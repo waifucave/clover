@@ -21,6 +21,9 @@ export interface GalleryStory {
   theme?: string;
   /** Resolves once the frame may be captured (a model loaded, a frame drawn). */
   ready?: () => Promise<void>;
+  /** The sealed parts it draws, as the gallery's Chromium check counts them: whole and visible at rest, mid-motion
+   *  (a filmstrip's frames), or cut at the edge of a list that scrolls. Absent, it draws none. */
+  sealed?: { visible?: number; moving?: number; scrolled?: number };
 }
 
 const STACKS: Record<string, { layers: readonly ThemeLayer[]; appearance: Appearance }> = {
@@ -41,7 +44,7 @@ declare global {
   interface Window {
     __galleryReady?: boolean;
     __galleryError?: string;
-    __galleryStories?: { id: string; title: string; width: number; height: number }[];
+    __galleryStories?: Pick<GalleryStory, "id" | "title" | "width" | "height" | "sealed">[];
   }
 }
 
@@ -88,7 +91,7 @@ function Ready({ story, children }: { story?: GalleryStory; children: ReactNode 
 
 const params = new URLSearchParams(location.search);
 const only = params.get("story");
-window.__galleryStories = STORIES.map(({ id, title, width, height }) => ({ id, title, width, height }));
+window.__galleryStories = STORIES.map(({ id, title, width, height, sealed }) => ({ id, title, width, height, sealed }));
 
 const style = document.createElement("style");
 style.textContent = scopedCss(

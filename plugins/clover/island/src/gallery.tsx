@@ -23,6 +23,9 @@ export interface Story {
   width: number;
   height: number;
   render: () => ReactNode;
+  /** The sealed parts it draws, as the gallery's Chromium check counts them: whole and visible at rest, mid-motion
+   *  (a filmstrip's frames), or cut at the edge of a list that scrolls. Absent, it draws none. */
+  sealed?: { visible?: number; moving?: number; scrolled?: number };
 }
 
 const kit = mockSealedKit(SEALED);
@@ -160,6 +163,7 @@ export const ISLAND_STORIES: Story[] = [
     title: "Card on top: an approval (sealed parts)",
     width: W,
     height: 200,
+    sealed: { visible: 5 },
     render: () => <Desktop shape={NOTCH} width={W} height={200}><Strip shape={NOTCH} counts={{ waiting: 1, working: 1 }} /><MeasuredCard content={<SealedCardContent card={APPROVAL} />} /></Desktop>,
   },
   {
@@ -167,6 +171,7 @@ export const ISLAND_STORIES: Story[] = [
     title: "Card on top: hovered, ✓ under the pointer",
     width: W,
     height: 200,
+    sealed: { visible: 5 },
     render: () => <Desktop shape={NOTCH} width={W} height={200}><Strip shape={NOTCH} counts={{ waiting: 1, working: 1 }} /><MeasuredCard content={<SealedCardContent card={APPROVAL} hover="accept" />} hovered /></Desktop>,
   },
   {
@@ -174,6 +179,7 @@ export const ISLAND_STORIES: Story[] = [
     title: "Card on top: an approval whose answers include \"Always allow\" (one sealed button per option)",
     width: W,
     height: 200,
+    sealed: { visible: 5 },
     render: () => <Desktop shape={NOTCH} width={W} height={200}><Strip shape={NOTCH} counts={{ waiting: 1, working: 0 }} /><MeasuredCard content={<SealedCardContent card={APPROVAL_ALWAYS} />} /></Desktop>,
   },
   {
@@ -181,6 +187,7 @@ export const ISLAND_STORIES: Story[] = [
     title: "Card on top: a link request",
     width: W,
     height: 210,
+    sealed: { visible: 5 },
     render: () => <Desktop shape={NOTCH} width={W} height={210}><Strip shape={NOTCH} counts={{ waiting: 1, working: 0 }} /><MeasuredCard content={<SealedCardContent card={LINK} />} /></Desktop>,
   },
   {
@@ -202,6 +209,7 @@ export const ISLAND_STORIES: Story[] = [
     title: "A hovered card holds; the newcomer waits below",
     width: W,
     height: 250,
+    sealed: { visible: 5 },
     render: () => (
       <Desktop shape={NOTCH} width={W} height={250}>
         <Strip shape={NOTCH} counts={{ waiting: 2, working: 0 }} />
@@ -222,6 +230,7 @@ export const ISLAND_STORIES: Story[] = [
     title: "Card on top: a screen with no housing",
     width: W,
     height: 190,
+    sealed: { visible: 5 },
     render: () => <Desktop shape={NO_NOTCH} width={W} height={190}><Strip shape={NO_NOTCH} counts={{ waiting: 1, working: 0 }} /><MeasuredCard content={<SealedCardContent card={APPROVAL} />} shape={NO_NOTCH} /></Desktop>,
   },
   {
@@ -229,6 +238,7 @@ export const ISLAND_STORIES: Story[] = [
     title: "A card's birth from the housing, frame by frame",
     width: 3 * 460 + 16,
     height: 3 * 200 + 16,
+    sealed: { visible: 5, moving: 40 },
     render: () =>
       filmstrip(
         [0.06, 0.14, 0.22, 0.3, 0.38, 0.46, 0.58, 0.78, FLUID.settle],
@@ -242,11 +252,12 @@ export const ISLAND_STORIES: Story[] = [
     title: "Open island: Needs you",
     width: W,
     height: 220,
+    sealed: { visible: 4, scrolled: 7 },
     render: () => (
       <Desktop shape={NOTCH} width={W} height={220}>
         <Strip shape={NOTCH} counts={{ waiting: 3, working: 1 }} />
         <OpenIsland shape={NOTCH} tabs={tabState(TABS)} count={3}>
-          <NeedsYou cards={[APPROVAL, LINK, QUESTION]} scrolls={false} />
+          <NeedsYou cards={[LINK, QUESTION, { ...APPROVAL, issuedAt: 6 }]} scrolls={false} />
         </OpenIsland>
       </Desktop>
     ),
@@ -256,6 +267,7 @@ export const ISLAND_STORIES: Story[] = [
     title: "Open island: Needs you, no housing",
     width: W,
     height: 220,
+    sealed: { visible: 4, scrolled: 7 },
     render: () => (
       <Desktop shape={NO_NOTCH} width={W} height={220}>
         <OpenIsland shape={NO_NOTCH} tabs={tabState(TABS)} count={2}>
@@ -310,6 +322,7 @@ export const ISLAND_STORIES: Story[] = [
     title: "The island opening out of the strip, frame by frame",
     width: 3 * 640 + 16,
     height: 2 * 220 + 8,
+    sealed: { moving: 30, scrolled: 6 },
     render: () => {
       const from = stripRect(NOTCH, true)!;
       const tabs = tabState(TABS);

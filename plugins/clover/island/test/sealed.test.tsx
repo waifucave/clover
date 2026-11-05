@@ -21,6 +21,7 @@ import { SealedCardContent } from "../src/ui/CardContent";
 import { ISLAND_CSS } from "../src/ui/styles";
 import { ISLAND_CARD_SOURCES, MIN_SEALED_BUTTON, SealedKitContext, tokenProperty, type SealedCardKit } from "../src/ui/sealed";
 import { mockSealedKit } from "../src/mock-kit";
+import { ISLAND_STORIES as STORIES } from "../src/gallery";
 import { APPROVAL, APPROVAL_2, APPROVAL_ALWAYS, LINK, NO_NOTCH, NOTCH, QUESTION, SEALED } from "../src/fixtures";
 import type { IslandCard } from "../src/model/cards";
 
@@ -281,5 +282,17 @@ describe("Needs you", () => {
     const card = container.querySelector("[data-sealed-card]")!;
     const order = [...card.querySelectorAll("[data-sealed]")].map((el) => el.getAttribute("data-field") ?? el.getAttribute("data-sealed"));
     expect(order).toEqual(["source", "what", "deny", "approve", "risk", "command"]);
+  });
+});
+
+describe("the gallery's stories", () => {
+  test("each records every sealed part it draws, so the Chromium check counts them all (none skipped)", () => {
+    for (const story of STORIES) {
+      const view = render(<>{story.render()}</>);
+      const drawn = view.container.querySelectorAll("[data-sealed]").length;
+      const recorded = (story.sealed?.visible ?? 0) + (story.sealed?.moving ?? 0) + (story.sealed?.scrolled ?? 0);
+      expect(recorded, story.id).toBe(drawn);
+      view.unmount();
+    }
   });
 });

@@ -19,6 +19,7 @@ import { Shell } from "../src/ui/Shell";
 import { PILL_CSS } from "../src/ui/styles";
 import { MIN_SEALED_BUTTON, PILL_CARD_SOURCES, SealedKitContext, tokenProperty, type SealedCardKit } from "../src/ui/sealed";
 import { mockSealedKit } from "../src/mock-kit";
+import { PILL_STORIES as STORIES } from "../src/gallery";
 import { emptyDraft } from "../src/model/cards";
 import { AGENTS, ALPHA, APPROVAL, APPROVAL_ALWAYS, LINK, SEALED, TARGETS } from "../src/fixtures";
 
@@ -197,5 +198,17 @@ describe("the frames take the pill's own tokens", () => {
 describe("the client entry", () => {
   test("ships no stand-in kit", () => {
     expect("mockSealedKit" in client).toBe(false);
+  });
+});
+
+describe("the gallery's stories", () => {
+  test("each records every sealed part it draws, so the Chromium check counts them all (none skipped)", () => {
+    for (const story of STORIES) {
+      const view = render(<>{story.render()}</>);
+      const drawn = view.container.querySelectorAll("[data-sealed]").length;
+      const recorded = (story.sealed?.visible ?? 0) + (story.sealed?.moving ?? 0) + (story.sealed?.scrolled ?? 0);
+      expect(recorded, story.id).toBe(drawn);
+      view.unmount();
+    }
   });
 });

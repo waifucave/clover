@@ -25,6 +25,9 @@ export interface Story {
   width: number;
   height: number;
   render: () => ReactNode;
+  /** The sealed parts it draws, as the gallery's Chromium check counts them: whole and visible at rest, mid-motion
+   *  (a filmstrip's frames), or cut at the edge of a list that scrolls. Absent, it draws none. */
+  sealed?: { visible?: number; moving?: number; scrolled?: number };
 }
 
 const kit = mockSealedKit(SEALED);
@@ -186,10 +189,10 @@ export const PILL_STORIES: Story[] = [
   { id: "pill/working", title: "Working: the plume, each tool thrown out of the nozzle, the stop circle", width: W, height: 120, render: () => <Desk width={W} height={120}><BarFrame running /></Desk> },
   { id: "pill/working-stopping", title: "Working, stop pressed and not yet confirmed", width: W, height: 120, render: () => <Desk width={W} height={120}><BarFrame running stopping /></Desk> },
   { id: "pill/typing-over-work", title: "Typing over a running turn: the circle stays a stop, Enter steers", width: W, height: 120, render: () => <Desk width={W} height={120}><BarFrame presentation="expanded" running verb="Reading the release notes…" /></Desk> },
-  { id: "pill/card-approval", title: "Card: an approval, its words and buttons sealed", width: W, height: 260, render: () => <Desk width={W} height={260}><CardFrame card={APPROVAL} waiting={1} /></Desk> },
-  { id: "pill/card-approval-hovered", title: "Card: an approval, ✓ under the pointer", width: W, height: 260, render: () => <Desk width={W} height={260}><CardFrame card={APPROVAL} hover="accept" /></Desk> },
-  { id: "pill/card-approval-always", title: "Card: an approval whose answers include \"Always allow\" (one sealed button per option)", width: W, height: 230, render: () => <Desk width={W} height={230}><CardFrame card={APPROVAL_ALWAYS} /></Desk> },
-  { id: "pill/card-link", title: "Card: a sign-in link", width: W, height: 230, render: () => <Desk width={W} height={230}><CardFrame card={LINK} /></Desk> },
+  { id: "pill/card-approval", title: "Card: an approval, its words and buttons sealed", width: W, height: 260, sealed: { visible: 6 }, render: () => <Desk width={W} height={260}><CardFrame card={APPROVAL} waiting={1} /></Desk> },
+  { id: "pill/card-approval-hovered", title: "Card: an approval, ✓ under the pointer", width: W, height: 260, sealed: { visible: 6 }, render: () => <Desk width={W} height={260}><CardFrame card={APPROVAL} hover="accept" /></Desk> },
+  { id: "pill/card-approval-always", title: "Card: an approval whose answers include \"Always allow\" (one sealed button per option)", width: W, height: 230, sealed: { visible: 5 }, render: () => <Desk width={W} height={230}><CardFrame card={APPROVAL_ALWAYS} /></Desk> },
+  { id: "pill/card-link", title: "Card: a sign-in link", width: W, height: 230, sealed: { visible: 5 }, render: () => <Desk width={W} height={230}><CardFrame card={LINK} /></Desk> },
   { id: "pill/card-question", title: "Card: a question, an option under the pointer (choosing never sends)", width: W, height: 360, render: () => <Desk width={W} height={360}><CardFrame card={QUESTION} draft={{ visible: 0, selections: { 0: [1] }, others: {} }} hoverOption={0} hoverAccept /></Desk> },
   { id: "pill/card-questions", title: "Card: the first of two questions, multiple choice", width: W, height: 360, render: () => <Desk width={W} height={360}><CardFrame card={QUESTIONS} presentation="expanded" draft={{ visible: 0, selections: { 0: [0, 1] }, others: {} }} waiting={2} /></Desk> },
   { id: "pill/card-question-error", title: "Card: an answer that didn't go through", width: W, height: 360, render: () => <Desk width={W} height={360}><CardFrame card={QUESTION} draft={{ visible: 0, selections: {}, others: { 0: "The release branch, but rebase first" } }} error={t("clover.pill.notSent")} /></Desk> },
@@ -242,6 +245,7 @@ export const PILL_STORIES: Story[] = [
     title: "Morph: the compact pill becomes a card (the bar fades, the shape springs, the card sharpens in)",
     width: 4 * 460 + 3 * 8,
     height: 2 * 250 + 8,
+    sealed: { visible: 6, moving: 30 },
     render: () =>
       filmstrip(
         [0.04, 0.1, 0.16, 0.22, 0.3, 0.4, 0.55, 0.9],
