@@ -6,13 +6,15 @@ Date: 2026-11-05. Lane C, `lane/c-m0`, spec revision 17; base `a481f7e14`.
 release.** The write that sank the candidate landed in the sandbox principal's own profile: the
 launcher lets the principal write there, and the old fixture prepared a different folder. With the
 principal's profile resolved by SID and all three Startup folders denied, every Startup route is
-refused against a positive unfenced control (`review-controls-v6.txt`), and the full suite passes
-**31/32** ordinary checks (the one failure is the superseded historical COM assertion), **7/7**
-approved escapes and job cleanup (`final-windows-candidate-v3.txt`). What still blocks admission:
+refused against a positive unfenced control (`review-controls-v7.txt`), and the full suite passes
+**32/32** ordinary checks, **7/7** approved escapes and job cleanup (`final-windows-candidate-v4.txt`).
+One of the 32 is not a denial: `declared-limit-profile-write` passes when the principal's write to
+its own profile lands, the limit recorded below. Every denial counts only as an access error, and
+the Shell.Application check passes on the started child's own receipt. What still blocks admission:
 every candidate run needs the Session 0 namespace alias diagnostic (the unmodified launch admits
-zero commands); the principal's own profile stays writable by construction (declared a scratch
-root below, **[P]** for the controller); and Windows 11 is a live gate. Nothing here establishes
-production readiness.
+zero commands); the principal's writable profile is accepted **for M0 only**, and the M1 floor
+requires per-session isolation and a reset (controller's ruling, proposed edit 7); and Windows 11 is
+a live gate. Nothing here establishes production readiness.
 
 **Decided by the owner:** on Windows, Bash runs as the dedicated sandbox principal. `gh`, git
 credential helpers, Docker registry logins and ssh-agent signing reach it only through a Clover
@@ -110,9 +112,14 @@ because it expected `\Sessions\0\BaseNamedObjects`, whereas this environment use
 namespace. The diagnostic `session0-bno.cs` holds a temporary object-manager alias to the real
 namespace; handles close afterwards. **This alias is not a production solution.** A production
 launcher must resolve Session 0 correctly without modifying the namespace. With that diagnostic,
-`final-windows-candidate-v3.txt` contains 32 ordinary checks (31 successful assertions), seven
-approved-escape checks (7/7), job cleanup and an out-of-process COM observation. The one failed
-assertion is the historical `com-outofproc` rejection test; the child receipts below supersede it.
+`final-windows-candidate-v4.txt` contains 32 ordinary checks, all passing, seven approved-escape
+checks (7/7) and job cleanup. Every denial counts only as an access error (EPERM/EACCES): a missing
+path or any other failure is not evidence. One check is not a denial: `declared-limit-profile-write`
+passes when the write to the principal's own profile lands, and its result is tagged
+`declared-limit`. The Shell.Application check passes only on the started child's own receipt
+(non-admin, protected read refused); it replaced the historical `com-outofproc` assertion, which
+always failed. The first rerun (`final-windows-candidate-v3.txt`) counted any exception as a
+denial and still carried that assertion.
 
 | Requirement / route | Observed result |
 | --- | --- |
@@ -125,10 +132,10 @@ assertion is the historical `com-outofproc` rejection test; the child receipts b
 | Services / Service Control Manager | Service creation rejected |
 | WMI process creation | Attempt rejected |
 | In-process WScript COM creating a child | Child retained protected-read denial; process creation itself is not an escape |
-| Shell.Application | Child receipts: fenced child non-admin, protected read denied |
+| Shell.Application | The started child's receipt: non-admin, protected read refused |
 | runas / saved-credential attempt | Both fenced and unfenced attempts fail; no attributable fence denial |
 | Startup folders: the principal's own, the real user's, all users' | All three refused (EPERM), each with a positive unfenced control |
-| The principal's own profile | Writable by construction; declared the sandbox's scratch root (below) |
+| The principal's own profile | Writable by construction; recorded M0-only limit, checked in every run (below) |
 | Job cleanup | Detached delayed child did not write its marker after parent exit |
 | Direct local listener and metadata TCP | Both denied, ordinary and approved-escape sessions |
 
@@ -138,8 +145,8 @@ protection and both network denials held. They are deliberately network-closed e
 not implement arbitrary approved network access. Per-command write-root overrides are unsupported
 by this vendor API and were not silently dropped.
 
-In the rerun, ordinary end-to-end checks took 703–1668 ms, median 740 ms; approved-escape checks
-690–711 ms, median 701 ms (earlier runs: 654–2708 ms, median 706 ms). These include PowerShell,
+In the final run, ordinary end-to-end checks took 665–3062 ms, median 704 ms; approved-escape
+checks 660–708 ms, median 670 ms (earlier runs: medians 706–740 ms and 634–701 ms). These include PowerShell,
 Node worker and native broker execution. The earlier 2–5 ms launch-return figures exclude
 provisioning/compilation and are not comparable production costs. The Session 0 dependency,
 full-home policy, concurrency/crash recovery and Windows 11 remain gaps. No claim is made that
@@ -184,22 +191,21 @@ re-provisioned afterwards).
 
 The rerun refuses all three Startup writes with EPERM in the suite and in the paired controls.
 
-**Limit.** The principal's own profile stays writable. It is the principal's, never the user's, and
-holds no Clover or user data, so this candidate declares it the sandbox's scratch root
-(`principal-scratch-write` records that the write lands there). Logon-start entries inside it, its
-Startup folder and its own registry hive (the hive was not measured), take effect only when the
-principal's desktop shell starts. The launcher never starts one: children run on a non-interactive
-desktop, the account is hidden from logon, and its password is readable only by the broker (the
-vendor's state database denies the sandbox group). Because the principal owns that tree, denies
-inside it are weaker than denies on paths it does not own; the M1 helper should therefore keep no
-persistent principal profile at all (M1 entry below). **[P] for the controller:** accept the
-principal's profile as the Windows sandbox's scratch root until M1, or require the M1 change before
-the candidate counts as meeting the floor.
+**Limit, accepted for M0 only (the controller's ruling).** The principal's own profile stays
+writable: it is the principal's, never the user's, and holds no Clover or user data.
+`declared-limit-profile-write` records in every run that the write lands. Logon-start entries
+inside it, its Startup folder and its own registry hive (the hive was not measured), take effect
+only when the principal's desktop shell starts, which the launcher never does: children run on a
+non-interactive desktop, the account is hidden from logon, and its password is readable only by the
+broker (the vendor's state database denies the sandbox group). In M1 the Windows candidate does
+not meet the floor until nothing a command writes can carry over to any other command or session
+(M1 entry item 2, proposed edit 7).
 
 ### Review controls and actual administrator context
 
-`spikes/s2-windows-fence/results/review-controls-v6.txt` is the final paired run (v4 found the
-Startup write; v1–v3 are earlier fixtures). The real launching user is explicitly verified as an
+`spikes/s2-windows-fence/results/review-controls-v7.txt` is the final paired run; v6 had the same
+outcomes before the controls stopped on a temporary profile, v4 found the Startup write, and v1–v3
+are earlier fixtures. The real launching user is explicitly verified as an
 enabled local administrator. The fenced handle-probe process is explicitly non-admin and
 `IsTokenRestricted=true`, while its unfenced control is admin/unrestricted. Therefore these results
 include the common case where Clover's real user is an administrator; they do not depend on
@@ -314,8 +320,18 @@ stores would defeat the separation.
 
 1. The broker contract and the four adapters, with the user's stores, agent pipe and engine pipe
    verified closed to the principal.
-2. No persistent principal profile: launch without loading it, or recreate it for each session,
-   with HOME and TEMP in the session's allowed temp. Until then, provisioning creates the
+2. **Nothing carries over** (the controller's M1 floor for Windows). Nothing a command writes may
+   carry over to any other command or session, concurrent sessions included:
+   - a sandbox principal per running session, or running sessions one at a time;
+   - the principal's profile **and its registry hive** reset for each session, with the reset
+     measured on every launch and failing closed, as `candidate.mjs` already does for a temporary
+     profile;
+   - the vendor's persistent grants and any temp folder per session, with HOME and TEMP in the
+     session's own temp, as part of the floor.
+
+   Fencing a list of auto-run paths (shell startup files including Git Bash's, PowerShell
+   profiles, the Startup folders, Run/RunOnce and other autorun keys, scheduled tasks) is only an
+   interim measure; the reset is the M1 exit condition. Until then, provisioning creates the
    principal's Startup folder and the fence denies all three Startup folders, resolved by SID.
 3. Session 0 resolved without modifying the namespace.
 4. A real **per-command escape API**: the experiment resets/reinitializes an entire vendor session
@@ -479,10 +495,25 @@ Keep the owner-decided own-sandbox/no-outer-wrapper rule and unsupported-backend
 6. **[D], decided by the owner, §9.1:** Windows Bash and PowerShell run as the dedicated sandbox
    principal; `gh`, git credential helpers, Docker registry logins and ssh-agent signing reach them
    only through the Clover credential broker. The controller replaces §9.1's "the OS store itself
-   stays open to tools such as `gh`, Docker and git" with the text in S2.3–4.
-7. **[P], §9.1:** on Windows the fence also denies the three Startup folders (the user's, the sandbox
-   principal's, all users'), with the principal's resolved by SID, and the sandbox principal's own
-   profile is the sandbox's scratch area until the M1 helper keeps no persistent principal profile.
+   stays open to tools such as `gh`, Docker and git" with the text in S2.3–4. The same edit
+   changes §4's Windows Bash cell: "built on AppContainer or a restricted token" becomes "built on
+   a dedicated sandbox principal with a write-restricted token, network filters keyed to that
+   principal and a kill-on-close job; credentials go through the Clover broker (§9.1)".
+7. **[P], §9.1, with the controller's ruling:** one rule for all three OSes.
+
+   > **Nothing a command writes runs later on its own, or carries over.** Bash's writable home and
+   > temp folders exclude the places the OS starts programs from at login or on a schedule; they
+   > join the fenced set on every OS, escapes included: on macOS `~/Library/LaunchAgents`, login
+   > items and shell startup files; on Linux `~/.config/systemd/user`, `~/.config/autostart` and
+   > shell startup files; on Windows the Startup folders, the Run and RunOnce keys, PowerShell
+   > profiles and Git Bash's startup files. A bot changes them only through a core tool and an
+   > approval card. On Windows, where Bash runs as a sandbox principal, nothing the principal
+   > writes carries over to another command or session: a principal per running session or one
+   > session at a time; its profile and registry hive reset for each session, checked on every
+   > launch and failing closed; its grants and temp folder per session.
+
+   For M0 the principal's writable profile is accepted as a recorded limit only. Fencing listed
+   auto-run paths stays an interim measure; the reset is the M1 exit condition.
 
 No relaxation of the [D] Windows Bash release blocker is proposed. The Session 0, COM, startup-task
 and protected-backend gaps go to the controller; this report does not silently route around them.
@@ -493,8 +524,10 @@ M1 starts with a reviewed native broker, stable floor and secret-store contracts
 correct Session 0 handling, caller identity and a production semantic credential policy. The failed
 or unavailable backend combinations remain explicitly unsupported pending resolution. Broader home
 write policy, concurrent sessions, crash cleanup and real credential-helper protocols need coverage.
-The credential broker, the principal-profile change, the per-command escape API and full fenced-set
-enumeration are explicit M1 entry requirements, not features proved by the spike counts. The
+The credential broker, the no-carry-over floor (a principal per running session or one session at
+a time, profile and hive reset per session, per-session grants and temp), the per-command escape
+API and full fenced-set enumeration are explicit M1 entry requirements, not features proved by the
+spike counts. The
 candidate's Startup failure is closed for the tested routes; it remains a test shim, not Windows
 release admission.
 
@@ -517,7 +550,7 @@ the controller merges.
 2. **Repository CI:** controller-owned base-doc residue gate, to clear with C0 #152. No residue
    allowlist, base-doc or cross-lane source changes made by this lane. Focused spike CI is separate.
 3. **Unfenced/admin controls:** all listed route denials paired, with local administrator launching
-   context verified (`review-controls-v6.txt`). runas has a failed control and is not credited as
+   context verified (`review-controls-v7.txt`). runas has a failed control and is not credited as
    closed. Principal-based denials are labelled as such.
 4. **COM / handles:** synchronous child receipts replace the unobserved ShellExecute marker;
    forced local-server activation reports class unavailability in both contexts. Deliberate inherited
@@ -547,3 +580,21 @@ the controller merges.
 3. **§9.1 [D]:** decided by the owner and recorded.
 4. **Repository residue gate:** controller-owned, unchanged.
 5. **PR body:** rewritten to match this report.
+
+## Final-round disposition (check of 8080cbadd)
+
+1. **Denial checks:** all nine other denial checks now use the access-error rule of the Startup
+   checks (`a944bdf3e`); in the rerun every denial reports EPERM.
+2. **Temporary profile:** `review-routes.mjs` stops on a temporary profile, as `candidate.mjs` does.
+3. **COM check:** the child-receipt check replaced the old assertion; the suite reaches 32/32
+   (`final-windows-candidate-v4.txt`), and the paired controls match (`review-controls-v7.txt`).
+4. **Label:** the profile write is `declared-limit-profile-write`, tagged `declared-limit`, and the
+   count above says it is not a denial.
+5. **Temp-folder paths:** the macOS per-user temp folder is scrubbed from `macos-codex.txt`,
+   `final-macos-cursor.txt` and `resumed-macos-cursor-v2.txt`. The normaliser scrubs its path and
+   project-key forms, and `--check` fails if any scrub rule stops firing on its sample.
+6. **Edit 6:** also changes §4's Windows Bash cell.
+7. **Edit 7:** the controller's ruling is written in, with one §9.1 rule for all three OSes; M1
+   entry item 2 names the registry hive.
+8. **PR body:** refreshed.
+9. **Cursor trailer on `94ae95409`:** stays, as the controller decided; no history rewrite.
