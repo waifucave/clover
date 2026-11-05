@@ -349,6 +349,13 @@ export const CLOVER_ALLOWLIST: readonly AllowlistEntry[] = [
     regex: /\b(?:winterLeg|winterLegDisabledKeys|winterIdleTimeoutSec|DEFAULT_WINTER_IDLE_TIMEOUT_SEC)\b/g,
     why: "keys of `settings.json`'s `runtimes` block (`runtimes.winterLeg`, `runtimes.winterIdleTimeoutSec`): Winter's settings carry over to Clover as they are (spec §12)",
   },
+  {
+    id: "manifest-generated-from",
+    regex: /"winter"/g,
+    files: ["packages/plugin-sdk/src/manifest/schema.ts", "packages/plugin-sdk/generated/clover.schema.json"],
+    why: "the manifest's `generated.from: \"winter\"` (spec §5.9)",
+    awaits: "lane B's B-M0 (#157), which adds both files",
+  },
   // ── Live infrastructure and history ────────────────────────────────────────────────────────────
   {
     id: "live-infra",
