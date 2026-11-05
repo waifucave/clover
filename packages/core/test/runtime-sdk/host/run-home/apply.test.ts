@@ -34,7 +34,7 @@ function storePeer(): { peer: HostSdk; calls: ReturnType<typeof createFakeWinter
 
 function winterRouter(bed: RunHomeBed, extra: { requireRunHome?: boolean } = {}) {
   const { peer, calls } = storePeer();
-  const sdk = createRuntimeSdkHost({ sdk: peer, requireRunHome: extra.requireRunHome ?? true, home: bed.home });
+  const sdk = createRuntimeSdkHost({ brand: WINTER_BRAND, sdk: peer, requireRunHome: extra.requireRunHome ?? true, home: bed.home });
   return { sdk, calls };
 }
 
@@ -104,7 +104,7 @@ describe("the Winter leg", () => {
           return Object.assign(failing, { interrupt: async () => undefined }) as unknown as ReturnType<HostSdk["query"]>;
         },
       });
-      const sdk = createRuntimeSdkHost({ sdk: { ...peer, WinterCompatibilitySessionStore } as unknown as HostSdk, requireRunHome: true, home: bed.home });
+      const sdk = createRuntimeSdkHost({ brand: WINTER_BRAND, sdk: { ...peer, WinterCompatibilitySessionStore } as unknown as HostSdk, requireRunHome: true, home: bed.home });
       const query = sdk.query({ prompt: "hi", options: { cwd: bed.cwd, runtime: { runHome } } });
       expect(sdk.runHomeOutcome(runHome.runId)).toBe("pending");
       await expect(query.next()).rejects.toThrow("unexpected process death");
@@ -137,7 +137,7 @@ describe("the Winter leg", () => {
     const { peer } = createFakeWinterPeer();
     let returned: unknown;
     const wrapped = { ...peer, WinterCompatibilitySessionStore, query: (args: Parameters<HostSdk["query"]>[0]) => (returned = peer.query(args)) } as unknown as HostSdk;
-    const sdk = createRuntimeSdkHost({ sdk: wrapped });
+    const sdk = createRuntimeSdkHost({ brand: WINTER_BRAND, sdk: wrapped });
     const query = sdk.query({ prompt: "hi", options: { cwd: bed.cwd } });
     expect(query).toBe(returned as typeof query);
   });
@@ -233,6 +233,7 @@ describe("the cold resume runs on a run home too", () => {
     const { peer, calls } = storePeer();
     const declared = declaredClasses();
     const sdk = createRuntimeSdkHost({
+      brand: WINTER_BRAND,
       sdk: peer,
       requireRunHome: true,
       home: bed.home,
@@ -284,6 +285,7 @@ describe("the cwd check compares CANONICAL forms (L3 round 4: the daemon's cold 
     const { peer, calls } = storePeer();
     const declared = declaredClasses();
     const sdk = createRuntimeSdkHost({
+      brand: WINTER_BRAND,
       sdk: peer,
       requireRunHome: true,
       home: bed.home,

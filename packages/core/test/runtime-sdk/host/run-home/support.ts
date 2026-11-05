@@ -3,6 +3,7 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
+import { WINTER_BRAND } from "@waifucave/clover-agent-sdk";
 import type { RunHomeInput } from "../../../../src/runtime-sdk/host/run-home/types";
 
 const roots: string[] = [];
@@ -47,6 +48,10 @@ export function inputFor(bed: RunHomeBed, overrides: Partial<RunHomeInput> = {})
     mcpDisabled: [],
     reservedMcpServerNames: [],
     memoryDir: join(bed.sdk, "projects", "k", "memory"),
+    // A-M1 review: the SDK has no default brand, and the moved host code reads the process's installed brand
+    // (Clover's, in core) when none is given. These router-era tests describe the layout under Winter's own
+    // profile, so they name it.
+    brand: WINTER_BRAND,
     ...overrides,
   };
 }

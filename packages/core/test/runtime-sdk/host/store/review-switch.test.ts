@@ -25,6 +25,7 @@
 // the requested model key, so the text-only target is the real `zai/glm-5` (the fixture `GLM` key is
 // off-catalog and reads as image-capable with no window).
 import { randomUUID } from "node:crypto";
+import { WINTER_BRAND } from "@waifucave/clover-agent-sdk";
 import { appendFileSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { describe, expect, test } from "bun:test";
@@ -582,7 +583,7 @@ describe("integration Important: under WS-21 (`requireRunHome`) the review reads
   /** The ROUTER's own reviewer over the shared runtime home `<home>/sdk` — not one built on the bed's pre-WS-21 store. */
   function routerOf(bed: StoreBed): { barrier: SwitchReviewerHandle; shared: SharedSessionStore; storeHome: string } {
     mkdirSync(bed.home, { recursive: true, mode: 0o700 }); // the daemon's home always exists; the store creates `sdk/` under it
-    const sdk = createRuntimeSdkHost({ sdk: bed.sdk, directoryStore: bed.directoryStore, requireRunHome: true, home: bed.home, resolveEndpoint: fixtureResolveEndpoint });
+    const sdk = createRuntimeSdkHost({ brand: WINTER_BRAND, sdk: bed.sdk, directoryStore: bed.directoryStore, requireRunHome: true, home: bed.home, resolveEndpoint: fixtureResolveEndpoint });
     const barrier = sdk.reviewer;
     return { barrier, shared: barrier.shared, storeHome: sdkHomeOf(bed.home) };
   }

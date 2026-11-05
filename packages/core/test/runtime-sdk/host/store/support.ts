@@ -13,7 +13,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 
-import { WinterCompatibilitySessionStore, type SessionKey, type SessionStoreEntry } from "@waifucave/clover-agent-sdk";
+import { WINTER_BRAND, WinterCompatibilitySessionStore, type SessionKey, type SessionStoreEntry } from "@waifucave/clover-agent-sdk";
 
 import { createRuntimeSdkHost, type HostSdk } from "../../../../src/runtime-sdk/host/index";
 import type { SeamContextWithDirectory } from "../../../../src/runtime-sdk/host/seams/context";
@@ -72,7 +72,7 @@ export async function withStoreBed<T>(fn: (bed: StoreBed) => Promise<T>, options
     const tempBase = join(root, "temp");
     const sdk = storeSdk(options.store === undefined ? {} : { store: options.store });
     const directoryStore = options.directoryStore ?? createInMemoryRuntimeDirectoryStore();
-    const host = createRuntimeSdkHost({ sdk, directoryStore });
+    const host = createRuntimeSdkHost({ brand: WINTER_BRAND, sdk, directoryStore });
     const context = host.context;
     const shared = createSharedSessionStore({ sdk, winterHome: home, ...(options.policy === undefined ? {} : { policy: options.policy }) });
     const key: SessionKey = { projectKey: "-lane-c-project", sessionId: "11111111-2222-4333-8444-555555555555" };

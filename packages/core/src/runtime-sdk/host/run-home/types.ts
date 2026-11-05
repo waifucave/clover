@@ -22,7 +22,7 @@
 // to the Winter SDK's own profile). Claude's names — `CLAUDE.md`, `.claude.json`, `file-history`,
 // `CLAUDE_CODE_*` — are the official runtime's own and stay fixed (WS-01 §5).
 import { join, isAbsolute } from "node:path";
-import { WINTER_BRAND, type BrandProfile } from "@waifucave/clover-agent-sdk";
+import { requireBrand, type BrandProfile } from "@waifucave/clover-agent-sdk";
 
 
 /** The session modes a run home is built for (spec §3.2's columns). */
@@ -200,7 +200,8 @@ export const PROTECTED_ITEM_DIRS = ["skills", "commands", "rules", "output-style
 export function protectedPathRules(
   sdkHome: string,
   trustedProjectRoot: string | null,
-  brand: Pick<RunHomeBrand, "projectDirName" | "instructionsFile"> = WINTER_BRAND,
+  // A-M1 review: no default brand; an unthreaded caller reads the brand installed for the process, or refuses.
+  brand: Pick<RunHomeBrand, "projectDirName" | "instructionsFile"> = requireBrand(),
   /** @deprecated Ignored — the any-depth rule covers every walk directory. */
   walk?: { cwd: string; userHome?: string },
 ): string[] {
@@ -218,6 +219,6 @@ export function protectedPathRules(
 
 /** The brand a run home was built with, filled in. */
 export function runHomeBrandOf(input: Pick<RunHomeInput, "brand">): RunHomeBrand {
-  const brand = input.brand ?? WINTER_BRAND;
+  const brand = requireBrand(input.brand);
   return { homeDirName: brand.homeDirName, projectDirName: brand.projectDirName, instructionsFile: brand.instructionsFile, envPrefix: brand.envPrefix, mcpServerName: brand.mcpServerName };
 }

@@ -4,6 +4,7 @@
 // attach points on both `query()` overloads and the `requireRunHome` refusal. The builder's behaviour
 // has its own files (`build-core`, `items`, `instructions`, `settings`, `mcp`, `apply`, …).
 import { describe, expect, test } from "bun:test";
+import { WINTER_BRAND } from "@waifucave/clover-agent-sdk";
 
 import * as router from "../../../../src/runtime-sdk/host/index";
 import { createFakeWinterPeer } from "../testing/index";
@@ -37,7 +38,7 @@ describe("WS-21 Contract A: helpers and constants", () => {
   });
 
   test("protectedPathRules: Edit and Write ask rules over the sdk home's item dirs, WINTER.md, and the trusted project's item dirs AT ANY DEPTH under the root (C1)", () => {
-    const rules = router.protectedPathRules("/h/sdk", "/repo");
+    const rules = router.protectedPathRules("/h/sdk", "/repo", WINTER_BRAND);
     for (const tool of ["Edit", "Write"]) {
       for (const kind of ["skills", "commands", "rules", "output-styles"]) {
         expect(rules).toContain(`${tool}(//h/sdk/${kind}/**)`);
@@ -49,7 +50,7 @@ describe("WS-21 Contract A: helpers and constants", () => {
     }
     expect(rules).toHaveLength(2 * (4 + 1 + 4));
     // No project, no project rules.
-    expect(router.protectedPathRules("/h/sdk", null).some((rule) => rule.includes("//repo"))).toBe(false);
+    expect(router.protectedPathRules("/h/sdk", null, WINTER_BRAND).some((rule) => rule.includes("//repo"))).toBe(false);
   });
 
   test("protectedPathRules: glob metacharacters in a path are escaped the way the pinned matcher reads them (minors round, item 2; the rule-content layer since the escape-table round)", () => {
@@ -58,12 +59,12 @@ describe("WS-21 Contract A: helpers and constants", () => {
     // when escaped, `?` must stay RAW, `(`/`)` are escaped too), then the rule-content escape (every
     // backslash doubled, `(`/`)` escaped), because the rule string is unescaped once before
     // the gitignore layer sees it. `{}`, `!`, `#` and spaces are literal as written.
-    const rules = router.protectedPathRules("/h/[s]dk", "/x/[wip] a*b?c{d}!(e)#f");
+    const rules = router.protectedPathRules("/h/[s]dk", "/x/[wip] a*b?c{d}!(e)#f", WINTER_BRAND);
     expect(rules).toContain(String.raw`Write(//x/\\[wip\\] a\\*b?c{d}!\\\(e\\\)#f/**/.winter/skills/**)`);
     expect(rules).toContain(String.raw`Edit(//h/\\[s\\]dk/skills/**)`);
     expect(rules).toContain(String.raw`Edit(//h/\\[s\\]dk/WINTER.md)`);
     // A literal backslash is FOUR in the rule string (claude matches nothing less — measured).
-    expect(router.protectedPathRules("/h/sdk", String.raw`/x/a\b`)).toContain(String.raw`Write(//x/a\\\\b/**/.winter/skills/**)`);
+    expect(router.protectedPathRules("/h/sdk", String.raw`/x/a\b`, WINTER_BRAND)).toContain(String.raw`Write(//x/a\\\\b/**/.winter/skills/**)`);
     // The helper itself, exported for a host that spells rules over the same paths.
     expect(router.escapeRulePath(String.raw`/x/[a]*b?\c`)).toBe(String.raw`/x/\\[a\\]\\*b?\\\\c`);
     expect(router.escapeRulePath(String.raw`/p (old)/q\(y`)).toBe(String.raw`/p \\\(old\\\)/q\\\\\\\(y`);
@@ -121,8 +122,8 @@ describe("WS-21 Contract A: helpers and constants", () => {
   });
 
   test("protectedPathRules: the walk adds nothing any more — every walk dir is under the root, which the any-depth rule already covers (C1)", () => {
-    const withWalk = router.protectedPathRules("/h/sdk", "/repo", undefined, { cwd: "/repo/a/b", userHome: "/home/u" });
-    expect(withWalk).toEqual(router.protectedPathRules("/h/sdk", "/repo"));
+    const withWalk = router.protectedPathRules("/h/sdk", "/repo", WINTER_BRAND, { cwd: "/repo/a/b", userHome: "/home/u" });
+    expect(withWalk).toEqual(router.protectedPathRules("/h/sdk", "/repo", WINTER_BRAND));
     // A write the old walk-only rules missed: the root's cwd writing a DEEPER directory's items.
     expect(withWalk).toContain("Write(//repo/**/.winter/skills/**)");
   });
@@ -139,7 +140,7 @@ describe("WS-21 Contract A: helpers and constants", () => {
 describe("WS-21 Contract A: `requireRunHome` — the router refuses a generation without a run home", () => {
   test("the Winter overload refuses `run_home_required` synchronously, before the peer is called", () => {
     const { peer, calls } = createFakeWinterPeer();
-    const sdk = router.createRuntimeSdkHost({ sdk: peer, requireRunHome: true, home: "/tmp/ws21-contract-home" });
+    const sdk = router.createRuntimeSdkHost({ brand: WINTER_BRAND, sdk: peer, requireRunHome: true, home: "/tmp/ws21-contract-home" });
     let caught: unknown;
     try {
       sdk.query({ prompt: "hello", options: { cwd: "/tmp/nowhere" } });
@@ -154,6 +155,7 @@ describe("WS-21 Contract A: `requireRunHome` — the router refuses a generation
 
   test("without `requireRunHome` an existing caller is unchanged (feature detection: the daemon opts in)", () => {
     const { peer, calls } = createFakeWinterPeer();
+    // No brand on the host either: it fills `Options.brand` only when it was given one.
     const sdk = router.createRuntimeSdkHost({ sdk: peer });
     const options = { cwd: "/tmp/nowhere" };
     sdk.query({ prompt: "hello", options });
@@ -163,7 +165,7 @@ describe("WS-21 Contract A: `requireRunHome` — the router refuses a generation
 
   test("the handle carries the two exit/recovery doors, and an unknown run id is `pending`", () => {
     const { peer } = createFakeWinterPeer();
-    const sdk = router.createRuntimeSdkHost({ sdk: peer, requireRunHome: true, home: "/tmp/ws21-contract-home" });
+    const sdk = router.createRuntimeSdkHost({ brand: WINTER_BRAND, sdk: peer, requireRunHome: true, home: "/tmp/ws21-contract-home" });
     expect(typeof sdk.runHomeOutcome).toBe("function");
     expect(typeof sdk.reconcileRootForRecovery).toBe("function");
     expect(sdk.runHomeOutcome("never-seen")).toBe("pending");
@@ -171,7 +173,7 @@ describe("WS-21 Contract A: `requireRunHome` — the router refuses a generation
 
   test("a run-home router must name its home — its store is rooted at the shared runtime home under it", () => {
     const { peer } = createFakeWinterPeer();
-    expect(() => router.createRuntimeSdkHost({ sdk: peer, requireRunHome: true })).toThrow(/the home must be named/);
+    expect(() => router.createRuntimeSdkHost({ brand: WINTER_BRAND, sdk: peer, requireRunHome: true })).toThrow(/the home must be named/);
   });
 
   test("`runHomeFor` is accepted at creation (the cold-resume callback)", () => {
@@ -179,7 +181,7 @@ describe("WS-21 Contract A: `requireRunHome` — the router refuses a generation
     const runHomeFor: router.RunHomeFor = async () => {
       throw new Error("not called in this test");
     };
-    const sdk = router.createRuntimeSdkHost({ sdk: peer, requireRunHome: true, runHomeFor, home: "/tmp/ws21-contract-home" });
+    const sdk = router.createRuntimeSdkHost({ brand: WINTER_BRAND, sdk: peer, requireRunHome: true, runHomeFor, home: "/tmp/ws21-contract-home" });
     expect(sdk.brand.projectDirName).toBe(".winter");
   });
 });
