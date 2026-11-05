@@ -120,7 +120,7 @@ import {
 } from "./computer-helper-lib";
 import { checkSignedHeadless, HEADLESS, HEADLESS_EMBED_RELATIVE, HEADLESS_NESTED_HELPERS, headlessRequirement, signedFacts as headlessSignedFacts } from "./headless-helper-lib";
 import { winterSourceOf } from "../packages/core/src/runtime-sdk/bundle-layout";
-import { REQUIRED_WINTER_AGENT_SDK } from "../packages/core/src/runtime-sdk/versions";
+import { CODING_AGENT_BINARY_VERSION } from "../packages/core/src/runtime-sdk/versions";
 import { buildWinter } from "./build-winter";
 import { resolveInstalledWinterPackage } from "./stage-runtimes";
 import { buildCoworkNative } from "./build-cowork-native";
@@ -719,7 +719,7 @@ if (process.env.CLOVER_SDK_CHECKOUT) {
     recordedHash: embeddedVersions.checksums.winterPreSign,
   });
   const row16Path = join(OUT, "row16.json");
-  writeFileSync(row16Path, `${JSON.stringify({ tag: `v${REQUIRED_WINTER_AGENT_SDK}`, checkout, ...row16.record }, null, 2)}\n`);
+  writeFileSync(row16Path, `${JSON.stringify({ tag: `v${CODING_AGENT_BINARY_VERSION}`, checkout, ...row16.record }, null, 2)}\n`);
   if (!row16.ok) fail(row16.failure!);
   console.log(
     `Row 16: PASS — provenance verified (pinned-tag checkout, rebuild succeeded). freshHash=${row16.record.freshHash} ` +
