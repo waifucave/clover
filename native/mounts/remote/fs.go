@@ -187,8 +187,12 @@ func (f *FS) forgetLocked(p string) {
 		}
 	}
 	if p != "" {
+		// The parent's listing changed, and so did its own mtime and ctime. An NFS client decides
+		// from the folder's attributes whether the names it remembers as missing still are, so a
+		// stale parent kept a new file invisible on macOS for good.
 		dir, _ := Parent(p)
 		delete(f.dirs, dir)
+		delete(f.attrs, dir)
 	}
 }
 

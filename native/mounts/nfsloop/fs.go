@@ -7,6 +7,7 @@ package nfsloop
 
 import (
 	"io"
+	"log"
 	"os"
 	"path"
 	"strings"
@@ -137,6 +138,9 @@ func (f *FS) Lstat(name string) (os.FileInfo, error) {
 	}
 	if e != wire.OK {
 		return nil, perr("lstat", name, e)
+	}
+	if debugReads && a.Type != wire.TypeDir {
+		log.Printf("STAT %s size=%d", p, a.Size)
 	}
 	return f.info(p, a), nil
 }
@@ -325,8 +329,13 @@ type file struct {
 
 func (x *file) Name() string { return x.path }
 
+var debugReads = os.Getenv("CLOVER_S6_NFS_DEBUG") != ""
+
 func (x *file) ReadAt(p []byte, off int64) (int, error) {
 	n := 0
+	if debugReads {
+		defer func() { log.Printf("READ %s off=%d want=%d got=%d", x.path, off, len(p), n) }()
+	}
 	for n < len(p) {
 		data, e := x.fs.R.Read(x.path, x.h, off+int64(n), len(p)-n)
 		if e != wire.OK {

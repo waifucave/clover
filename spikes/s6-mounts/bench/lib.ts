@@ -99,7 +99,7 @@ export class Rig {
   // ac: the kernel's attribute caching for the NFS mount (default: noac for nocache, else actimeo=1).
   // With noac every stat reaches the helper on the loopback address, whose own cache the holder's
   // events keep fresh, so the kernel never works from an old size.
-  nfs?: { bin: string; port: number; mountpoint: string; sudo?: boolean; mountedAs?: string; mountError?: string; ac?: string };
+  nfs?: { bin: string; port: number; mountpoint: string; sudo?: boolean; mountedAs?: string; mountError?: string; ac?: string; dead?: number };
   constructor(public o: { root: string; tree: string; helperBin: string; logs: string; remoteName: string; selfName: string; selfHome: string }) {}
 
   async startService(extra: string[] = []) {
@@ -176,7 +176,8 @@ export class Rig {
     // deadtimeout: if the helper itself stops answering, macOS marks the mount dead after 5 s and
     // forcibly unmounts it, which frees callers stuck in the NFS client (CI saw a read survive
     // SIGKILL for 20 minutes without it); the daemon then remounts.
-    const opts = `vers=3,tcp,port=${n.port},mountport=${n.port},nolocks,locallocks,soft,intr,timeo=10,retrans=2,deadtimeout=5,rsize=1048576,wsize=1048576,readahead=16,nobrowse,noresvport,${ac}`;
+    const dead = n.dead ?? 5;
+    const opts = `vers=3,tcp,port=${n.port},mountport=${n.port},nolocks,locallocks,soft,intr,timeo=10,retrans=2,${dead ? `deadtimeout=${dead},` : ""}rsize=1048576,wsize=1048576,readahead=16,nobrowse,noresvport,${ac}`;
     const cmd = ["/sbin/mount_nfs", "-o", opts, "127.0.0.1:/", n.mountpoint];
     if (!n.sudo) {
       const r = await run(cmd, { timeoutMs: 30000 });

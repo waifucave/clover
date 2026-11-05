@@ -80,7 +80,7 @@ step "7/9 fail fast when the computer drops (+20 ms)"
 bun "$s6/bench/failfast.ts" --root "$gate/export" --tree "$gate/tree" --helper none --rtt 20 --policy fskit \
   --fskit-url "clovertree://127.0.0.1:7500/Desktop1" --fskit-mountpoint "$gate/tree" --out "$results/macos-failfast-fskit.json"
 
-step "8/9 NFS loopback, the macOS backend the report proposes (sudo may ask for your password)"
+step "8/9 NFS loopback, the macOS backend the report proposes (mounted as you; sudo only if that fails)"
 echo "Watch the screen during the helper-crash scenario: does macOS show 'Server connections interrupted'?"
 ( cd "$here/.." && CGO_ENABLED=0 go build -o "$gate/clover-nfs" ./cmd/clover-nfs )
 mkdir -p "$gate/nfs-tree"

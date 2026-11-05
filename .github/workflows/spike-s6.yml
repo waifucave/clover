@@ -188,6 +188,8 @@ jobs:
           git config --global --add safe.directory '*'
           bash spikes/s6-mounts/ci/prepare.sh "$RUNNER_TEMP/s6/export"
       - name: NFS loopback — coherence and fail-fast
+        env:
+          CLOVER_S6_NFS_DEBUG: "1" # the helper logs each READ and the sizes it hands go-nfs
         run: |
           res="$RUNNER_TEMP/s6/results"; mkdir -p "$RUNNER_TEMP/s6/nfs-tree"
           common=(--root "$RUNNER_TEMP/s6/export" --tree "$RUNNER_TEMP/s6/nfs-tree" --helper none --nfs-helper "$RUNNER_TEMP/s6/clover-nfs")
