@@ -4,6 +4,8 @@
 import { env, exports } from "cloudflare:workers";
 
 import { b64u, utf8 } from "../../shared/encoding";
+import type { StepLimiter } from "../../shared/testing/step-limiter";
+import handshake from "../src/index";
 import {
   type Connect,
   generateSigner,
@@ -19,12 +21,6 @@ import {
 } from "../client";
 
 export const ORIGIN = "https://handshake.test";
-
-/** Rate-limit windows follow the wall clock's minutes: a test that counts toward a limit starts well clear of the next. */
-export async function clearOfMinuteBoundary(needMs = 12_000): Promise<void> {
-  const left = 60_000 - (Date.now() % 60_000);
-  if (left < needMs) await new Promise((r) => setTimeout(r, left + 50));
-}
 
 let addressCounter = 0;
 
@@ -47,16 +43,25 @@ export const connect: Connect = async (url) => {
   return ws as unknown as SocketLike;
 };
 
-export function client(address = freshAddress()): HandshakeClient {
+export function client(address = freshAddress(), via: (request: Request) => Promise<Response> = worker): HandshakeClient {
   return new HandshakeClient({
     origin: ORIGIN,
     fetch: (request) => {
       const headers = new Headers(request.headers);
       headers.set("cf-connecting-ip", address);
-      return worker(new Request(request, { headers }));
+      return via(new Request(request, { headers }));
     },
     connect,
   });
+}
+
+/**
+ * The Worker with some of its rate limits replaced by StepLimiters (shared/testing/step-limiter.ts), so a test of a
+ * limit doesn't depend on the wall clock's minutes or the runner's speed. Everything else is the real binding.
+ */
+export function withLimiters(limiters: Partial<Record<"REGISTER_RATE" | "API_RATE" | "ADDRESS_RATE", StepLimiter>>): (request: Request) => Promise<Response> {
+  const limited = { ...env, ...limiters } as typeof env;
+  return (request) => handshake.fetch(request, limited);
 }
 
 export const newPairId = () => b64u(crypto.getRandomValues(new Uint8Array(16)));

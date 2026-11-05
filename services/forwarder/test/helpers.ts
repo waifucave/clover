@@ -4,20 +4,13 @@
 import { env, exports } from "cloudflare:workers";
 
 import { b64u, fromB64u, utf8 } from "../../shared/encoding";
+import type { StepLimiter } from "../../shared/testing/step-limiter";
+import forwarder from "../src/index";
 import { keyId, type DeviceKey } from "../../../plugins/clover/forwarder/src/wire/envelope";
 import { generateX25519 } from "../../../plugins/clover/forwarder/src/wire/hpke";
 import { hookKeyHash, type DeviceRegistered, type RoutineRegistered, type Ticket } from "../../../plugins/clover/forwarder/src/wire/protocol";
 
 export const ORIGIN = "https://hooks.test";
-
-/**
- * Rate-limit windows are aligned to the wall clock's minutes (miniflare, like Cloudflare): a test that counts
- * toward a limit starts its burst well clear of the next minute, so the window cannot reset half-way.
- */
-export async function clearOfMinuteBoundary(needMs = 12_000): Promise<void> {
-  const left = 60_000 - (Date.now() % 60_000);
-  if (left < needMs) await new Promise((r) => setTimeout(r, left + 50));
-}
 
 /** The name of the Durable Object an account's tag points at: the 11-byte id after its version byte. */
 export function objectOf(tag: string): string {
@@ -123,14 +116,29 @@ export async function registeredRoutine(computer: Computer, routine: string, key
   return { key, url: ((await response.json()) as RoutineRegistered).url };
 }
 
-export function postHook(url: string, key: string | null, body: BodyInit | null, init: RequestInit & { keyIn?: "header" | "query" } = {}): Promise<Response> {
+export function postHook(
+  url: string,
+  key: string | null,
+  body: BodyInit | null,
+  init: RequestInit & { keyIn?: "header" | "query"; via?: (request: Request) => Promise<Response> } = {},
+): Promise<Response> {
   const target = new URL(url);
   const headers = new Headers(init.headers);
   if (key !== null) {
     if (init.keyIn === "query") target.searchParams.set("key", key);
     else headers.set("authorization", `Bearer ${key}`);
   }
-  return exports.default.fetch(new Request(target, { method: init.method ?? "POST", headers, body }));
+  const request = new Request(target, { method: init.method ?? "POST", headers, body });
+  return init.via ? init.via(request) : exports.default.fetch(request);
+}
+
+/**
+ * The Worker with some of its rate limits replaced by StepLimiters (shared/testing/step-limiter.ts), so a test of a
+ * limit doesn't depend on the wall clock's minutes or the runner's speed. Everything else is the real binding.
+ */
+export function withLimiters(limiters: Partial<Record<"HOOK_RATE" | "TAG_RATE" | "CHECK_RATE" | "API_RATE", StepLimiter>>): (request: Request) => Promise<Response> {
+  const limited = { ...env, ...limiters } as typeof env;
+  return (request) => forwarder.fetch(request, limited);
 }
 
 /** A computer's WebSocket, opened like the plugin opens it: a ticket over HTTP, then the upgrade. */

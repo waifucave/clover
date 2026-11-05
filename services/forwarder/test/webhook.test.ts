@@ -8,7 +8,8 @@ import { b64u, fromUtf8 } from "../../../plugins/clover/forwarder/src/wire/bytes
 import { decodeRequestRecord, openEnvelope } from "../../../plugins/clover/forwarder/src/wire/envelope";
 import { decodeWebhookFrame, hookKeyHash } from "../../../plugins/clover/forwarder/src/wire/protocol";
 import type { ForwarderDO } from "../src/forwarder-do";
-import { apiCall, clearOfMinuteBoundary, objectOf, openSocket, postHook, registerComputer, registeredRoutine, routineKey, uniqueAccount } from "./helpers";
+import { apiCall, objectOf, openSocket, postHook, registerComputer, registeredRoutine, routineKey, uniqueAccount, withLimiters } from "./helpers";
+import { StepLimiter } from "../../shared/testing/step-limiter";
 
 async function heldCount(tag: string): Promise<number> {
   return runInDurableObject(env.FORWARDER.getByName(objectOf(tag)), (_i: ForwarderDO, state) =>
@@ -105,15 +106,13 @@ describe("webhook ingress", () => {
     socket.close();
   });
 
-  // Waiting for a clear minute takes up to 12 s by itself; slow runners (Windows CI) need room for the burst.
-  it("rate-limits a routine's webhooks at the edge", { timeout: 90_000 }, async () => {
+  it("rate-limits a routine's webhooks at the edge", async () => {
     const pc = await registerComputer(uniqueAccount(), "pc");
     const { key, url } = await registeredRoutine(pc, "flood");
-    await clearOfMinuteBoundary();
-    const statuses: number[] = [];
-    for (let i = 0; i < 125; i++) statuses.push((await postHook(url, key, "x")).status);
-    expect(statuses.filter((s) => s === 429).length).toBeGreaterThan(0);
-    const limited = await postHook(url, key, "x");
+    const via = withLimiters({ HOOK_RATE: new StepLimiter(2), TAG_RATE: new StepLimiter(100), CHECK_RATE: new StepLimiter(100) });
+    expect((await postHook(url, key, "x", { via })).status).toBe(202);
+    expect((await postHook(url, key, "x", { via })).status).toBe(202);
+    const limited = await postHook(url, key, "x", { via });
     expect(limited.status).toBe(429);
     expect(limited.headers.get("retry-after")).toBe("60");
   });
