@@ -42,29 +42,41 @@ describe("FakeTree", () => {
     expect(splitTreePath("home/Studio/")).toEqual({ area: "home", name: "Studio", rest: "" });
   });
 
+  test("a path never climbs out of its area, and every call says whom it is for", async () => {
+    const { tree } = setup();
+    const invalid = (path: string) => isContractError((() => { try { tree.resolve(path); } catch (e) { return e; } })(), "invalid");
+    for (const path of ["home/Studio/../../etc/passwd", "bots/alpha/../../settings/x.json", "home/Studio/./a", "home/Studio//a", "home/..", "bots/alpha/a\\..\\b", "home/Studio/a\0b"]) {
+      expect([path, invalid(path)]).toEqual([path, true]);
+    }
+    expect(splitTreePath("home/Studio/../x")).toBeNull();
+    // A call that doesn't say whom it is for is refused, never run unfenced.
+    expect(isContractError(await rejection(tree.write("home/Laptop1/.clover/settings/settings.json", utf8("{}"), {} as never)), "invalid")).toBe(true);
+    expect(isContractError(await rejection(tree.write("bots/alpha/../../settings/x.json", utf8("{}"), { as: BOT })), "invalid")).toBe(true);
+  });
+
   test("files are read, written, listed, stat'ed and removed on the computer that holds them", async () => {
     const { tree } = setup();
-    await tree.write("home/Laptop1/data/a.csv", utf8("x,y\n1,2\n"));
-    await tree.write("home/Laptop1/data/run.sh", { encoding: "base64", data: btoa("#!/bin/sh\necho hi\n") }, { executable: true });
-    expect(await tree.read("home/Laptop1/data/a.csv")).toEqual(utf8("x,y\n1,2\n"));
-    expect(await tree.read("home/Laptop1/data/run.sh", { encoding: "base64" })).toEqual({ encoding: "base64", data: btoa("#!/bin/sh\necho hi\n") });
-    expect((await tree.list("home/Laptop1/data")).map((s) => [s.path, s.type, s.executable])).toEqual([
+    await tree.write("home/Laptop1/data/a.csv", utf8("x,y\n1,2\n"), { as: USER });
+    await tree.write("home/Laptop1/data/run.sh", { encoding: "base64", data: btoa("#!/bin/sh\necho hi\n") }, { executable: true, as: USER });
+    expect(await tree.read("home/Laptop1/data/a.csv", { as: USER })).toEqual(utf8("x,y\n1,2\n"));
+    expect(await tree.read("home/Laptop1/data/run.sh", { encoding: "base64", as: USER })).toEqual({ encoding: "base64", data: btoa("#!/bin/sh\necho hi\n") });
+    expect((await tree.list("home/Laptop1/data", { as: USER })).map((s) => [s.path, s.type, s.executable])).toEqual([
       ["home/Laptop1/data/a.csv", "file", false],
       ["home/Laptop1/data/run.sh", "file", true],
     ]);
-    expect(await tree.stat("home/Studio/data/a.csv")).toBeNull();
-    expect(isContractError(await rejection(tree.remove("home/Laptop1/data")), "invalid")).toBe(true);
-    await tree.remove("home/Laptop1/data", { recursive: true });
-    expect(await tree.stat("home/Laptop1/data")).toBeNull();
+    expect(await tree.stat("home/Studio/data/a.csv", { as: USER })).toBeNull();
+    expect(isContractError(await rejection(tree.remove("home/Laptop1/data", { as: USER })), "invalid")).toBe(true);
+    await tree.remove("home/Laptop1/data", { recursive: true, as: USER });
+    expect(await tree.stat("home/Laptop1/data", { as: USER })).toBeNull();
   });
 
   test("a computer that is off answers computer_offline at once", async () => {
     const { tree } = setup();
     tree.setOnline("Laptop1", false);
-    const err = await rejection(tree.read("home/Laptop1/a.txt"));
+    const err = await rejection(tree.read("home/Laptop1/a.txt", { as: USER }));
     expect(isContractError(err, "computer_offline")).toBe(true);
     expect((err as { detail: unknown }).detail).toEqual({ computer: "Laptop1" });
-    expect(isContractError(await rejection(tree.move("home/Studio/a", "home/Laptop1/a")), "computer_offline")).toBe(true);
+    expect(isContractError(await rejection(tree.move("home/Studio/a", "home/Laptop1/a", { as: USER })), "computer_offline")).toBe(true);
   });
 
   test("a bot's call meets the fence of the computer that holds the files; the user's doesn't", async () => {
@@ -80,30 +92,30 @@ describe("FakeTree", () => {
 
   test("move works across computers, and refuses to clobber", async () => {
     const { tree } = setup();
-    await tree.write("home/Studio/project1/README.md", utf8("hello"));
-    await tree.write("home/Studio/project1/src/a.ts", utf8("export {}"));
-    await tree.move("home/Studio/project1", "home/Laptop1/project1");
-    expect(await tree.stat("home/Studio/project1")).toBeNull();
-    expect(await tree.read("home/Laptop1/project1/src/a.ts")).toEqual(utf8("export {}"));
-    await tree.write("home/Studio/b.txt", utf8("b"));
-    await tree.move("home/Studio/b.txt", "home/Studio/c.txt");
-    await tree.write("home/Studio/d.txt", utf8("d"));
-    expect(isContractError(await rejection(tree.move("home/Studio/d.txt", "home/Studio/c.txt")), "conflict")).toBe(true);
+    await tree.write("home/Studio/project1/README.md", utf8("hello"), { as: USER });
+    await tree.write("home/Studio/project1/src/a.ts", utf8("export {}"), { as: USER });
+    await tree.move("home/Studio/project1", "home/Laptop1/project1", { as: USER });
+    expect(await tree.stat("home/Studio/project1", { as: USER })).toBeNull();
+    expect(await tree.read("home/Laptop1/project1/src/a.ts", { as: USER })).toEqual(utf8("export {}"));
+    await tree.write("home/Studio/b.txt", utf8("b"), { as: USER });
+    await tree.move("home/Studio/b.txt", "home/Studio/c.txt", { as: USER });
+    await tree.write("home/Studio/d.txt", utf8("d"), { as: USER });
+    expect(isContractError(await rejection(tree.move("home/Studio/d.txt", "home/Studio/c.txt", { as: USER })), "conflict")).toBe(true);
     expect(isContractError(await rejection(tree.move("home/Studio/c.txt", "home/Laptop1/.clover/levels/c.txt", { as: BOT })), "fenced")).toBe(true);
   });
 
   test("glob and grep run where the files are and return tree paths", async () => {
     const { tree } = setup();
-    await tree.write("home/Laptop1/p/src/a.ts", utf8("const token = 1;\nexport {}\n"));
-    await tree.write("home/Laptop1/p/src/b.md", utf8("TOKEN here\n"));
-    await tree.write("home/Laptop1/p/README.md", utf8("nothing\n"));
-    expect(await tree.glob("**/*.ts", { cwd: "home/Laptop1/p" })).toEqual(["home/Laptop1/p/src/a.ts"]);
-    expect(await tree.grep("token", { path: "home/Laptop1/p", ignoreCase: true })).toEqual([
+    await tree.write("home/Laptop1/p/src/a.ts", utf8("const token = 1;\nexport {}\n"), { as: USER });
+    await tree.write("home/Laptop1/p/src/b.md", utf8("TOKEN here\n"), { as: USER });
+    await tree.write("home/Laptop1/p/README.md", utf8("nothing\n"), { as: USER });
+    expect(await tree.glob("**/*.ts", { cwd: "home/Laptop1/p", as: USER })).toEqual(["home/Laptop1/p/src/a.ts"]);
+    expect(await tree.grep("token", { path: "home/Laptop1/p", ignoreCase: true, as: USER })).toEqual([
       { path: "home/Laptop1/p/src/a.ts", line: 1, text: "const token = 1;" },
       { path: "home/Laptop1/p/src/b.md", line: 1, text: "TOKEN here" },
     ]);
-    expect(await tree.grep("token", { path: "home/Laptop1/p", glob: "**/*.md" })).toEqual([]);
-    expect(await tree.grep("o", { path: "home/Laptop1/p", limit: 1 })).toHaveLength(1);
+    expect(await tree.grep("token", { path: "home/Laptop1/p", glob: "**/*.md", as: USER })).toEqual([]);
+    expect(await tree.grep("o", { path: "home/Laptop1/p", limit: 1, as: USER })).toHaveLength(1);
   });
 
   test("computersFor lists the computers an action touches", () => {

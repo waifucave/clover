@@ -83,13 +83,13 @@ export class FakeTree implements Tree {
     return p === c.home ? `home/${name}` : `home/${name}/${p.slice(c.home.length + 1)}`;
   }
 
-  async stat(path: string, opts: TreeCallOptions = {}): Promise<FileStat | null> {
+  async stat(path: string, opts: TreeCallOptions): Promise<FileStat | null> {
     const loc = this.#reach(path, { op: "stat", path: "" }, opts);
     const node = this.#fs.get(loc.computer)!.get(loc.path);
     return node ? this.#statOf(path, node) : null;
   }
 
-  async read(path: string, opts: TreeCallOptions & { encoding?: "utf8" | "base64" } = {}): Promise<TreeData> {
+  async read(path: string, opts: TreeCallOptions & { encoding?: "utf8" | "base64" }): Promise<TreeData> {
     const loc = this.#reach(path, { op: "read", path: "" }, opts);
     const node = this.#fs.get(loc.computer)!.get(loc.path);
     if (!node) throw new ContractError("not_found", `${path} doesn't exist`);
@@ -98,7 +98,7 @@ export class FakeTree implements Tree {
     return opts.encoding === "base64" ? { encoding: "base64", data: b64(bytes) } : { encoding: "utf8", text: dec.decode(bytes) };
   }
 
-  async write(path: string, data: TreeData, opts: TreeCallOptions & { executable?: boolean } = {}): Promise<void> {
+  async write(path: string, data: TreeData, opts: TreeCallOptions & { executable?: boolean }): Promise<void> {
     const loc = this.#reach(path, { op: "write", path: "" }, opts);
     const fs = this.#fs.get(loc.computer)!;
     const existing = fs.get(loc.path);
@@ -108,7 +108,7 @@ export class FakeTree implements Tree {
     fs.set(loc.path, { type: "file", data: bytes, executable: opts.executable ?? existing?.executable ?? false, modifiedAt: this.#clock.now() });
   }
 
-  async list(path: string, opts: TreeCallOptions = {}): Promise<FileStat[]> {
+  async list(path: string, opts: TreeCallOptions): Promise<FileStat[]> {
     const loc = this.#reach(path, { op: "list", path: "" }, opts);
     const fs = this.#fs.get(loc.computer)!;
     const node = fs.get(loc.path);
@@ -121,7 +121,7 @@ export class FakeTree implements Tree {
     return out.sort((a, b) => a.path.localeCompare(b.path));
   }
 
-  async remove(path: string, opts: TreeCallOptions & { recursive?: boolean } = {}): Promise<void> {
+  async remove(path: string, opts: TreeCallOptions & { recursive?: boolean }): Promise<void> {
     const loc = this.#reach(path, { op: "delete", path: "" }, opts);
     const fs = this.#fs.get(loc.computer)!;
     const node = fs.get(loc.path);
@@ -131,7 +131,7 @@ export class FakeTree implements Tree {
     for (const p of [...inside, loc.path]) fs.delete(p);
   }
 
-  async move(from: string, to: string, opts: TreeCallOptions = {}): Promise<void> {
+  async move(from: string, to: string, opts: TreeCallOptions): Promise<void> {
     const src = this.resolve(from);
     const dst = this.resolve(to);
     this.#online(src.computer);
@@ -202,7 +202,8 @@ export class FakeTree implements Tree {
   }
 
   #fenced(computer: string, op: FenceOp, as: Caller | undefined): void {
-    if (as === undefined || as.kind === "user" || as.kind === "core") return;
+    if (as === undefined) throw new ContractError("invalid", "a tree call says whom it is for (`as`)");
+    if (as.kind === "user" || as.kind === "core") return;
     const verdict = this.#computers.get(computer)?.fence?.check(op);
     if (verdict && !verdict.allowed) throw new ContractError("fenced", `the fence keeps bots out of ${verdict.path}`, { computer, reason: verdict.reason });
   }
