@@ -12,6 +12,7 @@ import { SystemClock } from "../../clock/system-clock";
 import { DeviceKey } from "../../identity/device-key";
 import { PairingService } from "../pairing";
 import { followRegistry, SidecarWire } from "../sidecar-wire";
+import { type DeviceLinks, startDeviceLinks } from "../node";
 import { CloverLinkTransport } from "../transport";
 
 const BIN = process.env.CLOVER_LINK_BIN ?? join(import.meta.dir, "../../../../../native/link/target/release/clover-link");
@@ -29,7 +30,7 @@ async function device(name: string) {
   const registry = await FileDeviceRegistry.open({ home: mkdtempSync(join(tmpdir(), "clover-h-sidecar-")), key, clock, self: { name } });
   const wire = await SidecarWire.start({ binary: BIN, key, relay: "disabled", n0Lookup: false, bind: "127.0.0.1:0" });
   stops.push(() => wire.close());
-  const report = await wire.netReport();
+  const report = await wire.settledReport();
   return { name, store, key, registry, wire, direct: report.direct };
 }
 type Dev = Awaited<ReturnType<typeof device>>;
@@ -86,6 +87,42 @@ describe.skipIf(!built)("link sidecar (iroh on loopback)", () => {
     await a.registry.revoke(b.key.id);
     expect(isContractError(await link.request("echo", 1).catch((e: unknown) => e), "refused")).toBe(true);
   }, 30_000);
+
+  test("the daemon's links over two sidecars: pair, link, and a restart under the same key", async () => {
+    const homes = [mkdtempSync(join(tmpdir(), "clover-h-sidecar-node-")), mkdtempSync(join(tmpdir(), "clover-h-sidecar-node-"))];
+    const stores = [new MemorySecretStore(), new MemorySecretStore()];
+    // No handshake here: each daemon finds the other at its loopback address. n0's lookup stays off, so nothing
+    // leaves the machine.
+    const where = new Map<string, DeviceLinks>();
+    const directory = { target: (id: string) => { const p = where.get(id); return p ? { key: p.key.publicKey, direct: p.localAddresses().direct } : undefined; } };
+    const start = async (i: number, name: string) => {
+      const l = await startDeviceLinks({ home: homes[i]!, store: stores[i]!, clock, self: { name }, directory, sidecar: { binary: BIN, relay: "disabled", bind: "127.0.0.1:0", n0Lookup: false } });
+      where.set(l.key.id, l);
+      return l;
+    };
+    const a = await start(0, "Studio");
+    let b = await start(1, "Laptop");
+    stops.push(() => a.close(), () => b.close());
+    expect(a.localAddresses().direct.some((x) => x.startsWith("127.0.0.1:"))).toBe(true);
+    const view = await a.pairing.begin();
+    const joined = await b.pairing.join(view.qr!);
+    await waitFor(() => a.pairing.get(view.pairingId)?.status === "words");
+    await Promise.all([a.pairing.confirm(view.pairingId, joined.words!, { terminal: true }), b.pairing.confirm(view.pairingId, joined.words!, { terminal: true })]);
+    await waitFor(() => a.registry.get(b.key.id) !== undefined && b.registry.get(a.key.id) !== undefined);
+    b.transport.handle("who", () => "laptop");
+    expect(await (await a.transport.connect(b.key.id)).request<string>("who", null)).toBe("laptop");
+
+    // A restart: the same key and pairing, a new sidecar on a new port, and the link comes back.
+    const id = b.key.id;
+    await b.close();
+    b = await start(1, "Laptop");
+    expect(b.key.id).toBe(id);
+    expect(b.registry.get(a.key.id)?.revokedAt).toBeUndefined();
+    b.transport.handle("who", () => "laptop again");
+    const link = await a.transport.connect(id);
+    await waitFor(() => link.view().up, 15_000);
+    expect(await link.request<string>("who", null)).toBe("laptop again");
+  }, 40_000);
 
   test("a key the core didn't allow is closed at the sidecar's door", async () => {
     const a = await device("Studio");

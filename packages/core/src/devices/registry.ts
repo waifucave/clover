@@ -154,7 +154,9 @@ export class FileDeviceRegistry implements DeviceRegistry {
     if (!NAME_RE.test(device.name)) throw new ContractError("invalid", "a device name is 1–63 characters");
     if (!KINDS.includes(device.kind)) throw new ContractError("invalid", `unknown device kind ${String(device.kind)}`);
     if (device.answerKey !== undefined) this.#checkAnswerKey(device.answerKey);
-    const record: DeviceRecord = { ...stripUndefined(device), addedAt: this.#clock.now(), addedBy: proof.via };
+    // Every computer has its tree name (§9.1; lane J's ask): a device that runs clover-core and names none takes its own.
+    const computer = device.runsCore ? { computer: device.computer ?? device.name } : {};
+    const record: DeviceRecord = { ...stripUndefined(device), ...computer, addedAt: this.#clock.now(), addedBy: proof.via };
     this.#state.devices.push(record);
     this.#save();
     this.#listeners.emit({ type: "added", device: { ...record } });

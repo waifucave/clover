@@ -320,13 +320,25 @@ class PeerLink implements Link {
     if (this.#best) return this.#best;
     if (!this.#dialing && this.#t.opts.clock.monotonic() - this.#lastDialFailedAt < this.#t.opts.failFastMs) throw offline(this.peer);
     const dial = this.#dialing ?? this.#dial();
-    if (!signal) return dial;
+    // Whichever comes first: this side's dial, or the peer's own dial in (a peer that restarted dials its computers).
     return new Promise<Session>((resolve, reject) => {
-      const onAbort = () => reject(new ContractError("cancelled", "the dial was cancelled"));
-      signal.addEventListener("abort", onAbort, { once: true });
-      dial.then(resolve, reject).finally(() => signal.removeEventListener("abort", onAbort));
+      let settled = false;
+      const done = (fn: () => void) => {
+        if (settled) return;
+        settled = true;
+        this.#bestWaiters.delete(onBest);
+        signal?.removeEventListener("abort", onAbort);
+        fn();
+      };
+      const onBest = (s: Session) => done(() => resolve(s));
+      const onAbort = () => done(() => reject(new ContractError("cancelled", "the dial was cancelled")));
+      this.#bestWaiters.add(onBest);
+      signal?.addEventListener("abort", onAbort, { once: true });
+      dial.then((s) => done(() => resolve(s)), (e: unknown) => done(() => (this.#best ? resolve(this.#best) : reject(e))));
     });
   }
+
+  readonly #bestWaiters = new Set<(s: Session) => void>();
 
   request<R = unknown>(method: string, params: unknown, opts: LinkRequestOptions = {}): Promise<R> {
     if (opts.signal?.aborted) return Promise.reject(new ContractError("cancelled", "the request was cancelled"));
@@ -372,6 +384,7 @@ class PeerLink implements Link {
     }
     if (!wasUp) this.#since = this.#t.opts.clock.now();
     this.#changed();
+    if (best) for (const w of [...this.#bestWaiters]) w(best);
   }
 
   /** A session ended. */
@@ -406,7 +419,8 @@ class PeerLink implements Link {
     // A connection that has heard nothing for a while is likely stale after a network change: close it first, since
     // iroh dials a peer slowly while a stale connection to it is still open (S1, network changes, point 5).
     for (const s of this.sessions) if (s.silentFor() > this.#t.opts.keepaliveMs) s.close(CLOSE_SUPERSEDED, "stale after a network change");
-    void this.#dial().catch(() => undefined);
+    // A fresh dial, even with one in flight: that one may be headed for an address the peer has left.
+    void this.#dial(true).catch(() => undefined);
   }
 
   #scheduleRedial(): void {
@@ -423,15 +437,21 @@ class PeerLink implements Link {
     }, ms);
   }
 
-  #dial(): Promise<Session> {
-    if (this.#dialing) return this.#dialing;
-    const p = this.#runDial().then(
+  /** One dial at a time, unless `fresh`: then another joins the one in flight, and the first to answer wins. */
+  #dial(fresh = false): Promise<Session> {
+    if (this.#dialing && !fresh) return this.#dialing;
+    const attempt = this.#runDial();
+    const prev = this.#dialing;
+    const either: Promise<Session> = prev ? Promise.any([prev, attempt]).catch((e: unknown) => {
+      throw e instanceof AggregateError ? (e.errors.at(-1) as Error) : e;
+    }) : attempt;
+    const p: Promise<Session> = either.then(
       (s) => {
-        this.#dialing = undefined;
+        if (this.#dialing === p) this.#dialing = undefined;
         return s;
       },
       (err: unknown) => {
-        this.#dialing = undefined;
+        if (this.#dialing === p) this.#dialing = undefined;
         this.#lastDialFailedAt = this.#t.opts.clock.monotonic();
         throw isContractError(err) ? err : offline(this.peer);
       },

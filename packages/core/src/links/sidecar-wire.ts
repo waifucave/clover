@@ -153,6 +153,16 @@ export class SidecarWire implements WireEndpoint {
     return p;
   }
 
+  /** The net report once it lists a direct address: iroh learns its own just after it binds. Gives up after `ms`. */
+  async settledReport(ms = 2000): Promise<{ mapping: NatMapping; globalV4?: string; relay?: string; direct: string[] }> {
+    const end = Date.now() + ms;
+    for (;;) {
+      const r = await this.netReport();
+      if (r.direct.length > 0 || Date.now() >= end) return r;
+      await Bun.sleep(25);
+    }
+  }
+
   async close(): Promise<void> {
     if (this.#closed) return;
     this.#send({ op: "shutdown" });

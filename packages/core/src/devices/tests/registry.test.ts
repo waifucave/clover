@@ -50,6 +50,16 @@ describe("FileDeviceRegistry", () => {
     expect(text).not.toContain((await store.get({ owner: { kind: "device" }, name: "device:link-key" }))!.value.reveal());
   });
 
+  test("every computer has its tree name; a phone has none", async () => {
+    const { registry } = await open();
+    expect(registry.self().computer).toBe("Studio");
+    const p = await peer("Laptop");
+    const { computer: _c, ...noName } = p.record;
+    expect((await registry.add(noName, { via: "terminal" })).computer).toBe("Laptop");
+    const phone = await DeviceKey.fromKey(generateEd25519());
+    expect((await registry.add({ id: phone.id, name: "Phone", kind: "phone", runsCore: false, publicKey: phone.publicKeyBase64 }, { via: "terminal" })).computer).toBeUndefined();
+  });
+
   test("a registry written for another device key is refused", async () => {
     const { dir } = await open();
     expect(isContractError(await open(dir).catch((e: unknown) => e), "conflict")).toBe(true);
