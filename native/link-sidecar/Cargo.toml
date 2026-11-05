@@ -20,9 +20,17 @@ rustls = { version = "0.23", default-features = false, features = ["ring", "std"
 rcgen = { version = "0.14", default-features = false, features = ["ring", "crypto"] }
 ring = "0.17"
 # The same iroh the napi binding @number0/iroh 1.2.0 is locked to (iroh-ffi v1.2.0 Cargo.lock).
-iroh = "=1.4.1"
+# `unstable-net-report` only exposes the net report, so the relay lab can show what QAD learned.
+iroh = { version = "=1.4.1", features = ["unstable-net-report"] }
 # Only for noq's congestion controller configs (BBRv3), which iroh does not re-export.
 noq-proto = "=1.4.0"
+# The relay map's QUIC address-discovery config for the lab relay, and with the `relay-server`
+# feature the relay itself (nat/matrix.sh's relay phase). The same version iroh uses.
+iroh-relay = { version = "=1.4.1", default-features = false, features = ["tls-ring"] }
+
+[features]
+# A local iroh relay for the netns lab: `clover-link-sidecar relay-server`.
+relay-server = ["iroh-relay/server"]
 
 [profile.release]
 opt-level = 3

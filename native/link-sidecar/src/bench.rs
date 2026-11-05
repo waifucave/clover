@@ -6,14 +6,14 @@
 //! * `S` sinks a bulk transfer and acks its byte count as a big-endian u64
 
 use std::net::{SocketAddr, UdpSocket};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use anyhow::{bail, Context, Result};
 use serde_json::{json, Value};
 
-use crate::link::{Cc, Conn, Endpoint, Kind, RecvS, SendS};
+use crate::link::{Cc, Conn, Endpoint, Kind, Opts, RecvS, SendS};
 use crate::{emit, ms, summary, Args};
 
 const FRAME: usize = 64;
@@ -26,6 +26,9 @@ pub struct Sizes {
     pub load_mb: f64,
     pub chunk: usize,
     pub load_gap_ms: u64,
+    /// Keep repeating the load transfer until the RPCs under it have this many samples, so the
+    /// under-load p99 is a percentile and not the maximum of a dozen samples. 0: one transfer.
+    pub load_min_samples: usize,
 }
 
 impl Sizes {
@@ -39,12 +42,14 @@ impl Sizes {
             load_mb: a.num("load-mb", if quick { 8.0 } else { 64.0 }),
             chunk: a.num("chunk", 64 * 1024),
             load_gap_ms: a.num("load-gap-ms", 5),
+            load_min_samples: a.num("load-min-samples", 0),
         }
     }
 
     fn json(&self) -> Value {
         json!({ "rpc": self.rpc, "rpcStreams": self.rpc_streams, "bulkMB": self.bulk_mb, "shots": self.shots,
-                "loadMB": self.load_mb, "chunk": self.chunk, "loadGapMs": self.load_gap_ms })
+                "loadMB": self.load_mb, "chunk": self.chunk, "loadGapMs": self.load_gap_ms,
+                "loadMinSamples": self.load_min_samples })
     }
 }
 
@@ -107,6 +112,17 @@ async fn handle_stream(mut send: SendS, mut recv: RecvS) -> Result<()> {
 // ---------- client ----------
 
 pub async fn rpc_on_one_stream(conn: &Conn, n: usize, prio: i32, gap: Duration, stop: Option<Arc<AtomicBool>>) -> Result<Vec<f64>> {
+    rpc_counted(conn, n, prio, gap, stop, None).await
+}
+
+async fn rpc_counted(
+    conn: &Conn,
+    n: usize,
+    prio: i32,
+    gap: Duration,
+    stop: Option<Arc<AtomicBool>>,
+    count: Option<Arc<AtomicUsize>>,
+) -> Result<Vec<f64>> {
     let (mut send, mut recv) = conn.open_bi(prio).await?;
     send.write_all(b"E").await?;
     let frame = [7u8; FRAME];
@@ -120,6 +136,9 @@ pub async fn rpc_on_one_stream(conn: &Conn, n: usize, prio: i32, gap: Duration, 
         send.write_all(&frame).await?;
         recv.read_exact(&mut back).await?;
         samples.push(ms(t.elapsed()));
+        if let Some(c) = &count {
+            c.fetch_add(1, Ordering::Relaxed);
+        }
         if !gap.is_zero() {
             tokio::time::sleep(gap).await;
         }
@@ -196,25 +215,50 @@ pub async fn run_client(conn: &Conn, sizes: &Sizes) -> Result<Value> {
     out.insert("screenshot1MB".into(), summary(&shots));
 
     // Small-message delay while a bulk transfer runs on the same connection (spec §8.3 item 4).
+    // With load_min_samples, the transfer repeats until the RPCs have that many samples.
     for (label, rpc_prio, bulk_prio) in [("prioritised", 10, 0), ("equal", 0, 0)] {
         let done = Arc::new(AtomicBool::new(false));
+        let count = Arc::new(AtomicUsize::new(0));
         let load_bytes = (sizes.load_mb * 1e6) as u64;
         let bulk = {
             let conn = conn.clone();
             let done = done.clone();
+            let count = count.clone();
             let chunk = sizes.chunk;
+            let min = sizes.load_min_samples;
             tokio::spawn(async move {
-                let r = sink(&conn, load_bytes, chunk, bulk_prio).await;
+                let r: Result<(u64, f64, usize)> = async {
+                    let (mut bytes, mut total_ms, mut transfers) = (0u64, 0.0f64, 0usize);
+                    loop {
+                        total_ms += sink(&conn, load_bytes, chunk, bulk_prio).await?;
+                        bytes += load_bytes;
+                        transfers += 1;
+                        if count.load(Ordering::Relaxed) >= min {
+                            break;
+                        }
+                    }
+                    Ok((bytes, total_ms, transfers))
+                }
+                .await;
                 done.store(true, Ordering::Relaxed);
                 r
             })
         };
         tokio::time::sleep(Duration::from_millis(20)).await;
-        let samples =
-            rpc_on_one_stream(conn, usize::MAX, rpc_prio, Duration::from_millis(sizes.load_gap_ms), Some(done.clone())).await?;
-        let bulk_ms = bulk.await??;
+        let samples = rpc_counted(
+            conn,
+            usize::MAX,
+            rpc_prio,
+            Duration::from_millis(sizes.load_gap_ms),
+            Some(done.clone()),
+            Some(count.clone()),
+        )
+        .await?;
+        let (bytes, bulk_ms, transfers) = bulk.await??;
         let mut s = summary(&samples);
-        s["bulkMBps"] = json!(mbps(load_bytes as f64, bulk_ms));
+        s["bulkMBps"] = json!(mbps(bytes as f64, bulk_ms));
+        s["loadMB"] = json!((bytes as f64 / 1e5).round() / 10.0);
+        s["transfers"] = json!(transfers);
         out.insert(format!("rpcUnderLoad_{label}"), s);
     }
     out.insert("path".into(), conn.path_json());
@@ -227,14 +271,15 @@ pub async fn run_client(conn: &Conn, sizes: &Sizes) -> Result<Value> {
 /// `local-bench`: client and server in one process over loopback, relay off.
 pub async fn local(a: &Args) -> Result<()> {
     let kind: Kind = a.get_or("transport", "quinn").parse()?;
-    let cc: Cc = a.get_or("cc", "cubic").parse()?;
+    let opts = Opts::from_args(a)?;
+    let cc = opts.cc;
     let sizes = Sizes::from_args(a);
     let check = format!("native-{}", kind.name());
     let res: Result<Value> = async {
         let t = Instant::now();
-        let server = Endpoint::bind(kind, UdpSocket::bind("127.0.0.1:0")?, cc).await?;
+        let server = Endpoint::bind(kind, UdpSocket::bind("127.0.0.1:0")?, &opts).await?;
         let bind_ms = ms(t.elapsed());
-        let client = Endpoint::bind(kind, UdpSocket::bind("127.0.0.1:0")?, cc).await?;
+        let client = Endpoint::bind(kind, UdpSocket::bind("127.0.0.1:0")?, &opts).await?;
         let server = Arc::new(server);
         {
             let server = server.clone();
@@ -273,24 +318,26 @@ pub async fn local(a: &Args) -> Result<()> {
             body["ok"] = json!(true);
             body["mode"] = json!("in-process loopback, relay off");
             body["cc"] = json!(cc.name());
+            body["tuning"] = opts.json();
             body["sizes"] = sizes.json();
             emit(&check, body);
             Ok(())
         }
         Err(e) => {
-            emit(&check, json!({ "ok": false, "cc": cc.name(), "error": format!("{e:#}") }));
+            emit(&check, json!({ "ok": false, "cc": cc.name(), "tuning": opts.json(), "error": format!("{e:#}") }));
             Err(e)
         }
     }
 }
 
 /// `serve`: a bench server for runs across network namespaces. Writes an info file with the
-/// identity a client needs, then serves until killed.
+/// identity a client needs, then serves until killed. The tuning options apply to the server's
+/// side: `--stream-window` is the window it grants the client's bulk streams.
 pub async fn serve(a: &Args) -> Result<()> {
     let kind: Kind = a.get_or("transport", "quinn").parse()?;
-    let cc: Cc = a.get_or("cc", "cubic").parse()?;
+    let opts = Opts::from_args(a)?;
     let bind: SocketAddr = a.get_or("bind", "0.0.0.0:47000").parse()?;
-    let ep = Endpoint::bind(kind, UdpSocket::bind(bind)?, cc).await?;
+    let ep = Endpoint::bind(kind, UdpSocket::bind(bind)?, &opts).await?;
     let info = json!({ "transport": kind.name(), "identity": ep.identity(), "addrs": ep.local_addrs() });
     let path = a.get_or("info-file", "server.json");
     std::fs::write(format!("{path}.tmp"), info.to_string())?;
@@ -307,7 +354,10 @@ pub async fn serve(a: &Args) -> Result<()> {
 /// link out. Records when replies arrive, so the longest gap shows how long the link was gone,
 /// and whether replies came back at all. With `--rebind-trigger <file>`, the client calls
 /// `network_changed()` (quinn: rebind to a new socket; iroh: `network_change()`) as soon as that
-/// file appears, the way clover-core would on the OS's network-change event.
+/// file appears, the way clover-core would on the OS's network-change event. With
+/// `--redial-trigger <file>`, it instead dials a second, fresh connection when that file appears
+/// and times its first echo (spec §8.3's "re-dial at once"); the old connection carries on, so
+/// the result shows both.
 pub async fn ping(a: &Args) -> Result<()> {
     use std::sync::atomic::AtomicU64;
     let info: Value = serde_json::from_str(&std::fs::read_to_string(a.get_or("info-file", "server.json"))?)?;
@@ -317,19 +367,58 @@ pub async fn ping(a: &Args) -> Result<()> {
     let duration = Duration::from_secs(a.num("duration-s", 12));
     let grace = Duration::from_secs(a.num("grace-s", 10));
     let trigger = a.get("rebind-trigger");
+    let redial_trigger = a.get("redial-trigger");
+    let opts = Opts::from_args(a)?;
     let res: Result<Value> = async {
         let target: SocketAddr = a.get("connect").context("--connect ip:port")?.parse()?;
-        let ep = Arc::new(Endpoint::bind(kind, UdpSocket::bind("0.0.0.0:0")?, Cc::Cubic).await?);
-        let conn = tokio::time::timeout(
-            Duration::from_secs(15),
-            ep.connect(info["identity"].as_str().unwrap_or_default(), &[target]),
-        )
-        .await
-        .context("connect timeout")??;
+        let identity = info["identity"].as_str().unwrap_or_default().to_string();
+        let ep = Arc::new(Endpoint::bind(kind, UdpSocket::bind("0.0.0.0:0")?, &opts).await?);
+        let conn = tokio::time::timeout(Duration::from_secs(15), ep.connect(&identity, &[target]))
+            .await
+            .context("connect timeout")??;
         let path_before = conn.path_json();
         let (mut send, mut recv) = conn.open_bi(10).await?;
         send.write_all(b"E").await?;
         let start = Instant::now();
+        let redial = Arc::new(std::sync::Mutex::new(None::<Value>));
+        if let Some(path) = redial_trigger.clone() {
+            let ep = ep.clone();
+            let redial = redial.clone();
+            let identity = identity.clone();
+            tokio::spawn(async move {
+                while start.elapsed() < duration + grace {
+                    if std::path::Path::new(&path).exists() {
+                        let at = start.elapsed().as_secs_f64();
+                        let t = Instant::now();
+                        let res: Result<(f64, f64, Value)> = async {
+                            let c = tokio::time::timeout(Duration::from_secs(15), ep.connect(&identity, &[target]))
+                                .await
+                                .context("re-dial timed out after 15 s")??;
+                            let connect_ms = ms(t.elapsed());
+                            let (mut s, mut r) = c.open_bi(10).await?;
+                            s.write_all(b"E").await?;
+                            s.write_all(&[0u8; FRAME]).await?;
+                            let mut back = [0u8; FRAME];
+                            r.read_exact(&mut back).await?;
+                            let first_reply_ms = ms(t.elapsed());
+                            let path = c.path_json();
+                            c.close();
+                            Ok((connect_ms, first_reply_ms, path))
+                        }
+                        .await;
+                        *redial.lock().unwrap() = Some(match res {
+                            Ok((connect_ms, first_reply_ms, path)) => json!({
+                                "atS": (at * 100.0).round() / 100.0, "ok": true,
+                                "connectMs": connect_ms, "firstReplyMs": first_reply_ms, "path": path,
+                            }),
+                            Err(e) => json!({ "atS": (at * 100.0).round() / 100.0, "ok": false, "error": format!("{e:#}") }),
+                        });
+                        return;
+                    }
+                    tokio::time::sleep(Duration::from_millis(20)).await;
+                }
+            });
+        }
         let rebind_at = Arc::new(std::sync::Mutex::new(None::<(f64, Option<String>)>));
         if let Some(path) = trigger.clone() {
             let ep = ep.clone();
@@ -396,6 +485,11 @@ pub async fn ping(a: &Args) -> Result<()> {
         let mut body = ping_json(kind, &label, sent.load(Ordering::Relaxed), &arrivals, end_s, read_error);
         body["rebindAtS"] = json!(rebind.as_ref().map(|r| (r.0 * 100.0).round() / 100.0));
         body["rebindError"] = json!(rebind.and_then(|r| r.1));
+        // A re-dial still under way at the end has had duration + grace seconds; say so.
+        body["redial"] = match redial_trigger {
+            None => Value::Null,
+            Some(_) => redial.lock().unwrap().clone().unwrap_or_else(|| json!({ "ok": false, "error": "no re-dial result by the end" })),
+        };
         body["pathBefore"] = path_before;
         body["pathAfter"] = conn.path_json();
         Ok(body)
@@ -447,14 +541,15 @@ fn ping_json(kind: Kind, label: &str, sent: u64, arrivals: &[(f64, f64)], end_s:
 /// `bench`: the client half of `serve`.
 pub async fn client(a: &Args) -> Result<()> {
     let sizes = Sizes::from_args(a);
-    let cc: Cc = a.get_or("cc", "cubic").parse()?;
+    let opts = Opts::from_args(a)?;
+    let cc: Cc = opts.cc;
     let profile = a.get_or("profile", "unknown");
     let info: Value = serde_json::from_str(&std::fs::read_to_string(a.get_or("info-file", "server.json"))?)?;
     let kind: Kind = info["transport"].as_str().unwrap_or("quinn").parse()?;
     let check = format!("native-{}-remote", kind.name());
     let res: Result<Value> = async {
         let target: SocketAddr = a.get("connect").context("--connect ip:port")?.parse()?;
-        let ep = Endpoint::bind(kind, UdpSocket::bind(a.get_or("bind", "0.0.0.0:0"))?, cc).await?;
+        let ep = Endpoint::bind(kind, UdpSocket::bind(a.get_or("bind", "0.0.0.0:0"))?, &opts).await?;
         let t = Instant::now();
         let conn = tokio::time::timeout(
             Duration::from_secs(15),
@@ -475,12 +570,13 @@ pub async fn client(a: &Args) -> Result<()> {
             body["ok"] = json!(true);
             body["profile"] = json!(profile);
             body["cc"] = json!(cc.name());
+            body["tuning"] = opts.json();
             body["sizes"] = sizes.json();
             emit(&check, body);
             Ok(())
         }
         Err(e) => {
-            emit(&check, json!({ "ok": false, "profile": profile, "cc": cc.name(), "error": format!("{e:#}") }));
+            emit(&check, json!({ "ok": false, "profile": profile, "cc": cc.name(), "tuning": opts.json(), "error": format!("{e:#}") }));
             Err(e)
         }
     }

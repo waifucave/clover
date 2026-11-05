@@ -7,9 +7,13 @@
 //! clover-link-sidecar ping --info-file f.json --connect ip:port --duration-s 12 --interval-ms 50
 //! clover-link-sidecar punch --transport quinn|iroh --name a|b --port P --stun ip:port --rendezvous dir
 //! clover-link-sidecar stun-server --bind 0.0.0.0:3478
-//! clover-link-sidecar stun-query --server stun.cloudflare.com:3478
+//! clover-link-sidecar stun-query --server stun.cloudflare.com:3478 [--server2 stun.l.google.com:19302]
+//! clover-link-sidecar relay-server --bind-ip 203.0.113.50 --metrics-file m.json   (feature relay-server)
 //! clover-link-sidecar ipc
 //! ```
+//!
+//! The QUIC commands take `--gso on|off`, `--stream-window <bytes>`, `--initial-rtt-ms <ms>` and,
+//! for iroh, `--relay-url <url> [--relay-qad-port <port>]` (link.rs, `Opts`).
 //!
 //! Every measuring command prints one `S1RESULT <json>` line (and a GitHub `::notice` annotation
 //! when S1_ANNOTATE=1), the same format as the Bun checks in spikes/s1-transport/bun.
@@ -18,6 +22,8 @@ mod bench;
 mod ipc;
 mod link;
 mod punch;
+#[cfg(feature = "relay-server")]
+mod relay;
 mod stun;
 
 use std::net::{SocketAddr, ToSocketAddrs, UdpSocket};
@@ -91,8 +97,36 @@ pub fn emit(check: &str, body: Value) {
 }
 
 fn usage() -> ! {
-    eprintln!("usage: clover-link-sidecar <local-bench|serve|bench|punch|stun-server|stun-query|ipc> [options]");
+    eprintln!("usage: clover-link-sidecar <local-bench|serve|bench|ping|punch|stun-server|stun-query|relay-server|ipc> [options]");
     std::process::exit(2)
+}
+
+/// STUN from one socket to `server` and, if given, `server2`: two answers that differ mean the
+/// NAT's mapping depends on the destination (symmetric), and no peer can use the first answer.
+fn stun_query(a: &Args) -> Result<()> {
+    let resolve = |s: &str| -> Result<SocketAddr> { s.to_socket_addrs()?.find(|a| a.is_ipv4()).context("resolve STUN server") };
+    let server = a.get_or("server", "stun.cloudflare.com:3478");
+    let server2 = a.get("server2");
+    let sock = UdpSocket::bind("0.0.0.0:0")?;
+    let t = std::time::Instant::now();
+    let first = resolve(&server).and_then(|addr| stun::query(&sock, addr, 3, Duration::from_millis(800)));
+    let second = server2.as_deref().map(|s| resolve(s).and_then(|addr| stun::query(&sock, addr, 3, Duration::from_millis(800))));
+    let mapping = match (&first, &second) {
+        (Ok(r1), Some(Ok(r2))) if r1 == r2 => Some("independent"),
+        (Ok(_), Some(Ok(_))) => Some("dependent"),
+        _ => None,
+    };
+    let body = match first {
+        Ok(r) => json!({
+            "ok": true, "server": server, "reflexive": r.to_string(), "ms": ms(t.elapsed()),
+            "server2": server2,
+            "reflexive2": second.map(|x| x.map(|r| r.to_string()).unwrap_or_else(|e| format!("error: {e:#}"))),
+            "mapping": mapping,
+        }),
+        Err(e) => json!({ "ok": false, "server": server, "error": format!("{e:#}") }),
+    };
+    emit("stun-query", body);
+    Ok(())
 }
 
 fn main() -> Result<()> {
@@ -102,20 +136,8 @@ fn main() -> Result<()> {
     match cmd.as_str() {
         "ipc" => ipc::run(),
         "stun-server" => stun::serve(args.get_or("bind", "0.0.0.0:3478").parse()?),
-        "stun-query" => {
-            let server = args.get_or("server", "stun.cloudflare.com:3478");
-            let addr: SocketAddr = server.to_socket_addrs()?.find(|a| a.is_ipv4()).context("resolve STUN server")?;
-            let sock = UdpSocket::bind("0.0.0.0:0")?;
-            let t = std::time::Instant::now();
-            let res = stun::query(&sock, addr, 3, Duration::from_millis(800));
-            let body = match res {
-                Ok(r) => json!({ "ok": true, "server": server, "reflexive": r.to_string(), "ms": ms(t.elapsed()) }),
-                Err(e) => json!({ "ok": false, "server": server, "error": format!("{e:#}") }),
-            };
-            emit("stun-query", body);
-            Ok(())
-        }
-        "local-bench" | "serve" | "bench" | "ping" | "punch" => {
+        "stun-query" => stun_query(&args),
+        "local-bench" | "serve" | "bench" | "ping" | "punch" | "relay-server" => {
             let rt = tokio::runtime::Builder::new_multi_thread().enable_all().build()?;
             rt.block_on(async {
                 match cmd.as_str() {
@@ -123,6 +145,10 @@ fn main() -> Result<()> {
                     "serve" => bench::serve(&args).await,
                     "bench" => bench::client(&args).await,
                     "ping" => bench::ping(&args).await,
+                    #[cfg(feature = "relay-server")]
+                    "relay-server" => relay::serve(&args).await,
+                    #[cfg(not(feature = "relay-server"))]
+                    "relay-server" => anyhow::bail!("built without the relay-server feature"),
                     _ => punch::run(&args).await,
                 }
             })

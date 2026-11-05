@@ -1,6 +1,6 @@
 //! One surface over the two QUIC stacks S1 compares: plain quinn 0.11 and iroh 1.4.1 (whose QUIC
-//! is noq, n0's quinn fork). Both run relay-free here; addresses come from the caller, which is
-//! the lab's stand-in for the waifucave handshake.
+//! is noq, n0's quinn fork). Both run relay-free unless a lab relay is given; addresses come from
+//! the caller, which is the lab's stand-in for the waifucave handshake.
 
 use std::net::{SocketAddr, UdpSocket};
 use std::str::FromStr;
@@ -10,7 +10,74 @@ use std::time::Duration;
 use anyhow::{anyhow, bail, Context, Result};
 use serde_json::{json, Value};
 
+use crate::Args;
+
 pub const ALPN: &[u8] = b"clover/s1/bench/1";
+
+/// What the labs vary on top of each stack's own defaults.
+#[derive(Clone, Debug)]
+pub struct Opts {
+    pub cc: Cc,
+    /// UDP segmentation offload, on by default in both stacks: one send hands the kernel up to
+    /// 10 datagrams, and netem drops such a batch whole. The loss labs turn it off.
+    pub gso: bool,
+    /// The per-stream receive window in bytes. Both stacks default to 1,250,000.
+    pub stream_window: Option<u64>,
+    /// The first RTT estimate. Both default to 333 ms, so a lost first Initial is resent at 999 ms.
+    pub initial_rtt: Option<Duration>,
+    /// iroh only: the lab's relay. None is relays off.
+    pub relay: Option<RelayOpts>,
+}
+
+#[derive(Clone, Debug)]
+pub struct RelayOpts {
+    pub url: String,
+    /// The relay's QUIC address-discovery (QAD) port. None leaves QAD off for this relay, the one
+    /// lever iroh 1.4.1 has to keep address discovery off a relay that is otherwise on.
+    pub qad_port: Option<u16>,
+    /// The lab relay's self-signed certificate, pinned by its SHA-256 (as `relay-server` reports
+    /// it), so the endpoints verify the relay without a CA.
+    pub cert_sha256: Vec<u8>,
+}
+
+impl Opts {
+    pub fn new(cc: Cc) -> Opts {
+        Opts { cc, gso: true, stream_window: None, initial_rtt: None, relay: None }
+    }
+
+    /// `--cc`, `--gso on|off`, `--stream-window <bytes>`, `--initial-rtt-ms <ms>`, and
+    /// `--relay-url <url> --relay-cert-sha256 <hex> [--relay-qad-port <port>]`.
+    pub fn from_args(a: &Args) -> Result<Opts> {
+        let mut o = Opts::new(a.get_or("cc", "cubic").parse()?);
+        o.gso = match a.get_or("gso", "on").as_str() {
+            "on" => true,
+            "off" => false,
+            other => bail!("--gso on|off, not {other}"),
+        };
+        o.stream_window = a.get("stream-window").map(|v| v.parse()).transpose().context("--stream-window")?;
+        o.initial_rtt = a
+            .get("initial-rtt-ms")
+            .map(|v| v.parse::<u64>().map(Duration::from_millis))
+            .transpose()
+            .context("--initial-rtt-ms")?;
+        if let Some(url) = a.get("relay-url") {
+            let qad_port = a.get("relay-qad-port").map(|p| p.parse()).transpose().context("--relay-qad-port")?;
+            let cert_sha256 = unhex(&a.get("relay-cert-sha256").context("--relay-cert-sha256 with --relay-url")?)?;
+            o.relay = Some(RelayOpts { url, qad_port, cert_sha256 });
+        }
+        Ok(o)
+    }
+
+    pub fn json(&self) -> Value {
+        json!({
+            "cc": self.cc.name(),
+            "gso": self.gso,
+            "streamWindow": self.stream_window,
+            "initialRttMs": self.initial_rtt.map(|d| d.as_millis() as u64),
+            "relay": self.relay.as_ref().map(|r| json!({ "url": r.url, "qadPort": r.qad_port })),
+        })
+    }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Kind {
@@ -119,7 +186,7 @@ impl rustls::client::danger::ServerCertVerifier for PinnedServerCert {
     }
 }
 
-fn hex(bytes: &[u8]) -> String {
+pub fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
@@ -130,12 +197,19 @@ fn unhex(s: &str) -> Result<Vec<u8>> {
     (0..s.len()).step_by(2).map(|i| u8::from_str_radix(&s[i..i + 2], 16).map_err(Into::into)).collect()
 }
 
-fn quinn_transport(cc: Cc) -> Result<Arc<quinn::TransportConfig>> {
+fn quinn_transport(o: &Opts) -> Result<Arc<quinn::TransportConfig>> {
     let mut tc = quinn::TransportConfig::default();
     // Same liveness as iroh's defaults (HEARTBEAT_INTERVAL 5 s), so neither side is favoured.
     tc.keep_alive_interval(Some(Duration::from_secs(5)));
     tc.max_idle_timeout(Some(Duration::from_secs(30).try_into()?));
-    match cc {
+    tc.enable_segmentation_offload(o.gso);
+    if let Some(w) = o.stream_window {
+        tc.stream_receive_window(quinn::VarInt::from_u64(w)?);
+    }
+    if let Some(rtt) = o.initial_rtt {
+        tc.initial_rtt(rtt);
+    }
+    match o.cc {
         Cc::Cubic => {}
         Cc::Bbr => {
             tc.congestion_controller_factory(Arc::new(quinn::congestion::BbrConfig::default()));
@@ -147,25 +221,31 @@ fn quinn_transport(cc: Cc) -> Result<Arc<quinn::TransportConfig>> {
     Ok(Arc::new(tc))
 }
 
-fn iroh_transport(cc: Cc) -> iroh::endpoint::QuicTransportConfig {
-    let b = iroh::endpoint::QuicTransportConfig::builder();
-    let b = match cc {
+fn iroh_transport(o: &Opts) -> Result<iroh::endpoint::QuicTransportConfig> {
+    let mut b = iroh::endpoint::QuicTransportConfig::builder().enable_segmentation_offload(o.gso);
+    if let Some(w) = o.stream_window {
+        b = b.stream_receive_window(iroh::endpoint::VarInt::from_u64(w)?);
+    }
+    if let Some(rtt) = o.initial_rtt {
+        b = b.initial_rtt(rtt);
+    }
+    let b = match o.cc {
         Cc::Cubic => b,
         Cc::Bbr => b.congestion_controller_factory(Arc::new(noq_proto::congestion::Bbr3Config::default())),
         Cc::NewReno => b.congestion_controller_factory(Arc::new(noq_proto::congestion::NewRenoConfig::default())),
     };
-    b.build()
+    Ok(b.build())
 }
 
 pub enum Endpoint {
-    Quinn { ep: quinn::Endpoint, cert_sha256: Vec<u8>, cc: Cc },
-    Iroh { ep: iroh::Endpoint },
+    Quinn { ep: quinn::Endpoint, cert_sha256: Vec<u8>, opts: Opts },
+    Iroh { ep: iroh::Endpoint, relay_url: Option<String> },
 }
 
 impl Endpoint {
     /// Binds a quinn endpoint on an already-bound socket (so a STUN answer taken on that socket
-    /// describes this endpoint's own NAT mapping), or an iroh endpoint on `bind`.
-    pub async fn bind(kind: Kind, socket: UdpSocket, cc: Cc) -> Result<Endpoint> {
+    /// describes this endpoint's own NAT mapping), or an iroh endpoint on that socket's port.
+    pub async fn bind(kind: Kind, socket: UdpSocket, opts: &Opts) -> Result<Endpoint> {
         match kind {
             Kind::Quinn => {
                 let key = rcgen::KeyPair::generate_for(&rcgen::PKCS_ED25519)?;
@@ -182,29 +262,47 @@ impl Endpoint {
                 let mut server_config = quinn::ServerConfig::with_crypto(Arc::new(
                     quinn::crypto::rustls::QuicServerConfig::try_from(server_crypto)?,
                 ));
-                server_config.transport_config(quinn_transport(cc)?);
+                server_config.transport_config(quinn_transport(opts)?);
                 let runtime = quinn::default_runtime().ok_or_else(|| anyhow!("no async runtime"))?;
                 // tokio needs the socket non-blocking; a blocking one stalls quinn's driver in
                 // recv until some packet arrives.
                 socket.set_nonblocking(true)?;
                 let ep = quinn::Endpoint::new(quinn::EndpointConfig::default(), Some(server_config), socket, runtime)?;
-                Ok(Endpoint::Quinn { ep, cert_sha256, cc })
+                Ok(Endpoint::Quinn { ep, cert_sha256, opts: opts.clone() })
             }
             Kind::Iroh => {
                 // iroh binds its own sockets, so hand the port over: close ours, bind iroh on it.
-                // The NAT mapping a STUN query made from this port outlives the socket.
+                // The NAT mapping a STUN query made from this port outlives the socket on a NAT
+                // that keeps mappings per inside address and port; the lab's NATs keep the port
+                // itself, so the lab can't tell (report, lab limits).
                 let addr = socket.local_addr()?;
                 drop(socket);
-                let ep = iroh::Endpoint::builder(iroh::endpoint::presets::Minimal)
-                    .relay_mode(iroh::RelayMode::Disabled)
+                let builder = iroh::Endpoint::builder(iroh::endpoint::presets::Minimal)
                     .alpns(vec![ALPN.to_vec()])
-                    .transport_config(iroh_transport(cc))
-                    .clear_ip_transports()
-                    .bind_addr(addr)?
-                    .bind()
-                    .await
-                    .context("bind iroh endpoint")?;
-                Ok(Endpoint::Iroh { ep })
+                    .transport_config(iroh_transport(opts)?)
+                    // iroh maps a port through UPnP, NAT-PMP or PCP by default, and its gateway
+                    // probing can raise a firewall prompt on macOS. The labs keep it off.
+                    .portmapper_config(iroh::endpoint::PortmapperConfig::Disabled);
+                let builder = match &opts.relay {
+                    None => builder.relay_mode(iroh::RelayMode::Disabled),
+                    Some(r) => {
+                        let url: iroh::RelayUrl = r.url.parse().context("--relay-url")?;
+                        let quic = r.qad_port.map(iroh_relay::RelayQuicConfig::new);
+                        // The lab relay's certificate is self-signed: pin it, for both its HTTPS
+                        // and its QUIC address discovery.
+                        let pin = r.cert_sha256.clone();
+                        let tls = iroh::tls::CaTlsConfig::custom_server_cert_verifier(Arc::new(move |provider| {
+                            let verifier: Arc<dyn rustls::client::danger::ServerCertVerifier> =
+                                Arc::new(PinnedServerCert { sha256: pin.clone(), provider });
+                            Ok(verifier)
+                        }));
+                        builder
+                            .relay_mode(iroh::RelayMode::Custom(iroh::RelayMap::from(iroh::RelayConfig::new(url, quic))))
+                            .ca_tls_config(tls)
+                    }
+                };
+                let ep = builder.clear_ip_transports().bind_addr(addr)?.bind().await.context("bind iroh endpoint")?;
+                Ok(Endpoint::Iroh { ep, relay_url: opts.relay.as_ref().map(|r| r.url.clone()) })
             }
         }
     }
@@ -213,24 +311,65 @@ impl Endpoint {
     pub fn identity(&self) -> String {
         match self {
             Endpoint::Quinn { cert_sha256, .. } => hex(cert_sha256),
-            Endpoint::Iroh { ep } => ep.id().to_string(),
+            Endpoint::Iroh { ep, .. } => ep.id().to_string(),
+        }
+    }
+
+    /// With a relay: waits (up to `max`) until the endpoint holds its home-relay connection and
+    /// its first net report is in, the steady state of a long-running daemon, and returns what
+    /// that report learned from the relay. Null without a relay.
+    pub async fn settle(&self, max: Duration) -> Value {
+        use iroh::Watcher;
+        let Endpoint::Iroh { ep, relay_url: Some(_) } = self else { return Value::Null };
+        let t = std::time::Instant::now();
+        let online = tokio::time::timeout(max, ep.online()).await.is_ok();
+        let online_ms = t.elapsed().as_secs_f64() * 1000.0;
+        let mut report = ep.net_report().get();
+        while report.is_none() && t.elapsed() < max {
+            tokio::time::sleep(Duration::from_millis(50)).await;
+            report = ep.net_report().get();
+        }
+        json!({
+            "online": online,
+            "onlineMs": (online_ms * 10.0).round() / 10.0,
+            "reportMs": (t.elapsed().as_secs_f64() * 10000.0).round() / 10.0,
+            "globalV4": report.as_ref().and_then(|r| r.global_v4).map(|a| a.to_string()),
+            "mappingVariesByDest": report.as_ref().and_then(|r| r.mapping_varies_by_dest_ipv4),
+            "captivePortal": report.as_ref().and_then(|r| r.captive_portal),
+        })
+    }
+
+    /// The relay this endpoint uses, which a peer adds to its dial to race the relay path.
+    pub fn relay_url(&self) -> Option<String> {
+        match self {
+            Endpoint::Quinn { .. } => None,
+            Endpoint::Iroh { relay_url, .. } => relay_url.clone(),
         }
     }
 
     pub fn local_addrs(&self) -> Vec<SocketAddr> {
         match self {
             Endpoint::Quinn { ep, .. } => ep.local_addr().into_iter().collect(),
-            Endpoint::Iroh { ep } => ep.bound_sockets(),
+            Endpoint::Iroh { ep, .. } => ep.bound_sockets(),
         }
     }
 
     /// Dials a peer at every candidate address at once and returns the first connection.
     pub async fn connect(&self, identity: &str, addrs: &[SocketAddr]) -> Result<Conn> {
-        if addrs.is_empty() {
+        self.connect_via(identity, addrs, None).await
+    }
+
+    /// Like `connect`, and with iroh also through `relay_url` when given: the dial then sends its
+    /// first packets over the relay as well as directly.
+    pub async fn connect_via(&self, identity: &str, addrs: &[SocketAddr], relay_url: Option<&str>) -> Result<Conn> {
+        if addrs.is_empty() && relay_url.is_none() {
             bail!("no candidate addresses");
         }
         match self {
-            Endpoint::Quinn { ep, cc, .. } => {
+            Endpoint::Quinn { ep, opts, .. } => {
+                if addrs.is_empty() {
+                    bail!("quinn has no relay");
+                }
                 let provider = Arc::new(rustls::crypto::ring::default_provider());
                 let verifier = Arc::new(PinnedServerCert { sha256: unhex(identity)?, provider: provider.clone() });
                 let mut crypto = rustls::ClientConfig::builder_with_provider(provider)
@@ -241,7 +380,7 @@ impl Endpoint {
                 crypto.alpn_protocols = vec![ALPN.to_vec()];
                 let mut client_config =
                     quinn::ClientConfig::new(Arc::new(quinn::crypto::rustls::QuicClientConfig::try_from(crypto)?));
-                client_config.transport_config(quinn_transport(*cc)?);
+                client_config.transport_config(quinn_transport(opts)?);
                 // quinn dials one address per connection, so race one attempt per candidate.
                 let mut set = tokio::task::JoinSet::new();
                 for addr in addrs {
@@ -260,10 +399,14 @@ impl Endpoint {
                 }
                 Err(anyhow!("all quinn dials failed: {last_err:?}"))
             }
-            Endpoint::Iroh { ep } => {
+            Endpoint::Iroh { ep, .. } => {
                 // iroh sends its Initial to every known path until one answers (remote_state.rs).
                 let id = iroh::EndpointId::from_str(identity)?;
-                let addr = iroh::EndpointAddr::from_parts(id, addrs.iter().map(|a| iroh::TransportAddr::Ip(*a)));
+                let mut transports: Vec<iroh::TransportAddr> = addrs.iter().map(|a| iroh::TransportAddr::Ip(*a)).collect();
+                if let Some(url) = relay_url {
+                    transports.push(iroh::TransportAddr::Relay(url.parse().context("relay url")?));
+                }
+                let addr = iroh::EndpointAddr::from_parts(id, transports);
                 let conn = ep.connect(addr, ALPN).await?;
                 Ok(Conn::Iroh(conn))
             }
@@ -276,7 +419,7 @@ impl Endpoint {
                 None => Ok(None),
                 Some(incoming) => Ok(Some(Conn::Quinn(incoming.await?))),
             },
-            Endpoint::Iroh { ep } => match ep.accept().await {
+            Endpoint::Iroh { ep, .. } => match ep.accept().await {
                 None => Ok(None),
                 Some(incoming) => {
                     let conn = incoming.accept()?.await?;
@@ -295,7 +438,7 @@ impl Endpoint {
                 socket.set_nonblocking(true)?;
                 ep.rebind(socket)?
             }
-            Endpoint::Iroh { ep } => ep.network_change().await,
+            Endpoint::Iroh { ep, .. } => ep.network_change().await,
         }
         Ok(())
     }
@@ -306,7 +449,7 @@ impl Endpoint {
                 ep.close(0u32.into(), b"done");
                 ep.wait_idle().await;
             }
-            Endpoint::Iroh { ep } => ep.close().await,
+            Endpoint::Iroh { ep, .. } => ep.close().await,
         }
     }
 }
@@ -390,6 +533,14 @@ impl Conn {
         }
     }
 
+    /// Whether any of the connection's paths goes through a relay.
+    pub fn has_relay_path(&self) -> bool {
+        match self {
+            Conn::Quinn(_) => false,
+            Conn::Iroh(c) => c.paths().iter().any(|p| p.is_relay()),
+        }
+    }
+
     pub fn stats_json(&self) -> Value {
         match self {
             Conn::Quinn(c) => {
@@ -398,7 +549,15 @@ impl Conn {
             }
             Conn::Iroh(c) => {
                 let s = c.stats();
-                json!({ "udpTx": s.udp_tx.datagrams, "udpRx": s.udp_rx.datagrams })
+                // iroh is multipath: the congestion state is per path. Report the selected one's.
+                let paths = c.paths();
+                let selected = paths.iter().find(|p| p.is_selected()).map(|p| p.stats());
+                json!({
+                    "udpTx": s.udp_tx.datagrams,
+                    "udpRx": s.udp_rx.datagrams,
+                    "lost": selected.as_ref().map(|p| p.lost_packets),
+                    "cwnd": selected.as_ref().map(|p| p.cwnd),
+                })
             }
         }
     }
