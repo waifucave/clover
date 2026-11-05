@@ -243,10 +243,20 @@
         {
           "repo": "clover",
           "file": ".github/workflows/ci.yml",
-          "contains": "verify (workflow, runtime-state, runtimes)"
+          "contains": "run: bun run verify:workflow"
+        },
+        {
+          "repo": "clover",
+          "file": ".github/workflows/ci.yml",
+          "contains": "run: bun run verify:runtime-state"
+        },
+        {
+          "repo": "clover",
+          "file": ".github/workflows/ci.yml",
+          "contains": "run: bun run verify:runtimes"
         }
       ],
-      "note": "Proven 8d, re-confirmed 9a: app-repo CI runs protocol, core, plugin-sdk, cli, typecheck ×2, codegen, Swift (WinterProtocol + WinterKit) and the three compiled proofs (workflow, runtime-state, runtimes) as separate jobs; the SDK repo adds a per-push macOS build-platform job."
+      "note": "Proven 8d, re-confirmed 9a: app-repo CI runs protocol, core, plugin-sdk, cli, typecheck ×2, codegen, Swift (WinterProtocol + WinterKit) and the three compiled proofs (workflow, runtime-state, runtimes) separately; since #175 the macOS suites share one runner, each still a step with its own result. The SDK repo adds a per-push macOS build-platform job."
     }
   ]
 }
