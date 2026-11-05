@@ -1,323 +1,273 @@
 # C-M0: S2 Windows fence and S8 hiding secrets
 
-Date: 2026-11-05. Lane C, `lane/c-m0`, based on `a481f7e14`; spec revision 17.
+Date: 2026-11-05. Lane C, `lane/c-m0`, spec revision 17; base `a481f7e14`.
 
-**Status: C-M0 resumed under the controller's rulings; not security admission.**
-Windows remains a release blocker. Generated test keys in disposable homes/stores are authorized;
-real credentials, tokens, fixtures containing real secrets and secret-bearing logs remain prohibited.
-Spec §8.5's unattended headless fallback stays: per-user systemd sealing with TPM where available,
-otherwise an owner-readable plaintext key file, visibly labelled plaintext and hidden by the fence.
-The earlier stop-condition interpretation was incorrect. No policy conflict remains.
+**M0 experiments complete, with negative and limited results. Windows is not admitted for release.**
+The dedicated-principal candidate runs useful work and passes most focused checks, but requires a
+Session 0 compatibility diagnostic and leaves one COM route inconclusive. Supported Windows 11
+and authenticated agent integration remain live gates. Nothing here establishes production readiness.
 
-The locked-persistence proposal is a **rejected alternative**: cloud/main/refresher computers must
-operate unattended across reboots. Requiring a person to unlock them would break that requirement.
-The other proposed network, semantic D-Bus, caller-check and protected-backend edits remain proposals
-for the controller after review. No Winter source, install or real agent home was changed.
+The controller ruled that generated test keys in disposable stores are authorized, and that §8.5's
+unattended fallback remains: user-scoped systemd sealing with TPM where available, otherwise an
+owner-only plaintext key file, labelled plaintext and hidden by the fence. There is no policy conflict.
+**Locked persistence is a rejected alternative:** cloud computers can be main/refresher computers and
+must work unattended after reboot; requiring a person to unlock them would break that requirement.
+No spec or shared contract was edited. Network, semantic D-Bus, caller-check and backend edits below
+remain proposals for the controller after review.
 
-## Evidence and scope
+## Method and evidence
 
-All evidence is under [`spikes/s2-windows-fence/results`](../../spikes/s2-windows-fence/results/)
-and [`spikes/s8-secrets/results`](../../spikes/s8-secrets/results/). Each README gives one command
-per experiment. Measurements are single runs, not confidence intervals or load benchmarks.
-Evidence normalizes Windows line endings and NUL padding in CLR diagnostics. The Windows
-store transcript was recovered from the successfully captured tool output after an older
-transport's timeout overwrote its redirected file; its artifact explicitly records that provenance.
+The two spike READMEs give one command per check. Evidence is in their `results/` directories.
+`final-*` results supersede intermediate `resumed-*` fixture failures; the interrupted v2 Windows
+candidate file contains only an upload line and is not a measurement. Windows line endings/NUL
+padding and personal temporary paths are normalized. The first Windows store artifact explicitly
+records recovery from captured successful stdout after an older transport overwrote its output file.
+No secret value, password or real account credential is included in any artifact.
 
-| Platform | Observed environment | Limitation |
+| Platform | Actual environment | Scope limit |
 | --- | --- | --- |
-| Windows | Server 2025 Datacenter, 10.0.26100; Git 2.51.2.windows.1; bundled OpenSSH 10.2p1/OpenSSL 3.5.4; Node 22.21.1; Bun 1.3.1 | SSH session 0, not a Windows 11 desktop |
-| Ubuntu | 26.04.1 LTS, kernel 7.0.0-1014-gcp; bubblewrap 0.11.1; xdg-dbus-proxy 0.1.7; systemd 259.9 | Cloud VM, no desktop login/keyring assumed |
-| Fedora | Fedora 45 container, xdg-dbus-proxy 0.1.9; package availability also checked for bubblewrap 0.13.1 | Ubuntu host kernel; no Fedora SELinux or host namespace validation |
-| Mac | macOS 26.6.1 (25G76), arm64; Codex 0.166.0; Anthropic sandbox-runtime 0.0.81 | Below the spec's macOS 27 minimum; runtime-only checks |
+| Windows | Server 2025 build 26100, SSH session 0; Git 2.51.2.windows.1, Node 22.21.1, Bun 1.3.1; SRT 0.0.81; Codex 0.166.0 | Surrogate for Windows 11, not a desktop logon |
+| Ubuntu | 26.04.1; kernel 7.0.0-1014-gcp; bwrap 0.11.1, xdg-dbus-proxy 0.1.7, systemd 259.9 | Cloud VM; vTPM present |
+| Fedora | Fedora 45 container, proxy 0.1.9; bwrap package 0.13.1 | Ubuntu kernel; no Fedora SELinux host validation |
+| Mac | macOS 26.6.1/25G76 arm64; Codex 0.166.0, SRT 0.0.81; Cursor 2026.10.22-27dcf5f | Below the spec's macOS 27 minimum |
 
-Both named VMs were started using the authorized command. SSH connected without needing
-the prescribed first-boot retry loop. Both successful stop operations completed before this
-report was finalized. No cloud resource was created, resized, deleted, or reconfigured.
-The Fedora image, installer download and transient test directories were removed; tool
-installations remain on the stopped disposable VMs. No model call, login to an outside account,
-desktop interaction, browser, app bundle, or signing identity was used.
+All work stayed in lane-owned paths. Winter source/install/processes, the real Keychain and real
+agent homes on this Mac were untouched. The SDK clone was read-only. No `claude` invocation,
+agent prompt, model call, account login, GUI, app bundle, signing identity or sub-agent was used.
+VM password authentication used generated local test users only, with passwords held in memory.
+Cloud operations were limited to starting/stopping/SSH into the two named VMs. Both were stopped
+after testing; Windows test accounts, WFP/firewall rules, grants and large downloaded test packages
+were removed. Installed Git/Node/Bun and Linux package prerequisites remain on the stopped VMs.
 
-## Winter parity baseline, read from source
+## Winter baseline
 
-Reference only: `docs/claude/tool-surface.md`,
-`packages/core/src/runtime-sdk/{mode-options,home-fence}.ts`; in the read-only SDK clone,
-`packages/runtime/src/sandbox/{profile,spawn,host-child-floor}.ts` and
-`packages/sdk/src/mandatory-floor.ts`.
+Read-only references: `docs/claude/tool-surface.md`, `runtime-sdk/mode-options.ts` and `home-fence.ts`;
+in the SDK, `sandbox/profile.ts`, `spawn.ts`, `host-child-floor.ts` and `sdk/src/mandatory-floor.ts`.
+`selfGrantDenyWrite` supplies self-grant write protection; child configuration adds project/glob rules.
+Clover deliberately permits home/temp writes and installed plugin/routine writes, so copying Winter's
+arrays unchanged would be wrong. Reads are generally open except protected control/credential state.
+`resolveNetworkPosture` denies network for every supported configuration and rejects domain lists.
+Approved escapes retain a native read/write/link/ancestor floor; command-text matching alone is not it.
 
-`selfGrantDenyWrite` supplies the daemon's self-grant write fences; `sandboxConfigFor` adds
-protected-home/project paths and read denies for run/runtime/control state. Child configuration
-adds the runtime's glob spelling and any-depth project rules. Clover's spec intentionally
-widens ordinary writes to home/temp and removes installed plugin/routine files from the fenced
-set; copying Winter's arrays unchanged would contradict those choices.
+## S2.1 — Bash, PowerShell and token compatibility
 
-`resolveNetworkPosture` returns false for every supported configuration and rejects domain
-lists. Ordinary sandboxed Bash therefore has **no network**, not a ready domain-filtering proxy.
-An approved override in `spawn.ts` still receives the mandatory native floor. That profile
-allows unrelated operations while denying protected reads, writes, links and ancestor mutation.
-The static command-text hook is not a substitute for that native floor.
+**Verdict: works with limits; simple original-user strong-token configurations do not work.**
+The original C# P/Invoke probe measured seven checks per posture: PowerShell pipeline, Bash
+pipeline/subshell/substitution, git, SSH version, Node, Bun and a minimal Bun build. The last five
+were invoked through Bash, so Bash startup failures do not independently establish tool failures.
 
-## S2: Windows
+| Original-user posture | Passing / 7 | Native launch-return median |
+| --- | --- | --- |
+| Privileges stripped, no restricting SIDs | 7 | 5 ms |
+| Same, low integrity | 5 | 2 ms |
+| Write-restricting SID | 0 | 2 ms |
+| Write-restricting SID + low integrity | 0 | 2 ms |
+| AppContainer, no capabilities | 0 | 2 ms |
 
-### 1. Shell/tool compatibility
+The privilege-only posture is a compatibility control, **not a filesystem fence**. Low integrity
+failed git/build writes and is not an arbitrary read/write policy. Strong-token failures include
+PowerShell CLR startup, MSYS token-default-DACL and BaseNamedObjects access, and AppContainer
+initialization `0xC0000142`. Removing hidden-console flags was necessary to reach user code under
+SSH; earlier DLL-initialization failures with those flags were fixture failures.
 
-Verdict: **works with limits for privilege stripping; doesn't for the tested write-restricting
-and AppContainer launch configurations.** This is a verdict on these configurations, not a
-proof that AppContainer/MSYS2 or a more complete restricted-token design can never work.
+Controlled diagnostics compared three direct executables under four postures: privilege-only 3/3;
+restricted, token/default-DACL-repaired restricted, and private-desktop/repaired restricted each 1/3
+(direct Node works; PowerShell and Bash fail). Repairing token DACLs or adding a private desktop
+alone did not resolve MSYS's named-object denial. See `resumed-diagnostics.txt`.
 
-The C# P/Invoke helper measures `CreateRestrictedToken`/`CreateProcessAsUser` and
-`PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES` AppContainer launches. The latter has no
-capabilities. A unique AppContainer profile and low-labelled fixture root are removed afterwards.
-Seven checks per posture: PowerShell pipeline, Bash pipeline/subshell/command substitution,
-git init/status, `ssh -V`, Node, Bun, and a minimal Bun bundle. No real SSH connection or
-authenticated git operation was attempted. This is a build smoke test, not a full project build.
+## S2.2 — One complete Windows candidate and every requested route
 
-| Token posture | Checks passing | Native launch return min/median/max, ms | Interpretation |
+**Verdict: works with limits as a spike; does not establish the release floor.**
+The candidate uses the pinned upstream SRT native Rust launcher: dedicated unprivileged principal,
+write-restricted token, explicit ACL grants/denies, WFP keyed to that principal, private desktop,
+handle whitelist, process mitigations and kill-on-close jobs. Four WFP filters were installed.
+No broad user-profile read grant was applied. Microsoft's VC++ runtime was a missing dependency.
+
+It initially failed closed on a pre-existing hardlink to a denied file, and then failed under SSH
+because it expected `\Sessions\0\BaseNamedObjects`, whereas this environment uses the global
+namespace. The diagnostic `session0-bno.cs` holds a temporary object-manager alias to the real
+namespace; handles close afterwards. **This alias is not a production solution.** A production
+launcher must resolve Session 0 correctly without modifying the namespace. With that diagnostic,
+`final-windows-candidate.txt` contains 30 ordinary checks (29 successful assertions), seven approved-
+escape checks (7/7), job cleanup and an explicit out-of-process COM observation.
+
+| Requirement / route | Observed result |
+| --- | --- |
+| Allowed/ordinary reads, allowed writes, denied settings/outside writes | Passed scoped fixture checks |
+| Run folder, encrypted secrets, plaintext key | Host contents unreadable |
+| Junction, hardlink creation/read, case/dot path aliases | Denied; pre-existing hardlink configuration also failed closed |
+| Ancestor replacement | Rename denied |
+| PowerShell, Bash pipeline/subshell, git, SSH version, Node, Bun, bundle | Passed; no authenticated SSH/git or full project build claimed |
+| Task Scheduler executable and COM registration | Both attempts rejected |
+| Services / Service Control Manager | Service creation rejected |
+| WMI process creation | Attempt rejected |
+| In-process WScript COM creating a child | Child retained protected-read denial; process creation itself is not an escape |
+| Out-of-process Shell.Application | Call accepted, but no delayed child marker observed: **inconclusive**, not closed |
+| runas / saved-credential attempt | Rejected; no saved outside credentials supplied |
+| User/common Startup folders | Both writes denied |
+| Job cleanup | Detached delayed child did not write its marker after parent exit |
+| Direct local listener and metadata TCP | Both denied, ordinary and approved-escape sessions |
+
+Approved escape experiments create a separate session with an additional write root, keeping the
+same protected denies and WFP identity. Its extra allowed write succeeded; settings/run/secret/key
+protection and both network denials held. They are deliberately network-closed escapes; this does
+not implement arbitrary approved network access. Per-command write-root overrides are unsupported
+by this vendor API and were not silently dropped.
+
+Ordinary end-to-end checks took 654–2708 ms, median 706 ms; approved-escape checks 625–666 ms,
+median 634 ms. These include PowerShell, Node worker and native broker execution. The earlier
+2–5 ms launch-return figures exclude provisioning/compilation and are not comparable production costs.
+The COM observation, Session 0 dependency, full-home policy, concurrency/crash recovery and Windows 11
+remain gaps. No claim is made that every COM server or token-impersonation technique is closed.
+
+## S2.3–4 — Helper, design and M1 entry
+
+`native/sandbox/windows-probe.cs` is the C# diagnostic; `session0-bno.cs` is its temporary namespace
+control. `AppSid`, `Run` and `RemoveApp` are documented in the native README. Neither is an admitted
+launcher. `candidate.mjs` exercises the pinned upstream native account/WFP/token/job implementation.
+
+Recommend the dedicated-principal/restricted-token/WFP design for further engineering, preserving
+an independent mandatory floor for escapes. A small native broker should accept versioned bounded
+argv/policy requests, canonicalize paths, create suspended, apply explicit handles/token/job policy,
+verify effective identity, then resume. Failure launches nothing. Reuse reviewed native primitives;
+do not turn the PowerShell experiment into a daemon interface. Static CRT packaging avoids a surprise
+VC runtime prerequisite. Principal identity must remain visible to caller checks even if a service
+launches a process without `IsTokenRestricted`. M1 starts with these broker and `Fence`/`SecretStore`
+contracts, Session 0 resolution and the remaining COM/startup investigation, not production adoption
+of this test shim. The SDK handoff remains coordinated with lane A.
+
+## S8.1 — Stores, actual startup context and unattended fallback
+
+**Verdict: works with limits.** Generated keys were kept in memory except authorized disposable
+OS stores, encrypted files and the explicitly authorized plaintext fallback.
+
+| Check | Result |
+| --- | --- |
+| Windows SSH key/network logon | DPAPI failed `0x80070005`; Credential Manager failed 1312 |
+| Password LogonUser type 2 + loaded profile + impersonation | DPAPI and Credential Manager each 1/1 roundtrip |
+| Actual password-principal scheduled-task startup | No started/result marker; result 267011 (not yet run), despite enabled/on-demand/timed/COM RunEx attempts |
+| SYSTEM scheduled-task infrastructure control | Started, result 0; therefore password-principal result is not treated as a global scheduler outage |
+| Ubuntu private real Secret Service | Key store/retrieve and AES-256-GCM file roundtrip passed; tamper rejected; 64 bytes became 92 bytes |
+| TPM inventory | `/dev/tpm0` and `/dev/tpmrm0` present; after installing TSS libraries, systemd reported full support |
+| `systemd-creds --user`, host+tpm2 / auto | Roundtrip passed; format `ef4ac13679a9480ea7db68897f9f165d` identifies UID-scoped host-plus-TPM wrapping |
+| Pure tpm2 with `--user` | Rejected as unavailable in UID-scoped mode; use the combined mechanism |
+| System-scope TPM control | Real TPM encryption/decryption passed; nonexistent-device control failed |
+| No-TPM private namespace control | UID 0 user scope; TPM devices/sysfs and host credential IPC hidden; roundtrip passed with host-scoped format `55b9ed1d38594d43a8319d2ebb332ac6` |
+| Plaintext fallback | Owner-only `0600`, encrypted-file roundtrip passed; explicit `plaintext` label |
+| Fence | Masked all six generated store files in the TPM-present test, and the sealed file in the no-TPM control |
+
+The real VM has a vTPM. Absence is simulated by a private namespace, not by changing the VM or
+claiming a second physical host. An earlier bad-device argument to user-mode encryption did not
+simulate absence: the credential IPC service selected its own device and still produced TPM format.
+The format identifiers are public algorithm identifiers, confirmed against
+[systemd v259's header](https://github.com/systemd/systemd/blob/v259/src/shared/creds-util.h).
+The no-TPM control uses root's user scope to avoid delegating back to the host credential service;
+ordinary-user behaviour on a truly TPM-less host remains a deployment check. The non-root plaintext
+fallback and mask check are independently exercised. No global user-namespace sysctl was relaxed.
+
+The keyring fixture used a private bus and temporary home/config/data/runtime directories. Windows
+local users/passwords/credential targets were generated and removed; no password entered a command
+line or log. Password API success does not validate the actual daemon startup task. That startup
+result remains a negative/unresolved deployment gate, not a DPAPI success inferred from another logon.
+M1 must pin authenticated-encryption format/AAD, atomic writes, nonce/rotation/recovery and profile
+lifecycle. This spike does not change the controller's fallback ruling.
+
+## S8.2 — Linux mounts, semantic D-Bus broker and credential fixtures
+
+**Verdict: works with limits.** The original Ubuntu filesystem/network/IPC fixture passed 12/12,
+including ordinary read, allowed write, denied settings write, hidden run/secrets, denied ancestor
+rename, hidden host bus, blocked systemd-run, blocked metadata TCP, pipelines, git and a C build.
+The fixture is narrower than the final home/temp policy and does not prove every mount/alias race.
+
+A plain xdg-dbus-proxy root-method allow list forwarded a protected item path in GetSecrets arguments;
+this was reproduced inside bubblewrap and Fedora 45 userland. Header-path filtering cannot authorize
+paths carried in method bodies. See the
+[proxy policy grammar](https://github.com/flatpak/xdg-dbus-proxy/blob/main/xdg-dbus-proxy.xml).
+
+The new read-only `secret-broker.py` separates backend and frontend private buses and exposes only
+an xdg-filtered proxy socket inside bubblewrap. It authorizes item attributes, filters searches and
+collection listings, validates all bulk items and returned keys, binds sessions to callers, and rejects
+unknown/mutating APIs. The real-keyring harness passed **13/13** assertions: hidden search/listing,
+direct and mixed bulk denial, three host broker destinations denied, gh/Docker/git lookup fixtures,
+real `git credential fill`, and fenced Clover lookup denial. No real account or Docker daemon socket
+was exposed. gh/Docker rows are local credential-lookup fixtures, not full vendor login conformance.
+
+This broker intentionally admits only tagged external fixtures, not arbitrary real keyring items.
+It is a semantic proof of concept, not a production Secret Service replacement: write/login/unlock
+workflows, reconnect, concurrency, signals, policy ownership and recovery need implementation/review.
+Raw host bus, systemd private sockets, portals, Docker and other execution brokers must stay hidden.
+A Docker credential helper is not equivalent to the Docker daemon's host-execution socket.
+
+Ubuntu SRT initially failed in nested-userns/seccomp setup. A copied trusted bwrap launcher with a
+path-scoped AppArmor `userns` profile fixed startup; PID/network namespaces, fresh proc, seccomp and
+host write protection remained. Linux read-deny masks can be writable private tmpfs views; host
+unchanged assertions distinguish that from a host write. Fedora still requires a real SELinux host,
+package, keyring and namespace check; the container proves userland protocol behaviour only.
+
+## S8.3 — Agent-owned deny lists and no-model retry gates
+
+**Verdict: mixed; protection must be admitted per exact backend/version/configuration.** All runs
+used sandbox-only entry points and temporary homes. No `claude`, sign-in or agent/model turn ran.
+Nested retry tests mean another subprocess under the same native floor, not a vendor approval turn.
+
+| Backend | Mac | Ubuntu | Native Windows |
 | --- | --- | --- | --- |
-| `DISABLE_MAX_PRIVILEGE`, no restricting SIDs | 7/7 | 5 / 5 / 20 | Shell compatibility only; filesystem remains unfenced |
-| Same, low integrity | 5/7 | 2 / 2 / 3 | git cannot create its repo; build redirect fails; root cause unresolved |
-| `DISABLE_MAX_PRIVILEGE | WRITES_RESTRICTED`, Restricted Code SID | 0/7 | 2 / 2 / 2 | MSYS2 reports token-default-DACL/named-object access denied; PowerShell CLR startup fails |
-| Same write restriction, low integrity | 0/7 | 2 / 2 / 2 | Same class of startup failures |
-| AppContainer, no capabilities | 0/7 | 2 / 2 / 5 | Exits `0xC0000142` during initialization; no attribution to MSYS2 fork proven |
+| Anthropic standalone SRT 0.0.81 | 9/9 deny/alias/link/config/nested-retry gates | 10/10, including nested-userns bypass attempt, after scoped AppArmor setup | Dedicated-principal candidate above; this is not Claude Code integration |
+| Codex 0.166.0 | 9/9 | 10/10 | Unelevated refused restricted reads; elevated runner pipe timed out, also with namespace diagnostic; 0/6 admitted commands |
+| Cursor CLI 2026.10.22-27dcf5f | Allowed write passed; tested outside-root read/write denies and retry failed; hidden host write observed | Fail-closed unsupported-backend preflight | Fail-closed: helper reports network proxy only, no filesystem isolation; 0/3 commands |
+| Claude Code itself | Seatbelt plus file-tool rules documented; standalone runtime tested | bubblewrap plus file-tool rules documented | Official docs say unsandboxed; explicit unsupported-backend OK remains required |
+| Devin | CLI help exposes sandbox setup only, no sandbox-only command execution | Docs describe bwrap/seccomp | Docs say unsupported; no model/login test |
+| Antigravity CLI | Help exposes sandbox session flag, no sandbox-only executor | Namespace-based sandbox documented | AppContainer/PSE and patch prerequisites documented; no model/login test |
 
-For the compatible privilege-only posture, total durations were 100–541 ms per command,
-including PowerShell 541 ms and bundle 150 ms. There is no production launch-cost claim:
-profile creation, ACL preparation, C# compilation, IPC and admission checks are excluded.
-Removing `CREATE_NO_WINDOW` was necessary to reach user code in the restricted-token
-experiments under SSH session 0. The earlier hidden-console failure was a fixture issue,
-not evidence that a desktop launch is impossible. Windows 11 must reproduce the final setup.
+The tested Cursor standalone configuration is not a proof that every possible Cursor policy fails.
+Its output retained system read boundary; absolute blocked patterns/tool deny rules did not provide
+this floor. It must not be marked protected on that evidence. Codex Windows refusals/timeouts are
+startup failures, not demonstrations that hidden reads were denied after command launch.
 
-### 2. Fence parity and routes to an unfenced process
-
-Verdict: **doesn't — no tested Windows configuration combines useful commands with the
-required security floor.** A privilege-stripped token passing commands is not a fence.
-Low integrity is not a read fence and does not express an arbitrary home/temp allow set.
-The fixture has no network enforcement or persistent escape floor.
-
-| Requirement / route | Measured result or remaining gate |
-| --- | --- |
-| Allowed writes; fenced writes; hidden run/secrets; ordinary reads | No successful strong-token command to measure these; not established |
-| Network, including cloud metadata | Not implemented in Windows prototype; not established |
-| Approved command escapes retain native floor | Not implemented; not established |
-| `schtasks` and Task Scheduler COM | Not tested from an admitted fence; open |
-| Service Control Manager / services | Not tested; open |
-| WMI and COM activation / existing COM servers | Not tested; open |
-| `runas` / secondary logon | Not tested as an escape; open |
-| Per-user and common Startup folders | Not tested; open |
-| Process/token duplication, impersonation, inherited handles, host pipes and brokers | Not tested; open |
-
-No escape route is called closed merely because its executable is absent or a PATH stub could
-block it. The scheduled-task secrets attempt did not execute and provides no escape evidence.
-The direct password-logon store experiment below succeeded by a different method.
-
-Microsoft documents the second restricting-SID access check and the distinct launch/context
-requirements. These support investigating the observed initialization failures, not broadening
-the grants until the process happens to start. [Restricted tokens](https://learn.microsoft.com/en-us/windows/win32/secauthz/restricted-tokens),
-[AppContainer launch](https://learn.microsoft.com/en-us/windows/win32/secauthz/implementing-an-appcontainer).
-
-### 3–4. Helper and recommended next design
-
-The self-contained prototype is [`native/sandbox/windows-probe.cs`](../../native/sandbox/windows-probe.cs).
-Its language is C# using built-in .NET Framework and Win32 P/Invoke; API and costs are in its
-README. It accepts only fixed experimental commands in this milestone. It has no job-object
-tree cleanup and is not safe for untrusted commands.
-
-Recommended design **to evaluate, not adopt as proven**: a dedicated unprivileged sandbox
-principal, write-restricted tokens, explicit filesystem grants/denies, and WFP policy tied to
-that principal. Keep a persistent floor on approved escapes. A native C++ broker can own
-token creation, object namespace, a private noninteractive desktop if needed, bounded launch
-requests, suspended creation, handle allow-listing and kill-on-close jobs. Bun talks to this
-broker over a versioned private channel; no shell command provisions policy.
-
-This would add installation/provisioning work and needs a full threat review. In particular,
-same-user DPAPI/Credential Manager compatibility does not transfer to another principal;
-approved external credential access would need a narrow broker. Out-of-process execution
-under that principal must never acquire the daemon/app role just because its token is no
-longer restricted. Existing sandbox runtimes document dedicated-account/WFP approaches,
-but their alpha status and limitations do not discharge Clover's requirements.
-[Anthropic sandbox-runtime](https://github.com/anthropics/sandbox-runtime).
-
-M0 does not yet choose a release-ready Windows design. The original-user restricted-token
-and AppContainer candidates need controlled object/desktop/ACL diagnostics before either
-can be rejected generally. No insecure compatibility fallback was integrated.
-
-## S8: secrets and the Linux fence
-
-### 1. Encrypted file and OS wrapping key
-
-Verdict: **works with limits** for the isolated store primitives; lifecycle, daemon use and
-headless fallback remain unresolved.
-
-| Platform / logon | Numbers and result |
-| --- | --- |
-| Windows SSH public-key/network logon | DPAPI 0/1, HRESULT `0x80070005`; Credential Manager 0/1, error 1312 (no logon session) |
-| Windows password logon | DPAPI 1/1 and Credential Manager 1/1, both error codes zero |
-| Ubuntu private Secret Service | Store/retrieve key 1/1, AES-256-GCM encrypted-file roundtrip 1/1, modified ciphertext rejected 1/1; 64 plaintext bytes produce a 92-byte nonce+ciphertext+tag file |
-
-Windows generated a local user's random password only in memory, called `LogonUser` type 2
-(interactive password authentication), loaded that user's profile, then impersonated its token
-for in-memory DPAPI and generic-credential roundtrips. The user, profile and credential targets
-were removed. This is a real password logon via API, **not** an RDP/console or scheduled-task
-validation. Initial Task Scheduler and `Start-Process` attempts produced no fixture result;
-they were not counted as successes. No password was sent through command arguments or logs.
-
-The Linux keyring ran on a private D-Bus session with a temporary home/config/data/runtime
-directory and random in-memory unlock password. `secret-tool` received the generated key
-through stdin; lookup output was captured and compared in memory. Only encrypted keyring
-and AES-GCM contents reached the disposable filesystem. No login keyring was contacted.
-No Fedora OS-store roundtrip was run.
-
-For M1, select one authenticated-encryption format with version/AAD, atomic replacement,
-permissions, nonce discipline, rotation, backup/recovery and corruption handling. Credential
-Manager storing the wrapping key best matches §4's current Windows wording; DPAPI is also
-viable for protecting a wrapping-key blob under a valid user profile. These two smoke tests
-do not choose recovery semantics or prove availability in Clover's actual login task.
-
-With no unlocked keyring, report a locked store and keep keys in memory only after explicit
-unlock until the controller resolves the plaintext fallback. `systemd-creds --user`/TPM
-availability and service-logon behaviour have **not** been tested. No claim is made that this
-VM has a usable TPM or that per-user sealing provides application identity isolation.
-
-### 2. Hiding paths while preserving external credential lookups
-
-Verdict: **works with limits** for Ubuntu mount isolation; **doesn't** for plain
-`xdg-dbus-proxy` providing item-level Secret Service separation.
-
-Ubuntu's 12/12 focused checks passed: writable scratch, ordinary read, denied settings write,
-hidden host run contents, hidden host secrets contents, denied ancestor rename, hidden session
-bus socket, rejected `systemd-run --user`, denied cloud-metadata TCP connection, Bash
-pipeline/subshell, git init/status, and a compiled C smoke build. Durations were 14.78–150.58 ms;
-the build took 150.58 ms. This fixture masks `/tmp`, `/run`, `/home`, supplies fresh `/proc` and
-`/dev`, unshares namespaces, and mounts the test state read-only with secret/run masks. It
-does not implement Clover's final home-wide writable policy or prove all alias/race protections.
-
-The proxy check uses a private fake service returning only a public integer. An allow rule for
-`org.freedesktop.Secret.Service.GetSecrets` at `/org/freedesktop/secrets` forwarded a Clover
-item path in its `ao` argument despite granting no access to that item's object path. An
-unrelated interface was denied. This reproduced both outside and inside bubblewrap. Fedora
-45/xdg-dbus-proxy 0.1.9 reproduced the same protocol result in a container. The fake service
-is not a real keyring conformance test and does not return real secrets.
-
-The proxy's rule grammar filters destination/interface/member/header path, and replies to
-admitted calls pass through. It has no Secret Service argument policy. A name-wide
-`--talk=org.freedesktop.secrets` grant is therefore insufficient; a root-method allow list also
-does not distinguish the item paths inside a bulk request.
-[Proxy policy reference](https://github.com/flatpak/xdg-dbus-proxy/blob/main/xdg-dbus-proxy.xml).
-
-An equivalent **semantic credential broker** would need to validate requested items, collection
-and alias resolution, bulk `GetSecrets`, lookup/search results, property access, signals and
-mutation/unlock methods, while rejecting Clover's wrapping-key item. Its endpoint must be
-the only reachable store path. Independently hide the original bus, runtime sockets,
-systemd private sockets, system bus, and any filesystem/abstract-socket alternate route.
-`systemd-run` failing in a fixture with no bus is not proof that such a broker is complete.
-
-`gh`, Docker and git working with real OS-store credentials was **not proved**. No outside
-login was authorized, and the fixture intentionally exposes no real credential sockets. A next
-test should exercise their credential helpers against disposable store items and a local fake
-server. Docker's credential helper and its daemon socket are different boundaries: exposing
-the raw host daemon can launch host work and cannot be treated as a harmless store lookup.
-Likewise, an SSH version check does not establish SSH-agent or network compatibility.
-
-Fedora requires real-host checks of SELinux labels/policy, unprivileged namespaces, bubblewrap,
-the desktop's keyring/portal services and packaging. Ubuntu also needs the installed AppArmor
-policy and supported helper version checked; no system policy was weakened in this spike.
-
-### 3. Each agent's own sandbox
-
-Verdict: **works with limits** for the tested Codex/standalone Anthropic primitives; **not
-established** for complete agent integrations. Tool permission rules and shell containment
-must both hide the run/secrets paths. A runtime test does not prove the agent's in-process Read
-tool, ACP adapter, settings precedence or approved retry behaviour.
-
-| Backend | macOS | Linux | Native Windows | Clover path configuration / evidence |
-| --- | --- | --- | --- | --- |
-| Claude Code | Seatbelt | bubblewrap | Official Claude Code docs still say unsandboxed | `sandbox.filesystem.denyRead/denyWrite` for shell commands, plus `Read`/write-tool deny rules. Standalone SRT 0.0.81 passed the Mac read/write fixture; Ubuntu failed before its command in `apply-seccomp` (`setgroups`, CAP_SYS_ADMIN). No weakening/retry was applied. |
-| Codex | Seatbelt | Native sandbox backend | Native Windows sandbox documented; not live-tested here | Named `permissions.<name>.filesystem` absolute paths with `deny`, allowed root `write`; sandbox-only fixture passed on Mac and Ubuntu with temp `CODEX_HOME`. Tested broad ordinary read, allowed write, hidden read and denied hidden write. |
-| Devin CLI / Desktop backend | OS sandbox documented | bubblewrap/socat documented | Docs explicitly refuse sandbox mode | `Read(absolute-path/**)` / `Write(...)` denies. Docs say read denies hide paths from shell commands and tools have their own rules. No login-free sandbox-only runner identified in the reviewed docs; no live invocation made. |
-| Cursor CLI | Seatbelt | Namespaces with Landlock/bubblewrap paths documented | Native installation documented; these sandbox docs do not establish Windows containment | CLI `Read(...)`/`Write(...)` permission denies and `sandbox.json` read boundary. No documented arbitrary hard deny-path list in `sandbox.json` was established; workspace read boundary is narrower but is not equivalent to a non-overridable deny. No live invocation made. |
-| Antigravity CLI | Seatbelt | Namespaces | AppContainer in a process security environment; documented patched 24H2 prerequisite | `permissions.deny` with `read_file(...)` / `write_file(...)`, sandbox enabled. Documentation says denied paths are blocked. No live sandbox-only invocation made. |
-
-Primary sources: [Claude sandbox scope](https://code.claude.com/docs/en/sandboxing),
+Sources: [Claude scope/settings](https://code.claude.com/docs/en/sandboxing),
 [Codex permission implementation](https://github.com/openai/codex/blob/main/codex-rs/protocol/src/permissions.rs),
 [Devin sandbox](https://docs.devin.ai/cli/sandbox),
-[Devin tool permissions](https://docs.devin.ai/cli/reference/permissions),
-[Cursor CLI permissions](https://cursor.com/docs/cli/reference/permissions),
 [Cursor sandbox configuration](https://cursor.com/docs/reference/sandbox),
-[Cursor platform/run modes](https://cursor.com/docs/agent/security/run-modes),
+[Cursor CLI installation](https://cursor.com/docs/cli/installation),
 [Antigravity terminal sandbox](https://antigravity.google/docs/sandbox/?tab=cli).
+Recorded CLI help establishes available local entry points; docs establish the untested OS mechanisms.
+In-process Read/Edit tools, ACP adapters, precedence, vendor retry/exclusion approvals and authentication
+remain live gates. Use explicit asking modes, not a vendor classifier silently approving an unfenced retry.
+Keep the owner-decided own-sandbox/no-outer-wrapper rule and unsupported-backend OK.
 
-Anthropic's standalone runtime separately offers alpha Windows support with a dedicated
-account, WFP and ACLs. This is not proof that Claude Code itself exposes it. The table preserves
-that distinction. None of these vendor modes establishes Clover's mandatory escape floor:
-exclude lists, approvals and automatic retry classifiers must not silently remove it.
-Use explicit asking modes, never vendor auto-approval of an unfenced retry, and require an
-integration gate before labelling a backend protected. Clover's existing unsandboxed-backend
-OK remains necessary wherever this cannot be achieved.
+## Proposed spec edits — controller applies after review
 
-## Concrete proposed spec text — controller applies, no spec file edited
+1. **[P], §4/§9.1:** explicitly state ordinary Bash/PowerShell network denial on every OS, and the
+   mandatory protected-path floor for approved escapes. Define metadata denial for escapes too;
+   a path-only Mac floor does not itself implement an IP rule.
+2. **[P], §4/S8:** require semantic Secret Service item authorization in request bodies/results,
+   not merely a bus-name/interface/header-path allow list. Host execution endpoints remain hidden.
+3. **[P], §3.1:** check sandbox principal and trusted execution-generation provenance in addition
+   to process ancestry/token flags, including processes launched through services or changed tokens.
+4. **[P], §9.3:** mark a backend protected only after its exact configuration protects shell descendants
+   and file tools, rejects policy widening and preserves the floor on retries/exclusions. Unsupported
+   combinations require the existing explicit OK. No outer sandbox is proposed over the [D] rule.
+5. **Rejected alternative, §8.5:** locked persistence/in-memory-only unlock. Controller rejected it
+   because unattended main/refresher/cloud computers must survive reboot. The existing fallback stays.
 
-1. **[P], §4 and §9.1, network:** “Ordinary bot Bash and PowerShell have no network access
-   on every OS. Networked work goes through the approved core/plugin interfaces or an approved
-   escape. An escape retains the mandatory protected-path floor. Cloud-metadata access remains
-   forbidden to bot commands.” Controller must specify and test how the last sentence applies
-   to approved escapes; current Mac path-floor code alone does not implement an IP rule.
-2. **[P], §4/S8 Linux:** “The D-Bus boundary must enforce Secret Service item semantics,
-   including object paths carried inside method arguments and results. A name/interface/path
-   allow list alone is not sufficient. The host bus and other host execution endpoints are
-   unreachable except through reviewed brokers.” `xdg-dbus-proxy` can be one layer, not the
-   item-isolation claim itself.
-3. **[P], §8.5, recommended conflict resolution:** replace the plaintext fallback with:
-   “When no approved key store or sealing mechanism is available, credential persistence stays
-   locked. The daemon can run without saved credentials and can accept an explicit in-memory
-   unlock. It never silently writes a plaintext wrapping key.” If the owner intends to keep
-   the existing plaintext option, the controller must instead explicitly amend plan §9 and
-   this lane's secret-handling authorization before testing it. This affects the owner-decided
-   encrypted-file/OS-store design and headless experience: **touches [D]; owner decides**.
-4. **[P], §3.1, caller checks:** “Sandbox principal identity, mandatory policy provenance and
-   execution generation are checked in addition to token flags/process ancestry. Work launched
-   through a service or different token does not become an app/user caller.” Needed if the
-   dedicated-principal candidate proceeds; no claim of an implemented API.
-5. **[P], §9.3:** “A backend is marked protected only after its exact version/configuration
-   denies protected paths to both file tools and shell descendants, rejects policy widening,
-   and preserves the floor on retries/exclusions. Otherwise the explicit unsupported-backend
-   OK applies; settings names alone are not evidence.” Keep the **[D] own-sandbox/no-outer-wrap
-   rule**. Any proposal to replace it with another enclosing sandbox needs the owner's decision.
+No relaxation of the [D] Windows Bash release blocker is proposed. The Session 0, COM, startup-task
+and protected-backend gaps go to the controller; this report does not silently route around them.
 
-These are proposals, not assumed authorization to change the spec or cross-lane contracts.
-No change to the **[D] Windows bash release blocker** is proposed.
+## M1, live gates and review
 
-## What remains, and where M1 starts
+M1 starts with a reviewed native broker, stable floor and secret-store contracts, lifecycle/recovery,
+correct Session 0 handling, caller identity and a production semantic credential policy. The failed
+or unavailable backend combinations remain explicitly unsupported pending resolution. Broader home
+write policy, concurrent sessions, crash cleanup and real credential-helper protocols need coverage.
 
-The Windows floor, semantic credential broker, headless fallback, agent integration and
-production store format are **incomplete engineering gates**, not work silently deferred to
-the owner-only live batch. Resolve the stop condition first, then resume C-M0 on this branch.
+Owner-batch gates: real Windows 11 install/Bash/island (§10.3), actual Ubuntu/Fedora deb/rpm/SELinux
+and desktop keyrings (§10.4), macOS 27 integration (§10.5), authenticated ACP/file-tool/retry checks for
+all five agents, and backed-up Winter migration (§10.11). Password-principal scheduled startup and
+Codex Windows initialization need resolution before release, not an assumed pass from live gates.
 
-The next C-M0 work is controlled Windows object/token/desktop diagnostics with a privilege-only
-control, then one complete candidate including every escape route listed above, canonical
-paths/aliases/ancestor replacement, job cleanup and normal/approved-escape network tests.
-Measure provisioning and warm/cold launch separately. Repeat real-logon secrets tests in the
-actual scheduled-task startup context. Build a semantic Secret Service broker and local
-credential-helper fixtures, and resolve the Ubuntu standalone-runtime startup failure without
-removing required isolation. Complete the three-OS agent deny-list and retry gates.
-
-Only then should M1 begin with the shared `SecretStore`/`Fence` interfaces, fail-closed native
-launch broker, store lifecycle/recovery and caller verification; lane A's SDK remains read-only
-until the agreed ownership handoff. No production adapter should consume this launch probe.
-
-Owner-batch live gates still include plan §10.3's real Windows 11 installation/Bash fence;
-§10.4's Ubuntu/Fedora deb/rpm, real desktop keyrings and host policy; §10.5's macOS 27 integration;
-and §10.11's backed-up Winter migration. Claude Code, Codex, Devin, Cursor and Antigravity
-end-to-end tool/ACP/retry checks that require an authenticated agent/model belong in the live
-batch; no such login or model call was made here. Synthetic OS-store tests should precede it.
-
-## CI and review meaning
-
-[`spike-s2-s8.yml`](../../.github/workflows/spike-s2-s8.yml) repeats the focused Linux fixture,
-private store and negative proxy experiment, the Mac runtime primitives, and Windows launch
-measurements. It uses runner OS surrogates, not the full supported-OS/live matrix. A green
-workflow means those checks ran; it does **not** mean S2/S8 passed. The Windows job admits only
-its privilege-only compatibility control and uploads the strong-mode results for inspection.
-The known Ubuntu SRT failure is preserved in evidence and is not represented as passing CI.
-
-Open as a **draft** with the requested title; lane reviewer/controller review is pending.
-No reviewer was spawned or messaged. The controller must decide how to reconcile the stop
-condition and whether to resume the missing C-M0 work; the PR must not be merged as completed M0.
+Focused CI repeats mount/network/store/broker checks and Mac/Linux native deny/retry gates, plus
+Windows launch measurements. Runner OSes are surrogates. Green means those experiments ran, not that
+Windows security parity or every vendor integration passed. The latest focused run at the preceding
+checkpoint passed all three jobs; final-head status is linked from PR #148. Broader repository CI is
+reported separately. M0 is ready for the lane reviewer to assess these positive, negative and
+inconclusive results; only the controller merges.
