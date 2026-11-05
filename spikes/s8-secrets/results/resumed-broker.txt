@@ -1,0 +1,21 @@
+Running broker-probe.py on clover-c-linux
+{"test": "broker-search-clover-hidden", "pass": true}
+ERROR:dbus.connection:Unable to set arguments ({},) according to signature None: <class 'ValueError'>: Unable to guess signature from an empty dict
+Traceback (most recent call last):
+  File "/tmp/clover-lane-c-4sjfda70/broker-probe.py", line 58, in <module>
+    found=obj.SearchItems({},dbus_interface=SVC)[0]
+          ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3/dist-packages/dbus/proxies.py", line 141, in __call__
+    return self._connection.call_blocking(self._named_service,
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+                                          self._object_path,
+                                          ^^^^^^^^^^^^^^^^^^
+    ...<3 lines>...
+                                          args,
+                                          ^^^^^
+                                          **keywords)
+                                          ^^^^^^^^^^^
+  File "/usr/lib/python3/dist-packages/dbus/connection.py", line 687, in call_blocking
+    message.append(signature=signature, *args)
+    ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ValueError: Unable to guess signature from an empty dict

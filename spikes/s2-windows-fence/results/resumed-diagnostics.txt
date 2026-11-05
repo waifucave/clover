@@ -1,0 +1,24 @@
+Uploading public source chunk 1
+Uploading public source chunk 2
+Uploading public source chunk 3
+Running diagnostics.ps1 on clover-c-win
+Controlled token-DACL/default-DACL/private-desktop diagnostics; fixed public commands only
+{"mode":"privileges","launch_ms":20,"elapsed_ms":246,"exit":0,"timeout":false,"check":"powershell"}
+{"mode":"privileges","launch_ms":8,"elapsed_ms":295,"exit":0,"timeout":false,"check":"msys-objects-fork"}
+{"mode":"privileges","launch_ms":5,"elapsed_ms":69,"exit":0,"timeout":false,"check":"win32-node"}
+Starting the CLR failed with HRESULT 80070005.
+{"mode":"restricted","launch_ms":2,"elapsed_ms":26,"exit":4294901760,"timeout":false,"check":"powershell"}
+      0 [main] bash (4964) cygheap_user::init: NtSetInformationToken (TokenDefaultDacl), 0xC0000022
+    555 [main] bash (4964) C:\Program Files\Git\bin\..\usr\bin\bash.exe: *** fatal error - NtCreateDirectoryObject(\BaseNamedObjects\msys-2.0S5-1888ae32e00d56aa): 0xC0000022
+{"mode":"restricted","launch_ms":2,"elapsed_ms":172,"exit":3221225794,"timeout":false,"check":"msys-objects-fork"}
+{"mode":"restricted","launch_ms":2,"elapsed_ms":73,"exit":0,"timeout":false,"check":"win32-node"}
+Starting the CLR failed with HRESULT 80070005.
+{"mode":"restricted-fixed","launch_ms":4,"elapsed_ms":28,"exit":4294901760,"timeout":false,"check":"powershell"}
+      0 [main] bash (736) C:\Program Files\Git\bin\..\usr\bin\bash.exe: *** fatal error - NtCreateDirectoryObject(\BaseNamedObjects\msys-2.0S5-1888ae32e00d56aa): 0xC0000022
+{"mode":"restricted-fixed","launch_ms":2,"elapsed_ms":39,"exit":3221225794,"timeout":false,"check":"msys-objects-fork"}
+{"mode":"restricted-fixed","launch_ms":2,"elapsed_ms":71,"exit":0,"timeout":false,"check":"win32-node"}
+Starting the CLR failed with HRESULT 80070005.
+{"mode":"desktop-fixed","launch_ms":3,"elapsed_ms":27,"exit":4294901760,"timeout":false,"check":"powershell"}
+      0 [main] bash (4076) C:\Program Files\Git\bin\..\usr\bin\bash.exe: *** fatal error - NtCreateDirectoryObject(\BaseNamedObjects\msys-2.0S5-1888ae32e00d56aa): 0xC0000022
+{"mode":"desktop-fixed","launch_ms":2,"elapsed_ms":40,"exit":3221225794,"timeout":false,"check":"msys-objects-fork"}
+{"mode":"desktop-fixed","launch_ms":3,"elapsed_ms":72,"exit":0,"timeout":false,"check":"win32-node"}

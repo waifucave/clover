@@ -1,0 +1,20 @@
+[package]
+name = "s1-napi-probe"
+version = "0.0.0"
+edition = "2021"
+publish = false
+license = "Apache-2.0"
+description = "Spike S1: what napi byte passing costs under Bun, Vec<u8> (as @number0/iroh does) against Buffer"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+napi = { version = "3", default-features = false, features = ["napi8", "async", "tokio_rt"] }
+napi-derive = "3"
+
+[build-dependencies]
+napi-build = "2"
+
+[profile.release]
+opt-level = 3

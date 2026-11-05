@@ -1,0 +1,80 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  // hooks.waifucave.com: the waifucave forwarder (spec §7). Webhooks for a routine arrive here, are sealed to
+  // the account's computers on arrival, and are held in the account's Durable Object until the routine's
+  // computer takes them over its WebSocket.
+  //
+  // The top level is the local profile that the tests and `wrangler dev` use; env.production is what the
+  // first deploy at the live gates would use. Nothing here has been deployed. Secrets are never in this file:
+  // TAG_KEYS, ACCOUNT_ID_KEY and TICKET_SECRET come from `wrangler secret put` (production) or the test
+  // harness (local); src/identity.ts says what each one does and which may be rotated.
+  //
+  // Observability stays off: webhook URLs may carry a routine's key as ?key=, and Workers Logs would keep it.
+  "name": "clover-forwarder-local",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-01",
+  "workers_dev": false,
+  "send_metrics": false,
+  "observability": { "enabled": false },
+  "vars": {
+    "ACCOUNT_ISSUER": "https://accounts.waifucave.invalid",
+    "ACCOUNT_JWKS": "{\"keys\":[]}",
+    "HOOKS_AUDIENCE": "hooks.waifucave.com",
+    "HOOKS_ORIGIN": "https://hooks.waifucave.invalid",
+    "HOLD_DAYS": "7",
+    "MAX_HELD": "1000",
+    "MAX_HELD_BYTES": "50000000",
+    "MAX_BODY_BYTES": "1048576",
+    "MAX_HEADER_BYTES": "16384",
+    "MAX_DEVICES": "32",
+    "MAX_ROUTINES": "1000"
+  },
+  "durable_objects": {
+    "bindings": [{ "name": "FORWARDER", "class_name": "ForwarderDO" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["ForwarderDO"] }],
+  // Each limit counts per Cloudflare location, not globally.
+  "ratelimits": [
+    // Webhooks per routine, counted only once the key has checked out.
+    { "name": "HOOK_RATE", "namespace_id": "71001", "simple": { "limit": 120, "period": 60 } },
+    // Device API calls (register, tickets, routines) per account.
+    { "name": "API_RATE", "namespace_id": "71002", "simple": { "limit": 120, "period": 60 } },
+    // Webhooks per account, over all its routines.
+    { "name": "TAG_RATE", "namespace_id": "71003", "simple": { "limit": 600, "period": 60 } },
+    // Key checks against the account's Durable Object (no cached success), per sender address and account:
+    // high enough that a real sender firing many of one account's routines at cold Worker instances is not
+    // refused (senders like GitHub do not retry a 429), low enough to cap the load a stranger can cause.
+    { "name": "CHECK_RATE", "namespace_id": "71004", "simple": { "limit": 120, "period": 60 } }
+  ],
+  "env": {
+    "production": {
+      "name": "clover-forwarder",
+      "workers_dev": false,
+      "observability": { "enabled": false },
+      "routes": [{ "pattern": "hooks.waifucave.com", "custom_domain": true }],
+      "vars": {
+        // Set at the live gates from lane H's account service: its issuer and its public signing keys.
+        "ACCOUNT_ISSUER": "https://waifucave.com/auth",
+        "ACCOUNT_JWKS": "{\"keys\":[]}",
+        "HOOKS_AUDIENCE": "hooks.waifucave.com",
+        "HOOKS_ORIGIN": "https://hooks.waifucave.com",
+        "HOLD_DAYS": "7",
+        "MAX_HELD": "1000",
+        "MAX_HELD_BYTES": "50000000",
+        "MAX_BODY_BYTES": "1048576",
+        "MAX_HEADER_BYTES": "16384",
+        "MAX_DEVICES": "32",
+        "MAX_ROUTINES": "1000"
+      },
+      "durable_objects": {
+        "bindings": [{ "name": "FORWARDER", "class_name": "ForwarderDO" }]
+      },
+      "ratelimits": [
+        { "name": "HOOK_RATE", "namespace_id": "71101", "simple": { "limit": 120, "period": 60 } },
+        { "name": "API_RATE", "namespace_id": "71102", "simple": { "limit": 120, "period": 60 } },
+        { "name": "TAG_RATE", "namespace_id": "71103", "simple": { "limit": 600, "period": 60 } },
+        { "name": "CHECK_RATE", "namespace_id": "71104", "simple": { "limit": 120, "period": 60 } }
+      ]
+    }
+  }
+}

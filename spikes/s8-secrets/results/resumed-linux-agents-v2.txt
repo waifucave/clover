@@ -1,0 +1,7 @@
+Running linux-agents.sh on clover-c-linux
+Installing pinned sandbox-only agent tools in the disposable probe directory
+Running standalone Anthropic sandbox checks
+{"test": "anthropic-standalone-sandbox", "exit": 0, "allowed_write_observed": true, "hidden_write_observed": false, "private_mask_view_writable": true, "diagnostic": ""}
+Running sandbox-only Codex checks
+{"test": "codex-own-sandbox", "exit": 0, "allowed_write_observed": true, "hidden_write_observed": false, "diagnostic": "WARNING: proceeding, even though we could not create PATH aliases: Refusing to create helper binaries under temporary dir \"/tmp/clover-codex-n_wk05k2\" (codex_home: AbsolutePathBuf(\"/tmp/clover-codex-n_wk05k2/config\"))\n"}
+srt_exit=0 codex_exit=0

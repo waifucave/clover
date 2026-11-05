@@ -1,0 +1,11 @@
+Running headless-probe.py on clover-c-linux
+{"test": "tpm-inventory", "tpm0": true, "tpmrm0": true}
+{"test": "systemd-creds-tpm2", "encrypt_exit": 1, "diagnostic": "Selected key not available in --uid= scoped mode, refusing.\n"}
+{"test": "systemd-creds-host+tpm2", "encrypt_exit": 0, "decrypt_exit": 0, "roundtrip": true, "format_id": "ef4ac13679a9480ea7db68897f9f165d"}
+{"test": "systemd-creds-auto", "encrypt_exit": 0, "decrypt_exit": 0, "roundtrip": true, "format_id": "ef4ac13679a9480ea7db68897f9f165d"}
+{"test": "systemd-creds-tpm-unavailable", "encrypt_exit": 1, "diagnostic": "Selected key not available in --uid= scoped mode, refusing.\n"}
+{"test": "systemd-creds-host+tpm2-unavailable", "encrypt_exit": 0, "decrypt_exit": 0, "roundtrip": true, "format_id": "ef4ac13679a9480ea7db68897f9f165d"}
+{"test": "systemd-creds-host", "encrypt_exit": 0, "decrypt_exit": 0, "roundtrip": true, "format_id": "ef4ac13679a9480ea7db68897f9f165d"}
+{"test": "system-scope-tpm-control-actual", "encrypt_exit": 0, "roundtrip": true}
+{"test": "system-scope-tpm-control-unavailable", "encrypt_exit": 1, "diagnostic": "ERROR:tcti:src/tss2-tcti/tcti-device.c:455:Tss2_Tcti_Device_Init() Failed to open specified TCTI device file /dev/clover-no-tpm: No such file or directory \nFailed to create TPM2 context: State not recoverable\n"}
+{"test": "plaintext-fallback", "mode": "0o600", "roundtrip": true, "label": "plaintext", "fence_masks_all_store_files": true, "masked_file_count": 6, "fence_exit": 0}

@@ -1,0 +1,19 @@
+Running setup-candidate.ps1 on clover-c-win
+Installing pinned standalone Windows sandbox candidate
+
+added 7 packages in 32s
+npm notice
+npm notice New major version of npm available! 10.9.4 -> 12.2.2
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.2
+npm notice To update run: npm install -g npm@12.2.2
+npm notice
+HELPER C:\clover-tools\srt\node_modules\@anthropic-ai\sandbox-runtime\vendor\srt-win\arm64\srt-win.exe
+Program 'srt-win.exe' failed to run: The specified executable is not a valid application for this OS platform.At
+C:\Users\<test-user>\AppData\Local\Temp\clover-lane-c-af9647e441aa434fbd9dcfe730582890\probe.ps1:10 char:1
++ & $helper.FullName --help
++ ~~~~~~~~~~~~~~~~~~~~~~~~~.
+At C:\Users\<test-user>\AppData\Local\Temp\clover-lane-c-af9647e441aa434fbd9dcfe730582890\probe.ps1:10 char:1
++ & $helper.FullName --help
++ ~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : ResourceUnavailable: (:) [], ParentContainsErrorRecordException
+    + FullyQualifiedErrorId : NativeCommandFailed

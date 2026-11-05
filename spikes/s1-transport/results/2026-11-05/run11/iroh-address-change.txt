@@ -1,0 +1,6 @@
+noroute: sent for 16 s: 320/320 echoes back; gaps over 1 s: 5.84 s from 2.92 s to 8.76 s
+noroute: sent for 30 s: 600/600 echoes back; gaps over 1 s: 5.84 s from 2.92 s to 8.76 s, 6.45 s from 8.78 s to 15.23 s
+noroute: sent for 16 s: 320/320 echoes back; gaps over 1 s: 5.84 s from 2.92 s to 8.76 s, 6.45 s from 8.78 s to 15.23 s (with RUST_LOG=iroh=debug,noq_proto=debug)
+route: sent for 16 s: 320/320 echoes back; gaps over 1 s: 1.09 s from 3.38 s to 4.47 s
+route: sent for 30 s: 600/600 echoes back; gaps over 1 s: 1.08 s from 3.38 s to 4.46 s
+route: sent for 16 s: 320/320 echoes back; gaps over 1 s: 1.08 s from 3.37 s to 4.45 s (with RUST_LOG=iroh=debug,noq_proto=debug)

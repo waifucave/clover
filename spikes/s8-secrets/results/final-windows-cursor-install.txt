@@ -1,0 +1,5 @@
+Uploading public source chunk 1
+Running install-windows-cursor.ps1 on clover-c-win
+Downloading pinned headless Cursor CLI for Windows
+C:\clover-tools\cursor\dist-package\cursor-agent.cmd
+C:\clover-tools\cursor\dist-package\cursor-agent.ps1
