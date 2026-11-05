@@ -101,10 +101,46 @@ body {
 }
 
 .g-frame {
+  position: relative;
   overflow: hidden;
   border: 1px solid var(--gallery-rim);
   border-radius: 10px;
   background: var(--clover-color-surface);
+}
+
+/* A whole window on a desktop: the wallpaper stands in for what the window's material blurs through the
+   sidebar (vibrancy on macOS), and the window controls sit where macOS draws them. */
+.g-frame[data-desktop] {
+  border-radius: 12px;
+  background: var(--gallery-wallpaper);
+}
+
+.g-frame__controls {
+  position: absolute;
+  top: 16px;
+  left: 17px;
+  display: flex;
+  gap: 10px;
+  pointer-events: none;
+}
+
+.g-frame__controls span {
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 0.5px rgb(0 0 0 / 0.18);
+}
+
+.g-frame__controls span:nth-child(1) {
+  background: #ff5f57;
+}
+
+.g-frame__controls span:nth-child(2) {
+  background: #febc2e;
+}
+
+.g-frame__controls span:nth-child(3) {
+  background: #28c840;
 }
 
 .g-error {

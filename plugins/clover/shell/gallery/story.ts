@@ -10,5 +10,7 @@ export interface Story {
   notes?: string;
   width?: number;
   height?: number;
+  /** A whole window: drawn on a desktop wallpaper, with the macOS window controls over its corner. */
+  desktop?: boolean;
   render: () => ReactNode;
 }

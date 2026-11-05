@@ -1,4 +1,4 @@
-// Lane B's token catalog, by name (`packages/plugin-sdk/src/catalogs/tokens.ts`, B-M0 bc01d25ea). The
+// Lane B's token catalog, by name (`packages/plugin-sdk/src/catalogs/tokens.ts`, B-M0 cc3aa7e76). The
 // gallery test checks every catalog token a part names against this list, so a renamed token shows up.
 // Refresh it from B's catalog when B changes it; in M2 the parts import the catalog itself.
 export const CATALOG_SNAPSHOT: ReadonlySet<string> = new Set([
