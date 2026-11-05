@@ -4,7 +4,7 @@
 // question's are the pill's own, one question at a time, and choosing never sends by itself.
 
 import type { ReactElement } from "react";
-import { cardTrailing, questionAdvance, type ApprovalCard, type LinkCard, type PillCard, type QuestionCard, type QuestionDraft } from "../model/cards";
+import { cardTrailing, questionAdvance, sealedButtons, type ApprovalCard, type LinkCard, type PillCard, type QuestionCard, type QuestionDraft } from "../model/cards";
 import { t } from "../strings";
 import { Glyph } from "./glyphs";
 import { PILL_CARD_SOURCES, useCardTokens, useSealedKit } from "./sealed";
@@ -32,17 +32,20 @@ export function SealedCardBody({ card, waiting = 0, hover }: SealedCardBodyProps
           </span>
           {trailing ? <span className="clp-card-trailing">{trailing}</span> : null}
         </div>
-        <kit.Field name="ask" lines={4} className="clp-card-ask" />
+        <kit.Field name="what" lines={4} className="clp-card-ask" />
         {card.kind === "approval" ? <kit.Field name="command" lines={5} className="clp-card-command" /> : <kit.Field name="host" className="clp-card-command" />}
         {card.kind === "approval" ? <kit.Field name="risk" lines={2} className="clp-card-risk" /> : null}
         <div className="clp-card-actions">
           <span className="clp-card-status" />
-          <span className="clp-slot" data-role="refuse" data-hover={hover === "refuse" || undefined}>
-            <kit.Deny look="cross" size={30} />
-          </span>
-          <span className="clp-slot" data-role="accept" data-hover={hover === "accept" || undefined}>
-            <kit.Approve look={card.kind === "link" ? "open" : "check"} size={30} />
-          </span>
+          {sealedButtons(card).map((button) => {
+            const Button = button.approve ? kit.Approve : kit.Deny;
+            const hovered = button.look !== "label" && hover === (button.approve ? "accept" : "refuse");
+            return (
+              <span key={button.option ?? (button.approve ? "approve" : "deny")} className="clp-slot" data-role={button.approve ? "accept" : "refuse"} data-look={button.look} data-hover={hovered || undefined}>
+                <Button option={button.option} look={button.look} size={30} />
+              </span>
+            );
+          })}
         </div>
       </kit.Card>
     </div>

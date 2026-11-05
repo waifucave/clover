@@ -14,20 +14,30 @@
 
 import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState, type ReactElement, type ReactNode, type RefObject } from "react";
 
-/** The fields an approval card carries. Assumed names, until lane C pins the card data (C-M3). */
+/** The sealed fields a card may carry (lane B's `CARD_FIELD_NAMES`); a field the card lacks draws nothing. */
 export type SealedField =
-  /** Who asks, and with what: "Alpha · Bash". */
-  | "source"
-  /** What is asked, in a sentence. */
-  | "ask"
-  /** The command or the input, as written. */
+  /** The card's heading. */
+  | "title"
+  /** What it asks, in a sentence. */
+  | "what"
+  /** The command, the edit or the call's input, as code. */
   | "command"
-  /** The computer it runs on. */
+  /** Where it runs. */
   | "computer"
-  /** The reviewer's word on the risk. */
+  /** The safety reviewer's verdict. */
   | "risk"
-  /** A link request's host. */
-  | "host";
+  /** Why the bot wants it. */
+  | "reason"
+  /** Who asks. */
+  | "source"
+  /** The site a link or a fetch goes to. */
+  | "host"
+  /** The files it touches. */
+  | "paths"
+  /** Anything more, as rows. */
+  | "detail"
+  /** When it is denied unanswered. */
+  | "expires";
 
 export interface SealedCardProps {
   id: string;
@@ -45,9 +55,11 @@ export interface SealedFieldProps {
 }
 
 export interface SealedButtonProps {
-  /** The button's look: a ✓ circle, a ↗ circle (open a link), or a ✕ circle. */
-  look: "check" | "open" | "cross";
-  /** Its side, in CSS pixels; never under 24. */
+  /** The answer it gives: an option's id from the card's options; absent, the first option of its kind. */
+  option?: string;
+  /** The option's own sealed label (the default), or a glyph: ✓ `check`, ✕ `cross`, ↗ `open` (a link). */
+  look?: "label" | "check" | "cross" | "open";
+  /** A glyph button's side, in CSS pixels; never under 24. */
   size?: number;
   className?: string;
 }
@@ -115,8 +127,9 @@ export const PILL_CARD_SOURCES: Readonly<Record<string, CardTokenSource>> = {
 /** A token's CSS custom property (lane B's mapping; catalog names hold no hyphen). */
 export const tokenProperty = (name: string): string => `--clover-${name.replace(/-/g, "_").replace(/\./g, "-")}`;
 
-// What a resolved value may hold before it goes to a frame: lane B's rule for any token value.
-const UNSAFE = /[;{}\\@<>]|\/\*|url\s*\(|expression\s*\(|image-set|image\s*\(|element\s*\(/i;
+// What a resolved value may hold before it goes to a frame: lane B's `isSafeTokenValue`.
+const UNSAFE = /[;{}\\@<>\n\r\f\0]|\/\*|url\s*\(|src\s*\(|expression\s*\(|image-set|image\s*\(|element\s*\(|cross-fade|!\s*important/i;
+const quotesClosed = (value: string) => (value.match(/"/g)?.length ?? 0) % 2 === 0 && (value.match(/'/g)?.length ?? 0) % 2 === 0;
 
 /** The card values, each read through `read` (a custom property's computed value) or fixed. */
 export function resolveCardTokens(sources: Readonly<Record<string, CardTokenSource>>, read: (property: string) => string): Record<string, string> {
@@ -127,7 +140,7 @@ export function resolveCardTokens(sources: Readonly<Record<string, CardTokenSour
       continue;
     }
     const value = read(tokenProperty(source.token)).trim();
-    out[name] = value.length > 0 && value.length <= 300 && !UNSAFE.test(value) ? value : source.fallback;
+    out[name] = value.length > 0 && value.length <= 300 && !UNSAFE.test(value) && quotesClosed(value) ? value : source.fallback;
   }
   return out;
 }

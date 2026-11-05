@@ -98,7 +98,7 @@ describe("card contents", () => {
     const onAnswer = mock();
     const { container } = render(withKit(<SealedCardContent card={APPROVAL} />, onAnswer));
     expect(container.querySelector('[data-field="source"]')?.textContent).toBe("Alpha · Bash");
-    expect(container.querySelector('[data-field="ask"]')?.textContent).toContain("deletes the build folder");
+    expect(container.querySelector('[data-field="what"]')?.textContent).toContain("deletes the build folder");
     expect(container.textContent).toContain("Studio");
     fireEvent.click(screen.getByRole("button", { name: "Allow once" }));
     expect(onAnswer).toHaveBeenCalledWith("approval-1", true);
@@ -108,7 +108,7 @@ describe("card contents", () => {
 
   test("an approval never draws words of its own: without a kit the parts are empty", () => {
     const { container } = render(<SealedCardContent card={APPROVAL} />);
-    expect(container.querySelector('[data-field="ask"]')?.textContent).toBe("");
+    expect(container.querySelector('[data-field="what"]')?.textContent).toBe("");
     expect(container.querySelector('[data-sealed="approve"]')).not.toBeNull();
   });
 

@@ -35,17 +35,19 @@ export function CircleButton({ role, glyph, label, enabled = true, hover, onClic
 
 export interface SealedSlotProps {
   approve: boolean;
-  look: SealedButtonProps["look"];
+  look: NonNullable<SealedButtonProps["look"]>;
+  /** The answer's option id; absent, the first option of its kind. */
+  option?: string;
   hover?: boolean;
 }
 
-/** Where a sealed approve or deny button goes: the circle's place, its glow, nothing on the frame itself. */
-export function SealedSlot({ approve, look, hover }: SealedSlotProps): ReactElement {
+/** Where a sealed approve or deny button goes: the circle's place (or a label's), its glow, nothing on the frame. */
+export function SealedSlot({ approve, look, option, hover }: SealedSlotProps): ReactElement {
   const kit = useSealedKit();
   const Button = approve ? kit.Approve : kit.Deny;
   return (
-    <span className="clv-sealed-slot" data-role={approve ? "accept" : "refuse"} data-hover={hover || undefined}>
-      <Button look={look} size={30} />
+    <span className="clv-sealed-slot" data-role={approve ? "accept" : "refuse"} data-look={look} data-hover={hover || undefined}>
+      <Button option={option} look={look} size={30} />
     </span>
   );
 }

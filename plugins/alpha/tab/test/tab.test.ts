@@ -12,7 +12,8 @@ import layout from "../layout.json" with { type: "json" };
 
 const TAB = join(import.meta.dir, "..");
 const ALPHA = join(TAB, "..");
-const css = readFileSync(join(TAB, "theme.css"), "utf8");
+// A format file's paths are relative to the plugin's folder (lane B, §5.9's `Path`): Alpha's, above `tab/`.
+const css = readFileSync(join(ALPHA, theme.css), "utf8");
 const alpha = readTheme(theme, { strict: true });
 const light = stack(tokensFor(BASE_THEME, "light"), tokensFor(alpha, "light"));
 const dark = stack(tokensFor(BASE_THEME, "dark"), tokensFor(alpha, "dark"));
@@ -24,6 +25,11 @@ describe("Alpha's theme", () => {
     const names = new Set(TOKENS.map((t) => t.name));
     for (const name of [...Object.keys(theme.tokens), ...Object.keys(theme.dark.tokens)]) expect(names.has(name), name).toBe(true);
     expect(theme.appearance).toBe("both");
+  });
+
+  test("names its CSS by its path inside Alpha's folder, the way every format file names a file", () => {
+    expect(theme.css).toBe("tab/theme.css");
+    expect(existsSync(join(ALPHA, theme.css))).toBe(true);
   });
 
   test("leaves approval cards, the island and the pill to the app's own styling", () => {
@@ -73,7 +79,7 @@ test("a selected row stands apart from a hovered one, and both from the canvas",
 
 describe("Alpha's CSS", () => {
   test("keeps to the theme CSS rules", () => {
-    expect(checkThemeCss(css)).toEqual([]);
+    expect(checkThemeCss(css, { path: theme.css })).toEqual([]);
   });
 
   test("dresses only its own layout's classes, and every file it names is in Alpha's folder", () => {

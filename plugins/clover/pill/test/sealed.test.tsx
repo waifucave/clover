@@ -20,7 +20,7 @@ import { PILL_CSS } from "../src/ui/styles";
 import { MIN_SEALED_BUTTON, PILL_CARD_SOURCES, SealedKitContext, tokenProperty, type SealedCardKit } from "../src/ui/sealed";
 import { mockSealedKit } from "../src/mock-kit";
 import { emptyDraft } from "../src/model/cards";
-import { AGENTS, ALPHA, APPROVAL, LINK, SEALED, TARGETS } from "../src/fixtures";
+import { AGENTS, ALPHA, APPROVAL, APPROVAL_ALWAYS, LINK, SEALED, TARGETS } from "../src/fixtures";
 
 const kit = mockSealedKit(SEALED);
 const withKit = (ui: ReactElement, k: SealedCardKit = kit) => <SealedKitContext.Provider value={k}>{ui}</SealedKitContext.Provider>;
@@ -30,7 +30,8 @@ function assertVisible(container: HTMLElement): void {
   expect(sealedProblems(container, PILL_CSS)).toEqual([]);
   for (const button of container.querySelectorAll('[data-sealed="approve"], [data-sealed="deny"]')) {
     const style = (button as HTMLElement).style;
-    expect(parseFloat(style.width)).toBeGreaterThanOrEqual(MIN_SEALED_BUTTON);
+    // A glyph button is a square; one carrying its own label is at least that wide.
+    expect(parseFloat(style.width || style.minWidth)).toBeGreaterThanOrEqual(MIN_SEALED_BUTTON);
     expect(parseFloat(style.height)).toBeGreaterThanOrEqual(MIN_SEALED_BUTTON);
   }
 }
@@ -66,8 +67,8 @@ function mountPill(props: Partial<DispatchPillProps>) {
 }
 
 describe("sealed parts stay visible at rest, on the real pill", () => {
-  test("an approval and a link request on top, once the shape rests", () => {
-    for (const card of [APPROVAL, LINK]) {
+  test("an approval, one with an \"always\" answer, and a link request on top, once the shape rests", () => {
+    for (const card of [APPROVAL, APPROVAL_ALWAYS, LINK]) {
       const pill = mountPill({ cards: [card] });
       pill.clock.run(2500);
       expect(pill.clock.pending).toBe(0);
@@ -102,6 +103,27 @@ describe("sealed parts stay visible at rest, on the real pill", () => {
       ),
     );
     expect(sealedProblems(fading.container, PILL_CSS).length).toBeGreaterThan(0);
+  });
+});
+
+describe("the sealed buttons", () => {
+  test("one per option, each its own: the \"always\" answer on its label, then ✕, then ✓", () => {
+    const { container } = render(withKit(<CardBody card={APPROVAL_ALWAYS} draft={emptyDraft()} />));
+    const buttons = [...container.querySelectorAll('[data-sealed="approve"], [data-sealed="deny"]')];
+    expect(buttons.map((b) => [b.getAttribute("data-option"), b.getAttribute("data-look")])).toEqual([
+      ["always", "label"],
+      ["deny", "cross"],
+      ["once", "check"],
+    ]);
+  });
+
+  test("a card that lists no options gets the first of each kind", () => {
+    const { container } = render(withKit(<CardBody card={LINK} draft={emptyDraft()} />));
+    const buttons = [...container.querySelectorAll('[data-sealed="approve"], [data-sealed="deny"]')];
+    expect(buttons.map((b) => [b.getAttribute("data-option"), b.getAttribute("data-look")])).toEqual([
+      [null, "cross"],
+      [null, "open"],
+    ]);
   });
 });
 

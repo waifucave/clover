@@ -140,9 +140,9 @@ describe("the speech feed", () => {
   test("the app side stamps each hop with when it is heard", () => {
     const frames = speechFrames(vowel("a", 0.1), RATE, 2.5);
     expect(frames.length).toBe(Math.ceil((0.1 * RATE) / FFT_SIZE));
-    expect(frames[0]!.at).toBe(2.5);
-    expect(frames[1]!.at).toBeCloseTo(2.5 + FFT_SIZE / RATE, 9);
-    expect(frames[0]!.duration).toBeCloseTo(FFT_SIZE / RATE, 9);
+    expect(frames[0]!.t).toBe(2.5);
+    expect(frames[1]!.t).toBeCloseTo(2.5 + FFT_SIZE / RATE, 9);
+    expect(Object.keys(frames[0]!).sort()).toEqual(["centroid", "rms", "t"]);
     expect(frames[5]!.rms).toBeGreaterThan(0.05);
     expect(frames[5]!.centroid).toBeGreaterThan(0);
   });
@@ -154,8 +154,25 @@ describe("the speech feed", () => {
     expect(ring.frameAt(1.05)!.rms).toBeGreaterThan(0.05);
     expect(ring.frameAt(1.3)).toBeNull();
     // A frame that is not a number in every field is dropped, never drawn.
-    ring.push([{ at: 5, duration: 0.01, rms: Number.NaN, centroid: 900 }]);
-    expect(ring.frameAt(5.005)).toBeNull();
+    ring.push([{ t: 5, rms: Number.NaN, centroid: 900 }]);
+    expect(ring.frameAt(5.001)).toBeNull();
+  });
+
+  test("a frame is heard until the next, never past 50 ms: a feed that stalls goes quiet", () => {
+    const ring = new SpeechRing(RATE, 0);
+    ring.push([
+      { t: 1, rms: 0.2, centroid: 800 },
+      { t: 1.01, rms: 0.3, centroid: 900 },
+      { t: 1.2, rms: 0.4, centroid: 1000 },
+    ]);
+    expect(ring.frameAt(1.005)!.rms).toBe(0.2);
+    expect(ring.frameAt(1.015)!.rms).toBe(0.3);
+    // 190 ms to the next frame: the one before it is heard for 50 ms, then silence.
+    expect(ring.frameAt(1.05)!.rms).toBe(0.3);
+    expect(ring.frameAt(1.1)).toBeNull();
+    // The newest is heard for 50 ms at most (its hop before it was longer).
+    expect(ring.frameAt(1.24)!.rms).toBe(0.4);
+    expect(ring.frameAt(1.3)).toBeNull();
   });
 
   test("lip-sync reads the feed at the audio clock: the mouth opens on the vowel, bright for i, dark for a", () => {

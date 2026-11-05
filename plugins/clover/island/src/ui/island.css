@@ -237,7 +237,7 @@
   position: absolute;
   inset: 0;
   z-index: -1;
-  border-radius: 50%;
+  border-radius: inherit;
   pointer-events: none;
   transition: box-shadow 150ms ease-out;
 }
@@ -252,6 +252,24 @@
 .clv-sealed-slot[data-role="accept"] {
   background: var(--clover-island-accept, #C2387A);
   color: var(--clover-island-accept-text, #FFFFFF);
+}
+
+/* An answer that carries its own sealed label ("Always allow"): a capsule as tall as the circles. */
+.clv-sealed-slot[data-look="label"] {
+  width: auto;
+  min-width: 30px;
+  border-radius: 15px;
+  padding: 0 4px;
+  font-size: var(--clover-font-size-label, 12px);
+  font-weight: 600;
+  background: var(--clover-island-option, #FFFFFF1F);
+  color: var(--clover-island-text, #FFFFFF);
+}
+
+.clv-sealed-slot[data-look="label"] > * {
+  border-radius: inherit;
+  padding: 0 8px;
+  white-space: nowrap;
 }
 
 .clv-circle[data-role="refuse"]:hover::before,

@@ -5,9 +5,10 @@
 //
 // Names: dot-separated segments of lowercase letters and digits, each starting with a letter
 // (`color.text.muted`). A token is a CSS custom property inside the part a theme dresses: `--clover-`
-// and the name with its dots as hyphens (`--clover-color-text-muted`). A plugin's own tokens are
-// `<top-level plugin id>.<name>`; the hyphens an id may hold become underscores
-// (`mcp-blender.glow` → `--clover-mcp_blender-glow`), so the map stays one to one.
+// and the name with its dots as hyphens (`--clover-color-text-muted`). A plugin's own tokens live under
+// the reserved group `plugin`: `plugin.<top-level id>.<name>`; the hyphens an id may hold become
+// underscores (`plugin.mcp-blender.glow` → `--clover-plugin-mcp_blender-glow`), so the map stays one to
+// one and no plugin can ever name a catalog token.
 //
 // `card.*` is the set sealed approval frames take (spec §5.5); keep it self-contained: a card value
 // never derives from another token, so restyling the accent never silently restyles approval cards.
@@ -187,20 +188,26 @@ export function isTokenName(name: string): boolean {
   return name.length <= 128 && NAME.test(name);
 }
 
-/** The catalog's first segments (`color`, `card`, …). A plugin whose top-level id is one of them has no
- *  tokens of its own, so its names can never be mistaken for the catalog's. */
-export const TOKEN_GROUPS: ReadonlySet<string> = new Set(TOKENS.map((spec) => spec.name.split(".")[0]!));
+/** The reserved group a plugin's own tokens live under (lane B). */
+export const PLUGIN_TOKEN_GROUP = "plugin";
 
-/** A plugin's own token, `<top-level plugin id>.<name>` (`luna.glow.soft`); the id may hold hyphens. */
+/** Any plugin's own token name: `plugin.<top-level id>.<name>`, the id with single hyphens. */
+export const PLUGIN_TOKEN_NAME_RE = /^plugin\.[a-z][a-z0-9]*(-[a-z0-9]+)*(\.[a-z][a-z0-9]*)+$/;
+
+/** A plugin's own token name, for one plugin: `pluginTokenName("luna", "glow.soft")` → `plugin.luna.glow.soft`. */
+export function pluginTokenName(pluginTopId: string, name: string): string {
+  return `${PLUGIN_TOKEN_GROUP}.${pluginTopId}.${name}`;
+}
+
+/** Whether `name` is one of this plugin's own tokens (`plugin.<its top-level id>.…`). */
 export function isPluginTokenName(name: string, pluginTopId: string): boolean {
-  if (TOKEN_GROUPS.has(pluginTopId) || !name.startsWith(`${pluginTopId}.`) || name.length > 128) return false;
-  return NAME.test(name.slice(pluginTopId.length + 1));
+  return name.length <= 128 && name.startsWith(`${PLUGIN_TOKEN_GROUP}.${pluginTopId}.`) && PLUGIN_TOKEN_NAME_RE.test(name);
 }
 
 /** The CSS custom property a token sets: `color.text.muted` → `--clover-color-text-muted`. Dots become
  *  hyphens; the hyphens a plugin id may hold become underscores, so the map is one to one. */
 export function cssProperty(name: string): string {
-  if (!/^[a-z0-9][a-z0-9.-]*$/.test(name)) throw new Error(`not a token name: ${name}`);
+  if (name.length > 128 || !(NAME.test(name) || PLUGIN_TOKEN_NAME_RE.test(name))) throw new Error(`not a token name: ${name}`);
   return `--clover-${name.replace(/-/g, "_").replace(/\./g, "-")}`;
 }
 

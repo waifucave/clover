@@ -13,7 +13,7 @@
 // is held to lane B's rule first: nothing that could break out of the property (`unsafeValue`).
 
 import { isHexColor } from "./contrast";
-import { cssProperty, isPluginTokenName, isTokenName, TOKEN_GROUPS, tokenSpec, type TokenType } from "./catalog";
+import { cssProperty, isPluginTokenName, isTokenName, PLUGIN_TOKEN_GROUP, PLUGIN_TOKEN_NAME_RE, tokenSpec, type TokenType } from "./catalog";
 
 export type Text = string | ({ en: string } & Record<string, string>);
 export type TokenValue = string | number;
@@ -40,9 +40,10 @@ export function isPluginPath(path: unknown): path is string {
   return path.split("/").every((segment) => segment !== ".." && segment !== "");
 }
 
-// Lane B's `UNSAFE` (packages/plugin-sdk/src/catalogs/tokens.ts): no `;`, braces, `@`, `<`, `>`,
-// backslashes or comments, and no function that loads something, whatever the token's type.
-const UNSAFE = /[;{}\\@<>]|\/\*|url\s*\(|expression\s*\(|image-set|image\s*\(|element\s*\(/i;
+// Lane B's `isSafeTokenValue` (packages/plugin-sdk/src/catalogs/tokens.ts): a finite number, or a string of at
+// most 300 characters on one line, with no `;`, braces, angle brackets, `@`, backslash, comment, open quote or
+// `!important`, and no `url(`, `src(`, `image(`, `image-set`, `cross-fade`, `element(` or `expression(`.
+const UNSAFE = /[;{}\\@<>\n\r\f\0]|\/\*|url\s*\(|src\s*\(|expression\s*\(|image-set|image\s*\(|element\s*\(|cross-fade|!\s*important/i;
 const MAX_VALUE = 300;
 
 /** Why a value could never sit in a CSS custom property, or null when it can. */
@@ -50,12 +51,12 @@ export function unsafeValue(value: unknown): string | null {
   if (typeof value === "number") return Number.isFinite(value) ? null : "is not a finite number";
   if (typeof value !== "string") return "is neither a string nor a number";
   if (value.length > MAX_VALUE) return `is longer than ${MAX_VALUE} characters`;
-  if (UNSAFE.test(value)) return "holds characters a token may not (;, braces, @, <, >, a backslash, a comment, url(, image-set, image(, element(, expression()";
+  if (UNSAFE.test(value)) return "holds what a token may not (a line break, ;, braces, @, <, >, a backslash, a comment, !important, url(, src(, image(, image-set, cross-fade, element(, expression()";
+  // A quote left open would run on past the value.
+  if ((value.match(/"/g)?.length ?? 0) % 2 !== 0 || (value.match(/'/g)?.length ?? 0) % 2 !== 0) return "leaves a quote open";
   return null;
 }
 
-/** A plugin's own token name when its top-level id is not known: `<id>.<name>`, the id possibly hyphenated. */
-const ANY_PLUGIN_TOKEN = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z][a-z0-9]*)+$/;
 const DIMENSION = /^(0|-?\d+(\.\d+)?px)$/;
 const DURATION = /^\d+(\.\d+)?ms$/;
 const EASING = /^(linear|ease|ease-in|ease-out|ease-in-out|cubic-bezier\(\s*-?[\d.]+(\s*,\s*-?[\d.]+){3}\s*\)|linear\([\d.,%\s-]+\))$/;
@@ -95,14 +96,14 @@ export function checkValue(type: TokenType, value: TokenValue): string | null {
 export interface CheckThemeOptions {
   /** Refuse tokens the catalog does not list: how the themes we ship are held to it. */
   strict?: boolean;
-  /** The theme's plugin's top-level id: its own tokens are `<id>.<name>` (lane B's `isPluginTokenName`). Without
-   *  it, a non-strict check takes any `<id>.<name>` whose id could be a plugin's. */
+  /** The theme's plugin's top-level id: its own tokens are `plugin.<id>.<name>` (lane B's `isPluginTokenName`).
+   *  Without it, a non-strict check takes any plugin's own token name. */
   plugin?: string;
 }
 
-/** A plugin's own token when the plugin is not known: `<id>.<name>`, the id never one of the catalog's groups. */
+/** A plugin's own token when the plugin is not known: `plugin.<id>.<name>`. */
 function isAnyPluginToken(name: string): boolean {
-  return name.length <= 128 && ANY_PLUGIN_TOKEN.test(name) && !TOKEN_GROUPS.has(name.slice(0, name.indexOf(".")));
+  return name.length <= 128 && PLUGIN_TOKEN_NAME_RE.test(name);
 }
 
 function checkTokens(where: string, tokens: unknown, problems: string[], options: CheckThemeOptions): void {
@@ -113,7 +114,9 @@ function checkTokens(where: string, tokens: unknown, problems: string[], options
   for (const [name, value] of Object.entries(tokens)) {
     const spec = tokenSpec(name);
     const own = !spec && (options.plugin !== undefined ? isPluginTokenName(name, options.plugin) : isAnyPluginToken(name));
-    if (!spec && !own && !isTokenName(name)) {
+    // The `plugin` group holds plugins' own tokens only; anything else must read as a catalog name.
+    const reserved = name === PLUGIN_TOKEN_GROUP || name.startsWith(`${PLUGIN_TOKEN_GROUP}.`);
+    if (!spec && !own && (reserved || !isTokenName(name))) {
       problems.push(`${where}: "${name}" is not a token name`);
       continue;
     }
@@ -180,8 +183,11 @@ export function readTheme(json: unknown, options: CheckThemeOptions = {}): Theme
   return json as ThemeFile;
 }
 
-/** The tokens a theme gives in one appearance. */
+/** The tokens a theme gives in one appearance: none in an appearance it does not name (lane B: a light-only theme
+ *  does nothing in dark), and in dark its `dark.tokens` over its `tokens`. */
 export function tokensFor(theme: ThemeFile, appearance: Appearance): Tokens {
+  const names = theme.appearance ?? "both";
+  if (names !== "both" && names !== appearance) return {};
   return appearance === "dark" ? { ...theme.tokens, ...(theme.dark?.tokens ?? {}) } : { ...theme.tokens };
 }
 

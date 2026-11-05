@@ -7,7 +7,8 @@ import type { CSSProperties, ReactElement } from "react";
 import { Glyph } from "./ui/glyphs";
 import { MIN_SEALED_BUTTON, SealedCardIdProvider, tokenProperty, useSealedCardId, type SealedButtonProps, type SealedCardKit, type SealedField, type SealedFieldProps } from "./ui/sealed";
 
-export type SealedFixtures = Readonly<Record<string, Partial<Record<SealedField, string>>>>;
+/** Each card's field text, and its options' labels by id (what the core's frames would draw). */
+export type SealedFixtures = Readonly<Record<string, Partial<Record<SealedField, string>> & { readonly options?: Readonly<Record<string, string>> }>>;
 
 export function mockSealedKit(fixtures: SealedFixtures, onAnswer?: (cardId: string, approved: boolean) => void): SealedCardKit {
   function Field({ name, lines, className }: SealedFieldProps): ReactElement {
@@ -23,20 +24,22 @@ export function mockSealedKit(fixtures: SealedFixtures, onAnswer?: (cardId: stri
     );
   }
   function button(approved: boolean) {
-    return function SealedButton({ look, size = 30, className }: SealedButtonProps): ReactElement {
+    return function SealedButton({ option, look = "label", size = 30, className }: SealedButtonProps): ReactElement {
       const id = useSealedCardId();
       const side = Math.max(size, MIN_SEALED_BUTTON);
+      const label = (id && option && fixtures[id]?.options?.[option]) || (approved ? (look === "open" ? "Open the link" : "Allow once") : look === "open" ? "Decline the link" : "Deny");
       return (
         <button
           type="button"
           className={className}
           data-sealed={approved ? "approve" : "deny"}
+          data-option={option}
           data-look={look}
-          aria-label={approved ? (look === "open" ? "Open the link" : "Allow once") : look === "open" ? "Decline the link" : "Deny"}
-          style={{ width: side, height: side }}
+          aria-label={label}
+          style={look === "label" ? { minWidth: side, height: side } : { width: side, height: side }}
           onClick={() => id && onAnswer?.(id, approved)}
         >
-          <Glyph name={look === "cross" ? "xmark" : look === "open" ? "open" : "check"} size={12} />
+          {look === "label" ? label : <Glyph name={look === "cross" ? "xmark" : look === "open" ? "open" : "check"} size={12} />}
         </button>
       );
     };

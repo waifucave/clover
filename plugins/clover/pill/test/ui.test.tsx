@@ -153,6 +153,7 @@ describe("cards", () => {
     const answering = mockSealedKit(SEALED, (id, approved) => answers.push([id, approved]));
     const { container } = render(withKit(<CardBody card={APPROVAL} draft={emptyDraft()} waiting={1} />, answering));
     for (const words of Object.values(SEALED["ask-1"]!)) {
+      if (typeof words !== "string") continue;
       const holder = [...container.querySelectorAll("*")].find((el) => el.children.length === 0 && el.textContent === words);
       expect(holder?.closest("[data-sealed]"), words).toBeTruthy();
     }

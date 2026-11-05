@@ -26,6 +26,7 @@ import {
   questionAnswers,
   questionHeader,
   questionPosition,
+  sealedButtons,
   typeOther,
   waitingLine,
   type Question,
@@ -463,5 +464,28 @@ describe("question cards", () => {
     d = typeOther(d, multi, 1, "d.ts");
     expect(draftComplete(card.questions, d)).toBe(true);
     expect(questionAnswers(card.questions, d)).toEqual({ "Which branch?": "main", "Which files?": "a.ts, d.ts" });
+  });
+});
+
+describe("sealed buttons (lane B: one per option)", () => {
+  test("an \"always\" answer on its own label, then ✕, then ✓; a link's approve is ↗", () => {
+    const options = [
+      { id: "deny", kind: "deny" as const },
+      { id: "always", kind: "approve" as const, remember: "always" as const },
+      { id: "once", kind: "approve" as const },
+    ];
+    expect(sealedButtons({ kind: "approval", options })).toEqual([
+      { approve: true, option: "always", look: "label" },
+      { approve: false, option: "deny", look: "cross" },
+      { approve: true, option: "once", look: "check" },
+    ]);
+    expect(sealedButtons({ kind: "link", options: [{ id: "open", kind: "approve" }, { id: "no", kind: "deny" }] }).map((b) => b.look)).toEqual(["cross", "open"]);
+  });
+
+  test("no options listed: the first of each kind", () => {
+    expect(sealedButtons({ kind: "approval" })).toEqual([
+      { approve: false, look: "cross" },
+      { approve: true, look: "check" },
+    ]);
   });
 });

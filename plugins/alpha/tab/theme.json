@@ -84,5 +84,5 @@
       "avatar.exposure": 0.95
     }
   },
-  "css": "theme.css"
+  "css": "tab/theme.css"
 }

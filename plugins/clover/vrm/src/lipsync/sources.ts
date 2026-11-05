@@ -13,26 +13,30 @@
 import { FFT_SIZE, rmsOf, spectralCentroidOf } from "./features";
 import { MouthSmoother, SHUT, visemeWeights, type VisemeWeights } from "./visemes";
 
-/** One frame of the speech the app plays: the shape the `avatar` spot's speech feed carries (asked of lanes B and
- *  E). Frames come in time order, one per analysis hop, each a few milliseconds long. */
+/** One frame of the speech the app plays: lane B's provisional `SpeechFrame` (the `avatar` spot's `speech` feed).
+ *  Frames come in time order, one per analysis hop (256 samples at 48 kHz is 5.3 ms), a little ahead of when they
+ *  play; each is heard until the next one, at most `MAX_FRAME_SECONDS`, so a feed that stalls reads as silence. */
 export interface SpeechFrame {
-  /** When it is heard: seconds on the audio clock (`AudioContext.currentTime`), the output's latency added. */
-  readonly at: number;
-  /** How long it lasts, in seconds: the hop between frames (256 samples at 48 kHz is 5.3 ms). */
-  readonly duration: number;
-  /** Loudness: the RMS of the frame's samples, on −1…1. */
+  /** When it plays: seconds on the layer's audio clock (`AudioContext.currentTime`), output latency already added. */
+  readonly t: number;
+  /** Loudness, 0 to 1: the RMS of the frame's samples. */
   readonly rms: number;
   /** Brightness: the frame's spectral centroid, in hertz; 0 for a silent frame. */
   readonly centroid: number;
 }
 
-/** The `avatar` spot's speech: frames pushed as the app analyses what it plays, and the clock they are stamped in. */
+/** The `avatar` spot's `speech` prop (lane B's `SpeechFeed`): frames as the app makes them, and its audio clock. */
 export interface SpeechFeed {
-  /** The audio clock now, in seconds: what each frame's `at` is measured on. */
+  /** Frames as they're made, in time order, a little ahead of when they play; returns how to stop. */
+  subscribe(listener: (frames: readonly SpeechFrame[]) => void): () => void;
+  /** The audio clock now, in the frames' seconds. */
   now(): number;
-  /** Takes every batch of frames pushed from here on; returns how to stop. */
-  subscribe(onFrames: (frames: readonly SpeechFrame[]) => void): () => void;
 }
+
+/** The longest a frame is heard for: to the next frame, never longer than this. */
+export const MAX_FRAME_SECONDS = 0.05;
+/** A frame with nothing before or after it to measure its hop by is heard for one hop. */
+const LONE_FRAME_SECONDS = FFT_SIZE / 48000;
 
 /**
  * The app side of the feed, for reference: the speech it plays, cut into hops and measured, each stamped with when
@@ -43,7 +47,7 @@ export function speechFrames(samples: Float32Array, sampleRate: number, startTim
   const frames: SpeechFrame[] = [];
   for (let i = 0; i < samples.length; i += hop) {
     const window = samples.subarray(i, Math.min(samples.length, i + FFT_SIZE));
-    frames.push({ at: startTime + i / sampleRate, duration: hop / sampleRate, rms: rmsOf(window), centroid: spectralCentroidOf(window, sampleRate) });
+    frames.push({ t: startTime + i / sampleRate, rms: Math.min(1, rmsOf(window)), centroid: spectralCentroidOf(window, sampleRate) });
   }
   return frames;
 }
@@ -113,7 +117,7 @@ export class SpeechRing {
   /** Frames from the feed, in time order. */
   push(frames: readonly SpeechFrame[]): void {
     for (const frame of frames) {
-      if (!(Number.isFinite(frame.at) && Number.isFinite(frame.duration) && frame.duration > 0 && Number.isFinite(frame.rms) && Number.isFinite(frame.centroid))) continue;
+      if (!(Number.isFinite(frame.t) && Number.isFinite(frame.rms) && Number.isFinite(frame.centroid))) continue;
       this.newest = (this.newest + 1) % RING_FRAMES;
       this.frames[this.newest] = frame;
     }
@@ -122,12 +126,18 @@ export class SpeechRing {
   /** The pushed frame sounding at `time` (seconds, audio clock), or null: nothing pushed covers it. */
   frameAt(time: number): SpeechFrame | null {
     if (this.newest < 0) return null;
+    const at = (k: number) => this.frames[(((this.newest - k) % RING_FRAMES) + RING_FRAMES) % RING_FRAMES] ?? null;
+    let later: SpeechFrame | null = null;
     for (let k = 0; k < RING_FRAMES; k++) {
-      const frame = this.frames[(this.newest - k + RING_FRAMES) % RING_FRAMES];
+      const frame = at(k);
       if (!frame) return null;
-      if (frame.at <= time && time < frame.at + frame.duration) return frame;
-      // Older frames only get earlier; one that ended a second ago ends the search.
-      if (frame.at + frame.duration < time - 1) return null;
+      if (frame.t <= time) {
+        // Heard until the next frame; the newest, for as long as the hop before it.
+        const earlier = at(k + 1);
+        const span = later ? later.t - frame.t : earlier && earlier.t < frame.t ? frame.t - earlier.t : LONE_FRAME_SECONDS;
+        return time < frame.t + Math.min(span, MAX_FRAME_SECONDS) ? frame : null;
+      }
+      later = frame;
     }
     return null;
   }

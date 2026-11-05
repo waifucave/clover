@@ -41,11 +41,47 @@ interface CardBase {
 
 export interface ApprovalCard extends CardBase {
   kind: "approval";
+  /** Its answers' ids and kinds; absent, one approve and one deny. */
+  options?: readonly CardOptionMeta[];
 }
 
+/** A link to open (lane B's `elicitation` card kind). */
 export interface LinkCard extends CardBase {
   kind: "link";
+  options?: readonly CardOptionMeta[];
 }
+/** A sealed card's answer, as `approvals.watch` lists it (`CardMeta.options`): its id and kind, never its label. */
+export interface CardOptionMeta {
+  id: string;
+  kind: "approve" | "deny";
+  /** The "always allow" answer: its sealed label says so. */
+  remember?: "always";
+}
+
+/** A sealed button to place: which answer, and how it looks. */
+export interface SealedButtonPlan {
+  approve: boolean;
+  /** The option's id; absent, the first option of its kind. */
+  option?: string;
+  look: "label" | "check" | "cross" | "open";
+}
+
+/**
+ * One sealed button per option (lane B: one `<Card.Approve option>` per approve option, one `<Card.Deny option>` per
+ * deny option), in this order: an "always" answer on its own sealed label, then ✕, then ✓ (↗ for a link) at the
+ * trailing end. A card that lists no options gets the first of each kind.
+ */
+export function sealedButtons(card: { kind: "approval" | "link"; options?: readonly CardOptionMeta[] }): SealedButtonPlan[] {
+  const accept: SealedButtonPlan["look"] = card.kind === "link" ? "open" : "check";
+  const options = card.options ?? [];
+  if (options.length === 0) return [{ approve: false, look: "cross" }, { approve: true, look: accept }];
+  return [
+    ...options.filter((o) => o.kind === "approve" && o.remember === "always").map((o) => ({ approve: true, option: o.id, look: "label" as const })),
+    ...options.filter((o) => o.kind === "deny").map((o) => ({ approve: false, option: o.id, look: "cross" as const })),
+    ...options.filter((o) => o.kind === "approve" && o.remember !== "always").map((o) => ({ approve: true, option: o.id, look: accept })),
+  ];
+}
+
 
 export interface QuestionCard extends CardBase {
   kind: "question";

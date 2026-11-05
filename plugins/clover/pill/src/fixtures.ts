@@ -18,23 +18,40 @@ export const TARGETS: readonly PillTarget[] = [ALPHA, LUNA, MORI];
 export const APPROVAL: ApprovalCard = { id: "ask-1", kind: "approval", source: { id: "alpha", name: "Alpha" }, computer: "Studio" };
 export const APPROVAL_CHILD: ApprovalCard = { id: "ask-2", kind: "approval", source: { id: "agent-2", name: "Screenshot pass" }, computer: "Studio" };
 export const LINK: LinkCard = { id: "ask-3", kind: "link", source: { id: "alpha", name: "Alpha" } };
+/** An approval whose answers include "always allow": three sealed buttons, each its option. */
+export const APPROVAL_ALWAYS: ApprovalCard = {
+  id: "ask-5",
+  kind: "approval",
+  source: { id: "luna", name: "Luna" },
+  computer: "Studio",
+  options: [
+    { id: "once", kind: "approve" },
+    { id: "always", kind: "approve", remember: "always" },
+    { id: "deny", kind: "deny" },
+  ],
+};
 
 export const SEALED: SealedFixtures = {
   "ask-1": {
     source: "Alpha · Bash",
-    ask: "Run a command that deletes the build folder and rebuilds the site",
+    what: "Run a command that deletes the build folder and rebuilds the site",
     command: "rm -rf dist && bun run build",
     risk: "Deletes files, inside the project only",
   },
   "ask-2": {
     source: "Screenshot pass · Computer use",
-    ask: "Take control of Safari to capture the settings page",
+    what: "Take control of Safari to capture the settings page",
     command: "computer: open Safari, click Settings",
   },
   "ask-3": {
     source: "Alpha · GitHub",
-    ask: "GitHub asks you to sign in to finish connecting",
+    what: "GitHub asks you to sign in to finish connecting",
     host: "github.com",
+  },
+  "ask-5": {
+    source: "Luna · WebFetch",
+    what: "Read pages on wikipedia.org",
+    options: { once: "Allow once", always: "Always allow", deny: "Deny" },
   },
 };
 

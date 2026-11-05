@@ -21,7 +21,7 @@ import { SealedCardContent } from "../src/ui/CardContent";
 import { ISLAND_CSS } from "../src/ui/styles";
 import { ISLAND_CARD_SOURCES, MIN_SEALED_BUTTON, SealedKitContext, tokenProperty, type SealedCardKit } from "../src/ui/sealed";
 import { mockSealedKit } from "../src/mock-kit";
-import { APPROVAL, APPROVAL_2, LINK, NO_NOTCH, NOTCH, QUESTION, SEALED } from "../src/fixtures";
+import { APPROVAL, APPROVAL_2, APPROVAL_ALWAYS, LINK, NO_NOTCH, NOTCH, QUESTION, SEALED } from "../src/fixtures";
 import type { IslandCard } from "../src/model/cards";
 
 const kit = mockSealedKit(SEALED);
@@ -33,7 +33,8 @@ function assertVisible(container: HTMLElement): void {
   expect(sealedProblems(container, ISLAND_CSS)).toEqual([]);
   for (const button of container.querySelectorAll('[data-sealed="approve"], [data-sealed="deny"]')) {
     const style = (button as HTMLElement).style;
-    expect(parseFloat(style.width)).toBeGreaterThanOrEqual(MIN_SEALED_BUTTON);
+    // A glyph button is a square; one carrying its own label is at least that wide.
+    expect(parseFloat(style.width || style.minWidth)).toBeGreaterThanOrEqual(MIN_SEALED_BUTTON);
     expect(parseFloat(style.height)).toBeGreaterThanOrEqual(MIN_SEALED_BUTTON);
   }
 }
@@ -89,6 +90,24 @@ describe("sealed parts stay visible at rest", () => {
       assertVisible(container);
       unmount();
     }
+  });
+
+  test("an approval with an \"always\" answer: one sealed button per option, each its own, all visible", () => {
+    const { container } = render(
+      withKit(
+        <LiquidCard geometry={g}>
+          <SealedCardContent card={APPROVAL_ALWAYS} hover="accept" />
+        </LiquidCard>,
+      ),
+    );
+    assertVisible(container);
+    const buttons = [...container.querySelectorAll('[data-sealed="approve"], [data-sealed="deny"]')];
+    expect(buttons.map((b) => [b.getAttribute("data-option"), b.getAttribute("data-look")])).toEqual([
+      ["always", "label"],
+      ["deny", "cross"],
+      ["once", "check"],
+    ]);
+    expect(buttons[0]!.textContent).toBe("Always allow");
   });
 
   test("but not while the card is still being born (its clicks do not count yet)", () => {
@@ -252,6 +271,6 @@ describe("Needs you", () => {
     const { container } = render(withKit(<NeedsYou cards={[APPROVAL]} />));
     const card = container.querySelector("[data-sealed-card]")!;
     const order = [...card.querySelectorAll("[data-sealed]")].map((el) => el.getAttribute("data-field") ?? el.getAttribute("data-sealed"));
-    expect(order).toEqual(["source", "ask", "deny", "approve", "risk", "command"]);
+    expect(order).toEqual(["source", "what", "deny", "approve", "risk", "command"]);
   });
 });

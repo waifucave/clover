@@ -11,6 +11,7 @@ import type { ReactElement } from "react";
 import {
   answerLabels,
   questionAnswered,
+  sealedButtons,
   questionHeader,
   questionPosition,
   type ApprovalCard,
@@ -49,7 +50,7 @@ export function SealedCardContent({ card, lines = 4, withCommand = false, hover 
         </div>
         <div className="clv-answer-line">
           <div className="clv-answer-words">
-            <kit.Field name="ask" lines={lines} />
+            <kit.Field name="what" lines={lines} />
             {card.kind === "link" ? (
               <span className="clv-host-line">
                 <Glyph name="lock" />
@@ -57,8 +58,15 @@ export function SealedCardContent({ card, lines = 4, withCommand = false, hover 
               </span>
             ) : null}
           </div>
-          <SealedSlot approve={false} look="cross" hover={hover === "refuse"} />
-          <SealedSlot approve look={card.kind === "link" ? "open" : "check"} hover={hover === "accept"} />
+          {sealedButtons(card).map((button) => (
+            <SealedSlot
+              key={button.option ?? (button.approve ? "approve" : "deny")}
+              approve={button.approve}
+              option={button.option}
+              look={button.look}
+              hover={button.look !== "label" && hover === (button.approve ? "accept" : "refuse")}
+            />
+          ))}
         </div>
         {card.kind === "approval" ? <kit.Field name="risk" lines={2} className="clv-risk" /> : null}
         {withCommand && card.kind === "approval" ? <kit.Field name="command" className="clv-command" lines={6} /> : null}

@@ -11,6 +11,8 @@ import {
   cssRule,
   cssVariables,
   isTokenName,
+  pluginTokenName,
+  readTheme,
   stack,
   tokensFor,
 } from "../src/index";
@@ -186,29 +188,43 @@ describe("checkTheme", () => {
   });
 
   test("lets a lenient reader pass tokens it does not know", () => {
-    expect(checkTheme({ theme: 1, name: "x", tokens: { "luna.sparkle": "#FFFFFF" } })).toEqual([]);
-    expect(checkTheme({ theme: 1, name: "x", tokens: { "luna.sparkle": "#FFFFFF" } }, { strict: true })).toHaveLength(1);
+    expect(checkTheme({ theme: 1, name: "x", tokens: { "plugin.luna.sparkle": "#FFFFFF" } })).toEqual([]);
+    expect(checkTheme({ theme: 1, name: "x", tokens: { "plugin.luna.sparkle": "#FFFFFF" } }, { strict: true })).toHaveLength(1);
   });
 
   test("holds every value to what a custom property may hold, a token it does not know included", () => {
     const injection = "red; } body { background: url(https://evil.test/x.png) } x {";
-    expect(checkTheme({ theme: 1, name: "x", tokens: { "luna.sparkle": injection } })).toHaveLength(1);
+    expect(checkTheme({ theme: 1, name: "x", tokens: { "plugin.luna.sparkle": injection } })).toHaveLength(1);
     expect(checkTheme({ theme: 1, name: "x", tokens: { "color.unlisted": injection } })).toHaveLength(1);
-    for (const value of ["image-set('https://evil.test/x.png' 1x)", "a\\62 c", "x /* y */", "<b>", "@x", "x".repeat(301)]) {
-      expect(checkTheme({ theme: 1, name: "x", tokens: { "luna.sparkle": value } }), value).toHaveLength(1);
+    for (const value of ["image-set('https://evil.test/x.png' 1x)", "src('x')", "cross-fade(red, blue)", "a\\62 c", "x /* y */", "<b>", "@x", "red !important", "a\nb", '"open', "x".repeat(301)]) {
+      expect(checkTheme({ theme: 1, name: "x", tokens: { "plugin.luna.sparkle": value } }), value).toHaveLength(1);
     }
-    expect(() => cssRule(".x", { "luna.sparkle": injection })).toThrow();
+    expect(checkTheme({ theme: 1, name: "x", tokens: { "plugin.luna.face": '"Iowan Old Style", serif' } })).toEqual([]);
+    expect(() => cssRule(".x", { "plugin.luna.sparkle": injection })).toThrow();
     expect(() => cssVariables({ "color.text": "red;}" })).toThrow();
   });
 
-  test("takes a plugin's own tokens by lane B's names: its top-level id, hyphens and all", () => {
-    expect(checkTheme({ theme: 1, name: "x", tokens: { "mcp-blender.glow.soft": "#FFFFFF" } })).toEqual([]);
-    expect(checkTheme({ theme: 1, name: "x", tokens: { "mcp-blender.glow": "#FFFFFF" } }, { strict: true, plugin: "mcp-blender" })).toEqual([]);
-    expect(checkTheme({ theme: 1, name: "x", tokens: { "luna.glow": "#FFFFFF" } }, { strict: true, plugin: "mcp-blender" })).toHaveLength(1);
-    // A catalog group is never a plugin's id.
-    expect(checkTheme({ theme: 1, name: "x", tokens: { "color.glow": "#FFFFFF" } }, { strict: true, plugin: "color" })).toHaveLength(1);
-    expect(checkTheme({ theme: 1, name: "x", tokens: { "-bad.glow": "#FFFFFF", "mcp-.glow": "#FFFFFF" } })).toHaveLength(2);
-    expect(cssProperty("mcp-blender.glow")).toBe("--clover-mcp_blender-glow");
+  test("takes a plugin's own tokens by lane B's names: plugin.<its top-level id>, hyphens and all", () => {
+    expect(checkTheme({ theme: 1, name: "x", tokens: { "plugin.mcp-blender.glow.soft": "#FFFFFF" } })).toEqual([]);
+    expect(checkTheme({ theme: 1, name: "x", tokens: { "plugin.mcp-blender.glow": "#FFFFFF" } }, { strict: true, plugin: "mcp-blender" })).toEqual([]);
+    expect(checkTheme({ theme: 1, name: "x", tokens: { "plugin.luna.glow": "#FFFFFF" } }, { strict: true, plugin: "mcp-blender" })).toHaveLength(1);
+    // The group is reserved: no other name may sit under it, and no plugin id can name a catalog token.
+    expect(checkTheme({ theme: 1, name: "x", tokens: { "plugin.glow": "#FFFFFF" } })).toHaveLength(1);
+    expect(checkTheme({ theme: 1, name: "x", tokens: { "mcp-blender.glow": "#FFFFFF", "plugin.-bad.glow": "#FFFFFF" } })).toHaveLength(2);
+    expect(cssProperty("plugin.mcp-blender.glow")).toBe("--clover-plugin-mcp_blender-glow");
+    expect(pluginTokenName("luna", "glow.soft")).toBe("plugin.luna.glow.soft");
+    // Every catalog property differs from every plugin property.
+    const properties = new Set(TOKENS.map((spec) => cssProperty(spec.name)));
+    for (const id of ["color", "card", "island", "mcp-blender"]) expect(properties.has(cssProperty(`plugin.${id}.text`))).toBe(false);
+  });
+
+  test("a theme applies only in the appearances it names", () => {
+    const lightOnly = readTheme({ theme: 1, name: "Day", appearance: "light", tokens: { "color.accent": "#7651DD" } });
+    expect(tokensFor(lightOnly, "light")["color.accent"]).toBe("#7651DD");
+    expect(tokensFor(lightOnly, "dark")).toEqual({});
+    const darkOnly = readTheme({ theme: 1, name: "Night", appearance: "dark", tokens: { "color.accent": "#B9A8FF" } });
+    expect(tokensFor(darkOnly, "light")).toEqual({});
+    expect(tokensFor(darkOnly, "dark")["color.accent"]).toBe("#B9A8FF");
   });
 });
 
@@ -249,8 +265,37 @@ describe("layout format 1", () => {
     expect(problems({ layout: 1, root: { image: "../outside.png" } })[0]).toMatch(/inside the plugin/);
     expect(problems({ layout: 1, root: { image: "https://x.test/a.png" } })[0]).toMatch(/inside the plugin/);
     expect(problems({ layout: 1, root: { spot: "composer", min: 400, max: 200 } })[0]).toMatch(/`min` is more than `max`/);
-    expect(problems({ layout: 1, root: { spot: "composer", grow: -1 } })[0]).toMatch(/0 or more/);
-    expect(problems({ layout: 1, root: { spot: "composer", class: "Bad Class!" } })[0]).toMatch(/lowercase/);
+    expect(problems({ layout: 1, root: { spot: "composer", grow: -1 } })[0]).toMatch(/from 0 to 1000/);
+    expect(problems({ layout: 1, root: { spot: "composer", size: "12 parsecs" } })[0]).toMatch(/CSS length/);
+    expect(problems({ layout: 1, root: { spot: "composer", hideBelow: 1.5 } })[0]).toMatch(/whole number/);
+    expect(problems({ layout: 1, root: { spot: "composer", class: "two classes" } })[0]).toMatch(/one class name/);
     expect(problems({ layout: 1, root: { spot: "composer", onClick: "x" } })[0]).toMatch(/unknown key/);
+    expect(problems({ layout: 1, root: { text: { fr: "Bonjour" } } })[0]).toMatch(/words/);
+    expect(problems({ layout: 1, root: { spot: "avatar", key: "" } })[0]).toMatch(/`key` is a name/);
+    expect(problems({ layout: 1, root: { spot: "sidebar" } })[0]).toMatch(/not a spot here/);
+  });
+
+  test("follows lane B's schema: every bot-tab spot of B's catalog, avatar included, a spot's key, words by language, CSS lengths", async () => {
+    const { checkLayout, BOT_TAB_SPOTS, SPOTS } = await import("../src/layout-check");
+    expect(BOT_TAB_SPOTS).toContain("avatar");
+    expect(BOT_TAB_SPOTS).toEqual(SPOTS.filter((s) => s.inBotTab).map((s) => s.name));
+    for (const outside of ["sidebar", "island.tab", "pill.target", "app.surface"]) expect(BOT_TAB_SPOTS).not.toContain(outside);
+    const check = checkLayout(
+      {
+        $schema: "https://waifucave.com/schemas/layout-1.json",
+        layout: 1,
+        root: {
+          row: [
+            { column: [{ text: { en: "Hello", fr: "Bonjour" } }, { spot: "conversation", grow: 1 }], size: "60%" },
+            { spot: "avatar", key: "vrm", min: "12rem", class: "Alpha_stage" },
+            { tabs: [{ title: { en: "Notes" }, node: { markdown: "notes.md" } }] },
+          ],
+          gap: "1rem",
+        },
+      },
+      { spots: BOT_TAB_SPOTS },
+    );
+    expect(check.problems).toEqual([]);
+    expect(check.spots).toEqual(["conversation", "avatar#vrm"]);
   });
 });
