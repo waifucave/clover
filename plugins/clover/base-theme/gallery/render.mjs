@@ -99,7 +99,9 @@ for (const story of stories) {
             for (const p of parts) {
               const e = seen.get(p);
               const box = p.getBoundingClientRect();
-              if (!atRest(p) || !e || !e.isIntersecting || box.width === 0 || box.height === 0) continue;
+              // Held to it: a part at rest that shows whole (a click counts only on a whole button; a list cut at its
+              // edge shows the rest of a card after a scroll).
+              if (!atRest(p) || !e || !e.isIntersecting || e.intersectionRatio < 0.999 || box.width === 0 || box.height === 0) continue;
               checked++;
               if (!e.isVisible) covered.push(`${p.getAttribute("data-sealed")}${p.getAttribute("data-field") ? `:${p.getAttribute("data-field")}` : ""}${p.getAttribute("data-option") ? `:${p.getAttribute("data-option")}` : ""}`);
             }
