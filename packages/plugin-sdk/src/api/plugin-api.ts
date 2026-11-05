@@ -453,19 +453,28 @@ export interface FilesApi {
   grep(pattern: string, opts: { cwd: string; glob?: string; limit?: number }): Promise<{ matches: { path: string; line: number; text: string }[]; truncated: boolean }>;
 }
 
-/** `terminal`: the user's terminals on their computers (lane F's request; lane J's PTY), for a component that draws
- *  one. Its OK says it runs commands on the user's computers. Components only: what reaches a terminal is the user's,
- *  counted as a send is. `write` passes only from a trusted key or paste event in the component's own layer (the UI
- *  runtime checks), never from its code; a paste goes whole with `paste: true`, bracketed when the program asked for
- *  it, and one of several lines waits for the user's OK first. */
+/** `terminal`: the user's terminals on their computers (lane F's request; lane J's PTY), for the component that draws
+ *  one. Only the bundled `clover` tree holds it (`bundledOnly`, review T1); its OK says it runs commands on the user's
+ *  computers, and a computer at read-only never opens one for a plugin (`refused`). Components only.
+ *  What reaches a terminal is not written by the component: lane E's runtime derives it from trusted input events.
+ *  `input` takes the `keydown` or `paste` event itself; a trusted key press becomes its bytes, and a trusted paste goes
+ *  through the paste door, which takes the clipboard's text, brackets it when the program turned bracketed paste on,
+ *  and asks the user before one of more than one line goes. An untrusted or made-up event sends nothing. */
 export interface TerminalApi {
   /** In a folder of the tree on that computer (its home folder by default); `session` shows it in that panel. */
   open(opts: { computer: string; cwd?: string; session?: string; cols: number; rows: number }): Promise<{ terminalId: string }>;
-  write(terminalId: string, data: string, opts?: { paste?: boolean }): Promise<void>;
+  input(terminalId: string, event: TerminalInputEvent): Promise<void>;
   /** Output as it comes, and `exited` once the shell ends. */
   onData(terminalId: string, fn: (data: string, exited?: { code: number | null }) => void): Unsubscribe;
   resize(terminalId: string, cols: number, rows: number): Promise<void>;
   close(terminalId: string): Promise<void>;
+}
+
+/** A DOM `keydown` `KeyboardEvent` or `paste` `ClipboardEvent` from the terminal's own element, as the browser
+ *  dispatched it; typed loosely, since the SDK carries no DOM types. */
+export interface TerminalInputEvent {
+  readonly type: "keydown" | "paste";
+  readonly isTrusted: boolean;
 }
 
 /** `browser`: the Clover Browser's API (§12.1); DevTools calls pass only allowlisted domains. */

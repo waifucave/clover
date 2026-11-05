@@ -1,0 +1,52 @@
+name: Clover S9 layers
+on:
+  push:
+    branches: [main, lane/e-m0, lane/e-m1]
+    paths: ['spikes/s9-layers/**', '.github/workflows/spike-s9.yml', 'apps/desktop/**/package.json', 'apps/desktop/package.json', 'bun.lock', 'pnpm-lock.yaml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  layers:
+    if: github.event_name != 'workflow_dispatch' || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/lane/e-m0' || github.ref == 'refs/heads/lane/e-m1'
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, windows-2025, ubuntu-24.04]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: spikes/s9-layers/prototype
+        shell: bash
+    env:
+      CLOVER_S9_CI: '1'
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5 (Node 24)
+      - name: Install isolated spike dependencies (no root workspace)
+        run: npm ci --ignore-scripts --workspaces=false
+      - name: Download pinned Electron binary (CI only)
+        run: node node_modules/electron/install.js
+      - name: Configure Chromium sandbox helper on Ubuntu
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y xdotool
+          sudo chown root:root node_modules/electron/dist/chrome-sandbox
+          sudo chmod 4755 node_modules/electron/dist/chrome-sandbox
+      - name: Typecheck and non-launching unit tests
+        run: npm run typecheck && npm test
+      - name: Run all four checks on Linux
+        if: runner.os == 'Linux'
+        run: xvfb-run -a npm run all
+      - name: Run all four checks on macOS and Windows
+        if: runner.os != 'Linux'
+        run: npm run all
+      - name: Upload measurements even on failure
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6 (Node 24)
+        with:
+          name: clover-s9-${{ matrix.os }}
+          path: spikes/s9-layers/prototype/results/
+          retention-days: 14
+          if-no-files-found: error

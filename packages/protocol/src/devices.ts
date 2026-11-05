@@ -105,13 +105,19 @@ export const PairingView = z.object({
 
 /** An append-only stream two devices replicate (§8.5): `transcript:<session>`, `memory:<bot>`, `plugins`,
  *  `credentials`, `settings`, `routines`, `usage`. Lane H settles the streams and their payloads at H-M3.
- *  The rule H-M3 keeps (review N7): a receiver never takes a grant from a peer's stream (`PEER_STREAM_GRANTS`: a
- *  plugin's OK, a computer's level, a saved rule, a raised routine level) without its own card answered here or a
- *  signed answer bound to that change (`verifySignedAnswer`). Such an entry is kept as a request that waits for that
- *  answer; it never takes effect from the stream alone. */
+ *  The rule H-M3 keeps (review N7): a receiver never takes a grant from a peer's stream (`PEER_STREAM_GRANTS`, every
+ *  §5.5 sensitive change) without its own card answered here or a signed answer bound to that change
+ *  (`verifySignedAnswer`). Such an entry is kept as a request that waits for that answer; it never takes effect from
+ *  the stream alone. */
 export const SyncStream = utf16(256, 1).regex(/^[a-z][a-z-]*(:[A-Za-z0-9._:/-]+)?$/);
-/** What a peer's sync entry can never grant by itself (review N7). */
-export const PEER_STREAM_GRANTS = ["plugin-ok", "computer-level", "saved-rule", "routine-level-raise"] as const;
+/** What a peer's sync entry can never grant by itself (review N7): every §5.5 sensitive change. A plugin's OK, a
+ *  computer's level, a saved rule, a raised routine level; adding or revoking a device and choosing the main computer;
+ *  a development folder, a trusted repo, a connector permission; the 18+ confirmation; and a replaced provider
+ *  credential. */
+export const PEER_STREAM_GRANTS = [
+  "plugin-ok", "computer-level", "saved-rule", "routine-level-raise", "device-add", "device-revoke", "main-computer",
+  "dev-folder", "repo-trust", "connector-permission", "adult-confirmation", "provider-credential",
+] as const;
 export type PeerStreamGrant = (typeof PEER_STREAM_GRANTS)[number];
 
 export const SyncEntry = z.object({
