@@ -3,7 +3,8 @@
 import { describe, expect, test } from "bun:test";
 import {
   API_CALLS, CAPABILITIES, CARD_TOKENS, CLAUDE_HOOK_EVENTS, CORE_CONTRIBUTION_KEYS, CORE_POINTS, DATA_POINTS, HOOK_EVENTS,
-  HOOK_RETURNS, MESSAGE_KINDS, SPOTS, TOKENS, TOKEN_GROUPS, WELL_KNOWN_POINT_NAMES, apiCallAllowed, capabilityOkText, catalogJson, cssProperty, cssVar,
+  HOOK_RETURNS, MESSAGE_KINDS, PointDeclSchema, SPOTS, TOKENS, TOKEN_GROUPS, WELL_KNOWN_POINT_NAMES, apiCallAllowed, capabilityOkText, catalogJson,
+  catalogPointDecl, cssProperty, cssVar,
   fetchesCodeAtRunTime, hookMatchesTool, hookOrder, interpolate, isPluginTokenName, isSafeTokenValue, isTokenName, isTokenValue, keyMatches,
   networkAllows, pluginTokenName,
   parseCapability,
@@ -130,6 +131,18 @@ describe("points and spots", () => {
     for (const p of CORE_POINTS) expect(WELL_KNOWN_POINT_NAMES.has(p.name)).toBe(false);
     expect(WELL_KNOWN_POINT_NAMES.has("island.tab")).toBe(true);
     expect(WELL_KNOWN_POINT_NAMES.has("composer")).toBe(true);
+  });
+
+  test("a well-known name's declaration is the catalog's, keep and needs included, whoever declares it (review S2)", () => {
+    for (const name of WELL_KNOWN_POINT_NAMES) {
+      const decl = catalogPointDecl(name);
+      expect(PointDeclSchema.safeParse(decl).success).toBe(true);
+      expect(decl!.props !== undefined).toBe(SPOTS.some((s) => s.name === name));
+    }
+    expect(catalogPointDecl("conversation.message")).toMatchObject({ shape: "keyed", keep: ["approval"], needs: ["conversation.read"], context: ["bot"] });
+    expect(catalogPointDecl("webhook.ingress")).toMatchObject({ shape: "list", fields: { type: "object" } });
+    expect(catalogPointDecl("webhook.ingress")!.props).toBeUndefined();
+    for (const name of ["app.root", "bot.tab", "models", "luna.cards"]) expect(catalogPointDecl(name)).toBeUndefined();
   });
 
   test("a keyed spot's entry with no key fills every key; a key ending in * fills what it matches", () => {

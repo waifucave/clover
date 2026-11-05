@@ -5,8 +5,9 @@ import { CATALOG_VERSION, PLUGIN_API_VERSION } from "../version";
 import { API_CALLS } from "./api-calls";
 import { CAPABILITIES } from "./capabilities";
 import { CLAUDE_HOOK_EVENTS, HOOK_DEFAULT_TIMEOUT_MS, HOOK_EVENTS, HOOK_RETURNS } from "./hooks";
-import { CORE_POINTS, DATA_POINTS } from "./points";
-import { SPOTS } from "./spots";
+import type { PointDecl } from "../manifest/types";
+import { CORE_POINTS, DATA_POINTS, WELL_KNOWN_POINT_NAMES, dataPointInfo } from "./points";
+import { SPOTS, spotInfo } from "./spots";
 import { TOKENS } from "./tokens";
 
 export * from "./api-calls";
@@ -17,6 +18,24 @@ export * from "./spots";
 export * from "./tokens";
 
 const schema = (s: z.ZodType) => z.toJSONSchema(s, { target: "draft-2020-12", io: "input", unrepresentable: "any" });
+
+/** The catalog's own declaration of a well-known name (§5.4), as a manifest would write it: what the registry records
+ *  for that point whoever declares it, so its `keep` and `needs` hold whatever the declarer wrote (review S2). A plugin
+ *  that declares a well-known name declares only its shape and whether it is a spot (`{ shape, props: {} }` is
+ *  enough); the rest is the catalog's. Undefined for any other name, the core's own points included. */
+export function catalogPointDecl(name: string): PointDecl | undefined {
+  if (!WELL_KNOWN_POINT_NAMES.has(name)) return undefined;
+  const s = spotInfo(name);
+  if (s) {
+    return {
+      shape: s.shape, fields: schema(s.fields), props: schema(s.props),
+      ...(s.needs ? { needs: [...s.needs] } : {}), ...(s.keep ? { keep: [...s.keep] } : {}),
+      ...(s.context ? { context: [...s.context] } : {}), doc: s.doc,
+    };
+  }
+  const p = dataPointInfo(name)!;
+  return { shape: p.shape, fields: schema(p.entry), doc: p.doc };
+}
 
 export function catalogJson() {
   return {
