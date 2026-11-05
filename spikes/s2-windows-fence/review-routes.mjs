@@ -34,11 +34,12 @@ if(route==='scheduler-cli'){
 }else if(route==='startup-user'||route==='startup-common'){
  const dir=route==='startup-user'?p.join(process.env.APPDATA,'Microsoft/Windows/Start Menu/Programs/Startup'):p.join(process.env.ProgramData,'Microsoft/Windows/Start Menu/Programs/Startup');
  const f=p.join(dir,'clover-review-'+suffix+'.cmd');try{fs.writeFileSync(f,'@exit /b 0');fs.unlinkSync(f);r={status:0}}catch(e){r={status:3};extra.error_code=e.code}
-}else if(route==='shell-application'){
+}else if(route==='shell-application'||route==='shell-application-local'){
  const args=[p.join(work,'com-child.cjs'),marker,p.join(control,'secrets.enc')].map(s=>'"'+s+'"').join(' ');
- r=run(ps,['-NoProfile','-Command',"$ErrorActionPreference='Stop';try{$s=New-Object -ComObject Shell.Application;$s.ShellExecute('C:/clover-tools/node/node.exe','"+args.replaceAll("'","''")+"','"+work+"','open',0);exit 0}catch{@{hresult=$_.Exception.HResult}|ConvertTo-Json -Compress;exit 3}"]);
-}else if(route==='network'){
- r={status:3};await new Promise(resolve=>{const s=net.connect(Number(port),'127.0.0.1');s.setTimeout(1500);s.on('connect',()=>{r.status=0;s.destroy();resolve()});s.on('error',()=>resolve());s.on('timeout',()=>{s.destroy();resolve()})});
+ if(route==='shell-application-local')r=run(p.join(p.dirname(work),'bin/handle-probe.exe'),['local-com','C:/clover-tools/node/node.exe',args,work]);
+ else r=run(ps,['-NoProfile','-Command',"$ErrorActionPreference='Stop';try{$s=New-Object -ComObject Shell.Application;$s.ShellExecute('C:/clover-tools/node/node.exe','"+args.replaceAll("'","''")+"','"+work+"','open',0);exit 0}catch{@{hresult=$_.Exception.HResult}|ConvertTo-Json -Compress;exit 3}"]);
+}else if(route==='network'||route==='metadata-network'){
+ r={status:3};await new Promise(resolve=>{const s=net.connect(route==='network'?Number(port):80,route==='network'?'127.0.0.1':'169.254.169.254');s.setTimeout(1500);s.on('connect',()=>{r.status=0;s.destroy();resolve()});s.on('error',()=>resolve());s.on('timeout',()=>{s.destroy();resolve()})});
 }
 await new Promise(resolve=>setTimeout(resolve,route==='wmi'||route==='shell-application'?1800:0));
 console.log(JSON.stringify({route,actor,exit:r?.status??null,timeout:r?.error?.code==='ETIMEDOUT',detail:parse(r?.stdout),marker_observed:fs.existsSync(marker),...extra}));
@@ -59,21 +60,21 @@ try{
  for(const d of starts)fs.mkdirSync(d,{recursive:true});
  console.log(JSON.stringify({test:'startup-fixture-prerequisites',host_directory_exists:fs.existsSync(starts[0]),sandbox_directory_exists:fs.existsSync(starts[1])}));
 
- for(const test of ['scheduler-cli','scheduler-com','services','wmi','runas','startup-user','startup-common','shell-application','network']){
+ for(const test of ['scheduler-cli','scheduler-com','services','wmi','runas','startup-user','startup-common','shell-application','shell-application-local','network','metadata-network']){
   const unfenced=await route(test,'unfenced');const fenced=await route(test,'fenced');
   let classification=unfenced.exit===0?(fenced.exit!==0?'fence_or_principal_denial':'operation_accepted'):'control_failed_not_attributable';
   if(test==='observable-com' && unfenced.exit===0 && fenced.exit===0)classification=fenced.detail?.protected_read_allowed?'fenced_com_read_breach':'observable_fenced_com';
   const receipts={};
-  if(test==='shell-application'){
+  if(test.startsWith('shell-application')){
    await new Promise(r=>setTimeout(r,4500));
    for(const actor of ['unfenced','fenced']){
     const file=path.join(work,'receipt-'+test+'-'+actor+'.json');
     receipts[actor]=fs.existsSync(file)?JSON.parse(fs.readFileSync(file)):null;
     receipts[actor+'_late']=fs.existsSync(file+'.late')?JSON.parse(fs.readFileSync(file+'.late')):null;
    }
-   classification=receipts.fenced?(receipts.fenced.protected_read_allowed?'protected_read_breach':'observable_child_read_denied'):'child_not_observed';
+   classification=unfenced.exit!==0?'control_failed_not_attributable':receipts.fenced?(receipts.fenced.protected_read_allowed?'protected_read_breach':'observable_child_read_denied'):'child_not_observed';
   }
-  const row={test,unfenced,fenced,classification,...(test==='shell-application'?{receipts}:{})};paired.push(row);console.log(JSON.stringify(row));
+  const row={test,unfenced,fenced,classification,...(test.startsWith('shell-application')?{receipts}:{})};paired.push(row);console.log(JSON.stringify(row));
  }
  const hold=path.join(bin,'handle-probe.exe'),publicFile=path.join(control,'secrets.enc');
  for(const actor of ['unfenced','fenced']){
@@ -89,6 +90,7 @@ try{
  await SandboxManager.reset();
  await new Promise(r=>setTimeout(r,4500));
  const late=path.join(work,'receipt-shell-application-fenced-afterfloor.json.late');
- console.log(JSON.stringify({test:'com-after-floor-release',observed:fs.existsSync(late),receipt:fs.existsSync(late)?JSON.parse(fs.readFileSync(late)):null}));
+ const initial=late.slice(0,-5);
+ console.log(JSON.stringify({test:'com-after-floor-release',initial_observed:fs.existsSync(initial),initial:fs.existsSync(initial)?JSON.parse(fs.readFileSync(initial)):null,observed:fs.existsSync(late),receipt:fs.existsSync(late)?JSON.parse(fs.readFileSync(late)):null}));
 }catch(e){console.log(JSON.stringify({test:'review-harness-error',code:e.code??e.name,diagnostic:String(e.message).slice(0,900)}))}
 finally{await SandboxManager.reset();server.close();}

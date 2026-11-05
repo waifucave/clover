@@ -4,6 +4,7 @@ using System.IO;
 using System.Text;
 using System.Diagnostics;
 using System.Security.Principal;
+using System.Reflection;
 using System.Runtime.InteropServices;
 public static class CloverHandleProbe {
  [StructLayout(LayoutKind.Sequential)] struct SA { public int length; public IntPtr descriptor; [MarshalAs(UnmanagedType.Bool)] public bool inherit; }
@@ -23,6 +24,8 @@ public static class CloverHandleProbe {
  [DllImport("kernel32.dll")] static extern bool CloseHandle(IntPtr handle);
  [DllImport("advapi32.dll")] static extern bool OpenProcessToken(IntPtr process,uint access,out IntPtr token);
  [DllImport("advapi32.dll")] static extern bool IsTokenRestricted(IntPtr token);
+ [DllImport("ole32.dll")] static extern int CoInitializeEx(IntPtr reserved,uint flags);
+ [DllImport("ole32.dll")] static extern int CoCreateInstance(ref Guid clsid,IntPtr outer,uint context,ref Guid iid,out IntPtr instance);
  static bool Matches(IntPtr file,string expected) {
   if(GetFileType(file)!=1)return false;
   long pos;SetFilePointerEx(file,0,out pos,0);byte[] buffer=new byte[256];uint read;
@@ -35,6 +38,18 @@ public static class CloverHandleProbe {
   r.Append('\\',slashes*2);r.Append('"');return r.ToString();
  }
  public static int Main(string[] args) {
+  if(args[0]=="local-com") {
+   CoInitializeEx(IntPtr.Zero,0);Guid clsid=Type.GetTypeFromProgID("Shell.Application").GUID;
+   Guid iid=new Guid("00020400-0000-0000-C000-000000000046");IntPtr instance;
+   int hr=CoCreateInstance(ref clsid,IntPtr.Zero,4,ref iid,out instance);
+   if(hr<0){Console.WriteLine("{\"co_create_hresult\":"+hr+",\"local_server_only\":true}");return 74;}
+   object shell=Marshal.GetObjectForIUnknown(instance);Marshal.Release(instance);
+   try {
+    shell.GetType().InvokeMember("ShellExecute",BindingFlags.InvokeMethod,null,shell,new object[]{args[1],args[2],args[3],"open",0});
+    Console.WriteLine("{\"co_create_hresult\":0,\"call_accepted\":true,\"local_server_only\":true}");return 0;
+   }catch(Exception e){Console.WriteLine("{\"call_hresult\":"+e.HResult+",\"local_server_only\":true}");return 75;}
+   finally{Marshal.FinalReleaseComObject(shell);}
+  }
   if(args[0]=="hold") {
    // The trusted holder deliberately leaks two inheritable handles into the first
    // broker hop. The tested sandbox runner must remove them before its child.

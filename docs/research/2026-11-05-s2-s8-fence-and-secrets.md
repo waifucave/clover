@@ -2,11 +2,13 @@
 
 Date: 2026-11-05. Lane C, `lane/c-m0`, spec revision 17; base `a481f7e14`.
 
-**Review revision in progress. Windows is not admitted for release.** The historical **29/30 + 7/7**
+**Review revision: the Windows candidate fails the required floor. Windows is not admitted for release.**
+The paired controls demonstrate an allowed user-Startup write outside the permitted roots. Historical **29/30 + 7/7**
 figures are provisional, alias-assisted measurements on an artificially modified Session 0 namespace.
 The unmodified candidate admitted zero workload checks: initialization failed.
 The dedicated-principal candidate runs useful work and passes most focused checks, but requires a
-Session 0 compatibility diagnostic and leaves one COM route inconclusive. Supported Windows 11
+Session 0 compatibility diagnostic. Review follow-up replaces the missing COM marker with child
+receipts and distinguishes default COM activation from an unavailable local-server-only class. Supported Windows 11
 and authenticated agent integration remain live gates. Nothing here establishes production readiness.
 
 The controller ruled that generated test keys in disposable stores are authorized, and that §8.5's
@@ -80,7 +82,8 @@ alone did not resolve MSYS's named-object denial. See `resumed-diagnostics.txt`.
 
 ## S2.2 — One complete Windows candidate and every requested route
 
-**Verdict: works with limits as a spike; does not establish the release floor.**
+**Verdict: does not meet the release floor.** Useful commands run only in the alias-assisted
+configuration; paired review controls expose a user-Startup write that the original fixture missed.
 The candidate uses the pinned upstream SRT native Rust launcher: dedicated unprivileged principal,
 write-restricted token, explicit ACL grants/denies, WFP keyed to that principal, private desktop,
 handle whitelist, process mitigations and kill-on-close jobs. Four WFP filters were installed.
@@ -105,9 +108,9 @@ escape checks (7/7), job cleanup and an explicit out-of-process COM observation.
 | Services / Service Control Manager | Service creation rejected |
 | WMI process creation | Attempt rejected |
 | In-process WScript COM creating a child | Child retained protected-read denial; process creation itself is not an escape |
-| Out-of-process Shell.Application | Call accepted, but no delayed child marker observed: **inconclusive**, not closed |
-| runas / saved-credential attempt | Rejected; no saved outside credentials supplied |
-| User/common Startup folders | Both writes denied |
+| Shell.Application | Historical marker was unobserved; review child receipts below supersede that result |
+| runas / saved-credential attempt | Both fenced and unfenced attempts fail; no attributable fence denial |
+| User/common Startup folders | User write accepted after directory preparation; common write denied with a positive unfenced control |
 | Job cleanup | Detached delayed child did not write its marker after parent exit |
 | Direct local listener and metadata TCP | Both denied, ordinary and approved-escape sessions |
 
@@ -122,6 +125,59 @@ median 634 ms. These include PowerShell, Node worker and native broker execution
 2–5 ms launch-return figures exclude provisioning/compilation and are not comparable production costs.
 The COM observation, Session 0 dependency, full-home policy, concurrency/crash recovery and Windows 11
 remain gaps. No claim is made that every COM server or token-impersonation technique is closed.
+
+### Review controls and actual administrator context
+
+`spikes/s2-windows-fence/results/review-controls-v4.txt` is the final paired run; v1 records an
+interrupted observer fixture, v2/v3 are intermediate successful probes. The real launching user is
+explicitly verified as an enabled local administrator. The fenced handle-probe process is explicitly
+non-admin and `IsTokenRestricted=true`, while its unfenced control is admin/unrestricted. Therefore
+these results include the common case where Clover's real user is an administrator; they do not
+depend on treating an admin user's unrestricted token as a safe fence.
+
+Every broker/Startup denial now has the same-operation unfenced control:
+
+| Route | Unfenced administrator | Fenced principal | Attribution |
+| --- | --- | --- | --- |
+| schtasks registration | Succeeds | Rejected | Principal/token policy contributes; not a command-name filter |
+| Scheduler COM registration | Succeeds | Rejected | Positive control |
+| Service creation | Succeeds | Rejected | Unprivileged principal is an intentional boundary |
+| WMI process creation | Return 0, child marker observed | Rejected, no marker | Positive execution control |
+| runas /savecred | Fails without a saved-credential fixture | Fails | **Not attributable**; excluded from closure claims |
+| User Startup file creation | Succeeds | **Succeeds** | Original ENOENT was a fixture error; candidate violates allowed-write policy |
+| Common Startup file creation | Succeeds | Rejected | Positive control |
+| Local listener and metadata TCP | Connect | Rejected | Positive network controls; no metadata HTTP request/credential read |
+
+The original Startup test did not ensure the user Startup directory existed. The new harness
+materializes both host and sandbox profile directories before attempting the same disposable file
+write/delete. This proves a forbidden write, **not** an observed logon-time execution or access to
+the original user's credentials. It is enough to reject this candidate as the required floor.
+
+`Shell.Application.ShellExecute` is now observable: both controls create a child receipt with PID,
+parent PID, administrator status and actual protected-canary read outcome. The unfenced child is
+admin and reads the public canary; the fenced child is non-admin and cannot read it. The fenced
+delayed receipt is absent after its parent ends, including the floor-release follow-up whose initial
+receipt was observed. This is child/floor evidence, not an inference from method return status.
+For an actual out-of-process activation test, the native helper also forces `CLSCTX_LOCAL_SERVER`
+for the same class: **both** contexts return `0x80040154` (class not registered for that context),
+so that route is unavailable here and is not counted as a blocked out-of-process COM server. The
+historical `com-outofproc` name did not prove that its default activation was out of process.
+
+Handle propagation/duplication is tested at the OS boundary, not just through Node's spawn defaults.
+A trusted .NET holder opens an inheritable public-canary file and an inheritable handle to itself,
+then calls CreateProcess with `bInheritHandles=true` into the first native broker hop. Controls:
+
+| Probe in final child | Unfenced | Fenced |
+| --- | --- | --- |
+| Read the deliberately inheritable canary handle | true | false |
+| Duplicate via deliberately inheritable parent-process handle | true | false (invalid handle, error 6) |
+| Open parent with PROCESS_DUP_HANDLE and duplicate canary | true | false (access denied, error 5) |
+
+All controls run while the holder and its source handles remain alive. Existing rights on a leaked
+handle would bypass pathname denial; matching the exact public canary prevents an unrelated reused
+handle value from being mistaken for a leak. These cases passed with the real user a local admin.
+This does not assert closure of every process/token/COM technique; it resolves the previously untested
+inherited/duplication cases with positive controls and reports the actual remaining outcomes.
 
 ## S2.3–4 — Helper, design and M1 entry
 

@@ -21,6 +21,12 @@ the disposable Server/SSH diagnosis; production must resolve the real namespace 
 The complete dedicated-principal/WFP experiment uses the pinned upstream Rust launcher via
 `candidate.mjs`, including its own restricted token, handle and job controls; the C# probe does not.
 
+`handle-probe.cs` is a separate review fixture. Its trusted `hold` mode keeps an inheritable
+public-canary file and parent-process handle alive, deliberately using `bInheritHandles=true`
+for the broker's first hop. `child` measures direct inherited reads and two DuplicateHandle paths,
+with an unfenced positive control. `local-com` forces CLSCTX_LOCAL_SERVER for Shell.Application,
+so class unavailability can be distinguished from a fence denial. None is a daemon entry point.
+
 Measured launch return medians were 2–5 ms (seven samples per posture), excluding C#
 compilation and profile/ACL provisioning. These are not production per-launch cost figures.
 

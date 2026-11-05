@@ -23,7 +23,7 @@ if __name__=='__main__':
     changed=[]
     for directory in ['spikes/s2-windows-fence/results','spikes/s8-secrets/results']:
         for p in sorted((repo/directory).glob('*.txt')):
-            before=p.read_text(errors='replace');after=normalize(before)
+            before=p.read_bytes().decode(errors='replace');after=normalize(before)
             if before!=after:
                 changed.append(str(p.relative_to(repo)))
                 if not args.check:p.write_text(after)
