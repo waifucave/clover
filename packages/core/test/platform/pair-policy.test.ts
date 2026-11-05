@@ -264,6 +264,16 @@ describe("DaemonPair", () => {
     expect(h.stops).toHaveLength(1);
   });
 
+  test("a hung app (no app.ping answer, R9) restarts in safe mode on its first crash", async () => {
+    const h = harness();
+    h.pair.appConnected("a");
+    h.pair.appHung("a");
+    h.pair.appDisconnected("a"); // the daemon ended it
+    expect(h.pair.status()).toMatchObject({ safeMode: true, crashesInWindow: 1, startPending: "crash" });
+    await h.advance(1_000);
+    expect(h.starts.at(-1)).toEqual({ at: 1_000, why: "crash", safeMode: true });
+  });
+
   test("dispose cancels every timer", async () => {
     const h = harness();
     h.pair.start();

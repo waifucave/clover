@@ -2126,6 +2126,8 @@ export function startIpcServer(opts: IpcServerOptions): IpcServer {
             } catch {
               throw new RpcFailure(ERR.PARSE_ERROR, "parse error");
             }
+            // C-M1: a Clover client's answer to one of the daemon's requests (the app's heartbeat).
+            if (incoming.kind === "response" && socket.data.clover) { opts.cloverConnections!.response(socket.data.clover, incoming.msg); continue; }
             if (incoming.kind !== "request") continue; // Phase 0: ignore client notifications
             id = incoming.msg.id;
             // Remote Gateway SP1 Task 2: a flaky mobile link means a phone may resend a request

@@ -30,8 +30,8 @@ export interface CloverConn {
   readonly clientName: string;
   /** Areas this connection subscribed to (`events.subscribe`). */
   readonly areas: Set<string>;
-  /** Send the client a request from the daemon (`app.quit`, `app.show`, `pluginHost.invoke`…). */
-  send(method: string, params: unknown): void;
+  /** Send the client a request from the daemon (`app.quit`, `app.show`, `pluginHost.invoke`…); its id. */
+  send(method: string, params: unknown): string;
 }
 
 export type CloverHandler = (conn: CloverConn, params: unknown) => Promise<unknown> | unknown;
@@ -56,6 +56,10 @@ export interface CloverServerDeps {
   readonly os?: DaemonPlatform;
   /** Test seam: the peer of a socket. */
   probe?(socket: object): PeerFacts;
+  /** The app's heartbeat (ruling R9): `app.ping` every `intervalMs`, ended after `timeoutMs` unanswered. */
+  readonly heartbeat?: { readonly intervalMs?: number; readonly timeoutMs?: number; now?(): number };
+  /** End a hung app's process (default SIGKILL; TerminateProcess on Windows). */
+  killApp?(pid: number): void;
   log?(line: string): void;
 }
 
@@ -71,6 +75,8 @@ export interface CloverServer {
   hello(socket: object, connId: number, params: unknown, write: (bytes: Uint8Array) => void): Promise<{ conn: CloverConn; result: CloverHelloResult }>;
   handle(conn: CloverConn, method: string, params: unknown): Promise<unknown>;
   closed(conn: CloverConn | null, socket: object): void;
+  /** A response from the client to one of the daemon's requests (the heartbeat's). */
+  response(conn: CloverConn, msg: { id?: unknown }): void;
   /** `app.quit{reason}` to these app connections (the pair's `tellAppQuit`). */
   tellAppQuit(reason: PairStopReason, connIds: readonly string[]): void;
   connections(): readonly CloverConn[];
@@ -81,6 +87,26 @@ export function createCloverServer(deps: CloverServerDeps): CloverServer {
   const pipePeers = os === "win32" ? new WindowsPipePeers() : null;
   const conns = new Map<number, CloverConn>();
   let requestSeq = 0;
+  const beatEvery = deps.heartbeat?.intervalMs ?? 5_000;
+  const beatTimeout = deps.heartbeat?.timeoutMs ?? 15_000;
+  const now = deps.heartbeat?.now ?? Date.now;
+  const beats = new Map<number, { timer: ReturnType<typeof setInterval>; heard: number; pid: number | null; pending: Set<string> }>();
+  const killApp = deps.killApp ?? ((pid: number) => { try { process.kill(pid, "SIGKILL"); } catch { /* gone */ } });
+  const stopBeat = (connId: number) => { const b = beats.get(connId); if (b) { clearInterval(b.timer); beats.delete(connId); } };
+  const startBeat = (conn: CloverConn, pid: number | null) => {
+    const beat = { heard: now(), pid, pending: new Set<string>(), timer: setInterval(() => {
+      if (now() - beat.heard > beatTimeout) {
+        stopBeat(conn.connId);
+        deps.log?.(`[clover] the app (connection ${conn.connId}) didn't answer app.ping for ${beatTimeout} ms`);
+        deps.pair?.appHung(String(conn.connId));
+        if (beat.pid !== null) killApp(beat.pid);
+        return;
+      }
+      beat.pending.add(conn.send("app.ping", {}));
+    }, beatEvery) };
+    (beat.timer as { unref?: () => void }).unref?.();
+    beats.set(conn.connId, beat);
+  };
 
   const peerOf = (socket: object): PeerFacts => {
     if (deps.probe) return deps.probe(socket);
@@ -138,10 +164,10 @@ export function createCloverServer(deps: CloverServerDeps): CloverServer {
       if ("code" in caller) throw new CloverRpcError(caller.code, caller.message);
       const conn: CloverConn = {
         connId, role: h.role, caller, features: h.features ?? [], clientName: h.clientName, areas: new Set(),
-        send(method, p) { write(encodeLine({ jsonrpc: "2.0", id: `d${++requestSeq}`, method, params: p })); },
+        send(method, p) { const id = `d${++requestSeq}`; write(encodeLine({ jsonrpc: "2.0", id, method, params: p })); return id; },
       };
       conns.set(connId, conn);
-      if (h.role === "app") deps.pair?.appConnected(String(connId), conn.features);
+      if (h.role === "app") { deps.pair?.appConnected(String(connId), conn.features); startBeat(conn, peer.pid); }
       deps.log?.(`[clover] ${h.role} connection ${connId} (${h.clientName}) counts as ${caller.kind}`);
       return {
         conn,
@@ -165,8 +191,15 @@ export function createCloverServer(deps: CloverServerDeps): CloverServer {
     closed(conn, socket) {
       pipePeers?.closed(socket);
       if (conn === null) return;
+      stopBeat(conn.connId);
       conns.delete(conn.connId);
       if (conn.role === "app") deps.pair?.appDisconnected(String(conn.connId));
+    },
+
+    // Any answer to a ping, a result or an error, shows the app's main process is responsive.
+    response(conn, msg) {
+      const b = beats.get(conn.connId);
+      if (b && typeof msg.id === "string" && b.pending.delete(msg.id)) b.heard = now();
     },
 
     tellAppQuit(reason, connIds) {

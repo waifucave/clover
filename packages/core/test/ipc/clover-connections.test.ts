@@ -22,6 +22,8 @@ class Client {
   private nextId = 1;
   private pending = new Map<number, (msg: any) => void>();
   readonly fromDaemon: any[] = [];
+  /** Answer the daemon's app.ping, as the app's main process does. */
+  answerPings = true;
   private socket!: Awaited<ReturnType<typeof Bun.connect>>;
   private writer!: ConnWriter;
   closed = false;
@@ -33,7 +35,10 @@ class Client {
         for (const line of c.decoder.push(chunk)) {
           const msg = JSON.parse(line);
           if (typeof msg.id === "number" && c.pending.has(msg.id)) { c.pending.get(msg.id)!(msg); c.pending.delete(msg.id); }
-          else if (msg.method) c.fromDaemon.push(msg);
+          else if (msg.method) {
+            c.fromDaemon.push(msg);
+            if (msg.method === "app.ping" && c.answerPings) c.writer.enqueue(encodeLine({ jsonrpc: "2.0", id: msg.id, result: { ok: true } }));
+          }
         }
       },
       drain() { c.writer.onDrain(); },
@@ -60,7 +65,7 @@ describe("Clover connections (C-M1)", () => {
   let stop: (() => void) | undefined;
   afterEach(() => { stop?.(); stop = undefined; });
 
-  async function boot(opts: { peer?: PeerFacts } = {}) {
+  async function boot(opts: { peer?: PeerFacts; heartbeat?: { intervalMs: number; timeoutMs: number } } = {}) {
     const home = mkdtempSync(join(tmpdir(), "clover-conns-"));
     const store = new SessionStore(home);
     const socketPath = resolveEndpoint(join(home, "run")).path;
@@ -79,10 +84,12 @@ describe("Clover connections (C-M1)", () => {
       startApp: async () => "started", stopDaemon: (why) => { stops.push(why); },
       tellAppQuit: (reason, to) => { quits.push({ reason, to }); clover.tellAppQuit(reason, to); },
     }, { desktop: true, graceMs: 60_000 });
-    clover = createCloverServer({ tokens, processes, serverVersion: "test", deviceId: "d".repeat(32), pair, probe: () => peer });
+    const killed: number[] = [];
+    clover = createCloverServer({ tokens, processes, serverVersion: "test", deviceId: "d".repeat(32), pair, probe: () => peer,
+      ...(opts.heartbeat ? { heartbeat: opts.heartbeat } : {}), killApp: (pid) => { killed.push(pid); } });
     const server = startIpcServer({ socketPath, serverVersion: "test", tokens: authority, store, cloverConnections: clover });
     stop = () => { pair.dispose(); server.stop(); store.close(); };
-    return { socketPath, appToken, legacy, tokens, processes, pair, stops, quits, setPeer: (p: PeerFacts) => { peer = p; } };
+    return { socketPath, appToken, legacy, tokens, processes, pair, stops, quits, killed, setPeer: (p: PeerFacts) => { peer = p; } };
   }
 
   test("the app says hello with this run's token and counts as the user", async () => {
@@ -196,5 +203,25 @@ describe("Clover connections (C-M1)", () => {
     app.close();
     for (let i = 0; i < 100 && b.pair.status().startPending === null; i++) await Bun.sleep(10);
     expect(b.pair.status()).toMatchObject({ appConnected: false, crashesInWindow: 1, startPending: "crash" });
+  });
+
+  test("the heartbeat (R9): an app that answers app.ping stays; one that stops is ended and restarts in safe mode", async () => {
+    const b = await boot({ heartbeat: { intervalMs: 20, timeoutMs: 150 } });
+    const alive = await Client.connect(b.socketPath);
+    await alive.hello("app", b.appToken);
+    await Bun.sleep(300);
+    expect(alive.fromDaemon.filter((m) => m.method === "app.ping").length).toBeGreaterThan(5);
+    expect(b.killed).toEqual([]);
+    alive.close();
+    for (let i = 0; i < 100 && b.pair.status().appConnected; i++) await Bun.sleep(5);
+
+    const hung = await Client.connect(b.socketPath);
+    hung.answerPings = false;
+    await hung.hello("app", b.appToken);
+    for (let i = 0; i < 100 && b.killed.length === 0; i++) await Bun.sleep(10);
+    expect(b.killed).toEqual([4242]); // the peer's pid, from the caller check
+    hung.close(); // what the kill does
+    for (let i = 0; i < 100 && b.pair.status().appConnected; i++) await Bun.sleep(5);
+    expect(b.pair.status().safeMode).toBe(true);
   });
 });

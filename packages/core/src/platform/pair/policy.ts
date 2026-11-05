@@ -11,6 +11,8 @@
 //   - a side that leaves on purpose says so first: the app's `pair.exiting{quit|update}` and the
 //     daemon's `app.quit{reason}` stop the pair (exit 0, so the crash-only login unit leaves it down);
 //     `pair.exiting{restart}` is the app restarting itself, which is not a crash, and leaves safe mode;
+//   - an app that stops answering `app.ping` for 15 s (sent every 5 s; ruling R9) is ended, and its
+//     restart is in safe mode (`appHung`);
 //   - the app that asked for `pair.quit` exits once it has the answer, so `app.quit` goes only to the
 //     other app connections, and only to those whose hello listed the `app.quit` feature (agreed with
 //     lane E, E-M1 #168). An app that can't be told is waited for, then the daemon stops anyway.
@@ -94,7 +96,7 @@ export interface DaemonPairStatus {
   readonly stopping: PairStopReason | null;
 }
 
-interface AppConn { leaving?: AppExitReason; canQuit: boolean }
+interface AppConn { leaving?: AppExitReason; canQuit: boolean; hung?: boolean }
 
 export class DaemonPair {
   private readonly apps = new Map<string, AppConn>();
@@ -142,6 +144,15 @@ export class DaemonPair {
     this.beginStop(reason, false);
   }
 
+  /** The app stopped answering the heartbeat (`app.ping`; ruling R9): the daemon ends it, and its
+   *  restart is in safe mode whatever the crash count. */
+  appHung(connId: string): void {
+    const app = this.apps.get(connId);
+    if (!app || this.stopping) return;
+    app.hung = true;
+    this.log(`the app stopped answering (${connId}): it restarts in safe mode`);
+  }
+
   /** An app connection closed. */
   appDisconnected(connId: string): void {
     const app = this.apps.get(connId);
@@ -151,6 +162,7 @@ export class DaemonPair {
     if (this.stopping) { this.finishStop(`the app went (${this.stopping.reason})`); return; }
     if (!this.o.desktop) return;
     if (app.leaving === "restart") { this.schedule("restart", this.o.restartGraceMs); return; }
+    if (app.hung) { this.safeMode = true; this.crashed("hung, and was ended"); return; }
     this.crashed("went away without pair.exiting");
   }
 
