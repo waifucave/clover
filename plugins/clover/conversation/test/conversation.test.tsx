@@ -618,3 +618,36 @@ describe("the conversation.message spot", () => {
   });
 });
 
+
+describe("the window's title bar over the view (spec §5.5: a covered card counts as hidden)", () => {
+  test("a pending card is marked to pin below the bar; an answered one is not", () => {
+    const { container, rerenderWith } = renderView({ items: APPROVAL_PENDING });
+    const unit = container.querySelector<HTMLElement>('.cl-conv__unit[data-unit="approval"]')!;
+    expect(unit.hasAttribute("data-pending")).toBe(true);
+    const answered = APPROVAL_PENDING.map((i) => (i.kind === "approval" ? { ...i, state: "approved" as const } : i));
+    rerenderWith({ items: answered });
+    expect(container.querySelector('.cl-conv__unit[data-unit="approval"]')?.hasAttribute("data-pending")).toBe(false);
+  });
+
+  test("a card that starts waiting is brought into view, to the nearest edge below the bar", () => {
+    const calls: { el: Element; arg: unknown }[] = [];
+    const original = HTMLElement.prototype.scrollIntoView;
+    HTMLElement.prototype.scrollIntoView = function (this: HTMLElement, arg?: boolean | ScrollIntoViewOptions) {
+      calls.push({ el: this, arg });
+    };
+    try {
+      const before = APPROVAL_PENDING.filter((i) => i.kind !== "approval");
+      const { container, rerenderWith } = renderView({ items: before });
+      expect(calls).toHaveLength(0);
+      rerenderWith({ items: APPROVAL_PENDING });
+      expect(calls).toHaveLength(1);
+      expect(calls[0]!.el).toBe(container.querySelector('.cl-conv__unit[data-pending]')!);
+      expect(calls[0]!.arg).toEqual({ block: "nearest" });
+      // The same card again is no news: no second jump.
+      rerenderWith({ items: [...APPROVAL_PENDING, bot(at(0, 16, 3), "Waiting for your OK.")] });
+      expect(calls).toHaveLength(1);
+    } finally {
+      HTMLElement.prototype.scrollIntoView = original;
+    }
+  });
+});

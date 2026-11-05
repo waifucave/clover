@@ -4,7 +4,11 @@
    Sealed approval frames sit inside this view, and the core counts a click on one only while the
    frame and everything around it is unfaded, unfiltered and untransformed (spec §5.5). So opacity,
    filters and transforms appear here only on leaf decorations that never hold a frame (the caret,
-   the breathing status text, icons); test/styles.test.ts holds that line. */
+   the breathing status text, icons); test/styles.test.ts holds that line.
+
+   The window's title bar is translucent and the view runs up under it: `--cl-inset-top` (set by the
+   frame, 0 elsewhere) is how far down the content starts, where anything scrolled into view stops, and
+   where a pending card pins, so no part of the bar ever covers one. */
 
 .cl-conv {
   display: flex;
@@ -32,20 +36,30 @@
   min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
+  scroll-padding-top: var(--cl-inset-top, 0px);
 }
 
 .cl-conv__viewport:focus-visible {
   outline-offset: -2px;
 }
 
+/* The reading column: at most 728 px of text, at least 36 px from each side. */
 .cl-conv__column {
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  max-width: 760px;
+  gap: var(--clover-space-l);
+  max-width: 800px;
   margin: 0 auto;
-  padding: 24px 24px 16px;
+  padding: calc(var(--cl-inset-top, 0px) + var(--clover-space-xl)) 36px var(--clover-space-l);
+}
+
+/* A pending card pins just below the bar when the transcript scrolls past it, and a jump to it stops
+   there too: no part of the bar ever covers it. */
+.cl-conv__unit[data-pending] {
+  position: sticky;
+  top: calc(var(--cl-inset-top, 0px) + var(--clover-space-xs));
+  scroll-margin-top: var(--clover-space-s);
 }
 
 .cl-conv__footer {
@@ -60,12 +74,12 @@
   align-items: center;
   gap: 6px;
   margin: 6px 0 8px;
-  padding: 5px 12px;
+  padding: 6px 12px;
   border: 1px solid var(--clover-color-hairline-raised);
   border-radius: var(--clover-radius-round);
   background: var(--clover-color-control);
   color: var(--clover-color-text);
-  font-size: var(--clover-font-size-control);
+  font-size: var(--clover-font-size-label);
   cursor: pointer;
 }
 
@@ -252,7 +266,7 @@
 .cl-conv-md ol,
 .cl-conv-md blockquote,
 .cl-conv-md .cl-conv-md__table {
-  margin: 0 0 10px;
+  margin: 0 0 var(--clover-space-m);
 }
 
 .cl-conv-md h1,
@@ -283,7 +297,7 @@
 }
 
 .cl-conv-md li + li {
-  margin-top: 4px;
+  margin-top: var(--clover-space-xs);
 }
 
 .cl-conv-md blockquote {
@@ -298,17 +312,26 @@
   border-top: 1px solid var(--clover-color-hairline);
 }
 
+/* A link reads as a soft chip in the accent, and underlines under the pointer. */
 .cl-conv-md a,
 .cl-conv-md__link,
 .cl-conv-md__image-link {
+  padding: 1px 3px;
+  border-radius: var(--clover-radius-small);
+  background: var(--clover-color-accent-soft);
   color: var(--clover-color-accent-text);
+  text-decoration: none;
+}
+
+.cl-conv-md a:hover,
+.cl-conv-md__link:hover {
   text-decoration: underline;
   text-underline-offset: 2px;
 }
 
 .cl-conv-md code {
-  padding: 1px 5px;
-  border-radius: var(--clover-radius-small);
+  padding: 1px 4px;
+  border-radius: 4px;
   background: var(--clover-color-control);
   font-family: var(--clover-font-mono);
   font-size: var(--clover-font-size-code);
@@ -364,7 +387,7 @@
   overflow-x: auto;
   font-family: var(--clover-font-mono);
   font-size: var(--clover-font-size-code);
-  line-height: var(--clover-clover-line-code);
+  line-height: var(--clover-plugin-clover-line-code);
 }
 
 /* The streaming caret: a leaf at the end of the last line of text, inside a list's last item or a
@@ -619,7 +642,7 @@
   color: var(--clover-color-text);
   font-family: var(--clover-font-mono);
   font-size: var(--clover-font-size-caption);
-  line-height: var(--clover-clover-line-code);
+  line-height: var(--clover-plugin-clover-line-code);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
@@ -750,23 +773,31 @@ button.cl-conv-diff:hover {
   flex: 1 1 auto;
 }
 
+/* Each sealed field sits in a holder of the view's own; a field the card doesn't have draws nothing,
+   and its holder takes no room. */
+.cl-conv-approval__field:empty {
+  display: none;
+}
+
 .cl-conv-approval__facts {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px 16px;
+  gap: var(--clover-space-xs) var(--clover-space-m);
 }
 
 .cl-conv-approval__buttons {
   display: flex;
+  flex-wrap: wrap;
   justify-content: flex-end;
-  gap: 8px;
-  margin-top: 4px;
+  gap: var(--clover-space-s);
+  margin-top: var(--clover-space-xs);
 }
 
+/* A sealed button keeps at least the 24 by 24 the core counts clicks on. */
 .cl-conv-approval__button {
-  display: block;
-  min-width: 96px;
-  min-height: 32px;
+  display: inline-flex;
+  min-width: 24px;
+  min-height: 24px;
 }
 
 .cl-conv-approval__deadline {
@@ -1134,32 +1165,6 @@ button.cl-conv-diff:hover {
   }
 }
 
-/* Every sealed field sits in a holder of the view's own; a field the card doesn't have draws nothing,
-   and its holder takes no room. */
-.cl-conv-approval__field:empty {
-  display: none;
-}
-
-.cl-conv-approval__facts {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--clover-space-xs) var(--clover-space-m);
-}
-
-.cl-conv-approval__buttons {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: var(--clover-space-s);
-}
-
-/* A sealed button keeps at least the 24 by 24 the core counts clicks on. */
-.cl-conv-approval__button {
-  display: inline-flex;
-  min-width: 24px;
-  min-height: 24px;
-}
-
 .cl-conv-note__id {
   color: var(--clover-color-text-muted);
 }
@@ -1180,11 +1185,7 @@ button.cl-conv-diff:hover {
 }
 
 .cl-conv-mark {
-  color: var(--clover-color-accent);
-}
-
-.cl-conv-app {
-  margin-top: var(--clover-space-s);
+  color: var(--clover-plugin-clover-mark);
 }
 
 /* An attachment opens like any file the conversation names. */

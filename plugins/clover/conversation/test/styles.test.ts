@@ -74,3 +74,23 @@ describe("the conversation stylesheet", () => {
     expect(css).toContain("@media (prefers-reduced-motion: reduce)");
   });
 });
+
+describe("the window's title bar over the view", () => {
+  const rules = parseCss(css);
+  const decl = (selector: string, property: string) =>
+    rules.find((r) => r.prelude === selector && r.context.length === 0)?.declarations.find((d) => d.property === property)?.value ?? "";
+
+  test("the content starts below the bar, and anything scrolled into view stops below it", () => {
+    expect(decl(".cl-conv__column", "padding")).toMatch(/^calc\(var\(--cl-inset-top, 0px\) \+/);
+    expect(decl(".cl-conv__viewport", "scroll-padding-top")).toBe("var(--cl-inset-top, 0px)");
+  });
+
+  test("a pending card pins below the bar, never under it, and a jump to it keeps a margin (scroll-margin-top)", () => {
+    expect(decl(".cl-conv__unit[data-pending]", "position")).toBe("sticky");
+    expect(decl(".cl-conv__unit[data-pending]", "top")).toMatch(/^calc\(var\(--cl-inset-top, 0px\) \+ var\(--clover-space-xs\)\)$/);
+    expect(decl(".cl-conv__unit[data-pending]", "scroll-margin-top")).toBe("var(--clover-space-s)");
+    // The view's own padding is 0, so the pin and the jump both measure from the scrollport's top edge, the
+    // bar's top: the inset is on the column, never on the viewport.
+    expect(decl(".cl-conv__viewport", "padding-top")).toBe("");
+  });
+});

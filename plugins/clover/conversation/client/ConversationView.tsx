@@ -8,7 +8,9 @@
 //
 // Nothing in this view may overlap the conversation's own content: an approval card's sealed buttons
 // count a click only while nothing covers them (spec §5.5), so the "Jump to latest" pill lives in a
-// strip below the scrolling area rather than over it.
+// strip below the scrolling area rather than over it. The window's translucent title bar does sit over
+// the view's top (`--cl-inset-top`): a card that starts waiting is brought into view below it, and while
+// it waits it pins below it rather than scroll under it (styles.css).
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentType, type ReactNode } from "react";
 import type { MessageContext, MessageSpotProps } from "./context";
 import { afterContentChange, isAtBottom } from "./follow";
@@ -249,6 +251,19 @@ export function ConversationView(props: ConversationViewProps) {
     observer.observe(inner);
     return () => observer.disconnect();
   }, []);
+  // A card that starts waiting comes into view, stopping below the title bar (the view's scroll padding
+  // and the card's scroll margin), even when the reader had scrolled away.
+  const pending = units.flatMap((u) => (u.type === "message" && u.item.kind === "approval" && u.item.state === "pending" ? [u.key] : []));
+  const pendingKey = pending.join("\n");
+  const seenPending = useRef<ReadonlySet<string>>(new Set());
+  useLayoutEffect(() => {
+    const fresh = pending.filter((key) => !seenPending.current.has(key));
+    seenPending.current = new Set(pending);
+    const el = viewport.current;
+    if (!el || fresh.length === 0) return;
+    const unit = [...el.querySelectorAll<HTMLElement>("[data-pending]")].find((u) => u.dataset.key === fresh[0]);
+    unit?.scrollIntoView?.({ block: "nearest" });
+  }, [pendingKey]);
   const onScroll = () => {
     const el = viewport.current;
     if (!el) return;
@@ -292,7 +307,13 @@ export function ConversationView(props: ConversationViewProps) {
                 <span className="cl-conv-day__label">{unit.label}</span>
               </div>
             ) : (
-              <div key={unit.key} className="cl-conv__unit" data-unit={unit.type === "message" ? unit.item.kind : unit.type}>
+              <div
+                key={unit.key}
+                className="cl-conv__unit"
+                data-unit={unit.type === "message" ? unit.item.kind : unit.type}
+                data-key={unit.key}
+                data-pending={unit.type === "message" && unit.item.kind === "approval" && unit.item.state === "pending" ? "" : undefined}
+              >
                 <MessageUnit
                   unit={unit}
                   renderers={renderers}

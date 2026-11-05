@@ -1,5 +1,5 @@
 // The theme tokens the conversation wears, by lane B's catalog names (`packages/plugin-sdk/src/catalogs/tokens.ts`,
-// B-M0 cde691273): `color.text.muted` arrives in CSS as `--clover-color-text-muted`. test/styles.test.ts
+// B-M0 cc3aa7e76): `color.text.muted` arrives in CSS as `--clover-color-text-muted`. test/styles.test.ts
 // fails if styles.css uses a token this list doesn't name, or this list names one styles.css doesn't use.
 // The shell's gallery test checks every catalog name here against a snapshot of B's catalog.
 
@@ -9,6 +9,7 @@ export const CATALOG_TOKENS = [
   "bubble.user.background",
   "color.accent",
   "color.accent.contrast",
+  "color.accent.soft",
   "color.accent.text",
   "color.attention.text",
   "color.control",
@@ -35,18 +36,22 @@ export const CATALOG_TOKENS = [
   "font.size.caption",
   "font.size.code",
   "font.size.control",
+  "font.size.label",
   "radius.large",
   "radius.round",
   "radius.small",
+  "space.l",
   "space.m",
   "space.s",
+  "space.xl",
   "space.xs",
 ] as const;
 
-/** Part-local tokens, named as B's rule names a plugin's own (`<top-level id>.<name>`, so `clover.…`),
- *  each a request to B for a catalog entry (listed in the PR body). */
+/** The `clover` plugin's own tokens (`plugin.clover.<name>`, B's rule for a plugin's own), each a request to
+ *  B for a catalog entry (listed in the PR body). */
 export const PART_TOKENS: readonly string[] = [
-  "clover.line.code",
+  "plugin.clover.line.code",
+  "plugin.clover.mark",
 ];
 
 export const TOKENS: readonly string[] = [...CATALOG_TOKENS, ...PART_TOKENS];
