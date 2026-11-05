@@ -160,7 +160,11 @@ export interface McpChannel {
 /** How the core answers a plugin's own plugin-API call (`storage.synced.get`, `net.fetch` …). It checks the plugin's
  *  capabilities (the SDK's `API_CALLS` table) and refuses a call the plugin may not make. `pluginId` is the one the
  *  host stamped. A listener reaches the router as a function and a streamed argument as an async iterable; across
- *  the pipe they are a subscription (`pluginHost.deliver`) and pieces (`pluginHost.chunk`). */
+ *  the pipe they are a subscription (`pluginHost.deliver`) and pieces (`pluginHost.chunk`). The router builds each
+ *  plugin's `net.fetch` when it takes the plugin's install record, placing keys by the SDK's `keyPlacementsFor` over
+ *  its `auth` entries: a placement off the closed list refuses that build, so the plugin has no fetch at all, rather
+ *  than failing a request (lane A's kit, `placement-closed-list`). A request's `idleTimeoutMs` is held to 1 s - 30 min
+ *  (`clampKeyedIdleTimeoutMs`). */
 export type ApiRouter = (call: { pluginId: string; process: HostProcess; path: string; args: unknown[]; caller: Caller }) => Promise<unknown>;
 
 export interface PluginHost {
