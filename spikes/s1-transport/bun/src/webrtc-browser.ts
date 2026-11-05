@@ -1,12 +1,20 @@
-// S1 question 5: a WebRTC data channel from a headless browser to the Bun side (node-datachannel).
+// S1 question 5: a WebRTC data channel from a browser to the Bun side (node-datachannel).
 // Lane I builds the web companion on this (spec §8.4).
 //
-//   bun src/webrtc-browser.ts --browser chrome|firefox [--exe <path>]
+//   bun src/webrtc-browser.ts --browser chrome|firefox|safari [--mdns reveal|hide] [--exe <path>]
 //
 // Bun serves one page on 127.0.0.1 and answers its offer over HTTP (the lab's signalling). The
 // page opens "ctrl" and "bulk" channels and measures: time to open, 64-byte round trips, upload
 // (browser to Bun) and download throughput, and round trips while an upload runs. It posts the
-// numbers back, and this process prints them as one S1RESULT line.
+// numbers back, with the ICE candidates it gathered and the pair that won, and this process
+// prints them as one S1RESULT line.
+//
+// `--mdns reveal` (the default) turns off Chrome's and Firefox's hiding of host addresses behind
+// mDNS names; `--mdns hide` leaves it on, as on a real page. Safari has no switch: it always runs
+// as it ships, headed, through safaridriver (`sudo safaridriver --enable` once).
+//
+// Browsers start only in CI: elsewhere this exits unless S1_ALLOW_LOCAL_BROWSER=1, so a local
+// run never opens a browser on someone's screen.
 
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -15,6 +23,7 @@ import nodeDataChannel from "node-datachannel";
 import { arg, emit, mbps, round, summary, withTimeout } from "./lib/report.ts";
 
 const browser = arg("browser", "chrome")!;
+const mdns = browser === "safari" ? "hide" : arg("mdns", "reveal")!;
 const sizes = {
   rpc: Number(arg("rpc", "500")),
   upMB: Number(arg("up-mb", "32")),
@@ -77,6 +86,12 @@ const post = (path, body) => fetch(path, { method: "POST", body });
 async function main() {
   const t0 = performance.now();
   const pc = new RTCPeerConnection({ iceServers: [] });
+  const gathered = [];
+  pc.onicecandidate = (e) => {
+    if (!e.candidate || !e.candidate.candidate) return;
+    const f = e.candidate.candidate.split(" ");
+    gathered.push({ type: f[7], address: f[4], protocol: f[2] });
+  };
   const ctrl = pc.createDataChannel("ctrl");
   const bulk = pc.createDataChannel("bulk");
   ctrl.binaryType = "arraybuffer";
@@ -135,16 +150,56 @@ async function main() {
   const under = [];
   while (!finished) { under.push(await ping()); await new Promise((r) => setTimeout(r, 5)); }
   const loadMs = await loaded;
+  const stats = await pc.getStats();
   let pair = null;
-  (await pc.getStats()).forEach((s) => { if (s.type === "candidate-pair" && (s.selected || s.nominated) && s.state === "succeeded") pair = { rttMs: (s.currentRoundTripTime || 0) * 1000, local: s.localCandidateId, remote: s.remoteCandidateId }; });
-  await post("/result", JSON.stringify({ ua: navigator.userAgent, openMs, rtts, upMs, downMs, under, loadMs, pair }));
+  stats.forEach((s) => { if (s.type === "candidate-pair" && (s.selected || s.nominated) && s.state === "succeeded") pair = { rttMs: (s.currentRoundTripTime || 0) * 1000, local: s.localCandidateId, remote: s.remoteCandidateId }; });
+  const cand = (id) => { const c = id && stats.get(id); return c ? { type: c.candidateType, address: c.address || c.ip || null, protocol: c.protocol } : null; };
+  if (pair) { pair.local = cand(pair.local); pair.remote = cand(pair.remote); }
+  await post("/result", JSON.stringify({ ua: navigator.userAgent, openMs, rtts, upMs, downMs, under, loadMs, pair, gathered }));
 }
 main().catch((e) => post("/result", JSON.stringify({ error: String((e && e.stack) || e) })));
 </script>`;
 }
 
+// safaridriver: one WebDriver session that opens `url`; returns how to end it.
+async function openInSafari(url: string): Promise<() => Promise<void>> {
+  const port = 4400 + Math.floor(Math.random() * 500);
+  const driver = Bun.spawn(["safaridriver", "--port", String(port)], { stdout: "ignore", stderr: "ignore" });
+  const base = `http://127.0.0.1:${port}`;
+  for (let i = 0; i < 100; i++) {
+    try {
+      if ((await fetch(`${base}/status`)).ok) break;
+    } catch {
+      /* not listening yet */
+    }
+    await Bun.sleep(100);
+  }
+  const created = (await (
+    await fetch(`${base}/session`, {
+      method: "POST",
+      body: JSON.stringify({ capabilities: { alwaysMatch: { browserName: "safari" } } }),
+    })
+  ).json()) as { value?: { sessionId?: string; message?: string } };
+  const id = created.value?.sessionId;
+  if (!id) {
+    driver.kill();
+    throw new Error(`safaridriver: no session (${created.value?.message ?? "unknown error"}); run sudo safaridriver --enable`);
+  }
+  // Navigation returns once the page has loaded; the page then runs on its own.
+  await fetch(`${base}/session/${id}/url`, { method: "POST", body: JSON.stringify({ url }) });
+  return async () => {
+    await fetch(`${base}/session/${id}`, { method: "DELETE" }).catch(() => undefined);
+    driver.kill();
+    await driver.exited;
+  };
+}
+
 async function main(): Promise<void> {
-  const exe = findExe();
+  if (!process.env.CI && process.env.S1_ALLOW_LOCAL_BROWSER !== "1") {
+    console.error("webrtc-browser starts a browser, so it runs only in CI (set S1_ALLOW_LOCAL_BROWSER=1 to override)");
+    process.exit(3);
+  }
+  const exe = browser === "safari" ? "safaridriver" : findExe();
   let resolveResult: (v: Record<string, unknown>) => void = () => {};
   const result = new Promise<Record<string, unknown>>((r) => (resolveResult = r));
   const peers: unknown[] = [];
@@ -165,7 +220,8 @@ async function main(): Promise<void> {
           },
         });
       if (req.method === "POST" && url.pathname === "/result") {
-        resolveResult(await req.json());
+        const body: unknown = await req.json();
+        resolveResult(body !== null && typeof body === "object" ? (body as Record<string, unknown>) : { error: `bad result: ${String(body)}` });
         return new Response("ok");
       }
       if (req.method === "POST" && url.pathname === "/offer") return new Response(await answerOffer(await req.text(), peers));
@@ -174,54 +230,81 @@ async function main(): Promise<void> {
   });
 
   const profile = mkdtempSync(join(tmpdir(), `s1-${browser}-`));
-  let argv: string[];
-  if (browser === "firefox") {
-    // Firefox hides host candidates behind mDNS names by default; libdatachannel can't resolve them.
-    writeFileSync(
-      join(profile, "user.js"),
-      [
-        'user_pref("media.peerconnection.ice.obfuscate_host_addresses", false);',
-        'user_pref("browser.shell.checkDefaultBrowser", false);',
-        'user_pref("datareporting.policy.dataSubmissionEnabled", false);',
-        'user_pref("toolkit.telemetry.reportingpolicy.firstRun", false);',
-      ].join("\n"),
-    );
-    argv = [exe, "--headless", "--no-remote", "--profile", profile, server.url.href];
+  let close: () => Promise<void>;
+  if (browser === "safari") {
+    close = await openInSafari(server.url.href);
   } else {
-    argv = [
-      exe,
-      "--headless=new",
-      "--no-first-run",
-      "--no-default-browser-check",
-      "--disable-gpu",
-      // Chrome hides host candidates behind mDNS names by default; libdatachannel can't resolve them.
-      "--disable-features=WebRtcHideLocalIpsWithMdns",
-      `--user-data-dir=${profile}`,
-      ...(process.platform === "linux" ? ["--no-sandbox"] : []),
-      server.url.href,
-    ];
+    let argv: string[];
+    if (browser === "firefox") {
+      // Firefox hides host candidates behind mDNS names by default; libdatachannel can't resolve
+      // them. `--mdns reveal` turns that off.
+      writeFileSync(
+        join(profile, "user.js"),
+        [
+          ...(mdns === "reveal" ? ['user_pref("media.peerconnection.ice.obfuscate_host_addresses", false);'] : []),
+          'user_pref("browser.shell.checkDefaultBrowser", false);',
+          'user_pref("datareporting.policy.dataSubmissionEnabled", false);',
+          'user_pref("toolkit.telemetry.reportingpolicy.firstRun", false);',
+        ].join("\n"),
+      );
+      argv = [exe, "--headless", "--no-remote", "--profile", profile, server.url.href];
+    } else {
+      argv = [
+        exe,
+        "--headless=new",
+        "--no-first-run",
+        "--no-default-browser-check",
+        "--disable-gpu",
+        // Chrome hides host candidates behind mDNS names by default; libdatachannel can't resolve
+        // them. `--mdns reveal` turns that off.
+        ...(mdns === "reveal" ? ["--disable-features=WebRtcHideLocalIpsWithMdns"] : []),
+        `--user-data-dir=${profile}`,
+        ...(process.platform === "linux" ? ["--no-sandbox"] : []),
+        server.url.href,
+      ];
+    }
+    const proc = Bun.spawn(argv, { stdout: "ignore", stderr: "ignore" });
+    close = async () => {
+      proc.kill();
+      await proc.exited;
+    };
   }
-  const proc = Bun.spawn(argv, { stdout: "ignore", stderr: "ignore" });
   try {
     const r = await withTimeout(result, 90_000, `${browser} result`);
     if (r.error) throw new Error(`page: ${r.error}`);
     const rtts = r.rtts as number[];
     const under = r.under as number[];
+    const gathered = (r.gathered as { type: string; address: string }[] | undefined) ?? [];
+    const sel = bunPc?.getSelectedCandidatePair() ?? null;
+    const selectedPair = sel && {
+      local: { type: sel.local.type, address: sel.local.address, transport: sel.local.transportType },
+      remote: { type: sel.remote.type, address: sel.remote.address, transport: sel.remote.transportType },
+    };
     emit("webrtc-browser", {
       ok: true,
       browser,
+      mdns,
       ua: r.ua,
       openMs: round(r.openMs as number, 1),
       rtt64B: summary(rtts),
       uploadMBps: mbps(sizes.upMB * 1e6, r.upMs as number),
       downloadMBps: mbps(sizes.downMB * 1e6, r.downMs as number),
       rttUnderUpload: { ...summary(under), uploadMBps: mbps(sizes.loadMB * 1e6, r.loadMs as number) },
+      // What the browser offered: host candidates as mDNS names, or as addresses.
+      browserCandidates: {
+        total: gathered.length,
+        mdnsHost: gathered.filter((c) => c.type === "host" && c.address.endsWith(".local")).length,
+        ipHost: gathered.filter((c) => c.type === "host" && !c.address.endsWith(".local")).length,
+        other: gathered.filter((c) => c.type !== "host").map((c) => c.type),
+      },
+      // The pair that carried the channel, from each side: with mDNS names, the Bun side learns
+      // the browser's address from its connectivity checks (a peer-reflexive candidate).
       pair: r.pair,
+      bunPair: selectedPair,
       sizes,
     });
   } finally {
-    proc.kill();
-    await proc.exited;
+    await close();
     server.stop(true);
     try {
       rmSync(profile, { recursive: true, force: true });
@@ -231,8 +314,11 @@ async function main(): Promise<void> {
   }
 }
 
+let bunPc: InstanceType<typeof nodeDataChannel.PeerConnection> | null = null;
+
 async function answerOffer(offer: string, keep: unknown[]): Promise<string> {
   const pc = new nodeDataChannel.PeerConnection("bun", { iceServers: [] });
+  bunPc = pc;
   keep.push(pc);
   const candidates: string[] = [];
   pc.onLocalCandidate((c) => candidates.push(c));
@@ -304,6 +390,6 @@ try {
   nodeDataChannel.cleanup();
   process.exit(0);
 } catch (e) {
-  emit("webrtc-browser", { ok: false, browser, error: String((e as Error)?.stack ?? e) });
+  emit("webrtc-browser", { ok: false, browser, mdns, error: String((e as Error)?.stack ?? e) });
   process.exit(1);
 }

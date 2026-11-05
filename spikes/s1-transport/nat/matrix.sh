@@ -1,13 +1,23 @@
 #!/usr/bin/env bash
-# S1 question 3: which NAT pairs connect directly with no relay.
+# S1 question 3: which NAT pairs connect directly with no relay, and (with a relay) what a dial
+# sends through it.
 #
-#   sudo spikes/s1-transport/nat/matrix.sh <clover-link-sidecar> <results.jsonl>
+#   sudo [PHASES="matrix timing relay"] spikes/s1-transport/nat/matrix.sh <clover-link-sidecar> <results.jsonl>
+#
+# Phases (default "matrix"):
+#   matrix  every NAT pair, relays off: iroh and quinn both dialling, iroh with one side dialling
+#   timing  restricted x symmetric, five times each, as is, with a second dial 100 ms after the
+#           first, and with a 100 ms initial RTT (the 1 s case in the report)
+#   relay   a local iroh relay at 203.0.113.50 (needs a sidecar built with --features
+#           relay-server): chosen pairs under each dial policy (punch.rs), and once with the
+#           relay's QUIC address discovery off
 #
 # Linux only, as root. Builds a small internet out of network namespaces:
 #
 #   s1pa ─ s1ra ─┐                          ┌─ s1rb ─ s1pb      peers behind their routers
 #                ├─ s1inet (bridge br0, 203.0.113.0/24) ─┤
-#   s1stun ──────┘                          └───────────       STUN at 203.0.113.100:3478
+#   s1stun ──────┘                          └─ s1relay         STUN at 203.0.113.100 and .101,
+#                                                              the relay at 203.0.113.50
 #
 # Each router is an iptables NAT of one type (RFC 4787 terms):
 #   public           no NAT: the peer sits on the bridge with a public address
@@ -20,16 +30,23 @@
 #
 # Routers drop unsolicited UDP silently instead of answering ICMP, as most home routers do.
 # Each pair gets fresh namespaces, so no conntrack state carries over. The two peers exchange
-# addresses through a shared folder (the waifucave handshake's job) and use no relay.
+# addresses through a shared folder (the waifucave handshake's job). Every NAT here that maps
+# endpoint-independently also keeps the inside port, so the lab can't show a mapping outliving
+# its socket (report, lab limits). Each peer asks both STUN servers from its one socket, so its
+# record says whether its mapping depends on the destination (report, edit 6 option (c)).
 
 set -uo pipefail
 BIN="$(readlink -f "$1")"
 OUT="$(readlink -f "$2")"
 TYPES=(${NAT_TYPES:-public full restricted port-restricted symmetric})
 RUNS=(${RUNS:-iroh:both quinn:both iroh:one})
+PHASES=(${PHASES:-matrix})
 TIMEOUT="${PUNCH_TIMEOUT:-10}"
 STUN=203.0.113.100:3478
+STUN2=203.0.113.101:3478
+RELAY_IP=203.0.113.50
 : >"$OUT"
+has_phase() { local p; for p in "${PHASES[@]}"; do [ "$p" = "$1" ] && return 0; done; return 1; }
 
 IPT=iptables
 probe_ipt() {
@@ -61,6 +78,7 @@ cleanup_sides() {
 
 cleanup_all() {
   cleanup_sides
+  ip netns del s1relay 2>/dev/null
   ip netns del s1stun 2>/dev/null
   ip netns del s1inet 2>/dev/null
   return 0
@@ -68,7 +86,7 @@ cleanup_all() {
 trap cleanup_all EXIT
 cleanup_all
 
-# The internet: one bridge, and the STUN host on it.
+# The internet: one bridge, and the STUN host on it with two addresses (two STUN servers).
 ip netns add s1inet
 ns s1inet ip link set lo up
 ns s1inet ip link add br0 type bridge
@@ -80,10 +98,40 @@ ip link set s1stun0 netns s1stun
 ip link set s1stun-br netns s1inet
 ns s1inet ip link set s1stun-br master br0 up
 ns s1stun ip addr add 203.0.113.100/24 dev s1stun0
+ns s1stun ip addr add 203.0.113.101/24 dev s1stun0
 ns s1stun ip link set s1stun0 up
 ip netns exec s1stun "$BIN" stun-server --bind "$STUN" 2>/dev/null &
 STUN_PID=$!
-trap 'kill $STUN_PID 2>/dev/null; cleanup_all' EXIT
+ip netns exec s1stun "$BIN" stun-server --bind "$STUN2" 2>/dev/null &
+STUN2_PID=$!
+BG_PIDS="$STUN_PID $STUN2_PID"
+trap 'kill $BG_PIDS 2>/dev/null; cleanup_all' EXIT
+
+# The relay host, for the relay phase only.
+RELAY_DIR=""
+if has_phase relay; then
+  RELAY_DIR="$(mktemp -d)"
+  ip netns add s1relay
+  ns s1relay ip link set lo up
+  ip link add s1relay0 type veth peer name s1relay-br
+  ip link set s1relay0 netns s1relay
+  ip link set s1relay-br netns s1inet
+  ns s1inet ip link set s1relay-br master br0 up
+  ns s1relay ip addr add "$RELAY_IP/24" dev s1relay0
+  ns s1relay ip link set s1relay0 up
+  ip netns exec s1relay "$BIN" relay-server --bind-ip "$RELAY_IP" --https-port 3443 --http-port 3340 --qad-port 7842 \
+    --metrics-file "$RELAY_DIR/metrics.json" --info-file "$RELAY_DIR/relay.json" >"$RELAY_DIR/relay.log" 2>&1 &
+  BG_PIDS="$BG_PIDS $!"
+  for _ in $(seq 100); do [ -s "$RELAY_DIR/relay.json" ] && break; sleep 0.1; done
+  if [ ! -s "$RELAY_DIR/relay.json" ]; then
+    echo "the relay did not start:" >&2
+    cat "$RELAY_DIR/relay.log" >&2
+    exit 1
+  fi
+  echo "relay: $(cat "$RELAY_DIR/relay.json")"
+  RELAY_URL="$(jq -r .url "$RELAY_DIR/relay.json")"
+  RELAY_SHA="$(jq -r .certSha256 "$RELAY_DIR/relay.json")"
+fi
 
 # wire <ns-a> <if-a> <ns-b> <if-b>: a veth pair between two namespaces.
 wire() {
@@ -173,9 +221,10 @@ lan_sides() {
   router_rules s1rl lan 203.0.113.9 lanbr rl-wan 10.0.9.2
 }
 
-# pair <type-a> <type-b> <transport> <strategy>
+# pair <phase> <variant> <type-a> <type-b> <transport> <strategy> [punch flags...]
 pair() {
-  local TA=$1 TB=$2 TR=$3 ST=$4
+  local PH=$1 VAR=$2 TA=$3 TB=$4 TR=$5 ST=$6
+  shift 6
   cleanup_sides
   if [ "$TA" = lan ]; then lan_sides; else
     side a "$TA" 1
@@ -183,11 +232,11 @@ pair() {
   fi
   local RDV
   RDV="$(mktemp -d)"
-  ip netns exec s1pa "$BIN" punch --transport "$TR" --strategy "$ST" --name a --port 47001 --stun "$STUN" \
-    --rendezvous "$RDV" --timeout "$TIMEOUT" --label "$TA/$TB" >"$RDV/a.out" 2>"$RDV/a.err" &
+  local COMMON=(punch --transport "$TR" --strategy "$ST" --stun "$STUN" --stun2 "$STUN2" --rendezvous "$RDV"
+    --timeout "$TIMEOUT" --label "$TA/$TB" "$@")
+  ip netns exec s1pa "$BIN" "${COMMON[@]}" --name a --port 47001 >"$RDV/a.out" 2>"$RDV/a.err" &
   local PA=$!
-  ip netns exec s1pb "$BIN" punch --transport "$TR" --strategy "$ST" --name b --port 47002 --stun "$STUN" \
-    --rendezvous "$RDV" --timeout "$TIMEOUT" --label "$TA/$TB" >"$RDV/b.out" 2>"$RDV/b.err" &
+  ip netns exec s1pb "$BIN" "${COMMON[@]}" --name b --port 47002 >"$RDV/b.out" 2>"$RDV/b.err" &
   local PB=$!
   wait "$PA" "$PB"
   for X in a b; do
@@ -197,24 +246,61 @@ pair() {
       line="$(jq -cn --arg e "$(tail -c 400 "$RDV/$X.err")" --arg n "$X" --arg t "$TR" --arg s "$ST" \
         '{check:"punch",ok:false,name:$n,transport:$t,strategy:$s,error:("no result: " + $e)}')"
     fi
-    echo "$line" | jq -c --arg ta "$TA" --arg tb "$TB" '. + {natA:$ta, natB:$tb}' >>"$OUT"
+    echo "$line" | jq -c --arg ta "$TA" --arg tb "$TB" --arg ph "$PH" --arg v "$VAR" \
+      '. + {natA:$ta, natB:$tb, phase:$ph, variant:$v}' >>"$OUT"
   done
   local verdict
-  verdict="$(grep '^S1RESULT ' "$RDV/a.out" | sed 's/^S1RESULT //' | jq -r 'if .ok then "direct in \(.connectMs) ms (\(.how))" else "FAILED: \(.error // "?")" end' 2>/dev/null)"
-  printf '%-6s %-5s a=%-16s b=%-16s %s\n' "$TR" "$ST" "$TA" "$TB" "${verdict:-FAILED: no result}"
+  verdict="$(grep '^S1RESULT ' "$RDV/a.out" | sed 's/^S1RESULT //' | jq -r 'if .ok then "connected in \(.connectMs) ms (\(.how)), relayed during dial \(.relayDuringDial.sendPacketsRecv // "-")" else "FAILED: \(.error // "?")" end' 2>/dev/null)"
+  printf '%-7s %-12s %-6s %-5s a=%-16s b=%-16s %s\n' "$PH" "$VAR" "$TR" "$ST" "$TA" "$TB" "${verdict:-FAILED: no result}"
   rm -rf "$RDV"
 }
 
-for run in "${RUNS[@]}"; do
-  TR="${run%%:*}"
-  ST="${run##*:}"
-  pair lan lan "$TR" "$ST"
-  for ((i = 0; i < ${#TYPES[@]}; i++)); do
-    # Ordered pairs for strategy "one" (only a dials, so roles matter); unordered for "both".
-    for ((j = 0; j < ${#TYPES[@]}; j++)); do
-      if [ "$ST" = both ] && [ "$j" -lt "$i" ]; then continue; fi
-      pair "${TYPES[$i]}" "${TYPES[$j]}" "$TR" "$ST"
+if has_phase matrix; then
+  for run in "${RUNS[@]}"; do
+    TR="${run%%:*}"
+    ST="${run##*:}"
+    pair matrix relay-off lan lan "$TR" "$ST"
+    for ((i = 0; i < ${#TYPES[@]}; i++)); do
+      # Ordered pairs for strategy "one" (only a dials, so roles matter); unordered for "both".
+      for ((j = 0; j < ${#TYPES[@]}; j++)); do
+        if [ "$ST" = both ] && [ "$j" -lt "$i" ]; then continue; fi
+        pair matrix relay-off "${TYPES[$i]}" "${TYPES[$j]}" "$TR" "$ST"
+      done
     done
   done
-done
+fi
+
+if has_phase timing; then
+  # The pair whose first Initial often loses the race (report, Q3 point 3), five times each way.
+  for TR in iroh quinn; do
+    for rep in 1 2 3 4 5; do
+      pair timing as-is restricted symmetric "$TR" both
+      pair timing redial-100ms restricted symmetric "$TR" both --redial-ms 100
+      pair timing initial-rtt-100ms restricted symmetric "$TR" both --initial-rtt-ms 100
+    done
+  done
+fi
+
+if has_phase relay; then
+  RELAY_FLAGS=(--relay-url "$RELAY_URL" --relay-cert-sha256 "$RELAY_SHA" --relay-metrics "$RELAY_DIR/metrics.json")
+  # A pair that connects directly, two that never do, one that needs QUIC's 1 s resend, and one
+  # with a symmetric side that still connects directly.
+  RELAY_PAIRS=(${RELAY_PAIRS:-port-restricted:port-restricted symmetric:symmetric port-restricted:symmetric restricted:symmetric public:symmetric})
+  for p in "${RELAY_PAIRS[@]}"; do
+    TA="${p%%:*}"
+    TB="${p##*:}"
+    for policy in direct race headstart:500 headstart:1000 auto:500; do
+      POL="${policy%%:*}"
+      HS="${policy##*:}"
+      [ "$HS" = "$POL" ] && HS=500
+      pair relay "$policy" "$TA" "$TB" iroh both "${RELAY_FLAGS[@]}" --relay-qad-port 7842 \
+        --policy "$POL" --headstart-ms "$HS" --second-direct-dial
+    done
+  done
+  # The one lever iroh has to keep address discovery off a relay that is on: no QUIC config.
+  pair relay direct-no-qad port-restricted port-restricted iroh both "${RELAY_FLAGS[@]}" --policy direct
+  pair relay race-no-qad port-restricted port-restricted iroh both "${RELAY_FLAGS[@]}" --policy race
+  echo "relay log tail:"
+  tail -n 20 "$RELAY_DIR/relay.log"
+fi
 echo "results in $OUT"

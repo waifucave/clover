@@ -5,9 +5,13 @@
 #   sudo spikes/s1-transport/nat/migrate.sh <clover-link-sidecar> <results.jsonl>
 #
 # Linux only, as root. Client namespace s1m1 and server namespace s1m2 on one veth pair with
-# 10 ms of delay each way. The client sends a 64-byte echo every 50 ms without waiting (the
-# sidecar's `ping`); the script breaks the path at a known time. Neither side reconnects: the
-# result says whether the one connection lived through it, and the longest gap between replies.
+# 10 ms of delay each way, and no NAT. The client sends a 64-byte echo every 50 ms without
+# waiting (the sidecar's `ping`); the script breaks the path at a known time. Neither side
+# reconnects the old connection: the result says whether it lived through the change, and the
+# longest gap between replies. In the "+redial" scenarios the client also dials a fresh
+# connection at the change or the wake and times its first echo (spec §8.3's "re-dial at once").
+# With no NAT that is the re-dial's floor; behind NATs it also needs fresh STUN answers and the
+# handshake (report, network changes).
 
 set -uo pipefail
 BIN="$(readlink -f "$1")"
@@ -62,6 +66,11 @@ signal_change() {
   touch "$TRIGGER"
 }
 
+# The re-dial clover-core would start on that event: a second, fresh connection.
+redial_now() {
+  touch "$REDIAL"
+}
+
 # scenario <name> <transport> <duration s> <grace s> <steps...>, each step "<at s>:<function>"
 scenario() {
   local NAME=$1 TR=$2 DUR=$3 GRACE=$4
@@ -73,8 +82,9 @@ scenario() {
   local SERVER=$!
   for _ in $(seq 100); do [ -s "$TMP/info.json" ] && break; sleep 0.1; done
   TRIGGER="$TMP/network-changed"
+  REDIAL="$TMP/redial"
   ip netns exec s1m1 "$BIN" ping --info-file "$TMP/info.json" --connect 198.19.0.2:47000 --duration-s "$DUR" --grace-s "$GRACE" \
-    --rebind-trigger "$TRIGGER" --label "$NAME" >"$TMP/client.log" 2>&1 &
+    --rebind-trigger "$TRIGGER" --redial-trigger "$REDIAL" --label "$NAME" >"$TMP/client.log" 2>&1 &
   local CLIENT=$!
   local t=0
   for step in "$@"; do
@@ -90,7 +100,7 @@ scenario() {
   line="$(grep '^S1RESULT ' "$TMP/client.log" | sed 's/^S1RESULT //')"
   [ -z "$line" ] && line="$(jq -cn --arg e "$(tail -c 400 "$TMP/client.log")" --arg t "$TR" --arg n "$NAME" '{check:"ping",ok:false,transport:$t,label:$n,error:$e}')"
   echo "$line" >>"$OUT"
-  echo "$line" | jq -r '"\(.transport) \(.label): recovered=\(.recovered) received \(.received)/\(.sent), last reply at \(.lastReplyAtS) s, longest gap \(.maxGapMs) ms at \(.maxGapAtS) s \(if .error then "error: \(.error)" else "" end)"'
+  echo "$line" | jq -r '"\(.transport) \(.label): recovered=\(.recovered) received \(.received)/\(.sent), last reply at \(.lastReplyAtS) s, longest gap \(.maxGapMs) ms at \(.maxGapAtS) s \(if .redial then "; re-dial at \(.redial.atS) s: \(if .redial.ok then "first reply in \(.redial.firstReplyMs) ms" else "failed: \(.redial.error)" end)" else "" end) \(if .error then "error: \(.error)" else "" end)"'
   rm -rf "$TMP"
 }
 
@@ -106,5 +116,10 @@ for TR in "${TRANSPORTS[@]}"; do
   # Sleep and wake: the wake event is a network-change call too.
   scenario blackout-20s+signal "$TR" 28 12 3:blackout 23:link_ok 23:signal_change
   scenario blackout-40s "$TR" 48 12 3:blackout 43:link_ok
+  # The same events with a fresh connection dialled at once (at the change, or at the wake).
+  scenario address-change+redial "$TR" 8 10 3:new_address 3:redial_now
+  scenario switch-2s-outage+redial "$TR" 10 8 3:blackout 5:new_address 5:link_ok 5:redial_now
+  scenario blackout-20s+redial "$TR" 28 12 3:blackout 23:link_ok 23:redial_now
+  scenario blackout-40s+redial "$TR" 48 12 3:blackout 43:link_ok 43:redial_now
 done
 echo "results in $OUT"

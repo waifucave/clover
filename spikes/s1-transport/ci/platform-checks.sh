@@ -7,8 +7,19 @@
 # Run from the repo root after `cargo build --release --manifest-path native/link-sidecar/Cargo.toml`
 # and `bun install --frozen-lockfile` in spikes/s1-transport/bun. Each check prints one
 # `S1RESULT <json>` line; this script collects them. It exits non-zero if a required check fails.
+#
+# Outside CI two groups are off unless asked for, because they reach past the process:
+#   S1_SKIP_BROWSER=0    the browser checks start Chrome, Firefox or Safari
+#   S1_SKIP_IROH_NAPI=0  n0's napi binding keeps iroh's port mapper on (it has no switch), whose
+#                        UPnP/NAT-PMP/PCP probing can raise a firewall prompt on macOS
 
 set -uo pipefail
+if [ -z "${CI:-}" ]; then
+  : "${S1_SKIP_BROWSER:=1}"
+  : "${S1_SKIP_IROH_NAPI:=1}"
+fi
+S1_SKIP_BROWSER="${S1_SKIP_BROWSER:-0}"
+S1_SKIP_IROH_NAPI="${S1_SKIP_IROH_NAPI:-0}"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 SPIKE="$ROOT/spikes/s1-transport/bun"
 EXE=""
@@ -48,13 +59,17 @@ run() {
 echo "bun $(bun --version), node $(node --version 2>/dev/null || echo none), $(uname -sm)"
 
 # Under Bun, from source.
-run required iroh-napi bun src/iroh-napi.ts
-run required iroh-napi-yield bun src/iroh-napi.ts --yield-every 1 --rpc 200 --rpc-streams 50 --shots 5
+if [ "$S1_SKIP_IROH_NAPI" = 1 ]; then
+  echo "S1_SKIP_IROH_NAPI=1; skipping n0's napi binding (its port mapper can't be turned off)"
+else
+  run required iroh-napi bun src/iroh-napi.ts
+  run required iroh-napi-yield bun src/iroh-napi.ts --yield-every 1 --rpc 200 --rpc-streams 50 --shots 5
+fi
 run required webrtc-dc bun src/webrtc-dc.ts
 run required sidecar-ipc bun src/sidecar-ipc.ts --sidecar "$SIDECAR"
 
 # The same napi binding under Node, for comparison (Bun's event loop starves timers; Node's doesn't).
-if command -v node >/dev/null; then
+if command -v node >/dev/null && [ "$S1_SKIP_IROH_NAPI" != 1 ]; then
   run optional iroh-napi-node node src/iroh-napi.ts --rpc 500 --rpc-streams 100 --bulk-mb 32 --shots 5 --load-mb 16
 fi
 
@@ -74,9 +89,16 @@ fi
 run required compile bun scripts/compile.ts
 BIN_DIR="$(mktemp -d)"
 cp "$SPIKE"/out/* "$BIN_DIR"/
-run required iroh-napi-compiled "$BIN_DIR/iroh-napi$EXE" --quick
+# bun build --compile leaves a copy of the Bun executable per binary in the working directory.
+rm -f "$SPIKE"/.*.bun-build
+if [ "$S1_SKIP_IROH_NAPI" != 1 ]; then run required iroh-napi-compiled "$BIN_DIR/iroh-napi$EXE" --quick; fi
 run required webrtc-dc-compiled "$BIN_DIR/webrtc-dc$EXE" --quick
 run required sidecar-ipc-compiled "$BIN_DIR/sidecar-ipc$EXE" --sidecar "$SIDECAR"
+
+# The iOS app's iroh (iroh-ffi 1.1.0, iroh 1.0.2) against ours (iroh 1.4.1), both directions.
+if [ "$S1_SKIP_IROH_NAPI" != 1 ] && [ -d "$ROOT/spikes/s1-transport/interop/node_modules/@number0/iroh" ]; then
+  run optional iroh-ffi-interop bun ../interop/interop.ts --sidecar "$SIDECAR"
+fi
 
 # Native QUIC in one process over loopback, for reference.
 run required native-quinn "$SIDECAR" local-bench --transport quinn
@@ -84,15 +106,22 @@ run required native-iroh "$SIDECAR" local-bench --transport iroh
 run optional native-quinn-bbr "$SIDECAR" local-bench --transport quinn --cc bbr --rpc 200 --rpc-streams 50 --shots 5
 run optional native-iroh-bbr "$SIDECAR" local-bench --transport iroh --cc bbr --rpc 200 --rpc-streams 50 --shots 5
 
-# A browser to the Bun side (question 5), headless. Chrome is required where the runner has it.
-if [ "${S1_SKIP_BROWSER:-0}" = 1 ]; then
-  echo "S1_SKIP_BROWSER=1; skipping the browser check"
+# A browser to the Bun side (question 5). Chrome is required where the runner has it. Each
+# browser runs with its mDNS hiding of host addresses turned off ("reveal", the lab's setting
+# so far) and left on ("hide", as a real page runs); Safari, on macOS, has no switch.
+if [ "$S1_SKIP_BROWSER" = 1 ]; then
+  echo "S1_SKIP_BROWSER=1; skipping the browser checks"
 elif [ "$(uname -m)" = aarch64 ] && [ "$(uname -s)" = Linux ]; then
-  echo "no Chrome build for Linux arm64; skipping the browser check"
+  echo "no Chrome build for Linux arm64; skipping the browser checks"
 else
   run required webrtc-chrome bun src/webrtc-browser.ts --browser chrome
   run optional webrtc-chrome-compiled "$BIN_DIR/webrtc-browser$EXE" --browser chrome
+  run optional webrtc-chrome-mdns bun src/webrtc-browser.ts --browser chrome --mdns hide
   run optional webrtc-firefox bun src/webrtc-browser.ts --browser firefox
+  run optional webrtc-firefox-mdns bun src/webrtc-browser.ts --browser firefox --mdns hide
+  if [ "$(uname -s)" = Darwin ]; then
+    run optional webrtc-safari bun src/webrtc-browser.ts --browser safari
+  fi
 fi
 
 echo "results in $OUT"

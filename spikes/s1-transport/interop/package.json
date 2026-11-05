@@ -1,0 +1,9 @@
+{
+  "name": "@waifucave/spike-s1-iroh-ffi-interop",
+  "private": true,
+  "type": "module",
+  "description": "Spike S1: iroh 1.0.2 (iroh-ffi 1.1.0, the iOS app's) against iroh 1.4.1 (clover-link-sidecar). Its own package so it can pin the older binding.",
+  "dependencies": {
+    "@number0/iroh": "1.1.0"
+  }
+}

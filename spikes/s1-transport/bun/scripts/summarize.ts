@@ -1,7 +1,7 @@
 // Turns S1 result files into Markdown tables (for $GITHUB_STEP_SUMMARY) and a few compact
 // GitHub notices (readable without auth from the public check-runs API).
 //
-//   bun scripts/summarize.ts platform|nat|netem <results.jsonl> [more.jsonl...]
+//   bun scripts/summarize.ts platform|nat|relay|netem|migrate <results.jsonl> [more.jsonl...]
 
 import { appendFileSync, readFileSync } from "node:fs";
 
@@ -30,8 +30,12 @@ if (kind === "platform") {
   md.push(`### S1 platform checks · ${platform}`, "", "| check | compiled | ok | numbers |", "| :- | :- | :- | :- |");
   const compact: R = { platform };
   for (const r of rows) {
-    const name = `${r.check}${r.browser ? `-${r.browser}` : ""}${r.runtime?.startsWith("node") ? "-node" : ""}${r.cc && r.cc !== "cubic" ? `-${r.cc}` : ""}${r.sizes?.yieldEvery > 0 ? "-yield" : ""}`;
+    const name = `${r.check}${r.browser ? `-${r.browser}` : ""}${r.mdns === "hide" && r.browser !== "safari" ? "-mdns" : ""}${r.runtime?.startsWith("node") ? "-node" : ""}${r.cc && r.cc !== "cubic" ? `-${r.cc}` : ""}${r.sizes?.yieldEvery > 0 ? "-yield" : ""}`;
     let nums = "";
+    if (r.browserCandidates)
+      nums += `browser offered ${r.browserCandidates.mdnsHost} mDNS + ${r.browserCandidates.ipHost} IP host candidates; pair ${r.pair?.local?.type ?? "?"}→${r.pair?.remote?.type ?? "?"} (Bun saw ${r.bunPair?.remote?.type ?? "?"}); `;
+    if (r.olderDialsNewer)
+      nums += `1.0.2→1.4.1 ${r.olderDialsNewer.ok ? `ok, rtt p50 ${f2(r.olderDialsNewer.rtt?.p50)} ms` : "**failed**"}; 1.4.1→1.0.2 ${r.newerDialsOlder?.ok ? `ok, ${r.newerDialsOlder.received}/${r.newerDialsOlder.sent} echoes` : "**failed**"}; `;
     if (r.bulk) nums += `bulk ${f1(r.bulk.MBps)} MB/s; `;
     if (r.rpcStream) nums += `rpc p50 ${f2(r.rpcStream.p50)} ms; `;
     if (r.rtt64B) nums += `rtt p50 ${f2(r.rtt64B.p50)} ms; `;
@@ -55,7 +59,7 @@ if (kind === "platform") {
   notices.push([`S1 platform ${platform}`, JSON.stringify(compact)]);
 } else if (kind === "nat") {
   const runs = new Map<string, R[]>();
-  for (const r of rows.filter((r) => r.name === "a")) {
+  for (const r of rows.filter((r) => r.name === "a" && (r.phase ?? "matrix") === "matrix")) {
     const key = `${r.transport}/${r.strategy}`;
     runs.set(key, [...(runs.get(key) ?? []), r]);
   }
@@ -79,6 +83,53 @@ if (kind === "platform") {
       JSON.stringify({ direct: `${ok.length}/${rs.filter((r) => r.natA !== "lan").length}`, lan: lan?.ok ?? null, connectMsP50: ms[Math.floor(ms.length / 2)] ?? null, fails }),
     ]);
   }
+  // What two STUN servers say about each NAT type's mapping (report, edit 6 option (c)).
+  const mapping = new Map<string, Set<string>>();
+  for (const r of rows.filter((r) => r.mapping && r.natA !== "lan")) {
+    const t = r.name === "a" ? r.natA : r.natB;
+    mapping.set(t, (mapping.get(t) ?? new Set()).add(r.mapping));
+  }
+  if (mapping.size) {
+    md.push("### Mapping seen by two STUN servers", "", "| NAT | mapping |", "| :- | :- |");
+    for (const [t, m] of mapping) md.push(`| ${t} | ${[...m].join(", ")} |`);
+    md.push("");
+    notices.push(["S1 NAT mapping by type", JSON.stringify(Object.fromEntries([...mapping].map(([t, m]) => [t, [...m]])))]);
+  }
+  const timing = rows.filter((r) => r.phase === "timing" && r.name === "a");
+  if (timing.length) {
+    md.push("### restricted × symmetric, time to connect", "", "| transport | variant | connect ms, each repetition |", "| :- | :- | :- |");
+    const compact: R = {};
+    for (const key of [...new Set(timing.map((r) => `${r.transport}|${r.variant}`))]) {
+      const [tr, v] = key.split("|");
+      const rs = timing.filter((r) => r.transport === tr && r.variant === v);
+      const cells = rs.map((r) => (r.ok ? String(Math.round(r.connectMs)) : "**no**"));
+      md.push(`| ${tr} | ${v} | ${cells.join(", ")} |`);
+      compact[`${tr}/${v}`] = rs.map((r) => (r.ok ? Math.round(r.connectMs) : null));
+    }
+    md.push("");
+    notices.push(["S1 NAT restricted x symmetric connect ms", JSON.stringify(compact)]);
+  }
+} else if (kind === "relay") {
+  md.push(
+    "### Dials with a local iroh relay on (iroh 1.4.1)",
+    "",
+    "| pair | policy | connected | ms | how | path at connect | relayed datagrams during dial / after | relay path after RPC | next direct-only dial: relay path | QAD address |",
+    "| :- | :- | :- | -: | :- | :- | -: | :- | :- | :- |",
+  );
+  const compact: R = {};
+  for (const r of rows.filter((r) => r.phase === "relay" && r.name === "a")) {
+    const atConnect = (r.pathAtConnect?.paths ?? []).find((p: R) => p.selected);
+    const viaRelay = atConnect ? (atConnect.relay ? "relay" : "direct") : "–";
+    const relayed = `${r.relayDuringDial?.sendPacketsRecv ?? "–"} / ${r.relayAfterConnect?.sendPacketsRecv ?? "–"}`;
+    const second = r.second ? (r.second.ok ? (r.second.relayPathAfterRpc || r.second.relayPathAtConnect ? "yes" : "no") : "dial failed") : "–";
+    md.push(
+      `| ${r.natA}/${r.natB} | ${r.variant} | ${r.ok ? "yes" : "**no**"} | ${r.ok ? Math.round(r.connectMs) : "–"} | ${r.how ?? "–"} | ${viaRelay} | ${relayed} | ${r.relayPathAfterRpc ? "yes" : "no"} | ${second} | ${r.settled?.globalV4 ?? "none"} |`,
+    );
+    compact[`${r.natA}/${r.natB}/${r.variant}`] = r.ok ? [Math.round(r.connectMs), viaRelay, r.relayDuringDial?.sendPacketsRecv ?? null] : false;
+  }
+  md.push("");
+  const entries = Object.entries(compact);
+  for (let i = 0; i < entries.length; i += 10) notices.push([`S1 relay [ms, path, relayed during dial] ${i / 10 + 1}`, JSON.stringify(Object.fromEntries(entries.slice(i, i + 10)))]);
 } else if (kind === "netem") {
   const profiles = [...new Set(rows.map((r) => r.profile))];
   for (const p of profiles) {
@@ -87,21 +138,23 @@ if (kind === "platform") {
     md.push(
       `### ${p}: ${n?.oneWayDelayMs} ms each way, ${n?.lossPct}% loss, ${n?.rate}`,
       "",
-      "| impl | connect ms | rpc p50 / p99 ms | per-stream rpc p50 | bulk MB/s | 1 MB shot p50 ms | under load, prioritised p50 / p99 | under load, equal p50 / p99 |",
-      "| :- | -: | -: | -: | -: | -: | -: | -: |",
+      "| impl | GSO | stream window | run | connect ms | rpc p50 / p99 ms | bulk MB/s | lost / final cwnd | 1 MB shot p50 ms | under load, prioritised p50 / p99 (n) | equal p50 / p99 (n) |",
+      "| :- | :- | :- | :- | -: | -: | -: | -: | -: | -: | -: |",
     );
     const compact: R = {};
     for (const r of rs) {
-      const name = `${r.impl}/${r.cc}`;
+      const win = r.window === "bdp" ? `${Math.round(r.windowBytes / 1000)} kB` : "1.25 MB";
+      const name = `${r.impl}/${r.cc}${r.gso && r.gso !== "on" ? " gso-off" : ""}${r.window === "bdp" ? " window-bdp" : ""}${r.runLabel ? ` ${r.runLabel}` : ""}${r.rep > 1 ? ` #${r.rep}` : ""}`;
       if (!r.ok) {
-        md.push(`| ${name} | **failed**: ${String(r.error).replace(/\s+/g, " ").slice(0, 120)} |||||||`);
+        md.push(`| ${r.impl}/${r.cc} | ${r.gso ?? "on"} | ${win} | ${r.runLabel || r.rep || ""} | **failed**: ${String(r.error).replace(/\s+/g, " ").slice(0, 120)} ||||||`);
         compact[name] = false;
         continue;
       }
       const lp = r.rpcUnderLoad_prioritised;
       const le = r.rpcUnderLoad_equal;
+      const cwnd = typeof r.stats?.cwnd === "number" ? `${Math.round(r.stats.cwnd / 1000)} kB` : "–";
       md.push(
-        `| ${name} | ${f1(r.connectMs)} | ${f2(r.rpcStream?.p50)} / ${f2(r.rpcStream?.p99)} | ${f2(r.rpcPerStream?.p50)} | ${f1(r.bulk?.MBps)} | ${f1(r.screenshot1MB?.p50)} | ${f1(lp?.p50)} / ${f1(lp?.p99)} | ${f1(le?.p50)} / ${f1(le?.p99)} |`,
+        `| ${r.impl}/${r.cc} | ${r.gso ?? "on"} | ${win} | ${r.runLabel || r.rep || ""} | ${f1(r.connectMs)} | ${f2(r.rpcStream?.p50)} / ${f2(r.rpcStream?.p99)} | ${f1(r.bulk?.MBps)} | ${r.stats?.lost ?? "–"} / ${cwnd} | ${f1(r.screenshot1MB?.p50)} | ${f1(lp?.p50)} / ${f1(lp?.p99)} (${lp?.n}) | ${f1(le?.p50)} / ${f1(le?.p99)} (${le?.n}) |`,
       );
       compact[name] = [r.rpcStream?.p50, r.bulk?.MBps, lp?.p50, lp?.p99].map((x) => (typeof x === "number" ? Math.round(x * 10) / 10 : null));
     }
@@ -112,18 +165,19 @@ if (kind === "platform") {
   md.push(
     "### One connection through network changes",
     "",
-    "| transport | scenario | all replies back | replies | longest gap ms | last reply s | connection lost |",
-    "| :- | :- | :- | -: | -: | -: | :- |",
+    "| transport | scenario | all replies back | replies | longest gap ms | last reply s | connection lost | re-dial at s: connect / first reply ms |",
+    "| :- | :- | :- | -: | -: | -: | :- | :- |",
   );
   const compact: R = {};
   for (const r of rows) {
     const lost = r.connectionLost ? String(r.error ?? "yes").replace(/\s+/g, " ").slice(0, 80) : "";
-    md.push(`| ${r.transport} | ${r.label} | ${r.recovered ? "yes" : "**no**"} | ${r.received}/${r.sent} | ${f1(r.maxGapMs)} | ${f2(r.lastReplyAtS)} | ${lost} |`);
+    const redial = r.redial ? (r.redial.ok ? `${r.redial.atS}: ${f1(r.redial.connectMs)} / ${f1(r.redial.firstReplyMs)}` : `**failed**: ${String(r.redial.error).slice(0, 60)}`) : "";
+    md.push(`| ${r.transport} | ${r.label} | ${r.recovered ? "yes" : "**no**"} | ${r.received}/${r.sent} | ${f1(r.maxGapMs)} | ${f2(r.lastReplyAtS)} | ${lost} | ${redial} |`);
     compact[`${r.transport}/${r.label}`] = r.recovered ? Math.round(r.maxGapMs) : false;
   }
   notices.push(["S1 network changes [longest gap ms, false = replies never all came back]", JSON.stringify(compact)]);
 } else {
-  console.error("usage: summarize.ts platform|nat|netem|migrate <files...>");
+  console.error("usage: summarize.ts platform|nat|relay|netem|migrate <files...>");
   process.exit(2);
 }
 
