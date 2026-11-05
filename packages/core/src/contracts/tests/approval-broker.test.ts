@@ -2,17 +2,25 @@
 // meta, and answers by sealed frame and by a paired device's signature.
 import { describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
-import { LEVELS, UNATTENDED_CARD_TIMEOUT_MS, cardAnswerSigningInput, cardHashInput, type Card, type CardAnswerProof, type Level } from "@waifucave/clover-protocol";
 import {
-  ACTION_EFFECTS, acpOutcomeFor, cardMetaOf, deviceProofVerifier, levelDecision, strictestLevel,
-  type AgentPermissionOption, type ApprovalDecision, type ApprovalEvent, type ApprovalRequest,
+  LEVELS, UNATTENDED_CARD_TIMEOUT_MS, callBindingInput, cardAnswerSigningInput, cardHashInput, type Card, type CardAnswerProof,
+  type Level, type SignedCardAnswer,
+} from "@waifucave/clover-protocol";
+import {
+  ACTION_EFFECTS, acpOutcomeFor, cardMetaOf, deviceProofVerifier, levelDecision, strictestLevel, verifySignedAnswer,
+  type AgentPermissionOption, type AnswerOrigin, type ApprovalDecision, type ApprovalEvent, type ApprovalRequest,
 } from "../approval-broker";
-import { FakeApprovalBroker } from "../fakes/approval-broker";
+import { FakeApprovalBroker, MemoryAnswerLedger } from "../fakes/approval-broker";
 import { FakeClock, flush } from "../fakes/clock";
 import { FakeDeviceRegistry, makeFakeDevice, toBase64 } from "../fakes/device-registry";
 import { FakeFence } from "../fakes/fence";
 
+const APP: AnswerOrigin = { role: "app" };
+/** A proof naming a channel no one minted: fine where the answer is refused before the proof is looked at. */
 const FRAME: CardAnswerProof = { via: "sealed-frame", frame: "frame-1", input: "click", at: 1 };
+/** A sealed frame's answer: the app has the core mint the card's channel, then the click arrives on it. */
+const viaFrame = (broker: FakeApprovalBroker, card: Card): CardAnswerProof => ({ via: "sealed-frame", frame: broker.frameChannel(card.id)!, input: "click", at: 1 });
+const sha256 = (text: string) => createHash("sha256").update(text).digest("hex");
 
 function bash(over: Partial<ApprovalRequest> = {}): ApprovalRequest {
   return {
@@ -129,7 +137,7 @@ describe("FakeApprovalBroker", () => {
     const { broker } = setup();
     const { card, decision } = await carded(broker, bash({ ruleKey: "Bash(git push:*)" }));
     expect(card.options.map((o) => o.id)).toEqual(["approve", "always", "deny"]);
-    expect(await broker.answer(card.id, { optionId: "always", hash: card.hash, proof: FRAME })).toBe("accepted");
+    expect(await broker.answer(card.id, { optionId: "always", hash: card.hash, proof: viaFrame(broker, card) }, APP)).toBe("accepted");
     expect(await decision).toEqual({ allowed: true, by: "card", cardId: card.id, optionId: "always", remembered: true });
     expect(broker.rules()).toMatchObject([{ ruleKey: "Bash(git push:*)", computers: ["Studio"], cardId: card.id }]);
     expect(await broker.request(bash({ ruleKey: "Bash(git push:*)" }))).toEqual({ allowed: true, by: "rule" });
@@ -148,7 +156,7 @@ describe("FakeApprovalBroker", () => {
     clock.advance(1);
     expect(await decision).toEqual({ allowed: false, by: "expired", cardId: card.id });
     expect(events.at(-1)).toEqual({ type: "resolved", cardId: card.id, outcome: "expired" });
-    expect(await broker.answer(card.id, { optionId: "approve", hash: card.hash, proof: FRAME })).toBe("already-answered");
+    expect(await broker.answer(card.id, { optionId: "approve", hash: card.hash, proof: FRAME }, APP)).toBe("already-answered");
   });
 
   test("rule 6: one from the user's own turn waits; a plugin's confirm never does", async () => {
@@ -177,16 +185,28 @@ describe("FakeApprovalBroker", () => {
     expect(await broker.request(bash(), { signal: abort.signal })).toEqual({ allowed: false, by: "cancelled" });
   });
 
-  test("rule 7: the first answer wins; a wrong hash, option or proof is refused", async () => {
+  test("rule 7: the first answer wins; a wrong hash, option, origin, frame or proof is refused", async () => {
     const clock = new FakeClock();
-    const broker = new FakeApprovalBroker({ clock, verify: (_c, _o, proof) => proof.via === "sealed-frame" });
+    const broker = new FakeApprovalBroker({ clock });
     const { card, decision } = await carded(broker, bash());
-    expect(await broker.answer("card_unknown1", { optionId: "approve", hash: card.hash, proof: FRAME })).toBe("unknown-card");
-    expect(await broker.answer(card.id, { optionId: "approve", hash: "0".repeat(64), proof: FRAME })).toBe("hash-mismatch");
-    expect(await broker.answer(card.id, { optionId: "maybe", hash: card.hash, proof: FRAME })).toBe("bad-option");
-    expect(await broker.answer(card.id, { optionId: "approve", hash: card.hash, proof: { via: "device", device: "phone0000000000000", at: 1, signature: "AAAA" } })).toBe("bad-proof");
-    expect(await broker.answer(card.id, { optionId: "deny", hash: card.hash, proof: FRAME })).toBe("accepted");
-    expect(await broker.answer(card.id, { optionId: "approve", hash: card.hash, proof: FRAME })).toBe("already-answered");
+    const phone = "phone0000000000000";
+    const device: CardAnswerProof = { via: "device", device: phone, at: clock.now(), signature: "AAAA" };
+    expect(await broker.answer("card_unknown1", { optionId: "approve", hash: card.hash, proof: FRAME }, APP)).toBe("unknown-card");
+    expect(await broker.answer(card.id, { optionId: "approve", hash: "0".repeat(64), proof: FRAME }, APP)).toBe("hash-mismatch");
+    expect(await broker.answer(card.id, { optionId: "maybe", hash: card.hash, proof: FRAME }, APP)).toBe("bad-option");
+    expect(await broker.answer(card.id, { optionId: "approve", hash: card.hash, proof: FRAME, children: ["luna"] }, APP)).toBe("bad-option");
+    // A sealed frame counts only through the app, on the channel minted for this card.
+    expect(await broker.answer(card.id, { optionId: "approve", hash: card.hash, proof: FRAME }, APP)).toBe("bad-origin");
+    expect(await broker.answer(card.id, { optionId: "approve", hash: card.hash, proof: viaFrame(broker, card) }, { role: "remote", device: phone })).toBe("bad-origin");
+    expect(await broker.answer(card.id, { optionId: "approve", hash: card.hash, proof: viaFrame(broker, card) }, { role: "plugin-host" })).toBe("bad-origin");
+    // A device's answer counts only from that device, in time, and the fake's verifier refuses by default.
+    expect(await broker.answer(card.id, { optionId: "approve", hash: card.hash, proof: device }, APP)).toBe("bad-origin");
+    expect(await broker.answer(card.id, { optionId: "approve", hash: card.hash, proof: device }, { role: "remote", device: "laptop000000000000" })).toBe("bad-origin");
+    expect(await broker.answer(card.id, { optionId: "approve", hash: card.hash, proof: { ...device, at: 0 } }, { role: "remote", device: phone })).toBe("bad-time");
+    expect(await broker.answer(card.id, { optionId: "approve", hash: card.hash, proof: device }, { role: "remote", device: phone })).toBe("bad-proof");
+    expect(await broker.answer(card.id, { optionId: "deny", hash: card.hash, proof: viaFrame(broker, card) }, APP)).toBe("accepted");
+    expect(await broker.answer(card.id, { optionId: "approve", hash: card.hash, proof: viaFrame(broker, card) ?? FRAME }, APP)).toBe("already-answered");
+    expect(broker.frameChannel(card.id)).toBeUndefined();
     expect(await decision).toEqual({ allowed: false, by: "card", cardId: card.id, optionId: "deny" });
   });
 
@@ -211,12 +231,15 @@ describe("FakeApprovalBroker", () => {
   });
 
   test("get: a pending card in full, then the resolved one with its outcome, option, device and time", async () => {
-    const { clock, broker, events } = setup();
+    const clock = new FakeClock();
+    const broker = new FakeApprovalBroker({ clock, verify: () => true });
+    const events: ApprovalEvent[] = [];
+    broker.watch((e) => events.push(e));
     const { card, decision } = await carded(broker, bash());
     expect(broker.get(card.id)).toEqual({ card });
     clock.advance(1_500);
-    const proof: CardAnswerProof = { via: "device", device: "phone0000000000000", at: 1, signature: "AAAA" };
-    expect(await broker.answer(card.id, { optionId: "approve", hash: card.hash, proof })).toBe("accepted");
+    const proof: CardAnswerProof = { via: "device", device: "phone0000000000000", at: clock.now(), signature: "AAAA" };
+    expect(await broker.answer(card.id, { optionId: "approve", hash: card.hash, proof }, { role: "remote", device: "phone0000000000000" })).toBe("accepted");
     await decision;
     expect(broker.get(card.id)).toEqual({ card, outcome: "approved", optionId: "approve", device: "phone0000000000000", resolvedAt: clock.now() });
     expect(events.at(-1)).toEqual({ type: "resolved", cardId: card.id, outcome: "approved", optionId: "approve", device: "phone0000000000000" });
@@ -228,23 +251,73 @@ describe("FakeApprovalBroker", () => {
     expect(broker.get(two.card.id)).toEqual({ card: two.card, outcome: "withdrawn", resolvedAt: clock.now() });
   });
 
-  test("a paired device answers with its signature over the card; a revoked one can't", async () => {
+  test("a paired device answers with its signature over the card and the children; a browser or revoked one can't", async () => {
     const clock = new FakeClock();
     const { registry } = await FakeDeviceRegistry.create({ clock, name: "Studio" });
     const phone = await makeFakeDevice();
+    const web = await makeFakeDevice();
     await registry.add({ id: phone.id, name: "Phone", kind: "phone", runsCore: false, publicKey: phone.publicKey }, { via: "account", account: "acct_1" });
+    await registry.add({ id: web.id, name: "Web", kind: "browser", runsCore: false, publicKey: web.publicKey }, { via: "account", account: "acct_1" });
     const broker = new FakeApprovalBroker({ clock, verify: deviceProofVerifier(registry) });
-    const sign = async (card: Card, option: string) => toBase64(await phone.sign(new TextEncoder().encode(cardAnswerSigningInput({ id: card.id, hash: card.hash, option, at: 5 }))));
+    const at = clock.now();
+    const sign = async (who: typeof phone, card: Card, option: string, children: string[] = []) =>
+      toBase64(await who.sign(new TextEncoder().encode(cardAnswerSigningInput({ id: card.id, hash: card.hash, option, at, children }))));
+    const from = (who: typeof phone): AnswerOrigin => ({ role: "remote", device: who.id });
+    const proof = async (who: typeof phone, card: Card, option: string, children: string[] = []): Promise<CardAnswerProof> =>
+      ({ via: "device", device: who.id, at, signature: await sign(who, card, option, children) });
 
     const one = await carded(broker, bash());
-    const forDeny = await sign(one.card, "deny");
-    expect(await broker.answer(one.card.id, { optionId: "approve", hash: one.card.hash, proof: { via: "device", device: phone.id, at: 5, signature: forDeny } })).toBe("bad-proof");
-    expect(await broker.answer(one.card.id, { optionId: "approve", hash: one.card.hash, proof: { via: "device", device: phone.id, at: 5, signature: await sign(one.card, "approve") } })).toBe("accepted");
+    expect(await broker.answer(one.card.id, { optionId: "approve", hash: one.card.hash, proof: await proof(phone, one.card, "deny") }, from(phone))).toBe("bad-proof");
+    // The web companion answers no card, even with a good signature.
+    expect(await broker.answer(one.card.id, { optionId: "approve", hash: one.card.hash, proof: await proof(web, one.card, "approve") }, from(web))).toBe("bad-proof");
+    expect(await broker.answer(one.card.id, { optionId: "approve", hash: one.card.hash, proof: await proof(phone, one.card, "approve") }, from(phone))).toBe("accepted");
     expect(await one.decision).toMatchObject({ allowed: true, by: "card" });
+
+    // A plugin OK's checked children are signed: a signature without them doesn't cover an answer with them.
+    const ok = await carded(broker, bash({ kind: "plugin-ok", pluginId: "luna", effect: "other", children: [
+      { id: "luna/deck", label: "Deck", checked: true }, { id: "luna/tarot-panel", label: "Panel", checked: true },
+    ] }));
+    expect(await broker.answer(ok.card.id, { optionId: "approve", hash: ok.card.hash, proof: await proof(phone, ok.card, "approve"), children: ["luna/deck"] }, from(phone))).toBe("bad-proof");
+    expect(await broker.answer(ok.card.id, { optionId: "approve", hash: ok.card.hash, proof: await proof(phone, ok.card, "approve", ["luna/deck"]), children: ["luna/deck"] }, from(phone))).toBe("accepted");
+    expect(broker.get(ok.card.id)?.children).toEqual(["luna/deck"]);
 
     const two = await carded(broker, bash());
     await registry.revoke(phone.id);
-    expect(await broker.answer(two.card.id, { optionId: "approve", hash: two.card.hash, proof: { via: "device", device: phone.id, at: 5, signature: await sign(two.card, "approve") } })).toBe("bad-proof");
+    expect(await broker.answer(two.card.id, { optionId: "approve", hash: two.card.hash, proof: await proof(phone, two.card, "approve") }, from(phone))).toBe("bad-proof");
+  });
+
+  test("a signed answer counts as proof only for the call its card binds, on this computer, once", async () => {
+    const clock = new FakeClock();
+    const { registry } = await FakeDeviceRegistry.create({ clock, name: "Studio" });
+    const phone = await makeFakeDevice();
+    const web = await makeFakeDevice();
+    await registry.add({ id: phone.id, name: "Phone", kind: "phone", runsCore: false, publicKey: phone.publicKey }, { via: "account", account: "acct_1" });
+    await registry.add({ id: web.id, name: "Web", kind: "browser", runsCore: false, publicKey: web.publicKey }, { via: "account", account: "acct_1" });
+    const params = { name: "Studio", level: "automatic" };
+    const unhashed = {
+      id: "card_00112233445566778899aabb", kind: "change" as const, change: "computer-level" as const, computer: "Studio", origin: "user" as const,
+      issuedAt: clock.now(), expiresAt: null, fields: {}, options: [{ id: "approve", kind: "approve" as const, label: "Raise" }, { id: "deny", kind: "deny" as const, label: "Keep" }],
+      binds: { computer: "Studio", method: "computer.setLevel", params: sha256(callBindingInput("computer.setLevel", params)) },
+    };
+    const card = { ...unhashed, hash: sha256(cardHashInput(unhashed as never)) } as Card;
+    const signed = async (who: typeof phone, option = "approve", over: Partial<SignedCardAnswer> = {}): Promise<SignedCardAnswer> => {
+      const at = clock.now();
+      return { card, option, device: who.id, at, signature: toBase64(await who.sign(new TextEncoder().encode(cardAnswerSigningInput({ id: card.id, hash: card.hash, option, at })))), ...over };
+    };
+    const ledger = new MemoryAnswerLedger();
+    const check = (method = "computer.setLevel", p: unknown = params, self = "Studio") =>
+      ({ self, method, params: p, now: clock.now(), sha256, devices: registry, ledger });
+    const good = await signed(phone);
+    expect(await verifySignedAnswer(good, check("computer.rename"))).toBe("unbound");
+    expect(await verifySignedAnswer(good, check(undefined, { ...params, level: "ask" }))).toBe("unbound");
+    expect(await verifySignedAnswer(good, check(undefined, undefined, "Laptop1"))).toBe("unbound");
+    expect(await verifySignedAnswer({ ...good, card: { ...card, fields: { title: { type: "text", text: "x" } } } }, check())).toBe("bad-hash");
+    expect(await verifySignedAnswer(await signed(phone, "deny"), check())).toBe("not-approve");
+    expect(await verifySignedAnswer(await signed(web), check())).toBe("bad-device");
+    expect(await verifySignedAnswer({ ...good, at: 0 }, check())).toBe("bad-time");
+    expect(await verifySignedAnswer({ ...good, signature: (await signed(phone, "deny")).signature }, check())).toBe("bad-signature");
+    expect(await verifySignedAnswer(good, check())).toBe("ok");
+    expect(await verifySignedAnswer(good, check())).toBe("used");
   });
 });
 

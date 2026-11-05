@@ -115,6 +115,22 @@ export function allowedEvents(role: CloverRole): ReadonlySet<string> {
   return out;
 }
 
+/** The allow lists a `peer.call` may name: a paired computer reaches what a remote client may, never more (§8.5). */
+export const PEER_CALL_ROLES = ["remote", "web"] as const;
+
+/** What a receiving daemon does with a `peer.call` (lane H's door, B1 of the review):
+ *  * `refused`: the role isn't a remote one, the method isn't on that role's list, or it is a peer method itself;
+ *  * `needs-answer`: the method is `userOnly` or a `change`, so it runs only with the user's signed answer bound to
+ *    this call (`SignedCardAnswer`, `CallBinding`), which the receiver verifies itself;
+ *  * `allowed`: it runs as the peer device the link authenticated, never as the user's own terminal, and never past
+ *    the fence. */
+export function peerCallVerdict(method: string, role: string): "refused" | "needs-answer" | "allowed" {
+  if (!(PEER_CALL_ROLES as readonly string[]).includes(role) || method.startsWith("peer.")) return "refused";
+  const spec = CLOVER_METHODS.get(method);
+  if (!spec || !allowedMethods(role as CloverRole).has(method)) return "refused";
+  return spec.userOnly || spec.change !== undefined ? "needs-answer" : "allowed";
+}
+
 /** Whether a plugin caller with these capabilities may call a method (§5.4): plugin roles need the method's
  *  capability; `call:*` means `call:<the target's top-level id>`, checked against the command's plugin. */
 export function pluginMayCall(method: MethodSpec, capabilities: readonly string[], target?: string): boolean {

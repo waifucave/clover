@@ -8,7 +8,7 @@ import {
   type PluginApi, type UiApi, type WebhookIngressHandler,
 } from "../src/index";
 import { createHash } from "node:crypto";
-import { DEFAULT_KEY_PLACEMENT, keyHeaderFor, stripEchoedKey, validateManifest } from "../src/index";
+import { DEFAULT_KEY_PLACEMENT, isSealedLookAllowed, keyHeaderFor, stripEchoedKey, validateManifest } from "../src/index";
 
 // A host half: handlers named by the manifest, a `host` MCP server, and the lifecycle.
 const draw: Handler<{ count: number }, { cards: string[] }> = async (args, ctx) => {
@@ -138,6 +138,17 @@ describe("the declarations", () => {
     const want = createHash("sha256").update("clover hook key v1|k3y").digest("base64url");
     expect(await webhookKeyHash("k3y")).toBe(want);
     expect(WEBHOOK_NEXT_WAIT_MAX_MS + WEBHOOK_NEXT_GRACE_MS).toBeLessThanOrEqual(API_CALL_MAX_TIMEOUT_MS);
+  });
+
+  test("a sealed glyph never contradicts its button", () => {
+    expect(isSealedLookAllowed("check", { kind: "approve" }, "tool")).toBe(true);
+    expect(isSealedLookAllowed("check", { kind: "deny" }, "tool")).toBe(false);
+    expect(isSealedLookAllowed("cross", { kind: "approve" }, "tool")).toBe(false);
+    expect(isSealedLookAllowed("cross", { kind: "deny" }, "elicitation")).toBe(true);
+    expect(isSealedLookAllowed("open", { kind: "approve" }, "tool")).toBe(false);
+    expect(isSealedLookAllowed("open", { kind: "approve" }, "elicitation")).toBe(true);
+    expect(isSealedLookAllowed("check", { kind: "approve" }, "elicitation")).toBe(false);
+    expect(isSealedLookAllowed("label", { kind: "deny" }, "tool")).toBe(true);
   });
 
   test("the limits are §5.4's", () => {

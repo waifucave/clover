@@ -107,7 +107,7 @@
                         "type": "string",
                         "minLength": 1,
                         "maxLength": 64,
-                        "pattern": "^[a-z0-9_-]+$"
+                        "pattern": "^[a-z0-9_-]{1,64}$"
                       },
                       "kind": {
                         "type": "string",
@@ -175,6 +175,32 @@
                     "agent-unsandboxed",
                     "core-setting"
                   ]
+                },
+                "binds": {
+                  "type": "object",
+                  "properties": {
+                    "computer": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 63,
+                      "pattern": "^[A-Za-z0-9]+(-[A-Za-z0-9]+)*$"
+                    },
+                    "method": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 128
+                    },
+                    "params": {
+                      "type": "string",
+                      "pattern": "^[0-9a-f]{64}$"
+                    }
+                  },
+                  "required": [
+                    "computer",
+                    "method",
+                    "params"
+                  ],
+                  "additionalProperties": false
                 },
                 "fields": {
                   "type": "object",
@@ -474,7 +500,7 @@
                       "type": "string",
                       "minLength": 1,
                       "maxLength": 64,
-                      "pattern": "^[a-z0-9_-]+$"
+                      "pattern": "^[a-z0-9_-]{1,64}$"
                     },
                     "kind": {
                       "type": "string",
@@ -542,6 +568,32 @@
                   "agent-unsandboxed",
                   "core-setting"
                 ]
+              },
+              "binds": {
+                "type": "object",
+                "properties": {
+                  "computer": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 63,
+                    "pattern": "^[A-Za-z0-9]+(-[A-Za-z0-9]+)*$"
+                  },
+                  "method": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  },
+                  "params": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$"
+                  }
+                },
+                "required": [
+                  "computer",
+                  "method",
+                  "params"
+                ],
+                "additionalProperties": false
               },
               "fields": {
                 "type": "object",
@@ -857,7 +909,7 @@
                         "type": "string",
                         "minLength": 1,
                         "maxLength": 64,
-                        "pattern": "^[a-z0-9_-]+$"
+                        "pattern": "^[a-z0-9_-]{1,64}$"
                       },
                       "kind": {
                         "type": "string",
@@ -900,6 +952,42 @@
         "additionalProperties": false
       }
     },
+    "card.frame": {
+      "doc": "Mints the channel a card's sealed frame answers on; a sealed-frame proof names it, and only for this card.",
+      "owner": "C",
+      "direction": "to-daemon",
+      "roles": [
+        "app"
+      ],
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^card_[A-Za-z0-9_-]{6,64}$"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "channel": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        },
+        "required": [
+          "channel"
+        ],
+        "additionalProperties": false
+      }
+    },
     "card.answer": {
       "doc": "Answers a card from a sealed frame, or with a paired device's signature; the first answer wins.",
       "owner": "C",
@@ -924,7 +1012,8 @@
           "option": {
             "type": "string",
             "minLength": 1,
-            "maxLength": 64
+            "maxLength": 64,
+            "pattern": "^[a-z0-9_-]{1,64}$"
           },
           "proof": {
             "oneOf": [
@@ -990,6 +1079,15 @@
                 ]
               }
             ]
+          },
+          "children": {
+            "maxItems": 256,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 81,
+              "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+            }
           }
         },
         "required": [
@@ -1022,18 +1120,12 @@
       "owner": "C",
       "direction": "to-daemon",
       "roles": [
-        "layer",
-        "plugin-host"
+        "layer"
       ],
       "params": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
         "properties": {
-          "pluginId": {
-            "type": "string",
-            "maxLength": 81,
-            "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
-          },
           "text": {
             "type": "string",
             "minLength": 1,
@@ -1041,7 +1133,6 @@
           }
         },
         "required": [
-          "pluginId",
           "text"
         ]
       },
@@ -1173,7 +1264,7 @@
                       "type": "string",
                       "minLength": 1,
                       "maxLength": 64,
-                      "pattern": "^[a-z0-9_-]+$"
+                      "pattern": "^[a-z0-9_-]{1,64}$"
                     },
                     "kind": {
                       "type": "string",
@@ -1239,6 +1330,31 @@
                   "computer-delete",
                   "agent-unsandboxed",
                   "core-setting"
+                ]
+              },
+              "binds": {
+                "type": "object",
+                "properties": {
+                  "computer": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 63,
+                    "pattern": "^[A-Za-z0-9]+(-[A-Za-z0-9]+)*$"
+                  },
+                  "method": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  },
+                  "params": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$"
+                  }
+                },
+                "required": [
+                  "computer",
+                  "method",
+                  "params"
                 ]
               },
               "fields": {
@@ -1528,7 +1644,7 @@
                       "type": "string",
                       "minLength": 1,
                       "maxLength": 64,
-                      "pattern": "^[a-z0-9_-]+$"
+                      "pattern": "^[a-z0-9_-]{1,64}$"
                     },
                     "kind": {
                       "type": "string",

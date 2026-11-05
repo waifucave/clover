@@ -4,9 +4,17 @@
 //
 // A card is core data. The app's main process and the native iOS app get its sealed fields; a plugin with the
 // `approvals` capability hears only which cards are pending and where (`card_pending`), and places their sealed
-// frames, never their text. The core takes an answer only from a sealed frame, over a channel the app's main process
-// opens for that frame alone, or from a paired device's own app, signed with its device key over the card's id and
-// hash. Every device shows a pending card; the first answer wins.
+// frames, never their text. The core takes an answer only from a sealed frame, through the app's main process (role
+// `app`) on a channel the core minted for that card (`card.frame`), or from a paired device's own app, signed with
+// its device key over the card's id and hash, the option, the time and the children checked. The device must be the
+// one the link authenticated, and never a `browser` device: the web companion answers no card. Every device shows a
+// pending card; the first answer wins, and a signed answer is used once per card id on every computer, since it also
+// travels as the proof of a raise (`SignedCardAnswer`).
+//
+// The card's hash is SHA-256 over its canonical JSON (RFC 8785, JCS: keys sorted by UTF-16 code units, numbers and
+// strings as ECMAScript serializes them), never over another language's default encoder. The phone recomputes the hash
+// from the card it shows and signs that, never the hash it was sent. `generated/clover/fixtures/card-hash-vectors.json`
+// pins the encoding (nulls, `/`, non-ASCII, U+2028, emoji, large integers).
 import { z } from "zod";
 import { utf16 } from "./strings";
 import {
@@ -55,7 +63,10 @@ export const CARD_FIELD_NAMES = [
 export const CardFieldName = z.enum(CARD_FIELD_NAMES);
 export type CardFieldName = z.infer<typeof CardFieldName>;
 
-/** A sealed field's content. Strings come from the built-in tables and trusted packs only (§5.5 "Translations"). */
+/** A sealed field's content. Strings come from the built-in tables and trusted packs only (§5.5 "Translations").
+ *  Wherever a sealed field is drawn (the app's frames, the iOS app), control characters and bidirectional marks show
+ *  as visible escapes (`\u202E`), and a field too long for its space is never cut silently: it says so and offers the
+ *  rest, so what the user approves is what runs. */
 export const SealedValue = z.discriminatedUnion("type", [
   z.object({ type: z.literal("text"), text: utf16(4000) }),
   z.object({ type: z.literal("code"), code: utf16(64_000), language: utf16(32).optional() }),
@@ -64,10 +75,14 @@ export const SealedValue = z.discriminatedUnion("type", [
 ]);
 export type SealedValue = z.infer<typeof SealedValue>;
 
+/** An option's id, as cards and answers name it. */
+export const CARD_OPTION_ID_RE = /^[a-z0-9_-]{1,64}$/;
+export const CardOptionId = utf16(64, 1).regex(CARD_OPTION_ID_RE);
+
 /** A sealed button. `<Card.Approve>` and `<Card.Deny>` place the first option of their kind, or a named one. An
  *  "always" option saves Clover's own rule; an agent still gets `allow_once` (§9.3, spike S5 edit 5). */
 export const CardOption = z.object({
-  id: utf16(64, 1).regex(/^[a-z0-9_-]+$/),
+  id: CardOptionId,
   kind: z.enum(["approve", "deny"]),
   label: Text,
   remember: z.enum(["always"]).optional(),
@@ -94,9 +109,16 @@ export type CardMeta = z.infer<typeof CardMeta>;
 
 /** The whole card, for the app's main process and the native iOS app only. `hash` is SHA-256 over
  *  `cardHashInput(card)`; a signed answer covers it. */
+/** The one call a card approves, when it approves a call: the computer that runs it, the method, and SHA-256 over the
+ *  canonical JSON of `{ method, params }` (`callBindingInput`). A receiver takes a signed answer as proof only for the
+ *  call its card binds (§8.5: a raise travels only with its signed answer). */
+export const CallBinding = z.object({ computer: ComputerName, method: utf16(128, 1), params: Sha256Hex });
+export type CallBinding = z.infer<typeof CallBinding>;
+
 export const Card = CardMeta.extend({
   hash: Sha256Hex,
   change: ChangeSubject.optional(),
+  binds: CallBinding.optional(),
   fields: z.partialRecord(CardFieldName, SealedValue),
   options: z.array(CardOption).min(1).max(8),
   /** A plugin OK covers the plugin and its children, with a checkbox per child (§5.1). */
@@ -105,11 +127,13 @@ export const Card = CardMeta.extend({
 export type Card = z.infer<typeof Card>;
 
 /** How an answer proves it came from the user (§5.5). A sealed frame's click or key press counts only when the app
- *  saw it come from the hardware, while the button showed whole and uncovered and no computer-use action ran. */
+ *  saw it come from the hardware, while the button showed whole and uncovered and no computer-use action ran; the core
+ *  takes it only from role `app`. A device's answer counts only from the device the link authenticated, never a
+ *  `browser` one, with `at` inside `answerTimeOk`'s bounds. */
 export const CardAnswerProof = z.discriminatedUnion("via", [
   z.object({
     via: z.literal("sealed-frame"),
-    /** The channel the app's main process opened for that frame alone. */
+    /** The channel the core minted for this card's frame (`card.frame`). */
     frame: utf16(128, 1),
     input: z.enum(["click", "key"]),
     at: Timestamp,
@@ -142,10 +166,41 @@ export function cardHashInput(card: Omit<Card, "hash"> | Card): string {
   return canonicalJson(rest);
 }
 
-/** What a paired device signs to answer a card: the card's id and hash, the option and the time. */
-export function cardAnswerSigningInput(a: { id: string; hash: string; option: string; at: number }): string {
-  return `clover/card-answer/1\n${a.id}\n${a.hash}\n${a.option}\n${a.at}`;
+/** What a paired device signs to answer a card: the card's id and hash, the option, the time, and the children it
+ *  checked (a plugin OK's checkboxes), sorted and joined by `,` on the last line (empty when there are none). */
+export function cardAnswerSigningInput(a: { id: string; hash: string; option: string; at: number; children?: readonly string[] }): string {
+  const children = [...(a.children ?? [])].sort().join(",");
+  return `clover/card-answer/2\n${a.id}\n${a.hash}\n${a.option}\n${a.at}\n${children}`;
 }
+
+/** How far a device's clock may stray from the shared clock when it signs an answer. */
+export const CARD_ANSWER_SKEW_MS = 60_000;
+
+/** An answer's time must fall between the card's issue (less the skew) and the earlier of now (plus the skew) and the
+ *  card's expiry. */
+export function answerTimeOk(card: Pick<Card, "issuedAt" | "expiresAt">, at: number, now: number): boolean {
+  const latest = Math.min(now + CARD_ANSWER_SKEW_MS, card.expiresAt ?? Number.POSITIVE_INFINITY);
+  return at >= card.issuedAt - CARD_ANSWER_SKEW_MS && at <= latest;
+}
+
+/** The text a `CallBinding`'s `params` hash covers. */
+export function callBindingInput(method: string, params: unknown): string {
+  return canonicalJson({ method, params });
+}
+
+/** A paired device's answer as proof for another computer: the whole card, so the receiver recomputes its hash and
+ *  checks what it binds, and the signature over `cardAnswerSigningInput`. The receiver verifies it itself, takes only
+ *  an approve option, and uses a card id once (C's `verifySignedAnswer`). */
+export const SignedCardAnswer = z.object({
+  card: Card,
+  option: CardOptionId,
+  children: z.array(AnyPluginId).max(256).optional(),
+  device: DeviceId,
+  at: Timestamp,
+  /** Ed25519 over `cardAnswerSigningInput(...)`, base64. */
+  signature: utf16(256, 1),
+});
+export type SignedCardAnswer = z.infer<typeof SignedCardAnswer>;
 
 export const APPROVALS_METHODS = {
   cardList: defineMethod({
@@ -171,15 +226,25 @@ export const APPROVALS_METHODS = {
     params: Empty, result: z.object({ cards: z.array(CardMeta) }),
     doc: "Pending cards' ids and computers, never their text (§5.5 `approvals.watch`).",
   }),
+  cardFrame: defineMethod({
+    name: "card.frame", owner: "C", roles: ["app"],
+    params: z.object({ id: CardId }), result: z.object({ channel: utf16(128, 1) }),
+    doc: "Mints the channel a card's sealed frame answers on; a sealed-frame proof names it, and only for this card.",
+  }),
   cardAnswer: defineMethod({
     name: "card.answer", owner: "C", roles: ["app", "remote", "peer"],
-    params: z.object({ id: CardId, hash: Sha256Hex, option: utf16(64, 1), proof: CardAnswerProof }),
+    params: z.object({
+      id: CardId, hash: Sha256Hex, option: CardOptionId, proof: CardAnswerProof,
+      /** A plugin OK's checked children; a device signs them too. */
+      children: z.array(AnyPluginId).max(256).optional(),
+    }),
     result: z.object({ accepted: z.boolean(), reason: utf16(500).optional() }),
     doc: "Answers a card from a sealed frame, or with a paired device's signature; the first answer wins.",
   }),
   cardConfirm: defineMethod({
-    name: "card.confirm", owner: "C", roles: ["layer", "plugin-host"],
-    params: z.object({ pluginId: AnyPluginId, text: utf16(2000, 1) }),
+    name: "card.confirm", owner: "C", roles: ["layer"],
+    /** The plugin is the layer connection's own; a host half's `confirm` goes through `pluginHost.api`. */
+    params: z.object({ text: utf16(2000, 1) }),
     result: z.object({ answer: z.enum(["yes", "no", "timeout"]) }),
     doc: "A plugin's `confirm(text)`: a sealed card naming the plugin; denied after 10 minutes unanswered (§5.4).",
   }),

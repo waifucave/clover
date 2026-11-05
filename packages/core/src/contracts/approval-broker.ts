@@ -21,11 +21,16 @@
 //    `confirm` always is; one from the user's turn waits (§5.5, §9.1).
 // 7. The user's interrupt withdraws the step's cards; a cancelled or stopped session's cards resolve cancelled, as ACP
 //    requires of a client (S5 §8). The first answer wins; a later one is told so.
+//    An answer counts only as it arrived (`answer`'s `from`): a sealed-frame proof only from the app's main process
+//    (role `app`), naming the channel minted for this card (`frameChannel`); a device's signature only from the device
+//    the link authenticated, never a `browser` device, with its time inside `answerTimeOk`'s bounds, over the option
+//    and the children checked (`clover/card-answer/2`).
 // 8. An agent never gets an "always": `acpOutcomeFor` picks `allow_once` or `reject_once`, and a card's "always" is
 //    saved as Clover's own rule instead (S5 edit 5).
 import {
   type Card, type CardAnswerProof, type CardFieldName, type CardKind, type CardMeta, type CardOption, type CardOutcome,
-  type ChangeSubject, type Level, LEVELS, type SealedValue, type TurnOrigin, cardAnswerSigningInput,
+  type ChangeSubject, type CloverRole, type DeviceKind, type Level, LEVELS, type SealedValue, type SignedCardAnswer,
+  type TurnOrigin, answerTimeOk, callBindingInput, cardAnswerSigningInput, cardHashInput,
 } from "@waifucave/clover-protocol";
 import type { Unsubscribe } from "./common";
 
@@ -102,13 +107,33 @@ export interface ApprovalDecision {
   remembered?: boolean;
 }
 
-export type AnswerResult = "accepted" | "already-answered" | "unknown-card" | "hash-mismatch" | "bad-option" | "bad-proof";
+export type AnswerResult =
+  | "accepted" | "already-answered" | "unknown-card" | "hash-mismatch" | "bad-option" | "bad-proof"
+  /** The proof can't come from where the answer did: a sealed frame not through the app, another device's signature. */
+  | "bad-origin"
+  /** A device's `at` outside `answerTimeOk`'s bounds. */
+  | "bad-time";
+
+/** Where an answer arrived from, as the connection says, never as the answer does: its role, and for a device link
+ *  (`remote`, `peer`), the device the link authenticated. */
+export interface AnswerOrigin {
+  role: CloverRole;
+  device?: string;
+}
+
+export interface CardAnswer {
+  optionId: string;
+  hash: string;
+  proof: CardAnswerProof;
+  /** A plugin OK's checked children, out of the card's `children`. */
+  children?: readonly string[];
+}
 
 export type ApprovalEvent =
   /** A new card: the whole of it, for the app's main process and the native iOS app (`card_requested`). */
   | { type: "requested"; card: Card }
   /** `card_resolved`; `device` is the paired device whose answer won, when one did. */
-  | { type: "resolved"; cardId: string; outcome: CardOutcome; optionId?: string; device?: string };
+  | { type: "resolved"; cardId: string; outcome: CardOutcome; optionId?: string; device?: string; children?: string[] };
 
 /** A card and, once it is resolved, how (`card.get`). */
 export interface CardRecord {
@@ -117,6 +142,8 @@ export interface CardRecord {
   optionId?: string;
   /** The paired device whose answer won, when one did. */
   device?: string;
+  /** The children the answer checked (a plugin OK). */
+  children?: string[];
   resolvedAt?: number;
 }
 
@@ -131,8 +158,9 @@ export interface SavedRule {
  *  the inherited `reviewer.model` rules and answers `unavailable` when no model can run. */
 export type Reviewer = (req: ApprovalRequest) => Promise<"safe" | "risky" | "unavailable">;
 
-/** Checks an answer's proof: a sealed frame's channel, or a paired device's signature (§5.5). */
-export type ProofVerifier = (card: Card, optionId: string, proof: CardAnswerProof) => boolean | Promise<boolean>;
+/** Checks a device's signature on an answer (§5.5); the broker itself checks the origin, the time and the frame
+ *  channels. */
+export type ProofVerifier = (card: Card, answer: CardAnswer, from: AnswerOrigin) => boolean | Promise<boolean>;
 
 export interface ApprovalBroker {
   /** Decides by rules 1–5, or shows a card and waits. Never rejects; an aborted signal decides `cancelled`. */
@@ -144,7 +172,9 @@ export interface ApprovalBroker {
   get(cardId: string): CardRecord | undefined;
   /** Pending cards without their text (`cardMetaOf`), for plugins with `approvals`. */
   pending(computer?: string): CardMeta[];
-  answer(cardId: string, a: { optionId: string; hash: string; proof: CardAnswerProof }): Promise<AnswerResult>;
+  /** Mints the channel this card's sealed frame answers on (`card.frame`); undefined once it isn't pending. */
+  frameChannel(cardId: string): string | undefined;
+  answer(cardId: string, a: CardAnswer, from: AnswerOrigin): Promise<AnswerResult>;
   /** The user interrupted the session's step: its pending cards resolve `withdrawn` (§6.4). How many did. */
   withdrawSession(sessionId: string): number;
   /** The session was cancelled or stopped: its pending cards resolve `cancelled`. How many did. */
@@ -215,18 +245,63 @@ export function cardMetaOf(card: Card): CardMeta {
   };
 }
 
-/** Builds a verifier that accepts a sealed frame's answer (the app's main process vouches for its channel) and a
- *  device's answer only with a valid Ed25519 signature over `cardAnswerSigningInput` from a device still paired. */
-export function deviceProofVerifier(devices: { verify(device: string, data: Uint8Array, signature: Uint8Array): Promise<boolean> }): ProofVerifier {
-  return async (card, optionId, proof) => {
-    if (proof.via === "sealed-frame") return true;
-    let signature: Uint8Array;
-    try {
-      signature = Uint8Array.from(atob(proof.signature), (c) => c.charCodeAt(0));
-    } catch {
-      return false;
-    }
-    const data = new TextEncoder().encode(cardAnswerSigningInput({ id: card.id, hash: card.hash, option: optionId, at: proof.at }));
-    return devices.verify(proof.device, data, signature);
+/** What a verifier needs of the device registry. */
+export interface AnswerDevices {
+  verify(device: string, data: Uint8Array, signature: Uint8Array): Promise<boolean>;
+  get(device: string): { kind: DeviceKind; revokedAt?: number } | undefined;
+}
+
+function fromBase64(text: string): Uint8Array | null {
+  try {
+    return Uint8Array.from(atob(text), (c) => c.charCodeAt(0));
+  } catch {
+    return null;
+  }
+}
+
+/** Builds the verifier for device answers: the signing device must be the one the link authenticated, paired, not a
+ *  `browser` device, and its Ed25519 signature must cover `cardAnswerSigningInput` with the option and children. A
+ *  sealed-frame proof never reaches it (the broker checks those), so it refuses one. */
+export function deviceProofVerifier(devices: AnswerDevices): ProofVerifier {
+  return async (card, answer, from) => {
+    const proof = answer.proof;
+    if (proof.via !== "device" || from.device !== proof.device) return false;
+    const device = devices.get(proof.device);
+    if (!device || device.kind === "browser" || device.revokedAt !== undefined) return false;
+    const signature = fromBase64(proof.signature);
+    if (!signature) return false;
+    const input = cardAnswerSigningInput({ id: card.id, hash: card.hash, option: answer.optionId, at: proof.at, children: answer.children ?? [] });
+    return devices.verify(proof.device, new TextEncoder().encode(input), signature);
   };
+}
+
+/** Each computer's record of the card ids whose signed answers it has taken as proof: a signed answer counts once. */
+export interface AnswerLedger {
+  /** True the first time, false ever after. */
+  claim(cardId: string): boolean;
+}
+
+export type SignedAnswerVerdict = "ok" | "bad-hash" | "unbound" | "not-approve" | "bad-device" | "bad-time" | "bad-signature" | "used";
+
+/** How a receiver takes a signed answer as proof for a call (`peer.call`, `tool.run`) or a raise (`setLevel`): it
+ *  recomputes the card's hash, checks the card binds exactly this computer, method and params, that the option is an
+ *  approve option, that the device is paired and not a browser, the time, and the signature, and then claims the card
+ *  id in its ledger, so the same answer never counts twice. */
+export async function verifySignedAnswer(
+  s: SignedCardAnswer,
+  c: { self: string; method: string; params: unknown; now: number; sha256(text: string): string; devices: AnswerDevices; ledger: AnswerLedger },
+): Promise<SignedAnswerVerdict> {
+  const { card } = s;
+  if (c.sha256(cardHashInput(card)) !== card.hash) return "bad-hash";
+  const b = card.binds;
+  if (!b || b.computer !== c.self || b.method !== c.method || b.params !== c.sha256(callBindingInput(c.method, c.params))) return "unbound";
+  if (card.options.find((o) => o.id === s.option)?.kind !== "approve") return "not-approve";
+  if ((s.children ?? []).some((id) => !card.children?.some((x) => x.id === id))) return "not-approve";
+  const device = c.devices.get(s.device);
+  if (!device || device.kind === "browser" || device.revokedAt !== undefined) return "bad-device";
+  if (!answerTimeOk(card, s.at, c.now)) return "bad-time";
+  const signature = fromBase64(s.signature);
+  const input = cardAnswerSigningInput({ id: card.id, hash: card.hash, option: s.option, at: s.at, children: s.children ?? [] });
+  if (!signature || !(await c.devices.verify(s.device, new TextEncoder().encode(input), signature))) return "bad-signature";
+  return c.ledger.claim(card.id) ? "ok" : "used";
 }

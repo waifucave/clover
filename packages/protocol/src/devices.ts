@@ -10,7 +10,7 @@ import { utf16 } from "./strings";
 import {
   Caller, ChangeResult, ComputerName, DeviceId, Empty, Ok, Os, SessionId, Text, Timestamp,
 } from "./common";
-import { CloverRole } from "./roles";
+import { SignedCardAnswer } from "./approvals";
 import { coreEvent, defineEvent, defineMethod } from "./rpc";
 import { UserMessageInput } from "./sessions";
 
@@ -195,10 +195,16 @@ export const DEVICES_METHODS = {
     params: z.object({
       method: utf16(128, 1),
       params: z.unknown(),
-      /** Who called on the peer's own computer, after its caller check, and through which role. The receiving daemon
-       *  applies that role's allow list, as if the caller were connected to it. */
+      /** Whose call it is on the calling computer, for attribution only. The receiver decides who the caller is from
+       *  the link (`from`, the authenticated peer device), never from this: a peer's `user` is the user on another
+       *  device, never the user's own terminal here, and it never waives the fence. */
       as: Caller,
-      role: CloverRole,
+      /** The allow list the receiver applies: a remote client's (`remote`) or the web page's shorter one (`web`), never
+       *  another role's (`peerCallVerdict`). */
+      role: z.enum(["remote", "web"]),
+      /** For a `userOnly` or `change` method: the user's signed answer, bound to this call, which the receiver
+       *  verifies itself; without it the call is refused. */
+      answer: SignedCardAnswer.optional(),
     }),
     result: z.object({ result: z.unknown() }),
     doc: "Runs a method on this computer for a caller on another one: a message to a bot that thinks here, a card's answer.",

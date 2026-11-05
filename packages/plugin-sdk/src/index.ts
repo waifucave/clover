@@ -35,5 +35,6 @@ export {
   WEBHOOK_ROUTINE_ID_RE, mayUseWaifucaveAuth, webhookKeyHash,
 } from "./api/plugin-api";
 export type * from "./api/ui-api";
+export { isSealedLookAllowed } from "./api/ui-api";
 
 export * from "./legacy-tier2";

@@ -50,7 +50,7 @@ export type DeliveredInput =
   | { from: "agent"; agent: string; text: string }
   | { from: "task-notification"; agent: string; backend: string; stopReason: AgentStopReason; text: string; transcript: string; usage?: { inputTokens: number; outputTokens: number } }
   | { from: "routine"; routine: string; name: string; sideThread: string; text: string }
-  /** A plugin's `conversation.send`, or an MCP Apps page's `ui/message` (`app`) without the user's own key press. */
+  /** A plugin's `conversation.send`, or an MCP Apps page's `ui/message` (`app`), which is never the user's (§5.5). */
   | { from: "plugin"; pluginId: string; text: string; app?: { callId: string } }
   | { from: "note"; label: string; text: string; by: { kind: "plugin"; pluginId: string } | { kind: "hook"; pluginId: string; hook: string } | { kind: "core" } };
 

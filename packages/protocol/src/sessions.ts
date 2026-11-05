@@ -314,8 +314,8 @@ export const NoteEvent = sessionEvent("note", {
   text: utf16(100_000),
 });
 /** A message a plugin sends a bot: its `conversation.send` (with `conversation.post`), or an MCP Apps page's
- *  `ui/message` sent without the user's own key press or click (§5.4, §5.5). The turn it starts is the plugin's, never
- *  the user's; shown with the plugin's name (`from.kind: "plugin"`). */
+ *  `ui/message`, which is never the user's, whatever key press or click came with it (§5.5). The turn it starts is the
+ *  plugin's; shown with the plugin's name (`from.kind: "plugin"`). */
 export const PluginMessageEvent = sessionEvent("plugin_message", {
   from: z.object({ kind: z.literal("plugin"), pluginId: AnyPluginId }),
   text: utf16(1_000_000),

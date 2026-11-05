@@ -61,11 +61,24 @@ export interface CardFieldProps {
 export interface CardButtonProps {
   option?: string;
   /** The option's sealed label (the default), or a glyph the core draws with the label as its accessible name: `check`
-   *  ✓, `cross` ✕, `open` ↗ (an elicitation's link). */
-  look?: "label" | "check" | "cross" | "open";
+   *  ✓ only on an approve option, `cross` ✕ only on a deny option, `open` ↗ only on an elicitation's approve option
+   *  (`isSealedLookAllowed`); the core draws the label for any other pairing, so a glyph never contradicts its button. */
+  look?: SealedLook;
   /** A glyph button's side in CSS pixels, at least 24 (smaller draws 24). */
   size?: number;
   className?: string;
+}
+
+export type SealedLook = "label" | "check" | "cross" | "open";
+
+/** Whether a sealed button may wear a glyph: ✓ approves, ✕ denies, ↗ opens an elicitation's link. */
+export function isSealedLookAllowed(look: SealedLook, option: { kind: "approve" | "deny" }, cardKind: string): boolean {
+  switch (look) {
+    case "label": return true;
+    case "check": return option.kind === "approve" && cardKind !== "elicitation";
+    case "cross": return option.kind === "deny";
+    case "open": return option.kind === "approve" && cardKind === "elicitation";
+  }
 }
 
 /** `<AppView call>`: places an MCP Apps page where a tool's result shows (§5.5). A page no component places within 2

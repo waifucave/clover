@@ -1,14 +1,15 @@
 // FakeApprovalBroker: the broker's rules on an injected clock, levels and fence, with cards answered by tests. Its
-// default reviewer is unavailable, so "ask for risky actions" asks, as the real broker does when no model can run.
+// default reviewer is unavailable, so "ask for risky actions" asks, as the real broker does when no model can run, and
+// its default verifier refuses every device answer: a test that answers by device passes `deviceProofVerifier`.
 import { createHash, randomBytes } from "node:crypto";
 import {
-  type Card, type CardAnswerProof, type CardMeta, type CardOption, type CardOutcome, type Level,
-  DEFAULT_LEVEL, UNATTENDED_CARD_TIMEOUT_MS, cardHashInput, isUserTurn,
+  type Card, type CardMeta, type CardOption, type CardOutcome, type Level,
+  DEFAULT_LEVEL, UNATTENDED_CARD_TIMEOUT_MS, answerTimeOk, cardHashInput, isUserTurn,
 } from "@waifucave/clover-protocol";
 import {
   cardMetaOf, isBridgeCall, levelDecision, strictestLevel,
-  type AnswerResult, type ApprovalBroker, type ApprovalDecision, type ApprovalEvent, type ApprovalRequest,
-  type CardRecord, type ProofVerifier, type Reviewer, type SavedRule,
+  type AnswerLedger, type AnswerOrigin, type AnswerResult, type ApprovalBroker, type ApprovalDecision, type ApprovalEvent,
+  type ApprovalRequest, type CardAnswer, type CardRecord, type ProofVerifier, type Reviewer, type SavedRule,
 } from "../approval-broker";
 import type { Clock, TimerHandle } from "../clock";
 import { Listeners, type Unsubscribe } from "../common";
@@ -30,6 +31,18 @@ interface Pending {
   resolve: (d: ApprovalDecision) => void;
   timer?: TimerHandle;
   done: boolean;
+  /** The channel minted for its sealed frame, once the app asked. */
+  channel?: string;
+}
+
+/** The card ids a computer has taken signed answers for, in memory. */
+export class MemoryAnswerLedger implements AnswerLedger {
+  readonly #used = new Set<string>();
+  claim(cardId: string): boolean {
+    if (this.#used.has(cardId)) return false;
+    this.#used.add(cardId);
+    return true;
+  }
 }
 
 const DEFAULT_OPTIONS: CardOption[] = [
@@ -53,7 +66,7 @@ export class FakeApprovalBroker implements ApprovalBroker {
     this.#levels = opts.levels ?? (() => DEFAULT_LEVEL);
     this.#fence = opts.fence;
     this.#reviewer = opts.reviewer ?? (async () => "unavailable");
-    this.#verify = opts.verify ?? (() => true);
+    this.#verify = opts.verify ?? (() => false);
   }
 
   async request(req: ApprovalRequest, opts: { signal?: AbortSignal } = {}): Promise<ApprovalDecision> {
@@ -80,19 +93,34 @@ export class FakeApprovalBroker implements ApprovalBroker {
       .map((p) => cardMetaOf(p.card));
   }
 
-  async answer(cardId: string, a: { optionId: string; hash: string; proof: CardAnswerProof }): Promise<AnswerResult> {
+  frameChannel(cardId: string): string | undefined {
+    const p = this.#pending.get(cardId);
+    if (!p) return undefined;
+    p.channel ??= `frame_${randomBytes(12).toString("hex")}`;
+    return p.channel;
+  }
+
+  async answer(cardId: string, a: CardAnswer, from: AnswerOrigin): Promise<AnswerResult> {
     const p = this.#pending.get(cardId);
     if (!p) return this.#resolved.has(cardId) ? "already-answered" : "unknown-card";
     if (a.hash !== p.card.hash) return "hash-mismatch";
     const option = p.card.options.find((o) => o.id === a.optionId);
     if (!option) return "bad-option";
-    if (!(await this.#verify(p.card, a.optionId, a.proof))) return "bad-proof";
+    const children = [...(a.children ?? [])];
+    if (children.some((id) => !p.card.children?.some((c) => c.id === id))) return "bad-option";
+    if (a.proof.via === "sealed-frame") {
+      if (from.role !== "app" || p.channel === undefined || a.proof.frame !== p.channel) return "bad-origin";
+    } else {
+      if (from.device !== a.proof.device) return "bad-origin";
+      if (!answerTimeOk(p.card, a.proof.at, this.#clock.now())) return "bad-time";
+      if (!(await this.#verify(p.card, a, from))) return "bad-proof";
+    }
     if (p.done) return "already-answered"; // another answer won while this one was being checked
     const allowed = option.kind === "approve";
     const remembered = allowed && option.remember === "always" && p.req.ruleKey !== undefined;
     if (remembered) this.#rules.push({ ruleKey: p.req.ruleKey!, computers: [...p.req.computers], cardId, savedAt: this.#clock.now() });
     const device = a.proof.via === "device" ? a.proof.device : undefined;
-    this.#settle(p, allowed ? "approved" : "denied", { allowed, by: "card", cardId, optionId: option.id, ...(remembered ? { remembered } : {}) }, option.id, device);
+    this.#settle(p, allowed ? "approved" : "denied", { allowed, by: "card", cardId, optionId: option.id, ...(remembered ? { remembered } : {}) }, option.id, device, children);
     return "accepted";
   }
 
@@ -178,12 +206,15 @@ export class FakeApprovalBroker implements ApprovalBroker {
     return n;
   }
 
-  #settle(p: Pending, outcome: CardOutcome, decision: ApprovalDecision, optionId?: string, device?: string): void {
+  #settle(p: Pending, outcome: CardOutcome, decision: ApprovalDecision, optionId?: string, device?: string, children?: string[]): void {
     if (p.done) return;
     p.done = true;
     if (p.timer) this.#clock.clearTimeout(p.timer);
     this.#pending.delete(p.card.id);
-    const how = { ...(optionId === undefined ? {} : { optionId }), ...(device === undefined ? {} : { device }) };
+    const how = {
+      ...(optionId === undefined ? {} : { optionId }), ...(device === undefined ? {} : { device }),
+      ...(children === undefined || children.length === 0 ? {} : { children }),
+    };
     this.#resolved.set(p.card.id, { card: p.card, outcome, ...how, resolvedAt: this.#clock.now() });
     this.#listeners.emit({ type: "resolved", cardId: p.card.id, outcome, ...how });
     p.resolve(decision);

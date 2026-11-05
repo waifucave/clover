@@ -4,7 +4,9 @@
 // change to an area file without `pnpm protocol:generate` fails the tests as well as CI's codegen job.
 // Nothing here goes into the Swift test bundle: the inherited Swift mirror stays as it is until lane I re-points
 // the iOS app.
+import { createHash } from "node:crypto";
 import { z } from "zod";
+import { canonicalJson, cardAnswerSigningInput, cardHashInput } from "../src/approvals";
 import { CLOVER_AREAS, AREA_EVENTS, AREA_METHODS, AREA_OWNERS, CORE_METHODS, allowedEvents, allowedMethods, daemonRequestsTo } from "../src/clover";
 import { CLOVER_ROLES } from "../src/roles";
 import type { EventSpec, MethodSpec } from "../src/rpc";
@@ -43,6 +45,39 @@ function eventDoc(e: EventSpec) {
 
 const json = (v: unknown) => `${JSON.stringify(v, null, 2)}\n`;
 
+const sha256 = (text: string) => createHash("sha256").update(text, "utf8").digest("hex");
+
+/** The canonical JSON (RFC 8785) a card's hash covers, pinned for every language that recomputes it (the iOS app):
+ *  each `input` with the exact text `canonicalJson` gives and its SHA-256, and a signing input. */
+function cardHashVectors() {
+  const inputs: [string, unknown][] = [
+    ["nulls", { b: null, a: [null, 1, { c: null }] }],
+    ["slash", { path: "a/b/c", url: "https://example.com/x?y=1" }],
+    ["non-ascii", { text: "héllo — ✓", 日本: "語", Ä: "ö" }],
+    ["line-separators", { s: "a\u2028b\u2029c" }],
+    ["emoji", { e: "😀", "😀": 1, z: "👩‍👩‍👧" }],
+    ["control", { c: "\u0000\u001f\t\n\r\"\\" }],
+    ["numbers", { max: 9007199254740991, ts: 1781270000000, neg: -1, half: 0.5, big: 1e21, small: 1e-7, zero: 0 }],
+    ["nested-order", { b: { y: [3, { q: 1, p: 2 }], x: true }, a: false, A: "upper first" }],
+  ];
+  const card = {
+    id: "card_0a1b2c3d4e5f60718293a4b5", kind: "tool", computer: "Studio", session: "s_alpha", bot: "alpha", origin: "user",
+    issuedAt: 1781270000000, expiresAt: null, fields: { title: { type: "text", text: "Run a command" }, command: { type: "code", code: "git push", language: "sh" } },
+    options: [{ id: "approve", kind: "approve", label: "Approve" }, { id: "deny", kind: "deny", label: "Deny" }],
+  };
+  const cardInput = cardHashInput(card as never);
+  const cardHash = sha256(cardInput);
+  return {
+    doc: "canonicalJson is RFC 8785 (JCS): keys sorted by UTF-16 code units, strings and numbers as ECMAScript serializes them, no whitespace. A card's hash is SHA-256 over cardHashInput(card), lowercase hex.",
+    vectors: inputs.map(([name, input]) => ({ name, input, canonical: canonicalJson(input), sha256: sha256(canonicalJson(input)) })),
+    card: { card, hashInput: cardInput, hash: cardHash },
+    signing: {
+      answer: { id: card.id, hash: cardHash, option: "approve", at: 1781270001000, children: ["luna/tarot-panel", "luna/deck"] },
+      input: cardAnswerSigningInput({ id: card.id, hash: cardHash, option: "approve", at: 1781270001000, children: ["luna/tarot-panel", "luna/deck"] }),
+    },
+  };
+}
+
 /** Path (relative to `generated/clover/`) → file content. */
 export function buildCloverArtifacts(): Map<string, string> {
   const files = new Map<string, string>();
@@ -61,6 +96,7 @@ export function buildCloverArtifacts(): Map<string, string> {
     }));
     for (const e of events) files.set(`fixtures/${e.type}.json`, json(e.fixture));
   }
+  files.set("fixtures/card-hash-vectors.json", json(cardHashVectors()));
   files.set("allowlists.json", json(Object.fromEntries(CLOVER_ROLES.map((role) => [role, {
     calls: [...allowedMethods(role)].sort(),
     receives: [...allowedEvents(role)].sort(),

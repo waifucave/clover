@@ -10,6 +10,7 @@ import { utf16 } from "./strings";
 import {
   AnyPluginId, ChangeResult, ComputerName, DeviceId, Empty, Level, Ok, Os, SecretStoreView, SessionId, Timestamp, TreePath,
 } from "./common";
+import { SignedCardAnswer } from "./approvals";
 import { coreEvent, defineEvent, defineMethod } from "./rpc";
 
 export const ComputerState = z.enum(["online", "offline", "asleep"]);
@@ -191,8 +192,11 @@ export const COMPUTERS_METHODS = {
     params: z.object({
       session: SessionId, callId: utf16(128, 1), epoch: z.number().int().nonnegative(),
       tool: utf16(256, 1), input: z.unknown(),
-      /** The level the call runs under: the stricter of the computers it touches (§9.1). */
+      /** The calling computer's level for the call (the stricter of the computers it touches, §9.1). The receiver runs
+       *  it at the stricter of this and its own level; what that level would ask about needs `answer`, a signed answer
+       *  bound to this call, or the receiver shows its own card. */
       level: Level,
+      answer: SignedCardAnswer.optional(),
     }),
     result: z.object({ output: z.unknown(), isError: z.boolean() }),
     doc: "Runs a tool call (Bash, a local MCP server's tool) on the computer that holds its folder; output streams as `tool_output`.",

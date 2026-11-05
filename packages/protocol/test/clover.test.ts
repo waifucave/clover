@@ -4,7 +4,7 @@ import { describe, expect, test } from "bun:test";
 import { z } from "zod";
 import {
   AREA_EVENTS, AREA_METHODS, CLOVER_AREAS, CLOVER_EVENTS, CLOVER_METHODS, CloverCoreEvent,
-  allowedEvents, allowedMethods, daemonRequestsTo, pluginMayCall,
+  PEER_CALL_ROLES, allowedEvents, allowedMethods, daemonRequestsTo, peerCallVerdict, pluginMayCall,
 } from "../src/clover";
 import { CloverSessionEvent } from "../src/sessions";
 import {
@@ -13,7 +13,8 @@ import {
 } from "../src/common";
 import { CLOVER_ROLES, PLUGIN_ROLES, REMOTE_ROLES, USER_ROLES, type CloverRole } from "../src/roles";
 import { METHODS, SessionEvent } from "../src/index";
-import { canonicalJson, cardAnswerSigningInput, cardHashInput } from "../src/approvals";
+import { CARD_ANSWER_SKEW_MS, answerTimeOk, canonicalJson, cardAnswerSigningInput, cardHashInput } from "../src/approvals";
+import { buildCloverArtifacts } from "../scripts/clover-artifacts";
 import { isCdpMethodAllowed } from "../src/browser";
 
 const methods = [...CLOVER_METHODS.values()];
@@ -211,6 +212,37 @@ describe("the allow lists", () => {
     }
   });
 
+  test("peer.call reaches only a remote client's list, and a user-only or change method only with a signed answer", () => {
+    const reach = new Set<string>();
+    for (const role of PEER_CALL_ROLES) {
+      for (const name of allowedMethods(role)) {
+        const verdict = peerCallVerdict(name, role);
+        const m = CLOVER_METHODS.get(name)!;
+        if (name.startsWith("peer.")) expect(verdict).toBe("refused");
+        else expect(verdict).toBe(m.userOnly || m.change !== undefined ? "needs-answer" : "allowed");
+        if (verdict !== "refused") reach.add(name);
+      }
+    }
+    for (const name of reach) {
+      expect(name.startsWith("pluginHost.")).toBe(false);
+      expect(name.startsWith("plugin.dev.")).toBe(false);
+      expect(name).not.toBe("layer.token");
+      expect(name).not.toBe("card.frame");
+      // Nothing only the app, the CLI or the plugin host may call.
+      const m = CLOVER_METHODS.get(name)!;
+      expect(m.roles.some((r) => r === "remote" || r === "web")).toBe(true);
+    }
+    for (const role of ["app", "cli", "plugin-host", "layer", "peer"]) expect(peerCallVerdict("protocol.hello", role)).toBe("refused");
+    expect(peerCallVerdict("plugin.dev.add", "remote")).toBe("refused");
+    expect(peerCallVerdict("peer.call", "remote")).toBe("refused");
+    expect(peerCallVerdict("no.such", "remote")).toBe("refused");
+    // The schema itself refuses any other role.
+    const call = (role: string) => CLOVER_METHODS.get("peer.call")!.params.safeParse({ method: "session.send", params: {}, as: { kind: "core" }, role }).success;
+    expect(call("remote")).toBe(true);
+    expect(call("app")).toBe(false);
+    expect(call("plugin-host")).toBe(false);
+  });
+
   test("every role says hello", () => {
     for (const role of CLOVER_ROLES) expect(calls(role).has("protocol.hello")).toBe(true);
   });
@@ -231,11 +263,37 @@ describe("cards", () => {
     expect(canonicalJson({ b: 1, a: { d: [3, { y: 1, x: 2 }], c: undefined } })).toBe('{"a":{"d":[3,{"x":2,"y":1}]},"b":1}');
   });
 
-  test("a card's hash input leaves out the hash, and a signed answer covers id, hash, option and time", () => {
+  test("a card's hash input leaves out the hash, and a signed answer covers id, hash, option, time and children", () => {
     const card = { id: "card_0a1b2c3d", hash: "f".repeat(64), kind: "tool" } as never;
     expect(cardHashInput(card)).toBe('{"id":"card_0a1b2c3d","kind":"tool"}');
     expect(cardAnswerSigningInput({ id: "card_0a1b2c3d", hash: "a".repeat(64), option: "deny", at: 5 }))
-      .toBe(`clover/card-answer/1\ncard_0a1b2c3d\n${"a".repeat(64)}\ndeny\n5`);
+      .toBe(`clover/card-answer/2\ncard_0a1b2c3d\n${"a".repeat(64)}\ndeny\n5\n`);
+    expect(cardAnswerSigningInput({ id: "c", hash: "h", option: "approve", at: 7, children: ["luna/z", "luna/a"] }))
+      .toBe("clover/card-answer/2\nc\nh\napprove\n7\nluna/a,luna/z");
+  });
+
+  test("an answer's time falls between the card's issue and the earlier of now and its expiry, give or take the skew", () => {
+    const card = { issuedAt: 1_000_000, expiresAt: 1_600_000 };
+    expect(answerTimeOk(card, 1_000_000, 1_000_000)).toBe(true);
+    expect(answerTimeOk(card, 0, 1_000_000)).toBe(false);
+    expect(answerTimeOk(card, 1_000_000 - CARD_ANSWER_SKEW_MS - 1, 1_000_000)).toBe(false);
+    expect(answerTimeOk(card, 1_000_000 + CARD_ANSWER_SKEW_MS + 1, 1_000_000)).toBe(false);
+    expect(answerTimeOk(card, 1_600_001, 2_000_000)).toBe(false);
+    expect(answerTimeOk({ issuedAt: 1_000_000, expiresAt: null }, 1_900_000, 1_900_000)).toBe(true);
+  });
+
+  test("the card hash vectors hold: canonical JSON as RFC 8785 gives it, for nulls, /, non-ASCII, U+2028, emoji and numbers", () => {
+    const file = JSON.parse(buildCloverArtifacts().get("fixtures/card-hash-vectors.json")!) as {
+      vectors: { name: string; input: unknown; canonical: string }[]; card: { card: unknown; hashInput: string };
+    };
+    const byName = Object.fromEntries(file.vectors.map((v) => [v.name, v]));
+    expect(byName.slash!.canonical).toBe('{"path":"a/b/c","url":"https://example.com/x?y=1"}');
+    expect(byName.nulls!.canonical).toBe('{"a":[null,1,{"c":null}],"b":null}');
+    expect(byName.emoji!.canonical.startsWith('{"e":"😀","z":')).toBe(true);
+    expect(byName.numbers!.canonical).toContain('"big":1e+21');
+    expect(byName["line-separators"]!.canonical).toBe('{"s":"a\u2028b\u2029c"}');
+    for (const v of file.vectors) expect([v.name, canonicalJson(v.input)]).toEqual([v.name, v.canonical]);
+    expect(cardHashInput(file.card.card as never)).toBe(file.card.hashInput);
   });
 });
 
