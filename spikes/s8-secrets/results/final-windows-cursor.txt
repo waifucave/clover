@@ -1,0 +1,9 @@
+Uploading public source chunk 1
+Running windows-cursor-gates.ps1 on clover-c-win
+Testing Cursor Windows sandbox-only command with a temporary home and project
+cursor-agent.cmd : Error: command failed unexpectedly.
+At C:\Users\<test-user>\AppData\Local\Temp\clover-lane-c-7d7e366613974364b343b176bcc2916b\probe.ps1:22 char:11
++   $output=& C:\clover-tools\cursor\dist-package\cursor-agent.cmd sand ...
++           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Error: command failed unexpectedly.:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError

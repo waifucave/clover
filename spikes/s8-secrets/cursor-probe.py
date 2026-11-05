@@ -20,8 +20,10 @@ with tempfile.TemporaryDirectory(prefix='clover-cursor-') as t:
     checks={'allowed-write':'touch "$2/ok"','hidden-read':'! cat "$1/public" >/dev/null 2>&1',
         'hidden-write':'! touch "$1/bad" 2>/dev/null','encoded-retry':'! /bin/sh -c \'cat "$1/public"\' retry "$1" >/dev/null 2>&1'}
     for test,command in checks.items():
+        script=work/(test+'.sh')
+        script.write_text('#!/bin/sh\n'+command.replace('"$1','"'+str(hidden)).replace('"$2','"'+str(work))+'\n')
         r=subprocess.run([binary,'sandbox','run','--blocked-patterns',str(hidden)+'/**','--',
-            '/bin/sh','-c',command,'probe',str(hidden),str(work)],cwd=work,env=env,
+            '/bin/sh',str(script)],cwd=work,env=env,
             stdin=subprocess.DEVNULL,capture_output=True,text=True,timeout=25)
         print(json.dumps({'test':'cursor-'+test,'exit':r.returncode,'diagnostic':(r.stdout+r.stderr).replace(str(root),'<isolated-home>')[:800]}),flush=True)
     print(json.dumps({'test':'cursor-host-state','allowed_write':(work/'ok').exists(),'hidden_write':(hidden/'bad').exists()}))

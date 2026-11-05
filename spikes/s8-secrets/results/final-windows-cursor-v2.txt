@@ -1,0 +1,10 @@
+Uploading public source chunk 1
+Running windows-cursor-gates.ps1 on clover-c-win
+Testing Cursor Windows sandbox-only command with a temporary home and project
+Exception calling "Substring" with "2" argument(s): "Index and length must refer to a location within the string.
+Parameter name: length"
+At C:\Users\<test-user>\AppData\Local\Temp\clover-lane-c-ea5757c25dc24f529044690e83cbc3cd\probe.ps1:26 char:3
++   @{backend='cursor-windows';test=$test;exit=$exit;diagnostic=([strin ...
++   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (:) [], ParentContainsErrorRecordException
+    + FullyQualifiedErrorId : ArgumentOutOfRangeException

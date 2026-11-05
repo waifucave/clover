@@ -1,0 +1,4 @@
+Uploading public source chunk 1
+Running scheduler-control.ps1 on clover-c-win
+Testing the scheduled-task infrastructure with a disposable SYSTEM control
+{"last_run":"11/05/2026 03:19:41","started":true,"last_result":0,"test":"system-scheduler-control"}

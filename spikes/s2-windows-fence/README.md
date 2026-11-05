@@ -38,3 +38,43 @@ commands. Fixed native launch failures cannot establish that all designs fail.
 
 See [the report](../../docs/research/2026-11-05-s2-s8-fence-and-secrets.md) and
 [`results/windows-compatibility.txt`](results/windows-compatibility.txt).
+
+Controlled original-user token/default-DACL/private-desktop comparison:
+
+```sh
+python3 spikes/s2-windows-fence/remote.py windows spikes/s2-windows-fence/diagnostics.ps1
+```
+
+Install the pinned standalone native candidate and required VC runtime in the disposable VM:
+
+```sh
+python3 spikes/s2-windows-fence/remote.py windows spikes/s2-windows-fence/setup-candidate.ps1
+```
+
+```sh
+python3 spikes/s2-windows-fence/remote.py windows spikes/s2-windows-fence/install-vcrt.ps1
+```
+
+Provision only the test principal, its WFP policy and no user-profile read grant:
+
+```sh
+python3 spikes/s2-windows-fence/remote.py windows spikes/s2-windows-fence/provision-candidate.ps1
+```
+
+The unmodified Session 0 launch is a separate failure measurement:
+
+```sh
+python3 spikes/s2-windows-fence/remote.py windows spikes/s2-windows-fence/run-candidate.ps1
+```
+
+Evaluate the candidate with a temporary Session 0 namespace diagnostic, including broker routes,
+aliases, normal/approved-escape floors and network, plus detached-child cleanup:
+
+```sh
+python3 spikes/s2-windows-fence/remote.py windows spikes/s2-windows-fence/run-session0-candidate.ps1
+```
+
+The namespace alias is not an admitted production fix. The out-of-process COM result is
+inconclusive; scripts print measurements, not a release-admission verdict. Use the S8 cleanup
+command after the disposable VM experiments. `remote.py` uploads public source in bounded
+chunks, preventing cmd.exe length limits and overlapping stdin transports.

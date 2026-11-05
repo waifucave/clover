@@ -15,6 +15,12 @@ milliseconds; `RemoveApp(name)` removes that profile. Native errors throw a Win3
 No password, credential or model is accepted. `Run` waits at most 20 seconds for its direct
 child. It does not terminate descendant trees and is suitable only for the fixed fixtures.
 
+The additional `restricted-fixed` and `desktop-fixed` modes isolate token-object/default-DACL
+and private-desktop hypotheses. `session0-bno.cs` holds a temporary namespace alias solely for
+the disposable Server/SSH diagnosis; production must resolve the real namespace instead.
+The complete dedicated-principal/WFP experiment uses the pinned upstream Rust launcher via
+`candidate.mjs`, including its own restricted token, handle and job controls; the C# probe does not.
+
 Measured launch return medians were 2–5 ms (seven samples per posture), excluding C#
 compilation and profile/ACL provisioning. These are not production per-launch cost figures.
 
