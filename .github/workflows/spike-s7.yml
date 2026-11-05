@@ -1,0 +1,319 @@
+name: Spike S7 (the Clover Browser)
+
+# Lane L's M0: every check that launches Electron or a browser runs here, never on a developer's Mac.
+# spikes/s7-browser/README.md says what each job answers.
+
+on:
+  push:
+    branches: [lane/l-m0]
+    paths:
+      - "spikes/s7-browser/**"
+      - ".github/workflows/spike-s7.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: spike-s7-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+    working-directory: spikes/s7-browser/prototype
+
+env:
+  CI: "true"
+  RESULTS: ${{ github.workspace }}/spikes/s7-browser/prototype/out/results
+
+jobs:
+  unit:
+    name: unit · typecheck and tests (launch nothing)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: .bun-version
+      - run: bun install --frozen-lockfile
+      - run: bun run typecheck
+      - run: bun test
+      - run: bun run build
+
+  electron:
+    name: electron · ${{ matrix.label }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: macos-latest, label: macos }
+          - { os: windows-latest, label: windows }
+          - { os: ubuntu-24.04, label: linux-x11 }
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: .bun-version
+      - run: bun install --frozen-lockfile
+      - name: Fetch the Electron binary
+        run: node node_modules/electron/install.js && node -p "require('electron')"
+      - run: bun run build
+      - name: The runner
+        run: |
+          mkdir -p "$RESULTS"
+          case "$RUNNER_OS" in
+            macOS) sw_vers; system_profiler SPDisplaysDataType | grep -E "Resolution|Retina|Display Type" || true ;;
+            Windows) cmd //c ver; powershell -NoProfile -Command "(Get-Process -Id \$PID).SessionId; query user 2>\$null; Get-CimInstance Win32_VideoController | Select-Object Name,CurrentHorizontalResolution,CurrentVerticalResolution | Format-List" || true ;;
+            Linux) lsb_release -a || true; echo "userns restriction: $(sysctl -n kernel.apparmor_restrict_unprivileged_userns 2>/dev/null || echo n/a)" ;;
+          esac
+      - name: Linux — Electron's sandbox without an AppArmor profile
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get install -y -qq xvfb >/dev/null
+          set +e
+          timeout 60 xvfb-run -a "$(node -p "require('electron')")" out/electron/main.cjs --checks=none --out="$RESULTS/sandbox-no-profile.json" > "$RESULTS/linux-sandbox-no-profile.txt" 2>&1
+          echo "exit code $?" >> "$RESULTS/linux-sandbox-no-profile.txt"
+          tail -n 15 "$RESULTS/linux-sandbox-no-profile.txt"
+          rm -f "$RESULTS/sandbox-no-profile.json"
+          exit 0
+      - name: Linux — the AppArmor profile a deb would install
+        if: runner.os == 'Linux'
+        run: scripts/ci/apparmor.sh clover-s7-electron "$(node -p "require('electron')")"
+      - name: Probe (move, throttle, capture, cost, stream)
+        run: |
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            xvfb-run -a -s "-screen 0 1920x1080x24" bun scripts/probe.ts --checks=move,throttle,capture,cost,stream --out="$RESULTS/electron-${{ matrix.label }}.json" --label=${{ matrix.label }} -- --ozone-platform=x11
+          else
+            bun scripts/probe.ts --checks=move,throttle,capture,cost,stream --out="$RESULTS/electron-${{ matrix.label }}.json" --label=${{ matrix.label }}
+          fi
+      - if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: s7-electron-${{ matrix.label }}
+          path: spikes/s7-browser/prototype/out/results/
+          if-no-files-found: warn
+
+  wayland:
+    name: electron · linux-wayland (headless Weston)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: .bun-version
+      - run: bun install --frozen-lockfile
+      - run: node node_modules/electron/install.js
+      - run: bun run build
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq weston >/dev/null
+      - run: scripts/ci/apparmor.sh clover-s7-electron "$(node -p "require('electron')")"
+      - name: Probe under Wayland (no X server at all)
+        run: |
+          mkdir -p "$RESULTS"
+          scripts/ci/weston.sh bun scripts/probe.ts --checks=move,throttle,capture,cost,stream --out="$RESULTS/electron-linux-wayland.json" --label=linux-wayland -- --ozone-platform=wayland
+      - if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: s7-electron-linux-wayland
+          path: spikes/s7-browser/prototype/out/results/
+          if-no-files-found: warn
+
+  ozone-headless:
+    name: "electron · ${{ matrix.label }} (no display, as on a server)"
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-24.04, label: linux-x64-ozone-headless }
+          - { os: ubuntu-24.04-arm, label: linux-arm64-ozone-headless }
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: .bun-version
+      - run: bun install --frozen-lockfile
+      - run: node node_modules/electron/install.js
+      - run: bun run build
+      - run: scripts/ci/apparmor.sh clover-s7-electron "$(node -p "require('electron')")"
+      - name: Probe with Ozone's headless platform (no X, no Wayland)
+        run: |
+          mkdir -p "$RESULTS"
+          env -u DISPLAY -u WAYLAND_DISPLAY bun scripts/probe.ts --checks=move,throttle,capture,cost --out="$RESULTS/electron-${{ matrix.label }}.json" --label=${{ matrix.label }} -- --ozone-platform=headless
+      - if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: s7-electron-${{ matrix.label }}
+          path: spikes/s7-browser/prototype/out/results/
+          if-no-files-found: warn
+
+  long:
+    name: electron · linux-x11 long run (past five hidden minutes)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: .bun-version
+      - run: bun install --frozen-lockfile
+      - run: node node_modules/electron/install.js
+      - run: bun run build
+      - run: sudo apt-get install -y -qq xvfb >/dev/null && scripts/ci/apparmor.sh clover-s7-electron "$(node -p "require('electron')")"
+      - run: |
+          mkdir -p "$RESULTS"
+          xvfb-run -a -s "-screen 0 1920x1080x24" bun scripts/probe.ts --checks=long --out="$RESULTS/electron-linux-x11-long.json" --label=linux-x11-long -- --ozone-platform=x11
+      - if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: s7-electron-linux-x11-long
+          path: spikes/s7-browser/prototype/out/results/
+          if-no-files-found: warn
+
+  cft:
+    name: chrome for testing · ${{ matrix.label }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: macos-latest, label: macos }
+          - { os: windows-latest, label: windows }
+          - { os: ubuntu-24.04, label: linux-x64 }
+          - { os: ubuntu-24.04-arm, label: linux-arm64 }
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: .bun-version
+      - run: bun install --frozen-lockfile
+      - run: bun run build
+      - name: Install, start, tabs, screenshots, screencast, per-bot profiles, cost
+        run: |
+          mkdir -p "$RESULTS"
+          if [ "$RUNNER_OS" = "Linux" ]; then echo "userns restriction: $(sysctl -n kernel.apparmor_restrict_unprivileged_userns)"; fi
+          bun src/cft/run.ts --out="$RESULTS/cft-${{ matrix.label }}.json" --home="$RUNNER_TEMP/clover-s7-home" --keep-home
+      - name: Linux — a sandboxed start with the AppArmor profile
+        if: runner.os == 'Linux'
+        run: |
+          plat=$([ "$(uname -m)" = "aarch64" ] && echo linux-arm64 || echo linux64)
+          ver=$(jq -r .version src/cft/pins.json)
+          bin="$RUNNER_TEMP/clover-s7-home/browsers/cft/$ver/chrome-headless-shell-$plat/chrome-headless-shell-$plat/chrome-headless-shell"
+          scripts/ci/apparmor.sh clover-s7-cft "$bin"
+          bun src/cft/run.ts --only=start --artifacts=chrome-headless-shell --out="$RESULTS/cft-${{ matrix.label }}-apparmor.json" --home="$RUNNER_TEMP/clover-s7-home" --keep-home
+      - name: Linux — what a bare server lacks (clean ubuntu:24.04 container)
+        if: runner.os == 'Linux'
+        run: |
+          plat=$([ "$(uname -m)" = "aarch64" ] && echo linux-arm64 || echo linux64)
+          ver=$(jq -r .version src/cft/pins.json)
+          scripts/ci/cft-deps.sh "$RUNNER_TEMP/clover-s7-home/browsers/cft/$ver/chrome-headless-shell-$plat" "chrome-headless-shell-$plat/chrome-headless-shell" "$RESULTS/cft-${{ matrix.label }}-deps.txt"
+      - if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: s7-cft-${{ matrix.label }}
+          path: spikes/s7-browser/prototype/out/results/
+          if-no-files-found: warn
+
+  pair:
+    name: the pair · ${{ matrix.label }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: macos-latest, label: macos, app: task }
+          - { os: windows-latest, label: windows-task, app: task }
+          - { os: windows-latest, label: windows-spawn, app: spawn }
+          - { os: ubuntu-24.04, label: linux, app: task }
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: .bun-version
+      - run: bun install --frozen-lockfile
+      - run: node node_modules/electron/install.js
+      - name: Build (with the compiled daemon)
+        run: bun scripts/build.ts --daemon
+      - name: The session
+        run: |
+          case "$RUNNER_OS" in
+            macOS) id; launchctl print "gui/$(id -u)" | head -n 12 || echo "no gui domain" ;;
+            Windows) powershell -NoProfile -Command "whoami; (Get-Process -Id \$PID).SessionId; query user 2>\$null; Get-ScheduledTask | Select-Object -First 3 | Format-Table TaskPath,TaskName,State" || true ;;
+            Linux) id; loginctl list-sessions || true ;;
+          esac
+      - name: Linux — a user manager, a display and the AppArmor profile
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get install -y -qq xvfb >/dev/null
+          scripts/ci/linux-user-manager.sh
+          scripts/ci/apparmor.sh clover-s7-electron "$(node -p "require('electron')")"
+      - name: Run the pair
+        run: |
+          mkdir -p "$RESULTS"
+          electron="$(node -p "require('electron')")"
+          exe=""; [ "$RUNNER_OS" = "Windows" ] && exe=".exe"
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            Xvfb :99 -screen 0 1920x1080x24 >/dev/null 2>&1 &
+            xvfb=$!
+            sleep 1
+            DISPLAY=:99 bun src/pair/run.ts --daemon-bin="out/pair/clover-core-s7" --electron="$electron" --app-dir=out/pair/app --display=:99 --out="$RESULTS/pair-${{ matrix.label }}.json"
+            kill $xvfb || true
+          else
+            bun src/pair/run.ts --daemon-bin="out/pair/clover-core-s7$exe" --electron="$electron" --app-dir=out/pair/app --windows-app-start=${{ matrix.app }} --out="$RESULTS/pair-${{ matrix.label }}.json"
+          fi
+      - if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: s7-pair-${{ matrix.label }}
+          path: spikes/s7-browser/prototype/out/results/
+          if-no-files-found: warn
+
+  summary:
+    name: summary
+    needs: [unit, electron, wayland, ozone-headless, long, cft, pair]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: .bun-version
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          path: spikes/s7-browser/prototype/out/all
+          pattern: s7-*
+      - run: bun install --frozen-lockfile
+      - name: Summarize
+        run: |
+          bun src/summarize.ts out/all > out/s7-summary.md
+          cat out/s7-summary.md >> "$GITHUB_STEP_SUMMARY"
+          for f in $(find out/all -name '*.txt'); do echo; echo "### $(basename "$f")"; echo '```'; cat "$f"; echo '```'; done >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: s7-summary
+          path: |
+            spikes/s7-browser/prototype/out/s7-summary.md
+            spikes/s7-browser/prototype/out/all/

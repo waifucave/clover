@@ -1,0 +1,19 @@
+{
+  "version": "156.0.8078.80",
+  "why": "The same Chromium as Electron 45.2.2 (156.0.8078.80), so the browser where no app runs is the same engine as the app's.",
+  "base": "https://storage.googleapis.com/chrome-for-testing-public",
+  "artifacts": {
+    "chrome-headless-shell": {
+      "linux64": { "bytes": 126922702, "sha256": "" },
+      "linux-arm64": { "bytes": 126679292, "sha256": "" },
+      "mac-arm64": { "bytes": 103982159, "sha256": "" },
+      "win64": { "bytes": 125772546, "sha256": "" }
+    },
+    "chrome": {
+      "linux64": { "bytes": 201329937, "sha256": "" },
+      "linux-arm64": { "bytes": 200722708, "sha256": "" },
+      "mac-arm64": { "bytes": 195027080, "sha256": "" },
+      "win64": { "bytes": 208152768, "sha256": "" }
+    }
+  }
+}
