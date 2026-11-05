@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { CLOVER_PROTOCOL_VERSION, ConnWriter, encodeLine, LineDecoder, METHODS, type WritableSocket } from "@waifucave/clover-protocol";
 import { startDaemon, type RunningDaemon } from "../src/daemon";
 import { FileSecretStore } from "../src/auth/secret-store";
+import { cloverCall } from "../src/ipc/clover-client";
 
 // C-M1 on a real daemon: the app token in the run directory, an `app` hello through the caller check
 // (this test process is outside every floor), the pair's methods, and the pair's quit ending the run.
@@ -47,6 +48,14 @@ describe("the daemon's Clover side, booted", () => {
     await daemon.stop();
     expect(existsSync(tokenFile)).toBe(false); // this run's token goes with it
     daemon = undefined;
+  });
+
+  test("an uninstaller's clean stop: the CLI's pair.quit through cloverCall ends the run", async () => {
+    const home = mkdtempSync(join(tmpdir(), "clover-pair-boot-"));
+    daemon = await startDaemon({ home, secrets: new FileSecretStore(join(home, "secrets.json")), agentProvider: null });
+    expect(await cloverCall(daemon.socketPath, { role: "cli", token: daemon.tokens.harness, clientName: "autostart" }, "pair.quit", { handOver: false })).toEqual({ ok: true });
+    expect(await Promise.race([daemon.pairStopped, Bun.sleep(5_000).then(() => "timed out")])).toBe("quit, no app connected");
+    await expect(cloverCall(daemon.socketPath, { role: "cli", token: "nope", clientName: "x" }, "pair.status", {})).rejects.toThrow();
   });
 
   test("a daemon with the pair turned off has no app token, and quitPair still ends it", async () => {

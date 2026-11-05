@@ -20,6 +20,7 @@ export {
 export { callerFloorVerdict, mayBeUser, type SandboxProbe, type FloorVerdict } from "./platform/sandbox-floor";
 export { CloverTokens, isRefusal, type CloverBinding, type HelloRefusal } from "./auth/clover-tokens";
 export { resolveCloverCaller, isFencedCaller, gateCloverRequest, SessionProcesses, type SessionRef } from "./auth/clover-caller";
+export { cloverCall } from "./ipc/clover-client";
 export { createCloverServer, CloverRpcError, type CloverConn, type CloverServer, type CloverServerDeps, type CloverHandler } from "./ipc/clover";
 export { probePeer, peerPid, parentPid, ancestry, sandboxProbe, socketFd, descendsFrom, WindowsPipePeers, type PeerFacts } from "./platform/caller-probe";
 export { lockPipeDacl, currentUserSid, pipeDaclSddl, pipeServerIdentity, isOurDaemon, ownerOnlyPipeSddl, type PipeServerIdentity } from "./platform/win-pipe";

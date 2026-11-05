@@ -1,7 +1,7 @@
 import { join, resolve } from "node:path";
 import { homedir } from "node:os";
 import { existsSync, readFileSync, mkdirSync } from "node:fs";
-import { resolveCloverHome, isDefaultCloverHome, OtherInstallHomeRefused, KeychainSecretStore, startDaemon, TOKEN_NAMES, loadSettings, CORE_VERSION, runWorkflowSubprocess, runAutomationWorker, AUTOMATION_WORKER_ARG, processSatisfiesRequirement, runRuntimeWorkflowWorker, RUNTIME_WORKFLOW_WORKER_ARG, runRuntimeStateProbe, runRuntimesProbe, keychainUnlocked, processStartSecondsViaSysctl, runEmbeddedProbe, runDevKeychainAdopt, DEV_KEYCHAIN_ADOPT_ARG, resolveCloverProfile, splitTag, sdkLocalMcpServers, installCloverProcessIdentity, loginEnable, loginDisable, loginRemove, loginStatus, liveLoginOsDeps, superviseLoop, startDaemonThroughOs, windowsUserSid, stopDaemonCleanly, stopThroughOs, bunRunner, resolveEndpoint, endpointPresent, endpointAnswers, type LoginSpec, type DaemonRun, type DaemonStartResult } from "@waifucave/clover-core";
+import { resolveCloverHome, isDefaultCloverHome, OtherInstallHomeRefused, KeychainSecretStore, startDaemon, TOKEN_NAMES, loadSettings, CORE_VERSION, runWorkflowSubprocess, runAutomationWorker, AUTOMATION_WORKER_ARG, processSatisfiesRequirement, runRuntimeWorkflowWorker, RUNTIME_WORKFLOW_WORKER_ARG, runRuntimeStateProbe, runRuntimesProbe, keychainUnlocked, processStartSecondsViaSysctl, runEmbeddedProbe, runDevKeychainAdopt, DEV_KEYCHAIN_ADOPT_ARG, resolveCloverProfile, splitTag, sdkLocalMcpServers, installCloverProcessIdentity, loginEnable, loginDisable, loginRemove, loginStatus, liveLoginOsDeps, superviseLoop, startDaemonThroughOs, windowsUserSid, stopDaemonCleanly, stopThroughOs, cloverCall, bunRunner, resolveEndpoint, endpointPresent, endpointAnswers, type LoginSpec, type DaemonRun, type DaemonStartResult } from "@waifucave/clover-core";
 import type { CredentialRow, SecretStore, Settings } from "@waifucave/clover-core";
 import { METHODS, type ApprovalPolicy, type Task } from "@waifucave/clover-protocol";
 import { POLICY_ORDER } from "./tui/policy-order";
@@ -1478,10 +1478,10 @@ function currentLoginSpec(app?: string): LoginSpec {
 
 const AUTOSTART_USAGE = "usage: clover autostart enable|disable [--stop]|remove|start|status [--json] [--app <path to the app>]";
 
-/** Stop the running daemon for an uninstaller (`disable --stop`, `remove`): the pair's quit first, so
- *  the daemon tells the app and exits 0 (and `supervise` ends), then the OS's own stop if it is still
- *  there after 10 s. Until B's `pair.quit` is in, the clean request is SIGTERM to the lock holder on
- *  macOS and Linux (the daemon's clean stop); on Windows it is `schtasks /End`. */
+/** Stop the running daemon for an uninstaller (`disable --stop`, `remove`): the pair's quit first
+ *  (`pair.quit` as the CLI, so the daemon tells the app and exits 0, and `supervise` ends), else
+ *  SIGTERM to the lock holder on macOS and Linux (the same clean stop), then the OS's own stop if it
+ *  is still there after 10 s. */
 async function stopRunningDaemon(spec: LoginSpec): Promise<string> {
   const lockFile = join(spec.home, "run", spec.os === "win32" ? "core.pid" : "core.lock");
   let pid = -1;
@@ -1491,6 +1491,10 @@ async function stopRunningDaemon(spec: LoginSpec): Promise<string> {
     answers: () => endpointAnswers(socketPath()),
     stillRunning: alive,
     async requestQuit() {
+      try {
+        const token = await new KeychainSecretStore().get(TOKEN_NAMES.harness);
+        if (token) { await cloverCall(socketPath(), { role: "cli", token, clientName: "clover-autostart" }, "pair.quit", { handOver: false }); return true; }
+      } catch { /* an older daemon, or a token it won't take: fall back */ }
       if (spec.os === "win32" || !(pid > 0)) return false;
       try { process.kill(pid, "SIGTERM"); return true; } catch { return false; }
     },
