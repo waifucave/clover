@@ -240,9 +240,15 @@ export class Companion {
         }
       });
     });
+    opened.catch(() => undefined);
+    const timeoutMs = options.timeoutMs ?? 20_000;
     try {
-      await opened;
-      const link = await dial({ channel, router, rtc: this.options.rtc, peer: record.computerKey, ...(options.timeoutMs ? { timeoutMs: options.timeoutMs } : {}) });
+      // The handshake may be unreachable: the socket keeps retrying, but this attempt gives up in time.
+      await Promise.race([
+        opened,
+        new Promise<never>((_, reject) => setTimeout(() => reject(new LinkError("offline", "the handshake can't be reached")), timeoutMs)),
+      ]);
+      const link = await dial({ channel, router, rtc: this.options.rtc, peer: record.computerKey, timeoutMs });
       return {
         link,
         record,
