@@ -20,6 +20,7 @@ export interface BotSideOptions {
   /** Lane H's lease, as main-computer.ts reads it; without it this computer always runs its bots. */
   main?: MainComputer;
   relay?: BotRelay;
+  reattach?: BotServiceOptions["reattach"];
   approvals?: DurableSessionHostOptions["approvals"];
   /** The compaction numbers for a session (the model's cache life and the settings); the spec's defaults otherwise. */
   compaction?: (view: SessionView) => CompactionPolicy | undefined;
@@ -54,6 +55,7 @@ export function createBotSide(o: BotSideOptions): BotSide {
     home: o.home, computer: o.computer, registry: o.registry, host, gate, drivers: o.drivers, clock: o.clock,
     defaultModel: o.defaultModel, cacheCold: (id) => compaction.cacheCold(id),
     ...(o.relay === undefined ? {} : { relay: o.relay }),
+    ...(o.reattach === undefined ? {} : { reattach: o.reattach }),
     ...(o.hasKeyFor === undefined ? {} : { hasKeyFor: o.hasKeyFor }),
     ...(o.assetUrl === undefined ? {} : { assetUrl: o.assetUrl }),
     ...(o.warn === undefined ? {} : { warn: o.warn }),

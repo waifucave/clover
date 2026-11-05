@@ -124,6 +124,9 @@ export interface BotServiceOptions {
   relay?: BotRelay;
   /** Whether a session's cached prompt has expired (compaction.ts); without it, always. */
   cacheCold?(sessionId: string): boolean;
+  /** Background agents and coding sessions a restart left dormant, handed over at start to be reattached (lane K's
+   *  `AgentManager.reattach`, which gives each its driver again). */
+  reattach?(sessions: SessionView[]): Promise<void> | void;
   drivers: DriverFactory;
   clock: Clock;
   /** The user's default model and effort (§6.1). */
@@ -199,6 +202,15 @@ export class BotService {
     const host = this.#o.host;
     const orphans = new Set(host.list({ kind: "side-thread" }).filter((s) => s.bot !== undefined && !this.#bots.has(s.bot)).map((s) => s.bot!));
     for (const bot of orphans) await this.#endCutOffRuns(bot, mainSessionIdFor(bot));
+    const dormant = [...host.list({ kind: "agent" }), ...host.list({ kind: "coding" })]
+      .filter((v) => !host.isAttached(v.id) && v.status !== "stopped" && v.status !== "failed");
+    if (dormant.length > 0 && this.#o.reattach) {
+      try {
+        await this.#o.reattach(dormant);
+      } catch (err) {
+        this.#warn(`reattaching ${dormant.length} agent session(s) failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
   }
 
   /** Detaches every bot's sessions, leaving them dormant on disk (a shutdown). */

@@ -353,6 +353,25 @@ describe("the memory block (§6.5, pre-C5 paths)", () => {
   });
 });
 
+describe("a restart's dormant agents", () => {
+  test("background agents and coding sessions left dormant are handed over to be reattached; ended ones aren't", async () => {
+    const home = tempDir();
+    const clock = new FakeClock();
+    const first = await boot({ home, plugins: await alpha(), clock });
+    first.host.open({ id: "s_agent", kind: "agent", bot: "alpha", parent: "b_alpha", computer: "Studio", backend: "codex" }, new FakeSessionDriver({ canFold: false }));
+    first.host.open({ id: "s_code", kind: "coding", computer: "Studio", backend: "claude-code" }, new FakeSessionDriver({ canFold: false }));
+    first.host.open({ id: "s_done", kind: "agent", bot: "alpha", parent: "b_alpha", computer: "Studio", backend: "codex" }, new FakeSessionDriver({ canFold: false }));
+    await first.host.stop("s_done");
+    await first.shutdown();
+    const handed: string[] = [];
+    const again = await boot({ home, plugins: await alpha(), clock, reattach: (views) => {
+      handed.push(...views.map((v) => v.id));
+    } });
+    expect(handed.sort()).toEqual(["s_agent", "s_code"]);
+    await again.shutdown();
+  });
+});
+
 describe("the new sessions methods", () => {
   test("session.setModel: an agent's or coding session's, never a bot's", async () => {
     const b = await boot({ home: tempDir(), plugins: await alpha() });
