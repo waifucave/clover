@@ -11,7 +11,7 @@ import { FileDeviceRegistry } from "../../devices/registry";
 import { SystemClock } from "../../clock/system-clock";
 import { DeviceKey } from "../../identity/device-key";
 import { PairingService } from "../pairing";
-import { SidecarWire } from "../sidecar-wire";
+import { followRegistry, SidecarWire } from "../sidecar-wire";
 import { CloverLinkTransport } from "../transport";
 
 const BIN = process.env.CLOVER_LINK_BIN ?? join(import.meta.dir, "../../../../../native/link/target/release/clover-link");
@@ -47,6 +47,8 @@ describe.skipIf(!built)("link sidecar (iroh on loopback)", () => {
   test("starts under the device's key, pairs two devices over the pair ALPN, and links them", async () => {
     const a = await device("Studio");
     const b = await device("Laptop");
+    // Each sidecar takes link connections only from its registry's devices; pairing has its own ALPN.
+    stops.push(followRegistry(a.wire, a.registry), followRegistry(b.wire, b.registry));
     expect(Buffer.from(a.wire.publicKey).toString("hex")).toBe(Buffer.from(a.key.publicKey).toString("hex"));
     expect(a.direct.some((x) => x.startsWith("127.0.0.1:"))).toBe(true);
 
@@ -88,7 +90,8 @@ describe.skipIf(!built)("link sidecar (iroh on loopback)", () => {
   test("a key the core didn't allow is closed at the sidecar's door", async () => {
     const a = await device("Studio");
     const b = await device("Stranger");
-    a.wire.allow([]);
+    // The allow list follows A's registry, which pairs no one.
+    stops.push(followRegistry(a.wire, a.registry));
     a.wire.onIncoming("clover/link/1", () => {
       throw new Error("the sidecar let an unknown key through");
     });

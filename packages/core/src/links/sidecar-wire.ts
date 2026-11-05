@@ -290,6 +290,21 @@ export class SidecarWire implements WireEndpoint {
   }
 }
 
+/** Keeps the sidecar's allow list to the registry's paired, unrevoked devices, so a link connection from any other
+ *  key is closed before the core sees it (the transport checks again). Returns the unsubscribe. */
+export function followRegistry(
+  wire: Pick<SidecarWire, "allow">,
+  registry: { self(): { id: string }; list(): { id: string; publicKey: string }[]; watch(fn: () => void): Unsubscribe },
+): Unsubscribe {
+  const sync = () => {
+    const self = registry.self().id;
+    const keys = registry.list().filter((d) => d.id !== self).map((d) => fromBase64(d.publicKey)).filter((k): k is Bytes => k !== null && k.length === 32);
+    wire.allow(keys);
+  };
+  sync();
+  return registry.watch(sync);
+}
+
 function send(proc: SidecarProcess, m: Record<string, unknown>): void {
   const body = concat(Uint8Array.of(T_JSON), utf8(JSON.stringify(m)));
   proc.write(concat(u32(body.byteLength), body));
