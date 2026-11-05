@@ -1,19 +1,32 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
+import { deflateRawSync } from "node:zlib";
 import { join } from "node:path";
 import { MemoryFileSource, ModelRuntime, readMoc, type MotionSyncSetting } from "@waifucave/mochi2d/headless";
 import { placeholderFiles, placeholderMocData, PLACEHOLDER_PARAMETERS } from "../src/placeholder/model";
 import { PLACEHOLDER_DIR } from "../scripts/make-placeholder";
 import { insideFolder, LIVE2D_BUDGETS, Live2dRefusal, pngSize, validateLive2d } from "../src/validate";
 import { memorySource, readCapped, urlSource, zipDeclared, zipSource } from "../src/sources";
+import { inflateCapped, openZip, settingsIn } from "../src/zip";
 import { motionSyncValues, mouthPlan, openAndForm } from "../src/mouth";
 import { SHUT } from "@waifucave/clover-plugin-vrm/lipsync";
 
 const enc = (s: string) => new TextEncoder().encode(s);
 const FILES = placeholderFiles();
 
-/** A STORE-method zip of `files` (no compression), for the archive tests. */
-function zip(files: Record<string, Uint8Array>, lie?: { name: string; size: number }): Uint8Array {
+interface ZipOptions {
+  /** Deflate the entries (method 8) instead of storing them. */
+  deflate?: boolean;
+  /** One entry's directory claims another inflated size (or CRC, or flags) than the truth. */
+  lie?: { name: string; size?: number; crc?: number; flags?: number };
+  /** Names as these raw bytes, flagged UTF-8 or not. */
+  rawNames?: Record<string, { bytes: Uint8Array; utf8: boolean }>;
+}
+
+/** A zip of `files`, stored or deflated, for the archive tests. */
+function zip(files: Record<string, Uint8Array>, options: ZipOptions | { name: string; size: number } = {}): Uint8Array {
+  const o: ZipOptions = "name" in options ? { lie: options } : options;
+  const lie = o.lie;
   const locals: Uint8Array[] = [];
   const centrals: Uint8Array[] = [];
   let offset = 0;
@@ -27,16 +40,20 @@ function zip(files: Record<string, Uint8Array>, lie?: { name: string; size: numb
     for (const x of b) c = crcTable[(c ^ x) & 0xff]! ^ (c >>> 8);
     return (c ^ 0xffffffff) >>> 0;
   };
-  for (const [name, data] of Object.entries(files)) {
-    const n = enc(name);
+  for (const [name, plain] of Object.entries(files)) {
+    const n = o.rawNames?.[name]?.bytes ?? enc(name);
+    const data = o.deflate ? new Uint8Array(deflateRawSync(plain)) : plain;
+    const method = o.deflate ? 8 : 0;
+    const flags = (o.rawNames?.[name]?.utf8 ?? true ? 0x800 : 0) | (lie?.name === name ? (lie.flags ?? 0) : 0);
     const local = new Uint8Array(30 + n.length + data.length);
     const lv = new DataView(local.buffer);
     lv.setUint32(0, 0x04034b50, true);
     lv.setUint16(4, 20, true);
-    lv.setUint16(8, 0, true);
-    lv.setUint32(14, crc(data), true);
+    lv.setUint16(6, flags, true);
+    lv.setUint16(8, method, true);
+    lv.setUint32(14, crc(plain), true);
     lv.setUint32(18, data.length, true);
-    lv.setUint32(22, data.length, true);
+    lv.setUint32(22, plain.length, true);
     lv.setUint16(26, n.length, true);
     local.set(n, 30);
     local.set(data, 30 + n.length);
@@ -45,9 +62,11 @@ function zip(files: Record<string, Uint8Array>, lie?: { name: string; size: numb
     cv.setUint32(0, 0x02014b50, true);
     cv.setUint16(4, 20, true);
     cv.setUint16(6, 20, true);
-    cv.setUint32(16, crc(data), true);
+    cv.setUint16(8, flags, true);
+    cv.setUint16(10, method, true);
+    cv.setUint32(16, lie?.name === name && lie.crc !== undefined ? lie.crc : crc(plain), true);
     cv.setUint32(20, data.length, true);
-    cv.setUint32(24, lie?.name === name ? lie.size : data.length, true);
+    cv.setUint32(24, lie?.name === name && lie.size !== undefined ? lie.size : plain.length, true);
     cv.setUint16(28, n.length, true);
     cv.setUint32(42, offset, true);
     central.set(n, 46);
@@ -218,6 +237,39 @@ describe("the avatar check (the VRM renderer's caps, for Live2D)", () => {
     const bomb = zip(FILES, { name: "alpha.moc3", size: 0x7fffffff });
     expect(() => zipSource(bomb)).toThrow(Live2dRefusal);
     expect(() => zipSource(enc("not a zip"))).toThrow(Live2dRefusal);
+  });
+
+  test("Clover extracts the archive itself (R5): a deflated model loads, and a cap counts the real inflated bytes", async () => {
+    const archive = zip(FILES, { deflate: true });
+    const { source, settingsPath } = zipSource(archive);
+    expect(settingsPath).toBe("alpha.model3.json");
+    expect((await validateLive2d(source, settingsPath)).stats.drawables).toBe(11);
+    // An entry that says it is small but inflates to 4 MiB: cut off at the cap, whatever it declared.
+    const big = new Uint8Array(4 * 1024 * 1024);
+    const liar = openZip(zip({ "big.bin": big }, { deflate: true, lie: { name: "big.bin", size: 100 } }));
+    expect(liar.declared).toEqual([100]);
+    const r = await refusal(liar.read("big.bin", 64 * 1024));
+    expect(r.code).toBe("too-large");
+    expect(r.detail).toBe("big.bin inflates past 65536 bytes");
+    // Under the cap, all of it; a capped stream never holds more than the cap.
+    expect((await liar.read("big.bin", big.length)).length).toBe(big.length);
+    expect((await refusal(inflateCapped(new Uint8Array(deflateRawSync(big)), 1000, "x"))).code).toBe("too-large");
+  });
+
+  test("an archive entry that fails its checksum, is encrypted, or uses another compression is refused", async () => {
+    expect((await refusal(openZip(zip(FILES, { lie: { name: "alpha.png", crc: 1 } })).read("alpha.png", 1e6))).code).toBe("archive");
+    expect((await refusal(openZip(zip(FILES, { lie: { name: "alpha.png", flags: 1 } })).read("alpha.png", 1e6))).detail).toBe("alpha.png is encrypted");
+    expect((await refusal(openZip(zip(FILES)).read("nothing.png", 1e6))).code).toBe("missing");
+    expect((await refusal(inflateCapped(enc("not deflate data at all"), 1000, "x"))).code).toBe("archive");
+  });
+
+  test("names as the archive's tool wrote them: UTF-8, or a local code page such as Shift_JIS", () => {
+    // 「アルファ」 in Shift_JIS, unflagged, as Japanese tools often write it.
+    const sjis = new Uint8Array([0x83, 0x41, 0x83, 0x8b, 0x83, 0x74, 0x83, 0x40]);
+    const names = openZip(zip({ a: FILES["alpha.png"]!, b: FILES["alpha.png"]! }, { rawNames: { a: { bytes: new Uint8Array([...sjis, ...enc("/alpha.png")]), utf8: false }, b: { bytes: enc("b.png"), utf8: false } } })).names;
+    expect(names).toEqual(["アルファ/alpha.png", "b.png"]);
+    expect(settingsIn(["deep/x/a.model3.json", "top.model3.json", "b.moc3"])).toBe("top.model3.json");
+    expect(settingsIn(["a.moc3"])).toBeNull();
   });
 
   test("over the network: a Content-Length over the cap is refused unread; a body that runs past it is cut off", async () => {

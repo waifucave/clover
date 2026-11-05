@@ -50,6 +50,7 @@ export type Live2dProblemCode =
   | "too-many-files"
   | "outside-folder"
   | "missing"
+  | "archive"
   | "settings"
   | "moc"
   | "texture"

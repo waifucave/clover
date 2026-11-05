@@ -26,6 +26,8 @@ export interface IslandHost {
   tabs?: readonly IslandTabEntry[];
   /** `devices.read` (`DevicesApi.list` and `watch`). */
   devices?: DevicesSource;
+  /** Opens Settings → Devices (lane F's page, ruling R3), at a device when one is named: lane E's route. */
+  openDevices?: (device?: string) => void;
   onAnswerQuestion?: (card: QuestionCard, answers: Record<string, string>) => Promise<boolean> | boolean | void;
   reducedMotion?: boolean;
 }
@@ -62,7 +64,7 @@ export function IslandApp(_: IslandEntryProps<{ surface: string }>): ReactElemen
 
 /** The island's own `island.tab` entry: Devices. */
 export function DevicesTabEntry(_: IslandEntryProps<{ expanded: boolean }>): ReactElement | null {
-  const source = useIslandHost()?.devices;
-  if (!source) return null;
-  return <DevicesTab source={source} />;
+  const host = useIslandHost();
+  if (!host?.devices) return null;
+  return <DevicesTab source={host.devices} onOpenDevices={host.openDevices} />;
 }

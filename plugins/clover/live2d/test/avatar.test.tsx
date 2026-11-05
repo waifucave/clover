@@ -157,6 +157,15 @@ describe("no microphone, no sound of its own", () => {
       .join("\n");
     for (const call of ["startLiveLipSync", "startMotionSync", "setMotionSyncInput", ".speak(", "getUserMedia", "AudioContext"]) expect(sources).not.toContain(call);
   });
+
+  test("Mochi2D never opens an archive: Clover extracts it with its own caps (R5)", () => {
+    const dir = join(import.meta.dir, "..", "src");
+    const sources = readdirSync(dir, { recursive: true })
+      .filter((f) => /\.(ts|tsx)$/.test(String(f)))
+      .map((f) => readFileSync(join(dir, String(f)), "utf8"))
+      .join("\n");
+    for (const name of ["sourceFromZip", "ZipFileSource"]) expect(sources).not.toContain(name);
+  });
 });
 
 describe("the entry the manifest names", () => {

@@ -8,6 +8,7 @@ const EN: Record<string, string> = {
   "clover.live2d.refused.too-many-files": "The avatar has too many files.",
   "clover.live2d.refused.outside-folder": "The avatar points to files outside itself.",
   "clover.live2d.refused.missing": "A file the avatar needs is missing.",
+  "clover.live2d.refused.archive": "The avatar's archive is damaged.",
   "clover.live2d.refused.settings": "The avatar's settings file is damaged.",
   "clover.live2d.refused.moc": "The avatar's model file is damaged.",
   "clover.live2d.refused.texture": "The avatar's textures can't be drawn here.",

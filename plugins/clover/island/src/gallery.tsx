@@ -329,7 +329,7 @@ export const ISLAND_STORIES: Story[] = [
       <Desktop shape={NOTCH} width={W} height={220}>
         <Strip shape={NOTCH} counts={{ waiting: 0, working: 2 }} />
         <OpenIsland shape={NOTCH} tabs={tabState(TABS, 2)}>
-          <DevicesList devices={SAMPLE_DEVICES} now={NOW} hovered="laptop" />
+          <DevicesList devices={SAMPLE_DEVICES} now={NOW} hovered="laptop" onOpenDevices={() => {}} />
         </OpenIsland>
       </Desktop>
     ),

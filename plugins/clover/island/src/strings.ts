@@ -33,6 +33,7 @@ export const EN: Readonly<Record<string, Entry>> = {
   "clover.devices.title": "Devices",
   "clover.devices.summary": "{online} of {count} online",
   "clover.devices.none": "No devices yet",
+  "clover.devices.manage": "Manage devices",
   "clover.devices.computers": "Computers",
   "clover.devices.others": "Phones and browsers",
   "clover.devices.groupMeta": "{online} of {count} online",

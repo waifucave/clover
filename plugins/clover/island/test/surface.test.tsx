@@ -237,6 +237,18 @@ describe("the Devices tab", () => {
     expect(screen.getByText("3 ms round trip")).toBeTruthy();
   });
 
+  test("a row and Manage devices open Settings → Devices (R3: the tab is status, the page manages)", () => {
+    const opened: (string | undefined)[] = [];
+    const { container } = render(<DevicesList devices={DEVICES} now={NOW} onOpenDevices={(d) => opened.push(d)} />);
+    fireEvent.click(screen.getByText("Box").closest(".clv-row")!);
+    fireEvent.click(screen.getByText("Manage devices"));
+    expect(opened).toEqual(["box", undefined]);
+    // Without the route, no link to follow.
+    container.remove();
+    render(<DevicesList devices={DEVICES} now={NOW} />);
+    expect(screen.queryByText("Manage devices")).toBeNull();
+  });
+
   test("none yet: says so", () => {
     render(<DevicesList devices={[]} now={NOW} />);
     expect(screen.getByText("No devices yet")).toBeTruthy();
