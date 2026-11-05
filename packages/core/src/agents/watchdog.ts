@@ -6,7 +6,7 @@
 // began** also counts, up to the command limit. Processes from before the call never count: the agent's MCP servers,
 // the bridge included, live under it for the whole session. Neither agent puts a limit for the command on the wire,
 // so the limit is Clover's own: a per-computer maximum for one agent command, by default the same 10 minutes as a
-// bot's own `Bash` (Winter's maximum).
+// bot's own `Bash` (the inherited maximum).
 //
 // It checks once a minute on the session's clock, only while a turn runs.
 import { AGENT_STALL_MS } from "../contracts/agent-backend";
@@ -14,7 +14,7 @@ import type { Clock, TimerHandle } from "../contracts/clock";
 import { descendantsOf, readProcessTable, type ProcessTableReader } from "./process/table";
 
 export const STALL_CHECK_EVERY_MS = 60_000;
-/** One agent command's longest run, by default (Winter's `Bash` maximum). */
+/** One agent command's longest run, by default (the inherited `Bash` maximum). */
 export const AGENT_COMMAND_MAX_MS = 10 * 60_000;
 
 /** What the watchdog reads from a session. */

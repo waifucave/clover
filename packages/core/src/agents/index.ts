@@ -16,7 +16,7 @@
 // | `testing/`          | the scripted ACP agent and the conformance harness                                       |
 //
 // The protocol layer (`acp/`) imports nothing from the daemon but the spine's contract types, so it can move into
-// clover-sdk's ACP package (plan §4 K) once that package exists; K-M3 adds the agent side there for Winter's
+// clover-sdk's ACP package (plan §4 K) once that package exists; K-M3 adds the agent side there for the inherited
 // coding agent.
 import { join } from "node:path";
 import type { AgentBackend } from "../contracts/agent-backend";
