@@ -1,0 +1,6 @@
+{
+  "extends": "../../tsconfig.base.json",
+  // The Worker runs on workerd: the Workers types only, no Bun or Node.
+  "compilerOptions": { "types": ["@cloudflare/workers-types"], "lib": ["ES2023"] },
+  "include": ["src"]
+}

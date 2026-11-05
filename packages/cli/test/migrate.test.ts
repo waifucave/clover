@@ -37,10 +37,41 @@ function baseDeps(overrides: Partial<MigrateCommandDeps> = {}): { deps: MigrateC
     log: (l) => lines.push(l),
     error: (l) => errLines.push(l),
     confirm: async () => true,
+    // These tests drive Migration B itself, with their own throwaway legacy home and stores (M-M0: the
+    // code's own switch keeps it off; the tests below the helper prove that).
+    legacyImports: { home: true },
     ...overrides,
   };
   return { deps, lines, errLines };
 }
+
+describe("clover migrate with the code's own legacy-import switches (M-M0: all off)", () => {
+  test("a fresh Migration B refuses, with or without --from, and nothing is copied", async () => {
+    // Without --from it never looks for a legacy home (C0 review S2); with one, the switch refuses (M-M0).
+    for (const [argv, says] of [[["--yes"], "--from <path>"], [["--from", "PLACEHOLDER", "--yes"], "imports nothing from a legacy install"]] as const) {
+      const { deps, errLines } = baseDeps({ legacyImports: undefined });
+      const legacyHome = join(tempDir(), "legacy");
+      seedLegacyHome(legacyHome);
+      deps.argv = argv.map((a) => (a === "PLACEHOLDER" ? legacyHome : a));
+      expect(await runMigrateCommand(deps)).toBe(1);
+      expect(errLines.join("\n")).toContain(says);
+      expect(existsSync(deps.home)).toBe(false);
+    }
+  });
+
+  test("--resume refuses too, and points at --rollback", async () => {
+    const { deps, errLines } = baseDeps({ legacyImports: undefined, argv: ["--resume", "--yes"] });
+    expect(await runMigrateCommand(deps)).toBe(1);
+    expect(errLines.join("\n")).toContain("imports nothing from a legacy install");
+    expect(errLines.join("\n")).toContain("--rollback");
+  });
+
+  test("--status still answers (it reads only this home)", async () => {
+    const { deps, lines } = baseDeps({ legacyImports: undefined, argv: ["--status"] });
+    expect(await runMigrateCommand(deps)).toBe(0);
+    expect(lines.join("\n")).toContain("never run Migration B");
+  });
+});
 
 describe("clover migrate --cowork-schema --rollback", () => {
   test("only removes unused Cowork tables, preserving the SDK layout and v7 records", async () => {
