@@ -17,5 +17,5 @@ require (
 	golang.org/x/sys v0.28.0 // indirect
 )
 
-// go-nfs with three patches for the macOS loopback (third_party/README.md)
+// go-nfs with four patches for the macOS loopback (third_party/README.md)
 replace github.com/willscott/go-nfs => ./third_party/go-nfs

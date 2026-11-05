@@ -13,7 +13,7 @@ over that computer's link by the helper here. The report is
 | `fuselinux/` | Linux: FUSE through go-fuse (pure Go, no cgo, needs `fusermount3`) |
 | `cgofs/` | Windows: WinFsp's FUSE layer through cgofuse (no cgo: it loads WinFsp's DLL). Also macOS with cgo against macFUSE, which CI uses to drive FSKit through macFUSE's FSKit backend |
 | `nfsloop/`, `cmd/clover-nfs/` | macOS: one computer's home as an NFSv3 export on the loopback address, for the kernel's NFS client |
-| `third_party/go-nfs/` | go-nfs v0.0.4 with three patches (see `third_party/README.md`) |
+| `third_party/go-nfs/` | go-nfs v0.0.4 with four patches (see `third_party/README.md`) |
 | `cmd/clover-mount/` | the helper: one process mounts the whole tree (or, with `--single`, one computer's home) |
 | `macos/` | macOS: the `clovertree` FSKit module (Swift), its host app, the CI probe and the live-gate script |
 
@@ -40,8 +40,8 @@ capability and turned on in System Settings; `macos/gate.sh` does both at the li
 bun spikes/s6-mounts/server/serve.ts --root ~/some/folder --port 7400          # on the holder
 clover-mount --mountpoint /run/user/$UID/clover --self Me=$HOME \
              --remote Desktop1=127.0.0.1:7400 --policy cached                    # Linux
-clover-mount.exe --mountpoint T: --self Me=%USERPROFILE% --remote Desktop1=127.0.0.1:7400   # Windows, one drive
-clover-mount.exe --mountpoint C:\tree\home\Desktop1 --single --remote Desktop1=127.0.0.1:7400  # Windows, folder layout
+clover-mount.exe --mountpoint T: --volume-prefix \clover\tree --remote Desktop1=127.0.0.1:7400  # Windows: a network volume
+clover-mount.exe --mountpoint "*" --single --volume-prefix \clover\Desktop1 --remote Desktop1=127.0.0.1:7400  # one computer, \\clover\Desktop1
 clover-nfs --listen 127.0.0.1:12049 --remote Desktop1=127.0.0.1:7400 --policy cached       # macOS, then, as the user:
 mount_nfs -o vers=3,tcp,port=12049,mountport=12049,nolocks,locallocks,soft,intr,timeo=10,retrans=2,deadtimeout=5,noresvport,nobrowse,noac 127.0.0.1:/ ~/tree/home/Desktop1
 mount -F -t clovertree clovertree://127.0.0.1:7400/Desktop1 ~/clover-tree        # macOS FSKit, once enabled
@@ -50,6 +50,10 @@ mount -F -t clovertree clovertree://127.0.0.1:7400/Desktop1 ~/clover-tree       
 Policies: `nocache` (every lookup crosses the link), `plain` (1 s caching, like stock FUSE file
 systems) and `cached` (cache until the holder reports a change, plus a breadth-first prefetch
 of a directory's subtree on the first lookup or listing that misses in it).
+
+On Windows, mount the tree as a network volume (`--volume-prefix`): on a plain drive letter or a
+folder, Windows can't name the volume, Node's `realpath` fails, and `tsc` in a Bun or pnpm
+workspace finds no types (see the report). A network volume can't be mounted on a folder.
 
 Test knobs: `--owner uid:gid` (Linux) reports another owner for every file, as a holder whose
 user has another uid would; `--case-insensitive` (Windows) turns on WinFsp's case-insensitive

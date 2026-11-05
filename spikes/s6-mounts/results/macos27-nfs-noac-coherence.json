@@ -10,7 +10,7 @@
     "memGB": 7,
     "bun": "1.3.14"
   },
-  "started": "2026-11-05T02:41:28.530Z",
+  "started": "2026-11-05T04:30:41.397Z",
   "results": [
     {
       "label": "nfs cached, noac",
@@ -134,7 +134,7 @@
         ]
       },
       "shrinkVerdict": "old version: 200 'A' (stale, but bytes the holder sent)",
-      "sizeFreshAfterMs": 31,
+      "sizeFreshAfterMs": 28,
       "grownRead": {
         "ok": true,
         "length": 46,
@@ -165,9 +165,9 @@
       "growVerdict": "stale: 46 bytes {\"C\":46}",
       "grownFreshAfterMs": 59,
       "missingFirst": "ENOENT",
-      "newNameVisibleAfterMs": 32,
-      "deletedGoneAfterMs": 56
+      "newNameVisibleAfterMs": 54,
+      "deletedGoneAfterMs": 58
     }
   ],
-  "finished": "2026-11-05T02:41:29.568Z"
+  "finished": "2026-11-05T04:30:42.446Z"
 }

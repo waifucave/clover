@@ -17,6 +17,7 @@ mount against local disk; failing fast when the computer drops.
 | `ci/prepare.sh` | makes "the other computer's home": a clone of this repo with `node_modules` |
 | `ci/macfuse.sh` | CI only, on a disposable macOS runner: installs macFUSE and turns its FSKit module on by hand |
 | `ci/windows-git.ps1` | CI only: Git for Windows and Git Bash inside the tree, four layouts |
+| `ci/windows-tsc.ps1` | CI only: what Node and `tsc` resolve in `node_modules` inside the tree, five layouts |
 | `results/` | the numbers from CI, as JSON |
 
 No `package.json` here on purpose: `spikes/*` is a workspace glob, so one would join the root
@@ -27,7 +28,8 @@ workspace. Everything runs as plain Bun scripts.
 Linux (FUSE; needs `fuse3`) and Windows (WinFsp 2.1 installed). Build the helper first:
 `cd native/mounts && CGO_ENABLED=0 go build -o /tmp/s6/clover-mount ./cmd/clover-mount`
 (`clover-mount.exe` on Windows), then `bash spikes/s6-mounts/ci/prepare.sh /tmp/s6/export`.
-On Windows pass `--tree T:`.
+On Windows pass `--tree T:`, and to `speed.ts` also `--volume-prefix '\clover\tree'`, without which
+`tsc` finds no types (see the report).
 
 ```sh
 # protocol-level checks, any OS, no mount (also the fail-fast core):
