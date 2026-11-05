@@ -40,6 +40,7 @@ import { credentialRefFor } from "../../src/runtime-sdk/keychain";
 import { keychainService } from "../../src/profile";
 import { startDaemon, type RunningDaemon } from "../../src/daemon";
 import { describeWithWinterBinary } from "../helpers/winter-binary";
+import { spawnEmbeddedWorker, type SpawnEmbeddedWorkerOptions } from "@yanlinglabs/winter-agent-runtime/embedded-host";
 
 const SENTINEL = "WS19-SENTINEL-e2e-6d41af9c";
 const DEEPSEEK_MODEL = "deepseek/deepseek-v4-pro"; // R.1: DeepSeek's live row (deepseek-reasoner left the catalog, V16)
@@ -133,6 +134,9 @@ describeWithWinterBinary("WS-19 end to end: a stored credential routes a real se
    *  environment as `ps` reports them. */
   const turnLines: string[] = [];
   let childCommandLine = "";
+  /** A-M1: what every embedded session's Worker was started with (the spawn the SDK asked for: its argv
+   *  and environment), captured through the embedded host's `spawnWorker` seam. */
+  const workerSpawns: Array<SpawnEmbeddedWorkerOptions["spawn"]> = [];
   /** B-1's code session — the LIVE one MAJOR 1 and B-3 re-open (the list also holds the §7 chat session). */
   let codeSessionId: string | undefined;
 
@@ -164,7 +168,10 @@ describeWithWinterBinary("WS-19 end to end: a stored credential routes a real se
     secretsRef = secrets;
     // DELIBERATELY NO CREDENTIAL WRITTEN HERE — B-1 requires the key to arrive through
     // `credential.set` on the LIVE daemon, with no restart before the turn that uses it.
-    daemon = await startDaemon({ home, secrets, agentProvider: null });
+    daemon = await startDaemon({
+      home, secrets, agentProvider: null,
+      embeddedHost: { spawnWorker: (options) => { workerSpawns.push(options.spawn); return spawnEmbeddedWorker(options); } },
+    });
     if ("unavailable" in daemon.runtimeState) throw daemon.runtimeState.unavailable;
     client = await TestClient.connect(daemon.socketPath);
     await client.hello(daemon.tokens.harness, "e2e");
@@ -229,14 +236,15 @@ describeWithWinterBinary("WS-19 end to end: a stored credential routes a real se
     } finally {
       for (const spy of spies) spy.mockRestore();
     }
-    // The LIVE child's argv and environment (`ps -E` prints a same-user process's environment after its
-    // command): the child of THIS process that runs the winter binary.
-    const kids = Bun.spawnSync(["pgrep", "-P", String(process.pid)]).stdout.toString().split("\n").filter(Boolean);
-    for (const pid of kids) {
-      const line = Bun.spawnSync(["ps", "-wwwE", "-o", "command=", "-p", pid]).stdout.toString();
-      if (line.includes(winterBin)) childCommandLine += line;
+    // The LIVE session's argv and environment. A-M1: a code session runs EMBEDDED (spec §3.3), in a
+    // Worker of this process, so there is no child process for `ps -E` to read; what the session got is
+    // the spawn its Worker was started with, rendered the way `ps -wwwE` printed a child's (`command
+    // args… KEY=value…`). Its command is the embedded marker, never the binary.
+    expect(workerSpawns.length).toBeGreaterThan(0);
+    for (const spawn of workerSpawns) {
+      childCommandLine += [spawn.command, ...spawn.args, ...Object.entries(spawn.env ?? {}).map(([k, v]) => `${k}=${v ?? ""}`)].join(" ") + "\n";
     }
-    expect(childCommandLine).toContain(winterBin);
+    expect(childCommandLine).not.toContain(winterBin);
 
     // (4) THE ROUTING, measured on the wire: the turn reached the CONFIGURED loopback endpoint,
     // asking for the DeepSeek row's own upstream model id. Before W19-1/W19-6 neither was possible —

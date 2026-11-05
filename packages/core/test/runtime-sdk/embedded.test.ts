@@ -24,6 +24,7 @@ import {
   LINKED_EMBEDDED_VERSIONS,
   RUNTIME_WORKFLOW_WORKER_ARG,
   runsEmbedded,
+  EMBEDDED_MODES,
   runtimeWorkflowWorkerCommand,
 } from "../../src/runtime-sdk/embedded";
 import { SHUTDOWN_QUERY_GRACE_MS } from "../../src/runtime-sdk/create";
@@ -59,10 +60,11 @@ async function drain(gen: AsyncIterable<SdkMessage>): Promise<SdkMessage[]> {
 const resultOf = (ms: SdkMessage[]) => ms.find((m) => (m as { type?: string }).type === "result") as { subtype?: string; result?: string } | undefined;
 
 describe("the topology", () => {
-  test("chat and dispatch run embedded; code does not (dispatch's children are code sessions, so they stay subprocesses)", () => {
+  test("A-M1: every runnable mode runs embedded — code too, and so dispatch's code children", () => {
     expect(runsEmbedded("chat")).toBe(true);
     expect(runsEmbedded("dispatch")).toBe(true);
-    expect(runsEmbedded("code")).toBe(false);
+    expect(runsEmbedded("code")).toBe(true);
+    expect([...EMBEDDED_MODES].sort()).toEqual(["chat", "code", "dispatch"]);
   });
 
   test("the Worker entry: the compiled binary's plain relative path, or this package's own file in dev", () => {

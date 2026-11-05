@@ -1,5 +1,5 @@
-// `createWinterRuntimeSdk` against a REAL router handle (the in-memory directory store the router
-// itself ships for hermetic hosts) and a `FileSecretStore` in a temp dir. No child process is
+// `createWinterRuntimeSdk` against a REAL session host (the in-memory directory store the host
+// ships for hermetic tests) and a `FileSecretStore` in a temp dir. No child process or Worker is
 // spawned anywhere here: the topology is exercised through `spawnHookFor`'s RESOLUTION only, which
 // is a pure function of settings/env/paths.
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
@@ -15,7 +15,6 @@ import { DEFAULT_DELIVERIES_DAYS, DEFAULT_NAME_LEASES_DAYS } from "../../src/run
 import { RUNTIME_SHUTDOWN_DRAIN_MS } from "../../src/runtime-state/wiring";
 import { buildCoreBrand, CORE_BRAND } from "../../src/runtime-sdk/brand";
 import { createWinterRuntimeSdk, SHUTDOWN_QUERY_GRACE_MS, type WinterRuntimeSdk, type WinterRuntimeSdkDeps } from "../../src/runtime-sdk/create";
-import { WinterExecutableUnavailable } from "../../src/runtime-sdk/executable";
 import { EmbeddedRuntimeUnavailable, type EmbeddedSessionHost } from "../../src/runtime-sdk/embedded";
 import { CLOVER_PEER_VERSIONS } from "../../src/runtime-sdk/versions";
 import type { Settings } from "../../src/settings";
@@ -55,13 +54,16 @@ function withRuntimes(runtimes: Omit<NonNullable<Settings["runtimes"]>, "handoff
   return { schemaVersion: 2, runtimes: { handoff: { crossRuntime: false }, ...runtimes } } as unknown as Settings;
 }
 
-test("active retained storage preserves Code when no optional worker/bridge broker is installed",async()=>{
+// A-M1: Code runs embedded now, so under active (paused-Cowork) storage it takes the embedded floor's
+// answer like chat and dispatch — never the host-code broker's refusal for a missing optional broker.
+test("active retained storage refuses Code through the embedded floor, not for a missing optional worker/bridge broker",async()=>{
   mkdirSync(join(home,"cowork"));
   const coordination=mkdtempSync(join(tmpdir(),"clover-create-floor-coordination-"));
   const unregister=registerHostStorageFences(home,{coordinationDir:coordination,coworkStorageActive:true});
   try {
     const handle=await createWinterRuntimeSdk(deps({codeExecution:new HostCodeExecutionService(home,null)}));handles.push(handle);
     expect(handle.spawnHookFor("code")).not.toBeInstanceOf(HostCodeUnavailable);
+    expect(handle.spawnHookFor("code")).toBeInstanceOf(EmbeddedRuntimeUnavailable);
   } finally {unregister();rmSync(coordination,{recursive:true,force:true});}
 });
 
@@ -267,76 +269,49 @@ describe("spawnHookFor — P8b-1's one topology site", () => {
     expect(embedded.spawned).toHaveLength(0);
   });
 
-  test("an explicit CLOVER_RUNTIME_EXECUTABLE that is missing on disk ⇒ the typed refusal, never a throw and never a fallback", async () => {
-    // P9a fix wave (M1 class): "nothing configured" is no longer a refusal in a tree where the
-    // platform package is installed (the ladder's last rung finds it), so the deterministic refusal
-    // is an explicit path that does not exist — P8b-2 says an explicit path never falls through.
-    // WS-23: asked of CODE — the one mode that still resolves a binary.
+  test("A-M1: every mode is EMBEDDED — the host's workerProcess, and no binary is resolved for any of them", async () => {
+    // A binary that does not exist, explicitly configured twice over: were any mode still resolving
+    // the ladder, it would refuse `winter_executable_unavailable` here. Code included (spec §3.3).
     process.env.CLOVER_RUNTIME_EXECUTABLE = join(home, "missing-clover");
-    const { handle } = await build();
-    const hook = handle.spawnHookFor("code");
-    expect(hook).toBeInstanceOf(WinterExecutableUnavailable);
-    expect((hook as WinterExecutableUnavailable).code).toBe("winter_executable_unavailable");
-    // It names what it looked at, so a user can see where to drop the binary.
-    expect((hook as WinterExecutableUnavailable).tried.some((p) => p.startsWith(home))).toBe(true);
-  });
-
-  test("CLOVER_RUNTIME_EXECUTABLE naming an existing file ⇒ the spawn hook", async () => {
-    const bin = join(home, "clover-bin");
-    writeFileSync(bin, "#!/bin/sh\n");
-    process.env.CLOVER_RUNTIME_EXECUTABLE = bin;
-    const { handle } = await build();
-    expect(handle.spawnHookFor("code")).toEqual({ pathToClaudeCodeExecutable: bin });
-    // Path (a): the SDK's own `defaultSpawn` stays in charge until the engine is published.
-    expect((handle.spawnHookFor("code") as { spawnClaudeCodeProcess?: unknown }).spawnClaudeCodeProcess).toBeUndefined();
-  });
-
-  test("it RE-RESOLVES on every call: the setting is hot and wins over the env", async () => {
-    const envBin = join(home, "env-clover");
-    const settingBin = join(home, "setting-clover");
-    writeFileSync(envBin, "#!/bin/sh\n");
-    writeFileSync(settingBin, "#!/bin/sh\n");
-    process.env.CLOVER_RUNTIME_EXECUTABLE = envBin;
-
-    const { handle } = await build();
-    expect(handle.spawnHookFor("code")).toEqual({ pathToClaudeCodeExecutable: envBin });
-
-    settings = withRuntimes({ retention: { deliveriesDays: 30, nameLeasesDays: 7 }, migrations: { memoryKeys: false }, winterLeg: { chat: false, dispatch: false, code: false }, winterExecutable: settingBin, winterIdleTimeoutSec: 900 });
-    // Same handle, no rebuild, no restart.
-    expect(handle.spawnHookFor("code")).toEqual({ pathToClaudeCodeExecutable: settingBin });
-  });
-
-  test("WS-23: chat and dispatch are EMBEDDED — the host's workerProcess, and no binary is resolved for them at all", async () => {
-    // A binary that does not exist: were chat/dispatch still resolving the ladder, this would refuse.
-    process.env.CLOVER_RUNTIME_EXECUTABLE = join(home, "missing-clover");
+    settings = withRuntimes({ retention: { deliveriesDays: 30, nameLeasesDays: 7 }, migrations: { memoryKeys: false }, winterLeg: { chat: false, dispatch: false, code: false }, winterExecutable: join(home, "missing-setting-clover"), winterIdleTimeoutSec: 900 });
     const embedded = recordingEmbeddedHost();
     const { handle } = await build({ embedded });
-    for (const mode of ["chat", "dispatch"] as const) {
+    for (const mode of ["chat", "dispatch", "code"] as const) {
       const hook = handle.spawnHookFor(mode);
       expect(hook).not.toBeInstanceOf(Error);
-      const spawnHook = hook as { pathToClaudeCodeExecutable: string; spawnClaudeCodeProcess?: (o: unknown) => unknown };
+      const spawnHook = hook as { pathToClaudeCodeExecutable: string; spawnClaudeCodeProcess?: (o: unknown) => unknown; runtimeVersion?: string };
       expect(spawnHook.pathToClaudeCodeExecutable).toBe("clover-embedded");
+      expect(spawnHook.runtimeVersion).toBe(CLOVER_PEER_VERSIONS.winterAgentSdk);
       expect(typeof spawnHook.spawnClaudeCodeProcess).toBe("function");
       // The hook IS the host's spawn: what query() hands it goes straight to the embedded host.
       const options = { command: "clover-embedded", args: ["--run", "--config-json", "{}"], cwd: home, env: {} };
       expect(() => spawnHook.spawnClaudeCodeProcess!(options)).toThrow("recordingEmbeddedHost spawns nothing");
     }
-    expect(embedded.spawned).toHaveLength(2);
-    // Code keeps the binary ladder — and so still refuses the missing binary.
-    expect(handle.spawnHookFor("code")).toBeInstanceOf(WinterExecutableUnavailable);
+    expect(embedded.spawned).toHaveLength(3);
   });
 
-  test("WS-23: chat and dispatch with NO embedded host refuse typed — never a fallback to the spawned binary", async () => {
+  test("A-M1: with NO embedded host every mode refuses typed — never a fallback to a spawned binary", async () => {
     const bin = join(home, "clover-bin");
     writeFileSync(bin, "#!/bin/sh\n");
     process.env.CLOVER_RUNTIME_EXECUTABLE = bin;
     const { handle } = await build();
-    for (const mode of ["chat", "dispatch"] as const) {
+    for (const mode of ["chat", "dispatch", "code"] as const) {
       const hook = handle.spawnHookFor(mode);
       expect(hook).toBeInstanceOf(EmbeddedRuntimeUnavailable);
       expect((hook as EmbeddedRuntimeUnavailable).code).toBe("embedded_runtime_unavailable");
     }
-    expect(handle.spawnHookFor("code")).toEqual({ pathToClaudeCodeExecutable: bin });
+  });
+
+  test("A-M1: a code session under active protected storage refuses like chat and dispatch, while the host cannot cover it", async () => {
+    const embedded = recordingEmbeddedHost();
+    const { handle } = await build({ embedded });
+    mkdirSync(join(home, "cowork"));
+    const coordination = mkdtempSync(join(tmpdir(), "clover-embedded-code-coordination-"));
+    const unregister = registerHostStorageFences(home, { coordinationDir: coordination, coworkStorageActive: true });
+    try {
+      expect(handle.spawnHookFor("code")).toBeInstanceOf(EmbeddedRuntimeUnavailable);
+      expect(embedded.spawned).toHaveLength(0);
+    } finally { unregister(); rmSync(coordination, { recursive: true, force: true }); }
   });
 });
 

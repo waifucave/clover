@@ -10,10 +10,10 @@
 // WHY A WRAPPER RATHER THAN `createSessionHost` AT THE CALL SITE. Three things the daemon has to do
 // exactly once, in exactly one place, and that a raw handle cannot carry:
 //
-//  1. `spawnHookFor(mode)` — P8b-1's single topology site. Code: path (a), one spawned `winter`
-//     child per session. Chat and dispatch (WS-23): path (b), the runtime EMBEDDED in this process,
-//     one Bun Worker per session (`embedded.ts`) — the change to this one function's return value
-//     P8b-1 promised, with nothing else in the daemon moving.
+//  1. `spawnHookFor(mode)` — P8b-1's single topology site. Every mode runs the runtime EMBEDDED in
+//     this process, one Bun Worker per session (`embedded.ts`): chat and dispatch since WS-23, code
+//     since A-M1 (spec §3.3) — each the change to this one function's return value P8b-1 promised,
+//     with nothing else in the daemon moving. No session spawns the `winter` binary any more.
 //  2. `trackQuery`/`untrack`/`dispose` — G-14's ordering. Every live `Query` ends BEFORE the host
 //     disposes and, in `daemon.ts`, before the 8a spine closes: a draining child's last frames
 //     write delivery receipts into `runtime-state.db`, and a closed store loses them.
@@ -25,7 +25,7 @@
 // WS-23: the handle serves ONE runtime. The official `claude` peer and everything this file built for
 // it (the peer import and its version guard, the executable ladder, the credential seam, the advisor
 // resolver, the capability-schema bridge, the handoff participants) is gone.
-import { existsSync } from "node:fs";
+
 import * as clover from "@yanlinglabs/winter-agent-sdk";
 import type { SpawnClaudeCodeProcess } from "@yanlinglabs/winter-agent-sdk";
 import { createSessionHost, isSelectionRefusal, selectionVersionsFrom, selectRuntime, SelectionRefusedError } from "./host";
@@ -33,9 +33,8 @@ import type { RuntimeDirectoryEntry, RuntimeDirectoryOptions, RuntimeDirectorySt
 import type { PermissionClassLabel } from "@yanlinglabs/winter-agent-sdk/messaging";
 import type { SecretStore } from "../auth/secret-store";
 import { retentionFromSettings } from "../runtime-state/retention";
-import { cloverOptionsFromSettings, type Settings } from "../settings";
+import type { Settings } from "../settings";
 import { buildCoreBrand } from "./brand";
-import { explicitRuntimeVersionNote, resolveWinterExecutable, winterBinaryVersion, type WinterExecutableUnavailable } from "./executable";
 import { EmbeddedRuntimeUnavailable, embeddedVersionCheck, runsEmbedded, type EmbeddedSessionHost } from "./embedded";
 import { credentialPresenceFrom } from "./keychain";
 import { familyListingFromCatalog } from "./provider-selection";
@@ -172,14 +171,15 @@ export interface WinterRuntimeSdk {
   /**
    * P8b-1: THE ONE SITE for the spawn topology, re-resolved on EVERY call.
    *
-   * CODE: the spawned `winter` binary. `settings.runtimes.winterExecutable` is hot, so a newly built
-   * binary is picked up by the next session with no restart. CHAT and DISPATCH (WS-23): the embedded
-   * runtime, one Worker per session — no binary is resolved for them at all, so
-   * `winter_executable_unavailable` cannot apply; their refusal is `EmbeddedRuntimeUnavailable`
-   * (a version-locked set that does not agree, or no embedded host wired). Returns the typed error
-   * rather than throwing and NEVER falls back to the other topology — a session refuses at create.
+   * EVERY MODE (chat and dispatch since WS-23, code since A-M1): the embedded runtime, one Worker per
+   * session — no binary is resolved at all, so `winter_executable_unavailable` cannot apply and
+   * `settings.runtimes.winterExecutable` no longer decides anything here. The refusal is
+   * `EmbeddedRuntimeUnavailable` (a version-locked set that does not agree, protected storage the
+   * embedded host cannot cover, or no embedded host wired), or for code the host-code broker's own.
+   * Returns the typed error rather than throwing and NEVER falls back to a spawned binary — a session
+   * refuses at create.
    */
-  spawnHookFor(mode: SessionMode): CloverSpawnHook | WinterExecutableUnavailable | EmbeddedRuntimeUnavailable | HostCodeUnavailable | HostStorageFenceUnavailable;
+  spawnHookFor(mode: SessionMode): CloverSpawnHook | EmbeddedRuntimeUnavailable | HostCodeUnavailable | HostStorageFenceUnavailable;
   readonly codeExecution?: HostCodeExecutionService;
   /** Complete, versioned file/context coverage; Read/Write-only capability is insufficient. */
   protectedEmbeddedPathsAvailable?(): boolean;
@@ -387,8 +387,6 @@ export async function createWinterRuntimeSdk(deps: WinterRuntimeSdkDeps, overrid
   // underneath a child that is still appending into both. That is precisely the ordering G-14
   // exists to guarantee, so the second caller awaits the first instead.
   let disposing: Promise<void> | undefined;
-  // One log line per distinct stale-runtime note (explicitRuntimeVersionNote), never one per session.
-  const loggedRuntimeVersionNotes = new Set<string>();
 
   return {
     sdk,
@@ -402,7 +400,7 @@ export async function createWinterRuntimeSdk(deps: WinterRuntimeSdkDeps, overrid
         await releaseAllHeld(sdk, deps.directoryStore, deps.log);
       },
     },
-    spawnHookFor(mode: SessionMode): CloverSpawnHook | WinterExecutableUnavailable | EmbeddedRuntimeUnavailable | HostCodeUnavailable | HostStorageFenceUnavailable {
+    spawnHookFor(mode: SessionMode): CloverSpawnHook | EmbeddedRuntimeUnavailable | HostCodeUnavailable | HostStorageFenceUnavailable {
       if (mode === "code") {
         try { codeExecution.assertReady(deps.home); }
         catch (error) {
@@ -410,44 +408,22 @@ export async function createWinterRuntimeSdk(deps: WinterRuntimeSdkDeps, overrid
           throw error;
         }
       }
-      if (runsEmbedded(mode)) {
-        try {
-          if (codeExecution.protectedStorageActive() && deps.embedded?.supportsProtectedPaths?.() !== true) return new EmbeddedRuntimeUnavailable(
-            "protected Cowork storage requires complete file/context policy coverage; embedded chat and dispatch remain unavailable until that coverage is verified",
-          );
-        } catch (error) {
-          if (error instanceof HostStorageFenceUnavailable) return error;
-          throw error;
-        }
-        const embedded = deps.embedded;
-        if (embedded === undefined) return new EmbeddedRuntimeUnavailable("this daemon was built without an embedded-session host; chat and dispatch cannot start");
-        // Checked on every call, not only at boot: the values are constants, so this costs nothing,
-        // and it keeps the refusal at the one topology site rather than a boot flag someone must read.
-        const versionRefusal = embeddedVersionCheck();
-        if (versionRefusal !== undefined) return versionRefusal;
-        return { pathToClaudeCodeExecutable: "clover-embedded", spawnClaudeCodeProcess: codeExecution.trustEmbeddedSpawn((options) => embedded.spawn(options), () => embedded.supportsProtectedPaths?.() === true), runtimeVersion: REQUIRED_WINTER_AGENT_SDK };
+      if (!runsEmbedded(mode)) return new EmbeddedRuntimeUnavailable(`no topology runs ${mode} sessions on this daemon`);
+      try {
+        if (codeExecution.protectedStorageActive() && deps.embedded?.supportsProtectedPaths?.() !== true) return new EmbeddedRuntimeUnavailable(
+          "protected Cowork storage requires complete file/context policy coverage; embedded sessions remain unavailable until that coverage is verified",
+        );
+      } catch (error) {
+        if (error instanceof HostStorageFenceUnavailable) return error;
+        throw error;
       }
-      const resolution = resolveWinterExecutable({
-        setting: cloverOptionsFromSettings(deps.settings()).winterExecutable,
-        env: process.env,
-        execPath: process.execPath,
-        home: deps.home,
-        exists: (p) => existsSync(p),
-      });
-      if (!resolution.ok) return resolution.error;
-      if (resolution.source === "setting" || resolution.source === "env") {
-        const note = explicitRuntimeVersionNote(resolution.path);
-        if (note !== undefined && !loggedRuntimeVersionNotes.has(note)) {
-          loggedRuntimeVersionNotes.add(note);
-          deps.log?.(note);
-        }
-      }
-      // The platform package is refused unless it IS the pin, and a Release bundle ships the pinned
-      // runtime; a configured or home-installed binary is whatever it says it is.
-      const runtimeVersion = resolution.source === "platform-package" || resolution.source === "bundle"
-        ? REQUIRED_WINTER_AGENT_SDK
-        : winterBinaryVersion(resolution.path);
-      return { pathToClaudeCodeExecutable: resolution.path, ...(runtimeVersion === undefined ? {} : { runtimeVersion }) };
+      const embedded = deps.embedded;
+      if (embedded === undefined) return new EmbeddedRuntimeUnavailable("this daemon was built without an embedded-session host; no session can start");
+      // Checked on every call, not only at boot: the values are constants, so this costs nothing,
+      // and it keeps the refusal at the one topology site rather than a boot flag someone must read.
+      const versionRefusal = embeddedVersionCheck();
+      if (versionRefusal !== undefined) return versionRefusal;
+      return { pathToClaudeCodeExecutable: "clover-embedded", spawnClaudeCodeProcess: codeExecution.trustEmbeddedSpawn((options) => embedded.spawn(options), () => embedded.supportsProtectedPaths?.() === true), runtimeVersion: REQUIRED_WINTER_AGENT_SDK };
     },
     async selectRuntimeFor(input: { mode: SessionMode; model?: string; persisted?: RuntimeSelection }): Promise<RuntimeSelection | SelectionRefusal> {
       try {

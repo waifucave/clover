@@ -133,7 +133,7 @@ export function createWinterMessagingAdapter(deps: WinterMessagingAdapterDeps): 
     if (entry.status === "archived") {
       return refused(message.messageId, `${entry.address} is archived; it refuses delivery until a deliberate user or product resume unarchives it (WS-15 §6.2)`);
     }
-    return coldResume(entry, message);
+    return resumeParkedSession(entry, message);
   }
 
   async function childDelivery(address: RuntimeAddress, message: GlobalAgentMessage, door: "steer" | "resume"): Promise<DeliveryOutcome> {
@@ -184,7 +184,7 @@ export function createWinterMessagingAdapter(deps: WinterMessagingAdapterDeps): 
    *   * a stream that ends with neither — the runtime came and went without a turn we can point at,
    *     which is also indistinguishable from a delivered-then-lost turn: `delivery_uncertain`.
    */
-  async function coldResume(entry: RuntimeDirectoryEntry, message: GlobalAgentMessage): Promise<DeliveryOutcome> {
+  async function resumeParkedSession(entry: RuntimeDirectoryEntry, message: GlobalAgentMessage): Promise<DeliveryOutcome> {
     if (entry.backendSessionId === undefined) {
       return unavailable(message.messageId, false, `${entry.address} has no backend session id, so there is no transcript to resume; a cold resume needs the persisted runtime's own id (WS-15 §6.2)`);
     }

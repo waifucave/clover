@@ -1,7 +1,9 @@
-// P8b Task 17 Step 2 — CODE ON THE CLOVER LEG, end to end, on the BUILT binary.
+// P8b Task 17 Step 2 — CODE ON THE CLOVER LEG, end to end.
 //
-// A real `startDaemon` in a temp home with `winterLeg: { code: true }`, a real NDJSON client, the
-// real `winter` child. Every model is a `winter-test/<double>`; nothing reaches the network.
+// A real `startDaemon` in a temp home with `winterLeg: { code: true }`, a real NDJSON client, and the
+// real runtime: until A-M1 the spawned `winter` binary, since A-M1 (spec §3.3) the same runtime
+// EMBEDDED in a Worker of the daemon — the binary is still configured and no longer runs a session.
+// Every model is a `winter-test/<double>`; nothing reaches the network.
 //
 //   (a) `tooluse` under `ask` → an `approval_requested` carrying the phone's fields; `approval.respond`
 //       allows; the `tool_result` follows (the double's unregistered tool → its own fallback text)
@@ -116,6 +118,9 @@ const cloverSurvivors = (bin: string, home: string): string[] =>
 const pgrepLiteral = (path: string): string => path.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const cloverChildren = (bin: string): string[] =>
   Bun.spawnSync(["pgrep", "-P", String(process.pid), "-f", pgrepLiteral(bin)]).stdout.toString().trim().split("\n").filter(Boolean);
+/** The stdio fake MCP servers this process started (an embedded session's spawn is this process's child). */
+const fakeMcpChildren = (): string[] =>
+  Bun.spawnSync(["pgrep", "-P", String(process.pid), "-f", "fake-mcp-server"]).stdout.toString().trim().split("\n").filter(Boolean);
 const types = (events: SessionEvent[]): string[] => events.map((e) => e.type);
 
 describeWithWinterBinary("code on the Clover leg — the built binary through a real daemon", (bin) => {
@@ -329,9 +334,13 @@ describeWithWinterBinary("code on the Clover leg — the built binary through a 
     rmSync(cwd, { recursive: true, force: true });
   }, 60_000);
 
-  test("(n) a configured user MCP server (sdk/.clover.json) reaches the child: THE CHILD spawns the forwarded stdio server", async () => {
+  test("(n) a configured user MCP server (sdk/.clover.json) reaches the session: ITS Worker spawns the forwarded stdio server, and its end stops it", async () => {
     const cwd = realpathSync(mkdtempSync(join(tmpdir(), "clover-code-mcp-")));
-    const before = new Set(cloverChildren(bin));
+    // A-M1: the session runs EMBEDDED (spec §3.3), in a Worker of this process, so the server it spawns
+    // is a child of THIS process. The daemon's own McpManager probe copy is too, but it ran at boot and
+    // closed (WS-24: connects, lists, closes), so a `fake-mcp-server` child that is new since `before`
+    // is the session's own.
+    const before = new Set(fakeMcpChildren());
     const sid = await createCode("echo", cwd, "auto");
     const driver = daemon!.clover.get(sid)!;
     const t0 = Date.now();
@@ -341,24 +350,20 @@ describeWithWinterBinary("code on the Clover leg — the built binary through a 
     // ruling, so not in `init.tools`; the runtime still says the daemon's server connected
     expect(driver.init!.tools).toContain("ToolSearch");
     expect(driver.init!.tools).not.toContain("Computer");
-    // MEASURED: a stdio server's tools are NOT in `system/init.tools` — the child connects
+    expect(daemon!.embedded.live().length).toBeGreaterThan(0);
+    // MEASURED: a stdio server's tools are NOT in `system/init.tools` — the runtime connects
     // process-transport servers asynchronously after init (`WaitForMcpServers`/`RefreshMcpTools`
-    // are advertised for exactly that), so the observable fact is the SPAWN: a `bun run
-    // fake-mcp-server.ts` whose PARENT is this session's winter child (the daemon's own McpManager
-    // probe copy has the test process as its parent, so the parent pid is what tells them apart).
-    const cloverPid = cloverChildren(bin).find((p) => !before.has(p));
-    expect(cloverPid).toBeDefined();
-    // The home-scoped survivor scan is not vacuous: it DOES see this file's live child (its command line
-    // names this home), so the zero-survivor check at the end means something — while a home it never
-    // spawned under sees nothing.
-    expect(cloverSurvivors(bin, home).some((l) => l.startsWith(`${cloverPid} `))).toBe(true);
-    expect(cloverSurvivors(bin, join(home, "not-this-home")).some((l) => l.startsWith(`${cloverPid} `))).toBe(false);
-    const spawnedByChild = (): string[] =>
-      Bun.spawnSync(["pgrep", "-P", cloverPid!, "-f", "fake-mcp-server"]).stdout.toString().trim().split("\n").filter(Boolean);
+    // are advertised for exactly that), so the observable fact is the SPAWN.
+    const spawned = (): string[] => fakeMcpChildren().filter((p) => !before.has(p));
     const t1 = Date.now();
-    while (spawnedByChild().length === 0 && Date.now() - t1 < 10_000) await Bun.sleep(50);
-    expect(spawnedByChild().length).toBeGreaterThanOrEqual(1);
+    while (spawned().length === 0 && Date.now() - t1 < 10_000) await Bun.sleep(50);
+    const sessionServers = spawned();
+    expect(sessionServers.length).toBeGreaterThanOrEqual(1);
     await driver.end();
+    // The Worker's teardown stops what its session started (WS-24's process groups): nothing outlives it.
+    const t2 = Date.now();
+    while (fakeMcpChildren().some((p) => sessionServers.includes(p)) && Date.now() - t2 < 10_000) await Bun.sleep(50);
+    expect(fakeMcpChildren().filter((p) => sessionServers.includes(p))).toEqual([]);
     rmSync(cwd, { recursive: true, force: true });
   }, 40_000);
 

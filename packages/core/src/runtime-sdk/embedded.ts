@@ -2,7 +2,8 @@ import { embeddedHostPathProtection, embeddedFileProtectionSupported, embeddedCo
 import * as embeddedHostApi from "@yanlinglabs/winter-agent-runtime/embedded-host";
 import { hostStorageFloorDescriptor, registerHostStoragePolicyConsumer } from "./host-storage-fence";
 // WS-23 (ruling R1): CHAT AND DISPATCH RUN THE CLOVER RUNTIME EMBEDDED — one Bun Worker per session,
-// inside `clover-core`. Code sessions keep the spawned `winter` binary (`executable.ts`'s ladder).
+// inside `clover-core`. A-M1 (spec §3.3): CODE SESSIONS DO TOO. No session spawns the `winter` binary
+// any more; it stays buildable as Winter's coding agent, which becomes an ACP agent (§9.3, lane K).
 //
 // WHY A WORKER AND NOT THE DAEMON'S MAIN THREAD. The runtime keeps its tool registry, MCP executors,
 // advisor, child-engine factory and background-task table as module-level singletons — one per JS
@@ -22,7 +23,7 @@ import { hostStorageFloorDescriptor, registerHostStoragePolicyConsumer } from ".
 // idle reaping and resume work unchanged.
 //
 // CREDENTIALS. An embedded session resolves its Keychain items IN-PROCESS, as `clover-core` — the
-// binary that created them — so chat and dispatch never raise the per-binary consent prompt a spawned
+// binary that created them — so no session ever raises the per-binary consent prompt a spawned
 // `winter` child gets. The wire still carries only a locator (`authRef`); the difference is which
 // thread of which process reads it.
 //
@@ -41,8 +42,8 @@ import { WORKFLOW_WORKER_BRIDGE_FLAG } from "@yanlinglabs/winter-agent-runtime/w
 import { REQUIRED_WINTER_AGENT_SDK } from "./versions";
 import type { RunnableSessionMode } from "../sessions/session-mode";
 
-/** The modes that run embedded. Dispatch's CHILD sessions are code sessions, so they stay subprocesses. */
-export const EMBEDDED_MODES = ["chat", "dispatch"] as const;
+/** The modes that run embedded: every runnable mode (code since A-M1), Dispatch's child sessions included. */
+export const EMBEDDED_MODES = ["chat", "dispatch", "code"] as const;
 
 export function runsEmbedded(mode: RunnableSessionMode): boolean {
   return (EMBEDDED_MODES as readonly string[]).includes(mode);
@@ -127,7 +128,7 @@ export function embeddedVersionCheck(versions: EmbeddedVersions = LINKED_EMBEDDE
   if (versions.runtime === versions.sdk && versions.sdk === versions.required) return undefined;
   return new EmbeddedRuntimeUnavailable(
     `the embedded Clover runtime is ${versions.runtime}, the agent SDK wrapper is ${versions.sdk} and this build is pinned to ${versions.required} — ` +
-      "chat and dispatch run the runtime in-process and refuse a mixed set; reinstall so all three agree",
+      "every session runs the runtime in-process and refuses a mixed set; reinstall so all three agree",
   );
 }
 
