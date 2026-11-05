@@ -1,6 +1,11 @@
 // Winter Phase 8d — `clover doctor`'s "runtimes" section (Lane 1 fills; Lane 4 prints). Diagnoses
 // where the `winter` executable resolves from (or the typed reason it does not) and, when the bundle
-// carries them, the parsed runtimes record and `ant`'s own record. READ-ONLY: never spawns a runtime,
+// carries them, the parsed runtimes record and `ant`'s own record.
+//
+// A-M1: NO SESSION RUNS THAT EXECUTABLE. Every session (code, dispatch, chat) runs the SDK embedded in
+// `clover-core`, one Worker per session, so a missing or broken `winter` binary breaks no session. It
+// is Winter's coding agent, kept for the ACP agent work (lane K); the report says so (`sessions`,
+// `clover.usedBySessions`), so a doctor reader never takes an unresolved binary for a broken daemon. READ-ONLY: never spawns a runtime,
 // never touches a store, safe beside a live daemon — every resolver this composes is itself
 // pure/typed, and every remaining throw surface is caught here so a doctor run can NEVER crash
 // `clover doctor`, only report an `error` string.
@@ -12,7 +17,10 @@ import { bundleRuntimePath, parseAntVersionsJson, parseVersionsJson, type AntVer
 import { resolveWinterExecutable } from "./executable";
 
 export interface RuntimesReport {
-  clover: { resolved?: { path: string; source: string }; error?: string };
+  /** A-M1: how sessions run. Always `"embedded"`: in `clover-core`, one Worker per session. */
+  sessions: "embedded";
+  /** The `winter` coding-agent executable. `usedBySessions` is always `false` (A-M1). */
+  clover: { resolved?: { path: string; source: string }; error?: string; usedBySessions: false };
   /** `runtimes/VERSIONS.json` and `runtimes/ant/VERSIONS.json`, each present only when staged — a
    *  dev checkout has neither, which is a normal state, never an error. */
   bundle?: { versions?: VersionsJson; antVersions?: AntVersionsJson; error?: string };
@@ -45,7 +53,7 @@ export async function diagnoseRuntimes(input: {
   const options = cloverOptionsFromSettings(input.settings);
 
   // --- clover -----------------------------------------------------------------------------------
-  const clover: RuntimesReport["clover"] = {};
+  const clover: RuntimesReport["clover"] = { usedBySessions: false };
   try {
     const resolution = resolveWinterExecutable({
       setting: options.winterExecutable,
@@ -86,5 +94,5 @@ export async function diagnoseRuntimes(input: {
   if (errors.length > 0) bundle.error = errors.join("; ");
 
   const staged = bundle.versions !== undefined || bundle.antVersions !== undefined || bundle.error !== undefined;
-  return { clover, ...(staged ? { bundle } : {}) };
+  return { sessions: "embedded", clover, ...(staged ? { bundle } : {}) };
 }

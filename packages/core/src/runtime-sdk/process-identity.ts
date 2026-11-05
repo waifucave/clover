@@ -12,15 +12,27 @@
 // A-M1: through the SDK's one brand-to-identity mapping (`installBrandIdentity`, SDK 0.0.63), so the identity carries
 // `CORE_BRAND.productVersion`, Clover's own release: `User-Agent: clover-core/<release>`, never the SDK's version
 // after Clover's name. Installed once and never removed: the bottom frame for the process's whole life.
+//
+// A-M1 review (the SDK has no default brand): the same place installs `CORE_BRAND` as the process's BRAND
+// (`installBrand`). The SDK no longer falls back to Winter's profile anywhere: a reader that was not handed a brand
+// reads the one installed for its process, and with none installed it refuses (`BrandRequiredError`). So in core's
+// process an unthreaded SDK call reads Clover's names, never Winter's `~/.winter`, `WINTER_*` or Keychain service.
+// Each embedded session's Worker installs its own session's brand (the SDK's production wiring does that).
+import { installBrand } from "@waifucave/clover-agent-sdk";
 import { installBrandIdentity } from "@waifucave/clover-provider-runtime";
 import { CORE_BRAND } from "./brand";
 
 let installed = false;
 
-/** Installs Clover's identity process-wide, once. The bottom frame: a session's own frame sits above it. */
+/**
+ * Installs Clover's identity and brand process-wide, once. The identity is the bottom frame (a session's own
+ * frame sits above it); the brand is the process's (the SDK's first install wins, and nothing installs before
+ * core loads).
+ */
 export function installCloverProcessIdentity(): void {
   if (installed) return;
   installed = true;
+  installBrand(CORE_BRAND);
   installBrandIdentity(CORE_BRAND);
 }
 

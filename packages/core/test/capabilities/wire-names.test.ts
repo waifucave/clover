@@ -1,12 +1,6 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { isWinterMcpServerInstance, type McpSdkServerConfigWithInstance, type Options, type WinterMcpServerInstance } from "@waifucave/clover-agent-sdk";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { FileSecretStore } from "../../src/auth/secret-store";
-import { resolvePlatformPackageWinter } from "../../src/runtime-sdk/executable";
+import { describe, expect, test } from "bun:test";
+import { isWinterMcpServerInstance, type Options, type WinterMcpServerInstance } from "@waifucave/clover-agent-sdk";
 import { CORE_BRAND } from "../../src/runtime-sdk/brand";
-import { createWinterRuntimeSdk, type WinterRuntimeSdk } from "../../src/runtime-sdk/create";
 import {
   CAPABILITY_SERVER_KEYS, CLOVER_CAPABILITY_TOOLS,
   assertNoCapabilityCollision, buildCapabilitiesFor, capabilityServerName, capabilityToolName,
@@ -35,29 +29,6 @@ import {
  * its capability servers in its own `Options.mcpServers`, keyed by each server's own `name` (P8b-36),
  * which is the path the tests below derive the wire name through.
  */
-
-let home: string;
-let handles: WinterRuntimeSdk[];
-/** A probe the guard does NOT refuse (a bare key, which is not a capability's name) is a real query:
- *  the router picks a leg and spawns a `winter` child for it. Each one is ended here — left alone,
- *  those children outlived the file and were counted as survivors by the e2e home-isolation checks
- *  that run later in the same `bun test` process. */
-let queries: AsyncGenerator<unknown>[];
-/** Ends a probe query AND its child. The child is spawned at `query()` even with a pre-aborted
- *  controller, and it is killed only once the generator is first pulled (`next()` then rejects
- *  "query aborted: runtime process killed") — a bare `return()` on a never-started generator runs
- *  no cleanup at all, and the child lives until this whole `bun test` process exits. */
-const endQuery = async (q: AsyncGenerator<unknown>): Promise<void> => {
-  await q.next().catch(() => undefined);
-  await q.return(undefined).catch(() => undefined);
-};
-
-beforeEach(() => { home = mkdtempSync(join(tmpdir(), "p8b-wire-names-")); handles = []; queries = []; });
-afterEach(async () => {
-  for (const q of queries) await endQuery(q);
-  for (const h of handles) await h.dispose();
-  rmSync(home, { recursive: true, force: true });
-});
 
 const SESSION: CapabilitySession = { sessionId: "s_wire", mode: "code", cwd: "/tmp", roots: ["/tmp"] };
 
@@ -139,6 +110,36 @@ describe("P8b-35: the wire name a child sees is the name the table carries", () 
       }
     }
     expect([...derived].sort()).toEqual(Object.keys(CLOVER_CAPABILITY_TOOLS).sort());
+  });
+
+  test("A-M1 review M9: every advertised inputSchema is a JSON-Schema object (the check the router ran at construction)", () => {
+    // The router's `capabilityServerDescriptors` called every `instance.listTools()` and refused any tool whose
+    // `inputSchema` was not a JSON-Schema object; with the router gone, nothing between a capability server and
+    // the child checks it, so this does, for every server in every mode.
+    const isPlain = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
+    const problems: string[] = [];
+    let checked = 0;
+    for (const mode of ["code", "dispatch", "chat"] as const) {
+      for (const [key, cfg] of Object.entries(serversFor(mode))) {
+        for (const tool of (cfg.instance as WinterMcpServerInstance).listTools()) {
+          checked++;
+          const where = `${mode} ${key}/${tool.name}`;
+          const schema: unknown = tool.inputSchema;
+          if (!isPlain(schema)) { problems.push(`${where}: not an object`); continue; }
+          if (schema["type"] !== "object") problems.push(`${where}: type is ${JSON.stringify(schema["type"])}, not "object"`);
+          const props = schema["properties"];
+          if (props !== undefined && (!isPlain(props) || !Object.values(props).every(isPlain))) problems.push(`${where}: properties is not an object of schemas`);
+          const required = schema["required"];
+          if (required !== undefined && (!Array.isArray(required) || !required.every((r) => typeof r === "string" && isPlain(props) && r in props))) problems.push(`${where}: required names a property it does not declare`);
+          const extra = schema["additionalProperties"];
+          if (extra !== undefined && typeof extra !== "boolean" && !isPlain(extra)) problems.push(`${where}: additionalProperties is neither a boolean nor a schema`);
+          // It crosses the wire as JSON: nothing in it may be lost on the way.
+          if (JSON.stringify(JSON.parse(JSON.stringify(schema))) !== JSON.stringify(schema)) problems.push(`${where}: not plain JSON`);
+        }
+      }
+    }
+    expect(checked).toBeGreaterThan(10);
+    expect(problems).toEqual([]);
   });
 
   test("N1: every record KEY equals its config's own name — mis-keying is unrepresentable", () => {

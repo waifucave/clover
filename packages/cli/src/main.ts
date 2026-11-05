@@ -1759,11 +1759,13 @@ if (import.meta.main) {
         console.log(`  ${DIM}unavailable (${err instanceof Error ? err.message : "unknown error"})${RESET}`);
         return;
       }
-      // WS-23: the `winter` executable only — the official `claude` ladder is gone with the leg.
+      // WS-23: the `winter` executable only — the official `claude` ladder is gone with the leg. A-M1: sessions run
+      // embedded in clover-core, so that executable is reported as the coding agent no session runs.
+      console.log(`  ${AQUA}sessions:${RESET} ${DIM}embedded in clover-core (one worker per session)${RESET}`);
       if (report.clover.resolved) {
-        console.log(`  ${AQUA}clover:${RESET} ${report.clover.resolved.path} ${DIM}(${report.clover.resolved.source})${RESET}`);
+        console.log(`  ${AQUA}coding agent:${RESET} ${report.clover.resolved.path} ${DIM}(${report.clover.resolved.source}; no session runs it)${RESET}`);
       } else {
-        console.log(`  ${AQUA}clover:${RESET} ${DIM}${report.clover.error ?? "unresolved"}${RESET}`);
+        console.log(`  ${AQUA}coding agent:${RESET} ${DIM}${report.clover.error ?? "unresolved"} (no session runs it)${RESET}`);
       }
       if (report.bundle?.versions) {
         const v = report.bundle.versions;
