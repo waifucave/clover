@@ -192,3 +192,30 @@ export function decalDelta(surface: Surface, base: Decal, moved: readonly (reado
   });
   return out;
 }
+
+/**
+ * A shell over the top of an ellipsoid (hair), from its crown down to an edge that may differ all the way
+ * round: `edge(theta)` gives how far down it reaches at each heading (an angle from the crown, in radians;
+ * theta = 0 faces the front). Built along the edge, not cut from a sphere, so the edge is smooth.
+ */
+export function shell(center: Vec3, radii: Vec3, edge: (theta: number) => number, rings = 24, segments = 96): Shape {
+  const s = empty();
+  for (let r = 0; r <= rings; r++) {
+    for (let g = 0; g <= segments; g++) {
+      const theta = (2 * Math.PI * g) / segments;
+      const phi = edge(theta) * (r / rings);
+      const unit: Vec3 = [Math.sin(phi) * Math.sin(theta), Math.cos(phi), Math.sin(phi) * Math.cos(theta)];
+      s.positions.push(center[0] + unit[0] * radii[0], center[1] + unit[1] * radii[1], center[2] + unit[2] * radii[2]);
+      s.normals.push(...norm([unit[0] / radii[0], unit[1] / radii[1], unit[2] / radii[2]]));
+    }
+  }
+  const row = segments + 1;
+  for (let r = 0; r < rings; r++) {
+    for (let g = 0; g < segments; g++) {
+      const a = r * row + g;
+      const b = a + row;
+      s.indices.push(a, b, a + 1, a + 1, b, b + 1);
+    }
+  }
+  return s;
+}

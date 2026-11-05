@@ -6,7 +6,7 @@
 // output (`placeholder.test.ts`).
 
 import { GltfBuilder } from "../vrm/glb";
-import { decalDelta, decalShape, ellipse, ellipsoid, merge, tube, type Decal, type Shape, type Surface, type Vec3 } from "./shapes";
+import { decalDelta, decalShape, ellipse, ellipsoid, merge, shell, tube, type Decal, type Shape, type Surface, type Vec3 } from "./shapes";
 
 export const PLACEHOLDER_NAME = "Alpha (placeholder model)";
 
@@ -134,8 +134,7 @@ export function makePlaceholderVrm(): Uint8Array {
   // The head and the hair.
   const hc = HEAD.center;
   part("head", "Head", [["skin", ellipsoid(hc, [0.13, 0.127, 0.128], 22, 32)]]);
-  const fringe = (x: number) => 0.036 + 0.011 * Math.cos(x * 95);
-  const hairCap = ellipsoid([hc[0], hc[1] + 0.008, hc[2] - 0.004], [0.143, 0.14, 0.142], 40, 64, ([x, y, z]) => !(z > -0.03 && y < fringe(x) - 0.008));
+  const hairCap = shell([hc[0], hc[1] + 0.008, hc[2] - 0.004], [0.143, 0.14, 0.142], hairEdge);
   const sideLocks = [1, -1].map((s) => tube([s * 0.118, hc[1] + 0.03, 0.035], [s * 0.112, hc[1] - 0.1, 0.05], 0.024, 0.012, 16));
   const backHair = tube([0, hc[1] - 0.01, -0.07], [0, hc[1] - 0.27, -0.085], 0.125, 0.095, 26, 0.5);
   part("head", "Hair", [["hair", merge(hairCap, ...sideLocks, backHair)]]);
@@ -162,10 +161,10 @@ export function makePlaceholderVrm(): Uint8Array {
   );
 
   // The body.
-  part("neck", "Neck", [["skin", tube([0, 1.155, -0.004], [0, 1.06, -0.004], 0.029, 0.031, 18)]]);
+  part("neck", "Neck", [["skin", tube([0, 1.155, -0.006], [0, 1.06, -0.006], 0.033, 0.035, 18)]]);
   part("chest", "Bodice", [
-    ["dress", tube([0, 1.07, 0], [0, 0.86, 0], 0.074, 0.064, 26, 0.72, "flat")],
-    ["mint", merge(tube([0, 1.074, 0], [0, 1.05, 0], 0.084, 0.094, 26, 0.74, "flat"), ellipsoid([0.02, 1.032, 0.062], [0.018, 0.011, 0.008], 8, 12), ellipsoid([-0.02, 1.032, 0.062], [0.018, 0.011, 0.008], 8, 12))],
+    ["dress", tube([0, 1.078, 0], [0, 0.86, 0], 0.074, 0.064, 26, 0.72, "flat")],
+    ["mint", merge(tube([0, 1.082, 0], [0, 1.056, 0], 0.08, 0.093, 26, 0.74, "flat"), ellipsoid([0.02, 1.032, 0.062], [0.018, 0.011, 0.008], 8, 12), ellipsoid([-0.02, 1.032, 0.062], [0.018, 0.011, 0.008], 8, 12))],
   ]);
   part("hips", "Skirt", [
     ["skirt", tube([0, 0.875, 0], [0, 0.6, 0], 0.066, 0.19, 30, 0.84, "flat")],
@@ -275,6 +274,25 @@ export function makePlaceholderVrm(): Uint8Array {
   };
   b.use("VRMC_vrm");
   return b.toGlb();
+}
+
+/**
+ * How far down the hair reaches at each heading (radians from the crown): over the forehead, a fringe of
+ * pointed strands with a longer one in the middle; from the temples round the back, down to the nape.
+ */
+function hairEdge(theta: number): number {
+  const t = Math.atan2(Math.sin(theta), Math.cos(theta));
+  const away = Math.abs(t);
+  const ry = 0.14;
+  // Strands: a zigzag, tips down, ten to a turn of the head.
+  const cycle = (t * 10) / (2 * Math.PI) + 0.5;
+  const zig = 1 - 2 * Math.abs(cycle - Math.floor(cycle) - 0.5);
+  const fringeY = 0.025 + 0.016 * zig - 0.007 * Math.exp(-((t / 0.22) ** 2));
+  const front = Math.acos(Math.min(1, Math.max(-1, fringeY / ry)));
+  const back = 2.2;
+  const k = Math.min(1, Math.max(0, (away - 0.78) / (1.45 - 0.78)));
+  const blend = k * k * (3 - 2 * k);
+  return front + (back - front) * blend;
 }
 
 interface FacePart {
