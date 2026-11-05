@@ -26,12 +26,12 @@ import { openRuntimeStateDb, ProjectionCheckpoints, RuntimeSessionRecords } from
 import { SessionHub } from "../../src/sessions/hub";
 import { SessionStore } from "../../src/sessions/store";
 import type { Settings } from "../../src/settings";
-import { describeWithWinterBinary } from "../helpers/winter-binary";
+import { describeWithEmbeddedRuntime } from "../helpers/embedded-runtime";
 import { recordedRunHomes } from "../helpers/run-homes";
 
 const TINY_PNG_B64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
 
-describeWithWinterBinary("item 10 probe: MCP image content through a capability server, on the built binary", (bin) => {
+describeWithEmbeddedRuntime("item 10 probe: MCP image content through a capability server, on the built binary", () => {
   const cleanups: Array<() => Promise<void> | void> = [];
   afterAll(async () => { for (const c of cleanups.reverse()) await c(); });
 
@@ -43,7 +43,7 @@ describeWithWinterBinary("item 10 probe: MCP image content through a capability 
     const rs = openRuntimeStateDb(home);
     const records = new RuntimeSessionRecords(rs);
     const checkpoints = new ProjectionCheckpoints(rs);
-    const settings = { runtimes: { winterExecutable: bin, winterIdleTimeoutSec: 10 } } as unknown as Settings;
+    const settings = { runtimes: { winterIdleTimeoutSec: 10 } } as unknown as Settings;
     const secrets = new FileSecretStore(join(home, "secrets.json"));
     // R.1: the production shape — a run-home router (`runHomeFor` → `requireRunHome`) and real run homes, so the
     // child writes its transcript where the record says (`sdk/projects`).

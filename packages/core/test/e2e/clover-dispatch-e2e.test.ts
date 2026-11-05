@@ -30,7 +30,7 @@ import { FileSecretStore } from "../../src/auth/secret-store";
 import { startDaemon, type RunningDaemon } from "../../src/daemon";
 import type { RuntimeStateWiring } from "../../src/runtime-state";
 import { sessionLegOf } from "../../src/runtime-sdk/leg";
-import { describeWithWinterBinary } from "../helpers/winter-binary";
+import { describeWithEmbeddedRuntime } from "../helpers/embedded-runtime";
 
 class TestClient {
   private decoder = new LineDecoder();
@@ -103,21 +103,20 @@ function walkHome(dir: string, describe: (rel: string, st: Stats) => string): st
 }
 const homeSignature = (dir: string): string => walkHome(dir, (rel, st) => (st.isDirectory() ? `${rel}/` : rel));
 const projectsSignature = (home: string): string => walkHome(join(home, "projects"), (rel, st) => `${rel} ${st.size} ${st.mtimeMs}`);
-/** THIS file's surviving children only: a `winter` process whose command line names this file's own home (its
- *  `--config-json` carries the daemon's sandbox paths under it) — never a stray from another run, which would
- *  fail every file's check at once. */
-const cloverSurvivors = (bin: string, home: string): string[] =>
-  Bun.spawnSync(["ps", "-axww", "-o", "pid=,command="]).stdout.toString().split("\n").map((l) => l.trim()).filter((l) => l.replace(/^\d+\s+/, "").startsWith(bin) && l.includes(home));
-/** `pgrep -f` takes a REGEX. The npm platform binary's path carries `+` and `.`
- *  (`…/@yanlinglabs+winter-agent-sdk-darwin-arm64@0.0.35/…`), so an unescaped path matched nothing and
- *  every child scan came back empty whenever `$CLOVER_RUNTIME_EXECUTABLE` was unset. */
-const pgrepLiteral = (path: string): string => path.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-const cloverChildren = (bin: string): string[] =>
-  Bun.spawnSync(["pgrep", "-P", String(process.pid), "-f", pgrepLiteral(bin)]).stdout.toString().trim().split("\n").filter(Boolean);
+/** A-M1 (review S7): sessions run EMBEDDED, one Worker per session inside the daemon, so no `winter` child exists to
+ *  look for. A survivor is any process other than this one whose command line names this file's own home (a
+ *  session's tool children, MCP servers and hooks run with paths under it) — never a stray from another run. */
+const cloverSurvivors = (home: string): string[] =>
+  Bun.spawnSync(["ps", "-axww", "-o", "pid=,command="]).stdout.toString().split("\n")
+    .map((l) => l.trim()).filter((l) => l.includes(home) && Number.parseInt(l, 10) !== process.pid);
+/** The child processes of THIS test process (compared before and after an action: an embedded session adds a
+ *  Worker, never a process). */
+const cloverChildren = (): string[] =>
+  Bun.spawnSync(["pgrep", "-P", String(process.pid)]).stdout.toString().trim().split("\n").filter(Boolean);
 const types = (events: SessionEvent[]): string[] => events.map((e) => e.type);
 const TURN = ["user_message", "turn_started", "tool_call", "tool_result", "assistant_message", "turn_completed", "approval_requested", "thread_started", "thread_completed", "agent_error"];
 
-describeWithWinterBinary("dispatch on the Clover leg — the built binary through a real daemon", (bin) => {
+describeWithEmbeddedRuntime("dispatch on the Clover leg — the built binary through a real daemon", () => {
   let home: string;
   let daemon: RunningDaemon | undefined;
   let rt: RuntimeStateWiring;
@@ -131,7 +130,7 @@ describeWithWinterBinary("dispatch on the Clover leg — the built binary throug
     writeFileSync(join(home, "settings.json"), JSON.stringify({
       schemaVersion: 2,
       provider: { type: "openai-compatible", model: "winter-test/tooluse", baseUrl: "http://127.0.0.1:9/v1" },
-      runtimes: { winterExecutable: bin, winterIdleTimeoutSec: 10 },
+      runtimes: { winterIdleTimeoutSec: 10 },
     }, null, 2));
   };
   const bootDaemon = async (): Promise<void> => {
@@ -176,7 +175,7 @@ describeWithWinterBinary("dispatch on the Clover leg — the built binary throug
     const stopping = daemon?.stop();
     daemon = undefined;
     await stopping;
-    for (const pid of cloverChildren(bin)) { try { process.kill(Number(pid), "SIGKILL"); } catch { /* gone */ } }
+    for (const pid of cloverChildren()) { try { process.kill(Number(pid), "SIGKILL"); } catch { /* gone */ } }
     rmSync(home, { recursive: true, force: true });
   });
 
@@ -184,12 +183,12 @@ describeWithWinterBinary("dispatch on the Clover leg — the built binary throug
     expect(daemon!.clover.legForNewSession("dispatch")).toBe("winter");
     expect(daemon!.clover.legForNewSession("chat")).toBe("winter");   // Task 17 Step 4: every mode
     expect(daemon!.clover.legForNewSession("code")).toBe("winter");
-    const before = cloverChildren(bin);
+    const before = cloverChildren();
     const minted = await client.call<{ sessionId: string; created: boolean }>(METHODS.sessionDispatch, {});
     expect(minted.created).toBe(true);
     sid = minted.sessionId;
     // WS-23: embedded — one Worker for the singleton, and no `winter` process.
-    expect(cloverChildren(bin).filter((p) => !before.includes(p))).toEqual([]);
+    expect(cloverChildren().filter((p) => !before.includes(p))).toEqual([]);
     expect(daemon!.embedded.live()).toEqual([rt.records.get(sid)!.backendSessionId!]);
     const rec = rt.records.get(sid);
     expect(sessionLegOf(rec)).toBe("winter");
@@ -340,7 +339,7 @@ describeWithWinterBinary("dispatch on the Clover leg — the built binary throug
       expect(projectsSignature(h)).toBe(projectsBefore.get(h)!);
     }
     const t0 = Date.now();
-    while (cloverSurvivors(bin, home).length > 0 && Date.now() - t0 < 3000) await Bun.sleep(50);
-    expect(cloverSurvivors(bin, home).map((l) => l.slice(0, 120))).toEqual([]);
+    while (cloverSurvivors(home).length > 0 && Date.now() - t0 < 3000) await Bun.sleep(50);
+    expect(cloverSurvivors(home).map((l) => l.slice(0, 120))).toEqual([]);
   });
 });

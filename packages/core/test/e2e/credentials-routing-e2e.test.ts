@@ -39,7 +39,7 @@ import { readCredentialMaterial } from "../../src/auth/credential-material";
 import { credentialRefFor } from "../../src/runtime-sdk/keychain";
 import { keychainService } from "../../src/profile";
 import { startDaemon, type RunningDaemon } from "../../src/daemon";
-import { describeWithWinterBinary } from "../helpers/winter-binary";
+import { describeWithEmbeddedRuntime } from "../helpers/embedded-runtime";
 import { spawnEmbeddedWorker, type SpawnEmbeddedWorkerOptions } from "@waifucave/clover-agent-runtime/embedded-host";
 
 const SENTINEL = "WS19-SENTINEL-e2e-6d41af9c";
@@ -116,7 +116,7 @@ function everyFileUnder(dir: string): string[] {
   return out;
 }
 
-describeWithWinterBinary("WS-19 end to end: a stored credential routes a real session (B-1/B-3/B-8)", (winterBin) => {
+describeWithEmbeddedRuntime("WS-19 end to end: a stored credential routes a real session (B-1/B-3/B-8)", () => {
   let home: string;
   let daemon: RunningDaemon | undefined;
   let client: TestClient;
@@ -162,7 +162,7 @@ describeWithWinterBinary("WS-19 end to end: a stored credential routes a real se
       provider: { type: "openai-compatible", model: DEEPSEEK_MODEL, baseUrl: "http://127.0.0.1:9/v1" },
       // W19-6: the ONLY thing that points deepseek at the fake. No daemon-side endpoint table.
       providers: { deepseek: { baseUrl: `${fake.url}/v1` } },
-      runtimes: { winterExecutable: winterBin, winterIdleTimeoutSec: 60 },
+      runtimes: { winterIdleTimeoutSec: 60 },
     }, null, 2));
     const secrets = new FileSecretStore(join(home, "test-secrets"));
     secretsRef = secrets;
@@ -244,7 +244,7 @@ describeWithWinterBinary("WS-19 end to end: a stored credential routes a real se
     for (const spawn of workerSpawns) {
       childCommandLine += [spawn.command, ...spawn.args, ...Object.entries(spawn.env ?? {}).map(([k, v]) => `${k}=${v ?? ""}`)].join(" ") + "\n";
     }
-    expect(childCommandLine).not.toContain(winterBin);
+    expect(childCommandLine).not.toMatch(/\bbin\/winter\b/);
 
     // (4) THE ROUTING, measured on the wire: the turn reached the CONFIGURED loopback endpoint,
     // asking for the DeepSeek row's own upstream model id. Before W19-1/W19-6 neither was possible —
@@ -486,7 +486,7 @@ describeWithWinterBinary("WS-19 end to end: a stored credential routes a real se
 // TWO loopback fakes, one per provider, each recording its own requests — the assertion is that
 // turn 2 lands on B and NOT on A, which no single-fake bed could distinguish.
 // ════════════════════════════════════════════════════════════════════════════════════════════════
-describeWithWinterBinary("WS-19 + D1 item 6: a same-leg PROVIDER change routes the NEXT turn to the new endpoint", (winterBin) => {
+describeWithEmbeddedRuntime("WS-19 + D1 item 6: a same-leg PROVIDER change routes the NEXT turn to the new endpoint", () => {
   const ZAI_MODEL = "zai/glm-5";
   let home: string;
   let daemon: RunningDaemon | undefined;
@@ -518,7 +518,7 @@ describeWithWinterBinary("WS-19 + D1 item 6: a same-leg PROVIDER change routes t
       provider: { type: "openai-compatible", model: DEEPSEEK_MODEL, baseUrl: "http://127.0.0.1:9/v1" },
       // W19-6's seam, one entry per provider — the ONLY thing pointing either at a fake.
       providers: { deepseek: { baseUrl: `${deepseekFake.url}/v1` }, zai: { baseUrl: `${zaiFake.url}/v1` } },
-      runtimes: { winterExecutable: winterBin, winterIdleTimeoutSec: 600, handoff: { crossRuntime: true } },
+      runtimes: { winterIdleTimeoutSec: 600, handoff: { crossRuntime: true } },
     }, null, 2));
     const secrets = new FileSecretStore(join(home, "test-secrets"));
     daemon = await startDaemon({ home, secrets, agentProvider: null });
@@ -601,7 +601,7 @@ describeWithWinterBinary("WS-19 + D1 item 6: a same-leg PROVIDER change routes t
 // exactly such a home. The rule that actually matters is unchanged and is asserted in the suite
 // above (B-1/B-3): no TURN runs against a provider Clover HAS decided on and holds no credential for.
 // ════════════════════════════════════════════════════════════════════════════════════════════════
-describeWithWinterBinary("W19-7: a credential-less, Codex-configured home creates, dispatches AND sends", (winterBin) => {
+describeWithEmbeddedRuntime("W19-7: a credential-less, Codex-configured home creates, dispatches AND sends", () => {
   let home: string;
   let daemon: RunningDaemon | undefined;
   let client: TestClient;
@@ -613,7 +613,7 @@ describeWithWinterBinary("W19-7: a credential-less, Codex-configured home create
     writeFileSync(join(home, "settings.json"), JSON.stringify({
       schemaVersion: 3,
       provider: { model: "codex-oauth/gpt-5.6-sol" },
-      runtimes: { winterExecutable: winterBin, winterIdleTimeoutSec: 60 },
+      runtimes: { winterIdleTimeoutSec: 60 },
     }, null, 2));
     daemon = await startDaemon({ home, secrets: new FileSecretStore(join(home, "test-secrets")), agentProvider: null });
     if ("unavailable" in daemon.runtimeState) throw daemon.runtimeState.unavailable;

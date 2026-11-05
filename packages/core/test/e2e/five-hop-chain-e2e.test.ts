@@ -66,7 +66,7 @@ import { CREDENTIAL_MATERIAL_NAMES, writeCredentialMaterial } from "../../src/au
 import { startDaemon, type RunningDaemon } from "../../src/daemon";
 import { ANTHROPIC_CREDENTIAL_SECRET_NAME } from "../../src/runtime-sdk/keychain";
 import { daemonResolveEndpoint } from "../../src/providers/registry";
-import { describeWithWinterBinary } from "../helpers/winter-binary";
+import { describeWithEmbeddedRuntime } from "../helpers/embedded-runtime";
 import { carriesReasoning, opaqueLeaks, outOfOrder } from "../helpers/carriage";
 import type { anthropicFake as AnthropicFakeModule } from "@waifucave/clover-provider-conformance";
 
@@ -200,7 +200,7 @@ class TestClient {
 
 // WS-23: Claude runs on the Clover runtime too now — the Anthropic fake is reached through
 // `settings.providers.anthropic.baseUrl`, the same per-provider door every other hop uses.
-describeWithWinterBinary("A-5 part 2: the chain's LAST hop (gpt -> claude) is silent against a real session; a hop the target cannot hold prompts", (winterBin) => {
+describeWithEmbeddedRuntime("A-5 part 2: the chain's LAST hop (gpt -> claude) is silent against a real session; a hop the target cannot hold prompts", () => {
   describe("gpt -> claude", () => {
     let home: string;
     let daemon: RunningDaemon | undefined;
@@ -228,7 +228,7 @@ describeWithWinterBinary("A-5 part 2: the chain's LAST hop (gpt -> claude) is si
         schemaVersion: 3,
         provider: { model: CATALOG_GPT_MODEL },
         providers: { openai: { baseUrl: openaiFake.url }, anthropic: { baseUrl: anthropicFakeServer.url } },
-        runtimes: { winterExecutable: winterBin, winterIdleTimeoutSec: 60 },
+        runtimes: { winterIdleTimeoutSec: 60 },
       }, null, 2));
       const secrets = new FileSecretStore(join(home, "test-secrets"));
       await writeCredentialMaterial(secrets, CREDENTIAL_MATERIAL_NAMES.openai, { kind: "api-key", key: "sk-test-5hop" });
@@ -378,7 +378,7 @@ async function startChainChatFake(reply: string, reasoning?: string[]): Promise<
   return { fake, models, bodies };
 }
 
-describeWithWinterBinary("A-5 part 3: claude -> deepseek -> GLM -> gpt -> claude, every hop on its own provider", (winterBin) => {
+describeWithEmbeddedRuntime("A-5 part 3: claude -> deepseek -> GLM -> gpt -> claude, every hop on its own provider", () => {
   describe("the chain", () => {
     let home: string;
     let daemon: RunningDaemon | undefined;
@@ -422,7 +422,7 @@ describeWithWinterBinary("A-5 part 3: claude -> deepseek -> GLM -> gpt -> claude
           deepseek: { baseUrl: `${deepseek.fake.url}/v1` }, zai: { baseUrl: `${glm.fake.url}/v1` },
           anthropic: { baseUrl: anthropicFakeServer.url },
         },
-        runtimes: { winterExecutable: winterBin, winterIdleTimeoutSec: 60 },
+        runtimes: { winterIdleTimeoutSec: 60 },
       }, null, 2));
       const secrets = new FileSecretStore(join(home, "test-secrets"));
       await writeCredentialMaterial(secrets, CREDENTIAL_MATERIAL_NAMES.openai, { kind: "api-key", key: "sk-test-chain-openai" });

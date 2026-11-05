@@ -28,7 +28,7 @@ import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, type Wr
 import { FileSecretStore } from "../../src/auth/secret-store";
 import { startDaemon, type RunningDaemon } from "../../src/daemon";
 import { guardHeadlessNotifications, type NotificationGuard } from "../helpers/headless-notifications";
-import { describeWithWinterBinary } from "../helpers/winter-binary";
+import { describeWithEmbeddedRuntime } from "../helpers/embedded-runtime";
 
 class TestClient {
   private decoder = new LineDecoder();
@@ -190,11 +190,11 @@ describe("(A) session_spawn with no winter binary", () => {
   });
 });
 
-describeWithWinterBinary("(B) session_spawn on the real winter binary", (bin) => {
+describeWithEmbeddedRuntime("(B) session_spawn on the real winter binary", () => {
   const h = harnessFor(() => ({
     schemaVersion: 3,
     provider: { model: "winter-test/echo" },
-    runtimes: { winterExecutable: bin, winterIdleTimeoutSec: 10 },
+    runtimes: { winterIdleTimeoutSec: 10 },
   }));
   beforeAll(async () => { await h.boot(); });
   afterAll(async () => { await h.stop(); });

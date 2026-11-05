@@ -6,7 +6,7 @@
 // Clover runtime. The scripted `winter-test/lanec` double makes exactly ONE real Bash call
 // (`echo winter-t8-lanec`), as in `hooks-measure.e2e.test.ts`.
 //
-// SKIPS cleanly when `CLOVER_RUNTIME_EXECUTABLE` is unset (`describeWithWinterBinary`).
+// Runs on the embedded runtime, as every session does (`describeWithEmbeddedRuntime`, A-M1 review S7).
 import { expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -14,14 +14,14 @@ import { join } from "node:path";
 import { query, type CanUseTool, type HookCallback } from "@waifucave/clover-agent-sdk";
 import { CORE_BRAND } from "../../src/runtime-sdk/brand";
 import { createHostPromptQueue } from "../../src/runtime-sdk/prompt-queue";
-import { describeWithWinterBinary } from "../helpers/winter-binary";
+import { describeWithEmbeddedRuntime } from "../helpers/embedded-runtime";
 
 const contentOf = (m: unknown): Array<Record<string, unknown>> | undefined => {
   const content = (m as { message?: { content?: unknown } } | undefined)?.message?.content;
   return Array.isArray(content) ? (content as Array<Record<string, unknown>>) : undefined;
 };
 
-describeWithWinterBinary("fix round 2 measurement — a hook `ask` under bypassPermissions on the Clover leg", (bin) => {
+describeWithEmbeddedRuntime("fix round 2 measurement — a hook `ask` under bypassPermissions on the Clover leg", (spawn) => {
   test("the ask reaches canUseTool (and its deny is honoured): the command never runs", async () => {
     const home = mkdtempSync(join(tmpdir(), "clover-ask-bypass-home-"));
     const cwd = mkdtempSync(join(tmpdir(), "clover-ask-bypass-cwd-"));
@@ -38,7 +38,7 @@ describeWithWinterBinary("fix round 2 measurement — a hook `ask` under bypassP
     const q = query({
       prompt: queue,
       options: {
-        pathToClaudeCodeExecutable: bin,
+        spawnClaudeCodeProcess: spawn,
         // The router injects the session's brand; a child driven directly is handed the daemon's own.
         brand: CORE_BRAND,
         model: "winter-test/lanec",

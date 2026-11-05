@@ -11,7 +11,7 @@
 //
 // WS-23: the official-leg half of this measurement (the pinned `claude` binary, whose control stayed on
 // `.clover/skills` because claude has no `.clover` cover) is gone with that leg. GATED by
-// `describeWithWinterBinary`.
+// `describeWithEmbeddedRuntime` (A-M1 review S7: the embedded runtime every session runs).
 import { expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -20,9 +20,9 @@ import { query as cloverQuery } from "@waifucave/clover-agent-sdk";
 import { CORE_BRAND } from "../../src/runtime-sdk/brand";
 import { anthropicFake, startFake } from "@waifucave/clover-provider-conformance";
 import { childSandboxConfigFor, sandboxConfigFor } from "../../src/runtime-sdk/mode-options";
-import { describeWithWinterBinary } from "../helpers/winter-binary";
+import { describeWithEmbeddedRuntime } from "../helpers/embedded-runtime";
 
-describeWithWinterBinary("C-1 — the Clover-leg sandbox fence under a `[`-named project (the daemon's own deny list)", (bin) => {
+describeWithEmbeddedRuntime("C-1 — the Clover-leg sandbox fence under a `[`-named project (the daemon's own deny list)", (spawn) => {
   /** One sandboxed Bash turn on the built `winter`, the sandbox being the daemon's OWN fence for this home
    *  and cwd — `childSandboxConfigFor` (what a spawn is sent) or, as the control, the literal
    *  `sandboxConfigFor`. The command writes into the protected `<cwd>/.clover/skills` twice (python, which
@@ -58,7 +58,7 @@ describeWithWinterBinary("C-1 — the Clover-leg sandbox fence under a `[`-named
       const q = cloverQuery({
         prompt: "run the command you were scripted to run",
         options: {
-          pathToClaudeCodeExecutable: bin,
+          spawnClaudeCodeProcess: spawn,
           // The router injects the session's brand; a child driven directly is handed the daemon's own.
           brand: CORE_BRAND,
           model: "anthropic/claude-sonnet-5",

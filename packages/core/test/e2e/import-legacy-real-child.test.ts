@@ -34,11 +34,11 @@ import { openRuntimeStateDb, RuntimeSessionRecords, backfillNativeSessions } fro
 import { sessionLegOf } from "../../src/runtime-sdk/leg";
 import { SessionStore } from "../../src/sessions/store";
 import { storeHomeFor } from "../../src/agent/paths";
-import { describeWithWinterBinary } from "../helpers/winter-binary";
+import { describeWithEmbeddedRuntime } from "../helpers/embedded-runtime";
 
 interface ProtocolSdkMessage { type?: string; [k: string]: unknown }
 
-describeWithWinterBinary("engine-era import — the REAL winter binary resumes the converted transcript", (bin) => {
+describeWithEmbeddedRuntime("engine-era import — the REAL winter binary resumes the converted transcript", (spawn) => {
   test("import then resume: no refusal, and the imported turns lead the new one on disk", async () => {
     const home = mkdtempSync(join(tmpdir(), "clover-import-e2e-home-"));
     // WS-21 (L2 O-1): the daemon hands the child — and keys the imported transcript by — the CANONICAL cwd
@@ -74,7 +74,7 @@ describeWithWinterBinary("engine-era import — the REAL winter binary resumes t
       const q = query({
         prompt: (async function* () { yield "And 3+3?"; })(),
         options: {
-          pathToClaudeCodeExecutable: bin,
+          spawnClaudeCodeProcess: spawn,
           // The router injects the session's brand; a child driven directly is handed the daemon's own.
           brand: CORE_BRAND,
           model: "winter-test/echo",

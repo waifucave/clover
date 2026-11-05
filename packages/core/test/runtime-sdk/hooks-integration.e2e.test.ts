@@ -2,21 +2,21 @@
 // individual callbacks, already covered unit-level in `hooks.test.ts`) against a REAL spawned
 // `winter` child: multiple matcher groups on the same event (the unmatched plugin group alongside a
 // `Bash`-matched group) fire together correctly, and the fileDiff producer's PreToolUse snapshot /
-// PostToolUse diff+persist+attach round-trips through a real child's actual Write. SKIPS cleanly
-// when `CLOVER_RUNTIME_EXECUTABLE` is unset (`describeWithWinterBinary`, P8b-2 contract).
+// PostToolUse diff+persist+attach round-trips through a real child's actual Write. It never skips:
+// it runs on the embedded runtime every session runs (`describeWithEmbeddedRuntime`, A-M1 review S7).
 import { expect, test } from "bun:test";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { query } from "@waifucave/clover-agent-sdk";
+import { query, type SpawnClaudeCodeProcess } from "@waifucave/clover-agent-sdk";
 import { CORE_BRAND } from "../../src/runtime-sdk/brand";
 import { readStoredDiff } from "../../src/diffs/store";
 import { takeFileDiff } from "../../src/runtime-sdk/diff-attach";
 import { sessionHooksFor, type HookFacadeLike } from "../../src/runtime-sdk/hooks";
 import { createHostPromptQueue } from "../../src/runtime-sdk/prompt-queue";
-import { describeWithWinterBinary } from "../helpers/winter-binary";
+import { describeWithEmbeddedRuntime } from "../helpers/embedded-runtime";
 
-async function drive(bin: string, opts: {
+async function drive(spawn: SpawnClaudeCodeProcess, opts: {
   provider: string; sessionId: string; home: string; cwd: string; hooks: ReturnType<typeof sessionHooksFor>["clover"]; prompt: string;
 }): Promise<Array<Record<string, unknown>>> {
   const queue = createHostPromptQueue();
@@ -24,7 +24,7 @@ async function drive(bin: string, opts: {
   const q = query({
     prompt: queue,
     options: {
-      pathToClaudeCodeExecutable: bin,
+      spawnClaudeCodeProcess: spawn,
       // The router injects the session's brand; a child driven directly is handed the daemon's own.
       brand: CORE_BRAND,
       model: `winter-test/${opts.provider}`,
@@ -53,7 +53,7 @@ async function drive(bin: string, opts: {
   return messages;
 }
 
-describeWithWinterBinary("sessionHooksFor — assembled against a real winter child", (bin) => {
+describeWithEmbeddedRuntime("sessionHooksFor — assembled against a real winter child", (spawn) => {
   test("the fileDiff producer round-trips through a real child's Write, alongside an observing plugin hook", async () => {
     const home = mkdtempSync(join(tmpdir(), "hooks-int-home-"));
     const cwd = mkdtempSync(join(tmpdir(), "hooks-int-cwd-"));
@@ -68,7 +68,7 @@ describeWithWinterBinary("sessionHooksFor — assembled against a real winter ch
     };
     const { clover } = sessionHooksFor({ sessionId: "s_hi1", home, roots: [cwd], hookFacade });
 
-    const messages = await drive(bin, { provider: "laneb", sessionId: "s_hi1", home, cwd, hooks: clover, prompt: `write it here:\n${target}` });
+    const messages = await drive(spawn, { provider: "laneb", sessionId: "s_hi1", home, cwd, hooks: clover, prompt: `write it here:\n${target}` });
 
     expect(messages.map((m) => m.type)).toEqual(["system", "assistant", "user", "assistant", "result"]);
     expect(readFileSync(target, "utf8")).toBe("winter-t8-laneb-fixture-content\n");
@@ -98,7 +98,7 @@ describeWithWinterBinary("sessionHooksFor — assembled against a real winter ch
     };
     const { clover } = sessionHooksFor({ sessionId: "s_hi2", home, roots: [cwd], hookFacade });
 
-    const messages = await drive(bin, { provider: "lanec", sessionId: "s_hi2", home, cwd, hooks: clover, prompt: "go" });
+    const messages = await drive(spawn, { provider: "lanec", sessionId: "s_hi2", home, cwd, hooks: clover, prompt: "go" });
 
     const denialNotice = messages.find((m) => m.type === "system" && (m as { subtype?: string }).subtype === "permission_denied");
     expect(denialNotice).toMatchObject({ tool_name: "Bash", message: "blocked by plugin hook test-plugin: policy says no" });
