@@ -4,7 +4,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { mkdirSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { CLOVER_ERR, ERR, SESSIONS_METHODS as M, type Caller, type MethodSpec } from "@waifucave/clover-protocol";
+import { CLOVER_ERR, ERR, SENT_AT_WINDOW_MS, SESSIONS_METHODS as M, type Caller, type MethodSpec } from "@waifucave/clover-protocol";
 import type { z } from "zod";
 import type { Unsubscribe } from "../../contracts/common";
 import { FakeClock, flush } from "../../contracts/fakes/clock";
@@ -77,17 +77,23 @@ describe("the sessions area's methods", () => {
     await b.shutdown();
   });
 
-  test("session.send keeps the client's own send stamp; without one, the message is stamped as it arrives", async () => {
+  test("session.send keeps the client's own send stamp inside the window, holds one outside it to the edge, and stamps a message without one as it arrives", async () => {
     // (Waiting messages then run in `(sentAt, device)` order: lane B's conformance suite, run on the durable host.)
     const { b, call } = await setup();
-    await call(M.sessionSend, { id: "b_alpha", message: { text: "from the phone", clientMessageId: "p", sentAt: 1_700_000_000_000 } }, thePhone);
+    const sent = b.clock.now() - 30_000;
+    await call(M.sessionSend, { id: "b_alpha", message: { text: "from the phone", clientMessageId: "p", sentAt: sent } }, thePhone);
     await flush();
-    expect(b.drivers.for("b_alpha").turns[0]!.input).toMatchObject({ sentAt: 1_700_000_000_000, device: "phone00000000000000" });
+    expect(b.drivers.for("b_alpha").turns[0]!.input).toMatchObject({ sentAt: sent, device: "phone00000000000000" });
     b.drivers.for("b_alpha").end();
     await flush();
     await call(M.sessionSend, { id: "b_alpha", message: { text: "no clock", clientMessageId: "n" } });
     await flush();
     expect(b.drivers.for("b_alpha").turns[1]!.input).toMatchObject({ sentAt: b.clock.now() });
+    b.drivers.for("b_alpha").end();
+    await flush();
+    await call(M.sessionSend, { id: "b_alpha", message: { text: "from 2023", clientMessageId: "o", sentAt: 1_700_000_000_000 } }, thePhone);
+    await flush();
+    expect(b.drivers.for("b_alpha").turns[2]!.input).toMatchObject({ sentAt: b.clock.now() - SENT_AT_WINDOW_MS });
     await b.shutdown();
   });
 

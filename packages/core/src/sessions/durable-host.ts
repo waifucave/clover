@@ -42,7 +42,7 @@
 import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import {
-  pluginIdToSegment, TRANSIENT_EVENT_TYPES,
+  clampSentAt, pluginIdToSegment, TRANSIENT_EVENT_TYPES,
   type SessionFailure, type SessionKind, type SessionStatus, type SessionView, type TurnOrigin,
 } from "@waifucave/clover-protocol";
 import type { ApprovalBroker } from "../contracts/approval-broker";
@@ -365,7 +365,9 @@ export class DurableSessionHost implements SessionHost {
     if (s.meta.kind === "side-thread") throw new ContractError("refused", "a side thread takes no messages from the user");
     const seen = s.clientIds.get(input.clientMessageId);
     if (seen) return { ...seen };
-    const full: UserInput = { from: "user", ...structuredClone(input) };
+    // The stamp is held to this computer's clock plus or minus the window before it orders or records anything, so a
+    // skewed or hostile one can't jump the queue or backdate the transcript (review N5).
+    const full: UserInput = { from: "user", ...structuredClone(input), sentAt: clampSentAt(input.sentAt, this.#clock.now()) };
     if (s.running && s.meta.kind === "bot") {
       const record = this.#record(s, { type: "input", input: full, disposition: "interrupted" });
       rememberClientId(s.clientIds, full.clientMessageId, { seq: record.seq, disposition: "interrupted" });
