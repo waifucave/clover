@@ -107,7 +107,7 @@ export async function networkCheck(electron){
   if(mode==='non-plugin')await win.loadURL(f.endpoints['own-fetch'].url);
   else await win.loadURL(`clover-core://shell/?mount=${rootToken}`);
   await pause(250);
-  const frame=mode==='non-plugin'?win.webContents.mainFrame:win.webContents.mainFrame.frames.find((/** @type {any} */ x)=>x.url===p1url);
+  let frame=mode==='non-plugin'?win.webContents.mainFrame:win.webContents.mainFrame.frames.find((/** @type {any} */ x)=>x.url===p1url);
   const invoke=(/** @type {any} */ fr,/** @type {any} */ ep,/** @type {any} */ full)=>fr.executeJavaScript(`(${networkProbe.toString()})(${JSON.stringify(ep)},${full})`);
   const main=await Promise.race([invoke(frame,f.endpoints,mode!=='non-plugin'),pause(16000).then(()=>({error:'document probe deadline'}))]);
   /** @type {any[]} */ const trustAttempts=[];
@@ -116,17 +116,28 @@ export async function networkCheck(electron){
   if(mode!=='non-plugin'){
    const p2=win.webContents.mainFrame.frames.find((/** @type {any} */ x)=>x.url===p2url);
    second=await p2.executeJavaScript(`Promise.all(${JSON.stringify([f.endpoints['own-fetch'].url,f.endpoints['other-plugin-fetch'].url])}.map(url=>fetch(url).then(r=>({url,status:r.status})).catch(e=>({url,error:String(e)}))))`);
-   // Test inheritance in nested, srcdoc, opaque srcdoc and about:blank documents.
+   // Recreate the parent per inherited-context probe. A renderer crash is a result,
+   // not permission to skip the other contexts or the non-plugin control.
+   const fresh=async()=>{
+    const url=issue('p1',['clover-core://shell']);
+    await win.webContents.executeJavaScript(`(()=>{document.querySelector('#context-host')?.remove();const f=document.createElement('iframe');f.id='context-host';f.style='position:fixed;top:0;left:0;width:480px;height:500px';f.src=${JSON.stringify(url)};document.body.append(f)})()`);
+    await pause(250);return win.webContents.mainFrame.frames.find((/** @type {any} */ x)=>x.url===url);
+   };
    for(const kind of ['nested','srcdoc','opaque-srcdoc','about-blank']){
-    const cf=await fixtures(`${mode}-${kind}`);contexts.push({kind,fixture:cf,result:null});
-    await frame.executeJavaScript(inheritedScript(kind,nestedurl));
-    await pause(180);const child=frame.frames.find((/** @type {any} */ x)=>x.name===kind);contexts[contexts.length-1].result=await Promise.race([invoke(child,cf.endpoints,false),pause(6000).then(()=>({error:'inherited probe deadline'}))]);
+    const cf=await fixtures(`${mode}-${kind}`);const context={kind,fixture:cf,result:/** @type {any} */ (null)};contexts.push(context);
+    try{
+     frame=await fresh();await frame.executeJavaScript(inheritedScript(kind,nestedurl));
+     await pause(180);const child=frame.frames.find((/** @type {any} */ x)=>x.name===kind);
+     context.result=await Promise.race([invoke(child,cf.endpoints,false),pause(12000).then(()=>({error:'inherited probe deadline'}))]);
+    }catch(e){context.result={error:String(e),completed:false};}
    }
+   frame=await fresh();
    const wf=await fixtures(`${mode}-worker`);contexts.push({kind:'worker',fixture:wf,result:null});
    // A separate worker script response receives the same header and CSP.
    // Pass endpoints in the message so this context has its own names and ports.
    // Replace handler above's endpoint-only script using a data parameter in worker message.
    contexts[contexts.length-1].result=await frame.executeJavaScript(`new Promise(resolve=>{const w=new Worker('/context-worker.js');w.onmessage=e=>{w.terminate();resolve(e.data)};w.onerror=e=>resolve({error:e.message});w.postMessage(${JSON.stringify(wf.endpoints)});setTimeout(()=>{w.terminate();resolve({error:'worker deadline'})},6000)})`);
+   frame=await fresh();
    await frame.executeJavaScript("window.trustViolations=[];document.addEventListener('securitypolicyviolation',e=>trustViolations.push({directive:e.effectiveDirective,blocked:e.blockedURI}))");
    for(const target of ['clover-plugin://p2/',p2url,'clover-core://shell/',`clover-core://shell/?mount=${rootToken}`,'clover-sealed://cards/']){
     trustAttempts.push(await frame.executeJavaScript(`new Promise(resolve=>{const f=document.createElement('iframe');f.name='trust-'+${JSON.stringify(target)};f.src=${JSON.stringify(target)};f.onload=()=>resolve({target:${JSON.stringify(target)},loaded:true});f.onerror=()=>resolve({target:${JSON.stringify(target)},error:true});document.body.append(f);setTimeout(()=>resolve({target:${JSON.stringify(target)},settled:true}),150)})`));

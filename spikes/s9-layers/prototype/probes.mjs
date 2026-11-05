@@ -15,8 +15,8 @@ export async function networkProbe(endpoints, full = true) {
  await attempt('stun',()=>rtc(endpoints.stun.ice));
  await attempt('turn-tcp',()=>rtc(endpoints.turn.ice));
  if(typeof document!=='undefined'){
-  for(const rel of ['dns-prefetch','preconnect','prefetch','prerender'])await attempt(rel,async()=>{const el=document.createElement('link');el.rel=rel;el.href=endpoints[rel].url;document.head.append(el);await wait(200);return 'inserted';});
-  await attempt('speculationrules',async()=>{const s=document.createElement('script');s.type='speculationrules';s.textContent=JSON.stringify({prefetch:[{source:'list',urls:[endpoints.speculation.url]}],prerender:[{source:'list',urls:[endpoints.prerender.url]}]});document.head.append(s);await wait(200);return 'inserted';});
+  for(const rel of (full?['dns-prefetch','preconnect','prefetch','prerender']:['dns-prefetch']))await attempt(rel,async()=>{const el=document.createElement('link');el.rel=rel;el.href=endpoints[rel].url;document.head.append(el);await wait(200);return 'inserted';});
+  if(full)await attempt('speculationrules',async()=>{const s=document.createElement('script');s.type='speculationrules';s.textContent=JSON.stringify({prefetch:[{source:'list',urls:[endpoints.speculation.url]}],prerender:[{source:'list',urls:[endpoints.prerender.url]}]});document.head.append(s);await wait(200);return 'inserted';});
  }
  await attempt('fetch',()=>fetch(endpoints.fetch.url).then(r=>r.status));
  if(!full)return {outcomes:out,violations};
