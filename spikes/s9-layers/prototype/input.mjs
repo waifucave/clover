@@ -40,7 +40,7 @@ export async function crossingCheck(win,app){
  let xdotool=null;
  if(process.platform==='linux'){
   await one.executeJavaScript('document.querySelector("#first").focus();document.querySelector("#first").select()');
-  try{const id=execFileSync('xdotool',['search','--pid',String(process.pid),'--name','Clover S9'],{encoding:'utf8',timeout:3000}).trim().split('\n')[0];execFileSync('xdotool',['windowfocus','--sync',id],{timeout:3000});execFileSync('xdotool',['type','--clearmodifiers','xvfb'],{timeout:3000});execFileSync('xdotool',['key','Tab'],{timeout:3000});await pause(200);xdotool=await state();}catch(e){xdotool={error:String(e)};}
+  try{const id=String(win.getNativeWindowHandle().readUInt32LE(0));execFileSync('xdotool',['windowfocus','--sync',id],{timeout:3000});execFileSync('xdotool',['type','--clearmodifiers','xvfb'],{timeout:3000});execFileSync('xdotool',['key','Tab'],{timeout:3000});await pause(200);xdotool=await state();}catch(e){xdotool={error:String(e)};}
  }
  const io=await one.executeJavaScript(`new Promise(resolve=>{const f=document.createElement('iframe');f.srcdoc='<button style="width:50px;height:30px">fixture</button>';document.body.append(f);f.onload=()=>{try{const o=new f.contentWindow.IntersectionObserver(entries=>{o.disconnect();resolve(entries.map(e=>({isIntersecting:e.isIntersecting,isVisible:e.isVisible,ratio:e.intersectionRatio})))},{trackVisibility:true,delay:100});o.observe(f.contentDocument.querySelector('button'));}catch(e){resolve({error:String(e)})}};setTimeout(()=>resolve({timeout:true}),1200)})`);
  wc.debugger.detach();

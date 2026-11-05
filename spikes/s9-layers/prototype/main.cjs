@@ -17,7 +17,7 @@ app.setName('Clover S9');
 app.on('window-all-closed', () => {}); // Variants deliberately close their last window.
 app.commandLine.appendSwitch('site-per-process');
 // Fixture routing only; no process-wide network/security closures.
-app.commandLine.appendSwitch('host-resolver-rules','MAP *.s9.test 127.0.0.1');
+app.commandLine.appendSwitch('host-resolver-rules','MAP *.s9.test 127.0.0.1, MAP *.s9.test. 127.0.0.1');
 protocol.registerSchemesAsPrivileged(['clover-plugin','clover-core','clover-sealed'].map(scheme=>({scheme,privileges:{standard:true,secure:true,supportFetchAPI:true,corsEnabled:true}}))); // Service workers deliberately not granted.
 ipcMain.on('clover-s9-memory', (event, value) => {
   if (event.senderFrame && /^clover-(plugin|core):/.test(event.senderFrame.url)) samples.set(event.senderFrame.osProcessId, { ...value, namespacePid:value.pid,pid:event.senderFrame.osProcessId, frameUrl: event.senderFrame.url, received: Date.now() });
@@ -80,7 +80,7 @@ async function processCheck() {
   win.webContents.setWindowOpenHandler(()=>({action:'allow',overrideBrowserWindowOptions:{show:false}}));
   /** @type {import('electron').BrowserWindow|null} */ let related=null;
   win.webContents.once('did-create-window',child=>{related=child;windows.push(child)});
-  await win.webContents.executeJavaScript("window.open('clover-core://shell/','clover-related-island')");await pause(700);
+  await win.webContents.executeJavaScript("void window.open('clover-core://shell/','clover-related-island')");await pause(700);
   const relatedFrames=related?frames(related):[];
   const multiwindow={independent:separateFrames,related:relatedFrames,original:listing};
 

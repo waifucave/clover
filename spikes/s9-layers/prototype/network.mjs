@@ -15,7 +15,7 @@ async function fixtures(prefix){
  /** @type {Record<string,any>} */ const records={};
  /** @type {(()=>void)[]} */ const closers=[];
  for(const name of vectors){
-  const host=`${prefix}-${name.replaceAll(/[^a-z0-9-]/gi,'-').toLowerCase()}.${name==='dns-prefetch'?'localhost':'s9.test'}`;
+  const host=`${prefix}-${name.replaceAll(/[^a-z0-9-]/gi,'-').toLowerCase()}.${['dns-prefetch','stun','turn'].includes(name)?'localhost':'s9.test'}`;
   /** @type {any} */ const rec=records[name]={host,http:[],tcp:[],udp:[]};
   /** @type {any} */ let server;
   if(name==='stun'||name==='webtransport'){
@@ -111,7 +111,7 @@ export async function networkCheck(electron){
    // Test inheritance in nested, srcdoc, opaque srcdoc and about:blank documents.
    for(const kind of ['nested','srcdoc','opaque-srcdoc','about-blank']){
     const cf=await fixtures(`${mode}-${kind}`);contexts.push({kind,fixture:cf,result:null});
-    await frame.executeJavaScript(`(()=>{const f=document.createElement('iframe');f.name=${JSON.stringify(kind)};${kind==='nested'?`f.src=${JSON.stringify(nestedurl)}`:kind==='about-blank'?`f.src='about:blank'`:`f.srcdoc='<input>';${kind==='opaque-srcdoc'?"f.sandbox='allow-scripts'":''}`}document.body.append(f)})()`);
+    await frame.executeJavaScript(`(()=>{const f=document.createElement('iframe');f.name=${JSON.stringify(kind)};${kind==='nested'?`f.src=${JSON.stringify(nestedurl)}`:kind==='about-blank'?`f.src='about:blank'`:`f.srcdoc='<input>';${kind==='opaque-srcdoc'?"f.sandbox='allow-scripts'":''}`};document.body.append(f)})()`);
     await pause(180);const child=frame.frames.find((/** @type {any} */ x)=>x.name===kind);contexts[contexts.length-1].result=await Promise.race([invoke(child,cf.endpoints,false),pause(6000).then(()=>({error:'inherited probe deadline'}))]);
    }
    const wf=await fixtures(`${mode}-worker`);contexts.push({kind:'worker',fixture:wf,result:null});
