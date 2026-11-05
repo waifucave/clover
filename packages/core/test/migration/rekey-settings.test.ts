@@ -1,20 +1,20 @@
 import { describe, expect, test } from "bun:test";
 import { rekeySettings } from "../../src/migration/rekey-settings";
-import { LEGACY_CLAUDE_EXECUTABLE_ENV, LEGACY_DEV_HOME_DIR, LEGACY_HOME_DIR, LEGACY_HOME_ENV, LEGACY_PROFILE_ENV, LEGACY_TMPDIR_ENV, LEGACY_WINTER_EXECUTABLE_ENV } from "../../src/legacy-names";
+import { LEGACY_CLAUDE_EXECUTABLE_ENV, LEGACY_DEV_HOME_DIR, LEGACY_HOME_DIR, LEGACY_HOME_ENV, LEGACY_PROFILE_ENV, LEGACY_TMPDIR_ENV, LEGACY_CLOVER_EXECUTABLE_ENV } from "../../src/legacy-names";
 
 describe("rekeySettings", () => {
   test("rewrites every P9b-8 env-var token inside string values", () => {
     const input = {
       runtimes: {
-        winterExecutable: `$${LEGACY_WINTER_EXECUTABLE_ENV}`,
+        winterExecutable: `$${LEGACY_CLOVER_EXECUTABLE_ENV}`,
         claudeExecutable: `$${LEGACY_CLAUDE_EXECUTABLE_ENV}`,
       },
       note: `set ${LEGACY_HOME_ENV} and ${LEGACY_PROFILE_ENV} and ${LEGACY_TMPDIR_ENV} before launch`,
     };
     const { out, changes } = rekeySettings(input);
     expect(out).toEqual({
-      runtimes: { winterExecutable: "$WINTER_RUNTIME_EXECUTABLE", claudeExecutable: "$WINTER_CLAUDE_EXECUTABLE" },
-      note: "set WINTER_HOME and WINTER_PROFILE and WINTER_TMPDIR before launch",
+      runtimes: { winterExecutable: "$CLOVER_RUNTIME_EXECUTABLE", claudeExecutable: "$CLOVER_CLAUDE_EXECUTABLE" },
+      note: "set CLOVER_HOME and CLOVER_PROFILE and CLOVER_TMPDIR before launch",
     });
     expect(changes.length).toBe(3);
     expect(changes.map((c) => c.path).sort()).toEqual(["note", "runtimes.claudeExecutable", "runtimes.winterExecutable"]);
@@ -28,10 +28,10 @@ describe("rekeySettings", () => {
       d: `~/${LEGACY_HOME_DIR}`,
     };
     const { out } = rekeySettings(input) as { out: Record<string, string> };
-    expect(out.a).toBe("/Users/x/.winter-dev/settings.json");
-    expect(out.b).toBe("/Users/x/.winter/settings.json");
-    expect(out.c).toBe("~/.winter-dev");
-    expect(out.d).toBe("~/.winter");
+    expect(out.a).toBe("/Users/x/.clover-dev/settings.json");
+    expect(out.b).toBe("/Users/x/.clover/settings.json");
+    expect(out.c).toBe("~/.clover-dev");
+    expect(out.d).toBe("~/.clover");
   });
 
   test("does not rename keys, only rewrites values", () => {
@@ -51,12 +51,12 @@ describe("rekeySettings", () => {
   test("array entries are addressed by index in the change path", () => {
     const input = { permissions: { allow: ["fine", `$${LEGACY_HOME_ENV}/tool`] } };
     const { changes } = rekeySettings(input);
-    expect(changes).toEqual([{ path: "permissions.allow[1]", from: `$${LEGACY_HOME_ENV}/tool`, to: "$WINTER_HOME/tool" }]);
+    expect(changes).toEqual([{ path: "permissions.allow[1]", from: `$${LEGACY_HOME_ENV}/tool`, to: "$CLOVER_HOME/tool" }]);
   });
 
   test("no-op round trip: re-running rekeySettings on already-rekeyed output makes no further changes", () => {
     const input = {
-      runtimes: { winterExecutable: `$${LEGACY_WINTER_EXECUTABLE_ENV}` },
+      runtimes: { winterExecutable: `$${LEGACY_CLOVER_EXECUTABLE_ENV}` },
       path: `/Users/x/${LEGACY_HOME_DIR}/runtimes/bin`,
     };
     const once = rekeySettings(input);

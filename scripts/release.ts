@@ -1,5 +1,5 @@
 /**
- * Winter release pipeline (release-pipeline T2 core + T3 DMG/appcast/cask/publish). Chains:
+ * Clover release pipeline (release-pipeline T2 core + T3 DMG/appcast/cask/publish). Chains:
  *   preflight -> [version bump] -> build (Developer ID + hardened runtime, T1's canonical
  *   override invocation) -> verify nested signatures -> zip -> notarize -> staple -> re-zip
  *   the stapled app -> spctl/stapler gates -> DMG (stage+hdiutil+codesign+notarize+staple+
@@ -8,9 +8,9 @@
  *
  * Usage: bun run scripts/release.ts --dry-run [--beta] [--no-bump] [--resume-publish] [--allow-checkout-winter]
  *
- * Winter Phase 9c (P9c-2): `--no-bump` is REQUIRED for the first Winter release. VERSION already
+ * Winter Phase 9c (P9c-2): `--no-bump` is REQUIRED for the first Clover release. VERSION already
  * carries 0.111.0 (the first `#.###.#` version — see version-lib.ts) at the moment this repo's
- * first Winter release is cut; a default (bumping) run would ship 0.111.1 instead of 0.111.0. The
+ * first Clover release is cut; a default (bumping) run would ship 0.111.1 instead of 0.111.0. The
  * default bump mode stays `--patch` for every release after that — this script never special-cases
  * "first release" itself, the operator does, by passing --no-bump exactly once. `--help`/`-h`
  * prints this same guidance and exits before preflight.
@@ -24,15 +24,15 @@
  * check (identity, notary profile, clean tree, tag collision) still hard-fails regardless of
  * --dry-run. `--resume-publish` (non-dry-run only): an existing release is expected — upload
  * only assets missing from it and skip the appcast commit/tag if already done. `--allow-checkout-
- * winter` (P9a-8): without it, a non-dry-run release REQUIRES the strong row-16 identity path
- * (the embedded winter's checksum equals the currently-installed npm platform package's own
+ * clover` (P9a-8): without it, a non-dry-run release REQUIRES the strong row-16 identity path
+ * (the embedded clover's checksum equals the currently-installed npm platform package's own
  * `bin/winter`) — pass it to allow the weaker checkout-build provenance path instead (loud,
  * printed in the summary either way).
  *
  * Whole-branch review fix (F1/F2, see .superpowers/sdd/progress-release.md): the appcast
  * `<item>` insert decision is `appcastInsertPlan` (release-lib.ts, unit-tested) — under
  * --dry-run it writes ONLY a preview at out/release/<v>-dryrun/appcast-preview.xml, mirroring
- * cask's out/ render; the TRACKED releases/winter/appcast.xml (P9b-9's Winter feed; the frozen
+ * cask's out/ render; the TRACKED releases/clover/appcast.xml (P9b-9's Clover feed; the frozen
  * pre-rename releases/appcast.xml is never touched by this pipeline) is written only from
  * inside the publish tail's `if (!DRY_RUN)` block, never before. The insert is also idempotent: an
  * `<item>` whose `<sparkle:version>` already matches the release version is skipped rather than
@@ -42,7 +42,7 @@
  * T1 findings this script carries (see .superpowers/sdd/task-11-report.md):
  *  - CODE_SIGN_INJECT_BASE_ENTITLEMENTS=NO is REQUIRED — without it Xcode injects
  *    get-task-allow=true and notarization silently auto-rejects.
- *  - The "Embed winter-core" postCompileScript now signs with --options runtime --timestamp
+ *  - The "Embed clover-core" postCompileScript now signs with --options runtime --timestamp
  *    (apple/Winter/project.yml, committed) so the nested binary carries hardened runtime too —
  *    plus scripts/bun-jit.entitlements (exactly allow-jit; A2, see HARDENING_PINS below).
  *  - WinterHelper's embedded codesign identifier becomes "WinterHelper" (not "com.winter.helper")
@@ -61,7 +61,7 @@
  * inside-out signing since signing a container after its contents change invalidates the
  * container's own seal), preserving each one's existing entitlements as-is (extracted then
  * reapplied; Autoupdate is the only one with a real entitlement — see resignPreserving below),
- * then re-signing Sparkle.framework and finally the outer Winter.app so their seals pick up the
+ * then re-signing Sparkle.framework and finally the outer Clover.app so their seals pick up the
  * changed nested content.
  *
  * Fix wave M4 (whole-branch review, Major, P9c-19): right after `gh release create`/the resume
@@ -69,10 +69,10 @@
  * plain `gh release create` only becomes GitHub's "latest" release by virtue of being the most
  * recently created one, which is exactly the ordering this repo's handoff release (norma-final,
  * created by a DIFFERENT pipeline, possibly AFTER this one) could otherwise steal. The edit is
- * idempotent (safe to re-run on --resume-publish, and a no-op if already latest) and is Winter's
+ * idempotent (safe to re-run on --resume-publish, and a no-op if already latest) and is Clover's
  * own half of the pairing: the handoff release passes `--latest=false` on ITS side (agent B / the
  * norma-final `release.ts`), so between the two, `/releases/latest` on the shared repo always
- * resolves to Winter regardless of which release was created second — the controller verifies this
+ * resolves to Clover regardless of which release was created second — the controller verifies this
  * after both publishes actually run.
  */
 import { execSync } from "node:child_process";
@@ -126,6 +126,10 @@ import { resolveInstalledWinterPackage } from "./stage-runtimes";
 import { buildCoworkNative } from "./build-cowork-native";
 import { COWORK_NATIVE, COWORK_NATIVE_EMBED_RELATIVE, checkCoworkNativeBundle, checkCoworkNativeOmitted, checkSignedNative, coworkNativeReleasePlan, coworkRequirement, readCoworkBundleFacts } from "./cowork-native-lib";
 import { createHash } from "node:crypto";
+import { refuseHeldScript } from "./held-scripts";
+
+// C0 review S6: until C7 (`held-scripts.ts`), before this script reads an argument or touches anything.
+refuseHeldScript("release");
 
 const TEAM_ID = "37N77U9RSZ";
 const NOTARY_PROFILE = "norma-notary";
@@ -142,7 +146,7 @@ const DRY_RUN = argv.includes("--dry-run");
 const BETA = argv.includes("--beta");
 const NO_BUMP = argv.includes("--no-bump");
 const RESUME_PUBLISH = argv.includes("--resume-publish");
-// P9a-8: a non-dry-run release REQUIRES the strong row-16 identity path (the embedded winter came
+// P9a-8: a non-dry-run release REQUIRES the strong row-16 identity path (the embedded clover came
 // from the installed npm platform package, checksum-verified) — this flag is the loud, printed
 // escape hatch that keeps the weaker checkout-build provenance path available for a REHEARSAL
 // before the platform package is published (or on a machine with no installed copy to verify
@@ -150,7 +154,7 @@ const RESUME_PUBLISH = argv.includes("--resume-publish");
 const ALLOW_CHECKOUT_WINTER = argv.includes("--allow-checkout-winter");
 
 if (argv.includes("--help") || argv.includes("-h")) {
-  console.log(`Winter release pipeline — scripts/release.ts
+  console.log(`Clover release pipeline — scripts/release.ts
 
 Usage:
   bun run scripts/release.ts --dry-run --no-bump   # full rehearsal, never publishes
@@ -161,7 +165,7 @@ Flags:
                             (no gh release, no appcast commit, no tag).
   --beta                   Marks the appcast <item> with <sparkle:channel>beta</sparkle:channel>.
   --no-bump                Release at VERSION's CURRENT value instead of bumping first.
-                            REQUIRED for the first Winter release: VERSION already carries 0.111.0
+                            REQUIRED for the first Clover release: VERSION already carries 0.111.0
                             (P9c-2) at that moment, and a default run would bump to 0.111.1 before
                             releasing — --no-bump is what makes 0.111.0 itself the shipped version.
                             Every release after that goes back to the default (bumping) invocation.
@@ -251,7 +255,7 @@ const pre = preflight({
       const out = probe(`git status --porcelain`).stdout.trim();
       return out === "" ? null : `working tree not clean — commit or stash changes before releasing`;
     },
-    // The shipped `winter-core` is compiled by THIS bun, and CI tests with `.bun-version` — they must be
+    // The shipped `clover-core` is compiled by THIS bun, and CI tests with `.bun-version` — they must be
     // the same Bun, or CI proves a different binary (CI on "latest" went red on 1.4.2 while releases
     // built with 1.3.14: bun:ffi's executable-memory need and a stdin EPIPE both differ between them).
     bunVersion: () => {
@@ -259,7 +263,7 @@ const pre = preflight({
       return Bun.version === pinned ? null : `this bun is ${Bun.version} but .bun-version pins ${pinned} — release with the pinned Bun (CI tests that one)`;
     },
     // `bun test` strips types and runs, so a type error ships unless something compiles it: 0.121.0
-    // and 0.122.0 went out with `winter mcp permissions` calling a name its branch never imported (a
+    // and 0.122.0 went out with `clover mcp permissions` calling a name its branch never imported (a
     // ReferenceError on every call) that `tsc -p packages/cli` reports. Every tsconfig, every release.
     typecheck: () => {
       const r = probe(`bun run typecheck`);
@@ -346,18 +350,18 @@ console.log("Preflight: OK");
 // 1b. Resolve the signing identity ONCE, up front — every codesign --sign call below (app
 //     resign, its nested/embedded binaries, DMG) uses this same resolved SHA-1 hash, never a
 //     display name, so no legal/company name needs to live in this repo and every signature
-//     comes from the exact same, unambiguous identity. `WINTER_SIGN_IDENTITY` is an escape hatch
+//     comes from the exact same, unambiguous identity. `CLOVER_SIGN_IDENTITY` is an escape hatch
 //     (e.g. a differently-provisioned keychain in CI) that skips the `security find-identity`
 //     lookup entirely.
 // ---------------------------------------------------------------------------
-const signIdentityEnv = process.env.WINTER_SIGN_IDENTITY;
+const signIdentityEnv = process.env.CLOVER_SIGN_IDENTITY;
 const SIGN_IDENTITY = resolveSigningIdentity({
   envOverride: signIdentityEnv,
   identitiesOutput: signIdentityEnv ? "" : sh(`security find-identity -v -p codesigning`),
   teamId: TEAM_ID,
 });
 console.log(
-  `Signing identity resolved: ${SIGN_IDENTITY}${signIdentityEnv ? " (WINTER_SIGN_IDENTITY override)" : ""}`,
+  `Signing identity resolved: ${SIGN_IDENTITY}${signIdentityEnv ? " (CLOVER_SIGN_IDENTITY override)" : ""}`,
 );
 
 // ---------------------------------------------------------------------------
@@ -486,7 +490,7 @@ sh(`xcodegen generate`, APPLE_DIR);
 
 console.log("Building Release (Developer ID, org team 37N77U9RSZ, hardened runtime)...");
 sh(
-  `xcodebuild -project Winter.xcodeproj -scheme Winter -destination 'platform=macOS' -configuration Release ` +
+  `xcodebuild -project Winter.xcodeproj -scheme Clover -destination 'platform=macOS' -configuration Release ` +
     // arm64-only: IrohLib ships no x86_64 slice (universal link fails), and the macOS 26 floor
     // leaves no supported Intel audience anyway.
     `ARCHS=arm64 ` +
@@ -495,15 +499,15 @@ sh(
     `-derivedDataPath "${dd}" build`,
   APPLE_DIR,
 );
-const app = join(dd, "Build", "Products", "Release", "Winter.app");
+const app = join(dd, "Build", "Products", "Release", "Clover.app");
 if (!existsSync(app)) fail(`build did not produce ${app}`);
 console.log(`Built: ${app}`);
 // ComputerV2: Xcode registers every app it builds with LaunchServices, so the standalone Release build of
 // Winter Computer Use (com.winter.computeruse, the shipped identity) would otherwise sit in LaunchServices
-// beside the user's installed one. Only the copy embedded in Winter.app is ever launched; drop this one.
+// beside the user's installed one. Only the copy embedded in Clover.app is ever launched; drop this one.
 probe(`"${LSREGISTER}" -u "${join(dd, "Build", "Products", "Release", `${HELPER.dist.name}.app`)}"`);
 // ComputerV2 Phase 4: the same for the standalone Release build of Winter Headless (the daemon spawns only the copy
-// nested in Winter.app, by path — never through LaunchServices — but no stray registration is left either).
+// nested in Clover.app, by path — never through LaunchServices — but no stray registration is left either).
 probe(`"${LSREGISTER}" -u "${join(dd, "Build", "Products", "Release", `${HEADLESS.dist.name}.app`)}"`);
 
 // ---------------------------------------------------------------------------
@@ -559,8 +563,8 @@ function assertSigned(path: string, label: string) {
     fail(`${label}: missing secure timestamp (notarization will reject this):\n${out}`);
   }
 }
-assertSigned(app, "Winter.app");
-assertSigned(join(app, "Contents", "Resources", "winter-core"), "winter-core");
+assertSigned(app, "Clover.app");
+assertSigned(join(app, "Contents", "Resources", "clover-core"), "clover-core");
 assertSigned(join(app, "Contents", "MacOS", "WinterHelper"), "WinterHelper");
 assertSigned(sparkleFramework, "Sparkle.framework");
 for (const target of nestedSparkleHelpers) {
@@ -569,31 +573,31 @@ for (const target of nestedSparkleHelpers) {
 
 // --- Winter Phase 8d: the embedded runtimes (P8d-1/P8d-2) -----------------
 // WS-23: the official `claude` runtime is no longer embedded; `winter` and `ant` are, each re-signed
-// under Winter's own team identity, each with its own staged record.
-// `winter` is embed-time RE-SIGNED under Winter's own team identity (embed-runtimes.sh) — it fits
+// under Clover's own team identity, each with its own staged record.
+// `clover` is embed-time RE-SIGNED under Clover's own team identity (embed-runtimes.sh) — it fits
 // `assertSigned`'s existing generic check (TeamIdentifier=TEAM_ID + a secure timestamp) exactly,
-// same as winter-core/WinterHelper above.
+// same as clover-core/WinterHelper above.
 const embeddedRuntimesDir = join(app, "Contents", "Resources", "runtimes");
-const embeddedWinterPath = join(embeddedRuntimesDir, "winter");
-assertSigned(embeddedWinterPath, "winter (embedded runtime)");
+const embeddedCloverPath = join(embeddedRuntimesDir, "winter");
+assertSigned(embeddedCloverPath, "clover (embedded runtime)");
 
 // The runtimes record (`runtimes/VERSIONS.json`, schema 2): it must parse and match this build's
 // pins. Its `winterPreSign` checksum is what the row-16 gates below compare.
 const embeddedVersionsPath = join(embeddedRuntimesDir, "VERSIONS.json");
-if (!existsSync(embeddedVersionsPath)) fail(`VERSIONS.json not found at ${embeddedVersionsPath} — the embedded winter has no accompanying pin record`);
+if (!existsSync(embeddedVersionsPath)) fail(`VERSIONS.json not found at ${embeddedVersionsPath} — the embedded clover has no accompanying pin record`);
 const versionsCheck = verifyVersionsJsonAgainstPins({ versionsJsonText: readFileSync(embeddedVersionsPath, "utf8") });
 if (!versionsCheck.ok) {
   fail(`${embeddedVersionsPath} failed the pin gate:\n  ${versionsCheck.failures.join("\n  ")}`);
 }
 const embeddedVersions = versionsCheck.versions!;
-console.log(`Embedded runtimes verified: winter re-signed (TeamIdentifier=${TEAM_ID}), VERSIONS.json matches this build's pins.`);
+console.log(`Embedded runtimes verified: clover re-signed (TeamIdentifier=${TEAM_ID}), VERSIONS.json matches this build's pins.`);
 
 
 // --- Winter Phase 10a (P10a-4/P10a-5, Task L3, fix round 2): the second embedded runtime — ant ---
-// `ant` is embed-time RE-SIGNED under Winter's own team identity (embed-runtimes.sh, --identifier
+// `ant` is embed-time RE-SIGNED under Clover's own team identity (embed-runtimes.sh, --identifier
 // com.winter.ant) — it fits `assertSigned`'s existing generic check (TeamIdentifier + secure
-// timestamp), same as `winter` above (L1's licence finding — MIT,
-// github.com/anthropics/anthropic-cli — is what permits Winter to redistribute + re-sign it).
+// timestamp), same as `clover` above (L1's licence finding — MIT,
+// github.com/anthropics/anthropic-cli — is what permits Clover to redistribute + re-sign it).
 const embeddedAntPath = join(embeddedRuntimesDir, "ant", "ant");
 assertSigned(embeddedAntPath, "ant (embedded runtime)");
 
@@ -658,10 +662,10 @@ console.log(
 // for a rehearsal, or a release machine with no installed copy of the platform package to verify
 // the embed against. This runs ALONGSIDE (never instead of) the pre-existing provenance check
 // below, which stays the relevant check for a `checkout-build` embed either way.
-const installedWinterPackage = resolveInstalledWinterPackage();
+const installedCloverPackage = resolveInstalledWinterPackage();
 const row16Identity = row16IdentityCheck({
   versionsJsonText: readFileSync(embeddedVersionsPath, "utf8"),
-  platformPackageBinPath: installedWinterPackage?.binPath,
+  platformPackageBinPath: installedCloverPackage?.binPath,
   embeddedPreSignSha256: embeddedVersions.checksums.winterPreSign,
 });
 console.log(row16Identity.detail);
@@ -675,8 +679,8 @@ if (!row16Identity.strong) {
 }
 
 // Row 16 ("identical versioned artifact", P8d-2/P8d-26): the strongest form of this check
-// verifies PROVENANCE — that the embedded winter came from a build of the SDK checkout named by
-// WINTER_SDK_CHECKOUT actually sitting at the pinned tag, and that a rebuild from it
+// verifies PROVENANCE — that the embedded clover came from a build of the SDK checkout named by
+// CLOVER_SDK_CHECKOUT actually sitting at the pinned tag, and that a rebuild from it
 // SUCCEEDS — never hash equality of that rebuild against the staged binary. Measured on the
 // controller's own release rehearsal (P8d-26): a fresh `bun build --compile` of the SAME pinned
 // tag hashes differently from the staged build every time — `bun build --compile` is not
@@ -688,22 +692,22 @@ if (!row16Identity.strong) {
 // provenance could not be established either way. Both hashes are always logged AND written into
 // a `row16.json` record beside the release artifacts (informational — a mismatch there is
 // EXPECTED and non-fatal). Only possible when a real SDK checkout is available
-// (WINTER_SDK_CHECKOUT), since the sole other rung (`build-winter.ts`'s own default
-// `../winter-agent-sdk` sibling) is Winter-repo-scoped and not assumed present on a release
+// (CLOVER_SDK_CHECKOUT), since the sole other rung (`build-winter.ts`'s own default
+// `../clover-sdk` sibling) is Clover-repo-scoped and not assumed present on a release
 // machine. Without a checkout this falls back to trusting the `winterPreSign` hash
 // `stage-runtimes.ts` itself recorded at staging time — a documented WEAKER check (it cannot
 // detect a compromised STAGING step, only a compromised EMBED step after it) — UNCHANGED by
 // P8d-26, since this rung already never compared hashes it couldn't independently reproduce.
-if (process.env.WINTER_SDK_CHECKOUT) {
-  const checkout = process.env.WINTER_SDK_CHECKOUT;
-  console.log(`Row 16: rebuilding winter from ${checkout} to verify provenance (pinned-tag checkout + a successful rebuild — hash equality is NOT the check, P8d-26)...`);
-  const freshWinterOut = join(OUT, "winter-row16-rebuild");
+if (process.env.CLOVER_SDK_CHECKOUT) {
+  const checkout = process.env.CLOVER_SDK_CHECKOUT;
+  console.log(`Row 16: rebuilding clover from ${checkout} to verify provenance (pinned-tag checkout + a successful rebuild — hash equality is NOT the check, P8d-26)...`);
+  const freshCloverOut = join(OUT, "clover-row16-rebuild");
   let rebuildSucceeded = true;
   let rebuildError: string | undefined;
   let freshHash: string | undefined;
   try {
-    await buildWinter({ checkout, out: freshWinterOut });
-    freshHash = createHash("sha256").update(readFileSync(freshWinterOut)).digest("hex");
+    await buildWinter({ checkout, out: freshCloverOut });
+    freshHash = createHash("sha256").update(readFileSync(freshCloverOut)).digest("hex");
   } catch (err) {
     rebuildSucceeded = false;
     rebuildError = err instanceof Error ? err.message : String(err);
@@ -719,20 +723,20 @@ if (process.env.WINTER_SDK_CHECKOUT) {
   if (!row16.ok) fail(row16.failure!);
   console.log(
     `Row 16: PASS — provenance verified (pinned-tag checkout, rebuild succeeded). freshHash=${row16.record.freshHash} ` +
-      `recordedWinterPreSign=${row16.record.recordedHash} hashesMatch=${row16.record.hashesMatch} (a mismatch here is ` +
+      `recordedCloverPreSign=${row16.record.recordedHash} hashesMatch=${row16.record.hashesMatch} (a mismatch here is ` +
       `EXPECTED and non-fatal — bun compiles are not byte-reproducible). Record written to ${row16Path}.`,
   );
 } else {
   console.log(
-    `Row 16: WINTER_SDK_CHECKOUT not set — trusting the winterPreSign hash stage-runtimes.ts recorded at ` +
+    `Row 16: CLOVER_SDK_CHECKOUT not set — trusting the winterPreSign hash stage-runtimes.ts recorded at ` +
       `staging time (${embeddedVersions.checksums.winterPreSign}) rather than reproducing a fresh build. This is a ` +
       `WEAKER check: it cannot detect a compromised staging step, only a compromised embed step after it. Set ` +
-      `WINTER_SDK_CHECKOUT to the pinned-tag winter-agent-sdk checkout for the full row-16 proof.`,
+      `CLOVER_SDK_CHECKOUT to the pinned-tag clover-sdk checkout for the full row-16 proof.`,
   );
 }
 
 // --- Office (office-plumbing wave) ------------------------------------------
-// WinterOfficeHelper is Winter's own compiled binary (like WinterHelper above), embedded at
+// WinterOfficeHelper is Clover's own compiled binary (like WinterHelper above), embedded at
 // Contents/MacOS/ — TeamIdentifier + secure timestamp checked and enrolled in HARDENING_PINS below,
 // same as every other component this repo compiles. The vendored LibreOffice product-set (T2) is
 // NOT this repo's own build output — 66 dylibs, individually re-signed depth-first at embed time —
@@ -819,16 +823,16 @@ console.log(`office-helper.sb present at ${officeSandboxProfile}, unmodified sin
   `(codesign --verify --deep --strict above), and byte-identical to the repository source.`);
 
 // --- CEF (panel-cef Task 5; moved into Winter Headless, the user's ruling) ---------------------
-// Winter's ONE Chromium lives inside the nested Winter Headless helper — Winter.app/Contents/Helpers/Winter Headless.app/
-// Contents/Frameworks — and Winter.app's own CEF runs from there too (every Chromium subprocess's sandbox reads only
-// inside its browser's main bundle: the helper holds them for its own browser, Winter.app holds the helper). Winter.app's
+// Clover's ONE Chromium lives inside the nested Winter Headless helper — Winter.app/Contents/Helpers/Winter Headless.app/
+// Contents/Frameworks — and Clover.app's own CEF runs from there too (every Chromium subprocess's sandbox reads only
+// inside its browser's main bundle: the helper holds them for its own browser, Clover.app holds the helper). Clover.app's
 // own Contents/Frameworks must hold NO second copy (checked below).
 // The framework, its five dlopen'd dylibs, and the five helper bundles. `--deep --strict` above
 // already proves the seals nest correctly; this roster proves the two things it does NOT check
 // and that notarization rejects outright — a Developer ID TEAM identity and a secure timestamp
 // on every one of them. Both matter beyond notarization here: the Team ID is exactly what lets
 // the hardened runtime's library validation permit the app and the helpers to dlopen this
-// framework at all (see project.yml's "Embed Winter's Chromium"), and libcef_sandbox.dylib is
+// framework at all (see project.yml's "Embed Clover's Chromium"), and libcef_sandbox.dylib is
 // dlopen'd separately by every helper's CefScopedSandboxContext, so it needs its own identity
 // rather than inheriting the framework's seal.
 //
@@ -854,8 +858,8 @@ for (const name of CEF_HELPERS) {
 {
   const second = ["Chromium Embedded Framework.framework", ...CEF_HELPERS.map((n) => `${n}.app`)]
     .filter((name) => existsSync(join(app, "Contents", "Frameworks", name)));
-  if (second.length > 0) fail(`Winter.app's own Contents/Frameworks still holds a second Chromium (${second.join(", ")}) — the one copy lives in ${HEADLESS_EMBED_RELATIVE}`);
-  console.log(`Chromium: one copy, in ${HEADLESS_EMBED_RELATIVE}/Contents/Frameworks (Winter.app's own Frameworks hold none).`);
+  if (second.length > 0) fail(`Clover.app's own Contents/Frameworks still holds a second Chromium (${second.join(", ")}) — the one copy lives in ${HEADLESS_EMBED_RELATIVE}`);
+  console.log(`Chromium: one copy, in ${HEADLESS_EMBED_RELATIVE}/Contents/Frameworks (Clover.app's own Frameworks hold none).`);
 }
 // --- Winter Computer Use (ComputerV2) ---------------------------------------
 // The helper app that holds its OWN Accessibility and Screen Recording grants, embedded at
@@ -889,7 +893,7 @@ assertSigned(computerHelperApp, "Winter Computer Use");
 }
 // Winter for Chrome's native host, nested in the helper's Contents/MacOS (embed-computer-helper.sh signs it first, with
 // its own identity). The daemon checks the host's process against EXACTLY this requirement, and Chrome runs it for the
-// user's browsers, so: Winter's team and a secure timestamp, the identifier com.winter.browserhost, the stated
+// user's browsers, so: Clover's team and a secure timestamp, the identifier com.winter.browserhost, the stated
 // requirement, the hardened runtime, no entitlements at all, and no test hooks (a release host containing one could be
 // pointed at another home and a fake daemon).
 const browserHostPath = browserHostExecutable(computerHelperApp);
@@ -951,13 +955,13 @@ if (nativePlan.mode === "omit") {
   console.log(`Cowork native pair verified: ${COWORK_NATIVE.launcher.identifier} (no entitlements) and ${COWORK_NATIVE.worker.identifier} (the hypervisor entitlement only), stated requirements, hardened runtime, pins match this checkout.`);
 }
 // --- Winter Headless (ComputerV2 Phase 4) ----------------------------------------------------
-// Winter's private, invisible browser: a background-only app the daemon SPAWNS by path (never through LaunchServices)
+// Clover's private, invisible browser: a background-only app the daemon SPAWNS by path (never through LaunchServices)
 // and checks against EXACTLY its stated requirement before it sends anything. Embedded at
 // Contents/Helpers/Winter Headless.app by project.yml's "Embed Winter Headless" phase (scripts/embed-headless-helper.sh).
 // Beyond assertSigned's team + timestamp, a release proves: the identifier com.winter.headless; the stated designated
 // requirement (identifier + team OU); the hardened runtime; NO entitlements at all (it holds no grants, and the
-// hardened runtime's library validation is what lets it load only Winter's own CEF framework); LSBackgroundOnly (no
-// Dock tile, no menu bar); this release's version; and Winter's one Chromium in its own Contents/Frameworks — the CEF
+// hardened runtime's library validation is what lets it load only Clover's own CEF framework); LSBackgroundOnly (no
+// Dock tile, no menu bar); this release's version; and Clover's one Chromium in its own Contents/Frameworks — the CEF
 // framework and the five Winter Helper bundles, each keeping its own identifier. `checkSignedHeadless` is the same
 // check `dev:headless` and `verify:headless-helper` run.
 const headlessApp = join(app, HEADLESS_EMBED_RELATIVE);
@@ -979,7 +983,7 @@ assertSigned(headlessApp, "Winter Headless");
   const satisfied = probe(`codesign --verify --strict -R='${stated}' "${headlessApp}" 2>&1`);
   if (!satisfied.ok) failures.push(`the signature does not satisfy its own stated requirement: ${satisfied.stdout.trim()}`);
   if (failures.length > 0) fail(`Winter Headless is not signed the way the daemon needs:\n  ${failures.join("\n  ")}`);
-  console.log(`Winter Headless verified: ${HEADLESS.dist.identifier}, designated => ${stated}, hardened runtime, no entitlements, background-only, version ${version}, Winter's one Chromium inside.`);
+  console.log(`Winter Headless verified: ${HEADLESS.dist.identifier}, designated => ${stated}, hardened runtime, no entitlements, background-only, version ${version}, Clover's one Chromium inside.`);
 }
 // "Start from nothing" pinned where it SHIPS, across every component this repo signs — not just
 // where entitlements are declared. project.yml can hand CODE_SIGN_ENTITLEMENTS to the wrong
@@ -990,7 +994,7 @@ assertSigned(headlessApp, "Winter Headless");
 // `allow-jit` on the Renderer, and exactly nothing on everything else. "Applied too widely" is
 // checked as carefully as "missing", because that is the direction that silently weakens
 // hardening — and `com.apple.security.cs.disable-library-validation` is the specific creep this
-// exists to stop. Winter.app is in the list deliberately (Task 5 review, Minor): it `dlopen`s the
+// exists to stop. Clover.app is in the list deliberately (Task 5 review, Minor): it `dlopen`s the
 // same CEF framework via `LoadInMain` from Task 6 onward, so it is the most plausible place for
 // that entitlement to be added "just to make it work" — Task 5 measured that it does not need it.
 //
@@ -1005,9 +1009,9 @@ const UNSIGNED_EXEC_MEMORY = "com.apple.security.cs.allow-unsigned-executable-me
 /// which point at the SAME `Support/CEFHelperJit.entitlements` for the same anti-drift reason.
 const CEF_JIT_HELPERS = ["Winter Helper (Renderer)", "Winter Helper (GPU)"];
 const HARDENING_PINS: { path: string; label: string; expect: string[] }[] = [
-  { path: app, label: "Winter.app", expect: [] },
+  { path: app, label: "Clover.app", expect: [] },
   { path: join(app, "Contents", "MacOS", "WinterHelper"), label: "WinterHelper", expect: [] },
-  // A2 (2026-09-22): winter-core is a bun (JavaScriptCore) binary and carries exactly `allow-jit`
+  // A2 (2026-09-22): clover-core is a bun (JavaScriptCore) binary and carries exactly `allow-jit`
   // (`scripts/bun-jit.entitlements`). Without it, under the hardened runtime, JSC runs JIT-less with
   // no `SharedArrayBuffer`: `@anthropic-ai/claude-agent-sdk`'s top-level `new SharedArrayBuffer(4)`
   // threw `ReferenceError` in every shipped daemon (the official leg never loaded), and the daemon ran
@@ -1018,19 +1022,19 @@ const HARDENING_PINS: { path: string; label: string; expect: string[] }[] = [
   // disable-executable-page-protection, allow-dyld-environment-variables, disable-library-validation:
   // `bun-types/docs/guides/runtime/codesign-macos-executable.mdx:36-45`). The extra two `cs.*`
   // memory/library relaxations exist for `bun:ffi` and native `.node` addons; nothing bundled into
-  // winter-core (core, cli, protocol, the agent/runtime SDK wrappers, provider-runtime, unpdf) or into the agent SDK's own
+  // clover-core (core, cli, protocol, the agent/runtime SDK wrappers, provider-runtime, unpdf) or into the agent SDK's own
   // sources imports `bun:ffi` or loads a `.node` addon, so they would widen the surface for nothing.
   // A future FFI/addon dependency must revisit this pin with evidence, not by widening it blind.
   // 0.120.1 — THAT HAPPENED, unnoticed: 0.120.0's app-token access lists (`auth/keychain-ffi.ts`) use
   // `bun:ffi`, whose `dlopen` builds call trampolines in memory that is not MAP_JIT, and the hardened
   // runtime killed the shipped daemon at its first Keychain call (SIGKILL, "Code Signature Invalid",
   // a crash loop at boot). Measured on a signed compiled probe: `allow-jit` alone → exit 137;
-  // + `allow-unsigned-executable-memory` → runs. So winter-core (only) carries that one more, from its
-  // own `scripts/winter-core.entitlements`; `disable-executable-page-protection`,
+  // + `allow-unsigned-executable-memory` → runs. So clover-core (only) carries that one more, from its
+  // own `scripts/clover-core.entitlements`; `disable-executable-page-protection`,
   // `allow-dyld-environment-variables` and `disable-library-validation` stay off (not needed). The
   // `__keychain-ffi-probe` run below proves it on the signed binary, every release.
-  { path: join(app, "Contents", "Resources", "winter-core"), label: "winter-core", expect: [JIT, UNSIGNED_EXEC_MEMORY] },
-  // office-plumbing wave — Winter's own compiled binary, same posture as WinterHelper above (no
+  { path: join(app, "Contents", "Resources", "clover-core"), label: "clover-core", expect: [JIT, UNSIGNED_EXEC_MEMORY] },
+  // office-plumbing wave — Clover's own compiled binary, same posture as WinterHelper above (no
   // hardened-runtime relaxation of any kind; it is not a JS engine). The vendored LibreOffice product-set is
   // deliberately NOT enrolled here — see the team-ID-only probe on libmergedlo.dylib above this
   // array, and that probe's own comment for why.
@@ -1046,15 +1050,15 @@ const HARDENING_PINS: { path: string; label: string; expect: string[] }[] = [
   ]),
   // ComputerV2 Phase 4 — Winter Headless: no entitlements at all (checkSignedHeadless above pins that whole).
   { path: headlessApp, label: "Winter Headless", expect: [] },
-  // Winter Phase 8d (P8d-2) — `winter` is re-signed at embed time under Winter's own team identity
-  // (embed-runtimes.sh), same posture as winter-core/WinterHelper above.
+  // Winter Phase 8d (P8d-2) — `clover` is re-signed at embed time under Clover's own team identity
+  // (embed-runtimes.sh), same posture as clover-core/WinterHelper above.
   // A2 (2026-09-22): `winter` is a bun binary too (measured `Bun v1.4.2` in the shipped runtime) —
-  // exactly `allow-jit`, for the same measured reason as winter-core above (embed-runtimes.sh passes
+  // exactly `allow-jit`, for the same measured reason as clover-core above (embed-runtimes.sh passes
   // `scripts/bun-jit.entitlements`). `ant` below is Go and stays at none.
-  { path: embeddedWinterPath, label: "winter (embedded runtime)", expect: [JIT] },
-  // Winter Phase 10a (P10a-4/P10a-5, Task L3 fix round 1) — `ant` joins `winter` above: it too is
-  // re-signed at embed time under Winter's own team identity (embed-runtimes.sh, --identifier
-  // com.winter.ant) — but it is a Go binary with no JIT, so unlike `winter` it gets NO relaxation
+  { path: embeddedCloverPath, label: "clover (embedded runtime)", expect: [JIT] },
+  // Winter Phase 10a (P10a-4/P10a-5, Task L3 fix round 1) — `ant` joins `clover` above: it too is
+  // re-signed at embed time under Clover's own team identity (embed-runtimes.sh, --identifier
+  // com.winter.ant) — but it is a Go binary with no JIT, so unlike `clover` it gets NO relaxation
   // at all (the A2 entitlement is bun-specific).
   { path: embeddedAntPath, label: "ant (embedded runtime)", expect: [] },
   // panel-cef Task 6a: the GPU helper joined the Renderer. Chromium routes the GPU process to the
@@ -1063,7 +1067,7 @@ const HARDENING_PINS: { path: string; label: string; expect: string[] }[] = [
   // with `--use-angle=swiftshader`. Under the hardened runtime and without `allow-jit` it
   // crash-looped, `exit_code=9`, with the crash report reading
   // `"termination": {"namespace":"CODESIGNING","indicator":"Invalid Page"}`. Chrome 151 ships
-  // `allow-jit` on both of these helpers and on neither of the other three; so does Winter.
+  // `allow-jit` on both of these helpers and on neither of the other three; so does Clover.
   ...CEF_HELPERS.map((name) => ({
     path: join(chromiumFrameworks, `${name}.app`),
     label: `CEF helper (${name})`,
@@ -1087,7 +1091,7 @@ for (const pin of HARDENING_PINS) {
 }
 console.log(
   "Signatures verified: codesign --verify --deep --strict PASS; TeamIdentifier + secure timestamp confirmed on " +
-    "app + winter-core + WinterHelper + WinterOfficeHelper + Winter Computer Use + Sparkle.framework + its nested helpers + CEF framework + " +
+    "app + clover-core + WinterHelper + WinterOfficeHelper + Winter Computer Use + Sparkle.framework + its nested helpers + CEF framework + " +
     "its 5 libraries + the 5 CEF helpers + the vendored LibreOffice's libmergedlo.dylib (identity probe only — " +
     `not part of the entitlements roster below); hardened-runtime entitlements pinned across all ${HARDENING_PINS.length} ` +
     `components this ` +
@@ -1097,22 +1101,22 @@ console.log(
     `repo signs — ${HARDENING_PINS.filter((p) => p.expect.length).map((p) => `${p.label}: ${p.expect.map((e) => e.replace("com.apple.security.cs.", "")).join(" + ")}`).join("; ")}; exactly none on ` +
     `the other ${HARDENING_PINS.filter((p) => !p.expect.length).length}.`,
 );
-// 0.120.1: the signed winter-core must be able to run `bun:ffi` (the entitlement pin above says it may;
+// 0.120.1: the signed clover-core must be able to run `bun:ffi` (the entitlement pin above says it may;
 // this proves it does). A missing entitlement is a SIGKILL here, never a published crash loop.
 {
-  const probed = probe(`"${join(app, "Contents", "Resources", "winter-core")}" __keychain-ffi-probe 2>&1`);
+  const probed = probe(`"${join(app, "Contents", "Resources", "clover-core")}" __keychain-ffi-probe 2>&1`);
   // WS-27: `keychainFfiProbeOk` also requires the libSystem sysctl ffi's answer (the lock's start time).
   if (!probed.ok || !keychainFfiProbeOk(probed.stdout)) {
-    fail(`winter-core __keychain-ffi-probe failed on the signed binary — bun:ffi is killed under the hardened runtime without ${UNSIGNED_EXEC_MEMORY}:\n${probed.stdout.slice(0, 400)}`);
+    fail(`clover-core __keychain-ffi-probe failed on the signed binary — bun:ffi is killed under the hardened runtime without ${UNSIGNED_EXEC_MEMORY}:\n${probed.stdout.slice(0, 400)}`);
   }
-  console.log(`Signed winter-core runs bun:ffi: ${probed.stdout.trim()}`);
+  console.log(`Signed clover-core runs bun:ffi: ${probed.stdout.trim()}`);
 }
 
 // ---------------------------------------------------------------------------
 // 4b. Licence notices (panel-cef Task 5). CEF and Chromium are BSD-3-Clause, whose second
 //     condition requires a BINARY redistribution to reproduce the copyright notice and
 //     disclaimer "in the documentation and/or other materials provided with the distribution".
-//     Winter is Apache-2.0 and stays cleanly so by shipping theirs inside the app bundle.
+//     Clover is Apache-2.0 and stays cleanly so by shipping theirs inside the app bundle.
 //
 //     This gate exists because the alternative is trusting that a postCompileScript ran. That
 //     script is `basedOnDependencyAnalysis: false` and its copy is easy to break silently — a
@@ -1207,7 +1211,7 @@ console.log("Licence notices verified in Contents/Resources/Licenses.");
 // 5. ditto zip for notarization submission.
 // ---------------------------------------------------------------------------
 console.log("Creating zip for notarization submission...");
-const zipPath = join(OUT, `Winter-${version}.zip`);
+const zipPath = join(OUT, `Clover-${version}.zip`);
 rmSync(zipPath, { force: true });
 sh(`ditto -c -k --sequesterRsrc --keepParent "${app}" "${zipPath}"`);
 
@@ -1296,14 +1300,14 @@ for (const op of dmgStagePlan(app)) {
   else symlinkSync(op.source, dest);
 }
 
-const dmgPath = join(OUT, `Winter-${version}.dmg`);
+const dmgPath = join(OUT, `Clover-${version}.dmg`);
 rmSync(dmgPath, { force: true });
 console.log("Creating DMG (hdiutil)...");
-sh(`hdiutil create -volname "Winter" -srcfolder "${dmgStage}" -ov -format UDZO "${dmgPath}"`);
+sh(`hdiutil create -volname "Clover" -srcfolder "${dmgStage}" -ov -format UDZO "${dmgPath}"`);
 
 console.log("Signing DMG...");
 sh(`codesign --sign "${SIGN_IDENTITY}" --timestamp "${dmgPath}"`);
-assertSigned(dmgPath, "Winter.dmg");
+assertSigned(dmgPath, "Clover.dmg");
 
 console.log("Submitting DMG for notarization (second submission this release; can take 1-15 minutes)...");
 const dmgSubmission = notarizeSubmit(dmgPath);
@@ -1350,7 +1354,7 @@ if (!existsSync(join(SPARKLE_TOOLS, "bin", "sign_update"))) {
 }
 const SIGN_UPDATE = join(SPARKLE_TOOLS, "bin", "sign_update");
 const GENERATE_KEYS = join(SPARKLE_TOOLS, "bin", "generate_keys");
-const DRY_RUN_TEST_KEY_ACCOUNT = "winter-release-dry-run-test";
+const DRY_RUN_TEST_KEY_ACCOUNT = "clover-release-dry-run-test";
 
 function signAppcastEnclosure(zipFile: string): { edSignature: string; length: number; testKey: boolean } {
   const hasProdKey = probe(`security find-generic-password -s "https://sparkle-project.org"`).ok;
@@ -1416,10 +1420,10 @@ function assertValidXml(xml: string, label: string) {
 // action; only `preview` is ever actually written here — the `repo` write is deferred to the
 // publish tail below.
 //
-// P9b-9: this is the NEW Winter feed (`releases/winter/appcast.xml`), not the frozen `releases/
+// P9b-9: this is the NEW Clover feed (`releases/clover/appcast.xml`), not the frozen `releases/
 // appcast.xml` (the pre-rename feed — byte-identical after 9b; its terminal entry is 9c's handoff
 // release, never written by this pipeline again).
-const appcastPath = join(ROOT, "releases", "winter", "appcast.xml");
+const appcastPath = join(ROOT, "releases", "clover", "appcast.xml");
 // Repo-relative form of appcastPath, used everywhere this script probes/stages/commits the
 // tracked file by path (git operates relative to ROOT) — computed once so the git-status probe,
 // `git add`, and the resume log all name the SAME (renamed) feed instead of the frozen
@@ -1429,7 +1433,7 @@ const appcastPreviewPath = join(OUT, "appcast-preview.xml");
 const appcastXml = readFileSync(appcastPath, "utf8");
 const item = appcastItem({
   version,
-  zipName: `Winter-${version}.zip`,
+  zipName: `Clover-${version}.zip`,
   edSignature: signResult.edSignature,
   length: signResult.length,
   beta: BETA,
@@ -1460,7 +1464,7 @@ if (appcastPlan.action === "insert") {
   assertValidXml(appcastPlan.updatedXml!, "appcast (with new item)");
 }
 if (appcastPlan.target === "preview") {
-  // --dry-run: releases/winter/appcast.xml (appcastPath) is NEVER touched (F1) — preview only,
+  // --dry-run: releases/clover/appcast.xml (appcastPath) is NEVER touched (F1) — preview only,
   // mirroring the cask's out/ render (section 11, below).
   if (appcastPlan.action === "insert") {
     writeFileSync(appcastPreviewPath, appcastPlan.updatedXml!);
@@ -1472,23 +1476,23 @@ if (appcastPlan.target === "preview") {
     console.log(`Appcast already carries ${version} — skipping insert (dry-run: ${appcastPath} NOT touched).`);
   }
 }
-// appcastPlan.target === "repo" (a real, non-dry-run run): the actual releases/winter/appcast.xml
+// appcastPlan.target === "repo" (a real, non-dry-run run): the actual releases/clover/appcast.xml
 // write is deferred to the publish tail (section 12, inside `if (!DRY_RUN)`) — see F1 above.
 
 // ---------------------------------------------------------------------------
-// 11. Cask: render packaging/winter.rb.tmpl with this release's version/sha256(DMG)/url into
-//     out/release/<v>/winter.rb — per-release build output; only the .tmpl is committed.
+// 11. Cask: render packaging/clover.rb.tmpl with this release's version/sha256(DMG)/url into
+//     out/release/<v>/clover.rb — per-release build output; only the .tmpl is committed.
 // ---------------------------------------------------------------------------
 console.log("Rendering Homebrew cask...");
 const dmgSha256 = sh(`shasum -a 256 "${dmgPath}"`).trim().split(/\s+/)[0]!;
-const caskTmplPath = join(ROOT, "packaging", "winter.rb.tmpl");
+const caskTmplPath = join(ROOT, "packaging", "clover.rb.tmpl");
 const caskTmpl = readFileSync(caskTmplPath, "utf8");
 const caskRendered = caskFrom(caskTmpl, {
   version,
   sha256: dmgSha256,
-  url: `https://github.com/${GH_REPO}/releases/download/v${version}/Winter-${version}.dmg`,
+  url: `https://github.com/${GH_REPO}/releases/download/v${version}/Clover-${version}.dmg`,
 });
-const caskOutPath = join(OUT, "winter.rb");
+const caskOutPath = join(OUT, "clover.rb");
 writeFileSync(caskOutPath, caskRendered);
 console.log(`Cask rendered: ${caskOutPath} (sha256 ${dmgSha256})`);
 
@@ -1555,7 +1559,7 @@ if (scannedFiles + skippedFiles !== totalFiles) {
       `  (targets + exclusions must equal the whole bundle; see nameScanPlan in release-lib.ts)`,
   );
 }
-// ComputerV2: Winter Computer Use is Winter's own compiled code with its own grants; it is scanned whole,
+// ComputerV2: Winter Computer Use is Clover's own compiled code with its own grants; it is scanned whole,
 // like the app. An exclusion rule that ever reached into Contents/Helpers would hide it — refuse that here.
 if (scan.excluded.some((p) => p.slice(app.length + 1).startsWith("Contents/Helpers"))) {
   fail("identity scan: an exclusion rule reaches into Contents/Helpers (Winter Computer Use) — the helper must be scanned whole");
@@ -1607,7 +1611,7 @@ Artifacts:
   App notarization: ${submission.id} (${submission.status})
   DMG notarization: ${dmgSubmission.id} (${dmgSubmission.status})
   Appcast enclosure signature: ${signResult.testKey ? "EPHEMERAL TEST KEY [DRY-RUN: test key — NOT publishable]" : "production key"}
-  Row 16 (winter source): winterSource=${winterSourceOf(embeddedVersions)}, strong=${row16Identity.strong}${!row16Identity.strong && ALLOW_CHECKOUT_WINTER ? " (--allow-checkout-winter)" : ""}
+  Row 16 (clover source): winterSource=${winterSourceOf(embeddedVersions)}, strong=${row16Identity.strong}${!row16Identity.strong && ALLOW_CHECKOUT_WINTER ? " (--allow-checkout-winter)" : ""}
 
 DRY RUN: publish skipped —
 ${guard.lines.map((l) => `  - ${l}`).join("\n")}
@@ -1638,7 +1642,7 @@ if (guard.action === "publish") {
   // without notes, which now fails before the build instead.
   const notesPath = join(OUT, "release-notes.md");
   writeFileSync(notesPath, notesMarkdown);
-  sh(`gh release create v${version} --title "Winter ${version}" --notes-file "${notesPath}" "${zipPath}" "${dmgPath}"`);
+  sh(`gh release create v${version} --title "Clover ${version}" --notes-file "${notesPath}" "${zipPath}" "${dmgPath}"`);
 } else {
   // guard.action === "resume": upload only whatever assets aren't already on the release.
   console.log(`Resuming publish of v${version}...`);
@@ -1658,12 +1662,12 @@ if (guard.action === "publish") {
 }
 
 // Fix wave M4 (whole-branch review, Major, P9c-19) — see this file's header for the full reasoning:
-// explicitly (re)assert Winter's release as GitHub's "latest", rather than relying on create-order.
+// explicitly (re)assert Clover's release as GitHub's "latest", rather than relying on create-order.
 // Idempotent by design (`gh release edit --latest` on an already-latest release is a no-op), so it
 // runs on BOTH the fresh-publish and the --resume-publish path.
 sh(`gh release edit v${version} --latest`);
 
-// Appcast write + commit+push. The actual releases/winter/appcast.xml write lives HERE — inside
+// Appcast write + commit+push. The actual releases/clover/appcast.xml write lives HERE — inside
 // `!DRY_RUN`, past every abort/exit above (F1 fix, see section 10) — never earlier. Resume-safe
 // both ways: `appcastPlan.action === "skip"` means a prior attempt already wrote this version's
 // <item> (F2 fix — re-running never appends a duplicate), so nothing to write here either; the
@@ -1688,7 +1692,7 @@ if (appcastDirty) {
 // already on origin; nothing left to do for it here.
 
 console.log(
-  `Row 16 (winter source): winterSource=${winterSourceOf(embeddedVersions)}, strong=${row16Identity.strong}` +
+  `Row 16 (clover source): winterSource=${winterSourceOf(embeddedVersions)}, strong=${row16Identity.strong}` +
     `${!row16Identity.strong && ALLOW_CHECKOUT_WINTER ? " (--allow-checkout-winter)" : ""}`,
 );
 console.log(`\nPublished v${version}: https://github.com/${GH_REPO}/releases/tag/v${version}\n`);

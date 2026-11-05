@@ -2,7 +2,7 @@
 // `ComputerV2`: JavaScript the model writes against ready-made functions, run in the session's sandboxed
 // automation worker, every function a daemon-checked call (`computer-use/service.ts`).
 //
-//  - code + dispatch only, deferred in both (`WINTER_CAPABILITY_TOOLS`); built only while computer use is on and
+//  - code + dispatch only, deferred in both (`CLOVER_CAPABILITY_TOOLS`); built only while computer use is on and
 //    `computerUse.legacyComputer` is not set (`index.ts`) — never beside the old `computer`.
 //  - CONCURRENCY-SAFE WITH NO LANE: the daemon's per-target locks replace the lane.
 //  - the DESCRIPTION is generated per incarnation from the session's model: without image input there is no
@@ -15,7 +15,7 @@ import type { McpSdkServerConfigWithInstance } from "@yanlinglabs/winter-agent-s
 import { z } from "zod";
 import type { ToolDefinition } from "../agent/tools/registry";
 import { imagesAcceptedBy, rowForTag } from "../runtime-sdk/provider-selection";
-import { WINTER_TEST_PREFIX } from "../runtime-sdk/model-tag";
+import { CLOVER_TEST_PREFIX } from "../runtime-sdk/model-tag";
 import { COMPUTER_V2_INPUT_SCHEMA, computerV2Description } from "../computer-use/description";
 import type { ScriptCall, ScriptInput, ScriptResult } from "../computer-use/service";
 import { capabilityServer, type CapabilitySession } from "./server";
@@ -27,7 +27,7 @@ export interface ComputerV2CapabilityDeps {
 
 /** Does `model` accept images? A `winter-test/*` double and an unknown model read as yes (not a block). */
 export function visionFor(model: string | undefined): boolean {
-  if (model === undefined || model.startsWith(WINTER_TEST_PREFIX)) return true;
+  if (model === undefined || model.startsWith(CLOVER_TEST_PREFIX)) return true;
   const row = rowForTag(model);
   return row === undefined ? true : imagesAcceptedBy(row);
 }

@@ -3,9 +3,9 @@
 <!-- The live suite's fixture dictionary: the Standard Suite, plus ONE command of every parameter kind ComputerV2's
      generated `app.dict.*` wrappers marshal (text, integer, boolean, an enumeration, a list of text), so the adapters
      group can run a dictionary command end to end and read in the fixture's own log what arrived. -->
-<dictionary title="Winter CU Fixture Terminology" xmlns:xi="http://www.w3.org/2001/XInclude">
+<dictionary title="Clover CU Fixture Terminology" xmlns:xi="http://www.w3.org/2001/XInclude">
   <xi:include href="file:///System/Library/ScriptingDefinitions/CocoaStandard.sdef" xpointer="xpointer(/dictionary/suite)"/>
-  <suite name="Winter CU Fixture Suite" code="WCUF" description="What the live suite's fixture answers.">
+  <suite name="Clover CU Fixture Suite" code="WCUF" description="What the live suite's fixture answers.">
     <enumeration name="fixture tone" code="WCUt">
       <enumerator name="plain" code="WCpl" description="Logged as plain."/>
       <enumerator name="loud" code="WClo" description="Logged as loud."/>

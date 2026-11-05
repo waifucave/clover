@@ -6,7 +6,7 @@
 //   permissions.deny / additionalDirectories        same keys, verbatim
 //   outputStyle                                     outputStyle
 //   memory.enabled / memory.directory               autoMemoryEnabled / autoMemoryDirectory
-//   mcpServers                                  →  sdk/.winter.json mcpServers (credential-shaped headers dropped)
+//   mcpServers                                  →  sdk/.clover.json mcpServers (credential-shaped headers dropped)
 //
 // Runs automatically at EVERY boot on every home and build (L3.2 already reads these keys from `sdk/`
 // only — a home whose split never ran would silently lose its rules, servers and memory switch), and
@@ -42,7 +42,7 @@ export interface SettingsSplitReport {
   copied: SplitKey[];
   /** Keys the sdk file already stated (marked, never overwritten). */
   alreadyPresent: SplitKey[];
-  /** Winter-grammar allow rules with no claude spelling that is not wider (spec §4.2). */
+  /** Clover-grammar allow rules with no claude spelling that is not wider (spec §4.2). */
   untranslated: string[];
   untranslatedFile?: string;
   /** The `["Computer"]` default was written (spec §4.2: only when `allow` was absent). */
@@ -89,7 +89,7 @@ function setPath(obj: Record<string, unknown>, path: string, value: unknown): Re
   return { ...obj, [head!]: setPath(base, rest.join("."), value) };
 }
 
-/** Winter allow rules that `sdkAllowRulesFor` drops: Winter's own grammar, refused or not expressible
+/** Clover allow rules that `sdkAllowRulesFor` drops: Clover's own grammar, refused or not expressible
  *  without widening (a `*` value, `Edit(<dir>)`, a bare `WebFetch`, …). Foreign-grammar rules forward. */
 function untranslatedRules(rules: readonly string[]): string[] {
   const out: string[] = [];
@@ -133,7 +133,7 @@ export function splitSettingsToSdk(home: string, opts: { now?: () => Date; log?:
     if (!readable[dest.file]) continue;
     let value = get(raw, key);
     if (key === "permissions.allow" && value === undefined) {
-      // Spec §4.2: Winter's getter-level `["Computer"]` default, written in once — only when this
+      // Spec §4.2: Clover's getter-level `["Computer"]` default, written in once — only when this
       // home's settings.json never stated an allow list at all (an explicit `[]` opts out of it).
       if (get(current.settings, dest.path) !== undefined) { report.alreadyPresent.push(key); marks.push(key); continue; }
       pending.settings.push([dest.path, sdkAllowRulesFor(["Computer"])]);

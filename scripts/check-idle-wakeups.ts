@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-// The daemon's IDLE cost, measured: how often an idle `winter-core` wakes the CPU (`top`'s IDLEW, in DELTA mode).
+// The daemon's IDLE cost, measured: how often an idle `clover-core` wakes the CPU (`top`'s IDLEW, in DELTA mode).
 //
 //   bun run check:idle-wakeups            # boots an isolated daemon, settles, measures 3 × 10 s, fails over 50/s
 //   bun run check:idle-wakeups --pid N    # measures an already-running process instead (read-only: `top` only)
@@ -7,9 +7,9 @@
 // WHY DELTA MODE. `top`'s IDLEW column is, by default, the ABSOLUTE count since the process started — 3,962 on a
 // daemon up for 8 hours is ~0.14 wakeups/s, not 3,962/s. `-c d` makes each sample the count over its own interval.
 //
-// ISOLATION. The booted daemon runs IN a child bun process on a temp WINTER_HOME with a FILE secret store
+// ISOLATION. The booted daemon runs IN a child bun process on a temp CLOVER_HOME with a FILE secret store
 // (`startDaemon({ secrets })`): every Keychain path in the daemon is gated on the profile's default home, and a
-// random throwaway WINTER_KEYCHAIN_SERVICE is set besides (no WINTER_PROFILE). It never touches ~/.winter*.
+// random throwaway CLOVER_KEYCHAIN_SERVICE is set besides (no CLOVER_PROFILE). It never touches ~/.clover*.
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -39,7 +39,7 @@ async function main(): Promise<void> {
     report(await idleWakeups(pid, WINDOWS, WINDOW_S));
     return;
   }
-  const home = mkdtempSync(join(tmpdir(), "winter-idle-check-"));
+  const home = mkdtempSync(join(tmpdir(), "clover-idle-check-"));
   const probe = join(home, "probe.ts");
   writeFileSync(probe, [
     `const { startDaemon } = await import(${JSON.stringify(join(CORE, "daemon.ts"))});`,
@@ -50,8 +50,8 @@ async function main(): Promise<void> {
     `process.on("SIGTERM", async () => { try { await d.stop(); } finally { process.exit(0); } });`,
   ].join("\n"));
   const env: Record<string, string> = {};
-  for (const [k, v] of Object.entries(process.env)) if (v !== undefined && k !== "WINTER_PROFILE") env[k] = v;
-  Object.assign(env, { WINTER_HOME: home, WINTER_KEYCHAIN_SERVICE: `com.winter.core.test-idle-${crypto.randomUUID().slice(0, 8)}`, WINTER_LOGIN_SHELL_PATH: "off",
+  for (const [k, v] of Object.entries(process.env)) if (v !== undefined && k !== "CLOVER_PROFILE") env[k] = v;
+  Object.assign(env, { CLOVER_HOME: home, CLOVER_KEYCHAIN_SERVICE: `com.waifucave.clover.core.test-idle-${crypto.randomUUID().slice(0, 8)}`, CLOVER_LOGIN_SHELL_PATH: "off",
     // Usage tracking (docs/claude/usage.md): inert — every root and executable none, the background plan beat and the
     // catch-up off (`USAGE_INERT` above, and the same in the environment), so the measurement never touches the
     // developer's own Codex / Claude Code / Antigravity / OpenCode files or binaries. The gate does NOT cover the beat

@@ -1,4 +1,4 @@
-// WS-27: every Keychain item the daemon owns — except the two the app reads — trusts `winter-core` alone.
+// WS-27: every Keychain item the daemon owns — except the two the app reads — trusts `clover-core` alone.
 //
 // THE PROBLEM. Before WS-25 §7, a code session's `winter` child read its provider key, the Exa key and its
 // MCP sign-ins from the Keychain itself, and each read by a binary the item did not name raised a consent
@@ -45,7 +45,7 @@
 // requirement; the migration is a no-op while both match, so a differently signed binary on the same home
 // migrates for itself. No marker is written when nothing could be migrated and something was skipped. A
 // change of creator the new binary cannot read silently (the dev daemon moving from `bun` to a compiled
-// `winter-core`) is `dev-keychain-transition.ts`'s job.
+// `clover-core`) is `dev-keychain-transition.ts`'s job.
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { APP_READ_TOKEN_NAMES, APP_TOKEN_SHADOW_SUFFIX, REAL_APP_TOKEN_KEYCHAIN_OPS, type AppTokenKeychainOps } from "./app-token-acl";
@@ -117,7 +117,7 @@ export function readStoredValue(kc: CredentialKeychain, account: string): Stored
  *  it cannot be built — recovery and the migration then do nothing. */
 export function prepareCredentialAccess(kc: CredentialKeychain): KeychainAccess | undefined {
   try {
-    return opsOf(kc).createAccess("Winter credential", [null]);
+    return opsOf(kc).createAccess("Clover credential", [null]);
   } catch (err) {
     kc.log?.(`keychain: the credential access list could not be built (${describe(err)}) — credential items keep theirs`);
     return undefined;

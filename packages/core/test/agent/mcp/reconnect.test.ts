@@ -1,5 +1,5 @@
 // WS-25: `reconnectLiveSessionsFor` — after a sign-in or a sign-out, live children reconnect the server by
-// THEIR OWN name for its URL (the live incarnation answers, `WinterSession.mcpServerNamesFor`); never an
+// THEIR OWN name for its URL (the live incarnation answers, `CloverSession.mcpServerNamesFor`); never an
 // eviction, never a restart.
 import { describe, expect, test } from "bun:test";
 import { describeReconnectError, reconnectLiveSessionsFor, type ReconnectableSession } from "../../../src/agent/mcp/reconnect";
@@ -52,13 +52,13 @@ describe("reconnectLiveSessionsFor (WS-25)", () => {
 
   test("a rejected reconnect (a signed-out server is needs-auth now, or the child ended) is one log line, never a throw", async () => {
     const lines: string[] = [];
-    class WinterLegUnsupported extends Error { override name = "WinterLegUnsupported"; }
+    class CloverLegUnsupported extends Error { override name = "CloverLegUnsupported"; }
     const rejecting = session("a", () => ["x"], async () => { throw new Error("needs-auth"); });
-    const ended = session("b", () => ["x"], async () => { throw new WinterLegUnsupported("no live child"); });
+    const ended = session("b", () => ["x"], async () => { throw new CloverLegUnsupported("no live child"); });
     const acted = await reconnectLiveSessionsFor({ list: () => [rejecting, ended], log: (l) => lines.push(l) }, "https://mcp.example.test/mcp");
     expect(acted).toEqual(["a", "b"]);
     expect(lines.filter((l) => l.includes("did not connect"))).toHaveLength(2);
-    expect(lines.some((l) => l.includes("WinterLegUnsupported"))).toBe(true);
+    expect(lines.some((l) => l.includes("CloverLegUnsupported"))).toBe(true);
   });
 
   test("the log line carries the error's code and message, not only its name (the live 2026-09-27 failure logged just 'WinterRpcError')", async () => {
@@ -81,7 +81,7 @@ describe("reconnectLiveSessionsFor (WS-25)", () => {
     expect(masked).not.toContain("\n");
     expect(describeReconnectError(new Error("x".repeat(1000))).length).toBeLessThan(300);
     expect(describeReconnectError("not an error")).toBe("unknown");
-    expect(describeReconnectError(Object.assign(new Error(""), { name: "WinterLegUnsupported", code: "not_supported_on_winter_leg" }))).toBe("WinterLegUnsupported not_supported_on_winter_leg");
+    expect(describeReconnectError(Object.assign(new Error(""), { name: "CloverLegUnsupported", code: "not_supported_on_winter_leg" }))).toBe("CloverLegUnsupported not_supported_on_winter_leg");
   });
 
   test("a session without the two methods (a test double) or whose lookup throws is skipped", async () => {

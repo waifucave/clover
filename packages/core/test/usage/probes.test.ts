@@ -23,7 +23,7 @@ function service(over: Partial<UsageServiceDeps> & { db?: UsageDb; home?: string
   const logs: string[] = [];
   const svc = new UsageService({
     db, pricer, tracking: () => ({ codex: true, claudeCode: true, antigravity: true, opencode: true }), codexExecutable: () => undefined, claudeExecutable: () => undefined,
-    winterCodexWindows: () => [], probeRoot: () => probeRootIn(home), ingestEveryMs: 0, planWaitMs: 20_000,
+    cloverCodexWindows: () => [], probeRoot: () => probeRootIn(home), ingestEveryMs: 0, planWaitMs: 20_000,
     log: { warn: (m, meta) => logs.push(`${m} ${JSON.stringify(meta ?? {})}`), info: (m, meta) => logs.push(`${m} ${JSON.stringify(meta ?? {})}`) },
     ...over,
   });
@@ -169,14 +169,14 @@ describe("the probes' environment is an allowlist", () => {
   const leaky = {
     ANTHROPIC_API_KEY: "sk-decoy-6e1d", ANTHROPIC_AUTH_TOKEN: "x", ANTHROPIC_BASE_URL: "https://example.invalid", CLAUDECODE: "1",
     CLAUDE_CODE_ENTRYPOINT: "cli", CODEX_SANDBOX: "seatbelt", CODEX_SANDBOX_NETWORK_DISABLED: "1", OPENAI_API_KEY: "sk-decoy", OPENAI_BASE_URL: "https://example.invalid",
-    WINTER_HOME: "/nowhere", WINTER_PROFILE: "dev",
+    CLOVER_HOME: "/nowhere", CLOVER_PROFILE: "dev",
   };
   const allowed = new Set(["HOME", "PATH", "USER", "LOGNAME", "LANG", "LC_ALL", "LC_CTYPE", "TMPDIR", "SHELL", "CODEX_HOME", "CLAUDE_CONFIG_DIR",
     "HTTPS_PROXY", "HTTP_PROXY", "NO_PROXY", "https_proxy", "http_proxy", "no_proxy", "ALL_PROXY", "all_proxy", "NODE_EXTRA_CA_CERTS", "SSL_CERT_FILE",
     // added by the OS/runtime to every process, not inherited
     "__CF_USER_TEXT_ENCODING", "PWD", "SHLVL", "_", "OLDPWD"]);
 
-  test("neither spawn sees an API key, a base URL, a nested-session marker or WINTER_*", async () => {
+  test("neither spawn sees an API key, a base URL, a nested-session marker or CLOVER_*", async () => {
     const claude = fakeClaude(tempDir("bin"), "ok");
     const codex = fakeCodex(tempDir("bin"), "ok");
     await withEnv(leaky, async () => {
@@ -201,7 +201,7 @@ describe("the probes' environment is an allowlist", () => {
   });
 
   test("probeEnv keeps only the allowlist and the tool's own config dir", () => {
-    expect(probeEnv(["CODEX_HOME"], { HOME: "/h", PATH: "/bin", OPENAI_API_KEY: "k", CODEX_HOME: "/c", CODEX_SANDBOX: "x", WINTER_X: "1" }))
+    expect(probeEnv(["CODEX_HOME"], { HOME: "/h", PATH: "/bin", OPENAI_API_KEY: "k", CODEX_HOME: "/c", CODEX_SANDBOX: "x", CLOVER_X: "1" }))
       .toEqual({ HOME: "/h", PATH: "/bin", CODEX_HOME: "/c" });
   });
 });
@@ -219,16 +219,16 @@ describe("binary resolution", () => {
     const root = tempDir("resolve");
     const installed = exe(join(root, "install"), "codex");
     const onPath = exe(join(root, "path"), "codex");
-    exe(join(process.cwd(), "node_modules", ".winter-test-relative"), "codex-rel");
+    exe(join(process.cwd(), "node_modules", ".clover-test-relative"), "codex-rel");
     expect(resolveExecutable("codex", undefined, [installed], join(root, "path"))).toBe(installed);
     expect(resolveExecutable("codex", undefined, [join(root, "missing", "codex")], join(root, "path"))).toBe(onPath);
-    expect(resolveExecutable("codex-rel", undefined, [], `node_modules/.winter-test-relative:${join(root, "nothing")}`)).toBeUndefined();
+    expect(resolveExecutable("codex-rel", undefined, [], `node_modules/.clover-test-relative:${join(root, "nothing")}`)).toBeUndefined();
     expect(resolveExecutable("codex", undefined, ["relative/codex"], "")).toBeUndefined();
     // An explicit path is authoritative: missing, relative or "off" is none (never a fall-through).
     expect(resolveExecutable("codex", "off", [installed], join(root, "path"))).toBeUndefined();
     expect(resolveExecutable("codex", "relative/codex", [installed], "")).toBeUndefined();
     expect(resolveExecutable("codex", onPath, [installed], "")).toBe(onPath);
-    require("node:fs").rmSync(join(process.cwd(), "node_modules", ".winter-test-relative"), { recursive: true, force: true });
+    require("node:fs").rmSync(join(process.cwd(), "node_modules", ".clover-test-relative"), { recursive: true, force: true });
   });
 });
 

@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { z } from "zod";
 
 /**
- * winter-plugin.json — WS-21 (spec §5.1): Winter-only EXTRAS on top of a claude plugin. A plugin is
+ * clover-plugin.json — WS-21 (spec §5.1): Clover-only EXTRAS on top of a claude plugin. A plugin is
  * now a claude plugin first (claude's own component dirs — `skills/`, `.mcp.json`, `agents/`,
  * `hooks/hooks.json`, …), loaded natively by both runtimes; this manifest carries only what claude's
  * layout has no room for: `tier`, `permissions` (`tcc`/`hardware`/`exec` for the entry process),
@@ -17,7 +17,7 @@ import { z } from "zod";
  * naming which of the four legacy keys it found, so the extras that ARE still declared load normally
  * — see `loadManifest` below.
  */
-export const WinterPluginManifest = z.object({
+export const CloverPluginManifest = z.object({
   id: z.string().min(1),
   name: z.string().optional(), description: z.string().optional(),
   version: z.string().optional(), author: z.string().optional(),
@@ -36,7 +36,7 @@ export const WinterPluginManifest = z.object({
   entry: z.object({ command: z.string().min(1), args: z.array(z.string()).optional(), cwd: z.string().optional() }).optional(),
   signature: z.string().optional(), // RESERVED — unenforced until Phase 6 PKI
 });
-export type WinterManifest = z.infer<typeof WinterPluginManifest>;
+export type CloverManifest = z.infer<typeof CloverPluginManifest>;
 
 /** The `contributes` keys a pre-WS-21 manifest could declare that now live in claude's own plugin
  *  layout instead (skills/, .mcp.json, agents/, hooks/hooks.json) — see the schema's own doc above. */
@@ -44,7 +44,7 @@ const LEGACY_CONTRIBUTES_KEYS = ["skills", "mcpServers", "agents", "hooks"] as c
 
 /** Which of `LEGACY_CONTRIBUTES_KEYS` a RAW (pre-schema) manifest's `contributes` object declares,
  *  in the schema's own field order — `[]` when none do (including when `contributes` itself is
- *  absent or not an object). Read off the raw JSON, before `WinterPluginManifest` strips them. */
+ *  absent or not an object). Read off the raw JSON, before `CloverPluginManifest` strips them. */
 function legacyContributesKeysPresent(raw: unknown): string[] {
   if (typeof raw !== "object" || raw === null) return [];
   const contributes = (raw as Record<string, unknown>)["contributes"];
@@ -53,16 +53,16 @@ function legacyContributesKeysPresent(raw: unknown): string[] {
 }
 
 /**
- * Reads winter-plugin.json out of `dir` (a plugin directory whose canonical name is `dirName`).
- * - valid winter-plugin.json → { manifest, legacy: false }. When manifest.id doesn't match
+ * Reads clover-plugin.json out of `dir` (a plugin directory whose canonical name is `dirName`).
+ * - valid clover-plugin.json → { manifest, legacy: false }. When manifest.id doesn't match
  *   dirName, the directory wins (id is coerced) and a warning is logged — the directory name
- *   stays canonical throughout Winter's plugin model.
- * - missing winter-plugin.json → { legacy: true }, no manifest, no log (the caller falls back to
+ *   stays canonical throughout Clover's plugin model.
+ * - missing clover-plugin.json → { legacy: true }, no manifest, no log (the caller falls back to
  *   the legacy plugin.json metadata path — this is the common/expected case, not a warning).
  * - present but malformed (bad JSON or schema failure) → { legacy: true } + a logged warning.
  *   Never throws — a broken manifest degrades to legacy loading, it never bricks the plugin.
  */
-export function loadManifest(dir: string, dirName: string, log?: (m: string) => void): { manifest?: WinterManifest; legacy: boolean } {
+export function loadManifest(dir: string, dirName: string, log?: (m: string) => void): { manifest?: CloverManifest; legacy: boolean } {
   // Final-review Fix 3 (id/name charset): tool.register's own wire schema (protocol/methods.ts)
   // now REJECTS a `__` in a tool NAME outright, but a pluginId is a raw directory name — user/
   // filesystem-controlled, so it's a WARNING here, not a hard reject (a plugin someone already
@@ -76,37 +76,37 @@ export function loadManifest(dir: string, dirName: string, log?: (m: string) => 
   if (dirName.includes("__")) {
     log?.(`plugin ${dirName}: directory name contains "__" — this can collide with another plugin's tool-unregister prefix (plugin__<id>__); consider renaming the plugin directory`);
   }
-  const path = join(dir, "winter-plugin.json");
+  const path = join(dir, "clover-plugin.json");
   if (!existsSync(path)) return { legacy: true };
 
   let raw: unknown;
   try {
     raw = JSON.parse(readFileSync(path, "utf8"));
   } catch {
-    log?.(`plugin ${dirName}: malformed winter-plugin.json (loading as legacy)`);
+    log?.(`plugin ${dirName}: malformed clover-plugin.json (loading as legacy)`);
     return { legacy: true };
   }
 
-  const parsed = WinterPluginManifest.safeParse(raw);
+  const parsed = CloverPluginManifest.safeParse(raw);
   if (!parsed.success) {
-    log?.(`plugin ${dirName}: invalid winter-plugin.json (loading as legacy)`);
+    log?.(`plugin ${dirName}: invalid clover-plugin.json (loading as legacy)`);
     return { legacy: true };
   }
 
   // WS-21: a manifest written before the claude-plugin-layout move may still declare
   // `contributes.{skills,mcpServers,agents,hooks}` — those now live in claude's own component dirs
-  // and `WinterPluginManifest`'s narrowed schema silently strips them (zod's default unknown-key
+  // and `CloverPluginManifest`'s narrowed schema silently strips them (zod's default unknown-key
   // behavior). The plugin still loads, with every extra it DOES declare (tier, permissions,
   // tools/shortcuts/tile/provider, entry) intact — this is ONE warning naming which legacy keys were
   // ignored, never a hard failure.
   const legacyKeys = legacyContributesKeysPresent(raw);
   if (legacyKeys.length > 0) {
-    log?.(`plugin ${dirName}: winter-plugin.json declares contributes.{${legacyKeys.join(", ")}} — these now live in claude's own plugin layout (skills/, .mcp.json, agents/, hooks/hooks.json) and are ignored here`);
+    log?.(`plugin ${dirName}: clover-plugin.json declares contributes.{${legacyKeys.join(", ")}} — these now live in claude's own plugin layout (skills/, .mcp.json, agents/, hooks/hooks.json) and are ignored here`);
   }
 
   let manifest = parsed.data;
   if (manifest.id !== dirName) {
-    log?.(`plugin ${dirName}: winter-plugin.json id "${manifest.id}" does not match directory name — using directory name`);
+    log?.(`plugin ${dirName}: clover-plugin.json id "${manifest.id}" does not match directory name — using directory name`);
     manifest = { ...manifest, id: dirName };
   }
   return { manifest, legacy: false };
@@ -130,11 +130,11 @@ export function skillsPayloadLines(skills: readonly string[] | undefined): strin
  *
  * WS-21 (spec §5.4): "enabling a plugin is the consent for its claude parts" — a plugin's NATIVE
  * content (skills, mcpServers, hooks, agents, all loaded straight off claude's own component dirs)
- * is authorized by install+enable alone (Contract B), never a separate Winter consent record here.
- * Only the EXTRAS winter-plugin.json itself declares still gate on this consent flow — this function
+ * is authorized by install+enable alone (Contract B), never a separate Clover consent record here.
+ * Only the EXTRAS clover-plugin.json itself declares still gate on this consent flow — this function
  * narrowed accordingly; it no longer takes a `shipsSkills` hint (there is nothing left for it to add).
  */
-export function requiredConsentClasses(m: WinterManifest): Array<"exec" | "tcc" | "hardware"> {
+export function requiredConsentClasses(m: CloverManifest): Array<"exec" | "tcc" | "hardware"> {
   const classes: Array<"exec" | "tcc" | "hardware"> = [];
   const execNeeded = Boolean(m.entry) || Boolean(m.permissions?.exec);
   if (execNeeded) classes.push("exec");
@@ -146,10 +146,10 @@ export function requiredConsentClasses(m: WinterManifest): Array<"exec" | "tcc" 
 /**
  * The verbatim exec-payload disclosure lines the consent block prints (design spec §1: "Consent
  * text always shows the exec payload (commands to be run), never just a summary."). WS-21: the
- * mcpServer/hook lines are gone (native content needs no Winter consent, see
+ * mcpServer/hook lines are gone (native content needs no Clover consent, see
  * `requiredConsentClasses`'s own doc above) — the entry command is what's left, at most one line.
  */
-export function execPayloadLines(m: WinterManifest): string[] {
+export function execPayloadLines(m: CloverManifest): string[] {
   const lines: string[] = [];
   if (m.entry) {
     lines.push(`entry: ${[m.entry.command, ...(m.entry.args ?? [])].join(" ")}`);

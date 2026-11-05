@@ -64,10 +64,10 @@ describe("capability-matrix.json (P8d-15)", () => {
     for (const r of cliNonCode) expect(r.cell).toBe("correctly-unavailable");
   });
 
-  test("the Winter leg is implemented on every reachable (mode, surface) pair", () => {
+  test("the Clover leg is implemented on every reachable (mode, surface) pair", () => {
     const { rows } = buildCapabilityMatrix();
-    const winterRows = rows.filter((r) => r.runtime === "winter-agent");
-    for (const r of winterRows) {
+    const cloverRows = rows.filter((r) => r.runtime === "winter-agent");
+    for (const r of cloverRows) {
       const cliCodeOnly = r.surface === "cli" && r.mode !== "code";
       expect(r.cell).toBe(cliCodeOnly ? "correctly-unavailable" : "implemented");
     }

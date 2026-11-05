@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { COWORK_RPC, CoworkSource as SourceDto, CoworkCompleteWorkspace as WorkspaceDto, CoworkSummaryWorkspace as SummaryDto, CoworkWorkspacePolicy as PolicyDto, CoworkPolicySummary as PolicySummaryDto, CoworkWorkspaceRecord as WorkspaceRecordDto, type CoworkMethod, type CoworkResult } from "@yanlinglabs/winter-protocol";
+import { COWORK_RPC, CoworkSource as SourceDto, CoworkCompleteWorkspace as WorkspaceDto, CoworkSummaryWorkspace as SummaryDto, CoworkWorkspacePolicy as PolicyDto, CoworkPolicySummary as PolicySummaryDto, CoworkWorkspaceRecord as WorkspaceRecordDto, type CoworkMethod, type CoworkResult } from "@waifucave/clover-protocol";
 import { CoworkAuthority, intersectCeilings, type CoworkGrantResolver, type CoworkPrincipal } from "./authority";
 import { CoworkInstructions, type InstructionAgentApproval } from "./instructions";
 import { CoworkOutputs } from "./outputs";

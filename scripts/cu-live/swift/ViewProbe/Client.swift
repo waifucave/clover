@@ -156,7 +156,7 @@ final class ProbeClient: @unchecked Sendable {
                 fail(helloAnswered
                      ? "the helper closed the connection"
                      : "the helper closed the connection before answering hello (it checks the peer's code signature first: "
-                       + "the probe must be signed with Winter's team and identifier com.winter.app.dev)",
+                       + "the probe must be signed with Clover's team and identifier com.winter.app.dev)",
                      code: ProbeExit.closedByPeer)
             }
             pending.append(contentsOf: chunk[0..<n])

@@ -1,7 +1,7 @@
 // ComputerV2: the small pure pieces — per-target locks, the diff base (with compaction), the result builder and
 // its DATA-ONLY fence, the per-provider screenshot budget, the per-vision description.
 import { describe, expect, test } from "bun:test";
-import type { SessionEvent } from "@yanlinglabs/winter-protocol";
+import type { SessionEvent } from "@waifucave/clover-protocol";
 import { AutomationFailure } from "../../src/computer-use/errors";
 import { FOREGROUND_LOCK_KEY, TargetLocks } from "../../src/computer-use/locks";
 import { DiffBases } from "../../src/computer-use/diff-base";

@@ -193,7 +193,7 @@ describe("PermissionGate v1", () => {
     }
   });
 
-  // 4g Task 5/6: web_fetch/web_search are Winter's only network-capable tools. They get their OWN
+  // 4g Task 5/6: web_fetch/web_search are Clover's only network-capable tools. They get their OWN
   // gate class (NETWORK), distinct from both READ_ONLY and MUTATING.
   //
   // SP-approvals T10 (user addition 2026-07-21, spec §7): "web tools become free by default" —
@@ -377,13 +377,13 @@ describe("PermissionGate v1", () => {
 
     // WS-26 (USER RULING 2026-09-27): the ONE reversal of "chat never asks" — a CONNECTOR action (a tool
     // of a user-configured MCP server) answers "ask", and the bridge cards it. Deliberately narrower than
-    // `isExternalToolName`: the daemon's own capability tools, Winter's extras-tier plugin tools
-    // (`plugin__*`, which reach a child as `mcp__winter__external__*`) and a spoofed `mcp__winter__…` name
+    // `isExternalToolName`: the daemon's own capability tools, Clover's extras-tier plugin tools
+    // (`plugin__*`, which reach a child as `mcp__clover__external__*`) and a spoofed `mcp__clover__…` name
     // keep chat's allow-or-deny.
     test("a connector action ASKS under 'chat'; every other external-looking name still denies", () => {
       expect(gate.evaluate("mcp__cf__workers_list", "chat")).toBe("ask");
       expect(gate.evaluate("mcp__github__create_issue", "chat")).toBe("ask");
-      for (const name of ["plugin__x__y", "mcp__winter__external__battery", "mcp__winter__x", "mcp__winter__computer__computer"]) {
+      for (const name of ["plugin__x__y", "mcp__clover__external__battery", "mcp__clover__x", "mcp__clover__computer__computer"]) {
         expect(gate.evaluate(name, "chat")).toBe("deny");
       }
     });

@@ -5,7 +5,7 @@ import { join } from "node:path";
 // A fresh process, so no other test's imports count; a Bun plugin records every host-env module that is loaded.
 test("a production-shaped daemon boots and stops without loading anything under cowork/host-env", async () => {
   const probe = join(import.meta.dir, "fixtures", "host-env-load-probe.ts");
-  const run = Bun.spawnSync([process.execPath, probe], { env: { PATH: process.env.PATH ?? "", HOME: process.env.TMPDIR ?? "/tmp", WINTER_KEYCHAIN_SERVICE: process.env.WINTER_KEYCHAIN_SERVICE ?? "winter-test-throwaway" }, stdout: "pipe", stderr: "pipe" });
+  const run = Bun.spawnSync([process.execPath, probe], { env: { PATH: process.env.PATH ?? "", HOME: process.env.TMPDIR ?? "/tmp", CLOVER_KEYCHAIN_SERVICE: process.env.CLOVER_KEYCHAIN_SERVICE ?? "clover-test-throwaway" }, stdout: "pipe", stderr: "pipe" });
   const out = run.stdout.toString().trim().split("\n").at(-1) ?? "";
   expect(run.exitCode, run.stderr.toString()).toBe(0);
   const result = JSON.parse(out) as { loaded: string[]; built: boolean | undefined };

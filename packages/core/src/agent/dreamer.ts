@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { COMPUTER_WAKE_CLIENT_NAME, DISPATCH_WAKE_CLIENT_NAME } from "@yanlinglabs/winter-protocol";
+import { COMPUTER_WAKE_CLIENT_NAME, DISPATCH_WAKE_CLIENT_NAME } from "@waifucave/clover-protocol";
 import type { Provider, TurnInputItem } from "../providers/types";
 import type { SessionStore } from "../sessions/store";
 import type { Settings } from "../settings";
@@ -19,7 +19,7 @@ export const DREAM_TICK_MS = 300_000; // 5min
 export const DREAM_WINDOW_MAX_CHARS = 200_000;
 
 export const DREAM_INSTRUCTION = [
-  "You are Winter's memory, consolidating while she rests. You receive: her current memory files, her tombstones list, today's date, and a transcript window of her recent conversations as the user's assistant (including outcomes of work sessions she delegated).",
+  "You are Clover's memory, consolidating while she rests. You receive: her current memory files, her tombstones list, today's date, and a transcript window of her recent conversations as the user's assistant (including outcomes of work sessions she delegated).",
   "Distill the transcript into durable memories:",
   "- SYNTHESIZE, don't transcribe: combine observations into abstractions that will matter weeks from now — preferences, ongoing projects, people, decisions, constraints. Never write fact-lists or echo single messages.",
   "- REVISE over time: every memory file carries `revised: <date>` frontmatter and a `sources: <seq ranges>` line. Update time-bounded facts as they age (an upcoming event becomes a past one; finished work is finished). Rewrite files rather than appending contradictions.",
@@ -61,7 +61,7 @@ export interface DreamerDeps {
    */
   resolve?: () => InternalCall | InternalRefusal;
   /** B-1: `InternalProviderView.refreshSoon` — reconciles the internal-jobs credential snapshot from the
-   *  scheduler's own slot (and after a rejected credential), so an out-of-band `winter login`/`winter
+   *  scheduler's own slot (and after a rejected credential), so an out-of-band `clover login`/`clover
    *  logout` is picked up with no restart. Rate-limited and non-blocking inside. Absent in every double. */
   refreshCredentials?: () => void;
   store: SessionStore;
@@ -72,7 +72,7 @@ export interface DreamerDeps {
   settings: () => Settings | null;
   activeTurnCount: () => number;    // engine idle signal
   now?: () => number;               // injectable clock (tests)
-  timeoutMs?: number;               // default WINTER_DREAM_TIMEOUT_MS ?? 120_000
+  timeoutMs?: number;               // default CLOVER_DREAM_TIMEOUT_MS ?? 120_000
   /** session-activity-hygiene T7 (spec §3): the session cleaner "rides the existing Dreaming cycle
    *  (its scheduler, its model configuration, low effort)". THE SCHEDULER is this class's tick
    *  timer, so the cleaner hangs off it here — one pass per tick, AFTER the dream pass.
@@ -90,7 +90,7 @@ export interface DreamerDeps {
   cleaner?: { runPass(): Promise<unknown> };
   /** 2026-09-18: quiet per-role failure notes (`providers/role-health.ts`) — OBSERVATION ONLY, never
    *  changes what `runCycle` throws/logs. Absent (every pre-existing test double) records nothing,
-   *  same as a daemon with no `winterHome` to persist against. */
+   *  same as a daemon with no `cloverHome` to persist against. */
   roleHealth?: RoleHealthRegistry;
 }
 
@@ -105,7 +105,7 @@ export class Dreamer {
     this.now = deps.now ?? Date.now;
     // A junk env value must fall back to the default, not become NaN — setTimeout(fn, NaN) fires
     // immediately (lsp/client.ts's envNum guards the same footgun the same way).
-    const n = Number(process.env.WINTER_DREAM_TIMEOUT_MS);
+    const n = Number(process.env.CLOVER_DREAM_TIMEOUT_MS);
     this.timeoutMs = deps.timeoutMs ?? (Number.isFinite(n) && n > 0 ? n : 120_000);
   }
 
@@ -130,7 +130,7 @@ export class Dreamer {
     this.inFlight = true;
     try {
       // B-1 (2026-09-19): the scheduler's slot is the natural place to reconcile the internal-jobs
-      // credential snapshot — a `winter login`/`winter logout` that happened out of band (both write the
+      // credential snapshot — a `clover login`/`clover logout` that happened out of band (both write the
       // Keychain in-process) is picked up here even on a daemon nothing else poked. Rate-limited and
       // non-blocking inside `refreshSoon`, so this is a no-op on the overwhelming majority of ticks.
       this.deps.refreshCredentials?.();
@@ -172,7 +172,7 @@ export class Dreamer {
     // 2026-09-19: ONE resolution for the whole cycle — provider, model, tag and effort from a single
     // settings/credential generation. A refusal skips the cycle, exactly as an `internalModelFor`
     // mismatch used to, but for the honest reasons only (nothing credentialed, or an explicit pin on a
-    // provider Winter's jobs cannot use) rather than for "the pin names a provider we did not bind".
+    // provider Clover's jobs cannot use) rather than for "the pin names a provider we did not bind".
     const resolved = this.deps.resolve?.();
     if (resolved !== undefined && isInternalRefusal(resolved)) return;
     const boundProviderId = resolved?.providerId ?? this.deps.provider?.live?.().providerId ?? ownProviderFor(settings);
@@ -203,7 +203,7 @@ export class Dreamer {
         if (e.clientName === DISPATCH_WAKE_CLIENT_NAME || e.clientName === COMPUTER_WAKE_CLIENT_NAME) continue;
         lines.push(e.clientName === "messaging" ? `[message from another session — not the user] ${e.text}` : `[user] ${e.text}`);
       }
-      else if (e.type === "assistant_message") lines.push(`[winter] ${e.text}`);
+      else if (e.type === "assistant_message") lines.push(`[clover] ${e.text}`);
       else if (e.type === "child_update") lines.push(`[delegated work "${e.title}" → ${e.status}]${e.resultSummary ? ` ${e.resultSummary}` : ""}`);
     }
     let transcript = lines.join("\n");
@@ -243,7 +243,7 @@ export class Dreamer {
           // ONLY the structured fields already on the event, never `ev.message` for its DECISION.
           sawProviderError = true;
           // B-1: a credential the provider REJECTED (or one it says is missing) is the other symptom of a
-          // stale snapshot — `winter logout` leaves the daemon believing codex is still signed in. Ask for
+          // stale snapshot — `clover logout` leaves the daemon believing codex is still signed in. Ask for
           // a rate-limited re-probe so the next cycle is right; never blocking, never per call.
           if (ev.code === "auth") this.deps.refreshCredentials?.();
           this.deps.roleHealth?.recordFailure("pins.dream", effectiveTag, classifyProviderFailure({ ...ev, subscriptionQuota: dreamQuota?.subscriptionQuota() }));

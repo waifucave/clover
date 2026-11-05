@@ -28,7 +28,7 @@ describe("feature detection", () => {
 
 describe("settleRunHome — dispose ONLY when the router says safe (L2 fix round 1)", () => {
   // Both legs, one rule: `safe` is the router's word that the incarnation ended AND reconciled (the
-  // Winter leg reports it once the query finished, closed or failed — `pending` while the child runs, and
+  // Clover leg reports it once the query finished, closed or failed — `pending` while the child runs, and
   // for a query nobody iterated). Everything else keeps the folder for recovery.
   const cases: Array<[string | undefined, "disposed" | "kept"]> = [
     ["safe", "disposed"],

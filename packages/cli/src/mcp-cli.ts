@@ -1,19 +1,19 @@
-// Pure/isolatable logic behind `winter mcp add|add-json|remove|get` — CLI parity with
+// Pure/isolatable logic behind `clover mcp add|add-json|remove|get` — CLI parity with
 // `claude mcp add|add-json|remove|get` (reference clone: `src/commands/mcp/addCommand.ts`,
 // `src/cli/handlers/mcp.tsx`, `src/services/mcp/utils.ts`). Split out of main.ts the same way
 // `model-cli.ts`/`plugin-cli.ts` are: main.ts owns argv slicing + printing + `process.exit`; this
 // file owns parsing, scope/transport validation, and the actual read-modify-write.
 //
-// WS-21 (spec §4.4, `winter mcp add` = `claude mcp add`): all three of claude's scopes, claude's
+// WS-21 (spec §4.4, `clover mcp add` = `claude mcp add`): all three of claude's scopes, claude's
 // names and claude's default —
-//   local    (the DEFAULT, as in claude)  sdk/.winter.json -> projects[<abs project root>].mcpServers
-//   user                                  sdk/.winter.json -> mcpServers
-//   project                               <project root>/.winter/mcp.json (claude's .mcp.json
+//   local    (the DEFAULT, as in claude)  sdk/.clover.json -> projects[<abs project root>].mcpServers
+//   user                                  sdk/.clover.json -> mcpServers
+//   project                               <project root>/.clover/mcp.json (claude's .mcp.json
 //                                         format; loaded only when the project is trusted; the
 //                                         repo-root .mcp.json is no longer read at all)
 //
 // DOOR VS. DIRECT: `user` scope's write goes through the daemon when it's live (`mcp.add`/
-// `mcp.remove` RPC, already wired to sdk/.winter.json — protocol/methods.ts's own header) and
+// `mcp.remove` RPC, already wired to sdk/.clover.json — protocol/methods.ts's own header) and
 // directly through Contract C's `addSdkUserMcpServer`/`removeSdkUserMcpServer` when it's not — the
 // SAME validated-write functions the daemon's own RPC handler calls, so the two paths can never
 // accept a write the other would refuse.
@@ -21,15 +21,15 @@
 // `local` and `project` are ALWAYS direct, never routed through the door, on THIS branch:
 //   - `local`'s daemon-side RPC handler still refuses the scope typed (protocol/methods.ts's own
 //     doc: "Local and project MCP scopes are refused typed until L3.5" — a FUTURE daemon-side task,
-//     not this lane's). `sdk/.winter.json` is a plain, atomically-written file the daemon's own
+//     not this lane's). `sdk/.clover.json` is a plain, atomically-written file the daemon's own
 //     SdkFilesWatcher picks up live regardless of who writes it (the "no daemon restart for
 //     settings" hard rule) — writing it directly works today and needs no daemon coordination, the
 //     same reasoning `user` scope's own no-daemon fallback already relies on.
 //   - `local`-scope servers are, unlike `user`-scope ones, never a live in-daemon connection to
-//     begin with — they're folded into a run folder's `.winter.json` at spawn time by the ROUTER
+//     begin with — they're folded into a run folder's `.clover.json` at spawn time by the ROUTER
 //     (spec §3.4.5), not started/managed by the daemon's own `McpManager` the way `user` servers
 //     are. There is no "hot-start" a door call could buy that a direct write doesn't already give.
-//   - `project` has always been direct (this file's own precedent, pre-WS-21): `.winter/mcp.json`
+//   - `project` has always been direct (this file's own precedent, pre-WS-21): `.clover/mcp.json`
 //     isn't daemon state either — no watcher, no settings-schema validation, just a project file the
 //     router reads live off disk when trusted (spec §3.4.5).
 //
@@ -50,13 +50,13 @@ import {
   loadSettings, saveSettings, setConnectorToolPermission, connectorPermissionTable,
   removeMcpServerForgettingPermissions, renameMcpServerCarryingSettings, McpRenameRefusal,
   type McpServerSettingsEntry, type ProjectMcpServerEntry,
-} from "@yanlinglabs/winter-core";
-import { McpAddEntrySchema } from "@yanlinglabs/winter-protocol";
+} from "@waifucave/clover-core";
+import { McpAddEntrySchema } from "@waifucave/clover-protocol";
 
 export type McpScope = "local" | "user" | "project";
 export type McpTransport = "stdio" | "http" | "sse";
 
-/** Structural — matches exactly the three `WinterClient` methods this file calls, so a test can
+/** Structural — matches exactly the three `CloverClient` methods this file calls, so a test can
  *  hand in a plain fake instead of a real socket connection. USER scope only (see this file's own
  *  header for why `local`/`project` never reach this door on this branch). */
 export interface McpDoor {
@@ -74,7 +74,7 @@ export interface McpDoor {
 
 export interface McpRouteDeps {
   cwd: string;
-  winterHome: string;
+  cloverHome: string;
   /** `undefined` when no daemon answered — the USER-scope route falls back to a direct, in-process
    *  write; `local`/`project` never use this at all (see this file's own header). */
   door?: McpDoor;
@@ -132,7 +132,7 @@ export function looksLikeMcpUrl(commandOrUrl: string): boolean {
 }
 
 // ------------------------------------------------------------------------------------------------
-// `winter mcp add` argv parsing
+// `clover mcp add` argv parsing
 // ------------------------------------------------------------------------------------------------
 
 export interface McpAddParsed {
@@ -143,12 +143,12 @@ export interface McpAddParsed {
   transportRaw?: string;
   envArgs: string[];
   headerArgs: string[];
-  /** WS-24: `--version-negotiation legacy|auto|<revision>` — Winter-only (claude has no such flag). */
+  /** WS-24: `--version-negotiation legacy|auto|<revision>` — Clover-only (claude has no such flag). */
   versionNegotiationRaw?: string;
 }
 export type McpAddParseResult = { kind: "ok"; parsed: McpAddParsed } | { kind: "usageError"; message: string };
 
-const ADD_USAGE = "usage: winter mcp add [-s local|user|project] [-t stdio|sse|http] [-e KEY=value...] [-H \"Name: value\"...] [--version-negotiation legacy|auto|<revision>] <name> <commandOrUrl> [-- args...]";
+const ADD_USAGE = "usage: clover mcp add [-s local|user|project] [-t stdio|sse|http] [-e KEY=value...] [-H \"Name: value\"...] [--version-negotiation legacy|auto|<revision>] <name> <commandOrUrl> [-- args...]";
 
 /** Flags may appear anywhere before the positionals; a bare `--` (commander's own convention, kept
  *  identical here) stops FLAG parsing only — positional consumption continues across it exactly as
@@ -190,13 +190,13 @@ export function parseMcpAddArgs(args: string[]): McpAddParseResult {
 }
 
 // ------------------------------------------------------------------------------------------------
-// `winter mcp add-json` argv parsing
+// `clover mcp add-json` argv parsing
 // ------------------------------------------------------------------------------------------------
 
 export interface McpAddJsonParsed { name: string; json: string; scopeRaw?: string }
 export type McpAddJsonParseResult = { kind: "ok"; parsed: McpAddJsonParsed } | { kind: "usageError"; message: string };
 
-const ADD_JSON_USAGE = "usage: winter mcp add-json [-s local|user|project] <name> <json>";
+const ADD_JSON_USAGE = "usage: clover mcp add-json [-s local|user|project] <name> <json>";
 
 export function parseMcpAddJsonArgs(args: string[]): McpAddJsonParseResult {
   let scopeRaw: string | undefined;
@@ -213,7 +213,7 @@ export function parseMcpAddJsonArgs(args: string[]): McpAddJsonParseResult {
 }
 
 // ------------------------------------------------------------------------------------------------
-// `winter mcp remove` / `winter mcp get` argv parsing
+// `clover mcp remove` / `clover mcp get` argv parsing
 // ------------------------------------------------------------------------------------------------
 
 export interface McpRemoveParsed { name: string; scopeRaw?: string }
@@ -228,13 +228,13 @@ export function parseMcpRemoveArgs(args: string[]): McpRemoveParseResult {
     positionals.push(tok);
   }
   const name = positionals[0];
-  if (!name) return { kind: "usageError", message: "usage: winter mcp remove <name> [-s local|user|project]" };
+  if (!name) return { kind: "usageError", message: "usage: clover mcp remove <name> [-s local|user|project]" };
   return { kind: "ok", parsed: { name, scopeRaw } };
 }
 
 export function parseMcpGetArgs(args: string[]): { kind: "ok"; name: string } | { kind: "usageError"; message: string } {
   const name = args[0];
-  if (!name) return { kind: "usageError", message: "usage: winter mcp get <name>" };
+  if (!name) return { kind: "usageError", message: "usage: clover mcp get <name>" };
   return { kind: "ok", name };
 }
 
@@ -244,7 +244,7 @@ export function parseMcpGetArgs(args: string[]): { kind: "ok"; name: string } | 
 
 export type McpEntryBuildResult = { kind: "ok"; entry: McpServerSettingsEntry } | { kind: "error"; message: string };
 
-/** Builds the entry `winter mcp add`'s flags describe, validating just enough to give a specific
+/** Builds the entry `clover mcp add`'s flags describe, validating just enough to give a specific
  *  error (a URL required for http/sse, `-e`/`-H` used on the wrong transport) — mirrors
  *  `addCommand.ts`'s own per-transport branching. Does NOT check project scope's stdio-only WRITE
  *  rule (a narrower choice of the write door, not of what the file format accepts — see this file's
@@ -276,7 +276,7 @@ type McpVersionNegotiationValue = NonNullable<McpServerSettingsEntry["versionNeg
 /**
  * WS-24: `--version-negotiation legacy|auto|<revision>` → the entry's `versionNegotiation` (the agent
  * SDK's own per-server choice; `settings.ts`'s `McpVersionNegotiationSetting`). `legacy` and `auto` are
- * the two named modes; any other value is a revision to PIN (`{ pin: "2026-07-28" }`). A Winter-only flag
+ * the two named modes; any other value is a revision to PIN (`{ pin: "2026-07-28" }`). A Clover-only flag
  * — claude has no protocol-era choice to make, so there is nothing of its to mirror. Absent → no key
  * (the runtime's per-transport default). An empty value is refused rather than guessed at.
  */
@@ -305,7 +305,7 @@ function wrongTransportFlagWarnings(parsed: McpAddParsed, transport: McpTranspor
 }
 
 // ------------------------------------------------------------------------------------------------
-// sdk/.winter.json LOCAL scope (projects[<root>].mcpServers) — always direct, see this file's own
+// sdk/.clover.json LOCAL scope (projects[<root>].mcpServers) — always direct, see this file's own
 // header. No Contract C writer exists for this yet (only the `user`-scope one, `mcp-write.ts`'s
 // `addSdkUserMcpServer`/`removeSdkUserMcpServer`), so this file carries its own — the SAME
 // validation (`validateMcpServerName`/`validateMcpServerEntryForWrite`) and the SAME
@@ -321,7 +321,7 @@ function addSdkLocalMcpServer(home: string, root: string, name: string, entry: u
     const existing = projects[root] ?? {};
     const servers = (existing.mcpServers as Record<string, unknown> | undefined) ?? {};
     if (Object.hasOwn(servers, name)) {
-      throw new Error(`MCP server "${name}" already exists in local config for ${root} — remove it first ("winter mcp remove ${name} --scope local") or edit sdk/.winter.json directly`);
+      throw new Error(`MCP server "${name}" already exists in local config for ${root} — remove it first ("clover mcp remove ${name} --scope local") or edit sdk/.clover.json directly`);
     }
     projects[root] = { ...existing, mcpServers: { ...servers, [name]: valid } };
     return { ...config, projects };
@@ -335,23 +335,23 @@ function sdkLocalServer(home: string, root: string, name: string): McpServerSett
 }
 
 // ------------------------------------------------------------------------------------------------
-// <root>/.winter/mcp.json PROJECT scope — claude's `.mcp.json` shape, at the WINTER-named path
+// <root>/.clover/mcp.json PROJECT scope — claude's `.mcp.json` shape, at the CLOVER-named path
 // (spec §4.4: "the repo-root .mcp.json is no longer read at all"). Reuses `parseProjectMcpServers`
 // (the per-entry validator — a pure function of the parsed JSON, not tied to any path) but never
 // `agent/mcp/project-file.ts`'s own path/read/write helpers, which are hardcoded to `.mcp.json`.
 // ------------------------------------------------------------------------------------------------
 
-export function winterMcpConfigPath(root: string): string {
-  return join(root, ".winter", "mcp.json");
+export function cloverMcpConfigPath(root: string): string {
+  return join(root, ".clover", "mcp.json");
 }
 
-type RawWinterMcpConfig =
+type RawCloverMcpConfig =
   | { kind: "absent" }
   | { kind: "malformed" }
   | { kind: "ok"; raw: Record<string, unknown>; servers: Record<string, unknown> };
 
-function readRawWinterMcpConfig(root: string): RawWinterMcpConfig {
-  const path = winterMcpConfigPath(root);
+function readRawCloverMcpConfig(root: string): RawCloverMcpConfig {
+  const path = cloverMcpConfigPath(root);
   let text: string;
   try {
     text = readFileSync(path, "utf8");
@@ -375,8 +375,8 @@ function readRawWinterMcpConfig(root: string): RawWinterMcpConfig {
 /** Atomic write: temp file beside the target, then rename — same discipline
  *  `agent/mcp/project-file.ts`'s own `.mcp.json` writer uses, for the same reason (a team-shared
  *  file another process/editor may read mid-write). */
-function writeRawWinterMcpConfig(root: string, raw: Record<string, unknown>, servers: Record<string, unknown>): void {
-  const path = winterMcpConfigPath(root);
+function writeRawCloverMcpConfig(root: string, raw: Record<string, unknown>, servers: Record<string, unknown>): void {
+  const path = cloverMcpConfigPath(root);
   mkdirSync(dirname(path), { recursive: true });
   const next = { ...raw, mcpServers: servers };
   const tmp = `${path}.${process.pid}.tmp`;
@@ -388,13 +388,13 @@ function addProjectMcpServer(servers: Record<string, unknown>, name: string, ent
   const nameErr = validateMcpServerName(name);
   if (nameErr) throw new Error(nameErr);
   if (Object.hasOwn(servers, name)) {
-    throw new Error(`MCP server "${name}" already exists in project config — remove it first ("winter mcp remove ${name} --scope project") or edit .winter/mcp.json directly`);
+    throw new Error(`MCP server "${name}" already exists in project config — remove it first ("clover mcp remove ${name} --scope project") or edit .clover/mcp.json directly`);
   }
   return { ...servers, [name]: entry };
 }
 
 // ------------------------------------------------------------------------------------------------
-// Route functions — the full round trip (I/O via the injected door and `@yanlinglabs/winter-core`),
+// Route functions — the full round trip (I/O via the injected door and `@waifucave/clover-core`),
 // returning a plain outcome object. Nothing here prints or exits; `main.ts`'s `case "mcp"` does.
 // ------------------------------------------------------------------------------------------------
 
@@ -406,10 +406,10 @@ export type McpAddOutcome =
 
 /** R.3 residual: the project scope's trust, keyed on the REPOSITORY (`projectScopeTrusted`) — a linked
  *  worktree of a trusted repo is trusted, as the run home and the daemon read it. */
-function isTrustedDir(winterHome: string, dir: string): boolean {
+function isTrustedDir(cloverHome: string, dir: string): boolean {
   let real = dir;
   try { real = realpathSync(dir); } catch { /* the trust store falls back to the given path too */ }
-  return projectScopeTrusted(real, new TrustStore(join(winterHome, "trust.json")));
+  return projectScopeTrusted(real, new TrustStore(join(cloverHome, "trust.json")));
 }
 
 // Post-merge round: `projectRootFor` (a plain `realpathSync(cwd)`, no git awareness — this file's own
@@ -429,7 +429,7 @@ async function addUserScope(deps: McpRouteDeps, name: string, entry: McpServerSe
     }
   }
   try {
-    addSdkUserMcpServer(deps.winterHome, name, entry);
+    addSdkUserMcpServer(deps.cloverHome, name, entry);
   } catch (err) {
     return { ok: false, message: (err as Error).message };
   }
@@ -439,19 +439,19 @@ async function addUserScope(deps: McpRouteDeps, name: string, entry: McpServerSe
 function addLocalScope(deps: McpRouteDeps, name: string, entry: McpServerSettingsEntry, transport: McpTransport): McpAddOutcome {
   const root = localScopeKeyFor(deps.cwd);
   try {
-    addSdkLocalMcpServer(deps.winterHome, root, name, entry);
+    addSdkLocalMcpServer(deps.cloverHome, root, name, entry);
   } catch (err) {
     return { ok: false, message: (err as Error).message };
   }
   return { ok: true, scope: "local", name, transport, root };
 }
 
-/** A message shared by every project-scope write that finds `.winter/mcp.json` unreadable —
+/** A message shared by every project-scope write that finds `.clover/mcp.json` unreadable —
  *  REFUSES rather than silently replaces it: this file has no watcher/keep-last-good the way
  *  settings.json does, so "degrade to empty and write anyway" would delete every server a human or
  *  claude configured there. */
 function malformedProjectFileMessage(cwd: string, verb: string): string {
-  return `${winterMcpConfigPath(cwd)} is not valid JSON — fix it before ${verb} (Winter refuses to overwrite a project file it cannot parse)`;
+  return `${cloverMcpConfigPath(cwd)} is not valid JSON — fix it before ${verb} (Clover refuses to overwrite a project file it cannot parse)`;
 }
 
 /** A stdio entry in the project file's shape — `versionNegotiation` included (WS-24: both project-scope
@@ -467,7 +467,7 @@ function projectStdioEntry(e: Extract<McpServerSettingsEntry, { type: "stdio" }>
 
 function addProjectScope(deps: McpRouteDeps, name: string, entry: ProjectMcpServerEntry): McpAddOutcome {
   const root = projectScopeRootFor(deps.cwd);
-  const read = readRawWinterMcpConfig(root);
+  const read = readRawCloverMcpConfig(root);
   if (read.kind === "malformed") return { ok: false, message: malformedProjectFileMessage(root, `adding "${name}"`) };
   const servers = read.kind === "ok" ? read.servers : {};
   let next: Record<string, unknown>;
@@ -476,14 +476,14 @@ function addProjectScope(deps: McpRouteDeps, name: string, entry: ProjectMcpServ
   } catch (err) {
     return { ok: false, message: (err as Error).message };
   }
-  writeRawWinterMcpConfig(root, read.kind === "ok" ? read.raw : {}, next);
-  return { ok: true, scope: "project", name, transport: "stdio", cwd: root, trusted: isTrustedDir(deps.winterHome, deps.cwd) };
+  writeRawCloverMcpConfig(root, read.kind === "ok" ? read.raw : {}, next);
+  return { ok: true, scope: "project", name, transport: "stdio", cwd: root, trusted: isTrustedDir(deps.cloverHome, deps.cwd) };
 }
 
-/** `winter mcp add` — the full route. Refuses `--transport http|sse` at PROJECT scope: not because
+/** `clover mcp add` — the full route. Refuses `--transport http|sse` at PROJECT scope: not because
  *  the reader can't handle it any more (it accepts http/sse too, per-entry — this file's own
  *  header), but because THIS write door hasn't been asked to grow a new transport; use `-s user`
- *  or `-s local`, or hand-edit `.winter/mcp.json` directly for a project-scope http/sse entry.
+ *  or `-s local`, or hand-edit `.clover/mcp.json` directly for a project-scope http/sse entry.
  *  LOCAL scope has the same restriction, same reasoning. */
 export async function runMcpAddRoute(args: string[], deps: McpRouteDeps): Promise<McpAddOutcome> {
   const parseResult = parseMcpAddArgs(args);
@@ -498,7 +498,7 @@ export async function runMcpAddRoute(args: string[], deps: McpRouteDeps): Promis
   const { transport } = transportResult;
 
   if ((scopeResult.scope === "project" || scopeResult.scope === "local") && transport !== "stdio") {
-    return { ok: false, message: `winter mcp add --scope ${scopeResult.scope} only writes a stdio entry today — use "-s user" to add an http/sse server, or edit ${scopeResult.scope === "project" ? ".winter/mcp.json" : "sdk/.winter.json"} directly for one at this scope` };
+    return { ok: false, message: `clover mcp add --scope ${scopeResult.scope} only writes a stdio entry today — use "-s user" to add an http/sse server, or edit ${scopeResult.scope === "project" ? ".clover/mcp.json" : "sdk/.clover.json"} directly for one at this scope` };
   }
 
   const entryResult = buildMcpEntry(parsed, transport);
@@ -528,8 +528,8 @@ export async function runMcpAddRoute(args: string[], deps: McpRouteDeps): Promis
   return outcome.ok && warning ? { ...outcome, warning } : outcome;
 }
 
-/** `winter mcp add-json` — validates the JSON's SHAPE against the same wire schema `mcp.add`'s RPC
- *  params use (`McpAddEntrySchema`, `@yanlinglabs/winter-protocol`) before ever reaching a scope's
+/** `clover mcp add-json` — validates the JSON's SHAPE against the same wire schema `mcp.add`'s RPC
+ *  params use (`McpAddEntrySchema`, `@waifucave/clover-protocol`) before ever reaching a scope's
  *  write door, mirroring claude's own `McpServerConfigSchema().safeParse(config)` gate. */
 export async function runMcpAddJsonRoute(args: string[], deps: McpRouteDeps): Promise<McpAddOutcome> {
   const parseResult = parseMcpAddJsonArgs(args);
@@ -560,7 +560,7 @@ export async function runMcpAddJsonRoute(args: string[], deps: McpRouteDeps): Pr
   }
 
   if ((scopeResult.scope === "project" || scopeResult.scope === "local") && shaped.data.type !== "stdio") {
-    return { ok: false, message: `winter mcp add --scope ${scopeResult.scope} only writes a stdio entry today — use "-s user" to add an http/sse server, or edit ${scopeResult.scope === "project" ? ".winter/mcp.json" : "sdk/.winter.json"} directly for one at this scope` };
+    return { ok: false, message: `clover mcp add --scope ${scopeResult.scope} only writes a stdio entry today — use "-s user" to add an http/sse server, or edit ${scopeResult.scope === "project" ? ".clover/mcp.json" : "sdk/.clover.json"} directly for one at this scope` };
   }
   if (scopeResult.scope === "project") {
     return addProjectScope(deps, parsed.name, projectStdioEntry(shaped.data as Extract<McpServerSettingsEntry, { type: "stdio" }>));
@@ -584,21 +584,21 @@ async function userScopeHasServer(deps: McpRouteDeps, name: string): Promise<boo
   if (deps.door) {
     try { return (await deps.door.mcpGet(name)).found; } catch { return false; }
   }
-  try { return Object.hasOwn(readSdkGlobalConfig(deps.winterHome).mcpServers ?? {}, name); } catch { return false; }
+  try { return Object.hasOwn(readSdkGlobalConfig(deps.cloverHome).mcpServers ?? {}, name); } catch { return false; }
 }
 
 function localScopeHasServer(deps: McpRouteDeps, name: string): boolean {
-  try { return sdkLocalServer(deps.winterHome, localScopeKeyFor(deps.cwd), name) !== undefined; } catch { return false; }
+  try { return sdkLocalServer(deps.cloverHome, localScopeKeyFor(deps.cwd), name) !== undefined; } catch { return false; }
 }
 
-/** Tri-state, not a boolean: a malformed project `.winter/mcp.json` must never be silently read as
+/** Tri-state, not a boolean: a malformed project `.clover/mcp.json` must never be silently read as
  *  "not there" — the ambient (no `-s`) branch surfaces the parse error instead, the same way
  *  `mcp get` already does. */
 type ProjectScopeCheck = { kind: "found" } | { kind: "absent" } | { kind: "malformed"; message: string };
 
 function projectScopeHasServer(deps: McpRouteDeps, name: string): ProjectScopeCheck {
   const root = projectScopeRootFor(deps.cwd);
-  const read = readRawWinterMcpConfig(root);
+  const read = readRawCloverMcpConfig(root);
   if (read.kind === "malformed") return { kind: "malformed", message: malformedProjectFileMessage(root, `checking for "${name}"`) };
   if (read.kind === "absent") return { kind: "absent" };
   return { kind: Object.hasOwn(read.servers, name) ? "found" : "absent" };
@@ -607,7 +607,7 @@ function projectScopeHasServer(deps: McpRouteDeps, name: string): ProjectScopeCh
 /** WS-27: where a direct (no-daemon, or local/project) remove or rename reads trust — the same file the daemon's
  *  own `TrustStore` reads — so it can tell whether a trusted project still defines the name. */
 function nameContext(deps: McpRouteDeps): { cwd: string; trust: TrustStore } {
-  return { cwd: deps.cwd, trust: new TrustStore(join(deps.winterHome, "trust.json")) };
+  return { cwd: deps.cwd, trust: new TrustStore(join(deps.cloverHome, "trust.json")) };
 }
 
 type ScopeRemoveResult = { ok: true; removed: boolean; permissionsCleared?: true; permissionsNote?: string; rulesNotFollowed?: string[]; nameStillInUse?: true } | { ok: false; message: string };
@@ -620,7 +620,7 @@ type ScopeRemoveResult = { ok: true; removed: boolean; permissionsCleared?: true
 async function removeInScope(deps: McpRouteDeps, scope: McpScope, name: string): Promise<ScopeRemoveResult> {
   if (scope === "project") {
     const root = projectScopeRootFor(deps.cwd);
-    const read = readRawWinterMcpConfig(root);
+    const read = readRawCloverMcpConfig(root);
     if (read.kind === "malformed") return { ok: false, message: malformedProjectFileMessage(root, `removing "${name}"`) };
     if (read.kind === "absent") return { ok: true, removed: false };
   }
@@ -629,7 +629,7 @@ async function removeInScope(deps: McpRouteDeps, scope: McpScope, name: string):
     r = await deps.door.mcpRemove(name, scope, scope === "user" ? undefined : deps.cwd);
   } else {
     const root = scope === "local" ? localScopeKeyFor(deps.cwd) : scope === "project" ? projectScopeRootFor(deps.cwd) : undefined;
-    r = removeMcpServerForgettingPermissions({ home: deps.winterHome, scope, ...(root !== undefined ? { root } : {}) }, name, nameContext(deps));
+    r = removeMcpServerForgettingPermissions({ home: deps.cloverHome, scope, ...(root !== undefined ? { root } : {}) }, name, nameContext(deps));
   }
   return {
     ok: true, removed: r.removed,
@@ -649,7 +649,7 @@ async function removeOutcome(deps: McpRouteDeps, scope: McpScope, name: string):
   return { ok: true, scope, name, ...rest, cwd: projectScopeRootFor(deps.cwd) };
 }
 
-/** `winter mcp remove` — with an explicit `-s`, removes from just that scope (a "not found there"
+/** `clover mcp remove` — with an explicit `-s`, removes from just that scope (a "not found there"
  *  still reports `removed: false`, never an error, matching `mcp.remove`'s own idempotent RPC
  *  posture). With NO `-s`, mirrors claude's own ambiguity handling (`mcpRemoveHandler`): check all
  *  three scopes, remove from whichever ONE has it, refuse typed if it's in none, and hand back the
@@ -681,10 +681,10 @@ export async function runMcpRemoveRoute(args: string[], deps: McpRouteDeps): Pro
 }
 
 // ------------------------------------------------------------------------------------------------
-// WS-27: `winter mcp rename <old> <new> [-s local|user|project]`
+// WS-27: `clover mcp rename <old> <new> [-s local|user|project]`
 // ------------------------------------------------------------------------------------------------
 
-const RENAME_USAGE = "usage: winter mcp rename <old> <new> [-s local|user|project]";
+const RENAME_USAGE = "usage: clover mcp rename <old> <new> [-s local|user|project]";
 
 export interface McpRenameDoorResult {
   ok: true; name: string; newName: string; carried: boolean; keptOld: boolean;
@@ -697,7 +697,7 @@ export type McpRenameOutcome =
   | { ok: false; multi: true; name: string; scopes: McpScope[] };
 
 /**
- * `winter mcp rename` — within one scope (with no `-s`, the one scope that defines the name, as `remove`
+ * `clover mcp rename` — within one scope (with no `-s`, the one scope that defines the name, as `remove`
  * finds it; several → the "which scope" listing). Routed like `remove`: the USER scope through the daemon's
  * `mcp.rename` when it is live, every other case through the same core door in-process
  * (`renameMcpServerCarryingSettings`), so the connector permissions and `mcp.disabled` follow the rename
@@ -729,12 +729,12 @@ export async function runMcpRenameRoute(args: string[], deps: McpRouteDeps): Pro
   try {
     // Review 6: with a live daemon, every scope goes through `mcp.rename` (scope + cwd).
     if (deps.door !== undefined) {
-      if (deps.door.mcpRename === undefined) return { ok: false, message: "this daemon has no mcp.rename — update Winter, or stop the daemon to rename in-process" };
+      if (deps.door.mcpRename === undefined) return { ok: false, message: "this daemon has no mcp.rename — update Clover, or stop the daemon to rename in-process" };
       const r = await deps.door.mcpRename(name, newName, scope, scope === "user" ? undefined : deps.cwd);
       return { ok: true, scope, name, newName, carried: r.carried, keptOld: r.keptOld, rulesNotFollowed: r.rulesNotFollowed ?? [], ...(r.protectiveRulesNotFollowed !== undefined && r.protectiveRulesNotFollowed.length > 0 ? { protectiveRulesNotFollowed: r.protectiveRulesNotFollowed } : {}), ...(r.note !== undefined ? { note: r.note } : {}), via: "daemon" };
     }
     const root = scope === "local" ? localScopeKeyFor(deps.cwd) : scope === "project" ? projectScopeRootFor(deps.cwd) : undefined;
-    const r = renameMcpServerCarryingSettings({ home: deps.winterHome, scope, ...(root !== undefined ? { root } : {}) }, name, newName, nameContext(deps));
+    const r = renameMcpServerCarryingSettings({ home: deps.cloverHome, scope, ...(root !== undefined ? { root } : {}) }, name, newName, nameContext(deps));
     return { ok: true, scope, name, newName, carried: r.carried, keptOld: r.keptOld, rulesNotFollowed: r.rulesNotFollowed, ...(r.protectiveRulesNotFollowed.length > 0 ? { protectiveRulesNotFollowed: r.protectiveRulesNotFollowed } : {}), ...(r.note !== undefined ? { note: r.note } : {}), via: "local" };
   } catch (err) {
     if (err instanceof McpRenameRefusal) return { ok: false, message: err.message, code: err.code };
@@ -749,7 +749,7 @@ export function renderMcpRenameOutcome(outcome: McpRenameOutcome): string {
       const lines = [`MCP server "${outcome.name}" exists in multiple scopes:`];
       for (const s of outcome.scopes) lines.push(`  - ${scopeLabel(s)}`);
       lines.push("", "To rename in a specific scope, use:");
-      for (const s of outcome.scopes) lines.push(`  winter mcp rename "${outcome.name}" <new> -s ${s}`);
+      for (const s of outcome.scopes) lines.push(`  clover mcp rename "${outcome.name}" <new> -s ${s}`);
       return lines.join("\n");
     }
     return outcome.message;
@@ -760,7 +760,7 @@ export function renderMcpRenameOutcome(outcome: McpRenameOutcome): string {
   const where = outcome.via === "daemon" ? "" : " (no daemon was running; live sessions pick it up at their next start)";
   const lines = [`Renamed MCP server "${outcome.name}" to "${outcome.newName}" in ${scopeLabel(outcome.scope)}${settings}${where}.`];
   if (outcome.rulesNotFollowed.length > 0) {
-    lines.push(`These rules could still name "${outcome.name}" — Winter never rewrites a rule, so they do not follow the rename; edit them yourself:`);
+    lines.push(`These rules could still name "${outcome.name}" — Clover never rewrites a rule, so they do not follow the rename; edit them yourself:`);
     for (const r of outcome.rulesNotFollowed) lines.push(`  ${r}`);
   }
   // Called out apart: a deny or ask rule left on the old name no longer stops or cards the renamed server.
@@ -778,13 +778,13 @@ export type McpGetOutcome =
       command?: string; args?: string[]; env?: Record<string, string>;
       url?: string; headers?: Record<string, string>; disabled?: boolean; strippedHeaders?: string[];
       cwd?: string;
-      /** Set ONLY for a project-scope entry that is PRESENT in `.winter/mcp.json` but does not
+      /** Set ONLY for a project-scope entry that is PRESENT in `.clover/mcp.json` but does not
        *  validate against any recognized shape (`parseProjectMcpServers`' own skip reason). */
       unrecognized?: string;
     }
   | { ok: false; message: string };
 
-/** `winter mcp get <name>` — no `-s` flag (claude's own `get` has none either): checks LOCAL scope
+/** `clover mcp get <name>` — no `-s` flag (claude's own `get` has none either): checks LOCAL scope
  *  first, then USER, then PROJECT — local shadows user shadows project, mirroring claude's own
  *  merge-order precedence (F17: arrays/tiers layer local-most-specific-wins). Project-scope reads
  *  go through the SAME per-entry parser (`parseProjectMcpServers`) the daemon's own readers use —
@@ -801,7 +801,7 @@ export async function runMcpGetRoute(args: string[], deps: McpRouteDeps): Promis
   // knows nothing about this header rule (it's a `settings.ts`-level concern). `strippedHeaders`
   // below is computed separately, off the RAW file, since the cleaned entry can no longer say what
   // it lost.
-  const local = sdkLocalMcpServers(deps.winterHome, localScopeKeyFor(deps.cwd))[name];
+  const local = sdkLocalMcpServers(deps.cloverHome, localScopeKeyFor(deps.cwd))[name];
   if (local) {
     return {
       ok: true, found: true, name, scope: "local", transport: local.type,
@@ -822,23 +822,23 @@ export async function runMcpGetRoute(args: string[], deps: McpRouteDeps): Promis
     } catch { /* fall through to project scope below */ }
   } else {
     try {
-      const entry = sdkUserMcpServers(deps.winterHome)[name];
+      const entry = sdkUserMcpServers(deps.cloverHome)[name];
       if (entry) {
         // Read-door correction, matching the RPC handler's own `mcp.get` exactly: which
         // credential-shaped headers were silently stripped for THIS server, read fresh off the
         // RAW file — `entry` above, by construction, can no longer say what it lost.
-        const strippedHeaders = stripCredentialShapedMcpHeaders(readRawSettings(sdkGlobalConfigPath(deps.winterHome)) ?? {})[name];
+        const strippedHeaders = stripCredentialShapedMcpHeaders(readRawSettings(sdkGlobalConfigPath(deps.cloverHome)) ?? {})[name];
         return {
           ok: true, found: true, name, scope: "user", transport: entry.type,
           ...(entry.type === "stdio" ? { command: entry.command, args: entry.args, env: entry.env } : { url: entry.url, headers: entry.headers }),
           ...(strippedHeaders && strippedHeaders.length > 0 ? { strippedHeaders } : {}),
         };
       }
-    } catch { /* no sdk/.winter.json yet — fall through */ }
+    } catch { /* no sdk/.clover.json yet — fall through */ }
   }
 
   const root = projectScopeRootFor(deps.cwd);
-  const read = readRawWinterMcpConfig(root);
+  const read = readRawCloverMcpConfig(root);
   if (read.kind === "malformed") return { ok: false, message: malformedProjectFileMessage(root, `reading "${name}"`) };
   if (read.kind === "ok") {
     const { servers, skipped } = parseProjectMcpServers(read.servers);
@@ -862,9 +862,9 @@ export async function runMcpGetRoute(args: string[], deps: McpRouteDeps): Promis
 // ------------------------------------------------------------------------------------------------
 
 function scopeLabel(scope: McpScope, location?: string): string {
-  if (scope === "user") return "user config (sdk/.winter.json)";
-  if (scope === "local") return `local config (sdk/.winter.json${location ? `, ${location}` : ""})`;
-  return `project config (.winter/mcp.json${location ? `, ${location}` : ""})`;
+  if (scope === "user") return "user config (sdk/.clover.json)";
+  if (scope === "local") return `local config (sdk/.clover.json${location ? `, ${location}` : ""})`;
+  return `project config (.clover/mcp.json${location ? `, ${location}` : ""})`;
 }
 
 export function renderMcpAddOutcome(outcome: McpAddOutcome): string {
@@ -873,7 +873,7 @@ export function renderMcpAddOutcome(outcome: McpAddOutcome): string {
   // gets its own "Warning: " line rather than only the first.
   const warningLine = outcome.warning ? `${outcome.warning.split("\n").map((w) => `Warning: ${w}`).join("\n")}\n` : "";
   if (outcome.scope === "project") {
-    const trustNote = outcome.trusted ? "" : ` — not yet loaded: this project is not trusted yet (run \`winter trust ${outcome.cwd}\` to trust it)`;
+    const trustNote = outcome.trusted ? "" : ` — not yet loaded: this project is not trusted yet (run \`clover trust ${outcome.cwd}\` to trust it)`;
     return `${warningLine}Added ${outcome.transport} MCP server "${outcome.name}" to ${scopeLabel("project", outcome.cwd)}${trustNote}`;
   }
   if (outcome.scope === "local") {
@@ -895,7 +895,7 @@ export function renderMcpRemoveOutcome(outcome: McpRemoveOutcome): string {
       const lines = [`MCP server "${outcome.name}" exists in multiple scopes:`];
       for (const s of outcome.scopes) lines.push(`  - ${scopeLabel(s)}`);
       lines.push("", "To remove from a specific scope, use:");
-      for (const s of outcome.scopes) lines.push(`  winter mcp remove "${outcome.name}" -s ${s}`);
+      for (const s of outcome.scopes) lines.push(`  clover mcp remove "${outcome.name}" -s ${s}`);
       return lines.join("\n");
     }
     return outcome.message;
@@ -906,7 +906,7 @@ export function renderMcpRemoveOutcome(outcome: McpRemoveOutcome): string {
   if (outcome.rulesNotFollowed !== undefined) {
     extra.push(outcome.nameStillInUse === true
       ? `These rules could still name "${outcome.name}" — a server of that name remains (another scope or a live session), and they still apply to it:`
-      : `These rules could still name "${outcome.name}" and remain as they are (Winter never edits a rule) — edit them if you want them gone:`);
+      : `These rules could still name "${outcome.name}" and remain as they are (Clover never edits a rule) — edit them if you want them gone:`);
     for (const r of outcome.rulesNotFollowed) extra.push(`  ${r}`);
   }
   if (outcome.permissionsNote !== undefined) extra.push(outcome.permissionsNote);
@@ -928,7 +928,7 @@ export function renderMcpGetOutcome(outcome: McpGetOutcome): string {
       `  Scope: ${scopeLabel(outcome.scope, outcome.cwd)}`,
       `  (not recognized: ${outcome.unrecognized})`,
       "",
-      `To remove this server, run: winter mcp remove "${outcome.name}" -s ${outcome.scope}`,
+      `To remove this server, run: clover mcp remove "${outcome.name}" -s ${outcome.scope}`,
     ].join("\n");
   }
   const lines = [`${outcome.name}:`, `  Scope: ${scopeLabel(outcome.scope, outcome.cwd)}`, `  Type: ${outcome.transport}`];
@@ -946,14 +946,14 @@ export function renderMcpGetOutcome(outcome: McpGetOutcome): string {
       for (const [k, v] of Object.entries(outcome.headers)) lines.push(`    ${k}: ${v}`);
     }
   }
-  if (outcome.strippedHeaders?.length) lines.push(`  (dropped credential-shaped header(s) at read time: ${outcome.strippedHeaders.join(", ")} — sdk/.winter.json is model-readable; see CLAUDE.md)`);
-  if (outcome.disabled) lines.push("  Disabled: yes (winter mcp add ran, but this name is in settings.mcp.disabled)");
-  lines.push("", `To remove this server, run: winter mcp remove "${outcome.name}" -s ${outcome.scope}`);
+  if (outcome.strippedHeaders?.length) lines.push(`  (dropped credential-shaped header(s) at read time: ${outcome.strippedHeaders.join(", ")} — sdk/.clover.json is model-readable; see CLAUDE.md)`);
+  if (outcome.disabled) lines.push("  Disabled: yes (clover mcp add ran, but this name is in settings.mcp.disabled)");
+  lines.push("", `To remove this server, run: clover mcp remove "${outcome.name}" -s ${outcome.scope}`);
   return lines.join("\n");
 }
 
 // ------------------------------------------------------------------------------------------------
-// WS-25 (MCP OAuth): `winter mcp login <name>` / `logout <name> [--forget-client]` / `set-secret <name>`
+// WS-25 (MCP OAuth): `clover mcp login <name>` / `logout <name> [--forget-client]` / `set-secret <name>`
 // ------------------------------------------------------------------------------------------------
 //
 // THROUGH THE DAEMON WHEN IT IS LIVE (`mcp.login`/`mcp.loginStatus`/`mcp.logout`/`mcp.setClientSecret`):
@@ -961,7 +961,7 @@ export function renderMcpGetOutcome(outcome: McpGetOutcome): string {
 // is keyed on, and reconnects the server in every live session afterwards. With no daemon the SAME code
 // runs in this process (`McpOAuthDoors`, the core module behind those RPCs) against the same Keychain
 // service, and a daemon that comes up later reads the result; `poke` tells a live one anyway (the
-// `winter login` pattern, `notifyDaemonOfOutOfBandCredentialChange`).
+// `clover login` pattern, `notifyDaemonOfOutOfBandCredentialChange`).
 //
 // A CLIENT SECRET is read ONLY at the masked prompt (`readSecret`) or, where there is no terminal to prompt
 // in (an agent's `!` shell), from the macOS clipboard with `--from-clipboard` — spawned `pbpaste` inside this
@@ -1025,7 +1025,7 @@ export interface McpAuthDeps {
   poke: () => Promise<boolean>;
   sleep?: (ms: number) => Promise<void>;
   pollMs?: number;
-  /** The command a hint names (`cliCommandName`: `winter-dev` on the dev profile); default `winter`. */
+  /** The command a hint names (`cliCommandName`: `clover-dev` on the dev profile); default `clover`. */
   commandName?: string;
 }
 
@@ -1048,9 +1048,9 @@ interface McpAuthArgs {
 }
 
 function parseMcpAuthArgs(verb: "login" | "logout" | "set-secret", args: string[]): { kind: "ok"; parsed: McpAuthArgs } | { kind: "usageError"; message: string } {
-  const usage = verb === "logout" ? "usage: winter mcp logout <name> [--forget-client] [-s local|user|project]"
-    : verb === "login" ? "usage: winter mcp login <name> [--yes] [--confirm-issuer-change] [-s local|user|project]"
-    : "usage: winter mcp set-secret <name> [--from-clipboard [--issuer <issuer>]] [-s local|user|project]";
+  const usage = verb === "logout" ? "usage: clover mcp logout <name> [--forget-client] [-s local|user|project]"
+    : verb === "login" ? "usage: clover mcp login <name> [--yes] [--confirm-issuer-change] [-s local|user|project]"
+    : "usage: clover mcp set-secret <name> [--from-clipboard [--issuer <issuer>]] [-s local|user|project]";
   let scopeRaw: string | undefined;
   let forgetClient = false;
   let yes = false;
@@ -1113,7 +1113,7 @@ export async function runMcpLoginRoute(args: string[], deps: McpAuthDeps): Promi
   try {
     const start = async (confirmIssuerChange: boolean): Promise<McpLoginStartedView> => {
       if (deps.door !== undefined) {
-        const { METHODS } = await import("@yanlinglabs/winter-protocol");
+        const { METHODS } = await import("@waifucave/clover-protocol");
         return deps.door.request(METHODS.mcpLogin, { name, ...(scope !== undefined ? { scope } : {}), cwd: deps.cwd, ...(confirmIssuerChange ? { confirmIssuerChange: true } : {}) });
       }
       return local!.login(local!.resolve({ name, ...(scope !== undefined ? { scope } : {}), cwd: deps.cwd }), confirmIssuerChange ? { confirmIssuerChange: true } : {});
@@ -1131,7 +1131,7 @@ export async function runMcpLoginRoute(args: string[], deps: McpAuthDeps): Promi
       // `--confirm-issuer-change` is the ONLY non-interactive answer to this: `--yes` never implies it.
       if (confirmIssuerChange) deps.print(`${change} Continuing (--confirm-issuer-change).`);
       else if (!(await deps.confirm(`${change} Continue with the new authorization server? [y/N] `))) {
-        return { ok: false, message: `sign-in cancelled — the authorization server changed and was not confirmed (to accept it without a prompt: ${deps.commandName ?? "winter"} mcp login ${name} --confirm-issuer-change)`, code: ISSUER_CHANGE };
+        return { ok: false, message: `sign-in cancelled — the authorization server changed and was not confirmed (to accept it without a prompt: ${deps.commandName ?? "clover"} mcp login ${name} --confirm-issuer-change)`, code: ISSUER_CHANGE };
       }
       started = await start(true);
     }
@@ -1151,7 +1151,7 @@ export async function runMcpLoginRoute(args: string[], deps: McpAuthDeps): Promi
       await sleep(pollMs);
       let status: { state: string; error?: string };
       if (deps.door !== undefined) {
-        const { METHODS } = await import("@yanlinglabs/winter-protocol");
+        const { METHODS } = await import("@waifucave/clover-protocol");
         status = await deps.door.request(METHODS.mcpLoginStatus, { loginId: started.loginId });
       } else {
         status = local!.loginStatus(started.loginId);
@@ -1161,7 +1161,7 @@ export async function runMcpLoginRoute(args: string[], deps: McpAuthDeps): Promi
         if (deps.door === undefined) await deps.poke();
         return { ok: true, kind: "login", name, via: deps.door !== undefined ? "daemon" : "in-process", issuerOrigin: started.issuerOrigin };
       }
-      if (status.state === "expired") return { ok: false, message: `the sign-in to "${name}" expired before it was completed in the browser — run ${deps.commandName ?? "winter"} mcp login ${name} again`, code: "expired" };
+      if (status.state === "expired") return { ok: false, message: `the sign-in to "${name}" expired before it was completed in the browser — run ${deps.commandName ?? "clover"} mcp login ${name} again`, code: "expired" };
       return { ok: false, message: `the sign-in to "${name}" failed${status.error !== undefined ? ` (${status.error})` : ""}`, code: "failed" };
     }
   } catch (err) {
@@ -1178,7 +1178,7 @@ export async function runMcpLogoutRoute(args: string[], deps: McpAuthDeps): Prom
   const { name, scope, forgetClient } = p.parsed;
   try {
     if (deps.door !== undefined) {
-      const { METHODS } = await import("@yanlinglabs/winter-protocol");
+      const { METHODS } = await import("@waifucave/clover-protocol");
       await deps.door.request(METHODS.mcpLogout, { name, ...(scope !== undefined ? { scope } : {}), cwd: deps.cwd, ...(forgetClient ? { forgetClient: true } : {}) });
       return { ok: true, kind: "logout", name, via: "daemon" };
     }
@@ -1197,7 +1197,7 @@ export async function runMcpLogoutRoute(args: string[], deps: McpAuthDeps): Prom
 }
 
 /**
- * `winter mcp set-secret <name>` (fix round 1, minor 4): WHERE the secret may go is shown and confirmed
+ * `clover mcp set-secret <name>` (fix round 1, minor 4): WHERE the secret may go is shown and confirmed
  * BEFORE the secret is asked for — `mcp.clientSecretIssuer` names the authorization server the user-scope
  * config discovers, the user answers y/N, then the masked prompt, then `mcp.setClientSecret` with that
  * confirmed `expectedIssuer` (the daemon discovers again and refuses `mcp_issuer_changed` if it moved).
@@ -1214,7 +1214,7 @@ export async function runMcpSetSecretRoute(args: string[], deps: McpAuthDeps): P
   try {
     let target: { name: string; issuer: string; issuerOrigin: string };
     if (deps.door !== undefined) {
-      const { METHODS } = await import("@yanlinglabs/winter-protocol");
+      const { METHODS } = await import("@waifucave/clover-protocol");
       target = await deps.door.request(METHODS.mcpClientSecretIssuer, ref);
     } else {
       target = await local!.clientSecretIssuer(local!.resolve(ref));
@@ -1224,7 +1224,7 @@ export async function runMcpSetSecretRoute(args: string[], deps: McpAuthDeps): P
     secret = (await deps.readSecret(`Client secret for "${target.name}": `)).trim();
     if (secret === "") return { ok: false, message: "no client secret entered — nothing stored" };
     if (deps.door !== undefined) {
-      const { METHODS } = await import("@yanlinglabs/winter-protocol");
+      const { METHODS } = await import("@waifucave/clover-protocol");
       const r = await deps.door.request(METHODS.mcpSetClientSecret, { ...ref, secret, expectedIssuer: target.issuer });
       return { ok: true, kind: "set-secret", name: target.name, via: "daemon", issuer: typeof r?.issuer === "string" ? r.issuer : target.issuer };
     }
@@ -1249,11 +1249,11 @@ export function renderMcpAuthOutcome(outcome: McpAuthOutcome): string {
   return `Client secret stored for "${outcome.name}"${outcome.issuer !== undefined ? `; it is sent only to ${outcome.issuer}` : ""}${where}.${clip}`;
 }
 
-/** `winter mcp list`'s auth note for one row (WS-25): empty when the daemon reported no auth column. */
+/** `clover mcp list`'s auth note for one row (WS-25): empty when the daemon reported no auth column. */
 export function mcpAuthNote(row: { auth?: string; oauthIssuerOrigin?: string; oauthPreregistered?: boolean }): string {
   if (row.auth === undefined || row.auth === "none") return "";
   const at = row.oauthIssuerOrigin !== undefined ? ` at ${row.oauthIssuerOrigin}` : "";
-  return row.auth === "signed-in" ? `signed in${at}` : `needs sign-in${at} (winter mcp login)`;
+  return row.auth === "signed-in" ? `signed in${at}` : `needs sign-in${at} (clover mcp login)`;
 }
 
 /** The longest clipboard value `--from-clipboard` accepts as a client secret: real ones are tens of
@@ -1268,7 +1268,7 @@ function sameIssuerLoose(a: string, b: string): boolean {
 }
 
 /**
- * `winter mcp set-secret <name> --from-clipboard [--issuer <issuer>]` — the NON-INTERACTIVE door (an agent's
+ * `clover mcp set-secret <name> --from-clipboard [--issuer <issuer>]` — the NON-INTERACTIVE door (an agent's
  * `!` shell has no terminal for the masked prompt or the y/N).
  *   - Without `--issuer`: the read-only `mcp.clientSecretIssuer`, one line naming the server and the
  *     authorization server the secret would be bound to, and an instruction to re-run with that exact issuer.
@@ -1290,7 +1290,7 @@ async function setSecretFromClipboard(name: string, scope: McpScope | undefined,
   try {
     let target: { name: string; scope?: string; url?: string; issuer: string };
     if (deps.door !== undefined) {
-      const { METHODS } = await import("@yanlinglabs/winter-protocol");
+      const { METHODS } = await import("@waifucave/clover-protocol");
       target = await deps.door.request(METHODS.mcpClientSecretIssuer, ref);
     } else {
       target = await local!.clientSecretIssuer(local!.resolve(ref));
@@ -1299,7 +1299,7 @@ async function setSecretFromClipboard(name: string, scope: McpScope | undefined,
     if (confirmedIssuer === undefined) {
       return {
         ok: false,
-        message: `nothing was read or stored — if that is the right authorization server, copy the secret and re-run: ${deps.commandName ?? "winter"} mcp set-secret ${target.name} --from-clipboard --issuer ${target.issuer}`,
+        message: `nothing was read or stored — if that is the right authorization server, copy the secret and re-run: ${deps.commandName ?? "clover"} mcp set-secret ${target.name} --from-clipboard --issuer ${target.issuer}`,
         code: "issuer_confirmation_required",
       };
     }
@@ -1321,7 +1321,7 @@ async function setSecretFromClipboard(name: string, scope: McpScope | undefined,
     }
     let stored: { name: string; via: "daemon" | "in-process"; issuer: string };
     if (deps.door !== undefined) {
-      const { METHODS } = await import("@yanlinglabs/winter-protocol");
+      const { METHODS } = await import("@waifucave/clover-protocol");
       const r = await deps.door.request(METHODS.mcpSetClientSecret, { ...ref, secret, expectedIssuer: confirmedIssuer });
       stored = { name: target.name, via: "daemon", issuer: typeof r?.issuer === "string" ? r.issuer : target.issuer };
     } else {
@@ -1347,12 +1347,12 @@ async function setSecretFromClipboard(name: string, scope: McpScope | undefined,
 }
 
 
-// ── WS-26: `winter mcp permissions` — the connector permissions from the terminal ──────────────────────
+// ── WS-26: `clover mcp permissions` — the connector permissions from the terminal ──────────────────────
 //
-// `winter mcp permissions <server> [<tool>] [allow|ask|deny|default]`:
+// `clover mcp permissions <server> [<tool>] [allow|ask|deny|default]`:
 //   - no verb: list — the server's actions with what applies and why (`mcp.tools`), or one action;
 //   - a verb: store it for `<tool>`, or for EVERY action of the server when `<tool>` is `*` or omitted
-//     (`winter mcp permissions cf deny` = all of cf's actions). A server-wide value also clears every
+//     (`clover mcp permissions cf deny` = all of cf's actions). A server-wide value also clears every
 //     per-action value (`resetTools`), exactly as the Mac's "All actions" control does — so "deny" means
 //     every action, and the line printed says what applies (review r1, minor 8). `default` clears the
 //     value (and, server-wide, only the server-wide value).
@@ -1368,7 +1368,7 @@ export type McpPermissionVerb = (typeof MCP_PERMISSION_VERBS)[number];
 export interface McpPermissionsParsed { server: string; tool?: string; verb?: McpPermissionVerb }
 
 export function parseMcpPermissionsArgs(args: string[]): { kind: "ok"; parsed: McpPermissionsParsed } | { kind: "usageError"; message: string } {
-  const usage = "usage: winter mcp permissions <server> [<tool> | '*'] [allow|ask|deny|default]";
+  const usage = "usage: clover mcp permissions <server> [<tool> | '*'] [allow|ask|deny|default]";
   if (args.some((a) => a.startsWith("-"))) return { kind: "usageError", message: usage };
   if (args.length === 0 || args.length > 3) return { kind: "usageError", message: usage };
   const [server, second, third] = args as [string, string | undefined, string | undefined];
@@ -1399,7 +1399,7 @@ export interface McpToolPermissionServer { name: string; status: string; allTool
 export interface McpPermissionsDeps {
   /** The daemon's door, when one answered. */
   door?: McpAuthRpcDoor;
-  winterHome: string;
+  cloverHome: string;
   cwd: string;
 }
 
@@ -1412,7 +1412,7 @@ export async function runMcpPermissionsRoute(args: string[], deps: McpPermission
   const p = parseMcpPermissionsArgs(args);
   if (p.kind === "usageError") return { ok: false, message: p.message };
   const { server, tool, verb } = p.parsed;
-  const { METHODS } = await import("@yanlinglabs/winter-protocol");
+  const { METHODS } = await import("@waifucave/clover-protocol");
   try {
     if (verb !== undefined) {
       const target = tool ?? "*";
@@ -1423,10 +1423,10 @@ export async function runMcpPermissionsRoute(args: string[], deps: McpPermission
         await deps.door.request(METHODS.mcpSetToolPermission, { server, tool: target, permission: verb, ...(reset ? { resetTools: true } : {}) });
         return { ok: true, kind: "set", via: "daemon", server, tool: target, permission: verb, reset };
       }
-      if (/\s/.test(server) || /\s/.test(target) || server === "winter" || server.startsWith("winter__")) {
+      if (/\s/.test(server) || /\s/.test(target) || server === "clover" || server.startsWith("clover__")) {
         return { ok: false, message: `"${server}" / "${target}" cannot name a connector action` };
       }
-      const path = join(deps.winterHome, "settings.json");
+      const path = join(deps.cloverHome, "settings.json");
       saveSettings(path, setConnectorToolPermission(loadSettings(path), server, target, verb === "default" ? undefined : verb, { resetTools: reset }));
       return { ok: true, kind: "set", via: "local", server, tool: target, permission: verb, reset };
     }
@@ -1436,7 +1436,7 @@ export async function runMcpPermissionsRoute(args: string[], deps: McpPermission
       return { ok: true, kind: "list", via: "daemon", server: row, ...(tool !== undefined && tool !== "*" ? { tool } : {}) };
     }
     // No daemon: the stored values alone (no probe, so no action list and no read-only marks).
-    const table = connectorPermissionTable(loadSettings(join(deps.winterHome, "settings.json")));
+    const table = connectorPermissionTable(loadSettings(join(deps.cloverHome, "settings.json")));
     const stored = Object.hasOwn(table, server) ? table[server]! : {};
     const tools = Object.entries(stored).filter(([t]) => t !== "*").map(([t, v]): McpToolPermissionRow => ({
       name: t, toolName: `mcp__${server}__${t}`, readOnly: false, setting: v, permission: v, source: "tool",
@@ -1449,7 +1449,7 @@ export async function runMcpPermissionsRoute(args: string[], deps: McpPermission
 
 const PERMISSION_LABEL: Record<"allow" | "ask" | "deny", string> = { allow: "Always allow", ask: "Always ask", deny: "Always deny" };
 
-export function renderMcpPermissionsOutcome(outcome: McpPermissionsOutcome, commandName = "winter"): string {
+export function renderMcpPermissionsOutcome(outcome: McpPermissionsOutcome, commandName = "clover"): string {
   if (!outcome.ok) return outcome.message;
   if (outcome.kind === "set") {
     const note = outcome.via === "daemon"

@@ -73,7 +73,7 @@ export function keyForChar(ch: string): (KeyDef & { shift: boolean }) | undefine
 
 /**
  * The macOS editing commands each combo means (AppKit's standard key bindings), sent WITH the key event as
- * `Input.dispatchKeyEvent`'s `commands`: on a Mac it is the native text system — or, in Winter's browser, the app's
+ * `Input.dispatchKeyEvent`'s `commands`: on a Mac it is the native text system — or, in Clover's browser, the app's
  * menu, which no longer sees a held tab's keys — that turns a key into an edit, never the page. A command runs only in
  * an editable element (elsewhere it is not enabled, and the key's ordinary handling — scrolling, a slider — goes on).
  * Return, Tab and Escape carry none: their default handling (submitting a form, moving the focus) is the page's own.

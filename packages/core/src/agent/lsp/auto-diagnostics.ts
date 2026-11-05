@@ -5,7 +5,7 @@ import type { LspDiagnostic } from "./client";
 import { resolveWithinAny } from "../paths";
 
 /**
- * Auto-diagnostics after edit (lsp-consolidation T3 originally; ported to the Winter leg's
+ * Auto-diagnostics after edit (lsp-consolidation T3 originally; ported to the Clover leg's
  * `PostToolUse` hook at Phase 8c Lane 3, Task 3.2) — CC parity: "after each file edit, it
  * automatically reports type errors and warnings so Claude can fix issues without a separate build
  * step." This is NOT a second diagnostics pipeline: it calls the SAME `LspManager.clientFor` /
@@ -15,29 +15,29 @@ import { resolveWithinAny } from "../paths";
  *
  * PORT NOTE (8c): the retired engine's version (git history at `1e732738^`) keyed `FILE_PATH_ARG`
  * on the DAEMON's own lowercase registry tool names (`write`/`edit`/`notebook_edit`, each carrying
- * a `path` or `notebook_path` arg). The Winter leg's built-in tools are named and shaped
+ * a `path` or `notebook_path` arg). The Clover leg's built-in tools are named and shaped
  * differently — `Edit`/`Write` take `file_path`; `NotebookEdit` takes `notebook_path`
  * (`@yanlinglabs/winter-agent-sdk`'s `descriptors/{edit,write,notebook-edit}.ts`, captured verbatim)
- * — so the map below is keyed on THOSE names. Winter 0.0.4 has no `MultiEdit` tool at all (measured:
- * absent from `WINTER_ADVERTISED_TOOLS_0_0_4_BASE`), so there is nothing to map it to; a future SDK
+ * — so the map below is keyed on THOSE names. Clover 0.0.4 has no `MultiEdit` tool at all (measured:
+ * absent from `CLOVER_ADVERTISED_TOOLS_0_0_4_BASE`), so there is nothing to map it to; a future SDK
  * that adds one is a one-line addition here, not a silent gap (the calling hook in `hooks.ts` only
  * ever asks about tools this map lists).
  *
  * NEVER-FAIL CONTRACT (why this whole thing is one try/catch): the caller (`hooks.ts`'s
- * `PostToolUse` hook) only reaches this AFTER Winter itself reports the tool call — a diagnostics
+ * `PostToolUse` hook) only reaches this AFTER Clover itself reports the tool call — a diagnostics
  * hiccup (unsupported extension, fence rejection, spawn failure, timeout, dead server, a malformed
  * `tool_input` shape) must never retroactively touch a call the child already completed. Every
  * failure mode below resolves to "" (append nothing); NOTHING here ever throws out to the caller.
  */
 
-// Winter tool name -> which `tool_input` key holds the file path that was just written.
+// Clover tool name -> which `tool_input` key holds the file path that was just written.
 const FILE_PATH_ARG: Record<string, string> = {
   Edit: "file_path",
   Write: "file_path",
   NotebookEdit: "notebook_path",
 };
 
-/** The Winter tool names this hook ever applies to — exported so `hooks.ts`'s own `PostToolUse`
+/** The Clover tool names this hook ever applies to — exported so `hooks.ts`'s own `PostToolUse`
  *  matcher-group registration and this module's path-arg lookup can never drift apart (one Set,
  *  one source of truth). */
 export const AUTO_DIAG_TOOL_NAMES = new Set(Object.keys(FILE_PATH_ARG));

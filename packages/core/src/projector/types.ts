@@ -5,7 +5,7 @@
 // `user` and `stream_event` frames cannot occur, while the runtime yields both. Import the real one.
 import type { ProtocolSdkMessage } from "@yanlinglabs/winter-agent-sdk";
 import type { RuntimeKind } from "@yanlinglabs/winter-runtime-sdk";
-import type { NewSessionEvent, SessionEvent } from "@yanlinglabs/winter-protocol";
+import type { NewSessionEvent, SessionEvent } from "@waifucave/clover-protocol";
 import type { DrivableSessionMode, RunnableSessionMode } from "../sessions/session-mode";
 
 export type { ProtocolSdkMessage };
@@ -16,7 +16,7 @@ export type SessionMode = RunnableSessionMode;
 
 /** The projector's logging surface. Structural and tiny on purpose: `packages/core` has no Logger
  *  type, every module logs through `console`, and a projector that took one would drag a new
- *  dependency into the one module the Winter leg cannot do without. Nothing here is ever handed
+ *  dependency into the one module the Clover leg cannot do without. Nothing here is ever handed
  *  opaque provider state, a credential, or a `reasoning_item` — see `logSkipped`. */
 export interface Logger {
   debug?(message: string, fields?: Record<string, unknown>): void;
@@ -94,7 +94,7 @@ export class ProjectorRefusedError extends Error {
 }
 
 export interface ProjectorDeps {
-  /** The WINTER session id every produced event is stamped with. */
+  /** The CLOVER session id every produced event is stamped with. */
   sessionId: string;
   /** "cowork" only from the Cowork session driver; nothing here branches on it (a debug field). */
   mode: DrivableSessionMode;
@@ -138,7 +138,7 @@ export interface ProjectorDeps {
    * bridge's `approval_resolved`/`question_resolved` withdrawal) lands ahead of the `tool_result`
    * and the stamped seqs stay exact.
    *
-   * WHY IT EXISTS: an interrupt abandons a pending permission request inside the Winter child (agent
+   * WHY IT EXISTS: an interrupt abandons a pending permission request inside the Clover child (agent
    * SDK 0.0.17 `engine.ts`'s `raceInterrupt` around `evaluateWithFreshPolicy`) WITHOUT cancelling the
    * host's `canUseTool` — the SDK has no `control_cancel_request` (claude's CLI sends one and the
    * claude SDK aborts the callback's signal) — so the card stayed pending forever. The child's own
@@ -237,13 +237,13 @@ export interface Projector {
   /**
    * 2026-09-22 (C2): announce NOW every push whose `turn_started` `beginTurn` is still holding.
    *
-   * On the Winter leg a push made while one of the host's turns is still open (a steer, a delivery,
+   * On the Clover leg a push made while one of the host's turns is still open (a steer, a delivery,
    * a held send released at a `result` while a steer runs) returns NO `turn_started` from `beginTurn`:
    * the child holds it pending, so it is announced when the child takes it up — folded into the running
    * turn (0.0.44's `host_input_folded`) or right after the running turn's `turn_completed`, one per
    * terminal — the log's turn boundaries in the order they happen.
    *
-   * The durable queue's adjacency pairing (`winter-session.ts`'s `unconsumedUserMessages`: a
+   * The durable queue's adjacency pairing (`clover-session.ts`'s `unconsumedUserMessages`: a
    * `turn_started` pairs with the NEAREST PRECEDING unpaired `user_message`) needs a pushed message
    * and its `turn_started` never to be separated by a YOUNGER `user_message`. So the driver calls this
    * before it appends any `user_message`: a push still unannounced at that moment is announced there

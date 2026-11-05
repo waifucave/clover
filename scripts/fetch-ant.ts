@@ -2,13 +2,13 @@
  * Winter Phase 10a (Task L1/L2, fix round 1) — vendors Anthropic's Platform CLI `ant` (darwin-arm64)
  * into `vendor/ant/<tag>/ant` (gitignored). `ant` is what the daemon's console-profile broker
  * (P10a-4, `packages/core/src/auth/console-profile-broker.ts`, Lane O) shells out to for
- * `ant auth print-credentials` — Winter never implements OAuth token refresh itself.
+ * `ant auth print-credentials` — Clover never implements OAuth token refresh itself.
  *
  * L1's licence finding (github.com/anthropics/anthropic-cli): MIT ("Permission is hereby granted
  * ... to deal in the Software without restriction, including ... distribute ... copies") —
  * verified via `gh api repos/anthropics/anthropic-cli` (`license.key === "mit"`) AND the repo's own
  * LICENSE file (`gh api repos/anthropics/anthropic-cli/license`, base64-decoded), both fetched
- * 2026-09-13. Redistribution inside Winter.app is permitted — P10a-5's "bundle" ruling stands.
+ * 2026-09-13. Redistribution inside Clover.app is permitted — P10a-5's "bundle" ruling stands.
  *
  * Usage: bun run scripts/fetch-ant.ts
  *
@@ -273,7 +273,7 @@ export async function fetchAnt(opts: FetchAntOpts): Promise<FetchAntResult> {
   const actualAssetSha256 = sha256Hex(bytes);
   if (actualAssetSha256 !== opts.pin.sha256) throw new AntChecksumMismatch("asset", url, opts.pin.sha256, actualAssetSha256);
 
-  const tmp = mkdtempSync(join(tmpdir(), "winter-fetch-ant-"));
+  const tmp = mkdtempSync(join(tmpdir(), "clover-fetch-ant-"));
   try {
     const zipPath = join(tmp, opts.pin.asset);
     writeFileSync(zipPath, bytes);

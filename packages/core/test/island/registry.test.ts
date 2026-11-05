@@ -1,4 +1,4 @@
-// The Winter island's daemon half: the cross-session pending set (`island/registry.ts`), the `island.pending` door, the
+// The Clover island's daemon half: the cross-session pending set (`island/registry.ts`), the `island.pending` door, the
 // `island.changed` push, the hello's `capabilities`/`tty`, and the desktop-switch prompt going to the helper's panel
 // ONLY while no island client is connected.
 import { afterEach, describe, expect, test } from "bun:test";
@@ -8,7 +8,7 @@ import { join } from "node:path";
 import {
   LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, ERR, CLIENT_CAPABILITY_ISLAND, ISLAND_CHANGED_NOTIFICATION,
   IslandPendingResult, IslandHostsResult, IslandUsageResult, type SessionEvent, type WritableSocket,
-} from "@yanlinglabs/winter-protocol";
+} from "@waifucave/clover-protocol";
 import { startIpcServer, REMOTE_ALLOWED_METHODS } from "../../src/ipc/server";
 import { SessionStore } from "../../src/sessions/store";
 import { SessionHub } from "../../src/sessions/hub";
@@ -278,7 +278,7 @@ describe("island.pending over the socket", () => {
   afterEach(() => { stop?.(); stop = undefined; });
 
   async function boot() {
-    const home = mkdtempSync(join(tmpdir(), "winter-island-"));
+    const home = mkdtempSync(join(tmpdir(), "clover-island-"));
     const store = new SessionStore(home);
     const hub = new SessionHub(store);
     const socketPath = join(home, "core.sock");

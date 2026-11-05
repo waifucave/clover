@@ -46,7 +46,7 @@ const SELF = () => ({ pid: process.pid, startedAt: processStartedAt(process.pid)
 
 async function withWorld(fn: (w: { home: string; scan: string; rs: RuntimeStateDb; store: SessionStore }) => Promise<void>): Promise<void> {
   await withTempHome(async (home) => {
-    const scan = mkdtempSync(join(tmpdir(), "winter-crs-scan-"));
+    const scan = mkdtempSync(join(tmpdir(), "clover-crs-scan-"));
     const rs = openRuntimeStateDb(home);
     const store = new SessionStore(home);
     try { await fn({ home, scan, rs, store }); } finally { store.close(); rs.close(); }
@@ -68,7 +68,7 @@ const stub = (outcomes: Record<string, "clean" | "appended" | "quarantined" | "t
 
 describe("listClaudeResumeStaging — bounded, names and entry types only", () => {
   test("finds claude-resume-* DIRECTORIES only (a file or a look-alike is not one)", () => {
-    const root = mkdtempSync(join(tmpdir(), "winter-crs-list-"));
+    const root = mkdtempSync(join(tmpdir(), "clover-crs-list-"));
     mkdirSync(join(root, "claude-resume-aaa"));
     mkdirSync(join(root, "claude-resume-bbb"));
     writeFileSync(join(root, "claude-resume-file"), "x");
@@ -79,7 +79,7 @@ describe("listClaudeResumeStaging — bounded, names and entry types only", () =
   });
 
   test("an absent root is `absent` (nothing to sweep), any other open error propagates", () => {
-    expect(listClaudeResumeStaging(join(tmpdir(), "winter-crs-does-not-exist-xyz"))).toMatchObject({ names: [], absent: true, complete: true });
+    expect(listClaudeResumeStaging(join(tmpdir(), "clover-crs-does-not-exist-xyz"))).toMatchObject({ names: [], absent: true, complete: true });
     expect(() => listClaudeResumeStaging("/x", { open: (() => { throw Object.assign(new Error("denied"), { code: "EACCES" }); }) as never })).toThrow("denied");
   });
 
@@ -104,7 +104,7 @@ describe("listClaudeResumeStaging — bounded, names and entry types only", () =
 
 describe("the marker", () => {
   test("round-trips, is 0600, remembers several roots, and an unknown schema reads as 'not scanned'", () => {
-    const home = mkdtempSync(join(tmpdir(), "winter-crs-marker-"));
+    const home = mkdtempSync(join(tmpdir(), "clover-crs-marker-"));
     expect(readClaudeResumeScanMarker(home)).toBeUndefined();
     expect(recordClaudeResumeScan(home, "/r/one", { complete: true, entries: 7, found: 1, pending: ["/r/one/claude-resume-x"] })).toBe(true);
     expect(recordClaudeResumeScan(home, "/r/two", { complete: false, entries: 9, found: 0, pending: [] })).toBe(true);
@@ -269,7 +269,7 @@ describe("recoverRunRoots (the late pass every real daemon runs) — the staging
       await recoverRunRoots({ home, rs, reconcile: stub().reconcile, claudeResumeScanRoot: scan, listClaudeResumeStaging: spy.lister }); // the one listing
       const named = plant(scan, "claude-resume-named", 60_000); // young: only the directory row makes it ours
       const unnamed = plant(scan, "claude-resume-unnamed", 60_000);
-      rs.db.run("INSERT INTO directory_entries (address, entry_json, updated_at) VALUES (?, ?, 't')", ["winter://session/s_1", JSON.stringify({ configDir: named })]);
+      rs.db.run("INSERT INTO directory_entries (address, entry_json, updated_at) VALUES (?, ?, 't')", ["clover://session/s_1", JSON.stringify({ configDir: named })]);
       const s = stub();
       await recoverRunRoots({ home, rs, reconcile: s.reconcile, claudeResumeScanRoot: scan, listClaudeResumeStaging: spy.lister });
       expect(spy.calls).toEqual([scan]);
@@ -312,7 +312,7 @@ describe("recoverRunRoots (the late pass every real daemon runs) — the staging
   test("a different scan root is a different listing (the marker covers roots, not just the home)", async () => {
     await withWorld(async ({ home, scan, rs }) => {
       const spy = spyLister();
-      const other = mkdtempSync(join(tmpdir(), "winter-crs-other-"));
+      const other = mkdtempSync(join(tmpdir(), "clover-crs-other-"));
       await recoverRunRoots({ home, rs, reconcile: stub().reconcile, claudeResumeScanRoot: scan, listClaudeResumeStaging: spy.lister });
       await recoverRunRoots({ home, rs, reconcile: stub().reconcile, claudeResumeScanRoot: other, listClaudeResumeStaging: spy.lister });
       await recoverRunRoots({ home, rs, reconcile: stub().reconcile, claudeResumeScanRoot: other, listClaudeResumeStaging: spy.lister });
@@ -323,8 +323,8 @@ describe("recoverRunRoots (the late pass every real daemon runs) — the staging
 
 describe("Migration C's staging check", () => {
   test("a home whose marker covers the root answers from the marker's pending paths — the root is never listed", () => {
-    const home = mkdtempSync(join(tmpdir(), "winter-crs-migc-"));
-    const root = mkdtempSync(join(tmpdir(), "winter-crs-migc-scan-"));
+    const home = mkdtempSync(join(tmpdir(), "clover-crs-migc-"));
+    const root = mkdtempSync(join(tmpdir(), "clover-crs-migc-scan-"));
     mkdirSync(join(root, "claude-resume-aaa"));
     const spy = spyLister();
     expect(claudeResumeStagingPresent(home, root, spy.lister)).toBe(true); // no marker yet: one bounded listing

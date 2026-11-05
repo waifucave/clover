@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { METHODS } from "@yanlinglabs/winter-protocol";
+import { METHODS } from "@waifucave/clover-protocol";
 import { REMOTE_ALLOWED_METHODS } from "../../src/ipc/server";
 import { startDaemon } from "../../src/daemon";
 import { FileSecretStore } from "../../src/auth/secret-store";
@@ -29,7 +29,7 @@ import { FileSecretStore } from "../../src/auth/secret-store";
 // sessionId, but both are phone-only surfaces exactly like the three sync verbs above).
 // provider-correctness T4 grew it 18→19: `session.setEffort` (the phone sets the reasoning effort
 // on a remote-driven session — the other half of its model picker, and its own method for the same
-// reason the CLI keeps `winter model` and `winter model --effort` separate).
+// reason the CLI keeps `clover model` and `clover model --effort` separate).
 // session-activity-hygiene T3 grew it 19→20: `session.setActivity` (the phone backgrounds/archives
 // a remote-driven code session — the write half of the `activity` state `session.list`, already on
 // this list, has served since T2; a read-only phone could see the state but never move it).
@@ -182,7 +182,7 @@ describe("RunningDaemon.tokens.remote (SP2a gate G8)", () => {
   });
 
   test("startDaemon exposes a non-empty remote token distinct from harness/admin", async () => {
-    home = mkdtempSync(join(tmpdir(), "winter-remote-token-"));
+    home = mkdtempSync(join(tmpdir(), "clover-remote-token-"));
     const d = await startDaemon({
       home,
       secrets: new FileSecretStore(join(home, "secrets")),

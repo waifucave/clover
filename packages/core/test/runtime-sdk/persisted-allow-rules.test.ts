@@ -2,13 +2,13 @@
 //
 // A card's "Allow … everywhere" / "in this project" writes a rule through `approval.respond`'s
 // `PermissionRules.append` — `<home>/settings.json`'s `permissions.allow` (global) or
-// `<projectRoot>/.winter/permissions.local.json` (project) — and a TRUSTED project's own
-// `.winter/settings.json` `permissions.allow` unions in through `ProjectSettingsResolver`. Nothing read
-// any of it on the way to a child: `buildWinterOptions` sent only Winter's fixed read/web allow rules,
+// `<projectRoot>/.clover/permissions.local.json` (project) — and a TRUSTED project's own
+// `.clover/settings.json` `permissions.allow` unions in through `ProjectSettingsResolver`. Nothing read
+// any of it on the way to a child: `buildCloverOptions` sent only Clover's fixed read/web allow rules,
 // so a saved rule lasted exactly as long as the live bridge that answered the card. claude applies its
 // settings files' `permissions.allow` natively; this is the host half of that parity.
 //
-// Pinned here: the translation from Winter's rule grammar to the runtimes' (`sdkAllowRulesFor`), the
+// Pinned here: the translation from Clover's rule grammar to the runtimes' (`sdkAllowRulesFor`), the
 // trust-gated reader (`persistedAllowRulesFor`), and the child's Options (WS-23: one leg). Deny-before-allow on the real
 // binary is `persisted-allow-measure.e2e.test.ts`.
 import { describe, expect, test } from "bun:test";
@@ -26,13 +26,13 @@ import { ProjectSettingsResolver } from "../../src/project-settings";
 import { Settings } from "../../src/settings";
 import { projectScopeRootFor, projectScopeTrust } from "../../src/runtime-sdk/run-home-input";
 import {
-  buildWinterOptions, controlPlaneDenyRules, GLOBAL_READ_ALLOW_RULES, persistedAllowRulesFor, projectScopeAllowRulesFor, sdkAllowRulesFor,
-  WEB_BUILTIN_ALLOW_RULES, type WinterOptionsInput,
+  buildCloverOptions, controlPlaneDenyRules, GLOBAL_READ_ALLOW_RULES, persistedAllowRulesFor, projectScopeAllowRulesFor, sdkAllowRulesFor,
+  WEB_BUILTIN_ALLOW_RULES, type CloverOptionsInput,
 } from "../../src/runtime-sdk/mode-options";
 
 function realDir(prefix: string): string { return realpathSync(mkdtempSync(join(tmpdir(), prefix))); }
 
-function winterInput(over: Partial<WinterOptionsInput> = {}): WinterOptionsInput {
+function cloverInput(over: Partial<CloverOptionsInput> = {}): CloverOptionsInput {
   return {
     mode: "code", policy: "ask", sessionId: "11111111-2222-3333-4444-555555555555", home: "/h", cwd: "/repo",
     credentials: { byProvider: {} }, spawn: { pathToClaudeCodeExecutable: "/opt/winter" },
@@ -41,18 +41,18 @@ function winterInput(over: Partial<WinterOptionsInput> = {}): WinterOptionsInput
   };
 }
 
-describe("sdkAllowRulesFor — Winter's saved-rule grammar, as the runtimes read it", () => {
+describe("sdkAllowRulesFor — Clover's saved-rule grammar, as the runtimes read it", () => {
   test("bash exact/prefix/any keep their meaning; BashUnsandboxed becomes Bash (claude: the flag only removes the sandbox auto-allow)", () => {
     expect(sdkAllowRulesFor(["Bash(git status)", "Bash(gh repo:*)", "Bash", "BashUnsandboxed(curl:*)"]))
       .toEqual(["Bash(git status)", "Bash(gh repo:*)", "Bash", "Bash(curl:*)"]);
   });
 
   test("Edit, Computer, Worktree and WebFetch(domain:) map onto the runtimes' own names", () => {
-    // `Edit` covers `Write` too, as it always did in Winter — the SDK matches a bare rule's tool name
+    // `Edit` covers `Write` too, as it always did in Clover — the SDK matches a bare rule's tool name
     // literally, so both are stated (measured: `persisted-allow-measure.e2e.test.ts`).
     expect(sdkAllowRulesFor(["Edit", "Computer", "Worktree", "WebFetch(domain:example.com)"])).toEqual([
       "Edit", "Write",
-      "mcp__winter__computer__computer",
+      "mcp__clover__computer__computer",
       "EnterWorktree", "ExitWorktree",
       "WebFetch(domain:example.com)",
     ]);
@@ -66,7 +66,7 @@ describe("sdkAllowRulesFor — Winter's saved-rule grammar, as the runtimes read
     expect(sdkAllowRulesFor(["Bash(*)", "Bash(ls *.txt)", "Bash(rm *:*)", "Edit(/tmp/*)"])).toEqual([]);
   });
 
-  test("a Winter-grammar string Winter itself refuses stays refused; a foreign (runtime-grammar) rule is forwarded verbatim", () => {
+  test("a Clover-grammar string Clover itself refuses stays refused; a foreign (runtime-grammar) rule is forwarded verbatim", () => {
     // Bare `WebFetch` would silence every fetch card; `Computer(x)`/relative `Edit` never parse.
     expect(sdkAllowRulesFor(["WebFetch", "Computer(x)", "Edit(src/**)", "Bash()"])).toEqual([]);
     expect(sdkAllowRulesFor(["WebSearch", "mcp__github__get_issue", "Write(//Users/x/notes/**)"]))
@@ -80,16 +80,16 @@ describe("sdkAllowRulesFor — Winter's saved-rule grammar, as the runtimes read
 
 describe("persistedAllowRulesFor — global always, the project halves only when the project is TRUSTED", () => {
   function world() {
-    const home = realDir("winter-allow-home-");
-    const repo = realDir("winter-allow-repo-");
+    const home = realDir("clover-allow-home-");
+    const repo = realDir("clover-allow-repo-");
     writeFileSync(join(home, "settings.json"), JSON.stringify({ schemaVersion: 3, provider: { model: "codex-oauth/gpt-5.6-sol" }, permissions: { allow: ["Bash(gh repo:*)"] } }));
-    mkdirSync(join(repo, ".winter"), { recursive: true });
-    writeFileSync(join(repo, ".winter", "settings.json"), JSON.stringify({ permissions: { allow: ["Bash(make test)"] } }));
-    writeFileSync(join(repo, ".winter", "permissions.local.json"), JSON.stringify({ allow: ["Bash(npm run lint:*)"] }));
+    mkdirSync(join(repo, ".clover"), { recursive: true });
+    writeFileSync(join(repo, ".clover", "settings.json"), JSON.stringify({ permissions: { allow: ["Bash(make test)"] } }));
+    writeFileSync(join(repo, ".clover", "permissions.local.json"), JSON.stringify({ allow: ["Bash(npm run lint:*)"] }));
     const trust = new TrustStore(join(home, "trust.json"));
     const base = Settings.parse(JSON.parse(readFileSync(join(home, "settings.json"), "utf8")));
     const resolver = new ProjectSettingsResolver({ base: () => base, trust });
-    const rules = new PermissionRules({ globalAllow: (root) => resolver.effective(root)?.permissions?.allow ?? ["Computer"], winterHome: home });
+    const rules = new PermissionRules({ globalAllow: (root) => resolver.effective(root)?.permissions?.allow ?? ["Computer"], cloverHome: home });
     const read = (cwd: string) => persistedAllowRulesFor(cwd, {
       projectRootOf: () => repo,
       effectiveSettings: (root) => resolver.effective(root),
@@ -111,7 +111,7 @@ describe("persistedAllowRulesFor — global always, the project halves only when
   });
 
   test("nothing configured anywhere → nothing (the engine-era `[\"Computer\"]` getter default is NOT a saved rule)", () => {
-    const home = realDir("winter-allow-empty-");
+    const home = realDir("clover-allow-empty-");
     expect(persistedAllowRulesFor("/nowhere", {
       projectRootOf: () => null, effectiveSettings: () => null, isTrusted: () => false,
     })).toEqual([]);
@@ -119,9 +119,9 @@ describe("persistedAllowRulesFor — global always, the project halves only when
   });
 });
 
-describe("the child's Options carry the saved rules — after Winter's fixed ones, with the deny fence intact", () => {
-  test("Winter leg, code: fixed allow + translated saved rules; the control-plane deny list is unchanged", () => {
-    const o = buildWinterOptions(winterInput({ persistedAllow: ["Bash(gh repo:*)", "Edit"] }));
+describe("the child's Options carry the saved rules — after Clover's fixed ones, with the deny fence intact", () => {
+  test("Clover leg, code: fixed allow + translated saved rules; the control-plane deny list is unchanged", () => {
+    const o = buildCloverOptions(cloverInput({ persistedAllow: ["Bash(gh repo:*)", "Edit"] }));
     expect(o.permissions?.allow).toEqual([...GLOBAL_READ_ALLOW_RULES, ...WEB_BUILTIN_ALLOW_RULES, "Bash(gh repo:*)", "Edit", "Write"]);
     // Deny-before-allow is the runtimes' own evaluation order; the fence a saved `Edit` must not beat
     // is still stated in full (the binary proof is the e2e sibling).
@@ -129,27 +129,27 @@ describe("the child's Options carry the saved rules — after Winter's fixed one
     expect(o.permissions?.deny).toContain("Write(//h/settings.json)");
   });
 
-  test("Winter leg: chat and dispatch get no saved rules (chat's policy is fixed; a dispatch card offers no rule to remember)", () => {
-    expect(buildWinterOptions(winterInput({ mode: "chat", policy: "chat", persistedAllow: ["Bash(gh repo:*)"] })).permissions?.allow).toBeUndefined();
-    // Dispatch: only Winter's fixed read/web rules (its dont-ask keeps them, as code's does) — never a saved one.
-    const d = buildWinterOptions(winterInput({ mode: "dispatch", policy: "auto", persistedAllow: ["Bash(gh repo:*)"] }));
+  test("Clover leg: chat and dispatch get no saved rules (chat's policy is fixed; a dispatch card offers no rule to remember)", () => {
+    expect(buildCloverOptions(cloverInput({ mode: "chat", policy: "chat", persistedAllow: ["Bash(gh repo:*)"] })).permissions?.allow).toBeUndefined();
+    // Dispatch: only Clover's fixed read/web rules (its dont-ask keeps them, as code's does) — never a saved one.
+    const d = buildCloverOptions(cloverInput({ mode: "dispatch", policy: "auto", persistedAllow: ["Bash(gh repo:*)"] }));
     expect(d.permissions?.allow).toEqual(["Read", ...WEB_BUILTIN_ALLOW_RULES]);
   });
 });
 
 describe("R.3 residual: the daemon's project-scope readers from a linked worktree of a trusted repo", () => {
   function bed() {
-    const main = realDir("winter-r3p-allow-main-");
+    const main = realDir("clover-r3p-allow-main-");
     const git = (args: string[]) => expect(Bun.spawnSync(["git", "-C", main, ...args], { stdout: "ignore", stderr: "ignore" }).exitCode).toBe(0);
     git(["init", "-q"]);
     git(["-c", "user.email=t@t.test", "-c", "user.name=t", "commit", "--allow-empty", "-q", "-m", "i"]);
-    const wt = join(realDir("winter-r3p-allow-wt-"), "wt");
+    const wt = join(realDir("clover-r3p-allow-wt-"), "wt");
     git(["worktree", "add", "-q", "-b", `r3p-${Math.random().toString(16).slice(2)}`, wt]);
     for (const [dir, rule] of [[main, "Bash(main-only)"], [wt, "Bash(wt-only)"]] as const) {
-      mkdirSync(join(dir, ".winter"), { recursive: true });
-      writeFileSync(join(dir, ".winter", "settings.json"), JSON.stringify({ permissions: { allow: [rule] } }));
+      mkdirSync(join(dir, ".clover"), { recursive: true });
+      writeFileSync(join(dir, ".clover", "settings.json"), JSON.stringify({ permissions: { allow: [rule] } }));
     }
-    const trust = new TrustStore(join(realDir("winter-r3p-allow-home-"), "trust.json"));
+    const trust = new TrustStore(join(realDir("clover-r3p-allow-home-"), "trust.json"));
     trust.trust(main);
     const resolver = new ProjectSettingsResolver({ base: () => Settings.parse({ schemaVersion: 3, provider: { model: "codex-oauth/gpt-5.6-sol" } }), trust: projectScopeTrust(trust) });
     const allowFor = (cwd: string) => projectScopeAllowRulesFor(cwd, {

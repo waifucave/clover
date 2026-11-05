@@ -1,13 +1,13 @@
 // WS-27: URL-mode elicitation on the terminal — the -p decline, the TUI's open/decline flow, the checks.
 import { describe, expect, test } from "bun:test";
-import { METHODS } from "@yanlinglabs/winter-protocol";
+import { METHODS } from "@waifucave/clover-protocol";
 import { answerElicitation, declineElicitationHeadless, elicitationAnswerNote, elicitationUrlToOpen, HeadlessElicitationGate, openInBrowser, type ElicitationDoors } from "../src/elicitation";
 import { applyEvent, isStalled, type WatchdogState } from "../src/watchdog";
 
 const CODE = "OTC-cli-NOTPRINTED";
 const URL_OK = `https://linear.app/oauth?code=${CODE}`;
 
-describe("winter -p declines a card at once", () => {
+describe("clover -p declines a card at once", () => {
   test("one line naming the server and host, and elicitation.respond decline — never the url", async () => {
     const lines: string[] = [];
     const sent: [string, unknown][] = [];
@@ -34,7 +34,7 @@ describe("HeadlessElicitationGate — only this shell's own turn's cards", () =>
 
   test("a card in a turn this shell started is declined; one before it, or after it, is not", () => {
     const g = new HeadlessElicitationGate();
-    // Another client's turn is running when this shell attaches (winter resume <id> "text").
+    // Another client's turn is running when this shell attaches (clover resume <id> "text").
     expect(g.observe(started(10))).toEqual([]);
     expect(g.observe(card(11))).toEqual([]);       // the Mac's card: never declined here
     g.beginSend();

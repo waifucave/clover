@@ -72,8 +72,8 @@
 //     `tool-results/` and `workflows/scripts/` (surface map §6.6), so a `memory/`-only move would
 //     split one project's state across two keys. The first cut of this migration therefore renamed
 //     the whole directory — and that is exactly wrong for the destination, because
-//     `projects/<compatKey>/` is ALSO WHERE THE WINTER SDK WRITES TRANSCRIPTS. On any home that has
-//     run a Winter session the destination already exists, so a whole-directory rename could only
+//     `projects/<compatKey>/` is ALSO WHERE THE CLOVER SDK WRITES TRANSCRIPTS. On any home that has
+//     run a Clover session the destination already exists, so a whole-directory rename could only
 //     refuse there, permanently, and take every other project in that home down with it.
 //
 //     So the unit of relocation is the ENTRY: every top-level entry under `projects/<oldKey>/` is
@@ -344,7 +344,7 @@ function syncRecordKey(rs: RuntimeStateDb, records: RuntimeSessionRecords, oldKe
   const relocated = pairRelocated(rows);
   // BY EXPLICIT RECORD IDS, captured at plan time (re-review NEW-3). The by-key form re-keys EVERY
   // record sitting at a key, which is right for a directory rename seen from the directory's side
-  // and wrong seen from this migration's: a Winter session files its record AT the compatibility key
+  // and wrong seen from this migration's: a Clover session files its record AT the compatibility key
   // from birth, so the reverse direction below would drag those records to the old key every time a
   // multi-entry project is half-moved (entries apply in sorted order, and a `<uuid>.jsonl` sorts
   // before `memory`), and a rollback would file them there for good.
@@ -401,7 +401,7 @@ export function planMemoryKeyMigration(deps: {
   // what lets the sweep below read records that agree with the disk.
   plan.reconciled = reconcileManifest(rs, home, fs, deps.records);
 
-  // `compatibilityKeys` spawns `git` and, unlike Winter's own `repoRootFor`, memoises nothing — so a
+  // `compatibilityKeys` spawns `git` and, unlike Clover's own `repoRootFor`, memoises nothing — so a
   // migration over hundreds of records would be hundreds of subprocesses. One `Map` per plan call
   // (sessions cluster heavily on a handful of cwds) fixes that without caching across calls, which
   // would risk answering from a stale repo layout.
@@ -988,7 +988,7 @@ export function rollbackMemoryKeyMigration(deps: { rs: RuntimeStateDb; home: str
     // An I/O failure mid-rename (never reachable through the two `fs.existsSync` checks above,
     // which only test presence) leaves the row `undoing` for the next boot's repair to retry — not
     // a `target-exists` collision, so it is not reported in `failures`; a leftover `undoing` row is
-    // now itself a fact `winter doctor`'s `memory-keys-migration` finding can surface.
+    // now itself a fact `clover doctor`'s `memory-keys-migration` finding can surface.
     if (outcome === "left-undoing") continue;
     touched.add(row.new_key);
     rolledBack += 1;

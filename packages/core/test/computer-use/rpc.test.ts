@@ -5,7 +5,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { ConnWriter, ERR, LineDecoder, METHODS, PROTOCOL_VERSION, encodeLine, type WritableSocket } from "@yanlinglabs/winter-protocol";
+import { ConnWriter, ERR, LineDecoder, METHODS, PROTOCOL_VERSION, encodeLine, type WritableSocket } from "@waifucave/clover-protocol";
 import { ApprovalBroker } from "../../src/agent/approvals";
 import { FileSecretStore } from "../../src/auth/secret-store";
 import { TokenAuthority } from "../../src/auth/tokens";
@@ -62,7 +62,7 @@ describe("computerUse.* (local-only RPCs)", () => {
   afterEach(() => { stop?.(); stop = undefined; });
 
   async function boot(initial: Record<string, unknown> = {}) {
-    const home = mkdtempSync(join(tmpdir(), "winter-cu-rpc-"));
+    const home = mkdtempSync(join(tmpdir(), "clover-cu-rpc-"));
     const settingsPath = join(home, "settings.json");
     writeFileSync(settingsPath, JSON.stringify({ schemaVersion: 3, provider: { model: "codex-oauth/gpt-5.6-sol" }, ...initial }));
     let live: Settings | null = loadSettings(settingsPath);
@@ -74,7 +74,7 @@ describe("computerUse.* (local-only RPCs)", () => {
     const tabBackend = new FakeWakeBackend();
     const runtime = createComputerUseRuntime({
       home, profile: "dev", settings: () => live, settingsPath, approvals: new ApprovalBroker(), hub, store,
-      launchAllowed: true, inject: { transport: fake.transport, launcher: fake.launcher, verifier: fake.verifier, browserInstalled: () => false, headless: { resolve: () => ({ missing: "Winter's headless browser is missing — reinstall Winter" }) }, wakeBackends: { app: wakeBackend, tab: tabBackend } },
+      launchAllowed: true, inject: { transport: fake.transport, launcher: fake.launcher, verifier: fake.verifier, browserInstalled: () => false, headless: { resolve: () => ({ missing: "Clover's headless browser is missing — reinstall Clover" }) }, wakeBackends: { app: wakeBackend, tab: tabBackend } },
     });
     const socketPath = join(home, "core.sock");
     const authority = new TokenAuthority(new FileSecretStore(join(home, "secrets.json")));
@@ -92,9 +92,9 @@ describe("computerUse.* (local-only RPCs)", () => {
     expect(r1.result).toEqual({
       enabled: true, allowAllApps: true, legacyComputer: false, mirror: false, privateEventPath: true, headlessEnabled: true, webmcp: true, wakes: true,
       helper: { installed: true, running: false },
-      // Phase 4: Winter's headless browser is always listed (a test daemon finds it only through $WINTER_HEADLESS_APP).
-      browsers: [{ id: "winter", name: "Winter (built-in)", connected: false, reason: "Winter isn't running" },
-        { id: "headless", name: "Winter (headless)", connected: false, reason: "Winter's headless browser is missing — reinstall Winter" }],
+      // Phase 4: Clover's headless browser is always listed (a test daemon finds it only through $CLOVER_HEADLESS_APP).
+      browsers: [{ id: "winter", name: "Clover (built-in)", connected: false, reason: "Clover isn't running" },
+        { id: "headless", name: "Clover (headless)", connected: false, reason: "Clover's headless browser is missing — reinstall Clover" }],
     });
     expect(fake.launched).toEqual([]);
     fake.running = true;
@@ -347,7 +347,7 @@ describe("the computerUse settings — one reader each, hot writes", () => {
     expect(computerUseMirrorFrom(null)).toBe(true);
     expect(computerUsePrivateEventPathFrom(undefined)).toBe(true);
     expect(computerUseLegacyComputerFrom(null)).toBe(false);
-    // Phase 4: Winter's headless browser and sites' own tools (WebMCP, user ruling D9) — on unless `false`.
+    // Phase 4: Clover's headless browser and sites' own tools (WebMCP, user ruling D9) — on unless `false`.
     expect(computerUseHeadlessEnabledFrom(null)).toBe(true);
     expect(computerUseHeadlessEnabledFrom({ computerUse: { headless: {} } } as unknown as Settings)).toBe(true);
     expect(computerUseHeadlessEnabledFrom({ computerUse: { headless: { enabled: false } } } as unknown as Settings)).toBe(false);
@@ -389,7 +389,7 @@ describe("the computerUse settings — one reader each, hot writes", () => {
   });
 
   test("the per-app card's Always allow persists through the runtime and is served before the watcher catches up", async () => {
-    const home = mkdtempSync(join(tmpdir(), "winter-cu-always-"));
+    const home = mkdtempSync(join(tmpdir(), "clover-cu-always-"));
     const settingsPath = join(home, "settings.json");
     writeFileSync(settingsPath, JSON.stringify({ schemaVersion: 3, provider: { model: "codex-oauth/gpt-5.6-sol" } }));
     const live = loadSettings(settingsPath);

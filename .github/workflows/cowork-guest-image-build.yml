@@ -35,7 +35,7 @@ env:
   LLVM_KEY_SHA256: 'dc0ffd470f01a27a19fad7a243cf85cf79f063d60b3a4c75090b24d9bdc6e2c8'
 jobs:
   build:
-    if: github.repository == 'yanlingLabs/winter' && github.event_name == 'push' && github.ref == 'refs/heads/cowork/guest-image-build-6' && github.event.created == true && github.run_attempt == '1'
+    if: github.repository == 'waifucave/clover' && github.event_name == 'push' && github.ref == 'refs/heads/cowork/guest-image-build-6' && github.event.created == true && github.run_attempt == '1'
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 210
     steps:
@@ -57,13 +57,13 @@ jobs:
           git checkout --detach --quiet "$REVIEWED_HEAD"
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
-          repository: yanlingLabs/winter-agent-sdk
+          repository: waifucave/clover-sdk
           ref: ${{ env.AGENT_SDK_HEAD }}
           path: origins/sdk
           persist-credentials: false
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
-          repository: yanlingLabs/winter-agent-sdk
+          repository: waifucave/clover-sdk
           ref: ${{ env.BUILDER_HEAD }}
           path: origins/builder
           persist-credentials: false
@@ -71,7 +71,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          image_work=$(mktemp -d "$RUNNER_TEMP/winter-image.XXXXXXXX")
+          image_work=$(mktemp -d "$RUNNER_TEMP/clover-image.XXXXXXXX")
           printf 'IMAGE_WORK=%s\n' "$image_work" >> "$GITHUB_ENV"
           mkdir -m 700 "$image_work/downloads" "$image_work/tools" "$image_work/kernel-downloads"
           curl --fail --location --proto '=https' --proto-redir '=https' --tlsv1.2 --max-time 900 --max-filesize 67108864 "$BUN_ARCHIVE_URL" --output "$image_work/downloads/bun.zip"
@@ -121,8 +121,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          kernel_work="$RUNNER_TEMP/winter-kernel-work"
-          kernel_work_b="$RUNNER_TEMP/winter-kernel-work-b"
+          kernel_work="$RUNNER_TEMP/clover-kernel-work"
+          kernel_work_b="$RUNNER_TEMP/clover-kernel-work-b"
           test "$kernel_work" != "$kernel_work_b"
           python3 -I -S -B scripts/cowork-guest-artifact/kernel/native_build.py --downloads "$IMAGE_WORK/kernel-downloads" --work "$kernel_work" --out "$IMAGE_WORK/kernel-1"
           rm -rf "$kernel_work"

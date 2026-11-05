@@ -1,5 +1,5 @@
 import { isDeepStrictEqual } from "node:util";
-import { HOST_WORKSPACE_EVENT_TYPES, SessionEvent } from "@yanlinglabs/winter-protocol";
+import { HOST_WORKSPACE_EVENT_TYPES, SessionEvent } from "@waifucave/clover-protocol";
 import type { SessionHub } from "../sessions/hub";
 import type { EventInput, SessionStore } from "../sessions/store";
 import { CoworkRepository, type WorkspaceChange } from "./repository";

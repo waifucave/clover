@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
-import { CAPABILITY_SERVER_KEYS, WINTER_CAPABILITY_TOOLS, capabilityAdvertisedName } from "../../src/capabilities/names";
+import { CAPABILITY_SERVER_KEYS, CLOVER_CAPABILITY_TOOLS, capabilityAdvertisedName } from "../../src/capabilities/names";
 import * as profile from "../../src/cowork/session-profile";
 import {
   COWORK_DECISIONS, COWORK_DYNAMIC_TOOL_FAMILIES, COWORK_HOST_ACCESS_REFUSALS, COWORK_PROMPT_LIMITS, COWORK_READINESS, COWORK_TOOL_ALLOWLIST,
@@ -85,12 +85,12 @@ function hostAccessProblems(rows: readonly Row[]): string[] {
       if (brokers.length === 0 || brokers.some((broker) => !HOST_BROKERS_ALLOWED_FOR_HOST_RUN.includes(broker))) problems.push(`${row.name} runs on the host without a message, schedule or question broker`);
     }
     if (row.server !== undefined) problems.push(`${row.name} belongs to capability server ${row.server}`);
-    if (row.name.startsWith("mcp__winter__")) problems.push(`${row.name} is a daemon capability tool`);
+    if (row.name.startsWith("mcp__clover__")) problems.push(`${row.name} is a daemon capability tool`);
   }
   return problems;
 }
 
-const REGISTRY = new Set<string>([...KNOWN_RUNTIME_BUILTINS, ...Object.keys(WINTER_CAPABILITY_TOOLS).map(capabilityAdvertisedName)]);
+const REGISTRY = new Set<string>([...KNOWN_RUNTIME_BUILTINS, ...Object.keys(CLOVER_CAPABILITY_TOOLS).map(capabilityAdvertisedName)]);
 function registryProblems(rows: readonly Row[]): string[] {
   const problems: string[] = [];
   for (const row of rows) {
@@ -125,7 +125,7 @@ describe("allowlist and denylist", () => {
   test("every built-in and every capability tool in today's registry is classified, so a new one forces a decision", () => {
     const classified = new Set([...allowed, ...denied]);
     expect(KNOWN_RUNTIME_BUILTINS.filter((name) => !classified.has(name))).toEqual([]);
-    for (const [mcpName] of Object.entries(WINTER_CAPABILITY_TOOLS)) {
+    for (const [mcpName] of Object.entries(CLOVER_CAPABILITY_TOOLS)) {
       const advertised = capabilityAdvertisedName(mcpName), key = mcpName.split("__")[2]!;
       const row = COWORK_TOOL_DENYLIST.find((candidate) => candidate.name === advertised);
       expect(row ? `${advertised}:${row.server}:${row.runs}` : `${advertised}:missing`).toBe(`${advertised}:${key}:host`);
@@ -140,13 +140,13 @@ describe("allowlist and denylist", () => {
       const row = COWORK_TOOL_ALLOWLIST.find((candidate) => candidate.name === name);
       expect(row ? `${name}:${row.runs}` : `${name}:absent`).toBe(`${name}:guest`);
     }
-    expect(COWORK_TOOL_ALLOWLIST.some((row) => row.name.startsWith("mcp__winter__") || "server" in row)).toBe(false);
+    expect(COWORK_TOOL_ALLOWLIST.some((row) => row.name.startsWith("mcp__clover__") || "server" in row)).toBe(false);
     const base: Row[] = [...COWORK_TOOL_ALLOWLIST];
     for (const slipped of [
       { name: "Bash", runs: "host", brokers: [] }, { name: "Bash", runs: "host", brokers: ["messaging"] }, { name: "bash", runs: "host", brokers: ["messaging"] },
       { name: "Read", runs: "host", brokers: ["questions"] }, { name: "Edit", runs: "host", brokers: [] }, { name: "Write", runs: "host", brokers: [] },
       { name: "Computer", runs: "host", brokers: [], server: "computer" }, { name: "ComputerV2", runs: "guest", brokers: [], server: "computer_v2" },
-      { name: "Browser", runs: "host", brokers: ["network"] }, { name: "mcp__winter__office__docs", runs: "guest", brokers: [] },
+      { name: "Browser", runs: "host", brokers: ["network"] }, { name: "mcp__clover__office__docs", runs: "guest", brokers: [] },
       { name: "SomeShell", runs: "host", brokers: ["network"] },
     ] satisfies Row[]) expect(hostAccessProblems([...base, slipped]).length).toBeGreaterThan(0);
   });
@@ -192,14 +192,14 @@ describe("allowlist and denylist", () => {
     for (const family of COWORK_DYNAMIC_TOOL_FAMILIES) {
       expect(family.runs).toBe("guest");
       expect(family.pattern.startsWith("mcp__<server>__")).toBe(true);
-      expect(family.pattern).not.toContain("mcp__winter__");
+      expect(family.pattern).not.toContain("mcp__clover__");
     }
   });
 
   test("only the host session tools are forbidden outright; the Mac capabilities are opt-in; plugin servers get a visible reason", () => {
     expect(COWORK_TOOL_DENYLIST.filter((row) => row.kind === "never").map((row) => row.name).sort()).toEqual(["ListSessions", "SpawnSession"]);
     expect(COWORK_TOOL_DENYLIST.filter((row) => row.kind === "opt-in").map((row) => row.name).sort())
-      .toEqual(["Browser", "Computer", "ComputerV2", "mcp__winter__lsp__lsp", "mcp__winter__office__docs", "mcp__winter__office__sheets", "mcp__winter__office__slides"]);
+      .toEqual(["Browser", "Computer", "ComputerV2", "mcp__clover__lsp__lsp", "mcp__clover__office__docs", "mcp__clover__office__sheets", "mcp__clover__office__slides"]);
     expect(COWORK_UNBUILT_CAPABILITY_SERVERS.filter((row) => row.kind === "never").map((row) => row.key)).toEqual(["sessions"]);
     expect(COWORK_UNBUILT_CAPABILITY_SERVERS.find((row) => row.key === "external")?.kind).toBe("visible-unavailable");
     expect(COWORK_HOST_ACCESS_REFUSALS.map((row) => row.id)).toEqual(["host-shell-fallback", "disable-sandbox", "host-file-tools", "host-ambient-access", "host-credentials"]);
@@ -413,7 +413,7 @@ describe("prompt text", () => {
 
   test("states what the session can do, truthfully", () => {
     for (const phrase of [
-      "You are Winter in Cowork mode", "Linux (ARM64) virtual machine", "It is not the Mac", "/workspace/folders/<id>", "/workspace/repos/<id>",
+      "You are Clover in Cowork mode", "Linux (ARM64) virtual machine", "It is not the Mac", "/workspace/folders/<id>", "/workspace/repos/<id>",
       "/workspace/outputs/s_4f2a91c0", "/workspace/.winter/scratch/s_4f2a91c0", "/workspace/.winter/memory", "/workspace/.winter/WINTER.md", "read-only to you",
       "survive the workspace being stopped", "public Internet", "private or link-local address unless the user has granted that specific service",
       "never the user's approval", "you cannot turn the sandbox off", "main, default or any protected branch", "\"Do not push\" from the user always wins",
@@ -423,10 +423,10 @@ describe("prompt text", () => {
   });
 
   test("the claims about enforcement, guidance and scheduled runs are no stronger than the spec", () => {
-    expect(text).toContain("Winter's Git gateway checks it for the credentials it holds");
-    expect(text).not.toMatch(/Winter enforces/);
+    expect(text).toContain("Clover's Git gateway checks it for the credentials it holds");
+    expect(text).not.toMatch(/Clover enforces/);
     expect(text).toContain("the WINTER.md files that apply to the source and directory you are working in");
-    expect(text).not.toMatch(/WINTER\.md files of connected sources/);
+    expect(text).not.toMatch(/CLOVER\.md files of connected sources/);
     expect(text).toContain("or ends in a typed denial or a timeout");
     expect(coworkSystemPrompt(facts({ approvalPolicy: "plan" }))).toContain("a separate scratch area for planning notes");
     expect(coworkSystemPrompt(facts({ approvalPolicy: "plan" }))).toContain("The sources and memory are read-only to you");
@@ -450,7 +450,7 @@ describe("prompt text", () => {
 
   test("the voice and structure match the chat and dispatch prompts: an identity line, then # sections", () => {
     const lines = text.split("\n");
-    expect(lines[0]).toMatch(/^You are Winter in Cowork mode: /);
+    expect(lines[0]).toMatch(/^You are Clover in Cowork mode: /);
     expect(lines.filter((line) => line.startsWith("# "))).toEqual([
       "# Where you are", "# Your files", "# What stays and what does not", "# Guidance and memory", "# What needs approval", "# Network", "# Publishing",
       "# Working with others", "# Scheduling", "# Delivering work", "# Asking and reporting",
@@ -469,7 +469,7 @@ describe("prompt text", () => {
     for (const phrase of hands) expect(text).toContain(phrase);
     for (const bare of [coworkSystemPrompt(facts({ readiness: undefined })), coworkSystemPrompt(facts({ toolClasses: [] })), coworkSystemPrompt(facts({ withheldTools: ["Bash", "Read", "Write", "Edit"] }))]) {
       for (const phrase of hands) expect(bare).not.toContain(phrase);
-      expect(bare.split("\n")[0]).toBe("You are Winter in Cowork mode: you work for the user inside a private Linux workspace. You act, check what you did, and report plainly what worked and what did not.");
+      expect(bare.split("\n")[0]).toBe("You are Clover in Cowork mode: you work for the user inside a private Linux workspace. You act, check what you did, and report plainly what worked and what did not.");
       expect(bare).toContain("It is not the Mac. Whatever you run runs inside it.");
       expect(bare).toContain("You cannot reach the Mac");
     }
@@ -721,8 +721,8 @@ test("anti-wiring, wired behind the refusal: one src importer (mode-options), wh
   expect(existsSync(join(packages, "core", "src", "cowork", "index.ts"))).toBe(false);
   expect(readFileSync(join(packages, "core", "src", "index.ts"), "utf8")).not.toMatch(/session-profile|from "\.\/cowork/);
   const own = readFileSync(MODULE, "utf8");
-  expect([...own.matchAll(/from "([^"]+)"/g)].map((match) => match[1]!).sort()).toEqual(["./types", "@yanlinglabs/winter-protocol"]);
-  expect(own).not.toMatch(/from "@yanlinglabs\/winter-(agent|runtime)-sdk/);
+  expect([...own.matchAll(/from "([^"]+)"/g)].map((match) => match[1]!).sort()).toEqual(["./types", "@waifucave/clover-protocol"]);
+  expect(own).not.toMatch(/from "@yanlinglabs\/clover-(agent|runtime)-sdk/);
   expect(own).not.toMatch(/\b(process\.env|Bun\.|readFileSync|writeFileSync|fetch\()/);
   expect(Object.keys(profile).sort()).toEqual([
     "COWORK_DECISIONS", "COWORK_DYNAMIC_TOOL_FAMILIES", "COWORK_GUEST_PROFILE_TOOLS", "COWORK_HOST_ACCESS_REFUSALS", "COWORK_PROMPT_LIMITS", "COWORK_READINESS", "COWORK_TOOL_ALLOWLIST", "COWORK_TOOL_DENYLIST",

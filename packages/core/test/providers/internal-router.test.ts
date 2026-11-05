@@ -1,5 +1,5 @@
 /**
- * 2026-09-19: the internal-jobs router — Winter's own background calls (titles, the bash reviewer, the
+ * 2026-09-19: the internal-jobs router — Clover's own background calls (titles, the bash reviewer, the
  * dreamer, the session cleaner) no longer depend on `settings.provider.model`'s provider being one of
  * codex-oauth/openai.
  *
@@ -28,7 +28,7 @@ import { withProblemsForRoles } from "../../src/providers/role-health";
 import { effortToSpendForRole, modelRolesFor } from "../../src/settings";
 
 function secretsStore(): FileSecretStore {
-  return new FileSecretStore(mkdtempSync(join(tmpdir(), "winter-internal-router-secrets-")));
+  return new FileSecretStore(mkdtempSync(join(tmpdir(), "clover-internal-router-secrets-")));
 }
 
 function settingsWith(model: string, extra: Record<string, unknown> = {}): Settings {
@@ -45,7 +45,7 @@ async function routerFor(
 }
 
 describe("the eligible set", () => {
-  // WS-23: `anthropic` rejoined the eligible set (every model runs on the Winter SDK now), and
+  // WS-23: `anthropic` rejoined the eligible set (every model runs on the Clover SDK now), and
   // `console` with the live-gate fix; only the reserved `cc` row stays out.
   test("excludes the reserved first-party Claude row and includes anthropic, console plus ordinary token-priced ones", () => {
     const eligible = internalEligibleProviderIds();
@@ -63,7 +63,7 @@ describe("the eligible set", () => {
     // Their credential material is `aws`/`gcp-*`, which `credential-store.ts` refuses typed.
     expect(eligible.has("bedrock")).toBe(false);
     expect(eligible.has("vertex")).toBe(false);
-    // No Winter login door and no inventory slot.
+    // No Clover login door and no inventory slot.
     expect(eligible.has("xai-oauth")).toBe(false);
   });
 });
@@ -86,7 +86,7 @@ describe("a DeepSeek default with only a DeepSeek key", () => {
       expect(String(call.tag)).toBe("deepseek/deepseek-flash");
       expect(call.model).toBe("deepseek-flash");
 
-      const home = mkdtempSync(join(tmpdir(), "winter-internal-router-home-"));
+      const home = mkdtempSync(join(tmpdir(), "clover-internal-router-home-"));
       const store = new SessionStore(home);
       const hub = new SessionHub(store);
       const titler = new SessionTitler({
@@ -198,7 +198,7 @@ describe("a Claude default", () => {
     if (!isInternalRefusal(refused)) return;
     expect(refused.reason).toBe("provider-unsupported");
     expect(refused.detail).toContain("AWS Bedrock");
-    expect(refused.detail).toContain("can't be used for Winter's own jobs yet");
+    expect(refused.detail).toContain("can't be used for Clover's own jobs yet");
     expect(String(refused.tag)).toBe("bedrock/anthropic.claude-sonnet-4-5");
   });
 });
@@ -505,7 +505,7 @@ describe("codex-oauth and openai still work over their own loopback fakes", () =
 });
 
 describe("a user-entered providers.<id>.baseUrl", () => {
-  test("keeps Winter's historically unrestricted BYO-endpoint behaviour — a loopback override streams", async () => {
+  test("keeps Clover's historically unrestricted BYO-endpoint behaviour — a loopback override streams", async () => {
     const model = "gpt-5.6-terra";
     const fake = await openaiResponsesFake.startOpenAiResponsesFake({
       scenarios: { [model]: [openaiResponsesFake.responsesStream({ text: ["Local Title"] })] },
@@ -536,7 +536,7 @@ describe("a user-entered providers.<id>.baseUrl", () => {
 // ════════════════════════════════════════════════════════════════════════════════════════════════
 
 describe("B-1: the snapshot self-heals from an out-of-band credential write", () => {
-  test("`winter login`'s in-process codex write is picked up without a restart", async () => {
+  test("`clover login`'s in-process codex write is picked up without a restart", async () => {
     const secrets = secretsStore();
     let clock = 1_000_000;
     const view = createInternalProviderView({ secrets, log: () => {}, now: () => clock });
@@ -547,7 +547,7 @@ describe("B-1: the snapshot self-heals from an out-of-band credential write", ()
     // Inert, and the refusal asked for a background probe.
     expect(isInternalRefusal(router.resolve("titles.model", settings))).toBe(true);
     await Bun.sleep(30); // let that first probe settle — `refreshSoon` coalesces while one is in flight
-    // …the CLI writes the material itself, exactly as `winter login` does.
+    // …the CLI writes the material itself, exactly as `clover login` does.
     await writeCredentialMaterial(secrets, CREDENTIAL_MATERIAL_NAMES.codexOauth, { kind: "oauth", accessToken: "at" });
     clock += REFRESH_SOON_MIN_MS + 1; // past the self-heal floor
     router.resolve("titles.model", settings); // fires the probe
@@ -557,7 +557,7 @@ describe("B-1: the snapshot self-heals from an out-of-band credential write", ()
     if (!isInternalRefusal(healed)) expect(healed.providerId).toBe("codex-oauth");
   });
 
-  test("`winter logout`'s in-process clear is picked up too — the jobs go inert, not credential-rejected", async () => {
+  test("`clover logout`'s in-process clear is picked up too — the jobs go inert, not credential-rejected", async () => {
     const secrets = secretsStore();
     await writeCredentialMaterial(secrets, CREDENTIAL_MATERIAL_NAMES.codexOauth, { kind: "oauth", accessToken: "at" });
     const view = createInternalProviderView({ secrets, log: () => {} });
@@ -753,7 +753,7 @@ describe("M-2: one quota ledger per provider", () => {
   });
 });
 
-describe("M-3: Winter never guesses a model on a provider the user did not choose", () => {
+describe("M-3: Clover never guesses a model on a provider the user did not choose", () => {
   test("a credentialed provider with no family slot and no session-default claim reports no-default-model", async () => {
     const secrets = secretsStore();
     // `groq` is eligible and credentialed, declares no terra slot, and is NOT provider.model's provider.
@@ -766,7 +766,7 @@ describe("M-3: Winter never guesses a model on a provider the user did not choos
     expect(isInternalRefusal(call)).toBe(true);
     if (!isInternalRefusal(call)) return;
     expect(call.reason).toBe("no-default-model");
-    expect(call.detail).toBe("pick a model for this job in Settings › Roles — Winter won't choose one on Groq for you");
+    expect(call.detail).toBe("pick a model for this job in Settings › Roles — Clover won't choose one on Groq for you");
     expect(call.tag).toBeNull();
   });
 
@@ -838,7 +838,7 @@ describe("the reviewer's pin fallback", () => {
     if (isInternalRefusal(call)) return;
     expect(String(call.tag)).toBe("codex-oauth/gpt-5.6-terra");
     expect(call.pinRefusal?.reason).toBe("provider-unsupported");
-    expect(call.pinRefusal?.detail).toBe("AWS Bedrock can't be used for Winter's own jobs yet");
+    expect(call.pinRefusal?.detail).toBe("AWS Bedrock can't be used for Clover's own jobs yet");
   });
 
   test("a RUNNABLE pin is untouched — no fallback, no pinRefusal", async () => {
@@ -903,7 +903,7 @@ describe("R.1 ruling 1: a tag with no catalog row is an unrunnable pin", () => {
   test("the titler SKIPS its run on it — no provider call, no title", async () => {
     const { router } = await codexAndDeepseekHome();
     const settings = pinnedEverywhere(settingsWith("codex-oauth/gpt-5.6-sol"));
-    const store = new SessionStore(mkdtempSync(join(tmpdir(), "winter-r1-titles-")));
+    const store = new SessionStore(mkdtempSync(join(tmpdir(), "clover-r1-titles-")));
     const hub = new SessionHub(store);
     const titler = new SessionTitler({ source: () => router.resolve("titles.model", settings), store, hub } as never);
     const sessionId = store.createSession("global", { cwd: "/tmp" });

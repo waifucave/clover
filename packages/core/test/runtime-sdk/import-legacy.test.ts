@@ -1,14 +1,14 @@
 // Winter Phase 8c (P8c-6): the engine-era import door. Unit coverage for `convertEngineEraLog`
 // (the pure conversion, over a golden fixture set) and `importEngineEraSession` (the whole
 // mechanism: convert, write, patch the SAME record). The real-binary proof that a converted
-// transcript actually RESUMES on `winter` lives in `test/e2e/import-legacy-real-child.test.ts` —
+// transcript actually RESUMES on `clover` lives in `test/e2e/import-legacy-real-child.test.ts` —
 // this file never spawns a child.
 import { describe, expect, test } from "bun:test";
 import { readFileSync, readdirSync, realpathSync } from "node:fs";
 import { join } from "node:path";
 import { mkdirSync } from "node:fs";
 import { transcriptProjectKey, type SessionKey, type SessionStoreEntry } from "@yanlinglabs/winter-agent-sdk";
-import type { SessionEvent } from "@yanlinglabs/winter-protocol";
+import type { SessionEvent } from "@waifucave/clover-protocol";
 import { convertEngineEraLog, importEngineEraSession, ImportLegacySessionError } from "../../src/runtime-sdk/import-legacy";
 import { openRuntimeStateDb, RuntimeSessionRecords, backfillNativeSessions } from "../../src/runtime-state";
 import { sessionLegOf } from "../../src/runtime-sdk/leg";
@@ -142,7 +142,7 @@ describe("importEngineEraSession", () => {
         expect(appended[0]!.key).toEqual({ projectKey: transcriptProjectKey(realpathSync(cwd)), sessionId: result.backendSessionId }); // WS-21 (L2 O-1)
 
         const after = records.get(sid)!;
-        expect(after.winterSessionId).toBe(sid); // SAME Winter session id — never a new record
+        expect(after.winterSessionId).toBe(sid); // SAME Clover session id — never a new record
         expect(sessionLegOf(after)).toBe("winter");
         expect(after.backendSessionId).toBe(result.backendSessionId);
         expect(after.transcriptHealth).toBe("clean");
@@ -211,7 +211,7 @@ describe("importEngineEraSession", () => {
     });
   });
 
-  test("refuses a session that is already on the Winter or official leg", async () => {
+  test("refuses a session that is already on the Clover or official leg", async () => {
     await withTempHome(async (home) => {
       const store = new SessionStore(home);
       const cwd = join(home, "work2");

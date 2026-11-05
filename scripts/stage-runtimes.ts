@@ -9,10 +9,10 @@
  *
  *   bun run runtimes:stage                              # -> dist/runtimes/{winter,VERSIONS.json}
  *   bun run runtimes:stage --out <dir>
- *   bun run runtimes:stage --winter <path>               # skip winter resolution, use an already-built one
+ *   bun run runtimes:stage --clover <path>               # skip winter resolution, use an already-built one
  *   bun run runtimes:stage --sdk-checkout <path>          # forwarded to buildWinter() (checkout-build only)
- *   bun run runtimes:stage --winter-source platform-package   # fail loudly rather than fall back
- *   bun run runtimes:stage --winter-source checkout-build     # always build from the pinned-tag checkout
+ *   bun run runtimes:stage --clover-source platform-package   # fail loudly rather than fall back
+ *   bun run runtimes:stage --clover-source checkout-build     # always build from the pinned-tag checkout
  *
  * P9a-8/P9a-9: `winter`'s source is now a LADDER, same posture as the daemon's own
  * `resolveWinterExecutable` — the installed npm platform package first (the strong row-16 check,
@@ -26,7 +26,7 @@
  * into the app bundle — this file and the embed script are the ONE place a runtime is copied.
  *
  * Layout (RUNTIME_BUNDLE_LAYOUT, bundle-layout.ts — the one place the subpaths are spelled):
- *   <out>/winter
+ *   <out>/clover
  *   <out>/VERSIONS.json
  */
 import { createHash } from "node:crypto";
@@ -67,7 +67,7 @@ export function assertMachOArm64(path: string): void {
   if (cpuType !== CPU_TYPE_ARM64) throw new Error(`stage-runtimes: ${path} is a Mach-O binary but not arm64 (cputype 0x${cpuType.toString(16)})`);
 }
 
-export interface InstalledWinterPackage {
+export interface InstalledCloverPackage {
   binPath: string;
   version: string;
 }
@@ -80,7 +80,7 @@ export interface InstalledWinterPackage {
  * `undefined` when the optional dependency is not installed at all (a legitimate skip: a non-
  * darwin/arm64 host, or simply no `bun install` yet).
  */
-export function resolveInstalledWinterPackage(): InstalledWinterPackage | undefined {
+export function resolveInstalledWinterPackage(): InstalledCloverPackage | undefined {
   const binPath = resolvePlatformPackageWinter();
   if (binPath === undefined) return undefined;
   // `<packageRoot>/bin/winter` — the package.json this bin path came from sits two levels up.
@@ -113,14 +113,14 @@ export interface StageRuntimesResult {
 export interface StageRuntimesOpts {
   /** Root directory the layout is written into (a bundle's `Resources/runtimes/`, or `dist/runtimes` for dev/CI). */
   out: string;
-  /** Skip winter resolution entirely and copy from an already-built binary instead (`--winter
+  /** Skip winter resolution entirely and copy from an already-built binary instead (`--clover
    *  <path>`). Labelled by `winterSource` when given (default `"checkout-build"` — the historical
    *  meaning of "an already-built path", e.g. a prior `bun run build:winter`). */
   winterPath?: string;
   /** Forwarded to `buildWinter()` when staging falls through to a from-source build. */
   sdkCheckout?: string;
   /**
-   * P9a-8/`--winter-source`: which rung produces the embedded `winter`. Explicit
+   * P9a-8/`--clover-source`: which rung produces the embedded `winter`. Explicit
    * `"platform-package"` FAILS (never silently falls back) when the package is not installed —
    * an explicit choice this ladder cannot honor is the failure, same posture as every other
    * explicit-beats-implicit door in this codebase. Explicit `"checkout-build"` always calls
@@ -132,7 +132,7 @@ export interface StageRuntimesOpts {
   winterSource?: VersionsJson["winterSource"];
   /** Test seam for the P9a-9 platform-package door; defaults to `resolveInstalledWinterPackage`
    *  (never a real install dependency in tests). */
-  resolveWinterPackage?: () => InstalledWinterPackage | undefined;
+  resolveWinterPackage?: () => InstalledCloverPackage | undefined;
   /** Test seam for the Mach-O/arch assertion on a package-resolved winter binary; defaults to
    *  `assertMachOArm64`. Throws to refuse, same contract as the real one. */
   checkWinterMachO?: (path: string) => void;
@@ -144,7 +144,7 @@ export interface StageRuntimesOpts {
 
 export async function stageRuntimes(opts: StageRuntimesOpts): Promise<StageRuntimesResult> {
   mkdirSync(opts.out, { recursive: true });
-  const winterDest = join(opts.out, relativeToRuntimesRoot("winter"));
+  const cloverDest = join(opts.out, relativeToRuntimesRoot("winter"));
   const versionsDest = join(opts.out, relativeToRuntimesRoot("versions"));
 
   // (1) winter — P9a-8's ladder: an explicit `winterPath` bypasses resolution entirely; otherwise
@@ -152,14 +152,14 @@ export async function stageRuntimes(opts: StageRuntimesOpts): Promise<StageRunti
   // for explicitly, and only falls BACK to a from-source `buildWinter()` — loudly — when nothing
   // else was requested and the package is simply not installed.
   const buildWinterFn = opts.buildWinterFn ?? buildWinter;
-  let winterSrc: string;
+  let cloverSrc: string;
   let winterSource: VersionsJson["winterSource"];
   if (opts.winterPath !== undefined) {
-    winterSrc = opts.winterPath;
+    cloverSrc = opts.winterPath;
     winterSource = opts.winterSource ?? "checkout-build";
   } else if (opts.winterSource === "checkout-build") {
     console.log("stage-runtimes: winterSource=checkout-build requested explicitly — building winter from the pinned-tag SDK checkout.");
-    winterSrc = await buildWinterFn({ checkout: opts.sdkCheckout });
+    cloverSrc = await buildWinterFn({ checkout: opts.sdkCheckout });
     winterSource = "checkout-build";
   } else {
     const resolveWinterPackage = opts.resolveWinterPackage ?? resolveInstalledWinterPackage;
@@ -170,7 +170,7 @@ export async function stageRuntimes(opts: StageRuntimesOpts): Promise<StageRunti
       }
       const checkWinterMachO = opts.checkWinterMachO ?? assertMachOArm64;
       checkWinterMachO(pkg.binPath);
-      winterSrc = pkg.binPath;
+      cloverSrc = pkg.binPath;
       winterSource = "platform-package";
     } else if (opts.winterSource === "platform-package") {
       throw new Error(
@@ -182,24 +182,24 @@ export async function stageRuntimes(opts: StageRuntimesOpts): Promise<StageRunti
         "WARNING: stage-runtimes: the @yanlinglabs/winter-agent-sdk-darwin-arm64 platform package is not installed " +
           "(dated 2026-09-12, P9a-8) — falling BACK to building winter from the pinned-tag SDK checkout. This is the " +
           "WEAKER row-16 path (row16ProvenanceCheck, never the strong checksum-equality row16IdentityCheck). Run " +
-          "`bun install` once the platform package is published, or pass --winter-source platform-package to fail loudly instead.",
+          "`bun install` once the platform package is published, or pass --clover-source platform-package to fail loudly instead.",
       );
-      winterSrc = await buildWinterFn({ checkout: opts.sdkCheckout });
+      cloverSrc = await buildWinterFn({ checkout: opts.sdkCheckout });
       winterSource = "checkout-build";
     }
   }
-  copyFileSync(winterSrc, winterDest);
-  chmodSync(winterDest, 0o755);
+  copyFileSync(cloverSrc, cloverDest);
+  chmodSync(cloverDest, 0o755);
 
   // (2) SHA-256 — the PRE-SIGN payload (P8d-2's row-16 check compares against exactly this value;
   // `winter` is re-signed at embed time).
-  const winterPreSignSha256 = sha256File(winterDest);
+  const winterPreSignSha256 = sha256File(cloverDest);
 
-  // (3) VERSIONS.json — winterSource names WHICH rung produced winterSrc above (P9a-8).
+  // (3) VERSIONS.json — winterSource names WHICH rung produced cloverSrc above (P9a-8).
   const versions = buildVersionsJson({ winterPreSignSha256, winterSource });
   writeFileSync(versionsDest, `${JSON.stringify(versions, null, 2)}\n`);
 
-  return { winterPath: winterDest, versionsPath: versionsDest, versions };
+  return { winterPath: cloverDest, versionsPath: versionsDest, versions };
 }
 
 if (import.meta.main) {
@@ -209,14 +209,14 @@ if (import.meta.main) {
     return ix >= 0 ? args[ix + 1] : undefined;
   };
   const out = resolve(flag("--out") ?? resolve(import.meta.dir, "../dist/runtimes"));
-  const winterSourceArg = flag("--winter-source");
+  const winterSourceArg = flag("--clover-source");
   if (winterSourceArg !== undefined && winterSourceArg !== "platform-package" && winterSourceArg !== "checkout-build") {
-    console.error(`stage-runtimes: --winter-source must be "platform-package" or "checkout-build" (got ${JSON.stringify(winterSourceArg)})`);
+    console.error(`stage-runtimes: --clover-source must be "platform-package" or "checkout-build" (got ${JSON.stringify(winterSourceArg)})`);
     process.exit(1);
   }
   const result = await stageRuntimes({
     out,
-    winterPath: flag("--winter"),
+    winterPath: flag("--clover"),
     sdkCheckout: flag("--sdk-checkout"),
     winterSource: winterSourceArg as VersionsJson["winterSource"] | undefined,
   });

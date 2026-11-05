@@ -1,4 +1,4 @@
-// The Winter island's activity (phase 2, `island/activity.ts`): the sessions driving ComputerV2 now, the turns that
+// The Clover island's activity (phase 2, `island/activity.ts`): the sessions driving ComputerV2 now, the turns that
 // ended with their session idle, the armed wake triggers, and the `island.activity` / `island.activityChanged` doors.
 import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync } from "node:fs";
@@ -7,7 +7,7 @@ import { join } from "node:path";
 import {
   LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, ERR, CLIENT_CAPABILITY_ISLAND, ISLAND_ACTIVITY_CHANGED_NOTIFICATION,
   IslandActivityResult, type SessionEvent, type WritableSocket,
-} from "@yanlinglabs/winter-protocol";
+} from "@waifucave/clover-protocol";
 import { startIpcServer, REMOTE_ALLOWED_METHODS } from "../../src/ipc/server";
 import { SessionStore } from "../../src/sessions/store";
 import { SessionHub } from "../../src/sessions/hub";
@@ -327,7 +327,7 @@ describe("island.activity over the socket", () => {
   afterEach(() => { stop?.(); stop = undefined; });
 
   test("an island client is told on change and reads the activity; a remote or plugin connection is refused", async () => {
-    const home = mkdtempSync(join(tmpdir(), "winter-island-activity-"));
+    const home = mkdtempSync(join(tmpdir(), "clover-island-activity-"));
     const store = new SessionStore(home);
     const hub = new SessionHub(store);
     const socketPath = join(home, "core.sock");

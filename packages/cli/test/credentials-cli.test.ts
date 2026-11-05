@@ -2,17 +2,17 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { FileSecretStore, OPENAI_API_KEY_SECRET, CODEX_SECRET_NAMES, writeCredentialMaterial } from "@yanlinglabs/winter-core";
+import { FileSecretStore, OPENAI_API_KEY_SECRET, CODEX_SECRET_NAMES, writeCredentialMaterial } from "@waifucave/clover-core";
 import { runCredentialsRoute, runLogoutOpenAiRoute, writeCredentialThroughDaemonOrLocally, notifyDaemonOfOutOfBandCredentialChange, credentialEffectNote, type CredentialRpcDoor } from "../src/main";
-import { METHODS } from "@yanlinglabs/winter-protocol";
+import { METHODS } from "@waifucave/clover-protocol";
 
-// WS-19 (W19-11, acceptance B-4) — `winter credentials` and `winter logout --openai`.
+// WS-19 (W19-11, acceptance B-4) — `clover credentials` and `clover logout --openai`.
 //
 // Driven through the EXTRACTED route functions, the same convention `cli-verb-gates.test.ts`
 // established for the eight session verbs: store + args in, a plain result out, nothing printed and
 // nothing exited. That is what makes them testable at all here — the real `case` blocks construct a
-// `KeychainSecretStore`, whose service resolves to the REAL `com.winter.core` (no home is passed, so
-// the `WINTER_KEYCHAIN_SERVICE` test override is deliberately inert for it), and a test must never
+// `KeychainSecretStore`, whose service resolves to the REAL `com.waifucave.clover.core` (no home is passed, so
+// the `CLOVER_KEYCHAIN_SERVICE` test override is deliberately inert for it), and a test must never
 // reach that. A `FileSecretStore` in a mkdtemp dir stands in.
 //
 // The masked prompt is injected rather than driven: `readSecret`'s raw-mode TTY read is the ONLY
@@ -33,7 +33,7 @@ afterEach(() => rmSync(dir, { recursive: true, force: true }));
 
 const never = async (): Promise<string> => { throw new Error("readKey must not be called"); };
 
-describe("winter credentials", () => {
+describe("clover credentials", () => {
   test("a bare `credentials` lists, and every row carries the fields a client keys on", async () => {
     const r = await runCredentialsRoute(secrets, home, undefined, undefined, never);
     expect(r.ok).toBe(true);
@@ -80,7 +80,7 @@ describe("winter credentials", () => {
 
   test("the masked prompt is never reached for a malformed invocation — no staring at a prompt for a key that was going to be refused", async () => {
     // `never` throws if called; a missing provider id must be caught before it.
-    expect(await runCredentialsRoute(secrets, home, "set", undefined, never)).toEqual({ ok: false, message: "usage: winter credentials set <providerId>" });
+    expect(await runCredentialsRoute(secrets, home, "set", undefined, never)).toEqual({ ok: false, message: "usage: clover credentials set <providerId>" });
     expect(await runCredentialsRoute(secrets, home, "nonsense", undefined, never)).toMatchObject({ ok: false });
   });
 
@@ -117,7 +117,7 @@ describe("winter credentials", () => {
   });
 });
 
-describe("winter logout --openai (W19-11)", () => {
+describe("clover logout --openai (W19-11)", () => {
   test("clears BOTH the material record and the legacy raw record", async () => {
     await writeCredentialMaterial(secrets, "openai:default", { kind: "api-key", key: SENTINEL });
     await secrets.set(OPENAI_API_KEY_SECRET, `${SENTINEL}-legacy`);
@@ -139,7 +139,7 @@ describe("winter logout --openai (W19-11)", () => {
 describe("the usage string lists every credential verb and flag (W19-11)", () => {
   test("credentials' three verbs, logout's three flags, and login's --anthropic-console are all named", () => {
     const src = readFileSync(join(import.meta.dir, "..", "src", "main.ts"), "utf8");
-    const usage = src.slice(src.indexOf("winter ${CORE_VERSION} — commands:"));
+    const usage = src.slice(src.indexOf("clover ${CORE_VERSION} — commands:"));
     const block = usage.slice(0, usage.indexOf("`);"));
     for (const fragment of [
       "credentials [list]",
@@ -163,7 +163,7 @@ describe("the usage string lists every credential verb and flag (W19-11)", () =>
 // whole-branch review's MAJOR 1 caught on the RPC door, surviving on this one. Meanwhile the CLI
 // printed "no daemon restart needed".
 //
-// The in-process path is still the fallback, and it is the RIGHT fallback (`winter login` has always
+// The in-process path is still the fallback, and it is the RIGHT fallback (`clover login` has always
 // worked with no daemon) — but the two outcomes are different promises and the copy now says which.
 // ════════════════════════════════════════════════════════════════════════════════════════════════
 describe("the daemon door (fix round 4)", () => {
@@ -252,7 +252,7 @@ describe("the daemon door (fix round 4)", () => {
     expect(await secrets.get(OPENAI_API_KEY_SECRET)).toBeNull();
   });
 
-  test("a TOOL row still falls back in-process with no daemon — `winter login --exa-key` must work when it is down", async () => {
+  test("a TOOL row still falls back in-process with no daemon — `clover login --exa-key` must work when it is down", async () => {
     const r = await runCredentialsRoute(secrets, home, "set", "exa", async () => SENTINEL, async () => undefined);
     expect(r).toMatchObject({ ok: true, via: "in-process" });
     expect(await secrets.get("exa-api-key")).toBe(SENTINEL);
@@ -265,15 +265,15 @@ describe("the daemon door (fix round 4)", () => {
     // core's `setCredential`. It goes through core, and this pins that.
     const noDaemon = await runCredentialsRoute(secrets, home, "set", "web-search", async () => SENTINEL, async () => undefined);
     expect(noDaemon).toMatchObject({ ok: false });
-    expect(String((noDaemon as { message: string }).message)).toContain("winter credentials remove web-search");
+    expect(String((noDaemon as { message: string }).message)).toContain("clover credentials remove web-search");
     expect(await secrets.get("web-search-api-key")).toBeNull();
 
     // …and the DAEMON's own refusal for the same row stands and is never retried in-process (the rule
     // this suite already pins for provider rows), so the store stays empty on that path too. The
     // daemon-side refusal itself is pinned in core's `credentials-rpc` suite; this door only has to
     // carry it.
-    const refusal = Object.assign(new Error("Web search is no longer used by any Winter tool (code -32602)"), {
-      rpc: { message: "Web search is no longer used by any Winter tool — its key cannot be set.", code: -32602, data: { code: "credential_kind_unsupported", door: "credential.set" } },
+    const refusal = Object.assign(new Error("Web search is no longer used by any Clover tool (code -32602)"), {
+      rpc: { message: "Web search is no longer used by any Clover tool — its key cannot be set.", code: -32602, data: { code: "credential_kind_unsupported", door: "credential.set" } },
     });
     const { door } = scriptedDaemon({ [METHODS.credentialSet]: refusal });
     const viaDaemon = await runCredentialsRoute(secrets, home, "set", "web-search", async () => SENTINEL, async () => door);
@@ -289,10 +289,10 @@ describe("the daemon door (fix round 4)", () => {
 
   test("with a daemon listening, the `exa` row goes THROUGH it (0.0.17: the key is baked into a spawn)", async () => {
     // It used to be written in-process by design — the daemon's own Search/ReadPage read it per call
-    // and no child's `Options` named it. At agent SDK 0.0.17 a Winter child's
+    // and no child's `Options` named it. At agent SDK 0.0.17 a Clover child's
     // `Options.web.search.authRef` NAMES it, and whether it exists decides chat's and dispatch's tool
     // surface, both fixed at spawn. So the daemon has to hear about it: its `credential.set` evicts
-    // every Winter-leg child resumably, which is what makes "no restart" true for this key too.
+    // every Clover-leg child resumably, which is what makes "no restart" true for this key too.
     const { door, calls } = scriptedDaemon({ [METHODS.credentialSet]: { ok: true } });
     const r = await runCredentialsRoute(secrets, home, "set", "exa", async () => SENTINEL, async () => door);
     expect(r).toMatchObject({ ok: true, via: "daemon" });
@@ -303,10 +303,10 @@ describe("the daemon door (fix round 4)", () => {
 });
 
 // ════════════════════════════════════════════════════════════════════════════════════════════════
-// B-1 (2026-09-19 review): `winter login` (ChatGPT/Codex) and bare `winter logout` write
+// B-1 (2026-09-19 review): `clover login` (ChatGPT/Codex) and bare `clover logout` write
 // `codex-oauth:default` IN-PROCESS and cannot go through `credential.set` (that door takes an API-KEY
 // string; this material is an OAuth record). So a LIVE daemon has to be told, or its cached
-// "which providers can Winter's own jobs run on" snapshot stays wrong until a restart.
+// "which providers can Clover's own jobs run on" snapshot stays wrong until a restart.
 // ════════════════════════════════════════════════════════════════════════════════════════════════
 describe("notifyDaemonOfOutOfBandCredentialChange", () => {
   /** The same shape the WS-19 block above uses, scoped here (that one is a nested helper). */
@@ -333,7 +333,7 @@ describe("notifyDaemonOfOutOfBandCredentialChange", () => {
     expect(calls[0]!.params).toEqual({});
   });
 
-  test("answers false with no daemon — `winter login` has always worked with the daemon down", async () => {
+  test("answers false with no daemon — `clover login` has always worked with the daemon down", async () => {
     expect(await notifyDaemonOfOutOfBandCredentialChange(async () => undefined)).toBe(false);
   });
 

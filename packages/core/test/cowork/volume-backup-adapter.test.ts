@@ -20,7 +20,7 @@ afterEach(() => { fds.splice(0).forEach(fd => { try { closeSync(fd); } catch { /
  * native metadata reader that `hasStickyBackupExclusion` needs. */
 function items() {
   // The storage code passes canonical paths (CoworkVolumes realpaths its home); tmutil prints the canonical spelling.
-  const dir = realpathSync(mkdtempSync(join(tmpdir(), "winter-backup-adapter-"))); dirs.push(dir);
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), "clover-backup-adapter-"))); dirs.push(dir);
   const marked = join(dir, "data.ext4"), sibling = join(dir, "env.ext4");
   writeFileSync(marked, "x"); writeFileSync(sibling, "y");
   const dirFd = openDirAt(AT_FDCWD, dir); fds.push(dirFd);

@@ -2,7 +2,7 @@
 // wire validator (native/protocol.ts `conversationOf`, the supervisor's own rules mirrored), and the policy encoding is
 // pinned against the guest supervisor's literal map.
 import { afterEach, expect, test } from "bun:test";
-import type { ApprovalPolicy } from "@yanlinglabs/winter-protocol";
+import type { ApprovalPolicy } from "@waifucave/clover-protocol";
 import {
   coworkPlanScratchPath,
   COWORK_GUEST_IDENTITIES, COWORK_GUEST_RUNTIME_MODES, coworkConversationFor, coworkGuestCwdFor, coworkGuestPermissionModeFor, coworkGuestPolicyFor,
@@ -88,7 +88,7 @@ test("a read-only source is a read-only root, and a relative cwd is the root its
 test("CONDITION (D3 note section 4): no protected path can be a host-query root: the native wire refuses each, and the builder only ever sends the source", () => {
   const f = fixture(), input = inputFor(f), item = coworkConversationFor(input).conversations[0]!;
   expect(refusedOnTheWire(item, "incarnation")).toBe(false);
-  // The builder: one root, its `source` IS its guest path, and it is a folder or repository root (never .winter, outputs or /run).
+  // The builder: one root, its `source` IS its guest path, and it is a folder or repository root (never .clover, outputs or /run).
   expect(item.roots).toHaveLength(1);
   expect(item.roots[0]!.source).toBe(item.roots[0]!.guestPath);
   expect(item.roots[0]!.guestPath).toMatch(/^\/workspace\/(folders|repos)\/[A-Za-z0-9][A-Za-z0-9_.-]*(\/|$)/);
@@ -100,7 +100,7 @@ test("CONDITION (D3 note section 4): no protected path can be a host-query root:
     "/workspace/.winter",                                       // the skeleton
     "/workspace/.winter/memory",                                // memory: not in a host-query view (G3, a spec gap)
     "/workspace/.winter/WINTER.md",                             // shared guidance: a guided view only
-    "/workspace/.winter/scratch/conversation",                  // even its own scratch: no .winter for host-query
+    "/workspace/.winter/scratch/conversation",                  // even its own scratch: no .clover for host-query
     "/workspace/.winter/scratch/other",
     "/workspace/outputs/other",                                 // another conversation's outputs
     "/workspace/outputs",                                       // the outputs parent

@@ -101,7 +101,7 @@ describe("RuntimeSessionRecords", () => {
           newRecord(home, "s_opt", {
             capabilities: ["messaging", "handoff"],
             connectionRef: "conn_1",
-            effectiveTempDir: "/private/tmp/winter-501/s_opt",
+            effectiveTempDir: "/private/tmp/clover-501/s_opt",
             parentWinterSessionId: "s_parent",
             lastVerifiedClaudeConsumer: "2.0.1",
           }),
@@ -130,7 +130,7 @@ describe("RuntimeSessionRecords", () => {
         }
         expect(caught).toBeInstanceOf(DuplicateBackendSessionError);
         expect((caught as DuplicateBackendSessionError).backendSessionId).toBe(UUID);
-        expect((caught as DuplicateBackendSessionError).existingWinterSessionId).toBe("s_a");
+        expect((caught as DuplicateBackendSessionError).existingCloverSessionId).toBe("s_a");
         // the refused transition left s_b exactly as it was — never half-applied
         expect(records.get("s_b")?.state).toBe("creating");
         expect(records.get("s_b")?.backendSessionId).toBeUndefined();

@@ -6,7 +6,7 @@ import { DEAD_LEGACY_TOP_LEVEL_FILES, describeDeadLegacyFiles, findDeadLegacyFil
 
 const dirs: string[] = [];
 function home(): string {
-  const d = mkdtempSync(join(tmpdir(), "winter-dead-legacy-"));
+  const d = mkdtempSync(join(tmpdir(), "clover-dead-legacy-"));
   dirs.push(d);
   return d;
 }
@@ -67,7 +67,7 @@ describe("findDeadLegacyFiles", () => {
   });
 
   test("a missing home is simply none", () => {
-    expect(findDeadLegacyFiles(join(tmpdir(), "winter-dead-legacy-does-not-exist-xyz"))).toEqual([]);
+    expect(findDeadLegacyFiles(join(tmpdir(), "clover-dead-legacy-does-not-exist-xyz"))).toEqual([]);
   });
 });
 
@@ -91,7 +91,7 @@ describe("describeDeadLegacyFiles — the one boot/doctor line", () => {
   test("an mcp.json that declares servers says plainly where MCP servers belong", () => {
     const line = describeDeadLegacyFiles([{ name: "mcp.json", path: "/h/mcp.json", mcpServers: 1 }], "/h")!;
     expect(line).toContain("mcp.json declares 1 MCP server");
-    expect(line).toContain("winter mcp add");
-    expect(line).toContain(".winter/mcp.json"); // WS-21: the repo-root .mcp.json is no longer read
+    expect(line).toContain("clover mcp add");
+    expect(line).toContain(".clover/mcp.json"); // WS-21: the repo-root .mcp.json is no longer read
   });
 });

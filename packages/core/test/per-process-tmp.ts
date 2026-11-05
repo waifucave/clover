@@ -1,8 +1,8 @@
 // Every test PROCESS gets its own temp root, and removes it at exit.
 //
 // WHY (2026-10-10). Tests make their homes, fixtures and session scratch with `mkdtempSync(join(tmpdir(),
-// "winter-…-"))` and almost none of them remove what they make, so the developer's per-user temp folder
-// (`$TMPDIR`, `/var/folders/…/T/`) grew to ~878,000 entries (~839,000 of them `winter-*`): a bare `ls` there
+// "clover-…-"))` and almost none of them remove what they make, so the developer's per-user temp folder
+// (`$TMPDIR`, `/var/folders/…/T/`) grew to ~878,000 entries (~839,000 of them `clover-*`): a bare `ls` there
 // took over two minutes and `bun` start-up from a path under it slowed to 4-40 s. A full core run alone left
 // ~3,600 top-level entries behind.
 //
@@ -43,7 +43,7 @@ import { chmodSync, existsSync, lstatSync, mkdtempSync, readdirSync, rmSync } fr
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-const GLOBAL_KEY = Symbol.for("winter.test.perProcessTmpRoot");
+const GLOBAL_KEY = Symbol.for("clover.test.perProcessTmpRoot");
 
 export interface PerProcessTmp {
   /** The directory every temp path of this process lives in (`undefined` when none could be made). */
@@ -102,7 +102,7 @@ function install(): PerProcessTmp {
   const realTmp = tmpdir();
   let root: string | undefined;
   try {
-    root = mkdtempSync(join(realTmp, "winter-test-"));
+    root = mkdtempSync(join(realTmp, "clover-test-"));
   } catch {
     // The real temp folder is not writable: leave the environment alone and let the tests fail where they
     // would have failed anyway, rather than failing the preload.

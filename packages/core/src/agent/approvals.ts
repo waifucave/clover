@@ -1,4 +1,4 @@
-import type { ApprovalOption } from "@yanlinglabs/winter-protocol";
+import type { ApprovalOption } from "@waifucave/clover-protocol";
 
 export interface ApprovalOutcome {
   approved: boolean;
@@ -132,7 +132,7 @@ export class ApprovalBroker {
 // These three are LITERAL COPIES of `engine.ts`'s own private `approvalCardSummary`,
 // `BASH_PREFIX_MULTI_WORD_HEADS`/`suggestBashPrefix` and `approvalOptionsFor` — the helpers that
 // compose what a human actually reads on an approval card and what choosing an option persists.
-// The Winter approval bridge (`runtime-sdk/approval-bridge.ts`) is a SECOND producer of
+// The Clover approval bridge (`runtime-sdk/approval-bridge.ts`) is a SECOND producer of
 // `approval_requested` and needs exactly this text; engine.ts is deleted in Task 17, so the copies
 // are made HERE (beside the broker they feed) rather than by exporting out of a module that is
 // about to disappear. **Deliberate one-phase duplication:** engine.ts keeps its private copies
@@ -143,8 +143,8 @@ export class ApprovalBroker {
 const WORKFLOW_TOOL = "Workflow";
 
 /** The one-line human-readable summary on an approval card. Copy of engine.ts's private
- *  `approvalCardSummary`; `call.name` is a WINTER tool name (`runtime-sdk/tool-names.ts` normalizes
- *  a Winter name before this is called) and `argsJson` the call's raw JSON arguments. */
+ *  `approvalCardSummary`; `call.name` is a CLOVER tool name (`runtime-sdk/tool-names.ts` normalizes
+ *  a Clover name before this is called) and `argsJson` the call's raw JSON arguments. */
 export function approvalCardSummary(call: { name: string; argsJson: string }): string {
   const oneLine = (s: string) => s.split(/\r?\n/).join(" ").trim();
   if (call.name === "skill_write") {

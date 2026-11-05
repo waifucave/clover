@@ -28,7 +28,7 @@ const LEGACY_UNSTATED_BARE_IDS: ReadonlySet<string> = new Set(["unknown", "unsta
 export function tagForLegacyModelRef(
   modelRef: string, providerId: string, home: string, presentProviders?: ReadonlySet<string>,
 ): ModelTag {
-  if (isModelTag(modelRef)) return modelRef as ModelTag; // already migrated, or a winter-test double
+  if (isModelTag(modelRef)) return modelRef as ModelTag; // already migrated, or a clover-test double
   if (LEGACY_UNSTATED_BARE_IDS.has(modelRef)) return UNSTATED_TAG;
   const catalogProviderId = providerId === "openai-compatible" ? "openai" : providerId;
   const candidate = `${catalogProviderId}/${modelRef}`;

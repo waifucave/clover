@@ -14,40 +14,40 @@ const bad = (message: string): TypeError => Object.assign(new TypeError(message)
 /** The handlers a script may call with `my …` (defined outside the `tell`, so their words are AppleScript's own). */
 const HANDLERS = {
   text: [
-    "on winterText(v)",
+    "on cloverText(v)",
     "  if v is missing value then return \"\"",
     "  return v as text",
-    "end winterText",
+    "end cloverText",
   ],
   iso: [
-    "on winterPad(n)",
+    "on cloverPad(n)",
     "  return text -2 thru -1 of (\"0\" & (n as text))",
-    "end winterPad",
-    "on winterISO(d)",
+    "end cloverPad",
+    "on cloverISO(d)",
     "  if d is missing value then return \"\"",
     "  set s to time of d",
-    "  return ((year of d) as text) & \"-\" & my winterPad((month of d) as integer) & \"-\" & my winterPad(day of d) & \"T\" & my winterPad(s div 3600) & \":\" & my winterPad((s mod 3600) div 60) & \":\" & my winterPad(s mod 60)",
-    "end winterISO",
+    "  return ((year of d) as text) & \"-\" & my cloverPad((month of d) as integer) & \"-\" & my cloverPad(day of d) & \"T\" & my cloverPad(s div 3600) & \":\" & my cloverPad((s mod 3600) div 60) & \":\" & my cloverPad(s mod 60)",
+    "end cloverISO",
   ],
   min: [
-    "on winterMin(a, b)",
+    "on cloverMin(a, b)",
     "  if a < b then return a",
     "  return b",
-    "end winterMin",
+    "end cloverMin",
   ],
 } as const;
 
 /**
- * One adapter script: `body` runs inside `tell application id "<bundleId>"`. Rows are joined with `winterTAB` /
- * `winterLF` (set before the tell); `handlers` adds `winterText(v)` (missing value → "") and `winterISO(date)`.
+ * One adapter script: `body` runs inside `tell application id "<bundleId>"`. Rows are joined with `cloverTAB` /
+ * `cloverLF` (set before the tell); `handlers` adds `cloverText(v)` (missing value → "") and `cloverISO(date)`.
  */
 export function appScript(bundleId: string, body: string[], opts: { handlers?: Array<keyof typeof HANDLERS> } = {}): string {
   if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(bundleId)) throw bad("the bound app has no usable bundle id");
   const handlers = (opts.handlers ?? []).flatMap((h) => [...HANDLERS[h]]);
   return [
-    "set winterTAB to tab",
-    "set winterLF to linefeed",
-    "set winterCR to return",
+    "set cloverTAB to tab",
+    "set cloverLF to linefeed",
+    "set cloverCR to return",
     ...handlers,
     `tell application id "${bundleId}"`,
     ...body.map((l) => `  ${l}`),

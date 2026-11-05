@@ -1,7 +1,7 @@
 // Phase 9c (P9c-4, Task M Step 7) — the legacy project-instructions/project-dir read-only fallback for the
-// instructions loader and `.winter/rules`, both inside `ContextAssembler.assemble()`. Same harness
-// shape as `context-rules.test.ts`: a real temp WINTER_HOME/TrustStore/SkillStore, never the live
-// `~/.winter`.
+// instructions loader and `.clover/rules`, both inside `ContextAssembler.assemble()`. Same harness
+// shape as `context-rules.test.ts`: a real temp CLOVER_HOME/TrustStore/SkillStore, never the live
+// `~/.clover`.
 import { describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -13,7 +13,7 @@ import { LEGACY_INSTRUCTIONS_FILE, LEGACY_PROJECT_DIR } from "../../src/legacy-n
 import type { Settings } from "../../src/settings";
 
 function realDir(): string {
-  return realpathSync(mkdtempSync(join(tmpdir(), "winter-ctx-legacy-")));
+  return realpathSync(mkdtempSync(join(tmpdir(), "clover-ctx-legacy-")));
 }
 function setup() {
   const home = realDir();
@@ -26,30 +26,30 @@ function settingsWith(readLegacyProjectFiles: boolean): Settings {
 }
 
 describe("ContextAssembler — legacy read-only fallback (P9c-4)", () => {
-  test("project instructions: falls back to the legacy file when WINTER.md is absent and the flag is on, and adds the deprecation notice", () => {
+  test("project instructions: falls back to the legacy file when CLOVER.md is absent and the flag is on, and adds the deprecation notice", () => {
     const { home, trust } = setup();
     const cwd = realDir();
     writeFileSync(join(cwd, LEGACY_INSTRUCTIONS_FILE), "legacy project prose");
     trust.trust(cwd);
-    const a = new ContextAssembler({ winterHome: home, trust, skills: new SkillStore({ winterHome: home, trust }), legacySettings: () => settingsWith(true) });
+    const a = new ContextAssembler({ cloverHome: home, trust, skills: new SkillStore({ cloverHome: home, trust }), legacySettings: () => settingsWith(true) });
     const out = a.assemble({ cwd });
-    expect(out).toContain("## Project instructions (WINTER.md)\nlegacy project prose");
-    expect(out).toContain("Winter is reading legacy project files read-only");
+    expect(out).toContain("## Project instructions (CLOVER.md)\nlegacy project prose");
+    expect(out).toContain("Clover is reading legacy project files read-only");
     expect(out).toContain(join(cwd, LEGACY_INSTRUCTIONS_FILE));
-    expect(out).toContain("winter migrate-project");
+    expect(out).toContain("clover migrate-project");
   });
 
-  test("a Winter-named WINTER.md wins over a co-existing legacy file — never falls back when the Winter path already exists", () => {
+  test("a Clover-named CLOVER.md wins over a co-existing legacy file — never falls back when the Clover path already exists", () => {
     const { home, trust } = setup();
     const cwd = realDir();
-    writeFileSync(join(cwd, "WINTER.md"), "winter prose");
+    writeFileSync(join(cwd, "CLOVER.md"), "clover prose");
     writeFileSync(join(cwd, LEGACY_INSTRUCTIONS_FILE), "legacy prose — must never appear");
     trust.trust(cwd);
-    const a = new ContextAssembler({ winterHome: home, trust, skills: new SkillStore({ winterHome: home, trust }), legacySettings: () => settingsWith(true) });
+    const a = new ContextAssembler({ cloverHome: home, trust, skills: new SkillStore({ cloverHome: home, trust }), legacySettings: () => settingsWith(true) });
     const out = a.assemble({ cwd });
-    expect(out).toContain("winter prose");
+    expect(out).toContain("clover prose");
     expect(out).not.toContain("legacy prose");
-    expect(out).not.toContain("Winter is reading legacy project files");
+    expect(out).not.toContain("Clover is reading legacy project files");
   });
 
   test("flag off: the legacy file is ignored entirely, exactly as if it did not exist", () => {
@@ -57,10 +57,10 @@ describe("ContextAssembler — legacy read-only fallback (P9c-4)", () => {
     const cwd = realDir();
     writeFileSync(join(cwd, LEGACY_INSTRUCTIONS_FILE), "legacy project prose");
     trust.trust(cwd);
-    const a = new ContextAssembler({ winterHome: home, trust, skills: new SkillStore({ winterHome: home, trust }), legacySettings: () => settingsWith(false) });
+    const a = new ContextAssembler({ cloverHome: home, trust, skills: new SkillStore({ cloverHome: home, trust }), legacySettings: () => settingsWith(false) });
     const out = a.assemble({ cwd });
     expect(out).not.toContain("legacy project prose");
-    expect(out).not.toContain("Winter is reading legacy project files");
+    expect(out).not.toContain("Clover is reading legacy project files");
   });
 
   test("no legacySettings dep at all: byte-identical to pre-9c behavior (never falls back)", () => {
@@ -68,7 +68,7 @@ describe("ContextAssembler — legacy read-only fallback (P9c-4)", () => {
     const cwd = realDir();
     writeFileSync(join(cwd, LEGACY_INSTRUCTIONS_FILE), "legacy project prose");
     trust.trust(cwd);
-    const a = new ContextAssembler({ winterHome: home, trust, skills: new SkillStore({ winterHome: home, trust }) });
+    const a = new ContextAssembler({ cloverHome: home, trust, skills: new SkillStore({ cloverHome: home, trust }) });
     const out = a.assemble({ cwd });
     expect(out).not.toContain("legacy project prose");
   });
@@ -78,43 +78,43 @@ describe("ContextAssembler — legacy read-only fallback (P9c-4)", () => {
     const cwd = realDir();
     writeFileSync(join(cwd, LEGACY_INSTRUCTIONS_FILE), "legacy project prose");
     // deliberately never trust(cwd)
-    const a = new ContextAssembler({ winterHome: home, trust, skills: new SkillStore({ winterHome: home, trust }), legacySettings: () => settingsWith(true) });
+    const a = new ContextAssembler({ cloverHome: home, trust, skills: new SkillStore({ cloverHome: home, trust }), legacySettings: () => settingsWith(true) });
     const out = a.assemble({ cwd });
     expect(out).not.toContain("legacy project prose");
   });
 
-  test("user instructions (~/.winter/WINTER.md) also falls back to the legacy home file", () => {
+  test("user instructions (~/.clover/CLOVER.md) also falls back to the legacy home file", () => {
     const { home, trust } = setup();
     writeFileSync(join(home, LEGACY_INSTRUCTIONS_FILE), "legacy user prose");
-    const a = new ContextAssembler({ winterHome: home, trust, skills: new SkillStore({ winterHome: home, trust }), legacySettings: () => settingsWith(true) });
+    const a = new ContextAssembler({ cloverHome: home, trust, skills: new SkillStore({ cloverHome: home, trust }), legacySettings: () => settingsWith(true) });
     const out = a.assemble({ cwd: null });
-    expect(out).toContain("## User instructions (~/.winter/WINTER.md)\nlegacy user prose");
-    expect(out).toContain("Winter is reading legacy project files read-only");
+    expect(out).toContain("## User instructions (~/.clover/CLOVER.md)\nlegacy user prose");
+    expect(out).toContain("Clover is reading legacy project files read-only");
   });
 
-  test("project rules: falls back to the legacy project dir's rules/ when .winter/rules is absent, and never writes there", () => {
+  test("project rules: falls back to the legacy project dir's rules/ when .clover/rules is absent, and never writes there", () => {
     const { home, trust } = setup();
     const cwd = realDir();
     mkdirSync(join(cwd, LEGACY_PROJECT_DIR, "rules"), { recursive: true });
     writeFileSync(join(cwd, LEGACY_PROJECT_DIR, "rules", "a.md"), "LEGACY_RULE_BODY");
     trust.trust(cwd);
-    const a = new ContextAssembler({ winterHome: home, trust, skills: new SkillStore({ winterHome: home, trust }), legacySettings: () => settingsWith(true) });
+    const a = new ContextAssembler({ cloverHome: home, trust, skills: new SkillStore({ cloverHome: home, trust }), legacySettings: () => settingsWith(true) });
     const out = a.assemble({ cwd });
-    expect(out).toContain("## Project rules (.winter/rules/)");
+    expect(out).toContain("## Project rules (.clover/rules/)");
     expect(out).toContain("LEGACY_RULE_BODY");
-    expect(out).toContain("Winter is reading legacy project files read-only");
-    // read-only: assemble() must never have created a .winter/rules directory as a side effect.
-    expect(existsSync(join(cwd, ".winter", "rules"))).toBe(false);
+    expect(out).toContain("Clover is reading legacy project files read-only");
+    // read-only: assemble() must never have created a .clover/rules directory as a side effect.
+    expect(existsSync(join(cwd, ".clover", "rules"))).toBe(false);
   });
 
-  test("a real .winter/rules directory (even empty) wins over the legacy one — never falls back", () => {
+  test("a real .clover/rules directory (even empty) wins over the legacy one — never falls back", () => {
     const { home, trust } = setup();
     const cwd = realDir();
-    mkdirSync(join(cwd, ".winter", "rules"), { recursive: true }); // present, but empty
+    mkdirSync(join(cwd, ".clover", "rules"), { recursive: true }); // present, but empty
     mkdirSync(join(cwd, LEGACY_PROJECT_DIR, "rules"), { recursive: true });
     writeFileSync(join(cwd, LEGACY_PROJECT_DIR, "rules", "a.md"), "LEGACY_RULE_BODY — must never appear");
     trust.trust(cwd);
-    const a = new ContextAssembler({ winterHome: home, trust, skills: new SkillStore({ winterHome: home, trust }), legacySettings: () => settingsWith(true) });
+    const a = new ContextAssembler({ cloverHome: home, trust, skills: new SkillStore({ cloverHome: home, trust }), legacySettings: () => settingsWith(true) });
     const out = a.assemble({ cwd });
     expect(out).not.toContain("LEGACY_RULE_BODY");
   });
@@ -126,9 +126,9 @@ describe("ContextAssembler — legacy read-only fallback (P9c-4)", () => {
     mkdirSync(join(cwd, LEGACY_PROJECT_DIR, "rules"), { recursive: true });
     writeFileSync(join(cwd, LEGACY_PROJECT_DIR, "rules", "a.md"), "LEGACY_RULE_BODY");
     trust.trust(cwd);
-    const a = new ContextAssembler({ winterHome: home, trust, skills: new SkillStore({ winterHome: home, trust }), legacySettings: () => settingsWith(true) });
+    const a = new ContextAssembler({ cloverHome: home, trust, skills: new SkillStore({ cloverHome: home, trust }), legacySettings: () => settingsWith(true) });
     const out = a.assemble({ cwd });
-    const occurrences = out.split("Winter is reading legacy project files read-only").length - 1;
+    const occurrences = out.split("Clover is reading legacy project files read-only").length - 1;
     expect(occurrences).toBe(1);
     expect(out).toContain(join(cwd, LEGACY_INSTRUCTIONS_FILE));
     expect(out).toContain(join(cwd, LEGACY_PROJECT_DIR, "rules"));

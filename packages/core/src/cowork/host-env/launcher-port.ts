@@ -12,7 +12,7 @@ import { processStartToken } from "./guards";
  *
  * Trust, in order (contract section 2 and 4.1):
  *  - the launcher is a DIRECT CHILD that this port spawned, so its pid is the one the kernel gave the spawn;
- *  - the RUNNING process must satisfy the launcher's designated requirement (`processSatisfiesRequirement`, the Computer Use precedent: identifier + Winter's team).
+ *  - the RUNNING process must satisfy the launcher's designated requirement (`processSatisfiesRequirement`, the Computer Use precedent: identifier + Clover's team).
  *    It is checked on the live pid, before a single byte is read or sent, so there is no time-of-check/time-of-use gap on the file. Residual: the process runs for a few
  *    milliseconds before it is checked, and the launcher's own check of ITS parent (by audit token, which Bun cannot read on this side) is the load-bearing one;
  *  - `hello` must be the first line and say `parentVerified: true`; any later `hello`, any unparseable line and any descriptor ends the channel.

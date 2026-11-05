@@ -10,7 +10,7 @@ import type { PublicationReceipt } from "../../../src/cowork/git/types";
 const homes: string[] = [], dbs: RuntimeStateDb[] = [];
 afterEach(() => { for (const db of dbs.splice(0)) db.close(); for (const home of homes.splice(0)) rmSync(home, {recursive:true,force:true}); });
 function fixture() {
-  const home = mkdtempSync(join(tmpdir(), "winter-git-journal-")); homes.push(home);
+  const home = mkdtempSync(join(tmpdir(), "clover-git-journal-")); homes.push(home);
   const open = () => { const db = openRuntimeStateDb(home); dbs.push(db); return new CoworkRepository(db); };
   const records = open();
   const made = records.create({principalId:"user",requestId:"create"}, {ownership:"project",title:"Fixture",sources:[{kind:"githubRepository",label:"Repo",access:"read-write",detail:{repositoryId:"repo",authorityRef:"grant",initialRef:"main"}}],ceiling:{toolClasses:[],hostServices:[],connectors:[],network:"none"}});

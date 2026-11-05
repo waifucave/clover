@@ -7,8 +7,8 @@ import { trustedProjectWalk } from "../agent/project-scope-dirs";
 /** WS-21: user-scope workflow scripts live in the store home's `workflows/` — `<home>/sdk/workflows`
  *  (claude's persistent config-dir entry of the same name, spec §3.3, F18) on a run-home build,
  *  `<home>/workflows` before it (`storeHomeFor`). */
-export function userWorkflowsDir(winterHome: string): string {
-  return join(storeHomeFor(winterHome), "workflows");
+export function userWorkflowsDir(cloverHome: string): string {
+  return join(storeHomeFor(cloverHome), "workflows");
 }
 
 /** A resolved workflow's identity + where it came from. Unlike OutputStyleStore's ResolvedStyle
@@ -43,8 +43,8 @@ const DESCRIPTION_RE = /(?:^|[{,\s])description\s*:\s*(["'`])((?:\\.|(?!\1).)*)\
  *  feature's entire raison d'être is a sandboxed subprocess for a script's actual body; running any
  *  fragment of a workflow file — even just its meta block — in the unsandboxed daemon defeats that,
  *  since `list()`/`resolve()`/`read()` (and thus this function) fire passively, e.g. whenever the
- *  Workflows pane opens or `winter workflow list` runs, on every workflow file the trust gate would
- *  ever surface (a trusted project's `.winter/workflows/*.js`, or ANY `~/.winter/workflows/*.js`) —
+ *  Workflows pane opens or `clover workflow list` runs, on every workflow file the trust gate would
+ *  ever surface (a trusted project's `.clover/workflows/*.js`, or ANY `~/.clover/workflows/*.js`) —
  *  there is no opportunity for a human to review the file first. Any failure to find a well-formed
  *  `meta`/`description` (no `meta`, unbalanced braces, a computed/interpolated/missing description)
  *  yields "" rather than throwing or evaluating anything: a missing or malformed `meta` block must
@@ -105,7 +105,7 @@ function parseWorkflowFile(path: string, fallbackName: string): { name: string; 
 
 /**
  * Resolves a workflow script by name from two sources, closest-wins: a trusted project's
- * `.winter/workflows/<name>.js`, then `userWorkflowsDir(winterHome)/<name>.js`. WS-24: the project
+ * `.clover/workflows/<name>.js`, then `userWorkflowsDir(cloverHome)/<name>.js`. WS-24: the project
  * tier is the trusted project's walk (`trustedProjectWalk` — trust keyed on the repository, the
  * directories from the cwd up to the project scope's root, so a linked worktree of a trusted repo lists
  * its own), NEAREST wins, as skills and agents do on a run home. Unlike
@@ -115,16 +115,16 @@ function parseWorkflowFile(path: string, fallbackName: string): { name: string; 
  * except `save()`, which rejects a malformed name before it ever reaches a filesystem call.
  */
 export class WorkflowStore {
-  constructor(private readonly deps: { winterHome: string; trust: Pick<TrustStore, "isTrusted"> }) {}
+  constructor(private readonly deps: { cloverHome: string; trust: Pick<TrustStore, "isTrusted"> }) {}
 
   /** Shared traversal for resolve()/read(): project[trusted] > user. Slug-guarded — see SLUG_RE. */
   private resolveInternal(name: string, cwd: string | null): { name: string; description: string; source: string; body: string } | null {
     if (!SLUG_RE.test(name)) return null;
     for (const dir of trustedProjectWalk(cwd, this.deps.trust)) {
-      const p = parseWorkflowFile(join(dir, ".winter", "workflows", `${name}.js`), name);
+      const p = parseWorkflowFile(join(dir, ".clover", "workflows", `${name}.js`), name);
       if (p) return { ...p, source: "project" };
     }
-    const u = parseWorkflowFile(join(userWorkflowsDir(this.deps.winterHome), `${name}.js`), name);
+    const u = parseWorkflowFile(join(userWorkflowsDir(this.deps.cloverHome), `${name}.js`), name);
     if (u) return { ...u, source: "user" };
     return null;
   }
@@ -155,20 +155,20 @@ export class WorkflowStore {
         if (p) out.set(p.name, { description: p.description, source });
       }
     };
-    scan(userWorkflowsDir(this.deps.winterHome), "user");
+    scan(userWorkflowsDir(this.deps.cloverHome), "user");
     // Project overrides user; along the walk the NEAREST wins, so the root-most directory is scanned first.
-    for (const dir of [...trustedProjectWalk(cwd, this.deps.trust)].reverse()) scan(join(dir, ".winter", "workflows"), "project");
+    for (const dir of [...trustedProjectWalk(cwd, this.deps.trust)].reverse()) scan(join(dir, ".clover", "workflows"), "project");
     return [...out].map(([name, v]) => ({ name, description: v.description, source: v.source }));
   }
 
-  /** Writes a run's script to `userWorkflowsDir(winterHome)/<name>.js` (creating the directory if it
+  /** Writes a run's script to `userWorkflowsDir(cloverHome)/<name>.js` (creating the directory if it
    *  doesn't exist yet). Slug-guarded — same regex/rationale as resolve(); rejected BEFORE any
    *  filesystem call, since `name` here can come from a tool-call argument (the Workflow tool's
    *  `name` param) just as readily as from a human. Throws on an invalid name, rather than
    *  returning a result object — callers are expected to validate/catch, not silently no-op. */
   save(name: string, source: string): void {
     if (!SLUG_RE.test(name)) throw new Error(`invalid workflow name: "${name}"`);
-    const dir = userWorkflowsDir(this.deps.winterHome);
+    const dir = userWorkflowsDir(this.deps.cloverHome);
     mkdirSync(dir, { recursive: true });
     writeFileSync(join(dir, `${name}.js`), source);
   }

@@ -2,19 +2,19 @@
 // `runtimeKind` is knowable at ONE point in the creation transaction — the `session.create`/
 // `session.dispatch` handler, before the 8a runtime record exists (see ipc/server.ts's doc
 // comments at both call sites and store.ts's `createSession`) — so this test drives the RPC over
-// a bare IPC server with a fake `WinterSessionDrivers` (same shape as session-unrecorded.test.ts's
-// `recordlessTable`) standing in for the Winter leg, and reads the persisted event back off the
+// a bare IPC server with a fake `CloverSessionDrivers` (same shape as session-unrecorded.test.ts's
+// `recordlessTable`) standing in for the Clover leg, and reads the persisted event back off the
 // store rather than trusting the RPC reply alone.
 import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, type WritableSocket } from "@yanlinglabs/winter-protocol";
+import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, type WritableSocket } from "@waifucave/clover-protocol";
 import { startIpcServer } from "../../src/ipc/server";
 import { SessionStore } from "../../src/sessions/store";
 import { FileSecretStore } from "../../src/auth/secret-store";
 import { TokenAuthority } from "../../src/auth/tokens";
-import type { WinterSessionDrivers } from "../../src/runtime-sdk/session-driver";
+import type { CloverSessionDrivers } from "../../src/runtime-sdk/session-driver";
 
 class TestClient {
   private decoder = new LineDecoder();
@@ -51,8 +51,8 @@ class TestClient {
 }
 
 /** A driver table whose `create` succeeds silently — enough for the creation transaction to
- *  commit (no `WinterLegRefusal`), never actually spawning anything. */
-function acceptingTable(): WinterSessionDrivers {
+ *  commit (no `CloverLegRefusal`), never actually spawning anything. */
+function acceptingTable(): CloverSessionDrivers {
   const never = (): never => { throw new Error("not reached by this test"); };
   return {
     legForNewSession: () => "winter",
@@ -72,20 +72,20 @@ describe("Winter Phase 8c: session_created carries runtimeKind/modelRef when kno
   let stop: (() => void) | undefined;
   afterEach(() => { stop?.(); stop = undefined; });
 
-  async function boot(winter: WinterSessionDrivers | undefined) {
-    const home = mkdtempSync(join(tmpdir(), "winter-runtime-annotation-"));
+  async function boot(clover: CloverSessionDrivers | undefined) {
+    const home = mkdtempSync(join(tmpdir(), "clover-runtime-annotation-"));
     const store = new SessionStore(home);
     const authority = new TokenAuthority(new FileSecretStore(join(home, "secrets.json")));
     const tokens = await authority.ensureTokens();
     const socketPath = join(home, "core.sock");
-    const server = startIpcServer({ socketPath, serverVersion: "test", tokens: authority, store, winter });
+    const server = startIpcServer({ socketPath, serverVersion: "test", tokens: authority, store, clover });
     stop = () => { server.stop(); store.close(); };
     const c = await TestClient.connect(socketPath);
     await c.hello(tokens.harness, "mac");
     return { store, c };
   }
 
-  test("session.create on the Winter leg yields session_created.runtimeKind === \"winter-agent\"", async () => {
+  test("session.create on the Clover leg yields session_created.runtimeKind === \"winter-agent\"", async () => {
     const { store, c } = await boot(acceptingTable());
     const created = await c.request(METHODS.sessionCreate, { scope: "global" });
     expect(created.error).toBeUndefined();
@@ -116,7 +116,7 @@ describe("Winter Phase 8c: session_created carries runtimeKind/modelRef when kno
     c.close();
   });
 
-  test("with no Winter facade at all (bare test server), runtimeKind is left undefined — never a guessed value", async () => {
+  test("with no Clover facade at all (bare test server), runtimeKind is left undefined — never a guessed value", async () => {
     const { store, c } = await boot(undefined);
     const created = await c.request(METHODS.sessionCreate, { scope: "global" });
     expect(created.error).toBeUndefined();
@@ -127,7 +127,7 @@ describe("Winter Phase 8c: session_created carries runtimeKind/modelRef when kno
 
   // Winter Phase 8d (P8d-7) omitted the stamp for a Claude-family model while an official peer could
   // still claim that session. WS-23 retired the official leg: every session a driver table creates
-  // runs on the Winter leg, so a Claude model is stamped like any other.
+  // runs on the Clover leg, so a Claude model is stamped like any other.
   test("WS-23: a Claude-family model stamps winter-agent — there is no other leg to route to", async () => {
     const { store, c } = await boot(acceptingTable());
     const created = await c.request(METHODS.sessionCreate, { scope: "global", model: "anthropic/claude-opus-5" });

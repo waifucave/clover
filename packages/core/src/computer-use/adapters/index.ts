@@ -11,7 +11,7 @@
 // means nothing more is printed.
 import { spawnSync } from "node:child_process";
 import { join } from "node:path";
-import type { SessionEvent } from "@yanlinglabs/winter-protocol";
+import type { SessionEvent } from "@waifucave/clover-protocol";
 import { applicationPathsForBundleId } from "../../auth/keychain-ffi";
 import { AutomationFailure, isAutomationFailure } from "../errors";
 import { CLICK_ONLY_PRIMITIVES, cardName } from "../policy";
@@ -45,7 +45,7 @@ export interface AppAdaptersDeps {
   /** The app's `CFBundleShortVersionString` when the bind did not say (a helper older than 1.8.0) — asked only for an
    *  app whose adapter has version conditions. Default: LaunchServices' path for the bundle id, then its Info.plist. */
   appVersion?(bundleId: string): string | undefined;
-  /** Is Winter for Chrome connected in this browser (by its bundle id)? undefined: not a browser Winter links to, or not
+  /** Is Winter for Chrome connected in this browser (by its bundle id)? undefined: not a browser Clover links to, or not
    *  known — the ordinary guide. */
   browserConnected?(bundleId: string): boolean | undefined;
   log?(line: string): void;
@@ -198,7 +198,7 @@ export class AppAdapters {
    *  the wrappers generated once per (bundle id, `CFBundleVersion`). Never fails the caller but for a cancellation. */
   private async dictFor(scope: AdapterRunScope, t: AdapterTarget): Promise<{ dict?: DictInfo; dictUnavailable?: string }> {
     if (!helperVersionAtLeast(scope.helperVersion(), HELPER_SCRIPTING_COMMANDS_VERSION)) {
-      return { dictUnavailable: `Winter Computer Use is older than ${HELPER_SCRIPTING_COMMANDS_VERSION}, so it lists no dictionary commands — use scriptingDictionary() and applescript(), or update Winter` };
+      return { dictUnavailable: `Winter Computer Use is older than ${HELPER_SCRIPTING_COMMANDS_VERSION}, so it lists no dictionary commands — use scriptingDictionary() and applescript(), or update Clover` };
     }
     const key = `${t.bundleId.toLowerCase()}\u0000${t.pid}`;
     const hit = this.dictByApp.get(key);
@@ -294,7 +294,7 @@ export class AppAdapters {
     if (topic === undefined || topic === null || topic === "") {
       const block = this.block(b);
       if (block !== undefined) this.delivery.mark(scope.sessionId, b.target.bundleId);
-      const text = block ?? `${name} has no extras, dictionary commands or guide in Winter`;
+      const text = block ?? `${name} has no extras, dictionary commands or guide in Clover`;
       if (emit) scope.builder.guide(text);
       return text;
     }
@@ -356,7 +356,7 @@ export class AppAdapters {
     const callId = scope.callId;
     const needs = (what: string, cls: "click" | "full"): void => {
       if (access === "view" || (cls === "full" && access !== "full")) {
-        throw new AutomationFailure("NotAllowed", `this ${access} extra cannot ${what} (Winter's own adapter is wrong — report it)`);
+        throw new AutomationFailure("NotAllowed", `this ${access} extra cannot ${what} (Clover's own adapter is wrong — report it)`);
       }
     };
     return {
@@ -364,7 +364,7 @@ export class AppAdapters {
       signal: scope.signal,
       window: () => {
         if (typeof t.windowId !== "number" || !Number.isInteger(t.windowId) || t.windowId <= 0) {
-          throw new AutomationFailure("NoWindow", `Winter doesn't know which ${t.name} window is bound, so nothing was done — bind the window again (apps.open, or useWindow)`);
+          throw new AutomationFailure("NoWindow", `Clover doesn't know which ${t.name} window is bound, so nothing was done — bind the window again (apps.open, or useWindow)`);
         }
         return t.windowId;
       },

@@ -4,7 +4,7 @@ import { afterEach, expect, test as bunTest } from "bun:test";
 import { mkdtempSync, rmSync, statfsSync, renameSync, readFileSync, writeFileSync, existsSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { HOST_WORKSPACE_EVENT_TYPES, SessionEvent, LineDecoder, ConnWriter, PROTOCOL_VERSION, encodeLine, type WritableSocket } from "@yanlinglabs/winter-protocol";
+import { HOST_WORKSPACE_EVENT_TYPES, SessionEvent, LineDecoder, ConnWriter, PROTOCOL_VERSION, encodeLine, type WritableSocket } from "@waifucave/clover-protocol";
 import { openRuntimeStateDb } from "../../src/runtime-state/db";
 import { CoworkRepository } from "../../src/cowork/repository";
 import { CoworkWorkspaceService, type CoworkHostPorts } from "../../src/cowork/service";
@@ -29,7 +29,7 @@ const selection = { kind: "folder" as const, label: "private /Users/hidden/root 
   detail: { grantRef: "grant-one", rootIdentity: "private-host-path-token" } };
 const context = (requestId: string, expectedRevision?: number) => ({ principalId: "user-one", requestId, expectedRevision });
 function fixture(two = false) {
-  const home = mkdtempSync(join(tmpdir(), "winter-workspace-events-"));
+  const home = mkdtempSync(join(tmpdir(), "clover-workspace-events-"));
   cleanups.push(() => rmSync(home, { recursive: true, force: true }));
   let db = openRuntimeStateDb(home), store = new SessionStore(home), remaining = 1000;
   let records = new CoworkRepository(db, () => "2026-10-14T00:00:00.000Z", prefix => `${prefix}_${String(remaining--).padStart(4, "0")}`);
@@ -161,7 +161,7 @@ test("runtime frames and sync imports cannot author host workspace authority eve
 });
 
 test("sync imports cannot author a Cowork binding: session_created.cowork is refused at seq 1 (a creating push), at any later seq, and by appendSynced", () => {
-  const home = mkdtempSync(join(tmpdir(), "winter-sync-cowork-")), store = new SessionStore(home);
+  const home = mkdtempSync(join(tmpdir(), "clover-sync-cowork-")), store = new SessionStore(home);
   cleanups.push(() => { store.close(); rmSync(home, { recursive: true, force: true }); });
   const facts = { workspaceId: "w_forged", projectId: "p_forged", location: "source", sourceId: "src_forged", policyRevision: 7 };
   const push = (sessionId: string, baseSeq: number, events: unknown[]) => syncPush({ store, buffers: new SyncPushBuffers(), connId: 1, broadcastCreated() {} },

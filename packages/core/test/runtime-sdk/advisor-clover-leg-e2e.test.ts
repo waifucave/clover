@@ -2,15 +2,15 @@
 // OpenAI-compatible provider fake + a stored `openai:default` credential material, driven through
 // the full daemon (`startDaemon`) exactly as the M5 controller measurement's own shape (a real
 // catalog OpenAI-family model). `driver.init.tools` (the same `system/init` capture the 8b
-// `winter-chat-e2e.test.ts` tripwire uses) is the ONE path this file reads through — never a second,
+// `clover-chat-e2e.test.ts` tripwire uses) is the ONE path this file reads through — never a second,
 // hand-rolled NDJSON capture.
 //
-// M5 DIAGNOSIS (recorded here, not just in the report): with ZERO Winter-side `Options.advisor`
+// M5 DIAGNOSIS (recorded here, not just in the report): with ZERO Clover-side `Options.advisor`
 // wiring and a real `openai:default` credential present, the SDK's own D30 per-family default
 // machinery ALREADY advertises `advisor` for this exact real-catalog-model shape — measured below,
 // before this lane's `advisorModel` wiring is even exercised (the FIRST test below runs against a
 // fresh daemon with no `runtimes.advisorModel` set at all). The controller's M5 measurement used
-// `codex-oauth/gpt-6-astra` specifically; Winter's session-driver has no mechanism to point a Winter
+// `codex-oauth/gpt-6-astra` specifically; Clover's session-driver has no mechanism to point a Clover
 // child's `codex-oauth` connection at a loopback fake (only `openai-compatible` sessions get a BYO
 // `baseUrl`, `session-driver.ts`'s `optionsFor`), so the EXACT M5 shape cannot be reproduced
 // hermetically — this file proves the openai-compatible arm of D30 is healthy and demonstrates the
@@ -21,7 +21,7 @@ import { mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { openaiResponsesFake } from "@yanlinglabs/winter-provider-conformance/fakes";
-import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, type WritableSocket, type SessionEvent } from "@yanlinglabs/winter-protocol";
+import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, type WritableSocket, type SessionEvent } from "@waifucave/clover-protocol";
 import { FileSecretStore } from "../../src/auth/secret-store";
 import { CREDENTIAL_MATERIAL_NAMES, writeCredentialMaterial } from "../../src/auth/credential-material";
 import { startDaemon, type RunningDaemon } from "../../src/daemon";
@@ -77,7 +77,7 @@ class TestClient {
   close(): void { try { this.socket.end(); } catch { /* closed */ } }
 }
 
-describeWithWinterBinary("P8d-8 (D30) — advisor in init.tools on a real Winter child", (winterBin) => {
+describeWithWinterBinary("P8d-8 (D30) — advisor in init.tools on a real Clover child", (winterBin) => {
   let home: string;
   let daemon: RunningDaemon | undefined;
   let client: TestClient | undefined;
@@ -92,7 +92,7 @@ describeWithWinterBinary("P8d-8 (D30) — advisor in init.tools on a real Winter
   }
 
   beforeAll(async () => {
-    home = realpathSync(mkdtempSync(join(tmpdir(), "winter-advisor-winter-")));
+    home = realpathSync(mkdtempSync(join(tmpdir(), "clover-advisor-clover-")));
     openaiFakeRef = await openaiResponsesFake.startOpenAiResponsesFake({
       scenarios: {},
       unknownModel: async () => openaiResponsesFake.responsesStream({ text: ["hello"] }),
@@ -119,12 +119,12 @@ describeWithWinterBinary("P8d-8 (D30) — advisor in init.tools on a real Winter
 
   async function createAndWaitForInit(): Promise<{ tools: string[] }> {
     const d = daemon!;
-    const cwd = realpathSync(mkdtempSync(join(tmpdir(), "winter-advisor-winter-cwd-")));
+    const cwd = realpathSync(mkdtempSync(join(tmpdir(), "clover-advisor-clover-cwd-")));
     const { sessionId } = await client!.call<{ sessionId: string }>(METHODS.sessionCreate, {
       scope: "e2e", mode: "code", model: CATALOG_OPENAI_MODEL, cwd,
     });
     await client!.call(METHODS.sessionAttach, { sessionId, fromSeq: 0 });
-    const driver = d.winter.get(sessionId)!;
+    const driver = d.clover.get(sessionId)!;
     const t0 = Date.now();
     while (driver.init === undefined && Date.now() - t0 < 15_000) await Bun.sleep(20);
     rmSync(cwd, { recursive: true, force: true });
@@ -139,17 +139,17 @@ describeWithWinterBinary("P8d-8 (D30) — advisor in init.tools on a real Winter
     expect(tools).toContain("advisor");
   }, 30_000);
 
-  // The "absent" direction, using the ONE case `tool-names.ts`'s own `WINTER_ADVERTISED_TOOLS_0_0_4_BASE`
+  // The "absent" direction, using the ONE case `tool-names.ts`'s own `CLOVER_ADVERTISED_TOOLS_0_0_4_BASE`
   // doc already measures reliably: a `winter-test/<double>` session has no catalog identity at all
   // (`provider-selection.ts`: "not a catalog provider and must never be resolved against one"), so
   // every arm of D30's resolution withholds the reviewer — `advisor` is absent regardless of settings.
   test("a winter-test/<double> session (no catalog identity) never advertises advisor — the other direction", async () => {
-    const cwd = realpathSync(mkdtempSync(join(tmpdir(), "winter-advisor-winter-cwd-")));
+    const cwd = realpathSync(mkdtempSync(join(tmpdir(), "clover-advisor-clover-cwd-")));
     const { sessionId } = await client!.call<{ sessionId: string }>(METHODS.sessionCreate, {
       scope: "e2e", mode: "code", model: "winter-test/echo", cwd,
     });
     await client!.call(METHODS.sessionAttach, { sessionId, fromSeq: 0 });
-    const driver = daemon!.winter.get(sessionId)!;
+    const driver = daemon!.clover.get(sessionId)!;
     const t0 = Date.now();
     while (driver.init === undefined && Date.now() - t0 < 15_000) await Bun.sleep(20);
     rmSync(cwd, { recursive: true, force: true });
@@ -167,7 +167,7 @@ describeWithWinterBinary("P8d-8 (D30) — advisor in init.tools on a real Winter
   //  (2) THE GENERATION TARGET (which model id actually appears on the wire when the tool is
   //      CALLED): `Options.advisor.model` IS a disclosed, wired option documented to win over
   //      `settings.advisor.model` (the SDK's `options.ts:544-552`, forwarded unconditionally by
-  //      `query.ts:692`) — a DIFFERENT axis from visibility, and the one Winter's own `advisorModel`
+  //      `query.ts:692`) — a DIFFERENT axis from visibility, and the one Clover's own `advisorModel`
   //      wiring is actually FOR. See the describe block below this one for that proof: an advisor
   //      call reaching the fake with the EXPLICITLY CONFIGURED model id in the request, never the
   //      session's own default — which is the axis "does the override do anything" actually asks.
@@ -187,12 +187,12 @@ describeWithWinterBinary("P8d-8 (D30) — advisor in init.tools on a real Winter
 // loopback, so the ONLY thing that can explain two DIFFERENT model ids appearing in two DIFFERENT
 // requests to the same endpoint is `Options.advisor.model` actually reaching the child and being
 // honoured for its own separate generation, exactly as `options.ts`/`query.ts` document.
-describeWithWinterBinary("P8d-8/F2 — the advisor's GENERATION TARGET on the real Winter child", (winterBin) => {
+describeWithWinterBinary("P8d-8/F2 — the advisor's GENERATION TARGET on the real Clover child", (winterBin) => {
   const SESSION_MODEL = "openai/gpt-6-astra"; // the session's OWN model (D30 default would also be "astra")
   const ADVISOR_MODEL = "gpt-5.6-sol"; // an EXPLICIT, DIFFERENT, valid openai-family catalog model
 
   test("an advisor tool call's own HTTP request names the EXPLICITLY CONFIGURED advisorModel, not the session's own model", async () => {
-    const home = realpathSync(mkdtempSync(join(tmpdir(), "winter-advisor-target-")));
+    const home = realpathSync(mkdtempSync(join(tmpdir(), "clover-advisor-target-")));
     const requests: Array<{ model?: string; body: string }> = [];
     const { responsesModelOf } = openaiResponsesFake;
     const fake = await openaiResponsesFake.startOpenAiResponsesFake({
@@ -221,7 +221,7 @@ describeWithWinterBinary("P8d-8/F2 — the advisor's GENERATION TARGET on the re
       if ("unavailable" in daemon.runtimeState) throw daemon.runtimeState.unavailable;
       const client = await TestClient.connect(daemon.socketPath);
       await client.hello(daemon.tokens.harness, "advisor-target-e2e");
-      const cwd = realpathSync(mkdtempSync(join(tmpdir(), "winter-advisor-target-cwd-")));
+      const cwd = realpathSync(mkdtempSync(join(tmpdir(), "clover-advisor-target-cwd-")));
       const { sessionId } = await client.call<{ sessionId: string }>(METHODS.sessionCreate, { scope: "e2e", mode: "code", model: SESSION_MODEL, cwd });
       await client.call(METHODS.sessionAttach, { sessionId, fromSeq: 0 });
       await client.call(METHODS.sessionSend, { sessionId, text: "please consult the advisor" });

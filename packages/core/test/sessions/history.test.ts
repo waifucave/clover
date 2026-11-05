@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { ToolResultEvent, FileDiffSummary, THINKING_ID_MAX_LENGTH, THINKING_TEXT_MAX_LENGTH, THINKING_TITLE_MAX_LENGTH, type SessionEvent } from "@yanlinglabs/winter-protocol";
+import { ToolResultEvent, FileDiffSummary, THINKING_ID_MAX_LENGTH, THINKING_TEXT_MAX_LENGTH, THINKING_TITLE_MAX_LENGTH, type SessionEvent } from "@waifucave/clover-protocol";
 import { SessionStore } from "../../src/sessions/store";
 import { HISTORY_EVENT_TYPES, readHistoryPage, capEvent, phoneViewOf, WHOLE_EVENT_CEILING } from "../../src/sessions/history";
 import { createRemoteStreamFilter, filterRemoteStreamEvent } from "../../src/sessions/remote-stream";
@@ -20,7 +20,7 @@ describe("readHistoryPage", () => {
   });
 
   function boot(): { store: SessionStore; sessionId: string } {
-    home = mkdtempSync(join(tmpdir(), "winter-history-"));
+    home = mkdtempSync(join(tmpdir(), "clover-history-"));
     store = new SessionStore(home);
     const sessionId = store.createSession("global");
     return { store, sessionId };
@@ -81,7 +81,7 @@ describe("readHistoryPage", () => {
     ]);
     expect(text).toContain("SECRET-NOTE");
     store.append(sessionId, { type: "user_message", sessionId, threadId: "main", text, clientName: "computer-wake" });
-    const line = "Winter continued: 2 wake triggers ended (you clicked “Submit for review” in Chrome — Developer Dashboard; Mail — Inbox went away while Winter waited)";
+    const line = "Clover continued: 2 wake triggers ended (you clicked “Submit for review” in Chrome — Developer Dashboard; Mail — Inbox went away while Clover waited)";
     const page = readHistoryPage(store, { sessionId });
     const fromHistory = page.events.at(-1) as { type: string; text: string; clientName: string };
     expect(fromHistory).toMatchObject({ type: "user_message", clientName: "computer-wake", text: line });
@@ -94,7 +94,7 @@ describe("readHistoryPage", () => {
     expect(JSON.stringify(live)).toBe(JSON.stringify(fromHistory));
     // With no log at all, still never the note: the line without its facts.
     const bare = filterRemoteStreamEvent(msg) as { text: string };
-    expect(bare.text).toBe("Winter continued: 2 wake triggers ended");
+    expect(bare.text).toBe("Clover continued: 2 wake triggers ended");
     // The session log keeps the model's text; any other user_message is untouched.
     expect((log.at(-1) as { text: string }).text).toBe(text);
     expect(phoneViewOf(log[0]!)).toBe(log[0]!);

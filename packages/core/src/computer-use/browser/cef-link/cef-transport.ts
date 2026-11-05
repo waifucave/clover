@@ -1,4 +1,4 @@
-// ComputerV2 Phase 2 — the built-in browser's `CdpTransport`: Winter.app's CEF tabs, reached over the BROWSER LINK
+// ComputerV2 Phase 2 — the built-in browser's `CdpTransport`: Clover.app's CEF tabs, reached over the BROWSER LINK
 // (`rpc.ts`). Every call is one `browserLink.command` notification the app answers with one `browserLink.result`; a
 // late result is dropped by its `cmdId`. The app enforces the CDP allowlist with its own Swift copy, and so does this
 // transport, before anything is written (both layers). One transport per link: a second attach (or a relaunched app)
@@ -14,7 +14,7 @@ export const BROWSER_LINK_PROTOCOL = 2;
 export type BrowserLinkOp = "tab.ensure" | "tab.release" | "tab.close" | "tabs.live" | "cdp.send" | "cdp.subscribe" | "overlay" | "tab.present" | "tab.mute" | "tab.downloads" | "tab.download"
   | "headless.show" | "headless.hide" | "headless.tabs" | "headless.update";
 
-/** Feature `headless` (`BROWSER_LINK_FEATURES`): show one of the session's headless tabs in Winter's panel — the app
+/** Feature `headless` (`BROWSER_LINK_FEATURES`): show one of the session's headless tabs in Clover's panel — the app
  *  connects to the presentation `service` Winter Headless checked in for it, naming `nonce`, and holds the helper to
  *  `producerRequirement` (the helper the daemon spawned and verified). `purpose` "handoff": the agent waits for the
  *  person (a `waitForUser`), who has control; "watch": the person watches, and may take over from the panel. */
@@ -83,7 +83,7 @@ export class CefTransport implements CdpTransport {
 
   /** One command, answered by one `browserLink.result` (or a timeout; there is no cancel op). */
   command(op: BrowserLinkOp, params: Record<string, unknown>, timeoutMs: number): Promise<unknown> {
-    if (!this.connected) return Promise.reject(new TransportError("disconnected", "Winter isn't running"));
+    if (!this.connected) return Promise.reject(new TransportError("disconnected", "Clover isn't running"));
     const cmdId = `c${this.nextCmd++}`;
     const message = { jsonrpc: "2.0", method: "browserLink.command", params: { linkId: this.linkId, cmdId, op, params } };
     let size: number;
@@ -92,13 +92,13 @@ export class CefTransport implements CdpTransport {
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(cmdId);
-        reject(new TransportError("timeout", `Winter's browser did not answer ${op} in time`));
+        reject(new TransportError("timeout", `Clover's browser did not answer ${op} in time`));
       }, timeoutMs);
       this.pending.set(cmdId, { op, resolve, reject, timer });
       try { this.peer.write(message); } catch {
         clearTimeout(timer);
         this.pending.delete(cmdId);
-        reject(new TransportError("disconnected", "Winter isn't running"));
+        reject(new TransportError("disconnected", "Clover isn't running"));
       }
     });
   }
@@ -146,7 +146,7 @@ export class CefTransport implements CdpTransport {
     this.connected = false;
     for (const [id, p] of this.pending) {
       clearTimeout(p.timer);
-      p.reject(new TransportError("disconnected", "Winter isn't running"));
+      p.reject(new TransportError("disconnected", "Clover isn't running"));
       this.pending.delete(id);
     }
   }
@@ -176,7 +176,7 @@ export class CefTransport implements CdpTransport {
     this.tabSession.delete(tabKey);
   }
 
-  /** Winter's built-in tabs are never auto-closed: keeping one changes nothing. */
+  /** Clover's built-in tabs are never auto-closed: keeping one changes nothing. */
   async keepTab(): Promise<void> {}
 
   async listTabs(opts?: { sessionId?: string }): Promise<TransportTab[]> {
@@ -235,7 +235,7 @@ export class CefTransport implements CdpTransport {
 
   // ── Phase 3 (link protocol 2) ──────────────────────────────────────────────────────────────────
 
-  /** The sign-in handoff: Winter.app shows the session's window with this tab selected (after the user's OK). */
+  /** The sign-in handoff: Clover.app shows the session's window with this tab selected (after the user's OK). */
   async present(tabKey: string, opts: { sessionId: string }): Promise<void> {
     await this.command("tab.present", { sessionId: opts.sessionId, tabId: tabKey }, this.timeouts.other);
   }

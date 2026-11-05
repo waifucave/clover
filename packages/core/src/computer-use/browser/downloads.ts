@@ -78,7 +78,7 @@ const HTML_MIME = new Set(["text/html", "application/xhtml+xml"]);
 /**
  * The Fetch capture on one tab driver. A response is the file when it is an ATTACHMENT (from any frame), or the tab's
  * own TOP-LEVEL document that says a non-HTML type — a frame's document is the page's own and is left alone, and a
- * document that names no type is left to the browser. `anyResponse`: the URL route (a temporary tab Winter navigates
+ * document that names no type is left to the browser. `anyResponse`: the URL route (a temporary tab Clover navigates
  * itself) — its top-level document is the file whatever its type. `checkUrl`: the dangerous-domain floor, held to each
  * redirect of the tab's top-level document as it is paused (before the browser follows it) and to the file's own
  * address before a byte is read; the request waits paused meanwhile (a card may be up), and the wait's clock with it.
@@ -280,7 +280,7 @@ export class NativeCapture {
 
   async arm(): Promise<void> {
     const t = this.transport;
-    if (t.armDownloads === undefined || t.onDownload === undefined) throw new Error("this browser can't save downloads for Winter");
+    if (t.armDownloads === undefined || t.onDownload === undefined) throw new Error("this browser can't save downloads for Clover");
     this.lastProgress = this.o.now();
     this.off = t.onDownload((tabKey, d) => { if (tabKey === this.tabKey) this.onDownload(d); });
     try {
@@ -332,7 +332,7 @@ export class NativeCapture {
 }
 
 function tooLarge(max: number): AutomationFailure {
-  return new AutomationFailure("NotAllowed", `the file is larger than ${Math.round(max / (1024 * 1024))} MiB — Winter doesn't save it`);
+  return new AutomationFailure("NotAllowed", `the file is larger than ${Math.round(max / (1024 * 1024))} MiB — Clover doesn't save it`);
 }
 
 /** A `data:` URL's bytes, decoded by the daemon (no browser), with its MIME type. */

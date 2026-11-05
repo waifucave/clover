@@ -1,4 +1,4 @@
-import { COMPUTER_WAKE_CLIENT_NAME, type SessionEvent } from "@yanlinglabs/winter-protocol";
+import { COMPUTER_WAKE_CLIENT_NAME, type SessionEvent } from "@waifucave/clover-protocol";
 import type { SessionStore } from "./store";
 import { computerWakePhoneLine } from "./wake-phone-line";
 
@@ -23,7 +23,7 @@ import { computerWakePhoneLine } from "./wake-phone-line";
  *  one (advances the cursor -- correct, since it really did consume a daemon seq).
  *
  *  The one place these come to a stop is the phone's own transcript fold (`norma-ios`
- *  `Winter/Code/Transcript.swift`'s `TranscriptBuilder.apply`, `default: break` at the end of its
+ *  `Clover/Code/Transcript.swift`'s `TranscriptBuilder.apply`, `default: break` at the end of its
  *  switch on `type`) -- an unrecognized type is silently skipped, never rendered, never a crash,
  *  never a dropped connection. So no kit/capability gate is needed here: both types are safe to
  *  allow the moment this file does, on old phones and new alike.

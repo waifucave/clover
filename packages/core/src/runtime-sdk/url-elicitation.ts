@@ -5,7 +5,7 @@
 //
 // The rules, each enforced here and nowhere else:
 //   - URL mode ONLY. A form-mode request (or one naming no mode) is declined deterministically, with
-//     no card — Winter renders no forms for an MCP server.
+//     no card — Clover renders no forms for an MCP server.
 //   - https only, a bounded url with no embedded credentials; anything else is declined without a card.
 //   - A card, never an automatic open: `accept` means the USER chose to open the link, and the client
 //     opens it (the Mac does). The daemon opens nothing.
@@ -23,13 +23,13 @@
 // from the phone (`REMOTE_ALLOWED_METHODS`), and neither may answer or list one of these — the phone
 // cannot open a link on the Mac. `elicitation.respond` is local-only.
 
-import type { NewSessionEvent } from "@yanlinglabs/winter-protocol";
+import type { NewSessionEvent } from "@waifucave/clover-protocol";
 import {
   ELICITATION_MESSAGE_MAX_LENGTH,
   ELICITATION_SERVER_NAME_MAX_LENGTH,
   ELICITATION_URL_MAX_LENGTH,
   ELICITATION_HOST_MAX_LENGTH,
-} from "@yanlinglabs/winter-protocol";
+} from "@waifucave/clover-protocol";
 import type { Options } from "@yanlinglabs/winter-agent-sdk";
 import type { SessionApprovalPolicy } from "../agent/gate";
 import type { Mode as SessionMode } from "../agent/tools/registry";

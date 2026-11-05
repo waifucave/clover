@@ -1,4 +1,4 @@
-// PORTED from Winter's own agent SDK (yanlingLabs/winter-agent-sdk, packages/runtime/src/permissions,
+// PORTED from Clover's own agent SDK (waifucave/clover-sdk, packages/runtime/src/permissions,
 // v0.0.53): `bash-read-only.ts`, plus the declarations it needs from `grammar.ts` and `shell-structure.ts`,
 // merged into this one module (each part under its own "From …" banner, in source order, otherwise
 // verbatim). The runtime classifies a Bash command as read-only to run it concurrently (agent SDK 0.0.40+,

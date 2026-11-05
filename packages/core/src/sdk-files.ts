@@ -1,5 +1,5 @@
 // WS-21 (Contract C): the daemon's readers and writers of the two claude-format files in the shared
-// runtime home — `<home>/sdk/settings.json` (claude `Settings`) and `<home>/sdk/.winter.json` (claude's
+// runtime home — `<home>/sdk/settings.json` (claude `Settings`) and `<home>/sdk/.clover.json` (claude's
 // `.claude.json` shape: user `mcpServers`, local-scope `projects[<abs root>].mcpServers`).
 //
 // Both files are also the USER's (spec §2.2: "Written by: daemon; the user"), so:
@@ -41,7 +41,7 @@ export interface SdkSettingsFile {
   [key: string]: unknown;
 }
 
-/** claude's `.claude.json` (`sdk/.winter.json`), as far as the daemon reads or writes it. */
+/** claude's `.claude.json` (`sdk/.clover.json`), as far as the daemon reads or writes it. */
 export interface SdkGlobalConfigFile {
   mcpServers?: Record<string, unknown>;
   projects?: Record<string, { mcpServers?: Record<string, unknown>; [key: string]: unknown }>;
@@ -171,7 +171,7 @@ export function liveSdkSettings(home: string): SdkSettingsFile {
   return liveRead<SdkSettingsFile>(sdkSettingsPath(home));
 }
 
-/** `sdk/.winter.json` as the daemon reads it now: live, cached, keep-last-good. Treat as READ-ONLY. */
+/** `sdk/.clover.json` as the daemon reads it now: live, cached, keep-last-good. Treat as READ-ONLY. */
 export function liveSdkGlobalConfig(home: string): SdkGlobalConfigFile {
   return liveRead<SdkGlobalConfigFile>(sdkGlobalConfigPath(home));
 }
@@ -193,18 +193,18 @@ export function updateSdkSettings(home: string, mutate: (current: SdkSettingsFil
   return updateJsonObject<SdkSettingsFile>(sdkSettingsPath(home), mutate);
 }
 
-/** `sdk/.winter.json` with its state (`ok`/`missing`/`invalid`). */
+/** `sdk/.clover.json` with its state (`ok`/`missing`/`invalid`). */
 export function readSdkGlobalConfigDetailed(home: string): SdkFileRead<SdkGlobalConfigFile> {
   return readJsonObjectDetailed<SdkGlobalConfigFile>(sdkGlobalConfigPath(home));
 }
 
-/** `sdk/.winter.json`, or `{}` when missing or unparseable. Never throws. */
+/** `sdk/.clover.json`, or `{}` when missing or unparseable. Never throws. */
 export function readSdkGlobalConfig(home: string): SdkGlobalConfigFile {
   const r = readSdkGlobalConfigDetailed(home);
   return r.state === "ok" ? r.value : {};
 }
 
-/** Read-modify-write `sdk/.winter.json` atomically (0600). Same refusal as `updateSdkSettings`. */
+/** Read-modify-write `sdk/.clover.json` atomically (0600). Same refusal as `updateSdkSettings`. */
 export function updateSdkGlobalConfig(home: string, mutate: (current: SdkGlobalConfigFile) => SdkGlobalConfigFile): SdkGlobalConfigFile {
   return updateJsonObject<SdkGlobalConfigFile>(sdkGlobalConfigPath(home), mutate);
 }

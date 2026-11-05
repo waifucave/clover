@@ -2,10 +2,10 @@
 /**
  * THE DELIBERATE REGENERATION DOOR for `test/projector/fixtures/golden/*.events.jsonl`.
  *
- * ── WHAT THESE FILES ARE (ruling P8b-14, Winter map §13.3) ───────────────────────────────────────
+ * ── WHAT THESE FILES ARE (ruling P8b-14, Clover map §13.3) ───────────────────────────────────────
  *
- * Winter 8b replaces `AgentEngine` with a spawned `winter` child plus a projector that folds the
- * SDK's wire messages into Winter's `SessionEvent`s. The honest cutover proof is NOT a literal
+ * Clover 8b replaces `AgentEngine` with a spawned `winter` child plus a projector that folds the
+ * SDK's wire messages into Clover's `SessionEvent`s. The honest cutover proof is NOT a literal
  * dual-run — two live model calls answer differently every time, so a diff of their event streams
  * measures the model, not the projector. What IS comparable is the PRODUCT CONTRACT: for a given
  * scenario, which variants the daemon emits, in which order, carrying which fields.
@@ -40,7 +40,7 @@
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import type { SessionEvent } from "@yanlinglabs/winter-protocol";
+import type { SessionEvent } from "@waifucave/clover-protocol";
 import { SessionStore } from "../src/sessions/store";
 import { SessionHub } from "../src/sessions/hub";
 import { ToolRegistry } from "../src/agent/tools/registry";
@@ -94,8 +94,8 @@ function setupEngine(provider: Provider, opts: {
   withSubagents?: boolean;
   seedFiles?: Record<string, string>;
 } = {}): Harness {
-  const home = temp("winter-golden-home-");
-  const cwd = realpathSync(temp("winter-golden-cwd-"));
+  const home = temp("clover-golden-home-");
+  const cwd = realpathSync(temp("clover-golden-cwd-"));
   for (const [name, body] of Object.entries(opts.seedFiles ?? {})) writeFileSync(join(cwd, name), body);
   const store = new SessionStore(home);
   const hub = new SessionHub(store);
@@ -105,12 +105,12 @@ function setupEngine(provider: Provider, opts: {
   registerSpawnAgentTool(registry);
   const broker = new ApprovalBroker();
   const dirs = new SessionDirectories(() => [cwd]);
-  const assemblerHome = temp("winter-golden-actx-");
+  const assemblerHome = temp("clover-golden-actx-");
   const assemblerTrust = new TrustStore(join(assemblerHome, "trust.json"));
-  const skills = new SkillStore({ winterHome: assemblerHome, trust: assemblerTrust });
-  const assembler = new ContextAssembler({ winterHome: assemblerHome, trust: assemblerTrust, skills });
+  const skills = new SkillStore({ cloverHome: assemblerHome, trust: assemblerTrust });
+  const assembler = new ContextAssembler({ cloverHome: assemblerHome, trust: assemblerTrust, skills });
   const compactor = new Compactor({ provider: { provider, model: "golden-1" }, store, hub });
-  const agentsHome = temp("winter-golden-agents-");
+  const agentsHome = temp("clover-golden-agents-");
   const agentsTrust = new TrustStore(join(agentsHome, "trust.json"));
   const engine = new AgentEngine({
     store, hub, registry, broker,
@@ -122,7 +122,7 @@ function setupEngine(provider: Provider, opts: {
     compactor,
     ...(opts.withSubagents
       ? {
-          agents: new AgentStore({ winterHome: agentsHome, trust: agentsTrust }),
+          agents: new AgentStore({ cloverHome: agentsHome, trust: agentsTrust }),
           subagents: new SubagentManager({ maxConcurrent: () => undefined, timeoutMs: () => undefined, stallTimeoutMs: () => undefined }),
         }
       : {}),
@@ -204,7 +204,7 @@ function normalize(events: SessionEvent[], h: Pick<Harness, "home" | "cwd">): st
 
 // ── the scenarios ──────────────────────────────────────────────────────────────────────────────
 // Each returns the raw hub stream for one turn. The host's own `user_message` append (what
-// `ipc/server.ts`'s `session.send` does before starting a turn, and what the Winter leg's host push
+// `ipc/server.ts`'s `session.send` does before starting a turn, and what the Clover leg's host push
 // queue does per P8b-5) is part of every scenario, because it is part of the product contract.
 
 const scenarios: Array<{ name: string; run: () => Promise<{ events: SessionEvent[]; home: string; cwd: string }> }> = [

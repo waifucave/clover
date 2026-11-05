@@ -21,7 +21,7 @@ const PROOF = {}, A = "a".repeat(64), B = "b".repeat(64), C = "c".repeat(64), D 
 const volumeAuthority: CoworkVolumeAuthority = { authorize: (_a, input) => input.proof === PROOF, verifyStopped: () => true };
 
 function fixture(opts: { compatible?: () => boolean | Promise<boolean>; ready?: boolean } = {}) {
-  const home = mkdtempSync(join(tmpdir(), "winter-storage-lifecycle-"));
+  const home = mkdtempSync(join(tmpdir(), "clover-storage-lifecycle-"));
   const db: RuntimeStateDb = openRuntimeStateDb(home), repo = new CoworkRepository(db);
   cleanup.push(() => { db.close(); rmSync(home, { recursive: true, force: true }); });
   const homeId = repo.homeIdentity();
@@ -81,7 +81,7 @@ const userVersion = (home: string): number => {
   try { return raw.query<{ user_version: number }, []>("PRAGMA user_version").get()!.user_version; } finally { raw.close(); }
 };
 test("an empty current-schema store downgrades to v7 and to v6, loses the lifecycle tables, and upgrades again cleanly", () => {
-  const home = mkdtempSync(join(tmpdir(), "winter-lifecycle-schema-")); cleanup.push(() => rmSync(home, { recursive: true, force: true }));
+  const home = mkdtempSync(join(tmpdir(), "clover-lifecycle-schema-")); cleanup.push(() => rmSync(home, { recursive: true, force: true }));
   let db = openRuntimeStateDb(home); db.close();
   expect(userVersion(home)).toBe(21);
   expect(tablesOf(home)).toEqual(expect.arrayContaining(["cowork_workspace_images", "cowork_exports"]));
@@ -102,7 +102,7 @@ test("each lifecycle table alone is Cowork authority: one recorded row refuses b
     ["cowork_workspace_images", "INSERT INTO cowork_workspace_images(workspace_id,base_image_digest,runtime_image_digest,pending_update_json,revision,pinned_at,updated_at) VALUES('ws_x','" + A + "','" + B + "',NULL,1,'t','t')"],
     ["cowork_exports", "INSERT INTO cowork_exports(export_id,workspace_id,generation,state,manifest_json,manifest_digest,created_at,updated_at) VALUES('export_x','ws_x',1,'failed','{}','" + A + "','t','t')"],
   ] as const) {
-    const home = mkdtempSync(join(tmpdir(), "winter-lifecycle-schema-")); cleanup.push(() => rmSync(home, { recursive: true, force: true }));
+    const home = mkdtempSync(join(tmpdir(), "clover-lifecycle-schema-")); cleanup.push(() => rmSync(home, { recursive: true, force: true }));
     const db = openRuntimeStateDb(home); db.db.run("PRAGMA foreign_keys=OFF"); db.db.run(insert); db.close();
     expect(() => downgradeCoworkRuntimeStateToV7(home)).toThrow("Cowork authority");
     expect(() => downgradeRuntimeStateToV6(home)).toThrow("Cowork authority");

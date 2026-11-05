@@ -4,7 +4,7 @@ import { join } from "node:path";
 import type { CanUseTool, PermissionMode } from "@yanlinglabs/winter-agent-sdk";
 import type { CredentialPresence } from "@yanlinglabs/winter-runtime-sdk";
 import { RESUME_STAGING_PREFIX, isResumeStagingRoot, resumeStagingRoot } from "@yanlinglabs/winter-runtime-sdk";
-import type { NewSessionEvent } from "@yanlinglabs/winter-protocol";
+import type { NewSessionEvent } from "@waifucave/clover-protocol";
 import { Settings, modelRoleConstraint } from "../../src/settings";
 import { keychainService } from "../../src/profile";
 import { ApprovalBroker } from "../../src/agent/approvals";
@@ -14,17 +14,17 @@ import { classifyPermissionMode } from "@yanlinglabs/winter-agent-sdk/messaging"
 import { DISPATCH_CHILD_APPROVAL_TIMEOUT_MS, canUseToolFor, neverPromptsMessage, type BridgeLogger } from "../../src/runtime-sdk/approval-bridge";
 import { REVIEWER_ESCALATION_REASON, noteReviewerCleared, takeReviewerCleared } from "../../src/runtime-sdk/bridge-common";
 import {
-  buildWinterOptions, permissionModeFor, disallowedToolsFor, toolsFor, deferToolsFor,
+  buildCloverOptions, permissionModeFor, disallowedToolsFor, toolsFor, deferToolsFor,
   CAPABILITY_TOOL_MODES, CHAT_BUILTIN_TOOLS, DISPATCH_BUILTIN_TOOLS, DISPATCH_READ_ALLOW_RULES, GLOBAL_READ_ALLOW_RULES,
   WEB_BUILTIN_ALLOW_RULES, KNOWN_RUNTIME_BUILTINS, CAPABILITY_PLAIN_NAMES, LEGACY_TOOL_NAMES, toolSurfaceViolations,
-  type ToolExposure, type WinterOptionsInput,
+  type ToolExposure, type CloverOptionsInput,
 } from "../../src/runtime-sdk/mode-options";
-import { WINTER_CAPABILITY_TOOLS, capabilityToolName, reservedMcpServerNames } from "../../src/capabilities/names";
+import { CLOVER_CAPABILITY_TOOLS, capabilityToolName, reservedMcpServerNames } from "../../src/capabilities/names";
 import { capabilityKeysOf } from "../../src/runtime-sdk/session-driver";
 import {
-  gateClassFor, hostToolNameFor, winterToolNameFor,
-  WINTER_ADVERTISED_TOOLS_0_0_4, WINTER_ADVERTISED_TOOLS_0_0_4_BASE, WINTER_ADVERTISED_MCP_TOOLS_0_0_4,
-  WINTER_OWN_TOOL_NAMES, RUNTIME_HOST_TOOL_PAIRS,
+  gateClassFor, hostToolNameFor, cloverToolNameFor,
+  CLOVER_ADVERTISED_TOOLS_0_0_4, CLOVER_ADVERTISED_TOOLS_0_0_4_BASE, CLOVER_ADVERTISED_MCP_TOOLS_0_0_4,
+  CLOVER_OWN_TOOL_NAMES, RUNTIME_HOST_TOOL_PAIRS,
 } from "../../src/runtime-sdk/tool-names";
 
 type Mode = "code" | "dispatch" | "chat";
@@ -32,23 +32,23 @@ const MODES: Mode[] = ["code", "dispatch", "chat"];
 const POLICIES: SessionApprovalPolicy[] = ["plan", "dont-ask", "ask", "accept-edits", "auto", "bypass"];
 const silent: BridgeLogger = { info: () => {}, error: () => {} };
 const NO_CREDS: CredentialPresence = { byProvider: {} };
-// 0.0.17: the two Winter-leg tool-exposure inputs, spelled once. `exaKeyPresent` is explicit on both
+// 0.0.17: the two Clover-leg tool-exposure inputs, spelled once. `exaKeyPresent` is explicit on both
 // (the absent default is `true`, which one test below pins on purpose).
-const WINTER_LEG_WITH_EXA: ToolExposure = { exaKeyPresent: true };
-const WINTER_LEG_NO_EXA: ToolExposure = { exaKeyPresent: false };
+const CLOVER_LEG_WITH_EXA: ToolExposure = { exaKeyPresent: true };
+const CLOVER_LEG_NO_EXA: ToolExposure = { exaKeyPresent: false };
 
 // -------------------------------------------------------------------------------------------
 // permissionModeFor — the P8b-7 1:1 table
 // -------------------------------------------------------------------------------------------
 
-test("the six policies map onto Winter's PermissionMode — auto → default (P8b-7 amended, review F1)", () => {
+test("the six policies map onto Clover's PermissionMode — auto → default (P8b-7 amended, review F1)", () => {
   expect(Object.fromEntries(POLICIES.map((p) => [p, permissionModeFor(p)]))).toEqual({
     plan: "plan",
     "dont-ask": "dontAsk",
     ask: "default",
     "accept-edits": "acceptEdits",
-    // NEVER Winter's `auto`: that mode runs Winter's model-backed classifier AHEAD of `canUseTool`
-    // (fail-closed with a double, a model call per tool use in production). Winter's `auto` is the
+    // NEVER Clover's `auto`: that mode runs Clover's model-backed classifier AHEAD of `canUseTool`
+    // (fail-closed with a double, a model call per tool use in production). Clover's `auto` is the
     // host gate's silent verdict, which only `"default"` routes to.
     auto: "default",
     bypass: "bypassPermissions",
@@ -56,7 +56,7 @@ test("the six policies map onto Winter's PermissionMode — auto → default (P8
   expect(permissionModeFor("auto")).not.toBe("auto");
 });
 
-test("review F1: the messaging class of an `auto` session is derived from `default`, i.e. `prompts` — never Winter's `auto`", () => {
+test("review F1: the messaging class of an `auto` session is derived from `default`, i.e. `prompts` — never Clover's `auto`", () => {
   // `sessionPermissionClassFor` (session-driver.ts) reads the stored policy and classifies
   // `permissionModeFor(policy)`; with `auto → default` an `auto` session is a `prompts` receiver,
   // exactly like an `ask` one. Pinned through the SDK's own classifier so the two stay one predicate.
@@ -67,29 +67,29 @@ test("review F1: the messaging class of an `auto` session is derived from `defau
 
 test("the internal seventh policy maps to default, NOT dontAsk", () => {
   // `ipc/server.ts:1096` persists `"chat"` on every chat session, so it reaches this function in
-  // production. `dontAsk` would deny `AskUserQuestion` outright (Winter's own descriptor), killing
+  // production. `dontAsk` would deny `AskUserQuestion` outright (Clover's own descriptor), killing
   // chat's only question surface; `default` routes every call through the bridge, where the gate's
   // own chat branch — allow READ_ONLY/NETWORK, deny everything else, NEVER ask — is the live policy.
   expect(permissionModeFor("chat")).toBe("default");
 });
 
 // -------------------------------------------------------------------------------------------
-// buildWinterOptions
+// buildCloverOptions
 // -------------------------------------------------------------------------------------------
 
-// WS-20: `model`/`advisorModel` are branded `ModelTag` on `WinterOptionsInput`, but every fixture
+// WS-20: `model`/`advisorModel` are branded `ModelTag` on `CloverOptionsInput`, but every fixture
 // in this file hand-writes them as plain tag-shaped string literals — `over` accepts plain strings
 // for both and casts once, here, rather than every call site wrapping its own `tag(...)`.
 function optionsInput(
-  over: Partial<Omit<WinterOptionsInput, "model" | "advisorModel" | "digestModel">>
+  over: Partial<Omit<CloverOptionsInput, "model" | "advisorModel" | "digestModel">>
     & { model?: string; advisorModel?: string; digestModel?: string } = {},
-): WinterOptionsInput {
+): CloverOptionsInput {
   const { model, advisorModel, digestModel, ...rest } = over;
   return {
     mode: "code",
     policy: "ask",
     sessionId: "11111111-2222-3333-4444-555555555555",
-    home: "/tmp/winter-home",
+    home: "/tmp/clover-home",
     cwd: "/repo",
     credentials: NO_CREDS,
     spawn: { pathToClaudeCodeExecutable: "/opt/winter" },
@@ -97,16 +97,16 @@ function optionsInput(
     abort: new AbortController(),
     baseEnv: { PATH: "/usr/bin", HOME: "/Users/x", TMPDIR: "/tmp", LANG: "en_US.UTF-8", SECRET_TOKEN: "leak-me" },
     ...rest,
-    ...(model === undefined ? {} : { model: model as WinterOptionsInput["model"] }),
-    ...(advisorModel === undefined ? {} : { advisorModel: advisorModel as WinterOptionsInput["advisorModel"] }),
-    ...(digestModel === undefined ? {} : { digestModel: digestModel as WinterOptionsInput["digestModel"] }),
+    ...(model === undefined ? {} : { model: model as CloverOptionsInput["model"] }),
+    ...(advisorModel === undefined ? {} : { advisorModel: advisorModel as CloverOptionsInput["advisorModel"] }),
+    ...(digestModel === undefined ? {} : { digestModel: digestModel as CloverOptionsInput["digestModel"] }),
   };
 }
 
 test("permissionMode is set from the policy for every mode × policy cell", () => {
   for (const mode of MODES) {
     for (const policy of POLICIES) {
-      expect(buildWinterOptions(optionsInput({ mode, policy })).permissionMode).toBe(permissionModeFor(policy));
+      expect(buildCloverOptions(optionsInput({ mode, policy })).permissionMode).toBe(permissionModeFor(policy));
     }
   }
 });
@@ -115,7 +115,7 @@ test("bypass is the only cell that sets allowDangerouslySkipPermissions", () => 
   // `bypassPermissions` cannot be selected without it — startup refuses otherwise (surface map §5.2).
   for (const mode of MODES) {
     for (const policy of POLICIES) {
-      const o = buildWinterOptions(optionsInput({ mode, policy }));
+      const o = buildCloverOptions(optionsInput({ mode, policy }));
       expect(o.allowDangerouslySkipPermissions).toBe(policy === "bypass" ? true : undefined);
     }
   }
@@ -129,17 +129,17 @@ test("bypass is the only cell that sets allowDangerouslySkipPermissions", () => 
 test("disableBypassPermissionsMode is set for every policy except bypass itself", () => {
   for (const mode of MODES) {
     for (const policy of POLICIES) {
-      const o = buildWinterOptions(optionsInput({ mode, policy }));
+      const o = buildCloverOptions(optionsInput({ mode, policy }));
       expect(o.permissions?.disableBypassPermissionsMode).toBe(policy !== "bypass");
     }
   }
 });
 
-// Agent SDK 0.0.16 adoption: two fields the daemon sets on EVERY Winter-leg cell, for reasons that
+// Agent SDK 0.0.16 adoption: two fields the daemon sets on EVERY Clover-leg cell, for reasons that
 // are invisible in the option's own name — a background-by-default spawn would produce a turn the
 // host never pushed, and an absent `settingSources` means "all three sources", which at 0.0.16 makes
-// the child run its OWN discovery of WINTER.md, output styles, commands, skills and agent definitions
-// across `<home>` and `<cwd>/.winter/**` — a second pass, untrust-gated where the daemon's is gated,
+// the child run its OWN discovery of CLOVER.md, output styles, commands, skills and agent definitions
+// across `<home>` and `<cwd>/.clover/**` — a second pass, untrust-gated where the daemon's is gated,
 // over material `ContextAssembler`/`SkillStore`/`Options.agents` already supply. (It does NOT make the
 // child parse `<home>/settings.json`: that cascade has no production call site at 0.0.16. See the
 // comment on the field itself in mode-options.ts.)
@@ -149,7 +149,7 @@ test("disableBypassPermissionsMode is set for every policy except bypass itself"
 test("every cell discovers no settings tier of its own and keeps the foreground spawn default", () => {
   for (const mode of MODES) {
     for (const policy of POLICIES) {
-      const o = buildWinterOptions(optionsInput({ mode, policy }));
+      const o = buildCloverOptions(optionsInput({ mode, policy }));
       expect(o.backgroundByDefault).toBe(false);
       expect(o.settingSources).toEqual([]);
     }
@@ -157,34 +157,34 @@ test("every cell discovers no settings tier of its own and keeps the foreground 
 });
 
 // The session's $OUTDIR rides `Options.outputsDir`, which the agent SDK makes writable for the Bash
-// sandbox and carves out of its protected winter-home floor; without it a sandboxed `echo > $OUTDIR/x`
+// sandbox and carves out of its protected clover-home floor; without it a sandboxed `echo > $OUTDIR/x`
 // is refused though the system prompt names the directory.
 test("the session's $OUTDIR rides Options.outputsDir; absent ⇒ no key", () => {
-  const o = buildWinterOptions(optionsInput({ mode: "code", outputsDir: "/tmp/winter-home/outputs/s_abc" }));
-  expect(o.outputsDir).toBe("/tmp/winter-home/outputs/s_abc");
-  expect("outputsDir" in buildWinterOptions(optionsInput({ mode: "code" }))).toBe(false);
+  const o = buildCloverOptions(optionsInput({ mode: "code", outputsDir: "/tmp/clover-home/outputs/s_abc" }));
+  expect(o.outputsDir).toBe("/tmp/clover-home/outputs/s_abc");
+  expect("outputsDir" in buildCloverOptions(optionsInput({ mode: "code" }))).toBe(false);
 });
 
 // B1 (2026-09-22): with `settingSources: []` a local plugin is the ONE skill source the child still
 // indexes, so the daemon's resolved plugin skills ride `Options.plugins` (skills-only views, built by
 // `SkillStore.childSkillSurface`) and `Options.skills` names which of them the session may invoke.
 test("B1: the daemon's skill surface rides Options.plugins + Options.skills verbatim; none ⇒ neither key", () => {
-  const plugins = [{ type: "local" as const, path: "/tmp/winter-home/runtimes/skill-plugins/superpowers", skipMcpDiscovery: true }];
-  const o = buildWinterOptions(optionsInput({ mode: "code", plugins, skills: ["superpowers:brainstorming"] }));
+  const plugins = [{ type: "local" as const, path: "/tmp/clover-home/runtimes/skill-plugins/superpowers", skipMcpDiscovery: true }];
+  const o = buildCloverOptions(optionsInput({ mode: "code", plugins, skills: ["superpowers:brainstorming"] }));
   expect(o.plugins).toEqual(plugins);
   expect(o.skills).toEqual(["superpowers:brainstorming"]);
   // An empty list is a real answer (every plugin skill denied): the SDK reads `[]` as "none", which
   // is exactly what the daemon means — never "all", which is what dropping the key would say.
-  expect(buildWinterOptions(optionsInput({ mode: "code", plugins, skills: [] })).skills).toEqual([]);
+  expect(buildCloverOptions(optionsInput({ mode: "code", plugins, skills: [] })).skills).toEqual([]);
   for (const mode of MODES) {
     for (const policy of POLICIES) {
-      const bare = buildWinterOptions(optionsInput({ mode, policy }));
+      const bare = buildCloverOptions(optionsInput({ mode, policy }));
       expect("plugins" in bare).toBe(false);
       expect("skills" in bare).toBe(false);
     }
   }
   // No plugin ⇒ no `skills` either: with nothing indexed, a filter would only add a validation warning.
-  const noPlugins = buildWinterOptions(optionsInput({ mode: "code", plugins: [], skills: [] }));
+  const noPlugins = buildCloverOptions(optionsInput({ mode: "code", plugins: [], skills: [] }));
   expect("plugins" in noPlugins).toBe(false);
   expect("skills" in noPlugins).toBe(false);
 });
@@ -195,15 +195,15 @@ test("B1: the daemon's skill surface rides Options.plugins + Options.skills verb
 test("code cells carry the global read-allow list AND the two web built-ins; dispatch its Read + the web pair; chat none", () => {
   // 0.0.17: `WebFetch`/`WebSearch` join the code-mode allow list — see `WEB_BUILTIN_ALLOW_RULES`'
   // own doc. Without them a `dont-ask` session loses both tools, because the runtime denies an
-  // unresolved call under that mode without ever calling `canUseTool` (where Winter's gate has always
+  // unresolved call under that mode without ever calling `canUseTool` (where Clover's gate has always
   // answered `allow` for the web class). Spelled as the two constants, not a fourth literal copy.
   for (const policy of POLICIES) {
-    expect(buildWinterOptions(optionsInput({ mode: "code", policy })).permissions?.allow)
+    expect(buildCloverOptions(optionsInput({ mode: "code", policy })).permissions?.allow)
       .toEqual([...GLOBAL_READ_ALLOW_RULES, ...WEB_BUILTIN_ALLOW_RULES]);
     expect(WEB_BUILTIN_ALLOW_RULES).toEqual(["WebFetch", "WebSearch"]);
-    expect(buildWinterOptions(optionsInput({ mode: "chat", policy })).permissions?.allow).toBeUndefined();
+    expect(buildCloverOptions(optionsInput({ mode: "chat", policy })).permissions?.allow).toBeUndefined();
     // Dispatch respects its policy like code (user ruling 2026-10-17): under dont-ask it keeps its reads and web reads.
-    expect(buildWinterOptions(optionsInput({ mode: "dispatch", policy })).permissions?.allow)
+    expect(buildCloverOptions(optionsInput({ mode: "dispatch", policy })).permissions?.allow)
       .toEqual([...DISPATCH_READ_ALLOW_RULES, ...WEB_BUILTIN_ALLOW_RULES]);
   }
 });
@@ -214,7 +214,7 @@ test("a cowork mode gets none of the Dispatch or Code allow rules", () => {
   for (const policy of ["dont-ask", "ask", "auto"] as const) {
     let allow: readonly string[] | undefined;
     let threw = false;
-    try { allow = buildWinterOptions(optionsInput({ mode: "cowork" as never, policy })).permissions?.allow; } catch { threw = true; }
+    try { allow = buildCloverOptions(optionsInput({ mode: "cowork" as never, policy })).permissions?.allow; } catch { threw = true; }
     // Either outcome is a refusal; neither may be skipped, so a future change cannot pass this vacuously.
     expect(threw || allow === undefined).toBe(true);
     if (!threw) expect(allow).toBeUndefined();
@@ -222,11 +222,11 @@ test("a cowork mode gets none of the Dispatch or Code allow rules", () => {
 });
 
 // The allow list must never be able to out-vote the fence. Both runtimes evaluate deny BEFORE allow
-// (the Winter SDK's evaluator header spells the stage order; claude's is the same), so what this
+// (the Clover SDK's evaluator header spells the stage order; claude's is the same), so what this
 // pins is that the deny list is still THERE, in the same block, in every cell that has an allow.
 test("every cell with a read-allow list still carries the control-plane deny rules beside it", () => {
   for (const policy of POLICIES) {
-    const perms = buildWinterOptions(optionsInput({ mode: "code", policy, home: "/h" })).permissions!;
+    const perms = buildCloverOptions(optionsInput({ mode: "code", policy, home: "/h" })).permissions!;
     expect(perms.allow).toBeDefined();
     expect(perms.deny!.some((r) => r.includes("/h/run"))).toBe(true);
     expect(perms.deny!.some((r) => r.startsWith("Read("))).toBe(true);
@@ -234,10 +234,10 @@ test("every cell with a read-allow list still carries the control-plane deny rul
 });
 
 test("the child's env is BUILT, never inherited", () => {
-  const o = buildWinterOptions(optionsInput({ home: "/tmp/temp-home", profile: "dev" }));
+  const o = buildCloverOptions(optionsInput({ home: "/tmp/temp-home", profile: "dev" }));
   expect(o.env).toEqual({
-    WINTER_HOME: "/tmp/temp-home",
-    WINTER_PROFILE: "dev",
+    CLOVER_HOME: "/tmp/temp-home",
+    CLOVER_PROFILE: "dev",
     PATH: "/usr/bin",
     HOME: "/Users/x",
     TMPDIR: "/tmp",
@@ -246,32 +246,32 @@ test("the child's env is BUILT, never inherited", () => {
   // The ambient variable in `baseEnv` is NOT forwarded — an API key sitting in the environment
   // never becomes a credential by existing (surface map §7.1's host half).
   expect(o.env).not.toHaveProperty("SECRET_TOKEN");
-  expect(o.env!.WINTER_PROFILE).toBe("dev");
-  expect(buildWinterOptions(optionsInput()).env!.WINTER_PROFILE).toBe("");
+  expect(o.env!.CLOVER_PROFILE).toBe("dev");
+  expect(buildCloverOptions(optionsInput()).env!.CLOVER_PROFILE).toBe("");
 });
 
-test("process.env.WINTER_HOME is NEVER consulted — the child is pinned to the daemon's home", () => {
-  const saved = process.env.WINTER_HOME;
-  process.env.WINTER_HOME = "/Users/real/.winter";   // the hard-rule trap
+test("process.env.CLOVER_HOME is NEVER consulted — the child is pinned to the daemon's home", () => {
+  const saved = process.env.CLOVER_HOME;
+  process.env.CLOVER_HOME = "/Users/real/.clover";   // the hard-rule trap
   try {
-    // No `baseEnv` at all: the fallback reads `process.env` for PATH/HOME/TMPDIR, and WINTER_HOME
+    // No `baseEnv` at all: the fallback reads `process.env` for PATH/HOME/TMPDIR, and CLOVER_HOME
     // must STILL come from the input. A child that inherited the daemon's ambient environment would
-    // write a real transcript under ~/.winter the moment a test ran on a machine with an install.
-    const o = buildWinterOptions({ ...optionsInput(), baseEnv: undefined, home: "/tmp/pinned-home" });
-    expect(o.env!.WINTER_HOME).toBe("/tmp/pinned-home");
+    // write a real transcript under ~/.clover the moment a test ran on a machine with an install.
+    const o = buildCloverOptions({ ...optionsInput(), baseEnv: undefined, home: "/tmp/pinned-home" });
+    expect(o.env!.CLOVER_HOME).toBe("/tmp/pinned-home");
   } finally {
-    if (saved === undefined) delete process.env.WINTER_HOME; else process.env.WINTER_HOME = saved;
+    if (saved === undefined) delete process.env.CLOVER_HOME; else process.env.CLOVER_HOME = saved;
   }
 });
 
 test("WINTER_TEST_PROVIDER is set ONLY for a winter-test/* model", () => {
-  expect(buildWinterOptions(optionsInput({ model: "winter-test/echo" })).env!.WINTER_TEST_PROVIDER).toBe("echo");
-  expect(buildWinterOptions(optionsInput({ model: "openai/gpt-5.6-sol" })).env).not.toHaveProperty("WINTER_TEST_PROVIDER");
-  expect(buildWinterOptions(optionsInput()).env).not.toHaveProperty("WINTER_TEST_PROVIDER");
+  expect(buildCloverOptions(optionsInput({ model: "winter-test/echo" })).env!.WINTER_TEST_PROVIDER).toBe("echo");
+  expect(buildCloverOptions(optionsInput({ model: "openai/gpt-5.6-sol" })).env).not.toHaveProperty("WINTER_TEST_PROVIDER");
+  expect(buildCloverOptions(optionsInput()).env).not.toHaveProperty("WINTER_TEST_PROVIDER");
 });
 
 test("the constant options: streaming on, no prompt, no brand, no mcpServers, no toolAliases", () => {
-  const o = buildWinterOptions(optionsInput());
+  const o = buildCloverOptions(optionsInput());
   // Without `includePartialMessages` the runtime emits no `stream_event` frames at all, so the
   // projector has no `assistant_delta` to produce (options.d.ts:195).
   expect(o.includePartialMessages).toBe(true);
@@ -288,11 +288,11 @@ test("the constant options: streaming on, no prompt, no brand, no mcpServers, no
 });
 
 test("optional passthroughs appear only when given", () => {
-  const bare = buildWinterOptions(optionsInput());
+  const bare = buildCloverOptions(optionsInput());
   for (const k of ["model", "effort", "systemPrompt", "outputStyle", "provider"] as const) {
     expect(bare[k]).toBeUndefined();
   }
-  const full = buildWinterOptions(optionsInput({
+  const full = buildCloverOptions(optionsInput({
     model: "openai/gpt-5.6-sol", effort: "high", systemPrompt: "be terse", outputStyle: "explanatory",
     credentials: { byProvider: { openai: "keychain" } },
     spawn: { pathToClaudeCodeExecutable: "/opt/winter", spawnClaudeCodeProcess: (() => { throw new Error("unused"); }) as never },
@@ -310,11 +310,11 @@ test("optional passthroughs appear only when given", () => {
 // -------------------------------------------------------------------------------------------
 
 test("the control-plane deny rules cover the four write tools × the control-plane surface", () => {
-  const deny = buildWinterOptions(optionsInput({ home: "/h" })).permissions!.deny!;
+  const deny = buildCloverOptions(optionsInput({ home: "/h" })).permissions!.deny!;
   for (const tool of ["Edit", "Write", "MultiEdit", "NotebookEdit"]) {
-    expect(deny).toContain(`${tool}(//**/.winter/permissions.local.json)`);
-    expect(deny).toContain(`${tool}(//**/.winter/settings.json)`);
-    expect(deny).toContain(`${tool}(//**/.winter/settings.local.json)`);
+    expect(deny).toContain(`${tool}(//**/.clover/permissions.local.json)`);
+    expect(deny).toContain(`${tool}(//**/.clover/settings.json)`);
+    expect(deny).toContain(`${tool}(//**/.clover/settings.local.json)`);
     expect(deny).toContain(`${tool}(//h/permissions.local.json)`);
     expect(deny).toContain(`${tool}(//h/run/**)`);
     // Whole-branch review: the trust record — writing it trusts any project, and a trusted project's
@@ -324,7 +324,7 @@ test("the control-plane deny rules cover the four write tools × the control-pla
     // bearing surface (`permissionMode`) — same "project-INDEPENDENT, any depth" fence as the three
     // control-plane filenames above, just for a directory of them.
     expect(deny).toContain(`${tool}(//h/agents/**)`);
-    expect(deny).toContain(`${tool}(//**/.winter/agents/**)`);
+    expect(deny).toContain(`${tool}(//**/.clover/agents/**)`);
     // B1 follow-up: the skills-only plugin views — a planted manifest there becomes the next child's
     // plugin hooks. Write-fenced; deliberately NOT read-fenced (a skill reads its own files).
     // Re-review M-a: ALL of `<home>/cache` (only the views use it), so the directories above the views
@@ -339,18 +339,18 @@ test("the control-plane deny rules cover the four write tools × the control-pla
     // WS-21 (spec §7.1): the shared runtime home's self-grant files and stores, and a project's own MCP
     // server list and any settings tier, at any depth.
     expect(deny).toContain(`${tool}(//h/sdk/settings.json)`);
-    expect(deny).toContain(`${tool}(//h/sdk/.winter.json)`);
+    expect(deny).toContain(`${tool}(//h/sdk/.clover.json)`);
     expect(deny).toContain(`${tool}(//h/sdk/agents/**)`);
     expect(deny).toContain(`${tool}(//h/sdk/plugins/**)`);
-    expect(deny).toContain(`${tool}(//**/.winter/mcp.json)`);
-    expect(deny).toContain(`${tool}(//**/.winter/settings*.json)`);
+    expect(deny).toContain(`${tool}(//**/.clover/mcp.json)`);
+    expect(deny).toContain(`${tool}(//**/.clover/settings*.json)`);
   }
   // The skill-plugin views stay READABLE: no read rule covers the cache wholesale. WS-21 (spec §7.1)
   // read-denies exactly three generated config files per run folder, and (round 6) its `backups/`.
   for (const tool of ["Read", "Glob", "Grep"]) {
     const underCache = deny.filter((r) => r.startsWith(`${tool}(`) && r.includes("/cache"));
-    expect(underCache.sort()).toEqual([".claude.json", ".credentials.json", ".winter.json", "backups/**"].map((f) => `${tool}(//h/cache/runs/*/${f})`));
-    expect(deny).toContain(`${tool}(//h/sdk/.winter.json)`);
+    expect(underCache.sort()).toEqual([".claude.json", ".clover.json", ".credentials.json", "backups/**"].map((f) => `${tool}(//h/cache/runs/*/${f})`));
+    expect(deny).toContain(`${tool}(//h/sdk/.clover.json)`);
   }
   // Task 17: + the engine's read-tool denials, carried: Read/Glob/Grep × { run/**, runtimes/** }
   for (const tool of ["Read", "Glob", "Grep"]) {
@@ -371,7 +371,7 @@ test("the control-plane deny rules cover the four write tools × the control-pla
   // never the whole root (a resumed generation's own large tool outputs live there and must be readable).
   for (const tool of ["Read", "Glob", "Grep"]) {
     expect(deny).not.toContain(`${tool}(${claudeResumeTarget})`);
-    for (const f of [".claude.json", ".credentials.json", ".winter.json", "backups/**"]) expect(deny).toContain(`${tool}(/${join(tmpdir(), `${RESUME_STAGING_PREFIX}*`)}/${f})`);
+    for (const f of [".claude.json", ".credentials.json", ".clover.json", "backups/**"]) expect(deny).toContain(`${tool}(/${join(tmpdir(), `${RESUME_STAGING_PREFIX}*`)}/${f})`);
   }
   expect(deny).toHaveLength(4 * 21 + 3 * 11);
 });
@@ -379,7 +379,7 @@ test("the control-plane deny rules cover the four write tools × the control-pla
 // Daemon settings surface batch 3 (item 2): `settings.permissions.deny` (Skill(<name>) toggles,
 // or any hand-written rule) rides ALONGSIDE the fixed control-plane fence, never in place of it.
 test("item 2 (WS-21): the user's sdk/settings.json deny rules (userDeny) are appended after the fixed control-plane fence, verbatim", () => {
-  const deny = buildWinterOptions(optionsInput({ home: "/h", userDeny: ["Skill(writing-skills)", "Agent(fork)"] })).permissions!.deny!;
+  const deny = buildCloverOptions(optionsInput({ home: "/h", userDeny: ["Skill(writing-skills)", "Agent(fork)"] })).permissions!.deny!;
   expect(deny.slice(-2)).toEqual(["Skill(writing-skills)", "Agent(fork)"]);
   // The fixed fence is untouched (same count this file's other test pins).
   expect(deny).toHaveLength(4 * 21 + 3 * 11 + 2);
@@ -391,23 +391,23 @@ test("WS-21: a STALE settings.permissions.deny (a moved key) never reaches the c
     provider: { model: "codex-oauth/gpt-5.6-sol" },
     permissions: { deny: ["Skill(stale)"] },
   });
-  const deny = buildWinterOptions(optionsInput({ home: "/h", settings })).permissions!.deny!;
+  const deny = buildCloverOptions(optionsInput({ home: "/h", settings })).permissions!.deny!;
   expect(deny).not.toContain("Skill(stale)");
   expect(deny).toHaveLength(4 * 21 + 3 * 11);
 });
 
 test("WS-21: the user's sdk/settings.json allow rules (userAllow) reach a code child verbatim — never re-translated", () => {
-  const allow = buildWinterOptions(optionsInput({ home: "/h", mode: "code", userAllow: ["Edit", "Bash(npm test:*)", "mcp__srv__tool"] })).permissions!.allow!;
+  const allow = buildCloverOptions(optionsInput({ home: "/h", mode: "code", userAllow: ["Edit", "Bash(npm test:*)", "mcp__srv__tool"] })).permissions!.allow!;
   expect(allow).toContain("Edit");
   expect(allow).not.toContain("Write"); // a claude `Edit` alone is NOT widened to Edit + Write
   expect(allow).toContain("Bash(npm test:*)");
   expect(allow).toContain("mcp__srv__tool");
-  expect(buildWinterOptions(optionsInput({ home: "/h", mode: "chat", userAllow: ["Edit"] })).permissions!.allow).toBeUndefined();
+  expect(buildCloverOptions(optionsInput({ home: "/h", mode: "chat", userAllow: ["Edit"] })).permissions!.allow).toBeUndefined();
 });
 
 test("item 2: an absent settings.permissions.deny changes nothing — byte-identical to before item 2", () => {
-  const withNull = buildWinterOptions(optionsInput({ home: "/h", settings: null })).permissions!.deny!;
-  const withUndefined = buildWinterOptions(optionsInput({ home: "/h" })).permissions!.deny!;
+  const withNull = buildCloverOptions(optionsInput({ home: "/h", settings: null })).permissions!.deny!;
+  const withUndefined = buildCloverOptions(optionsInput({ home: "/h" })).permissions!.deny!;
   expect(withNull).toHaveLength(4 * 21 + 3 * 11);
   expect(withUndefined).toHaveLength(4 * 21 + 3 * 11);
 });
@@ -421,7 +421,7 @@ test("item 2: an absent settings.permissions.deny changes nothing — byte-ident
 // Round 6: the READ rules name the staging root's config files and `backups/` (no longer the whole root —
 // the model reads its own large tool outputs there); the WRITE rules keep the whole root.
 test("W18-9: a real router-shaped claude-resume staging root is caught by the deny rules (reads: its config and backups; writes: all of it)", () => {
-  const deny = buildWinterOptions(optionsInput({ home: "/h" })).permissions!.deny!;
+  const deny = buildCloverOptions(optionsInput({ home: "/h" })).permissions!.deny!;
   const root = resumeStagingRoot("9f2c1e40-0000-4000-8000-abcdefabcdef", tmpdir());
   expect(isResumeStagingRoot(root)).toBe(true); // the router agrees this IS a staging root
   // The rules target `<tmpdir>/<prefix>*/…` — `root` (built with the SAME `tmpdir()` base) must fall under
@@ -429,7 +429,7 @@ test("W18-9: a real router-shaped claude-resume staging root is caught by the de
   expect(root.startsWith(join(tmpdir(), RESUME_STAGING_PREFIX))).toBe(true);
   const stagingGlob = join(tmpdir(), `${RESUME_STAGING_PREFIX}*`);
   for (const tool of ["Read", "Glob", "Grep"]) {
-    for (const f of [".claude.json", ".credentials.json", ".winter.json", "backups/**"]) expect(deny).toContain(`${tool}(/${stagingGlob}/${f})`);
+    for (const f of [".claude.json", ".credentials.json", ".clover.json", "backups/**"]) expect(deny).toContain(`${tool}(/${stagingGlob}/${f})`);
   }
   for (const tool of ["Edit", "Write", "MultiEdit", "NotebookEdit"]) expect(deny).toContain(`${tool}(/${join(stagingGlob, "**")})`);
 });
@@ -453,8 +453,8 @@ test("W18-9: a real router-shaped claude-resume staging root is caught by the de
  *   and nothing at all from the four `join(home, …)` rules.
  */
 test("every deny rule is //-anchored, and resolves to the fence target it names", () => {
-  const home = "/Users/x/.winter";
-  const deny = buildWinterOptions(optionsInput({ home })).permissions!.deny!;
+  const home = "/Users/x/.clover";
+  const deny = buildCloverOptions(optionsInput({ home })).permissions!.deny!;
   for (const rule of deny) {
     const spec = rule.slice(rule.indexOf("(") + 1, -1);
     // The three anchors: `//` binds to the filesystem root; a single `/` is inert; bare is cwd.
@@ -465,30 +465,30 @@ test("every deny rule is //-anchored, and resolves to the fence target it names"
   // …and each rule resolves to exactly the fence target it is supposed to name.
   const specs = new Set(deny.map((r) => r.slice(r.indexOf("(") + 1, -1)));
   for (const f of ["permissions.local.json", "settings.json", "settings.local.json"]) {
-    expect(specs.has(`//**/.winter/${f}`)).toBe(true);              // project-INDEPENDENT, any depth
+    expect(specs.has(`//**/.clover/${f}`)).toBe(true);              // project-INDEPENDENT, any depth
     expect(specs.has(`/${join(home, f)}`)).toBe(true);             // the user's own global copies
   }
   expect(specs.has(`/${join(home, "run")}/**`)).toBe(true);        // the daemon control plane
   expect(specs.has(`/${join(home, "runtimes")}/**`)).toBe(true);   // the runtime store (reads; Task 17)
   expect(specs.has(`/${join(tmpdir(), "claude-resume-*", "**")}`)).toBe(true); // P8d-12's staging root
   expect(specs.has(`/${join(home, "agents")}/**`)).toBe(true);     // finding 2c: the user's own agent definitions
-  expect(specs.has(`//**/.winter/agents/**`)).toBe(true);          // finding 2c: any project's, any depth
+  expect(specs.has(`//**/.clover/agents/**`)).toBe(true);          // finding 2c: any project's, any depth
   expect(specs.has(`/${join(home, "cache")}/**`)).toBe(true);      // B1 + M-a: the cache holding the skills-only plugin views
   expect(specs.has(`/${join(home, "plugins")}/**`)).toBe(true);    // M6: installed plugins
   expect(specs.has(`/${join(home, "permissions")}/**`)).toBe(true); // I2: the approved-project-rules record
   expect(specs.has(`/${join(home, "trust.json")}`)).toBe(true);     // whole-branch review: the trust record
   // WS-21 (spec §7.1): the shared runtime home's files and stores, a project's MCP list and settings
   // tiers, and the generated config of every run folder (reads).
-  for (const t of [join(home, "sdk", "settings.json"), join(home, "sdk", ".winter.json"), `${join(home, "sdk", "agents")}/**`, `${join(home, "sdk", "plugins")}/**`]) {
+  for (const t of [join(home, "sdk", "settings.json"), join(home, "sdk", ".clover.json"), `${join(home, "sdk", "agents")}/**`, `${join(home, "sdk", "plugins")}/**`]) {
     expect(specs.has(`/${t}`)).toBe(true);
   }
-  expect(specs.has("//**/.winter/mcp.json")).toBe(true);
-  expect(specs.has("//**/.winter/settings*.json")).toBe(true);
-  for (const f of [".winter.json", ".claude.json", ".credentials.json"]) expect(specs.has(`/${join(home, "cache", "runs", "*", f)}`)).toBe(true);
+  expect(specs.has("//**/.clover/mcp.json")).toBe(true);
+  expect(specs.has("//**/.clover/settings*.json")).toBe(true);
+  for (const f of [".clover.json", ".claude.json", ".credentials.json"]) expect(specs.has(`/${join(home, "cache", "runs", "*", f)}`)).toBe(true);
   // Round 6: `backups/**` of every run folder and staging root, and a staging root's config files (reads).
   expect(specs.has(`/${join(home, "cache", "runs", "*", "backups")}/**`)).toBe(true);
   expect(specs.has(`/${join(tmpdir(), "claude-resume-*", "backups")}/**`)).toBe(true);
-  for (const f of [".winter.json", ".claude.json", ".credentials.json"]) expect(specs.has(`/${join(tmpdir(), "claude-resume-*", f)}`)).toBe(true);
+  for (const f of [".clover.json", ".claude.json", ".credentials.json"]) expect(specs.has(`/${join(tmpdir(), "claude-resume-*", f)}`)).toBe(true);
   expect(specs.size).toBe(29);                                       // (runtimes/** was already a READ target)
   // The two inert forms must never reappear.
   for (const s of specs) {
@@ -499,22 +499,22 @@ test("every deny rule is //-anchored, and resolves to the fence target it names"
 
 test("the deny rules do NOT fence the MEMDIR or $OUTDIR — both are agent-writable BY DESIGN", () => {
   // `<home>/projects/<key>/memory/` is file-based memory (CLAUDE.md's tool surface) and
-  // `<home>/outputs/<sid>` is "a blessed, agent-writable exception under ~/.winter"
+  // `<home>/outputs/<sid>` is "a blessed, agent-writable exception under ~/.clover"
   // (sessions/outdir.ts). The ruling's literal `<home>/**` would delete both features.
-  const deny = buildWinterOptions(optionsInput({ home: "/h" })).permissions!.deny!;
+  const deny = buildCloverOptions(optionsInput({ home: "/h" })).permissions!.deny!;
   expect(deny.some((r) => r.includes("/h/**"))).toBe(false);
   expect(deny.some((r) => r.includes("projects"))).toBe(false);
   expect(deny.some((r) => r.includes("outputs"))).toBe(false);
 });
 
-test("the Bash sandbox names real DIRECTORIES — plus, since R.3 I-4, the any-depth `.winter/<kind>` globs", () => {
+test("the Bash sandbox names real DIRECTORIES — plus, since R.3 I-4, the any-depth `.clover/<kind>` globs", () => {
   // Review F8: a plain `filesystem.denyWrite` entry becomes `(deny file-write* (subpath "<canon(p)>"))`
   // (`sandbox/profile.ts`), so the control-plane list stays REAL paths. R.3 I-4: F8's other half — "a glob
   // becomes a literal path that never exists and denies nothing" — stopped holding at agent SDK round 11
-  // (`2a118c6`): a glob-shaped entry renders as a recursive seatbelt REGEX on the Winter leg
+  // (`2a118c6`): a glob-shaped entry renders as a recursive seatbelt REGEX on the Clover leg
   // as on claude (measured: `sandbox-glob-escape-measure.e2e.test.ts`'s R.3 I-4 row). So the
-  // child's list ends with the five `<cwd>/**/.winter/<kind>` entries, and those are its ONLY globs.
-  const sb = buildWinterOptions(optionsInput({ home: "/h" })).sandbox!;
+  // child's list ends with the five `<cwd>/**/.clover/<kind>` entries, and those are its ONLY globs.
+  const sb = buildCloverOptions(optionsInput({ home: "/h" })).sandbox!;
   expect(sb.enabled).toBe(true);
   // `runtimes` is on BOTH lists (2026-09-18). It was read-denied and write-allowed, which the retired
   // official leg made reachable: that leg had no out-of-cwd Bash fence, and a per-tool `Write(path)`
@@ -524,15 +524,15 @@ test("the Bash sandbox names real DIRECTORIES — plus, since R.3 I-4, the any-d
   // re-review M-a the whole `<home>/cache` that holds them.
   // Whole-branch review: EVERY self-grant path, because lane C's escape floor (an unsandboxed command)
   // derives from this list — the trust record, the user's agent definitions, the user's three global
-  // control-plane files (the SDK's own profile covers those only under a home NAMED `.winter`), and
-  // the session's project agent definitions (`<cwd>/.winter/agents`, the loader's one path —
-  // `loadProjectAgentDefinitions`), which sandboxed Bash could otherwise write on the Winter leg.
+  // control-plane files (the SDK's own profile covers those only under a home NAMED `.clover`), and
+  // the session's project agent definitions (`<cwd>/.clover/agents`, the loader's one path —
+  // `loadProjectAgentDefinitions`), which sandboxed Bash could otherwise write on the Clover leg.
   // WS-21 (spec §7.1/§7.2): + the shared runtime home's self-grant files (a file is its own subpath) and
   // stores, and — for the cwd and its project root (one path here: `/repo` is no repository) — the
   // project's MCP list, both claude settings tiers, agents and the four protected item directories.
   expect(sb.filesystem!.denyWrite).toEqual([
     "/h/run", "/h/runtimes", "/h/cache", "/h/plugins", "/h/permissions", "/h/trust.json", "/h/agents",
-    "/h/sdk/settings.json", "/h/sdk/.winter.json", "/h/sdk/agents", "/h/sdk/plugins",
+    "/h/sdk/settings.json", "/h/sdk/.clover.json", "/h/sdk/agents", "/h/sdk/plugins",
     // ComputerV2 wake triggers (2026-10-12): the daemon's computer-use records (the restart file `wakes.json`).
     "/h/computer-use",
     "/h/permissions.local.json", "/h/settings.json", "/h/settings.local.json",
@@ -540,17 +540,17 @@ test("the Bash sandbox names real DIRECTORIES — plus, since R.3 I-4, the any-d
     // for the shared runtime home and the store home this build loads from. R.1: on a run-home build the
     // store home IS the shared runtime home (`sdk/`), so the list names it once (router 0.0.11 added the
     // `<home>/…` duplicates of these five).
-    "/h/sdk/skills", "/h/sdk/commands", "/h/sdk/rules", "/h/sdk/output-styles", "/h/sdk/WINTER.md",
-    "/repo/.winter/mcp.json", "/repo/.winter/settings.json", "/repo/.winter/settings.local.json", "/repo/.winter/agents",
-    "/repo/.winter/skills", "/repo/.winter/commands", "/repo/.winter/rules", "/repo/.winter/output-styles",
+    "/h/sdk/skills", "/h/sdk/commands", "/h/sdk/rules", "/h/sdk/output-styles", "/h/sdk/CLOVER.md",
+    "/repo/.clover/mcp.json", "/repo/.clover/settings.json", "/repo/.clover/settings.local.json", "/repo/.clover/agents",
+    "/repo/.clover/skills", "/repo/.clover/commands", "/repo/.clover/rules", "/repo/.clover/output-styles",
     // R.3 I-4: the any-depth project fence (child-only; `sandboxConfigFor`'s literal list has none).
-    "/repo/**/.winter/skills", "/repo/**/.winter/commands", "/repo/**/.winter/rules", "/repo/**/.winter/output-styles", "/repo/**/.winter/agents",
+    "/repo/**/.clover/skills", "/repo/**/.clover/commands", "/repo/**/.clover/rules", "/repo/**/.clover/output-styles", "/repo/**/.clover/agents",
   ]);
-  // CLAUDE.md: "the sole read denial is ~/.winter/run" — reads are otherwise unrestricted.
+  // CLAUDE.md: "the sole read denial is ~/.clover/run" — reads are otherwise unrestricted.
   // WS-21 (spec §7.1): + the user's MCP server list.
-  expect(sb.filesystem!.denyRead).toEqual(["/h/run", "/h/runtimes", "/h/sdk/.winter.json"]);   // Task 17: runtimes/ is model-denied (8a)
+  expect(sb.filesystem!.denyRead).toEqual(["/h/run", "/h/runtimes", "/h/sdk/.clover.json"]);   // Task 17: runtimes/ is model-denied (8a)
   for (const p of [...sb.filesystem!.denyWrite!, ...sb.filesystem!.denyRead!]) {
-    const anyDepth = /^\/repo\/\*\*\/\.winter\/(?:skills|commands|rules|output-styles|agents)$/.test(p);
+    const anyDepth = /^\/repo\/\*\*\/\.clover\/(?:skills|commands|rules|output-styles|agents)$/.test(p);
     expect({ p, glob: p.includes("*") }).toEqual({ p, glob: anyDepth });
   }
   // `allowUnsandboxedCommands` is NOT set: it is consulted only together with `excludedCommands`
@@ -565,7 +565,7 @@ test("the Bash sandbox names real DIRECTORIES — plus, since R.3 I-4, the any-d
 
 test("every capability tool is either exposed to a mode or in that mode's disallowedTools (under the name the child knows it by)", () => {
   for (const mode of MODES) {
-    const disallowed = new Set(disallowedToolsFor(mode, WINTER_LEG_WITH_EXA));
+    const disallowed = new Set(disallowedToolsFor(mode, CLOVER_LEG_WITH_EXA));
     for (const [name, { modes, plainName }] of Object.entries(CAPABILITY_TOOL_MODES)) {
       const exposed = modes.includes(mode);
       expect({ mode, name, exposed, disallowed: disallowed.has(plainName ?? name) })
@@ -577,28 +577,30 @@ test("every capability tool is either exposed to a mode or in that mode's disall
 test("the per-mode capability exposure table is pinned (the 2026-10-01 tool-surface ruling)", () => {
   // Plain names for the renamed tools; office and LSP are code-only; the `research` server is gone.
   // (The built-in half of chat's and dispatch's list is the fail-closed test below.)
-  const capabilityHalf = (mode: (typeof MODES)[number]): string[] => disallowedToolsFor(mode, WINTER_LEG_WITH_EXA).filter((name) => !KNOWN_RUNTIME_BUILTINS.includes(name));
-  expect(disallowedToolsFor("code", WINTER_LEG_WITH_EXA)).toEqual(["ListSessions", "SpawnSession"]);
+  const capabilityHalf = (mode: (typeof MODES)[number]): string[] => disallowedToolsFor(mode, CLOVER_LEG_WITH_EXA).filter((name) => !KNOWN_RUNTIME_BUILTINS.includes(name));
+  expect(disallowedToolsFor("code", CLOVER_LEG_WITH_EXA)).toEqual(["ListSessions", "SpawnSession"]);
+  // C0: and the standing twin of each native the mode withholds, by name (`STANDING_TWINS`): ListAgents here.
   expect(capabilityHalf("dispatch")).toEqual([
-    "mcp__winter__lsp__lsp", "mcp__winter__office__docs", "mcp__winter__office__sheets", "mcp__winter__office__slides",
+    "mcp__clover__list_agents", "mcp__clover__lsp__lsp", "mcp__clover__office__docs", "mcp__clover__office__sheets", "mcp__clover__office__slides",
   ]);
   // ComputerV2 (2026-10-08) is code + dispatch, never chat (R14).
   expect(capabilityHalf("chat")).toEqual([
     "Computer", "ComputerV2", "ListSessions", "SpawnSession",
-    "mcp__winter__lsp__lsp", "mcp__winter__office__docs", "mcp__winter__office__sheets", "mcp__winter__office__slides",
+    "mcp__clover__list_agents", "mcp__clover__lsp__lsp", "mcp__clover__office__docs", "mcp__clover__office__sheets", "mcp__clover__office__slides",
+    "mcp__clover__send_message",
   ]);
   // Code keeps every built-in, so the key never moves its list.
-  expect(disallowedToolsFor("code", WINTER_LEG_NO_EXA)).toEqual(disallowedToolsFor("code", WINTER_LEG_WITH_EXA));
+  expect(disallowedToolsFor("code", CLOVER_LEG_NO_EXA)).toEqual(disallowedToolsFor("code", CLOVER_LEG_WITH_EXA));
   // The retired names must not resurface in ANY mode's list (a stale entry would be inert rather than loud).
   for (const mode of MODES) {
-    for (const gone of ["mcp__winter__web__web_fetch", "mcp__winter__web__web_search", "mcp__winter__research__ReadPage", "mcp__winter__research__Search"]) {
-      expect(disallowedToolsFor(mode, WINTER_LEG_WITH_EXA)).not.toContain(gone);
+    for (const gone of ["mcp__clover__web__web_fetch", "mcp__clover__web__web_search", "mcp__clover__research__ReadPage", "mcp__clover__research__Search"]) {
+      expect(disallowedToolsFor(mode, CLOVER_LEG_WITH_EXA)).not.toContain(gone);
     }
   }
 });
 
 test("FAIL CLOSED (review): chat's and dispatch's deny list also names every KNOWN built-in their allowed list leaves out — never one it keeps", () => {
-  for (const exposure of [WINTER_LEG_WITH_EXA, WINTER_LEG_NO_EXA]) {
+  for (const exposure of [CLOVER_LEG_WITH_EXA, CLOVER_LEG_NO_EXA]) {
     for (const mode of ["chat", "dispatch"] as const) {
       const allowed = toolsFor(mode, exposure)!;
       const denied = disallowedToolsFor(mode, exposure);
@@ -607,19 +609,19 @@ test("FAIL CLOSED (review): chat's and dispatch's deny list also names every KNO
     }
   }
   // The complement: with a key `WebSearch` is denied and `Search` is not; without one, the reverse.
-  expect(disallowedToolsFor("dispatch", WINTER_LEG_WITH_EXA)).toContain("WebSearch");
-  expect(disallowedToolsFor("dispatch", WINTER_LEG_WITH_EXA)).not.toContain("Search");
-  expect(disallowedToolsFor("dispatch", WINTER_LEG_NO_EXA)).toContain("Search");
-  expect(disallowedToolsFor("dispatch", WINTER_LEG_NO_EXA)).not.toContain("WebSearch");
+  expect(disallowedToolsFor("dispatch", CLOVER_LEG_WITH_EXA)).toContain("WebSearch");
+  expect(disallowedToolsFor("dispatch", CLOVER_LEG_WITH_EXA)).not.toContain("Search");
+  expect(disallowedToolsFor("dispatch", CLOVER_LEG_NO_EXA)).toContain("Search");
+  expect(disallowedToolsFor("dispatch", CLOVER_LEG_NO_EXA)).not.toContain("WebSearch");
   // Dispatch's list denies what the ruling withholds by name: Agent, the file editors, the task graph…
-  for (const name of ["Agent", "Edit", "Write", "Glob", "Grep", "TaskCreate", "Workflow", "ListAgents", "advisor"]) expect(disallowedToolsFor("dispatch", WINTER_LEG_WITH_EXA)).toContain(name);
+  for (const name of ["Agent", "Edit", "Write", "Glob", "Grep", "TaskCreate", "Workflow", "ListAgents", "advisor"]) expect(disallowedToolsFor("dispatch", CLOVER_LEG_WITH_EXA)).toContain(name);
   // …and chat's denies the shell and the file tools.
-  for (const name of ["Bash", "Read", "Edit", "Write", "Agent", "CronCreate"]) expect(disallowedToolsFor("chat", WINTER_LEG_WITH_EXA)).toContain(name);
+  for (const name of ["Bash", "Read", "Edit", "Write", "Agent", "CronCreate"]) expect(disallowedToolsFor("chat", CLOVER_LEG_WITH_EXA)).toContain(name);
 });
 
 test("FAIL CLOSED (review): `toolSurfaceViolations` names a built-in the child offered outside its allowed list; capability plain names and MCP tools are fine", () => {
-  const allowed = toolsFor("dispatch", WINTER_LEG_WITH_EXA)!;
-  const honest = [...allowed.filter((n) => n !== "CronList"), "SpawnSession", "ListSessions", "mcp__winter__send_message", "mcp__github__search"];
+  const allowed = toolsFor("dispatch", CLOVER_LEG_WITH_EXA)!;
+  const honest = [...allowed.filter((n) => n !== "CronList"), "SpawnSession", "ListSessions", "mcp__clover__send_message", "mcp__github__search"];
   expect(toolSurfaceViolations(honest, allowed, CAPABILITY_PLAIN_NAMES)).toEqual([]);
   // A runtime that ignored `tools` offers its whole set:
   expect(toolSurfaceViolations([...honest, "Edit", "Agent", "SomeFutureBuiltin"], allowed, CAPABILITY_PLAIN_NAMES)).toEqual(["Edit", "Agent", "SomeFutureBuiltin"]);
@@ -629,18 +631,18 @@ test("FAIL CLOSED (review): `toolSurfaceViolations` names a built-in the child o
 });
 
 test("`Options.legacyToolNames` carries the daemon's retired Search under its old name in every mode", () => {
-  expect(LEGACY_TOOL_NAMES).toEqual({ mcp__winter__research__Search: "Search" });
+  expect(LEGACY_TOOL_NAMES).toEqual({ mcp__clover__research__Search: "Search" });
 });
 
 test("ALLOWED lists replace restricted lists: chat's and dispatch's `tools` are pinned; code keeps every built-in", () => {
-  expect(toolsFor("code", WINTER_LEG_WITH_EXA)).toBeUndefined();
-  expect(toolsFor("code", WINTER_LEG_NO_EXA)).toBeUndefined();
+  expect(toolsFor("code", CLOVER_LEG_WITH_EXA)).toBeUndefined();
+  expect(toolsFor("code", CLOVER_LEG_NO_EXA)).toBeUndefined();
   // Chat: no messaging trio (user ruling 2026-10-02 — SendMessage, ListAgents, ReadNotifications removed).
-  expect(toolsFor("chat", WINTER_LEG_WITH_EXA)).toEqual(["AskUserQuestion", "Search", "ToolSearch", "WebFetch", "advisor"]);
-  for (const gone of ["SendMessage", "ListAgents", "ReadNotifications"]) expect(disallowedToolsFor("chat", WINTER_LEG_WITH_EXA)).toContain(gone);
+  expect(toolsFor("chat", CLOVER_LEG_WITH_EXA)).toEqual(["AskUserQuestion", "Search", "ToolSearch", "WebFetch", "advisor"]);
+  for (const gone of ["SendMessage", "ListAgents", "ReadNotifications"]) expect(disallowedToolsFor("chat", CLOVER_LEG_WITH_EXA)).toContain(gone);
   // Dispatch: EXACTLY the ruling's list (+ ToolSearch so the deferred tools load). No Agent/Edit/Glob/…,
-  // and of Winter's own four only SendMessage.
-  expect(toolsFor("dispatch", WINTER_LEG_WITH_EXA)).toEqual([
+  // and of Clover's own four only SendMessage.
+  expect(toolsFor("dispatch", CLOVER_LEG_WITH_EXA)).toEqual([
     "AskUserQuestion", "Bash", "CronCreate", "CronDelete", "CronList", "PushNotification", "Read", "ScheduleWakeup",
     "Search", "SendMessage", "TaskStop", "ToolSearch", "WebFetch",
   ]);
@@ -653,8 +655,8 @@ test("with NO Exa key, chat and dispatch get WebSearch INSTEAD of Search — exa
   // `Search` (the SDK built-in) reaches Exa's answer endpoint, which needs a key; `WebSearch`'s backend
   // has an anonymous tier. The absence of a key SWAPS the search surface rather than removing it.
   for (const mode of ["chat", "dispatch"] as const) {
-    const withKey = toolsFor(mode, WINTER_LEG_WITH_EXA)!;
-    const noKey = toolsFor(mode, WINTER_LEG_NO_EXA)!;
+    const withKey = toolsFor(mode, CLOVER_LEG_WITH_EXA)!;
+    const noKey = toolsFor(mode, CLOVER_LEG_NO_EXA)!;
     expect(withKey).toContain("Search");
     expect(withKey).not.toContain("WebSearch");
     expect(noKey).toContain("WebSearch");
@@ -667,9 +669,9 @@ test("with NO Exa key, chat and dispatch get WebSearch INSTEAD of Search — exa
 
 test("WebFetch is in every mode; chat names no fs/shell/repo built-in", () => {
   for (const mode of ["chat", "dispatch"] as const) {
-    for (const exposure of [WINTER_LEG_WITH_EXA, WINTER_LEG_NO_EXA, {}]) expect(toolsFor(mode, exposure)).toContain("WebFetch");
+    for (const exposure of [CLOVER_LEG_WITH_EXA, CLOVER_LEG_NO_EXA, {}]) expect(toolsFor(mode, exposure)).toContain("WebFetch");
   }
-  const chat = toolsFor("chat", WINTER_LEG_WITH_EXA)!;
+  const chat = toolsFor("chat", CLOVER_LEG_WITH_EXA)!;
   for (const t of ["Bash", "Write", "Edit", "Read", "Glob", "Grep", "NotebookEdit", "Workflow", "Agent", "Monitor", "ReportFindings", "ScheduleWakeup", "CronList", "WaitForMcpServers", "ListMcpResourcesTool"]) {
     expect(chat).not.toContain(t);
   }
@@ -677,7 +679,7 @@ test("WebFetch is in every mode; chat names no fs/shell/repo built-in", () => {
 
 test("Tool Search is on in every mode, and CronList is the one built-in that starts deferred (where it exists)", () => {
   for (const mode of MODES) {
-    const options = buildWinterOptions(optionsInput({ mode, policy: "ask" }));
+    const options = buildCloverOptions(optionsInput({ mode, policy: "ask" }));
     expect(options.toolSearchEnabled).toBe(true);
     expect(options.tools).toEqual(toolsFor(mode, {}));
     expect(options.deferTools).toEqual(mode === "chat" ? undefined : ["CronList"]);
@@ -690,23 +692,23 @@ test("Tool Search is on in every mode, and CronList is the one built-in that sta
 test("every mode states the old Search name and every capability server name as reserved — retired and unbuilt ones included", () => {
   const reserved = [...reservedMcpServerNames()];
   for (const mode of MODES) {
-    const options = buildWinterOptions({ ...optionsInput({ mode, policy: "ask" }), reservedMcpServerNames: reserved });
-    expect(options.legacyToolNames).toEqual({ mcp__winter__research__Search: "Search" });
+    const options = buildCloverOptions({ ...optionsInput({ mode, policy: "ask" }), reservedMcpServerNames: reserved });
+    expect(options.legacyToolNames).toEqual({ mcp__clover__research__Search: "Search" });
     // The runtime refuses any other server under these, from every origin: a plugin's `.mcp.json`, an agent
-    // definition's inline server, a hand-edited settings scope. `winter__computer` is there whether or not
-    // computer use is on; `winter__research`/`winter__web` although no server of that name is ever built.
+    // definition's inline server, a hand-edited settings scope. `clover__computer` is there whether or not
+    // computer use is on; `clover__research`/`clover__web` although no server of that name is ever built.
     expect(options.reservedMcpServerNames).toEqual([...reserved].sort());
-    for (const name of ["winter__research", "winter__web", "winter__computer", "winter__browser", "winter__sessions", "winter__external"]) expect(options.reservedMcpServerNames).toContain(name);
+    for (const name of ["clover__research", "clover__web", "clover__computer", "clover__browser", "clover__sessions", "clover__external"]) expect(options.reservedMcpServerNames).toContain(name);
   }
   // A caller that states none sends none (the field is omitted, never an empty fence).
-  expect(buildWinterOptions(optionsInput({ mode: "chat", policy: "chat" })).reservedMcpServerNames).toBeUndefined();
+  expect(buildCloverOptions(optionsInput({ mode: "chat", policy: "chat" })).reservedMcpServerNames).toBeUndefined();
 });
 
 test("every built-in a `tools` list names is one the child advertises (no dead allowed-list entry)", () => {
   // The 0.0.3 measurement plus the two web built-ins and the SDK's `Search` (opt-in, 2026-10-01).
-  const known = new Set([...WINTER_ADVERTISED_TOOLS_0_0_4, "WebFetch", "WebSearch", "Search", ...WINTER_OWN_TOOL_NAMES]);
+  const known = new Set([...CLOVER_ADVERTISED_TOOLS_0_0_4, "WebFetch", "WebSearch", "Search", ...CLOVER_OWN_TOOL_NAMES]);
   for (const mode of ["chat", "dispatch"] as const) {
-    for (const exposure of [WINTER_LEG_WITH_EXA, WINTER_LEG_NO_EXA]) {
+    for (const exposure of [CLOVER_LEG_WITH_EXA, CLOVER_LEG_NO_EXA]) {
       for (const t of toolsFor(mode, exposure)!) expect({ mode, t, known: known.has(t) }).toEqual({ mode, t, known: true });
     }
   }
@@ -715,38 +717,38 @@ test("every built-in a `tools` list names is one the child advertises (no dead a
 test("the advertised BASE set is pinned to what the BUILT BINARY reported at 0.0.3", () => {
   // Measured: `dist/winter` driven through `query()` with `model: "winter-test/echo"` under a temp
   // home and CORE_BRAND's names; `system/init.tools`, verbatim — with NO MCP servers declared.
-  expect(WINTER_ADVERTISED_TOOLS_0_0_4_BASE).toHaveLength(31);
-  expect([...WINTER_ADVERTISED_TOOLS_0_0_4_BASE].sort()).toEqual([...WINTER_ADVERTISED_TOOLS_0_0_4_BASE]);
+  expect(CLOVER_ADVERTISED_TOOLS_0_0_4_BASE).toHaveLength(31);
+  expect([...CLOVER_ADVERTISED_TOOLS_0_0_4_BASE].sort()).toEqual([...CLOVER_ADVERTISED_TOOLS_0_0_4_BASE]);
   // The 0.0.3 measurement, kept verbatim: neither web built-in existed in this runtime then. At
   // 0.0.17 both ARE advertised in every session, which is why nothing derives chat's web exposure
   // from this constant any more (see `tool-names.ts`'s own note and `disallowedToolsFor`).
-  expect(WINTER_ADVERTISED_TOOLS_0_0_4_BASE).not.toContain("WebFetch");
-  expect(WINTER_ADVERTISED_TOOLS_0_0_4_BASE).not.toContain("WebSearch");
-  expect(WINTER_ADVERTISED_TOOLS_0_0_4_BASE).toContain("Monitor");
+  expect(CLOVER_ADVERTISED_TOOLS_0_0_4_BASE).not.toContain("WebFetch");
+  expect(CLOVER_ADVERTISED_TOOLS_0_0_4_BASE).not.toContain("WebSearch");
+  expect(CLOVER_ADVERTISED_TOOLS_0_0_4_BASE).toContain("Monitor");
   // The measurement could not see the `winter.mcp` family, because it declared no MCP servers.
-  for (const t of WINTER_ADVERTISED_MCP_TOOLS_0_0_4) expect(WINTER_ADVERTISED_TOOLS_0_0_4_BASE).not.toContain(t);
+  for (const t of CLOVER_ADVERTISED_MCP_TOOLS_0_0_4) expect(CLOVER_ADVERTISED_TOOLS_0_0_4_BASE).not.toContain(t);
 });
 
-test("a real Winter child ALSO advertises the winter.mcp six — the union is Task 16's tripwire", () => {
+test("a real Clover child ALSO advertises the clover.mcp six — the union is Task 16's tripwire", () => {
   // `winter.mcp` is DERIVED, not host-supplied: `RUNTIME_DERIVED_CAPABILITIES`
   // (`tools/registry.ts:1264`) grants it whenever `SessionCapabilityFacts.hasMcpServers` is true —
-  // and every Winter mode declares capability servers, which ARE MCP servers. So the real host's
+  // and every Clover mode declares capability servers, which ARE MCP servers. So the real host's
   // `system/init.tools` is the UNION, and a tripwire pinned to the base alone would fail by
   // construction — with the pressure to re-pin the list rather than re-derive chat's exclusions.
-  expect(WINTER_ADVERTISED_MCP_TOOLS_0_0_4).toEqual([
+  expect(CLOVER_ADVERTISED_MCP_TOOLS_0_0_4).toEqual([
     "ListMcpResourcesTool", "ReadMcpResourceDirTool", "ReadMcpResourceTool",
     "RefreshMcpTools", "ToolSearch", "WaitForMcpServers",
   ]);
-  expect(WINTER_ADVERTISED_TOOLS_0_0_4).toEqual(
-    [...new Set([...WINTER_ADVERTISED_TOOLS_0_0_4_BASE, ...WINTER_ADVERTISED_MCP_TOOLS_0_0_4])].sort(),
+  expect(CLOVER_ADVERTISED_TOOLS_0_0_4).toEqual(
+    [...new Set([...CLOVER_ADVERTISED_TOOLS_0_0_4_BASE, ...CLOVER_ADVERTISED_MCP_TOOLS_0_0_4])].sort(),
   );
-  expect(WINTER_ADVERTISED_TOOLS_0_0_4).toHaveLength(37);
+  expect(CLOVER_ADVERTISED_TOOLS_0_0_4).toHaveLength(37);
   // …and of the six, chat's allowed list names only ToolSearch (Browser, an MCP tool, loads through
   // it); the resource bookkeeping tools are not chat's, and WaitForMcpServers is the ToolSearch-off twin.
-  for (const t of WINTER_ADVERTISED_MCP_TOOLS_0_0_4) expect(toolsFor("chat", WINTER_LEG_WITH_EXA)!.includes(t)).toBe(t === "ToolSearch");
+  for (const t of CLOVER_ADVERTISED_MCP_TOOLS_0_0_4) expect(toolsFor("chat", CLOVER_LEG_WITH_EXA)!.includes(t)).toBe(t === "ToolSearch");
 });
 
-test("the winter.mcp housekeeping trio is classified read-only, so code and dispatch get it silently", () => {
+test("the clover.mcp housekeeping trio is classified read-only, so code and dispatch get it silently", () => {
   // All three are bookkeeping over ALREADY-CONNECTED servers and none can reach a server the session
   // has not declared. `RefreshMcpTools` says so itself: "never establishes a disconnected
   // connection" (`descriptors/refresh-mcp-tools.ts:13`); `WaitForMcpServers` is `permissionClass:
@@ -764,14 +766,14 @@ test("the winter.mcp housekeeping trio is classified read-only, so code and disp
   }
 });
 
-test("NEW-1: the `web` capability tools strip to Winter names and keep today's NETWORK class", async () => {
-  // The sixth server key was missing, so `mcp__winter__web__web_fetch` did not strip: it took the
+test("NEW-1: the `web` capability tools strip to Clover names and keep today's NETWORK class", async () => {
+  // The sixth server key was missing, so `mcp__clover__web__web_fetch` did not strip: it took the
   // MUTATING/external branch — a card under `ask`, a DENY under `plan` — where `web_fetch` is
   // NETWORK today and allowed under every policy.
-  expect(hostToolNameFor("mcp__winter__web__web_fetch")).toBe("web_fetch");
-  expect(hostToolNameFor("mcp__winter__web__web_search")).toBe("web_search");
-  expect(gateClassFor("mcp__winter__web__web_fetch")).toBe("web_fetch");
-  for (const tool of ["mcp__winter__web__web_fetch", "mcp__winter__web__web_search"]) {
+  expect(hostToolNameFor("mcp__clover__web__web_fetch")).toBe("web_fetch");
+  expect(hostToolNameFor("mcp__clover__web__web_search")).toBe("web_search");
+  expect(gateClassFor("mcp__clover__web__web_fetch")).toBe("web_fetch");
+  for (const tool of ["mcp__clover__web__web_fetch", "mcp__clover__web__web_search"]) {
     for (const policy of POLICIES) {
       const h = harness({ mode: "code", policy });
       const res = (await h.canUse(tool, { url: "https://example.com" }, ctx()))!;
@@ -792,71 +794,71 @@ test("n1: gateClassFor never returns a prototype member", () => {
 // P8b-25 / P8b-28 — the name table
 // -------------------------------------------------------------------------------------------
 
-test("Winter's own four default tools are derived from the SDK, and the four literals are pinned", () => {
-  expect([...WINTER_OWN_TOOL_NAMES].sort()).toEqual(["ListAgents", "ReadNotifications", "SendMessage", "advisor"]);
+test("Clover's own four default tools are derived from the SDK, and the four literals are pinned", () => {
+  expect([...CLOVER_OWN_TOOL_NAMES].sort()).toEqual(["ListAgents", "ReadNotifications", "SendMessage", "advisor"]);
 });
 
-test("the reverse map is deterministic where several Winter names share one Winter name", () => {
-  expect(winterToolNameFor("schedule")).toBe("CronCreate");   // FIRST pair wins
-  expect(winterToolNameFor("bash")).toBe("Bash");
-  expect(winterToolNameFor("agent_output")).toBe("TaskOutput");
-  expect(winterToolNameFor("not-a-winter-tool")).toBeUndefined();
+test("the reverse map is deterministic where several Clover names share one Clover name", () => {
+  expect(cloverToolNameFor("schedule")).toBe("CronCreate");   // FIRST pair wins
+  expect(cloverToolNameFor("bash")).toBe("Bash");
+  expect(cloverToolNameFor("agent_output")).toBe("TaskOutput");
+  expect(cloverToolNameFor("not-a-clover-tool")).toBeUndefined();
   // Both directions come from ONE table and cannot drift.
   for (const [w, n] of RUNTIME_HOST_TOOL_PAIRS) expect(hostToolNameFor(w)).toBe(n);
 });
 
-test("the mcp__winter__ strip is refused for any server key that is not one of Winter's five", () => {
-  // A third-party server named `winter__x` must NOT reach `read`'s READ_ONLY class — it is an
+test("the mcp__clover__ strip is refused for any server key that is not one of Clover's five", () => {
+  // A third-party server named `clover__x` must NOT reach `read`'s READ_ONLY class — it is an
   // external MCP tool and keeps its prefix so `isExternalToolName` classifies it as one.
-  expect(hostToolNameFor("mcp__winter__x__read")).toBeUndefined();
-  expect(hostToolNameFor("mcp__winter__evil__bash")).toBeUndefined();
-  expect(hostToolNameFor("mcp__winter__broken")).toBeUndefined();
+  expect(hostToolNameFor("mcp__clover__x__read")).toBeUndefined();
+  expect(hostToolNameFor("mcp__clover__evil__bash")).toBeUndefined();
+  expect(hostToolNameFor("mcp__clover__broken")).toBeUndefined();
   // …while the five real keys still strip.
-  expect(hostToolNameFor("mcp__winter__research__Search")).toBe("Search");
-  expect(hostToolNameFor("mcp__winter__office__docs")).toBe("docs");
-  expect(hostToolNameFor("mcp__winter__computer__computer")).toBe("computer");
+  expect(hostToolNameFor("mcp__clover__research__Search")).toBe("Search");
+  expect(hostToolNameFor("mcp__clover__office__docs")).toBe("docs");
+  expect(hostToolNameFor("mcp__clover__computer__computer")).toBe("computer");
 });
 
 test("LIVE calls strip only the keys the incarnation built (2026-10-01 review); replay strips every key", () => {
   const live = new Set(["sessions", "browser", "office", "lsp", "external"]);
   // A retired key and an unbuilt one (computer use off) stay ordinary MCP names on a live call…
-  expect(hostToolNameFor("mcp__winter__research__Search", live)).toBeUndefined();
-  expect(hostToolNameFor("mcp__winter__web__web_fetch", live)).toBeUndefined();
-  expect(hostToolNameFor("mcp__winter__computer__computer", live)).toBeUndefined();
-  expect(gateClassFor("mcp__winter__research__Search", live)).toBe("mcp__winter__research__Search");
+  expect(hostToolNameFor("mcp__clover__research__Search", live)).toBeUndefined();
+  expect(hostToolNameFor("mcp__clover__web__web_fetch", live)).toBeUndefined();
+  expect(hostToolNameFor("mcp__clover__computer__computer", live)).toBeUndefined();
+  expect(gateClassFor("mcp__clover__research__Search", live)).toBe("mcp__clover__research__Search");
   // …a built one strips as ever, and so does every key on replay (no `liveKeys`).
-  expect(hostToolNameFor("mcp__winter__browser__browser", live)).toBe("browser");
-  expect(hostToolNameFor("mcp__winter__research__Search")).toBe("Search");
-  expect(hostToolNameFor("mcp__winter__computer__computer")).toBe("computer");
+  expect(hostToolNameFor("mcp__clover__browser__browser", live)).toBe("browser");
+  expect(hostToolNameFor("mcp__clover__research__Search")).toBe("Search");
+  expect(hostToolNameFor("mcp__clover__computer__computer")).toBe("computer");
   // Plain names do not depend on it.
   expect(hostToolNameFor("Browser", live)).toBe("browser");
   expect(hostToolNameFor("Search", new Set())).toBe("Search");
 });
 
 test("the strip names EXACT tools: every capability tool strips, and a forged `schedule`/`push_notification` under a capability key never does (the sinks act on the stripped name)", () => {
-  for (const name of Object.keys(WINTER_CAPABILITY_TOOLS)) {
-    if (name.startsWith("mcp__winter__external__")) continue;
+  for (const name of Object.keys(CLOVER_CAPABILITY_TOOLS)) {
+    if (name.startsWith("mcp__clover__external__")) continue;
     // ComputerV2's server tool is `script`, but its host name is `computer_v2` (its pair in the table).
-    const host = name === "mcp__winter__computer_v2__script" ? "computer_v2" : name.split("__").slice(3).join("__");
+    const host = name === "mcp__clover__computer_v2__script" ? "computer_v2" : name.split("__").slice(3).join("__");
     expect({ name, host: hostToolNameFor(name) }).toEqual({ name, host });
   }
   for (const key of ["web", "research", "computer", "sessions", "browser"]) {
-    for (const tool of ["schedule", "push_notification", "bash", "read"]) expect(hostToolNameFor(`mcp__winter__${key}__${tool}`)).toBeUndefined();
+    for (const tool of ["schedule", "push_notification", "bash", "read"]) expect(hostToolNameFor(`mcp__clover__${key}__${tool}`)).toBeUndefined();
   }
   // The retired names keep stripping for old transcripts.
-  for (const [name, host] of [["mcp__winter__research__ReadPage", "ReadPage"], ["mcp__winter__web__web_fetch", "web_fetch"], ["mcp__winter__web__web_search", "web_search"]] as const) expect(hostToolNameFor(name)).toBe(host);
+  for (const [name, host] of [["mcp__clover__research__ReadPage", "ReadPage"], ["mcp__clover__web__web_fetch", "web_fetch"], ["mcp__clover__web__web_search", "web_search"]] as const) expect(hostToolNameFor(name)).toBe(host);
 });
 
-test("the session driver's live keys are the built servers' keys, read off their `winter__<key>` names", () => {
-  expect([...capabilityKeysOf({ winter__sessions: {}, winter__browser: {}, other: {}, winter__: {} } as never)].sort()).toEqual(["browser", "sessions"]);
+test("the session driver's live keys are the built servers' keys, read off their `clover__<key>` names", () => {
+  expect([...capabilityKeysOf({ clover__sessions: {}, clover__browser: {}, other: {}, clover__: {} } as never)].sort()).toEqual(["browser", "sessions"]);
 });
 
 test("a spoofed capability name gets the EXTERNAL class, not READ_ONLY", async () => {
   // The end-to-end consequence of the strip guard: under `plan`, a real capability read is one
   // thing and a spoofed `read` is another.
-  const spoof = await harness({ mode: "code", policy: "plan" }).canUse("mcp__winter__x__read", {}, ctx());
+  const spoof = await harness({ mode: "code", policy: "plan" }).canUse("mcp__clover__x__read", {}, ctx());
   expect(spoof!.behavior).toBe("deny");     // external + plan → deny, not READ_ONLY's allow
-  const real = await harness({ mode: "chat", policy: "chat" }).canUse("mcp__winter__research__Search", {}, ctx());
+  const real = await harness({ mode: "chat", policy: "chat" }).canUse("mcp__clover__research__Search", {}, ctx());
   expect(real!.behavior).toBe("allow");
 });
 
@@ -880,17 +882,17 @@ function ctx(): Parameters<CanUseTool>[2] {
   return { signal: new AbortController().signal, toolUseID: `tu${++tu}`, requestId: `r${tu}` } as Parameters<CanUseTool>[2];
 }
 
-/** One representative tool per gate class, by its WINTER name. */
+/** One representative tool per gate class, by its CLOVER name. */
 const REPRESENTATIVES = [
   { tool: "Read", input: {}, cls: "READ_ONLY" },
   { tool: "Edit", input: { file_path: "/repo/a.ts" }, cls: "EDIT_CLASS" },
   { tool: "Bash", input: { command: "rm -rf /tmp/x" }, cls: "MUTATING" },
-  { tool: "mcp__winter__computer__computer", input: {}, cls: "MUTATING (capability)" },
+  { tool: "mcp__clover__computer__computer", input: {}, cls: "MUTATING (capability)" },
   { tool: "Workflow", input: { script: "x" }, cls: "Workflow carve-out" },
-  { tool: "mcp__winter__research__Search", input: { query: "q" }, cls: "NETWORK (capability)" },
+  { tool: "mcp__clover__research__Search", input: { query: "q" }, cls: "NETWORK (capability)" },
   // 0.0.17: the SDK's own web pair reaches `canUseTool` under the modes that consult it. They are in
   // no gate class of their own — `gateClassFor` falls through to the pair table's `web_fetch`/
-  // `web_search`, which is Winter's `NETWORK` class, so a public web read never nags and chat/dispatch
+  // `web_search`, which is Clover's `NETWORK` class, so a public web read never nags and chat/dispatch
   // never see a card. The floor is a layer below (`Options.web.blockedDomains` in the child, and lane
   // B3's PreToolUse hooks on both legs), never this gate's answer.
   { tool: "WebFetch", input: { url: "https://example.com", prompt: "what" }, cls: "NETWORK (SDK built-in)" },
@@ -903,8 +905,8 @@ type Verdict = "allow" | "deny" | "ask";
 /** The gate's verdict today for this (policy, tool) — the thing the matrix agrees with, with the
  *  ONE documented divergence applied on top. Derived from the REAL `PermissionGate`, not restated,
  *  so the matrix cannot drift away from the gate it claims to mirror. */
-function expectedVerdict(mode: Mode, policy: SessionApprovalPolicy, winterTool: string, origin?: string): { want: Verdict; diverged: boolean } {
-  const gateName = hostToolNameFor(winterTool) ?? winterTool;
+function expectedVerdict(mode: Mode, policy: SessionApprovalPolicy, cloverTool: string, origin?: string): { want: Verdict; diverged: boolean } {
+  const gateName = hostToolNameFor(cloverTool) ?? cloverTool;
   let v = new PermissionGate().evaluate(gateName, policy) as Verdict;
   if (v === "ask" && policy === "dont-ask") v = "deny";
   if (v !== "ask") return { want: v, diverged: false };
@@ -999,23 +1001,23 @@ test("a relayed dispatch child's card that nobody answers is denied as a timeout
 test("dispatch's own session_spawn is allowed under every policy a dispatch session can hold (the old bridge ran before the gate)", async () => {
   for (const policy of ["dont-ask", "ask", "accept-edits", "auto", "bypass"] as SessionApprovalPolicy[]) {
     const h = harness({ mode: "dispatch", policy });
-    const res = (await h.canUse("mcp__winter__sessions__session_spawn", { dir: "/tmp", prompt: "p" }, ctx()))!;
+    const res = (await h.canUse("mcp__clover__sessions__session_spawn", { dir: "/tmp", prompt: "p" }, ctx()))!;
     expect({ policy, behavior: res.behavior }).toEqual({ policy, behavior: "allow" });
     expect(h.events).toEqual([]);
   }
   // plan keeps the gate's "nothing mutates while planning" (dispatch cannot be set to plan anyway).
   const planned = harness({ mode: "dispatch", policy: "plan" });
-  expect((await planned.canUse("mcp__winter__sessions__session_spawn", { dir: "/tmp", prompt: "p" }, ctx()))!.behavior).toBe("deny");
+  expect((await planned.canUse("mcp__clover__sessions__session_spawn", { dir: "/tmp", prompt: "p" }, ctx()))!.behavior).toBe("deny");
   // The carve-out is dispatch's alone: the same name in a code session is the gate's MUTATING answer.
   const code = harness({ mode: "code", policy: "ask" });
-  void code.canUse("mcp__winter__sessions__session_spawn", { dir: "/tmp", prompt: "p" }, ctx());
+  void code.canUse("mcp__clover__sessions__session_spawn", { dir: "/tmp", prompt: "p" }, ctx());
   expect(code.events).toHaveLength(1);
 });
 
-test("P8b-28: Winter's own four are allowed silently in every mode × policy, even plan and chat", async () => {
+test("P8b-28: Clover's own four are allowed silently in every mode × policy, even plan and chat", async () => {
   for (const mode of MODES) {
     for (const policy of [...POLICIES, "chat" as SessionApprovalPolicy]) {
-      for (const tool of WINTER_OWN_TOOL_NAMES) {
+      for (const tool of CLOVER_OWN_TOOL_NAMES) {
         const h = harness({ mode, policy });
         const res = (await h.canUse(tool, {}, ctx()))!;
         expect({ mode, policy, tool, behavior: res.behavior }).toEqual({ mode, policy, tool, behavior: "allow" });
@@ -1034,7 +1036,7 @@ test("P8b-28: Winter's own four are allowed silently in every mode × policy, ev
 // allows (`bashPermissions.ts:1132-1142`), bypass allows (`utils/permissions/permissions.ts:1255-1269`),
 // auto hands the `ask` to its classifier (`permissions.ts:519-...`), default/acceptEdits prompt, dontAsk
 // denies (`permissions.ts:508-516`). There is no producer of a `sandboxOverride` decision anywhere.
-// Winter's `auto` judge is the bash safety reviewer (a PreToolUse hook, before this bridge). C3-1: under
+// Clover's `auto` judge is the bash safety reviewer (a PreToolUse hook, before this bridge). C3-1: under
 // `auto` an escape runs only on that reviewer's POSITIVE clearance for the very call, recorded by the
 // hook — every other outcome fails closed to a card (a typed deny where nobody can answer), as
 // claude's auto runs nothing its classifier did not clear (`permissions.ts:845-875`).
@@ -1201,7 +1203,7 @@ test("Monitor is gated as bash, not as its display name — chat and plan deny i
 
 test("the two task-class advertised tools are classified from the child's own permissionClass", () => {
   // `report-findings.ts:36` and `schedule-wakeup.ts:41` both declare `permissionClass: "task"`.
-  // `ScheduleWakeup` is deliberately NOT Winter's `schedule` (MUTATING): that is the persistent cron
+  // `ScheduleWakeup` is deliberately NOT Clover's `schedule` (MUTATING): that is the persistent cron
   // surface — `CronCreate`/`CronDelete`/`CronList` — while this is an in-session self-wake with its
   // delay clamped to 60-3600s.
   expect(gateClassFor("ReportFindings")).toBe("task_create");
@@ -1212,19 +1214,19 @@ test("the two task-class advertised tools are classified from the child's own pe
   expect(gateClassFor("SomeFutureTool")).toBe("SomeFutureTool");
 });
 
-test("F11: the pinned WINTER_HOME/WINTER_PROFILE are applied AFTER input.env, so they always win", () => {
-  // They were merged FIRST, which let a caller-supplied `input.env.WINTER_HOME` silently override the
+test("F11: the pinned CLOVER_HOME/CLOVER_PROFILE are applied AFTER input.env, so they always win", () => {
+  // They were merged FIRST, which let a caller-supplied `input.env.CLOVER_HOME` silently override the
   // one value CLAUDE.md's hard rule depends on — a test session would then have written a real
-  // transcript under ~/.winter.
-  const o = buildWinterOptions(optionsInput({
+  // transcript under ~/.clover.
+  const o = buildCloverOptions(optionsInput({
     home: "/tmp/pinned", profile: "dev",
-    env: { WINTER_HOME: "/Users/real/.winter", WINTER_PROFILE: "prod", EXTRA: "kept" },
+    env: { CLOVER_HOME: "/Users/real/.clover", CLOVER_PROFILE: "prod", EXTRA: "kept" },
   }));
-  expect(o.env!.WINTER_HOME).toBe("/tmp/pinned");
-  expect(o.env!.WINTER_PROFILE).toBe("dev");
+  expect(o.env!.CLOVER_HOME).toBe("/tmp/pinned");
+  expect(o.env!.CLOVER_PROFILE).toBe("dev");
   expect(o.env!.EXTRA).toBe("kept");
   // The test-provider selector is pinned after `input.env` for the same reason.
-  const t = buildWinterOptions(optionsInput({ model: "winter-test/echo", env: { WINTER_TEST_PROVIDER: "hijack" } }));
+  const t = buildCloverOptions(optionsInput({ model: "winter-test/echo", env: { WINTER_TEST_PROVIDER: "hijack" } }));
   expect(t.env!.WINTER_TEST_PROVIDER).toBe("echo");
 });
 
@@ -1236,7 +1238,7 @@ test("P8b-27b: the rules store is refused under every policy, bypass and auto in
   for (const mode of MODES) {
     for (const policy of [...POLICIES, "chat" as SessionApprovalPolicy]) {
       const h = harness({ mode, policy, cwd: "/repo" });
-      const res = (await h.canUse("Edit", { file_path: "/repo/.winter/permissions.local.json" }, ctx()))!;
+      const res = (await h.canUse("Edit", { file_path: "/repo/.clover/permissions.local.json" }, ctx()))!;
       expect({ mode, policy, behavior: res.behavior }).toEqual({ mode, policy, behavior: "deny" });
       expect((res as { message: string }).message).toContain("the permission rules store can only be changed");
       expect(h.events).toEqual([]);
@@ -1247,16 +1249,16 @@ test("P8b-27b: the rules store is refused under every policy, bypass and auto in
 test("P8b-27b: the fence covers all four write tools, both settings overlays, and MultiEdit's nested targets", async () => {
   const h = harness({ mode: "code", policy: "bypass", cwd: "/repo" });
   for (const [tool, input] of [
-    ["Write", { file_path: "/repo/.winter/settings.local.json" }],
-    ["Edit", { file_path: "/repo/.winter/settings.json" }],
-    ["NotebookEdit", { notebook_path: "/repo/.winter/permissions.local.json" }],
-    ["write", { path: "/repo/.winter/permissions.local.json" }],
+    ["Write", { file_path: "/repo/.clover/settings.local.json" }],
+    ["Edit", { file_path: "/repo/.clover/settings.json" }],
+    ["NotebookEdit", { notebook_path: "/repo/.clover/permissions.local.json" }],
+    ["write", { path: "/repo/.clover/permissions.local.json" }],
     // A batch whose FIRST edit is innocent and whose SECOND writes the store must not pass.
-    ["MultiEdit", { edits: [{ file_path: "/repo/ok.ts" }, { file_path: "/repo/.winter/settings.json" }] }],
+    ["MultiEdit", { edits: [{ file_path: "/repo/ok.ts" }, { file_path: "/repo/.clover/settings.json" }] }],
     // A relative target, resolved against the session cwd.
-    ["Edit", { file_path: ".winter/permissions.local.json" }],
+    ["Edit", { file_path: ".clover/permissions.local.json" }],
     // A sibling project's store — the fence is project-INDEPENDENT.
-    ["Edit", { file_path: "/other/projB/.winter/permissions.local.json" }],
+    ["Edit", { file_path: "/other/projB/.clover/permissions.local.json" }],
   ] as const) {
     const res = (await h.canUse(tool, input as Record<string, unknown>, ctx()))!;
     expect({ tool, behavior: res.behavior }).toEqual({ tool, behavior: "deny" });
@@ -1268,10 +1270,10 @@ test("P8b-27b: the fence does NOT touch the MEMDIR, $OUTDIR, ordinary files, or 
   for (const [tool, input] of [
     ["Write", { file_path: "/h/projects/repo/memory/facts.md" }],     // the MEMDIR
     ["Write", { file_path: "/h/outputs/s1/report.pdf" }],             // $OUTDIR
-    ["Edit", { file_path: "/repo/.winter/notes.md" }],                 // .winter itself stays writable
+    ["Edit", { file_path: "/repo/.clover/notes.md" }],                 // .clover itself stays writable
     ["Edit", { file_path: "/repo/src/index.ts" }],
     // Reads are deliberately unrestricted (CLAUDE.md) — the fence is the WRITE class only.
-    ["Read", { file_path: "/repo/.winter/permissions.local.json" }],
+    ["Read", { file_path: "/repo/.clover/permissions.local.json" }],
   ] as const) {
     const res = (await h.canUse(tool, input as Record<string, unknown>, ctx()))!;
     expect({ tool, behavior: res.behavior }).toEqual({ tool, behavior: "allow" });
@@ -1283,26 +1285,26 @@ test("P8b-27b: the fence does NOT touch the MEMDIR, $OUTDIR, ordinary files, or 
 // -------------------------------------------------------------------------------------------
 
 test("Task 16: forwardSubagentText is ON (ledger:93 — the dispatch golden carries a child's own text)", () => {
-  expect(buildWinterOptions(optionsInput()).forwardSubagentText).toBe(true);
+  expect(buildCloverOptions(optionsInput()).forwardSubagentText).toBe(true);
 });
 
 test("Task 16 / P8b-36: `capabilities` is spread into mcpServers under its OWN keys — never re-keyed; absent ⇒ no mcpServers", () => {
   const caps = {
-    "winter__browser": { type: "sdk", name: "winter__browser", instance: { listTools: () => [], callTool: async () => ({ content: [] }) } },
-    "winter__research": { type: "sdk", name: "winter__research", instance: { listTools: () => [], callTool: async () => ({ content: [] }) } },
+    "clover__browser": { type: "sdk", name: "clover__browser", instance: { listTools: () => [], callTool: async () => ({ content: [] }) } },
+    "clover__research": { type: "sdk", name: "clover__research", instance: { listTools: () => [], callTool: async () => ({ content: [] }) } },
   } as never;
-  const o = buildWinterOptions(optionsInput({ capabilities: caps }));
-  expect(Object.keys(o.mcpServers ?? {}).sort()).toEqual(["winter__browser", "winter__research"]);
-  expect(o.mcpServers!["winter__browser"]).toBe((caps as Record<string, unknown>)["winter__browser"] as never);
-  expect(buildWinterOptions(optionsInput()).mcpServers).toBeUndefined();
+  const o = buildCloverOptions(optionsInput({ capabilities: caps }));
+  expect(Object.keys(o.mcpServers ?? {}).sort()).toEqual(["clover__browser", "clover__research"]);
+  expect(o.mcpServers!["clover__browser"]).toBe((caps as Record<string, unknown>)["clover__browser"] as never);
+  expect(buildCloverOptions(optionsInput()).mcpServers).toBeUndefined();
 });
 
 test("Task 16 / P8b-30: a BYO `connection` rides provider.connection; without a selected provider it is dropped", () => {
   const connection = { baseUrl: "http://127.0.0.1:9/v1", endpointOrigin: "user" as const };
-  const withProvider = buildWinterOptions(optionsInput({ model: "openai/gpt-5.6-sol", credentials: { byProvider: { openai: "keychain" } }, connection }));
+  const withProvider = buildCloverOptions(optionsInput({ model: "openai/gpt-5.6-sol", credentials: { byProvider: { openai: "keychain" } }, connection }));
   expect(withProvider.provider).toEqual({ providerId: "openai", authRef: expect.objectContaining({ kind: "keychain" }), connection });
   // a `winter-test/*` model names no provider, so there is nothing to attach a connection to
-  expect(buildWinterOptions(optionsInput({ model: "winter-test/echo", connection })).provider).toBeUndefined();
+  expect(buildCloverOptions(optionsInput({ model: "winter-test/echo", connection })).provider).toBeUndefined();
 });
 
 // Fix wave (M7): `Options.advisor` gains `authRef` when the advisor's own target model resolves to
@@ -1310,7 +1312,7 @@ test("Task 16 / P8b-30: a BYO `connection` rides provider.connection; without a 
 // actually supports (`model`/`authRef` only; NO `connection` field exists at that level). Without
 // this, the advisor's own generation falls through to the runtime's independent
 // "<providerId>:default" credential resolution regardless of whatever `Options.provider.connection`
-// override the session itself is using (measured root cause of `advisor-winter-leg-e2e.test.ts`'s
+// override the session itself is using (measured root cause of `advisor-clover-leg-e2e.test.ts`'s
 // F2 case hanging on a real machine's Keychain consent dialog against a freshly re-signed
 // `dist/winter`).
 // D3 (2026-09-22): `advisor.model` is the FULL qualified tag. The pinned SDK 0.0.17 resolves a
@@ -1320,14 +1322,14 @@ test("Task 16 / P8b-30: a BYO `connection` rides provider.connection; without a 
 // SDK read it under the SESSION's provider, which is why a cross-provider advisor had to be dropped.
 test("M7/D3: a same-provider advisor names its full tag and its provider's own authRef", () => {
   const credentials: CredentialPresence = { byProvider: { openai: "keychain" } };
-  const o = buildWinterOptions(optionsInput({ model: "openai/gpt-5.6-sol", advisorModel: "openai/gpt-6-astra", credentials }));
+  const o = buildCloverOptions(optionsInput({ model: "openai/gpt-5.6-sol", advisorModel: "openai/gpt-6-astra", credentials }));
   expect(o.advisor).toEqual({ model: "openai/gpt-6-astra", authRef: o.provider!.authRef });
   expect(o.advisor!.authRef).toEqual(expect.objectContaining({ kind: "keychain" }));
 });
 
 // D3: the dist log's case — every spawn dropped `codex-oauth/gpt-5.6-sol` for sessions on deepseek.
 test("D3: a CROSS-provider advisor reaches the child on its OWN provider's credential, never the session's", () => {
-  const o = buildWinterOptions(optionsInput({ model: "deepseek-anthropic/deepseek-v4-flash", advisorModel: "codex-oauth/gpt-5.6-sol", credentials: NO_CREDS }));
+  const o = buildCloverOptions(optionsInput({ model: "deepseek-anthropic/deepseek-v4-flash", advisorModel: "codex-oauth/gpt-5.6-sol", credentials: NO_CREDS }));
   expect(o.provider).toEqual({ providerId: "deepseek-anthropic", authRef: expect.objectContaining({ kind: "keychain", account: "deepseek-anthropic:default" }) });
   expect(o.advisor).toEqual({ model: "codex-oauth/gpt-5.6-sol", authRef: expect.objectContaining({ kind: "keychain", account: "codex-oauth:default" }) });
   expect(o.advisor!.authRef).not.toEqual(o.provider!.authRef);
@@ -1338,22 +1340,22 @@ test("D3: a CROSS-provider advisor reaches the child on its OWN provider's crede
 // D3: a session with no provider of its own (a `winter-test/*` double) still gets an advisor that
 // names one — the advisor's routing no longer depends on agreeing with the session's.
 test("D3: the session having NO resolvable provider (winter-test/*) no longer drops a routable advisor", () => {
-  const o = buildWinterOptions(optionsInput({ model: "winter-test/echo", advisorModel: "openai/gpt-6-astra", credentials: NO_CREDS }));
+  const o = buildCloverOptions(optionsInput({ model: "winter-test/echo", advisorModel: "openai/gpt-6-astra", credentials: NO_CREDS }));
   expect(o.provider).toBeUndefined();
   expect(o.advisor).toEqual({ model: "openai/gpt-6-astra", authRef: expect.objectContaining({ kind: "keychain", account: "openai:default" }) });
 });
 
 // The reserved test double travels WHOLE, as it always has (it is not a provider tag, and the SDK's
 // qualified-key door passes the reserved namespace through); it names no credential.
-test("D3: a winter-test advisor double is passed whole, with no authRef", () => {
-  const o = buildWinterOptions(optionsInput({ model: "openai/gpt-5.6-sol", advisorModel: "winter-test/echo", credentials: NO_CREDS }));
+test("D3: a clover-test advisor double is passed whole, with no authRef", () => {
+  const o = buildCloverOptions(optionsInput({ model: "openai/gpt-5.6-sol", advisorModel: "winter-test/echo", credentials: NO_CREDS }));
   expect(o.advisor).toEqual({ model: "winter-test/echo" });
 });
 
 // D3: only a GENUINELY unroutable advisor tag is dropped — the `unstated/unstated` sentinel a
 // hand-edited settings file can carry (`isModelTag` accepts it) names no provider at all.
 test("D3: an unroutable advisor tag (the unstated sentinel) is dropped, never guessed at", () => {
-  const o = buildWinterOptions(optionsInput({ model: "openai/gpt-5.6-sol", advisorModel: "unstated/unstated", credentials: NO_CREDS }));
+  const o = buildCloverOptions(optionsInput({ model: "openai/gpt-5.6-sol", advisorModel: "unstated/unstated", credentials: NO_CREDS }));
   expect(o.advisor).toBeUndefined();
 });
 
@@ -1362,13 +1364,13 @@ test("D3: an unroutable advisor tag (the unstated sentinel) is dropped, never gu
 // unread by this file; presence-based refusal is `beforeTurn`'s own separate job) — so the
 // advisor STILL gets its provider's authRef even with `NO_CREDS` passed in.
 test("M7: the advisor's authRef threads through regardless of the (now-unread) credentials presence input", () => {
-  const o = buildWinterOptions(optionsInput({ model: "openai/gpt-5.6-sol", advisorModel: "openai/gpt-6-astra", credentials: NO_CREDS }));
+  const o = buildCloverOptions(optionsInput({ model: "openai/gpt-5.6-sol", advisorModel: "openai/gpt-6-astra", credentials: NO_CREDS }));
   expect(o.provider!.authRef).toEqual(expect.objectContaining({ kind: "keychain", account: "openai:default" }));
   expect(o.advisor).toEqual({ model: "openai/gpt-6-astra", authRef: o.provider!.authRef });
 });
 
 test("M7: no advisorModel at all -> no Options.advisor key, unchanged from before this fix", () => {
-  const o = buildWinterOptions(optionsInput({ model: "openai/gpt-5.6-sol", credentials: { byProvider: { openai: "keychain" } } }));
+  const o = buildCloverOptions(optionsInput({ model: "openai/gpt-5.6-sol", credentials: { byProvider: { openai: "keychain" } } }));
   expect(o.advisor).toBeUndefined();
 });
 
@@ -1378,23 +1380,23 @@ test("M7: no advisorModel at all -> no Options.advisor key, unchanged from befor
 // (agent-definitions.test.ts owns that).
 test("item 3: a populated `agents` input reaches Options.agents verbatim", () => {
   const agents = { reviewer: { description: "Reviews code", prompt: "You review code." } };
-  const o = buildWinterOptions(optionsInput({ agents }));
+  const o = buildCloverOptions(optionsInput({ agents }));
   expect(o.agents).toEqual(agents);
   expect(o.agents).not.toBe(agents); // defensively copied, never the caller's own object reference
 });
 
 test("item 3: an empty `agents: {}` produces NO Options.agents key at all — same shape as absent", () => {
-  const withEmpty = buildWinterOptions(optionsInput({ agents: {} }));
-  const withAbsent = buildWinterOptions(optionsInput());
+  const withEmpty = buildCloverOptions(optionsInput({ agents: {} }));
+  const withAbsent = buildCloverOptions(optionsInput());
   expect(withEmpty.agents).toBeUndefined();
   expect(withAbsent.agents).toBeUndefined();
 });
 
 test("Task 16 / P8b-24: `resume` names the transcript through Options.resume and OMITS sessionId; a fresh start is the reverse", () => {
-  const resumed = buildWinterOptions(optionsInput({ resume: true }));
+  const resumed = buildCloverOptions(optionsInput({ resume: true }));
   expect(resumed.resume).toBe("11111111-2222-3333-4444-555555555555");
   expect(resumed.sessionId).toBeUndefined();
-  const fresh = buildWinterOptions(optionsInput({ resume: false }));
+  const fresh = buildCloverOptions(optionsInput({ resume: false }));
   expect(fresh.sessionId).toBe("11111111-2222-3333-4444-555555555555");
   expect(fresh.resume).toBeUndefined();
 });
@@ -1407,67 +1409,67 @@ test("Task 16 / P8b-24: `resume` names the transcript through Options.resume and
 // a tag names its provider outright, so there is nothing left to "steer".
 test("WS-20: a tag names its provider outright regardless of which OTHER providers hold a credential", () => {
   const credentials = { byProvider: { openai: "keychain" as const, "codex-oauth": "keychain" as const } };
-  const openai = buildWinterOptions(optionsInput({ model: "openai/gpt-5.6-terra", credentials }));
+  const openai = buildCloverOptions(optionsInput({ model: "openai/gpt-5.6-terra", credentials }));
   expect(openai.provider?.providerId).toBe("openai");
-  const codex = buildWinterOptions(optionsInput({ model: "codex-oauth/gpt-5.6-terra", credentials }));
+  const codex = buildCloverOptions(optionsInput({ model: "codex-oauth/gpt-5.6-terra", credentials }));
   expect(codex.provider?.providerId).toBe("codex-oauth");
   expect(codex.provider?.authRef).toMatchObject({ kind: "keychain", account: "codex-oauth:default" });
 });
 
 // -------------------------------------------------------------------------------------------
-// `Options.web` — the WINTER leg's web-tool configuration (agent SDK 0.0.17, ruling 2026-09-18)
+// `Options.web` — the CLOVER leg's web-tool configuration (agent SDK 0.0.17, ruling 2026-09-18)
 // -------------------------------------------------------------------------------------------
 
-test("every Winter-leg cell carries a `web` block, and its private-address policy is per MODE", () => {
+test("every Clover-leg cell carries a `web` block, and its private-address policy is per MODE", () => {
   // `ask` in code and dispatch (a card the user can answer — dispatch respects its policy since the user
   // ruling of 2026-10-17), `deny` in chat (it never prompts, and a prompt it cannot answer is a hang or an
-  // invisible refusal). WebFetch is the only door a Winter child has to a local service — its Bash sandbox
+  // invisible refusal). WebFetch is the only door a Clover child has to a local service — its Bash sandbox
   // has no network — so silent reach would ADD power.
   for (const policy of POLICIES) {
     for (const mode of ["code", "dispatch"] as const) {
-      expect(buildWinterOptions(optionsInput({ mode, policy })).web?.fetch?.privateAddressPolicy).toBe("ask");
+      expect(buildCloverOptions(optionsInput({ mode, policy })).web?.fetch?.privateAddressPolicy).toBe("ask");
     }
-    expect(buildWinterOptions(optionsInput({ mode: "chat", policy })).web?.fetch?.privateAddressPolicy).toBe("deny");
+    expect(buildCloverOptions(optionsInput({ mode: "chat", policy })).web?.fetch?.privateAddressPolicy).toBe("deny");
   }
   // A dispatch CHILD (a code session) asks too: its card is relayed to its coordinator and bounded (P8b-26's
   // "children prompt nobody" is what the relay answers).
-  expect(buildWinterOptions(optionsInput({ mode: "code", origin: "dispatch-child" })).web?.fetch?.privateAddressPolicy).toBe("ask");
+  expect(buildCloverOptions(optionsInput({ mode: "code", origin: "dispatch-child" })).web?.fetch?.privateAddressPolicy).toBe("ask");
 });
 
 test("the Exa key travels as a keychain LOCATOR, and only when one is stored", () => {
-  const withKey = buildWinterOptions(optionsInput({ exaKeyPresent: true }));
-  expect(withKey.web?.search?.authRef).toEqual({ kind: "keychain", account: "exa-api-key", service: keychainService(undefined, "/tmp/winter-home") });
+  const withKey = buildCloverOptions(optionsInput({ exaKeyPresent: true }));
+  expect(withKey.web?.search?.authRef).toEqual({ kind: "keychain", account: "exa-api-key", service: keychainService(undefined, "/tmp/clover-home") });
   // never the value, and never `enabled` — the backend's anonymous tier works without a key, so there
   // is no session in which the daemon wants the tool advertised-but-dead.
   expect(withKey.web?.search).not.toHaveProperty("enabled");
   expect(JSON.stringify(withKey.web)).not.toContain("exa-secret");
   // With no key: no `search` block at all, which is the SDK's anonymous-only state.
-  expect(buildWinterOptions(optionsInput({ exaKeyPresent: false })).web?.search).toBeUndefined();
+  expect(buildCloverOptions(optionsInput({ exaKeyPresent: false })).web?.search).toBeUndefined();
 });
 
 test("blockedDomains is the floor, verbatim — the shipped list plus whatever the caller resolved", () => {
-  const o = buildWinterOptions(optionsInput({ dangerousDomains: ["pastebin.com", "corp.example"] }));
+  const o = buildCloverOptions(optionsInput({ dangerousDomains: ["pastebin.com", "corp.example"] }));
   expect(o.web?.blockedDomains).toEqual(["pastebin.com", "corp.example"]);
   // Absent (a test double that does not care) is an EMPTY list, never undefined: the field is always
   // stated, so a floor that is genuinely empty and a floor nobody passed read the same to the child.
-  expect(buildWinterOptions(optionsInput()).web?.blockedDomains).toEqual([]);
+  expect(buildCloverOptions(optionsInput()).web?.blockedDomains).toEqual([]);
 });
 
 test("the digest model is stated with its OWN authRef — and dropped rather than guessed at", () => {
-  const home = "/tmp/winter-home";
+  const home = "/tmp/clover-home";
   // Cross-provider: the qualified tag, plus that provider's own Keychain locator. The session's key is
   // never sent to another provider, and an explicit ref keeps the child off the BRAND's keychain
   // service (the dist one, even for a dev-profile daemon) — the `Options.advisor.authRef` precedent.
-  const cross = buildWinterOptions(optionsInput({ model: "codex-oauth/gpt-5.6-sol", digestModel: "openai/gpt-5.6-luna" }));
+  const cross = buildCloverOptions(optionsInput({ model: "codex-oauth/gpt-5.6-sol", digestModel: "openai/gpt-5.6-luna" }));
   expect(cross.web?.fetch?.digestModel).toBe("openai/gpt-5.6-luna");
   expect(cross.web?.fetch?.authRef).toEqual({ kind: "keychain", account: "openai:default", service: keychainService(undefined, home) });
   // The session's OWN tag is not stated: that IS the SDK's default, and stating it would be a second
   // way to say the same thing (and a second thing to keep in step with a mid-session model switch).
-  const same = buildWinterOptions(optionsInput({ model: "openai/gpt-5.6-luna", digestModel: "openai/gpt-5.6-luna" }));
+  const same = buildCloverOptions(optionsInput({ model: "openai/gpt-5.6-luna", digestModel: "openai/gpt-5.6-luna" }));
   expect(same.web?.fetch).not.toHaveProperty("digestModel");
   // No digest model at all: the same shape, so the digest runs on the session's model.
-  expect(buildWinterOptions(optionsInput({ model: "openai/gpt-5.6-sol" })).web?.fetch).not.toHaveProperty("digestModel");
+  expect(buildCloverOptions(optionsInput({ model: "openai/gpt-5.6-sol" })).web?.fetch).not.toHaveProperty("digestModel");
   // A `winter-test/*` double is never stated (the child's own selection refuses the reserved namespace).
-  const double = buildWinterOptions(optionsInput({ model: "winter-test/echo", digestModel: "winter-test/echo2" }));
+  const double = buildCloverOptions(optionsInput({ model: "winter-test/echo", digestModel: "winter-test/echo2" }));
   expect(double.web?.fetch).not.toHaveProperty("digestModel");
 });

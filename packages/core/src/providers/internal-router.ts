@@ -1,5 +1,5 @@
 /**
- * 2026-09-19: the ONE door every caller of Winter's own background jobs passes through —
+ * 2026-09-19: the ONE door every caller of Clover's own background jobs passes through —
  * `resolve(role)` answers either "here is the `Provider`, the bare model id it speaks and the
  * qualified tag this call runs on", or a typed refusal naming why the job is not running.
  *
@@ -90,7 +90,7 @@ export function requireInternalWiring(what: string): never {
  * The two reason strings the Mac's Roles pane already ships wording for, plus the pre-existing
  * `no-credential`:
  *
- *  - `"provider-unsupported"` — the role's EXPLICIT tag names a provider Winter's own jobs cannot run
+ *  - `"provider-unsupported"` — the role's EXPLICIT tag names a provider Clover's own jobs cannot run
  *    on (the reserved subscription row, or one whose adapter family the daemon cannot drive).
  *    `detail` names the provider's display name.
  *  - `"no-credential"` — the role's explicit tag names an ELIGIBLE provider with nothing stored in its
@@ -105,7 +105,7 @@ export function requireInternalWiring(what: string): never {
  *    other unrunnable pin (the reviewer falls back; titles/the dreamer/the cleaner stay inert with a
  *    note). The same reason `settings.modelRoles` derives for a session-facing role
  *    (`catalog-role-problems.ts`).
- *  - `"no-default-model"` (M-3) — a provider IS credentialed, but Winter will not CHOOSE a model on it:
+ *  - `"no-default-model"` (M-3) — a provider IS credentialed, but Clover will not CHOOSE a model on it:
  *    it declares no `terra`/`luna` family slot and it is not `settings.provider.model`'s own provider,
  *    so there is no model the user can be said to have picked. The fix is a pin, not a credential, so it
  *    has to be a different reason from `no-credential` — see `internalRoleDefaultTagFor`'s own doc for
@@ -252,9 +252,9 @@ export function createInternalRouter(deps: {
       return { reason: "provider-unsupported", detail: `${JSON.stringify(tag)} is not a provider-qualified model tag`, tag };
     }
     if (!deps.view.eligible().has(providerId)) {
-      return { reason: "provider-unsupported", detail: `${providerDisplayName(providerId)} can't be used for Winter's own jobs yet`, tag };
+      return { reason: "provider-unsupported", detail: `${providerDisplayName(providerId)} can't be used for Clover's own jobs yet`, tag };
     }
-    // R.1 ruling 1: a tag with no catalog row can never run — judged after the provider (a provider Winter's
+    // R.1 ruling 1: a tag with no catalog row can never run — judged after the provider (a provider Clover's
     // jobs can never use is the more fundamental answer) and before the credential (no key would make it
     // runnable). Never a silent substitute; the reviewer's fallback below is the user-ruled exception, and it
     // reports this pin's own issue while it runs.
@@ -271,7 +271,7 @@ export function createInternalRouter(deps: {
     }
     const provider = providerFor(providerId, settings);
     if (provider === null) {
-      return { reason: "provider-unsupported", detail: `${providerDisplayName(providerId)} can't be used for Winter's own jobs yet`, tag };
+      return { reason: "provider-unsupported", detail: `${providerDisplayName(providerId)} can't be used for Clover's own jobs yet`, tag };
     }
     const wanted = effortToSpendForRole(settings, role, tag, CONSUMER_EFFORT[role], { neverEscalate: true });
     const effort = internalWireEffortFor(tag, wanted);
@@ -285,14 +285,14 @@ export function createInternalRouter(deps: {
       // A credential IS present — a probe would not change this answer, so no self-heal here.
       return {
         reason: "no-default-model",
-        detail: `pick a model for this job in Settings › Roles — Winter won't choose one on ${providerDisplayName(why.providerId ?? "")} for you`,
+        detail: `pick a model for this job in Settings › Roles — Clover won't choose one on ${providerDisplayName(why.providerId ?? "")} for you`,
         tag: null,
       };
     }
-    // SELF-HEAL (B-1): `winter login` writes `codex-oauth:default` in-process, so a cached snapshot can
+    // SELF-HEAL (B-1): `clover login` writes `codex-oauth:default` in-process, so a cached snapshot can
     // be stale in exactly this state. Non-blocking and rate-limited — the NEXT call is right.
     deps.view.refreshSoon();
-    return { reason: "no-internal-credential", detail: `no provider Winter's own jobs can run on has a credential stored — ${INTERNAL_JOBS_LOGIN_HINT}`, tag: null };
+    return { reason: "no-internal-credential", detail: `no provider Clover's own jobs can run on has a credential stored — ${INTERNAL_JOBS_LOGIN_HINT}`, tag: null };
   };
 
   return {

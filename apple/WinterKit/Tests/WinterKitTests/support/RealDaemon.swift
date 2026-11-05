@@ -28,7 +28,7 @@ enum RealDaemonError: Error, CustomStringConvertible {
 }
 
 /// SP2a Task 1: a real-daemon Swift test harness. Spawns the ACTUAL bun daemon (`startDaemon`
-/// from `@yanlinglabs/winter-core`) on a temp `WINTER_HOME`, with an EXPLICIT `FileSecretStore` — never the
+/// from `@waifucave/clover-core`) on a temp `CLOVER_HOME`, with an EXPLICIT `FileSecretStore` — never the
 /// live macOS Keychain, and never `packages/cli/src/main.ts`'s `daemon run` (whose CLI path
 /// defaults to `KeychainSecretStore`: reading that token from Swift is infeasible, and spawning
 /// it would touch the real, live daemon's Keychain entry — forbidden by this project's
@@ -58,11 +58,11 @@ struct RealDaemon {
     private let stdoutPath: String
     private let stderrPath: String
 
-    /// bun's resolution of a bare specifier like `@yanlinglabs/winter-core` walks up from the SPAWNED
-    /// PROCESS'S CWD looking for `node_modules/@yanlinglabs/winter-core` — it does not consult the repo root.
-    /// In this pnpm workspace, `node_modules/@yanlinglabs/winter-{core,protocol}` (symlinks into
+    /// bun's resolution of a bare specifier like `@waifucave/clover-core` walks up from the SPAWNED
+    /// PROCESS'S CWD looking for `node_modules/@waifucave/clover-core` — it does not consult the repo root.
+    /// In this pnpm workspace, `node_modules/@waifucave/clover-{core,protocol}` (symlinks into
     /// `packages/{core,protocol}`) exist ONLY under `packages/cli` — verified empirically:
-    /// `bun -e 'import ... from "@yanlinglabs/winter-core"'` fails with "Cannot find module '@yanlinglabs/winter-core'"
+    /// `bun -e 'import ... from "@waifucave/clover-core"'` fails with "Cannot find module '@waifucave/clover-core'"
     /// when run with the repo root as cwd, and succeeds when run from `packages/cli`. This is
     /// exactly why the TS precedent (`daemon-sigterm.test.ts`) spawns with
     /// `cwd: join(import.meta.dir, "..")` — i.e. `packages/cli` — rather than the repo root. So
@@ -83,8 +83,8 @@ struct RealDaemon {
     /// token (this task's daemon.ts change exposes it on `RunningDaemon.tokens`) since Tasks 2 & 9
     /// need it for the gateway's daemon-facing bridge client, which authenticates as `"remote"`.
     private static let fixture = """
-    import { startDaemon, FileSecretStore } from "@yanlinglabs/winter-core";
-    const home = process.env.WINTER_HOME;
+    import { startDaemon, FileSecretStore } from "@waifucave/clover-core";
+    const home = process.env.CLOVER_HOME;
     const d = await startDaemon({ home, secrets: new FileSecretStore(home + "/secrets"), agentProvider: null });
     process.stdout.write(JSON.stringify({ socketPath: d.socketPath, harness: d.tokens.harness, remote: d.tokens.remote }) + "\\n");
     process.on("SIGTERM", async () => { await d.stop(); process.exit(0); });
@@ -107,9 +107,9 @@ struct RealDaemon {
     /// transport's hard 1 MiB de-framing limit, whose overflow silently ends the phone's stream. Any
     /// other request (the daemon's own titler) gets a short reply.
     static let streamingProviderFixture = """
-    import { startDaemon, FileSecretStore, writeOpenAiApiKey } from "@yanlinglabs/winter-core";
+    import { startDaemon, FileSecretStore, writeOpenAiApiKey } from "@waifucave/clover-core";
     import { mkdirSync, writeFileSync } from "node:fs";
-    const home = process.env.WINTER_HOME;
+    const home = process.env.CLOVER_HOME;
     const CHUNKS = \(streamedChunksJSLiteral);
     const server = Bun.serve({ hostname: "127.0.0.1", port: 0, async fetch(req) {
       const body = JSON.parse((await req.text()) || "{}");
@@ -163,7 +163,7 @@ struct RealDaemon {
         let remote: String
     }
 
-    /// Spawns the daemon on a temp `WINTER_HOME` and waits (asynchronously) for its ready line.
+    /// Spawns the daemon on a temp `CLOVER_HOME` and waits (asynchronously) for its ready line.
     /// Throws if the fixture exits early or doesn't come up within the deadline. On ANY such throw
     /// it terminates the subprocess and removes the temp home + scratch files itself (the returned
     /// `RealDaemon`'s `stop()` is otherwise the only cleanup path). `fixtureOverride` is test-only —
@@ -206,27 +206,27 @@ struct RealDaemon {
             throw RealDaemonError.setupFailed("could not create the daemon's temp directory \(tmpDir): \(error)")
         }
         var env = ProcessInfo.processInfo.environment
-        env["WINTER_HOME"] = home
+        env["CLOVER_HOME"] = home
         env["TMPDIR"] = tmpDir
         // WS-19 (Lane P fix round 2, item 1A) — KEYCHAIN ISOLATION, the Swift mirror of what the TS
         // suite has pinned in `packages/core/test/preload.ts` since the test-keychain-isolation fix.
         //
-        // Without this the daemon's `keychainService()` resolves to the LIVE `com.winter.core` even
+        // Without this the daemon's `keychainService()` resolves to the LIVE `com.waifucave.clover.core` even
         // on this throwaway temp home, so any `CredentialRef` it minted would name the user's real
         // Keychain — a standing CLAUDE.md violation ("Tests must never resolve credentials against
-        // `com.winter.core`/`com.winter.core.dev`"). It has been latent rather than live only
+        // `com.waifucave.clover.core`/`com.waifucave.clover.core.dev`"). It has been latent rather than live only
         // because this harness stores no credentials and a ref is minted only for a slot that is
         // PRESENT; the moment anything here seeds one, the gap becomes real. The daemon honours this
-        // override only for a NON-default home (`winter-dir.ts`'s `isDefaultWinterHome` guard), so it
-        // is inert against a real `~/.winter[-dev]` and active only for temp homes like this one.
+        // override only for a NON-default home (`clover-dir.ts`'s `isDefaultCloverHome` guard), so it
+        // is inert against a real `~/.clover[-dev]` and active only for temp homes like this one.
         //
         // The named service holds no items, and nothing in this suite writes to it.
-        env["WINTER_KEYCHAIN_SERVICE"] = "com.winter.core.winterkit-tests-throwaway"
+        env["CLOVER_KEYCHAIN_SERVICE"] = "com.waifucave.clover.core.winterkit-tests-throwaway"
         // Login-shell PATH (`packages/core/src/login-shell-path.ts`): `startDaemon` resolves the
         // user's login-shell PATH at boot by default. A `bun -e` fixture never loads the TS test
         // preload that turns it off, so it is turned off here — no test runs the developer's real
         // login shell (their rc files).
-        env["WINTER_LOGIN_SHELL_PATH"] = "off"
+        env["CLOVER_LOGIN_SHELL_PATH"] = "off"
         process.environment = env
         process.standardOutput = stdoutHandle
         process.standardError = stderrHandle
@@ -312,19 +312,19 @@ struct RealDaemon {
     /// ("feat(core): Dispatch on the Winter leg — winterLeg.dispatch defaults to true", Task 17
     /// Step 1, pre-dating 8d entirely): `session.dispatch {}`'s default mode now mints on the
     /// Winter leg and requires a resolvable `winter` executable at create time — this fixture sets
-    /// no `WINTER_RUNTIME_EXECUTABLE` and stages no bundle/home binary (matching WinterKit's actual CI
+    /// no `CLOVER_RUNTIME_EXECUTABLE` and stages no bundle/home binary (matching WinterKit's actual CI
     /// `swift` job, which never builds/installs one), so every one of the 13 tests that seeds a
     /// real session via `session.dispatch` fails there. Over `ScriptedRemoteConn`/`LoopbackListener`
     /// (`GatewayGateTests`) the failure surfaces as a plain `RpcError`/`CancellationError` from
     /// `WinterClient`; over the REAL Iroh transport (`IrohE2ETests`, `FakePhoneConformanceTests`) the
     /// resulting local `close()` is what the Iroh FFI reports to the peer as `ConnectionLost
-    /// (LocallyClosed)` — confirmed by re-running with `WINTER_RUNTIME_EXECUTABLE` UNSET, which
+    /// (LocallyClosed)` — confirmed by re-running with `CLOVER_RUNTIME_EXECUTABLE` UNSET, which
     /// reproduces `IrohError { kind: Stream, message: "ConnectionLost(LocallyClosed)" }` verbatim on
     /// `FakePhoneConformanceTests/testStreamingDeltasReachThePhone_...`. None of this is an Iroh FFI
     /// bug or a WinterKit Swift bug — it is `packages/core`'s dispatch-mode default, out of this
     /// lane's edit scope (`apple/WinterKit/**` only).
     ///
-    /// Providing a REAL, resolvable `winter` binary (`WINTER_RUNTIME_EXECUTABLE` pointed at a signed
+    /// Providing a REAL, resolvable `winter` binary (`CLOVER_RUNTIME_EXECUTABLE` pointed at a signed
     /// `dist/winter`) makes 8 of the 13 pass outright (measured: `IrohE2ETests` scenarios B/C's
     /// early phase, `FakePhoneConformanceTests` ×3, `GatewayGateTests` G2/G3/R1/T6b). The remaining
     /// 5 — `GatewayGateTests` G1/R2, `IrohE2ETests` scenarios C/D, `FakePhoneConformanceTests`'s
@@ -414,7 +414,7 @@ struct RealDaemon {
 
     /// SIGTERM + wait — the fixture's own handler calls `d.stop()` for a clean socket/lock
     /// release (mirroring the TS `daemon-sigterm` precedent's shutdown path) — then removes the
-    /// temp `WINTER_HOME` and the redirected stdout/stderr scratch files. Idempotent: safe to call
+    /// temp `CLOVER_HOME` and the redirected stdout/stderr scratch files. Idempotent: safe to call
     /// more than once (e.g. an explicit call plus a `defer` safety net).
     ///
     /// **The wait is BOUNDED, deliberately — do not restore `process.waitUntilExit()`.** That call

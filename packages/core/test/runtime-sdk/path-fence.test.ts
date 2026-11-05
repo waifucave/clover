@@ -17,7 +17,7 @@ const silent: BridgeLogger = { info: () => {}, error: () => {} };
 /** The path fence: the unmatched PreToolUse group registered after the plugin group. */
 function fenceOf(deps: Partial<SessionHooksDeps> & { home: string }): HookCallback {
   const built = sessionHooksFor({ sessionId: "s_1", roots: [deps.cwd ?? "/tmp"], ...deps });
-  const unmatched = (built.winter?.PreToolUse ?? []).filter((g: HookCallbackMatcher) => g.matcher === undefined);
+  const unmatched = (built.clover?.PreToolUse ?? []).filter((g: HookCallbackMatcher) => g.matcher === undefined);
   expect(unmatched).toHaveLength(2); // the plugin group, then the fence
   return unmatched[1]!.hooks[0]!;
 }
@@ -28,23 +28,23 @@ const call = async (hook: HookCallback, tool_name: string, tool_input: Record<st
 const decisionOf = (r: Awaited<ReturnType<typeof call>>) => r.hookSpecificOutput?.permissionDecision ?? "none";
 
 describe("the path fence hook", () => {
-  const home = "/Users/x/.winter";
+  const home = "/Users/x/.clover";
   const root = "/Users/x/code/app";
 
   test("a protected write: ask in code and dispatch (user ruling 2026-10-17), deny in chat", async () => {
-    const input = { file_path: `${root}/.winter/skills/deploy/SKILL.md`, content: "x" };
+    const input = { file_path: `${root}/.clover/skills/deploy/SKILL.md`, content: "x" };
     for (const mode of ["code", "dispatch"] as const) {
       expect(decisionOf(await call(fenceOf({ home, cwd: root, mode, trustedProjectRoot: () => root }), "Write", input))).toBe("ask");
     }
     expect(decisionOf(await call(fenceOf({ home, cwd: root, mode: "chat", trustedProjectRoot: () => root }), "Write", input))).toBe("deny");
     // the sdk tier needs no trusted project
-    expect(decisionOf(await call(fenceOf({ home, cwd: root, mode: "code" }), "Edit", { file_path: `${home}/sdk/WINTER.md` }))).toBe("ask");
+    expect(decisionOf(await call(fenceOf({ home, cwd: root, mode: "code" }), "Edit", { file_path: `${home}/sdk/CLOVER.md` }))).toBe("ask");
   });
 
   test("review C1: the project tier is protected whatever the trust, at any depth (it loads once trusted)", async () => {
     const hook = fenceOf({ home, cwd: root, mode: "code", trustedProjectRoot: () => null });
-    expect(decisionOf(await call(hook, "Write", { file_path: `${root}/.winter/rules/a.md` }))).toBe("ask");
-    expect(decisionOf(await call(hook, "Write", { file_path: `${root}/packages/app/.winter/skills/x/SKILL.md` }))).toBe("ask");
+    expect(decisionOf(await call(hook, "Write", { file_path: `${root}/.clover/rules/a.md` }))).toBe("ask");
+    expect(decisionOf(await call(hook, "Write", { file_path: `${root}/packages/app/.clover/skills/x/SKILL.md` }))).toBe("ask");
   });
 
   test("sdk/projects is denied outside memory/; the memory directory is free", async () => {
@@ -53,25 +53,25 @@ describe("the path fence hook", () => {
     expect(decisionOf(await call(hook, "Write", { file_path: `${home}/sdk/projects/-Users-x-code-app/memory/MEMORY.md` }))).toBe("none");
   });
 
-  test("a project's .winter/mcp.json and any .winter/settings*.json are denied on every policy", async () => {
+  test("a project's .clover/mcp.json and any .clover/settings*.json are denied on every policy", async () => {
     const hook = fenceOf({ home, cwd: root, mode: "code" });
     for (const f of ["mcp.json", "settings.json", "settings.local.json", "settings.team.json"]) {
-      const r = await call(hook, "Write", { file_path: `${root}/.winter/${f}` });
+      const r = await call(hook, "Write", { file_path: `${root}/.clover/${f}` });
       expect(decisionOf(r)).toBe("deny");
     }
-    expect((await call(hook, "Write", { file_path: `${root}/.winter/mcp.json` })).hookSpecificOutput?.permissionDecisionReason).toContain("winter mcp add --scope project");
+    expect((await call(hook, "Write", { file_path: `${root}/.clover/mcp.json` })).hookSpecificOutput?.permissionDecisionReason).toContain("clover mcp add --scope project");
   });
 
-  test("the home fence binds as a hook too: sdk/settings.json, sdk/.winter.json, sdk/plugins, sdk/agents, the cache", async () => {
+  test("the home fence binds as a hook too: sdk/settings.json, sdk/.clover.json, sdk/plugins, sdk/agents, the cache", async () => {
     const hook = fenceOf({ home, cwd: root, mode: "code" });
-    for (const p of [`${home}/sdk/settings.json`, `${home}/sdk/.winter.json`, `${home}/sdk/plugins/x/plugin.json`, `${home}/sdk/agents/a.md`, `${home}/cache/runs/r/settings.json`]) {
+    for (const p of [`${home}/sdk/settings.json`, `${home}/sdk/.clover.json`, `${home}/sdk/plugins/x/plugin.json`, `${home}/sdk/agents/a.md`, `${home}/cache/runs/r/settings.json`]) {
       expect(decisionOf(await call(hook, "Write", { file_path: p }))).toBe("deny");
     }
   });
 
-  test("reads: sdk/.winter.json and a run folder's generated config are denied; everything else is free", async () => {
+  test("reads: sdk/.clover.json and a run folder's generated config are denied; everything else is free", async () => {
     const hook = fenceOf({ home, cwd: root, mode: "code" });
-    expect(decisionOf(await call(hook, "Read", { file_path: `${home}/sdk/.winter.json` }))).toBe("deny");
+    expect(decisionOf(await call(hook, "Read", { file_path: `${home}/sdk/.clover.json` }))).toBe("deny");
     expect(decisionOf(await call(hook, "Read", { file_path: `${home}/cache/runs/r1/.claude.json` }))).toBe("deny");
     expect(decisionOf(await call(hook, "Read", { file_path: `${home}/sdk/settings.json` }))).toBe("none");
     expect(decisionOf(await call(hook, "Read", { file_path: `${root}/src/index.ts` }))).toBe("none");
@@ -80,13 +80,13 @@ describe("the path fence hook", () => {
 
   test("no home: no fence group at all (the diff producer's own convention)", () => {
     const built = sessionHooksFor({ sessionId: "s_1", roots: ["/tmp"] });
-    expect((built.winter?.PreToolUse ?? []).filter((g: HookCallbackMatcher) => g.matcher === undefined)).toHaveLength(1);
+    expect((built.clover?.PreToolUse ?? []).filter((g: HookCallbackMatcher) => g.matcher === undefined)).toHaveLength(1);
   });
 });
 
 describe("the bridge never auto-allows a protected write (spec §7.2, layer 3)", () => {
-  const home = real("winter-fence-home-");
-  const root = real("winter-fence-root-");
+  const home = real("clover-fence-home-");
+  const root = real("clover-fence-root-");
   const ctx = (): Parameters<CanUseTool>[2] => ({ signal: new AbortController().signal, toolUseID: `tu-${Math.random()}`, requestId: "r" } as Parameters<CanUseTool>[2]);
   function bridge(policy: SessionApprovalPolicy, over: { mode?: "code" | "dispatch"; origin?: string; trusted?: boolean } = {}) {
     const approvals = new ApprovalBroker();
@@ -97,7 +97,7 @@ describe("the bridge never auto-allows a protected write (spec §7.2, layer 3)",
     });
     return { canUse, approvals };
   }
-  const protectedInput = { file_path: join(root, ".winter", "skills", "a", "SKILL.md"), content: "x" };
+  const protectedInput = { file_path: join(root, ".clover", "skills", "a", "SKILL.md"), content: "x" };
 
   for (const policy of ["bypass", "accept-edits", "auto"] as const) {
     test(`${policy}: a protected write raises a card instead of running`, async () => {
@@ -127,7 +127,7 @@ describe("the bridge never auto-allows a protected write (spec §7.2, layer 3)",
   test("review C1: at the repo root under bypass, a nested project dir's skill is a card, trusted or not", async () => {
     for (const trusted of [true, false]) {
       const { canUse, approvals } = bridge("bypass", { trusted });
-      const pending = canUse("Write", { file_path: join(root, "packages", "app", ".winter", "skills", "x", "SKILL.md"), content: "x" }, ctx());
+      const pending = canUse("Write", { file_path: join(root, "packages", "app", ".clover", "skills", "x", "SKILL.md"), content: "x" }, ctx());
       await new Promise((r) => setTimeout(r, 10));
       const listed = approvals.list("s_1");
       expect(listed).toHaveLength(1);
@@ -147,27 +147,27 @@ describe("the bridge never auto-allows a protected write (spec §7.2, layer 3)",
   });
 });
 
-// Fix round 2 (controller ruling on SPEC CONCERN D): the sandbox cannot fence `.winter/<kind>` off the
+// Fix round 2 (controller ruling on SPEC CONCERN D): the sandbox cannot fence `.clover/<kind>` off the
 // walk (real subpaths only), so ANY Bash command — sandboxed or not — that WRITES under a
-// `.winter/{skills,commands,rules,output-styles,agents}` segment, at any depth and whatever the trust, is
+// `.clover/{skills,commands,rules,output-styles,agents}` segment, at any depth and whatever the trust, is
 // asked about: a card in code, a typed deny where nobody can answer. Read-only mentions pass.
-describe("fix round 2: Bash writes under .winter/<kind>", () => {
+describe("fix round 2: Bash writes under .clover/<kind>", () => {
   const writes = [
-    "mkdir -p pkg/a/.winter/skills/x",
-    "echo evil > pkg/.winter/rules/r.md",
-    "cp evil.md sub/.winter/commands/",
-    "cd sub/.winter/agents && tee x.md < /dev/null",
-    "sed -i 's/a/b/' .winter/output-styles/terse.md",
-    "echo x | tee /elsewhere/proj/.WINTER/Skills/a/SKILL.md",
+    "mkdir -p pkg/a/.clover/skills/x",
+    "echo evil > pkg/.clover/rules/r.md",
+    "cp evil.md sub/.clover/commands/",
+    "cd sub/.clover/agents && tee x.md < /dev/null",
+    "sed -i 's/a/b/' .clover/output-styles/terse.md",
+    "echo x | tee /elsewhere/proj/.CLOVER/Skills/a/SKILL.md",
   ];
   const reads = [
-    "cat .winter/skills/x/SKILL.md",
-    "ls pkg/.winter/rules",
-    "grep -r foo .winter/commands",
-    "cat .winter/agents/a.md > /tmp/copy.md",
-    "sed 's/a/b/' .winter/rules/r.md",
+    "cat .clover/skills/x/SKILL.md",
+    "ls pkg/.clover/rules",
+    "grep -r foo .clover/commands",
+    "cat .clover/agents/a.md > /tmp/copy.md",
+    "sed 's/a/b/' .clover/rules/r.md",
   ];
-  const outside = ["mkdir -p pkg/winter/skills/x", "echo x > notes/.winter-skills.md", "cp a.md .winter/other/b.md"];
+  const outside = ["mkdir -p pkg/clover/skills/x", "echo x > notes/.clover-skills.md", "cp a.md .clover/other/b.md"];
 
   test("the detector: writes hit, reads and paths outside the protected kinds do not", () => {
     for (const cmd of writes) expect({ cmd, hit: bashProtectedWriteHit(cmd) !== undefined }).toEqual({ cmd, hit: true });
@@ -180,31 +180,31 @@ describe("fix round 2: Bash writes under .winter/<kind>", () => {
   // is the write target. Every write case above still gets its card.
   test("round 3, minor 10: each segment judged alone; git reads and a copy's source get no card", () => {
     const noCard = [
-      "git status && ls .winter/rules",
-      "cat a 2>/dev/null; cat .winter/commands/x.md",
-      "mkdir -p build && grep -r foo .winter/rules",
-      "git log -- .winter/skills",
-      "cp .winter/skills/a/ref.md /tmp/",
-      "cd .winter/skills && git status",
-      "git diff HEAD~1 -- .winter/rules/r.md | cat",
-      "echo 'a; b > .winter/rules/x' && ls",          // a separator and a redirect INSIDE quotes are text
-      "cat .winter/agents/a.md 2>&1 | grep name",
+      "git status && ls .clover/rules",
+      "cat a 2>/dev/null; cat .clover/commands/x.md",
+      "mkdir -p build && grep -r foo .clover/rules",
+      "git log -- .clover/skills",
+      "cp .clover/skills/a/ref.md /tmp/",
+      "cd .clover/skills && git status",
+      "git diff HEAD~1 -- .clover/rules/r.md | cat",
+      "echo 'a; b > .clover/rules/x' && ls",          // a separator and a redirect INSIDE quotes are text
+      "cat .clover/agents/a.md 2>&1 | grep name",
     ];
     for (const cmd of noCard) expect({ cmd, hit: bashProtectedWriteHit(cmd) }).toEqual({ cmd, hit: undefined });
     const stillWrites = [
       ...writes,
-      "cp -t .winter/rules a.md b.md",
-      "cp --target-directory=.winter/commands a.md",
-      "git status; echo x > .winter/rules/r.md",
-      "ls\ntouch .winter/rules/r.md",
-      "cd .winter/skills && touch new/SKILL.md",
-      "cd pkg && cd .winter && mkdir commands",
-      "rsync -a src/ .winter/agents/",
-      "ln -s /tmp/x .winter/commands/x.md",
-      "git checkout -- .winter/rules",
-      "cat a >> .winter/rules/r.md",
-      "echo x >.winter/rules/r.md",
-      "true && (cd pkg/.winter/skills && touch x)",
+      "cp -t .clover/rules a.md b.md",
+      "cp --target-directory=.clover/commands a.md",
+      "git status; echo x > .clover/rules/r.md",
+      "ls\ntouch .clover/rules/r.md",
+      "cd .clover/skills && touch new/SKILL.md",
+      "cd pkg && cd .clover && mkdir commands",
+      "rsync -a src/ .clover/agents/",
+      "ln -s /tmp/x .clover/commands/x.md",
+      "git checkout -- .clover/rules",
+      "cat a >> .clover/rules/r.md",
+      "echo x >.clover/rules/r.md",
+      "true && (cd pkg/.clover/skills && touch x)",
     ];
     for (const cmd of stillWrites) expect({ cmd, hit: bashProtectedWriteHit(cmd) !== undefined }).toEqual({ cmd, hit: true });
   });
@@ -215,24 +215,24 @@ describe("fix round 2: Bash writes under .winter/<kind>", () => {
   // static check — the code comment says so.)
   test("round 3, minor 9: interpreter one-liners and awk -i inplace naming a protected segment are writes", () => {
     const writes9 = [
-      `python3 -c "import os; open('.winter/rules/x.md','w').write('y')"`,
-      `python -c "import os; os.makedirs('pkg/.winter/skills', exist_ok=True)"`,
-      `python3.12 -c "open('.winter/agents/a.md','w')"`,
-      `node -e "require('fs').writeFileSync('.winter/commands/c.md','x')"`,
-      `node --eval "require('fs').mkdirSync('.winter/output-styles')"`,
-      `bun -e "await Bun.write('.winter/rules/r.md', 'x')"`,
-      `ruby -e "File.write('.winter/rules/r.md', 'x')"`,
-      `perl -e 'open(my $f, ">", ".winter/rules/r.md")'`,
-      `deno eval "Deno.writeTextFileSync('.winter/skills/s/SKILL.md', 'x')"`,
-      `cd pkg && python3 -c "open('.winter/rules/r.md','w')"`,
-      "awk -i inplace '{print}' .winter/rules/r.md",
+      `python3 -c "import os; open('.clover/rules/x.md','w').write('y')"`,
+      `python -c "import os; os.makedirs('pkg/.clover/skills', exist_ok=True)"`,
+      `python3.12 -c "open('.clover/agents/a.md','w')"`,
+      `node -e "require('fs').writeFileSync('.clover/commands/c.md','x')"`,
+      `node --eval "require('fs').mkdirSync('.clover/output-styles')"`,
+      `bun -e "await Bun.write('.clover/rules/r.md', 'x')"`,
+      `ruby -e "File.write('.clover/rules/r.md', 'x')"`,
+      `perl -e 'open(my $f, ">", ".clover/rules/r.md")'`,
+      `deno eval "Deno.writeTextFileSync('.clover/skills/s/SKILL.md', 'x')"`,
+      `cd pkg && python3 -c "open('.clover/rules/r.md','w')"`,
+      "awk -i inplace '{print}' .clover/rules/r.md",
     ];
     for (const cmd of writes9) expect({ cmd, hit: bashProtectedWriteHit(cmd) !== undefined }).toEqual({ cmd, hit: true });
     for (const cmd of [
-      `python3 -c "print(1)" && cat .winter/rules/r.md`,
-      "awk '{print}' .winter/rules/r.md",
+      `python3 -c "print(1)" && cat .clover/rules/r.md`,
+      "awk '{print}' .clover/rules/r.md",
       `node -e "console.log(1)"`,
-      `python3 -c "open('.winter/rulesets.md','w')"`,
+      `python3 -c "open('.clover/rulesets.md','w')"`,
     ]) expect({ cmd, hit: bashProtectedWriteHit(cmd) }).toEqual({ cmd, hit: undefined });
   });
 
@@ -241,27 +241,27 @@ describe("fix round 2: Bash writes under .winter/<kind>", () => {
   // (both terminators), and a `cd` inside a command substitution (both spellings).
   test("round 4, minor 2: -t clusters, --target-directory <dir>, trailing options, find -exec and substitutions ask", () => {
     const writes4 = [
-      "cp -rt .winter/skills/x src/",
-      "cp --target-directory .winter/skills/x a.md",
-      "rsync -a src/ .winter/skills/x/ --exclude tmp",
-      "find . -name '*.md' -exec cp {} .winter/skills/ +",
-      "find . -name '*.md' -exec cp {} .winter/skills/ \;",
-      "find src -execdir mv {} ../.winter/rules/ \;",
-      "echo $(cd .winter/skills; touch x)",
-      "echo `cd .winter/skills; touch x`",
-      'echo "$(touch .winter/rules/r.md)"',
+      "cp -rt .clover/skills/x src/",
+      "cp --target-directory .clover/skills/x a.md",
+      "rsync -a src/ .clover/skills/x/ --exclude tmp",
+      "find . -name '*.md' -exec cp {} .clover/skills/ +",
+      "find . -name '*.md' -exec cp {} .clover/skills/ \;",
+      "find src -execdir mv {} ../.clover/rules/ \;",
+      "echo $(cd .clover/skills; touch x)",
+      "echo `cd .clover/skills; touch x`",
+      'echo "$(touch .clover/rules/r.md)"',
     ];
     for (const cmd of writes4) expect({ cmd, hit: bashProtectedWriteHit(cmd) !== undefined }).toEqual({ cmd, hit: true });
     const stillNoCard = [
-      "git status && ls .winter/rules",
-      "cat a 2>/dev/null; cat .winter/commands/x.md",
-      "mkdir -p build && grep -r foo .winter/rules",
-      "git log -- .winter/skills",
-      "cp .winter/skills/a/ref.md /tmp/",
-      "cd .winter/skills && git status",
-      "find .winter/skills -name '*.md' -exec cat {} +",
-      "echo $(cat .winter/rules/r.md)",
-      "rsync -a .winter/skills/ /tmp/backup/ --exclude tmp",
+      "git status && ls .clover/rules",
+      "cat a 2>/dev/null; cat .clover/commands/x.md",
+      "mkdir -p build && grep -r foo .clover/rules",
+      "git log -- .clover/skills",
+      "cp .clover/skills/a/ref.md /tmp/",
+      "cd .clover/skills && git status",
+      "find .clover/skills -name '*.md' -exec cat {} +",
+      "echo $(cat .clover/rules/r.md)",
+      "rsync -a .clover/skills/ /tmp/backup/ --exclude tmp",
     ];
     for (const cmd of stillNoCard) expect({ cmd, hit: bashProtectedWriteHit(cmd) }).toEqual({ cmd, hit: undefined });
   });
@@ -271,23 +271,23 @@ describe("fix round 2: Bash writes under .winter/<kind>", () => {
   // judged as a command of its own, like an interpreter one-liner.
   test("round 5: a shell -c string and eval's argument are judged as commands", () => {
     const writes5 = [
-      `bash -c "echo x > .winter/rules/a"`,
-      `sh -c 'cat > .winter/skills/x/SKILL.md'`,
-      `zsh -c "printf x >> .winter/commands/c.md"`,
-      `eval "echo x > .winter/rules/a"`,
-      `find . -exec sh -c 'cp "$0" .winter/skills/' {} \;`,
-      `bash -lc 'mkdir -p .winter/agents'`,
-      `cd pkg && dash -c "touch .winter/output-styles/o.md"`,
-      `sudo ksh -c "tee .winter/rules/r.md < x"`,
+      `bash -c "echo x > .clover/rules/a"`,
+      `sh -c 'cat > .clover/skills/x/SKILL.md'`,
+      `zsh -c "printf x >> .clover/commands/c.md"`,
+      `eval "echo x > .clover/rules/a"`,
+      `find . -exec sh -c 'cp "$0" .clover/skills/' {} \;`,
+      `bash -lc 'mkdir -p .clover/agents'`,
+      `cd pkg && dash -c "touch .clover/output-styles/o.md"`,
+      `sudo ksh -c "tee .clover/rules/r.md < x"`,
     ];
     for (const cmd of writes5) expect({ cmd, hit: bashProtectedWriteHit(cmd) !== undefined }).toEqual({ cmd, hit: true });
     for (const cmd of [
-      `bash -c "cat .winter/rules/a"`,
-      `sh -c 'ls .winter/skills && git status'`,
-      `eval "cat .winter/rules/a"`,
+      `bash -c "cat .clover/rules/a"`,
+      `sh -c 'ls .clover/skills && git status'`,
+      `eval "cat .clover/rules/a"`,
       `find . -exec sh -c 'cat "$0"' {} \;`,
-      `bash script.sh .winter/rules`,
-      `echo 'a; b > .winter/rules/x' && ls`,
+      `bash script.sh .clover/rules`,
+      `echo 'a; b > .clover/rules/x' && ls`,
     ]) expect({ cmd, hit: bashProtectedWriteHit(cmd) }).toEqual({ cmd, hit: undefined });
   });
 
@@ -295,19 +295,19 @@ describe("fix round 2: Bash writes under .winter/<kind>", () => {
   // `format-patch`) — the flag is write-shaped whatever the subcommand.
   test("R.3 I-4: a git --output=/--output target is a write, read subcommand or not", () => {
     for (const cmd of [
-      "git show -s --format=%B --output=pkg/.winter/rules/x.md",
-      "git log -1 --output pkg/.winter/skills/x/SKILL.md",
-      "git -C sub diff --output=.winter/commands/c.md HEAD~1",
-      "cd pkg && git show HEAD:README.md --output=.winter/agents/a.md",
+      "git show -s --format=%B --output=pkg/.clover/rules/x.md",
+      "git log -1 --output pkg/.clover/skills/x/SKILL.md",
+      "git -C sub diff --output=.clover/commands/c.md HEAD~1",
+      "cd pkg && git show HEAD:README.md --output=.clover/agents/a.md",
     ]) expect({ cmd, hit: bashProtectedWriteHit(cmd) !== undefined }).toEqual({ cmd, hit: true });
-    for (const cmd of ["git show -s --output=notes.md", "git diff --output=/tmp/x.patch", "git log .winter/rules"]) {
+    for (const cmd of ["git show -s --output=notes.md", "git diff --output=/tmp/x.patch", "git log .clover/rules"]) {
       expect({ cmd, hit: bashProtectedWriteHit(cmd) }).toEqual({ cmd, hit: undefined });
     }
   });
 
   test("the hook asks (both legs, sandboxed or not); a read gets no answer from it", async () => {
-    const built = sessionHooksFor({ sessionId: "s_1", roots: ["/r"], home: "/Users/x/.winter", mode: "code" });
-    const groups = (built.winter?.PreToolUse ?? []).filter((g: HookCallbackMatcher) => g.matcher === "Bash");
+    const built = sessionHooksFor({ sessionId: "s_1", roots: ["/r"], home: "/Users/x/.clover", mode: "code" });
+    const groups = (built.clover?.PreToolUse ?? []).filter((g: HookCallbackMatcher) => g.matcher === "Bash");
     const run = async (command: string, escape = false) => {
       const answers: string[] = [];
       for (const g of groups) for (const h of g.hooks) {
@@ -321,52 +321,52 @@ describe("fix round 2: Bash writes under .winter/<kind>", () => {
   });
 
   test("the bridge never auto-allows one: bypass/dispatch → card, dont-ask/chat → deny; a read runs", async () => {
-    const home = real("winter-fr2-home-");
-    const root = real("winter-fr2-root-");
+    const home = real("clover-fr2-home-");
+    const root = real("clover-fr2-root-");
     const ctx = (): Parameters<CanUseTool>[2] => ({ signal: new AbortController().signal, toolUseID: `tu-${Math.random()}`, requestId: "r" } as Parameters<CanUseTool>[2]);
     const mk = (policy: SessionApprovalPolicy, mode: "code" | "dispatch" | "chat" = "code") => {
       const approvals = new ApprovalBroker();
       return { approvals, canUse: canUseToolFor({ sessionId: "s_1", mode, policy, approvals, questions: new QuestionBroker(), gate: new PermissionGate(), emit: () => {}, log: silent, home, cwd: root }) };
     };
     const b = mk("bypass");
-    const pending = b.canUse("Bash", { command: "mkdir -p pkg/a/.winter/skills/x" }, ctx());
+    const pending = b.canUse("Bash", { command: "mkdir -p pkg/a/.clover/skills/x" }, ctx());
     await new Promise((r) => setTimeout(r, 10));
     expect(b.approvals.list("s_1")).toHaveLength(1);
     b.approvals.resolve("s_1", b.approvals.list("s_1")[0]!.callId, false, "test");
     expect((await pending)?.behavior).toBe("deny");
-    expect((await mk("dont-ask").canUse("Bash", { command: "cp a.md sub/.winter/commands/" }, ctx()))?.behavior).toBe("deny");
+    expect((await mk("dont-ask").canUse("Bash", { command: "cp a.md sub/.clover/commands/" }, ctx()))?.behavior).toBe("deny");
     // Dispatch respects its policy like code (user ruling 2026-10-17): a card; a stale chat row: the typed deny.
     const d = mk("auto", "dispatch");
-    const dp = d.canUse("Bash", { command: "echo x > .winter/rules/r.md" }, ctx());
+    const dp = d.canUse("Bash", { command: "echo x > .clover/rules/r.md" }, ctx());
     await new Promise((r) => setTimeout(r, 10));
     expect(d.approvals.list("s_1")).toHaveLength(1);
     d.approvals.resolve("s_1", d.approvals.list("s_1")[0]!.callId, false, "test");
     expect((await dp)?.behavior).toBe("deny");
-    expect((await mk("auto", "chat").canUse("Bash", { command: "echo x > .winter/rules/r.md" }, ctx()))?.behavior).toBe("deny");
-    expect((await mk("bypass").canUse("Bash", { command: "cat .winter/skills/x/SKILL.md" }, ctx()))?.behavior).toBe("allow");
+    expect((await mk("auto", "chat").canUse("Bash", { command: "echo x > .clover/rules/r.md" }, ctx()))?.behavior).toBe("deny");
+    expect((await mk("bypass").canUse("Bash", { command: "cat .clover/skills/x/SKILL.md" }, ctx()))?.behavior).toBe("allow");
   });
 });
 
 // R.3 C-1: the escape floor (the LAST Bash PreToolUse group, every policy, bypass included, both legs) knows
-// the variables WS-21 exports into every child — `$WINTER_STORE_HOME`, both plugin-cache variables,
-// `$CLAUDE_CONFIG_DIR` and the Winter child's own `$WINTER_HOME` (its run folder).
+// the variables WS-21 exports into every child — `$CLOVER_STORE_HOME`, both plugin-cache variables,
+// `$CLAUDE_CONFIG_DIR` and the Clover child's own `$CLOVER_HOME` (its run folder).
 // WS-24: a write through a link that already exists on disk is judged at the link's target.
 describe("Bash writes through an existing link to a protected directory", () => {
   function project(): { root: string; work: string } {
-    const root = real("winter-link-proj-");
-    mkdirSync(join(root, ".winter", "skills"), { recursive: true });
-    mkdirSync(join(root, ".winter", "rules"), { recursive: true });
+    const root = real("clover-link-proj-");
+    mkdirSync(join(root, ".clover", "skills"), { recursive: true });
+    mkdirSync(join(root, ".clover", "rules"), { recursive: true });
     mkdirSync(join(root, "notes"), { recursive: true });
     const work = join(root, "pkg");
     mkdirSync(work, { recursive: true });
-    symlinkSync(join(root, ".winter", "skills"), join(work, "s"));                // a link to a protected dir
-    symlinkSync(join(root, ".winter"), join(work, "dot"));                        // a link to .winter itself
-    symlinkSync(join(root, ".winter", "rules", "planted.md"), join(work, "r.md")); // dangling: writing creates the target
+    symlinkSync(join(root, ".clover", "skills"), join(work, "s"));                // a link to a protected dir
+    symlinkSync(join(root, ".clover"), join(work, "dot"));                        // a link to .clover itself
+    symlinkSync(join(root, ".clover", "rules", "planted.md"), join(work, "r.md")); // dangling: writing creates the target
     symlinkSync(join(root, "notes"), join(work, "n"));                           // a link to an ordinary dir
     return { root, work };
   }
 
-  test("relative targets resolve against the session cwd; the static text alone never named .winter", () => {
+  test("relative targets resolve against the session cwd; the static text alone never named .clover", () => {
     const { work } = project();
     for (const cmd of [
       "echo x > s/deploy/SKILL.md",
@@ -378,23 +378,23 @@ describe("Bash writes through an existing link to a protected directory", () => 
       "echo x > S/Deploy/SKILL.md",
     ]) {
       expect({ cmd, before: bashProtectedWriteHit(cmd) }).toEqual({ cmd, before: undefined });
-      expect({ cmd, hit: bashProtectedWriteHit(cmd, { cwd: work }) }).toEqual({ cmd, hit: cmd.includes("dot/rules") || cmd.includes("r.md") ? ".winter/rules" : ".winter/skills" });
+      expect({ cmd, hit: bashProtectedWriteHit(cmd, { cwd: work }) }).toEqual({ cmd, hit: cmd.includes("dot/rules") || cmd.includes("r.md") ? ".clover/rules" : ".clover/skills" });
     }
   });
 
   test("an absolute target through a link resolves without a cwd; ordinary links and reads stay quiet", () => {
     const { work } = project();
-    expect(bashProtectedWriteHit(`echo x > ${work}/s/a/SKILL.md`)).toBe(".winter/skills");
+    expect(bashProtectedWriteHit(`echo x > ${work}/s/a/SKILL.md`)).toBe(".clover/skills");
     for (const cmd of ["echo x > n/todo.md", "cat s/deploy/SKILL.md", "ls dot/rules", "echo x > fresh/file.md"]) {
       expect({ cmd, hit: bashProtectedWriteHit(cmd, { cwd: work }) }).toEqual({ cmd, hit: undefined });
     }
   });
 
   // Fix round 1 (the reviewer's probes): the shell's own spelling is walked too — `..` climbs out of the
-  // link's TARGET, so `./s/x/../../rules` is `.winter/rules`, however the text would collapse.
+  // link's TARGET, so `./s/x/../../rules` is `.clover/rules`, however the text would collapse.
   test("`..` after a link climbs from the link's target, with or without a leading ./", () => {
     const { work } = project();
-    mkdirSync(join(work, "s", "x"), { recursive: true }); // s -> <root>/.winter/skills, so this is skills/x
+    mkdirSync(join(work, "s", "x"), { recursive: true }); // s -> <root>/.clover/skills, so this is skills/x
     for (const cmd of [
       "echo x > ./s/../rules/e.md",
       "echo x > ./s/x/../../rules/evil.md",
@@ -402,16 +402,16 @@ describe("Bash writes through an existing link to a protected directory", () => 
       "echo x > s/x/../../rules/",
       "echo x > s/../rules/evil.md",
       "cd s; cd ..; echo x > rules/evil.md",
-    ]) expect({ cmd, hit: bashProtectedWriteHit(cmd, { cwd: work }) }).toEqual({ cmd, hit: ".winter/rules" });
-    expect(bashProtectedWriteHit("echo x > s/x/../y/SKILL.md", { cwd: work })).toBe(".winter/skills");
+    ]) expect({ cmd, hit: bashProtectedWriteHit(cmd, { cwd: work }) }).toEqual({ cmd, hit: ".clover/rules" });
+    expect(bashProtectedWriteHit("echo x > s/x/../y/SKILL.md", { cwd: work })).toBe(".clover/skills");
   });
 
   test("ln itself is judged: a link whose source is (or resolves under) a protected path is a card; an ordinary ln is not", () => {
     const { work } = project();
     for (const cmd of [
-      "ln -s .winter/skills t && echo x > t/y.md",
-      "ln -s ../.winter/skills t",
-      "ln ../.winter/skills/x/SKILL.md hard.md",
+      "ln -s .clover/skills t && echo x > t/y.md",
+      "ln -s ../.clover/skills t",
+      "ln ../.clover/skills/x/SKILL.md hard.md",
       "ln -s s/x t",
       "ln -sf dot/rules r2",
     ]) expect({ cmd, hit: bashProtectedWriteHit(cmd, { cwd: work }) !== undefined }).toEqual({ cmd, hit: true });
@@ -422,9 +422,9 @@ describe("Bash writes through an existing link to a protected directory", () => 
 
   test("the reviewer's probe matrix: every link shape resolves, with a cwd", () => {
     const { root, work } = project();
-    mkdirSync(join(root, ".winter", "skills", "x"), { recursive: true });
+    mkdirSync(join(root, ".clover", "skills", "x"), { recursive: true });
     symlinkSync("s", join(work, "chain"));
-    symlinkSync(join(root, ".winter", "skills"), join(work, "abs"));
+    symlinkSync(join(root, ".clover", "skills"), join(work, "abs"));
     mkdirSync(join(work, "sub"));
     symlinkSync("../s", join(work, "sub", "up"));
     for (const cmd of [
@@ -434,10 +434,10 @@ describe("Bash writes through an existing link to a protected directory", () => 
       "echo x > S/X/SKILL.MD", "sed -i '' s/a/b/ s/x/SKILL.md", "bash -c 'echo x > s/y.md'",
     ]) expect({ cmd, hit: bashProtectedWriteHit(cmd, { cwd: work }) !== undefined }).toEqual({ cmd, hit: true });
     // Fix round 2 (N-2): a write through a HARD link made earlier is judged by its inode.
-    writeFileSync(join(root, ".winter", "skills", "x", "SKILL.md"), "hi");
-    linkSync(join(root, ".winter", "skills", "x", "SKILL.md"), join(work, "hard.md"));
+    writeFileSync(join(root, ".clover", "skills", "x", "SKILL.md"), "hi");
+    linkSync(join(root, ".clover", "skills", "x", "SKILL.md"), join(work, "hard.md"));
     for (const cmd of ["echo x > hard.md", "cp /etc/hosts hard.md", "sed -i '' s/a/b/ hard.md", "tee hard.md"]) {
-      expect({ cmd, hit: bashProtectedWriteHit(cmd, { cwd: work }) }).toEqual({ cmd, hit: ".winter/skills" });
+      expect({ cmd, hit: bashProtectedWriteHit(cmd, { cwd: work }) }).toEqual({ cmd, hit: ".clover/skills" });
     }
   });
 
@@ -450,15 +450,15 @@ describe("Bash writes through an existing link to a protected directory", () => 
       "cd /nonexistent; cd s; echo x > y.md",
       "cd nope || true; echo x > s/y.md",
       "cd sub 2>/dev/null; cd s; echo x > y.md",
-    ]) expect({ cmd, hit: bashProtectedWriteHit(cmd, { cwd: work }) }).toEqual({ cmd, hit: ".winter/skills" });
+    ]) expect({ cmd, hit: bashProtectedWriteHit(cmd, { cwd: work }) }).toEqual({ cmd, hit: ".clover/skills" });
     expect(bashProtectedWriteHit("cd nope; echo x > notes.md", { cwd: work })).toBeUndefined();
   });
 
   test("hard links: cp -l / -al sources are judged; an existing hard link is judged by inode; an unrelated one is quiet", () => {
     const { root, work } = project();
-    mkdirSync(join(root, ".winter", "skills", "x"), { recursive: true });
-    writeFileSync(join(root, ".winter", "skills", "x", "SKILL.md"), "hi");
-    for (const cmd of ["cp -l ../.winter/skills/x/SKILL.md foo.md", "cp -al ../.winter/skills bk", "cp --link s/x/SKILL.md foo.md"]) {
+    mkdirSync(join(root, ".clover", "skills", "x"), { recursive: true });
+    writeFileSync(join(root, ".clover", "skills", "x", "SKILL.md"), "hi");
+    for (const cmd of ["cp -l ../.clover/skills/x/SKILL.md foo.md", "cp -al ../.clover/skills bk", "cp --link s/x/SKILL.md foo.md"]) {
       expect({ cmd, hit: bashProtectedWriteHit(cmd, { cwd: work }) !== undefined }).toEqual({ cmd, hit: true });
     }
     expect(bashProtectedWriteHit("cp -L ../notes/a.md b.md", { cwd: work })).toBeUndefined(); // -L dereferences, it links nothing
@@ -466,8 +466,8 @@ describe("Bash writes through an existing link to a protected directory", () => 
     writeFileSync(join(work, "plain.md"), "p");
     linkSync(join(work, "plain.md"), join(work, "plain2.md"));
     expect(bashProtectedWriteHit("echo x > plain2.md", { cwd: work })).toBeUndefined();
-    // The store's own sdk/skills, when the Winter home is known.
-    const home = real("winter-link-home-");
+    // The store's own sdk/skills, when the Clover home is known.
+    const home = real("clover-link-home-");
     mkdirSync(join(home, "sdk", "skills", "k"), { recursive: true });
     writeFileSync(join(home, "sdk", "skills", "k", "SKILL.md"), "k");
     linkSync(join(home, "sdk", "skills", "k", "SKILL.md"), join(work, "store-hard.md"));
@@ -478,9 +478,9 @@ describe("Bash writes through an existing link to a protected directory", () => 
     const { work } = project();
     for (const cmd of [
       "echo x > $PWD/s/y.md", "echo x > \"${PWD}/s/y.md\"", "cd s && echo x > $PWD/y.md",
-      "echo x >| s/y.md", "echo x >| ../.winter/skills/y.md", "dd if=/etc/hosts of=s/y.md", "echo x > s\\/y.md",
+      "echo x >| s/y.md", "echo x >| ../.clover/skills/y.md", "dd if=/etc/hosts of=s/y.md", "echo x > s\\/y.md",
     ]) expect({ cmd, hit: bashProtectedWriteHit(cmd, { cwd: work }) !== undefined }).toEqual({ cmd, hit: true });
-    expect(bashProtectedWriteHit("dd if=../.winter/skills/x of=/tmp/copy", { cwd: work })).toBeUndefined(); // a read
+    expect(bashProtectedWriteHit("dd if=../.clover/skills/x of=/tmp/copy", { cwd: work })).toBeUndefined(); // a read
     expect(bashProtectedWriteHit(`echo x > $HOME/${"no-such-dir-ws24"}/y.md`, { cwd: work })).toBeUndefined();
   });
 
@@ -488,14 +488,14 @@ describe("Bash writes through an existing link to a protected directory", () => 
   test("the cwd cap: five failed cds then a link write is caught; past the cap a write is a card, never a pass", () => {
     const { work } = project();
     const cds = (n: number): string => Array.from({ length: n }, (_, i) => `cd n${i}`).join("; ");
-    for (const n of [3, 4, 5, 6]) expect({ n, hit: bashProtectedWriteHit(`${cds(n)}; echo x > s/y.md`, { cwd: work }) }).toEqual({ n, hit: ".winter/skills" });
+    for (const n of [3, 4, 5, 6]) expect({ n, hit: bashProtectedWriteHit(`${cds(n)}; echo x > s/y.md`, { cwd: work }) }).toEqual({ n, hit: ".clover/skills" });
     // 8 cds: the session cwd is still judged exactly (it hits here)…
-    expect(bashProtectedWriteHit(`${cds(8)}; echo x > s/y.md`, { cwd: work })).toBe(".winter/skills");
+    expect(bashProtectedWriteHit(`${cds(8)}; echo x > s/y.md`, { cwd: work })).toBe(".clover/skills");
     // …and a write the kept candidates do not settle is the bound's card.
     expect(bashProtectedWriteHit(`${cds(8)}; echo x > zz/y.md`, { cwd: work })).toBe(BASH_WRITE_CHECK_BOUND.cwds);
     // A successful chain of cds (the all-took chain) is always exact.
     mkdirSync(join(work, "a", "b", "c", "d", "e"), { recursive: true });
-    expect(bashProtectedWriteHit(`cd a; cd b; cd c; cd d; cd e; cd /; cd ${work}; echo x > s/y.md`, { cwd: work })).toBe(".winter/skills");
+    expect(bashProtectedWriteHit(`cd a; cd b; cd c; cd d; cd e; cd /; cd ${work}; echo x > s/y.md`, { cwd: work })).toBe(".clover/skills");
     // Controls: an ordinary multi-cd command with no protected write stays quiet.
     expect(bashProtectedWriteHit("cd packages/core && bun test; cd ../cli && echo x > out.txt; cd - ; echo y > skills/notes.md", { cwd: work })).toBeUndefined();
   });
@@ -517,11 +517,11 @@ describe("Bash writes through an existing link to a protected directory", () => 
 
   test("the hard-link scan: the store's sdk/ kinds are scanned first; an exhausted budget with no match is a card", () => {
     const { root, work } = project();
-    const home = real("winter-link-budget-home-");
+    const home = real("clover-link-budget-home-");
     mkdirSync(join(home, "sdk", "skills", "k"), { recursive: true });
     writeFileSync(join(home, "sdk", "skills", "k", "SKILL.md"), "k");
-    mkdirSync(join(root, ".winter", "skills", "big"), { recursive: true });
-    for (let i = 0; i < 300; i += 1) writeFileSync(join(root, ".winter", "skills", "big", `f${i}`), "");
+    mkdirSync(join(root, ".clover", "skills", "big"), { recursive: true });
+    for (let i = 0; i < 300; i += 1) writeFileSync(join(root, ".clover", "skills", "big", `f${i}`), "");
     linkSync(join(home, "sdk", "skills", "k", "SKILL.md"), join(work, "h2.md"));
     writeFileSync(join(work, "plain.md"), "p");
     linkSync(join(work, "plain.md"), join(work, "plain2.md"));
@@ -543,12 +543,12 @@ describe("Bash writes through an existing link to a protected directory", () => 
     writeFileSync(join(work, "notes.md"), "a");
     expect(bashProtectedWriteHit("sed -i '' s/a/b/ notes.md", { cwd: work })).toBeUndefined();
     expect(bashProtectedWriteHit("sed -i -e s/a/b/ notes.md", { cwd: work })).toBeUndefined();
-    expect(bashProtectedWriteHit("sed -i '' s/a/b/ s/x/SKILL.md", { cwd: work })).toBe(".winter/skills");
+    expect(bashProtectedWriteHit("sed -i '' s/a/b/ s/x/SKILL.md", { cwd: work })).toBe(".clover/skills");
   });
 
   test("the bridge (third layer) resolves a relative link from its session cwd: bypass/dispatch → card, chat → deny", async () => {
     const { work } = project();
-    const home = real("winter-link-bridge-home-");
+    const home = real("clover-link-bridge-home-");
     const ctx = (): Parameters<CanUseTool>[2] => ({ signal: new AbortController().signal, toolUseID: `tu-${Math.random()}`, requestId: "r" } as Parameters<CanUseTool>[2]);
     const mk = (policy: SessionApprovalPolicy, mode: "code" | "dispatch" | "chat" = "code") => {
       const approvals = new ApprovalBroker();
@@ -572,8 +572,8 @@ describe("Bash writes through an existing link to a protected directory", () => 
 
   test("the hook reads the cwd off its input and asks", async () => {
     const { work } = project();
-    const built = sessionHooksFor({ sessionId: "s_1", roots: [work], home: "/Users/x/.winter", mode: "code" });
-    const groups = (built.winter?.PreToolUse ?? []).filter((g: HookCallbackMatcher) => g.matcher === "Bash");
+    const built = sessionHooksFor({ sessionId: "s_1", roots: [work], home: "/Users/x/.clover", mode: "code" });
+    const groups = (built.clover?.PreToolUse ?? []).filter((g: HookCallbackMatcher) => g.matcher === "Bash");
     const answers: string[] = [];
     for (const g of groups) for (const h of g.hooks) {
       const r = (await h({ hook_event_name: "PreToolUse", tool_name: "Bash", tool_input: { command: "echo x > s/deploy/SKILL.md" }, session_id: "b", transcript_path: "", cwd: work } as never, "tu1", { signal: new AbortController().signal })) as { hookSpecificOutput?: { permissionDecision?: string } };
@@ -585,25 +585,25 @@ describe("Bash writes through an existing link to a protected directory", () => 
 
 describe("R.3 C-1: the escape floor under bypass — the child's own variables", () => {
   const floor = () => {
-    const built = sessionHooksFor({ sessionId: "s_1", roots: ["/r"], home: "/Users/x/.winter", mode: "code", policy: () => "bypass" });
-    const groups = (built.winter?.PreToolUse ?? []).filter((g: HookCallbackMatcher) => g.matcher === "Bash");
+    const built = sessionHooksFor({ sessionId: "s_1", roots: ["/r"], home: "/Users/x/.clover", mode: "code", policy: () => "bypass" });
+    const groups = (built.clover?.PreToolUse ?? []).filter((g: HookCallbackMatcher) => g.matcher === "Bash");
     return groups[groups.length - 1]!.hooks[0]!;
   };
   const escape = async (command: string) => decisionOf(await call(floor(), "Bash", { command, dangerouslyDisableSandbox: true }));
 
   test("a write-shaped escape through each variable is denied", async () => {
     for (const cmd of [
-      "echo x > $WINTER_STORE_HOME/agents/evil.md",
-      "echo x > ${WINTER_STORE_HOME}/skills/x/SKILL.md",
-      "echo x >> $WINTER_STORE_HOME/projects/k/id.jsonl",
-      "echo '{}' > $WINTER_PLUGIN_CACHE_DIR/p/hooks/hooks.json",
+      "echo x > $CLOVER_STORE_HOME/agents/evil.md",
+      "echo x > ${CLOVER_STORE_HOME}/skills/x/SKILL.md",
+      "echo x >> $CLOVER_STORE_HOME/projects/k/id.jsonl",
+      "echo '{}' > $CLOVER_PLUGIN_CACHE_DIR/p/hooks/hooks.json",
       "echo '{}' > ${CLAUDE_CODE_PLUGIN_CACHE_DIR}/p/hooks/hooks.json",
       "echo x > $CLAUDE_CONFIG_DIR/skills/foo/SKILL.md",
-      "echo x > $WINTER_HOME/anything",
+      "echo x > $CLOVER_HOME/anything",
     ]) expect({ cmd, decision: await escape(cmd) }).toEqual({ cmd, decision: "deny" });
   });
   test("a read-shaped mention passes the floor", async () => {
-    for (const cmd of ["cat $WINTER_STORE_HOME/projects/k/x.jsonl", "cat $WINTER_PLUGIN_CACHE_DIR/p/skills/x/SKILL.md", "cat $CLAUDE_CONFIG_DIR/skills/foo/SKILL.md"]) {
+    for (const cmd of ["cat $CLOVER_STORE_HOME/projects/k/x.jsonl", "cat $CLOVER_PLUGIN_CACHE_DIR/p/skills/x/SKILL.md", "cat $CLAUDE_CONFIG_DIR/skills/foo/SKILL.md"]) {
       expect({ cmd, decision: await escape(cmd) }).toEqual({ cmd, decision: "none" });
     }
   });

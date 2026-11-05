@@ -13,7 +13,7 @@
 //
 // Code-mode FILE attachments (2026-10-13) ride the same way: `[File #n]` placeholders in `text`, the user's
 // own file or folder named in `user_message.files`, the path substituted here and nowhere else.
-import type { UserMessageFileRef, UserMessageImageRef } from "@yanlinglabs/winter-protocol";
+import type { UserMessageFileRef, UserMessageImageRef } from "@waifucave/clover-protocol";
 
 const IMAGE_TOKEN_RE = /\[Image #(\d+)\]/g;
 const FILE_TOKEN_RE = /\[File #(\d+)\]/g;

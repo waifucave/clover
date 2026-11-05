@@ -15,7 +15,7 @@ import { CoworkError, type CapabilityCeiling, type SourceAccess } from "./types"
  * construction stays refused. A slot test with a fake port proves slot logic; it never
  * proves issuer authenticity, kernel facts or native admission.
  *
- * Core's winter-agent-sdk pin (0.0.53) predates the SDK's guided module, so no SDK guided
+ * Core's clover-sdk pin (0.0.53) predates the SDK's guided module, so no SDK guided
  * type is imported: the correlation, owner mirror and kernel record below are plain-data mirrors.
  */
 

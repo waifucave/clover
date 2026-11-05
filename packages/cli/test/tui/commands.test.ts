@@ -1,9 +1,9 @@
 /** Phase 3d Task 1 — the pure in-chat slash-command registry + runners. Each runner mirrors ONE
  *  main.ts subcommand route's client calls + output wording (cited in commands.ts per-runner);
- *  this file drives them through a fake `WinterClient` that only records calls + returns canned
+ *  this file drives them through a fake `CloverClient` that only records calls + returns canned
  *  results, following app.test.tsx's `fakeClient()` precedent (recorded calls array, no real I/O).
- *  `/model` reads/writes `settings.json` directly under `WINTER_HOME` (an env var this suite
- *  points at a tmpdir per test so it never touches the real `~/.winter`) for its WRITE path, same
+ *  `/model` reads/writes `settings.json` directly under `CLOVER_HOME` (an env var this suite
+ *  points at a tmpdir per test so it never touches the real `~/.clover`) for its WRITE path, same
  *  as its main.ts route — but WS-20 has its no-arg SHOW form read the live catalogue over
  *  `ctx.client.request("sync.config", {})` (CODEX_MODELS, the static enumeration the pre-WS-20
  *  design relied on to stay client-free, no longer exists), so a fake client WITHOUT a `request`
@@ -20,12 +20,12 @@ import {
 import type { ChoiceRequest } from "../../src/tui/choice-menu";
 import { formatRoutineLine } from "../../src/routines-cli";
 import { formatMemoryList } from "../../src/memory-cli";
-import type { WinterClient } from "../../src/client";
+import type { CloverClient } from "../../src/client";
 
 // ---- fake client (mirrors test/tui/app.test.tsx's fakeClient — recorded calls, canned results) ----
 type Impl = Record<string, (...args: unknown[]) => unknown>;
 
-function makeClient(impl: Impl): { client: WinterClient; calls: { method: string; args: unknown[] }[] } {
+function makeClient(impl: Impl): { client: CloverClient; calls: { method: string; args: unknown[] }[] } {
   const calls: { method: string; args: unknown[] }[] = [];
   const client: Record<string, unknown> = {};
   for (const [name, fn] of Object.entries(impl)) {
@@ -34,10 +34,10 @@ function makeClient(impl: Impl): { client: WinterClient; calls: { method: string
       return Promise.resolve(fn(...args));
     };
   }
-  return { client: client as unknown as WinterClient, calls };
+  return { client: client as unknown as CloverClient, calls };
 }
 
-function makeCtx(client: WinterClient, overrides: Partial<Omit<CommandCtx, "client" | "appendNote">> = {}) {
+function makeCtx(client: CloverClient, overrides: Partial<Omit<CommandCtx, "client" | "appendNote">> = {}) {
   const notes: string[] = [];
   const ctx: CommandCtx = {
     client,
@@ -174,7 +174,7 @@ describe("runners — mirror main.ts's routes", () => {
     const { ctx, notes } = makeCtx(client);
     await runCommand(ctx, "/status");
     expect(calls).toEqual([{ method: "daemonStatus", args: [] }]);
-    expect(notes[0]).toContain("winter-core v0.0.1");
+    expect(notes[0]).toContain("clover-core v0.0.1");
     expect(notes[0]).toContain("1m 1s");
     expect(notes[0]).toContain("(none configured)");
     expect(notes[0]).toContain("sessions: 2");
@@ -227,7 +227,7 @@ describe("runners — mirror main.ts's routes", () => {
   });
 
   // Plan-immunity Task 2: the TUI is CODE-ONLY (mode×surface matrix) — /sessions is the resume
-  // PICKER, so it HIDES non-code rows entirely rather than marking them (contrast `winter sessions`,
+  // PICKER, so it HIDES non-code rows entirely rather than marking them (contrast `clover sessions`,
   // a plain inventory — see session-mode.ts's file doc). Absent mode = code (the R-slice
   // convention); "code" explicit also counts.
   test("/sessions — hides chat/dispatch/cowork rows, keeps absent-mode and explicit-code rows", async () => {
@@ -460,7 +460,7 @@ describe("runners — mirror main.ts's routes", () => {
     expect(notes).toEqual(["(no memory facts)"]);
   });
 
-  // CC-parity phase 3 (Workflows) Track C Task C4: /workflows mirrors `winter workflow`'s CLI shape
+  // CC-parity phase 3 (Workflows) Track C Task C4: /workflows mirrors `clover workflow`'s CLI shape
   // (main.ts `case "workflow"`, C3) — no-arg lists saved (WorkflowStore, via workflowList's
   // `.saved`) then running (`.running`) under a "running:" header; `run <name> [json]` / `stop
   // <runId>` mirror /bg's sub-token dispatch, forwarding to client.workflowRun/workflowStop.
@@ -820,20 +820,20 @@ describe("runCommand — saved-workflow /name dispatch (CC-parity phase 3 Track 
   });
 });
 
-describe("/model — mirrors `case \"model\"` (settings.json write under WINTER_HOME; show reads sync.config)", () => {
+describe("/model — mirrors `case \"model\"` (settings.json write under CLOVER_HOME; show reads sync.config)", () => {
   let home: string;
   let prevHome: string | undefined;
 
   beforeEach(() => {
-    home = mkdtempSync(join(tmpdir(), "winter-cli-cmd-model-"));
+    home = mkdtempSync(join(tmpdir(), "clover-cli-cmd-model-"));
     writeFileSync(join(home, "settings.json"), JSON.stringify({ schemaVersion: 2, provider: { type: "codex-oauth", model: "codex-oauth/gpt-5.6-sol" } }));
-    prevHome = process.env.WINTER_HOME;
-    process.env.WINTER_HOME = home;
+    prevHome = process.env.CLOVER_HOME;
+    process.env.CLOVER_HOME = home;
   });
 
   afterEach(() => {
-    if (prevHome === undefined) delete process.env.WINTER_HOME;
-    else process.env.WINTER_HOME = prevHome;
+    if (prevHome === undefined) delete process.env.CLOVER_HOME;
+    else process.env.CLOVER_HOME = prevHome;
     rmSync(home, { recursive: true, force: true });
   });
 
@@ -875,7 +875,7 @@ describe("/model — mirrors `case \"model\"` (settings.json write under WINTER_
 
   // Design correction (after item 4): `settings.provider.model` may name ANY catalog provider —
   // a non-internal one (e.g. anthropic) no longer refuses at the write. `/model` never printed
-  // `internalProviderNote` itself (that heads-up is `winter model <tag>`'s own, main.ts) — a
+  // `internalProviderNote` itself (that heads-up is `clover model <tag>`'s own, main.ts) — a
   // per-session pick has no daemon-internal-Provider concern to warn about in the first place.
   test("(item 4 design correction) a non-internal-provider tag writes successfully", async () => {
     const { client } = makeClient({ setModel: () => ({}) });
@@ -1000,15 +1000,15 @@ describe("B2 — /model (no args) opens the model picker when openChoice is wire
   });
 
   beforeEach(() => {
-    home = mkdtempSync(join(tmpdir(), "winter-cli-cmd-choice-"));
+    home = mkdtempSync(join(tmpdir(), "clover-cli-cmd-choice-"));
     writeFileSync(join(home, "settings.json"), JSON.stringify({ schemaVersion: 2, provider: { type: "codex-oauth", model: "codex-oauth/gpt-5.6-sol" } }));
-    prevHome = process.env.WINTER_HOME;
-    process.env.WINTER_HOME = home;
+    prevHome = process.env.CLOVER_HOME;
+    process.env.CLOVER_HOME = home;
   });
 
   afterEach(() => {
-    if (prevHome === undefined) delete process.env.WINTER_HOME;
-    else process.env.WINTER_HOME = prevHome;
+    if (prevHome === undefined) delete process.env.CLOVER_HOME;
+    else process.env.CLOVER_HOME = prevHome;
     rmSync(home, { recursive: true, force: true });
   });
 
@@ -1118,15 +1118,15 @@ describe("B2 — /output-style (no args) opens the style picker when openChoice 
   let prevHome: string | undefined;
 
   beforeEach(() => {
-    home = mkdtempSync(join(tmpdir(), "winter-cli-cmd-style-choice-"));
+    home = mkdtempSync(join(tmpdir(), "clover-cli-cmd-style-choice-"));
     writeFileSync(join(home, "settings.json"), JSON.stringify({ schemaVersion: 2, provider: { type: "codex-oauth", model: "gpt-5.6-sol" } }));
-    prevHome = process.env.WINTER_HOME;
-    process.env.WINTER_HOME = home;
+    prevHome = process.env.CLOVER_HOME;
+    process.env.CLOVER_HOME = home;
   });
 
   afterEach(() => {
-    if (prevHome === undefined) delete process.env.WINTER_HOME;
-    else process.env.WINTER_HOME = prevHome;
+    if (prevHome === undefined) delete process.env.CLOVER_HOME;
+    else process.env.CLOVER_HOME = prevHome;
     rmSync(home, { recursive: true, force: true });
   });
 
@@ -1178,12 +1178,12 @@ describe("B2 — /output-style (no args) opens the style picker when openChoice 
 
 // ---- 2026-09-16 field report: `/model <tag>` must switch THIS session, not only the global default ----
 describe("/model switches the attached session (session.setModel) as well as the default", () => {
-  const home = mkdtempSync(join(tmpdir(), "winter-tui-model-session-"));
+  const home = mkdtempSync(join(tmpdir(), "clover-tui-model-session-"));
   const settingsPath = join(home, "settings.json");
   const seed = () => writeFileSync(settingsPath, JSON.stringify({ schemaVersion: 3, provider: { model: "codex-oauth/gpt-5.6-terra" } }));
 
   test("a plain switch calls session.setModel with the tag and reports the session switch", async () => {
-    seed(); process.env.WINTER_HOME = home;
+    seed(); process.env.CLOVER_HOME = home;
     const { client, calls } = makeClient({ setModel: () => ({}) });
     const { ctx, notes } = makeCtx(client, { sessionId: "s_live" });
     await runCommand(ctx, "/model deepseek/deepseek-v4-pro");
@@ -1193,7 +1193,7 @@ describe("/model switches the attached session (session.setModel) as well as the
   });
 
   test("a lossy cross-family refusal is reported with the --confirm door, and --confirm passes confirmLossy", async () => {
-    seed(); process.env.WINTER_HOME = home;
+    seed(); process.env.CLOVER_HOME = home;
     const refusal = Object.assign(new Error("handoff needs confirmation (code -32000)"), { rpc: { code: -32000, message: "handoff needs confirmation", data: { code: "handoff_confirmation_required", warnings: ["private reasoning cannot follow"] } } });
     const { client, calls } = makeClient({ setModel: (...args: unknown[]) => { if (args[2] !== true) throw refusal; return {}; } });
     const { ctx, notes } = makeCtx(client, { sessionId: "s_live" });
@@ -1206,7 +1206,7 @@ describe("/model switches the attached session (session.setModel) as well as the
   });
 
   test("a deferred switch (turn running) says so", async () => {
-    seed(); process.env.WINTER_HOME = home;
+    seed(); process.env.CLOVER_HOME = home;
     const { client } = makeClient({ setModel: () => ({ deferred: true }) });
     const { ctx, notes } = makeCtx(client, { sessionId: "s_live" });
     await runCommand(ctx, "/model deepseek/deepseek-v4-pro");

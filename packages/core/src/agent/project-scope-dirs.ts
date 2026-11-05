@@ -2,7 +2,7 @@
 // home loads them along, so a listing names what a session actually gets.
 //
 // The listings (`agents.list`, output styles, workflows) and the project memory RPC used to check trust on
-// the cwd's own path and read `<cwd>/.winter/…` only. In a linked worktree of a trusted repository that
+// the cwd's own path and read `<cwd>/.clover/…` only. In a linked worktree of a trusted repository that
 // under-reported twice over: trust is keyed on the REPOSITORY (`projectScopeTrusted` — a worktree of a
 // trusted repo is trusted, the worktree's own path is not in `trust.json`), and the run home walks from the
 // cwd up to the project scope's root (`projectScopeRootFor`: the cwd's own git top, a worktree's own), not

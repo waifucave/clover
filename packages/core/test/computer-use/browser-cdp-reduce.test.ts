@@ -1,5 +1,5 @@
 // ComputerV2 Phase 3 — `cdp-reduce.ts`: what of an event leaves the browser's process. The shared cases are the
-// contract the extension (which bundles this file) and Winter.app's Swift twin both keep.
+// contract the extension (which bundles this file) and Clover.app's Swift twin both keep.
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";

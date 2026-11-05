@@ -10,10 +10,10 @@
 //
 // WHICH LISTING answers "read-only" (review r1, minor 6): the one of the scope the server name RESOLVES to
 // for the session's cwd — local > project > user, the runtime's own precedence:
-//  - a name the LOCAL scope defines (`sdk/.winter.json` `projects[<root>]`) — never probed by the daemon —
+//  - a name the LOCAL scope defines (`sdk/.clover.json` `projects[<root>]`) — never probed by the daemon —
 //    has no answer: toward ask;
-//  - a name the TRUSTED project's `.winter/mcp.json` defines answers from that project's listing only, and
-//    has none until something lists the project (`mcp.list`/`mcp.tools` with that cwd, `winter mcp
+//  - a name the TRUSTED project's `.clover/mcp.json` defines answers from that project's listing only, and
+//    has none until something lists the project (`mcp.list`/`mcp.tools` with that cwd, `clover mcp
 //    permissions` run there) — never borrowed from a same-named user server;
 //  - anything else, from the user scope's listing.
 // The STORED permissions stay keyed by name alone, like `mcp.disabled`: a project's `cf` takes the same

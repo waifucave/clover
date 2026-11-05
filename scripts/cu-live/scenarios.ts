@@ -7,14 +7,14 @@
 // the daemon's metrics. The runner adds, for EVERY scenario, the focus check: the user's frontmost app and active
 // Space unchanged from the action's start until 3 s after it.
 //
-// The windows (the fixture app "Winter CU Fixture", `dev.cu-live.fixture`): "Fixture Form" (native fields),
+// The windows (the fixture app "Clover CU Fixture", `dev.cu-live.fixture`): "Fixture Form" (native fields),
 // "Fixture Web" (WKWebView), "Fixture Canvas" (no accessibility), "Fixture Offspace" (full screen = its own Space).
 // Handles persist across calls in the session's runtime (`win()` binds a window once and keeps it).
 import { check, eventsSince, lastValue, MARKER, MIXED_TEXT, type Check, type FixtureEvent } from "./lib";
 import type { WakeObservation } from "./wake";
 import type { ChromeNeed, ChromeObservation, PageEvent } from "./chrome";
 
-export const FIXTURE_APP = "Winter CU Fixture";
+export const FIXTURE_APP = "Clover CU Fixture";
 export const FIXTURE_BUNDLE = "dev.cu-live.fixture";
 export const USER_APP_BUNDLE = "dev.cu-live.fixture-user";
 
@@ -138,7 +138,7 @@ export interface Scenario {
    * WAKE TRIGGERS (`wake.ts`): after the action's turn (and its 3 s watch), the runner — when `userClicks` names an
    * element — brings the fixture to the front as the USER, counts the helper's new on-screen windows (the ring and the
    * pill), and has the live-test helper click that element for the user (`test.userClick`; `stamp: "winter"` marks it as
-   * Winter's own instead); then it waits up to `withinMs` for the session's `computer-wake` turn (`VerifyContext.wake`),
+   * Clover's own instead); then it waits up to `withinMs` for the session's `computer-wake` turn (`VerifyContext.wake`),
    * and runs `cleanup` (ComputerV2 code, after the prelude) as one more turn in the same session.
    */
   wake?: { userClicks?: string; window?: string; stamp?: "user" | "winter"; withinMs: number; cleanup?: string };
@@ -461,7 +461,7 @@ report({ ok: true });`,
     },
   },
   {
-    // The KNOWN LIMITATION (round 9, the user's ruling): a web page takes no hover from Winter's pointer while its app is
+    // The KNOWN LIMITATION (round 9, the user's ruling): a web page takes no hover from Clover's pointer while its app is
     // in the background — WebKit (measured 2026-10-10) and Chromium (run111, 2026-10-11) alike. The bind says so once
     // per session per app (an unfenced daemon line), and a hover that brought nothing up says so with the way out (click
     // it, or requestForeground for a real hover). A FRESH session, so this scenario's own bind carries the line. (The
@@ -475,7 +475,7 @@ const trigger = await pick(web, "Hover Menu", "button");
 await web.hover(trigger.ref, { ms: 600 });
 report({ ok: true });`,
     verify: (ctx) => [ok(ctx),
-      check("the bind carried the hover line", /web pages don't react to hover from Winter's pointer while it is in the background — click instead, or app\.requestForeground\(reason\) for a real hover/.test(ctx.output), ctx.output.slice(0, 400)),
+      check("the bind carried the hover line", /web pages don't react to hover from Clover's pointer while it is in the background — click instead, or app\.requestForeground\(reason\) for a real hover/.test(ctx.output), ctx.output.slice(0, 400)),
       check("nothing appeared (no mouseenter reached the page)", eventsSince(ctx.events, ctx.since, "web.hover").length === 0,
         JSON.stringify(eventsSince(ctx.events, ctx.since, "web.hover"))),
       check("the hover's answer says nothing appeared, and the way out", /nothing new appeared in the page/.test(ctx.output) && /requestForeground\(reason\) for a real hover/.test(ctx.output), ctx.output.slice(0, 400))],
@@ -692,15 +692,15 @@ report({ ok: true });`,
     name: "AppleScript (no Apple Event) and its refusals", group: "applescript",
     code: `
 const form = await win("Fixture Form");
-const r = await form.applescript('return "winter" & " " & (2 + 3)', { emit: false });
+const r = await form.applescript('return "clover" & " " & (2 + 3)', { emit: false });
 let shell = null, other = null, jxa = null;
 try { await form.applescript('do shell script "id"', { emit: false }); } catch (e) { shell = e.name; }
 try { await form.applescript('tell application "Finder" to get name of startup disk', { emit: false }); } catch (e) { other = e.name; }
 const dict = await form.scriptingDictionary({ emit: false });
 report({ result: r.result, shell, other, scriptable: dict.scriptable });`,
     verify: (ctx) => [ok(ctx),
-      // The result comes back as AppleScript writes the value (a string quoted, `"winter 5"`); either form counts.
-      check("a script with no Apple Event ran", fact(ctx, "result") === "winter 5" || fact(ctx, "result") === '"winter 5"', String(fact(ctx, "result"))),
+      // The result comes back as AppleScript writes the value (a string quoted, `"clover 5"`); either form counts.
+      check("a script with no Apple Event ran", fact(ctx, "result") === "clover 5" || fact(ctx, "result") === '"clover 5"', String(fact(ctx, "result"))),
       check("do shell script is refused", fact(ctx, "shell") === "Refused" || fact(ctx, "shell") === "NotAllowed", String(fact(ctx, "shell"))),
       check("another app is refused", fact(ctx, "other") === "Refused" || fact(ctx, "other") === "NotAllowed", String(fact(ctx, "other"))),
       check("scriptingDictionary answers", typeof fact(ctx, "scriptable") === "boolean")],
@@ -1138,5 +1138,5 @@ function lastValueEver(events: readonly FixtureEvent[], since: number, ev: strin
 
 /** The card the `ask` scenarios expect (the daemon's per-app card). */
 export function expectedCardSummary(): string {
-  return `Allow Winter to use ${FIXTURE_APP} (${FIXTURE_BUNDLE})?`;
+  return `Allow Clover to use ${FIXTURE_APP} (${FIXTURE_BUNDLE})?`;
 }

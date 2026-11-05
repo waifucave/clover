@@ -4,7 +4,7 @@
 // per delta. `createRemoteStreamFilter` forwards a block's `start`, the first title this client sees,
 // each change of title, and the persisted block; nothing else.
 import { describe, expect, test } from "bun:test";
-import type { SessionEvent } from "@yanlinglabs/winter-protocol";
+import type { SessionEvent } from "@waifucave/clover-protocol";
 import { ThinkingBlocks, type ReasoningProgressFrame } from "../../src/projector/thinking";
 import { createRemoteStreamFilter, filterRemoteStreamEvent } from "../../src/sessions/remote-stream";
 

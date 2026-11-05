@@ -47,7 +47,7 @@ describe("SessionModeSchema recognises cowork", () => {
   // map as "withheld in <mode>", so a `cowork: false` on every tool would read "withheld in cowork" on every row.
   // An absent mode is how that tab knows the daemon said nothing (apple/Winter/Sources/Library/LibraryMcpTab.swift).
   test("capabilities.list's exposure map accepts the three-key shape this daemon emits, and an optional cowork key", () => {
-    const tool = { name: "mcp__winter__sessions__SpawnSession", modes: ["dispatch"], exposure: { code: false, dispatch: true, chat: false } };
+    const tool = { name: "mcp__clover__sessions__SpawnSession", modes: ["dispatch"], exposure: { code: false, dispatch: true, chat: false } };
     const parsed = CapabilityToolInfoSchema.parse(tool);
     expect(parsed.exposure).toEqual({ code: false, dispatch: true, chat: false });
     expect("cowork" in parsed.exposure).toBe(false);

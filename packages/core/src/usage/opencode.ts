@@ -48,7 +48,7 @@ const money = (v: unknown): number => (typeof v === "number" && Number.isFinite(
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 /** PURE: the answer's per-model totals and active dates; undefined when it is not a stats answer. OpenCode's `input`
- *  excludes cache reads and writes (they are their own counts) — Winter's normalized shape as it stands. */
+ *  excludes cache reads and writes (they are their own counts) — Clover's normalized shape as it stands. */
 export function parseOpencodeStats(text: string): OpencodeStats | undefined {
   let parsed: unknown;
   try { parsed = JSON.parse(text); } catch {
@@ -184,7 +184,7 @@ export function sameOpencodeStats(a: OpencodeStats, b: OpencodeStats): boolean {
 export type OpencodeFailure = "no-json" | "exited" | "timeout" | "spawn-failed" | "too-large";
 
 /** One `opencode stats` run (stdin from /dev/null, the probes' allowlisted environment plus its XDG dirs, and ALWAYS
- *  `TZ` = `tz` — the zone Winter counts its days in, so the child's `--days` are the same days). */
+ *  `TZ` = `tz` — the zone Clover counts its days in, so the child's `--days` are the same days). */
 export async function runOpencodeStats(executable: string, args: readonly string[], opts: { cwd: string; tz: string; timeoutMs?: number; env?: Record<string, string> }):
   Promise<{ stats?: OpencodeStats; failure?: OpencodeFailure }> {
   const lines: string[] = [];

@@ -20,7 +20,7 @@ export const SYSTEM_SESSION_ID = "$system";
 
 /** Every session mode this protocol RECOGNISES — the one list the wire, the log and the capability
  *  table share. Recognised is not runnable: `cowork` is named so a client, a stored row or a replayed
- *  log can carry it, but no Winter can create or run one yet — `session.create` refuses it for every
+ *  log can carry it, but no Clover can create or run one yet — `session.create` refuses it for every
  *  role with the Cowork `unsupported_topology` error and core's runtime keeps its own three-valued
  *  `RunnableSessionMode` (`sessions/session-mode.ts`, pinned to this list at compile time), so a new
  *  entry here is a type error there until someone classifies it. Do not enable Cowork by listing it
@@ -42,13 +42,13 @@ export const SessionCreatedEvent = Base.extend({
   // Chat Mode Slice A: "chat" added — a conversation with no filesystem/shell access that shares
   // dispatch's _assistant memory bucket but, unlike dispatch, is NOT a singleton (many chats).
   // Cowork (session door): "cowork" is RECOGNISED on the wire and in a stored log, never produced by
-  // any Winter today — `session.create` refuses it before a row exists (see `SESSION_MODES`).
+  // any Clover today — `session.create` refuses it before a row exists (see `SESSION_MODES`).
   mode: SessionModeSchema.optional(),
   // Winter Phase 8c (P8c-5): the runtime annotation — which leg backs this session, its provider
   // and the model it opened with. All three OPTIONAL by design (protocol discipline P8c-5: no new
   // variant, no new method): the row in `sessions/store.ts`'s `createSession` is inserted BEFORE
   // the runtime record exists (the child hasn't been asked to start yet), so a session minted via
-  // `session.create`/`session.dispatch` carries only `runtimeKind` (known: `opts.winter` decides
+  // `session.create`/`session.dispatch` carries only `runtimeKind` (known: `opts.clover` decides
   // the leg before the row is created — see `ipc/server.ts`'s two call sites) and, when the caller
   // named one, `modelRef` (the already-resolved model). `providerId` has no producer yet — the
   // catalog lookup this would need is out of this lane's scope — and stays undefined until a later
@@ -498,7 +498,7 @@ export const ChildUpdateEvent = ThreadBase.extend({
 export const DISPATCH_WAKE_CLIENT_NAME = "dispatch-wake";
 
 /** ComputerV2 wake triggers (2026-10-12): the `clientName` of the `user_message` that WAKES a session when a trigger
- *  its model armed (`target.wakeWhen(…)`) ends — the user clicked what it waited for, the target was lost, or Winter
+ *  its model armed (`target.wakeWhen(…)`) ends — the user clicked what it waited for, the target was lost, or Clover
  *  restarted (core's `computer-use/wakes/`). The daemon wrote it, not the user: clients render it as a notice built from
  *  the `wake_armed`/`wake_ended` pair, never as a user bubble. Not a variant, for the same reason as
  *  `DISPATCH_WAKE_CLIENT_NAME` (Swift mirror: `SessionModel`'s `computerWakeClientName`). */
@@ -531,7 +531,7 @@ export const WakeArmedEvent = ThreadBase.extend({
 /** ComputerV2 wake triggers: a trigger ended — `fired` / `lost` (its backend), `expired`, `cancelled` (the model or
  *  the user), `disabled` (the setting turned off, the session archived), `restart` (reported at the next boot).
  *  Appended for EVERY ending, whether or not the session is woken for it. `at`: epoch ms. `woken` is true exactly when
- *  a `computer-wake` message carries this ending — clients decide "Winter will continue" from it, NEVER from the
+ *  a `computer-wake` message carries this ending — clients decide "Clover will continue" from it, NEVER from the
  *  reason (an `expired` wakes only when the model asked; a silent one is just "stopped waiting"). */
 export const WakeEndedEvent = ThreadBase.extend({
   type: z.literal("wake_ended"),
@@ -621,7 +621,7 @@ export const PluginToolInvokeEvent = ThreadBase.extend({
 });
 
 /** TRANSIENT (broadcast-only, like `assistant_delta`/the lease events/`plugin_tool_invoke` above)
- *  — core pushes this to the active PROVIDER's connection (Winter.app, spec §5) when a plugin (or
+ *  — core pushes this to the active PROVIDER's connection (Clover.app, spec §5) when a plugin (or
  *  the harness, dev/testing) calls `hardware.request` (methods.ts): the app-side broker answers
  *  via `hardware.respond` {requestId, resultJson?, error?}, the same approval-broker
  *  request/response pattern as `peripheral_call_requested`/`plugin_tool_invoke`. A hardware verb
@@ -646,7 +646,7 @@ export const PluginTileUpdatedEvent = Base.extend({
   tile: z.record(z.string(), z.unknown()).nullable(),
 });
 
-/** Winter Phase 10a (O5, P10a-6): the `winter-shape` cap on a single `provider_login_progress`
+/** Winter Phase 10a (O5, P10a-6): the `clover-shape` cap on a single `provider_login_progress`
  *  line — well above any real CLI progress line, far below the caps CLAUDE.md names as
  *  "unreachable by honest content" for a similar reason (`PANEL_TITLE_MAX_LENGTH`'s own doc). Never
  *  truncated in place by a producer; an over-cap line simply fails to parse, same "refused, never
@@ -748,11 +748,11 @@ export const ToolReviewProgressEvent = ThreadBase.extend({
  *  and replayed like `tool_review`/`task_updated`, so a client that attaches/reattaches later
  *  still sees it in the session's history. `title`/`message` mirror the tool's own zod bounds
  *  (min(1)/max(100) and min(1)/max(500)) — the tool always supplies a non-empty title (defaults
- *  to "Winter" when the caller omits one), so this schema can require both rather than treating
+ *  to "Clover" when the caller omits one), so this schema can require both rather than treating
  *  either as optional.
  *
  *  DELIVERY is entirely client-side (WinterKit/CLI/app), not this schema's concern: the app posts
- *  a native `UNUserNotificationCenter` alert (see `SessionModel.apply` in the Winter target, which
+ *  a native `UNUserNotificationCenter` alert (see `SessionModel.apply` in the Clover target, which
  *  additionally gates delivery on the event's `ts` being wall-clock-fresh — a reattach/refocus
  *  replays a session's ENTIRE history from seq 0, and without that freshness gate every
  *  historical notification would re-fire as a new banner on every reconnect); the daemon itself
@@ -779,7 +779,7 @@ export const HookNoticeEvent = ThreadBase.extend({
 });
 
 /** WS-23 (reasoning-state, review r1 I-3): a CONTINUITY warning the runtime raised -- what the
- *  conversation lost, or what Winter did to it, that the user must be told about: a model switch that
+ *  conversation lost, or what Clover did to it, that the user must be told about: a model switch that
  *  cannot carry everything across (`model_switch_lossy`), a conversation summarized before a switch to a
  *  smaller model (`switch_compaction`), a turn whose reasoning state could not be saved
  *  (`reasoning_state_unsaved`), a replay dropped across domains (`cross_domain_replay_dropped`) and a

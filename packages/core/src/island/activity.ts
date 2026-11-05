@@ -1,8 +1,8 @@
-import type { SessionEvent } from "@yanlinglabs/winter-protocol";
+import type { SessionEvent } from "@waifucave/clover-protocol";
 import { TurnOriginPairer } from "../sessions/turn-origins";
 import type { IslandClient, IslandHost, IslandSessionFacts } from "./registry";
 
-// The Winter island's ACTIVITY (`docs/claude/island.md`, phase 2): what the Mac's island shows besides the cards that
+// The Clover island's ACTIVITY (`docs/claude/island.md`, phase 2): what the Mac's island shows besides the cards that
 // wait for an answer — no event stream the app holds covers every session, so the daemon watches them here.
 //
 //   - `computerUse`: the sessions driving ComputerV2 NOW — from the first `computer_v2` call of a turn to that turn's

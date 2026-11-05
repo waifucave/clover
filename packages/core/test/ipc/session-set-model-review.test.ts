@@ -2,21 +2,21 @@
 // A-7a (same family, silent), plus the controller's own C1 addendum item (a same-leg model change
 // must not leave the pre-flight review reading a STALE recorded model before a later family change).
 //
-// WS-23: every model runs on the Winter runtime now, Claude included — the cases below that used the
-// official `claude` leg (Sonnet -> Opus, gpt -> claude) run Claude on Winter, against an Anthropic
+// WS-23: every model runs on the Clover runtime now, Claude included — the cases below that used the
+// official `claude` leg (Sonnet -> Opus, gpt -> claude) run Claude on Clover, against an Anthropic
 // loopback fake reached through `settings.providers.anthropic.baseUrl`.
 //
 // STRUCTURAL FINDING (2026-09-14, test fix round 1 — same root cause `five-hop-chain-e2e.test.ts`
 // documents in full depth, including the DEEPER attempt: review-lane-d2.md's own suggested
-// workaround, pushing a `deepseek`/`zai` row into `WINTER_CREDENTIAL_INVENTORY` at test runtime plus
+// workaround, pushing a `deepseek`/`zai` row into `CLOVER_CREDENTIAL_INVENTORY` at test runtime plus
 // writing matching credential material, was TRIED and does NOT work — the real `dist/winter` child
 // still refuses "no credential is configured for provider deepseek", because `session-driver.ts`'s
 // `optionsFor` only ever builds a connection/local-declaration object for `providerId === "openai"`;
-// see that file's header for the full account): `WINTER_CREDENTIAL_INVENTORY`
+// see that file's header for the full account): `CLOVER_CREDENTIAL_INVENTORY`
 // (`src/runtime-sdk/keychain.ts:115-127`) has exactly three rows — `openai`, `codex-oauth`,
 // `anthropic` — so NEITHER `deepseek` NOR `zai` (GLM) NOR any OpenRouter-style row can ever be routed
 // to end to end. This blocks, via REAL daemon wiring:
-//   - A-7's OWN literal pairing ("gpt -> deepseek on Winter prompts; deepseek -> GLM does not");
+//   - A-7's OWN literal pairing ("gpt -> deepseek on Clover prompts; deepseek -> GLM does not");
 //   - A-7a's OWN literal "Claude on Anthropic -> Claude on OpenRouter" case;
 //   - the controller's OWN C1 addendum's literal "GPT -> DeepSeek -> GPT -> Claude" chain (it cannot
 //     even reach the first step).
@@ -43,7 +43,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { classifySwitch, sameFamily } from "@yanlinglabs/winter-provider-runtime";
 import { openaiChatFake, openaiResponsesFake, startFake } from "@yanlinglabs/winter-provider-conformance/fakes";
-import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, type WritableSocket, type SessionEvent } from "@yanlinglabs/winter-protocol";
+import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, type WritableSocket, type SessionEvent } from "@waifucave/clover-protocol";
 import { FileSecretStore } from "../../src/auth/secret-store";
 import { CREDENTIAL_MATERIAL_NAMES, writeCredentialMaterial } from "../../src/auth/credential-material";
 import { startDaemon, type RunningDaemon } from "../../src/daemon";
@@ -113,20 +113,20 @@ class TestClient {
 // ════════════════════════════════════════════════════════════════════════════════════════════════
 describe("A-6a: the no-credential hint never names an SDK or runtime (pure function, real code)", () => {
   test("an OpenRouter-only alternative renders a hint that never mentions an SDK/runtime name (R-10b-4)", () => {
-    // Substitute for "Claude with only an OpenRouter credential -> the winter leg": OpenRouter has
-    // no row in this daemon's own WINTER_CREDENTIAL_INVENTORY either (this file's own header), so
+    // Substitute for "Claude with only an OpenRouter credential -> the clover leg": OpenRouter has
+    // no row in this daemon's own CLOVER_CREDENTIAL_INVENTORY either (this file's own header), so
     // the end-to-end shape cannot be constructed; `renderNoCredentialHint` is the REAL, exported
     // pure function `planAndApplySwitch` itself calls for this exact case — exercised directly with
     // an alternatives list shaped like a real no-credential refusal would carry.
     const hint = renderNoCredentialHint([{ providerId: "openrouter", authKind: "api-key", label: "OpenRouter" }]);
     expect(hint).toContain("OpenRouter");
-    expect(hint).not.toMatch(/\bSDK\b|\bruntime\b|Claude Agent|Winter Agent|winter-agent|claude-agent/i);
+    expect(hint).not.toMatch(/\bSDK\b|\bruntime\b|Claude Agent|Clover Agent|winter-agent|claude-agent/i);
   });
 
   test("no doors at all renders a hint naming no provider, still never an SDK/runtime", () => {
     const hint = renderNoCredentialHint([]);
     expect(hint.length).toBeGreaterThan(0);
-    expect(hint).not.toMatch(/\bSDK\b|\bruntime\b|Claude Agent|Winter Agent/i);
+    expect(hint).not.toMatch(/\bSDK\b|\bruntime\b|Claude Agent|Clover Agent/i);
   });
 });
 
@@ -179,9 +179,9 @@ describeWithWinterBinary("A-6b: no credential at all -> runtime_selection_refuse
     } catch (err) { caught = err as RpcErrorLike; }
     expect(caught).toBeDefined();
     expect(caught!.rpc?.data?.code).toBe("runtime_selection_refused");
-    expect(caught!.rpc?.message).not.toMatch(/\bSDK\b|Claude Agent|Winter Agent/i);
+    expect(caught!.rpc?.message).not.toMatch(/\bSDK\b|Claude Agent|Clover Agent/i);
     // Never applied: the session stays on its original leg/model.
-    expect(d.winter.legOf(sessionId)).toBe("winter");
+    expect(d.clover.legOf(sessionId)).toBe("winter");
 
     rmSync(cwd, { recursive: true, force: true });
   }, 60_000);
@@ -190,7 +190,7 @@ describeWithWinterBinary("A-6b: no credential at all -> runtime_selection_refuse
 // ════════════════════════════════════════════════════════════════════════════════════════════════
 // A-7a — same family never prompts.
 // ════════════════════════════════════════════════════════════════════════════════════════════════
-describeWithWinterBinary("A-7a: Sonnet -> Opus (both on the Winter runtime) never prompts", (winterBin) => {
+describeWithWinterBinary("A-7a: Sonnet -> Opus (both on the Clover runtime) never prompts", (winterBin) => {
   let home: string;
   let daemon: RunningDaemon | undefined;
   let client: TestClient;
@@ -232,24 +232,24 @@ describeWithWinterBinary("A-7a: Sonnet -> Opus (both on the Winter runtime) neve
     rmSync(home, { recursive: true, force: true });
   });
 
-  test("Sonnet -> Opus applies silently (same family), and the Claude session is on the Winter leg throughout", async () => {
+  test("Sonnet -> Opus applies silently (same family), and the Claude session is on the Clover leg throughout", async () => {
     const d = daemon!;
     if ("unavailable" in d.runtimeState) throw d.runtimeState.unavailable;
     const { sessionId } = await client.call<{ sessionId: string }>(METHODS.sessionCreate, { scope: "e2e", mode: "code", model: "anthropic/claude-sonnet-5" });
     await client.call(METHODS.sessionAttach, { sessionId, fromSeq: 0 });
-    // WS-23: a Claude model in Code mode with an Anthropic key is a Winter-leg session.
-    expect(d.winter.legOf(sessionId)).toBe("winter");
+    // WS-23: a Claude model in Code mode with an Anthropic key is a Clover-leg session.
+    expect(d.clover.legOf(sessionId)).toBe("winter");
     await client.call(METHODS.sessionSend, { sessionId, text: "one turn on sonnet" });
     await client.waitFor((e) => e.type === "turn_completed" && e.sessionId === sessionId, 45_000);
 
     // Same family -> no prompt, applied with NO error.
     await client.call(METHODS.sessionSetModel, { sessionId, model: "anthropic/claude-opus-5" });
-    expect(d.winter.legOf(sessionId)).toBe("winter");
+    expect(d.clover.legOf(sessionId)).toBe("winter");
     expect(d.runtimeState.records.get(sessionId)?.modelRef).toBe("anthropic/claude-opus-5");
   }, 60_000);
 });
 
-describeWithWinterBinary("A-7a: two OpenAI-family models never prompt on Winter", (winterBin) => {
+describeWithWinterBinary("A-7a: two OpenAI-family models never prompt on Clover", (winterBin) => {
   let home: string;
   let daemon: RunningDaemon | undefined;
   let client: TestClient;
@@ -310,7 +310,7 @@ describeWithWinterBinary("A-7a: two OpenAI-family models never prompt on Winter"
     await client.waitFor((e) => e.type === "turn_completed" && e.sessionId === sessionId, 45_000);
 
     await client.call(METHODS.sessionSetModel, { sessionId, model: "openai/gpt-5.6-sol" }); // never throws
-    expect(d.winter.legOf(sessionId)).toBe("winter");
+    expect(d.clover.legOf(sessionId)).toBe("winter");
   }, 60_000);
 });
 
@@ -332,7 +332,7 @@ describe("A-7: same-leg loss, against the REAL daemon resolver (no fixture)", ()
   // cross-FILE ordering risk is not eliminated. Labeled here per that review's own instruction.
   // WS-23 (reasoning-state, user decision 9): A-7's pairing no longer prompts -- GPT's reasoning stays in
   // the sidecar for GPT (a switch back replays it) -- while what the target cannot represent still does.
-  test("gpt -> deepseek on Winter: silent over reasoning (WS-23), and prompts over a compaction the fit check will run", () => {
+  test("gpt -> deepseek on Clover: silent over reasoning (WS-23), and prompts over a compaction the fit check will run", () => {
     const gpt = resolve({ providerId: "openai", modelKey: "openai/gpt-5.6-sol", family: "openai" });
     const deepseek = resolve({ providerId: "deepseek", modelKey: "deepseek/deepseek-v4-pro", family: "deepseek" });
     expect(classifySwitch(gpt, deepseek, {}).lossClass).toBe("lossless-portable");
@@ -409,7 +409,7 @@ describeWithWinterBinary("A-7: a zero-turn session that switches families does n
     // its canonical transcript file does not exist yet (no turn has ever run), and `barrier
     // .reviewSwitch` THROWS reading it rather than treating a missing file as zero entries. The
     // fail-safe catch in `runtime-sdk/handoff.ts`'s `planAndApplySwitch` then converts that into a
-    // PROMPT ("Winter couldn't check what carries over to claude-sonnet-5…") — not the silent skip
+    // PROMPT ("Clover couldn't check what carries over to claude-sonnet-5…") — not the silent skip
     // P10b-2 requires for a session with nothing to lose. Reported to the controller; left asserting
     // the spec's required silent behaviour rather than weakened.
     await client.call(METHODS.sessionSetModel, { sessionId, model: "anthropic/claude-sonnet-5" }); // MEASURED to throw handoff_confirmation_required today (see above)
@@ -487,7 +487,7 @@ describeWithWinterBinary("C1: a same-leg switch must not leave the review readin
 
     // Step 1: gpt-4.1 -> gpt-5.6-sol, same family, same leg — must apply silently.
     await client.call(METHODS.sessionSetModel, { sessionId, model: "openai/gpt-5.6-sol" }); // never throws
-    expect(d.winter.legOf(sessionId)).toBe("winter");
+    expect(d.clover.legOf(sessionId)).toBe("winter");
     // A turn on the NEW model, so the review has a source turn to weigh under the NEW identity — and
     // ~700k characters of it (~220k tokens by the review's estimate), past GLM's 200k window outright.
     await client.call(METHODS.sessionSend, { sessionId, text: `on the reasoning model now: ${"a".repeat(700_000)}` });
@@ -522,7 +522,7 @@ describeWithWinterBinary("C1: a same-leg switch must not leave the review readin
 //
 // This file's header records, accurately for the time it was written, why A-7's own literal
 // `gpt -> deepseek` / `deepseek -> GLM` pairing and A-7a's own literal case could not be built:
-// `WINTER_CREDENTIAL_INVENTORY` was a four-row literal, so `providerSelectionFor` refused any model
+// `CLOVER_CREDENTIAL_INVENTORY` was a four-row literal, so `providerSelectionFor` refused any model
 // whose provider was not one of `openai`/`codex-oauth`/`anthropic`, and `session-driver.ts`'s
 // `optionsFor` built a provider connection ONLY for `providerId === "openai"`, so even a
 // hand-injected inventory row left the real child refusing outright. The header's own diagnosis
@@ -719,7 +719,7 @@ describeWithWinterBinary("A-7a: ONE canonical model on TWO providers switches SI
   // credentialled provider also serves the same canonical model. The router (`selectRuntimeFor`)
   // used to canonicalise `openrouter/openai/gpt-4.1` to `gpt-4.1` and pick the first credentialled
   // candidate row (`openai`) because the daemon built its input as `requested: { model }` and
-  // never set `provider` — while Winter's own resolver took the qualified key at its word
+  // never set `provider` — while Clover's own resolver took the qualified key at its word
   // (`openrouter`). So the endpoint a turn reached depended on whether the child had been
   // respawned since the switch.
   //
@@ -743,7 +743,7 @@ describeWithWinterBinary("A-7a: ONE canonical model on TWO providers switches SI
   // fixture issue (the AFTER-RESPAWN phase below, unaffected by this, passes exactly as before),
   // and diagnosing WHY the live-evicted child keeps its original adapter shape while correctly
   // adopting the new base URL is outside this lane's ownership (mode-options.ts's
-  // `buildWinterOptions`/the router's own protocol selection, not model-tag territory) — reported
+  // `buildCloverOptions`/the router's own protocol selection, not model-tag territory) — reported
   // under "Blocked" rather than guessed at further.
   // ════════════════════════════════════════════════════════════════════════════════════════════
   test.skip("openai/gpt-4.1 -> openrouter/openai/gpt-4.1: decision-level convergence CONFIRMED (see comment above), but the live child's second turn hits the wrong endpoint SHAPE (/v1/responses, not /chat/completions) against openrouter — a downstream adapter-protocol defect outside L3's ownership", async () => {
@@ -767,11 +767,11 @@ describeWithWinterBinary("A-7a: ONE canonical model on TWO providers switches SI
     // The same session, after the child is replaced (an idle reap or a daemon restart does this for
     // a real user; `endAll()` is the door a test drives): the SAME stored model now routes to
     // OpenRouter, because `optionsFor` rebuilds the provider from the qualified key.
-    await daemon!.winter!.endAll();
+    await daemon!.clover!.endAll();
     await client.call(METHODS.sessionSend, { sessionId, text: "after the child was replaced" });
     await client.waitFor(() => client.events.filter((x) => x.type === "turn_completed").length >= 3, 90_000);
     // BODY-LEVEL (W18-19): OpenRouter's own spelling of the id (`openai/gpt-4.1`, the ROW's
-    // upstreamId, not the Winter key) AND the conversation so far, in order — a rebuilt, empty
+    // upstreamId, not the Clover key) AND the conversation so far, in order — a rebuilt, empty
     // conversation on the right endpoint would pass a model-id check alone. Nothing is carried as
     // reasoning and nothing should be: the source is a hidden-reasoning OpenAI row whose turns
     // produced none, which is also why this hop is silent.

@@ -1,11 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import { openRuntimeStateDb, type RuntimeStateDb } from "../../src/runtime-state/db";
-import { ChildAlreadyTerminalError, RuntimeChildren, type PersistedWinterChild } from "../../src/runtime-state/children";
+import { ChildAlreadyTerminalError, RuntimeChildren, type PersistedCloverChild } from "../../src/runtime-state/children";
 import { withTempHome } from "./support";
 
 const PARENT = "s_parent";
 
-const child = (over: Partial<PersistedWinterChild> = {}): PersistedWinterChild => ({
+const child = (over: Partial<PersistedCloverChild> = {}): PersistedCloverChild => ({
   parentWinterSessionId: PARENT,
   childId: "c_1",
   agentType: "explore",

@@ -14,7 +14,7 @@
 // element and target labels, a fired trigger's `detail`, a lost one's reason in the backend's words) inside the SAME
 // random-tag fence ComputerV2 results use (`result.ts`), with its one-line preamble. The model's own note and the
 // daemon's own words stay outside it.
-import { COMPUTER_WAKE_CLIENT_NAME } from "@yanlinglabs/winter-protocol";
+import { COMPUTER_WAKE_CLIENT_NAME } from "@waifucave/clover-protocol";
 import { deliverInto, type MessagingDriverHandle } from "../../agent/session-messaging";
 import { withReplacementRetry } from "../../runtime-sdk/session-replaced";
 import { fenceInline, newFenceTag, screenDataPreamble } from "../result";
@@ -114,7 +114,7 @@ function newsLines(n: WakeNews, fence: (s: string) => string, clock: (at: number
     // The loss reason is the backend's words (a helper's or a page watcher's, possibly screen-derived): fenced.
     case "lost": head = `- ${n.wakeId} can no longer fire (${clock(n.at)}): ${n.reason?.trim() ? fence(n.reason.trim()) : "its target is gone"} — it was waiting for ${waited}.`; break;
     case "expired": head = `- ${n.wakeId} expired at ${clock(n.at)}, after ${durationWords(n.at - n.armedAt)} — it was waiting for ${waited}.`; break;
-    case "restart": head = `- ${n.wakeId} (armed at ${clock(n.armedAt)}) ended when Winter restarted — it was waiting for ${waited}.`; break;
+    case "restart": head = `- ${n.wakeId} (armed at ${clock(n.armedAt)}) ended when Clover restarted — it was waiting for ${waited}.`; break;
   }
   const lines = [head];
   // I6 (the helper's hands-off rule): the user just clicked or typed in that app, so it is theirs until they leave it.
@@ -137,7 +137,7 @@ export function renderWakeMessage(news: readonly WakeNews[], opts: { tag?: strin
   const fence = (s: string): string => fenceInline(tag, s);
   const allRestart = news.every((n) => n.outcome === "restart");
   const header = allRestart
-    ? `Winter restarted, so ${news.length === 1 ? "this wait" : "these waits"} ended — arm ${news.length === 1 ? "it" : "them"} again with wakeWhen() if you still need ${news.length === 1 ? "it" : "them"}.`
+    ? `Clover restarted, so ${news.length === 1 ? "this wait" : "these waits"} ended — arm ${news.length === 1 ? "it" : "them"} again with wakeWhen() if you still need ${news.length === 1 ? "it" : "them"}.`
     : news.length === 1 ? "A wake trigger you set has ended." : `${news.length} wake triggers you set have ended.`;
   const body = news.flatMap((n) => newsLines(n, fence, clock));
   return ["<computer-wake>", header, screenDataPreamble(tag), ...body, "</computer-wake>"].join("\n");

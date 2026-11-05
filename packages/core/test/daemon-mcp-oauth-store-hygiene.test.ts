@@ -2,13 +2,13 @@
 // the Swift suites' `RealDaemon` fixture (`apple/WinterKit/Tests/WinterKitTests/support/RealDaemon.swift`, which
 // boots `startDaemon({ home, secrets: new FileSecretStore(...) })`) -- keeps its MCP sign-ins in a per-daemon
 // MEMORY store. The sign-in doors, the `mcp.list` probe and the session credential answers share it, and the
-// Keychain store is never even constructed: not the throwaway service, and never the real `com.winter.core` a
-// fixture that forgot `WINTER_KEYCHAIN_SERVICE` would otherwise land on.
+// Keychain store is never even constructed: not the throwaway service, and never the real `com.waifucave.clover.core` a
+// fixture that forgot `CLOVER_KEYCHAIN_SERVICE` would otherwise land on.
 import { afterEach, describe, expect, spyOn, test } from "bun:test";
 import { mkdirSync, mkdtempSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, type WritableSocket } from "@yanlinglabs/winter-protocol";
+import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, type WritableSocket } from "@waifucave/clover-protocol";
 import * as mcpAuth from "@yanlinglabs/winter-agent-runtime/mcp-auth";
 import * as daemonStore from "../src/runtime-sdk/mcp-oauth-store";
 import { startDaemon, type RunningDaemon } from "../src/daemon";
@@ -82,9 +82,9 @@ describe("a daemon with injected secrets never builds a Keychain MCP OAuth store
     const sdkKeychain = spyOn(mcpAuth, "createKeychainMcpOAuthStore");
     try {
       fx = startFixtureAs();
-      const home = realpathSync(mkdtempSync(join(tmpdir(), "winter-mcp-store-hygiene-")));
+      const home = realpathSync(mkdtempSync(join(tmpdir(), "clover-mcp-store-hygiene-")));
       mkdirSync(join(home, "sdk"), { recursive: true });
-      writeFileSync(join(home, "sdk", ".winter.json"), JSON.stringify({ mcpServers: { linear: { type: "http", url: fx.mcpUrl } } }));
+      writeFileSync(join(home, "sdk", ".clover.json"), JSON.stringify({ mcpServers: { linear: { type: "http", url: fx.mcpUrl } } }));
       // A provider (a fake: nothing here runs a turn) because the `mcp.list` status probe is built only beside one.
       daemon = await startDaemon({ home, secrets: new FileSecretStore(join(home, "secrets")), agentProvider: { provider: new FakeProvider([]), model: "fake-1" } });
       client = await TestClient.connect(daemon.socketPath);

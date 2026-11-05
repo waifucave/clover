@@ -1,10 +1,10 @@
-// `winter plugin` — CLI parity with `claude plugin` (WS-21 spec §5.2), over Contract B
-// (`@yanlinglabs/winter-core`'s `plugins/plugin-manager.ts`). Same shape as `mcp-cli.ts`: main.ts owns
+// `clover plugin` — CLI parity with `claude plugin` (WS-21 spec §5.2), over Contract B
+// (`@waifucave/clover-core`'s `plugins/plugin-manager.ts`). Same shape as `mcp-cli.ts`: main.ts owns
 // argv slicing + printing + `process.exit`; every exported `run*Route` function here IS the full
 // round trip (I/O via an injected `door` when the daemon answers, the adapter directly otherwise),
 // returning a plain outcome object main.ts renders and exits on.
 //
-// DOOR VS. ADAPTER: `winter plugin install <p>[@<m>] [--scope ...]` "goes through the daemon when
+// DOOR VS. ADAPTER: `clover plugin install <p>[@<m>] [--scope ...]` "goes through the daemon when
 // it is live, and the SDK adapter otherwise" (this task's own brief) — every route below takes an
 // optional `PluginDoor`; when absent, it builds a `PluginManagerOptions` straight off the adapter
 // and calls the SAME Contract B functions the daemon's own RPC handlers call
@@ -30,11 +30,11 @@ import {
   sdkPluginsRoot, sdkSettingsPath, localScopeKeyFor, projectScopeRootFor,
   type PluginManagerOptions, type PluginManagerScope,
   type MarketplaceInfo, type InstalledPlugin, type PluginListing,
-} from "@yanlinglabs/winter-core";
+} from "@waifucave/clover-core";
 
 export type PluginScope = PluginManagerScope; // "user" | "project" | "local"
 
-/** Structural — matches the `WinterClient` methods the CLI's daemon path calls, so a test can hand
+/** Structural — matches the `CloverClient` methods the CLI's daemon path calls, so a test can hand
  *  in a plain fake instead of a real socket connection (same precedent as `mcp-cli.ts`'s `McpDoor`). */
 export interface PluginDoor {
   pluginList(cwd?: string): Promise<{ ok: true; plugins: PluginListing[] }>;
@@ -50,7 +50,7 @@ export interface PluginDoor {
 
 export interface PluginRouteDeps {
   cwd: string;
-  winterHome: string;
+  cloverHome: string;
   /** `undefined` when no daemon answered — every route falls back to a direct, in-process call
    *  through the adapter, the SAME Contract B functions the daemon's own RPC handlers call. */
   door?: PluginDoor;
@@ -74,22 +74,22 @@ export function ensurePluginScope(raw?: string): PluginScopeResolution {
 // uses, so the no-daemon path and the daemon path can never write a scope to different files.
 // ------------------------------------------------------------------------------------------------
 
-export function pluginManagerOptionsFor(winterHome: string, cwd: string | undefined): PluginManagerOptions {
+export function pluginManagerOptionsFor(cloverHome: string, cwd: string | undefined): PluginManagerOptions {
   return {
-    pluginsRoot: sdkPluginsRoot(winterHome),
+    pluginsRoot: sdkPluginsRoot(cloverHome),
     settingsPathFor: (scope) => {
-      if (scope === "user") return sdkSettingsPath(winterHome);
+      if (scope === "user") return sdkSettingsPath(cloverHome);
       if (!cwd) throw new PluginManagerError(`plugin scope "${scope}" requires a project directory — run this from inside one`);
       // R.3 I-2 + residual: both project-named scopes are keyed where the run home reads them — the cwd's
       // own git top (a linked worktree's own), `localScopeKeyFor` / `projectScopeRootFor`, as the daemon does.
-      if (scope === "local") return resolve(localScopeKeyFor(cwd), ".winter", "settings.local.json");
-      return resolve(projectScopeRootFor(cwd), ".winter", "settings.json");
+      if (scope === "local") return resolve(localScopeKeyFor(cwd), ".clover", "settings.local.json");
+      return resolve(projectScopeRootFor(cwd), ".clover", "settings.json");
     },
   };
 }
 
 /** A directory marketplace's own plugin names, read straight off the CLI's local filesystem
- *  (`directoryMarketplacePluginNames`, `@yanlinglabs/winter-core`) — used by BOTH the no-daemon and
+ *  (`directoryMarketplacePluginNames`, `@waifucave/clover-core`) — used by BOTH the no-daemon and
  *  daemon "install from a folder" paths, so a bare-path install always resolves the same plugin. */
 function readMarketplacePluginNames(dir: string): string[] | { error: string } {
   try {
@@ -128,13 +128,13 @@ export async function runPluginInstallRoute(deps: PluginRouteDeps, specOrPath: s
     if (looksLikeDirectory(specOrPath)) {
       const dir = isAbsolute(specOrPath) ? specOrPath : resolve(specOrPath);
       if (!deps.door) {
-        const plugin = await installPluginFromDirectory(pluginManagerOptionsFor(deps.winterHome, cwd), dir, scope);
+        const plugin = await installPluginFromDirectory(pluginManagerOptionsFor(deps.cloverHome, cwd), dir, scope);
         return { ok: true, plugin, via };
       }
       const names = readMarketplacePluginNames(dir);
       if (!Array.isArray(names)) return { ok: false, message: names.error };
       if (names.length !== 1) {
-        return { ok: false, message: `${dir}: this folder lists ${names.length} plugin(s) — add it as a marketplace first (winter plugin marketplace add ${dir}) and install "<plugin>@<marketplace>" explicitly` };
+        return { ok: false, message: `${dir}: this folder lists ${names.length} plugin(s) — add it as a marketplace first (clover plugin marketplace add ${dir}) and install "<plugin>@<marketplace>" explicitly` };
       }
       const mktRes = await deps.door.pluginMarketplaceAdd(dir);
       const spec = `${names[0]}@${mktRes.marketplace.name}`;
@@ -145,7 +145,7 @@ export async function runPluginInstallRoute(deps: PluginRouteDeps, specOrPath: s
       const res = await deps.door.pluginInstall(specOrPath, scope, cwd);
       return { ok: true, plugin: res.plugin, via };
     }
-    const res = await installPlugin(pluginManagerOptionsFor(deps.winterHome, cwd), specOrPath, scope);
+    const res = await installPlugin(pluginManagerOptionsFor(deps.cloverHome, cwd), specOrPath, scope);
     return { ok: true, plugin: res, via };
   } catch (err) {
     return { ok: false, message: (err as Error).message };
@@ -163,7 +163,7 @@ export async function runPluginUninstallRoute(deps: PluginRouteDeps, spec: strin
       const res = await deps.door.pluginUninstall(spec, scope, cwd);
       return { ok: true, spec: res.spec, scope: res.scope };
     }
-    await uninstallPlugin(pluginManagerOptionsFor(deps.winterHome, cwd), spec, scope);
+    await uninstallPlugin(pluginManagerOptionsFor(deps.cloverHome, cwd), spec, scope);
     return { ok: true, spec, scope };
   } catch (err) {
     return { ok: false, message: (err as Error).message };
@@ -181,7 +181,7 @@ export async function runPluginSetEnabledRoute(deps: PluginRouteDeps, spec: stri
       const res = await deps.door.pluginSetEnabled(spec, scope, enabled, cwd);
       return { ok: true, spec: res.spec, scope: res.scope, enabled: res.enabled };
     }
-    await setPluginEnabledScoped(pluginManagerOptionsFor(deps.winterHome, cwd), spec, scope, enabled);
+    await setPluginEnabledScoped(pluginManagerOptionsFor(deps.cloverHome, cwd), spec, scope, enabled);
     return { ok: true, spec, scope, enabled };
   } catch (err) {
     return { ok: false, message: (err as Error).message };
@@ -196,7 +196,7 @@ export async function runPluginUpdateRoute(deps: PluginRouteDeps, spec: string):
       const res = await deps.door.pluginUpdate(spec);
       return { ok: true, plugin: res.plugin };
     }
-    const plugin = await updatePlugin(pluginManagerOptionsFor(deps.winterHome, undefined), spec);
+    const plugin = await updatePlugin(pluginManagerOptionsFor(deps.cloverHome, undefined), spec);
     return { ok: true, plugin };
   } catch (err) {
     return { ok: false, message: (err as Error).message };
@@ -211,7 +211,7 @@ export async function runPluginListRoute(deps: PluginRouteDeps, cwd?: string): P
       const res = await deps.door.pluginList(cwd);
       return { ok: true, plugins: res.plugins };
     }
-    const plugins = await listPlugins(pluginManagerOptionsFor(deps.winterHome, cwd));
+    const plugins = await listPlugins(pluginManagerOptionsFor(deps.cloverHome, cwd));
     return { ok: true, plugins };
   } catch (err) {
     return { ok: false, message: (err as Error).message };
@@ -226,7 +226,7 @@ export async function runPluginMarketplaceAddRoute(deps: PluginRouteDeps, source
       const res = await deps.door.pluginMarketplaceAdd(source);
       return { ok: true, marketplace: res.marketplace };
     }
-    const marketplace = await addMarketplace(pluginManagerOptionsFor(deps.winterHome, undefined), source);
+    const marketplace = await addMarketplace(pluginManagerOptionsFor(deps.cloverHome, undefined), source);
     return { ok: true, marketplace };
   } catch (err) {
     return { ok: false, message: (err as Error).message };
@@ -241,7 +241,7 @@ export async function runPluginMarketplaceRemoveRoute(deps: PluginRouteDeps, nam
       const res = await deps.door.pluginMarketplaceRemove(name);
       return { ok: true, name: res.name };
     }
-    await removeMarketplace(pluginManagerOptionsFor(deps.winterHome, undefined), name);
+    await removeMarketplace(pluginManagerOptionsFor(deps.cloverHome, undefined), name);
     return { ok: true, name };
   } catch (err) {
     return { ok: false, message: (err as Error).message };
@@ -256,7 +256,7 @@ export async function runPluginMarketplaceListRoute(deps: PluginRouteDeps): Prom
       const res = await deps.door.pluginMarketplaceList();
       return { ok: true, marketplaces: res.marketplaces };
     }
-    const marketplaces = await listMarketplaces(pluginManagerOptionsFor(deps.winterHome, undefined));
+    const marketplaces = await listMarketplaces(pluginManagerOptionsFor(deps.cloverHome, undefined));
     return { ok: true, marketplaces };
   } catch (err) {
     return { ok: false, message: (err as Error).message };
@@ -271,7 +271,7 @@ export async function runPluginMarketplaceUpdateRoute(deps: PluginRouteDeps, nam
       await deps.door.pluginMarketplaceUpdate(name);
       return { ok: true };
     }
-    await updateMarketplace(pluginManagerOptionsFor(deps.winterHome, undefined), name);
+    await updateMarketplace(pluginManagerOptionsFor(deps.cloverHome, undefined), name);
     return { ok: true };
   } catch (err) {
     return { ok: false, message: (err as Error).message };
@@ -284,8 +284,8 @@ export async function runPluginMarketplaceUpdateRoute(deps: PluginRouteDeps, nam
 
 function scopeLabel(scope: PluginScope): string {
   if (scope === "user") return "user (sdk/settings.json)";
-  if (scope === "project") return "project (.winter/settings.json)";
-  return "local (.winter/settings.local.json)";
+  if (scope === "project") return "project (.clover/settings.json)";
+  return "local (.clover/settings.local.json)";
 }
 
 export function renderPluginInstallOutcome(outcome: PluginInstallOutcome): string {

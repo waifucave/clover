@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { SessionDirectories } from "../../src/agent/dirs";
 
-function realDir() { return realpathSync(mkdtempSync(join(tmpdir(), "winter-dirs-"))); }
+function realDir() { return realpathSync(mkdtempSync(join(tmpdir(), "clover-dirs-"))); }
 
 describe("SessionDirectories", () => {
   test("roots = base + runtime-added, deduped/realpath'd", () => {
@@ -32,12 +32,12 @@ describe("SessionDirectories", () => {
 
   test("a non-existent base/added dir passes through without crashing roots()/has()", () => {
     const cwd = realDir();
-    const ghost = "/tmp/winter-nonexistent-" + "zzz9999";
+    const ghost = "/tmp/clover-nonexistent-" + "zzz9999";
     const sd = new SessionDirectories(() => [cwd, ghost]);
     expect(() => sd.roots("s1")).not.toThrow();
     expect(sd.roots("s1")).toContain(ghost); // canon() falls back to the literal path
-    sd.add("s1", "/tmp/winter-nonexistent-added-zzz");
-    expect(() => sd.has("s1", "/tmp/winter-nonexistent-added-zzz")).not.toThrow();
+    sd.add("s1", "/tmp/clover-nonexistent-added-zzz");
+    expect(() => sd.has("s1", "/tmp/clover-nonexistent-added-zzz")).not.toThrow();
   });
 
   // Regression (S1): exit_worktree {remove} deletes the worktree dir from disk but, without a

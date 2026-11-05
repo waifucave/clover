@@ -1,4 +1,4 @@
-/** Pure app-state reducer for the Ink TUI (Phase 3a Task 2) — THE HEART: composes Winter's existing
+/** Pure app-state reducer for the Ink TUI (Phase 3a Task 2) — THE HEART: composes Clover's existing
  *  tested reducers (`subagent-state.ts`'s `updateSubagents`, `task-block.ts`'s `upsertTask`) into
  *  ONE `TuiState` that every Ink component (Tasks 3-6) renders from. Every wire event in main.ts's
  *  interactive switch (packages/cli/src/main.ts:493-680) has an equivalent transition here.
@@ -37,13 +37,13 @@
  *  needs to call a LIVE child stalled before the daemon's watchdog kills it. Routing them here was
  *  mandatory rather than cosmetic: `tool_call` was already fed, so an unfed `tool_result` left the
  *  in-flight counter permanently climbing and every child mid-tool would have been mislabelled.
- *  (`winter -p`'s main.ts feeds this reducer every event already, so it needed no equivalent change.)
+ *  (`clover -p`'s main.ts feeds this reducer every event already, so it needed no equivalent change.)
  *
  *  PURE: `nowMs` is the caller's injected clock (App.tsx will tick it); `reduce` itself never calls
  *  `Date.now()`. ZERO Ink/React import — unit-testable in isolation (state.test.ts). */
 
-import type { ApprovalOption, ApprovalPolicy, SessionActivity, Task } from "@yanlinglabs/winter-protocol";
-import { DISPATCH_WAKE_CLIENT_NAME } from "@yanlinglabs/winter-protocol";
+import type { ApprovalOption, ApprovalPolicy, SessionActivity, Task } from "@waifucave/clover-protocol";
+import { DISPATCH_WAKE_CLIENT_NAME } from "@waifucave/clover-protocol";
 import { COMPUTER_WAKE_CLIENT_NAME, endedWords, stoppedWords, waitingWords, type ArmedWakeFacts } from "../wake-words";
 import { updateSubagents, type CliSubagent } from "../subagent-state";
 import { subagentTokens } from "../subagent-display";
@@ -319,7 +319,7 @@ export function reduce(s: TuiState, e: WireEvent, nowMs: number): TuiState {
 function reduceCore(s: TuiState, e: WireEvent, nowMs: number): TuiState {
   switch (e.type) {
     case "wake_armed": {
-      // ComputerV2 wake triggers: Winter waits for the user — said once, as a note.
+      // ComputerV2 wake triggers: Clover waits for the user — said once, as a note.
       if (e.threadId !== MAIN) return s;
       // The pair reaches an attached client twice (its session's fan-out and the global broadcast, same seq): said once.
       if (s.wakes?.[str(e.wakeId)] !== undefined) return s;
@@ -347,7 +347,7 @@ function reduceCore(s: TuiState, e: WireEvent, nowMs: number): TuiState {
       // happened, from the pair (the message itself is the model's `<computer-wake>` text).
       if (e.clientName === COMPUTER_WAKE_CLIENT_NAME) {
         const news = s.wakeNews ?? [];
-        const block: Block = { kind: "note", text: news.length === 0 ? "↻ a wake trigger ended — Winter continues" : `↻ Winter continued: ${news.join("; ")}` };
+        const block: Block = { kind: "note", text: news.length === 0 ? "↻ a wake trigger ended — Clover continues" : `↻ Clover continued: ${news.join("; ")}` };
         if (e.threadId !== MAIN) return { ...s, childBlocks: withChildBlock(s.childBlocks, str(e.threadId), block) };
         const { wakeNews: _said, ...rest } = s;
         return { ...rest, committed: [...s.committed, block] };
@@ -702,17 +702,17 @@ function reduceCore(s: TuiState, e: WireEvent, nowMs: number): TuiState {
     // transcript. CLI-only — no Swift-lockstep twin; the -p path (main.ts) has no lease branch, so
     // headless output is unchanged.
     case "lease_granted": {
-      const text = `⌘ Winter acquired ${cuClassLabel(str(e.class))} control`;
+      const text = `⌘ Clover acquired ${cuClassLabel(str(e.class))} control`;
       return { ...s, committed: [...s.committed, { kind: "note", text }] };
     }
 
     case "lease_lost": {
-      const text = `⌘ Winter released ${cuClassLabel(str(e.class))} control (${str(e.reason)})`;
+      const text = `⌘ Clover released ${cuClassLabel(str(e.class))} control (${str(e.reason)})`;
       return { ...s, committed: [...s.committed, { kind: "note", text }] };
     }
 
     // task-30 (push-notification track): a minimal one-liner — the app's own delivery (native
-    // UNUserNotificationCenter alert, SessionModel.apply in the Winter target) is where the real
+    // UNUserNotificationCenter alert, SessionModel.apply in the Clover target) is where the real
     // "notification" happens; the CLI just needs a visible trace in the transcript, same class as
     // the CU lease notes above.
     case "notification_requested": {

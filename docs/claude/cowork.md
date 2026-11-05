@@ -1,5 +1,7 @@
 # Cowork
 
+> **Reference: Winter's code.** This file describes Winter's code as it stood at the `winter-before-clover` tag, before the Clover rename (C0). Where it describes code that C0 renamed, read `winter-core` as `clover-core`, `WINTER_*` as `CLOVER_*` and `~/.winter` as `~/.clover`. For Clover itself, [the spec](../clover-spec.md) is the source of truth, then [the plan](../clover-plan.md).
+
 *Read this before touching `packages/core/src/cowork/**`, `packages/protocol/src/cowork.ts`, `apple/Cowork/**`, the host-storage fence or `home-fence`'s Cowork roots, `refreshForStorage`, or the `workspace.*` / `project.*` methods and events.*
 
 Cowork is not an implemented session mode: no Cowork session can be created or run, and `SpawnSession` refuses `type: "cowork"`. The protocol RECOGNISES the name (`SESSION_MODES`) so every door can refuse it typed: `session.create {mode: "cowork"}` answers `unsupported_topology` for every role, and a stored cowork row is refused rather than read as Code (see [runtime-and-sessions.md](./runtime-and-sessions.md)); there is deliberately no Cowork prompt, tool allowlist or run home. The host side exists: workspace metadata, guidance, schedules, outputs, the session-door records and (inert) the native worker, libkrun and guest-image source ([below](#native-guest-stack-on-the-integration-branch-source-only-never-booted)). What exists and what still blocks a functional mode: [cowork-status.md](../cowork-status.md). The design: [cowork-spec.md](../cowork-spec.md).

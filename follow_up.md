@@ -16,7 +16,7 @@ Cowork is unavailable: no Cowork session can be created. The [implementation map
 - [ ] Form-mode elicitation is declined; only URL mode cards. The phone shows no elicitation card (a daemon chat viewed there shows the tool running until the Mac answers).
 
 ## Credentials and Keychain
-- [ ] Bun's own environment-level launcher switches still let another process running as the same user make a compiled Bun binary (`winter-core` included) run arbitrary code under its signed identity; closing that needs a patched Bun build. (The workflow workers already refuse to run outside a sandbox that denies them the Keychain.)
+- [ ] Bun's own environment-level launcher switches still let another process running as the same user make a compiled Bun binary (`clover-core` included) run arbitrary code under its signed identity; closing that needs a patched Bun build. (The workflow workers already refuse to run outside a sandbox that denies them the Keychain.)
 
 ## Models and providers
 - [ ] Catalog tool-calling evidence still missing (no vendor statement found 2026-09-27): the ERNIE rows on `qianfan-anthropic`, the two role-play rows on `tencent-tokenhub-anthropic`, `tabitoken`'s four, three `wafer` rows absent from its live list, `agentrouter/gpt-5.6-sol`, `nvidia/stockmark/stockmark-2-100b-instruct` and `nvidia/meta/llama-4-maverick-17b-128e-instruct`; each needs a keyed live probe.

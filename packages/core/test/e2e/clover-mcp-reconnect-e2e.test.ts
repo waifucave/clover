@@ -1,7 +1,7 @@
 // WS-25 live failure (dev daemon, 2026-09-27), reproduced on the BUILT binary through a real daemon: a CODE
 // session's live `winter` child is connected to a signed-in OAuth http server (a user-scope server in
-// `sdk/.winter.json`); the user signs out, then in again, through the daemon's doors. Each door asks the live
-// child to reconnect the server (`agent/mcp/reconnect.ts` -> `WinterSession.reconnectMcpServer` -> the
+// `sdk/.clover.json`); the user signs out, then in again, through the daemon's doors. Each door asks the live
+// child to reconnect the server (`agent/mcp/reconnect.ts` -> `CloverSession.reconnectMcpServer` -> the
 // runtime's `mcp_reconnect`). Live, BOTH reconnects failed after exactly MCP_TIMEOUT (30 s), the second queued
 // behind the first, and the tools never came back:
 //
@@ -22,7 +22,7 @@ import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, type WritableSocket, type SessionEvent } from "@yanlinglabs/winter-protocol";
+import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, type WritableSocket, type SessionEvent } from "@waifucave/clover-protocol";
 import { FileSecretStore } from "../../src/auth/secret-store";
 import { startDaemon, type RunningDaemon } from "../../src/daemon";
 import { describeWithWinterBinary } from "../helpers/winter-binary";
@@ -94,18 +94,18 @@ describeWithWinterBinary("WS-25: a live code child reconnects a signed-out-then-
     // The daemon's reconnect verdicts are its own log lines (`console.error`); keep them, print nothing.
     errorSpy = spyOn(console, "error").mockImplementation((...args: unknown[]) => { lines.push({ at: Date.now(), line: args.map(String).join(" ") }); });
     fx = startFixtureAs();
-    home = join(realpathSync(mkdtempSync(join(tmpdir(), "winter-mcp-reconnect-e2e-"))), ".winter");
-    cwd = realpathSync(mkdtempSync(join(tmpdir(), "winter-mcp-reconnect-cwd-")));
+    home = join(realpathSync(mkdtempSync(join(tmpdir(), "clover-mcp-reconnect-e2e-"))), ".clover");
+    cwd = realpathSync(mkdtempSync(join(tmpdir(), "clover-mcp-reconnect-cwd-")));
     mkdirSync(join(home, "sdk"), { recursive: true });
     writeFileSync(join(home, "settings.json"), JSON.stringify({
       schemaVersion: 2,
       provider: { type: "openai-compatible", model: "winter-test/echo", baseUrl: "http://127.0.0.1:9/v1" },
       // A long idle timeout: the red run spends ~60 s in reconnects, and an idle-ended child would turn the
-      // second reconnect into `WinterLegUnsupported` rather than the failure under test.
+      // second reconnect into `CloverLegUnsupported` rather than the failure under test.
       runtimes: { winterExecutable: bin, winterLeg: { code: true }, winterIdleTimeoutSec: 600 },
     }, null, 2));
     // The user-scope OAuth http server, like the live `github` entry.
-    writeFileSync(join(home, "sdk", ".winter.json"), JSON.stringify({ mcpServers: { [SERVER]: { type: "http", url: fx.mcpUrl } } }, null, 2));
+    writeFileSync(join(home, "sdk", ".clover.json"), JSON.stringify({ mcpServers: { [SERVER]: { type: "http", url: fx.mcpUrl } } }, null, 2));
     daemon = await startDaemon({ home, secrets: new FileSecretStore(join(home, "test-secrets")), agentProvider: null });
     client = await TestClient.connect(daemon.socketPath);
     await client.call(METHODS.hello, { protocolVersion: PROTOCOL_VERSION, role: "harness", token: daemon.tokens.harness, clientName: "mcp-reconnect-e2e" });
@@ -138,7 +138,7 @@ describeWithWinterBinary("WS-25: a live code child reconnects a signed-out-then-
     await client.call(METHODS.sessionSend, { sessionId: sid, text: "hello" });
     await client.waitFor((e) => e.type === "turn_completed" && e.sessionId === sid, 30_000);
     await until(() => fx.mcpRequests > 0, 15_000, "the child to connect the server with the first sign-in");
-    expect(daemon!.winter.list().find((s) => s.sessionId === sid)?.mcpServerNamesFor?.(fx.mcpUrl)).toEqual([SERVER]);
+    expect(daemon!.clover.list().find((s) => s.sessionId === sid)?.mcpServerNamesFor?.(fx.mcpUrl)).toEqual([SERVER]);
 
     // SIGN-OUT through the door: the live child is asked to reconnect, and must answer promptly.
     const signOutAt = Date.now();

@@ -11,7 +11,7 @@ import { join } from "node:path";
 import {
   ConnWriter, ERR, FILE_REFERENCE_INVALID, FILE_SESSION_NOT_CODE, IMAGE_INPUT_UNSUPPORTED, IMAGE_INPUT_UNSUPPORTED_MESSAGE, IMAGE_REFERENCE_INVALID,
   IMAGE_SESSION_NOT_CODE, LineDecoder, METHODS, PROTOCOL_VERSION, SessionEvent, encodeLine, type WritableSocket,
-} from "@yanlinglabs/winter-protocol";
+} from "@waifucave/clover-protocol";
 import { loadCatalog } from "@yanlinglabs/winter-provider-catalog";
 import { sessionTakesAttachments, startIpcServer } from "../../src/ipc/server";
 import { SessionStore } from "../../src/sessions/store";
@@ -21,7 +21,7 @@ import { readHistoryPage } from "../../src/sessions/history";
 import { filterRemoteStreamEvent } from "../../src/sessions/remote-stream";
 import { modelTextOf } from "../../src/sessions/model-text";
 import { Settings, saveSettings } from "../../src/settings";
-import type { LegSession, WinterSessionDrivers } from "../../src/runtime-sdk/session-driver";
+import type { LegSession, CloverSessionDrivers } from "../../src/runtime-sdk/session-driver";
 
 /** Minimal raw NDJSON JSON-RPC client — the same per-file copy every test in test/ipc carries. */
 class TestClient {
@@ -86,21 +86,21 @@ describe("Dispatch takes image and file attachments (2026-10-19)", () => {
   let savedTmp: string | undefined;
   const cleanup: string[] = [];
   beforeEach(() => {
-    savedTmp = process.env.WINTER_TMPDIR;
-    tmpBase = mkdtempSync(join(tmpdir(), "winter-dispatch-att-tmp-"));
-    process.env.WINTER_TMPDIR = tmpBase;
+    savedTmp = process.env.CLOVER_TMPDIR;
+    tmpBase = mkdtempSync(join(tmpdir(), "clover-dispatch-att-tmp-"));
+    process.env.CLOVER_TMPDIR = tmpBase;
   });
   afterEach(() => {
     stop?.(); stop = undefined;
-    if (savedTmp === undefined) delete process.env.WINTER_TMPDIR; else process.env.WINTER_TMPDIR = savedTmp;
+    if (savedTmp === undefined) delete process.env.CLOVER_TMPDIR; else process.env.CLOVER_TMPDIR = savedTmp;
     rmSync(tmpBase, { recursive: true, force: true });
     for (const d of cleanup.splice(0)) rmSync(d, { recursive: true, force: true });
   });
 
   /** A daemon on a temp home whose settings name the code default (`provider.model`, also the live model) and the
    *  dispatch pin (`pins.dispatch`) — the image check must read the pin for a dispatch session. */
-  async function boot(models: { code: string; dispatch: string }, winter?: WinterSessionDrivers) {
-    const home = mkdtempSync(join(tmpdir(), "winter-dispatch-att-"));
+  async function boot(models: { code: string; dispatch: string }, clover?: CloverSessionDrivers) {
+    const home = mkdtempSync(join(tmpdir(), "clover-dispatch-att-"));
     cleanup.push(home);
     saveSettings(join(home, "settings.json"), Settings.parse({ schemaVersion: 3, provider: { model: models.code }, pins: { dispatch: models.dispatch } }));
     const store = new SessionStore(home);
@@ -108,8 +108,8 @@ describe("Dispatch takes image and file attachments (2026-10-19)", () => {
     const authority = new TokenAuthority(new FileSecretStore(join(home, "secrets.json")));
     const tokens = await authority.ensureTokens();
     const server = startIpcServer({
-      socketPath, serverVersion: "test", tokens: authority, store, winterHome: home, liveModel: () => models.code,
-      ...(winter === undefined ? {} : { winter }),
+      socketPath, serverVersion: "test", tokens: authority, store, cloverHome: home, liveModel: () => models.code,
+      ...(clover === undefined ? {} : { clover }),
     });
     stop = () => { server.stop(); store.close(); };
     const c = await TestClient.connect(socketPath);
@@ -118,8 +118,8 @@ describe("Dispatch takes image and file attachments (2026-10-19)", () => {
   }
 
   /** The Dispatch session as the daemon mints it: `mode: "dispatch"` and NO model of its own (the pin runs it). */
-  async function dispatchSession(models: { code: string; dispatch: string }, winter?: WinterSessionDrivers) {
-    const b = await boot(models, winter);
+  async function dispatchSession(models: { code: string; dispatch: string }, clover?: CloverSessionDrivers) {
+    const b = await boot(models, clover);
     const sid = b.store.createSession("global", { mode: "dispatch", approvalPolicy: "auto" });
     expect(b.store.meta(sid).model).toBeUndefined();
     expect((await b.c.request(METHODS.sessionAttach, { sessionId: sid, fromSeq: 0 })).error).toBeUndefined();
@@ -128,7 +128,7 @@ describe("Dispatch takes image and file attachments (2026-10-19)", () => {
 
   /** The user's own files, outside the daemon's home. */
   function userDir(): string {
-    const dir = realpathSync(mkdtempSync(join(tmpdir(), "winter-dispatch-userfiles-")));
+    const dir = realpathSync(mkdtempSync(join(tmpdir(), "clover-dispatch-userfiles-")));
     cleanup.push(dir);
     writeFileSync(join(dir, "shot.png"), PNG);
     writeFileSync(join(dir, "plan.md"), "# plan");
@@ -144,7 +144,7 @@ describe("Dispatch takes image and file attachments (2026-10-19)", () => {
     const dir = userDir();
     const staged = await c.request(METHODS.sessionStageImage, { sessionId: sid, mediaType: "image/png", dataBase64: b64(PNG) });
     expect(staged.error).toBeUndefined();
-    expect(staged.result).toEqual({ path: join(realpathSync(tmpBase), `winter-session-${sid}`, "images", "image_1.png"), imagesOnSend: true });
+    expect(staged.result).toEqual({ path: join(realpathSync(tmpBase), `clover-session-${sid}`, "images", "image_1.png"), imagesOnSend: true });
     const text = "compare [Image #1] with [Image #2], then check [File #1] in [File #2]";
     const images = [{ n: 1, path: staged.result.path }, { n: 2, path: join(dir, "shot.png") }];
     const files = [{ n: 1, path: join(dir, "plan.md") }, { n: 2, path: join(dir, "project") }];
@@ -156,7 +156,7 @@ describe("Dispatch takes image and file attachments (2026-10-19)", () => {
     c.close();
   });
 
-  test("on the Winter leg a dispatch session's driver receives the checked images and files — send and steer (the mid-turn fold's door)", async () => {
+  test("on the Clover leg a dispatch session's driver receives the checked images and files — send and steer (the mid-turn fold's door)", async () => {
     const calls: Array<{ door: string; text: string; images?: unknown; files?: unknown }> = [];
     const never = (): never => { throw new Error("not reached by this test"); };
     const leg: LegSession = {
@@ -167,7 +167,7 @@ describe("Dispatch takes image and file attachments (2026-10-19)", () => {
       interrupt: never, compact: never, setModel: never, setPolicy: never,
       end: async () => {}, deliver: never, open: async () => {}, idle: async () => {},
     };
-    const table: WinterSessionDrivers = {
+    const table: CloverSessionDrivers = {
       legForNewSession: () => "winter", legOf: () => "winter", assertAvailable: () => {}, create: async () => never(),
       get: () => leg, runTurn: async () => never(), ensure: async () => leg,
       evict: async () => {}, list: () => [], endAll: async () => {},

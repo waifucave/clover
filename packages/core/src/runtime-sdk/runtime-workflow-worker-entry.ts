@@ -1,6 +1,6 @@
-// WS-23: the RUNTIME's workflow worker, run from `winter-core`. An embedded session's Workflow tool
+// WS-23: the RUNTIME's workflow worker, run from `clover-core`. An embedded session's Workflow tool
 // spawns `<command> --bridge` under the seatbelt (`embedded.ts`'s `runtimeWorkflowWorkerCommand`):
-// compiled, `winter-core __runtime-workflow-worker --bridge`, which `cli/src/main.ts` routes here;
+// compiled, `clover-core __runtime-workflow-worker --bridge`, which `cli/src/main.ts` routes here;
 // in dev and tests, `bun <this file> __runtime-workflow-worker --bridge`, which self-executes below.
 //
 // NOT the daemon's own workflow worker (`workflows/subprocess-entry.ts`, argv `__workflow-worker`):
@@ -16,7 +16,7 @@ export async function runRuntimeWorkflowWorker(): Promise<never> {
   try {
     code = await workflowWorkerMain(process.argv, { stdin: process.stdin, stdout: process.stdout, stderr: process.stderr });
   } catch (err) {
-    process.stderr.write(`winter-core: fatal (runtime workflow worker): ${err instanceof Error ? err.message : String(err)}\n`);
+    process.stderr.write(`clover-core: fatal (runtime workflow worker): ${err instanceof Error ? err.message : String(err)}\n`);
     code = 1;
   }
   process.exit(code);

@@ -6,11 +6,11 @@
 // store bound to `LEGACY_KEYCHAIN_SERVICE[_DEV]`; every test path uses an in-memory/file
 // `SecretStore` instead (Global Constraints: never `Bun.secrets` in a test).
 import type { SecretStore } from "../auth/secret-store";
-import type { WinterProfile } from "../profile";
+import type { CloverProfile } from "../profile";
 import { LEGACY_KEYCHAIN_SERVICE, LEGACY_KEYCHAIN_SERVICE_DEV } from "../legacy-names";
 import { genericPasswordPresent, withKeychainUserInteractionDisabled } from "../auth/keychain-ffi";
 
-export function legacyKeychainServiceFor(profile: WinterProfile): string {
+export function legacyKeychainServiceFor(profile: CloverProfile): string {
   return profile === "dev" ? LEGACY_KEYCHAIN_SERVICE_DEV : LEGACY_KEYCHAIN_SERVICE;
 }
 
@@ -19,7 +19,7 @@ export function legacyKeychainServiceFor(profile: WinterProfile): string {
  *  (see `startDaemon`'s migration seam). */
 export class LegacyKeychainSecretStore implements SecretStore {
   private readonly service: string;
-  constructor(profile: WinterProfile) {
+  constructor(profile: CloverProfile) {
     this.service = legacyKeychainServiceFor(profile);
   }
   async get(name: string): Promise<string | null> {
@@ -38,12 +38,12 @@ export class LegacyKeychainSecretStore implements SecretStore {
 }
 
 /**
- * WS-25 §7: `winter doctor`'s legacy-item COUNT, by presence alone — each item is located in the user's
+ * WS-25 §7: `clover doctor`'s legacy-item COUNT, by presence alone — each item is located in the user's
  * keychains WITHOUT requesting its data (`keychain-ffi.ts`), so no decrypt happens and no consent dialog
  * can appear, whichever binary created the item. Production wiring only (the CLI's doctor); tests pass
  * their own probe.
  */
-export function legacyKeychainPresence(profile: WinterProfile): (name: string) => boolean {
+export function legacyKeychainPresence(profile: CloverProfile): (name: string) => boolean {
   const service = legacyKeychainServiceFor(profile);
   // User interaction off for each probe (restored after): a locked keychain answers without an unlock
   // dialog (measured: locating an item in a locked keychain is silent; this keeps it so).

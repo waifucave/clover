@@ -1,4 +1,4 @@
-// The plain shell's (`winter -p`, the legacy chat loop) cards, ONE AT A TIME.
+// The plain shell's (`clover -p`, the legacy chat loop) cards, ONE AT A TIME.
 //
 // Since agent SDK 0.0.40 a session can hold several open cards at once (two subagents running side by side,
 // a `Computer` and a `Browser` call in their own lanes). The shell has one stdin, so it shows one card: an

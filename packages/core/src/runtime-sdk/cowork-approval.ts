@@ -22,7 +22,7 @@
 // source revision and requesting agent"). Island and `approval.list` read the same broker, so they show it unchanged.
 
 import { posix } from "node:path";
-import type { ApprovalPolicy } from "@yanlinglabs/winter-protocol";
+import type { ApprovalPolicy } from "@waifucave/clover-protocol";
 import { connectorFactsFor, isConnectorToolName, statedServerFromCanUseTool, type ConnectorPermissionSource } from "../agent/mcp/connector-permissions";
 import { coworkConnectorVerdict, coworkHostDecision, type CoworkHostReason } from "../cowork/host-policy";
 import type { CoworkTransitionSnapshot } from "../cowork/policy-transition";

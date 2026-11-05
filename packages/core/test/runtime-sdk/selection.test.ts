@@ -1,6 +1,6 @@
 // P8c Task 1.3 — the selection matrix: `familyListingFromCatalog` fed through the router's own
 // REAL `selectRuntime`, and `createWinterRuntimeSdk(...).selectRuntimeFor` end to end. Nothing here
-// re-derives D13/D28's routing table — the whole point is that Winter's listing/credential inputs
+// re-derives D13/D28's routing table — the whole point is that Clover's listing/credential inputs
 // produce the SAME decision the router's own pinned rules would for a host that got them right.
 //
 // WS-20 rewrite: `requested.model` is now ALWAYS a provider-qualified TAG — router 0.0.8+ refuses
@@ -26,7 +26,7 @@ import { rowForTag, familyListingFromCatalog } from "../../src/runtime-sdk/provi
 
 describe("familyListingFromCatalog + the router's own selectRuntime", () => {
   // WS-23: the daemon never offers the router an official peer (`hasClaudePeer: false`, always), so a
-  // Claude model routes to the Winter runtime — the official alternative's D13-2 case is gone.
+  // Claude model routes to the Clover runtime — the official alternative's D13-2 case is gone.
   test("a Claude model with no official peer -> winter-agent (R-7b-1-no-peer)", () => {
     const result = selectRuntime({
       mode: "code",
@@ -57,7 +57,7 @@ describe("familyListingFromCatalog + the router's own selectRuntime", () => {
     }
   });
 
-  test("dispatch and chat modes run on the Winter runtime even for a Claude model (D13-3-mode)", () => {
+  test("dispatch and chat modes run on the Clover runtime even for a Claude model (D13-3-mode)", () => {
     for (const mode of ["dispatch", "chat"] as const) {
       const result = selectRuntime({
         mode,
@@ -152,7 +152,7 @@ describe("createWinterRuntimeSdk(...).selectRuntimeFor", () => {
     rmSync(home, { recursive: true, force: true });
   });
 
-  test("routes anthropic/claude-sonnet-5 to the Winter runtime once the anthropic credential is stored (WS-23)", async () => {
+  test("routes anthropic/claude-sonnet-5 to the Clover runtime once the anthropic credential is stored (WS-23)", async () => {
     home = mkdtempSync(join(tmpdir(), "p8c-selection-"));
     secretsDir = join(home, "secrets");
     const secrets = new FileSecretStore(secretsDir);

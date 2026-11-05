@@ -18,7 +18,7 @@ const backup: CoworkVolumeBackup = { excludeItem: () => {}, verifyItemExcluded: 
 const IMAGE: CoworkVerifiedGuestImage = { baseImageDigest: "b".repeat(64), runtimeImageDigest: "d".repeat(64), runtimeCapability: { protocolVersion: 1, capabilities: [COWORK_CONFINED_POSTURE_CAPABILITY, "host-query-v1"], supportsConfinedGuestExecution: true } };
 
 function fixture() {
-  const root = realpathSync(mkdtempSync(join(tmpdir(), "winter-provision-"))); roots.push(root);
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "clover-provision-"))); roots.push(root);
   const home = join(root, "home"); mkdirSync(home, { mode: 0o700 });
   const db = openRuntimeStateDb(home), records = new CoworkRepository(db);
   const made = records.create({ principalId: "fixture-user", requestId: "create" }, { ownership: "project", title: "Fixture", sources: [{ kind: "folder", label: "Fixture", access: "read-write", detail: { grantRef: "g", rootIdentity: "r" } }], ceiling: { toolClasses: [], hostServices: [], connectors: [], network: "none" } });

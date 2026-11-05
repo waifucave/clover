@@ -1,5 +1,5 @@
 // Plan readings (`docs/claude/usage.md`): the Codex ladder (its app-server → the newest rollout's `rate_limits` →
-// Winter's own codex-oauth report) and the Claude Code ladder (its own `/usage` → `~/.claude.json`'s cache), with
+// Clover's own codex-oauth report) and the Claude Code ladder (its own `/usage` → `~/.claude.json`'s cache), with
 // FAKE executables only, the staleness rule, the throttles, and the guard on `/usage`.
 import { describe, expect, test } from "bun:test";
 import { existsSync, readFileSync, utimesSync, writeFileSync } from "node:fs";
@@ -25,7 +25,7 @@ function service(over: Partial<UsageServiceDeps> & { logs?: string[] } = {}) {
   const logs = over.logs ?? [];
   const svc = new UsageService({
     db, pricer, tracking: () => ({ codex: true, claudeCode: true, antigravity: true, opencode: true }),
-    codexExecutable: () => undefined, claudeExecutable: () => undefined, winterCodexWindows: () => [],
+    codexExecutable: () => undefined, claudeExecutable: () => undefined, cloverCodexWindows: () => [],
     probeRoot: () => probeRootIn(home), ingestEveryMs: 0, planWaitMs: 20_000, fallbackEveryMs: 0,
     log: { warn: (m, meta) => logs.push(`${m} ${JSON.stringify(meta ?? {})}`), info: (m, meta) => logs.push(`${m} ${JSON.stringify(meta ?? {})}`) },
     ...over,
@@ -171,12 +171,12 @@ describe("the Codex plan", () => {
     expect(later.windows.map((w) => w.usedPercent)).toEqual([50, 60]);
   });
 
-  test("Codex that cannot answer: Winter's own codex-oauth report, status only, labelled; none without it; not installed whatever Winter knows", async () => {
+  test("Codex that cannot answer: Clover's own codex-oauth report, status only, labelled; none without it; not installed whatever Clover knows", async () => {
     const windows = () => [{ rateLimitType: "five_hour", status: "allowed" as const, at: NOW - 1000, resetsAt: NOW + 1000 }];
-    const plan = await service({ codexExecutable: () => FAILING, winterCodexWindows: windows }).svc.codexPlan();
+    const plan = await service({ codexExecutable: () => FAILING, cloverCodexWindows: windows }).svc.codexPlan();
     expect(plan).toMatchObject({ source: "winter-codex-oauth", windows: [], statusOnly: [{ rateLimitType: "five_hour", status: "allowed" }] });
     expect((await service({ codexExecutable: () => FAILING }).svc.codexPlan()).source).toBe("none");
-    expect((await service({ winterCodexWindows: windows }).svc.codexPlan()).source).toBe("not-installed");
+    expect((await service({ cloverCodexWindows: windows }).svc.codexPlan()).source).toBe("not-installed");
   });
 
   test("tracking off: nothing is spawned or read", async () => {
@@ -339,7 +339,7 @@ describe("a plan's last good reading is shown until a fresh one lands (user 2026
     let exe: string | undefined = FAILING;
     const restarted = new UsageService({
       db: env.db, pricer, tracking: () => tracking, codexExecutable: () => exe, claudeExecutable: () => undefined,
-      winterCodexWindows: () => [], probeRoot: () => probeRootIn(env.home), planWaitMs: 20_000, now: () => NOW + 120_000,
+      cloverCodexWindows: () => [], probeRoot: () => probeRootIn(env.home), planWaitMs: 20_000, now: () => NOW + 120_000,
     });
     const plan = await restarted.codexPlan();
     expect([plan.source, plan.at, plan.windows.map((w) => w.usedPercent)]).toEqual(["codex-app-server", NOW, [21, 31]]);
@@ -368,7 +368,7 @@ describe("a plan's last good reading is shown until a fresh one lands (user 2026
     // A restart (Claude Code still not answering): the same kept reading, its name included.
     const restarted = new UsageService({
       db: env.db, pricer, tracking: () => ({ codex: true, claudeCode: true, antigravity: true, opencode: true }), codexExecutable: () => undefined,
-      claudeExecutable: () => broken.path, claudeJsonPath: jsonPath, winterCodexWindows: () => [], probeRoot: () => probeRootIn(env.home),
+      claudeExecutable: () => broken.path, claudeJsonPath: jsonPath, cloverCodexWindows: () => [], probeRoot: () => probeRootIn(env.home),
       planWaitMs: 20_000, now: () => now,
     });
     plan = await restarted.claudeCodePlan();

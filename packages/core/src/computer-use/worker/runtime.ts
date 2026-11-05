@@ -21,9 +21,9 @@ export interface AutomationRuntimeDeps {
 }
 
 /** What a script's stack frames are attributed to — how a thrown error is placed on a line of the script. */
-const SCRIPT_URL = "winter-script";
-/** A saved script's frames: `winter-saved:<name>` — how a throw inside one is placed on a line of ITS source. */
-const SAVED_URL = "winter-saved:";
+const SCRIPT_URL = "clover-script";
+/** A saved script's frames: `clover-saved:<name>` — how a throw inside one is placed on a line of ITS source. */
+const SAVED_URL = "clover-saved:";
 /** Ambient names a script must not reach through the scope chain. Defense in depth only: the seatbelt is the
  *  boundary (no network, no writes, no Keychain), and sloppy-mode `this` can still reach the global object. */
 const SHADOWED = ["process", "require", "module", "exports", "Bun", "globalThis", "global", "self", "fetch", "XMLHttpRequest", "WebSocket", "__filename", "__dirname", "Deno"];
@@ -479,7 +479,7 @@ export function createAutomationRuntime(deps: AutomationRuntimeDeps): Automation
       // "-calibrate": a sourceURL no saved script's name can produce (a name starts with a lowercase letter).
       (new Function(...PARAMS, `with (__scope) { return (\n() => { throw new Error("calibrate") }\n); }\n//# sourceURL=${SAVED_URL}-calibrate`)(scope, store) as () => void)();
     } catch (e) {
-      const m = /winter-saved:-calibrate:(\d+)/.exec(e instanceof Error ? e.stack ?? "" : "");
+      const m = /clover-saved:-calibrate:(\d+)/.exec(e instanceof Error ? e.stack ?? "" : "");
       if (m !== null) return Number(m[1]) - 1;
     }
     return 3;
@@ -487,7 +487,7 @@ export function createAutomationRuntime(deps: AutomationRuntimeDeps): Automation
   /** "(in saved script exportCsv, line 3)" when the throw happened inside a saved script's own code. */
   const savedPlace = (err: unknown): string | undefined => {
     const stack = err !== null && typeof err === "object" && typeof (err as { stack?: unknown }).stack === "string" ? (err as { stack: string }).stack : "";
-    const m = /winter-saved:([a-z][A-Za-z0-9_]{0,47}):(\d+)/.exec(stack);
+    const m = /clover-saved:([a-z][A-Za-z0-9_]{0,47}):(\d+)/.exec(stack);
     if (m === null) return undefined;
     const line = Number(m[2]) - savedLineOffset;
     return line >= 1 ? `(in saved script ${m[1]}, line ${line})` : `(in saved script ${m[1]})`;

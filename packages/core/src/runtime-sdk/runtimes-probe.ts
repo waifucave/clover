@@ -1,9 +1,9 @@
-// Winter Phase 8d — the compiled-binary probe behind `winter-core __runtimes-probe`. It runs
+// Winter Phase 8d — the compiled-binary probe behind `clover-core __runtimes-probe`. It runs
 // OUTSIDE a daemon (no settings, no store — `setting: undefined`, exactly as a fresh boot with
 // nothing configured would see it), resolves the `winter` and `ant` ladders from the given
 // execPath/home/env, reads the bundle's records, and reports what it found. WS-23: the official
 // `claude` ladder it also resolved is gone with the leg. It NEVER spawns `winter` (the pinned build
-// has no version flag — controller measurement M2) and never calls `resolveWinterHome()` — `home` is
+// has no version flag — controller measurement M2) and never calls `resolveCloverHome()` — `home` is
 // exactly what the caller passed, so `scripts/verify-runtimes-compiled.ts` can point it at a mkdtemp
 // dir and prove the real user's homes are never touched.
 import { accessSync, constants as fsConstants, existsSync, readFileSync } from "node:fs";
@@ -13,12 +13,12 @@ import { resolveWinterExecutable } from "./executable";
 
 export interface RuntimesProbeResult {
   ok: boolean;
-  winter: { path?: string; source?: string; executable: boolean; signature?: string };
-  /** Winter Phase 10a (P10a-4): OPTIONAL, unlike winter above — a miss never affects `ok`
+  clover: { path?: string; source?: string; executable: boolean; signature?: string };
+  /** Winter Phase 10a (P10a-4): OPTIONAL, unlike clover above — a miss never affects `ok`
    *  (`resolveAntExecutable` itself has no typed refusal; see bundle-layout.ts). Reported purely
    *  for `scripts/verify-runtimes-compiled.ts`'s fixture-driven proof that the bundle rung
    *  resolves ant inside a REAL compiled `$bunfs` binary, the same way it already proves this for
-   *  winter. */
+   *  clover. */
   ant: { path?: string; source?: string; executable: boolean; signature?: string };
   /** `runtimes/VERSIONS.json`, when staged. */
   versions?: VersionsJson;
@@ -86,8 +86,8 @@ export async function runRuntimesProbe(input: {
   const errors: string[] = [];
   const exists = (p: string): boolean => existsSync(p);
 
-  // --- winter ---------------------------------------------------------------------------------
-  const winterResolution = resolveWinterExecutable({
+  // --- clover ---------------------------------------------------------------------------------
+  const cloverResolution = resolveWinterExecutable({
     setting: undefined,
     env: input.env,
     execPath: input.execPath,
@@ -95,15 +95,15 @@ export async function runRuntimesProbe(input: {
     exists,
     ...(input.resolvePlatformPackageBin === undefined ? {} : { resolvePlatformPackageBin: input.resolvePlatformPackageBin }),
   });
-  const winter: RuntimesProbeResult["winter"] = { executable: false };
-  if (winterResolution.ok) {
-    winter.path = winterResolution.path;
-    winter.source = winterResolution.source;
-    winter.executable = isExecutable(winterResolution.path);
-    if (!winter.executable) errors.push(`winter at ${winterResolution.path} exists but is not executable`);
-    winter.signature = formatSignature(codesignInfo(winterResolution.path));
+  const clover: RuntimesProbeResult["clover"] = { executable: false };
+  if (cloverResolution.ok) {
+    clover.path = cloverResolution.path;
+    clover.source = cloverResolution.source;
+    clover.executable = isExecutable(cloverResolution.path);
+    if (!clover.executable) errors.push(`clover at ${cloverResolution.path} exists but is not executable`);
+    clover.signature = formatSignature(codesignInfo(cloverResolution.path));
   } else {
-    errors.push(winterResolution.error.message);
+    errors.push(cloverResolution.error.message);
   }
 
   // --- ant (Winter Phase 10a, P10a-4) — OPTIONAL: a miss is recorded, never pushed into `errors`
@@ -145,6 +145,6 @@ export async function runRuntimesProbe(input: {
     }
   }
 
-  const ok = winter.executable;
-  return { ok, winter, ant, ...(versions === undefined ? {} : { versions }), ...(antVersions === undefined ? {} : { antVersions }), errors };
+  const ok = clover.executable;
+  return { ok, clover, ant, ...(versions === undefined ? {} : { versions }), ...(antVersions === undefined ? {} : { antVersions }), errors };
 }

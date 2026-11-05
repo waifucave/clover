@@ -8,7 +8,7 @@
 //   3. VERIFY the helper: `pid`'s running code against the helper's designated requirement
 //      (`helper-verify.ts`). A mismatch closes the connection and fails `helper_unavailable`.
 //      A helper speaking another protocol (its `protocol_mismatch` refusal, or another number in its `hello`
-//      result) is the typed `HelperProtocolMismatchError` — "too old/too new for this Winter — update Winter",
+//      result) is the typed `HelperProtocolMismatchError` — "too old/too new for this Clover — update Clover",
 //      never retried — and `status()` reports it (apple/ComputerUse/PROTOCOL.md, "Compatibility").
 //
 // Every failure to reach it is the typed `HelperUnavailableError` (retryable): the next call tries again, and
@@ -27,7 +27,7 @@ import { createConnection } from "node:net";
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import type { WinterProfile } from "../profile";
+import type { CloverProfile } from "../profile";
 import { processSatisfiesRequirement } from "./helper-verify";
 import {
   HELPER_MAX_RESPONSE_LINE, HELPER_MIN_VERSION, HELPER_PROTOCOL, HelperOutdatedError, HelperProtocolMismatchError, HelperRpcError, HelperUnavailableError, helperAppPathFor, helperVersionAtLeast,
@@ -52,7 +52,7 @@ export type HelperVerifier = (pid: number, requirement: string) => boolean;
 
 export interface HelperClientDeps {
   home: string;
-  profile: WinterProfile;
+  profile: CloverProfile;
   transport?: HelperTransport;
   launcher?: HelperLauncher;
   verifier?: HelperVerifier;
@@ -128,7 +128,7 @@ interface Pending { resolve(v: unknown): void; reject(e: unknown): void; timer: 
 
 export interface HelperStatus {
   installed: boolean; running: boolean; version?: string; permissions?: HelperPermissions;
-  /** The running helper speaks another protocol: nothing works until Winter is updated. */
+  /** The running helper speaks another protocol: nothing works until Clover is updated. */
   protocolMismatch?: HelperProtocolMismatch;
 }
 
@@ -234,12 +234,12 @@ export class HelperClient {
       this.mismatchedHelperRunning = false;
       if (!launch) throw new HelperUnavailableError("Winter Computer Use is not running");
       if (!this.deps.launchAllowed) {
-        throw new HelperUnavailableError("Winter Computer Use is not running, and this daemon does not launch it (it serves only the profile's own Winter home)", false);
+        throw new HelperUnavailableError("Winter Computer Use is not running, and this daemon does not launch it (it serves only the profile's own Clover home)", false);
       }
       if (!this.launcher.installed(this.appPath)) {
         throw new HelperUnavailableError(this.deps.profile === "dev"
           ? "Winter Computer Use Dev is not built — run `bun run dev:helper`, then try again"
-          : "Winter Computer Use is not installed — reinstall Winter, then try again", false);
+          : "Winter Computer Use is not installed — reinstall Clover, then try again", false);
       }
       try { await this.launcher.launch(this.appPath); } catch (err) {
         throw new HelperUnavailableError(`Winter Computer Use could not be launched (${err instanceof Error ? err.message : "error"})`);
@@ -417,13 +417,13 @@ export class HelperClient {
     // Not connected: connect only if it is already running (no launch), inside the single-flight connect.
     if (this.conn === undefined) await this.connectIfRunning();
     if (this.conn === undefined) {
-      // It answered, in another protocol: unusable until Winter is updated (running while it still answers).
+      // It answered, in another protocol: unusable until Clover is updated (running while it still answers).
       if (this.lastMismatch !== undefined) return { installed, running: this.mismatchedHelperRunning, protocolMismatch: this.lastMismatch };
-      // Too old (it answered, in our protocol, but predates the desktop-switch prompt): the same "update Winter" state.
+      // Too old (it answered, in our protocol, but predates the desktop-switch prompt): the same "update Clover" state.
       if (this.lastOutdated !== undefined) {
         const message = new HelperOutdatedError(this.lastOutdated === "unknown" ? undefined : this.lastOutdated).message;
         return { installed, running: true, ...(this.lastOutdated === "unknown" ? {} : { version: this.lastOutdated }),
-          protocolMismatch: { helperProtocol: HELPER_PROTOCOL, ...(this.lastOutdated === "unknown" ? {} : { helperVersion: this.lastOutdated }), winterProtocol: HELPER_PROTOCOL, message } };
+          protocolMismatch: { helperProtocol: HELPER_PROTOCOL, ...(this.lastOutdated === "unknown" ? {} : { helperVersion: this.lastOutdated }), cloverProtocol: HELPER_PROTOCOL, message } };
       }
       return { installed, running: false };
     }

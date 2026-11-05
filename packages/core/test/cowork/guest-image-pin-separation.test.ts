@@ -31,7 +31,7 @@ const PROOF = {};
 const digests = (runtime: string): CoworkImageDigests => ({ baseImageDigest: BASE, runtimeImageDigest: runtime });
 
 function fixture() {
-  const home = mkdtempSync(join(tmpdir(), "winter-image-separation-"));
+  const home = mkdtempSync(join(tmpdir(), "clover-image-separation-"));
   const db: RuntimeStateDb = openRuntimeStateDb(home), repo = new CoworkRepository(db);
   cleanup.push(() => { db.close(); rmSync(home, { recursive: true, force: true }); });
   const made = repo.create({ principalId: "fixture-user", requestId: "create" }, {

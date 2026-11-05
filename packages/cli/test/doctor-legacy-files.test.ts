@@ -1,4 +1,4 @@
-// A3: `winter doctor`'s legacy-files line. The helper is tested directly on a temp home; the whole
+// A3: `clover doctor`'s legacy-files line. The helper is tested directly on a temp home; the whole
 // `doctor` command is NOT run here because its migration section reads the legacy Keychain service
 // (a real Keychain), which no test may touch. The wiring into `doctor` is pinned at source level.
 import { afterEach, describe, expect, test } from "bun:test";
@@ -9,7 +9,7 @@ import { legacyFilesDoctorLine, sdkHomeDoctorSection } from "../src/doctor-legac
 
 const dirs: string[] = [];
 function home(): string {
-  const d = mkdtempSync(join(tmpdir(), "winter-cli-doctor-legacy-"));
+  const d = mkdtempSync(join(tmpdir(), "clover-cli-doctor-legacy-"));
   dirs.push(d);
   return d;
 }
@@ -17,7 +17,7 @@ afterEach(() => {
   while (dirs.length) rmSync(dirs.pop()!, { recursive: true, force: true });
 });
 
-describe("winter doctor — the A3 legacy-files line", () => {
+describe("clover doctor — the A3 legacy-files line", () => {
   test("a home with an mcp.json declaring a server and a tools.json: one line naming both, saying where MCP servers belong; files untouched", () => {
     const h = home();
     const mcp = JSON.stringify({ mcpServers: { youtube: { command: "npx", args: ["-y", "yt-mcp"] } } });
@@ -28,9 +28,9 @@ describe("winter doctor — the A3 legacy-files line", () => {
     expect(line!.includes("\n")).toBe(false);
     expect(line).toContain(h);
     expect(line).toContain("mcp.json, tools.json");
-    expect(line).toContain("not read by Winter");
+    expect(line).toContain("not read by Clover");
     expect(line).toContain("mcp.json declares 1 MCP server");
-    expect(line).toContain("winter mcp add");
+    expect(line).toContain("clover mcp add");
     expect(readFileSync(join(h, "mcp.json"), "utf8")).toBe(mcp);
   });
 
@@ -41,10 +41,10 @@ describe("winter doctor — the A3 legacy-files line", () => {
   });
 
   test("a missing home prints nothing and never throws", () => {
-    expect(legacyFilesDoctorLine(join(tmpdir(), "winter-cli-doctor-legacy-absent-xyz"))).toBeUndefined();
+    expect(legacyFilesDoctorLine(join(tmpdir(), "clover-cli-doctor-legacy-absent-xyz"))).toBeUndefined();
   });
 
-  test("`winter doctor` prints it (wired into the doctor command's migration section)", () => {
+  test("`clover doctor` prints it (wired into the doctor command's migration section)", () => {
     const main = readFileSync(join(import.meta.dir, "..", "src", "main.ts"), "utf8");
     const doctorCase = main.slice(main.indexOf('case "doctor": {'), main.indexOf("const repair = args.includes(\"--repair\")"));
     expect(doctorCase).toContain("legacyFilesDoctorLine(home)");
@@ -54,7 +54,7 @@ describe("winter doctor — the A3 legacy-files line", () => {
 // WS-21 L3.7: the shared-runtime-home section beside the legacy-files line.
 describe("sdkHomeDoctorSection", () => {
   test("a fresh home reports the new layout; never throws", () => {
-    const home = mkdtempSync(join(tmpdir(), "winter-cli-sdkdoc-"));
+    const home = mkdtempSync(join(tmpdir(), "clover-cli-sdkdoc-"));
     expect(sdkHomeDoctorSection(home)).toEqual(["sdk home: the shared runtime home layout (no migration needed)"]);
     expect(sdkHomeDoctorSection(join(home, "missing"))).toEqual(["sdk home: the shared runtime home layout (no migration needed)"]);
   });

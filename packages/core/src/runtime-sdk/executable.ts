@@ -1,5 +1,5 @@
 // P8b-2: where the daemon finds the `winter` runtime binary it spawns for every session on the
-// Winter leg.
+// Clover leg.
 //
 // WHY A PATH IS ALWAYS PASSED. The SDK's own `resolveRuntimeExecutable` falls back to the
 // platform package `@yanlinglabs/winter-agent-sdk-darwin-arm64`, which is `private` and NOT on npm
@@ -8,10 +8,10 @@
 // in a real `node_modules`. So the host ALWAYS passes `Options.pathToClaudeCodeExecutable`, and
 // this module is how it gets one.
 //
-// P8d-1: the "bundle" rung moved from a bare `<dirname(execPath)>/winter` sibling to
+// P8d-1: the "bundle" rung moved from a bare `<dirname(execPath)>/clover` sibling to
 // `<dirname(execPath)>/runtimes/winter` (`bundleRuntimePath`, the one place this layout is
 // spelled) — the Release app now embeds BOTH runtimes under one `Resources/runtimes/` subtree
-// rather than dropping `winter` next to `winter-core` itself.
+// rather than dropping `winter` next to `clover-core` itself.
 //
 // P9a-9: the ladder gains a FIFTH, LAST rung — the installed npm platform package
 // (`@yanlinglabs/winter-agent-sdk-darwin-arm64`, published starting with the v0.0.5 tag; see
@@ -41,8 +41,8 @@ import { REQUIRED_WINTER_AGENT_SDK } from "./versions";
 
 export type WinterExecutableSource = "setting" | "env" | "bundle" | "home" | "platform-package";
 
-const WINTER_WRAPPER_PACKAGE = "@yanlinglabs/winter-agent-sdk";
-const WINTER_PLATFORM_PACKAGE = "@yanlinglabs/winter-agent-sdk-darwin-arm64";
+const CLOVER_WRAPPER_PACKAGE = "@yanlinglabs/winter-agent-sdk";
+const CLOVER_PLATFORM_PACKAGE = "@yanlinglabs/winter-agent-sdk-darwin-arm64";
 
 /**
  * P9a-9's package door, fixed by the P9a fix wave's C1: resolves
@@ -65,14 +65,14 @@ export function resolvePlatformPackageWinter(fromUrl: string = import.meta.url):
   const req = createRequire(fromUrl);
   let packageJsonPath: string | undefined;
   try {
-    const wrapperPackageJson = req.resolve(`${WINTER_WRAPPER_PACKAGE}/package.json`);
-    packageJsonPath = createRequire(wrapperPackageJson).resolve(`${WINTER_PLATFORM_PACKAGE}/package.json`);
+    const wrapperPackageJson = req.resolve(`${CLOVER_WRAPPER_PACKAGE}/package.json`);
+    packageJsonPath = createRequire(wrapperPackageJson).resolve(`${CLOVER_PLATFORM_PACKAGE}/package.json`);
   } catch {
     packageJsonPath = undefined;
   }
   if (packageJsonPath === undefined) {
     try {
-      packageJsonPath = req.resolve(`${WINTER_PLATFORM_PACKAGE}/package.json`);
+      packageJsonPath = req.resolve(`${CLOVER_PLATFORM_PACKAGE}/package.json`);
     } catch {
       return undefined;
     }
@@ -95,7 +95,7 @@ export type WinterExecutableResolution =
   | { ok: true; path: string; source: WinterExecutableSource }
   | { ok: false; error: WinterExecutableUnavailable };
 
-/** The typed refusal. A session on the Winter leg fails at create with this — NEVER a silent
+/** The typed refusal. A session on the Clover leg fails at create with this — NEVER a silent
  *  fallback to the retiring engine (P8b-2). `tried` stays PURE PATHS (an explicit path, or the two
  *  implicit filesystem rungs) — P9a-9's package door has no fixed path to report on a miss (it is
  *  a `require` resolution, not a `existsSync` probe), so it is named separately via
@@ -107,7 +107,7 @@ export class WinterExecutableUnavailable extends Error {
       `winter runtime executable not found (tried: ${tried.join(", ") || "nothing configured"}` +
         `${opts?.triedPlatformPackage ? ", nor the installed platform package (@yanlinglabs/winter-agent-sdk-darwin-arm64)" : ""})` +
         `${opts?.detail ? `: ${opts.detail}` : ""}; ` +
-        `set settings.runtimes.winterExecutable or WINTER_RUNTIME_EXECUTABLE, run \`bun run build:winter\`, or install the optional ` +
+        `set settings.runtimes.winterExecutable or CLOVER_RUNTIME_EXECUTABLE, run \`bun run build:winter\`, or install the optional ` +
         `@yanlinglabs/winter-agent-sdk-darwin-arm64 platform package (\`bun install\`)`,
     );
     this.name = "WinterExecutableUnavailable";
@@ -129,7 +129,7 @@ export function resolveWinterExecutable(input: {
    *  (never real-install-dependent) so the ladder's unit tests never need `bun add` a tarball. */
   resolvePlatformPackageBin?: () => string | undefined;
 }): WinterExecutableResolution {
-  const explicit: Array<[WinterExecutableSource, string | undefined]> = [["setting", input.setting?.trim() || undefined], ["env", input.env.WINTER_RUNTIME_EXECUTABLE?.trim() || undefined]];
+  const explicit: Array<[WinterExecutableSource, string | undefined]> = [["setting", input.setting?.trim() || undefined], ["env", input.env.CLOVER_RUNTIME_EXECUTABLE?.trim() || undefined]];
   for (const [source, path] of explicit) {
     if (!path) continue;
     return input.exists(path) ? { ok: true, path, source } : { ok: false, error: new WinterExecutableUnavailable([path]) };
@@ -150,7 +150,7 @@ export function resolveWinterExecutable(input: {
   return { ok: false, error: new WinterExecutableUnavailable(tried, { triedPlatformPackage: true }) };
 }
 
-/** An explicitly configured runtime (`runtimes.winterExecutable` / `$WINTER_RUNTIME_EXECUTABLE`) is used as
+/** An explicitly configured runtime (`runtimes.winterExecutable` / `$CLOVER_RUNTIME_EXECUTABLE`) is used as
  *  it is — that is how a local SDK build gets tested — so nothing refuses a version that differs from the
  *  pin. But a stale one silently runs yesterday's runtime (2026-09-30: a dev home's `dist/winter` stayed on
  *  0.0.35 after the pin moved to 0.0.36, and code sessions got the old Read). This names the mismatch:
@@ -178,5 +178,5 @@ export function explicitRuntimeVersionNote(path: string, deps: VersionProbeDeps 
   const reported = winterBinaryVersion(path, deps);
   return reported === undefined || reported === REQUIRED_WINTER_AGENT_SDK
     ? undefined
-    : `code sessions run ${path}, which reports winter ${reported}, but this daemon is pinned to ${REQUIRED_WINTER_AGENT_SDK} — rebuild it (bun run build:winter) or unset runtimes.winterExecutable / $WINTER_RUNTIME_EXECUTABLE`;
+    : `code sessions run ${path}, which reports winter ${reported}, but this daemon is pinned to ${REQUIRED_WINTER_AGENT_SDK} — rebuild it (bun run build:winter) or unset runtimes.winterExecutable / $CLOVER_RUNTIME_EXECUTABLE`;
 }

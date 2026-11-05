@@ -6,7 +6,7 @@ import type { ProtocolSdkMessage } from "./types";
  * Four families reach the host that have no `SessionEvent` home, and 8b adds no variant for them:
  *
  *  - **Hook lifecycle** — `hook_started` / `hook_progress` / `hook_response` (§4.5), gated on
- *    `Options.includeHookEvents` and always written to Winter's own audit stream regardless. There
+ *    `Options.includeHookEvents` and always written to Clover's own audit stream regardless. There
  *    is no `hook_*` SessionEvent and inventing one would re-enter the full seven-step protocol
  *    checklist, Swift side included.
  *  - **`rate_limit_event` / `auth_status`** (§4.7). Neither is the failure frame it looks like: an
@@ -15,7 +15,7 @@ import type { ProtocolSdkMessage } from "./types";
  *    would put a card in the transcript for something that has not gone wrong.
  *  - **`system/api_retry`** — one frame per attempt, BEFORE the delay. A retried request that then
  *    succeeds is not an error, and the terminal `result` is where a genuine failure lands.
- *  - **Winter-only extension messages** — `thinking_tokens`, `model_refusal_*`, `reasoning_summary`,
+ *  - **Clover-only extension messages** — `thinking_tokens`, `model_refusal_*`, `reasoning_summary`,
  *    `model_switch` (§4.7). `continuity_warning` is NOT one of them any more (WS-23 review r1 I-3): it
  *    is persisted as the `continuity_warning` SessionEvent, because the user must see what a switch or
  *    a failed write lost -- except its three resume-time kinds, re-emitted on every incarnation and so

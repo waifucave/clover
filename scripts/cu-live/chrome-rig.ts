@@ -24,7 +24,7 @@ export interface ChromeRigDeps {
   activateUser(): Promise<void>;
   /** Brings `pid` to the front AS THE USER would (the live-test helper's test.activate asUser). */
   activateAsUser(pid: number): Promise<void>;
-  /** Binds the browser once in a session of its own (Winter switches its accessibility on). */
+  /** Binds the browser once in a session of its own (Clover switches its accessibility on). */
   bindOnce(): Promise<void>;
   /** Runs one ComputerV2 turn (after the suite's prelude) in a session of its own; throws on an error. */
   turn(code: string): Promise<void>;

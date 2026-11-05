@@ -12,7 +12,7 @@
 // `installed_plugins.json` record at every scope, enabled or not (a deliberate SUPERSET — an extra name only
 // ever makes an ambiguous split ask, the conservative direction), plus every ENABLED key with no install
 // record that a DIRECTORY marketplace in `known_marketplaces.json` resolves — from the user's
-// `sdk/settings.json` and, for a trusted project, its `.winter/settings.json` and `.winter/settings.local.json`
+// `sdk/settings.json` and, for a trusted project, its `.clover/settings.json` and `.clover/settings.local.json`
 // (the files `plugin.enable --scope project|local` writes). The marketplace source is resolved with the SDK's
 // own `resolveMarketplacePluginPath` (it refuses a source that escapes the marketplace), and a plugin's names
 // are the first of `.mcp.json`/`mcp.json` (its `mcpServers` block or the bare map) plus its manifest's.
@@ -20,7 +20,7 @@
 // SUBAGENT DEFINITIONS: `agents/*.md` frontmatter `mcpServers` — claude's list of server-name references and
 // `{ <name>: <config> }` objects; only the objects declare a server (a string names one the session already
 // has). From the user tier (`<home>/sdk/agents`, and `<home>/agents` when it is a directory of its own), a
-// trusted project's `.winter/agents` (at its project root, and at the cwd when that differs) and each plugin's
+// trusted project's `.clover/agents` (at its project root, and at the cwd when that differs) and each plugin's
 // `agents/`. The name is the CONFIG name: a clash inside a session renames the server (`cf` → `cf_2`), and
 // the runtime states the config name beside each call (`winter_mcp_server.config_name`), which is what the
 // stored values are keyed by. NOTE: the pinned runtime's own agent-file parser (`parseAgentDefinitionFile`, checked at
@@ -89,8 +89,8 @@ export function pluginInstallPaths(home: string, projectRoots: readonly string[]
   };
   try { addEnabled(sdkEnabledPlugins(home)); } catch { /* unreadable: none */ }
   for (const project of projectRoots) {
-    addEnabled(readJsonObject(join(project, ".winter", "settings.json"))?.["enabledPlugins"]);
-    addEnabled(readJsonObject(join(project, ".winter", "settings.local.json"))?.["enabledPlugins"]);
+    addEnabled(readJsonObject(join(project, ".clover", "settings.json"))?.["enabledPlugins"]);
+    addEnabled(readJsonObject(join(project, ".clover", "settings.local.json"))?.["enabledPlugins"]);
   }
   let marketplaces: Record<string, unknown> | undefined;
   for (const key of enabled) {
@@ -180,7 +180,7 @@ function agentDirServers(dir: string, scope: AgentInlineScope, out: AgentInlineM
 
 /**
  * Every inline MCP server a subagent definition declares — the user tier, the given (trusted) project roots
- * (plus `cwd`'s own `.winter/agents` when it is inside one of them and differs) and the plugins those roots
+ * (plus `cwd`'s own `.clover/agents` when it is inside one of them and differs) and the plugins those roots
  * enable (this file's header).
  */
 export function agentInlineMcpServers(home: string, projectRoots: readonly string[] = [], cwd?: string): AgentInlineMcpServer[] {
@@ -194,8 +194,8 @@ export function agentInlineMcpServers(home: string, projectRoots: readonly strin
   };
   dir(join(sdkHomeFor(home), "agents"), "user");
   dir(join(home, "agents"), "user");
-  for (const root of projectRoots) dir(join(root, ".winter", "agents"), "project");
-  if (cwd !== undefined && cwd !== "" && projectRoots.some((r) => canonical(cwd).startsWith(r.endsWith(sep) ? r : r + sep))) dir(join(cwd, ".winter", "agents"), "project");
+  for (const root of projectRoots) dir(join(root, ".clover", "agents"), "project");
+  if (cwd !== undefined && cwd !== "" && projectRoots.some((r) => canonical(cwd).startsWith(r.endsWith(sep) ? r : r + sep))) dir(join(cwd, ".clover", "agents"), "project");
   for (const plugin of pluginInstallPaths(home, projectRoots)) dir(join(plugin, "agents"), "plugin");
   return out;
 }
@@ -249,7 +249,7 @@ function linkedWorktrees(root: string): string[] | "unknown" {
 
 /**
  * Does anything still define an MCP server named `name` — the user scope, ANY project's local scope, the
- * `.winter/mcp.json` of the cwd's trusted project, of any trusted project or of any linked worktree of one
+ * `.clover/mcp.json` of the cwd's trusted project, of any trusted project or of any linked worktree of one
  * (a worktree's project scope is its own top), a plugin, or a subagent definition? `mcp.remove`/`mcp.rename`
  * keep a name's connector settings while it does. Fail-safe toward "defined": git failing to list a trusted
  * repository's worktrees answers `true`. Unreadable files count as "not defined there".

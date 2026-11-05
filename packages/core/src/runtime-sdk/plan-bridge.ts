@@ -1,11 +1,11 @@
 import type { PermissionResult } from "@yanlinglabs/winter-agent-sdk";
-import type { NewSessionEvent } from "@yanlinglabs/winter-protocol";
+import type { NewSessionEvent } from "@waifucave/clover-protocol";
 import type { SessionApprovalPolicy } from "../agent/gate";
 import type { BridgedApprovalRequest } from "./approval-bridge";
 import { NO_PARK_TIMEOUT_MS, type BridgeLogger } from "./bridge-common";
 
 /**
- * **The `ExitPlanMode` bridge** (P8c-11 / Task 2.3) — a Winter child's plan presentation over the
+ * **The `ExitPlanMode` bridge** (P8c-11 / Task 2.3) — a Clover child's plan presentation over the
  * `plan_presented`/`plan_resolved` events and `plan.respond` RPC that PREDATE this phase
  * (`agent/plans.ts`'s `PlanBroker`, `ipc/server.ts`'s `case METHODS.planRespond`): both retired
  * with the engine (`event-coverage.ts` marked both variants `false`, "fate follows the tool that
@@ -18,9 +18,9 @@ import { NO_PARK_TIMEOUT_MS, type BridgeLogger } from "./bridge-common";
  * leaves the session in `"plan"`, whichever button was pressed); on rejection, the model is told
  * to stay in plan mode and revise.
  *
- * **What changed for the Winter leg, and why `onExitPlanMode` answers a `PermissionResult` and not
+ * **What changed for the Clover leg, and why `onExitPlanMode` answers a `PermissionResult` and not
  * a tool result.** The retired engine ran `exit_plan_mode` as one of its OWN registered tools, so
- * approval/rejection was reported as that tool's `{output, isError}`. Winter's `ExitPlanMode` is a
+ * approval/rejection was reported as that tool's `{output, isError}`. Clover's `ExitPlanMode` is a
  * BUILT-IN the child calls through `canUseTool` (Task 2.3's brief: "ExitPlanMode arrives as a
  * canUseTool request") — the same shape `approval-bridge.ts`'s `canUseToolFor` answers everything
  * else with, so this bridge answers the same way: `allow`/`updatedInput` on approval, `deny`/
@@ -53,7 +53,7 @@ export interface PlanBridgeDeps {
   /**
    * Persists the session's new approval policy AND reaches a live child (the retired engine's
    * `cfg.setPolicy` — `ipc/server.ts`'s `session.setPolicy` case composes the identical pair,
-   * `store.setApprovalPolicy` + `winter.get(sessionId)?.setPolicy`). Called ONLY on approval,
+   * `store.setApprovalPolicy` + `clover.get(sessionId)?.setPolicy`). Called ONLY on approval,
    * never on rejection or timeout — leaving plan mode is what an approval MEANS.
    */
   setPolicy: (sessionId: string, policy: SessionApprovalPolicy) => Promise<void> | void;
@@ -61,7 +61,7 @@ export interface PlanBridgeDeps {
   /** Test seam; defaults to `Date.now`. */
   now?: () => number;
   /** Defaults to `NO_PARK_TIMEOUT_MS` (24.8 days) — the SAME park ceiling `approval-bridge.ts`/
-   *  `question-bridge.ts` use, not the retired engine's 5-minute `WINTER_PLAN_TIMEOUT_MS`: a plan
+   *  `question-bridge.ts` use, not the retired engine's 5-minute `CLOVER_PLAN_TIMEOUT_MS`: a plan
    *  is exactly as human-paced as any other approval card, and a shorter park would silently auto-
    *  reject a plan a human is still reading. */
   parkTimeoutMs?: number;
@@ -112,7 +112,7 @@ export function planBridgeFor(deps: PlanBridgeDeps): PlanBridge {
   async function onExitPlanMode(request: BridgedPlanRequest): Promise<PermissionResult> {
     const { sessionId, callId, plan } = request;
     // ExitPlanMode is main-thread-only (event-coverage.ts: plan tools are excluded from every
-    // child — `childExcludeTools` in the retired engine, the same exclusion Winter's own
+    // child — `childExcludeTools` in the retired engine, the same exclusion Clover's own
     // descriptor availability enforces), so this bridge never learns a non-main threadId.
     const threadId = "main";
 

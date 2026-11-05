@@ -34,7 +34,7 @@ describe("waitForUser(): the cards", () => {
     const out = await p({ reason: "Sign in to your bank\n(2-step code)" });
     expect(out).toEqual({ done: true });
     expect(answers).toEqual([
-      "Google Chrome — accounts.example.com: Sign in to your bank (2-step code). Winter waits while you do it.",
+      "Google Chrome — accounts.example.com: Sign in to your bank (2-step code). Clover waits while you do it.",
       "Waiting for you on accounts.example.com in Google Chrome — press Done when you have finished.",
     ]);
     expect(h.cards.map((c) => c.options?.map((o) => o.id))).toEqual([["handoff_show", "handoff_done"], ["handoff_done"]]);
@@ -89,13 +89,13 @@ describe("waitForUser(): the cards", () => {
     r3.end();
   });
 
-  test("what the page logged while the user had the tab is not Winter's: replayed console entries from the hand-off are dropped", async () => {
+  test("what the page logged while the user had the tab is not Clover's: replayed console entries from the hand-off are dropped", async () => {
     let during = 0;
     const { h, r, key, p } = await opened("chrome", { answer: (s) => { if (s.startsWith("Google Chrome — ")) return "handoff_show"; during = Date.now(); return "handoff_done"; } });
     const before = Date.now() - 1_000;
     h.chrome.pageEvent(key, "Runtime.consoleAPICalled", { type: "log", timestamp: before, args: [{ type: "string", value: "before the hand-off" }] });
     expect(await p({ reason: "sign in" })).toEqual({ done: true });
-    // The browser replays the sign-in page's messages on Runtime.enable; one from after Winter is back is live.
+    // The browser replays the sign-in page's messages on Runtime.enable; one from after Clover is back is live.
     h.chrome.pageEvent(key, "Runtime.consoleAPICalled", { type: "log", timestamp: during, args: [{ type: "string", value: "one-time code 492817 accepted" }] });
     h.chrome.pageEvent(key, "Log.entryAdded", { entry: { source: "network", level: "error", text: "sign-in request failed", timestamp: during } });
     h.chrome.pageEvent(key, "Runtime.consoleAPICalled", { type: "log", timestamp: Date.now() + 5, args: [{ type: "string", value: "after the hand-off" }] });
@@ -131,7 +131,7 @@ describe("waitForUser(): the cards", () => {
     r.end();
   });
 
-  test("the tab closed while Winter waited: TargetLost", async () => {
+  test("the tab closed while Clover waited: TargetLost", async () => {
     const { h, r, key, p } = await opened("chrome", { answer: (s) => (s.startsWith("Google Chrome — ") ? "handoff_show" : undefined) });
     const waiting = p({ reason: "sign in" });
     for (let i = 0; i < 50 && h.cards.length < 2; i++) await tick();
@@ -141,21 +141,21 @@ describe("waitForUser(): the cards", () => {
     r.end();
   });
 
-  test("the built-in browser: its hold is dropped before the first card (native prompts can show), then the tab is shown in Winter's window", async () => {
+  test("the built-in browser: its hold is dropped before the first card (native prompts can show), then the tab is shown in Clover's window", async () => {
     const order: string[] = [];
-    const { h, r, key, p } = await opened("winter", { answer: (s) => (s.startsWith("Winter's browser — ") ? "handoff_show" : "handoff_done") });
+    const { h, r, key, p } = await opened("winter", { answer: (s) => (s.startsWith("Clover's browser — ") ? "handoff_show" : "handoff_done") });
     const present = h.winter.present!;
     h.winter.present = async (k, o) => { order.push(`present attached=${h.winter.tabs.get(k)!.attached}`); await present(k, o); };
     expect(await p({ reason: "solve the CAPTCHA" })).toEqual({ done: true });
     expect(order).toEqual(["present attached=false"]);
     expect(h.winter.presented).toEqual([`${key}@s1`]);
-    expect(r.text()).toContain("showed the tab to the user in Winter's window");
+    expect(r.text()).toContain("showed the tab to the user in Clover's window");
     r.end();
   });
 });
 
 describe("waitForUser(): policy and checks", () => {
-  test("dont-ask never asks: NotAllowed naming the host; plan may ask (the user acts, not Winter)", async () => {
+  test("dont-ask never asks: NotAllowed naming the host; plan may ask (the user acts, not Clover)", async () => {
     const d = await opened("winter", { policy: "dont-ask" });
     const e = await failure(d.p({ reason: "sign in" }));
     expect((e as AutomationFailure).kind).toBe("NotAllowed");
