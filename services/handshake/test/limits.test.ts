@@ -35,17 +35,16 @@ describe("rate limits", () => {
     expect(ipv6Prefix64("fe80::1%en0")).toBe("fe80:0:0:0");
   });
 
-  test("a member's calls: 120 a minute", async () => {
-    await clearOfMinuteBoundary(20_000);
+  // Waiting for a clear minute can take 20 s by itself, and a slow runner (Windows CI) needs more for the calls.
+  test("a member's calls: 120 a minute", { timeout: 90_000 }, async () => {
+    await clearOfMinuteBoundary(30_000);
     const { pair, a, c } = await registeredPair();
     const scope = c.pair(pair, a);
     let limited = 0;
-    for (let i = 0; i < 125; i++) {
-      try {
-        await scope.get();
-      } catch {
-        limited++;
-      }
+    // GETs may run side by side (only mutations wait for the one before), so the 125 go in batches.
+    for (let batch = 0; batch < 5; batch++) {
+      const results = await Promise.allSettled(Array.from({ length: 25 }, () => scope.get()));
+      limited += results.filter((r) => r.status === "rejected").length;
     }
     expect(limited).toBe(5);
   });
