@@ -9,6 +9,7 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { query } from "@yanlinglabs/winter-agent-sdk";
+import { CORE_BRAND } from "../../src/runtime-sdk/brand";
 import { readStoredDiff } from "../../src/diffs/store";
 import { takeFileDiff } from "../../src/runtime-sdk/diff-attach";
 import { sessionHooksFor, type HookFacadeLike } from "../../src/runtime-sdk/hooks";
@@ -24,6 +25,8 @@ async function drive(bin: string, opts: {
     prompt: queue,
     options: {
       pathToClaudeCodeExecutable: bin,
+      // The router injects the session's brand; a child driven directly is handed the daemon's own.
+      brand: CORE_BRAND,
       model: `winter-test/${opts.provider}`,
       cwd: opts.cwd,
       allowedTools: ["Bash", "Write"],

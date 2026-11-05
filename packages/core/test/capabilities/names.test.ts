@@ -60,7 +60,7 @@ describe("capabilityToolName (P8b-12)", () => {
     expect(capabilityToolName("research", "Search")).toBe("mcp__clover__research__Search");
   });
 
-  // Since P9b-7 the daemon's own MCP namespace IS `clover` (`CORE_BRAND.mcpServerName`). What still has
+  // Since C0 the daemon's own MCP namespace IS `clover` (`CORE_BRAND.mcpServerName`). What still has
   // to hold (R-1, `capabilityServerName`'s own doc) is narrower: a capability SERVER's `clover__<key>`
   // name can never equal the BARE brand name `"clover"` itself, which the router reserves for its
   // standing messaging server — the `__<key>` suffix is what guarantees that.

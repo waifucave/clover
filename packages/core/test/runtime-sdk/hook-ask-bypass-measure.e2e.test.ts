@@ -12,6 +12,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { query, type CanUseTool, type HookCallback } from "@yanlinglabs/winter-agent-sdk";
+import { CORE_BRAND } from "../../src/runtime-sdk/brand";
 import { createHostPromptQueue } from "../../src/runtime-sdk/prompt-queue";
 import { describeWithWinterBinary } from "../helpers/winter-binary";
 
@@ -38,6 +39,8 @@ describeWithWinterBinary("fix round 2 measurement — a hook `ask` under bypassP
       prompt: queue,
       options: {
         pathToClaudeCodeExecutable: bin,
+        // The router injects the session's brand; a child driven directly is handed the daemon's own.
+        brand: CORE_BRAND,
         model: "winter-test/lanec",
         cwd,
         permissionMode: "bypassPermissions",

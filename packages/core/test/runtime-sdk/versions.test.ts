@@ -13,7 +13,7 @@ describe("peer versions", () => {
   test("CLOVER_PEER_VERSIONS is host-declared from SDK_VERSION and the matrix accepts it", () => {
     // WS-23: the Clover peer is the only one — no `claudeAgentSdk` key, whatever node_modules holds.
     expect(CLOVER_PEER_VERSIONS).toEqual({ winterAgentSdk: SDK_VERSION });
-    const report = assertVersionMatrix({ winter }, CLOVER_PEER_VERSIONS);
+    const report = assertVersionMatrix({ winter: clover }, CLOVER_PEER_VERSIONS);
     expect(report.winterAgentSdk.source).toBe("host-declared");
     expect(SUPPORTED.winterAgentSdk).toBeDefined();
   });

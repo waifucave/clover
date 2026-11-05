@@ -25,6 +25,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { query, type HookCallback, type HookInput, type Options } from "@yanlinglabs/winter-agent-sdk";
+import { CORE_BRAND } from "../../src/runtime-sdk/brand";
 import { createHostPromptQueue } from "../../src/runtime-sdk/prompt-queue";
 import { describeWithWinterBinary } from "../helpers/winter-binary";
 
@@ -51,6 +52,8 @@ async function driveWithHooks(bin: string, hooks: Options["hooks"]): Promise<{
     prompt: queue,
     options: {
       pathToClaudeCodeExecutable: bin,
+      // The router injects the session's brand; a child driven directly is handed the daemon's own.
+      brand: CORE_BRAND,
       model: "winter-test/lanec",
       cwd,
       allowedTools: ["Bash"],

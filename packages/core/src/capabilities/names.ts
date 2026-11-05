@@ -32,11 +32,9 @@
 // DERIVES each name from the declared server through the router's own path and asserts the two
 // agree, so the table can never again describe names the router does not register.
 //
-// R-1's NAMESPACE IS `clover` (`CORE_BRAND.mcpServerName`) — the daemon's OWN brand namespace, not a
-// foreign one being avoided. Pre-rename this pinned the daemon to its OWN old brand token,
-// deliberately never `clover` (the SDK's own reserved brand name), to keep the two apart; since
-// P9b-7 the daemon's brand equals the SDK's `WINTER_BRAND` except three fields, so `mcpServerName` is genuinely
-// `"clover"` for both sides now — that reason no longer exists. The invariant that still matters,
+// R-1's NAMESPACE IS `clover` (`CORE_BRAND.mcpServerName`) — the daemon's OWN brand namespace, which
+// since C0 differs from the SDK default's (`WINTER_BRAND`); nothing here depends on the two being
+// equal or apart. The invariant that still matters,
 // narrower but load-bearing, is `capabilityServerName`'s own: a capability server's `clover__<key>`
 // name can never equal the bare brand name `"clover"` itself, which the router reserves for its
 // standing messaging server — the `__<key>` suffix guarantees that. The Mac/iOS renderers key tool

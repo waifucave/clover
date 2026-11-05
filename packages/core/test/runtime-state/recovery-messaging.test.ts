@@ -102,7 +102,7 @@ describe("recovery step 10 — directory.recover() over the 8a store", () => {
       try {
         const directoryStore = createSqliteRuntimeDirectoryStore(rs);
         const sdk = createRuntimeSdk({
-          peers: { winter },
+          peers: { winter: clover },
           peerVersions: CLOVER_PEER_VERSIONS,
           keychain: { read: async () => undefined },
           brand: CORE_BRAND,

@@ -20,6 +20,7 @@ import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync } from "node:f
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { query as cloverQuery } from "@yanlinglabs/winter-agent-sdk";
+import { CORE_BRAND } from "../../src/runtime-sdk/brand";
 import { escapeRulePath } from "@yanlinglabs/winter-runtime-sdk";
 import { fsRootAnchored } from "../../src/runtime-sdk/mode-options";
 import { describeWithWinterBinary } from "../helpers/winter-binary";
@@ -56,6 +57,8 @@ describeWithWinterBinary("R.2 carry — escaped rule paths on the Clover leg", (
         prompt: b.target,
         options: {
           pathToClaudeCodeExecutable: bin,
+          // The router injects the session's brand; a child driven directly is handed the daemon's own.
+          brand: CORE_BRAND,
           model: "winter-test/laneb",
           cwd: b.cwd,
           permissionMode: "acceptEdits",

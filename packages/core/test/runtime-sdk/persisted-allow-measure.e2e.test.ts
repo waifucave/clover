@@ -17,6 +17,7 @@ import { existsSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { query, type CanUseTool } from "@yanlinglabs/winter-agent-sdk";
+import { CORE_BRAND } from "../../src/runtime-sdk/brand";
 import type { CredentialPresence } from "@yanlinglabs/winter-runtime-sdk";
 import { buildCloverOptions } from "../../src/runtime-sdk/mode-options";
 import type { ModelTag } from "../../src/runtime-sdk/model-tag";
@@ -38,7 +39,8 @@ async function writeOnce(bin: string, opts: { home: string; cwd: string; target:
     ...(opts.persistedAllow === undefined ? {} : { persistedAllow: opts.persistedAllow }),
   });
   const queue = createHostPromptQueue();
-  const q = query({ prompt: queue, options });
+  // The router injects the session's brand; a child driven directly is handed the daemon's own.
+  const q = query({ prompt: queue, options: { ...options, brand: CORE_BRAND } });
   queue.push(opts.target);
   try {
     for await (const m of q) {

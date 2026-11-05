@@ -349,7 +349,7 @@ test("the control-plane deny rules cover the four write tools × the control-pla
   // read-denies exactly three generated config files per run folder, and (round 6) its `backups/`.
   for (const tool of ["Read", "Glob", "Grep"]) {
     const underCache = deny.filter((r) => r.startsWith(`${tool}(`) && r.includes("/cache"));
-    expect(underCache.sort()).toEqual([".claude.json", ".credentials.json", ".clover.json", "backups/**"].map((f) => `${tool}(//h/cache/runs/*/${f})`));
+    expect(underCache.sort()).toEqual([".claude.json", ".clover.json", ".credentials.json", "backups/**"].map((f) => `${tool}(//h/cache/runs/*/${f})`));
     expect(deny).toContain(`${tool}(//h/sdk/.clover.json)`);
   }
   // Task 17: + the engine's read-tool denials, carried: Read/Glob/Grep × { run/**, runtimes/** }
@@ -579,13 +579,15 @@ test("the per-mode capability exposure table is pinned (the 2026-10-01 tool-surf
   // (The built-in half of chat's and dispatch's list is the fail-closed test below.)
   const capabilityHalf = (mode: (typeof MODES)[number]): string[] => disallowedToolsFor(mode, CLOVER_LEG_WITH_EXA).filter((name) => !KNOWN_RUNTIME_BUILTINS.includes(name));
   expect(disallowedToolsFor("code", CLOVER_LEG_WITH_EXA)).toEqual(["ListSessions", "SpawnSession"]);
+  // C0: and the standing twin of each native the mode withholds, by name (`STANDING_TWINS`): ListAgents here.
   expect(capabilityHalf("dispatch")).toEqual([
-    "mcp__clover__lsp__lsp", "mcp__clover__office__docs", "mcp__clover__office__sheets", "mcp__clover__office__slides",
+    "mcp__clover__list_agents", "mcp__clover__lsp__lsp", "mcp__clover__office__docs", "mcp__clover__office__sheets", "mcp__clover__office__slides",
   ]);
   // ComputerV2 (2026-10-08) is code + dispatch, never chat (R14).
   expect(capabilityHalf("chat")).toEqual([
     "Computer", "ComputerV2", "ListSessions", "SpawnSession",
-    "mcp__clover__lsp__lsp", "mcp__clover__office__docs", "mcp__clover__office__sheets", "mcp__clover__office__slides",
+    "mcp__clover__list_agents", "mcp__clover__lsp__lsp", "mcp__clover__office__docs", "mcp__clover__office__sheets", "mcp__clover__office__slides",
+    "mcp__clover__send_message",
   ]);
   // Code keeps every built-in, so the key never moves its list.
   expect(disallowedToolsFor("code", CLOVER_LEG_NO_EXA)).toEqual(disallowedToolsFor("code", CLOVER_LEG_WITH_EXA));

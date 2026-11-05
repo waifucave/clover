@@ -36,7 +36,7 @@ const SPAWN_CALL = /\b(?:Bun\.spawnSync|Bun\.spawn|spawnSync|spawn|execFileSync|
 
 /** The structural rule's subject: a script that names the daemon binary (`clover-core`, `clover-core-live`, a
  *  `dist/dev/clover-core`, never the `@waifucave/clover-core` package), `startDaemon` or `daemon run`… */
-const NAMES_A_DAEMON = /(?<!@yanlinglabs\/)\bclover-core\b|\bstartDaemon\b|\bdaemon run\b|["']daemon["']\s*,\s*["']run["']/;
+const NAMES_A_DAEMON = /(?<!@waifucave\/)\bclover-core\b|\bstartDaemon\b|\bdaemon run\b|["']daemon["']\s*,\s*["']run["']/;
 /** …carries the usage-inert switch somewhere in its code (not a comment)… */
 const CARRIES_INERT = /\bUSAGE_INERT_ENV\b|\bUSAGE_INERT\b|\busage\s*:\s*\{[^}]*\bbackground\s*:\s*false\b/;
 /** …or is one of these, each for its reason. A NEW script naming the daemon fails until it is one or the other, so a
@@ -45,7 +45,6 @@ const NO_DAEMON_OF_ITS_OWN: Record<string, string> = {
   "scripts/dev-daemon.ts": "the developer's own dev daemon — real, on purpose",
   "scripts/dev-daemon-lib.ts": "the dev daemon's helpers (paths, signing, the transition)",
   "scripts/dev-daemon.test.ts": "tests the dev daemon's helpers; boots none",
-  "scripts/computer-helper-lib.ts": "names the daemon's code-signing identities for the helper's allowlist",
   "scripts/cu-live/build.ts": "compiles and signs clover-core-live; runs it never",
   "scripts/verify-automation-worker-compiled.ts": "runs only the `__automation-worker` route (a worker, no daemon)",
   "scripts/verify-workflow-compiled.ts": "runs only the `__workflow-worker` route (a worker, no daemon)",

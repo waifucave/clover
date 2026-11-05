@@ -15,12 +15,16 @@
 //                                  memory-key relocation honoured), the `_assistant` bucket for chat,
 //                                  dispatch and a workdir-less code session — the same rule the
 //                                  assembler's `memoryDirFor` has always applied.
+//   brand                          `CORE_BRAND`: the router spells the folder's names from it and refuses
+//                                  a run home built for a brand other than its own (absent means the
+//                                  SDK's default, which is not this daemon's)
 import { realpathSync } from "node:fs";
 import { sep } from "node:path";
 import type { TrustStore } from "../agent/trust";
 import { assistantMemoryDirFor, memoryDirFor, repoRootFor } from "../agent/memory-dir";
 import { sdkAutoMemory, type Settings } from "../settings";
 import type { RunHomeInput, RunLeg, RunMode } from "@yanlinglabs/winter-runtime-sdk";
+import { CORE_BRAND } from "./brand";
 
 export interface RunHomeInputDeps {
   /** The daemon's home. */
@@ -65,6 +69,7 @@ export function runHomeInputFor(deps: RunHomeInputDeps, s: RunHomeSessionFacts):
     mcpDisabled: [...(deps.settings()?.mcp?.disabled ?? [])],
     reservedMcpServerNames: [...deps.reservedMcpServerNames],
     memoryDir,
+    brand: CORE_BRAND,
   };
 }
 

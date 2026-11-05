@@ -3,6 +3,7 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { query } from "@yanlinglabs/winter-agent-sdk";
+import { CORE_BRAND } from "../../src/runtime-sdk/brand";
 import { SessionEvent } from "@waifucave/clover-protocol";
 import { createHostPromptQueue } from "../../src/runtime-sdk/prompt-queue";
 import { MAIN_THREAD, createProjector } from "../../src/projector";
@@ -104,6 +105,8 @@ async function driveChild(bin: string, opts: {
     prompt: queue,
     options: {
       pathToClaudeCodeExecutable: bin,
+      // The router injects the session's brand; a child driven directly is handed the daemon's own.
+      brand: CORE_BRAND,
       model: `winter-test/${opts.provider}`,
       cwd,
       includePartialMessages: true,

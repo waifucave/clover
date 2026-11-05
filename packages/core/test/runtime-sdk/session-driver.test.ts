@@ -488,7 +488,7 @@ describe("createCloverSessionDrivers — the table", () => {
       const sid = t.store.createSession("t", { mode: "code", model: "winter-test/echo", cwd: repo });
       const session = await t.drivers.create(sid);
       const servers = t.q().options.mcpServers as Record<string, unknown>;
-      expect(Object.keys(servers).sort()).toEqual(["fake", "clover__browser"]);
+      expect(Object.keys(servers).sort()).toEqual(["clover__browser", "fake"]);
       expect(servers.fake).toEqual({ type: "stdio", command: "bun", args: ["run", "fake.ts", repo] });
       await session.end();
     } finally { t.close(); }

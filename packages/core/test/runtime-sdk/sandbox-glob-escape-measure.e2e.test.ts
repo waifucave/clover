@@ -17,6 +17,7 @@ import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync } from "node:f
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { query as cloverQuery } from "@yanlinglabs/winter-agent-sdk";
+import { CORE_BRAND } from "../../src/runtime-sdk/brand";
 import { anthropicFake, startFake } from "@yanlinglabs/winter-provider-conformance";
 import { childSandboxConfigFor, sandboxConfigFor } from "../../src/runtime-sdk/mode-options";
 import { describeWithWinterBinary } from "../helpers/winter-binary";
@@ -58,6 +59,8 @@ describeWithWinterBinary("C-1 — the Clover-leg sandbox fence under a `[`-named
         prompt: "run the command you were scripted to run",
         options: {
           pathToClaudeCodeExecutable: bin,
+          // The router injects the session's brand; a child driven directly is handed the daemon's own.
+          brand: CORE_BRAND,
           model: "anthropic/claude-sonnet-5",
           provider: { providerId: "anthropic", authRef: { kind: "inline", value: "sk-ant-loopback" }, connection: { baseUrl: fake.url, local: true } },
           cwd,

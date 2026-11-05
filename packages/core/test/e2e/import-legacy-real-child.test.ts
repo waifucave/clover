@@ -27,6 +27,7 @@ import { mkdtempSync, readFileSync, rmSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { query, transcriptProjectKey } from "@yanlinglabs/winter-agent-sdk";
+import { CORE_BRAND } from "../../src/runtime-sdk/brand";
 import type { SessionEvent } from "@waifucave/clover-protocol";
 import { importEngineEraSession } from "../../src/runtime-sdk/import-legacy";
 import { openRuntimeStateDb, RuntimeSessionRecords, backfillNativeSessions } from "../../src/runtime-state";
@@ -74,6 +75,8 @@ describeWithWinterBinary("engine-era import — the REAL winter binary resumes t
         prompt: (async function* () { yield "And 3+3?"; })(),
         options: {
           pathToClaudeCodeExecutable: bin,
+          // The router injects the session's brand; a child driven directly is handed the daemon's own.
+          brand: CORE_BRAND,
           model: "winter-test/echo",
           cwd,
           resume: backendSessionId,
