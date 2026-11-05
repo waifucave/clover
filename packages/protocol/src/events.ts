@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { utf16 } from "./strings";
 import { CoworkSessionCreatedFacts } from "./cowork";
 
 const Base = z.object({
@@ -91,7 +92,7 @@ export const USER_MESSAGE_IMAGE_PATH_MAX = 4096;
  *  absolute path of either an image `session.stageImage` wrote, or the user's own original image file. */
 export const UserMessageImageRef = z.object({
   n: z.number().int().positive(),
-  path: z.string().min(1).max(USER_MESSAGE_IMAGE_PATH_MAX),
+  path: utf16(USER_MESSAGE_IMAGE_PATH_MAX, 1),
 });
 export type UserMessageImageRef = z.infer<typeof UserMessageImageRef>;
 
@@ -110,7 +111,7 @@ export const USER_MESSAGE_ATTACHMENTS_MAX_MESSAGE = `A message can carry at most
  *  file itself is never read, copied or staged by the daemon. Same path bound as an image's. */
 export const UserMessageFileRef = z.object({
   n: z.number().int().positive(),
-  path: z.string().min(1).max(USER_MESSAGE_IMAGE_PATH_MAX),
+  path: utf16(USER_MESSAGE_IMAGE_PATH_MAX, 1),
 });
 export type UserMessageFileRef = z.infer<typeof UserMessageFileRef>;
 
@@ -156,7 +157,7 @@ export const ProviderRetryEvent = ThreadBase.extend({
   maxRetries: z.number().int().min(0),
   retryDelayMs: z.number().int().min(0),
   status: z.number().int().nullable(),
-  message: z.string().max(200),
+  message: utf16(200),
 });
 export const ToolCallEvent = ThreadBase.extend({
   type: z.literal("tool_call"), callId: z.string().min(1), name: z.string().min(1), argsJson: z.string(),
@@ -176,7 +177,7 @@ export const DIFF_ID_SHAPE = /^[A-Za-z0-9_-]{1,64}$/;
  *  whole-event ceiling and the phone's frame limit are the real bounds a value here must stay
  *  under. */
 export const FileDiffSummary = z.object({
-  path: z.string().min(1).max(1024),
+  path: utf16(1024, 1),
   added: z.number().int().nonnegative(),
   removed: z.number().int().nonnegative(),
   diffId: z.string().regex(DIFF_ID_SHAPE),
@@ -192,7 +193,7 @@ export const SITE_ICONS_MAX = 10;
 export const SITE_ICON_URL_MAX_LENGTH = 2048;
 /** An https url of printable ASCII only (what `new URL(...).href` produces) — never another scheme,
  *  never whitespace or a control character. */
-export const SiteIconUrl = z.string().max(SITE_ICON_URL_MAX_LENGTH).regex(/^https:\/\/[!-~]+$/);
+export const SiteIconUrl = utf16(SITE_ICON_URL_MAX_LENGTH).regex(/^https:\/\/[!-~]+$/);
 /** One site a web tool's result names, and the icon the TOOL knows for it: Exa's citation/result
  *  `favicon`, or the icon a fetched page declares. Never model-visible — a client (the Mac's dispatch
  *  pill) draws the site from `iconUrl` instead of guessing `/favicon.ico`. */
@@ -301,10 +302,10 @@ export const ElicitationRequestedEvent = ThreadBase.extend({
   type: z.literal("elicitation_requested"),
   elicitationId: z.string().min(1),
   mode: z.literal("url"),
-  serverName: z.string().min(1).max(ELICITATION_SERVER_NAME_MAX_LENGTH),
-  message: z.string().max(ELICITATION_MESSAGE_MAX_LENGTH),
-  host: z.string().min(1).max(ELICITATION_HOST_MAX_LENGTH).regex(/^[^\s/?#@\\]+$/),
-  origin: z.string().min(1).max(ELICITATION_HOST_MAX_LENGTH + 8),
+  serverName: utf16(ELICITATION_SERVER_NAME_MAX_LENGTH, 1),
+  message: utf16(ELICITATION_MESSAGE_MAX_LENGTH),
+  host: utf16(ELICITATION_HOST_MAX_LENGTH, 1).regex(/^[^\s/?#@\\]+$/),
+  origin: utf16(ELICITATION_HOST_MAX_LENGTH + 8, 1),
   issuedAt: z.number().int(),
   expiresAt: z.number().int(),
 }).refine((e) => e.origin === `https://${e.host}`, { message: "elicitation_requested: origin and host disagree", path: ["origin"] });
@@ -393,7 +394,7 @@ export const QuestionSchema = z.object({
   // Slice B1: chat's `AskQuestion` emits a deliberately simplified card (question + labels + Other,
   // no chip, no per-option description, no notes), and a header-less question is a genuinely
   // different SHAPE — not a rendering trick. Absent ⟹ simplified card; see PendingCards.swift.
-  question: z.string().min(1), header: z.string().min(1).max(12).optional(),
+  question: z.string().min(1), header: utf16(12, 1).optional(),
   // Free-text questions (2026-10-20): NO options (absent or `[]`) is a question answered by typing
   // alone; 2–4 options are a menu, always with a free-text box under it. Exactly one option is still
   // refused (a menu of one is not a choice). The daemon always EMITS the key (`[]` for none): a
@@ -405,7 +406,7 @@ export const QuestionSchema = z.object({
   multiSelect: z.boolean(),
   // The free-text box's hint (2026-10-20), optional/additive. Capped at 80 characters by the daemon
   // before it ever reaches a log.
-  placeholder: z.string().min(1).max(QUESTION_PLACEHOLDER_MAX).optional(),
+  placeholder: utf16(QUESTION_PLACEHOLDER_MAX, 1).optional(),
 });
 export const TaskSchema = z.object({
   id: z.string().min(1), subject: z.string().min(1),
@@ -523,8 +524,8 @@ export const WakeArmedEvent = ThreadBase.extend({
   type: z.literal("wake_armed"),
   wakeId: z.string().regex(WAKE_ID_PATTERN),
   condition: WakeConditionKind,
-  targetLabel: z.string().max(WAKE_LABEL_MAX),
-  elementLabel: z.string().max(WAKE_LABEL_MAX).optional(),
+  targetLabel: utf16(WAKE_LABEL_MAX),
+  elementLabel: utf16(WAKE_LABEL_MAX).optional(),
   expiresAt: z.number().int().nonnegative(),
 });
 
@@ -667,7 +668,7 @@ export const PROVIDER_LOGIN_LINE_MAX_LENGTH = 2048;
 export const ProviderLoginProgressEvent = Base.extend({
   type: z.literal("provider_login_progress"),
   provider: z.string().min(1),
-  line: z.string().max(PROVIDER_LOGIN_LINE_MAX_LENGTH),
+  line: utf16(PROVIDER_LOGIN_LINE_MAX_LENGTH),
 });
 
 /** TRANSIENT, same `$system`-scoped shape as `ProviderLoginProgressEvent` above — Winter Phase 10a
@@ -679,7 +680,7 @@ export const ProviderLoginFinishedEvent = Base.extend({
   type: z.literal("provider_login_finished"),
   provider: z.string().min(1),
   ok: z.boolean(),
-  reason: z.string().max(PROVIDER_LOGIN_LINE_MAX_LENGTH).optional(),
+  reason: utf16(PROVIDER_LOGIN_LINE_MAX_LENGTH).optional(),
 });
 
 /** TRANSIENT (broadcast-only, never persisted to the session log/replayed on attach — there's no
@@ -773,7 +774,7 @@ export const ToolReviewProgressEvent = ThreadBase.extend({
  *  bounded by the projector (the SDK already caps each hook contribution at 10,000 characters). */
 export const HookNoticeEvent = ThreadBase.extend({
   type: z.literal("hook_notice"),
-  text: z.string().min(1).max(12_000),
+  text: utf16(12_000, 1),
   level: z.enum(["info", "notice", "suggestion", "warning"]),
   stopsTurn: z.boolean().optional(),
 });
@@ -795,8 +796,8 @@ export const HookNoticeEvent = ThreadBase.extend({
  *  bounded by the projector. */
 export const ContinuityWarningEvent = ThreadBase.extend({
   type: z.literal("continuity_warning"),
-  warning: z.string().min(1).max(64),
-  text: z.string().min(1).max(4_000),
+  warning: utf16(64, 1),
+  text: utf16(4_000, 1),
 });
 
 /** The thinking pill (2026-10-05): what kind of reasoning a block carried — the agent SDK's
@@ -831,13 +832,13 @@ export const THINKING_ID_MAX_LENGTH = 256;
  *  encrypted content) never rides it. `durationMs` is the daemon's own start→end measure. */
 export const ThinkingBlockEvent = ThreadBase.extend({
   type: z.literal("thinking_block"),
-  blockId: z.string().min(1).max(THINKING_ID_MAX_LENGTH),
+  blockId: utf16(THINKING_ID_MAX_LENGTH, 1),
   kind: ThinkingKind,
-  title: z.string().min(1).max(THINKING_TITLE_MAX_LENGTH).optional(),
-  text: z.string().max(THINKING_TEXT_MAX_LENGTH),
+  title: utf16(THINKING_TITLE_MAX_LENGTH, 1).optional(),
+  text: utf16(THINKING_TEXT_MAX_LENGTH),
   truncated: z.boolean().optional(),
-  provider: z.string().min(1).max(THINKING_ID_MAX_LENGTH).optional(),
-  model: z.string().min(1).max(THINKING_ID_MAX_LENGTH).optional(),
+  provider: utf16(THINKING_ID_MAX_LENGTH, 1).optional(),
+  model: utf16(THINKING_ID_MAX_LENGTH, 1).optional(),
   durationMs: z.number().int().nonnegative().optional(),
 });
 
@@ -852,17 +853,17 @@ export const ThinkingBlockEvent = ThreadBase.extend({
  *  `text` on both events until the phone has a body view, and drop a delta left with nothing to say. */
 export const ThinkingDeltaEvent = ThreadBase.extend({
   type: z.literal("thinking_delta"),
-  blockId: z.string().min(1).max(THINKING_ID_MAX_LENGTH),
+  blockId: utf16(THINKING_ID_MAX_LENGTH, 1),
   kind: ThinkingKind,
   phase: z.enum(["start", "delta"]),
-  text: z.string().min(1).max(THINKING_TEXT_MAX_LENGTH).optional(),
-  title: z.string().min(1).max(THINKING_TITLE_MAX_LENGTH).optional(),
+  text: utf16(THINKING_TEXT_MAX_LENGTH, 1).optional(),
+  title: utf16(THINKING_TITLE_MAX_LENGTH, 1).optional(),
 });
 
 export const NotificationRequestedEvent = ThreadBase.extend({
   type: z.literal("notification_requested"),
-  title: z.string().min(1).max(100),
-  message: z.string().min(1).max(500),
+  title: utf16(100, 1),
+  message: utf16(500, 1),
 });
 
 /** session-activity-hygiene (spec §1): a code session's lifecycle state today. The daemon's
@@ -963,8 +964,8 @@ export const PanelTabOpenedEvent = Base.extend({
   type: z.literal("panel_tab_opened"),
   tabId: z.string().min(1),
   kind: PanelTabKind,
-  url: z.string().max(PANEL_URL_MAX_LENGTH).optional(),
-  title: z.string().max(PANEL_TITLE_MAX_LENGTH).optional(),
+  url: utf16(PANEL_URL_MAX_LENGTH).optional(),
+  title: utf16(PANEL_TITLE_MAX_LENGTH).optional(),
   /** Set only when kind === "diff". */
   diffId: z.string().regex(DIFF_ID_SHAPE).optional(),
 });
@@ -993,8 +994,8 @@ export const PanelTabActivatedEvent = Base.extend({
 export const PanelTabNavigatedEvent = Base.extend({
   type: z.literal("panel_tab_navigated"),
   tabId: z.string().min(1),
-  url: z.string().min(1).max(PANEL_URL_MAX_LENGTH),
-  title: z.string().max(PANEL_TITLE_MAX_LENGTH),
+  url: utf16(PANEL_URL_MAX_LENGTH, 1),
+  title: utf16(PANEL_TITLE_MAX_LENGTH),
 });
 
 /** B2 Task 2: the agent's browser verbs, in one place so the TS producer, the app's consumer and the
@@ -1123,7 +1124,7 @@ export const PanelCommandEvent = Base.extend({
   // one is TRANSIENT and never enters a JSONL, so the cap here bounds a FRAME rather than a file.
   // It is still the right default — B2's agent-authored navigate is the producer, and a model can
   // emit an arbitrarily long string.
-  url: z.string().max(PANEL_URL_MAX_LENGTH).optional(),
+  url: utf16(PANEL_URL_MAX_LENGTH).optional(),
   /** Per-verb payload, opaque at this layer. B2 Task 5 fixed the real shapes on both sides:
    *  `{selector}` for `click`/`submit`, `{selector, text}` for `type`, `{selector}` OR
    *  `{direction, amount}` for `scroll`, `{until, timeoutMs}` for `wait`. (This comment used to say

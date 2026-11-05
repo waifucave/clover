@@ -1,0 +1,27 @@
+{
+  "type": "computer_changed",
+  "ts": 1781270000000,
+  "computer": {
+    "name": "Desktop1",
+    "aliases": [
+      "Gaming-PC"
+    ],
+    "device": "d1sk7t0p3a5b7c9d1e3f5a7b9c1d3e5f",
+    "os": "windows",
+    "hasDisplay": true,
+    "agents": [
+      "claude-code",
+      "codex"
+    ],
+    "level": "ask-risky",
+    "state": "online",
+    "link": "lan",
+    "isMain": false,
+    "secrets": {
+      "backend": "encrypted-file",
+      "keySource": "credential-manager",
+      "plaintext": false,
+      "state": "unlocked"
+    }
+  }
+}

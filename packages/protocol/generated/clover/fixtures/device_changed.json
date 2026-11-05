@@ -1,0 +1,23 @@
+{
+  "type": "device_changed",
+  "ts": 1781270000000,
+  "device": {
+    "id": "k3x9a7mq2c4d8e1f5g6h0j2k4m6n8p0r",
+    "name": "Laptop1",
+    "kind": "desktop",
+    "os": "macos",
+    "runsCore": true,
+    "computer": "Laptop1",
+    "hasDisplay": true,
+    "online": true,
+    "link": {
+      "peer": "k3x9a7mq2c4d8e1f5g6h0j2k4m6n8p0r",
+      "up": true,
+      "path": "lan",
+      "rttMs": 2.4
+    },
+    "isThis": false,
+    "isMain": false,
+    "addedAt": 1781200000000
+  }
+}

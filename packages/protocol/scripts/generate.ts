@@ -1,8 +1,9 @@
 import { z } from "zod";
 import { cpSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { SessionEvent } from "../src/events";
 import { buildCleanerVectorsFixture, buildDangerousDomainsFixture } from "./parity-fixtures";
+import { buildCloverArtifacts } from "./clover-artifacts";
 
 const outDir = join(import.meta.dir, "..", "generated");
 const fixDir = join(outDir, "fixtures");
@@ -307,7 +308,18 @@ mkdirSync(swiftFixDir, { recursive: true });
 for (const name of Object.keys(fixtures)) {
   cpSync(join(fixDir, `${name}.json`), join(swiftFixDir, `${name}.json`));
 }
+// 4. Clover's protocol (spec revision 17): an area file each, a fixture per Clover event and every role's allow list,
+// under generated/clover/ (scripts/clover-artifacts.ts). Delete-then-write, so a renamed event leaves no orphan.
+const cloverDir = join(outDir, "clover");
+rmSync(cloverDir, { recursive: true, force: true });
+const cloverFiles = buildCloverArtifacts();
+for (const [rel, content] of cloverFiles) {
+  mkdirSync(dirname(join(cloverDir, rel)), { recursive: true });
+  writeFileSync(join(cloverDir, rel), content);
+}
+
 console.log(
   `generated: schema + ${Object.keys(fixtures).length} fixtures (synced to Swift test bundle) + ` +
-    `dangerous-domains (${buildDangerousDomainsFixture().length} entries) + cleaner-vectors (${cleanerVectors.length} vectors)`,
+    `dangerous-domains (${buildDangerousDomainsFixture().length} entries) + cleaner-vectors (${cleanerVectors.length} vectors) + ` +
+    `clover (${cloverFiles.size} files)`,
 );

@@ -1,0 +1,157 @@
+{
+  "doc": "canonicalJson is RFC 8785 (JCS): keys sorted by UTF-16 code units, strings and numbers as ECMAScript serializes them, no whitespace, with any lone surrogate first replaced by U+FFFD. A card's hash is SHA-256 over cardHashInput(card), lowercase hex. The lone-surrogate vector's input holds escapes a Swift string can't: decoded with U+FFFD in their place, it must give the same canonical text.",
+  "vectors": [
+    {
+      "name": "nulls",
+      "input": {
+        "b": null,
+        "a": [
+          null,
+          1,
+          {
+            "c": null
+          }
+        ]
+      },
+      "canonical": "{\"a\":[null,1,{\"c\":null}],\"b\":null}",
+      "sha256": "3f84609126ee894d623fe60bcc222b5a62dfe9fac5a97fb45837b8792ff9e04b"
+    },
+    {
+      "name": "slash",
+      "input": {
+        "path": "a/b/c",
+        "url": "https://example.com/x?y=1"
+      },
+      "canonical": "{\"path\":\"a/b/c\",\"url\":\"https://example.com/x?y=1\"}",
+      "sha256": "b745fc2fd2c06c369116a79a35aabb4d3959266a6796d0969f2af1b6c1d85818"
+    },
+    {
+      "name": "non-ascii",
+      "input": {
+        "text": "héllo — ✓",
+        "日本": "語",
+        "Ä": "ö"
+      },
+      "canonical": "{\"text\":\"héllo — ✓\",\"Ä\":\"ö\",\"日本\":\"語\"}",
+      "sha256": "4a7b1917008a461d65b3a380d88d2d45f66799e3b4319bb01ca98df69576145d"
+    },
+    {
+      "name": "line-separators",
+      "input": {
+        "s": "a b c"
+      },
+      "canonical": "{\"s\":\"a b c\"}",
+      "sha256": "5b2dc062ac2d05c4b51a388dd0e99e9b161c6c6f0fefeef39629890a42902b84"
+    },
+    {
+      "name": "emoji",
+      "input": {
+        "e": "😀",
+        "😀": 1,
+        "z": "👩‍👩‍👧"
+      },
+      "canonical": "{\"e\":\"😀\",\"z\":\"👩‍👩‍👧\",\"😀\":1}",
+      "sha256": "5e2f5bf0014ba58b965fe87d20bee61eddaebeb88177f53d8d7d8a72001c9904"
+    },
+    {
+      "name": "lone-surrogate",
+      "input": {
+        "s": "a\ud800b",
+        "\udc00": 1
+      },
+      "canonical": "{\"s\":\"a�b\",\"�\":1}",
+      "sha256": "f8e88b64323d701de4a00f358b0df5b0f5a8455c48d20b8f90fd5d0087ed63c0"
+    },
+    {
+      "name": "control",
+      "input": {
+        "c": "\u0000\u001f\t\n\r\"\\"
+      },
+      "canonical": "{\"c\":\"\\u0000\\u001f\\t\\n\\r\\\"\\\\\"}",
+      "sha256": "db2a834827cb01e81c22f45a08671e01239262b15afdad04328f9d480e6f6348"
+    },
+    {
+      "name": "numbers",
+      "input": {
+        "max": 9007199254740991,
+        "ts": 1781270000000,
+        "neg": -1,
+        "half": 0.5,
+        "big": 1e+21,
+        "small": 1e-7,
+        "zero": 0
+      },
+      "canonical": "{\"big\":1e+21,\"half\":0.5,\"max\":9007199254740991,\"neg\":-1,\"small\":1e-7,\"ts\":1781270000000,\"zero\":0}",
+      "sha256": "ce769471d06ec5604d77116814306c091acd46ae8aa5ed92460dd4a5f16fe081"
+    },
+    {
+      "name": "nested-order",
+      "input": {
+        "b": {
+          "y": [
+            3,
+            {
+              "q": 1,
+              "p": 2
+            }
+          ],
+          "x": true
+        },
+        "a": false,
+        "A": "upper first"
+      },
+      "canonical": "{\"A\":\"upper first\",\"a\":false,\"b\":{\"x\":true,\"y\":[3,{\"p\":2,\"q\":1}]}}",
+      "sha256": "ab47301cc7ae33cb0a276a13d5e9538ec7fb0a5cb1b64cac5248efab0f1cc638"
+    }
+  ],
+  "card": {
+    "card": {
+      "id": "card_0a1b2c3d4e5f60718293a4b5",
+      "kind": "tool",
+      "computer": "Studio",
+      "session": "s_alpha",
+      "bot": "alpha",
+      "origin": "user",
+      "issuedAt": 1781270000000,
+      "expiresAt": null,
+      "fields": {
+        "title": {
+          "type": "text",
+          "text": "Run a command"
+        },
+        "command": {
+          "type": "code",
+          "code": "git push",
+          "language": "sh"
+        }
+      },
+      "options": [
+        {
+          "id": "approve",
+          "kind": "approve",
+          "label": "Approve"
+        },
+        {
+          "id": "deny",
+          "kind": "deny",
+          "label": "Deny"
+        }
+      ]
+    },
+    "hashInput": "{\"bot\":\"alpha\",\"computer\":\"Studio\",\"expiresAt\":null,\"fields\":{\"command\":{\"code\":\"git push\",\"language\":\"sh\",\"type\":\"code\"},\"title\":{\"text\":\"Run a command\",\"type\":\"text\"}},\"id\":\"card_0a1b2c3d4e5f60718293a4b5\",\"issuedAt\":1781270000000,\"kind\":\"tool\",\"options\":[{\"id\":\"approve\",\"kind\":\"approve\",\"label\":\"Approve\"},{\"id\":\"deny\",\"kind\":\"deny\",\"label\":\"Deny\"}],\"origin\":\"user\",\"session\":\"s_alpha\"}",
+    "hash": "372f3fc73fbbf32ea4aa14bd4d27b90b5cef2f780ba9f51ae38822bcc608f5c9"
+  },
+  "signing": {
+    "answer": {
+      "id": "card_0a1b2c3d4e5f60718293a4b5",
+      "hash": "372f3fc73fbbf32ea4aa14bd4d27b90b5cef2f780ba9f51ae38822bcc608f5c9",
+      "option": "approve",
+      "at": 1781270001000,
+      "children": [
+        "luna/tarot-panel",
+        "luna/deck"
+      ]
+    },
+    "input": "clover/card-answer/2\ncard_0a1b2c3d4e5f60718293a4b5\n372f3fc73fbbf32ea4aa14bd4d27b90b5cef2f780ba9f51ae38822bcc608f5c9\napprove\n1781270001000\nluna/deck,luna/tarot-panel"
+  }
+}

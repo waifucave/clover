@@ -1,0 +1,11 @@
+{
+  "type": "plugin_changed",
+  "ts": 1781270000000,
+  "id": "luna/tarot-panel",
+  "state": "waiting",
+  "enabled": true,
+  "reason": "waiting for `island.tab`",
+  "waitingFor": [
+    "island.tab"
+  ]
+}

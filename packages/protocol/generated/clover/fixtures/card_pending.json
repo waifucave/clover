@@ -1,0 +1,24 @@
+{
+  "type": "card_pending",
+  "ts": 1781270000000,
+  "card": {
+    "id": "card_0a1b2c3d",
+    "kind": "tool",
+    "computer": "Studio",
+    "session": "s_alpha",
+    "bot": "alpha",
+    "origin": "routine",
+    "issuedAt": 1781270000000,
+    "expiresAt": 1781270600000,
+    "options": [
+      {
+        "id": "allow_once",
+        "kind": "approve"
+      },
+      {
+        "id": "deny",
+        "kind": "deny"
+      }
+    ]
+  }
+}

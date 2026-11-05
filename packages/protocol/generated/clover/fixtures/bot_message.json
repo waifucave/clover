@@ -1,0 +1,10 @@
+{
+  "type": "bot_message",
+  "seq": 12,
+  "sessionId": "s_alpha",
+  "ts": 1781270000000,
+  "epoch": 3,
+  "from": "pack/luna",
+  "fromSession": "s_luna",
+  "text": "The deploy finished."
+}
