@@ -1,4 +1,4 @@
-// Shared beds for the run-home tests: a throwaway daemon home per test, never `~/.winter*`.
+// Shared beds for the run-home tests: a throwaway daemon home per test, never a real one.
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";

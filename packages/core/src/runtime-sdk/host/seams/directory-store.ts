@@ -310,7 +310,7 @@ function copy<T>(value: T): T {
  * hermetic test uses.
  *
  * FULLY IMPLEMENTED, not a stub: it is the test default, so "the directory works" must be provable
- * without a host. It touches no filesystem, no `~/.winter`, no keychain, and holds nothing across a
+ * without a host. It touches no filesystem, no real daemon home, no keychain, and holds nothing across a
  * process — which is also the honest statement of what a host gets if it never supplies one.
  */
 export function createInMemoryRuntimeDirectoryStore(): RuntimeDirectoryStore {

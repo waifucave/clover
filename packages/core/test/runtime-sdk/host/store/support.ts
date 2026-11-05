@@ -1,7 +1,7 @@
 // Lane C's bed: a throwaway Winter home, the real concrete store, and the spine's own seam context.
 //
 // HERMETIC BY CONSTRUCTION. Every home is an `mkdtemp` directory removed in a `finally`; the temp
-// layout is driven by an INJECTED env rather than `process.env`; nothing reads `~/.winter`, `~/.claude`
+// layout is driven by an INJECTED env rather than `process.env`; nothing reads a real daemon home, `~/.claude`
 // or the Keychain, and no test in this directory starts a network listener.
 //
 // THE CONTEXT IS THE REAL ONE. `createRuntimeSdkHost` builds exactly one `SeamContextWithDirectory` and

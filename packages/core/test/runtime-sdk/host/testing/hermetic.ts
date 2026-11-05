@@ -1,7 +1,7 @@
 // HERMETICITY HELPERS — the two doubles and the one temp-home idiom every test in this package uses.
 //
 // THE RULE THIS FILE EXISTS TO MAKE EASY (Phase 7b Global Constraints): a test never touches
-// `~/.winter`, `~/.claude`, a legacy home or the Keychain. Those are not style preferences — a test that
+// a real daemon home, `~/.claude`, a legacy home or the Keychain. Those are not style preferences — a test that
 // reads a developer's real home passes on their machine and fails in CI (or, worse, the reverse), and
 // a test that reaches the Keychain prompts a human.
 import { mkdtempSync, rmSync } from "node:fs";

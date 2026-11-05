@@ -61,7 +61,7 @@ describe("the generated .winter.json", () => {
     expect(file["mcpServers"]).toBeUndefined();
   });
 
-  test("the walk's `$HOME` stop (fix round 1, M2, as ruled): never `$HOME/.winter/mcp.json` or one above it — but a local scope keyed at `$HOME` still applies, as claude applies it", async () => {
+  test("the walk's `$HOME` stop (fix round 1, M2, as ruled): never the daemon home's own `mcp.json` under `$HOME` or one above it — but a local scope keyed at `$HOME` still applies, as claude applies it", async () => {
     const bed = runHomeBed("hm");
     const userHome = join(bed.root, "u");
     const daemonHome = join(userHome, ".winter");

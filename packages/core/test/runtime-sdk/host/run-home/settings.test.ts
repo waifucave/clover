@@ -154,9 +154,9 @@ describe("the tiers and claude's merge (F17)", () => {
 });
 
 describe("the walk's `$HOME` stop (fix round 1, M2): a root at `$HOME` or above is not a project", () => {
-  // A daemon home laid out as it is for real: `$HOME/.winter`, its sdk home inside it. A project tier
-  // rooted at `$HOME` would read `$HOME/.winter/settings.json` — the DAEMON's own settings, which still
-  // hold Winter-grammar keys kept for downgrade — and `$HOME/.winter/settings.local.json`.
+  // A daemon home laid out as it is for real: `$HOME/<home dir>`, its sdk home inside it. A project tier
+  // rooted at `$HOME` would read `$HOME/<home dir>/settings.json` — the DAEMON's own settings, which still
+  // hold Winter-grammar keys kept for downgrade — and `$HOME/<home dir>/settings.local.json`.
   function homeBed(): { bed: RunHomeBed; userHome: string } {
     const bed = runHomeBed("hs");
     const userHome = join(bed.root, "u");
