@@ -1,0 +1,56 @@
+Uploading public source chunk 1
+Uploading public source chunk 2
+Running setup-candidate.ps1 on clover-c-win
+Installing pinned standalone Windows sandbox candidate
+
+added 7 packages in 40s
+npm notice
+npm notice New major version of npm available! 10.9.4 -> 12.2.2
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.2
+npm notice To update run: npm install -g npm@12.2.2
+npm notice
+HELPER C:\clover-tools\srt\node_modules\@anthropic-ai\sandbox-runtime\vendor\srt-win\x64\srt-win.exe
+Windows network sandbox helper for sandbox-runtime
+
+Usage: srt-win.exe <COMMAND>
+
+Commands:
+  install    Provision the dedicated `srt-sandbox` user account + the user-SID-keyed WFP filter set in one elevated step
+  uninstall  Remove the srt-win WFP filters under the sublayer and the `srt-sandbox` account, its credential file, and the setup marker (unless `--keep-user`). Self-elevates via UAC if not already admin. Best-effort also removes the legacy `sandbox-runtime-net` discriminator group if a prior install left it behind. Unless `--keep-user`, the calling user's persistent write grants (`acl grant --persistent`) are removed first, as by `acl forget --all`, and so is their profile read grant, as by `profile forget`
+  status     Print `{user: <user-status>, wfp: <wfp-status>}` as one line of JSON — the same objects `user status` and `wfp status` emit (so Secondary Logon readiness is `user.seclogon`), in a single spawn. The host's readiness check calls this instead of two separate subprocesses. Exit 0
+  user       Inspect the sandbox user account that `srt-win install` provisions (and that the sandboxed child runs as)
+  wfp        Inspect/remove the persistent WFP filters
+  acl        Add/remove explicit ACEs for the sandbox user on file paths so the sandboxed child can (`grant`) or cannot (`stamp`) read/write them. State is persisted in the shared state per-user session DB so concurrent brokers refcount and a crash mid-session is recoverable by the next `acl` op
+  profile    The profile read grant: make the calling user's profile readable to the sandbox group, except for credential stores. Opt-in; nothing else in `srt-win` writes it. Runs as the user whose profile it is, without elevation
+  exec       Spawn a process inside the sandbox
+  help       Print this message or the help of the given subcommand(s)
+
+Options:
+  -h, --help     Print help
+  -V, --version  Print version
+Usage: srt windows-install [options]
+
+Windows: provision the `srt-sandbox` user account + install WFP filters (one
+UAC prompt), then make your user profile readable to sandboxed commands, except
+for credential stores (no elevation; minutes on a large profile the first
+time). No logout needed. Run it again after upgrading sandbox-runtime when a
+command asks for it, or to bring the profile read grant up to date: it upgrades
+the existing install in place.
+
+Options:
+  --sublayer-guid <guid>      WFP sublayer GUID
+  --proxy-port-range <lo-hi>  loopback PERMIT port range (e.g. 60080-60089)
+  --allow-loopback            let sandboxed commands connect to any localhost
+                              port (default: off); must match
+                              network.allowLocalBinding
+  --sandbox-user <name>       name for the sandbox user account (default:
+                              srt-sandbox)
+  --force                     replace an existing install with different config
+  --profile-exclude <path>    a path inside your profile to keep unreadable in
+                              addition to the built-in exclusions (repeatable)
+                              (default: [])
+  --skip-profile-grant        install the account and the filters only;
+                              sandboxed commands then read nothing in your
+                              profile (use this on a computer other people have
+                              accounts on)
+  -h, --help                  display help for command

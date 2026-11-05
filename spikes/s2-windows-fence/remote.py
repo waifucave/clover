@@ -22,6 +22,8 @@ if args.os == 'windows':
         files['windows-probe.cs']=(Path(__file__).resolve().parents[2] / 'native/sandbox/windows-probe.cs').read_text()
     if 'session0-bno.cs' in files['probe.ps1']:
         files['session0-bno.cs']=(Path(__file__).resolve().parents[2] / 'native/sandbox/session0-bno.cs').read_text()
+    if 'handle-probe.cs' in files['probe.ps1']:
+        files['handle-probe.cs']=(Path(__file__).resolve().parents[2] / 'native/sandbox/handle-probe.cs').read_text()
     files.update({p.name:p.read_text() for p in args.script.parent.glob('*.mjs')})
     compressed = base64.b64encode(gzip.compress(json.dumps(files).encode())).decode()
     payload = None

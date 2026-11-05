@@ -1,0 +1,33 @@
+Uploading public source chunk 1
+Uploading public source chunk 2
+Uploading public source chunk 3
+Uploading public source chunk 4
+Running review-routes.ps1 on clover-c-win
+Review controls: local-admin host, dedicated fenced principal, observable COM and handles
+directory_status=0xC0000035 alias_status=0x00000000
+{"test":"admin-parent-context","host_local_admin":true,"session0_alias":true}
+{"test":"scheduler-cli","unfenced":{"route":"scheduler-cli","actor":"unfenced","exit":0,"timeout":false,"detail":null,"marker_observed":false},"fenced":{"route":"scheduler-cli","actor":"fenced","exit":1,"timeout":false,"detail":null,"marker_observed":false},"classification":"fence_or_principal_denial"}
+{"test":"scheduler-com","unfenced":{"route":"scheduler-com","actor":"unfenced","exit":0,"timeout":false,"detail":null,"marker_observed":false},"fenced":{"route":"scheduler-com","actor":"fenced","exit":3,"timeout":false,"detail":{"hresult":-2147024893},"marker_observed":false},"classification":"fence_or_principal_denial"}
+{"test":"services","unfenced":{"route":"services","actor":"unfenced","exit":0,"timeout":false,"detail":null,"marker_observed":false},"fenced":{"route":"services","actor":"fenced","exit":5,"timeout":false,"detail":null,"marker_observed":false},"classification":"fence_or_principal_denial"}
+{"test":"wmi","unfenced":{"route":"wmi","actor":"unfenced","exit":0,"timeout":false,"detail":{"return_value":0,"child_pid":2224},"marker_observed":true},"fenced":{"route":"wmi","actor":"fenced","exit":4,"timeout":false,"detail":{"hresult":-2146233088},"marker_observed":false},"classification":"fence_or_principal_denial"}
+{"test":"runas","unfenced":{"route":"runas","actor":"unfenced","exit":1,"timeout":false,"detail":null,"marker_observed":false,"no_saved_credential_fixture":true},"fenced":{"route":"runas","actor":"fenced","exit":1,"timeout":false,"detail":null,"marker_observed":false,"no_saved_credential_fixture":true},"classification":"control_failed_not_attributable"}
+{"test":"startup-user","unfenced":{"route":"startup-user","actor":"unfenced","exit":3,"timeout":false,"detail":null,"marker_observed":false,"error_code":"ENOENT"},"fenced":{"route":"startup-user","actor":"fenced","exit":3,"timeout":false,"detail":null,"marker_observed":false,"error_code":"ENOENT"},"classification":"control_failed_not_attributable"}
+{"test":"startup-common","unfenced":{"route":"startup-common","actor":"unfenced","exit":0,"timeout":false,"detail":null,"marker_observed":false},"fenced":{"route":"startup-common","actor":"fenced","exit":3,"timeout":false,"detail":null,"marker_observed":false,"error_code":"EPERM"},"classification":"fence_or_principal_denial"}
+{"test":"shell-application","unfenced":{"route":"shell-application","actor":"unfenced","exit":0,"timeout":false,"detail":null,"marker_observed":true},"fenced":{"route":"shell-application","actor":"fenced","exit":0,"timeout":false,"detail":null,"marker_observed":true},"classification":"operation_accepted"}
+{"test":"observable-com","unfenced":{"route":"observable-com","actor":"unfenced","exit":null,"timeout":true,"detail":null,"marker_observed":false},"fenced":{"route":"observable-com","actor":"fenced","exit":null,"timeout":true,"detail":null,"marker_observed":false},"classification":"control_failed_not_attributable"}
+node:events:497
+      throw er; // Unhandled 'error' event
+      ^
+
+Error: read ECONNRESET
+    at TCP.onStreamRead (node:internal/stream_base_commons:216:20)
+Emitted 'error' event on Socket instance at:
+    at emitErrorNT (node:internal/streams/destroy:170:8)
+    at emitErrorCloseNT (node:internal/streams/destroy:129:3)
+    at process.processTicksAndRejections (node:internal/process/task_queues:90:21) {
+  errno: -4077,
+  code: 'ECONNRESET',
+  syscall: 'read'
+}
+
+Node.js v22.21.1

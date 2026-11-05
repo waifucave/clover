@@ -78,3 +78,22 @@ The namespace alias is not an admitted production fix. The out-of-process COM re
 inconclusive; scripts print measurements, not a release-admission verdict. Use the S8 cleanup
 command after the disposable VM experiments. `remote.py` uploads public source in bounded
 chunks, preventing cmd.exe length limits and overlapping stdin transports.
+
+Review follow-up: paired unfenced/local-admin controls, prepared Startup directories,
+COM child receipts and deliberate inherited/duplicated public-canary handles:
+
+```sh
+python3 spikes/s2-windows-fence/remote.py windows spikes/s2-windows-fence/review-routes.ps1
+```
+
+The tests record both outcomes. A failed unfenced control is not counted as a fence denial.
+The user-Startup write was accepted after its directory was materialized; the original
+missing-directory denial must not be used as security evidence. `handle-probe.cs` deliberately
+passes inheritable canary handles to the first broker hop, bypassing Node's own filtering, then
+tests the actual sandbox child. Only public fixture contents are used.
+
+Normalize result files before committing; CI checks that normalization is current:
+
+```sh
+python3 spikes/s2-windows-fence/normalize-results.py
+```
