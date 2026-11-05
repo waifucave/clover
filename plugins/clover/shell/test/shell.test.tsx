@@ -57,6 +57,7 @@ const COMPONENTS: Record<string, EntryComponent> = {
   Column: stub("panel:session"),
   Terminal: stub("panel:terminal"),
   Settings: stub("main:settings"),
+  Browser: stub("panel:browser"),
   Status: stub("status"),
 };
 
@@ -139,6 +140,16 @@ describe("the shell", () => {
     expect(browser.textContent).toContain("No plugin shows the browser here yet");
     fireEvent.click(within(browser as HTMLElement).getByRole("button", { name: "Find a plugin" }));
     expect(stubText("sidebar")).toContain('{"route":"plugins","params":{"spot":"panel","key":"browser"}}');
+  });
+
+  test("a panel view hears whose tab it is and whether the person used it last (R8), and draws its head in the host's row", async () => {
+    await mount({ route: { route: "bot", params: { bot: "alpha" } }, panels: ["agent", "browser"], agent: "agent-1" }, [entry("clover/browser-view", "panel", "Browser", { key: "browser" })]);
+    // The newest opened is the one used last, until the person uses the other.
+    expect(stubText("panel:browser")).toContain('"bot":"alpha"');
+    expect(stubText("panel:browser")).toContain('"usedLast":true');
+    fireEvent.pointerDown(document.querySelector('.cl-panel__view[data-view="agent"]')!);
+    expect(stubText("panel:browser")).toContain('"usedLast":false');
+    expect(document.querySelector('.cl-panel__view[data-view="agent"]')!.hasAttribute("data-used-last")).toBe(true);
   });
 
   test("the agent tab interrupts and stops through the core", async () => {

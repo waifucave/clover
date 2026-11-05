@@ -108,21 +108,22 @@ export function Shell({ props }: EntryProps<ShellProps>) {
     return typeof app?.fields?.title === "string" ? app.fields.title : shown.route;
   })();
 
+  // A bot's tab says whose it is (`bot`, its id: the browser shows that bot's tabs, a code session the person's own).
   const panelProps = (id: string): Record<string, unknown> =>
     id === "agent" && agentSession
-      ? { app: id, session: agentSession.id, sessionKind: agentSession.kind }
-      : { app: id, session: tabSession, sessionKind: kind };
+      ? { app: id, session: agentSession.id, sessionKind: agentSession.kind, ...(botRef ? { bot: botRef.id } : {}) }
+      : { app: id, session: tabSession, sessionKind: kind, ...(botRef ? { bot: botRef.id } : {}) };
   const views: PanelView[] = kind
     ? open
         .filter((id) => id !== "session")
         .map((id) => ({
           id,
           title: id === "agent" ? (agentSession?.title ?? S.views.agent!) : (S.views[id] ?? id),
-          content: (header: HTMLElement | null) => (
+          content: (header: HTMLElement | null, usedLast: boolean) => (
             <Spot
               name="panel"
               spotKey={id}
-              props={{ ...panelProps(id), header }}
+              props={{ ...panelProps(id), header, usedLast }}
               fallback={<PanelEmpty id={id} title={S.views[id] ?? id} onFindPlugin={(k) => navigate({ route: "plugins", params: { spot: "panel", key: k } })} />}
             />
           ),

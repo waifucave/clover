@@ -34,7 +34,10 @@ export interface PanelView {
   /** What the plugin keyed for this panel draws, or a function of the view's header row, which a panel that brings
    *  its own header portals into (the clover layer only: a question for E). Absent: no installed plugin fills the
    *  key, and the host says so in its place. */
-  content?: ReactNode | ((header: HTMLElement | null) => ReactNode);
+  /** Its contents, or a function of its header row (a view that draws its own head portals it there, inside
+   *  `.cl-panel__head-own`, and the host's title steps aside) and of whether the person used this view last (of two
+   *  showing the same live thing, a browser tab, only that one shows it live: the controller's R8). */
+  content?: ReactNode | ((header: HTMLElement | null, usedLast: boolean) => ReactNode);
   /** The tab kinds the view belongs in: its plugin's manifest says so, once lane B's catalog has the field
    *  (`sessions`). Absent: any. The terminal, the changes and the files are code-only whatever it says. */
   sessions?: readonly SessionKind[];

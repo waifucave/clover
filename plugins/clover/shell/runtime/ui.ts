@@ -126,7 +126,8 @@ export function uiFor(react: ReactLike): Ui {
   const pluginOf = (scope: { entry: EntryRef } | null) => scope?.entry.pluginId ?? "clover";
 
   function contextFor(runtime: UiRuntime, props: Record<string, unknown>, parent: SpotContext | undefined): SpotContext {
-    const bot = (props.bot as { id?: unknown } | undefined)?.id;
+    // A bot as a reference (`{ id, name }`), or by its id alone (the `panel` spot's `bot`).
+    const bot = typeof props.bot === "string" ? props.bot : (props.bot as { id?: unknown } | undefined)?.id;
     const session = props.session;
     const kind = (props.sessionKind as SessionKind | undefined) ?? (typeof session === "string" ? runtime.sessionKind?.(session) : undefined);
     return {

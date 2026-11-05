@@ -43,11 +43,22 @@ export function PanelHost({ kind, views, onClose, onExpand, onFindPlugin }: Pane
     if (!ref) refs.current.set(id, (ref = (el: HTMLElement | null) => setSlots((s) => (s[id] === el ? s : { ...s, [id]: el }))));
     return ref;
   };
+  // The view the person used last: the one they last clicked or moved the focus into, else the newest opened.
+  const [used, setUsed] = useState<string | undefined>(undefined);
+  const last = shown.some((v) => v.id === used) ? used : shown[shown.length - 1]?.id;
   if (shown.length === 0) return null;
   return (
     <div className="cl-panel" role="region" aria-label={S.panel} data-kind={kind} data-count={shown.length}>
       {shown.map((view) => (
-        <section key={view.id} className="cl-panel__view" data-view={view.id} aria-label={view.title}>
+        <section
+          key={view.id}
+          className="cl-panel__view"
+          data-view={view.id}
+          data-used-last={view.id === last || undefined}
+          aria-label={view.title}
+          onPointerDownCapture={() => setUsed(view.id)}
+          onFocusCapture={() => setUsed(view.id)}
+        >
           <header className="cl-panel__head">
             <div className="cl-panel__head-main" ref={slotFor(view.id)}>
               {view.header ?? <h2 className="cl-panel__title">{view.title}</h2>}
@@ -66,7 +77,7 @@ export function PanelHost({ kind, views, onClose, onExpand, onFindPlugin }: Pane
             {view.content === undefined ? (
               <PanelEmpty id={view.id} title={view.title} onFindPlugin={onFindPlugin} />
             ) : typeof view.content === "function" ? (
-              view.content(slots[view.id] ?? null)
+              view.content(slots[view.id] ?? null, view.id === last)
             ) : (
               view.content
             )}
