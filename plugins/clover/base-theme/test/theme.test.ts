@@ -18,6 +18,9 @@ import {
   tokensFor,
   AUTO_INKS,
   SYSTEM_ACCENT_TOKENS,
+  hexToHsl,
+  labelFill,
+  resolveAutoInk,
 } from "../src/index";
 import { checkManifest } from "../src/manifest-check";
 
@@ -328,7 +331,10 @@ describe("the OS accent colour (lane B's rule)", () => {
     expect(dark["card.approve.background"]).toBe("#3570D8");
     const blue = resolveTokens("light", [tokensFor(BASE_THEME, "light")], { systemAccent: "#007AFF" });
     expect(blue["color.accent"]).toBe("#007AFF");
-    expect(blue["card.approve.background"]).toBe("#007AFF");
+    // The approve button carries a text label: the OS accent, darkened in its own hue until white reaches 4.5:1.
+    expect(blue["card.approve.background"]).toBe(labelFill("#007AFF"));
+    expect(blue["card.approve.background"]).not.toBe("#007AFF");
+    expect(blue["card.approve.text"]).toBe("#FFFFFF");
     // A theme above that sets its own accent keeps it (Alpha's tab keeps its look); one that says "system" again
     // falls back to the value beneath it.
     const own = resolveTokens("light", [tokensFor(BASE_THEME, "light"), { "color.accent": "#7651DD" }], { systemAccent: "#007AFF" });
@@ -352,7 +358,9 @@ describe("the OS accent colour (lane B's rule)", () => {
       for (const accent of ACCENTS) {
         const tokens = resolveTokens(appearance, [tokensFor(BASE_THEME, appearance)], { systemAccent: accent });
         expect(contrast(hex(tokens, "color.accent.contrast"), accent), `${appearance} ${accent} label`).toBeGreaterThanOrEqual(4.5);
-        expect(contrast(hex(tokens, "card.approve.text"), accent), `${appearance} ${accent} approve`).toBeGreaterThanOrEqual(4.5);
+        // The approve button's fill is the accent darkened for its label, which is always white.
+        expect(hex(tokens, "card.approve.text"), `${appearance} ${accent} approve`).toBe("#FFFFFF");
+        expect(contrast("#FFFFFF", hex(tokens, "card.approve.background")), `${appearance} ${accent} approve`).toBeGreaterThanOrEqual(4.5);
       }
     }
   });
@@ -364,5 +372,56 @@ describe("the OS accent colour (lane B's rule)", () => {
     expect(checkTheme({ theme: 1, name: "x", tokens: { "color.accent": "system", "color.accent.glyph": "auto" } }, { strict: true })).toEqual([]);
     // An unresolved word never reaches CSS.
     expect(() => cssVariables({ "color.accent": "system" })).toThrow();
+  });
+});
+
+describe("every possible OS accent (the review's sweep: 52 steps a channel, 140,608 colours)", () => {
+  const grid: string[] = [];
+  for (let r = 0; r < 256; r += 5) for (let g = 0; g < 256; g += 5) for (let b = 0; b < 256; b += 5) grid.push(`#${[r, g, b].map((c) => c.toString(16).padStart(2, "0")).join("").toUpperCase()}`);
+
+  test("the text-label ink reaches 4.5:1 and the glyph ink 3:1 on every one, in both appearances", () => {
+    for (const tokens of [light, dark]) {
+      const darkInk = hex(tokens, "color.accent.ink");
+      expect(darkInk).toBe("#000000");
+      expect(hex(tokens, "card.approve.ink")).toBe("#000000");
+      let text = 0;
+      let glyph = 0;
+      for (const accent of grid) {
+        if (contrast(resolveAutoInk(accent, { background: "#FFFFFF", darkInk, floor: 4.5 }), accent) < 4.5) text++;
+        if (contrast(resolveAutoInk(accent, { background: "#FFFFFF", darkInk, floor: 3 }), accent) < 3) glyph++;
+      }
+      expect(text).toBe(0);
+      expect(glyph).toBe(0);
+    }
+  });
+
+  test("the approve button: the accent darkened in its own hue until its always-white label reaches 4.5:1", () => {
+    let darkened = 0;
+    for (const accent of grid.filter((_, i) => i % 7 === 0)) {
+      const fill = labelFill(accent);
+      expect(contrast("#FFFFFF", fill), accent).toBeGreaterThanOrEqual(4.5);
+      if (contrast("#FFFFFF", accent) >= 4.5) {
+        expect(fill, accent).toBe(accent);
+        continue;
+      }
+      darkened++;
+      const [h0, s0, l0] = hexToHsl(accent);
+      const [h1, , l1] = hexToHsl(fill);
+      expect(l1, accent).toBeLessThan(l0);
+      // The same hue, within what whole channels can hold (a near-grey has little hue to keep).
+      if (s0 > 0.2 && l1 > 0.08) expect(Math.min(Math.abs(h1 - h0), 360 - Math.abs(h1 - h0)), accent).toBeLessThan(4);
+      // The lightest shade that holds: one step lighter would not.
+      expect(contrast("#FFFFFF", labelFill(fill, 4.4)), accent).toBeGreaterThanOrEqual(4.4);
+    }
+    expect(darkened).toBeGreaterThan(1000);
+    // Through the stack: macOS's default blue gets a white "Allow once", in both appearances.
+    for (const appearance of ["light", "dark"] as const) {
+      const tokens = resolveTokens(appearance, [tokensFor(BASE_THEME, appearance)], { systemAccent: "#007AFF" });
+      expect(hex(tokens, "card.approve.text")).toBe("#FFFFFF");
+      expect(contrast("#FFFFFF", hex(tokens, "card.approve.background"))).toBeGreaterThanOrEqual(4.5);
+      // Glyph-only controls keep the plain accent and the 3:1 white-bias rule.
+      expect(hex(tokens, "color.accent")).toBe("#007AFF");
+      expect(hex(tokens, "color.accent.glyph")).toBe("#FFFFFF");
+    }
   });
 });

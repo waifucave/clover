@@ -17,6 +17,8 @@ import {
   AUTO_INK,
   AUTO_INKS,
   CATALOG_ACCENTS,
+  LABEL_FILL_TOKENS,
+  LABEL_FLOOR,
   cssProperty,
   isPluginTokenName,
   isTokenName,
@@ -228,6 +230,48 @@ export function resolveAutoInk(accent: string, opts: { background: string; darkI
   return contrast("#FFFFFF", hex) >= opts.floor ? "#FFFFFF" : opts.darkInk;
 }
 
+/** `#RRGGBB` as hue (degrees), saturation and lightness (0–1). */
+export function hexToHsl(hex: string): [number, number, number] {
+  const { r, g, b } = parseHex(hex);
+  const [R, G, B] = [r / 255, g / 255, b / 255];
+  const max = Math.max(R, G, B);
+  const min = Math.min(R, G, B);
+  const l = (max + min) / 2;
+  if (max === min) return [0, 0, l];
+  const d = max - min;
+  const s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+  const h = max === R ? (G - B) / d + (G < B ? 6 : 0) : max === G ? (B - R) / d + 2 : (R - G) / d + 4;
+  return [h * 60, s, l];
+}
+
+function hslToHex(h: number, s: number, l: number): string {
+  const k = (n: number) => (n + h / 30) % 12;
+  const a = s * Math.min(l, 1 - l);
+  const f = (n: number) => l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)));
+  return `#${[0, 8, 4].map((n) => Math.round(f(n) * 255).toString(16).padStart(2, "0")).join("").toUpperCase()}`;
+}
+
+/** An accent as a filled button's fill under a white label: itself when white already reaches `floor`, otherwise
+ *  darkened in its own hue (its HSL hue and saturation kept, its lightness lowered) to the lightest shade where it
+ *  does. Alpha is flattened onto `background` first. */
+export function labelFill(accent: string, floor = LABEL_FLOOR, background = "#FFFFFF"): string {
+  const p = composite(parseHex(accent), { ...parseHex(background), a: 1 });
+  const flat = `#${[p.r, p.g, p.b].map((c) => Math.round(c).toString(16).padStart(2, "0")).join("").toUpperCase()}`;
+  if (contrast("#FFFFFF", flat) >= floor) return flat;
+  const [h, s, l] = hexToHsl(flat);
+  let lo = 0;
+  let hi = l;
+  for (let i = 0; i < 24; i++) {
+    const mid = (lo + hi) / 2;
+    if (contrast("#FFFFFF", hslToHex(h, s, mid)) >= floor) lo = mid;
+    else hi = mid;
+  }
+  // Rounding to whole channels can land a hair under the floor: step down until it holds.
+  let out = hslToHex(h, s, lo);
+  for (let l2 = lo; contrast("#FFFFFF", out) < floor && l2 > 0; l2 -= 0.002) out = hslToHex(h, s, Math.max(0, l2));
+  return out;
+}
+
 /**
  * One part's tokens in one appearance, as lane B's `resolveTokens` gives them: the layers' values (each from
  * `tokensFor`), lowest first, a later one winning; an accent token whose winning value is `"system"` takes the OS
@@ -251,6 +295,11 @@ export function resolveTokens(appearance: Appearance, layers: readonly Tokens[],
   }
   const live = opts.systemAccent !== undefined && isHexColor(opts.systemAccent) ? opts.systemAccent : undefined;
   if (live !== undefined) for (const name of followsOs) out[name] = live;
+  // A filled button with a text label takes the accent darkened until its white label reaches 4.5:1.
+  for (const name of followsOs) {
+    const value = out[name];
+    if (LABEL_FILL_TOKENS.includes(name) && typeof value === "string" && isHexColor(value)) out[name] = labelFill(value);
+  }
   for (const name of auto) {
     const ink = AUTO_INKS[name]!;
     const [accent, background, darkInk] = [out[ink.accent], out[ink.background], out[ink.darkInk]];

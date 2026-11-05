@@ -241,6 +241,14 @@ export const AUTO_INK = "auto";
 /** The tokens that may be `"system"`. */
 export const SYSTEM_ACCENT_TOKENS: readonly string[] = ["color.accent", "card.approve.background"];
 
+/** Filled accent buttons with a text label (the controller's ruling, matching the reference's white-on-blue): a
+ *  `"system"` value is the accent darkened in its own hue until white text reaches 4.5:1, so the label is always
+ *  white. Glyph-only controls keep the plain accent and the 3:1 white-bias ink. */
+export const LABEL_FILL_TOKENS: readonly string[] = ["card.approve.background"];
+
+/** The contrast white text needs on a filled button with a label. */
+export const LABEL_FLOOR = 4.5;
+
 /** Lane B's catalog values for those tokens: what a `"system"` falls back to with nothing beneath it but the
  *  catalog (the base theme's own case) and no OS reading. */
 export const CATALOG_ACCENTS: Readonly<Record<string, { readonly light: string; readonly dark: string }>> = {
