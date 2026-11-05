@@ -1,0 +1,138 @@
+{
+  "spike": "S6",
+  "question": "speed",
+  "machine": {
+    "os": "darwin",
+    "release": "27.0.0",
+    "arch": "arm64",
+    "cpus": 3,
+    "cpu": "Apple M1 (Virtual)",
+    "memGB": 7,
+    "bun": "1.3.14",
+    "commit": "044fbedb494c92cdc97d320183f235e8f8c7bce6",
+    "run": "42001348205",
+    "runAttempt": "1",
+    "job": "macos"
+  },
+  "started": "2026-11-05T09:31:01.777Z",
+  "rows": [
+    {
+      "workload": "git-status",
+      "where": "mount",
+      "policy": "plain, actimeo=1",
+      "rttMs": 20,
+      "phase": "cold",
+      "requests": 5260,
+      "ops": {
+        "STAT": 4771,
+        "READ": 45,
+        "READ_bytes": 18143126,
+        "SETATTR": 4,
+        "OPEN": 1,
+        "LIST": 437,
+        "CLOSE": 1,
+        "UNLINK": 1
+      },
+      "helper": {
+        "drops": 0,
+        "fastFails": 0,
+        "mounted": true,
+        "mountsRefused": 0,
+        "nfsCalls": {
+          "Access": 471,
+          "Create": 2,
+          "FSInfo": 1,
+          "FSStat": 165,
+          "GetAttr": 504,
+          "Lookup": 4553,
+          "Null": 1,
+          "PathConf": 1,
+          "Read": 45,
+          "ReadDirPlus": 439,
+          "Remove": 1,
+          "SetAttr": 3
+        },
+        "nfsNanos": {
+          "Access": 20993296,
+          "Create": 90518417,
+          "FSInfo": 29292,
+          "FSStat": 432160962,
+          "GetAttr": 6103383460,
+          "Lookup": 125195704315,
+          "Null": 18042,
+          "PathConf": 19000,
+          "Read": 1653540752,
+          "ReadDirPlus": 12813426459,
+          "Remove": 58833208,
+          "SetAttr": 87236126
+        },
+        "online": true,
+        "reconnects": 0,
+        "requests": 5261,
+        "timeouts": 0
+      },
+      "nfsCalls": {
+        "Access": 468,
+        "Create": 2,
+        "FSStat": 163,
+        "GetAttr": 502,
+        "Lookup": 4553,
+        "Read": 45,
+        "ReadDirPlus": 439,
+        "Remove": 1,
+        "SetAttr": 3
+      },
+      "nfsCallsTotal": 6176,
+      "nfsHelperMs": 146429,
+      "ms": 38659,
+      "ok": true,
+      "code": 0,
+      "timedOut": false
+    },
+    {
+      "workload": "git-status",
+      "where": "mount",
+      "policy": "plain, actimeo=1",
+      "rttMs": 20,
+      "phase": "warm",
+      "requests": 5119,
+      "ops": {
+        "STAT": 4675,
+        "SETATTR": 4,
+        "OPEN": 1,
+        "LIST": 437,
+        "CLOSE": 1,
+        "UNLINK": 1
+      },
+      "nfsCalls": {
+        "Access": 151,
+        "Create": 2,
+        "FSStat": 151,
+        "GetAttr": 4970,
+        "Lookup": 21,
+        "ReadDirPlus": 439,
+        "Remove": 1,
+        "SetAttr": 3
+      },
+      "nfsCallsTotal": 5738,
+      "nfsHelperMs": 137375,
+      "ms": 35975,
+      "ok": true,
+      "code": 0,
+      "timedOut": false
+    }
+  ],
+  "nfs": {
+    "mountedAs": "user",
+    "ac": "actimeo=1",
+    "timeo": 110,
+    "deadtimeout": 5,
+    "dumbtimer": true,
+    "rsize": 1048576,
+    "readahead": 16,
+    "treeRootMode": "700",
+    "exportPathKind": "one-time token",
+    "mountArgs": "/Users/runner/work/_temp/s6/nfs-tree from 127.0.0.1:/<one-time export path>\n  -- Original mount options:\n     General mount flags: 0x100000 nobrowse\n     NFS parameters: vers=3,tcp,port=49937,mountport=49937,soft,intr,noresvport,nolocks,rsize=1048576,wsize=1048576,readahead=16,dumbtimer,timeo=110,retrans=2,acregmin=1,acregmax=1,acdirmin=1,acdirmax=1,acrootdirmin=1,acrootdirmax=1,deadtimeout=5\n     File system locations:\n       /<one-time export path> @ 127.0.0.1 (127.0.0.1)\n  -- Current mount parameters:\n     General mount flags: 0x4100018 nodev,nosuid,nobrowse,multilabel\n     NFS parameters: vers=3,tcp,port=49937,mountport=49937,nomntudp,soft,intr,noresvport,negnamecache,callumnt,nolocks,quota,rsize=1048576,wsize=1048576,readahead=16,dsize=8192,rdirplus,dumbtimer,timeo=110,retrans=2,maxgroups=16,acregmin=1,acregmax=1,acdirmin=1,acdirmax=1,acrootdirmin=1,acrootdirmax=1,deadtimeout=5,nomutejukebox,nonfc,sec=none,accesscache=3\n     File system locations:\n       /<one-time export path> @ 127.0.0.1 (127.0.0.1)\n     Status flags: 0x0"
+  },
+  "finished": "2026-11-05T09:32:16.740Z"
+}

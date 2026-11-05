@@ -1,0 +1,2 @@
+[test]
+# No preload: these tests read files and compute; nothing touches a home, a daemon or a secret store.

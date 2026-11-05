@@ -1,0 +1,105 @@
+{
+  "check": "initialize",
+  "agent": "agy",
+  "command": "/opt/homebrew/bin/agy acp --disable-telemetry",
+  "started": "2026-11-05T00:25:32.278Z",
+  "bridgeTokenSha": {
+    "stdio": "af1ec5ab7212"
+  },
+  "nonces": {
+    "stdio": "SN-e1277a91c3b7",
+    "http": "HN-fd23c04cccbc",
+    "stdioWord": "swordfcbfa2",
+    "httpWord": "hword8d21d6"
+  },
+  "initialize": {
+    "protocolVersion": 1,
+    "agentCapabilities": {
+      "loadSession": true,
+      "load_session": true,
+      "sessionCapabilities": {
+        "resume": {},
+        "close": {},
+        "load": {},
+        "list": {},
+        "additionalDirectories": {}
+      },
+      "session_capabilities": {
+        "resume": {},
+        "close": {},
+        "load": {},
+        "list": {},
+        "additionalDirectories": {}
+      },
+      "auth": {
+        "logout": {}
+      },
+      "_meta": {
+        "antigravity": {
+          "tier": true,
+          "systemPrompt": {
+            "append": true
+          }
+        }
+      }
+    },
+    "agentInfo": {
+      "name": "Antigravity ACP Server",
+      "version": "1.4.12"
+    },
+    "authMethods": [
+      {
+        "id": "oauth-personal",
+        "name": "Log in with Google",
+        "description": "Log in with your Google account"
+      },
+      {
+        "id": "oauth-business",
+        "name": "Log in with Gemini Enterprise",
+        "description": "Log in with your Gemini Enterprise account"
+      },
+      {
+        "id": "gemini-api-key",
+        "name": "Gemini API key",
+        "description": "Use an API key with Gemini Developer API"
+      },
+      {
+        "id": "agent-platform",
+        "name": "Gemini Enterprise Agent Platform",
+        "description": "Use Gemini Enterprise Agent Platform (formerly Vertex AI) with Application Default Credentials"
+      }
+    ]
+  },
+  "agentStop": {
+    "code": 0,
+    "signal": null,
+    "forced": false
+  },
+  "mcp": {
+    "stdio": {
+      "starts": 0,
+      "bridgeCheck": "never started",
+      "envTokenMatches": false,
+      "methods": [],
+      "calls": []
+    },
+    "http": {
+      "requests": [],
+      "authCheck": [],
+      "protocolVersionHeader": [],
+      "userAgent": [],
+      "calls": []
+    }
+  },
+  "client": {
+    "permissions": [],
+    "fsCalls": [],
+    "terminalCalls": [],
+    "elicitations": 0,
+    "unknownMethods": [],
+    "updateKinds": {},
+    "toolCalls": []
+  },
+  "shimsUsed": [],
+  "finished": "2026-11-05T00:25:32.586Z"
+}

@@ -1,0 +1,15 @@
+Uploading public source chunk 1
+Running cleanup-windows.ps1 on clover-c-win
+Cleaning only lane C sandbox installations, tasks, users and interrupted fixtures
+WARNING: proceeding, even though we could not create PATH aliases: Refusing to create helper binaries under temporary dir "C:\\Users\\<test-user>\\AppData\\Local\\Temp\\" (codex_home: AbsolutePathBuf("C:\\Users\\<test-user>\\AppData\\Local\\Temp\\clover-codex-cleanup-a920f855663d40729129cc7afc849986"))
+skipping sandbox directories: no pinned home
+remove WFP filters: completed
+remove firewall rules: completed
+remove hidden-user entries: completed
+remove sandbox group: completed
+codex_uninstall_exit=0
+srt-win: ambient write-deny removed from 11 system path(s)
+srt-win: uninstalled (4 filter(s) removed). Sandbox user, credential, and setup marker removed.
+srt-win: persistent write grants removed from 4 root(s)
+srt_uninstall_exit=0
+Remaining lane test users:

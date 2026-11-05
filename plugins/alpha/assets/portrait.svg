@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <title>Alpha (placeholder portrait)</title>
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#EFE8FF"/>
+      <stop offset="1" stop-color="#DDF6EC"/>
+    </linearGradient>
+    <clipPath id="round"><circle cx="128" cy="128" r="128"/></clipPath>
+  </defs>
+  <g clip-path="url(#round)">
+    <rect width="256" height="256" fill="url(#sky)"/>
+    <!-- twin tails, behind -->
+    <path d="M44 118 C 18 170 26 222 52 250 L 84 250 C 70 206 66 160 78 120 Z" fill="#9C88F2"/>
+    <path d="M212 118 C 238 170 230 222 204 250 L 172 250 C 186 206 190 160 178 120 Z" fill="#9C88F2"/>
+    <!-- shoulders and collar -->
+    <path d="M64 256 C 70 214 96 196 128 196 C 160 196 186 214 192 256 Z" fill="#FBFAFF"/>
+    <path d="M100 200 L 128 226 L 156 200 C 148 196 138 194 128 194 C 118 194 108 196 100 200 Z" fill="#5ED6B4"/>
+    <!-- neck and face -->
+    <rect x="114" y="168" width="28" height="34" rx="12" fill="#F6D2C6"/>
+    <ellipse cx="128" cy="124" rx="62" ry="60" fill="#FFE7DC"/>
+    <!-- hair cap and fringe -->
+    <path d="M62 128 C 58 74 92 50 128 50 C 164 50 198 74 194 128 C 186 108 178 98 168 94 C 160 104 150 98 144 90 C 136 102 122 104 112 92 C 104 102 94 104 86 96 C 76 104 68 114 62 128 Z" fill="#B8A5FF"/>
+    <path d="M62 128 C 60 150 64 168 72 180 C 72 160 70 142 72 124 Z" fill="#B8A5FF"/>
+    <path d="M194 128 C 196 150 192 168 184 180 C 184 160 186 142 184 124 Z" fill="#B8A5FF"/>
+    <!-- clover clip -->
+    <g fill="#5ED6B4" transform="translate(178 86)">
+      <circle cx="-5" cy="-5" r="5.5"/><circle cx="5" cy="-5" r="5.5"/><circle cx="-5" cy="5" r="5.5"/><circle cx="5" cy="5" r="5.5"/>
+    </g>
+    <!-- brows -->
+    <ellipse cx="104" cy="110" rx="11" ry="2.4" fill="#6F5BC6"/>
+    <ellipse cx="152" cy="110" rx="11" ry="2.4" fill="#6F5BC6"/>
+    <!-- eyes -->
+    <ellipse cx="104" cy="130" rx="11.5" ry="15" fill="#2A2145"/>
+    <ellipse cx="152" cy="130" rx="11.5" ry="15" fill="#2A2145"/>
+    <ellipse cx="104" cy="132.5" rx="8.6" ry="11.2" fill="#3FC7A4"/>
+    <ellipse cx="152" cy="132.5" rx="8.6" ry="11.2" fill="#3FC7A4"/>
+    <ellipse cx="104" cy="134" rx="4" ry="5.4" fill="#17112D"/>
+    <ellipse cx="152" cy="134" rx="4" ry="5.4" fill="#17112D"/>
+    <circle cx="100" cy="124" r="3.4" fill="#FFFFFF"/>
+    <circle cx="148" cy="124" r="3.4" fill="#FFFFFF"/>
+    <circle cx="108" cy="139" r="1.5" fill="#FFFFFF"/>
+    <circle cx="156" cy="139" r="1.5" fill="#FFFFFF"/>
+    <!-- blush and smile -->
+    <ellipse cx="86" cy="150" rx="11" ry="5.5" fill="#FFB7C8"/>
+    <ellipse cx="170" cy="150" rx="11" ry="5.5" fill="#FFB7C8"/>
+    <path d="M118 156 Q 128 164 138 156" fill="none" stroke="#6A2840" stroke-width="3" stroke-linecap="round"/>
+  </g>
+</svg>

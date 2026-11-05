@@ -1,0 +1,9 @@
+{"backend": "srt", "test": "allowed-write", "pass": true, "exit": 0, "host_unchanged": true, "diagnostic": ""}
+{"backend": "srt", "test": "secret-read", "pass": true, "exit": 0, "host_unchanged": true, "diagnostic": ""}
+{"backend": "srt", "test": "key-read", "pass": true, "exit": 0, "host_unchanged": true, "diagnostic": ""}
+{"backend": "srt", "test": "run-read", "pass": true, "exit": 0, "host_unchanged": true, "diagnostic": ""}
+{"backend": "srt", "test": "alias-read", "pass": true, "exit": 0, "host_unchanged": true, "diagnostic": ""}
+{"backend": "srt", "test": "link-create", "pass": true, "exit": 0, "host_unchanged": true, "diagnostic": ""}
+{"backend": "srt", "test": "settings-write", "pass": true, "exit": 0, "host_unchanged": true, "diagnostic": ""}
+{"backend": "srt", "test": "policy-write", "pass": true, "exit": 0, "host_unchanged": true, "diagnostic": ""}
+{"backend": "srt", "test": "nested-retry", "pass": true, "exit": 0, "host_unchanged": true, "diagnostic": ""}

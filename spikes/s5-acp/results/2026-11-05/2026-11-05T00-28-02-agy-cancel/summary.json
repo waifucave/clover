@@ -1,0 +1,230 @@
+{
+  "check": "cancel",
+  "agent": "agy",
+  "command": "/opt/homebrew/bin/agy acp --disable-telemetry",
+  "started": "2026-11-05T00:28:02.937Z",
+  "bridgeTokenSha": {
+    "stdio": "c031abb4fd9d"
+  },
+  "nonces": {
+    "stdio": "SN-d0ec08bece53",
+    "http": "HN-7619bb9d33ee",
+    "stdioWord": "sword479cbd",
+    "httpWord": "hworda79d7b"
+  },
+  "initialize": {
+    "protocolVersion": 1,
+    "agentCapabilities": {
+      "loadSession": true,
+      "load_session": true,
+      "sessionCapabilities": {
+        "resume": {},
+        "close": {},
+        "load": {},
+        "list": {},
+        "additionalDirectories": {}
+      },
+      "session_capabilities": {
+        "resume": {},
+        "close": {},
+        "load": {},
+        "list": {},
+        "additionalDirectories": {}
+      },
+      "auth": {
+        "logout": {}
+      },
+      "_meta": {
+        "antigravity": {
+          "tier": true,
+          "systemPrompt": {
+            "append": true
+          }
+        }
+      }
+    },
+    "agentInfo": {
+      "name": "Antigravity ACP Server",
+      "version": "1.4.12"
+    },
+    "authMethods": [
+      {
+        "id": "oauth-personal",
+        "name": "Log in with Google",
+        "description": "Log in with your Google account"
+      },
+      {
+        "id": "oauth-business",
+        "name": "Log in with Gemini Enterprise",
+        "description": "Log in with your Gemini Enterprise account"
+      },
+      {
+        "id": "gemini-api-key",
+        "name": "Gemini API key",
+        "description": "Use an API key with Gemini Developer API"
+      },
+      {
+        "id": "agent-platform",
+        "name": "Gemini Enterprise Agent Platform",
+        "description": "Use Gemini Enterprise Agent Platform (formerly Vertex AI) with Application Default Credentials"
+      }
+    ]
+  },
+  "session": {
+    "sessionId": "agy-session-3",
+    "ms": 909,
+    "models": {
+      "current": "gemini-3.8-flash-high",
+      "available": [
+        "gemini-3.8-flash-high",
+        "gemini-3.8-flash-medium",
+        "gemini-3.8-flash-low"
+      ]
+    },
+    "configOptions": [
+      {
+        "id": "model",
+        "category": "model",
+        "type": "select",
+        "currentValue": "gemini-3.8-flash",
+        "values": [
+          "gemini-3.8-flash"
+        ]
+      },
+      {
+        "id": "thought_level",
+        "category": "thought_level",
+        "type": "select",
+        "currentValue": "high",
+        "values": [
+          "low",
+          "medium",
+          "high"
+        ]
+      }
+    ]
+  },
+  "modelSet": {
+    "via": "session/set_config_option",
+    "configId": "model",
+    "value": "gemini-3.8-flash",
+    "current": "gemini-3.8-flash"
+  },
+  "effortSet": {
+    "configId": "thought_level",
+    "value": "low"
+  },
+  "result": {
+    "commandSeenRunning": true,
+    "stopReason": "cancelled",
+    "msFromCancelToStop": 15,
+    "msPromptTotal": 8426,
+    "sleepProcessesBeforeCancel": [
+      "16219  9608 sleep 37.25"
+    ],
+    "sleepProcessesAfterCancel": [],
+    "verdict": {
+      "stopReasonCancelled": true,
+      "commandKilled": true
+    }
+  },
+  "agentStop": {
+    "code": 0,
+    "signal": null,
+    "forced": false
+  },
+  "mcp": {
+    "stdio": {
+      "starts": 1,
+      "bridgeCheck": "present sha256=c031abb4fd9d",
+      "envTokenMatches": true,
+      "envNames": [
+        "AGY_CLI_DISABLE_AUTO_UPDATE",
+        "HOME",
+        "LANG",
+        "LOGNAME",
+        "NO_COLOR",
+        "PATH",
+        "S5_BRIDGE_TOKEN",
+        "S5_INSTRUCTION_WORD",
+        "S5_NONCE",
+        "SHELL",
+        "TERM",
+        "TMPDIR",
+        "USER"
+      ],
+      "methods": [
+        "server/discover",
+        "initialize",
+        "notifications/initialized",
+        "tools/list",
+        "notifications/roots/list_changed"
+      ],
+      "calls": []
+    },
+    "http": {
+      "requests": [
+        "POST /mcp → 400 server/discover → legacy",
+        "POST /mcp → 200 initialize asked=2025-11-25 answered=2025-11-25",
+        "POST /mcp → 202 notification notifications/initialized",
+        "GET /.well-known/oauth-protected-resource/mcp → 404",
+        "GET /.well-known/oauth-protected-resource → 404",
+        "POST /mcp → 200 tools/list",
+        "POST /mcp → 202 notification notifications/roots/list_changed",
+        "DELETE /mcp → 200"
+      ],
+      "authCheck": [
+        "match",
+        "missing"
+      ],
+      "protocolVersionHeader": [
+        "2026-07-28",
+        "2025-11-25"
+      ],
+      "userAgent": [
+        "Go-http-client/1.1"
+      ],
+      "calls": []
+    }
+  },
+  "client": {
+    "permissions": [
+      {
+        "ms": 8339,
+        "sessionId": "agy-session-3",
+        "toolCallId": "agy-call-6",
+        "title": "sleep 37.25",
+        "kind": "execute",
+        "optionKinds": [
+          "allow_once:allow",
+          "reject_once:deny"
+        ],
+        "decision": "allow",
+        "optionId": "allow"
+      }
+    ],
+    "fsCalls": [],
+    "terminalCalls": [],
+    "elicitations": 0,
+    "unknownMethods": [],
+    "updateKinds": {
+      "config_option_update": 2,
+      "available_commands_update": 3,
+      "user_message_chunk": 1,
+      "session_info_update": 1,
+      "agent_thought_chunk": 1,
+      "tool_call": 1,
+      "tool_call_update": 2
+    },
+    "toolCalls": [
+      {
+        "id": "agy-call-6",
+        "title": "sleep 37.25",
+        "kind": "execute",
+        "status": "in_progress"
+      }
+    ]
+  },
+  "shimsUsed": [],
+  "finished": "2026-11-05T00:28:16.877Z"
+}

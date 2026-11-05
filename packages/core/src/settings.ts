@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { advanceAuthorityRevision } from "./authority-revision";
+import { legacyImportOn } from "./migration/legacy-imports";
 import { z } from "zod";
 import { loadCatalog } from "@waifucave/clover-provider-catalog";
 import { ensureGlobalGitignore, CLOVER_PERSONAL_IGNORES } from "./global-gitignore";
@@ -740,11 +741,12 @@ export const Settings = z.object({
   }).optional(),
   // Phase 9c (P9c-4, the user's ruling on WS-00 §8 #7): Clover reads a project's unconverted legacy
   // instructions file / project dir (`legacy-names.ts`'s `LEGACY_INSTRUCTIONS_FILE` / `LEGACY_PROJECT_DIR`) READ-ONLY when the Clover-named file/dir is absent and this is true —
-  // with a visible per-project deprecation notice; `clover migrate-project` converts. Default ON,
-  // indefinitely, until a later release flips the default. Read HOT, never a boot snapshot.
+  // with a visible per-project deprecation notice; `clover migrate-project` converts. M-M0: default
+  // OFF, from `migration/legacy-imports.ts`'s `projectFiles` (spec §12 retires the legacy
+  // migrations); an explicit `true` still turns it on. Read HOT, never a boot snapshot.
   // OPTIONAL (not prefaulted) for the same reason `runtimes` is: a prefaulted block becomes REQUIRED on
-  // the inferred `Settings` type and breaks every hand-built settings literal. Absent block = default
-  // ON; readers go through `legacyProjectFilesReadEnabled()` below, never the raw block.
+  // the inferred `Settings` type and breaks every hand-built settings literal. Absent block = the
+  // default; readers go through `legacyProjectFilesReadEnabled()` below, never the raw block.
   /**
    * WS-19 (W19-6): per-provider connection overrides, keyed by the CATALOG provider id
    * (`deepseek`, `zai`, `openrouter`, …) — the same ids `credential.list` reports and
@@ -775,7 +777,7 @@ export const Settings = z.object({
    * reading is "send the user's credential to whatever this parses as".
    */
   providers: z.record(z.string(), z.object({ baseUrl: z.string().url().optional() })).optional(),
-  legacy: z.object({ readLegacyProjectFiles: z.boolean().default(true) }).optional(),
+  legacy: z.object({ readLegacyProjectFiles: z.boolean().optional() }).optional(),
   /** Usage and cost tracking (`docs/claude/usage.md`): whether Clover may read the user's OWN Codex and Claude Code
    *  usage (their local session files, and their plan windows through the user's own `codex` / `claude`), and their
    *  Antigravity plan windows (through their own `agy`) and OpenCode tokens and cost (through their own `opencode stats`). Default on;
@@ -930,9 +932,10 @@ export function usageTrackingFrom(settings: Settings | null | undefined): { code
 }
 
 /** Phase 9c (P9c-4): the ONE reader of `legacy.readLegacyProjectFiles` — absent block or absent key
- *  means ON (the shipped default); only an explicit `false` turns the legacy read-only fallback off. */
+ *  means the code's own switch (`migration/legacy-imports.ts`'s `projectFiles`, off since M-M0);
+ *  an explicit `true` or `false` wins. */
 export function legacyProjectFilesReadEnabled(settings: Settings | null | undefined): boolean {
-  return settings?.legacy?.readLegacyProjectFiles ?? true;
+  return settings?.legacy?.readLegacyProjectFiles ?? legacyImportOn("projectFiles");
 }
 
 /** WS-19 (W19-6): the ONE reader of `providers.<id>.baseUrl` — absent block, absent entry, absent

@@ -1,0 +1,19 @@
+{
+  "extends": "../../../../tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ESNext", "DOM", "DOM.Iterable"],
+    "resolveJsonModule": true,
+    // The parts' sources come from sibling folders, each with its own dev install: one copy of each
+    // shared library's types, this folder's, as the bundle has one copy of each library.
+    "paths": {
+      "react": ["./node_modules/@types/react"],
+      "react/*": ["./node_modules/@types/react/*"],
+      "react-dom": ["./node_modules/@types/react-dom"],
+      "react-dom/*": ["./node_modules/@types/react-dom/*"],
+      "three": ["./node_modules/@types/three"],
+      "three/*": ["./node_modules/@types/three/*"],
+      "@pixiv/three-vrm": ["./node_modules/@pixiv/three-vrm"]
+    }
+  },
+  "include": ["src", "build.ts"]
+}

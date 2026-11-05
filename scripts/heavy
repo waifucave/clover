@@ -1,0 +1,64 @@
+#!/bin/bash
+# heavy: run a heavy job (an Electron or native build, a full test suite, an Xcode build) in one of a few
+# shared slots, so parallel agents on one machine don't swamp it (plan §8). While it waits for a free slot it
+# prints a line every 30 seconds. Every checkout and the old path, WaifuCave/bin/heavy, share the same slots.
+#
+#   scripts/heavy <command> [args...]   run the command in a slot; its exit code is heavy's
+#   scripts/heavy --status              show who holds the slots
+#
+# HEAVY_SLOTS (default 3) sets the number of slots, HEAVY_DIR where they live (default: the user cache folder's
+# clover-heavy), HEAVY_POLL_SECONDS how often a waiting heavy looks again (default 5). A slot is a directory made
+# with mkdir (atomic), holding the pid of the heavy that took it and what it runs; a slot whose heavy is gone is
+# freed by the next one that looks.
+set -u
+slots="${HEAVY_SLOTS:-3}"
+poll="${HEAVY_POLL_SECONDS:-5}"
+case "$slots" in ''|*[!0-9]*|0) echo "heavy: HEAVY_SLOTS must be a positive number" >&2; exit 2 ;; esac
+case "$poll" in ''|*[!0-9]*|0) echo "heavy: HEAVY_POLL_SECONDS must be a positive number" >&2; exit 2 ;; esac
+if [ -n "${HEAVY_DIR:-}" ]; then
+  dir="$HEAVY_DIR"
+elif [ "$(uname -s)" = "Darwin" ]; then
+  dir="$HOME/Library/Caches/clover-heavy"
+else
+  dir="${XDG_CACHE_HOME:-$HOME/.cache}/clover-heavy"
+fi
+mkdir -p "$dir"
+
+reap() { # free a slot whose owner is gone
+  local s="$1" pid
+  [ -d "$s" ] || return 0
+  pid="$(cat "$s/pid" 2>/dev/null || true)"
+  if [ -n "$pid" ]; then
+    kill -0 "$pid" 2>/dev/null || rm -rf "$s"
+  elif [ -z "$(find "$s" -maxdepth 0 -mmin -1 2>/dev/null)" ]; then
+    rm -rf "$s" # no pid after a minute: its owner died while taking it
+  fi
+}
+
+if [ "${1:-}" = "--status" ]; then
+  for i in $(seq 1 "$slots"); do
+    s="$dir/slot$i"; reap "$s"
+    if [ -d "$s" ]; then echo "slot $i: pid $(cat "$s/pid" 2>/dev/null): $(cat "$s/what" 2>/dev/null)"; else echo "slot $i: free"; fi
+  done
+  exit 0
+fi
+[ $# -gt 0 ] || { echo "usage: heavy <command> [args...] | heavy --status" >&2; exit 2; }
+
+slot=""; waited=0
+while [ -z "$slot" ]; do
+  for i in $(seq 1 "$slots"); do
+    s="$dir/slot$i"; reap "$s"
+    if mkdir "$s" 2>/dev/null; then
+      echo $$ > "$s/pid"; printf '%s  (in %s)\n' "$*" "$PWD" > "$s/what"
+      slot="$s"; break
+    fi
+  done
+  if [ -z "$slot" ]; then
+    [ $((waited % 30)) -lt "$poll" ] && echo "heavy: all $slots slots busy, waiting (${waited}s)" >&2
+    sleep "$poll"; waited=$((waited + poll))
+  fi
+done
+trap 'rm -rf "$slot"' EXIT
+trap 'exit 130' INT TERM HUP
+echo "heavy: slot ${slot##*slot}: $*" >&2
+"$@"

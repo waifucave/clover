@@ -1,0 +1,1046 @@
+{
+  "spike": "S6",
+  "question": "speed",
+  "machine": {
+    "os": "win32",
+    "release": "10.0.26100",
+    "arch": "x64",
+    "cpus": 4,
+    "cpu": "INTEL(R) XEON(R) PLATINUM 8573C",
+    "memGB": 16,
+    "bun": "1.3.14"
+  },
+  "started": "2026-11-05T00:57:21.314Z",
+  "rows": [
+    {
+      "workload": "git-status",
+      "where": "mount",
+      "policy": "plain",
+      "rttMs": 0,
+      "phase": "cold",
+      "requests": 2,
+      "ops": {
+        "STAT": 2
+      },
+      "helper": {
+        "cacheHits": 17,
+        "cacheMiss": 2,
+        "drops": 0,
+        "fastFails": 0,
+        "online": true,
+        "prefetches": 0,
+        "reconnects": 0,
+        "requests": 4,
+        "timeouts": 0
+      },
+      "ms": 30,
+      "ok": false,
+      "code": 128,
+      "timedOut": false,
+      "err": "fatal: Unable to read current working directory: No such file or directory"
+    },
+    {
+      "workload": "git-status",
+      "where": "mount",
+      "policy": "plain",
+      "rttMs": 0,
+      "phase": "warm",
+      "requests": 0,
+      "ops": {},
+      "ms": 26,
+      "ok": false,
+      "code": 128,
+      "timedOut": false,
+      "err": "fatal: Unable to read current working directory: No such file or directory"
+    },
+    {
+      "workload": "tsc-protocol",
+      "where": "mount",
+      "policy": "plain",
+      "rttMs": 0,
+      "phase": "cold",
+      "requests": 1345,
+      "ops": {
+        "STAT": 772,
+        "READLINK": 363,
+        "READ": 205,
+        "READ_bytes": 9630252,
+        "LIST": 4,
+        "STATFS": 1
+      },
+      "helper": {
+        "cacheHits": 12171,
+        "cacheMiss": 776,
+        "drops": 0,
+        "fastFails": 0,
+        "online": true,
+        "prefetches": 0,
+        "reconnects": 0,
+        "requests": 1347,
+        "timeouts": 0
+      },
+      "ms": 3144,
+      "ok": false,
+      "code": 2,
+      "timedOut": false,
+      "err": "packages/protocol/test/parity-fixtures.test.ts(77,42): error TS2339: Property 'dir' does not exist on type 'ImportMeta'.\r | packages/protocol/test/parity-fixtures.test.ts(78,57): error TS7006: Parameter 'f' implicitly has an 'any' type.\r | packages/protocol/test/session-mode.test.ts(1,40): error TS2307: Cannot find module 'bun:test' or its corresponding type declarations."
+    },
+    {
+      "workload": "tsc-protocol",
+      "where": "mount",
+      "policy": "plain",
+      "rttMs": 0,
+      "phase": "warm",
+      "requests": 1344,
+      "ops": {
+        "STAT": 770,
+        "READLINK": 363,
+        "STATFS": 2,
+        "READ": 205,
+        "READ_bytes": 9630252,
+        "LIST": 4
+      },
+      "ms": 3075,
+      "ok": false,
+      "code": 2,
+      "timedOut": false,
+      "err": "packages/protocol/test/parity-fixtures.test.ts(77,42): error TS2339: Property 'dir' does not exist on type 'ImportMeta'.\r | packages/protocol/test/parity-fixtures.test.ts(78,57): error TS7006: Parameter 'f' implicitly has an 'any' type.\r | packages/protocol/test/session-mode.test.ts(1,40): error TS2307: Cannot find module 'bun:test' or its corresponding type declarations."
+    },
+    {
+      "workload": "tsc-core",
+      "where": "mount",
+      "policy": "plain",
+      "rttMs": 0,
+      "phase": "cold",
+      "requests": 10500,
+      "ops": {
+        "STAT": 5475,
+        "READLINK": 3155,
+        "READ": 1776,
+        "READ_bytes": 32377216,
+        "LIST": 84,
+        "STATFS": 10
+      },
+      "helper": {
+        "cacheHits": 103703,
+        "cacheMiss": 5559,
+        "drops": 0,
+        "fastFails": 0,
+        "online": true,
+        "prefetches": 0,
+        "reconnects": 0,
+        "requests": 10502,
+        "timeouts": 0
+      },
+      "ms": 26835,
+      "ok": false,
+      "code": 2,
+      "timedOut": false,
+      "err": "scripts/dev-daemon-lib.ts(2,25): error TS2307: Cannot find module 'node:os' or its corresponding type declarations.\r | scripts/dev-daemon-lib.ts(3,31): error TS2307: Cannot find module 'node:path' or its corresponding type declarations.\r | scripts/dev-daemon-lib.ts(64,36): error TS2503: Cannot find namespace 'NodeJS'."
+    },
+    {
+      "workload": "tsc-core",
+      "where": "mount",
+      "policy": "plain",
+      "rttMs": 0,
+      "phase": "warm",
+      "requests": 10493,
+      "ops": {
+        "STAT": 5467,
+        "READLINK": 3155,
+        "STATFS": 11,
+        "READ": 1776,
+        "READ_bytes": 32377216,
+        "LIST": 84
+      },
+      "ms": 26613,
+      "ok": false,
+      "code": 2,
+      "timedOut": false,
+      "err": "scripts/dev-daemon-lib.ts(2,25): error TS2307: Cannot find module 'node:os' or its corresponding type declarations.\r | scripts/dev-daemon-lib.ts(3,31): error TS2307: Cannot find module 'node:path' or its corresponding type declarations.\r | scripts/dev-daemon-lib.ts(64,36): error TS2503: Cannot find namespace 'NodeJS'."
+    },
+    {
+      "workload": "read-256M",
+      "where": "mount",
+      "policy": "plain",
+      "rttMs": 0,
+      "phase": "cold",
+      "requests": 259,
+      "ops": {
+        "STAT": 2,
+        "READ": 257,
+        "READ_bytes": 268435456
+      },
+      "helper": {
+        "cacheHits": 2,
+        "cacheMiss": 2,
+        "drops": 0,
+        "fastFails": 0,
+        "online": true,
+        "prefetches": 0,
+        "reconnects": 0,
+        "requests": 261,
+        "timeouts": 0
+      },
+      "ms": 936,
+      "ok": true,
+      "code": 0,
+      "timedOut": false
+    },
+    {
+      "workload": "read-256M",
+      "where": "mount",
+      "policy": "plain",
+      "rttMs": 0,
+      "phase": "warm",
+      "requests": 257,
+      "ops": {
+        "READ": 257,
+        "READ_bytes": 268435456
+      },
+      "ms": 867,
+      "ok": true,
+      "code": 0,
+      "timedOut": false
+    },
+    {
+      "workload": "write-256M",
+      "where": "mount",
+      "policy": "plain",
+      "rttMs": 0,
+      "phase": "cold",
+      "requests": 518,
+      "ops": {
+        "STAT": 259,
+        "OPEN": 1,
+        "WRITE": 256,
+        "WRITE_bytes": 268435456,
+        "FSYNC": 1,
+        "CLOSE": 1
+      },
+      "helper": {
+        "cacheHits": 6,
+        "cacheMiss": 259,
+        "drops": 0,
+        "fastFails": 0,
+        "online": true,
+        "prefetches": 0,
+        "reconnects": 0,
+        "requests": 520,
+        "timeouts": 0
+      },
+      "ms": 1778,
+      "ok": true,
+      "code": 0,
+      "timedOut": false
+    },
+    {
+      "workload": "write-256M",
+      "where": "mount",
+      "policy": "plain",
+      "rttMs": 0,
+      "phase": "warm",
+      "requests": 518,
+      "ops": {
+        "STAT": 259,
+        "OPEN": 1,
+        "WRITE": 256,
+        "WRITE_bytes": 268435456,
+        "FSYNC": 1,
+        "CLOSE": 1
+      },
+      "ms": 1723,
+      "ok": true,
+      "code": 0,
+      "timedOut": false
+    },
+    {
+      "workload": "copy-out",
+      "where": "mount",
+      "policy": "plain",
+      "rttMs": 0,
+      "phase": "cold",
+      "requests": 259,
+      "ops": {
+        "STAT": 9,
+        "LIST": 7,
+        "READ": 238,
+        "READ_bytes": 746123,
+        "READLINK": 5
+      },
+      "helper": {
+        "cacheHits": 1116,
+        "cacheMiss": 16,
+        "drops": 0,
+        "fastFails": 0,
+        "online": true,
+        "prefetches": 0,
+        "reconnects": 0,
+        "requests": 261,
+        "timeouts": 0
+      },
+      "ms": 303,
+      "ok": true,
+      "code": 0,
+      "timedOut": false
+    },
+    {
+      "workload": "copy-out",
+      "where": "mount",
+      "policy": "plain",
+      "rttMs": 0,
+      "phase": "warm",
+      "requests": 243,
+      "ops": {
+        "READ": 238,
+        "READ_bytes": 746123,
+        "READLINK": 5
+      },
+      "ms": 270,
+      "ok": true,
+      "code": 0,
+      "timedOut": false
+    },
+    {
+      "workload": "copy-in",
+      "where": "mount",
+      "policy": "plain",
+      "rttMs": 0,
+      "phase": "cold",
+      "requests": 846,
+      "ops": {
+        "STAT": 364,
+        "MKDIR": 6,
+        "OPEN": 119,
+        "WRITE": 119,
+        "WRITE_bytes": 746123,
+        "SETATTR": 119,
+        "CLOSE": 119
+      },
+      "helper": {
+        "cacheHits": 1651,
+        "cacheMiss": 364,
+        "drops": 0,
+        "fastFails": 0,
+        "online": true,
+        "prefetches": 0,
+        "reconnects": 0,
+        "requests": 848,
+        "timeouts": 0
+      },
+      "ms": 597,
+      "ok": true,
+      "code": 0,
+      "timedOut": false
+    },
+    {
+      "workload": "copy-in",
+      "where": "mount",
+      "policy": "plain",
+      "rttMs": 0,
+      "phase": "warm",
+      "requests": 846,
+      "ops": {
+        "STAT": 364,
+        "MKDIR": 6,
+        "OPEN": 119,
+        "WRITE": 119,
+        "WRITE_bytes": 746123,
+        "SETATTR": 119,
+        "CLOSE": 119
+      },
+      "ms": 577,
+      "ok": true,
+      "code": 0,
+      "timedOut": false
+    },
+    {
+      "workload": "git-status",
+      "where": "mount",
+      "policy": "plain",
+      "rttMs": 20,
+      "phase": "cold",
+      "requests": 2,
+      "ops": {
+        "STAT": 2
+      },
+      "helper": {
+        "cacheHits": 17,
+        "cacheMiss": 2,
+        "drops": 0,
+        "fastFails": 0,
+        "online": true,
+        "prefetches": 0,
+        "reconnects": 0,
+        "requests": 4,
+        "timeouts": 0
+      },
+      "ms": 97,
+      "ok": false,
+      "code": 128,
+      "timedOut": false,
+      "err": "fatal: Unable to read current working directory: No such file or directory"
+    },
+    {
+      "workload": "git-status",
+      "where": "mount",
+      "policy": "plain",
+      "rttMs": 20,
+      "phase": "warm",
+      "requests": 0,
+      "ops": {},
+      "ms": 29,
+      "ok": false,
+      "code": 128,
+      "timedOut": false,
+      "err": "fatal: Unable to read current working directory: No such file or directory"
+    },
+    {
+      "workload": "tsc-protocol",
+      "where": "mount",
+      "policy": "plain",
+      "rttMs": 20,
+      "phase": "cold",
+      "requests": 2539,
+      "ops": {
+        "STAT": 1896,
+        "READLINK": 363,
+        "READ": 205,
+        "READ_bytes": 9630252,
+        "STATFS": 71,
+        "LIST": 4
+      },
+      "helper": {
+        "cacheHits": 11047,
+        "cacheMiss": 1900,
+        "drops": 0,
+        "fastFails": 0,
+        "online": true,
+        "prefetches": 0,
+        "reconnects": 0,
+        "requests": 2541,
+        "timeouts": 0
+      },
+      "ms": 81833,
+      "ok": false,
+      "code": 2,
+      "timedOut": false,
+      "err": "packages/protocol/test/parity-fixtures.test.ts(77,42): error TS2339: Property 'dir' does not exist on type 'ImportMeta'.\r | packages/protocol/test/parity-fixtures.test.ts(78,57): error TS7006: Parameter 'f' implicitly has an 'any' type.\r | packages/protocol/test/session-mode.test.ts(1,40): error TS2307: Cannot find module 'bun:test' or its corresponding type declarations."
+    },
+    {
+      "workload": "tsc-protocol",
+      "where": "mount",
+      "policy": "plain",
+      "rttMs": 20,
+      "phase": "warm",
+      "requests": 2536,
+      "ops": {
+        "STAT": 1892,
+        "READLINK": 363,
+        "STATFS": 72,
+        "READ": 205,
+        "READ_bytes": 9630252,
+        "LIST": 4
+      },
+      "ms": 82498,
+      "ok": false,
+      "code": 2,
+      "timedOut": false,
+      "err": "packages/protocol/test/parity-fixtures.test.ts(77,42): error TS2339: Property 'dir' does not exist on type 'ImportMeta'.\r | packages/protocol/test/parity-fixtures.test.ts(78,57): error TS7006: Parameter 'f' implicitly has an 'any' type.\r | packages/protocol/test/session-mode.test.ts(1,40): error TS2307: Cannot find module 'bun:test' or its corresponding type declarations."
+    },
+    {
+      "workload": "tsc-core",
+      "where": "mount",
+      "policy": "plain",
+      "rttMs": 20,
+      "phase": "cold",
+      "requests": 18956,
+      "ops": {
+        "STAT": 13662,
+        "READLINK": 3141,
+        "READ": 1570,
+        "READ_bytes": 27603624,
+        "STATFS": 499,
+        "LIST": 84
+      },
+      "helper": {
+        "cacheHits": 91365,
+        "cacheMiss": 13746,
+        "drops": 0,
+        "fastFails": 0,
+        "online": true,
+        "prefetches": 0,
+        "reconnects": 0,
+        "requests": 18958,
+        "timeouts": 0
+      },
+      "ms": 600167,
+      "ok": false,
+      "code": 137,
+      "timedOut": true,
+      "err": ""
+    },
+    {
+      "workload": "tsc-core",
+      "where": "mount",
+      "policy": "plain",
+      "rttMs": 20,
+      "phase": "warm",
+      "requests": 18984,
+      "ops": {
+        "STAT": 13675,
+        "READLINK": 3141,
+        "STATFS": 501,
+        "READ": 1583,
+        "READ_bytes": 27803124,
+        "LIST": 84
+      },
+      "ms": 600174,
+      "ok": false,
+      "code": 137,
+      "timedOut": true,
+      "err": ""
+    },
+    {
+      "workload": "read-256M",
+      "where": "mount",
+      "policy": "plain",
+      "rttMs": 20,
+      "phase": "cold",
+      "requests": 259,
+      "ops": {
+        "STAT": 2,
+        "READ": 257,
+        "READ_bytes": 268435456
+      },
+      "helper": {
+        "cacheHits": 2,
+        "cacheMiss": 2,
+        "drops": 0,
+        "fastFails": 0,
+        "online": true,
+        "prefetches": 0,
+        "reconnects": 0,
+        "requests": 261,
+        "timeouts": 0
+      },
+      "ms": 8404,
+      "ok": true,
+      "code": 0,
+      "timedOut": false
+    },
+    {
+      "workload": "read-256M",
+      "where": "mount",
+      "policy": "plain",
+      "rttMs": 20,
+      "phase": "warm",
+      "requests": 259,
+      "ops": {
+        "STAT": 2,
+        "READ": 257,
+        "READ_bytes": 268435456
+      },
+      "ms": 8433,
+      "ok": true,
+      "code": 0,
+      "timedOut": false
+    },
+    {
+      "workload": "write-256M",
+      "where": "mount",
+      "policy": "plain",
+      "rttMs": 20,
+      "phase": "cold",
+      "requests": 517,
+      "ops": {
+        "STAT": 259,
+        "OPEN": 1,
+        "WRITE": 256,
+        "WRITE_bytes": 268435456,
+        "FSYNC": 1
+      },
+      "helper": {
+        "cacheHits": 6,
+        "cacheMiss": 259,
+        "drops": 0,
+        "fastFails": 0,
+        "online": true,
+        "prefetches": 0,
+        "reconnects": 0,
+        "requests": 520,
+        "timeouts": 0
+      },
+      "ms": 16825,
+      "ok": true,
+      "code": 0,
+      "timedOut": false
+    },
+    {
+      "workload": "write-256M",
+      "where": "mount",
+      "policy": "plain",
+      "rttMs": 20,
+      "phase": "warm",
+      "requests": 517,
+      "ops": {
+        "STAT": 259,
+        "OPEN": 1,
+        "WRITE": 256,
+        "WRITE_bytes": 268435456,
+        "FSYNC": 1
+      },
+      "ms": 17148,
+      "ok": true,
+      "code": 0,
+      "timedOut": false
+    },
+    {
+      "workload": "copy-out",
+      "where": "mount",
+      "policy": "plain",
+      "rttMs": 20,
+      "phase": "cold",
+      "requests": 418,
+      "ops": {
+        "STAT": 168,
+        "LIST": 7,
+        "READ": 238,
+        "READ_bytes": 746123,
+        "READLINK": 5
+      },
+      "helper": {
+        "cacheHits": 957,
+        "cacheMiss": 175,
+        "drops": 0,
+        "fastFails": 0,
+        "online": true,
+        "prefetches": 0,
+        "reconnects": 0,
+        "requests": 420,
+        "timeouts": 0
+      },
+      "ms": 13249,
+      "ok": true,
+      "code": 0,
+      "timedOut": false
+    },
+    {
+      "workload": "copy-out",
+      "where": "mount",
+      "policy": "plain",
+      "rttMs": 20,
+      "phase": "warm",
+      "requests": 415,
+      "ops": {
+        "LIST": 7,
+        "READ": 238,
+        "READ_bytes": 746123,
+        "STAT": 165,
+        "READLINK": 5
+      },
+      "ms": 13142,
+      "ok": true,
+      "code": 0,
+      "timedOut": false
+    },
+    {
+      "workload": "copy-in",
+      "where": "mount",
+      "policy": "plain",
+      "rttMs": 20,
+      "phase": "cold",
+      "requests": 932,
+      "ops": {
+        "STAT": 450,
+        "MKDIR": 6,
+        "OPEN": 119,
+        "WRITE": 119,
+        "WRITE_bytes": 746123,
+        "SETATTR": 119,
+        "CLOSE": 119
+      },
+      "helper": {
+        "cacheHits": 1565,
+        "cacheMiss": 450,
+        "drops": 0,
+        "fastFails": 0,
+        "online": true,
+        "prefetches": 0,
+        "reconnects": 0,
+        "requests": 934,
+        "timeouts": 0
+      },
+      "ms": 25725,
+      "ok": true,
+      "code": 0,
+      "timedOut": false
+    },
+    {
+      "workload": "copy-in",
+      "where": "mount",
+      "policy": "plain",
+      "rttMs": 20,
+      "phase": "warm",
+      "requests": 932,
+      "ops": {
+        "STAT": 450,
+        "MKDIR": 6,
+        "OPEN": 119,
+        "WRITE": 119,
+        "WRITE_bytes": 746123,
+        "SETATTR": 119,
+        "CLOSE": 119
+      },
+      "ms": 25677,
+      "ok": true,
+      "code": 0,
+      "timedOut": false
+    },
+    {
+      "workload": "git-status",
+      "where": "mount",
+      "policy": "plain",
+      "rttMs": 80,
+      "phase": "cold",
+      "requests": 2,
+      "ops": {
+        "STAT": 2
+      },
+      "helper": {
+        "cacheHits": 17,
+        "cacheMiss": 2,
+        "drops": 0,
+        "fastFails": 0,
+        "online": true,
+        "prefetches": 0,
+        "reconnects": 0,
+        "requests": 4,
+        "timeouts": 0
+      },
+      "ms": 223,
+      "ok": false,
+      "code": 128,
+      "timedOut": false,
+      "err": "fatal: Unable to read current working directory: No such file or directory"
+    },
+    {
+      "workload": "git-status",
+      "where": "mount",
+      "policy": "plain",
+      "rttMs": 80,
+      "phase": "warm",
+      "requests": 0,
+      "ops": {},
+      "ms": 28,
+      "ok": false,
+      "code": 128,
+      "timedOut": false,
+      "err": "fatal: Unable to read current working directory: No such file or directory"
+    },
+    {
+      "workload": "tsc-protocol",
+      "where": "mount",
+      "policy": "plain",
+      "rttMs": 80,
+      "phase": "cold",
+      "requests": 6349,
+      "ops": {
+        "STAT": 5638,
+        "READLINK": 363,
+        "STATFS": 208,
+        "READ": 136,
+        "READ_bytes": 7408680,
+        "LIST": 4
+      },
+      "helper": {
+        "cacheHits": 5286,
+        "cacheMiss": 5642,
+        "drops": 0,
+        "fastFails": 0,
+        "online": true,
+        "prefetches": 0,
+        "reconnects": 0,
+        "requests": 6351,
+        "timeouts": 0
+      },
+      "ms": 600581,
+      "ok": false,
+      "code": 137,
+      "timedOut": true,
+      "err": ""
+    },
+    {
+      "workload": "tsc-protocol",
+      "where": "mount",
+      "policy": "plain",
+      "rttMs": 80,
+      "phase": "warm",
+      "requests": 6343,
+      "ops": {
+        "STAT": 5634,
+        "READLINK": 363,
+        "STATFS": 207,
+        "READ": 135,
+        "READ_bytes": 7403451,
+        "LIST": 4
+      },
+      "ms": 600201,
+      "ok": false,
+      "code": 137,
+      "timedOut": true,
+      "err": ""
+    },
+    {
+      "workload": "tsc-core",
+      "where": "mount",
+      "policy": "plain",
+      "rttMs": 80,
+      "phase": "cold",
+      "requests": 6345,
+      "ops": {
+        "STAT": 5525,
+        "READLINK": 537,
+        "STATFS": 157,
+        "READ": 42,
+        "READ_bytes": 6621704,
+        "LIST": 84
+      },
+      "helper": {
+        "cacheHits": 7426,
+        "cacheMiss": 5609,
+        "drops": 0,
+        "fastFails": 0,
+        "online": true,
+        "prefetches": 0,
+        "reconnects": 0,
+        "requests": 6347,
+        "timeouts": 0
+      },
+      "ms": 600256,
+      "ok": false,
+      "code": 137,
+      "timedOut": true,
+      "err": ""
+    },
+    {
+      "workload": "tsc-core",
+      "where": "mount",
+      "policy": "plain",
+      "rttMs": 80,
+      "phase": "warm",
+      "requests": 6348,
+      "ops": {
+        "STAT": 5528,
+        "READLINK": 537,
+        "STATFS": 157,
+        "READ": 42,
+        "READ_bytes": 6621704,
+        "LIST": 84
+      },
+      "ms": 600157,
+      "ok": false,
+      "code": 137,
+      "timedOut": true,
+      "err": ""
+    },
+    {
+      "workload": "read-256M",
+      "where": "mount",
+      "policy": "plain",
+      "rttMs": 80,
+      "phase": "cold",
+      "requests": 259,
+      "ops": {
+        "STAT": 2,
+        "READ": 257,
+        "READ_bytes": 268435456
+      },
+      "helper": {
+        "cacheHits": 2,
+        "cacheMiss": 2,
+        "drops": 0,
+        "fastFails": 0,
+        "online": true,
+        "prefetches": 0,
+        "reconnects": 0,
+        "requests": 261,
+        "timeouts": 0
+      },
+      "ms": 24538,
+      "ok": true,
+      "code": 0,
+      "timedOut": false
+    },
+    {
+      "workload": "read-256M",
+      "where": "mount",
+      "policy": "plain",
+      "rttMs": 80,
+      "phase": "warm",
+      "requests": 259,
+      "ops": {
+        "STAT": 2,
+        "READ": 257,
+        "READ_bytes": 268435456
+      },
+      "ms": 24631,
+      "ok": true,
+      "code": 0,
+      "timedOut": false
+    },
+    {
+      "workload": "write-256M",
+      "where": "mount",
+      "policy": "plain",
+      "rttMs": 80,
+      "phase": "cold",
+      "requests": 517,
+      "ops": {
+        "STAT": 259,
+        "OPEN": 1,
+        "WRITE": 256,
+        "WRITE_bytes": 268435456,
+        "FSYNC": 1
+      },
+      "helper": {
+        "cacheHits": 6,
+        "cacheMiss": 259,
+        "drops": 0,
+        "fastFails": 0,
+        "online": true,
+        "prefetches": 0,
+        "reconnects": 0,
+        "requests": 520,
+        "timeouts": 0
+      },
+      "ms": 49478,
+      "ok": true,
+      "code": 0,
+      "timedOut": false
+    },
+    {
+      "workload": "write-256M",
+      "where": "mount",
+      "policy": "plain",
+      "rttMs": 80,
+      "phase": "warm",
+      "requests": 518,
+      "ops": {
+        "CLOSE": 1,
+        "STAT": 259,
+        "OPEN": 1,
+        "WRITE": 256,
+        "WRITE_bytes": 268435456,
+        "FSYNC": 1
+      },
+      "ms": 49545,
+      "ok": true,
+      "code": 0,
+      "timedOut": false
+    },
+    {
+      "workload": "copy-out",
+      "where": "mount",
+      "policy": "plain",
+      "rttMs": 80,
+      "phase": "cold",
+      "requests": 694,
+      "ops": {
+        "STAT": 444,
+        "LIST": 7,
+        "READ": 238,
+        "READ_bytes": 746123,
+        "READLINK": 5
+      },
+      "helper": {
+        "cacheHits": 681,
+        "cacheMiss": 451,
+        "drops": 0,
+        "fastFails": 0,
+        "online": true,
+        "prefetches": 0,
+        "reconnects": 0,
+        "requests": 696,
+        "timeouts": 0
+      },
+      "ms": 65635,
+      "ok": true,
+      "code": 0,
+      "timedOut": false
+    },
+    {
+      "workload": "copy-out",
+      "where": "mount",
+      "policy": "plain",
+      "rttMs": 80,
+      "phase": "warm",
+      "requests": 694,
+      "ops": {
+        "STAT": 444,
+        "LIST": 7,
+        "READ": 238,
+        "READ_bytes": 746123,
+        "READLINK": 5
+      },
+      "ms": 65551,
+      "ok": true,
+      "code": 0,
+      "timedOut": false
+    },
+    {
+      "workload": "copy-in",
+      "where": "mount",
+      "policy": "plain",
+      "rttMs": 80,
+      "phase": "cold",
+      "requests": 1085,
+      "ops": {
+        "STAT": 604,
+        "MKDIR": 6,
+        "OPEN": 119,
+        "WRITE": 119,
+        "WRITE_bytes": 746123,
+        "SETATTR": 119,
+        "CLOSE": 118
+      },
+      "helper": {
+        "cacheHits": 1411,
+        "cacheMiss": 604,
+        "drops": 0,
+        "fastFails": 0,
+        "online": true,
+        "prefetches": 0,
+        "reconnects": 0,
+        "requests": 1088,
+        "timeouts": 0
+      },
+      "ms": 91480,
+      "ok": true,
+      "code": 0,
+      "timedOut": false
+    },
+    {
+      "workload": "copy-in",
+      "where": "mount",
+      "policy": "plain",
+      "rttMs": 80,
+      "phase": "warm",
+      "requests": 1085,
+      "ops": {
+        "CLOSE": 119,
+        "STAT": 603,
+        "MKDIR": 6,
+        "OPEN": 119,
+        "WRITE": 119,
+        "WRITE_bytes": 746123,
+        "SETATTR": 119
+      },
+      "ms": 91310,
+      "ok": true,
+      "code": 0,
+      "timedOut": false
+    }
+  ],
+  "finished": "2026-11-05T02:11:12.951Z"
+}

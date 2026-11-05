@@ -1,0 +1,2 @@
+Running standalone Anthropic sandbox checks
+{"test": "anthropic-standalone-sandbox", "exit": 0, "allowed_write_observed": true, "hidden_write_observed": false, "diagnostic": ""}

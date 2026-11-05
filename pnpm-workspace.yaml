@@ -1,5 +1,10 @@
 packages:
   - "packages/*"
+  - "apps/*"
+  - "plugins/*"
+  - "plugins/*/*"
+  - "services/*"
+  - "native/*"
   - "spikes/*"
   - "examples/*"
   - "extensions/*"

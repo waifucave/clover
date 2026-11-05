@@ -1,0 +1,9 @@
+Uploading public source chunk 1
+Running windows-agent-gates.ps1 on clover-c-win
+Testing Codex native Windows sandbox-only entry point with an isolated CODEX_HOME
+{"backend":"codex-windows","test":"allowed-write","exit":1,"pass":false,"diagnostic":"windows sandbox failed: Restricted read-only access requires the elevated Windows sandbox backend\n"}
+{"backend":"codex-windows","test":"hidden-read","exit":1,"pass":false,"diagnostic":"windows sandbox failed: Restricted read-only access requires the elevated Windows sandbox backend\n"}
+{"backend":"codex-windows","test":"hidden-write","exit":1,"pass":false,"diagnostic":"windows sandbox failed: Restricted read-only access requires the elevated Windows sandbox backend\n"}
+{"backend":"codex-windows","test":"alias-read","exit":1,"pass":false,"diagnostic":"windows sandbox failed: Restricted read-only access requires the elevated Windows sandbox backend\n"}
+{"backend":"codex-windows","test":"policy-write","exit":1,"pass":false,"diagnostic":"windows sandbox failed: Restricted read-only access requires the elevated Windows sandbox backend\n"}
+{"backend":"codex-windows","test":"nested-retry","exit":1,"pass":false,"diagnostic":"windows sandbox failed: Restricted read-only access requires the elevated Windows sandbox backend\n"}
