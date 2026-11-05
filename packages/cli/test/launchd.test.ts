@@ -1,29 +1,29 @@
 import { describe, expect, test } from "bun:test";
-import { LEGACY_LAUNCHD_LABEL } from "@yanlinglabs/winter-core";
+import { LEGACY_LAUNCHD_LABEL } from "@waifucave/clover-core";
 import { renderPlist, migrateFromLaunchdAgent, launchdLabel } from "../src/launchd";
 
 describe("renderPlist", () => {
   test("contains label, program arguments, keepalive, and log paths", () => {
     const xml = renderPlist({
       binaryPath: "/usr/local/bin/winter",
-      winterHome: "/Users/me/.winter",
+      cloverHome: "/Users/me/.clover",
     });
     expect(xml).toContain(`<string>${launchdLabel()}</string>`);
     expect(xml).toContain("<string>/usr/local/bin/winter</string>");
     expect(xml).toContain("<string>daemon</string>");
     expect(xml).toContain("<string>run</string>");
     expect(xml).toContain("<key>KeepAlive</key>");
-    expect(xml).toContain("<string>/Users/me/.winter/logs/core.out.log</string>");
-    expect(xml).toContain("<string>/Users/me/.winter/logs/core.err.log</string>");
+    expect(xml).toContain("<string>/Users/me/.clover/logs/core.out.log</string>");
+    expect(xml).toContain("<string>/Users/me/.clover/logs/core.err.log</string>");
     expect(xml).not.toContain("~"); // launchd does not expand tildes
-    expect(xml).toContain("<key>WINTER_HOME</key>");
-    expect(xml).toContain("<string>/Users/me/.winter</string>");
+    expect(xml).toContain("<key>CLOVER_HOME</key>");
+    expect(xml).toContain("<string>/Users/me/.clover</string>");
   });
 
   test("xml-escapes special characters in paths", () => {
-    const xml = renderPlist({ binaryPath: "/a&b/winter", winterHome: "/home/x<y>/.winter" });
-    expect(xml).toContain("/a&amp;b/winter");
-    expect(xml).toContain("/home/x&lt;y&gt;/.winter");
+    const xml = renderPlist({ binaryPath: "/a&b/clover", cloverHome: "/home/x<y>/.clover" });
+    expect(xml).toContain("/a&amp;b/clover");
+    expect(xml).toContain("/home/x&lt;y&gt;/.clover");
     expect(xml).not.toMatch(/<string>[^<]*&(?!amp;|lt;|gt;)/);
   });
 });
@@ -49,11 +49,11 @@ describe("migrateFromLaunchdAgent", () => {
   // The historical agent's label (`LEGACY_LAUNCHD_LABEL`, `legacy-names.ts`) is NOT today's CURRENT
   // dist label (`launchdLabel("dist")`): the rename made those two strings different again after
   // briefly (and only textually) colliding. This teardown must keep targeting the pre-rename
-  // literal regardless of WINTER_PROFILE, or of the product's own name — imported, never
+  // literal regardless of CLOVER_PROFILE, or of the product's own name — imported, never
   // hardcoded (the residue test forbids the legacy literal outside `legacy-names.ts`).
-  test("keeps the historical literal label regardless of WINTER_PROFILE", async () => {
-    const prev = process.env.WINTER_PROFILE;
-    process.env.WINTER_PROFILE = "dev";
+  test("keeps the historical literal label regardless of CLOVER_PROFILE", async () => {
+    const prev = process.env.CLOVER_PROFILE;
+    process.env.CLOVER_PROFILE = "dev";
     let bootoutLabel: string | undefined;
     try {
       await migrateFromLaunchdAgent({
@@ -63,7 +63,7 @@ describe("migrateFromLaunchdAgent", () => {
         remove: () => {},
       });
     } finally {
-      if (prev === undefined) delete process.env.WINTER_PROFILE; else process.env.WINTER_PROFILE = prev;
+      if (prev === undefined) delete process.env.CLOVER_PROFILE; else process.env.CLOVER_PROFILE = prev;
     }
     expect(bootoutLabel).toBe(LEGACY_LAUNCHD_LABEL);
     expect(bootoutLabel).not.toBe(launchdLabel("dist"));
@@ -96,43 +96,43 @@ describe("migrateFromLaunchdAgent", () => {
 
 describe("launchd profile label", () => {
   test("label derives from profile, dist literal unchanged", () => {
-    expect(launchdLabel("dist")).toBe("com.winter.core");
-    expect(launchdLabel("dev")).toBe("com.winter.core.dev");
+    expect(launchdLabel("dist")).toBe("com.waifucave.clover.core");
+    expect(launchdLabel("dev")).toBe("com.waifucave.clover.core.dev");
   });
 
   test("renderPlist embeds the profile label", () => {
-    const dev = renderPlist({ binaryPath: "/x/winter-core", winterHome: "/tmp/h", profile: "dev" });
-    expect(dev).toContain("<string>com.winter.core.dev</string>");
-    const dist = renderPlist({ binaryPath: "/x/winter-core", winterHome: "/tmp/h", profile: "dist" });
-    expect(dist).toContain("<string>com.winter.core</string>");
-    expect(dist).not.toContain("com.winter.core.dev");
+    const dev = renderPlist({ binaryPath: "/x/clover-core", cloverHome: "/tmp/h", profile: "dev" });
+    expect(dev).toContain("<string>com.waifucave.clover.core.dev</string>");
+    const dist = renderPlist({ binaryPath: "/x/clover-core", cloverHome: "/tmp/h", profile: "dist" });
+    expect(dist).toContain("<string>com.waifucave.clover.core</string>");
+    expect(dist).not.toContain("com.waifucave.clover.core.dev");
   });
 
-  // DD branch review (I3): WINTER_PROFILE must ride along in the plist's own EnvironmentVariables
+  // DD branch review (I3): CLOVER_PROFILE must ride along in the plist's own EnvironmentVariables
   // for a dev-profile install (otherwise a launchd-installed dev daemon resolves
-  // `keychainService()` to the dist Keychain literal despite living in ~/.winter-dev — silent
+  // `keychainService()` to the dist Keychain literal despite living in ~/.clover-dev — silent
   // credential cross-contamination), and the dist plist must stay byte-identical to before this
   // fix (no new key at all, not even an empty one).
-  test("dev plist carries WINTER_PROFILE=dev; dist plist never mentions WINTER_PROFILE", () => {
-    const dev = renderPlist({ binaryPath: "/x/winter-core", winterHome: "/tmp/h", profile: "dev" });
-    expect(dev).toContain("<key>WINTER_PROFILE</key><string>dev</string>");
+  test("dev plist carries CLOVER_PROFILE=dev; dist plist never mentions CLOVER_PROFILE", () => {
+    const dev = renderPlist({ binaryPath: "/x/clover-core", cloverHome: "/tmp/h", profile: "dev" });
+    expect(dev).toContain("<key>CLOVER_PROFILE</key><string>dev</string>");
 
-    const dist = renderPlist({ binaryPath: "/x/winter-core", winterHome: "/tmp/h", profile: "dist" });
-    expect(dist).not.toContain("WINTER_PROFILE");
+    const dist = renderPlist({ binaryPath: "/x/clover-core", cloverHome: "/tmp/h", profile: "dist" });
+    expect(dist).not.toContain("CLOVER_PROFILE");
   });
 
   // Byte-identity proof: the dist plist output must be EXACTLY what renderPlist produced before
-  // this fix, character for character — not just "doesn't contain WINTER_PROFILE". Passes
-  // `profile: "dist"` explicitly (rather than relying on ambient `WINTER_PROFILE` env resolution)
+  // this fix, character for character — not just "doesn't contain CLOVER_PROFILE". Passes
+  // `profile: "dist"` explicitly (rather than relying on ambient `CLOVER_PROFILE` env resolution)
   // so this assertion can never flake against another test's env mutation.
   test("dist plist is byte-identical to the pre-fix output", () => {
-    const xml = renderPlist({ binaryPath: "/usr/local/bin/winter", winterHome: "/Users/me/.winter", profile: "dist" });
+    const xml = renderPlist({ binaryPath: "/usr/local/bin/winter", cloverHome: "/Users/me/.clover", profile: "dist" });
     expect(xml).toBe(
       `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-  <key>Label</key><string>com.winter.core</string>
+  <key>Label</key><string>com.waifucave.clover.core</string>
   <key>ProgramArguments</key>
   <array>
     <string>/usr/local/bin/winter</string>
@@ -140,11 +140,11 @@ describe("launchd profile label", () => {
     <string>run</string>
   </array>
   <key>EnvironmentVariables</key>
-  <dict><key>WINTER_HOME</key><string>/Users/me/.winter</string></dict>
+  <dict><key>CLOVER_HOME</key><string>/Users/me/.clover</string></dict>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>
-  <key>StandardOutPath</key><string>/Users/me/.winter/logs/core.out.log</string>
-  <key>StandardErrorPath</key><string>/Users/me/.winter/logs/core.err.log</string>
+  <key>StandardOutPath</key><string>/Users/me/.clover/logs/core.out.log</string>
+  <key>StandardErrorPath</key><string>/Users/me/.clover/logs/core.err.log</string>
 </dict>
 </plist>
 `

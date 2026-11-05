@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { CoworkFolderSelections } from "../../src/cowork/folder-selections";
 import { createMacCoworkHost } from "../../src/cowork/mac-host";
-import { COWORK_REMOTE_METHODS, COWORK_RPC } from "@yanlinglabs/winter-protocol";
+import { COWORK_REMOTE_METHODS, COWORK_RPC } from "@waifucave/clover-protocol";
 import { resolveMacFolderBookmark } from "../../src/cowork/folder-bookmark";
 
 const local = { kind: "local-user" as const, id: "local-fixture" };

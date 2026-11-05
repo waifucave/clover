@@ -2,7 +2,7 @@ import { afterEach, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { COWORK_RPC, COWORK_REMOTE_METHODS, CoworkWatchFrame, encodeLine, type CoworkWatchFrame as Frame } from "@yanlinglabs/winter-protocol";
+import { COWORK_RPC, COWORK_REMOTE_METHODS, CoworkWatchFrame, encodeLine, type CoworkWatchFrame as Frame } from "@waifucave/clover-protocol";
 import { openRuntimeStateDb, type RuntimeStateDb } from "../../src/runtime-state/db";
 import { CoworkRepository } from "../../src/cowork/repository";
 import { CoworkWorkspaceService, type CoworkHostPorts } from "../../src/cowork/service";
@@ -13,7 +13,7 @@ const selection = { kind: "githubRepository" as const, label: "Fixture", access:
 const connection = { role: "harness", connectionId: 1 };
 afterEach(() => { services.splice(0).forEach(s => s.close()); dbs.splice(0).forEach(db => db.close()); homes.splice(0).forEach(home => rmSync(home, { recursive: true, force: true })); });
 function fixture(count = 1) {
-  const home = mkdtempSync(join(tmpdir(), "winter-watch-store-")); homes.push(home);
+  const home = mkdtempSync(join(tmpdir(), "clover-watch-store-")); homes.push(home);
   const db = openRuntimeStateDb(home); dbs.push(db); const records = new CoworkRepository(db);
   const ids = Array.from({ length: count }, (_, index) => records.create({ principalId: "local", requestId: `create-${index}` }, { ownership: "project", title: "Fixture", ceiling, sources: [selection] }).workspaceId);
   let principal: string | undefined = "local", mono = 0, wall = 10_000, blocked = false;

@@ -3,7 +3,7 @@ import { storeHomeFor } from "../src/agent/paths";
 import { mkdtempSync, readFileSync, realpathSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, ERR, type WritableSocket } from "@yanlinglabs/winter-protocol";
+import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, ERR, type WritableSocket } from "@waifucave/clover-protocol";
 import { startDaemon, type RunningDaemon, CORE_VERSION } from "../src/daemon";
 import { startIpcServer } from "../src/ipc/server";
 import { SessionStore } from "../src/sessions/store";
@@ -100,7 +100,7 @@ describe("daemon IPC", () => {
     // dedicated coverage in test/agent/engine-reviewer.test.ts.
     settingsOverride?: Record<string, unknown>,
   ): Promise<void> {
-    const home = mkdtempSync(join(tmpdir(), "winter-daemon-"));
+    const home = mkdtempSync(join(tmpdir(), "clover-daemon-"));
     daemonHome = home;
     if (settingsOverride) {
       writeFileSync(join(home, "settings.json"), JSON.stringify({
@@ -125,7 +125,7 @@ describe("daemon IPC", () => {
   async function bootPluginTestServer(): Promise<{
     store: SessionStore; socketPath: string; harnessToken: string; adminToken: string; stop: () => void;
   }> {
-    const home = mkdtempSync(join(tmpdir(), "winter-plugin-role-"));
+    const home = mkdtempSync(join(tmpdir(), "clover-plugin-role-"));
     const store = new SessionStore(home);
     const socketPath = join(home, "core.sock");
     const authority = new TokenAuthority(new FileSecretStore(join(home, "secrets.json")));
@@ -289,7 +289,7 @@ describe("daemon IPC", () => {
 
   test("malformed JSON line gets an id:null error frame that our own schema accepts", async () => {
     await boot();
-    const { RpcResponse } = await import("@yanlinglabs/winter-protocol");
+    const { RpcResponse } = await import("@waifucave/clover-protocol");
     const c = await TestClient.connect(daemon.socketPath);
     await c.hello(harnessToken, "garbler");
     (c as any).socket.write(new TextEncoder().encode("THIS IS NOT JSON\n"));
@@ -376,13 +376,13 @@ describe("daemon IPC", () => {
   // isolation, same "own SessionStore + TokenAuthority, no AgentEngine" shape as
   // remote-role.test.ts's bootPluginTestServer sibling below.
   test("approval.respond: a rule-bearing optionId with no session cwd — the refused save is logged, nothing is written, and the approval still resolves (WS-21)", async () => {
-    const home = mkdtempSync(join(tmpdir(), "winter-approve-nocwd-"));
+    const home = mkdtempSync(join(tmpdir(), "clover-approve-nocwd-"));
     const store = new SessionStore(home);
     const socketPath = join(home, "core.sock");
     const authority = new TokenAuthority(new FileSecretStore(join(home, "secrets.json")));
     const tokens = await authority.ensureTokens();
     const broker = new ApprovalBroker();
-    const server = startIpcServer({ socketPath, serverVersion: "test", tokens: authority, store, broker, winterHome: home });
+    const server = startIpcServer({ socketPath, serverVersion: "test", tokens: authority, store, broker, cloverHome: home });
     try {
       const sessionId = store.createSession("global", { approvalPolicy: "ask" }); // no cwd at all
       const options = [{ id: "allow_project", label: 'Allow "Bash(git push:*)" in this project', rule: "Bash(git push:*)", scope: "project" as const }];
@@ -433,13 +433,13 @@ describe("daemon IPC", () => {
   describe("workflow.list/run/stop/get (CC-parity phase 3, Track C Task C2)", () => {
     async function bootWorkflowServer(): Promise<{
       store: SessionStore; trust: TrustStore; workflows: WorkflowRuntime; workflowStore: WorkflowStore;
-      socketPath: string; harnessToken: string; remoteToken: string; winterHome: string; stop: () => void;
+      socketPath: string; harnessToken: string; remoteToken: string; cloverHome: string; stop: () => void;
     }> {
-      const home = mkdtempSync(join(tmpdir(), "winter-workflow-rpc-"));
+      const home = mkdtempSync(join(tmpdir(), "clover-workflow-rpc-"));
       const store = new SessionStore(home);
       const trust = new TrustStore(join(home, "trust.json"));
-      const workflowStore = new WorkflowStore({ winterHome: home, trust });
-      const runsDir = mkdtempSync(join(tmpdir(), "winter-workflow-rpc-runs-"));
+      const workflowStore = new WorkflowStore({ cloverHome: home, trust });
+      const runsDir = mkdtempSync(join(tmpdir(), "clover-workflow-rpc-runs-"));
       const workflows = new WorkflowRuntime({
         onEvent: () => {},
         spawnAgent: (_sid, _prompt, _opts, signal) =>
@@ -452,7 +452,7 @@ describe("daemon IPC", () => {
       const server = startIpcServer({ socketPath, serverVersion: "test", tokens: authority, store, trust, workflows, workflowStore });
       return {
         store, trust, workflows, workflowStore, socketPath, harnessToken: tokens.harness, remoteToken: tokens.remote,
-        winterHome: home, stop: () => { server.stop(); store.close(); },
+        cloverHome: home, stop: () => { server.stop(); store.close(); },
       };
     }
 
@@ -565,9 +565,9 @@ describe("daemon IPC", () => {
 
     test("workflow.run resolves a saved workflow by name via WorkflowStore, trust-gated to the session's own cwd", async () => {
       const srv = await bootWorkflowServer();
-      const cwd = realpathSync(mkdtempSync(join(tmpdir(), "winter-workflow-rpc-cwd-")));
-      mkdirSync(join(cwd, ".winter", "workflows"), { recursive: true });
-      writeFileSync(join(cwd, ".winter", "workflows", "hello.js"),
+      const cwd = realpathSync(mkdtempSync(join(tmpdir(), "clover-workflow-rpc-cwd-")));
+      mkdirSync(join(cwd, ".clover", "workflows"), { recursive: true });
+      writeFileSync(join(cwd, ".clover", "workflows", "hello.js"),
         `export const meta = {name:"hello", description:"says hi"}; return "hi from project";`);
 
       const c = await TestClient.connect(srv.socketPath);
@@ -611,8 +611,8 @@ describe("daemon IPC", () => {
     test("workflow.list surfaces saved workflows from WorkflowStore alongside running runs", async () => {
       const srv = await bootWorkflowServer();
       // WS-21: the user workflow tier lives in the store home (`<home>/sdk` on a run-home build).
-      mkdirSync(join(storeHomeFor(srv.winterHome), "workflows"), { recursive: true });
-      writeFileSync(join(storeHomeFor(srv.winterHome), "workflows", "nightly.js"),
+      mkdirSync(join(storeHomeFor(srv.cloverHome), "workflows"), { recursive: true });
+      writeFileSync(join(storeHomeFor(srv.cloverHome), "workflows", "nightly.js"),
         `export const meta = {name:"nightly", description:"nightly sweep"}; return "ok";`);
 
       const c = await TestClient.connect(srv.socketPath);
@@ -671,9 +671,9 @@ describe("daemon IPC", () => {
   test("startIpcServer refuses an engine without a shared hub", () => {
     // Build a throwaway engine; we only need the constructor guard to fire.
     expect(() => {
-      const store = new SessionStore(mkdtempSync(join(tmpdir(), "winter-guard-")));
+      const store = new SessionStore(mkdtempSync(join(tmpdir(), "clover-guard-")));
       startIpcServer({
-        socketPath: join(mkdtempSync(join(tmpdir(), "winter-guard-sock-")), "s.sock"),
+        socketPath: join(mkdtempSync(join(tmpdir(), "clover-guard-sock-")), "s.sock"),
         serverVersion: "test", tokens: {} as any, store,
         engine: {} as any, // engine present...
         // ...no hub
@@ -689,7 +689,7 @@ describe("daemon IPC", () => {
     await c.hello(harnessToken, "adder-bad");
     const res = await c.request(METHODS.sessionAddDir, {
       sessionId: "s_does_not_exist",
-      path: realpathSync(mkdtempSync(join(tmpdir(), "winter-x-"))),
+      path: realpathSync(mkdtempSync(join(tmpdir(), "clover-x-"))),
     });
     expect(res.error).toBeTruthy();
     expect(res.error.code).toBe(ERR.NOT_FOUND);
@@ -711,11 +711,11 @@ describe("daemon IPC", () => {
     const { result } = await c.request(METHODS.skillsList, {});
     expect(result.ok).toBe(true);
     // The writing-skills builtin (phase 5c) is always discovered, regardless of home — it ships
-    // in-repo and is resolved relative to the module, not winterHome.
+    // in-repo and is resolved relative to the module, not cloverHome.
     // Lane B (2026-09-22): + the truthful session-availability pair. WS-21 (R.1 ruling 3): the linked
     // router stages the user, self and trusted-project tiers into a run folder, never the builtin one, so
     // the builtin still cannot load — and the note says why on this build.
-    // `computer-use` is the one Winter-shipped skill a session CAN load: every boot seeds a managed copy into
+    // `computer-use` is the one Clover-shipped skill a session CAN load: every boot seeds a managed copy into
     // the user tier (`migration/builtin-skills.ts`), and that user-tier copy shadows the same-named builtin
     // listing — so it is listed once, as the copy sessions load.
     expect(result.skills).toEqual([
@@ -726,7 +726,7 @@ describe("daemon IPC", () => {
   });
 
   test("skills.list discovers a user skill over the socket (the daemon wires its one skillStore into the server)", async () => {
-    const home = mkdtempSync(join(tmpdir(), "winter-daemon-"));
+    const home = mkdtempSync(join(tmpdir(), "clover-daemon-"));
     // WS-21: the user tier lives in the store home (`<home>/sdk` on a run-home build) — seeding the old
     // `<home>/skills` there would make a temp home the old layout (Migration C refuses it at boot).
     mkdirSync(join(storeHomeFor(home), "skills", "greet"), { recursive: true });
@@ -751,14 +751,14 @@ describe("daemon IPC", () => {
     if (process.platform !== "darwin") return; // spawns a child process
     const { FakeProvider } = await import("../src/agent/fake-provider");
     const fixture = join(import.meta.dir, "agent", "mcp", "fake-mcp-server.ts");
-    const home = mkdtempSync(join(tmpdir(), "winter-daemon-"));
+    const home = mkdtempSync(join(tmpdir(), "clover-daemon-"));
     writeFileSync(join(home, "settings.json"), JSON.stringify({
       schemaVersion: 3,
       provider: { model: "codex-oauth/gpt-5.4" },
     }, null, 2));
-    // WS-21: the user-scope MCP servers live in `sdk/.winter.json` (claude's `.claude.json` shape).
+    // WS-21: the user-scope MCP servers live in `sdk/.clover.json` (claude's `.claude.json` shape).
     mkdirSync(join(home, "sdk"), { recursive: true });
-    writeFileSync(join(home, "sdk", ".winter.json"), JSON.stringify({ mcpServers: { fake: { command: "bun", args: ["run", fixture] } } }, null, 2));
+    writeFileSync(join(home, "sdk", ".clover.json"), JSON.stringify({ mcpServers: { fake: { command: "bun", args: ["run", fixture] } } }, null, 2));
     const secrets = new FileSecretStore(join(home, "test-secrets"));
     const fake = new FakeProvider([[{ type: "text_delta", delta: "hi" }, { type: "done", stopReason: "end_turn" }]]);
     daemon = await startDaemon({ home, secrets, agentProvider: { provider: fake, model: "fake-1" } });
@@ -775,23 +775,23 @@ describe("daemon IPC", () => {
     if (process.platform !== "darwin") return; // spawns a child process
     const { FakeProvider } = await import("../src/agent/fake-provider");
     const fixture = join(import.meta.dir, "agent", "mcp", "fake-mcp-server.ts");
-    const home = mkdtempSync(join(tmpdir(), "winter-daemon-"));
+    const home = mkdtempSync(join(tmpdir(), "clover-daemon-"));
     writeFileSync(join(home, "settings.json"), JSON.stringify({
       schemaVersion: 3,
       provider: { model: "codex-oauth/gpt-5.4" },
     }, null, 2));
-    // WS-21: the user-scope MCP servers live in `sdk/.winter.json` (claude's `.claude.json` shape).
+    // WS-21: the user-scope MCP servers live in `sdk/.clover.json` (claude's `.claude.json` shape).
     mkdirSync(join(home, "sdk"), { recursive: true });
-    writeFileSync(join(home, "sdk", ".winter.json"), JSON.stringify({ mcpServers: { fake: { command: "bun", args: ["run", fixture] } } }, null, 2));
+    writeFileSync(join(home, "sdk", ".clover.json"), JSON.stringify({ mcpServers: { fake: { command: "bun", args: ["run", fixture] } } }, null, 2));
     const secrets = new FileSecretStore(join(home, "test-secrets"));
     const fake = new FakeProvider([[{ type: "text_delta", delta: "hi" }, { type: "done", stopReason: "end_turn" }]]);
     daemon = await startDaemon({ home, secrets, agentProvider: { provider: fake, model: "fake-1" } });
     harnessToken = daemon.tokens.harness;
 
-    const projectDir = realpathSync(mkdtempSync(join(tmpdir(), "winter-mcp-project-")));
-    // WS-21: the project MCP file is `<root>/.winter/mcp.json`.
-    mkdirSync(join(projectDir, ".winter"), { recursive: true });
-    writeFileSync(join(projectDir, ".winter", "mcp.json"), JSON.stringify({ mcpServers: { proj: { command: "bun", args: ["run", fixture] } } }));
+    const projectDir = realpathSync(mkdtempSync(join(tmpdir(), "clover-mcp-project-")));
+    // WS-21: the project MCP file is `<root>/.clover/mcp.json`.
+    mkdirSync(join(projectDir, ".clover"), { recursive: true });
+    writeFileSync(join(projectDir, ".clover", "mcp.json"), JSON.stringify({ mcpServers: { proj: { command: "bun", args: ["run", fixture] } } }));
 
     const c = await TestClient.connect(daemon.socketPath);
     await c.hello(harnessToken, "mcp-lister-project");
@@ -819,14 +819,14 @@ describe("daemon IPC", () => {
     if (process.platform !== "darwin") return; // spawns a child process
     const { FakeProvider } = await import("../src/agent/fake-provider");
     const fixture = join(import.meta.dir, "agent", "mcp", "fake-mcp-server.ts");
-    const home = mkdtempSync(join(tmpdir(), "winter-daemon-"));
+    const home = mkdtempSync(join(tmpdir(), "clover-daemon-"));
     writeFileSync(join(home, "settings.json"), JSON.stringify({
       schemaVersion: 3,
       provider: { model: "codex-oauth/gpt-5.4" },
     }, null, 2));
-    // WS-21: the user-scope MCP servers live in `sdk/.winter.json` (claude's `.claude.json` shape).
+    // WS-21: the user-scope MCP servers live in `sdk/.clover.json` (claude's `.claude.json` shape).
     mkdirSync(join(home, "sdk"), { recursive: true });
-    writeFileSync(join(home, "sdk", ".winter.json"), JSON.stringify({ mcpServers: { fake: { command: "bun", args: ["run", fixture] } } }, null, 2));
+    writeFileSync(join(home, "sdk", ".clover.json"), JSON.stringify({ mcpServers: { fake: { command: "bun", args: ["run", fixture] } } }, null, 2));
     const secrets = new FileSecretStore(join(home, "test-secrets"));
     const fake = new FakeProvider([[{ type: "text_delta", delta: "hi" }, { type: "done", stopReason: "end_turn" }]]);
     daemon = await startDaemon({ home, secrets, agentProvider: { provider: fake, model: "fake-1" } });
@@ -863,14 +863,14 @@ describe("daemon IPC", () => {
     if (process.platform !== "darwin") return; // spawns a child process
     const { FakeProvider } = await import("../src/agent/fake-provider");
     const fixture = join(import.meta.dir, "agent", "mcp", "fake-mcp-server.ts");
-    const home = mkdtempSync(join(tmpdir(), "winter-daemon-"));
+    const home = mkdtempSync(join(tmpdir(), "clover-daemon-"));
     writeFileSync(join(home, "settings.json"), JSON.stringify({
       schemaVersion: 3,
       provider: { model: "codex-oauth/gpt-5.4" },
     }, null, 2));
-    // WS-21: the user-scope MCP servers live in `sdk/.winter.json` (claude's `.claude.json` shape).
+    // WS-21: the user-scope MCP servers live in `sdk/.clover.json` (claude's `.claude.json` shape).
     mkdirSync(join(home, "sdk"), { recursive: true });
-    writeFileSync(join(home, "sdk", ".winter.json"), JSON.stringify({ mcpServers: { fake: { command: "bun", args: ["run", fixture] } } }, null, 2));
+    writeFileSync(join(home, "sdk", ".clover.json"), JSON.stringify({ mcpServers: { fake: { command: "bun", args: ["run", fixture] } } }, null, 2));
     const secrets = new FileSecretStore(join(home, "test-secrets"));
     const fake = new FakeProvider([[{ type: "text_delta", delta: "hi" }, { type: "done", stopReason: "end_turn" }]]);
     daemon = await startDaemon({ home, secrets, agentProvider: { provider: fake, model: "fake-1" } });
@@ -914,7 +914,7 @@ describe("daemon IPC", () => {
   // needing the `ps -o lstart=` identity check, so this doesn't depend on any real process at all.
   // -----------------------------------------------------------------------------------------
   test("Phase 4d-cleanup Task 2: a daemon booted with NO agent provider still sweeps a stale orphaned plugin PID file at boot", async () => {
-    const home = mkdtempSync(join(tmpdir(), "winter-daemon-no-provider-sweep-"));
+    const home = mkdtempSync(join(tmpdir(), "clover-daemon-no-provider-sweep-"));
     const pidDir = join(home, "run", "plugins");
     mkdirSync(pidDir, { recursive: true });
     const pidFile = join(pidDir, "ghost-plugin.pid");
@@ -936,7 +936,7 @@ describe("daemon IPC", () => {
   // Review-caught regression (post Phase 4d-cleanup Task 2): hoisting `PluginSupervisor`
   // construction out of `if (agentProvider)` (above) made `opts.supervisor` ALWAYS defined, which
   // silently widened `hotApplyStart` (ipc/server.ts) — its old guard was `!opts.supervisor ||
-  // !opts.winterHome`, so a no-provider daemon fell through to a REAL `opts.supervisor.restart()`
+  // !opts.cloverHome`, so a no-provider daemon fell through to a REAL `opts.supervisor.restart()`
   // spawn on `plugin.enable {consent:true}`, where before this task it always returned "stopped"
   // with no spawn. Fixed by also gating on `opts.registry` (only ever wired for a
   // provider-configured daemon — same signal `tool.register` already uses). This proves the FIX:
@@ -946,7 +946,7 @@ describe("daemon IPC", () => {
   // (`bun --version`) — if the bug regressed, this WOULD spawn a real OS process.
   // -----------------------------------------------------------------------------------------
   test("Phase 4d-cleanup Task 2 fix: a daemon booted with NO agent provider does NOT hot-spawn on plugin.enable — settings recorded, status stays \"stopped\", no process spawned", async () => {
-    const home = mkdtempSync(join(tmpdir(), "winter-daemon-no-provider-enable-"));
+    const home = mkdtempSync(join(tmpdir(), "clover-daemon-no-provider-enable-"));
     writeFileSync(join(home, "settings.json"), JSON.stringify({
       schemaVersion: 3,
       provider: { model: "codex-oauth/gpt-5.4" }, // unused — agentProvider: null below forces no-provider
@@ -956,7 +956,7 @@ describe("daemon IPC", () => {
     // would hot-spawn on a provider-configured daemon.
     const dir = join(home, "test-mkt", "runner");
     mkdirSync(dir, { recursive: true });
-    writeFileSync(join(dir, "winter-plugin.json"), JSON.stringify({
+    writeFileSync(join(dir, "clover-plugin.json"), JSON.stringify({
       id: "runner", tier: "platform", entry: { command: "bun", args: ["--version"] },
     }));
     mkdirSync(join(home, "sdk", "plugins"), { recursive: true });
@@ -1019,7 +1019,7 @@ describe("daemon IPC", () => {
   // connection is role-rejected by the allowlist gate BEFORE ever reaching those handlers — an
   // even stronger form of "never touching the broker" than the old typed-denied result.
   test("peripheral.lease/renew/release from a plugin-role connection are role-rejected before ever reaching the broker", async () => {
-    const home = mkdtempSync(join(tmpdir(), "winter-peripheral-plugin-"));
+    const home = mkdtempSync(join(tmpdir(), "clover-peripheral-plugin-"));
     const store = new SessionStore(home);
     const socketPath = join(home, "core.sock");
     const rawToken = store.mintPluginToken("plugin-client");
@@ -1105,7 +1105,7 @@ describe("daemon IPC", () => {
     const { PeripheralBroker } = await import("../src/peripheral/broker");
     const { ProviderLink } = await import("../src/peripheral/provider-link");
 
-    const home = mkdtempSync(join(tmpdir(), "winter-peripheral-call-"));
+    const home = mkdtempSync(join(tmpdir(), "clover-peripheral-call-"));
     const audit = new AuditLog(join(home, "audit.jsonl"));
     const providerLink = new ProviderLink();
     const broker = new PeripheralBroker({
@@ -1166,8 +1166,8 @@ describe("daemon IPC", () => {
     await boot();
     const c = await TestClient.connect(daemon.socketPath);
     await c.hello(harnessToken, "trust-lister");
-    const dirA = realpathSync(mkdtempSync(join(tmpdir(), "winter-trust-a-")));
-    const dirB = realpathSync(mkdtempSync(join(tmpdir(), "winter-trust-b-")));
+    const dirA = realpathSync(mkdtempSync(join(tmpdir(), "clover-trust-a-")));
+    const dirB = realpathSync(mkdtempSync(join(tmpdir(), "clover-trust-b-")));
     await c.request(METHODS.trustDir, { path: dirA });
     await c.request(METHODS.trustDir, { path: dirB });
 
@@ -1208,7 +1208,7 @@ describe("daemon IPC", () => {
   });
 
   test("daemon.status pluginsCount reflects the real installed-plugin count (Phase 4d-i Task 4 — was hardcoded 0)", async () => {
-    const home = mkdtempSync(join(tmpdir(), "winter-daemon-status-plugins-"));
+    const home = mkdtempSync(join(tmpdir(), "clover-daemon-status-plugins-"));
     // WS-21: PluginStore now reads the installed set from `sdk/plugins/installed_plugins.json`
     // (Contract B), never a `<home>/plugins` scan — see `agent/plugins.ts`'s own header.
     const pluginsRoot = join(home, "sdk", "plugins");
@@ -1220,7 +1220,7 @@ describe("daemon IPC", () => {
       installed[`${name}@status-mkt`] = [{ scope: "user", installPath: dir, installedAt: new Date().toISOString() }];
     }
     writeFileSync(join(pluginsRoot, "installed_plugins.json"), JSON.stringify({ version: 2, plugins: installed }));
-    const plugins = new PluginStore({ winterHome: home });
+    const plugins = new PluginStore({ cloverHome: home });
     const secrets = new FileSecretStore(join(home, "test-secrets"));
     const authority = new TokenAuthority(secrets);
     const tokens = await authority.ensureTokens();
@@ -1291,7 +1291,7 @@ describe("daemon IPC", () => {
     });
 
     // Phase 4c Task 1 (spec §5): hardware.respond is deliberately NOT on the plugin allowlist —
-    // only the active provider connection (Winter.app) may answer a hardware_requested push, same
+    // only the active provider connection (Clover.app) may answer a hardware_requested push, same
     // precedent as peripheral.respond. A plugin connection calling it is role-rejected before
     // dispatch ever reaches the (Task 2) handler.
     test("hardware.respond from a plugin connection is role-rejected — provider-only, not one of the seven plugin verbs", async () => {
@@ -1352,7 +1352,7 @@ describe("daemon IPC", () => {
 
   // -----------------------------------------------------------------------------------------
   // Hardware helper (Phase 4c Task 2, spec §5): plugin (or harness, dev/testing) → core →
-  // Winter.app's XPC helper, via HardwareBroker + the SAME ProviderLink/PeripheralBroker.isProvider
+  // Clover.app's XPC helper, via HardwareBroker + the SAME ProviderLink/PeripheralBroker.isProvider
   // gate peripheral.respond uses. Constructed directly here (AuditLog/PeripheralBroker/
   // ProviderLink/HardwareBroker/PluginStore), mirroring daemon.ts's own wiring exactly — same
   // precedent as "plugin tool bridge (Task 4)"'s bootBridgeServer and the "noop capability call
@@ -1378,7 +1378,7 @@ describe("daemon IPC", () => {
       const { ProviderLink } = await import("../src/peripheral/provider-link");
       const { HardwareBroker } = await import("../src/peripheral/hardware");
 
-      const home = mkdtempSync(join(tmpdir(), "winter-hardware-ipc-"));
+      const home = mkdtempSync(join(tmpdir(), "clover-hardware-ipc-"));
       const store = new SessionStore(home);
       const socketPath = join(home, "core.sock");
       const authority = new TokenAuthority(new FileSecretStore(join(home, "secrets.json")));
@@ -1423,16 +1423,16 @@ describe("daemon IPC", () => {
           return [`${id}@test-mkt`, { classes, fingerprint }];
         }),
       );
-      const plugins = new PluginStore({ winterHome: home, consents });
+      const plugins = new PluginStore({ cloverHome: home, consents });
 
-      // Phase 4d-ii Task 2: `winterHome` wired (harmless for every EXISTING test here — no
+      // Phase 4d-ii Task 2: `cloverHome` wired (harmless for every EXISTING test here — no
       // settings.json exists at `home` unless a test writes one, so `livePlugins()`'s
       // `loadSettings` throws and it falls back to the `plugins` snapshot above, same as before
       // this change) — lets a dedicated regression test below prove `plugin.setConsent`'s hardware
       // grant is honored by `hardware.request` immediately, without a restart.
       const server = startIpcServer({
         socketPath, serverVersion: "test", tokens: authority, store, peripheral, providerLink, hardware, plugins,
-        winterHome: home,
+        cloverHome: home,
       });
       return {
         store, socketPath, harnessToken: tokens.harness, home,
@@ -1447,7 +1447,7 @@ describe("daemon IPC", () => {
     function seedBatteryPlugin(home: string, pluginId: string, permissions: { hardware?: string[] } = { hardware: ["battery"] }): void {
       const dir = join(home, "test-mkt", pluginId);
       mkdirSync(dir, { recursive: true });
-      writeFileSync(join(dir, "winter-plugin.json"), JSON.stringify({ id: pluginId, tier: "capability", permissions }));
+      writeFileSync(join(dir, "clover-plugin.json"), JSON.stringify({ id: pluginId, tier: "capability", permissions }));
 
       const pluginsRoot = join(home, "sdk", "plugins");
       mkdirSync(pluginsRoot, { recursive: true });
@@ -1489,7 +1489,7 @@ describe("daemon IPC", () => {
       const plugin = await connectPlugin(srv.store, srv.socketPath, "battery-limiter@test-mkt");
 
       const res = await plugin.request(METHODS.hardwareRequest, { verb: "getChargeLimit" });
-      expect(res.result).toEqual({ code: "no_provider", message: "hardware features require Winter.app" });
+      expect(res.result).toEqual({ code: "no_provider", message: "hardware features require Clover.app" });
 
       plugin.close(); srv.stop();
     });
@@ -1762,7 +1762,7 @@ describe("daemon IPC", () => {
       store: SessionStore; socketPath: string; harnessToken: string; adminToken: string;
       supervisor: PluginSupervisor; stop: () => void;
     }> {
-      const home = mkdtempSync(join(tmpdir(), "winter-plugin-restart-"));
+      const home = mkdtempSync(join(tmpdir(), "clover-plugin-restart-"));
       const store = new SessionStore(home);
       const socketPath = join(home, "core.sock");
       const authority = new TokenAuthority(new FileSecretStore(join(home, "secrets.json")));
@@ -1862,7 +1862,7 @@ describe("daemon IPC", () => {
       registry: ToolRegistry; supervisor: PluginSupervisor; contrib: PluginContribRegistry;
       stop: () => void;
     }> {
-      const home = mkdtempSync(join(tmpdir(), "winter-plugin-bridge-"));
+      const home = mkdtempSync(join(tmpdir(), "clover-plugin-bridge-"));
       const store = new SessionStore(home);
       const socketPath = join(home, "core.sock");
       const authority = new TokenAuthority(new FileSecretStore(join(home, "secrets.json")));
@@ -2165,7 +2165,7 @@ describe("daemon IPC", () => {
       store: SessionStore; socketPath: string; harnessToken: string; supervisor: PluginSupervisor;
       stop: () => void;
     }> {
-      const home = mkdtempSync(join(tmpdir(), "winter-plugin-push-"));
+      const home = mkdtempSync(join(tmpdir(), "clover-plugin-push-"));
       const store = new SessionStore(home);
       const socketPath = join(home, "core.sock");
       const authority = new TokenAuthority(new FileSecretStore(join(home, "secrets.json")));
@@ -2407,7 +2407,7 @@ describe("daemon IPC", () => {
 // -----------------------------------------------------------------------------------------
 // provider.configure RPC (BYOK T1, design doc `2026-07-16-byok-provider-setup-design.md` §1): the
 // in-app "bring your own OpenAI API key" path. A bare `startIpcServer` (no full daemon/engine) with
-// `winterHome` + a `FileSecretStore` wired directly — same self-contained precedent as the "plugin
+// `cloverHome` + a `FileSecretStore` wired directly — same self-contained precedent as the "plugin
 // lifecycle RPCs" describe block above — so assertions can read back both the secret store and
 // settings.json without exposing `home` off the shared daemon fixture.
 // -----------------------------------------------------------------------------------------
@@ -2416,7 +2416,7 @@ describe("provider.configure RPC (BYOK T1)", () => {
     home: string; settingsPath: string; socketPath: string; harnessToken: string;
     secrets: FileSecretStore; store: SessionStore; stop: () => void;
   }> {
-    const home = mkdtempSync(join(tmpdir(), "winter-provider-configure-"));
+    const home = mkdtempSync(join(tmpdir(), "clover-provider-configure-"));
     writeFileSync(join(home, "settings.json"), JSON.stringify({
       schemaVersion: 3,
       provider: { model: "codex-oauth/gpt-5.4" },
@@ -2427,7 +2427,7 @@ describe("provider.configure RPC (BYOK T1)", () => {
     const authority = new TokenAuthority(new FileSecretStore(join(home, "auth-secrets")));
     const tokens = await authority.ensureTokens();
     const secrets = new FileSecretStore(join(home, "provider-secrets"));
-    const server = startIpcServer({ socketPath, serverVersion: "test", tokens: authority, store, winterHome: home, secrets });
+    const server = startIpcServer({ socketPath, serverVersion: "test", tokens: authority, store, cloverHome: home, secrets });
     return {
       home, settingsPath: join(home, "settings.json"), socketPath, harnessToken: tokens.harness,
       secrets, store,
@@ -2448,7 +2448,7 @@ describe("provider.configure RPC (BYOK T1)", () => {
     expect(res.result).toEqual({ ok: true });
 
     // Hotfix (credential material, P8b): the RPC now writes the JSON material record the spawned
-    // Winter child reads (openai:default), not the legacy raw openai-api-key string.
+    // Clover child reads (openai:default), not the legacy raw openai-api-key string.
     expect(await readOpenAiApiKey(srv.secrets)).toBe("sk-test-123");
     // Review r1 m4: the legacy raw record is BLANKED (not left null) after a successful material write, so a
     // rotated key is never left live under the old name; blank reads as absent everywhere (presence, migration).
@@ -2553,14 +2553,14 @@ describe("provider.configure RPC (BYOK T1)", () => {
   });
 
   test("a server with no secret store configured -> typed INTERNAL failure, never a crash", async () => {
-    const home = mkdtempSync(join(tmpdir(), "winter-provider-configure-nostore-"));
+    const home = mkdtempSync(join(tmpdir(), "clover-provider-configure-nostore-"));
     writeFileSync(join(home, "settings.json"), JSON.stringify({ schemaVersion: 3, provider: { model: "codex-oauth/gpt-5.4" } }));
     const store = new SessionStore(home);
     const socketPath = join(home, "core.sock");
     const authority = new TokenAuthority(new FileSecretStore(join(home, "auth-secrets")));
     const tokens = await authority.ensureTokens();
-    // winterHome wired, secrets deliberately omitted.
-    const server = startIpcServer({ socketPath, serverVersion: "test", tokens: authority, store, winterHome: home });
+    // cloverHome wired, secrets deliberately omitted.
+    const server = startIpcServer({ socketPath, serverVersion: "test", tokens: authority, store, cloverHome: home });
     const c = await TestClient.connect(socketPath);
     await c.hello(tokens.harness, "cli-provider-configure-nostore");
 

@@ -1,20 +1,20 @@
 import { mkdtempSync, rmSync } from "node:fs"; import { tmpdir } from "node:os"; import { join } from "node:path";
-import { bootstrapWinterDir, type WinterDirs } from "../../src/winter-dir";
+import { bootstrapCloverDir, type CloverDirs } from "../../src/clover-dir";
 /** Whole-branch review, Major 1: `startRuntimeState`'s `claude-resume-*` staging sweep (P8d-12)
  *  falls back to the developer's REAL `os.tmpdir()` whenever a caller names neither the
- *  `recovery.claudeResumeScanRoot` dep nor `WINTER_CLAUDE_RESUME_SCAN_ROOT`. Every `startDaemon`-style
+ *  `recovery.claudeResumeScanRoot` dep nor `CLOVER_CLAUDE_RESUME_SCAN_ROOT`. Every `startDaemon`-style
  *  test in this file's callers goes through this one helper, so setting the env seam here — to a
  *  subdirectory of the SAME temp home already being torn down in `finally` — is what keeps all of
  *  them (and `daemon-wiring.test.ts`'s `boot()`) off the real machine's tmpdir, with no per-test
  *  wiring. Saved/restored around the call so a stray ambient value in the runner's own environment
  *  is never permanently clobbered. */
-export async function withTempHome(fn: (home: string, dirs: WinterDirs) => Promise<void> | void): Promise<void> {
-  const home = mkdtempSync(join(tmpdir(), "winter-8a-")); const dirs = bootstrapWinterDir(home);
-  const prevScanRoot = process.env.WINTER_CLAUDE_RESUME_SCAN_ROOT;
-  process.env.WINTER_CLAUDE_RESUME_SCAN_ROOT = join(home, "claude-resume-scan-env");
+export async function withTempHome(fn: (home: string, dirs: CloverDirs) => Promise<void> | void): Promise<void> {
+  const home = mkdtempSync(join(tmpdir(), "clover-8a-")); const dirs = bootstrapCloverDir(home);
+  const prevScanRoot = process.env.CLOVER_CLAUDE_RESUME_SCAN_ROOT;
+  process.env.CLOVER_CLAUDE_RESUME_SCAN_ROOT = join(home, "claude-resume-scan-env");
   try { await fn(home, dirs); } finally {
-    if (prevScanRoot === undefined) delete process.env.WINTER_CLAUDE_RESUME_SCAN_ROOT;
-    else process.env.WINTER_CLAUDE_RESUME_SCAN_ROOT = prevScanRoot;
+    if (prevScanRoot === undefined) delete process.env.CLOVER_CLAUDE_RESUME_SCAN_ROOT;
+    else process.env.CLOVER_CLAUDE_RESUME_SCAN_ROOT = prevScanRoot;
     rmSync(home, { recursive: true, force: true });
   }
 }

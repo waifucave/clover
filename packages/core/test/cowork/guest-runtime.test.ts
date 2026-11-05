@@ -129,8 +129,8 @@ test("stdin end drains accepted frames in order and shutdown prevents future sta
   host.stop(); expect(() => host.spawn("conversation")).toThrow("unsupported_topology"); expect(host.retained()).toHaveLength(1);
 });
 
-test.skipIf(!process.env.WINTER_TEST_GUEST_SDK)("actual candidate SDK confined posture refuses before any runtime/store init", async () => {
-  const child = Bun.spawn([process.execPath, "run", "--preload", join(import.meta.dir, "../preload.ts"), join(import.meta.dir, "fixtures/guest-runtime-refusal.ts"), process.env.WINTER_TEST_GUEST_SDK!], { env: process.env, stdout: "pipe", stderr: "pipe" });
+test.skipIf(!process.env.CLOVER_TEST_GUEST_SDK)("actual candidate SDK confined posture refuses before any runtime/store init", async () => {
+  const child = Bun.spawn([process.execPath, "run", "--preload", join(import.meta.dir, "../preload.ts"), join(import.meta.dir, "fixtures/guest-runtime-refusal.ts"), process.env.CLOVER_TEST_GUEST_SDK!], { env: process.env, stdout: "pipe", stderr: "pipe" });
   const [code, out, err] = await Promise.all([child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()]);
   expect({ code, err }).toEqual({ code: 0, err: "" });
   expect(out).toBe("actual SDK confined startup refused before init and durable store creation\n");

@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { acquireLock, AlreadyRunningError } from "../src/lock";
 
 function tmpRun(): { lockPath: string; socketPath: string } {
-  const d = mkdtempSync(join(tmpdir(), "winter-lock-"));
+  const d = mkdtempSync(join(tmpdir(), "clover-lock-"));
   return { lockPath: join(d, "core.lock"), socketPath: join(d, "core.sock") };
 }
 

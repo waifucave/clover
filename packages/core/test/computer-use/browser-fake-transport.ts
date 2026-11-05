@@ -167,14 +167,14 @@ export interface FakeFile {
   frame?: string;
 }
 
-interface Ctx { frameId: string; session?: string; winter: boolean; doc: number }
+interface Ctx { frameId: string; session?: string; ownWorld: boolean; doc: number }
 
 export class FakeTab {
   doc = 1;
   attached = false;
   subscribed: readonly string[] = [];
   readonly contexts = new Map<string, Ctx>();
-  /** Winter worlds that ended (their document went): answered "Cannot find context with specified id". */
+  /** Clover worlds that ended (their document went): answered "Cannot find context with specified id". */
   readonly endedContexts = new Set<string>();
   /** CDP sessions ("" = the tab's own) with Runtime enabled: a world is made and used only there. */
   readonly runtimeOn = new Set<string>();
@@ -195,7 +195,7 @@ export class FakeTab {
    *  with `navigated: true`); "new-key" — the tab came back under a new key (`tab.gone` for the old one, then
    *  `tab_gone` with `navigated` and the new key; `goneAfter`: the gone notice comes after the answer). */
   navigateFallback?: "new-session" | "navigated-only" | { newKey: string; goneAfter?: boolean };
-  readonly winterObjects = new Set<string>();
+  readonly cloverObjects = new Set<string>();
   values = new Map<string, string>();
   focused: string | undefined;
   dialog?: { type: string; message: string };
@@ -252,7 +252,7 @@ export class FakeCdpTransport implements CdpTransport {
   pages: Record<string, FakePage> = {};
   /** The next navigate fails with this net error. */
   failNextNavigate?: string;
-  /** `Page.getFrameTree` on a tab's own session fails: "too_large" (Winter's app's -32603) or "refused". */
+  /** `Page.getFrameTree` on a tab's own session fails: "too_large" (Clover's app's -32603) or "refused". */
   failFrameTree?: "too_large" | "refused";
   /** `Runtime.callFunctionOn`'s next answer for this op is too large for the link (-32603), once. */
   oversizeOnce?: string;
@@ -296,7 +296,7 @@ export class FakeCdpTransport implements CdpTransport {
   armDownloads?: CdpTransport["armDownloads"];
   /** Wake triggers: the page watcher's ops, and (`withWatch()`) Winter for Chrome 1.2.0's debugger-free watch. */
   readonly wakes: FakeWakes = new FakeWakes(this);
-  /** The built-in browser's link feature `watchOnly` (a test deletes it to play an older Winter.app). */
+  /** The built-in browser's link feature `watchOnly` (a test deletes it to play an older Clover.app). */
   watchOnlyHolds?: boolean;
   watch?: CdpTransport["watch"];
   unwatch?: CdpTransport["unwatch"];
@@ -466,7 +466,7 @@ export class FakeCdpTransport implements CdpTransport {
     t.contexts.clear();
     t.endedContexts.clear();
     t.runtimeOn.clear();
-    t.winterObjects.clear();
+    t.cloverObjects.clear();
     t.intercept.clear();
     t.focusEmulation = false;
   }
@@ -506,7 +506,7 @@ export class FakeCdpTransport implements CdpTransport {
     t.contexts.clear();
     t.endedContexts.clear();
     t.runtimeOn.clear();
-    t.winterObjects.clear();
+    t.cloverObjects.clear();
   }
 
   /** The discard's own events (§5.3 step 1), all in before the command is sent: the old subframes detached (and their
@@ -537,7 +537,7 @@ export class FakeCdpTransport implements CdpTransport {
     t.contexts.clear();
     t.endedContexts.clear();
     t.runtimeOn.clear();
-    t.winterObjects.clear();
+    t.cloverObjects.clear();
     t.doc++;
     t.page = this.page(url);
     t.values.clear();
@@ -711,13 +711,13 @@ export class FakeCdpTransport implements CdpTransport {
         if (params.worldName !== "winter" || params.grantUniveralAccess === true) throw new TransportError("not_allowed", "world rule");
         const frameId = String(params.frameId);
         const id = this.nextCtx++;
-        t.contexts.set(ctxKey(id), { frameId, ...(session === undefined ? {} : { session }), winter: true, doc: t.doc });
+        t.contexts.set(ctxKey(id), { frameId, ...(session === undefined ? {} : { session }), ownWorld: true, doc: t.doc });
         this.emit(t, "Runtime.executionContextCreated", { context: { id, uniqueId: `u-${id}`, name: "winter", origin: "", auxData: { frameId, isDefault: false, type: "isolated" } } }, session);
         return r({ executionContextId: id });
       }
       case "Runtime.evaluate": {
         const c = t.contexts.get(ctxKey(params.contextId));
-        if (c === undefined || !c.winter) throw new TransportError("not_allowed", "Runtime.evaluate outside the winter world");
+        if (c === undefined || !c.ownWorld) throw new TransportError("not_allowed", "Runtime.evaluate outside the winter world");
         return r({ result: { type: "string", value: `rt-${c.frameId}-${c.doc}` } });
       }
       case "DOM.getFrameOwner": {
@@ -727,15 +727,15 @@ export class FakeCdpTransport implements CdpTransport {
       }
       case "DOM.resolveNode": {
         const c = t.contexts.get(ctxKey(params.executionContextId));
-        if (c === undefined || !c.winter) throw new TransportError("not_allowed", "DOM.resolveNode outside the winter world");
+        if (c === undefined || !c.ownWorld) throw new TransportError("not_allowed", "DOM.resolveNode outside the winter world");
         const objectId = `obj:${c.frameId}:${String(params.backendNodeId)}`;
-        t.winterObjects.add(objectId);
+        t.cloverObjects.add(objectId);
         return r({ object: { type: "object", objectId } });
       }
       case "Runtime.callFunctionOn": {
         let frameId: string;
         if (typeof params.objectId === "string") {
-          if (!t.winterObjects.has(params.objectId)) throw new TransportError("not_allowed", "objectId not minted in the winter world");
+          if (!t.cloverObjects.has(params.objectId)) throw new TransportError("not_allowed", "objectId not minted in the winter world");
           frameId = params.objectId.split(":")[1]!;
           const [, , nodeId] = params.objectId.split(":");
           const op = (params.arguments as Array<{ value: unknown }>)[0]!.value;
@@ -743,7 +743,7 @@ export class FakeCdpTransport implements CdpTransport {
           return r({ result: { type: "undefined" } });
         }
         const c = t.contexts.get(ctxKey(params.executionContextId));
-        if (c === undefined || !c.winter) throw new TransportError("not_allowed", "Runtime.callFunctionOn outside the winter world");
+        if (c === undefined || !c.ownWorld) throw new TransportError("not_allowed", "Runtime.callFunctionOn outside the winter world");
         if (c.doc !== t.doc && c.frameId === "top") throw new TransportError("cdp_error", "ctx gone", { cdpMessage: "Cannot find context with specified id" });
         frameId = c.frameId;
         const args = params.arguments as Array<{ value: unknown }>;
@@ -752,7 +752,7 @@ export class FakeCdpTransport implements CdpTransport {
         const arg = (args[1]?.value ?? null) as Record<string, any> | null;
         if (params.returnByValue === false) {
           const objectId = `obj:${frameId}:${String(arg?.id)}`;
-          t.winterObjects.add(objectId);
+          t.cloverObjects.add(objectId);
           return r({ result: { type: "object", objectId } });
         }
         const value = this.op(t, frameId, op, arg, ctxKey(params.executionContextId));
@@ -768,7 +768,7 @@ export class FakeCdpTransport implements CdpTransport {
         return r({ result: { type: "object", value: settled.v } });
       }
       case "Input.dispatchMouseEvent": {
-        // Winter's own click lands in the page as a trusted click too (a wake trigger tells them apart by time).
+        // Clover's own click lands in the page as a trusted click too (a wake trigger tells them apart by time).
         if (params.type === "mouseReleased" && session === undefined) this.wakes.inputClick(t, Number(params.x), Number(params.y));
         if (params.type === "mouseReleased" && session === undefined && (params.button ?? "left") === "left") this.pressAt(t, Number(params.x), Number(params.y));
         if (params.type === "mouseReleased" && session === undefined) {
@@ -894,7 +894,7 @@ export class FakeCdpTransport implements CdpTransport {
         return r({ data: fakeJpeg(Math.round(clip.width * clip.scale * 2), Math.round(clip.height * clip.scale * 2)) });
       }
       case "DOM.setFileInputFiles":
-        if (typeof params.objectId !== "string" || !t.winterObjects.has(params.objectId)) throw new TransportError("not_allowed", "unknown object");
+        if (typeof params.objectId !== "string" || !t.cloverObjects.has(params.objectId)) throw new TransportError("not_allowed", "unknown object");
         t.values.set(`files:${params.objectId}`, (params.files as string[]).join(","));
         return r({});
       default:

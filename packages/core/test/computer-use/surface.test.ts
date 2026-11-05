@@ -21,7 +21,7 @@ function instanceOf(session: CapabilitySession, service?: { run: (...a: never[])
 describe("the computer_v2 capability server", () => {
   test("one tool, `script`, shown as ComputerV2, concurrency-safe with no lane, deferred (no alwaysLoad), no 120 s call timeout", () => {
     const { cfg, instance } = instanceOf(SESSION);
-    expect(cfg.name).toBe("winter__computer_v2");
+    expect(cfg.name).toBe("clover__computer_v2");
     const tools = instance.listTools();
     expect(tools.map((t) => t.name)).toEqual(["script"]);
     expect((cfg as { toolNames?: Record<string, string> }).toolNames).toEqual({ script: "ComputerV2" });
@@ -84,10 +84,10 @@ describe("the fail-closed wiring", () => {
 
   test("names: ComputerV2 ↔ computer_v2, both spellings; the MCP spelling only while the key is live", () => {
     expect(hostToolNameFor("ComputerV2")).toBe("computer_v2");
-    expect(hostToolNameFor("mcp__winter__computer_v2__script")).toBe("computer_v2");
-    expect(hostToolNameFor("mcp__winter__computer_v2__script", new Set(["computer_v2"]))).toBe("computer_v2");
-    expect(hostToolNameFor("mcp__winter__computer_v2__script", new Set(["computer"]))).toBeUndefined();
-    expect(hostToolNameFor("mcp__winter__computer_v2__other")).toBeUndefined();
+    expect(hostToolNameFor("mcp__clover__computer_v2__script")).toBe("computer_v2");
+    expect(hostToolNameFor("mcp__clover__computer_v2__script", new Set(["computer_v2"]))).toBe("computer_v2");
+    expect(hostToolNameFor("mcp__clover__computer_v2__script", new Set(["computer"]))).toBeUndefined();
+    expect(hostToolNameFor("mcp__clover__computer_v2__other")).toBeUndefined();
     expect(gateToolNameFor("ComputerV2")).toBe("computer_v2");
   });
 
@@ -103,7 +103,7 @@ describe("the fail-closed wiring", () => {
 
   test("the PreToolUse allow: explicit for ComputerV2 under every code/dispatch policy; nothing in chat or when the key is not live", async () => {
     const groupFor = (deps: Parameters<typeof sessionHooksFor>[0]) =>
-      (sessionHooksFor(deps).winter?.PreToolUse ?? []).find((m) => m.matcher === "ComputerV2|mcp__winter__computer_v2__script");
+      (sessionHooksFor(deps).clover?.PreToolUse ?? []).find((m) => m.matcher === "ComputerV2|mcp__clover__computer_v2__script");
     const invoke = async (deps: Parameters<typeof sessionHooksFor>[0], toolName: string) => {
       const group = groupFor(deps);
       expect(group).toBeDefined();
@@ -112,7 +112,7 @@ describe("the fail-closed wiring", () => {
     const base = { sessionId: "s1", roots: ["/tmp"] };
     const allow = await invoke({ ...base, mode: "code", policy: () => "dont-ask", capabilityKeys: () => new Set(["computer_v2"]) }, "ComputerV2");
     expect(allow).toMatchObject({ hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "allow" } });
-    const mcpSpelling = await invoke({ ...base, mode: "dispatch", capabilityKeys: () => new Set(["computer_v2"]) }, "mcp__winter__computer_v2__script");
+    const mcpSpelling = await invoke({ ...base, mode: "dispatch", capabilityKeys: () => new Set(["computer_v2"]) }, "mcp__clover__computer_v2__script");
     expect(mcpSpelling).toMatchObject({ hookSpecificOutput: { permissionDecision: "allow" } });
     expect(await invoke({ ...base, mode: "chat", capabilityKeys: () => new Set(["computer_v2"]) }, "ComputerV2")).toEqual({});
     expect(await invoke({ ...base, mode: "code", capabilityKeys: () => new Set(["computer"]) }, "ComputerV2")).toEqual({});

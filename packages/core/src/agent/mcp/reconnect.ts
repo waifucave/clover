@@ -3,7 +3,7 @@
 // tools in the session that is already open (sign-in), or turns needs-auth and hides them (sign-out).
 //
 // WHICH CHILDREN, WHICH NAMES. A sign-in is keyed by the server's CANONICAL URL, and each session names
-// its servers itself. The session answers that itself (`WinterSession.mcpServerNamesFor`): the names under
+// its servers itself. The session answers that itself (`CloverSession.mcpServerNamesFor`): the names under
 // which its LIVE incarnation configured an http/sse server at that URL -- the fold the child was actually
 // spawned with (kept with the incarnation by `session-driver.ts`, plugin servers included on a run-home
 // build), not a re-derivation from today's settings, which may have moved since the spawn. The spec's
@@ -17,21 +17,21 @@
 // so a tool call running on that server is never cut off.
 //
 // Both methods are optional on the driver table's `LegSession` (a test double need not implement them); a
-// session without them is skipped. `reconnectMcpServer` itself refuses typed (`WinterLegUnsupported`) when
+// session without them is skipped. `reconnectMcpServer` itself refuses typed (`CloverLegUnsupported`) when
 // the child ended meanwhile or its SDK has no reconnect control -- one log line, like any other rejection.
 
 export interface ReconnectableSession {
   readonly sessionId: string;
   readonly turnRunning: boolean;
   idle(): Promise<void>;
-  /** `WinterSession.mcpServerNamesFor`: the live incarnation's names for an http/sse server at a URL. */
+  /** `CloverSession.mcpServerNamesFor`: the live incarnation's names for an http/sse server at a URL. */
   mcpServerNamesFor?(serverUrl: string): string[];
-  /** `WinterSession.reconnectMcpServer`: the runtime's `mcp_reconnect` control on the live child. */
+  /** `CloverSession.reconnectMcpServer`: the runtime's `mcp_reconnect` control on the live child. */
   reconnectMcpServer?(name: string): Promise<void>;
 }
 
 export interface ReconnectDeps {
-  /** Every live driver (the daemon's `WinterSessionDrivers.list()`). */
+  /** Every live driver (the daemon's `CloverSessionDrivers.list()`). */
   list(): ReadonlyArray<ReconnectableSession>;
   log?: (line: string) => void;
 }
@@ -63,7 +63,7 @@ export async function reconnectLiveSessionsFor(deps: ReconnectDeps, serverUrl: s
           deps.log?.(`mcp: ${session.sessionId} reconnected '${name}'`);
         } catch (err) {
           // After a sign-out this is the expected answer (the server is needs-auth now); a
-          // `WinterLegUnsupported` means the child ended meanwhile -- its next incarnation reads the Keychain.
+          // `CloverLegUnsupported` means the child ended meanwhile -- its next incarnation reads the Keychain.
           deps.log?.(`mcp: ${session.sessionId} reconnected '${name}', which did not connect (${describeReconnectError(err)})`);
         }
       }

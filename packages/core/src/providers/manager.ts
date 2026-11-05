@@ -10,7 +10,7 @@ import { splitTag, type ModelTag } from "../runtime-sdk/model-tag";
 
 /** LEGACY raw record — migration source only (`auth/credential-material.ts`'s
  *  `readOpenAiApiKey`/`migrateLegacyCredentialMaterial`). Writers use `writeOpenAiApiKey`, which
- *  writes ONLY the `openai:default` JSON material record the spawned Winter child reads. Defined
+ *  writes ONLY the `openai:default` JSON material record the spawned Clover child reads. Defined
  *  in the leaf `auth/legacy-secret-names.ts` (hotfix review r1, m1 — breaks the import cycle with
  *  `auth/credential-material.ts`) and re-exported here verbatim so every existing importer of
  *  `OPENAI_API_KEY_SECRET` from this module keeps working unchanged. */
@@ -70,7 +70,7 @@ function resolveSelection(settings: Settings, providerId: string): LiveModelSele
 }
 
 /** Builds the `liveModel` resolver for `createProvider`. `settingsPath` is optional — omitted
- *  (e.g. tests, `winter provider-smoke`) means the resolver just keeps returning the boot-time
+ *  (e.g. tests, `clover provider-smoke`) means the resolver just keeps returning the boot-time
  *  selection forever (no re-read possible without a path). `providerId` is the BOOT-time catalog
  *  id (`createProvider`'s own `providerId` local) — passed in rather than re-derived from each
  *  live read, because the provider IDENTITY is fixed at boot (this function's own doc comment). */
@@ -126,7 +126,7 @@ export function buildLiveModelResolver(
  *
  * 2026-09-19 — THAT FOLLOW-UP LANDED, and this function is no longer on any production path.
  * `providers/internal-router.ts` + `internal-provider.ts` build one internal `Provider` per
- * CREDENTIALED catalog provider and resolve it per ROLE, so Winter's own background jobs no longer
+ * CREDENTIALED catalog provider and resolve it per ROLE, so Clover's own background jobs no longer
  * depend on `settings.provider.model` at all and `INTERNAL_PROVIDER_IDS` no longer gates them. This
  * builder (and `createRebindableProvider`/`SwappableProvider`/`internalModelFor`/
  * `internalRoleEffortFor` below) survives ONLY for the tests that still construct it directly and for
@@ -155,7 +155,7 @@ export async function createProvider(
     // P8c lane 5: onto the `@yanlinglabs/winter-provider-runtime` codex-oauth adapter — credential
     // resolution (and, on a 401, refresh write-back) goes through `credential-store.ts`'s
     // `CredentialStore`, which reads/writes the SAME `codex-oauth:default` material record the
-    // spawned Winter child does (`runtime-provider.ts`'s own header). No eager credential check
+    // spawned Clover child does (`runtime-provider.ts`'s own header). No eager credential check
     // here — matches the pre-8c `CodexOAuthProvider` construction (deleted, Phase 8d task 2.4:
     // superseded by this adapter and never re-added), which never touched the secret store at construction time
     // either; a missing/invalid credential surfaces as a typed `auth` error from the FIRST
@@ -167,7 +167,7 @@ export async function createProvider(
     // Fail-fast, unchanged: `createProvider` itself throws before anything is constructed when no
     // key is stored (manager.test.ts pins this exact message).
     const apiKey = await readOpenAiApiKey(secrets);
-    if (!apiKey) throw new Error("no API key stored — run: winter login --api-key");
+    if (!apiKey) throw new Error("no API key stored — run: clover login --api-key");
     // providerBaseUrlFor's own doc comment: "ABSENT IS THE NORMAL CASE" — an empty string is the
     // same "no override" signal `createOpenAiCompatibleRuntimeProvider`'s `connection.baseUrl` has
     // always accepted (the adapter falls back to its own generated default).
@@ -301,7 +301,7 @@ export async function createRebindableProvider(settings: Settings, secrets: Secr
         // the last provider that actually worked". Logged on every attempt while stuck here (this
         // function's own doc comment) — the OLD backend is left in place, always.
         console.error(
-          `provider: settings.provider.model now names "${nextProviderId}" — the daemon's internal provider only rebuilds for ${INTERNAL_PROVIDER_IDS.join("/")}, so this RETIRED single-instance handle stays on "${boundProviderId}" (Winter's own background jobs are unaffected — they run through providers/internal-router.ts)`,
+          `provider: settings.provider.model now names "${nextProviderId}" — the daemon's internal provider only rebuilds for ${INTERNAL_PROVIDER_IDS.join("/")}, so this RETIRED single-instance handle stays on "${boundProviderId}" (Clover's own background jobs are unaffected — they run through providers/internal-router.ts)`,
         );
         return false;
       }

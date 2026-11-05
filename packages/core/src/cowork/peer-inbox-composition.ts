@@ -1,4 +1,4 @@
-import type { SessionEvent } from "@yanlinglabs/winter-protocol";
+import type { SessionEvent } from "@waifucave/clover-protocol";
 import { coworkHeldInputReconciler, type CoworkHeldInputInbox } from "./held-input-reconcile";
 import { coworkLostInputNotice, coworkStalledInboxNotice } from "./held-input";
 import type { CoworkSessionDriverDeps } from "./session-driver";

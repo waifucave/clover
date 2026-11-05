@@ -4,12 +4,12 @@ import { join } from "node:path";
 import { describe, expect, test } from "bun:test";
 import { appendHistory, historyPathFor, loadHistory, makeHistoryNav } from "../../src/tui/history-store";
 
-const tmpFile = (name = "history.jsonl"): string => join(mkdtempSync(join(tmpdir(), "winter-history-")), name);
+const tmpFile = (name = "history.jsonl"): string => join(mkdtempSync(join(tmpdir(), "clover-history-")), name);
 
 describe("history-store", () => {
   describe("historyPathFor (WS-21 spec §2.2: claude's own location)", () => {
     test("<home>/sdk/history.jsonl", () => {
-      expect(historyPathFor("/Users/x/.winter")).toBe("/Users/x/.winter/sdk/history.jsonl");
+      expect(historyPathFor("/Users/x/.clover")).toBe("/Users/x/.clover/sdk/history.jsonl");
     });
   });
 
@@ -31,12 +31,12 @@ describe("history-store", () => {
     });
 
     test("missing file loads as empty, never throws", () => {
-      const path = join(mkdtempSync(join(tmpdir(), "winter-history-")), "does-not-exist.jsonl");
+      const path = join(mkdtempSync(join(tmpdir(), "clover-history-")), "does-not-exist.jsonl");
       expect(loadHistory(path, "s1")).toEqual([]);
     });
 
     test("appendHistory never throws even against an unwritable path", () => {
-      const path = join(tmpdir(), "winter-history-missing-dir", "nested", "history.jsonl");
+      const path = join(tmpdir(), "clover-history-missing-dir", "nested", "history.jsonl");
       expect(() => appendHistory(path, { display: "x", pastedContents: {}, timestamp: 1, project: "/p", sessionId: "s1" })).not.toThrow();
     });
 
@@ -94,7 +94,7 @@ describe("history-store", () => {
       expect(loadHistory(path, "s1")).toEqual(["old-2", "new-1", "old-1"]);
     });
 
-    test("a real Winter build can append NEW-shape entries onto an OLD-shape file with no special handling", () => {
+    test("a real Clover build can append NEW-shape entries onto an OLD-shape file with no special handling", () => {
       const path = tmpFile();
       writeFileSync(path, `${JSON.stringify({ display: "legacy", ts: 1, sessionId: "s1" })}\n`);
       appendHistory(path, { display: "fresh", pastedContents: {}, timestamp: 2, project: "/p", sessionId: "s1" });

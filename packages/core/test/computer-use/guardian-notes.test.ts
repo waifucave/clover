@@ -6,7 +6,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { SessionEvent } from "@yanlinglabs/winter-protocol";
+import type { SessionEvent } from "@waifucave/clover-protocol";
 import { ApprovalBroker } from "../../src/agent/approvals";
 import { HelperClient } from "../../src/computer-use/helper-client";
 import { ComputerPolicy, type SessionFacts } from "../../src/computer-use/policy";
@@ -21,10 +21,10 @@ const macOnly = sandboxAvailable() ? test : test.skip;
 const services: ComputerV2Service[] = [];
 afterEach(() => { for (const s of services.splice(0)) s.stop(); });
 
-const HOVER = "Safari's web pages don't react to hover from Winter's pointer while it is in the background — click instead, or app.requestForeground(reason) for a real hover";
+const HOVER = "Safari's web pages don't react to hover from Clover's pointer while it is in the background — click instead, or app.requestForeground(reason) for a real hover";
 
 function world() {
-  const home = mkdtempSync(join(tmpdir(), "winter-cu-guardian-notes-"));
+  const home = mkdtempSync(join(tmpdir(), "clover-cu-guardian-notes-"));
   const fake = new FakeHelper();
   fake.apps.push({ name: "Safari", bundleId: "com.apple.Safari", pid: 601, running: true });
   fake.apps.push({ name: "Notes", bundleId: "com.apple.Notes", pid: 602, running: true });

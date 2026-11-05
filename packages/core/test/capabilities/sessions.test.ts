@@ -16,7 +16,7 @@ import type { CapabilitySession } from "../../src/capabilities/server";
  *
  * Both doors are built over ONE temp-home `SessionStore` and ONE set of deps, so "the capability
  * answers what the registry answers" is checked against the real other door rather than a
- * transcribed expectation. Never touches `~/.winter` — every store lives in a `mkdtemp` home.
+ * transcribed expectation. Never touches `~/.clover` — every store lives in a `mkdtemp` home.
  */
 
 const NOW = 1_770_000_000_000;
@@ -35,7 +35,7 @@ interface Harness {
 }
 
 function harness(): Harness {
-  const home = mkdtempSync(join(tmpdir(), "winter-cap-sessions-"));
+  const home = mkdtempSync(join(tmpdir(), "clover-cap-sessions-"));
   homes.push(home);
   const store = new SessionStore(home);
   const registry = new ToolRegistry();
@@ -79,7 +79,7 @@ describe("sessionsCapability: the server shape", () => {
     expect(server.type).toBe("sdk");
     // P8b-35: the BRAND rides the server name, so the router's `mcp__<server>__<tool>` comes out as
     // P8b-12's literal. `wire-names.test.ts` derives that rather than asserting it.
-    expect(server.name).toBe("winter__sessions");
+    expect(server.name).toBe("clover__sessions");
     // The router refuses a capability server whose instance is not duck-type callable, and the SDK
     // would forward it as wire-safe-but-inert. This is the exact predicate both use.
     expect(isWinterMcpServerInstance(server.instance)).toBe(true);

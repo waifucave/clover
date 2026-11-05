@@ -27,7 +27,7 @@ import { mapStructuredCoworkInstructions } from "./structured-instruction-mapper
  */
 
 /* ---- Frame definition: a COPY of the SDK-side reader frame. ----
- * Source of truth (read-only, not imported): yanlingLabs/winter-agent-sdk
+ * Source of truth (read-only, not imported): waifucave/clover-sdk
  *   packages/runtime/src/guest/linux-guided-reader-protocol.ts  parseLinuxGuidedReaderMessage (echo keys, inner owner
  *     keys = the runtime owner without workspaceId, views keys, loader limits, the 320 KiB reader_result frame bound)
  *   packages/sdk/src/guided-reader-protocol.ts                  GUIDED_READER_FRAME_BYTES, single-line frame rules

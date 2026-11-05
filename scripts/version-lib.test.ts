@@ -5,14 +5,14 @@ import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "n
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { HELPER_VERSION_MARKER, readHelperVersion } from "./computer-helper-lib";
-import { FORMAT, nextVersion, readCanonical, ROOT, semverTwin, stampInfoPlist, stampProjectYml, WINTER_INFO_PLISTS } from "./version-lib";
+import { FORMAT, nextVersion, readCanonical, ROOT, semverTwin, stampInfoPlist, stampProjectYml, CLOVER_INFO_PLISTS } from "./version-lib";
 
 const temps: string[] = [];
 afterEach(() => {
   for (const d of temps.splice(0)) rmSync(d, { recursive: true, force: true });
 });
 function tempVersionFile(content: string): string {
-  const dir = mkdtempSync(join(tmpdir(), "winter-version-lib-test-"));
+  const dir = mkdtempSync(join(tmpdir(), "clover-version-lib-test-"));
   temps.push(dir);
   const path = join(dir, "VERSION");
   writeFileSync(path, content);
@@ -90,10 +90,10 @@ describe("nextVersion", () => {
 });
 
 describe("stamping the apple sources", () => {
-  test("project.yml: EVERY Winter target is stamped, not just the first — but never the helper's marked lines (its own version)", () => {
+  test("project.yml: EVERY Clover target is stamped, not just the first — but never the helper's marked lines (its own version)", () => {
     const yml = readFileSync(join(ROOT, "apple", "Winter", "project.yml"), "utf8");
     const count = (text: string, re: RegExp) => [...text.matchAll(re)].length;
-    // Winter, Winter Headless (Winter's version too) and the Computer Use helper (its own, marked).
+    // Clover, Winter Headless (Clover's version too) and the Computer Use helper (its own, marked).
     expect(count(yml, /CFBundleShortVersionString: "[^"]*"/g)).toBe(3);
     const stamped = stampProjectYml(yml, "9.999.9");
     expect(count(stamped, /CFBundleShortVersionString: "9\.999\.9"/g)).toBe(2);
@@ -104,15 +104,15 @@ describe("stamping the apple sources", () => {
     expect(stamped.replaceAll("9.999.9", readCanonical())).toBe(yml);
   });
 
-  test("every generated Info.plist in apple/Winter/Support that carries Winter's version is stamped — Winter Headless's too", () => {
+  test("every generated Info.plist in apple/Winter/Support that carries Clover's version is stamped — Winter Headless's too", () => {
     const support = join(ROOT, "apple", "Winter", "Support");
     const carriers = readdirSync(support).filter((f) => f.endsWith(".plist")).filter((f) =>
       new RegExp(`<key>CFBundleShortVersionString</key>\\s*<string>${readCanonical().replaceAll(".", "\\.")}</string>`).test(readFileSync(join(support, f), "utf8")));
-    expect(carriers.sort()).toEqual([...WINTER_INFO_PLISTS].sort());
-    expect(WINTER_INFO_PLISTS).toContain("WinterHeadless-Info.plist");
+    expect(carriers.sort()).toEqual([...CLOVER_INFO_PLISTS].sort());
+    expect(CLOVER_INFO_PLISTS).toContain("WinterHeadless-Info.plist");
   });
 
-  test("the helper's generated Info.plist carries the helper's OWN version (apple/ComputerUse/VERSION), not Winter's", () => {
+  test("the helper's generated Info.plist carries the helper's OWN version (apple/ComputerUse/VERSION), not Clover's", () => {
     const plist = readFileSync(join(ROOT, "apple", "ComputerUse", "WinterComputerUse", "Support", "Info.plist"), "utf8");
     expect(plist).toMatch(new RegExp(`<key>CFBundleShortVersionString</key>\\s*<string>${readHelperVersion().replaceAll(".", "\\.")}</string>`));
     expect(plist).toMatch(new RegExp(`<key>CFBundleVersion</key>\\s*<string>${readHelperVersion().replaceAll(".", "\\.")}</string>`));

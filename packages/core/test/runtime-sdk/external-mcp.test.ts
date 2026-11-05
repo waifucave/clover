@@ -1,4 +1,4 @@
-// Fix wave (review row 7): Winter's configured MCP servers → the SDK's stdio configs, keyed as the
+// Fix wave (review row 7): Clover's configured MCP servers → the SDK's stdio configs, keyed as the
 // daemon's registry keys them, trust-gated for the project half.
 import { expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, writeFileSync, realpathSync, rmSync } from "node:fs";
@@ -7,10 +7,10 @@ import { join } from "node:path";
 import { configuredMcpServersFor, pluginMcpServersFor } from "../../src/runtime-sdk/external-mcp";
 import { Settings, sdkUserMcpServers, validateMcpServerEntryForWrite } from "../../src/settings";
 
-// WS-21: the project MCP file is `<root>/.winter/mcp.json` (the repo-root `.mcp.json` is never read).
+// WS-21: the project MCP file is `<root>/.clover/mcp.json` (the repo-root `.mcp.json` is never read).
 const writeProjectMcp = (root: string, body: string): void => {
-  mkdirSync(join(root, ".winter"), { recursive: true });
-  writeFileSync(join(root, ".winter", "mcp.json"), body);
+  mkdirSync(join(root, ".clover"), { recursive: true });
+  writeFileSync(join(root, ".clover", "mcp.json"), body);
 };
 
 // Daemon settings surface batch 3 (item 3b): a real `Settings.parse` always normalizes a `type`-less
@@ -20,11 +20,11 @@ const writeProjectMcp = (root: string, body: string): void => {
 const settingsWith = (servers: Record<string, { command: string; args?: string[]; env?: Record<string, string> }>): Settings =>
   ({ mcpServers: Object.fromEntries(Object.entries(servers).map(([k, v]) => [k, { type: "stdio" as const, ...v }])) } as unknown as Settings);
 
-// WS-21: the user-scope servers moved to `sdk/.winter.json` and arrive as `userMcpServers`
+// WS-21: the user-scope servers moved to `sdk/.clover.json` and arrive as `userMcpServers`
 // (`sdkUserMcpServers`, read live by the daemon); `settings` is read for `mcp.disabled` only.
 const userServers = (settings: Settings) => ({ userMcpServers: settings.mcpServers ?? {} });
 
-test("user servers (sdk/.winter.json) become stdio configs under their own keys (mcp__<key>__<tool> on the child)", () => {
+test("user servers (sdk/.clover.json) become stdio configs under their own keys (mcp__<key>__<tool> on the child)", () => {
   const settings = settingsWith({ fake: { command: "bun", args: ["run", "fake.ts"], env: { A: "1" } }, bare: { command: "npx" } });
   const out = configuredMcpServersFor({ settings, ...userServers(settings), cwd: undefined, trusted: () => false });
   expect(out).toEqual({
@@ -33,8 +33,8 @@ test("user servers (sdk/.winter.json) become stdio configs under their own keys 
   });
 });
 
-test("a TRUSTED project's <root>/.winter/mcp.json contributes its servers; an UNTRUSTED one contributes nothing and is never read", () => {
-  const dir = realpathSync(mkdtempSync(join(tmpdir(), "winter-ext-mcp-")));
+test("a TRUSTED project's <root>/.clover/mcp.json contributes its servers; an UNTRUSTED one contributes nothing and is never read", () => {
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), "clover-ext-mcp-")));
   try {
     writeProjectMcp(dir, JSON.stringify({ mcpServers: { proj: { command: "bun", args: ["run", "p.ts"] } } }));
     expect(configuredMcpServersFor({ settings: null, cwd: dir, trusted: () => true })).toEqual({ proj: { type: "stdio", command: "bun", args: ["run", "p.ts"] } });
@@ -47,7 +47,7 @@ test("a TRUSTED project's <root>/.winter/mcp.json contributes its servers; an UN
 // WS-21 (spec §3.4.5): claude's precedence, local > project > user — a trusted PROJECT server now shadows
 // a same-keyed USER server (the pre-WS-21 registry order had it the other way round).
 test("a missing or malformed project MCP file contributes nothing and never throws; a project server shadows a same-keyed user server", () => {
-  const dir = realpathSync(mkdtempSync(join(tmpdir(), "winter-ext-mcp-bad-")));
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), "clover-ext-mcp-bad-")));
   try {
     expect(configuredMcpServersFor({ settings: null, cwd: dir, trusted: () => true })).toEqual({});
     writeProjectMcp(dir, "{ not json");
@@ -67,7 +67,7 @@ test("a missing or malformed project MCP file contributes nothing and never thro
 // (`agent/mcp/project-file.ts`) validates PER ENTRY instead, matching claude's own accepted `.mcp.
 // json` transports (stdio/http/sse) via the SAME shape `settings.mcpServers` already accepts.
 test("a mixed project .mcp.json (stdio + http + sse + one malformed entry) yields the three valid servers; the malformed one is skipped and logged, never taking its siblings down", () => {
-  const dir = realpathSync(mkdtempSync(join(tmpdir(), "winter-ext-mcp-mixed-")));
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), "clover-ext-mcp-mixed-")));
   try {
     writeProjectMcp(dir, JSON.stringify({
       mcpServers: {
@@ -90,7 +90,7 @@ test("a mixed project .mcp.json (stdio + http + sse + one malformed entry) yield
 });
 
 test("the SAME mixed .mcp.json, untrusted, still contributes nothing — the trust gate is unchanged by the per-entry fix", () => {
-  const dir = realpathSync(mkdtempSync(join(tmpdir(), "winter-ext-mcp-mixed-untrusted-")));
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), "clover-ext-mcp-mixed-untrusted-")));
   try {
     writeProjectMcp(dir, JSON.stringify({
       mcpServers: {
@@ -111,7 +111,7 @@ test("the SAME mixed .mcp.json, untrusted, still contributes nothing — the tru
 // reused settings.mcpServers' own schema (refuseCredentialShapedHeaders included) and so silently
 // DROPPED such an entry — this is the regression test for that reversal.
 test("a project-scope http entry with a credential-shaped header (Authorization) reaches the child VERBATIM — never refused, never stripped (parity with claude, not settings.json's own posture)", () => {
-  const dir = realpathSync(mkdtempSync(join(tmpdir(), "winter-ext-mcp-project-cred-header-")));
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), "clover-ext-mcp-project-cred-header-")));
   try {
     writeProjectMcp(dir, JSON.stringify({
       mcpServers: { credhttp: { type: "http", url: "https://example.com/mcp", headers: { Authorization: "Bearer sk-team-shared" } } },
@@ -132,7 +132,7 @@ test("no settings, no cwd → nothing (a bare daemon forwards no servers)", () =
 // `Authorization`) is refused at the SETTINGS door (`Settings.parse`, `settings.test.ts`'s own
 // dedicated describe block) — it can never reach this function at all, so this fixture uses a
 // benign header. `configuredMcpServersFor` is the ONE function BOTH legs' options builders read
-// from (`mode-options.ts`'s `buildWinterOptions` and `official-options.ts`'s `officialInputFor`
+// from (`mode-options.ts`'s `buildCloverOptions` and `official-options.ts`'s `officialInputFor`
 // both consume its output verbatim), so proving a benign header survives here is proving it reaches
 // both legs, not just one.
 test("an HTTP server and an SSE server pass through with their own shape (url, headers) — never coerced to stdio", () => {
@@ -154,12 +154,12 @@ test("an HTTP server and an SSE server pass through with their own shape (url, h
 // credential-shaped header must still boot the daemon (`loadSettings` strips rather than refuses —
 // see settings.test.ts's own dedicated describe block), and the stripped header must never reach
 // EITHER leg's `Options` — `configuredMcpServersFor` is the one function both `mode-options.ts`'s
-// `buildWinterOptions` and `official-options.ts`'s `officialInputFor` consume verbatim, so proving
+// `buildCloverOptions` and `official-options.ts`'s `officialInputFor` consume verbatim, so proving
 // it is absent from THIS function's output proves it is absent from both legs.
-test("a credential-shaped header a user hand-edited into sdk/.winter.json is stripped by sdkUserMcpServers and never reaches configuredMcpServersFor's output", () => {
-  const home = mkdtempSync(join(tmpdir(), "winter-ext-mcp-cred-header-"));
+test("a credential-shaped header a user hand-edited into sdk/.clover.json is stripped by sdkUserMcpServers and never reaches configuredMcpServersFor's output", () => {
+  const home = mkdtempSync(join(tmpdir(), "clover-ext-mcp-cred-header-"));
   mkdirSync(join(home, "sdk"), { recursive: true });
-  writeFileSync(join(home, "sdk", ".winter.json"), JSON.stringify({
+  writeFileSync(join(home, "sdk", ".clover.json"), JSON.stringify({
     mcpServers: {
       httpOne: {
         type: "http", url: "https://example.com/mcp",
@@ -167,7 +167,7 @@ test("a credential-shaped header a user hand-edited into sdk/.winter.json is str
       },
     },
   }));
-  // Read through the real daemon-facing door (WS-21: the user scope is `sdk/.winter.json`) — this IS
+  // Read through the real daemon-facing door (WS-21: the user scope is `sdk/.clover.json`) — this IS
   // the read door under test.
   const out = configuredMcpServersFor({ settings: null, userMcpServers: sdkUserMcpServers(home), cwd: undefined, trusted: () => false });
   expect(out).toEqual({ httpOne: { type: "http", url: "https://example.com/mcp", headers: { "X-Request-Id": "abc123" } } });
@@ -178,7 +178,7 @@ test("a credential-shaped header a user hand-edited into sdk/.winter.json is str
 // Daemon settings surface batch 3 (item 3a): a server named in settings.mcp.disabled is withheld
 // entirely from Options.mcpServers — for BOTH the user and the trusted-project source.
 test("a disabled server is withheld entirely — neither a user nor a project entry of that name survives", () => {
-  const dir = realpathSync(mkdtempSync(join(tmpdir(), "winter-ext-mcp-disabled-")));
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), "clover-ext-mcp-disabled-")));
   try {
     writeProjectMcp(dir, JSON.stringify({ mcpServers: { blocked: { command: "project-cmd" }, allowed: { command: "p" } } }));
     const settings = Settings.parse({
@@ -194,15 +194,15 @@ test("a disabled server is withheld entirely — neither a user nor a project en
 });
 
 // WS-23 (MCP v2): a server's own `versionNegotiation` reaches the child verbatim, on every transport and
-// from every scope. zod strips an undeclared key, so before this every read (`sdk/.winter.json`, a
-// project's `.winter/mcp.json`) and every write (`validateMcpServerEntryForWrite`) dropped it silently,
+// from every scope. zod strips an undeclared key, so before this every read (`sdk/.clover.json`, a
+// project's `.clover/mcp.json`) and every write (`validateMcpServerEntryForWrite`) dropped it silently,
 // and the runtime's per-transport default applied instead of the server's stated choice.
-test("versionNegotiation passes through from sdk/.winter.json and a trusted project's mcp.json to the child's config", () => {
-  const home = mkdtempSync(join(tmpdir(), "winter-ext-mcp-negotiation-"));
-  const dir = realpathSync(mkdtempSync(join(tmpdir(), "winter-ext-mcp-negotiation-proj-")));
+test("versionNegotiation passes through from sdk/.clover.json and a trusted project's mcp.json to the child's config", () => {
+  const home = mkdtempSync(join(tmpdir(), "clover-ext-mcp-negotiation-"));
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), "clover-ext-mcp-negotiation-proj-")));
   try {
     mkdirSync(join(home, "sdk"), { recursive: true });
-    writeFileSync(join(home, "sdk", ".winter.json"), JSON.stringify({
+    writeFileSync(join(home, "sdk", ".clover.json"), JSON.stringify({
       mcpServers: {
         legacyStdio: { command: "bun", args: ["run", "s.ts"], versionNegotiation: "legacy" },
         autoHttp: { type: "http", url: "https://example.com/mcp", versionNegotiation: "auto" },
@@ -234,10 +234,10 @@ test("versionNegotiation survives the write door, and a value the SDK does not d
   expect(() => validateMcpServerEntryForWrite({ command: "x", versionNegotiation: { pin: "" } })).toThrow();
 
   // On the read side a bad value costs only that entry (the per-entry posture `parseMcpServerMap` keeps).
-  const home = mkdtempSync(join(tmpdir(), "winter-ext-mcp-negotiation-bad-"));
+  const home = mkdtempSync(join(tmpdir(), "clover-ext-mcp-negotiation-bad-"));
   try {
     mkdirSync(join(home, "sdk"), { recursive: true });
-    writeFileSync(join(home, "sdk", ".winter.json"), JSON.stringify({
+    writeFileSync(join(home, "sdk", ".clover.json"), JSON.stringify({
       mcpServers: { bad: { command: "x", versionNegotiation: "modern" }, good: { command: "y", versionNegotiation: "auto" } },
     }));
     const servers = sdkUserMcpServers(home);

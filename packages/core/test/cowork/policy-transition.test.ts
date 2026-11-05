@@ -2,7 +2,7 @@ import { afterEach, expect, test } from "bun:test";
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
-import type { ApprovalPolicy } from "@yanlinglabs/winter-protocol";
+import type { ApprovalPolicy } from "@waifucave/clover-protocol";
 import { ApprovalBroker } from "../../src/agent/approvals";
 import { CoworkInstructions } from "../../src/cowork/instructions";
 import { COWORK_GUEST_TOOL_CLASSES, COWORK_PATH_CLASSES, coworkConnectorVerdict, coworkHostDecision, type CoworkHostDecision } from "../../src/cowork/host-policy";
@@ -392,7 +392,7 @@ const grants = { folder: () => ({ rootIdentity: "root", writable: true, revoked:
 
 /** A minimal conversation bound at `policy`; no instruction file is ever created (updateAgent refuses or cards before any file access). */
 function instructionConversation(policy: ApprovalPolicy) {
-  const home = mkdtempSync(join(tmpdir(), "winter-host-policy-")); cleanups.push(() => rmSync(home, { recursive: true, force: true }));
+  const home = mkdtempSync(join(tmpdir(), "clover-host-policy-")); cleanups.push(() => rmSync(home, { recursive: true, force: true }));
   const db = openRuntimeStateDb(home); cleanups.push(() => db.close());
   const records = new CoworkRepository(db), store = new SessionStore(home); cleanups.push(() => store.close());
   const hub = new SessionHub(store), broker = new ApprovalBroker();
@@ -461,7 +461,7 @@ test("wired behind the refusal: only the Cowork approval projection names the tr
   expect(readFileSync(join(packages, "core", "src", "index.ts"), "utf8")).not.toMatch(/policy-transition|from "\.\/cowork/);
   const own = readFileSync(module, "utf8");
   expect([...own.matchAll(/^import (type )?[^;]*from "([^"]+)"/gm)].map(match => `${match[1] ? "type " : ""}${match[2]}`).sort())
-    .toEqual(["./host-policy", "type ./types", "type @yanlinglabs/winter-protocol"]);
+    .toEqual(["./host-policy", "type ./types", "type @waifucave/clover-protocol"]);
   expect(Object.keys(transition).sort()).toEqual(["COWORK_CLASSIFIER_CELLS", "COWORK_CLASSIFIER_CONNECTOR_CELLS", "CoworkPolicyTransitionMachine", "classifyCoworkPolicyChange"]);
   // No timers, clock, I/O or environment: ports are the only way the machine touches anything.
   expect(own).not.toMatch(/\b(Date\.now|new Date|process\.|Bun\.|node:|fetch\(|setTimeout|setInterval|Math\.random)\b/);

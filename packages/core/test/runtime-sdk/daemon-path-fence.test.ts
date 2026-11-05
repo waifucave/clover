@@ -16,7 +16,7 @@ import { takeFileDiff } from "../../src/runtime-sdk/diff-attach";
 describe("Core protected storage checks at actual host use points", () => {
   let root: string, home: string, other: string, coordination: string, volume: string, db: string, project: string, unregister: () => void;
   beforeEach(() => {
-    root = realpathSync(mkdtempSync(join(tmpdir(), "winter-daemon-path-fence-")));
+    root = realpathSync(mkdtempSync(join(tmpdir(), "clover-daemon-path-fence-")));
     home = join(root, "home"); other = join(root, "other"); coordination = join(root, "coordination"); project = join(root, "project");
     for (const dir of [join(home, "cowork"), join(other, "cowork/workspaces/w/shared"), join(other, "runtimes"), join(other, "run"), coordination, project]) mkdirSync(dir, { recursive: true });
     volume = join(other, "cowork/workspaces/w/data.ext4"); db = join(other, "runtimes/runtime-state.db");
@@ -27,7 +27,7 @@ describe("Core protected storage checks at actual host use points", () => {
   test("direct paths, parent symlinks, hard links and case variants use one canonical fence; ordinary/shared reads work", () => {
     symlinkSync(other, join(project, "alias")); linkSync(volume, join(project, "volume.ts"));
     for (const path of [volume, db, join(other, "run/control.txt"), join(coordination, "cowork-admission.sqlite"), join(project, "alias/runtimes/runtime-state.db"), join(project, "volume.ts"), volume.toUpperCase()]) {
-      expect(() => assertDaemonPathAccess(home, path, project)).toThrow("protected Winter storage");
+      expect(() => assertDaemonPathAccess(home, path, project)).toThrow("protected Clover storage");
     }
     const ordinary = join(project, "ordinary.ts"), shared = join(other, "cowork/workspaces/w/shared/output.md");
     writeFileSync(ordinary, "ordinary"); writeFileSync(shared, "shared");
@@ -65,7 +65,7 @@ describe("Core protected storage checks at actual host use points", () => {
   });
   test("uploads refuse other-home aliases with broad cwd and no read-deny list, then recheck at source copy", () => {
     linkSync(volume, join(project, "upload.bin"));
-    expect(() => checkUploadFiles("upload.bin", { home, cwd: project, denyRead: [] })).toThrow("Protected Winter storage");
+    expect(() => checkUploadFiles("upload.bin", { home, cwd: project, denyRead: [] })).toThrow("Protected Clover storage");
     const path = join(project, "ordinary.txt"); writeFileSync(path, "ordinary");
     const checked = checkUploadFiles(path, { home, cwd: root, denyRead: [] });
     linkSync(path, join(other, "cowork/workspaces/w/env.ext4"));
@@ -76,7 +76,7 @@ describe("Core protected storage checks at actual host use points", () => {
     const manager = new LspManager(), call = spyOn(manager, "clientFor");
     expect(await autoDiagnosticsSuffix({ home, lsp: manager, cwd: project, roots: [root], toolName: "Edit", toolInput: { file_path: path } })).toBe("");
     expect(call).not.toHaveBeenCalled(); call.mockRestore();
-    const hooks = sessionHooksFor({ home, sessionId: "s", roots: [root], cwd: project }).winter!;
+    const hooks = sessionHooksFor({ home, sessionId: "s", roots: [root], cwd: project }).clover!;
     const input = { session_id: "s", transcript_path: "", cwd: project, tool_name: "Edit", tool_input: { file_path: path }, tool_use_id: "private", hook_event_name: "PreToolUse" };
     for (const group of hooks.PreToolUse ?? []) if (group.matcher === "Edit") for (const hook of group.hooks) await hook(input as never, "private", { signal: new AbortController().signal });
     writeFileSync(db, "updated private fixture bytes");

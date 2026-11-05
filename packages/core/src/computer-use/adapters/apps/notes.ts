@@ -34,7 +34,7 @@ const NOTE_ROW = [
   "  try",
   "    set f to name of container of x",
   "  end try",
-  "  set out to out & my winterText(id of x) & winterTAB & my winterISO(modification date of x) & winterTAB & my winterText(f) & winterTAB & my winterText(name of x) & winterLF",
+  "  set out to out & my cloverText(id of x) & cloverTAB & my cloverISO(modification date of x) & cloverTAB & my cloverText(f) & cloverTAB & my cloverText(name of x) & cloverLF",
 ];
 
 export const notesAdapter: AppAdapter = {
@@ -51,7 +51,7 @@ export const notesAdapter: AppAdapter = {
         const limit = o.limit === undefined ? 30 : intArg(o.limit, "list({ limit })", 1, 200);
         const from = o.folder === undefined ? "" : ` of ${folderRef(stringArg(o.folder, "list({ folder })", 200))}`;
         const result = await scope.applescript(appScript(scope.app.bundleId, [
-          `set n to my winterMin(count of notes${from}, ${limit})`,
+          `set n to my cloverMin(count of notes${from}, ${limit})`,
           "set out to \"\"",
           "repeat with i from 1 to n",
           `  set x to note i${from}`,
@@ -71,7 +71,7 @@ export const notesAdapter: AppAdapter = {
         const id = noteId(args[0]);
         const result = await scope.applescript(appScript(scope.app.bundleId, [
           `set x to note id ${text(id)}`,
-          "return my winterText(name of x) & winterLF & my winterText(plaintext of x)",
+          "return my cloverText(name of x) & cloverLF & my cloverText(plaintext of x)",
         ], { handlers: ["text"] }), { timeoutMs: 20_000 });
         const all = result ?? "";
         const nl = all.indexOf("\n");
@@ -92,7 +92,7 @@ export const notesAdapter: AppAdapter = {
           "on error",
           `  set found to (notes whose name contains ${text(q)})`,
           "end try",
-          "set n to my winterMin(count of found, 50)",
+          "set n to my cloverMin(count of found, 50)",
           "set out to \"\"",
           "repeat with i from 1 to n",
           "  set x to item i of found",
@@ -116,7 +116,7 @@ export const notesAdapter: AppAdapter = {
         const at = o.folder === undefined ? "default folder of default account" : folderRef(stringArg(o.folder, "create({ folder })", 200));
         const result = await scope.applescript(appScript(scope.app.bundleId, [
           `set x to make new note at ${at} with properties {body:${text(noteHtml(title, body))}}`,
-          "return my winterText(id of x)",
+          "return my cloverText(id of x)",
         ], { handlers: ["text"] }), { timeoutMs: 20_000 });
         scope.say("made a new note");
         return { id: (result ?? "").trim() };

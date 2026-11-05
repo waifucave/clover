@@ -1,4 +1,4 @@
-// ComputerV2 Phase 4, lane H3 — a headless tab SHOWN in Winter's panel, over a FAKE Winter Headless on a real pipe
+// ComputerV2 Phase 4, lane H3 — a headless tab SHOWN in Clover's panel, over a FAKE Winter Headless on a real pipe
 // (`headless-fake-helper.ts`) and a fake panel (the browser link's `headless` feature): the hand-off (`present`, the
 // person in control), the control lease (the agent's commands refused while the person holds the tab; the ones in flight
 // finish first), watch and take over from the panel, a presentation nobody connected to, a viewer that leaves, the
@@ -43,7 +43,7 @@ const pools: HeadlessPool[] = [];
 afterEach(() => { for (const p of pools.splice(0)) p.stop(); });
 
 function rig(o: { mode?: string; presentStartMs?: number; drainMs?: number } = {}): Rig {
-  const home = mkdtempSync(join(tmpdir(), "winter-headless-present-"));
+  const home = mkdtempSync(join(tmpdir(), "clover-headless-present-"));
   const log = join(home, "fake.log");
   const view = panel();
   const app = { up: true, feature: true };
@@ -55,7 +55,7 @@ function rig(o: { mode?: string; presentStartMs?: number; drainMs?: number } = {
     verify: () => true,
     memoryOf: () => 100 * 1024 * 1024,
     viewer: () => (app.up && app.feature ? view : undefined),
-    viewerMissing: () => (!app.up ? "Winter isn't running — ask the user to open Winter" : !app.feature ? "this Winter's app can't show a headless tab — ask the user to update Winter" : undefined),
+    viewerMissing: () => (!app.up ? "Clover isn't running — ask the user to open Clover" : !app.feature ? "this Clover's app can't show a headless tab — ask the user to update Clover" : undefined),
     viewerRequirement: () => winterAppRequirementFor("dev"),
     presentStartMs: o.presentStartMs ?? 2_000,
     drainMs: o.drainMs ?? 2_000,
@@ -82,8 +82,8 @@ async function until(what: string, pred: () => boolean, ms = 3_000): Promise<voi
 
 const isUserHasTab = (e: Error): boolean => e instanceof TransportError && e.code === "capacity" && e.message === HEADLESS_USER_HAS_TAB;
 
-describe("the hand-off (waitForUser): the tab shown in Winter's panel, the person in control", () => {
-  test("present: the helper checks in a presentation for Winter's own app, the panel connects, and the agent waits until Done", async () => {
+describe("the hand-off (waitForUser): the tab shown in Clover's panel, the person in control", () => {
+  test("present: the helper checks in a presentation for Clover's own app, the panel connects, and the agent waits until Done", async () => {
     const r = rig();
     const t = await r.pool.createTab({ sessionId: "s1", url: "https://accounts.example/" });
     await r.pool.present(t.tabKey, { sessionId: "s1" });
@@ -131,18 +131,18 @@ describe("the hand-off (waitForUser): the tab shown in Winter's panel, the perso
     await r.pool.send(t.tabKey, "Page.enable");
   });
 
-  test("nobody connects in time (Winter.app's viewer never came, or was refused): the presentation is ended and the call fails, typed", async () => {
+  test("nobody connects in time (Clover.app's viewer never came, or was refused): the presentation is ended and the call fails, typed", async () => {
     const r = rig({ presentStartMs: 150 });
     const t = await r.pool.createTab({ sessionId: "s1", url: "http://no-viewer.test/" });
     const e = await failure(r.pool.present(t.tabKey, { sessionId: "s1" }));
     expect((e as AutomationFailure).kind).toBe("BrowserUnavailable");
-    expect(e.message).toMatch(/Winter could not show the headless tab \(Winter's panel did not connect to it in time\)/);
+    expect(e.message).toMatch(/Clover could not show the headless tab \(Clover's panel did not connect to it in time\)/);
     expect(r.commands().some((c) => c.op === "headless.unpresent")).toBe(true);
     expect(r.panel.hidden.map((h) => h.reason)).toEqual(["not shown"]);
     await r.pool.send(t.tabKey, "Page.enable"); // the agent has it again
   });
 
-  test("the viewer leaves (the person closed it, Winter quit): the wait reads not done and control returns to the agent", async () => {
+  test("the viewer leaves (the person closed it, Clover quit): the wait reads not done and control returns to the agent", async () => {
     const r = rig();
     const t = await r.pool.createTab({ sessionId: "s1", url: "http://viewer-leaves.test/" });
     const answers: boolean[] = [];
@@ -387,7 +387,7 @@ describe("the lease to the end (the final review's MEDIUMs)", () => {
     const held = (await r.pool.listTabs({ sessionId: "s1" }))[0]!;
     expect(r.commands().filter((c) => c.op === "tabs.live").length).toBe(asked);
     expect(held.url).toBe(before.url);
-    expect(held.title).toBe(`${before.title} — held by the user in Winter's panel`);
+    expect(held.title).toBe(`${before.title} — held by the user in Clover's panel`);
   });
 
   test("#4 a sign-in window goes with its opener's view when the viewer ends it", async () => {
@@ -420,7 +420,7 @@ describe("the lease to the end (the final review's MEDIUMs)", () => {
     await r.pool.createTab({ sessionId: "s1", url: "https://a.example/" });
     process.kill(r.pool.pid!, "SIGKILL");
     await until("the helper gone", () => r.pool.pid === undefined);
-    expect(r.pool.presentMissing()).toBe("Winter's headless browser is too old to show a tab — ask the user to update Winter");
+    expect(r.pool.presentMissing()).toBe("Clover's headless browser is too old to show a tab — ask the user to update Clover");
   });
 
   test("#5 each session's file choosers are answered from its own uploads folder, removed with its context", async () => {
@@ -510,23 +510,23 @@ describe("a window the person opens (a sign-in window)", () => {
 });
 
 describe("what can't show a tab says so", () => {
-  test("Winter.app not there, or without the feature: refused before anything is checked in", async () => {
+  test("Clover.app not there, or without the feature: refused before anything is checked in", async () => {
     const r = rig();
     const t = await r.pool.createTab({ sessionId: "s1", url: "https://a.example/" });
     r.app.up = false;
-    expect(r.pool.presentMissing()).toBe("Winter isn't running — ask the user to open Winter");
+    expect(r.pool.presentMissing()).toBe("Clover isn't running — ask the user to open Clover");
     const e = await failure(r.pool.present(t.tabKey, { sessionId: "s1" }));
     expect((e as AutomationFailure).kind).toBe("BrowserUnavailable");
-    expect(e.message).toContain("Winter isn't running");
+    expect(e.message).toContain("Clover isn't running");
     r.app.up = true; r.app.feature = false;
-    expect(r.pool.presentMissing()).toMatch(/can't show a headless tab — ask the user to update Winter/);
+    expect(r.pool.presentMissing()).toMatch(/can't show a headless tab — ask the user to update Clover/);
     expect(r.commands().some((c) => c.op === "headless.present")).toBe(false);
   });
 
   test("a helper without the `present` feature is never sent the presentation ops", async () => {
     const r = rig({ mode: "no-present" });
     const t = await r.pool.createTab({ sessionId: "s1", url: "https://a.example/" });
-    expect(r.pool.presentMissing()).toBe("Winter's headless browser is too old to show a tab — ask the user to update Winter");
+    expect(r.pool.presentMissing()).toBe("Clover's headless browser is too old to show a tab — ask the user to update Clover");
     const e = await failure(r.pool.panelAction("s1", t.tabKey, "watch"));
     expect((e as AutomationFailure).kind).toBe("BrowserUnavailable");
     expect(r.commands().some((c) => c.op === "headless.present")).toBe(false);

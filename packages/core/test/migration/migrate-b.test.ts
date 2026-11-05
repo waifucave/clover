@@ -25,10 +25,10 @@ import { ANTHROPIC_CONSOLE_CREDENTIAL_SECRET_NAME, ANTHROPIC_CREDENTIAL_SECRET_N
 import { TOKEN_NAMES } from "../../src/auth/tokens";
 import { WEB_SEARCH_API_KEY_SECRET } from "../../src/agent/tools/web";
 import { EXA_API_KEY_SECRET } from "../../src/agent/exa-key";
-import { LEGACY_DEV_HOME_DIR, LEGACY_HOME_DIR, LEGACY_HOME_ENV, LEGACY_WINTER_EXECUTABLE_ENV } from "../../src/legacy-names";
+import { LEGACY_DEV_HOME_DIR, LEGACY_HOME_DIR, LEGACY_HOME_ENV, LEGACY_CLOVER_EXECUTABLE_ENV } from "../../src/legacy-names";
 
 const dirs: string[] = [];
-function tempDir(prefix = "winter-migrate-b-"): string {
+function tempDir(prefix = "clover-migrate-b-"): string {
   const d = mkdtempSync(join(tmpdir(), prefix));
   dirs.push(d);
   return d;
@@ -52,7 +52,7 @@ function write(path: string, content: string): void {
  *  log, and a cache file. */
 function seedLegacyHome(root: string): void {
   mkdirSync(root, { recursive: true });
-  write(join(root, "settings.json"), JSON.stringify({ schemaVersion: 1, runtimes: { winterExecutable: `$${LEGACY_WINTER_EXECUTABLE_ENV}` } }, null, 2));
+  write(join(root, "settings.json"), JSON.stringify({ schemaVersion: 1, runtimes: { winterExecutable: `$${LEGACY_CLOVER_EXECUTABLE_ENV}` } }, null, 2));
   write(join(root, "sessions", "s1", "a.jsonl"), '{"type":"user_message","text":"hi"}\n');
   write(join(root, "sessions", "index.db"), "sqlite-bytes-stand-in");
   write(join(root, "memory", "_global", "x.md"), "# a global memory fact\n");
@@ -78,8 +78,8 @@ async function seedTo(legacyHome: string, home: string, profile: "dev" | "dist" 
 
 function noopDeps(overrides: Partial<MigrationDeps> = {}): MigrationDeps {
   return {
-    from: new FileSecretStore(tempDir("winter-migrate-b-secrets-from-")),
-    to: new FileSecretStore(tempDir("winter-migrate-b-secrets-to-")),
+    from: new FileSecretStore(tempDir("clover-migrate-b-secrets-from-")),
+    to: new FileSecretStore(tempDir("clover-migrate-b-secrets-to-")),
     log: () => {},
     ...overrides,
   };
@@ -158,7 +158,7 @@ describe("runMigrationB — copy + manifest (Step 1)", () => {
     }
 
     const rekeyedSettings = JSON.parse(readFileSync(join(home, "settings.json"), "utf8"));
-    expect(rekeyedSettings.runtimes.winterExecutable).toBe("$WINTER_RUNTIME_EXECUTABLE");
+    expect(rekeyedSettings.runtimes.winterExecutable).toBe("$CLOVER_RUNTIME_EXECUTABLE");
 
     // Manifest on disk matches what was returned, and readMigrationManifest agrees.
     const onDisk = readMigrationManifest(home);
@@ -359,7 +359,7 @@ describe("isPristineHome (Step 3, P9c-10)", () => {
     expect(isPristineHome(home)).toBe(false);
   });
 
-  // Fix wave C2 (P9c-16, whole-branch review): Winter.app may have written a UI marker into
+  // Fix wave C2 (P9c-16, whole-branch review): Clover.app may have written a UI marker into
   // `app-state/` before the daemon's first successful connect — that must never block Migration B.
   test("an app-state marker beside otherwise-empty bootstrap dirs is still pristine", () => {
     const home = tempDir();

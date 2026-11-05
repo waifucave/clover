@@ -1,4 +1,4 @@
-import type { SessionActivity } from "@yanlinglabs/winter-protocol";
+import type { SessionActivity } from "@waifucave/clover-protocol";
 import type { ActivityDeriver, ActivityRow } from "./activity";
 import { participatesInActivity } from "./activity";
 
@@ -42,7 +42,7 @@ export const ACTIVITY_MODE_REFUSAL = "activity states apply to code sessions onl
 
 /** activity-verb-semantics ruling 1: an ARCHIVED session is IMMUTABLE except through resume, and the
  *  refusal NAMES the one door out. Exported as a constant for the same reason the sentence above is:
- *  the RPC and the `winter agents` roster both reach this state machine (dispatch's `manage_session`
+ *  the RPC and the `clover agents` roster both reach this state machine (dispatch's `manage_session`
  *  did too, until 2026-10-02),
  *  and a near-identical hand-written sentence at each door is how three remedies start pointing at
  *  three different remedies. */

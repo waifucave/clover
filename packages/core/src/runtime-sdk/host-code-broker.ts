@@ -1,5 +1,6 @@
 import { hostToolNameFor } from "./tool-names";
 import { canonicalHostJson } from "./host-code-json";
+import { CORE_BRAND } from "./brand";
 import * as sdk from "@yanlinglabs/winter-agent-sdk";
 import type {
   Options,
@@ -9,7 +10,7 @@ import type {
   HookCallback,
   HookJSONOutput,
 } from "@yanlinglabs/winter-agent-sdk";
-import type { NewSessionEvent } from "@yanlinglabs/winter-protocol";
+import type { NewSessionEvent } from "@waifucave/clover-protocol";
 import { randomUUID, createHash } from "node:crypto";
 import { lstatSync, realpathSync } from "node:fs";
 import { basename, dirname, isAbsolute, resolve } from "node:path";
@@ -77,7 +78,7 @@ export interface HostCodeContext {
   workflow?: {
     command: { file: string; args: string[] };
     home?: string;
-    winterHome?: string;
+    cloverHome?: string;
   };
 }
 export interface HostCodeDrainEvidence {
@@ -150,7 +151,9 @@ export interface HostCodeSdkAdapter {
   }): HostCodeRegistration;
   executionLimits(name: string, input: Record<string, unknown>): { timeoutMs: number; maxStreamedBytes: number };
   buildPwdCaptureScript(command: string, path: string): string;
-  buildRunInputs(input: Record<string, unknown>): Record<string, unknown>;
+  /** The SDK's `buildHostSandboxRunInputs`, typed by its own input (C0 review S4): a renamed key fails typecheck. A
+   *  type-only reference, so the runtime still loads lazily (see `installedHostCodeAdapter`). */
+  buildRunInputs(input: import("@yanlinglabs/winter-agent-runtime").HostSandboxRunInputs): Record<string, unknown>;
   buildHookEntries?(config: unknown): Array<{ id: string }>;
   createHookStage?(input: Record<string, unknown>): {
     preToolUse(
@@ -193,10 +196,10 @@ export function installedHostCodeAdapter(): HostCodeSdkAdapter | undefined {
   };
 }
 export const HOST_CODE_BINDING: unique symbol = Symbol(
-  "winter.hostCodeBinding",
+  "clover.hostCodeBinding",
 );
 const HOST_CODE_RESOLVED_SPAWN: unique symbol = Symbol(
-  "winter.hostCodeResolvedSpawn",
+  "clover.hostCodeResolvedSpawn",
 );
 /** Trusted executable/env resolver. Floor application happens AFTER this callback, before the one actual spawn. */
 export function withResolvedHostCodeSpawn(
@@ -244,7 +247,7 @@ export interface HostCodeBinding {
     | {
         command: { file: string; args: string[] };
         home?: string;
-        winterHome?: string;
+        cloverHome?: string;
       }
     | undefined;
 }
@@ -386,7 +389,7 @@ export class HostCodeExecutionService {
   }
   enroll(input: {
     options: Options;
-    /** Explicit Winter-owned worker/bridge operation; never inferred from storage activation. */
+    /** Explicit Clover-owned worker/bridge operation; never inferred from storage activation. */
     ownedBridge?: true;
     sessionId: string;
     backendSessionId: string;
@@ -664,8 +667,11 @@ export class HostCodeExecutionService {
               ...(binding!.outDir ? [binding!.outDir] : []),
             ],
             home: canonicalEnv.HOME ?? binding!.home,
-            winterHome: canonicalEnv.WINTER_HOME,
-            storeHome: canonicalEnv.WINTER_STORE_HOME,
+            // The SDK's own field (C0 review S4): its sandbox reads `winterHome`, whatever the brand, and fences the
+            // brand's dot-dirs (`.clover`), not its own default's.
+            winterHome: canonicalEnv.CLOVER_HOME,
+            storeHome: canonicalEnv.CLOVER_STORE_HOME,
+            brand: CORE_BRAND,
           });
           const limits = this.adapter!.executionLimits(call.name, effectiveCall.input);
           const admittedTimeout = limits.timeoutMs, admittedOutput = limits.maxStreamedBytes;

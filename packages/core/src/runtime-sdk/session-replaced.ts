@@ -1,6 +1,6 @@
 // `session_replaced`: a send (or steer, or a SendMessage delivery) joined an incarnation that was still
 // OPENING when its driver was ended -- evicted (a credential or policy change, a model switch), deleted, or
-// the daemon stopping. That open spawned nothing and appended nothing (`WinterSession.end`), so the message
+// the daemon stopping. That open spawned nothing and appended nothing (`CloverSession.end`), so the message
 // was never taken. The session itself is fine: its NEXT driver takes the message.
 //
 // Every door that sends retries ONCE on the session's next driver (`ipc/server.ts`'s `session.send` /
@@ -10,7 +10,7 @@
 
 export const SESSION_REPLACED = "session_replaced";
 
-/** Whether `err` is the `session_replaced` refusal (a `WinterLegRefusal`, or anything carrying its code). */
+/** Whether `err` is the `session_replaced` refusal (a `CloverLegRefusal`, or anything carrying its code). */
 export function isSessionReplaced(err: unknown): boolean {
   return typeof err === "object" && err !== null && (err as { code?: unknown }).code === SESSION_REPLACED;
 }

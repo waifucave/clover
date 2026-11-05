@@ -7,7 +7,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { NewSessionEvent, SessionEvent } from "@yanlinglabs/winter-protocol";
+import type { NewSessionEvent, SessionEvent } from "@waifucave/clover-protocol";
 import { ApprovalBroker } from "../../src/agent/approvals";
 import type { SessionApprovalPolicy } from "../../src/agent/gate";
 import { HelperClient } from "../../src/computer-use/helper-client";
@@ -43,7 +43,7 @@ const services: ComputerV2Service[] = [];
 afterEach(() => { for (const s of services.splice(0)) s.stop(); });
 
 function world(opts: WorldOpts = {}) {
-  const home = mkdtempSync(join(tmpdir(), "winter-cu-service-"));
+  const home = mkdtempSync(join(tmpdir(), "clover-cu-service-"));
   const fake = new FakeHelper();
   const approvals = new ApprovalBroker();
   const events: NewSessionEvent[] = [];
@@ -188,7 +188,7 @@ describe("ComputerV2: binding, state and the diff base", () => {
     expect(w.fake.calls("target.act")[0]).toMatchObject({ linkOpensViaDaemon: true });
     expect(w.fake.calls("apps.defaultOpener")[0]).toMatchObject({ urls: ["https://news.example.org/a"] });
     expect(w.fake.calls("apps.openDocument")[0]).toMatchObject({ urls: ["https://news.example.org/a"], app: "com.apple.Safari" });
-    expect(cards(w.events).map((c) => c.summary)).toContain("Allow Winter to use Safari (com.apple.Safari)?");
+    expect(cards(w.events).map((c) => c.summary)).toContain("Allow Clover to use Safari (com.apple.Safari)?");
     expect(w.fake.calls("target.bind").length).toBe(1);  // Notes only: the opener is not bound
     expect(text(r)).toContain("opened in Safari in the background — not bound");
   }, 30_000);
@@ -276,7 +276,7 @@ describe("ComputerV2: apps.open opens documents without activating the opener", 
     expect(r.isError).toBe(false);
     expect(w.fake.calls("apps.defaultOpener")[0]).toMatchObject({ urls: ["/tmp/notes.md"], app: "TextEdit" });
     expect(w.fake.calls("apps.openDocument")[0]).toMatchObject({ app: "TextEdit" });
-    expect(cards(w.events).map((c) => c.summary)).toContain("Allow Winter to use TextEdit (com.apple.TextEdit)?");
+    expect(cards(w.events).map((c) => c.summary)).toContain("Allow Clover to use TextEdit (com.apple.TextEdit)?");
   }, 30_000);
 
   macOnly("a URL opens as a document", async () => {
@@ -338,7 +338,7 @@ describe("ComputerV2: the policy, through a script", () => {
     const r1 = await w.run("const notes = await apps.open('Notes')\nawait notes.click(14)");
     expect(r1.isError).toBe(false);
     expect(cards(w.events)).toHaveLength(1);
-    expect(cards(w.events)[0]).toMatchObject({ toolName: "ComputerV2", summary: "Allow Winter to use Notes (com.apple.Notes)?" });
+    expect(cards(w.events)[0]).toMatchObject({ toolName: "ComputerV2", summary: "Allow Clover to use Notes (com.apple.Notes)?" });
     // "Once" covered that call: the target is released, so the next call can neither act nor LOOK (review I3).
     expect(w.fake.calls("target.release")).toEqual([{ targetId: "t1" }]);
     const looked = await w.run("try { await notes.state() } catch (e) { print(e.name, e.message) }");
@@ -350,7 +350,7 @@ describe("ComputerV2: the policy, through a script", () => {
 
     const denied = world({ policy: "ask", answer: (c, b) => b.resolve(c.sessionId, c.callId, false, "orb") });
     const r2 = await denied.run("try { await apps.open('Notes') } catch (e) { print(e instanceof NotAllowed, e.message) }");
-    expect(text(r2)).toContain("true The user did not allow Winter to use Notes.");
+    expect(text(r2)).toContain("true The user did not allow Clover to use Notes.");
     expect(denied.fake.calls("target.bind")).toEqual([]); // nothing was launched or bound
   }, 30_000);
 
@@ -378,20 +378,20 @@ describe("ComputerV2: the policy, through a script", () => {
     const r = await w.run("const notes = await apps.open('Notes')\nawait notes.state()\nawait notes.type('x')");
     expect(r.isError).toBe(true);
     expect(text(r)).toContain("NotAllowed (line 3): this session is in plan mode");
-    expect(cards(w.events).map((c) => c.summary)).toEqual(["Allow Winter to use Notes (com.apple.Notes)?"]);
+    expect(cards(w.events).map((c) => c.summary)).toEqual(["Allow Clover to use Notes (com.apple.Notes)?"]);
   }, 30_000);
 
-  macOnly("restrictions and floors under bypass: Don't allow, click only, Winter itself", async () => {
+  macOnly("restrictions and floors under bypass: Don't allow, click only, Clover itself", async () => {
     const w = world({ apps: { "com.apple.TextEdit": { access: "deny" }, "com.apple.Notes": { access: "click" } } });
     const r = await w.run([
       "try { await apps.open('TextEdit') } catch (e) { print('textedit', e.name) }",
-      "try { await apps.open('Winter') } catch (e) { print('winter', e.name) }",
+      "try { await apps.open('Winter') } catch (e) { print('self', e.name) }",
       "const notes = await apps.open('Notes')",
       "await notes.click(14)",
       "try { await notes.type('x') } catch (e) { print('type', e.name) }",
     ].join("\n"));
     expect(text(r)).toContain("textedit NotAllowed");
-    expect(text(r)).toContain("winter Refused");
+    expect(text(r)).toContain("self Refused");
     expect(text(r)).toContain("type NotAllowed");
     expect(w.fake.calls("target.act").map((a) => a.access)).toEqual(["click"]);
   }, 30_000);
@@ -402,14 +402,14 @@ describe("ComputerV2: the policy, through a script", () => {
     w.fake.handlers["target.act"] = (p) => { if (first && p.allowForeground === false) { first = false; throw new FakeHelperError("needs_foreground", "canvas"); } return { rung: 4 }; };
     const r = await w.run("const notes = await apps.open('Notes')\nawait notes.click(14)");
     expect(r.isError).toBe(false);
-    expect(cards(w.events).map((c) => c.summary)).toEqual(["Allow Winter to use Notes (com.apple.Notes)?", "Winter needs to bring Notes (com.apple.Notes) to the front and use your mouse for a moment"]);
+    expect(cards(w.events).map((c) => c.summary)).toEqual(["Allow Clover to use Notes (com.apple.Notes)?", "Clover needs to bring Notes (com.apple.Notes) to the front and use your mouse for a moment"]);
     expect(w.fake.calls("target.act").map((a) => a.allowForeground)).toEqual([false, true]);
 
     const lonely = world({ policy: "ask", attended: false, answer: (c, b) => b.resolve(c.sessionId, c.callId, true, "orb", "session") });
     lonely.fake.handlers["target.act"] = () => { throw new FakeHelperError("needs_foreground", "canvas"); };
     const r2 = await lonely.run("const notes = await apps.open('Notes')\ntry { await notes.click(14) } catch (e) { print(e.name) }");
     expect(text(r2)).toContain("NeedsForeground");
-    expect(cards(lonely.events).map((c) => c.summary)).toEqual(["Allow Winter to use Notes (com.apple.Notes)?"]);
+    expect(cards(lonely.events).map((c) => c.summary)).toEqual(["Allow Clover to use Notes (com.apple.Notes)?"]);
     // A menu command the app keeps disabled in the background: the same rung, worded for a menu.
     const r3 = await lonely.run("try { await notes.menu(['File', 'Move to Trash']) } catch (e) { print(e.name, e.message) }");
     expect(text(r3)).toContain("NeedsForeground Notes only enables that menu command while it is in front");
@@ -423,8 +423,8 @@ describe("ComputerV2: the policy, through a script", () => {
     expect(text(r)).toContain("true");
     expect(text(r)).toContain("Notes is in front until this script ends; then the front goes back to the user's app");
     expect(cards(w.events).map((c) => c.summary)).toEqual([
-      "Allow Winter to use Notes (com.apple.Notes)?",
-      "Winter asks to bring Notes (com.apple.Notes) to the front and keep it there until this step ends: the editor takes no keys in the background",
+      "Allow Clover to use Notes (com.apple.Notes)?",
+      "Clover asks to bring Notes (com.apple.Notes) to the front and keep it there until this step ends: the editor takes no keys in the background",
     ]);
     // The desktop-switch ruling: a hold is on the user's own desktop only — nothing asks the helper to move desktops.
     expect(w.fake.calls("target.foreground")).toEqual([{ targetId: expect.any(String), callId: expect.any(String) }]);
@@ -825,9 +825,9 @@ describe("ComputerV2: screenshots, points and the vision gate", () => {
     expect(text(r)).toContain(note);
   }, 30_000);
 
-  macOnly("a display shot that shows Winter's own window says where it is: a picture of an app inside it is the mirror", async () => {
+  macOnly("a display shot that shows Clover's own window says where it is: a picture of an app inside it is the mirror", async () => {
     const w = world();
-    const note = "Winter's own window is in this picture at [200, 100, 800, 600] (image pixels): an app shown inside it is Winter's live mirror of that app, not the app itself — act on the app through its handle, never by points inside Winter's window";
+    const note = "Clover's own window is in this picture at [200, 100, 800, 600] (image pixels): an app shown inside it is Clover's live mirror of that app, not the app itself — act on the app through its handle, never by points inside Clover's window";
     w.fake.handlers["screen.screenshot"] = () => ({ imageBase64: Buffer.from("jpeg").toString("base64"), mime: "image/jpeg", width: 2000, height: 1000, shotId: "s1", detail: note });
     const r = await w.run("await screen.screenshot()");
     expect(r.isError).toBe(false);
@@ -867,20 +867,20 @@ describe("ComputerV2: screenshots, points and the vision gate", () => {
     expect(w.fake.calls("target.act")[0]).toMatchObject({ action: { kind: "click", point: [5, 5], shotId: "shot1" } });
   }, 30_000);
 
-  macOnly("screen.screenshot blacks out the auth surfaces and Don't-allow apps — not Winter; screen.windows hides the same", async () => {
+  macOnly("screen.screenshot blacks out the auth surfaces and Don't-allow apps — not Clover; screen.windows hides the same", async () => {
     const w = world({ apps: { "com.apple.Notes": { access: "deny" } } });
     w.fake.apps.find((a) => a.bundleId === "com.apple.TextEdit")!.running = true;
     const r = await w.run("await screen.screenshot()\nconst wins = await screen.windows({ emit: false })\nprint('[' + wins.map((x) => x.app).join(',') + ']')");
     const ex = w.fake.calls("screen.screenshot")[0]!.excludeBundleIds as string[];
-    expect(ex).not.toContain("com.winter.app"); // the user ruling: Winter's windows are shown (binding it stays refused)
+    expect(ex).not.toContain("com.winter.app"); // the user ruling: the app's own windows are shown (binding it stays refused)
     expect(ex).toContain("com.apple.Notes");
     expect(ex).toContain("com.1password.1password"); // a built-in Don't-allow exception
     expect(ex).toContain("com.apple.keychainaccess"); // a floor
     expect(ex).not.toContain("com.apple.TextEdit");
     // The switch is on: the running apps are not asked for (nothing without a row is denied).
     expect(w.fake.calls("apps.list")).toEqual([]);
-    // Running: Notes (Don't allow), TextEdit, Winter (shown), 1Password (default Don't allow), Keychain Access (an
-    // auth surface) — TextEdit and Winter are listed.
+    // Running: Notes (Don't allow), TextEdit, the app itself (shown), 1Password (default Don't allow), Keychain Access
+    // (an auth surface) — TextEdit and the app are listed.
     expect(text(r)).toContain("[TextEdit,Winter]");
   }, 30_000);
 
@@ -891,7 +891,7 @@ describe("ComputerV2: screenshots, points and the vision gate", () => {
     expect(w.fake.calls("apps.list")).toHaveLength(1);
     const ex = w.fake.calls("screen.screenshot")[0]!.excludeBundleIds as string[];
     expect(ex).toContain("com.apple.TextEdit"); // running, no exception → deny
-    expect(ex).not.toContain("com.winter.app"); // running, no exception — but Winter is always shown
+    expect(ex).not.toContain("com.winter.app"); // running, no exception — but the app itself is always shown
     expect(ex).toContain("com.1password.1password");
     expect(ex).not.toContain("com.apple.Notes"); // an allowing exception (view)
     expect(text(r)).toContain("[Notes,Winter]");
@@ -952,7 +952,7 @@ describe("ComputerV2: the helper's errors and notifications", () => {
   macOnly("a bind's off-desktop note reaches the model whole (the 300-character cap cut it mid-word)", async () => {
     const w = world();
     // The helper's words as the live Dispatch run got them (2026-10-20), cut at "…each screenshot says ho".
-    const note = "Notes's window is not on this desktop, so it is worked in the background: a click is sent but can't be seen landing, keys reach it through a brief focus switch, and it may not redraw (each screenshot says how fresh it is) — screenshot({ live: true, reason }) gets what is on screen now, and an action that can't land from here asks the user to let Winter take them to its desktop for a moment (and back)";
+    const note = "Notes's window is not on this desktop, so it is worked in the background: a click is sent but can't be seen landing, keys reach it through a brief focus switch, and it may not redraw (each screenshot says how fresh it is) — screenshot({ live: true, reason }) gets what is on screen now, and an action that can't land from here asks the user to let Clover take them to its desktop for a moment (and back)";
     expect(note.length).toBeGreaterThan(300);
     expect(note.length).toBeLessThan(BIND_DETAIL_CAP);
     const notesApp = w.fake.apps.find((a) => a.bundleId === "com.apple.Notes")!;
@@ -963,7 +963,7 @@ describe("ComputerV2: the helper's errors and notifications", () => {
     const r = await w.run("const notes = await apps.open('Notes')");
     expect(r.content.map((c) => (c.type === "text" ? c.text : "[image]"))).toContain(`${note}\n`);
     const quiet = await w.run("const again = await apps.open('Notes', { emit: false })");
-    expect(text(quiet)).toContain("asks the user to let Winter take them to its desktop for a moment (and back)");
+    expect(text(quiet)).toContain("asks the user to let Clover take them to its desktop for a moment (and back)");
   }, 30_000);
 
   test("helperDetail: a note past its cap is cut at a clause boundary and says so — never mid-word", () => {

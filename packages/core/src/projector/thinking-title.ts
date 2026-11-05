@@ -1,4 +1,4 @@
-import { THINKING_TITLE_MAX_LENGTH } from "@yanlinglabs/winter-protocol";
+import { THINKING_TITLE_MAX_LENGTH } from "@waifucave/clover-protocol";
 
 /**
  * ── THE THINKING PILL'S TITLE (2026-10-05, user ruling) ─────────────────────────────────────────

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { NewSessionEvent } from "@yanlinglabs/winter-protocol";
+import type { NewSessionEvent } from "@waifucave/clover-protocol";
 import { createSinkCallStore, sinksFor, type ProjectedToolCall, type ProjectedToolResult, type RoutineSink } from "../../src/runtime-sdk/sinks";
 import { openRuntimeStateDb } from "../../src/runtime-state/db";
 import { withTempHome } from "../runtime-state/support";
@@ -51,8 +51,8 @@ test("push_notification: emits notification_requested with the fixed title and f
   const { sinks, events, fallbacks, attached } = harness();
   attached.count = 0;
   sinks.onToolCall(call({ name: "push_notification", argsJson: JSON.stringify({ message: "build finished", status: "proactive" }) }));
-  expect(events).toEqual([{ type: "notification_requested", sessionId: SESSION, threadId: "main", title: "Winter", message: "build finished" }]);
-  expect(fallbacks).toEqual([{ title: "Winter", message: "build finished" }]);
+  expect(events).toEqual([{ type: "notification_requested", sessionId: SESSION, threadId: "main", title: "Clover", message: "build finished" }]);
+  expect(fallbacks).toEqual([{ title: "Clover", message: "build finished" }]);
 });
 
 test("push_notification: does NOT fire the headless fallback when a client is attached", () => {
@@ -94,7 +94,7 @@ test("schedule create: a routine lands only after the matching tool_result confi
   const { sinks, routines } = harness();
   sinks.onToolCall(call({ name: "schedule", callId: "tu-cron-1", argsJson: JSON.stringify({ cron: "0 9 * * *", prompt: "say good morning" }) }));
   expect(routines.created).toEqual([]); // not yet — waiting on the result
-  sinks.onToolResult(toolResult({ callId: "tu-cron-1", output: JSON.stringify({ id: "winter-job-1", humanSchedule: "daily at 09:00", recurring: true }) }));
+  sinks.onToolResult(toolResult({ callId: "tu-cron-1", output: JSON.stringify({ id: "clover-job-1", humanSchedule: "daily at 09:00", recurring: true }) }));
   expect(routines.created).toEqual([{ spec: "0 9 * * *", prompt: "say good morning", cwd: undefined }]);
 });
 
@@ -122,11 +122,11 @@ test("schedule create: cwdFor supplies the routine's cwd when wired", () => {
 test("schedule delete: resolves the child's minted id to the mirrored routine and deletes it", () => {
   const { sinks, routines } = harness();
   sinks.onToolCall(call({ name: "schedule", callId: "tu-cron-5", argsJson: JSON.stringify({ cron: "0 9 * * *", prompt: "x" }) }));
-  sinks.onToolResult(toolResult({ callId: "tu-cron-5", output: JSON.stringify({ id: "winter-job-5" }) }));
+  sinks.onToolResult(toolResult({ callId: "tu-cron-5", output: JSON.stringify({ id: "clover-job-5" }) }));
   expect(routines.created).toEqual([{ spec: "0 9 * * *", prompt: "x", cwd: undefined }]);
   const createdId = "routine-1";
 
-  sinks.onToolCall(call({ name: "schedule", callId: "tu-cron-6", argsJson: JSON.stringify({ id: "winter-job-5" }) }));
+  sinks.onToolCall(call({ name: "schedule", callId: "tu-cron-6", argsJson: JSON.stringify({ id: "clover-job-5" }) }));
   expect(routines.deleted).toEqual([createdId]);
 });
 
@@ -139,8 +139,8 @@ test("schedule delete: an id this daemon never mirrored is a harmless no-op (mat
 test("schedule delete: a replayed tool_call for the SAME callId deletes only once", () => {
   const { sinks, routines } = harness();
   sinks.onToolCall(call({ name: "schedule", callId: "tu-cron-8", argsJson: JSON.stringify({ cron: "0 9 * * *", prompt: "x" }) }));
-  sinks.onToolResult(toolResult({ callId: "tu-cron-8", output: JSON.stringify({ id: "winter-job-8" }) }));
-  const del = call({ name: "schedule", callId: "tu-cron-9", argsJson: JSON.stringify({ id: "winter-job-8" }) });
+  sinks.onToolResult(toolResult({ callId: "tu-cron-8", output: JSON.stringify({ id: "clover-job-8" }) }));
+  const del = call({ name: "schedule", callId: "tu-cron-9", argsJson: JSON.stringify({ id: "clover-job-8" }) });
   sinks.onToolCall(del);
   sinks.onToolCall(del);
   expect(routines.deleted).toEqual(["routine-1"]);

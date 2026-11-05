@@ -79,7 +79,7 @@ file data. The signed native bootstrap inspects actual sandbox denial of Keychai
 services, user file data, writes, network and fork before reading stdin or exec.
 It sets and verifies hard RLIMIT_CPU=2 seconds, NOFILE=64, CORE=0 and FSIZE=0;
 closes inherited descriptors above stdio; and execs Node with `--jitless`, no addons,
-no global module search and a 128 MiB V8 heap ceiling. This is a Winter-owned helper
+no global module search and a 128 MiB V8 heap ceiling. This is a Clover-owned helper
 floor and does not modify ordinary Code commands or their sandboxes.
 
 Each request uses a fixed 20-byte header plus bounded raw bytes; no credentials,
@@ -99,13 +99,13 @@ separately declared fixture payloads; malformed-pack tests and clone/fetch use t
 exact parser bundle. These proofs do not establish full VM/resource acceptance.
 
 Opt in to the Mac fixture tests by supplying a self-contained Node executable via
-`WINTER_GIT_READ_NODE_FIXTURE`. The fixture copies it into disposable storage,
+`CLOVER_GIT_READ_NODE_FIXTURE`. The fixture copies it into disposable storage,
 signs only those copies ad hoc with hardened runtime and no entitlements, compiles
 the native bootstrap and exact JS bundle, then cleans them up. Actual validation
 used official Node v26.7.0 darwin-arm64, archive SHA-256
 `7ee659a7768e641bbfd5360940660b8e8fd0052f77488f365562bac522fc15d4`,
 from [Node's release checksums](https://nodejs.org/dist/v26.7.0/SHASUMS256.txt).
-No production signing key, live Winter home, real account or VM is used.
+No production signing key, live Clover home, real account or VM is used.
 
 
 Static signature inspection and fixture build/sign commands now share

@@ -6,13 +6,13 @@
 // suggested workaround was tried and does NOT work either): `session.create`/`session.setModel` can
 // NEVER route to `deepseek` or `zai` (GLM) on this daemon build, REGARDLESS of loopback wiring.
 // `providerSelectionFor` (`src/runtime-sdk/provider-selection.ts:69-98`) refuses any model whose
-// provider has no row in `WINTER_CREDENTIAL_INVENTORY` (`src/runtime-sdk/keychain.ts:115-127`) — a
+// provider has no row in `CLOVER_CREDENTIAL_INVENTORY` (`src/runtime-sdk/keychain.ts:115-127`) — a
 // FIXED array with exactly THREE rows (`openai`, `codex-oauth`, `anthropic`). review-lane-d2.md
 // suggested pushing a `deepseek`/`zai` row into that array at test runtime (it is a real, mutable JS
 // array despite its `readonly` TYPE) plus writing matching credential material — TRIED, SAFELY
 // (no real network reached): this DOES get `session.create`/`setModel` to route the record to
 // `winter-agent`/`deepseek` (the daemon's OWN bookkeeping succeeds), but the REAL spawned `dist/
-// winter` child still refuses outright: `"...no credential is configured for provider \"deepseek\"
+// clover` child still refuses outright: `"...no credential is configured for provider \"deepseek\"
 // — an OpenAI-compatible endpoint that is not a declared local installation needs one"` — a clean,
 // typed refusal, not a network attempt. Root cause: `session-driver.ts`'s `optionsFor` builds a
 // `connection`/local-declaration object for the child ONLY when `selection?.providerId === "openai"`
@@ -35,7 +35,7 @@
 //   2. The chain's LAST prompt (gpt -> claude) against a REAL session (part 2).
 //
 // WS-23: the official `claude` leg this file's Claude hops once ran on is retired — every hop,
-// Claude's included, runs on the Winter runtime, and the retired cross-runtime parity files that
+// Claude's included, runs on the Clover runtime, and the retired cross-runtime parity files that
 // parts 1 and 2 used to lean on are gone with it.
 //
 // WS-23 (reasoning-state, decision 9 — SDK b5a79db): W18-19's prompt rule ("prompts appear exactly at
@@ -48,7 +48,7 @@
 // can reach: a conversation the chain's own GLM cannot hold.
 //
 // RESOLVED (WS-19, Lane P): the finding above is a HISTORICAL RECORD, accurate for when it was
-// written — it is no longer this daemon's current state. W19-1 derives `WINTER_CREDENTIAL_INVENTORY`
+// written — it is no longer this daemon's current state. W19-1 derives `CLOVER_CREDENTIAL_INVENTORY`
 // from the catalog (deepseek/zai/openrouter are now real, routable rows) and W19-6 gives
 // `session-driver.ts`'s `optionsFor` a connection seam for any provider with a
 // `settings.providers.<id>.baseUrl`, not just `openai`. Part 3 below now proves the FULL chain,
@@ -60,7 +60,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { classifySwitch, type ContinuityEndpoint } from "@yanlinglabs/winter-provider-runtime";
 import { openaiChatFake, openaiResponsesFake, startFake, type FakeServer } from "@yanlinglabs/winter-provider-conformance/fakes";
-import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, type WritableSocket, type SessionEvent } from "@yanlinglabs/winter-protocol";
+import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, type WritableSocket, type SessionEvent } from "@waifucave/clover-protocol";
 import { FileSecretStore } from "../../src/auth/secret-store";
 import { CREDENTIAL_MATERIAL_NAMES, writeCredentialMaterial } from "../../src/auth/credential-material";
 import { startDaemon, type RunningDaemon } from "../../src/daemon";
@@ -198,7 +198,7 @@ class TestClient {
   close(): void { try { this.socket.end(); } catch { /* closed */ } }
 }
 
-// WS-23: Claude runs on the Winter runtime too now — the Anthropic fake is reached through
+// WS-23: Claude runs on the Clover runtime too now — the Anthropic fake is reached through
 // `settings.providers.anthropic.baseUrl`, the same per-provider door every other hop uses.
 describeWithWinterBinary("A-5 part 2: the chain's LAST hop (gpt -> claude) is silent against a real session; a hop the target cannot hold prompts", (winterBin) => {
   describe("gpt -> claude", () => {
@@ -304,7 +304,7 @@ describeWithWinterBinary("A-5 part 2: the chain's LAST hop (gpt -> claude) is si
 // Part 3 — THE WHOLE CHAIN, BODY-LEVEL ON EVERY HOP (WS-19, Lane P).
 //
 // This file's header records, accurately for when it was written, why the two middle hops were
-// structurally unreachable: `WINTER_CREDENTIAL_INVENTORY` was a four-row literal so
+// structurally unreachable: `CLOVER_CREDENTIAL_INVENTORY` was a four-row literal so
 // `providerSelectionFor` could never name `deepseek` or `zai`, and `session-driver.ts`'s
 // `optionsFor` built a provider connection ONLY for `providerId === "openai"`, so even the
 // reviewer's own suggested workaround (injecting an inventory row at runtime) left the real child
@@ -322,7 +322,7 @@ describeWithWinterBinary("A-5 part 2: the chain's LAST hop (gpt -> claude) is si
 //   (b) the prior model's REASONING is carried as data with its own provenance, where W18-19 says it
 //       should be: `kind="summary"` off a hidden-reasoning source (Claude, GPT), `kind="exposed"`
 //       off DeepSeek and GLM — including on ROW 4, the Claude destination (the official leg's
-//       until WS-23; the Winter runtime's Anthropic adapter since);
+//       until WS-23; the Clover runtime's Anthropic adapter since);
 //   (c) NO OPAQUE STATE crosses — no `signature`, `encrypted_content` or `redacted_thinking` in the
 //       conversation, and the Claude turn's own scripted signature value appears in no body at all.
 //
@@ -331,7 +331,7 @@ describeWithWinterBinary("A-5 part 2: the chain's LAST hop (gpt -> claude) is si
 // chat-completions hop read as a defect.
 //
 // ── A W18-19 ROW-4 CONTINUITY FINDING, MEASURED 2026-09-15 (review N4) — CLOSED BY WS-23 ─────────
-// (On the Winter runtime the Claude destination replays hop 0's thinking natively, signature and all;
+// (On the Clover runtime the Claude destination replays hop 0's thinking natively, signature and all;
 // the account below is the official leg's, kept as the record of what it did.)
 // Hop 4's Claude-destination body carries the WHOLE conversation from hop 0 in order — every user
 // turn and every assistant reply, including the Claude turn the chain started with — and it carries
@@ -456,10 +456,10 @@ describeWithWinterBinary("A-5 part 3: claude -> deepseek -> GLM -> gpt -> claude
       // D1 round 4 evicts it, so every hop below changes provider on its own. If that eviction
       // regressed, the destination fake would simply never be reached and these assertions fail.
 
-      // HOP 0 — claude (on the Winter runtime since WS-23).
+      // HOP 0 — claude (on the Clover runtime since WS-23).
       const { sessionId } = await client.call<{ sessionId: string }>(METHODS.sessionCreate, { scope: "e2e", mode: "code", model: CATALOG_CLAUDE_MODEL, cwd });
       await client.call(METHODS.sessionAttach, { sessionId, fromSeq: 0 });
-      expect(daemon!.winter!.legOf(sessionId)).toBe("winter");
+      expect(daemon!.clover!.legOf(sessionId)).toBe("winter");
       await client.call(METHODS.sessionSend, { sessionId, text: "hop 0, on claude" });
       await client.waitFor(() => turns() >= 1, 120_000);
       expect(anthropicFakeServer!.requests.some((r) => r.path === "/v1/messages")).toBe(true);
@@ -468,7 +468,7 @@ describeWithWinterBinary("A-5 part 3: claude -> deepseek -> GLM -> gpt -> claude
       // SILENT (part 1's table) — Claude's signed thinking stays in the sidecar for Claude, and hop 4
       // proves it comes back. No `confirmLossy`: a prompt here throws and fails the test.
       await client.call(METHODS.sessionSetModel, { sessionId, model: CATALOG_DEEPSEEK_MODEL });
-      expect(daemon!.winter!.legOf(sessionId)).toBe("winter");
+      expect(daemon!.clover!.legOf(sessionId)).toBe("winter");
       await client.call(METHODS.sessionSend, { sessionId, text: "hop 1, on deepseek" });
       await client.waitFor(() => turns() >= 2, 120_000);
       expect(deepseek!.models).toContain("deepseek-v4-pro");
@@ -518,7 +518,7 @@ describeWithWinterBinary("A-5 part 3: claude -> deepseek -> GLM -> gpt -> claude
       // `readableState` is not full-exposed, so it takes the TAG door.
       const anthropicTurnsBefore = anthropicFakeServer!.requests.filter((r) => r.path === "/v1/messages").length;
       await client.call(METHODS.sessionSetModel, { sessionId, model: CATALOG_CLAUDE_MODEL });
-      expect(daemon!.winter!.legOf(sessionId)).toBe("winter");
+      expect(daemon!.clover!.legOf(sessionId)).toBe("winter");
       await client.call(METHODS.sessionSend, { sessionId, text: "hop 4, back on claude" });
       await client.waitFor(() => turns() >= 5, 120_000);
       const claudeRequests = anthropicFakeServer!.requests.filter((r) => r.path === "/v1/messages");
@@ -529,7 +529,7 @@ describeWithWinterBinary("A-5 part 3: claude -> deepseek -> GLM -> gpt -> claude
       expect(outOfOrder(claudeBody, ["hop 0, on claude", "hello from claude", "hop 1, on deepseek", "hello from deepseek", "hop 2, on glm", "hello from glm", "hop 3, on gpt", "hop 4, back on claude"])).toEqual([]);
       // ...AND hop 0's own THINKING, replayed NATIVELY — a `thinking` block carrying its signature,
       // same-domain replay. MEASURED 2026-09-25 (WS-23): the row-4 gap this block's header records
-      // was the retired official leg's; the Winter runtime's Anthropic adapter closes it. Pinned as
+      // was the retired official leg's; the Clover runtime's Anthropic adapter closes it. Pinned as
       // carried, so a regression has to come here and say so.
       expect(claudeBody).toContain(`{"type":"thinking","thinking":"${CLAUDE_THINKING}","signature":"${CLAUDE_SIGNATURE}"}`);
       // THE TAG DOOR, all three prior families: GPT is hidden-reasoning, so its readable SUMMARY is
@@ -539,7 +539,7 @@ describeWithWinterBinary("A-5 part 3: claude -> deepseek -> GLM -> gpt -> claude
       expect(carriesReasoning(claudeBody, { kind: "exposed", provider: "deepseek", text: "reasoning on the deepseek hop" })).toBe(true);
       expect(carriesReasoning(claudeBody, { kind: "exposed", provider: "zai", text: "reasoning on the glm hop" })).toBe(true);
       // ...and GPT's OPAQUE half stays behind. `encrypted_content` is what the Responses leg calls
-      // it and `itemJson` is what Winter's own `reasoning_item` calls it; neither the field names nor
+      // it and `itemJson` is what Clover's own `reasoning_item` calls it; neither the field names nor
       // the blob itself may cross a family boundary.
       expect(claudeBody).not.toContain(GPT_ENCRYPTED);
       expect(claudeBody).not.toContain("itemJson");

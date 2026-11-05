@@ -9,22 +9,22 @@
  * binary. Nothing but running the real artifact can close that gap.
  *
  * What it does:
- *   1. `bun run --filter '@yanlinglabs/winter-cli' compile:core` -> dist/winter-core (the real Release artifact;
+ *   1. `bun run --filter '@waifucave/clover-cli' compile:core` -> dist/clover-core (the real Release artifact;
  *      the same invocation verify-workflow-compiled.ts uses, and the same reason for the `--filter`:
  *      `compile:core` is defined only in packages/cli/package.json).
- *   2. `mkdtemp` a throwaway WINTER_HOME.
- *   3. Take a signature of the user's REAL homes (`~/.winter`, `~/.winter-dev`) BEFORE the run —
+ *   2. `mkdtemp` a throwaway CLOVER_HOME.
+ *   3. Take a signature of the user's REAL homes (`~/.clover`, `~/.clover-dev`) BEFORE the run —
  *      WHAT EXISTS there, never when it was written (see `homeSignature`).
  *   3b. (A2) Copy the binary to a temp dir and sign the copy the way the Release app signs
- *      winter-core: ad-hoc identity, `--options runtime`, `--entitlements scripts/winter-core.entitlements`.
- *   4. `spawn(<signed copy>, ["__runtime-state-probe"], { env: { WINTER_HOME: tmp, ... } })` —
+ *      clover-core: ad-hoc identity, `--options runtime`, `--entitlements scripts/clover-core.entitlements`.
+ *   4. `spawn(<signed copy>, ["__runtime-state-probe"], { env: { CLOVER_HOME: tmp, ... } })` —
  *      the static argv route in packages/cli/src/main.ts, beside `__workflow-worker`.
  *   5. Parse the one JSON line it prints; assert `ok`, `online`, `userVersion` ===
  *      RUNTIME_STATE_SCHEMA_VERSION, that `dbPath` is inside the temp home, and (A2) that the
  *      router handle constructed (`runtimeSdk`). WS-23: the official peer is no longer loaded, and
  *      the probe reports no `officialPeer` at all.
  *   6. Re-take the real-home signature and assert it is UNCHANGED — a probe that quietly fell back
- *      to `resolveWinterHome()` would otherwise pass every other assertion here.
+ *      to `resolveCloverHome()` would otherwise pass every other assertion here.
  *   7. `rm -rf` the temp home — in a `finally`, on the failure paths too (the tokens the probe
  *      minted live in there).
  *
@@ -33,7 +33,7 @@
  *   bun run verify:runtime-state
  *   bun run scripts/verify-runtime-state-compiled.ts
  *
- * NEVER run the compiled binary against a real home. The temp `WINTER_HOME` is the whole safety
+ * NEVER run the compiled binary against a real home. The temp `CLOVER_HOME` is the whole safety
  * model of this script: the daemon it boots is a REAL daemon, with a real socket and a real lock.
  */
 
@@ -49,9 +49,9 @@ import { keychainFfiProbeOk } from "./release-lib";
 
 const SCRIPTS_DIR = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = join(SCRIPTS_DIR, "..");
-const DIST_BINARY = join(REPO_ROOT, "dist", "winter-core");
-/** The entitlements the Release app signs winter-core with (0.120.1: allow-jit + allow-unsigned-executable-memory). */
-const WINTER_CORE_ENTITLEMENTS = join(REPO_ROOT, "scripts", "winter-core.entitlements");
+const DIST_BINARY = join(REPO_ROOT, "dist", "clover-core");
+/** The entitlements the Release app signs clover-core with (0.120.1: allow-jit + allow-unsigned-executable-memory). */
+const CLOVER_CORE_ENTITLEMENTS = join(REPO_ROOT, "scripts", "clover-core.entitlements");
 /** The embedded `winter` runtime's (allow-jit only) — used here only as the NEGATIVE leg of the bun:ffi check. */
 const BUN_JIT_ENTITLEMENTS = join(REPO_ROOT, "scripts", "bun-jit.entitlements");
 const COMPILE_TIMEOUT_MS = 180_000;
@@ -59,7 +59,7 @@ const COMPILE_TIMEOUT_MS = 180_000;
  *  it again. Seconds in practice; this only guards against a genuine hang. */
 const PROBE_TIMEOUT_MS = 90_000;
 /** The homes this script must prove it did not touch. */
-const REAL_HOMES = [join(homedir(), ".winter"), join(homedir(), ".winter-dev")];
+const REAL_HOMES = [join(homedir(), ".clover"), join(homedir(), ".clover-dev")];
 
 function log(line: string): void { console.log(line); }
 
@@ -78,7 +78,7 @@ function fail(message: string): never {
  * A signature of a real home: what EXISTS there, and nothing about when it was written.
  *
  * NO MTIMES, NO SIZES, DELIBERATELY (review F-2). The only thing this check exists to catch is a
- * probe that resolved a real home instead of reading `WINTER_HOME` — and such a probe would CREATE
+ * probe that resolved a real home instead of reading `CLOVER_HOME` — and such a probe would CREATE
  * the home, add entries, or create `runtimes/runtime-state.db`, all of which are visible in a name
  * list. Metadata is not: the user's live daemon churns `runtime-state.db-wal`/`-shm` and appends to
  * session logs on every write, so a size/mtime signature would fail for reasons that have nothing to
@@ -131,11 +131,11 @@ async function main(): Promise<void> {
   log(`dist binary : ${DIST_BINARY}`);
 
   // ---- Step 1: compile the REAL Release artifact -----------------------------------------------
-  log("\n--- Step 1: compiling dist/winter-core (bun run --filter '@yanlinglabs/winter-cli' compile:core) ---");
+  log("\n--- Step 1: compiling dist/clover-core (bun run --filter '@waifucave/clover-cli' compile:core) ---");
   const compileStart = Date.now();
   const compile = spawnSync(
     process.execPath, // the running bun binary itself — avoids any PATH/version ambiguity
-    ["run", "--filter", "@yanlinglabs/winter-cli", "compile:core"],
+    ["run", "--filter", "@waifucave/clover-cli", "compile:core"],
     { cwd: REPO_ROOT, encoding: "utf8", timeout: COMPILE_TIMEOUT_MS },
   );
   log(`compile:core exit=${compile.status ?? "null"} signal=${compile.signal ?? "none"} (${Date.now() - compileStart}ms)`);
@@ -152,13 +152,13 @@ async function main(): Promise<void> {
   log(`(info) literal "__runtime-state-probe" occurrences in binary: ${grep.stdout?.trim() || "0"}`);
 
   // ---- Steps 2-3: a throwaway home, and a before-picture of the real ones ----------------------
-  const tmpHome = mkdtempSync(join(tmpdir(), "winter-runtime-state-probe-"));
-  log(`\n--- Step 2: temp WINTER_HOME = ${tmpHome} ---`);
+  const tmpHome = mkdtempSync(join(tmpdir(), "clover-runtime-state-probe-"));
+  log(`\n--- Step 2: temp CLOVER_HOME = ${tmpHome} ---`);
   const before = REAL_HOMES.map(homeSignature);
   log(`--- Step 3: signature taken for ${REAL_HOMES.join(", ")} ---`);
 
-  // ---- Step 3b (A2): sign a COPY exactly the way the Release app signs winter-core ------------
-  // `apple/Winter/project.yml`'s "Embed winter-core" re-signs with `--options runtime` (the hardened
+  // ---- Step 3b (A2): sign a COPY exactly the way the Release app signs clover-core ------------
+  // `apple/Winter/project.yml`'s "Embed clover-core" re-signs with `--options runtime` (the hardened
   // runtime notarization requires) and `--entitlements scripts/bun-jit.entitlements`. Under the
   // hardened runtime WITHOUT `com.apple.security.cs.allow-jit`, JavaScriptCore runs JIT-less and
   // `SharedArrayBuffer` does not exist — the retired official peer's `sdk.mjs` touched it at module
@@ -166,12 +166,12 @@ async function main(): Promise<void> {
   // compile (what this gate used to run) has the JIT and could never see it. An ad-hoc identity
   // (`-`) reproduces the runtime posture exactly, so the router handle is still proven to construct
   // on the binary as the Release app signs it.
-  const signedDir = mkdtempSync(join(tmpdir(), "winter-runtime-state-bin-"));
-  const probeBinary = join(signedDir, "winter-core");
+  const signedDir = mkdtempSync(join(tmpdir(), "clover-runtime-state-bin-"));
+  const probeBinary = join(signedDir, "clover-core");
   copyFileSync(DIST_BINARY, probeBinary);
   chmodSync(probeBinary, 0o755);
-  log(`\n--- Step 3b: codesign ${probeBinary} (ad-hoc, --options runtime, --entitlements ${WINTER_CORE_ENTITLEMENTS}) ---`);
-  const sign = spawnSync("codesign", ["--force", "--sign", "-", "--options", "runtime", "--entitlements", WINTER_CORE_ENTITLEMENTS, probeBinary], { encoding: "utf8" });
+  log(`\n--- Step 3b: codesign ${probeBinary} (ad-hoc, --options runtime, --entitlements ${CLOVER_CORE_ENTITLEMENTS}) ---`);
+  const sign = spawnSync("codesign", ["--force", "--sign", "-", "--options", "runtime", "--entitlements", CLOVER_CORE_ENTITLEMENTS, probeBinary], { encoding: "utf8" });
   if (sign.status !== 0) {
     rmSync(tmpHome, { recursive: true, force: true });
     rmSync(signedDir, { recursive: true, force: true });
@@ -181,7 +181,7 @@ async function main(): Promise<void> {
   log(`(info) ${`${dvv.stdout ?? ""}${dvv.stderr ?? ""}`.split("\n").filter((l) => l.startsWith("CodeDirectory") || l.startsWith("Identifier")).join(" | ")}`);
 
   // ---- Step 3c (0.120.1): bun:ffi on the signed copy, both ways ------------------------------------
-  // 0.120.0 shipped winter-core with allow-jit only; `bun:ffi`'s dlopen (auth/keychain-ffi.ts, the
+  // 0.120.0 shipped clover-core with allow-jit only; `bun:ffi`'s dlopen (auth/keychain-ffi.ts, the
   // app-token access lists) builds trampolines in non-MAP_JIT memory and the hardened runtime killed the
   // daemon at its first Keychain call. `__keychain-ffi-probe` loads the three libraries and asks only
   // whether the default keychain is unlocked (no item read, no prompt), then (WS-27) reads its own start
@@ -189,14 +189,14 @@ async function main(): Promise<void> {
   // entitlements run it. NEGATIVE: a copy signed with allow-jit alone must be killed — proof this leg
   // can see the failure at all.
   {
-    const ffiEnv = { PATH: process.env.PATH ?? "", HOME: process.env.HOME ?? homedir(), WINTER_HOME: tmpHome, WINTER_PROFILE: "dev", WINTER_LOGIN_SHELL_PATH: "off" };
+    const ffiEnv = { PATH: process.env.PATH ?? "", HOME: process.env.HOME ?? homedir(), CLOVER_HOME: tmpHome, CLOVER_PROFILE: "dev", CLOVER_LOGIN_SHELL_PATH: "off" };
     const pos = spawnSync(probeBinary, ["__keychain-ffi-probe"], { encoding: "utf8", env: ffiEnv, timeout: 30_000 });
     // WS-27: the probe also reads its own start time through libSystem's sysctl (the credential migration
     // lock's ffi), so the positive leg covers both libraries.
     if (pos.status !== 0 || !keychainFfiProbeOk(pos.stdout ?? "")) {
       rmSync(tmpHome, { recursive: true, force: true });
       rmSync(signedDir, { recursive: true, force: true });
-      fail(`bun:ffi does not run on winter-core signed with ${WINTER_CORE_ENTITLEMENTS} (exit ${pos.status ?? pos.signal}): ${`${pos.stdout ?? ""}${pos.stderr ?? ""}`.trim().slice(0, 300)}`);
+      fail(`bun:ffi does not run on clover-core signed with ${CLOVER_CORE_ENTITLEMENTS} (exit ${pos.status ?? pos.signal}): ${`${pos.stdout ?? ""}${pos.stderr ?? ""}`.trim().slice(0, 300)}`);
     }
     log(`--- Step 3c: signed copy runs bun:ffi: ${(pos.stdout ?? "").trim()} ---`);
     // The kill is the hardened runtime's code-signing enforcement, which macOS relaxes with System
@@ -206,7 +206,7 @@ async function main(): Promise<void> {
     const sip = spawnSync("/usr/bin/csrutil", ["status"], { encoding: "utf8" });
     const sipOff = /disabled/i.test(`${sip.stdout ?? ""}${sip.stderr ?? ""}`);
     log(`(info) ${`${sip.stdout ?? ""}`.trim() || "csrutil status unavailable"}`);
-    const negBinary = join(signedDir, "winter-core-jit-only");
+    const negBinary = join(signedDir, "clover-core-jit-only");
     copyFileSync(DIST_BINARY, negBinary);
     chmodSync(negBinary, 0o755);
     const negSign = spawnSync("codesign", ["--force", "--sign", "-", "--options", "runtime", "--entitlements", BUN_JIT_ENTITLEMENTS, negBinary], { encoding: "utf8" });
@@ -216,7 +216,7 @@ async function main(): Promise<void> {
     } else if (neg === undefined || neg.status === 0) {
       rmSync(tmpHome, { recursive: true, force: true });
       rmSync(signedDir, { recursive: true, force: true });
-      fail(`NEGATIVE leg: winter-core signed with allow-jit alone was expected to be killed by bun:ffi and was not (${neg === undefined ? "codesign failed" : `exit ${neg.status}`}) — this check can no longer see the 0.120.0 crash`);
+      fail(`NEGATIVE leg: clover-core signed with allow-jit alone was expected to be killed by bun:ffi and was not (${neg === undefined ? "codesign failed" : `exit ${neg.status}`}) — this check can no longer see the 0.120.0 crash`);
     } else {
       log(`--- Step 3c: allow-jit alone is killed as expected (${neg.signal ?? `exit ${neg.status}`}) ---`);
     }
@@ -228,23 +228,23 @@ async function main(): Promise<void> {
     const child = spawn(probeBinary, ["__runtime-state-probe"], {
       stdio: ["ignore", "pipe", "pipe"],
       // A DELIBERATELY NARROW env: PATH and HOME only, plus the temp home. Inheriting process.env
-      // would drag this shell's WINTER_HOME/WINTER_PROFILE in and could point a real daemon boot at a
+      // would drag this shell's CLOVER_HOME/CLOVER_PROFILE in and could point a real daemon boot at a
       // real home — the one thing this script must never do.
-      // `WINTER_PROFILE: "dev"` is a REAL profile (review F-10): `resolveWinterProfile` maps everything
+      // `CLOVER_PROFILE: "dev"` is a REAL profile (review F-10): `resolveCloverProfile` maps everything
       // but "dev" to "dist", so a made-up literal like "test" silently runs as the distribution
       // profile and reads as an isolation it does not provide. The isolation here comes from the
-      // injected `FileSecretStore` and the temp `WINTER_HOME`, not from the profile — the profile
+      // injected `FileSecretStore` and the temp `CLOVER_HOME`, not from the profile — the profile
       // only picks a Keychain service name (never reached) and the CLI's launchd label (not on this
       // path).
       // Major 1 (whole-branch review): without this, `startRuntimeState`'s `claude-resume-*`
       // staging sweep (P8d-12) falls back to the REAL machine's `os.tmpdir()` — the one thing this
       // script's own header says it must never touch. Pointed at a subdir of the same temp home
       // this script already `rm -rf`s in its `finally`.
-      // `WINTER_LOGIN_SHELL_PATH: "off"` (A1): the probe boots a real `startDaemon`, which would
+      // `CLOVER_LOGIN_SHELL_PATH: "off"` (A1): the probe boots a real `startDaemon`, which would
       // otherwise run the developer's own login shell (their rc files) to resolve PATH.
       // `USAGE_INERT_ENV`: the probe's daemon never reads or spawns the developer's own Codex / Claude Code / Antigravity /
       // OpenCode, nor runs the background plan beat (it also injects `USAGE_INERT` itself).
-      env: { PATH: process.env.PATH ?? "", HOME: process.env.HOME ?? homedir(), WINTER_HOME: tmpHome, WINTER_PROFILE: "dev", WINTER_CLAUDE_RESUME_SCAN_ROOT: join(tmpHome, "claude-resume-scan"), WINTER_LOGIN_SHELL_PATH: "off", ...USAGE_INERT_ENV },
+      env: { PATH: process.env.PATH ?? "", HOME: process.env.HOME ?? homedir(), CLOVER_HOME: tmpHome, CLOVER_PROFILE: "dev", CLOVER_CLAUDE_RESUME_SCAN_ROOT: join(tmpHome, "claude-resume-scan"), CLOVER_LOGIN_SHELL_PATH: "off", ...USAGE_INERT_ENV },
     });
     let stdout = "";
     let stderr = "";
@@ -271,7 +271,7 @@ async function main(): Promise<void> {
     log(`[stdout from probe]\n${stdout.trim()}`);
     log(`probe exited: ${exitCode}`);
 
-    // The daemon narrates its boot on stdout too ("winter-core <v> listening on ..."), so the
+    // The daemon narrates its boot on stdout too ("clover-core <v> listening on ..."), so the
     // result is the LAST line that parses as JSON carrying an `ok` field — not simply the last line.
     let result: Record<string, unknown> | undefined;
     for (const line of stdout.split("\n")) {
@@ -314,19 +314,19 @@ async function main(): Promise<void> {
       fail(
         "one or more assertions failed — the compiled binary did NOT create/migrate runtime-state.db " +
         "as the daemon does. Diagnose before touching the assertions: (a) no JSON line at all + a " +
-        "stderr about a missing module -> the probe route or `@yanlinglabs/winter-core`'s barrel did not survive " +
+        "stderr about a missing module -> the probe route or `@waifucave/clover-core`'s barrel did not survive " +
         "`bun build --compile` (this is what C1 looked like for workflows); (b) ok:false with a " +
         "`runtime state reported offline` error -> `openRuntimeStateDb` refused inside $bunfs, which " +
         "is the 8a carry itself failing; (c) userVersion 0 -> the migrations did not run; (d) a real " +
-        "home changed -> the probe resolved a home instead of reading WINTER_HOME, which is the one " +
+        "home changed -> the probe resolved a home instead of reading CLOVER_HOME, which is the one " +
         "failure this script must never let through; (e) runtimeSdk false -> grep the stderr above for " +
-        "`winter runtime sdk unavailable` (a peer the router cannot version, a bad brand)."
+        "`clover runtime sdk unavailable` (a peer the router cannot version, a bad brand)."
       );
     }
 
     log(
-      "\nRESULT: PASS — dist/winter-core (the real `bun build --compile` Release artifact) booted the " +
-      `daemon against a temp WINTER_HOME with an injected FileSecretStore, created and migrated ` +
+      "\nRESULT: PASS — dist/clover-core (the real `bun build --compile` Release artifact) booted the " +
+      `daemon against a temp CLOVER_HOME with an injected FileSecretStore, created and migrated ` +
       `runtimes/runtime-state.db to user_version ${RUNTIME_STATE_SCHEMA_VERSION}, reported the runtime spine online, and left ` +
       "the user's real homes untouched. The 8a carry is discharged on the shipped artifact."
     );

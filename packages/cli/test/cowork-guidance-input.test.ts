@@ -3,7 +3,7 @@ import { mkdtempSync, writeFileSync, rmSync, mkdirSync, readdirSync, symlinkSync
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { Readable } from "node:stream";
-import { COWORK_INSTRUCTION_MAX_BYTES, type CoworkMethod, type CoworkParams, type CoworkResult } from "@yanlinglabs/winter-protocol";
+import { COWORK_INSTRUCTION_MAX_BYTES, type CoworkMethod, type CoworkParams, type CoworkResult } from "@waifucave/clover-protocol";
 import { parseCoworkArgs, resolveCoworkArgs, runCoworkRoute, type CoworkCliRoute } from "../src/cowork-cli";
 const directories: string[] = [];
 afterEach(() => { for (const directory of directories.splice(0)) rmSync(directory, { recursive: true, force: true }); });
@@ -32,7 +32,7 @@ const NOT_REGULAR = "--content-file must name a regular file";
 // The real CLI in a child with an empty private home and autolaunch off: every use here refuses before any connection.
 function cli(home: string, args: string[], stdin: Uint8Array | "ignore") {
   return Bun.spawnSync({ cmd: [process.execPath, join(import.meta.dir, "../src/main.ts"), "workspace", ...args], stdin, stdout: "pipe", stderr: "pipe", timeout: 20_000,
-    env: { ...process.env, WINTER_HOME: home, WINTER_NO_AUTOLAUNCH: "1", WINTER_LOGIN_SHELL_PATH: "off" } });
+    env: { ...process.env, CLOVER_HOME: home, CLOVER_NO_AUTOLAUNCH: "1", CLOVER_LOGIN_SHELL_PATH: "off" } });
 }
 function home(): string { const directory = mkdtempSync(join(tmpdir(), "cowork-cli-guidance-home-")); directories.push(directory); return directory; }
 
@@ -200,7 +200,7 @@ test("production resolver consumes actual subprocess stdin before any client or 
         bytes: Buffer.byteLength(result.params.content, 'utf8') }));
     } catch (error) { console.error(error.message); process.exitCode = 1; }`;
   const run = (stdin: Uint8Array) => Bun.spawnSync({ cmd: [process.execPath, "--no-env-file", "--eval", source], stdin,
-    stdout: "pipe", stderr: "pipe", env: { ...process.env, WINTER_LOGIN_SHELL_PATH: "off" } });
+    stdout: "pipe", stderr: "pipe", env: { ...process.env, CLOVER_LOGIN_SHELL_PATH: "off" } });
   const valid = run(content); expect(valid.exitCode).toBe(0); expect(valid.stderr.byteLength).toBe(0);
   expect(JSON.parse(valid.stdout.toString())).toEqual({ method: "workspace.instructions.update", revision: 2, digest: "a".repeat(64), requestId: "stable-request", bytes: content.length });
   expect(valid.stdout.toString()).not.toContain("private pipe guidance");

@@ -1,6 +1,6 @@
 import { durableCoworkTransaction } from "./durable-transaction";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
-import type { ApprovalPolicy } from "@yanlinglabs/winter-protocol";
+import type { ApprovalPolicy } from "@waifucave/clover-protocol";
 import type { RuntimeStateDb } from "../runtime-state/db";
 import { CoworkError, isTerminalOperationStatus, type OperationStatus, type CapabilityCeiling, type ConversationBinding, type CoworkConversation, type GuestEpoch, type MutationContext, type MutationReceipt, type PublicationPolicy, type SourceSelection, type Workspace, type WorkspacePolicy, type WorkspaceSource } from "./types";
 

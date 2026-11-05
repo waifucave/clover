@@ -2,27 +2,27 @@
 # The body of apple/Winter/project.yml's "Embed Winter Headless" postCompileScript, in its own file so it is tested
 # standalone (scripts/embed-headless-helper.test.ts), like embed-computer-helper.sh beside it.
 #
-# Winter Headless is Winter's private, invisible browser for the agent's background reading: a background-only app
-# running windowless CEF browsers, which the daemon spawns directly over a pipe. It also carries Winter's ONE Chromium
+# Winter Headless is Clover's private, invisible browser for the agent's background reading: a background-only app
+# running windowless CEF browsers, which the daemon spawns directly over a pipe. It also carries Clover's ONE Chromium
 # (the user's ruling): the CEF framework and the five "Winter Helper" bundles in its own Contents/Frameworks, and
-# Winter.app's own CEF runs from there too. Nested at
+# Clover.app's own CEF runs from there too. Nested at
 #
 #   Winter.app/Contents/Helpers/Winter Headless.app        (Release)
-#   Winter.app/Contents/Helpers/Winter Headless Dev.app    (Debug: Winter Dev runs its CEF from it the same way)
+#   Winter.app/Contents/Helpers/Winter Headless Dev.app    (Debug: Clover Dev runs its CEF from it the same way)
 #
-# What this does, in EVERY configuration (a Debug Winter.app has no Chromium of its own any more either):
+# What this does, in EVERY configuration (a Debug Clover.app has no Chromium of its own any more either):
 #   0. Refuse a built helper with the wrong bundle id for this configuration (Release: com.winter.headless; Debug: the
 #      Debug build's own), one that is not LSBackgroundOnly, or one without its Chromium (the framework and the five
 #      helper bundles in its Contents/Frameworks).
-#   1. Remove the OLD layout's copy from Winter.app's own Contents/Frameworks (an incremental build of a tree made
+#   1. Remove the OLD layout's copy from Clover.app's own Contents/Frameworks (an incremental build of a tree made
 #      before the move still holds one; a second Chromium must never ship), then ditto the helper into
 #      Contents/Helpers.
 #   2. Re-sign the helper BUNDLE (its framework and helpers are already signed, inside-out, by its own build — never a
 #      --deep re-sign) with the app's identity, the hardened runtime, NO entitlements, its stable identifier and a
-#      STATED designated requirement (identifier + Winter's team under Apple's anchor) — the requirement the daemon
+#      STATED designated requirement (identifier + Clover's team under Apple's anchor) — the requirement the daemon
 #      checks before it spawns the helper; a secure timestamp in Release. Stated here rather than through
 #      OTHER_CODE_SIGN_FLAGS because release.ts overrides that setting on its xcodebuild command line for every target.
-#      Winter.app is signed last, by Xcode.
+#      Clover.app is signed last, by Xcode.
 #   3. Check the signature took: the recorded requirement is exactly the stated one, the identifier is right, the
 #      hardened runtime flag is set, and there are no entitlements.
 #
@@ -57,7 +57,7 @@ IDENTIFIER="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "${SRC}/Con
 ALLOWED=0
 for ID in "${ALLOWED_IDS[@]}"; do [ "${IDENTIFIER}" = "${ID}" ] && ALLOWED=1; done
 if [ "${ALLOWED}" != "1" ]; then
-  echo "error: the built helper's bundle id is '${IDENTIFIER}', not one of ${ALLOWED_IDS[*]} — a ${CONFIGURATION:-?} Winter.app embeds only its own configuration's helper" >&2
+  echo "error: the built helper's bundle id is '${IDENTIFIER}', not one of ${ALLOWED_IDS[*]} — a ${CONFIGURATION:-?} Clover.app embeds only its own configuration's helper" >&2
   exit 1
 fi
 BACKGROUND_ONLY="$(/usr/libexec/PlistBuddy -c 'Print :LSBackgroundOnly' "${SRC}/Contents/Info.plist" 2>/dev/null || true)"
@@ -71,11 +71,11 @@ for H in "${HELPERS[@]}"; do
   [ -e "${SRC}/Contents/Frameworks/${H}.app/Contents/MacOS/${H}" ] || MISSING="${MISSING} [${H}.app]"
 done
 if [ -n "${MISSING}" ]; then
-  echo "error: the built helper does not carry Winter's Chromium in its Contents/Frameworks — missing:${MISSING}" >&2
+  echo "error: the built helper does not carry Clover's Chromium in its Contents/Frameworks — missing:${MISSING}" >&2
   exit 1
 fi
 
-# The old layout's copy in Winter.app's own Contents/Frameworks goes (an incremental build of a tree made before the
+# The old layout's copy in Clover.app's own Contents/Frameworks goes (an incremental build of a tree made before the
 # move still holds one): one Chromium, in the helper.
 rm -rf "${APP_CONTENTS}/Frameworks/Chromium Embedded Framework.framework"
 for H in "${HELPERS[@]}"; do rm -rf "${APP_CONTENTS}/Frameworks/${H}.app"; done
@@ -86,7 +86,7 @@ for OTHER in "Winter Headless" "Winter Headless Dev"; do
   [ "${OTHER}" = "${NAME}" ] || rm -rf "${DEST_DIR}/${OTHER}.app"
 done
 # rm first: ditto merges into an existing bundle, so a file dropped from the helper would otherwise linger. --clone:
-# the helper carries Winter's whole Chromium (~350 MB), and a clone on the same volume (APFS) costs no copy — a plain
+# the helper carries Clover's whole Chromium (~350 MB), and a clone on the same volume (APFS) costs no copy — a plain
 # ditto copied all of it on every build.
 rm -rf "${DEST}"
 ditto --clone "${SRC}" "${DEST}"
@@ -117,4 +117,4 @@ if codesign -d --entitlements - --xml "${DEST}" 2>/dev/null | grep -q "<key>"; t
   echo "error: the headless helper must carry no entitlements" >&2
   exit 1
 fi
-echo "embedded ${NAME} (${IDENTIFIER}, hardened runtime, no entitlements, stated requirement, Winter's one Chromium inside)"
+echo "embedded ${NAME} (${IDENTIFIER}, hardened runtime, no entitlements, stated requirement, Clover's one Chromium inside)"

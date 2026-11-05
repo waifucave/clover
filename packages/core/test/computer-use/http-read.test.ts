@@ -82,7 +82,7 @@ const ARTICLE = `<!doctype html><html><head><title>Docs &#8212; API</title><scri
 <ul><li>One &#x2019;s</li><li>Two</li></ul>${"<p>More text to make this a real page. </p>".repeat(10)}</body></html>`;
 
 describe("browsers.read: a page's text over plain HTTP", () => {
-  test("a public page: GET to a checked address, the original host as Host and TLS server name, Winter's honest UA, no cookies", async () => {
+  test("a public page: GET to a checked address, the original host as Host and TLS server name, Clover's honest UA, no cookies", async () => {
     const t = setup({ names: { "docs.example.com": ["93.184.216.34"] }, pages: { "docs.example.com/api": () => html(ARTICLE) } });
     const res = await t.read("https://docs.example.com/api");
     expect(res).toMatchObject({ url: "https://docs.example.com/api", status: 200, type: "text/html", truncated: false, needsJs: false });
@@ -95,7 +95,7 @@ describe("browsers.read: a page's text over plain HTTP", () => {
     expect(s.host).toBe("docs.example.com");
     expect(s.serverName).toBe("docs.example.com");
     expect(s.headers["user-agent"]).toBe(READ_USER_AGENT);
-    expect(READ_USER_AGENT).toMatch(/^Mozilla\/5\.0 \(Macintosh; Mac OS X\) Winter\/\d+\.\d+\.\d+$/);
+    expect(READ_USER_AGENT).toMatch(/^Mozilla\/5\.0 \(Macintosh; Mac OS X\) Clover\/\d+\.\d+\.\d+$/);
     expect(s.headers.accept).toContain("text/html");
     for (const h of ["cookie", "authorization", "referer"]) expect(s.headers[h]).toBeUndefined();
     // Printed: the header line then the text, fenced as page data.
@@ -199,7 +199,7 @@ describe("browsers.read: a page's text over plain HTTP", () => {
     const names = { "ok.example": ["93.184.216.34"], "evil.example": ["93.184.216.66"] };
     const ask = setup({ names, pages }, { policy: "ask", dangerousAdded: ["evil.example"], answer: () => "once" });
     expect((await ask.read("https://ok.example/")).text).toBe("evil");
-    expect(ask.cards.map((c) => c.summary)).toEqual(["Allow Winter to use evil.example in Winter's page reader? It is on the dangerous-domains list."]);
+    expect(ask.cards.map((c) => c.summary)).toEqual(["Allow Clover to use evil.example in Clover's page reader? It is on the dangerous-domains list."]);
     const declined = setup({ names, pages }, { policy: "ask", dangerousAdded: ["evil.example"], answer: () => false });
     expect(kind(await failure(declined.read("https://evil.example/x")))).toBe("NotAllowed");
     expect(declined.sent).toEqual([]);
@@ -369,7 +369,7 @@ describe("browsers.read: a page's text over plain HTTP", () => {
   test("the engine: browsers.read normalises the URL as browsers.open does and reaches the reader", async () => {
     const h = harness();
     const n = net({ names: { "docs.example.com": ["93.184.216.34"] }, pages: { "docs.example.com/x": () => html("<p>via the engine</p>") } });
-    const engine = new BrowserEngine({ registry: new BrowserBackendRegistry(), mintWinterTab: () => "x", winterTabs: () => ({ tabs: [] }), sessionInfo: () => ({}), home: h.home, httpReader: new HttpReader(n.deps) });
+    const engine = new BrowserEngine({ registry: new BrowserBackendRegistry(), mintCloverTab: () => "x", cloverTabs: () => ({ tabs: [] }), sessionInfo: () => ({}), home: h.home, httpReader: new HttpReader(n.deps) });
     const r = h.run();
     const res = await engine.global(r.scope, "browsers.read", { url: "docs.example.com/x" }) as { url: string; text: string };
     expect(res).toMatchObject({ url: "https://docs.example.com/x", text: "via the engine" });
@@ -409,7 +409,7 @@ afterEach(() => { for (const s of servers.splice(0)) s.stop(true); });
 function makeCert(): { cert: string; key: string } | undefined {
   const openssl = Bun.which("openssl");
   if (openssl === null) return undefined;
-  const dir = mkdtempSync(join(tmpdir(), "winter-read-tls-"));
+  const dir = mkdtempSync(join(tmpdir(), "clover-read-tls-"));
   try {
     execFileSync(openssl, ["req", "-x509", "-newkey", "rsa:2048", "-nodes", "-keyout", join(dir, "key.pem"), "-out", join(dir, "cert.pem"), "-days", "1",
       "-subj", "/CN=localhost", "-addext", "subjectAltName=DNS:localhost"], { stdio: "ignore" });
@@ -522,7 +522,7 @@ describe("H1: a compressed body is inflated by hand and stops at the cap", () =>
       expect(res).toMatchObject({ text: "compressed text", title: "Squeezed", truncated: false });
     }
     const zstd = await failure(reader.read(r.scope, `http://localhost:${server.port}/zstd`, { emit: false }, policy));
-    expect(zstd.message).toContain("compressed in a way Winter doesn't read");
+    expect(zstd.message).toContain("compressed in a way Clover doesn't read");
   });
 });
 
@@ -687,7 +687,7 @@ describe("the review's smaller findings", () => {
     const reader = new HttpReader({ ...n.deps, env: { HTTPS_PROXY: "http://proxy.example:3128" } });
     const e = await failure(reader.read(hz.run().scope, "https://a.example/", {}, { approvals: new SiteApprovals(), site: {}, cwd: undefined }));
     expect(kind(e)).toBe("NotAllowed");
-    expect(e.message).toContain("a network proxy is set for Winter (HTTPS_PROXY)");
+    expect(e.message).toContain("a network proxy is set for Clover (HTTPS_PROXY)");
     expect(n.sent).toEqual([]);
   });
 

@@ -1,4 +1,4 @@
-// SendMessage between Winter sessions (`agent/session-messaging.ts`) — the daemon's half of the agent
+// SendMessage between Clover sessions (`agent/session-messaging.ts`) — the daemon's half of the agent
 // SDK's `Options.hostMessaging`. A REAL SessionStore + SessionHub in a temp home; the driver table is a
 // recording fake that behaves like the real one (a `send` appends the `user_message` and, when idle,
 // begins the turn). The end-to-end path through a real runtime child is `e2e/dispatch-spawn-e2e`.
@@ -19,7 +19,7 @@ class FakeDriver implements MessagingDriverHandle {
   failNext?: Error;
   interrupts = 0;
   pendingSends: string[] = [];
-  /** Agent SDK 0.0.44's folding child (`WinterSession.foldsQueuedInput`). */
+  /** Agent SDK 0.0.44's folding child (`CloverSession.foldsQueuedInput`). */
   foldsQueuedInput = false;
   readonly steers: Array<{ text: string; clientName?: string }> = [];
   constructor(private readonly hub: SessionHub, readonly sessionId: string) {}
@@ -53,7 +53,7 @@ class FakeDriver implements MessagingDriverHandle {
 }
 
 function setup() {
-  const home = realpathSync(mkdtempSync(join(tmpdir(), "winter-session-messaging-")));
+  const home = realpathSync(mkdtempSync(join(tmpdir(), "clover-session-messaging-")));
   const store = new SessionStore(home);
   const hub = new SessionHub(store);
   const drivers = new Map<string, FakeDriver>();
@@ -212,7 +212,7 @@ describe("SendMessage to a session", () => {
     expect(await t.send(from, from)).toMatchObject({ status: "refused", reason: "cannot target your own session" });
     expect((await t.send(from, archived)).status).toBe("refused");
     expect((await t.send(from, archived)).reason).toContain("archived");
-    expect(await t.send(from, "s_doesnotexist")).toMatchObject({ status: "not_found", reason: "no Winter session 's_doesnotexist'" });
+    expect(await t.send(from, "s_doesnotexist")).toMatchObject({ status: "not_found", reason: "no Clover session 's_doesnotexist'" });
     expect((await t.send(from, "the build session")).status).toBe("not_found");
     expect(await t.send(from, t.code(), "   ")).toMatchObject({ status: "refused", reason: "the message is empty — write the session what you want it to do" });
     expect(await t.send(chat, from)).toMatchObject({ status: "refused", reason: CHAT_SENDER_REFUSAL });

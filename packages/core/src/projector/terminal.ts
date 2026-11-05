@@ -20,10 +20,10 @@ import { classifyResult } from "./errors";
 /**
  * ── `contextTokens`, and the one place this projector deliberately reports LESS than the engine ──
  *
- * Winter does not put per-round usage on the wire. The normalized `message_start` stream event
+ * Clover does not put per-round usage on the wire. The normalized `message_start` stream event
  * carries `{type, id?, model?}` only — the runtime consumes the provider's `usage` internally and
  * does not forward it (read out of `dist/winter`, not inferred) — and the surface map records that
- * Winter deliberately omits the main-loop `usage` block from `result` (§4.8). The ONLY usage a host
+ * Clover deliberately omits the main-loop `usage` block from `result` (§4.8). The ONLY usage a host
  * ever sees is `result.modelUsage`, which is (a) present only for a PRICED catalog row and (b) a
  * per-session CUMULATIVE ledger, not a per-turn figure.
  *
@@ -38,7 +38,7 @@ import { classifyResult } from "./errors";
  *
  *    **WHO READS IT TODAY** (corrected 2026-09-18, whole-branch review N2 — this block used to cite an
  *    auto-compaction trigger that scanned back for the last positive reading, and no such consumer
- *    exists any more): NOTHING in the daemon. The Winter leg's child compacts itself, and
+ *    exists any more): NOTHING in the daemon. The Clover leg's child compacts itself, and
  *    `session.compact` answers `not_supported_on_winter_leg`; the only reader of the field in either
  *    language is `apple/WinterKit`'s own probe binary. So an omitted figure costs a diagnostic, not a
  *    behaviour — which is why the 0.0.17 rules below can afford to omit it as widely as they do, and
@@ -48,7 +48,7 @@ import { classifyResult } from "./errors";
  *    per-turn `usage` block, which is then the turn's figure (2026-09-22, C1 — see `turnUsageOf`).
  *    "Unpriced" turned out to be every row the user runs on (codex-oauth is subscription-based and
  *    the deepseek/zai rows carry no pricing), which is why every `turn_completed` since the
- *    2026-09-16 provider fix read 0/0; the fix that closes it for the Winter leg is an SDK carry.
+ *    2026-09-16 provider fix read 0/0; the fix that closes it for the Clover leg is an SDK carry.
  *
  * ── AGENT SDK 0.0.17 (P-B1): THE LEDGER IS NO LONGER THE MAIN LOOP'S ────────────────────────────
  *
@@ -57,7 +57,7 @@ import { classifyResult } from "./errors";
  *  1. **the main row's KEY is the qualified `provider/model` catalog key**, not the string the host
  *     passed. The daemon passes the BARE modelId (`mode-options.ts`'s WS-20 spawn boundary) while
  *     `system/init.model` echoes that same bare string, so the old `model === init.model` equality
- *     MISSED ON EVERY WINTER-LEG SESSION — and the old fallback then SUMMED every row.
+ *     MISSED ON EVERY CLOVER-LEG SESSION — and the old fallback then SUMMED every row.
  *     `init.winter_provider.modelKey` is the row key verbatim (the child emits it beside `model`),
  *     which is why `MainModelKey` carries both and why the key is tried first.
  *  2. **the ledger carries more rows than the main loop's**: subagent spend is priced and rolled up
@@ -93,7 +93,7 @@ export interface UsageTotals {
    * The SESSION'S CANONICAL MODEL row's input only (m6, review r1).
    *
    * `contextTokens` answers "how full is this conversation's context", which is a fact about the
-   * main loop's model and nothing else. Winter's ledger is keyed by model and §4.2 says auxiliary
+   * main loop's model and nothing else. Clover's ledger is keyed by model and §4.2 says auxiliary
    * calls (compaction summariser, classifier, advisor, `countTokens`) emit no stream events — which
    * says nothing about whether they accrue into `modelUsage`. Summing every row would therefore let
    * an auxiliary call inflate a figure labelled EXACT. Keying to the session's own model row closes
@@ -134,8 +134,8 @@ export interface MainModelKey {
  * `WebSearch` runs its inner pass on the SESSION'S OWN model, always — so its tokens are on the main
  * row by construction. `WebFetch`'s digest runs on `Options.web.fetch.digestModel` when the host
  * states one (its own row) and on the session's model when it does not, and the projector cannot see
- * which — so it counts too. Both names are the same on both legs (the Winter runtime copied claude's
- * own tool names); the host spellings ride along because `renameTool` has already mapped a Winter
+ * which — so it counts too. Both names are the same on both legs (the Clover runtime copied claude's
+ * own tool names); the host spellings ride along because `renameTool` has already mapped a Clover
  * name by the time a transcript reads it and a future caller may hand either one over.
  *
  * Subagent spawns are NOT here: `isSpawnTool` (`children.ts`) is the one owner of that question.
@@ -209,7 +209,7 @@ export function totalsOf(result: ResultFrame, main?: MainModelKey): UsageTotals 
  * Claude's `result` carries two usage blocks: `modelUsage` (session-CUMULATIVE, every API call,
  * keyed by model — `cost-tracker.ts`) and `usage` (`NonNullableUsage`, snake_case, accumulated over
  * ONE `ask()` — i.e. over this turn's main-loop rounds, `QueryEngine.ts`'s `totalUsage`; the SDK
- * print loop builds a fresh engine per dequeued prompt). The Winter runtime sends neither for an
+ * print loop builds a fresh engine per dequeued prompt). The Clover runtime sends neither for an
  * UNPRICED row: agent SDK 0.0.17 folds a generation into `modelUsage` only once `priceUsage` answers
  * (`engine.ts` `priceGeneration`), and `session-provider.ts` refuses every subscription row and every
  * row with no `pricing` evidence — which is every `codex-oauth`, `deepseek`, `deepseek-anthropic` and
@@ -255,7 +255,7 @@ export function turnUsageOf(result: ResultFrame): { input: number; output: numbe
 export interface LedgerSnapshot { input: number; output: number; cacheRead: number; cacheWrite: number; costUsd: number }
 
 export interface TurnModelUsageRow {
-  /** The ledger's row key (the qualified `provider/model` catalog key on the Winter runtime). */
+  /** The ledger's row key (the qualified `provider/model` catalog key on the Clover runtime). */
   model: string;
   canonicalModel?: string;
   provider?: string;

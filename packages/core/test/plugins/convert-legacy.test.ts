@@ -14,13 +14,13 @@ import { pluginConsentFingerprint } from "../../src/plugins/consent-fingerprint"
 import { pluginHooksFor } from "../../src/plugins/plugin-hooks";
 
 function home(): string {
-  return mkdtempSync(join(tmpdir(), "winter-convert-legacy-"));
+  return mkdtempSync(join(tmpdir(), "clover-convert-legacy-"));
 }
 
 function legacyPlugin(h: string, id: string, manifest: unknown): string {
   const dir = join(h, "plugins", id);
   mkdirSync(dir, { recursive: true });
-  writeFileSync(join(dir, "winter-plugin.json"), JSON.stringify(manifest));
+  writeFileSync(join(dir, "clover-plugin.json"), JSON.stringify(manifest));
   return dir;
 }
 
@@ -88,8 +88,8 @@ describe("convertLegacyPlugins: maps fields and hook events; the original stays 
       { event: "SessionStart", type: "command", command: "echo hi" },
       { event: "PreToolUse", type: "command", command: "echo pre" },
     ]);
-    // The narrowed winter-plugin.json keeps only tier/permissions/contributes.{tools,tile}/entry.
-    const narrowed = JSON.parse(readFileSync(join(targetDir, "winter-plugin.json"), "utf8"));
+    // The narrowed clover-plugin.json keeps only tier/permissions/contributes.{tools,tile}/entry.
+    const narrowed = JSON.parse(readFileSync(join(targetDir, "clover-plugin.json"), "utf8"));
     expect(narrowed).toEqual({
       id: "demo", tier: "platform",
       permissions: { exec: true, tcc: ["accessibility"], hardware: ["battery"] },
@@ -98,8 +98,8 @@ describe("convertLegacyPlugins: maps fields and hook events; the original stays 
     });
 
     // THE ORIGINAL STAYS IN PLACE — copy, never move.
-    expect(existsSync(join(legacyDir, "winter-plugin.json"))).toBe(true);
-    expect(JSON.parse(readFileSync(join(legacyDir, "winter-plugin.json"), "utf8")).contributes.mcpServers).toBeDefined();
+    expect(existsSync(join(legacyDir, "clover-plugin.json"))).toBe(true);
+    expect(JSON.parse(readFileSync(join(legacyDir, "clover-plugin.json"), "utf8")).contributes.mcpServers).toBeDefined();
     expect(existsSync(join(legacyDir, "skills", "greet", "SKILL.md"))).toBe(true);
 
     // Registered through Contract B: listed, enabled, at the "winter-legacy" marketplace.
@@ -124,7 +124,7 @@ describe("convertLegacyPlugins: maps fields and hook events; the original stays 
     // the plugin shipped skills, which enabling a plugin now covers, spec §5.4) — the BARE record's
     // `exec` is untouched, since the bare record isn't touched at all. C1 fix round 2: the added
     // record is FINGERPRINTED (`{classes, fingerprint}`), computed off the converted install path +
-    // the SAME entry the narrowed winter-plugin.json ended up with — so it reads as consented from
+    // the SAME entry the narrowed clover-plugin.json ended up with — so it reads as consented from
     // the start, never forcing a needless re-consent right after migration.
     const settings = JSON.parse(readFileSync(join(h, "settings.json"), "utf8"));
     const demoFingerprint = pluginConsentFingerprint(targetDir, {
@@ -138,7 +138,7 @@ describe("convertLegacyPlugins: maps fields and hook events; the original stays 
 
     // PluginStore (the daemon's own sync reader) sees the converted, enabled plugin with its
     // extras — `consented` no longer includes "exec", so the entry process prompts fresh.
-    const store = new PluginStore({ winterHome: h, consents: settings.plugins.consents });
+    const store = new PluginStore({ cloverHome: h, consents: settings.plugins.consents });
     const [info] = store.list();
     expect(info?.name).toBe("demo");
     expect(info?.tier).toBe("platform");
@@ -148,7 +148,7 @@ describe("convertLegacyPlugins: maps fields and hook events; the original stays 
 
   // I3 fix round 1 (ruling): the legacy `exec` consent is DROPPED during conversion, never
   // re-keyed — before WS-21 it was granted because a plugin shipped skills, and enabling a plugin
-  // now covers that (spec §5.4, native content needs no separate Winter consent). `tcc`/`hardware`
+  // now covers that (spec §5.4, native content needs no separate Clover consent). `tcc`/`hardware`
   // carry forward untouched.
   test("a converted legacy plugin with exec consent has NONE after conversion, and keeps its tcc/hardware consents", async () => {
     const h = home();
@@ -292,7 +292,7 @@ describe("convertLegacyPlugins: maps fields and hook events; the original stays 
       expect(listing?.enabled).toBe(true);
     });
 
-    test("a plugin.json-only (no winter-plugin.json) legacy plugin never needed consent -- enabled state is untouched", async () => {
+    test("a plugin.json-only (no clover-plugin.json) legacy plugin never needed consent -- enabled state is untouched", async () => {
       const h = home();
       const dir = join(h, "plugins", "meta-only");
       mkdirSync(dir, { recursive: true });
@@ -317,7 +317,7 @@ describe("convertLegacyPlugins: maps fields and hook events; the original stays 
     });
   });
 
-  test("a legacy plugin.json-only (no winter-plugin.json) plugin converts with metadata only", async () => {
+  test("a legacy plugin.json-only (no clover-plugin.json) plugin converts with metadata only", async () => {
     const h = home();
     const dir = join(h, "plugins", "legacy-meta");
     mkdirSync(dir, { recursive: true });
@@ -327,7 +327,7 @@ describe("convertLegacyPlugins: maps fields and hook events; the original stays 
     const result = await convertLegacyPlugins(h);
     expect(result.converted).toHaveLength(1);
     const targetDir = result.converted[0]!.installPath;
-    expect(existsSync(join(targetDir, "winter-plugin.json"))).toBe(false); // no extras to narrow
+    expect(existsSync(join(targetDir, "clover-plugin.json"))).toBe(false); // no extras to narrow
     const claudeManifest = JSON.parse(readFileSync(join(targetDir, ".claude-plugin", "plugin.json"), "utf8"));
     expect(claudeManifest).toEqual({ name: "Legacy Meta", version: "0.0.1" });
   });
@@ -344,9 +344,9 @@ describe("finding 4: a symlinked legacy plugin directory is dereferenced, never 
   test("a top-level symlink to a real plugin folder converts successfully, and the REAL folder is byte-unchanged", async () => {
     const h = home();
     // The REAL plugin content lives OUTSIDE <home>/plugins entirely -- e.g. a dev checkout.
-    const realDir = mkdtempSync(join(tmpdir(), "winter-convert-legacy-devcheckout-"));
+    const realDir = mkdtempSync(join(tmpdir(), "clover-convert-legacy-devcheckout-"));
     const manifestJson = JSON.stringify({ id: "linked", tier: "capability", permissions: { hardware: ["battery"] } });
-    writeFileSync(join(realDir, "winter-plugin.json"), manifestJson);
+    writeFileSync(join(realDir, "clover-plugin.json"), manifestJson);
     mkdirSync(join(realDir, "skills", "greet"), { recursive: true });
     writeFileSync(join(realDir, "skills", "greet", "SKILL.md"), "---\nname: greet\n---\nhi");
 
@@ -369,15 +369,15 @@ describe("finding 4: a symlinked legacy plugin directory is dereferenced, never 
     expect(lstatSync(join(h, "plugins", "linked")).isSymbolicLink()).toBe(true);
 
     // The REAL folder the symlink points to is BYTE-UNCHANGED -- the converter never deleted its
-    // original winter-plugin.json or wrote anything new into it.
-    expect(readFileSync(join(realDir, "winter-plugin.json"), "utf8")).toBe(manifestJson);
+    // original clover-plugin.json or wrote anything new into it.
+    expect(readFileSync(join(realDir, "clover-plugin.json"), "utf8")).toBe(manifestJson);
     expect(existsSync(join(realDir, ".claude-plugin"))).toBe(false); // no claude-plugin dir was ever added here
     expect(existsSync(join(realDir, "skills", "greet", "SKILL.md"))).toBe(true); // untouched
   });
 
   test("a NESTED symlink escaping the plugin folder makes it unconvertible, with a clear reason, and the original is untouched", async () => {
     const h = home();
-    const outsideDir = mkdtempSync(join(tmpdir(), "winter-convert-legacy-outside-"));
+    const outsideDir = mkdtempSync(join(tmpdir(), "clover-convert-legacy-outside-"));
     writeFileSync(join(outsideDir, "secret.txt"), "do not touch");
 
     const legacyDir = legacyPlugin(h, "escapee", { id: "escapee", tier: "capability" });
@@ -395,7 +395,7 @@ describe("finding 4: a symlinked legacy plugin directory is dereferenced, never 
     expect(result.skipped[0]?.reason).toContain("outside");
 
     // The original legacy plugin folder (and the nested symlink itself) are completely untouched.
-    expect(existsSync(join(legacyDir, "winter-plugin.json"))).toBe(true);
+    expect(existsSync(join(legacyDir, "clover-plugin.json"))).toBe(true);
     expect(realpathSync(join(legacyDir, "escape-hatch"))).toBe(realpathSync(outsideDir));
     // Nothing was ever written into the outside folder the escaping symlink pointed to.
     expect(readFileSync(join(outsideDir, "secret.txt"), "utf8")).toBe("do not touch");

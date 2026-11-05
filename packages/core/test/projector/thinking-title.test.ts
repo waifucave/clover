@@ -5,7 +5,7 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import type { ThinkingKind } from "@yanlinglabs/winter-protocol";
+import type { ThinkingKind } from "@waifucave/clover-protocol";
 import { ThinkingBlocks, deriveThinkingTitle, gerundOf, type ReasoningProgressFrame } from "../../src/projector/thinking";
 import { ActivityTitleTracker, TITLE_PATTERNS, activityTitleOf, lastValidHeading } from "../../src/projector/thinking-title";
 

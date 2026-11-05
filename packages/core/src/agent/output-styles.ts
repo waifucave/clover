@@ -22,7 +22,7 @@ export interface ResolvedStyle {
   legacyPath?: string;
 }
 
-// Overlay bodies — each ASSUMES Winter's base SYSTEM_PROMPT is still present (keepCodingInstructions:
+// Overlay bodies — each ASSUMES Clover's base SYSTEM_PROMPT is still present (keepCodingInstructions:
 // true), so they layer behavior on top rather than restating the base.
 const PROACTIVE_BODY =
   "Operate in a proactive mode. When the user's intent is clear, take the initiating action instead " +
@@ -44,7 +44,7 @@ const LEARNING_BODY =
 /** The four built-ins. `default` is reserved: empty body, never injected — selecting it (or leaving
  *  `outputStyle` unset) means "use the base prompt as-is". The other three augment the base. */
 export const BUILTIN_OUTPUT_STYLES: ResolvedStyle[] = [
-  { name: "default", description: "Winter's standard behavior.", body: "", keepCodingInstructions: true },
+  { name: "default", description: "Clover's standard behavior.", body: "", keepCodingInstructions: true },
   { name: "proactive", description: "Act immediately and autonomously; ask less.", body: PROACTIVE_BODY, keepCodingInstructions: true },
   { name: "explanatory", description: "Explain reasoning and tradeoffs while working.", body: EXPLANATORY_BODY, keepCodingInstructions: true },
   { name: "learning", description: "Leave labeled TODO(human) gaps for you to complete.", body: LEARNING_BODY, keepCodingInstructions: true },
@@ -95,8 +95,8 @@ function parseStyleFile(path: string, fallbackName: string, cap: number): Resolv
 
 /**
  * Resolves an output style by name from three sources, closest-wins: a trusted project's
- * `.winter/output-styles/<name>.md`, then `<store home>/output-styles/<name>.md` (WS-21:
- * `storeHomeFor(winterHome)`), then the built-ins. Never throws.
+ * `.clover/output-styles/<name>.md`, then `<store home>/output-styles/<name>.md` (WS-21:
+ * `storeHomeFor(cloverHome)`), then the built-ins. Never throws.
  *
  * WS-24: the project tier is what a run home loads — trust keyed on the repository and the directories
  * walked from the cwd up to the project scope's root (`trustedProjectWalk`), a linked worktree of a trusted
@@ -107,11 +107,11 @@ export class OutputStyleStore {
   private readonly cap: number;
   constructor(
     private readonly deps: {
-      winterHome: string;
+      cloverHome: string;
       trust: Pick<TrustStore, "isTrusted">;
       caps?: { bodyBytes?: number };
       /** Phase 9c (P9c-4): live settings getter for the legacy project output-styles dir's read-only
-       *  fallback (project-scoped only — the user-level `<winterHome>/output-styles/` dir is
+       *  fallback (project-scoped only — the user-level `<cloverHome>/output-styles/` dir is
        *  already covered by Migration B's wholesale home copy, so it has no separate legacy
        *  counterpart to fall back to). Absent means "never falls back", same convention as
        *  `ContextAssembler`'s own `legacySettings` dep. */
@@ -124,7 +124,7 @@ export class OutputStyleStore {
   /** project[trusted] > user > built-in. null if the name resolves to nothing, or isn't a valid slug. */
   resolve(name: string, cwd: string | null): ResolvedStyle | null {
     // Path-traversal guard: `name` flows from settings.outputStyle — including a trusted project's
-    // checked-in .winter/settings.json — straight into join(..., `${name}.md`) below. Reject anything
+    // checked-in .clover/settings.json — straight into join(..., `${name}.md`) below. Reject anything
     // that isn't a bare slug BEFORE it ever reaches a filesystem call. Same slug-jail spirit as
     // skills.ts's skillNameError; no dots either, so a bare "." or ".." stem is rejected too rather
     // than relying on the `${name}.md` suffix to accidentally neuter it into "..md"/"...md".
@@ -135,28 +135,28 @@ export class OutputStyleStore {
       const p = parseStyleFile(path, name, this.cap);
       if (p) {
         if (usedLegacy) {
-          console.error(`output-style: reading legacy project style from ${path} — run \`winter migrate-project\` to convert`);
+          console.error(`output-style: reading legacy project style from ${path} — run \`clover migrate-project\` to convert`);
           return { ...p, legacyPath: path };
         }
         return p;
       }
     }
-    const u = parseStyleFile(join(storeHomeFor(this.deps.winterHome), "output-styles", `${name}.md`), name, this.cap);
+    const u = parseStyleFile(join(storeHomeFor(this.deps.cloverHome), "output-styles", `${name}.md`), name, this.cap);
     if (u) return u;
     return BUILTIN_OUTPUT_STYLES.find((s) => s.name === name) ?? null;
   }
 
-  /** Winter-named project style path, or its legacy counterpart when the flag is on and the Winter
+  /** Clover-named project style path, or its legacy counterpart when the flag is on and the Clover
    *  one is absent. `legacySettings` absent (see the constructor dep's own doc) never falls back. */
   private resolveStylePath(cwd: string, name: string): { path: string; usedLegacy: boolean } {
-    const winterPath = join(cwd, ".winter", "output-styles", `${name}.md`);
+    const winterPath = join(cwd, ".clover", "output-styles", `${name}.md`);
     if (!this.deps.legacySettings) return { path: winterPath, usedLegacy: false };
     return resolveLegacyProjectPath(winterPath, join(cwd, LEGACY_PROJECT_DIR, "output-styles", `${name}.md`), this.deps.legacySettings());
   }
 
   /** All resolvable styles for the CLI: built-ins ∪ user files ∪ project files (if trusted, along the walk),
    *  deduped by name closest-wins (project > user > built-in). A legacy project output-styles
-   *  directory is included ONLY when the Winter-named one does not exist at all (same
+   *  directory is included ONLY when the Clover-named one does not exist at all (same
    *  file-vs-file fallback rule `resolve()` applies per style, generalized to "the whole dir is
    *  absent" for a directory listing — see `legacy-project-files.ts`'s directory doc comment). */
   list(cwd: string | null): { name: string; description: string }[] {
@@ -171,13 +171,13 @@ export class OutputStyleStore {
         if (p) out.set(p.name, p.description);
       }
     };
-    scan(join(storeHomeFor(this.deps.winterHome), "output-styles")); // user overrides built-in (WS-21: the store home)
+    scan(join(storeHomeFor(this.deps.cloverHome), "output-styles")); // user overrides built-in (WS-21: the store home)
     // Project overrides user; along the walk, nearest first and each later (more root-ward) dir overriding
     // — the run home's `lastWins` (see the class doc).
     for (const projectDir of trustedProjectWalk(cwd, this.deps.trust)) {
-      const winterDir = join(projectDir, ".winter", "output-styles");
+      const cloverDir = join(projectDir, ".clover", "output-styles");
       const legacyDir = join(projectDir, LEGACY_PROJECT_DIR, "output-styles");
-      const dir = this.deps.legacySettings ? resolveLegacyProjectDir(winterDir, legacyDir, this.deps.legacySettings()).dir : winterDir;
+      const dir = this.deps.legacySettings ? resolveLegacyProjectDir(cloverDir, legacyDir, this.deps.legacySettings()).dir : cloverDir;
       scan(dir);
     }
     return [...out].map(([name, description]) => ({ name, description }));

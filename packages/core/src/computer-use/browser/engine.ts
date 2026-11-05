@@ -1,6 +1,6 @@
 // ComputerV2 Phase 2 — the BROWSER ENGINE: browser tabs as ComputerV2 targets, and the `browsers` global. The service
 // (`service.ts`) routes every primitive on a tab target and every `browsers.*` call here, with a `TabRunScope`; the
-// engine speaks CDP to the tab through its backend's transport (`transport.ts` — Winter.app's link for the built-in
+// engine speaks CDP to the tab through its backend's transport (`transport.ts` — Clover.app's link for the built-in
 // browser, Winter for Chrome for the user's), via one `TabDriver` per tab.
 //
 // What the engine owns, per session: its BINDINGS (target ids `bt_<12 hex>`, stable per (session, backend, tab) while
@@ -8,7 +8,7 @@
 // sites approved on the dangerous-domain card. Tab targets never enter the service's own target table: every
 // helper-facing loop stays app-only, and a tab-only script never launches the helper.
 //
-// POLICY. Winter's own browsers — the built-in browser (`winter`) and the headless one (`headless`, Phase 4) — have no
+// POLICY. Clover's own browsers — the built-in browser (`winter`) and the headless one (`headless`, Phase 4) — have no
 // per-app card and no access setting ("Allow all apps" does not apply), but `plan` is observe-only and chat has no
 // computer use; the headless browser also stays off the local network (`headless/private-network.ts`). A user's browser is the app with its bundle id: the
 // existing per-app policy (`authorize`) — `browsers.open` is checked as a full-class act first, then as a bind;
@@ -64,7 +64,7 @@ const CHECK_CONFIRM_MS = 2_500;
 
 /** What a tab primitive is, for the per-app policy (everything not here acts). */
 const OBSERVE_PRIMITIVES: ReadonlySet<string> = new Set(["state", "find", "screenshot", "waitFor", "waitForIdle", "url", "title", "text",
-  // Phase 3's readers, and the hand-off (the user acts there, not Winter; it has its own card)
+  // Phase 3's readers, and the hand-off (the user acts there, not Clover; it has its own card)
   "console", "network", "networkBody", "inspect", "html", "assets", "dialog", "waitForUser",
   // Phase 4: listing the page's own tools (WebMCP) — calling one is an act
   "tools"]);
@@ -86,15 +86,15 @@ export const HANDOFF_WAIT_OPTIONS = [{ id: "handoff_done", label: "Done" }] as c
 export interface BrowserEngineDeps {
   registry: BrowserBackendRegistry;
   /** Mint a web tab in the session's panel strip (the daemon's `mintPanelTab`, the old Browser's door); its id. */
-  mintWinterTab(sessionId: string, url: string | undefined): string;
+  mintCloverTab(sessionId: string, url: string | undefined): string;
   /** A built-in tab the engine closed: the daemon records `panel_tab_closed` for it. */
-  winterTabClosed?(sessionId: string, tabId: string): void;
+  cloverTabClosed?(sessionId: string, tabId: string): void;
   /** The session's own panel web tabs (`foldPanelTabs`). */
-  winterTabs(sessionId: string): { tabs: Array<{ tabId: string; url?: string; title?: string }>; activeTabId?: string };
+  cloverTabs(sessionId: string): { tabs: Array<{ tabId: string; url?: string; title?: string }>; activeTabId?: string };
   /** The session's working directory and title. */
   sessionInfo(sessionId: string): { cwd?: string | null; title?: string };
   site?: SiteFloorDeps;
-  /** Uploads: the Winter home, and the session's temp directory and read-deny list. */
+  /** Uploads: the Clover home, and the session's temp directory and read-deny list. */
   home: string;
   uploadRoots?(sessionId: string, cwd: string | null | undefined): { tmpDir?: string; denyRead: readonly string[] };
   /** Downloads: the session's temp directory AS SPELLED (`sessionTmpDirPath`), and the sandbox's deny-write and
@@ -120,16 +120,16 @@ export interface BrowserEngineDeps {
   headlessReason?(): string | undefined;
   /** When Winter Headless last refused a request of this tab to the local network (the pool's `localNetworkRefusedAt`). */
   headlessLocalNetworkRefusedAt?(tabKey: string): number | undefined;
-  /** Lane H3: why a headless tab can't be shown in Winter's panel now (undefined: it can) — `waitForUser` on one. */
+  /** Lane H3: why a headless tab can't be shown in Clover's panel now (undefined: it can) — `waitForUser` on one. */
   headlessPresentMissing?(): string | undefined;
   /** Lane H3: the person pressed Done on a shown headless tab — control returns to the agent and the panel's view goes. */
   headlessHandBack?(tabKey: string): Promise<void>;
   /** Lane H3: a `waitForUser` on a shown headless tab ended without Done — the tab stays with the person. */
   headlessHandoffOver?(tabKey: string): void;
-  /** Lane H3: the view a headless tab's page is laid out in, once it differs from the agent's own (a tab shown in Winter's
+  /** Lane H3: the view a headless tab's page is laid out in, once it differs from the agent's own (a tab shown in Clover's
    *  panel follows the panel's size): how often it changed, its size, and whether a person is watching it now. */
   headlessView?(tabKey: string): { epoch: number; width: number; height: number; watched: boolean } | undefined;
-  /** Lane H3: does the person hold this headless tab in Winter's panel now (what its page does is theirs)? */
+  /** Lane H3: does the person hold this headless tab in Clover's panel now (what its page does is theirs)? */
   headlessHeld?(tabKey: string): boolean;
   /** Lane H3: how many times the person has held this headless tab, and when the latest hold began. */
   headlessHolds?(tabKey: string): { count: number; since: number } | undefined;
@@ -137,7 +137,7 @@ export interface BrowserEngineDeps {
   log?(line: string): void;
   /** Phase 4: the plain-HTTP page reader `browsers.read` uses (default: one on the system resolver and `fetch`). */
   httpReader?: HttpReader;
-  /** Wake triggers: did Winter's helper send input to this browser APP (bound as an app) at `at`, or within the grace
+  /** Wake triggers: did Clover's helper send input to this browser APP (bound as an app) at `at`, or within the grace
    *  before it? Its clicks in a page are trusted DOM events too, so a tab watch never counts them as the user's. */
   ownAppInputAt?(bundleId: string, at: number): boolean;
 }
@@ -182,8 +182,8 @@ type TabRow = { id: string; browser: string; url: string; title: string; active:
 /** At most this many tabs held (a live built-in browser, an attached debugger) per session and in all; past it the
  *  least recently used is let go (still open: its next use takes it again). */
 export const HOLDS_PER_SESSION = 8;
-/** Navigation in a user's browser leaves only tabs Winter opened and still owns: the user's own tab — or one handed to
- *  them with `keep()` — could ask "leave this page?" and lose their work (the controller's ruling; Winter's built-in
+/** Navigation in a user's browser leaves only tabs Clover opened and still owns: the user's own tab — or one handed to
+ *  them with `keep()` — could ask "leave this page?" and lose their work (the controller's ruling; Clover's built-in
  *  browser hides its dialogs, so it is exempt). */
 const NAVIGATE_PRIMITIVES: ReadonlySet<string> = new Set(["goto", "back", "forward", "reload"]);
 export const USER_TAB_NAVIGATION = "this is the user's own tab — navigating it away could raise a leave-page prompt and lose their work; open the page in a new tab with browsers.open(url)";
@@ -200,15 +200,15 @@ export function wakeHoldsFull(waiting: number, scope: "session" | "all"): string
 const HEADLESS_REFUSAL_GRACE_MS = 400;
 
 /** Phase 4 (the user's ruling on headless tabs): a headless tab is nobody's but the agent's — never handed over. It can
- *  be SHOWN to the user (lane H3: `waitForUser`, the page drawn in Winter's panel) and stays the agent's. */
-export const HEADLESS_KEEP = "a headless tab can't be handed to the user to keep — it stays in Winter's private browser; to show it to them, call waitForUser() on it (Winter's panel shows the live page), or open the page with browsers.open(url) in Winter's browser";
+ *  be SHOWN to the user (lane H3: `waitForUser`, the page drawn in Clover's panel) and stays the agent's. */
+export const HEADLESS_KEEP = "a headless tab can't be handed to the user to keep — it stays in Clover's private browser; to show it to them, call waitForUser() on it (Clover's panel shows the live page), or open the page with browsers.open(url) in Clover's browser";
 /** Lane H3: the hand-off card for a headless tab offers only to show it — nothing of it can be done anywhere else. */
 export const HANDOFF_ASK_OPTIONS_HEADLESS = [{ id: "handoff_show", label: "Show me the tab" }] as const;
 /** What a headless tab can't do, by primitive (the same ruling; the headless browser never downloads and has no sound). */
 function headlessRefusal(primitive: string, args: Record<string, unknown>): string | undefined {
   switch (primitive) {
     case "keep": return HEADLESS_KEEP;
-    case "download": return "Winter's headless browser doesn't download files — open the page with browsers.open(url) in Winter's browser to download it";
+    case "download": return "Clover's headless browser doesn't download files — open the page with browsers.open(url) in Clover's browser to download it";
     case "mute": return args.on === false ? "a headless tab never plays sound" : undefined;
     default: return undefined;
   }
@@ -309,7 +309,7 @@ export class BrowserEngine {
   async global(scope: TabRunScope, primitive: string, args: Record<string, unknown>): Promise<unknown> {
     const t0 = this.now();
     try {
-      if (this.stopped) throw new AutomationFailure("BrowserUnavailable", "Winter is shutting down");
+      if (this.stopped) throw new AutomationFailure("BrowserUnavailable", "Clover is shutting down");
       switch (primitive) {
         case "browsers.list": return this.listCall(scope, args);
         case "browsers.open": return await this.open(scope, args);
@@ -339,12 +339,12 @@ export class BrowserEngine {
       scope.live();
       const facts = scope.sessionFacts();
       if (facts.mode === "chat" || facts.policy === "chat") throw new AutomationFailure("NotAllowed", "computer use is not available in chat");
-      if (NAVIGATE_PRIMITIVES.has(primitive) && !this.isWintersOwn(b.backend) && this.usersTab(scope.sessionId, b)) throw new AutomationFailure("NotAllowed", USER_TAB_NAVIGATION);
+      if (NAVIGATE_PRIMITIVES.has(primitive) && !this.isCloversOwn(b.backend) && this.usersTab(scope.sessionId, b)) throw new AutomationFailure("NotAllowed", USER_TAB_NAVIGATION);
       if (this.isHeadless(b.backend)) {
         scope.metric.headlessEngine = "winter";
         const refusal = headlessRefusal(primitive, args);
         if (refusal !== undefined) throw new AutomationFailure("NotAllowed", refusal);
-        // The person holds the tab in Winter's panel: nothing of it is the agent's — no read from what the driver already
+        // The person holds the tab in Clover's panel: nothing of it is the agent's — no read from what the driver already
         // has (console, network, a state diff), no command — until they hand it back. Letting go, keeping it and waiting
         // for the person still work.
         if (this.deps.headlessHeld?.(b.tabKey) === true && !HELD_TAB_PRIMITIVES.has(primitive)) throw new AutomationFailure("TargetBusy", HEADLESS_USER_HAS_TAB);
@@ -365,7 +365,7 @@ export class BrowserEngine {
       scope.live();
       this.makeRoomForHold(scope, driver);
       driver.busy++;
-      // An act is Winter's own input to the tab, whatever it sends (a wake trigger never takes what it causes for the
+      // An act is Clover's own input to the tab, whatever it sends (a wake trigger never takes what it causes for the
       // user's).
       if (act) driver.beginOwnInput();
       try {
@@ -405,7 +405,7 @@ export class BrowserEngine {
     }
   }
 
-  /** Winter.app's ceiling on held built-in tabs, reached while wake triggers hold some of them: the sentence names
+  /** Clover.app's ceiling on held built-in tabs, reached while wake triggers hold some of them: the sentence names
    *  `wakes.cancel` too (a waiting tab is held until its trigger ends). */
   private holdsNameWakes(err: unknown): unknown {
     if (!(err instanceof AutomationFailure) || err.kind !== "TargetBusy" || err.message !== HOLD_CEILING_SENTENCE) return err;
@@ -438,7 +438,7 @@ export class BrowserEngine {
       b.lost = "turn_end";
       void this.drivers.get(tabKeyOf(b.backend, b.tabKey))?.release(sessionId);
     }
-    // A built-in tab's hold keeps a browser alive in Winter.app: it goes at the turn's end too (the binding stays; its
+    // A built-in tab's hold keeps a browser alive in Clover.app: it goes at the turn's end too (the binding stays; its
     // next use takes the hold again — the page is re-read then, so earlier refs are stale).
     for (const b of s.bindings.values()) {
       if (b.lost !== undefined || this.familyOf(b.backend) !== "winter") continue;
@@ -521,7 +521,7 @@ export class BrowserEngine {
   }
 
   /**
-   * A built-in tab left the session's strip (`panel_tab_closed` — the user closed it, or Winter did): its hold is
+   * A built-in tab left the session's strip (`panel_tab_closed` — the user closed it, or Clover did): its hold is
    * released and every binding of it is `TargetLost`. The app cannot tell a closed tab from one not folded yet, so it
    * keeps a held browser alive until the daemon lets go.
    */
@@ -556,7 +556,7 @@ export class BrowserEngine {
   /** What a session's tab binding names now: its tab's driver (taken by the backend for the trigger's life — the
    *  binding itself may go with a reset, a worker restart or a turn end) and the facts its floors read. */
   wakeTarget(sessionId: string, targetId: string): WakeTabTarget {
-    if (this.stopped) throw new AutomationFailure("BrowserUnavailable", "Winter is shutting down");
+    if (this.stopped) throw new AutomationFailure("BrowserUnavailable", "Clover is shutting down");
     const b = this.binding(sessionId, targetId);
     this.wakeTabs.set(`${sessionId}\u0000${targetId}`, { backend: b.backend, tabKey: b.tabKey });
     return {
@@ -597,7 +597,7 @@ export class BrowserEngine {
     try { return this.deps.persistentlyAllowed?.(sessionId, bundleId) === true; } catch { return false; }
   }
 
-  /** Winter's helper input to this browser app at `at` (see `BrowserEngineDeps.ownAppInputAt`). */
+  /** Clover's helper input to this browser app at `at` (see `BrowserEngineDeps.ownAppInputAt`). */
   wakeOwnAppInput(bundleId: string, at: number): boolean {
     try { return this.deps.ownAppInputAt?.(bundleId, at) === true; } catch { return false; }
   }
@@ -648,10 +648,10 @@ export class BrowserEngine {
     const rows = new Map<string, BrowserListRow>();
     for (const r of this.deps.registry.list()) {
       // The headless browser's reason is the pool's own ("turned off in Settings", missing), not a link's.
-      const reason = r.connected ? undefined : r.family === "headless" ? (this.deps.headlessReason?.() ?? "Winter's headless browser is not available") : r.reason;
+      const reason = r.connected ? undefined : r.family === "headless" ? (this.deps.headlessReason?.() ?? "Clover's headless browser is not available") : r.reason;
       rows.set(r.id, { id: r.id, name: r.name, isDefault: r.id === "winter", connected: r.connected, ...(reason === undefined ? {} : { reason }) });
     }
-    if (!rows.has("winter")) rows.set("winter", { id: "winter", name: "Winter (built-in)", isDefault: true, connected: false, reason: "Winter isn't running" });
+    if (!rows.has("winter")) rows.set("winter", { id: "winter", name: "Clover (built-in)", isDefault: true, connected: false, reason: "Clover isn't running" });
     const installed = this.installedBundleIds();
     for (const fam of ["chrome", "edge", "brave", "vivaldi", "opera", "arc", "chromium"] as const) {
       const info = familyInfo(fam)!;
@@ -675,7 +675,7 @@ export class BrowserEngine {
       live.add(transport);
       if (this.hooked.has(transport)) continue;
       const off = [
-        // A headless tab the person holds in Winter's panel: its page is followed, but what it does is theirs.
+        // A headless tab the person holds in Clover's panel: its page is followed, but what it does is theirs.
         transport.onEvent((e) => this.drivers.get(tabKeyOf(id, e.tabKey))?.onEvent(e, { person: this.personHolds(id, e.tabKey) })),
         transport.onTabGone((tabKey, reason) => this.tabGone(id, tabKey, reason)),
         transport.onStop((tabKey) => this.stopPressed(id, tabKey)),
@@ -689,7 +689,7 @@ export class BrowserEngine {
         })]),
       ];
       this.hooked.set(transport, { backend: id, off });
-      if (!this.isWintersOwn(id) && transport.connected) void this.reconcileOrphans(id, transport);
+      if (!this.isCloversOwn(id) && transport.connected) void this.reconcileOrphans(id, transport);
     }
     for (const [t, h] of this.hooked) {
       if (live.has(t)) continue;
@@ -731,7 +731,7 @@ export class BrowserEngine {
   private tabGone(backend: BackendId, tabKey: string, reason: string): void {
     const key = tabKeyOf(backend, tabKey);
     const d = this.drivers.get(key);
-    // A tab handed to the user and closed (or crashed) while Winter waited: the wait is over.
+    // A tab handed to the user and closed (or crashed) while Clover waited: the wait is over.
     if (reason !== "stopped") this.handoffAnswers.get(key)?.(false, "tab-gone");
     if (reason === "stopped") { d?.onGone("stopped"); return; }
     d?.onGone(reason);
@@ -759,7 +759,7 @@ export class BrowserEngine {
   private makeRoomForHold(scope: TabRunScope, driver: TabDriver): void {
     driver.lastUsed = this.now();
     if (driver.isAttached && driver.holders.has(scope.sessionId)) return;
-    // A headless tab's attachment costs nothing in Winter.app: the pool's open-tab caps are its budget, and it neither
+    // A headless tab's attachment costs nothing in Clover.app: the pool's open-tab caps are its budget, and it neither
     // counts toward these caps nor is let go for them.
     if (this.isHeadless(driver.backend)) return;
     const held = [...this.drivers.values()].filter((d) => d !== driver && d.isAttached && d.holders.size > 0 && !this.isHeadless(d.backend));
@@ -799,7 +799,7 @@ export class BrowserEngine {
     let d = this.drivers.get(key);
     if (d === undefined) {
       const driver = new TabDriver(backend, tabKey, transport, this.browserName(backend), () => this.now());
-      if (!this.isWintersOwn(backend)) driver.onRekey = (newKey) => this.rekey(driver, newKey);
+      if (!this.isCloversOwn(backend)) driver.onRekey = (newKey) => this.rekey(driver, newKey);
       d = driver;
       this.drivers.set(key, d);
     } else d.replaceTransport(transport);
@@ -852,7 +852,7 @@ export class BrowserEngine {
   private unavailable(backend: BackendId): AutomationFailure {
     const row = this.listRows().find((r) => r.id === backend);
     const fam = familyOfBackendId(backend);
-    const reason = row?.reason ?? (fam === "winter" ? "Winter isn't running" : fam === "headless" ? (this.deps.headlessReason?.() ?? "it is not available") : "it is not connected");
+    const reason = row?.reason ?? (fam === "winter" ? "Clover isn't running" : fam === "headless" ? (this.deps.headlessReason?.() ?? "it is not available") : "it is not connected");
     return new AutomationFailure("BrowserUnavailable", `${row?.name ?? backend} can't be reached: ${reason}`, true);
   }
 
@@ -860,8 +860,8 @@ export class BrowserEngine {
     return this.deps.registry.info(backend)?.family ?? familyOfBackendId(backend) ?? "chromium";
   }
 
-  /** Winter's own browsers (`winter`, `headless`): no bundle id, no per-app card; `plan` is observe-only. */
-  private isWintersOwn(backend: BackendId): boolean {
+  /** Clover's own browsers (`winter`, `headless`): no bundle id, no per-app card; `plan` is observe-only. */
+  private isCloversOwn(backend: BackendId): boolean {
     const f = this.familyOf(backend);
     return f === "winter" || f === "headless";
   }
@@ -872,8 +872,8 @@ export class BrowserEngine {
   }
 
   private browserName(backend: BackendId): string {
-    if (this.familyOf(backend) === "winter") return "Winter's browser";
-    if (this.familyOf(backend) === "headless") return "Winter's headless browser";
+    if (this.familyOf(backend) === "winter") return "Clover's browser";
+    if (this.familyOf(backend) === "headless") return "Clover's headless browser";
     return this.deps.registry.info(backend)?.name ?? familyInfo(this.familyOf(backend))?.name ?? backend;
   }
 
@@ -911,7 +911,7 @@ export class BrowserEngine {
     return b;
   }
 
-  /** The user's tab: one Winter did not open, or one it handed over with `keep()`. */
+  /** The user's tab: one Clover did not open, or one it handed over with `keep()`. */
   private usersTab(sessionId: string, b: Binding): boolean {
     return b.kind === "user" || this.sessions.get(sessionId)?.agentTabs.get(tabKeyOf(b.backend, b.tabKey))?.kept === true;
   }
@@ -1021,7 +1021,7 @@ export class BrowserEngine {
     let tab: TransportTab;
     try {
       if (this.familyOf(backend) === "winter") {
-        const tabKey = this.deps.mintWinterTab(scope.sessionId, url === "about:blank" ? undefined : url);
+        const tabKey = this.deps.mintCloverTab(scope.sessionId, url === "about:blank" ? undefined : url);
         tab = await transport.createTab({ sessionId: scope.sessionId, url, tabKey, ...(title === undefined ? {} : { sessionTitle: title }) });
       } else if (headless) {
         const engine = typeof args.engine === "string" ? args.engine.trim().toLowerCase() : HEADLESS_ENGINES[0];
@@ -1036,8 +1036,8 @@ export class BrowserEngine {
     const driver = this.driverFor(backend, tab.tabKey);
     const loaded = await driver.waitOpened(url, scope.signal);
     scope.live();
-    scope.builder.daemonLine(this.familyOf(backend) === "winter" ? "opened a new tab in Winter's browser"
-      : headless ? "opened a new tab in Winter's headless browser (nobody sees it)" : `opened a new tab in ${name} (in the background)`);
+    scope.builder.daemonLine(this.familyOf(backend) === "winter" ? "opened a new tab in Clover's browser"
+      : headless ? "opened a new tab in Clover's headless browser (nobody sees it)" : `opened a new tab in ${name} (in the background)`);
     if (!loaded) scope.builder.daemonLine("still loading after 10 s");
     // Where the tab LANDED (a redirect) meets the dangerous-domain floor before anything of it is printed.
     await this.siteFloor(scope, this.binding(scope.sessionId, handle.targetId), driver);
@@ -1063,7 +1063,7 @@ export class BrowserEngine {
   private async tabRows(scope: TabRunScope, backend: BackendId): Promise<TabRow[]> {
     const s = this.session(scope.sessionId);
     if (this.familyOf(backend) === "winter") {
-      const fold = this.deps.winterTabs(scope.sessionId);
+      const fold = this.deps.cloverTabs(scope.sessionId);
       return fold.tabs.map((t) => ({
         id: `${backend}:${t.tabId}`, browser: backend, url: shownUrl(t.url ?? "about:blank"), title: t.title ?? "",
         active: t.tabId === fold.activeTabId, yours: s.agentTabs.get(tabKeyOf(backend, t.tabId))?.kept === false,
@@ -1102,7 +1102,7 @@ export class BrowserEngine {
     for (const r of this.listRows()) {
       if (familyOfBackendId(r.id) === "winter") { ids.push(r.id); continue; }
       if (!r.connected) continue;
-      // The headless browser is Winter's own: its tabs are listed with no grant (only this session's).
+      // The headless browser is Clover's own: its tabs are listed with no grant (only this session's).
       if (familyOfBackendId(r.id) === "headless") { ids.push(r.id); continue; }
       const bundleId = this.bundleIdOf(r.id);
       if (bundleId !== undefined && !scope.granted(bundleId)) { leftOut.push(`${r.name} (${r.id}) — not allowed in this session yet`); continue; }
@@ -1146,14 +1146,14 @@ export class BrowserEngine {
       const rows = await this.tabRows(scope, backend);
       const hit = rows.find((r) => r.id === `${backend}:${tabKey}`);
       if (hit === undefined) {
-        throw new AutomationFailure("TargetLost", this.isWintersOwn(backend)
+        throw new AutomationFailure("TargetLost", this.isCloversOwn(backend)
           ? `no tab ${t.slice(0, 80)} in this session's tabs — browsers.tabs() lists them`
           : `no tab ${t.slice(0, 80)} is open — browsers.tabs() lists them`);
       }
       url = hit.url;
     } else if (t !== null && typeof t === "object" && (t as { active?: unknown }).active === true) {
       // The tab the user has in front in a user's browser (named, or the one allowed and connected).
-      const chosen = args.browser === undefined ? this.defaultBackends(scope).ids.filter((id) => !this.isWintersOwn(id)) : [this.backendFor(args.browser)];
+      const chosen = args.browser === undefined ? this.defaultBackends(scope).ids.filter((id) => !this.isCloversOwn(id)) : [this.backendFor(args.browser)];
       if (chosen.length === 0) throw bad("browsers.tab({ active: true }) needs a user's browser: name it with { browser } (browsers.list() shows them)");
       if (chosen.length > 1) throw bad(`several browsers are connected — name one with { browser }: ${chosen.join(", ")}`);
       backend = chosen[0]!;
@@ -1194,7 +1194,7 @@ export class BrowserEngine {
     const wasBound = known !== undefined && s.bindings.get(known)?.lost === undefined;
     // A tab of a user's browser is in one of its windows: one another session holds as an app window (or the whole
     // browser held app-wide) is refused, naming the holder (the review of 2026-10-20).
-    if (!wasBound && !this.isWintersOwn(backend) && !this.isHeadless(backend) && this.deps.heldElsewhere !== undefined) {
+    if (!wasBound && !this.isCloversOwn(backend) && !this.isHeadless(backend) && this.deps.heldElsewhere !== undefined) {
       const bundleId = this.bundleIdOf(backend);
       if (bundleId !== undefined) {
         const refusal = await this.deps.heldElsewhere(scope.sessionId, bundleId, this.browserName(backend), await this.activeTitleOfTabWindow(backend, tabKey));
@@ -1292,7 +1292,7 @@ export class BrowserEngine {
 
   /** After a click: a check box, radio or switch that did not take the press is said (nothing when it did — a radio
    *  already on stays on); a file chooser the page opened from the click (a button whose handler clicks a hidden file
-   *  input) is said, naming the input to upload() into — Winter intercepts the chooser, so nothing opened on screen. */
+   *  input) is said, naming the input to upload() into — Clover intercepts the chooser, so nothing opened on screen. */
   private async afterPress(scope: TabRunScope, driver: TabDriver, ref: number | undefined, check: RtCheckFacts | undefined, single: boolean, chooserBefore: boolean, mayChoose: boolean): Promise<void> {
     if (ref !== undefined && check !== undefined && single) {
       const now = await driver.checkAfterPress(ref, check.kind, check.checked, 600, scope.signal);
@@ -1304,7 +1304,7 @@ export class BrowserEngine {
     // in its form or near it); a chooser already reported is said after any press.
     if (!chooserBefore && (driver.fileChooser !== undefined || (mayChoose && await driver.waitFileChooser(FILE_CHOOSER_WAIT_MS, scope.signal)))) {
       const input = await driver.fileChooserInput();
-      scope.builder.daemonLine(`the click opened the page's file chooser — Winter held it, so nothing opened on screen; ${input === undefined
+      scope.builder.daemonLine(`the click opened the page's file chooser — Clover held it, so nothing opened on screen; ${input === undefined
         ? "upload(ref, paths) on its file input puts the files in"
         : `upload([${input}], paths) puts the files in (its file input)`}`);
     }
@@ -1661,7 +1661,7 @@ export class BrowserEngine {
             scope.builder.daemonLine("kept — but this Winter for Chrome is too old to put it in a group; the user can update it");
           }
         } else if (group !== undefined) {
-          scope.builder.daemonLine("kept — Winter's built-in browser has no tab groups, so the group name was not used");
+          scope.builder.daemonLine("kept — Clover's built-in browser has no tab groups, so the group name was not used");
         }
         if (a !== undefined) { a.kept = true; a.handoff = false; }
         return undefined;
@@ -1693,27 +1693,27 @@ export class BrowserEngine {
         const t = driver.transport;
         if (t.setMuted === undefined) {
           throw this.familyOf(b.backend) === "winter"
-            ? new Error("Winter's built-in browser can't mute a tab yet — update Winter")
+            ? new Error("Clover's built-in browser can't mute a tab yet — update Clover")
             : new AutomationFailure("BrowserUnavailable", `this Winter for Chrome is too old for mute() — ask the user to update Winter for Chrome`);
         }
         try { await t.setMuted(b.tabKey, on); } catch (err) { throw transportFailure(err, this.browserName(b.backend)); }
         return undefined;
       }
       case "handoff": {
-        // Engine-side only: the tab stays the agent's and in Winter's group, and survives this turn's end.
+        // Engine-side only: the tab stays the agent's and in Clover's group, and survives this turn's end.
         const a = this.session(sid).agentTabs.get(tabKeyOf(b.backend, b.tabKey));
         if (a !== undefined && !a.kept) a.handoff = true;
         return undefined;
       }
       case "close": {
-        if (b.kind !== "agent") throw new AutomationFailure("NotAllowed", "that tab is the user's — Winter never closes a tab it did not open");
+        if (b.kind !== "agent") throw new AutomationFailure("NotAllowed", "that tab is the user's — Clover never closes a tab it did not open");
         if (this.session(sid).agentTabs.get(tabKeyOf(b.backend, b.tabKey))?.kept === true) {
-          throw new AutomationFailure("NotAllowed", "that tab is the user's now — Winter never closes it");
+          throw new AutomationFailure("NotAllowed", "that tab is the user's now — Clover never closes it");
         }
         driver.agentNavigating = true;
         try { await driver.transport.closeTab(b.tabKey); } catch (err) { throw transportFailure(err, this.browserName(b.backend)); }
         if (this.familyOf(b.backend) === "winter") {
-          try { this.deps.winterTabClosed?.(sid, b.tabKey); } catch { /* the strip catches up from the app */ }
+          try { this.deps.cloverTabClosed?.(sid, b.tabKey); } catch { /* the strip catches up from the app */ }
         }
         b.lost = "closed_by_you";
         const key = tabKeyOf(b.backend, b.tabKey);
@@ -1766,7 +1766,7 @@ export class BrowserEngine {
     }
   }
 
-  /** viewport()/mute(): only a tab Winter opened and still owns (never the user's page). */
+  /** viewport()/mute(): only a tab Clover opened and still owns (never the user's page). */
   private requireOwnTab(sessionId: string, b: Binding, what: string): void {
     if (b.kind !== "agent" || this.session(sessionId).agentTabs.get(tabKeyOf(b.backend, b.tabKey))?.kept === true) {
       throw new AutomationFailure("NotAllowed", `${what} works on a tab you opened with browsers.open() and still own — this one is the user's`);
@@ -1777,17 +1777,17 @@ export class BrowserEngine {
   private oneUserBrowser(scope: TabRunScope, named: unknown, what: string): BackendId {
     if (named !== undefined) {
       const id = this.backendFor(named);
-      if (this.familyOf(id) === "winter") throw new Error(`Winter's built-in browser has no ${what} — name a user's browser (browsers.list())`);
-      if (this.isHeadless(id)) throw new Error(`Winter's headless browser has no ${what} — name a user's browser (browsers.list())`);
+      if (this.familyOf(id) === "winter") throw new Error(`Clover's built-in browser has no ${what} — name a user's browser (browsers.list())`);
+      if (this.isHeadless(id)) throw new Error(`Clover's headless browser has no ${what} — name a user's browser (browsers.list())`);
       return id;
     }
-    const ids = this.defaultBackends(scope).ids.filter((id) => !this.isWintersOwn(id));
+    const ids = this.defaultBackends(scope).ids.filter((id) => !this.isCloversOwn(id));
     if (ids.length === 1) return ids[0]!;
     throw bad(ids.length === 0 ? `name the user's browser with { browser } (browsers.list() shows them) — none is allowed in this session yet` : `several browsers are connected — name one with { browser }: ${ids.join(", ")}`);
   }
 
   private async windowsCall(scope: TabRunScope, args: Record<string, unknown>): Promise<unknown> {
-    const ids = args.browser !== undefined ? [this.oneUserBrowser(scope, args.browser, "windows")] : this.defaultBackends(scope).ids.filter((id) => !this.isWintersOwn(id));
+    const ids = args.browser !== undefined ? [this.oneUserBrowser(scope, args.browser, "windows")] : this.defaultBackends(scope).ids.filter((id) => !this.isCloversOwn(id));
     const rows: Array<{ browser: string; id: number; focused: boolean; tabs: number }> = [];
     for (const id of ids) {
       const t = this.deps.registry.get(id);
@@ -1811,15 +1811,15 @@ export class BrowserEngine {
   private async libraryCall(scope: TabRunScope, args: Record<string, unknown>, what: "history" | "bookmarks"): Promise<unknown> {
     const label = `${what}()`;
     if (args.browser !== undefined && this.familyOf(this.backendFor(args.browser)) === "winter") {
-      throw new Error("Winter's built-in browser keeps no history or bookmarks Winter can read");
+      throw new Error("Clover's built-in browser keeps no history or bookmarks Clover can read");
     }
     if (args.browser !== undefined && this.isHeadless(this.backendFor(args.browser))) {
-      throw new Error("Winter's headless browser keeps no history or bookmarks");
+      throw new Error("Clover's headless browser keeps no history or bookmarks");
     }
     const facts = scope.sessionFacts();
     if (facts.mode === "chat" || facts.policy === "chat") throw new AutomationFailure("NotAllowed", "computer use is not available in chat");
     const chosen = args.browser === undefined ? this.defaultBackends(scope) : { ids: [this.backendFor(args.browser)], leftOut: [] as string[] };
-    const ids = chosen.ids.filter((id) => !this.isWintersOwn(id));
+    const ids = chosen.ids.filter((id) => !this.isCloversOwn(id));
     if (ids.length === 0) {
       throw bad(`browsers.${label} searches a user's browser — name it with { browser } (browsers.list() shows them)${chosen.leftOut.length > 0 ? `; not allowed in this session yet: ${chosen.leftOut.join("; ")}` : ""}`);
     }
@@ -1930,7 +1930,7 @@ export class BrowserEngine {
     if (args.clear === true) driver.devtools.clearNetwork();
     scope.builder.markScreenRead();
     if (args.emit !== false) {
-      const head = `network of ${this.labelOf(driver)}: ${read.total === 0 ? "no requests seen (only those made while Winter worked in the tab)" : `${read.total} request${read.total === 1 ? "" : "s"}`}${read.total > read.entries.length ? ` (showing the last ${read.entries.length})` : ""}`;
+      const head = `network of ${this.labelOf(driver)}: ${read.total === 0 ? "no requests seen (only those made while Clover worked in the tab)" : `${read.total} request${read.total === 1 ? "" : "s"}`}${read.total > read.entries.length ? ` (showing the last ${read.entries.length})` : ""}`;
       scope.builder.text([head, ...read.entries.map(requestLine)].join("\n"), { screen: true });
     }
     return read.entries;
@@ -1939,10 +1939,10 @@ export class BrowserEngine {
   // ── waitForUser() — the sign-in hand-off ──────────────────────────────────────────────────────
 
   /**
-   * `waitForUser(reason, { timeoutMs })`: a page needs the user (a sign-in, a 2-step code, a CAPTCHA). Winter asks on a
+   * `waitForUser(reason, { timeoutMs })`: a page needs the user (a sign-in, a 2-step code, a CAPTCHA). Clover asks on a
    * card under every policy but `dont-ask` (which never asks: refused, and the model tells the user in its reply).
    * The tab is let go BEFORE the card — by every session that holds it, a full detach (`TabDriver.handOff`) — so
-   * nothing of Winter's reads it while the user works there, whichever answer they give, and the built-in browser's
+   * nothing of Clover's reads it while the user works there, whichever answer they give, and the built-in browser's
    * native prompts (passkeys, permission prompts) can show. "Show me the tab" brings it forward: the built-in browser
    * shows the session's window with that tab; a user's browser activates the tab and focuses its window (the one place
    * Winter for Chrome does). A second card waits for "Done" (the browser's own toolbar offers it too). Done (or "I've
@@ -1971,24 +1971,24 @@ export class BrowserEngine {
     if (driver.wakeHolders.size > 0) {
       throw new AutomationFailure("TargetBusy", "a wake trigger is armed on this tab — handing it over would end it; cancel the trigger first (wakes.cancel(id)), or let the trigger alone wait for the user");
     }
-    if (scope.userCard === undefined) throw new Error("this Winter can't hand a tab to the user");
-    const winter = this.familyOf(b.backend) === "winter";
+    if (scope.userCard === undefined) throw new Error("this Clover can't hand a tab to the user");
+    const builtIn = this.familyOf(b.backend) === "winter";
     const headless = this.isHeadless(b.backend);
     const name = this.browserName(b.backend);
     const transport = driver.transport;
-    // A headless tab is shown in Winter's panel (lane H3): Winter.app must be there and able to.
-    const cannotShow = headless ? this.deps.headlessPresentMissing?.() ?? (this.deps.headlessHandBack === undefined ? "this Winter can't show a headless tab" : undefined) : undefined;
-    if (cannotShow !== undefined) throw new AutomationFailure("BrowserUnavailable", `waitForUser() shows a headless tab in Winter's panel, and ${cannotShow}`);
+    // A headless tab is shown in Clover's panel (lane H3): Clover.app must be there and able to.
+    const cannotShow = headless ? this.deps.headlessPresentMissing?.() ?? (this.deps.headlessHandBack === undefined ? "this Clover can't show a headless tab" : undefined) : undefined;
+    if (cannotShow !== undefined) throw new AutomationFailure("BrowserUnavailable", `waitForUser() shows a headless tab in Clover's panel, and ${cannotShow}`);
     if (transport.present === undefined) {
-      throw winter
-        ? new Error("Winter's built-in browser can't show a tab to the user until Winter is updated")
+      throw builtIn
+        ? new Error("Clover's built-in browser can't show a tab to the user until Clover is updated")
         : new AutomationFailure("BrowserUnavailable", `the Winter for Chrome in ${name} is too old for waitForUser() — ask the user to update it`);
     }
     scope.noteHandoff?.();
     const t0 = this.now();
     // Let the tab go first, for every session: whatever the user does in it from here is theirs alone.
     await driver.handOff();
-    const ask = await scope.userCard(`${name} — ${host}: ${reason}. Winter waits while you do it.`, headless ? HANDOFF_ASK_OPTIONS_HEADLESS : HANDOFF_ASK_OPTIONS, total);
+    const ask = await scope.userCard(`${name} — ${host}: ${reason}. Clover waits while you do it.`, headless ? HANDOFF_ASK_OPTIONS_HEADLESS : HANDOFF_ASK_OPTIONS, total);
     scope.live();
     if (!ask.approved) {
       scope.builder.daemonLine(`the user did not take over (${ask.by === "timeout" ? "no answer" : "declined"})`);
@@ -1998,8 +1998,8 @@ export class BrowserEngine {
       const key = tabKeyOf(b.backend, b.tabKey);
       try {
         try { await transport.present(b.tabKey, { sessionId: sid }); } catch (err) { throw transportFailure(err, name); }
-        scope.builder.daemonLine(winter ? `showed the tab to the user in Winter's window`
-          : headless ? "showed the headless tab to the user in Winter's panel (the same live page — they have it until they press Done)"
+        scope.builder.daemonLine(builtIn ? `showed the tab to the user in Clover's window`
+          : headless ? "showed the headless tab to the user in Clover's panel (the same live page — they have it until they press Done)"
             : `brought the tab forward in ${name} for the user`);
         const left = Math.max(1_000, total - (this.now() - t0));
         let wait: { approved: boolean; optionId?: string; by?: string };
@@ -2009,10 +2009,10 @@ export class BrowserEngine {
         } finally {
           this.handoffAnswers.delete(key);
           // The browser's own waiting mark goes (Winter for Chrome's badge and pill).
-          if (!winter) transport.overlay(b.tabKey, { active: false });
+          if (!builtIn) transport.overlay(b.tabKey, { active: false });
         }
         scope.live();
-        if (wait.by === "tab-gone") throw new AutomationFailure("TargetLost", "the tab was closed while Winter waited for the user");
+        if (wait.by === "tab-gone") throw new AutomationFailure("TargetLost", "the tab was closed while Clover waited for the user");
         if (!wait.approved) {
           // A headless tab stays shown, the user's, until they hand it back in the panel (the agent's commands on it are
           // TargetBusy meanwhile).
@@ -2063,7 +2063,7 @@ export class BrowserEngine {
     const sid = scope.sessionId;
     const cwd = this.cwdOf(sid);
     const r = this.deps.downloadRoots?.(sid, cwd);
-    if (r === undefined) throw new Error("downloads are not available in this Winter");
+    if (r === undefined) throw new Error("downloads are not available in this Clover");
     const roots: DownloadRoots = { cwd, tmpDir: r.tmpDir, home: this.deps.home, denyWrite: r.denyWrite };
     // A destination that can't be used fails before anything is fetched.
     planDownload(args.to, "download", roots);
@@ -2074,7 +2074,7 @@ export class BrowserEngine {
     if (typeof timeout !== "number" || !Number.isFinite(timeout) || timeout <= 0) throw bad("download()'s timeoutMs is a positive number of ms");
     const startMs = scope.clampWait(Math.min(timeout, DOWNLOAD_TOTAL_MAX_MS));
     const totalMs = scope.clampWait(DOWNLOAD_TOTAL_MAX_MS);
-    const winter = this.familyOf(b.backend) === "winter";
+    const builtIn = this.familyOf(b.backend) === "winter";
 
     const t = args.target;
     let ref: number | undefined;
@@ -2119,11 +2119,11 @@ export class BrowserEngine {
       await ensureSiteAllowed(scope, this.approvals, this.deps.site ?? {}, checked, this.browserName(b.backend), cwd);
       scope.live();
       noteSiteOf(scope, checked);
-      captured = winter
+      captured = builtIn
         ? await this.captureNativeUrl(scope, b, driver, checked, { staging, startMs, totalMs })
         : await this.captureUrlRoute(scope, b, checked, { staging, startMs, totalMs, floor });
     } else {
-      const out = await this.captureByClick(scope, b, driver, ref!, { staging, startMs, totalMs, fetch: !winter, floor });
+      const out = await this.captureByClick(scope, b, driver, ref!, { staging, startMs, totalMs, fetch: !builtIn, floor });
       captured = out.file;
       fromBrowserFolder = out.browserFolder;
     }
@@ -2141,7 +2141,7 @@ export class BrowserEngine {
     let source = captured.stagedPath;
     let afterPlaced: (() => void) | undefined;
     if (fromBrowserFolder !== undefined) ({ source, afterPlaced } = this.takeFromBrowserFolder(fromBrowserFolder, captured, staging, r.denyRead));
-    else if (winter && captured.reportedPath !== undefined) this.requireInStaging(captured.reportedPath, staging);
+    else if (builtIn && captured.reportedPath !== undefined) this.requireInStaging(captured.reportedPath, staging);
     const placed = placeDownload(source, plan, { expectedBytes: captured.bytes, tmpDir: r.tmpDir });
     afterPlaced?.();
     if (fromBrowserFolder?.id !== undefined) void fromBrowserFolder.transport.releaseDownload?.(fromBrowserFolder.id).catch(() => undefined);
@@ -2157,17 +2157,17 @@ export class BrowserEngine {
     scope: TabRunScope, b: Binding, driver: TabDriver, ref: number,
     o: { staging: string; startMs: number; totalMs: number; fetch: boolean; floor: (url: string) => Promise<void> },
   ): Promise<{ file: CapturedFile; browserFolder?: { path: string; subdir: string; id?: string; transport: CdpTransport; armedAt: number } }> {
-    const winter = this.familyOf(b.backend) === "winter";
+    const builtIn = this.familyOf(b.backend) === "winter";
     const name = this.browserName(b.backend);
     const transport = driver.transport;
     if (o.fetch) this.requireCdp3(driver, "download()");
     const fetch = o.fetch ? new FetchCapture(driver, { anyResponse: false, stagingDir: o.staging, maxBytes: DOWNLOAD_MAX_BYTES, now: () => this.now(), checkUrl: o.floor }) : undefined;
-    const subdir = winter ? "" : `Winter/${randomBytes(6).toString("hex")}`;
+    const subdir = builtIn ? "" : `Clover/${randomBytes(6).toString("hex")}`;
     let native: NativeCapture | undefined;
     if (transport.armDownloads !== undefined && transport.onDownload !== undefined) {
-      native = new NativeCapture(transport, b.tabKey, { dir: winter ? o.staging : "", subdir, until: this.now() + o.totalMs, maxBytes: DOWNLOAD_MAX_BYTES, now: () => this.now() });
-    } else if (winter) {
-      throw new Error("Winter's built-in browser can't save downloads until Winter is updated");
+      native = new NativeCapture(transport, b.tabKey, { dir: builtIn ? o.staging : "", subdir, until: this.now() + o.totalMs, maxBytes: DOWNLOAD_MAX_BYTES, now: () => this.now() });
+    } else if (builtIn) {
+      throw new Error("Clover's built-in browser can't save downloads until Clover is updated");
     }
     let nativeRefusal: Error | undefined;
     const armedAt = this.now();
@@ -2175,7 +2175,7 @@ export class BrowserEngine {
       if (fetch !== undefined) await fetch.arm();
       if (native !== undefined) {
         try { await native.arm(); } catch (err) {
-          nativeRefusal = winter ? transportFailure(err, name) : nativeArmFailure(err, name);
+          nativeRefusal = builtIn ? transportFailure(err, name) : nativeArmFailure(err, name);
           native = undefined;
           if (fetch === undefined) throw nativeRefusal;
         }
@@ -2195,16 +2195,16 @@ export class BrowserEngine {
           if (pageMade !== undefined) {
             const saved = `${name} saved "${redactText(pageMade)}" in its own Downloads folder`;
             if (nativeRefusal !== undefined) return `${nativeRefusal.message} (${saved})`;
-            if (!winter && transport.armDownloads === undefined) {
+            if (!builtIn && transport.armDownloads === undefined) {
               return `that file is made by the page itself — to save it from ${name}, ask the user to update Winter for Chrome and allow downloads in its menu (its toolbar button) (${saved})`;
             }
-            return `the page started a download of "${redactText(pageMade)}" that Winter could not catch`;
+            return `the page started a download of "${redactText(pageMade)}" that Clover could not catch`;
           }
           if ((fetch?.sighting.pages ?? 0) > 0) return "the click opened a page instead of a download — read the page (state()) and download from its link";
           return `nothing started a download within ${Math.round(o.startMs / 1000)} s of the click`;
         },
       });
-      if (file.nativeId !== undefined && !winter) return { file, browserFolder: { path: file.reportedPath ?? file.stagedPath, subdir, id: file.nativeId, transport, armedAt } };
+      if (file.nativeId !== undefined && !builtIn) return { file, browserFolder: { path: file.reportedPath ?? file.stagedPath, subdir, id: file.nativeId, transport, armedAt } };
       return { file };
     } finally {
       await fetch?.disarm();
@@ -2216,7 +2216,7 @@ export class BrowserEngine {
   private async captureNativeUrl(scope: TabRunScope, b: Binding, driver: TabDriver, url: string, o: { staging: string; startMs: number; totalMs: number }): Promise<CapturedFile> {
     const transport = driver.transport;
     if (transport.armDownloads === undefined || transport.startDownload === undefined || transport.onDownload === undefined) {
-      throw new Error("Winter's built-in browser can't save downloads until Winter is updated");
+      throw new Error("Clover's built-in browser can't save downloads until Clover is updated");
     }
     const native = new NativeCapture(transport, b.tabKey, { dir: o.staging, subdir: "", until: this.now() + o.totalMs, maxBytes: DOWNLOAD_MAX_BYTES, now: () => this.now() });
     try {
@@ -2272,7 +2272,7 @@ export class BrowserEngine {
   }
 
   /** A captured file that will not be placed (the floor refused its address): the staged copy goes, and a file the
-   *  browser saved into Winter's own subfolder of its downloads folder goes with its item in the browser's list. */
+   *  browser saved into Clover's own subfolder of its downloads folder goes with its item in the browser's list. */
   private discardCaptured(staging: string, fromBrowserFolder: { path: string; subdir: string; id?: string; transport: CdpTransport } | undefined): void {
     try { rmSync(staging, { recursive: true, force: true }); } catch { /* best effort */ }
     if (fromBrowserFolder === undefined) return;
@@ -2291,13 +2291,13 @@ export class BrowserEngine {
     let realPath: string | undefined;
     try { realPath = realpathSync(path); } catch { realPath = undefined; }
     const root = realpathSync(staging);
-    if (realPath === undefined || !realPath.startsWith(`${root}/`)) throw new Error("the browser saved the download somewhere Winter did not expect — nothing was saved");
+    if (realPath === undefined || !realPath.startsWith(`${root}/`)) throw new Error("the browser saved the download somewhere Clover did not expect — nothing was saved");
   }
 
   /**
-   * The extension's downloads route: the browser saved the file in its own downloads folder, under `Winter/<random>/`
+   * The extension's downloads route: the browser saved the file in its own downloads folder, under `Clover/<random>/`
    * (or wherever the user chose in its save dialog). It is accepted only as a regular file of the reported size, not
-   * a link, outside Winter's home and the sandbox's read-deny list. Under our subfolder it is MOVED (and the subfolder
+   * a link, outside Clover's home and the sandbox's read-deny list. Under our subfolder it is MOVED (and the subfolder
    * removed); elsewhere — the user's choice — it is copied and theirs left alone.
    */
   private takeFromBrowserFolder(f: { path: string; subdir: string; armedAt: number }, captured: CapturedFile, staging: string, denyRead: readonly string[]): { source: string; afterPlaced?: () => void } {
@@ -2311,15 +2311,15 @@ export class BrowserEngine {
     const home = [this.deps.home, (() => { try { return realpathSync(this.deps.home); } catch { return this.deps.home; } })()];
     const realPath = realpathSync(path);
     const under = (p: string, root: string): boolean => p === root || p.startsWith(root.endsWith("/") ? root : `${root}/`);
-    if (home.some((h) => under(realPath, h)) || denyRead.some((d) => under(realPath, d))) throw new Error("the browser saved the download somewhere Winter may not read — nothing was saved");
+    if (home.some((h) => under(realPath, h)) || denyRead.some((d) => under(realPath, d))) throw new Error("the browser saved the download somewhere Clover may not read — nothing was saved");
     const ours = dirname(realPath).endsWith(`/${f.subdir}`);
     if (ours) {
-      // A move: placeDownload removes it once copied; the subfolder (and `Winter/` when empty) goes after.
+      // A move: placeDownload removes it once copied; the subfolder (and `Clover/` when empty) goes after.
       return {
         source: realPath,
         afterPlaced: () => {
           try { rmdirSync(dirname(realPath)); } catch { /* not empty, or gone */ }
-          try { rmdirSync(dirname(dirname(realPath))); } catch { /* the user's other Winter downloads, or gone */ }
+          try { rmdirSync(dirname(dirname(realPath))); } catch { /* the user's other Clover downloads, or gone */ }
         },
       };
     }
@@ -2489,7 +2489,7 @@ export class BrowserEngine {
     let region = Array.isArray(r) && r.length === 4 && r.every((n) => typeof n === "number" && Number.isFinite(n))
       ? { x: r[0] as number, y: r[1] as number, width: r[2] as number, height: r[3] as number } : undefined;
     const fullPage = args.fullPage === true;
-    // A picture never moves the USER's own tab (one Winter did not open, or handed over with keep()): no full-page
+    // A picture never moves the USER's own tab (one Clover did not open, or handed over with keep()): no full-page
     // relayout, and an element shot only where it already is.
     const usersTab = this.usersTab(scope.sessionId, b);
     if (fullPage && usersTab) throw new AutomationFailure("NotAllowed", USER_TAB_FULL_PAGE);
@@ -2596,12 +2596,12 @@ function lostSentence(b: Binding): string {
     case "turn_end": return "that tab is the user's and was released at the end of the turn — bind it again with browsers.tab()";
     case "once": return `${b.backend} was allowed for one call only — bind the tab again with browsers.tab()`;
     case "closed_by_you": return "you closed that tab — open another with browsers.open()";
-    case "closed_turn_end": return "Winter closed that tab when your turn ended (it was not marked with keep() or handoff()) — open a new one with browsers.open()";
-    case "closed_session_end": return "Winter closed that tab when the session ended — open a new one with browsers.open()";
+    case "closed_turn_end": return "Clover closed that tab when your turn ended (it was not marked with keep() or handoff()) — open a new one with browsers.open()";
+    case "closed_session_end": return "Clover closed that tab when the session ended — open a new one with browsers.open()";
     case "crashed": return familyOfBackendId(b.backend) === "headless"
-      ? "Winter's headless browser stopped (or this tab's page crashed) — open the page again with browsers.open()"
+      ? "Clover's headless browser stopped (or this tab's page crashed) — open the page again with browsers.open()"
       : "the tab crashed — open it again with browsers.open()";
-    case "detached_by_user": return "the user stopped Winter from controlling this tab — ask them before binding it again";
+    case "detached_by_user": return "the user stopped Clover from controlling this tab — ask them before binding it again";
     case "stopped": return "the tab's browser was stopped — open a new tab with browsers.open()";
     default: return "the tab was closed — open a new one with browsers.open() or bind another with browsers.tab()";
   }

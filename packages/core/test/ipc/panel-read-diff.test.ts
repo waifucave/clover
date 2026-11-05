@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, ERR, type WritableSocket,
-} from "@yanlinglabs/winter-protocol";
+} from "@waifucave/clover-protocol";
 import { startIpcServer, REMOTE_ALLOWED_METHODS } from "../../src/ipc/server";
 import { SessionStore } from "../../src/sessions/store";
 import { SessionHub } from "../../src/sessions/hub";
@@ -75,14 +75,14 @@ describe("panel.readDiff (diff-tabs Task 7)", () => {
   async function boot(): Promise<{
     store: SessionStore; home: string; socketPath: string; harnessToken: string; remoteToken: string;
   }> {
-    const home = mkdtempSync(join(tmpdir(), "winter-panel-readdiff-"));
+    const home = mkdtempSync(join(tmpdir(), "clover-panel-readdiff-"));
     const store = new SessionStore(home);
     const hub = new SessionHub(store);
     const socketPath = join(home, "core.sock");
     const authority = new TokenAuthority(new FileSecretStore(join(home, "secrets.json")));
     const tokens = await authority.ensureTokens();
     const server = startIpcServer({
-      socketPath, serverVersion: "test", tokens: authority, store, hub, winterHome: home,
+      socketPath, serverVersion: "test", tokens: authority, store, hub, cloverHome: home,
     });
     stop = () => { server.stop(); store.close(); };
     return { store, home, socketPath, harnessToken: tokens.harness, remoteToken: tokens.remote };
@@ -115,14 +115,14 @@ describe("panel.readDiff (diff-tabs Task 7)", () => {
     const sessionId = store.createSession("global");
     const diffId = mintDiffId();
     const patch = "@@ -1,2 +1,2 @@\n-old line\n+new line\n context\n";
-    await writeDiff(home, sessionId, diffId, { path: "/Users/me/winter v2/core/x.ts", added: 1, removed: 1 }, patch);
+    await writeDiff(home, sessionId, diffId, { path: "/Users/me/clover v2/core/x.ts", added: 1, removed: 1 }, patch);
 
     const c = await TestClient.connect(socketPath);
     await c.hello(harnessToken, "panel-tester");
     const res = await c.request(METHODS.panelReadDiff, { sessionId, diffId });
     expect(res.error).toBeUndefined();
     expect(res.result).toEqual({
-      path: "/Users/me/winter v2/core/x.ts", added: 1, removed: 1, patch, truncated: false,
+      path: "/Users/me/clover v2/core/x.ts", added: 1, removed: 1, patch, truncated: false,
     });
     c.close();
   });
@@ -211,18 +211,18 @@ describe("panel.readDiff (diff-tabs Task 7)", () => {
   });
 
   // -------------------------------------------------------------------------------------------
-  // A server built WITHOUT `winterHome` — the same "typed INTERNAL failure, never a crash"
-  // precedent every other winterHome-gated handler in ipc/server.ts follows (provider.configure,
+  // A server built WITHOUT `cloverHome` — the same "typed INTERNAL failure, never a crash"
+  // precedent every other cloverHome-gated handler in ipc/server.ts follows (provider.configure,
   // plugins.install, plugin.enable/disable/remove/setConsent).
   // -------------------------------------------------------------------------------------------
-  test("a server built WITHOUT winterHome fails typed-INTERNAL rather than throwing", async () => {
-    const home = mkdtempSync(join(tmpdir(), "winter-panel-readdiff-nohome-"));
+  test("a server built WITHOUT cloverHome fails typed-INTERNAL rather than throwing", async () => {
+    const home = mkdtempSync(join(tmpdir(), "clover-panel-readdiff-nohome-"));
     const store = new SessionStore(home);
     const hub = new SessionHub(store);
     const socketPath = join(home, "core.sock");
     const authority = new TokenAuthority(new FileSecretStore(join(home, "secrets.json")));
     const tokens = await authority.ensureTokens();
-    const server = startIpcServer({ socketPath, serverVersion: "test", tokens: authority, store, hub }); // no winterHome
+    const server = startIpcServer({ socketPath, serverVersion: "test", tokens: authority, store, hub }); // no cloverHome
     stop = () => { server.stop(); store.close(); };
 
     const c = await TestClient.connect(socketPath);

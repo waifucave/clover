@@ -16,7 +16,7 @@ import {
 
 const dirs: string[] = [];
 function tempDir(): string {
-  const d = mkdtempSync(join(tmpdir(), "winter-migration-manifest-"));
+  const d = mkdtempSync(join(tmpdir(), "clover-migration-manifest-"));
   dirs.push(d);
   return d;
 }

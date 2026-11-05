@@ -20,7 +20,7 @@ import { SessionTitler } from "../../src/agent/titles";
  *  actually speaks the wire the `@yanlinglabs/winter-provider-runtime` adapters expect, for both
  *  credential families lane 5 covers. */
 function newStore(): SessionStore {
-  return new SessionStore(mkdtempSync(join(tmpdir(), "winter-runtime-provider-home-")));
+  return new SessionStore(mkdtempSync(join(tmpdir(), "clover-runtime-provider-home-")));
 }
 
 function seedTurn(store: SessionStore, sessionId: string): void {
@@ -35,7 +35,7 @@ describe("RuntimeBackedProvider over a loopback fake", () => {
       scenarios: { [model]: [openaiResponsesFake.responsesStream({ text: ["Fix Login Flow Bug"] })] },
     });
     try {
-      const secrets = new FileSecretStore(mkdtempSync(join(tmpdir(), "winter-runtime-provider-secrets-")));
+      const secrets = new FileSecretStore(mkdtempSync(join(tmpdir(), "clover-runtime-provider-secrets-")));
       await writeCredentialMaterial(secrets, CREDENTIAL_MATERIAL_NAMES.openai, { kind: "api-key", key: "sk-test" });
       const provider = createOpenAiCompatibleRuntimeProvider(secrets, fake.url);
 
@@ -59,7 +59,7 @@ describe("RuntimeBackedProvider over a loopback fake", () => {
       scenarios: { [DEFAULT_CODEX_MODEL]: [openaiResponsesFake.responsesStream({ text: ["Fix Login Flow Bug"] })] },
     });
     try {
-      const secrets = new FileSecretStore(mkdtempSync(join(tmpdir(), "winter-runtime-provider-secrets-")));
+      const secrets = new FileSecretStore(mkdtempSync(join(tmpdir(), "clover-runtime-provider-secrets-")));
       await writeCredentialMaterial(secrets, CREDENTIAL_MATERIAL_NAMES.codexOauth, {
         kind: "oauth",
         accessToken: codexFake.FAKE_ACCESS_TOKEN,
@@ -87,7 +87,7 @@ describe("RuntimeBackedProvider over a loopback fake", () => {
       requireRefreshFor: [DEFAULT_CODEX_MODEL],
     });
     try {
-      const secrets = new FileSecretStore(mkdtempSync(join(tmpdir(), "winter-runtime-provider-secrets-")));
+      const secrets = new FileSecretStore(mkdtempSync(join(tmpdir(), "clover-runtime-provider-secrets-")));
       await writeCredentialMaterial(secrets, CREDENTIAL_MATERIAL_NAMES.codexOauth, {
         kind: "oauth",
         accessToken: codexFake.FAKE_ACCESS_TOKEN,
@@ -105,7 +105,7 @@ describe("RuntimeBackedProvider over a loopback fake", () => {
       expect(fake.bearers).toEqual([codexFake.FAKE_ACCESS_TOKEN, codexFake.FAKE_REFRESHED_ACCESS_TOKEN]);
       expect(events.some((e) => e.type === "text_delta")).toBe(true);
 
-      // The refreshed token was written back to the SAME material record the spawned Winter child
+      // The refreshed token was written back to the SAME material record the spawned Clover child
       // reads — one token set, one writer.
       const raw = await secrets.get(CREDENTIAL_MATERIAL_NAMES.codexOauth);
       expect(raw).toBeTruthy();

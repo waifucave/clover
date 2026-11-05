@@ -47,11 +47,11 @@ describe("buildVersionsJson (P8d-3)", () => {
 describe("stageRuntimes (fake binaries, mkdtemp — no real winter build)", () => {
   test("writes the P8d-1 layout, byte-copies winter mode 0755, and VERSIONS.json parses clean — no claude-official/ (WS-23)", async () => {
     const srcDir = tempDir("stage-runtimes-src-");
-    const winterSrc = join(srcDir, "winter-fake");
-    writeFileSync(winterSrc, "fake winter binary bytes\n");
+    const cloverSrc = join(srcDir, "clover-fake");
+    writeFileSync(cloverSrc, "fake winter binary bytes\n");
 
     const out = tempDir("stage-runtimes-out-");
-    const result = await stageRuntimes({ out, winterPath: winterSrc });
+    const result = await stageRuntimes({ out, winterPath: cloverSrc });
 
     // Layout
     expect(result.winterPath).toBe(join(out, "winter"));
@@ -76,25 +76,25 @@ describe("stageRuntimes (fake binaries, mkdtemp — no real winter build)", () =
 
   test("winterPath given, no winterSource -> defaults to checkout-build (the historical meaning of an already-built path)", async () => {
     const srcDir = tempDir("stage-runtimes-ws1-src-");
-    const winterSrc = join(srcDir, "winter-fake");
-    writeFileSync(winterSrc, "fake winter binary bytes\n");
+    const cloverSrc = join(srcDir, "clover-fake");
+    writeFileSync(cloverSrc, "fake winter binary bytes\n");
     const out = tempDir("stage-runtimes-ws1-out-");
-    const result = await stageRuntimes({ out, winterPath: winterSrc });
+    const result = await stageRuntimes({ out, winterPath: cloverSrc });
     expect(result.versions.winterSource).toBe("checkout-build");
   });
 
   test("winterPath given WITH an explicit winterSource -> that label wins (verify-runtimes-compiled's own use)", async () => {
     const srcDir = tempDir("stage-runtimes-ws2-src-");
-    const winterSrc = join(srcDir, "winter-fake");
-    writeFileSync(winterSrc, "fake winter binary bytes\n");
+    const cloverSrc = join(srcDir, "clover-fake");
+    writeFileSync(cloverSrc, "fake winter binary bytes\n");
     const out = tempDir("stage-runtimes-ws2-out-");
-    const result = await stageRuntimes({ out, winterPath: winterSrc, winterSource: "platform-package" });
+    const result = await stageRuntimes({ out, winterPath: cloverSrc, winterSource: "platform-package" });
     expect(result.versions.winterSource).toBe("platform-package");
   });
 
   test("no winterPath, no winterSource, the injected package resolver hits -> platform-package, version+Mach-O both asserted, no buildWinter() call", async () => {
     const srcDir = tempDir("stage-runtimes-ws3-src-");
-    const pkgBin = join(srcDir, "pkg-winter");
+    const pkgBin = join(srcDir, "pkg-clover");
     writeFileSync(pkgBin, fakeMachOArm64());
     const out = tempDir("stage-runtimes-ws3-out-");
     const result = await stageRuntimes({
@@ -107,7 +107,7 @@ describe("stageRuntimes (fake binaries, mkdtemp — no real winter build)", () =
 
   test("the package resolver hits but the version disagrees with this build's pin -> throws, never stages a mixed pair", async () => {
     const srcDir = tempDir("stage-runtimes-ws4-src-");
-    const pkgBin = join(srcDir, "pkg-winter");
+    const pkgBin = join(srcDir, "pkg-clover");
     writeFileSync(pkgBin, fakeMachOArm64());
     const out = tempDir("stage-runtimes-ws4-out-");
     await expect(
@@ -117,7 +117,7 @@ describe("stageRuntimes (fake binaries, mkdtemp — no real winter build)", () =
 
   test("the package resolver hits but the binary is not a Mach-O arm64 -> throws (the injected checkWinterMachO seam)", async () => {
     const srcDir = tempDir("stage-runtimes-ws5-src-");
-    const pkgBin = join(srcDir, "pkg-winter");
+    const pkgBin = join(srcDir, "pkg-clover");
     writeFileSync(pkgBin, "not a mach-o binary\n");
     const out = tempDir("stage-runtimes-ws5-out-");
     await expect(
@@ -131,20 +131,20 @@ describe("stageRuntimes (fake binaries, mkdtemp — no real winter build)", () =
 
   test("no winterPath, package resolver misses, no explicit winterSource -> falls BACK to buildWinterFn (checkout-build) with a WARNING line", async () => {
     const srcDir = tempDir("stage-runtimes-ws6-src-");
-    const winterSrc = join(srcDir, "winter-fallback-fake");
-    writeFileSync(winterSrc, "fake fallback winter binary bytes\n");
+    const cloverSrc = join(srcDir, "clover-fallback-fake");
+    writeFileSync(cloverSrc, "fake fallback winter binary bytes\n");
     const out = tempDir("stage-runtimes-ws6-out-");
     const logs: string[] = [];
     const origLog = console.log;
     console.log = (...a: unknown[]) => { logs.push(a.join(" ")); origLog(...a); };
-    let buildWinterFnCalled = 0;
+    let buildCloverFnCalled = 0;
     try {
       const result = await stageRuntimes({
         out,
         resolveWinterPackage: () => undefined,
-        buildWinterFn: async () => { buildWinterFnCalled += 1; return winterSrc; },
+        buildWinterFn: async () => { buildCloverFnCalled += 1; return cloverSrc; },
       });
-      expect(buildWinterFnCalled).toBe(1);
+      expect(buildCloverFnCalled).toBe(1);
       expect(result.versions.winterSource).toBe("checkout-build");
       expect(readFileSync(result.winterPath, "utf8")).toBe("fake fallback winter binary bytes\n");
       expect(logs.some((l) => l.includes("WARNING") && l.includes("falling BACK to building winter"))).toBe(true);
@@ -155,15 +155,15 @@ describe("stageRuntimes (fake binaries, mkdtemp — no real winter build)", () =
 
   test("no winterPath, winterSource=checkout-build explicit -> buildWinterFn runs directly, the package door is never even consulted", async () => {
     const srcDir = tempDir("stage-runtimes-ws8-src-");
-    const winterSrc = join(srcDir, "winter-explicit-fake");
-    writeFileSync(winterSrc, "fake explicit checkout-build winter bytes\n");
+    const cloverSrc = join(srcDir, "clover-explicit-fake");
+    writeFileSync(cloverSrc, "fake explicit checkout-build winter bytes\n");
     const out = tempDir("stage-runtimes-ws8-out-");
     let packageDoorConsulted = false;
     const result = await stageRuntimes({
       out,
       winterSource: "checkout-build",
       resolveWinterPackage: () => { packageDoorConsulted = true; return { binPath: "/should/not/be/used", version: REQUIRED_WINTER_AGENT_SDK }; },
-      buildWinterFn: async () => winterSrc,
+      buildWinterFn: async () => cloverSrc,
     });
     expect(packageDoorConsulted).toBe(false);
     expect(result.versions.winterSource).toBe("checkout-build");
@@ -185,12 +185,12 @@ describe("stageRuntimes (fake binaries, mkdtemp — no real winter build)", () =
 
 describe("assertMachOArm64 (P9a-8)", () => {
   test("accepts the exact 8-byte shape measured off the real packed bin/winter", () => {
-    const p = join(tempDir("mach-o-ok-"), "winter-fake");
+    const p = join(tempDir("mach-o-ok-"), "clover-fake");
     writeFileSync(p, fakeMachOArm64());
     expect(() => assertMachOArm64(p)).not.toThrow();
   });
   test("refuses a plain text file", () => {
-    const p = join(tempDir("mach-o-text-"), "winter-fake");
+    const p = join(tempDir("mach-o-text-"), "clover-fake");
     writeFileSync(p, "#!/bin/sh\necho not a binary\n");
     expect(() => assertMachOArm64(p)).toThrow(/not a 64-bit Mach-O binary/);
   });
@@ -198,12 +198,12 @@ describe("assertMachOArm64 (P9a-8)", () => {
     const header = Buffer.alloc(8);
     header.writeUInt32LE(0xfeedfacf, 0); // MH_MAGIC_64
     header.writeUInt32LE(0x01000007, 4); // CPU_TYPE_X86_64
-    const p = join(tempDir("mach-o-wrong-arch-"), "winter-fake");
+    const p = join(tempDir("mach-o-wrong-arch-"), "clover-fake");
     writeFileSync(p, header);
     expect(() => assertMachOArm64(p)).toThrow(/not arm64/);
   });
   test("refuses a too-short file", () => {
-    const p = join(tempDir("mach-o-short-"), "winter-fake");
+    const p = join(tempDir("mach-o-short-"), "clover-fake");
     writeFileSync(p, Buffer.from([0, 1, 2]));
     expect(() => assertMachOArm64(p)).toThrow(/too small/);
   });

@@ -4,13 +4,13 @@
  *
  *   bun run verify:headless-helper            build a proof copy into a temp dir (dist/dev is never touched)
  *   bun run verify:headless-helper --app <p>  check and drive an existing build instead: dist/dev's, or a Release
- *                                             Winter.app's nested Contents/Helpers/Winter Headless.app (its flavor is
- *                                             read from its bundle id; a nested one carries Winter's one Chromium and
+ *                                             Clover.app's nested Contents/Helpers/Winter Headless.app (its flavor is
+ *                                             read from its bundle id; a nested one carries Clover's one Chromium and
  *                                             the enclosing app's own Contents/Frameworks must hold none)
  *
  * What it proves:
- *   1. the signature (`checkSignedHeadless`): identifier, Winter's team, the hardened runtime, the stated designated
- *      requirement, no entitlements, LSBackgroundOnly, Winter's version, the Chromium it carries — and a strict verify, nested
+ *   1. the signature (`checkSignedHeadless`): identifier, Clover's team, the hardened runtime, the stated designated
+ *      requirement, no entitlements, LSBackgroundOnly, Clover's version, the Chromium it carries — and a strict verify, nested
  *      code included, against that requirement;
  *   2. it refuses to run without its pipe (fds 3/4) or without a cache root, before CEF starts;
  *   3. the pipe itself (`scripts/browser-e2e/headless/smoke.ts`): hello, a windowless tab in a session's context, the
@@ -22,7 +22,7 @@
  * Everything runs on temp directories. Running the helper registers its bundles with LaunchServices (Chromium's
  * notification helper checks in at start, and with it the bundle it is in): the proof copy's are unregistered before
  * its temp directory goes. An --app build's are left as they are — that build is not this run's to unregister (for a
- * temporary one, `lsregister -u` its bundles, and the enclosing Winter.app's, by hand).
+ * temporary one, `lsregister -u` its bundles, and the enclosing Clover.app's, by hand).
  */
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
@@ -60,7 +60,7 @@ function main(): void {
   let app = appIndex >= 0 ? argv[appIndex + 1] : undefined;
   let scratch: string | undefined;
   if (app === undefined) {
-    scratch = mkdtempSync(join(tmpdir(), "winter-headless-verify-"));
+    scratch = mkdtempSync(join(tmpdir(), "clover-headless-verify-"));
     console.log(`building a proof copy into ${scratch}…`);
     const built = spawnSync("bun", [join(REPO_ROOT, "scripts", "dev-headless.ts"), "--out", scratch], { stdio: "inherit", env: { ...process.env } });
     if (built.status !== 0) { console.error("verify:headless-helper: the build failed"); process.exit(1); }
@@ -69,25 +69,25 @@ function main(): void {
   app = resolve(app);
   const id = spawnSync("/usr/libexec/PlistBuddy", ["-c", "Print :CFBundleIdentifier", join(app, "Contents", "Info.plist")], { encoding: "utf8" }).stdout.trim();
   const flavor: HeadlessFlavor = id === HEADLESS.dist.identifier ? "dist" : "dev";
-  console.log(`${app}: ${id} (${flavor === "dist" ? "a Release helper, nested in Winter.app" : "the dev helper"})`);
+  console.log(`${app}: ${id} (${flavor === "dist" ? "a Release helper, nested in Clover.app" : "the dev helper"})`);
   try {
     const failures = inspectHeadless(app, flavor);
-    check("the signature: stated requirement, hardened runtime, no entitlements, background-only, Winter's one Chromium inside", failures.length === 0, failures.join("; "));
+    check("the signature: stated requirement, hardened runtime, no entitlements, background-only, Clover's one Chromium inside", failures.length === 0, failures.join("; "));
 
     if (flavor === "dist") {
-      // Nested at Winter.app/Contents/Helpers/: Winter.app's own CEF runs from this helper's Chromium, so Winter.app's
+      // Nested at Winter.app/Contents/Helpers/: Clover.app's own CEF runs from this helper's Chromium, so Clover.app's
       // own Contents/Frameworks must hold no second copy.
       const outerFrameworks = join(app, "..", "..", "Frameworks");
       const second = ["Chromium Embedded Framework.framework", ...HEADLESS_NESTED_HELPERS.map((n) => `${n}.app`)].filter((name) => existsSync(join(outerFrameworks, name)));
-      check("nested in a Winter.app (Contents/Helpers) whose own Frameworks hold no second Chromium", basename(join(app, "..")) === "Helpers" && second.length === 0,
+      check("nested in a Clover.app (Contents/Helpers) whose own Frameworks hold no second Chromium", basename(join(app, "..")) === "Helpers" && second.length === 0,
         second.length === 0 ? resolve(join(app, "..", "..", "..")) : `a second copy: ${second.join(", ")}`);
     }
 
     const exe = headlessExecutable(app, flavor);
-    const noPipe = spawnSync(exe, ["--winter-cache-root=/tmp/winter-headless-never"], { encoding: "utf8", timeout: 10_000, stdio: ["ignore", "ignore", "pipe"] });
-    check("started without its pipe it refuses at once", noPipe.status === 2 && /only Winter starts this/.test(noPipe.stderr ?? ""), `exit ${noPipe.status}`);
+    const noPipe = spawnSync(exe, ["--clover-cache-root=/tmp/clover-headless-never"], { encoding: "utf8", timeout: 10_000, stdio: ["ignore", "ignore", "pipe"] });
+    check("started without its pipe it refuses at once", noPipe.status === 2 && /only Clover starts this/.test(noPipe.stderr ?? ""), `exit ${noPipe.status}`);
     const sh = spawnSync("/bin/sh", ["-c", `exec "$0" 3</dev/null 4>/dev/null`, exe], { encoding: "utf8", timeout: 10_000, stdio: ["ignore", "ignore", "pipe"] });
-    check("started without a cache root it refuses at once", sh.status === 2 && /--winter-cache-root/.test(sh.stderr ?? ""), `exit ${sh.status}`);
+    check("started without a cache root it refuses at once", sh.status === 2 && /--clover-cache-root/.test(sh.stderr ?? ""), `exit ${sh.status}`);
 
     const smoke = spawnSync("bun", [join(REPO_ROOT, "scripts", "browser-e2e", "headless", "smoke.ts"), "--app", app], { encoding: "utf8", timeout: 180_000, env: { ...process.env } });
     const smokeTail = (smoke.stdout ?? "").trim().split("\n").at(-1) ?? "";

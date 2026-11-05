@@ -12,11 +12,11 @@
 import { existsSync } from "node:fs";
 import { buildRunHome, type RunHome, type RunHomeInput } from "@yanlinglabs/winter-runtime-sdk";
 import { runHomeInputFor, type RunHomeSessionFacts } from "../../src/runtime-sdk/run-home-input";
-import type { WinterLegDeps } from "../../src/runtime-sdk/session-driver";
+import type { CloverLegDeps } from "../../src/runtime-sdk/session-driver";
 import type { Settings } from "../../src/settings";
 
 export interface RecordedRunHomes {
-  deps: NonNullable<WinterLegDeps["runHome"]>;
+  deps: NonNullable<CloverLegDeps["runHome"]>;
   facts: RunHomeSessionFacts[];
   inputs: RunHomeInput[];
   built: RunHome[];
@@ -37,7 +37,7 @@ export function recordedRunHomes(
   const facts: RunHomeSessionFacts[] = [];
   const inputs: RunHomeInput[] = [];
   const built: RunHome[] = [];
-  const deps: NonNullable<WinterLegDeps["runHome"]> = {
+  const deps: NonNullable<CloverLegDeps["runHome"]> = {
     inputFor: (f) => {
       facts.push(f);
       return runHomeInputFor({

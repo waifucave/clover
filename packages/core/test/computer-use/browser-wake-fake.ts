@@ -1,7 +1,7 @@
 // Wake triggers on the FAKE browser (`browser-fake-transport.ts`): the page watcher's ops in the winter world (the
 // debugger path: `watchLocate`, `watchArm`, `watchWait`, `watchDisarm`), Winter for Chrome 1.2.0's debugger-free watch
 // (`watch`/`unwatch`/`onWatchEvent`, its own world, injected again in each new document), and test doors for the USER's
-// actions — which reach the page as trusted events, exactly as Winter's own `Input.*` click does (only the timing tells
+// actions — which reach the page as trusted events, exactly as Clover's own `Input.*` click does (only the timing tells
 // them apart). Semantics follow `page-runtime/watch.ts`: input conditions report each event; state conditions report a
 // false→true transition; `initial` refuse / baseline / fire.
 import type { RtNode } from "../../src/computer-use/browser/page-runtime/protocol";
@@ -229,7 +229,7 @@ export class FakeWakes {
     return [...this.worlds.values()].filter((w) => w.tabKey === tabKey && w.frameId === frameId && w.doc === tab.doc);
   }
 
-  /** The USER acts in the page (a trusted event that is not Winter's): a click (with the press before it), a press
+  /** The USER acts in the page (a trusted event that is not Clover's): a click (with the press before it), a press
    *  only, a form submitted, a field changed (its value set first, the change settled). */
   user(tabKey: string, ev: { type: "click" | "press" | "submit" | "change"; id?: number; frameId?: string; value?: string; at?: number; cause?: number }): void {
     const frameId = ev.frameId ?? "top";
@@ -254,7 +254,7 @@ export class FakeWakes {
     }
   }
 
-  /** Winter's own `Input.*` click at a point lands in the page as a trusted click too (the element at (10·id, 5·id)). */
+  /** Clover's own `Input.*` click at a point lands in the page as a trusted click too (the element at (10·id, 5·id)). */
   inputClick(tab: FakeTab, x: number, y: number): void {
     const n = this.nodes(tab, "top").find((m) => Math.abs(10 * m.id - x) < 1 && Math.abs(5 * m.id - y) < 1);
     if (n !== undefined) this.user(tab.tabKey, { type: "click", id: n.id });

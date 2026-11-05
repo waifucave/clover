@@ -1,4 +1,4 @@
-// ComputerV2 Phase 2 — the backends the browser engine can use (`transport.ts`'s `BackendRegistry`). Winter.app's
+// ComputerV2 Phase 2 — the backends the browser engine can use (`transport.ts`'s `BackendRegistry`). Clover.app's
 // browser link registers the built-in browser ("winter"); Winter for Chrome's host server registers one transport per
 // extension instance. The engine only reads.
 //
@@ -119,6 +119,6 @@ export class BrowserBackendRegistry implements BackendRegistry {
 
 /** Why a known instance is not connected now, when nothing more specific was noted. */
 export function disconnectedReason(family: string, name: string): string {
-  if (family === "winter") return "Winter isn't running";
+  if (family === "winter") return "Clover isn't running";
   return `Winter for Chrome is not connected in ${familyInfo(family)?.name ?? name} — ask the user`;
 }

@@ -102,7 +102,7 @@ interface ResolverCacheEntry {
   projectSig: string;
   localSig: string;
   // Phase 9c (P9c-4): the legacy project dir's own file signatures — needed IN THE CACHE KEY
-  // because while `projectSig`/`localSig` read "absent" (the Winter-named files don't exist), the
+  // because while `projectSig`/`localSig` read "absent" (the Clover-named files don't exist), the
   // effective settings are being read through these instead; without them here, editing the legacy
   // overlay file while purely on the fallback path would serve a stale cached merge forever.
   legacyProjectSig: string;
@@ -118,7 +118,7 @@ interface ResolverCacheEntry {
 
 /**
  * Cwd-keyed, mtime-cached "effective settings" read-through: `base()` deep-merged (mergeSettings
- * above) with a project's `.winter/settings.json` and `.winter/settings.local.json` — BOTH
+ * above) with a project's `.clover/settings.json` and `.clover/settings.local.json` — BOTH
  * trust-gated (fix-wave A1: gitignored is not a trust boundary — a repo can `git add -f` a
  * settings.local.json, so it needs the same gate the committed file gets). A session with no cwd,
  * an untrusted cwd, or any read failure sees `base()` back verbatim — the SAME object, never a copy.
@@ -130,10 +130,10 @@ interface ResolverCacheEntry {
  * reads, no merge.
  *
  * Symlink refusal mirrors permission-rules.ts's `projectRulesFor` (the reviewed precedent this
- * pattern comes from): `<cwd>/.winter` must be a real directory and each settings file a real
+ * pattern comes from): `<cwd>/.clover` must be a real directory and each settings file a real
  * regular file, or that project's overlays are treated as absent. This matters for the identical
- * reason it does there — the write-fence denies agent writes into a real `.winter` store, but a
- * symlinked `.winter` (or a symlinked settings file) pointing at agent-writable space elsewhere
+ * reason it does there — the write-fence denies agent writes into a real `.clover` store, but a
+ * symlinked `.clover` (or a symlinked settings file) pointing at agent-writable space elsewhere
  * would let overlay content bypass that fence once a later task wires `permissions.allow` through
  * this resolver.
  *
@@ -152,22 +152,22 @@ export class ProjectSettingsResolver {
     if (!cwd || !base) return base;
 
     const trusted = this.deps.trust.isTrusted(cwd);
-    const dotWinter = join(cwd, ".winter");
-    const projectPath = join(dotWinter, "settings.json");
-    const localPath = join(dotWinter, "settings.local.json");
+    const dotClover = join(cwd, ".clover");
+    const projectPath = join(dotClover, "settings.json");
+    const localPath = join(dotClover, "settings.local.json");
 
-    // A symlinked `.winter` would let the per-file lstats below silently follow it into
+    // A symlinked `.clover` would let the per-file lstats below silently follow it into
     // agent-controlled space — lstat only refuses to follow the FINAL path component, and
-    // `.winter` is an earlier component once joined with a filename, so checking the files alone
+    // `.clover` is an earlier component once joined with a filename, so checking the files alone
     // can never catch a swapped parent. Only trust the per-file lstats when it's a real directory.
-    const dotWinterLstat = lstatOrNull(dotWinter);
-    const dotWinterOk = !!dotWinterLstat && dotWinterLstat.isDirectory();
-    const projectSig = fileSig(dotWinterOk ? lstatOrNull(projectPath) : null);
-    const localSig = fileSig(dotWinterOk ? lstatOrNull(localPath) : null);
+    const dotCloverLstat = lstatOrNull(dotClover);
+    const dotCloverOk = !!dotCloverLstat && dotCloverLstat.isDirectory();
+    const projectSig = fileSig(dotCloverOk ? lstatOrNull(projectPath) : null);
+    const localSig = fileSig(dotCloverOk ? lstatOrNull(localPath) : null);
 
     // Phase 9c (P9c-4): the legacy project dir, file-by-file — a legacy overlay file is only ever
-    // consulted when its Winter-named counterpart is absent (`projectSig`/`localSig` === "absent")
-    // AND `legacy.readLegacyProjectFiles` is on. Same symlink-safety shape as `.winter` above: a
+    // consulted when its Clover-named counterpart is absent (`projectSig`/`localSig` === "absent")
+    // AND `legacy.readLegacyProjectFiles` is on. Same symlink-safety shape as `.clover` above: a
     // symlinked legacy dir is treated as absent, never followed. `legacyProjectFilesReadEnabled`
     // reads `base` directly — no separate settings dep needed, `effective()` already has it.
     const legacyOn = legacyProjectFilesReadEnabled(base);
@@ -206,7 +206,7 @@ export class ProjectSettingsResolver {
       else cacheable = false;
     }
     // fix-wave A1: settings.local.json is trust-gated too, exactly like the project file just
-    // above — a repo can `git add -f` a `.winter/settings.local.json` (gitignore is advisory, a
+    // above — a repo can `git add -f` a `.clover/settings.local.json` (gitignore is advisory, a
     // force-committed file checks out on a clone same as any other tracked file), so gitignored
     // is NOT a trust boundary. An untrusted cwd applies NEITHER overlay; matches CC ("a
     // repository-committed .claude/settings.local.json still requires workspace trust"). `localSig`

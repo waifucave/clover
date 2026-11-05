@@ -74,7 +74,7 @@ export interface RuntimeSessionRecord {
   selection: RuntimeSelection;
   /** Winter Phase 8c (P8c-6): set once, by `runtime-sdk/import-legacy.ts`'s `importEngineEraSession`,
    *  when THIS record's transcript was converted from an engine-era log rather than native to the
-   *  Winter leg from creation. `undefined` for every other record — including one imported before
+   *  Clover leg from creation. `undefined` for every other record — including one imported before
    *  this column existed, which is the honest "unknown" rather than a fabricated "no". */
   importedFrom?: "engine-era";
 }
@@ -127,8 +127,8 @@ export type RuntimeSessionPatch = Partial<
     | "providerId"
     | "modelRef"
     | "authRef"
-    // WS-23 (R2, fix round 1 minor 7): a legacy `claude-agent` record adopted onto the Winter runtime
-    // is re-stamped with the Winter runtime's own versions, so the record never keeps naming the
+    // WS-23 (R2, fix round 1 minor 7): a legacy `claude-agent` record adopted onto the Clover runtime
+    // is re-stamped with the Clover runtime's own versions, so the record never keeps naming the
     // retired official SDK's. Nullable columns: an explicit `undefined` clears them.
     | "sdkVersion"
     | "engineVersion"
@@ -173,8 +173,8 @@ export interface HandoffHistoryEntry {
 
 /** WS-16 §4: "ambiguous backend-ID mappings are rejected, never resolved by picking a file." */
 export class DuplicateBackendSessionError extends Error {
-  constructor(public readonly backendSessionId: string, public readonly existingWinterSessionId: string) {
-    super(`backend session ${backendSessionId} is already mapped to ${existingWinterSessionId}`);
+  constructor(public readonly backendSessionId: string, public readonly existingCloverSessionId: string) {
+    super(`backend session ${backendSessionId} is already mapped to ${existingCloverSessionId}`);
     this.name = "DuplicateBackendSessionError";
   }
 }
@@ -700,28 +700,28 @@ export class RuntimeSessionRecords {
    * The by-key form moves every record sitting at a key, which is correct for a directory rename
    * seen from the directory's side and WRONG seen from the migration's: a project that is only
    * half-moved, or one being rolled back, would sweep up records that were natively filed at the
-   * destination (a Winter session's own record is filed there from birth) and carry them somewhere
+   * destination (a Clover session's own record is filed there from birth) and carry them somewhere
    * they never lived. The manifest records which ids a move was derived from; this is how they are
    * moved, and nothing else with them.
    *
    * Unknown ids are silently skipped: a record deleted since plan time is not an error, it is one
    * fewer record to re-key. Returns how many rows actually changed.
    */
-  setMemoryProjectKeyFor(winterSessionIds: readonly string[], memoryProjectKey: string): number {
-    if (winterSessionIds.length === 0) return 0;
-    const placeholders = winterSessionIds.map(() => "?").join(", ");
+  setMemoryProjectKeyFor(cloverSessionIds: readonly string[], memoryProjectKey: string): number {
+    if (cloverSessionIds.length === 0) return 0;
+    const placeholders = cloverSessionIds.map(() => "?").join(", ");
     return this.rs.transaction(
       () =>
         this.rs.db
           .query(`UPDATE runtime_sessions SET memory_project_key = ?, updated_at = ? WHERE winter_session_id IN (${placeholders})`)
-          .run(memoryProjectKey, this.now(), ...winterSessionIds).changes,
+          .run(memoryProjectKey, this.now(), ...cloverSessionIds).changes,
       { mode: "immediate" },
     );
   }
 
   /**
    * WS-21 (spec §3.8): a run folder the router QUARANTINED at an incarnation's exit — kept on disk, and
-   * recorded so boot recovery never re-reconciles (and re-copies) it and `winter doctor` reports it.
+   * recorded so boot recovery never re-reconciles (and re-copies) it and `clover doctor` reports it.
    * Idempotent; a pre-v7 store (no table) is a no-op.
    */
   /**
@@ -791,7 +791,7 @@ export class RuntimeSessionRecords {
   /** SQLite's UNIQUE violation on `backend_session_id` is the ambiguous-mapping refusal WS-16 §4
    *  demands — typed here, with the existing owner named, so a caller never has to parse SQL text.
    *
-   *  When the owner cannot be looked up the RAW error is rethrown untouched: `existingWinterSessionId`
+   *  When the owner cannot be looked up the RAW error is rethrown untouched: `existingCloverSessionId`
    *  is an id callers render and compare, so it must never carry prose (review r1 minor 7), and a
    *  UNIQUE violation with no owner behind it means the invariant is already broken — that deserves
    *  to surface as what it is rather than be dressed up as a mapping. */

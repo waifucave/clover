@@ -133,7 +133,7 @@ describe("D1-6: the pre-flight review, against the daemon's REAL resolveEndpoint
     expect((review as SwitchReview & { fits?: boolean }).fits).toBe(true);
     // Never names an SDK or runtime (R-10b-4) — the matrix's own prose invariant.
     for (const w of review.classification?.warnings ?? []) {
-      expect(w).not.toMatch(/\bSDK\b|\bruntime\b|Claude Agent|Winter Agent/i);
+      expect(w).not.toMatch(/\bSDK\b|\bruntime\b|Claude Agent|Clover Agent/i);
     }
   });
 });

@@ -17,7 +17,7 @@
 //   - at most `MAX_TRACKED` sessions are held, least recently asked evicted first.
 // Every failure answers `undefined` — an UNKNOWN origin, which every caller already treats as "not a
 // person" (bounded), today's conservative reading.
-import type { SessionEvent } from "@yanlinglabs/winter-protocol";
+import type { SessionEvent } from "@waifucave/clover-protocol";
 import { TurnOriginTracker } from "./turn-origins";
 
 /** How much of a log a first question reads — far more than any turn's start sits back from its cards. */

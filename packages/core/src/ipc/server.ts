@@ -1,5 +1,5 @@
 import type { CoworkWorkspaceEvents } from "../cowork/workspace-events";
-import { COWORK_RPC, COWORK_REMOTE_METHODS, type CoworkMethod } from "@yanlinglabs/winter-protocol";
+import { COWORK_RPC, COWORK_REMOTE_METHODS, type CoworkMethod } from "@waifucave/clover-protocol";
 import { CoworkWorkspaceService } from "../cowork/service";
 import { CoworkError } from "../cowork/types";
 import type { CoworkSessionDoor, CoworkSessionDrivers } from "../cowork/session-ports";
@@ -34,7 +34,7 @@ import {
   ProviderRegisterParams, PluginsContribParams, PluginToolResultParams, HardwareRequestParams, HardwareRespondParams,
   ShortcutInvokeParams, TileActionParams,
   PluginSetConsentParams,
-  // WS-21 (spec §5.2, Contract B): `winter plugin` = `claude plugin`.
+  // WS-21 (spec §5.2, Contract B): `clover plugin` = `claude plugin`.
   PluginInstallParams, PluginUninstallParams, PluginEnableScopedParams, PluginDisableScopedParams,
   PluginUpdateParams, PluginListParams, PluginMarketplaceAddParams, PluginMarketplaceRemoveParams,
   PluginMarketplaceListParams, PluginMarketplaceUpdateParams,
@@ -52,7 +52,7 @@ import {
   AgentsListParams, SettingsSetSkillDeniedParams, ModelsCatalogParams,
   SYSTEM_SESSION_ID,
   SessionEvent, ConnWriter, type WritableSocket,
-} from "@yanlinglabs/winter-protocol";
+} from "@waifucave/clover-protocol";
 import { SDK_VERSION } from "@yanlinglabs/winter-agent-sdk";
 import type { TokenAuthority } from "../auth/tokens";
 import type { SecretStore } from "../auth/secret-store";
@@ -93,10 +93,10 @@ import type { UsageService } from "../usage/service";
 import type { ModelInfo } from "../providers/types";
 import type { ChildrenRpc } from "../runtime-sdk/children-rpc";
 import type { WinterRuntimeSdk } from "../runtime-sdk/create";
-import { WinterLegRefusal, type LegSession, type WinterSessionDrivers } from "../runtime-sdk/session-driver";
+import { CloverLegRefusal, type LegSession, type CloverSessionDrivers } from "../runtime-sdk/session-driver";
 import { COWORK_SESSION_UNSUPPORTED_CODE, COWORK_SESSION_UNSUPPORTED_MESSAGE, isUnrunnableSessionMode, isUnrunnableStoredMode, unrunnableModeMessage } from "../sessions/session-mode";
 import { isSessionReplaced, withReplacementRetry } from "../runtime-sdk/session-replaced";
-import { readWinterTasks } from "../runtime-sdk/tasks-reader";
+import { readCloverTasks } from "../runtime-sdk/tasks-reader";
 import { ImportLegacySessionError } from "../runtime-sdk/import-legacy";
 import type { PlanSwitchOutcome } from "../runtime-sdk/handoff";
 import { recordNamesSelection } from "../runtime-sdk/handoff";
@@ -145,12 +145,12 @@ import { McpOAuthDoorRefusal, McpOAuthDoors, type McpOAuthDoorDeps } from "../ag
 import { reconnectLiveSessionsFor } from "../agent/mcp/reconnect";
 import { parseProjectMcpServers, readRawProjectMcpConfig } from "../agent/mcp/project-file";
 import { daemonMcpOAuthStore } from "../runtime-sdk/mcp-oauth-store";
-import { keychainService, resolveWinterProfile } from "../profile";
+import { keychainService, resolveCloverProfile } from "../profile";
 import type { McpOAuthStore } from "@yanlinglabs/winter-agent-runtime/mcp-auth";
 import { liveSdkSettings, readSdkGlobalConfig, SdkFileUnreadable, updateSdkSettings } from "../sdk-files";
 import { CONNECTOR_ALL_TOOLS, connectorFactsFor, connectorToolName, sdkRulesFor, type ConnectorPermission, type ConnectorPermissionSource } from "../agent/mcp/connector-permissions";
 import { bypassAllowedAtSpawn, disallowedToolsFor } from "../runtime-sdk/mode-options";
-import { WINTER_CAPABILITY_TOOLS, CAPABILITY_SERVER_KEYS, capabilityToolName, type CapabilityToolFacts } from "../capabilities/names";
+import { CLOVER_CAPABILITY_TOOLS, CAPABILITY_SERVER_KEYS, capabilityToolName, type CapabilityToolFacts } from "../capabilities/names";
 import { diagnoseRuntimes } from "../runtime-sdk/runtimes-doctor";
 import { loadUserAgentDefinitions, loadProjectAgentDefinitions, mergeAgentDefinitionTiers, type LoadedAgentDefinitions } from "../agent/agent-definitions";
 import { trustedProjectWalk } from "../agent/project-scope-dirs";
@@ -266,21 +266,21 @@ export interface IpcServerOptions {
   // daemon whose runtime store would not open (there are no rows to remove), and in every test that
   // constructs a server without one.
   onSessionDeleted?: (sessionId: string) => void;
-  // P8b Task 5: THE Winter runtime handle (`runtime-sdk/create.ts`), built once in daemon.ts.
+  // P8b Task 5: THE Clover runtime handle (`runtime-sdk/create.ts`), built once in daemon.ts.
   //
   // It arrives here because `session.create` is where the leg is decided (P8b-13: a session runs to
-  // completion on the leg it was created with), and a Winter-leg create needs the handle's
+  // completion on the leg it was created with), and a Clover-leg create needs the handle's
   // `spawnHookFor(mode)` and its `sdk.query()`. NOTHING IN THIS FILE READS IT YET — Task 16 is what
   // opens the first Chat session on it — but the wiring is deliberate rather than deferred, so that
   // task is a change to one handler instead of a change to the daemon's whole construction.
   //
   // `undefined` means the router could not construct (a packaging fault; see daemon.ts's slot). A
-  // Winter-leg create must then refuse with a typed error, never crash and never silently fall back.
+  // Clover-leg create must then refuse with a typed error, never crash and never silently fall back.
   runtimeSdk?: WinterRuntimeSdk;
   /**
    * P8b Tasks 6-7 (P8b-36): build THIS session's daemon-owned capability servers.
    *
-   * The other half of the Winter-leg session door. `callTool(name, args)` carries no session
+   * The other half of the Clover-leg session door. `callTool(name, args)` carries no session
    * identity, so a capability server has the session BAKED IN and belongs to exactly one — which is
    * why this is a function of a session rather than a list on the handle. Task 16's driver calls it
    * once per session and SPREADS the result into that session's `Options.mcpServers` — it is already
@@ -292,10 +292,10 @@ export interface IpcServerOptions {
    */
   buildSessionCapabilities?: (session: CapabilitySession) => CapabilityServerRecord;
   /**
-   * P8b Task 16: THE driver table (`runtime-sdk/session-driver.ts`) — the Winter leg's whole door.
+   * P8b Task 16: THE driver table (`runtime-sdk/session-driver.ts`) — the Clover leg's whole door.
    *
    * `session.create`/`session.dispatch` run the creation transaction through it (every mode is
-   * the Winter leg since Task 17); every later `session.send`/`steer`/`interrupt`/`compact`/
+   * the Clover leg since Task 17); every later `session.send`/`steer`/`interrupt`/`compact`/
    * `setModel` asks it for the session's live driver first. A record that says "winter" with no
    * live driver (a daemon restart, an idle timeout) is RESUMED here; an engine-ERA record or a
    * record-less session is a typed refusal (`session_predates_winter_leg` / `session_unrecorded`).
@@ -304,11 +304,11 @@ export interface IpcServerOptions {
    * `session.send` lands the message in the log and nothing else, exactly as a no-engine daemon
    * always behaved.
    */
-  winter?: WinterSessionDrivers;
+  clover?: CloverSessionDrivers;
   /**
    * Winter Phase 8c (P8c-6): the engine-era IMPORT door — `runtime-sdk/import-legacy.ts`'s
    * `importEngineEraSession`, bound to this daemon's home/store/records by the caller (`daemon.ts`).
-   * `session.send`'s ONLY caller: a session whose record is engine-era (`opts.winter.legOf(id) ===
+   * `session.send`'s ONLY caller: a session whose record is engine-era (`opts.clover.legOf(id) ===
    * "engine"`) gets exactly one import attempt before this door's own `session_predates_winter_leg`
    * refusal would otherwise be permanent.
    *
@@ -342,7 +342,7 @@ export interface IpcServerOptions {
    *
    * `undefined` on a server built without one (a bare test server, or a daemon whose runtime-state
    * spine did not open): `providerId` stays absent on every row, exactly like `runtimeKind` does
-   * when `opts.winter` itself is undefined.
+   * when `opts.clover` itself is undefined.
    */
   records?: Pick<RuntimeSessionRecords, "get">;
   // session-activity-hygiene T8: hands the caller THE bound activity derivation this server stamps
@@ -367,10 +367,10 @@ export interface IpcServerOptions {
    *  sessions through THIS, never a second copy of `session.create`'s steps. Optional. */
   onSessionCreator?: (create: InternalSessionCreator) => void;
   /** P8b Task 17: the engine is gone; what remains is the ACTIVITY the handlers read (turn running,
-   *  background work, the model catalogue) — served by the daemon over the Winter driver table and
+   *  background work, the model catalogue) — served by the daemon over the Clover driver table and
    *  the persisted child roster. */
   engine?: EngineSignals | null;
-  /** `thread.send` / `agent.stop` over Winter children (`runtime-sdk/children-rpc.ts`). */
+  /** `thread.send` / `agent.stop` over Clover children (`runtime-sdk/children-rpc.ts`). */
   agents?: ChildrenRpc;
   broker?: ApprovalBroker | null;
   /** WS-27: URL-mode elicitation cards; `elicitation.respond` (local clients only). */
@@ -402,7 +402,7 @@ export interface IpcServerOptions {
    * LOCAL-ONLY `computerUse.*` RPCs. Absent (a bare test server): those methods answer INTERNAL.
    */
   computerUse?: ComputerUseControl;
-  /** ComputerV2 Phase 2: Winter.app's browser link (`browserLink.*`, harness role only — `computer-use/browser/cef-link/`).
+  /** ComputerV2 Phase 2: Clover.app's browser link (`browserLink.*`, harness role only — `computer-use/browser/cef-link/`).
    *  Absent (a bare test server): those methods answer INTERNAL. */
   browserLink?: BrowserLink;
   /** A session was archived (`session.setActivity`): the browser engine closes its remaining agent tabs. */
@@ -419,13 +419,13 @@ export interface IpcServerOptions {
   /**
    * WS-25: the MCP sign-in doors' seams. `store` is the daemon's ONE MCP OAuth store; absent, it is
    * derived exactly as the rest of the daemon derives it (`daemonMcpOAuthStore(keychainService(profile,
-   * winterHome))` -- the same instance, so the refresh single-flight is shared). The rest are test seams
+   * cloverHome))` -- the same instance, so the refresh single-flight is shared). The rest are test seams
    * (`McpOAuthDoorDeps`). Local role only: none of the `mcp.*` sign-in methods is remote-reachable.
    */
   mcpOAuth?: { store?: McpOAuthStore } & Pick<McpOAuthDoorDeps, "startLogin" | "discoverIssuer" | "revoke" | "fetch" | "clientMetadataUrl" | "loginTtlMs" | "now">;
-  plugins?: PluginStore;     // discovered ~/.winter/plugins/*; plugins.list
-  // Phase 4d-ii Task 2: `<winterHome>/settings.json` + `<winterHome>/plugins/` — the SAME
-  // convention `bootstrapWinterDir` (winter-dir.ts) and every other winterHome-taking store
+  plugins?: PluginStore;     // discovered ~/.clover/plugins/*; plugins.list
+  // Phase 4d-ii Task 2: `<cloverHome>/settings.json` + `<cloverHome>/plugins/` — the SAME
+  // convention `bootstrapCloverDir` (clover-dir.ts) and every other cloverHome-taking store
   // (PluginStore, SkillStore, ContextAssembler, …) already assumes. Lets the plugin-lifecycle
   // RPCs below (plugins.install/plugin.enable/disable/remove/setConsent) read+write settings.json
   // and the plugins directory directly, and re-derive a FRESH `PluginStore` per call (`livePlugins`
@@ -434,13 +434,13 @@ export interface IpcServerOptions {
   // "applied HOT, no restart" requirement exists to fix. Optional: a server built without it (most
   // existing tests) keeps working via `livePlugins`'s fallback to the boot-time `plugins` above;
   // the five lifecycle RPCs themselves become a typed INTERNAL failure (never a crash) when a
-  // caller actually invokes them with no `winterHome` wired.
-  winterHome?: string;
+  // caller actually invokes them with no `cloverHome` wired.
+  cloverHome?: string;
   // BYOK T1 (design doc `2026-07-16-byok-provider-setup-design.md` §1): the daemon's OWN
   // SecretStore — threaded here so `provider.configure` can write the BYO OpenAI API key
   // server-side (never a Swift/Keychain write, avoiding the Bun.secrets item-format mismatch the
   // design doc's recon flagged). Optional, same "typed INTERNAL failure, never a crash" precedent
-  // as `winterHome` above: a server built without one (most existing tests) makes
+  // as `cloverHome` above: a server built without one (most existing tests) makes
   // `provider.configure` a typed failure rather than throwing on construction. daemon.ts always
   // wires its own `secrets` (KeychainSecretStore by default, `startDaemon({secrets})`-injectable
   // for tests) into this field. Also `sync.config`'s ONLY route to the Exa key (Chat Slice D task
@@ -448,7 +448,7 @@ export interface IpcServerOptions {
   secrets?: SecretStore;
   // Winter Phase 10a (O6, P10a-6): the daemon's ONE console-profile broker instance — threaded here
   // so `provider.login`/`provider.loginCode`/`provider.logout`/`provider.status` can drive it.
-  // Optional, same "typed INTERNAL failure, never a crash" precedent as `winterHome`/`secrets`
+  // Optional, same "typed INTERNAL failure, never a crash" precedent as `cloverHome`/`secrets`
   // above: a server built without one (most existing tests) makes the four RPCs typed failures.
   consoleBroker?: ConsoleProfileBroker;
   // Chat Slice D task 3 (`sync.config`): the user-ADDED half of the dangerous-domains list —
@@ -495,14 +495,14 @@ export interface IpcServerOptions {
   // `boundProviderId` — absent (every pre-fix test, or a no-agentProvider daemon) falls back to
   // `ownProviderFor(settings)` there, unchanged.
   boundProviderId?: () => string;
-  // 2026-09-18: the shared role-health registry (daemon.ts, constructed once near `winterHome`) —
+  // 2026-09-18: the shared role-health registry (daemon.ts, constructed once near `cloverHome`) —
   // read by `settings.modelRoles`/`settings.setModelRole` ONLY, to merge a `problem` onto each
   // role's wire shape (`providers/role-health.ts`'s `withProblem`). Absent (every pre-existing
   // test/caller) means `problem` reports `null` for every role — never a crash, never a guess.
   roleHealth?: RoleHealthRegistry;
   /**
    * 2026-09-19: the internal-jobs router (`providers/internal-router.ts`), the ONE thing that decides
-   * whether Winter's own background jobs (titles, the bash reviewer, the dreamer, the session cleaner)
+   * whether Clover's own background jobs (titles, the bash reviewer, the dreamer, the session cleaner)
    * can run and on which provider. Read by `settings.modelRoles`/`settings.setModelRole` for the
    * internal roles' `permitted` set and their DERIVED `problem`, and by `credential.set`/
    * `credential.remove`, which AWAIT `view.refresh()` before returning so "add a key, the next
@@ -531,10 +531,10 @@ export interface IpcServerOptions {
   // being absent elsewhere in this file.
   hooks?: HookRegistry;
   questions?: QuestionBroker; // in-flight ask_user questions; ask_user.respond
-  /** The Winter island (`island/registry.ts`): every pending card across sessions (`island.pending`), and the island
+  /** The Clover island (`island/registry.ts`): every pending card across sessions (`island.pending`), and the island
    *  clients — a harness hello advertising `CLIENT_CAPABILITY_ISLAND` — it tells when that set changes. */
   island?: IslandRegistry;
-  /** The Winter island's activity (`island/activity.ts`, phase 2): computer use, turn results and watches across
+  /** The Clover island's activity (`island/activity.ts`, phase 2): computer use, turn results and watches across
    *  sessions (`island.activity`), told to the same island clients (`island.activityChanged`). */
   islandActivity?: IslandActivity;
   /** The island's Usage tab (`island/usage.ts`, `island.usage`). */
@@ -546,7 +546,7 @@ export interface IpcServerOptions {
   peripheral?: PeripheralBroker; // lease machinery; peripheral.* verbs (Phase 2f)
   providerLink?: ProviderLink;   // bridges PeripheralBroker.call()'s pushToProvider to the live
                                   // provider connection this server tracks (Phase 2f)
-  // Phase 4c Task 2 (spec §5): plugin (or harness, dev/testing) → Winter.app's XPC helper.
+  // Phase 4c Task 2 (spec §5): plugin (or harness, dev/testing) → Clover.app's XPC helper.
   // `hardware` is constructed with the SAME `providerLink` as `peripheral` above (daemon.ts) — the
   // app's one provider connection doubles as the hardware provider. `hardware.respond` reuses
   // `peripheral.isProvider()` to gate on that SAME connection identity (see the hardware.respond
@@ -604,7 +604,7 @@ export interface IpcServerOptions {
   // (every pre-C2 test, and a no-agentProvider daemon) degrades workflow.list's running section to
   // [] and workflow.stop to a soft no-op, while workflow.run/get become a typed RpcFailure.
   workflows?: WorkflowRuntime;
-  // The daemon's own WorkflowStore (C1) — trust-gated project/user `.winter`/`<winterHome>` `.js`
+  // The daemon's own WorkflowStore (C1) — trust-gated project/user `.clover`/`<cloverHome>` `.js`
   // workflow discovery, backing workflow.list's "saved" section and workflow.run's by-name
   // resolution. Built UNCONDITIONALLY in daemon.ts (no engine dependency — same precedent as
   // `outputStyleStore`), so it's present even on a no-agentProvider daemon. Optional here only for
@@ -626,7 +626,7 @@ export interface IpcServerOptions {
 export interface IpcServer { stop(): void }
 
 /** `data` rides the JSON-RPC error envelope's own `data` field (the pump below forwards it
- *  structurally; `sync.push`'s DIVERGED uses the same slot). P8b Task 16: the Winter leg's typed
+ *  structurally; `sync.push`'s DIVERGED uses the same slot). P8b Task 16: the Clover leg's typed
  *  refusals travel as `data: { code }` — the numeric `code` stays a JSON-RPC class, the string
  *  names the refusal, and a client can branch on it without string-matching a message. */
 /** `session.create`'s default mint-sweep scheduler: a MACROTASK (`setTimeout(0)`), which the event loop
@@ -651,9 +651,9 @@ function coworkSessionUnsupported(storedMode?: string): RpcFailure {
   return new RpcFailure(ERR.INVALID_PARAMS, storedMode === undefined ? COWORK_SESSION_UNSUPPORTED_MESSAGE : unrunnableModeMessage(storedMode), { code: COWORK_SESSION_UNSUPPORTED_CODE });
 }
 
-/** P8b Task 16: a `WinterLegRefusal` (or the driver's own typed errors) as the RPC error a client
+/** P8b Task 16: a `CloverLegRefusal` (or the driver's own typed errors) as the RPC error a client
  *  can branch on. Anything else is rethrown untouched. */
-export function rpcFromWinterRefusal(err: unknown): never {
+export function rpcFromCloverRefusal(err: unknown): never {
   // A store-level Cowork refusal (`SessionStore.createSession` on a mode nothing can run) is the numeric RPC error
   // with the string code in `data.code`, like every other refusal here — never an uncaught Error that reaches
   // the client as INTERNAL. Same shape `COWORK_RPC` gives a `CoworkError`.
@@ -664,11 +664,11 @@ export function rpcFromWinterRefusal(err: unknown): never {
       { code: err.code, ...(err.currentRevision === undefined ? {} : { currentRevision: err.currentRevision }) },
     );
   }
-  if (err instanceof WinterLegRefusal) {
+  if (err instanceof CloverLegRefusal) {
     // Client-actionable refusals, in the same shape as `session_predates_winter_leg` (the caller can
     // fix its own input — configure a credential, pick a servable model, repair a transcript) rather
     // than a daemon-internal fault. WS-23: `legacy_session_migration_refused` is a session the retired
-    // official leg created whose transcript cannot move to the Winter leg as it stands.
+    // official leg created whose transcript cannot move to the Clover leg as it stands.
     // `session_cwd_unavailable`: the session's own working directory is gone — the user restores it
     // or starts a new session, so it is theirs to fix, not a daemon fault.
     // `unsupported_topology`: a stored `cowork` session — a recognised mode nothing can run; the same
@@ -700,7 +700,7 @@ export function rpcFromWinterRefusal(err: unknown): never {
 
 /**
  * WS-19: a typed credential refusal as the RPC error a client branches on. The CODE rides
- * `error.data.code` (+ `data.door` where one applies), exactly as the Winter leg's own refusals do,
+ * `error.data.code` (+ `data.door` where one applies), exactly as the Clover leg's own refusals do,
  * so the Mac app, the phone and the CLI all read one vocabulary.
  *
  * INVALID_PARAMS for everything the caller can fix (an unknown provider, a wrong door, an unusable
@@ -756,8 +756,8 @@ function skillErrorCode(failure: { kind?: SkillErrorKind }): number {
 // below.
 //
 // Phase 4c Task 1 (spec §5) adds a seventh: `hardware.request` — a plugin's own tool may need to
-// ask Winter.app's XPC helper to do something (e.g. set the battery charge limit). `hardware.respond`
-// is DELIBERATELY NOT here: only the active provider connection (Winter.app) may answer a
+// ask Clover.app's XPC helper to do something (e.g. set the battery charge limit). `hardware.respond`
+// is DELIBERATELY NOT here: only the active provider connection (Clover.app) may answer a
 // `hardware_requested` push, same precedent as `peripheral.respond` staying off this list — a
 // plugin connection calling it is role-rejected before dispatch, never reaching the handler.
 // Task 2 wires `hardware.request`'s handler (consent gate + HardwareBroker) below.
@@ -843,7 +843,7 @@ export const REMOTE_ALLOWED_METHODS = new Set<string>([
   METHODS.credentialRemove,
   // ComputerV2 Phase 1b (the phone mirror): the phone asks to watch the live mirror of the session it is
   // attached to. The daemon only GATES it (assertRemoteMayUseSession + the attachment + the user's mirror
-  // setting); Winter.app's Gateway special-cases it like `session.attach` and relays the frames it already
+  // setting); Clover.app's Gateway special-cases it like `session.attach` and relays the frames it already
   // shows on its own wire kind — never through this socket, the session log, history or the event stream.
   METHODS.sessionMirror,
 ]);
@@ -866,7 +866,7 @@ export const REMOTE_ALLOWED_METHODS = new Set<string>([
  *  store — refusal is the gate's default, not an opt-in list of blocked modes to maintain. */
 // Winter Phase 8d (Task 4.4 fix round 1): exported so `packages/core/scripts/capability-matrix.ts`
 // reads this SAME set for its ios-remote surface-reachability row instead of a duplicated literal
-// — the capability matrix is a Winter-repo-internal consumer (no dependency-direction problem, the
+// — the capability matrix is a Clover-repo-internal consumer (no dependency-direction problem, the
 // reason `session-mode.ts`'s own copy stays a literal — see that file's own comment).
 export const REMOTE_ELIGIBLE_SESSION_MODES = new Set(["code", "dispatch", "chat"]);
 
@@ -967,15 +967,15 @@ function resolveModelSelection(model: string, settings?: Settings): string {
 }
 
 /** WS-20: `dispatchPinMessage` needs the LIVE settings (it names the live pinned tag), but most
- *  test harnesses boot this server with no `winterHome` wired at all — same "typed no-op, never a
- *  crash" precedent as every other `opts.winterHome`-gated reader in this file (`livePlugins`,
+ *  test harnesses boot this server with no `cloverHome` wired at all — same "typed no-op, never a
+ *  crash" precedent as every other `opts.cloverHome`-gated reader in this file (`livePlugins`,
  *  `provider.configure`, …). Falls back to `undefined`, which `pinsFor`/`dispatchPinMessage` both
  *  already treat as "use `DEFAULT_PROVIDER`" — never a throw. */
-function liveSettingsFor(opts: { winterHome?: string }): Settings | undefined {
-  if (!opts.winterHome) return undefined;
+function liveSettingsFor(opts: { cloverHome?: string }): Settings | undefined {
+  if (!opts.cloverHome) return undefined;
   try {
     // WS-21: never the moved keys (`withoutMovedKeys`) — their only doors are the `sdk…` readers.
-    return liveSettingsView(loadSettings(join(opts.winterHome, "settings.json")));
+    return liveSettingsView(loadSettings(join(opts.cloverHome, "settings.json")));
   } catch {
     return undefined;
   }
@@ -1000,33 +1000,33 @@ const ATTACHMENTS_SESSION_MESSAGE = (kind: "images" | "files"): string => `${kin
 const STAGED_IMAGE_KEEP_TAIL_BYTES = 4 * 1024 * 1024;
 
 /** WS-21 (spec §4.4): the MCP doors speak claude's three scopes. `local` and `project` name a project,
- *  so they need the caller's `cwd`. The local entry in `sdk/.winter.json` is keyed by `localScopeKeyFor`
+ *  so they need the caller's `cwd`. The local entry in `sdk/.clover.json` is keyed by `localScopeKeyFor`
  *  (review I5 — exactly the run home's key); the project file lives at the project root the run home reads
  *  it from (`projectScopeRootFor`, R.3 residual: a linked worktree's own top). Refused typed without a cwd. */
 /** WS-27: the config names of the inline servers subagent definitions declare, for a session at `cwd`. */
-function agentInlineRowsFor(winterHome: string, cwd: string | undefined, trust: TrustStore | undefined): string[] {
+function agentInlineRowsFor(cloverHome: string, cwd: string | undefined, trust: TrustStore | undefined): string[] {
   try {
     const roots = trustedProjectRoots({ cwd, trust });
-    return [...new Set(agentInlineMcpServers(winterHome, roots, cwd).map((s) => s.name))];
+    return [...new Set(agentInlineMcpServers(cloverHome, roots, cwd).map((s) => s.name))];
   } catch {
     return [];
   }
 }
 
-/** WS-27: every server name a LIVE session's child has connected (`WinterSession.mcpServerNames`). */
-function liveMcpServerNames(winter: { list(): ReadonlyArray<{ mcpServerNames?(): string[] }> } | undefined): () => string[] {
-  return () => (winter?.list() ?? []).flatMap((s) => s.mcpServerNames?.() ?? []);
+/** WS-27: every server name a LIVE session's child has connected (`CloverSession.mcpServerNames`). */
+function liveMcpServerNames(clover: { list(): ReadonlyArray<{ mcpServerNames?(): string[] }> } | undefined): () => string[] {
+  return () => (clover?.list() ?? []).flatMap((s) => s.mcpServerNames?.() ?? []);
 }
 
-function mcpScopeTarget(method: string, winterHome: string, p: { scope: McpScope; cwd?: string | undefined }): McpScopeTarget {
-  if (p.scope === "user") return { home: winterHome, scope: "user" };
+function mcpScopeTarget(method: string, cloverHome: string, p: { scope: McpScope; cwd?: string | undefined }): McpScopeTarget {
+  if (p.scope === "user") return { home: cloverHome, scope: "user" };
   if (p.cwd === undefined || p.cwd === "") {
     throw new RpcFailure(ERR.INVALID_PARAMS, `${method}: the "${p.scope}" scope names a project — pass the project's cwd`, { code: "mcp_scope_needs_cwd" });
   }
-  return { home: winterHome, scope: p.scope, root: p.scope === "local" ? localScopeKeyFor(p.cwd) : projectScopeRootFor(p.cwd) };
+  return { home: cloverHome, scope: p.scope, root: p.scope === "local" ? localScopeKeyFor(p.cwd) : projectScopeRootFor(p.cwd) };
 }
 
-/** Which credential-shaped headers the read door dropped from ONE scope's servers in `sdk/.winter.json`
+/** Which credential-shaped headers the read door dropped from ONE scope's servers in `sdk/.clover.json`
  *  (names only). The project file forwards headers verbatim (claude parity), so it has none. */
 function strippedMcpHeaders(t: McpScopeTarget): Record<string, string[]> {
   if (t.scope === "project") return {};
@@ -1075,19 +1075,19 @@ export function startIpcServer(opts: IpcServerOptions): IpcServer {
    * change lands at the next incarnation.
    */
   async function evictSessionsForCredentialChange(providerId: string): Promise<void> {
-    const winter = opts.winter;
+    const clover = opts.clover;
     const records = opts.records;
-    if (winter === undefined || records === undefined) return;
+    if (clover === undefined || records === undefined) return;
     try {
       await evictSessionsForCredential({
-        list: () => winter.list(),
+        list: () => clover.list(),
         providerOf: (sessionId) => records.get(sessionId)?.providerId,
         // 0.0.17: the `exa` row is keyed by LEG, not by the record's provider — the Exa key reaches a
-        // child only through the Winter leg's `Options.web`, and it decides that leg's tool surface.
-        legOf: (sessionId) => winter.legOf(sessionId),
+        // child only through the Clover leg's `Options.web`, and it decides that leg's tool surface.
+        legOf: (sessionId) => clover.legOf(sessionId),
         // Minor d: a child whose cross-provider advisor pin names this provider is replaced too.
-        advisorProviderOf: (sessionId) => winter.advisorProviderOf?.(sessionId),
-        evict: (sessionId) => winter.evict(sessionId),
+        advisorProviderOf: (sessionId) => clover.advisorProviderOf?.(sessionId),
+        evict: (sessionId) => clover.evict(sessionId),
         log: (line) => console.error(line),
       }, providerId);
     } catch (err) {
@@ -1101,24 +1101,24 @@ export function startIpcServer(opts: IpcServerOptions): IpcServer {
    * the rest of the daemon derives it), because `refreshMcpOAuthToken`'s single-flight is keyed on the
    * store object. A test injects a memory store.
    */
-  const mcpOAuthStore = (): McpOAuthStore => opts.mcpOAuth?.store ?? daemonMcpOAuthStore(keychainService(resolveWinterProfile(), opts.winterHome));
+  const mcpOAuthStore = (): McpOAuthStore => opts.mcpOAuth?.store ?? daemonMcpOAuthStore(keychainService(resolveCloverProfile(), opts.cloverHome));
 
   /**
    * WS-25: a sign-in finished or a sign-out ran for `serverUrl`. The daemon's status probe forgets its
    * http/sse answers (the next `mcp.list` re-probes), and every LIVE child that configures the server is
    * asked to reconnect it under the names its own live incarnation gave it (`agent/mcp/reconnect.ts` over
-   * `WinterSession.mcpServerNamesFor`/`reconnectMcpServer`: turn-safe, never an eviction or a restart -- a
+   * `CloverSession.mcpServerNamesFor`/`reconnectMcpServer`: turn-safe, never an eviction or a restart -- a
    * Keychain write never restarts a child). Best-effort: the sign-in itself already stands.
    */
   async function onMcpSignInChanged(serverUrl: string): Promise<void> {
     opts.mcp?.forgetRemote();
-    const winter = opts.winter;
-    if (winter === undefined) return;
-    await reconnectLiveSessionsFor({ list: () => winter.list(), log: (line) => console.error(line) }, serverUrl);
+    const clover = opts.clover;
+    if (clover === undefined) return;
+    await reconnectLiveSessionsFor({ list: () => clover.list(), log: (line) => console.error(line) }, serverUrl);
   }
 
-  const mcpOAuthDoors = opts.winterHome === undefined ? undefined : new McpOAuthDoors({
-    home: opts.winterHome,
+  const mcpOAuthDoors = opts.cloverHome === undefined ? undefined : new McpOAuthDoors({
+    home: opts.cloverHome,
     store: mcpOAuthStore,
     ...(opts.trust !== undefined ? { trust: opts.trust } : {}),
     onSignInChanged: onMcpSignInChanged,
@@ -1132,9 +1132,9 @@ export function startIpcServer(opts: IpcServerOptions): IpcServer {
     log: (line) => console.error(line),
   });
 
-  /** The sign-in doors, or a typed refusal on a server built without a `winterHome`. */
+  /** The sign-in doors, or a typed refusal on a server built without a `cloverHome`. */
   function signInDoors(method: string): McpOAuthDoors {
-    if (mcpOAuthDoors === undefined) throw new RpcFailure(ERR.INTERNAL, `${method} is not available on this server (no winterHome configured)`);
+    if (mcpOAuthDoors === undefined) throw new RpcFailure(ERR.INTERNAL, `${method} is not available on this server (no cloverHome configured)`);
     return mcpOAuthDoors;
   }
 
@@ -1145,7 +1145,7 @@ export function startIpcServer(opts: IpcServerOptions): IpcServer {
   }
 
   /**
-   * 2026-09-19: re-probe which providers Winter's own jobs can run on, AWAITED before
+   * 2026-09-19: re-probe which providers Clover's own jobs can run on, AWAITED before
    * `credential.set`/`credential.remove`/`credential.list` return — so the very next internal call
    * (and the very next `settings.modelRoles` read) sees material that was just stored or removed, with
    * no daemon restart.
@@ -1159,7 +1159,7 @@ export function startIpcServer(opts: IpcServerOptions): IpcServer {
    * earlier uncaught version turned a stored credential into an RPC error.)
    */
   /**
-   * `session.setPolicy` across the BYPASS BOUNDARY on a live Winter-leg child: the policy the child
+   * `session.setPolicy` across the BYPASS BOUNDARY on a live Clover-leg child: the policy the child
    * was SPAWNED under, per session, while a replacement is waiting for its idle boundary.
    *
    * Needed because the stored policy stops being the child's once a crossing is deferred: a user who
@@ -1171,7 +1171,7 @@ export function startIpcServer(opts: IpcServerOptions): IpcServer {
   const pendingPolicyReplacements = new Map<string, { live: LegSession; spawnPolicy: SessionApprovalPolicy }>();
 
   /**
-   * Replace a live Winter child whose SPAWN-TIME bypass facts disagree with the policy the user just
+   * Replace a live Clover child whose SPAWN-TIME bypass facts disagree with the policy the user just
    * chose — `mode-options.ts`'s `bypassAllowedAtSpawn` decides both, and the runtime refuses a live
    * switch into `bypassPermissions` on a child spawned clamped ("bypassPermissions is disabled by
    * managed configuration"), which is how this RPC used to fail and revert.
@@ -1190,7 +1190,7 @@ export function startIpcServer(opts: IpcServerOptions): IpcServer {
   async function replaceChildForPolicy(
     sessionId: string, live: LegSession, spawnPolicy: SessionApprovalPolicy, next: SessionApprovalPolicy,
   ): Promise<{ replaced: "now" | "at-idle"; warning?: string }> {
-    const winter = opts.winter!;
+    const clover = opts.clover!;
     let warning: string | undefined;
     if (bypassAllowedAtSpawn(spawnPolicy)) {
       try {
@@ -1213,7 +1213,7 @@ export function startIpcServer(opts: IpcServerOptions): IpcServer {
     if (!live.turnRunning) {
       pendingPolicyReplacements.delete(sessionId);
       console.error(`session.setPolicy for ${sessionId} crosses the bypass boundary (${spawnPolicy} → ${next}) — replacing its child so it spawns with the matching permission clamp`);
-      await winter.evict(sessionId);
+      await clover.evict(sessionId);
       return withWarning("now");
     }
     if (pendingPolicyReplacements.get(sessionId)?.live === live) return withWarning("at-idle");   // already scheduled for this child
@@ -1223,9 +1223,9 @@ export function startIpcServer(opts: IpcServerOptions): IpcServer {
     void live.idle().then(
       async () => {
         forget();
-        if (winter.get(sessionId) !== live) return;   // replaced meanwhile — the successor read the store when it spawned
+        if (clover.get(sessionId) !== live) return;   // replaced meanwhile — the successor read the store when it spawned
         if (!clampChanges()) return;                  // crossed back before the boundary: this child is already right
-        await winter.evict(sessionId);
+        await clover.evict(sessionId);
       },
       forget,
     );
@@ -1248,7 +1248,7 @@ export function startIpcServer(opts: IpcServerOptions): IpcServer {
   /**
    * WS-23 live-gate fix: the Console's bearer slot (`anthropic:console`) is an ordinary credential of
    * the `console` provider now — a `console/*` session names it, a cross-provider advisor pin can, and
-   * Winter's own jobs may run on it — so a sign-in or sign-out through the daemon does what
+   * Clover's own jobs may run on it — so a sign-in or sign-out through the daemon does what
    * `credential.set`/`credential.remove` do for a key: replace the live children that name `console`
    * and re-probe the internal-jobs view. Best-effort for the same reasons as those two (the sign-in or
    * sign-out itself already succeeded). A CLI-door login in another process pokes the view through
@@ -1300,7 +1300,7 @@ export function startIpcServer(opts: IpcServerOptions): IpcServer {
     }
     assertModelAcceptsImages(meta);
     try {
-      return validateImageRefs(sessionId, text, images, { winterHome: opts.winterHome });
+      return validateImageRefs(sessionId, text, images, { cloverHome: opts.cloverHome });
     } catch (err) {
       if (err instanceof StageImageRefusal) throw new RpcFailure(err.internal ? ERR.INTERNAL : ERR.INVALID_PARAMS, err.message, { code: err.code, ...(err.n === undefined ? {} : { n: err.n }) });
       throw new RpcFailure(ERR.INTERNAL, "could not check the message's images", { code: IMAGE_REFERENCE_INVALID });
@@ -1327,27 +1327,27 @@ export function startIpcServer(opts: IpcServerOptions): IpcServer {
       throw new RpcFailure(ERR.INVALID_PARAMS, USER_MESSAGE_ATTACHMENTS_MAX_MESSAGE, { code: FILE_REFERENCE_INVALID });
     }
     try {
-      return validateFileRefs(text, files, { winterHome: opts.winterHome });
+      return validateFileRefs(text, files, { cloverHome: opts.cloverHome });
     } catch (err) {
       if (err instanceof StageImageRefusal) throw new RpcFailure(ERR.INVALID_PARAMS, err.message, { code: err.code, ...(err.n === undefined ? {} : { n: err.n }) });
       throw new RpcFailure(ERR.INTERNAL, "could not check the message's files", { code: FILE_REFERENCE_INVALID });
     }
   }
 
-  async function ensureWinterSession(sessionId: string): Promise<LegSession | undefined> {
-    if (opts.winter === undefined) return undefined;
-    try { return await opts.winter.ensure(sessionId); } catch (err) { rpcFromWinterRefusal(err); }
+  async function ensureCloverSession(sessionId: string): Promise<LegSession | undefined> {
+    if (opts.clover === undefined) return undefined;
+    try { return await opts.clover.ensure(sessionId); } catch (err) { rpcFromCloverRefusal(err); }
   }
 
   /**
    * THE session-creation transaction — `session.create`'s body, extracted so the daemon's own
    * doors create sessions through exactly the same steps a client's `session.create` takes (the
    * dispatch coordinator's `session_spawn`, `agent/dispatch-children.ts`): the model resolved and
-   * the effort checked, the Winter-leg availability check BEFORE the row exists, the row, the
+   * the effort checked, the Clover-leg availability check BEFORE the row exists, the row, the
    * creation transaction (the record and the child) with the row rolled back on a refusal, the
    * `session_created` broadcast to every harness (so a child appears in every open session list
-   * live) and the mint-time reaper sweep. Throws the typed `WinterLegRefusal` (the RPC wrapper maps
-   * it with `rpcFromWinterRefusal`) or the `RpcFailure` of a bad model/effort. Published to the
+   * live) and the mint-time reaper sweep. Throws the typed `CloverLegRefusal` (the RPC wrapper maps
+   * it with `rpcFromCloverRefusal`) or the `RpcFailure` of a bad model/effort. Published to the
    * daemon through `opts.onSessionCreator`.
    */
   async function createSessionInternal(input: InternalSessionCreateInput): Promise<{ sessionId: string; trusted: boolean }> {
@@ -1375,40 +1375,40 @@ export function startIpcServer(opts: IpcServerOptions): IpcServer {
     // caller can simply be told.
     if (input.effort !== undefined) assertEffortSelectable(input.effort, model ?? opts.liveModel?.() ?? "", input.mode);
     // P8b-2 / Task 17: the availability check runs BEFORE the product row is minted, so a
-    // Winter-leg refusal (no `winter` binary resolves; the router handle or the runtime spine
+    // Clover-leg refusal (no `winter` binary resolves; the router handle or the runtime spine
     // did not construct) costs nothing but this reply — and NEVER falls back to anything.
-    // `winter` is undefined only on a bare test server, where the row is minted and no child
+    // `clover` is undefined only on a bare test server, where the row is minted and no child
     // exists (fix wave F9 retired the engine-leg branch that used to sit here).
-    if (opts.winter !== undefined) {
-      opts.winter.assertAvailable(input.mode ?? "code");
+    if (opts.clover !== undefined) {
+      opts.clover.assertAvailable(input.mode ?? "code");
     }
     // Winter Phase 8c (P8c-5), AMENDED Phase 8d (P8d-7, M7) and WS-23: `runtimeKind` is stamped
-    // HERE and only here — the 8a runtime record `winter.create()` mints just below does not exist
+    // HERE and only here — the 8a runtime record `clover.create()` mints just below does not exist
     // yet, so this is the ONE call site that can honestly stamp the seq-1 event. P8d-7 omitted it
     // for a Claude-family model while an official peer could still have claimed that session; with
-    // the official leg retired, every session a driver table creates runs on the Winter leg.
+    // the official leg retired, every session a driver table creates runs on the Clover leg.
     // `modelRef` rides the ALREADY-RESOLVED `model` local (set above, before the effort check) —
     // never the caller's raw, possibly-aliased `p.model`. `providerId` has no producer on THIS event
     // (P8d-7: `session.list` is the truthful source, from the record) and is deliberately omitted,
     // not set to a guess.
-    const knowsWinterLeg = opts.winter !== undefined;
+    const knowsCloverLeg = opts.clover !== undefined;
     const { cwd } = input;
     const sessionId = opts.store.createSession(input.scope, {
       cwd, approvalPolicy: input.approvalPolicy, origin: input.origin, mode: input.mode, model, effort: input.effort,
       ...(input.parentSessionId === undefined ? {} : { parentSessionId: input.parentSessionId }),
-      ...(knowsWinterLeg ? { runtimeKind: "winter-agent" as const } : {}),
+      ...(knowsCloverLeg ? { runtimeKind: "winter-agent" as const } : {}),
       ...(model !== undefined ? { modelRef: model } : {}),
     });
     // THE CREATION TRANSACTION (WS-16 §6, P8b-14): the record allocates the backend uuid and
     // the child is started; a failure there ROLLS THE ROW BACK (it was never announced to any
     // client — the `session_created` broadcast is below) and the typed refusal is the reply.
-    if (opts.winter !== undefined) {
+    if (opts.clover !== undefined) {
       try {
-        await opts.winter!.create(sessionId);
+        await opts.clover!.create(sessionId);
       } catch (err) {
         // The row AND its runtime rows: `create` may have persisted the record (with its backend
         // uuid) before the child refused to start, and a record for a session that no longer
-        // exists is parked by every later recovery and counted by `winter doctor` forever —
+        // exists is parked by every later recovery and counted by `clover doctor` forever —
         // retention never removes it, only a session deletion does. Same hook the reaper fires.
         try { opts.store.deleteSession(sessionId); } catch { /* the row is gone or undeletable; the refusal still stands */ }
         try { opts.onSessionDeleted?.(sessionId); } catch { /* best effort; the refusal still stands */ }
@@ -1447,18 +1447,18 @@ export function startIpcServer(opts: IpcServerOptions): IpcServer {
     // can't reach this handler either way (it runs on a later turn, not inline) — the try/catch
     // is the error sink for that turn.
     //
-    // Skipped outright with no `opts.winterHome` wired (most existing tests): unlike the
-    // destructive half (`store.emptySessionIds`/`deleteSession`, which need no winterHome at
+    // Skipped outright with no `opts.cloverHome` wired (most existing tests): unlike the
+    // destructive half (`store.emptySessionIds`/`deleteSession`, which need no cloverHome at
     // all), reaping with no audit trail at all is not a degraded mode this feature should ever
     // run in — see reaper.ts's own doc comment on the delete-then-audit order. Every real
-    // caller (daemon.ts) always wires `winterHome`.
+    // caller (daemon.ts) always wires `cloverHome`.
     //
     // The timer is TRACKED (`pendingReaps`) and cancelled by `stop()`: a create answered just
     // before shutdown used to leave its sweep queued behind the reply, and the caller's
     // `stop()` → `store.close()` ran first, so the sweep queried a closed database ("Cannot use
     // a closed database" from `emptySessionIds`). A server that has stopped reaps nothing.
-    if (opts.winterHome) {
-      const home = opts.winterHome;
+    if (opts.cloverHome) {
+      const home = opts.cloverHome;
       const reap = opts.reapEmptySessions ?? reapEmptySessions;
       const cancel = scheduleMintSweep(() => {
         pendingReaps.delete(cancel);
@@ -1486,14 +1486,14 @@ export function startIpcServer(opts: IpcServerOptions): IpcServer {
    *  and never `undefined` (no record at all). Widened from a bare `=== "winter"` string check the
    *  moment `legOf` could answer `"official"` too — the two legs share every one of these doors. */
   function isRunnableLeg(sessionId: string): boolean {
-    const leg = opts.winter?.legOf(sessionId);
+    const leg = opts.clover?.legOf(sessionId);
     return leg === "winter" || leg === "official";
   }
 
-  /** P8b-22: a session that CANNOT run on the Winter leg gets a typed refusal — never a crash,
+  /** P8b-22: a session that CANNOT run on the Clover leg gets a typed refusal — never a crash,
    *  never a silent new transcript, and (fix wave F2) never silence. Two shapes, two codes:
    *
-   *   - `session_predates_winter_leg` — the record exists and has no Winter transcript (an
+   *   - `session_predates_winter_leg` — the record exists and has no Clover transcript (an
    *     engine-era session backfilled by 8a's boot sweep). History stays readable.
    *   - `session_unrecorded` — the session has NO runtime record at all on a daemon whose driver
    *     table exists. In production that is a PHONE-OWNED session: `sync.push` materialises it
@@ -1507,14 +1507,14 @@ export function startIpcServer(opts: IpcServerOptions): IpcServer {
    *
    *  Unreachable on a server built without the driver table (a bare test server), where `hub.send`
    *  stays the answer exactly as before 8b. */
-  function refuseIfPredatesWinterLeg(sessionId: string): void {
-    if (opts.winter === undefined) return;
+  function refuseIfPredatesCloverLeg(sessionId: string): void {
+    if (opts.clover === undefined) return;
     // A stored `cowork` row (a recognised mode nothing can run) is refused as exactly that — before the
     // record-less "phone-owned session" answer below, whose advice (start a new session) would be wrong for it.
     let stored: string | undefined;
     try { stored = opts.store.meta(sessionId).mode; } catch { /* unknown id: the handler's own not-found wins */ }
     if (isUnrunnableStoredMode(stored)) throw coworkSessionUnsupported(stored);
-    const leg = opts.winter.legOf(sessionId);
+    const leg = opts.clover.legOf(sessionId);
     if (leg === undefined) {
       throw new RpcFailure(
         ERR.INVALID_PARAMS,
@@ -1523,7 +1523,7 @@ export function startIpcServer(opts: IpcServerOptions): IpcServer {
       );
     }
     if (leg !== "engine") return;
-    throw new RpcFailure(ERR.INVALID_PARAMS, "this session predates the Winter leg; start a new session", { code: "session_predates_winter_leg" });
+    throw new RpcFailure(ERR.INVALID_PARAMS, "this session predates the Clover leg; start a new session", { code: "session_predates_winter_leg" });
   }
 
   /** session-activity-hygiene: the ONE place this server turns a session into a lifecycle state.
@@ -1864,11 +1864,11 @@ export function startIpcServer(opts: IpcServerOptions): IpcServer {
    *  `enabledPlugins` (enable/disable touch it); `<home>/settings.json` still carries
    *  `plugins.consents` (setConsent touches it). Three stats, not the pre-WS-21 two — none of the
    *  new adapter's writes touch either `<home>/settings.json` or `<home>/plugins` any more. */
-  function livePluginsCacheKey(winterHome: string): string {
+  function livePluginsCacheKey(cloverHome: string): string {
     return [
-      statMtimeOrZero(join(sdkPluginsRoot(winterHome), "installed_plugins.json")),
-      statMtimeOrZero(sdkSettingsPath(winterHome)),
-      statMtimeOrZero(join(winterHome, "settings.json")),
+      statMtimeOrZero(join(sdkPluginsRoot(cloverHome), "installed_plugins.json")),
+      statMtimeOrZero(sdkSettingsPath(cloverHome)),
+      statMtimeOrZero(join(cloverHome, "settings.json")),
     ].join(":");
   }
 
@@ -1884,26 +1884,26 @@ export function startIpcServer(opts: IpcServerOptions): IpcServer {
    *  home-rooted (Contract B's install root never moves per scope); `settingsPathFor` resolves
    *  which file THAT scope's `enabledPlugins` lives in. `user` needs no `cwd`; `project`/`local` do
    *  (refused typed otherwise — the caller passes `cwd` on every scoped call, `p.cwd`). */
-  function pluginManagerOptionsFor(winterHome: string, cwd: string | undefined): PluginManagerOptions {
+  function pluginManagerOptionsFor(cloverHome: string, cwd: string | undefined): PluginManagerOptions {
     return {
-      pluginsRoot: sdkPluginsRoot(winterHome),
+      pluginsRoot: sdkPluginsRoot(cloverHome),
       settingsPathFor: (scope: AdapterPluginScope): string => {
-        if (scope === "user") return sdkSettingsPath(winterHome);
+        if (scope === "user") return sdkSettingsPath(cloverHome);
         if (!cwd) throw new RpcFailure(ERR.INVALID_PARAMS, `plugin scope "${scope}" requires cwd`);
         // R.3 I-2 + residual: both project-named scopes are keyed where the run home reads them — the
         // cwd's own git top (a linked worktree's own), `localScopeKeyFor` / `projectScopeRootFor`.
-        if (scope === "local") return join(localScopeKeyFor(cwd), ".winter", "settings.local.json");
-        return join(projectScopeRootFor(cwd), ".winter", "settings.json");
+        if (scope === "local") return join(localScopeKeyFor(cwd), ".clover", "settings.local.json");
+        return join(projectScopeRootFor(cwd), ".clover", "settings.json");
       },
     };
   }
 
-  /** I1 fix round 1: `plugin.list`'s `extras` — winter-plugin.json's tier/permissions/entry plus
+  /** I1 fix round 1: `plugin.list`'s `extras` — clover-plugin.json's tier/permissions/entry plus
    *  the SAME consent-completeness pair `agent/plugins.ts#PluginStore` computes (requiredConsents
    *  from the manifest, consented from `<home>/settings.json`'s `plugins.consents`, keyed by the
    *  qualified `"<id>@<marketplace>"` spec — the same key `plugin.setConsent` writes under). `undefined`
-   *  when the plugin has no winter-plugin.json (matches `PluginInfo.legacy`'s own "no manifest"
-   *  case). Scope-independent: `plugins.consents` is Winter's own daemon-level store (spec §4.1,
+   *  when the plugin has no clover-plugin.json (matches `PluginInfo.legacy`'s own "no manifest"
+   *  case). Scope-independent: `plugins.consents` is Clover's own daemon-level store (spec §4.1,
    *  "stays"), not tied to which sdk file the enabled flag lives in, so this works the same for a
    *  project/local-scope listing as it does for user scope.
    *
@@ -1943,7 +1943,7 @@ export function startIpcServer(opts: IpcServerOptions): IpcServer {
   }
 
   /** WS-24: `plugin.list`'s `extras.entryNote` for a project/local-scope row with an entry (see that handler). */
-  const PROJECT_SCOPE_ENTRY_NOTE = "Winter runs this plugin's background process only when it is installed for your user (user scope). At project or local scope the process is not started; the plugin's skills, hooks and MCP servers still load in the sessions that enable it.";
+  const PROJECT_SCOPE_ENTRY_NOTE = "Clover runs this plugin's background process only when it is installed for your user (user scope). At project or local scope the process is not started; the plugin's skills, hooks and MCP servers still load in the sessions that enable it.";
 
   /** `PluginManagerError` (a typed, expected refusal — unknown marketplace/plugin, not installed,
    *  an unwritable settings file, …) becomes `RpcFailure(INVALID_PARAMS, message)`; anything else
@@ -1966,23 +1966,23 @@ export function startIpcServer(opts: IpcServerOptions): IpcServer {
   /** A fresh, settings-current view of installed plugins — unlike `opts.plugins` (its
    *  `enabled`/`disabled`/`consents` deps are a snapshot captured once at daemon boot and never
    *  updated), this re-reads settings.json on every CACHE-MISS call so a `plugin.enable`/`disable`/
-   *  `setConsent` written moments ago — by this task's own RPCs, or a concurrent `winter plugin
+   *  `setConsent` written moments ago — by this task's own RPCs, or a concurrent `clover plugin
    *  ...` CLI invocation — is reflected immediately, without a daemon restart (the whole point of
-   *  this task). Falls back to the boot-time `opts.plugins` when `winterHome` isn't wired (keeps
-   *  every pre-existing test that passes a bare `plugins:` PluginStore, with no `winterHome`,
+   *  this task). Falls back to the boot-time `opts.plugins` when `cloverHome` isn't wired (keeps
+   *  every pre-existing test that passes a bare `plugins:` PluginStore, with no `cloverHome`,
    *  working unchanged) or when settings.json can't be read (defensive — never throws); neither
    *  fallback path is cached (nothing stable to key on). */
   function livePlugins(): PluginInfo[] {
-    if (!opts.winterHome) return opts.plugins?.list() ?? [];
-    const key = livePluginsCacheKey(opts.winterHome);
+    if (!opts.cloverHome) return opts.plugins?.list() ?? [];
+    const key = livePluginsCacheKey(opts.cloverHome);
     if (livePluginsCache && livePluginsCache.key === key) return livePluginsCache.list;
     let settings: Settings;
     try {
-      settings = loadSettings(join(opts.winterHome, "settings.json"));
+      settings = loadSettings(join(opts.cloverHome, "settings.json"));
     } catch {
       return opts.plugins?.list() ?? [];
     }
-    const list = new PluginStore({ winterHome: opts.winterHome, consents: settings.plugins?.consents }).list();
+    const list = new PluginStore({ cloverHome: opts.cloverHome, consents: settings.plugins?.consents }).list();
     livePluginsCache = { key, list };
     return list;
   }
@@ -2008,7 +2008,7 @@ export function startIpcServer(opts: IpcServerOptions): IpcServer {
    *  `plugin.enable` — settings-only recording is the correct behavior for that daemon shape. */
   function hotApplyStart(info: PluginInfo): SupervisorStatus | "na" {
     if (!pluginSpawnEligible(info)) return "na";
-    if (!opts.supervisor || !opts.registry || !opts.winterHome) return "stopped";
+    if (!opts.supervisor || !opts.registry || !opts.cloverHome) return "stopped";
     // WS-21: `info.installPath` — a plugin's real install path, straight off Contract B's own
     // record, never the pre-WS-21 `<home>/plugins/<name>` convention (agent/plugins.ts's own doc).
     // WS-24: the supervisor is keyed by the plugin's SPEC (`plugins/supervisor.ts`'s header, "THE KEY").
@@ -2070,8 +2070,8 @@ export function startIpcServer(opts: IpcServerOptions): IpcServer {
           opts.island?.removeClient(socket.data.islandClient);
           opts.islandActivity?.removeClient(socket.data.islandClient);
         }
-        // ComputerV2 Phase 2: the connection that carried Winter.app's browser link is gone — the built-in browser
-        // reads "Winter isn't running" until the app attaches again (every command in flight fails `disconnected`).
+        // ComputerV2 Phase 2: the connection that carried Clover.app's browser link is gone — the built-in browser
+        // reads "Clover isn't running" until the app attaches again (every command in flight fails `disconnected`).
         opts.browserLink?.connectionClosed(socket.data);
         // Chat Slice D task 2: an in-flight chunked sync.push dies with its connection — the
         // partial bytes are dropped, never carried over to whatever reconnects next (a resumed
@@ -2185,7 +2185,7 @@ export function startIpcServer(opts: IpcServerOptions): IpcServer {
       if (socket.data.helloTimer) { clearTimeout(socket.data.helloTimer); socket.data.helloTimer = null; }
       socket.data.decoder = new LineDecoder(); // authed: default 8 MiB line cap
       if (p.role === "harness") harnessConns.add(socket.data);
-      // The Winter island: a terminal client's tty (its hosts' "in front?" question), and an island client — told,
+      // The Clover island: a terminal client's tty (its hosts' "in front?" question), and an island client — told,
       // with no payload, when the cross-session pending set changes (`island.changed`; it then asks `island.pending`).
       socket.data.tty = p.tty ?? null;
       if (p.role === "harness" && p.capabilities?.includes(CLIENT_CAPABILITY_ISLAND) === true && opts.island) {
@@ -2270,7 +2270,7 @@ export function startIpcServer(opts: IpcServerOptions): IpcServer {
             { role: socket.data.authedRole ?? "unknown", connectionId: socket.data.connId });
             // A Cowork conversation has no host project to trust: its cwd is a guest location, never a Mac directory.
             return { sessionId: created.sessionId, trusted: false };
-          } catch (err) { rpcFromWinterRefusal(err); }
+          } catch (err) { rpcFromCloverRefusal(err); }
         }
         // A Cowork binding beside any other mode is a malformed request, never ignored.
         if (p.cowork !== undefined) throw new RpcFailure(ERR.INVALID_PARAMS, "Invalid Cowork request", { code: "invalid_request" });
@@ -2323,7 +2323,7 @@ export function startIpcServer(opts: IpcServerOptions): IpcServer {
             ...(p.model === undefined ? {} : { model: p.model }),
             ...(p.effort === undefined ? {} : { effort: p.effort }),
           });
-        } catch (err) { rpcFromWinterRefusal(err); }
+        } catch (err) { rpcFromCloverRefusal(err); }
       }
       case METHODS.sessionList: {
         // session-activity-hygiene T2 (spec §1): stamp each row's derived lifecycle state. ONE
@@ -2374,7 +2374,7 @@ export function startIpcServer(opts: IpcServerOptions): IpcServer {
           // session is on some runtime leg too, and a picker choosing whether to offer a handoff
           // needs to know which one regardless of mode. `legOf` reads the runtime-state record, not
           // the event log, so this is a live fact rather than a stored column.
-          const leg = opts.winter?.legOf(s.sessionId);
+          const leg = opts.clover?.legOf(s.sessionId);
           const runtimeKind = leg === "official" ? "claude-agent" as const : leg === "winter" ? "winter-agent" as const : undefined;
           // Winter Phase 8d (P8d-7, Task 4.1): `providerId` — the SAME record `legOf` above reads
           // (WS-16 §4's `RuntimeSessionRecord.providerId`, stamped on both legs by
@@ -2412,28 +2412,28 @@ export function startIpcServer(opts: IpcServerOptions): IpcServer {
         // Get-or-create is atomic here: the lookup+create sequence is synchronous (bun:sqlite,
         // no await between), so two concurrent RPCs cannot both create.
         const existing = opts.store.dispatchSessionId();
-        // P8b-22 (Task 17): an ENGINE-ERA singleton can never run again (no Winter transcript), so
-        // it is left as history and a NEW singleton is minted on the Winter leg — `dispatchSessionId`
+        // P8b-22 (Task 17): an ENGINE-ERA singleton can never run again (no Clover transcript), so
+        // it is left as history and a NEW singleton is minted on the Clover leg — `dispatchSessionId`
         // answers the newest dispatch row, so the re-mint happens once.
-        if (existing && (opts.winter === undefined || opts.winter.legOf(existing) !== "engine")) return { sessionId: existing, created: false };
+        if (existing && (opts.clover === undefined || opts.clover.legOf(existing) !== "engine")) return { sessionId: existing, created: false };
         // P8b Task 17: the singleton is minted through the same transaction `session.create` runs:
         // refuse typed BEFORE the row exists, persist the record + start the child after it, roll
-        // the row back on a refusal. (`winter` is undefined only on a bare test server.)
-        if (opts.winter !== undefined) { try { opts.winter.assertAvailable("dispatch"); } catch (err) { rpcFromWinterRefusal(err); } }
+        // the row back on a refusal. (`clover` is undefined only on a bare test server.)
+        if (opts.clover !== undefined) { try { opts.clover.assertAvailable("dispatch"); } catch (err) { rpcFromCloverRefusal(err); } }
         // Winter Phase 8c (P8c-5), amended Phase 8d (P8d-7): same reasoning as `session.create`
-        // above — `runtimeKind` is knowable whenever `opts.winter` exists. `modelRef` stays unset (the
+        // above — `runtimeKind` is knowable whenever `opts.clover` exists. `modelRef` stays unset (the
         // dispatch singleton always uses the live/boot default model).
         const sessionId = opts.store.createSession("global", {
           cwd: canonicalSessionCwd(homedir()), approvalPolicy: "auto", origin: "dispatch", mode: "dispatch",
-          ...(opts.winter !== undefined ? { runtimeKind: "winter-agent" as const } : {}),
+          ...(opts.clover !== undefined ? { runtimeKind: "winter-agent" as const } : {}),
         });
-        if (opts.winter !== undefined) {
+        if (opts.clover !== undefined) {
           try {
-            await opts.winter.create(sessionId);
+            await opts.clover.create(sessionId);
           } catch (err) {
             try { opts.store.deleteSession(sessionId); } catch { /* the row is gone or undeletable; the refusal still stands */ }
             try { opts.onSessionDeleted?.(sessionId); } catch { /* best effort; the refusal still stands */ }
-            rpcFromWinterRefusal(err);
+            rpcFromCloverRefusal(err);
           }
         }
         return { sessionId, created: true };
@@ -2545,7 +2545,7 @@ export function startIpcServer(opts: IpcServerOptions): IpcServer {
         // model is given the paths. Checked before any resume, import or append.
         const images = checkedImageRefs(p.sessionId, p.text, p.images, socket.data.authedRole);
         const files = checkedFileRefs(p.sessionId, p.text, p.files, socket.data.authedRole, images?.length ?? 0);
-        // P8b Task 16: a session on the Winter leg — a live driver, or a record that says "winter"
+        // P8b Task 16: a session on the Clover leg — a live driver, or a record that says "winter"
         // and is resumed here — takes its own path. The attachment check mirrors `hub.send`'s own
         // (same message, same plain Error → INTERNAL), and the driver appends the `user_message`
         // under this client's name exactly as `hub.send` would, then begins the turn (P8b-5).
@@ -2559,31 +2559,31 @@ export function startIpcServer(opts: IpcServerOptions): IpcServer {
           try {
             const session = coworkSend.get(p.sessionId) ?? await coworkSend.ensure(p.sessionId);
             return { seq: (await session.send(p.text, socket.data.clientName)).seq };
-          } catch (err) { rpcFromWinterRefusal(err); }
+          } catch (err) { rpcFromCloverRefusal(err); }
         }
-        if (opts.winter !== undefined && (opts.winter.get(p.sessionId) !== undefined || isRunnableLeg(p.sessionId))) {
+        if (opts.clover !== undefined && (opts.clover.get(p.sessionId) !== undefined || isRunnableLeg(p.sessionId))) {
           // The attachment check FIRST (the same condition and message `hub.send` throws for), so a
           // client attached elsewhere can never trigger a resume-spawn that is then refused.
           if (hub.attachedSession(socket.data.hubClient) !== p.sessionId) {
             throw new Error(`client ${socket.data.clientName} not attached to ${p.sessionId}`);
           }
-          const winterSession = await ensureWinterSession(p.sessionId);
-          if (winterSession !== undefined) {
+          const cloverSession = await ensureCloverSession(p.sessionId);
+          if (cloverSession !== undefined) {
             try {
               // A driver replaced while it was starting took nothing: the message goes to its successor, once.
-              const sent = await withReplacementRetry(winterSession, () => ensureWinterSession(p.sessionId), (s) => s.send(p.text, socket.data.clientName, images, files));
+              const sent = await withReplacementRetry(cloverSession, () => ensureCloverSession(p.sessionId), (s) => s.send(p.text, socket.data.clientName, images, files));
               return { seq: sent.seq };
-            } catch (err) { rpcFromWinterRefusal(err); }
+            } catch (err) { rpcFromCloverRefusal(err); }
           }
         }
         // Winter Phase 8c (P8c-6): the engine-era IMPORT door — ONE chance, right here, before the
-        // permanent refusal below. `opts.winter.legOf` (not `isRunnableLeg`, which the block above
+        // permanent refusal below. `opts.clover.legOf` (not `isRunnableLeg`, which the block above
         // already checked and found false) is read again explicitly so this branch fires ONLY for
         // the exact case P8c-6 names: a RECORDED engine-era session, never a record-less one
-        // (`session_unrecorded` stays `refuseIfPredatesWinterLeg`'s to raise) and never a session
+        // (`session_unrecorded` stays `refuseIfPredatesCloverLeg`'s to raise) and never a session
         // already runnable (which the block above would have handled and returned from already).
-        if (opts.winter !== undefined && opts.importLegacy !== undefined && opts.winter.legOf(p.sessionId) === "engine") {
-          // m1 (whole-branch review): the attachment check FIRST — mirrors the ordinary Winter
+        if (opts.clover !== undefined && opts.importLegacy !== undefined && opts.clover.legOf(p.sessionId) === "engine") {
+          // m1 (whole-branch review): the attachment check FIRST — mirrors the ordinary Clover
           // branch just above (same condition and message `hub.send` throws for), so a client
           // attached elsewhere can never trigger the import (an expensive, MUTATING conversion
           // that writes a whole new backend transcript) before being refused for exactly the
@@ -2595,19 +2595,19 @@ export function startIpcServer(opts: IpcServerOptions): IpcServer {
             await opts.importLegacy.importSession(p.sessionId);
           } catch (err) {
             const detail = err instanceof ImportLegacySessionError ? err.message : (err instanceof Error ? err.name : "unknown");
-            throw new RpcFailure(ERR.INTERNAL, `this session could not be imported to continue on the Winter leg (${detail})`, { code: "session_import_failed" });
+            throw new RpcFailure(ERR.INTERNAL, `this session could not be imported to continue on the Clover leg (${detail})`, { code: "session_import_failed" });
           }
-          // The record is now "winter" — the SAME attach+ensure+send path the ordinary Winter
+          // The record is now "winter" — the SAME attach+ensure+send path the ordinary Clover
           // branch above runs, over the transcript the import just wrote.
-          const imported = await ensureWinterSession(p.sessionId);
+          const imported = await ensureCloverSession(p.sessionId);
           if (imported !== undefined) {
             try {
-              const sent = await withReplacementRetry(imported, () => ensureWinterSession(p.sessionId), (s) => s.send(p.text, socket.data.clientName, images, files));
+              const sent = await withReplacementRetry(imported, () => ensureCloverSession(p.sessionId), (s) => s.send(p.text, socket.data.clientName, images, files));
               return { seq: sent.seq };
-            } catch (err) { rpcFromWinterRefusal(err); }
+            } catch (err) { rpcFromCloverRefusal(err); }
           }
         }
-        refuseIfPredatesWinterLeg(p.sessionId);
+        refuseIfPredatesCloverLeg(p.sessionId);
         // No driver table at all (a bare test server): the message lands in the log, exactly as it
         // always has on a no-engine daemon. With a table present every path above either ran the
         // turn or refused typed — this line is never a production no-op (fix wave F2).
@@ -2623,17 +2623,17 @@ export function startIpcServer(opts: IpcServerOptions): IpcServer {
         if (coworkSteer !== undefined) {
           const live = coworkSteer.get(p.sessionId);
           if (live === undefined) return { ok: true, injected: false };
-          try { return { ok: true, injected: (await live.steer(p.text)).injected }; } catch (err) { rpcFromWinterRefusal(err); }
+          try { return { ok: true, injected: (await live.steer(p.text)).injected }; } catch (err) { rpcFromCloverRefusal(err); }
         }
         {
-          const winterSession = await ensureWinterSession(p.sessionId);
-          if (winterSession !== undefined) {
+          const cloverSession = await ensureCloverSession(p.sessionId);
+          if (cloverSession !== undefined) {
             try {
-              const steered = await withReplacementRetry(winterSession, () => ensureWinterSession(p.sessionId), (s) => s.steer(p.text, undefined, images, files));
+              const steered = await withReplacementRetry(cloverSession, () => ensureCloverSession(p.sessionId), (s) => s.steer(p.text, undefined, images, files));
               return { ok: true, injected: steered.injected };
-            } catch (err) { rpcFromWinterRefusal(err); }
+            } catch (err) { rpcFromCloverRefusal(err); }
           }
-          refuseIfPredatesWinterLeg(p.sessionId);
+          refuseIfPredatesCloverLeg(p.sessionId);
         }
         return { ok: true, injected: false };
       }
@@ -2646,12 +2646,12 @@ export function startIpcServer(opts: IpcServerOptions): IpcServer {
         if (coworkInterrupt !== undefined) {
           const live = coworkInterrupt.get(p.sessionId);
           if (live === undefined) return { ok: true, wasRunning: false };
-          try { return { ok: true, ...(await live.interrupt()) }; } catch (err) { rpcFromWinterRefusal(err); }
+          try { return { ok: true, ...(await live.interrupt()) }; } catch (err) { rpcFromCloverRefusal(err); }
         }
-        // P8b Task 16: only a LIVE driver has anything to interrupt; a resumable Winter session has
+        // P8b Task 16: only a LIVE driver has anything to interrupt; a resumable Clover session has
         // no child, so the answer is "nothing was running" without spawning one to say so.
         {
-          const live = opts.winter?.get(p.sessionId);
+          const live = opts.clover?.get(p.sessionId);
           if (live !== undefined) {
             // A client's stop is the USER's (a Mac window or pill, a terminal, the phone): a Dispatch child's
             // report says so, and its coordinator leaves it stopped.
@@ -2664,7 +2664,7 @@ export function startIpcServer(opts: IpcServerOptions): IpcServer {
         return { ok: true, ...opts.engine.interrupt(p.sessionId) };
       }
       case METHODS.sessionMirror: {
-        // ComputerV2 Phase 1b: the GATE for the phone mirror. Frames never come here — the Gateway relays Winter.app's
+        // ComputerV2 Phase 1b: the GATE for the phone mirror. Frames never come here — the Gateway relays Clover.app's
         // own mirror of the session (its helper view subscription, which the watch holds open with pictures) — so
         // this answers only "may this caller watch this session's mirror, and is the mirror on at all". The phone
         // renews its watch through here every 10 s, so turning the setting off ends a running watch at the next
@@ -2678,7 +2678,7 @@ export function startIpcServer(opts: IpcServerOptions): IpcServer {
         if (!socket.data.hubClient || hub.attachedSession(socket.data.hubClient) !== p.sessionId) {
           throw new RpcFailure(ERR.NOT_FOUND, "attach to the session first");
         }
-        // Chat has no computer use: answered off at once, so a chat screen never makes Winter.app open anything.
+        // Chat has no computer use: answered off at once, so a chat screen never makes Clover.app open anything.
         if ((opts.store.meta(p.sessionId).mode ?? "code") === "chat") return { ok: true, mirror: false };
         // Fail CLOSED (review decision): settings that cannot be read are no consent to stream the screen.
         const settings = liveSettingsFor(opts);
@@ -2694,35 +2694,35 @@ export function startIpcServer(opts: IpcServerOptions): IpcServer {
         // 2026-10-07: the session compacts ITSELF. `/compact [instructions]` goes through the session's own
         // driver exactly as a typed message would — queued behind a running turn, an idle session resumed
         // for it — and the runtime runs it as its built-in command (never a model turn; the model never sees
-        // the text). One door for every client: the TUI's `/compact`, `winter compact <id>`, and the same
+        // the text). One door for every client: the TUI's `/compact`, `clover compact <id>`, and the same
         // text typed into the Mac's composer. The outcome lands in the log as a `continuity_warning`
         // (`compacted` / `compaction_failed`, projector/index.ts). Until 0.0.4's carry this was a typed
         // `not_supported_on_winter_leg`; the runtime has had the built-in all along.
         // A Cowork conversation cannot compact (the host-query guest refuses slash text): refused typed, with a door too.
         if (coworkDriversOf(p.sessionId) !== undefined) throw coworkSessionUnsupported("cowork");
-        if (opts.winter !== undefined && (opts.winter.get(p.sessionId) !== undefined || isRunnableLeg(p.sessionId))) {
+        if (opts.clover !== undefined && (opts.clover.get(p.sessionId) !== undefined || isRunnableLeg(p.sessionId))) {
           const instructions = p.instructions?.trim() ?? "";
           const text = instructions.length > 0 ? `/compact ${instructions}` : "/compact";
-          const winterSession = await ensureWinterSession(p.sessionId);
-          if (winterSession !== undefined) {
+          const cloverSession = await ensureCloverSession(p.sessionId);
+          if (cloverSession !== undefined) {
             try {
-              const sent = await withReplacementRetry(winterSession, () => ensureWinterSession(p.sessionId), (s) => s.send(text, socket.data.clientName));
+              const sent = await withReplacementRetry(cloverSession, () => ensureCloverSession(p.sessionId), (s) => s.send(text, socket.data.clientName));
               return { ok: true, compacted: false, uptoSeq: 0, summaryChars: 0, requested: true, seq: sent.seq };
-            } catch (err) { rpcFromWinterRefusal(err); }
+            } catch (err) { rpcFromCloverRefusal(err); }
           }
         }
-        refuseIfPredatesWinterLeg(p.sessionId);
+        refuseIfPredatesCloverLeg(p.sessionId);
         return { ok: true, compacted: false, uptoSeq: 0, summaryChars: 0 };
       }
       case METHODS.skillsList: {
         const p = parseParams(SkillsListParams, params);
         // Batch 3 (item 2): overlay `denied`/`deniedBy` from the GLOBAL `settings.permissions.deny`
         // list — `liveSettingsFor` is the same "typed absence, never a crash" reader every other
-        // opts.winterHome-gated path in this file uses. `skillDenyRule` is the ONE place the exact
+        // opts.cloverHome-gated path in this file uses. `skillDenyRule` is the ONE place the exact
         // `Skill(<name>)` string is spelled, shared with the writer (`setSkillDenied`, settings.ts)
         // so the two can never drift onto different strings for the same skill.
         // WS-21: the deny list moved to `sdk/settings.json` (`sdkDenyRules`, read live).
-        const denySet = new Set(opts.winterHome ? sdkDenyRules(opts.winterHome) : []);
+        const denySet = new Set(opts.cloverHome ? sdkDenyRules(opts.cloverHome) : []);
         // Post-merge fix round, finding 3 (Opus review): the merge's own resolution of this handler
         // assumed L3's `agent/skills.ts` rewrite now reads plugin skills itself — wrong. L3 DELETED
         // `SkillStore`'s own plugin tier outright (it used to scan the retired `<home>/plugins`
@@ -2742,8 +2742,8 @@ export function startIpcServer(opts: IpcServerOptions): IpcServer {
           const withAvailability = { ...s, ...store.sessionAvailability(s) };
           return denied ? { ...withAvailability, denied: true, deniedBy: "settings" as const } : withAvailability;
         });
-        const pluginSkills = opts.winterHome
-          ? (await pluginSkillsFor(pluginManagerOptionsFor(opts.winterHome, p.cwd))).map((s) => {
+        const pluginSkills = opts.cloverHome
+          ? (await pluginSkillsFor(pluginManagerOptionsFor(opts.cloverHome, p.cwd))).map((s) => {
               const denied = denySet.has(skillDenyRule(s.name));
               return denied ? { ...s, denied: true, deniedBy: "settings" as const } : s;
             })
@@ -2818,7 +2818,7 @@ export function startIpcServer(opts: IpcServerOptions): IpcServer {
         const p = parseParams(McpListParams, params);
         const settings = liveSettingsFor(opts);
         const disabled = new Set(settings?.mcp?.disabled ?? []);
-        const userServers = opts.winterHome ? sdkUserMcpServers(opts.winterHome) : {};
+        const userServers = opts.cloverHome ? sdkUserMcpServers(opts.cloverHome) : {};
         // WS-25: the LAZY http/sse probe of the live user scope (`McpManager.ensureRemote`; never at boot) —
         // a recorded answer is reused until a sign-in, a sign-out, an add or an enable forgets it. A
         // disabled name is never probed (the child is never handed it either).
@@ -2832,7 +2832,7 @@ export function startIpcServer(opts: IpcServerOptions): IpcServer {
         // which by construction can no longer say what it removed) so a hand-edited header shows up
         // HERE even though `configuredMcpServersFor` never forwards it to either leg. NEVER the
         // header value, only its name — same posture as the boot-time log line this mirrors.
-        const strippedHeaders = opts.winterHome ? strippedMcpHeaders({ home: opts.winterHome, scope: "user" }) : {};
+        const strippedHeaders = opts.cloverHome ? strippedMcpHeaders({ home: opts.cloverHome, scope: "user" }) : {};
         const withStripped = <T extends { name: string }>(row: T): T | (T & { strippedHeaders: string[] }) => {
           const headers = strippedHeaders[row.name];
           return headers && headers.length > 0 ? { ...row, strippedHeaders: headers } : row;
@@ -2872,7 +2872,7 @@ export function startIpcServer(opts: IpcServerOptions): IpcServer {
         // WS-27: the servers subagent definitions declare inline (`server-names.ts`) — never probed (the runtime
         // connects them per subagent), listed so their connector permissions can be set under the config name.
         const rowNames = new Set([...overlaid, ...unmanaged].map((r) => r.name));
-        const agentRows = opts.winterHome === undefined ? [] : agentInlineRowsFor(opts.winterHome, p.cwd, opts.trust)
+        const agentRows = opts.cloverHome === undefined ? [] : agentInlineRowsFor(opts.cloverHome, p.cwd, opts.trust)
           .filter((name) => !rowNames.has(name))
           .map((name) => ({ name, status: (disabled.has(name) ? "disabled" : "unmanaged") as "disabled" | "unmanaged", toolNames: [] as string[], source: "agent" as const }));
         const rows = await Promise.all([...overlaid, ...unmanaged, ...agentRows].map(async (row) => {
@@ -2887,12 +2887,12 @@ export function startIpcServer(opts: IpcServerOptions): IpcServer {
       // -----------------------------------------------------------------------------------------
       // Daemon settings surface batch 3 (item 3a) — the enable/disable door for a configured MCP
       // server, by name. LOCAL-ROLE ONLY. `setMcpServerDisabled` never fails on its own input (no
-      // catalog/tag validation needed), so the only failure mode here is a missing `winterHome`.
+      // catalog/tag validation needed), so the only failure mode here is a missing `cloverHome`.
       // -----------------------------------------------------------------------------------------
       case METHODS.mcpDisable: {
         const p = parseParams(McpDisableParams, params);
-        if (!opts.winterHome) throw new RpcFailure(ERR.INTERNAL, "mcp.disable is not available on this server (no winterHome configured)");
-        const settingsPath = join(opts.winterHome, "settings.json");
+        if (!opts.cloverHome) throw new RpcFailure(ERR.INTERNAL, "mcp.disable is not available on this server (no cloverHome configured)");
+        const settingsPath = join(opts.cloverHome, "settings.json");
         saveSettings(settingsPath, setMcpServerDisabled(loadSettings(settingsPath), p.name, true));
         // MEDIUM (fix wave, pre-merge review, finding 3): drop the name's recorded probe status now, so
         // `mcp.list` reports it from the settings overlay ("disabled"). WS-24: the daemon keeps no copy
@@ -2903,8 +2903,8 @@ export function startIpcServer(opts: IpcServerOptions): IpcServer {
       }
       case METHODS.mcpEnable: {
         const p = parseParams(McpEnableParams, params);
-        if (!opts.winterHome) throw new RpcFailure(ERR.INTERNAL, "mcp.enable is not available on this server (no winterHome configured)");
-        const settingsPath = join(opts.winterHome, "settings.json");
+        if (!opts.cloverHome) throw new RpcFailure(ERR.INTERNAL, "mcp.enable is not available on this server (no cloverHome configured)");
+        const settingsPath = join(opts.cloverHome, "settings.json");
         const next = setMcpServerDisabled(loadSettings(settingsPath), p.name, false);
         saveSettings(settingsPath, next);
         // MEDIUM (fix wave, pre-merge review, finding 3, symmetry): `mcp.disable` drops a server's
@@ -2912,8 +2912,8 @@ export function startIpcServer(opts: IpcServerOptions): IpcServer {
         // daemon restart to report a USER-tier stdio server again (the no-restart-for-settings rule).
         // Only the CONFIGURED stdio user-tier shape is probed this way (`stdioMcpServersFor`'s own
         // narrowing — WS-25: an http/sse user server is re-probed lazily by the next `mcp.list`); an HTTP/SSE or project
-        // `.winter/mcp.json` name is a no-op here, same as it always was for `mcp.enable`.
-        const cfg = stdioMcpServersFor(sdkUserMcpServers(opts.winterHome), next.mcp?.disabled)[p.name];
+        // `.clover/mcp.json` name is a no-op here, same as it always was for `mcp.enable`.
+        const cfg = stdioMcpServersFor(sdkUserMcpServers(opts.cloverHome), next.mcp?.disabled)[p.name];
         if (cfg) await opts.mcp?.startOneUserServer(p.name, cfg);
         return { ok: true, name: p.name, enabled: true };
       }
@@ -2933,17 +2933,17 @@ export function startIpcServer(opts: IpcServerOptions): IpcServer {
           readOnly: (server, tool, cwd) => opts.mcp?.readOnlyHint(server, tool, cwd),
         };
         const table = connectorSource.table();
-        const userServers = opts.winterHome ? sdkUserMcpServers(opts.winterHome) : {};
+        const userServers = opts.cloverHome ? sdkUserMcpServers(opts.cloverHome) : {};
         if (opts.mcp?.probesRemote) {
           await opts.mcp.ensureRemote(Object.fromEntries(Object.entries(userServers).filter(([name, entry]) => entry.type !== "stdio" && !disabled.has(name) && (p.server === undefined || name === p.server))));
         }
         if (p.cwd) await opts.mcp?.ensureProject(p.cwd);
         const tracked = opts.mcp?.list(p.cwd) ?? [];
-        const sdkPermissions = opts.winterHome ? liveSdkSettings(opts.winterHome).permissions : undefined;
+        const sdkPermissions = opts.cloverHome ? liveSdkSettings(opts.cloverHome).permissions : undefined;
         // Every server anyone could name: probed ones, configured user ones not (yet) probed, and names that
         // only have stored values (so a stale value for a removed server can still be seen and cleared).
         // WS-27: plus the servers subagent definitions declare inline, by config name (`server-names.ts`).
-        const agentNames = new Set(opts.winterHome !== undefined ? agentInlineRowsFor(opts.winterHome, p.cwd, opts.trust) : []);
+        const agentNames = new Set(opts.cloverHome !== undefined ? agentInlineRowsFor(opts.cloverHome, p.cwd, opts.trust) : []);
         const names = [...new Set([...tracked.map((r) => r.name), ...Object.keys(userServers), ...agentNames, ...Object.keys(table)])]
           .filter((name) => p.server === undefined || name === p.server);
         const servers = names.map((name) => {
@@ -2993,36 +2993,36 @@ export function startIpcServer(opts: IpcServerOptions): IpcServer {
       }
       case METHODS.mcpSetToolPermission: {
         const p = parseParams(McpSetToolPermissionParams, params);
-        if (!opts.winterHome) throw new RpcFailure(ERR.INTERNAL, "mcp.setToolPermission is not available on this server (no winterHome configured)");
-        // The daemon's own capability tools are `mcp__winter__…`, which is never a connector action — a value
-        // stored under `winter` would be inert, so it is refused rather than silently kept.
-        if (p.server === "winter" || p.server.startsWith("winter__")) {
-          throw new RpcFailure(ERR.INVALID_PARAMS, `"${p.server}" names Winter's own capability servers, not a connector`);
+        if (!opts.cloverHome) throw new RpcFailure(ERR.INTERNAL, "mcp.setToolPermission is not available on this server (no cloverHome configured)");
+        // The daemon's own capability tools are `mcp__clover__…`, which is never a connector action — a value
+        // stored under `clover` would be inert, so it is refused rather than silently kept.
+        if (p.server === "clover" || p.server.startsWith("clover__")) {
+          throw new RpcFailure(ERR.INVALID_PARAMS, `"${p.server}" names Clover's own capability servers, not a connector`);
         }
         if (p.resetTools === true && p.tool !== CONNECTOR_ALL_TOOLS) {
           throw new RpcFailure(ERR.INVALID_PARAMS, "resetTools applies only to the all-actions value (tool \"*\")");
         }
-        const settingsPath = join(opts.winterHome, "settings.json");
+        const settingsPath = join(opts.cloverHome, "settings.json");
         const next = setConnectorToolPermission(loadSettings(settingsPath), p.server, p.tool, p.permission === "default" ? undefined : p.permission, { resetTools: p.resetTools === true });
         saveSettings(settingsPath, next);
         opts.onConnectorPermissionsSaved?.(next);
         return { ok: true, server: p.server, tool: p.tool, permission: p.permission };
       }
       // -----------------------------------------------------------------------------------------
-      // `winter mcp add`/`add-json`/`remove` (CLI parity with `claude mcp add`/`remove`), over claude's
+      // `clover mcp add`/`add-json`/`remove` (CLI parity with `claude mcp add`/`remove`), over claude's
       // three scopes (WS-21, `McpScopeSchema`). Both handlers delegate the actual "is this a valid
       // write" decision to `agent/mcp/mcp-write.ts` — the name rule (reserved namespace, already-
       // exists) and the entry schema (the credential-shaped-header refusal) both run before anything
       // is written, and either is reported as `ERR.INVALID_PARAMS`, never `ERR.INTERNAL`: it is the
-      // CALLER's input being wrong, not a server fault. An unparseable `sdk/.winter.json` is refused
+      // CALLER's input being wrong, not a server fault. An unparseable `sdk/.clover.json` is refused
       // typed (`sdk_file_unreadable`) and left untouched.
       // -----------------------------------------------------------------------------------------
       case METHODS.mcpAdd: {
         const p = parseParams(McpAddParams, params);
-        if (!opts.winterHome) throw new RpcFailure(ERR.INTERNAL, "mcp.add is not available on this server (no winterHome configured)");
-        const target = mcpScopeTarget("mcp.add", opts.winterHome, p);
-        // WS-21 (spec §4.4): `user` → `sdk/.winter.json` `mcpServers`; `local` (the default) → its
-        // `projects[<root>].mcpServers`; `project` → `<root>/.winter/mcp.json`. The name rule, the
+        if (!opts.cloverHome) throw new RpcFailure(ERR.INTERNAL, "mcp.add is not available on this server (no cloverHome configured)");
+        const target = mcpScopeTarget("mcp.add", opts.cloverHome, p);
+        // WS-21 (spec §4.4): `user` → `sdk/.clover.json` `mcpServers`; `local` (the default) → its
+        // `projects[<root>].mcpServers`; `project` → `<root>/.clover/mcp.json`. The name rule, the
         // no-silent-overwrite rule and the entry schema (credential-shaped headers refused in the user's
         // own file) all run BEFORE anything is written (`addMcpServerInScope`).
         let entry: { type: "stdio" | "http" | "sse" };
@@ -3039,19 +3039,19 @@ export function startIpcServer(opts: IpcServerOptions): IpcServer {
         // ALSO listed in `mcp.disabled` is not probed until enabled — `started: false` says so honestly.
         let started = false;
         if (target.scope === "user" && entry.type === "stdio") {
-          const cfg = stdioMcpServersFor(sdkUserMcpServers(opts.winterHome), liveSettingsFor(opts)?.mcp?.disabled)[p.name];
+          const cfg = stdioMcpServersFor(sdkUserMcpServers(opts.cloverHome), liveSettingsFor(opts)?.mcp?.disabled)[p.name];
           if (cfg) { await opts.mcp?.startOneUserServer(p.name, cfg); started = true; }
         }
         return { ok: true, name: p.name, transport: entry.type, started, scope: p.scope };
       }
       case METHODS.mcpRemove: {
         const p = parseParams(McpRemoveParams, params);
-        if (!opts.winterHome) throw new RpcFailure(ERR.INTERNAL, "mcp.remove is not available on this server (no winterHome configured)");
-        const target = mcpScopeTarget("mcp.remove", opts.winterHome, p);
+        if (!opts.cloverHome) throw new RpcFailure(ERR.INTERNAL, "mcp.remove is not available on this server (no cloverHome configured)");
+        const target = mcpScopeTarget("mcp.remove", opts.cloverHome, p);
         let outcome: ReturnType<typeof removeMcpServerForgettingPermissions>;
         try {
           // WS-27: the name's connector permissions go too — once nothing else defines a server of that name.
-          outcome = removeMcpServerForgettingPermissions(target, p.name, { cwd: p.cwd, trust: opts.trust, liveNames: liveMcpServerNames(opts.winter) });
+          outcome = removeMcpServerForgettingPermissions(target, p.name, { cwd: p.cwd, trust: opts.trust, liveNames: liveMcpServerNames(opts.clover) });
         } catch (err) {
           throw sdkWriteFailure(err);
         }
@@ -3067,17 +3067,17 @@ export function startIpcServer(opts: IpcServerOptions): IpcServer {
         };
       }
       // -----------------------------------------------------------------------------------------
-      // WS-27 — `winter mcp rename <old> <new>` (`McpRenameParams`' doc): within one scope, carrying the
+      // WS-27 — `clover mcp rename <old> <new>` (`McpRenameParams`' doc): within one scope, carrying the
       // name's connector permissions and `mcp.disabled` membership. LOCAL role only. A sign-in is keyed by URL
       // and follows by itself; the probe forgets the old user-scope name and re-probes a stdio user server.
       // -----------------------------------------------------------------------------------------
       case METHODS.mcpRename: {
         const p = parseParams(McpRenameParams, params);
-        if (!opts.winterHome) throw new RpcFailure(ERR.INTERNAL, "mcp.rename is not available on this server (no winterHome configured)");
-        const target = mcpScopeTarget("mcp.rename", opts.winterHome, p);
+        if (!opts.cloverHome) throw new RpcFailure(ERR.INTERNAL, "mcp.rename is not available on this server (no cloverHome configured)");
+        const target = mcpScopeTarget("mcp.rename", opts.cloverHome, p);
         let outcome: ReturnType<typeof renameMcpServerCarryingSettings>;
         try {
-          outcome = renameMcpServerCarryingSettings(target, p.name, p.newName, { cwd: p.cwd, trust: opts.trust, liveNames: liveMcpServerNames(opts.winter) });
+          outcome = renameMcpServerCarryingSettings(target, p.name, p.newName, { cwd: p.cwd, trust: opts.trust, liveNames: liveMcpServerNames(opts.clover) });
         } catch (err) {
           if (err instanceof McpRenameRefusal) throw new RpcFailure(ERR.INVALID_PARAMS, err.message, { code: err.code });
           throw sdkWriteFailure(err);
@@ -3085,7 +3085,7 @@ export function startIpcServer(opts: IpcServerOptions): IpcServer {
         if (outcome.settings !== undefined) opts.onConnectorPermissionsSaved?.(outcome.settings);
         if (target.scope === "user") {
           opts.mcp?.stopServer(p.name);
-          const cfg = stdioMcpServersFor(sdkUserMcpServers(opts.winterHome), (outcome.settings ?? liveSettingsFor(opts))?.mcp?.disabled)[p.newName];
+          const cfg = stdioMcpServersFor(sdkUserMcpServers(opts.cloverHome), (outcome.settings ?? liveSettingsFor(opts))?.mcp?.disabled)[p.newName];
           if (cfg) await opts.mcp?.startOneUserServer(p.newName, cfg);
         }
         return {
@@ -3095,8 +3095,8 @@ export function startIpcServer(opts: IpcServerOptions): IpcServer {
         };
       }
       // -----------------------------------------------------------------------------------------
-      // `winter mcp get <name>` — read-only, degrades to `found: false` rather than throwing on a
-      // missing `winterHome` (this is a read, not a write door; same "typed absence, never a crash"
+      // `clover mcp get <name>` — read-only, degrades to `found: false` rather than throwing on a
+      // missing `cloverHome` (this is a read, not a write door; same "typed absence, never a crash"
       // posture `mcp.list` already has). Reports the FULL configured shape (`mcp.list` deliberately
       // does not — that RPC is a live-status listing, not a config reader) plus the same
       // `strippedHeaders` read-door correction `mcp.list` reports, computed the identical way (off
@@ -3105,8 +3105,8 @@ export function startIpcServer(opts: IpcServerOptions): IpcServer {
       // -----------------------------------------------------------------------------------------
       case METHODS.mcpGet: {
         const p = parseParams(McpGetParams, params);
-        if (!opts.winterHome) return { ok: true, name: p.name, found: false, scope: p.scope };
-        const target = mcpScopeTarget("mcp.get", opts.winterHome, p);
+        if (!opts.cloverHome) return { ok: true, name: p.name, found: false, scope: p.scope };
+        const target = mcpScopeTarget("mcp.get", opts.cloverHome, p);
         const entry = mcpServerInScope(target, p.name) as McpServerSettingsEntry | undefined;
         if (!entry) return { ok: true, name: p.name, found: false, scope: p.scope };
         const disabled = new Set(liveSettingsFor(opts)?.mcp?.disabled ?? []);
@@ -3192,20 +3192,20 @@ export function startIpcServer(opts: IpcServerOptions): IpcServer {
         // posture `livePlugins()` above already has — `computerUse.enabled`/`lsp.enabled` simply
         // read their absent-block defaults (off / on respectively) when settings can't be loaded.
         let settings: Settings | null = null;
-        if (opts.winterHome) {
-          try { settings = liveSettingsView(loadSettings(join(opts.winterHome, "settings.json"))); } catch { settings = null; }
+        if (opts.cloverHome) {
+          try { settings = liveSettingsView(loadSettings(join(opts.cloverHome, "settings.json"))); } catch { settings = null; }
         }
         // The SAME table `session-driver.ts` passes every real session's `Options.disallowedTools`
-        // through (`capabilityTools: WINTER_CAPABILITY_TOOLS`) — computed once per mode, not
+        // through (`capabilityTools: CLOVER_CAPABILITY_TOOLS`) — computed once per mode, not
         // per tool, since `disallowedToolsFor` itself is a pure O(table size) scan.
         //
         // (The Exa key no longer decides any row here: the `research` server and its `Search` left on
         // 2026-10-01 — `Search` is the agent SDK's built-in, named in chat's/dispatch's `Options.tools`.)
         const exposure = {};
         const disallowedByMode: Record<"code" | "dispatch" | "chat", Set<string>> = {
-          code: new Set(disallowedToolsFor("code", exposure, WINTER_CAPABILITY_TOOLS)),
-          dispatch: new Set(disallowedToolsFor("dispatch", exposure, WINTER_CAPABILITY_TOOLS)),
-          chat: new Set(disallowedToolsFor("chat", exposure, WINTER_CAPABILITY_TOOLS)),
+          code: new Set(disallowedToolsFor("code", exposure, CLOVER_CAPABILITY_TOOLS)),
+          dispatch: new Set(disallowedToolsFor("dispatch", exposure, CLOVER_CAPABILITY_TOOLS)),
+          chat: new Set(disallowedToolsFor("chat", exposure, CLOVER_CAPABILITY_TOOLS)),
         };
         // `deferred` is the EFFECTIVE state: a mode whose default model cannot tool-search (its tool calling
         // is not native — `toolSearchSupportedBy`) gets every tool injected up front, so nothing defers there.
@@ -3215,11 +3215,11 @@ export function startIpcServer(opts: IpcServerOptions): IpcServer {
           mode === "dispatch" ? pinsFor(settings).dispatch : settings?.provider?.model ?? DEFAULT_PROVIDER.model;
         const searchable = new Set((["code", "dispatch", "chat"] as const).filter((mode) => toolSearchSupportedBy(modeDefaultTag(mode))));
         const capabilities = CAPABILITY_SERVER_KEYS.map((key) => {
-          // `capabilityToolName(key, "")` mints the exact `mcp__winter__<key>__` prefix every one
+          // `capabilityToolName(key, "")` mints the exact `mcp__clover__<key>__` prefix every one
           // of this key's tool names carries (capabilities/names.ts's own wire-name doc) — so a
           // brand rename moves the grouping and this call site together, never a second hand-copy.
           const prefix = capabilityToolName(key, "");
-          const tools = Object.entries(WINTER_CAPABILITY_TOOLS)
+          const tools = Object.entries(CLOVER_CAPABILITY_TOOLS)
             .filter(([name]) => name.startsWith(prefix))
             .map(([name, factsRaw]) => {
               const facts: CapabilityToolFacts = factsRaw;
@@ -3251,7 +3251,7 @@ export function startIpcServer(opts: IpcServerOptions): IpcServer {
           // The only two live gates that exist today (capabilities/index.ts's `computerUseEnabled`
           // doc + capabilities/lsp.ts's own doc on `settings.lsp.enabled`) — every other key has no
           // settings gate at all and is always live. `external`'s tool set is per-plugin/dynamic
-          // (no static WINTER_CAPABILITY_TOOLS rows), so `tools` is `[]` for it, never fabricated.
+          // (no static CLOVER_CAPABILITY_TOOLS rows), so `tools` is `[]` for it, never fabricated.
           // Minor 5e: `computerUseEnabledFrom`/`lspEnabledFrom` (settings.ts) — the ONE reader for
           // each gate, rather than a third hand-spelled copy of what daemon.ts's boot registration
           // and `settings-apply.ts`'s hot-toggle closures already decide.
@@ -3269,7 +3269,7 @@ export function startIpcServer(opts: IpcServerOptions): IpcServer {
       }
       // -----------------------------------------------------------------------------------------
       // Daemon settings surface (2026-09-17 plan, item 3). LOCAL-ROLE ONLY, same posture as
-      // capabilities.list just above. Reuses `diagnoseRuntimes` — the SAME resolver `winter
+      // capabilities.list just above. Reuses `diagnoseRuntimes` — the SAME resolver `clover
       // doctor`'s "runtimes" section calls (packages/cli/src/main.ts's `printRuntimesSection`) —
       // rather than `runtimes-probe.ts`'s `runRuntimesProbe`: that second probe spawns `codesign
       // -dvv` with a 10s timeout and hardcodes `setting: undefined` to emulate a fresh boot with
@@ -3280,10 +3280,10 @@ export function startIpcServer(opts: IpcServerOptions): IpcServer {
       case METHODS.versionsGet: {
         parseParams(VersionsGetParams, params);
         let settings: Settings | undefined;
-        if (opts.winterHome) {
-          try { settings = liveSettingsView(loadSettings(join(opts.winterHome, "settings.json"))); } catch { settings = undefined; }
+        if (opts.cloverHome) {
+          try { settings = liveSettingsView(loadSettings(join(opts.cloverHome, "settings.json"))); } catch { settings = undefined; }
         }
-        const report = await diagnoseRuntimes({ execPath: process.execPath, home: opts.winterHome ?? homedir(), env: process.env, settings });
+        const report = await diagnoseRuntimes({ execPath: process.execPath, home: opts.cloverHome ?? homedir(), env: process.env, settings });
         return {
           ok: true,
           core: opts.serverVersion,
@@ -3294,7 +3294,7 @@ export function startIpcServer(opts: IpcServerOptions): IpcServer {
           installed: {
             winterAgentSdk: SDK_VERSION,
             ...(installedWinterRuntimeSdkVersion() === undefined ? {} : { winterRuntimeSdk: installedWinterRuntimeSdkVersion()! }),
-            ...(report.winter.resolved === undefined ? {} : { winterExecutable: report.winter.resolved }),
+            ...(report.clover.resolved === undefined ? {} : { winterExecutable: report.clover.resolved }),
           },
           // WS-23: the staged records (`runtimes/VERSIONS.json`, `runtimes/ant/VERSIONS.json`), or
           // `null` when neither is staged (every dev checkout). Was `official`, the retired
@@ -3308,18 +3308,18 @@ export function startIpcServer(opts: IpcServerOptions): IpcServer {
       // -----------------------------------------------------------------------------------------
       // Daemon settings surface (2026-09-17 plan, item 3; batch 3 item 1 adds the project tier).
       // LOCAL-ROLE ONLY, same posture as capabilities.list/versions.get above — read-only, no
-      // settings write. A missing `opts.winterHome` (a test/harness without one) degrades to
+      // settings write. A missing `opts.cloverHome` (a test/harness without one) degrades to
       // `definitions: []`/`rejected: []` rather than throwing — same "typed absence, never a crash"
       // precedent every RPC in this block follows for an optional daemon-wide dep.
       //
       // The project tier is read ONLY for a `cwd` `opts.trust` reports trusted — the SAME gate
-      // `optionsFor`'s own `WinterLegDeps.projectAgentDefinitions` wiring uses (daemon.ts), never a
+      // `optionsFor`'s own `CloverLegDeps.projectAgentDefinitions` wiring uses (daemon.ts), never a
       // looser one: an absent `cwd`, a missing `opts.trust`, or an untrusted `cwd` all report the
       // user tier alone, with no project row able to appear.
       // -----------------------------------------------------------------------------------------
       case METHODS.agentsList: {
         const p = parseParams(AgentsListParams, params);
-        const user = opts.winterHome ? loadUserAgentDefinitions(opts.winterHome) : { definitions: {}, sources: [], rejected: [] };
+        const user = opts.cloverHome ? loadUserAgentDefinitions(opts.cloverHome) : { definitions: {}, sources: [], rejected: [] };
         // WS-24: the project tier a run home loads — the trusted project's walk (`trustedProjectWalk`: trust
         // keyed on the repository, the directories from the cwd up to the project scope's root, so a linked
         // worktree of a trusted repo lists its own agents), the NEAREST definition of a name winning, as the
@@ -3355,8 +3355,8 @@ export function startIpcServer(opts: IpcServerOptions): IpcServer {
       case METHODS.settingsModelRoles: {
         parseParams(SettingsModelRolesParams, params);
         let settings: Settings | null = null;
-        if (opts.winterHome) {
-          try { settings = liveSettingsView(loadSettings(join(opts.winterHome, "settings.json"))); } catch { settings = null; }
+        if (opts.cloverHome) {
+          try { settings = liveSettingsView(loadSettings(join(opts.cloverHome, "settings.json"))); } catch { settings = null; }
         }
         // 2026-09-18: `problem` is merged in HERE, not inside `modelRolesFor`/`modelRoleInfo`
         // (settings.ts) — those stay pure `Settings -> …` readers with no fs/registry dependency;
@@ -3372,8 +3372,8 @@ export function startIpcServer(opts: IpcServerOptions): IpcServer {
       // (settings.ts) — never a duplicated validation path for that one role.
       case METHODS.settingsSetModelRole: {
         const p = parseParams(SettingsSetModelRoleParams, params);
-        if (!opts.winterHome) throw new RpcFailure(ERR.INTERNAL, "settings.setModelRole is not available on this server (no winterHome configured)");
-        const settingsPath = join(opts.winterHome, "settings.json");
+        if (!opts.cloverHome) throw new RpcFailure(ERR.INTERNAL, "settings.setModelRole is not available on this server (no cloverHome configured)");
+        const settingsPath = join(opts.cloverHome, "settings.json");
         const settings = loadSettings(settingsPath);
         let next: Settings;
         try {
@@ -3386,7 +3386,7 @@ export function startIpcServer(opts: IpcServerOptions): IpcServer {
           // sentinel, or `role: "provider.model"` with `model: null` — the params door's
           // `ModelTagSchema` already refused a BARE id, so the only way here is a shape-valid tag
           // the pinned catalog does not recognise, the sentinel, or that one role-specific rule.
-          // It throws the same `TypeError` for a refused `effort` too (a Winter-level tier, a level
+          // It throws the same `TypeError` for a refused `effort` too (a Clover-level tier, a level
           // the role's model does not offer, an effort on a model that declares no vocabulary) — the
           // effort gate's messages are `session.setEffort`'s own, and land as the same INVALID_PARAMS.
           throw new RpcFailure(ERR.INVALID_PARAMS, err instanceof Error ? err.message : String(err));
@@ -3401,12 +3401,12 @@ export function startIpcServer(opts: IpcServerOptions): IpcServer {
       // Roles pane model picker: catalog family/pricing facts, LOCAL-ROLE ONLY, same posture as
       // `settings.modelRoles` just above — read-only, no settings write, and settings-independent
       // (`modelCatalogWire` calls the SAME unfiltered `permittedProviders()` those roles' "any"/
-      // "same-as-session" `permitted` sets use, so there is nothing here for a `winterHome`-less
+      // "same-as-session" `permitted` sets use, so there is nothing here for a `cloverHome`-less
       // test server to degrade on).
       //
       // The ONE thing it is not settings-independent about is `providers[].credentialPresent`, and its
       // two inputs are exactly `sync.config`'s (below): `credentialPresenceFrom(opts.secrets)` plus
-      // `opts.winterHome` for the console door's on-disk profile. Taken as an ALREADY-COMPUTED
+      // `opts.cloverHome` for the console door's on-disk profile. Taken as an ALREADY-COMPUTED
       // presence rather than probed inside the catalog reader — one Keychain probe per call, and the
       // same rule `pickerModels` filters on, so the two listings cannot disagree. A server with no
       // secret store wired degrades to "no stored credentials at all" (`{byProvider:{}}` / `home: ""`),
@@ -3416,28 +3416,28 @@ export function startIpcServer(opts: IpcServerOptions): IpcServer {
       case METHODS.modelsCatalog: {
         parseParams(ModelsCatalogParams, params);
         const credentials = opts.secrets ? await credentialPresenceFrom(opts.secrets) : { byProvider: {} };
-        return modelCatalogWire({ credentials, home: opts.winterHome ?? "" });
+        return modelCatalogWire({ credentials, home: opts.cloverHome ?? "" });
       }
       // -----------------------------------------------------------------------------------------
       // Daemon settings surface batch 3 (item 2) — the ONE write door for a skill's `Skill(<name>)`
       // deny rule. LOCAL-ROLE ONLY, same posture as `settings.setModelRole` just above. `setSkillDenied`
       // never throws on its own input (no tag/catalog validation needed), so the only failure mode
-      // here is a missing `winterHome`.
+      // here is a missing `cloverHome`.
       // -----------------------------------------------------------------------------------------
       case METHODS.settingsSetSkillDenied: {
         const p = parseParams(SettingsSetSkillDeniedParams, params);
-        if (!opts.winterHome) throw new RpcFailure(ERR.INTERNAL, "settings.setSkillDenied is not available on this server (no winterHome configured)");
+        if (!opts.cloverHome) throw new RpcFailure(ERR.INTERNAL, "settings.setSkillDenied is not available on this server (no cloverHome configured)");
         // WS-21: `permissions.deny` lives in `sdk/settings.json` (claude `Settings`) — the same file both
         // runtimes read; `updateSdkSettings` is atomic and preserves every other key.
         try {
-          updateSdkSettings(opts.winterHome, (s) => setSkillDenied(s, p.name, p.denied));
+          updateSdkSettings(opts.cloverHome, (s) => setSkillDenied(s, p.name, p.denied));
         } catch (err) {
           throw sdkWriteFailure(err);
         }
         return { ok: true, name: p.name, denied: p.denied, rule: skillDenyRule(p.name) };
       }
       // -----------------------------------------------------------------------------------------
-      // WS-21 (spec §5.2): `winter plugin` = `claude plugin`, over Contract B
+      // WS-21 (spec §5.2): `clover plugin` = `claude plugin`, over Contract B
       // (`plugins/plugin-manager.ts`). Every result mirrors the SDK's own return shape verbatim
       // (protocol/methods.ts's own header: "field for field — protocol never imports the SDK").
       // harness-role (same precedent the pre-WS-21 block noted: NOT one of the six plugin-role
@@ -3449,13 +3449,13 @@ export function startIpcServer(opts: IpcServerOptions): IpcServer {
       // -----------------------------------------------------------------------------------------
       case METHODS.pluginList: {
         const p = parseParams(PluginListParams, params);
-        if (!opts.winterHome) throw new RpcFailure(ERR.INTERNAL, "plugin.list is not available on this server (no winterHome configured)");
-        const listed = await listPlugins(pluginManagerOptionsFor(opts.winterHome, p.cwd));
+        if (!opts.cloverHome) throw new RpcFailure(ERR.INTERNAL, "plugin.list is not available on this server (no cloverHome configured)");
+        const listed = await listPlugins(pluginManagerOptionsFor(opts.cloverHome, p.cwd));
         // I1 fix round 1: `extras` over the wire — lane L5's Mac app consent UI needs
         // tier/permissions/requiredConsents/consented/entry, not just Contract B's bare listing.
         let consents: Record<string, unknown> = {};
         try {
-          consents = loadSettings(join(opts.winterHome, "settings.json")).plugins?.consents ?? {};
+          consents = loadSettings(join(opts.cloverHome, "settings.json")).plugins?.consents ?? {};
         } catch { /* degrade to "nothing consented" rather than fail the whole list */ }
         const plugins = listed.map((entry) => {
           const found = pluginExtrasFor(entry.installPath, entry.id, consents[`${entry.id}@${entry.marketplace}`]);
@@ -3467,7 +3467,7 @@ export function startIpcServer(opts: IpcServerOptions): IpcServer {
           const extras = found?.entry !== undefined && entry.scope !== "user" ? { ...found, entryNote: PROJECT_SCOPE_ENTRY_NOTE } : found;
           // Fix round 2: `hooks` — a TOP-LEVEL sibling of `extras` (plugins/plugin-hooks.ts), read
           // from `hooks/hooks.json` and the claude manifest's own inline `hooks` field regardless of
-          // whether this plugin has a winter-plugin.json at all.
+          // whether this plugin has a clover-plugin.json at all.
           const hooks = pluginHooksFor(entry.installPath);
           return { ...entry, ...(extras ? { extras } : {}), ...(hooks ? { hooks } : {}) };
         });
@@ -3475,9 +3475,9 @@ export function startIpcServer(opts: IpcServerOptions): IpcServer {
       }
       case METHODS.pluginInstall: {
         const p = parseParams(PluginInstallParams, params);
-        if (!opts.winterHome) throw new RpcFailure(ERR.INTERNAL, "plugin.install is not available on this server (no winterHome configured)");
+        if (!opts.cloverHome) throw new RpcFailure(ERR.INTERNAL, "plugin.install is not available on this server (no cloverHome configured)");
         try {
-          const plugin = await installPlugin(pluginManagerOptionsFor(opts.winterHome, p.cwd), p.spec, p.scope);
+          const plugin = await installPlugin(pluginManagerOptionsFor(opts.cloverHome, p.cwd), p.spec, p.scope);
           invalidateLivePluginsCache();
           return { ok: true, plugin };
         } catch (err) {
@@ -3486,8 +3486,8 @@ export function startIpcServer(opts: IpcServerOptions): IpcServer {
       }
       case METHODS.pluginUninstall: {
         const p = parseParams(PluginUninstallParams, params);
-        if (!opts.winterHome) throw new RpcFailure(ERR.INTERNAL, "plugin.uninstall is not available on this server (no winterHome configured)");
-        const options = pluginManagerOptionsFor(opts.winterHome, p.cwd);
+        if (!opts.cloverHome) throw new RpcFailure(ERR.INTERNAL, "plugin.uninstall is not available on this server (no cloverHome configured)");
+        const options = pluginManagerOptionsFor(opts.cloverHome, p.cwd);
         // I2 fix round 1: resolve BEFORE touching the supervisor — an uninstall of a scope this
         // spec isn't installed in must refuse typed with NOTHING stopped (the old code called
         // hotApplyStop unconditionally, before uninstallPlugin's own "is it installed there" check
@@ -3514,7 +3514,7 @@ export function startIpcServer(opts: IpcServerOptions): IpcServer {
           // that keeps the OLD scope's record around; this covers the "nothing installed under this
           // spec at all" case, where there is no install left to fingerprint against.
           try {
-            const settingsPath = join(opts.winterHome, "settings.json");
+            const settingsPath = join(opts.cloverHome, "settings.json");
             saveSettings(settingsPath, stripPluginConsents(loadSettings(settingsPath), p.spec));
           } catch { /* best effort — a consent-clear failure never unwinds the already-committed uninstall */ }
         }
@@ -3522,9 +3522,9 @@ export function startIpcServer(opts: IpcServerOptions): IpcServer {
       }
       case METHODS.pluginEnable: {
         const p = parseParams(PluginEnableScopedParams, params);
-        if (!opts.winterHome) throw new RpcFailure(ERR.INTERNAL, "plugin.enable is not available on this server (no winterHome configured)");
+        if (!opts.cloverHome) throw new RpcFailure(ERR.INTERNAL, "plugin.enable is not available on this server (no cloverHome configured)");
         try {
-          await setPluginEnabledOnAdapter(pluginManagerOptionsFor(opts.winterHome, p.cwd), p.spec, p.scope, true);
+          await setPluginEnabledOnAdapter(pluginManagerOptionsFor(opts.cloverHome, p.cwd), p.spec, p.scope, true);
         } catch (err) {
           throwPluginManagerFailure(err);
         }
@@ -3537,9 +3537,9 @@ export function startIpcServer(opts: IpcServerOptions): IpcServer {
       }
       case METHODS.pluginDisable: {
         const p = parseParams(PluginDisableScopedParams, params);
-        if (!opts.winterHome) throw new RpcFailure(ERR.INTERNAL, "plugin.disable is not available on this server (no winterHome configured)");
+        if (!opts.cloverHome) throw new RpcFailure(ERR.INTERNAL, "plugin.disable is not available on this server (no cloverHome configured)");
         try {
-          await setPluginEnabledOnAdapter(pluginManagerOptionsFor(opts.winterHome, p.cwd), p.spec, p.scope, false);
+          await setPluginEnabledOnAdapter(pluginManagerOptionsFor(opts.cloverHome, p.cwd), p.spec, p.scope, false);
         } catch (err) {
           throwPluginManagerFailure(err);
         }
@@ -3549,9 +3549,9 @@ export function startIpcServer(opts: IpcServerOptions): IpcServer {
       }
       case METHODS.pluginUpdate: {
         const p = parseParams(PluginUpdateParams, params);
-        if (!opts.winterHome) throw new RpcFailure(ERR.INTERNAL, "plugin.update is not available on this server (no winterHome configured)");
+        if (!opts.cloverHome) throw new RpcFailure(ERR.INTERNAL, "plugin.update is not available on this server (no cloverHome configured)");
         try {
-          const plugin = await updatePlugin(pluginManagerOptionsFor(opts.winterHome, undefined), p.spec);
+          const plugin = await updatePlugin(pluginManagerOptionsFor(opts.cloverHome, undefined), p.spec);
           invalidateLivePluginsCache();
           return { ok: true, plugin };
         } catch (err) {
@@ -3560,9 +3560,9 @@ export function startIpcServer(opts: IpcServerOptions): IpcServer {
       }
       case METHODS.pluginMarketplaceAdd: {
         const p = parseParams(PluginMarketplaceAddParams, params);
-        if (!opts.winterHome) throw new RpcFailure(ERR.INTERNAL, "plugin.marketplace.add is not available on this server (no winterHome configured)");
+        if (!opts.cloverHome) throw new RpcFailure(ERR.INTERNAL, "plugin.marketplace.add is not available on this server (no cloverHome configured)");
         try {
-          const marketplace = await addMarketplace(pluginManagerOptionsFor(opts.winterHome, undefined), p.source);
+          const marketplace = await addMarketplace(pluginManagerOptionsFor(opts.cloverHome, undefined), p.source);
           return { ok: true, marketplace };
         } catch (err) {
           throwPluginManagerFailure(err);
@@ -3570,9 +3570,9 @@ export function startIpcServer(opts: IpcServerOptions): IpcServer {
       }
       case METHODS.pluginMarketplaceRemove: {
         const p = parseParams(PluginMarketplaceRemoveParams, params);
-        if (!opts.winterHome) throw new RpcFailure(ERR.INTERNAL, "plugin.marketplace.remove is not available on this server (no winterHome configured)");
+        if (!opts.cloverHome) throw new RpcFailure(ERR.INTERNAL, "plugin.marketplace.remove is not available on this server (no cloverHome configured)");
         try {
-          await removeMarketplace(pluginManagerOptionsFor(opts.winterHome, undefined), p.name);
+          await removeMarketplace(pluginManagerOptionsFor(opts.cloverHome, undefined), p.name);
           return { ok: true, name: p.name };
         } catch (err) {
           throwPluginManagerFailure(err);
@@ -3580,15 +3580,15 @@ export function startIpcServer(opts: IpcServerOptions): IpcServer {
       }
       case METHODS.pluginMarketplaceList: {
         parseParams(PluginMarketplaceListParams, params);
-        if (!opts.winterHome) throw new RpcFailure(ERR.INTERNAL, "plugin.marketplace.list is not available on this server (no winterHome configured)");
-        const marketplaces = await listMarketplaces(pluginManagerOptionsFor(opts.winterHome, undefined));
+        if (!opts.cloverHome) throw new RpcFailure(ERR.INTERNAL, "plugin.marketplace.list is not available on this server (no cloverHome configured)");
+        const marketplaces = await listMarketplaces(pluginManagerOptionsFor(opts.cloverHome, undefined));
         return { ok: true, marketplaces };
       }
       case METHODS.pluginMarketplaceUpdate: {
         const p = parseParams(PluginMarketplaceUpdateParams, params);
-        if (!opts.winterHome) throw new RpcFailure(ERR.INTERNAL, "plugin.marketplace.update is not available on this server (no winterHome configured)");
+        if (!opts.cloverHome) throw new RpcFailure(ERR.INTERNAL, "plugin.marketplace.update is not available on this server (no cloverHome configured)");
         try {
-          await updateMarketplace(pluginManagerOptionsFor(opts.winterHome, undefined), p.name);
+          await updateMarketplace(pluginManagerOptionsFor(opts.cloverHome, undefined), p.name);
           return { ok: true };
         } catch (err) {
           throwPluginManagerFailure(err);
@@ -3611,29 +3611,29 @@ export function startIpcServer(opts: IpcServerOptions): IpcServer {
             // client bug or protocol drift, not a crash: log once and fall through to the normal
             // resolve below (approved per p.approved, exactly as if optionId had been omitted).
             console.error(`approval.respond: unknown optionId ${JSON.stringify(p.optionId)} for session ${p.sessionId} call ${p.callId} — resolving with no rule persisted`);
-          } else if (option?.rule && p.approved && opts.winterHome) {
+          } else if (option?.rule && p.approved && opts.cloverHome) {
             // Persist the chosen rule. `approved:false` on a rule-bearing option must NEVER be saved —
             // enforced by `p.approved` being part of THIS same condition, not a separate branch, so
             // there is no path that persists a rule for a denied call. A refused save (an untrusted
-            // project, a planted link, a hand-edited file that does not parse, the Winter home itself)
+            // project, a planted link, a hand-edited file that does not parse, the Clover home itself)
             // only logs: the approval outcome never hangs or fails on a persistence problem, and
             // `resolve()` below still runs unconditionally either way.
             //
             // WS-21 (spec §4.3): claude's own locations, in claude's grammar — "everywhere" is
-            // `sdk/settings.json`, "in this project" is the TRUSTED project's `.winter/settings.local.json`
+            // `sdk/settings.json`, "in this project" is the TRUSTED project's `.clover/settings.local.json`
             // at its canonical git root (then the global git exclude). The retired stores
-            // (`<home>/permissions/projects.json`, `.winter/permissions.local.json`) are not written.
-            const winterHome = opts.winterHome;
+            // (`<home>/permissions/projects.json`, `.clover/permissions.local.json`) are not written.
+            const cloverHome = opts.cloverHome;
             try {
               if ((option.scope ?? "project") === "global") {
-                saveAnswerEverywhere(winterHome, option.rule);
+                saveAnswerEverywhere(cloverHome, option.rule);
               } else {
                 const cwd = opts.store.meta(p.sessionId).cwd;
                 if (!cwd) throw new SavedAnswerRefused("the session has no project directory to save an \"in this project\" answer in");
                 const root = localScopeKeyFor(cwd); // review I5: the local tier's one key
                 // R.3 re-review B-2: the SAME trust the card offered this option under (`bridgeProjectTrustedFor`
                 // = `projectScopeTrusted`: a linked worktree of a trusted repo is trusted).
-                saveAnswerInProject({ root, winterHome, trusted: opts.trust ? projectScopeTrusted(cwd, opts.trust) : false }, option.rule);
+                saveAnswerInProject({ root, cloverHome, trusted: opts.trust ? projectScopeTrusted(cwd, opts.trust) : false }, option.rule);
               }
             } catch (err) {
               console.error(`approval.respond: the rule ${JSON.stringify(option.rule)} for session ${p.sessionId} was not saved: ${(err as Error).message}`);
@@ -3656,14 +3656,14 @@ export function startIpcServer(opts: IpcServerOptions): IpcServer {
         return opts.elicitations?.respond(p.sessionId, p.elicitationId, p.action, socket.data.clientName) ?? { ok: true, alreadyResolved: true };
       }
       case METHODS.islandPending: {
-        // The Winter island: LOCAL harness clients only — never in `REMOTE_ALLOWED_METHODS` or the plugin list, and
+        // The Clover island: LOCAL harness clients only — never in `REMOTE_ALLOWED_METHODS` or the plugin list, and
         // the explicit check keeps it so if either ever widens (the phone has its own per-session `approval.list`).
         if (socket.data.authedRole !== "harness") throw new RpcFailure(ERR.UNAUTHORIZED, "island.pending is available to local clients only");
         parseParams(IslandPendingParams, params);
         return { items: opts.island?.list() ?? [] };
       }
       case METHODS.islandActivity: {
-        // The Winter island's activity: LOCAL harness clients only, like `island.pending`.
+        // The Clover island's activity: LOCAL harness clients only, like `island.pending`.
         if (socket.data.authedRole !== "harness") throw new RpcFailure(ERR.UNAUTHORIZED, "island.activity is available to local clients only");
         parseParams(IslandActivityParams, params);
         return opts.islandActivity?.list() ?? { computerUse: [], results: [], watches: [], usageAlarms: [] };
@@ -3705,13 +3705,13 @@ export function startIpcServer(opts: IpcServerOptions): IpcServer {
       case METHODS.usageAlarmsSet:
       case METHODS.usageAlarmsRemove:
       case METHODS.usageAlarmsAck: {
-        // Usage and cost tracking (`docs/claude/usage.md`): the user's own usage across Winter, Codex and Claude Code,
+        // Usage and cost tracking (`docs/claude/usage.md`): the user's own usage across Clover, Codex and Claude Code,
         // and their plan alarms. LOCAL harness clients only — never a phone, never a plugin.
         if (socket.data.authedRole !== "harness") throw new RpcFailure(ERR.UNAUTHORIZED, `${method} is available to local clients only`);
         if (method === METHODS.usageSetTracking) {
           const p = parseParams(UsageSetTrackingParams, params);
-          if (!opts.winterHome) throw new RpcFailure(ERR.INTERNAL, "usage.setTracking is not available on this server (no winterHome configured)");
-          const settingsPath = join(opts.winterHome, "settings.json");
+          if (!opts.cloverHome) throw new RpcFailure(ERR.INTERNAL, "usage.setTracking is not available on this server (no cloverHome configured)");
+          const settingsPath = join(opts.cloverHome, "settings.json");
           const settings = loadSettings(settingsPath);
           const next: Settings = {
             ...settings,
@@ -3832,7 +3832,7 @@ export function startIpcServer(opts: IpcServerOptions): IpcServer {
         }
       }
       // -----------------------------------------------------------------------------------------
-      // ComputerV2 Phase 2: Winter.app's BROWSER LINK. Harness role only — outside every allowlist, and the explicit
+      // ComputerV2 Phase 2: Clover.app's BROWSER LINK. Harness role only — outside every allowlist, and the explicit
       // check keeps it so if one ever widens. The connection never attaches to a session; nothing here is an event.
       // -----------------------------------------------------------------------------------------
       case METHODS.browserLinkAttach:
@@ -3841,7 +3841,7 @@ export function startIpcServer(opts: IpcServerOptions): IpcServer {
       case METHODS.browserLinkTabGone:
       case METHODS.browserLinkDownload:
       case METHODS.browserLinkHeadless: {
-        if (socket.data.authedRole !== "harness") throw new RpcFailure(ERR.UNAUTHORIZED, `${method} is available to Winter's app only`);
+        if (socket.data.authedRole !== "harness") throw new RpcFailure(ERR.UNAUTHORIZED, `${method} is available to Clover's app only`);
         const link = opts.browserLink;
         if (link === undefined) throw new RpcFailure(ERR.INTERNAL, `${method} is not available on this server`);
         try {
@@ -3902,26 +3902,26 @@ export function startIpcServer(opts: IpcServerOptions): IpcServer {
       case METHODS.taskList: {
         const p = parseParams(TaskListParams, params);
         // Winter Phase 8c (P8c-11, Task 2.3): the task graph lives in the CHILD's own in-memory
-        // store (measured against the winter-agent-sdk checkout — no file, see tasks-reader.ts's
-        // doc comment), so a Winter-leg session's task list is folded from its OWN persisted
+        // store (measured against the clover-sdk checkout — no file, see tasks-reader.ts's
+        // doc comment), so a Clover-leg session's task list is folded from its OWN persisted
         // `task_updated` history rather than read from `opts.tasks` (the retired engine's
         // in-process `TaskStore`, which no live producer writes to any more — kept as the fallback
-        // for a session not on the Winter leg, and for a bare test server with no `winter` wired).
+        // for a session not on the Clover leg, and for a bare test server with no `clover` wired).
         //
-        // review r1 (Major): `opts.winter?.get(id)` alone only sees a LIVE child — an idle/resumed
-        // Winter-leg session (no driver running right now) fell through to the retired, empty
+        // review r1 (Major): `opts.clover?.get(id)` alone only sees a LIVE child — an idle/resumed
+        // Clover-leg session (no driver running right now) fell through to the retired, empty
         // TaskStore path. Same shape as `session.compact`/`session.interrupt`'s own leg check just
         // above: a RECORDED "winter" leg (`legOf`) reads the folded history too, live driver or
-        // not; only an engine-era session (or no `winter` at all) takes the legacy fallback.
+        // not; only an engine-era session (or no `clover` at all) takes the legacy fallback.
         //
         // Fix wave M3 (whole-branch review): `legOf(id) === "winter"` alone missed the OFFICIAL
         // leg entirely — an idle official-leg session (no live driver) fell through to the empty
-        // legacy fallback exactly like the pre-review-r1 bug this comment describes for Winter.
+        // legacy fallback exactly like the pre-review-r1 bug this comment describes for Clover.
         // `isRunnableLeg` (this file's own siblings, `session.send`/`session.compact` above) is the
         // ONE "a leg the driver table can actually run a turn on" predicate; both legs' task
         // graphs live the same way (the child's own in-memory store, folded from `task_updated`).
-        if (opts.winter?.get(p.sessionId) !== undefined || isRunnableLeg(p.sessionId)) {
-          return { ok: true, tasks: readWinterTasks(opts.store, p.sessionId) };
+        if (opts.clover?.get(p.sessionId) !== undefined || isRunnableLeg(p.sessionId)) {
+          return { ok: true, tasks: readCloverTasks(opts.store, p.sessionId) };
         }
         return { ok: true, tasks: opts.tasks?.list(p.sessionId) ?? [] };
       }
@@ -3997,7 +3997,7 @@ export function startIpcServer(opts: IpcServerOptions): IpcServer {
           throw new RpcFailure(ERR.NOT_FOUND, (e as Error).message);
         }
         // P8b Task 17 Step 0(b): a LIVE child learns the new policy NOW — `Query.setPermissionMode`,
-        // on whichever leg it is running (`WinterSessionDrivers.get` answers for both). The bridge's
+        // on whichever leg it is running (`CloverSessionDrivers.get` answers for both). The bridge's
         // policy getter already reads the store live, and a resumable session re-reads it when it
         // reopens, so this call is only about the child that is already up.
         //
@@ -4011,15 +4011,15 @@ export function startIpcServer(opts: IpcServerOptions): IpcServer {
         // in `accept-edits` is strictly worse than either end state — the user would be told the
         // switch failed by a surface whose next read says it succeeded, and this session's own gate
         // would start denying calls the child never asks about.
-        const live = opts.winter?.get(p.sessionId);
-        // ACROSS THE BYPASS BOUNDARY on the Winter leg the child cannot be told — its clamp and its
+        const live = opts.clover?.get(p.sessionId);
+        // ACROSS THE BYPASS BOUNDARY on the Clover leg the child cannot be told — its clamp and its
         // `allowDangerouslySkipPermissions` are spawn-time facts — so it is REPLACED, resumably, the way
         // a credential write replaces one (`replaceChildForPolicy`). The policy it was spawned under is
         // the stored one, unless an earlier crossing is still waiting for this child's idle boundary.
         // The official leg never needs this: its `bypass` is `acceptEdits` (`officialPermissionModeFor`),
         // a mode its live child accepts, and its clamp only fences `Options.agents`, whose
         // `permissionMode` the daemon strips at parse time.
-        if (live !== undefined && live.state === "live" && opts.winter!.legOf(p.sessionId) === "winter") {
+        if (live !== undefined && live.state === "live" && opts.clover!.legOf(p.sessionId) === "winter") {
           const pending = pendingPolicyReplacements.get(p.sessionId);
           const spawnPolicy = pending !== undefined && pending.live === live ? pending.spawnPolicy : previous;
           if (spawnPolicy !== undefined && bypassAllowedAtSpawn(spawnPolicy) !== bypassAllowedAtSpawn(p.policy)) {
@@ -4159,13 +4159,13 @@ export function startIpcServer(opts: IpcServerOptions): IpcServer {
         } catch (e) {
           throw new RpcFailure(ERR.NOT_FOUND, (e as Error).message);
         }
-        // P8b Task 16: a LIVE Winter child is told (`Query.setModel`); a resumable one re-reads the
+        // P8b Task 16: a LIVE Clover child is told (`Query.setModel`); a resumable one re-reads the
         // store when it reopens. The store write above is the contract; this is best-effort and
         // never delays the reply.
         // WS-23 review r1 I-5: not while a provider switch is replacing the child -- the live child is the
         // SOURCE being left, it would refuse a model on another provider, and the target is spawned with
         // the new model from the record anyway.
-        const liveDriver = opts.winter?.get(p.sessionId);
+        const liveDriver = opts.clover?.get(p.sessionId);
         if (liveDriver?.handoffPending !== true) void liveDriver?.setModel(model ?? undefined).catch((err: unknown) => {
           console.error(`session.setModel: the winter child for ${p.sessionId} refused the model: ${(err as Error)?.name ?? "unknown"}`);
         });
@@ -4212,7 +4212,7 @@ export function startIpcServer(opts: IpcServerOptions): IpcServer {
         // values diverge yet.
         //
         // NOT a claim that any other string is "an invalid effort": it is a claim about what is
-        // valid ON THE WIRE. A Winter-level tier that never reaches the wire (`ultra`, which sends
+        // valid ON THE WIRE. A Clover-level tier that never reaches the wire (`ultra`, which sends
         // `max` plus a delegation instruction, code sessions only) is a different kind of value —
         // provider-correctness T5 landed it, and, exactly as this comment anticipated, it is
         // admitted HERE as a client-side selector translated before the request (at
@@ -4350,15 +4350,15 @@ export function startIpcServer(opts: IpcServerOptions): IpcServer {
           // CALL TIME: a Keychain write or a console sign-in is visible on the very next
           // `sync.config`, no daemon restart.
           credentials: opts.secrets ? () => credentialPresenceFrom(opts.secrets!) : undefined,
-          home: opts.winterHome,
+          home: opts.cloverHome,
         });
       }
       case METHODS.syncMemory: {
         const p = parseParams(SyncMemoryParams, params);
-        // No `winterHome` wired (most existing tests) → no bucket to page over — same typed no-op
+        // No `cloverHome` wired (most existing tests) → no bucket to page over — same typed no-op
         // shape as `syncMemory`'s own missing-directory branch, not a crash.
-        if (!opts.winterHome) return { files: [], complete: true };
-        return syncMemory(opts.winterHome, p.cursor ?? 0);
+        if (!opts.cloverHome) return { files: [], complete: true };
+        return syncMemory(opts.cloverHome, p.cursor ?? 0);
       }
 
       // -----------------------------------------------------------------------------------------
@@ -4499,7 +4499,7 @@ export function startIpcServer(opts: IpcServerOptions): IpcServer {
 
       // -----------------------------------------------------------------------------------------
       // Workflows (CC-parity phase 3, Track C Task C2): the management/control surface over
-      // WorkflowRuntime (live runs) + WorkflowStore (saved `.winter/workflows/*.js` scripts, C1).
+      // WorkflowRuntime (live runs) + WorkflowStore (saved `.clover/workflows/*.js` scripts, C1).
       // Role-gated exactly like routines.*/memory.* above — no additional role check here (harness
       // AND admin may both call these; a plugin or remote connection is role-rejected before
       // dispatch ever reaches this switch, since none of these four are in PLUGIN_ALLOWED_METHODS
@@ -4570,7 +4570,7 @@ export function startIpcServer(opts: IpcServerOptions): IpcServer {
         } catch (e) {
           throw new RpcFailure(ERR.NOT_FOUND, (e as Error).message);
         }
-        // working-directories T5: this legacy verb (CLI `winter add-dir`, the TUI's `/add-dir`,
+        // working-directories T5: this legacy verb (CLI `clover add-dir`, the TUI's `/add-dir`,
         // WinterKit's `addDir`) is now a THIN ALIAS over the one setter rather than a second writer
         // of the fence. It used to `opts.dirs.add(...)` an in-memory root that no client could see,
         // that no restart survived, and that no lock rule applied to; the same call now lands the
@@ -4686,7 +4686,7 @@ export function startIpcServer(opts: IpcServerOptions): IpcServer {
 
       // -----------------------------------------------------------------------------------------
       // Hardware helper (Phase 4c Task 2, spec §5): plugin (or harness, dev/testing) → core →
-      // Winter.app's XPC helper. Consent gating lives HERE, not in HardwareBroker — the broker has
+      // Clover.app's XPC helper. Consent gating lives HERE, not in HardwareBroker — the broker has
       // no PluginStore access, only `verbClass` (this file's `hardware.request` case is the one
       // place that has BOTH the requesting plugin's PluginInfo and the verb's class at once). A
       // plugin-role caller must have the verb's class in its manifest's `permissions.hardware`
@@ -4794,12 +4794,12 @@ export function startIpcServer(opts: IpcServerOptions): IpcServer {
       // -----------------------------------------------------------------------------------------
       case METHODS.providerConfigure: {
         const p = parseParams(ProviderConfigureParams, params);
-        if (!opts.winterHome) throw new RpcFailure(ERR.INTERNAL, "provider.configure is not available on this server (no winterHome configured)");
+        if (!opts.cloverHome) throw new RpcFailure(ERR.INTERNAL, "provider.configure is not available on this server (no cloverHome configured)");
         // WS-20: the SECOND arm (the app's Anthropic auth-mode radio, `runtimes.official.auth`) is
         // DELETED along with the setting itself — `ProviderConfigureParams` now has exactly the one
         // openai-compatible BYOK arm below.
         if (!opts.secrets) throw new RpcFailure(ERR.INTERNAL, "provider.configure is not available on this server (no secret store configured)");
-        const settingsPath = join(opts.winterHome, "settings.json");
+        const settingsPath = join(opts.cloverHome, "settings.json");
         const settings = loadSettings(settingsPath);
         // WS-20: the BYO endpoint is `providers.openai.baseUrl` now (never `provider.baseUrl`,
         // which no longer exists on `ProviderSettings`) and the model is a tag — `"openai/…"`,
@@ -4826,13 +4826,13 @@ export function startIpcServer(opts: IpcServerOptions): IpcServer {
       // -----------------------------------------------------------------------------------------
       // WS-20 (cross-lane, Lane 4 / Mac app): the ONE door onto `settings.runtimes.advisorModel` —
       // the Mac app used to write it straight into settings.json; that write must be validated
-      // against the pinned catalog now, same as `winter model --advisor <slug|auto>` (the CLI's
+      // against the pinned catalog now, same as `clover model --advisor <slug|auto>` (the CLI's
       // own in-process door onto the SAME `setAdvisorModel` transform). LOCAL-ROLE ONLY.
       // -----------------------------------------------------------------------------------------
       case METHODS.settingsSetAdvisorModel: {
         const p = parseParams(SettingsSetAdvisorModelParams, params);
-        if (!opts.winterHome) throw new RpcFailure(ERR.INTERNAL, "settings.setAdvisorModel is not available on this server (no winterHome configured)");
-        const settingsPath = join(opts.winterHome, "settings.json");
+        if (!opts.cloverHome) throw new RpcFailure(ERR.INTERNAL, "settings.setAdvisorModel is not available on this server (no cloverHome configured)");
+        const settingsPath = join(opts.cloverHome, "settings.json");
         const settings = loadSettings(settingsPath);
         let next: Settings;
         try {
@@ -4907,7 +4907,7 @@ export function startIpcServer(opts: IpcServerOptions): IpcServer {
             // `startRefresher()` is idempotent (a no-op while already running) and performs its own
             // immediate refresh, so this is the one missing call, not a duplicate of anything above.
             //
-            // WS-23 live-gate fix: the bearer is now what `console` sessions and Winter's own jobs READ,
+            // WS-23 live-gate fix: the bearer is now what `console` sessions and Clover's own jobs READ,
             // and the refresher's seed refresh writes it asynchronously — so ONE refresh is awaited
             // first (the CLI door's own sequence: `refreshBearer()`, then a refresher), and the
             // children are replaced and the jobs' view re-probed ONLY when that refresh reports the
@@ -5018,10 +5018,10 @@ export function startIpcServer(opts: IpcServerOptions): IpcServer {
         parseParams(CredentialListParams, params);
         if (!opts.secrets) throw new RpcFailure(ERR.INTERNAL, "credential.list is not available on this server (no secret store configured)", { code: "credential_store_unavailable" });
         try {
-          // B-1 (review): THIS is the door `winter login` / `winter logout` poke after writing
+          // B-1 (review): THIS is the door `clover login` / `clover logout` poke after writing
           // `codex-oauth:default` in-process. Those two write the Keychain directly and always have —
           // a login door whose first move is to reach the daemon is useless in exactly the state a user
-          // reaches for it — so the daemon's cached "which providers can Winter's own jobs run on"
+          // reaches for it — so the daemon's cached "which providers can Clover's own jobs run on"
           // snapshot has no other way to learn about them while it is running.
           //
           // An EXISTING method rather than a new one (CLAUDE.md's RPC checklist would otherwise apply to
@@ -5030,7 +5030,7 @@ export function startIpcServer(opts: IpcServerOptions): IpcServer {
           // and cannot report anything the caller was not already being told. Nothing about the result
           // changes; a remote caller (this method is already on the allowlist) triggers the same probe it
           // triggers for its own rows and learns nothing new.
-          const rows = await credentialRows(opts.secrets, opts.winterHome);
+          const rows = await credentialRows(opts.secrets, opts.cloverHome);
           await refreshInternalProvidersAfterCredentialChange();
           return { providers: rows };
         } catch (err) {
@@ -5077,7 +5077,7 @@ export function startIpcServer(opts: IpcServerOptions): IpcServer {
         if ("code" in outcome) throw credentialRpcFailure(outcome);
         await evictSessionsForCredentialChange(p.providerId);
         // 2026-09-19: the mirror of `credential.set`'s own refresh — removing the LAST credential a
-        // Winter job could run on must make those jobs inert on the next call, cleanly and at once.
+        // Clover job could run on must make those jobs inert on the next call, cleanly and at once.
         await refreshInternalProvidersAfterCredentialChange();
         return { ok: true, removed: outcome.removed };
       }
@@ -5085,7 +5085,7 @@ export function startIpcServer(opts: IpcServerOptions): IpcServer {
       // -----------------------------------------------------------------------------------------
       // plugin.revokeToken (Phase 4b Task 2, spec §3): harness-role admin verb, same precedent as
       // trust.remove above — NOT one of the six plugin-role verbs (rejected by the allowlist gate
-      // above before ever reaching here if called from a plugin connection). The CLI's `winter
+      // above before ever reaching here if called from a plugin connection). The CLI's `clover
       // plugin disable/remove` call this best-effort instead of opening the daemon's sqlite
       // directly (locking risk) — mint stays daemon-side (Task 3, lazily at supervisor spawn).
       // -----------------------------------------------------------------------------------------
@@ -5100,7 +5100,7 @@ export function startIpcServer(opts: IpcServerOptions): IpcServer {
 
       // -----------------------------------------------------------------------------------------
       // plugin.restart (final-review Fix 1): the `PluginSupervisor.restart()` manual-restart rider
-      // existed and was tested (supervisor.ts) but had no caller — this wires it up so `winter
+      // existed and was tested (supervisor.ts) but had no caller — this wires it up so `clover
       // plugin restart <id>` can recover a plugin stuck "circuit-open" (nothing else ever clears
       // that state short of a daemon restart). harness OR admin role, same precedent as
       // `plugins.list` above (no extra role check here) — NOT one of the six plugin-role verbs, so
@@ -5114,7 +5114,7 @@ export function startIpcServer(opts: IpcServerOptions): IpcServer {
         const p = parseParams(PluginRestartParams, params);
         if (!opts.supervisor) throw new RpcFailure(ERR.INTERNAL, "plugin supervisor is not available on this server");
         // WS-24: `pluginId` is the plugin's spec (the supervisor's key). A BARE name — what this RPC took
-        // before, and what `winter plugin restart <name>` and older clients still send — resolves only when
+        // before, and what `clover plugin restart <name>` and older clients still send — resolves only when
         // exactly one tracked spec has that name; two marketplaces' same-named plugins refuse it by name.
         let config = opts.supervisor.configFor(p.pluginId);
         if (!config && !p.pluginId.includes("@")) {
@@ -5133,7 +5133,7 @@ export function startIpcServer(opts: IpcServerOptions): IpcServer {
       }
 
       // -----------------------------------------------------------------------------------------
-      // plugin.setConsent (spec §5.4: "the extras keep their own consents") — a Winter-only extra
+      // plugin.setConsent (spec §5.4: "the extras keep their own consents") — a Clover-only extra
       // (the Tier-2 entry process, tcc, hardware) still needs the daemon's own consent record,
       // separate from "installed+enabled" (which is the consent for a plugin's claude-native
       // content, spec §5.4). `install`/`uninstall`/`enable`/`disable`/`update`/`list`/`marketplace.*`
@@ -5160,17 +5160,17 @@ export function startIpcServer(opts: IpcServerOptions): IpcServer {
         // `listPlugins`; with no cwd the project/local records still list, only their enabled state is
         // unresolved) — never `livePlugins()`, which reports user scope only, so a plugin installed at
         // project or local scope listed with a fingerprint yet could never be consented to.
-        if (!opts.winterHome) throw new RpcFailure(ERR.INTERNAL, "plugin.setConsent is not available on this server (no winterHome configured)");
-        const installs = (await listPlugins(pluginManagerOptionsFor(opts.winterHome, undefined))).filter((e) => `${e.id}@${e.marketplace}` === p.spec);
+        if (!opts.cloverHome) throw new RpcFailure(ERR.INTERNAL, "plugin.setConsent is not available on this server (no cloverHome configured)");
+        const installs = (await listPlugins(pluginManagerOptionsFor(opts.cloverHome, undefined))).filter((e) => `${e.id}@${e.marketplace}` === p.spec);
         if (installs.length === 0) return { code: "unknown_plugin" };
         // The disclosure each install shows RIGHT NOW, computed exactly as `plugin.list`'s `extras` do (a
-        // plugin with no winter-plugin.json: as `PluginStore`'s legacy entry does). A spec installed at two
+        // plugin with no clover-plugin.json: as `PluginStore`'s legacy entry does). A spec installed at two
         // scopes from different folders: the echoed fingerprint picks the one the user saw.
         const fingerprint = installs
           .map((e) => pluginExtrasFor(e.installPath, e.id, undefined)?.fingerprint ?? pluginConsentFingerprint(e.installPath, {}))
           .find((f) => f === p.fingerprint);
         if (fingerprint === undefined) return { code: "stale_disclosure" };
-        const settingsPath = join(opts.winterHome, "settings.json");
+        const settingsPath = join(opts.cloverHome, "settings.json");
         const classes = p.classes.filter((c): c is "exec" | "tcc" | "hardware" => c === "exec" || c === "tcc" || c === "hardware");
         const settings = loadSettings(settingsPath);
         const consents = { ...(settings.plugins?.consents ?? {}), [p.spec]: { classes, fingerprint } };
@@ -5454,8 +5454,8 @@ export function startIpcServer(opts: IpcServerOptions): IpcServer {
       // branch on which one it got.
       case METHODS.panelReadDiff: {
         const p = parseParams(PanelReadDiffParams, params);
-        if (!opts.winterHome) throw new RpcFailure(ERR.INTERNAL, "panel.readDiff is not available on this server (no winterHome configured)");
-        const found = await readStoredDiff(opts.winterHome, p.sessionId, p.diffId);
+        if (!opts.cloverHome) throw new RpcFailure(ERR.INTERNAL, "panel.readDiff is not available on this server (no cloverHome configured)");
+        const found = await readStoredDiff(opts.cloverHome, p.sessionId, p.diffId);
         if (!found) throw new RpcFailure(ERR.NOT_FOUND, `diff not found: "${p.diffId}"`);
         return {
           path: found.header.path, added: found.header.added, removed: found.header.removed,

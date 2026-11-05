@@ -224,16 +224,16 @@ describe("the extension's hello", () => {
     expect(registry.list()).toEqual([{ id: "chrome", family: "chrome", name: "Google Chrome", bundleId: "com.google.Chrome", connected: true }]);
   });
 
-  test("an older extension → protocol_mismatch, listed unavailable with \"update Winter for Chrome\"; a newer one → \"update Winter\"", async () => {
+  test("an older extension → protocol_mismatch, listed unavailable with \"update Winter for Chrome\"; a newer one → \"update Clover\"", async () => {
     const { registry } = start();
     const c = await readyHost();
     const old = await c.request("e1", "hello", { protocol: 0, extensionVersion: "0.9.0", instanceId: INSTANCE });
     expect(old).toMatchObject({ error: { message: "update Winter for Chrome", data: { code: "protocol_mismatch", expected: EXTENSION_PROTOCOL } } });
     const newer = await c.request("e2", "hello", { protocol: EXTENSION_PROTOCOL + 1, extensionVersion: "2.0.0", instanceId: INSTANCE });
-    expect(newer).toMatchObject({ error: { message: "update Winter", data: { code: "protocol_mismatch", expected: EXTENSION_PROTOCOL } } });
+    expect(newer).toMatchObject({ error: { message: "update Clover", data: { code: "protocol_mismatch", expected: EXTENSION_PROTOCOL } } });
     expect(registry.unavailable.map((u) => u.reason)).toEqual([
       "Winter for Chrome in Google Chrome is too old — ask the user to update Winter for Chrome",
-      "Winter for Chrome in Google Chrome is newer than this Winter — ask the user to update Winter",
+      "Winter for Chrome in Google Chrome is newer than this Clover — ask the user to update Clover",
     ]);
     expect(registry.unavailable[0]).toMatchObject({ family: "chrome", name: "Google Chrome", bundleId: "com.google.Chrome" });
     expect(registry.registrations).toEqual([]);

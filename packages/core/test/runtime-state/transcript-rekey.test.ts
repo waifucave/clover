@@ -14,7 +14,7 @@ const ID = "0f6f3f0e-1111-4222-8333-444455556666";
 const write = (p: string, body: string): void => { mkdirSync(join(p, ".."), { recursive: true }); writeFileSync(p, body); };
 
 function store() {
-  const projects = join(realpathSync(mkdtempSync(join(tmpdir(), "winter-rekey-"))), "projects");
+  const projects = join(realpathSync(mkdtempSync(join(tmpdir(), "clover-rekey-"))), "projects");
   mkdirSync(projects);
   return projects;
 }
@@ -69,7 +69,7 @@ describe("moveTranscriptFiles", () => {
   test("never through a link: a key dir that is a symbolic link refuses, nothing moved", () => {
     const projects = store();
     write(join(projects, "-tmp-app", `${ID}.jsonl`), "t\n");
-    const elsewhere = realpathSync(mkdtempSync(join(tmpdir(), "winter-rekey-elsewhere-")));
+    const elsewhere = realpathSync(mkdtempSync(join(tmpdir(), "clover-rekey-elsewhere-")));
     symlinkSync(elsewhere, join(projects, "-private-tmp-app"));
     const r = moveTranscriptFiles(projects, ID, "-tmp-app", "-private-tmp-app");
     expect(r.kind).toBe("refused");
@@ -80,7 +80,7 @@ describe("moveTranscriptFiles", () => {
 
 describe("RuntimeSessionRecords.rekeyTranscript", () => {
   test("re-points the key and the backend root, guarded by the key it expects", () => {
-    const home = realpathSync(mkdtempSync(join(tmpdir(), "winter-rekey-rs-")));
+    const home = realpathSync(mkdtempSync(join(tmpdir(), "clover-rekey-rs-")));
     const rs = openRuntimeStateDb(home);
     try {
       const records = new RuntimeSessionRecords(rs);

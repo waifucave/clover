@@ -1,8 +1,8 @@
-// WS-21 (spec §4.4, Q1): Winter's project MCP file is `<project root>/.winter/mcp.json` — claude's own
-// `.mcp.json` FORMAT, in Winter's project directory. The repo-root `.mcp.json` is no longer read by
-// anything in Winter (claude never reads a repo's `.claude/`, `CLAUDE.md` or `.mcp.json` either, Q1).
+// WS-21 (spec §4.4, Q1): Clover's project MCP file is `<project root>/.clover/mcp.json` — claude's own
+// `.mcp.json` FORMAT, in Clover's project directory. The repo-root `.mcp.json` is no longer read by
+// anything in Clover (claude never reads a repo's `.claude/`, `CLAUDE.md` or `.mcp.json` either, Q1).
 // `dir` below is always the PROJECT ROOT (`repoRootFor(cwd)`), the same root the run home's builder
-// reads it at. The file is write-denied to the model (spec §7.1) — only `winter mcp` writes it.
+// reads it at. The file is write-denied to the model (spec §7.1) — only `clover mcp` writes it.
 //
 // The project MCP file's schema and read/write helpers — Claude Code's own file
 // format (git-shared), previously duplicated verbatim in TWO places (`agent/mcp/manager.ts`'s own
@@ -11,7 +11,7 @@
 //
 // PARITY FIX (controller-directed, after the write-door fix below shipped): claude's own `.mcp.json`
 // reader (`McpServerConfigSchema`, the reference clone's `services/mcp/types.ts`) accepts stdio,
-// sse AND http entries (plus a few IDE-internal ones Winter has no equivalent of) — Winter's
+// sse AND http entries (plus a few IDE-internal ones Clover has no equivalent of) — Clover's
 // PER-FILE readers (`ProjectMcpConfig` below, `manager.ts`'s `doEnsureProject`,
 // `external-mcp.ts`'s `configuredMcpServersFor`) used to accept ONLY stdio, and — worse — used to
 // validate the WHOLE `mcpServers` map in one `.parse()` call, so a single http/sse (or otherwise
@@ -33,7 +33,7 @@
 // `ProjectMcpEntrySchema` below is otherwise IDENTICAL to `settings.ts`'s `McpServerSettingsEntry`
 // (same three shapes, same `type`-defaulting preprocess) but does NOT carry that schema's
 // `refuseCredentialShapedHeaders` refinement, and is defined fresh here rather than importing it.
-// `settings.mcpServers` is Winter's OWN file, and the refusal exists because settings.json is
+// `settings.mcpServers` is Clover's OWN file, and the refusal exists because settings.json is
 // model-readable with no other guard on a bearer token landing there in the clear. A project's
 // `.mcp.json` is a DIFFERENT file with a DIFFERENT ownership story — it is claude's own format, git-
 // shared with a team, and a real team's shared MCP server frequently authenticates via a header IN
@@ -50,10 +50,10 @@
 // since the write door for project scope is stdio-only today and so never writes a header at all —
 // see below); it must never again say "settings.json" while doing it.
 //
-// `winter mcp add --scope project` (`mcp-cli.ts`) still writes ONLY stdio entries — a deliberate,
+// `clover mcp add --scope project` (`mcp-cli.ts`) still writes ONLY stdio entries — a deliberate,
 // narrower choice than what the readers now ACCEPT (see that command's own refusal message): the
 // readers had to widen to match every shape claude or a human might already have put in the file;
-// Winter's own write door hasn't been asked to grow a new transport, and this fix does not do that.
+// Clover's own write door hasn't been asked to grow a new transport, and this fix does not do that.
 //
 // TWO READER/WRITER PAIRS, deliberately, for two different callers:
 //   - `readProjectMcpConfig`/`writeProjectMcpConfig`/`ProjectMcpConfig` (typed, stdio-only,
@@ -62,7 +62,7 @@
 //     validated stdio-only shape in hand; today that is only this file's own tests. `manager.ts`/
 //     `external-mcp.ts` no longer use this pair at all (see above).
 //   - `readRawProjectMcpConfig`/`writeRawProjectMcpConfig` (untyped, refuses on a malformed file) —
-//     THE WRITE DOOR. `winter mcp add/remove --scope project` (`mcp-cli.ts`) uses ONLY this pair.
+//     THE WRITE DOOR. `clover mcp add/remove --scope project` (`mcp-cli.ts`) uses ONLY this pair.
 //     See that function's own doc for why a write can never go through the typed pair above: one
 //     stdio-only `.parse()` failure anywhere in the map would make a write silently drop every
 //     OTHER server in the file. `extractRawMcpServers` is the shape-recognition half this shares
@@ -144,7 +144,7 @@ const ProjectMcpEntryHttp = z.object({
   headers: z.record(z.string(), z.string()).optional(),
   versionNegotiation: McpVersionNegotiationSetting.optional(),
   // WS-25: validated with the runtime's own rules (`McpOAuthSetting`). A project may declare a sign-in;
-  // it can never name where a secret lives (the account is derived), and the Winter doors show the
+  // it can never name where a secret lives (the account is derived), and the Clover doors show the
   // authorization server's origin before any sign-in.
   oauth: McpOAuthSetting.optional(),
 }).superRefine(mcpOAuthIssue);
@@ -170,7 +170,7 @@ export const ProjectMcpServerEntry = z.object({
   args: z.array(z.string()).optional(),
   env: z.record(z.string(), z.string()).optional(),
   // WS-24: the CLI's project-scope write door builds its entry from this shape — without the key, a
-  // `winter mcp add --scope project --version-negotiation …` (or an `add-json` carrying it) lost it.
+  // `clover mcp add --scope project --version-negotiation …` (or an `add-json` carrying it) lost it.
   versionNegotiation: McpVersionNegotiationSetting.optional(),
 });
 export type ProjectMcpServerEntry = z.infer<typeof ProjectMcpServerEntry>;
@@ -182,15 +182,15 @@ export type ProjectMcpConfig = z.infer<typeof ProjectMcpConfig>;
 
 const PROJECT_MCP_FILENAME = "mcp.json";
 
-/** `<root>/.winter/mcp.json` (WS-21). */
+/** `<root>/.clover/mcp.json` (WS-21). */
 export function projectMcpConfigPath(dir: string): string {
-  return join(dir, ".winter", PROJECT_MCP_FILENAME);
+  return join(dir, ".clover", PROJECT_MCP_FILENAME);
 }
 
-/** Refuse a write THROUGH a planted link: `<root>/.winter` and the file itself must be real. */
+/** Refuse a write THROUGH a planted link: `<root>/.clover` and the file itself must be real. */
 function assertNoLinkOnWritePath(dir: string): void {
-  const dotWinter = join(dir, ".winter");
-  for (const p of [dotWinter, projectMcpConfigPath(dir)]) {
+  const dotClover = join(dir, ".clover");
+  for (const p of [dotClover, projectMcpConfigPath(dir)]) {
     let isLink = false;
     try { isLink = lstatSync(p).isSymbolicLink(); } catch { /* absent: fine */ }
     if (isLink) throw new Error(`refusing to write the project MCP config — ${p} is a symbolic link`);
@@ -259,7 +259,7 @@ export function projectMcpConfigExists(dir: string): boolean {
  *  `TrustStore.isTrusted`); a caller reports trust status separately. */
 export function writeProjectMcpConfig(dir: string, config: ProjectMcpConfig): void {
   assertNoLinkOnWritePath(dir);
-  mkdirSync(join(dir, ".winter"), { recursive: true });
+  mkdirSync(join(dir, ".clover"), { recursive: true });
   atomicWriteFile(projectMcpConfigPath(dir), `${JSON.stringify(config, null, 2)}\n`);
 }
 
@@ -285,7 +285,7 @@ export function extractRawMcpServers(parsedJson: unknown): { raw: Record<string,
 /**
  * THE WRITE DOOR'S OWN READER — deliberately UNTYPED, unlike `readProjectMcpConfig` above.
  *
- * `winter mcp add/remove --scope project` must never lose a server it doesn't itself understand:
+ * `clover mcp add/remove --scope project` must never lose a server it doesn't itself understand:
  * claude's own `.mcp.json` format accepts http/sse entries too. `readProjectMcpConfig`'s
  * `ProjectMcpConfig.parse(...)` throws on the FIRST entry that doesn't fit the stdio shape — one
  * bad (or merely differently-shaped) entry anywhere in the map fails the WHOLE parse, and that
@@ -331,7 +331,7 @@ export function readRawProjectMcpConfig(dir: string): { kind: "absent" } | { kin
  *  never leave a team's git-shared `.mcp.json` truncated. */
 export function writeRawProjectMcpConfig(dir: string, raw: Record<string, unknown>, servers: Record<string, unknown>): void {
   assertNoLinkOnWritePath(dir);
-  mkdirSync(join(dir, ".winter"), { recursive: true });
+  mkdirSync(join(dir, ".clover"), { recursive: true });
   const next = { ...raw, mcpServers: servers };
   atomicWriteFile(projectMcpConfigPath(dir), `${JSON.stringify(next, null, 2)}\n`);
 }
@@ -360,7 +360,7 @@ export interface ParsedProjectMcpServers {
  * external-mcp.ts`'s `configuredMcpServersFor` both call this instead of validating their raw
  * `mcpServers` map in one shot. Validates against `ProjectMcpEntrySchema` (this file, above) —
  * stdio/http/sse, `type` defaulted to `stdio` — matching claude's own `.mcp.json` reader's accepted
- * transports (Winter has no equivalent of claude's IDE-internal `sse-ide`/`ws-ide`/`ws`/`sdk` rows,
+ * transports (Clover has no equivalent of claude's IDE-internal `sse-ide`/`ws-ide`/`ws`/`sdk` rows,
  * which are not a MCP shape a project file would ever legitimately carry) WITHOUT
  * `settings.mcpServers`' own credential-header refusal — see this file's header for why a project's
  * `.mcp.json` is not that file. An entry that fails EVERY branch (missing `command`/`url`, a

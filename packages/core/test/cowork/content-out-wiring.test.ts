@@ -9,7 +9,7 @@
 import { expect, setDefaultTimeout, test } from "bun:test";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { basename, dirname, join, relative, resolve } from "node:path";
-import { METHODS } from "@yanlinglabs/winter-protocol";
+import { METHODS } from "@waifucave/clover-protocol";
 import { createCoworkPublishService } from "../../src/cowork/git/publish-service";
 import { GitPublicationError } from "../../src/cowork/git/types";
 import { createCoworkWorkspaceRestorer } from "../../src/cowork/restore-bundle";
@@ -152,10 +152,10 @@ test("the services built the way production would build them refuse every verb",
 });
 
 test("the Cowork refusal is untouched: no RPC method, protocol name or session door names publish, export or restore, and the creation door is not built here", () => {
-  for (const name of Object.values(METHODS as Record<string, string>)) expect(`${name}:${/publish|winterworkspace|workspace\.export|workspace\.restore|bundle/i.test(name)}`).toBe(`${name}:false`);
+  for (const name of Object.values(METHODS as Record<string, string>)) expect(`${name}:${/publish|cloverworkspace|workspace\.export|workspace\.restore|bundle/i.test(name)}`).toBe(`${name}:false`);
   for (const file of ["ipc/server.ts", "daemon.ts", "sessions/session-mode.ts", "cowork/service.ts", "cowork/session-ports.ts"].map(abs)) {
     const text = REAL.get(file)!;
-    for (const needle of ["publish-service", "export-writer", "restore-bundle", "winterworkspace", "createCoworkPublishService", "createCoworkWorkspaceRestorer"]) expect(`${basename(file)}:${needle}:${text.includes(needle)}`).toBe(`${basename(file)}:${needle}:false`);
+    for (const needle of ["publish-service", "export-writer", "restore-bundle", "cloverworkspace", "createCoworkPublishService", "createCoworkWorkspaceRestorer"]) expect(`${basename(file)}:${needle}:${text.includes(needle)}`).toBe(`${basename(file)}:${needle}:false`);
   }
   for (const module of NEW_MODULES) {
     const text = REAL.get(module)!;
@@ -198,7 +198,7 @@ test("the native symbol table of export-io.ts is pinned exactly: adding connect,
 test("exports and restore touch no credential store and no home outside the workspace's own folder", () => {
   for (const module of EXPORT) {
     const code = codeOnly(REAL.get(module)!);
-    for (const needle of [/Bun\.secrets/, /keychain/i, /\.winter(?!workspace)/, /\.claude/, /homedir/, /WINTER_HOME/, /runtime-state\.db/, /credentials/i])
+    for (const needle of [/Bun\.secrets/, /keychain/i, /\.clover(?!workspace)/, /\.claude/, /homedir/, /CLOVER_HOME/, /runtime-state\.db/, /credentials/i])
       expect(`${basename(module)}:${needle}:${needle.test(code)}`).toBe(`${basename(module)}:${needle}:false`);
   }
 });

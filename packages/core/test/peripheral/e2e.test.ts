@@ -6,7 +6,7 @@ import { join } from "node:path";
 import {
   LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, type WritableSocket,
   type NewSessionEvent,
-} from "@yanlinglabs/winter-protocol";
+} from "@waifucave/clover-protocol";
 import { startIpcServer, type IpcServer } from "../../src/ipc/server";
 import { SessionStore } from "../../src/sessions/store";
 import { SessionHub } from "../../src/sessions/hub";
@@ -165,7 +165,7 @@ interface Harness {
  *  round-trip, spec v1 has no wire method for it) while every lease/renew/release/advertise/
  *  revoke/respond operation below still goes over the REAL unix socket via TestClient. */
 async function buildHarness(opts: { expiryMs?: number; heartbeatMs?: number; callTimeoutMs?: number } = {}): Promise<Harness> {
-  const home = mkdtempSync(join(tmpdir(), "winter-e2e-peripheral-"));
+  const home = mkdtempSync(join(tmpdir(), "clover-e2e-peripheral-"));
   const store = new SessionStore(home);
   const hub = new SessionHub(store);
   const secrets = new FileSecretStore(join(home, "test-secrets"));

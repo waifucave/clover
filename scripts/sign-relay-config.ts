@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 /**
- * Signs a relay config with the Winter relay-config Ed25519 key (SP2b Task 2).
+ * Signs a relay config with the Clover relay-config Ed25519 key (SP2b Task 2).
  *
  * Usage:
  *   bun run scripts/sign-relay-config.ts <config.json>   # normal mode

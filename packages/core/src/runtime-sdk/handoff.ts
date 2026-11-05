@@ -8,14 +8,14 @@
 // (`confirmation_required`) rather than silently downgraded or silently executed.
 //
 // WS-23: THERE IS ONE RUNTIME. This module used to own a second, larger job — moving a session
-// between the Winter runtime and the official `claude` leg through the router's handoff barrier
+// between the Clover runtime and the official `claude` leg through the router's handoff barrier
 // (WS-05 §12's eight steps: drain, stage, validate, confirm the destination's init, defer past a
 // running turn, re-select a zero-turn session). With the official leg retired every model runs on
-// the Winter runtime, so a switch never changes runtime and all of that is gone. Two survivors:
+// the Clover runtime, so a switch never changes runtime and all of that is gone. Two survivors:
 //
 //   - the SAME-RUNTIME review and its record patch (below), unchanged in behaviour;
-//   - a session the official leg created is ADOPTED onto the Winter leg before anything else runs
-//     (`WinterSessionDrivers.adoptLegacyRecord`, the same step `resume()` takes) — otherwise its record
+//   - a session the official leg created is ADOPTED onto the Clover leg before anything else runs
+//     (`CloverSessionDrivers.adoptLegacyRecord`, the same step `resume()` takes) — otherwise its record
 //     would keep naming `claude-agent` and the 1c invariant in `ipc/server.ts` would refuse every
 //     model change on it until the session happened to resume.
 //
@@ -44,7 +44,7 @@ import { refusalDetailCategoryFor } from "./refusal-copy";
 import { rowForTag, testProviderNameFor } from "./provider-selection";
 // Types only: `session-driver.ts` imports this module (`renderNoCredentialHint`), so the refusal below is
 // recognised by its `code` rather than by `instanceof` — no value cycle between the two.
-import type { WinterSessionDrivers } from "./session-driver";
+import type { CloverSessionDrivers } from "./session-driver";
 import { COWORK_SESSION_UNSUPPORTED_CODE, isUnrunnableStoredMode, runnableModeOf, unrunnableModeMessage } from "../sessions/session-mode";
 
 /**
@@ -59,7 +59,7 @@ export interface SwitchReviewer {
 
 export interface HandoffDeps {
   runtime: WinterRuntimeSdk;
-  winter: WinterSessionDrivers;
+  clover: CloverSessionDrivers;
   records: RuntimeSessionRecords;
   store: {
     meta(sessionId: string): { mode?: string; cwd?: string | null; model?: string };
@@ -68,7 +68,7 @@ export interface HandoffDeps {
    *  retired the cross-runtime fence; kept on the deps so the daemon's wiring does not move. */
   settings: () => Settings | null | undefined;
   /**
-   * Winter Phase 10b (D1-2, W18-7): the daemon's own `WINTER_HOME`, threaded through to
+   * Winter Phase 10b (D1-2, W18-7): the daemon's own `CLOVER_HOME`, threaded through to
    * `credentialRefFor` so the same-runtime patch can name the destination's own credential locator
    * (`keychain:<account>`) the same way `session-driver.ts`'s `create()` does for a brand-new session —
    * never credential material, only which account it would be. Optional so a test double that never
@@ -253,9 +253,9 @@ const CONSOLE_DOOR_LABEL = "Anthropic Console login";
  * Winter Phase 10b (D1-7, W18-3): the no-credential refusal's hint, built FROM the router's own
  * `alternatives` — never a hardcoded provider list, so a catalog change (a new Claude-serving
  * gateway) widens the hint automatically. Each door names ITS OWN way in:
- *   - `anthropic`/`api-key` → `winter login --anthropic-key`;
+ *   - `anthropic`/`api-key` → `clover login --anthropic-key`;
  *   - `anthropic`/`console-profile`, and any alternative on the `console` catalog provider → the ONE
- *     console door, `winter login --anthropic-console`, rendered once. The router lists a `console`
+ *     console door, `clover login --anthropic-console`, rendered once. The router lists a `console`
  *     row under its bare id with whatever auth kind the host declared (none — `console-profile` has no
  *     spelling in presence), so it used to fall through to the generic branch below and tell a Console
  *     user to "add a credential" (the WS-23 live-gate report) — there is no key to add;
@@ -275,9 +275,9 @@ export function renderNoCredentialHint(alternatives: readonly SelectionAlternati
   const push = (door: string): void => { if (!doors.includes(door)) doors.push(door); };
   for (const alt of alternatives) {
     if (alt.providerId === "anthropic" && alt.authKind === "api-key") {
-      push(`${alt.label}: run \`winter login --anthropic-key\``);
+      push(`${alt.label}: run \`clover login --anthropic-key\``);
     } else if ((alt.providerId === "anthropic" && alt.authKind === "console-profile") || alt.providerId === "console") {
-      push(`${CONSOLE_DOOR_LABEL}: run \`winter login --anthropic-console\``);
+      push(`${CONSOLE_DOOR_LABEL}: run \`clover login --anthropic-console\``);
     } else if (alt.providerId === "anthropic" && alt.authKind === "claude-oauth") {
       continue;
     } else {
@@ -312,13 +312,13 @@ export async function planAndApplySwitch(deps: HandoffDeps, sessionId: string, m
   if (unrunnable !== undefined) return { kind: "refused", code: COWORK_SESSION_UNSUPPORTED_CODE, detail: unrunnableModeMessage(unrunnable.mode) };
   if (model === null) return { kind: "same-runtime" };
   let record = deps.records.get(sessionId);
-  // WS-23 (R2): a record the retired official leg wrote moves onto the Winter leg FIRST — transcript
+  // WS-23 (R2): a record the retired official leg wrote moves onto the Clover leg FIRST — transcript
   // re-keyed, runtime kind and selection rewritten — exactly as its next resume would do it. A refusal
   // there (a collision, a transcript already marked for repair) is this switch's refusal too: the
   // model preference is not written onto a session that cannot run.
-  if (sessionLegOf(record) === "official" && deps.winter.adoptLegacyRecord !== undefined) {
+  if (sessionLegOf(record) === "official" && deps.clover.adoptLegacyRecord !== undefined) {
     try {
-      record = deps.winter.adoptLegacyRecord(sessionId);
+      record = deps.clover.adoptLegacyRecord(sessionId);
     } catch (err) {
       const refusal = err as { code?: unknown; message?: unknown; reason?: unknown };
       if (refusal?.code === "legacy_session_migration_refused") {
@@ -361,16 +361,16 @@ export async function planAndApplySwitch(deps: HandoffDeps, sessionId: string, m
       return {
         kind: "refused",
         code: "runtime_selection_refused",
-        detail: `Winter can't switch to ${modelLabelFor(model)} yet — ${renderNoCredentialHint(decided.alternatives)}`,
+        detail: `Clover can't switch to ${modelLabelFor(model)} yet — ${renderNoCredentialHint(decided.alternatives)}`,
       };
     }
-    return { kind: "refused", code: "runtime_selection_refused", detail: `Winter can't switch to ${modelLabelFor(model)} right now.` };
+    return { kind: "refused", code: "runtime_selection_refused", detail: `Clover can't switch to ${modelLabelFor(model)} right now.` };
   }
-  // WS-23: the router routes every family to the Winter runtime (`hasClaudePeer: false`); a selection
+  // WS-23: the router routes every family to the Clover runtime (`hasClaudePeer: false`); a selection
   // naming any other runtime is one this daemon cannot serve, refused typed and never recorded.
   if (decided.runtimeKind !== "winter-agent") {
     deps.log?.(`handoff: selectRuntimeFor chose ${decided.runtimeKind} for ${modelLabelFor(model)}, which this daemon no longer hosts — refused`);
-    return { kind: "refused", code: "runtime_selection_refused", detail: `Winter can't switch to ${modelLabelFor(model)} right now.` };
+    return { kind: "refused", code: "runtime_selection_refused", detail: `Clover can't switch to ${modelLabelFor(model)} right now.` };
   }
   // Winter Phase 10b (D1-6, W18-4/W18-20/W18-21; P10b-1/2): the ONE pre-flight review, for EVERY
   // provider/model change. The ROUTER decides every skip (same-profile/same-family/zero-source-turns)
@@ -394,7 +394,7 @@ export async function planAndApplySwitch(deps: HandoffDeps, sessionId: string, m
     prompt: true,
     classification: {
       lossClass: "warned-lossy",
-      warnings: [`Winter couldn't check whether this conversation fits ${modelLabelFor(model)}, or holds anything it can't read. The conversation carries over as it is; if it is too large, the current model will summarize its older part first.`],
+      warnings: [`Clover couldn't check whether this conversation fits ${modelLabelFor(model)}, or holds anything it can't read. The conversation carries over as it is; if it is too large, the current model will summarize its older part first.`],
       portable: [],
     },
   });
@@ -404,7 +404,7 @@ export async function planAndApplySwitch(deps: HandoffDeps, sessionId: string, m
   let sourceFit: { estimatedTokens?: number; window?: number } | undefined;
   if (sessionKey !== undefined && reviewer !== undefined) {
     let review: SwitchReview;
-    // No `midTurnAbort` (`reviewModelSwitch`'s flag for a switch that aborts a running turn): Winter never
+    // No `midTurnAbort` (`reviewModelSwitch`'s flag for a switch that aborts a running turn): Clover never
     // applies a switch that way — a model change is `Query.setModel`, and a provider change evicts the child
     // at its next idle boundary (below), so the turn in flight always finishes on the source.
     try {
@@ -448,7 +448,7 @@ export async function planAndApplySwitch(deps: HandoffDeps, sessionId: string, m
   // Fix round 2 (C1, belt-and-braces): keep the 8a record's identity columns in step with an APPLIED
   // family change (gpt -> deepseek) — without this a switch away from the family the session was
   // CREATED with left `selection`/`providerId`/`modelRef`/`authRef` naming the ORIGINAL family forever,
-  // stale for `session.list`, a cold resume, `winter doctor` and the credential eviction.
+  // stale for `session.list`, a cold resume, `clover doctor` and the credential eviction.
   //
   // ⚠️ FIX ROUND 3 (the 1c INVARIANT): a failure here is logged rather than thrown, but it is not "the
   // switch still applied" — `decided` rides out on this outcome and `ipc/server.ts`'s `same-runtime`
@@ -479,7 +479,7 @@ export async function planAndApplySwitch(deps: HandoffDeps, sessionId: string, m
   // ════════════════════════════════════════════════════════════════════════════════════════════════
   // Fix round 4, ITEM 6 — A SWITCH THAT CHANGES PROVIDER MUST REACH THE CHILD.
   //
-  // A live Winter child's `Options.provider`/`connection` is FIXED AT SPAWN — `session-driver.ts`'s
+  // A live Clover child's `Options.provider`/`connection` is FIXED AT SPAWN — `session-driver.ts`'s
   // `optionsFor` builds it once, per incarnation. A model change (`openai/gpt-4.1` ->
   // `openrouter/openai/gpt-4.1`, or gpt -> deepseek) lands in the store, `Query.setModel` tells the
   // child its new MODEL — and the child would keep posting to the OLD endpoint, with the OLD
@@ -504,7 +504,7 @@ export async function planAndApplySwitch(deps: HandoffDeps, sessionId: string, m
   // fails (nothing to fold, the source refused) is logged and the switch goes ahead: the target's own
   // fit check then compacts on the target, its summarizer bounded to what the target can read.
   if (recordMoved && providerBeforeSwitch !== undefined && providerBeforeSwitch !== decided.providerId) {
-    const liveChild = deps.winter.get(sessionId);
+    const liveChild = deps.clover.get(sessionId);
     if (liveChild !== undefined) {
       const compactFirst = async (): Promise<void> => {
         if (!compactOnSource) return;
@@ -523,7 +523,7 @@ export async function planAndApplySwitch(deps: HandoffDeps, sessionId: string, m
       };
       // Review r1 I-5: the switch is confirmed and the record names the new provider, so from here on
       // the TARGET answers. While the source finishes its turn and/or compacts, what the user sends is
-      // held (logged, not pushed -- `WinterSession.beginHandoff`); once the child is replaced, the
+      // held (logged, not pushed -- `CloverSession.beginHandoff`); once the child is replaced, the
       // session is resumed on the new provider at once to answer it.
       const handOff = (work: () => Promise<void>): void => {
         const held = liveChild.beginHandoff !== undefined ? liveChild.beginHandoff(work) : work().then(() => ({ heldTurns: 0 }));
@@ -531,7 +531,7 @@ export async function planAndApplySwitch(deps: HandoffDeps, sessionId: string, m
           async ({ heldTurns }) => {
             if (heldTurns === 0) return;
             deps.log?.(`handoff: ${sessionId} — ${heldTurns} message(s) sent during the switch now run on ${modelLabelFor(model)}`);
-            await deps.winter.ensure(sessionId);
+            await deps.clover.ensure(sessionId);
           },
         ).catch((err: unknown) => {
           deps.log?.(`handoff: ${sessionId} could not resume on its new provider for the messages held during the switch (${err instanceof Error ? err.name : "unknown"}) — they stay owed in the log for the next send`);
@@ -542,7 +542,7 @@ export async function planAndApplySwitch(deps: HandoffDeps, sessionId: string, m
         handOff(async () => {
           await liveChild.idle();
           await compactFirst();
-          await deps.winter.evict(sessionId);
+          await deps.clover.evict(sessionId);
         });
       } else if (compactOnSource) {
         // NOT awaited: a compaction can take tens of seconds, and `session.setModel`'s callers time out
@@ -552,11 +552,11 @@ export async function planAndApplySwitch(deps: HandoffDeps, sessionId: string, m
         handOff(async () => {
           await compactFirst();
           await liveChild.idle();
-          await deps.winter.evict(sessionId);
+          await deps.clover.evict(sessionId);
         });
       } else {
         deps.log?.(`handoff: ${sessionId} changed provider (${providerBeforeSwitch} -> ${decided.providerId}) — replacing its child so the next turn spawns against the new endpoint`);
-        await deps.winter.evict(sessionId);
+        await deps.clover.evict(sessionId);
       }
     }
   }

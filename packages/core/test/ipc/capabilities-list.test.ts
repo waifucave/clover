@@ -1,19 +1,19 @@
 // Daemon settings surface (2026-09-17 plan, item 2): `capabilities.list` — the daemon's own
-// in-process `winter__<key>` capability servers, grouped by key, with live enablement and per-mode
+// in-process `clover__<key>` capability servers, grouped by key, with live enablement and per-mode
 // exposure. Bare IPC server harness, same shape `settings-set-advisor-model.test.ts` already uses
 // (no shared test-harness module exists in this codebase).
 import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, type WritableSocket } from "@yanlinglabs/winter-protocol";
+import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, type WritableSocket } from "@waifucave/clover-protocol";
 import { startIpcServer, REMOTE_ALLOWED_METHODS } from "../../src/ipc/server";
 import { SessionStore } from "../../src/sessions/store";
 import { FileSecretStore } from "../../src/auth/secret-store";
 import { TokenAuthority } from "../../src/auth/tokens";
 import { Settings, saveSettings } from "../../src/settings";
 import { disallowedToolsFor } from "../../src/runtime-sdk/mode-options";
-import { WINTER_CAPABILITY_TOOLS, CAPABILITY_SERVER_KEYS, capabilityToolName } from "../../src/capabilities/names";
+import { CLOVER_CAPABILITY_TOOLS, CAPABILITY_SERVER_KEYS, capabilityToolName } from "../../src/capabilities/names";
 
 class TestClient {
   private decoder = new LineDecoder();
@@ -61,7 +61,7 @@ describe("capabilities.list", () => {
   afterEach(() => { stop?.(); stop = undefined; });
 
   async function boot(settingsOverride?: Record<string, unknown>) {
-    const home = mkdtempSync(join(tmpdir(), "winter-capabilities-list-"));
+    const home = mkdtempSync(join(tmpdir(), "clover-capabilities-list-"));
     const settingsPath = join(home, "settings.json");
     saveSettings(settingsPath, Settings.parse({ schemaVersion: 3, provider: { model: "codex-oauth/gpt-5.6-sol" }, ...settingsOverride }));
     const store = new SessionStore(home);
@@ -69,7 +69,7 @@ describe("capabilities.list", () => {
     const secrets = new FileSecretStore(join(home, "secrets"));
     const authority = new TokenAuthority(secrets);
     const tokens = await authority.ensureTokens();
-    const server = startIpcServer({ socketPath, serverVersion: "test", tokens: authority, store, winterHome: home, secrets });
+    const server = startIpcServer({ socketPath, serverVersion: "test", tokens: authority, store, cloverHome: home, secrets });
     stop = () => { server.stop(); store.close(); };
     return { home, socketPath, harnessToken: tokens.harness };
   }
@@ -87,8 +87,8 @@ describe("capabilities.list", () => {
     const byKey = new Map<string, any>(caps.map((x: any) => [x.key, x]));
     expect(byKey.get("external").tools).toEqual([]);
 
-    // Every static WINTER_CAPABILITY_TOOLS row lands under its own key's group, and nowhere else.
-    for (const name of Object.keys(WINTER_CAPABILITY_TOOLS)) {
+    // Every static CLOVER_CAPABILITY_TOOLS row lands under its own key's group, and nowhere else.
+    for (const name of Object.keys(CLOVER_CAPABILITY_TOOLS)) {
       const owner = CAPABILITY_SERVER_KEYS.find((k) => name.startsWith(capabilityToolName(k, "")));
       expect(owner).toBeDefined();
       const group = byKey.get(owner!);
@@ -112,7 +112,7 @@ describe("capabilities.list", () => {
     expect(byKey.get("computer_v2").enabled).toBe(true);
     expect(byKey.get("computer").enabled).toBe(false);
     expect(byKey.get("computer_v2").tools).toEqual([{
-      name: "mcp__winter__computer_v2__script", plainName: "ComputerV2", modes: ["code", "dispatch"],
+      name: "mcp__clover__computer_v2__script", plainName: "ComputerV2", modes: ["code", "dispatch"],
       ...(byKey.get("computer_v2").tools[0].deferred === undefined ? {} : { deferred: byKey.get("computer_v2").tools[0].deferred }),
       exposure: { code: true, dispatch: true, chat: false },
     }]);
@@ -147,20 +147,20 @@ describe("capabilities.list", () => {
     c.close();
   });
 
-  test("per-mode exposure matches the Winter leg's disallowedToolsFor for WINTER_CAPABILITY_TOOLS exactly", async () => {
+  test("per-mode exposure matches the Clover leg's disallowedToolsFor for CLOVER_CAPABILITY_TOOLS exactly", async () => {
     const { socketPath, harnessToken } = await boot();
     const c = await TestClient.connect(socketPath);
     await c.hello(harnessToken, "cli");
     const result = await c.request(METHODS.capabilitiesList, {});
-    // The listing reports the WINTER leg's answer (its rows are all `mcp__winter__*` capability
-    // tools, which only a Winter child ever sees). This test daemon has no Exa key in its throwaway
+    // The listing reports the CLOVER leg's answer (its rows are all `mcp__clover__*` capability
+    // tools, which only a Clover child ever sees). This test daemon has no Exa key in its throwaway
     // Keychain service, so the handler's live probe answers `false` — spelled here rather than
     // defaulted, since the default is the opposite (`true`, the narrower surface).
     const exposure = { exaKeyPresent: false };
     const disallowed = {
-      code: new Set(disallowedToolsFor("code", exposure, WINTER_CAPABILITY_TOOLS)),
-      dispatch: new Set(disallowedToolsFor("dispatch", exposure, WINTER_CAPABILITY_TOOLS)),
-      chat: new Set(disallowedToolsFor("chat", exposure, WINTER_CAPABILITY_TOOLS)),
+      code: new Set(disallowedToolsFor("code", exposure, CLOVER_CAPABILITY_TOOLS)),
+      dispatch: new Set(disallowedToolsFor("dispatch", exposure, CLOVER_CAPABILITY_TOOLS)),
+      chat: new Set(disallowedToolsFor("chat", exposure, CLOVER_CAPABILITY_TOOLS)),
     };
     for (const group of result.result.capabilities) {
       for (const tool of group.tools) {
@@ -179,14 +179,14 @@ describe("capabilities.list", () => {
     }
     // Spot-check one concretely: the sessions trio is dispatch-only, shown as `SpawnSession`, loaded up front.
     const sessionsGroup = result.result.capabilities.find((x: any) => x.key === "sessions");
-    const spawn = sessionsGroup.tools.find((t: any) => t.name === "mcp__winter__sessions__session_spawn");
+    const spawn = sessionsGroup.tools.find((t: any) => t.name === "mcp__clover__sessions__session_spawn");
     expect(spawn.exposure).toEqual({ code: false, dispatch: true, chat: false });
     expect(spawn.plainName).toBe("SpawnSession");
     expect(spawn.deferred).toBeUndefined();
     // …and `Browser` starts deferred in every mode it is offered; office is code-only.
     const browser = result.result.capabilities.find((x: any) => x.key === "browser").tools[0];
-    expect(browser).toMatchObject({ name: "mcp__winter__browser__browser", plainName: "Browser", deferred: ["code", "dispatch", "chat"] });
-    const docs = result.result.capabilities.find((x: any) => x.key === "office").tools.find((t: any) => t.name === "mcp__winter__office__docs");
+    expect(browser).toMatchObject({ name: "mcp__clover__browser__browser", plainName: "Browser", deferred: ["code", "dispatch", "chat"] });
+    const docs = result.result.capabilities.find((x: any) => x.key === "office").tools.find((t: any) => t.name === "mcp__clover__office__docs");
     expect(docs.exposure).toEqual({ code: true, dispatch: false, chat: false });
     expect(result.result.capabilities.some((x: any) => x.key === "research")).toBe(false);
     c.close();
@@ -203,7 +203,7 @@ describe("capabilities.list", () => {
     const browser = result.result.capabilities.find((x: any) => x.key === "browser").tools[0];
     expect(browser.deferred).toEqual(["dispatch"]);
     // Office is code-only, so on this default nothing defers it at all — the field is absent.
-    const docs = result.result.capabilities.find((x: any) => x.key === "office").tools.find((t: any) => t.name === "mcp__winter__office__docs");
+    const docs = result.result.capabilities.find((x: any) => x.key === "office").tools.find((t: any) => t.name === "mcp__clover__office__docs");
     expect(docs.deferred).toBeUndefined();
     c.close();
   });

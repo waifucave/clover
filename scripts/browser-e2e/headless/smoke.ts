@@ -40,8 +40,8 @@ if (app === undefined) {
   process.exit(2);
 }
 const exe = join(app, "Contents", "MacOS", app.split("/").pop()!.replace(/\.app$/, ""));
-const out = arg("--out") ?? mkdtempSync(join(tmpdir(), "winter-headless-smoke-"));
-const cacheRoot = mkdtempSync(join(tmpdir(), "winter-headless-cache-"));
+const out = arg("--out") ?? mkdtempSync(join(tmpdir(), "clover-headless-smoke-"));
+const cacheRoot = mkdtempSync(join(tmpdir(), "clover-headless-cache-"));
 
 /** A private (RFC 1918) IPv4 address on no subnet of this Mac's: refused by the rule, yet off the local network. */
 function offSubnetPrivateAddress(nets = Object.values(networkInterfaces()).flat()): string | undefined {
@@ -214,10 +214,10 @@ const started = Date.now();
 const helperArgs = process.argv.flatMap((a, i) => (process.argv[i - 1] === "--helper-arg" ? [a] : []));
 // A NetLog of the whole run (the helper passes `--log-net-log` through): what did the browser itself ask for?
 const helperArgsGiven = helperArgs.some((a) => a.startsWith("--log-net-log="));
-const netlog = helperArgs.find((a) => a.startsWith("--log-net-log="))?.slice("--log-net-log=".length) ?? join(mkdtempSync(join(tmpdir(), "winter-headless-netlog-")), "net.json");
+const netlog = helperArgs.find((a) => a.startsWith("--log-net-log="))?.slice("--log-net-log=".length) ?? join(mkdtempSync(join(tmpdir(), "clover-headless-netlog-")), "net.json");
 if (!helperArgsGiven) helperArgs.push(`--log-net-log=${netlog}`);
 const idleSeconds = Number(arg("--idle") ?? "0");
-const proc = spawn(exe, [`--winter-cache-root=${cacheRoot}`, ...helperArgs], { stdio: ["ignore", "ignore", "pipe", "pipe", "pipe"], env: { ...process.env } });
+const proc = spawn(exe, [`--clover-cache-root=${cacheRoot}`, ...helperArgs], { stdio: ["ignore", "ignore", "pipe", "pipe", "pipe"], env: { ...process.env } });
 const toHelper = proc.stdio[3] as Writable;
 const fromHelper = proc.stdio[4] as Readable;
 let stderr = "";
@@ -324,7 +324,7 @@ try {
     console.log(`(gave up waiting for ${what})`);
     return false;
   }
-  const evalWinter = async (expression: string) =>
+  const evalClover = async (expression: string) =>
     ((await cdp("Runtime.evaluate", { expression, contextId: world.executionContextId, returnByValue: true })) as { result?: { value?: unknown } }).result?.value;
 
   // Typing: focus the field by a click, then insert text.
@@ -334,7 +334,7 @@ try {
   await cdp("Input.insertText", { text: "héllo headless" });
   await cdp("Input.dispatchKeyEvent", { type: "keyDown", key: "!", text: "!" });
   await cdp("Input.dispatchKeyEvent", { type: "keyUp", key: "!" });
-  check("typing into a field", await evalWinter("document.getElementById('t').value") === "héllo headless!", String(await evalWinter("document.getElementById('t').value")));
+  check("typing into a field", await evalClover("document.getElementById('t').value") === "héllo headless!", String(await evalClover("document.getElementById('t').value")));
 
   // Out-of-process iframes: auto-attach, flattened child sessions.
   await cdp("Target.setAutoAttach", { autoAttach: true, waitForDebuggerOnStart: false, flatten: true });
@@ -358,12 +358,12 @@ try {
   }
 
   // A JS dialog: held (never shown), reported over DevTools, answered by the engine.
-  await evalWinter("setTimeout(() => { window.answer = confirm('proceed?'); }, 0); 1");
+  await evalClover("setTimeout(() => { window.answer = confirm('proceed?'); }, 0); 1");
   const opened = await eventually("Page.javascriptDialogOpening", () => flat().some((e) => e.method === "Page.javascriptDialogOpening"));
   console.log(`INFO dialog events: ${flat().filter((e) => e.method.includes("Dialog")).map((e) => e.method).join(", ")}`);
   await cdp("Page.handleJavaScriptDialog", { accept: true });
   await Bun.sleep(300);
-  const answer = await evalWinter("window.answer");
+  const answer = await evalClover("window.answer");
   check("a dialog is held and answered over DevTools", opened && answer === true, `opened=${opened} answer=${String(answer)}`);
 
   // A file chooser: intercepted over DevTools when asked; never a native panel.
@@ -377,7 +377,7 @@ try {
 
 
   // WebMCP behind its feature (reported, not required: it is an origin-trial API).
-  const webmcp = await evalWinter("typeof document.modelContext + '/' + typeof navigator.modelContext");
+  const webmcp = await evalClover("typeof document.modelContext + '/' + typeof navigator.modelContext");
   console.log(`INFO WebMCP: document.modelContext / navigator.modelContext = ${String(webmcp)}`);
 
   check("events arrive in batches", events.length > 0, `${events.length} batch(es)`);
@@ -389,7 +389,7 @@ try {
   const topUrl = async (): Promise<string> => String(((await cdp("Page.getFrameTree")) as { frameTree?: { frame?: { url?: string } } }).frameTree?.frame?.url ?? "");
   const noticed = (kind: string, after: number) => notices.slice(after).some((n) => n.tabId === "w-1" && n.kind === kind);
   let mark = notices.length;
-  await evalWinter(`location.href = ${JSON.stringify(nowhere("router"))}; 1`);
+  await evalClover(`location.href = ${JSON.stringify(nowhere("router"))}; 1`);
   const scriptNoticed = await eventually("a local-network notice (script navigation)", () => noticed("local-network", mark));
   await Bun.sleep(300);
   check("a page's own navigation to a refused host is cancelled before it is sent, and said", scriptNoticed && await topUrl() === url, await topUrl());
@@ -454,7 +454,7 @@ try {
   const refusedSocket = await socketTo(`ws://${nameHost}:${sockets.port}/`);
   const nameError = await netErrorFor(nameHost);
   check("a WebSocket to a local-network name fails, never resolved (the PAC belt first, the resolver belt behind it)", refusedSocket.startsWith("error") && nameError === DEAD_PROXY, `${refusedSocket}, ${nameError}`);
-  const label = `winterpac${Math.random().toString(36).slice(2, 10)}`;
+  const label = `cloverpac${Math.random().toString(36).slice(2, 10)}`;
   testedRefusedHosts.push(label);
   const labelSocket = await socketTo(`ws://${label}:${sockets.port}/`);
   const labelError = await netErrorFor(label);

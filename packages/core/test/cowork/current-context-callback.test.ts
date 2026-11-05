@@ -32,7 +32,7 @@ function reply(request: CoworkInstructionReadRequest, sharedText = "shared guida
  * session inventory; protected reader/live owner/grant ports are doubles.
  * No host session-index, guest filesystem or native admission proof. */
 function fixture() {
-  const home = mkdtempSync(join(tmpdir(), "winter-context-callback-")); roots.push(home);
+  const home = mkdtempSync(join(tmpdir(), "clover-context-callback-")); roots.push(home);
   const db = openRuntimeStateDb(home); databases.push(db);
   let mint = 0;
   const records = new CoworkRepository(db, () => "2026-10-14T00:00:00.000Z", prefix => `${prefix}_${++mint}`);

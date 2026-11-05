@@ -2,11 +2,11 @@
 // tool (definition / references / implementation / hover / symbols / workspace_symbols /
 // diagnostics) over the daemon's ONE `LspManager`.
 //
-// WHY IT EXISTS. Task 17 retired the registry-door `lsp` tool "because Winter's own LSP serves the
+// WHY IT EXISTS. Task 17 retired the registry-door `lsp` tool "because Clover's own LSP serves the
 // child" — and the measured 0.0.4 advertised set has NO `LSP` (`runtime-sdk/tool-names.ts`:
-// `WINTER_ADVERTISED_TOOLS_0_0_4`; the SDK's `descriptors/lsp.ts` is capability-gated and a Winter
+// `CLOVER_ADVERTISED_TOOLS_0_0_4`; the SDK's `descriptors/lsp.ts` is capability-gated and a Clover
 // child never gets it). CLAUDE.md's tool surface promises "a single multi-purpose `lsp` tool", so
-// this server is that promise on the Winter leg: the same `ToolDefinition` the registry door
+// this server is that promise on the Clover leg: the same `ToolDefinition` the registry door
 // registers (`agent/tools/lsp.ts`'s `lspToolDefs`), the same fence discipline (every file_path
 // resolves within the session's read roots BEFORE the manager is touched), the same 1-based
 // position convention, the same `LspNotSupportedError` sentinel.
@@ -25,7 +25,7 @@
 //
 // AUTO-DIAGNOSTICS-AFTER-EDIT IS NOT HERE. It was never a registry hook: the engine appended
 // `autoDiagnosticsSuffix` to a write/edit `tool_result` inside its own `executeCall`, and on the
-// Winter leg the edits are the CHILD's (`Edit`/`Write`). The SDK's `Options.hooks` carries a
+// Clover leg the edits are the CHILD's (`Edit`/`Write`). The SDK's `Options.hooks` carries a
 // `PostToolUse` matcher whose output admits `additionalContext`/`updatedToolOutput` — the honest
 // shape for it — but whether a spawned child invokes host hooks is unmeasured, and hooks are the
 // plugin-hooks carry (review row 6). Recorded in the fix-wave report; `lsp/auto-diagnostics.ts`

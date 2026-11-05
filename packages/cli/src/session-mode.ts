@@ -8,18 +8,18 @@
 //
 // Two different session SURFACES need two different treatments of a non-code row, and conflating
 // them was an explicit thing to avoid (see the task brief):
-//   - a PICKER (the TUI's `/sessions`, and `winter resume` with no id) exists purely to choose a
+//   - a PICKER (the TUI's `/sessions`, and `clover resume` with no id) exists purely to choose a
 //     session to attach/resume INTO — and attach unconditionally refuses non-code (below), so
 //     showing a row here that would immediately be refused is the "shown-but-broken" shape this
 //     slice keeps closing (same reasoning as Part B's orb-sidebar fix). These HIDE non-code rows
 //     via `filterCodeSessions`.
-//   - a LISTING (`winter sessions`) is a plain inventory — its job is to stay a truthful account of
+//   - a LISTING (`clover sessions`) is a plain inventory — its job is to stay a truthful account of
 //     every session that exists, chat/dispatch included, just visibly flagged as not-for-here. This
 //     MARKS non-code rows via `sessionModeMarker` rather than hiding them.
 //
 // `nonCodeRefusalMessage` is the third piece: what attach/send/watch/resume print INSTEAD of
 // performing the action when a session turns out to be non-code (reached even without the picker
-// filters above — e.g. a stale/cached session id, or a plain `winter send <chatSessionId> ...`).
+// filters above — e.g. a stale/cached session id, or a plain `clover send <chatSessionId> ...`).
 //
 // CLIENT-SIDE ONLY: this is a product-surface rule among same-user local clients (TUI/CLI here,
 // the Mac app, the orb) — NOT a security boundary. The daemon-side gate is reserved for the
@@ -36,7 +36,7 @@ export function filterCodeSessions<T extends { mode?: string }>(rows: T[]): T[] 
   return rows.filter((r) => isCodeMode(r.mode));
 }
 
-/** `winter sessions`' inventory tag — "" for code, the spec's exact wording for chat/dispatch, and
+/** `clover sessions`' inventory tag — "" for code, the spec's exact wording for chat/dispatch, and
  *  a generic "<mode> — app only" for any future/unknown mode so a new mode never falls through
  *  to a blank marker. A synthetic cowork row tests this fallback; it does not establish availability. */
 export function sessionModeMarker(mode?: string): string {
@@ -46,11 +46,11 @@ export function sessionModeMarker(mode?: string): string {
   return ` [${m} — app only]`; // chat and any future/unknown mode (including synthetic cowork rows)
 }
 
-/** Winter Phase 8d (Task 4.3): `winter sessions`' runtime tag — "" when absent (an engine-era row,
+/** Winter Phase 8d (Task 4.3): `clover sessions`' runtime tag — "" when absent (an engine-era row,
  *  a record-less/phone-owned row, or a daemon predating the field — `SessionListResult.runtimeKind`'s
  *  own doc names all three), ` · winter-agent`/` · claude-agent` verbatim otherwise (`claude-agent`:
- *  a session the retired official leg created, not yet resumed onto the Winter leg — WS-23). Deliberately
- *  the RAW WIRE VALUE, not a display label ("Winter Agent"/"Claude Agent", WS-14 §14) — this
+ *  a session the retired official leg created, not yet resumed onto the Clover leg — WS-23). Deliberately
+ *  the RAW WIRE VALUE, not a display label ("Clover Agent"/"Claude Agent", WS-14 §14) — this
  *  listing's own convention is terse machine-ish tags (`sessionModeMarker`'s bracketed form is the
  *  other example), unlike the Mac app's prose badge; the Interfaces block spells this exact tag. */
 export function sessionRuntimeMarker(runtimeKind?: string): string {
@@ -61,7 +61,7 @@ export function sessionRuntimeMarker(runtimeKind?: string): string {
  *  wording), with a generic apps-only fallback for any future/unknown mode. Cowork appears only
  *  as a synthetic fallback fixture today; this text is not a promise that the app supports it. */
 export function nonCodeRefusalMessage(mode: string): string {
-  if (mode === "chat") return "chat sessions live in the Winter app";
+  if (mode === "chat") return "chat sessions live in the Clover app";
   if (mode === "dispatch") return "dispatch lives in the orb and the app";
   return `${mode} sessions are app-only`; // future/unknown modes, including synthetic cowork rows
 }

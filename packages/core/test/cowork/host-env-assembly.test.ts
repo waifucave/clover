@@ -40,7 +40,7 @@ const space = { read: () => ({ filesystemId: "fs-fixture", typeName: "apfs", blo
 function options(h: Harness, w: World, over: Partial<CoworkNativeProductionOptions> = {}): CoworkNativeProductionOptions {
   return {
     home: h.home, db: h.db, records: h.records, coordination: { env: { WINTER_COWORK_COORDINATION_DIR: join(h.root, "coord") }, homeDirectory: "/nonexistent" },
-    executablePath: join(h.root, "Winter.app", "Contents", "Resources", "winter-core"), adapters: adapters(w), space, volumeId: () => "volume-fixture", daemonPid: DAEMON_PID, ...over,
+    executablePath: join(h.root, "Clover.app", "Contents", "Resources", "clover-core"), adapters: adapters(w), space, volumeId: () => "volume-fixture", daemonPid: DAEMON_PID, ...over,
   };
 }
 const withBindingTable = (h: Harness): void => { h.db.db.exec(COWORK_HOME_BINDING_DDL); };
@@ -61,14 +61,14 @@ describe("construction", () => {
   test("a coordination directory equal to, inside or above the home is refused before anything is created", () => {
     const h = createHarness(), w = world(); withBindingTable(h);
     for (const where of [h.home, join(h.home, "coord"), h.root]) {
-      expect(() => createCoworkNativeProductionEnvironment(options(h, w, { coordination: { env: { WINTER_COWORK_COORDINATION_DIR: where }, homeDirectory: "/nonexistent" } }))).toThrow(expect.objectContaining({ code: "path_inside_winter_home" }));
+      expect(() => createCoworkNativeProductionEnvironment(options(h, w, { coordination: { env: { WINTER_COWORK_COORDINATION_DIR: where }, homeDirectory: "/nonexistent" } }))).toThrow(expect.objectContaining({ code: "path_inside_clover_home" }));
     }
     expect(existsSync(join(h.home, "coord"))).toBe(false);
   });
-  test("a coordination directory inside a Winter home is refused before anything is created", () => {
+  test("a coordination directory inside a Clover home is refused before anything is created", () => {
     const h = createHarness(), w = world(); withBindingTable(h);
-    const inside = join(h.root, ".winter-dev", "coord");
-    expect(() => createCoworkNativeProductionEnvironment(options(h, w, { coordination: { env: { WINTER_COWORK_COORDINATION_DIR: inside }, homeDirectory: "/nonexistent" } }))).toThrow(expect.objectContaining({ code: "path_inside_winter_home" }));
+    const inside = join(h.root, ".clover-dev", "coord");
+    expect(() => createCoworkNativeProductionEnvironment(options(h, w, { coordination: { env: { WINTER_COWORK_COORDINATION_DIR: inside }, homeDirectory: "/nonexistent" } }))).toThrow(expect.objectContaining({ code: "path_inside_clover_home" }));
     expect(existsSync(inside)).toBe(false);
   });
   test("the installation id, the home binding and the ledger registration are made once, and a rebuild reuses all three", () => {
@@ -137,7 +137,7 @@ describe("the launcher's identity", () => {
     expect(coworkRequirement(coworkNativeIdentifier("launcher", "dev"))).toBe(coworkLauncherRequirement(undefined, COWORK_LAUNCHER_DEV_IDENTIFIER));
     expect(coworkRequirement(coworkNativeIdentifier("launcher"))).toBe(coworkLauncherRequirement());
     // and the seam picks the dev identifier from the profile
-    expect(readFileSync(join(import.meta.dir, "..", "..", "src", "cowork", "native-activation.ts"), "utf8")).toContain('env.WINTER_PROFILE === "dev" ? { launcherIdentifier: hostEnv.COWORK_LAUNCHER_DEV_IDENTIFIER }');
+    expect(readFileSync(join(import.meta.dir, "..", "..", "src", "cowork", "native-activation.ts"), "utf8")).toContain('env.CLOVER_PROFILE === "dev" ? { launcherIdentifier: hostEnv.COWORK_LAUNCHER_DEV_IDENTIFIER }');
   });
   test("the identifier and team the daemon expects are the ones the launcher package compiles in (read from the Swift source)", () => {
     const swift = readFileSync(join(import.meta.dir, "..", "..", "..", "..", "apple", "Cowork", "WinterCoworkLauncher", "Sources", "LauncherCore", "Identity", "CodeIdentity.swift"), "utf8");
@@ -149,8 +149,8 @@ describe("the launcher's identity", () => {
 describe("an omitted bundle", () => {
   test("an omitted bundle (no Contents/Helpers/WinterCowork) gives the daemon nothing to spawn: the real launcher port refuses launcher_missing, before any process exists", async () => {
     const h = createHarness(), w = world(); withBindingTable(h);
-    const env = createCoworkNativeProductionEnvironment(options(h, w)); // executablePath is <root>/Winter.app/Contents/Resources/winter-core; no Helpers directory exists beside it
-    expect(existsSync(join(h.root, "Winter.app", "Contents", "Helpers"))).toBe(false);
+    const env = createCoworkNativeProductionEnvironment(options(h, w)); // executablePath is <root>/Clover.app/Contents/Resources/clover-core; no Helpers directory exists beside it
+    expect(existsSync(join(h.root, "Clover.app", "Contents", "Helpers"))).toBe(false);
     await expect(env.launcher.spawn({ workspaceId: h.workspaceId, incarnationId: "inc-1", leaseEpoch: 1 })).rejects.toMatchObject({ code: "launcher_missing" });
     env.close?.();
   });
@@ -170,7 +170,7 @@ describe("through the wiring", () => {
     await wiring.start(h.workspaceId);
     expect(wiring.activeWorkspaces()).toEqual([h.workspaceId]);
     expect(owners(h).every(owner => owner !== null)).toBe(true);
-    expect(readdirSync(prod.journalDirectory).filter(name => !name.startsWith(".")).length).toBe(1); // the launch was journaled durably, outside every Winter home
+    expect(readdirSync(prod.journalDirectory).filter(name => !name.startsWith(".")).length).toBe(1); // the launch was journaled durably, outside every Clover home
     await wiring.beginShutdown();
     expect(owners(h)).toEqual([null, null]);
     expect(wiring.activeWorkspaces()).toEqual([]);

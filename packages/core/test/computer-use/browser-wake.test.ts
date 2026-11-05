@@ -1,5 +1,5 @@
 // ComputerV2 — wake triggers on browser tabs (`browser/wake/backend.ts`), over the fake transports (which enforce the CDP
-// allowlist and the world rules, and play the page watcher's ops): the debugger path (Winter's built-in browser, a
+// allowlist and the world rules, and play the page watcher's ops): the debugger path (Clover's built-in browser, a
 // Winter for Chrome older than 1.2.0, an element in a child frame) and Winter for Chrome 1.2.0's debugger-free path.
 // The real watcher in a real browser: `scripts/browser-e2e/` (opt-in).
 import { afterEach, describe, expect, test } from "bun:test";
@@ -7,7 +7,7 @@ import { shouldCloseAgentTab } from "../../src/computer-use/browser/lifecycle";
 import { HOLD_CEILING_SENTENCE, SECURE_FIELD_SENTENCE, TabDriver } from "../../src/computer-use/browser/tab-driver";
 import { HOLDS_PER_SESSION } from "../../src/computer-use/browser/engine";
 import { TransportError } from "../../src/computer-use/browser/transport";
-import { BrowserWakeBackend, WAKE_HEADLESS, WAKE_IN_FRAME_NOTE, WAKE_OLD_EXTENSION_NOTE, WAKE_UPDATE_WINTER, wakePill, wakeUrlShape } from "../../src/computer-use/browser/wake/backend";
+import { BrowserWakeBackend, WAKE_HEADLESS, WAKE_IN_FRAME_NOTE, WAKE_OLD_EXTENSION_NOTE, WAKE_UPDATE_CLOVER, wakePill, wakeUrlShape } from "../../src/computer-use/browser/wake/backend";
 import type { FakePage } from "./browser-fake-transport";
 import { AutomationFailure } from "../../src/computer-use/errors";
 import type { TabHandle } from "../../src/computer-use/worker/bridge";
@@ -58,7 +58,7 @@ function setup(o: HarnessOpts & { skew?: { ms: number } } = {}) {
     return pred();
   };
   /** The built-in browser's tab on `url` (its page served by the fake). */
-  const winterTab = async (url = "https://app.example/", extra: Partial<FakePage> = {}): Promise<TabHandle> => {
+  const cloverTab = async (url = "https://app.example/", extra: Partial<FakePage> = {}): Promise<TabHandle> => {
     h.winter.pages[url] = page(url, extra);
     return await h.engine.global(r.scope, "browsers.open", { url }) as TabHandle;
   };
@@ -67,7 +67,7 @@ function setup(o: HarnessOpts & { skew?: { ms: number } } = {}) {
     h.chrome.addTab(page(url, extra), { tabKey: key });
     return await h.engine.global(r.scope, "browsers.tab", { tab: `chrome:${key}` }) as TabHandle;
   };
-  return { h, backend, events, r, arm, refOf, until, winterTab, userTab };
+  return { h, backend, events, r, arm, refOf, until, cloverTab, userTab };
 }
 
 async function failure(p: Promise<unknown>): Promise<AutomationFailure> {
@@ -76,14 +76,14 @@ async function failure(p: Promise<unknown>): Promise<AutomationFailure> {
 }
 const keyOf = (t: TabHandle): string => t.id.split(":")[1]!;
 
-describe("the debugger path — Winter's built-in browser", () => {
+describe("the debugger path — Clover's built-in browser", () => {
   test("clicked: armed with the element's label, the hold kept past the turn's end, the user's click fires it, and the hold goes after", async () => {
     const s = setup();
-    const tab = await s.winterTab();
+    const tab = await s.cloverTab();
     const ref = await s.refOf(tab.targetId, "Submit for review");
     const armed = await s.arm(tab.targetId, { kind: "clicked", ref });
-    expect(armed).toEqual({ element: { role: "button", name: "Submit for review" }, targetLabel: "Winter's browser — Developer Dashboard", rebind: `browsers.tab("${tab.id}")` });
-    expect(s.h.winter.wakes.pills(keyOf(tab))).toEqual(["Winter continues when you click “Submit for review”"]);
+    expect(armed).toEqual({ element: { role: "button", name: "Submit for review" }, targetLabel: "Clover's browser — Developer Dashboard", rebind: `browsers.tab("${tab.id}")` });
+    expect(s.h.winter.wakes.pills(keyOf(tab))).toEqual(["Clover continues when you click “Submit for review”"]);
     s.r.end();
     s.h.engine.turnEnded("s1");
     await sleep(30);
@@ -97,12 +97,12 @@ describe("the debugger path — Winter's built-in browser", () => {
     expect(s.backend.armedIds()).toEqual([]);
   });
 
-  test("WINTER'S OWN INPUT never counts: its click on the element (any session) and what lands within 500 ms after are dropped; the user's later click fires", async () => {
+  test("CLOVER'S OWN INPUT never counts: its click on the element (any session) and what lands within 500 ms after are dropped; the user's later click fires", async () => {
     const s = setup();
-    const tab = await s.winterTab();
+    const tab = await s.cloverTab();
     const ref = await s.refOf(tab.targetId, "Submit for review");
     await s.arm(tab.targetId, { kind: "clicked", ref });
-    // Winter's own click through the engine: the page sees a trusted click on the element.
+    // Clover's own click through the engine: the page sees a trusted click on the element.
     await s.h.engine.primitive(s.r.scope, tab.targetId, "click", { target: Number(ref) });
     s.h.winter.wakes.user(keyOf(tab), { type: "click", id: 2, at: Date.now() + 200 });
     await sleep(150);
@@ -114,7 +114,7 @@ describe("the debugger path — Winter's built-in browser", () => {
 
   test("ALREADY TRUE AT ARM is refused NotAllowed in the daemon's words (appeared, gone, titled, url)", async () => {
     const s = setup();
-    const tab = await s.winterTab();
+    const tab = await s.cloverTab();
     const e1 = await failure(s.arm(tab.targetId, { kind: "appeared", text: "Dashboard" }));
     expect([e1.kind, e1.message]).toEqual(["NotAllowed", "“Dashboard” is already shown in this tab — nothing to wait for; check state()"]);
     const e2 = await failure(s.arm(tab.targetId, { kind: "gone", text: "Nowhere" }));
@@ -130,12 +130,12 @@ describe("the debugger path — Winter's built-in browser", () => {
     expect(s.backend.armedIds()).toEqual([]);
   });
 
-  test("state conditions fire on a false→true transition only; one that lands during Winter's own act is the baseline", async () => {
+  test("state conditions fire on a false→true transition only; one that lands during Clover's own act is the baseline", async () => {
     const s = setup();
-    const tab = await s.winterTab();
+    const tab = await s.cloverTab();
     const t = s.h.winter.tabs.get(keyOf(tab))!;
     await s.arm(tab.targetId, { kind: "appeared", text: "Saved" });
-    // Winter's own click makes "Saved" appear: not the user's — the baseline.
+    // Clover's own click makes "Saved" appear: not the user's — the baseline.
     s.h.winter.onSend = (method, params) => {
       if (method === "Input.dispatchMouseEvent" && params.type === "mouseReleased") { t.page.text = "Saved"; s.h.winter.wakes.recheck(keyOf(tab)); }
     };
@@ -155,7 +155,7 @@ describe("the debugger path — Winter's built-in browser", () => {
 
   test("titled fires with the title redacted; gone (an element) fires when it goes; changed fires with no value in it; submitted fires for any form", async () => {
     const s = setup();
-    const tab = await s.winterTab();
+    const tab = await s.cloverTab();
     const t = s.h.winter.tabs.get(keyOf(tab))!;
     const titled = wakeId();
     await s.arm(tab.targetId, { kind: "titled", title: "Done" }, titled);
@@ -166,7 +166,7 @@ describe("the debugger path — Winter's built-in browser", () => {
     const form = wakeId();
     await s.arm(tab.targetId, { kind: "submitted" }, form);
     expect(s.h.winter.wakes.pills(keyOf(tab)).sort()).toEqual([
-      "Winter continues when this page's title changes", "Winter continues when you change “Email”", "Winter continues when you submit a form on this page", "Winter continues when “Dashboard” goes away",
+      "Clover continues when this page's title changes", "Clover continues when you change “Email”", "Clover continues when you submit a form on this page", "Clover continues when “Dashboard” goes away",
     ].sort());
     t.page.title = "Done — token sk-abcdefghijklmnopqrstuvwxyz";
     t.page.nodes = t.page.nodes.filter((x) => x.id !== 1);
@@ -182,15 +182,15 @@ describe("the debugger path — Winter's built-in browser", () => {
     expect(by(form)).toMatchObject({ outcome: "fired", detail: "submitted the form" });
   });
 
-  test("navigated: the page's own navigation fires (its URL redacted); Winter's own goto is the new baseline; a same-document change counts", async () => {
+  test("navigated: the page's own navigation fires (its URL redacted); Clover's own goto is the new baseline; a same-document change counts", async () => {
     const s = setup();
-    const tab = await s.winterTab();
+    const tab = await s.cloverTab();
     const any = wakeId();
     await s.arm(tab.targetId, { kind: "navigated" }, any);
     await s.h.engine.primitive(s.r.scope, tab.targetId, "goto", { url: "https://app.example/step2" });
     await sleep(100);
     expect(s.events).toEqual([]);
-    // Past the 500 ms grace after Winter's own navigation: the page moves by itself.
+    // Past the 500 ms grace after Clover's own navigation: the page moves by itself.
     await sleep(500);
     s.h.winter.navigateTo(keyOf(tab), "https://app.example/done?token=abc123&x=1");
     expect(await s.until(() => s.events.length > 0)).toBe(true);
@@ -207,14 +207,14 @@ describe("the debugger path — Winter's built-in browser", () => {
 
   test("a ref condition's document going away is lost — unless the user's own press of that element came just before (then fired)", async () => {
     const s = setup();
-    const tab = await s.winterTab();
+    const tab = await s.cloverTab();
     const a = wakeId();
     await s.arm(tab.targetId, { kind: "clicked", ref: await s.refOf(tab.targetId, "Submit for review") }, a);
     s.h.winter.navigateTo(keyOf(tab), "https://app.example/elsewhere");
     expect(await s.until(() => s.events.length > 0)).toBe(true);
     expect(s.events[0]).toMatchObject({ wakeId: a, outcome: "lost", reason: "the page changed" });
 
-    const tab2 = await s.winterTab("https://app2.example/");
+    const tab2 = await s.cloverTab("https://app2.example/");
     const b = wakeId();
     await s.arm(tab2.targetId, { kind: "clicked", ref: await s.refOf(tab2.targetId, "Submit for review") }, b);
     s.h.winter.wakes.user(keyOf(tab2), { type: "press", id: 2 });
@@ -224,11 +224,11 @@ describe("the debugger path — Winter's built-in browser", () => {
     expect(s.events[1]).toMatchObject({ wakeId: b, outcome: "fired", detail: "clicked" });
   });
 
-  test("a page condition survives navigations: a new document the page brings that shows it fires; one Winter's own goto brings does not", async () => {
+  test("a page condition survives navigations: a new document the page brings that shows it fires; one Clover's own goto brings does not", async () => {
     const s = setup();
-    const tab = await s.winterTab();
+    const tab = await s.cloverTab();
     await s.arm(tab.targetId, { kind: "appeared", text: "Approved" });
-    s.h.winter.pages["https://app.example/mine"] = page("https://app.example/mine", { text: "Approved (by Winter's goto)" });
+    s.h.winter.pages["https://app.example/mine"] = page("https://app.example/mine", { text: "Approved (by Clover's goto)" });
     await s.h.engine.primitive(s.r.scope, tab.targetId, "goto", { url: "https://app.example/mine" });
     await sleep(300);
     expect(s.events).toEqual([]);
@@ -241,8 +241,8 @@ describe("the debugger path — Winter's built-in browser", () => {
 
   test("the tab closing, crashing, or the link dropping ends it lost", async () => {
     const s = setup();
-    const t1 = await s.winterTab("https://a.example/");
-    const t2 = await s.winterTab("https://b.example/");
+    const t1 = await s.cloverTab("https://a.example/");
+    const t2 = await s.cloverTab("https://b.example/");
     const a = wakeId(), b = wakeId();
     await s.arm(t1.targetId, { kind: "titled", title: "Ready" }, a);
     await s.arm(t2.targetId, { kind: "titled", title: "Ready" }, b);
@@ -251,17 +251,17 @@ describe("the debugger path — Winter's built-in browser", () => {
     expect(await s.until(() => s.events.length === 2)).toBe(true);
     expect(s.events.find((e) => e.wakeId === a)).toMatchObject({ outcome: "lost", reason: "the tab was closed" });
     expect(s.events.find((e) => e.wakeId === b)).toMatchObject({ outcome: "lost", reason: "the tab crashed" });
-    const t3 = await s.winterTab("https://c.example/");
+    const t3 = await s.cloverTab("https://c.example/");
     const c = wakeId();
     await s.arm(t3.targetId, { kind: "titled", title: "Ready" }, c);
     s.h.winter.connected = false;
     expect(await s.until(() => s.events.length === 3)).toBe(true);
-    expect(s.events[2]).toMatchObject({ wakeId: c, outcome: "lost", reason: "Winter isn't running" });
+    expect(s.events[2]).toMatchObject({ wakeId: c, outcome: "lost", reason: "Clover isn't running" });
   });
 
   test("a cancel (disarm) is idempotent: nothing fires after it, the hold goes, and the pill leaves the page", async () => {
     const s = setup();
-    const tab = await s.winterTab();
+    const tab = await s.cloverTab();
     const id = wakeId();
     await s.arm(tab.targetId, { kind: "clicked", ref: await s.refOf(tab.targetId, "Submit for review") }, id);
     s.r.end();
@@ -278,7 +278,7 @@ describe("the debugger path — Winter's built-in browser", () => {
 
   test("waitForUser() on a tab the debugger path holds for a trigger is TargetBusy", async () => {
     const s = setup();
-    const tab = await s.winterTab();
+    const tab = await s.cloverTab();
     await s.arm(tab.targetId, { kind: "titled", title: "Ready" });
     const e = await failure(s.h.engine.primitive(s.r.scope, tab.targetId, "waitForUser", { reason: "sign in" }));
     expect(e.kind).toBe("TargetBusy");
@@ -291,7 +291,7 @@ describe("WATCH-ONLY: a waiting tab changes nothing the user sees or does", () =
 
   test("built-in: after the turn ends, the hold sent is watch-only, no interception, no focus emulation, no emulated size, no overlay — a primitive takes the full hold back and it drops back after", async () => {
     const s = setup();
-    const tab = await s.winterTab();
+    const tab = await s.cloverTab();
     const t = s.h.winter.tabs.get(keyOf(tab))!;
     await s.h.engine.primitive(s.r.scope, tab.targetId, "viewport", { size: { width: 600, height: 500 } });
     await s.h.engine.primitive(s.r.scope, tab.targetId, "click", { target: Number(await s.refOf(tab.targetId, "Email")) });
@@ -324,7 +324,7 @@ describe("WATCH-ONLY: a waiting tab changes nothing the user sees or does", () =
 
   test("built-in: an idle detach recovered while only the wake holds it attaches watch-only from the start", async () => {
     const s = setup();
-    const tab = await s.winterTab();
+    const tab = await s.cloverTab();
     const t = s.h.winter.tabs.get(keyOf(tab))!;
     await s.arm(tab.targetId, { kind: "clicked", ref: await s.refOf(tab.targetId, "Submit for review") });
     s.r.end();
@@ -338,12 +338,12 @@ describe("WATCH-ONLY: a waiting tab changes nothing the user sees or does", () =
     expect(t.focusEmulation).toBe(false);
   });
 
-  test("built-in: a Winter.app without the watchOnly feature never holds a tab for a wake (NotAllowed, update Winter)", async () => {
+  test("built-in: a Clover.app without the watchOnly feature never holds a tab for a wake (NotAllowed, update Clover)", async () => {
     const s = setup();
     delete s.h.winter.watchOnlyHolds;
-    const tab = await s.winterTab();
+    const tab = await s.cloverTab();
     const e = await failure(s.arm(tab.targetId, { kind: "titled", title: "Ready" }));
-    expect([e.kind, e.message]).toEqual(["NotAllowed", WAKE_UPDATE_WINTER]);
+    expect([e.kind, e.message]).toEqual(["NotAllowed", WAKE_UPDATE_CLOVER]);
     expect(s.backend.armedIds()).toEqual([]);
   });
 
@@ -362,7 +362,7 @@ describe("WATCH-ONLY: a waiting tab changes nothing the user sees or does", () =
 
   test("a confirm() the user's submit raises while the arming run still holds the tab: never cancelled — the full hold stays (no watch-only hold, which would dismiss it), the wait ends lost saying so, and the woken session answers it", async () => {
     const s = setup();
-    const tab = await s.winterTab();
+    const tab = await s.cloverTab();
     const t = s.h.winter.tabs.get(keyOf(tab))!;
     const id = wakeId();
     await s.arm(tab.targetId, { kind: "submitted" }, id);
@@ -380,7 +380,7 @@ describe("WATCH-ONLY: a waiting tab changes nothing the user sees or does", () =
     expect(s.events[0]).toMatchObject({ wakeId: id, outcome: "lost" });
     expect(s.events[0]!.reason).toMatch(/opened a confirm dialog and is paused on it .* dialog\(\) .* answerDialog\(\)/);
     await sleep(80);
-    // Never a watch-only hold (Winter.app would dismiss the held dialog as Cancel), never an answer from Winter.
+    // Never a watch-only hold (Clover.app would dismiss the held dialog as Cancel), never an answer from Clover.
     expect(t.holdModes.slice(modes)).not.toContain("watch");
     expect(t.attached).toBe(true);
     expect(s.h.winter.sent.some((x) => x.method === "Page.handleJavaScriptDialog")).toBe(false);
@@ -394,9 +394,9 @@ describe("WATCH-ONLY: a waiting tab changes nothing the user sees or does", () =
     expect(await s.until(() => !t.attached)).toBe(true);
   });
 
-  test("…a cancelled wait does not keep such a dialog (it goes as Winter lets the tab go, as without a wait)", async () => {
+  test("…a cancelled wait does not keep such a dialog (it goes as Clover lets the tab go, as without a wait)", async () => {
     const s = setup();
-    const tab = await s.winterTab();
+    const tab = await s.cloverTab();
     const t = s.h.winter.tabs.get(keyOf(tab))!;
     const id = wakeId();
     await s.arm(tab.targetId, { kind: "submitted" }, id);
@@ -410,7 +410,7 @@ describe("WATCH-ONLY: a waiting tab changes nothing the user sees or does", () =
 
   test("a confirm() raised just as a wait fired on the user's action (its report got out first) is kept for the woken session too", async () => {
     const s = setup();
-    const tab = await s.winterTab();
+    const tab = await s.cloverTab();
     const t = s.h.winter.tabs.get(keyOf(tab))!;
     await s.arm(tab.targetId, { kind: "clicked", ref: await s.refOf(tab.targetId, "Submit for review") });
     s.h.winter.wakes.user(keyOf(tab), { type: "click", id: 2, at: Date.now() + 1_000 });
@@ -427,7 +427,7 @@ describe("WATCH-ONLY: a waiting tab changes nothing the user sees or does", () =
 
   test("a dialog raised during a watch-only wait is the user's to answer: the wake ending detaches with no answer sent (watch-only holds none)", async () => {
     const s = setup();
-    const tab = await s.winterTab();
+    const tab = await s.cloverTab();
     const t = s.h.winter.tabs.get(keyOf(tab))!;
     await s.arm(tab.targetId, { kind: "submitted" });
     s.r.end();
@@ -446,7 +446,7 @@ describe("WATCH-ONLY: a waiting tab changes nothing the user sees or does", () =
 
   test("the poller polls around a page dialog (never parked on it): even when the dialog's closing event is lost, the user's click after it fires", async () => {
     const s = setup();
-    const tab = await s.winterTab();
+    const tab = await s.cloverTab();
     await s.arm(tab.targetId, { kind: "clicked", ref: await s.refOf(tab.targetId, "Submit for review") });
     s.r.end();
     s.h.engine.turnEnded("s1");
@@ -464,7 +464,7 @@ describe("WATCH-ONLY: a waiting tab changes nothing the user sees or does", () =
 
   test("a cancel while a page dialog is open still takes the watch (its ring and pill) off the page", async () => {
     const s = setup();
-    const tab = await s.winterTab();
+    const tab = await s.cloverTab();
     const id = wakeId();
     await s.arm(tab.targetId, { kind: "clicked", ref: await s.refOf(tab.targetId, "Submit for review") }, id);
     s.h.winter.openDialog(keyOf(tab), "alert", "Hello");
@@ -474,26 +474,26 @@ describe("WATCH-ONLY: a waiting tab changes nothing the user sees or does", () =
 
   test("a watch whose disarm never reached the page goes at the next poll of its frame (each poll names the watches kept)", async () => {
     const s = setup();
-    const tab = await s.winterTab();
+    const tab = await s.cloverTab();
     const gone = wakeId(), kept = wakeId();
     await s.arm(tab.targetId, { kind: "titled", title: "Ready" }, gone);
     await s.arm(tab.targetId, { kind: "clicked", ref: await s.refOf(tab.targetId, "Submit for review") }, kept);
     s.h.winter.wakes.failOps.add("watchDisarm");
     s.backend.disarm(gone);
     expect(await s.until(() => s.h.winter.wakes.pills(keyOf(tab)).length === 1)).toBe(true);
-    expect(s.h.winter.wakes.pills(keyOf(tab))).toEqual(["Winter continues when you click “Submit for review”"]);
+    expect(s.h.winter.wakes.pills(keyOf(tab))).toEqual(["Clover continues when you click “Submit for review”"]);
   });
 });
 
 describe("only the user's action counts — timing", () => {
-  test("a submit whose qualifying input was Winter's own (a page's requestSubmit() just after Winter typed) never fires; the user's own does", async () => {
+  test("a submit whose qualifying input was Clover's own (a page's requestSubmit() just after Clover typed) never fires; the user's own does", async () => {
     const s = setup();
-    const tab = await s.winterTab();
+    const tab = await s.cloverTab();
     await s.arm(tab.targetId, { kind: "submitted" });
     const t0 = Date.now();
     await s.h.engine.primitive(s.r.scope, tab.targetId, "click", { target: Number(await s.refOf(tab.targetId, "Email")) });
     const ownEnd = Date.now();
-    // The page submits by itself 700 ms after Winter's input ended (past the grace), on the strength of Winter's input.
+    // The page submits by itself 700 ms after Clover's input ended (past the grace), on the strength of Clover's input.
     s.h.winter.wakes.user(keyOf(tab), { type: "submit", at: ownEnd + 700, cause: Math.max(t0, ownEnd - 5) });
     await sleep(120);
     expect(s.events).toEqual([]);
@@ -502,12 +502,12 @@ describe("only the user's action counts — timing", () => {
     expect(s.events[0]).toMatchObject({ outcome: "fired", detail: "submitted the form" });
   });
 
-  test("Winter's own navigation is decided when it STARTS: a goto whose commit lands after the grace is still the baseline", async () => {
+  test("Clover's own navigation is decided when it STARTS: a goto whose commit lands after the grace is still the baseline", async () => {
     const s = setup();
-    const tab = await s.winterTab();
+    const tab = await s.cloverTab();
     await s.arm(tab.targetId, { kind: "navigated" });
     s.h.winter.slowCommitMs = 1_200;
-    // Winter's goto starts the navigation, and its run ends (stopped) long before the slow commit lands.
+    // Clover's goto starts the navigation, and its run ends (stopped) long before the slow commit lands.
     const going = s.h.engine.primitive(s.r.scope, tab.targetId, "goto", { url: "https://app.example/step2" }).catch(() => undefined);
     await sleep(80);
     s.r.end();
@@ -525,7 +525,7 @@ describe("only the user's action counts — timing", () => {
   test("the press window runs from the user's press to when the page went — not to when the backend learned of it", async () => {
     const skew = { ms: 0 };
     const s = setup({ skew });
-    const tab = await s.winterTab();
+    const tab = await s.cloverTab();
     await s.arm(tab.targetId, { kind: "clicked", ref: await s.refOf(tab.targetId, "Submit for review") });
     s.h.winter.wakes.user(keyOf(tab), { type: "press", id: 2 });
     await sleep(80);
@@ -541,7 +541,7 @@ describe("hold budgets", () => {
   test(`a waiting tab's hold counts: past ${HOLDS_PER_SESSION} waiting tabs a new wait is refused TargetBusy naming wakes.cancel, and so is another tab's hold`, async () => {
     const s = setup();
     const tabs: TabHandle[] = [];
-    for (let i = 0; i <= HOLDS_PER_SESSION; i++) tabs.push(await s.winterTab(`https://t${i}.example/`));
+    for (let i = 0; i <= HOLDS_PER_SESSION; i++) tabs.push(await s.cloverTab(`https://t${i}.example/`));
     for (let i = 0; i < HOLDS_PER_SESSION; i++) await s.arm(tabs[i]!.targetId, { kind: "titled", title: "Ready" });
     const e = await failure(s.arm(tabs[HOLDS_PER_SESSION]!.targetId, { kind: "titled", title: "Ready" }));
     expect(e.kind).toBe("TargetBusy");
@@ -558,17 +558,17 @@ describe("hold budgets", () => {
     expect([...s.h.winter.tabs.values()].filter((t) => t.attached).length).toBe(HOLDS_PER_SESSION);
   });
 
-  test("Winter.app's ceiling on held tabs, reached while tabs wait: its sentence names wakes.cancel too", async () => {
+  test("Clover.app's ceiling on held tabs, reached while tabs wait: its sentence names wakes.cancel too", async () => {
     const s = setup();
-    const t1 = await s.winterTab("https://a.example/");
+    const t1 = await s.cloverTab("https://a.example/");
     await s.arm(t1.targetId, { kind: "titled", title: "Ready" });
-    const t2 = await s.winterTab("https://b.example/");
+    const t2 = await s.cloverTab("https://b.example/");
     s.r.end();
     s.h.engine.turnEnded("s1");
     await sleep(30);
     const attach = s.h.winter.attach.bind(s.h.winter);
     s.h.winter.attach = async (tabKey, o) => {
-      if (tabKey === keyOf(t2)) throw new TransportError("not_allowed", "Winter's built-in browser already holds 24 tabs for automation — release one first", { holdCeiling: true });
+      if (tabKey === keyOf(t2)) throw new TransportError("not_allowed", "Clover's built-in browser already holds 24 tabs for automation — release one first", { holdCeiling: true });
       return attach(tabKey, o);
     };
     const r2 = s.h.run();
@@ -587,7 +587,7 @@ describe("rekey, leaks", () => {
     const tab = await s.h.engine.global(s.r.scope, "browsers.open", { url: "https://shop.example/", browser: "chrome" }) as TabHandle;
     const id = wakeId();
     await s.arm(tab.targetId, { kind: "submitted" }, id);
-    // Winter's own navigation of it comes back under a new key (the extension moved the watch with it).
+    // Clover's own navigation of it comes back under a new key (the extension moved the watch with it).
     s.h.chrome.tabs.get(keyOf(tab))!.navigateFallback = { newKey: "900" };
     await s.h.engine.primitive(s.r.scope, tab.targetId, "goto", { url: "https://shop.example/cart" }).catch(() => undefined);
     s.h.chrome.wakes.moveExt(keyOf(tab), "900");
@@ -623,7 +623,7 @@ describe("rekey, leaks", () => {
 
   test("the debugger path's navigation listener goes with the tab's last watch", async () => {
     const s = setup();
-    const tab = await s.winterTab();
+    const tab = await s.cloverTab();
     const d = s.h.engine.wakeTarget("s1", tab.targetId).driver;
     const before = d.listeners.size;
     const a = wakeId(), b = wakeId();
@@ -651,7 +651,7 @@ describe("the floors and the grants (no scope at arm)", () => {
     const ht = await s.h.engine.global(s.r.scope, "browsers.open", { url: "https://h.example/", browser: "headless" }) as TabHandle;
     const e1 = await failure(s.arm(ht.targetId, { kind: "titled", title: "x" }));
     expect([e1.kind, e1.message]).toEqual(["NotAllowed", WAKE_HEADLESS]);
-    const tab = await s.winterTab();
+    const tab = await s.cloverTab();
     const e2 = await failure(s.arm(tab.targetId, { kind: "changed", ref: await s.refOf(tab.targetId, "Password"), settleMs: 1_500 }));
     expect([e2.kind, e2.message]).toEqual(["Refused", SECURE_FIELD_SENTENCE]);
   });
@@ -659,7 +659,7 @@ describe("the floors and the grants (no scope at arm)", () => {
   test("a dangerous-domains host: NotAllowed unless approved for the SESSION (a one-run approval does not count) or a saved rule allows it", async () => {
     const answers: string[] = ["once", "session"];
     const s = setup({ policy: "ask", dangerousAdded: ["risky.example"], answer: () => answers.shift() });
-    const tab = await s.winterTab("https://risky.example/");
+    const tab = await s.cloverTab("https://risky.example/");
     const e = await failure(s.arm(tab.targetId, { kind: "titled", title: "Ready" }));
     expect(e.kind).toBe("NotAllowed");
     expect(e.message).toMatch(/risky\.example, which is on the dangerous-domains list and not approved for this session/);
@@ -670,7 +670,7 @@ describe("the floors and the grants (no scope at arm)", () => {
     await s.arm(tab.targetId, { kind: "titled", title: "Ready" });
     // A saved WebFetch(domain:) rule: no card at all, and the trigger arms.
     const s2 = setup({ policy: "ask", dangerousAdded: ["risky.example"], savedRules: ["WebFetch(domain:risky.example)"], answer: () => false });
-    const t2 = await s2.winterTab("https://risky.example/");
+    const t2 = await s2.cloverTab("https://risky.example/");
     await s2.arm(t2.targetId, { kind: "titled", title: "Ready" });
   });
 
@@ -720,12 +720,12 @@ describe("a Winter for Chrome older than 1.2.0: the debugger is kept for the wai
     await s.arm(tab.targetId, { kind: "titled", title: "Ready" });
     s.h.chrome.goneTab("7", "detached_by_user");
     expect(await s.until(() => s.events.length > 0)).toBe(true);
-    expect(s.events[0]).toMatchObject({ outcome: "lost", reason: "the user stopped Winter from controlling this tab" });
+    expect(s.events[0]).toMatchObject({ outcome: "lost", reason: "the user stopped Clover from controlling this tab" });
   });
 });
 
 describe("Winter for Chrome 1.2.0: no debugger while it waits", () => {
-  test("armed through the extension: the tab is let go at once; the user's click fires; Winter's own click (its stamp) does not", async () => {
+  test("armed through the extension: the tab is let go at once; the user's click fires; Clover's own click (its stamp) does not", async () => {
     const s = setup();
     s.h.chrome.withWatch();
     const tab = await s.userTab();
@@ -737,7 +737,7 @@ describe("Winter for Chrome 1.2.0: no debugger while it waits", () => {
     s.h.engine.turnEnded("s1");
     await sleep(30);
     expect(s.h.chrome.tabs.get("7")!.attached).toBe(false);
-    // Winter's own click (another run binds the tab again): dropped.
+    // Clover's own click (another run binds the tab again): dropped.
     const r2 = s.h.run();
     const again = await s.h.engine.global(r2.scope, "browsers.tab", { tab: "chrome:7" }) as TabHandle;
     await s.h.engine.primitive(r2.scope, again.targetId, "click", { target: Number(await s.refOf(again.targetId, "Submit for review", r2.scope)) });
@@ -878,7 +878,7 @@ describe("agent tabs and the lifecycle", () => {
 describe("the pieces", () => {
   test("engine.hostOf: the bound tab's host for the audit line — after a reset too, for a target a trigger was armed on", async () => {
     const s = setup();
-    const tab = await s.winterTab("https://shop.example/cart?token=x");
+    const tab = await s.cloverTab("https://shop.example/cart?token=x");
     expect(s.h.engine.hostOf("s1", tab.targetId)).toBe("shop.example");
     await s.arm(tab.targetId, { kind: "titled", title: "Paid" });
     s.h.engine.forgetBindings("s1");
@@ -888,7 +888,7 @@ describe("the pieces", () => {
 
   test("TabDriver.ownInputAt: in flight, and 500 ms after, from any session", () => {
     let now = 10_000;
-    const d = new TabDriver("winter", "w1", {} as never, "Winter's browser", () => now);
+    const d = new TabDriver("winter", "w1", {} as never, "Clover's browser", () => now);
     expect(d.ownInputAt(now)).toBe(false);
     d.beginOwnInput();
     now += 300;
@@ -900,11 +900,11 @@ describe("the pieces", () => {
   });
 
   test("the pill's words are fixed per kind and name only the element's own label", () => {
-    expect(wakePill("clicked", "Submit for review")).toBe("Winter continues when you click “Submit for review”");
-    expect(wakePill("clicked", "")).toBe("Winter continues when you click the marked element");
-    expect(wakePill("submitted", "", { anyForm: true })).toBe("Winter continues when you submit a form on this page");
-    expect(wakePill("appeared", "")).toBe("Winter continues when this page changes");
-    expect(wakePill("navigated", "")).toBe("Winter continues when you go to another page");
-    expect(wakePill("changed", "Notes  for\nthe reviewer")).toBe("Winter continues when you change “Notes for the reviewer”");
+    expect(wakePill("clicked", "Submit for review")).toBe("Clover continues when you click “Submit for review”");
+    expect(wakePill("clicked", "")).toBe("Clover continues when you click the marked element");
+    expect(wakePill("submitted", "", { anyForm: true })).toBe("Clover continues when you submit a form on this page");
+    expect(wakePill("appeared", "")).toBe("Clover continues when this page changes");
+    expect(wakePill("navigated", "")).toBe("Clover continues when you go to another page");
+    expect(wakePill("changed", "Notes  for\nthe reviewer")).toBe("Clover continues when you change “Notes for the reviewer”");
   });
 });

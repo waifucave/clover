@@ -10,7 +10,7 @@ import type { RoutineRunner } from "./scheduler";
 // `agent_error` with no `code` at all (an older log, or one of engine.ts's two synthetic
 // agent_error emit sites — "no cwd" / context cap — which have no provider code to carry).
 // Phase 8d task 2.4: the message-prefix producer this fallback was originally paired with
-// (`providers/openai-compatible.ts`'s `mapHttpError`) is gone — Winter's internal model calls now
+// (`providers/openai-compatible.ts`'s `mapHttpError`) is gone — Clover's internal model calls now
 // run over `@yanlinglabs/winter-provider-runtime` adapters (`providers/runtime-provider.ts`), whose
 // own error messages are NOT guaranteed to start with "HTTP 429". This fallback is therefore a
 // carry of unverified reach on today's provider layer, not a tripwire with a live producer to
@@ -18,7 +18,7 @@ import type { RoutineRunner } from "./scheduler";
 const QUOTA_ERROR_PREFIX = "HTTP 429";
 
 /** Builds the RoutineRunner the daemon wires into makeRoutineScheduler — `runHeadless` reuses the
- *  SAME internal path `winter -p` drives (session create → post the prompt as a user_message → one
+ *  SAME internal path `clover -p` drives (session create → post the prompt as a user_message → one
  *  engine.runTurn → read the final assistant text back off the session log), just in-process
  *  instead of over the IPC socket (the scheduler already lives inside the daemon).
  *
@@ -26,7 +26,7 @@ const QUOTA_ERROR_PREFIX = "HTTP 429";
  *  sessions list") — T3 superseded T2's fallback: `origin` is now a real, additive session-meta
  *  field (`SessionCreateParams.origin` → the sqlite `sessions.origin` column → `SessionStore.list()`
  *  rows), passed straight through at `createSession`. The session-TITLE stamp T2 shipped stays —
- *  belt-and-suspenders, not replaced: the title is what a human sees in `winter sessions`/`resume`
+ *  belt-and-suspenders, not replaced: the title is what a human sees in `clover sessions`/`resume`
  *  (`session_titled`), the `origin` meta field is the machine-readable record another program can
  *  filter/query on (e.g. "list every session this routine ever fired"). Neither overwrites the
  *  other — titles.ts's SessionTitler still never touches an already-titled session (`maybeTitle`'s
@@ -44,9 +44,9 @@ const QUOTA_ERROR_PREFIX = "HTTP 429";
  *  `run_in_background: false` on that spawn_agent call — rather than this runner special-casing
  *  routine-origin sessions to a different spawn default. */
 /** The slice of Task 16's driver table a headless turn needs: a routine session is a new CODE
- *  session on the Winter leg every fire (the only leg since Task 17; fix wave F9 removed the
+ *  session on the Clover leg every fire (the only leg since Task 17; fix wave F9 removed the
  *  runner's engine branch with it). */
-export interface WinterTurnRunner {
+export interface CloverTurnRunner {
   /** Create the session's driver, `send` the prompt (the driver appends the `user_message`), wait
    *  until nothing is in flight. Rejects with the leg's typed refusal. */
   runTurn(sessionId: string, text: string, clientName: string): Promise<void>;
@@ -55,20 +55,20 @@ export interface WinterTurnRunner {
 export function makeDaemonRoutineRunner(deps: {
   store: SessionStore;
   hub: SessionHub;
-  /** The driver table. `undefined` (a daemon whose Winter handle never constructed has one anyway;
+  /** The driver table. `undefined` (a daemon whose Clover handle never constructed has one anyway;
    *  this is a harness without one) ⇒ every fire fails cleanly, as "agent disabled" always did. */
-  winter?: WinterTurnRunner;
+  clover?: CloverTurnRunner;
 }): RoutineRunner {
   return {
     async runHeadless(opts): Promise<{ ok: boolean; quotaLimited?: boolean; resultText?: string; error?: string }> {
-      if (!deps.winter) return { ok: false, error: "agent disabled: no runtime available" };
+      if (!deps.clover) return { ok: false, error: "agent disabled: no runtime available" };
 
       const sessionId = deps.store.createSession("routine", { cwd: opts.cwd, approvalPolicy: opts.policy, origin: opts.origin });
       deps.hub.append(sessionId, { type: "session_titled", sessionId, threadId: "main", title: opts.origin });
 
       try {
         // The driver appends the `user_message` itself (P8b-39: the log is its queue).
-        await deps.winter.runTurn(sessionId, opts.prompt, "routine");
+        await deps.clover.runTurn(sessionId, opts.prompt, "routine");
       } catch (err) {
         return { ok: false, error: err instanceof Error ? err.message : String(err) };
       }
@@ -76,7 +76,7 @@ export function makeDaemonRoutineRunner(deps: {
       const events = deps.store.read(sessionId);
       // Main-thread only — a routine prompt that itself spawns subagents surfaces their results
       // through the main thread's own assistant_message (spawn_agent's normal tool_result bridge),
-      // exactly like a `winter -p` turn.
+      // exactly like a `clover -p` turn.
       const mainEvents = events.filter((e) => !("threadId" in e) || e.threadId === "main");
       const lastError = [...mainEvents].reverse().find((e) => e.type === "agent_error");
       if (lastError && lastError.type === "agent_error") {

@@ -12,7 +12,7 @@ import { join } from "node:path";
 import {
   ConnWriter, DAEMON_FEATURE_ATTACHMENT_FILES, DAEMON_FEATURE_IMAGE_ORIGINAL_PATHS, ERR, FILE_REFERENCE_INVALID, FILE_SESSION_NOT_CODE, FILE_UNREADABLE,
   LineDecoder, METHODS, PROTOCOL_VERSION, SessionEvent, SessionSendParams, SessionSteerParams, USER_MESSAGE_ATTACHMENTS_MAX, USER_MESSAGE_FILES_MAX, encodeLine, type WritableSocket,
-} from "@yanlinglabs/winter-protocol";
+} from "@waifucave/clover-protocol";
 import { loadCatalog } from "@yanlinglabs/winter-provider-catalog";
 import { startIpcServer } from "../../src/ipc/server";
 import { SessionStore } from "../../src/sessions/store";
@@ -22,7 +22,7 @@ import { readHistoryPage } from "../../src/sessions/history";
 import { filterRemoteStreamEvent } from "../../src/sessions/remote-stream";
 import { fileTokenNumbers, modelTextOf, substituteFileTokens } from "../../src/sessions/model-text";
 import { validateFileRefs } from "../../src/agent/stage-image";
-import type { LegSession, WinterSessionDrivers } from "../../src/runtime-sdk/session-driver";
+import type { LegSession, CloverSessionDrivers } from "../../src/runtime-sdk/session-driver";
 
 /** Minimal raw NDJSON JSON-RPC client — the same per-file copy every test in test/ipc carries. */
 class TestClient {
@@ -102,8 +102,8 @@ describe("session.send / session.steer — files (code-mode file attachments)", 
     for (const d of cleanup.splice(0)) rmSync(d, { recursive: true, force: true });
   });
 
-  async function boot(opts: { winter?: WinterSessionDrivers; withHome?: boolean } = {}) {
-    const home = mkdtempSync(join(tmpdir(), "winter-sendfile-"));
+  async function boot(opts: { clover?: CloverSessionDrivers; withHome?: boolean } = {}) {
+    const home = mkdtempSync(join(tmpdir(), "clover-sendfile-"));
     cleanup.push(home);
     const store = new SessionStore(home);
     const socketPath = join(home, "core.sock");
@@ -111,7 +111,7 @@ describe("session.send / session.steer — files (code-mode file attachments)", 
     const tokens = await authority.ensureTokens();
     const server = startIpcServer({
       socketPath, serverVersion: "test", tokens: authority, store,
-      ...(opts.winter === undefined ? {} : { winter: opts.winter }), ...(opts.withHome ? { winterHome: home } : {}),
+      ...(opts.clover === undefined ? {} : { clover: opts.clover }), ...(opts.withHome ? { cloverHome: home } : {}),
     });
     stop = () => { server.stop(); store.close(); };
     const c = await TestClient.connect(socketPath);
@@ -129,7 +129,7 @@ describe("session.send / session.steer — files (code-mode file attachments)", 
 
   /** A folder outside the daemon's home with a distinctive name no error may echo. */
   function userDir(): string {
-    const dir = realpathSync(mkdtempSync(join(tmpdir(), "winter-userfiles-SECRETNAME-")));
+    const dir = realpathSync(mkdtempSync(join(tmpdir(), "clover-userfiles-SECRETNAME-")));
     cleanup.push(dir);
     return dir;
   }
@@ -163,7 +163,7 @@ describe("session.send / session.steer — files (code-mode file attachments)", 
     expect("images" in m!).toBe(false);
     expect(modelTextOf(m!)).toBe(`${doc} ${join(dir, "project")} ${code} ${join(dir, "link.pdf")}\nread these`);
     expect((await c.request(METHODS.sessionSteer, { sessionId: sid, text: "also [File #1]", files: [{ n: 1, path: doc }] })).error).toBeUndefined();
-    // (A bare server's steer appends nothing — the Winter-leg test below covers the driver's steer.)
+    // (A bare server's steer appends nothing — the Clover-leg test below covers the driver's steer.)
     // An empty array is no files: nothing stored under the key.
     expect((await c.request(METHODS.sessionSend, { sessionId: sid, text: "hi", files: [] })).error).toBeUndefined();
     expect("files" in userMessages(store, sid)[1]!).toBe(false);
@@ -254,9 +254,9 @@ describe("session.send / session.steer — files (code-mode file attachments)", 
     mkdirSync(join(home, "outputs", "s_1"), { recursive: true });
     writeFileSync(join(home, "outputs", "s_1", "report.md"), "# hi");
     symlinkSync(join(home, "run"), join(dir, "into-run"));
-    for (const path of [join(home, "run"), join(dir, "into-run"), join(home, "sdk", ".winter.json")]) {
+    for (const path of [join(home, "run"), join(dir, "into-run"), join(home, "sdk", ".clover.json")]) {
       const res = await c.request(METHODS.sessionSend, { sessionId: sid, text: "[File #1]", files: [{ n: 1, path }] });
-      // sdk/.winter.json does not exist; the spelled check refuses it before any resolve.
+      // sdk/.clover.json does not exist; the spelled check refuses it before any resolve.
       expect({ path: path.replace(home, "<home>"), code: res.error?.data?.code }).toEqual({ path: path.replace(home, "<home>"), code: FILE_REFERENCE_INVALID });
       expect(JSON.stringify(res.error)).not.toContain(home);
     }
@@ -311,7 +311,7 @@ describe("session.send / session.steer — files (code-mode file attachments)", 
     c.close();
   });
 
-  test("on the Winter leg the driver receives the checked files (send and steer); a refusal never resumes it", async () => {
+  test("on the Clover leg the driver receives the checked files (send and steer); a refusal never resumes it", async () => {
     const calls: Array<{ door: string; text: string; images?: unknown; files?: unknown }> = [];
     let ensures = 0;
     const never = (): never => { throw new Error("not reached by this test"); };
@@ -323,13 +323,13 @@ describe("session.send / session.steer — files (code-mode file attachments)", 
       interrupt: never, compact: never, setModel: never, setPolicy: never,
       end: async () => {}, deliver: never, open: async () => {}, idle: async () => {},
     };
-    const table: WinterSessionDrivers = {
+    const table: CloverSessionDrivers = {
       legForNewSession: () => "winter", legOf: () => "winter", assertAvailable: () => {}, create: async () => never(),
       get: () => leg, runTurn: async () => never(),
       ensure: async () => { ensures++; return leg; },
       evict: async () => {}, list: () => [], endAll: async () => {},
     };
-    const { store, c } = await boot({ winter: table });
+    const { store, c } = await boot({ clover: table });
     const sid = store.createSession("global", { model: TEXT_TAG });
     await c.request(METHODS.sessionAttach, { sessionId: sid, fromSeq: 0 });
     const dir = userDir();

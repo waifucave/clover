@@ -23,7 +23,7 @@ export interface PlanWindow {
   windowKey?: string;
 }
 
-/** A status-only window (Winter's own codex-oauth report: no percentage). */
+/** A status-only window (Clover's own codex-oauth report: no percentage). */
 export interface PlanStatusWindow {
   rateLimitType?: string;
   status: string;

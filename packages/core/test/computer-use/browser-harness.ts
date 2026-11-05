@@ -3,7 +3,7 @@
 import { mkdirSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { NewSessionEvent } from "@yanlinglabs/winter-protocol";
+import type { NewSessionEvent } from "@waifucave/clover-protocol";
 import { ApprovalBroker } from "../../src/agent/approvals";
 import type { SessionApprovalPolicy } from "../../src/agent/gate";
 import { BrowserEngine, type BrowserEngineDeps } from "../../src/computer-use/browser/engine";
@@ -30,7 +30,7 @@ export interface HarnessOpts {
   /** Give these fakes the native download members before the engine starts (link protocol 2 / the extension's
    *  downloads feature). */
   nativeDownloads?: Array<"winter" | "chrome">;
-  /** Phase 4: also register a fake `headless` backend (Winter's headless browser). */
+  /** Phase 4: also register a fake `headless` backend (Clover's headless browser). */
   headless?: boolean;
   /** More engine deps (Phase 4's headless hooks). */
   engineDeps?: Partial<BrowserEngineDeps>;
@@ -39,23 +39,23 @@ export interface HarnessOpts {
 }
 
 export function harness(o: HarnessOpts = {}) {
-  const home = mkdtempSync(join(tmpdir(), "winter-browser-home-"));
-  const cwd = mkdtempSync(join(tmpdir(), "winter-browser-cwd-"));
-  const tmp = mkdtempSync(join(tmpdir(), "winter-browser-tmp-"));
+  const home = mkdtempSync(join(tmpdir(), "clover-browser-home-"));
+  const cwd = mkdtempSync(join(tmpdir(), "clover-browser-cwd-"));
+  const tmp = mkdtempSync(join(tmpdir(), "clover-browser-tmp-"));
   mkdirSync(join(cwd, "sub"), { recursive: true });
   const registry = new BrowserBackendRegistry();
   const winter = new FakeCdpTransport("winter", "winter");
   const chrome = new FakeCdpTransport("chrome", "chrome");
   if (o.nativeDownloads?.includes("winter") === true) winter.withNativeDownloads();
   if (o.nativeDownloads?.includes("chrome") === true) chrome.withNativeDownloads();
-  const winterReg = registry.register(winter, { family: "winter", name: "Winter (built-in)", instanceKey: "winter" });
+  const cloverReg = registry.register(winter, { family: "winter", name: "Clover (built-in)", instanceKey: "winter" });
   const chromeReg = registry.register(chrome, { family: "chrome", name: "Google Chrome", bundleId: "com.google.Chrome", instanceKey: "chrome-instance-1" });
   const headless = new FakeCdpTransport("headless", "headless");
   // The headless pool's own surface: the fake must not lend the engine a capability the pool's path never uses.
   delete (headless as { setMuted?: unknown }).setMuted;
-  if (o.headless === true) registry.register(headless, { family: "headless", name: "Winter (headless)", instanceKey: "headless" });
+  if (o.headless === true) registry.register(headless, { family: "headless", name: "Clover (headless)", instanceKey: "headless" });
   const panel = new Map<string, Array<{ tabId: string; url?: string; title?: string }>>();
-  const closedWinter: Array<{ sessionId: string; tabId: string }> = [];
+  const closedClover: Array<{ sessionId: string; tabId: string }> = [];
   let nextPanel = 1;
   const settings = { computerUse: { apps: o.apps ?? {} } } as unknown as Settings;
   const facts: SessionFacts = { policy: o.policy ?? "bypass", mode: "code", ...o.facts };
@@ -79,23 +79,23 @@ export function harness(o: HarnessOpts = {}) {
   const stops: Array<{ sessionId: string; reason: string }> = [];
   const engine = new BrowserEngine({
     registry,
-    mintWinterTab: (sid, url) => {
+    mintCloverTab: (sid, url) => {
       const tabId = `w${nextPanel++}`;
       const list = panel.get(sid) ?? [];
       list.push({ tabId, ...(url === undefined ? {} : { url }) });
       panel.set(sid, list);
       return tabId;
     },
-    winterTabClosed: (sessionId, tabId) => {
-      closedWinter.push({ sessionId, tabId });
+    cloverTabClosed: (sessionId, tabId) => {
+      closedClover.push({ sessionId, tabId });
       panel.set(sessionId, (panel.get(sessionId) ?? []).filter((t) => t.tabId !== tabId));
     },
-    winterTabs: (sid) => ({ tabs: (panel.get(sid) ?? []).map((t) => ({ ...t, url: winter.tabs.get(t.tabId)?.page.url ?? t.url })) }),
+    cloverTabs: (sid) => ({ tabs: (panel.get(sid) ?? []).map((t) => ({ ...t, url: winter.tabs.get(t.tabId)?.page.url ?? t.url })) }),
     sessionInfo: () => ({ cwd, title: "Test session" }),
     site: { dangerousDomainsAdded: () => o.dangerousAdded ?? [], savedAllowRules: () => o.savedRules ?? [] },
     home,
     uploadRoots: () => ({ tmpDir: tmp, denyRead: [join(cwd, "secret")] }),
-    downloadRoots: (sid) => ({ tmpDir: join(tmp, `winter-session-${sid}`), denyWrite: [join(cwd, "locked")], denyRead: [join(cwd, "secret")] }),
+    downloadRoots: (sid) => ({ tmpDir: join(tmp, `clover-session-${sid}`), denyWrite: [join(cwd, "locked")], denyRead: [join(cwd, "secret")] }),
     installed: (b) => (o.installed ?? []).includes(b),
     persistentlyAllowed: (sid, b) => policy.persistentlyAllowed(sid, b),
     stopScript: (sessionId, reason) => stops.push({ sessionId, reason }),
@@ -150,5 +150,5 @@ export function harness(o: HarnessOpts = {}) {
     const text = (): string => builder.build().content.map((c) => (c.type === "text" ? c.text : "[image]")).join("");
     return { scope, builder, end, text, metric, sites, browsers, grants, abort, downloads: () => downloads, handoffs: () => handoffs, siteTools: () => siteTools };
   };
-  return { engine, registry, winter, chrome, headless, winterReg, chromeReg, panel, closedWinter, cards, approvals, run, locks, diffBases, home, cwd, tmp, facts, stops, policy };
+  return { engine, registry, winter, chrome, headless, cloverReg, chromeReg, panel, closedClover, cards, approvals, run, locks, diffBases, home, cwd, tmp, facts, stops, policy };
 }

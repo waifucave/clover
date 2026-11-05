@@ -129,7 +129,7 @@ export interface ComputerV2ServiceDeps {
   savedScripts?: SavedScripts;
   /** Wake triggers (2026-10-12): the registry `wakeWhen` arms through (`wakes/registry.ts`). Absent: `NotAllowed`. */
   wakes?: WakeRegistry;
-  /** Wake triggers across backends: the record of Winter's helper input per app (`ownAppInputAt`); the service makes
+  /** Wake triggers across backends: the record of Clover's helper input per app (`ownAppInputAt`); the service makes
    *  its own when absent. */
   ownAppInput?: OwnAppInput;
 }
@@ -322,7 +322,7 @@ export class ComputerV2Service {
    * variables and handles were gone. Removed only when the session is deleted (and with the daemon).
    */
   private readonly ranWorker = new Set<string>();
-  /** Wake triggers: Winter's helper input to each app, from every session (`ownAppInputAt`). */
+  /** Wake triggers: Clover's helper input to each app, from every session (`ownAppInputAt`). */
   private readonly ownAppInput: OwnAppInput;
   private stopped = false;
 
@@ -348,7 +348,7 @@ export class ComputerV2Service {
   // ── one call ───────────────────────────────────────────────────────────────────────────────────
 
   async run(call: ScriptCall, input: ScriptInput): Promise<ScriptResult> {
-    if (this.stopped) return failure("HelperUnavailable", "Winter is shutting down");
+    if (this.stopped) return failure("HelperUnavailable", "Clover is shutting down");
     if (typeof input.code !== "string" || input.code.trim().length === 0) return failure("TypeError", "code is empty — pass the script to run");
     const timeoutMs = Math.min(SCRIPT_TIMEOUT_MAX_MS, Math.max(SCRIPT_TIMEOUT_MIN_MS, Math.floor(input.timeoutMs ?? SCRIPT_TIMEOUT_DEFAULT_MS)));
     const state = this.stateFor(call.sessionId);
@@ -663,7 +663,7 @@ export class ComputerV2Service {
     const wakes = this.deps.wakes;
     const { condition, key } = parseWakeCondition(args.cond, args.settleMs);
     const o = parseWakeOptions(args);
-    if (wakes === undefined) throw new AutomationFailure("NotAllowed", "wake triggers are not available in this Winter — ask the user to tell you when they are done");
+    if (wakes === undefined) throw new AutomationFailure("NotAllowed", "wake triggers are not available in this Clover — ask the user to tell you when they are done");
     const isTab = this.deps.browsers?.owns(ctx.sessionId, targetId) === true;
     let audit: { app?: string; site?: string } | undefined;
     if (!isTab) {
@@ -731,7 +731,7 @@ export class ComputerV2Service {
     return t === undefined ? undefined : { bundleId: t.bundleId, name: t.name, pid: t.pid, ...(t.lost === undefined ? {} : { lost: t.lost }) };
   }
 
-  /** Did Winter's helper send input to this app — from ANY session — at `at` (epoch ms), or end one at most the grace
+  /** Did Clover's helper send input to this app — from ANY session — at `at` (epoch ms), or end one at most the grace
    *  before? The browser engine's door (`BrowserEngineDeps.ownAppInputAt`): a browser bound as an app takes the
    *  helper's clicks as trusted DOM events, which a tab wake trigger must never take for the user's. */
   ownAppInputAt(bundleId: string, at: number): boolean {
@@ -869,7 +869,7 @@ export class ComputerV2Service {
   private async helperCall<T>(ctx: RunCtx, method: string, params: Record<string, unknown>, metric: PrimitiveMetric, timeoutMs?: number, opts: { afterEnd?: boolean } = {}): Promise<T> {
     const t0 = this.now();
     // Input the helper sends an app (an act, an AppleScript, its window raised — every door: `act`, the adapters' extras
-    // and dictionary wrappers, `applescript`, `requestForeground`, `useWindow`; the busy retry included) is Winter's
+    // and dictionary wrappers, `applescript`, `requestForeground`, `useWindow`; the busy retry included) is Clover's
     // own while in flight and for the grace after.
     const inputTo = HELPER_INPUT_METHODS.has(method) && typeof params.targetId === "string" ? ctx.state.targets.get(params.targetId)?.bundleId : undefined;
     const endInput = inputTo === undefined ? undefined : this.ownAppInput.begin(inputTo);
@@ -1027,7 +1027,7 @@ export class ComputerV2Service {
     ctx.apps.add(app.name);
     this.deps.recentApps?.note(app.bundleId, app.name);
     // `{ emit: false }`: bound, nothing of the window read or printed (no screen read, no diff base) — what the bind had
-    // to do and Winter's own adapter block still say themselves.
+    // to do and Clover's own adapter block still say themselves.
     if (req.quiet === true) {
       const detail = helperDetail(res.detail, BIND_DETAIL_CAP);
       if (detail !== undefined) ctx.builder.daemonLine(detail);
@@ -1065,7 +1065,7 @@ export class ComputerV2Service {
    *  which stays fixed per incarnation. */
   private hoverNote(ctx: RunCtx, t: { bundleId: string; name: string }): void {
     if (this.hoverNotes.has(ctx.sessionId, t.bundleId)) return;
-    ctx.builder.daemonLine(`${t.name}'s web pages don't react to hover from Winter's pointer while it is in the background — click instead, or app.requestForeground(reason) for a real hover`);
+    ctx.builder.daemonLine(`${t.name}'s web pages don't react to hover from Clover's pointer while it is in the background — click instead, or app.requestForeground(reason) for a real hover`);
     this.hoverNotes.mark(ctx.sessionId, t.bundleId);
   }
 
@@ -1395,8 +1395,8 @@ export class ComputerV2Service {
             if (!(await this.deps.policy.allowForeground(ctx.grants, app, ctx.abort.signal))) {
               throw new AutomationFailure("NeedsForeground", primitive === "menu"
                 // A menu command the app keeps disabled while it is in the background (Finder's Move to Trash).
-                ? `${t.name} only enables that menu command while it is in front, and Winter may not bring it forward now — ask the user to choose it, or to allow foreground use`
-                : `${t.name} only accepts this ${primitive} in the foreground, and Winter may not take the pointer now — try an element ref or another action, or ask the user`);
+                ? `${t.name} only enables that menu command while it is in front, and Clover may not bring it forward now — ask the user to choose it, or to allow foreground use`
+                : `${t.name} only accepts this ${primitive} in the foreground, and Clover may not take the pointer now — try an element ref or another action, or ask the user`);
             }
             this.live(ctx);
             if (releaseForeground === undefined) releaseForeground = await this.takeForeground(ctx);
@@ -1648,7 +1648,7 @@ export class ComputerV2Service {
     const handle = this.keepImage(ctx, res);
     if (args.emit !== false) ctx.builder.image(res.imageBase64, res.mime ?? "image/jpeg");
     else ctx.builder.markScreenRead();
-    // Where Winter's own windows are in it (a picture of an app inside one is Winter's mirror, not the app).
+    // Where Clover's own windows are in it (a picture of an app inside one is Clover's mirror, not the app).
     const detail = helperDetail(res.detail, 500);
     if (detail !== undefined) ctx.builder.daemonLine(detail);
     return handle;
@@ -1814,7 +1814,7 @@ export class ComputerV2Service {
         }
         case "needs_foreground": return { kind: "NeedsForeground", message: `${name} needs the foreground for that — try an element ref, or ask the user` };
         // The desktop switch: one that escaped the ladder (asked again after the user allowed it) — never a bare Error.
-        case "needs_desktop_visit": return { kind: "NeedsForeground", message: `${name}'s window is on another desktop and this needs it on screen, which Winter could not arrange — keep to what works from here, or ask the user to bring the window to this desktop` };
+        case "needs_desktop_visit": return { kind: "NeedsForeground", message: `${name}'s window is on another desktop and this needs it on screen, which Clover could not arrange — keep to what works from here, or ask the user to bring the window to this desktop` };
         case "not_allowed": return { kind: "NotAllowed", message: typeof data.reason === "string" ? `not allowed: ${data.reason}` : `not allowed in ${name}` };
         case "refused": {
           // The helper's own sentence is KEPT — it says what it actually saw (the live gate: VS Code's "can't tell
@@ -2376,7 +2376,7 @@ export function targetLostMessage(name: string, reason: string): string {
 
 function refusedWords(reason: string, name: string, workLift = true): string {
   switch (reason) {
-    case "secure_field": return "that is a password or payment field — Winter never reads or types into one; ask the user to fill it in";
+    case "secure_field": return "that is a password or payment field — Clover never reads or types into one; ask the user to fill it in";
     case "focus_unknown": return `can't tell which field has focus in ${name}, so it could be a password field — pass \`into\` or click a text field first`;
     case "focus_not_placed": return `couldn't put the keyboard focus in that field of ${name}, so nothing was typed — use setValue(ref, text) if it takes a value, or click it first and retry`;
     case "focus_not_editable": return `the focus in ${name} is not a text field, so nothing was typed — click the field or pass { into }`;
@@ -2386,9 +2386,9 @@ function refusedWords(reason: string, name: string, workLift = true): string {
     case "wrong_field_shape": return `the text does not fit the field that has the focus in ${name} (several lines, or a long text, for a one-line field or the browser's own) — pass { into } for the field you mean`;
     case "auth_dialog": return "that is a system authentication dialog — ask the user to handle it";
     case "privacy_pane": return "System Settings' Privacy & Security panes are off limits — ask the user to change them";
-    case "winter_itself": return "Winter never controls itself";
+    case "winter_itself": return "Clover never controls itself";
     case "save_path": return "that save location is protected (shell startup files, ~/.ssh, LaunchAgents) — choose another";
-    case "remote_debugging": return "Winter never turns on or approves remote debugging in a browser — it would give any app on this Mac full control of the browser and its sign-ins. Ask the user to do it if they really want it.";
+    case "remote_debugging": return "Clover never turns on or approves remote debugging in a browser — it would give any app on this Mac full control of the browser and its sign-ins. Ask the user to do it if they really want it.";
     default: return `${name} refused that action${reason ? ` (${reason})` : ""}`;
   }
 }
@@ -2412,9 +2412,9 @@ function visitDuration(ms: number): string {
  *  (5 actions) and back"), or — when the user could not be brought back — a loud notice. */
 export function visitLine(app: string, v: { ms: number; actions: number; returned: boolean; userMoved?: boolean }): { line?: string; notice?: string } {
   const what = `${app}'s desktop for ${visitDuration(v.ms)} (${v.actions} action${v.actions === 1 ? "" : "s"})`;
-  if (v.userMoved === true) return { line: `moved the user to ${what}; they took over during it, so Winter left them where they went` };
+  if (v.userMoved === true) return { line: `moved the user to ${what}; they took over during it, so Clover left them where they went` };
   if (v.returned) return { line: `moved the user to ${what} and back` };
-  return { notice: `Winter moved the user to ${app}'s desktop and could NOT bring them back to their own. Tell the user now, and do nothing more in ${app} until they are back on their desktop.` };
+  return { notice: `Clover moved the user to ${app}'s desktop and could NOT bring them back to their own. Tell the user now, and do nothing more in ${app} until they are back on their desktop.` };
 }
 
 // ── wake triggers (2026-10-12) ───────────────────────────────────────────────────────────────────

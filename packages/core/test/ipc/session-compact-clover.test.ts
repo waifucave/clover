@@ -1,17 +1,17 @@
-// 2026-10-07: `session.compact` on the Winter leg asks the SESSION to compact. It sends `/compact
+// 2026-10-07: `session.compact` on the Clover leg asks the SESSION to compact. It sends `/compact
 // [instructions]` through the session's own driver -- the same door a typed message takes (queued behind a
 // running turn, an idle session resumed) -- and answers `requested: true` with the message's seq. It used to
-// refuse `not_supported_on_winter_leg`, which left the TUI's `/compact` and `winter compact` dead.
+// refuse `not_supported_on_winter_leg`, which left the TUI's `/compact` and `clover compact` dead.
 import { describe, expect, test } from "bun:test";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, ERR, type WritableSocket } from "@yanlinglabs/winter-protocol";
+import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, ERR, type WritableSocket } from "@waifucave/clover-protocol";
 import { startIpcServer } from "../../src/ipc/server";
 import { SessionStore } from "../../src/sessions/store";
 import { FileSecretStore } from "../../src/auth/secret-store";
 import { TokenAuthority } from "../../src/auth/tokens";
-import { WinterLegRefusal, type WinterSessionDrivers, type LegSession } from "../../src/runtime-sdk/session-driver";
+import { CloverLegRefusal, type CloverSessionDrivers, type LegSession } from "../../src/runtime-sdk/session-driver";
 
 class TestClient {
   private decoder = new LineDecoder();
@@ -47,7 +47,7 @@ class TestClient {
   close(): void { this.socket.end(); }
 }
 
-const replaced = () => new WinterLegRefusal("session_replaced", "this session's runtime was replaced while it was starting; send again");
+const replaced = () => new CloverLegRefusal("session_replaced", "this session's runtime was replaced while it was starting; send again");
 
 /** A driver that refuses `session_replaced` (and hands the table its successor) or takes the text. */
 function driver(name: string, replace: boolean, got: string[], onReplaced: () => void): LegSession {
@@ -64,7 +64,7 @@ function driver(name: string, replace: boolean, got: string[], onReplaced: () =>
 }
 
 /** The table's current driver for the session: `drivers[i]`, advanced each time a driver is replaced. */
-function table(replaceFlags: boolean[], got: string[]): WinterSessionDrivers {
+function table(replaceFlags: boolean[], got: string[]): CloverSessionDrivers {
   let i = 0;
   const drivers: LegSession[] = [];
   replaceFlags.forEach((r, n) => drivers.push(driver(`d${n}`, r, got, () => { i = Math.min(i + 1, drivers.length - 1); })));
@@ -80,17 +80,17 @@ function table(replaceFlags: boolean[], got: string[]): WinterSessionDrivers {
     evict: async () => {},
     list: () => [],
     endAll: async () => {},
-  } as unknown as WinterSessionDrivers;
+  } as unknown as CloverSessionDrivers;
 }
 
-async function withServer(t: WinterSessionDrivers, body: (c: TestClient, sessionId: string) => Promise<void>): Promise<void> {
-  const home = mkdtempSync(join(tmpdir(), "winter-compact-"));
+async function withServer(t: CloverSessionDrivers, body: (c: TestClient, sessionId: string) => Promise<void>): Promise<void> {
+  const home = mkdtempSync(join(tmpdir(), "clover-compact-"));
   const store = new SessionStore(home);
   const sessionId = store.createSession("global");
   const authority = new TokenAuthority(new FileSecretStore(join(home, "secrets.json")));
   const tokens = await authority.ensureTokens();
   const socketPath = join(home, "core.sock");
-  const server = startIpcServer({ socketPath, serverVersion: "test", tokens: authority, store, winter: t });
+  const server = startIpcServer({ socketPath, serverVersion: "test", tokens: authority, store, clover: t });
   const c = await TestClient.connect(socketPath);
   try {
     await c.hello(tokens.harness, "mac");
@@ -103,7 +103,7 @@ async function withServer(t: WinterSessionDrivers, body: (c: TestClient, session
   }
 }
 
-describe("session.compact on the Winter leg", () => {
+describe("session.compact on the Clover leg", () => {
   test("sends `/compact` through the session's driver and answers requested, with the message's seq", async () => {
     const got: string[] = [];
     await withServer(table([false], got), async (c, sessionId) => {

@@ -1,5 +1,7 @@
 # Internal jobs
 
+> **Reference: Winter's code.** This file describes Winter's code as it stood at the `winter-before-clover` tag, before the Clover rename (C0). Where it describes code that C0 renamed, read `winter-core` as `clover-core`, `WINTER_*` as `CLOVER_*` and `~/.winter` as `~/.clover`. For Clover itself, [the spec](../clover-spec.md) is the source of truth, then [the plan](../clover-plan.md).
+
 *Read this before touching titles, the bash safety reviewer, the dreamer or the session cleaner — how they pick a model, effort or credential.*
 
 ## The four jobs

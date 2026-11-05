@@ -1,4 +1,4 @@
-// `winter mcp add`/`add-json`/`remove`/`get` (CLI parity with `claude mcp add`/`remove`/`get`) —
+// `clover mcp add`/`add-json`/`remove`/`get` (CLI parity with `claude mcp add`/`remove`/`get`) —
 // the USER-scope RPC handlers (`mcp.add`/`mcp.remove`/`mcp.get`, `ipc/server.ts`). Same bare IPC
 // server harness as `mcp-enable-disable.test.ts` (no real MCP child process needed for these
 // settings.json write-door tests).
@@ -6,7 +6,7 @@ import { afterEach, describe, expect, test, spyOn } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, type WritableSocket } from "@yanlinglabs/winter-protocol";
+import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, type WritableSocket } from "@waifucave/clover-protocol";
 import { startIpcServer, REMOTE_ALLOWED_METHODS } from "../../src/ipc/server";
 import { SessionStore } from "../../src/sessions/store";
 import { FileSecretStore } from "../../src/auth/secret-store";
@@ -60,14 +60,14 @@ describe("mcp.add / mcp.remove / mcp.get", () => {
   let stop: (() => void) | undefined;
   afterEach(() => { stop?.(); stop = undefined; });
 
-  // WS-21: the user scope is `sdk/.winter.json` `mcpServers` (claude's `.claude.json` shape).
+  // WS-21: the user scope is `sdk/.clover.json` `mcpServers` (claude's `.claude.json` shape).
   async function boot(userServers?: Record<string, unknown>) {
-    const home = mkdtempSync(join(tmpdir(), "winter-mcp-add-remove-"));
+    const home = mkdtempSync(join(tmpdir(), "clover-mcp-add-remove-"));
     const base = { schemaVersion: 3 as const, provider: { model: "codex-oauth/gpt-5.6-sol" } };
     saveSettings(join(home, "settings.json"), Settings.parse(base));
     if (userServers !== undefined) {
       mkdirSync(join(home, "sdk"), { recursive: true });
-      writeFileSync(join(home, "sdk", ".winter.json"), JSON.stringify({ numStartups: 7, mcpServers: userServers }));
+      writeFileSync(join(home, "sdk", ".clover.json"), JSON.stringify({ numStartups: 7, mcpServers: userServers }));
     }
     const trust = new TrustStore(join(home, "trust.json"));
     const mcp = new McpManager({ trust });
@@ -76,23 +76,23 @@ describe("mcp.add / mcp.remove / mcp.get", () => {
     const secrets = new FileSecretStore(join(home, "secrets"));
     const authority = new TokenAuthority(secrets);
     const tokens = await authority.ensureTokens();
-    const server = startIpcServer({ socketPath, serverVersion: "test", tokens: authority, store, winterHome: home, secrets, mcp });
+    const server = startIpcServer({ socketPath, serverVersion: "test", tokens: authority, store, cloverHome: home, secrets, mcp });
     stop = () => { server.stop(); store.close(); };
     return { home, socketPath, harnessToken: tokens.harness };
   }
   const globalConfig = (home: string): Record<string, any> => {
-    const path = join(home, "sdk", ".winter.json");
+    const path = join(home, "sdk", ".clover.json");
     return existsSync(path) ? JSON.parse(readFileSync(path, "utf8")) : {};
   };
 
-  test("mcp.add (scope user) writes a stdio entry into sdk/.winter.json mcpServers and mcp.get reads it back", async () => {
+  test("mcp.add (scope user) writes a stdio entry into sdk/.clover.json mcpServers and mcp.get reads it back", async () => {
     const { home, socketPath, harnessToken } = await boot();
     const c = await TestClient.connect(socketPath);
     await c.hello(harnessToken, "cli");
     const add = await c.request(METHODS.mcpAdd, { name: "my-server", entry: { type: "stdio", command: "npx", args: ["my-mcp"] }, scope: "user" });
     expect(add.result).toEqual({ ok: true, name: "my-server", transport: "stdio", started: true, scope: "user" });
     expect(globalConfig(home).mcpServers).toEqual({ "my-server": { type: "stdio", command: "npx", args: ["my-mcp"] } });
-    expect(statSync(join(home, "sdk", ".winter.json")).mode & 0o777).toBe(0o600);
+    expect(statSync(join(home, "sdk", ".clover.json")).mode & 0o777).toBe(0o600);
     // …and never into settings.json, where the key no longer lives.
     expect(JSON.parse(readFileSync(join(home, "settings.json"), "utf8")).mcpServers).toBeUndefined();
     const get = await c.request(METHODS.mcpGet, { name: "my-server", scope: "user" });
@@ -124,10 +124,10 @@ describe("mcp.add / mcp.remove / mcp.get", () => {
     const { home, socketPath, harnessToken } = await boot();
     const c = await TestClient.connect(socketPath);
     await c.hello(harnessToken, "cli");
-    const add = await c.request(METHODS.mcpAdd, { name: "winter__browser", entry: { type: "stdio", command: "x" }, scope: "user" });
+    const add = await c.request(METHODS.mcpAdd, { name: "clover__browser", entry: { type: "stdio", command: "x" }, scope: "user" });
     expect(add.error?.code).toBeDefined();
     expect(add.error?.message).toMatch(/reserved/);
-    expect(existsSync(join(home, "sdk", ".winter.json"))).toBe(false);
+    expect(existsSync(join(home, "sdk", ".clover.json"))).toBe(false);
     c.close();
   });
 
@@ -151,7 +151,7 @@ describe("mcp.add / mcp.remove / mcp.get", () => {
     });
     expect(add.error?.message).toMatch(/credential-shaped/);
     expect(add.error?.message).not.toContain("sk-secret");
-    expect(existsSync(join(home, "sdk", ".winter.json"))).toBe(false);
+    expect(existsSync(join(home, "sdk", ".clover.json"))).toBe(false);
     c.close();
   });
 
@@ -164,7 +164,7 @@ describe("mcp.add / mcp.remove / mcp.get", () => {
     c.close();
   });
 
-  test("mcp.add preserves every OTHER key of sdk/.winter.json", async () => {
+  test("mcp.add preserves every OTHER key of sdk/.clover.json", async () => {
     const { home, socketPath, harnessToken } = await boot({});
     const c = await TestClient.connect(socketPath);
     await c.hello(harnessToken, "cli");
@@ -185,15 +185,15 @@ describe("mcp.add / mcp.remove / mcp.get", () => {
     c.close();
   });
 
-  test("an unparseable sdk/.winter.json is refused typed and left untouched", async () => {
+  test("an unparseable sdk/.clover.json is refused typed and left untouched", async () => {
     const { home, socketPath, harnessToken } = await boot();
     mkdirSync(join(home, "sdk"), { recursive: true });
-    writeFileSync(join(home, "sdk", ".winter.json"), '{"mcpServers": {');
+    writeFileSync(join(home, "sdk", ".clover.json"), '{"mcpServers": {');
     const c = await TestClient.connect(socketPath);
     await c.hello(harnessToken, "cli");
     const add = await c.request(METHODS.mcpAdd, { name: "my-server", entry: { type: "stdio", command: "x" }, scope: "user" });
     expect(add.error?.data?.code).toBe("sdk_file_unreadable");
-    expect(readFileSync(join(home, "sdk", ".winter.json"), "utf8")).toBe('{"mcpServers": {');
+    expect(readFileSync(join(home, "sdk", ".clover.json"), "utf8")).toBe('{"mcpServers": {');
     c.close();
   });
 

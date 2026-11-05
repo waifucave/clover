@@ -70,8 +70,8 @@ describe("the monitor analysis", () => {
     expect(doneWindowModel([row("a", "bind", "pass"), row("cleanup", "run", "fail")], 1, 1, "").status).toBe("fail");
     expect(doneWindowModel([row("a", "bind", "pass"), row("ABORTED", "run", "fail"), row("cleanup", "run", "pass")], 1, 1, "").status).toBe("aborted");
     expect(doneWindowModel([row("setup", "run", "fail")], 1, 1, "").status).toBe("aborted");
-    const args = doneWindowOpenArgs("/x/Winter CU Live Result.app", doneWindowModel(ok, 1, 2, "/r.json"));
-    expect(args.slice(0, 6)).toEqual(["-n", "-g", "-a", "/x/Winter CU Live Result.app", "--args", "--done"]);
+    const args = doneWindowOpenArgs("/x/Clover CU Live Result.app", doneWindowModel(ok, 1, 2, "/r.json"));
+    expect(args.slice(0, 6)).toEqual(["-n", "-g", "-a", "/x/Clover CU Live Result.app", "--args", "--done"]);
     expect(JSON.parse(args[6]!)).toMatchObject({ status: "pass", passed: 2, path: "/r.json" });
   });
 
@@ -178,8 +178,8 @@ describe("the monitor analysis", () => {
     expect(countdownDecision([at(1_000, 7, 400), at(5_000, 7, 400, [60, 5]), at(31_000, 7, 400, [60, 5])], 1_000, 31_000, 30_000)).toEqual({ kind: "go" });
     // Input BEFORE the banner went up is the idle gate's business, not the countdown's.
     expect(countdownDecision([at(500, 6, 450), at(1_000, 7, 900), at(31_000, 7, 900)], 1_000, 31_000, 30_000)).toEqual({ kind: "go" });
-    expect(bannerOpenArgs("/o/Winter CU Live Result.app", { kind: "countdown", seconds: 30, watchPid: 9 }))
-      .toEqual(["-n", "-g", "-a", "/o/Winter CU Live Result.app", "--args", "--banner", '{"kind":"countdown","seconds":30,"watchPid":9}']);
+    expect(bannerOpenArgs("/o/Clover CU Live Result.app", { kind: "countdown", seconds: 30, watchPid: 9 }))
+      .toEqual(["-n", "-g", "-a", "/o/Clover CU Live Result.app", "--args", "--banner", '{"kind":"countdown","seconds":30,"watchPid":9}']);
   });
 
   test("the start plan: a regular desktop stays put; a full-screen start records the app and Space to return to", () => {
@@ -379,7 +379,7 @@ describe("the scenarios", () => {
     expect(seen.session).toBe("fresh");
     expect(seen.prepare?.map((p) => ("cmd" in p ? p.cmd : "turn" in p ? "turn" : "returnUser"))).toEqual(["restoreSpace", "returnUser", "turn", "offspace", "returnUser"]);
     const ok = (o: Record<string, unknown>, output: string): boolean => seen.verify({ output, isError: false, facts: o, events: [], since: 0, probe: [], metrics: [], shots: [] }).every((c) => c.ok);
-    expect(ok({ hasField: true, noAxNote: false, onScreen: [false] }, "bound Winter CU Fixture")).toBe(true);
+    expect(ok({ hasField: true, noAxNote: false, onScreen: [false] }, "bound Clover CU Fixture")).toBe(true);
     expect(ok({ hasField: false, noAxNote: true, onScreen: [false] }, "bound … as capture only")).toBe(false);
     // Keys refused with focus_not_placed is the documented alternative to keys landing.
     const actOk = (typed: string, events: FixtureEvent[]): boolean => act.verify({ output: "", isError: false, facts: { typed }, events, since: 0, probe: [], metrics: [], shots: [] }).every((c) => c.ok);
@@ -406,14 +406,14 @@ describe("the scenarios", () => {
     expect(refused.allowExcursionMs).toBeUndefined(); // refused: the strict focus check — nothing may move
     expect(allowed.desktopSwitch?.answer).toBe("allow");
     expect(allowed.allowExcursionMs).toBe(DESKTOP_VISIT_MAX_AWAY_MS);
-    const card = { toolName: "ComputerV2", onTimeout: "allow", issuedAt: 1_000, expiresAt: 61_000, summary: `Switch to Winter CU Fixture's desktop for a moment? Winter CU Fixture (dev.cu-live.fixture) — ${LIVE_REASON}. …` };
+    const card = { toolName: "ComputerV2", onTimeout: "allow", issuedAt: 1_000, expiresAt: 61_000, summary: `Switch to Clover CU Fixture's desktop for a moment? Clover CU Fixture (dev.cu-live.fixture) — ${LIVE_REASON}. …` };
     const prompt = { cards: [card], panelSeen: true, panelGone: true };
     const ctx = (over: Record<string, unknown>) => ({ output: "", isError: false, facts: {}, events: [], since: 0, probe: [], metrics: [], shots: [], prompt, ...over });
     const passes = (sc: typeof allowed, c: Record<string, unknown>): boolean => sc.verify(ctx(c) as never).every((x) => x.ok);
     const shot = { file: "a.jpg", width: 800, height: 600, stddevLuma: 30, blank: false, sentinelPixels: 900 };
     const visitLine = { primitive: "desktop.visit", visit: { actions: 2, ms: 1_400, returned: true } };
     const allowedOk = {
-      facts: { w: 800, h: 600, w2: 800 }, shots: [shot], output: "moved the user to Winter CU Fixture's desktop for 1.4 s (2 actions) and back\n",
+      facts: { w: 800, h: 600, w2: 800 }, shots: [shot], output: "moved the user to Clover CU Fixture's desktop for 1.4 s (2 actions) and back\n",
       metrics: [{ primitive: "screenshot", visitAnswer: "allow", inVisit: true }, { primitive: "screenshot", inVisit: true }, visitLine],
     };
     expect(passes(allowed, allowedOk)).toBe(true);
@@ -424,7 +424,7 @@ describe("the scenarios", () => {
     expect(passes(allowed, { ...allowedOk, output: allowedOk.output + allowedOk.output })).toBe(false);
     expect(passes(allowed, { ...allowedOk, metrics: [allowedOk.metrics[0]!, { primitive: "desktop.visit", visit: { actions: 2, ms: 1, returned: false } }] })).toBe(false);
     expect(passes(allowed, { ...allowedOk, output: "" })).toBe(false);
-    const refusedOk = { facts: { error: "NeedsForeground", message: "the user refused to be moved to Winter CU Fixture's desktop — ask them in your reply if it is needed" }, metrics: [{ primitive: "screenshot", visitAnswer: "refuse" }] };
+    const refusedOk = { facts: { error: "NeedsForeground", message: "the user refused to be moved to Clover CU Fixture's desktop — ask them in your reply if it is needed" }, metrics: [{ primitive: "screenshot", visitAnswer: "refuse" }] };
     expect(passes(refused, refusedOk)).toBe(true);
     expect(passes(refused, { ...refusedOk, metrics: [...refusedOk.metrics, { primitive: "desktop.visit", visit: { actions: 1, ms: 1, returned: true } }] })).toBe(false);
     expect(passes(refused, { ...refusedOk, prompt: { ...prompt, panelGone: false } })).toBe(false);
@@ -445,9 +445,9 @@ describe("the scenarios", () => {
     expect(finder.code).not.toContain("applescript");
     expect(finder.code).toContain(REAL_DIR_TOKEN);
     for (const s of REAL_APP_SCENARIOS) expect(s.code).not.toContain(".applescript(");
-    const placed = withRealDir(finder, "/tmp/winter-cu-live-x/cu-live-real");
+    const placed = withRealDir(finder, "/tmp/clover-cu-live-x/cu-live-real");
     expect(placed.code).not.toContain(REAL_DIR_TOKEN);
-    expect(placed.code).toContain("/tmp/winter-cu-live-x/cu-live-real/cu-live-folder");
+    expect(placed.code).toContain("/tmp/clover-cu-live-x/cu-live-real/cu-live-folder");
     const verify = (facts: Record<string, unknown>): boolean => finder.verify({ output: "", isError: false, facts, events: [], since: 0, probe: [], metrics: [], shots: [] }).every((c) => c.ok);
     expect(verify({ skipped: "Finder showed the folder in a window accessibility never saw (another Space: capture only) — left as it is" })).toBe(true);
     expect(verify({ alpha: true, beta: true, closed: "no sheet" })).toBe(true);
@@ -480,7 +480,7 @@ describe("the scenarios", () => {
 
 describe("the live daemon refuses every home but a fresh temp one", () => {
   test("default homes, relative, missing, outside the temp dir, or without the marker are refused", () => {
-    const root = mkdtempSync(join(tmpdir(), "winter-cu-live-"));
+    const root = mkdtempSync(join(tmpdir(), "clover-cu-live-"));
     const other = mkdtempSync(join(tmpdir(), "not-live-"));
     try {
       const home = join(root, "home");
@@ -489,7 +489,7 @@ describe("the live daemon refuses every home but a fresh temp one", () => {
       expect(liveHomeRefusal(undefined, tmpdir())).toContain("not set");
       expect(liveHomeRefusal("relative/home", tmpdir())).toContain("absolute");
       expect(liveHomeRefusal(join(root, "missing"), tmpdir())).toContain("does not exist");
-      expect(liveHomeRefusal(other, tmpdir())).toContain("winter-cu-live-");
+      expect(liveHomeRefusal(other, tmpdir())).toContain("clover-cu-live-");
       expect(liveHomeRefusal(homedir(), tmpdir())).toContain("temp dir");
     } finally {
       rmSync(root, { recursive: true, force: true });

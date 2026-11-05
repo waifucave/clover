@@ -13,24 +13,24 @@
     "examples/battery-limiter": {
       "name": "battery-limiter",
       "dependencies": {
-        "@yanlinglabs/winter-plugin-sdk": "workspace:*",
+        "@waifucave/clover-plugin-sdk": "workspace:*",
       },
     },
     "examples/sample-echo": {
       "name": "sample-echo",
       "dependencies": {
-        "@yanlinglabs/winter-plugin-sdk": "workspace:*",
+        "@waifucave/clover-plugin-sdk": "workspace:*",
       },
     },
     "packages/cli": {
-      "name": "@yanlinglabs/winter-cli",
+      "name": "@waifucave/clover-cli",
       "version": "0.124.0",
       "bin": {
-        "winter": "./src/main.ts",
+        "clover": "./src/main.ts",
       },
       "dependencies": {
-        "@yanlinglabs/winter-core": "workspace:*",
-        "@yanlinglabs/winter-protocol": "workspace:*",
+        "@waifucave/clover-core": "workspace:*",
+        "@waifucave/clover-protocol": "workspace:*",
         "chalk": "^5.6.2",
         "cli-highlight": "^2.1.11",
         "figures": "^6.1.0",
@@ -46,12 +46,12 @@
       },
     },
     "packages/core": {
-      "name": "@yanlinglabs/winter-core",
+      "name": "@waifucave/clover-core",
       "version": "0.124.0",
       "dependencies": {
+        "@waifucave/clover-protocol": "workspace:*",
         "@yanlinglabs/winter-agent-runtime": "0.0.55",
         "@yanlinglabs/winter-agent-sdk": "0.0.55",
-        "@yanlinglabs/winter-protocol": "workspace:*",
         "@yanlinglabs/winter-provider-catalog": "0.0.55",
         "@yanlinglabs/winter-provider-runtime": "0.0.55",
         "@yanlinglabs/winter-runtime-sdk": "^0.0.16",
@@ -63,14 +63,14 @@
       },
     },
     "packages/plugin-sdk": {
-      "name": "@yanlinglabs/winter-plugin-sdk",
+      "name": "@waifucave/clover-plugin-sdk",
       "version": "0.124.0",
       "dependencies": {
-        "@yanlinglabs/winter-protocol": "workspace:*",
+        "@waifucave/clover-protocol": "workspace:*",
       },
     },
     "packages/protocol": {
-      "name": "@yanlinglabs/winter-protocol",
+      "name": "@waifucave/clover-protocol",
       "version": "0.124.0",
       "dependencies": {
         "zod": "^4.0.0",
@@ -131,6 +131,14 @@
 
     "@types/react": ["@types/react@18.3.31", "", { "dependencies": { "@types/prop-types": "*", "csstype": "^3.2.2" } }, "sha512-vfEqpXTvwT91yhmwdfouStN2hSKwTvyRs8qpLfADyrq/kxDw0hZM7Wk9Ug1FELj8hIby+S/+kQCSRFF32nv2Qw=="],
 
+    "@waifucave/clover-cli": ["@waifucave/clover-cli@workspace:packages/cli"],
+
+    "@waifucave/clover-core": ["@waifucave/clover-core@workspace:packages/core"],
+
+    "@waifucave/clover-plugin-sdk": ["@waifucave/clover-plugin-sdk@workspace:packages/plugin-sdk"],
+
+    "@waifucave/clover-protocol": ["@waifucave/clover-protocol@workspace:packages/protocol"],
+
     "@winter-spike/bun-compile": ["@winter-spike/bun-compile@workspace:spikes/bun-compile"],
 
     "@yanlinglabs/winter-agent-runtime": ["@yanlinglabs/winter-agent-runtime@0.0.55", "", { "dependencies": { "@modelcontextprotocol/client": "^2.1.0", "@yanlinglabs/winter-agent-sdk": "0.0.55", "@yanlinglabs/winter-provider-catalog": "0.0.55", "@yanlinglabs/winter-provider-runtime": "0.0.55", "ajv": "^8.20.0", "ignore": "7.0.5" } }, "sha512-phmdKQPgrxeHAaOe5HWrgAk6XqerdAmuwgqX1xZ4FhLylYfCQ/Hgd9uOpz209yIcCWR5nAv1Uh2PkI0w9QoR/A=="],
@@ -138,14 +146,6 @@
     "@yanlinglabs/winter-agent-sdk": ["@yanlinglabs/winter-agent-sdk@0.0.55", "", { "dependencies": { "@yanlinglabs/winter-provider-catalog": "0.0.55" }, "optionalDependencies": { "@yanlinglabs/winter-agent-sdk-darwin-arm64": "0.0.55" } }, "sha512-hNtiSPscLKWprvYNMOtt8+r/1xZLdMkju9ND2NqnBREtatiLdol/XeSkUM1hWtNT0LUX9jAOhpxjbi9UidTJYA=="],
 
     "@yanlinglabs/winter-agent-sdk-darwin-arm64": ["@yanlinglabs/winter-agent-sdk-darwin-arm64@0.0.55", "", { "os": "darwin", "cpu": "arm64", "bin": { "winter": "bin/winter" } }, "sha512-bL8IPF8FTCxFDDWxf/210RtMDh/x5z5YNPaZSEJA1Cg0aMu8f/cWMA0wxJ9jE2q17biO5wzTIburlrBNgX1f+g=="],
-
-    "@yanlinglabs/winter-cli": ["@yanlinglabs/winter-cli@workspace:packages/cli"],
-
-    "@yanlinglabs/winter-core": ["@yanlinglabs/winter-core@workspace:packages/core"],
-
-    "@yanlinglabs/winter-plugin-sdk": ["@yanlinglabs/winter-plugin-sdk@workspace:packages/plugin-sdk"],
-
-    "@yanlinglabs/winter-protocol": ["@yanlinglabs/winter-protocol@workspace:packages/protocol"],
 
     "@yanlinglabs/winter-provider-catalog": ["@yanlinglabs/winter-provider-catalog@0.0.55", "", {}, "sha512-DQmkUVJfkY2Y7iF2WPNh7Fg7ru3XDZpboPfjTlev3EnAQl6meLb5uOHnNNxBKSd/8HNKxxQ2gAJkTI61XajA2A=="],
 
@@ -319,7 +319,7 @@
 
     "wrap-ansi": ["wrap-ansi@10.0.0", "", { "dependencies": { "ansi-styles": "^6.2.3", "string-width": "^8.2.0", "strip-ansi": "^7.1.2" } }, "sha512-SGcvg80f0wUy2/fXES19feHMz8E0JoXv2uNgHOu4Dgi2OrCy1lqwFYEJz1BLbDI0exjPMe/ZdzZ/YpGECBG/aQ=="],
 
-    "ws": ["ws@7.5.11", "", {}, "sha512-zS54Oen9bITtp7kp2XM3AydrCIq1D+HwJOuH+c+e4LfpL/lotP5osijd+UoMnxwAam1GN8R4KtLAyIrIcBNpiA=="],
+    "ws": ["ws@8.21.0", "", {}, "sha512-Vsp28b7DRcimFQvrqu2Wek3z1iYxDCWqHYB8Qsnk/S4RfaCQzPGPyBNuVjJV3cd6UiKtUtp6sNM77gWvzcCH+g=="],
 
     "y18n": ["y18n@5.0.8", "", {}, "sha512-0pfFzegeDWJHJIAmTLRP2DwHjdF5s7jo9tuztdQxAhINCdvS+3nGINqPd00AphqJR/0LhANUS6/+7SCb98YOfA=="],
 
@@ -347,9 +347,9 @@
 
     "ink/wrap-ansi": ["wrap-ansi@9.0.2", "", { "dependencies": { "ansi-styles": "6.2.3", "string-width": "7.2.0", "strip-ansi": "7.2.0" } }, "sha512-42AtmgqjV+X1VpdOfyTGOYRi0/zsoLqtXQckTmqTeybT+BDIbM/Guxo7x3pE2vtpr1ok6xRqM9OpBe+Jyoqyww=="],
 
-    "ink/ws": ["ws@8.21.0", "", {}, "sha512-Vsp28b7DRcimFQvrqu2Wek3z1iYxDCWqHYB8Qsnk/S4RfaCQzPGPyBNuVjJV3cd6UiKtUtp6sNM77gWvzcCH+g=="],
-
     "parse5-htmlparser2-tree-adapter/parse5": ["parse5@6.0.1", "", {}, "sha512-Ofn/CTFzRGTTxwpNEs9PP93gXShHcTq255nzRYSKe8AkVpZY7e1fpmTfOyoIvjP5HG7Z2ZM7VS9PPhQGW2pOpw=="],
+
+    "react-devtools-core/ws": ["ws@7.5.11", "", {}, "sha512-zS54Oen9bITtp7kp2XM3AydrCIq1D+HwJOuH+c+e4LfpL/lotP5osijd+UoMnxwAam1GN8R4KtLAyIrIcBNpiA=="],
 
     "slice-ansi/is-fullwidth-code-point": ["is-fullwidth-code-point@5.1.0", "", { "dependencies": { "get-east-asian-width": "1.6.0" } }, "sha512-5XHYaSyiqADb4RnZ1Bdad6cPp8Toise4TzEjcOYDHZkTCbKgiUl7WTUCpNWHuxmDt91wnsZBc9xinNzopv3JMQ=="],
 

@@ -9,7 +9,7 @@ import { TOKEN_NAMES } from "../../src/auth/tokens";
 import { keychainService } from "../../src/profile";
 import { OPENAI_API_KEY_SECRET } from "../../src/providers/manager";
 import { CODEX_SECRET_NAMES, CodexAuthStore, writeOpenAiApiKey } from "../../src/auth/credential-material";
-import { credentialInventory, credentialPresenceFrom, credentialPresentProbe, credentialRefFor, isInScopeApiKeyProvider, refMaterialPresent, WINTER_CREDENTIAL_INVENTORY, ANTHROPIC_CREDENTIAL_SECRET_NAME, ANTHROPIC_CONSOLE_CREDENTIAL_SECRET_NAME } from "../../src/runtime-sdk/keychain";
+import { credentialInventory, credentialPresenceFrom, credentialPresentProbe, credentialRefFor, isInScopeApiKeyProvider, refMaterialPresent, CLOVER_CREDENTIAL_INVENTORY, ANTHROPIC_CREDENTIAL_SECRET_NAME, ANTHROPIC_CONSOLE_CREDENTIAL_SECRET_NAME } from "../../src/runtime-sdk/keychain";
 import { loadCatalog } from "@yanlinglabs/winter-provider-catalog";
 import { ANTHROPIC_CONSOLE_CREDENTIAL_ACCOUNT } from "@yanlinglabs/winter-provider-runtime";
 import { Settings } from "../../src/settings";
@@ -18,7 +18,7 @@ import { Settings } from "../../src/settings";
 // discriminated union with NO `api_key` kind and NO `provider`/`secretName` fields — the brief's
 // `{ kind: "api_key", provider, secretName }` placeholder does not exist on the installed type.
 // The kind that names a Keychain-backed secret is `{ kind: "keychain"; account: string; service?:
-// string }`; `account` is the secret name, `service` is Winter's own `keychainService()`
+// string }`; `account` is the secret name, `service` is Clover's own `keychainService()`
 // (see keychain.ts's `credentialRefFor`).
 //
 // HOTFIX (post-8b, 2026-09-11): the inventory's secret names moved from raw token/key strings
@@ -69,7 +69,7 @@ describe("credential inventory and presence over SecretStore", () => {
 
   test("credentialPresenceFrom: authByProvider (P8c-10) — openai and anthropic are api-key, codex-oauth is custom", async () => {
     await writeOpenAiApiKey(store, "sk-test");
-    await store.set(WINTER_CREDENTIAL_INVENTORY.find((s) => s.provider === "anthropic")!.secretName, JSON.stringify({ kind: "api-key", key: "sk-ant-test" }));
+    await store.set(CLOVER_CREDENTIAL_INVENTORY.find((s) => s.provider === "anthropic")!.secretName, JSON.stringify({ kind: "api-key", key: "sk-ant-test" }));
     const presence = await credentialPresenceFrom(store);
     expect(presence.authByProvider).toEqual({ openai: { authFamily: "api-key" }, anthropic: { authFamily: "api-key" } });
   });
@@ -116,7 +116,7 @@ describe("credential inventory and presence over SecretStore", () => {
   });
 
   test("credentialPresenceFrom: PRESENCE IS PARSEABILITY (hotfix review r1, M1) — a raw non-JSON leftover (the OLD pre-hotfix shape) is ABSENT, never present", async () => {
-    await store.set(WINTER_CREDENTIAL_INVENTORY.find((s) => s.provider === "codex-oauth")!.secretName, "codex-token");
+    await store.set(CLOVER_CREDENTIAL_INVENTORY.find((s) => s.provider === "codex-oauth")!.secretName, "codex-token");
     const presence = await credentialPresenceFrom(store);
     expect(presence.byProvider["codex-oauth"]).toBeUndefined();
   });
@@ -135,7 +135,7 @@ describe("credential inventory and presence over SecretStore", () => {
     // The inventory is ~150 rows; the per-slot form turned one fault into 148 identical lines on
     // every session open.
     expect(lines).toHaveLength(1);
-    expect(lines[0]).toContain(`${WINTER_CREDENTIAL_INVENTORY.length} of ${WINTER_CREDENTIAL_INVENTORY.length} presence probe(s) failed`);
+    expect(lines[0]).toContain(`${CLOVER_CREDENTIAL_INVENTORY.length} of ${CLOVER_CREDENTIAL_INVENTORY.length} presence probe(s) failed`);
     // The error CODE only — never a secret name, never the message text, never a value.
     expect(lines[0]).toContain("EKEYCHAINLOCKED");
     expect(lines[0]).not.toContain("openai:default");
@@ -150,7 +150,7 @@ describe("credential inventory and presence over SecretStore", () => {
   // "providers live in the SDKs" ruling.
   describe("the derived inventory (WS-19 W19-1)", () => {
     test("today's four rows are the PREFIX, verbatim and in order — credential.list's order and the no-default-model refusal's naming follow it", () => {
-      expect(WINTER_CREDENTIAL_INVENTORY.slice(0, 4)).toEqual([
+      expect(CLOVER_CREDENTIAL_INVENTORY.slice(0, 4)).toEqual([
         { provider: "openai", secretName: "openai:default", kind: "keychain" },
         { provider: "codex-oauth", secretName: "codex-oauth:default", kind: "keychain" },
         { provider: "anthropic", secretName: "anthropic:default", kind: "keychain" },
@@ -165,31 +165,31 @@ describe("credential inventory and presence over SecretStore", () => {
       const inScope = loadCatalog().providers.filter(isInScopeApiKeyProvider);
       // `openai` and `anthropic` are themselves in-scope api-key rows and appear once each; the two
       // EXTRA rows are `codex-oauth:default` and `anthropic:console`, neither of which is derived.
-      expect(WINTER_CREDENTIAL_INVENTORY.length).toBe(inScope.length + 2);
-      expect(credentialInventory()).toBe(WINTER_CREDENTIAL_INVENTORY); // memoised, one array
+      expect(CLOVER_CREDENTIAL_INVENTORY.length).toBe(inScope.length + 2);
+      expect(credentialInventory()).toBe(CLOVER_CREDENTIAL_INVENTORY); // memoised, one array
     });
 
     test("every row's secretName is <providerId>:default (bar the Console's fixed account), and every provider appears exactly once", () => {
-      for (const slot of WINTER_CREDENTIAL_INVENTORY) {
+      for (const slot of CLOVER_CREDENTIAL_INVENTORY) {
         if (slot.secretName === "anthropic:console") continue;
         expect(slot.secretName).toBe(`${slot.provider}:default`);
         expect(slot.kind).toBe("keychain");
       }
       const counts = new Map<string, number>();
-      for (const slot of WINTER_CREDENTIAL_INVENTORY) counts.set(slot.provider, (counts.get(slot.provider) ?? 0) + 1);
+      for (const slot of CLOVER_CREDENTIAL_INVENTORY) counts.set(slot.provider, (counts.get(slot.provider) ?? 0) + 1);
       expect([...counts].filter(([, n]) => n > 1)).toEqual([]);
       // The Console's account keeps its `anthropic:` prefix (renaming a Keychain item would strand every
       // signed-in home) but belongs to the `console` provider — the one row whose name is not derived.
-      expect(WINTER_CREDENTIAL_INVENTORY.filter((s) => s.secretName === "anthropic:console")).toEqual([{ provider: "console", secretName: "anthropic:console", kind: "keychain" }]);
+      expect(CLOVER_CREDENTIAL_INVENTORY.filter((s) => s.secretName === "anthropic:console")).toEqual([{ provider: "console", secretName: "anthropic:console", kind: "keychain" }]);
     });
 
     test("the providers WS-18's five-hop chain needs are IN — this is the whole reason the inventory was derived", () => {
-      const ids = new Set(WINTER_CREDENTIAL_INVENTORY.map((s) => s.provider));
+      const ids = new Set(CLOVER_CREDENTIAL_INVENTORY.map((s) => s.provider));
       for (const id of ["deepseek", "zai", "openrouter", "google", "xai"]) expect(ids.has(id)).toBe(true);
     });
 
     test("endpoint-required, local-none and blocked rows are OUT — by construction, never by a denylist", () => {
-      const ids = new Set(WINTER_CREDENTIAL_INVENTORY.map((s) => s.provider));
+      const ids = new Set(CLOVER_CREDENTIAL_INVENTORY.map((s) => s.provider));
       // `requiresUserEndpoint` rows ship with a placeholder host, so a credential slot for one
       // would route a session at a literal `<resource>` domain.
       for (const id of ["azure-ai", "oci"]) expect(ids.has(id)).toBe(false);
@@ -220,7 +220,7 @@ describe("credential inventory and presence over SecretStore", () => {
       CODEX_SECRET_NAMES.account,
       CODEX_SECRET_NAMES.expires,
     ];
-    const inventoryNames = new Set(WINTER_CREDENTIAL_INVENTORY.map((s) => s.secretName));
+    const inventoryNames = new Set(CLOVER_CREDENTIAL_INVENTORY.map((s) => s.secretName));
     for (const name of excluded) expect(inventoryNames.has(name)).toBe(false);
   });
 
@@ -241,7 +241,7 @@ describe("credential inventory and presence over SecretStore", () => {
       // provider — and since the live-gate fix it is the inventory's own `console` row, so presence
       // (`credentialPresenceFrom`) reads the very slot this ref names.
       expect(credentialRefFor("console", dir)).toEqual({ kind: "keychain", account: ANTHROPIC_CONSOLE_CREDENTIAL_SECRET_NAME, service: keychainService(undefined, dir) });
-      expect(WINTER_CREDENTIAL_INVENTORY.find((s) => s.provider === "console")?.secretName).toBe(ANTHROPIC_CONSOLE_CREDENTIAL_SECRET_NAME);
+      expect(CLOVER_CREDENTIAL_INVENTORY.find((s) => s.provider === "console")?.secretName).toBe(ANTHROPIC_CONSOLE_CREDENTIAL_SECRET_NAME);
     });
 
     test("every OTHER provider is an ordinary fixed inventory row", () => {
@@ -249,19 +249,19 @@ describe("credential inventory and presence over SecretStore", () => {
     });
   });
 
-  // Test-keychain-isolation TRIPWIRE: `test/preload.ts` sets `WINTER_KEYCHAIN_SERVICE` for the
+  // Test-keychain-isolation TRIPWIRE: `test/preload.ts` sets `CLOVER_KEYCHAIN_SERVICE` for the
   // whole run, and every real daemon/session in this test process runs on a temp (non-default)
-  // `WINTER_HOME` — so a resolution built for ANY test home must never land back on the real
-  // `com.winter.core[.dev]` service, no matter which function does the resolving. This fails loudly
+  // `CLOVER_HOME` — so a resolution built for ANY test home must never land back on the real
+  // `com.waifucave.clover.core[.dev]` service, no matter which function does the resolving. This fails loudly
   // the moment either the preload's override or `keychainService()`'s default-home guard regresses.
   test("TRIPWIRE: a test-homed credentialRefFor resolution never equals the REAL Keychain service", () => {
-    expect(process.env.WINTER_KEYCHAIN_SERVICE).toBeTruthy(); // preload precondition — if this is unset, the tripwire is meaningless
+    expect(process.env.CLOVER_KEYCHAIN_SERVICE).toBeTruthy(); // preload precondition — if this is unset, the tripwire is meaningless
     const ref = credentialRefFor("openai", dir); // `dir` (beforeEach) is a temp, non-default home
     if (ref?.kind !== "keychain") throw new Error("expected a keychain CredentialRef for a known provider");
     expect(ref.service).toBeDefined();
-    expect(ref.service).not.toBe("com.winter.core");
-    expect(ref.service).not.toBe("com.winter.core.dev");
-    expect(ref.service).toBe(process.env.WINTER_KEYCHAIN_SERVICE);
+    expect(ref.service).not.toBe("com.waifucave.clover.core");
+    expect(ref.service).not.toBe("com.waifucave.clover.core.dev");
+    expect(ref.service).toBe(process.env.CLOVER_KEYCHAIN_SERVICE);
   });
 });
 

@@ -6,7 +6,7 @@
 // It answers ONE question for the guest tool classes: given the conversation's approval policy, the tool
 // class, the class of path it targets and the EFFECTIVE capability ceiling, is the call allowed, asked or
 // denied by the host policy check? It decides nothing else:
-//   - it is NOT the Bash reviewer ("Preserve Winter's existing `auto` reviewer semantics ...", line 82):
+//   - it is NOT the Bash reviewer ("Preserve Clover's existing `auto` reviewer semantics ...", line 82):
 //     Bash under `auto` is `allow` here and ALWAYS carries `bashReview: true`, whether or not a saved rule or a
 //     delegation bound applies. The review skip belongs to the hook, not to this layer: in Code,
 //     `bashReviewerHook` (runtime-sdk/hooks.ts) skips the model review only for `bashLooksSafe` commands, never
@@ -50,10 +50,10 @@
 //     `/workspace/outputs` root are `outside`). Owner decision 2026-10-18, from docs/cowork-spec.md ("`outputs/<session-id>` is an
 //     optional destination for user-facing deliverables"; scratch is the "Persistent conversation TMPDIR", and the contracts call
 //     "Memory and scratch ... separately writable subtrees"): Read is Allow in every policy; Write and Edit follow the SAME row as an
-//     admitted root (plan Deny, ask Ask, accept-edits/auto/bypass Allow, dont-ask only if authorized), so plan x `.winter` scratch Write/Edit
+//     admitted root (plan Deny, ask Ask, accept-edits/auto/bypass Allow, dont-ask only if authorized), so plan x `.clover` scratch Write/Edit
 //     is a plain Deny. Plan's own writable scratch is the separate class `planScratch` below. Bash and Workflow are pathless and never
 //     take these classes (denied as `path_unclassified`);
-//   - `planScratch` is the epoch-scoped planning scratch OUTSIDE `.winter`, `/workspace/plan/<session-id>/<epoch>` (owner decision
+//   - `planScratch` is the epoch-scoped planning scratch OUTSIDE `.clover`, `/workspace/plan/<session-id>/<epoch>` (owner decision
 //     2026-10-19; contract: "Scope scratch by conversation and policy epoch so a later auto execution cannot execute files planted in a
 //     plan scratch directory"). It means the conversation's OWN id and its CURRENT epoch only (the caller narrows; the epoch is the
 //     bridge's port, never read from the path). Read is Allow in every policy; Write and Edit are `allow-in-plan-view` under plan (the
@@ -86,7 +86,7 @@
 //
 // Nothing here may grow a new `CoworkErrorCode`: a denial is a value, not an error.
 
-import type { ApprovalPolicy } from "@yanlinglabs/winter-protocol";
+import type { ApprovalPolicy } from "@waifucave/clover-protocol";
 import type { ConnectorPermission } from "../agent/mcp/connector-permissions";
 import type { CapabilityCeiling } from "./types";
 
@@ -108,7 +108,7 @@ export const COWORK_GUEST_TOOL_CLASSES: readonly CoworkGuestToolClass[] = Object
  *  - `outputs`              the conversation's OWN `/workspace/outputs/<session-id>` (see the header);
  *  - `scratch`              the conversation's OWN `/workspace/.winter/scratch/<session-id>` (see the header);
  *  - `planScratch`          the conversation's OWN `/workspace/plan/<session-id>/<current epoch>` (see the header);
- *  - `protected`            run homes, SDK stores, another conversation's store, the protected `.winter` skeleton;
+ *  - `protected`            run homes, SDK stores, another conversation's store, the protected `.clover` skeleton;
  *  - `outside`              anything not admitted;
  *  - `none`                 the call names no path (Bash, Workflow), or the host could not classify one.
  */
@@ -143,7 +143,7 @@ export interface CoworkHostDecisionInput {
 export interface CoworkHostDecision {
   readonly verdict: CoworkHostVerdict;
   readonly reason: CoworkHostReason;
-  /** `auto` x Bash, always: the Winter reviewer semantics apply on top of this allow (line 82); skipping is the hook's `bashLooksSafe`, not a saved rule. */
+  /** `auto` x Bash, always: the Clover reviewer semantics apply on top of this allow (line 82); skipping is the hook's `bashLooksSafe`, not a saved rule. */
   readonly bashReview: boolean;
 }
 

@@ -1,7 +1,7 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { z } from "zod";
-import { execPayloadLines, loadManifest, requiredConsentClasses, type WinterManifest } from "./plugin-manifest";
+import { execPayloadLines, loadManifest, requiredConsentClasses, type CloverManifest } from "./plugin-manifest";
 import { sdkPluginsRoot } from "./paths";
 import { sdkEnabledPlugins } from "../settings";
 import { consentedClassesFor, pluginConsentFingerprint, type PluginConsentRecordV2 } from "../plugins/consent-fingerprint";
@@ -29,7 +29,7 @@ export interface PluginInfo {
    *  supervisor, the plugin's token, its connection and its tools are all keyed by it: the bare `name`
    *  is not unique across marketplaces, so two marketplaces' same-named plugins collided on it. */
   spec: string;
-  /** winter-plugin.json tier, when a valid manifest was found. undefined for legacy (plugin.json-only) plugins. */
+  /** clover-plugin.json tier, when a valid manifest was found. undefined for legacy (plugin.json-only) plugins. */
   tier?: "capability" | "platform";
   /** Consent classes ("exec"|"tcc"|"hardware") the manifest requires, per plugin-manifest.ts#requiredConsentClasses. [] for legacy plugins. */
   requiredConsents: string[];
@@ -39,7 +39,7 @@ export interface PluginInfo {
    *  a stale fingerprint (a different install folder or an edited entry), or no record at all all
    *  read as []. See `plugins/consent-fingerprint.ts`. */
   consented: string[];
-  /** true when no valid winter-plugin.json was found (missing OR present-but-malformed) and the plugin loaded via the legacy plugin.json path. */
+  /** true when no valid clover-plugin.json was found (missing OR present-but-malformed) and the plugin loaded via the legacy plugin.json path. */
   legacy: boolean;
   // WS-24: `hasManifestMcp`/`manifestServers`/`manifestHooks` are gone -- inert since WS-21 (a plugin's
   // MCP servers and hooks are claude-native content both runtimes load themselves), and nothing read
@@ -52,9 +52,9 @@ export interface PluginInfo {
   tccPermissions: string[];
   /** manifest.permissions.hardware verbatim (e.g. "battery") — one consent-block line per entry. [] when hardware isn't required. */
   hardwarePermissions: string[];
-  /** winter-plugin.json's `entry` verbatim — what the PluginSupervisor spawns for a Tier-2 platform
+  /** clover-plugin.json's `entry` verbatim — what the PluginSupervisor spawns for a Tier-2 platform
    *  plugin. undefined for legacy plugins and manifest plugins that declare no entry point. */
-  entry?: NonNullable<WinterManifest["entry"]>;
+  entry?: NonNullable<CloverManifest["entry"]>;
 }
 
 /** Consent record shape for one plugin: settings.plugins.consents[spec] (settings.ts). WS-21 fix
@@ -88,21 +88,21 @@ function readInstalledPluginsFileSync(pluginsRoot: string): InstalledPluginsFile
 /**
  * WS-21 (spec §5): reads the shared runtime home's claude-format plugin store —
  * `<home>/sdk/plugins/installed_plugins.json` (Contract B's V2 shape, the SAME file
- * `plugins/plugin-manager.ts`/`winter plugin` write) plus `<home>/sdk/settings.json`'s
+ * `plugins/plugin-manager.ts`/`clover plugin` write) plus `<home>/sdk/settings.json`'s
  * `enabledPlugins` — restricted to USER scope (daemon.ts's own call sites have no project cwd to
  * scope by; the `plugin.list` RPC combines scopes itself, through the async adapter, when a cwd is
- * given). For each installed, user-scope plugin, `winter-plugin.json` is read from the install path
- * for the Winter-only extras (tier/permissions/contributes.{tools,shortcuts,tile,provider}/entry) —
- * `agent/plugin-manifest.ts#loadManifest`, unchanged. A plugin with no winter-plugin.json (or an
+ * given). For each installed, user-scope plugin, `clover-plugin.json` is read from the install path
+ * for the Clover-only extras (tier/permissions/contributes.{tools,shortcuts,tile,provider}/entry) —
+ * `agent/plugin-manifest.ts#loadManifest`, unchanged. A plugin with no clover-plugin.json (or an
  * unparseable one) still lists, as a `legacy: true` entry with no extras — mirroring claude's own
- * "the manifest is optional" rule (F15) so an ordinary claude plugin with no Winter extras at all is
+ * "the manifest is optional" rule (F15) so an ordinary claude plugin with no Clover extras at all is
  * never hidden.
  */
 export class PluginStore {
   constructor(
     private readonly deps: {
-      winterHome: string;
-      /** settings.plugins.consents — per-plugin-id consent records (Winter-only extras' consent,
+      cloverHome: string;
+      /** settings.plugins.consents — per-plugin-id consent records (Clover-only extras' consent,
        *  spec §5.4: "the extras keep their own consents"). Keyed by the SAME `"<name>@<marketplace>"`
        *  spec `installed_plugins.json` uses. Typed `Record<string, unknown>` deliberately (C1, fix
        *  round 2): a stored value may be a stale pre-fix record, so it is validated at the point of
@@ -119,12 +119,12 @@ export class PluginStore {
   }
 
   list(): PluginInfo[] {
-    const pluginsRoot = sdkPluginsRoot(this.deps.winterHome);
+    const pluginsRoot = sdkPluginsRoot(this.deps.cloverHome);
     const installedFile = readInstalledPluginsFileSync(pluginsRoot);
     // `sdk/settings.json`'s `enabledPlugins`, through Contract C's own live/keep-last-good reader
     // (`settings.ts#sdkEnabledPlugins`) — the "one door" that module's own header names for this
     // exact key (`MOVED_SETTINGS_KEYS`'s doc comment: "read by the plugin surface — lane L4").
-    const enabledPlugins = sdkEnabledPlugins(this.deps.winterHome);
+    const enabledPlugins = sdkEnabledPlugins(this.deps.cloverHome);
 
     const out: PluginInfo[] = [];
     for (const [key, records] of Object.entries(installedFile.plugins)) {
@@ -219,7 +219,7 @@ export function consentComplete(p: PluginInfo): boolean {
  * The daemon's Tier-2 process-supervision eligibility filter: a platform-tier manifest plugin with a
  * declared `entry` point, explicitly enabled, not disabled, and fully consented. UNLIKE the retired
  * predicates above, this one stays LIVE under WS-21 — a Tier-2 entry process has no claude-native
- * equivalent; Winter's own `PluginSupervisor` is still what spawns it.
+ * equivalent; Clover's own `PluginSupervisor` is still what spawns it.
  */
 export function pluginSpawnEligible(p: PluginInfo): boolean {
   return p.tier === "platform" && p.entry !== undefined && p.mcpEnabled && !p.disabled && consentComplete(p);

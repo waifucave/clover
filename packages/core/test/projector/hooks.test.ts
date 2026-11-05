@@ -7,7 +7,7 @@ const msg = (o: Record<string, unknown>) => o as unknown as ProtocolSdkMessage;
 
 /**
  * P8b-8 / P8b-21: hook rows, `rate_limit_event`, `auth_status`, status/compaction rows and every
- * Winter-only extension message are OBSERVED and never persisted. 8b adds no variant for them, so
+ * Clover-only extension message are OBSERVED and never persisted. 8b adds no variant for them, so
  * "logged at debug, codes only" is the whole contract — and the logging half is a SECURITY rule,
  * not a tidiness one.
  */

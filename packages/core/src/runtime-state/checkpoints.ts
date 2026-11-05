@@ -86,8 +86,8 @@ export type ProjectionCursorInput = Omit<ProjectionCheckpoint, "winterSessionId"
  * the mark and the checkpoint describing different ends of the same append.
  */
 export class ProjectionCursorMismatchError extends Error {
-  constructor(public readonly key: ProjectionKey, public readonly cursorLastWinterSeq: number, public readonly appendedLast: number) {
-    super(`projection cursor disagrees with the appended range for ${key.winterSessionId}/${key.generation}/${key.sourceId}: cursor.lastWinterSeq=${cursorLastWinterSeq}, seqs.last=${appendedLast}`);
+  constructor(public readonly key: ProjectionKey, public readonly cursorLastCloverSeq: number, public readonly appendedLast: number) {
+    super(`projection cursor disagrees with the appended range for ${key.winterSessionId}/${key.generation}/${key.sourceId}: cursor.lastWinterSeq=${cursorLastCloverSeq}, seqs.last=${appendedLast}`);
     this.name = "ProjectionCursorMismatchError";
   }
 }

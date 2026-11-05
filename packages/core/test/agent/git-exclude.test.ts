@@ -1,5 +1,5 @@
-// WS-21 L3.5 (spec §4.3, F21 — claude parity): writing `.winter/settings.local.json` inside a git
-// repo that does not already ignore it appends `**/.winter/settings.local.json` to the user's GLOBAL git
+// WS-21 L3.5 (spec §4.3, F21 — claude parity): writing `.clover/settings.local.json` inside a git
+// repo that does not already ignore it appends `**/.clover/settings.local.json` to the user's GLOBAL git
 // excludes — `core.excludesfile`, else `$XDG_CONFIG_HOME/git/ignore`, else `~/.config/git/ignore`.
 // Every test runs git with a temp HOME, XDG_CONFIG_HOME and GIT_CONFIG_GLOBAL: the developer's own git
 // config is never read or written.
@@ -16,7 +16,7 @@ let home: string;
 
 beforeEach(() => {
   saved = Object.fromEntries(ENV_KEYS.map((k) => [k, process.env[k]]));
-  home = tmp("winter-gitx-home-");
+  home = tmp("clover-gitx-home-");
   process.env.HOME = home;
   delete process.env.XDG_CONFIG_HOME;
   process.env.GIT_CONFIG_GLOBAL = join(home, ".gitconfig");
@@ -25,7 +25,7 @@ beforeEach(() => {
 afterEach(() => { for (const k of ENV_KEYS) { if (saved[k] === undefined) delete process.env[k]; else process.env[k] = saved[k]; } });
 
 function repo(): string {
-  const dir = tmp("winter-gitx-repo-");
+  const dir = tmp("clover-gitx-repo-");
   const p = Bun.spawnSync(["git", "-C", dir, "init", "-q"], { env: process.env });
   if (p.exitCode !== 0) throw new Error("git init failed");
   return dir;
@@ -39,11 +39,11 @@ describe("ensureGlobalGitExclude", () => {
     ensureGlobalGitExclude(r); // idempotent: already ignored now
     const path = join(home, ".config", "git", "ignore");
     expect(lines(path)).toEqual([LOCAL_SETTINGS_EXCLUDE]);
-    expect(LOCAL_SETTINGS_EXCLUDE).toBe("**/.winter/settings.local.json");
+    expect(LOCAL_SETTINGS_EXCLUDE).toBe("**/.clover/settings.local.json");
   });
 
   test("$XDG_CONFIG_HOME wins over ~/.config", () => {
-    const xdg = tmp("winter-gitx-xdg-");
+    const xdg = tmp("clover-gitx-xdg-");
     process.env.XDG_CONFIG_HOME = xdg;
     ensureGlobalGitExclude(repo());
     expect(lines(join(xdg, "git", "ignore"))).toEqual([LOCAL_SETTINGS_EXCLUDE]);
@@ -51,7 +51,7 @@ describe("ensureGlobalGitExclude", () => {
   });
 
   test("core.excludesfile wins over both (a ~/ path expanded), and existing lines are kept", () => {
-    process.env.XDG_CONFIG_HOME = tmp("winter-gitx-xdg-");
+    process.env.XDG_CONFIG_HOME = tmp("clover-gitx-xdg-");
     writeFileSync(join(home, ".gitconfig"), "[core]\n\texcludesfile = ~/my-excludes\n");
     writeFileSync(join(home, "my-excludes"), "*.log"); // no trailing newline
     ensureGlobalGitExclude(repo());
@@ -60,13 +60,13 @@ describe("ensureGlobalGitExclude", () => {
 
   test("a repo that already ignores the file (its own .gitignore) is left alone — nothing global is written", () => {
     const r = repo();
-    writeFileSync(join(r, ".gitignore"), ".winter/\n");
+    writeFileSync(join(r, ".gitignore"), ".clover/\n");
     ensureGlobalGitExclude(r);
     expect(existsSync(join(home, ".config", "git", "ignore"))).toBe(false);
   });
 
   test("outside a git repository nothing is written", () => {
-    ensureGlobalGitExclude(tmp("winter-gitx-plain-"));
+    ensureGlobalGitExclude(tmp("clover-gitx-plain-"));
     expect(existsSync(join(home, ".config", "git", "ignore"))).toBe(false);
   });
 

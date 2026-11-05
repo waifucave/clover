@@ -1,16 +1,16 @@
 // WS-23 (ruling R1) — CHAT AND DISPATCH RUN EMBEDDED, end to end, through a REAL daemon.
 //
 // A real `startDaemon` on a temp home and a real NDJSON client on its socket; every model is a
-// `winter-test/<double>` (nothing reaches a network or a Keychain). The Winter executable is set to a
+// `winter-test/<double>` (nothing reaches a network or a Keychain). The Clover executable is set to a
 // path that DOES NOT EXIST: a code session therefore refuses typed (`winter_executable_unavailable` —
 // code still resolves the binary ladder), while chat and dispatch run anyway, in a Bun Worker each
 // (`runtime-sdk/embedded.ts`), observed through `daemon.embedded` by their backend session ids. That
-// contrast is the proof that no binary is involved, and why this file needs no WINTER_RUNTIME_EXECUTABLE.
+// contrast is the proof that no binary is involved, and why this file needs no CLOVER_RUNTIME_EXECUTABLE.
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { existsSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, type WritableSocket, type SessionEvent } from "@yanlinglabs/winter-protocol";
+import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, type WritableSocket, type SessionEvent } from "@waifucave/clover-protocol";
 import { FileSecretStore } from "../../src/auth/secret-store";
 import { startDaemon, type RunningDaemon } from "../../src/daemon";
 import type { RuntimeStateWiring } from "../../src/runtime-state";
@@ -128,7 +128,7 @@ describe("chat and dispatch run embedded — a Worker per session inside a real 
   }
 
   beforeAll(async () => {
-    home = mkdtempSync(join(tmpdir(), "winter-embedded-e2e-"));
+    home = mkdtempSync(join(tmpdir(), "clover-embedded-e2e-"));
     writeFileSync(join(home, "settings.json"), JSON.stringify({
       schemaVersion: 3,
       provider: { model: "winter-test/echo" },
@@ -152,7 +152,7 @@ describe("chat and dispatch run embedded — a Worker per session inside a real 
     expect(daemon!.embedded.live()).toContain(backend);
     await sendAndSettle(sid, "hello"); // the client saw turn_completed, which is appended before it is broadcast
     expect(turnKinds(daemon!.sessions.read(sid))).toEqual(["user_message", "turn_started", "assistant_message", "turn_completed"]);
-    const driver = daemon!.winter.get(sid)!;
+    const driver = daemon!.clover.get(sid)!;
     expect(driver.state).toBe("live");
     expect(driver.init?.sessionId).toBe(backend);
     // The Worker runs on a router-built per-run folder (WS-21), exactly as a spawned child does — the
@@ -179,20 +179,20 @@ describe("chat and dispatch run embedded — a Worker per session inside a real 
   test("a DISPATCH session runs embedded too", async () => {
     const { sessionId: sid } = await client.call<{ sessionId: string; created: boolean }>(METHODS.sessionDispatch, {});
     // Dispatch's model is a pin; the store column is the one door the driver honours over it.
-    await daemon!.winter.get(sid)?.end();
+    await daemon!.clover.get(sid)?.end();
     daemon!.sessions.setModel(sid, "winter-test/echo");
     await client.call(METHODS.sessionAttach, { sessionId: sid, fromSeq: 0 });
     await sendAndSettle(sid, "hello dispatch");
-    expect(daemon!.winter.get(sid)?.mode).toBe("dispatch");
+    expect(daemon!.clover.get(sid)?.mode).toBe("dispatch");
     expect(workerLive(sid)).toBe(true);
     const log = daemon!.sessions.read(sid);
     expect(turnKinds(log).slice(-4)).toEqual(["user_message", "turn_started", "assistant_message", "turn_completed"]);
     // Dispatch strips no built-ins: the Worker's session advertises Bash, which runs from the daemon's process.
-    expect(daemon!.winter.get(sid)?.init?.tools).toContain("Bash");
+    expect(daemon!.clover.get(sid)?.init?.tools).toContain("Bash");
     // ...and it RUNS: the `lanec` double's `echo` goes through the real Bash tool, spawned by the
     // Worker thread on the Worker's env (what the router laid on `Options.env`) — a PATH-less or
     // home-less Worker env would fail here, not in a unit test.
-    await daemon!.winter.get(sid)?.end();
+    await daemon!.clover.get(sid)?.end();
     daemon!.sessions.setModel(sid, "winter-test/lanec");
     await sendAndSettle(sid, "run the shell");
     const shellLog = daemon!.sessions.read(sid);
@@ -205,7 +205,7 @@ describe("chat and dispatch run embedded — a Worker per session inside a real 
   test("end() ends the Worker; the next send starts a NEW Worker that resumes the SAME backend session", async () => {
     const sid = await createChat("echo");
     await sendAndSettle(sid, "one");
-    const driver = daemon!.winter.get(sid)!;
+    const driver = daemon!.clover.get(sid)!;
     const backend = backendOf(sid);
     const firstInit = driver.init?.sessionId;
     await driver.end();
@@ -223,7 +223,7 @@ describe("chat and dispatch run embedded — a Worker per session inside a real 
 
   test("an interrupt ends a hanging turn and the SAME Worker stays live for the next send", async () => {
     const sid = await createChat("hang");
-    const driver = daemon!.winter.get(sid)!;
+    const driver = daemon!.clover.get(sid)!;
     await sendAndStart(sid, "hang please");
     expect(await client.call<{ ok: boolean; wasRunning: boolean }>(METHODS.sessionInterrupt, { sessionId: sid })).toEqual({ ok: true, wasRunning: true });
     await client.waitFor((e) => e.type === "turn_completed" && e.sessionId === sid);
@@ -280,12 +280,12 @@ describe("chat and dispatch run embedded — a Worker per session inside a real 
     await client.call(METHODS.sessionAttach, { sessionId: sid, fromSeq: 0 });
     await client.call(METHODS.sessionSetModel, { sessionId: sid, model: "winter-test/echo" });
     await sendAndSettle(sid, "after restart");
-    expect(daemon!.winter.get(sid)?.init?.sessionId).toBe(backend);
+    expect(daemon!.clover.get(sid)?.init?.sessionId).toBe(backend);
     expect(daemon!.embedded.live()).toContain(backend);
   }, E2E_TEST_MS);
 
   test("WS-21 × WS-23: once every Worker has ended, every per-run folder was judged safe and disposed — none quarantined", async () => {
-    // The router reports a Winter run home `safe` when the iteration ends; a Worker-run session must
+    // The router reports a Clover run home `safe` when the iteration ends; a Worker-run session must
     // reach that verdict exactly as a spawned child does, or its folder is kept (and quarantined) silently.
     client.close();
     const stopping = daemon!.stop();
@@ -301,7 +301,7 @@ describe("chat and dispatch run embedded — a Worker per session inside a real 
 // or a lifecycle observer never touches the daemon above.
 describe("embedded sessions under failure — a real daemon", () => {
   async function bootWith(embeddedHost: NonNullable<Parameters<typeof startDaemon>[0]>["embeddedHost"]): Promise<{ home: string; daemon: RunningDaemon; client: TestClient; rt: RuntimeStateWiring }> {
-    const home = mkdtempSync(join(tmpdir(), "winter-embedded-failure-e2e-"));
+    const home = mkdtempSync(join(tmpdir(), "clover-embedded-failure-e2e-"));
     writeFileSync(join(home, "settings.json"), JSON.stringify({
       schemaVersion: 3,
       provider: { model: "winter-test/echo" },
@@ -354,7 +354,7 @@ describe("embedded sessions under failure — a real daemon", () => {
       await client.call(METHODS.sessionSend, { sessionId: sid, text: "hang please" });
       // The wrapper refuses the non-frame line: the iteration ends typed, the driver goes resumable…
       await client.waitFor((e) => e.type === "agent_error" && e.sessionId === sid, WAIT_BOUND_MS);
-      const driver = daemon.winter.get(sid)!;
+      const driver = daemon.clover.get(sid)!;
       const t0 = Date.now();
       while (driver.state === "live" && Date.now() - t0 < WAIT_BOUND_MS) await Bun.sleep(20);
       expect(driver.state).toBe("resumable");
@@ -389,7 +389,7 @@ describe("embedded sessions under failure — a real daemon", () => {
       await client.call(METHODS.sessionSend, { sessionId: sid, text: "hang please" });
       const err = await client.waitFor((e) => e.type === "agent_error" && e.sessionId === sid, WAIT_BOUND_MS);
       expect(typeof (err as { code?: unknown }).code).toBe("string");
-      const driver = daemon.winter.get(sid)!;
+      const driver = daemon.clover.get(sid)!;
       const t0 = Date.now();
       while (driver.state === "live" && Date.now() - t0 < WAIT_BOUND_MS) await Bun.sleep(20);
       expect(driver.state).toBe("resumable");

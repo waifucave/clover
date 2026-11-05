@@ -23,13 +23,13 @@ importers:
 
   examples/battery-limiter:
     dependencies:
-      '@yanlinglabs/winter-plugin-sdk':
+      '@waifucave/clover-plugin-sdk':
         specifier: workspace:*
         version: link:../../packages/plugin-sdk
 
   examples/sample-echo:
     dependencies:
-      '@yanlinglabs/winter-plugin-sdk':
+      '@waifucave/clover-plugin-sdk':
         specifier: workspace:*
         version: link:../../packages/plugin-sdk
 
@@ -37,10 +37,10 @@ importers:
 
   packages/cli:
     dependencies:
-      '@yanlinglabs/winter-core':
+      '@waifucave/clover-core':
         specifier: workspace:*
         version: link:../core
-      '@yanlinglabs/winter-protocol':
+      '@waifucave/clover-protocol':
         specifier: workspace:*
         version: link:../protocol
       chalk:
@@ -77,15 +77,15 @@ importers:
 
   packages/core:
     dependencies:
+      '@waifucave/clover-protocol':
+        specifier: workspace:*
+        version: link:../protocol
       '@yanlinglabs/winter-agent-runtime':
         specifier: 0.0.53
         version: 0.0.53
       '@yanlinglabs/winter-agent-sdk':
         specifier: 0.0.53
         version: 0.0.53
-      '@yanlinglabs/winter-protocol':
-        specifier: workspace:*
-        version: link:../protocol
       '@yanlinglabs/winter-provider-catalog':
         specifier: 0.0.53
         version: 0.0.53
@@ -108,7 +108,7 @@ importers:
 
   packages/plugin-sdk:
     dependencies:
-      '@yanlinglabs/winter-protocol':
+      '@waifucave/clover-protocol':
         specifier: workspace:*
         version: link:../protocol
 

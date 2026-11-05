@@ -24,7 +24,7 @@
 import { chmodSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { randomBytes } from "node:crypto";
-import { WAKE_ID_PATTERN, WAKE_LABEL_MAX } from "@yanlinglabs/winter-protocol";
+import { WAKE_ID_PATTERN, WAKE_LABEL_MAX } from "@waifucave/clover-protocol";
 import { cutUtf16, wellFormed } from "./text";
 import { WAKE_LIMITS, type WakeConditionKind } from "./types";
 

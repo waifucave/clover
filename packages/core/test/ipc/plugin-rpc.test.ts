@@ -1,4 +1,4 @@
-// WS-21 lane L4.1 (spec §5.2): `winter plugin` = `claude plugin`, over Contract B
+// WS-21 lane L4.1 (spec §5.2): `clover plugin` = `claude plugin`, over Contract B
 // (`plugins/plugin-manager.ts`). Replacement RPC-level coverage for the pre-WS-21
 // "plugin lifecycle RPCs (Task 2)" describe block in server.test.ts, which tested the retired
 // plugins.list/plugins.install/plugin.enable(unscoped)/plugin.disable(unscoped)/plugin.remove wire
@@ -10,7 +10,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, ERR, type WritableSocket } from "@yanlinglabs/winter-protocol";
+import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, ERR, type WritableSocket } from "@waifucave/clover-protocol";
 import { startIpcServer } from "../../src/ipc/server";
 import { SessionStore } from "../../src/sessions/store";
 import { FileSecretStore } from "../../src/auth/secret-store";
@@ -72,7 +72,7 @@ function writeMarketplace(dir: string, pluginJson: unknown = { id: "p", tier: "p
   writeFileSync(join(dir, ".claude-plugin", "marketplace.json"), JSON.stringify({
     name: "m", owner: { name: "test" }, plugins: [{ name: "p", source: "." }],
   }));
-  writeFileSync(join(dir, "winter-plugin.json"), JSON.stringify(pluginJson));
+  writeFileSync(join(dir, "clover-plugin.json"), JSON.stringify(pluginJson));
 }
 
 describe("plugin.* RPCs (WS-21, Contract B)", () => {
@@ -80,7 +80,7 @@ describe("plugin.* RPCs (WS-21, Contract B)", () => {
   afterEach(() => { stop?.(); stop = undefined; });
 
   async function boot(opts: { withSupervisor?: boolean; withHookRegistry?: boolean } = {}) {
-    const home = mkdtempSync(join(tmpdir(), "winter-plugin-rpc-"));
+    const home = mkdtempSync(join(tmpdir(), "clover-plugin-rpc-"));
     writeFileSync(join(home, "settings.json"), JSON.stringify({ schemaVersion: 3, provider: { model: "codex-oauth/gpt-5.4" } }));
     const store = new SessionStore(home);
     const socketPath = join(home, "core.sock");
@@ -98,7 +98,7 @@ describe("plugin.* RPCs (WS-21, Contract B)", () => {
     // test can prove the plugin RPCs never feed it (DECISION 22) rather than just asserting an
     // absence of source-level calls.
     const hooks = opts.withHookRegistry ? new HookRegistry() : undefined;
-    const server = startIpcServer({ socketPath, serverVersion: "test", tokens: authority, store, winterHome: home, registry, supervisor, hooks });
+    const server = startIpcServer({ socketPath, serverVersion: "test", tokens: authority, store, cloverHome: home, registry, supervisor, hooks });
     stop = () => { supervisor?.stopAll(); server.stop(); store.close(); };
     const c = await TestClient.connect(socketPath);
     await c.hello(tokens.harness, "plugin-rpc");
@@ -107,7 +107,7 @@ describe("plugin.* RPCs (WS-21, Contract B)", () => {
 
   test("plugin.marketplace.add + plugin.install + plugin.list: a directory marketplace installs and lists, enabled by default", async () => {
     const { home, c } = await boot();
-    const mktDir = mkdtempSync(join(tmpdir(), "winter-plugin-mkt-"));
+    const mktDir = mkdtempSync(join(tmpdir(), "clover-plugin-mkt-"));
     writeMarketplace(mktDir);
 
     const mktRes = await c.request(METHODS.pluginMarketplaceAdd, { source: mktDir });
@@ -117,7 +117,7 @@ describe("plugin.* RPCs (WS-21, Contract B)", () => {
     expect(installRes.result).toEqual({ ok: true, plugin: { id: "p", installPath: mktDir, scope: "user" } });
 
     const listRes = await c.request(METHODS.pluginList, {});
-    // I1 fix round 1: plugin.list now carries `extras` (winter-plugin.json's tier/permissions/
+    // I1 fix round 1: plugin.list now carries `extras` (clover-plugin.json's tier/permissions/
     // requiredConsents/consented/entry) — the Mac app's consent UI (lane L5) needs them over RPC.
     // `writeMarketplace`'s default fixture declares tier:"platform" + an entry point (no
     // permissions), so requiredConsents derives ["exec"] and consented is [] (never consented here).
@@ -144,14 +144,14 @@ describe("plugin.* RPCs (WS-21, Contract B)", () => {
     expect(sdkSettings.enabledPlugins["p@m"]).toBe(true);
   });
 
-  test("plugin.list: extras is absent for a plugin with no winter-plugin.json", async () => {
+  test("plugin.list: extras is absent for a plugin with no clover-plugin.json", async () => {
     const { c } = await boot();
-    const mktDir = mkdtempSync(join(tmpdir(), "winter-plugin-mkt-noextras-"));
+    const mktDir = mkdtempSync(join(tmpdir(), "clover-plugin-mkt-noextras-"));
     mkdirSync(join(mktDir, ".claude-plugin"), { recursive: true });
     writeFileSync(join(mktDir, ".claude-plugin", "marketplace.json"), JSON.stringify({
       name: "m", owner: { name: "test" }, plugins: [{ name: "p", source: "." }],
     }));
-    // Deliberately no winter-plugin.json at mktDir.
+    // Deliberately no clover-plugin.json at mktDir.
     await c.request(METHODS.pluginMarketplaceAdd, { source: mktDir });
     await c.request(METHODS.pluginInstall, { spec: "p@m", scope: "user" });
 
@@ -162,7 +162,7 @@ describe("plugin.* RPCs (WS-21, Contract B)", () => {
 
   test("plugin.list: extras.consented reflects plugin.setConsent, and permissions carry through", async () => {
     const { c } = await boot();
-    const mktDir = mkdtempSync(join(tmpdir(), "winter-plugin-mkt-consent-"));
+    const mktDir = mkdtempSync(join(tmpdir(), "clover-plugin-mkt-consent-"));
     writeMarketplace(mktDir, {
       id: "p", tier: "capability",
       permissions: { exec: true, tcc: ["accessibility"], hardware: ["battery"] },
@@ -200,7 +200,7 @@ describe("plugin.* RPCs (WS-21, Contract B)", () => {
 
     test("a matching fingerprint reads as consented", async () => {
       const { home, c } = await boot();
-      const mktDir = mkdtempSync(join(tmpdir(), "winter-plugin-c1-match-"));
+      const mktDir = mkdtempSync(join(tmpdir(), "clover-plugin-c1-match-"));
       writeMarketplace(mktDir);
       await c.request(METHODS.pluginMarketplaceAdd, { source: mktDir });
       await c.request(METHODS.pluginInstall, { spec: "p@m", scope: "user" });
@@ -216,7 +216,7 @@ describe("plugin.* RPCs (WS-21, Contract B)", () => {
 
     test("reinstalling the same spec from a different folder invalidates the old consent", async () => {
       const { home, c } = await boot();
-      const mktDirA = mkdtempSync(join(tmpdir(), "winter-plugin-c1-reinstall-a-"));
+      const mktDirA = mkdtempSync(join(tmpdir(), "clover-plugin-c1-reinstall-a-"));
       writeMarketplace(mktDirA);
       await c.request(METHODS.pluginMarketplaceAdd, { source: mktDirA });
       await c.request(METHODS.pluginInstall, { spec: "p@m", scope: "user" });
@@ -229,7 +229,7 @@ describe("plugin.* RPCs (WS-21, Contract B)", () => {
       // Same marketplace NAME ("m"), a DIFFERENT folder -- addMarketplace re-points "m" at mktDirB,
       // exactly the ruling's own scenario (folder A's "node a.js" consent must not cover folder B's
       // "sh payload.sh").
-      const mktDirB = mkdtempSync(join(tmpdir(), "winter-plugin-c1-reinstall-b-"));
+      const mktDirB = mkdtempSync(join(tmpdir(), "clover-plugin-c1-reinstall-b-"));
       writeMarketplace(mktDirB, { id: "p", tier: "platform", entry: { command: "sh", args: ["payload.sh"] } });
       await c.request(METHODS.pluginMarketplaceAdd, { source: mktDirB });
       await c.request(METHODS.pluginInstall, { spec: "p@m", scope: "user" });
@@ -241,7 +241,7 @@ describe("plugin.* RPCs (WS-21, Contract B)", () => {
 
     test("editing the entry in place invalidates the old consent", async () => {
       const { home, c } = await boot();
-      const mktDir = mkdtempSync(join(tmpdir(), "winter-plugin-c1-edit-"));
+      const mktDir = mkdtempSync(join(tmpdir(), "clover-plugin-c1-edit-"));
       writeMarketplace(mktDir);
       await c.request(METHODS.pluginMarketplaceAdd, { source: mktDir });
       await c.request(METHODS.pluginInstall, { spec: "p@m", scope: "user" });
@@ -252,7 +252,7 @@ describe("plugin.* RPCs (WS-21, Contract B)", () => {
       expect((await c.request(METHODS.pluginList, {})).result.plugins[0].extras.consented).toEqual(["exec"]);
 
       // Same install path, EDITED entry command -- a directory marketplace is read live, in place.
-      writeFileSync(join(mktDir, "winter-plugin.json"), JSON.stringify({
+      writeFileSync(join(mktDir, "clover-plugin.json"), JSON.stringify({
         id: "p", tier: "platform", entry: { command: "sh", args: ["payload.sh"] },
       }));
 
@@ -262,7 +262,7 @@ describe("plugin.* RPCs (WS-21, Contract B)", () => {
 
     test("a legacy bare-array consent value reads as not consented", async () => {
       const { home, c } = await boot();
-      const mktDir = mkdtempSync(join(tmpdir(), "winter-plugin-c1-legacy-"));
+      const mktDir = mkdtempSync(join(tmpdir(), "clover-plugin-c1-legacy-"));
       writeMarketplace(mktDir);
       await c.request(METHODS.pluginMarketplaceAdd, { source: mktDir });
       await c.request(METHODS.pluginInstall, { spec: "p@m", scope: "user" });
@@ -278,7 +278,7 @@ describe("plugin.* RPCs (WS-21, Contract B)", () => {
     // stays ["tcc"] whether the list is ["accessibility"] or ["accessibility","screen-recording"]).
     test("adding a permission under an already-consented class invalidates the old consent", async () => {
       const { home, c } = await boot();
-      const mktDir = mkdtempSync(join(tmpdir(), "winter-plugin-c1-newperm-"));
+      const mktDir = mkdtempSync(join(tmpdir(), "clover-plugin-c1-newperm-"));
       writeMarketplace(mktDir, { id: "p", tier: "capability", permissions: { tcc: ["accessibility"] } });
       await c.request(METHODS.pluginMarketplaceAdd, { source: mktDir });
       await c.request(METHODS.pluginInstall, { spec: "p@m", scope: "user" });
@@ -290,7 +290,7 @@ describe("plugin.* RPCs (WS-21, Contract B)", () => {
 
       // Same install path, same required CLASS ("tcc") -- but the tcc LIST grew a new permission the
       // user never saw disclosed.
-      writeFileSync(join(mktDir, "winter-plugin.json"), JSON.stringify({
+      writeFileSync(join(mktDir, "clover-plugin.json"), JSON.stringify({
         id: "p", tier: "capability", permissions: { tcc: ["accessibility", "screen-recording"] },
       }));
 
@@ -301,7 +301,7 @@ describe("plugin.* RPCs (WS-21, Contract B)", () => {
 
     test("uninstalling the last scope clears the stored consent", async () => {
       const { home, c } = await boot();
-      const mktDir = mkdtempSync(join(tmpdir(), "winter-plugin-c1-uninstall-"));
+      const mktDir = mkdtempSync(join(tmpdir(), "clover-plugin-c1-uninstall-"));
       writeMarketplace(mktDir);
       await c.request(METHODS.pluginMarketplaceAdd, { source: mktDir });
       await c.request(METHODS.pluginInstall, { spec: "p@m", scope: "user" });
@@ -325,7 +325,7 @@ describe("plugin.* RPCs (WS-21, Contract B)", () => {
   describe("C2: plugin.setConsent is TOCTOU-safe", () => {
     test("a changed entry between list and setConsent gives stale_disclosure and no write", async () => {
       const { home, c } = await boot();
-      const mktDir = mkdtempSync(join(tmpdir(), "winter-plugin-c2-toctou-"));
+      const mktDir = mkdtempSync(join(tmpdir(), "clover-plugin-c2-toctou-"));
       writeMarketplace(mktDir); // tier "platform", entry {command:"bun", args:["--version"]}
       await c.request(METHODS.pluginMarketplaceAdd, { source: mktDir });
       await c.request(METHODS.pluginInstall, { spec: "p@m", scope: "user" });
@@ -335,7 +335,7 @@ describe("plugin.* RPCs (WS-21, Contract B)", () => {
 
       // The sheet was shown with `staleFingerprint`'s disclosure -- now the entry changes underneath
       // it, BEFORE the user's click reaches the daemon.
-      writeFileSync(join(mktDir, "winter-plugin.json"), JSON.stringify({
+      writeFileSync(join(mktDir, "clover-plugin.json"), JSON.stringify({
         id: "p", tier: "platform", entry: { command: "sh", args: ["payload.sh"] },
       }));
 
@@ -361,12 +361,12 @@ describe("plugin.* RPCs (WS-21, Contract B)", () => {
   // claude-format plugin's hooks live in `hooks/hooks.json` (claude's own file, wrapped
   // `{hooks:{<Event>:[{matcher?,hooks:[{type,command?}]}]}}`) and/or the claude manifest's own
   // inline `hooks` field (the SAME inner shape, unwrapped) — read from BOTH, unlike `extras`
-  // (winter-plugin.json-only), because a plain claude plugin with no winter-plugin.json at all still
+  // (clover-plugin.json-only), because a plain claude plugin with no clover-plugin.json at all still
   // carries hooks.
   describe("hooks: plugin.list's top-level hooks field", () => {
     test("reads hooks/hooks.json (claude's wrapped shape)", async () => {
       const { c } = await boot();
-      const mktDir = mkdtempSync(join(tmpdir(), "winter-plugin-hooks-file-"));
+      const mktDir = mkdtempSync(join(tmpdir(), "clover-plugin-hooks-file-"));
       writeMarketplace(mktDir, { id: "p", tier: "capability" });
       mkdirSync(join(mktDir, "hooks"), { recursive: true });
       writeFileSync(join(mktDir, "hooks", "hooks.json"), JSON.stringify({
@@ -381,9 +381,9 @@ describe("plugin.* RPCs (WS-21, Contract B)", () => {
       ]);
     });
 
-    test("reads the claude manifest's own inline hooks field (bare event map, no winter-plugin.json needed)", async () => {
+    test("reads the claude manifest's own inline hooks field (bare event map, no clover-plugin.json needed)", async () => {
       const { c } = await boot();
-      const mktDir = mkdtempSync(join(tmpdir(), "winter-plugin-hooks-manifest-"));
+      const mktDir = mkdtempSync(join(tmpdir(), "clover-plugin-hooks-manifest-"));
       mkdirSync(join(mktDir, ".claude-plugin"), { recursive: true });
       writeFileSync(join(mktDir, ".claude-plugin", "marketplace.json"), JSON.stringify({
         name: "m", owner: { name: "test" }, plugins: [{ name: "p", source: "." }],
@@ -396,12 +396,12 @@ describe("plugin.* RPCs (WS-21, Contract B)", () => {
 
       const listRes = await c.request(METHODS.pluginList, {});
       expect(listRes.result.plugins[0].hooks).toEqual([{ event: "Stop", type: "command", command: "echo stop" }]);
-      expect(listRes.result.plugins[0]).not.toHaveProperty("extras"); // no winter-plugin.json at all
+      expect(listRes.result.plugins[0]).not.toHaveProperty("extras"); // no clover-plugin.json at all
     });
 
     test("unions hooks/hooks.json and the manifest's inline hooks — load both", async () => {
       const { c } = await boot();
-      const mktDir = mkdtempSync(join(tmpdir(), "winter-plugin-hooks-both-"));
+      const mktDir = mkdtempSync(join(tmpdir(), "clover-plugin-hooks-both-"));
       mkdirSync(join(mktDir, ".claude-plugin"), { recursive: true });
       writeFileSync(join(mktDir, ".claude-plugin", "marketplace.json"), JSON.stringify({
         name: "m", owner: { name: "test" }, plugins: [{ name: "p", source: "." }],
@@ -428,7 +428,7 @@ describe("plugin.* RPCs (WS-21, Contract B)", () => {
     // still gets a wire-visible `hooks: []`, never an omitted key.
     test("declares no hooks at all -> an explicit empty array, not an absent field", async () => {
       const { c } = await boot();
-      const mktDir = mkdtempSync(join(tmpdir(), "winter-plugin-hooks-none-"));
+      const mktDir = mkdtempSync(join(tmpdir(), "clover-plugin-hooks-none-"));
       writeMarketplace(mktDir, { id: "p", tier: "capability" }); // no hooks/hooks.json, no .claude-plugin/plugin.json
       await c.request(METHODS.pluginMarketplaceAdd, { source: mktDir });
       await c.request(METHODS.pluginInstall, { spec: "p@m", scope: "user" });
@@ -440,7 +440,7 @@ describe("plugin.* RPCs (WS-21, Contract B)", () => {
 
     test("a malformed hooks.json degrades to an absent hooks field, never throws", async () => {
       const { c } = await boot();
-      const mktDir = mkdtempSync(join(tmpdir(), "winter-plugin-hooks-malformed-"));
+      const mktDir = mkdtempSync(join(tmpdir(), "clover-plugin-hooks-malformed-"));
       writeMarketplace(mktDir, { id: "p", tier: "capability" });
       mkdirSync(join(mktDir, "hooks"), { recursive: true });
       writeFileSync(join(mktDir, "hooks", "hooks.json"), "{ not valid json");
@@ -456,11 +456,11 @@ describe("plugin.* RPCs (WS-21, Contract B)", () => {
     // treated exactly like an unreadable file (an absent `hooks` key), never the escaped content.
     test("a hooks.json that symlinks outside the install path is refused -- absent, never the escaped content", async () => {
       const { c } = await boot();
-      const mktDir = mkdtempSync(join(tmpdir(), "winter-plugin-hooks-symlink-"));
+      const mktDir = mkdtempSync(join(tmpdir(), "clover-plugin-hooks-symlink-"));
       writeMarketplace(mktDir, { id: "p", tier: "capability" });
 
       // Real hook content living OUTSIDE the plugin's install path.
-      const outsideDir = mkdtempSync(join(tmpdir(), "winter-plugin-hooks-outside-"));
+      const outsideDir = mkdtempSync(join(tmpdir(), "clover-plugin-hooks-outside-"));
       writeFileSync(join(outsideDir, "hooks.json"), JSON.stringify({
         hooks: { PreToolUse: [{ hooks: [{ type: "command", command: "echo escaped" }] }] },
       }));
@@ -477,7 +477,7 @@ describe("plugin.* RPCs (WS-21, Contract B)", () => {
 
     test("caps at 100 entries and 500 characters per command", async () => {
       const { c } = await boot();
-      const mktDir = mkdtempSync(join(tmpdir(), "winter-plugin-hooks-cap-"));
+      const mktDir = mkdtempSync(join(tmpdir(), "clover-plugin-hooks-cap-"));
       writeMarketplace(mktDir, { id: "p", tier: "capability" });
       mkdirSync(join(mktDir, "hooks"), { recursive: true });
       const longCommand = "x".repeat(600);
@@ -504,7 +504,7 @@ describe("plugin.* RPCs (WS-21, Contract B)", () => {
   describe("the daemon's own hook registry holds no plugin hooks (DECISION 22)", () => {
     test("after plugin.enable (a Tier-2, spawn-eligible, consented plugin), the hook registry is still empty for every event", async () => {
       const { c, hooks } = await boot({ withHookRegistry: true });
-      const mktDir = mkdtempSync(join(tmpdir(), "winter-plugin-hookreg-"));
+      const mktDir = mkdtempSync(join(tmpdir(), "clover-plugin-hookreg-"));
       writeMarketplace(mktDir); // tier "platform", entry present
       await c.request(METHODS.pluginMarketplaceAdd, { source: mktDir });
       await c.request(METHODS.pluginInstall, { spec: "p@m", scope: "user" });
@@ -516,7 +516,7 @@ describe("plugin.* RPCs (WS-21, Contract B)", () => {
       const enableRes = await c.request(METHODS.pluginEnable, { spec: "p@m", scope: "user" });
       expect(enableRes.result).toEqual({ ok: true, spec: "p@m", scope: "user", enabled: true });
 
-      // Every event claude/Winter hooks ever fire on -- none of them ever got a plugin entry.
+      // Every event claude/Clover hooks ever fire on -- none of them ever got a plugin entry.
       for (const event of ["PreToolUse", "PostToolUse", "SessionStart", "Stop", "UserPromptSubmit"]) {
         expect(hooks!.hooksFor(event)).toEqual([]);
       }
@@ -524,7 +524,7 @@ describe("plugin.* RPCs (WS-21, Contract B)", () => {
 
     test("after plugin.disable and plugin.setConsent too, the hook registry is still empty", async () => {
       const { c, hooks } = await boot({ withHookRegistry: true });
-      const mktDir = mkdtempSync(join(tmpdir(), "winter-plugin-hookreg-2-"));
+      const mktDir = mkdtempSync(join(tmpdir(), "clover-plugin-hookreg-2-"));
       writeMarketplace(mktDir);
       await c.request(METHODS.pluginMarketplaceAdd, { source: mktDir });
       await c.request(METHODS.pluginInstall, { spec: "p@m", scope: "user" });
@@ -547,7 +547,7 @@ describe("plugin.* RPCs (WS-21, Contract B)", () => {
 
   test("plugin.disable then plugin.enable flips enabledPlugins; plugin.uninstall clears the record (never the directory)", async () => {
     const { c } = await boot();
-    const mktDir = mkdtempSync(join(tmpdir(), "winter-plugin-mkt-"));
+    const mktDir = mkdtempSync(join(tmpdir(), "clover-plugin-mkt-"));
     writeMarketplace(mktDir);
     await c.request(METHODS.pluginMarketplaceAdd, { source: mktDir });
     await c.request(METHODS.pluginInstall, { spec: "p@m", scope: "user" });
@@ -564,12 +564,12 @@ describe("plugin.* RPCs (WS-21, Contract B)", () => {
     expect(uninstallRes.result).toEqual({ ok: true, spec: "p@m", scope: "user" });
     expect((await c.request(METHODS.pluginList, {})).result.plugins).toEqual([]);
     // Directory marketplace: read in place, never deleted.
-    expect(readFileSync(join(mktDir, "winter-plugin.json"), "utf8")).toContain("\"id\":\"p\"");
+    expect(readFileSync(join(mktDir, "clover-plugin.json"), "utf8")).toContain("\"id\":\"p\"");
   });
 
   test("plugin.enable hot-spawns a Tier-2 plugin via the supervisor when spawn-eligible; plugin.disable hot-stops it", async () => {
     const { c } = await boot({ withSupervisor: true });
-    const mktDir = mkdtempSync(join(tmpdir(), "winter-plugin-mkt-"));
+    const mktDir = mkdtempSync(join(tmpdir(), "clover-plugin-mkt-"));
     writeMarketplace(mktDir); // tier "platform", entry present — spawn-eligible once consented+enabled
     await c.request(METHODS.pluginMarketplaceAdd, { source: mktDir });
     await c.request(METHODS.pluginInstall, { spec: "p@m", scope: "user" }); // installed+enabled, but not yet consented
@@ -593,7 +593,7 @@ describe("plugin.* RPCs (WS-21, Contract B)", () => {
   // WS-24: the supervisor is keyed by the spec ("p@m"), not the bare name.
   test("plugin.uninstall on a scope the plugin isn't installed in refuses typed, with the OTHER scope's record untouched and nothing stopped", async () => {
     const { c, supervisor } = await boot({ withSupervisor: true });
-    const mktDir = mkdtempSync(join(tmpdir(), "winter-plugin-mkt-"));
+    const mktDir = mkdtempSync(join(tmpdir(), "clover-plugin-mkt-"));
     writeMarketplace(mktDir);
     await c.request(METHODS.pluginMarketplaceAdd, { source: mktDir });
     await c.request(METHODS.pluginInstall, { spec: "p@m", scope: "user" });
@@ -603,7 +603,7 @@ describe("plugin.* RPCs (WS-21, Contract B)", () => {
     });
     await c.request(METHODS.pluginEnable, { spec: "p@m", scope: "user" }); // hot-spawns via the real supervisor
 
-    const projectDir = mkdtempSync(join(tmpdir(), "winter-plugin-uninstall-project-"));
+    const projectDir = mkdtempSync(join(tmpdir(), "clover-plugin-uninstall-project-"));
     const res = await c.request(METHODS.pluginUninstall, { spec: "p@m", scope: "project", cwd: projectDir });
     expect(res.error?.code).toBe(ERR.INVALID_PARAMS);
 
@@ -615,14 +615,14 @@ describe("plugin.* RPCs (WS-21, Contract B)", () => {
 
   test("a plugin installed at two scopes: uninstalling one leaves the Tier-2 process running; uninstalling the last stops it", async () => {
     const { c, supervisor } = await boot({ withSupervisor: true });
-    const mktDir = mkdtempSync(join(tmpdir(), "winter-plugin-mkt-"));
+    const mktDir = mkdtempSync(join(tmpdir(), "clover-plugin-mkt-"));
     writeMarketplace(mktDir);
     await c.request(METHODS.pluginMarketplaceAdd, { source: mktDir });
 
-    const projectDir = mkdtempSync(join(tmpdir(), "winter-plugin-two-scopes-"));
+    const projectDir = mkdtempSync(join(tmpdir(), "clover-plugin-two-scopes-"));
     await c.request(METHODS.pluginInstall, { spec: "p@m", scope: "user" });
     await c.request(METHODS.pluginInstall, { spec: "p@m", scope: "project", cwd: projectDir });
-    // Consent is scope-independent (Winter's own <home>/settings.json store, spec §5.4) -- one call
+    // Consent is scope-independent (Clover's own <home>/settings.json store, spec §5.4) -- one call
     // covers both scopes' installs of the same spec.
     await c.request(METHODS.pluginSetConsent, {
       spec: "p@m", classes: ["exec"],
@@ -657,7 +657,7 @@ describe("plugin.* RPCs (WS-21, Contract B)", () => {
 
   test("plugin.update re-resolves the install path and bumps the version", async () => {
     const { c } = await boot();
-    const mktDir = mkdtempSync(join(tmpdir(), "winter-plugin-mkt-"));
+    const mktDir = mkdtempSync(join(tmpdir(), "clover-plugin-mkt-"));
     mkdirSync(join(mktDir, ".claude-plugin"), { recursive: true });
     writeFileSync(join(mktDir, ".claude-plugin", "marketplace.json"), JSON.stringify({
       name: "m", owner: { name: "test" }, plugins: [{ name: "p", source: ".", version: "1.0.0" }],
@@ -675,7 +675,7 @@ describe("plugin.* RPCs (WS-21, Contract B)", () => {
 
   test("plugin.marketplace.remove/list round-trip", async () => {
     const { c } = await boot();
-    const mktDir = mkdtempSync(join(tmpdir(), "winter-plugin-mkt-"));
+    const mktDir = mkdtempSync(join(tmpdir(), "clover-plugin-mkt-"));
     writeMarketplace(mktDir);
     await c.request(METHODS.pluginMarketplaceAdd, { source: mktDir });
     expect((await c.request(METHODS.pluginMarketplaceList, {})).result.marketplaces).toHaveLength(1);
@@ -687,24 +687,24 @@ describe("plugin.* RPCs (WS-21, Contract B)", () => {
 
   test("plugin.marketplace.update re-validates a directory marketplace in place", async () => {
     const { c } = await boot();
-    const mktDir = mkdtempSync(join(tmpdir(), "winter-plugin-mkt-"));
+    const mktDir = mkdtempSync(join(tmpdir(), "clover-plugin-mkt-"));
     writeMarketplace(mktDir);
     await c.request(METHODS.pluginMarketplaceAdd, { source: mktDir });
     const updateRes = await c.request(METHODS.pluginMarketplaceUpdate, { name: "m" });
     expect(updateRes.result).toEqual({ ok: true });
   });
 
-  test("project scope resolves against cwd's trusted .winter/settings.json", async () => {
+  test("project scope resolves against cwd's trusted .clover/settings.json", async () => {
     const { c } = await boot();
-    const mktDir = mkdtempSync(join(tmpdir(), "winter-plugin-mkt-"));
+    const mktDir = mkdtempSync(join(tmpdir(), "clover-plugin-mkt-"));
     writeMarketplace(mktDir);
     await c.request(METHODS.pluginMarketplaceAdd, { source: mktDir });
 
-    const projectDir = mkdtempSync(join(tmpdir(), "winter-plugin-project-"));
+    const projectDir = mkdtempSync(join(tmpdir(), "clover-plugin-project-"));
     const installRes = await c.request(METHODS.pluginInstall, { spec: "p@m", scope: "project", cwd: projectDir });
     expect(installRes.result.ok).toBe(true);
 
-    const settingsPath = join(projectDir, ".winter", "settings.json");
+    const settingsPath = join(projectDir, ".clover", "settings.json");
     const settings = JSON.parse(readFileSync(settingsPath, "utf8"));
     expect(settings.enabledPlugins["p@m"]).toBe(true);
 
@@ -726,22 +726,22 @@ describe("plugin.* RPCs (WS-21, Contract B)", () => {
   // R.3 I-2: the LOCAL scope is keyed like every other local-tier reader and writer (`localScopeKeyFor`: a
   // linked worktree's OWN top, the run home's `gitRoot ?? cwd`), never `repoRootFor`, which follows a worktree
   // to its main checkout — where the run home never reads it.
-  test("R.3 I-2: local scope from a linked worktree writes the WORKTREE's .winter/settings.local.json", async () => {
+  test("R.3 I-2: local scope from a linked worktree writes the WORKTREE's .clover/settings.local.json", async () => {
     const { c } = await boot();
-    const mktDir = mkdtempSync(join(tmpdir(), "winter-plugin-mkt-"));
+    const mktDir = mkdtempSync(join(tmpdir(), "clover-plugin-mkt-"));
     writeMarketplace(mktDir);
     await c.request(METHODS.pluginMarketplaceAdd, { source: mktDir });
-    const repo = realpathSync(mkdtempSync(join(tmpdir(), "winter-plugin-i2-repo-")));
+    const repo = realpathSync(mkdtempSync(join(tmpdir(), "clover-plugin-i2-repo-")));
     const git = (args: string[], cwd: string) => expect(Bun.spawnSync(["git", "-C", cwd, ...args], { stdout: "ignore", stderr: "ignore" }).exitCode).toBe(0);
     git(["init", "-q"], repo);
     git(["-c", "user.email=t@t.test", "-c", "user.name=t", "commit", "--allow-empty", "-q", "-m", "i"], repo);
-    const wt = join(realpathSync(mkdtempSync(join(tmpdir(), "winter-plugin-i2-wt-"))), "wt");
+    const wt = join(realpathSync(mkdtempSync(join(tmpdir(), "clover-plugin-i2-wt-"))), "wt");
     git(["worktree", "add", "-q", "-b", `i2-${Math.random().toString(16).slice(2)}`, wt], repo);
 
     const installRes = await c.request(METHODS.pluginInstall, { spec: "p@m", scope: "local", cwd: wt });
     expect(installRes.result?.ok).toBe(true);
-    expect(JSON.parse(readFileSync(join(wt, ".winter", "settings.local.json"), "utf8")).enabledPlugins["p@m"]).toBe(true);
-    expect(existsSync(join(repo, ".winter", "settings.local.json"))).toBe(false);
+    expect(JSON.parse(readFileSync(join(wt, ".clover", "settings.local.json"), "utf8")).enabledPlugins["p@m"]).toBe(true);
+    expect(existsSync(join(repo, ".clover", "settings.local.json"))).toBe(false);
     const listRes = await c.request(METHODS.pluginList, { cwd: wt });
     expect(listRes.result.plugins.map((p: { scope: string; enabled: boolean }) => [p.scope, p.enabled])).toEqual([["local", true]]);
   });
@@ -753,10 +753,10 @@ describe("plugin.* RPCs (WS-21, Contract B)", () => {
   for (const scope of ["project", "local"] as const) {
     test(`R.3 I-3: consent for a ${scope}-scope plugin is recorded, and the sheet's fingerprint matches`, async () => {
       const { c } = await boot();
-      const mktDir = mkdtempSync(join(tmpdir(), "winter-plugin-mkt-i3-"));
+      const mktDir = mkdtempSync(join(tmpdir(), "clover-plugin-mkt-i3-"));
       writeMarketplace(mktDir);
       await c.request(METHODS.pluginMarketplaceAdd, { source: mktDir });
-      const projectDir = realpathSync(mkdtempSync(join(tmpdir(), "winter-plugin-i3-project-")));
+      const projectDir = realpathSync(mkdtempSync(join(tmpdir(), "clover-plugin-i3-project-")));
       expect((await c.request(METHODS.pluginInstall, { spec: "p@m", scope, cwd: projectDir })).result?.ok).toBe(true);
 
       const sheet = (await c.request(METHODS.pluginList, { cwd: projectDir })).result.plugins[0];
@@ -778,11 +778,11 @@ describe("plugin.* RPCs (WS-21, Contract B)", () => {
   // top — what the run home reads the project tier from); trust stays keyed on the repository.
   describe("R.3 residual: plugin project scope from a linked worktree of a trusted repo", () => {
     function worktreeBed(home: string) {
-      const main = realpathSync(mkdtempSync(join(tmpdir(), "winter-plugin-r3p-main-")));
+      const main = realpathSync(mkdtempSync(join(tmpdir(), "clover-plugin-r3p-main-")));
       const git = (args: string[]) => expect(Bun.spawnSync(["git", "-C", main, ...args], { stdout: "ignore", stderr: "ignore" }).exitCode).toBe(0);
       git(["init", "-q"]);
       git(["-c", "user.email=t@t.test", "-c", "user.name=t", "commit", "--allow-empty", "-q", "-m", "i"]);
-      const wt = join(realpathSync(mkdtempSync(join(tmpdir(), "winter-plugin-r3p-wt-"))), "wt");
+      const wt = join(realpathSync(mkdtempSync(join(tmpdir(), "clover-plugin-r3p-wt-"))), "wt");
       git(["worktree", "add", "-q", "-b", `r3p-${Math.random().toString(16).slice(2)}`, wt]);
       const trust = new TrustStore(join(home, "trust.json"));
       trust.trust(main);
@@ -794,32 +794,32 @@ describe("plugin.* RPCs (WS-21, Contract B)", () => {
       try { return (rh.effectiveSettings["enabledPlugins"] ?? {}) as Record<string, unknown>; } finally { await rh.dispose(); }
     }
 
-    test("plugin.install/enable --scope project writes the WORKTREE's .winter/settings.json; its run home enables the plugin", async () => {
+    test("plugin.install/enable --scope project writes the WORKTREE's .clover/settings.json; its run home enables the plugin", async () => {
       const { home, c } = await boot();
       const b = worktreeBed(home);
-      const mktDir = mkdtempSync(join(tmpdir(), "winter-plugin-mkt-r3p-"));
+      const mktDir = mkdtempSync(join(tmpdir(), "clover-plugin-mkt-r3p-"));
       writeMarketplace(mktDir);
       await c.request(METHODS.pluginMarketplaceAdd, { source: mktDir });
       expect((await c.request(METHODS.pluginInstall, { spec: "p@m", scope: "project", cwd: b.wt })).result?.ok).toBe(true);
-      expect(JSON.parse(readFileSync(join(b.wt, ".winter", "settings.json"), "utf8")).enabledPlugins["p@m"]).toBe(true);
-      expect(existsSync(join(b.main, ".winter", "settings.json"))).toBe(false);
+      expect(JSON.parse(readFileSync(join(b.wt, ".clover", "settings.json"), "utf8")).enabledPlugins["p@m"]).toBe(true);
+      expect(existsSync(join(b.main, ".clover", "settings.json"))).toBe(false);
       await c.request(METHODS.pluginDisable, { spec: "p@m", scope: "project", cwd: b.wt });
-      expect(JSON.parse(readFileSync(join(b.wt, ".winter", "settings.json"), "utf8")).enabledPlugins["p@m"]).toBe(false);
+      expect(JSON.parse(readFileSync(join(b.wt, ".clover", "settings.json"), "utf8")).enabledPlugins["p@m"]).toBe(false);
       await c.request(METHODS.pluginEnable, { spec: "p@m", scope: "project", cwd: b.wt });
       expect((await runHomeEnabled(home, b.trust, b.wt))["p@m"]).toBe(true);
       const listed = (await c.request(METHODS.pluginList, { cwd: b.wt })).result.plugins;
       expect(listed.map((e: { scope: string; enabled: boolean }) => [e.scope, e.enabled])).toEqual([["project", true]]);
     });
 
-    test("from the MAIN checkout nothing changes: its own .winter/settings.json and run home", async () => {
+    test("from the MAIN checkout nothing changes: its own .clover/settings.json and run home", async () => {
       const { home, c } = await boot();
       const b = worktreeBed(home);
-      const mktDir = mkdtempSync(join(tmpdir(), "winter-plugin-mkt-r3p-"));
+      const mktDir = mkdtempSync(join(tmpdir(), "clover-plugin-mkt-r3p-"));
       writeMarketplace(mktDir);
       await c.request(METHODS.pluginMarketplaceAdd, { source: mktDir });
       expect((await c.request(METHODS.pluginInstall, { spec: "p@m", scope: "project", cwd: b.main })).result?.ok).toBe(true);
-      expect(JSON.parse(readFileSync(join(b.main, ".winter", "settings.json"), "utf8")).enabledPlugins["p@m"]).toBe(true);
-      expect(existsSync(join(b.wt, ".winter", "settings.json"))).toBe(false);
+      expect(JSON.parse(readFileSync(join(b.main, ".clover", "settings.json"), "utf8")).enabledPlugins["p@m"]).toBe(true);
+      expect(existsSync(join(b.wt, ".clover", "settings.json"))).toBe(false);
       expect((await runHomeEnabled(home, b.trust, b.main))["p@m"]).toBe(true);
       expect((await runHomeEnabled(home, b.trust, b.wt))["p@m"]).toBeUndefined();
     });
@@ -827,7 +827,7 @@ describe("plugin.* RPCs (WS-21, Contract B)", () => {
 
   test("project/local scope without cwd is refused typed", async () => {
     const { c } = await boot();
-    const mktDir = mkdtempSync(join(tmpdir(), "winter-plugin-mkt-"));
+    const mktDir = mkdtempSync(join(tmpdir(), "clover-plugin-mkt-"));
     writeMarketplace(mktDir);
     await c.request(METHODS.pluginMarketplaceAdd, { source: mktDir });
     const res = await c.request(METHODS.pluginInstall, { spec: "p@m", scope: "project" });

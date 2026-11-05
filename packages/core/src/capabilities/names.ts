@@ -1,10 +1,10 @@
 // P8b-12 — the CANONICAL names of every daemon-owned capability tool, and the one function that
 // builds them.
 //
-// WHY THIS FILE EXISTS AT ALL. On the Winter leg the daemon's own tools are no longer registry
+// WHY THIS FILE EXISTS AT ALL. On the Clover leg the daemon's own tools are no longer registry
 // entries the engine dispatches; they are MCP tools on in-process servers handed to the child
 // through `Options.mcpServers`. Every downstream surface that has to reason about them (Task 9's
-// per-mode `disallowedTools`, P8b-25's Winter-name table, the approval gate's classification) keys
+// per-mode `disallowedTools`, P8b-25's Clover-name table, the approval gate's classification) keys
 // on the WIRE names, so they are written down once, here.
 //
 // ════════════════════════════════════════════════════════════════════════════════════════════════
@@ -21,26 +21,24 @@
 //
 // SO THE SERVER'S NAME CARRIES THE BRAND, NOT THE TOOL TOKEN. A server declared `"sessions"` would
 // be reached as `mcp__sessions__list_sessions` — one segment short of P8b-12's
-// `mcp__winter__sessions__list_sessions`, and short SILENTLY: Task 9's `disallowedTools` entries
+// `mcp__clover__sessions__list_sessions`, and short SILENTLY: Task 9's `disallowedTools` entries
 // would name tools that do not exist and therefore deny nothing (a chat session would keep
 // `computer`), and P8b-25's name table would miss, blanking tool rows in the Mac/iOS renderers.
 // Nothing in the type system or in a literal-vs-literal parity test can see that.
 //
-// P8b-35's answer: the server is NAMED `winter__<key>` (`capabilityServerName`), so the router's own
+// P8b-35's answer: the server is NAMED `clover__<key>` (`capabilityServerName`), so the router's own
 // `mcp__<server>__<tool>` yields exactly the P8b-12 literal — the same string
 // `mcpToolName(CORE_BRAND, "<key>__<tool>")` produces. `test/capabilities/wire-names.test.ts`
 // DERIVES each name from the declared server through the router's own path and asserts the two
 // agree, so the table can never again describe names the router does not register.
 //
-// R-1's NAMESPACE IS `winter` (`CORE_BRAND.mcpServerName`) — the daemon's OWN brand namespace, not a
-// foreign one being avoided. Pre-rename this pinned the daemon to its OWN old brand token,
-// deliberately never `winter` (the SDK's own reserved brand name), to keep the two apart; since
-// P9b-7 the daemon's brand equals the SDK's `WINTER_BRAND` except three fields, so `mcpServerName` is genuinely
-// `"winter"` for both sides now — that reason no longer exists. The invariant that still matters,
-// narrower but load-bearing, is `capabilityServerName`'s own: a capability server's `winter__<key>`
-// name can never equal the bare brand name `"winter"` itself, which the router reserves for its
+// R-1's NAMESPACE IS `clover` (`CORE_BRAND.mcpServerName`) — the daemon's OWN brand namespace, which
+// since C0 differs from the SDK default's (`WINTER_BRAND`); nothing here depends on the two being
+// equal or apart. The invariant that still matters,
+// narrower but load-bearing, is `capabilityServerName`'s own: a capability server's `clover__<key>`
+// name can never equal the bare brand name `"clover"` itself, which the router reserves for its
 // standing messaging server — the `__<key>` suffix guarantees that. The Mac/iOS renderers key tool
-// rows on Winter's names (P8b-25). `mcpToolName` is TWO-ARG — it takes the brand and the WHOLE tool
+// rows on Clover's names (P8b-25). `mcpToolName` is TWO-ARG — it takes the brand and the WHOLE tool
 // token — so the `<server>__<tool>` join happens here.
 import { mcpToolName } from "@yanlinglabs/winter-agent-sdk";
 import { CORE_BRAND } from "../runtime-sdk/brand";
@@ -50,11 +48,11 @@ export type { SessionMode };
 
 /** The capability server keys, in the order `buildCapabilitiesFor` returns them.
  *
- *  The fix wave added `lsp` (review F7): the `lsp` tool was retired on the premise that Winter's own
+ *  The fix wave added `lsp` (review F7): the `lsp` tool was retired on the premise that Clover's own
  *  LSP serves the child, and the measured 0.0.4 advertised set has none. Phase 8c Lane 3 (Task 3.4)
  *  added `external`: plugin-contributed tools, forwarded to the owning plugin over its existing RPC —
  *  its tool set is per-plugin and dynamic, so (unlike every other key) it has no corresponding
- *  `WINTER_CAPABILITY_TOOLS` rows; mode scoping for it lives on each `ExternalToolSource.modes`
+ *  `CLOVER_CAPABILITY_TOOLS` rows; mode scoping for it lives on each `ExternalToolSource.modes`
  *  instead (default `["code"]`, `capabilities/server.ts`'s own documented fallback).
  *
  *  **`web` LEFT the list (2026-09-18, the web-tools ruling.)** P8b-33 had added it because every mode
@@ -71,18 +69,18 @@ export type CapabilityServerKey = (typeof CAPABILITY_SERVER_KEYS)[number];
 
 /**
  * Server keys the daemon USED to own and no longer builds — still RESERVED, so no configured server can
- * take the name: `runtime-sdk/tool-names.ts` keeps stripping `mcp__winter__<key>__<tool>` for every one
- * of them (old session JSONLs replay those rows), so a user server named `winter__research` or
- * `winter__web` would otherwise mint a name that strips to the host's own `Search`/`web_fetch` — the
+ * take the name: `runtime-sdk/tool-names.ts` keeps stripping `mcp__clover__<key>__<tool>` for every one
+ * of them (old session JSONLs replay those rows), so a user server named `clover__research` or
+ * `clover__web` would otherwise mint a name that strips to the host's own `Search`/`web_fetch` — the
  * NETWORK class, allowed under every policy.
  *
- *  - `research` (Winter's Exa-answer `Search`) left on 2026-10-01: `Search` is the agent SDK's built-in.
+ *  - `research` (Clover's Exa-answer `Search`) left on 2026-10-01: `Search` is the agent SDK's built-in.
  *  - `web` (`web_fetch`/`web_search`) left on 2026-09-18.
  */
 export const RETIRED_CAPABILITY_SERVER_KEYS = ["research", "web"] as const;
 
 /**
- * `capabilityToolName("sessions", "list_sessions")` → `"mcp__winter__sessions__list_sessions"`.
+ * `capabilityToolName("sessions", "list_sessions")` → `"mcp__clover__sessions__list_sessions"`.
  *
  * The SDK's `mcpToolName(brand, tool)` prefixes `mcp__<brand.mcpServerName>__`; the server key is
  * folded into the tool token because a capability server is forwarded under its OWN name (surface
@@ -95,7 +93,7 @@ export function capabilityToolName(serverKey: string, tool: string): string {
 }
 
 /**
- * The NAME a capability server is declared with — `winter__sessions`, `winter__browser`, … (P8b-35).
+ * The NAME a capability server is declared with — `clover__sessions`, `clover__browser`, … (P8b-35).
  *
  * The router keys its capability record by `server.name`, merges the server into the forwarded
  * `Options.mcpServers` under it, and a child names that server's tools `mcp__<server>__<tool>`. So
@@ -103,7 +101,7 @@ export function capabilityToolName(serverKey: string, tool: string): string {
  * literal. Declared as `"sessions"` instead, every name in the table below would be one segment
  * short of what the child actually sees — see this file's header for why that is silent.
  *
- * `winter__<key>` can never equal `brand.mcpServerName` (`"winter"`), which is the one name the
+ * `clover__<key>` can never equal `brand.mcpServerName` (`"clover"`), which is the one name the
  * router refuses for a capability server (it would shadow the standing messaging server).
  */
 export function capabilityServerName(serverKey: string): string {
@@ -115,8 +113,8 @@ export function capabilityServerName(serverKey: string): string {
  * never be allowed to take — the brand's own namespace plus every daemon-owned capability server
  * name. `assertNoCapabilityCollision` (`capabilities/index.ts`) already refuses these at SESSION
  * SPAWN, but that is one door too late for a write door: a configured server named e.g.
- * `winter__browser` would sit in settings.json refusing every session created afterward rather than
- * being refused at the moment it's added. `winter mcp add`/`mcp.add` (`agent/mcp/mcp-write.ts`)
+ * `clover__browser` would sit in settings.json refusing every session created afterward rather than
+ * being refused at the moment it's added. `clover mcp add`/`mcp.add` (`agent/mcp/mcp-write.ts`)
  * check this SET before the write ever reaches `saveSettings`. Claude has no equivalent check
  * because it owns no daemon MCP servers of its own to collide with.
  */
@@ -132,10 +130,10 @@ export function reservedMcpServerNames(): Set<string> {
  * that silently widened a tool's reach (chat gaining `bash`-adjacent power, dispatch gaining a code-only
  * tool) fails a test rather than shipping. The servers filter by it structurally (`server.ts`).
  *
- * `plainName` — the ORDINARY tool name the model is shown in place of `mcp__winter__<key>__<tool>`
+ * `plainName` — the ORDINARY tool name the model is shown in place of `mcp__clover__<key>__<tool>`
  * (`SpawnSession`, `Computer`, …), through the agent SDK's `McpSdkServerConfig.toolNames`. That plain name
  * is the call's identity everywhere downstream (the transcript, hook inputs, `canUseTool`, the gate via
- * `runtime-sdk/tool-names.ts`'s pair table); the `mcp__winter__…` spelling stays an EQUIVALENT identity in
+ * `runtime-sdk/tool-names.ts`'s pair table); the `mcp__clover__…` spelling stays an EQUIVALENT identity in
  * the runtime, so a saved rule or an old transcript naming it keeps working. Absent: the tool keeps its
  * MCP name (office, LSP, plugin extras).
  *
@@ -167,8 +165,8 @@ export interface CapabilityToolFacts {
   /**
    * The tool is genuinely READ-ONLY: its server lists it `annotations.readOnlyHint: true`, so the runtime
    * runs its calls concurrently by claude's ordinary MCP rule. `ListSessions` only reads the session store.
-   * (Winter's connector permissions never read this for a capability tool — `isConnectorToolName` excludes
-   * every capability name, plain or `mcp__winter__<key>__…`.)
+   * (Clover's connector permissions never read this for a capability tool — `isConnectorToolName` excludes
+   * every capability name, plain or `mcp__clover__<key>__…`.)
    */
   readOnly?: true;
 }
@@ -182,44 +180,44 @@ export interface CapabilityToolFacts {
  * The literal spellings are asserted equal to `capabilityToolName(key, tool)` in
  * `test/capabilities/names.test.ts`; that test is what keeps the two spellings from drifting.
  */
-export const WINTER_CAPABILITY_TOOLS = {
+export const CLOVER_CAPABILITY_TOOLS = {
   // `sessions` — dispatch's orchestration surface (`modes: ["dispatch"]` on both defs). EAGER: the ruling
   // lists them as ordinary dispatch tools. `manage_session` (ManageSession) was removed 2026-10-02.
   // `SpawnSession` is CONCURRENCY-SAFE (user ruling 2026-10-03): several spawns of one round run at once;
   // `ListSessions` is READ-ONLY (`readOnlyHint: true`), so it runs beside other calls too.
-  "mcp__winter__sessions__session_spawn": { modes: ["dispatch"], plainName: "SpawnSession", eager: true, concurrent: true },
-  "mcp__winter__sessions__list_sessions": { modes: ["dispatch"], plainName: "ListSessions", eager: true, readOnly: true },
+  "mcp__clover__sessions__session_spawn": { modes: ["dispatch"], plainName: "SpawnSession", eager: true, concurrent: true },
+  "mcp__clover__sessions__list_sessions": { modes: ["dispatch"], plainName: "ListSessions", eager: true, readOnly: true },
   // `computer` — `modes: ["code","dispatch"]`, deferred in both. Its PRESENCE additionally follows the
   // LIVE `settings.computerUse.enabled`, read when the session's servers are built (`index.ts`).
-  "mcp__winter__computer__computer": { modes: ["code", "dispatch"], plainName: "Computer", lane: "computer" },
+  "mcp__clover__computer__computer": { modes: ["code", "dispatch"], plainName: "Computer", lane: "computer" },
   // `computer_v2` (ComputerV2, 2026-10-08) — the script-based computer tool: `modes: ["code","dispatch"]`,
   // deferred in both, built INSTEAD of `computer` (never beside it — `computerUse.legacyComputer` picks the
   // old one for an A/B). CONCURRENCY-SAFE WITH NO LANE: the daemon owns the per-target locks
   // (`computer-use/locks.ts`), so two sessions on two apps run at once and two on one app wait in the daemon.
-  "mcp__winter__computer_v2__script": { modes: ["code", "dispatch"], plainName: "ComputerV2", concurrent: true },
+  "mcp__clover__computer_v2__script": { modes: ["code", "dispatch"], plainName: "ComputerV2", concurrent: true },
   // `browser` — the only capability tool eligible in all three modes, deferred in all three. Chat sees a
   // READ-ONLY verb set, enforced INSIDE the capability (`browser.ts`'s `argsByMode`, resolved from the
   // caller's mode), because a construction-time capability set cannot express a per-ACTION subset and a
   // whole-tool deny would take the read verbs away too.
-  "mcp__winter__browser__browser": { modes: ["code", "dispatch", "chat"], plainName: "Browser", lane: "browser" },
+  "mcp__clover__browser__browser": { modes: ["code", "dispatch", "chat"], plainName: "Browser", lane: "browser" },
   // `office` — the three LibreOffice-bridge tools. CODE ONLY since the 2026-10-01 ruling (dispatch's
   // allowed set names no office tool); deferred, under their MCP names.
-  "mcp__winter__office__docs": { modes: ["code"] },
-  "mcp__winter__office__sheets": { modes: ["code"] },
-  "mcp__winter__office__slides": { modes: ["code"] },
-  // `research` (Winter's own Exa-answer `Search`) was HERE until 2026-10-01: `Search` is the agent SDK's
+  "mcp__clover__office__docs": { modes: ["code"] },
+  "mcp__clover__office__sheets": { modes: ["code"] },
+  "mcp__clover__office__slides": { modes: ["code"] },
+  // `research` (Clover's own Exa-answer `Search`) was HERE until 2026-10-01: `Search` is the agent SDK's
   // built-in now (opt-in through `Options.tools`, keyed on `Options.web.search.authRef`), and old session
-  // JSONLs' `mcp__winter__research__Search` rows still strip to `Search` for the renderers and the gate.
+  // JSONLs' `mcp__clover__research__Search` rows still strip to `Search` for the renderers and the gate.
   // `ReadPage` and the `web` server's `web_fetch`/`web_search` left on 2026-09-18 (their names survive
   // as CLASSIFICATION DATA only, in `runtime-sdk/tool-names.ts`).
   // `lsp` (fix wave, review F7) — the single multi-purpose language-server tool: code only, deferred.
-  "mcp__winter__lsp__lsp": { modes: ["code"] },
+  "mcp__clover__lsp__lsp": { modes: ["code"] },
 } as const satisfies Readonly<Record<string, CapabilityToolFacts>>;
 
 /** The name the CHILD knows a capability tool by: its plain name when it has one, else its MCP name. */
 export function capabilityAdvertisedName(mcpName: string): string {
-  const facts = (WINTER_CAPABILITY_TOOLS as Readonly<Record<string, CapabilityToolFacts>>)[mcpName];
+  const facts = (CLOVER_CAPABILITY_TOOLS as Readonly<Record<string, CapabilityToolFacts>>)[mcpName];
   return facts?.plainName ?? mcpName;
 }
 
-export type WinterCapabilityToolName = keyof typeof WINTER_CAPABILITY_TOOLS;
+export type CloverCapabilityToolName = keyof typeof CLOVER_CAPABILITY_TOOLS;

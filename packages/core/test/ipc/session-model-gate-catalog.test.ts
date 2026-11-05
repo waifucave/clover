@@ -23,7 +23,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, ERR, type WritableSocket } from "@yanlinglabs/winter-protocol";
+import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, ERR, type WritableSocket } from "@waifucave/clover-protocol";
 import { startIpcServer } from "../../src/ipc/server";
 import { SessionStore } from "../../src/sessions/store";
 import { SessionHub } from "../../src/sessions/hub";
@@ -94,7 +94,7 @@ describe("resolveModelSelection: tag shape + provider existence, engine.knownMod
   afterEach(() => { stop?.(); stop = undefined; });
 
   async function boot(models: ModelInfo[], handoff?: { planAndApplySwitch(sessionId: string, model: string | null, confirmLossy: boolean): Promise<PlanSwitchOutcome> }) {
-    const home = mkdtempSync(join(tmpdir(), "winter-model-gate-catalog-"));
+    const home = mkdtempSync(join(tmpdir(), "clover-model-gate-catalog-"));
     const store = new SessionStore(home);
     const socketPath = join(home, "core.sock");
     const authority = new TokenAuthority(new FileSecretStore(join(home, "secrets.json")));

@@ -6,7 +6,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, ERR, type WritableSocket } from "@yanlinglabs/winter-protocol";
+import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, ERR, type WritableSocket } from "@waifucave/clover-protocol";
 import { startIpcServer } from "../../src/ipc/server";
 import { SessionStore } from "../../src/sessions/store";
 import { FileSecretStore } from "../../src/auth/secret-store";
@@ -85,7 +85,7 @@ function fakeBroker(overrides: Partial<ConsoleProfileBroker> = {}): { broker: Co
     login: async (onLine) => {
       calls.push("login");
       onLine("Opening browser to sign in...");
-      return { submitCode: async () => { calls.push("submitCode"); }, done: Promise.resolve({ ok: true, profile: "winter" }) };
+      return { submitCode: async () => { calls.push("submitCode"); }, done: Promise.resolve({ ok: true, profile: "clover" }) };
     },
     profileExists: () => { calls.push("profileExists"); return false; },
     refreshBearer: async () => { calls.push("refreshBearer"); return { ok: true, expiresAt: 1 }; },
@@ -113,7 +113,7 @@ describe("provider.login / provider.loginCode / provider.logout (O6, P10a-6)", (
   afterEach(() => { stop?.(); stop = undefined; });
 
   async function boot(brokerOverrides: Partial<ConsoleProfileBroker> = {}, ipcOpts: { providerLoginUrlHintWaitMs?: number; consoleSessions?: string[] } = {}) {
-    const home = mkdtempSync(join(tmpdir(), "winter-provider-login-"));
+    const home = mkdtempSync(join(tmpdir(), "clover-provider-login-"));
     const store = new SessionStore(home);
     const socketPath = join(home, "core.sock");
     const secrets = new FileSecretStore(join(home, "secrets"));
@@ -124,7 +124,7 @@ describe("provider.login / provider.loginCode / provider.logout (O6, P10a-6)", (
     // internal-jobs view. Minimal stand-ins record both, in the SAME `calls` log as the broker's own, so
     // a test can assert the order (the bearer must have landed before either runs).
     const consoleSessions = ipcOpts.consoleSessions ?? [];
-    const winter = {
+    const clover = {
       list: () => consoleSessions.map((sessionId) => ({ sessionId, turnRunning: false, idle: async () => {} })),
       legOf: () => "winter" as const,
       advisorProviderOf: () => undefined,
@@ -137,9 +137,9 @@ describe("provider.login / provider.loginCode / provider.logout (O6, P10a-6)", (
     // pay the full 3s production default per test; 200ms is still comfortably above the async
     // 50ms-delayed-URL test's own delay, below.
     const server = startIpcServer({
-      socketPath, serverVersion: "test", tokens: authority, store, winterHome: home, secrets, consoleBroker: broker,
+      socketPath, serverVersion: "test", tokens: authority, store, cloverHome: home, secrets, consoleBroker: broker,
       providerLoginUrlHintWaitMs: ipcOpts.providerLoginUrlHintWaitMs ?? 200,
-      winter: winter as never, records: records as never, internalRouter: internalRouter as never,
+      clover: clover as never, records: records as never, internalRouter: internalRouter as never,
     });
     stop = () => { server.stop(); store.close(); };
     return { socketPath, harnessToken: tokens.harness, calls };
@@ -265,7 +265,7 @@ describe("provider.login / provider.loginCode / provider.logout (O6, P10a-6)", (
   });
 
   // WS-23 live-gate fix: the Console bearer is the `console` provider's credential now (sessions name
-  // it, Winter's own jobs may run on it), so a sign-in does what `credential.set` does for a key —
+  // it, Clover's own jobs may run on it), so a sign-in does what `credential.set` does for a key —
   // AFTER the bearer has landed: one awaited refresh, then the refresher, then the live `console`
   // children are replaced and the internal-jobs view re-probed.
   test("a successful login replaces the live console children and re-probes the jobs' view, once the bearer has landed", async () => {
@@ -378,7 +378,7 @@ describe("provider.login / provider.loginCode / provider.logout (O6, P10a-6)", (
   // THROUGH the RPC layer, proving `provider.logout` no longer collapses that thrown reason into a
   // bare `{ok:false}`.
   test("provider.logout surfaces the broker's typed reason as an RPC error when the profile survives (console_logout_incomplete)", async () => {
-    const home = mkdtempSync(join(tmpdir(), "winter-provider-logout-incomplete-"));
+    const home = mkdtempSync(join(tmpdir(), "clover-provider-logout-incomplete-"));
     const store = new SessionStore(home);
     const socketPath = join(home, "core.sock");
     const secrets = new FileSecretStore(join(home, "secrets"));
@@ -388,13 +388,13 @@ describe("provider.login / provider.loginCode / provider.logout (O6, P10a-6)", (
     // (measured behaviour this fix wave's own doc describes) — `anthropicConsoleProfileExists`
     // stays `true` no matter what `logoutAnthropicConsole` does.
     const sdk: AnthropicConsoleSdk = {
-      startAnthropicConsoleBrokerLogin: async () => ({ submitCode: async () => {}, done: Promise.resolve({ ok: true, profile: "winter" }) }),
+      startAnthropicConsoleBrokerLogin: async () => ({ submitCode: async () => {}, done: Promise.resolve({ ok: true, profile: "clover" }) }),
       refreshAnthropicBearer: async () => ({ ok: true, expiresAt: 1 }),
       anthropicConsoleProfileExists: () => true,
       logoutAnthropicConsole: async () => {},
     };
     const broker = createConsoleProfileBroker({ home, antExecutable: () => "/bin/ant", secrets, sdk });
-    const server = startIpcServer({ socketPath, serverVersion: "test", tokens: authority, store, winterHome: home, secrets, consoleBroker: broker });
+    const server = startIpcServer({ socketPath, serverVersion: "test", tokens: authority, store, cloverHome: home, secrets, consoleBroker: broker });
     stop = () => { server.stop(); store.close(); };
     const c = await TestClient.connect(socketPath);
     await c.hello(tokens.harness, "cli");
@@ -441,13 +441,13 @@ describe("provider.login / provider.loginCode / provider.logout (O6, P10a-6)", (
   });
 
   test("without a consoleBroker wired, provider.login/logout refuse a typed INTERNAL failure", async () => {
-    const home = mkdtempSync(join(tmpdir(), "winter-provider-login-none-"));
+    const home = mkdtempSync(join(tmpdir(), "clover-provider-login-none-"));
     const store = new SessionStore(home);
     const socketPath = join(home, "core.sock");
     const secrets = new FileSecretStore(join(home, "secrets"));
     const authority = new TokenAuthority(secrets);
     const tokens = await authority.ensureTokens();
-    const server = startIpcServer({ socketPath, serverVersion: "test", tokens: authority, store, winterHome: home, secrets });
+    const server = startIpcServer({ socketPath, serverVersion: "test", tokens: authority, store, cloverHome: home, secrets });
     stop = () => { server.stop(); store.close(); };
     const c = await TestClient.connect(socketPath);
     await c.hello(tokens.harness, "cli");
@@ -468,7 +468,7 @@ describe("provider.status (O6, P10a-3); WS-20: presence alone, effective gains \
   afterEach(() => { stop?.(); stop = undefined; });
 
   async function boot(opts: { hasApiKey?: boolean; hasProfile?: boolean } = {}) {
-    const home = mkdtempSync(join(tmpdir(), "winter-provider-status-"));
+    const home = mkdtempSync(join(tmpdir(), "clover-provider-status-"));
     const settingsPath = join(home, "settings.json");
     saveSettings(settingsPath, Settings.parse({ schemaVersion: 3, provider: { model: "codex-oauth/gpt-5.6-sol" } }));
     const store = new SessionStore(home);
@@ -478,7 +478,7 @@ describe("provider.status (O6, P10a-3); WS-20: presence alone, effective gains \
     const authority = new TokenAuthority(secrets);
     const tokens = await authority.ensureTokens();
     const { broker } = fakeBroker({ profileExists: () => opts.hasProfile ?? false });
-    const server = startIpcServer({ socketPath, serverVersion: "test", tokens: authority, store, winterHome: home, secrets, consoleBroker: broker });
+    const server = startIpcServer({ socketPath, serverVersion: "test", tokens: authority, store, cloverHome: home, secrets, consoleBroker: broker });
     stop = () => { server.stop(); store.close(); };
     return { socketPath, harnessToken: tokens.harness };
   }

@@ -1,11 +1,11 @@
 import { describe, expect, test } from "bun:test";
-import type { SessionEvent } from "@yanlinglabs/winter-protocol";
+import type { SessionEvent } from "@waifucave/clover-protocol";
 import { accept, acceptError, assistantText, assistantToolUse, beginTurn, flat, init, makeProjector, result, toolResult, userTextFrame } from "./harness";
 
 /**
  * 2026-09-22 (C2): TURN BOUNDARIES IN ORDER.
  *
- * On the Winter leg a push made while a turn is running is queued by the child as its OWN later turn
+ * On the Clover leg a push made while a turn is running is queued by the child as its OWN later turn
  * (agent SDK 0.0.17 `engine.ts`: a `user` frame goes to `userFrames`, which the turn loop drains one
  * envelope at a time) — P8b-38 measured it: two pushes, two `result`s. So the steered-in turn STARTS
  * when the running one ends, and that is where its `turn_started` belongs. Announcing it at push time

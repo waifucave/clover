@@ -6,7 +6,7 @@ import { FileSecretStore } from "../src/auth/secret-store";
 import { TokenAuthority } from "../src/auth/tokens";
 
 function makeAuthority(): TokenAuthority {
-  return new TokenAuthority(new FileSecretStore(mkdtempSync(join(tmpdir(), "winter-secrets-"))));
+  return new TokenAuthority(new FileSecretStore(mkdtempSync(join(tmpdir(), "clover-secrets-"))));
 }
 
 describe("TokenAuthority", () => {
@@ -31,7 +31,7 @@ describe("TokenAuthority", () => {
   });
 
   test("FileSecretStore writes 0600 files in a 0700 dir", async () => {
-    const dir = join(mkdtempSync(join(tmpdir(), "winter-secrets-")), "inner");
+    const dir = join(mkdtempSync(join(tmpdir(), "clover-secrets-")), "inner");
     const store = new FileSecretStore(dir);
     await store.set("probe", "v");
     const { statSync } = await import("node:fs");

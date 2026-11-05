@@ -1,8 +1,8 @@
-// Semantic color theme for the TUI (Claude-Code-shaped keys, Winter's own accent).
+// Semantic color theme for the TUI (Claude-Code-shaped keys, Clover's own accent).
 // Values are hex strings suitable for Ink `color`/`backgroundColor` props and
 // for building `chalk.hex(...)` instances in the markdown/highlight pipeline.
 export const theme = {
-  accent: "#8CCBF0", // Winter ice blue — replaces CC's brand key everywhere it appears
+  accent: "#8CCBF0", // Clover ice blue — replaces CC's brand key everywhere it appears
   text: "#FFFFFF",
   subtle: "#505050",
   inactive: "#999999",

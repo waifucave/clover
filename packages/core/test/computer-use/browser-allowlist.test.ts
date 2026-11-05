@@ -108,7 +108,7 @@ describe("transport.ts", () => {
     expect(seen).toEqual([undefined, "chrome"]);
     const full = new TransportError("capacity", "the headless browser's tab budget is spent — close tabs first");
     expect(full.code).toBe("capacity");
-    expect(familyName("headless")).toBe("Winter (headless)");
+    expect(familyName("headless")).toBe("Clover (headless)");
     expect(familyInfo("headless")?.bundleIds).toEqual([]);
     expect(BROWSER_FAMILIES.map((f) => f.family).slice(0, 2)).toEqual(["winter", "headless"]);
   });

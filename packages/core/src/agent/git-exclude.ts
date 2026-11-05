@@ -1,11 +1,11 @@
-// WS-21 (spec §4.3, F21): keep a project's personal `.winter/settings.local.json` out of git, the way
+// WS-21 (spec §4.3, F21): keep a project's personal `.clover/settings.local.json` out of git, the way
 // claude keeps `.claude/settings.local.json` out of it.
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 
-/** The pattern appended to the global excludes (claude's own, with Winter's project dir). */
-export const LOCAL_SETTINGS_EXCLUDE = "**/.winter/settings.local.json";
+/** The pattern appended to the global excludes (claude's own, with Clover's project dir). */
+export const LOCAL_SETTINGS_EXCLUDE = "**/.clover/settings.local.json";
 
 /** `git -C <dir> <args>`, inheriting the process env (HOME, XDG_CONFIG_HOME, GIT_CONFIG_GLOBAL). */
 function git(dir: string, args: string[]): { code: number; stdout: string } {
@@ -50,7 +50,7 @@ export function globalGitExcludesFile(cwd: string): string {
 
 /**
  * claude parity: inside a git repo, when `git check-ignore` says the file is not ignored,
- * append `**\/.winter/settings.local.json` to `git config --global core.excludesfile`, else
+ * append `**\/.clover/settings.local.json` to `git config --global core.excludesfile`, else
  * `$XDG_CONFIG_HOME/git/ignore`, else `~/.config/git/ignore`. Idempotent.
  *
  * Best-effort, never throws: a global excludes file that cannot be written is a cosmetic loss (git
@@ -61,7 +61,7 @@ export function ensureGlobalGitExclude(gitRoot: string): void {
   const inside = git(gitRoot, ["rev-parse", "--is-inside-work-tree"]);
   if (inside.code !== 0 || inside.stdout.trim() !== "true") return;
   // Exit 0 = ignored already (the repo's own .gitignore, info/exclude, or the global file).
-  if (git(gitRoot, ["check-ignore", "-q", join(".winter", "settings.local.json")]).code === 0) return;
+  if (git(gitRoot, ["check-ignore", "-q", join(".clover", "settings.local.json")]).code === 0) return;
   const path = globalGitExcludesFile(gitRoot);
   try {
     const existing = existsSync(path) ? readFileSync(path, "utf8") : "";
@@ -74,6 +74,6 @@ export function ensureGlobalGitExclude(gitRoot: string): void {
     const prefix = existing.length > 0 && !existing.endsWith("\n") ? "\n" : "";
     appendFileSync(path, `${prefix}${LOCAL_SETTINGS_EXCLUDE}\n`);
   } catch (err) {
-    console.error(`git-exclude: could not update ${path} (${(err as NodeJS.ErrnoException)?.code ?? "error"}) — .winter/settings.local.json may show as untracked`);
+    console.error(`git-exclude: could not update ${path} (${(err as NodeJS.ErrnoException)?.code ?? "error"}) — .clover/settings.local.json may show as untracked`);
   }
 }

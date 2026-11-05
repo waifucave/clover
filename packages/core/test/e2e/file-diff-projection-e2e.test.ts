@@ -8,16 +8,16 @@
 // REAL daemon (`startDaemon`), a REAL Write tool call, and the assertion is on the PERSISTED
 // session log the projector itself wrote — never a direct call to `takeFileDiff`/`attachFileDiff`.
 //
-// The `p5checkpoint` winter-test double (`winter-code-e2e.test.ts`'s own fixture, reused verbatim
+// The `p5checkpoint` clover-test double (`clover-code-e2e.test.ts`'s own fixture, reused verbatim
 // here) reads a given path, then Writes "AFTER\n" to it, then Bash-redirects into "<path>.bash" —
-// callId `p5-ckpt-write` names its Write step. A plain in-root, non-`.winter` target keeps every
-// step silent under `auto` (no approval card), exactly as `winter-code-e2e.test.ts`'s own memory-dir
+// callId `p5-ckpt-write` names its Write step. A plain in-root, non-`.clover` target keeps every
+// step silent under `auto` (no approval card), exactly as `clover-code-e2e.test.ts`'s own memory-dir
 // case (m) proves for the same double.
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, type WritableSocket, type SessionEvent } from "@yanlinglabs/winter-protocol";
+import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, type WritableSocket, type SessionEvent } from "@waifucave/clover-protocol";
 import { FileSecretStore } from "../../src/auth/secret-store";
 import { readStoredDiff } from "../../src/diffs/store";
 import { startDaemon, type RunningDaemon } from "../../src/daemon";
@@ -79,7 +79,7 @@ describeWithWinterBinary("tool_result.fileDiff — the projector's REAL wiring (
   let client: TestClient;
 
   beforeAll(async () => {
-    home = realpathSync(mkdtempSync(join(tmpdir(), "winter-filediff-e2e-")));
+    home = realpathSync(mkdtempSync(join(tmpdir(), "clover-filediff-e2e-")));
     writeFileSync(join(home, "settings.json"), JSON.stringify({
       schemaVersion: 2,
       provider: { type: "openai-compatible", model: "winter-test/p5checkpoint", baseUrl: "http://127.0.0.1:9/v1" },
@@ -101,7 +101,7 @@ describeWithWinterBinary("tool_result.fileDiff — the projector's REAL wiring (
 
   test("a real Write through dist/winter yields a persisted tool_result with fileDiff", async () => {
     const d = daemon!;
-    const cwd = realpathSync(mkdtempSync(join(tmpdir(), "winter-filediff-e2e-cwd-")));
+    const cwd = realpathSync(mkdtempSync(join(tmpdir(), "clover-filediff-e2e-cwd-")));
     const target = join(cwd, "note.txt");
     writeFileSync(target, "BEFORE\n"); // the double Reads before it Writes (read-ladder)
 
@@ -114,8 +114,8 @@ describeWithWinterBinary("tool_result.fileDiff — the projector's REAL wiring (
     await Bun.sleep(50);
 
     const log = d.sessions.read(sessionId);
-    // A plain in-root, non-`.winter` path: every step (Read, Write, the bash redirect into
-    // `<target>.bash`) lands silently under `auto` — no card, exactly `winter-code-e2e.test.ts`'s
+    // A plain in-root, non-`.clover` path: every step (Read, Write, the bash redirect into
+    // `<target>.bash`) lands silently under `auto` — no card, exactly `clover-code-e2e.test.ts`'s
     // own case (m).
     expect(log.filter((e) => e.type === "approval_requested")).toEqual([]);
     expect(readFileSync(target, "utf8")).toBe("AFTER\n");
@@ -141,7 +141,7 @@ describeWithWinterBinary("tool_result.fileDiff — the projector's REAL wiring (
 
   test("a replayed tool_result never re-attaches a diff (destructive take) — session.history still carries the ONE it got", async () => {
     const d = daemon!;
-    const cwd = realpathSync(mkdtempSync(join(tmpdir(), "winter-filediff-e2e-cwd2-")));
+    const cwd = realpathSync(mkdtempSync(join(tmpdir(), "clover-filediff-e2e-cwd2-")));
     const target = join(cwd, "note2.txt");
     writeFileSync(target, "BEFORE\n");
 

@@ -1,15 +1,15 @@
 /**
- * ComputerV2 (2026-10-08) — the compiled-binary proof for the AUTOMATION worker (`winter-core
+ * ComputerV2 (2026-10-08) — the compiled-binary proof for the AUTOMATION worker (`clover-core
  * __automation-worker`), the per-session sandboxed process that runs a model's ComputerV2 scripts.
  *
  * `bun test` drives the worker through its DEV path (`bun computer-use/worker/entry.ts`), which says nothing
  * about the shipped artifact: the entry must also survive `bun build --compile`, route through `main.ts`'s
  * positional `__automation-worker` branch, boot under the workflow seatbelt and keep Bun's transpiler (it
  * strips TypeScript) after the worker withholds `Bun` from scripts. This script checks exactly that, on a
- * freshly compiled `dist/winter-core`:
+ * freshly compiled `dist/clover-core`:
  *
- *   1. `bun run --filter '@yanlinglabs/winter-cli' compile:core` → dist/winter-core (gitignored).
- *   2. A ROUND TRIP under `buildAutomationSeatbeltProfile(dist/winter-core)` — the worker's own READ-ALLOWLIST
+ *   1. `bun run --filter '@waifucave/clover-cli' compile:core` → dist/clover-core (gitignored).
+ *   2. A ROUND TRIP under `buildAutomationSeatbeltProfile(dist/clover-core)` — the worker's own READ-ALLOWLIST
  *      profile the daemon uses, with its minimal environment and `/` as cwd — and inside it the containment:
  *      a read of the user's home and of `/etc/passwd` denied, the environment empty —
  *      speaking the bridge by hand: `ready`, a run whose `apps.list()` call is answered here, a TypeScript
@@ -30,7 +30,7 @@ import { AUTOMATION_WORKER_ENV, buildAutomationSeatbeltProfile } from "../packag
 import type { HostToWorker, WorkerToHost } from "../packages/core/src/computer-use/worker/bridge";
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
-const DIST_BINARY = join(REPO_ROOT, "dist", "winter-core");
+const DIST_BINARY = join(REPO_ROOT, "dist", "clover-core");
 const ARG = "__automation-worker";
 const TIMEOUT_MS = 30_000;
 
@@ -110,8 +110,8 @@ async function main(): Promise<void> {
   log("=== verify:automation-worker — the compiled automation worker ===");
   if (!sandboxAvailable()) { log("SKIPPED — sandbox-exec unavailable on this host (macOS only)."); process.exit(0); }
 
-  log("\n--- Step 1: compile dist/winter-core ---");
-  const compile = spawnSync(process.execPath, ["run", "--filter", "@yanlinglabs/winter-cli", "compile:core"], { cwd: REPO_ROOT, encoding: "utf8", timeout: 240_000 });
+  log("\n--- Step 1: compile dist/clover-core ---");
+  const compile = spawnSync(process.execPath, ["run", "--filter", "@waifucave/clover-cli", "compile:core"], { cwd: REPO_ROOT, encoding: "utf8", timeout: 240_000 });
   if (compile.stdout?.trim()) log(compile.stdout.trim());
   if (compile.stderr?.trim()) log(`[stderr]\n${compile.stderr.trim()}`);
   if (compile.status !== 0 || !existsSync(DIST_BINARY)) fail(`compile:core failed (exit ${compile.status ?? compile.signal})`);
@@ -139,7 +139,7 @@ async function main(): Promise<void> {
   log("\n--- Assertions ---");
   for (const [name, ok] of checks) log(`  [${ok ? "PASS" : "FAIL"}] ${name}`);
   if (!checks.every(([, ok]) => ok)) fail("the compiled automation worker misbehaved — see the transcript above");
-  log("\nRESULT: PASS — dist/winter-core runs ComputerV2 scripts in its sandboxed automation worker and refuses to run outside it.");
+  log("\nRESULT: PASS — dist/clover-core runs ComputerV2 scripts in its sandboxed automation worker and refuses to run outside it.");
   process.exit(0);
 }
 
