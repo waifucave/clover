@@ -14,7 +14,8 @@ test('different plugins, ports, redirects and opaque initiators fail closed',()=
  for(const url of ['https://one.test','https://one.test:445','https://two.test','file:///tmp/a','clover-plugin://p-beta'])assert.equal(decision(url,'clover-plugin://p-alpha',grants).cancel,true);
 });
 test('netlog extracts resolver intent and failure instead of inferring from HTTP silence',()=>{
- const d=extractNetlog({constants:{logEventTypes:{HOST_RESOLVER_MANAGER_REQUEST:1},logEventPhase:{BEGIN:1,END:2}},events:[{type:1,phase:1,source:{id:9},params:{host:'dns.localhost',is_speculative:true}},{type:1,phase:2,source:{id:9},params:{net_error:-138}}]});assert.equal(d.speculative.length,1);assert.equal(d.errors.length,1);
+ // Real Chromium netlogs name phases PHASE_BEGIN / PHASE_END.
+ const d=extractNetlog({constants:{logEventTypes:{HOST_RESOLVER_MANAGER_REQUEST:1},logEventPhase:{PHASE_BEGIN:1,PHASE_END:2}},events:[{type:1,phase:1,source:{id:9},params:{host:'dns.localhost',is_speculative:true}},{type:1,phase:2,source:{id:9},params:{net_error:-138}}]});assert.equal(d.speculative.length,1);assert.equal(d.errors.length,1);assert.equal(d.events[0].phaseName,'PHASE_BEGIN');
 });
 
 import {inheritedScript} from './network.mjs';

@@ -36,14 +36,19 @@ async function makeWindow(/** @type {any} */ body, /** @type {any} */ options = 
   /** @type {any[]} */ const popups=[];
   const { csp, decision } = await import('./policy.mjs');
   const local = options.local || '';
+  // Single-use mount tokens: each successful plugin document serve consumes its token.
   const mounts=new Set();
   const mountUrl=(/** @type {any} */ host)=>{const token=crypto.randomUUID();mounts.add(token);return `clover-plugin://${host}/?mount=${token}`};
-  body=body.replace(/clover-plugin:\/\/([a-z0-9-]+)\//g,(/** @type {any} */ _m,/** @type {any} */ host)=>mountUrl(host));
+  const shellWithMounts=()=>body.replace(/clover-plugin:\/\/([a-z0-9-]+)\//g,(/** @type {any} */ _m,/** @type {any} */ host)=>mountUrl(host));
   const serve = (/** @type {any} */ request)=> {
     const url = new URL(request.url);
     const core=url.protocol==='clover-core:';
-    if(!core&&!mounts.has(url.searchParams.get('mount')))return new Response('forbidden',{status:403});
-    let content = body, mime = 'text/html';
+    const token=url.searchParams.get('mount');
+    if(!core){
+      if(!mounts.has(token))return new Response('forbidden',{status:403});
+      mounts.delete(token);
+    }
+    let content = core ? shellWithMounts() : '', mime = 'text/html';
     if (!core) content = `<style>body{margin:0;background:#eee}input{width:75px}.menu{pointer-events:none;position:absolute;left:80px;top:100px;width:250px;height:40px;background:#ff00ff;z-index:99999}</style><input id="first"><input id="second"><div id="drag" draggable="true">Clover drag</div><div id="drop">Drop here</div><div class="menu">Plugin menu</div><script>window.events=[];for(const type of ['focusin','keydown','drop','dragenter','dragstart','compositionstart','compositionupdate','compositionend'])document.addEventListener(type,e=>events.push({type,key:e.key,text:e.dataTransfer?.getData('text/plain')}));document.addEventListener('dragstart',e=>e.dataTransfer.setData('text/plain','clover-fixture'));document.addEventListener('dragover',e=>e.preventDefault());document.addEventListener('drop',e=>e.preventDefault());</script>${url.hostname === 'p1' && check === 'process' ? `<iframe src="${mountUrl('p1--child')}" width="50" height="50"></iframe><iframe src="${mountUrl('p2')}" width="50" height="50"></iframe>` : ''}`;
     return new Response(content, {headers:{'Content-Type':mime,'Content-Security-Policy': core ? "default-src 'self'; frame-src clover-plugin://p1 clover-plugin://p2 clover-plugin://p3 clover-plugin://p4 clover-plugin://p5 clover-plugin://p6 clover-plugin://p7 clover-plugin://p8 clover-plugin://p9 clover-plugin://p10 clover-plugin://p11 clover-plugin://p12 clover-plugin://p13 clover-plugin://p14 clover-plugin://p15 clover-plugin://p16 clover-plugin://p17 clover-plugin://p18 clover-plugin://p19 clover-plugin://p20; script-src 'unsafe-inline'; style-src 'unsafe-inline'; frame-ancestors 'none'" : csp(local?[local]:[], options.csp !== false,url.host==='p1'?["'self'",'clover-plugin://p2','clover-plugin://p1--child']:["'self'"])+"; frame-ancestors clover-core://shell clover-plugin://p1", 'X-DNS-Prefetch-Control': 'off', 'Permissions-Policy': 'camera=(), microphone=(), geolocation=()' }});
   };
