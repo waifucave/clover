@@ -2,7 +2,7 @@
 
 Lane H, milestone M0: the lab half of spike S1 (spec §8.2, §8.3 and §14.1 item 1; plan §4 lane H). November 5, 2026.
 
-Code: [`spikes/s1-transport/`](../../spikes/s1-transport/README.md) (the Bun side, the network labs, the CI glue) and [`native/link-sidecar/`](../../native/link-sidecar/) (the native half: quinn and iroh peers, a STUN responder, a stdio sidecar). CI: `.github/workflows/spike-s1.yml` on `lane/h-m0`, runs [1](https://github.com/waifucave/clover/actions/runs/41942502147), [2](https://github.com/waifucave/clover/actions/runs/41943850278), [3](https://github.com/waifucave/clover/actions/runs/41945403885) and [4](https://github.com/waifucave/clover/actions/runs/41948554183); each run's artifacts hold its result files, and [`spikes/s1-transport/results/2026-11-05/`](../../spikes/s1-transport/results/2026-11-05/) keeps the ones the tables below cite (runs 3 and 4). The runs on real networks, and how often traffic falls back to n0's relays, wait for live gate 1.
+Code: [`spikes/s1-transport/`](../../spikes/s1-transport/README.md) (the Bun side, the network labs, the CI glue) and [`native/link-sidecar/`](../../native/link-sidecar/) (the native half: quinn and iroh peers, a STUN responder, a stdio sidecar). CI: `.github/workflows/spike-s1.yml` on `lane/h-m0`, runs [1](https://github.com/waifucave/clover/actions/runs/41942502147), [2](https://github.com/waifucave/clover/actions/runs/41943850278), [3](https://github.com/waifucave/clover/actions/runs/41945403885), [4](https://github.com/waifucave/clover/actions/runs/41948554183) and [5](https://github.com/waifucave/clover/actions/runs/41950156724); each run's artifacts hold its result files, and [`spikes/s1-transport/results/2026-11-05/`](../../spikes/s1-transport/results/2026-11-05/) keeps the ones the tables below cite (runs 3 and 4, and in `run5/` every lab repeated on the final code). The runs on real networks, and how often traffic falls back to n0's relays, wait for live gate 1.
 
 ## Verdicts
 
@@ -10,8 +10,8 @@ Code: [`spikes/s1-transport/`](../../spikes/s1-transport/README.md) (the Bun sid
 | :- | :- | :- | :- |
 | 1 | iroh or plain QUIC (quinn) between a user's computers | **iroh.** The two are equally fast and punch the same NATs. quinn would mean rebuilding iroh's identity, relay fallback and discovery, could not use n0's relays, and has no iOS or Bun binding. quinn did follow a new address faster (0.1 s against 6 s), which re-dialling on network changes covers | Native loopback bulk: iroh 130–608 MB/s, quinn 116–559 MB/s, neither ahead on every OS; RPC p50 0.05–0.19 ms against 0.04–0.15 ms; identical NAT matrix |
 | 2 | iroh, quinn and WebRTC under Bun and inside `bun build --compile`, on all three OSes | **Works, with limits.** Everything loads and compiles on all four targets. n0's napi binding is too slow for bulk data and makes Bun stop firing timers; a binding that passes buffers fixes both. quinn has no binding: it needs a sidecar or our own addon | iroh napi bulk 18–64 MB/s against native 130–608; a 10 ms timer fired once in 1–3.5 s of transfer; an async buffer-typed napi call costs 22–61 µs and moves 1.1–3.3 GB/s; the sidecar's stdio hop is 0.02–0.06 ms |
-| 3 | Punching through routers with no relay | **Works, with limits.** Relay-free iroh connects every NAT pair that can connect without a relay, if each device asks STUN from iroh's own port first and both devices dial at once; a symmetric NAT against a filtering one needs a relay | 13 of 15 NAT pairs direct, the same for quinn; same LAN direct in 1 ms; with only one side dialling, 10 of 25 |
-| 4 | Delay and throughput under `tc netem`, prioritised streams | **Works, with limits.** Connecting costs one round trip and a small RPC the network's delay plus well under a millisecond, on both stacks. But stream priorities alone don't keep small messages fast during a transfer, and neither stack's default congestion control copes with a lossy path | Connect 1 RTT + 1–5 ms; RPC p50 1 RTT + < 0.6 ms; during a transfer, prioritised and equal streams measured the same, +1–15 ms at p50 under Cubic and +35–50 ms under quinn's BBR; at 1 % loss and 80 ms, Cubic 0.2–0.5 MB/s and quinn's BBR 4.7 MB/s |
+| 3 | Punching through routers with no relay | **Works, with limits.** Relay-free iroh connects every NAT pair that can connect without a relay, if each device asks STUN from iroh's own port first and both devices dial at once; a symmetric NAT against a filtering one needs a relay | 13 of 15 NAT pairs direct, the same for quinn, in 1–23 ms, or about 1 s where QUIC had to resend its first packet; same LAN direct; with only one side dialling, 10 of 25 |
+| 4 | Delay and throughput under `tc netem`, prioritised streams | **Works, with limits.** Connecting costs one round trip and a small RPC the network's delay plus under a millisecond, on both stacks. But stream priorities alone don't keep small messages fast during a transfer, and neither stack's default congestion control copes with a lossy path | Two runs: connect 1 RTT + 1–3 ms; RPC p50 1 RTT + 0.1–0.6 ms; during a transfer the controller set the delay, not the priority: Cubic +8 ms on the LAN profile and up to +50 ms on the WAN one, noq's BBRv3 +1–2 ms, quinn's BBR +35–53 ms on the WAN and far ones; at 1 % loss and 80 ms, Cubic 0.2–0.6 MB/s and quinn's BBR 4.4–4.7 MB/s |
 | 5 | WebRTC from a browser to the Bun side | **Works.** Headless Chrome 156 and Firefox 158–159 open data channels to `node-datachannel` under Bun on macOS, Windows and Linux; Lane I can build on [`webrtc-browser.ts`](../../spikes/s1-transport/bun/src/webrtc-browser.ts) | Open 0.15–1.5 s; RTT p50 0.14–0.48 ms; 8–80 MB/s each way; RTT during a parallel upload 6–62 ms (p50) |
 
 Beyond choosing iroh, these results change the spec, and one touches decisions:
@@ -82,7 +82,7 @@ Native, loopback, relays off, ranges over three CI runs:
 
 The harness handed quinn a socket still in blocking mode in the first two runs; tokio needs it non-blocking. That stalled quinn whenever no packet was arriving, so it slowed quinn's idle wake-ups (connects behind NATs, recovery after blackouts) but hardly its loopback numbers. The third run and every NAT, netem and network-change result below have the fix.
 
-Across a real-looking link the two tie (Q4): the same connect time (one round trip plus 1–5 ms) and the same RPC delay (the round trip plus well under a millisecond) in every netem profile. Where throughput differs, the congestion controller makes the difference, and either stack accepts a different one. Through blackouts iroh came back sooner (below).
+Across a real-looking link the two tie (Q4): the same connect time (one round trip plus 1–3 ms) and the same RPC delay (the round trip plus under a millisecond) in every netem profile. Where throughput differs, the congestion controller makes the difference, and either stack accepts a different one. Through blackouts iroh came back sooner (below).
 
 Beyond speed:
 
@@ -97,7 +97,7 @@ Beyond speed:
 | Bun | n0's napi binding (with Q2's limits); or our own addon | Our own addon, or a sidecar |
 | Churn | iroh 1.0 shipped in June 2026 and is at 1.4.1 now; the napi binding is at 1.2.0 | quinn's 0.11 line is stable |
 
-**Verdict: iroh.** Speed doesn't separate them: quinn is ahead on some runners and behind on others, and both are far above what the network delivers once the link leaves the machine (Q4). quinn did better at following a new address (below), and its punch packets saved one retransmission in one NAT pair (Q3), but re-dialling on network changes covers the first and an earlier second dial would cover the other. Everything else favours iroh, and quinn would also break a decision: n0's relays, on by default [D], are iroh relays.
+**Verdict: iroh.** Speed doesn't separate them: quinn is ahead on some runners and behind on others, and both are far above what the network delivers once the link leaves the machine (Q4). quinn did better at following a new address (below), which re-dialling on network changes covers; its punch packets gained nothing over iroh's Initials (Q3). Everything else favours iroh, and quinn would also break a decision: n0's relays, on by default [D], are iroh relays.
 
 ## Question 3: punching with no relay
 
@@ -120,7 +120,7 @@ The routers drop unsolicited UDP silently, every pair starts from fresh namespac
 
 Peer `a` then runs 20 RPCs on the connection to prove data flows. The time is from the moment a peer had the other's record to its first connection; the lab's rendezvous polls every 20 ms, which is most of the 22 ms values.
 
-Direct connections, iroh, both peers dialling (time to connect, CI run 2; runs 3 and 4 connected the same pairs, within the 20 ms poll of these times):
+Direct connections, iroh, both peers dialling (time to connect, CI run 2; runs 3, 4 and 5 connected the same pairs, within the 20 ms poll of these times):
 
 | a \ b | public | full | restricted | port-restricted | symmetric |
 | :- | :-: | :-: | :-: | :-: | :-: |
@@ -130,54 +130,54 @@ Direct connections, iroh, both peers dialling (time to connect, CI run 2; runs 3
 | port-restricted | | | | 23 ms | **no** |
 | symmetric | | | | | **no** |
 
-Same LAN behind one router: direct over the LAN addresses, 1 ms.
+Same LAN behind one router: direct over the LAN addresses, 1 ms (22 ms in run 5, the poll again).
 
-quinn with its own STUN and punch packets, both peers dialling, connects exactly the same 13 of 15 pairs and the same LAN case, in 1–22 ms (CI run 4). That includes restricted × symmetric in 22 ms, which took iroh one retransmission: quinn's punch packets had already opened the way. With only one peer dialling, iroh reaches peer `b` only when `b` is public or behind a full cone, 10 of 25 ordered pairs: every other router drops the dial because `b` never sent anything toward `a`.
+quinn with its own STUN and punch packets, both peers dialling, connects exactly the same 13 of 15 pairs and the same LAN case, in 1–23 ms (CI runs 4 and 5; runs 2 and 3 timed quinn up to 100 ms late), except restricted × symmetric: about 1 s in runs 2, 3 and 5, the wait iroh had in every run (point 3 below), and 22 ms in run 4. With only one peer dialling, iroh reaches peer `b` only when `b` is public or behind a full cone, 10 of 25 ordered pairs: every other router drops the dial because `b` never sent anything toward `a`.
 
 What this shows:
 
 1. **Relay-free iroh punches everything that can be punched without a relay**, 13 of 15 pairs, the textbook result: only a symmetric NAT against a port-restricted or symmetric one fails, since the symmetric side's port for the peer is one nobody has seen (Linux picks it at random, so no prediction helps).
 2. **iroh learns no public address with relays off.** In iroh 1.4.1 an endpoint finds its public address only through QUIC address discovery against its relays (`net_report` builds its probes from the relay map); there is no STUN. So the handshake's STUN has to run from the port iroh will use, before iroh binds it, and Clover should hand the result to iroh with `add_external_addr` so iroh's later NAT-traversal rounds advertise it. On NATs whose mapping depends on the destination (symmetric), no such address exists at all.
-3. **Both peers must dial at the same moment.** Before a connection exists, iroh sends its Initial to every address it was given, which opens the dialler's own NAT toward the peer; the peer's NAT lets it in only once the peer has sent something back the other way. So the handshake has to tell both devices to dial each other at once. A pair that took one retransmission (restricted × symmetric, 981 ms) shows why at once matters: the first Initial arrived before the other side's.
-4. **The two stacks reach the same pairs.** Punching is a property of the NATs, not of the QUIC library, once both sides have their address and dial together. quinn's punch packets only saved one retransmission; iroh could get the same by dialling a second time a few milliseconds after the first.
+3. **Both peers must dial at the same moment.** Before a connection exists, iroh sends its Initial to every address it was given, which opens the dialler's own NAT toward the peer; the peer's NAT lets it in only once the peer has sent something back the other way. So the handshake has to tell both devices to dial each other at once. Restricted × symmetric shows what "at once" has to cover: only the symmetric side's dial can get in, and only after the restricted side has sent something toward it. When the symmetric side started first, its first Initial was dropped, and QUIC sent it again at its first timeout, 999 ms with the default initial RTT of 333 ms, so the connection came 980 ms after the later peer started. That happened in all four of iroh's full runs and in three of quinn's four; which peer read the other's record first decided it.
+4. **The two stacks reach the same pairs.** Punching is a property of the NATs, not of the QUIC library, once both sides have their address and dial together. quinn's punch packets changed nothing: they leave the dial's socket at the moment it sends its Initial, so they open nothing the Initial doesn't. What shortens the 1 s case is sending again sooner: a second dial about 100 ms after the first, or a shorter initial RTT for direct dials (iroh's transport config takes one), for M1 to tune.
 
 **Verdict: works, with limits.** Every pair that can connect without a relay did, given STUN on iroh's port and a simultaneous dial; pairs with a symmetric NAT against a filtering one need a relay. How common those are on real networks is live gate 1's question.
 
 ## Question 4: delay and throughput
 
-**Method.** [`nat/netem.sh`](../../spikes/s1-transport/nat/netem.sh) joins two namespaces with one veth pair and puts `tc netem` on both egresses, with its default queue of 1,000 packets. Profiles, each way: **lan** 1 ms, no loss, 1 Gbit/s; **wan** 20 ms, 0.1 % loss, 100 Mbit/s; **lossy** 40 ms, 1 % loss, 50 Mbit/s; **far** 75 ms, 0.5 % loss, 50 Mbit/s. Each runs the bench across the link for quinn and iroh natively, each with Cubic (the default) and with BBR (quinn's BBR, noq's BBRv3), and for iroh through the napi binding in Bun. One run per cell (CI run 3), so read the loss profiles' throughput as an order of magnitude: random loss on a single transfer varies a lot.
+**Method.** [`nat/netem.sh`](../../spikes/s1-transport/nat/netem.sh) joins two namespaces with one veth pair and puts `tc netem` on both egresses, with its default queue of 1,000 packets. Profiles, each way: **lan** 1 ms, no loss, 1 Gbit/s; **wan** 20 ms, 0.1 % loss, 100 Mbit/s; **lossy** 40 ms, 1 % loss, 50 Mbit/s; **far** 75 ms, 0.5 % loss, 50 Mbit/s. Each runs the bench across the link for quinn and iroh natively, each with Cubic (the default) and with BBR (quinn's BBR, noq's BBRv3), and for iroh through the napi binding in Bun. Two runs per cell (CI runs 3 and 5), shown as a range where they differ. Random loss makes single transfers vary a lot: on the loss profiles some cells moved by more than 10× between the runs, so read their throughput as an order of magnitude.
 
 | profile | impl | connect ms | RPC p50 / p99 ms | bulk MB/s | 1 MB p50 ms | RPC under load, prioritised p50 / p99 | equal p50 / p99 |
 | :- | :- | -: | -: | -: | -: | -: | -: |
-| lan | quinn, Cubic | 5.1 | 2.12 / 2.5 | 116 | 10.6 | 9.9 / 10.4 | 10.1 / 10.5 |
-| | quinn, BBR | 2.9 | 2.11 / 2.16 | 94 | 10.6 | 10.1 / 10.4 | 9.9 / 10.4 |
-| | iroh, Cubic | 3.1 | 2.13 / 2.16 | 116 | 10.6 | 10.0 / 10.5 | 10.0 / 10.5 |
-| | iroh, BBRv3 | 3.2 | 2.13 / 2.17 | 99 | 10.6 | 3.4 / 5.0 | 3.9 / 6.3 |
-| | iroh napi | 3.8 | 2.20 / 2.4 | 49 | 21.5 | 5.5 / 14 | 4.2 / 12 |
-| wan | quinn, Cubic | 41.4 | 40.44 / 40.63 | 6.5 | 406 | 42.2 / 50.1 | 43.3 / 46.7 |
-| | quinn, BBR | 41.3 | 40.45 / 40.97 | 10.5 | 125 | 93.6 / 124.6 | 93.6 / 126.2 |
-| | iroh, Cubic | 41.5 | 40.42 / 40.59 | 10.2 | 133 | 41.7 / 43.6 | 42.1 / 45.0 |
-| | iroh, BBRv3 | 41.6 | 40.42 / 40.64 | 6.7 | 144 | 41.2 / 42.3 | 41.8 / 46.0 |
-| | iroh napi | 42.1 | 40.54 / 40.89 | 2.5 | 358 | 43.5 / 54.5 | 43.2 / 52.7 |
-| lossy | quinn, Cubic | 81.7 | 80.53 / 268 | 0.5 | 2,375 | 90.7 / 212.8 | 95.0 / 188.4 |
-| | quinn, BBR | 81.7 | 80.52 / 268 | 4.7 | 288 | 107.5 / 180.6 | 90.0 / 181.3 |
-| | iroh, Cubic | 81.9 | 80.43 / 95.6 | 0.2 | 4,384 | 82.4 / 165.3 | 89.3 / 203.1 |
-| | iroh, BBRv3 | 81.9 | 80.39 / 80.61 | 0.5 | 906 | 81.5 / 192.9 | 82.5 / 188.2 |
-| | iroh napi | 82.4 | 80.55 / 270 | 0.3 | 4,517 | 83.7 / 196.6 | 86.4 / 232.6 |
-| far | quinn, Cubic | 151.7 | 150.52 / 150.78 | 0.7 | 2,535 | 158.4 / 202.0 | 164.8 / 360.7 |
-| | quinn, BBR | 151.9 | 150.55 / 151.06 | 4.2 | 319 | 185.9 / 340.9 | 190.7 / 340.7 |
-| | iroh, Cubic | 152.0 | 150.60 / 152.65 | 3.4 | 350 | 152.6 / 171.0 | 152.6 / 177.1 |
-| | iroh, BBRv3 | 152.1 | 150.60 / 478.6 | 0.6 | 1,421 | 155.7 / 216.1 | 155.8 / 158.9 |
-| | iroh napi | 152.5 | 150.71 / 478.0 | 0.2 | 3,677 | 153.3 / 185.3 | 162.1 / 397.1 |
+| lan | quinn, Cubic | 5.1 | 2.12–2.17 / 2.31–2.50 | 116 | 10.6–10.7 | 9.9–10.1 / 10.4–10.5 | 9.8–10.1 / 10.4–10.5 |
+| | quinn, BBR | 2.9–3.1 | 2.11–2.17 / 2.16–2.28 | 88–94 | 10.6–10.8 | 6.2–10.1 / 10.4–10.7 | 6.1–9.9 / 6.2–10.4 |
+| | iroh, Cubic | 3.1–3.4 | 2.13–2.25 / 2.16–2.35 | 116 | 10.6–10.8 | 9.9–10.0 / 10.5 | 9.9–10.0 / 10.5–10.6 |
+| | iroh, BBRv3 | 3.2–3.4 | 2.13–2.25 / 2.17–2.35 | 94–99 | 10.6–10.8 | 3.4–3.5 / 5.0–9.2 | 3.3–3.9 / 5.7–6.3 |
+| | iroh napi | 3.8 | 2.20–2.30 / 2.40–2.58 | 37–49 | 21.5–30.7 | 5.5–8.3 / 13.7–14.0 | 4.2–8.8 / 12.0–17.9 |
+| wan | quinn, Cubic | 41.4 | 40.35–40.44 / 40.49–40.63 | 6.5–10.7 | 125–406 | 42.2–94.8 / 50.1–100.6 | 43.3–89.2 / 46.7–97.6 |
+| | quinn, BBR | 41.3–41.4 | 40.35–40.45 / 40.48–40.97 | 10.4–10.5 | 124–126 | 90.6–93.6 / 91.8–124.6 | 89.7–93.6 / 90.9–126.2 |
+| | iroh, Cubic | 41.5–41.8 | 40.33–40.42 / 40.57–40.59 | 10.2–10.5 | 133 | 41.7–42.0 / 43.6–44.8 | 41.7–42.1 / 45.0–45.3 |
+| | iroh, BBRv3 | 41.6–41.9 | 40.42 / 40.64–40.93 | 4.4–6.7 | 144–243 | 40.8–41.2 / 42.3–60.2 | 41.0–41.8 / 45.3–46.0 |
+| | iroh napi | 42.1–42.3 | 40.45–40.54 / 40.72–40.89 | 2.5–10.7 | 126–358 | 43.5–93.1 / 54.5–103.5 | 43.2–96.5 / 52.7–101.0 |
+| lossy | quinn, Cubic | 81.7 | 80.43–80.53 / 268 | 0.5 | 1,737–2,375 | 90.7–94.5 / 212.8–289.9 | 95.0–97.7 / 188.4–270.9 |
+| | quinn, BBR | 81.7–81.8 | 80.47–80.52 / 268 | 4.4–4.7 | 286–288 | 107.5–153.9 / 180.6–209.6 | 90.0–106.9 / 181.3–196.9 |
+| | iroh, Cubic | 81.9–82.4 | 80.43–80.48 / 95.62–268 | 0.2–0.6 | 4,384–4,614 | 82.4–83.6 / 165.3–188.5 | 89.3–90.8 / 203.1–203.8 |
+| | iroh, BBRv3 | 81.9–82.4 | 80.39–80.54 / 80.61–269 | 0.5–1.1 | 288–906 | 81.5–81.7 / 169.9–192.9 | 81.7–82.5 / 103.4–188.2 |
+| | iroh napi | 82.4–82.5 | 80.55–80.63 / 269–270 | 0.3 | 3,597–4,517 | 82.5–83.7 / 189.4–196.6 | 86.4–89.8 / 221.2–232.6 |
+| far | quinn, Cubic | 151.7–152.0 | 150.52–150.57 / 151 | 0.7–2.8 | 956–2,535 | 155.6–158.4 / 202.0–451.1 | 162.8–164.8 / 360.7–365.0 |
+| | quinn, BBR | 151.9–152.2 | 150.55–150.61 / 151 | 4.0–4.2 | 319 | 185.9–189.7 / 340.9–341.5 | 190.7–191.9 / 338.3–340.7 |
+| | iroh, Cubic | 152.0–152.3 | 150.58–150.60 / 151–153 | 1.0–3.4 | 350–4,867 | 152.6–154.4 / 171.0–199.4 | 152.6–162.4 / 177.1–413.2 |
+| | iroh, BBRv3 | 152.1–152.6 | 150.60–150.62 / 479 | 0.4–0.6 | 925–1,421 | 151.6–155.7 / 216.1–306.7 | 151.9–155.8 / 152.9–158.9 |
+| | iroh napi | 152.5–153.0 | 150.71–150.86 / 151–478 | 0.2–3.5 | 334–3,677 | 153.3–170.7 / 185.3–192.1 | 159.8–162.1 / 199.8–397.1 |
 
 What this shows:
 
-1. **Connecting takes one round trip plus 1–5 ms, and a small RPC one round trip plus under 0.6 ms**, on both stacks and in every profile (QUIC's one-round-trip handshake, as spec §8.3 expects). The napi binding adds about 0.1 ms.
-2. **Stream priorities made no measurable difference** to small RPCs during a transfer, in any profile. The delay is in queues below QUIC: on the LAN profile Cubic filled netem's queue and added about 8 ms to every RPC; on the others the added delay was 1–15 ms at p50 under Cubic. iroh's BBRv3 kept the LAN queue to 1–2 ms. quinn's BBR built a standing queue: 50 ms more on the WAN profile and 35–40 ms more on the far one.
-3. **Loss, not distance, is what hurts throughput.** At 0.1 % loss and 40 ms, the stacks moved 6.5–10.5 MB/s of the link's 12.5. At 1 % loss and 80 ms, Cubic collapsed to 0.2–0.5 MB/s, so a 1 MB screenshot took 2.4–4.4 s. quinn's BBR held 4.7 MB/s (1 MB in 0.29 s), but noq's BBRv3 managed only 0.5 MB/s. At 0.5 % loss and 150 ms, quinn's BBR (4.2 MB/s) and iroh's Cubic (3.4 MB/s, a good draw) did well and the rest moved under 1 MB/s. So on a lossy Wi-Fi or mobile path the congestion controller matters more than which QUIC library is underneath. iroh lets Clover plug its own in (`congestion_controller_factory`).
-4. **n0's napi binding falls behind on every link**: 49 against 116 MB/s on the LAN profile, and 2.5 against 10 MB/s on the WAN one. On the WAN profile data arrives a packet at a time, so its per-read cost is paid per packet; the cause wasn't isolated further, since M1 replaces the binding anyway.
+1. **Connecting takes one round trip plus 1–3 ms, and a small RPC one round trip plus 0.1–0.6 ms**, on both stacks, in every profile and in both runs (QUIC's one-round-trip handshake, as spec §8.3 expects). The napi binding adds 0.1–0.2 ms to an RPC.
+2. **During a transfer the congestion controller sets the delay, and priorities barely change it.** On the LAN and WAN profiles prioritised and equal streams measured within a few milliseconds of each other in both runs: the delay sits in the queues below QUIC. Cubic filled netem's LAN queue and added about 8 ms to every RPC, on both stacks; noq's BBRv3 kept it to 1–2 ms. On the WAN profile Cubic added about 2 ms when loss kept its window small and about 50 ms when it didn't (quinn, run 5); quinn's BBR added about 50 ms there in both runs, and 35–41 ms on the far profile. Priorities showed only on the two lossier profiles, where the congestion window rather than a queue likely held data back, and only by a few milliseconds: under Cubic they took about 3–9 ms off the added delay in 10 of 12 cells across the two runs (iroh's Cubic on the lossy profile: 2–3 ms instead of 9–10, in both), while quinn's BBR on the lossy profile measured worse with them in both runs.
+3. **Loss, not distance, is what hurts throughput.** At 0.1 % loss and 40 ms, the native stacks moved 4.4–10.7 MB/s of the link's 12.5. At 1 % loss and 80 ms, Cubic collapsed to 0.2–0.6 MB/s, so a 1 MB screenshot took 1.7–4.6 s; quinn's BBR held 4.4–4.7 MB/s in both runs (1 MB in 0.29 s), while noq's BBRv3 managed 0.5–1.1 MB/s. At 0.5 % loss and 150 ms only quinn's BBR was steady (4.0–4.2 MB/s); the rest moved 0.2–3.5 MB/s, depending on the draw. So on a lossy Wi-Fi or mobile path the congestion controller matters more than which QUIC library is underneath. iroh lets Clover plug its own in (`congestion_controller_factory`).
+4. **n0's napi binding falls behind where it is the limit**: 37–49 against 116 MB/s on the LAN profile, in both runs. On the WAN profile it moved 2.5 MB/s in run 3 but 10.7 MB/s in run 5, as fast as native, so that gap was the loss draw, not the binding.
 
-**Verdict: works, with limits.** Delay is the network's plus well under a millisecond, and connecting costs one round trip. But prioritised streams alone don't keep control messages fast during a transfer, and neither default congestion controller copes with a lossy path. M1 has to choose the controller and pace bulk streams (edit 7).
+**Verdict: works, with limits.** Delay is the network's plus under a millisecond, and connecting costs one round trip. But prioritised streams alone don't keep control messages fast during a transfer, and neither stack's default congestion controller (Cubic) copes with a lossy path. M1 has to choose the controller and pace bulk streams (edit 7).
 
 ## Network changes
 
@@ -185,23 +185,23 @@ Spec §8.3 asks for the time to first byte after sleep and after a Wi-Fi-to-mobi
 
 **Method.** [`nat/migrate.sh`](../../spikes/s1-transport/nat/migrate.sh) puts a client and a server namespace on one veth pair with 10 ms of delay each way. The client ([`bench.rs`](../../native/link-sidecar/src/bench.rs), `ping`) sends a 64-byte echo every 50 ms without waiting for replies. The script then breaks the path at a known time: the client's address changes, or every packet is dropped for a while, or both. In some scenarios it also tells the client the network changed, as clover-core would on the OS's event: quinn then moves to a new socket (`rebind`, its active migration) and iroh re-checks its paths (`network_change()`). Nothing reconnects; the question is whether this one connection carries on.
 
-Echoes sent every 50 ms; "longest gap" is the longest wait between replies (CI run 4; the blackout rows match run 3 within 0.1 s):
+Echoes sent every 50 ms; "longest gap" is the longest wait between replies (CI runs 4 and 5, which agree within 0.2 s; the blackout rows also match run 3 within 0.1 s):
 
 | Scenario | quinn: all back? | quinn: longest gap | iroh: all back? | iroh: longest gap |
 | :- | :- | -: | :- | -: |
-| address change, no call | yes | 0.14 s | yes | 6.0 s |
-| address change, with the network-change call | yes | 0.12 s | yes | 6.0 s |
-| Wi-Fi to mobile: 2 s outage, new address, call | yes | 2.1 s | **no**: 181 of 201, 8 s after the end | 8.0 s |
+| address change, no call | yes | 0.14 s | yes | 5.8–6.0 s |
+| address change, with the network-change call | yes | 0.11–0.12 s | yes | 5.9–6.0 s |
+| Wi-Fi to mobile: 2 s outage, new address, call | yes | 2.1 s | run 5 yes; run 4 **no**: 181 of 201, 8 s after the end | 7.8–8.0 s |
 | 5 s blackout | yes | 5.1 s | yes | 5.1 s |
-| 20 s blackout | yes | 28.4 s | yes | 24.6 s |
+| 20 s blackout | yes | 28.4 s | yes | 24.6–24.7 s |
 | 20 s blackout, with the call at wake | yes | 28.4 s | yes | 24.5 s |
 | 40 s blackout | **no**: closed at 33 s | | **no**: closed at 33 s | |
 
 What this shows:
 
 1. **Short outages heal by themselves.** After 5 s without a network, both stacks delivered every queued echo within about 150 ms of the link coming back.
-2. **quinn follows a new address at once; relay-free iroh takes seconds.** When the client's address changed, quinn carried on within about 0.1 s: QUIC's own migration, where the client just sends from its new address and the server follows. iroh, with relays off, went 6 s without replies before it opened a second path from the new address, and the network-change call didn't shorten that. In the Wi-Fi-to-mobile case iroh went 8 s without replies, and a tenth of the echoes still hadn't arrived 8 s after the test ended. With relays on, iroh would have had the relay path meanwhile; that is live gate 1's to measure. It is worth raising with n0 (the controller decides).
-3. **Long outages heal slowly, and the wake call doesn't speed them up.** After 20 s, iroh resumed 4.5 s after the link returned and quinn 8.4 s, with or without the call. Both had backed off their retransmission timers, and after a loss that long congestion control holds them back too, so quinn's rebind ping waits as well. A fresh connection takes one round trip.
+2. **quinn follows a new address at once; relay-free iroh takes seconds.** When the client's address changed, quinn carried on within about 0.1 s: QUIC's own migration, where the client just sends from its new address and the server follows. iroh, with relays off, went about 6 s without replies before it opened a second path from the new address, and the network-change call didn't shorten that. In the Wi-Fi-to-mobile case iroh went about 8 s without replies; in run 4 a tenth of the echoes still hadn't arrived 8 s after the test ended, while in run 5 all of them did. With relays on, iroh would have had the relay path meanwhile; that is live gate 1's to measure. It is worth raising with n0 (the controller decides).
+3. **Long outages heal slowly, and the wake call doesn't speed them up.** After 20 s, iroh resumed 4.5–4.7 s after the link returned and quinn 8.4 s, with or without the call. Both had backed off their retransmission timers, and after a loss that long congestion control holds them back too, so quinn's rebind ping waits as well. A fresh connection takes one round trip.
 4. **Past 30 s the connection is gone.** Both close it after 30 s with nothing received (quinn as configured here, iroh by default), so a sleep longer than that always needs a new connection.
 
 The first two runs of this test were wrong and are not used: deleting the client's old address also deleted the new one, because Linux drops secondary addresses with the primary unless `promote_secondaries` is on.
@@ -254,14 +254,14 @@ Each is marked [P] (the controller applies it) or [D] (it touches an owner decis
    * Old: `Public STUN servers (Cloudflare, Google) find each device's internet address reliably.`
    * New: `Public STUN servers (Cloudflare, Google) find each device's internet address reliably, asked from the port the link then binds, since iroh has none of its own. The handshake also tells both devices when to dial, so they dial each other at once.`
 6. **[D] Coordination off n0's relays, against the fastest connection.** This touches three decisions in §8.3: "[D] n0's public relays are on by default", "[D] Settled: no relay for coordination either" and "[D] The connection must be the absolute fastest", and the [P] "LAN first: … racing the LAN, direct and relay paths and keeping the fastest". iroh 1.4.1, read in its source, sends a dial's first packets to every path it knows, relay included, and runs its NAT-traversal rounds inside that connection over whichever path is up; with relays on it also keeps a connection to its home relay and probes its relays to learn its own address. So with n0's relays on, no relay for coordination holds only if Clover dials with direct addresses alone and adds the relay after a head start; that costs the head start every time direct fails. Racing every path from the start gives the fastest first byte but puts coordination on the relay whenever one is configured. Options:
-   * **(a) direct first, then the relay after a head start of about 0.5–1 s (rec).** It keeps "no relay for coordination". In the lab, direct connections that worked took 1–23 ms, or about 1 s when the first packet needed a retransmission. On real paths add one or two round trips.
+   * **(a) direct first, then the relay after a head start of about 0.5–1 s (rec).** It keeps "no relay for coordination". In the lab, direct connections that worked took 1–23 ms, or about 1 s when the first packet needed a retransmission; a second dial about 100 ms after the first (M1) brings that case inside the head start. On real paths add one or two round trips.
    * **(b) race every path from the start.** The fastest first byte, but the relay sees every connection's set-up.
 
    Either way, the LAN-first bullet should say the same as the choice.
 7. **[P] §8.3, "Priorities"**, and a new bullet after it:
    * Old: `* **Priorities:** binary frames on separate streams for bulk data, with token streams and control messages ahead of screenshots and files.`
-   * New: `* **Priorities:** binary frames on separate streams for bulk data, with token streams and control messages ahead of screenshots and files. Priorities only order what QUIC sends next; during a transfer a control message still waits in the queues below QUIC, which the congestion controller fills or keeps short (S1: prioritised and equal streams measured the same). So bulk streams are paced below the path's rate.`
-   * Added: `* **[P] Congestion control is chosen for lossy paths.** At 1 % loss and 80 ms, Cubic moved 0.2–0.5 MB/s in S1's lab and quinn's BBR 4.7 MB/s, while noq's BBRv3 managed 0.5 MB/s and quinn's BBR added 35–50 ms of queueing. M1 picks and tunes the controller (iroh accepts one from Clover); live gate 1 checks it on real Wi-Fi and mobile.`
+   * New: `* **Priorities:** binary frames on separate streams for bulk data, with token streams and control messages ahead of screenshots and files. Priorities only order what QUIC sends next; during a transfer a control message still waits in the queues below QUIC, which the congestion controller fills or keeps short (in S1's lab, prioritised and equal streams measured the same on clean paths, and priority saved only a few milliseconds on lossy ones). So bulk streams are paced below the path's rate.`
+   * Added: `* **[P] Congestion control is chosen for lossy paths.** At 1 % loss and 80 ms, Cubic moved 0.2–0.6 MB/s in S1's lab and quinn's BBR 4.4–4.7 MB/s, while noq's BBRv3 managed 0.5–1.1 MB/s and quinn's BBR added 35–53 ms of queueing. M1 picks and tunes the controller (iroh accepts one from Clover); live gate 1 checks it on real Wi-Fi and mobile.`
 8. **[P] §8.3, "Connect early, stay connected"**, and the transport table's "Network change or sleep" row:
    * Old: `* **Connect early, stay connected:** connect at login and wake, send keep-alives, and re-dial at once on network-change and wake events.`
    * New: `* **Connect early, stay connected:** connect at login and wake, send keep-alives, and re-dial at once on network-change and wake events, keeping whichever connection answers first. In S1's lab an existing connection came back 4.5–8.4 s after a 20 s outage ended, telling the stack about the change didn't shorten that, relay-free iroh took 6 s to follow a new local address, and a connection is gone after 30 s of silence; a new one takes one round trip.`
@@ -278,12 +278,12 @@ Each is marked [P] (the controller applies it) or [D] (it touches an owner decis
 3. **Mobile and carrier NATs are often symmetric**, and every pair with a symmetric NAT against a filtering one needs a relay. The relay share could be much higher on phones and hotel Wi-Fi than at home; live gate 1 measures it.
 4. **STUN before bind only works once per port.** After a network change the public address changes, but iroh now holds the port, so Clover can't ask STUN from it again. Ways out for M1: relays on (n0's QAD, which [D] turns on by default anyway), or iroh's observed-address reports from any connected peer (`send_observed_address_reports` / `receive_observed_address_reports` in iroh's transport config), or rebinding iroh on a fresh port after a fresh STUN.
 5. **Priorities don't protect small messages under load** on their own (Q4): the queues that delay them sit below QUIC.
-6. **Relay-free iroh follows a new local address slowly.** In the lab it took 6 s, and with an outage in front a tenth of the data was still missing 8 s later. So clover-core must catch the OS's network-change and wake events on all three OSes and re-dial at once; with no event, the old connection limps.
+6. **Relay-free iroh follows a new local address slowly.** In the lab it took about 6 s, and with a 2 s outage in front about 8 s; in one of two runs a tenth of the data was still missing 8 s after the end. So clover-core must catch the OS's network-change and wake events on all three OSes and re-dial at once; with no event, the old connection limps.
 7. **Lossy links collapse loss-based congestion control** (Q4), and noq's BBRv3 did little better there than Cubic.
 8. **Browsers:** host candidates are mDNS names libdatachannel can't resolve; SCTP has no priorities; Firefox takes 1.1–1.5 s to open a channel. Safari was not tested.
 9. **Windows Firewall** may ask the user the first time clover-core receives unsolicited UDP. CI runners never prompt, so only live gate 3 can show it.
 10. **Size:** a compiled clover-core with these addons is 95–131 MB on Linux and 99–115 MB on Windows.
-11. **The lab's limits:** shared runners vary by up to 2x between runs, so the comparisons here are within one run; netem's random loss is harsher than real networks' bursty loss; and a loopback or netem pair shares one machine's CPU.
+11. **The lab's limits:** shared runners vary by up to 2x between runs, so the comparisons here are within one run; netem's random loss is harsher than real networks' bursty loss, and single transfers on its lossy profiles varied by more than 10× between two runs; and a loopback or netem pair shares one machine's CPU.
 
 ## Left for live gate 1
 
@@ -299,7 +299,7 @@ Each is marked [P] (the controller applies it) or [D] (it touches an owner decis
 
 1. **The addon:** a thin napi-rs addon over iroh 1.4.1 for the four targets, built in CI and shipped beside clover-core rather than embedded (4 ms to load instead of 11–450 ms). Its surface: bind on a chosen port after a STUN query from it, connect and accept by device key, streams with `Buffer` in and out and a priority, path events, `network_change()`, close. Proposed path `native/link/`, with the sidecar kept as a build of the same crate (a path change for the controller).
 2. **`LinkTransport` on top**, against the spine's contract: one link per device pair, priority classes (control, token streams, screenshots, files), liveness from any inbound frame with a keep-alive on quiet links (Winter's phone link learned this), re-dial on loss, and the OS network-change and wake hooks on all three OSes.
-3. **The handshake's part of punching:** candidates (LAN address and STUN's answer from iroh's port) and a "dial now" message that makes both devices dial at once; for devices paired without an account, LAN discovery and the last known address.
+3. **The handshake's part of punching:** candidates (LAN address and STUN's answer from iroh's port) and a "dial now" message that makes both devices dial at once, then again about 100 ms later (or a shorter initial RTT for direct dials), so a first Initial that loses the race costs 0.1 s rather than QUIC's 1 s first timeout; for devices paired without an account, LAN discovery and the last known address.
 4. **Congestion control and pacing** for bulk streams, chosen from Q4's numbers, so control messages stay fast while files move.
 5. **The relay policy**, once the owner decides edit 6.
 6. **A timer-lag watchdog** in clover-core, and yields in every hot native loop.
