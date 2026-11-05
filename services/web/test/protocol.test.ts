@@ -14,6 +14,7 @@ import {
   inviteSigner,
   invitePairSecret,
   lastingPairStatement,
+  holdMessages,
   LinkError,
   pairingResult,
   readInvite,
@@ -103,13 +104,15 @@ describe("the pairing exchange", () => {
 });
 
 /** Two node-datachannel peers joined in-process, and a link on each end. */
-async function linkedPair(): Promise<{ page: RtcLink; computer: RtcLink }> {
+async function linkedPair(options: { computerFirst?: (computer: RtcLink) => void } = {}): Promise<{ page: RtcLink; computer: RtcLink }> {
   const a = new RTCPeerConnection({ iceServers: [] });
   const b = new RTCPeerConnection({ iceServers: [] });
   a.onicecandidate = (e) => void (e.candidate && b.addIceCandidate(e.candidate));
   b.onicecandidate = (e) => void (e.candidate && a.addIceCandidate(e.candidate));
   const control = a.createDataChannel("control") as unknown as ChannelLike;
   const tokens = a.createDataChannel("tokens") as unknown as ChannelLike;
+  holdMessages(control);
+  holdMessages(tokens);
   const remote = new Map<string, ChannelLike>();
   let computer: RtcLink | null = null;
   const both = new Promise<void>((resolve) => {
@@ -126,9 +129,15 @@ async function linkedPair(): Promise<{ page: RtcLink; computer: RtcLink }> {
   await b.setLocalDescription(await b.createAnswer());
   await a.setRemoteDescription(b.localDescription!);
   await Promise.all([opened(control), opened(tokens), both]);
+  const makeComputer = () => new RtcLink({ peer: "page", pc: b as never, control: remote.get("control")!, tokens: remote.get("tokens")!, requestTimeoutMs: 2000 });
+  if (options.computerFirst) {
+    computer = makeComputer();
+    options.computerFirst(computer);
+    await Bun.sleep(100);
+  }
   const page = new RtcLink({ peer: "computer", pc: a as never, control, tokens, requestTimeoutMs: 2000 });
   a.ondatachannel = (e) => page.adoptChannel(e.channel as unknown as ChannelLike);
-  computer = new RtcLink({ peer: "page", pc: b as never, control: remote.get("control")!, tokens: remote.get("tokens")!, requestTimeoutMs: 2000 });
+  computer ??= makeComputer();
   return { page, computer };
 }
 
@@ -176,6 +185,26 @@ describe("the link over data channels", () => {
     await file.write(new Uint8Array(10));
     file.abort("cancelled by the user");
     expect((await aborted)?.message).toBe("cancelled by the user");
+    page.close();
+    computer.close();
+  });
+
+  test("what arrives before this end's link exists waits for it, in order", async () => {
+    let early: Promise<unknown> | null = null;
+    const { page, computer } = await linkedPair({
+      computerFirst: (c) => {
+        early = c.request("hello", { from: "computer" });
+        c.notify("event", { n: 1 });
+      },
+    });
+    // Registered in the turn the link was made, as `adopt` does: the held request and notification reach them.
+    page.handle("hello", (p) => ({ echo: p }));
+    const notes: unknown[] = [];
+    page.onNotify("event", (p) => notes.push(p));
+    computer.notify("event", { n: 2 });
+    expect(await early!).toEqual({ echo: { from: "computer" } });
+    for (let i = 0; i < 100 && notes.length < 2; i++) await Bun.sleep(5);
+    expect(notes).toEqual([{ n: 1 }, { n: 2 }]);
     page.close();
     computer.close();
   });

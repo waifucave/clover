@@ -63,6 +63,38 @@ type Frame =
   | { t: "note"; method: string; params: unknown };
 
 const HIGH_WATER = 1024 * 1024;
+
+/** Messages a channel received before its link took it (see `holdMessages`). */
+const held = new WeakMap<ChannelLike, { data: unknown }[]>();
+
+/**
+ * Keeps what a channel receives until a link takes it. The other end may send as soon as its own side is open,
+ * before this end has finished setting up; a data channel with no message handler drops what arrives.
+ */
+export function holdMessages(channel: ChannelLike): void {
+  if (held.has(channel)) return;
+  const queue: { data: unknown }[] = [];
+  held.set(channel, queue);
+  channel.onmessage = (event) => queue.push(event);
+}
+
+/**
+ * Points a channel's messages at `fn`. What was held is handed over on the next task, after whoever made the link
+ * has registered its handlers in the turn it got the link (as `adopt` does).
+ */
+function takeMessages(channel: ChannelLike, fn: (event: { data: unknown }) => void): void {
+  const queue = held.get(channel);
+  if (!queue) {
+    channel.onmessage = fn;
+    return;
+  }
+  // Until the hand-over, new messages keep queueing behind the held ones, so the order holds.
+  setTimeout(() => {
+    held.delete(channel);
+    for (const event of queue.splice(0)) fn(event);
+    channel.onmessage = fn;
+  }, 0);
+}
 const MAX_FRAME = 256 * 1024;
 
 class RtcStream implements LinkStream {
@@ -191,8 +223,8 @@ export class RtcLink {
     this.tokens = options.tokens;
     this.timeoutMs = options.requestTimeoutMs ?? 30_000;
     for (const channel of [this.control, this.tokens]) {
-      channel.onmessage = (event) => this.onFrame(event.data);
       channel.onclose = () => this.close("the peer went away");
+      takeMessages(channel, (event) => this.onFrame(event.data));
     }
   }
 
@@ -205,7 +237,8 @@ export class RtcLink {
     if (!channel.label.startsWith("s:")) return;
     channel.binaryType = "arraybuffer";
     let stream: RtcStream | null = null;
-    channel.onmessage = (event) => {
+    channel.onclose = () => stream?.finish(new LinkError("offline", "the stream's channel closed"));
+    takeMessages(channel, (event) => {
       if (stream) return stream.receive(event.data);
       try {
         const head = JSON.parse(String(event.data)) as { label: string; priority: LinkPriority; meta?: unknown };
@@ -216,8 +249,7 @@ export class RtcLink {
       } catch {
         channel.close();
       }
-    };
-    channel.onclose = () => stream?.finish(new LinkError("offline", "the stream's channel closed"));
+    });
   }
 
   handle(method: string, fn: (params: unknown) => unknown): () => void {

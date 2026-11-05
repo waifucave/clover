@@ -9,7 +9,7 @@
 
 import { b64u } from "../../shared/encoding";
 import type { ChannelEvent, PairChannel } from "@waifucave/clover-service-handshake/client";
-import { type ChannelLike, LinkError, RtcLink } from "./rtc-link";
+import { type ChannelLike, holdMessages, LinkError, RtcLink } from "./rtc-link";
 
 export interface SignalMessage {
   v: 1;
@@ -155,6 +155,14 @@ export async function dial(options: {
   const pc = rtc.createPeerConnection({ iceServers: rtc.iceServers });
   const control = pc.createDataChannel("control", { ordered: true });
   const tokens = pc.createDataChannel("tokens", { ordered: true });
+  holdMessages(control);
+  holdMessages(tokens);
+  // Streams the computer opens before the link exists here wait for it too.
+  const early: ChannelLike[] = [];
+  pc.ondatachannel = (event) => {
+    holdMessages(event.channel);
+    early.push(event.channel);
+  };
   const wiring = trickle(pc, channel, router, session, (sdp) => pc.setRemoteDescription({ type: "answer", sdp }));
   try {
     await pc.setLocalDescription(await pc.createOffer());
@@ -172,6 +180,7 @@ export async function dial(options: {
   pc.onicecandidate = null;
   const link = new RtcLink({ peer, pc, control, tokens });
   pc.ondatachannel = (event) => link.adoptChannel(event.channel);
+  for (const ch of early.splice(0)) link.adoptChannel(ch);
   watchConnection(pc, link);
   return link;
 }
@@ -195,6 +204,7 @@ export async function answer(options: {
   const both = new Promise<void>((resolve) => {
     pc.ondatachannel = (event) => {
       const ch = event.channel;
+      if (!link) holdMessages(ch);
       if (ch.label === "control" || ch.label === "tokens") {
         channels.set(ch.label, ch);
         if (channels.size === 2) resolve();
