@@ -62,6 +62,11 @@ async function launch(l: Launcher, profile: string, transport: Transport = l.tra
 /** The transports to try, best first: a pipe no other process can reach, else the loopback port. */
 const TRANSPORTS: Transport[] = process.platform === "win32" ? ["winpipe", "pipe", "port"] : ["fdpipe", "pipe", "port"];
 
+/** What the browser said last, for an error: whether it exited, and its stderr's last lines (no secrets go there). */
+function died(b: Browser): string {
+  return `${b.exited ? ` — the browser exited (${b.exitCode ?? b.exitSignal})` : " — the browser is still running"}; stderr: ${b.tail(10)}`;
+}
+
 function decodeJpeg(data: Buffer, pageWidth: number, at: number): number | undefined {
   try {
     const img = jpeg.decode(data, { useTArray: true, formatAsRGBA: true });
@@ -150,10 +155,8 @@ async function forArtifact(artifact: Artifact, server: SpikeServer): Promise<Rec
         // two tabs in one window (Target.createTarget's default), then two tabs each in a window of its own
         const tabRows: Array<Record<string, unknown>> = [];
         for (const own of [false, true]) {
-          const t1 = await probeTab(b, server, `scenario=probe&media=1&sse=0&tab=c1${own ? "w" : ""}`, undefined, own);
-          const t2 = await probeTab(b, server, `scenario=probe&media=1&sse=0&tab=c2${own ? "w" : ""}`, undefined, own);
-          const media = [];
-          for (const t of [t1, t2]) media.push(await t.eval<Record<string, unknown>>("window.__s7.setup({ media: true })", 15_000));
+          const t1 = await probeTab(b, server, `scenario=probe&sse=0&tab=c1${own ? "w" : ""}`, undefined, own);
+          const t2 = await probeTab(b, server, `scenario=probe&sse=0&tab=c2${own ? "w" : ""}`, undefined, own);
           await sleep(2000);
           for (const t of [t1, t2]) await t.eval("window.__s7.resetGaps()");
           const a = [await t1.eval<Snap>("window.__s7.snapshot()"), await t2.eval<Snap>("window.__s7.snapshot()")];
@@ -170,10 +173,7 @@ async function forArtifact(artifact: Artifact, server: SpikeServer): Promise<Rec
               chainHz: rate(s0.chain.n, s0.now, s1.chain.n, s1.now),
               rafHz: rate(s0.raf.n, s0.now, s1.raf.n, s1.now),
               maxRafGapMs: s1.raf.maxGap,
-              mediaStart: media[i]?.media,
-              mediaPlayedPerSec: s0.media && s1.media ? (s1.media.played - s0.media.played) / secs : undefined,
-              decodedFps: s0.media && s1.media ? (s1.media.decodedFrames - s0.media.decodedFrames) / secs : undefined,
-              audioState: s1.media?.audioState,
+              seconds: secs,
             });
           }
           if (own) {
@@ -195,7 +195,7 @@ async function forArtifact(artifact: Artifact, server: SpikeServer): Promise<Rec
         log(`${artifact}: tabs ${JSON.stringify(rounded(out.tabs, 1))}`);
 
       } catch (e) {
-        errors.push(`tabs: ${errorText(e)}${b.exited ? ` — the browser exited (${b.exitCode ?? b.exitSignal}); stderr: ${b.tail(10)}` : ""}`);
+        errors.push(`tabs: ${errorText(e)}${died(b)}`);
       }
     }
 
@@ -256,11 +256,52 @@ async function forArtifact(artifact: Artifact, server: SpikeServer): Promise<Rec
         log(`${artifact}: screencast ${JSON.stringify(rounded(out.screencast, 1))}`);
         await t.close();
       } catch (e) {
-        errors.push(`screenshots: ${errorText(e)}${b.exited ? ` — the browser exited (${b.exitCode ?? b.exitSignal}); stderr: ${b.tail(10)}` : ""}`);
+        errors.push(`screenshots: ${errorText(e)}${died(b)}`);
       }
     }
   } finally {
     await b.close();
+  }
+
+  // --- media: video with sound and an AudioContext, in a browser of its own, so a hang can't spoil the other steps --
+  if (want("media")) {
+    const rows: Array<Record<string, unknown>> = [];
+    const variants: Array<{ label: string; extra: string[] }> = [{ label: "default flags", extra: [] }, { label: "--disable-audio-output", extra: ["--disable-audio-output"] }];
+    for (const v of variants) {
+      let mb: Browser | undefined;
+      const row: Record<string, unknown> = { flags: v.label };
+      try {
+        mb = (await launch({ ...l, extra: [...l.extra, ...v.extra] }, join(profiles, `${artifact}-media-${rows.length}`))).b;
+        const t = await probeTab(mb, server, "scenario=probe&media=1&sse=0&tab=m", undefined, true);
+        const t0 = Date.now();
+        row.setup = await t.eval<Record<string, unknown>>("window.__s7.setup({ media: true })", 15_000);
+        row.setupMs = Date.now() - t0;
+        await sleep(2000);
+        const s0 = await t.eval<Snap>("window.__s7.snapshot()");
+        await sleep(5000);
+        const s1 = await t.eval<Snap>("window.__s7.snapshot()");
+        const secs = (s1.now - s0.now) / 1000;
+        Object.assign(row, {
+          ok: true, visibility: s1.visibility, intervalHz: rate(s0.interval.n, s0.now, s1.interval.n, s1.now), rafHz: rate(s0.raf.n, s0.now, s1.raf.n, s1.now),
+          mediaPlayedPerSec: s0.media && s1.media ? (s1.media.played - s0.media.played) / secs : undefined,
+          decodedFps: s0.media && s1.media ? (s1.media.decodedFrames - s0.media.decodedFrames) / secs : undefined,
+          audioState: s1.media?.audioState,
+        });
+        // is the browser itself still answering?
+        const a0 = Date.now();
+        await mb.send("Browser.getVersion", {}, undefined, 5000);
+        row.browserAnswersMs = Date.now() - a0;
+      } catch (e) {
+        row.ok = false;
+        row.error = `${errorText(e)}${mb === undefined ? "" : died(mb)}`;
+      } finally {
+        await mb?.close();
+      }
+      rows.push(row);
+      log(`${artifact}: media ${JSON.stringify(rounded(row, 1)).slice(0, 900)}`);
+      if (row.ok === true) break; // the default worked: nothing to compare
+    }
+    out.media = rows;
   }
 
   // --- per-bot profiles: two bots, two browsers, two profiles ------------------------------------------------------
@@ -346,7 +387,7 @@ async function forArtifact(artifact: Artifact, server: SpikeServer): Promise<Rec
       };
       log(`${artifact}: cost ${JSON.stringify(rounded(out.cost, 1))}`);
     } catch (e) {
-      errors.push(`cost: ${errorText(e)}${main?.exited ? ` — the browser exited (${main.exitCode ?? main.exitSignal}); stderr: ${main.tail(10)}` : ""}`);
+      errors.push(`cost: ${errorText(e)}${main === undefined ? "" : died(main)}`);
     } finally {
       for (const p of pages) await p.close().catch(() => undefined);
       await main?.close();

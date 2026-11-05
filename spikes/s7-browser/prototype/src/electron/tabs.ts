@@ -6,7 +6,8 @@
 //   invisibleWindow  a view in a window that IS shown, but can't be seen or touched: opacity 0 (macOS, Windows) or
 //                    placed off every screen (X11), click-through, not focusable, not in the taskbar (not on Wayland,
 //                    where an app can neither hide nor place a shown window)
-//   tinyWindow       a view of 1280x800 in a shown 1x1 window, click-through, not focusable, not in the taskbar
+//   tinyWindow       a view of 1280x800 in a shown 1x1 window, click-through, not focusable, not in the taskbar, and
+//                    at opacity 0 on macOS and Windows (round four)
 //   shown            a view in the visible browser view's window, laid out at that view's size
 //   osr              an offscreen-rendering BrowserWindow (frames arrive as 'paint' events; can't be shown as a view)
 //   osrView          an offscreen-rendering WebContentsView in no window
@@ -107,6 +108,9 @@ function tinyWindow(title: string): BaseWindow {
     skipTaskbar: true, hasShadow: false, resizable: false, minimizable: false, maximizable: false, title,
   });
   w.setIgnoreMouseEvents(true);
+  // round four: Windows makes a frameless window at least 32x31, which would show a corner of the page, so the
+  // host is transparent where it can be (macOS, Windows); Linux has no window opacity
+  if (process.platform === "darwin" || process.platform === "win32") w.setOpacity(0);
   w.showInactive();
   return w;
 }
@@ -137,8 +141,9 @@ export class TabHost {
 
   /**
    * An opaque window over a tab's host window, as the user's own windows would be on a real desktop: shown without
-   * focus, above normal windows (but below an always-on-top host at the "screen-saver" level), click-through. On
-   * Wayland, where nothing can be placed, it is made full screen instead. Returns where it ended up.
+   * focus, above normal windows (but below an always-on-top host at the "screen-saver" level). Not click-through:
+   * on Windows that makes it a layered window, which Chromium's occlusion tracking ignores (round three's cover was
+   * one). On Wayland, where nothing can be placed, it is made full screen instead. Returns where it ended up.
    */
   cover(t: Tab): string {
     this.uncover();
@@ -149,7 +154,6 @@ export class TabHost {
       show: false, x, y, width: Math.max(d.x + d.width, at.x + at.width) - x, height: Math.max(d.y + d.height, at.y + at.height) - y,
       frame: false, focusable: false, skipTaskbar: true, hasShadow: false, backgroundColor: "#202020", title: "S7 cover",
     });
-    w.setIgnoreMouseEvents(true);
     if (onWayland()) w.setFullScreen(true);
     else w.setAlwaysOnTop(true, "floating");
     w.showInactive();
