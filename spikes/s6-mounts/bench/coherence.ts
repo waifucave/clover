@@ -114,7 +114,7 @@ async function main() {
       root: ROOT, tree: IS_WIN ? args.tree! : path.resolve(args.tree!), helperBin: path.resolve(args.helper!),
       logs: path.join(path.dirname(OUT), "logs", path.basename(OUT, ".json")), remoteName: "Desktop1", selfName: "Runner", selfHome: path.dirname(ROOT),
     });
-    if (args["nfs-helper"]) rig.nfs = { bin: path.resolve(args["nfs-helper"]), port: 12049, mountpoint: path.resolve(args.tree!) };
+    if (args["nfs-helper"]) rig.nfs = { bin: path.resolve(args["nfs-helper"]), port: 12049, mountpoint: path.resolve(args.tree!), ac: args["nfs-ac"] };
     await rig.startService();
     await rig.startLink(0);
     try {
@@ -128,7 +128,7 @@ async function main() {
           out.selfLink = link;
           log(`self link home/Runner: ${JSON.stringify(link)}`);
         }
-        await checks(rig.nfs ? `nfs ${p}` : p, rig.remotePath());
+        await checks(rig.nfs ? `nfs ${p}${rig.nfs.ac ? `, ${rig.nfs.ac}` : ""}` : p, rig.remotePath());
         await rig.unmount();
       }
     } finally { await rig.stopAll(); }

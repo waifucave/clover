@@ -96,7 +96,10 @@ export class Rig {
   /** fskit: when set, the tree is an FSKit volume mounted by `mount -F` (the macOS live gate). */
   fskit?: { url: string; mountpoint: string };
   /** nfs: the tree entry is an NFSv3 export on localhost (clover-nfs) mounted by mount_nfs (macOS). */
-  nfs?: { bin: string; port: number; mountpoint: string; sudo?: boolean; mountedAs?: string; mountError?: string };
+  // ac: the kernel's attribute caching for the NFS mount (default: noac for nocache, else actimeo=1).
+  // With noac every stat reaches the helper on the loopback address, whose own cache the holder's
+  // events keep fresh, so the kernel never works from an old size.
+  nfs?: { bin: string; port: number; mountpoint: string; sudo?: boolean; mountedAs?: string; mountError?: string; ac?: string };
   constructor(public o: { root: string; tree: string; helperBin: string; logs: string; remoteName: string; selfName: string; selfHome: string }) {}
 
   async startService(extra: string[] = []) {
@@ -169,7 +172,7 @@ export class Rig {
     // soft + short timeo: if the helper itself dies, calls fail instead of hanging; nobrowse keeps
     // the volume out of Finder; actimeo matches the plain policy's 1 s; noresvport because a user
     // can't bind a reserved port (mount_nfs's default), which is what a mount as the user needs.
-    const ac = policy === "nocache" ? "noac" : "actimeo=1";
+    const ac = n.ac ?? (policy === "nocache" ? "noac" : "actimeo=1");
     const opts = `vers=3,tcp,port=${n.port},mountport=${n.port},nolocks,locallocks,soft,intr,timeo=10,retrans=2,rsize=1048576,wsize=1048576,readahead=16,nobrowse,noresvport,${ac}`;
     const cmd = ["/sbin/mount_nfs", "-o", opts, "127.0.0.1:/", n.mountpoint];
     if (!n.sudo) {

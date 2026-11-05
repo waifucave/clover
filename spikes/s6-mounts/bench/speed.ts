@@ -64,7 +64,7 @@ const rig = new Rig({
   remoteName: "Desktop1", selfName: "Runner", selfHome: path.dirname(ROOT),
 });
 if (args["fskit-url"]) rig.fskit = { url: args["fskit-url"], mountpoint: path.resolve(args["fskit-mountpoint"]!) };
-if (args["nfs-helper"]) rig.nfs = { bin: path.resolve(args["nfs-helper"]), port: 12049, mountpoint: path.resolve(args.tree!) };
+if (args["nfs-helper"]) rig.nfs = { bin: path.resolve(args["nfs-helper"]), port: 12049, mountpoint: path.resolve(args.tree!), ac: args["nfs-ac"] };
 
 async function once(w: Workload, base: string): Promise<Omit<Row, "workload" | "where" | "phase">> {
   const tag = `${process.pid}-${seq++}`;

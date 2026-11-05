@@ -192,14 +192,21 @@ jobs:
           res="$RUNNER_TEMP/s6/results"; mkdir -p "$RUNNER_TEMP/s6/nfs-tree"
           common=(--root "$RUNNER_TEMP/s6/export" --tree "$RUNNER_TEMP/s6/nfs-tree" --helper none --nfs-helper "$RUNNER_TEMP/s6/clover-nfs")
           bun spikes/s6-mounts/bench/coherence.ts "${common[@]}" --policies plain --out "$res/macos-nfs-coherence.json" || echo "coherence failed"
+          # the kernel's attribute cache off, the helper's event-fed cache in front of it
+          bun spikes/s6-mounts/bench/coherence.ts "${common[@]}" --policies cached --nfs-ac noac --out "$res/macos-nfs-noac-coherence.json" || echo "coherence (noac) failed"
           bun spikes/s6-mounts/bench/failfast.ts "${common[@]}" --copy-src "$GITHUB_WORKSPACE/packages/protocol" --rtt 20 --policy plain --out "$res/macos-nfs-failfast.json"
       - name: NFS loopback — speed
         if: matrix.runner == 'xcode-27'
+        env:
+          S6_SKIP_NFS_PLAIN: ${{ contains(github.event.head_commit.message, '[s6-skip-nfs-plain]') }}
         run: |
           res="$RUNNER_TEMP/s6/results"
-          bun spikes/s6-mounts/bench/speed.ts --root "$RUNNER_TEMP/s6/export" --tree "$RUNNER_TEMP/s6/nfs-tree" --helper none \
-            --nfs-helper "$RUNNER_TEMP/s6/clover-nfs" --copy-src "$GITHUB_WORKSPACE/packages/protocol" \
-            --policies plain --rtts 0,20,80 --timeout 600 --out "$res/macos-speed-nfs.json"
+          common=(--root "$RUNNER_TEMP/s6/export" --tree "$RUNNER_TEMP/s6/nfs-tree" --helper none \
+            --nfs-helper "$RUNNER_TEMP/s6/clover-nfs" --copy-src "$GITHUB_WORKSPACE/packages/protocol" --rtts 0,20,80 --timeout 600)
+          bun spikes/s6-mounts/bench/speed.ts "${common[@]}" --policies cached --nfs-ac noac --out "$res/macos-speed-nfs-noac.json"
+          if [ "$S6_SKIP_NFS_PLAIN" != true ]; then
+            bun spikes/s6-mounts/bench/speed.ts "${common[@]}" --policies plain --local 0 --out "$res/macos-speed-nfs.json"
+          fi
       - name: Results
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

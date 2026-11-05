@@ -30,7 +30,7 @@ const rig = new Rig({
   remoteName: "Desktop1", selfName: "Runner", selfHome: path.dirname(ROOT),
 });
 if (args["fskit-url"]) rig.fskit = { url: args["fskit-url"], mountpoint: path.resolve(args["fskit-mountpoint"]!) };
-if (args["nfs-helper"]) rig.nfs = { bin: path.resolve(args["nfs-helper"]), port: 12049, mountpoint: path.resolve(args.tree!) };
+if (args["nfs-helper"]) rig.nfs = { bin: path.resolve(args["nfs-helper"]), port: 12049, mountpoint: path.resolve(args.tree!), ac: args["nfs-ac"] };
 const results: Array<Record<string, unknown>> = [];
 const out: { [k: string]: any } = { spike: "S6", question: "failfast", machine: machine(), rttMs: RTT, policy: POLICY, started: new Date().toISOString(), results };
 const save = () => writeJson(OUT, out);
