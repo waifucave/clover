@@ -109,7 +109,6 @@ import { startRuntimeState, runtimeStateOnline, type DaemonRuntimeState } from "
 import { restampStep } from "./runtime-state/recovery";
 import { createWinterRuntimeSdk, describeLoadError, type WinterRuntimeSdk } from "./runtime-sdk/create";
 import { createEmbeddedSessionHost, embeddedVersionCheck, EMBEDDED_SHUTDOWN_BUDGET_MS, type EmbeddedSessionHost, type EmbeddedSessionHostDeps } from "./runtime-sdk/embedded";
-import { installCoreIdentity } from "./runtime-sdk/brand";
 import { createConsoleProfileBroker } from "./auth/console-profile-broker";
 import { resolveAntExecutable } from "./runtime-sdk/bundle-layout";
 import { attachedFacetFor, parkRecoveredSessions } from "./runtime-sdk/messaging";
@@ -3369,15 +3368,8 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
  *  consumer behind with no handle to stop it, so the failure path shuts the host down. */
 export async function startDaemon(opts: Parameters<typeof startDaemonInner>[1] = {}): Promise<RunningDaemon> {
   let embedded: { shutdown(budgetMs?: number): Promise<void> } | undefined;
-  // A-M1: Clover's identity for the daemon's lifetime (otherwise the SDK's default identity stays).
-  const disposeIdentity = installCoreIdentity();
-  try {
-    const daemon = await startDaemonInner(host => { embedded = host; }, opts);
-    const stop = daemon.stop.bind(daemon);
-    daemon.stop = async () => { try { await stop(); } finally { disposeIdentity(); } };
-    return daemon;
-  }
-  catch (error) { disposeIdentity(); void embedded?.shutdown(EMBEDDED_SHUTDOWN_BUDGET_MS).catch(() => {}); throw error; }
+  try { return await startDaemonInner(host => { embedded = host; }, opts); }
+  catch (error) { void embedded?.shutdown(EMBEDDED_SHUTDOWN_BUDGET_MS).catch(() => {}); throw error; }
 }
 
 // Direct execution: `bun run src/daemon.ts` (also the compiled binary's `daemon run` path).

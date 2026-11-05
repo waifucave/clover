@@ -153,7 +153,7 @@ export interface HostCodeSdkAdapter {
   buildPwdCaptureScript(command: string, path: string): string;
   /** The SDK's `buildHostSandboxRunInputs`, typed by its own input (C0 review S4): a renamed key fails typecheck. A
    *  type-only reference, so the runtime still loads lazily (see `installedHostCodeAdapter`). */
-  buildRunInputs(input: import("@yanlinglabs/winter-agent-runtime").HostSandboxRunInputs): Record<string, unknown>;
+  buildRunInputs(input: import("@waifucave/clover-agent-runtime").HostSandboxRunInputs): Record<string, unknown>;
   buildHookEntries?(config: unknown): Array<{ id: string }>;
   createHookStage?(input: Record<string, unknown>): {
     preToolUse(

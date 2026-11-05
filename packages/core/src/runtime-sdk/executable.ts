@@ -24,7 +24,7 @@
 // P9a fix wave, C1: the platform package arrives as an OPTIONAL DEPENDENCY OF THE WRAPPER
 // (`@waifucave/clover-agent-sdk`), not as a dependency of `packages/core` itself. Bun's isolated
 // linker nests such a package under the WRAPPER's own store entry
-// (`node_modules/.bun/@yanlinglabs+winter-agent-sdk@<ver>/node_modules/@yanlinglabs/<platform-pkg>`)
+// (`node_modules/.bun/@yanlinglabs+clover-sdk@<ver>/node_modules/@yanlinglabs/<platform-pkg>`)
 // and links it only into the wrapper's own `node_modules` — never hoisted to `packages/core`'s own
 // `node_modules`, never to the workspace root. A single `createRequire(import.meta.url).resolve(...)`
 // rooted at THIS module walks straight past it (measured the same way on the retired official
@@ -41,44 +41,27 @@ import { CODING_AGENT_BINARY_VERSION } from "./versions";
 
 export type WinterExecutableSource = "setting" | "env" | "bundle" | "home" | "platform-package";
 
-// A-M1: the binary is the last published build, on its own pin (`CODING_AGENT_BINARY_VERSION`). Its old
-// wrapper (`@yanlinglabs/winter-agent-sdk`) is no longer installed, so the first hop below misses and
-// the platform package resolves as core's own optional dependency.
-const CLOVER_WRAPPER_PACKAGE = "@yanlinglabs/winter-agent-sdk";
+// A-M1: the binary is the last published build, on its own pin (`CODING_AGENT_BINARY_VERSION`), and core's
+// own optional dependency, so it resolves from core directly (the wrapper it once came nested under is not
+// installed any more).
 const CLOVER_PLATFORM_PACKAGE = "@yanlinglabs/winter-agent-sdk-darwin-arm64";
 
 /**
- * P9a-9's package door, fixed by the P9a fix wave's C1: resolves
- * `@yanlinglabs/winter-agent-sdk-darwin-arm64/package.json` with a DUAL `createRequire` hop —
- * first resolve the wrapper's own `package.json` from `fromUrl` (default `import.meta.url`, so a
- * test can root the whole resolution in a fixture directory instead), then resolve the platform
- * package AS A DEPENDENCY OF THE WRAPPER via `createRequire(wrapperPackageJsonPath)`. Falls back
- * to a single hop rooted at `fromUrl` when the wrapper itself cannot be resolved that way or does
- * not carry the platform package as its own dependency — the direct-install dev shape (`bun add
- * <tarball> --optional` in `packages/core`) is still top-level-resolvable and must keep working.
+ * P9a-9's package door: resolves the platform package's `package.json` from `fromUrl` (default
+ * `import.meta.url`, so a test can root the resolution in a fixture directory instead).
  *
- * Returns `undefined` when the optional dependency was not installed at all through either hop (a
- * non-darwin/non-arm64 host, or simply no `bun install` yet) — a legitimate skip, never a throw;
- * the caller decides what an absent rung means. A platform package whose OWN version disagrees
- * with the binary's pin (`CODING_AGENT_BINARY_VERSION`) THROWS instead (P9a fix wave, M2) — a mixed
- * pair is not the pinned artifact (WS-02 §6); staying silent about it would let a session run
- * against an unpinned binary.
+ * Returns `undefined` when the optional dependency was not installed (a non-darwin/non-arm64 host, or
+ * simply no `bun install` yet) — a legitimate skip, never a throw; the caller decides what an absent rung
+ * means. A platform package whose OWN version disagrees with the binary's pin
+ * (`CODING_AGENT_BINARY_VERSION`) THROWS instead (P9a fix wave, M2) — a mixed pair is not the pinned
+ * artifact (WS-02 §6).
  */
 export function resolvePlatformPackageWinter(fromUrl: string = import.meta.url): string | undefined {
-  const req = createRequire(fromUrl);
-  let packageJsonPath: string | undefined;
+  let packageJsonPath: string;
   try {
-    const wrapperPackageJson = req.resolve(`${CLOVER_WRAPPER_PACKAGE}/package.json`);
-    packageJsonPath = createRequire(wrapperPackageJson).resolve(`${CLOVER_PLATFORM_PACKAGE}/package.json`);
+    packageJsonPath = createRequire(fromUrl).resolve(`${CLOVER_PLATFORM_PACKAGE}/package.json`);
   } catch {
-    packageJsonPath = undefined;
-  }
-  if (packageJsonPath === undefined) {
-    try {
-      packageJsonPath = req.resolve(`${CLOVER_PLATFORM_PACKAGE}/package.json`);
-    } catch {
-      return undefined;
-    }
+    return undefined;
   }
   const version = (JSON.parse(readFileSync(packageJsonPath, "utf8")) as { version: string }).version;
   if (version !== CODING_AGENT_BINARY_VERSION) {

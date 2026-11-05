@@ -91,15 +91,15 @@ export const CLOVER_ALLOWLIST: readonly AllowlistEntry[] = [
   // ── The agent SDK: renamed to `@waifucave/clover-*` in A-M1; what is left is Winter's own ──────────
   {
     id: "sdk-packages",
-    regex: /@yanlinglabs\\?[/+]winter-(?:agent-sdk(?:-darwin-[a-z0-9]+)?|runtime-sdk|for-chrome)(?![a-z0-9-])(?:@[0-9][0-9a-z.+-]*)?|(?<=["'])winter-agent-sdk(?=["'])|\bwinter-agent-sdk-darwin-[a-z0-9]+\b/g,
-    why: "Winter's own npm packages, which stay Winter's: the coding agent binary core installs (`@yanlinglabs/winter-agent-sdk-darwin-arm64`, lane K's) and its old wrapper's name, the archived router, and Winter for Chrome's package; the SDK itself is `@waifucave/clover-*` since A-M1",
+    regex: /@yanlinglabs\\?[/+]winter-(?:agent-sdk-darwin-[a-z0-9]+|runtime-sdk|for-chrome)(?![a-z0-9-])(?:@[0-9][0-9a-z.+-]*)?|(?<=["'])winter-agent-sdk(?=["'])|\bwinter-agent-sdk-darwin-[a-z0-9]+\b/g,
+    why: "Winter's own npm packages, which stay Winter's: the coding agent binary core installs (`@yanlinglabs/winter-agent-sdk-darwin-arm64`, lane K's), the archived router, and Winter for Chrome's package. The SDK itself is `@waifucave/clover-*` since A-M1: CLOVER_EXPLICIT_TOKEN_MAP renames its imports",
   },
   {
     id: "sdk-package-names",
     // `winterAgentSdk` is also the router's own `peerVersions` field; `createWinterRuntimeSdk` and
     // `REQUIRED_WINTER_AGENT_SDK` name the packages they wrap and pin.
-    regex: /\w*(?:[Ww]inter(?:Agent|Runtime|Provider)(?:Sdk|SDK|Runtime|Catalog|Conformance)|WINTER_(?:AGENT|RUNTIME|PROVIDER)_(?:SDK|RUNTIME|CATALOG|CONFORMANCE))\w*|\bwinter-(?:agent-runtime|provider-catalog|provider-runtime|provider-conformance|runtime-sdk|conformance)\b/g,
-    why: "identifiers and words that name an SDK package (`winter-agent-sdk`, `winter-runtime-sdk`, the provider packages) or the router's `winterAgentSdk` field; they change when the packages do",
+    regex: /\w*(?:[Ww]inter(?:Agent|Runtime|Provider)(?:Sdk|SDK|Runtime|Catalog|Conformance)|WINTER_(?:AGENT|RUNTIME|PROVIDER)_(?:SDK|RUNTIME|CATALOG|CONFORMANCE))\w*|(?<!@yanlinglabs\/)\bwinter-(?:agent-runtime|provider-catalog|provider-runtime|provider-conformance|runtime-sdk|conformance)\b/g,
+    why: "identifiers and words that name an SDK package (`winter-agent-sdk`, `winter-runtime-sdk`, the provider packages) or the router's `winterAgentSdk` field; a scoped `@yanlinglabs/winter-*` import is left to CLOVER_EXPLICIT_TOKEN_MAP (A-M1)",
   },
   {
     id: "sdk-api",
@@ -421,6 +421,16 @@ export const CLOVER_EXPLICIT_TOKEN_MAP: readonly (readonly [from: string, to: st
   ["@yanlinglabs/winter-core", "@waifucave/clover-core"],
   ["@yanlinglabs/winter-cli", "@waifucave/clover-cli"],
   ["@yanlinglabs/winter-plugin-sdk", "@waifucave/clover-plugin-sdk"],
+  // A-M1: the agent SDK's packages (clover-sdk 0.0.63 renamed them; the binary package stays Winter's and is
+  // protected by the `sdk-packages` entry). Applied on every run, so a rebase or another lane's branch that
+  // still imports `@yanlinglabs/winter-*` is swept the same way.
+  ["@yanlinglabs/winter-agent-sdk", "@waifucave/clover-agent-sdk"],
+  ["@yanlinglabs/winter-agent-runtime", "@waifucave/clover-agent-runtime"],
+  ["@yanlinglabs/winter-provider-catalog", "@waifucave/clover-provider-catalog"],
+  ["@yanlinglabs/winter-provider-runtime", "@waifucave/clover-provider-runtime"],
+  ["@yanlinglabs/winter-provider-conformance", "@waifucave/clover-provider-conformance"],
+  ["@yanlinglabs/winter-conformance", "@waifucave/clover-conformance"],
+  ["@yanlinglabs/winter-web", "@waifucave/clover-web"],
   // identities (spec §2): the app, and the core's Keychain service and launchd label
   ["com.winter.app", "com.waifucave.clover"],
   ["com.winter.core", "com.waifucave.clover.core"],

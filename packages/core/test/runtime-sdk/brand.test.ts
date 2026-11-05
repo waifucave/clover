@@ -11,9 +11,8 @@ import {
   type BrandProfile,
 } from "@waifucave/clover-agent-sdk";
 import { keychainService } from "../../src/profile";
-import { buildCoreBrand, CORE_BRAND, installCoreIdentity } from "../../src/runtime-sdk/brand";
+import { buildCoreBrand, CORE_BRAND } from "../../src/runtime-sdk/brand";
 import { CORE_VERSION } from "../../src/version";
-import { activeWinterIdentity, winterUserAgent, WINTER_DEFAULT_IDENTITY } from "@waifucave/clover-provider-runtime";
 import { resolveCloverHome } from "../../src/clover-dir";
 
 /** The fourteen fields `BrandProfile` has (surface map §1.5 / global constraints). */
@@ -156,18 +155,5 @@ describe("CORE_BRAND", () => {
         if (savedWinterProfile === undefined) delete process.env.WINTER_PROFILE; else process.env.WINTER_PROFILE = savedWinterProfile;
       }
     });
-  });
-});
-
-describe("A-M1: the process identity follows CORE_BRAND", () => {
-  test("installCoreIdentity: originator clover, User-Agent clover-core/<release>, Clover's contact; the disposer gives Winter's back", () => {
-    const dispose = installCoreIdentity();
-    try {
-      expect(activeWinterIdentity()).toEqual({ product: "clover-core", codexOriginator: "clover", contactUrl: "https://github.com/waifucave/clover", version: CORE_VERSION });
-      expect(winterUserAgent()).toBe(`clover-core/${CORE_VERSION}`);
-    } finally {
-      dispose();
-    }
-    expect(activeWinterIdentity()).toEqual({ ...WINTER_DEFAULT_IDENTITY });
   });
 });

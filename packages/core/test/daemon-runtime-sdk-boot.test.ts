@@ -16,7 +16,7 @@ import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { FileSecretStore } from "../src/auth/secret-store";
 import { startDaemon, type RunningDaemon } from "../src/daemon";
-import { activeWinterIdentity, winterUserAgent, WINTER_DEFAULT_IDENTITY } from "@waifucave/clover-provider-runtime";
+import { activeWinterIdentity, winterUserAgent } from "@waifucave/clover-provider-runtime";
 import { CORE_VERSION } from "../src/version";
 import { RuntimeStateUnavailableError, type RuntimeStateWiring } from "../src/runtime-state";
 import { withTempHome } from "./runtime-state/support";
@@ -100,13 +100,14 @@ describe("daemon boot — the Clover handle", () => {
     });
   });
 
-  test("A-M1: a running daemon presents Clover's identity (CORE_BRAND), and its stop gives the SDK's default back", async () => {
+  test("A-M1: the daemon presents Clover's identity, with Clover's release, before, during and after it runs", async () => {
+    // Installed once when core loads (`process-identity.ts`) and never removed (review S1).
+    expect(winterUserAgent()).toBe(`clover-core/${CORE_VERSION}`);
     await withTempHome(async (home) => {
       const d = await boot(home);
-      expect(activeWinterIdentity()).toMatchObject({ product: "clover-core", codexOriginator: "clover" });
-      expect(winterUserAgent()).toBe(`clover-core/${CORE_VERSION}`);
+      expect(activeWinterIdentity()).toMatchObject({ product: "clover-core", codexOriginator: "clover", version: CORE_VERSION });
       await d.stop();
-      expect(activeWinterIdentity()).toEqual({ ...WINTER_DEFAULT_IDENTITY });
+      expect(winterUserAgent()).toBe(`clover-core/${CORE_VERSION}`);
     });
   });
 
