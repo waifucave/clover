@@ -44,17 +44,18 @@ export function headlessRequirementFor(profile: CloverProfile, override: boolean
   return `identifier "${headlessBundleIdFor(profile)}" and ${anchor}`;
 }
 
-/** Clover.app's bundle id per profile: dist `com.winter.app`, dev `com.winter.app.dev` ("Clover Dev"). */
-export function cloverAppBundleIdFor(profile: CloverProfile): string {
+/** The app's bundle id per profile, as the kept helpers know it: dist `com.winter.app`, dev `com.winter.app.dev`
+ *  (computer use keeps the ids of the app it was built with until opensky, spec §4). */
+export function winterAppBundleIdFor(profile: CloverProfile): string {
   return profile === "dev" ? "com.winter.app.dev" : "com.winter.app";
 }
 
 /**
  * Lane H3 — the code requirement Winter Headless holds the VIEWER of a presentation to (checked against the viewer's
- * audit token on its first message): Clover's own app for this daemon's profile, signed by Clover's team.
+ * audit token on its first message): the app (`winterAppBundleIdFor`) for this daemon's profile, signed by the team.
  */
-export function cloverAppRequirementFor(profile: CloverProfile, teamId: string = CLOVER_TEAM_ID): string {
-  return `identifier "${cloverAppBundleIdFor(profile)}" and anchor apple generic and certificate leaf[subject.OU] = "${teamId}"`;
+export function winterAppRequirementFor(profile: CloverProfile, teamId: string = CLOVER_TEAM_ID): string {
+  return `identifier "${winterAppBundleIdFor(profile)}" and anchor apple generic and certificate leaf[subject.OU] = "${teamId}"`;
 }
 
 /** Where the Winter Headless app should be for this daemon. */

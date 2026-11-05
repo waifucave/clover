@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { closeSync, constants, fstatSync, fsyncSync, linkSync, lstatSync, mkdirSync, openSync, readSync, realpathSync, unlinkSync, writeSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { COORDINATION_LEDGER_FILE, coordinationLedgerPath, type CoordinationPathInputs } from "../native/admission-probes";
+import { OTHER_INSTALL_HOMES } from "../../other-installs";
 
 /*
  * The Coordination directory and what lives beside the admission ledger (N2 S7B part 1). Everything here is host-side state that must outlive a
@@ -42,9 +43,12 @@ export function ensurePrivateDirectory(path: string): void {
   if (realpathSync(path) !== path) fail("directory_path_alias");
 }
 
-/** The launcher refuses any path with a `.clover*` component, in any case (volumes are case-insensitive). The daemon refuses the same, before it creates anything. */
+/** No path with a home's name as a component, in any case (volumes are case-insensitive): Clover's (`.clover*`) and the
+ *  other installs' that share the machine (`other-installs.ts`) — the kept Swift launcher refuses the live install's own
+ *  name the same way. The daemon refuses before it creates anything. */
+const REFUSED_HOME_PREFIXES: readonly string[] = [".clover", ...OTHER_INSTALL_HOMES.map((o) => o.dir.toLowerCase())];
 export function assertOutsideCloverHomes(path: string): void {
-  for (const component of path.split("/")) if (component.toLowerCase().startsWith(".clover")) fail("path_inside_clover_home");
+  for (const component of path.split("/")) if (REFUSED_HOME_PREFIXES.some((p) => component.toLowerCase().startsWith(p))) fail("path_inside_clover_home");
 }
 
 /** `path` with its deepest existing ancestor resolved through symlinks (the rest, which does not exist yet, appended as written). */

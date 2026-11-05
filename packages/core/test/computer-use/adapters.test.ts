@@ -16,6 +16,7 @@ import {
 } from "../../src/computer-use/adapters/dict";
 import { appleScriptText } from "../../src/computer-use/adapters/apps/common";
 import { mountFor, parseMounts, trashDialogReason, trashRefusal } from "../../src/computer-use/adapters/apps/finder";
+import { OTHER_INSTALL_HOMES } from "../../src/other-installs";
 import { noteHtml } from "../../src/computer-use/adapters/apps/notes";
 import { CHROMIUM_BUNDLE_IDS } from "../../src/computer-use/adapters/apps/chromium";
 import {
@@ -348,7 +349,7 @@ describe("access classes through the policy", () => {
     expect(await kindOf(policyFor("dont-ask").authorize(run, FINDER, purposeFor("full", "extras.trash")))).toContain("no \"Always allow\" grant");
     expect(await kindOf(policyFor("dont-ask", { "com.apple.finder": { grant: "always" } }).authorize(run, FINDER, purposeFor("full", "extras.trash")))).toBe("ok");
     expect(await kindOf(policyFor("bypass").authorize(run, FINDER, purposeFor("full", "dict.delete")))).toBe("ok");
-    expect(await kindOf(policyFor("bypass").authorize(run, { bundleId: "com.winter.app", name: "Clover" }, purposeFor("view", "extras.x")))).toContain("Refused");
+    expect(await kindOf(policyFor("bypass").authorize(run, { bundleId: "com.winter.app", name: "Winter" }, purposeFor("view", "extras.x")))).toContain("Refused");
   });
 });
 
@@ -578,7 +579,7 @@ describe("the built-in adapters' AppleScript", () => {
 
   test("Finder's trash refuses system and home folders; Notes' HTML is escaped; bad arguments are TypeErrors", async () => {
     const home = "/Users/someone";
-    for (const p of ["/", "/System/Library", "/Users", home, `${home}/Documents`, `${home}/.ssh/id_rsa`, `${home}/Library/Keychains/x`, `${home}/.clover-dev/x`]) {
+    for (const p of ["/", "/System/Library", "/Users", home, `${home}/Documents`, `${home}/.ssh/id_rsa`, `${home}/Library/Keychains/x`, `${home}/.clover-dev/x`, ...OTHER_INSTALL_HOMES.map((o) => `${home}/${o.dir}/x`)]) {
       expect(trashRefusal(p, home)).toBeDefined();
     }
     expect(trashRefusal(`${home}/Documents/old.txt`, home)).toBeUndefined();

@@ -126,6 +126,10 @@ import { resolveInstalledWinterPackage } from "./stage-runtimes";
 import { buildCoworkNative } from "./build-cowork-native";
 import { COWORK_NATIVE, COWORK_NATIVE_EMBED_RELATIVE, checkCoworkNativeBundle, checkCoworkNativeOmitted, checkSignedNative, coworkNativeReleasePlan, coworkRequirement, readCoworkBundleFacts } from "./cowork-native-lib";
 import { createHash } from "node:crypto";
+import { refuseHeldScript } from "./held-scripts";
+
+// C0 review S6: until C7 (`held-scripts.ts`), before this script reads an argument or touches anything.
+refuseHeldScript("release");
 
 const TEAM_ID = "37N77U9RSZ";
 const NOTARY_PROFILE = "norma-notary";
@@ -1488,7 +1492,7 @@ const caskRendered = caskFrom(caskTmpl, {
   sha256: dmgSha256,
   url: `https://github.com/${GH_REPO}/releases/download/v${version}/Clover-${version}.dmg`,
 });
-const caskOutPath = join(OUT, "winter.rb");
+const caskOutPath = join(OUT, "clover.rb");
 writeFileSync(caskOutPath, caskRendered);
 console.log(`Cask rendered: ${caskOutPath} (sha256 ${dmgSha256})`);
 

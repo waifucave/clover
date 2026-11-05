@@ -184,11 +184,12 @@ export function releaseNotesHtml(i: { notesMarkdown: string; version: string }):
     blocks.push(`<p>${inline(paragraph.join(" "), `the paragraph starting on line ${startedAt}`)}</p>`);
   }
 
-  // Every notes file opens with `# Clover <version>`, and Sparkle's own pane is already titled
-  // with the app name and this exact version (plus the `<title>` element of the item). Repeating it
-  // as the first heading of the body is the third copy on one screen, so that ONE heading — matched
-  // against this release's version, nothing else — is dropped.
-  if (blocks[0] === `<h1>Clover ${i.version}</h1>`) blocks.shift();
+  // Every notes file opens with `# Clover <version>` — or `# Winter <version>`, for the releases before
+  // C0 kept in `releases/notes/` — and Sparkle's own pane is already titled with the app name and this
+  // exact version (plus the `<title>` element of the item). Repeating it as the first heading of the
+  // body is the third copy on one screen, so that ONE heading — matched against this release's
+  // version, nothing else — is dropped.
+  if (blocks[0] === `<h1>Clover ${i.version}</h1>` || blocks[0] === `<h1>Winter ${i.version}</h1>`) blocks.shift();
   return blocks.join("\n");
 }
 

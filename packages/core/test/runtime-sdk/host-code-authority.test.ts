@@ -51,7 +51,7 @@ function fixture() {
     },
     sessionRoot: "/fixture/source",
     home: "/fixture/user",
-    cloverHome: "/fixture/private-run",
+    winterHome: "/fixture/private-run",
     storeHome: "/fixture/sdk",
     trustedWorkspace: true,
     brand: WINTER_BRAND,

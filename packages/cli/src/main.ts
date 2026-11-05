@@ -1,7 +1,7 @@
 import { join, resolve } from "node:path";
 import { homedir } from "node:os";
 import { existsSync, readFileSync } from "node:fs";
-import { resolveCloverHome, KeychainSecretStore, startDaemon, TOKEN_NAMES, loadSettings, CORE_VERSION, runWorkflowSubprocess, runAutomationWorker, AUTOMATION_WORKER_ARG, processSatisfiesRequirement, runRuntimeWorkflowWorker, RUNTIME_WORKFLOW_WORKER_ARG, runRuntimeStateProbe, runRuntimesProbe, keychainUnlocked, processStartSecondsViaSysctl, runEmbeddedProbe, runDevKeychainAdopt, DEV_KEYCHAIN_ADOPT_ARG, resolveCloverProfile, splitTag, sdkLocalMcpServers } from "@waifucave/clover-core";
+import { resolveCloverHome, KeychainSecretStore, startDaemon, TOKEN_NAMES, loadSettings, CORE_VERSION, runWorkflowSubprocess, runAutomationWorker, AUTOMATION_WORKER_ARG, processSatisfiesRequirement, runRuntimeWorkflowWorker, RUNTIME_WORKFLOW_WORKER_ARG, runRuntimeStateProbe, runRuntimesProbe, keychainUnlocked, processStartSecondsViaSysctl, runEmbeddedProbe, runDevKeychainAdopt, DEV_KEYCHAIN_ADOPT_ARG, resolveCloverProfile, splitTag, sdkLocalMcpServers, installCloverProcessIdentity } from "@waifucave/clover-core";
 import type { CredentialRow, SecretStore, Settings } from "@waifucave/clover-core";
 import { METHODS, type ApprovalPolicy, type Task } from "@waifucave/clover-protocol";
 import { POLICY_ORDER } from "./tui/policy-order";
@@ -1583,6 +1583,9 @@ if (import.meta.main) {
     process.exit(result.ok ? 0 : 1);
   }
 
+  // C0 (review S1): every provider call this process makes presents as Clover — `User-Agent`, the Codex
+  // `originator` and the contact URL (core installs it when it loads; this makes the CLI's start explicit).
+  installCloverProcessIdentity();
   const argv = process.argv.slice(2);
   const isTTY = !!(process.stdin.isTTY && process.stdout.isTTY);
   const route = routeCliInvocation(argv, isTTY);
@@ -1643,7 +1646,13 @@ if (import.meta.main) {
     // 2026-09-17: tee this process's stdout/stderr into <home>/logs/daemon.log (rotating) BEFORE the
     // daemon boots, so the boot lines themselves are captured — the release app wires our stdio to
     // /dev/null, and the file is the only diagnostic that survives that.
-    const { installDaemonLogFile } = await import("@waifucave/clover-core");
+    const { installDaemonLogFile, otherInstallHome } = await import("@waifucave/clover-core");
+    // Before the log file or anything else touches the home: never another install's home (`other-installs.ts`).
+    const otherInstall = otherInstallHome(resolveCloverHome());
+    if (otherInstall !== undefined) {
+      console.error(`clover daemon run: refusing ${resolveCloverHome()}: it is ${otherInstall.what}, which Clover never touches — set CLOVER_HOME to a Clover home`);
+      process.exit(1);
+    }
     const daemonLog = installDaemonLogFile(resolveCloverHome());
     console.error(`daemon log: ${daemonLog.path}`);
     let daemon: Awaited<ReturnType<typeof startDaemon>>;
@@ -1720,7 +1729,7 @@ if (import.meta.main) {
     // repair refuses while the lock is held, on the same probe `lock.ts` uses.
     const {
       diagnoseRuntimeState, repairRuntimeState, isDaemonLockHeld, DAEMON_RUNNING_REFUSAL, diagnoseRuntimes, loadSettings,
-      diagnoseMigration, formatMigrationDoctorLines, legacyHomeFor, legacyKeychainPresence, legacyKeychainServiceFor,
+      diagnoseMigration, formatMigrationDoctorLines,
     } = await import("@waifucave/clover-core");
     const home = resolveCloverHome();
     const args = process.argv.slice(3);
@@ -1771,16 +1780,10 @@ if (import.meta.main) {
     // posture as `printRuntimesSection` above — a Keychain read failure degrades to one honest
     // line rather than aborting the whole command.
     const printMigrationSection = async (): Promise<void> => {
-      const profile = resolveCloverProfile();
-      const legacyHome = legacyHomeFor(profile);
       try {
-        const report = await diagnoseMigration({
-          home,
-          legacyHome,
-          legacyKeychainService: legacyKeychainServiceFor(profile),
-          // WS-25 §7: presence without a decrypt — no consent dialog per legacy item.
-          legacyItemPresent: legacyKeychainPresence(profile),
-        });
+        // C0 (review S2): this home's own Migration B record only. No legacy home is looked at and no legacy
+        // Keychain item is probed: only an explicit `clover migrate --from` reads a legacy home.
+        const report = await diagnoseMigration({ home });
         for (const line of formatMigrationDoctorLines(report)) console.log(`${AQUA}${line}${RESET}`);
       } catch (err) {
         console.log(`${AQUA}migration:${RESET} ${DIM}unavailable (${err instanceof Error ? err.message : "unknown error"})${RESET}`);

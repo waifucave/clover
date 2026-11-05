@@ -1972,7 +1972,7 @@ export class BrowserEngine {
       throw new AutomationFailure("TargetBusy", "a wake trigger is armed on this tab — handing it over would end it; cancel the trigger first (wakes.cancel(id)), or let the trigger alone wait for the user");
     }
     if (scope.userCard === undefined) throw new Error("this Clover can't hand a tab to the user");
-    const winter = this.familyOf(b.backend) === "winter";
+    const builtIn = this.familyOf(b.backend) === "winter";
     const headless = this.isHeadless(b.backend);
     const name = this.browserName(b.backend);
     const transport = driver.transport;
@@ -1980,7 +1980,7 @@ export class BrowserEngine {
     const cannotShow = headless ? this.deps.headlessPresentMissing?.() ?? (this.deps.headlessHandBack === undefined ? "this Clover can't show a headless tab" : undefined) : undefined;
     if (cannotShow !== undefined) throw new AutomationFailure("BrowserUnavailable", `waitForUser() shows a headless tab in Clover's panel, and ${cannotShow}`);
     if (transport.present === undefined) {
-      throw winter
+      throw builtIn
         ? new Error("Clover's built-in browser can't show a tab to the user until Clover is updated")
         : new AutomationFailure("BrowserUnavailable", `the Winter for Chrome in ${name} is too old for waitForUser() — ask the user to update it`);
     }
@@ -1998,7 +1998,7 @@ export class BrowserEngine {
       const key = tabKeyOf(b.backend, b.tabKey);
       try {
         try { await transport.present(b.tabKey, { sessionId: sid }); } catch (err) { throw transportFailure(err, name); }
-        scope.builder.daemonLine(winter ? `showed the tab to the user in Clover's window`
+        scope.builder.daemonLine(builtIn ? `showed the tab to the user in Clover's window`
           : headless ? "showed the headless tab to the user in Clover's panel (the same live page — they have it until they press Done)"
             : `brought the tab forward in ${name} for the user`);
         const left = Math.max(1_000, total - (this.now() - t0));
@@ -2009,7 +2009,7 @@ export class BrowserEngine {
         } finally {
           this.handoffAnswers.delete(key);
           // The browser's own waiting mark goes (Winter for Chrome's badge and pill).
-          if (!winter) transport.overlay(b.tabKey, { active: false });
+          if (!builtIn) transport.overlay(b.tabKey, { active: false });
         }
         scope.live();
         if (wait.by === "tab-gone") throw new AutomationFailure("TargetLost", "the tab was closed while Clover waited for the user");
@@ -2074,7 +2074,7 @@ export class BrowserEngine {
     if (typeof timeout !== "number" || !Number.isFinite(timeout) || timeout <= 0) throw bad("download()'s timeoutMs is a positive number of ms");
     const startMs = scope.clampWait(Math.min(timeout, DOWNLOAD_TOTAL_MAX_MS));
     const totalMs = scope.clampWait(DOWNLOAD_TOTAL_MAX_MS);
-    const winter = this.familyOf(b.backend) === "winter";
+    const builtIn = this.familyOf(b.backend) === "winter";
 
     const t = args.target;
     let ref: number | undefined;
@@ -2119,11 +2119,11 @@ export class BrowserEngine {
       await ensureSiteAllowed(scope, this.approvals, this.deps.site ?? {}, checked, this.browserName(b.backend), cwd);
       scope.live();
       noteSiteOf(scope, checked);
-      captured = winter
+      captured = builtIn
         ? await this.captureNativeUrl(scope, b, driver, checked, { staging, startMs, totalMs })
         : await this.captureUrlRoute(scope, b, checked, { staging, startMs, totalMs, floor });
     } else {
-      const out = await this.captureByClick(scope, b, driver, ref!, { staging, startMs, totalMs, fetch: !winter, floor });
+      const out = await this.captureByClick(scope, b, driver, ref!, { staging, startMs, totalMs, fetch: !builtIn, floor });
       captured = out.file;
       fromBrowserFolder = out.browserFolder;
     }
@@ -2141,7 +2141,7 @@ export class BrowserEngine {
     let source = captured.stagedPath;
     let afterPlaced: (() => void) | undefined;
     if (fromBrowserFolder !== undefined) ({ source, afterPlaced } = this.takeFromBrowserFolder(fromBrowserFolder, captured, staging, r.denyRead));
-    else if (winter && captured.reportedPath !== undefined) this.requireInStaging(captured.reportedPath, staging);
+    else if (builtIn && captured.reportedPath !== undefined) this.requireInStaging(captured.reportedPath, staging);
     const placed = placeDownload(source, plan, { expectedBytes: captured.bytes, tmpDir: r.tmpDir });
     afterPlaced?.();
     if (fromBrowserFolder?.id !== undefined) void fromBrowserFolder.transport.releaseDownload?.(fromBrowserFolder.id).catch(() => undefined);
@@ -2157,16 +2157,16 @@ export class BrowserEngine {
     scope: TabRunScope, b: Binding, driver: TabDriver, ref: number,
     o: { staging: string; startMs: number; totalMs: number; fetch: boolean; floor: (url: string) => Promise<void> },
   ): Promise<{ file: CapturedFile; browserFolder?: { path: string; subdir: string; id?: string; transport: CdpTransport; armedAt: number } }> {
-    const winter = this.familyOf(b.backend) === "winter";
+    const builtIn = this.familyOf(b.backend) === "winter";
     const name = this.browserName(b.backend);
     const transport = driver.transport;
     if (o.fetch) this.requireCdp3(driver, "download()");
     const fetch = o.fetch ? new FetchCapture(driver, { anyResponse: false, stagingDir: o.staging, maxBytes: DOWNLOAD_MAX_BYTES, now: () => this.now(), checkUrl: o.floor }) : undefined;
-    const subdir = winter ? "" : `Clover/${randomBytes(6).toString("hex")}`;
+    const subdir = builtIn ? "" : `Clover/${randomBytes(6).toString("hex")}`;
     let native: NativeCapture | undefined;
     if (transport.armDownloads !== undefined && transport.onDownload !== undefined) {
-      native = new NativeCapture(transport, b.tabKey, { dir: winter ? o.staging : "", subdir, until: this.now() + o.totalMs, maxBytes: DOWNLOAD_MAX_BYTES, now: () => this.now() });
-    } else if (winter) {
+      native = new NativeCapture(transport, b.tabKey, { dir: builtIn ? o.staging : "", subdir, until: this.now() + o.totalMs, maxBytes: DOWNLOAD_MAX_BYTES, now: () => this.now() });
+    } else if (builtIn) {
       throw new Error("Clover's built-in browser can't save downloads until Clover is updated");
     }
     let nativeRefusal: Error | undefined;
@@ -2175,7 +2175,7 @@ export class BrowserEngine {
       if (fetch !== undefined) await fetch.arm();
       if (native !== undefined) {
         try { await native.arm(); } catch (err) {
-          nativeRefusal = winter ? transportFailure(err, name) : nativeArmFailure(err, name);
+          nativeRefusal = builtIn ? transportFailure(err, name) : nativeArmFailure(err, name);
           native = undefined;
           if (fetch === undefined) throw nativeRefusal;
         }
@@ -2195,7 +2195,7 @@ export class BrowserEngine {
           if (pageMade !== undefined) {
             const saved = `${name} saved "${redactText(pageMade)}" in its own Downloads folder`;
             if (nativeRefusal !== undefined) return `${nativeRefusal.message} (${saved})`;
-            if (!winter && transport.armDownloads === undefined) {
+            if (!builtIn && transport.armDownloads === undefined) {
               return `that file is made by the page itself — to save it from ${name}, ask the user to update Winter for Chrome and allow downloads in its menu (its toolbar button) (${saved})`;
             }
             return `the page started a download of "${redactText(pageMade)}" that Clover could not catch`;
@@ -2204,7 +2204,7 @@ export class BrowserEngine {
           return `nothing started a download within ${Math.round(o.startMs / 1000)} s of the click`;
         },
       });
-      if (file.nativeId !== undefined && !winter) return { file, browserFolder: { path: file.reportedPath ?? file.stagedPath, subdir, id: file.nativeId, transport, armedAt } };
+      if (file.nativeId !== undefined && !builtIn) return { file, browserFolder: { path: file.reportedPath ?? file.stagedPath, subdir, id: file.nativeId, transport, armedAt } };
       return { file };
     } finally {
       await fetch?.disarm();

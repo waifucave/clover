@@ -11,16 +11,16 @@ export type BrowserFamily = "winter" | "headless" | "chrome" | "edge" | "brave" 
 export type BackendId = string;
 
 export interface TransportTab {
-  /** The backend's own tab id as a string: a panel tab id (winter), an engine-prefixed id (headless: "w-…" for Clover's
+  /** The backend's own tab id as a string: a panel tab id (`winter`), an engine-prefixed id (headless: "w-…" for Clover's
    *  own engine, "chrome-…" and so on for an installed one) or a chrome.tabs id (extension). */
   tabKey: string;
   url: string;
   title: string;
   active: boolean;
-  /** Opened by Clover's automation — winter: minted by `browsers.open` in this daemon run; headless: every tab (the
+  /** Opened by Clover's automation — `winter`: minted by `browsers.open` in this daemon run; headless: every tab (the
    *  browser is Clover's own); extension: in a Clover group. */
   agent: boolean;
-  /** The Clover session it belongs to — winter: the panel tab's session; headless: the session whose browser context
+  /** The Clover session it belongs to — `winter`: the panel tab's session; headless: the session whose browser context
    *  holds it; extension: the Clover group's session. */
   sessionId?: string;
   /** Phase 3 (extension): when the user last had the tab in front (epoch ms), its tab group's title, its window. */
@@ -33,12 +33,12 @@ export interface TransportTab {
 export interface TransportDownload {
   /** The backend's own id for this download. */
   id: string;
-  /** `refused`: a download the tab started while NOT armed (winter: Clover.app refused it; the engine only says so). */
+  /** `refused`: a download the tab started while NOT armed (`winter`: Clover.app refused it; the engine only says so). */
   state: "started" | "progress" | "done" | "failed" | "refused";
   /** The suggested file name. */
   name: string;
   url?: string;
-  /** `done`: the finished file — inside the armed `dir` (winter), or in the browser's own download folder (extension:
+  /** `done`: the finished file — inside the armed `dir` (`winter`), or in the browser's own download folder (extension:
    *  under the armed `subdir`, unless the user picked another place in the browser's save dialog). */
   path?: string;
   bytes: number;
@@ -78,16 +78,16 @@ export interface CdpTransport {
   /** False once the far side is gone; every call then rejects `disconnected`. */
   readonly connected: boolean;
   /** Open a tab without activating anything the user is looking at outside Clover (extension: `active: false`, in the
-   *  session's Clover group; winter: the daemon has already minted the panel tab, so this makes its browser live;
+   *  session's Clover group; `winter`: the daemon has already minted the panel tab, so this makes its browser live;
    *  headless: a windowless or background page in the session's own private context, on `engine` — "winter" (the
    *  default: Clover's own CEF helper) or an installed browser's family id; every other backend ignores `engine`). */
   createTab(opts: { sessionId: string; sessionTitle?: string; url: string; tabKey?: string; engine?: string }): Promise<TransportTab>;
   closeTab(tabKey: string): Promise<void>;
   /** extension: take it out of the Clover group (it stays as the user's tab) — into the user's own group named `group`
-   *  in its window when given (Phase 3); winter, headless: nothing. */
+   *  in its window when given (Phase 3); `winter`, headless: nothing. */
   keepTab(tabKey: string, opts?: { group?: string }): Promise<void>;
   listTabs(opts?: { sessionId?: string }): Promise<TransportTab[]>;
-  /** Make the tab drivable — winter: its browser live and held; headless: a flattened CDP session on its page target;
+  /** Make the tab drivable — `winter`: its browser live and held; headless: a flattened CDP session on its page target;
    *  extension: the debugger attached. Idempotent. `watchOnly` (wake triggers): an attachment that changes nothing
    *  the user sees or does — a transport with `watchOnlyHolds` holds the tab with none of its native-UI effects, and
    *  attaching an attached tab again changes its hold; any other transport ignores it. */
@@ -101,12 +101,12 @@ export interface CdpTransport {
   onTabGone(listener: (tabKey: string, reason: "closed" | "crashed" | "stopped" | "detached_by_user") => void): () => void;
   /** The agent cursor / glow in the tab. Best effort: never throws, never awaited by the engine. */
   overlay(tabKey: string, o: { active: boolean; cursor?: { x: number; y: number; kind: "move" | "press" | "type" | "scroll" } }): void;
-  /** extension: the user pressed the in-page Stop button. winter, headless: never fires. */
+  /** extension: the user pressed the in-page Stop button. `winter`, headless: never fires. */
   onStop(listener: (tabKey: string) => void): () => void;
 
   // ── Phase 3: optional members. A backend without one does not offer that capability (the engine says so typed). ──
 
-  /** Show the tab to the user: its window (winter: the session's window) brought forward and the tab selected. ONLY
+  /** Show the tab to the user: its window (`winter`: the session's window) brought forward and the tab selected. ONLY
    *  for `waitForUser`, after the user's own "Show me the tab" on its card. */
   present?(tabKey: string, opts: { sessionId: string }): Promise<void>;
   /** extension: the user answered Done (`true`) or Stop waiting (`false`) in the toolbar for a tab waiting on them. */
@@ -121,13 +121,13 @@ export interface CdpTransport {
   bookmarks?(q: { text?: string; maxResults: number }): Promise<Array<{ url: string; title: string; folder: string }>>;
   /**
    * Downloads the BROWSER itself saves for this tab until `until` (epoch ms), at most `maxBytes` each; `null` disarms.
-   * winter: Clover.app's own handler writes into `dir` (Clover's staging, inside its home); extension (its optional
+   * `winter`: Clover.app's own handler writes into `dir` (Clover's staging, inside its home); extension (its optional
    * `downloads` permission granted): the browser writes into `<its download folder>/<subdir>/` and may show its own
    * "save as" dialog if the user asked it to. Each is reported through `onDownload`. Absent, or refused `not_allowed`
    * (`data.permission`): the engine catches http(s) downloads over CDP Fetch instead.
    */
   armDownloads?(tabKey: string, opts: { dir: string; subdir: string; until: number; maxBytes: number } | null): Promise<void>;
-  /** winter: download `url` in that tab's browser (its cookies), caught by the armed handler. */
+  /** `winter`: download `url` in that tab's browser (its cookies), caught by the armed handler. */
   startDownload?(tabKey: string, url: string): Promise<void>;
   onDownload?(listener: (tabKey: string, d: TransportDownload) => void): () => void;
   /** The engine has taken the finished file: the browser forgets the item (extension: its downloads list entry). */

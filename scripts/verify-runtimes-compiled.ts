@@ -99,7 +99,7 @@ function homeSignature(dir: string): string {
  *   - `bunfig.toml` preloads `preload.ts`, which writes `preloadMarker`;
  *   - `.env` sets `CLOVER_RUNTIME_EXECUTABLE` to `envMarker` (a path that does not exist). The
  *     probe's env is narrow and never sets it, and an explicit env path is AUTHORITATIVE in the
- *     clover ladder (`resolveWinterExecutable`), so a loaded `.env` turns `winter.source` away from
+ *     runtime executable's ladder (`resolveWinterExecutable`), so a loaded `.env` turns `clover.source` away from
  *     `bundle` and names the marker in `errors`.
  * Both fixtures are shown live under plain `bun` first (positive controls), so a green result can
  * never be a probe that could not have seen them.

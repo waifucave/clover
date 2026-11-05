@@ -153,6 +153,13 @@ describe("clover migrate — a fresh run (--from, or the default legacyHomeFor)"
     expect(errLines.join("\n")).toContain("no legacy home found");
   });
 
+  test("C0 (review S2): no --from, no migration — Clover never looks for a legacy home by itself", async () => {
+    const { deps, errLines } = baseDeps({ argv: ["--yes"] });
+    expect(await runMigrateCommand(deps)).toBe(1);
+    expect(errLines.join("\n")).toContain("--from <path>");
+    expect(existsSync(deps.home)).toBe(false);
+  });
+
   test("refuses when the destination is not pristine", async () => {
     const parent = tempDir();
     const legacyHome = join(parent, "legacy");
