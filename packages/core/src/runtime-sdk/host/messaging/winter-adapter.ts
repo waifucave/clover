@@ -21,7 +21,7 @@
 import type { Options } from "@waifucave/clover-agent-sdk";
 import { delivered, deliveryUncertain, notFound, refused, resumedAndDelivered, queued, serializeRuntimeAddress, unavailable } from "@waifucave/clover-agent-sdk/messaging";
 
-import type { HostSdk } from "../session-host";
+import type { HostSdk } from "../runtime-sdk-host";
 import { entryToListedRuntimeObject, owningSessionIdOf, parentAddressOf, sessionAddressOf } from "../directory/entries";
 import type { RuntimeDirectory } from "../seams/directory";
 import type { RuntimeDirectoryEntry } from "../seams/directory-store";

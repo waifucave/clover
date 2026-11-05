@@ -11,7 +11,7 @@
 //   * the shared transcript store (`store/`): the model-switch review and crash recovery;
 //   * the selection record (`selection/`): the `RuntimeSelection` a session persists.
 //
-// The router's `createRuntimeSdk` door is `createSessionHost` (`session-host.ts`): the run home applied,
+// The router's `createRuntimeSdk` door is `createRuntimeSdkHost` (`runtime-sdk-host.ts`): the run home applied,
 // then the SDK's own `query()`. What the router did not keep: its `peers` injection, its version matrix
 // over the injected peer, selections carried in `Options.runtime` and its capability-server merge. The
 // daemon imports the SDK itself (`create.ts`), checks one version lock (`embedded.ts`'s
@@ -26,8 +26,8 @@ export type { RunHomeErrorCode } from "./run-home/errors";
 export { reconcileLocalWriteRoot } from "./store/reconcile";
 export type { ReconcileReport, TailComparison, TranscriptReconcileOutcome } from "./store/reconcile";
 
-export { createSessionHost } from "./session-host";
-export type { HostQueryOptions, HostSdk, SessionHost, SessionHostOptions } from "./session-host";
+export { createRuntimeSdkHost } from "./runtime-sdk-host";
+export type { HostQueryOptions, HostSdk, RuntimeSdkHost, RuntimeSdkHostOptions } from "./runtime-sdk-host";
 
 export { isSelectionRefusal, selectChildRuntime, selectRuntime, SelectionRefusedError } from "./selection/runtime-selection";
 export type { ChildSelectionInput, CredentialPresence, RuntimeKind, RuntimeSelection, SelectionAlternative, SelectionInput, SelectionRefusal } from "./selection/runtime-selection";

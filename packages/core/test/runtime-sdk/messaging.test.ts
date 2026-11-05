@@ -15,8 +15,8 @@ import {
 import type { DeliveryOutcome, GlobalAgentMessage, ListedRuntimeObject, PermissionClassLabel } from "@waifucave/clover-agent-sdk/messaging";
 import type { Query, SessionMessagingFacet } from "@waifucave/clover-agent-sdk";
 import * as clover from "@waifucave/clover-agent-sdk";
-import { createInMemoryRuntimeDirectoryStore, createSessionHost } from "../../src/runtime-sdk/host";
-import type { RuntimeDirectoryStore, SessionHost, SerializedRuntimeAddress } from "../../src/runtime-sdk/host";
+import { createInMemoryRuntimeDirectoryStore, createRuntimeSdkHost } from "../../src/runtime-sdk/host";
+import type { RuntimeDirectoryStore, RuntimeSdkHost, SerializedRuntimeAddress } from "../../src/runtime-sdk/host";
 import { CORE_BRAND } from "../../src/runtime-sdk/brand";
 import { attachWinterSession, parkRecoveredSessions, releaseAllHeld, renderAttributedTurn } from "../../src/runtime-sdk/messaging";
 import type { WinterRuntimeSdk } from "../../src/runtime-sdk/create";
@@ -94,13 +94,13 @@ function harness(
   declaredClass?: PermissionClassLabel,
 ): {
   runtime: WinterRuntimeSdk;
-  sdk: SessionHost;
+  sdk: RuntimeSdkHost;
   store: RuntimeDirectoryStore;
   /** Every `clover.query(...)` the router attempted. Must stay empty in every test here. */
   spawned: unknown[];
 } {
   const spawned: unknown[] = [];
-  const sdk = createSessionHost({
+  const sdk = createRuntimeSdkHost({
     // ⚠️ THE SPAWN SPY IS THE POINT OF THIS HARNESS, not decoration (fix round 1, F2/F3). The
     // messaging router's `coldResume` calls `sdk.query({ options: { resume: <backendSessionId> } })`
     // — a whole second session opened from inside a delivery, untracked by `trackQuery`,

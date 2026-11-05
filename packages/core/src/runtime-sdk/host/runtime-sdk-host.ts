@@ -47,7 +47,7 @@ export interface HostQueryOptions extends Options {
   runtime?: { runHome?: RunHome };
 }
 
-export interface SessionHostOptions {
+export interface RuntimeSdkHostOptions {
   /**
    * The daemon's home: the quarantine and the shared store resolve under it. Required with
    * `requireRunHome`, whose store is rooted at `sdkHomeOf(home)`; absent, the SDK's own resolution
@@ -78,7 +78,7 @@ export interface SessionHostOptions {
   runHomeFor?: RunHomeFor;
 }
 
-export interface SessionHost {
+export interface RuntimeSdkHost {
   readonly brand: BrandProfile;
   /** One generation: the run home applied, then the SDK's `query()`. Refuses a call without a run home. */
   query(args: { prompt: string | AsyncIterable<string>; options?: HostQueryOptions }): Query;
@@ -99,7 +99,7 @@ export interface SessionHost {
   dispose(): Promise<void>;
 }
 
-export function createSessionHost(opts: SessionHostOptions): SessionHost {
+export function createRuntimeSdkHost(opts: RuntimeSdkHostOptions): RuntimeSdkHost {
   const sdk = opts.sdk ?? cloverSdk;
   const resolved = sdk.resolveBrand(opts.brand);
   if (!resolved.ok) throw new sdk.InvalidBrandError(resolved.reason);

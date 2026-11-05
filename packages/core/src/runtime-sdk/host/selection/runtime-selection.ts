@@ -276,7 +276,7 @@ export function isSelectionRefusal<T extends object>(value: T | SelectionRefusal
 export class SelectionRefusedError extends RuntimeSdkError {
   readonly refusal: SelectionRefusal;
   constructor(refusal: SelectionRefusal) {
-    super(`winter-runtime-sdk: runtime selection refused (${refusal.reason}) — ${refusal.detail}`);
+    super(`clover runtime host: runtime selection refused (${refusal.reason}) — ${refusal.detail}`);
     this.refusal = refusal;
   }
 }

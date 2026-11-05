@@ -34,7 +34,7 @@ import { randomUUID } from "node:crypto";
 import type { BrandProfile, SessionKey, SessionStore, SessionStoreEntry, SessionSummaryEntry } from "@waifucave/clover-agent-sdk";
 
 import { RuntimeSdkError } from "../errors";
-import type { HostSdk } from "../session-host";
+import type { HostSdk } from "../runtime-sdk-host";
 
 // --- the pieces of the SDK's concrete store this package uses --------------------------------------
 
@@ -76,7 +76,7 @@ export type CanonicalSessionStoreConstructor = new (opts: { winterHome: string }
 export class SharedStoreOptionsError extends RuntimeSdkError {
   readonly option: "persistSession" | "enableFileCheckpointing" | "sessionStore";
   constructor(args: { option: "persistSession" | "enableFileCheckpointing" | "sessionStore"; reason: string }) {
-    super(`winter-runtime-sdk: ${args.option} is incompatible with the shared session store — ${args.reason}`);
+    super(`clover runtime host: ${args.option} is incompatible with the shared session store — ${args.reason}`);
     this.option = args.option;
   }
 }
@@ -93,7 +93,7 @@ export class BlindStoreImportError extends RuntimeSdkError {
   readonly key: Readonly<SessionKey>;
   constructor(key: SessionKey, detail: string) {
     super(
-      `winter-runtime-sdk: a blind session import into ${key.projectKey}/${key.sessionId} is forbidden while the mirror is unhealthy (WS-14 §5) — ${detail}. Reconcile the canonical tail against the recorded local-write root first (transcript-only, suffix-only).`,
+      `clover runtime host: a blind session import into ${key.projectKey}/${key.sessionId} is forbidden while the mirror is unhealthy (WS-14 §5) — ${detail}. Reconcile the canonical tail against the recorded local-write root first (transcript-only, suffix-only).`,
     );
     this.key = Object.freeze({ ...key });
   }
@@ -103,7 +103,7 @@ export class BlindStoreImportError extends RuntimeSdkError {
 export class SharedStoreUnavailableError extends RuntimeSdkError {
   constructor() {
     super(
-      "winter-runtime-sdk: the injected Winter peer exports no `WinterCompatibilitySessionStore`, so there is no store for the two branches to share (WS-05 §6 requires the identical package/version on both legs)",
+      "clover runtime host: the injected Winter peer exports no `WinterCompatibilitySessionStore`, so there is no store for the two branches to share (WS-05 §6 requires the identical package/version on both legs)",
     );
   }
 }

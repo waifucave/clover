@@ -8,7 +8,7 @@ import { randomUUID } from "node:crypto";
 import { WinterCompatibilitySessionStore, type SessionKey, type SessionStoreEntry } from "@waifucave/clover-agent-sdk";
 import { toClaudeReady } from "@waifucave/clover-provider-runtime";
 
-import { createSessionHost, type HostSdk } from "../../../../src/runtime-sdk/host/index";
+import { createRuntimeSdkHost, type HostSdk } from "../../../../src/runtime-sdk/host/index";
 import { defaultEndpointResolver } from "../../../../src/runtime-sdk/host/default-endpoint-resolver";
 import { createSharedSessionStore, type SharedSessionStore } from "../../../../src/runtime-sdk/host/store/wiring";
 import { reconcileRootForRecovery, recoveryOutcomeOf } from "../../../../src/runtime-sdk/host/run-home/exit";
@@ -29,7 +29,7 @@ function router(bed: RunHomeBed, requireRunHome = true, Store: typeof WinterComp
       throw new Error("a hermetic test must never resolve the real Winter home");
     },
   } as unknown as HostSdk;
-  const sdk = createSessionHost({ sdk: fake, requireRunHome, home: bed.home });
+  const sdk = createRuntimeSdkHost({ sdk: fake, requireRunHome, home: bed.home });
   const shared = (sdk.reviewer as unknown as { shared: SharedSessionStore }).shared;
   return { sdk, shared };
 }

@@ -261,7 +261,7 @@ export interface ReconcileReport {
 export class TranscriptReconcileError extends RuntimeSdkError {
   readonly root: string;
   constructor(root: string, reason: string) {
-    super(`winter-runtime-sdk: reconciliation against ${root} could not complete — ${reason}`);
+    super(`clover runtime host: reconciliation against ${root} could not complete — ${reason}`);
     this.root = root;
   }
 }

@@ -15,14 +15,14 @@
 // the keychain seam — which only the official leg's spawn-time credential fetch read — is optional.
 import type { BrandProfile } from "@waifucave/clover-agent-sdk";
 
-import type { HostSdk } from "../session-host";
+import type { HostSdk } from "../runtime-sdk-host";
 import type { RuntimeDirectory } from "./directory";
 import type { RuntimeDirectoryStore } from "./directory-store";
 import type { KeychainSeam } from "./keychain";
 
 /** Everything the directory itself needs. */
 export interface SeamContext {
-  /** The agent SDK's module namespace (`session-host.ts`'s `HostSdk`): the real one, or a test's fake. */
+  /** The agent SDK's module namespace (`runtime-sdk-host.ts`'s `HostSdk`): the real one, or a test's fake. */
   sdk: HostSdk;
   /** WS-14 §12: the host's credential reads, when it passed any. Nothing in this package reads it (WS-23). */
   keychain?: KeychainSeam;

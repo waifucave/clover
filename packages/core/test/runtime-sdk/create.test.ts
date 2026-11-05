@@ -3,7 +3,7 @@
 // spawned anywhere here: the topology is exercised through `spawnHookFor`'s RESOLUTION only, which
 // is a pure function of settings/env/paths.
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { createInMemoryRuntimeDirectoryStore, type SessionHost, type SessionHostOptions } from "../../src/runtime-sdk/host";
+import { createInMemoryRuntimeDirectoryStore, type RuntimeSdkHost, type RuntimeSdkHostOptions } from "../../src/runtime-sdk/host";
 import { buildSessionAddress, serializeRuntimeAddress } from "@waifucave/clover-agent-sdk/messaging";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -77,27 +77,27 @@ function deps(extra: Partial<WinterRuntimeSdkDeps> = {}): WinterRuntimeSdkDeps {
   };
 }
 
-/** Build a handle and capture the exact `SessionHostOptions` this file handed the session host. The
+/** Build a handle and capture the exact `RuntimeSdkHostOptions` this file handed the session host. The
  *  real factory still runs, so every assertion is against a genuinely-constructed handle. */
 async function build(
   extra: Partial<WinterRuntimeSdkDeps> = {},
   grace?: number,
-): Promise<{ handle: WinterRuntimeSdk; opts: SessionHostOptions; disposeOrder: string[] }> {
-  const { createSessionHost } = await import("../../src/runtime-sdk/host");
+): Promise<{ handle: WinterRuntimeSdk; opts: RuntimeSdkHostOptions; disposeOrder: string[] }> {
+  const { createRuntimeSdkHost } = await import("../../src/runtime-sdk/host");
   const disposeOrder: string[] = [];
-  let captured: SessionHostOptions | undefined;
+  let captured: RuntimeSdkHostOptions | undefined;
   const handle = await createWinterRuntimeSdk(deps(extra), {
     ...(grace === undefined ? {} : { grace }),
-    createSessionHost: (opts) => {
+    createRuntimeSdkHost: (opts) => {
       captured = opts;
-      const real = createSessionHost(opts);
+      const real = createRuntimeSdkHost(opts);
       // A proxy rather than a spread: a getter on the host would be frozen by a spread.
       return new Proxy(real, {
         get(target, prop, receiver): unknown {
           if (prop === "dispose") return async () => { disposeOrder.push("sdk.dispose"); await real.dispose(); };
           return Reflect.get(target, prop, receiver);
         },
-      }) as SessionHost;
+      }) as RuntimeSdkHost;
     },
   });
   handles.push(handle);

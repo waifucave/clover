@@ -4,7 +4,7 @@
 // layout is driven by an INJECTED env rather than `process.env`; nothing reads `~/.winter`, `~/.claude`
 // or the Keychain, and no test in this directory starts a network listener.
 //
-// THE CONTEXT IS THE REAL ONE. `createSessionHost` builds exactly one `SeamContextWithDirectory` and
+// THE CONTEXT IS THE REAL ONE. `createRuntimeSdkHost` builds exactly one `SeamContextWithDirectory` and
 // hands it to every seam factory; its `context` member reaches it. Building a hand-rolled context here
 // would test the shape this lane's factories were written against rather than the one they will be
 // handed.
@@ -15,7 +15,7 @@ import { randomUUID } from "node:crypto";
 
 import { WinterCompatibilitySessionStore, type SessionKey, type SessionStoreEntry } from "@waifucave/clover-agent-sdk";
 
-import { createSessionHost, type HostSdk } from "../../../../src/runtime-sdk/host/index";
+import { createRuntimeSdkHost, type HostSdk } from "../../../../src/runtime-sdk/host/index";
 import type { SeamContextWithDirectory } from "../../../../src/runtime-sdk/host/seams/context";
 import { createInMemoryRuntimeDirectoryStore, type RuntimeDirectoryEntry, type RuntimeDirectoryStore } from "../../../../src/runtime-sdk/host/seams/directory-store";
 import type { RuntimeKind, RuntimeSelection } from "../../../../src/runtime-sdk/host/selection/runtime-selection";
@@ -25,7 +25,7 @@ import { createSharedSessionStore, type MirrorPolicy, type SharedSessionStore } 
 /**
  * A fake SDK that also carries the concrete store.
  *
- * The fake exports the members `createSessionHost` touches; Lane C's factories read
+ * The fake exports the members `createRuntimeSdkHost` touches; Lane C's factories read
  * `WinterCompatibilitySessionStore` and `resolveWinterHome` off the SDK as well, because WS-05 §6's
  * "the identical package/version" is a statement about the instance the host was handed. Spreading the
  * REAL class onto the fake is what keeps that true in a test.
@@ -72,7 +72,7 @@ export async function withStoreBed<T>(fn: (bed: StoreBed) => Promise<T>, options
     const tempBase = join(root, "temp");
     const sdk = storeSdk(options.store === undefined ? {} : { store: options.store });
     const directoryStore = options.directoryStore ?? createInMemoryRuntimeDirectoryStore();
-    const host = createSessionHost({ sdk, directoryStore });
+    const host = createRuntimeSdkHost({ sdk, directoryStore });
     const context = host.context;
     const shared = createSharedSessionStore({ sdk, winterHome: home, ...(options.policy === undefined ? {} : { policy: options.policy }) });
     const key: SessionKey = { projectKey: "-lane-c-project", sessionId: "11111111-2222-4333-8444-555555555555" };

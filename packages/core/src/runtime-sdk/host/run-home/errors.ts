@@ -40,7 +40,7 @@ export type RunHomeErrorCode =
 export class RunHomeError extends RuntimeSdkError {
   readonly code: RunHomeErrorCode;
   constructor(code: RunHomeErrorCode, reason: string, options?: { cause?: unknown }) {
-    super(`winter-runtime-sdk: ${code} — ${reason}`, options);
+    super(`clover runtime host: ${code} — ${reason}`, options);
     this.code = code;
   }
 }

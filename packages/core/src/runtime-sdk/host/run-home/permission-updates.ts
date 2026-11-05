@@ -37,7 +37,7 @@ export function sessionOnlyPermissionUpdates<T extends PermissionResult | null |
     warned = true;
     // eslint-disable-next-line no-console
     console.warn(
-      `winter-runtime-sdk: a permission update asked for the ${[...new Set(rewritten)].join(", ")} destination; it was kept for this session only — the host writes every settings file itself (WS-21 §4.3). This is logged once per process.`,
+      `clover runtime host: a permission update asked for the ${[...new Set(rewritten)].join(", ")} destination; it was kept for this session only — the host writes every settings file itself (WS-21 §4.3). This is logged once per process.`,
     );
   }
   return { ...(result as object), updatedPermissions: next } as T;

@@ -18,10 +18,10 @@
 // is read from the module namespace once and cached. Tests pin either answer with the seam below and
 // must restore it.
 import * as routerModule from "./host";
-import type { RecoveryReport, RunHome, RunHomeInput, RunHomeOutcome, SessionHost } from "./host";
+import type { RecoveryReport, RunHome, RunHomeInput, RunHomeOutcome, RuntimeSdkHost } from "./host";
 
-/** The session host's run-home members (`createSessionHost(...)`). */
-export type RouterRunHomeHandle = Pick<SessionHost, "runHomeOutcome" | "reconcileRootForRecovery">;
+/** The session host's run-home members (`createRuntimeSdkHost(...)`). */
+export type RouterRunHomeHandle = Pick<RuntimeSdkHost, "runHomeOutcome" | "reconcileRootForRecovery">;
 
 /** True when `router` (a module namespace or any object) exports a callable `buildRunHome`. */
 export function routerSupportsRunHome(router: unknown): router is { buildRunHome: (i: RunHomeInput) => Promise<RunHome> } {

@@ -12,7 +12,7 @@
 import { InvalidBrandError, resolveBrand, transcriptProjectKey } from "@waifucave/clover-agent-sdk";
 import type { AccountInfo, AgentInfo, EffortLevel, ModelFamilyListing, ModelInfo, Options, PermissionMode, Query, RewindFilesResult, SdkMessage } from "@waifucave/clover-agent-sdk";
 
-import type { HostSdk } from "../../../../src/runtime-sdk/host/session-host";
+import type { HostSdk } from "../../../../src/runtime-sdk/host/runtime-sdk-host";
 
 export interface RecordedQueryCall {
   prompt: string | AsyncIterable<string>;

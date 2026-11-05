@@ -58,7 +58,7 @@ export function createRuntimeMessaging(
     ...(options.directory ?? {}),
     deliverToChild: async (entry, message) => {
       /* c8 ignore next */
-      if (messaging === undefined) throw new Error("winter-runtime-sdk: the messaging router is not built yet"); // unreachable: assigned on the next line, and nothing delivers during construction
+      if (messaging === undefined) throw new Error("clover runtime host: the messaging router is not built yet"); // unreachable: assigned on the next line, and nothing delivers during construction
       return messaging.deliver({ ...message, to: entry.parsed, toGeneration: entry.generation });
     },
   });

@@ -47,7 +47,7 @@ import type { CloverSessionDrivers } from "./session-driver";
 import { COWORK_SESSION_UNSUPPORTED_CODE, isUnrunnableStoredMode, runnableModeOf, unrunnableModeMessage } from "../sessions/session-mode";
 
 /**
- * The one session-host door this module needs: `reviewSwitch(session, requested)`, reading the canonical
+ * The one runtime-SDK-host door this module needs: `reviewSwitch(session, requested)`, reading the canonical
  * transcript, its provider-state sidecar and the session's runtime-directory row. Reached through the
  * session host's `reviewer` (A-M1; the router kept it as `runtimeSdkInternals(sdk).barrier`).
  */

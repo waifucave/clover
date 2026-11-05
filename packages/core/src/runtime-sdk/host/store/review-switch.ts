@@ -54,7 +54,7 @@ export interface SwitchReviewerHandle extends SwitchReviewer {
 /** A review asked for a session the router has no record of. The text is matched by hosts — keep it. */
 export class SwitchReviewError extends RuntimeSdkError {
   constructor(session: SessionKey, reason: string) {
-    super(`winter-runtime-sdk: no switch review can be run for ${session.projectKey}/${session.sessionId} — ${reason}`);
+    super(`clover runtime host: no switch review can be run for ${session.projectKey}/${session.sessionId} — ${reason}`);
   }
 }
 

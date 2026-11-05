@@ -1,4 +1,4 @@
-// THE ONE session-host handle for the whole daemon (P8b Task 5; A-M1: the daemon drives the SDK
+// THE ONE runtime-SDK host handle for the whole daemon (P8b Task 5; A-M1: the daemon drives the SDK
 // directly, spec §3.3 — the router is archived and its remaining parts are `./host`).
 //
 // Everything on the Clover leg goes through this object: every session's `query()`, the global
@@ -7,7 +7,7 @@
 // `dispose()` is a use-after-shutdown latch and nothing more, so ending the live sessions before it
 // is the daemon's job, which is what this module's `dispose()` is.
 //
-// WHY A WRAPPER RATHER THAN `createSessionHost` AT THE CALL SITE. Three things the daemon has to do
+// WHY A WRAPPER RATHER THAN `createRuntimeSdkHost` AT THE CALL SITE. Three things the daemon has to do
 // exactly once, in exactly one place, and that a raw handle cannot carry:
 //
 //  1. `spawnHookFor(mode)` — P8b-1's single topology site. Every mode runs the runtime EMBEDDED in
@@ -28,8 +28,8 @@
 
 import * as clover from "@waifucave/clover-agent-sdk";
 import type { SpawnClaudeCodeProcess } from "@waifucave/clover-agent-sdk";
-import { createSessionHost, isSelectionRefusal, selectionVersionsFrom, selectRuntime, SelectionRefusedError } from "./host";
-import type { RuntimeDirectoryEntry, RuntimeDirectoryOptions, RuntimeDirectoryStore, RuntimeSelection, SelectionInput, SelectionRefusal, SessionHost, SessionHostOptions } from "./host";
+import { createRuntimeSdkHost, isSelectionRefusal, selectionVersionsFrom, selectRuntime, SelectionRefusedError } from "./host";
+import type { RuntimeDirectoryEntry, RuntimeDirectoryOptions, RuntimeDirectoryStore, RuntimeSelection, SelectionInput, SelectionRefusal, RuntimeSdkHost, RuntimeSdkHostOptions } from "./host";
 import type { PermissionClassLabel } from "@waifucave/clover-agent-sdk/messaging";
 import type { SecretStore } from "../auth/secret-store";
 import { retentionFromSettings } from "../runtime-state/retention";
@@ -150,9 +150,9 @@ export interface WinterRuntimeSdkDeps {
 export interface WinterRuntimeSdkOverrides {
   /** Test seam for `SHUTDOWN_QUERY_GRACE_MS`. */
   grace?: number;
-  /** Test seam for the host factory — a spy wraps it to capture the `SessionHostOptions` this
-   *  file builds while still returning a REAL `SessionHost`. */
-  createSessionHost?: (opts: SessionHostOptions) => SessionHost;
+  /** Test seam for the host factory — a spy wraps it to capture the `RuntimeSdkHostOptions` this
+   *  file builds while still returning a REAL `RuntimeSdkHost`. */
+  createRuntimeSdkHost?: (opts: RuntimeSdkHostOptions) => RuntimeSdkHost;
 }
 
 /** `Name: message`, first line only, capped — an import failure's message names a missing global
@@ -167,7 +167,7 @@ export function describeLoadError(err: unknown): string {
 
 export interface WinterRuntimeSdk {
   /** The session host itself. Every later lane reaches `query`/`messaging`/`directory` here. */
-  readonly sdk: SessionHost;
+  readonly sdk: RuntimeSdkHost;
   /**
    * P8b-1: THE ONE SITE for the spawn topology, re-resolved on EVERY call.
    *
@@ -284,7 +284,7 @@ function endWithin(sessionId: string, abort: AbortController, end: () => Promise
 }
 
 export async function createWinterRuntimeSdk(deps: WinterRuntimeSdkDeps, overrides: WinterRuntimeSdkOverrides = {}): Promise<WinterRuntimeSdk> {
-  const factory = overrides.createSessionHost ?? createSessionHost;
+  const factory = overrides.createRuntimeSdkHost ?? createRuntimeSdkHost;
   const codeExecution = deps.codeExecution ?? new HostCodeExecutionService(deps.home, undefined, undefined, {
     createOutputTransport: deps.hostOutputTransportFactory ?? loadBundledHostOutputFactory(deps.log),
   });

@@ -14,7 +14,7 @@ import { join } from "node:path";
 import { buildSessionAddress, serializeRuntimeAddress } from "@waifucave/clover-agent-sdk/messaging";
 import type { GlobalAgentMessage } from "@waifucave/clover-agent-sdk/messaging";
 import * as clover from "@waifucave/clover-agent-sdk";
-import { createSessionHost } from "../../src/runtime-sdk/host";
+import { createRuntimeSdkHost } from "../../src/runtime-sdk/host";
 import type { RuntimeDirectoryEntry, SerializedRuntimeAddress } from "../../src/runtime-sdk/host";
 import { openRuntimeStateDb } from "../../src/runtime-state/db";
 import { createSqliteRuntimeDirectoryStore } from "../../src/runtime-state/directory-store";
@@ -101,7 +101,7 @@ describe("recovery step 10 — directory.recover() over the 8a store", () => {
       const store = new SessionStore(home);
       try {
         const directoryStore = createSqliteRuntimeDirectoryStore(rs);
-        const sdk = createSessionHost({
+        const sdk = createRuntimeSdkHost({
           sdk: clover,
           brand: CORE_BRAND,
           directoryStore,

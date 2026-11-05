@@ -380,7 +380,7 @@ describe("planAndApplySwitch: the pre-flight review (reviewSwitch)", () => {
   // directory; `reviewSwitch` throws for that shape. The fix is to MATERIALIZE the row from the
   // durable record and retry ONCE — and, when that is impossible, to fail SAFE as a prompt.
   // ══════════════════════════════════════════════════════════════════════════════════════════════
-  const NOT_IN_DIRECTORY = "winter-runtime-sdk: no handoff can be planned for pk/be-1 — it is not in the runtime directory, so there is no record of which runtime owns it or which backend session it is";
+  const NOT_IN_DIRECTORY = "clover runtime host: no handoff can be planned for pk/be-1 — it is not in the runtime directory, so there is no record of which runtime owns it or which backend session it is";
 
   test("item 1a: the row is materialized from the durable record and reviewSwitch is retried — the router's real answer decides", async () => {
     await withRs(async (_rs, records) => {

@@ -58,7 +58,7 @@ import type {
   RuntimeDirectoryEntry,
   RuntimeDirectoryStore,
   SerializedRuntimeAddress,
-  SessionHost,
+  RuntimeSdkHost,
 } from "./host";
 import type { WinterRuntimeSdk } from "./create";
 import { CLOVER_PEER_VERSIONS } from "./versions";
@@ -377,7 +377,7 @@ export function attachWinterSession(runtime: WinterRuntimeSdk, session: CloverSe
  * a settings diff that has nothing to do about it.
  */
 export async function releaseAllHeld(
-  sdk: Pick<SessionHost, "messaging">,
+  sdk: Pick<RuntimeSdkHost, "messaging">,
   store?: Pick<RuntimeDirectoryStore, "mailboxes">,
   log?: (line: string) => void,
 ): Promise<DeliveryOutcome[]> {
