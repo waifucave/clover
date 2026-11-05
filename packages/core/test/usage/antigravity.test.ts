@@ -18,7 +18,7 @@ function service(over: Partial<UsageServiceDeps> & { home?: string; db?: UsageDb
   const logs: string[] = [];
   const svc = new UsageService({
     db, pricer, tracking: () => ({ codex: true, claudeCode: true, antigravity: true, opencode: true }), codexExecutable: () => undefined,
-    claudeExecutable: () => undefined, winterCodexWindows: () => [], probeRoot: () => probeRootIn(home), planWaitMs: 20_000, now: () => NOW,
+    claudeExecutable: () => undefined, cloverCodexWindows: () => [], probeRoot: () => probeRootIn(home), planWaitMs: 20_000, now: () => NOW,
     log: { warn: (m, meta) => logs.push(`${m} ${JSON.stringify(meta ?? {})}`), info: (m, meta) => logs.push(`${m} ${JSON.stringify(meta ?? {})}`) },
     ...over,
   });
@@ -87,7 +87,7 @@ describe("the Antigravity plan", () => {
     expect(m[0]!.argv).toEqual([...AGY_USAGE_ARGS]);
     expect(m[0]!.cwd).toMatch(/\/usage\/probe-[^/]+$/);
     expect(existsSync(m[0]!.cwd)).toBe(false);
-    expect(m[0]!.env.filter((k) => k.startsWith("WINTER_") || k.startsWith("GEMINI_") || k.startsWith("GOOGLE_"))).toEqual([]);
+    expect(m[0]!.env.filter((k) => k.startsWith("CLOVER_") || k.startsWith("GEMINI_") || k.startsWith("GOOGLE_"))).toEqual([]);
     now += 4 * 60_000;
     await svc.antigravityPlan();
     expect(marks(fake.markerPath)).toHaveLength(1);
@@ -131,7 +131,7 @@ describe("the Antigravity plan", () => {
     });
   }
 
-  test("a hung agy (it ignored its own --print-timeout) is killed at Winter's deadline and not asked again for hours", async () => {
+  test("a hung agy (it ignored its own --print-timeout) is killed at Clover's deadline and not asked again for hours", async () => {
     const fake = fakeAgy(tempDir("bin"), "hang");
     let now = NOW;
     const { svc, db } = service({ agyExecutable: () => fake.path, agyCliTimeoutMs: 2_000, now: () => now });

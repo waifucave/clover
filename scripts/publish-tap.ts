@@ -1,6 +1,6 @@
 /**
- * Publishes both casks to the Homebrew tap `yanlingLabs/homebrew-winter` (Winter Phase 9c, P9c-5):
- *   - Casks/winter.rb   <- out/release/<version>/winter.rb  (this repo's own release, already
+ * Publishes both casks to the Homebrew tap `waifucave/homebrew-clover` (Winter Phase 9c, P9c-5):
+ *   - Casks/clover.rb   <- out/release/<version>/clover.rb  (this repo's own release, already
  *                          rendered by release.ts's `caskFrom` call — read verbatim, never
  *                          re-interpolated here)
  *   - Casks/norma.rb    <- packaging/norma-deprecated.rb    (the deprecated cask, filled in by
@@ -25,11 +25,12 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { ROOT, readCanonical } from "./version-lib";
+import { refuseHeldScript } from "./held-scripts";
 
-export const TAP_REPO = "yanlingLabs/homebrew-winter";
+export const TAP_REPO = "waifucave/homebrew-clover";
 
 export interface TapFile {
-  /** Repo-relative path under the tap, e.g. "Casks/winter.rb". */
+  /** Repo-relative path under the tap, e.g. "Casks/clover.rb". */
   repoPath: string;
   /** Local path this file's content is read from (verbatim — never interpolated here). */
   localPath: string;
@@ -39,7 +40,7 @@ export interface TapFile {
  *  reads — so it's unit-testable without a real release build on disk. */
 export function tapPlan(version: string): TapFile[] {
   return [
-    { repoPath: "Casks/winter.rb", localPath: join(ROOT, "out", "release", version, "winter.rb") },
+    { repoPath: "Casks/clover.rb", localPath: join(ROOT, "out", "release", version, "clover.rb") },
     { repoPath: "Casks/norma.rb", localPath: join(ROOT, "packaging", "norma-deprecated.rb") },
   ];
 }
@@ -152,6 +153,7 @@ export function renderDryRunEntry(file: TapFile): string {
 }
 
 if (import.meta.main) {
+  refuseHeldScript("tap:publish"); // C0 review S6: until C7 (`held-scripts.ts`)
   const argv = process.argv.slice(2);
   const dryRun = argv.includes("--dry-run");
   const publish = argv.includes("--publish");
@@ -196,5 +198,5 @@ if (import.meta.main) {
     console.log(`Publishing ${f.repoPath}...`);
     publishFile(realGhRunner, f);
   }
-  console.log(`Published Casks/winter.rb + Casks/norma.rb to ${TAP_REPO}.`);
+  console.log(`Published Casks/clover.rb + Casks/norma.rb to ${TAP_REPO}.`);
 }

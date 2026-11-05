@@ -8,7 +8,7 @@ import { AUTOMATED_TURN_ORIGINS, isHumanTurnOrigin, runningTurnOrigin } from "..
 import { TurnOriginIndex, turnOriginIndexFor } from "../../src/sessions/turn-origin-index";
 
 function setup() {
-  const store = new SessionStore(mkdtempSync(join(tmpdir(), "winter-turn-origin-")));
+  const store = new SessionStore(mkdtempSync(join(tmpdir(), "clover-turn-origin-")));
   const hub = new SessionHub(store);
   const sid = store.createSession("global", { mode: "dispatch", approvalPolicy: "ask" });
   const msg = (clientName: string) => hub.append(sid, { type: "user_message", sessionId: sid, threadId: "main", text: "x", clientName });
@@ -22,8 +22,8 @@ describe("TurnOriginIndex — the running turn's origin from memory, never a who
     const { store, hub, sid, msg, started, done } = setup();
     const index = turnOriginIndexFor(hub, store);
     expect(index.origin(sid)).toBeUndefined();
-    msg("winter-mac"); started();
-    expect(index.origin(sid)).toBe("winter-mac");
+    msg("clover-mac"); started();
+    expect(index.origin(sid)).toBe("clover-mac");
     done();
     msg("dispatch-wake"); started();
     expect(index.origin(sid)).toBe("dispatch-wake");
@@ -46,11 +46,11 @@ describe("TurnOriginIndex — the running turn's origin from memory, never a who
     store.read = ((s: string, f?: number) => { reads++; return realRead(s, f); }) as typeof store.read;
     const index = new TurnOriginIndex(counting);
     hub.addObserver((e) => index.observe(e));
-    msg("winter-mac"); started();
-    expect(index.origin(sid)).toBe("winter-mac");
+    msg("clover-mac"); started();
+    expect(index.origin(sid)).toBe("clover-mac");
     expect(tails).toBe(1);
     for (let i = 0; i < 5; i++) { msg("messaging"); }
-    expect(index.origin(sid)).toBe("winter-mac");
+    expect(index.origin(sid)).toBe("clover-mac");
     expect(tails).toBe(1);
     expect(reads).toBe(0);
   });
@@ -58,8 +58,8 @@ describe("TurnOriginIndex — the running turn's origin from memory, never a who
   test("an event appended without the hub makes it re-seed from the bounded tail", () => {
     const { store, hub, sid, msg, started } = setup();
     const index = turnOriginIndexFor(hub, store);
-    msg("winter-mac"); started();
-    expect(index.origin(sid)).toBe("winter-mac");
+    msg("clover-mac"); started();
+    expect(index.origin(sid)).toBe("clover-mac");
     store.append(sid, { type: "turn_completed", sessionId: sid, threadId: "main", stopReason: "end_turn", inputTokens: 0, outputTokens: 0 } as never);
     store.append(sid, { type: "user_message", sessionId: sid, threadId: "main", text: "x", clientName: "dispatch-wake" });
     store.append(sid, { type: "turn_started", sessionId: sid, threadId: "main" } as never);
@@ -95,18 +95,18 @@ describe("a re-seed from a CUT tail never guesses a person (review: fail-safe)",
     // folded into the running turn, and the runtime's continuation `turn_started`.
     const tail = [
       ev(500, "tool_call", { callId: "c1", name: "Bash", argsJson: "{}" }),   // main-thread, before any turn start: cut inside a turn
-      ev(501, "user_message", { text: "later please", clientName: "winter-mac" }),
+      ev(501, "user_message", { text: "later please", clientName: "clover-mac" }),
       ev(502, "user_message", { text: "status?", clientName: "messaging" }),
       ev(503, "tool_result", { callId: "c1", output: "", isError: false }),
       ev(504, "turn_started"),
     ];
     // What a fresh, uncut pairing would have guessed — a person — is exactly what must not be answered.
-    expect(runningTurnOrigin(tail as never)).toBe("winter-mac");
+    expect(runningTurnOrigin(tail as never)).toBe("clover-mac");
     expect(new TurnOriginIndex(storeOf(tail)).origin("s1")).toBeUndefined();
   });
 
   test("a window whose only start is a continuation, right after the seed, reads unknown too", () => {
-    const tail = [ev(900, "user_message", { text: "x", clientName: "winter-mac" }), ev(901, "turn_started")];
+    const tail = [ev(900, "user_message", { text: "x", clientName: "clover-mac" }), ev(901, "turn_started")];
     expect(new TurnOriginIndex(storeOf(tail)).origin("s1")).toBeUndefined();
   });
 
@@ -114,15 +114,15 @@ describe("a re-seed from a CUT tail never guesses a person (review: fail-safe)",
     const tail = [
       ev(500, "assistant_message", { text: "…" }),
       ev(501, "turn_completed", { stopReason: "end_turn", inputTokens: 0, outputTokens: 0 }),
-      ev(502, "user_message", { text: "go", clientName: "winter-mac" }),
+      ev(502, "user_message", { text: "go", clientName: "clover-mac" }),
       ev(503, "turn_started"),
     ];
-    expect(new TurnOriginIndex(storeOf(tail)).origin("s1")).toBe("winter-mac");
+    expect(new TurnOriginIndex(storeOf(tail)).origin("s1")).toBe("clover-mac");
   });
 
   test("an UNCUT log (it starts at seq 1) is read exactly, as before", () => {
-    const tail = [ev(1, "user_message", { text: "go", clientName: "winter-mac" }), ev(2, "turn_started")];
-    expect(new TurnOriginIndex(storeOf(tail)).origin("s1")).toBe("winter-mac");
+    const tail = [ev(1, "user_message", { text: "go", clientName: "clover-mac" }), ev(2, "turn_started")];
+    expect(new TurnOriginIndex(storeOf(tail)).origin("s1")).toBe("clover-mac");
   });
 });
 
@@ -134,6 +134,6 @@ describe("automated turn origins", () => {
       expect(AUTOMATED_TURN_ORIGINS.has(o)).toBe(true);
       expect(isHumanTurnOrigin(o)).toBe(false);
     }
-    expect(isHumanTurnOrigin("winter-mac")).toBe(true);
+    expect(isHumanTurnOrigin("clover-mac")).toBe(true);
   });
 });

@@ -5,17 +5,17 @@
  * `deepseek`-adapter-family provider it actually ran on) declares a real effort vocabulary.
  *
  * ROOT CAUSE, confirmed against the REAL pinned catalog (`@yanlinglabs/winter-provider-catalog`)
- * and the REAL pinned Winter-leg runtime (`@yanlinglabs/winter-provider-runtime`, version pinned by
+ * and the REAL pinned Clover-leg runtime (`@yanlinglabs/winter-provider-runtime`, version pinned by
  * `runtime-sdk/versions.ts`'s `REQUIRED_WINTER_AGENT_SDK`): this is an SDK-SIDE bug, not a daemon
  * one. The DAEMON'S OWN inputs are correct end to end —
  *
  *   - `runtime-sdk/provider-selection.ts`'s `providerFor(tag)` names exactly one provider from a tag
  *     (WS-20; no bare-id tie-break), verified below against the real catalog;
- *   - `runtime-sdk/mode-options.ts`'s `buildWinterOptions` sends the Winter child the BARE modelId
+ *   - `runtime-sdk/mode-options.ts`'s `buildCloverOptions` sends the Clover child the BARE modelId
  *     as `Options.model` PLUS the qualified `Options.provider.providerId` — so the child receives
  *     BOTH pieces it needs to disambiguate.
  *
- * But inside the WINTER CHILD, `packages/provider-runtime/src/adapters/index.ts`'s
+ * But inside the CLOVER CHILD, `packages/provider-runtime/src/adapters/index.ts`'s
  * `descriptorLookupForAdapter` builds ONE descriptor index PER ADAPTER ID, not per provider, and
  * every OpenAI-family provider that shares an adapter (`winter.openai-chat-completions` alone
  * serves `deepseek`, `alibaba`, `alibaba-cn`, `blackbox`, `qwen-cloud`, `sensenova`,
@@ -36,10 +36,10 @@
  * `findDescriptor(catalog, providerId, model)` (`adapters/anthropic/messages.ts:320`) takes an
  * explicit `providerId` and filters by it, and the DAEMON'S OWN internal-jobs adapter builder
  * (`providers/internal-adapters.ts`'s `descriptorsForProvider`) already does the provider-scoped
- * version of this same lookup for exactly this reason — this test is the proof that the Winter
+ * version of this same lookup for exactly this reason — this test is the proof that the Clover
  * CHILD's production wiring (`createShippedAdapters`) still uses the unscoped one.
  *
- * Fix required in `../winter-agent-sdk` (lane E), NOT here:
+ * Fix required in `../clover-sdk` (lane E), NOT here:
  *   `packages/provider-runtime/src/adapters/index.ts`'s `createShippedAdapters` registers ONE
  *   `createChatCompletionsAdapter`/`createResponsesAdapter`/… per ADAPTER ID today. It needs a
  *   descriptor lookup that also takes the REQUEST'S OWN `ctx.connection.providerId` — the same shape
@@ -64,7 +64,7 @@ function noVocabularyReason(descriptor: WinterModelDescriptor | undefined, effor
   if (descriptor === undefined) return undefined;
   const verified = descriptor.reasoning?.efforts ?? [];
   if (descriptor.reasoning === undefined || verified.length === 0) {
-    return `model "${descriptor.key}" declares no reasoning effort vocabulary, so effort ${JSON.stringify(effort)} cannot be mapped onto it — Winter rejects the selection rather than silently sending the provider's default (WS-13 §8.2)`;
+    return `model "${descriptor.key}" declares no reasoning effort vocabulary, so effort ${JSON.stringify(effort)} cannot be mapped onto it — Clover rejects the selection rather than silently sending the provider's default (WS-13 §8.2)`;
   }
   return undefined;
 }
@@ -88,7 +88,7 @@ describe("D1: the daemon's own provider selection is correct", () => {
   });
 });
 
-describe("D1: the Winter-leg SDK's shared-adapter descriptor lookup is provider-scoped (fixed in agent SDK 0.0.20)", () => {
+describe("D1: the Clover-leg SDK's shared-adapter descriptor lookup is provider-scoped (fixed in agent SDK 0.0.20)", () => {
   test("deepseek and alibaba-cn share the openai-chat-completions adapter and the SAME bare upstreamId", () => {
     const catalog = loadCatalog();
     const deepseekProvider = catalog.providers.find((p) => p.id === "deepseek");

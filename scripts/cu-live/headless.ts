@@ -5,8 +5,8 @@
  *
  *   WINTER_CU_LIVE_TESTS=1 bun scripts/cu-live/headless.ts --app "<Winter Headless .app>" [options]
  *
- *   --app <path>        the helper to drive (default `$WINTER_HEADLESS_APP`); a dev build from `bun run dev:headless`,
- *                       or a Release Winter.app's nested `Contents/Helpers/Winter Headless.app`
+ *   --app <path>        the helper to drive (default `$CLOVER_HEADLESS_APP`); a dev build from `bun run dev:headless`,
+ *                       or a Release Clover.app's nested `Contents/Helpers/Winter Headless.app`
  *   --no-verify         skip the signature check of the spawned process (an unsigned build only)
  *   --user-typing       the view check's second variant: put another app in front and keep typing in it — the run
  *                       starts 10 s later; the user's own switches are then reported, never failed. They are told apart
@@ -20,7 +20,7 @@
  *                       candidate (a fingerprinting script's), and a public site that asks for a client certificate (client.badssl.com — needs the
  *                       internet). They may raise a macOS prompt (TCC, Local Network) — the question these probes ask,
  *                       so only with the user at the Mac: a denial is remembered for the identity macOS blames. NOTE:
- *                       spawned from a terminal, a prompt is attributed to the terminal's process chain, not to Winter
+ *                       spawned from a terminal, a prompt is attributed to the terminal's process chain, not to Clover
  *                       Headless — these probes say WHETHER one appears; only a daemon-spawned run shows which name it
  *                       carries
  *   --only <view,memory,isolation>  run only those checks (default all three)
@@ -48,9 +48,9 @@
  * Drives the engine directly (as `scripts/browser-e2e/headless/engine-smoke.ts` does), not a daemon and a script: a
  * headless tab never touches the Computer Use helper, a card or the user's browsers, and concurrent `engine.global`
  * calls are what a script's `Promise.all` becomes. The FIRST START — a daemon starting a Release-signed helper inside
- * Winter.app with Winter.app closed — is checked by hand (`HEADLESS_LIVE_BY_HAND`). Everything is on a temp home
- * (`<tmp>/winter-cu-live-headless-*`): no Keychain (the helper runs with `--use-mock-keychain`), nothing under
- * `~/.winter*`. SIGINT/SIGTERM/SIGHUP stop the helper, the monitor, the load and the child, then exit 128+n.
+ * Clover.app with Clover.app closed — is checked by hand (`HEADLESS_LIVE_BY_HAND`). Everything is on a temp home
+ * (`<tmp>/clover-cu-live-headless-*`): no Keychain (the helper runs with `--use-mock-keychain`), nothing under
+ * `~/.clover*`. SIGINT/SIGTERM/SIGHUP stop the helper, the monitor, the load and the child, then exit 128+n.
  */
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { cpus, tmpdir } from "node:os";
@@ -95,7 +95,7 @@ export type HeadlessCheck = (typeof HEADLESS_CHECKS)[number];
 
 /** The command line, or why it is wrong. `--child-pool` is the internal "daemon" of the isolation check's last step. */
 export function parseHeadlessOptions(argv: readonly string[], env: Readonly<Record<string, string | undefined>>): HeadlessLiveOptions | { error: string } {
-  let app = env.WINTER_HEADLESS_APP;
+  let app = env.CLOVER_HEADLESS_APP;
   let report = join(OUT_DIR, "headless.json");
   const o = { verify: true, userTyping: false, load: false, promptProbes: false, keepTemp: false };
   let checks = new Set<HeadlessCheck>(HEADLESS_CHECKS);
@@ -117,7 +117,7 @@ export function parseHeadlessOptions(argv: readonly string[], env: Readonly<Reco
     else if (a === "--keep-temp") o.keepTemp = true;
     else return { error: `unknown argument ${a}` };
   }
-  if (app === undefined || app.trim().length === 0) return { error: "name the helper: --app <Winter Headless .app> (or $WINTER_HEADLESS_APP; `bun run dev:headless` builds one)" };
+  if (app === undefined || app.trim().length === 0) return { error: "name the helper: --app <Winter Headless .app> (or $CLOVER_HEADLESS_APP; `bun run dev:headless` builds one)" };
   if (!/\.app\/?$/.test(app.trim())) return { error: `--app must be an .app bundle (got ${app})` };
   return { app: resolve(app.trim()), report: resolve(report), checks, ...o };
 }
@@ -210,7 +210,7 @@ export function parseApplicationType(stdout: string): string | undefined {
 
 /** The processes (from `ps -A -o pid=,command=`) whose executable lies inside the helper app AND that this run's
  *  helper tree held (`ours`) — the helper itself and its "Winter Helper" subprocesses. The path alone is never enough:
- *  Winter.app's own CEF runs its subprocesses from the nested helper's Contents/Frameworks too, so a running Winter's
+ *  Clover.app's own CEF runs its subprocesses from the nested helper's Contents/Frameworks too, so a running Clover's
  *  processes can lie inside the same app and must never be counted (or killed) as the helper's. */
 export function processesInside(psOutput: string, appPath: string, ours: ReadonlySet<number>): Array<{ pid: number; command: string }> {
   const prefix = `${appPath.replace(/\/+$/, "")}/`;
@@ -302,7 +302,7 @@ document.getElementById("ask").onclick = () => {
   navigator.geolocation?.getCurrentPosition(() => out("location", "granted"), (e) => out("location", "denied " + e.code));
   typeof Notification === "undefined" ? out("notifications", "no API") : Notification.requestPermission().then((r) => out("notifications", r), (e) => out("notifications", e.name));
   const challenge = crypto.getRandomValues(new Uint8Array(32));
-  navigator.credentials?.create({ publicKey: { challenge, rp: { name: "Winter probe" }, user: { id: new Uint8Array(8), name: "probe", displayName: "Probe" },
+  navigator.credentials?.create({ publicKey: { challenge, rp: { name: "Clover probe" }, user: { id: new Uint8Array(8), name: "probe", displayName: "Probe" },
     pubKeyCredParams: [{ type: "public-key", alg: -7 }], timeout: 5000 } }).then(() => out("passkey", "created"), (e) => out("passkey", e.name));
 };
 </script>`;
@@ -352,9 +352,9 @@ const out = (k, v) => { const li = document.createElement("li"); li.textContent 
 })();
 </script>`;
 
-/** By hand with the user before merge (it needs a Release-signed Winter.app and the daemon). */
+/** By hand with the user before merge (it needs a Release-signed Clover.app and the daemon). */
 export const HEADLESS_LIVE_BY_HAND: readonly string[] = [
-  "First start (before merge): a Release-signed Winter.app's daemon starts Winter Headless with Winter.app itself closed; the helper carries Winter's one Chromium (the CEF framework and its \"Winter Helper\" bundles in its own Contents/Frameworks; Winter.app's own holds none); a headless tab answers state(), screenshot() (a vision model), a click and typing, an out-of-process iframe, a dialog and a file chooser; killing the daemon ends the helper (its pipe's EOF); document.modelContext exists (--enable-features=WebMCP).",
+  "First start (before merge): a Release-signed Clover.app's daemon starts Winter Headless with Clover.app itself closed; the helper carries Clover's one Chromium (the CEF framework and its \"Winter Helper\" bundles in its own Contents/Frameworks; Clover.app's own holds none); a headless tab answers state(), screenshot() (a vision model), a click and typing, an out-of-process iframe, a dialog and a file chooser; killing the daemon ends the helper (its pipe's EOF); document.modelContext exists (--enable-features=WebMCP).",
   "With the daemon (not this script): note which name a macOS prompt would carry, if --prompt-probes ever raised one here.",
 ];
 
@@ -418,7 +418,7 @@ async function main(): Promise<void> {
   const unusable = screenUnavailable(session ?? null);
   if (unusable !== undefined) { console.error(`cu-live headless: refusing — ${unusable.what}`); process.exit(75); }
 
-  const root = mkdtempSync(join(tmpdir(), "winter-cu-live-headless-"));
+  const root = mkdtempSync(join(tmpdir(), "clover-cu-live-headless-"));
   const home = join(root, "home");
   mkdirSync(home, { recursive: true });
 
@@ -478,7 +478,7 @@ async function main(): Promise<void> {
   const registry = new BrowserBackendRegistry();
   registry.register(pool, { family: "headless", name: HEADLESS_NAME, instanceKey: "headless" });
   const engine = new BrowserEngine({
-    registry, mintWinterTab: () => "unused", winterTabs: () => ({ tabs: [] }), sessionInfo: () => ({ cwd: root, title: "headless live check" }),
+    registry, mintCloverTab: () => "unused", cloverTabs: () => ({ tabs: [] }), sessionInfo: () => ({ cwd: root, title: "headless live check" }),
     home, headlessSessionEnded: (sid) => pool.disposeSession(sid), headlessReason: () => pool.reason,
   });
   const locks = new TargetLocks();

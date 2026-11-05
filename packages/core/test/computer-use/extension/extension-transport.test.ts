@@ -96,10 +96,10 @@ describe("errors", () => {
   test("the extension's typed error becomes a TransportError with its code and data", async () => {
     const h = harness();
     const p = h.t.send("418", "Runtime.evaluate", { expression: "1" });
-    h.fail("not_allowed", "Runtime.evaluate needs a winter-world contextId");
+    h.fail("not_allowed", "Runtime.evaluate needs a clover-world contextId");
     const err = await p.catch((e: unknown) => e);
     expect(err).toBeInstanceOf(TransportError);
-    expect(err).toMatchObject({ code: "not_allowed", message: "Runtime.evaluate needs a winter-world contextId" });
+    expect(err).toMatchObject({ code: "not_allowed", message: "Runtime.evaluate needs a clover-world contextId" });
 
     const q = h.t.send("418", "DOM.getDocument");
     h.fail("cdp_error", "No node with given id", { cdpCode: -32000, cdpMessage: "No node with given id" });
@@ -294,9 +294,9 @@ describe("Phase 3: the members an extension's hello names", () => {
   test("a tab's facts: lastAccessed, group and windowId when well-formed, dropped otherwise", async () => {
     const h = harness({}, ["tabFacts"]);
     const listed = h.t.listTabs();
-    h.answer({ tabs: [{ ...tab, lastAccessed: 1_760_000_000_000, group: "Winter · Fix", windowId: 3 }, { ...tab, tabKey: "419", lastAccessed: "soon", group: "", windowId: Number.NaN }] });
+    h.answer({ tabs: [{ ...tab, lastAccessed: 1_760_000_000_000, group: "Clover · Fix", windowId: 3 }, { ...tab, tabKey: "419", lastAccessed: "soon", group: "", windowId: Number.NaN }] });
     const [a, b] = await listed;
-    expect(a).toEqual({ ...tab, lastAccessed: 1_760_000_000_000, group: "Winter · Fix", windowId: 3 });
+    expect(a).toEqual({ ...tab, lastAccessed: 1_760_000_000_000, group: "Clover · Fix", windowId: 3 });
     expect(b).toEqual({ ...tab, tabKey: "419" });
   });
 
@@ -317,7 +317,7 @@ describe("Phase 3: the members an extension's hello names", () => {
 });
 
 describe("1.2.0 — wake triggers' watches (feature watch)", () => {
-  const spec = { watchId: "wk_0123456789ab", kind: "clicked" as const, pill: "Winter continues when you click “Submit”", expiresAt: 1, initial: "refuse" as const };
+  const spec = { watchId: "wk_0123456789ab", kind: "clicked" as const, pill: "Clover continues when you click “Submit”", expiresAt: 1, initial: "refuse" as const };
 
   test("offered only when the hello names watch", () => {
     expect(harness().t.watch).toBeUndefined();

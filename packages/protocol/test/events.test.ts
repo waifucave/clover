@@ -239,7 +239,7 @@ describe("SessionEvent discriminated union", () => {
   });
 
   test("worktree_entered / worktree_exited round-trip", () => {
-    const we = { type: "worktree_entered", sessionId: "s", threadId: "t", seq: 1, ts: 1, name: "fix-auth", path: "/repo/.winter/worktrees/fix-auth", branch: "winter/fix-auth" } as const;
+    const we = { type: "worktree_entered", sessionId: "s", threadId: "t", seq: 1, ts: 1, name: "fix-auth", path: "/repo/.clover/worktrees/fix-auth", branch: "clover/fix-auth" } as const;
     expect(SessionEvent.parse(we)).toEqual(we);
     const wx = { type: "worktree_exited", sessionId: "s", threadId: "t", seq: 2, ts: 2, name: "fix-auth", action: "keep", removed: false } as const;
     expect(SessionEvent.parse(wx)).toEqual(wx);
@@ -325,7 +325,7 @@ describe("SessionEvent discriminated union", () => {
     expect(SessionEvent.safeParse({ ...t, type: "plugin_tool_invoke", requestId: "req_1", tool: "echo", argsJson: "" }).success).toBe(true);
   });
 
-  // Phase 4c Task 1 (spec §5): core pushes this to the active provider connection (Winter.app)
+  // Phase 4c Task 1 (spec §5): core pushes this to the active provider connection (Clover.app)
   // when a plugin (or the harness) calls hardware.request; mirrors plugin_tool_invoke's
   // request/response shape one-for-one — the provider answers with hardware.respond (methods.ts).
   test("hardware_requested round-trips", () => {
@@ -600,7 +600,7 @@ describe("panel_command (B2 T2)", () => {
   });
 
   test("args round-trips as an opaque per-verb bag", () => {
-    const e = cmd({ action: "type", tabId: "tab_1", args: { selector: "#q", text: "winter", submit: true } });
+    const e = cmd({ action: "type", tabId: "tab_1", args: { selector: "#q", text: "clover", submit: true } });
     expect(SessionEvent.parse(e)).toEqual(e);
   });
 

@@ -21,7 +21,7 @@ import {
 // -------------------------------------------------------------------------------------------
 
 function tmpRunDir(): string {
-  return mkdtempSync(join(tmpdir(), "winter-supervisor-"));
+  return mkdtempSync(join(tmpdir(), "clover-supervisor-"));
 }
 
 function fakePlugin(overrides: Partial<EligiblePlugin> = {}): EligiblePlugin {
@@ -90,7 +90,7 @@ function makeSupervisor(overrides: Partial<PluginSupervisorDeps> = {}) {
   const { settings, ...rest } = overrides;
   const supervisor = new PluginSupervisor({
     runDir: dir,
-    socketPath: "/tmp/winter-test.sock",
+    socketPath: "/tmp/clover-test.sock",
     mintToken: (id) => { const t = `tok_${id}_${mints.length}`; mints.push(t); return t; },
     spawn,
     now: () => Date.now(),
@@ -159,7 +159,7 @@ describe("circuitAfterFailure (pure)", () => {
 // -------------------------------------------------------------------------------------------
 
 describe("startAll / spawn", () => {
-  test("spawns the manifest entry with WINTER_PLUGIN_TOKEN/SOCKET/ID; status starts 'starting'", () => {
+  test("spawns the manifest entry with CLOVER_PLUGIN_TOKEN/SOCKET/ID; status starts 'starting'", () => {
     const { supervisor, calls, mints } = makeSupervisor();
     const p = fakePlugin();
     supervisor.startAll([p]);
@@ -167,9 +167,9 @@ describe("startAll / spawn", () => {
     expect(calls).toHaveLength(1);
     expect(calls[0]!.cmd).toEqual(["bun", "index.ts"]);
     expect(calls[0]!.opts.cwd).toBe("/plugins/demo");
-    expect(calls[0]!.opts.env.WINTER_PLUGIN_TOKEN).toBe(mints[0]);
-    expect(calls[0]!.opts.env.WINTER_SOCKET).toBe("/tmp/winter-test.sock");
-    expect(calls[0]!.opts.env.WINTER_PLUGIN_ID).toBe("demo");
+    expect(calls[0]!.opts.env.CLOVER_PLUGIN_TOKEN).toBe(mints[0]);
+    expect(calls[0]!.opts.env.CLOVER_SOCKET).toBe("/tmp/clover-test.sock");
+    expect(calls[0]!.opts.env.CLOVER_PLUGIN_ID).toBe("demo");
   });
 
   test("entry.cwd, when set, resolves relative to the plugin's own dir", () => {
@@ -178,11 +178,11 @@ describe("startAll / spawn", () => {
     expect(calls[0]!.opts.cwd).toBe(join("/plugins/demo", "sub"));
   });
 
-  test("WINTER_PLUGIN_DIR is always set to the plugin's directory (entry.cwd-safe)", () => {
+  test("CLOVER_PLUGIN_DIR is always set to the plugin's directory (entry.cwd-safe)", () => {
     const { supervisor, calls } = makeSupervisor();
     const p = fakePlugin({ dir: "/plugins/demo", entry: { command: "bun", args: ["i.ts"], cwd: "sub" } });
     supervisor.startAll([p]);
-    expect(calls[0]!.opts.env.WINTER_PLUGIN_DIR).toBe("/plugins/demo");
+    expect(calls[0]!.opts.env.CLOVER_PLUGIN_DIR).toBe("/plugins/demo");
   });
 
   test("startAll is idempotent — a second call for an already-tracked id does not spawn again", () => {
@@ -700,7 +700,7 @@ describe("reclaimOrphans", () => {
     writeOrphanPidFile(dir, "orphaned", 555);
     supervisor.startAll([orphaned, fresh]);
     expect(calls).toHaveLength(1);
-    expect(calls[0]!.opts.env.WINTER_PLUGIN_ID).toBe("fresh");
+    expect(calls[0]!.opts.env.CLOVER_PLUGIN_ID).toBe("fresh");
     expect(supervisor.status("orphaned")).toBe("starting");
     expect(supervisor.status("fresh")).toBe("starting");
   });
@@ -1054,7 +1054,7 @@ describe("keyed by spec (WS-24)", () => {
     const { supervisor, dir, mints, calls } = makeSupervisor();
     supervisor.startAll([fakePlugin({ id: "p@m1", dir: "/plugins/m1/p" }), fakePlugin({ id: "p@m2", dir: "/plugins/m2/p" })]);
     expect(supervisor.trackedIds().sort()).toEqual(["p@m1", "p@m2"]);
-    expect(calls.map((c) => c.opts.env.WINTER_PLUGIN_ID).sort()).toEqual(["p@m1", "p@m2"]);
+    expect(calls.map((c) => c.opts.env.CLOVER_PLUGIN_ID).sort()).toEqual(["p@m1", "p@m2"]);
     expect(mints.length).toBe(2);
     expect(existsSync(join(dir, "plugins", "p@m1.pid"))).toBe(true);
     expect(existsSync(join(dir, "plugins", "p@m2.pid"))).toBe(true);

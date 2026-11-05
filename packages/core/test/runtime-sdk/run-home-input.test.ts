@@ -16,7 +16,7 @@ const tmp = (prefix: string): string => real(mkdtempSync(join(tmpdir(), prefix))
 // Git runs below read config: keep it off the developer's global git config and home.
 const saved: Record<string, string | undefined> = {};
 beforeAll(() => {
-  const fakeHome = tmp("winter-rhi-home-");
+  const fakeHome = tmp("clover-rhi-home-");
   for (const [k, v] of Object.entries({ HOME: fakeHome, XDG_CONFIG_HOME: join(fakeHome, ".config"), GIT_CONFIG_GLOBAL: join(fakeHome, ".gitconfig") })) {
     saved[k] = process.env[k];
     process.env[k] = v;
@@ -31,14 +31,14 @@ function git(args: string[], cwd: string): void {
   if (p.exitCode !== 0) throw new Error(`git ${args.join(" ")} failed`);
 }
 function initRepo(): string {
-  const dir = tmp("winter-rhi-repo-");
+  const dir = tmp("clover-rhi-repo-");
   git(["init", "-q"], dir);
   git(["-c", "user.email=t@t.test", "-c", "user.name=t", "commit", "--allow-empty", "-q", "-m", "init"], dir);
   return dir;
 }
 
 const deps = (over: Partial<RunHomeInputDeps> = {}): RunHomeInputDeps => ({
-  home: tmp("winter-rhi-h-"),
+  home: tmp("clover-rhi-h-"),
   trust: { isTrusted: () => false },
   settings: () => null,
   reservedMcpServerNames: [...reservedMcpServerNames()],
@@ -65,13 +65,13 @@ describe("runHomeInputFor", () => {
   });
 
   test("outside a repository gitRoot is null", () => {
-    const dir = tmp("winter-rhi-plain-");
+    const dir = tmp("clover-rhi-plain-");
     expect(runHomeInputFor(deps(), { mode: "code", dispatchChild: false, leg: "winter", cwd: dir }).gitRoot).toBeNull();
   });
 
   test("a worktree's gitRoot is its OWN top (the local tier), while repoRootFor follows the main checkout", () => {
     const repo = initRepo();
-    const wt = join(tmp("winter-rhi-wt-"), "wt");
+    const wt = join(tmp("clover-rhi-wt-"), "wt");
     git(["worktree", "add", "-q", "-b", "wt-branch", wt], repo);
     expect(gitRootFor(wt)).toBe(real(wt));
     expect(repoRootFor(wt)).toBe(repo);
@@ -79,25 +79,25 @@ describe("runHomeInputFor", () => {
 
   test("chat and dispatch get the _assistant memory bucket (spec §3.7, the daemon's own injection)", () => {
     const d = deps();
-    const cwd = tmp("winter-rhi-cwd-");
+    const cwd = tmp("clover-rhi-cwd-");
     for (const mode of ["chat", "dispatch"] as const) {
-      expect(runHomeInputFor(d, { mode, dispatchChild: false, leg: "winter", cwd }).memoryDir).toBe(assistantMemoryDirFor({ winterHome: d.home }));
+      expect(runHomeInputFor(d, { mode, dispatchChild: false, leg: "winter", cwd }).memoryDir).toBe(assistantMemoryDirFor({ cloverHome: d.home }));
     }
   });
 
   test("code gets the project MEMDIR; a workdir-less code session gets _assistant (the assembler's rule)", () => {
     const d = deps();
-    const cwd = tmp("winter-rhi-cwd-");
-    expect(runHomeInputFor(d, { mode: "code", dispatchChild: false, leg: "winter", cwd }).memoryDir).toBe(memoryDirFor(cwd, { winterHome: d.home }));
-    expect(runHomeInputFor(d, { mode: "code", dispatchChild: false, leg: "winter", cwd, workdirLess: true }).memoryDir).toBe(assistantMemoryDirFor({ winterHome: d.home }));
+    const cwd = tmp("clover-rhi-cwd-");
+    expect(runHomeInputFor(d, { mode: "code", dispatchChild: false, leg: "winter", cwd }).memoryDir).toBe(memoryDirFor(cwd, { cloverHome: d.home }));
+    expect(runHomeInputFor(d, { mode: "code", dispatchChild: false, leg: "winter", cwd, workdirLess: true }).memoryDir).toBe(assistantMemoryDirFor({ cloverHome: d.home }));
   });
 
   test("code honours sdk/settings.json autoMemoryDirectory (the moved memory.directory)", () => {
     const d = deps();
-    const pinned = tmp("winter-rhi-pinned-");
+    const pinned = tmp("clover-rhi-pinned-");
     mkdirSync(join(d.home, "sdk"), { recursive: true });
     writeFileSync(join(d.home, "sdk", "settings.json"), JSON.stringify({ autoMemoryDirectory: pinned }));
-    expect(runHomeInputFor(d, { mode: "code", dispatchChild: false, leg: "winter", cwd: tmp("winter-rhi-cwd-") }).memoryDir).toBe(pinned);
+    expect(runHomeInputFor(d, { mode: "code", dispatchChild: false, leg: "winter", cwd: tmp("clover-rhi-cwd-") }).memoryDir).toBe(pinned);
   });
 
   test("the daemon's relocation-aware memoryDirFor wins when supplied", () => {
@@ -112,10 +112,10 @@ describe("runHomeInputFor", () => {
     expect(input.mcpDisabled).toEqual(["noisy"]);
   });
 
-  test("the reserved names include every winter__<key> capability server, and the brand's own name", () => {
+  test("the reserved names include every clover__<key> capability server, and the brand's own name", () => {
     const input = runHomeInputFor(deps(), { mode: "code", dispatchChild: false, leg: "winter", cwd: "/x" });
-    for (const key of CAPABILITY_SERVER_KEYS) expect(input.reservedMcpServerNames).toContain(`winter__${key}`);
-    expect(input.reservedMcpServerNames).toContain("winter");
+    for (const key of CAPABILITY_SERVER_KEYS) expect(input.reservedMcpServerNames).toContain(`clover__${key}`);
+    expect(input.reservedMcpServerNames).toContain("clover");
   });
 });
 
@@ -126,7 +126,7 @@ describe("runHomeInputFor", () => {
 // a linked worktree of a trusted repo is trusted.
 describe("R.3 I-1: a linked worktree's run home loads the worktree's own project tier", () => {
   /** Every entry of a built run home's `rules/`: its file name and its CONTENT. Router 0c62337 COPIES the
-   *  project rules into the run home (a snapshot, `project--.winter--rules--<name>`) instead of linking
+   *  project rules into the run home (a snapshot, `project--.clover--rules--<name>`) instead of linking
    *  them, so an entry's realpath is the run folder's own; which rule loaded is told by name and content. */
   async function builtRuleTargets(home: string, trust: TrustStore, cwd: string): Promise<{ root: string | null; rules: { name: string; content: string }[] }> {
     const input = runHomeInputFor({ home, trust, settings: () => null, reservedMcpServerNames: [...reservedMcpServerNames()] }, { mode: "code", dispatchChild: false, leg: "winter", cwd });
@@ -146,19 +146,19 @@ describe("R.3 I-1: a linked worktree's run home loads the worktree's own project
     rules.some((r) => r.name.endsWith(file) && r.content === content);
   function worktreeBed(): { repo: string; wt: string; home: string; wtRule: string; mainRule: string } {
     const repo = initRepo();
-    const wt = join(tmp("winter-rhi-wt-"), "wt");
+    const wt = join(tmp("clover-rhi-wt-"), "wt");
     git(["worktree", "add", "-q", "-b", `wt-${Math.random().toString(16).slice(2)}`, wt], repo);
-    for (const base of [repo, wt]) mkdirSync(join(base, ".winter", "rules"), { recursive: true });
-    const wtRule = join(wt, ".winter", "rules", "wt-rule.md");
-    const mainRule = join(repo, ".winter", "rules", "main-rule.md");
+    for (const base of [repo, wt]) mkdirSync(join(base, ".clover", "rules"), { recursive: true });
+    const wtRule = join(wt, ".clover", "rules", "wt-rule.md");
+    const mainRule = join(repo, ".clover", "rules", "main-rule.md");
     writeFileSync(wtRule, WT_RULE);
     writeFileSync(mainRule, MAIN_RULE);
-    const home = tmp("winter-rhi-h-");
+    const home = tmp("clover-rhi-h-");
     mkdirSync(join(home, "sdk"), { recursive: true });
     return { repo, wt: real(wt), home, wtRule: real(wtRule), mainRule: real(mainRule) };
   }
 
-  test("a linked worktree of a TRUSTED repo: the project root is the worktree, and its own .winter/rules load", async () => {
+  test("a linked worktree of a TRUSTED repo: the project root is the worktree, and its own .clover/rules load", async () => {
     const b = worktreeBed();
     const trust = new TrustStore(join(b.home, "trust.json"));
     trust.trust(b.repo);
@@ -203,7 +203,7 @@ describe("R.3 I-1: a linked worktree's run home loads the worktree's own project
     const repo = initRepo();
     const nested = join(repo, "a");
     mkdirSync(nested, { recursive: true });
-    const trust = new TrustStore(join(tmp("winter-rhi-t-"), "trust.json"));
+    const trust = new TrustStore(join(tmp("clover-rhi-t-"), "trust.json"));
     trust.trust(repo);
     expect(runHomeInputFor(deps({ trust }), { mode: "code", dispatchChild: false, leg: "winter", cwd: nested }).trustedProjectRoot).toBe(repo);
   });

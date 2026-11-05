@@ -9,7 +9,7 @@ import { join } from "node:path";
 export const SECRETS = ["SECRET-PROMPT-7f3a", "SECRET-ANSWER-91bc", "SecretProjectName", "SECRET-INSTRUCTIONS-c0de", "sk-decoy-6e1d", "DECOY_TOKEN_VALUE"];
 
 export function tempDir(prefix: string): string {
-  return mkdtempSync(join(tmpdir(), `winter-usage-${prefix}-`));
+  return mkdtempSync(join(tmpdir(), `clover-usage-${prefix}-`));
 }
 
 /** The service's probe root under a test home (`<home>/usage`, created): each probe makes its own dir in it. */

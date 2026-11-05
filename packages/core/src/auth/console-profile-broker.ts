@@ -47,7 +47,7 @@ import { ANTHROPIC_PROFILE_NAME, anthropicConfigDirFor, ensurePrivateDir } from 
 import { ANTHROPIC_CONSOLE_CREDENTIAL_SECRET_NAME } from "../runtime-sdk/keychain";
 import { CONSOLE_BROKER_SDK_MIN, REQUIRED_WINTER_AGENT_SDK, versionAtLeast } from "../runtime-sdk/versions";
 
-// Tripwire (Winter Phase 10a, v0.0.6 wiring): Winter's own profile name (`ANTHROPIC_PROFILE_NAME`,
+// Tripwire (Winter Phase 10a, v0.0.6 wiring): Clover's own profile name (`ANTHROPIC_PROFILE_NAME`,
 // `runtime-sdk/anthropic-paths.ts`) is a separate literal from the SDK's own default — they are
 // both `"winter"` today by coincidence of the two repos agreeing, not by one importing the other
 // (`optionsFor` below always passes `ANTHROPIC_PROFILE_NAME` explicitly, so the SDK's default is
@@ -63,10 +63,10 @@ if (DEFAULT_ANTHROPIC_CONSOLE_PROFILE !== ANTHROPIC_PROFILE_NAME) {
 /**
  * The options bag every SDK function below takes. Fix wave 3 (M-A, corrected design): `claudeExecutable`/
  * `claudeConfigDir` are GONE from this daemon-level shape — the single login/logout door is `ant
- * auth login`/`logout --profile winter`, which needs neither (the SDK ignores both from 0.0.8 on).
+ * auth login`/`logout --profile clover`, which needs neither (the SDK ignores both from 0.0.8 on).
  * `antExecutable` stays optional: the HOST decides whether a missing executable refuses (see
  * `login`'s own guard below) rather than pushing that judgment call into the SDK function, which
- * has no Winter-specific concept of "unavailable" to refuse with.
+ * has no Clover-specific concept of "unavailable" to refuse with.
  */
 export interface AnthropicLoginOptions {
   antExecutable?: string;
@@ -111,7 +111,7 @@ export const CONSOLE_BROKER_UNAVAILABLE_REASON = "console_broker_unavailable";
 /** Winter Phase 10a fix wave 3 (M-A): the refusal reason `login()`/`logout()` throw when the
  *  compile-time `REQUIRED_WINTER_AGENT_SDK` pin is below `CONSOLE_BROKER_SDK_MIN` — see that
  *  constant's own doc (`versions.ts`) for why this exists: below the floor, the SDK's own
- *  login/logout still spawn `claude auth login/logout --console` into Winter's OWN
+ *  login/logout still spawn `claude auth login/logout --console` into Clover's OWN
  *  `CLAUDE_CONFIG_DIR`, never the intended `ant`-driven door. Distinct from
  *  `CONSOLE_BROKER_UNAVAILABLE_REASON` (a missing/too-old PACKAGE) — this is a too-old PIN with the
  *  package present. */
@@ -126,7 +126,7 @@ export const CONSOLE_BROKER_SDK_UNSUPPORTED_REASON = "console_broker_sdk_unsuppo
  *  trusting that a resolved promise means the profile is actually gone. Left unchecked, the
  *  console arm would keep authenticating off the still-present profile and the next daemon boot's
  *  own `consoleBroker.profileExists()` check (`daemon.ts`) would re-mint the bearer right back —
- *  `provider.logout`/`winter logout --anthropic-console` must report this as a FAILURE, never a
+ *  `provider.logout`/`clover logout --anthropic-console` must report this as a FAILURE, never a
  *  silent success. */
 export const CONSOLE_LOGOUT_INCOMPLETE_REASON = "console_logout_incomplete";
 
@@ -178,8 +178,8 @@ export const REAL_SDK: AnthropicConsoleSdk = {
   logoutAnthropicConsole: (store, options) => sdkLogoutAnthropicConsole(store, options),
 };
 
-/** The host-facing door `ipc/server.ts` (O6) and `winter login/logout --anthropic-console` (O7)
- *  call — Winter-shaped (no `store`/`options` plumbing visible to a caller). */
+/** The host-facing door `ipc/server.ts` (O6) and `clover login/logout --anthropic-console` (O7)
+ *  call — Clover-shaped (no `store`/`options` plumbing visible to a caller). */
 export interface ConsoleProfileBroker {
   login(onLine: (line: string) => void): Promise<AnthropicLoginHandle>;
   profileExists(): boolean;
@@ -193,10 +193,10 @@ export interface ConsoleProfileBroker {
   stopRefresher(): void;
   /**
    * Winter Phase 10a fix wave (F2): watches the console profile's own credential file for
-   * appearing or disappearing, from ANY process or door — a CLI `winter login`/`logout
+   * appearing or disappearing, from ANY process or door — a CLI `clover login`/`logout
    * --anthropic-console` (a separate, short-lived process from the daemon), the daemon's own
    * RPC-driven `provider.login`/`provider.logout`, or a human running `ant auth login`/`logout
-   * --profile winter` directly — and reacts the same way that door's own call already would:
+   * --profile clover` directly — and reacts the same way that door's own call already would:
    * `startRefresher()` (its own seed refresh IS `refreshBearer()`, bundled) on appear, and
    * `stopRefresher()` + deleting the bearer material on disappear.
    *
@@ -211,7 +211,7 @@ export interface ConsoleProfileBroker {
 }
 
 export interface ConsoleProfileBrokerDeps {
-  /** WINTER_HOME. */
+  /** CLOVER_HOME. */
   home: string;
   antExecutable?: () => string | undefined;
   /** The daemon's OWN SecretStore — bridged to the SDK's `CredentialStore` via
@@ -328,7 +328,7 @@ export function createConsoleProfileBroker(deps: ConsoleProfileBrokerDeps): Cons
       throw new Error(
         `${CONSOLE_BROKER_SDK_UNSUPPORTED_REASON}: the console login/logout door needs ` +
           `@yanlinglabs/winter-agent-sdk >= ${CONSOLE_BROKER_SDK_MIN} (pinned ${pinnedAgentSdkVersion}) — below that floor its ` +
-          `own SDK spawns claude auth login/logout --console into Winter's own CLAUDE_CONFIG_DIR instead of the intended ` +
+          `own SDK spawns claude auth login/logout --console into Clover's own CLAUDE_CONFIG_DIR instead of the intended ` +
           `ant-driven door; wait for the pin to catch up`,
       );
     }
@@ -498,12 +498,12 @@ export function createConsoleProfileBroker(deps: ConsoleProfileBrokerDeps): Cons
       // `assertSdkSupportsConsoleBroker`'s own doc.
       assertSdkSupportsConsoleBroker();
       // Fix wave (F2 corrected design): the single login door is `ant auth login --profile
-      // winter` (SDK 0.0.9) — `claude auth login --console` was measured NOT to write the profile
+      // clover` (SDK 0.0.9) — `claude auth login --console` was measured NOT to write the profile
       // file at all (it mints a Console API key into CLAUDE_CONFIG_DIR instead), so
       // `antExecutable`, not `claudeExecutable`, is what this door actually needs resolved.
       if (!deps.antExecutable?.()) throw new Error("ant_executable_unavailable");
       // Winter Phase 10a fix wave (M4): harden `anthropicConfigDirFor(home)` 0700 BEFORE the
-      // login child ever spawns — without this, the very first `winter login --anthropic-console`
+      // login child ever spawns — without this, the very first `clover login --anthropic-console`
       // could hand the login a config dir that does not exist at all, or one left over-permissive by
       // something else. Same helper, same 0700 shape as every other caller of `ensurePrivateDir` —
       // never a second, hand-rolled mkdir/chmod.
@@ -523,7 +523,7 @@ export function createConsoleProfileBroker(deps: ConsoleProfileBrokerDeps): Cons
       // Fix wave 3 (M-A): same version gate as login() above, checked first.
       assertSdkSupportsConsoleBroker();
       // Fix wave (F2 corrected design): same single door as login() above — `logout()` also needs
-      // `ant` resolved BEFORE any spawn, never a partial/best-effort logout that clears Winter's
+      // `ant` resolved BEFORE any spawn, never a partial/best-effort logout that clears Clover's
       // own bearer material while leaving `ant`'s own on-disk profile dangling (the exact stale-
       // access shape `OfficialConsoleProfileMissing`, F3, exists to keep closed).
       if (!deps.antExecutable?.()) throw new Error("ant_executable_unavailable");

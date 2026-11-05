@@ -5,7 +5,7 @@ import { join } from "node:path";
 import type { RuntimeSelection } from "@yanlinglabs/winter-runtime-sdk";
 import { openRuntimeStateDb, RUNTIME_STATE_SCHEMA_VERSION, type RuntimeStateDb } from "../../src/runtime-state/db";
 import { RuntimeSessionRecords, type NewRuntimeSessionRecord } from "../../src/runtime-state/records";
-import { RuntimeChildren, type PersistedWinterChild } from "../../src/runtime-state/children";
+import { RuntimeChildren, type PersistedCloverChild } from "../../src/runtime-state/children";
 import { RuntimeLeases } from "../../src/runtime-state/leases";
 import { diagnoseRuntimeState, latestRecoveryAttempts, repairRuntimeState, type Finding } from "../../src/runtime-state/doctor";
 import { restampStep } from "../../src/runtime-state/recovery";
@@ -51,7 +51,7 @@ const newRecord = (home: string, id: string, over: Partial<NewRuntimeSessionReco
   ...over,
 });
 
-const newChild = (parent: string, childId: string, over: Partial<PersistedWinterChild> = {}): PersistedWinterChild => ({
+const newChild = (parent: string, childId: string, over: Partial<PersistedCloverChild> = {}): PersistedCloverChild => ({
   parentWinterSessionId: parent,
   childId,
   agentType: "general-purpose",
@@ -191,9 +191,9 @@ describe("diagnoseRuntimeState — WS-16 §15 read-only diagnostics", () => {
       });
 
       expect(kinds(await diagnoseRuntimeState(home))).toEqual(["db-newer-schema"]);
-      // The finding tells the user the exact way back (an older Winter cannot open this store until the schema is rolled back).
+      // The finding tells the user the exact way back (an older Clover cannot open this store until the schema is rolled back).
       const finding = (await diagnoseRuntimeState(home)).find(f => f.kind === "db-newer-schema")!;
-      expect(finding.detail).toContain("winter migrate --cowork-schema --rollback");
+      expect(finding.detail).toContain("clover migrate --cowork-schema --rollback");
     });
   });
 
@@ -622,7 +622,7 @@ describe("repairRuntimeState — WS-16 §15 explicit, recoverable repairs", () =
     });
   });
 
-  test("restore-backup refuses a backup written by a newer Winter", async () => {
+  test("restore-backup refuses a backup written by a newer Clover", async () => {
     await withTempHome(async (home) => {
       let backup = "";
       withDb(home, (rs) => {
@@ -637,7 +637,7 @@ describe("repairRuntimeState — WS-16 §15 explicit, recoverable repairs", () =
       // It would pass quick_check and then refuse to OPEN — a restore that "succeeds" into an
       // unusable store, caught while the current file is still intact (review r1, minor 7).
       expect(result.applied).toBe(false);
-      expect(result.detail).toContain("newer Winter");
+      expect(result.detail).toContain("newer Clover");
     });
   });
 

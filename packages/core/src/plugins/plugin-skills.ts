@@ -1,5 +1,5 @@
 // WS-21 (spec §5.3, §5.5): "Both runtimes load enabled plugins natively, in code mode only. Skills
-// appear as `plugin:skill`." — the daemon no longer builds a skills-only view for a Winter child
+// appear as `plugin:skill`." — the daemon no longer builds a skills-only view for a Clover child
 // (`SkillStore.childSkillSurface`/`<home>/cache/skill-plugins/`, spec's own "Supersedes" list) and
 // `SkillStore`'s OWN plugin tier (`agent/skills.ts#discover`, L3-owned) still scans the RETIRED
 // `<home>/plugins` layout — it is not this lane's file to fix (see the lane report's REQUEST FOR L3

@@ -1,5 +1,5 @@
-// The guide for Notes (id `notes@1`), shown with the app's extras block. Winter's own reviewed prose: every claim
-// is about an extra Winter implements or a behaviour the ComputerV2 description already states — checked against the
+// The guide for Notes (id `notes@1`), shown with the app's extras block. Clover's own reviewed prose: every claim
+// is about an extra Clover implements or a behaviour the ComputerV2 description already states — checked against the
 // app's dictionary and, at the live gate, the app itself. A content change bumps the rev (`notes@2`). ≤ 2,000 bytes.
 export const NOTES_GUIDE = `Notes' extras work without bringing Notes forward or changing what it shows:
 - list() returns notes in Notes' own order — id, name, folder and last change (local time); { folder: "Name" } one folder, { limit } up to 200 (default 30);

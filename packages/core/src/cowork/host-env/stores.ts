@@ -6,11 +6,11 @@ import type { RuntimeStateDb } from "../../runtime-state/db";
 import { COWORK_NATIVE_LIMITS, parseCoworkNativeStopReceipt } from "../native/protocol";
 import type { CoworkNativeDurableReceiptPort, CoworkNativeReceiptScope } from "../native/recovery";
 import type { CoworkNativeLaunchEntry, CoworkNativeLaunchJournalPort } from "../native/stop-proof";
-import { CoworkHostEnvError, assertOutsideWinterHomes, ensurePrivateDirectory } from "./coordination";
+import { CoworkHostEnvError, assertOutsideCloverHomes, ensurePrivateDirectory } from "./coordination";
 
 /*
  * The three durable stores of the production native environment (N2 S7B part 1). Files live beside the admission ledger in the Coordination
- * directory (outside every Winter home, so a home wipe or copy neither loses nor forges them); the home binding lives in the home database.
+ * directory (outside every Clover home, so a home wipe or copy neither loses nor forges them); the home binding lives in the home database.
  */
 const fail = (code: string): never => { throw new CoworkHostEnvError(code); };
 const euid = (): number => process.geteuid?.() ?? -1;
@@ -55,7 +55,7 @@ function writeAtomically(directory: string, name: string, bytes: Buffer): void {
  * `retire` unlinks the one file of that scope and tolerates its absence (the live `receipt_retire` races it). It never follows a symlink, never touches another scope.
  */
 export function createCoworkReceiptStore(directory: string): CoworkNativeDurableReceiptPort {
-  assertOutsideWinterHomes(directory);
+  assertOutsideCloverHomes(directory);
   return {
     load(scope) {
       let name: string;

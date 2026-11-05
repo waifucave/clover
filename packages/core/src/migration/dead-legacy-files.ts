@@ -1,21 +1,21 @@
 // A3 (2026-09-22): top-level files a legacy home (`legacy-names.ts`'s `LEGACY_HOME_DIR`) carries
-// that NOTHING in Winter reads — and that mislead a model reading the home. In s_56fc the agent
-// "installed" an MCP server by editing `~/.winter/mcp.json`, a file Migration B had copied
+// that NOTHING in Clover reads — and that mislead a model reading the home. In s_56fc the agent
+// "installed" an MCP server by editing `~/.clover/mcp.json`, a file Migration B had copied
 // byte-for-byte from the legacy home's `mcp.json` and that no code has ever opened.
 //
 // THE EVIDENCE, per file (2026-09-22 sweep): no reader of `<home>/<name>` anywhere in
 // `packages/*/src` or `apple/*`, and `git log -S` finds none of these names ever added to this repo
 // — they predate it. The agent SDK's only `mcp.json` reader is the PROJECT file
-// `<cwd>/.winter/mcp.json`, gated on `settingSources` including `project` (the daemon passes `[]`).
-// WS-21: MCP servers come from the shared runtime home's `sdk/.winter.json` (claude's user and local
-// scopes, `winter mcp add`) and a trusted project's `.winter/mcp.json` (the repo-root `.mcp.json` is no
+// `<cwd>/.clover/mcp.json`, gated on `settingSources` including `project` (the daemon passes `[]`).
+// WS-21: MCP servers come from the shared runtime home's `sdk/.clover.json` (claude's user and local
+// scopes, `clover mcp add`) and a trusted project's `.clover/mcp.json` (the repo-root `.mcp.json` is no
 // longer read) — `runtime-sdk/external-mcp.ts`, `agent/mcp/manager.ts`. Migration C archives these files
 // (`migrate-c.ts`'s archive step); until then they are only named.
 // `app-state.json` (150 MB on the user's machine) is NOT the `app-state/` directory, which the Mac
 // app does use (`migrate-b.ts`'s `TOLERATED_APP_OWNED_TOP_LEVEL`).
 //
 // Migration B skips these (`classify`). For homes that already hold them, the daemon logs ONE boot
-// line and `winter doctor` prints the same line. Nothing here ever modifies or deletes a user file.
+// line and `clover doctor` prints the same line. Nothing here ever modifies or deletes a user file.
 import { lstatSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -66,14 +66,14 @@ export function findDeadLegacyFiles(home: string): DeadLegacyFile[] {
   return found;
 }
 
-/** ONE line for the boot log and `winter doctor`, or `undefined` when there is nothing to say. File
+/** ONE line for the boot log and `clover doctor`, or `undefined` when there is nothing to say. File
  *  names and a server COUNT only — never file contents. */
 export function describeDeadLegacyFiles(found: readonly DeadLegacyFile[], home: string): string | undefined {
   if (found.length === 0) return undefined;
   const mcp = found.find((f) => f.name === "mcp.json" && (f.mcpServers ?? 0) > 0);
   const names = found.map((f) => f.name).join(", ");
-  const base = `legacy files: ${home} holds ${names} — copied from the legacy home and not read by Winter (left untouched)`;
+  const base = `legacy files: ${home} holds ${names} — copied from the legacy home and not read by Clover (left untouched)`;
   if (mcp === undefined) return base;
   const n = mcp.mcpServers!;
-  return `${base}; mcp.json declares ${n} MCP server${n === 1 ? "" : "s"} that ${n === 1 ? "is" : "are"} NOT loaded — add one with \`winter mcp add\` (it lands in sdk/.winter.json), or, for a trusted project, in its .winter/mcp.json`;
+  return `${base}; mcp.json declares ${n} MCP server${n === 1 ? "" : "s"} that ${n === 1 ? "is" : "are"} NOT loaded — add one with \`clover mcp add\` (it lands in sdk/.clover.json), or, for a trusted project, in its .clover/mcp.json`;
 }

@@ -47,7 +47,7 @@ test("a throwing Cowork boot step does not abort startup", async () => {
   expect(lines.filter(l => l.startsWith("cowork: schedule tick failed at boot"))).toHaveLength(1);
 });
 
-// The documented rollback ("a revert release reverts the feature, never the schema; roll back with `winter migrate --cowork-schema
+// The documented rollback ("a revert release reverts the feature, never the schema; roll back with `clover migrate --cowork-schema
 // --rollback`") must work for every ordinary user: the `cowork-data-present` refusal needs a Cowork row, and nothing in a production
 // daemon writes one.
 test("a daemon that booted and stopped leaves every Cowork table empty, so the schema rollback is never refused", async () => {

@@ -182,7 +182,7 @@ final class FormController: NSObject {
     let notesScroll: NotesScrollView
     let agree: NSButton
     /// A native hover-revealed control (round 9): a plain AppKit view whose tracking area shows "Native Hidden Item"
-    /// when the pointer enters it — what Winter's window-targeted pointer DOES reach (a web page's hover does not).
+    /// when the pointer enters it — what Clover's window-targeted pointer DOES reach (a web page's hover does not).
     let hoverArea: HoverRevealView
     let hiddenItem: NSButton
     private let openDocument: () -> Void

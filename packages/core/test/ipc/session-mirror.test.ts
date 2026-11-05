@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, ERR, type WritableSocket } from "@yanlinglabs/winter-protocol";
+import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, ERR, type WritableSocket } from "@waifucave/clover-protocol";
 import { startIpcServer, REMOTE_ALLOWED_METHODS } from "../../src/ipc/server";
 import { saveSettings, Settings } from "../../src/settings";
 import { SessionStore } from "../../src/sessions/store";
@@ -10,7 +10,7 @@ import { FileSecretStore } from "../../src/auth/secret-store";
 import { TokenAuthority } from "../../src/auth/tokens";
 
 // ComputerV2 Phase 1b (the phone mirror): `session.mirror` is the daemon's GATE for the phone watching the
-// live mirror of the session it is attached to. The frames never come through the daemon (Winter.app's
+// live mirror of the session it is attached to. The frames never come through the daemon (Clover.app's
 // Gateway relays what its own mirror already receives), so all this method decides is: may this caller watch
 // this session (the remote mode gate + the attachment), and is the mirror on at all (the user's settings).
 // Harness shape duplicated from remote-chat-gate.test.ts — this codebase keeps no shared ipc test harness.
@@ -67,14 +67,14 @@ describe("session.mirror — the phone mirror's gate (ComputerV2 Phase 1b)", () 
   });
 
   async function boot(settings: Record<string, unknown> = {}): Promise<{ store: SessionStore; socketPath: string; remoteToken: string; harnessToken: string }> {
-    home = mkdtempSync(join(tmpdir(), "winter-session-mirror-"));
+    home = mkdtempSync(join(tmpdir(), "clover-session-mirror-"));
     // A real daemon always has its settings file (boot writes it); the gate fails closed without one.
     saveSettings(join(home, "settings.json"), Settings.parse({ schemaVersion: 3, provider: { model: "codex-oauth/gpt-5.6-sol" }, ...settings }));
     const store = new SessionStore(home);
     const socketPath = join(home, "core.sock");
     const authority = new TokenAuthority(new FileSecretStore(join(home, "secrets.json")));
     const tokens = await authority.ensureTokens();
-    const server = startIpcServer({ socketPath, serverVersion: "test", tokens: authority, store, winterHome: home });
+    const server = startIpcServer({ socketPath, serverVersion: "test", tokens: authority, store, cloverHome: home });
     stop = () => { server.stop(); store.close(); };
     return { store, socketPath, remoteToken: tokens.remote, harnessToken: tokens.harness };
   }

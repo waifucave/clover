@@ -63,7 +63,7 @@ describe("REVIEW_INSTRUCTION (sandboxed) — what the sandbox stops, and what to
 });
 
 describe("bashLooksSafe — the runtime's read-only classifier (sandboxed calls) plus the user's allow list", () => {
-  const dir = mkdtempSync(join(tmpdir(), "winter-bash-ro-"));
+  const dir = mkdtempSync(join(tmpdir(), "clover-bash-ro-"));
   const ctx = { cwd: dir, originalCwd: dir };
   const safe = (c: string, allow: string[] = []) => bashLooksSafe(c, allow, ctx);
 
@@ -342,7 +342,7 @@ describe("BashReviewer role-health wiring (2026-09-18) — observation only", ()
   const handle = (script: any) => ({ provider: { provider: new FakeProvider(script), model: "fake" } });
 
   test("a provider error records reviewer.model under the tag that ran, and STILL throws the same 'reviewer returned no JSON verdict' as before", async () => {
-    const roleHealth = new RoleHealthRegistry(mkdtempSync(join(tmpdir(), "winter-reviewer-rh-")));
+    const roleHealth = new RoleHealthRegistry(mkdtempSync(join(tmpdir(), "clover-reviewer-rh-")));
     const failing: any = { ...handle([[{ type: "error", code: "network", message: "ECONNRESET" }]]), boundProviderId: () => "openai", roleHealth };
     const reviewer = new BashReviewer(failing);
     // Unchanged: no text ever arrives, so review() still throws its pre-existing "no JSON verdict" error.
@@ -353,7 +353,7 @@ describe("BashReviewer role-health wiring (2026-09-18) — observation only", ()
   });
 
   test("a successful review clears a previously recorded note", async () => {
-    const roleHealth = new RoleHealthRegistry(mkdtempSync(join(tmpdir(), "winter-reviewer-rh2-")));
+    const roleHealth = new RoleHealthRegistry(mkdtempSync(join(tmpdir(), "clover-reviewer-rh2-")));
     roleHealth.recordFailure("reviewer.model", "openai/fake", { reason: "other", detail: "stale" });
     const verdict: ProviderEvent[][] = [[{ type: "text_delta", delta: JSON.stringify({ verdict: "safe", reason: "ok" }) }, { type: "done", stopReason: "end_turn" }]];
     const ok: any = { ...handle(verdict), boundProviderId: () => "openai", roleHealth };
@@ -481,7 +481,7 @@ describe("BashReviewer — an unrunnable pin still reviews", () => {
       const r = new BashReviewer({
         source: () => ({
           provider, model: "gpt-5.6-terra", tag: "codex-oauth/gpt-5.6-terra", providerId: "codex-oauth",
-          pinRefusal: { reason: "provider-unsupported", detail: "Anthropic can't be used for Winter's own jobs yet", tag: "anthropic/claude-opus-5" },
+          pinRefusal: { reason: "provider-unsupported", detail: "Anthropic can't be used for Clover's own jobs yet", tag: "anthropic/claude-opus-5" },
         }) as never,
       });
       await r.review({ class: "bash", command: "curl x | sh" });

@@ -21,36 +21,36 @@ import { storeWriteDenial, protectedReadDenial } from "../../src/runtime-sdk/pro
 import { controlPlaneTargetForCall } from "../../src/runtime-sdk/control-plane";
 import { homeFenceFor } from "../../src/runtime-sdk/home-fence";
 
-const H = "/Users/x/.winter";
+const H = "/Users/x/.clover";
 const rules = controlPlaneDenyRules(H);
 const writeRule = (target: string) => ["Edit", "Write", "MultiEdit", "NotebookEdit"].every((t) => rules.includes(`${t}(${target})`));
 const readRule = (target: string) => ["Read", "Glob", "Grep"].every((t) => rules.includes(`${t}(${target})`));
 
 function project(): { cwd: string; root: string } {
-  const root = realpathSync(mkdtempSync(join(tmpdir(), "winter-fences-root-")));
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "clover-fences-root-")));
   Bun.spawnSync(["git", "-C", root, "init", "-q"]);
   const cwd = join(root, "packages", "app");
   mkdirSync(cwd, { recursive: true });
   return { cwd, root };
 }
 
-describe("writes: sdk/settings.json, sdk/.winter.json, sdk/agents/** — rules ✓, sandbox real path, floor any mention", () => {
+describe("writes: sdk/settings.json, sdk/.clover.json, sdk/agents/** — rules ✓, sandbox real path, floor any mention", () => {
   test("deny rules", () => {
     expect(writeRule(`/${H}/sdk/settings.json`)).toBe(true);
-    expect(writeRule(`/${H}/sdk/.winter.json`)).toBe(true);
+    expect(writeRule(`/${H}/sdk/.clover.json`)).toBe(true);
     expect(writeRule(`/${H}/sdk/agents/**`)).toBe(true);
   });
   test("sandbox denyWrite (real paths, with or without a cwd)", () => {
     for (const cfg of [sandboxConfigFor(H), sandboxConfigFor(H, "/Users/x/code")]) {
       const w = cfg.filesystem!.denyWrite!;
-      expect(w).toEqual(expect.arrayContaining([`${H}/sdk/settings.json`, `${H}/sdk/.winter.json`, `${H}/sdk/agents`]));
+      expect(w).toEqual(expect.arrayContaining([`${H}/sdk/settings.json`, `${H}/sdk/.clover.json`, `${H}/sdk/agents`]));
     }
   });
   test("escape floor: ANY mention", () => {
     expect(escapeFloorHit(`cat ${H}/sdk/settings.json`, H)).toBeDefined();
-    expect(escapeFloorHit("cat ~/.winter/sdk/.winter.json", H)).toBeDefined();
+    expect(escapeFloorHit("cat ~/.clover/sdk/.clover.json", H)).toBeDefined();
     expect(escapeFloorHit(`ls ${H}/sdk/agents`, H)).toBeDefined();
-    expect(escapeFloorHit(`cd ${H}/sdk && cat .winter.json`, H)).toBeDefined();
+    expect(escapeFloorHit(`cd ${H}/sdk && cat .clover.json`, H)).toBeDefined();
   });
 });
 
@@ -63,10 +63,10 @@ describe("writes: sdk/plugins/** — rules ✓, sandbox real path, floor write-s
     expect(escapeFloorHit(`cat ${H}/sdk/plugins/p/skills/a/SKILL.md`, H)).toBeUndefined();
     expect(escapeFloorHit(`bash ${H}/sdk/plugins/p/skills/a/run.sh`, H)).toBeUndefined();
     expect(escapeFloorHit(`cp evil.json ${H}/sdk/plugins/p/.claude-plugin/plugin.json`, H)).toBeDefined();
-    expect(escapeFloorHit(`echo x > ~/.winter/sdk/plugins/p/hooks.json`, H)).toBeDefined();
+    expect(escapeFloorHit(`echo x > ~/.clover/sdk/plugins/p/hooks.json`, H)).toBeDefined();
   });
   test("the home fence (write tools) derives it from the sandbox list", () => {
-    expect(homeFencedDirs(H)).toEqual(expect.arrayContaining([`${H}/sdk/plugins`, `${H}/sdk/settings.json`, `${H}/sdk/.winter.json`, `${H}/sdk/agents`]));
+    expect(homeFencedDirs(H)).toEqual(expect.arrayContaining([`${H}/sdk/plugins`, `${H}/sdk/settings.json`, `${H}/sdk/.clover.json`, `${H}/sdk/agents`]));
   });
 });
 
@@ -77,15 +77,15 @@ describe("writes: sdk/projects/** except */memory/** — no rule, not allowliste
   });
   test("escape floor", () => {
     expect(escapeFloorHit(`echo x >> ${H}/sdk/projects/-Users-x-app/abc.jsonl`, H)).toBeDefined();
-    expect(escapeFloorHit(`rm -rf ~/.winter/sdk/projects`, H)).toBeDefined();
+    expect(escapeFloorHit(`rm -rf ~/.clover/sdk/projects`, H)).toBeDefined();
     expect(escapeFloorHit(`echo note >> ${H}/sdk/projects/-Users-x-app/memory/MEMORY.md`, H)).toBeUndefined();
     expect(escapeFloorHit(`cat ${H}/sdk/projects/-Users-x-app/abc.jsonl`, H)).toBeUndefined();
   });
   test("review M2: the compat-link spelling <home>/projects is the same store", () => {
-    expect(escapeFloorHit("echo x >> ~/.winter/projects/-Users-x-app/abc.jsonl", H)).toBeDefined();
+    expect(escapeFloorHit("echo x >> ~/.clover/projects/-Users-x-app/abc.jsonl", H)).toBeDefined();
     expect(escapeFloorHit(`rm -rf ${H}/projects`, H)).toBeDefined();
-    expect(escapeFloorHit("echo note >> ~/.winter/projects/-Users-x-app/memory/MEMORY.md", H)).toBeUndefined();
-    expect(escapeFloorHit("cat ~/.winter/projects/-Users-x-app/abc.jsonl", H)).toBeUndefined();
+    expect(escapeFloorHit("echo note >> ~/.clover/projects/-Users-x-app/memory/MEMORY.md", H)).toBeUndefined();
+    expect(escapeFloorHit("cat ~/.clover/projects/-Users-x-app/abc.jsonl", H)).toBeUndefined();
   });
   test("hook", () => {
     expect(storeWriteDenial("Write", { file_path: `${H}/sdk/projects/k/a.jsonl` }, { home: H })).toBeDefined();
@@ -93,40 +93,40 @@ describe("writes: sdk/projects/** except */memory/** — no rule, not allowliste
   });
 });
 
-describe("writes: **/.winter/mcp.json, **/.winter/settings*.json, **/.winter/agents/** — rules ✓, sandbox <cwd>+<root>, floor write-shaped, hook ✓", () => {
+describe("writes: **/.clover/mcp.json, **/.clover/settings*.json, **/.clover/agents/** — rules ✓, sandbox <cwd>+<root>, floor write-shaped, hook ✓", () => {
   test("deny rules, at any depth", () => {
-    expect(writeRule("//**/.winter/mcp.json")).toBe(true);
-    expect(writeRule("//**/.winter/settings*.json")).toBe(true);
-    expect(writeRule("//**/.winter/agents/**")).toBe(true);
+    expect(writeRule("//**/.clover/mcp.json")).toBe(true);
+    expect(writeRule("//**/.clover/settings*.json")).toBe(true);
+    expect(writeRule("//**/.clover/agents/**")).toBe(true);
   });
   test("sandbox: real paths for the session's cwd AND its project root", () => {
     const { cwd, root } = project();
     const w = sandboxConfigFor(H, cwd).filesystem!.denyWrite!;
     for (const base of [cwd, root]) {
-      for (const f of ["mcp.json", "settings.json", "settings.local.json", "agents"]) expect(w).toContain(join(base, ".winter", f));
+      for (const f of ["mcp.json", "settings.json", "settings.local.json", "agents"]) expect(w).toContain(join(base, ".clover", f));
     }
   });
   test("sandbox: the protected project subdirectories too, so a Bash write has to go through a tool and its card (§7.2)", () => {
     const { cwd, root } = project();
     const w = sandboxConfigFor(H, cwd).filesystem!.denyWrite!;
     for (const base of [cwd, root]) {
-      for (const d of ["skills", "commands", "rules", "output-styles"]) expect(w).toContain(join(base, ".winter", d));
+      for (const d of ["skills", "commands", "rules", "output-styles"]) expect(w).toContain(join(base, ".clover", d));
     }
-    // <root>/WINTER.md stays ordinary, as claude treats CLAUDE.md
-    expect(w).not.toContain(join(root, "WINTER.md"));
+    // <root>/CLOVER.md stays ordinary, as claude treats CLAUDE.md
+    expect(w).not.toContain(join(root, "CLOVER.md"));
   });
   test("escape floor: write-shaped for mcp.json and settings*.json; the two claude settings files stay ANY-mention", () => {
-    expect(escapeFloorHit("echo '{}' > .winter/mcp.json", H)).toBeDefined();
-    expect(escapeFloorHit("cp x.json app/.winter/settings.team.json", H)).toBeDefined();
-    expect(escapeFloorHit("cat .winter/mcp.json", H)).toBeUndefined();
-    expect(escapeFloorHit("cat .winter/settings.local.json", H)).toBeDefined(); // unchanged, stricter than the table
-    expect(escapeFloorHit("ls .winter/agents", H)).toBeDefined();               // unchanged, stricter than the table
+    expect(escapeFloorHit("echo '{}' > .clover/mcp.json", H)).toBeDefined();
+    expect(escapeFloorHit("cp x.json app/.clover/settings.team.json", H)).toBeDefined();
+    expect(escapeFloorHit("cat .clover/mcp.json", H)).toBeUndefined();
+    expect(escapeFloorHit("cat .clover/settings.local.json", H)).toBeDefined(); // unchanged, stricter than the table
+    expect(escapeFloorHit("ls .clover/agents", H)).toBeDefined();               // unchanged, stricter than the table
   });
   test("hook: the write-tool fence names them", () => {
     for (const f of ["mcp.json", "settings.json", "settings.local.json", "settings.x.json", "agents/a.md"]) {
-      expect(controlPlaneTargetForCall("Write", { file_path: `/Users/x/code/app/.winter/${f}` }, "/", homeFenceFor(H))).not.toBeNull();
+      expect(controlPlaneTargetForCall("Write", { file_path: `/Users/x/code/app/.clover/${f}` }, "/", homeFenceFor(H))).not.toBeNull();
     }
-    expect(controlPlaneTargetForCall("Write", { file_path: "/Users/x/code/app/.winter/rules/a.md" }, "/", homeFenceFor(H))).toBeNull();
+    expect(controlPlaneTargetForCall("Write", { file_path: "/Users/x/code/app/.clover/rules/a.md" }, "/", homeFenceFor(H))).toBeNull();
   });
 });
 
@@ -146,11 +146,11 @@ describe("writes: <home>/computer-use/** (ComputerV2's own records: wakes.json, 
     expect(homeFencedDirs(H)).toContain(`${H}/computer-use`);
     // Reads stay unrestricted.
     expect(escapeFloorHit(`cat ${H}/computer-use/recent-apps.json`, H)).toBeUndefined();
-    expect(escapeFloorHit("cat ~/.winter/computer-use/wakes.json", H)).toBeUndefined();
+    expect(escapeFloorHit("cat ~/.clover/computer-use/wakes.json", H)).toBeUndefined();
     expect(escapeFloorHit(`ls ${H}/computer-use`, H)).toBeUndefined();
     // A write there is refused — a forged wakes.json would put daemon-worded text into another session's turn.
     expect(escapeFloorHit(`echo '{}' > ${H}/computer-use/wakes.json`, H)).toBeDefined();
-    expect(escapeFloorHit("cp forged.json ~/.winter/computer-use/wakes.json", H)).toBeDefined();
+    expect(escapeFloorHit("cp forged.json ~/.clover/computer-use/wakes.json", H)).toBeDefined();
     expect(escapeFloorHit(`rm -rf ${H}/computer-use`, H)).toBeDefined();
     expect(escapeFloorHit(`rm -rf ${H}/computer-use*`, H)).toBeDefined(); // a glob after it still counts
     // A path that merely starts the same is another path.
@@ -173,15 +173,15 @@ describe("writes: claude-resume-* roots — rule glob, not writable by the sandb
   });
 });
 
-describe("reads: sdk/.winter.json and the run-folder/staging config files — rule glob, sandbox real path, hook ✓", () => {
+describe("reads: sdk/.clover.json and the run-folder/staging config files — rule glob, sandbox real path, hook ✓", () => {
   test("deny rules", () => {
-    expect(readRule(`/${H}/sdk/.winter.json`)).toBe(true);
-    for (const f of [".winter.json", ".claude.json", ".credentials.json"]) expect(readRule(`/${H}/cache/runs/*/${f}`)).toBe(true);
+    expect(readRule(`/${H}/sdk/.clover.json`)).toBe(true);
+    for (const f of [".clover.json", ".claude.json", ".credentials.json"]) expect(readRule(`/${H}/cache/runs/*/${f}`)).toBe(true);
     // round 6: a staging root's config files (and `backups/`) are read-denied — no longer the whole root
-    for (const f of [".winter.json", ".claude.json", ".credentials.json"]) expect(readRule(`/${join(tmpdir(), `${RESUME_STAGING_PREFIX}*`, f)}`)).toBe(true);
+    for (const f of [".clover.json", ".claude.json", ".credentials.json"]) expect(readRule(`/${join(tmpdir(), `${RESUME_STAGING_PREFIX}*`, f)}`)).toBe(true);
   });
-  test("sandbox denyRead: sdk/.winter.json as a real path (the regex half has no SDK channel — DECISION 12)", () => {
-    expect(sandboxConfigFor(H).filesystem!.denyRead).toContain(`${H}/sdk/.winter.json`);
+  test("sandbox denyRead: sdk/.clover.json as a real path (the regex half has no SDK channel — DECISION 12)", () => {
+    expect(sandboxConfigFor(H).filesystem!.denyRead).toContain(`${H}/sdk/.clover.json`);
   });
   test("hook", () => {
     expect(protectedReadDenial("Read", { file_path: `${H}/cache/runs/r/.credentials.json` }, { home: H })).toBeDefined();
@@ -197,7 +197,7 @@ describe("reads: run/, runtimes/ — unchanged", () => {
 });
 
 // Review I7: Bash could write the protected paths with no card — `sdk/{skills,commands,rules,output-styles}`
-// and `sdk/WINTER.md` were in neither the sandbox nor the escape floor, and a project's `.winter/<kind>`
+// and `sdk/CLOVER.md` were in neither the sandbox nor the escape floor, and a project's `.clover/<kind>`
 // only in the sandbox. A SEPARATE list feeds only the sandbox's denyWrite and a write-shaped floor, so the
 // write TOOLS keep the spec's card (the shared list feeds `controlPlaneTargetForCall`'s hard deny).
 describe("review I7: protected paths vs Bash", () => {
@@ -205,42 +205,42 @@ describe("review I7: protected paths vs Bash", () => {
   test("the sandbox denies them (a sandboxed Bash whose cwd is $HOME included)", () => {
     const w = sandboxConfigFor(H, "/Users/x").filesystem!.denyWrite!;
     for (const k of kinds) expect(w).toContain(`${H}/sdk/${k}`);
-    expect(w).toContain(`${H}/sdk/WINTER.md`);
+    expect(w).toContain(`${H}/sdk/CLOVER.md`);
   });
   test("…but NOT through the shared self-grant list: the write tools still get a card, not a hard deny", () => {
     for (const k of kinds) expect(homeFencedDirs(H)).not.toContain(`${H}/sdk/${k}`);
-    expect(homeFencedDirs(H)).not.toContain(`${H}/sdk/WINTER.md`);
+    expect(homeFencedDirs(H)).not.toContain(`${H}/sdk/CLOVER.md`);
     expect(controlPlaneTargetForCall("Write", { file_path: `${H}/sdk/skills/x/SKILL.md` }, "/", homeFenceFor(H))).toBeNull();
-    expect(controlPlaneTargetForCall("Write", { file_path: `${H}/sdk/WINTER.md` }, "/", homeFenceFor(H))).toBeNull();
+    expect(controlPlaneTargetForCall("Write", { file_path: `${H}/sdk/CLOVER.md` }, "/", homeFenceFor(H))).toBeNull();
   });
   test("the escape floor refuses a write-shaped use; reads and skill scripts still run", () => {
     for (const cmd of [
       `echo x > ${H}/sdk/skills/evil/SKILL.md`,
-      `cp r.md ~/.winter/sdk/rules/r.md`,
-      `echo hi >> ${H}/sdk/WINTER.md`,
-      "mkdir -p packages/app/.winter/skills/x && echo y > packages/app/.winter/skills/x/SKILL.md",
-      "tee /elsewhere/proj/.winter/commands/deploy.md < x",
+      `cp r.md ~/.clover/sdk/rules/r.md`,
+      `echo hi >> ${H}/sdk/CLOVER.md`,
+      "mkdir -p packages/app/.clover/skills/x && echo y > packages/app/.clover/skills/x/SKILL.md",
+      "tee /elsewhere/proj/.clover/commands/deploy.md < x",
       `cp s.md ${H}/skills/self/s/SKILL.md`, // the old path (a compat link on a migrated home)
     ]) expect({ cmd, hit: escapeFloorHit(cmd, H) !== undefined }).toEqual({ cmd, hit: true });
-    for (const cmd of [`cat ${H}/sdk/skills/a/SKILL.md`, `bash ${H}/sdk/skills/a/run.sh`, "ls packages/app/.winter/rules", `cat ${H}/sdk/WINTER.md`]) {
+    for (const cmd of [`cat ${H}/sdk/skills/a/SKILL.md`, `bash ${H}/sdk/skills/a/run.sh`, "ls packages/app/.clover/rules", `cat ${H}/sdk/CLOVER.md`]) {
       expect({ cmd, hit: escapeFloorHit(cmd, H) }).toEqual({ cmd, hit: undefined });
     }
   });
-  // Round 3, minor 4: the home's basename (`.winter`) is one of the floor's home spellings, so the WINTER.md
-  // needle matched EVERY project's `.winter/WINTER.md` — which the spec leaves ordinary. The needle is the
+  // Round 3, minor 4: the home's basename (`.clover`) is one of the floor's home spellings, so the CLOVER.md
+  // needle matched EVERY project's `.clover/CLOVER.md` — which the spec leaves ordinary. The needle is the
   // home's own now: a full spelling of the home, or the bare basename only from the home's parent directory.
-  test("round 3, minor 4: a project's .winter/WINTER.md is ordinary; the home's own WINTER.md is still refused", () => {
-    for (const cmd of ["echo x > .winter/WINTER.md", "cp notes.md packages/app/.winter/WINTER.md", "cd /Users/x/proj && echo x >> .winter/WINTER.md"]) {
+  test("round 3, minor 4: a project's .clover/CLOVER.md is ordinary; the home's own CLOVER.md is still refused", () => {
+    for (const cmd of ["echo x > .clover/CLOVER.md", "cp notes.md packages/app/.clover/CLOVER.md", "cd /Users/x/proj && echo x >> .clover/CLOVER.md"]) {
       expect({ cmd, hit: escapeFloorHit(cmd, H, "/Users/x/proj") }).toEqual({ cmd, hit: undefined });
     }
     // from the home's parent, the bare spelling counts only as a word of its own — a project below it is not the home
-    expect(escapeFloorHit("echo x > proj/.winter/WINTER.md", H, "/Users/x")).toBeUndefined();
-    expect(escapeFloorHit("echo x > ./.winter/WINTER.md", H, "/Users/x")).toBeDefined();
+    expect(escapeFloorHit("echo x > proj/.clover/CLOVER.md", H, "/Users/x")).toBeUndefined();
+    expect(escapeFloorHit("echo x > ./.clover/CLOVER.md", H, "/Users/x")).toBeDefined();
     for (const [cmd, cwd] of [
-      [`echo x > ${H}/WINTER.md`, "/Users/x/proj"],
-      [`echo x > ${H}/sdk/WINTER.md`, "/Users/x/proj"],
-      ["echo x > .winter/WINTER.md", "/Users/x"],                  // run from the home's parent: it IS the home's
-      ["cd /Users/x && echo x > .winter/sdk/WINTER.md", "/Users/x/proj"],
+      [`echo x > ${H}/CLOVER.md`, "/Users/x/proj"],
+      [`echo x > ${H}/sdk/CLOVER.md`, "/Users/x/proj"],
+      ["echo x > .clover/CLOVER.md", "/Users/x"],                  // run from the home's parent: it IS the home's
+      ["cd /Users/x && echo x > .clover/sdk/CLOVER.md", "/Users/x/proj"],
     ] as const) expect({ cmd, hit: escapeFloorHit(cmd, H, cwd) !== undefined }).toEqual({ cmd, hit: true });
   });
 });
@@ -287,23 +287,23 @@ describe("round 4, minor 4: glob metacharacters in the daemon's own rule paths",
     expect(escapeRulePath("/u/a\\b")).toBe("/u/a\\\\\\\\b");
   });
   test("a home containing [x] still has its control-plane deny rules applied — glob parts intact", () => {
-    const home = "/Users/x/[wip] homes/.winter";
+    const home = "/Users/x/[wip] homes/.clover";
     const rules = controlPlaneDenyRules(home);
     const writes = rules.filter((r) => r.startsWith("Write("));
     const reads = rules.filter((r) => r.startsWith("Read("));
     for (const target of [`${home}/run/core.sock`, `${home}/runtimes/bin/winter`, `${home}/settings.json`, `${home}/sdk/settings.json`, `${home}/sdk/agents/a.md`, `${home}/cache/runs/r1/x`, `${home}/plugins/p/plugin.json`, `${home}/trust.json`]) {
       expect({ target, denied: writes.some((r) => gitignoreMatch(r, target)) }).toEqual({ target, denied: true });
     }
-    for (const target of [`${home}/run/core.sock`, `${home}/runtimes/runtime-state.db`, `${home}/sdk/.winter.json`, `${home}/cache/runs/r1/.claude.json`]) {
+    for (const target of [`${home}/run/core.sock`, `${home}/runtimes/runtime-state.db`, `${home}/sdk/.clover.json`, `${home}/cache/runs/r1/.claude.json`]) {
       expect({ target, denied: reads.some((r) => gitignoreMatch(r, target)) }).toEqual({ target, denied: true });
     }
     // the project-independent glob rules are untouched, and still match
-    expect(writes.some((r) => gitignoreMatch(r, "/p/app/.winter/settings.local.json"))).toBe(true);
+    expect(writes.some((r) => gitignoreMatch(r, "/p/app/.clover/settings.local.json"))).toBe(true);
     // the old spelling (unescaped) is what failed: `[wip]` read as a one-character class
     expect(gitignoreMatch(`Write(//${home}/run/**)`, `${home}/run/core.sock`)).toBe(false);
   });
   test("a home containing parens and a backslash still has its control-plane deny rules applied", () => {
-    for (const home of ["/Users/x/p (old)/.winter", "/Users/x/a\\b/.winter"]) {
+    for (const home of ["/Users/x/p (old)/.clover", "/Users/x/a\\b/.clover"]) {
       const writes = controlPlaneDenyRules(home).filter((r) => r.startsWith("Write("));
       for (const target of [`${home}/run/core.sock`, `${home}/settings.json`, `${home}/trust.json`]) {
         expect({ target, denied: writes.some((r) => gitignoreMatch(r, target)) }).toEqual({ target, denied: true });
@@ -339,7 +339,7 @@ describe("round 6: staging roots and run folders — config files and backups/ r
   test("deny rules: a tool result inside a staging root is readable; config files and backups are not, in both containers", () => {
     for (const tool of ["Read", "Glob", "Grep"]) expect({ tool, denied: deniedFor(tool, toolResult) }).toEqual({ tool, denied: false });
     for (const root of [staging, runFolder]) {
-      for (const f of [".claude.json", ".credentials.json", ".winter.json", "backups/.claude.json.backup.123"]) {
+      for (const f of [".claude.json", ".credentials.json", ".clover.json", "backups/.claude.json.backup.123"]) {
         const target = `${root}/${f}`;
         expect({ target, denied: deniedFor("Read", target) }).toEqual({ target, denied: true });
       }
@@ -371,7 +371,7 @@ describe("round 6: staging roots and run folders — config files and backups/ r
 // escape floor and the write-tool fence compare REAL paths — they keep the literal list (`home-fence.ts`),
 // so a `[`-named home is still fenced when a command or a tool names it the way it is really spelled.
 describe("C-1: a `[wip]` home — the escape floor and the write-tool fence match the LITERAL path", () => {
-  const W = "/Users/x/[wip] homes/.winter";
+  const W = "/Users/x/[wip] homes/.clover";
   test("the escape floor matches the literal `[wip]` spelling in a command (quoted or not)", () => {
     expect(escapeFloorHit(`echo x > '${W}/trust.json'`, W)).toBeDefined();
     expect(escapeFloorHit(`ls "${W}/run"`, W)).toBeDefined();
@@ -389,54 +389,54 @@ describe("C-1: a `[wip]` home — the escape floor and the write-tool fence matc
   });
 });
 
-// R.3 C-1 (the whole-branch review): WS-21 exports new variables into every child — the Winter child gets
-// `WINTER_HOME=<home>/cache/runs/<id>` (its run folder), `WINTER_STORE_HOME=<home>/sdk` and
-// `WINTER_PLUGIN_CACHE_DIR=<home>/sdk/plugins`; the official child `CLAUDE_CONFIG_DIR=<run folder>` and
+// R.3 C-1 (the whole-branch review): WS-21 exports new variables into every child — the Clover child gets
+// `CLOVER_HOME=<home>/cache/runs/<id>` (its run folder), `CLOVER_STORE_HOME=<home>/sdk` and
+// `CLOVER_PLUGIN_CACHE_DIR=<home>/sdk/plugins`; the official child `CLAUDE_CONFIG_DIR=<run folder>` and
 // `CLAUDE_CODE_PLUGIN_CACHE_DIR=<home>/sdk/plugins`. A child's Bash hands its whole environment to the shell,
 // so a model can name every fenced store through them. The floor knows each spelling now.
 describe("R.3 C-1: the variables WS-21 exports into every child — the escape floor refuses them", () => {
   test("a write-shaped use of each spelling is refused", () => {
     for (const cmd of [
-      "echo x > $WINTER_STORE_HOME/agents/evil.md",
-      "echo x > ${WINTER_STORE_HOME}/agents/evil.md",
-      "echo x > $WINTER_STORE_HOME/skills/x/SKILL.md",
-      "echo x > ${WINTER_STORE_HOME}/skills/x/SKILL.md",
-      "cp r.md $WINTER_STORE_HOME/rules/r.md",
-      "echo hi >> $WINTER_STORE_HOME/WINTER.md",
-      "echo x >> $WINTER_STORE_HOME/projects/k/id.jsonl",
-      "echo x >> ${WINTER_STORE_HOME}/projects/k/id.jsonl",
-      "cd $WINTER_STORE_HOME && cp evil.md agents/x.md",
-      "echo '{}' > $WINTER_PLUGIN_CACHE_DIR/p/hooks/hooks.json",
-      "echo '{}' > ${WINTER_PLUGIN_CACHE_DIR}/p/hooks/hooks.json",
-      "echo '{}' > $WINTER_STORE_HOME/plugins/p/hooks/hooks.json",
+      "echo x > $CLOVER_STORE_HOME/agents/evil.md",
+      "echo x > ${CLOVER_STORE_HOME}/agents/evil.md",
+      "echo x > $CLOVER_STORE_HOME/skills/x/SKILL.md",
+      "echo x > ${CLOVER_STORE_HOME}/skills/x/SKILL.md",
+      "cp r.md $CLOVER_STORE_HOME/rules/r.md",
+      "echo hi >> $CLOVER_STORE_HOME/CLOVER.md",
+      "echo x >> $CLOVER_STORE_HOME/projects/k/id.jsonl",
+      "echo x >> ${CLOVER_STORE_HOME}/projects/k/id.jsonl",
+      "cd $CLOVER_STORE_HOME && cp evil.md agents/x.md",
+      "echo '{}' > $CLOVER_PLUGIN_CACHE_DIR/p/hooks/hooks.json",
+      "echo '{}' > ${CLOVER_PLUGIN_CACHE_DIR}/p/hooks/hooks.json",
+      "echo '{}' > $CLOVER_STORE_HOME/plugins/p/hooks/hooks.json",
       "echo '{}' > $CLAUDE_CODE_PLUGIN_CACHE_DIR/p/hooks/hooks.json",
       "echo '{}' > ${CLAUDE_CODE_PLUGIN_CACHE_DIR}/p/hooks/hooks.json",
       "echo x > $CLAUDE_CONFIG_DIR/skills/foo/SKILL.md",
       "echo x > ${CLAUDE_CONFIG_DIR}/skills/foo/SKILL.md",
       "ln -sfn /tmp/evil $CLAUDE_CONFIG_DIR/agents",
-      // the Winter child's WINTER_HOME is its run folder, under `<home>/cache`
-      "echo x > $WINTER_HOME/anything",
-      "rm -rf ${WINTER_HOME}",
-      "ECHO X > $WINTER_STORE_HOME/AGENTS/EVIL.MD",
+      // the Clover child's CLOVER_HOME is its run folder, under `<home>/cache`
+      "echo x > $CLOVER_HOME/anything",
+      "rm -rf ${CLOVER_HOME}",
+      "ECHO X > $CLOVER_STORE_HOME/AGENTS/EVIL.MD",
     ]) expect({ cmd, hit: escapeFloorHit(cmd, H) !== undefined }).toEqual({ cmd, hit: true });
   });
   test("…and the any-mention stores stay refused on any mention under the store spelling", () => {
-    for (const cmd of ["ls $WINTER_STORE_HOME/agents", "cat ${WINTER_STORE_HOME}/agents/a.md"]) {
+    for (const cmd of ["ls $CLOVER_STORE_HOME/agents", "cat ${CLOVER_STORE_HOME}/agents/a.md"]) {
       expect({ cmd, hit: escapeFloorHit(cmd, H) !== undefined }).toEqual({ cmd, hit: true });
     }
   });
-  test("reads, skill scripts and the memory directory stay allowed (as under $WINTER_HOME)", () => {
+  test("reads, skill scripts and the memory directory stay allowed (as under $CLOVER_HOME)", () => {
     for (const cmd of [
-      "cat $WINTER_STORE_HOME/projects/k/x.jsonl",
-      "ls ${WINTER_STORE_HOME}/projects",
-      "echo note >> $WINTER_STORE_HOME/projects/k/memory/MEMORY.md",
-      "cat $WINTER_STORE_HOME/skills/a/SKILL.md",
-      "cat $WINTER_PLUGIN_CACHE_DIR/p/skills/x/SKILL.md",
+      "cat $CLOVER_STORE_HOME/projects/k/x.jsonl",
+      "ls ${CLOVER_STORE_HOME}/projects",
+      "echo note >> $CLOVER_STORE_HOME/projects/k/memory/MEMORY.md",
+      "cat $CLOVER_STORE_HOME/skills/a/SKILL.md",
+      "cat $CLOVER_PLUGIN_CACHE_DIR/p/skills/x/SKILL.md",
       "bash $CLAUDE_CODE_PLUGIN_CACHE_DIR/p/skills/x/run.sh",
       "cat $CLAUDE_CONFIG_DIR/skills/foo/SKILL.md",
-      "bash $WINTER_HOME/skills/x/run.sh",
-      "echo note >> $WINTER_HOME/projects/k/memory/MEMORY.md",
-      "echo x > $WINTER_HOME_BACKUP/notes.md",
+      "bash $CLOVER_HOME/skills/x/run.sh",
+      "echo note >> $CLOVER_HOME/projects/k/memory/MEMORY.md",
+      "echo x > $CLOVER_HOME_BACKUP/notes.md",
     ]) expect({ cmd, hit: escapeFloorHit(cmd, H) }).toEqual({ cmd, hit: undefined });
   });
 });
@@ -446,45 +446,45 @@ describe("R.3 C-1: the variables WS-21 exports into every child — the escape f
 // PROTECT cannot differ.
 describe("R.3 I-1: a linked worktree — the sandbox protects the walk up to the worktree's own top", () => {
   test("from a directory inside a linked worktree, the worktree top's protected dirs are denied", () => {
-    const repo = realpathSync(mkdtempSync(join(tmpdir(), "winter-fences-i1-repo-")));
+    const repo = realpathSync(mkdtempSync(join(tmpdir(), "clover-fences-i1-repo-")));
     const g = (args: string[], cwd: string) => expect(Bun.spawnSync(["git", "-C", cwd, ...args], { stdout: "ignore", stderr: "ignore" }).exitCode).toBe(0);
     g(["init", "-q"], repo);
     g(["-c", "user.email=t@t.test", "-c", "user.name=t", "commit", "--allow-empty", "-q", "-m", "i"], repo);
-    const wt = join(realpathSync(mkdtempSync(join(tmpdir(), "winter-fences-i1-wt-"))), "wt");
+    const wt = join(realpathSync(mkdtempSync(join(tmpdir(), "clover-fences-i1-wt-"))), "wt");
     g(["worktree", "add", "-q", "-b", `i1-${Math.random().toString(16).slice(2)}`, wt], repo);
     const cwd = join(wt, "pkg");
     mkdirSync(cwd, { recursive: true });
     const w = sandboxConfigFor(H, cwd).filesystem!.denyWrite!;
     for (const kind of ["skills", "commands", "rules", "output-styles"]) {
-      expect(w).toContain(join(wt, ".winter", kind));
-      expect(w).toContain(join(cwd, ".winter", kind));
+      expect(w).toContain(join(wt, ".clover", kind));
+      expect(w).toContain(join(cwd, ".clover", kind));
     }
-    for (const f of ["mcp.json", "settings.json", "settings.local.json", "agents"]) expect(w).toContain(join(wt, ".winter", f));
+    for (const f of ["mcp.json", "settings.json", "settings.local.json", "agents"]) expect(w).toContain(join(wt, ".clover", f));
   });
 });
 
 // R.3 re-review B-1: `..` after a variable. The normaliser collapses `/<seg>/..` only when a `/` precedes the
-// segment, which a variable lacks, so `$WINTER_STORE_HOME/../agents` (and `$OUTDIR/../../agents` — the SDK's
+// segment, which a variable lacks, so `$CLOVER_STORE_HOME/../agents` (and `$OUTDIR/../../agents` — the SDK's
 // Bash has exported OUTDIR, `<home>/outputs/<sid>`, since WS-12) reached the home's fenced paths unseen. The
 // floor now also reads each command with the path variables a child's shell has replaced by the absolute
 // values the daemon knows, so every `..` depth and `cd` chain falls into the literal-path checks.
 describe("R.3 re-review B-1: `..` after a child's path variable reaches no fenced path", () => {
   test("each measured row is refused", () => {
     for (const cmd of [
-      "echo x > $WINTER_STORE_HOME/../agents/evil.md",
-      "echo x > ${WINTER_STORE_HOME}/../agents/evil.md",
-      "echo x > $WINTER_STORE_HOME/../skills/x/SKILL.md",
-      "cp evil $WINTER_STORE_HOME/../runtimes/bin/winter",
-      "echo x > $WINTER_STORE_HOME/../run/daemon.pid",
-      "echo '{}' > $WINTER_STORE_HOME/../permissions/projects.json",
-      "cd $WINTER_STORE_HOME/.. && echo x > agents/evil.md",
-      "cd $WINTER_STORE_HOME && cd .. && echo x > agents/evil.md",
+      "echo x > $CLOVER_STORE_HOME/../agents/evil.md",
+      "echo x > ${CLOVER_STORE_HOME}/../agents/evil.md",
+      "echo x > $CLOVER_STORE_HOME/../skills/x/SKILL.md",
+      "cp evil $CLOVER_STORE_HOME/../runtimes/bin/winter",
+      "echo x > $CLOVER_STORE_HOME/../run/daemon.pid",
+      "echo '{}' > $CLOVER_STORE_HOME/../permissions/projects.json",
+      "cd $CLOVER_STORE_HOME/.. && echo x > agents/evil.md",
+      "cd $CLOVER_STORE_HOME && cd .. && echo x > agents/evil.md",
       "echo x > $OUTDIR/../../agents/evil.md",
       "echo x > ${OUTDIR}/../../agents/evil.md",
       "cd $OUTDIR && cd ../.. && cp evil.json permissions/projects.json",
       // …and the other variables, every depth
-      "cat $WINTER_PLUGIN_CACHE_DIR/../../runtimes/x",
-      "cat $WINTER_HOME/../../../runtimes/anthropic-config/profile.json",
+      "cat $CLOVER_PLUGIN_CACHE_DIR/../../runtimes/x",
+      "cat $CLOVER_HOME/../../../runtimes/anthropic-config/profile.json",
       "cat $CLAUDE_CONFIG_DIR/../../../run/core.sock",
       "echo x > $CLAUDE_CODE_PLUGIN_CACHE_DIR/../agents/evil.md",
     ]) expect({ cmd, hit: escapeFloorHit(cmd, H) !== undefined }).toEqual({ cmd, hit: true });
@@ -494,7 +494,7 @@ describe("R.3 re-review B-1: `..` after a child's path variable reaches no fence
       "echo x > $OUTDIR/notes.md",
       "cp report.md ${OUTDIR}/report.md",
       "cat $OUTDIR/../../sdk/skills/a/SKILL.md",
-      "ls $WINTER_STORE_HOME/../outputs",
+      "ls $CLOVER_STORE_HOME/../outputs",
     ]) expect({ cmd, hit: escapeFloorHit(cmd, H) }).toEqual({ cmd, hit: undefined });
   });
 });

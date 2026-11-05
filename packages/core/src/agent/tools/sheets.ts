@@ -465,7 +465,7 @@ export function sheetsToolDefs(deps: SheetsToolDeps): ToolDefinition[] {
   return [{
     name: "sheets",
     description:
-      "Read and edit a spreadsheet Winter has access to (.xlsx, .ods, .xlsm — any format the office "
+      "Read and edit a spreadsheet Clover has access to (.xlsx, .ods, .xlsm — any format the office "
       + "engine can open). "
       + "**A write verb whose path does not exist CREATES the document** — there is no separate "
       + "\"create\" or \"new\" verb, exactly as with the `write` tool for ordinary files. The kind "
@@ -478,7 +478,7 @@ export function sheetsToolDefs(deps: SheetsToolDeps): ToolDefinition[] {
       + "Every write verb SAVES immediately — there is no separate save step, and "
       + "you cannot undo from here. A HUMAN can: if they have the file open in a tab, one press of "
       + "⌘Z takes back your whole tool call, however many cells it changed, and ⌘⇧Z puts it back. "
-      + "Before EVERY verb — `read` and `info` included — if a human already has that file open in a tab, Winter first SAVES whatever unsaved edits their tab is holding. So a read is NOT read-only with respect to disk: it flushes the human's own work to the file before reporting on it. (Nothing to flush when this tool opens the file itself.) The one exception is a file that ALSO changed on disk outside Winter while that tab held it: there are then two versions and Winter will not pick between them, so a read SKIPS that save and still answers from the tab's live content, and a write is REFUSED until the human answers the conflict banner in their tab. "
+      + "Before EVERY verb — `read` and `info` included — if a human already has that file open in a tab, Clover first SAVES whatever unsaved edits their tab is holding. So a read is NOT read-only with respect to disk: it flushes the human's own work to the file before reporting on it. (Nothing to flush when this tool opens the file itself.) The one exception is a file that ALSO changed on disk outside Clover while that tab held it: there are then two versions and Clover will not pick between them, so a read SKIPS that save and still answers from the tab's live content, and a write is REFUSED until the human answers the conflict banner in their tab. "
       + "Pick a verb:\n"
       + "• info — path. Sheet names, each one's used range, and which sheet is active. Start here: "
       + "it also doubles as a check that the Mac app can actually open documents right now.\n"
@@ -569,7 +569,7 @@ export function sheetsToolDefs(deps: SheetsToolDeps): ToolDefinition[] {
       + "the usual unrestricted-reads rule does not cover it.\n"
       + "The Mac app has to be running and showing this session, or nothing here can work — info's own "
       + "refusal tells you if that's the problem.\n"
-      + "A document a human has open with UNSAVED changes does NOT refuse a write any more — Winter saves their edits first and then writes. A write is refused only when that save FAILS (the refusal names what went wrong), or when the file also changed on disk outside Winter "
+      + "A document a human has open with UNSAVED changes does NOT refuse a write any more — Clover saves their edits first and then writes. A write is refused only when that save FAILS (the refusal names what went wrong), or when the file also changed on disk outside Clover "
       + "and the human still has a conflict banner to answer.\n"
       + "A very large range/grid is refused outright rather than silently truncated — ask for a "
       + "smaller one.\n"
@@ -711,7 +711,7 @@ export function sheetsToolDefs(deps: SheetsToolDeps): ToolDefinition[] {
       // whether or not the app happens to be attached at this instant.
       const resolvedPath = officeSheetsResolvedPathWithinFence(a.path, deps.dirsOf(sessionId));
       if (!resolvedPath) {
-        throw new Error(`path is outside the allowed directories: ${a.path}. Winter's office tools `
+        throw new Error(`path is outside the allowed directories: ${a.path}. Clover's office tools `
           + "are limited to the session's working directories.");
       }
 

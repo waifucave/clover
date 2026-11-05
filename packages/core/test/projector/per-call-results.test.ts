@@ -3,7 +3,7 @@
 // so every call's `tool_result` event is produced the moment its frame arrives — and it keeps "one
 // `tool_result` per call" as its own rule, turn-scoped, against a runtime that repeats a result.
 import { afterEach, describe, expect, test } from "bun:test";
-import type { SessionEvent } from "@yanlinglabs/winter-protocol";
+import type { SessionEvent } from "@waifucave/clover-protocol";
 import { attachFileDiff, clearSession } from "../../src/runtime-sdk/diff-attach";
 import type { ProtocolSdkMessage } from "../../src/projector";
 import { accept, assistantText, beginTurn, makeProjector, result, toolResult } from "./harness";

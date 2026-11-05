@@ -1,13 +1,14 @@
 import { closeSync, existsSync, mkdirSync, openSync, renameSync, statSync, writeSync } from "node:fs";
 import { join } from "node:path";
 import { format as formatArg } from "node:util";
+import { assertNotOtherInstallHome } from "./other-installs";
 
 /**
- * 2026-09-17 (field report, 0.114.x): the release app launches `winter-core` with stdout and stderr
+ * 2026-09-17 (field report, 0.114.x): the release app launches `clover-core` with stdout and stderr
  * on `/dev/null`, so every daemon line — the resolved runtime, each spawn's options, every typed
  * refusal, the child's relayed stderr — was discarded, and three incidents in one night each needed
  * a reproduction instead of a grep. The daemon now TEES both streams into
- * `<WINTER_HOME>/logs/daemon.log` itself (the directory already exists; `winter-dir.ts` creates it),
+ * `<CLOVER_HOME>/logs/daemon.log` itself (the directory already exists; `clover-dir.ts` creates it),
  * whoever launched it and however its stdio is wired.
  *
  *  - APPEND-only; rotation by size: past `maxBytes` the file is renamed to `daemon.log.1` (one previous
@@ -33,7 +34,9 @@ export function daemonLogPathFor(home: string): string {
   return join(home, "logs", DAEMON_LOG_FILE);
 }
 
-export function installDaemonLogFile(home: string, opts: { maxBytes?: number; now?: () => Date } = {}): DaemonLogFileHandle {
+export function installDaemonLogFile(home: string, opts: { maxBytes?: number; now?: () => Date; userHomeForTests?: string } = {}): DaemonLogFileHandle {
+  // Never a log inside another install's home (`other-installs.ts` names them).
+  assertNotOtherInstallHome(home, opts.userHomeForTests);
   const path = daemonLogPathFor(home);
   const maxBytes = opts.maxBytes ?? DAEMON_LOG_MAX_BYTES;
   const now = opts.now ?? (() => new Date());

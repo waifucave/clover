@@ -2,7 +2,7 @@
 // network (its seatbelt denies it), so this is one more bridge primitive the DAEMON answers, after policy.
 //
 //   - GET only, no body, no cookies (there is no jar), no Authorization or Referer, nothing the model supplies but the
-//     URL; an honest User-Agent (`Mozilla/5.0 (Macintosh; Mac OS X) Winter/<version>`). It is an OBSERVE primitive:
+//     URL; an honest User-Agent (`Mozilla/5.0 (Macintosh; Mac OS X) Clover/<version>`). It is an OBSERVE primitive:
 //     allowed under every code and Dispatch policy, `plan` included; no per-app card (no app is involved).
 //   - Every hop — the first and each redirect, at most 5 — is checked before anything is sent to it: http(s) only, no
 //     user name or password, the DANGEROUS-DOMAIN floor exactly as for tabs (`site-policy.ts`: a site card under
@@ -13,7 +13,7 @@
 //     address, even beside public ones, is refused, so a dial never falls back across classes. A redirect may lead into
 //     this Mac only from a read that started there (a public page must not make the daemon call the user's local
 //     services). The connect is pinned to a checked address (`web.ts`'s `followRedirectsWith`), and the LAN is never
-//     dialled (no Local Network prompt for Winter). A read never goes through an environment proxy (Bun's fetch obeys
+//     dialled (no Local Network prompt for Clover). A read never goes through an environment proxy (Bun's fetch obeys
 //     `HTTP_PROXY` and friends with no per-request way out, which would bypass the pin): while one applies, it refuses.
 //   - 15 s per read (clamped to the script's time left, cancelled with the run, PAUSED while a card waits), at most
 //     5 MiB off the wire and 5 MiB once decoded — a compressed body is inflated by hand and stops at the cap (Bun's own
@@ -46,10 +46,10 @@ export const READ_MAX_BYTES = 5 * 1024 * 1024;
 export const READ_MAX_CHARS = 1_048_576;
 export const READS_PER_SESSION = 8;
 export const READS_PER_HOST = 4;
-/** The name a dangerous-domain card gives the reader ("Allow Winter to use <host> in Winter's page reader?"). */
-export const READER_NAME = "Winter's page reader";
+/** The name a dangerous-domain card gives the reader ("Allow Clover to use <host> in Clover's page reader?"). */
+export const READER_NAME = "Clover's page reader";
 
-export const READ_USER_AGENT = `Mozilla/5.0 (Macintosh; Mac OS X) Winter/${CORE_VERSION}`;
+export const READ_USER_AGENT = `Mozilla/5.0 (Macintosh; Mac OS X) Clover/${CORE_VERSION}`;
 const READ_HEADERS: Record<string, string> = {
   Accept: "text/html, text/*, application/json, application/xml;q=0.9, */*;q=0.1",
   "Accept-Encoding": "gzip, deflate, br",
@@ -57,7 +57,7 @@ const READ_HEADERS: Record<string, string> = {
 };
 
 /** The page redirected somewhere it may not go — said without repeating the page's own choice of address. */
-export const REDIRECT_REFUSED = "the page redirected to an address Winter won't read";
+export const REDIRECT_REFUSED = "the page redirected to an address Clover won't read";
 
 export interface ReadResult {
   /** Where the read landed after redirects (credential values redacted). */
@@ -411,7 +411,7 @@ export class HttpReader {
         }
         const proxy = proxyFor(a, url, env);
         if (proxy !== undefined) {
-          return { refused: `a network proxy is set for Winter (${proxy}), and browsers.read() never reads through one — open the page in a tab, or remove the proxy setting from Winter's environment` };
+          return { refused: `a network proxy is set for Clover (${proxy}), and browsers.read() never reads through one — open the page in a tab, or remove the proxy setting from Clover's environment` };
         }
       }
       if (first) startedLocal = local;

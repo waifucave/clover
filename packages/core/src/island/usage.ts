@@ -1,6 +1,6 @@
-import type { SessionEvent } from "@yanlinglabs/winter-protocol";
+import type { SessionEvent } from "@waifucave/clover-protocol";
 
-// The Winter island's Usage tab, daemon half (`docs/claude/island.md`): what the daemon ALREADY sees about usage and
+// The Clover island's Usage tab, daemon half (`docs/claude/island.md`): what the daemon ALREADY sees about usage and
 // limits, gathered for `island.usage` — nothing estimated, nothing fetched from a provider.
 //
 //  - Plan windows: the runtime's `rate_limit_event` frames (the agent SDK's subscription-shaped quota report — a
@@ -10,7 +10,7 @@ import type { SessionEvent } from "@yanlinglabs/winter-protocol";
 //    fraction 0…1) are passed through only if a runtime ever sends them. The latest report per window kind is kept, in memory, since the daemon started.
 //  - Per session: the tokens its `turn_completed` events counted since the daemon started (often 0 for a provider row
 //    that reports no usage), and the last measured context size (`contextTokens`, sent only for a single-round turn).
-//  - The rest (Winter's background jobs' quota and subscription snapshot, a model's context window) is read from its
+//  - The rest (Clover's background jobs' quota and subscription snapshot, a model's context window) is read from its
 //    owner at ask time through `IslandUsageSources`.
 
 /** A plan-window report, as the projector hands it over (the SDK's `SDKRateLimitInfo`). */
@@ -44,7 +44,7 @@ export interface IslandSessionUsage {
 }
 
 export interface IslandUsageSources {
-  /** `quota.state`'s numbers: Winter's background jobs (titles, reviewer, dreamer, cleaner, research). */
+  /** `quota.state`'s numbers: Clover's background jobs (titles, reviewer, dreamer, cleaner, research). */
   background(): { kind: "ok" | "limited"; resumeAt?: number; inputTokens: number; outputTokens: number };
   /** The background jobs' latest subscription-quota snapshot (`QuotaManager.subscriptionQuota()`). */
   subscription?(): { info: Record<string, unknown>; at: number } | undefined;

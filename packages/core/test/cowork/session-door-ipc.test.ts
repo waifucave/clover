@@ -9,7 +9,7 @@ setDefaultTimeout(30_000);
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { ConnWriter, ERR, LineDecoder, METHODS, PROTOCOL_VERSION, encodeLine, type WritableSocket } from "@yanlinglabs/winter-protocol";
+import { ConnWriter, ERR, LineDecoder, METHODS, PROTOCOL_VERSION, encodeLine, type WritableSocket } from "@waifucave/clover-protocol";
 import { FileSecretStore } from "../../src/auth/secret-store";
 import { TokenAuthority } from "../../src/auth/tokens";
 import { startIpcServer } from "../../src/ipc/server";
@@ -72,7 +72,7 @@ function recordingDrivers(opts: { live?: boolean; refuse?: string; interrupt?: (
 }
 
 async function boot(door: CoworkSessionDoor | undefined) {
-  const home = mkdtempSync(join(tmpdir(), "winter-door-d4b-")), store = new SessionStore(home), db: RuntimeStateDb = openRuntimeStateDb(home);
+  const home = mkdtempSync(join(tmpdir(), "clover-door-d4b-")), store = new SessionStore(home), db: RuntimeStateDb = openRuntimeStateDb(home);
   const records = new CoworkRepository(db), cowork = new CoworkWorkspaceService(records);
   const made = records.create({ principalId: "fixture", requestId: "create" }, { ownership: "project", title: "fixture", ceiling: CEILING, sources: [FOLDER] });
   const sourceId = made.value.sources[0]!.sourceId, coworkId = "s_0123456789ab";
@@ -155,7 +155,7 @@ test("session.list carries a Cowork row's workspace reference from the binding; 
 
 // ------------------------------------------------------------------------------------------------ provisioning, capabilities
 function service(over: Partial<CoworkHostPorts> = {}) {
-  const home = mkdtempSync(join(tmpdir(), "winter-door-d4b-svc-")), db = openRuntimeStateDb(home), records = new CoworkRepository(db);
+  const home = mkdtempSync(join(tmpdir(), "clover-door-d4b-svc-")), db = openRuntimeStateDb(home), records = new CoworkRepository(db);
   cleanups.push(() => { db.close(); rmSync(home, { recursive: true, force: true }); });
   const host: CoworkHostPorts = {
     principal: () => ({ kind: "local-user", id: "local" }), grants: { folder: () => ({ rootIdentity: "root", writable: true, revoked: false }), repository: () => undefined },
@@ -253,9 +253,9 @@ test("pins (structural): no src module supplies a host's execution port, and the
 });
 
 test("pins (behavioural): the production host composition carries neither port, and its service reports false/false", () => {
-  const home = mkdtempSync(join(tmpdir(), "winter-door-prod-")), db = openRuntimeStateDb(home);
+  const home = mkdtempSync(join(tmpdir(), "clover-door-prod-")), db = openRuntimeStateDb(home);
   cleanups.push(() => { db.close(); rmSync(home, { recursive: true, force: true }); });
-  // daemon.ts: `opts.coworkHost ?? createMacCoworkHost(winterHome, undefined, runtime.db, coworkNativePort)`, plus `native`.
+  // daemon.ts: `opts.coworkHost ?? createMacCoworkHost(cloverHome, undefined, runtime.db, coworkNativePort)`, plus `native`.
   const native = { start: async () => undefined };
   for (const host of [disabledCoworkHost, createMacCoworkHost(home, undefined, db), createMacCoworkHost(home, undefined, db, native), { ...createMacCoworkHost(home, undefined, db), native }]) {
     expect(["provisioning" in host, "execution" in host]).toEqual([false, false]);
@@ -417,7 +417,7 @@ test("D4c fix: a late `failed` for a workspace a guest has started stays pending
 });
 
 test("D4c fix: resume drives EVERY pending creation once per boot, oldest first, in keyset pages, at most COWORK_PROVISION_CONCURRENCY at a time", async () => {
-  const home = mkdtempSync(join(tmpdir(), "winter-door-d4c-bound-")), db = openRuntimeStateDb(home);
+  const home = mkdtempSync(join(tmpdir(), "clover-door-d4c-bound-")), db = openRuntimeStateDb(home);
   cleanups.push(() => { db.close(); rmSync(home, { recursive: true, force: true }); });
   let clock = 0;
   const records = new CoworkRepository(db, () => new Date(Date.UTC(2026, 0, 1) + clock++ * 1000).toISOString());

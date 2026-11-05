@@ -5,8 +5,8 @@
 //   - no `to`: `<the session's temp dir>/downloads/<name>`;
 //   - `to`: a path relative to the session's working directory, or absolute inside it or inside the session's temp
 //     dir; a `to` ending in "/" is a directory (the name is appended).
-// Refused, naming the rule: a segment below the root that starts with "." (.git, .winter, .ssh, .env …), a control-plane
-// file name, a path on the sandbox's deny-write list, anything under the Winter home, a symlink anywhere from the root
+// Refused, naming the rule: a segment below the root that starts with "." (.git, .clover, .ssh, .env …), a control-plane
+// file name, a path on the sandbox's deny-write list, anything under the Clover home, a symlink anywhere from the root
 // down.
 //
 // Both roots are places the agent itself can write — and so can REPLACE: the session temp dir is a sandbox writable
@@ -66,7 +66,7 @@ export interface DownloadRoots {
   cwd: string | null | undefined;
   /** The session's temp directory AS SPELLED (`sessionTmpDirPath`) — never resolved by name. */
   tmpDir: string;
-  /** The Winter home: never written. */
+  /** The Clover home: never written. */
   home: string;
   /** The sandbox's deny-write list for the session (`sandboxConfigFor(home, cwd).filesystem.denyWrite`). */
   denyWrite: readonly string[];
@@ -132,11 +132,11 @@ export function planDownload(to: unknown, suggestedName: string, roots: Download
   // `to`'s own segments as written (a name is sanitised below — a hidden name the model asked for is refused, never
   // quietly renamed), then the final name.
   const dot = [...parts, name].find((p) => p.startsWith("."));
-  if (dot !== undefined) throw refused(`${shown}: Winter doesn't save downloads into hidden folders or files ("${dot}")`);
+  if (dot !== undefined) throw refused(`${shown}: Clover doesn't save downloads into hidden folders or files ("${dot}")`);
   if (FENCED_NAMES.has(name.toLowerCase())) throw refused(`${shown}: a download can't be named ${name} (a settings file) — give { to } another name`);
   const finalPath = join(hit.path, ...dirs, name);
   const home = [resolve(roots.home), real(roots.home)].filter((h): h is string => h !== undefined);
-  if (home.some((h) => inside(finalPath, h))) throw refused(`${shown} is inside Winter's own home — a download can't go there`);
+  if (home.some((h) => inside(finalPath, h))) throw refused(`${shown} is inside Clover's own home — a download can't go there`);
   for (const d of roots.denyWrite) {
     for (const spelled of new Set([resolve(d), real(d) ?? resolve(d)])) {
       if (inside(finalPath, spelled)) throw refused(`${shown} is on the sandbox's protected list — a download can't go there`);
@@ -173,7 +173,7 @@ function fsetxattr(fd: number, name: string, value: string): boolean {
 
 /** The value a browser writes: flags 0083 (downloaded, user approved), the time in hex seconds, the agent's name. */
 export function quarantineValue(nowMs: number): string {
-  return `0083;${Math.floor(nowMs / 1000).toString(16)};Winter;`;
+  return `0083;${Math.floor(nowMs / 1000).toString(16)};Clover;`;
 }
 
 /**
@@ -189,7 +189,7 @@ export function placeDownload(
   // Every step below is RELATIVE TO A DIRECTORY DESCRIPTOR opened O_NOFOLLOW (`fd-fs.ts`): the root, each folder on the
   // way down, the file. A folder swapped for a link at any moment fails the open of that step, and a swap after the
   // walk cannot redirect the create, the write or the clean-up — they all name the directories that were checked.
-  const notPlain = (what: string): AutomationFailure => refused(`${what} is not a plain folder (a link?) — Winter doesn't save through links`);
+  const notPlain = (what: string): AutomationFailure => refused(`${what} is not a plain folder (a link?) — Clover doesn't save through links`);
   const fds: number[] = [];
   let dirFd: number;
   try {
@@ -214,7 +214,7 @@ export function placeDownload(
     try {
       const srcStat = fstatSync(src);
       if (!srcStat.isFile()) throw new Error("the downloaded file is not a regular file");
-      if (srcStat.size > DOWNLOAD_MAX_BYTES) throw refused(`the file is larger than ${DOWNLOAD_MAX_BYTES / (1024 * 1024)} MiB — Winter doesn't save it`);
+      if (srcStat.size > DOWNLOAD_MAX_BYTES) throw refused(`the file is larger than ${DOWNLOAD_MAX_BYTES / (1024 * 1024)} MiB — Clover doesn't save it`);
       if (o.expectedBytes !== undefined && srcStat.size !== o.expectedBytes) throw new Error(`the download is incomplete (${srcStat.size} of ${o.expectedBytes} bytes)`);
       for (let n = 1; n <= 1000; n++) {
         const name = nameCandidate(plan.name, n);
@@ -232,7 +232,7 @@ export function placeDownload(
             const r = readSync(src, buf, 0, buf.length, null);
             if (r === 0) break;
             total += r;
-            if (total > DOWNLOAD_MAX_BYTES) throw refused(`the file is larger than ${DOWNLOAD_MAX_BYTES / (1024 * 1024)} MiB — Winter doesn't save it`);
+            if (total > DOWNLOAD_MAX_BYTES) throw refused(`the file is larger than ${DOWNLOAD_MAX_BYTES / (1024 * 1024)} MiB — Clover doesn't save it`);
             let off = 0;
             while (off < r) off += writeSync(fd, buf, off, r - off);
           }

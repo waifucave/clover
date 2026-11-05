@@ -4,9 +4,9 @@ import { dirname, join } from "node:path";
 import { advanceAuthorityRevision } from "./authority-revision";
 import { z } from "zod";
 import { loadCatalog } from "@yanlinglabs/winter-provider-catalog";
-import { ensureGlobalGitignore, WINTER_PERSONAL_IGNORES } from "./global-gitignore";
+import { ensureGlobalGitignore, CLOVER_PERSONAL_IGNORES } from "./global-gitignore";
 import { consoleProfileCredentialFile } from "./runtime-sdk/anthropic-paths";
-import { canonicalModelTag, facingNameToTag, isModelTag, splitTag, UNSTATED_TAG, WINTER_TEST_PREFIX, type ModelTag } from "./runtime-sdk/model-tag";
+import { canonicalModelTag, facingNameToTag, isModelTag, splitTag, UNSTATED_TAG, CLOVER_TEST_PREFIX, type ModelTag } from "./runtime-sdk/model-tag";
 // The ONE catalog-row-by-tag lookup (WS-20) — imported rather than re-written here so a role write
 // and a session's own model resolution agree on what "this model exists" means, by construction.
 // `effortVocabularyFor`: the ONE interpretation of a catalog row's `reasoning?.efforts`, shared with
@@ -51,17 +51,17 @@ import { CONNECTOR_ALL_TOOLS, normalizeConnectorTable, type ConnectorPermission,
  *  first, the same way "none" and "ultra" were verified for this list. */
 export const REASONING_EFFORTS = ["none", "low", "medium", "high", "xhigh", "max"] as const;
 
-/** WINTER-LEVEL effort tiers (provider-correctness T5) — selectable in Winter, **never on the wire**.
+/** CLOVER-LEVEL effort tiers (provider-correctness T5) — selectable in Clover, **never on the wire**.
  *
  *  This is a STRICTLY DISJOINT vocabulary from `REASONING_EFFORTS` above, and the two live next to
  *  each other so nobody reads one without the other. `REASONING_EFFORTS` is what the endpoint's
- *  request validator accepts. A value here is a Winter product decision that is TRANSLATED to a wire
+ *  request validator accepts. A value here is a Clover product decision that is TRANSLATED to a wire
  *  effort (`wireEffort` below) before any request body exists, plus whatever local behaviour the
  *  tier names.
  *
  *  `ultra` belongs here precisely BECAUSE the wire refuses it — the same global `invalid_value`
  *  enum documented above. It was never a real API level; it was a catalogue misreading. What the
- *  user actually wanted from it (the thing that made it look real) is now what it means in Winter:
+ *  user actually wanted from it (the thing that made it look real) is now what it means in Clover:
  *  `max` on the wire, plus a proactive-delegation posture in the system prompt
  *  (`ULTRA_DELEGATION_INSTRUCTION`, agent/context.ts). Code sessions only — see
  *  `clientEffortEligible`.
@@ -83,13 +83,13 @@ const CLIENT_EFFORT_WIRE: Record<ClientEffort, (typeof REASONING_EFFORTS)[number
   ultra: "max",
 };
 
-/** Whether `effort` is a Winter-level tier rather than a wire effort. Undefined (no selection) is
+/** Whether `effort` is a Clover-level tier rather than a wire effort. Undefined (no selection) is
  *  not a tier. */
 export function isClientEffort(effort: string | undefined): effort is ClientEffort {
   return effort !== undefined && (CLIENT_EFFORTS as readonly string[]).includes(effort);
 }
 
-/** Translate a SELECTED effort (a wire effort, a Winter tier, or nothing) into what may go on the
+/** Translate a SELECTED effort (a wire effort, a Clover tier, or nothing) into what may go on the
  *  wire. TOTAL by construction: every result is either `undefined` or a member of
  *  `REASONING_EFFORTS`, so no caller downstream of this can hand a tier to a provider. Applied at
  *  `AgentEngine.resolveSel` — the one place a session's stored effort becomes a request field. */
@@ -121,7 +121,7 @@ export function clientEffortEligible(mode: string | undefined): boolean {
  * "model … declares no effort vocabulary, so no effort level can be verified for it" ended the turn.
  * One function so those four can never disagree about what a model takes.
  *
- * The two branches are ALTERNATIVES, not layers: a Winter-level tier (`ultra`) never reaches the
+ * The two branches are ALTERNATIVES, not layers: a Clover-level tier (`ultra`) never reaches the
  * endpoint, so it is judged by the session's MODE only and never by the row's vocabulary. A wire
  * level is judged by the row: a catalog row with no vocabulary takes none; a row with one takes only
  * what it lists (plus `"none"`); a tag the catalog does not know (a BYO endpoint) is unconstrained.
@@ -131,7 +131,7 @@ export function effortRefusalFor(effort: string, model: string, mode: string | u
   const allowed = vocabulary.length > 0 ? ["none", ...vocabulary] : [];
   if (isClientEffort(effort)) {
     if (clientEffortEligible(mode)) return undefined;
-    return `effort '${effort}' is a Winter-level tier offered on code sessions only — this is a '${mode ?? "unknown"}' session (wire efforts: ${allowed.join(", ")})`;
+    return `effort '${effort}' is a Clover-level tier offered on code sessions only — this is a '${mode ?? "unknown"}' session (wire efforts: ${allowed.join(", ")})`;
   }
   if (allowed.length === 0 && model && rowForTag(model) !== undefined) {
     return `model '${model}' declares no reasoning-effort vocabulary — an effort cannot be set for it (leave it on the provider's default)`;
@@ -160,7 +160,7 @@ export function effortRefusalFor(effort: string, model: string, mode: string | u
  * an explicit `model` on `session.create` always has been. The constraint belongs where the
  * internal Provider is actually BUILT, not on the field a session's own default also reads.
  *
- * 2026-09-19 — THIS CONSTANT NO LONGER GATES ANYTHING. Winter's own background jobs run on any
+ * 2026-09-19 — THIS CONSTANT NO LONGER GATES ANYTHING. Clover's own background jobs run on any
  * provider in `internalEligibleProviderIds()` (below) that holds a credential, whatever
  * `settings.provider.model` says, so neither the builder nor the roles consult this set as a
  * predicate. It survives as the HEAD of `internalProviderPreferenceOrder()`: the two providers those
@@ -211,11 +211,11 @@ export const PermissionsSettings = z.object({
    *  string entries (`"Skill(<name>)"`, `"Agent(<type>)"`, …), forwarded verbatim to the child
    *  (`mode-options.ts`'s `permissionDenyRulesFor`) alongside the
    *  fixed control-plane fence (`controlPlaneDenyRules`). This is a COMPLETELY SEPARATE mechanism
-   *  from `allow` above: `allow` feeds Winter's OWN engine-level approval gate
+   *  from `allow` above: `allow` feeds Clover's OWN engine-level approval gate
    *  (`agent/permission-rules.ts`'s `PermissionRules`, a different grammar/evaluator entirely) and
    *  never reaches `Options` at all; `deny` here rides straight into the pinned runtimes' own
    *  permission evaluator, unparsed by anything in this repo. GLOBAL-scope only, the same posture
-   *  `allow`'s own doc states — a trusted project's `.winter/settings.json` cannot add to or clear
+   *  `allow`'s own doc states — a trusted project's `.clover/settings.json` cannot add to or clear
    *  this list (no union-merge wiring for it in `project-settings.ts`, deliberately: unlike
    *  `allow`/`additionalDirectories`, this is not a per-project override surface today). The one
    *  shipped writer is `settings.setSkillDenied` (`ipc/server.ts`), which toggles a single
@@ -233,7 +233,7 @@ export const DEFAULT_WINTER_IDLE_TIMEOUT_SEC = 900;
  *  (`McpStdioServerConfig`/`McpHttpServerConfig`/`McpSSEServerConfig`, `@yanlinglabs/winter-agent-sdk`)
  *  rather than inventing a fourth shape — an `McpSdkServerConfig` (in-process, carries a live JS
  *  instance) has no settings-file representation and is deliberately NOT one of these three.
- *  `enabled` is NOT one of the mirrored SDK fields — see `mcp.disabled` below for why Winter's own
+ *  `enabled` is NOT one of the mirrored SDK fields — see `mcp.disabled` below for why Clover's own
  *  "disable" spelling is a separate, name-keyed list instead of a per-entry flag here. */
 const McpStdioServerSettings = z.object({
   type: z.literal("stdio"),
@@ -261,7 +261,7 @@ const McpStdioServerSettings = z.object({
  * header (`Accept`, `X-Request-Id`, a custom non-credential marker, …) still passes through
  * unchanged. This is a DELIBERATE, DOCUMENTED narrowing of what the SDKs themselves accept for
  * `Options.mcpServers` — the pinned agent SDK's own `McpHttpServerConfig`/`McpSSEServerConfig`
- * place no such restriction on `headers`, only Winter's own settings door does, ahead of the SDK.
+ * place no such restriction on `headers`, only Clover's own settings door does, ahead of the SDK.
  */
 const CREDENTIAL_HEADER_EXACT_NAMES = new Set(["authorization", "x-api-key", "cookie", "proxy-authorization"]);
 function isCredentialShapedHeaderName(name: string): boolean {
@@ -287,7 +287,7 @@ function refuseCredentialShapedHeaders<T extends z.ZodObject<{ headers: z.ZodOpt
  * READ-DOOR companion to `refuseCredentialShapedHeaders` above (the WRITE-door refusal, unchanged
  * — `saveSettings` and every direct `Settings.parse`/`Settings.safeParse` caller still refuse a
  * credential-shaped header, full stop). A `settings.json` a HUMAN hand-edited can carry one the
- * moment they save the file outside Winter entirely, and refusing to *load* such a file is far
+ * moment they save the file outside Clover entirely, and refusing to *load* such a file is far
  * worse than the leak the write door guards against: `loadSettings` throwing is exactly what
  * `daemon.ts`'s boot catch turns into `"settings unavailable, agent disabled"` — disabling EVERY
  * session on the machine over ONE header on ONE configured MCP server. So the read door does the
@@ -398,7 +398,7 @@ export const Settings = z.object({
    *  it is the one shape that can name a server regardless of which tier configured it (today only
    *  `settings.mcpServers`, but a trusted project's `.mcp.json` server shares the same tool-name
    *  key space and could be named here too without needing its own settings-file entry to carry a
-   *  flag on). Mirrors claude's own `disabledMcpjsonServers` concept — same idea, Winter's own
+   *  flag on). Mirrors claude's own `disabledMcpjsonServers` concept — same idea, Clover's own
    *  settings shape (a flat name list, not nested under `mcpServers` itself, so disabling a server
    *  never touches its config block). A disabled server is withheld from BOTH legs
    *  (`external-mcp.ts`'s `configuredMcpServersFor`) and from the daemon's own boot-time
@@ -431,8 +431,8 @@ export const Settings = z.object({
     enabled: z.boolean().optional(),
     model: ModelTagSchemaCore.optional(),
   }).optional(),
-  /** CC-parity output style: the active style NAME (built-in or a `.winter/output-styles/<name>.md`).
-   *  Absent or "default" → Winter's base prompt (today's behavior). Hot-reloaded; per-project via the
+  /** CC-parity output style: the active style NAME (built-in or a `.clover/output-styles/<name>.md`).
+   *  Absent or "default" → Clover's base prompt (today's behavior). Hot-reloaded; per-project via the
    *  ProjectSettingsResolver. */
   outputStyle: z.string().optional(),
   plugins: z.object({
@@ -450,7 +450,7 @@ export const Settings = z.object({
     /** PluginSupervisor lifecycle overrides (Phase 4b Task 3, spec §3 — all four values are
      *  spec-defaulted when omitted: registration timeout 10s, backoff cap 60s, circuit 5
      *  failures/10min). The invoke timeout (default 60s) and the SIGTERM→SIGKILL kill grace (5s)
-     *  are deliberately NOT here — spec pins the former to the `WINTER_PLUGIN_TOOL_TIMEOUT_MS` env
+     *  are deliberately NOT here — spec pins the former to the `CLOVER_PLUGIN_TOOL_TIMEOUT_MS` env
      *  var and the latter isn't settings-overridable at all. */
     supervisor: z.object({
       registrationTimeoutMs: z.number().int().positive().optional(),
@@ -491,7 +491,7 @@ export const Settings = z.object({
      *  stream produces NO events for this long is aborted as stalled (its partial output is
      *  surfaced to the parent). ABSENT means the default 600000 (10 min — deliberately ≥ bash's
      *  own max per-call timeout, so a tool-bounded silent bash never falsely trips it; env
-     *  override: WINTER_SUBAGENT_STALL_TIMEOUT_MS). Hot, same live-getter semantics as timeoutMs
+     *  override: CLOVER_SUBAGENT_STALL_TIMEOUT_MS). Hot, same live-getter semantics as timeoutMs
      *  above. */
     stallTimeoutMs: z.number().int().positive().optional(),
   }).optional(),
@@ -505,7 +505,7 @@ export const Settings = z.object({
   /** Computer use (Phase 5 CU). `enabled` is the capability switch, default ON (user ruling
    *  2026-10-07): the `computer` tool is registered unless it is explicitly `false` — absent means
    *  on, `false` means CU does not exist for the session (`computerUseEnabledFrom`). `screenshotMaxDim` caps the longest
-   *  side of a captured screenshot (default 1280, Winter.app-side) to bound the base64 payload well
+   *  side of a captured screenshot (default 1280, Clover.app-side) to bound the base64 payload well
    *  under the NDJSON line limit and the model's image budget. The lease heartbeat/expiry reuse the
    *  `peripheral` block above. */
   computerUse: z.object({
@@ -530,7 +530,7 @@ export const Settings = z.object({
      *  row that is not an object, or an unknown value, never invalidates the file; `computerUseAppsFrom`
      *  reads an unknown access as `deny` (fail closed) and an unknown grant as none. */
     apps: z.record(z.string(), z.unknown()).optional(),
-    /** ComputerV2 Phase 4: Winter's headless browser (`browsers.open(url, { browser: "headless" })`) — offered unless
+    /** ComputerV2 Phase 4: Clover's headless browser (`browsers.open(url, { browser: "headless" })`) — offered unless
      *  `enabled` is false (`computerUseHeadlessEnabledFrom`); off, `browsers.list()` shows it with its reason. */
     headless: z.object({ enabled: z.boolean().optional() }).optional(),
     /** ComputerV2 Phase 4: a site's own agent tools (WebMCP) — discovered and callable unless false
@@ -597,7 +597,7 @@ export const Settings = z.object({
    *  `hooks.enabled` above, but read LIVE (hot, per [[no-daemon-restart-for-settings]]) by both
    *  daemon.ts's write-root join and context.ts's injection — a toggle takes effect on the
    *  session's NEXT tool call / turn, no restart. `directory` (absolute or `~/`-relative) replaces
-   *  the computed `~/.winter/projects/<key>/memory` path entirely (CC's own relocatable-directory
+   *  the computed `~/.clover/projects/<key>/memory` path entirely (CC's own relocatable-directory
    *  setting) — see memory-dir.ts's `memoryDirFor`. */
   memory: z
     .object({
@@ -663,34 +663,34 @@ export const Settings = z.object({
    *  between its rename and its commit is repaired at EVERY boot, flag or no flag, so turning the
    *  flag back off can never strand a half-moved tree. See `runtime-state/migrations/memory-keys.ts`.
    *
-   *  ── The Winter leg (8b) ──────────────────────────────────────────────────────────────────────
+   *  ── The Clover leg (8b) ──────────────────────────────────────────────────────────────────────
    *
-   *  `winterLeg` DECIDED, per mode, whether a NEW session ran on the Winter runtime or on the
+   *  `winterLeg` DECIDED, per mode, whether a NEW session ran on the Clover runtime or on the
    *  legacy engine (P8b-13) while both existed. Task 17 retired the engine: every mode runs on the
-   *  Winter leg, the keys are accepted for one release and a `false` is logged and ignored
+   *  Clover leg, the keys are accepted for one release and a `false` is logged and ignored
    *  (`winterLegDisabledKeys` below names them for the log). A flag governs new sessions only: a session runs to
    *  completion on the leg it was created with, which is what makes flipping one safe at any moment.
    *
    *  `winterExecutable` overrides the `winter` binary lookup (P8b-2's first door, ahead of
-   *  `WINTER_RUNTIME_EXECUTABLE`, the bundle drop and `<WINTER_HOME>/runtimes/bin/winter`).
+   *  `CLOVER_RUNTIME_EXECUTABLE`, the bundle drop and `<CLOVER_HOME>/runtimes/bin/winter`).
    *  `advisorModel` names the model the router's advisor uses. Both are plain `z.string()` on
    *  purpose — NOT `.min(1)` — because an invalid `settings.json` costs the WHOLE FILE: boot
    *  degrades to `settings = null` and the agent is disabled (`daemon.ts`'s load catch), and a hot
    *  edit is discarded entirely by the watcher ("settings reload failed, keeping previous"). One
    *  blank string must not be able to do that. Blank therefore means absent, and
-   *  `winterOptionsFromSettings` below is the door that says so once for every consumer.
+   *  `cloverOptionsFromSettings` below is the door that says so once for every consumer.
    *  (`winterIdleTimeoutSec`'s floor CAN invalidate the file the same way — that is the deliberate
    *  shape the retention windows already have, and the brief mandates it; it is stated here so the
    *  asymmetry reads as a decision rather than an oversight.)
    *
-   *  `winterIdleTimeoutSec` ends an idle Winter child (P8b-24) — the session becomes `resumable` and
+   *  `winterIdleTimeoutSec` ends an idle Clover child (P8b-24) — the session becomes `resumable` and
    *  its next message resumes it, so this is a memory bound, not a session lifetime. The floor is
    *  10s rather than 1: below that, a child would be reaped between a user's own keystrokes.
    *
    *  THE DEFAULTS ONLY MATERIALIZE WHEN THE BLOCK IS PRESENT, because the block is `.optional()`
    *  (see above — a defaulted block would make `runtimes` required on every settings literal in the
    *  codebase, and `saveSettings` would start stamping today's values into every user's file). So
-   *  an absent block has to be answered for, and `winterOptionsFromSettings` below is the ONE place
+   *  an absent block has to be answered for, and `cloverOptionsFromSettings` below is the ONE place
    *  that does it — the same shape `retentionFromSettings` has for the windows. Read that door
    *  rather than the raw block, or three lanes each re-derive "absent means all legs false" and
    *  "blank means absent", and nothing fails to compile when one of them forgets. */
@@ -710,9 +710,9 @@ export const Settings = z.object({
     // same blank-is-absent shape as `winterExecutable` above, for the bundled Anthropic Platform
     // CLI (`ant`) the console-profile broker spawns — the Console's one login and token-refresh door.
     antExecutable: z.string().optional(),
-    // Task 17 Step 4: the engine is retired — every mode runs on the Winter leg. The block stays
+    // Task 17 Step 4: the engine is retired — every mode runs on the Clover leg. The block stays
     // ACCEPTED for one release (the `migrations.memoryKeys` pattern): a `false` is read, logged
-    // ("the engine leg no longer exists; ignored") and ignored by `winterOptionsFromSettings`.
+    // ("the engine leg no longer exists; ignored") and ignored by `cloverOptionsFromSettings`.
     winterLeg: z.object({
       chat: z.boolean().default(true),
       dispatch: z.boolean().default(true),
@@ -725,7 +725,7 @@ export const Settings = z.object({
     advisorModel: z.string().optional(),
     winterIdleTimeoutSec: z.number().int().min(10).default(DEFAULT_WINTER_IDLE_TIMEOUT_SEC),
     // WS-23: RETIRED. `crossRuntime` fenced a `session.setModel` that moved a session between the
-    // Winter runtime and the official `claude` leg; with that leg gone no switch crosses runtimes.
+    // Clover runtime and the official `claude` leg; with that leg gone no switch crosses runtimes.
     // Still ACCEPTED (`.optional()`, never defaulted, so an absent block stays absent) and reported
     // once per settings change as inert (`retiredRuntimeSettingKeys`); nothing reads it.
     handoff: z.object({ crossRuntime: z.boolean().optional() }).prefault({}),
@@ -738,9 +738,9 @@ export const Settings = z.object({
       subscriptionAuth: z.boolean().optional(),
     }).loose().optional(),
   }).optional(),
-  // Phase 9c (P9c-4, the user's ruling on WS-00 §8 #7): Winter reads a project's unconverted legacy
-  // instructions file / project dir (`legacy-names.ts`'s `LEGACY_INSTRUCTIONS_FILE` / `LEGACY_PROJECT_DIR`) READ-ONLY when the Winter-named file/dir is absent and this is true —
-  // with a visible per-project deprecation notice; `winter migrate-project` converts. Default ON,
+  // Phase 9c (P9c-4, the user's ruling on WS-00 §8 #7): Clover reads a project's unconverted legacy
+  // instructions file / project dir (`legacy-names.ts`'s `LEGACY_INSTRUCTIONS_FILE` / `LEGACY_PROJECT_DIR`) READ-ONLY when the Clover-named file/dir is absent and this is true —
+  // with a visible per-project deprecation notice; `clover migrate-project` converts. Default ON,
   // indefinitely, until a later release flips the default. Read HOT, never a boot snapshot.
   // OPTIONAL (not prefaulted) for the same reason `runtimes` is: a prefaulted block becomes REQUIRED on
   // the inferred `Settings` type and breaks every hand-built settings literal. Absent block = default
@@ -776,7 +776,7 @@ export const Settings = z.object({
    */
   providers: z.record(z.string(), z.object({ baseUrl: z.string().url().optional() })).optional(),
   legacy: z.object({ readLegacyProjectFiles: z.boolean().default(true) }).optional(),
-  /** Usage and cost tracking (`docs/claude/usage.md`): whether Winter may read the user's OWN Codex and Claude Code
+  /** Usage and cost tracking (`docs/claude/usage.md`): whether Clover may read the user's OWN Codex and Claude Code
    *  usage (their local session files, and their plan windows through the user's own `codex` / `claude`), and their
    *  Antigravity plan windows (through their own `agy`) and OpenCode tokens and cost (through their own `opencode stats`). Default on;
    *  `false` stops every read and every spawn for that app at the next ask — no restart. The ONE reader is
@@ -815,7 +815,7 @@ export const Settings = z.object({
    * across five blocks and put an effort under `runtimes`, where nothing else is per-role.
    *
    * EIGHT keys, not nine: `provider.model` is ABSENT by design. Its effort already has an established
-   * home in the sibling `provider.reasoningEffort` above — what `winter model --effort` writes and
+   * home in the sibling `provider.reasoningEffort` above — what `clover model --effort` writes and
    * what every existing reader of the daemon's own default effort reads (`sync.config`'s
    * `defaultEffort`, the engine's `resolveSel`) — and duplicating it here would create two places to
    * disagree about one value. `roleEffortFor` (below) is the ONE reader that routes that role to its
@@ -829,7 +829,7 @@ export const Settings = z.object({
    * in force. `effortToSpendForRole` is where stored-vs-default is decided.)
    *
    * The value type is `z.enum(REASONING_EFFORTS)` — the same schema `provider.reasoningEffort` uses,
-   * for the same reason: a stored role effort is always something the wire will honour. Winter-level
+   * for the same reason: a stored role effort is always something the wire will honour. Clover-level
    * tiers (`CLIENT_EFFORTS`) are excluded by construction and refused at the write door as well (see
    * `roleAcceptsClientEffort`), so no role can ever store a value the endpoint would 400 on.
    *
@@ -880,12 +880,12 @@ export function pinsFor(settings: Settings | null | undefined): {
   // it has no catalog family, so it serves no terra/luna slot at all, and `ownProviderFor` would
   // answer the literal string "winter-test" (never a pinned catalog provider). The OLD `UNSTATED_TAG`
   // default (correct for a REAL provider that genuinely serves no gpt-family slot) made every
-  // winter-test-primary daemon's dispatch/dream/cleaner/research refuse outright, because the
+  // clover-test-primary daemon's dispatch/dream/cleaner/research refuse outright, because the
   // harness's own double has no OTHER model to default to. Rule: the primary tag IS the pin — every
   // slot defaults to the SAME double the session itself runs on, unless an explicit
   // `settings.pins.<slot>` override says otherwise (still wins, unchanged).
   const primary = settings?.provider?.model ?? DEFAULT_PROVIDER.model;
-  if (primary.startsWith(WINTER_TEST_PREFIX)) {
+  if (primary.startsWith(CLOVER_TEST_PREFIX)) {
     return {
       dispatch: settings?.pins?.dispatch ?? (primary as ModelTag),
       dream: settings?.pins?.dream ?? (primary as ModelTag),
@@ -921,7 +921,7 @@ export function pinsFor(settings: Settings | null | undefined): {
   };
 }
 
-/** The ONE reader of `settings.usage`: which of the user's other apps Winter may read usage from (default both). */
+/** The ONE reader of `settings.usage`: which of the user's other apps Clover may read usage from (default both). */
 export function usageTrackingFrom(settings: Settings | null | undefined): { codex: boolean; claudeCode: boolean; antigravity: boolean; opencode: boolean } {
   return {
     codex: settings?.usage?.codex?.enabled ?? true, claudeCode: settings?.usage?.claudeCode?.enabled ?? true,
@@ -982,7 +982,7 @@ export function stdioMcpServersFor(
 //   outputStyle                               outputStyle
 //   memory.enabled / memory.directory         autoMemoryEnabled / autoMemoryDirectory
 //   plugins.enabled / plugins.disabled        enabledPlugins  (read by the plugin surface — lane L4)
-//   mcpServers                            →  sdk/.winter.json `mcpServers` (claude's `.claude.json`)
+//   mcpServers                            →  sdk/.clover.json `mcpServers` (claude's `.claude.json`)
 //
 // `permissions.dangerousDomains`, `mcp.disabled`, `plugins.consents` and everything else stay.
 
@@ -1116,7 +1116,7 @@ export function sdkEnabledPlugins(home: string): Record<string, boolean> {
 
 const reportedMcpEntries = new Set<string>();
 
-/** One `.winter.json` `mcpServers` map, parsed the way `settings.mcpServers` always was: a
+/** One `.clover.json` `mcpServers` map, parsed the way `settings.mcpServers` always was: a
  *  credential-shaped header is DROPPED (read door, reported once), and an entry that does not
  *  validate is skipped (reported once) rather than taking its siblings down. */
 function parseMcpServerMap(raw: unknown, where: string): Record<string, McpServerSettingsEntry> {
@@ -1143,20 +1143,20 @@ function parseMcpServerMap(raw: unknown, where: string): Record<string, McpServe
   return out;
 }
 
-/** `sdk/.winter.json` `mcpServers` — the USER-scope MCP servers (spec §4.4), validated per entry. */
+/** `sdk/.clover.json` `mcpServers` — the USER-scope MCP servers (spec §4.4), validated per entry. */
 export function sdkUserMcpServers(home: string): Record<string, McpServerSettingsEntry> {
-  return parseMcpServerMap(liveSdkGlobalConfig(home).mcpServers, "sdk/.winter.json");
+  return parseMcpServerMap(liveSdkGlobalConfig(home).mcpServers, "sdk/.clover.json");
 }
 
-/** `sdk/.winter.json` `projects[<root>].mcpServers` — the LOCAL-scope MCP servers for one project
+/** `sdk/.clover.json` `projects[<root>].mcpServers` — the LOCAL-scope MCP servers for one project
  *  root (spec §4.4), validated per entry. `root` must be the absolute canonical project root. */
 export function sdkLocalMcpServers(home: string, root: string): Record<string, McpServerSettingsEntry> {
   const projects = liveSdkGlobalConfig(home).projects;
   const entry = projects !== null && typeof projects === "object" && !Array.isArray(projects) ? projects[root] : undefined;
-  return parseMcpServerMap(entry?.mcpServers, `sdk/.winter.json projects[${root}]`);
+  return parseMcpServerMap(entry?.mcpServers, `sdk/.clover.json projects[${root}]`);
 }
 
-/** Validate one MCP entry for a WRITE into `sdk/.winter.json`: the same schema — and the same
+/** Validate one MCP entry for a WRITE into `sdk/.clover.json`: the same schema — and the same
  *  credential-shaped-header REFUSAL — `settings.mcpServers` always enforced at its write door. Throws a
  *  plain `Error` naming the problem (never a header value). */
 export function validateMcpServerEntryForWrite(entry: unknown): McpServerSettingsEntry {
@@ -1212,7 +1212,7 @@ export function setMcpServerDisabled(settings: Settings, name: string, disabled:
 }
 
 /**
- * `winter mcp add`/`mcp.add`'s USER-scope write door: a pure `Settings -> Settings` transform that
+ * `clover mcp add`/`mcp.add`'s USER-scope write door: a pure `Settings -> Settings` transform that
  * sets (adds or replaces) one `mcpServers` entry by name. Mirrors `setMcpServerDisabled`'s own
  * posture exactly — never validates `name` against a reserved/existing-name rule; that is a HIGHER
  * door's job (`agent/mcp/mcp-write.ts`'s `addUserMcpServer`, the one function both `ipc/server.ts`'s
@@ -1242,9 +1242,9 @@ export function removeMcpServerEntry(settings: Settings, name: string): Settings
  *  providers/manager.ts's `liveModel`) and this file's own tests exercise the SAME decision. */
 export const hooksEnabledFrom = (s: Settings): boolean => s.hooks?.enabled !== false;
 
-/** What the Winter leg actually runs with, for a home whose `runtimes` block may not exist at all. */
-export interface WinterOptions {
-  /** Absent when unset OR blank — never `""`. See `winterOptionsFromSettings`. */
+/** What the Clover leg actually runs with, for a home whose `runtimes` block may not exist at all. */
+export interface CloverOptions {
+  /** Absent when unset OR blank — never `""`. See `cloverOptionsFromSettings`. */
   winterExecutable?: string;
   /** Winter Phase 10a (Lane L's `bundle-layout.ts` `resolveAntExecutable` ladder), same
    *  blank-is-absent rule. Read only by the console-profile broker (`daemon.ts`, O6) — inert
@@ -1256,7 +1256,7 @@ export interface WinterOptions {
 }
 
 /**
- * THE DOOR EVERY WINTER-LEG CONSUMER READS (`resolveWinterExecutable`, `createWinterRuntimeSdk`,
+ * THE DOOR EVERY CLOVER-LEG CONSUMER READS (`resolveWinterExecutable`, `createWinterRuntimeSdk`,
  * `legForNewSession`, the idle timer), and the reason it exists rather than three lanes each
  * reaching into `settings.runtimes`.
  *
@@ -1304,7 +1304,7 @@ export function retiredRuntimeSettingKeys(s: Settings | null | undefined): strin
   return out;
 }
 
-export function winterOptionsFromSettings(s: Settings | null | undefined): WinterOptions {
+export function cloverOptionsFromSettings(s: Settings | null | undefined): CloverOptions {
   const r = s?.runtimes;
   const blankIsAbsent = (v: string | undefined): string | undefined => {
     const trimmed = v?.trim();
@@ -1357,7 +1357,7 @@ export const cleanerEnabledFrom = (s: Settings): boolean => s.cleaner?.enabled !
  *  `ipc/server.ts`'s `capabilities.list` handler — `settings-apply.ts`'s `cuEnabled` closure is the
  *  fourth). Default-ON since 2026-10-07 (user ruling: "default should be on"), the same `!== false`
  *  shape as `lspEnabledFrom` below — only an explicit `false` takes the `computer` tool away. It was
- *  opt-in (`=== true`) before, and a Winter Dev home with no `computerUse` block then handed Dispatch
+ *  opt-in (`=== true`) before, and a Clover Dev home with no `computerUse` block then handed Dispatch
  *  a prompt naming a tool it did not have. */
 export const computerUseEnabledFrom = (s: Settings): boolean => s.computerUse?.enabled !== false;
 
@@ -1510,7 +1510,7 @@ export interface MigrateBareModelIdOptions {
   /** Named ONLY for the one log line this function may emit — NEVER the value itself (which is
    *  not a secret, but this keeps the discipline uniform with every other settings log). */
   fieldName: string;
-  /** The Winter home — for the Claude-id arm's console-profile existence probe. */
+  /** The Clover home — for the Claude-id arm's console-profile existence probe. */
   home: string;
   /** The legacy `runtimes.official.auth` value, when migrating from settings (undefined for a
    *  runtime-state/session row migration, which has no such field to read). */
@@ -1536,7 +1536,7 @@ export interface MigrateBareModelIdOptions {
  *  should be removed rather than defaulted). Shared by the settings v2→v3 migration AND the
  *  runtime-state/session-row rewrite so the rule is never duplicated. */
 export function migrateBareModelId(m: string, opts: MigrateBareModelIdOptions): ModelTag | undefined {
-  // 1. already a tag with a catalog provider (or the winter-test escape hatch) → keep.
+  // 1. already a tag with a catalog provider (or the clover-test escape hatch) → keep.
   if (isModelTag(m)) return m as ModelTag;
   // Claude ids: the arm is decided by the legacy official-auth setting / on-disk console profile,
   // NOT by the generic S-based rules below (S would contain both `anthropic` and `console` for
@@ -1707,7 +1707,7 @@ export function loadSettings(path: string, opts?: { presentProviders?: ReadonlyS
     raw = JSON.parse(readFileSync(path, "utf8"));
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === "ENOENT") {
-      throw new Error(`settings file not found at ${path} — run \`winter daemon run\` once to initialize`);
+      throw new Error(`settings file not found at ${path} — run \`clover daemon run\` once to initialize`);
     }
     throw err;
   }
@@ -1946,7 +1946,7 @@ export function readRawSettings(path: string): Record<string, unknown> | null {
 }
 
 /** Pure `Settings -> Settings` provider-model transform (mirrors plugins/lifecycle.ts's
- *  `setPluginEnabled` pattern) — used by `winter model <slug>`. Preserves every other field,
+ *  `setPluginEnabled` pattern) — used by `clover model <slug>`. Preserves every other field,
  *  including `provider.reasoningEffort` if set. WS-20: `model` is a `ModelTag` — tag-shape/provider
  *  validation is the CALLER's job (same "never throws on the slug itself" contract as before,
  *  except the slug is now the whole tag): this never throws except on whatever `Settings.parse`
@@ -1971,7 +1971,7 @@ export function setOutputStyle<T extends { outputStyle?: string }>(settings: T, 
   return next;
 }
 
-/** Pure `Settings -> Settings` reasoning-effort transform — used by `winter model --effort
+/** Pure `Settings -> Settings` reasoning-effort transform — used by `clover model --effort
  *  <level>` (effort-only or combined with a model change). `effort: undefined` clears it. */
 export function setReasoningEffort(settings: Settings, effort: (typeof REASONING_EFFORTS)[number] | undefined): Settings {
   return { ...settings, provider: { ...settings.provider, reasoningEffort: effort } };
@@ -1979,7 +1979,7 @@ export function setReasoningEffort(settings: Settings, effort: (typeof REASONING
 
 /**
  * Winter Phase 8d (P8d-8): pure `Settings -> Settings` transform for THE ONE D30 advisor
- * setting (`settings.runtimes.advisorModel`) — used by `winter model --advisor <slug|auto>`
+ * setting (`settings.runtimes.advisorModel`) — used by `clover model --advisor <slug|auto>`
  * (Task 4.3) and the Mac app's composer-chip picker (Swift side writes the JSON file directly,
  * same "no daemon RPC needed" posture this function's CLI caller takes). `model: undefined`
  * clears the override, mirroring `setReasoningEffort`'s own `effort: undefined` convention — the
@@ -2081,7 +2081,7 @@ export type ModelRole = (typeof MODEL_ROLES)[number];
  *    provider the daemon has (or could have) credentials for, unconstrained by
  *    `INTERNAL_PROVIDER_IDS`.
  *  - `"same-as-session"`: no role reports it any more. `runtimes.advisorModel` did until D3
- *    (2026-09-22), when `buildWinterOptions` dropped an advisor on any provider but the session's;
+ *    (2026-09-22), when `buildCloverOptions` dropped an advisor on any provider but the session's;
  *    it now sends the FULL tag plus that provider's own `authRef`, and the child runs the advisor on
  *    its own provider — the `pins.research` shape — so the role is `"any"`. Kept in the union because
  *    it is a protocol enum value (`ModelRoleConstraintSchema`) a client may still decode.
@@ -2147,9 +2147,9 @@ export function permittedProviders(filterProviderIds?: ReadonlySet<string>): Arr
 }
 
 /**
- * WS-23 (the Winter-only pivot, 2026-09-25): the REMAINING first-party Claude rows Winter's own
+ * WS-23 (the Clover-only pivot, 2026-09-25): the REMAINING first-party Claude rows Clover's own
  * background jobs never run on. `anthropic` (the API-key row) is GONE from this list — every
- * model, Claude included, now runs on the Winter agent SDK, so the 2026-09-19 premise ("Claude
+ * model, Claude included, now runs on the Clover agent SDK, so the 2026-09-19 premise ("Claude
  * runs through Anthropic's own runtime, which brings its own reviewer") no longer holds and an
  * Anthropic key is an ordinary token-priced credential for titles, the bash reviewer, the dreamer
  * and the cleaner.
@@ -2196,14 +2196,14 @@ export interface InternalProviderSnapshot {
 let memoisedInternalEligible: ReadonlySet<string> | undefined;
 
 /**
- * WHICH catalog providers Winter's own jobs may run on — derived from the pinned catalog, never a
+ * WHICH catalog providers Clover's own jobs may run on — derived from the pinned catalog, never a
  * hand-kept list (the same discipline `credentialInventory()` already follows for credential slots).
  *
  * Four conditions, each for its own reason:
  *  1. the provider is an ordinary model-role candidate at all — `permittedProviders()`'s own floor
  *     (`scope === "llm"`, `risk.class !== "blocked"`), reused rather than restated;
  *  2. it is not a remaining first-party Claude row (`CLAUDE_FIRST_PARTY_PROVIDER_IDS` — WS-23: only
- *     the reserved `cc`; `anthropic` rejoined the eligible set when every model moved onto the Winter
+ *     the reserved `cc`; `anthropic` rejoined the eligible set when every model moved onto the Clover
  *     SDK, and `console` when its bearer slot became an ordinary inventory row the Anthropic adapter
  *     can be driven over);
  *  3. this daemon has a credential SLOT for it — a row in `credentialInventory()`. That inventory is
@@ -2235,7 +2235,7 @@ export function internalEligibleProviderIds(): ReadonlySet<string> {
 }
 
 /**
- * WHICH eligible provider Winter's own jobs PREFER, given a live credential snapshot — the answer
+ * WHICH eligible provider Clover's own jobs PREFER, given a live credential snapshot — the answer
  * an internal role with no explicit pin follows.
  *
  * Three rungs, and the first is the whole point of the 2026-09-19 fix (the THIRD produces no runnable
@@ -2267,7 +2267,7 @@ export function preferredInternalProviderFor(
   // `internalProviderPreferenceOrder()` tail is gone from this path: it is alphabetical inventory order
   // over ~94 providers, so "the first credentialed one" is a coin toss the user never asked for, and
   // only 3 of those 94 declare a `terra` slot — a default on any of the others had to guess a model.
-  // Never guess a provider AND a model the user did not choose: codex-oauth/openai are the two Winter's
+  // Never guess a provider AND a model the user did not choose: codex-oauth/openai are the two Clover's
   // own jobs have always run on, they both declare the family slots, and anything else needs an
   // explicit pin (`no-default-model`, `internalRoleEffectiveTag` below).
   for (const id of INTERNAL_PROVIDER_IDS) {
@@ -2276,7 +2276,7 @@ export function preferredInternalProviderFor(
   // THE LAST RUNG EXISTS ONLY TO NAME A REFUSAL, and it is worth being explicit about why, because it
   // looks like the guess the rung above just removed and is the opposite of one.
   //
-  // A home with (say) only a Groq key and a Claude session default HAS a credential Winter could use —
+  // A home with (say) only a Groq key and a Claude session default HAS a credential Clover could use —
   // it just has no model on it that the user can be said to have chosen. Answering `undefined` here
   // would report `no-internal-credential` ("sign in / add a key"), which is both wrong and unactionable
   // for that user: they already did. So this names the provider, `internalRoleDefaultTagFor` still
@@ -2290,7 +2290,7 @@ export function preferredInternalProviderFor(
 
 /**
  * The deterministic fallback order — `INTERNAL_PROVIDER_IDS` first, in their own order (the two
- * providers Winter's jobs have always run on; a user who signed in with ChatGPT expects the dreamer
+ * providers Clover's jobs have always run on; a user who signed in with ChatGPT expects the dreamer
  * on Codex, not on whichever third-party key happens to be stored too), then every other eligible
  * provider in `credentialInventory()` order, which is the ONE provider ordering this daemon already
  * pins deliberately (see that function's "THE ORDER SELECTS NOTHING" note — here it only decides which
@@ -2323,7 +2323,7 @@ export function internalProviderPreferenceOrder(): readonly string[] {
  * a third rung — "the provider's first non-blocked llm row in catalog order" — and measurement killed
  * it: only 3 of 94 eligible providers declare a `terra` slot, catalog/inventory order is alphabetical,
  * and that rung picked things like `agentrouter/claude-opus-4-8`, `kilocode/anthropic/claude-opus-5`, a
- * `-Base` completion model and a vision model. Winter does not choose a model on a provider the user
+ * `-Base` completion model and a vision model. Clover does not choose a model on a provider the user
  * did not choose: the role reports `no-default-model` and stays inert until the user picks one.
  */
 export function internalRoleDefaultTagFor(
@@ -2347,7 +2347,7 @@ export function internalRoleDefaultTagFor(
  * spellings of "explicit ?? preferred ?? default" is exactly how the pre-2026-09-19 bookkeeping and the
  * actually-bound backend came to disagree.
  *
- * A role's `explicit` tag is reported VERBATIM even when it names a provider Winter's own jobs cannot
+ * A role's `explicit` tag is reported VERBATIM even when it names a provider Clover's own jobs cannot
  * run (a Claude pin): the role really does sit on that model, and the reason it is not running rides the
  * `problem` field instead. Never silently substituted.
  */
@@ -2371,8 +2371,8 @@ export function internalRoleEffectiveTag(
  * M-3: WHY a role has no effective tag — the two cases `internalRoleEffectiveTag`'s `null` collapses,
  * which the wire has to tell apart because they have different fixes.
  *
- *  - `"no-credential"`: nothing Winter's jobs can use holds a credential. Fix: sign in / add a key.
- *  - `"no-default-model"`: a provider IS credentialed, but Winter will not choose a model on it
+ *  - `"no-credential"`: nothing Clover's jobs can use holds a credential. Fix: sign in / add a key.
+ *  - `"no-default-model"`: a provider IS credentialed, but Clover will not choose a model on it
  *    (no family slot, and it is not the session default's provider). Fix: pick one in Settings › Roles.
  *
  * `undefined` when the role HAS a tag — there is nothing to explain.
@@ -2387,7 +2387,7 @@ export function internalRoleNoTagReason(
   return preferred === undefined ? { reason: "no-credential" } : { reason: "no-default-model", providerId: preferred };
 }
 
-/** The four LIVE roles that run on Winter's own internal calls. `pins.researchFallback` is retired (its
+/** The four LIVE roles that run on Clover's own internal calls. `pins.researchFallback` is retired (its
  *  consumer went with `ReadPage`, itself since retired) and turn compaction has NO production consumer
  *  at all — `agent/compactor.ts` is constructed only by its own test and the golden-capture script — so
  *  neither is here: a role in this union is one something actually calls. */
@@ -2443,7 +2443,7 @@ function credentialSlotProviderIds(): readonly string[] {
  * never chose.
  *
  * `provider.model` is routed to `settings.provider.reasoningEffort` — its established home, written by
- * `winter model --effort` (`setReasoningEffort`) and read by every existing consumer of the daemon's
+ * `clover model --effort` (`setReasoningEffort`) and read by every existing consumer of the daemon's
  * own default effort. That role deliberately has NO `roleEfforts` entry (see the block's own schema
  * comment): this function is the only place the exception is spelled, so every caller — the read
  * (`modelRoleInfo`), the write (`setModelRole`) and any future consumer — asks one question and gets
@@ -2468,7 +2468,7 @@ export function roleEffortFor(settings: Settings | null | undefined, role: Model
  *    (`providers/runtime-provider.ts`'s `mapTurnRequest` forwards it verbatim).
  *  - `pins.research` — NO longer: `WebFetch`'s digest has no effort field on the wire.
  *  - `pins.researchFallback` — NO: its one consumer retired. See `roleCarriesEffort` for both.
- *  - `runtimes.advisorModel` — NO. The Winter agent SDK's `AdvisorConfig` is `{ model, authRef? }` and
+ *  - `runtimes.advisorModel` — NO. The Clover agent SDK's `AdvisorConfig` is `{ model, authRef? }` and
  *    nothing else, and the pinned Claude Agent SDK's `Options` has no advisor effort either (its only
  *    `effort` is the SESSION's own). Agent-SDK parity comes first in this project, so the daemon does
  *    not grow an option the SDKs do not have and does not pretend to spend one: `modelRoleInfo`
@@ -2532,7 +2532,7 @@ export function roleCarriesEffort(role: ModelRole): boolean {
  *  2. `"none"` -> `"none"` when the model's row declares a non-empty vocabulary or has no row at all;
  *     omitted (`undefined`) when the row declares none. This deliberately BYPASSES `implicitEffortFor`:
  *     that function asks `vocab.includes(wanted)`, the catalog lists `"none"` for almost no row (it is
- *     Winter's own "off", which the write door admits on ANY row with a vocabulary), and a miss there
+ *     Clover's own "off", which the write door admits on ANY row with a vocabulary), and a miss there
  *     falls through to the row's `defaultEffort` — it would silently turn the user's explicit "no
  *     reasoning" into "medium". The rule used instead is the write door's own
  *     (`assertRoleEffortSelectable`), so what was selectable at write time is what is spent. What
@@ -2587,7 +2587,7 @@ export function effortToSpendForRole(
 }
 
 /**
- * 2026-09-18: may this role's effort be a WINTER-LEVEL tier (`CLIENT_EFFORTS`, e.g. `"ultra"`)?
+ * 2026-09-18: may this role's effort be a CLOVER-LEVEL tier (`CLIENT_EFFORTS`, e.g. `"ultra"`)?
  *
  * `clientEffortEligible` (above) answers this for a SESSION, by mode. A role is not a session, so the
  * question has to be re-asked per role rather than by handing that function a mode — and in
@@ -2813,7 +2813,7 @@ export function modelRolesFor(settings: Settings | null | undefined, boundProvid
  *     `permitted` from `modelRoleInfo` and can grey a row out without the daemon refusing it.
  *
  * `winter-test/*` is exempt by construction, not by leniency: it is not a catalog provider at all
- * (`provider-selection.ts`'s `WINTER_TEST_MODEL_PREFIX` doc — "must never be resolved against one"),
+ * (`provider-selection.ts`'s `CLOVER_TEST_MODEL_PREFIX` doc — "must never be resolved against one"),
  * and `setProviderModel`'s own comment records that `provider.model` has always accepted it.
  *
  * Clearing a role (`null`/empty, where the role allows it) is never checked — there is no tag to
@@ -2822,11 +2822,11 @@ export function modelRolesFor(settings: Settings | null | undefined, boundProvid
 /** `setModelRole`'s internal-jobs gate — see its own call site for the accept/refuse split. Exempts
  *  `winter-test/*` for the same reason `assertCatalogBackedTag` does: it is not a catalog provider. */
 function assertInternalJobRoleTag(tag: string, role: InternalJobRole): void {
-  if (tag.startsWith(WINTER_TEST_PREFIX)) return;
+  if (tag.startsWith(CLOVER_TEST_PREFIX)) return;
   let providerId: string;
   try { providerId = splitTag(tag).providerId; } catch { return; } // shape is `assertCatalogBackedTag`'s job
   if (internalEligibleProviderIds().has(providerId)) {
-    // M-3 (review): the PROVIDER being eligible is not enough — the ROW has to be one Winter's own
+    // M-3 (review): the PROVIDER being eligible is not enough — the ROW has to be one Clover's own
     // one-shot chat call can actually issue. Two checks, both permanent catalog facts (never the
     // situational credential question, which stays a `problem` rather than a refusal):
     //   - not `status: "blocked"` — the one status the registry itself refuses to resolve;
@@ -2836,7 +2836,7 @@ function assertInternalJobRoleTag(tag: string, role: InternalJobRole): void {
     const row = rowForTag(tag);
     if (row !== undefined && row.status === "blocked") {
       throw new TypeError(
-        `${role}: ${JSON.stringify(tag)} is marked blocked in the pinned catalog — Winter will not issue its own ` +
+        `${role}: ${JSON.stringify(tag)} is marked blocked in the pinned catalog — Clover will not issue its own ` +
           `background calls against a blocked model. Pick another from this role's \`permitted\` set.`,
       );
     }
@@ -2849,7 +2849,7 @@ function assertInternalJobRoleTag(tag: string, role: InternalJobRole): void {
     // provider, a pin on it would otherwise be accepted and then fail every background call.
     if (row !== undefined && !row.endpoints.includes("chat") && !row.endpoints.includes("responses")) {
       throw new TypeError(
-        `${role}: ${JSON.stringify(tag)} serves only ${row.endpoints.join("/")} — Winter's own background jobs issue a ` +
+        `${role}: ${JSON.stringify(tag)} serves only ${row.endpoints.join("/")} — Clover's own background jobs issue a ` +
           `single chat/responses turn, so this model cannot run one. Pick another from this role's \`permitted\` set.`,
       );
     }
@@ -2858,16 +2858,16 @@ function assertInternalJobRoleTag(tag: string, role: InternalJobRole): void {
   const display = loadCatalog().providers.find((p) => p.id === providerId)?.displayName ?? providerId;
   const claude = (CLAUDE_FIRST_PARTY_PROVIDER_IDS as readonly string[]).includes(providerId);
   throw new TypeError(
-    `${role}: Winter's own background jobs can't run on ${display}. ` +
+    `${role}: Clover's own background jobs can't run on ${display}. ` +
       (claude
         ? `The subscription Claude arm is reserved and has no internal-calls credential path on this daemon — so titles, the bash safety reviewer, the dreamer and the session cleaner never borrow one. `
-        : `Winter has no way to drive that provider for its own calls (its credential shape or its API family is not one the daemon can use). `) +
+        : `Clover has no way to drive that provider for its own calls (its credential shape or its API family is not one the daemon can use). `) +
       `Pick a model from the providers \`settings.modelRoles\` reports as \`permitted\` for this role, or clear the pin (model: null) to use the default.`,
   );
 }
 
 function assertCatalogBackedTag(tag: string, role: ModelRole): void {
-  if (tag.startsWith(WINTER_TEST_PREFIX)) return;
+  if (tag.startsWith(CLOVER_TEST_PREFIX)) return;
   if (rowForTag(tag) !== undefined) return;
   throw new TypeError(
     `${role}: no model in the pinned catalog has the tag ${JSON.stringify(tag)} — ` +
@@ -2907,11 +2907,11 @@ export function setModelRole(settings: Settings, role: ModelRole, model?: string
     );
   }
   // 2026-09-19 (the internal-jobs widening), narrowed WS-23: an internal-jobs role may only
-  // name a provider Winter's own background calls can actually be driven over. Refused on the
+  // name a provider Clover's own background calls can actually be driven over. Refused on the
   // PERMANENT facts only — the reserved subscription row (`cc`) or an adapter family the daemon
   // cannot drive (Bedrock's/Vertex's cloud-credential material) — never on the situational one.
   // (`anthropic` rejoined the admittable set in WS-23: its API key is an ordinary token-priced
-  // credential now that every model runs on the Winter SDK; `console` with the live-gate fix: its
+  // credential now that every model runs on the Clover SDK; `console` with the live-gate fix: its
   // bearer is carried to the Anthropic adapter end to end — see `CLAUDE_FIRST_PARTY_PROVIDER_IDS`.)
   // An ELIGIBLE provider with no key stored yet is ACCEPTED: that is precisely the case
   // `assertCatalogBackedTag`'s own doc says a write must not refuse ("a provider the user is about to
@@ -2944,7 +2944,7 @@ export function setModelRole(settings: Settings, role: ModelRole, model?: string
  *   - a real catalog row whose vocabulary is empty (`null` OR `[]` — 570 of 618 rows) refuses ANY
  *     effort, rather than letting one through to a child that will refuse it typed mid-turn;
  *   - a row WITH a vocabulary accepts that vocabulary plus `"none"` (the `effortsForModel` rule: the
- *     catalog omits `"none"` because it is Winter's unset, but the wire honours it once a model
+ *     catalog omits `"none"` because it is Clover's unset, but the wire honours it once a model
  *     reasons at all). Computed inline rather than imported from `ipc/sync.ts` — that module imports
  *     this one, so the import would be a cycle; the ROW read underneath it is the shared
  *     `effortVocabularyFor`, so the two cannot disagree about the catalog itself.
@@ -2957,7 +2957,7 @@ function assertRoleEffortSelectable(settings: Settings, role: ModelRole, effort:
   if (isClientEffort(effort)) {
     if (!roleAcceptsClientEffort(role)) {
       throw new TypeError(
-        `${role}: effort ${JSON.stringify(effort)} is a Winter-level tier, and no model role accepts one — ` +
+        `${role}: effort ${JSON.stringify(effort)} is a Clover-level tier, and no model role accepts one — ` +
           `a tier rewrites a session's system prompt, and no role's model is a code session's own (see ` +
           `\`roleAcceptsClientEffort\` for the per-role reason). Select a tier per session instead ` +
           `(\`session.setEffort\`); the efforts a role may store are: ${REASONING_EFFORTS.join(", ")}.`,
@@ -3025,7 +3025,7 @@ function assertRoleEffortSelectable(settings: Settings, role: ModelRole, effort:
 function writeRoleEffort(settings: Settings, role: ModelRole, effort: string | null): Settings {
   if (role === "provider.model") {
     // `setReasoningEffort`'s own `undefined`-clears convention — the established door, reused rather
-    // than re-implemented, so `winter model --effort` and a role write cannot diverge.
+    // than re-implemented, so `clover model --effort` and a role write cannot diverge.
     return setReasoningEffort(settings, effort === null ? undefined : (effort as (typeof REASONING_EFFORTS)[number]));
   }
   const roleEfforts: Record<string, unknown> = { ...settings.roleEfforts };
@@ -3039,7 +3039,7 @@ function writeRoleEffort(settings: Settings, role: ModelRole, effort: string | n
 function setModelRoleModel(settings: Settings, role: ModelRole, model: string | null): Settings {
   if (role === "runtimes.advisorModel") {
     // Validated HERE rather than inside `setAdvisorModel`: that function is also the door for
-    // `winter model --advisor` and the v2→v3 migration, and this ruling is about what a ROLE WRITE
+    // `clover model --advisor` and the v2→v3 migration, and this ruling is about what a ROLE WRITE
     // through `settings.setModelRole` may contain — the same reason `provider.model`'s check sits
     // below instead of inside `setProviderModel`.
     const advisor = model?.trim();
@@ -3095,11 +3095,11 @@ function readDirs(path: string): string[] {
 
 /**
  * Merge additionalDirectories across scopes (Claude-Code-style). BOTH the COMMITTED
- * <projectDir>/.winter/settings.json AND the gitignored settings.local.json are honored ONLY when
+ * <projectDir>/.clover/settings.json AND the gitignored settings.local.json are honored ONLY when
  * `projectTrusted` — a repo can't silently widen the fence until the user trusts the folder.
  * fix-wave A2: settings.local.json used to be honored unconditionally ("gitignored, always"), but
  * gitignore is advisory, not a trust boundary — a repo can `git add -f` one, so it needs the same
- * gate the committed file gets (matches CC). Only the user's OWN ~/.winter/sdk/settings.json is always
+ * gate the committed file gets (matches CC). Only the user's OWN ~/.clover/sdk/settings.json is always
  * honored, trust-independent.
  */
 export function loadPermissionDirs(homeDir: string, projectDir?: string, projectTrusted = false): string[] {
@@ -3107,8 +3107,8 @@ export function loadPermissionDirs(homeDir: string, projectDir?: string, project
   // a stale copy left in `<home>/settings.json` for a downgrade is never read.
   const sources = [sdkSettingsPath(homeDir)]; // user global — always
   if (projectDir && projectTrusted) {
-    sources.push(join(projectDir, ".winter", "settings.json"));      // committed — trust-gated
-    sources.push(join(projectDir, ".winter", "settings.local.json")); // local: a repo can force-commit one → also trust-gated (matches CC)
+    sources.push(join(projectDir, ".clover", "settings.json"));      // committed — trust-gated
+    sources.push(join(projectDir, ".clover", "settings.local.json")); // local: a repo can force-commit one → also trust-gated (matches CC)
   }
   const merged: string[] = [];
   for (const src of sources) {
@@ -3122,9 +3122,9 @@ export function loadPermissionDirs(homeDir: string, projectDir?: string, project
 
 /** Persist a runtime-granted directory to the project's local (gitignored) settings. */
 export function addLocalDir(projectDir: string, dir: string): void {
-  const dotWinter = join(projectDir, ".winter");
-  mkdirSync(dotWinter, { recursive: true });
-  const path = join(dotWinter, "settings.local.json");
+  const dotClover = join(projectDir, ".clover");
+  mkdirSync(dotClover, { recursive: true });
+  const path = join(dotClover, "settings.local.json");
   let obj: any = {};
   if (existsSync(path)) {
     try {
@@ -3137,5 +3137,5 @@ export function addLocalDir(projectDir: string, dir: string): void {
   obj.permissions.additionalDirectories ??= [];
   if (!obj.permissions.additionalDirectories.includes(dir)) obj.permissions.additionalDirectories.push(dir);
   writeFileSync(path, JSON.stringify(obj, null, 2) + "\n");
-  ensureGlobalGitignore(WINTER_PERSONAL_IGNORES);
+  ensureGlobalGitignore(CLOVER_PERSONAL_IGNORES);
 }

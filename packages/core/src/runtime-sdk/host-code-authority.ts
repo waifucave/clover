@@ -40,6 +40,7 @@ export interface CanonicalHostCodePolicy {
   settingsRules?: unknown;
   sessionRoot: string;
   home: string;
+  /** The SDK's own field, read from the snapshot under this name whatever the brand (C0 review S4). */
   winterHome?: string;
   storeHome?: string;
   trustedWorkspace: boolean;

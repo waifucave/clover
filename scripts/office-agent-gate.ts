@@ -2,8 +2,8 @@
  * Office Stage C — THE HEADLESS AGENT GATE.
  *
  * Runs the office agent tools end to end with no human in the loop: a real daemon on a temp
- * `WINTER_HOME`, the real dev app, the real `WinterOfficeHelper`, the real vendored LibreOffice, and
- * the REAL AGENT reached through `winter -p` / `winter resume` with prompts phrased the way a user
+ * `CLOVER_HOME`, the real dev app, the real `WinterOfficeHelper`, the real vendored LibreOffice, and
+ * the REAL AGENT reached through `clover -p` / `clover resume` with prompts phrased the way a user
  * would phrase them. Then it asserts on the resulting files' OWN BYTES and on live UI facts read
  * back through accessibility scripting.
  *
@@ -53,7 +53,7 @@
  * FIVE THINGS THIS GATE LEARNED THE HARD WAY (none of them in the ledger before Task 8)
  *
  * 1. **`sockaddr_un.sun_path` is 103 bytes** (bind probe: 103 OK, 104 "path too long"; confirmed
- *    independently in review). A `WINTER_HOME` under a deep temp root makes the app die ~2s after
+ *    independently in review). A `CLOVER_HOME` under a deep temp root makes the app die ~2s after
  *    launch with exit 133 (SIGTRAP), NO crash report and NO log line. `assertSocketPathFits` is the
  *    preflight that turns that into one clear sentence, and the gate roots itself at a SHORT `/tmp`
  *    path.
@@ -81,15 +81,15 @@
  *    exit 133. The preflight below stands on those, and on nothing that needs the retracted story.
  *
  * 2. **The office tools need the app ATTACHED TO THIS SESSION**, and the app attaches to whatever
- *    session its window shows. Winter is `LSUIElement` — no window at launch — so this gate drives
+ *    session its window shows. Clover is `LSUIElement` — no window at launch — so this gate drives
  *    the `WINTER_GATE_SESSION` DEBUG door (added in Task 8) rather than AX-clicking an unnamed
  *    sidebar row by index, which could not tell the right row from any other.
  * 3. **The app mints its own `mode: "chat"` session on launch.** Office tools are
  *    `modes: ["code","dispatch"]` — never chat. Picking a session "the first one on disk" grabs the
- *    app's chat session and the CLI refuses with "chat sessions live in the Winter app". The gate
+ *    app's chat session and the CLI refuses with "chat sessions live in the Clover app". The gate
  *    creates its CODE session first and aims the door at that exact id.
- * 4. **`winter-dev` hardcodes the MAIN checkout.** `/opt/homebrew/bin/winter-dev` honours a preset
- *    `WINTER_HOME` but its last line execs `…/Norma v2/packages/cli/src/main.ts`. Driving this gate
+ * 4. **`clover-dev` hardcodes the MAIN checkout.** `/opt/homebrew/bin/clover-dev` honours a preset
+ *    `CLOVER_HOME` but its last line execs `…/Norma v2/packages/cli/src/main.ts`. Driving this gate
  *    through it would test `main`'s CLI+core, not this branch's — green, and proving nothing. The
  *    gate invokes THIS TREE's `packages/cli/src/main.ts` directly.
  * 5. **`timeout(1)` does not exist on this host.** Every bound here is a TS `setTimeout`.
@@ -103,7 +103,7 @@
  * live and are what the gate asserts:
  *
  *     AXStaticText  "…/budget.xlsx"      the document tab's own chrome
- *     AXStaticText  "A1: WINTER GATE"     the formula bar, showing the REAL cell content
+ *     AXStaticText  "A1: CLOVER GATE"     the formula bar, showing the REAL cell content
  *
  * The second is the strongest UI fact available anywhere in this app: not a static label, but the
  * document's own content read back through the live LibreOffice view.
@@ -123,7 +123,7 @@
  *        `WINTER_PANEL_SMOKE=1` produced no window either, on the same build;
  *      · it is not the spawn method — direct-exec, `open -n --env`, and a plain shell launch all
  *        reproduce it;
- *      · `tell application id "com.winter.app.dev" to activate` answers
+ *      · `tell application id "com.waifucave.clover.dev" to activate` answers
  *        `Application isn't running (-600)` for a directly-exec'd bundle, so activation cannot be
  *        used to force the window up.
  *    ⟹ these observations are reported as `UI-SKIP`, OUTSIDE the verdict tally. The predicates are
@@ -142,7 +142,7 @@
  * not by mutating an expectation — in `apple/Winter/Sources/OfficeHelper/LOKBridge.swift`, at the
  * top of `sheetsSetOnDedicatedThread`'s per-cell write loop:
  *
- *     if ProcessInfo.processInfo.environment["WINTER_GATE_BREAK_SHEETS_SET"] == "1" {
+ *     if ProcessInfo.processInfo.environment["CLOVER_GATE_BREAK_SHEETS_SET"] == "1" {
  *         return cellAddresses.count      // skip every write, still report full success
  *     }
  *
@@ -173,8 +173,8 @@
  * line needs an explicit `return`:
  *
  *     func sheetsRead(docId: String, sheet: String, range: String, formulas: Bool) throws -> [[String]] {
- *         if ProcessInfo.processInfo.environment["WINTER_GATE_BREAK_SHEETS_READ"] == "1" {
- *             return [["WINTER GATE", "42"], ["office stage A embed probe", ""]]   // plausible, but omits A4
+ *         if ProcessInfo.processInfo.environment["CLOVER_GATE_BREAK_SHEETS_READ"] == "1" {
+ *             return [["CLOVER GATE", "42"], ["office stage A embed probe", ""]]   // plausible, but omits A4
  *         }
  *         return try thread.sync { try self.sheetsReadOnDedicatedThread(…) }      // `return` added
  *     }
@@ -188,7 +188,7 @@
  *   - `sheets.read` FILE-FAIL, from the assertion under test:
  *         the tool_result did NOT contain A4's saved value "QUARTERLY REVIEW". Full tool_result:
  *         Sheet1!A1:B4 (values):
- *         WINTER GATE	42
+ *         CLOVER GATE	42
  *         office stage A embed probe
  *     — printed as a FULL MULTI-LINE GRID, which is itself proof the journal carries what stdout
  *     structurally cannot (the CLI's whole stdout for that call was `↳ Sheet1!A1:B4 (values):`)
@@ -228,7 +228,7 @@ const FIXTURE_DIR = join(REPO_ROOT, "apple", "Winter", "Tests", "WinterAppTests"
 /** SHORT on purpose — see header note 1. `sockaddr_un.sun_path` is 103 bytes and a deep root is a
  *  silent 2-second app death. `GATE_ROOT` is short enough that even the app's own nested helper
  *  socket paths fit with room to spare. */
-const GATE_ROOT = "/tmp/winter-office-gate";
+const GATE_ROOT = "/tmp/clover-office-gate";
 const HOME_DIR = join(GATE_ROOT, "h");
 const WORK_DIR = join(GATE_ROOT, "w");
 const PRISTINE_DIR = join(GATE_ROOT, "p"); // untouched copies, for the differs-from-pristine check
@@ -254,7 +254,7 @@ const BUILD_MAX_BUFFER = 256 * 1024 * 1024;
  */
 const EXPECTED_FILE_VERDICTS = 8;
 
-const APP_BUNDLE_ID = "com.winter.app.dev";
+const APP_BUNDLE_ID = "com.waifucave.clover.dev";
 const DAEMON_BOOT_TIMEOUT_MS = 60_000;
 const APP_BOOT_TIMEOUT_MS = 90_000;
 /** Office write verbs carry a 185s daemon-side deadline; a turn may legitimately take several
@@ -350,8 +350,8 @@ let app: ChildProcess | undefined;
  *
  * The harness leaks helpers and a leaked helper poisons the next run's results, so this must be
  * thorough; but an unscoped `pkill -9 -f WinterOfficeHelper` also SIGKILLs the helper belonging to
- * `/Applications/Winter.app`, the user's daily driver — pulling LibreOffice out from under an office
- * tab they have open. That brushes the repo's "never kill a running Winter.app" hard rule, so the
+ * `/Applications/Clover.app`, the user's daily driver — pulling LibreOffice out from under an office
+ * tab they have open. That brushes the repo's "never kill a running Clover.app" hard rule, so the
  * pattern is scoped to the gate's own DerivedData path exactly as `stopApp` already scopes its own.
  */
 function killHelpers(): void {
@@ -369,14 +369,14 @@ function gateEnv(extra: Record<string, string> = {}): NodeJS.ProcessEnv {
     // DELETION-RED" for the set leg, "THE SECOND PROBE" for the read leg), rebuilding, and then
     // passing the flag. Stated plainly because a flag that silently does nothing while claiming to
     // break a verb would be its own kind of lie.
-    ...(process.argv.includes("--break-sheets-set") ? { WINTER_GATE_BREAK_SHEETS_SET: "1" } : {}),
-    ...(process.argv.includes("--break-sheets-read") ? { WINTER_GATE_BREAK_SHEETS_READ: "1" } : {}),
-    WINTER_HOME: HOME_DIR,
-    WINTER_PROFILE: "dev",
-    // Belt and braces: nothing in this gate may ever reach `open -g -b com.winter.app` and launch
+    ...(process.argv.includes("--break-sheets-set") ? { CLOVER_GATE_BREAK_SHEETS_SET: "1" } : {}),
+    ...(process.argv.includes("--break-sheets-read") ? { CLOVER_GATE_BREAK_SHEETS_READ: "1" } : {}),
+    CLOVER_HOME: HOME_DIR,
+    CLOVER_PROFILE: "dev",
+    // Belt and braces: nothing in this gate may ever reach `open -g -b com.waifucave.clover` and launch
     // the user's DISTRIBUTION app, which is indistinguishable from their daily driver in the menu
     // bar. The CLI's autolaunch path is the only door to it and this closes it.
-    WINTER_NO_AUTOLAUNCH: "1",
+    CLOVER_NO_AUTOLAUNCH: "1",
     // The gate's daemon never reads or spawns the user's own Codex / Claude Code / Antigravity / OpenCode, nor runs the
     // background plan beat (docs/claude/usage.md).
     ...USAGE_INERT_ENV,
@@ -412,10 +412,10 @@ async function startDaemon(): Promise<void> {
 }
 
 /** Direct-exec of the app BINARY, never `open`: the binary inherits this env (which is how
- *  `WINTER_HOME` and the gate door reach it — `AppProfile.winterHome` reads raw `getenv` first) and
+ *  `CLOVER_HOME` and the gate door reach it — `AppProfile.winterHome` reads raw `getenv` first) and
  *  yields a pid we can actually tear down. */
 async function startApp(sessionId: string): Promise<void> {
-  const appBinary = join(DERIVED_DATA, "Build", "Products", "Debug", "Winter.app", "Contents", "MacOS", "Winter");
+  const appBinary = join(DERIVED_DATA, "Build", "Products", "Debug", "Clover.app", "Contents", "MacOS", "Clover");
   if (!existsSync(appBinary)) envFail(`the dev app binary is missing: ${appBinary}\n  build it first (the gate does this itself unless --no-build).`);
 
   // The stale-DerivedData scar, as a check: `xcodegen generate` mints a new DerivedData hash and a
@@ -432,8 +432,8 @@ async function startApp(sessionId: string): Promise<void> {
   // reading that window-less leftover — producing "the window never appears" for three runs while
   // the real instance was rendering the document perfectly. A measurement artifact reported as a
   // product failure is exactly the class this gate exists to prevent, so the invariant is enforced
-  // rather than assumed. Only ever `com.winter.app.dev` — the DIST app is never touched.
-  spawnSync("pkill", ["-9", "-f", `${DERIVED_DATA}.*MacOS/Winter`], { encoding: "utf8" });
+  // rather than assumed. Only ever `com.waifucave.clover.dev` — the DIST app is never touched.
+  spawnSync("pkill", ["-9", "-f", `${DERIVED_DATA}.*MacOS/Clover`], { encoding: "utf8" });
   await sleep(1500);
 
   const logPath = join(GATE_ROOT, "app.log");
@@ -475,7 +475,7 @@ async function startApp(sessionId: string): Promise<void> {
 
 function stopApp(): void {
   if (app && app.exitCode === null) { try { app.kill("SIGTERM"); } catch { /* gone */ } }
-  spawnSync("pkill", ["-f", `${DERIVED_DATA}.*MacOS/Winter`], { encoding: "utf8" });
+  spawnSync("pkill", ["-f", `${DERIVED_DATA}.*MacOS/Clover`], { encoding: "utf8" });
   app = undefined;
   killHelpers();
 }
@@ -936,10 +936,10 @@ function buildVerbSteps(): VerbStep[] {
         if (!differsFromPristine("deck.odp")) return [false, "the file is byte-identical to the pristine fixture — nothing was written"];
         const text = xmlText(odpAllText(odp));
         const ok = text.includes("Gate Verified Title");
-        // Non-vacuous both ways: the pristine deck's slide-2 title is "Winter T6 Slide Two", so the
+        // Non-vacuous both ways: the pristine deck's slide-2 title is "Clover T6 Slide Two", so the
         // NEW string cannot pre-exist and the OLD one must be gone from that slide.
-        const oldGone = !text.includes("Winter T6 Slide Two");
-        return [ok && oldGone, `saved odp ${ok ? "contains" : "MISSING"} "Gate Verified Title"; old title "Winter T6 Slide Two" ${oldGone ? "removed" : "STILL PRESENT"}`];
+        const oldGone = !text.includes("Clover T6 Slide Two");
+        return [ok && oldGone, `saved odp ${ok ? "contains" : "MISSING"} "Gate Verified Title"; old title "Clover T6 Slide Two" ${oldGone ? "removed" : "STILL PRESENT"}`];
       },
     },
     {
@@ -964,12 +964,12 @@ function buildVerbSteps(): VerbStep[] {
     {
       id: "docs.replace",
       file: "notes.docx",
-      prompt: 'In notes.docx, replace every occurrence of "WINTER GATE" with "WINTER GATE PASSED".',
+      prompt: 'In notes.docx, replace every occurrence of "CLOVER GATE" with "CLOVER GATE PASSED".',
       assert() {
         if (!differsFromPristine("notes.docx")) return [false, "the file is byte-identical to the pristine fixture — nothing was written"];
         const text = xmlText(docxAllText(docx));
-        const ok = text.includes("WINTER GATE PASSED");
-        return [ok, `saved docx text ${ok ? "contains" : "MISSING"} "WINTER GATE PASSED" (text: ${text.slice(0, 160)})`];
+        const ok = text.includes("CLOVER GATE PASSED");
+        return [ok, `saved docx text ${ok ? "contains" : "MISSING"} "CLOVER GATE PASSED" (text: ${text.slice(0, 160)})`];
       },
     },
     {
@@ -1011,8 +1011,8 @@ function seedFixtures(): void {
 
   writeFileSync(join(HOME_DIR, "settings.json"), JSON.stringify({
     schemaVersion: 2,
-    // Secrets are keyed by PROFILE, not by WINTER_HOME — which is the whole reason a temp home can
-    // authenticate at all without ever touching ~/.winter or ~/.winter-dev.
+    // Secrets are keyed by PROFILE, not by CLOVER_HOME — which is the whole reason a temp home can
+    // authenticate at all without ever touching ~/.clover or ~/.clover-dev.
     provider: { type: "codex-oauth", model: "gpt-5.6-terra" },
   }, null, 2) + "\n");
 }
@@ -1023,7 +1023,7 @@ function buildApp(): void {
   log("   xcodegen generate: ok");
 
   const build = spawnSync("xcodebuild", [
-    "-project", "Winter.xcodeproj", "-scheme", "Winter", "-configuration", "Debug",
+    "-project", "Winter.xcodeproj", "-scheme", "Clover", "-configuration", "Debug",
     // Pinned to arm64: a bare `platform=macOS` resolves to TWO destinations on this host and
     // xcodebuild warns "Using the first of multiple matching destinations". The repo is arm64-only
     // (the vendored LibreOffice/CEF libraries have no x86_64 slice), so naming it removes an
@@ -1079,10 +1079,10 @@ async function openDocumentTab(sessionId: string, absPath: string): Promise<bool
   const helper = join(GATE_ROOT, "open-tab.ts");
   writeFileSync(helper, `
 import { KeychainSecretStore, TOKEN_NAMES } from ${JSON.stringify(join(REPO_ROOT, "packages/core/src/index"))};
-import { WinterClient } from ${JSON.stringify(join(REPO_ROOT, "packages/cli/src/client"))};
+import { CloverClient } from ${JSON.stringify(join(REPO_ROOT, "packages/cli/src/client"))};
 const token = await new KeychainSecretStore().get(TOKEN_NAMES.harness);
 if (!token) { console.error("NO_TOKEN"); process.exit(1); }
-const c = await WinterClient.connect({ socketPath: process.env.WINTER_HOME + "/run/core.sock", token,
+const c = await CloverClient.connect({ socketPath: process.env.CLOVER_HOME + "/run/core.sock", token,
   clientName: "cli-office-gate", onEvent: () => {} });
 const r = await c.request("panel.openTab", { sessionId: ${JSON.stringify(sessionId)},
   kind: "document", url: ${JSON.stringify(absPath)}, title: ${JSON.stringify(basename(absPath))} });
@@ -1145,13 +1145,13 @@ async function main(): Promise<number> {
   log("   pre-run pkill -9 -f WinterOfficeHelper: done");
 
   // ── Phase 1: seed ──────────────────────────────────────────────────────────────────────────
-  step("Phase 1 — temp WINTER_HOME + fixture COPIES");
+  step("Phase 1 — temp CLOVER_HOME + fixture COPIES");
   seedFixtures();
   VERB_STEPS = buildVerbSteps();
 
   // ── Phase 2: build ─────────────────────────────────────────────────────────────────────────
   step("Phase 2 — build the DEV app (Debug, explicit -derivedDataPath)");
-  if (noBuild && existsSync(join(DERIVED_DATA, "Build/Products/Debug/Winter.app"))) log("   --no-build: reusing the existing build");
+  if (noBuild && existsSync(join(DERIVED_DATA, "Build/Products/Debug/Clover.app"))) log("   --no-build: reusing the existing build");
   else buildApp();
 
   // ── Phase 3: daemon + code session ─────────────────────────────────────────────────────────
@@ -1378,7 +1378,7 @@ async function withTeardown(): Promise<void> {
     //
     // The app and helper legs match on `DERIVED_DATA`, which really is in their argv (it is part of
     // the binary path). **The daemon deliberately does NOT use `pgrep`**: its argv is
-    // `bun <worktree>/packages/cli/src/main.ts daemon run` and the temp `WINTER_HOME` lives in its
+    // `bun <worktree>/packages/cli/src/main.ts daemon run` and the temp `CLOVER_HOME` lives in its
     // ENVIRONMENT, not its arguments — so any `pgrep -f` pattern naming the home can never match
     // it and would report 0 whether or not one survived: a check blind to its own failure mode,
     // inside the fix for "teardown never runs". A pattern loose enough to match (`daemon run`) has
@@ -1386,7 +1386,7 @@ async function withTeardown(): Promise<void> {
     // "surviving daemon" readings during this work. The child handle's own `close` event is exact.
     const residual = (pattern: string) =>
       (spawnSync("pgrep", ["-f", pattern], { encoding: "utf8" }).stdout || "").trim().split("\n").filter(Boolean).length;
-    const leftApp = residual(`${DERIVED_DATA}.*MacOS/Winter`);
+    const leftApp = residual(`${DERIVED_DATA}.*MacOS/Clover`);
     const leftHelpers = residual(`${DERIVED_DATA}.*WinterOfficeHelper`);
     const clean = leftApp === 0 && leftHelpers === 0 && !daemonState.includes("RESIDENT");
     log(`   residual: app=${leftApp} helpers=${leftHelpers} daemon=${daemonState}${clean ? " (clean)" : " ⚠ LEAKED"}`);
@@ -1394,7 +1394,7 @@ async function withTeardown(): Promise<void> {
       // The temp home, the workdir and the pristine set go; the build stays (it is expensive and
       // carries no state). `--keep` leaves everything for post-mortem.
       for (const d of [HOME_DIR, WORK_DIR, PRISTINE_DIR]) rmSync(d, { recursive: true, force: true });
-      log(`   removed the temp WINTER_HOME, workdir and pristine set under ${GATE_ROOT}`);
+      log(`   removed the temp CLOVER_HOME, workdir and pristine set under ${GATE_ROOT}`);
     } else {
       log(`   --keep: left ${GATE_ROOT} in place`);
     }

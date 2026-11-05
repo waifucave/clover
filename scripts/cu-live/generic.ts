@@ -113,7 +113,7 @@ export function parseApps(spec: string | undefined): GenericApp[] {
 }
 
 /** A marker no real field holds, mixed-case with a non-ASCII letter, so a lost or mangled keystroke shows. */
-export const TYPE_MARKER = "WinterCU-Marker-Ünï-42";
+export const TYPE_MARKER = "CloverCU-Marker-Ünï-42";
 
 const G = (key: string): string => `const app = GH.get(${JSON.stringify(key)}); if (!app) throw new Error("the app is not bound");`;
 

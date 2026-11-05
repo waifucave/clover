@@ -8,7 +8,7 @@ import {
   componentPaths, harvestHeadlessComponents, headlessComponentsDir, HEADLESS_COMPONENTS_MAX_BYTES, isComponentDir, seedHeadlessComponents,
 } from "../../src/computer-use/browser/headless/components";
 
-function dir(): string { return mkdtempSync(join(tmpdir(), "winter-headless-components-")); }
+function dir(): string { return mkdtempSync(join(tmpdir(), "clover-headless-components-")); }
 function component(root: string, name: string, version: string, extra: Record<string, string> = {}): void {
   mkdirSync(join(root, name, version), { recursive: true });
   writeFileSync(join(root, name, version, "manifest.json"), JSON.stringify({ name, version }));

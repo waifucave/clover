@@ -52,7 +52,7 @@ function fakeEvidence() {
 
 /** Real canonical DB, repository and runtime rows; launches from the REAL supervisor with a port that is never opened. */
 function fixture() {
-  const home = mkdtempSync(join(tmpdir(), "winter-guided-reader-")); roots.push(home);
+  const home = mkdtempSync(join(tmpdir(), "clover-guided-reader-")); roots.push(home);
   const db = openRuntimeStateDb(home); databases.push(db);
   let mint = 0, currentBoot = boot, held = true;
   const records = new CoworkRepository(db, () => "2026-10-16T00:00:00.000Z", prefix => `${prefix}_${++mint}`);
@@ -805,7 +805,7 @@ test("a capture whose cwd and view disagree with the canonical request is refuse
 // ---------------------------------------------------------------- drift guard and anti-wiring
 
 test("drift guard: the copied frame definition equals the pinned SDK literal", () => {
-  // Pinned independently of the module. Update BOTH after re-reading, in yanlingLabs/winter-agent-sdk,
+  // Pinned independently of the module. Update BOTH after re-reading, in waifucave/clover-sdk,
   // packages/runtime/src/guest/linux-guided-reader-protocol.ts and packages/sdk/src/guided-reader-protocol.ts.
   expect(COWORK_GUIDED_FRAME_VERSION).toBe(1);
   expect([...COWORK_GUIDED_FRAME_KEYS]).toEqual(["version", "readId", "owner", "views", "limits", "snapshot"]);

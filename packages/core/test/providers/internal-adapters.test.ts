@@ -24,7 +24,7 @@ import { buildInternalProvider } from "../../src/providers/internal-provider";
 import { FileSecretStore } from "../../src/auth/secret-store";
 import { Settings, internalEligibleProviderIds } from "../../src/settings";
 
-const secrets = (): FileSecretStore => new FileSecretStore(mkdtempSync(join(tmpdir(), "winter-internal-adapters-")));
+const secrets = (): FileSecretStore => new FileSecretStore(mkdtempSync(join(tmpdir(), "clover-internal-adapters-")));
 const settings = (extra: Record<string, unknown> = {}): Settings =>
   Settings.parse({ schemaVersion: 3, provider: { model: "codex-oauth/gpt-5.6-sol" }, ...extra });
 
@@ -97,7 +97,7 @@ describe("the connection profile buildInternalProvider assembles", () => {
     expect(conn.local).toBeUndefined();
   });
 
-  test("a user's own providers.<id>.baseUrl wins AND is declared local (Winter's BYO-endpoint carve-out)", () => {
+  test("a user's own providers.<id>.baseUrl wins AND is declared local (Clover's BYO-endpoint carve-out)", () => {
     const built = buildInternalProvider({
       providerId: "openai",
       secrets: secrets(),

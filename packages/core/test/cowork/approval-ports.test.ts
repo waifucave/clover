@@ -2,7 +2,7 @@
 // approval bridge deciding with them.
 import { afterEach, expect, test } from "bun:test";
 import type { CanUseTool, PermissionResult } from "@yanlinglabs/winter-agent-sdk";
-import type { ApprovalPolicy, NewSessionEvent } from "@yanlinglabs/winter-protocol";
+import type { ApprovalPolicy, NewSessionEvent } from "@waifucave/clover-protocol";
 import { ApprovalBroker } from "../../src/agent/approvals";
 import { PermissionGate } from "../../src/agent/gate";
 import { QuestionBroker } from "../../src/agent/questions";
@@ -73,7 +73,7 @@ function bridge(policy: ApprovalPolicy, planViewMounted = false) {
   const approvals = new ApprovalBroker(), events: NewSessionEvent[] = [];
   // The APPROVALS lane's bridge with the DOOR's ports; `mode: "code"` is the bridge's own type (a NEEDS for APPROVALS).
   const canUse = canUseToolFor({ sessionId: "conversation", mode: "code", policy, approvals, questions: new QuestionBroker(), gate: new PermissionGate(),
-    cwd: "/workspace/folders/grant", emit: event => { events.push(event); }, log: { info() {}, error() {} }, cowork: ports, turnOrigin: () => "Winter" });
+    cwd: "/workspace/folders/grant", emit: event => { events.push(event); }, log: { info() {}, error() {} }, cowork: ports, turnOrigin: () => "Clover" });
   return { canUse: canUse as unknown as (...args: Parameters<CanUseTool>) => Promise<PermissionResult>, approvals, events };
 }
 const ctx = (id: string) => ({ signal: new AbortController().signal, toolUseID: id, requestId: `r-${id}` }) as Parameters<CanUseTool>[2];

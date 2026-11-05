@@ -119,7 +119,7 @@ describe("the generic run's plan", () => {
       expect(() => new Function("apps", "screen", "print", "sleep", "show", `return (async () => {${scriptOf(s)}})`)).not.toThrow();
     }
     expect(SCRIPTS.type(a)).toContain(JSON.stringify(TYPE_MARKER));
-    expect(SCRIPTS.type(a)).not.toMatch(/\.type\((?!"WinterCU-Marker)/);
+    expect(SCRIPTS.type(a)).not.toMatch(/\.type\((?!"CloverCU-Marker)/);
     expect(genericScenario(a, "x", "state", true).name).toBe("VRoid Studio (off-Space): x");
   });
 

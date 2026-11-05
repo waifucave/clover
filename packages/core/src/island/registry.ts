@@ -1,6 +1,6 @@
-import type { SessionEvent } from "@yanlinglabs/winter-protocol";
+import type { SessionEvent } from "@waifucave/clover-protocol";
 
-// The Winter island's daemon half (`docs/claude/island.md`): the Mac app shows every approval, question and URL-mode
+// The Clover island's daemon half (`docs/claude/island.md`): the Mac app shows every approval, question and URL-mode
 // elicitation still pending in ANY session — its own windows attach to one session each, so no event stream gives it
 // that. `island.pending` answers from here; `island.changed` tells the island clients to ask again.
 //
@@ -74,7 +74,7 @@ export interface IslandRegistryDeps {
 export const ISLAND_MAX_ENTRIES = 256;
 
 /** How long the desktop-switch prompt waits for the island client to say it SHOWS the card (`island.shown`) before
- *  the helper's own panel is asked as well — a Winter.app that is connected but hung shows nothing. */
+ *  the helper's own panel is asked as well — a Clover.app that is connected but hung shows nothing. */
 export const ISLAND_SHOWN_ACK_MS = 2_000;
 
 /** What the desktop-switch prompt asks of the island (`islandAwareDesktopPanel`, `computer-use/wiring.ts`). */

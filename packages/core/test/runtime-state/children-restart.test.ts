@@ -1,6 +1,6 @@
 // P8b Task 13 — the persisted roster, across a daemon restart (WS-17 §8 row 6).
 //
-// THE PROOF ROW, stated as a test: "Winter child identity + `ResumeContext` reconstructed after
+// THE PROOF ROW, stated as a test: "Clover child identity + `ResumeContext` reconstructed after
 // daemon restart". `BackgroundAgentRegistry` was one `Map`, so a restart lost the names a model was
 // still using, which children had finished, and every `ResumeContext` that made `resume` possible.
 // A "restart" here is a SECOND registry built over the same temp home — no shared object, nothing
@@ -427,7 +427,7 @@ describe("createPersistedChildren — the progress-stall watchdog (fix round 1, 
       reg.register(input({ abort }));
 
       // `undefined` from the getter means the shipped default, which is `SubagentManager`'s and the
-      // Winter runtime's own `ASYNC_AGENT_STALL_TIMEOUT_MS`.
+      // Clover runtime's own `ASYNC_AGENT_STALL_TIMEOUT_MS`.
       expect(clock.armed()).toEqual([{ ms: CHILD_STALL_TIMEOUT_MS }]);
       clock.fireAll();
 

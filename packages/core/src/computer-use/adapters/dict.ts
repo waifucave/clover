@@ -192,9 +192,9 @@ export function asString(s: string, needs: Needs = { lf: false, cr: false, tab: 
   for (const ch of s) {
     if (ch === "\n" || ch === "\r" || ch === "\t") {
       flush();
-      if (ch === "\n") { parts.push("winterLF"); needs.lf = true; }
-      else if (ch === "\r") { parts.push("winterCR"); needs.cr = true; }
-      else { parts.push("winterTAB"); needs.tab = true; }
+      if (ch === "\n") { parts.push("cloverLF"); needs.lf = true; }
+      else if (ch === "\r") { parts.push("cloverCR"); needs.cr = true; }
+      else { parts.push("cloverTAB"); needs.tab = true; }
     } else cur += ch;
   }
   flush();
@@ -353,7 +353,7 @@ export function buildDictSource(bundleId: string, cmd: DictCommand, args: readon
     }
     line += ` ${p.term} ${marshal(v, p.type, `${fn}'s ${p.key}`, needs)}`;
   }
-  const pre = [needs.lf ? "set winterLF to linefeed" : "", needs.cr ? "set winterCR to return" : "", needs.tab ? "set winterTAB to tab" : ""].filter((l) => l.length > 0);
+  const pre = [needs.lf ? "set cloverLF to linefeed" : "", needs.cr ? "set cloverCR to return" : "", needs.tab ? "set cloverTAB to tab" : ""].filter((l) => l.length > 0);
   return [...pre, `tell application id "${bundleId}"`, line, "end tell"].join("\n");
 }
 
@@ -395,6 +395,6 @@ export function dictListing(appName: string, info: DictInfo, search?: string): s
     shown++;
   }
   if (shown < lines.length) out.push(`… ${lines.length - shown} more — narrow it with { search }: help("dict", { search: "…" })`);
-  else if (info.truncated) out.push("… the app has more commands than Winter lists (300) — narrow it with { search }");
+  else if (info.truncated) out.push("… the app has more commands than Clover lists (300) — narrow it with { search }");
   return out.join("\n");
 }

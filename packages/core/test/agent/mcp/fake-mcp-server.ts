@@ -1,8 +1,8 @@
 // Minimal MCP stdio server for tests: initialize / notifications/initialized / tools/list (echo) / tools/call (echoes msg).
-// WS-24: WINTER_FAKE_PID_FILE names a file this process writes its own pid to at startup, so a test can
+// WS-24: CLOVER_FAKE_PID_FILE names a file this process writes its own pid to at startup, so a test can
 // check the server is not left running after the daemon's status probe.
 import { writeFileSync } from "node:fs";
-if (process.env.WINTER_FAKE_PID_FILE) writeFileSync(process.env.WINTER_FAKE_PID_FILE, String(process.pid));
+if (process.env.CLOVER_FAKE_PID_FILE) writeFileSync(process.env.CLOVER_FAKE_PID_FILE, String(process.pid));
 let buf = "";
 process.stdin.setEncoding("utf8");
 process.stdin.on("data", (chunk: string) => {
@@ -15,7 +15,7 @@ process.stdin.on("data", (chunk: string) => {
 });
 function send(o: unknown) { process.stdout.write(JSON.stringify(o) + "\n"); }
 
-// Resources fixture (WINTER_FAKE_RESOURCES=1 opts a fake server instance in — off by default so
+// Resources fixture (CLOVER_FAKE_RESOURCES=1 opts a fake server instance in — off by default so
 // every pre-existing test, which never sets it, sees byte-identical `capabilities`/behavior):
 // one text resource, one image (a real 1x1 PNG) resource, plus an unknown-uri error path.
 const TEXT_URI = "fake://greeting";
@@ -24,29 +24,29 @@ const TINY_PNG_B64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42m
 
 function handle(msg: any) {
   if (msg.method === "initialize") {
-    if (process.env.WINTER_FAKE_NULL === "1") process.stdout.write("null\n");
+    if (process.env.CLOVER_FAKE_NULL === "1") process.stdout.write("null\n");
     const capabilities: Record<string, unknown> = { tools: {} };
-    if (process.env.WINTER_FAKE_RESOURCES === "1") capabilities.resources = {};
+    if (process.env.CLOVER_FAKE_RESOURCES === "1") capabilities.resources = {};
     send({ jsonrpc: "2.0", id: msg.id, result: { protocolVersion: "2024-11-05", capabilities, serverInfo: { name: "fake", version: "1" } } });
   }
   else if (msg.method === "notifications/initialized") { /* notification, no reply */ }
-  // WS-25 fix round 1 (I2): WINTER_FAKE_HANG_TOOLS_LIST=1 answers the handshake but never `tools/list`.
-  else if (msg.method === "tools/list" && process.env.WINTER_FAKE_HANG_TOOLS_LIST === "1") { /* never answered */ }
+  // WS-25 fix round 1 (I2): CLOVER_FAKE_HANG_TOOLS_LIST=1 answers the handshake but never `tools/list`.
+  else if (msg.method === "tools/list" && process.env.CLOVER_FAKE_HANG_TOOLS_LIST === "1") { /* never answered */ }
   else if (msg.method === "tools/list") {
     const echoTool = { name: "echo", description: "Echo the msg back", inputSchema: { type: "object", properties: { msg: { type: "string" } }, required: ["msg"] } };
-    const tools: Array<Record<string, unknown>> = process.env.WINTER_FAKE_DUP === "1" ? [echoTool, echoTool] : [echoTool];
-    // WINTER_FAKE_SLOW_TOOL=1 (opt-in; agent SDK 0.0.40's concurrency e2e): `wait`, listed READ-ONLY, sleeps
+    const tools: Array<Record<string, unknown>> = process.env.CLOVER_FAKE_DUP === "1" ? [echoTool, echoTool] : [echoTool];
+    // CLOVER_FAKE_SLOW_TOOL=1 (opt-in; agent SDK 0.0.40's concurrency e2e): `wait`, listed READ-ONLY, sleeps
     // `ms` and answers `<label> done` -- so the runtime may run several at once.
-    if (process.env.WINTER_FAKE_SLOW_TOOL === "1") {
+    if (process.env.CLOVER_FAKE_SLOW_TOOL === "1") {
       tools.push({ name: "wait", description: "Wait ms, then answer the label", inputSchema: { type: "object", properties: { label: { type: "string" }, ms: { type: "number" } }, required: ["label"] }, annotations: { readOnlyHint: true } });
     }
     send({ jsonrpc: "2.0", id: msg.id, result: { tools } });
   }
-  else if (msg.method === "tools/call" && msg.params?.name === "wait" && process.env.WINTER_FAKE_SLOW_TOOL === "1") {
+  else if (msg.method === "tools/call" && msg.params?.name === "wait" && process.env.CLOVER_FAKE_SLOW_TOOL === "1") {
     const label = String(msg.params?.arguments?.label ?? "");
-    // WINTER_FAKE_MARKER_DIR: `<label>.started` / `<label>.done` files, so a test can reason CAUSALLY about
+    // CLOVER_FAKE_MARKER_DIR: `<label>.started` / `<label>.done` files, so a test can reason CAUSALLY about
     // what had started or finished when a result arrived, instead of measuring millisecond gaps.
-    const markers = process.env.WINTER_FAKE_MARKER_DIR;
+    const markers = process.env.CLOVER_FAKE_MARKER_DIR;
     if (markers) writeFileSync(`${markers}/${label}.started`, "");
     setTimeout(() => {
       if (markers) writeFileSync(`${markers}/${label}.done`, "");
@@ -54,13 +54,13 @@ function handle(msg: any) {
     }, Number(msg.params?.arguments?.ms ?? 0));
   }
   else if (msg.method === "tools/call") send({ jsonrpc: "2.0", id: msg.id, result: { content: [{ type: "text", text: `echo: ${msg.params?.arguments?.msg ?? ""}` }] } });
-  else if (msg.method === "resources/list" && process.env.WINTER_FAKE_RESOURCES === "1") {
+  else if (msg.method === "resources/list" && process.env.CLOVER_FAKE_RESOURCES === "1") {
     send({ jsonrpc: "2.0", id: msg.id, result: { resources: [
       { uri: TEXT_URI, name: "greeting", description: "A greeting text resource", mimeType: "text/plain" },
       { uri: IMAGE_URI, name: "pixel", description: "A tiny PNG", mimeType: "image/png" },
     ] } });
   }
-  else if (msg.method === "resources/read" && process.env.WINTER_FAKE_RESOURCES === "1") {
+  else if (msg.method === "resources/read" && process.env.CLOVER_FAKE_RESOURCES === "1") {
     const uri = msg.params?.uri;
     if (uri === TEXT_URI) send({ jsonrpc: "2.0", id: msg.id, result: { contents: [{ uri, mimeType: "text/plain", text: "hello from fake resource" }] } });
     else if (uri === IMAGE_URI) send({ jsonrpc: "2.0", id: msg.id, result: { contents: [{ uri, mimeType: "image/png", blob: TINY_PNG_B64 }] } });

@@ -3,11 +3,11 @@ import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, renameSyn
 import { join, sep } from "node:path";
 import { hasShellHazards } from "./shell-scan";
 import { dangerousDomainMatch } from "./dangerous-domains";
-import { ensureGlobalGitignore, WINTER_PERSONAL_IGNORES } from "../global-gitignore";
+import { ensureGlobalGitignore, CLOVER_PERSONAL_IGNORES } from "../global-gitignore";
 
 /**
  * CC-grammar allow-rules store (SP-approvals Task 1) — the foundation the engine gate (Task 3)
- * and approval-card persistence (Task 5) build on. Winter's `ask` policy today re-prompts forever;
+ * and approval-card persistence (Task 5) build on. Clover's `ask` policy today re-prompts forever;
  * this store lets a call that matches a standing rule skip that prompt. Two scopes:
  *
  *  - "global": rules that apply regardless of project. Read via the injected `globalAllow(projectRoot)`
@@ -16,14 +16,14 @@ import { ensureGlobalGitignore, WINTER_PERSONAL_IGNORES } from "../global-gitign
  *    ?.permissions?.allow ?? ["Computer"]`), the SAME hot-settings pattern every other
  *    live-reloadable setting in this codebase already follows (see settings-watcher.ts). Despite
  *    the "global" name, the thunk itself may resolve to a PER-PROJECT value (a trusted project's
- *    own `.winter/settings.json` `permissions.allow` union'd in via ProjectSettingsResolver) — this
+ *    own `.clover/settings.json` `permissions.allow` union'd in via ProjectSettingsResolver) — this
  *    class stays agnostic to that; it just calls the thunk with whatever `projectRoot` the
  *    enclosing method already has in scope. `append(..., "global", ...)` writes the other direction: a
- *    read-modify-write of `<winterHome>/settings.json`'s `permissions.allow`, preserving every
+ *    read-modify-write of `<cloverHome>/settings.json`'s `permissions.allow`, preserving every
  *    other key. The daemon's existing SettingsWatcher (already watching that one file) is what
  *    makes the write hot — this class never watches or caches the global side itself, it just
  *    re-reads the thunk on every call.
- *  - "project": rules scoped to one repo root, persisted at `<projectRoot>/.winter/
+ *  - "project": rules scoped to one repo root, persisted at `<projectRoot>/.clover/
  *    permissions.local.json` (gitignored — mirrors settings.ts's own `settings.local.json`
  *    convention: local-only, never committed). This side has no daemon-level watcher (there can
  *    be many project roots over a daemon's life), so this class owns its own hot cache: a
@@ -76,8 +76,8 @@ import { ensureGlobalGitignore, WINTER_PERSONAL_IGNORES } from "../global-gitign
  */
 export type RuleScope = "project" | "global";
 
-/** Thrown by `append()` for scope `"project"` when `projectRoot` is winterHome itself or nested
- *  inside it — the control-plane guard: a project rules file must never land inside Winter's own
+/** Thrown by `append()` for scope `"project"` when `projectRoot` is cloverHome itself or nested
+ *  inside it — the control-plane guard: a project rules file must never land inside Clover's own
  *  home directory (that's what `scope: "global"` is for), where it could shadow or be confused
  *  with the real global settings file. Also thrown when scope is `"project"` but no projectRoot
  *  was given at all — there is nowhere sensible to write a project-scoped rule without one. */
@@ -351,10 +351,10 @@ function statOrNull(path: string): Stats | null {
 
 /** Like `statOrNull`, but `lstat` — reports the link ITSELF, never following a final symlink. Used
  *  by the symlink-indirection guard below (SP-policies whole-branch review): the rules store must
- *  refuse to TRUST a symlinked `<root>/.winter` (or a symlinked `permissions.local.json`). An agent
+ *  refuse to TRUST a symlinked `<root>/.clover` (or a symlinked `permissions.local.json`). An agent
  *  that can create a symlink (sandboxed `ln -s`, needing NO write grant) could otherwise point
- *  `.winter` at a decoy dir it CAN write, plant a `permissions.local.json` there (a path with no
- *  `.winter` in it, so the write-guard never flags it), and have the hot reader follow the symlink
+ *  `.clover` at a decoy dir it CAN write, plant a `permissions.local.json` there (a path with no
+ *  `.clover` in it, so the write-guard never flags it), and have the hot reader follow the symlink
  *  and mint allow-rules with no human card — self-escalating the live session, since rules are
  *  hot-read. `statOrNull`/`existsSync` FOLLOW the symlink (they'd read/write the decoy); lstat is
  *  what actually sees the link. */
@@ -374,7 +374,7 @@ export class PermissionRules {
   // NEW way still only gets the one warning it already got. See `projectRulesFor` below.
   private readonly warnedFiles = new Set<string>();
 
-  constructor(private readonly deps: { globalAllow: (projectRoot: string | null) => string[] | undefined; winterHome: string }) {}
+  constructor(private readonly deps: { globalAllow: (projectRoot: string | null) => string[] | undefined; cloverHome: string }) {}
 
   /** "allow" when any global or project rule matches this call; `null` = no opinion (the caller's
    *  existing `ask` policy decides from there — this class never itself denies). Never throws: a
@@ -389,20 +389,20 @@ export class PermissionRules {
     return null;
   }
 
-  /** Persist a rule. `scope: "global"` read-modify-writes `<winterHome>/settings.json`'s
+  /** Persist a rule. `scope: "global"` read-modify-writes `<cloverHome>/settings.json`'s
    *  `permissions.allow`, preserving every other key — a corrupt settings.json is left alone (the
    *  parse error propagates) rather than silently replaced, since there's nothing safe to
    *  "preserve other keys" from a file this class can't parse. `scope: "project"` read-modify-
-   *  writes `<projectRoot>/.winter/permissions.local.json`, creating the `.winter` directory and
+   *  writes `<projectRoot>/.clover/permissions.local.json`, creating the `.clover` directory and
    *  file on first use. Both scopes dedupe (appending an already-present rule is a no-op) and
    *  write atomically (tmp+rename). Throws `RuleAppendError` for `scope: "project"` when
-   *  `projectRoot` is missing or is winterHome itself / nested inside it (control-plane guard). */
+   *  `projectRoot` is missing or is cloverHome itself / nested inside it (control-plane guard). */
   append(rule: string, scope: RuleScope, projectRoot: string | null): void {
     if (scope === "project") {
       if (projectRoot === null || this.isControlPlanePath(projectRoot)) {
         throw new RuleAppendError(
           `refusing to write a project permission rule for ${projectRoot ?? "(no project root)"} — ` +
-            `it is winterHome itself or nested inside it (${this.deps.winterHome}); use scope "global" instead`,
+            `it is cloverHome itself or nested inside it (${this.deps.cloverHome}); use scope "global" instead`,
         );
       }
       this.appendProject(rule, projectRoot);
@@ -457,12 +457,12 @@ export class PermissionRules {
 
   private isControlPlanePath(projectRoot: string): boolean {
     const root = canon(projectRoot);
-    const home = canon(this.deps.winterHome);
+    const home = canon(this.deps.cloverHome);
     return root === home || root.startsWith(home + sep);
   }
 
   private projectRulesFile(root: string): string {
-    return join(root, ".winter", "permissions.local.json");
+    return join(root, ".clover", "permissions.local.json");
   }
 
   /** The hot mtime+size-checked read-through for one project root's rules file — no `fs.watch`.
@@ -475,16 +475,16 @@ export class PermissionRules {
    *  trigger another read attempt. */
   private projectRulesFor(root: string): string[] {
     // SP-policies whole-branch review residual (symlink indirection): never TRUST — hence never
-    // FOLLOW — a symlinked `<root>/.winter` or a symlinked `permissions.local.json`. lstat sees the
+    // FOLLOW — a symlinked `<root>/.clover` or a symlinked `permissions.local.json`. lstat sees the
     // link itself (statOrNull below would follow it into a decoy dir the agent controls). A
-    // symlinked `.winter` (or file) is treated as "this project has NO rules" — the same result as
+    // symlinked `.clover` (or file) is treated as "this project has NO rules" — the same result as
     // an absent file — and warned about once for this root (reusing warnFileOnce's per-root dedupe).
-    // A `.winter` that doesn't exist at all is fine (null lstat → fall through → no rules, as today);
+    // A `.clover` that doesn't exist at all is fine (null lstat → fall through → no rules, as today);
     // a real directory / real file passes straight through. See `lstatOrNull` for the full threat.
-    const dotWinter = join(root, ".winter");
-    const dotNormaLstat = lstatOrNull(dotWinter);
+    const dotClover = join(root, ".clover");
+    const dotNormaLstat = lstatOrNull(dotClover);
     if (dotNormaLstat?.isSymbolicLink()) {
-      this.warnFileOnce(root, `${dotWinter} is a symlink, not a real directory — refusing to read project permission rules through it`);
+      this.warnFileOnce(root, `${dotClover} is a symlink, not a real directory — refusing to read project permission rules through it`);
       this.cache.delete(root);
       return [];
     }
@@ -536,20 +536,20 @@ export class PermissionRules {
   }
 
   private appendProject(rule: string, root: string): void {
-    const dotWinter = join(root, ".winter");
+    const dotClover = join(root, ".clover");
     // Defense in depth (SP-policies whole-branch review residual): never write THROUGH a symlinked
-    // `<root>/.winter` or a symlinked `permissions.local.json`. A human answering an approval card
+    // `<root>/.clover` or a symlinked `permissions.local.json`. A human answering an approval card
     // must never be tricked into planting a rules file into an attacker-chosen dir via a symlink an
     // agent pre-created. lstat sees the link itself (mkdirSync/existsSync/rename below would follow
-    // it); throw rather than write through. A `.winter` that doesn't exist yet (null lstat) is fine —
+    // it); throw rather than write through. A `.clover` that doesn't exist yet (null lstat) is fine —
     // mkdir-on-first-use below still creates a REAL dir; a real dir/file passes straight through.
-    const dotNormaLstat = lstatOrNull(dotWinter);
+    const dotNormaLstat = lstatOrNull(dotClover);
     if (dotNormaLstat?.isSymbolicLink()) {
       throw new RuleAppendError(
-        `refusing to write a project permission rule for ${root} — ${dotWinter} is a symlink, not a real directory`,
+        `refusing to write a project permission rule for ${root} — ${dotClover} is a symlink, not a real directory`,
       );
     }
-    mkdirSync(dotWinter, { recursive: true });
+    mkdirSync(dotClover, { recursive: true });
     const path = this.projectRulesFile(root);
     const fileLstat = lstatOrNull(path);
     if (fileLstat?.isSymbolicLink()) {
@@ -578,11 +578,11 @@ export class PermissionRules {
     // the mtime check and momentarily serve stale rules back to this SAME instance.
     const stat = statSync(path);
     this.cache.set(root, { mtimeMs: stat.mtimeMs, size: stat.size, rules: list });
-    ensureGlobalGitignore(WINTER_PERSONAL_IGNORES);
+    ensureGlobalGitignore(CLOVER_PERSONAL_IGNORES);
   }
 
   private appendGlobal(rule: string): void {
-    const path = join(this.deps.winterHome, "settings.json");
+    const path = join(this.deps.cloverHome, "settings.json");
     // Unlike appendProject above, a corrupt settings.json is NOT swallowed to `{}` — that would
     // silently discard the user's real provider config and every other setting. Let JSON.parse's
     // SyntaxError propagate; there is nothing safe to "preserve other keys" from a file this
@@ -592,7 +592,7 @@ export class PermissionRules {
     // exist AT ALL, which is unreachable in real operation — the daemon always creates/migrates
     // one before anything else can run, and `loadSettings()` itself throws on a missing file
     // rather than tolerating one (see settings.ts). Left permissive rather than throwing here too:
-    // a winterHome with no settings.json yet has nothing to "preserve other keys" FROM either way,
+    // a cloverHome with no settings.json yet has nothing to "preserve other keys" FROM either way,
     // and today only a test that deliberately skips bootstrapping one exercises this branch.
     const obj: any = existsSync(path) ? JSON.parse(readFileSync(path, "utf8")) : {}; // same untyped-any idiom as settings.ts's loadSettings
     obj.permissions ??= {};

@@ -1,5 +1,5 @@
 // ComputerV2 Phase 4 — the PROOF VIEWER for a headless presentation (apple/Winter/Sources/HeadlessPresent): a
-// windowless stand-in for Winter.app's panel that drives the real viewer core (`WinterPresentConsumer`) the way the
+// windowless stand-in for Clover.app's panel that drives the real viewer core (`WinterPresentConsumer`) the way the
 // panel will — every frame read on the GPU into a display texture of its own, its slot given back only when that
 // read completed — and measures what the panel would see. It never draws on screen.
 //
@@ -34,7 +34,7 @@
 #import "WinterPresentConsumer.h"
 #include <mach/notify.h>
 
-// The proof's own doors into the consumer (never used by Winter.app): a raw message to the producer, and the receive
+// The proof's own doors into the consumer (never used by Clover.app): a raw message to the producer, and the receive
 // port its messages arrive on (to forge one the consumer must ignore).
 @interface WinterPresentConsumer (ProofDoors)
 - (BOOL)sendToProducer:(mach_msg_header_t *)header size:(mach_msg_size_t)size;
@@ -90,7 +90,7 @@ static void Emit(NSDictionary *object) {
   if ((self = [super init])) {
     _device = MTLCreateSystemDefaultDevice();
     _queue = [_device newCommandQueue];
-    _work = dispatch_queue_create("winter.present.viewer", DISPATCH_QUEUE_SERIAL);
+    _work = dispatch_queue_create("clover.present.viewer", DISPATCH_QUEUE_SERIAL);
     _probe = [_device newBufferWithLength:4 options:MTLResourceStorageModeShared];
     _probeX = x;
     _probeY = y;

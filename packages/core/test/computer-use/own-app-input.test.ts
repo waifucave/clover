@@ -1,4 +1,4 @@
-// Wake triggers across backends: Winter's own HELPER input to an app, per bundle id, from every session — what a tab
+// Wake triggers across backends: Clover's own HELPER input to an app, per bundle id, from every session — what a tab
 // wake trigger on a browser that is ALSO bound as an app asks (`BrowserEngineDeps.ownAppInputAt`), since the helper's
 // clicks reach its page as trusted DOM events. The rule is the tab's own (`TabDriver.ownInputAt`): in flight at `at`, or
 // ended at most the 500 ms grace before it, with 50 ms of slack before a start.
@@ -80,8 +80,8 @@ afterEach(() => {
 });
 
 describe("the service records its helper input per app", () => {
-  macOnly("an act and an AppleScript are Winter's own input to their app while in flight and for the grace after; a read is not", async () => {
-    const home = mkdtempSync(join(tmpdir(), "winter-own-input-"));
+  macOnly("an act and an AppleScript are Clover's own input to their app while in flight and for the grace after; a read is not", async () => {
+    const home = mkdtempSync(join(tmpdir(), "clover-own-input-"));
     homes.push(home);
     const fake = new FakeHelper();
     const settings = { computerUse: {} } as unknown as Settings;

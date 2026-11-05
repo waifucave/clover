@@ -1,5 +1,7 @@
 # Winter Headless
 
+> **Reference: Winter's code.** This file describes Winter's code as it stood at the `winter-before-clover` tag, before the Clover rename (C0). Where it describes code that C0 renamed, read `winter-core` as `clover-core`, `WINTER_*` as `CLOVER_*` and `~/.winter` as `~/.clover`. For Clover itself, [the spec](../clover-spec.md) is the source of truth, then [the plan](../clover-plan.md).
+
 *Read this before touching the `headless` browser backend, the Winter Headless helper app, its network rules, or the Chromium embed layout.*
 
 `browsers.open(url, { browser: "headless" })` opens a tab in Winter's private, invisible browser — background reading, many tabs at once. One engine: `HEADLESS_ENGINES = ["winter"]` (`packages/core/src/computer-use/browser/headless/engines.ts`). The engine (Phase 2 tab driver, policy, CDP allowlist) is shared with the other backends — see [computer-use-browsers.md](./computer-use-browsers.md).

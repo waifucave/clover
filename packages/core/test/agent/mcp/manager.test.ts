@@ -9,16 +9,16 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync, realpa
 import { McpManager } from "../../../src/agent/mcp/manager";
 import { TrustStore } from "../../../src/agent/trust";
 
-// WS-21: the project MCP file is `<root>/.winter/mcp.json` (the repo-root `.mcp.json` is never read).
+// WS-21: the project MCP file is `<root>/.clover/mcp.json` (the repo-root `.mcp.json` is never read).
 const writeProjectMcp = (root: string, body: string): void => {
-  mkdirSync(join(root, ".winter"), { recursive: true });
-  writeFileSync(join(root, ".winter", "mcp.json"), body);
+  mkdirSync(join(root, ".clover"), { recursive: true });
+  writeFileSync(join(root, ".clover", "mcp.json"), body);
 };
 
 const FIXTURE = join(import.meta.dir, "fake-mcp-server.ts");
 /**
  * The harness timeout of a test that probes a REAL stdio server (`bun run …`). The probe is bounded by its OWN
- * budget (`WINTER_MCP_START_TIMEOUT_MS`, 10 s): it answers "connected" or "failed" within it. Bun's 5 s default
+ * budget (`CLOVER_MCP_START_TIMEOUT_MS`, 10 s): it answers "connected" or "failed" within it. Bun's 5 s default
  * is shorter than that budget, so on a loaded machine (process start-up is the one latency that stretches without
  * bound -- a full-suite run under stress cut "bad-command" at 5003 ms) the harness killed a probe that was still
  * inside its documented bound, with no message about what it was waiting for. This is the failure bound only: a
@@ -44,7 +44,7 @@ describe.if(isMac)("McpManager (a status probe)", () => {
   test("startAll reports a connected server with its tool names — and leaves nothing running (WS-24)", async () => {
     const pidFile = join(realDir(), "pid");
     const mgr = new McpManager({ trust: trustNone() });
-    await mgr.startAll({ fake: { command: "bun", args: ["run", FIXTURE], env: { WINTER_FAKE_PID_FILE: pidFile } } });
+    await mgr.startAll({ fake: { command: "bun", args: ["run", FIXTURE], env: { CLOVER_FAKE_PID_FILE: pidFile } } });
     expect(mgr.list()).toEqual([{ name: "fake", status: "connected", toolNames: ["echo"], source: "user" }]);
     expect(existsSync(pidFile)).toBe(true); // it really ran…
     expect(await stillRunning(Number(readFileSync(pidFile, "utf8")))).toBe(false); // …and the probe closed it
@@ -54,15 +54,15 @@ describe.if(isMac)("McpManager (a status probe)", () => {
     const pidFile = join(realDir(), "pid");
     const mgr = new McpManager({ trust: trustNone() });
     // `sh` stays the parent (the trailing `; true`), so the real server is its CHILD — our grandchild.
-    await mgr.startAll({ wrapped: { command: "sh", args: ["-c", `bun run '${FIXTURE}'; true`], env: { WINTER_FAKE_PID_FILE: pidFile } } });
+    await mgr.startAll({ wrapped: { command: "sh", args: ["-c", `bun run '${FIXTURE}'; true`], env: { CLOVER_FAKE_PID_FILE: pidFile } } });
     expect(mgr.list().find((s) => s.name === "wrapped")?.status).toBe("connected");
     expect(await stillRunning(Number(readFileSync(pidFile, "utf8")))).toBe(false);
   }, SPAWN_TEST_MS);
 
   test("a server that never answers the handshake is a failed probe within the start timeout, and is killed", async () => {
     const pidFile = join(realDir(), "pid");
-    const prev = process.env.WINTER_MCP_START_TIMEOUT_MS;
-    process.env.WINTER_MCP_START_TIMEOUT_MS = "500";
+    const prev = process.env.CLOVER_MCP_START_TIMEOUT_MS;
+    process.env.CLOVER_MCP_START_TIMEOUT_MS = "500";
     try {
       const mgr = new McpManager({ trust: trustNone() });
       const t0 = Date.now();
@@ -71,7 +71,7 @@ describe.if(isMac)("McpManager (a status probe)", () => {
       expect(mgr.list().find((s) => s.name === "hung")?.status).toBe("failed");
       expect(await stillRunning(Number(readFileSync(pidFile, "utf8").trim()))).toBe(false);
     } finally {
-      if (prev === undefined) delete process.env.WINTER_MCP_START_TIMEOUT_MS; else process.env.WINTER_MCP_START_TIMEOUT_MS = prev;
+      if (prev === undefined) delete process.env.CLOVER_MCP_START_TIMEOUT_MS; else process.env.CLOVER_MCP_START_TIMEOUT_MS = prev;
     }
   }, SPAWN_TEST_MS);
 
@@ -84,23 +84,23 @@ describe.if(isMac)("McpManager (a status probe)", () => {
 
   test("a server that completes the handshake but hangs on tools/list is a failed probe within the ONE budget (WS-25 fix round 1, I2)", async () => {
     const pidFile = join(realDir(), "pid");
-    const prev = process.env.WINTER_MCP_START_TIMEOUT_MS;
-    process.env.WINTER_MCP_START_TIMEOUT_MS = "800";
+    const prev = process.env.CLOVER_MCP_START_TIMEOUT_MS;
+    process.env.CLOVER_MCP_START_TIMEOUT_MS = "800";
     try {
       const mgr = new McpManager({ trust: trustNone() });
       const t0 = Date.now();
-      await mgr.startAll({ slow: { command: "bun", args: ["run", FIXTURE], env: { WINTER_FAKE_HANG_TOOLS_LIST: "1", WINTER_FAKE_PID_FILE: pidFile } } });
+      await mgr.startAll({ slow: { command: "bun", args: ["run", FIXTURE], env: { CLOVER_FAKE_HANG_TOOLS_LIST: "1", CLOVER_FAKE_PID_FILE: pidFile } } });
       expect(Date.now() - t0).toBeLessThan(5_000); // never the MCP client's 60 s request timeout
       expect(mgr.list()).toEqual([{ name: "slow", status: "failed", toolNames: [], source: "user" }]);
       expect(await stillRunning(Number(readFileSync(pidFile, "utf8")))).toBe(false); // and it was closed
     } finally {
-      if (prev === undefined) delete process.env.WINTER_MCP_START_TIMEOUT_MS; else process.env.WINTER_MCP_START_TIMEOUT_MS = prev;
+      if (prev === undefined) delete process.env.CLOVER_MCP_START_TIMEOUT_MS; else process.env.CLOVER_MCP_START_TIMEOUT_MS = prev;
     }
   }, SPAWN_TEST_MS);
 
   test("a server whose tool list repeats a name still probes connected — the probe registers nothing to collide (WS-24)", async () => {
     const mgr = new McpManager({ trust: trustNone() });
-    await mgr.startAll({ dup: { command: "bun", args: ["run", FIXTURE], env: { WINTER_FAKE_DUP: "1" } } });
+    await mgr.startAll({ dup: { command: "bun", args: ["run", FIXTURE], env: { CLOVER_FAKE_DUP: "1" } } });
     // WS-25: the probe speaks through the runtime's own MCP client, which keeps the FIRST of a repeated
     // tool name (the listing a session's child sees) — so the status line reports what a session gets.
     expect(mgr.list().find((s) => s.name === "dup")).toMatchObject({ status: "connected", toolNames: ["echo"] });
@@ -128,7 +128,7 @@ describe.if(isMac)("McpManager.ensureProject", () => {
 
   test("TRUSTED project → probed connected, and not left running", async () => {
     const pidFile = join(realDir(), "pid");
-    const dir = projDir(true, { WINTER_FAKE_PID_FILE: pidFile });
+    const dir = projDir(true, { CLOVER_FAKE_PID_FILE: pidFile });
     const trust = trustNone(); trust.trust(dir);
     const mgr = new McpManager({ trust });
     await mgr.ensureProject(dir);
@@ -136,7 +136,7 @@ describe.if(isMac)("McpManager.ensureProject", () => {
     expect(await stillRunning(Number(readFileSync(pidFile, "utf8")))).toBe(false);
   }, SPAWN_TEST_MS);
 
-  test("malformed .winter/mcp.json → skip, no throw; idempotent 2nd call", async () => {
+  test("malformed .clover/mcp.json → skip, no throw; idempotent 2nd call", async () => {
     const dir = realpathSync(mkdtempSync(join(tmpdir(), "mcp-bad-")));
     writeProjectMcp(dir, "{ not json");
     const trust = trustNone(); trust.trust(dir);
@@ -202,7 +202,7 @@ describe.if(isMac)("McpManager.ensureProject", () => {
   // `mcp.list {cwd}` (`ipc/server.ts`'s `mcpList` handler) — it must never spawn a disabled server.
   test("a name in settings.mcp.disabled is NEVER spawned by ensureProject, even in a trusted project", async () => {
     const pidFile = join(realDir(), "pid");
-    const dir = projDir(true, { WINTER_FAKE_PID_FILE: pidFile });
+    const dir = projDir(true, { CLOVER_FAKE_PID_FILE: pidFile });
     const trust = trustNone(); trust.trust(dir);
     const mgr = new McpManager({ trust, disabled: () => new Set(["proj"]) });
     await mgr.ensureProject(dir);

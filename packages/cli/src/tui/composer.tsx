@@ -40,8 +40,8 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { join } from "node:path";
 import { Box, Text, useInput, useStdin } from "ink";
 import { Chalk } from "chalk";
-import { resolveWinterHome } from "@yanlinglabs/winter-core";
-import type { ApprovalPolicy } from "@yanlinglabs/winter-protocol";
+import { resolveCloverHome } from "@waifucave/clover-core";
+import type { ApprovalPolicy } from "@waifucave/clover-protocol";
 import { footerKeyAction } from "../keys";
 import type { FooterSelection } from "../task-block";
 import { theme } from "./theme";
@@ -107,9 +107,9 @@ const ansi = new Chalk({ level: 3 });
 
 function defaultHistoryPath(): string {
   // P9b-12: routed through the resolver (mirrors `main.ts`'s `socketPath()`) rather than
-  // hardcoding `~/.winter` — a `WINTER_HOME` override must move this file with everything else.
+  // hardcoding `~/.clover` — a `CLOVER_HOME` override must move this file with everything else.
   // WS-21 (spec §2.2): claude's own location, `sdk/history.jsonl`.
-  return historyPathFor(resolveWinterHome());
+  return historyPathFor(resolveCloverHome());
 }
 
 /** Phase 3d T2 — pure predicate: is the `/`-slash-command menu open for this `InputState`, and if
@@ -257,7 +257,7 @@ export interface ComposerProps {
    *  the priority behavior itself is covered at the history-store level). */
   sessionId?: string;
   /** Injectable history file location (tests pass a temp path); defaults to
-   *  `~/.winter/sdk/history.jsonl` (WS-21). */
+   *  `~/.clover/sdk/history.jsonl` (WS-21). */
   historyPath?: string;
   /** WS-21 (spec §2.2): the history entry's `project` field (claude's own history shape) — the
    *  session's cwd. Optional; defaults to "" (tests may omit it, same precedent as `sessionId`). */

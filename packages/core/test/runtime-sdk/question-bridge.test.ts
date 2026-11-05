@@ -1,6 +1,6 @@
 import { test, expect, afterEach, jest } from "bun:test";
 import type { CanUseTool } from "@yanlinglabs/winter-agent-sdk";
-import { QUESTION_PLACEHOLDER_MAX, QuestionAskedEvent, QuestionResolvedEvent, type NewSessionEvent } from "@yanlinglabs/winter-protocol";
+import { QUESTION_PLACEHOLDER_MAX, QuestionAskedEvent, QuestionResolvedEvent, type NewSessionEvent } from "@waifucave/clover-protocol";
 import { ApprovalBroker } from "../../src/agent/approvals";
 import { QuestionBroker } from "../../src/agent/questions";
 import { PermissionGate } from "../../src/agent/gate";
@@ -257,7 +257,7 @@ test("with agentID set, the question still surfaces on the parent session's stre
   const pending = canUse(ASK_USER_QUESTION_TOOL, INPUT, {
     signal: new AbortController().signal,
     toolUseID: "tu-child", requestId: "req-child",
-    agentID: "winter-subagent-7",
+    agentID: "clover-subagent-7",
   } as Parameters<CanUseTool>[2]);
 
   expect(events).toHaveLength(1);
@@ -266,7 +266,7 @@ test("with agentID set, the question still surfaces on the parent session's stre
   // The parent's id — never the agentID, which names no session and no event stream.
   expect(ev.sessionId).toBe(SESSION);
   expect(ev.callId).toBe("tu-child");
-  expect(Object.values(ev)).not.toContain("winter-subagent-7");
+  expect(Object.values(ev)).not.toContain("clover-subagent-7");
 
   // …and it is answerable at the parent's sessionId, which is what `ask_user.respond` addresses.
   questions.respond(SESSION, "tu-child", { "Which database?": "Postgres" }, "phone");
@@ -300,7 +300,7 @@ test("a re-asked question supersedes the stale wait, and the withdrawal lands BE
 });
 
 test("AskUserQuestion reaches a human under dont-ask — a deliberate descriptor divergence", async () => {
-  // Winter's own descriptor says AskUserQuestion is "denied under `dontAsk`". Winter's `ask_user` is
+  // Clover's own descriptor says AskUserQuestion is "denied under `dontAsk`". Clover's `ask_user` is
   // READ_ONLY and therefore ALLOWED under `dont-ask` today, and the bridge routes the tool to the
   // question broker before any policy is consulted — so on this leg the human is still asked.
   // Recorded and pinned rather than silently inherited: `dont-ask` means "don't ask me to approve
@@ -371,7 +371,7 @@ test("a placeholder rides the question trimmed; a blank one is dropped; a long o
   const emoji = "😀".repeat(60); // 120 UTF-16 units: the clamp must count what the wire schema counts
   const pending = h.ask("tu-hint", {
     questions: [
-      { question: "Name?", header: "Name", placeholder: "  e.g. Winter  " },
+      { question: "Name?", header: "Name", placeholder: "  e.g. Clover  " },
       { question: "Which?", header: "Which", placeholder: "   ", options: [{ label: "A" }, { label: "B" }], multiSelect: true },
       { question: "Long?", header: "Long", placeholder: long },
       { question: "Emoji?", header: "Emoji", placeholder: emoji },
@@ -380,7 +380,7 @@ test("a placeholder rides the question trimmed; a blank one is dropped; a long o
 
   expect(h.events).toHaveLength(1);
   const asked = QuestionAskedEvent.parse({ ...h.events[0], seq: 1, ts: FIXED_NOW });
-  expect(asked.questions[0]!.placeholder).toBe("e.g. Winter");
+  expect(asked.questions[0]!.placeholder).toBe("e.g. Clover");
   expect("placeholder" in asked.questions[1]!).toBe(false);
   expect(asked.questions[1]!.options.map((o) => o.label)).toEqual(["A", "B"]);
   const clamped = asked.questions[2]!.placeholder!;
@@ -423,6 +423,6 @@ test("a free-text question is never multiple-choice, and `options: null` asks as
   const asked = QuestionAskedEvent.parse({ ...h.events[0], seq: 1, ts: FIXED_NOW });
   expect(asked.questions[0]!.options).toEqual([]);
   expect(asked.questions[0]!.multiSelect).toBe(false);
-  h.questions.respond(SESSION, "tu-null", { "Name?": "Winter" }, "app");
+  h.questions.respond(SESSION, "tu-null", { "Name?": "Clover" }, "app");
   await pending;
 });

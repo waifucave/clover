@@ -1,7 +1,7 @@
-// `session.setPolicy` ACROSS THE BYPASS BOUNDARY on a live Winter-leg child re-incarnates it.
+// `session.setPolicy` ACROSS THE BYPASS BOUNDARY on a live Clover-leg child re-incarnates it.
 //
-// A Winter child is spawned with `permissions.disableBypassPermissionsMode: policy !== "bypass"` and
-// `allowDangerouslySkipPermissions` only under bypass (`mode-options.ts`'s `buildWinterOptions`) — a
+// A Clover child is spawned with `permissions.disableBypassPermissionsMode: policy !== "bypass"` and
+// `allowDangerouslySkipPermissions` only under bypass (`mode-options.ts`'s `buildCloverOptions`) — a
 // deliberate clamp against an agent DEFINITION minting its own bypass. Both are SPAWN-TIME facts, so a
 // live `Query.setPermissionMode("bypassPermissions")` on a child spawned under any other policy is
 // refused by the runtime ("bypassPermissions is disabled by managed configuration"), and the RPC used
@@ -22,13 +22,13 @@ import { describe, expect, test } from "bun:test";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, type WritableSocket } from "@yanlinglabs/winter-protocol";
+import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, type WritableSocket } from "@waifucave/clover-protocol";
 import { startIpcServer } from "../../src/ipc/server";
 import { SessionStore } from "../../src/sessions/store";
 import { FileSecretStore } from "../../src/auth/secret-store";
 import { TokenAuthority } from "../../src/auth/tokens";
 import type { SessionApprovalPolicy } from "../../src/agent/gate";
-import type { WinterSessionDrivers, LegSession } from "../../src/runtime-sdk/session-driver";
+import type { CloverSessionDrivers, LegSession } from "../../src/runtime-sdk/session-driver";
 import type { SessionLeg } from "../../src/runtime-sdk/leg";
 
 class TestClient {
@@ -66,7 +66,7 @@ class TestClient {
 }
 
 interface Harness {
-  table: WinterSessionDrivers;
+  table: CloverSessionDrivers;
   /** Every live `setPolicy` the child was told, in order. */
   told: SessionApprovalPolicy[];
   /** Every session id the table evicted, in order. */
@@ -79,7 +79,7 @@ interface Harness {
 
 /**
  * One live session on a configurable leg. `turnRunning` makes `idle()` wait for `finishTurn()`; the
- * child REFUSES a live switch into `bypass` exactly as the Winter runtime does when its spawn-time
+ * child REFUSES a live switch into `bypass` exactly as the Clover runtime does when its spawn-time
  * clamp is on (`refuseBypass`, default true), and `evict` forgets the driver, as the real table does.
  */
 function harness(opts: { leg?: SessionLeg; turnRunning?: boolean; refuseBypass?: boolean; refuseLeavingBypass?: boolean } = {}): Harness {
@@ -106,7 +106,7 @@ function harness(opts: { leg?: SessionLeg; turnRunning?: boolean; refuseBypass?:
     },
     end: async () => {}, deliver: never, open: async () => {}, idle: () => idle,
   };
-  const table: WinterSessionDrivers = {
+  const table: CloverSessionDrivers = {
     legForNewSession: () => opts.leg ?? "winter",
     legOf: () => opts.leg ?? "winter",
     assertAvailable: () => {},
@@ -121,13 +121,13 @@ function harness(opts: { leg?: SessionLeg; turnRunning?: boolean; refuseBypass?:
   return { table, told, evicted, finishTurn: () => release(), endIncarnation: () => { endInc(); present = false; } };
 }
 
-async function boot(winter: WinterSessionDrivers): Promise<{ store: SessionStore; client: TestClient; stop: () => void }> {
-  const home = mkdtempSync(join(tmpdir(), "winter-set-policy-bypass-"));
+async function boot(clover: CloverSessionDrivers): Promise<{ store: SessionStore; client: TestClient; stop: () => void }> {
+  const home = mkdtempSync(join(tmpdir(), "clover-set-policy-bypass-"));
   const store = new SessionStore(home);
   const socketPath = join(home, "core.sock");
   const authority = new TokenAuthority(new FileSecretStore(join(home, "secrets.json")));
   const tokens = await authority.ensureTokens();
-  const server = startIpcServer({ socketPath, serverVersion: "test", tokens: authority, store, winter });
+  const server = startIpcServer({ socketPath, serverVersion: "test", tokens: authority, store, clover });
   const client = await TestClient.connect(socketPath);
   await client.hello(tokens.harness, "mac");
   return { store, client, stop: () => { client.close(); server.stop(); store.close(); } };
@@ -136,7 +136,7 @@ async function boot(winter: WinterSessionDrivers): Promise<{ store: SessionStore
 /** Let a scheduled `idle().then(...)` continuation run. */
 const settle = () => new Promise((r) => setTimeout(r, 10));
 
-describe("session.setPolicy across the bypass boundary — the Winter child is replaced, never refused", () => {
+describe("session.setPolicy across the bypass boundary — the Clover child is replaced, never refused", () => {
   test("INTO bypass on an idle child: succeeds, stores bypass, replaces the child, never asks it to switch", async () => {
     const h = harness();
     const { store, client, stop } = await boot(h.table);

@@ -1,6 +1,6 @@
 // Winter Phase 8d (P8d-1/P8d-2) — the STANDALONE proof of `embed-runtimes.sh` (the body of
 // project.yml's "Embed runtimes" postCompileScript), run exactly the way the section brief
-// prescribes: BUILT_PRODUCTS_DIR=<mkdtemp>, CONTENTS_FOLDER_PATH=Winter.app/Contents,
+// prescribes: BUILT_PRODUCTS_DIR=<mkdtemp>, CONTENTS_FOLDER_PATH=Clover.app/Contents,
 // CONFIGURATION=Release, EXPANDED_CODE_SIGN_IDENTITY=- (ad-hoc — this is the build-phase proof,
 // not release.ts's own gate, which requires a real Developer ID team identity).
 //
@@ -49,7 +49,7 @@ describe("embed-runtimes.sh (P8d-1/P8d-2 postCompileScript body, standalone)", (
     }
 
     const builtProducts = mkdtempSync(join(tmpdir(), "embed-runtimes-"));
-    // Winter Phase 10a (Task L3): a self-contained `ant` fixture via WINTER_STAGE_ANT_PATH — this
+    // Winter Phase 10a (Task L3): a self-contained `ant` fixture via CLOVER_STAGE_ANT_PATH — this
     // test never depends on `bun run scripts/fetch-ant.ts` having been run (a real vendored `ant`
     // is exercised separately below, best-effort). Plain re-sign-ability is all this step needs:
     // `codesign --force --sign -` accepts any file, Mach-O or not (measured).
@@ -64,15 +64,15 @@ describe("embed-runtimes.sh (P8d-1/P8d-2 postCompileScript body, standalone)", (
           ...process.env,
           CONFIGURATION: "Release",
           BUILT_PRODUCTS_DIR: builtProducts,
-          CONTENTS_FOLDER_PATH: "Winter.app/Contents",
+          CONTENTS_FOLDER_PATH: "Clover.app/Contents",
           EXPANDED_CODE_SIGN_IDENTITY: "-",
-          WINTER_STAGE_RUNTIME_PATH: PINNED_DIST_WINTER,
-          WINTER_STAGE_ANT_PATH: antFixture,
+          CLOVER_STAGE_RUNTIME_PATH: PINNED_DIST_WINTER,
+          CLOVER_STAGE_ANT_PATH: antFixture,
         },
       });
       if (r.status !== 0) throw new Error(`embed-runtimes.sh exited ${r.status}:\n[stderr]\n${r.stderr}\n[stdout]\n${r.stdout}`);
 
-      const dest = join(builtProducts, "Winter.app", "Contents", "Resources", "runtimes");
+      const dest = join(builtProducts, "Clover.app", "Contents", "Resources", "runtimes");
       expect(existsSync(join(dest, "winter"))).toBe(true);
       expect(existsSync(join(dest, "VERSIONS.json"))).toBe(true);
       expect(existsSync(join(dest, "ant", "ant"))).toBe(true);
@@ -82,8 +82,8 @@ describe("embed-runtimes.sh (P8d-1/P8d-2 postCompileScript body, standalone)", (
 
       // winter: re-signed with the stable identifier, ad-hoc identity accepted (this is the
       // build-phase proof, not release.ts's real-team-identity gate).
-      const winterDvv = spawnSync("codesign", ["-dvv", join(dest, "winter")], { encoding: "utf8" });
-      expect(`${winterDvv.stdout}${winterDvv.stderr}`).toContain("Identifier=com.winter.runtime");
+      const cloverDvv = spawnSync("codesign", ["-dvv", join(dest, "winter")], { encoding: "utf8" });
+      expect(`${cloverDvv.stdout}${cloverDvv.stderr}`).toContain("Identifier=com.winter.runtime");
       // A2: exactly the JIT entitlement on winter (a bun binary); none on ant (Go).
       const csKeys = (path: string): string[] => {
         const xml = spawnSync("codesign", ["-d", "--entitlements", "-", "--xml", path], { encoding: "utf8" }).stdout ?? "";
@@ -92,7 +92,7 @@ describe("embed-runtimes.sh (P8d-1/P8d-2 postCompileScript body, standalone)", (
       expect(csKeys(join(dest, "winter"))).toEqual(["com.apple.security.cs.allow-jit"]);
       expect(csKeys(join(dest, "ant", "ant"))).toEqual([]);
 
-      // ant: RE-SIGNED with Winter's own stable identifier, same shape as winter.
+      // ant: RE-SIGNED with Clover's own stable identifier, same shape as clover.
       const antDvv = spawnSync("codesign", ["-dvv", join(dest, "ant", "ant")], { encoding: "utf8" });
       expect(`${antDvv.stdout}${antDvv.stderr}`).toContain("Identifier=com.winter.ant");
       expect(readFileSync(join(dest, "ant", "ant"), "utf8")).toBe("#!/bin/sh\necho fixture-ant\n");
@@ -136,10 +136,10 @@ describe("embed-runtimes.sh (P8d-1/P8d-2 postCompileScript body, standalone)", (
           ...process.env,
           CONFIGURATION: "Release",
           BUILT_PRODUCTS_DIR: builtProducts,
-          CONTENTS_FOLDER_PATH: "Winter.app/Contents",
+          CONTENTS_FOLDER_PATH: "Clover.app/Contents",
           EXPANDED_CODE_SIGN_IDENTITY: "-",
-          WINTER_STAGE_RUNTIME_PATH: PINNED_DIST_WINTER,
-          WINTER_STAGE_ANT_PATH: "/nonexistent/path/to/ant",
+          CLOVER_STAGE_RUNTIME_PATH: PINNED_DIST_WINTER,
+          CLOVER_STAGE_ANT_PATH: "/nonexistent/path/to/ant",
         },
       });
       expect(r.status).not.toBe(0);
@@ -170,15 +170,15 @@ describe("embed-runtimes.sh (P8d-1/P8d-2 postCompileScript body, standalone)", (
           ...process.env,
           CONFIGURATION: "Release",
           BUILT_PRODUCTS_DIR: builtProducts,
-          CONTENTS_FOLDER_PATH: "Winter.app/Contents",
+          CONTENTS_FOLDER_PATH: "Clover.app/Contents",
           EXPANDED_CODE_SIGN_IDENTITY: "-",
-          WINTER_STAGE_RUNTIME_PATH: PINNED_DIST_WINTER,
-          // deliberately NOT setting WINTER_STAGE_ANT_PATH — proves the default (VERSIONS.json
+          CLOVER_STAGE_RUNTIME_PATH: PINNED_DIST_WINTER,
+          // deliberately NOT setting CLOVER_STAGE_ANT_PATH — proves the default (VERSIONS.json
           // tag -> vendor/ant/<tag>/ant) resolution path, not the test seam.
         },
       });
       if (r.status !== 0) throw new Error(`embed-runtimes.sh exited ${r.status}:\n[stderr]\n${r.stderr}\n[stdout]\n${r.stdout}`);
-      const dest = join(builtProducts, "Winter.app", "Contents", "Resources", "runtimes");
+      const dest = join(builtProducts, "Clover.app", "Contents", "Resources", "runtimes");
       const antDvv = spawnSync("codesign", ["-dvv", join(dest, "ant", "ant")], { encoding: "utf8" });
       expect(`${antDvv.stdout}${antDvv.stderr}`).toContain("Identifier=com.winter.ant");
 

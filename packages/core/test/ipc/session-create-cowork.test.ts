@@ -8,12 +8,12 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdtempSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { LineDecoder, encodeLine, ERR, METHODS, PROTOCOL_VERSION, ConnWriter, type WritableSocket } from "@yanlinglabs/winter-protocol";
+import { LineDecoder, encodeLine, ERR, METHODS, PROTOCOL_VERSION, ConnWriter, type WritableSocket } from "@waifucave/clover-protocol";
 import { REMOTE_ELIGIBLE_SESSION_MODES, startIpcServer } from "../../src/ipc/server";
 import { SessionStore } from "../../src/sessions/store";
 import { FileSecretStore } from "../../src/auth/secret-store";
 import { TokenAuthority } from "../../src/auth/tokens";
-import type { WinterSessionDrivers } from "../../src/runtime-sdk/session-driver";
+import type { CloverSessionDrivers } from "../../src/runtime-sdk/session-driver";
 
 class TestClient {
   readonly notifications: any[] = [];
@@ -52,10 +52,10 @@ class TestClient {
 }
 
 /** A driver table that counts every call, so "no child, no probe" is a number. */
-function countingTable(): { table: WinterSessionDrivers; calls: string[] } {
+function countingTable(): { table: CloverSessionDrivers; calls: string[] } {
   const calls: string[] = [];
   const note = (name: string) => { calls.push(name); };
-  const table: WinterSessionDrivers = {
+  const table: CloverSessionDrivers = {
     legForNewSession: () => { note("legForNewSession"); return "winter"; },
     legOf: () => { note("legOf"); return "winter"; },
     assertAvailable: () => { note("assertAvailable"); },
@@ -76,15 +76,15 @@ describe("session.create refuses the recognised cowork mode", () => {
   let stop: (() => void) | undefined;
   afterEach(() => { stop?.(); stop = undefined; });
 
-  async function boot(withWinter: boolean) {
-    const home = mkdtempSync(join(tmpdir(), "winter-session-create-cowork-"));
+  async function boot(withClover: boolean) {
+    const home = mkdtempSync(join(tmpdir(), "clover-session-create-cowork-"));
     const store = new SessionStore(home);
     const authority = new TokenAuthority(new FileSecretStore(join(home, "secrets.json")));
     const tokens = await authority.ensureTokens();
     const socketPath = join(home, "core.sock");
     const { table, calls } = countingTable();
     const server = startIpcServer({
-      socketPath, serverVersion: "test", tokens: authority, store, ...(withWinter ? { winter: table } : {}),
+      socketPath, serverVersion: "test", tokens: authority, store, ...(withClover ? { clover: table } : {}),
     });
     stop = () => { server.stop(); store.close(); };
     const harness = await TestClient.connect(socketPath);
@@ -115,7 +115,7 @@ describe("session.create refuses the recognised cowork mode", () => {
     harness.close(); observer.close();
   });
 
-  test("the refusal is the same on a bare server with no Winter leg, and every optional param changes nothing", async () => {
+  test("the refusal is the same on a bare server with no Clover leg, and every optional param changes nothing", async () => {
     const { home, store, harness } = await boot(false);
     const variants: Array<Record<string, unknown>> = [
       { scope: "global", mode: "cowork" },

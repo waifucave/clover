@@ -7,7 +7,7 @@ import { LEGACY_INSTRUCTIONS_FILE, LEGACY_PROJECT_DIR, resolveLegacyProjectDir, 
 import type { Settings } from "../settings";
 
 export const BASE_PROMPT = [
-  "You are Winter, an agentic assistant running on the user's Mac.",
+  "You are Clover, an agentic assistant running on the user's Mac.",
   "You operate inside a session working directory; file tool paths are relative to it.",
   "Use the tools to accomplish the user's request, then reply with a concise summary.",
   // CC-parity (user directive 2026-07-10): route decisions the user must make THROUGH the tool — named as the model
@@ -30,7 +30,7 @@ export const BASE_PROMPT = [
  *  direction, and nothing in `BASE_PROMPT` speaks to it at all.
  *
  *  WHY THIS IS SAFE HERE AND NOT ON A HOSTED AGENTS API. Telling a model to spawn children freely
- *  is only safe if something other than the model bounds the fan-out. Winter has four such bounds,
+ *  is only safe if something other than the model bounds the fan-out. Clover has four such bounds,
  *  all upstream of the child ever running: the permission gate + approval policy the child inherits
  *  (never widened — spawn_agent's `mode` is restrict-only), `SubagentManager`'s concurrency
  *  semaphore, the depth limit (a workflow-spawned child cannot spawn at all), and the progress-stall
@@ -46,14 +46,14 @@ export const ULTRA_DELEGATION_INSTRUCTION = [
 
 /** Code-mode image paths (2026-10-10, "raw image paths"): the ONE standing line that tells a code session's model
  *  what an image path in the user's message is. A STAGED copy (clipboard data the daemon wrote) always has the fixed
- *  shape `<temp>/winter-session-<id>/images/image_<k>.<ext>` (`stage-image.ts`), and the session's own temp folder is
+ *  shape `<temp>/clover-session-<id>/images/image_<k>.<ext>` (`stage-image.ts`), and the session's own temp folder is
  *  where the model may keep or move things; any other image path is the user's own file, which must stay where it
  *  is. The line names that SHAPE rather than "this session's temp folder", which the prompt never states and the
  *  model cannot tell from `$TMPDIR` — and it stays STATIC: no session id, no path, no per-message state, so it never
  *  moves the cached prefix. Added by `assemble()` to every prompt that keeps the base slot (code, dispatch children);
  *  never to chat's (no attachments) or the dispatch coordinator's, which gets `DISPATCH_IMAGE_PATH_GUIDANCE`. */
 export const IMAGE_PATH_GUIDANCE =
-  "An image path in the user's message that sits inside a `winter-session-…/images/` folder is a staged copy you may move to keep; any other image path is the user's own file — read or copy it, never move, rename or edit it unless the user asks.";
+  "An image path in the user's message that sits inside a `clover-session-…/images/` folder is a staged copy you may move to keep; any other image path is the user's own file — read or copy it, never move, rename or edit it unless the user asks.";
 
 /** Dispatch's own image-path line (2026-10-19, image and file attachments in Dispatch): the same two shapes as
  *  `IMAGE_PATH_GUIDANCE`, WITHOUT its licence to move or copy — the coordinator has no write tools, its prompt routes
@@ -61,7 +61,7 @@ export const IMAGE_PATH_GUIDANCE =
  *  $OUTDIR to keep a copy in. It also says a staged copy is kept about two weeks (`STAGED_IMAGE_RETENTION_MS`, which
  *  prunes Dispatch only). STATIC like the code line — no session id, no path — in the same place in the prompt. */
 export const DISPATCH_IMAGE_PATH_GUIDANCE =
-  "An image path in the user's message that sits inside a `winter-session-…/images/` folder is a staged copy of a pasted image, kept for about two weeks; any other image or file path is the user's own file. Read either (Read, or Bash for inspection) — anything that changes, moves or copies files routes to SpawnSession, with the path in the child's prompt.";
+  "An image path in the user's message that sits inside a `clover-session-…/images/` folder is a staged copy of a pasted image, kept for about two weeks; any other image or file path is the user's own file. Read either (Read, or Bash for inspection) — anything that changes, moves or copies files routes to SpawnSession, with the path in the child's prompt.";
 
 const TRUNC = "\n[…truncated]";
 
@@ -133,7 +133,7 @@ function memoryProtocol(memDir: string): string {
     "Save a fact worth recalling in a FUTURE session (a user preference, a correction the user gave you, a durable project constraint) as its own file there, `<name>.md` where `<name>` is a short kebab-case slug, with frontmatter then the fact:",
     "```\n---\nname: <name>\ndescription: <one-line summary>\ntype: user | feedback | project | reference\n---\n<the fact — for feedback/project, add a short Why / How to apply it too>\n```",
     `Then add or update a one-line pointer for it in \`${join(memDir, "MEMORY.md")}\` (create the file if it doesn't exist yet): \`- [<name>](<name>.md) — <description>\`. MEMORY.md's first ${MEMDIR_INDEX_MAX_LINES} lines / ${Math.round(MEMDIR_INDEX_MAX_BYTES / 1024)}KB load into every session automatically — keep it terse; put detail in the fact file itself, not the index line.`,
-    "Update a fact by overwriting its file (and its MEMORY.md line) instead of writing a near-duplicate under a new name. Delete a fact (and its MEMORY.md line) once you learn it is wrong or no longer true. Never save something the repo itself already records — code, config, docs, and WINTER.md are already durable; memory is for facts ABOUT the user or project that live outside the repo.",
+    "Update a fact by overwriting its file (and its MEMORY.md line) instead of writing a near-duplicate under a new name. Delete a fact (and its MEMORY.md line) once you learn it is wrong or no longer true. Never save something the repo itself already records — code, config, docs, and CLOVER.md are already durable; memory is for facts ABOUT the user or project that live outside the repo.",
   ].join("\n");
 }
 
@@ -146,7 +146,7 @@ function memoryProtocol(memDir: string): string {
  *  user goes there") plus workdir-less extras. That shape was wrong, and session `s_bfadc28c2751`
  *  is the proof: a session with a real locked working directory (`~/Xcode progects/testing`) was
  *  asked to build an app and built the ENTIRE project — package.json, server.js, public/ — inside
- *  its `$OUTDIR` instead, then told the user to `cd` into `~/.winter-dev/outputs/<sid>` to run it.
+ *  its `$OUTDIR` instead, then told the user to `cd` into `~/.clover-dev/outputs/<sid>` to run it.
  *  The model was not misbehaving; it was obeying. `$OUTDIR` was the ONLY absolute path the whole
  *  assembled prompt ever named — `BASE_PROMPT` mentions the working directory purely abstractly
  *  ("you operate inside a session working directory") and nothing else names the `dirs` row — so
@@ -157,7 +157,7 @@ function memoryProtocol(memDir: string): string {
  *
  *  So the two cases now say different things (user direction, 2026-08-15):
  *   - WITH a working directory: name it — it is the default place work happens — and demote
- *     `$OUTDIR` to a MAILBOX, used only when the user asks to be sent something or when Winter is
+ *     `$OUTDIR` to a MAILBOX, used only when the user asks to be sent something or when Clover is
  *     handing over a standalone artifact with no home in the project.
  *   - WITHOUT one (`workdirLess`): `$OUTDIR` IS the default directory, scratch goes to `$TMPDIR`
  *     (bash already starts there), and don't ask to write elsewhere. Unchanged in substance from
@@ -223,7 +223,7 @@ export interface MemoryContextConfig {
 }
 
 export class ContextAssembler {
-  private readonly winterHome: string;
+  private readonly cloverHome: string;
   private readonly trust: TrustStore;
   private readonly skills: SkillStore;
   private readonly basePrompt: string;
@@ -233,7 +233,7 @@ export class ContextAssembler {
   private readonly legacySettings?: () => Settings | null;
   private readonly legacySettingsOverlayPathsFor?: (cwd: string | null) => string[];
   constructor(deps: {
-    winterHome: string;
+    cloverHome: string;
     trust: TrustStore;
     skills: SkillStore;
     basePrompt?: string;
@@ -254,7 +254,7 @@ export class ContextAssembler {
      *  `daemon.ts` already uses for permissions/dangerous-domains. */
     legacySettingsOverlayPathsFor?: (cwd: string | null) => string[];
   }) {
-    this.winterHome = deps.winterHome;
+    this.cloverHome = deps.cloverHome;
     this.trust = deps.trust;
     this.skills = deps.skills;
     this.basePrompt = deps.basePrompt ?? BASE_PROMPT;
@@ -294,7 +294,7 @@ export class ContextAssembler {
    *  directory off", not "memory turned off" — irrelevant to the official leg either way, since its
    *  own `cwd` is a required string). Skipping `enabled()` while still consulting
    *  `directory`/`relocatedKey` is what keeps a user's override live for that caller even while
-   *  Winter's OWN memory system is toggled off — the override and the on/off switch are orthogonal
+   *  Clover's OWN memory system is toggled off — the override and the on/off switch are orthogonal
    *  settings, and collapsing them would silently drop the override again for that one caller, the
    *  same class of bug this method exists to prevent. */
   memoryDirFor(
@@ -322,7 +322,7 @@ export class ContextAssembler {
     // "No skills are installed." line — for a caller whose runtime child lists skills ITSELF: the
     // agent SDK (and claude) announce exactly the skills the child can load as a `skill_listing`
     // attachment, so a second listing here would duplicate it at best and, for any skill the child's
-    // Options do not carry, advertise one that answers "unknown skill". `winterSystemPromptFor` is
+    // Options do not carry, advertise one that answers "unknown skill". `cloverSystemPromptFor` is
     // the one caller that sets it (both legs); `loadedSkills` is unaffected.
     skillListing?: boolean;
     // provider-correctness T5: the `ultra` tier's prompt half. Absent/false (every pre-T5 caller) is
@@ -359,9 +359,9 @@ export class ContextAssembler {
     // entirely — byte-identical.
     extraDirs?: string[];
     // WS-21 (spec §6.1, §3.7): the incarnation runs on a router-built run folder, which carries the
-    // user and trusted-project instructions (`WINTER.md` + rules, generated per spec §3.4.3), the output
+    // user and trusted-project instructions (`CLOVER.md` + rules, generated per spec §3.4.3), the output
     // style, and — for a code session — the runtime's own auto-memory. So this builder STOPS composing
-    // those: no user or project `WINTER.md`, no `.winter/rules`, no output-style fold, and no project
+    // those: no user or project `CLOVER.md`, no `.clover/rules`, no output-style fold, and no project
     // memory text (protocol + index). It KEEPS the base prompt, the workspace block, the ultra paragraph,
     // the date and the `_assistant` memory injection for chat and dispatch, exactly as today (their
     // runtime auto-memory is off, r3). Absent/false (router 0.0.11, every existing caller): byte-identical.
@@ -369,7 +369,7 @@ export class ContextAssembler {
     // Image attachments (2026-10-19): WHICH image-path line this prompt carries. Absent: `IMAGE_PATH_GUIDANCE`
     // exactly when the base slot is kept (`basePromptOverride` unset — code, dispatch children), as before.
     // "dispatch": `DISPATCH_IMAGE_PATH_GUIDANCE`, under the coordinator's override (it takes attachments and swaps
-    // the base slot whole) — `winterSystemPromptFor` sets it for dispatch only, so chat never gets a line. "code"
+    // the base slot whole) — `cloverSystemPromptFor` sets it for dispatch only, so chat never gets a line. "code"
     // forces the code line; `false` leaves the line out.
     imagePathGuidance?: "code" | "dispatch" | false;
   }): string {
@@ -455,32 +455,32 @@ export class ContextAssembler {
     const legacySettingsValue = legacyFallbackEnabled ? this.legacySettings!() : null;
     const resolveInstr = (winterPath: string, legacyPath: string) =>
       legacyFallbackEnabled ? resolveLegacyProjectPath(winterPath, legacyPath, legacySettingsValue) : { path: winterPath, usedLegacy: false };
-    const resolveRulesDir = (winterDir: string, legacyDir: string) =>
-      legacyFallbackEnabled ? resolveLegacyProjectDir(winterDir, legacyDir, legacySettingsValue) : { dir: winterDir, usedLegacy: false };
+    const resolveRulesDir = (cloverDir: string, legacyDir: string) =>
+      legacyFallbackEnabled ? resolveLegacyProjectDir(cloverDir, legacyDir, legacySettingsValue) : { dir: cloverDir, usedLegacy: false };
 
-    // WS-21: the run folder's generated `WINTER.md` carries both tiers (spec §3.4.3) — not composed here.
+    // WS-21: the run folder's generated `CLOVER.md` carries both tiers (spec §3.4.3) — not composed here.
     if (!runHome) {
-      const userInstrResolved = resolveInstr(join(this.winterHome, "WINTER.md"), join(this.winterHome, LEGACY_INSTRUCTIONS_FILE));
+      const userInstrResolved = resolveInstr(join(this.cloverHome, "CLOVER.md"), join(this.cloverHome, LEGACY_INSTRUCTIONS_FILE));
       if (userInstrResolved.usedLegacy) legacyNoticePaths.push(userInstrResolved.path);
       const userInstr = readCapped(userInstrResolved.path, this.caps.instructionsBytes);
-      if (userInstr) sections.push(`## User instructions (~/.winter/WINTER.md)\n${userInstr}`);
+      if (userInstr) sections.push(`## User instructions (~/.clover/CLOVER.md)\n${userInstr}`);
     }
 
     if (!runHome && cwd && trusted) {
-      const projInstrResolved = resolveInstr(join(cwd, "WINTER.md"), join(cwd, LEGACY_INSTRUCTIONS_FILE));
+      const projInstrResolved = resolveInstr(join(cwd, "CLOVER.md"), join(cwd, LEGACY_INSTRUCTIONS_FILE));
       if (projInstrResolved.usedLegacy) legacyNoticePaths.push(projInstrResolved.path);
       const projInstr = readCapped(projInstrResolved.path, this.caps.instructionsBytes);
-      if (projInstr) sections.push(`## Project instructions (WINTER.md)\n${projInstr}`);
+      if (projInstr) sections.push(`## Project instructions (CLOVER.md)\n${projInstr}`);
     }
 
-    // Project prose rules (CC-parity: `.claude/rules/` → `.winter/rules/*.md`). Same trust gate as
-    // the project WINTER.md block just above (reuses the same hoisted `trusted`, not a second
+    // Project prose rules (CC-parity: `.claude/rules/` → `.clover/rules/*.md`). Same trust gate as
+    // the project CLOVER.md block just above (reuses the same hoisted `trusted`, not a second
     // `isTrusted` call). Every file's total is bounded by ONE shared budget — the instructions byte
     // cap — rather than per-file, so a directory of many small rule files can't add up to an
     // unbounded prompt; `readCapped` truncates each file to whatever of that budget remains, and
     // files are read in sorted filename order for determinism.
     if (!runHome && cwd && trusted) {
-      const rulesResolved = resolveRulesDir(join(cwd, ".winter", "rules"), join(cwd, LEGACY_PROJECT_DIR, "rules"));
+      const rulesResolved = resolveRulesDir(join(cwd, ".clover", "rules"), join(cwd, LEGACY_PROJECT_DIR, "rules"));
       if (rulesResolved.usedLegacy) legacyNoticePaths.push(rulesResolved.dir);
       const rulesDir = rulesResolved.dir;
       let files: string[] = [];
@@ -499,7 +499,7 @@ export class ContextAssembler {
           budget -= Buffer.byteLength(part);
         }
       }
-      if (parts.length) sections.push(`## Project rules (.winter/rules/)\n${parts.join("\n\n")}`);
+      if (parts.length) sections.push(`## Project rules (.clover/rules/)\n${parts.join("\n\n")}`);
     }
 
     // Review M1 (P9c-4): the settings-overlay reader resolves OUTSIDE this class entirely
@@ -513,7 +513,7 @@ export class ContextAssembler {
     // text via the SAME mechanism as every other section here (no new SessionEvent variant).
     if (legacyNoticePaths.length > 0) {
       sections.push(
-        `Winter is reading legacy project files read-only: ${legacyNoticePaths.join(", ")}. Run \`winter migrate-project\` to convert them to their Winter-named equivalents.`,
+        `Clover is reading legacy project files read-only: ${legacyNoticePaths.join(", ")}. Run \`clover migrate-project\` to convert them to their Clover-named equivalents.`,
       );
     }
 
@@ -570,10 +570,10 @@ export class ContextAssembler {
       }
     } else {
       const mem: string[] = [];
-      const userMem = readMemory(join(this.winterHome, "memory", "MEMORY.md"), this.caps.memoryLines, this.caps.memoryBytes);
+      const userMem = readMemory(join(this.cloverHome, "memory", "MEMORY.md"), this.caps.memoryLines, this.caps.memoryBytes);
       if (userMem) mem.push(`### User memory\n${userMem}`);
       if (cwd && trusted) {
-        const projMem = readMemory(join(cwd, ".winter", "memory", "MEMORY.md"), this.caps.memoryLines, this.caps.memoryBytes);
+        const projMem = readMemory(join(cwd, ".clover", "memory", "MEMORY.md"), this.caps.memoryLines, this.caps.memoryBytes);
         if (projMem) mem.push(`### Project memory\n${projMem}`);
       }
       if (mem.length) sections.push(`## Memory\n${mem.join("\n\n")}`);

@@ -5,7 +5,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, type WritableSocket } from "@yanlinglabs/winter-protocol";
+import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, type WritableSocket } from "@waifucave/clover-protocol";
 import { startIpcServer, REMOTE_ALLOWED_METHODS } from "../../src/ipc/server";
 import { SessionStore } from "../../src/sessions/store";
 import { FileSecretStore } from "../../src/auth/secret-store";
@@ -60,7 +60,7 @@ describe("agents.list", () => {
   afterEach(() => { stop?.(); stop = undefined; });
 
   async function boot(opts: { withAgentsDir?: boolean; supportedAgents?: SupportedAgentsCache; trust?: TrustStore } = {}) {
-    const home = mkdtempSync(join(tmpdir(), "winter-agents-list-"));
+    const home = mkdtempSync(join(tmpdir(), "clover-agents-list-"));
     if (opts.withAgentsDir) mkdirSync(join(storeHomeFor(home), "agents"), { recursive: true });
     const store = new SessionStore(home);
     const socketPath = join(home, "core.sock");
@@ -68,7 +68,7 @@ describe("agents.list", () => {
     const authority = new TokenAuthority(secrets);
     const tokens = await authority.ensureTokens();
     const server = startIpcServer({
-      socketPath, serverVersion: "test", tokens: authority, store, winterHome: home, secrets,
+      socketPath, serverVersion: "test", tokens: authority, store, cloverHome: home, secrets,
       ...(opts.supportedAgents === undefined ? {} : { supportedAgents: opts.supportedAgents }),
       ...(opts.trust === undefined ? {} : { trust: opts.trust }),
     });
@@ -103,15 +103,15 @@ describe("agents.list", () => {
     c.close();
   });
 
-  test("a trusted project's .winter/agents contributes a row tagged tier: project, and wins over a same-named user agent", async () => {
-    const trustPath = mkdtempSync(join(tmpdir(), "winter-agents-list-trust-"));
+  test("a trusted project's .clover/agents contributes a row tagged tier: project, and wins over a same-named user agent", async () => {
+    const trustPath = mkdtempSync(join(tmpdir(), "clover-agents-list-trust-"));
     const trust = new TrustStore(join(trustPath, "trust.json"));
-    const cwd = mkdtempSync(join(tmpdir(), "winter-agents-list-project-"));
+    const cwd = mkdtempSync(join(tmpdir(), "clover-agents-list-project-"));
     trust.trust(cwd);
     const { home, socketPath, harnessToken } = await boot({ withAgentsDir: true, trust });
     writeFileSync(join(storeHomeFor(home), "agents", "shared.md"), ["---", "name: shared", "description: from user", "---", "", "Body."].join("\n"));
-    mkdirSync(join(cwd, ".winter", "agents"), { recursive: true });
-    writeFileSync(join(cwd, ".winter", "agents", "shared.md"), ["---", "name: shared", "description: from project", "---", "", "Body."].join("\n"));
+    mkdirSync(join(cwd, ".clover", "agents"), { recursive: true });
+    writeFileSync(join(cwd, ".clover", "agents", "shared.md"), ["---", "name: shared", "description: from project", "---", "", "Body."].join("\n"));
     const c = await TestClient.connect(socketPath);
     await c.hello(harnessToken, "cli");
     const result = await c.request(METHODS.agentsList, { cwd });
@@ -126,14 +126,14 @@ describe("agents.list", () => {
     c.close();
   });
 
-  test("an UNTRUSTED project's .winter/agents is ignored entirely — no project row, no error", async () => {
-    const trustPath = mkdtempSync(join(tmpdir(), "winter-agents-list-trust-"));
+  test("an UNTRUSTED project's .clover/agents is ignored entirely — no project row, no error", async () => {
+    const trustPath = mkdtempSync(join(tmpdir(), "clover-agents-list-trust-"));
     const trust = new TrustStore(join(trustPath, "trust.json"));
-    const cwd = mkdtempSync(join(tmpdir(), "winter-agents-list-untrusted-"));
+    const cwd = mkdtempSync(join(tmpdir(), "clover-agents-list-untrusted-"));
     // deliberately never trusted
     const { socketPath, harnessToken } = await boot({ trust });
-    mkdirSync(join(cwd, ".winter", "agents"), { recursive: true });
-    writeFileSync(join(cwd, ".winter", "agents", "sneaky.md"), ["---", "name: sneaky", "description: should not appear", "---", "", "Body."].join("\n"));
+    mkdirSync(join(cwd, ".clover", "agents"), { recursive: true });
+    writeFileSync(join(cwd, ".clover", "agents", "sneaky.md"), ["---", "name: sneaky", "description: should not appear", "---", "", "Body."].join("\n"));
     const c = await TestClient.connect(socketPath);
     await c.hello(harnessToken, "cli");
     const result = await c.request(METHODS.agentsList, { cwd });
@@ -146,20 +146,20 @@ describe("agents.list", () => {
   // definition of a name wins along the walk.
   test("a linked worktree of a trusted repo lists its agents; the nearest definition along the walk wins", async () => {
     const agent = (name: string, description: string) => ["---", `name: ${name}`, `description: ${description}`, "---", "", "Body."].join("\n");
-    const main = realpathSync(mkdtempSync(join(tmpdir(), "winter-agents-list-main-")));
+    const main = realpathSync(mkdtempSync(join(tmpdir(), "clover-agents-list-main-")));
     const git = (...args: string[]) => expect(Bun.spawnSync(["git", "-C", main, ...args], { stderr: "ignore" }).exitCode).toBe(0);
     git("init", "-q");
     writeFileSync(join(main, "f"), "x");
     git("add", "f");
     git("commit", "-q", "-m", "init");
-    const wt = join(realpathSync(mkdtempSync(join(tmpdir(), "winter-agents-list-wtp-"))), "wt");
+    const wt = join(realpathSync(mkdtempSync(join(tmpdir(), "clover-agents-list-wtp-"))), "wt");
     git("worktree", "add", "-q", "-b", "side", wt);
-    mkdirSync(join(wt, ".winter", "agents"), { recursive: true });
-    mkdirSync(join(wt, "pkg", ".winter", "agents"), { recursive: true });
-    writeFileSync(join(wt, ".winter", "agents", "reviewer.md"), agent("reviewer", "from the worktree root"));
-    writeFileSync(join(wt, ".winter", "agents", "root-only.md"), agent("root-only", "root only"));
-    writeFileSync(join(wt, "pkg", ".winter", "agents", "reviewer.md"), agent("reviewer", "from pkg"));
-    const trust = new TrustStore(join(realpathSync(mkdtempSync(join(tmpdir(), "winter-agents-list-trust-"))), "trust.json"));
+    mkdirSync(join(wt, ".clover", "agents"), { recursive: true });
+    mkdirSync(join(wt, "pkg", ".clover", "agents"), { recursive: true });
+    writeFileSync(join(wt, ".clover", "agents", "reviewer.md"), agent("reviewer", "from the worktree root"));
+    writeFileSync(join(wt, ".clover", "agents", "root-only.md"), agent("root-only", "root only"));
+    writeFileSync(join(wt, "pkg", ".clover", "agents", "reviewer.md"), agent("reviewer", "from pkg"));
+    const trust = new TrustStore(join(realpathSync(mkdtempSync(join(tmpdir(), "clover-agents-list-trust-"))), "trust.json"));
     trust.trust(main); // the MAIN checkout only
     const { socketPath, harnessToken } = await boot({ trust });
     const c = await TestClient.connect(socketPath);

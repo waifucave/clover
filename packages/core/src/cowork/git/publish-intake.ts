@@ -41,7 +41,7 @@ function sameBinding(a: PublishBundleBinding, b: PublishBundleBinding): boolean 
 /** The path the host asks for: derived from the request id alone, under a fixed staging directory. The guest never names it. */
 export function publishBundlePath(requestId: string): string {
   if (typeof requestId !== "string" || !/^[a-zA-Z0-9_-]{1,128}$/.test(requestId)) return fail("invalid_request");
-  return `.winter-publish/${requestId}.bundle`;
+  return `.clover-publish/${requestId}.bundle`;
 }
 
 export interface PulledBundle { readonly bytes: Uint8Array; readonly sha256: string; readonly generation: string }

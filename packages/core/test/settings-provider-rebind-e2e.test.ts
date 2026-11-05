@@ -23,12 +23,12 @@ import { loadSettings, type Settings } from "../src/settings";
 
 describe("settings.json → SettingsWatcher → makeApply → RebindableProvider.refresh (item 2, end to end)", () => {
   test("a provider.model write on disk swaps the backend a consumer already holds a reference to — no restart", async () => {
-    const home = mkdtempSync(join(tmpdir(), "winter-provider-rebind-e2e-"));
+    const home = mkdtempSync(join(tmpdir(), "clover-provider-rebind-e2e-"));
     const settingsPath = join(home, "settings.json");
     const bootSettings = { schemaVersion: 3, provider: { model: "codex-oauth/gpt-5.6-sol" } };
     writeFileSync(settingsPath, JSON.stringify(bootSettings, null, 2) + "\n");
 
-    const store = new FileSecretStore(mkdtempSync(join(tmpdir(), "winter-provider-rebind-secrets-")));
+    const store = new FileSecretStore(mkdtempSync(join(tmpdir(), "clover-provider-rebind-secrets-")));
     await store.set(OPENAI_API_KEY_SECRET, "sk-test");
 
     const active = await createRebindableProvider(loadSettings(settingsPath), store, settingsPath);

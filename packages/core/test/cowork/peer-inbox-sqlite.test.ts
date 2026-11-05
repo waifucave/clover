@@ -30,7 +30,7 @@ class FaultySqliteStore extends SqlitePeerInboxStore {
   protected override step() { if (this.failAt > 0 && ++this.statements === this.failAt) { this.failAt = 0; throw new Error("injected write failure"); } }
   protected override beforeBodyRead(handle: string) { if (this.unreadable.has(handle)) throw new Error("injected read failure"); }
 }
-function tempHome(prefix = "winter-peer-inbox-sqlite-"): string {
+function tempHome(prefix = "clover-peer-inbox-sqlite-"): string {
   const home = mkdtempSync(join(tmpdir(), prefix));
   cleanup.push(() => rmSync(home, { recursive: true, force: true }));
   return home;
@@ -455,8 +455,8 @@ test("a backup temp is never restorable, and a pre-17 style backup name without 
 
 const backupChild = join(import.meta.dir, "fixtures", "peer-inbox-backup-kill-child.ts");
 test("kill -9 during backups: no file under a backup's real name ever holds a body; a leftover .tmp is swept by the next backup", async () => {
-  const home = tempHome("winter-peer-inbox-bkill-"), dir = join(home, "bk");
-  const child = Bun.spawn([process.execPath, backupChild, home, dir], { stdout: "pipe", stderr: "pipe", env: { PATH: process.env.PATH ?? "/usr/bin:/bin", HOME: home, WINTER_HOME: home } });
+  const home = tempHome("clover-peer-inbox-bkill-"), dir = join(home, "bk");
+  const child = Bun.spawn([process.execPath, backupChild, home, dir], { stdout: "pipe", stderr: "pipe", env: { PATH: process.env.PATH ?? "/usr/bin:/bin", HOME: home, CLOVER_HOME: home } });
   const reader = child.stdout.getReader(), decoder = new TextDecoder();
   let text = "", done = 0;
   const deadline = Date.now() + 90_000;
@@ -698,8 +698,8 @@ test("Migration B treats a populated inbox as Cowork authority and refuses the c
 
 const childScript = join(import.meta.dir, "fixtures", "peer-inbox-kill-child.ts");
 async function killMidway(mode: "append" | "terminal" | "remove"): Promise<{ home: string; done: number }> {
-  const home = tempHome("winter-peer-inbox-kill-");
-  const child = Bun.spawn([process.execPath, childScript, home, mode], { stdout: "pipe", stderr: "pipe", env: { PATH: process.env.PATH ?? "/usr/bin:/bin", HOME: home, WINTER_HOME: home } });
+  const home = tempHome("clover-peer-inbox-kill-");
+  const child = Bun.spawn([process.execPath, childScript, home, mode], { stdout: "pipe", stderr: "pipe", env: { PATH: process.env.PATH ?? "/usr/bin:/bin", HOME: home, CLOVER_HOME: home } });
   const reader = child.stdout.getReader(), decoder = new TextDecoder();
   let text = "", done = 0;
   const deadline = Date.now() + 90_000;

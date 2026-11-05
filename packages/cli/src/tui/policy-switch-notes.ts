@@ -1,4 +1,4 @@
-import type { ApprovalPolicy } from "@yanlinglabs/winter-protocol";
+import type { ApprovalPolicy } from "@waifucave/clover-protocol";
 
 /** Lane B (2026-09-23): what a `session.setPolicy` result says beyond "ok", as the lines a policy
  *  switch prints — one for `replaced`, one for `warning`, nothing for an ordinary switch. Crossing the

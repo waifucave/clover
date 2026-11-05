@@ -7,7 +7,7 @@ import { describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, type WritableSocket } from "@yanlinglabs/winter-protocol";
+import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, type WritableSocket } from "@waifucave/clover-protocol";
 import { startIpcServer } from "../../src/ipc/server";
 import { SessionStore } from "../../src/sessions/store";
 import { FileSecretStore } from "../../src/auth/secret-store";
@@ -73,7 +73,7 @@ async function boot(store: SessionStore, home: string, outcome: PlanSwitchOutcom
 const cases: Array<{ name: string; outcome: PlanSwitchOutcome; expectWrite: boolean; expectedCode?: string }> = [
   { name: "same-runtime", outcome: { kind: "same-runtime" }, expectWrite: true },
   { name: "refused", outcome: { kind: "refused", code: "runtime_selection_refused", detail: "no credential" }, expectWrite: false, expectedCode: "runtime_selection_refused" },
-  // WS-23: a legacy claude-agent record that could not be adopted onto the Winter leg.
+  // WS-23: a legacy claude-agent record that could not be adopted onto the Clover leg.
   { name: "refused (legacy adoption)", outcome: { kind: "refused", code: "legacy_session_migration_refused", detail: "cannot move", reason: "transcript-collision" }, expectWrite: false, expectedCode: "legacy_session_migration_refused" },
   { name: "confirmation_required", outcome: { kind: "confirmation_required", warnings: ["lossy"], portable: ["deepseek"] }, expectWrite: false, expectedCode: "handoff_confirmation_required" },
 ];
@@ -81,7 +81,7 @@ const cases: Array<{ name: string; outcome: PlanSwitchOutcome; expectWrite: bool
 describe("session.setModel — the P8c-14 handoff outcome gate", () => {
   for (const c of cases) {
     test(`${c.name}: ${c.expectWrite ? "writes the model" : "refuses typed, writes nothing"}`, async () => {
-      const home = mkdtempSync(join(tmpdir(), `winter-setmodel-handoff-${c.name}-`));
+      const home = mkdtempSync(join(tmpdir(), `clover-setmodel-handoff-${c.name}-`));
       const store = new SessionStore(home);
       const sessionId = store.createSession("global");
       const { server, client } = await (async () => {
@@ -111,7 +111,7 @@ describe("session.setModel — the P8c-14 handoff outcome gate", () => {
 
   // WS-23: the refusal's own `reason` travels as `data.reason` beside `data.code`.
   test("a refusal's reason reaches error.data.reason", async () => {
-    const home = mkdtempSync(join(tmpdir(), "winter-setmodel-handoff-reason-"));
+    const home = mkdtempSync(join(tmpdir(), "clover-setmodel-handoff-reason-"));
     const store = new SessionStore(home);
     const sessionId = store.createSession("global");
     const { server, c: client } = await boot(store, home, { kind: "refused", code: "legacy_session_migration_refused", detail: "cannot move", reason: "repair-required" });
@@ -146,7 +146,7 @@ describe("session.setModel — the P8c-14 handoff outcome gate", () => {
     { name: "same-runtime", outcome: (want: RuntimeSelection): PlanSwitchOutcome => ({ kind: "same-runtime", decided: want }) },
   ]) {
     test(`1c: ${arm.name} whose record DISAGREES is blocked, and meta.model is left untouched`, async () => {
-      const home = mkdtempSync(join(tmpdir(), `winter-setmodel-invariant-${arm.name}-`));
+      const home = mkdtempSync(join(tmpdir(), `clover-setmodel-invariant-${arm.name}-`));
       const store = new SessionStore(home);
       const sessionId = store.createSession("global");
       // The record still names the SOURCE leg — precisely the state a "not in the runtime
@@ -170,7 +170,7 @@ describe("session.setModel — the P8c-14 handoff outcome gate", () => {
     });
 
     test(`1c: ${arm.name} whose record AGREES still writes the model (the guard is not a blanket refusal)`, async () => {
-      const home = mkdtempSync(join(tmpdir(), `winter-setmodel-invariant-ok-${arm.name}-`));
+      const home = mkdtempSync(join(tmpdir(), `clover-setmodel-invariant-ok-${arm.name}-`));
       const store = new SessionStore(home);
       const sessionId = store.createSession("global");
       const want = SEL("winter-agent", "anthropic", "claude-sonnet-5-5");
@@ -196,7 +196,7 @@ describe("session.setModel — the P8c-14 handoff outcome gate", () => {
   // must stay out of the way: an ordinary in-runtime model change keeps working on a session whose
   // record names a different family entirely.
   test("1c: a same-runtime with NO decided selection is never guarded — the ordinary store write still runs", async () => {
-    const home = mkdtempSync(join(tmpdir(), "winter-setmodel-invariant-bailout-"));
+    const home = mkdtempSync(join(tmpdir(), "clover-setmodel-invariant-bailout-"));
     const store = new SessionStore(home);
     const sessionId = store.createSession("global");
     const { server, c } = await boot(store, home, { kind: "same-runtime" }, { get: () => recordNaming("winter-agent", "openai", "openai/gpt-5.6-sol") });
@@ -217,7 +217,7 @@ describe("session.setModel — the P8c-14 handoff outcome gate", () => {
   // A session the record store has never heard of (a record row that was deleted, or a spine that
   // lost it) is a DISAGREEMENT, not a pass: nothing proves the destination leg is recorded.
   test("1c: an absent record is treated as a disagreement, not a pass", async () => {
-    const home = mkdtempSync(join(tmpdir(), "winter-setmodel-invariant-absent-"));
+    const home = mkdtempSync(join(tmpdir(), "clover-setmodel-invariant-absent-"));
     const store = new SessionStore(home);
     const sessionId = store.createSession("global");
     const { server, c } = await boot(store, home, { kind: "same-runtime", decided: SEL("winter-agent", "openai", "openai/gpt-5.6-sol") }, { get: () => undefined });
@@ -239,7 +239,7 @@ describe("session.setModel — the P8c-14 handoff outcome gate", () => {
   // above with a NON-EMPTY value, so this pins real threading rather than two `[]`s matching by
   // coincidence.
   test("confirmation_required: error data carries portable verbatim from the outcome", async () => {
-    const home = mkdtempSync(join(tmpdir(), "winter-setmodel-handoff-portable-"));
+    const home = mkdtempSync(join(tmpdir(), "clover-setmodel-handoff-portable-"));
     const store = new SessionStore(home);
     const sessionId = store.createSession("global");
     // WS-23 (reasoning-state): `fit` ({fits, estimatedTokens, window}) rides the data too, when the review computed one.

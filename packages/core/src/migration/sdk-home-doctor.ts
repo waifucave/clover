@@ -1,4 +1,4 @@
-// WS-21 (spec §8, "`winter doctor` reports"): the shared runtime home's section of `winter doctor` —
+// WS-21 (spec §8, "`clover doctor` reports"): the shared runtime home's section of `clover doctor` —
 // Migration C's status and archives, the settings split, quarantined roots, untranslated rules, leftover
 // approved-rules entries and the last run-folder sweep. READ-ONLY and never throwing (a diagnostic must
 // not crash the tool that runs it); counts and paths only, never a file's contents.
@@ -42,24 +42,24 @@ function untranslatedFiles(home: string): { path: string; rules: number }[] {
   } catch { return []; }
 }
 
-/** `winter doctor`'s shared-runtime-home lines. */
+/** `clover doctor`'s shared-runtime-home lines. */
 export function sdkHomeDoctorLines(home: string): string[] {
   const lines: string[] = [];
   try {
     const state = migrationCState(home);
-    if (state.kind === "unreadable") lines.push("sdk home: HALF-MIGRATED — the Migration C manifest does not parse; run `winter migrate --sdk-home --rollback` (or move it aside)");
+    if (state.kind === "unreadable") lines.push("sdk home: HALF-MIGRATED — the Migration C manifest does not parse; run `clover migrate --sdk-home --rollback` (or move it aside)");
     else if (state.kind === "parsed") {
       const m = state.manifest;
       if (m.status === "complete") lines.push(`sdk home: migrated (Migration C complete ${m.finishedAt ?? ""}) — backups and archives under ${m.archiveDir}`);
-      else if (m.status === "rolling-back") lines.push("sdk home: HALF-ROLLED-BACK — a Migration C rollback was interrupted; run `winter migrate --sdk-home --rollback` to finish it (the daemon refuses to boot until then)");
+      else if (m.status === "rolling-back") lines.push("sdk home: HALF-ROLLED-BACK — a Migration C rollback was interrupted; run `clover migrate --sdk-home --rollback` to finish it (the daemon refuses to boot until then)");
       else if (m.status === "phase1-complete") lines.push(`sdk home: Migration C phase 1 done, phase 2 NOT — the official working copies still await the router's reconcile; the next daemon boot on a build that has it finishes Migration C (and refuses to open sessions until it does) — archive ${m.archiveDir}`);
-      else lines.push("sdk home: HALF-MIGRATED — run `winter migrate --sdk-home --resume` or `winter migrate --sdk-home --rollback`");
+      else lines.push("sdk home: HALF-MIGRATED — run `clover migrate --sdk-home --resume` or `clover migrate --sdk-home --rollback`");
       const quarantinedAtMigration = m.reconciled.filter((r) => r.outcome === "quarantined" || r.outcome === "failed");
       if (quarantinedAtMigration.length > 0) lines.push(`sdk home: ${quarantinedAtMigration.length} official working cop(ies) could not be proved clean at migration: ${quarantinedAtMigration.map((r) => `${r.root} (${r.outcome})`).join(", ")} — a copy is under ${join(home, "cache", "quarantine")} and the original in the archive`);
     } else if (existsSync(migrationCRolledBackPath(home))) {
       lines.push(`sdk home: Migration C was rolled back (${migrationCRolledBackPath(home)})${isOldLayout(home) ? " — the home is in the old layout" : ""}`);
     } else if (isOldLayout(home)) {
-      lines.push("sdk home: old layout — the default home migrates at its next daemon boot on a build that supports it; any other home: `winter migrate --sdk-home --home <dir>` with the daemon stopped");
+      lines.push("sdk home: old layout — the default home migrates at its next daemon boot on a build that supports it; any other home: `clover migrate --sdk-home --home <dir>` with the daemon stopped");
     } else {
       lines.push("sdk home: the shared runtime home layout (no migration needed)");
     }
@@ -78,7 +78,7 @@ export function sdkHomeDoctorLines(home: string): string[] {
     const records = [...(existsSync(live) ? [live] : []), ...archivedApprovedRecords(home)];
     for (const record of records) {
       const n = projectCount(record);
-      if (n > 0) lines.push(`approved rules: ${n} project(s) still have "in this project" answers in the old record ${record} — run \`winter migrate-project\` in each to move them into its .winter/settings.local.json`);
+      if (n > 0) lines.push(`approved rules: ${n} project(s) still have "in this project" answers in the old record ${record} — run \`clover migrate-project\` in each to move them into its .clover/settings.local.json`);
     }
 
     if (existsSync(join(home, "runtimes", "runtime-state.db"))) {

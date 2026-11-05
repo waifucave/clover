@@ -1,7 +1,7 @@
 // WS-21 L3.4 (spec §6.1; F10, F22): once the router APPLIES a run home, the daemon stops building what the
 // run folder carries — agents, plugins, skills, configured MCP servers, the SAVED allow rules, the home
 // variable, the empty setting sources, the instructions, the output style and a code session's memory
-// text. It keeps its floor: Winter's fixed allow rules, every deny rule, the sandbox, the capability
+// text. It keeps its floor: Clover's fixed allow rules, every deny rule, the sandbox, the capability
 // servers, the hooks, the base prompt, the workspace block, the date, and chat's/dispatch's `_assistant`
 // memory injection. With the router not applying one (0.0.11), every input is built exactly as before.
 import { beforeEach, describe, expect, test } from "bun:test";
@@ -20,8 +20,8 @@ import { ApprovalBroker } from "../../src/agent/approvals";
 import { PermissionGate } from "../../src/agent/gate";
 import { QuestionBroker } from "../../src/agent/questions";
 import { assistantMemoryDirFor, memoryDirFor, _clearRepoRootCacheForTests } from "../../src/agent/memory-dir";
-import { buildWinterOptions, controlPlaneDenyRules, GLOBAL_READ_ALLOW_RULES, type WinterOptionsInput } from "../../src/runtime-sdk/mode-options";
-import { winterSystemPromptFor } from "../../src/runtime-sdk/system-prompt";
+import { buildCloverOptions, controlPlaneDenyRules, GLOBAL_READ_ALLOW_RULES, type CloverOptionsInput } from "../../src/runtime-sdk/mode-options";
+import { cloverSystemPromptFor } from "../../src/runtime-sdk/system-prompt";
 
 const real = (p: string): string => realpathSync(p);
 const tmp = (prefix: string): string => real(mkdtempSync(join(tmpdir(), prefix)));
@@ -37,28 +37,28 @@ const MARK = {
 };
 
 function world() {
-  const home = tmp("winter-nohome-h-");
-  const cwd = tmp("winter-nohome-cwd-");
-  writeFileSync(join(home, "WINTER.md"), MARK.userInstr);
-  writeFileSync(join(cwd, "WINTER.md"), MARK.projInstr);
-  mkdirSync(join(cwd, ".winter", "rules"), { recursive: true });
-  writeFileSync(join(cwd, ".winter", "rules", "r.md"), MARK.rule);
+  const home = tmp("clover-nohome-h-");
+  const cwd = tmp("clover-nohome-cwd-");
+  writeFileSync(join(home, "CLOVER.md"), MARK.userInstr);
+  writeFileSync(join(cwd, "CLOVER.md"), MARK.projInstr);
+  mkdirSync(join(cwd, ".clover", "rules"), { recursive: true });
+  writeFileSync(join(cwd, ".clover", "rules", "r.md"), MARK.rule);
   // the user tier of output styles is read from the store home (`storeHomeFor`: `sdk/` on a run-home build)
   mkdirSync(join(storeHomeFor(home), "output-styles"), { recursive: true });
   writeFileSync(join(storeHomeFor(home), "output-styles", "mine.md"), `---\nname: mine\ndescription: d\nkeep-coding-instructions: true\n---\n${MARK.style}`);
   const trust = new TrustStore(join(home, "trust.json"));
   trust.trust(cwd);
-  const projMem = memoryDirFor(cwd, { winterHome: home });
+  const projMem = memoryDirFor(cwd, { cloverHome: home });
   mkdirSync(projMem, { recursive: true });
   writeFileSync(join(projMem, "MEMORY.md"), `- ${MARK.projMemory}`);
-  const asstMem = assistantMemoryDirFor({ winterHome: home });
+  const asstMem = assistantMemoryDirFor({ cloverHome: home });
   mkdirSync(asstMem, { recursive: true });
   writeFileSync(join(asstMem, "MEMORY.md"), `- ${MARK.assistantMemory}`);
-  const skills = new SkillStore({ winterHome: home, trust });
-  const styles = new OutputStyleStore({ winterHome: home, trust });
+  const skills = new SkillStore({ cloverHome: home, trust });
+  const styles = new OutputStyleStore({ cloverHome: home, trust });
   const assembler = new ContextAssembler({
-    winterHome: home, trust, skills,
-    memory: { enabled: () => true, dirFor: (c) => memoryDirFor(c, { winterHome: home }), assistantDir: () => asstMem },
+    cloverHome: home, trust, skills,
+    memory: { enabled: () => true, dirFor: (c) => memoryDirFor(c, { cloverHome: home }), assistantDir: () => asstMem },
     styleResolver: (c) => styles.resolve("mine", c),
   });
   return { home, cwd, assembler };
@@ -67,7 +67,7 @@ function world() {
 beforeEach(() => _clearRepoRootCacheForTests());
 
 const promptFor = (w: ReturnType<typeof world>, mode: "code" | "chat" | "dispatch", runHomeApplied: boolean, primary: string | undefined = w.cwd): string =>
-  winterSystemPromptFor(w.assembler, { mode, primary, cwd: primary ?? w.cwd, outDir: join(w.home, "outputs", "s"), ...(runHomeApplied ? { runHomeApplied: true } : {}) });
+  cloverSystemPromptFor(w.assembler, { mode, primary, cwd: primary ?? w.cwd, outDir: join(w.home, "outputs", "s"), ...(runHomeApplied ? { runHomeApplied: true } : {}) });
 
 describe("the system prompt (context.ts / system-prompt.ts)", () => {
   test("flag OFF: every planted input is composed, as today", () => {
@@ -103,41 +103,41 @@ describe("the system prompt (context.ts / system-prompt.ts)", () => {
   });
 });
 
-// ── the Winter leg's Options ─────────────────────────────────────────────────────────────────────
-function winterInput(over: Partial<WinterOptionsInput> = {}): WinterOptionsInput {
+// ── the Clover leg's Options ─────────────────────────────────────────────────────────────────────
+function cloverInput(over: Partial<CloverOptionsInput> = {}): CloverOptionsInput {
   return {
-    mode: "code", policy: "ask", sessionId: "11111111-2222-3333-4444-555555555555", home: "/tmp/winter-home", cwd: "/repo",
+    mode: "code", policy: "ask", sessionId: "11111111-2222-3333-4444-555555555555", home: "/tmp/clover-home", cwd: "/repo",
     credentials: { byProvider: {} } as never,
     spawn: { pathToClaudeCodeExecutable: "/opt/winter" },
     canUseTool: (async () => ({ behavior: "allow" as const })) as CanUseTool,
     abort: new AbortController(),
     baseEnv: { PATH: "/usr/bin", HOME: "/Users/x" },
-    env: { WINTER_HOME: "/caller/supplied" },
+    env: { CLOVER_HOME: "/caller/supplied" },
     agents: { reviewer: { description: "d", prompt: "p" } },
     plugins: [{ type: "local", path: "/h/cache/skill-plugins/sp" }],
     skills: ["sp:one"],
     userAllow: ["Edit", "mcp__srv__tool"],
     persistedAllow: ["Bash(git status)"],
     userDeny: ["Skill(denied)"],
-    capabilities: { winter__computer: { type: "sdk", name: "winter__computer", instance: {} } } as never,
+    capabilities: { clover__computer: { type: "sdk", name: "clover__computer", instance: {} } } as never,
     ...over,
   };
 }
 
-describe("buildWinterOptions", () => {
-  test("flag OFF: today's Options — agents, plugins, skills, saved allow rules, WINTER_HOME, settingSources []", () => {
-    const o = buildWinterOptions(winterInput());
+describe("buildCloverOptions", () => {
+  test("flag OFF: today's Options — agents, plugins, skills, saved allow rules, CLOVER_HOME, settingSources []", () => {
+    const o = buildCloverOptions(cloverInput());
     expect(o.agents).toBeDefined();
     expect(o.plugins).toHaveLength(1);
     expect(o.skills).toEqual(["sp:one"]);
     expect(o.permissions!.allow).toEqual(expect.arrayContaining(["Edit", "mcp__srv__tool", "Bash(git status)"]));
-    expect(o.env!.WINTER_HOME).toBe("/tmp/winter-home");
+    expect(o.env!.CLOVER_HOME).toBe("/tmp/clover-home");
     expect(o.settingSources).toEqual([]);
   });
 
-  test("flag ON: none of the run folder's inputs; Winter's fixed allow rules, every deny rule and the capability servers stay", () => {
-    const off = buildWinterOptions(winterInput());
-    const on = buildWinterOptions(winterInput({ runHomeApplied: true }));
+  test("flag ON: none of the run folder's inputs; Clover's fixed allow rules, every deny rule and the capability servers stay", () => {
+    const off = buildCloverOptions(cloverInput());
+    const on = buildCloverOptions(cloverInput({ runHomeApplied: true }));
     expect("agents" in on).toBe(false);
     expect("plugins" in on).toBe(false);
     expect("skills" in on).toBe(false);
@@ -147,7 +147,7 @@ describe("buildWinterOptions", () => {
     expect(on.permissions!.deny).toContain("Skill(denied)");
     expect(on.sandbox).toEqual(off.sandbox);
     expect(on.mcpServers).toEqual(off.mcpServers);
-    expect("WINTER_HOME" in on.env!).toBe(false); // the router pins it — a caller's value never survives
+    expect("CLOVER_HOME" in on.env!).toBe(false); // the router pins it — a caller's value never survives
     expect(on.settingSources).toEqual(["user"]);  // stated, never absent (absent = every tier)
   });
 
@@ -156,20 +156,20 @@ describe("buildWinterOptions", () => {
   // L2 fix round 1 (M1): beside a run home the router refuses (`run_home_option_refused`) a caller's
   // `plugins`, `skills`, `agents`, `outputStyle` or `brand` — none may reach the Options, whatever the input.
   test("flag ON: none of the options a run home decides are stated, even when the input carries them", () => {
-    const on = buildWinterOptions(winterInput({
+    const on = buildCloverOptions(cloverInput({
       runHomeApplied: true, outputStyle: "terse",
       agents: { reviewer: { description: "d", prompt: "p" } } as never,
       plugins: [{ type: "local", path: "/h/cache/skill-plugins/p" }] as never, skills: ["p:a"] as never,
     })) as Record<string, unknown>;
     for (const key of RUN_HOME_DECIDED_OPTIONS) expect(key in on).toBe(false);
-    const off = buildWinterOptions(winterInput({ outputStyle: "terse" })) as Record<string, unknown>;
+    const off = buildCloverOptions(cloverInput({ outputStyle: "terse" })) as Record<string, unknown>;
     expect(off.outputStyle).toBe("terse"); // today's behaviour without a run home
   });
 
   test("flag ON: none of the five router-owned variables survive, even from a caller's env", () => {
-    const owned = { WINTER_HOME: "/x", WINTER_STORE_HOME: "/x", WINTER_PLUGIN_CACHE_DIR: "/x", WINTER_PROVIDER_MANAGED_BY_HOST: "1", WINTER_DISABLE_CRON: "1" };
-    const on = buildWinterOptions(winterInput({ runHomeApplied: true, env: owned }));
+    const owned = { CLOVER_HOME: "/x", CLOVER_STORE_HOME: "/x", CLOVER_PLUGIN_CACHE_DIR: "/x", CLOVER_PROVIDER_MANAGED_BY_HOST: "1", CLOVER_DISABLE_CRON: "1" };
+    const on = buildCloverOptions(cloverInput({ runHomeApplied: true, env: owned }));
     for (const key of Object.keys(owned)) expect(key in on.env!).toBe(false);
-    expect(on.env!.WINTER_PROFILE).toBeDefined(); // the daemon's own pins stay
+    expect(on.env!.CLOVER_PROFILE).toBeDefined(); // the daemon's own pins stay
   });
 });

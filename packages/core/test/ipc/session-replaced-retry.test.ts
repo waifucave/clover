@@ -1,17 +1,17 @@
 // A send (or steer) that joins a session runtime replaced while it was starting is refused
-// `session_replaced` by that runtime (`WinterSession.end` mid-open): nothing was taken. The RPC doors retry
+// `session_replaced` by that runtime (`CloverSession.end` mid-open): nothing was taken. The RPC doors retry
 // ONCE on the session's next driver, so a client never sees it in the normal case; if the successor is
 // replaced too, the error is typed and RETRYABLE (`ERR.RETRY`, `data.retryable: true`), never INTERNAL.
 import { describe, expect, test } from "bun:test";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, ERR, type WritableSocket } from "@yanlinglabs/winter-protocol";
+import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, ERR, type WritableSocket } from "@waifucave/clover-protocol";
 import { startIpcServer } from "../../src/ipc/server";
 import { SessionStore } from "../../src/sessions/store";
 import { FileSecretStore } from "../../src/auth/secret-store";
 import { TokenAuthority } from "../../src/auth/tokens";
-import { WinterLegRefusal, type WinterSessionDrivers, type LegSession } from "../../src/runtime-sdk/session-driver";
+import { CloverLegRefusal, type CloverSessionDrivers, type LegSession } from "../../src/runtime-sdk/session-driver";
 import { withReplacementRetry } from "../../src/runtime-sdk/session-replaced";
 
 class TestClient {
@@ -48,7 +48,7 @@ class TestClient {
   close(): void { this.socket.end(); }
 }
 
-const replaced = () => new WinterLegRefusal("session_replaced", "this session's runtime was replaced while it was starting; send again");
+const replaced = () => new CloverLegRefusal("session_replaced", "this session's runtime was replaced while it was starting; send again");
 
 /** A driver that refuses `session_replaced` (and hands the table its successor) or takes the text. */
 function driver(name: string, replace: boolean, got: string[], onReplaced: () => void): LegSession {
@@ -65,7 +65,7 @@ function driver(name: string, replace: boolean, got: string[], onReplaced: () =>
 }
 
 /** The table's current driver for the session: `drivers[i]`, advanced each time a driver is replaced. */
-function table(replaceFlags: boolean[], got: string[]): WinterSessionDrivers {
+function table(replaceFlags: boolean[], got: string[]): CloverSessionDrivers {
   let i = 0;
   const drivers: LegSession[] = [];
   replaceFlags.forEach((r, n) => drivers.push(driver(`d${n}`, r, got, () => { i = Math.min(i + 1, drivers.length - 1); })));
@@ -81,17 +81,17 @@ function table(replaceFlags: boolean[], got: string[]): WinterSessionDrivers {
     evict: async () => {},
     list: () => [],
     endAll: async () => {},
-  } as unknown as WinterSessionDrivers;
+  } as unknown as CloverSessionDrivers;
 }
 
-async function withServer(t: WinterSessionDrivers, body: (c: TestClient, sessionId: string) => Promise<void>): Promise<void> {
-  const home = mkdtempSync(join(tmpdir(), "winter-send-replaced-"));
+async function withServer(t: CloverSessionDrivers, body: (c: TestClient, sessionId: string) => Promise<void>): Promise<void> {
+  const home = mkdtempSync(join(tmpdir(), "clover-send-replaced-"));
   const store = new SessionStore(home);
   const sessionId = store.createSession("global");
   const authority = new TokenAuthority(new FileSecretStore(join(home, "secrets.json")));
   const tokens = await authority.ensureTokens();
   const socketPath = join(home, "core.sock");
-  const server = startIpcServer({ socketPath, serverVersion: "test", tokens: authority, store, winter: t });
+  const server = startIpcServer({ socketPath, serverVersion: "test", tokens: authority, store, clover: t });
   const c = await TestClient.connect(socketPath);
   try {
     await c.hello(tokens.harness, "mac");

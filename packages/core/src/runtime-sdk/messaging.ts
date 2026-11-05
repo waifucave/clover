@@ -1,4 +1,4 @@
-// P8b Task 12 — THE ONE DOOR that makes a live Winter session reachable by `SendMessage`.
+// P8b Task 12 — THE ONE DOOR that makes a live Clover session reachable by `SendMessage`.
 //
 // A session that is not attached here is, to the router, a durable row and nothing more: the
 // directory can address it, and delivery falls through to a COLD RESUME (a whole second `winter`
@@ -9,7 +9,7 @@
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 // WHY THE HANDLE CARRIES A *WRAPPER* FACET RATHER THAN `query.messaging` ITSELF
 //
-// The router's Winter adapter picks ONE of two doors, in this order (measured in the shipped
+// The router's Clover adapter picks ONE of two doors, in this order (measured in the shipped
 // `dist/index.js`, `deliverIntoSession`):
 //
 //     if (handle.messaging !== undefined) return handle.messaging.deliver(message);
@@ -21,12 +21,12 @@
 //  * `push` only. Session delivery lands in the host queue (right), but `handle.messaging` is then
 //    undefined, and the adapter's `childDelivery` answers a typed `unavailable` for every child
 //    ("a child is only addressable through its owner"), while `canSubscribeIdle` answers `false`,
-//    so `notify_when_idle` against a Winter session is refused. Two live surfaces lost.
+//    so `notify_when_idle` against a Clover session is refused. Two live surfaces lost.
 //  * `query.messaging` raw. Children and idle work, but a delivered message goes over the control
 //    pipe into the spawned child's own messaging runtime — which surface map §2.5 records as
 //    answering `messaging_unavailable` ("no messaging runtime is registered in that process, which
 //    retrying cannot change"). It also bypasses the host prompt queue, and P8b-5 makes that queue
-//    the ONLY way a later user turn reaches a Winter session.
+//    the ONLY way a later user turn reaches a Clover session.
 //
 // So the handle carries a facet that is the session's own everywhere EXCEPT `deliver`, which
 // renders the envelope and pushes it into the host queue — exactly P8b-5's `steer` path, because a
@@ -61,7 +61,7 @@ import type {
   SerializedRuntimeAddress,
 } from "@yanlinglabs/winter-runtime-sdk";
 import type { WinterRuntimeSdk } from "./create";
-import { WINTER_PEER_VERSIONS } from "./versions";
+import { CLOVER_PEER_VERSIONS } from "./versions";
 import { UNSTATED_TAG } from "./model-tag";
 
 /** The router's own `LiveSessionStatus`, which its barrel does not re-export (`messaging/sessions.d.ts`
@@ -78,11 +78,11 @@ const UNSTATED_SELECTION = {
   modelRef: UNSTATED_TAG,
   family: "unstated",
   authFamily: "custom",
-  sdkVersion: WINTER_PEER_VERSIONS.winterAgentSdk,
+  sdkVersion: CLOVER_PEER_VERSIONS.winterAgentSdk,
   reason: "attached without a persisted runtime selection; the session's own record is authoritative",
 } as const;
 
-/** Every capability a live, attached Winter session has. `resume` is true because the session's
+/** Every capability a live, attached Clover session has. `resume` is true because the session's
  *  backend transcript outlives the child (P8b-24's `resumable`), `reply`/`message` because the host
  *  queue is a real input stream, `notifyWhenIdle` because the wrapper forwards the facet's own
  *  idle surface. */
@@ -90,12 +90,12 @@ const LIVE_CAPABILITIES = { message: true, resume: true, notifyWhenIdle: true, r
 
 /** The session facts a caller may state at attach. Everything here has a correct answer when it is
  *  absent — an attach that states only the four pinned members is legal and is what a test uses. */
-export interface WinterSessionAttachment {
-  /** Winter's OWN session id (the product id the phone and the Mac app address). Never the address:
-   *  it is carried so a host-side map can go from a Winter session to its live `Query` — which is
+export interface CloverSessionAttachment {
+  /** Clover's OWN session id (the product id the phone and the Mac app address). Never the address:
+   *  it is carried so a host-side map can go from a Clover session to its live `Query` — which is
    *  what Task 13's `TaskStop` walks to reach a child through its owner's facet. */
   sessionId: string;
-  /** The BACKEND (Winter) session id — `Options.sessionId`, the id the runtime reports at
+  /** The BACKEND (Clover) session id — `Options.sessionId`, the id the runtime reports at
    *  `system/init`. THIS is the facet target and the directory address (surface map §6.1). */
   backendSessionId: string;
   /** The live session. Only `messaging` is read; the rest of `Query` is the caller's business. */
@@ -123,7 +123,7 @@ export interface WinterSessionAttachment {
   log?: (line: string) => void;
 }
 
-export interface WinterSessionAttachHandle {
+export interface CloverSessionAttachHandle {
   /** Re-record the directory row from the session's live status (F6). */
   refresh(): void;
   /** Remove the live handle and park the directory row `exited`. NEVER `forget()` — the row is what
@@ -146,7 +146,7 @@ export interface WinterSessionAttachHandle {
 }
 
 /** What Task 16 is handed so it never imports this module's internals (interfaces block). */
-export interface WinterMessagingDeps {
+export interface CloverMessagingDeps {
   attach: typeof attachWinterSession;
 }
 
@@ -234,7 +234,7 @@ function bridgedFacet(
         // The router's own push path answers `delivery_uncertain` for a failed push, and the two
         // handle shapes must not disagree about the same failure. (A closed queue did NOT deliver;
         // the honest narrowing of that case belongs with the sink that knows it is closed — Task
-        // 16's `WinterSession`, which holds while `resumable` rather than throwing.)
+        // 16's `CloverSession`, which holds while `resumable` rather than throwing.)
         return deliveryUncertain(message.messageId, `the input-stream push failed: ${error instanceof Error ? error.message : String(error)}`);
       }
       // `liveOutcome`, the router's own: a turn was already running, so the pushed text is QUEUED
@@ -245,13 +245,13 @@ function bridgedFacet(
 }
 
 /**
- * Make a live Winter session a messaging receiver.
+ * Make a live Clover session a messaging receiver.
  *
  * Two writes, in this order and deliberately: the live handle first (a map write that cannot fail),
  * then the durable directory row. The reverse would advertise a receiver in the directory that this
  * process cannot yet deliver to.
  */
-export function attachWinterSession(runtime: WinterRuntimeSdk, session: WinterSessionAttachment): WinterSessionAttachHandle {
+export function attachWinterSession(runtime: WinterRuntimeSdk, session: CloverSessionAttachment): CloverSessionAttachHandle {
   const parsed: RuntimeAddress = buildSessionAddress(session.backendSessionId);
   const address = serializeRuntimeAddress(parsed) as SerializedRuntimeAddress;
   const generation = session.generation ?? 1;
@@ -282,7 +282,7 @@ export function attachWinterSession(runtime: WinterRuntimeSdk, session: WinterSe
     parsed,
     runtimeKind: "winter-agent",
     objectKind: "session",
-    // P8b-1: every mode is a spawned `winter` child in 8b, so every Winter session is a
+    // P8b-1: every mode is a spawned `winter` child in 8b, so every Clover session is a
     // `winter-session`. `winter-thread` becomes reachable only if path (b) ever lands.
     transport: "winter-session",
     ...(session.displayName === undefined ? {} : { displayName: session.displayName }),
@@ -297,9 +297,9 @@ export function attachWinterSession(runtime: WinterRuntimeSdk, session: WinterSe
     // ⚠️ PARKED ROWS CARRY NO BACKEND ID, AND THAT IS THE POINT.
     //
     // `backendSessionId` is the router's COLD-RESUME source: with a handle gone and an id present,
-    // its Winter adapter opens `peers.winter.query({ prompt, options: { resume: <id> } })` — a whole
+    // its Clover adapter opens `peers.winter.query({ prompt, options: { resume: <id> } })` — a whole
     // second `winter` process, spawned from inside a delivery, that the daemon never tracked, never
-    // budgeted in `dispose()`'s shutdown grace and never gave a projector to. Winter's session
+    // budgeted in `dispose()`'s shutdown grace and never gave a projector to. Clover's session
     // lifecycle is the DAEMON's (P8b-24: the next `send`/`steer` resumes, host-driven), so a parked
     // row answers the honest non-retryable `unavailable` — "no transcript to resume" — instead. The
     // id itself is not lost: 8a's `runtime_sessions` record is where it lives for the product.
@@ -309,7 +309,7 @@ export function attachWinterSession(runtime: WinterRuntimeSdk, session: WinterSe
   });
 
   // `directory.record` THROWS `UnaddressableEntryError` for a non-canonical address — the one
-  // messaging error a Winter-only host can still hit (surface map §8.5). It is raised out of
+  // messaging error a Clover-only host can still hit (surface map §8.5). It is raised out of
   // `ready`, never swallowed: a session recorded under an address nothing can resolve would be
   // listed and unreachable, which is precisely what that class exists to prevent.
   // The live handle FIRST — a map write that cannot fail — then the durable row, which is I/O
@@ -406,7 +406,7 @@ export async function releaseAllHeld(
  * Task 13's `task_stop` reaches a child through its OWNING session's facet — "a child engine has no
  * facet surface of its own" (surface map §9.2) — and the only registry of live facets is the one
  * `attachWinterSession` writes into. The address construction lives here so no other module has to
- * know that a Winter session is addressed by its backend id.
+ * know that a Clover session is addressed by its backend id.
  *
  * The facet that comes back is the WRAPPER from `attachWinterSession`: `steerChild`/`resumeChild`
  * reach the real `Query.messaging` untouched, and only `deliver` is re-pointed at the host queue.
@@ -422,12 +422,12 @@ export function attachedFacetFor(runtime: Pick<WinterRuntimeSdk, "sdk">, backend
  * ⚠️ WHY `directory.recover()` IS NOT ENOUGH ON ITS OWN. The router's recovery marks a previously
  * live row `status: "unavailable"` and KEEPS its `backendSessionId`, and `deliverIntoSession`
  * refuses only `"archived"` — so every session row from the last boot stays cold-resumable from
- * inside a delivery. Today nothing actually spawns, because Winter supplies no `resumeOptions` and
+ * inside a delivery. Today nothing actually spawns, because Clover supplies no `resumeOptions` and
  * the SDK cannot resolve a `winter` executable without being handed one. That is safety by accident
  * of an unresolvable binary, which is the same shape CLAUDE.md calls out for `reasoning_item` ("an
  * accident of a missing protocol variant, not policy"). This makes it policy.
  *
- * A Winter session is resumed by its DRIVER, from the 8a `runtime_sessions` record — which keeps its
+ * A Clover session is resumed by its DRIVER, from the 8a `runtime_sessions` record — which keeps its
  * own `backendSessionId` and is untouched here — on the next `send`/`steer` (P8b-24). The directory
  * row's copy exists only to let the router resume behind the daemon's back, so a row this process
  * has not attached does not get one.

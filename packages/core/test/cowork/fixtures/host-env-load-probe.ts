@@ -10,7 +10,7 @@ Bun.plugin({
     build.onLoad({ filter: /[\\/]cowork[\\/]host-env[\\/][^\\/]+\.ts$/ }, args => { loaded.push(args.path); return { contents: readFileSync(args.path, "utf8"), loader: "ts" }; });
   },
 });
-const home = mkdtempSync(join(tmpdir(), "winter-hostenv-probe-"));
+const home = mkdtempSync(join(tmpdir(), "clover-hostenv-probe-"));
 const { startDaemon } = await import("../../../src/daemon");
 const { FileSecretStore } = await import("../../../src/auth/secret-store");
 const daemon = await startDaemon({ home, secrets: new FileSecretStore(join(home, "secrets")), agentProvider: null });

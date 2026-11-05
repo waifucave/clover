@@ -1,6 +1,6 @@
 // WS-21 L3.5 (spec §4.2, §4.3; F21): an approval card's "always" answers are saved where claude keeps
 // them, in claude's grammar — "everywhere" in `sdk/settings.json`, "in this project" in the TRUSTED
-// project's `.winter/settings.local.json` at its git root, followed by the global git exclude. The card
+// project's `.clover/settings.local.json` at its git root, followed by the global git exclude. The card
 // offers "in this project" only for a trusted project. Every test runs git with a temp HOME,
 // XDG_CONFIG_HOME and GIT_CONFIG_GLOBAL.
 import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test";
@@ -8,7 +8,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, symlink
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { CanUseTool } from "@yanlinglabs/winter-agent-sdk";
-import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, type NewSessionEvent, type WritableSocket } from "@yanlinglabs/winter-protocol";
+import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, type NewSessionEvent, type WritableSocket } from "@waifucave/clover-protocol";
 import { ApprovalBroker } from "../../src/agent/approvals";
 import { PermissionGate } from "../../src/agent/gate";
 import { QuestionBroker } from "../../src/agent/questions";
@@ -28,7 +28,7 @@ const saved: Record<string, string | undefined> = {};
 let gitHome: string;
 beforeAll(() => {
   for (const k of ENV) saved[k] = process.env[k];
-  gitHome = tmp("winter-save-githome-");
+  gitHome = tmp("clover-save-githome-");
   process.env.HOME = gitHome;
   process.env.XDG_CONFIG_HOME = join(gitHome, ".config");
   process.env.GIT_CONFIG_GLOBAL = join(gitHome, ".gitconfig");
@@ -39,22 +39,22 @@ afterEach(() => _clearGitRootCacheForTests());
 
 const excludesFile = (): string => join(gitHome, ".config", "git", "ignore");
 function repo(): string {
-  const dir = tmp("winter-save-repo-");
+  const dir = tmp("clover-save-repo-");
   if (Bun.spawnSync(["git", "-C", dir, "init", "-q"], { env: process.env }).exitCode !== 0) throw new Error("git init failed");
   return dir;
 }
 
 describe("saveAnswerEverywhere / saveAnswerInProject", () => {
   test("everywhere writes claude grammar into sdk/settings.json, deduped, other keys preserved", () => {
-    const home = tmp("winter-save-home-");
+    const home = tmp("clover-save-home-");
     mkdirSync(join(home, "sdk"), { recursive: true });
     writeFileSync(join(home, "sdk", "settings.json"), JSON.stringify({ theme: "dark", permissions: { deny: ["Skill(x)"] } }));
     expect(saveAnswerEverywhere(home, "Bash(npm test:*)")).toEqual(["Bash(npm test:*)"]);
-    expect(saveAnswerEverywhere(home, "Edit")).toEqual(["Edit", "Write"]);            // Winter's Edit = both tools
-    expect(saveAnswerEverywhere(home, "Computer")).toEqual(["mcp__winter__computer__computer"]);
+    expect(saveAnswerEverywhere(home, "Edit")).toEqual(["Edit", "Write"]);            // Clover's Edit = both tools
+    expect(saveAnswerEverywhere(home, "Computer")).toEqual(["mcp__clover__computer__computer"]);
     saveAnswerEverywhere(home, "Bash(npm test:*)");                                   // dedup
     const onDisk = JSON.parse(readFileSync(join(home, "sdk", "settings.json"), "utf8"));
-    expect(onDisk.permissions.allow).toEqual(["Bash(npm test:*)", "Edit", "Write", "mcp__winter__computer__computer"]);
+    expect(onDisk.permissions.allow).toEqual(["Bash(npm test:*)", "Edit", "Write", "mcp__clover__computer__computer"]);
     expect(onDisk.permissions.deny).toEqual(["Skill(x)"]);
     expect(onDisk.theme).toBe("dark");
     // …and NEVER settings.json, where the key no longer lives.
@@ -62,46 +62,46 @@ describe("saveAnswerEverywhere / saveAnswerInProject", () => {
   });
 
   test("a rule the runtimes cannot apply is refused, not saved", () => {
-    const home = tmp("winter-save-home-");
+    const home = tmp("clover-save-home-");
     expect(() => saveAnswerEverywhere(home, "Edit(/some/dir)")).toThrow(SavedAnswerRefused); // a writable-dir declaration
     expect(existsSync(join(home, "sdk", "settings.json"))).toBe(false);
   });
 
-  test("in this project, trusted: <root>/.winter/settings.local.json in claude grammar, then the exclude line EXACTLY once", () => {
-    const home = tmp("winter-save-home-");
+  test("in this project, trusted: <root>/.clover/settings.local.json in claude grammar, then the exclude line EXACTLY once", () => {
+    const home = tmp("clover-save-home-");
     const root = repo();
-    saveAnswerInProject({ root, winterHome: home, trusted: true }, "Bash(make:*)");
-    saveAnswerInProject({ root, winterHome: home, trusted: true }, "Edit");
-    const local = JSON.parse(readFileSync(join(root, ".winter", "settings.local.json"), "utf8"));
+    saveAnswerInProject({ root, cloverHome: home, trusted: true }, "Bash(make:*)");
+    saveAnswerInProject({ root, cloverHome: home, trusted: true }, "Edit");
+    const local = JSON.parse(readFileSync(join(root, ".clover", "settings.local.json"), "utf8"));
     expect(local.permissions.allow).toEqual(["Bash(make:*)", "Edit", "Write"]);
     const excludes = readFileSync(excludesFile(), "utf8").split("\n").filter(Boolean);
     expect(excludes.filter((l) => l === LOCAL_SETTINGS_EXCLUDE)).toHaveLength(1);
     // The retired store is not written.
-    expect(existsSync(join(root, ".winter", "permissions.local.json"))).toBe(false);
+    expect(existsSync(join(root, ".clover", "permissions.local.json"))).toBe(false);
   });
 
   test("in this project, UNTRUSTED: refused, nothing written anywhere", () => {
-    const home = tmp("winter-save-home-");
+    const home = tmp("clover-save-home-");
     const root = repo();
-    expect(() => saveAnswerInProject({ root, winterHome: home, trusted: false }, "Bash(make:*)")).toThrow(SavedAnswerRefused);
-    expect(existsSync(join(root, ".winter"))).toBe(false);
+    expect(() => saveAnswerInProject({ root, cloverHome: home, trusted: false }, "Bash(make:*)")).toThrow(SavedAnswerRefused);
+    expect(existsSync(join(root, ".clover"))).toBe(false);
   });
 
-  test("never through a planted link, never into the Winter home, never over a file that does not parse", () => {
-    const home = tmp("winter-save-home-");
+  test("never through a planted link, never into the Clover home, never over a file that does not parse", () => {
+    const home = tmp("clover-save-home-");
     const root = repo();
-    const elsewhere = tmp("winter-save-elsewhere-");
-    symlinkSync(elsewhere, join(root, ".winter"));
-    expect(() => saveAnswerInProject({ root, winterHome: home, trusted: true }, "Bash(ls)")).toThrow(/symbolic link/);
+    const elsewhere = tmp("clover-save-elsewhere-");
+    symlinkSync(elsewhere, join(root, ".clover"));
+    expect(() => saveAnswerInProject({ root, cloverHome: home, trusted: true }, "Bash(ls)")).toThrow(/symbolic link/);
     expect(existsSync(join(elsewhere, "settings.local.json"))).toBe(false);
 
-    expect(() => saveAnswerInProject({ root: join(home, "outputs"), winterHome: home, trusted: true }, "Bash(ls)")).toThrow(/Winter home/);
+    expect(() => saveAnswerInProject({ root: join(home, "outputs"), cloverHome: home, trusted: true }, "Bash(ls)")).toThrow(/Clover home/);
 
     const root2 = repo();
-    mkdirSync(join(root2, ".winter"));
-    writeFileSync(join(root2, ".winter", "settings.local.json"), "{ half");
-    expect(() => saveAnswerInProject({ root: root2, winterHome: home, trusted: true }, "Bash(ls)")).toThrow(/untouched/);
-    expect(readFileSync(join(root2, ".winter", "settings.local.json"), "utf8")).toBe("{ half");
+    mkdirSync(join(root2, ".clover"));
+    writeFileSync(join(root2, ".clover", "settings.local.json"), "{ half");
+    expect(() => saveAnswerInProject({ root: root2, cloverHome: home, trusted: true }, "Bash(ls)")).toThrow(/untouched/);
+    expect(readFileSync(join(root2, ".clover", "settings.local.json"), "utf8")).toBe("{ half");
   });
 });
 
@@ -168,7 +168,7 @@ class TestClient {
 
 describe("approval.respond saves through the WS-21 doors", () => {
   async function world(sessionCwd?: (root: string) => string) {
-    const home = tmp("winter-save-ipc-");
+    const home = tmp("clover-save-ipc-");
     const root = repo();
     const store = new SessionStore(home);
     const socketPath = join(home, "core.sock");
@@ -176,7 +176,7 @@ describe("approval.respond saves through the WS-21 doors", () => {
     const tokens = await authority.ensureTokens();
     const broker = new ApprovalBroker();
     const trust = new TrustStore(join(home, "trust.json"));
-    const server = startIpcServer({ socketPath, serverVersion: "test", tokens: authority, store, broker, trust, winterHome: home });
+    const server = startIpcServer({ socketPath, serverVersion: "test", tokens: authority, store, broker, trust, cloverHome: home });
     const client = await TestClient.connect(socketPath);
     await client.request(METHODS.hello, { protocolVersion: PROTOCOL_VERSION, role: "harness", token: tokens.harness, clientName: "approver" });
     const answer = async (callId: string, option: { id: string; rule: string; scope: "project" | "global" }, approved: boolean) => {
@@ -196,14 +196,14 @@ describe("approval.respond saves through the WS-21 doors", () => {
     } finally { w.stop(); }
   });
 
-  test("\"in this project\" on a TRUSTED project → <git root>/.winter/settings.local.json; the retired stores stay unwritten", async () => {
+  test("\"in this project\" on a TRUSTED project → <git root>/.clover/settings.local.json; the retired stores stay unwritten", async () => {
     const w = await world();
     try {
       w.trust.trust(w.root);
       await w.answer("c2", { id: "allow_project", rule: "Bash(make:*)", scope: "project" }, true);
-      expect(JSON.parse(readFileSync(join(w.root, ".winter", "settings.local.json"), "utf8")).permissions.allow).toEqual(["Bash(make:*)"]);
+      expect(JSON.parse(readFileSync(join(w.root, ".clover", "settings.local.json"), "utf8")).permissions.allow).toEqual(["Bash(make:*)"]);
       expect(existsSync(join(w.home, "permissions", "projects.json"))).toBe(false);
-      expect(existsSync(join(w.root, ".winter", "permissions.local.json"))).toBe(false);
+      expect(existsSync(join(w.root, ".clover", "permissions.local.json"))).toBe(false);
     } finally { w.stop(); }
   });
 
@@ -212,19 +212,19 @@ describe("approval.respond saves through the WS-21 doors", () => {
     try {
       const res = await w.answer("c3", { id: "allow_project", rule: "Bash(make:*)", scope: "project" }, true);
       expect(res.result).toEqual({ ok: true, alreadyResolved: false });
-      expect(existsSync(join(w.root, ".winter"))).toBe(false);
+      expect(existsSync(join(w.root, ".clover"))).toBe(false);
     } finally { w.stop(); }
   });
 
   // R.3 re-review B-2: in a linked worktree of a TRUSTED repo the card offers "in this project" (the bridge's
   // trust is the run home's, keyed on the repository) — and the answer IS saved, into the worktree's own local
   // tier (it used to be refused on a path-only trust check, logged, and approved once).
-  test("R.3 re-review B-2: \"in this project\" from a linked worktree of a TRUSTED repo → the WORKTREE's .winter/settings.local.json", async () => {
+  test("R.3 re-review B-2: \"in this project\" from a linked worktree of a TRUSTED repo → the WORKTREE's .clover/settings.local.json", async () => {
     let wt = "";
     const w = await world((root) => {
       const git = (args: string[]) => expect(Bun.spawnSync(["git", "-C", root, ...args], { stdout: "ignore", stderr: "ignore", env: process.env }).exitCode).toBe(0);
       git(["-c", "user.email=t@t.test", "-c", "user.name=t", "commit", "--allow-empty", "-q", "-m", "i"]);
-      wt = join(tmp("winter-save-wt-"), "wt");
+      wt = join(tmp("clover-save-wt-"), "wt");
       git(["worktree", "add", "-q", "-b", `r3p-${Math.random().toString(16).slice(2)}`, wt]);
       wt = realpathSync(wt);
       return wt;
@@ -232,8 +232,8 @@ describe("approval.respond saves through the WS-21 doors", () => {
     try {
       w.trust.trust(w.root);
       await w.answer("c6", { id: "allow_project", rule: "Bash(make:*)", scope: "project" }, true);
-      expect(JSON.parse(readFileSync(join(wt, ".winter", "settings.local.json"), "utf8")).permissions.allow).toEqual(["Bash(make:*)"]);
-      expect(existsSync(join(w.root, ".winter", "settings.local.json"))).toBe(false);
+      expect(JSON.parse(readFileSync(join(wt, ".clover", "settings.local.json"), "utf8")).permissions.allow).toEqual(["Bash(make:*)"]);
+      expect(existsSync(join(w.root, ".clover", "settings.local.json"))).toBe(false);
     } finally { w.stop(); }
   });
 
@@ -242,7 +242,7 @@ describe("approval.respond saves through the WS-21 doors", () => {
     const w = await world();
     const git = (args: string[]) => expect(Bun.spawnSync(["git", "-C", w.root, ...args], { stdout: "ignore", stderr: "ignore", env: process.env }).exitCode).toBe(0);
     git(["-c", "user.email=t@t.test", "-c", "user.name=t", "commit", "--allow-empty", "-q", "-m", "i"]);
-    const wtPath = join(tmp("winter-save-wt-"), "wt");
+    const wtPath = join(tmp("clover-save-wt-"), "wt");
     git(["worktree", "add", "-q", "-b", `r3b-${Math.random().toString(16).slice(2)}`, wtPath]);
     const wt = realpathSync(wtPath);
     try {
@@ -250,7 +250,7 @@ describe("approval.respond saves through the WS-21 doors", () => {
       const created = await w.client.request(METHODS.sessionCreate, { scope: "global", cwd: wt });
       expect(created.error).toBeUndefined();
       expect(created.result.trusted).toBe(true);
-      const untrustedDir = tmp("winter-save-plain-");
+      const untrustedDir = tmp("clover-save-plain-");
       expect((await w.client.request(METHODS.sessionCreate, { scope: "global", cwd: untrustedDir })).result.trusted).toBe(false);
     } finally { w.stop(); }
   });
@@ -262,7 +262,7 @@ describe("approval.respond saves through the WS-21 doors", () => {
       await w.answer("c4", { id: "allow_global", rule: "Bash(rm -rf build)", scope: "global" }, false);
       await w.answer("c5", { id: "allow_project", rule: "Bash(rm -rf build)", scope: "project" }, false);
       expect(existsSync(join(w.home, "sdk", "settings.json"))).toBe(false);
-      expect(existsSync(join(w.root, ".winter", "settings.local.json"))).toBe(false);
+      expect(existsSync(join(w.root, ".clover", "settings.local.json"))).toBe(false);
     } finally { w.stop(); }
   });
 });

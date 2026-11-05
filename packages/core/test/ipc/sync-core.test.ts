@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir, homedir } from "node:os";
 import { join } from "node:path";
-import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, ERR, type WritableSocket } from "@yanlinglabs/winter-protocol";
+import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, ERR, type WritableSocket } from "@waifucave/clover-protocol";
 import { startIpcServer } from "../../src/ipc/server";
 import { SYNC_PAGE_BYTES, SyncPushBuffers } from "../../src/ipc/sync";
 import { SessionStore } from "../../src/sessions/store";
@@ -11,7 +11,7 @@ import { TokenAuthority } from "../../src/auth/tokens";
 
 // Chat Slice D task 2 — the sync wire: `sync.heads` / `sync.pull` / `sync.push`, the replication
 // seam between a phone's local chat session logs and the daemon's own. Exercised over a REAL
-// daemon socket (own temp WINTER_HOME + SessionStore + TokenAuthority, no AgentEngine) — the same
+// daemon socket (own temp CLOVER_HOME + SessionStore + TokenAuthority, no AgentEngine) — the same
 // harness shape as session-set-model.test.ts/remote-chat-gate.test.ts (this codebase's convention:
 // no shared test-harness module, every test/ipc/*.test.ts carries its own copy).
 //
@@ -139,7 +139,7 @@ describe("sync.heads / sync.pull / sync.push (Chat Slice D task 2)", () => {
   afterEach(() => { stop?.(); stop = undefined; });
 
   async function boot(): Promise<{ store: SessionStore; home: string; socketPath: string; harnessToken: string; remoteToken: string }> {
-    const home = mkdtempSync(join(tmpdir(), "winter-sync-core-"));
+    const home = mkdtempSync(join(tmpdir(), "clover-sync-core-"));
     const store = new SessionStore(home);
     const socketPath = join(home, "core.sock");
     const authority = new TokenAuthority(new FileSecretStore(join(home, "secrets.json")));
@@ -451,7 +451,7 @@ describe("sync.heads / sync.pull / sync.push (Chat Slice D task 2)", () => {
     await c.hello(harnessToken, "sync-client");
     const id = uuid();
     await c.request(METHODS.syncPush, { sessionId: id, baseSeq: 0, data: b64(jsonl([created(id)])), complete: true });
-    const withImages = { ...userMsg(id, 2, "see [Image #1]"), images: [{ n: 1, path: "/tmp/winter-session-x/images/image_1.png" }] };
+    const withImages = { ...userMsg(id, 2, "see [Image #1]"), images: [{ n: 1, path: "/tmp/clover-session-x/images/image_1.png" }] };
     const bad = await c.request(METHODS.syncPush, { sessionId: id, baseSeq: 1, data: b64(jsonl([withImages])), complete: true });
     expect(bad.error?.code).toBe(ERR.INVALID_PARAMS);
     expect(store.lastSeq(id)).toBe(1);

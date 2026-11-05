@@ -80,7 +80,7 @@ export class ResultBuilder {
     this.items.push({ kind: "mixed", parts: parts.map((p) => (typeof p === "string" ? p : { data: p.data })) });
   }
 
-  /** Winter's own reviewed prose IN PLACE (an app's extras block and guide, `adapters/`): an unfenced daemon block,
+  /** Clover's own reviewed prose IN PLACE (an app's extras block and guide, `adapters/`): an unfenced daemon block,
    *  not counted against the text cap; bounded by the adapters' own caps, and here at `GUIDE_BLOCK_CAP` as a belt. */
   guide(text: string): void {
     const t = text.trimEnd();

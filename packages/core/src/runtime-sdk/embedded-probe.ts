@@ -9,8 +9,8 @@
 // the embedded topology is discharged only by running the real artifact, as the workflow worker (C1)
 // and the runtime spine (P8b-18) already are.
 //
-// WHAT IT DOES. Boots the REAL daemon (`startDaemon`, what `winter-core daemon run` calls) on a
-// caller-supplied temp `WINTER_HOME` with a `FileSecretStore` under it — nothing touches the macOS
+// WHAT IT DOES. Boots the REAL daemon (`startDaemon`, what `clover-core daemon run` calls) on a
+// caller-supplied temp `CLOVER_HOME` with a `FileSecretStore` under it — nothing touches the macOS
 // Keychain — and with settings that name a `winter` executable that does NOT exist, so the chat turn can
 // only have run embedded. It then speaks JSON-RPC to the daemon's own socket like any client: create a
 // chat session on the scripted `winter-test/echo` double, attach, send, wait for `turn_completed`. It
@@ -22,8 +22,8 @@
 import { existsSync, readdirSync, realpathSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join, resolve, sep } from "node:path";
-import { isDefaultWinterHome } from "../winter-dir";
-import { ConnWriter, LineDecoder, METHODS, PROTOCOL_VERSION, encodeLine, type SessionEvent, type WritableSocket } from "@yanlinglabs/winter-protocol";
+import { isDefaultCloverHome } from "../clover-dir";
+import { ConnWriter, LineDecoder, METHODS, PROTOCOL_VERSION, encodeLine, type SessionEvent, type WritableSocket } from "@waifucave/clover-protocol";
 import { FileSecretStore } from "../auth/secret-store";
 import { startDaemon, type RunningDaemon } from "../daemon";
 import { USAGE_INERT } from "../usage/wiring";
@@ -48,8 +48,8 @@ export type EmbeddedProbeResult =
  * secrets directory before booting a daemon there, so on a live home it would overwrite the user's
  * settings — which that home's running daemon then applies live. Refused, typed, BEFORE anything is
  * written:
- *   - either profile's DEFAULT home (`~/.winter`, `~/.winter-dev`), however it is spelled — the
- *     `winter-dev` wrapper exports `WINTER_HOME=~/.winter-dev`, so one stray invocation would hit it;
+ *   - either profile's DEFAULT home (`~/.clover`, `~/.clover-dev`), however it is spelled — the
+ *     `clover-dev` wrapper exports `CLOVER_HOME=~/.clover-dev`, so one stray invocation would hit it;
  *   - any other home that is neither ABSENT/EMPTY nor under the temp root (`os.tmpdir()`, realpath'd):
  *     a gate home is a fresh `mkdtemp`, and nothing else has any business here.
  * `homedirFn`/`tmpRoot` exist for the hermetic test only.
@@ -57,7 +57,7 @@ export type EmbeddedProbeResult =
 export function embeddedProbeHomeRefusal(home: string, opts: { homedirFn?: () => string; tmpRoot?: string } = {}): string | undefined {
   const homedirFn = opts.homedirFn ?? homedir;
   for (const profile of ["dist", "dev"] as const) {
-    if (isDefaultWinterHome(home, profile, homedirFn)) return `refusing ${home}: it is the ${profile} profile's default Winter home, and the probe overwrites settings.json`;
+    if (isDefaultCloverHome(home, profile, homedirFn)) return `refusing ${home}: it is the ${profile} profile's default Clover home, and the probe overwrites settings.json`;
   }
   const real = (p: string): string => {
     try {
@@ -126,7 +126,7 @@ async function connect(socketPath: string): Promise<{ call<T>(method: string, pa
 }
 
 export async function runEmbeddedProbe(input: { home: string | undefined; homedirFn?: () => string; tmpRoot?: string }): Promise<EmbeddedProbeResult> {
-  if (!input.home) return { ok: false, error: "WINTER_HOME is required (the probe never touches a real home)" };
+  if (!input.home) return { ok: false, error: "CLOVER_HOME is required (the probe never touches a real home)" };
   const home = input.home;
   const refusal = embeddedProbeHomeRefusal(home, {
     ...(input.homedirFn !== undefined ? { homedirFn: input.homedirFn } : {}),

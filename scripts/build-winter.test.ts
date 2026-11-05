@@ -12,7 +12,7 @@ import { spawnSync } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { assertBinaryDoesNotEmbedPath, checkoutIsAtTag, copyCheckoutExcludingGit, signWinterArgs } from "./build-winter";
+import { assertBinaryDoesNotEmbedPath, checkoutIsAtTag, copyCheckoutExcludingGit, signCloverArgs } from "./build-winter";
 
 const temps: string[] = [];
 afterAll(() => { for (const d of temps) rmSync(d, { recursive: true, force: true }); });
@@ -88,13 +88,13 @@ describe("checkoutIsAtTag (P8b-2 pinned-peer gate)", () => {
   });
 });
 
-// P8d-14: the dev `--sign`/`WINTER_RUNTIME_SIGN_IDENTITY` re-sign step. `buildWinter()` itself is
+// P8d-14: the dev `--sign`/`CLOVER_RUNTIME_SIGN_IDENTITY` re-sign step. `buildWinter()` itself is
 // not exercised here (a real SDK checkout + a two-minute compile) — only the codesign argv it
 // runs, and that argv's actual effect on a real (fake, non-Mach-O) file via the real `codesign`
 // binary. No Keychain access, no real winter/claude binary.
-describe("signWinterArgs (P8d-14 re-sign for a stable Keychain-ACL identity)", () => {
+describe("signCloverArgs (P8d-14 re-sign for a stable Keychain-ACL identity)", () => {
   test("carries a stable --identifier com.winter.runtime, hardened runtime, and a secure timestamp — same shape as the Release embed step (P8d-2)", () => {
-    expect(signWinterArgs("-", "/tmp/dist/winter")).toEqual([
+    expect(signCloverArgs("-", "/tmp/dist/winter")).toEqual([
       "--force", "--sign", "-", "--identifier", "com.winter.runtime", "--options", "runtime", "--timestamp", "/tmp/dist/winter",
     ]);
   });
@@ -102,10 +102,10 @@ describe("signWinterArgs (P8d-14 re-sign for a stable Keychain-ACL identity)", (
   test("a REAL codesign with an ad-hoc (`-`) identity lands Identifier=com.winter.runtime — the identifier is what fixes the Keychain-reprompt trap, not a real team identity", () => {
     const dir = mkdtempSync(join(tmpdir(), "build-winter-sign-"));
     temps.push(dir);
-    const fake = join(dir, "winter-fake");
+    const fake = join(dir, "clover-fake");
     writeFileSync(fake, "#!/bin/sh\necho fake winter\n");
     chmodSync(fake, 0o755);
-    const cs = spawnSync("codesign", signWinterArgs("-", fake), { encoding: "utf8" });
+    const cs = spawnSync("codesign", signCloverArgs("-", fake), { encoding: "utf8" });
     if (cs.status !== 0) throw new Error(`codesign failed: ${cs.stderr || cs.stdout}`);
     const dvv = spawnSync("codesign", ["-dvv", fake], { encoding: "utf8" });
     const out = `${dvv.stdout}${dvv.stderr}`;
@@ -159,7 +159,7 @@ describe("assertBinaryDoesNotEmbedPath (P8d-27's release-blocking gate)", () => 
   test("throws — without ever echoing the path itself — when the binary contains the checkout's absolute path", () => {
     const dir = mkdtempSync(join(tmpdir(), "build-winter-embed-"));
     temps.push(dir);
-    const secretPath = "/Users/some-developer/dev/winter-agent-sdk";
+    const secretPath = "/Users/some-developer/dev/clover-sdk";
     const fake = join(dir, "fake-binary-with-path");
     writeFileSync(fake, `some binary bytes\n// ../../../../../../..${secretPath}/packages/runtime/src/index.ts\nmore bytes\n`);
 
@@ -181,14 +181,14 @@ describe("assertBinaryDoesNotEmbedPath (P8d-27's release-blocking gate)", () => 
     temps.push(dir);
     const fake = join(dir, "fake-binary-clean");
     writeFileSync(fake, "some binary bytes with no paths in it at all\n");
-    expect(() => assertBinaryDoesNotEmbedPath(fake, "/Users/some-developer/dev/winter-agent-sdk")).not.toThrow();
+    expect(() => assertBinaryDoesNotEmbedPath(fake, "/Users/some-developer/dev/clover-sdk")).not.toThrow();
   });
 
   test("works on real (non-UTF8-safe) binary bytes, not just text", () => {
     const dir = mkdtempSync(join(tmpdir(), "build-winter-binarybytes-"));
     temps.push(dir);
     const fake = join(dir, "fake-binary-bytes");
-    const secretPath = "/Users/some-developer/dev/winter-agent-sdk";
+    const secretPath = "/Users/some-developer/dev/clover-sdk";
     const prefix = Buffer.from([0x7f, 0x45, 0x4c, 0x46, 0x02, 0x01, 0x01, 0x00, 0xff, 0xfe, 0xfd]); // arbitrary non-UTF8 bytes
     const body = Buffer.concat([prefix, Buffer.from(`...${secretPath}...`), Buffer.from([0x00, 0x01, 0x02])]);
     writeFileSync(fake, body);

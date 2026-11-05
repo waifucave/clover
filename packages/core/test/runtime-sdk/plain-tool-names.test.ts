@@ -1,13 +1,13 @@
 // The 2026-10-01 tool-surface ruling's NAME compatibility: the capability tools the model now calls by
 // plain names (`SpawnSession`, `ListSessions`, `ManageSession`, `Computer`, `Browser`) and the SDK's
-// `Search` built-in are classified, carded, rendered and ruled EXACTLY as their old `mcp__winter__…`
+// `Search` built-in are classified, carded, rendered and ruled EXACTLY as their old `mcp__clover__…`
 // spellings were — and the old spellings (saved rules, old transcripts, a call the runtime reports under
 // the old spelling because a rule or matcher named it) keep working.
 import { describe, expect, test } from "bun:test";
 import { PermissionGate, type SessionApprovalPolicy } from "../../src/agent/gate";
 import { connectorFactsFor, isConnectorToolName, type ConnectorPermissionSource } from "../../src/agent/mcp/connector-permissions";
-import { WINTER_CAPABILITY_TOOLS, capabilityToolName, type CapabilityToolFacts } from "../../src/capabilities/names";
-import { sdkAllowRulesFor, winterGateRulesFromSdk } from "../../src/runtime-sdk/mode-options";
+import { CLOVER_CAPABILITY_TOOLS, capabilityToolName, type CapabilityToolFacts } from "../../src/capabilities/names";
+import { sdkAllowRulesFor, cloverGateRulesFromSdk } from "../../src/runtime-sdk/mode-options";
 import { gateClassFor, gateToolNameFor, hostToolNameFor } from "../../src/runtime-sdk/tool-names";
 
 const POLICIES: SessionApprovalPolicy[] = ["plan", "dont-ask", "ask", "accept-edits", "auto", "bypass", "chat"];
@@ -27,7 +27,7 @@ const PAIRS: ReadonlyArray<readonly [plain: string, old: string]> = [
 
 describe("plain names ↔ old spellings", () => {
   test("every plain name in the capability table is one of the pairs", () => {
-    const plain = Object.values(WINTER_CAPABILITY_TOOLS as Readonly<Record<string, CapabilityToolFacts>>).flatMap((f) => (f.plainName === undefined ? [] : [f.plainName]));
+    const plain = Object.values(CLOVER_CAPABILITY_TOOLS as Readonly<Record<string, CapabilityToolFacts>>).flatMap((f) => (f.plainName === undefined ? [] : [f.plainName]));
     // `Search` became a runtime built-in; `ManageSession` was removed from Dispatch (2026-10-02) — both
     // keep their pair so an old transcript's call still maps.
     expect(plain.sort()).toEqual(PAIRS.map(([p]) => p).filter((p) => p !== "Search" && p !== "ManageSession").sort());
@@ -58,19 +58,19 @@ describe("plain names ↔ old spellings", () => {
   });
 
   test("are never connector actions — by name, and with the runtime's stated server either", () => {
-    const source: ConnectorPermissionSource = { table: () => ({ winter__browser: { "*": "deny" } }), readOnly: () => true };
+    const source: ConnectorPermissionSource = { table: () => ({ clover__browser: { "*": "deny" } }), readOnly: () => true };
     for (const [plain, old] of PAIRS) {
       expect(isConnectorToolName(plain)).toBe(false);
       expect(isConnectorToolName(old)).toBe(false);
-      expect(connectorFactsFor(source, plain, "/tmp", { name: "winter__browser", configName: "winter__browser" })).toBeUndefined();
-      expect(connectorFactsFor(source, old, "/tmp", { name: "winter__browser", configName: "winter__browser" })).toBeUndefined();
+      expect(connectorFactsFor(source, plain, "/tmp", { name: "clover__browser", configName: "clover__browser" })).toBeUndefined();
+      expect(connectorFactsFor(source, old, "/tmp", { name: "clover__browser", configName: "clover__browser" })).toBeUndefined();
     }
   });
 
   test("a saved computer rule keeps its OLD spelling on the way out and is read back from either", () => {
-    // The runtime honours `mcp__winter__computer__computer` as an equivalent identity of `Computer`, so the
+    // The runtime honours `mcp__clover__computer__computer` as an equivalent identity of `Computer`, so the
     // saved form works on runtimes before and after the rename.
-    expect(sdkAllowRulesFor(["Computer"])).toEqual(["mcp__winter__computer__computer"]);
-    expect(winterGateRulesFromSdk(["mcp__winter__computer__computer"])).toEqual(["Computer"]);
+    expect(sdkAllowRulesFor(["Computer"])).toEqual(["mcp__clover__computer__computer"]);
+    expect(cloverGateRulesFromSdk(["mcp__clover__computer__computer"])).toEqual(["Computer"]);
   });
 });

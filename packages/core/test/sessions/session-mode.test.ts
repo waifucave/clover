@@ -8,7 +8,7 @@ import { describe, expect, test } from "bun:test";
 import { existsSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { SESSION_MODES, SessionEvent } from "@yanlinglabs/winter-protocol";
+import { SESSION_MODES, SessionEvent } from "@waifucave/clover-protocol";
 import { CoworkError } from "../../src/cowork/types";
 import { SessionStore } from "../../src/sessions/store";
 import {
@@ -16,7 +16,7 @@ import {
   type RunnableSessionMode,
 } from "../../src/sessions/session-mode";
 import { toolsFor, disallowedToolsFor } from "../../src/runtime-sdk/mode-options";
-import { WINTER_CAPABILITY_TOOLS } from "../../src/capabilities/names";
+import { CLOVER_CAPABILITY_TOOLS } from "../../src/capabilities/names";
 import type { SessionMode as RuntimeSessionMode } from "../../src/runtime-sdk/create";
 import { runsEmbedded } from "../../src/runtime-sdk/embedded";
 import type { Mode as RegistryMode } from "../../src/agent/tools/registry";
@@ -80,7 +80,7 @@ describe("type-level guarantee: no runtime-facing mode type can hold cowork", ()
       // @ts-expect-error the built-in tool allowlist is only defined for runnable modes
       toolsFor("cowork", {});
       // @ts-expect-error the capability disallow table is only defined for runnable modes
-      disallowedToolsFor("cowork", {}, WINTER_CAPABILITY_TOOLS);
+      disallowedToolsFor("cowork", {}, CLOVER_CAPABILITY_TOOLS);
       // @ts-expect-error embedded-ness is only defined for runnable modes
       runsEmbedded("cowork");
       void [a, b, c, d];
@@ -89,7 +89,7 @@ describe("type-level guarantee: no runtime-facing mode type can hold cowork", ()
   });
 
   test("no capability tool registers cowork — the table hands a cowork session nothing", () => {
-    for (const [name, facts] of Object.entries(WINTER_CAPABILITY_TOOLS)) {
+    for (const [name, facts] of Object.entries(CLOVER_CAPABILITY_TOOLS)) {
       expect({ name, cowork: (facts.modes as readonly string[]).includes("cowork") }).toEqual({ name, cowork: false });
     }
   });
@@ -97,7 +97,7 @@ describe("type-level guarantee: no runtime-facing mode type can hold cowork", ()
 
 describe("SessionStore refuses to mint a cowork session", () => {
   test("createSession({mode: 'cowork'}) throws unsupported_topology BEFORE any row, directory or log exists", () => {
-    const dir = mkdtempSync(join(tmpdir(), "winter-session-mode-"));
+    const dir = mkdtempSync(join(tmpdir(), "clover-session-mode-"));
     const store = new SessionStore(dir);
     try {
       let thrown: unknown;
@@ -121,7 +121,7 @@ describe("SessionStore refuses to mint a cowork session", () => {
 
 describe("a log that says cowork is rebuilt as cowork, never as Code", () => {
   test("session_created{mode:'cowork'} parses, and a full index rebuild keeps the row's mode", () => {
-    const dir = mkdtempSync(join(tmpdir(), "winter-session-mode-"));
+    const dir = mkdtempSync(join(tmpdir(), "clover-session-mode-"));
     const store = new SessionStore(dir);
     const id = store.createSession("global");
     store.close();

@@ -1,7 +1,7 @@
 // ComputerV2 Phase 3 — the REDUCTION every transport applies to an event before it leaves the browser's process: the
 // pinned `cdp-allowlist.ts` says WHAT may cross (CDP_EVENT_PARAMS: dotted paths, `[]` for every element of an array);
 // this applies it. Pure and dependency-free: the Winter for Chrome extension bundles it (its guard), the daemon's own
-// transports use it, and Winter.app's link has a Swift twin (WinterKit `CDPEventReducer`) held to it by the shared
+// transports use it, and Clover.app's link has a Swift twin (WinterKit `CDPEventReducer`) held to it by the shared
 // cases in `packages/core/test/computer-use/fixtures/cdp-reduce-cases.json`.
 //
 // The rules: an event with no entry leaves whole. Otherwise only the listed paths survive; a LEAF keeps a string (cut at

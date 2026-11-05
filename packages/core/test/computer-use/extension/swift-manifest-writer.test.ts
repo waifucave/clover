@@ -1,5 +1,5 @@
-// Winter.app's Release manifest writer (apple/Winter/Sources/BrowserExtension/BrowserHostManifest.swift), compiled on
-// its own with `swiftc` and a small driver (running WinterAppTests would launch a Winter): it writes only from an
+// Clover.app's Release manifest writer (apple/Winter/Sources/BrowserExtension/BrowserHostManifest.swift), compiled on
+// its own with `swiftc` and a small driver (running WinterAppTests would launch a Clover): it writes only from an
 // installed location, and its manifest is byte for byte what the daemon-side TS writer produces for the same inputs.
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
@@ -35,7 +35,7 @@ default: exit(2)
 
 beforeAll(() => {
   if (!available) return;
-  dir = mkdtempSync(join(tmpdir(), "winter-swift-manifest-"));
+  dir = mkdtempSync(join(tmpdir(), "clover-swift-manifest-"));
   writeFileSync(join(dir, "main.swift"), DRIVER);
   driver = join(dir, "driver");
   const built = spawnSync("xcrun", ["swiftc", "-o", driver, SOURCE, join(dir, "main.swift")], { encoding: "utf8" });
@@ -50,12 +50,12 @@ const run = (...args: string[]): string => {
   return r.stdout;
 };
 
-describe.skipIf(!available)("Winter.app's manifest writer (Swift)", () => {
+describe.skipIf(!available)("Clover.app's manifest writer (Swift)", () => {
   const ids = ["abcdefghijklmnopabcdefghijklmnop", "ponmlkjihgfedcbaponmlkjihgfedcba"];
 
   test("its manifest is byte for byte the TS writer's, for the same inputs (spaces, quotes, non-ASCII, control characters)", () => {
     for (const path of [
-      "/Applications/Winter.app/Contents/Helpers/Winter Computer Use.app/Contents/MacOS/winter-browser-host",
+      "/Applications/Clover.app/Contents/Helpers/Winter Computer Use.app/Contents/MacOS/winter-browser-host",
       "/Users/someone/Applications/Wïnter \"β\".app/Contents/Helpers/Winter Computer Use.app/Contents/MacOS/winter-browser-host",
       "/tmp/back\\slash/tab\there/ctl\u0001\u0008\u000c/winter-browser-host",
     ]) {
@@ -64,28 +64,28 @@ describe.skipIf(!available)("Winter.app's manifest writer (Swift)", () => {
         expect({ path, swift: run("content", path, list.join(",")) }).toEqual({ path, swift: ts });
       }
     }
-    expect(run("content", "/Applications/Winter.app/x", "")).toBe("<none>"); // no store ids: nothing at all
+    expect(run("content", "/Applications/Clover.app/x", "")).toBe("<none>"); // no store ids: nothing at all
     expect(run("content", "relative/x", ids.join(","))).toBe("<none>");
   });
 
   test("it writes only from an installed location: /Applications or ~/Applications, never a disk image, a download, a build folder or a translocated copy", () => {
     const home = "/Users/someone";
-    const yes = ["/Applications/Winter.app", "/Applications/Utilities/Winter.app", `${home}/Applications/Winter.app`];
-    const no = ["/Volumes/Winter/Winter.app", `${home}/Downloads/Winter.app`, "/private/var/folders/x1/abc/T/AppTranslocation/0E3B/d/Winter.app",
-      "/Applications/AppTranslocation/Winter.app", "/Applications", "/ApplicationsOld/Winter.app", `${home}/repo/out/release/0.124.0/Winter.app`, "/Applications/Winter"];
+    const yes = ["/Applications/Clover.app", "/Applications/Utilities/Clover.app", `${home}/Applications/Clover.app`];
+    const no = ["/Volumes/Clover/Clover.app", `${home}/Downloads/Clover.app`, "/private/var/folders/x1/abc/T/AppTranslocation/0E3B/d/Clover.app",
+      "/Applications/AppTranslocation/Clover.app", "/Applications", "/ApplicationsOld/Clover.app", `${home}/repo/out/release/0.124.0/Clover.app`, "/Applications/Clover"];
     for (const p of yes) expect({ p, installed: run("installed", p, home) }).toEqual({ p, installed: "yes" });
     for (const p of no) expect({ p, installed: run("installed", p, home) }).toEqual({ p, installed: "no" });
   });
 
   test("written into existing browser directories only, and equal to the TS writer's files", () => {
-    const swiftRoot = mkdtempSync(join(tmpdir(), "winter-swift-nm-"));
-    const tsRoot = mkdtempSync(join(tmpdir(), "winter-ts-nm-"));
+    const swiftRoot = mkdtempSync(join(tmpdir(), "clover-swift-nm-"));
+    const tsRoot = mkdtempSync(join(tmpdir(), "clover-ts-nm-"));
     try {
       for (const root of [swiftRoot, tsRoot]) {
         mkdirSync(join(root, "Google", "Chrome"), { recursive: true });
         mkdirSync(join(root, "Arc", "User Data"), { recursive: true });
       }
-      const app = "/Applications/Winter.app";
+      const app = "/Applications/Clover.app";
       const out = run("write", app, swiftRoot, ids.join(","));
       expect(out).toContain("Google/Chrome=written");
       expect(out).toContain("Arc/User Data=written");

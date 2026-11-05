@@ -4,7 +4,7 @@ import { notifyHeadless } from "../../src/agent/notify-fallback";
 describe("notifyHeadless (osascript headless fallback)", () => {
   test("spawns a FIXED 3-line AppleScript, passing title/message as trailing argv items", () => {
     const calls: string[][] = [];
-    notifyHeadless("Winter", "hello", (cmd) => { calls.push(cmd); });
+    notifyHeadless("Clover", "hello", (cmd) => { calls.push(cmd); });
     expect(calls).toHaveLength(1);
     const cmd = calls[0]!;
     expect(cmd[0]).toBe("osascript");
@@ -18,7 +18,7 @@ describe("notifyHeadless (osascript headless fallback)", () => {
       "-e", "display notification (item 1 of argv) with title (item 2 of argv)",
       "-e", "end run",
     ]);
-    expect(cmd.slice(sep + 1)).toEqual(["hello", "Winter"]);
+    expect(cmd.slice(sep + 1)).toEqual(["hello", "Clover"]);
   });
 
   // Injection safety: a message stuffed with quotes/semicolons/backticks/AppleScript keywords must
@@ -48,14 +48,14 @@ describe("notifyHeadless (osascript headless fallback)", () => {
   test("default spawn hands Bun.spawn the same fixed argv, with every stdio ignored", () => {
     const seen: Array<{ cmd: unknown; opts: unknown }> = [];
     spawnSpy = spyOn(Bun, "spawn").mockImplementation(((cmd: unknown, opts: unknown) => { seen.push({ cmd, opts }); return {} as never; }) as never);
-    notifyHeadless("Winter", "hello");
+    notifyHeadless("Clover", "hello");
     expect(seen).toHaveLength(1);
     expect(seen[0]!.cmd).toEqual([
       "osascript",
       "-e", "on run argv",
       "-e", "display notification (item 1 of argv) with title (item 2 of argv)",
       "-e", "end run",
-      "--", "hello", "Winter",
+      "--", "hello", "Clover",
     ]);
     expect(seen[0]!.opts).toEqual({ stdout: "ignore", stderr: "ignore", stdin: "ignore" });
   });

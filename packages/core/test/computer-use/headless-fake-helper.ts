@@ -4,7 +4,7 @@
 // (Bun, running this script, keeps its own stdin and stdout reliably alive and flowing; a pending read on an extra
 // descriptor alone let it end early).
 //
-// Its behaviour is chosen by its arguments (before the helper's own `--winter-cache-root=…`):
+// Its behaviour is chosen by its arguments (before the helper's own `--clover-cache-root=…`):
 //   --fake-mode=normal (default) | no-hello | bad-protocol | no-present (a helper from before the `present` feature)
 //   --fake-log=<file>    one JSON line per command it read (`{op, params}`), for the test to inspect
 // and by the URLs it is asked to open:
@@ -48,7 +48,7 @@ import { join } from "node:path";
 const argValue = (name: string): string | undefined => process.argv.find((a) => a.startsWith(`--${name}=`))?.slice(name.length + 3);
 const mode = argValue("fake-mode") ?? "normal";
 const logFile = argValue("fake-log");
-const cacheRoot = argValue("winter-cache-root");
+const cacheRoot = argValue("clover-cache-root");
 const entries = (() => { try { return cacheRoot === undefined ? [] : readdirSync(cacheRoot).sort(); } catch { return []; } })();
 if (logFile !== undefined) appendFileSync(logFile, `${JSON.stringify({ op: "started", params: { cacheRoot, entries } })}\n`);
 const linkId = "h-fake";

@@ -1,12 +1,12 @@
 name: 🐞 Bug report
-description: Something in Winter doesn't work the way it should.
+description: Something in Clover doesn't work the way it should.
 labels: ["bug"]
 body:
   - type: markdown
     attributes:
       value: |
         Thanks for taking the time. If this is a **security** problem, please close this and
-        [report it privately](https://github.com/yanlingLabs/winter/security/advisories/new) instead.
+        [report it privately](https://github.com/waifucave/clover/security/advisories/new) instead.
 
   - type: textarea
     id: what-happened
@@ -36,8 +36,8 @@ body:
         - Mac app (chat window)
         - The orb / four-finger field
         - The panel (browser, editor, files, diffs)
-        - Terminal (winter CLI / TUI)
-        - The daemon (winter-core)
+        - Terminal (clover CLI / TUI)
+        - The daemon (clover-core)
         - iPhone app
         - Plugins / add-ons / MCP
         - Not sure
@@ -59,8 +59,8 @@ body:
   - type: input
     id: version
     attributes:
-      label: Winter version
-      description: "`winter --version`, or the version in the menu bar's About."
+      label: Clover version
+      description: "`clover --version`, or the version in the menu bar's About."
       placeholder: "0.2.013"
     validations:
       required: true

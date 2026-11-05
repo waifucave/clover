@@ -3,7 +3,7 @@
 // `packages/core/conformance/ws17-rows.json` is the in-repo row matrix: one entry per WS-17 §8
 // obligation (1..18), each carrying a `status` and one or more `citations`. This is the
 // "cite-or-cover" gate the release depends on: every row must EITHER
-//   (a) CITE something machine-checkable — a `winter` citation is verified HERE (the file exists
+//   (a) CITE something machine-checkable — a `clover` citation is verified HERE (the file exists
 //       under the repo root and literally contains the quoted substring), while a `router`/`sdk`
 //       citation (the SDK/router repos are siblings, not a workspace member, so their content
 //       cannot be read from here) is only format-checked here and is verified once by the
@@ -11,7 +11,7 @@
 //       report) — or
 //   (b) COVER the gap explicitly — `status: "carried"` or `"unproven"` with a non-empty `note`
 //       naming what is missing and why, rather than a silently-stale claim — or
-//   (c) RETIRE it — `status: "retired"` with a non-empty `note`, for a row whose subject Winter no
+//   (c) RETIRE it — `status: "retired"` with a non-empty `note`, for a row whose subject Clover no
 //       longer has at all (WS-23 retired the official `claude` runtime rows 4 and 5 measured).
 //
 // This is deliberately a TEST, not a document: a citation that stops matching (a renamed test, a
@@ -20,7 +20,7 @@
 // pinned to a 3-character substring proves nothing and would rot silently.
 //
 // HERMETIC: reads two files under the repository (this file's own JSON fixture, plus whatever
-// `winter` citations name) and writes nothing. No server, no runtime, no `~/.winter*`.
+// `clover` citations name) and writes nothing. No server, no runtime, no `~/.clover*`.
 import { describe, expect, test } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -30,7 +30,7 @@ const ROWS_PATH = join(import.meta.dir, "..", "..", "conformance", "ws17-rows.js
 
 const MIN_CONTAINS_LENGTH = 12;
 const STATUSES = ["proven", "partial", "unproven", "carried", "retired"] as const;
-const REPOS = ["winter", "router", "sdk"] as const;
+const REPOS = ["clover", "router", "sdk"] as const;
 
 type Status = (typeof STATUSES)[number];
 type Repo = (typeof REPOS)[number];
@@ -92,10 +92,10 @@ describe("WS-17 §8 sign-off matrix (ws17-rows.json)", () => {
     }
   });
 
-  test("every `winter` citation's file exists and literally contains its `contains` substring (min 12 chars)", () => {
+  test("every `clover` citation's file exists and literally contains its `contains` substring (min 12 chars)", () => {
     for (const row of rows) {
       for (const citation of row.citations) {
-        if (citation.repo !== "winter") continue;
+        if (citation.repo !== "clover") continue;
         expect(
           citation.contains.length,
           `row ${row.row} citation into ${citation.file} has too short a 'contains' (${citation.contains.length} < ${MIN_CONTAINS_LENGTH})`,

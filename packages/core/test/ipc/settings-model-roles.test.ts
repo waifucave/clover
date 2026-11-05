@@ -5,7 +5,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, type WritableSocket } from "@yanlinglabs/winter-protocol";
+import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, type WritableSocket } from "@waifucave/clover-protocol";
 import { startIpcServer, REMOTE_ALLOWED_METHODS } from "../../src/ipc/server";
 import { SessionStore } from "../../src/sessions/store";
 import { FileSecretStore } from "../../src/auth/secret-store";
@@ -67,7 +67,7 @@ describe("settings.modelRoles / settings.setModelRole", () => {
    *  internal-jobs router over — the 2026-09-19 shape a production daemon always has. Omitted keeps the
    *  bare pre-2026-09-19 server (no router), which is what every older test in this file asserts. */
   async function boot(providerModel = "codex-oauth/gpt-5.6-sol", opts: { roleHealth?: RoleHealthRegistry; internalCredentials?: string[] } = {}) {
-    const home = mkdtempSync(join(tmpdir(), "winter-model-roles-"));
+    const home = mkdtempSync(join(tmpdir(), "clover-model-roles-"));
     const settingsPath = join(home, "settings.json");
     saveSettings(settingsPath, Settings.parse({ schemaVersion: 3, provider: { model: providerModel } }));
     const store = new SessionStore(home);
@@ -82,7 +82,7 @@ describe("settings.modelRoles / settings.setModelRole", () => {
       await view.refresh();
       internalRouter = createInternalRouter({ view, secrets });
     }
-    const server = startIpcServer({ socketPath, serverVersion: "test", tokens: authority, store, winterHome: home, secrets, roleHealth: opts.roleHealth, ...(internalRouter ? { internalRouter } : {}) });
+    const server = startIpcServer({ socketPath, serverVersion: "test", tokens: authority, store, cloverHome: home, secrets, roleHealth: opts.roleHealth, ...(internalRouter ? { internalRouter } : {}) });
     stop = () => { server.stop(); store.close(); };
     return { home, settingsPath, socketPath, harnessToken: tokens.harness };
   }
@@ -300,7 +300,7 @@ describe("settings.modelRoles / settings.setModelRole", () => {
   //    `aws` material — or the reserved `cc` row) is refused AT THE WRITE, because no future
   //    credential makes it runnable and storing it would only produce a role that silently never runs;
   //  - `anthropic` rejoined the admittable set in WS-23 (its API key is an ordinary token-priced
-  //    credential now that every model runs on the Winter SDK), and `console` with the live-gate fix
+  //    credential now that every model runs on the Clover SDK), and `console` with the live-gate fix
   //    (its bearer slot is an inventory row the Anthropic adapter is driven over), so both are accepted;
   //  - an ELIGIBLE provider with no credential yet is accepted and LISTED as permitted — the old test's
   //    own rationale ("a provider the user is about to bind") applies to exactly that case.
@@ -437,7 +437,7 @@ describe("settings.modelRoles / settings.setModelRole", () => {
     const res = await c.request(METHODS.settingsModelRoles, {});
     const info = res.result.roles["titles.model"];
     expect(info.problem?.reason).toBe("provider-unsupported");
-    expect(info.problem?.detail).toBe("AWS Bedrock can't be used for Winter's own jobs yet");
+    expect(info.problem?.detail).toBe("AWS Bedrock can't be used for Clover's own jobs yet");
     // The role's own model is still reported verbatim so the user can SEE and clear it.
     expect(info.model).toBe("bedrock/anthropic.claude-sonnet-4-5");
     c.close();
@@ -483,7 +483,7 @@ describe("settings.modelRoles / settings.setModelRole", () => {
     await c.hello(harnessToken, "cli");
     // With groq AS the session default it IS the user's own choice, so the role sits on it.
     expect((await c.request(METHODS.settingsModelRoles, {})).result.roles["titles.model"].model).toBe("groq/llama-3.3-70b-versatile");
-    // Move the session default to a Claude row: groq is still the only credential, but Winter will no
+    // Move the session default to a Claude row: groq is still the only credential, but Clover will no
     // longer name a model on it, and codex-oauth/openai (which do have slots) have no key.
     const moved = await c.request(METHODS.settingsSetModelRole, { role: "provider.model", model: "anthropic/claude-opus-5" });
     expect(moved.error).toBeUndefined();
@@ -492,7 +492,7 @@ describe("settings.modelRoles / settings.setModelRole", () => {
     // `no-default-model`, NOT `no-internal-credential`: a credential exists, so "add a key" would be
     // both wrong and unactionable. The fix is a pin, and the detail names the provider.
     expect(info.problem?.reason).toBe("no-default-model");
-    expect(info.problem?.detail).toBe("pick a model for this job in Settings › Roles — Winter won't choose one on Groq for you");
+    expect(info.problem?.detail).toBe("pick a model for this job in Settings › Roles — Clover won't choose one on Groq for you");
     expect(info.problem?.model).toBe("");
     // A pin on a provider that DOES have a slot clears it immediately.
     const pinned = await c.request(METHODS.settingsSetModelRole, { role: "titles.model", model: "groq/llama-3.3-70b-versatile" });
@@ -553,7 +553,7 @@ describe("settings.modelRoles / settings.setModelRole", () => {
     await c.hello(harnessToken, "cli");
     const info = (await c.request(METHODS.settingsModelRoles, {})).result.roles["reviewer.model"];
     expect(info.problem?.reason).toBe("provider-unsupported");
-    expect(info.problem?.detail).toBe("AWS Bedrock can't be used for Winter's own jobs yet — reviewing on codex-oauth/gpt-5.6-terra meanwhile");
+    expect(info.problem?.detail).toBe("AWS Bedrock can't be used for Clover's own jobs yet — reviewing on codex-oauth/gpt-5.6-terra meanwhile");
     c.close();
   });
 
@@ -625,7 +625,7 @@ describe("settings.modelRoles / settings.setModelRole", () => {
   // that stuck state: settings.provider.model already names `openai`, but the daemon is still
   // (only) bound to `codex-oauth`.
   test("settings.modelRoles: permitted for an internal-provider role reflects the BOUND backend, not settings alone (a stuck rebind)", async () => {
-    const home = mkdtempSync(join(tmpdir(), "winter-model-roles-stuck-"));
+    const home = mkdtempSync(join(tmpdir(), "clover-model-roles-stuck-"));
     const settingsPath = join(home, "settings.json");
     saveSettings(settingsPath, Settings.parse({ schemaVersion: 3, provider: { model: "openai/gpt-5.6-sol" } }));
     const store = new SessionStore(home);
@@ -634,7 +634,7 @@ describe("settings.modelRoles / settings.setModelRole", () => {
     const authority = new TokenAuthority(secrets);
     const tokens = await authority.ensureTokens();
     const server = startIpcServer({
-      socketPath, serverVersion: "test", tokens: authority, store, winterHome: home, secrets,
+      socketPath, serverVersion: "test", tokens: authority, store, cloverHome: home, secrets,
       boundProviderId: () => "codex-oauth", // the daemon's ACTUAL bound backend — the stuck rebind
     });
     stop = () => { server.stop(); store.close(); };
@@ -657,7 +657,7 @@ describe("settings.modelRoles / settings.setModelRole", () => {
   });
 
   test("settings.setModelRole echoes the same bound-provider permitted set on its post-write cascade", async () => {
-    const home = mkdtempSync(join(tmpdir(), "winter-model-roles-stuck-write-"));
+    const home = mkdtempSync(join(tmpdir(), "clover-model-roles-stuck-write-"));
     const settingsPath = join(home, "settings.json");
     saveSettings(settingsPath, Settings.parse({ schemaVersion: 3, provider: { model: "openai/gpt-5.6-sol" } }));
     const store = new SessionStore(home);
@@ -666,7 +666,7 @@ describe("settings.modelRoles / settings.setModelRole", () => {
     const authority = new TokenAuthority(secrets);
     const tokens = await authority.ensureTokens();
     const server = startIpcServer({
-      socketPath, serverVersion: "test", tokens: authority, store, winterHome: home, secrets,
+      socketPath, serverVersion: "test", tokens: authority, store, cloverHome: home, secrets,
       boundProviderId: () => "codex-oauth",
     });
     stop = () => { server.stop(); store.close(); };
@@ -758,7 +758,7 @@ describe("settings.modelRoles / settings.setModelRole", () => {
     expect(set.error).toBeUndefined();
     expect(set.result.roles["provider.model"]).toMatchObject({ effort: "xhigh", effortExplicit: true });
     let written = JSON.parse(readFileSync(settingsPath, "utf8"));
-    // The established home — what `winter model --effort` writes and what `sync.config`'s
+    // The established home — what `clover model --effort` writes and what `sync.config`'s
     // `defaultEffort` reads. Duplicating it into `roleEfforts` would be two places to disagree.
     expect(written.provider.reasoningEffort).toBe("xhigh");
     expect(written.roleEfforts).toBeUndefined();
@@ -821,7 +821,7 @@ describe("settings.modelRoles / settings.setModelRole", () => {
     c.close();
   });
 
-  test("effort: a Winter-level tier is refused on every role (no role's model is a code session's own)", async () => {
+  test("effort: a Clover-level tier is refused on every role (no role's model is a code session's own)", async () => {
     const { socketPath, harnessToken } = await boot("codex-oauth/gpt-5.6-sol");
     const c = await TestClient.connect(socketPath);
     await c.hello(harnessToken, "cli");
@@ -834,7 +834,7 @@ describe("settings.modelRoles / settings.setModelRole", () => {
       const refused = await c.request(METHODS.settingsSetModelRole, { role, model, effort: "ultra" });
       expect(refused.error).toBeDefined();
       expect(refused.error.code).toBe(-32602);
-      expect(refused.error.message).toContain("Winter-level tier");
+      expect(refused.error.message).toContain("Clover-level tier");
     }
     c.close();
   });
@@ -911,7 +911,7 @@ describe("settings.modelRoles / settings.setModelRole", () => {
   });
 
   test("problem is populated on settings.modelRoles once a failure is recorded for that role's CURRENT effective model, and clears on success", async () => {
-    const roleHealth = new RoleHealthRegistry(mkdtempSync(join(tmpdir(), "winter-model-roles-rh-")));
+    const roleHealth = new RoleHealthRegistry(mkdtempSync(join(tmpdir(), "clover-model-roles-rh-")));
     const { socketPath, harnessToken } = await boot("codex-oauth/gpt-5.6-sol", { roleHealth });
     const c = await TestClient.connect(socketPath);
     await c.hello(harnessToken, "cli");
@@ -934,7 +934,7 @@ describe("settings.modelRoles / settings.setModelRole", () => {
   });
 
   test("problem also rides settings.setModelRole's post-write roles echo, and clears when the role moves OFF the failed model", async () => {
-    const roleHealth = new RoleHealthRegistry(mkdtempSync(join(tmpdir(), "winter-model-roles-rh2-")));
+    const roleHealth = new RoleHealthRegistry(mkdtempSync(join(tmpdir(), "clover-model-roles-rh2-")));
     const { socketPath, harnessToken } = await boot("codex-oauth/gpt-5.6-sol", { roleHealth });
     const c = await TestClient.connect(socketPath);
     await c.hello(harnessToken, "cli");

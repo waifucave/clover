@@ -10,7 +10,7 @@ const roots:string[]=[],handles:CoworkAdmissionLedger[]=[];
 afterEach(()=>{ for(const handle of handles.splice(0))handle.close(); for(const root of roots.splice(0))rmSync(root,{recursive:true,force:true}); });
 function code(body:()=>unknown,expected:AdmissionErrorCode) { try {body(); throw new Error("expected refusal");} catch(error) {expect(error).toBeInstanceOf(AdmissionError); expect((error as AdmissionError).code).toBe(expected);} }
 function fixture() {
-  const root=realpathSync(mkdtempSync(join(tmpdir(),"winter-admission-"))); roots.push(root);
+  const root=realpathSync(mkdtempSync(join(tmpdir(),"clover-admission-"))); roots.push(root);
   const path=join(root,"coordination/admission.sqlite"),persisted=new Map<string,HostPreparedHomeBinding>(),processes=new Map<number,ProcessObservation>(),proofs=new Set<string>();
   const host:HostIdentity={machineId:"machine-fixture",installationId:"installation-fixture",bootId:"boot-one"};
   let now=1000,previousBootEnded=false,relocationAllowed=false,resources:ResourceObservation|null={budget:{memoryBytes:1024,cpuUnits:4,guestLimit:2},pressure:"normal",admitNew:true,observedAt:0,validUntil:100_000};
@@ -205,7 +205,7 @@ try{ledger.reserve({requestId:'request-'+process.pid,homeId:home.homeId,owner,wo
 catch(error){console.log(JSON.stringify({result:error instanceof AdmissionError?error.code:'unexpected'}));}
 finally{ledger.close();}
 `);
-  const processes=[0,1].map(()=>Bun.spawn([process.execPath,script],{cwd:f.root,env:{PATH:process.env.PATH??"/usr/bin:/bin",HOME:f.root,WINTER_HOME:home.canonicalPath,WINTER_COWORK_COORDINATION_DIR:join(f.root,"coordination"),WINTER_KEYCHAIN_SERVICE:"com.winter.core.test-isolated"},stdout:"pipe",stderr:"pipe"}));
+  const processes=[0,1].map(()=>Bun.spawn([process.execPath,script],{cwd:f.root,env:{PATH:process.env.PATH??"/usr/bin:/bin",HOME:f.root,CLOVER_HOME:home.canonicalPath,WINTER_COWORK_COORDINATION_DIR:join(f.root,"coordination"),CLOVER_KEYCHAIN_SERVICE:"com.waifucave.clover.core.test-isolated"},stdout:"pipe",stderr:"pipe"}));
   try {
     const streams=processes.map(process=>process.stdout.getReader()),outputs=["",""];
     for(let i=0;i<streams.length;i++) {

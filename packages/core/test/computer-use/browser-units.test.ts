@@ -254,7 +254,7 @@ describe("the site floor", () => {
     for (const p of ["ask", "accept-edits"] as const) expect(siteRow({ policy: p, mode: "dispatch" })).toBe("card");
     for (const p of ["auto", "bypass", "dont-ask"] as const) expect(siteRow({ policy: p, mode: "dispatch" })).toBe("block");
     expect(siteRow({ policy: "ask", mode: "chat" })).toBe("block");
-    expect(siteCardSummary("evil.example", "Google Chrome")).toBe("Allow Winter to use evil.example in Google Chrome? It is on the dangerous-domains list.");
+    expect(siteCardSummary("evil.example", "Google Chrome")).toBe("Allow Clover to use evil.example in Google Chrome? It is on the dangerous-domains list.");
   });
   test("a standing WebFetch(domain:…) rule matches its host and subdomains; nothing else does", () => {
     expect(ruleAllowsSite(["WebFetch(domain:evil.example)"], "https://evil.example/x")).toBe(true);
@@ -266,9 +266,9 @@ describe("the site floor", () => {
 
 describe("upload paths", () => {
   const roots = () => {
-    const home = mkdtempSync(join(tmpdir(), "winter-up-home-"));
-    const cwd = mkdtempSync(join(tmpdir(), "winter-up-cwd-"));
-    const tmp = mkdtempSync(join(tmpdir(), "winter-up-tmp-"));
+    const home = mkdtempSync(join(tmpdir(), "clover-up-home-"));
+    const cwd = mkdtempSync(join(tmpdir(), "clover-up-cwd-"));
+    const tmp = mkdtempSync(join(tmpdir(), "clover-up-tmp-"));
     return { home, cwd, tmp, r: { home, cwd, tmpDir: tmp, denyRead: [join(cwd, "deny")] } };
   };
   test("relative paths resolve in the cwd; the temp dir counts; directories, too many and the deny list are refused", () => {
@@ -288,16 +288,16 @@ describe("upload paths", () => {
   });
   test("a file outside the cwd and the temp dir is refused naming the way on: copy it into $TMPDIR first", () => {
     const { r } = roots();
-    const elsewhere = mkdtempSync(join(tmpdir(), "winter-up-elsewhere-"));
+    const elsewhere = mkdtempSync(join(tmpdir(), "clover-up-elsewhere-"));
     writeFileSync(join(elsewhere, "pkg.zip"), "z");
     let message = "";
     try { checkUploadPaths(join(elsewhere, "pkg.zip"), r); } catch (e) { message = (e as Error).message; }
     expect(message).toContain("is outside this session's working directory and temp directory — only files from those can be uploaded: copy it into $TMPDIR first (with your shell), then upload the copy");
   });
-  test("a protected file outside the roots is refused plainly — never told to copy it (deny list, Winter's home, a home dotfolder)", () => {
+  test("a protected file outside the roots is refused plainly — never told to copy it (deny list, Clover's home, a home dotfolder)", () => {
     const { home, r } = roots();
-    const userHome = mkdtempSync(join(tmpdir(), "winter-up-user-"));
-    const denied = mkdtempSync(join(tmpdir(), "winter-up-denied-"));
+    const userHome = mkdtempSync(join(tmpdir(), "clover-up-user-"));
+    const denied = mkdtempSync(join(tmpdir(), "clover-up-denied-"));
     mkdirSync(join(userHome, ".aws"));
     writeFileSync(join(userHome, ".aws", "credentials"), "k");
     writeFileSync(join(denied, "secret.txt"), "s");
@@ -307,7 +307,7 @@ describe("upload paths", () => {
     expect(deny).toContain("is on the sandbox's read-deny list — it can't be uploaded");
     expect(deny).not.toContain("copy");
     const own = said(join(home, "settings.json"));
-    expect(own).toContain("inside Winter's own home");
+    expect(own).toContain("inside Clover's own home");
     expect(own).not.toContain("copy it");
     const aws = said(join(userHome, ".aws", "credentials"));
     expect(aws).toContain("is a protected file (in a hidden folder of the home, or a keychain) — it can't be uploaded, and must not be copied to be");
@@ -328,7 +328,7 @@ describe("upload paths", () => {
   });
   test("a hard-linked file is refused plainly — another name of it may be a secret", () => {
     const { cwd, r } = roots();
-    const elsewhere = mkdtempSync(join(tmpdir(), "winter-up-key-"));
+    const elsewhere = mkdtempSync(join(tmpdir(), "clover-up-key-"));
     writeFileSync(join(elsewhere, "id_ed25519"), "k");
     linkSync(join(elsewhere, "id_ed25519"), join(cwd, "innocent.txt"));
     let message = "";
@@ -340,6 +340,11 @@ describe("upload paths", () => {
     expect(isSecretPath("/USERS/U/.SSH/id_ed25519", "/Users/u")).toBe(true);
     expect(isSecretPath("/Volumes/x/LaunchAgents/a.plist", "/Users/u")).toBe(true);
     expect(isSecretPath("/opt/x/.zshrc", "/Users/u")).toBe(true);
+    // Clover's own names too, anywhere, on top of the helper's (C0 review): its homes and the SDK's config under its brand.
+    expect(isSecretPath("/tmp/h/.CLOVER/settings.json", "/Users/u")).toBe(true);
+    expect(isSecretPath("/tmp/h/.clover-dev/x", "/Users/u")).toBe(true);
+    expect(isSecretPath("/tmp/h/sdk/.clover.json", "/Users/u")).toBe(true);
+    expect(isSecretPath("/tmp/h/clover/notes.txt", "/Users/u")).toBe(false);
   });
   test("secret paths: a home dot segment or a keychain; nothing outside the home", () => {
     expect(isSecretPath("/Users/u/.ssh/id_ed25519", "/Users/u")).toBe(true);
@@ -387,14 +392,14 @@ describe("keys and URLs", () => {
     for (const bad of ["not a url", 7]) expect(() => checkTabUrl(bad, "goto()")).toThrow(TypeError);
   });
   test("transport failures read as the model's kinds; an oversized or unreadable answer says to read less", () => {
-    expect(transportFailure(new TransportError("disconnected", "x"), "Winter's browser")).toMatchObject({ kind: "BrowserUnavailable", message: "Winter's browser can't be reached: Winter isn't running — ask the user to open Winter" });
+    expect(transportFailure(new TransportError("disconnected", "x"), "Clover's browser")).toMatchObject({ kind: "BrowserUnavailable", message: "Clover's browser can't be reached: Clover isn't running — ask the user to open Clover" });
     expect(transportFailure(new TransportError("tab_gone", "x"), "Google Chrome")).toMatchObject({ kind: "TargetLost" });
     expect(transportFailure(new TransportError("protocol_mismatch", "x", { side: "extension" }), "Google Chrome").message).toContain("update Winter for Chrome");
     // Phase 4: a backend's own budget spent (headless) — TargetBusy in the transport's words, not retryable at once.
-    expect(transportFailure(new TransportError("capacity", "8 headless tabs are open in this session — close some with tab.close()"), "Winter (headless)"))
+    expect(transportFailure(new TransportError("capacity", "8 headless tabs are open in this session — close some with tab.close()"), "Clover (headless)"))
       .toMatchObject({ kind: "TargetBusy", message: "8 headless tabs are open in this session — close some with tab.close()", retryable: false });
-    expect(transportFailure(new TransportError("cdp_error", "x", { cdpCode: -32603, cdpMessage: "too big" }), "Winter's browser").message).toContain("too large or unreadable");
-    expect(transportFailure(new TransportError("cdp_error", "x", { cdpCode: -32000, cdpMessage: "No node with given id" }), "Winter's browser").message).toBe("No node with given id");
+    expect(transportFailure(new TransportError("cdp_error", "x", { cdpCode: -32603, cdpMessage: "too big" }), "Clover's browser").message).toContain("too large or unreadable");
+    expect(transportFailure(new TransportError("cdp_error", "x", { cdpCode: -32000, cdpMessage: "No node with given id" }), "Clover's browser").message).toBe("No node with given id");
   });
 });
 
@@ -423,8 +428,8 @@ describe("the tool description", () => {
     expect(full).toContain("interface App extends Target {");
     expect(full).toContain("interface Tab extends Target {");
     expect(full).toContain("declare const browsers: {");
-    expect(full).toContain("  handoff(): Promise<void>;   // keep this tab (yours, still in Winter's group) for your next turn only — call it again each turn you still need it");
-    expect(full).toContain("// hand this tab to the user: it leaves Winter's group (into their own group named `group`, if given) and Winter never closes it");
+    expect(full).toContain("  handoff(): Promise<void>;   // keep this tab (yours, still in Clover's group) for your next turn only — call it again each turn you still need it");
+    expect(full).toContain("// hand this tab to the user: it leaves Clover's group (into their own group named `group`, if given) and Clover never closes it");
     expect(full).toContain("Tabs you open in the user's own browser close when your turn ends unless you call keep() (give it to the user) or handoff() (keep it for your next turn).");
     expect(full).toContain("`BrowserUnavailable`");
     expect(full).toContain("the built-in browser needs no approval");

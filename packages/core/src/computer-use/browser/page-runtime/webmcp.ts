@@ -35,7 +35,7 @@ export const SITE_TOOL_CAPS = {
   listMs: 2_000,
 } as const;
 
-/** The two members Winter uses. Anything else on the page's object is ignored. */
+/** The two members Clover uses. Anything else on the page's object is ignored. */
 export interface ModelContextLike {
   getTools(options?: unknown): Promise<unknown>;
   executeTool(tool: unknown, input?: unknown, options?: unknown): Promise<unknown>;
@@ -67,7 +67,7 @@ const INVISIBLE = new RegExp("[\\u0085\\u061c\\u180e\\u2028\\u2029\\u200b-\\u200
 /** Page text printed as-is elsewhere (a schema's JSON, a tool's answer, a tab's title in a header): the characters that
  *  can break or reorder a line where JSON leaves them alone — NEL, line and paragraph separators, bidi controls and
  *  marks (U+061C, U+200E/F, U+202A–E, U+2066–9), zero-width and invisible marks (U+180E, U+200B–D, U+2060–4, U+FEFF)
- *  — written as `\uXXXX` escapes, so nothing the page wrote can pass for a line of Winter's. */
+ *  — written as `\uXXXX` escapes, so nothing the page wrote can pass for a line of Clover's. */
 export function escapeInvisible(s: string): string {
   return s.replace(INVISIBLE, (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, "0")}`);
 }

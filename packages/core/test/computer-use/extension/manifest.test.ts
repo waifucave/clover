@@ -7,7 +7,7 @@ import { allowedOrigins, EXTENSION_IDS, NATIVE_HOST_NAME } from "../../../src/co
 import { hostManifest, hostManifestText, NATIVE_MESSAGING_BROWSER_DIRS, writeHostManifests, writeManifestInto } from "../../../src/computer-use/browser/extension/manifest";
 
 let root: string;
-beforeEach(() => { root = mkdtempSync(join(tmpdir(), "winter-nm-")); });
+beforeEach(() => { root = mkdtempSync(join(tmpdir(), "clover-nm-")); });
 afterEach(() => { rmSync(root, { recursive: true, force: true }); });
 
 const devManifest = () => hostManifest({

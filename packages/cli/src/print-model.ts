@@ -1,4 +1,4 @@
-// `winter -p ... --model <providerId>/<modelId>`: the one-shot model choice for the session `-p` creates.
+// `clover -p ... --model <providerId>/<modelId>`: the one-shot model choice for the session `-p` creates.
 // Pure/isolatable logic, split out of main.ts like model-cli.ts so it is unit-testable without the
 // top-level `import.meta.main` dispatch: the argv parse, the offline tag check, and the one
 // daemon-side step (the `sync.config` list check + `session.create`) behind a fake-able client.
@@ -7,22 +7,22 @@
 // `resolveModelSelection`): a renamed catalog tag is canonicalised at parse, the tag must be
 // provider-qualified with a pinned provider, `unstated/unstated` and `winter-test/*` are never a
 // user's choice, and the tag must resolve to a catalog row (or a facing name, `anthropic/sonnet`) --
-// all of that is `validateModelTag`/`canonicalizeModelTag`, shared with `winter model`. On top of the
+// all of that is `validateModelTag`/`canonicalizeModelTag`, shared with `clover model`. On top of the
 // daemon's rules a catalog row must also be in the list `sync.config` offers (the credentialed
 // providers' rows), so a model the home has no key for is refused here, before a session exists,
 // instead of at the first turn. An unlisted model the daemon passes through verbatim (a provider's
 // own `settings.providers.<id>.baseUrl` endpoint, or a provider with no catalog rows) cannot be in
 // that list by construction and is let through exactly as the daemon lets it.
-import { canonicalizeModelTag, rowForTag, splitTag, isModelTag, UNSTATED_TAG, WINTER_TEST_PREFIX } from "@yanlinglabs/winter-core";
-import type { Settings } from "@yanlinglabs/winter-core";
-import { METHODS, ModelTagSchema, SyncConfigModel, type ApprovalPolicy } from "@yanlinglabs/winter-protocol";
-import type { WinterClient } from "./client";
+import { canonicalizeModelTag, rowForTag, splitTag, isModelTag, UNSTATED_TAG, CLOVER_TEST_PREFIX } from "@waifucave/clover-core";
+import type { Settings } from "@waifucave/clover-core";
+import { METHODS, ModelTagSchema, SyncConfigModel, type ApprovalPolicy } from "@waifucave/clover-protocol";
+import type { CloverClient } from "./client";
 import { validateModelTag } from "./model-cli";
 
-export const PRINT_USAGE = 'usage: winter -p "<prompt>" [--auto|--plan] [--trust|--no-trust] [--model <providerId>/<modelId>]';
+export const PRINT_USAGE = 'usage: clover -p "<prompt>" [--auto|--plan] [--trust|--no-trust] [--model <providerId>/<modelId>]';
 
-/** Where a refused `--model` points: `winter model` prints the catalogue a live daemon offers. */
-const LIST_HINT = "Run `winter model` to list the models you can use.";
+/** Where a refused `--model` points: `clover model` prints the catalogue a live daemon offers. */
+const LIST_HINT = "Run `clover model` to list the models you can use.";
 
 /** The flags `-p` reads off argv itself, wherever they sit; never the prompt. */
 export const PRINT_POLICY_FLAGS: ReadonlySet<string> = new Set(["--auto", "--plan", "--trust", "--no-trust"]);
@@ -32,7 +32,7 @@ export type PrintArgs =
   | { kind: "usageError"; message: string };
 
 /**
- * Parses `winter -p`'s argv tail (everything after "-p", i.e. `process.argv.slice(3)`).
+ * Parses `clover -p`'s argv tail (everything after "-p", i.e. `process.argv.slice(3)`).
  *
  * `--model <tag>` / `--model=<tag>` is removed from the list and the prompt is the first thing left,
  * so with no `--model` the prompt is exactly `args[0]` -- what `-p` has always read as `argv[3]` --
@@ -81,7 +81,7 @@ export type PrintModelCheck = { ok: true; model: PrintModel } | { ok: false; mes
 /**
  * Everything that needs no daemon: the tag's shape, the pinned provider, the catalog (or BYO-endpoint)
  * membership, and the facing-name / renamed-tag canonicalisation. Run BEFORE `connect()`, which
- * launches Winter.app when the daemon is down -- a typo must never open a socket. `settings` (optional,
+ * launches Clover.app when the daemon is down -- a typo must never open a socket. `settings` (optional,
  * best effort) carries the BYO-endpoint leniency `validateModelTag` and `canonicalizeModelTag` share.
  */
 export function checkPrintModelOffline(typed: string, settings?: Settings): PrintModelCheck {
@@ -106,7 +106,7 @@ function offlineRefusal(typed: string, tag: string): string {
     return `--model "${typed}" is not a provider-qualified tag — use "<providerId>/<modelId>". ${LIST_HINT}`;
   }
   // The "nothing recorded" sentinel and the test doubles are shaped like tags but are never a user's choice.
-  if (tag === UNSTATED_TAG || tag.startsWith(WINTER_TEST_PREFIX)) {
+  if (tag === UNSTATED_TAG || tag.startsWith(CLOVER_TEST_PREFIX)) {
     return `--model "${typed}" is not a provider-qualified tag — use "<providerId>/<modelId>". ${LIST_HINT}`;
   }
   if (!isModelTag(tag)) return `--model "${typed}": unknown provider "${providerId}". ${LIST_HINT}`;
@@ -117,7 +117,7 @@ type DaemonCheck = { ok: true } | { ok: false; message: string };
 
 /** The daemon-side half: is the (canonical) catalog tag one `sync.config` offers? Not asked at all
  *  for an unlisted pass-through model. A daemon that cannot answer is a refusal, never a guess. */
-async function checkOffered(c: Pick<WinterClient, "request">, model: PrintModel): Promise<DaemonCheck> {
+async function checkOffered(c: Pick<CloverClient, "request">, model: PrintModel): Promise<DaemonCheck> {
   if (!model.catalogRow) return { ok: true };
   let raw: unknown;
   try {
@@ -134,7 +134,7 @@ async function checkOffered(c: Pick<WinterClient, "request">, model: PrintModel)
   if (parsed.data.length === 0) {
     return {
       ok: false,
-      message: `--model "${model.tag}": this daemon offers no models yet — add a provider credential first (\`winter credentials set ${providerId}\`).`,
+      message: `--model "${model.tag}": this daemon offers no models yet — add a provider credential first (\`clover credentials set ${providerId}\`).`,
     };
   }
   return {
@@ -154,7 +154,7 @@ export type PrintSessionResult =
  * Without one it is the plain `createSession` call `-p` always made.
  */
 export async function createPrintSession(
-  c: Pick<WinterClient, "request" | "createSession">,
+  c: Pick<CloverClient, "request" | "createSession">,
   opts: { cwd: string; approvalPolicy: ApprovalPolicy; model?: PrintModel },
 ): Promise<PrintSessionResult> {
   if (opts.model !== undefined) {

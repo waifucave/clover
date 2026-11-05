@@ -103,7 +103,7 @@ export function shellSegments(command: string): string[] {
 }
 
 /** A redirect or separator character INSIDE quotes is text: it becomes a space before the quotes are
- *  stripped, so `echo 'a > .winter/rules/x'` names no write target (a quoted PATH is kept as it is). */
+ *  stripped, so `echo 'a > .clover/rules/x'` names no write target (a quoted PATH is kept as it is). */
 export function quotedOperatorsAsText(raw: string): string {
   let out = "";
   let quote: "'" | "\"" | undefined;

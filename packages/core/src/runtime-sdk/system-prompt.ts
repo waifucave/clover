@@ -1,28 +1,28 @@
-// P8b Task 17 Step 0(a) — Winter's OWN system prompt on the Winter leg, composed from the SAME
+// P8b Task 17 Step 0(a) — Clover's OWN system prompt on the Clover leg, composed from the SAME
 // sources `engine.ts`'s `turn()` composes it from today (the persona per mode, the `_assistant`
 // memory bucket for chat/dispatch, the project MEMDIR for code, the workspace block, the trusted
-// project instructions, the output style for a main conversation) — so a chat session on the Winter
-// leg speaks as Winter, not as Winter's coding agent (Task 16 review M3).
+// project instructions, the output style for a main conversation) — so a chat session on the Clover
+// leg speaks as Clover, not as Winter's coding agent (Task 16 review M3).
 //
 // The mapping below is `engine.ts` `turn()`'s `assembler.assemble({...})` call, argument by argument
 // (`test/runtime-sdk/system-prompt.test.ts` pins it BYTE-FOR-BYTE against a real engine turn per
 // mode). What is deliberately NOT ported: `buildInstructionsFull`'s three appendices — the
-// engine-registry "Deferred tools" index (Winter defers and searches its own tools), the code-mode
-// plan-mode paragraph (Winter's `plan` permission mode carries its own), and the `/ultracode`
+// engine-registry "Deferred tools" index (Clover defers and searches its own tools), the code-mode
+// plan-mode paragraph (Clover's `plan` permission mode carries its own), and the `/ultracode`
 // reminder (the Workflow tool is a Task 17 capability carry) — all three are engine mechanics, not
-// Winter's voice.
+// Clover's voice.
 //
 // `Options.outputStyle` stays UNSET on purpose: the assembler already folds the resolved style into
 // the base slot (`ContextAssembler.assemble`'s style gate), exactly as the engine ships it, so an
-// unset style is byte-identical to today and a set one is applied ONCE, by Winter, never a second
-// time by Winter's own style loader.
+// unset style is byte-identical to today and a set one is applied ONCE, by Clover, never a second
+// time by Clover's own style loader.
 import type { ContextAssembler } from "../agent/context";
 import { chatSystemPrompt } from "../agent/chat-prompt";
 import { dispatchSystemPrompt, type DispatchComputerTool } from "../agent/dispatch-prompt";
 import type { Mode as SessionMode } from "../agent/tools/registry";
 import { clientEffortEligible, isClientEffort } from "../settings";
 
-export interface WinterSystemPromptInput {
+export interface CloverSystemPromptInput {
   mode: SessionMode;
   /** `SessionMeta.origin`; `"dispatch-child"` skips the output style (styles are main-conversation only). */
   origin?: string;
@@ -60,7 +60,7 @@ export interface WinterSystemPromptInput {
   runHomeApplied?: boolean;
 }
 
-export function winterSystemPromptFor(assembler: Pick<ContextAssembler, "assemble">, input: WinterSystemPromptInput): string {
+export function cloverSystemPromptFor(assembler: Pick<ContextAssembler, "assemble">, input: CloverSystemPromptInput): string {
   const isDispatch = input.mode === "dispatch";
   const isChat = input.mode === "chat";
   // Spread rather than passed as `{ exaKeyPresent: input.exaKeyPresent }`: an EXPLICIT `undefined` and an
@@ -69,8 +69,8 @@ export function winterSystemPromptFor(assembler: Pick<ContextAssembler, "assembl
   const webOpts = input.exaKeyPresent === undefined ? {} : { exaKeyPresent: input.exaKeyPresent };
   return assembler.assemble({
     cwd: input.cwd,
-    // The engine's per-session `loadedSkills` set is empty at a session's first turn; on the Winter
-    // leg the `Skill` tool is Winter's own, so nothing ever fills it host-side.
+    // The engine's per-session `loadedSkills` set is empty at a session's first turn; on the Clover
+    // leg the `Skill` tool is Clover's own, so nothing ever fills it host-side.
     loadedSkills: [],
     basePromptOverride: isDispatch
       ? dispatchSystemPrompt({ ...webOpts, ...(input.computerOffered === undefined ? {} : { computerOffered: input.computerOffered }) })
@@ -85,7 +85,7 @@ export function winterSystemPromptFor(assembler: Pick<ContextAssembler, "assembl
     skillToolOffered: !(isDispatch || isChat),
     // B1 (2026-09-22): NO daemon-side skill listing, in any mode, on either leg. The engine listed
     // this store because its own `Skill` tool loaded from it; a runtime child loads only what its
-    // Options carry (`SkillStore.childSkillSurface` → `Options.plugins`/`skills` on the Winter leg;
+    // Options carry (`SkillStore.childSkillSurface` → `Options.plugins`/`skills` on the Clover leg;
     // the router's own plugin on the official leg) and announces exactly that set itself — claude's
     // `skill_listing` attachment, which the agent SDK mirrors. Two listings would disagree, and did:
     // the dist prompt named skills whose invocation answered "unknown skill … Available: (none)".

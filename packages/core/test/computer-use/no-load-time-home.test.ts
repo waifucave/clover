@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import ts from "typescript";
 
-// Every process of the `winter-core` binary loads the whole daemon graph at start — the sandboxed automation worker
+// Every process of the `clover-core` binary loads the whole daemon graph at start — the sandboxed automation worker
 // (`computer-use/worker-host.ts`) too, whose environment is `{ PATH }` only and whose seatbelt refuses the user
 // lookup. A `homedir()` (or `userInfo()`) evaluated at module load throws there (`ENOENT … uv_os_homedir`) and the
 // worker never starts: every ComputerV2 call fails `HelperUnavailable` (2026-10-19, `usage/wiring.ts`'s install
@@ -61,7 +61,7 @@ describe("no module looks up the user's home at load (the automation worker has 
   });
 
   test("the scan sees a load-time call, and not one behind a function or a default parameter", () => {
-    const dir = mkdtempSync(join(tmpdir(), "winter-no-load-time-home-"));
+    const dir = mkdtempSync(join(tmpdir(), "clover-no-load-time-home-"));
     const bad = join(dir, "bad.ts");
     const good = join(dir, "good.ts");
     writeFileSync(bad, `import { homedir } from "node:os";\nexport const A = [homedir()];\nclass K { static s = homedir(); }\n`);

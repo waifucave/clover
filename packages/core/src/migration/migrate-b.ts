@@ -1,4 +1,4 @@
-// Phase 9c Migration B (WS-16 §18) — copies a legacy home wholesale into a pristine Winter home on
+// Phase 9c Migration B (WS-16 §18) — copies a legacy home wholesale into a pristine Clover home on
 // first boot. Three phases, always in this order: (1) walk the legacy home and classify every file
 // (copy / rekey / skip-as-disposable / rebuild-later), (2) copy bytes / rewrite settings.json,
 // writing the manifest to disk after EVERY step so a crash mid-run is always resumable, (3) copy
@@ -23,7 +23,7 @@ import type { SecretStore } from "../auth/secret-store";
 import { MIGRATION_B_SECRET_NAMES } from "../auth/legacy-secret-names";
 import { LEGACY_DEV_HOME_DIR, LEGACY_HOME_DIR, LEGACY_HOME_ENV } from "../legacy-names";
 import { keychainService } from "../profile";
-import type { WinterProfile } from "../profile";
+import type { CloverProfile } from "../profile";
 import { legacyKeychainServiceFor } from "./legacy-keychain-store";
 import {
   clearWorkingManifest,
@@ -72,7 +72,7 @@ function errorTag(err: unknown): string {
 /** `legacyHomeFor` — the legacy home override env var if set, else the legacy dist/dev home
  *  directory name under the user's home, per profile (`legacy-names.ts`'s `LEGACY_HOME_ENV` /
  *  `LEGACY_HOME_DIR` / `LEGACY_DEV_HOME_DIR`). */
-export function legacyHomeFor(profile: WinterProfile, env: NodeJS.ProcessEnv = process.env): string {
+export function legacyHomeFor(profile: CloverProfile, env: NodeJS.ProcessEnv = process.env): string {
   const override = env[LEGACY_HOME_ENV];
   if (override) return override;
   return join(homedir(), profile === "dev" ? LEGACY_DEV_HOME_DIR : LEGACY_HOME_DIR);
@@ -82,7 +82,7 @@ const BOOTSTRAP_TOP_LEVEL = new Set(["agents", "hooks", "logs", "memory", "outpu
 
 /** P9c-16 (whole-branch review, Critical C2): named app-owned top-level directories the pristine
  *  check tolerates WITHOUT recursing into them at all — unlike `BOOTSTRAP_TOP_LEVEL`, their content
- *  is never required to be empty. Winter.app must never write into `WINTER_HOME` before the
+ *  is never required to be empty. Clover.app must never write into `CLOVER_HOME` before the
  *  daemon's first successful connect, but a UI marker file (today: `app-state/cli-install-offered`)
  *  is impractical to avoid — this is the ONE named exception, not a general escape hatch: any FUTURE
  *  app-side home write is a deliberate addition to this list, reviewed the same way. A legacy
@@ -91,7 +91,7 @@ const BOOTSTRAP_TOP_LEVEL = new Set(["agents", "hooks", "logs", "memory", "outpu
 const TOLERATED_APP_OWNED_TOP_LEVEL = new Set(["app-state"]);
 
 /** Review M2: known macOS/Finder noise that must never block the first-boot migration — a mere
- *  Finder browse of a fresh `~/.winter` drops a `.DS_Store` (and `.localized` on some volumes; an
+ *  Finder browse of a fresh `~/.clover` drops a `.DS_Store` (and `.localized` on some volumes; an
  *  AppleDouble `._*` sidecar can appear from a copy/USB-transfer touching the folder) with no user
  *  action at all. Ignored ONLY at the home's TOP LEVEL — everything else (inside a bootstrap-set
  *  directory, or any other top-level name) stays exactly as strict as before. */
@@ -102,7 +102,7 @@ function isIgnorableTopLevelNoise(name: string): boolean {
 
 /** The full path of the first regular file/symlink/etc found inside `path` (recursing into
  *  subdirectories, sorted for determinism), or `undefined` when it is empty (or absent) all the
- *  way down. Review M2: this is the "not pristine" REASON, not just a boolean — `winter doctor`
+ *  way down. Review M2: this is the "not pristine" REASON, not just a boolean — `clover doctor`
  *  names it so the user has somewhere to look instead of a bare "not pristine" verdict. */
 function firstNonEmptyEntry(path: string): string | undefined {
   let entries: string[];
@@ -200,7 +200,7 @@ export interface MigrationPlanFileEntry {
 export interface MigrationPlan {
   legacyHome: string;
   home: string;
-  profile: WinterProfile;
+  profile: CloverProfile;
   entries: MigrationPlanFileEntry[];
 }
 
@@ -296,7 +296,7 @@ function assertNoCoworkEntries(plan: MigrationPlan): void {
 /** The pristine-refusal-free planner — `resumeMigrationB` needs this to re-derive an in-progress
  *  run's plan against a destination that is, by definition, no longer pristine. `planMigrationB`
  *  below is this plus the P9c-10 refusal for every OTHER caller. */
-function buildPlan(input: { legacyHome: string; home: string; profile: WinterProfile }): MigrationPlan {
+function buildPlan(input: { legacyHome: string; home: string; profile: CloverProfile }): MigrationPlan {
   const files = walkLegacyHome(input.legacyHome);
   const entries: MigrationPlanFileEntry[] = files.map(({ rel, isRegular }) => ({
     src: join(input.legacyHome, rel),
@@ -306,11 +306,11 @@ function buildPlan(input: { legacyHome: string; home: string; profile: WinterPro
   return { legacyHome: input.legacyHome, home: input.home, profile: input.profile, entries };
 }
 
-export async function planMigrationB(input: { legacyHome: string; home: string; profile: WinterProfile }): Promise<MigrationPlan> {
+export async function planMigrationB(input: { legacyHome: string; home: string; profile: CloverProfile }): Promise<MigrationPlan> {
   if (!isPristineHome(input.home)) {
     throw new MigrationRefused(
       "destination_not_pristine",
-      `${input.home} is not a pristine Winter home — move it aside, e.g. \`mv ${input.home} ${input.home}.bak\`, then retry`,
+      `${input.home} is not a pristine Clover home — move it aside, e.g. \`mv ${input.home} ${input.home}.bak\`, then retry`,
     );
   }
   refuseCoworkSource(input.legacyHome);
@@ -517,7 +517,7 @@ export async function resumeMigrationB(home: string, deps: MigrationDeps): Promi
  * fallback to salvage from a manifest this function cannot even parse. The daemon boot hook's
  * `unreadable` refusal message (`daemon.ts`) therefore never points an operator at `--rollback` as
  * the FIRST move for that flavour — moving the corrupt file aside and re-running from scratch is;
- * `--rollback` only helps once files are known to have already been copied. `winter migrate
+ * `--rollback` only helps once files are known to have already been copied. `clover migrate
  * --status` is the one place that surfaces the `unreadable` state explicitly (via
  * `manifestFileState`, not `readMigrationManifest`), rather than reporting it as "never run".
  */

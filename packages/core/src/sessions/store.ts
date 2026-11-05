@@ -4,7 +4,7 @@ import { Database } from "bun:sqlite";
 import { openSync, closeSync, fstatSync, readSync, constants, appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join } from "node:path";
 import { randomBytes, createHash, timingSafeEqual } from "node:crypto";
-import { HOST_WORKSPACE_EVENT_TYPES, SessionEvent, SESSION_TITLE_MAX_CHARS, type NewSessionEvent } from "@yanlinglabs/winter-protocol";
+import { HOST_WORKSPACE_EVENT_TYPES, SessionEvent, SESSION_TITLE_MAX_CHARS, type NewSessionEvent } from "@waifucave/clover-protocol";
 import type { SessionApprovalPolicy } from "../agent/gate";
 import { hasOpenPanelTabs } from "../panel/store";
 import type { SessionDirs } from "./dirs";
@@ -226,7 +226,7 @@ export class SessionStore {
 
   /** WS-20 (review round 2, M5): `presentProviders` (`credentialPresenceFrom(secrets)`'s keys) is
    *  threaded into `migrateBareModelColumnToTags`'s own rule-5 tie-break — only the daemon boot
-   *  hook has `secrets` in hand at construction time, so every other caller (tests, `winter doctor`,
+   *  hook has `secrets` in hand at construction time, so every other caller (tests, `clover doctor`,
    *  any direct `new SessionStore(home)`) omits it and gets the same fixed-preference tie-break as
    *  before this field existed. */
   constructor(private readonly homeDir: string, private readonly storeOpts?: {
@@ -369,7 +369,7 @@ export class SessionStore {
    *  logs are rewritten only when bad lines were found, using a temp+rename atomic swap.
    *
    *  PUBLIC as of WS-16 §13 (P8a task 7): the constructor still calls it, but startup recovery's
-   *  step 1 and `winter doctor`'s `rebuild-index` repair both have to run it EXPLICITLY on a store
+   *  step 1 and `clover doctor`'s `rebuild-index` repair both have to run it EXPLICITLY on a store
    *  they already hold — recovery because "recover each store according to its ownership rules" is
    *  a step it must be able to report on, and the repair because it deletes `index.db` first. It is
    *  idempotent by construction (pass 1 resyncs known rows, pass 2 inserts unknown logs), so

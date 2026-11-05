@@ -14,7 +14,7 @@ import {
   SessionListResult,
   SyncConfigResult,
   DaemonStatusResult,
-} from "@yanlinglabs/winter-protocol";
+} from "@waifucave/clover-protocol";
 
 const BARE = "gpt-5.6-sol";
 const TAG = "codex-oauth/gpt-5.6-sol";

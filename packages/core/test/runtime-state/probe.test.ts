@@ -1,4 +1,4 @@
-// The DEV-path half of `verify:runtime-state` (the compiled half boots `dist/winter-core`): the
+// The DEV-path half of `verify:runtime-state` (the compiled half boots `dist/clover-core`): the
 // probe reports the A2 fact the gate asserts — the router handle constructed. (WS-23: the second
 // fact, the official peer loading, is gone with that leg.)
 import { describe, expect, test } from "bun:test";
@@ -16,6 +16,6 @@ describe("runRuntimeStateProbe", () => {
     });
   });
   test("refuses without a home", async () => {
-    expect(await runRuntimeStateProbe({ home: undefined })).toEqual({ ok: false, error: expect.stringContaining("WINTER_HOME") });
+    expect(await runRuntimeStateProbe({ home: undefined })).toEqual({ ok: false, error: expect.stringContaining("CLOVER_HOME") });
   });
 });

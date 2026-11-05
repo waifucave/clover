@@ -1,43 +1,43 @@
 // Builds everything the live ComputerV2 suite runs, into `out/cu-live/` (git-ignored), and skips what is current:
-//   - "Winter CU Fixture.app" (dev.cu-live.fixture) and "Winter CU User App.app" (dev.cu-live.fixture-user): ONE
+//   - "Clover CU Fixture.app" (dev.cu-live.fixture) and "Clover CU User App.app" (dev.cu-live.fixture-user): ONE
 //     Swift binary in two bundles, ad-hoc signed (nothing here needs an identity: the helper reads them through ITS
 //     Accessibility grant);
 //   - `cu-live-tool` (the focus/Space/HID monitor and the fixtures' command poster — needs no TCC grant at all);
-//   - `cu-live-viewprobe`, signed `com.winter.app.cutest` with Winter's team identity, and
-//   - `winter-core-live` (`daemon-entry.ts` compiled), signed `com.winter.core.cutest`:
+//   - `cu-live-viewprobe`, signed `com.winter.app.cutest` with Clover's team identity, and
+//   - `clover-core-live` (`daemon-entry.ts` compiled), signed `com.winter.core.cutest`:
 //     TEST-ONLY identifiers. The production ones (`com.winter.app.dev`, `com.winter.core.dev`) satisfy the dev
 //     Keychain items' and the pairing tokens' access lists, so a test binary carrying them would be a key to the
 //     user's dev secrets. A dev helper accepts the test identities only as a live-test instance (launched for a
-//     home inside a `winter-cu-live-` temp dir — `HelperIdentity.isLiveTestHome`); every other dev helper rejects
+//     home inside a `clover-cu-live-` temp dir — `HelperIdentity.isLiveTestHome`); every other dev helper rejects
 //     them. The daemon has a file secret store inside — it never touches the Keychain.
 import { spawnSync } from "node:child_process";
 import { copyFileSync, existsSync, mkdirSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { WINTER_TEAM_ID } from "../../packages/core/src/auth/app-token-acl";
+import { CLOVER_TEAM_ID } from "../../packages/core/src/auth/app-token-acl";
 import { designatedRequirementOf, resolveDevSigningIdentity, signedFacts, type SigningIdentity } from "../dev-daemon-lib";
 
 export const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 export const OUT_DIR = join(REPO_ROOT, "out", "cu-live");
 const SWIFT_DIR = join(REPO_ROOT, "scripts", "cu-live", "swift");
 const WEB_DIR = join(REPO_ROOT, "scripts", "cu-live", "fixture-web");
-const ENTITLEMENTS = join(REPO_ROOT, "scripts", "winter-core.entitlements");
+const ENTITLEMENTS = join(REPO_ROOT, "scripts", "clover-core.entitlements");
 
-// Never a `com.winter.` id: ComputerV2 refuses to bind any app under that prefix ("Winter can't control itself").
-export const FIXTURE_MAIN = { name: "Winter CU Fixture", bundleId: "dev.cu-live.fixture" } as const;
-export const FIXTURE_USER = { name: "Winter CU User App", bundleId: "dev.cu-live.fixture-user" } as const;
+// Never a `com.winter.` id: ComputerV2 refuses to bind any app under that prefix ("Clover can't control itself").
+export const FIXTURE_MAIN = { name: "Clover CU Fixture", bundleId: "dev.cu-live.fixture" } as const;
+export const FIXTURE_USER = { name: "Clover CU User App", bundleId: "dev.cu-live.fixture-user" } as const;
 /**
  * The end-of-run completion window (the same binary's `--done` mode) — its OWN bundle, name and id: run from the
- * fixture's bundle it was a second "Winter CU Fixture" (one floating window) that the next run's binds picked up.
+ * fixture's bundle it was a second "Clover CU Fixture" (one floating window) that the next run's binds picked up.
  * An agent app (LSUIElement): no Dock icon, never the active app.
  */
-export const FIXTURE_DONE = { name: "Winter CU Live Result", bundleId: "dev.cu-live.result" } as const;
+export const FIXTURE_DONE = { name: "Clover CU Live Result", bundleId: "dev.cu-live.result" } as const;
 /** Test-only identities (never a production identifier) — `WinterCodeIdentity.liveTest*Identifier` in the helper. */
 export const VIEW_PROBE_IDENTIFIER = "com.winter.app.cutest";
 export const LIVE_DAEMON_IDENTIFIER = "com.winter.core.cutest";
 
-/** A stated designated requirement: the identifier under Apple's anchor, Winter's team. */
-export function stated(identifier: string, teamId = WINTER_TEAM_ID): string {
+/** A stated designated requirement: the identifier under Apple's anchor, Clover's team. */
+export function stated(identifier: string, teamId = CLOVER_TEAM_ID): string {
   return `identifier "${identifier}" and anchor apple generic and certificate leaf[subject.OU] = "${teamId}"`;
 }
 
@@ -79,12 +79,12 @@ function newest(paths: string[]): number {
 
 const current = (output: string, inputs: string[]): boolean => existsSync(output) && statSync(output).mtimeMs >= newest(inputs);
 
-/** Winter's team identity (`bun run dev:daemon`'s rule; `WINTER_DEV_SIGN_IDENTITY` overrides). */
+/** Clover's team identity (`bun run dev:daemon`'s rule; `CLOVER_DEV_SIGN_IDENTITY` overrides). */
 export function signingIdentity(): SigningIdentity {
   return resolveDevSigningIdentity({
     identitiesOutput: run("security", ["find-identity", "-v", "-p", "codesigning"]).stdout,
-    teamId: WINTER_TEAM_ID,
-    override: process.env.WINTER_DEV_SIGN_IDENTITY,
+    teamId: CLOVER_TEAM_ID,
+    override: process.env.CLOVER_DEV_SIGN_IDENTITY,
     subjectOf: (name) => {
       const pem = run("security", ["find-certificate", "-c", name, "-p"]).stdout;
       if (pem === "") return undefined;
@@ -168,20 +168,20 @@ export function buildViewProbe(identity: SigningIdentity, log: (l: string) => vo
 }
 
 export function buildDaemon(identity: SigningIdentity, log: (l: string) => void): string {
-  const out = join(OUT_DIR, "winter-core-live");
+  const out = join(OUT_DIR, "clover-core-live");
   const inputs = [join(REPO_ROOT, "scripts", "cu-live", "daemon-entry.ts"), fileURLToPath(import.meta.url), join(REPO_ROOT, "packages", "core", "src"), join(REPO_ROOT, "packages", "protocol", "src")];
   if (current(out, inputs)) return out;
-  log("compiling winter-core-live (bun build --compile)…");
+  log("compiling clover-core-live (bun build --compile)…");
   mkdirSync(OUT_DIR, { recursive: true });
   const tmp = `${out}.${process.pid}.tmp`;
   try {
     must(run("bun", ["build", "--compile", "--no-compile-autoload-bunfig", "--no-compile-autoload-dotenv", join("scripts", "cu-live", "daemon-entry.ts"), "--outfile", tmp], { cwd: REPO_ROOT }), "bun build --compile");
     const requirement = stated(LIVE_DAEMON_IDENTIFIER);
-    must(run("codesign", ["--force", "--sign", identity.hash, "--identifier", LIVE_DAEMON_IDENTIFIER, "--options", "runtime", "--timestamp=none", "--entitlements", ENTITLEMENTS, `-r=designated => ${requirement}`, tmp]), "codesign winter-core-live");
+    must(run("codesign", ["--force", "--sign", identity.hash, "--identifier", LIVE_DAEMON_IDENTIFIER, "--options", "runtime", "--timestamp=none", "--entitlements", ENTITLEMENTS, `-r=designated => ${requirement}`, tmp]), "codesign clover-core-live");
     const shown = run("codesign", ["-d", "-r-", tmp]);
-    if (designatedRequirementOf(`${shown.stdout}\n${shown.stderr}`) !== requirement) throw new Error("winter-core-live: the stated designated requirement did not take");
+    if (designatedRequirementOf(`${shown.stdout}\n${shown.stderr}`) !== requirement) throw new Error("clover-core-live: the stated designated requirement did not take");
     const facts = signedFacts(run("codesign", ["-dv", tmp]).stderr);
-    if (facts.teamId !== WINTER_TEAM_ID || facts.identifier !== LIVE_DAEMON_IDENTIFIER || !facts.runtime) throw new Error(`winter-core-live is not signed with the live-test identity (team ${facts.teamId}, ${facts.identifier})`);
+    if (facts.teamId !== CLOVER_TEAM_ID || facts.identifier !== LIVE_DAEMON_IDENTIFIER || !facts.runtime) throw new Error(`clover-core-live is not signed with the live-test identity (team ${facts.teamId}, ${facts.identifier})`);
     renameSync(tmp, out);
   } finally {
     rmSync(tmp, { force: true });

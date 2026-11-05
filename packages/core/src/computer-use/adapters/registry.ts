@@ -1,4 +1,4 @@
-// ComputerV2 Phase 2 — the AppAdapter table: bundle id (and version conditions) → Winter's hand-written adapter. The
+// ComputerV2 Phase 2 — the AppAdapter table: bundle id (and version conditions) → Clover's hand-written adapter. The
 // built-in set lives in `apps/`; a test daemon may add its own (the live suite's fixture adapter, `wiring.ts`'s
 // `ComputerUseInjection.adapters`). Every adapter is VALIDATED when the registry is built: names, classes, the caps
 // (summary ≤ 120 characters, doc ≤ 600 bytes, guide ≤ 2,000 bytes) and unique guide ids — a bad table fails loudly.

@@ -5,7 +5,7 @@ import { COWORK_CONTROL_ENTRIES, protectedHostStorageFences, type HostStorageFen
 export * from "./host-storage-fence";
 
 /**
- * **What no agent may write under Winter's home — ONE list, three fences** (whole-branch review,
+ * **What no agent may write under Clover's home — ONE list, three fences** (whole-branch review,
  * 2026-09-23, lane C).
  *
  * The fences:
@@ -65,15 +65,15 @@ export function homeFencedFiles(home: string): string[] {
   return [join(home, "trust.json")];
 }
 
-/** Fenced wherever they appear, in any project: every `.winter/agents/` directory (the project tier of
+/** Fenced wherever they appear, in any project: every `.clover/agents/` directory (the project tier of
  *  the agent definitions), matched as a path segment. */
-export const PROJECT_FENCED_SEGMENTS: readonly string[] = [".winter/agents/"];
+export const PROJECT_FENCED_SEGMENTS: readonly string[] = [".clover/agents/"];
 
 /** The filenames the escape floor refuses to see named at all (its match is a conservative substring):
- *  the three control-plane files plus `trust.json`, and (WS-21 §7.1, "any mention") `.winter.json` —
- *  `sdk/.winter.json` is the user's MCP server list. The write-tool fence is precise instead
+ *  the three control-plane files plus `trust.json`, and (WS-21 §7.1, "any mention") `.clover.json` —
+ *  `sdk/.clover.json` is the user's MCP server list. The write-tool fence is precise instead
  *  (`controlPlaneFileTarget` + `homeFencedFiles`). */
-export const ESCAPE_FENCED_FILENAMES: readonly string[] = [...CONTROL_PLANE_FILENAMES, "trust.json", ".winter.json"];
+export const ESCAPE_FENCED_FILENAMES: readonly string[] = [...CONTROL_PLANE_FILENAMES, "trust.json", ".clover.json"];
 
 export function homeFenceFor(home: string, options?: HostStorageFenceOptions): HomeFence {
   const active = protectedHostStorageFences(home, options);

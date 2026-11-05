@@ -1,4 +1,4 @@
-/** `winter agents` (session-activity-hygiene T9) — the live roster of BACKGROUND and ACTIVE
+/** `clover agents` (session-activity-hygiene T9) — the live roster of BACKGROUND and ACTIVE
  *  code sessions today, and the four verbs that move them through the lifecycle T1-T8 built.
  *  The daemon's lifecycle predicate reserves Cowork; no supported creation path supplies that mode.
  *
@@ -37,7 +37,7 @@
  */
 
 import { homedir } from "node:os";
-import type { WinterClient } from "./client";
+import type { CloverClient } from "./client";
 import { formatElapsed } from "./task-display";
 import type { WheelEvent } from "./tui/input-model";
 
@@ -230,12 +230,12 @@ export function formatCwdColumn(cwd: string | undefined, home: string): string {
   return collapsed.length > CWD_WIDTH ? `…${collapsed.slice(collapsed.length - (CWD_WIDTH - 1))}` : collapsed;
 }
 
-/** The EXACT resume invocation, verified against main.ts's own `case "resume"` route (`winter resume
+/** The EXACT resume invocation, verified against main.ts's own `case "resume"` route (`clover resume
  *  <sessionId>` — a SUBCOMMAND, not a `--resume` flag) and matching `formatResumeHint`'s wording,
  *  which is what the TUI already prints on exit. If those ever diverge, the roster is the surface
  *  telling the user something that does not work. */
 export function agentResumeCommand(sessionId: string): string {
-  return `winter resume ${sessionId}`;
+  return `clover resume ${sessionId}`;
 }
 
 /** One plain (uncolored) line per row — used for the non-TTY snapshot and as the content the Ink
@@ -328,7 +328,7 @@ export function wheelToAgentsAction(w: WheelEvent): AgentsAction {
 
 /** Exactly the two RPCs the roster may make, structurally — a fake in a test satisfies it, and the
  *  type itself is the statement that `attach`/`send` are not on this surface. */
-export type AgentsVerbClient = Pick<WinterClient, "interrupt" | "sessionSetActivity">;
+export type AgentsVerbClient = Pick<CloverClient, "interrupt" | "sessionSetActivity">;
 
 export interface AgentVerbResult {
   message: string;
@@ -408,7 +408,7 @@ export class AgentsStore {
 
 /** Exactly what the roster asks of a daemon connection. `attach`/`send` are deliberately absent —
  *  see the module doc for why a roster that attached would be a bug, not a feature. */
-export type AgentsRosterClient = AgentsVerbClient & Pick<WinterClient, "listSessions" | "close">;
+export type AgentsRosterClient = AgentsVerbClient & Pick<CloverClient, "listSessions" | "close">;
 
 export interface AgentsMountHandle {
   waitUntilExit(): Promise<void>;
@@ -426,7 +426,7 @@ export interface RunAgentsDeps {
   pollMs?: number;
 }
 
-/** `winter agents`, whole. Every dependency is injected for the reason at the top of this file:
+/** `clover agents`, whole. Every dependency is injected for the reason at the top of this file:
  *  main.ts's `case` cannot be unit-tested, so the command's behaviour has to be provable here.
  *
  *  Poll AND subscribe, deliberately both: the transient carries every state CHANGE the instant it
@@ -457,7 +457,7 @@ export async function runAgentsCommand(deps: RunAgentsDeps): Promise<void> {
   await refresh();
 
   // Piped/redirected: print the roster once and exit. Same headless safety net `mountTui` has —
-  // never render, never take over a terminal that isn't one. Makes `winter agents | grep …` work.
+  // never render, never take over a terminal that isn't one. Makes `clover agents | grep …` work.
   if (!deps.isTTY) {
     for (const line of formatAgentsSnapshot(store.get(), now())) deps.log(line);
     client.close();

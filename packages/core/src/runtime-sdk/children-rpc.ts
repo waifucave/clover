@@ -1,6 +1,6 @@
-// P8b Task 17 — `thread.send` / `agent.stop` for WINTER children, over the persisted roster and the
+// P8b Task 17 — `thread.send` / `agent.stop` for CLOVER children, over the persisted roster and the
 // owning session's messaging facet. The engine answered these from its in-process thread table
-// (`sendToThread`/`resumeThread`); a Winter child belongs to its session's `winter` process, so the
+// (`sendToThread`/`resumeThread`); a Clover child belongs to its session's `winter` process, so the
 // only doors are the facet's `steerChild` (running) and `resumeChild` (terminal, addressable) —
 // P8b-15 / surface map §8. Semantics mirror the engine's: name guard first, a running child is
 // steered (`delivered: "queued"`), a finished one is resumed (`delivered: "resumed"`), a stop flips

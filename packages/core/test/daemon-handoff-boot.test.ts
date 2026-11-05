@@ -9,7 +9,7 @@
 import { afterEach, expect, test } from "bun:test";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, type WritableSocket } from "@yanlinglabs/winter-protocol";
+import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, type WritableSocket } from "@waifucave/clover-protocol";
 import { FileSecretStore } from "../src/auth/secret-store";
 import { startDaemon, type RunningDaemon } from "../src/daemon";
 import { SessionStore } from "../src/sessions/store";
@@ -69,7 +69,7 @@ describeWithWinterBinary("daemon.ts's boot wiring for the engine-era import door
       const cwd = home; // no separate workdir needed for this fixture
       // `settings.provider` names a provider so the boot's own §17 backfill runs (wiring.ts skips
       // it otherwise) — the pre-seeded plain-store session below is what it backfills into an
-      // "engine"-leg record. `provider.model` is a real winter-test double: the engine-era row
+      // "engine"-leg record. `provider.model` is a real clover-test double: the engine-era row
       // itself carries NO model (set below), so `session-driver.ts`'s `optionsFor` falls back to
       // this settings default once the import makes the session resumable.
       writeFileSync(join(home, "settings.json"), JSON.stringify({
@@ -106,7 +106,7 @@ describeWithWinterBinary("daemon.ts's boot wiring for the engine-era import door
       expect(seq).toBeGreaterThan(0);
 
       // The record now names a resumable leg with a real backend transcript — the import door's
-      // whole point (P8c-6): a permanently-refused session is now a live Winter one.
+      // whole point (P8c-6): a permanently-refused session is now a live Clover one.
       const after = daemon.runtimeState.records.get(sid);
       expect(sessionLegOf(after)).toBe("winter");
       expect(after?.backendSessionId).toBeDefined();

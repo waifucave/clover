@@ -1,20 +1,20 @@
 {
-  "name": "@yanlinglabs/winter-cli",
+  "name": "@waifucave/clover-cli",
   "version": "0.124.0",
   "private": true,
   "license": "Apache-2.0",
   "type": "module",
   "bin": {
-    "winter": "./src/main.ts"
+    "clover": "./src/main.ts"
   },
   "scripts": {
     "test": "bun test",
-    "compile": "bun build src/embedded-worker.source.ts --target bun --outfile .build/embedded-worker.bundle.js && bun build src/fd-receiver-worker.source.ts --target bun --outfile .build/fd-receiver-worker.bundle.js && bun build --compile --no-compile-autoload-bunfig --no-compile-autoload-dotenv src/main.ts src/embedded-worker.ts src/fd-receiver-worker.ts --outfile ../../dist/winter",
-    "compile:core": "bun build src/embedded-worker.source.ts --target bun --outfile .build/embedded-worker.bundle.js && bun build src/fd-receiver-worker.source.ts --target bun --outfile .build/fd-receiver-worker.bundle.js && bun build --compile --no-compile-autoload-bunfig --no-compile-autoload-dotenv src/main.ts src/embedded-worker.ts src/fd-receiver-worker.ts --outfile ../../dist/winter-core"
+    "compile": "bun build src/embedded-worker.source.ts --target bun --outfile .build/embedded-worker.bundle.js && bun build src/fd-receiver-worker.source.ts --target bun --outfile .build/fd-receiver-worker.bundle.js && bun build --compile --no-compile-autoload-bunfig --no-compile-autoload-dotenv src/main.ts src/embedded-worker.ts src/fd-receiver-worker.ts --outfile ../../dist/clover",
+    "compile:core": "bun build src/embedded-worker.source.ts --target bun --outfile .build/embedded-worker.bundle.js && bun build src/fd-receiver-worker.source.ts --target bun --outfile .build/fd-receiver-worker.bundle.js && bun build --compile --no-compile-autoload-bunfig --no-compile-autoload-dotenv src/main.ts src/embedded-worker.ts src/fd-receiver-worker.ts --outfile ../../dist/clover-core"
   },
   "dependencies": {
-    "@yanlinglabs/winter-core": "workspace:*",
-    "@yanlinglabs/winter-protocol": "workspace:*",
+    "@waifucave/clover-core": "workspace:*",
+    "@waifucave/clover-protocol": "workspace:*",
     "chalk": "^5.6.2",
     "cli-highlight": "^2.1.11",
     "figures": "^6.1.0",

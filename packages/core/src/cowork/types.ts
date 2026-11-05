@@ -1,4 +1,4 @@
-import type { ApprovalPolicy } from "@yanlinglabs/winter-protocol";
+import type { ApprovalPolicy } from "@waifucave/clover-protocol";
 
 export type WorkspaceState = "retained" | "archived" | "deleting" | "deleted";
 export type SourceState = "preparing" | "ready" | "unavailable" | "removing" | "detached";

@@ -1,7 +1,7 @@
 /**
  * Winter for Chrome, end to end (opt-in):
  *
- *   WINTER_BROWSER_E2E=1 WINTER_TEST_CHROME=<Chrome for Testing .app or binary> bun run scripts/browser-e2e/extension/run.ts
+ *   CLOVER_BROWSER_E2E=1 CLOVER_TEST_CHROME=<Chrome for Testing .app or binary> bun run scripts/browser-e2e/extension/run.ts
  *   (also reached as `bun run e2e:browser -- --extension` once lane B's runner dispatches here)
  *
  * The real pieces, nothing of the user's: the dev build of the extension (built into a temp dir), a TEST build of
@@ -21,7 +21,7 @@ import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { WINTER_TEAM_ID } from "../../../packages/core/src/auth/app-token-acl";
+import { CLOVER_TEAM_ID } from "../../../packages/core/src/auth/app-token-acl";
 import { FileSecretStore } from "../../../packages/core/src/auth/secret-store";
 import { cdpEventParams } from "../../../packages/core/src/computer-use/browser/cdp-reduce";
 import { allowedOrigins, EXTENSION_IDS, NATIVE_HOST_NAME } from "../../../packages/core/src/computer-use/browser/extension/extension-ids";
@@ -196,18 +196,18 @@ async function buildTestHost(dir: string): Promise<{ path: string; requirement: 
   const path = join(dir, "winter-browser-host");
   copyFileSync(product, path);
   const hash = await signingHash();
-  const stated = helperRequirement("com.winter.browserhost.test", WINTER_TEAM_ID);
+  const stated = helperRequirement("com.winter.browserhost.test", CLOVER_TEAM_ID);
   const args = ["--force", "--sign", hash, "--identifier", "com.winter.browserhost.test", "--options", "runtime", "--timestamp=none"];
   if (hash !== "-") args.push(`-r=designated => ${stated}`);
   const signed = run("codesign", [...args, path]);
   if (signed.status !== 0) throw new Error(`codesign failed: ${signed.stderr}`);
   const requirement = hash === "-" ? (/^designated => (.+)$/m.exec(run("codesign", ["-d", "-r-", path]).stdout)?.[1]?.trim() ?? "never") : stated;
-  facts.hostSigning = hash === "-" ? "ad-hoc" : "Winter's team";
+  facts.hostSigning = hash === "-" ? "ad-hoc" : "Clover's team";
   return { path, requirement };
 }
 
 function chromeBinary(): string {
-  const raw = process.env.WINTER_TEST_CHROME ?? "";
+  const raw = process.env.CLOVER_TEST_CHROME ?? "";
   if (raw.endsWith(".app")) {
     const plist = run("plutil", ["-extract", "CFBundleExecutable", "raw", "-o", "-", join(raw, "Contents", "Info.plist")]).stdout.trim();
     return join(raw, "Contents", "MacOS", plist);
@@ -284,14 +284,14 @@ async function phase3(p3: CdpTransport, base: string, profile: string): Promise<
     await p3.setMuted!(dl.tabKey, true);
     check(await cdp.inWorker<boolean>(`chrome.tabs.get(${dl.tabKey}).then((t) => t.mutedInfo.muted)`) === true, "mute(): the agent tab is muted");
     await p3.updateGroup!({ sessionId: "s_p3", title: "Renamed" });
-    check(((await cdp.inWorker<string[]>("chrome.tabGroups.query({}).then((gs) => gs.map((g) => g.title))")) ?? []).includes("Winter · Renamed"), "group.update: the session's group renamed, its \"Winter · \" kept");
+    check(((await cdp.inWorker<string[]>("chrome.tabGroups.query({}).then((gs) => gs.map((g) => g.title))")) ?? []).includes("Clover · Renamed"), "group.update: the session's group renamed, its \"Clover · \" kept");
     const wins = await p3.listWindows!();
     check(wins.length >= 1 && wins.some((w) => w.tabs >= 2), "windows.list: the browser's windows with their tab counts", wins);
     const history = await p3.history!({ text: "", maxResults: 5 }).then(() => "ok", (e: { code?: string; data?: Record<string, unknown> }) => `${e.code}:${String(e.data?.permission)}`);
     check(history === "not_allowed:history", "history.search without the optional permission: not_allowed, naming it", history);
     const before = (await p3.listTabs()).filter((x) => x.active).map((x) => x.tabKey);
     check(!before.includes(dl.tabKey), "before the hand-off the agent tab is in the background", before);
-    // The hand-off: brought forward (the one view-moving call), then marked waiting until Winter says otherwise.
+    // The hand-off: brought forward (the one view-moving call), then marked waiting until Clover says otherwise.
     await p3.present!(dl.tabKey, { sessionId: "s_p3" });
     const front = (await p3.listTabs()).filter((x) => x.active).map((x) => x.tabKey);
     check(front.includes(dl.tabKey), "present: the hand-off's tab is brought forward", front);
@@ -305,7 +305,7 @@ async function phase3(p3: CdpTransport, base: string, profile: string): Promise<
 // ── wake triggers through Winter for Chrome 1.2.0: no debugger while it waits ───────────────────────────────────────────
 //
 // The REAL engine and wake backend over the registered transport. The USER is a CDP session of the test's own on the
-// browser's DevTools endpoint, attached to the page — never the extension's debugger, so nothing of Winter's knows.
+// browser's DevTools endpoint, attached to the page — never the extension's debugger, so nothing of Clover's knows.
 
 async function wakeRow(t: CdpTransport, base: string, profile: string): Promise<void> {
   const features = (t as { features?: ReadonlySet<string> }).features ?? new Set<string>();
@@ -314,7 +314,7 @@ async function wakeRow(t: CdpTransport, base: string, profile: string): Promise<
   registry.register(t, { family: "chrome", name: "Chrome for Testing", bundleId: "com.google.chrome.for.testing", instanceKey: "wake-e2e" });
   const home = mkdtempSync(join(tmpdir(), "wfc-wake-home-"));
   const engine = new BrowserEngine({
-    registry, mintWinterTab: () => "unused", winterTabs: () => ({ tabs: [] }), sessionInfo: () => ({ cwd: home, title: "Wake e2e" }),
+    registry, mintCloverTab: () => "unused", cloverTabs: () => ({ tabs: [] }), sessionInfo: () => ({ cwd: home, title: "Wake e2e" }),
     site: { dangerousDomainsAdded: () => [], savedAllowRules: () => [] }, home, persistentlyAllowed: () => true,
   });
   const wakes = new BrowserWakeBackend(engine);
@@ -358,14 +358,14 @@ async function wakeRow(t: CdpTransport, base: string, profile: string): Promise<
   });
   const userReads = (suffix: string, expression: string) => asUser(suffix, async (send) => (await send("Runtime.evaluate", { expression, returnByValue: true })).result.value as unknown);
   try {
-    // The USER's own tab (not Winter's), bound by the engine for one run, then released at the turn's end.
+    // The USER's own tab (not Clover's), bound by the engine for one run, then released at the turn's end.
     await cdp.send("Target.createTarget", { url: `${base}/wake.html?user=1`, background: true });
     let listed: Awaited<ReturnType<CdpTransport["listTabs"]>>[number] | undefined;
     for (let i = 0; i < 50 && listed === undefined; i++) {
       listed = (await t.listTabs()).find((tab) => tab.url.endsWith("/wake.html?user=1"));
       if (listed === undefined) await sleep(100);
     }
-    if (!check(listed !== undefined && !listed.agent, "the user's own tab is listed (not Winter's)", listed)) return;
+    if (!check(listed !== undefined && !listed.agent, "the user's own tab is listed (not Clover's)", listed)) return;
     await sleep(500);
     const run = runScope("rwake1");
     const bound = await engine.global(run.s, "browsers.tab", { tab: `chrome:${listed!.tabKey}` }) as TabHandle;
@@ -399,14 +399,14 @@ async function wakeRow(t: CdpTransport, base: string, profile: string): Promise<
     await sleep(500);
     await userClicks("/wake.html?user=1", "#next");
     const nv = await eventOf(nav.id);
-    // The extension matched the words itself: what reached Winter is the address's site and path, never its query.
-    check(nv?.outcome === "fired" && nv.detail === `now at ${base}/wake.html?… — matched “step=2”`, "the user following a link fires the { url } wake (the extension's tabs.onUpdated; no query reaches Winter)", nv ?? events);
+    // The extension matched the words itself: what reached Clover is the address's site and path, never its query.
+    check(nv?.outcome === "fired" && nv.detail === `now at ${base}/wake.html?… — matched “step=2”`, "the user following a link fires the { url } wake (the extension's tabs.onUpdated; no query reaches Clover)", nv ?? events);
     const dn = await eventOf(done.id);
     check(dn?.outcome === "fired" && dn.detail === "appeared", "the new document gets the watcher again, and its text fires the appeared wake", dn ?? events);
     const left = await cdp.inWorker<number>(`chrome.debugger.getTargets().then((ts) => ts.filter((x) => x.attached && x.tabId === ${listed!.tabKey}).length)`);
     check(left === 0, "…with no debugger attached at any point of the wait", left);
 
-    // The extension's own-input stamp: Winter's own click through the extension's debugger never fires a wake.
+    // The extension's own-input stamp: Clover's own click through the extension's debugger never fires a wake.
     const runOwn = runScope("rwake-own");
     const mine = await engine.global(runOwn.s, "browsers.tab", { tab: `chrome:${listed!.tabKey}` }) as TabHandle;
     const stOwn = await engine.primitive(runOwn.s, mine.targetId, "state", { full: true, emit: false }) as string;
@@ -414,7 +414,7 @@ async function wakeRow(t: CdpTransport, base: string, profile: string): Promise<
     const ownWake = await arm(mine.targetId, { kind: "clicked", ref: refOwn(/button "Next button"/) });
     await engine.primitive(runOwn.s, mine.targetId, "click", { target: Number(refOwn(/button "Next button"/)) });
     await sleep(1_500);
-    check(!events.some((e) => e.wakeId === ownWake.id), "Winter's own click (its debugger, stamped own) never fires the wake", events.filter((e) => e.wakeId === ownWake.id));
+    check(!events.some((e) => e.wakeId === ownWake.id), "Clover's own click (its debugger, stamped own) never fires the wake", events.filter((e) => e.wakeId === ownWake.id));
     runOwn.end();
     engine.turnEnded("s_wake");
     await sleep(500);
@@ -448,7 +448,7 @@ async function wakeRow(t: CdpTransport, base: string, profile: string): Promise<
 // ── the run ───────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 /** A unix socket path is at most 103 bytes (`sockaddr_un`), and the host refuses a longer one. The per-process test
- *  root under `$TMPDIR` (`winter-test-XXXXXX`) pushed `<home>/run/browser.sock` past it, so the run dir lives directly
+ *  root under `$TMPDIR` (`clover-test-XXXXXX`) pushed `<home>/run/browser.sock` past it, so the run dir lives directly
  *  in the per-user temp dir (`getconf DARWIN_USER_TEMP_DIR`) and is removed at the end like before. */
 const SOCKET_PATH_MAX = 103;
 function socketSafeTempDir(): string {
@@ -458,7 +458,7 @@ function socketSafeTempDir(): string {
 
 async function main(): Promise<void> {
   const exe = chromeBinary();
-  if (!existsSync(exe)) throw new Error(`WINTER_TEST_CHROME (${process.env.WINTER_TEST_CHROME}) is not Chrome for Testing`);
+  if (!existsSync(exe)) throw new Error(`CLOVER_TEST_CHROME (${process.env.CLOVER_TEST_CHROME}) is not Chrome for Testing`);
   facts.chrome = run(exe, ["--version"]).stdout.trim();
   mkdirSync(OUT, { recursive: true });
   const root = realpathSync(mkdtempSync(join(socketSafeTempDir(), "wfc-e2e-")));
@@ -519,7 +519,7 @@ async function main(): Promise<void> {
       await sleep(100);
       userTab = (await transport.listTabs()).find((x) => x.url.endsWith("/user.html"));
     }
-    check(userTab !== undefined && userTab.active && !userTab.agent, "tabs.list: the user's tab, active, not Winter's", userTab ?? await transport.listTabs());
+    check(userTab !== undefined && userTab.active && !userTab.agent, "tabs.list: the user's tab, active, not Clover's", userTab ?? await transport.listTabs());
 
     // ── an agent tab, in the background ──
     const tab = await transport.createTab({ sessionId: "s_e2e", sessionTitle: "Winter for Chrome e2e", url: `${base}/page.html?frame=${encodeURIComponent(crossSite)}` });
@@ -547,7 +547,7 @@ async function main(): Promise<void> {
     const evalIn = <T>(expression: string, contextId = world.executionContextId, cdpSessionId?: string) =>
       transport.send<{ result: { value?: T; objectId?: string } }>(tab.tabKey, "Runtime.evaluate", { contextId, expression, returnByValue: true }, cdpSessionId === undefined ? {} : { cdpSessionId });
     const title = await evalIn<string>("document.title");
-    check(title.result.value === "Winter e2e page", "Runtime.evaluate in the \"winter\" world reads the page", title);
+    check(title.result.value === "Clover e2e page", "Runtime.evaluate in the \"winter\" world reads the page", title);
 
     // The world rules and the allowlist, enforced by the extension itself (raw requests past the daemon's own check).
     const raw = (method: string, params: Record<string, unknown>) =>
@@ -565,14 +565,14 @@ async function main(): Promise<void> {
     check(await code(raw("Page.navigate", { url: "javascript:document.title='pwned'" })) === "not_allowed", "…and Page.navigate to a javascript: URL");
     check(await code(raw("Page.navigate", { url: "file:///etc/hosts" })) === "not_allowed", "…and to a file: URL");
     const titleAfter = await evalIn<string>("document.title");
-    check(titleAfter.result.value === "Winter e2e page", "…none of which ran", titleAfter.result.value);
+    check(titleAfter.result.value === "Clover e2e page", "…none of which ran", titleAfter.result.value);
 
     // Phase 4 (WebMCP, Route A): the page's own tools are read and run from the winter world through Winter for Chrome
     // — the engine's page runtime does exactly this inside Runtime.callFunctionOn; nothing new is allowlisted.
-    const inWinter = <T>(expression: string) => transport.send<{ result: { value?: T } }>(tab.tabKey, "Runtime.evaluate", { contextId: world.executionContextId, expression, returnByValue: true, awaitPromise: true });
-    const listed = await inWinter<string>("(async () => { const mc = document.modelContext; if (!mc) return 'no API'; const ts = await mc.getTools(); return ts.filter((t) => t.window === window).map((t) => t.name).join(','); })()");
+    const inClover = <T>(expression: string) => transport.send<{ result: { value?: T } }>(tab.tabKey, "Runtime.evaluate", { contextId: world.executionContextId, expression, returnByValue: true, awaitPromise: true });
+    const listed = await inClover<string>("(async () => { const mc = document.modelContext; if (!mc) return 'no API'; const ts = await mc.getTools(); return ts.filter((t) => t.window === window).map((t) => t.name).join(','); })()");
     check(listed.result.value === "count_clicks", "WebMCP through the extension: the winter world lists the page's own tool", listed.result.value);
-    const ran = await inWinter<string>("(async () => { const mc = document.modelContext; const t = (await mc.getTools()).find((x) => x.name === 'count_clicks'); try { return await mc.executeTool(t, '{}'); } catch (e) { if (!(e instanceof TypeError)) throw e; return await mc.executeTool(t, {}); } })()");
+    const ran = await inClover<string>("(async () => { const mc = document.modelContext; const t = (await mc.getTools()).find((x) => x.name === 'count_clicks'); try { return await mc.executeTool(t, '{}'); } catch (e) { if (!(e instanceof TypeError)) throw e; return await mc.executeTool(t, {}); } })()");
     check(typeof ran.result.value === "string" && JSON.parse(ran.result.value).clicks === 0, "…and runs it there (the page's own callback answers)", ran.result.value);
 
     // Network events arrive reduced (Phase 3: the request's URL and method, its timing and frame — never headers, cookies
@@ -594,9 +594,9 @@ async function main(): Promise<void> {
     check(clicks.result.value === "1", "a click through Input.dispatchMouseEvent lands in the background tab", clicks);
     await transport.send(tab.tabKey, "DOM.enable");
     const notes = await evalIn<string>("(() => { document.getElementById('notes').focus(); return document.activeElement?.id; })()");
-    await transport.send(tab.tabKey, "Input.insertText", { text: "typed by Winter" });
+    await transport.send(tab.tabKey, "Input.insertText", { text: "typed by Clover" });
     const typed = await evalIn<string>("document.getElementById('notes').value");
-    check(notes.result.value === "notes" && typed.result.value === "typed by Winter", "focus (with focus emulation) and Input.insertText type into the background tab", { focused: notes.result.value, typed: typed.result.value });
+    check(notes.result.value === "notes" && typed.result.value === "typed by Clover", "focus (with focus emulation) and Input.insertText type into the background tab", { focused: notes.result.value, typed: typed.result.value });
 
     // The overlay: one element, in a closed shadow root, drawn by the extension's isolated world.
     await sleep(500);
@@ -670,7 +670,7 @@ async function main(): Promise<void> {
     await transport.keepTab(second.tabKey);
     const afterKeep = (await transport.listTabs()).find((x) => x.tabKey === second.tabKey);
     check(afterKeep !== undefined && !afterKeep.agent, "keepTab: the tab is the user's from then on", afterKeep);
-    check(await code(transport.closeTab(second.tabKey)) === "not_allowed", "…and Winter can no longer close it");
+    check(await code(transport.closeTab(second.tabKey)) === "not_allowed", "…and Clover can no longer close it");
     check(await code(transport.closeTab(userTab!.tabKey)) === "not_allowed", "closeTab refuses the user's tab");
 
     const activeTrail: string[] = [];
@@ -689,7 +689,7 @@ async function main(): Promise<void> {
       await transport.send(bu.tabKey, "Input.insertText", { text: "x" });
       await noteActive(`(${variant}) after the input`);
       if (variant === "not attached") await transport.detach(bu.tabKey);
-      check((await groupTitles()).includes(`Winter · Leave test ${variant}`), `(${variant}) the agent tab sits in its session's Winter group`, await groupTitles());
+      check((await groupTitles()).includes(`Clover · Leave test ${variant}`), `(${variant}) the agent tab sits in its session's Clover group`, await groupTitles());
       await noteActive(`(${variant}) after reading the groups`);
       const started = Date.now();
       const closed = await code(transport.closeTab(bu.tabKey));
@@ -698,16 +698,16 @@ async function main(): Promise<void> {
       check(closed === "ok" && !still && ms < 5000, `(${variant}) closeTab closes a page that asks "leave this page?" — no dialog left behind (${ms} ms)`, { closed, still, ms });
       const activeNow = (await transport.listTabs()).filter((x) => x.active).map((x) => x.tabKey);
       check(JSON.stringify(activeNow) === JSON.stringify([userTab!.tabKey]), `(${variant}) …and nothing came forward: the user's tab is still the active one`, activeNow);
-      check(!(await groupTitles()).includes(`Winter · Leave test ${variant}`), `(${variant}) …and its group is gone with its last tab`, await groupTitles());
+      check(!(await groupTitles()).includes(`Clover · Leave test ${variant}`), `(${variant}) …and its group is gone with its last tab`, await groupTitles());
       await noteActive(`after the leave test (${variant})`);
     }
 
-    // Leaving such a page by NAVIGATING (goto, reload, back) in a background agent tab Winter typed into: the extension
+    // Leaving such a page by NAVIGATING (goto, reload, back) in a background agent tab Clover typed into: the extension
     // discards it first, then runs the engine's own command on the same debugger session. Nothing comes forward (the
     // browser's own activation events are counted in the service worker), and the engine sees what it waits for: a
     // top-frame commit — for goto, of the answer's loaderId — then that document's DOMContentLoaded; the discard's own
     // events (a stand-in document's load, no commit) come before the commit.
-    await browserCdp.inWorker("(globalThis.__winterE2EActivations = [], chrome.tabs.onActivated.addListener((i) => globalThis.__winterE2EActivations.push(i.tabId)), true)");
+    await browserCdp.inWorker("(globalThis.__cloverE2EActivations = [], chrome.tabs.onActivated.addListener((i) => globalThis.__cloverE2EActivations.push(i.tabId)), true)");
     const nav = await transport.createTab({ sessionId: "s_nav", sessionTitle: "Leave by navigating", url: `${base}/bu.html` });
     await sleep(800);
     await transport.attach(nav.tabKey, { sessionId: "s_nav" });
@@ -749,8 +749,8 @@ async function main(): Promise<void> {
       }
       check(!seen.some((e) => e.method === "Page.javascriptDialogOpening"), `${what}: …no "leave this page?" was raised`);
       const now = (await transport.listTabs()).find((x) => x.tabKey === nav.tabKey);
-      check(now?.url === expectUrl && now.agent && !now.active, `${what}: …the tab is at ${expectUrl.replace(base, "")}, still Winter's, still in the background`, now);
-      const activations = await browserCdp.inWorker<number[]>("globalThis.__winterE2EActivations");
+      check(now?.url === expectUrl && now.agent && !now.active, `${what}: …the tab is at ${expectUrl.replace(base, "")}, still Clover's, still in the background`, now);
+      const activations = await browserCdp.inWorker<number[]>("globalThis.__cloverE2EActivations");
       const active = (await transport.listTabs()).filter((x) => x.active).map((x) => x.tabKey);
       check((activations ?? []).length === 0 && JSON.stringify(active) === JSON.stringify([userTab!.tabKey]), `${what}: …nothing came forward: no tab was activated, the user's is still the active one`, { activations, active });
       await noteActive(`after ${what}`);
@@ -762,11 +762,11 @@ async function main(): Promise<void> {
     check(back?.url === `${base}/bu.html`, "the history survived the discards: one entry back is the first page", history.entries.map((x) => x.url.replace(base, "")));
     await leave("back after typing", "Page.navigateToHistoryEntry", { entryId: back?.id ?? -1 }, true, `${base}/bu.html`);
     await leave("goto without input", "Page.navigate", { url: `${base}/frame.html` }, false, `${base}/frame.html`);
-    check(await code(transport.closeTab(nav.tabKey)) === "ok" && !(await groupTitles()).includes("Winter · Leave by navigating"), "the navigated agent tab closes, and its group goes with it", await groupTitles());
+    check(await code(transport.closeTab(nav.tabKey)) === "ok" && !(await groupTitles()).includes("Clover · Leave by navigating"), "the navigated agent tab closes, and its group goes with it", await groupTitles());
 
     // The service worker restarts (stopped through DevTools — `chrome.runtime.reload()` of this command-line-loaded
     // build does not come back in Chrome for Testing — then woken by a tab event): it reconnects on its own, still knows
-    // which tabs are Winter's, and has let go of the debugger and overlay its predecessor held.
+    // which tabs are Clover's, and has let go of the debugger and overlay its predecessor held.
     const kept = await transport.createTab({ sessionId: "s_restart", sessionTitle: "Restart test", url: `${base}/frame.html` });
     await sleep(800);
     await transport.attach(kept.tabKey, { sessionId: "s_restart" });
@@ -837,12 +837,12 @@ async function main(): Promise<void> {
   }
 }
 
-if (process.env.WINTER_BROWSER_E2E !== "1") {
-  console.error("browser-e2e (extension): skipped — set WINTER_BROWSER_E2E=1 (and WINTER_TEST_CHROME) to run it");
+if (process.env.CLOVER_BROWSER_E2E !== "1") {
+  console.error("browser-e2e (extension): skipped — set CLOVER_BROWSER_E2E=1 (and CLOVER_TEST_CHROME) to run it");
   process.exit(0);
 }
-if (!process.env.WINTER_TEST_CHROME) {
-  console.error("browser-e2e (extension): WINTER_TEST_CHROME is not set — point it at Chrome for Testing (a .app or its binary)");
+if (!process.env.CLOVER_TEST_CHROME) {
+  console.error("browser-e2e (extension): CLOVER_TEST_CHROME is not set — point it at Chrome for Testing (a .app or its binary)");
   process.exit(1);
 }
 try {

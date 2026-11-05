@@ -1,4 +1,4 @@
-import type { SessionEvent } from "@yanlinglabs/winter-protocol";
+import type { SessionEvent } from "@waifucave/clover-protocol";
 import { createProjector } from "../../src/projector";
 import type { CheckpointStore, ProjectedBatch, ProjectionKey, Projector, ProjectorDeps, ProtocolSdkMessage } from "../../src/projector";
 

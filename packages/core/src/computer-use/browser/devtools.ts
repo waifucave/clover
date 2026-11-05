@@ -1,6 +1,6 @@
 // ComputerV2 Phase 3 — a tab's DEVELOPER READERS: its console (`console()`) and its network log (`network()`,
 // `networkBody(id)`), kept per tab by its driver from the events the transport lets through — already reduced by
-// `cdp-reduce.ts` (no header, cookie, post data or page object ever reaches here). What Winter saw while it worked in
+// `cdp-reduce.ts` (no header, cookie, post data or page object ever reaches here). What Clover saw while it worked in
 // the tab: nothing arrives while the tab is released (a user's tab, a built-in tab's hold, at turn end). Every text the
 // model reads is redacted here (token-looking runs, credentials in URLs) and printed fenced by the engine.
 import { redactText, redactUrl } from "./page-runtime/redact";
@@ -109,12 +109,12 @@ export class TabDevtools {
 
   constructor(private readonly now: () => number = () => Date.now()) {}
 
-  /** Feed one (reduced) event. `isWinterContext` drops anything the engine's own world logged. */
-  onEvent(method: string, params: Record<string, unknown>, session: string | undefined, isWinterContext: (id: number) => boolean): void {
+  /** Feed one (reduced) event. `isCloverContext` drops anything the engine's own world logged. */
+  onEvent(method: string, params: Record<string, unknown>, session: string | undefined, isCloverContext: (id: number) => boolean): void {
     switch (method) {
       case "Runtime.consoleAPICalled": {
         const ctx = num(params.executionContextId);
-        if (ctx !== undefined && isWinterContext(ctx)) return;
+        if (ctx !== undefined && isCloverContext(ctx)) return;
         const type = str(params.type) ?? "log";
         if (type === "endGroup" || type === "clear") return;
         const frames = isRecord(params.stackTrace) && Array.isArray(params.stackTrace.callFrames) ? params.stackTrace.callFrames : [];
@@ -125,7 +125,7 @@ export class TabDevtools {
       case "Runtime.exceptionThrown": {
         const d = isRecord(params.exceptionDetails) ? params.exceptionDetails : {};
         const ctx = num(d.executionContextId);
-        if (ctx !== undefined && isWinterContext(ctx)) return;
+        if (ctx !== undefined && isCloverContext(ctx)) return;
         const ex = isRecord(d.exception) ? d.exception : {};
         const text = str(ex.description) ?? str(d.text) ?? "Uncaught exception";
         const lead = str(d.text);
@@ -204,8 +204,8 @@ export class TabDevtools {
     this.addLog("page", `— new page: ${redactUrl(cut(url, 200))} —`, this.now(), undefined, `p|${this.now()}|${url}`);
   }
 
-  /** Stretches of time Winter was NOT in the tab on purpose (the sign-in hand-off): the browser replays what the page
-   *  logged meanwhile when Winter attaches again (`Runtime.enable`, `Log.enable`), and none of it is Winter's to read. */
+  /** Stretches of time Clover was NOT in the tab on purpose (the sign-in hand-off): the browser replays what the page
+   *  logged meanwhile when Clover attaches again (`Runtime.enable`, `Log.enable`), and none of it is Clover's to read. */
   private readonly hidden: Array<[number, number]> = [];
   /** Entries with no time of their own that arrive while the tab is being taken back are replays too. */
   private hidingUntimed = false;

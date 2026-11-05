@@ -1,4 +1,4 @@
-// ComputerV2 Phase 2 — APP ADAPTERS, the shapes. An adapter is Winter's own, reviewed knowledge of one app: a few
+// ComputerV2 Phase 2 — APP ADAPTERS, the shapes. An adapter is Clover's own, reviewed knowledge of one app: a few
 // functions made for it (`app.extras.<name>(…)`), each with an ACCESS CLASS the per-app policy applies, and at most one
 // short guide. Both reach the model only in a TOOL RESULT (the bind that first meets the app, again after a compaction,
 // and `app.help()`), never in the tool description, which stays fixed per incarnation.
@@ -106,10 +106,10 @@ export interface AdapterScope {
   /**
    * The BOUND window's id — what every extra that works on "a window" or "the current tab/document" must address
    * (`window id <it>` in AppleScript, for an app whose scripting window id is that same window-server id). Never the
-   * app's front window: the user's own window may be in front. Throws `NoWindow` when Winter does not know it.
+   * app's front window: the user's own window may be in front. Throws `NoWindow` when Clover does not know it.
    */
   window(): number;
-  /** Winter's own AppleScript against this app; a string result as the string itself (the helper's display form
+  /** Clover's own AppleScript against this app; a string result as the string itself (the helper's display form
    *  decoded — `appleScriptText`), any other value as AppleScript displays it. */
   applescript(source: string, o?: { timeoutMs?: number }): Promise<string | null>;
   find(query: string | { role?: string; name?: string; text?: string }): Promise<FindResult["elements"]>;
@@ -122,9 +122,9 @@ export interface AdapterScope {
   openDocument(path: string, opener?: string): Promise<{ name: string; bundleId: string; handle?: AppHandle }>;
   /** Text read from the app, printed in place: DATA, inside the fence. */
   print(text: string): void;
-  /** Winter's own words, printed in place outside the fence (never app text). */
+  /** Clover's own words, printed in place outside the fence (never app text). */
   say(text: string): void;
-  /** Winter's own words the model must not miss: a notice before the script's output. */
+  /** Clover's own words the model must not miss: a notice before the script's output. */
   notice(text: string): void;
   clampWait(ms: number): number;
   /** Sleep, unless the run is cancelled first (`false` then). */

@@ -6,12 +6,12 @@ import { describe, expect, test } from "bun:test";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, ERR, type WritableSocket } from "@yanlinglabs/winter-protocol";
+import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, ERR, type WritableSocket } from "@waifucave/clover-protocol";
 import { startIpcServer } from "../../src/ipc/server";
 import { SessionStore } from "../../src/sessions/store";
 import { FileSecretStore } from "../../src/auth/secret-store";
 import { TokenAuthority } from "../../src/auth/tokens";
-import { sessionCwdRefusal, type WinterSessionDrivers, type LegSession } from "../../src/runtime-sdk/session-driver";
+import { sessionCwdRefusal, type CloverSessionDrivers, type LegSession } from "../../src/runtime-sdk/session-driver";
 import { ImportLegacySessionError } from "../../src/runtime-sdk/import-legacy";
 
 class TestClient {
@@ -50,7 +50,7 @@ class TestClient {
 
 /** A driver table whose `legOf`/`get`/`ensure` all read ONE mutable ref — `importSession` flips it,
  *  which is what lets the test observe "ensure() only succeeds AFTER importSession() ran". */
-function fakeTable(opts: { leg: { current: "engine" | "winter" | undefined }; sent: string[] }): WinterSessionDrivers {
+function fakeTable(opts: { leg: { current: "engine" | "winter" | undefined }; sent: string[] }): CloverSessionDrivers {
   const legNow = opts.leg;
   const never = (): never => { throw new Error("not reached by this test"); };
   const session: LegSession = {
@@ -75,11 +75,11 @@ function fakeTable(opts: { leg: { current: "engine" | "winter" | undefined }; se
   };
 }
 
-async function boot(winter: WinterSessionDrivers, store: SessionStore, home: string, importLegacy?: { importSession(sessionId: string): Promise<{ backendSessionId: string; entries: number }> }) {
+async function boot(clover: CloverSessionDrivers, store: SessionStore, home: string, importLegacy?: { importSession(sessionId: string): Promise<{ backendSessionId: string; entries: number }> }) {
   const authority = new TokenAuthority(new FileSecretStore(join(home, "secrets.json")));
   const tokens = await authority.ensureTokens();
   const socketPath = join(home, "core.sock");
-  const server = startIpcServer({ socketPath, serverVersion: "test", tokens: authority, store, winter, importLegacy });
+  const server = startIpcServer({ socketPath, serverVersion: "test", tokens: authority, store, clover, importLegacy });
   const c = await TestClient.connect(socketPath);
   await c.hello(tokens.harness, "mac");
   return { server, c };
@@ -87,7 +87,7 @@ async function boot(winter: WinterSessionDrivers, store: SessionStore, home: str
 
 describe("session.send — the P8c-6 engine-era import door", () => {
   test("an engine-era session is imported ONCE, then the send proceeds on the newly-resumable leg", async () => {
-    const home = mkdtempSync(join(tmpdir(), "winter-send-import-"));
+    const home = mkdtempSync(join(tmpdir(), "clover-send-import-"));
     const store = new SessionStore(home);
     const sessionId = store.createSession("global");
     const sent: string[] = [];
@@ -118,7 +118,7 @@ describe("session.send — the P8c-6 engine-era import door", () => {
   });
 
   test("a live/resumable session never triggers an import attempt", async () => {
-    const home = mkdtempSync(join(tmpdir(), "winter-send-import-live-"));
+    const home = mkdtempSync(join(tmpdir(), "clover-send-import-live-"));
     const store = new SessionStore(home);
     const sessionId = store.createSession("global");
     const sent: string[] = [];
@@ -140,7 +140,7 @@ describe("session.send — the P8c-6 engine-era import door", () => {
   });
 
   test("no importLegacy hook wired: an engine-era session keeps the ordinary permanent refusal", async () => {
-    const home = mkdtempSync(join(tmpdir(), "winter-send-import-none-"));
+    const home = mkdtempSync(join(tmpdir(), "clover-send-import-none-"));
     const store = new SessionStore(home);
     const sessionId = store.createSession("global");
     const table = fakeTable({ leg: { current: "engine" }, sent: [] });
@@ -160,12 +160,12 @@ describe("session.send — the P8c-6 engine-era import door", () => {
   // session), so it travels as INVALID_PARAMS — the class the other client-actionable refusals use —
   // never INTERNAL, which a client renders as a daemon fault.
   test("session_cwd_unavailable reaches the client as INVALID_PARAMS with its typed code and the path", async () => {
-    const home = mkdtempSync(join(tmpdir(), "winter-send-cwd-gone-"));
+    const home = mkdtempSync(join(tmpdir(), "clover-send-cwd-gone-"));
     const store = new SessionStore(home);
     const sessionId = store.createSession("global");
     const gone = join(home, "deleted-project");
     const refusal = sessionCwdRefusal(gone)!;
-    const table: WinterSessionDrivers = {
+    const table: CloverSessionDrivers = {
       ...fakeTable({ leg: { current: "winter" }, sent: [] }),
       get: () => undefined,
       ensure: async () => { throw refusal; },
@@ -185,7 +185,7 @@ describe("session.send — the P8c-6 engine-era import door", () => {
   });
 
   test("m1 (whole-branch review): the attachment check runs BEFORE the import attempt — a client attached elsewhere never triggers it", async () => {
-    const home = mkdtempSync(join(tmpdir(), "winter-send-import-attach-"));
+    const home = mkdtempSync(join(tmpdir(), "clover-send-import-attach-"));
     const store = new SessionStore(home);
     const sessionIdA = store.createSession("global");
     const sessionIdB = store.createSession("global");
@@ -213,7 +213,7 @@ describe("session.send — the P8c-6 engine-era import door", () => {
   });
 
   test("an import failure is refused typed, never a silent fall-through to the log-only path", async () => {
-    const home = mkdtempSync(join(tmpdir(), "winter-send-import-fail-"));
+    const home = mkdtempSync(join(tmpdir(), "clover-send-import-fail-"));
     const store = new SessionStore(home);
     const sessionId = store.createSession("global");
     const table = fakeTable({ leg: { current: "engine" }, sent: [] });

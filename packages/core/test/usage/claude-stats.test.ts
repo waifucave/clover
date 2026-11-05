@@ -1,5 +1,5 @@
 // Claude Code's `/stats` history (`docs/claude/usage.md`, `usage/claude-stats.ts`): synthetic per-model daily rows for
-// the days Winter's transcript ingest cannot cover — the boundary, the no-overlap rule, stable re-imports, the
+// the days Clover's transcript ingest cannot cover — the boundary, the no-overlap rule, stable re-imports, the
 // calibration, the ratio split and cost math, the size cap, a missing or corrupt file, the tracking switch, and the
 // privacy rule (the cache's session id and counters never reach the DB, its WAL, a log line or an RPC answer).
 import { describe, expect, test } from "bun:test";
@@ -23,7 +23,7 @@ const D = "kimi-k2-thinking"; // unpriced too, but Claude Code kept a cost for i
 
 const DECOYS = ["DECOY-SESSION-5a5a-longest", "DECOY-OTHER-KEY-77", "2026-01-02T03:04:05.678Z"];
 
-/** A stats cache shaped like Claude Code's (version 5), with decoys in every key Winter must NOT read. */
+/** A stats cache shaped like Claude Code's (version 5), with decoys in every key Clover must NOT read. */
 function statsCache(days: Record<string, Record<string, number>>, opts: { modelUsage?: Record<string, Record<string, number>>; lastComputedDate?: string; v?: number | null } = {}): string {
   return JSON.stringify({
     version: 5, lastComputedDate: opts.lastComputedDate ?? "2026-10-17",
@@ -53,7 +53,7 @@ function setup(opts: { tracking?: UsageTracking; claudeStatsMaxBytes?: number; f
   const clock = { now: NOW };
   const svc = new UsageService({
     db, pricer, tracking: () => tracking, claudeHome,
-    codexExecutable: () => undefined, claudeExecutable: () => undefined, winterCodexWindows: () => [],
+    codexExecutable: () => undefined, claudeExecutable: () => undefined, cloverCodexWindows: () => [],
     probeRoot: () => probeRootIn(home), ingestEveryMs: 0, now: () => clock.now, log: { warn: log, info: log },
     ...(opts.claudeStatsMaxBytes === undefined ? {} : { claudeStatsMaxBytes: opts.claudeStatsMaxBytes }),
     ...(opts.fileBudgetBytes === undefined ? {} : { fileBudgetBytes: opts.fileBudgetBytes }),
@@ -181,7 +181,7 @@ describe("re-imports", () => {
     const before = synthetic(env.db);
     const svc2 = new UsageService({
       db: env.db, pricer, tracking: () => env.tracking, claudeHome: env.claudeHome, codexExecutable: () => undefined, claudeExecutable: () => undefined,
-      winterCodexWindows: () => [], probeRoot: () => probeRootIn(env.home), ingestEveryMs: 0, now: () => NOW,
+      cloverCodexWindows: () => [], probeRoot: () => probeRootIn(env.home), ingestEveryMs: 0, now: () => NOW,
     });
     await svc2.ingest(true);
     expect(synthetic(env.db)).toEqual(before);
@@ -468,7 +468,7 @@ describe("review fixes: transcripts win whatever the stats file's state; stable 
   });
 });
 
-describe("partial days: Claude Code's cleanup emptied them before Winter read them", () => {
+describe("partial days: Claude Code's cleanup emptied them before Clover read them", () => {
   // A fresh DB's first read is NOW (2026-10-18 09:00 UTC): with the 30-day retention, 09-18 and every day before it are
   // partial; 09-19 on was read while all of its transcripts were still on disk.
   const A_SPLIT = { input: 1000, output: 3000, cacheRead: 5000, cacheWrite: 1000, costUsd: 0 };
@@ -543,7 +543,7 @@ describe("partial days: Claude Code's cleanup emptied them before Winter read th
     expect(synthetic(db)).toEqual(before);
   });
 
-  test("Winter's first read is remembered: a restart days later keeps the boundary", async () => {
+  test("Clover's first read is remembered: a restart days later keeps the boundary", async () => {
     const env = scene();
     await env.svc.ingest(true);
     const before = synthetic(env.db);
@@ -551,9 +551,9 @@ describe("partial days: Claude Code's cleanup emptied them before Winter read th
     const later = NOW + 10 * 86_400_000;
     const svc2 = new UsageService({
       db: env.db, pricer, tracking: () => env.tracking, claudeHome: env.claudeHome, codexExecutable: () => undefined, claudeExecutable: () => undefined,
-      winterCodexWindows: () => [], probeRoot: () => probeRootIn(env.home), ingestEveryMs: 0, now: () => later,
+      cloverCodexWindows: () => [], probeRoot: () => probeRootIn(env.home), ingestEveryMs: 0, now: () => later,
     });
-    // Claude Code's cleanup takes the resumed session's file: its rows are Winter's already.
+    // Claude Code's cleanup takes the resumed session's file: its rows are Clover's already.
     rmSync(claudeTranscriptPath(env.claudeHome, "cc-resumed"));
     await svc2.ingest(true);
     expect(synthetic(env.db)).toEqual(before);
@@ -569,7 +569,7 @@ describe("partial days: Claude Code's cleanup emptied them before Winter read th
     env.db.db.run(`UPDATE ingest_files SET updated_at = ${NOW - 5 * 86_400_000} WHERE source = 'claude-code'`);
     const svc2 = new UsageService({
       db: env.db, pricer, tracking: () => env.tracking, claudeHome: env.claudeHome, codexExecutable: () => undefined, claudeExecutable: () => undefined,
-      winterCodexWindows: () => [], probeRoot: () => probeRootIn(env.home), ingestEveryMs: 0, now: () => NOW,
+      cloverCodexWindows: () => [], probeRoot: () => probeRootIn(env.home), ingestEveryMs: 0, now: () => NOW,
     });
     await svc2.ingest(true);
     expect(state(env.db).firstPassAt).toBe(NOW - 5 * 86_400_000);
@@ -577,10 +577,10 @@ describe("partial days: Claude Code's cleanup emptied them before Winter read th
     expect([...byKey(env.db).keys()].sort()).toEqual([`ccstats:${A}:2026-09-10`, `ccstats:${A}:2026-09-12`]);
   });
 
-  test("Winter away longer than the retention: the days in between become partial and are estimated", async () => {
+  test("Clover away longer than the retention: the days in between become partial and are estimated", async () => {
     const env = scene();
     await env.svc.ingest(true);
-    // 45 days later. Claude Code ran on 10-22 meanwhile; its cleanup took those transcripts before Winter came back.
+    // 45 days later. Claude Code ran on 10-22 meanwhile; its cleanup took those transcripts before Clover came back.
     env.clock.now = NOW + 45 * 86_400_000; // 2026-12-02
     transcripts(env.claudeHome, ["2026-11-25", "2026-11-26", "2026-11-27", "2026-11-28"], 10_000, A, "cc-back");
     writeFileSync(env.statsPath, statsCache({
@@ -590,7 +590,7 @@ describe("partial days: Claude Code's cleanup emptied them before Winter read th
     await env.svc.ingest(true);
     expect(state(env.db).gaps).toEqual([["2026-10-18", "2026-11-02"]]);
     expect(total(byKey(env.db).get(`ccstats:${A}:2026-10-22`))).toBe(4_000);
-    // Days read in full before Winter left are untouched.
+    // Days read in full before Clover left are untouched.
     expect(byKey(env.db).has(`ccstats:${A}:2026-10-02`)).toBe(false);
   });
 

@@ -1,5 +1,5 @@
 // ComputerV2 Phase 4 — the headless browser stays off the LOCAL NETWORK (the user's ruling: this Mac's own servers are
-// allowed, the LAN is refused, decided by the address as written). Winter's headless browser is a Winter-owned Chromium
+// allowed, the LAN is refused, decided by the address as written). Clover's headless browser is a Clover-owned Chromium
 // the model drives with no one watching: pointed at the LAN it would be an SSRF pivot into the user's network (a
 // router's admin page, a NAS, a printer), and on macOS a page reaching the local network makes the system ask about
 // Local Network access — a prompt in front of the user.
@@ -16,7 +16,7 @@
 // `.private` and `.localdomain`, and a single-label name ("router", "nas").
 
 /** The private-network sentence the model reads. */
-export const HEADLESS_LAN_REFUSAL = "Winter's headless browser doesn't open pages on the local network (a private, link-local or .local address) — only public sites and this Mac's own servers (localhost)";
+export const HEADLESS_LAN_REFUSAL = "Clover's headless browser doesn't open pages on the local network (a private, link-local or .local address) — only public sites and this Mac's own servers (localhost)";
 
 /** Name suffixes only a local network resolves. Winter Headless also maps every name under them to "not found" in its
  *  browser's own resolver (`--host-resolver-rules`, `HeadlessNetworkRule.hostResolverRulesSwitch`), so nothing it runs

@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { SessionEvent } from "@yanlinglabs/winter-protocol";
+import { SessionEvent } from "@waifucave/clover-protocol";
 import { SessionMessaging, type SessionMessagingDeps } from "../../src/agent/session-messaging";
 import { coworkLostInputNotice, coworkStalledInboxNotice } from "../../src/cowork/held-input";
 import { coworkHeldInputGate, coworkPeerInboxNotes, type CoworkNoticeSink } from "../../src/cowork/peer-inbox-composition";

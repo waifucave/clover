@@ -37,7 +37,7 @@ export type WorkerRunOutcome =
 
 export interface AutomationWorkerOptions {
   command?: () => AutomationWorkerCommand;
-  /** Paths the worker may never read, whatever else its profile allows — `<WINTER_HOME>` and the Read fence's set. */
+  /** Paths the worker may never read, whatever else its profile allows — `<CLOVER_HOME>` and the Read fence's set. */
   denyRead?: readonly string[];
   /** How long to wait for the worker's `ready` line. */
   readyTimeoutMs?: number;

@@ -2,8 +2,8 @@ import { describe, expect, test, spyOn } from "bun:test";
 import { mkdtempSync, writeFileSync, readFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { loadSettings, loadPermissionDirs, addLocalDir, saveSettings, Settings, REASONING_EFFORTS, CLIENT_EFFORTS, isClientEffort, wireEffort, clientEffortEligible, setProviderModel, setReasoningEffort, hooksEnabledFrom, setOutputStyle, workflowsEnabledFrom, keywordTriggerEnabledFrom, cleanerEnabledFrom, computerUseEnabledFrom, lspEnabledFrom, winterOptionsFromSettings, DEFAULT_WINTER_IDLE_TIMEOUT_SEC, DEFAULT_PROVIDER, pinsFor, setModelRole, modelRoleInfo, setSkillDenied, skillDenyRule, MODEL_ROLES, roleEffortFor, roleAcceptsClientEffort, roleCarriesEffort, effortToSpendForRole, retiredRuntimeSettingKeys } from "../src/settings";
-import { ModelRole as ProtocolModelRole } from "@yanlinglabs/winter-protocol";
+import { loadSettings, loadPermissionDirs, addLocalDir, saveSettings, Settings, REASONING_EFFORTS, CLIENT_EFFORTS, isClientEffort, wireEffort, clientEffortEligible, setProviderModel, setReasoningEffort, hooksEnabledFrom, setOutputStyle, workflowsEnabledFrom, keywordTriggerEnabledFrom, cleanerEnabledFrom, computerUseEnabledFrom, lspEnabledFrom, cloverOptionsFromSettings, DEFAULT_WINTER_IDLE_TIMEOUT_SEC, DEFAULT_PROVIDER, pinsFor, setModelRole, modelRoleInfo, setSkillDenied, skillDenyRule, MODEL_ROLES, roleEffortFor, roleAcceptsClientEffort, roleCarriesEffort, effortToSpendForRole, retiredRuntimeSettingKeys } from "../src/settings";
+import { ModelRole as ProtocolModelRole } from "@waifucave/clover-protocol";
 import { mkdirSync, writeFileSync as wf } from "node:fs";
 import { UNSTATED_TAG, type ModelTag } from "../src/runtime-sdk/model-tag";
 import { setPluginEnabled } from "../src/plugins/lifecycle";
@@ -21,7 +21,7 @@ const LEGACY_DEFAULT_CODEX_MODEL = "gpt-5.6-sol";
 const tag = (s: string): ModelTag => s as ModelTag;
 
 function tmpSettings(content: unknown): string {
-  const p = join(mkdtempSync(join(tmpdir(), "winter-set-")), "settings.json");
+  const p = join(mkdtempSync(join(tmpdir(), "clover-set-")), "settings.json");
   writeFileSync(p, JSON.stringify(content));
   return p;
 }
@@ -110,7 +110,7 @@ describe("loadSettings", () => {
   });
 
   test("missing settings file throws a readable error", () => {
-    expect(() => loadSettings(join(mkdtempSync(join(tmpdir(), "winter-set-")), "settings.json"))).toThrow(/winter daemon run/);
+    expect(() => loadSettings(join(mkdtempSync(join(tmpdir(), "clover-set-")), "settings.json"))).toThrow(/clover daemon run/);
   });
 
   test("legacy v1-app settings (no schemaVersion) migrate, preserving v1 keys — in the PARSED result and, given persistMigration: true, on disk", () => {
@@ -256,7 +256,7 @@ describe("loadSettings", () => {
     });
 
     // CORRECTED RULING (read-door follow-up): `<home>/settings.json` can be hand-edited by a human
-    // OUTSIDE Winter entirely, and `loadSettings` refusing to LOAD such a file is far worse than the
+    // OUTSIDE Clover entirely, and `loadSettings` refusing to LOAD such a file is far worse than the
     // leak the WRITE door guards against — `daemon.ts`'s boot hook treats any `loadSettings` throw
     // as "settings unavailable, agent disabled", so ONE hand-edited header on ONE configured MCP
     // server used to disable EVERY session on the machine. The WRITE door (`saveSettings`, and any
@@ -479,7 +479,7 @@ describe("loadSettings", () => {
     expect(() => Settings.parse({ schemaVersion: 3, provider: { model: "codex-oauth/gpt-5.4" }, subagents: { maxConcurrent: -1 } })).toThrow();
   });
 
-  // 4h-i Task 3: subagents.maxDepth — CC parity (CC allows nesting depth up to 5; Winter's engine
+  // 4h-i Task 3: subagents.maxDepth — CC parity (CC allows nesting depth up to 5; Clover's engine
   // defaults to 2 when this is unset — see engine.ts's `subagentMaxDepth ?? 2`).
   test("subagents.maxDepth parses (1-5 inclusive); absent → undefined; out-of-range/non-integer rejected", () => {
     const s = Settings.parse({ schemaVersion: 3, provider: { model: "codex-oauth/gpt-5.4" }, subagents: { maxDepth: 3 } });
@@ -573,7 +573,7 @@ describe("loadSettings", () => {
   // "ultra" was added to REASONING_EFFORTS on 2026-07-10 from a reading of the live /models
   // catalogue that was never checked against the request validator. Effort is GLOBAL and
   // HOT-RELOADED (providers/manager.ts's live resolver re-reads settings.json every turn), so
-  // `winter model --effort ultra` doesn't fail at set-time — it silently PERSISTS, and then breaks
+  // `clover model --effort ultra` doesn't fail at set-time — it silently PERSISTS, and then breaks
   // EVERY session with an opaque HTTP 400 one turn later. Measured live against the Codex OAuth
   // endpoint this session (do not re-derive, do not weaken): "ultra" is rejected by a DIFFERENT,
   // GLOBAL enum layer (`invalid_value`, model-agnostic) than per-model rejections; "none" is
@@ -587,7 +587,7 @@ describe("loadSettings", () => {
     const s = Settings.parse({ schemaVersion: 3, provider: { model: "codex-oauth/gpt-5.6-sol", reasoningEffort: "none" } });
     expect(s.provider.reasoningEffort).toBe("none");
 
-    // The actual `winter model --effort ultra` path: setReasoningEffort + saveSettings (which
+    // The actual `clover model --effort ultra` path: setReasoningEffort + saveSettings (which
     // validates before writing). Before this task's fix, this round-trip SUCCEEDED and wrote
     // "ultra" to settings.json on disk — exactly the write that then 400s every session's next
     // turn against the live endpoint.
@@ -596,9 +596,9 @@ describe("loadSettings", () => {
   });
 
   // ----------------------------------------------------------------------------------------------
-  // provider-correctness T5 — the WINTER-LEVEL tier vocabulary (`CLIENT_EFFORTS`), which lives beside
+  // provider-correctness T5 — the CLOVER-LEVEL tier vocabulary (`CLIENT_EFFORTS`), which lives beside
   // `REASONING_EFFORTS` precisely so the two are read together and never conflated. `REASONING_EFFORTS`
-  // is what the endpoint's request validator accepts; `CLIENT_EFFORTS` is what Winter offers on top and
+  // is what the endpoint's request validator accepts; `CLIENT_EFFORTS` is what Clover offers on top and
   // TRANSLATES away before a request exists. The two must stay disjoint, and `wireEffort` must be a
   // TOTAL function into the first set — those are the only two properties that keep `ultra` off the wire.
   // ----------------------------------------------------------------------------------------------
@@ -777,7 +777,7 @@ describe("cleanerEnabledFrom (session-activity-hygiene T7: cleaner.enabled defau
   });
 
   test("the flag round-trips through a real settings.json (the watcher's own read path)", () => {
-    const p = join(mkdtempSync(join(tmpdir(), "winter-cleaner-settings-")), "settings.json");
+    const p = join(mkdtempSync(join(tmpdir(), "clover-cleaner-settings-")), "settings.json");
     saveSettings(p, Settings.parse({ ...base, cleaner: { enabled: false } }));
     expect(cleanerEnabledFrom(loadSettings(p))).toBe(false);
   });
@@ -848,14 +848,14 @@ describe("MODEL_ROLES / protocol ModelRole parity (Minor 5f)", () => {
 
 describe("saveSettings", () => {
   test("writes a file that loadSettings round-trips", () => {
-    const p = join(mkdtempSync(join(tmpdir(), "winter-save-")), "settings.json");
+    const p = join(mkdtempSync(join(tmpdir(), "clover-save-")), "settings.json");
     const s: Settings = { schemaVersion: 3, provider: { model: tag("codex-oauth/gpt-5.4") }, plugins: { enabled: ["a"] } };
     saveSettings(p, s);
     expect(loadSettings(p)).toEqual(s);
   });
 
   test("throws on an invalid object (bad schemaVersion) and does not write", () => {
-    const p = join(mkdtempSync(join(tmpdir(), "winter-save-")), "settings.json");
+    const p = join(mkdtempSync(join(tmpdir(), "clover-save-")), "settings.json");
     expect(() => saveSettings(p, { schemaVersion: 1, provider: { model: "codex-oauth/gpt-5.4" } } as unknown as Settings)).toThrow();
   });
 
@@ -874,13 +874,13 @@ describe("saveSettings", () => {
         enabledPlugins: ["foo", "bar"],
         // unknown key NESTED inside a KNOWN, non-strict block — `reviewer` only models
         // enabled/model/allow/classes; `hooks` here is the claude-agent-sdk's own hook-config
-        // shape, not Winter's `hooks.enabled` key, and lives inside a block Winter DOES define.
+        // shape, not Clover's `hooks.enabled` key, and lives inside a block Clover DOES define.
         reviewer: { enabled: true, hooks: { PreToolUse: [{ matcher: "Bash", hooks: [] }] } },
       }, null, 2));
     }
 
     test("survives a setModelRole write (titles.model)", () => {
-      const p = join(mkdtempSync(join(tmpdir(), "winter-save-unknown-")), "settings.json");
+      const p = join(mkdtempSync(join(tmpdir(), "clover-save-unknown-")), "settings.json");
       diskWithUnknownKeys(p);
       const before = loadSettings(p);
       const next = setModelRole(before, "titles.model", "codex-oauth/gpt-5.6-luna");
@@ -897,7 +897,7 @@ describe("saveSettings", () => {
     });
 
     test("survives a plugin.enable-shaped write (setPluginEnabled)", () => {
-      const p = join(mkdtempSync(join(tmpdir(), "winter-save-unknown-")), "settings.json");
+      const p = join(mkdtempSync(join(tmpdir(), "clover-save-unknown-")), "settings.json");
       diskWithUnknownKeys(p);
       const before = loadSettings(p);
       const next = setPluginEnabled(before, "my-plugin", true);
@@ -910,7 +910,7 @@ describe("saveSettings", () => {
     });
 
     test("a torn on-disk file falls back to writing the caller's value verbatim (no crash, no merge attempted)", () => {
-      const p = join(mkdtempSync(join(tmpdir(), "winter-save-unknown-")), "settings.json");
+      const p = join(mkdtempSync(join(tmpdir(), "clover-save-unknown-")), "settings.json");
       wf(p, "{not valid json"); // torn
       const s: Settings = { schemaVersion: 3, provider: { model: tag("codex-oauth/gpt-5.6-sol") } };
       expect(() => saveSettings(p, s)).not.toThrow();
@@ -918,7 +918,7 @@ describe("saveSettings", () => {
     });
 
     test("clearing a known field (setModelRole → null) removes it even though it survives on disk before the write", () => {
-      const p = join(mkdtempSync(join(tmpdir(), "winter-save-unknown-")), "settings.json");
+      const p = join(mkdtempSync(join(tmpdir(), "clover-save-unknown-")), "settings.json");
       wf(p, JSON.stringify({
         schemaVersion: 3,
         provider: { model: "codex-oauth/gpt-5.6-sol" },
@@ -936,7 +936,7 @@ describe("saveSettings", () => {
     });
 
     test("does not trigger extra writes (single writeFileSync call — no reload-storm risk)", () => {
-      const p = join(mkdtempSync(join(tmpdir(), "winter-save-unknown-")), "settings.json");
+      const p = join(mkdtempSync(join(tmpdir(), "clover-save-unknown-")), "settings.json");
       diskWithUnknownKeys(p);
       const before = loadSettings(p);
       saveSettings(p, setModelRole(before, "titles.model", "codex-oauth/gpt-5.6-luna"));
@@ -954,7 +954,7 @@ describe("saveSettings", () => {
     // `.strict()` schema then refused them at the second `Settings.parse`. Measured red before the
     // fix: `unrecognized_keys ["type"] at ["provider"]`.
     test("a v2-shaped `provider` block on disk survives a setModelRole write (BLOCKER)", () => {
-      const p = join(mkdtempSync(join(tmpdir(), "winter-save-v2-provider-")), "settings.json");
+      const p = join(mkdtempSync(join(tmpdir(), "clover-save-v2-provider-")), "settings.json");
       wf(p, JSON.stringify({
         schemaVersion: 2,
         provider: { type: "codex-oauth", model: "codex-oauth/gpt-5.6-sol" },
@@ -974,7 +974,7 @@ describe("saveSettings", () => {
     // carries on disk is simply carried through a save, like any other unknown key, and never costs
     // the write.
     test("a stray legacy `runtimes.official.auth` key on disk rides through a setSkillDenied write untouched (WS-23)", () => {
-      const p = join(mkdtempSync(join(tmpdir(), "winter-save-v2-official-")), "settings.json");
+      const p = join(mkdtempSync(join(tmpdir(), "clover-save-v2-official-")), "settings.json");
       wf(p, JSON.stringify({
         schemaVersion: 3,
         provider: { model: "codex-oauth/gpt-5.6-sol" },
@@ -1001,7 +1001,7 @@ describe("saveSettings", () => {
     // field inside one server's config is dropped, and a legacy typeless stdio entry is normalized
     // (an explicit `type: "stdio"` written back) on any unrelated save that round-trips it.
     test("an unknown field nested inside one mcpServers entry does NOT survive a save (corrected doc, 5b)", () => {
-      const p = join(mkdtempSync(join(tmpdir(), "winter-save-mcp-entry-")), "settings.json");
+      const p = join(mkdtempSync(join(tmpdir(), "clover-save-mcp-entry-")), "settings.json");
       wf(p, JSON.stringify({
         schemaVersion: 3,
         provider: { model: "codex-oauth/gpt-5.6-sol" },
@@ -1019,7 +1019,7 @@ describe("saveSettings", () => {
   });
 });
 
-describe("setProviderModel / setReasoningEffort (winter model CLI's pure transforms)", () => {
+describe("setProviderModel / setReasoningEffort (clover model CLI's pure transforms)", () => {
   test("setProviderModel changes only provider.model, preserving every other field", () => {
     const s: Settings = { schemaVersion: 3, provider: { model: tag("codex-oauth/gpt-5.6-sol"), reasoningEffort: "high" }, plugins: { enabled: ["a"] } };
     const next = setProviderModel(s, tag("codex-oauth/gpt-5.6-luna"));
@@ -1079,7 +1079,7 @@ describe("setModelRole: the catalog-membership check", () => {
   });
 
   // Not leniency: `winter-test/*` is not a catalog provider at all (provider-selection.ts's
-  // WINTER_TEST_MODEL_PREFIX — "must never be resolved against one"), and setProviderModel has always
+  // CLOVER_TEST_MODEL_PREFIX — "must never be resolved against one"), and setProviderModel has always
   // taken it. A catalog lookup would refuse every test harness that names its own fake model.
   test("winter-test/* is exempt, because it is not a catalog namespace", () => {
     expect(setModelRole(base, "pins.dispatch", "winter-test/echo").pins?.dispatch).toBe(tag("winter-test/echo"));
@@ -1111,7 +1111,7 @@ describe("setModelRole: the catalog-membership check", () => {
     expect(setModelRole(base, "titles.model", notYetCredentialed).titles?.model).toBe(tag(notYetCredentialed));
   });
 
-  // WS-23: `anthropic` is an ordinary eligible provider now (every model runs on the Winter SDK), and
+  // WS-23: `anthropic` is an ordinary eligible provider now (every model runs on the Clover SDK), and
   // so is `console` since the live-gate fix (its bearer slot is an inventory row the Anthropic adapter
   // is driven over) — while a provider whose adapter family the daemon cannot drive stays refused.
   test("an internal-jobs role ACCEPTS anthropic and console, and still REFUSES an undrivable provider, saying why", () => {
@@ -1172,7 +1172,7 @@ describe("role reasoning efforts (roleEfforts / roleEffortFor / roleAcceptsClien
     expect(set.provider.reasoningEffort).toBe("max");
     expect(set.roleEfforts).toBeUndefined();
     expect(roleEffortFor(set, "provider.model")).toBe("max");
-    // And an effort written the OLD way (`winter model --effort`) reads back through the role door.
+    // And an effort written the OLD way (`clover model --effort`) reads back through the role door.
     const legacy = setReasoningEffort(base, "low");
     expect(roleEffortFor(legacy, "provider.model")).toBe("low");
     expect(modelRoleInfo(legacy, "provider.model")).toMatchObject({ effort: "low", effortExplicit: true });
@@ -1214,7 +1214,7 @@ describe("role reasoning efforts (roleEfforts / roleEffortFor / roleAcceptsClien
     expect(() => setModelRole(base, "pins.dispatch", "openai/o4-mini", "max"))
       .toThrow(/effort 'max' is not accepted by model 'openai\/o4-mini' — supported: none, low, medium, high/);
     expect(roleEffortFor(setModelRole(base, "pins.dispatch", "openai/o4-mini", "high"), "pins.dispatch")).toBe("high");
-    // `"none"` is never in a catalog vocabulary (it is Winter's own unset) but is always accepted on a
+    // `"none"` is never in a catalog vocabulary (it is Clover's own unset) but is always accepted on a
     // row that HAS one — the `effortsForModel` rule, restated by this door.
     expect(roleEffortFor(setModelRole(base, "pins.dispatch", "codex-oauth/gpt-5.6-terra", "none"), "pins.dispatch")).toBe("none");
   });
@@ -1305,15 +1305,15 @@ describe("role reasoning efforts (roleEfforts / roleEffortFor / roleAcceptsClien
       expect(roleEffortFor(setModelRole(stale, "runtimes.advisorModel", "codex-oauth/gpt-5.6-terra", null), "runtimes.advisorModel")).toBeUndefined();
       expect(() => setModelRole(base, "runtimes.advisorModel", "codex-oauth/gpt-5.6-terra", "high")).toThrow(/cannot run at a chosen reasoning effort/);
       // A tier keeps its own, more specific refusal.
-      expect(() => setModelRole(base, "runtimes.advisorModel", "codex-oauth/gpt-5.6-terra", "ultra")).toThrow(/Winter-level tier/);
+      expect(() => setModelRole(base, "runtimes.advisorModel", "codex-oauth/gpt-5.6-terra", "ultra")).toThrow(/Clover-level tier/);
     });
   });
 
-  test("a Winter-level tier is refused on every role, and no role accepts one today", () => {
+  test("a Clover-level tier is refused on every role, and no role accepts one today", () => {
     for (const role of MODEL_ROLES) expect(roleAcceptsClientEffort(role)).toBe(false);
     for (const tier of CLIENT_EFFORTS) {
-      expect(() => setModelRole(base, "pins.dispatch", "codex-oauth/gpt-5.6-terra", tier)).toThrow(/Winter-level tier/);
-      expect(() => setModelRole(base, "provider.model", "codex-oauth/gpt-5.6-sol", tier)).toThrow(/Winter-level tier/);
+      expect(() => setModelRole(base, "pins.dispatch", "codex-oauth/gpt-5.6-terra", tier)).toThrow(/Clover-level tier/);
+      expect(() => setModelRole(base, "provider.model", "codex-oauth/gpt-5.6-sol", tier)).toThrow(/Clover-level tier/);
     }
     // The dispatch arm is asked through `clientEffortEligible` rather than hardcoded, so the role
     // answer and the session answer move together.
@@ -1376,13 +1376,13 @@ describe("permission directories", () => {
   });
 
   test("loadPermissionDirs merges user + project + local, expands ~, dedups (trusted project)", () => {
-    const home = mkdtempSync(join(tmpdir(), "winter-perm-home-"));
-    const project = mkdtempSync(join(tmpdir(), "winter-perm-proj-"));
+    const home = mkdtempSync(join(tmpdir(), "clover-perm-home-"));
+    const project = mkdtempSync(join(tmpdir(), "clover-perm-proj-"));
     wf(join(home, "settings.json"), JSON.stringify({ schemaVersion: 3, provider: { model: "codex-oauth/gpt-5.4" }, permissions: { additionalDirectories: ["~/shared"] } }));
-    mkdirSync(join(project, ".winter"), { recursive: true });
-    wf(join(project, ".winter", "settings.json"), JSON.stringify({ permissions: { additionalDirectories: ["/opt/data", "~/shared"] } }));
-    wf(join(project, ".winter", "settings.local.json"), JSON.stringify({ permissions: { additionalDirectories: ["/tmp/local-grant"] } }));
-    // committed .winter/settings.json only merges when the project is trusted — see
+    mkdirSync(join(project, ".clover"), { recursive: true });
+    wf(join(project, ".clover", "settings.json"), JSON.stringify({ permissions: { additionalDirectories: ["/opt/data", "~/shared"] } }));
+    wf(join(project, ".clover", "settings.local.json"), JSON.stringify({ permissions: { additionalDirectories: ["/tmp/local-grant"] } }));
+    // committed .clover/settings.json only merges when the project is trusted — see
     // "loadPermissionDirs trust gating" below for the untrusted-gates-it-out coverage.
     const dirs = loadPermissionDirs(home, project, true);
     const { homedir } = require("node:os");
@@ -1393,31 +1393,31 @@ describe("permission directories", () => {
   });
 
   test("loadPermissionDirs tolerates missing files and missing blocks", () => {
-    const home = mkdtempSync(join(tmpdir(), "winter-perm-h2-"));
+    const home = mkdtempSync(join(tmpdir(), "clover-perm-h2-"));
     expect(loadPermissionDirs(home)).toEqual([]); // nothing configured
   });
 
   test("addLocalDir appends to settings.local.json without duplicates", () => {
-    const project = mkdtempSync(join(tmpdir(), "winter-perm-add-"));
+    const project = mkdtempSync(join(tmpdir(), "clover-perm-add-"));
     addLocalDir(project, "/opt/one");
     addLocalDir(project, "/opt/one"); // dup ignored
     addLocalDir(project, "/opt/two");
-    const local = JSON.parse(require("node:fs").readFileSync(join(project, ".winter", "settings.local.json"), "utf8"));
+    const local = JSON.parse(require("node:fs").readFileSync(join(project, ".clover", "settings.local.json"), "utf8"));
     expect(local.permissions.additionalDirectories).toEqual(["/opt/one", "/opt/two"]);
   });
 });
 
 describe("loadPermissionDirs trust gating", () => {
   function scaffold() {
-    const home = mkdtempSync(join(tmpdir(), "winter-tg-home-"));
-    const project = mkdtempSync(join(tmpdir(), "winter-tg-proj-"));
-    mkdirSync(join(project, ".winter"), { recursive: true });
+    const home = mkdtempSync(join(tmpdir(), "clover-tg-home-"));
+    const project = mkdtempSync(join(tmpdir(), "clover-tg-proj-"));
+    mkdirSync(join(project, ".clover"), { recursive: true });
     // WS-21: the user tier is `sdk/settings.json`; a stale copy left in `settings.json` is never read.
     wf(join(home, "settings.json"), JSON.stringify({ schemaVersion: 3, provider: { model: "codex-oauth/gpt-5.4" }, permissions: { additionalDirectories: ["/opt/stale-dir"] } }));
     mkdirSync(join(home, "sdk"), { recursive: true });
     wf(join(home, "sdk", "settings.json"), JSON.stringify({ permissions: { additionalDirectories: ["/opt/user-dir"] } }));
-    wf(join(project, ".winter", "settings.json"), JSON.stringify({ permissions: { additionalDirectories: ["/opt/committed-dir"] } }));       // committed → trust-gated
-    wf(join(project, ".winter", "settings.local.json"), JSON.stringify({ permissions: { additionalDirectories: ["/opt/local-dir"] } }));    // fix-wave A2: local is ALSO trust-gated now (a repo can force-commit one)
+    wf(join(project, ".clover", "settings.json"), JSON.stringify({ permissions: { additionalDirectories: ["/opt/committed-dir"] } }));       // committed → trust-gated
+    wf(join(project, ".clover", "settings.local.json"), JSON.stringify({ permissions: { additionalDirectories: ["/opt/local-dir"] } }));    // fix-wave A2: local is ALSO trust-gated now (a repo can force-commit one)
     return { home, project };
   }
 
@@ -1439,10 +1439,10 @@ describe("loadPermissionDirs trust gating", () => {
   });
 
   test("SECURITY: an untrusted committed settings.json cannot self-grant a broad root", () => {
-    const home = mkdtempSync(join(tmpdir(), "winter-tg-h2-"));
-    const project = mkdtempSync(join(tmpdir(), "winter-tg-p2-"));
-    mkdirSync(join(project, ".winter"), { recursive: true });
-    wf(join(project, ".winter", "settings.json"), JSON.stringify({ permissions: { additionalDirectories: ["/", "~"] } }));
+    const home = mkdtempSync(join(tmpdir(), "clover-tg-h2-"));
+    const project = mkdtempSync(join(tmpdir(), "clover-tg-p2-"));
+    mkdirSync(join(project, ".clover"), { recursive: true });
+    wf(join(project, ".clover", "settings.json"), JSON.stringify({ permissions: { additionalDirectories: ["/", "~"] } }));
     const { homedir } = require("node:os");
     const untrusted = loadPermissionDirs(home, project, false);
     expect(untrusted).not.toContain("/");
@@ -1475,7 +1475,7 @@ describe("settings.runtimes", () => {
     expect(Settings.parse({ ...base, runtimes: {} }).runtimes).toEqual({
       retention: { deliveriesDays: 30, nameLeasesDays: 7 },
       migrations: { memoryKeys: false },
-      // P8b Task 15: the Winter-leg keys default to "behave exactly as this daemon does today" —
+      // P8b Task 15: the Clover-leg keys default to "behave exactly as this daemon does today" —
       // and Task 17 Step 1 flipped dispatch once its e2e proof landed.
       winterLeg: { chat: true, dispatch: true, code: true },
       winterIdleTimeoutSec: 900,
@@ -1507,7 +1507,7 @@ describe("settings.runtimes", () => {
     expect(() => Settings.parse({ ...base, runtimes: { retention: { deliveriesDays: -30 } } })).toThrow();
   });
 
-  // ── P8b Task 15: the Winter-leg keys ───────────────────────────────────────────────────────────
+  // ── P8b Task 15: the Clover-leg keys ───────────────────────────────────────────────────────────
   // Every one of them defaults to today's behaviour, because a daemon that has never been configured
   // must not change what it does when this build lands.
 
@@ -1515,7 +1515,7 @@ describe("settings.runtimes", () => {
     expect(Settings.parse({ ...base, runtimes: {} }).runtimes?.winterLeg).toEqual({ chat: true, dispatch: true, code: true });
     expect(Settings.parse({ ...base, runtimes: { winterLeg: { dispatch: false } } }).runtimes?.winterLeg)
       .toEqual({ chat: true, dispatch: false, code: true });
-    expect(winterOptionsFromSettings(Settings.parse({ ...base, runtimes: { winterLeg: { dispatch: false } } })).winterLeg)
+    expect(cloverOptionsFromSettings(Settings.parse({ ...base, runtimes: { winterLeg: { dispatch: false } } })).winterLeg)
       .toEqual({ chat: true, dispatch: true, code: true });
   });
 
@@ -1547,9 +1547,9 @@ describe("settings.runtimes", () => {
     // Asserting today's behaviour rather than choosing one: zod v4's `z.object()` strips unknown
     // keys, which is what lets a user's file survive a downgrade and what `loadSettings`'s own v1
     // migration comment already relies on. A future `.strict()` here would turn every settings.json
-    // written by a NEWER Winter into a boot failure on an older one.
-    const parsed = Settings.parse({ ...base, runtimes: { winterLegg: { chat: true }, nonsense: 1 } });
-    expect(parsed.runtimes).not.toHaveProperty("winterLegg");
+    // written by a NEWER Clover into a boot failure on an older one.
+    const parsed = Settings.parse({ ...base, runtimes: { cloverLegg: { chat: true }, nonsense: 1 } });
+    expect(parsed.runtimes).not.toHaveProperty("cloverLegg");
     expect(parsed.runtimes).not.toHaveProperty("nonsense");
     expect(parsed.runtimes?.winterLeg).toEqual({ chat: true, dispatch: true, code: true });
     // And the same one level up, so this is the schema's convention rather than a local accident.
@@ -1589,7 +1589,7 @@ describe("retired official-leg settings (WS-23)", () => {
   });
 
   test("a settings.json naming them loads through loadSettings, never a throw", () => {
-    const p = join(mkdtempSync(join(tmpdir(), "winter-retired-keys-")), "settings.json");
+    const p = join(mkdtempSync(join(tmpdir(), "clover-retired-keys-")), "settings.json");
     wf(p, JSON.stringify({ ...base, runtimes: { claudeExecutable: "/opt/claude", official: { subscriptionAuth: true }, handoff: { crossRuntime: true } } }, null, 2));
     expect(() => loadSettings(p)).not.toThrow();
   });
@@ -1605,8 +1605,8 @@ describe("retired official-leg settings (WS-23)", () => {
     expect(retiredRuntimeSettingKeys(Settings.parse({ ...base, runtimes: { official: {} } }))).toEqual(["runtimes.official"]);
   });
 
-  test("the retired keys reach no reader: winterOptionsFromSettings carries no claudeExecutable", () => {
-    const options = winterOptionsFromSettings(Settings.parse({ ...base, runtimes: { claudeExecutable: "/opt/claude" } }));
+  test("the retired keys reach no reader: cloverOptionsFromSettings carries no claudeExecutable", () => {
+    const options = cloverOptionsFromSettings(Settings.parse({ ...base, runtimes: { claudeExecutable: "/opt/claude" } }));
     expect("claudeExecutable" in options).toBe(false);
   });
 
@@ -1672,7 +1672,7 @@ describe("WS-20: pinsFor", () => {
   // WS-20 (review round 2, M6 fix — R2): a `winter-test/*` primary (provider-less; the string
   // "winter-test" is never a pinned catalog provider) used to fall to UNSTATED_TAG the same way a
   // real non-serving provider does — but there is no OTHER model for the double to default to, so
-  // every winter-test-primary daemon's dispatch/dream/cleaner/research refused outright. The
+  // every clover-test-primary daemon's dispatch/dream/cleaner/research refused outright. The
   // primary tag IS the pin instead: every slot defaults to the SAME double the session runs on.
   test("R2: a winter-test/* primary makes every pin default to the primary tag itself, never UNSTATED", () => {
     const s = { schemaVersion: 3, provider: { model: "winter-test/echo" } } as unknown as Settings;
@@ -1699,31 +1699,31 @@ describe("WS-20: pinsFor", () => {
 // P8b Task 15 / review r1 F4: ONE door answers for an absent block and a blank string, so three
 // lanes (Task 2's executable resolver, Task 5's create.ts, Task 9's leg + Task 16's idle timer)
 // cannot each re-derive the conventions and cannot silently forget one.
-describe("winterOptionsFromSettings", () => {
+describe("cloverOptionsFromSettings", () => {
   const base = { schemaVersion: 3 as const, provider: { model: DEFAULT_PROVIDER.model } };
 
   test("an absent runtimes block answers with today's behaviour, not with undefined", () => {
-    expect(winterOptionsFromSettings(Settings.parse(base))).toEqual({
+    expect(cloverOptionsFromSettings(Settings.parse(base))).toEqual({
       idleTimeoutSec: 900,
       winterLeg: { chat: true, dispatch: true, code: true },
     });
   });
 
   test("null/undefined settings answer the same way — the daemon boots with `settings = null` when the file is unusable", () => {
-    expect(winterOptionsFromSettings(null)).toEqual(winterOptionsFromSettings(undefined));
-    expect(winterOptionsFromSettings(null).winterLeg).toEqual({ chat: true, dispatch: true, code: true });
-    expect(winterOptionsFromSettings(null).idleTimeoutSec).toBe(900);
+    expect(cloverOptionsFromSettings(null)).toEqual(cloverOptionsFromSettings(undefined));
+    expect(cloverOptionsFromSettings(null).winterLeg).toEqual({ chat: true, dispatch: true, code: true });
+    expect(cloverOptionsFromSettings(null).idleTimeoutSec).toBe(900);
   });
 
   test("a blank or whitespace-only executable/model is ABSENT, never the empty string", () => {
-    const blank = winterOptionsFromSettings(Settings.parse({ ...base, runtimes: { winterExecutable: "   ", advisorModel: "" } }));
+    const blank = cloverOptionsFromSettings(Settings.parse({ ...base, runtimes: { winterExecutable: "   ", advisorModel: "" } }));
     expect(blank.winterExecutable).toBeUndefined();
     expect(blank.advisorModel).toBeUndefined();
     expect(blank).not.toHaveProperty("winterExecutable");
   });
 
   test("real values come through trimmed", () => {
-    const set = winterOptionsFromSettings(Settings.parse({ ...base, runtimes: { winterExecutable: " /opt/winter/bin/winter ", advisorModel: "some-model", winterIdleTimeoutSec: 60, winterLeg: { chat: true } } }));
+    const set = cloverOptionsFromSettings(Settings.parse({ ...base, runtimes: { winterExecutable: " /opt/winter/bin/winter ", advisorModel: "some-model", winterIdleTimeoutSec: 60, winterLeg: { chat: true } } }));
     expect(set).toEqual({
       winterExecutable: "/opt/winter/bin/winter",
       advisorModel: "some-model",
@@ -1734,7 +1734,7 @@ describe("winterOptionsFromSettings", () => {
 
   test("the schema default and the absent-block answer are the same number", () => {
     expect(Settings.parse({ ...base, runtimes: {} }).runtimes?.winterIdleTimeoutSec).toBe(DEFAULT_WINTER_IDLE_TIMEOUT_SEC);
-    expect(winterOptionsFromSettings(Settings.parse(base)).idleTimeoutSec).toBe(DEFAULT_WINTER_IDLE_TIMEOUT_SEC);
+    expect(cloverOptionsFromSettings(Settings.parse(base)).idleTimeoutSec).toBe(DEFAULT_WINTER_IDLE_TIMEOUT_SEC);
   });
 });
 

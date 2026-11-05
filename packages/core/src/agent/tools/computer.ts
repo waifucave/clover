@@ -4,7 +4,7 @@ import type { PeripheralClass } from "../../peripheral/broker";
 
 /**
  * `computer` (Phase 5 CU) — the computer-use tool. ONE tool with an `action` discriminant; each
- * action maps to a peripheral capability class leased from Winter.app (spec §4.6):
+ * action maps to a peripheral capability class leased from Clover.app (spec §4.6):
  *
  *   ax_snapshot → ax-read      (PRIMARY grounding: a text tree of on-screen elements with ids +
  *                               role/label/value + AX-sourced screen-space center coordinates)
@@ -12,14 +12,14 @@ import type { PeripheralClass } from "../../peripheral/broker";
  *                               captures a REGION at full resolution — the dense-UI/Retina detail
  *                               path. Both need a vision-capable model.)
  *   click/move/drag/type/key/scroll → input-drive (act on an element id — native AXPress — or x,y)
- *   wait → NO peripheral class  (a pure core-side timer: no lease, no Winter.app round-trip)
+ *   wait → NO peripheral class  (a pure core-side timer: no lease, no Clover.app round-trip)
  *
  * A PLAIN TOOL (not an engine bridge): everything it needs is `ctx.computerUse.act(...)` (the
  * lease-holding ComputerUseService) + `ctx.attachImage` (staging a screenshot for the model). The
  * tool builds the provider payload, calls the service, and shapes the model-facing result.
  *
  * Errors surface as isError tool_results (thrown → the registry catches them): "computer use
- * unavailable — Winter.app not running" (no provider / lease gone), a denial message (policy), or the
+ * unavailable — Clover.app not running" (no provider / lease gone), a denial message (policy), or the
  * provider's own message (e.g. missing TCC grant).
  *
  * DELIBERATELY SKIPPED actions (user decision 2026-07-12, logged in the phase report): raw
@@ -196,7 +196,7 @@ function formatResult(a: ComputerArgsT, resultJson: string, attachImage?: (u: st
       ? ` The image was downscaled to ${sw}×${sh}; multiply positions read off the image by ${((w as number) / (sw as number)).toFixed(3)} first${a.action === "zoom" ? ", then add the origin" : ""} — or better, target ax_snapshot element ids.`
       : "";
     const label = a.action === "zoom" ? `Zoomed region captured (${dims} at screen origin ${typeof parsed.originX === "number" ? `(${parsed.originX},${parsed.originY})` : "?"})` : `Screenshot captured (screen is ${dims})`;
-    // Only claim an image when something took it (`attachImage`): on the Winter leg the capability server
+    // Only claim an image when something took it (`attachImage`): on the Clover leg the capability server
     // returns it inside this result (`capabilities/server.ts`'s `resultWithImages`).
     return dataUrl && attachImage ? `${label}. The image is attached to this result.${originNote}${scaleNote}` : `${label}.`;
   }
@@ -237,7 +237,7 @@ export function computerToolDefs(
     name: "computer",
     description:
       "Control this Mac: read the accessibility tree (ax_snapshot), take a screenshot (or zoom into a region), click/drag/type/press keys/scroll, and wait for the UI to settle. " +
-      "Ground actions on ax_snapshot elements (exact) before falling back to a screenshot. Requires Winter.app running with the relevant permissions granted.",
+      "Ground actions on ax_snapshot elements (exact) before falling back to a screenshot. Requires Clover.app running with the relevant permissions granted.",
     args: ComputerArgs,
     rawParameters: RAW_PARAMETERS,
     modes: ["code", "dispatch"], // R-T2: was DISPATCH_ALLOW_TOOLS's literal membership

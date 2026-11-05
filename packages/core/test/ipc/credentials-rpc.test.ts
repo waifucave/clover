@@ -2,7 +2,7 @@ import { afterEach, describe, expect, spyOn, test } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { ERR, LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, CredentialListResult, type WritableSocket } from "@yanlinglabs/winter-protocol";
+import { ERR, LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, CredentialListResult, type WritableSocket } from "@waifucave/clover-protocol";
 import { startIpcServer } from "../../src/ipc/server";
 import { SessionStore } from "../../src/sessions/store";
 import { FileSecretStore } from "../../src/auth/secret-store";
@@ -17,7 +17,7 @@ import { ANTHROPIC_CONSOLE_CREDENTIAL_SECRET_NAME, ANTHROPIC_CREDENTIAL_SECRET_N
 // WS-19 (W19-3/4/5, W19-10) — the three credential RPCs over the REAL socket, in BOTH roles.
 //
 // Isolation: a mkdtemp home and a disk-backed `FileSecretStore` under it. Nothing here resolves
-// `com.winter.core*` or touches the Keychain — `FileSecretStore` is files in a temp dir, and the
+// `com.waifucave.clover.core*` or touches the Keychain — `FileSecretStore` is files in a temp dir, and the
 // values written are `WS19-SENTINEL-…` dummies, never a real key shape.
 //
 // The security obligation these tests carry is NEGATIVE and load-bearing: a `credential.list` reply
@@ -79,7 +79,7 @@ describe("credential.list / credential.set / credential.remove (WS-19)", () => {
     const authority = new TokenAuthority(new FileSecretStore(join(home, "auth-secrets")));
     const tokens = await authority.ensureTokens();
     const secrets = new FileSecretStore(join(home, "secrets"));
-    const server = startIpcServer({ socketPath, serverVersion: "test", tokens: authority, store, secrets, winterHome: home });
+    const server = startIpcServer({ socketPath, serverVersion: "test", tokens: authority, store, secrets, cloverHome: home });
     cleanup = () => { server.stop(); store.close(); rmSync(home, { recursive: true, force: true }); };
     return { home, socketPath, harnessToken: tokens.harness, remoteToken: tokens.remote, secrets };
   }
@@ -159,11 +159,11 @@ describe("credential.list / credential.set / credential.remove (WS-19)", () => {
 
     const set = await c.request(METHODS.credentialSet, { providerId: "console", apiKey: SENTINEL });
     expect(set.error.data).toEqual({ code: "credential_kind_unsupported", door: "provider.login" });
-    expect(set.error.message).toContain("winter login --anthropic-console");
+    expect(set.error.message).toContain("clover login --anthropic-console");
     expect(JSON.stringify(set)).not.toContain(SENTINEL);
     const removed = await c.request(METHODS.credentialRemove, { providerId: "console" });
     expect(removed.error.data).toEqual({ code: "credential_kind_unsupported", door: "provider.login" });
-    expect(removed.error.message).toContain("winter logout --anthropic-console");
+    expect(removed.error.message).toContain("clover logout --anthropic-console");
     // Neither door touched the bearer — its only ways in and out are the Console sign-in/sign-out.
     expect(await readCredentialMaterial(secrets, ANTHROPIC_CONSOLE_CREDENTIAL_SECRET_NAME)).toEqual({ kind: "bearer", token: `${SENTINEL}-console` });
     c.close();
@@ -223,11 +223,11 @@ describe("credential.list / credential.set / credential.remove (WS-19)", () => {
 
     const refused = await c.request(METHODS.credentialSet, { providerId: "web-search", apiKey: SENTINEL });
     expect(refused.error?.data?.code).toBe("credential_kind_unsupported");
-    expect(String(refused.error?.message)).toContain("winter credentials remove web-search");
+    expect(String(refused.error?.message)).toContain("clover credentials remove web-search");
     // The refusal is not a half-write: nothing landed in the Keychain.
     expect(await secrets.get(WEB_SEARCH_API_KEY_SECRET)).toBeNull();
 
-    // A key stored the old way (directly, as the retired `winter login --web-search-key` did) is
+    // A key stored the old way (directly, as the retired `clover login --web-search-key` did) is
     // listed, remove-only, and removable.
     await secrets.set(WEB_SEARCH_API_KEY_SECRET, `${SENTINEL}-ws`);
     const rows: any[] = (await c.request(METHODS.credentialList, {})).result.providers;
@@ -376,7 +376,7 @@ describe("credential.list / credential.set / credential.remove (WS-19)", () => {
     await view.refresh();
     expect(view.credentialed().has("openai")).toBe(false);
     const internalRouter = createInternalRouter({ view, secrets });
-    const server = startIpcServer({ socketPath, serverVersion: "test", tokens: authority, store, secrets, winterHome: home, internalRouter });
+    const server = startIpcServer({ socketPath, serverVersion: "test", tokens: authority, store, secrets, cloverHome: home, internalRouter });
     cleanup = () => { server.stop(); store.close(); rmSync(home, { recursive: true, force: true }); };
 
     const c = await TestClient.connect(socketPath);
@@ -404,7 +404,7 @@ describe("credential.list / credential.set / credential.remove (WS-19)", () => {
       ...createInternalRouter({ view, secrets }),
       view: { ...view, refresh: async () => { throw new Error("probe exploded"); } },
     } as unknown as Parameters<typeof startIpcServer>[0]["internalRouter"];
-    const server = startIpcServer({ socketPath, serverVersion: "test", tokens: authority, store, secrets, winterHome: home, internalRouter });
+    const server = startIpcServer({ socketPath, serverVersion: "test", tokens: authority, store, secrets, cloverHome: home, internalRouter });
     cleanup = () => { server.stop(); store.close(); rmSync(home, { recursive: true, force: true }); };
 
     const c = await TestClient.connect(socketPath);
@@ -415,10 +415,10 @@ describe("credential.list / credential.set / credential.remove (WS-19)", () => {
     c.close();
   });
 
-  // B-1 (review): `winter login` / `winter logout` write `codex-oauth:default` IN-PROCESS and cannot go
+  // B-1 (review): `clover login` / `clover logout` write `codex-oauth:default` IN-PROCESS and cannot go
   // through `credential.set`, so `credential.list` is the door they poke afterwards. Its handler
   // reconciles the view for exactly that reason.
-  test("credential.list reconciles the view — the door winter login/logout pokes", async () => {
+  test("credential.list reconciles the view — the door clover login/logout pokes", async () => {
     const home = mkdtempSync(join(tmpdir(), "ws19-cred-rpc-list-refresh-"));
     writeFileSync(join(home, "settings.json"), JSON.stringify({ schemaVersion: 3, provider: { model: "codex-oauth/gpt-5.6-sol" } }));
     const store = new SessionStore(home);
@@ -429,7 +429,7 @@ describe("credential.list / credential.set / credential.remove (WS-19)", () => {
     const view = createInternalProviderView({ secrets, log: () => {} });
     await view.refresh();
     const internalRouter = createInternalRouter({ view, secrets });
-    const server = startIpcServer({ socketPath, serverVersion: "test", tokens: authority, store, secrets, winterHome: home, internalRouter });
+    const server = startIpcServer({ socketPath, serverVersion: "test", tokens: authority, store, secrets, cloverHome: home, internalRouter });
     cleanup = () => { server.stop(); store.close(); rmSync(home, { recursive: true, force: true }); };
 
     const c = await TestClient.connect(socketPath);
@@ -467,7 +467,7 @@ describe("WS-19 negative pins", () => {
     const tokens = await authority.ensureTokens();
     const secrets = new FileSecretStore(join(home, "secrets"));
     const server = startIpcServer({
-      socketPath, serverVersion: "test", tokens: authority, store, secrets, winterHome: home,
+      socketPath, serverVersion: "test", tokens: authority, store, secrets, cloverHome: home,
       dangerousDomainsAdded: () => [], liveModel: () => "m",
     });
     cleanup = () => { server.stop(); store.close(); rmSync(home, { recursive: true, force: true }); };
@@ -522,7 +522,7 @@ describe("WS-19 negative pins", () => {
       set: async (): Promise<void> => { throw new Error("unused"); },
       delete: async (): Promise<boolean> => { throw new Error("unused"); },
     };
-    const server = startIpcServer({ socketPath, serverVersion: "test", tokens: authority, store, secrets: dead, winterHome: home });
+    const server = startIpcServer({ socketPath, serverVersion: "test", tokens: authority, store, secrets: dead, cloverHome: home });
     cleanup = () => { server.stop(); store.close(); rmSync(home, { recursive: true, force: true }); };
     const c = await TestClient.connect(socketPath);
     await c.hello(tokens.harness, "test");

@@ -1,17 +1,17 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { SessionEvent } from "@yanlinglabs/winter-protocol";
+import { SessionEvent } from "@waifucave/clover-protocol";
 import { MAIN_THREAD, PROJECTED_EVENT_COVERAGE } from "../../src/projector";
 import type { ProtocolSdkMessage } from "../../src/projector";
 import { accept, beginTurn, makeProjector, run } from "./harness";
 
 /**
- * ── THE CUTOVER PROOF (ruling P8b-14, Winter map §13.3) ──────────────────────────────────────────
+ * ── THE CUTOVER PROOF (ruling P8b-14, Clover map §13.3) ──────────────────────────────────────────
  *
  * For each scenario: `fixtures/golden/<s>.events.jsonl` is the PRODUCT CONTRACT, recorded from the
  * real `AgentEngine` by `scripts/capture-projector-goldens.ts`. `fixtures/sdk/<s>.messages.jsonl` is
- * the wire stream a Winter child emits for the same scenario (shapes measured against `dist/winter`
+ * the wire stream a Clover child emits for the same scenario (shapes measured against `dist/winter`
  * — see the task report). Driving the projector with the second must reproduce the first.
  *
  * Task 11 widens this from "the variants part 1 owned" to **every variant in every golden**, and
@@ -34,12 +34,12 @@ import { accept, beginTurn, makeProjector, run } from "./harness";
  *
  *  - **The engine emits the parent's `tool_call` for a spawn AFTER the child has finished** (its
  *    spawn bridge runs children concurrently before the per-call loop emits the call), while the
- *    Winter wire necessarily delivers the spawning `tool_use` BEFORE any child frame. The two
+ *    Clover wire necessarily delivers the spawning `tool_use` BEFORE any child frame. The two
  *    orders cannot both hold, so a single flat comparison of `code-child-spawn` is impossible; the
  *    per-thread comparison is the strongest true statement, and this note is the honest record of
  *    the difference.
  *  - **A child's own text is absent from the default wire.** `Options.forwardSubagentText`
- *    (`winter-agent-sdk/dist/options.d.ts:99`) is off unless the host sets it, so only the child's
+ *    (`clover-sdk/dist/options.d.ts:99`) is off unless the host sets it, so only the child's
  *    tool_use/tool_result blocks are forwarded — which is why the engine golden's child
  *    `assistant_message` has no counterpart in `code-child-spawn`. That half IS measured.
  *
@@ -71,7 +71,7 @@ const PROJECTOR_VARIANTS = new Set(
 const EXTERNAL_PRODUCERS: Partial<Record<SessionEvent["type"], string>> = {
   session_created: "sessions/store.ts's createSession",
   harness_attached: "sessions/hub.ts's attach",
-  user_message: "the host's push path (P8b-5) — ipc/server.ts's session.send / the Winter prompt queue",
+  user_message: "the host's push path (P8b-5) — ipc/server.ts's session.send / the Clover prompt queue",
   approval_requested: "runtime-sdk/approval-bridge.ts (Task 8) — emitted from inside canUseTool",
   approval_resolved: "runtime-sdk/approval-bridge.ts (Task 8)",
   question_asked: "runtime-sdk/question-bridge.ts (Task 8)",
@@ -99,13 +99,13 @@ type Any = Record<string, unknown>;
 /**
  * The compared field projection, per variant. Two things are deliberately NOT compared, each with
  * its own dedicated assertion elsewhere:
- *   - token counts — the engine reports per-round figures, Winter a cumulative ledger delta;
+ *   - token counts — the engine reports per-round figures, Clover a cumulative ledger delta;
  *     `terminal.test.ts` pins that mapping exactly.
- *   - `tool_call.argsJson` / `tool_result.output` BODIES — the Winter tool's argument schema is its
- *     own (`{file_path}` vs Winter's `{path}`), so byte-equality would assert a rename that is not
+ *   - `tool_call.argsJson` / `tool_result.output` BODIES — the Clover tool's argument schema is its
+ *     own (`{file_path}` vs Clover's `{path}`), so byte-equality would assert a rename that is not
  *     happening. Shape and `callId` linkage are asserted instead.
  * `tool_call.name` and `agent_error.code` ARE compared literally: the first is ruling P8b-25 (the
- * Mac and iOS tool rows key on Winter's names), the second is digest item 20's one-distinct-code-
+ * Mac and iOS tool rows key on Clover's names), the second is digest item 20's one-distinct-code-
  * per-class, which `routines/runner.ts:81` consumes.
  */
 function compare(e: Any): Any {
@@ -160,7 +160,7 @@ interface Scenario {
   /**
    * ── CROSS-LEG DIVERGENCES, DISCLOSED (M4, review r1) ────────────────────────────────────────
    *
-   * Main-thread events the WINTER leg produces that the engine golden does not contain. A fixture
+   * Main-thread events the CLOVER leg produces that the engine golden does not contain. A fixture
    * must equal its RECORDING, not its golden — shaping a fixture to the golden converts a real
    * behavioural difference between the two legs into a green test, which is the "green for the
    * wrong reason" class this whole proof exists to avoid. So the extra events stay, and each one is
@@ -192,7 +192,7 @@ const SCENARIOS: readonly Scenario[] = [
     provenance: "measured",
     provenanceNote: "byte-for-byte the recorded winter-test/tooluse stream, retargeted to Write",
     documentedAdditions: [
-      { type: "assistant_message", note: "THE WINTER CHILD KEEPS TALKING AFTER A DENIAL. Winter's engine ends the turn on a deny (its tool_result says \"Stop here and wait\"), so the golden's last events are tool_result(isError) -> turn_completed; the recorded child answered `tool round done` and only then terminated. A real cross-leg behavioural difference, surfaced here rather than fixture-shaped away. Whether it survives is Task 9's permission-message question." },
+      { type: "assistant_message", note: "THE CLOVER CHILD KEEPS TALKING AFTER A DENIAL. Clover's engine ends the turn on a deny (its tool_result says \"Stop here and wait\"), so the golden's last events are tool_result(isError) -> turn_completed; the recorded child answered `tool round done` and only then terminated. A real cross-leg behavioural difference, surfaced here rather than fixture-shaped away. Whether it survives is Task 9's permission-message question." },
       { type: "agent_error", note: "the recording's SECOND pushed envelope terminated `error_during_execution` (the scripted double ran out of turns). Its class is `tool_failure`." },
       { type: "turn_started", occurrence: "last", note: "the SECOND push's own turn_started — `beginTurn` produces it (never the driver), and the one-turn golden has one." },
       { type: "turn_completed", occurrence: "last", note: "that second envelope's own terminal — two pushes, two terminals (the M1 contract), where the one-turn golden has one. The LAST one is the addition: turn 1's own `end_turn` terminal is the golden's." },
@@ -309,11 +309,11 @@ describe("projector: golden-stream replay, every variant (P8b-14)", () => {
     });
   }
 
-  test("tool rows keep WINTER names on the Winter leg (P8b-25)", () => {
+  test("tool rows keep CLOVER names on the Clover leg (P8b-25)", () => {
     for (const s of SCENARIOS) {
       const messages = readJsonl<ProtocolSdkMessage>("sdk", `${s.name}.messages.jsonl`);
       const names = (run(makeProjector().projector, messages, { pushAt: s.pushAt ?? [0] }) as unknown as Any[]).filter((e) => e.type === "tool_call").map((e) => e.name);
-      for (const n of names) expect({ scenario: s.name, name: n, looksWinter: /^[A-Z]/.test(n as string) }).toEqual({ scenario: s.name, name: n, looksWinter: false });
+      for (const n of names) expect({ scenario: s.name, name: n, looksClover: /^[A-Z]/.test(n as string) }).toEqual({ scenario: s.name, name: n, looksClover: false });
     }
   });
 

@@ -12,7 +12,7 @@ import { splitSettingsToSdk, settingsSplitMarkerPath } from "../../src/migration
 import { readSdkGlobalConfig, readSdkSettings, updateSdkSettings } from "../../src/sdk-files";
 
 function home(settings?: Record<string, unknown>): string {
-  const h = mkdtempSync(join(tmpdir(), "winter-split-"));
+  const h = mkdtempSync(join(tmpdir(), "clover-split-"));
   mkdirSync(join(h, "sdk"), { recursive: true });
   if (settings !== undefined) writeFileSync(join(h, "settings.json"), JSON.stringify({ schemaVersion: 3, provider: { model: "codex-oauth/gpt-5.6-sol" }, ...settings }));
   return h;
@@ -29,7 +29,7 @@ describe("splitSettingsToSdk", () => {
     const before = readFileSync(join(h, "settings.json"), "utf8");
     const report = splitSettingsToSdk(h);
     const sdk = readSdkSettings(h) as Record<string, any>;
-    expect(sdk.permissions.allow).toEqual(["Bash(git status)", "Edit", "Write", "mcp__winter__computer__computer", "WebFetch(domain:docs.x.com)"]);
+    expect(sdk.permissions.allow).toEqual(["Bash(git status)", "Edit", "Write", "mcp__clover__computer__computer", "WebFetch(domain:docs.x.com)"]);
     expect(sdk.permissions.deny).toEqual(["Skill(noisy)"]);
     expect(sdk.permissions.additionalDirectories).toEqual(["/data"]);
     expect(sdk.permissions.dangerousDomains).toBeUndefined(); // stays in settings.json
@@ -79,7 +79,7 @@ describe("splitSettingsToSdk", () => {
   test("the [\"Computer\"] default is written only when a settings.json exists and states NO allow (not [])", () => {
     const absent = home({});
     splitSettingsToSdk(absent);
-    expect((readSdkSettings(absent) as Record<string, any>).permissions.allow).toEqual(["mcp__winter__computer__computer"]);
+    expect((readSdkSettings(absent) as Record<string, any>).permissions.allow).toEqual(["mcp__clover__computer__computer"]);
     const empty = home({ permissions: { allow: [] } });
     splitSettingsToSdk(empty);
     expect((readSdkSettings(empty) as Record<string, any>).permissions.allow).toEqual([]);

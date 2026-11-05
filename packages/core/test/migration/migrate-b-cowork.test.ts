@@ -16,7 +16,7 @@ import { openRuntimeStateDb } from "../../src/runtime-state/db";
 import { CoworkRepository } from "../../src/cowork/repository";
 
 const dirs: string[] = [];
-const tempDir = (prefix = "winter-migrate-b-cowork-"): string => { const d = mkdtempSync(join(tmpdir(), prefix)); dirs.push(d); return d; };
+const tempDir = (prefix = "clover-migrate-b-cowork-"): string => { const d = mkdtempSync(join(tmpdir(), prefix)); dirs.push(d); return d; };
 afterEach(() => { while (dirs.length) rmSync(dirs.pop()!, { recursive: true, force: true }); });
 
 const write = (path: string, content: string | Buffer): void => { mkdirSync(join(path, ".."), { recursive: true }); writeFileSync(path, content); };

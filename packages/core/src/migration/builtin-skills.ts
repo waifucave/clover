@@ -1,15 +1,15 @@
-// Winter-shipped skills the child can LOAD: a managed copy of each into the user's skill tier,
+// Clover-shipped skills the child can LOAD: a managed copy of each into the user's skill tier,
 // `<home>/sdk/skills/<name>/SKILL.md` — the one tier a session's run folder links.
 //
 // Why a copy: `packages/core/skills/` (the "builtin" tier `SkillStore` lists) is staged into no run folder, so
 // a skill only there is listed, never loaded (`SkillStore.sessionAvailability`). The text is EMBEDDED (a bun
-// text import) rather than read from that directory, because a compiled `winter-core` has no repo to read:
+// text import) rather than read from that directory, because a compiled `clover-core` has no repo to read:
 // `import.meta.url` there is a virtual path. The same file is still the source for the builtin listing.
 //
 // Every boot, on every home (beside the settings split, after the sdk home exists), per skill:
 //
 //   never seeded, target absent .......................... write it, record its hash
-//   seeded, target untouched (hash == recorded), text new .. overwrite it (a newer Winter updates a copy
+//   seeded, target untouched (hash == recorded), text new .. overwrite it (a newer Clover updates a copy
 //                                                            nobody edited), record the new hash
 //   seeded, target absent ................................ the user deleted it: NEVER re-create
 //   seeded, target edited (hash != recorded) ............. leave it, one log line
@@ -17,7 +17,7 @@
 //
 // The record is `<home>/migration/builtin-skills.json`: `{ "<name>": { "seededHash": sha256-hex of the bytes
 // last written } }`. Two cases leave the FILE alone and only repair the record: the target already holds
-// exactly the bytes this Winter ships (a crash between the file's rename and the record's, or a lost
+// exactly the bytes this Clover ships (a crash between the file's rename and the record's, or a lost
 // record) — nothing is written, so a later update still finds an untouched copy. A symlinked skill dir or
 // SKILL.md is the user's own arrangement and is never written through.
 //
@@ -31,7 +31,7 @@ import computerUseSkill from "../../skills/computer-use/SKILL.md" with { type: "
 import { sdkHomeFor } from "../agent/paths";
 import { writeJsonAtomic, writeTextAtomic } from "../sdk-files";
 
-/** A skill this Winter keeps a managed copy of: its directory name under `sdk/skills/` and its SKILL.md text. */
+/** A skill this Clover keeps a managed copy of: its directory name under `sdk/skills/` and its SKILL.md text. */
 export interface SeededSkill { name: string; text: string }
 
 /** The skills seeded at boot, in the order they are checked. Each is also a directory of `packages/core/skills/`. */
@@ -93,7 +93,7 @@ function skillDirIsLink(home: string, name: string): boolean {
 
 /**
  * Apply the rules above to every seeded skill. Never throws. `skills` defaults to the shipped list; a test
- * passes its own text to play a newer or older Winter.
+ * passes its own text to play a newer or older Clover.
  */
 export function seedBuiltinSkills(home: string, opts: { skills?: readonly SeededSkill[]; log?: (line: string) => void } = {}): BuiltinSkillsReport {
   const report: BuiltinSkillsReport = { skills: {} };
@@ -146,7 +146,7 @@ function seedOne(home: string, skill: SeededSkill, record: Record_, log: (line: 
       log(`builtin skills: ${skill.name} seeded into ${path}`);
       return { outcome: "seeded", recordChanged: true };
     }
-    if (sha256Hex(at.bytes) === shipped) { // exactly what this Winter ships: adopt it, so later updates reach it
+    if (sha256Hex(at.bytes) === shipped) { // exactly what this Clover ships: adopt it, so later updates reach it
       record[skill.name] = { seededHash: shipped };
       return { outcome: "recorded", recordChanged: true };
     }
@@ -164,6 +164,6 @@ function seedOne(home: string, skill: SeededSkill, record: Record_, log: (line: 
     record[skill.name] = { seededHash: shipped };
     return { outcome: "recorded", recordChanged: true };
   }
-  log(`builtin skills: ${skill.name} at ${path} was edited — left as it is (to get Winter's copy again, delete that file and the \`${skill.name}\` entry in ${builtinSkillsRecordPath(home)})`);
+  log(`builtin skills: ${skill.name} at ${path} was edited — left as it is (to get Clover's copy again, delete that file and the \`${skill.name}\` entry in ${builtinSkillsRecordPath(home)})`);
   return { outcome: "edited", recordChanged: false };
 }

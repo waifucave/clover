@@ -12,7 +12,7 @@ export function assertDaemonPathAccess(home: string | undefined, path: string, c
   const fence = homeFenceFor(home);
   const hit = hostStorageReadTarget(path, cwd, fence, access === "scan")
     ?? (access === "write" ? controlPlaneFileTarget(path, cwd) ?? homeFenceTarget(path, cwd, fence) : null);
-  if (hit) throw new Error("Host file access refused: protected Winter storage is available only through trusted metadata and export services");
+  if (hit) throw new Error("Host file access refused: protected Clover storage is available only through trusted metadata and export services");
 }
 
 /** Check again AFTER an awaited server request and open without following a final-component link.

@@ -6,7 +6,7 @@ import { daemonLogPathFor, installDaemonLogFile } from "../src/daemon-log-file";
 
 describe("daemon log file (tee of stdout/stderr into <home>/logs/daemon.log)", () => {
   const homes: string[] = [];
-  const home = () => { const h = mkdtempSync(join(tmpdir(), "winter-daemon-log-")); homes.push(h); return h; };
+  const home = () => { const h = mkdtempSync(join(tmpdir(), "clover-daemon-log-")); homes.push(h); return h; };
   afterEach(() => { for (const h of homes.splice(0)) rmSync(h, { recursive: true, force: true }); });
 
   test("every stdout and stderr line lands in the file, timestamped, and the streams still work", () => {
