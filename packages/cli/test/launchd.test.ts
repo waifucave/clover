@@ -1,32 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import { LEGACY_LAUNCHD_LABEL } from "@waifucave/clover-core";
-import { renderPlist, migrateFromLaunchdAgent, launchdLabel } from "../src/launchd";
+import { migrateFromLaunchdAgent, launchdLabel } from "../src/launchd";
 
-describe("renderPlist", () => {
-  test("contains label, program arguments, keepalive, and log paths", () => {
-    const xml = renderPlist({
-      binaryPath: "/usr/local/bin/winter",
-      cloverHome: "/Users/me/.clover",
-    });
-    expect(xml).toContain(`<string>${launchdLabel()}</string>`);
-    expect(xml).toContain("<string>/usr/local/bin/winter</string>");
-    expect(xml).toContain("<string>daemon</string>");
-    expect(xml).toContain("<string>run</string>");
-    expect(xml).toContain("<key>KeepAlive</key>");
-    expect(xml).toContain("<string>/Users/me/.clover/logs/core.out.log</string>");
-    expect(xml).toContain("<string>/Users/me/.clover/logs/core.err.log</string>");
-    expect(xml).not.toContain("~"); // launchd does not expand tildes
-    expect(xml).toContain("<key>CLOVER_HOME</key>");
-    expect(xml).toContain("<string>/Users/me/.clover</string>");
-  });
-
-  test("xml-escapes special characters in paths", () => {
-    const xml = renderPlist({ binaryPath: "/a&b/clover", cloverHome: "/home/x<y>/.clover" });
-    expect(xml).toContain("/a&amp;b/clover");
-    expect(xml).toContain("/home/x&lt;y&gt;/.clover");
-    expect(xml).not.toMatch(/<string>[^<]*&(?!amp;|lt;|gt;)/);
-  });
-});
+// C-M1 retired this file's own LaunchAgent installer (`installDaemon`, `renderPlist`, …): login start
+// is core's `platform/login/` behind `clover autostart`, tested in packages/core/test/platform/. What
+// stays here is the teardown of the historical pre-rename agent and the profile label.
 
 describe("migrateFromLaunchdAgent", () => {
   const fakePath = `/fake/Library/LaunchAgents/${LEGACY_LAUNCHD_LABEL}.plist`;
@@ -111,60 +89,10 @@ describe("migrateFromLaunchdAgent", () => {
   });
 });
 
+
 describe("launchd profile label", () => {
   test("label derives from profile, dist literal unchanged", () => {
     expect(launchdLabel("dist")).toBe("com.waifucave.clover.core");
     expect(launchdLabel("dev")).toBe("com.waifucave.clover.core.dev");
-  });
-
-  test("renderPlist embeds the profile label", () => {
-    const dev = renderPlist({ binaryPath: "/x/clover-core", cloverHome: "/tmp/h", profile: "dev" });
-    expect(dev).toContain("<string>com.waifucave.clover.core.dev</string>");
-    const dist = renderPlist({ binaryPath: "/x/clover-core", cloverHome: "/tmp/h", profile: "dist" });
-    expect(dist).toContain("<string>com.waifucave.clover.core</string>");
-    expect(dist).not.toContain("com.waifucave.clover.core.dev");
-  });
-
-  // DD branch review (I3): CLOVER_PROFILE must ride along in the plist's own EnvironmentVariables
-  // for a dev-profile install (otherwise a launchd-installed dev daemon resolves
-  // `keychainService()` to the dist Keychain literal despite living in ~/.clover-dev — silent
-  // credential cross-contamination), and the dist plist must stay byte-identical to before this
-  // fix (no new key at all, not even an empty one).
-  test("dev plist carries CLOVER_PROFILE=dev; dist plist never mentions CLOVER_PROFILE", () => {
-    const dev = renderPlist({ binaryPath: "/x/clover-core", cloverHome: "/tmp/h", profile: "dev" });
-    expect(dev).toContain("<key>CLOVER_PROFILE</key><string>dev</string>");
-
-    const dist = renderPlist({ binaryPath: "/x/clover-core", cloverHome: "/tmp/h", profile: "dist" });
-    expect(dist).not.toContain("CLOVER_PROFILE");
-  });
-
-  // Byte-identity proof: the dist plist output must be EXACTLY what renderPlist produced before
-  // this fix, character for character — not just "doesn't contain CLOVER_PROFILE". Passes
-  // `profile: "dist"` explicitly (rather than relying on ambient `CLOVER_PROFILE` env resolution)
-  // so this assertion can never flake against another test's env mutation.
-  test("dist plist is byte-identical to the pre-fix output", () => {
-    const xml = renderPlist({ binaryPath: "/usr/local/bin/winter", cloverHome: "/Users/me/.clover", profile: "dist" });
-    expect(xml).toBe(
-      `<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-  <key>Label</key><string>com.waifucave.clover.core</string>
-  <key>ProgramArguments</key>
-  <array>
-    <string>/usr/local/bin/winter</string>
-    <string>daemon</string>
-    <string>run</string>
-  </array>
-  <key>EnvironmentVariables</key>
-  <dict><key>CLOVER_HOME</key><string>/Users/me/.clover</string></dict>
-  <key>RunAtLoad</key><true/>
-  <key>KeepAlive</key><true/>
-  <key>StandardOutPath</key><string>/Users/me/.clover/logs/core.out.log</string>
-  <key>StandardErrorPath</key><string>/Users/me/.clover/logs/core.err.log</string>
-</dict>
-</plist>
-`
-    );
   });
 });

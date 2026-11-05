@@ -42,6 +42,16 @@ describe("login renderers run supervise, crash-only", () => {
     expect(x).toContain("<Command>/opt/clover/clover-core</Command>");
   });
 
+  test("paths are XML-escaped in the plist and the task, and never use a tilde", () => {
+    const spec = base({ bin: "/a&b/clover-core", home: "/home/x<y>/.clover", logsDir: "/home/x<y>/.clover/logs" });
+    const plist = renderLaunchdPlist(spec);
+    expect(plist).toContain("/a&amp;b/clover-core");
+    expect(plist).toContain("/home/x&lt;y&gt;/.clover");
+    expect(plist).not.toMatch(/<string>[^<]*&(?!amp;|lt;|gt;|quot;)/);
+    expect(plist).not.toContain("~");
+    expect(renderSchtasksXml({ ...spec, os: "win32" })).toContain("<Command>/a&amp;b/clover-core</Command>");
+  });
+
   test("unit paths and names per OS", () => {
     expect(loginUnitPath(base())).toBe("/home/x/Library/LaunchAgents/com.waifucave.clover.core.plist");
     expect(loginUnitPath(base({ os: "linux" }))).toBe("/home/x/.config/systemd/user/clover-core.service");

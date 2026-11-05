@@ -1483,6 +1483,12 @@ async function runAutostartCommand(sub: string | undefined): Promise<void> {
   const os = liveLoginOsDeps();
   switch (sub ?? "status") {
     case "enable": {
+      // The unit must run a real `clover-core` binary; under `bun src/main.ts` the executable is bun.
+      if (/[\\/]bun(\.exe)?$/.test(process.execPath)) {
+        console.error("autostart enable needs the compiled clover-core binary; in dev, run the daemon with: clover daemon run");
+        process.exitCode = 1;
+        return;
+      }
       const st = await loginEnable(spec, os);
       console.log(st.registered ? `autostart enabled (${st.label})` : `autostart: wrote the unit but the OS did not register it (${st.label})`);
       if (!st.registered) process.exitCode = 1;
@@ -2602,27 +2608,17 @@ if (import.meta.main) {
     await new Promise(() => {}); // run until interrupted
     break; // unreachable, but keeps the switch uniform
   }
+  // C-M1: the old LaunchAgent installer is retired; these spellings forward to `clover autostart`.
   case "daemon install": {
-    const { installDaemon } = await import("./launchd");
-    // process.execPath = the bun binary in dev, the compiled `winter` binary in production.
-    const binary = process.execPath;
-    if (binary.endsWith("/bun")) {
-      console.error("daemon install requires the compiled winter binary (Task 16); in dev use: clover daemon run");
-      process.exit(1);
-    }
-    await installDaemon(binary, resolveCloverHome());
-    console.log(`${AQUA}installed launchd agent${RESET} — daemon starts at login and stays alive`);
+    await runAutostartCommand("enable");
     break;
   }
   case "daemon uninstall": {
-    const { uninstallDaemon } = await import("./launchd");
-    await uninstallDaemon();
-    console.log("launchd agent removed");
+    await runAutostartCommand("disable");
     break;
   }
   case "daemon status": {
-    const { daemonStatus } = await import("./launchd");
-    console.log(await daemonStatus());
+    await runAutostartCommand("status");
     break;
   }
   case "login": {
@@ -3283,7 +3279,7 @@ if (import.meta.main) {
   }
   default:
     console.log(`clover ${CORE_VERSION} — commands:
-  daemon run | daemon install | daemon uninstall | daemon status
+  daemon run | autostart enable|disable|status (daemon install|uninstall|status are aliases) | supervise
   ping | sessions | status | quota | send <sessionId|new> <text> | watch <sessionId> | add-dir <sessionId> <path> [--persist] | cd <sessionId> <path>
   steer <sessionId> <text> | interrupt <sessionId> | compact <sessionId>
   doctor [--repair <op> [--session <id>] [--backend <uuid>] [--backup <path>]]   runtime-state diagnostics and repair (runs without a daemon)
