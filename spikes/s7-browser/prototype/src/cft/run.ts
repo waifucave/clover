@@ -105,22 +105,28 @@ async function forArtifact(artifact: Artifact, server: SpikeServer): Promise<Rec
     const prof = join(profiles, `${artifact}-start`);
     const attempts: Array<Record<string, unknown>> = [];
     let first: { b: Browser; ms: number } | undefined;
-    for (const sandboxed of [true, false]) {
-      if (!sandboxed && process.platform !== "linux") break; // only Linux's sandbox needs an OS profile
-      for (const t of TRANSPORTS) {
-        const cand: Launcher = { ...l, transport: t, extra: sandboxed ? [] : ["--no-sandbox"] };
-        try {
-          first = await launch(cand, prof);
-          attempts.push({ transport: t, sandboxed, ok: true, ms: first.ms });
-          l.transport = t;
-          l.extra = cand.extra;
-          l.sandbox = sandboxed ? "on" : "off (--no-sandbox: every sandboxed start failed)";
-          break;
-        } catch (e) {
-          attempts.push({ transport: t, sandboxed, ok: false, error: errorText(e).slice(0, 600) });
-        }
+    // The native pipe first, sandboxed and then (Linux, without the AppArmor profile) not; node's stdio pipes and the
+    // port only if the native pipe fails both ways. Round six: on Linux the node-pipe attempt that a failed sandboxed
+    // start fell through to came before every stall of a later browser's pipe, so it is no longer tried on the way.
+    const plan: Array<{ t: Transport; sandboxed: boolean }> = [];
+    for (const group of [[TRANSPORTS[0]!], TRANSPORTS.slice(1)]) {
+      for (const sandboxed of [true, false]) {
+        if (!sandboxed && process.platform !== "linux") continue; // only Linux's sandbox needs an OS profile
+        for (const t of group) plan.push({ t, sandboxed });
       }
-      if (first !== undefined) break;
+    }
+    for (const { t, sandboxed } of plan) {
+      const cand: Launcher = { ...l, transport: t, extra: sandboxed ? [] : ["--no-sandbox"] };
+      try {
+        first = await launch(cand, prof);
+        attempts.push({ transport: t, sandboxed, ok: true, ms: first.ms });
+        l.transport = t;
+        l.extra = cand.extra;
+        l.sandbox = sandboxed ? "on" : "off (--no-sandbox: every sandboxed start failed)";
+        break;
+      } catch (e) {
+        attempts.push({ transport: t, sandboxed, ok: false, error: errorText(e).slice(0, 600) });
+      }
     }
     out.startAttempts = attempts;
     if (first === undefined) throw new Error("no start worked");
@@ -131,17 +137,7 @@ async function forArtifact(artifact: Artifact, server: SpikeServer): Promise<Rec
     await first.b.close();
     const warm = await launch(l, prof);
     await warm.b.close();
-    let port: { ms?: number; error?: string } = {};
-    if (l.transport !== "port") {
-      try {
-        const p = await launch(l, join(profiles, `${artifact}-port`), "port");
-        port = { ms: p.ms };
-        await p.b.close();
-      } catch (e) {
-        port = { error: errorText(e) };
-      }
-    }
-    out.start = { transport: l.transport, coldMs: first.ms, warmMs: warm.ms, portMs: port.ms, portError: port.error };
+    out.start = { transport: l.transport, coldMs: first.ms, warmMs: warm.ms };
     log(`${artifact}: ${version.product}, cold start ${first.ms} ms, warm ${warm.ms} ms over ${l.transport}; sandbox ${l.sandbox}`);
   } catch (e) {
     errors.push(`start: ${errorText(e)}`);
@@ -412,6 +408,16 @@ async function forArtifact(artifact: Artifact, server: SpikeServer): Promise<Rec
       for (const p of pages) await p.close().catch(() => undefined);
       await main?.close();
       await second?.close();
+    }
+  }
+  // --- the port, to compare start times: last, since it starts the browser through node's child_process ----------
+  if (l.transport !== "port" && out.start !== undefined) {
+    try {
+      const p = await launch(l, join(profiles, `${artifact}-port`), "port");
+      Object.assign(out.start as Record<string, unknown>, { portMs: p.ms });
+      await p.b.close();
+    } catch (e) {
+      Object.assign(out.start as Record<string, unknown>, { portError: errorText(e) });
     }
   }
   return out;
