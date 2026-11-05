@@ -223,10 +223,10 @@ export class LocalHolder implements Holder {
       while (off < bytes.length) off += (await fh.write(bytes, off, bytes.length - off)).bytesWritten;
       // On the holder's disk before the call answers (S6 review S5: a write that returned wasn't always there).
       await fh.datasync();
-      if (this.os !== "windows") {
+      // A file keeps its mode unless the call says whether it is executable: then x follows each r bit.
+      if (this.os !== "windows" && call.executable !== undefined) {
         const mode = (await fh.stat()).mode & 0o7777;
-        const exec = call.executable ?? (r.exists ? (mode & 0o100) !== 0 : false);
-        const next = exec ? mode | ((mode & 0o444) >> 2) | 0o100 : mode & ~0o111;
+        const next = call.executable ? mode | ((mode & 0o444) >> 2) | 0o100 : mode & ~0o111;
         if (next !== mode) await fh.chmod(next);
       }
     } finally {
