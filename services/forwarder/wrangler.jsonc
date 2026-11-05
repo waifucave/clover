@@ -41,8 +41,10 @@
     { "name": "API_RATE", "namespace_id": "71002", "simple": { "limit": 120, "period": 60 } },
     // Webhooks per account, over all its routines.
     { "name": "TAG_RATE", "namespace_id": "71003", "simple": { "limit": 600, "period": 60 } },
-    // Key checks against the account's Durable Object (no cached success), per sender address and account.
-    { "name": "CHECK_RATE", "namespace_id": "71004", "simple": { "limit": 30, "period": 60 } }
+    // Key checks against the account's Durable Object (no cached success), per sender address and account:
+    // high enough that a real sender firing many of one account's routines at cold Worker instances is not
+    // refused (senders like GitHub do not retry a 429), low enough to cap the load a stranger can cause.
+    { "name": "CHECK_RATE", "namespace_id": "71004", "simple": { "limit": 120, "period": 60 } }
   ],
   "env": {
     "production": {
@@ -71,7 +73,7 @@
         { "name": "HOOK_RATE", "namespace_id": "71101", "simple": { "limit": 120, "period": 60 } },
         { "name": "API_RATE", "namespace_id": "71102", "simple": { "limit": 120, "period": 60 } },
         { "name": "TAG_RATE", "namespace_id": "71103", "simple": { "limit": 600, "period": 60 } },
-        { "name": "CHECK_RATE", "namespace_id": "71104", "simple": { "limit": 30, "period": 60 } }
+        { "name": "CHECK_RATE", "namespace_id": "71104", "simple": { "limit": 120, "period": 60 } }
       ]
     }
   }

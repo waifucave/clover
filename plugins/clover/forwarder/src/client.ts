@@ -24,7 +24,6 @@ import {
   PONG,
   type AckRef,
   type DeviceRegistered,
-  type DropCount,
   type RoutineInfo,
   type RoutineRegistered,
   type ServiceFrame,
@@ -148,8 +147,6 @@ export class ForwarderClient {
   private replacedAt: number[] = [];
   /** A bye frame's reason for the current socket, read when it closes. */
   private bye: string | null = null;
-  /** Drops the service reported in its hello, until listRoutines reports them. */
-  private readonly drops = new Map<string, DropCount>();
   /** Whether "no account is signed in" has been logged since the last successful registration. */
   private signedOut = false;
   private socket: WebSocketLike | null = null;
@@ -249,24 +246,14 @@ export class ForwarderClient {
   }
 
   /**
-   * The account's routines. Drops on this computer's routines (from the service's list, or from its hello on
-   * connecting) are reported here once, then forgotten.
+   * The account's routines. Drops on this computer's routines are reported here, and the service clears them
+   * once it has listed them; until then they survive a restart of this computer.
    */
   async listRoutines(): Promise<RoutineInfo[]> {
     await this.registered();
     const response = await this.call("GET", "/v1/routines");
     await this.expectOk(response);
-    const routines = ((await response.json()) as { routines: RoutineInfo[] }).routines;
-    for (const routine of routines) {
-      const local = this.drops.get(routine.id);
-      if (!local) continue;
-      const told = routine.dropped;
-      routine.dropped = told
-        ? { count: told.count + local.count, reason: told.at >= local.at ? told.reason : local.reason, at: Math.max(told.at, local.at) }
-        : local;
-    }
-    this.drops.clear();
-    return routines;
+    return ((await response.json()) as { routines: RoutineInfo[] }).routines;
   }
 
   // ---- registration ----
@@ -489,7 +476,10 @@ export class ForwarderClient {
       }
       if (frame.t === "hello") {
         this.log("info", `connected; ${frame.pending} webhook(s) waiting`);
-        for (const report of frame.dropped ?? []) this.noteDrop(report.routine, report);
+        // Listed (and cleared) by the routines' list; logged here so they show up at once.
+        for (const report of frame.dropped ?? []) {
+          this.log("warn", `${report.count} webhook(s) for ${report.routine} were dropped (${report.reason})`);
+        }
       }
       if (frame.t === "bye") {
         if (frame.reason === "revoked") this.revoked();
@@ -514,7 +504,6 @@ export class ForwarderClient {
     } catch (err) {
       // Sealed before this computer's key registered, say: the service counts it as a drop for the routine.
       this.log("warn", `dropping a webhook this computer cannot open: ${describe(err)}`);
-      this.noteDrop(header.routineId, { count: 1, reason: "unreadable", at: this.clock.now() });
       this.enqueue("unreadable", [seq, id]);
       return;
     }
@@ -546,16 +535,6 @@ export class ForwarderClient {
     this.recent.set(id, seq);
     while (this.recent.size > RECENT_LIMIT) this.recent.delete(this.recent.keys().next().value!);
     this.enqueue(kind, [seq, id]);
-  }
-
-  private noteDrop(routine: string, drop: DropCount): void {
-    const known = this.drops.get(routine);
-    this.drops.set(
-      routine,
-      known
-        ? { count: known.count + drop.count, reason: drop.at >= known.at ? drop.reason : known.reason, at: Math.max(known.at, drop.at) }
-        : { count: drop.count, reason: drop.reason, at: drop.at },
-    );
   }
 
   private enqueue(kind: "ack" | "nack" | "unreadable", ref: AckRef): void {

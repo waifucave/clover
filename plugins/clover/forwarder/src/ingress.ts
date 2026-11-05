@@ -8,8 +8,9 @@
 //          the URL count (off by default: link previewers fetch pasted links).
 //   unregister({ routine })      -> { heldElsewhere? }   stops it here. When another computer holds it (it
 //                                                         moved), nothing changes there.
-//   list()                       -> { routines: RoutineInfo[] }   with drops on this computer's routines,
-//                                                                  reported once
+//   list()                       -> { routines: RoutineInfo[] }   with drops on this computer's routines
+//                                                                  (cap, expired, unreadable, rekeyed);
+//                                                                  the service clears them once listed
 //   next({ max?, waitMs? })      -> { deliveries: IngressDelivery[] }   a long poll, 8 s by default: within
 //                                   the plugin API's default 10 s call limit. A longer waitMs needs the
 //                                   caller to set a longer call limit.

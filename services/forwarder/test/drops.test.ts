@@ -41,20 +41,24 @@ describe("drops", () => {
     expect((await listed(pc)).find((r) => r.id === "aged")!.dropped).toBeUndefined();
   });
 
-  it("drops at the cap are reported in the hello, once", async () => {
+  it("drops at the cap are in every hello until the computer lists its routines, which clears them", async () => {
     const pc = await registerComputer(uniqueAccount(), "pc");
     const { key, url } = await registeredRoutine(pc, "flooded");
     for (let i = 0; i < limits.maxHeld + 2; i++) expect((await postHook(url, key, `x${i}`)).status).toBe(202);
-    const socket = await openSocket(pc);
-    const hello = JSON.parse(socket.text().find((m) => m.includes('"hello"'))!) as Extract<ServiceFrame, { t: "hello" }>;
-    expect(hello.dropped).toEqual([{ routine: "flooded", count: 2, reason: "cap", at: expect.any(Number) }]);
+    const helloOf = async () => {
+      const socket = await openSocket(pc);
+      const hello = JSON.parse(socket.text().find((m) => m.includes('"hello"'))!) as Extract<ServiceFrame, { t: "hello" }>;
+      socket.close();
+      await new Promise((r) => setTimeout(r, 100));
+      return hello;
+    };
+    const report = [{ routine: "flooded", count: 2, reason: "cap", at: expect.any(Number) }];
+    expect((await helloOf()).dropped).toEqual(report);
+    // A computer that restarts before listing still learns of them.
+    expect((await helloOf()).dropped).toEqual(report);
+    expect((await listed(pc))[0]!.dropped).toMatchObject({ count: 2, reason: "cap" });
     expect((await listed(pc))[0]!.dropped).toBeUndefined();
-    socket.close();
-    await new Promise((r) => setTimeout(r, 100));
-    const again = await openSocket(pc);
-    const second = JSON.parse(again.text().find((m) => m.includes('"hello"'))!) as Extract<ServiceFrame, { t: "hello" }>;
-    expect(second.dropped).toBeUndefined();
-    again.close();
+    expect((await helloOf()).dropped).toBeUndefined();
   });
 
   it("a computer added after a webhook was sealed cannot open it, refuses it as unreadable, and is told so", async () => {

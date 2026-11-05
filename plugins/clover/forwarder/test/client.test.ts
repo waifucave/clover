@@ -288,19 +288,20 @@ describe("connections the service ends", () => {
 });
 
 describe("drops", () => {
-  test("drops reported in the hello and by the service's list are reported once, together", async () => {
+  test("drops in the hello are logged; the routines' list reports them, as the service still holds them", async () => {
     const t = setup();
     await connected(t);
     await t.client.registerRoutine("deploy", "k".repeat(43));
     t.service.socket.receive(JSON.stringify({ t: "hello", v: 1, device: "pc", pending: 0, dropped: [{ routine: "deploy", count: 2, reason: "expired", at: 5 }] }));
     await settle();
-    t.service.routineDrops.set("deploy", { count: 1, reason: "cap", at: 9 });
+    expect(t.logs.some((l) => l.includes("2 webhook(s) for deploy were dropped (expired)"))).toBe(true);
+    t.service.routineDrops.set("deploy", { count: 2, reason: "expired", at: 5 });
     const listed = await t.client.listRoutines();
-    expect(listed).toEqual([{ id: "deploy", device: "pc", held: 0, allowGet: false, dropped: { count: 3, reason: "cap", at: 9 } }]);
+    expect(listed).toEqual([{ id: "deploy", device: "pc", held: 0, allowGet: false, dropped: { count: 2, reason: "expired", at: 5 } }]);
     expect((await t.client.listRoutines())[0]!.dropped).toBeUndefined();
   });
 
-  test("a webhook this computer cannot open is refused as unreadable, and counted as a drop here", async () => {
+  test("a webhook this computer cannot open is refused as unreadable, for the service to count", async () => {
     const t = setup();
     await connected(t);
     await t.client.registerRoutine("deploy", "k".repeat(43));
@@ -310,7 +311,7 @@ describe("drops", () => {
     await settle();
     const sent = t.service.socket.sent.filter((m) => m.startsWith("{")).map((m) => JSON.parse(m) as { t: string; a: [number, string][]; reason?: string });
     expect(sent).toEqual([{ t: "nack", a: [[seq, expect.any(String)]], reason: "unreadable" }]);
-    expect((await t.client.listRoutines())[0]!.dropped).toEqual({ count: 1, reason: "unreadable", at: t.clock.now() });
+    expect(t.deliveries).toHaveLength(0);
   });
 });
 

@@ -8,10 +8,22 @@ import { describe, expect, it, vi } from "vitest";
 
 import { b64u, fromUtf8 } from "../../../plugins/clover/forwarder/src/wire/bytes";
 import { decodeRequestRecord, keyId, openEnvelope } from "../../../plugins/clover/forwarder/src/wire/envelope";
-import { decodeWebhookFrame, type RoutineInfo } from "../../../plugins/clover/forwarder/src/wire/protocol";
-import type { ForwarderDO } from "../src/forwarder-do";
+import { generateX25519 } from "../../../plugins/clover/forwarder/src/wire/hpke";
+import { decodeWebhookFrame, hookKeyHash, type RoutineInfo } from "../../../plugins/clover/forwarder/src/wire/protocol";
+import { REVOCATION_KEEP_MS, type ForwarderDO } from "../src/forwarder-do";
 import { limitsFrom } from "../src/env";
-import { apiCall, objectOf, openSocket, postHook, registerComputer, registeredRoutine, routineKey, uniqueAccount } from "./helpers";
+import {
+  accountToken,
+  apiCall,
+  clearOfMinuteBoundary,
+  objectOf,
+  openSocket,
+  postHook,
+  registerComputer,
+  registeredRoutine,
+  routineKey,
+  uniqueAccount,
+} from "./helpers";
 
 const limits = limitsFrom(env);
 
@@ -23,11 +35,11 @@ describe("senders without the key", () => {
   it("spend only their own address's check limit; the routine's real sender is unaffected", async () => {
     const pc = await registerComputer(uniqueAccount(), "pc");
     const { key, url } = await registeredRoutine(pc, "guarded");
+    await clearOfMinuteBoundary();
     const statuses: number[] = [];
-    for (let i = 0; i < 40; i++) statuses.push((await postHook(url, routineKey(), "guess", from("198.51.100.9"))).status);
-    expect(statuses.every((s) => s === 401 || s === 429)).toBe(true);
-    expect(statuses.slice(0, 30).every((s) => s === 401)).toBe(true);
-    expect(statuses.filter((s) => s === 429).length).toBeGreaterThan(0);
+    for (let i = 0; i < 130; i++) statuses.push((await postHook(url, routineKey(), "guess", from("198.51.100.9"))).status);
+    expect(statuses.slice(0, 120).every((s) => s === 401)).toBe(true);
+    expect(statuses.slice(120).every((s) => s === 429)).toBe(true);
     // No key at all costs nothing but a 401, and does not count either.
     expect((await postHook(url, null, "no key", from("198.51.100.9"))).status).toBe(401);
     for (let i = 0; i < 5; i++) expect((await postHook(url, key, `real ${i}`, from("192.0.2.1"))).status).toBe(202);
@@ -47,6 +59,7 @@ describe("a noisy routine", () => {
     const pc = await registerComputer(uniqueAccount(), "pc");
     const noisy = await registeredRoutine(pc, "noisy");
     const quiet = await registeredRoutine(pc, "quiet");
+    await clearOfMinuteBoundary();
     const statuses: number[] = [];
     for (let i = 0; i < 125; i++) statuses.push((await postHook(noisy.url, noisy.key, `n${i}`)).status);
     expect(statuses.filter((s) => s === 429).length).toBeGreaterThan(0);
@@ -109,17 +122,39 @@ describe("computer keys", () => {
 });
 
 describe("revocation", () => {
-  it("takes only ids that registered, so the revoked list cannot grow without bound", async () => {
-    const pc = await registerComputer(uniqueAccount(), "pc");
-    for (const id of ["ghost-1", "ghost-2", "ghost-3"]) {
-      expect((await apiCall(pc.token, "DELETE", `/v1/devices/${id}`)).status).toBe(404);
-    }
-    const revoked = await runInDurableObject(env.FORWARDER.getByName(objectOf(pc.tag)), (_i: ForwarderDO, state) =>
-      state.storage.sql.exec<{ n: number }>("SELECT COUNT(*) AS n FROM revoked").one().n,
+  it("takes any device id: one revoked before it registered can neither register nor take over a routine", async () => {
+    const account = uniqueAccount();
+    const pc = await registerComputer(account, "pc");
+    const { key } = await registeredRoutine(pc, "kept");
+    expect((await apiCall(pc.token, "DELETE", "/v1/devices/late-laptop")).status).toBe(204);
+    const late = await accountToken({ account, device: "late-laptop" });
+    const pair = await generateX25519();
+    const registering = await apiCall(late, "PUT", "/v1/devices/self", { encKey: b64u(pair.publicKey) });
+    expect(registering.status).toBe(403);
+    expect(await registering.json()).toEqual({ error: "revoked" });
+    const takeover = await apiCall(late, "PUT", "/v1/routines/kept", { keyHash: b64u(await hookKeyHash(key)), takeover: true });
+    expect(takeover.status).toBe(403);
+    expect((await apiCall(pc.token, "DELETE", "/v1/devices/late-laptop")).status).toBe(204); // again: still done
+  });
+
+  it("prunes revocations by age, once every token issued before them has expired, not by count", async () => {
+    const account = uniqueAccount();
+    const pc = await registerComputer(account, "pc");
+    const object = env.FORWARDER.getByName(objectOf(pc.tag));
+    const now = Date.now();
+    await runInDurableObject(object, (_i: ForwarderDO, state) => {
+      state.storage.sql.exec("INSERT INTO revoked (id, at) VALUES ('long-ago', ?), ('lately', ?)", now - REVOCATION_KEEP_MS - 1, now - 3600_000);
+    });
+    // A revocation past its window no longer holds: any token from before it has expired.
+    const back = await accountToken({ account, device: "long-ago" });
+    expect((await apiCall(back, "GET", "/v1/routines")).status).toBe(200);
+    const recent = await accountToken({ account, device: "lately" });
+    expect((await apiCall(recent, "GET", "/v1/routines")).status).toBe(403);
+
+    expect((await apiCall(pc.token, "DELETE", "/v1/devices/fresh")).status).toBe(204);
+    const left = await runInDurableObject(object, (_i: ForwarderDO, state) =>
+      state.storage.sql.exec<{ id: string }>("SELECT id FROM revoked ORDER BY id").toArray().map((row) => row.id),
     );
-    expect(revoked).toBe(0);
-    const other = await registerComputer(pc.account, "other");
-    expect((await apiCall(pc.token, "DELETE", `/v1/devices/${other.device}`)).status).toBe(204);
-    expect((await apiCall(pc.token, "DELETE", `/v1/devices/${other.device}`)).status).toBe(204); // already revoked: done
+    expect(left).toEqual(["fresh", "lately"]);
   });
 });

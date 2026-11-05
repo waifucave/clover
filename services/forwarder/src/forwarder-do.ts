@@ -24,7 +24,14 @@
 // computer is refused (held_elsewhere) or ignored. An ack is honoured from any of the account's computers,
 // since the one that acks has run the webhook. When the holder deletes a routine, its held webhooks stay
 // until they expire, so a routine moving to another computer (spec §7) keeps them whichever arrives first,
-// the old computer's DELETE or the new one's registration.
+// the old computer's DELETE or the new one's registration. Each held webhook carries a short tag of the key
+// it arrived under (in the same insert, no extra write): a registration keeps or adopts only those under its
+// own key, and drops the rest as "rekeyed", so re-creating a routine to replace a leaked key, or re-keying it
+// in place, never hands over what the old key queued.
+//
+// Revocation takes any device id (one revoked before it ever registered stays out too) and lasts 24 hours
+// and 10 minutes: past that, every token issued before it has expired, and the account service issues no
+// new ones to a revoked device. Old revocations are pruned by age when a new one is written.
 
 import { DurableObject } from "cloudflare:workers";
 
@@ -94,6 +101,16 @@ const TICKET_SLACK_MS = 60_000;
 /** Sequence numbers count microseconds, so a cutoff time in ms becomes a sequence number this way. */
 const SEQ_PER_MS = 1000;
 
+/** The bytes of a routine's key hash kept on each held webhook, to tell which key it arrived under. */
+const KEY_TAG_BYTES = 8;
+
+/** How long a revocation is kept: the longest account-token lifetime (24 h), plus clock skew and margin. */
+export const REVOCATION_KEEP_MS = 24 * 3600 * 1000 + 10 * 60 * 1000;
+
+function keyTag(keyHash: Uint8Array): ArrayBuffer {
+  return own(keyHash.subarray(0, KEY_TAG_BYTES)).buffer;
+}
+
 export class ForwarderDO extends DurableObject<Env> {
   private readonly sql: SqlStorage;
   private readonly limits: Limits;
@@ -118,12 +135,13 @@ export class ForwarderDO extends DurableObject<Env> {
     const schema = this.sql.exec<{ v: string }>("SELECT v FROM meta WHERE k = 'schema'").toArray()[0];
     if (schema) return;
     // WITHOUT ROWID wherever the key is text, so a row write is one row, with no index row beside it.
+    // Frozen at the first deploy: any later change needs a new schema version and a step that migrates to it.
     this.sql.exec(`
       CREATE TABLE devices (id TEXT PRIMARY KEY, kid BLOB NOT NULL, pub BLOB NOT NULL, name TEXT, added INTEGER NOT NULL) WITHOUT ROWID;
       CREATE TABLE revoked (id TEXT PRIMARY KEY, at INTEGER NOT NULL) WITHOUT ROWID;
       CREATE TABLE routines (id TEXT PRIMARY KEY, key_hash BLOB NOT NULL, device TEXT NOT NULL, allow_get INTEGER NOT NULL,
                              registered INTEGER NOT NULL) WITHOUT ROWID;
-      CREATE TABLE held (seq INTEGER PRIMARY KEY, routine TEXT NOT NULL, pid BLOB NOT NULL,
+      CREATE TABLE held (seq INTEGER PRIMARY KEY, routine TEXT NOT NULL, key_tag BLOB NOT NULL, pid BLOB NOT NULL,
                          received INTEGER NOT NULL, size INTEGER NOT NULL, env BLOB NOT NULL);
       CREATE TABLE tickets (nonce TEXT PRIMARY KEY, expires INTEGER NOT NULL) WITHOUT ROWID;
       CREATE TABLE drops (routine TEXT PRIMARY KEY, count INTEGER NOT NULL, reason TEXT NOT NULL, at INTEGER NOT NULL) WITHOUT ROWID;
@@ -152,7 +170,7 @@ export class ForwarderDO extends DurableObject<Env> {
   }
 
   private isRevoked(id: string): boolean {
-    return this.sql.exec("SELECT 1 AS x FROM revoked WHERE id = ?", id).toArray().length > 0;
+    return this.sql.exec("SELECT 1 AS x FROM revoked WHERE id = ? AND at > ?", id, Date.now() - REVOCATION_KEEP_MS).toArray().length > 0;
   }
 
   private routineRow(id: string): RoutineRow | undefined {
@@ -215,18 +233,19 @@ export class ForwarderDO extends DurableObject<Env> {
   }
 
   /**
-   * Revokes a computer that registered here (spec §8.1: revoking cuts its links at once). Its key stops being
-   * a recipient, its socket closes, and its routines go with it: their files lived on it. An id that never
-   * registered is refused, so the revoked list cannot grow without bound.
+   * Revokes a device (spec §8.1: revoking cuts its links at once), registered here or not: one revoked before
+   * it ever connected cannot register later with a token it already holds. A registered computer's key stops
+   * being a recipient, its socket closes, and its routines go with it: their files lived on it. Revocations
+   * older than every token they guard against are pruned here, so the list stays bounded by age.
    */
   async revokeDevice(caller: Caller, deviceId: string): Promise<{ ok: true } | Refusal> {
     const refused = this.refuse(caller);
     if (refused) return refused;
     if (!DEVICE_ID_RE.test(deviceId)) return { ok: false, status: 404, error: "unknown_device" };
-    if (!this.deviceRow(deviceId)) {
-      return this.isRevoked(deviceId) ? { ok: true } : { ok: false, status: 404, error: "unknown_device" };
-    }
-    this.sql.exec("INSERT OR IGNORE INTO revoked (id, at) VALUES (?, ?)", deviceId, Date.now());
+    const now = Date.now();
+    this.sql.exec("DELETE FROM revoked WHERE at <= ?", now - REVOCATION_KEEP_MS);
+    this.sql.exec("INSERT INTO revoked (id, at) VALUES (?, ?) ON CONFLICT(id) DO UPDATE SET at = excluded.at", deviceId, now);
+    if (!this.deviceRow(deviceId)) return { ok: true };
     this.sql.exec("DELETE FROM devices WHERE id = ?", deviceId);
     this.dropWhere("routine IN (SELECT id FROM routines WHERE device = ?)", null, deviceId);
     this.sql.exec("DELETE FROM drops WHERE routine IN (SELECT id FROM routines WHERE device = ?)", deviceId);
@@ -258,14 +277,18 @@ export class ForwarderDO extends DurableObject<Env> {
         allowGet,
         Date.now(),
       );
-      // Webhooks kept from an earlier holder (a move whose DELETE came first) are this computer's now.
+      // Webhooks kept from an earlier holder (a move whose DELETE came first) are this computer's now, if they
+      // came under this key; under another key (the routine re-created to replace it), they are dropped.
+      this.dropRekeyed(routineId, input.keyHash);
       if (this.heldFor(routineId) > 0) this.resendTo(caller.device);
       return { ok: true, device: caller.device };
     }
     if (existing.device === caller.device) {
-      if (!equalBytes(new Uint8Array(existing.key_hash), input.keyHash) || existing.allow_get !== allowGet) {
+      const sameKey = equalBytes(new Uint8Array(existing.key_hash), input.keyHash);
+      if (!sameKey || existing.allow_get !== allowGet) {
         this.sql.exec("UPDATE routines SET key_hash = ?, allow_get = ? WHERE id = ?", keyHash, allowGet, routineId);
       }
+      if (!sameKey) this.dropRekeyed(routineId, input.keyHash);
       return { ok: true, device: caller.device };
     }
     // Held by another computer. Moving a routine file re-registers it from its new computer with takeover
@@ -279,8 +302,14 @@ export class ForwarderDO extends DurableObject<Env> {
       Date.now(),
       routineId,
     );
+    this.dropRekeyed(routineId, input.keyHash);
     this.resendTo(caller.device);
     return { ok: true, device: caller.device };
+  }
+
+  /** Drops a routine's held webhooks that arrived under another key than `keyHash`, reported as "rekeyed". */
+  private dropRekeyed(routineId: string, keyHash: Uint8Array): void {
+    this.dropWhere("routine = ? AND key_tag != ?", "rekeyed", routineId, keyTag(keyHash));
   }
 
   /**
@@ -298,7 +327,10 @@ export class ForwarderDO extends DurableObject<Env> {
     return { ok: true };
   }
 
-  /** The account's routines; drops on the caller's own routines are reported here once, then forgotten. */
+  /**
+   * The account's routines. Drops on the caller's own routines are cleared once listed here (the hello only
+   * reports them), so a computer that restarts before listing still learns of them.
+   */
   async listRoutines(caller: Caller): Promise<{ ok: true; routines: RoutineInfo[] } | Refusal> {
     const refused = this.refuse(caller);
     if (refused) return refused;
@@ -379,9 +411,10 @@ export class ForwarderDO extends DurableObject<Env> {
     this.makeRoom(envelope.length);
     const seq = this.nextSeq(now);
     this.sql.exec(
-      "INSERT INTO held (seq, routine, pid, received, size, env) VALUES (?, ?, ?, ?, ?, ?)",
+      "INSERT INTO held (seq, routine, key_tag, pid, received, size, env) VALUES (?, ?, ?, ?, ?, ?, ?)",
       seq,
       input.routineId,
+      keyTag(input.keyHash),
       pid.buffer,
       input.receivedAt,
       envelope.length,
@@ -477,17 +510,15 @@ export class ForwarderDO extends DurableObject<Env> {
     return rows.length;
   }
 
-  /** Drops on a computer's routines, for its hello: forgotten here once taken. */
-  private takeDrops(device: string): DropReport[] {
-    const reports = this.sql
+  /** Drops on a computer's routines, for its hello. Only listing the routines clears them. */
+  private dropsFor(device: string): DropReport[] {
+    return this.sql
       .exec<{ routine: string; count: number; reason: string; at: number }>(
         "SELECT d.routine AS routine, d.count AS count, d.reason AS reason, d.at AS at FROM drops d JOIN routines r ON r.id = d.routine WHERE r.device = ?",
         device,
       )
       .toArray()
       .map((row) => ({ routine: row.routine, count: row.count, reason: row.reason as DropReason, at: row.at }));
-    if (reports.length > 0) this.sql.exec("DELETE FROM drops WHERE routine IN (SELECT id FROM routines WHERE device = ?)", device);
-    return reports;
   }
 
   // ---- expiry ----
@@ -546,7 +577,7 @@ export class ForwarderDO extends DurableObject<Env> {
     const pending = this.sql
       .exec<{ n: number }>("SELECT COUNT(*) AS n FROM held h JOIN routines r ON r.id = h.routine WHERE r.device = ?", device)
       .one().n;
-    const dropped = this.takeDrops(device);
+    const dropped = this.dropsFor(device);
     const hello: ServiceFrame = { t: "hello", v: 1, device, pending, ...(dropped.length > 0 ? { dropped } : {}) };
     server.send(JSON.stringify(hello));
     this.pump(server, state);

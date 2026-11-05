@@ -5,16 +5,16 @@
 //
 //   PUT    /v1/devices/self      { encKey, name? }            -> DeviceRegistered      this computer's forwarder key
 //   GET    /v1/devices                                          -> { devices: DeviceInfo[] }
-//   DELETE /v1/devices/:id                                      -> 204                   revoke a computer that registered
+//   DELETE /v1/devices/:id                                      -> 204                   revoke a device (any id, for 24 h 10 min)
 //   PUT    /v1/routines/:id      { keyHash, takeover?, allowGet? } -> RoutineRegistered (409 RoutineConflict)
 //   DELETE /v1/routines/:id                                     -> 204                   (409 RoutineConflict: held elsewhere)
-//   GET    /v1/routines                                         -> { routines: RoutineInfo[] }  reports drops once
+//   GET    /v1/routines                                         -> { routines: RoutineInfo[] }  clears the caller's drop reports
 //   POST   /v1/tickets                                          -> Ticket                one connection, 60 s
 //
 // The connection: a WebSocket to Ticket.url (GET /v1/connect?ticket=...), used only for webhooks.
 //
 //   service -> computer   binary  [0x01][seq: u64][envelope]      a held webhook (envelope.ts)
-//                         text    JSON ServiceFrame               hello (with the drops since last told), bye
+//                         text    JSON ServiceFrame               hello (with the drops not yet listed), bye
 //                         text    "pong"                          the Durable Object's free auto-response
 //   computer -> service   text    "ping"                          keep-alive, answered without waking the object
 //                         text    JSON ComputerFrame              ack / nack, at most 64 [seq, pid] pairs each
@@ -72,9 +72,10 @@ export function decodeWebhookFrame(frame: Uint8Array): { seq: number; envelope: 
 
 /**
  * Why webhooks were dropped before a routine's computer took them: the account's cap (the routine holding the
- * most went first), the 7-day hold, or a computer that could not open them (sealed before its key registered).
+ * most went first), the 7-day hold, a computer that could not open them (sealed before its key registered),
+ * or a new key (they arrived under the routine's old key, which may have leaked).
  */
-export type DropReason = "cap" | "expired" | "unreadable";
+export type DropReason = "cap" | "expired" | "unreadable" | "rekeyed";
 
 export interface DropCount {
   count: number;
@@ -88,7 +89,7 @@ export interface DropReport extends DropCount {
 }
 
 export type ServiceFrame =
-  /** `dropped`: drops for this computer's routines since it was last told; the service forgets them once sent. */
+  /** `dropped`: drops on this computer's routines not yet listed; listing its routines (GET) clears them. */
   | { t: "hello"; v: 1; device: string; pending: number; dropped?: DropReport[] }
   | { t: "bye"; reason: "replaced" | "revoked" | "stale" | "reauth" };
 
@@ -130,7 +131,7 @@ export interface RoutineInfo {
   held: number;
   /** Whether a GET to its URL counts as a webhook (off unless asked for: link previewers fetch pasted URLs). */
   allowGet: boolean;
-  /** Drops since the routine's computer was last told; listing by that computer forgets them. */
+  /** Drops not yet listed by the routine's computer; that computer's list clears them. */
   dropped?: DropCount;
 }
 

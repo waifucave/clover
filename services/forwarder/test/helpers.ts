@@ -10,6 +10,15 @@ import { hookKeyHash, type DeviceRegistered, type RoutineRegistered, type Ticket
 
 export const ORIGIN = "https://hooks.test";
 
+/**
+ * Rate-limit windows are aligned to the wall clock's minutes (miniflare, like Cloudflare): a test that counts
+ * toward a limit starts its burst well clear of the next minute, so the window cannot reset half-way.
+ */
+export async function clearOfMinuteBoundary(needMs = 12_000): Promise<void> {
+  const left = 60_000 - (Date.now() % 60_000);
+  if (left < needMs) await new Promise((r) => setTimeout(r, left + 50));
+}
+
 /** The name of the Durable Object an account's tag points at: the 11-byte id after its version byte. */
 export function objectOf(tag: string): string {
   return b64u(fromB64u(tag).subarray(1, 12));

@@ -18,6 +18,7 @@ import {
   registerComputer,
   registeredRoutine,
   registerRoutine,
+  routineKey,
   uniqueAccount,
   type Computer,
   type Socket,
@@ -122,5 +123,48 @@ describe("refusing webhooks", () => {
     await new Promise((r) => setTimeout(r, 200));
     expect(await heldCount(laptop.tag, "mine")).toBe(0);
     own.close();
+  });
+});
+
+describe("a new key", () => {
+  it("re-creating a routine under a new key drops what the old key queued, as rekeyed", async () => {
+    const { laptop } = await twoComputers();
+    const first = await registeredRoutine(laptop, "leaked");
+    for (const body of ["queued by a leaked key", "and another"]) expect((await postHook(first.url, first.key, body)).status).toBe(202);
+    expect((await apiCall(laptop.token, "DELETE", "/v1/routines/leaked")).status).toBe(204);
+    const fresh = await registeredRoutine(laptop, "leaked");
+    expect(await heldCount(laptop.tag, "leaked")).toBe(0);
+    expect((await routines(laptop))[0]!.dropped).toMatchObject({ count: 2, reason: "rekeyed" });
+    expect((await postHook(first.url, first.key, "the old key")).status).toBe(401);
+    const socket = await openSocket(laptop);
+    expect((await postHook(fresh.url, fresh.key, "the new key")).status).toBe(202);
+    await socket.until(() => socket.binary().length === 1, 5000, "the new key's webhook");
+    expect(await bodies(socket, laptop)).toEqual(["the new key"]);
+    socket.close();
+  });
+
+  it("re-keying in place drops what the old key queued", async () => {
+    const { laptop } = await twoComputers();
+    const first = await registeredRoutine(laptop, "rotated");
+    expect((await postHook(first.url, first.key, "old")).status).toBe(202);
+    const second = await registeredRoutine(laptop, "rotated");
+    expect((await postHook(second.url, second.key, "new")).status).toBe(202);
+    expect(await heldCount(laptop.tag, "rotated")).toBe(1);
+    expect((await routines(laptop))[0]!.dropped).toMatchObject({ count: 1, reason: "rekeyed" });
+  });
+
+  it("a takeover under a new key drops what the old key queued; under the same key it keeps them", async () => {
+    const { laptop, desktop } = await twoComputers();
+    const same = await registeredRoutine(laptop, "same-key");
+    const changed = await registeredRoutine(laptop, "new-key");
+    expect((await postHook(same.url, same.key, "kept")).status).toBe(202);
+    expect((await postHook(changed.url, changed.key, "dropped")).status).toBe(202);
+    expect((await registerRoutine(desktop, "same-key", same.key, true)).status).toBe(200);
+    expect((await registerRoutine(desktop, "new-key", routineKey(), true)).status).toBe(200);
+    expect(await heldCount(laptop.tag, "same-key")).toBe(1);
+    expect(await heldCount(laptop.tag, "new-key")).toBe(0);
+    const listed = await routines(desktop);
+    expect(listed.find((r) => r.id === "new-key")!.dropped).toMatchObject({ count: 1, reason: "rekeyed" });
+    expect(listed.find((r) => r.id === "same-key")!.dropped).toBeUndefined();
   });
 });
