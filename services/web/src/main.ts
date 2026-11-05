@@ -203,14 +203,11 @@ async function chat(record: PairRecord, bot: BotView): Promise<void> {
     transcript.append(node);
     transcript.scrollTop = transcript.scrollHeight;
   };
-  const history = await link.request<{ events: Record<string, unknown>[] }>("session.history", { id: bot.mainSession, limit: 50 });
-  for (const event of history.events) append(event);
+  // Listeners first, so nothing typed or streamed while the history loads is lost.
   link.onNotify("event", (event) => {
     const e = event as Record<string, unknown>;
     if (e.sessionId === undefined || e.sessionId === bot.mainSession) append(e);
   });
-  await link.request("session.attach", { id: bot.mainSession });
-
   composer.addEventListener("submit", (event) => {
     event.preventDefault();
     const text = input.value.trim();
@@ -221,6 +218,9 @@ async function chat(record: PairRecord, bot: BotView): Promise<void> {
       append({ type: "error", text: "Not sent: the computer couldn't be reached." });
     });
   });
+  const history = await link.request<{ events: Record<string, unknown>[] }>("session.history", { id: bot.mainSession, limit: 50 });
+  transcript.prepend(...history.events.map(line).filter((n): n is HTMLElement => n !== null));
+  await link.request("session.attach", { id: bot.mainSession });
 }
 
 void main().catch(() => show(el("div", { className: "card" }, el("p", { className: "error", text: "Something went wrong loading the page." }))));

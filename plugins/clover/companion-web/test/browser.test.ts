@@ -141,6 +141,7 @@ describe.skipIf(!enabled)("the web companion in headless Chrome", () => {
       iceServers: [],
     };
     const sent: string[] = [];
+    let attached = false;
     let page: Page | null = null;
     const host = new WebLinkHost({
       client: new HandshakeClient({ origin: harness.url }),
@@ -158,7 +159,10 @@ describe.skipIf(!enabled)("the web companion in headless Chrome", () => {
       adopt: (link: RtcLink) => {
         link.handle("bot.list", () => ({ bots: [{ id: "alpha", name: "Alpha", mainSession: "s_alpha", state: "idle" }] }));
         link.handle("session.history", () => ({ events: [{ type: "assistant_message", sessionId: "s_alpha", text: "Hello from Alpha" }], hasMore: false }));
-        link.handle("session.attach", () => ({ lastSeq: 1 }));
+        link.handle("session.attach", () => {
+          attached = true;
+          return { lastSeq: 1 };
+        });
         link.handle("session.send", (params) => {
           const text = (params as { message: { text: string } }).message.text;
           sent.push(text);
@@ -207,6 +211,8 @@ describe.skipIf(!enabled)("the web companion in headless Chrome", () => {
     await page.until("[...document.querySelectorAll('button')].some((b) => b.textContent === 'Open')");
     await page.evaluate("[...document.querySelectorAll('button')].find((b) => b.textContent === 'Open').click()");
     await page.until("document.body.innerText.includes('Hello from Alpha')");
+    for (let i = 0; i < 300 && !attached; i++) await Bun.sleep(100);
+    expect(attached).toBe(true);
     await page.evaluate("document.querySelector('textarea').value = 'hi from chrome'; document.querySelector('form.composer').requestSubmit()");
     await page.until("[...document.querySelectorAll('.msg.user')].some((m) => m.textContent.includes('hi from chrome'))");
     expect(sent).toEqual(["hi from chrome"]);
