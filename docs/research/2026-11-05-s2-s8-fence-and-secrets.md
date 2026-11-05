@@ -2,36 +2,44 @@
 
 Date: 2026-11-05. Lane C, `lane/c-m0`, spec revision 17; base `a481f7e14`.
 
-**Review findings addressed: the Windows candidate fails the required floor. Windows is not admitted for release.**
-The paired controls demonstrate an allowed user-Startup write outside the permitted roots. Historical **29/30 + 7/7**
-figures are provisional, alias-assisted measurements on an artificially modified Session 0 namespace.
-The unmodified candidate admitted zero workload checks: initialization failed.
-The dedicated-principal candidate runs useful work and passes most focused checks, but requires a
-Session 0 compatibility diagnostic. Review follow-up replaces the missing COM marker with child
-receipts and distinguishes default COM activation from an unavailable local-server-only class. Supported Windows 11
-and authenticated agent integration remain live gates. Nothing here establishes production readiness.
+**Status after the rerun: the out-of-root Startup write is closed; Windows is still not admitted for
+release.** The write that sank the candidate landed in the sandbox principal's own profile: the
+launcher lets the principal write there, and the old fixture prepared a different folder. With the
+principal's profile resolved by SID and all three Startup folders denied, every Startup route is
+refused against a positive unfenced control (`review-controls-v6.txt`), and the full suite passes
+**31/32** ordinary checks (the one failure is the superseded historical COM assertion), **7/7**
+approved escapes and job cleanup (`final-windows-candidate-v3.txt`). What still blocks admission:
+every candidate run needs the Session 0 namespace alias diagnostic (the unmodified launch admits
+zero commands); the principal's own profile stays writable by construction (declared a scratch
+root below, **[P]** for the controller); and Windows 11 is a live gate. Nothing here establishes
+production readiness.
+
+**Decided by the owner:** on Windows, Bash runs as the dedicated sandbox principal. `gh`, git
+credential helpers, Docker registry logins and ssh-agent signing reach it only through a Clover
+credential broker that never hands over raw keys, as on Linux. Spec §9.1 changes; the controller
+edits the spec. What the broker must cover and what it costs are in S2.3–4.
 
 The controller ruled that generated test keys in disposable stores are authorized, and that §8.5's
 unattended fallback remains: user-scoped systemd sealing with TPM where available, otherwise an
-owner-only plaintext key file, labelled plaintext and hidden by the fence. That fallback ruling is resolved;
-the separate-principal conflict with §9.1 **[D]** below is a different, unresolved owner decision.
-**Locked persistence is a rejected alternative:** cloud computers can be main/refresher computers and
-must work unattended after reboot; requiring a person to unlock them would break that requirement.
-No spec or shared contract was edited. Network, semantic D-Bus, caller-check and backend edits below
-remain proposals for the controller after review.
+owner-only plaintext key file, labelled plaintext and hidden by the fence. **Locked persistence is a
+rejected alternative:** cloud computers can be main/refresher computers and must work unattended
+after reboot; requiring a person to unlock them would break that requirement. No spec or shared
+contract was edited. Network, semantic D-Bus, caller-check and backend edits below remain proposals
+for the controller after review.
 
 ## Method and evidence
 
 The two spike READMEs give one command per check. Evidence is in their `results/` directories.
 `final-*` results supersede intermediate `resumed-*` fixture failures; the interrupted v2 Windows
 candidate file contains only an upload line and is not a measurement. Windows line endings/NUL
-padding and personal temporary paths are normalized. The first Windows store artifact explicitly
-records recovery from captured successful stdout after an older transport overwrote its output file.
-No secret value, password or real account credential is included in any artifact.
+padding and personal temporary paths are normalized; the normaliser keeps the sandbox principal's
+profile, a temporary profile and the real user's home apart. The first Windows store artifact
+explicitly records recovery from captured successful stdout after an older transport overwrote its
+output file. No secret value, password or real account credential is included in any artifact.
 
 | Platform | Actual environment | Scope limit |
 | --- | --- | --- |
-| Windows | Server 2025 build 26100, SSH session 0; Git 2.51.2.windows.1, Node 22.21.1, Bun 1.3.1; SRT 0.0.81; Codex 0.166.0 | Surrogate for Windows 11, not a desktop logon |
+| Windows | Server 2025 build 26100, SSH session 0; Git 2.51.2.windows.1, Node 22.21.1, Bun 1.3.1; SRT 0.0.81 (srt-win 0.0.1); Codex 0.166.0 | Surrogate for Windows 11, not a desktop logon |
 | Ubuntu | 26.04.1; kernel 7.0.0-1014-gcp; bwrap 0.11.1, xdg-dbus-proxy 0.1.7, systemd 259.9 | Cloud VM; vTPM present |
 | Fedora | Fedora 45 container, proxy 0.1.9; bwrap package 0.13.1 | Ubuntu kernel; no Fedora SELinux host validation |
 | Mac | macOS 26.6.1/25G76 arm64; Codex 0.166.0, SRT 0.0.81; Cursor 2026.10.22-27dcf5f | Below the spec's macOS 27 minimum |
@@ -40,9 +48,17 @@ All work stayed in lane-owned paths. Winter source/install/processes, the real K
 agent homes on this Mac were untouched. The SDK clone was read-only. No `claude` invocation,
 agent prompt, model call, account login, GUI, app bundle, signing identity or sub-agent was used.
 VM password authentication used generated local test users only, with passwords held in memory.
-Cloud operations were limited to starting/stopping/SSH into the two named VMs. Both were stopped
-after testing; Windows test accounts, WFP/firewall rules, grants and large downloaded test packages
-were removed. Installed Git/Node/Bun and Linux package prerequisites remain on the stopped VMs.
+Cloud operations were limited to starting/stopping/SSH into the two named VMs. After a network
+outage on 2026-11-05, direct SSH to both VMs stayed closed from this network while IAP TCP
+forwarding worked, so the rerun used the same SSH sessions through IAP (`CLOVER_SPIKE_IAP=1` in
+`remote.py`). Both VMs were stopped after testing. `rerun-windows-cleanup.txt` records the
+srt-win and Codex sandbox uninstalls (which remove the principal, WFP filters and grants) exiting 0,
+and no remaining sandbox profile folder or lane test user; the script also deletes the test
+packages. Installed Git/Node/Bun and Linux package prerequisites remain on the stopped VMs.
+
+Results written by an interrupted session before the rerun's fixes (a Startup probe, candidate v2
+and controls v5) were dropped: their normalisation merged the principal's profile with the
+administrator's home, so they could not show which folder was tested.
 
 ## Winter baseline
 
@@ -82,20 +98,21 @@ alone did not resolve MSYS's named-object denial. See `resumed-diagnostics.txt`.
 
 ## S2.2 — One complete Windows candidate and every requested route
 
-**Verdict: does not meet the release floor.** Useful commands run only in the alias-assisted
-configuration; paired review controls expose a user-Startup write that the original fixture missed.
-The candidate uses the pinned upstream SRT native Rust launcher: dedicated unprivileged principal,
-write-restricted token, explicit ACL grants/denies, WFP keyed to that principal, private desktop,
-handle whitelist, process mitigations and kill-on-close jobs. Four WFP filters were installed.
-No broad user-profile read grant was applied. Microsoft's VC++ runtime was a missing dependency.
+**Verdict: passes the tested routes with limits; not admitted for release.** Useful commands run
+only in the alias-assisted configuration. The candidate uses the pinned upstream SRT native Rust
+launcher: dedicated unprivileged principal, write-restricted token, explicit ACL grants/denies, WFP
+keyed to that principal, private desktop, handle whitelist, process mitigations and kill-on-close
+jobs. Four WFP filters were installed. No broad user-profile read grant was applied. Microsoft's
+VC++ runtime was a missing dependency.
 
 It initially failed closed on a pre-existing hardlink to a denied file, and then failed under SSH
 because it expected `\Sessions\0\BaseNamedObjects`, whereas this environment uses the global
 namespace. The diagnostic `session0-bno.cs` holds a temporary object-manager alias to the real
 namespace; handles close afterwards. **This alias is not a production solution.** A production
 launcher must resolve Session 0 correctly without modifying the namespace. With that diagnostic,
-`final-windows-candidate.txt` contains 30 ordinary checks (29 successful assertions), seven approved-
-escape checks (7/7), job cleanup and an explicit out-of-process COM observation.
+`final-windows-candidate-v3.txt` contains 32 ordinary checks (31 successful assertions), seven
+approved-escape checks (7/7), job cleanup and an out-of-process COM observation. The one failed
+assertion is the historical `com-outofproc` rejection test; the child receipts below supersede it.
 
 | Requirement / route | Observed result |
 | --- | --- |
@@ -108,9 +125,10 @@ escape checks (7/7), job cleanup and an explicit out-of-process COM observation.
 | Services / Service Control Manager | Service creation rejected |
 | WMI process creation | Attempt rejected |
 | In-process WScript COM creating a child | Child retained protected-read denial; process creation itself is not an escape |
-| Shell.Application | Historical marker was unobserved; review child receipts below supersede that result |
+| Shell.Application | Child receipts: fenced child non-admin, protected read denied |
 | runas / saved-credential attempt | Both fenced and unfenced attempts fail; no attributable fence denial |
-| User/common Startup folders | User write accepted after directory preparation; common write denied with a positive unfenced control |
+| Startup folders: the principal's own, the real user's, all users' | All three refused (EPERM), each with a positive unfenced control |
+| The principal's own profile | Writable by construction; declared the sandbox's scratch root (below) |
 | Job cleanup | Detached delayed child did not write its marker after parent exit |
 | Direct local listener and metadata TCP | Both denied, ordinary and approved-escape sessions |
 
@@ -120,22 +138,74 @@ protection and both network denials held. They are deliberately network-closed e
 not implement arbitrary approved network access. Per-command write-root overrides are unsupported
 by this vendor API and were not silently dropped.
 
-Ordinary end-to-end checks took 654–2708 ms, median 706 ms; approved-escape checks 625–666 ms,
-median 634 ms. These include PowerShell, Node worker and native broker execution. The earlier
-2–5 ms launch-return figures exclude provisioning/compilation and are not comparable production costs.
-The COM observation, Session 0 dependency, full-home policy, concurrency/crash recovery and Windows 11
-remain gaps. No claim is made that every COM server or token-impersonation technique is closed.
+In the rerun, ordinary end-to-end checks took 703–1668 ms, median 740 ms; approved-escape checks
+690–711 ms, median 701 ms (earlier runs: 654–2708 ms, median 706 ms). These include PowerShell,
+Node worker and native broker execution. The earlier 2–5 ms launch-return figures exclude
+provisioning/compilation and are not comparable production costs. The Session 0 dependency,
+full-home policy, concurrency/crash recovery and Windows 11 remain gaps. No claim is made that
+every COM server or token-impersonation technique is closed.
+
+### The out-of-root Startup write: cause and fix
+
+**Cause.** The launcher's `exec --write-restricted-token` builds the child token with the
+restricting SIDs `[sandbox user, Everyone, RESTRICTED]`, "so write access held by
+`BUILTIN\Users` / `Authenticated Users` no longer reaches the child" (its own help text). Access
+granted to the sandbox user itself still reaches it, and Windows gives every user full control of
+its own profile. A leftover `C:\Users\clover-spike-sandbox` folder, made by an earlier fixture,
+had moved the principal's profile to `clover-spike-sandbox.<COMPUTERNAME>`. The v4 fixture prepared
+the leftover folder; the fenced write landed in the real profile.
+
+`startup-probe.mjs` (`final-startup-probe.txt`) resolves the profile by SID and tries the same
+create-and-delete in each place. The administrator's unfenced control succeeds everywhere.
+
+| Fenced write to | Baseline (work only) | Deny the three Startup folders | Deny the whole profile |
+| --- | --- | --- | --- |
+| Allowed `work` | allowed | allowed | allowed |
+| The principal's Startup folder | **allowed** | EPERM | EPERM |
+| The principal's profile root, Roaming, Temp | **allowed** | **allowed** | EPERM |
+| Real user's and common Startup, leftover folder, outside fixture | EPERM | EPERM | EPERM |
+| Node, Bash and PowerShell start | yes | yes | yes, on a temporary profile |
+
+A deny on the whole profile is not usable: Windows loaded a temporary profile (`C:\Users\TEMP`) and
+changed the principal's ProfileList entry, which breaks the principal for later sessions (it was
+re-provisioned afterwards).
+
+**Fix**, in `candidate.mjs`, `review-routes.mjs`, `provision-candidate.ps1` and the cleanup:
+
+1. Resolve the principal's profile by SID from ProfileList after its first launch, never from the
+   account name, and stop if the fenced process runs on a temporary profile.
+2. A fresh profile made by this non-interactive logon has no Startup folder, and a deny cannot be
+   stamped on a missing path. Provisioning (elevated; the administrator in the harness) creates it
+   first. Without that step the first rerun's `startup-user` check was not refused.
+3. Deny the principal's, the real user's and the common Startup folders. Only EPERM/EACCES count
+   as denials; a missing folder is a fixture error, never evidence.
+4. Provisioning and cleanup remove an earlier principal's profile by SID and any leftover folder,
+   so the redirect does not recur.
+
+The rerun refuses all three Startup writes with EPERM in the suite and in the paired controls.
+
+**Limit.** The principal's own profile stays writable. It is the principal's, never the user's, and
+holds no Clover or user data, so this candidate declares it the sandbox's scratch root
+(`principal-scratch-write` records that the write lands there). Logon-start entries inside it, its
+Startup folder and its own registry hive (the hive was not measured), take effect only when the
+principal's desktop shell starts. The launcher never starts one: children run on a non-interactive
+desktop, the account is hidden from logon, and its password is readable only by the broker (the
+vendor's state database denies the sandbox group). Because the principal owns that tree, denies
+inside it are weaker than denies on paths it does not own; the M1 helper should therefore keep no
+persistent principal profile at all (M1 entry below). **[P] for the controller:** accept the
+principal's profile as the Windows sandbox's scratch root until M1, or require the M1 change before
+the candidate counts as meeting the floor.
 
 ### Review controls and actual administrator context
 
-`spikes/s2-windows-fence/results/review-controls-v4.txt` is the final paired run; v1 records an
-interrupted observer fixture, v2/v3 are intermediate successful probes. The real launching user is
-explicitly verified as an enabled local administrator. The fenced handle-probe process is explicitly
-non-admin and `IsTokenRestricted=true`, while its unfenced control is admin/unrestricted. Therefore
-these results include the common case where Clover's real user is an administrator; they do not
-depend on treating an admin user's unrestricted token as a safe fence.
+`spikes/s2-windows-fence/results/review-controls-v6.txt` is the final paired run (v4 found the
+Startup write; v1–v3 are earlier fixtures). The real launching user is explicitly verified as an
+enabled local administrator. The fenced handle-probe process is explicitly non-admin and
+`IsTokenRestricted=true`, while its unfenced control is admin/unrestricted. Therefore these results
+include the common case where Clover's real user is an administrator; they do not depend on
+treating an admin user's unrestricted token as a safe fence.
 
-Every broker/Startup denial now has the same-operation unfenced control:
+Every broker/Startup denial has the same-operation unfenced control:
 
 | Route | Unfenced administrator | Fenced principal | Attribution |
 | --- | --- | --- | --- |
@@ -144,16 +214,16 @@ Every broker/Startup denial now has the same-operation unfenced control:
 | Service creation | Succeeds | Rejected | Unprivileged principal is an intentional boundary |
 | WMI process creation | Return 0, child marker observed | Rejected, no marker | Positive execution control |
 | runas /savecred | Fails without a saved-credential fixture | Fails | **Not attributable**; excluded from closure claims |
-| User Startup file creation | Succeeds | **Succeeds** | Original ENOENT was a fixture error; candidate violates allowed-write policy |
-| Common Startup file creation | Succeeds | Rejected | Positive control |
+| The principal's Startup folder (resolved by SID) | Succeeds | Rejected, EPERM | Positive control; deny on the folder provisioning created |
+| The real user's Startup folder | Succeeds | Rejected, EPERM | Positive control |
+| Common Startup folder | Succeeds | Rejected, EPERM | Positive control |
 | Local listener and metadata TCP | Connect | Rejected | Positive network controls; no metadata HTTP request/credential read |
 
-The original Startup test did not ensure the user Startup directory existed. The new harness
-materializes both host and sandbox profile directories before attempting the same disposable file
-write/delete. This proves a forbidden write, **not** an observed logon-time execution or access to
-the original user's credentials. It is enough to reject this candidate as the required floor.
+Nothing is granted inside the principal's profile by the administrator; the only fixture step there
+is the Startup folder that provisioning creates. A Startup denial proves a refused write, not an
+observed logon-time execution.
 
-`Shell.Application.ShellExecute` is now observable: both controls create a child receipt with PID,
+`Shell.Application.ShellExecute` is observable: both controls create a child receipt with PID,
 parent PID, administrator status and actual protected-canary read outcome. The unfenced child is
 admin and reads the public canary; the fenced child is non-admin and cannot read it. The fenced
 delayed receipt is absent after its parent ends, including the floor-release follow-up whose initial
@@ -181,49 +251,78 @@ inherited/duplication cases with positive controls and reports the actual remain
 
 ## S2.3–4 — Helper, design and M1 entry
 
-### Blocking finding: the candidate changes the [D] Windows credential model
+### Decided: Windows Bash runs as the sandbox principal; credentials go through a broker
 
-Spec §9.1 says Windows Bash runs as the user and leaves that user's OS store open to `gh`, Docker
-and git. The only tested posture that both fenced writes and ran Bash uses a **different principal**.
-It cannot transparently use the real user's DPAPI, Credential Manager or Windows OpenSSH agent.
-`resumed-provision-v2.txt` records no profile read grant; granting files would not change per-user
-DPAPI/Credential Manager identity. Original-user strong-token configurations failed Bash startup.
-The candidate **does not implement this [D] decision**. Its recommendation is conditional on an owner
-decision. Controller authorization to evaluate it is not adoption of that product change.
-
-Proposed §9.1 text, **[P], touches [D] — owner decides**:
+The only tested posture that both fenced writes and ran Bash uses a different principal, which
+cannot use the real user's DPAPI, Credential Manager or Windows OpenSSH agent; original-user
+strong-token configurations failed Bash startup. Spec §9.1 had said Windows Bash runs as the user
+with the OS store open to `gh`, Docker and git. The owner has decided for the sandbox principal
+with a credential broker. Text for §9.1, for the controller to apply:
 
 > On Windows, model-run Bash and PowerShell execute as a dedicated sandbox principal under the
-> persistent floor. They do not directly inherit the user's DPAPI, Credential Manager or ssh-agent
-> access. Approved external-tool credentials are mediated by a Clover credential broker acting in
-> the user's authenticated logon context, as credential access is mediated on Linux. Clover's own
-> secrets, approval tokens and device keys are never served to model commands. The broker admits
-> only the explicitly allowed credential operation for that session, destination and identity.
+> persistent floor. They do not inherit the user's DPAPI, Credential Manager or ssh-agent access.
+> `gh`, git credential helpers, Docker registry logins and ssh-agent signing reach them only through
+> a Clover credential broker acting in the user's logon context, as on Linux; it never hands over raw
+> keys or stores. Clover's own secrets, approval tokens and device keys are never served to model
+> commands. The broker admits only the credential operation allowed for that session, destination
+> and identity.
 
-The broker must cover `gh` host/account token lookup; git credential-helper `get` plus approved
-store/erase lifecycle keyed by protocol/host/path/user; Docker's registry credential-helper protocol
-(not unrestricted host daemon-pipe access); and ssh-agent identity listing/signing with allowed keys,
-session/destination constraints where supported, no private-key export and no blanket forwarding.
-Raw host store/agent pipes stay closed. Requests must not become arbitrary host command execution.
+**What the broker must cover** (M1). Windows has no IPC point like Linux's Secret Service where one
+semantic filter covers every tool, so each tool gets an adapter:
 
-Costs: an extra IPC/authorization plus OS-store operation per uncached lookup/sign, per-tool adapters,
-rotation/recovery, logon/profile lifecycle, packaging/version compatibility and secret-safe audit.
-Caching trades fewer lookups for retained credential material. **Broker latency was not measured**;
-the 706/634 ms shell-fixture medians are not broker overhead estimates. Setup also requires account/
-WFP provisioning. The current external-credential fixtures do not prove these Windows integrations.
+| Tool | How it reaches the broker | What stays closed |
+| --- | --- | --- |
+| git | `credential.helper` set to a Clover helper: `get`, and `store`/`erase` only after approval, keyed by protocol, host, path and user | Git Credential Manager over the user's Credential Manager |
+| Docker | the registry credential-helper protocol (`get`/`list`) through a Clover `docker-credential-*` helper | the Docker engine pipe, which can start host containers |
+| gh | its token for the approved host and account, released for that command only (gh reads it from its environment; on Linux it is a Secret Service lookup) | the user's Credential Manager and gh's stored hosts |
+| ssh | an agent endpoint served by the broker: identity listing and signing for allowed keys, with session and destination constraints where supported | private-key export, blanket forwarding, the user's own agent pipe |
 
-Alternatives: continue original-user AppContainer/restricted-token research (no working write-fenced
-Bash proof yet); use WSL2/a VM (still needs credential forwarding and changes process/filesystem
-semantics); or explicitly reduce supported credential integrations. Unfenced original-user commands
-restore store access by abandoning the required floor and are not an acceptable silent fallback.
-Copying user tokens or raw stores defeats the separation. The controller takes this [D] change to
-the owner before M1 can adopt the recommendation.
+A released token is visible to that command's processes, as on Linux; keys never leave the broker.
+Git for Windows' MSYS ssh reaches an agent through a loopback socket emulation that the fence's WFP
+filters close, so M1 either points git at Windows OpenSSH (`core.sshCommand`) with the broker's
+agent pipe, or adds a sanctioned loopback endpoint. Requests must not become arbitrary host command
+execution. The user's own stores, agent pipe and engine pipe must stay unreachable: the measured
+mechanism is that a pipe whose access list does not name the sandbox user refuses the fence
+(below); M1 checks the real pipes' access lists.
 
-**M1 entry:** resolve that decision and define the Windows credential broker. Separately, implement
-a real **per-command escape API**: the experiment resets/reinitializes an entire vendor session to
-widen roots, not one `dangerouslyDisableSandbox` call. M1 must retain an immutable floor, isolate
-per-launch grants from concurrent ordinary commands, and cover cleanup/crash recovery. Session-wide
-reconfiguration must not ship as a per-command escape.
+**Cost.** Runtime, measured:
+
+| Hop | Through the broker | Direct | Evidence |
+| --- | --- | --- | --- |
+| Windows: fenced command to a user-context named pipe, one request | 1.31 ms median, p95 4.95 ms (25/25) | 1.43 ms unfenced | `final-broker-hop.txt` |
+| Windows: same endpoint without the sandbox user in its access list | refused, EPERM | owner connects | `final-broker-hop.txt` |
+| Linux prototype: filtered search / get-secret, in process | 4.25 / 4.63 ms | 0.69 / 0.67 ms | `final-broker-latency.txt` |
+| Linux prototype: whole `secret-tool lookup` | 31.97 ms | 19.16 ms | `final-broker-latency.txt` |
+
+The fence adds nothing measurable to the Windows hop; the OS store operation in the user's context
+comes on top (DPAPI and Credential Manager roundtrips passed under a real password logon but were
+not timed). The Python Linux broker adds about 4 ms per call and 13 ms per tool lookup; a native
+broker should do better. All of these are small next to starting a fenced command (about 0.7 s
+median end to end). Engineering, for M1–M2: the broker in the daemon's user context; the four
+adapters; policy per session, destination and identity with approval cards; secret-safe audit;
+rotation and recovery when the user's store changes; the logon lifecycle (DPAPI and Credential
+Manager need the user's real logon: SSH/network logons fail with `0x80070005`/1312); packaging with
+a static CRT; and tracking the tools' helper protocols. The ssh agent is the largest piece. The
+current external-credential fixtures do not prove these Windows integrations.
+
+Rejected alternatives: original-user AppContainer/restricted-token execution (no working
+write-fenced Bash), WSL2 or a VM (still needs credential forwarding and changes process and file
+semantics), and unfenced original-user commands, which abandon the floor. Copying user tokens or raw
+stores would defeat the separation.
+
+**M1 entry:**
+
+1. The broker contract and the four adapters, with the user's stores, agent pipe and engine pipe
+   verified closed to the principal.
+2. No persistent principal profile: launch without loading it, or recreate it for each session,
+   with HOME and TEMP in the session's allowed temp. Until then, provisioning creates the
+   principal's Startup folder and the fence denies all three Startup folders, resolved by SID.
+3. Session 0 resolved without modifying the namespace.
+4. A real **per-command escape API**: the experiment resets/reinitializes an entire vendor session
+   to widen roots, not one `dangerouslyDisableSandbox` call. M1 must retain an immutable floor,
+   isolate per-launch grants from concurrent ordinary commands, and cover cleanup/crash recovery.
+   Session-wide reconfiguration must not ship as a per-command escape.
+5. The full fenced-set enumeration below.
 
 ### Fenced-set coverage against the concrete source list
 
@@ -259,8 +358,8 @@ verify effective identity, then resume. Failure launches nothing. Reuse reviewed
 do not turn the PowerShell experiment into a daemon interface. Static CRT packaging avoids a surprise
 VC runtime prerequisite. Principal identity must remain visible to caller checks even if a service
 launches a process without `IsTokenRestricted`. M1 starts with these broker and `Fence`/`SecretStore`
-contracts, Session 0 resolution and the remaining COM/startup investigation, not production adoption
-of this test shim. The SDK handoff remains coordinated with lane A.
+contracts, the principal-profile change, Session 0 resolution and the remaining COM investigation,
+not production adoption of this test shim. The SDK handoff remains coordinated with lane A.
 
 ## S8.1 — Stores, actual startup context and unattended fallback
 
@@ -318,6 +417,7 @@ unknown/mutating APIs. The real-keyring harness passed **13/13** assertions: hid
 direct and mixed bulk denial, three host broker destinations denied, gh/Docker/git lookup fixtures,
 real `git credential fill`, and fenced Clover lookup denial. No real account or Docker daemon socket
 was exposed. gh/Docker rows are local credential-lookup fixtures, not full vendor login conformance.
+The rerun (`final-broker-latency.txt`) passed the same 13/13 and timed the broker (S2.3–4, Cost).
 
 This broker intentionally admits only tagged external fixtures, not arbitrary real keyring items.
 It is a semantic proof of concept, not a production Secret Service replacement: write/login/unlock
@@ -376,8 +476,13 @@ Keep the owner-decided own-sandbox/no-outer-wrapper rule and unsupported-backend
    combinations require the existing explicit OK. No outer sandbox is proposed over the [D] rule.
 5. **Rejected alternative, §8.5:** locked persistence/in-memory-only unlock. Controller rejected it
    because unattended main/refresher/cloud computers must survive reboot. The existing fallback stays.
-6. **[P], touches [D], §9.1:** sandbox-principal Windows execution plus the user-context credential
-   broker specified in the blocking finding; owner approval is required before M1 adoption.
+6. **[D], decided by the owner, §9.1:** Windows Bash and PowerShell run as the dedicated sandbox
+   principal; `gh`, git credential helpers, Docker registry logins and ssh-agent signing reach them
+   only through the Clover credential broker. The controller replaces §9.1's "the OS store itself
+   stays open to tools such as `gh`, Docker and git" with the text in S2.3–4.
+7. **[P], §9.1:** on Windows the fence also denies the three Startup folders (the user's, the sandbox
+   principal's, all users'), with the principal's resolved by SID, and the sandbox principal's own
+   profile is the sandbox's scratch area until the M1 helper keeps no persistent principal profile.
 
 No relaxation of the [D] Windows Bash release blocker is proposed. The Session 0, COM, startup-task
 and protected-backend gaps go to the controller; this report does not silently route around them.
@@ -388,11 +493,10 @@ M1 starts with a reviewed native broker, stable floor and secret-store contracts
 correct Session 0 handling, caller identity and a production semantic credential policy. The failed
 or unavailable backend combinations remain explicitly unsupported pending resolution. Broader home
 write policy, concurrent sessions, crash cleanup and real credential-helper protocols need coverage.
-The principal/broker [D] decision, per-command escape API and full fenced-set enumeration above are
-explicit M1 entry requirements, not features proved by the spike counts.
-The current candidate is rejected until user-Startup writes are closed, including paths materialized
-after provisioning. A write outside the configured roots cannot be waived because it belongs to the
-sandbox principal rather than the real user. This is a measured failure, not Windows release admission.
+The credential broker, the principal-profile change, the per-command escape API and full fenced-set
+enumeration are explicit M1 entry requirements, not features proved by the spike counts. The
+candidate's Startup failure is closed for the tested routes; it remains a test shim, not Windows
+release admission.
 
 Owner-batch gates: real Windows 11 install/Bash/island (§10.3), actual Ubuntu/Fedora deb/rpm/SELinux
 and desktop keyrings (§10.4), macOS 27 integration (§10.5), authenticated ACP/file-tool/retry checks for
@@ -400,21 +504,21 @@ all five agents, and backed-up Winter migration (§10.11). Password-principal sc
 Codex Windows initialization need resolution before release, not an assumed pass from live gates.
 
 Focused CI repeats mount/network/store/broker checks and Mac/Linux native deny/retry gates, plus
-Windows launch measurements. Runner OSes are surrogates. Green means those experiments ran, not that
-Windows security parity or every vendor integration passed. The latest focused run at the preceding
-checkpoint passed all three jobs; final-head status is linked from PR #148. Broader repository CI is
-reported separately. M0 is ready for the lane reviewer to assess these positive, negative and
-inconclusive results; only the controller merges.
+Windows launch measurements and the result-privacy check. Runner OSes are surrogates. Green means
+those experiments ran, not that Windows security parity or every vendor integration passed. Its
+status at the final head is linked from PR #148; broader repository CI is reported separately.
+M0 is ready for the lane reviewer to assess these positive, negative and inconclusive results; only
+the controller merges.
 
 ## Review disposition (review of da905d5d9)
 
-1. **Credential principal / [D]:** explicit blocking finding, conditional M1 entry and proposed §9.1
-   text above; scope, costs and alternatives documented. The controller takes the decision to the owner.
+1. **Credential principal / [D]:** surfaced as a blocking finding with proposed §9.1 text; the owner
+   has since decided it (S2.3–4, proposed edit 6).
 2. **Repository CI:** controller-owned base-doc residue gate, to clear with C0 #152. No residue
    allowlist, base-doc or cross-lane source changes made by this lane. Focused spike CI is separate.
-3. **Unfenced/admin controls:** all listed route denials paired in `review-controls-v4.txt`, with local
-   administrator launching context verified. Startup user write is now a measured failure; runas
-   has a failed control and is not credited as closed. Principal-based denials are labelled as such.
+3. **Unfenced/admin controls:** all listed route denials paired, with local administrator launching
+   context verified (`review-controls-v6.txt`). runas has a failed control and is not credited as
+   closed. Principal-based denials are labelled as such.
 4. **COM / handles:** synchronous child receipts replace the unobserved ShellExecute marker;
    forced local-server activation reports class unavailability in both contexts. Deliberate inherited
    handles and both duplication paths have positive unfenced and negative fenced controls.
@@ -433,7 +537,13 @@ inconclusive results; only the controller merges.
 11. **Workflow:** controller approved the scoped spike workflow; privacy normalization is checked there.
 12. **Base-doc context:** no action, as ruled; controller owns C0/rebase/merge sequencing.
 
-`spikes/s8-secrets/results/review-windows-cleanup.txt` records removal of the review installation,
-four WFP filters, grants and test principal. Both named VM stop operations completed after testing.
-The new measurements reject a claimed denial rather than hiding it; no unfenced fallback or production
-sandbox change was introduced. The [D] decision and controller-owned repo CI remain explicit gates.
+## Re-check disposition (re-check of 11aa9ae29)
+
+1. **Normaliser CI regression:** fixed in `94ae95409`. The home-folder name is scrubbed only in path
+   contexts, so "runner" in tool diagnostics is left alone; the focused CI went green at that head,
+   privacy step included, and the check also passes locally as the CI runner's identity.
+2. **Startup write (new failure):** cause found and closed for the tested routes (S2.2); the
+   principal's own profile is the remaining, declared limit.
+3. **§9.1 [D]:** decided by the owner and recorded.
+4. **Repository residue gate:** controller-owned, unchanged.
+5. **PR body:** rewritten to match this report.
