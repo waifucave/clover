@@ -1,0 +1,16 @@
+{
+  "type": "bot_changed",
+  "ts": 1781270000000,
+  "bot": {
+    "id": "alpha",
+    "name": "Alpha",
+    "model": "fireworks/kimi-k3",
+    "effort": "medium",
+    "userLayer": [
+      "model"
+    ],
+    "state": "idle",
+    "computer": "Studio",
+    "mainSession": "s_alpha"
+  }
+}
