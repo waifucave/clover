@@ -22,10 +22,10 @@ import { hostStorageFloorDescriptor, registerHostStoragePolicyConsumer } from ".
 // apart. Every embedded session is still a `CloverSession` incarnation, so credential eviction,
 // idle reaping and resume work unchanged.
 //
-// CREDENTIALS. An embedded session resolves its Keychain items IN-PROCESS, as `clover-core` — the
-// binary that created them — so no session ever raises the per-binary consent prompt a spawned
-// `winter` child gets. The wire still carries only a locator (`authRef`); the difference is which
-// thread of which process reads it.
+// CREDENTIALS. An embedded session still asks the daemon for every credential, exactly as a spawned
+// child did: the wire carries only a locator (`authRef`), the Worker builds no Keychain store of its
+// own, and `session-driver.ts`'s host-credential broker (`onCredentialResolve`, WS-25 §7) answers from
+// the main thread against that session's allowlist. The Worker never reads the Keychain itself.
 //
 // PIDS. `pid` is `null` for an embedded session (WS-04 §1.1: hosts must not require one). Nothing on
 // the daemon's Clover-leg path reads a child pid (audited for WS-23: the router's pid reads are all on
@@ -35,6 +35,7 @@ import { hostStorageFloorDescriptor, registerHostStoragePolicyConsumer } from ".
 // `CloverSession.open()` resumes only after the previous incarnation's iteration ends, and that
 // ordering is the only thing keeping two engines off one transcript.
 import { fileURLToPath } from "node:url";
+import { createProcessGroupLedger, sweepProcessGroupLedger } from "./process-group-ledger";
 import { SDK_VERSION, type SpawnedRuntimeProcess, type SpawnRuntimeOptions } from "@waifucave/clover-agent-sdk";
 import { EMBEDDED_KILL_GRACE_MS, spawnEmbeddedWorker, type EmbeddedWorkerProcess, type EmbeddedWorkflowWorkerCommand, type SpawnEmbeddedWorkerOptions } from "@waifucave/clover-agent-runtime/embedded-host";
 import { RUNTIME_VERSION } from "@waifucave/clover-agent-runtime/version";
@@ -202,7 +203,17 @@ export interface EmbeddedSessionHostDeps {
   spawnWorker?: (options: SpawnEmbeddedWorkerOptions) => EmbeddedWorkerProcess;
   /** Test seam over `killProcessGroup` (WS-24). */
   killProcessGroup?: (pgid: number) => boolean;
+  /**
+   * A-M1 review S2: test seam over the process-group ledger's leader start-time reader (`ps -o lstart=`). The
+   * ledger (`process-group-ledger.ts`) is kept only when `home` is set.
+   */
+  processStartedAt?: (pid: number) => string | null;
+  /** Test seam over how often the ledger follows the live Workers' groups. Default `LEDGER_REFRESH_MS`. */
+  ledgerRefreshMs?: number;
 }
+
+/** How often, while any Worker is live, the process-group ledger follows the Workers' reports (A-M1 review S2). */
+export const LEDGER_REFRESH_MS = 1000;
 
 // --- WS-24: process groups a Worker leaves behind ------------------------------------------------------
 //
@@ -300,6 +311,24 @@ export function createEmbeddedSessionHost(deps: EmbeddedSessionHostDeps = {}): E
     return Object.freeze({ ...paths, revision: policyRevision });
   };
   const live = new Map<EmbeddedWorkerProcess, string>();
+  // A-M1 review S2: first, what a dead daemon's sessions left running is killed (verified leaders only), and
+  // from here on the live Workers' groups are written down under `<home>/run/` for the next boot to do the same.
+  const killGroup = deps.killProcessGroup ?? killProcessGroup;
+  const ledger = deps.home === undefined ? undefined : (() => {
+    const ledgerDeps = { home: deps.home!, killGroup, log, ...(deps.processStartedAt === undefined ? {} : { startedAt: deps.processStartedAt }) };
+    sweepProcessGroupLedger(ledgerDeps);
+    return createProcessGroupLedger(ledgerDeps);
+  })();
+  let ledgerTimer: ReturnType<typeof setInterval> | undefined;
+  const followLedger = (): void => {
+    if (ledger === undefined) return;
+    ledger.update([...live.keys()].flatMap((proc) => orphanedProcessGroupsOf(proc)));
+    if (live.size === 0 && ledgerTimer !== undefined) { clearInterval(ledgerTimer); ledgerTimer = undefined; }
+    else if (live.size > 0 && ledgerTimer === undefined) {
+      ledgerTimer = setInterval(followLedger, deps.ledgerRefreshMs ?? LEDGER_REFRESH_MS);
+      (ledgerTimer as { unref?: () => void }).unref?.();
+    }
+  };
   // WS-23 review I-2: the NEWEST Worker per backend session. Every Worker shares this process's pid,
   // so the transcript lease (pid-stamped, same-pid re-entrant) cannot keep two incarnations of one
   // session apart; this map is what does. The wrapper can end an iteration WITHOUT the Worker having
@@ -372,6 +401,7 @@ export function createEmbeddedSessionHost(deps: EmbeddedSessionHostDeps = {}): E
     };
     const proc = (deps.spawnWorker ?? spawnEmbeddedWorker)(prepared);
     live.set(proc, sessionId);
+    followLedger(); // S2: starts following this Worker's groups
     newest.set(sessionId, proc);
     const onLifecycle = deps.onLifecycle;
     if (onLifecycle !== undefined) {
@@ -384,10 +414,11 @@ export function createEmbeddedSessionHost(deps: EmbeddedSessionHostDeps = {}): E
       // the moment we know the Worker is gone (see "process groups a Worker leaves behind" above).
       const orphans = orphanedProcessGroupsOf(proc);
       if (orphans.length > 0) {
-        const killed = orphans.filter((pgid) => (deps.killProcessGroup ?? killProcessGroup)(pgid)).length;
+        const killed = orphans.filter((pgid) => killGroup(pgid)).length;
         log(`embedded session ${sessionId}: its Worker closed with ${orphans.length} process group(s) still running — killed ${killed}`);
       }
       live.delete(proc);
+      followLedger(); // S2: the reaped groups leave the ledger (and it is removed once no Worker lives)
       if (newest.get(sessionId) === proc) newest.delete(sessionId);
       onLifecycle?.({ backendSessionId: sessionId, event: "exited", worker });
       // One line for an abnormal end only — an ordinary session ends 0 on every idle reap. The code
