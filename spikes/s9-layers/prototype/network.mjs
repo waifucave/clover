@@ -5,6 +5,8 @@ import os from 'node:os';
 import crypto from 'node:crypto';
 import {readFileSync,writeFileSync} from 'node:fs';
 import {resolve} from 'node:path';
+import {fileURLToPath} from 'node:url';
+const stubPreload=fileURLToPath(new URL('./preload-stub.cjs',import.meta.url));
 import {csp,decision} from './policy.mjs';
 import {extractNetlog} from './netlog.mjs';
 import {networkProbe,webRtcSurface,remoteNlProbe,turnTcpProbe} from './probes.mjs';
@@ -184,7 +186,7 @@ export async function networkCheck(electron){
     const result=internal||!useFilter?{cancel:false,reason:'local protocol or control'}:decision(d.url,d.initiatorOrigin,registry);
     requests.push({url:d.url,type:d.resourceType,initiator:d.initiatorOrigin,...result});cb({cancel:result.cancel});
    });
-   win=new BrowserWindow({show:true,width:1000,height:800,webPreferences:{session:ses,sandbox:mode!=='stub',contextIsolation:mode!=='stub',nodeIntegration:false,preload:mode==='stub'?resolve('preload-stub.cjs'):undefined,backgroundThrottling:false}});
+   win=new BrowserWindow({show:true,width:1000,height:800,webPreferences:{session:ses,sandbox:mode!=='stub',contextIsolation:mode!=='stub',nodeIntegration:false,preload:mode==='stub'?stubPreload:undefined,backgroundThrottling:false}});
    if(mode==='ip-policy'||mode==='belt')win.webContents.setWebRTCIPHandlingPolicy('disable_non_proxied_udp');
    win.webContents.setWindowOpenHandler((/** @type {any} */ d)=>{popups.push(d.url);return {action:'deny'}});
    win.webContents.on('will-frame-navigate',(/** @type {any} */ e)=>{if(!e.url.startsWith('clover-plugin:')){navigations.push({url:e.url,blocked:true});e.preventDefault();}});
