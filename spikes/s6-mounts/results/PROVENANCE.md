@@ -7,6 +7,10 @@ leave it out themselves. Files made from this round on also carry their commit
 and run in `machine.commit` and `machine.run`; for the earlier ones, this table says. A run's
 artifacts stay downloadable on its page for 90 days (`gh run download <run>`).
 
+Every file here was made while the helper lived in `native/mounts/`; it moved to
+`spikes/s6-mounts/native/` after the owner decided that Clover mounts nothing (the report's edit 1).
+No result was made after the move.
+
 | File | CI run | Commit | What the code had then |
 | :- | :- | :- | :- |
 | `linux-coherence.json`, `linux-failfast.json` | 41950399657 | `ef2ce0bfb` | events off the link's reader |
