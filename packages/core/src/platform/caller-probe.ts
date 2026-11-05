@@ -5,7 +5,9 @@
 // unknown peer is fenced, never the user.
 //   macOS:   getsockopt(LOCAL_PEERPID); kinfo_proc's e_ppid (sysctl); sandbox_check(pid, NULL, 0)
 //   Linux:   getsockopt(SO_PEERCRED); /proc/<pid>/stat; /proc/<pid>/ns/{user,mnt,pid,net} against ours
-//   Windows: GetNamedPipeClientProcessId; NtQueryInformationProcess's parent; the token's
+//   Windows: Bun's pipe sockets carry no handle (fd -1, measured), so `WindowsPipePeers` finds the
+//            connection's server end among the daemon's own handles and asks it
+//            (GetNamedPipeClientProcessId); NtQueryInformationProcess's parent; the token's
 //            IsTokenRestricted and TokenIsAppContainer
 // Mapping the result onto B's `Caller` (user, a session's command, the `clover` plugin host or
 // another) is the wiring step once B's roles are in.
@@ -13,26 +15,7 @@ import { readFileSync, readlinkSync } from "node:fs";
 import { callerFloorVerdict, type FloorVerdict, type SandboxProbe } from "./sandbox-floor";
 import type { DaemonPlatform } from "./transport";
 
-type Fn = (...args: unknown[]) => unknown;
-type Lib = Record<string, Fn>;
-const libs = new Map<string, Lib | null>();
-
-function open(key: string, path: string, symbols: Record<string, { args: string[]; returns: string }>): Lib | null {
-  if (libs.has(key)) return libs.get(key)!;
-  let lib: Lib | null = null;
-  try {
-    const { dlopen, FFIType } = require("bun:ffi") as typeof import("bun:ffi");
-    const defs = Object.fromEntries(Object.entries(symbols).map(([name, s]) => [name, {
-      args: s.args.map((a) => FFIType[a as keyof typeof FFIType]),
-      returns: FFIType[s.returns as keyof typeof FFIType],
-    }]));
-    lib = dlopen(path, defs as never).symbols as unknown as Lib;
-  } catch { lib = null; }
-  libs.set(key, lib);
-  return lib;
-}
-
-const ptr = (b: ArrayBufferView): unknown => (require("bun:ffi") as typeof import("bun:ffi")).ptr(b as never);
+import { ffiLib as open, ffiPtr as ptr, type FfiLib as Lib } from "./ffi";
 
 function libSystem(): Lib | null {
   return open("darwin", "/usr/lib/libSystem.B.dylib", {
@@ -48,6 +31,9 @@ function libc(): Lib | null {
 
 function kernel32(): Lib | null {
   return open("kernel32", "kernel32.dll", {
+    GetCurrentProcess: { args: [], returns: "u64" },
+    GetFileType: { args: ["u64"], returns: "u32" },
+    GetNamedPipeInfo: { args: ["u64", "ptr", "ptr", "ptr", "ptr"], returns: "i32" },
     GetNamedPipeClientProcessId: { args: ["u64", "ptr"], returns: "i32" },
     OpenProcess: { args: ["u32", "i32", "u32"], returns: "u64" },
     CloseHandle: { args: ["u64"], returns: "i32" },
@@ -192,13 +178,92 @@ export interface PeerFacts {
   readonly floor: FloorVerdict;
 }
 
-/** Probe the peer of a connected Bun socket (or a descriptor). */
-export function probePeer(socketOrFd: unknown, os: DaemonPlatform = currentOs()): PeerFacts {
+/** Probe the peer of a connected Bun socket (or a descriptor). On Windows pass the pid
+ *  `WindowsPipePeers` found, since the socket carries no handle there. */
+export function probePeer(socketOrFd: unknown, os: DaemonPlatform = currentOs(), knownPid?: number | null): PeerFacts {
   const fd = typeof socketOrFd === "number" ? socketOrFd : socketFd(socketOrFd);
-  const pid = fd === null ? null : peerPid(fd, os);
+  const pid = knownPid !== undefined ? knownPid : fd === null ? null : peerPid(fd, os);
   if (pid === null) return { pid: null, ancestors: [], probe: {}, floor: "fenced" };
   const probe = sandboxProbe(pid, os);
   return { pid, ancestors: ancestry(pid, os), probe, floor: callerFloorVerdict(os, probe) };
+}
+
+/** One of the daemon's own handles, from NtQueryInformationProcess(ProcessHandleInformation). */
+export interface OwnHandle { readonly handle: bigint; readonly access: number }
+
+export function ownHandles(): OwnHandle[] | null {
+  const n = ntdll(), k = kernel32();
+  if (!n || !k) return null;
+  let size = 1 << 16;
+  for (let tries = 0; tries < 6; tries++) {
+    const buf = Buffer.alloc(size), ret = new Uint32Array(1);
+    const status = (n.NtQueryInformationProcess!(k.GetCurrentProcess!(), 51, ptr(buf), size, ptr(ret)) as number) >>> 0;
+    if (status === 0xc0000004) { size = Math.max(size * 2, ret[0]! + 4096); continue; } // STATUS_INFO_LENGTH_MISMATCH
+    if (status !== 0) return null;
+    // PROCESS_HANDLE_SNAPSHOT_INFORMATION: a count, then 40-byte entries (HandleValue, HandleCount,
+    // PointerCount, GrantedAccess, ObjectTypeIndex, HandleAttributes, Reserved).
+    const count = Number(buf.readBigUInt64LE(0));
+    const out: OwnHandle[] = [];
+    for (let i = 0; i < count; i++) out.push({ handle: buf.readBigUInt64LE(16 + i * 40), access: buf.readUInt32LE(16 + i * 40 + 24) });
+    return out;
+  }
+  return null;
+}
+
+/** The connected server ends of named pipes among `handles`, with their clients' pids. */
+function connectedServerEnds(handles: readonly OwnHandle[]): Map<bigint, { pid: number }> {
+  const k = kernel32()!;
+  const out = new Map<bigint, { pid: number }>();
+  for (const h of handles) {
+    if ((k.GetFileType!(h.handle) as number) !== 3) continue; // FILE_TYPE_PIPE
+    const flags = new Uint32Array(1);
+    if ((k.GetNamedPipeInfo!(h.handle, ptr(flags), null, null, null) as number) === 0 || (flags[0]! & 1) === 0) continue; // PIPE_SERVER_END
+    const pid = new Uint32Array(1);
+    if ((k.GetNamedPipeClientProcessId!(h.handle, ptr(pid)) as number) !== 0 && pid[0]! > 0) out.set(h.handle, { pid: pid[0]! });
+  }
+  return out;
+}
+
+/** WRITE_DAC: libuv creates its named pipe server ends with it (measured: 0x1e019f for the first
+ *  instance, 0x16019f after), and the daemon's files and anonymous pipes don't ask for it. */
+const WRITE_DAC = 0x40000;
+
+/**
+ * Windows: the pid on the other end of each pipe connection. Bun's pipe sockets carry no handle, so
+ * when the listener's `open(socket)` runs, this lists the daemon's own handles, takes the connected
+ * server ends of named pipes, and gives the socket the one end no earlier socket has (spike on the
+ * lane's VM: 1.4–2.3 ms with 206 handles). Two connections that arrive before either is seen, with
+ * different clients, are ambiguous and get `null` (fenced; the client connects again). Only handles
+ * opened with WRITE_DAC are asked anything, so the daemon's files and other pipes are never touched.
+ */
+export class WindowsPipePeers {
+  private readonly owner = new Map<bigint, object>();
+  private readonly bySocket = new WeakMap<object, { handle: bigint; pid: number }>();
+
+  /** The listener's `open(socket)`: the client pid of this connection, or null. */
+  opened(socket: object): number | null {
+    const handles = ownHandles();
+    if (handles === null) return null;
+    const ends = connectedServerEnds(handles.filter((h) => (h.access & WRITE_DAC) !== 0));
+    for (const h of [...this.owner.keys()]) if (!ends.has(h)) this.owner.delete(h);
+    const fresh = [...ends].filter(([h]) => !this.owner.has(h)).sort((a, b) => (a[0] < b[0] ? -1 : 1));
+    if (fresh.length === 0 || new Set(fresh.map(([, e]) => e.pid)).size !== 1) return null;
+    const [handle, end] = fresh[0]!;
+    this.owner.set(handle, socket);
+    this.bySocket.set(socket, { handle, pid: end.pid });
+    return end.pid;
+  }
+
+  /** The listener's `close(socket)`. */
+  closed(socket: object): void {
+    const e = this.bySocket.get(socket);
+    if (e && this.owner.get(e.handle) === socket) this.owner.delete(e.handle);
+    this.bySocket.delete(socket);
+  }
+
+  pidOf(socket: object): number | null {
+    return this.bySocket.get(socket)?.pid ?? null;
+  }
 }
 
 /** The process-tree half: whether any of `pid` and its parents is one the daemon started for a bot,

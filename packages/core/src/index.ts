@@ -13,12 +13,13 @@ export {
 } from "./platform/login";
 export {
   DaemonPair, appRestartPlan, resolveAppLauncher, appStarter, startDaemonPairSide, PAIR_DEFAULTS,
-  mintAppToken, removeAppToken, writeAppStart, appTokenPath, appStartPath, APP_TOKEN_FILE, APP_START_FILE,
+  mintAppToken, removeAppToken, writeAppStart, appTokenPath, appStartPath, APP_TOKEN_FILE, APP_START_FILE, proveDaemon, checkDaemonProof,
   type DaemonPairDeps, type DaemonPairOptions, type DaemonPairStatus, type AppLauncher, type AppStartOutcome,
   type AppExitReason, type PairStopReason, type AppStart, type RunFileDeps, type DaemonPairSide, type DaemonPairSideInput,
 } from "./platform/pair";
 export { callerFloorVerdict, mayBeUser, type SandboxProbe, type FloorVerdict } from "./platform/sandbox-floor";
-export { probePeer, peerPid, parentPid, ancestry, sandboxProbe, socketFd, descendsFrom, type PeerFacts } from "./platform/caller-probe";
+export { probePeer, peerPid, parentPid, ancestry, sandboxProbe, socketFd, descendsFrom, WindowsPipePeers, type PeerFacts } from "./platform/caller-probe";
+export { lockPipeDacl, pipeDaclSddl, pipeServerIdentity, isOurDaemon, ownerOnlyPipeSddl, type PipeServerIdentity } from "./platform/win-pipe";
 export { acquireLock, AlreadyRunningError, LockHeldNoDaemonError, LockFailedError, classifyLockFailure, endpointAnswers, type Lock, type AcquireLockOptions } from "./lock";
 export { resolveCloverProfile, keychainService, profileDisplayName, cliCommandName, type CloverProfile } from "./profile";
 export {

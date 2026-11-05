@@ -10,7 +10,7 @@
 //                              deletes it and honours it for 60 s.
 // Both are written to a temporary name, locked down, then renamed into place, so the app never reads
 // a half-written file and the token is never readable by anyone else, even for a moment.
-import { randomBytes } from "node:crypto";
+import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { chmodSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Runner } from "../login/live";
@@ -80,4 +80,20 @@ export interface AppStart {
 /** Write the start file the app reads when it comes up. */
 export async function writeAppStart(runDir: string, start: AppStart, deps: RunFileDeps): Promise<void> {
   await writeOwnerOnly(appStartPath(runDir), JSON.stringify(start), deps);
+}
+
+/** The daemon's proof that it holds this run's app token, so the app can check who it is talking to
+ *  before it sends the token (from E-M1's review): HMAC-SHA256 of the app's nonce under the token,
+ *  base64url. Only the daemon that minted the token, or the user's own processes outside the fence,
+ *  can read it, so a process squatting the endpoint can't answer. It needs no native code in the app,
+ *  and works on every OS. */
+export function proveDaemon(appToken: string, nonce: string): string {
+  return createHmac("sha256", appToken).update(`clover-daemon-proof\0${nonce}`).digest("base64url");
+}
+
+/** The app's check of `proveDaemon`'s answer. The nonce should be at least 16 random bytes. */
+export function checkDaemonProof(appToken: string, nonce: string, proof: string): boolean {
+  const want = Buffer.from(proveDaemon(appToken, nonce));
+  const got = Buffer.from(proof);
+  return got.length === want.length && timingSafeEqual(got, want);
 }

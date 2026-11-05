@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { existsSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { ancestry, descendsFrom, parentPid, probePeer, socketFd, type PeerFacts } from "../../src/platform/caller-probe";
+import { ancestry, descendsFrom, parentPid, probePeer, socketFd, WindowsPipePeers, type PeerFacts } from "../../src/platform/caller-probe";
 import { resolveEndpoint } from "../../src/platform/transport";
 
 
@@ -40,7 +40,32 @@ describe("the caller check's OS probe", () => {
     expect(parentPid(2 ** 30)).toBeNull();
   });
 
-  test("a client in this process: its pid, outside every floor", async () => {
+  test.skipIf(process.platform !== "win32")("Windows: the pipe's peer from the daemon's own handles, then its token", async () => {
+    const path = resolveEndpoint(mkdtempSync(join(tmpdir(), "clover-peer-"))).path;
+    const peers = new WindowsPipePeers();
+    const seen: Array<number | null> = [];
+    const server = Bun.listen({ unix: path, socket: {
+      open(s) { seen.push(peers.opened(s)); },
+      close(s) { peers.closed(s); },
+      data() {},
+    } });
+    const until = async (n: number) => { for (let i = 0; i < 200 && seen.length < n; i++) await Bun.sleep(10); };
+    const self = await Bun.connect({ unix: path, socket: { data() {} } });
+    await until(1);
+    expect(seen[0]).toBe(process.pid); // the first instance's end (access 0x1e019f) as well as later ones
+    const a = Bun.spawn([process.execPath, "-e", CLIENT(path)], { stdout: "ignore", stderr: "ignore", windowsHide: true });
+    await until(2);
+    const b = Bun.spawn([process.execPath, "-e", CLIENT(path)], { stdout: "ignore", stderr: "ignore", windowsHide: true });
+    await until(3);
+    expect(seen.slice(1)).toEqual([a.pid, b.pid]);
+    const facts = probePeer(null, "win32", seen[1]!);
+    expect(facts.probe).toEqual({ tokenRestrictedWin: false, appContainerWin: false });
+    expect(facts.floor).toBe("outside-floor");
+    expect(descendsFrom(facts, new Set([process.pid]))).toBe(true);
+    a.kill(); b.kill(); self.end(); server.stop(true);
+  });
+
+  test.skipIf(process.platform === "win32")("a client in this process: its pid, outside every floor", async () => {
     const l = listenOnce();
     const c = await Bun.connect({ unix: l.path, socket: { data() {} } });
     const peer = await l.peer;
@@ -51,7 +76,7 @@ describe("the caller check's OS probe", () => {
     c.end(); l.stop();
   });
 
-  test("a client in a child process: the child's pid, under us in the tree", async () => {
+  test.skipIf(process.platform === "win32")("a client in a child process: the child's pid, under us in the tree", async () => {
     const l = listenOnce();
     const child = Bun.spawn([process.execPath, "-e", CLIENT(l.path)], { stdout: "ignore", stderr: "ignore" });
     const peer = await l.peer;
