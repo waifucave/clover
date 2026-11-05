@@ -1,0 +1,20 @@
+{
+  "name": "@waifucave/clover-plugin-relay-cloudflare",
+  "version": "0.0.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "description": "clover/relay-cloudflare: the relay a user runs in their own Cloudflare account (services/relay), as a `relays` entry: room URLs for the link layer, and sealed sync mail.",
+  "type": "module",
+  "exports": {
+    ".": "./host/index.ts",
+    "./client": "./src/client.ts"
+  },
+  "scripts": {
+    "test": "bun test",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "devDependencies": {
+    "@types/bun": "1.3.14",
+    "typescript": "5.9.3"
+  }
+}

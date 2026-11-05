@@ -1,0 +1,56 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  // The Cloudflare relay (PROTOCOL.md): the Worker a user runs in their own Cloudflare account, chosen on the
+  // welcome guide's relay page (spec §8.3). Rooms carry a link's end-to-end encrypted frames between two of the
+  // user's devices; mailboxes keep sealed sync mail for a device that is away.
+  //
+  // The top level is the local profile that the tests and `wrangler dev` use. env.production is the template the
+  // relay page deploys into the user's account, with their own route; nothing here has been deployed. RELAY_KEY is
+  // never in this file: `wrangler secret put RELAY_KEY` (production) or the test harness (local).
+  //
+  // Observability stays off: nothing about the user's traffic should be kept.
+  "name": "clover-relay-local",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-01",
+  "workers_dev": false,
+  "send_metrics": false,
+  "observability": { "enabled": false },
+  "vars": {
+    "RELAY_ORIGIN": "https://relay.invalid",
+    "TICKET_HOURS": "24"
+  },
+  "durable_objects": {
+    "bindings": [
+      { "name": "ROOMS", "class_name": "RoomDO" },
+      { "name": "MAIL", "class_name": "MailboxDO" }
+    ]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["RoomDO", "MailboxDO"] }],
+  // Each limit counts per Cloudflare location. They guard the user's quota; the key guards access.
+  "ratelimits": [
+    { "name": "CONNECT_RATE", "namespace_id": "74001", "simple": { "limit": 120, "period": 60 } },
+    { "name": "API_RATE", "namespace_id": "74002", "simple": { "limit": 600, "period": 60 } }
+  ],
+  "env": {
+    "production": {
+      "name": "clover-relay",
+      "workers_dev": true,
+      "observability": { "enabled": false },
+      "vars": {
+        // The relay page sets this to the address the Worker is deployed at.
+        "RELAY_ORIGIN": "https://clover-relay.example.workers.dev",
+        "TICKET_HOURS": "24"
+      },
+      "durable_objects": {
+        "bindings": [
+          { "name": "ROOMS", "class_name": "RoomDO" },
+          { "name": "MAIL", "class_name": "MailboxDO" }
+        ]
+      },
+      "ratelimits": [
+        { "name": "CONNECT_RATE", "namespace_id": "74101", "simple": { "limit": 120, "period": 60 } },
+        { "name": "API_RATE", "namespace_id": "74102", "simple": { "limit": 600, "period": 60 } }
+      ]
+    }
+  }
+}
