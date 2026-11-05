@@ -70,8 +70,8 @@ describe("Alpha", () => {
     expect(views).toHaveLength(1);
     const alpha = BotView.parse(views[0]);
     expect(alpha).toEqual({
-      id: "alpha", name: "Alpha", model: "anthropic/claude-sonnet-5-5", effort: "medium", userLayer: [], state: "idle",
-      computer: "Studio", mainSession: "b_alpha",
+      id: "alpha", name: "Alpha", portrait: "clover-asset://alpha/assets/portrait.svg", model: "anthropic/claude-sonnet-5-5", effort: "medium",
+      theme: "alpha", userLayer: [], state: "idle", computer: "Studio", mainSession: "b_alpha",
     });
     expect(b.host.get("b_alpha")).toMatchObject({ kind: "bot", bot: "alpha", title: "Alpha", model: "anthropic/claude-sonnet-5-5", effort: "medium" });
     const events = projectRecords(b.host.history("b_alpha"), { kind: "bot" });
