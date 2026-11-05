@@ -221,14 +221,19 @@ export async function networkCheck(electron){
      if(frame){
       await frame.executeJavaScript("window.trustViolations=[];document.addEventListener('securitypolicyviolation',e=>trustViolations.push({directive:e.effectiveDirective,blocked:e.blockedURI}))");
       for(const target of ['clover-plugin://p2/',p2url,'clover-core://shell/',`clover-core://shell/?mount=${rootToken}`,'clover-sealed://cards/']){
+       const deniedBefore=mountAttempts.length;
        const report=await frame.executeJavaScript(`new Promise(resolve=>{window.trustViolations=[];const f=document.createElement('iframe');f.name='trust-'+${JSON.stringify(target)};f.src=${JSON.stringify(target)};f.onload=()=>resolve({target:${JSON.stringify(target)},loadEvent:true});f.onerror=()=>resolve({target:${JSON.stringify(target)},error:true});document.body.append(f);setTimeout(()=>resolve({target:${JSON.stringify(target)},settled:true}),150)})`);
        const child=frame.frames.find((/** @type {any} */ x)=>{try{return x.name==='trust-'+target;}catch{return false;}});
        let actualUrl=null;try{actualUrl=child?.url??null;}catch{actualUrl='disposed';}
        const violations=await frame.executeJavaScript('window.trustViolations');
-       // An iframe load event fires for a CSP error page too, and the frame can still report
-       // the requested URL. A matching frame-src violation is the decisive block record.
-       const blocked=violations.some((/** @type {any} */ v)=>v.directive==='frame-src'&&target.startsWith(v.blocked+':'))||actualUrl==='about:blank'||!child;
-       trustAttempts.push({...report,actualUrl,violations,loaded:!blocked,blocked});
+       // An iframe load event fires for an error page too, and the frame can still report
+       // the requested URL. A matching frame-src violation, or the mount check refusing this
+       // exact URL (403 with frame-ancestors 'none'), is the decisive block record.
+       const byCsp=violations.some((/** @type {any} */ v)=>v.directive==='frame-src'&&target.startsWith(v.blocked+':'));
+       const byMount=mountAttempts.slice(deniedBefore).some((/** @type {any} */ a)=>a.url===target);
+       const blocked=byCsp||byMount||actualUrl==='about:blank'||!child;
+       const blockedBy=[byCsp&&'csp frame-src',byMount&&'mount token refused',!byCsp&&!byMount&&blocked&&'no document'].filter(Boolean);
+       trustAttempts.push({...report,actualUrl,violations,blockedBy,loaded:!blocked,blocked});
       }
       trustAttempts.push({children:frame.frames.map((/** @type {any} */ child)=>{try{return {name:child.name,url:child.url};}catch{return {name:null,url:'disposed'};}})});
       topNavigation=await frame.executeJavaScript(`(()=>{try{top.location=${JSON.stringify(f.endpoints['top-location'].url)};return {attempted:true}}catch(e){return {attempted:true,error:String(e)}}})()`);
