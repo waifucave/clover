@@ -8,18 +8,18 @@ import {
   fetchesCodeAtRunTime, hookMatchesTool, hookOrder, interpolate, isPluginTokenName, isSafeTokenValue, isTokenName, isTokenValue, keyMatches,
   networkAllows, pluginTokenName,
   parseCapability,
-  parseInterpolation, splitToolWireName, toolWireName, wrapperId,
+  parseInterpolation, splitToolWireName, toolWireName, validateManifest, wrapperId,
 } from "../src/index";
 
 describe("capabilities", () => {
-  test("the catalog holds §5.4's sixteen, and devices.read for the Devices tab (review S16)", () => {
+  test("the catalog holds §5.4's sixteen, devices.read for the Devices tab (review S16) and terminal for the terminal panel", () => {
     expect(CAPABILITIES.map((c) => c.name)).toEqual([
       "conversation.read", "conversation.post", "memory.read", "bots.read", "routines.read", "computers.read",
-      "computers.control", "devices.read", "approvals", "files", "browser", "usage.read", "logs.read", "notify", "audio",
+      "computers.control", "devices.read", "approvals", "files", "browser", "terminal", "usage.read", "logs.read", "notify", "audio",
       "call:<plugin-id>", "network:<host>",
     ]);
     expect(CAPABILITIES.filter((c) => c.warns).map((c) => c.ok)).toEqual([
-      "controls the screen and input of your computers", "restyles approval cards", "can hear your microphone",
+      "controls the screen and input of your computers", "restyles approval cards", "runs commands on your computers", "can hear your microphone",
     ]);
   });
 
@@ -174,6 +174,20 @@ describe("points and spots", () => {
     expect(pack.safeParse({ id: "alpha", file: "alpha.png", format: "live2d" }).success).toBe(false);
   });
 
+  test("lane F's asks: settings declares its sections, an unfilled panel key shows a placeholder, a panel may be for some sessions only", () => {
+    const spot = (name: string) => SPOTS.find((s) => s.name === name)!;
+    expect(spot("settings.section").declaredBy).toBe("settings");
+    expect(spot("panel").placeholder).toBe(true);
+    expect(spot("panel").context).toContain("session");
+    const panel = (when: unknown) => validateManifest({
+      manifest: 1, id: "term", name: "Term", engines: { clover: "^1.0.0" }, client: { entry: "ui/index.js" },
+      contributes: { ui: [{ spot: "panel", key: "terminal", component: "Terminal", title: "Terminal", when }] },
+    });
+    expect(panel({ session: "coding" }).issues).toEqual([]);
+    expect(panel({ session: ["coding", "agent"] }).issues).toEqual([]);
+    expect(panel({ session: "code" }).issues.map((i) => [i.refuses, i.path])).toEqual([["entry", "/contributes/ui/0/when/session"]]);
+  });
+
   test("a keyed spot's entry with no key fills every key; a key ending in * fills what it matches", () => {
     expect(keyMatches(undefined, "alpha")).toBe(true);
     expect(keyMatches("image/*", "image/png")).toBe(true);
@@ -196,6 +210,27 @@ describe("tokens", () => {
     expect(new Set(TOKENS.map((t) => t.name)).size).toBe(TOKENS.length);
     // Two names never map to one custom property.
     expect(new Set(TOKENS.map((t) => cssProperty(t.name))).size).toBe(TOKENS.length);
+  });
+
+  test("lane F's twelve plugin.clover tokens are catalog tokens now, at F's measured values", () => {
+    const value = (name: string) => { const t = TOKENS.find((x) => x.name === name)!; return [t.type, t.default, t.dark]; };
+    expect(value("sidebar.tint")).toEqual(["color", "#F5F5F5B3", "#202020B3"]);
+    expect(value("sidebar.solid")).toEqual(["color", "#F5F5F5", "#202020"]);
+    expect(value("titlebar.tint")).toEqual(["color", "#FFFFFFC7", "#191919C7"]);
+    expect(value("titlebar.blur")).toEqual(["dimension", "16px", undefined]);
+    expect(value("titlebar.height")).toEqual(["dimension", "45px", undefined]);
+    expect(value("color.scrim")).toEqual(["color", "#00000033", "#00000080"]);
+    expect(value("font.line.code")).toEqual(["number", 1.4, undefined]);
+    expect(value("color.diff.added.soft")).toEqual(["color", "#1A7F371A", "#8CC28324"]);
+    expect(value("color.diff.removed.soft")).toEqual(["color", "#C2364F17", "#DA6F8024"]);
+    expect(value("color.branch")).toEqual(["color", "#6F52C4", "#B19EDE"]);
+    expect(value("color.unread")).toEqual(["color", "#8A8A8A", "#848484"]);
+    expect(value("color.brand")).toEqual(["color", "#C2387A", "#FF7AB6"]);
+    // The accent no longer defaults to pink; it follows the OS, with F's blues where nothing is read.
+    expect(value("color.accent")).toEqual(["color", "#2F6FDF", "#4180E3"]);
+    expect(value("card.approve.background")).toEqual(["color", "#2F6FDF", "#3570D8"]);
+    expect(value("color.accent.ink")).toEqual(["color", "#111111", undefined]);
+    expect(TOKENS.some((t) => t.name === "card.approve.ink")).toBe(false);
   });
 
   test("names: lowercase segments, a letter first; the property is --clover- and the name with hyphens", () => {
@@ -319,7 +354,7 @@ describe("names", () => {
 describe("the catalog document", () => {
   test("carries every catalog, with JSON Schemas for spot fields and props", () => {
     const c = catalogJson();
-    expect(c.capabilities.length).toBe(17);
+    expect(c.capabilities.length).toBe(18);
     expect(c.spots.length).toBe(SPOTS.length);
     expect(c.spots.every((s) => typeof s.props === "object" && typeof s.fields === "object")).toBe(true);
     expect(Object.keys(c.apiCalls).length).toBe(Object.keys(API_CALLS).length);

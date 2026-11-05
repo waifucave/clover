@@ -16,7 +16,7 @@ export interface SpotInfo {
   readonly name: string;
   readonly shape: "single" | "list" | "keyed";
   /** Who declares it: the app's plugin runtime (a core point), or a bundled part of `clover`. */
-  readonly declaredBy: "app" | "shell" | "bot-tab" | "bot-stage" | "composer" | "conversation" | "file-view" | "island" | "pill";
+  readonly declaredBy: "app" | "shell" | "settings" | "bot-tab" | "bot-stage" | "composer" | "conversation" | "file-view" | "island" | "pill";
   /** Inside a bot's tab, where a bot's own plugin may add UI (§5.5). */
   readonly inBotTab: boolean;
   /** For a keyed spot, the keys the spec names (an entry may still use any key, and `*` patterns). */
@@ -24,6 +24,9 @@ export interface SpotInfo {
   readonly keep?: readonly string[];
   readonly needs?: readonly string[];
   readonly context?: readonly string[];
+  /** For a keyed spot: a key no plugin fills shows the declaring part's placeholder, which offers to find a plugin
+   *  for it (lane F's request): the plugins page, searched for that spot and key. */
+  readonly placeholder?: true;
   /** The spot's own entry fields (title, icon, opens…), beyond the `ui` entry's. */
   readonly fields: z.ZodType;
   /** What the spot hands each component (provisional, see above). */
@@ -69,14 +72,14 @@ export const SPOTS: readonly SpotInfo[] = [
   { name: "main", shape: "keyed", declaredBy: "shell", inBotTab: false, keys: MAIN_ROUTES, fields: none,
     props: z.object({ route: z.string(), params: z.record(z.string(), z.string()) }),
     doc: "The main area, keyed by route: bot, agent, settings, plugins, app." },
-  { name: "panel", shape: "keyed", declaredBy: "shell", inBotTab: false, fields: titledOpt,
-    props: z.object({ app: z.string() }),
-    doc: "The panel host, keyed by panel: each panel (session, terminal, diff, files, browser) is a plugin of its own, and replaceable." },
+  { name: "panel", shape: "keyed", declaredBy: "shell", inBotTab: false, context: ["session"], placeholder: true, fields: titledOpt,
+    props: z.object({ app: z.string(), session: z.string().optional() }),
+    doc: "The panel host, keyed by panel: each panel (session, terminal, diff, files, browser) is a plugin of its own, and replaceable. A panel for some sessions only says so with `when.session` (the code-only panels: `\"coding\"`); a key no plugin fills shows the host's placeholder." },
   { name: "panel.view", shape: "keyed", declaredBy: "shell", inBotTab: false, fields: titled,
     props: z.object({ view: z.string(), session: z.string().optional() }),
     doc: "The panel's contents: the browser, and later the diff view, editor, file tree and terminal." },
-  { name: "settings.section", shape: "list", declaredBy: "shell", inBotTab: false, fields: titled, props: none,
-    doc: "A section of the settings screen." },
+  { name: "settings.section", shape: "list", declaredBy: "settings", inBotTab: false, fields: titled, props: none,
+    doc: "A section of the settings screen, which the settings part (`main` key `settings`) declares." },
   { name: "status", shape: "list", declaredBy: "shell", inBotTab: false, fields: titledOpt, props: none,
     doc: "The shell's status bar; the inherited `tile` becomes an entry here (§12)." },
   // A bot's tab (`bot.tab`).

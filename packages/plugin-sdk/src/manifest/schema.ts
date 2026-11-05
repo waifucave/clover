@@ -2,7 +2,7 @@
 // (`generated/clover.schema.json`) and its validation (`validate.ts`). Every shape below follows §5.9's reference; the
 // details §5.9 leaves open are noted where they are chosen.
 import { z } from "zod";
-import { Os, Platform, RunsOn, Scope, SemverVersion, TopPluginId, COMPUTER_NAME_RE } from "@waifucave/clover-protocol";
+import { Os, Platform, RunsOn, Scope, SemverVersion, SessionKind, TopPluginId, COMPUTER_NAME_RE } from "@waifucave/clover-protocol";
 import { AUTH_SCHEME_RE } from "../api/keyed-fetch";
 import { avatarFileProblem } from "../catalogs/avatars";
 import {
@@ -255,6 +255,8 @@ export const UiSchema = z.object({
     surface: z.union([z.string().min(1).max(128), z.array(z.string().min(1).max(128)).min(1).max(64)]).optional(),
     os: z.array(Os).min(1).max(3).optional(),
     setting: z.record(SettingKey, z.unknown()).optional(),
+    /** The kinds of session the entry shows for, where its spot offers `session` (a code-only panel: `"coding"`). */
+    session: z.union([SessionKind, z.array(SessionKind).min(1).max(4)]).optional(),
   }).catchall(z.unknown()).optional(),
   component: ComponentName.optional(),
   /** The partition is prefixed with the plugin's id. */

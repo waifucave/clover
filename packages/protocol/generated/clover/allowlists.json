@@ -98,6 +98,10 @@
       "session.send",
       "session.setModel",
       "session.stop",
+      "terminal.close",
+      "terminal.open",
+      "terminal.resize",
+      "terminal.write",
       "ui.set",
       "ui.settings",
       "update.apply",
@@ -143,6 +147,7 @@
       "session_changed",
       "tab_changed",
       "tab_closed",
+      "terminal_output",
       "ui_settings_changed",
       "update_available",
       "usage_changed"
@@ -198,6 +203,10 @@
       "session.history",
       "session.list",
       "session.post",
+      "terminal.close",
+      "terminal.open",
+      "terminal.resize",
+      "terminal.write",
       "tree.glob",
       "tree.grep",
       "tree.list",
@@ -233,6 +242,7 @@
       "session_changed",
       "tab_changed",
       "tab_closed",
+      "terminal_output",
       "usage_changed"
     ],
     "daemonSends": []

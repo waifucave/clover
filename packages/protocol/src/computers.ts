@@ -86,6 +86,9 @@ export const TreeData = z.discriminatedUnion("encoding", [
 ]);
 
 const Files = { roles: ["peer", "layer"] as const, capability: "files" };
+export const TerminalId = utf16(128, 1).regex(/^[A-Za-z0-9._:-]+$/);
+/** The most one `terminal.write` carries, in UTF-16 code units; a longer paste goes in pieces. */
+export const TERMINAL_WRITE_MAX = 1_000_000;
 /** What a peer's tree call carries (review N2), as `tool.run` does: the calling session, the calling computer's level
  *  for it, and a signed answer bound to this call where the stricter level asks. A layer's call leaves them out. */
 const ViaPeer = {
@@ -192,6 +195,49 @@ export const COMPUTERS_METHODS = {
     params: z.object({ callId: utf16(128, 1) }), result: Ok,
     doc: "Cancels a running call; if the link is down, the holding computer stops it when the link returns (§6.4).",
   }),
+
+  // Terminals (lane F's request; lane J's PTY): the user's own terminals in the panel. A plugin needs `terminal`,
+  // whose OK says it runs commands on the user's computers. Input counts only from the user's real key presses in the
+  // terminal's component, as a send does: the UI runtime (lane E) passes a `write` only from a trusted key or paste
+  // event in that component's own layer, never from its code.
+  terminalOpen: defineMethod({
+    name: "terminal.open", owner: "J", roles: ["app", "layer"], capability: "terminal",
+    params: z.object({
+      computer: ComputerName,
+      /** A folder in the tree on that computer; its home folder when left out. */
+      cwd: TreePath.optional(),
+      /** The session it belongs to, which shows it in its panel. */
+      session: SessionId.optional(),
+      cols: z.number().int().min(2).max(1000),
+      rows: z.number().int().min(1).max(1000),
+    }),
+    result: z.object({ terminalId: TerminalId }),
+    doc: "Opens a terminal on a computer, in the user's shell; its output streams as `terminal_output`.",
+  }),
+  terminalWrite: defineMethod({
+    name: "terminal.write", owner: "J", roles: ["app", "layer"], capability: "terminal",
+    params: z.object({
+      terminalId: TerminalId,
+      data: utf16(TERMINAL_WRITE_MAX),
+      /** A paste, whole, from a real paste event (never typed through as keys). The core wraps it in bracketed-paste
+       *  markers when the program turned them on (`ESC[200~` … `ESC[201~`), and a paste of more than one line waits
+       *  for the user's OK on a card first; a deny drops it. */
+      paste: z.boolean().optional(),
+    }),
+    result: Ok,
+    doc: "The user's key presses, or a paste, into a terminal.",
+  }),
+  terminalResize: defineMethod({
+    name: "terminal.resize", owner: "J", roles: ["app", "layer"], capability: "terminal",
+    params: z.object({ terminalId: TerminalId, cols: z.number().int().min(2).max(1000), rows: z.number().int().min(1).max(1000) }),
+    result: Ok,
+    doc: "The terminal's new size in cells.",
+  }),
+  terminalClose: defineMethod({
+    name: "terminal.close", owner: "J", roles: ["app", "layer"], capability: "terminal",
+    params: z.object({ terminalId: TerminalId }), result: Ok,
+    doc: "Ends the terminal's shell and closes it.",
+  }),
 } as const;
 
 export const ComputerChangedEvent = coreEvent("computer_changed", { computer: ComputerView });
@@ -199,6 +245,7 @@ export const ComputerRemovedEvent = coreEvent("computer_removed", { name: Comput
 export const HoldsChangedEvent = coreEvent("holds_changed", { computer: ComputerName, holds: z.array(HoldView), userWorking: z.boolean() });
 export const ActionRunningEvent = coreEvent("action_running", { computer: ComputerName, running: z.boolean() });
 export const ToolOutputEvent = coreEvent("tool_output", { callId: utf16(128, 1), chunk: utf16(1_000_000), stream: z.enum(["stdout", "stderr"]) });
+export const TerminalOutputEvent = coreEvent("terminal_output", { terminalId: TerminalId, data: utf16(1_000_000), exited: z.object({ code: z.number().int().nullable() }).optional() });
 
 export const COMPUTERS_EVENTS = {
   computerChanged: defineEvent({
@@ -225,5 +272,10 @@ export const COMPUTERS_EVENTS = {
     type: "tool_output", owner: "J", roles: ["peer"], schema: ToolOutputEvent, transient: true,
     fixture: { type: "tool_output", ts: 1781270000000, callId: "call_1", chunk: "On branch main\n", stream: "stdout" },
     doc: "A running `tool.run` call's output, back to the computer running the session.",
+  }),
+  terminalOutput: defineEvent({
+    type: "terminal_output", owner: "J", roles: ["app", "layer"], capability: "terminal", schema: TerminalOutputEvent, transient: true,
+    fixture: { type: "terminal_output", ts: 1781270000000, terminalId: "term_1", data: "$ " },
+    doc: "A terminal's output; `exited` once its shell ends.",
   }),
 } as const;

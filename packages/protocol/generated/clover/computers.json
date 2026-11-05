@@ -5007,6 +5007,208 @@
         ],
         "additionalProperties": false
       }
+    },
+    "terminal.open": {
+      "doc": "Opens a terminal on a computer, in the user's shell; its output streams as `terminal_output`.",
+      "owner": "J",
+      "direction": "to-daemon",
+      "roles": [
+        "app",
+        "layer"
+      ],
+      "capability": "terminal",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "computer": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 63,
+            "pattern": "^[A-Za-z0-9]+(-[A-Za-z0-9]+)*$"
+          },
+          "cwd": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096,
+            "pattern": "^(home|bots)(\\/|$)"
+          },
+          "session": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9._:-]+$"
+          },
+          "cols": {
+            "type": "integer",
+            "minimum": 2,
+            "maximum": 1000
+          },
+          "rows": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000
+          }
+        },
+        "required": [
+          "computer",
+          "cols",
+          "rows"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "terminalId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9._:-]+$"
+          }
+        },
+        "required": [
+          "terminalId"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "terminal.write": {
+      "doc": "The user's key presses, or a paste, into a terminal.",
+      "owner": "J",
+      "direction": "to-daemon",
+      "roles": [
+        "app",
+        "layer"
+      ],
+      "capability": "terminal",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "terminalId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9._:-]+$"
+          },
+          "data": {
+            "type": "string",
+            "maxLength": 1000000
+          },
+          "paste": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "terminalId",
+          "data"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "terminal.resize": {
+      "doc": "The terminal's new size in cells.",
+      "owner": "J",
+      "direction": "to-daemon",
+      "roles": [
+        "app",
+        "layer"
+      ],
+      "capability": "terminal",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "terminalId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9._:-]+$"
+          },
+          "cols": {
+            "type": "integer",
+            "minimum": 2,
+            "maximum": 1000
+          },
+          "rows": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000
+          }
+        },
+        "required": [
+          "terminalId",
+          "cols",
+          "rows"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "terminal.close": {
+      "doc": "Ends the terminal's shell and closes it.",
+      "owner": "J",
+      "direction": "to-daemon",
+      "roles": [
+        "app",
+        "layer"
+      ],
+      "capability": "terminal",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "terminalId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9._:-]+$"
+          }
+        },
+        "required": [
+          "terminalId"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "additionalProperties": false
+      }
     }
   },
   "events": {
@@ -5460,6 +5662,68 @@
           "callId",
           "chunk",
           "stream"
+        ]
+      }
+    },
+    "terminal_output": {
+      "doc": "A terminal's output; `exited` once its shell ends.",
+      "owner": "J",
+      "scope": "core",
+      "roles": [
+        "app",
+        "layer"
+      ],
+      "capability": "terminal",
+      "transient": true,
+      "schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "terminal_output"
+          },
+          "ts": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "terminalId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9._:-]+$"
+          },
+          "data": {
+            "type": "string",
+            "maxLength": 1000000
+          },
+          "exited": {
+            "type": "object",
+            "properties": {
+              "code": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "code"
+            ]
+          }
+        },
+        "required": [
+          "type",
+          "ts",
+          "terminalId",
+          "data"
         ]
       }
     }

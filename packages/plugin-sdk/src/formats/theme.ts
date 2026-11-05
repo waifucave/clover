@@ -27,7 +27,8 @@
 // layer's last OK'd values as `heldCard`, and `resolveTokens` takes that layer's `card.*` values from there.
 import { z } from "zod";
 import {
-  AUTO_INK, AUTO_INKS, CARD_TOKENS, SYSTEM_ACCENT, TOKENS, isTokenValue, isValueForToken, resolveAutoInk, type TokenValue,
+  AUTO_INK, AUTO_INKS, CARD_TOKENS, LABEL_INK, SYSTEM_ACCENT, SYSTEM_LABEL_FILLS, TOKENS, fillForWhiteLabel, isTokenValue, isValueForToken,
+  resolveAutoInk, type TokenValue,
 } from "../catalogs/tokens";
 import { Path, Text } from "../manifest/fields";
 
@@ -96,14 +97,16 @@ export function cardTokensChanged(before: ThemeTokens, after: ThemeTokens): bool
 
 /** One part's token values in one appearance: the catalog's defaults, then each layer's values over them, `layers`
  *  given lowest first (base theme, global theme, the bot's theme, the dressing plugins from the outermost part in,
- *  the user's overrides). An accent token whose winning value is `"system"` takes `systemAccent`, the OS accent as
- *  the engine last read it, or with none the value beneath it in the stack, the theme's accent. An ink whose winning
- *  value is `"auto"` is then resolved against its accent (`resolveAutoInk`). */
+ *  the user's overrides). An accent token whose winning value is `"system"` (the catalog's own, `follows`, counts)
+ *  takes `systemAccent`, the OS accent as the engine last read it, or with none the value beneath it in the stack, the
+ *  theme's accent; a filled button with a text label (`SYSTEM_LABEL_FILLS`) takes it darkened until white text reads
+ *  on it (`fillForWhiteLabel`). An ink whose winning value is `"auto"` is then resolved against its accent
+ *  (`resolveAutoInk`): a label ink falls back to `LABEL_INK`, a glyph ink to its theme's dark ink. */
 export function resolveTokens(appearance: Appearance, layers: readonly TokenLayer[], opts: { systemAccent?: string } = {}): Record<string, TokenValue> {
   const out: Record<string, TokenValue> = {};
   for (const t of TOKENS) out[t.name] = appearance === "dark" && t.dark !== undefined ? t.dark : t.default;
-  const followsOs = new Set<string>();
-  const auto = new Set<string>();
+  const followsOs = new Set<string>(TOKENS.filter((t) => t.follows === SYSTEM_ACCENT).map((t) => t.name));
+  const auto = new Set<string>(TOKENS.filter((t) => t.follows === AUTO_INK).map((t) => t.name));
   for (const layer of layers) {
     const values = themeTokensFor(layer, appearance) ?? {};
     if (layer.heldCard !== undefined) {
@@ -119,10 +122,16 @@ export function resolveTokens(appearance: Appearance, layers: readonly TokenLaye
     }
   }
   const live = opts.systemAccent !== undefined && isTokenValue("color", opts.systemAccent) ? opts.systemAccent : undefined;
-  if (live !== undefined) for (const name of followsOs) out[name] = live;
+  for (const name of followsOs) {
+    if (live !== undefined) out[name] = live;
+    const fill = SYSTEM_LABEL_FILLS[name];
+    const filled = fill === undefined ? undefined : fillForWhiteLabel(String(out[name]), String(out[fill.background]));
+    if (filled !== undefined) out[name] = filled;
+  }
   for (const name of auto) {
     const ink = AUTO_INKS[name]!;
-    const resolved = resolveAutoInk(String(out[ink.accent]), { background: String(out[ink.background]), darkInk: String(out[ink.darkInk]), floor: ink.floor });
+    const darkInk = ink.darkInk === undefined ? LABEL_INK : String(out[ink.darkInk]);
+    const resolved = resolveAutoInk(String(out[ink.accent]), { background: String(out[ink.background]), darkInk, floor: ink.floor });
     if (resolved !== undefined) out[name] = resolved;
   }
   return out;

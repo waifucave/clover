@@ -4,7 +4,8 @@ import { createHash } from "node:crypto";
 import {
   IndexSchema, LayoutSchema, LocaleSchema, RevocationsSchema, ThemeSchema, compareVersions, isRevoked, isTreeHashExcluded,
   layoutPaths, layoutSpots, localeFallbacks, parseRange, parseSignatureFile, parseVersion, placeholdersOf, satisfies,
-  AUTO_INK, AUTO_INKS, SYSTEM_ACCENT, TOKENS, contrastRatio, flattenColor, isValueForToken, systemAccentFromOs, validateTree,
+  AUTO_INK, AUTO_INKS, FRAME_VARIABLES, LABEL_INK, SYSTEM_ACCENT, SYSTEM_ACCENT_TOKENS, TOKENS, contrastRatio, cssProperty, fillForWhiteLabel, flattenColor,
+  isValueForToken, systemAccentFromOs, validateTree,
   cardTokensChanged, cssFunctionName, cssUnescape, cssUrlArgumentsAreDynamic, isCssUrlFunction, isDroppedCssFunction, resolveCssUrl, resolveTokens, setsCardTokens, sha256Hex,
   themeTokensFor, treeHash, treeHashInput, treePathProblem,
 } from "../src/index";
@@ -37,44 +38,58 @@ describe("appearance and the fallback order", () => {
     const light = resolveTokens("light", [base, bot, user]);
     expect(light["color.accent"]).toBe("#7A5CFF");
     expect(light["color.text"]).toBe("#000000");
-    expect(light["color.canvas"]).toBe("#F6F6F8");
+    expect(light["color.canvas"]).toBe("#F5F5F5");
     expect(light["plugin.luna.glow"]).toBeUndefined();
     const dark = resolveTokens("dark", [base, bot, user]);
     expect(dark["color.accent"]).toBe("#FF7AB6");
-    expect(dark["color.canvas"]).toBe("#212126");
+    expect(dark["color.canvas"]).toBe("#202020");
   });
 
-  test("an accent may follow the OS; auto inks are white when white reaches 3:1 for glyphs or 4.5:1 for text, else the dark ink", async () => {
+  test("an accent may follow the OS; a labelled fill darkens until white reads; glyphs are white at 3:1, labels at 4.5:1, else black", async () => {
     const theme = {
       tokens: { "color.accent": SYSTEM_ACCENT, "color.accent.glyph": AUTO_INK, "color.accent.contrast": AUTO_INK, "card.approve.background": SYSTEM_ACCENT, "card.approve.text": AUTO_INK },
     };
     const ink = (v: Record<string, unknown>) => [v["color.accent"], v["color.accent.glyph"], v["color.accent.contrast"], v["card.approve.background"], v["card.approve.text"]];
-    const INK = "#1C1B22";
-    // The OSes' default blues get white glyphs, as both OSes and Claude draw them; text takes white only at 4.5:1.
-    expect(ink(resolveTokens("light", [theme], { systemAccent: systemAccentFromOs("007affff") }))).toEqual(["#007AFF", "#FFFFFF", INK, "#007AFF", INK]);
+    const INK = "#111111";
+    // The OSes' default blues get white glyphs; a text label takes white at 4.5:1, else black; the approve button is
+    // the accent darkened in its own hue until its white label reads at 4.5:1.
+    const blue = resolveTokens("light", [theme], { systemAccent: systemAccentFromOs("007affff") });
+    expect(ink(blue)).toEqual(["#007AFF", "#FFFFFF", LABEL_INK, fillForWhiteLabel("#007AFF", "#FFFFFF"), "#FFFFFF"]);
+    expect(contrastRatio("#FFFFFF", String(blue["card.approve.background"]))).toBeGreaterThanOrEqual(4.5);
     expect(ink(resolveTokens("light", [theme], { systemAccent: "#0078D4" }))).toEqual(["#0078D4", "#FFFFFF", "#FFFFFF", "#0078D4", "#FFFFFF"]);
-    // A yellow accent never gets white; graphite gets white glyphs and dark text.
-    expect(ink(resolveTokens("light", [theme], { systemAccent: "#FFC600" }))).toEqual(["#FFC600", INK, INK, "#FFC600", INK]);
-    expect(ink(resolveTokens("light", [theme], { systemAccent: "#8C8C8C" }))).toEqual(["#8C8C8C", "#FFFFFF", INK, "#8C8C8C", INK]);
-    // In the current appearance, with the theme's own dark ink.
-    const dark = resolveTokens("dark", [theme], { systemAccent: "#FFC600" });
-    expect([dark["color.accent.glyph"], dark["card.approve.text"]]).toEqual(["#2A0F1C", "#2A0F1C"]);
+    // A yellow accent never gets white glyphs or labels on it; the approve button still darkens until white reads.
+    const yellow = resolveTokens("light", [theme], { systemAccent: "#FFC600" });
+    expect(ink(yellow).slice(0, 3)).toEqual(["#FFC600", INK, LABEL_INK]);
+    expect([yellow["card.approve.text"], contrastRatio("#FFFFFF", String(yellow["card.approve.background"]))! >= 4.5]).toEqual(["#FFFFFF", true]);
+    expect(ink(resolveTokens("light", [theme], { systemAccent: "#8C8C8C" })).slice(0, 3)).toEqual(["#8C8C8C", "#FFFFFF", LABEL_INK]);
+    // Darkened in its own hue: hue and saturation kept, lighter ones left alone.
+    expect(fillForWhiteLabel("#2F6FDF", "#FFFFFF")).toBe("#2F6FDF");
+    expect(fillForWhiteLabel("#0A84FF", "#191919")).toMatch(/^#[0-9A-F]{6}$/);
+    expect(contrastRatio("#FFFFFF", fillForWhiteLabel("#4180E3", "#202020")!)).toBeGreaterThanOrEqual(4.5);
     // An accent with alpha is judged as painted on the control's background.
     expect(flattenColor("#007AFF80", "#FFFFFF")).toBe("#7FBCFF");
     expect(resolveTokens("light", [{ tokens: { "color.accent": "#007AFF80", "color.accent.glyph": AUTO_INK } }])["color.accent.glyph"]).toBe(INK);
-    // Whatever the OS says, white is drawn only where it reaches the floor.
+    // Whatever the OS says, white is drawn only where it reaches the floor, and a labelled fill always carries white.
     for (let i = 0; i < 4096; i += 7) {
       const accent = `#${(i * 4099 % 0x1000000).toString(16).padStart(6, "0").toUpperCase()}`;
       const v = resolveTokens("light", [theme], { systemAccent: accent });
       if (v["color.accent.glyph"] === "#FFFFFF") expect([accent, contrastRatio("#FFFFFF", accent)! >= 3]).toEqual([accent, true]);
       if (v["color.accent.contrast"] === "#FFFFFF") expect([accent, contrastRatio("#FFFFFF", accent)! >= 4.5]).toEqual([accent, true]);
+      expect([accent, v["card.approve.text"], contrastRatio("#FFFFFF", String(v["card.approve.background"]))! >= 4.5]).toEqual([accent, "#FFFFFF", true]);
     }
+    // With no theme at all, the catalog itself follows the OS and resolves its inks.
+    const bare = resolveTokens("dark", [], { systemAccent: "#0A84FF" });
+    expect([bare["color.accent"], bare["color.focus"], bare["island.accept"], bare["pill.accept"], bare["island.accept.text"], bare["pill.accept.text"]])
+      .toEqual(["#0A84FF", "#0A84FF", "#0A84FF", "#0A84FF", "#FFFFFF", "#FFFFFF"]);
+    expect(SYSTEM_ACCENT_TOKENS.every((n) => TOKENS.find((t) => t.name === n)?.follows === SYSTEM_ACCENT)).toBe(true);
+    expect(Object.keys(AUTO_INKS).every((n) => TOKENS.find((t) => t.name === n)?.follows === AUTO_INK)).toBe(true);
     // No reading (Linux): the theme's accent, the value beneath "system", which G's floors cover.
     const lunaAccent = { tokens: { "color.accent": "#5E2CA5" } };
     expect(resolveTokens("light", [lunaAccent, theme])["color.accent"]).toBe("#5E2CA5");
     expect(resolveTokens("light", [theme])["color.accent"]).toBe(TOKENS.find((t) => t.name === "color.accent")!.default);
     expect(resolveTokens("light", [theme], { systemAccent: "not a colour" })["color.accent"]).toBe(TOKENS.find((t) => t.name === "color.accent")!.default);
     expect(resolveTokens("light", [lunaAccent, theme])["color.accent.glyph"]).toBe("#FFFFFF");
+    expect(resolveTokens("light", [{ tokens: { "card.approve.background": "#FFC600" } }])["card.approve.text"]).toBe(LABEL_INK);
     // A layer above that sets the accent wins over "system"; the OS is read only for "system".
     expect(resolveTokens("light", [theme, { tokens: { "color.accent": "#123456" } }], { systemAccent: "#FFC600" })["color.accent"]).toBe("#123456");
     // Only accent tokens take "system", only inks on them take "auto".
@@ -83,7 +98,12 @@ describe("appearance and the fallback order", () => {
     expect(isValueForToken("color.accent.glyph", AUTO_INK)).toBe(true);
     expect(isValueForToken("color.text", AUTO_INK)).toBe(false);
     expect(isValueForToken("plugin.luna.glow", SYSTEM_ACCENT)).toBe(false);
-    expect(Object.values(AUTO_INKS).map((i) => i.floor)).toEqual([4.5, 3, 4.5]);
+    expect(Object.values(AUTO_INKS).map((i) => i.floor)).toEqual([4.5, 3, 4.5, 3, 3]);
+    expect(isValueForToken("color.focus", SYSTEM_ACCENT) && isValueForToken("island.accept", SYSTEM_ACCENT) && isValueForToken("pill.accept", SYSTEM_ACCENT)).toBe(true);
+    expect(isValueForToken("pill.accept.text", AUTO_INK)).toBe(true);
+    // The frame's variables are the shell's: no theme sets them.
+    expect(FRAME_VARIABLES.map((v) => cssProperty(v.name))).toEqual(["--clover-frame-inset-top", "--clover-frame-window-controls"]);
+    expect(isValueForToken("frame.inset.top", "45px")).toBe(false);
     expect(systemAccentFromOs("blue")).toBeUndefined();
     // A theme file may say so.
     const files = new Map([

@@ -276,7 +276,8 @@ export interface StorageApi {
  *     default `Authorization: Bearer …`), never where the caller says; a request that sets that header itself fails
  *     `credential_header`, and every response comes back with each header that holds the key taken out;
  *  3. redirects are followed by hand: each hop held to rule 1, a hop to another origin drops the key;
- *  4. no time limit while data flows either way: only `idle_timeout` (5 minutes of silence) ends a request;
+ *  4. no time limit while data flows either way: only `idle_timeout` ends a request, after 5 minutes of silence or
+ *     the request's own `idleTimeoutMs` (held to 1 s - 30 min, `clampKeyedIdleTimeoutMs`);
  *  5. a 401 gets one retry with a newer token from the refresher (a higher generation), when the body can be resent.
  *  Failures carry a closed code (`KEYED_FETCH_ERROR_CODES`) and never a key, a token or a response body. */
 export interface NetApi {
@@ -289,6 +290,9 @@ export interface KeyedFetchOptions {
    *  adds none. Left out: the plugin's one entry when it has exactly one, none when it has none, and `ambiguous_auth`
    *  when it has several. */
   auth?: string | false;
+  /** How long silence (no data either way) may last before `idle_timeout`: held to 1 s - 30 min (a shorter one is
+   *  raised, a longer one lowered); absent, five minutes. Lane A's interface v1 has the same option. */
+  idleTimeoutMs?: number;
 }
 
 /** Lane A's codes, plus `no_account`: `auth: "waifucave"` with no waifucave account signed in on this computer. */
@@ -449,6 +453,21 @@ export interface FilesApi {
   grep(pattern: string, opts: { cwd: string; glob?: string; limit?: number }): Promise<{ matches: { path: string; line: number; text: string }[]; truncated: boolean }>;
 }
 
+/** `terminal`: the user's terminals on their computers (lane F's request; lane J's PTY), for a component that draws
+ *  one. Its OK says it runs commands on the user's computers. Components only: what reaches a terminal is the user's,
+ *  counted as a send is. `write` passes only from a trusted key or paste event in the component's own layer (the UI
+ *  runtime checks), never from its code; a paste goes whole with `paste: true`, bracketed when the program asked for
+ *  it, and one of several lines waits for the user's OK first. */
+export interface TerminalApi {
+  /** In a folder of the tree on that computer (its home folder by default); `session` shows it in that panel. */
+  open(opts: { computer: string; cwd?: string; session?: string; cols: number; rows: number }): Promise<{ terminalId: string }>;
+  write(terminalId: string, data: string, opts?: { paste?: boolean }): Promise<void>;
+  /** Output as it comes, and `exited` once the shell ends. */
+  onData(terminalId: string, fn: (data: string, exited?: { code: number | null }) => void): Unsubscribe;
+  resize(terminalId: string, cols: number, rows: number): Promise<void>;
+  close(terminalId: string): Promise<void>;
+}
+
 /** `browser`: the Clover Browser's API (§12.1); DevTools calls pass only allowlisted domains. */
 export interface BrowserApi {
   tabs(filter?: { owner?: TabOwner; computer?: string }): Promise<TabView[]>;
@@ -524,6 +543,8 @@ export interface PluginApi {
   readonly approvals?: ApprovalsApi;
   readonly files?: FilesApi;
   readonly browser?: BrowserApi;
+  /** Components only. */
+  readonly terminal?: TerminalApi;
   readonly usage?: UsageApi;
   readonly logs?: LogsApi;
   readonly notify?: NotifyApi;
