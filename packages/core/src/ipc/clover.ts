@@ -7,7 +7,7 @@
 // other lanes add theirs through `handlers`. A method on a role's list that no lane serves yet answers
 // METHOD_NOT_FOUND.
 import {
-  CLOVER_ERR, CLOVER_METHODS, CLOVER_PROTOCOL_MIN_VERSION, CLOVER_PROTOCOL_VERSION, CloverHelloParams, ERR,
+  CLOVER_ERR, CLOVER_METHODS, CLOVER_PROTOCOL_MIN_VERSION, CLOVER_ROLES, CLOVER_PROTOCOL_VERSION, CloverHelloParams, ERR,
   PairStatus, encodeLine, helloVersionServed, type Caller, type CloverHelloResult, type CloverRole,
 } from "@waifucave/clover-protocol";
 import { isRefusal, type CloverTokens } from "../auth/clover-tokens";
@@ -115,9 +115,12 @@ export function createCloverServer(deps: CloverServerDeps): CloverServer {
   return {
     opened(socket) { pipePeers?.opened(socket); },
 
+    // Clover's when it names version 1 or later and one of Clover's roles: an inherited role
+    // (harness, admin, plugin) at any other version keeps the inherited path and its VERSION_MISMATCH.
     isCloverHello(params) {
-      const v = (params as { protocolVersion?: unknown } | null)?.protocolVersion;
-      return typeof v === "number" && v >= CLOVER_PROTOCOL_MIN_VERSION;
+      const p = params as { protocolVersion?: unknown; role?: unknown } | null;
+      return typeof p?.protocolVersion === "number" && p.protocolVersion >= CLOVER_PROTOCOL_MIN_VERSION
+        && typeof p.role === "string" && (CLOVER_ROLES as readonly string[]).includes(p.role);
     },
 
     async hello(socket, connId, params, write) {
