@@ -1,0 +1,72 @@
+{
+  "check": "initialize",
+  "agent": "cursor",
+  "command": "/opt/homebrew/bin/cursor-agent acp",
+  "started": "2026-11-05T00:19:17.879Z",
+  "bridgeTokenSha": {
+    "stdio": "483ae7db0877"
+  },
+  "nonces": {
+    "stdio": "SN-eecebe705262",
+    "http": "HN-d37d07c93056",
+    "stdioWord": "sword8eef4a",
+    "httpWord": "hword23c960"
+  },
+  "initialize": {
+    "protocolVersion": 1,
+    "agentCapabilities": {
+      "loadSession": true,
+      "mcpCapabilities": {
+        "http": true,
+        "sse": true
+      },
+      "promptCapabilities": {
+        "audio": false,
+        "embeddedContext": false,
+        "image": true
+      },
+      "sessionCapabilities": {
+        "list": {}
+      }
+    },
+    "authMethods": [
+      {
+        "id": "cursor_login",
+        "name": "Cursor Login",
+        "description": "Authenticate using existing Cursor login credentials. Run 'agent login' first if not logged in."
+      }
+    ]
+  },
+  "agentStop": {
+    "code": 143,
+    "signal": null,
+    "forced": false
+  },
+  "mcp": {
+    "stdio": {
+      "starts": 0,
+      "bridgeCheck": "never started",
+      "envTokenMatches": false,
+      "methods": [],
+      "calls": []
+    },
+    "http": {
+      "requests": [],
+      "authCheck": [],
+      "protocolVersionHeader": [],
+      "userAgent": [],
+      "calls": []
+    }
+  },
+  "client": {
+    "permissions": [],
+    "fsCalls": [],
+    "terminalCalls": [],
+    "elicitations": 0,
+    "unknownMethods": [],
+    "updateKinds": {},
+    "toolCalls": []
+  },
+  "shimsUsed": [],
+  "finished": "2026-11-05T00:19:18.451Z"
+}
