@@ -1,0 +1,12 @@
+{
+  "type": "note",
+  "seq": 16,
+  "sessionId": "s_alpha",
+  "ts": 1781270004000,
+  "from": {
+    "kind": "plugin",
+    "pluginId": "weather"
+  },
+  "label": "Forecast",
+  "text": "Rain after 4 pm."
+}

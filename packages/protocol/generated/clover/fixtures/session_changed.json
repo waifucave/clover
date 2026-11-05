@@ -1,0 +1,16 @@
+{
+  "type": "session_changed",
+  "ts": 1781270000000,
+  "session": {
+    "id": "s_agent_1",
+    "kind": "agent",
+    "bot": "alpha",
+    "parent": "s_alpha",
+    "computer": "Desktop1",
+    "status": "prompting",
+    "startedAt": 1781269990000,
+    "updatedAt": 1781270000000,
+    "backend": "claude-code",
+    "root": "home/Desktop1/project1"
+  }
+}

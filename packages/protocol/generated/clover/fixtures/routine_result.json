@@ -1,0 +1,10 @@
+{
+  "type": "routine_result",
+  "seq": 15,
+  "sessionId": "s_alpha",
+  "ts": 1781270003000,
+  "routine": "r_morning",
+  "name": "Morning brief",
+  "sideThread": "s_side_9",
+  "text": "3 new issues, no failed deploys."
+}
