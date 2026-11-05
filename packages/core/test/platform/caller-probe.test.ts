@@ -5,7 +5,6 @@ import { join } from "node:path";
 import { ancestry, descendsFrom, parentPid, probePeer, socketFd, type PeerFacts } from "../../src/platform/caller-probe";
 import { resolveEndpoint } from "../../src/platform/transport";
 
-const posix = process.platform === "darwin" || process.platform === "linux";
 
 /** Listen on a fresh endpoint and resolve with the probe of the first connection's peer. */
 function listenOnce(): { path: string; peer: Promise<PeerFacts & { fd: number | null }>; stop(): void } {
@@ -33,7 +32,7 @@ describe("the caller check's OS probe", () => {
     expect(descendsFrom({ pid: null, ancestors: [] }, new Set([1]))).toBe(false);
   });
 
-  test.skipIf(!posix)("a parent chain: ours starts at our parent", () => {
+  test("a parent chain: ours starts at our parent", () => {
     expect(parentPid(process.pid)).toBe(process.ppid);
     const chain = ancestry(process.pid);
     expect(chain[0]).toBe(process.ppid);
@@ -41,7 +40,7 @@ describe("the caller check's OS probe", () => {
     expect(parentPid(2 ** 30)).toBeNull();
   });
 
-  test.skipIf(!posix)("a client in this process: its pid, outside every floor", async () => {
+  test("a client in this process: its pid, outside every floor", async () => {
     const l = listenOnce();
     const c = await Bun.connect({ unix: l.path, socket: { data() {} } });
     const peer = await l.peer;
@@ -52,7 +51,7 @@ describe("the caller check's OS probe", () => {
     c.end(); l.stop();
   });
 
-  test.skipIf(!posix)("a client in a child process: the child's pid, under us in the tree", async () => {
+  test("a client in a child process: the child's pid, under us in the tree", async () => {
     const l = listenOnce();
     const child = Bun.spawn([process.execPath, "-e", CLIENT(l.path)], { stdout: "ignore", stderr: "ignore" });
     const peer = await l.peer;
@@ -72,14 +71,17 @@ describe("the caller check's OS probe", () => {
     child.kill(); l.stop();
   });
 
-  test.skipIf(process.platform !== "linux")("Linux: a client in its own user namespace is fenced", async () => {
-    const probe = Bun.spawnSync(["unshare", "-Ur", "true"]);
-    if (probe.exitCode !== 0) return; // unprivileged user namespaces are off here (Ubuntu's AppArmor default)
+  test.skipIf(process.platform !== "linux")("Linux: a client in its own namespaces (unshare, or bubblewrap) is fenced", async () => {
+    // Ubuntu 24.04 turns unprivileged user namespaces off for unshare but lets bubblewrap make them.
+    const wrappers = [["unshare", "-Ur"], ["bwrap", "--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc", "--unshare-user", "--unshare-pid"]];
+    const wrap = wrappers.find((w) => { try { return Bun.spawnSync([...w, "true"]).exitCode === 0; } catch { return false; } });
+    if (wrap === undefined) return; // no way to make a namespace here
     const l = listenOnce();
-    const child = Bun.spawn(["unshare", "-Ur", process.execPath, "-e", CLIENT(l.path)], { stdout: "ignore", stderr: "ignore" });
+    const child = Bun.spawn([...wrap, process.execPath, "-e", CLIENT(l.path)], { stdout: "ignore", stderr: "ignore" });
     const peer = await l.peer;
     expect(peer.probe).toEqual({ inHostNamespacesLinux: false });
     expect(peer.floor).toBe("fenced");
+    expect(descendsFrom(peer, new Set([child.pid]))).toBe(true); // the wrapper is in its tree
     child.kill(); l.stop();
   });
 });
