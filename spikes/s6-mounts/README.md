@@ -66,6 +66,7 @@ CLOVER_TEAM_ID=<team id> native/mounts/macos/gate.sh
 
 which signs the module, asks for the one click in System Settings, then runs the coherence
 check with the short-read guard on and off, the speed matrix and the fail-fast scenarios on the
-FSKit volume, and removes the app again.
+FSKit volume, then the NFS loopback checks (asking whether a dead helper made macOS show a
+dialog), and removes the app again.
 
 The CI workflow is `.github/workflows/spike-s6.yml`; every push to `lane/j-m0` runs it.

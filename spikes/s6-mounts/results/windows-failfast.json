@@ -1,0 +1,443 @@
+{
+  "spike": "S6",
+  "question": "failfast",
+  "machine": {
+    "os": "win32",
+    "release": "10.0.26100",
+    "arch": "x64",
+    "cpus": 4,
+    "cpu": "AMD EPYC 7763 64-Core Processor                ",
+    "memGB": 16,
+    "bun": "1.3.14"
+  },
+  "rttMs": 20,
+  "policy": "plain",
+  "started": "2026-11-05T02:02:26.669Z",
+  "results": [
+    {
+      "scenario": "read+blackhole",
+      "op": "read 1 GiB",
+      "fault": "link goes silent (no FIN, no RST)",
+      "failMs": 1556,
+      "exitCode": 1,
+      "sawError": "EHOSTUNREACH: EHOSTUNREACH: host is unreachable, read",
+      "progressBytes": 10485760,
+      "whileDown": {
+        "ok": false,
+        "ms": 0.5337999999999994,
+        "code": "EHOSTUNREACH",
+        "message": "EHOSTUNREACH: host is unreachable, stat 'T:\\home\\Desktop1\\clover\\package.json'"
+      },
+      "whileDownAgain": {
+        "ok": false,
+        "ms": 0.5546999999999969,
+        "code": "EHOSTUNREACH",
+        "message": "EHOSTUNREACH: host is unreachable, scandir 'T:\\home\\Desktop1'"
+      },
+      "stuckProcesses": [],
+      "systemUninterruptible": [],
+      "helperAlive": true,
+      "homeListing": {
+        "ok": true,
+        "ms": 0.5189999999999984
+      },
+      "recoverMs": 192,
+      "restoreCallMs": 3,
+      "afterRecovery": {
+        "ok": true,
+        "ms": 74.0573
+      },
+      "stuckAfter": [],
+      "helperStats": {
+        "cacheHits": 13,
+        "cacheMiss": 11,
+        "drops": 1,
+        "fastFails": 6,
+        "online": true,
+        "prefetches": 0,
+        "reconnects": 1,
+        "requests": 27,
+        "timeouts": 0
+      },
+      "helperLog": "02:02:29.564712 [Desktop1] online (service 41d14053 on win32)\n02:02:29.595446 mounting T: (policy plain)\nThe service clover-mount has been started.\n02:02:31.815316 [Desktop1] offline: silent for 1.561s (1 requests failed)\n02:02:32.012285 [Desktop1] link back (service 41d14053, restarted: false)",
+      "unmountMs": 5,
+      "mountGone": true
+    },
+    {
+      "scenario": "read+reset",
+      "op": "read 1 GiB",
+      "fault": "link reset (connections closed)",
+      "failMs": 11,
+      "exitCode": 1,
+      "sawError": "EHOSTUNREACH: EHOSTUNREACH: host is unreachable, read",
+      "progressBytes": 9437184,
+      "whileDown": {
+        "ok": false,
+        "ms": 0.47870000000000346,
+        "code": "EHOSTUNREACH",
+        "message": "EHOSTUNREACH: host is unreachable, stat 'T:\\home\\Desktop1\\clover\\package.json'"
+      },
+      "whileDownAgain": {
+        "ok": false,
+        "ms": 0.5548000000000002,
+        "code": "EHOSTUNREACH",
+        "message": "EHOSTUNREACH: host is unreachable, scandir 'T:\\home\\Desktop1'"
+      },
+      "stuckProcesses": [],
+      "systemUninterruptible": [],
+      "helperAlive": true,
+      "homeListing": {
+        "ok": true,
+        "ms": 0.48790000000000333
+      },
+      "recoverMs": 194,
+      "restoreCallMs": 1,
+      "afterRecovery": {
+        "ok": true,
+        "ms": 58.437
+      },
+      "stuckAfter": [],
+      "helperStats": {
+        "cacheHits": 16,
+        "cacheMiss": 8,
+        "drops": 1,
+        "fastFails": 3,
+        "online": true,
+        "prefetches": 0,
+        "reconnects": 1,
+        "requests": 23,
+        "timeouts": 0
+      },
+      "helperLog": "02:02:32.012285 [Desktop1] link back (service 41d14053, restarted: false)\n02:02:32.383956 [Desktop1] online (service 41d14053 on win32)\n02:02:32.416923 mounting T: (policy plain)\nThe service clover-mount has been started.\n02:02:33.123072 [Desktop1] offline: read: EOF (1 requests failed)\n02:02:33.250066 [Desktop1] link back (service 41d14053, restarted: false)",
+      "unmountMs": 4,
+      "mountGone": true
+    },
+    {
+      "scenario": "read+kill",
+      "op": "read 1 GiB",
+      "fault": "file service killed (SIGKILL)",
+      "failMs": 11,
+      "exitCode": 1,
+      "sawError": "EHOSTUNREACH: EHOSTUNREACH: host is unreachable, read",
+      "progressBytes": 10485760,
+      "whileDown": {
+        "ok": false,
+        "ms": 0.4758999999999993,
+        "code": "EHOSTUNREACH",
+        "message": "EHOSTUNREACH: host is unreachable, stat 'T:\\home\\Desktop1\\clover\\package.json'"
+      },
+      "whileDownAgain": {
+        "ok": false,
+        "ms": 0.43670000000000186,
+        "code": "EHOSTUNREACH",
+        "message": "EHOSTUNREACH: host is unreachable, scandir 'T:\\home\\Desktop1'"
+      },
+      "stuckProcesses": [],
+      "systemUninterruptible": [],
+      "helperAlive": true,
+      "homeListing": {
+        "ok": true,
+        "ms": 0.4640000000000022
+      },
+      "recoverMs": 194,
+      "restoreCallMs": 116,
+      "afterRecovery": {
+        "ok": true,
+        "ms": 59.57200000000001
+      },
+      "stuckAfter": [],
+      "helperStats": {
+        "cacheHits": 16,
+        "cacheMiss": 8,
+        "drops": 1,
+        "fastFails": 3,
+        "online": true,
+        "prefetches": 0,
+        "reconnects": 1,
+        "requests": 24,
+        "timeouts": 0
+      },
+      "helperLog": "02:02:33.250066 [Desktop1] link back (service 41d14053, restarted: false)\n02:02:33.670598 [Desktop1] online (service 41d14053 on win32)\n02:02:33.703677 mounting T: (policy plain)\nThe service clover-mount has been started.\n02:02:34.395370 [Desktop1] offline: read: EOF (1 requests failed)\n02:02:34.737001 [Desktop1] link back (service bf0d7d01, restarted: true)",
+      "unmountMs": 4,
+      "mountGone": true
+    },
+    {
+      "scenario": "write+blackhole",
+      "op": "write 1 GiB",
+      "fault": "link goes silent (no FIN, no RST)",
+      "failMs": 1539,
+      "exitCode": 1,
+      "sawError": "EHOSTUNREACH: EHOSTUNREACH: host is unreachable, write",
+      "progressBytes": 6291456,
+      "whileDown": {
+        "ok": false,
+        "ms": 0.36769999999999925,
+        "code": "EHOSTUNREACH",
+        "message": "EHOSTUNREACH: host is unreachable, stat 'T:\\home\\Desktop1\\clover\\package.json'"
+      },
+      "whileDownAgain": {
+        "ok": false,
+        "ms": 0.4806000000000026,
+        "code": "EHOSTUNREACH",
+        "message": "EHOSTUNREACH: host is unreachable, scandir 'T:\\home\\Desktop1'"
+      },
+      "stuckProcesses": [],
+      "systemUninterruptible": [],
+      "helperAlive": true,
+      "homeListing": {
+        "ok": true,
+        "ms": 0.5823999999999998
+      },
+      "recoverMs": 179,
+      "restoreCallMs": 0,
+      "afterRecovery": {
+        "ok": true,
+        "ms": 60.66890000000001
+      },
+      "stuckAfter": [],
+      "helperStats": {
+        "cacheHits": 18,
+        "cacheMiss": 19,
+        "drops": 1,
+        "fastFails": 9,
+        "online": true,
+        "prefetches": 0,
+        "reconnects": 1,
+        "requests": 32,
+        "timeouts": 0
+      },
+      "helperLog": "02:02:34.737001 [Desktop1] link back (service bf0d7d01, restarted: true)\n02:02:35.059539 [Desktop1] online (service bf0d7d01 on win32)\n02:02:35.098476 mounting T: (policy plain)\nThe service clover-mount has been started.\n02:02:37.309934 [Desktop1] offline: silent for 1.549s (1 requests failed)\n02:02:37.502620 [Desktop1] link back (service bf0d7d01, restarted: false)",
+      "unmountMs": 3,
+      "mountGone": true
+    },
+    {
+      "scenario": "write+kill",
+      "op": "write 1 GiB",
+      "fault": "file service killed (SIGKILL)",
+      "failMs": 13,
+      "exitCode": 1,
+      "sawError": "EHOSTUNREACH: EHOSTUNREACH: host is unreachable, write",
+      "progressBytes": 5242880,
+      "whileDown": {
+        "ok": false,
+        "ms": 0.4184000000000019,
+        "code": "EHOSTUNREACH",
+        "message": "EHOSTUNREACH: host is unreachable, stat 'T:\\home\\Desktop1\\clover\\package.json'"
+      },
+      "whileDownAgain": {
+        "ok": false,
+        "ms": 0.4441999999999986,
+        "code": "EHOSTUNREACH",
+        "message": "EHOSTUNREACH: host is unreachable, scandir 'T:\\home\\Desktop1'"
+      },
+      "stuckProcesses": [],
+      "systemUninterruptible": [],
+      "helperAlive": true,
+      "homeListing": {
+        "ok": true,
+        "ms": 0.4753000000000007
+      },
+      "recoverMs": 196,
+      "restoreCallMs": 116,
+      "afterRecovery": {
+        "ok": true,
+        "ms": 59.29090000000001
+      },
+      "stuckAfter": [],
+      "helperStats": {
+        "cacheHits": 21,
+        "cacheMiss": 13,
+        "drops": 1,
+        "fastFails": 4,
+        "online": true,
+        "prefetches": 0,
+        "reconnects": 1,
+        "requests": 26,
+        "timeouts": 0
+      },
+      "helperLog": "02:02:37.502620 [Desktop1] link back (service bf0d7d01, restarted: false)\n02:02:37.840154 [Desktop1] online (service bf0d7d01 on win32)\n02:02:37.869925 mounting T: (policy plain)\nThe service clover-mount has been started.\n02:02:38.558537 [Desktop1] offline: read: EOF (1 requests failed)\n02:02:38.895250 [Desktop1] link back (service 2f0018d5, restarted: true)",
+      "unmountMs": 4,
+      "mountGone": true
+    },
+    {
+      "scenario": "git+blackhole",
+      "op": "git status (cold)",
+      "fault": "link goes silent (no FIN, no RST)",
+      "failMs": 1519,
+      "exitCode": 128,
+      "sawError": "fatal: unable to get current working directory: No such file or directory",
+      "whileDown": {
+        "ok": false,
+        "ms": 0.38300000000000267,
+        "code": "EHOSTUNREACH",
+        "message": "EHOSTUNREACH: host is unreachable, stat 'T:\\home\\Desktop1\\clover\\package.json'"
+      },
+      "whileDownAgain": {
+        "ok": false,
+        "ms": 0.4441999999999986,
+        "code": "EHOSTUNREACH",
+        "message": "EHOSTUNREACH: host is unreachable, scandir 'T:\\home\\Desktop1'"
+      },
+      "stuckProcesses": [],
+      "systemUninterruptible": [],
+      "helperAlive": true,
+      "homeListing": {
+        "ok": true,
+        "ms": 0.571200000000001
+      },
+      "recoverMs": 179,
+      "restoreCallMs": 1,
+      "afterRecovery": {
+        "ok": true,
+        "ms": 59.82640000000001
+      },
+      "stuckAfter": [],
+      "helperStats": {
+        "cacheHits": 83,
+        "cacheMiss": 20,
+        "drops": 1,
+        "fastFails": 9,
+        "online": true,
+        "prefetches": 0,
+        "reconnects": 1,
+        "requests": 29,
+        "timeouts": 0
+      },
+      "helperLog": "02:02:38.895250 [Desktop1] link back (service 2f0018d5, restarted: true)\n02:02:39.213198 [Desktop1] online (service 2f0018d5 on win32)\n02:02:39.248363 mounting T: (policy plain)\nThe service clover-mount has been started.\n02:02:41.338534 [Desktop1] offline: silent for 1.515s (1 requests failed)\n02:02:41.523317 [Desktop1] link back (service 2f0018d5, restarted: false)",
+      "unmountMs": 3,
+      "mountGone": true
+    },
+    {
+      "scenario": "tsc+blackhole",
+      "op": "tsc packages/protocol (cold)",
+      "fault": "link goes silent (no FIN, no RST)",
+      "failMs": 1539,
+      "exitCode": 1,
+      "sawError": "node:internal/modules/cjs/loader:1568",
+      "whileDown": {
+        "ok": false,
+        "ms": 0.4319999999999986,
+        "code": "EHOSTUNREACH",
+        "message": "EHOSTUNREACH: host is unreachable, stat 'T:\\home\\Desktop1\\clover\\package.json'"
+      },
+      "whileDownAgain": {
+        "ok": false,
+        "ms": 0.47909999999999897,
+        "code": "EHOSTUNREACH",
+        "message": "EHOSTUNREACH: host is unreachable, scandir 'T:\\home\\Desktop1'"
+      },
+      "stuckProcesses": [],
+      "systemUninterruptible": [],
+      "helperAlive": true,
+      "homeListing": {
+        "ok": true,
+        "ms": 0.5450999999999979
+      },
+      "recoverMs": 179,
+      "restoreCallMs": 1,
+      "afterRecovery": {
+        "ok": true,
+        "ms": 56.49349999999999
+      },
+      "stuckAfter": [],
+      "helperStats": {
+        "cacheHits": 19,
+        "cacheMiss": 33,
+        "drops": 1,
+        "fastFails": 20,
+        "online": true,
+        "prefetches": 0,
+        "reconnects": 1,
+        "requests": 39,
+        "timeouts": 0
+      },
+      "helperLog": "02:02:41.523317 [Desktop1] link back (service 2f0018d5, restarted: false)\n02:02:41.862210 [Desktop1] online (service 2f0018d5 on win32)\n02:02:41.892815 mounting T: (policy plain)\nThe service clover-mount has been started.\n02:02:43.987417 [Desktop1] offline: silent for 1.513s (1 requests failed)\n02:02:44.193579 [Desktop1] link back (service 2f0018d5, restarted: false)",
+      "unmountMs": 3,
+      "mountGone": true
+    },
+    {
+      "scenario": "idle+blackhole",
+      "op": "stat after the drop",
+      "fault": "link goes silent (no FIN, no RST)",
+      "firstCall": {
+        "ok": false,
+        "ms": 1363.7455,
+        "code": "EHOSTUNREACH",
+        "message": "EHOSTUNREACH: host is unreachable, stat 'T:\\home\\Desktop1\\clover\\README.md'"
+      },
+      "laterCall": {
+        "ok": false,
+        "ms": 0.3442000000000007,
+        "code": "EHOSTUNREACH",
+        "message": "EHOSTUNREACH: host is unreachable, stat 'T:\\home\\Desktop1\\clover\\LICENSE'"
+      },
+      "laterCallCached": {
+        "ok": false,
+        "ms": 0.37079999999999913,
+        "code": "EHOSTUNREACH",
+        "message": "EHOSTUNREACH: host is unreachable, stat 'T:\\home\\Desktop1\\clover\\package.json'"
+      },
+      "stuckProcesses": [],
+      "systemUninterruptible": [],
+      "helperAlive": true,
+      "homeListing": {
+        "ok": true,
+        "ms": 0.46170000000000044
+      },
+      "recoverMs": 178
+    },
+    {
+      "scenario": "offline-at-start",
+      "op": "list an offline computer",
+      "fault": "file service not running",
+      "listHome": {
+        "ok": true,
+        "ms": 0.4936000000000007
+      },
+      "listComputer": {
+        "ok": false,
+        "ms": 0.5801999999999978,
+        "code": "EHOSTUNREACH",
+        "message": "EHOSTUNREACH: host is unreachable, scandir 'T:\\home\\Desktop1'"
+      },
+      "statFile": {
+        "ok": false,
+        "ms": 0.3728999999999978,
+        "code": "EHOSTUNREACH",
+        "message": "EHOSTUNREACH: host is unreachable, stat 'T:\\home\\Desktop1\\clover\\package.json'"
+      },
+      "stuckProcesses": [],
+      "systemUninterruptible": [],
+      "helperAlive": true,
+      "homeListing": {
+        "ok": true,
+        "ms": 0.4391999999999996
+      },
+      "recoverMs": 421
+    },
+    {
+      "scenario": "read+helper-crash",
+      "op": "read 1 GiB",
+      "fault": "mount helper killed (SIGKILL)",
+      "failMs": 9,
+      "sawError": "ECANCELED: ECANCELED: operation canceled, read",
+      "deadMount": {
+        "ok": false,
+        "ms": 0.07670000000000243,
+        "code": "ENOENT",
+        "message": "ENOENT: no such file or directory, stat 'T:\\home'"
+      },
+      "stuckProcesses": [],
+      "systemUninterruptible": [],
+      "detach": true,
+      "remountMs": 260,
+      "afterRemount": {
+        "ok": true,
+        "ms": 92.2597
+      },
+      "stuckAfter": [],
+      "mountGone": true
+    }
+  ],
+  "finished": "2026-11-05T02:02:50.967Z"
+}

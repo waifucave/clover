@@ -11,7 +11,8 @@
 # It answers what CI cannot (CI stops at "Module ... is disabled!"):
 #   1. does the module mount, read and write on this Mac's macOS;
 #   2. does this macOS still have FSKit's short-read bug (coherence with the guard off);
-#   3. speed against local disk at 0/20/80 ms, and the fail-fast scenarios, on FSKit.
+#   3. speed against local disk at 0/20/80 ms, and the fail-fast scenarios, on FSKit;
+#   4. the NFS loopback backend on this Mac, and whether a dead helper shows a dialog.
 set -euo pipefail
 [ -t 0 ] && [ -t 1 ] || { echo "gate.sh is for a person at a terminal, not for scripts or agents" >&2; exit 2; }
 : "${CLOVER_TEAM_ID:?set CLOVER_TEAM_ID to the Apple Developer team that has the FSKit Module capability}"
@@ -28,7 +29,7 @@ results="$gate/results/$(date +%Y%m%d-%H%M%S)"
 mkdir -p "$gate" "$results"
 step() { printf '\n== %s\n' "$*"; }
 
-step "1/8 build, signed by team $CLOVER_TEAM_ID (Xcode may ask you for access)"
+step "1/9 build, signed by team $CLOVER_TEAM_ID (Xcode may ask you for access)"
 command -v xcodegen >/dev/null || { echo "brew install xcodegen first"; exit 1; }
 ( cd "$here" && xcodegen generate >/dev/null )
 xcodebuild -project "$here/CloverTree.xcodeproj" -scheme CloverTree -configuration Release \
@@ -37,14 +38,14 @@ xcodebuild -project "$here/CloverTree.xcodeproj" -scheme CloverTree -configurati
   build > "$results/xcodebuild.log" 2>&1 || { tail -30 "$results/xcodebuild.log"; exit 1; }
 codesign -dv --entitlements - "$dd/Build/Products/Release/CloverTree.app/Contents/Extensions/CloverTreeFS.appex" 2>&1 | tee "$results/codesign.txt" | grep -E "Authority|TeamIdentifier|fskit"
 
-step "2/8 install to ~/Applications and register"
+step "2/9 install to ~/Applications and register"
 rm -rf "$app"
 ditto "$dd/Build/Products/Release/CloverTree.app" "$app"
 /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f -R -trusted "$app"
 sleep 2
 pluginkit -m -v -i "$id" | tee "$results/pluginkit.txt"
 
-step "3/8 turn it on: System Settings > General > Login Items & Extensions > File System Extensions > CloverTree"
+step "3/9 turn it on: System Settings > General > Login Items & Extensions > File System Extensions > CloverTree"
 enabled() { plutil -p "$HOME/Library/Group Containers/group.com.apple.fskit.settings/enabledModules.plist" 2>/dev/null | grep -q "$id"; }
 if ! enabled; then
   open "x-apple.systempreferences:com.apple.LoginItems-Settings.extension" || true
@@ -52,10 +53,10 @@ if ! enabled; then
 fi
 enabled && echo "enabled" || echo "not in FSKit's enabled list yet; the mount below will say"
 
-step "4/8 the other computer's home: a clone of this repo with node_modules, under $gate/export"
+step "4/9 the other computer's home: a clone of this repo with node_modules, under $gate/export"
 bash "$s6/ci/prepare.sh" "$gate/export"
 
-step "5/8 coherence: the short-read case with the guard on, then off"
+step "5/9 coherence: the short-read case with the guard on, then off"
 bun "$s6/server/serve.ts" --root "$gate/export" --port 7400 > "$results/service.log" 2>&1 &
 svc=$!
 trap 'kill $svc 2>/dev/null; /sbin/umount "$gate/tree" 2>/dev/null || true' EXIT
@@ -70,16 +71,25 @@ for guard in on off; do
 done
 kill $svc; trap - EXIT
 
-step "6/8 speed against local disk (0/20/80 ms), cold and warm"
+step "6/9 speed against local disk (0/20/80 ms), cold and warm"
 bun "$s6/bench/speed.ts" --root "$gate/export" --tree "$gate/tree" --helper none --policies fskit --rtts 0,20,80 \
   --fskit-url "clovertree://127.0.0.1:7500/Desktop1" --fskit-mountpoint "$gate/tree" \
   --copy-src "$repo/packages/protocol" --scratch "$gate/scratch" --out "$results/macos-speed-fskit.json"
 
-step "7/8 fail fast when the computer drops (+20 ms)"
+step "7/9 fail fast when the computer drops (+20 ms)"
 bun "$s6/bench/failfast.ts" --root "$gate/export" --tree "$gate/tree" --helper none --rtt 20 --policy fskit \
   --fskit-url "clovertree://127.0.0.1:7500/Desktop1" --fskit-mountpoint "$gate/tree" --out "$results/macos-failfast-fskit.json"
 
-step "8/8 (optional) the module itself dies with a read in flight"
+step "8/9 NFS loopback, the macOS backend the report proposes (sudo may ask for your password)"
+echo "Watch the screen during the helper-crash scenario: does macOS show 'Server connections interrupted'?"
+( cd "$here/.." && CGO_ENABLED=0 go build -o "$gate/clover-nfs" ./cmd/clover-nfs )
+mkdir -p "$gate/nfs-tree"
+nfs=(--root "$gate/export" --tree "$gate/nfs-tree" --helper none --nfs-helper "$gate/clover-nfs")
+bun "$s6/bench/coherence.ts" "${nfs[@]}" --policies cached --nfs-ac noac --out "$results/macos-nfs-noac-coherence.json"
+bun "$s6/bench/failfast.ts" "${nfs[@]}" --copy-src "$repo/packages/protocol" --rtt 20 --policy plain --out "$results/macos-nfs-failfast.json"
+read -r -p "Did a 'Server connections interrupted' dialog appear? [y/N] " dlg; echo "dialog: ${dlg:-n}" > "$results/nfs-dialog.txt"
+
+step "9/9 (optional) the module itself dies with a read in flight"
 echo "If FSKit leaves the reader stuck, it can stay unkillable until fskitd is restarted (sudo killall fskitd) or a reboot."
 read -r -p "Run it? [y/N] " yn
 if [ "$yn" = y ]; then
