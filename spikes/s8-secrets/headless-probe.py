@@ -1,6 +1,7 @@
 #!/usr/bin/python3
 """Authorized generated test keys only; isolated owner-only fallback and sealing."""
 import json
+import base64
 import os
 from pathlib import Path
 import secrets
@@ -27,11 +28,25 @@ with tempfile.TemporaryDirectory(prefix='clover-headless-') as temp:
             d=subprocess.run(['systemd-creds','--user','--name=clover-test','decrypt',str(name),'-'],
                 env=env, capture_output=True, timeout=20)
             result.update(decrypt_exit=d.returncode,roundtrip=d.returncode==0 and d.stdout==data)
+            result['format_id']=base64.b64decode(name.read_bytes())[:16].hex()
             files.append(name)
         else:
             # Diagnostics contain only fixed paths/errors, never input bytes.
             result['diagnostic']=r.stderr.decode(errors='replace')[:600]
         print(json.dumps(result),flush=True)
+    # Hardware control: user-scoped mode can choose a different wrapping mechanism;
+    # prove that an actual TPM-backed system credential works, then reject a missing device.
+    for label,device in [('actual','/dev/tpmrm0'),('unavailable','/dev/clover-no-tpm')]:
+        target=root/('system-tpm-'+label+'.cred')
+        r=subprocess.run(['sudo','-n','systemd-creds','--name=clover-test','--with-key=tpm2',
+            '--tpm2-device='+device,'encrypt','-',str(target)],input=data,capture_output=True,timeout=25)
+        value={'test':'system-scope-tpm-control-'+label,'encrypt_exit':r.returncode}
+        if r.returncode==0:
+            d=subprocess.run(['sudo','-n','systemd-creds','--name=clover-test','decrypt',str(target),'-'],capture_output=True,timeout=25)
+            value['roundtrip']=d.returncode==0 and d.stdout==data
+        else:value['diagnostic']=r.stderr.decode(errors='replace')[:350]
+        print(json.dumps(value),flush=True)
+        if target.exists():subprocess.run(['sudo','-n','rm',str(target)],check=True)
     keyfile=root/'plaintext.key'
     fd=os.open(keyfile,os.O_CREAT|os.O_EXCL|os.O_WRONLY,0o600)
     with os.fdopen(fd,'wb') as f: f.write(data)

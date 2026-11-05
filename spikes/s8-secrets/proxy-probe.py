@@ -73,7 +73,9 @@ def main():
                     'assert int(o.GetSecrets(dbus.Array([dbus.ObjectPath("' + ITEM + '")],signature="o"),'
                     'dbus.ObjectPath("' + ROOT + '/session/public"),dbus_interface="' + INTERFACE + '"))==1; '
                     'print("bubblewrap-proxy-item-argument-forwarded")')
-                checked = subprocess.run(['bwrap', '--die-with-parent', '--new-session', '--unshare-all',
+                bwrap='/usr/local/libexec/clover-spike-bwrap'
+                if not pathlib.Path(bwrap).exists(): bwrap='bwrap'
+                checked = subprocess.run([bwrap, '--die-with-parent', '--new-session', '--unshare-all',
                     '--ro-bind', '/', '/', '--tmpfs', '/tmp', '--tmpfs', '/run', '--proc', '/proc',
                     '--dev', '/dev', '--ro-bind', socket, '/tmp/proxy', '--', '/usr/bin/python3', '-c', client],
                     capture_output=True, text=True, timeout=10)

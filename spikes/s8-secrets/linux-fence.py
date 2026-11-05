@@ -17,7 +17,9 @@ with tempfile.TemporaryDirectory(prefix='clover-bwrap-') as tmp:
     (clover / 'run' / 'public-marker').write_text('public run marker')
     (clover / 'secrets.enc').write_text('public placeholder, not encrypted data or a secret')
     (clover / 'settings.json').write_text('{}')
-    common = ['bwrap', '--die-with-parent', '--new-session', '--unshare-all',
+    bwrap='/usr/local/libexec/clover-spike-bwrap'
+    if not Path(bwrap).exists(): bwrap='bwrap'
+    common = [bwrap, '--die-with-parent', '--new-session', '--unshare-all',
         '--cap-drop', 'ALL', '--ro-bind', '/', '/', '--tmpfs', '/tmp', '--tmpfs', '/run',
         '--tmpfs', '/home', '--proc', '/proc', '--dev', '/dev',
         '--dir', '/tmp/work', '--dir', '/tmp/clover',
