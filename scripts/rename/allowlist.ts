@@ -23,6 +23,9 @@ export interface AllowlistEntry {
   files?: string[];
   /** Why the literal survives the rename and who flips it. */
   why: string;
+  /** The change that adds this entry's files, when they are not in the tree yet (each named exactly). Until one of
+   *  them is tracked, a residue test does not count the entry as dead; from then on it must match like any other. */
+  awaits?: string;
 }
 
 /** The generic pass replaces `norma|Norma|NORMA` only when NOT followed by this lookahead. */

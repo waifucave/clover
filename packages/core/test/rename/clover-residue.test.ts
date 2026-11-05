@@ -53,6 +53,11 @@ function isNeverScanExempt(relPath: string): boolean {
   return NEVER_SCAN_EXEMPT.some((p) => (p.endsWith("/") ? relPath.startsWith(p) : relPath === p));
 }
 
+/** An entry whose files a later change adds (`awaits`) is not dead while none of them is tracked yet. */
+function awaitingItsFiles(entry: AllowlistEntry, tracked: readonly string[]): boolean {
+  return entry.awaits !== undefined && (entry.files ?? []).every((f) => !tracked.includes(f));
+}
+
 function entryAppliesTo(entry: AllowlistEntry, relPath: string): boolean {
   if (!entry.files) return true;
   return entry.files.some((g) => globToRegex(g).test(relPath));
@@ -270,17 +275,29 @@ describe("Winter→Clover rename residue (C0)", () => {
   }, 120_000);
 
   test("every allowlist entry matched at least once (no dead entries)", () => {
-    const { credited } = scan();
-    const dead = CLOVER_ALLOWLIST.filter((e) => !credited.has(e.id)).map((e) => e.id);
+    const { credited, files } = scan();
+    const dead = CLOVER_ALLOWLIST.filter((e) => !credited.has(e.id) && !awaitingItsFiles(e, files)).map((e) => e.id);
     expect(dead, `dead allowlist entries (matched nothing): ${dead.join(", ")}`).toHaveLength(0);
   }, 120_000);
 
   test("every top-level alternative of every entry permitted something (no dead shapes)", () => {
-    const { credited } = scan();
-    const dead = ALTERNATIVES.filter((a) => !credited.has(a.key)).map((a) => `${a.key}: ${a.source.slice(0, 160)}`);
+    const { credited, files } = scan();
+    const dead = ALTERNATIVES.filter((a) => !credited.has(a.key) && !awaitingItsFiles(a.entry, files)).map((a) => `${a.key}: ${a.source.slice(0, 160)}`);
     expect(dead, `dead alternatives (each permitted nothing):\n${dead.join("\n")}`).toHaveLength(0);
   }, 120_000);
 
+  test("an entry waits for its files only while none of them is tracked, and names each one exactly", () => {
+    const { files } = scan();
+    for (const e of CLOVER_ALLOWLIST.filter((x) => x.awaits !== undefined)) {
+      expect(e.files?.length, `${e.id} awaits files, so it names them`).toBeGreaterThan(0);
+      for (const f of e.files ?? []) expect(f, `${e.id} names exact paths, never a glob`).not.toMatch(/\*|\/$/);
+    }
+    const entry = { id: "x", regex: /"winter"/g, files: ["a/b.ts"], why: "a test entry, long enough to say why", awaits: "a later change" };
+    expect(awaitingItsFiles(entry, ["c.ts"])).toBe(true);
+    expect(awaitingItsFiles(entry, ["a/b.ts"])).toBe(false);
+    expect(awaitingItsFiles({ ...entry, awaits: undefined }, ["c.ts"])).toBe(false);
+    expect(files.length).toBeGreaterThan(0);
+  }, 120_000);
 
   test("every tracked path that still spells winter is exempt or kept on purpose", () => {
     const { files } = scan();
