@@ -23,8 +23,30 @@ async function parse(b: Uint8Array): Promise<VRM> {
 }
 
 describe("Alpha's placeholder model", () => {
-  test("the committed file is exactly what the code makes (run `bun run placeholder` after a change)", () => {
-    expect(Buffer.compare(Buffer.from(makePlaceholderVrm()), Buffer.from(bytes()))).toBe(0);
+  test("the committed file is what the code makes (run `bun run placeholder` after a change)", () => {
+    // Equal but for the last bits of a float: Math.sin and friends may round differently from one machine to another.
+    const made = makePlaceholderVrm();
+    const committed = bytes();
+    const round = (_key: string, value: unknown) => (typeof value === "number" && !Number.isInteger(value) ? Number(value.toPrecision(5)) : value);
+    expect(JSON.stringify(glbJson(made), round)).toBe(JSON.stringify(glbJson(committed), round));
+    // The BIN chunks, each from its own offset (a JSON number printed a digit longer moves it).
+    const bin = (glb: Uint8Array) => {
+      const view = new DataView(glb.buffer, glb.byteOffset, glb.byteLength);
+      const start = 28 + view.getUint32(12, true);
+      return new DataView(glb.buffer, glb.byteOffset + start, glb.byteLength - start);
+    };
+    const a = bin(made);
+    const b = bin(committed);
+    expect(a.byteLength).toBe(b.byteLength);
+    let differing = 0;
+    for (let at = 0; at + 4 <= a.byteLength; at += 4) {
+      if (a.getUint32(at, true) === b.getUint32(at, true)) continue;
+      const x = a.getFloat32(at, true);
+      const y = b.getFloat32(at, true);
+      expect(Math.abs(x - y), `BIN byte ${at}`).toBeLessThanOrEqual(1e-5 * Math.max(1, Math.abs(x)));
+      differing++;
+    }
+    expect(differing).toBeLessThan(a.byteLength / 4 / 100);
   });
 
   test("passes the structural check, and says it is a placeholder", () => {

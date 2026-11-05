@@ -15,7 +15,7 @@ import { CHILD_PALETTES, type PlumeThrow } from "../model/plume";
 import { turnPreview, type Exchange } from "../model/preview";
 import { restingSpring, retarget, settled, stepSpring, type SizeSpring } from "../model/spring";
 import { t } from "../strings";
-import { Bar, type BarMenu, type PillTarget } from "./Bar";
+import { Bar, BarMenus, type BarMenu, type PillTarget } from "./Bar";
 import { CardBody } from "./Card";
 import { Children } from "./Children";
 import { BROWSER_FRAMES, Plume, type FrameTimers } from "./Plume";
@@ -273,7 +273,10 @@ export function DispatchPill(props: DispatchPillProps): ReactElement {
 
   // The window's size, for the host.
   const s = spring.current;
-  const accessory = agents.length > 0 ? { width: s.target.width, height: PILL.pillHeight } : null;
+  // What floats above the pill: the agents' row, an open menu (measured roughly: its rows and padding).
+  const menuHeight = menu === "targets" ? 12 + 34 * targets.length : menu === "more" ? 12 + 34 * 2 : 0;
+  const floating = (agents.length > 0 ? PILL.pillHeight : 0) + (menuHeight > 0 ? menuHeight + (agents.length > 0 ? PILL.stackGap : 0) : 0);
+  const accessory = floating > 0 ? { width: s.target.width, height: floating } : null;
   const canvas = canvasSize(s.target, accessory);
   const onCanvas = props.onCanvas;
   useEffect(() => {
@@ -362,6 +365,16 @@ export function DispatchPill(props: DispatchPillProps): ReactElement {
           onOpen={props.onOpenAgent}
           onStop={props.onStopAgent}
         />
+        <BarMenus
+          menu={drawn === "bar" ? menu : null}
+          target={target}
+          targets={targets}
+          width={s.size.width}
+          onMenu={setMenu}
+          onTarget={props.onTarget}
+          onOpenInApp={props.onOpenInApp}
+          onClearDraft={() => setDraft("")}
+        />
         <Shell
           size={s.size}
           target={s.target}
@@ -399,10 +412,7 @@ export function DispatchPill(props: DispatchPillProps): ReactElement {
               inputRef.current?.focus();
             }}
             onMenu={setMenu}
-            onTarget={props.onTarget}
             onFullScreen={props.onFullScreen}
-            onOpenInApp={props.onOpenInApp}
-            onClearDraft={() => setDraft("")}
           />
           {/* A card or a pinned turn, laid out at the TARGET width and centred, so it never re-wraps while the shape springs. */}
           <div ref={contentRef} style={{ position: "absolute", left: "50%", top: 0, width: drawn === "bar" ? 0 : s.target.width, marginLeft: drawn === "bar" ? 0 : -s.target.width / 2 }}>

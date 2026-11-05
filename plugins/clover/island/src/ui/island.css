@@ -16,7 +16,7 @@
   line-height: 1.25;
 }
 
-.clv-island button {
+:where(.clv-island button) {
   font: inherit;
   color: inherit;
   cursor: default;

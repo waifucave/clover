@@ -1,7 +1,7 @@
 import { describe, expect, mock, test } from "bun:test";
 import { fireEvent, render, screen } from "@testing-library/react";
 import type { ReactElement } from "react";
-import { Bar } from "../src/ui/Bar";
+import { Bar, BarMenus } from "../src/ui/Bar";
 import { CardBody, QuestionCardBody } from "../src/ui/Card";
 import { Children } from "../src/ui/Children";
 import { Preview } from "../src/ui/Preview";
@@ -75,10 +75,10 @@ describe("the bar", () => {
   test("the portrait opens the targets; picking one reports it", () => {
     const onMenu = mock((_: unknown) => {});
     const onTarget = mock((_: string) => {});
-    const { rerender } = render(bar({ targets: TARGETS, onMenu }));
+    render(bar({ targets: TARGETS, onMenu }));
     fireEvent.click(screen.getByRole("button", { name: "Choose who to message" }));
     expect(onMenu).toHaveBeenCalledWith("targets");
-    rerender(bar({ targets: TARGETS, menu: "targets", onMenu, onTarget }));
+    render(<BarMenus menu="targets" target={ALPHA} targets={TARGETS} width={316} onMenu={onMenu} onTarget={onTarget} />);
     const items = screen.getAllByRole("menuitemradio");
     // Each a portrait (Alpha's image, the others' initials, hidden from screen readers) and a name.
     expect(items.map((i) => i.textContent)).toEqual(["Alpha", "LLuna", "MMori"]);
@@ -90,17 +90,36 @@ describe("the bar", () => {
     expect(onMenu).toHaveBeenLastCalledWith(null);
   });
 
+  test("a menu closes on a click outside it, but not on the button that opens it", () => {
+    const onMenu = mock((_: unknown) => {});
+    render(
+      <div>
+        <button type="button" data-menu-toggle="more">toggle</button>
+        <button type="button">elsewhere</button>
+        <BarMenus menu="more" target={ALPHA} width={560} onMenu={onMenu} />
+      </div>,
+    );
+    fireEvent.pointerDown(screen.getByText("toggle"));
+    expect(onMenu).not.toHaveBeenCalled();
+    fireEvent.pointerDown(screen.getByRole("menuitem", { name: /Clear draft/ }));
+    expect(onMenu).not.toHaveBeenCalled();
+    fireEvent.pointerDown(screen.getByText("elsewhere"));
+    expect(onMenu).toHaveBeenCalledWith(null);
+  });
+
   test("⋯ holds open-in-app and clear; ↗ asks for full screen", () => {
     const onOpenInApp = mock(() => {});
     const onClearDraft = mock(() => {});
     const onFullScreen = mock(() => {});
-    render(bar({ presentation: "expanded", draft: "x", accessories: true, menu: "more", onOpenInApp, onClearDraft, onFullScreen }));
+    render(bar({ presentation: "expanded", draft: "x", accessories: true, menu: "more", onFullScreen }));
+    render(<BarMenus menu="more" target={ALPHA} width={560} onOpenInApp={onOpenInApp} onClearDraft={onClearDraft} />);
     fireEvent.click(screen.getByRole("menuitem", { name: /Open Alpha in Clover/ }));
     fireEvent.click(screen.getByRole("menuitem", { name: /Clear draft/ }));
     fireEvent.click(screen.getByRole("button", { name: "Full screen" }));
     expect(onOpenInApp).toHaveBeenCalledTimes(1);
     expect(onClearDraft).toHaveBeenCalledTimes(1);
     expect(onFullScreen).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("button", { name: "More" }).getAttribute("aria-expanded")).toBe("true");
   });
 
   test("↗ and ⋯ give way to a second line", () => {

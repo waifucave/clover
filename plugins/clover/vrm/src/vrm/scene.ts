@@ -4,7 +4,7 @@
 // VRM (spring bones with a clamped step) and draws. Nothing above this class touches three.js, and the renderer
 // is a seam, so the rest is testable without a GPU.
 
-import { AmbientLight, Color, DirectionalLight, PerspectiveCamera, Scene, SRGBColorSpace, Vector3, WebGLRenderer, type Object3D } from "three";
+import { AmbientLight, Box3, Color, DirectionalLight, PerspectiveCamera, Scene, SRGBColorSpace, Vector3, WebGLRenderer, type Object3D } from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { VRMLoaderPlugin, VRMUtils, type VRM } from "@pixiv/three-vrm";
 import type { VisemeWeights } from "../lipsync/visemes";
@@ -48,6 +48,9 @@ export const DEFAULT_LIGHTS: StageLights = { key: "#FFFFFF", fill: "#FFF1F8", ri
 
 export type Framing = "bust" | "full";
 
+/** Light intensities at an exposure of 1. */
+export const LIGHT = { key: 1.8, fill: 0.45, rim: 1.0, ambient: 0.4 } as const;
+
 export interface FaceState {
   visemes: VisemeWeights;
   /** 0 open, 1 shut. */
@@ -67,10 +70,14 @@ export class AvatarScene {
   readonly camera = new PerspectiveCamera(24, 1, 0.05, 20);
   private readonly renderer: AvatarRenderer;
   private vrm: VRM | null = null;
-  private readonly key = new DirectionalLight(0xffffff, 2.2);
-  private readonly fill = new DirectionalLight(0xffffff, 0.9);
-  private readonly rim = new DirectionalLight(0xffffff, 1.4);
-  private readonly ambient = new AmbientLight(0xffffff, 0.55);
+  // MToon lights each surface by every light's colour over π: a key of about π alone would draw the base
+  // colours as made. Key, fill and ambient together come to a little under that, so pale colours keep their tint.
+  private readonly key = new DirectionalLight(0xffffff, LIGHT.key);
+  private readonly fill = new DirectionalLight(0xffffff, LIGHT.fill);
+  private readonly rim = new DirectionalLight(0xffffff, LIGHT.rim);
+  private readonly ambient = new AmbientLight(0xffffff, LIGHT.ambient);
+  /** The figure's height, top and the head's height, measured once it loads. */
+  private bounds = { top: 1.45, bottom: 0, head: 1.3 };
   private disposed = false;
   private framing: Framing;
   private size = { width: 1, height: 1 };
@@ -94,10 +101,10 @@ export class AvatarScene {
     this.key.color = new Color(opaque(lights.key));
     this.fill.color = new Color(opaque(lights.fill));
     this.rim.color = new Color(opaque(lights.rim));
-    this.key.intensity = 2.2 * exposure;
-    this.fill.intensity = 0.9 * exposure;
-    this.rim.intensity = 1.4 * exposure;
-    this.ambient.intensity = 0.55 * exposure;
+    this.key.intensity = LIGHT.key * exposure;
+    this.fill.intensity = LIGHT.fill * exposure;
+    this.rim.intensity = LIGHT.rim * exposure;
+    this.ambient.intensity = LIGHT.ambient * exposure;
   }
 
   /** Checks and parses the bytes; replaces any avatar already shown. Throws a sentence a person can read. */
@@ -122,24 +129,31 @@ export class AvatarScene {
     this.unload();
     this.vrm = vrm;
     this.scene.add(vrm.scene);
+    this.measure(vrm);
     const focus = this.frame(this.framing);
     return { meta: check.meta, focus };
+  }
+
+  /** The figure's top and bottom (its rest pose's box) and where its head bone sits. */
+  private measure(vrm: VRM): void {
+    vrm.scene.updateMatrixWorld(true);
+    const box = new Box3().setFromObject(vrm.scene);
+    const head = new Vector3(0, box.max.y * 0.85, 0);
+    const node = vrm.humanoid.getRawBoneNode("head");
+    if (node) node.getWorldPosition(head);
+    if (Number.isFinite(box.max.y) && box.max.y > box.min.y) this.bounds = { top: box.max.y, bottom: box.min.y, head: head.y };
   }
 
   /** Points the camera at the head and shoulders, or the whole figure. */
   frame(framing: Framing): { x: number; y: number; z: number } {
     this.framing = framing;
-    const head = new Vector3(0, 1.3, 0);
-    const node = this.vrm?.humanoid.getRawBoneNode("head");
-    if (node) {
-      node.updateWorldMatrix(true, false);
-      node.getWorldPosition(head);
-    }
     const aspect = this.size.width / Math.max(1, this.size.height);
     const fov = framing === "bust" ? 24 : 30;
-    // Bust: from the chest to just over the head. Full: the feet to the top of the head.
-    const top = head.y + 0.2;
-    const bottom = framing === "bust" ? head.y - 0.33 : 0;
+    const { top: figureTop, bottom: figureBottom, head } = this.bounds;
+    const figure = figureTop - figureBottom;
+    // Bust: from the chest to a little over the top of the head (hair included). Full: the whole figure.
+    const top = figureTop + figure * 0.03;
+    const bottom = framing === "bust" ? head - (figureTop - head) * 0.95 : figureBottom - figure * 0.02;
     const height = top - bottom;
     const half = (fov * Math.PI) / 360;
     // Fit the height, and on a narrow stage the shoulders' width too.

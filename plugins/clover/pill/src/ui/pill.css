@@ -22,7 +22,7 @@
   user-select: none;
 }
 
-.clp-stage button {
+:where(.clp-stage button) {
   font: inherit;
   color: inherit;
   cursor: default;
@@ -226,11 +226,17 @@
   box-shadow: 0 0 8px #0A85FF73, 0 0 20px #0A85FF38;
 }
 
-/* The ⋯ menu and the target menu: small dark lists floating above the pill. */
+/* The ⋯ menu and the target menu: small dark lists floating above the pill, in the stack over it. */
+
+.clp-menu-row {
+  display: flex;
+}
+
+.clp-menu-row[data-side="trailing"] {
+  justify-content: flex-end;
+}
 
 .clp-menu {
-  position: absolute;
-  bottom: calc(100% + 8px);
   min-width: 200px;
   padding: 6px;
   box-sizing: border-box;
@@ -240,15 +246,6 @@
   display: flex;
   flex-direction: column;
   gap: 2px;
-  z-index: 2;
-}
-
-.clp-menu[data-side="leading"] {
-  left: 0;
-}
-
-.clp-menu[data-side="trailing"] {
-  right: 0;
 }
 
 .clp-menu-item {

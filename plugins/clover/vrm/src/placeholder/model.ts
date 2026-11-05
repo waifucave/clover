@@ -13,10 +13,12 @@ export const PLACEHOLDER_NAME = "Alpha (placeholder model)";
 type Rgb = readonly [number, number, number];
 const hex = (h: string): Rgb => [parseInt(h.slice(1, 3), 16) / 255, parseInt(h.slice(3, 5), 16) / 255, parseInt(h.slice(5, 7), 16) / 255];
 /** sRGB to linear, as glTF colour factors are. */
-const linear = (c: Rgb): Rgb => c.map((v) => (v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4)) as unknown as Rgb;
+const linear = (c: Rgb): Rgb => c.map((v) => round6(v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4)) as unknown as Rgb;
+/** Six decimals: a colour prints the same wherever the model is built. */
+const round6 = (v: number) => Math.round(v * 1e6) / 1e6;
 
 const PALETTE = {
-  skin: ["#FFE7DC", "#F0B9AC"],
+  skin: ["#FFE0CF", "#EDB2A0"],
   hair: ["#B8A5FF", "#7C66DB"],
   dress: ["#FBFAFF", "#D5CCF3"],
   skirt: ["#8E7BF2", "#5E4AC8"],
@@ -93,7 +95,7 @@ export function makePlaceholderVrm(): Uint8Array {
             shadingShiftFactor: decal ? -1 : -0.05,
             shadingToonyFactor: 0.92,
             giEqualizationFactor: 0.9,
-            parametricRimColorFactor: decal ? [0, 0, 0] : linear(hex("#FFFFFF")).map((v) => v * 0.12),
+            parametricRimColorFactor: decal ? [0, 0, 0] : linear(hex("#FFFFFF")).map((v) => round6(v * 0.12)),
             parametricRimFresnelPowerFactor: 4,
             parametricRimLiftFactor: 0,
             outlineWidthMode: decal ? "none" : "worldCoordinates",
@@ -133,7 +135,7 @@ export function makePlaceholderVrm(): Uint8Array {
   const hc = HEAD.center;
   part("head", "Head", [["skin", ellipsoid(hc, [0.13, 0.127, 0.128], 22, 32)]]);
   const fringe = (x: number) => 0.036 + 0.011 * Math.cos(x * 95);
-  const hairCap = ellipsoid([hc[0], hc[1] + 0.008, hc[2] - 0.004], [0.143, 0.14, 0.142], 22, 34, ([x, y, z]) => !(z > -0.03 && y < fringe(x) - 0.008));
+  const hairCap = ellipsoid([hc[0], hc[1] + 0.008, hc[2] - 0.004], [0.143, 0.14, 0.142], 40, 64, ([x, y, z]) => !(z > -0.03 && y < fringe(x) - 0.008));
   const sideLocks = [1, -1].map((s) => tube([s * 0.118, hc[1] + 0.03, 0.035], [s * 0.112, hc[1] - 0.1, 0.05], 0.024, 0.012, 16));
   const backHair = tube([0, hc[1] - 0.01, -0.07], [0, hc[1] - 0.27, -0.085], 0.125, 0.095, 26, 0.5);
   part("head", "Hair", [["hair", merge(hairCap, ...sideLocks, backHair)]]);
@@ -162,17 +164,17 @@ export function makePlaceholderVrm(): Uint8Array {
   // The body.
   part("neck", "Neck", [["skin", tube([0, 1.155, -0.004], [0, 1.06, -0.004], 0.029, 0.031, 18)]]);
   part("chest", "Bodice", [
-    ["dress", tube([0, 1.07, 0], [0, 0.86, 0], 0.074, 0.064, 26, 0.72)],
-    ["mint", merge(tube([0, 1.072, 0], [0, 1.045, 0], 0.088, 0.097, 26, 0.74), ellipsoid([0.02, 1.03, 0.066], [0.019, 0.012, 0.008], 8, 12), ellipsoid([-0.02, 1.03, 0.066], [0.019, 0.012, 0.008], 8, 12))],
+    ["dress", tube([0, 1.07, 0], [0, 0.86, 0], 0.074, 0.064, 26, 0.72, "flat")],
+    ["mint", merge(tube([0, 1.074, 0], [0, 1.05, 0], 0.084, 0.094, 26, 0.74, "flat"), ellipsoid([0.02, 1.032, 0.062], [0.018, 0.011, 0.008], 8, 12), ellipsoid([-0.02, 1.032, 0.062], [0.018, 0.011, 0.008], 8, 12))],
   ]);
   part("hips", "Skirt", [
-    ["skirt", tube([0, 0.875, 0], [0, 0.6, 0], 0.066, 0.19, 30, 0.84)],
-    ["mint", tube([0, 0.618, 0], [0, 0.598, 0], 0.184, 0.192, 30, 0.84)],
+    ["skirt", tube([0, 0.875, 0], [0, 0.6, 0], 0.066, 0.19, 30, 0.84, "flat")],
+    ["mint", tube([0, 0.62, 0], [0, 0.598, 0], 0.183, 0.193, 30, 0.84, "flat")],
   ]);
   for (const s of [1, -1]) {
     const side = s > 0 ? "left" : "right";
     part(`${side}UpperArm`, `${side}Sleeve`, [
-      ["dress", ellipsoid([s * 0.11, 1.035, 0], [0.052, 0.041, 0.041], 12, 18)],
+      ["dress", ellipsoid([s * 0.108, 1.035, 0], [0.042, 0.034, 0.035], 12, 18)],
       ["skin", tube([s * 0.12, 1.035, 0], [s * 0.3, 1.035, 0], 0.024, 0.021, 16)],
     ]);
     part(`${side}LowerArm`, `${side}Forearm`, [["skin", tube([s * 0.3, 1.035, 0], [s * 0.465, 1.035, 0], 0.021, 0.018, 16)]]);

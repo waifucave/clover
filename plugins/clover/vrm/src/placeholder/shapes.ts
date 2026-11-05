@@ -74,7 +74,7 @@ export function ellipsoid(center: Vec3, radii: Vec3, rings = 18, segments = 28, 
  * A tapered tube from `from` to `to`, radius `r0` then `r1`, its ends rounded by spheres. `depth` squashes
  * a vertical tube front to back (a body is shallower than it is wide).
  */
-export function tube(from: Vec3, to: Vec3, r0: number, r1: number, segments = 22, depth = 1): Shape {
+export function tube(from: Vec3, to: Vec3, r0: number, r1: number, segments = 22, depth = 1, caps: "round" | "flat" = "round"): Shape {
   const axis = sub(to, from);
   const length = len(axis);
   const dir = norm(axis);
@@ -109,8 +109,31 @@ export function tube(from: Vec3, to: Vec3, r0: number, r1: number, segments = 22
       body.indices.push(a, a + 1, b, a + 1, b + 1, b);
     }
   }
+  if (caps === "flat") return merge(body, disc(from, r0, -1), disc(to, r1, 1));
   const cap = (at: Vec3, radius: number) => (vertical ? ellipsoid(at, [radius, radius * 0.7, radius * sv], 10, segments) : ellipsoid(at, [radius, radius, radius], 10, segments));
   return merge(body, cap(from, r0), cap(to, r1));
+
+  /** A flat end: a fan facing out along the axis (`side` -1 at the start, 1 at the end). */
+  function disc(at: Vec3, radius: number, side: number): Shape {
+    const d = empty();
+    const n: Vec3 = [dir[0] * side, dir[1] * side, dir[2] * side];
+    d.positions.push(...at);
+    d.normals.push(...n);
+    for (let g = 0; g < segments; g++) {
+      const a = (2 * Math.PI * g) / segments;
+      const cu = Math.cos(a);
+      const cv = Math.sin(a) * sv;
+      d.positions.push(at[0] + (u[0] * cu + v[0] * cv) * radius, at[1] + (u[1] * cu + v[1] * cv) * radius, at[2] + (u[2] * cu + v[2] * cv) * radius);
+      d.normals.push(...n);
+    }
+    for (let g = 1; g <= segments; g++) {
+      const next = g === segments ? 1 : g + 1;
+      // Counter-clockwise seen from outside: the end faces along the axis, the start against it.
+      if (side > 0) d.indices.push(0, g, next);
+      else d.indices.push(0, next, g);
+    }
+    return d;
+  }
 }
 
 /** The sphere the face's decals sit on. */

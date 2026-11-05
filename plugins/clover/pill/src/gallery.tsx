@@ -9,7 +9,7 @@ import { CHILD_PALETTES, PALETTES } from "./model/plume";
 import { turnPreview } from "./model/preview";
 import { springAt } from "./model/spring";
 import { AGENTS, ALPHA, APPROVAL, EXCHANGES, LINK, MANY_AGENTS, QUESTION, QUESTIONS, SEALED, TARGETS, THROWS } from "./fixtures";
-import { Bar, type BarMenu } from "./ui/Bar";
+import { Bar, BarMenus, type BarMenu } from "./ui/Bar";
 import { CardBody } from "./ui/Card";
 import { Children } from "./ui/Children";
 import { Plume } from "./ui/Plume";
@@ -68,6 +68,7 @@ function BarFrame({ presentation = "compact", draft = "", running = false, stopp
   const look = barLook(presentation === "expanded", running, draft, false, `Message ${ALPHA.name}`, verb ?? `${ALPHA.name} is working`);
   return (
     <div className="clp-stack" style={hovered ? { transform: `scale(${1 + (PILL.compactWidth * (PILL.hoverScale - 1)) / target.width})` } : undefined}>
+      <BarMenus menu={menu} target={ALPHA} targets={TARGETS} width={(size ?? target).width} />
       <Shell
         size={size ?? target}
         target={target}

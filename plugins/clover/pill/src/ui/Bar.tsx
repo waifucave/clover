@@ -62,10 +62,7 @@ export interface BarProps {
   /** A click on the working pill: open the typing pill over the running turn. */
   onOpen?: () => void;
   onMenu?: (menu: BarMenu) => void;
-  onTarget?: (id: string) => void;
   onFullScreen?: () => void;
-  onOpenInApp?: () => void;
-  onClearDraft?: () => void;
 }
 
 export function Bar(props: BarProps): ReactElement {
@@ -119,31 +116,12 @@ export function Bar(props: BarProps): ReactElement {
           aria-haspopup={canPick ? "menu" : undefined}
           aria-expanded={canPick ? menu === "targets" : undefined}
           disabled={!canPick}
+          data-menu-toggle="targets"
           onClick={() => props.onMenu?.(menu === "targets" ? null : "targets")}
           style={{ display: "inline-flex", opacity: working ? 0 : 1, transition: "opacity 250ms ease-out" }}
         >
           <Portrait target={target} />
         </button>
-        {menu === "targets" && canPick ? (
-          <Menu side="leading" label={t("clover.pill.targets")} onClose={() => props.onMenu?.(null)}>
-            {targets.map((option) => (
-              <button
-                key={option.id}
-                type="button"
-                role="menuitemradio"
-                aria-checked={option.id === target.id}
-                className="clp-menu-item"
-                onClick={() => {
-                  props.onTarget?.(option.id);
-                  props.onMenu?.(null);
-                }}
-              >
-                <Portrait target={option} size={20} />
-                {option.name}
-              </button>
-            ))}
-          </Menu>
-        ) : null}
       </span>
       <div className="clp-field" data-hidden={working || covered || undefined} style={working || covered ? { opacity: 0 } : undefined}>
         <textarea
@@ -167,21 +145,9 @@ export function Bar(props: BarProps): ReactElement {
             style={showsAccessories ? undefined : { opacity: 0, transform: "scale(0.9)" }}
           >
             <span style={{ position: "relative", display: "inline-flex" }}>
-              <button type="button" className="clp-accessory" aria-label={t("clover.pill.more")} aria-haspopup="menu" aria-expanded={menu === "more"} tabIndex={accessories ? 0 : -1} onClick={() => props.onMenu?.(menu === "more" ? null : "more")}>
+              <button type="button" className="clp-accessory" aria-label={t("clover.pill.more")} aria-haspopup="menu" aria-expanded={menu === "more"} data-menu-toggle="more" tabIndex={accessories ? 0 : -1} onClick={() => props.onMenu?.(menu === "more" ? null : "more")}>
                 <Glyph name="ellipsis" />
               </button>
-              {menu === "more" ? (
-                <Menu side="trailing" label={t("clover.pill.more")} onClose={() => props.onMenu?.(null)}>
-                  <button type="button" role="menuitem" className="clp-menu-item" onClick={() => { props.onOpenInApp?.(); props.onMenu?.(null); }}>
-                    <span className="clp-menu-glyph"><Glyph name="open" /></span>
-                    {t("clover.pill.openInApp", { name: target.name })}
-                  </button>
-                  <button type="button" role="menuitem" className="clp-menu-item" onClick={() => { props.onClearDraft?.(); props.onMenu?.(null); }}>
-                    <span className="clp-menu-glyph"><Glyph name="xmark" /></span>
-                    {t("clover.pill.clearDraft")}
-                  </button>
-                </Menu>
-              ) : null}
             </span>
             <button type="button" className="clp-accessory" aria-label={t("clover.pill.fullScreen")} tabIndex={accessories ? 0 : -1} onClick={props.onFullScreen}>
               <Glyph name="expand" />
@@ -227,14 +193,19 @@ export interface MenuProps {
   children?: ReactElement | ReactElement[];
 }
 
-/** A small dark list above the pill; Escape or a click outside closes it. */
+/**
+ * A small dark list floating above the pill, in the stack over it (it can't live inside the shape, which clips):
+ * a click outside it, or Escape, closes it. The buttons that open it (`data-menu-toggle`) don't count as outside.
+ */
 export function Menu({ side, label, onClose, children }: MenuProps): ReactElement {
   const ref = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     const doc = ref.current?.ownerDocument;
     if (!doc || !onClose) return;
     const onPointer = (event: PointerEvent) => {
-      if (!ref.current?.parentElement?.contains(event.target as Node)) onClose();
+      const target = event.target as Element | null;
+      if (ref.current?.contains(target) || target?.closest?.("[data-menu-toggle]")) return;
+      onClose();
     };
     const onKey = (event: globalThis.KeyboardEvent) => {
       if (event.key === "Escape") onClose();
@@ -247,10 +218,90 @@ export function Menu({ side, label, onClose, children }: MenuProps): ReactElemen
     };
   }, [onClose]);
   return (
-    <div ref={ref} className="clp-menu" role="menu" aria-label={label} data-side={side}>
-      {children}
+    <div className="clp-menu-row" data-side={side}>
+      <div ref={ref} className="clp-menu" role="menu" aria-label={label}>
+        {children}
+      </div>
     </div>
   );
+}
+
+export interface BarMenusProps {
+  menu: BarMenu;
+  target: PillTarget;
+  targets?: readonly PillTarget[];
+  /** The main pill's width now: the row lines up with its edges. */
+  width: number;
+  onMenu?: (menu: BarMenu) => void;
+  onTarget?: (id: string) => void;
+  onOpenInApp?: () => void;
+  onClearDraft?: () => void;
+}
+
+/** The bar's open menu, if any: who to message, or ⋯'s. Drawn in the stack above the main pill. */
+export function BarMenus({ menu, target, targets = [], width, onMenu, onTarget, onOpenInApp, onClearDraft }: BarMenusProps): ReactElement | null {
+  const close = () => onMenu?.(null);
+  if (menu === "targets" && targets.length > 1) {
+    return (
+      <div style={{ width }}>
+        <Menu side="leading" label={t("clover.pill.targets")} onClose={close}>
+          {targets.map((option) => (
+            <button
+              key={option.id}
+              type="button"
+              role="menuitemradio"
+              aria-checked={option.id === target.id}
+              className="clp-menu-item"
+              onClick={() => {
+                onTarget?.(option.id);
+                close();
+              }}
+            >
+              <Portrait target={option} size={20} />
+              {option.name}
+            </button>
+          ))}
+        </Menu>
+      </div>
+    );
+  }
+  if (menu === "more") {
+    return (
+      <div style={{ width }}>
+        <Menu side="trailing" label={t("clover.pill.more")} onClose={close}>
+          <button
+            type="button"
+            role="menuitem"
+            className="clp-menu-item"
+            onClick={() => {
+              onOpenInApp?.();
+              close();
+            }}
+          >
+            <span className="clp-menu-glyph">
+              <Glyph name="open" />
+            </span>
+            {t("clover.pill.openInApp", { name: target.name })}
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            className="clp-menu-item"
+            onClick={() => {
+              onClearDraft?.();
+              close();
+            }}
+          >
+            <span className="clp-menu-glyph">
+              <Glyph name="xmark" />
+            </span>
+            {t("clover.pill.clearDraft")}
+          </button>
+        </Menu>
+      </div>
+    );
+  }
+  return null;
 }
 
 /** One line of the field: its 20 px line and the 3 px padding above and below. */

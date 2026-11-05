@@ -23,7 +23,7 @@ export type Pose = Partial<Record<BoneName, Euler>>;
 
 export const IDLE = {
   /** How far the arms come down from horizontal. */
-  armDown: 1.22,
+  armDown: 1.32,
   armForward: 0.12,
   elbow: 0.32,
   breathHz: 0.24,
