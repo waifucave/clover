@@ -1,4 +1,4 @@
-// Mocked old Winter sessions (lane B's `ArchivedSessionView`) and one's events, for the gallery and the tests.
+// Mocked old sessions (lane B's `ArchivedSessionView`) and one's events, for the gallery and the tests.
 import type { ArchivedSessionView } from "../../shell/runtime/types";
 
 /** Thursday, November 5, 2026, 16:30 UTC (the gallery's clock). */
@@ -6,10 +6,10 @@ export const NOW = Date.UTC(2026, 10, 5, 16, 30);
 const day = (d: number, h = 12) => Date.UTC(2026, 10, 5 - d, h);
 
 export const ARCHIVED: ArchivedSessionView[] = [
-  { id: "w-1", title: "Release notes for 0.123", mode: "code", project: "/Users/sam/projects/winter", model: "openai/gpt-5.5", createdAt: day(3, 9), updatedAt: day(3, 11), messages: 42 },
+  { id: "w-1", title: "Release notes for 0.123", mode: "code", project: "/Users/sam/projects/assistant", model: "openai/gpt-5.5", createdAt: day(3, 9), updatedAt: day(3, 11), messages: 42 },
   { id: "w-2", title: "Trip to Kyoto: what to book first", mode: "chat", model: "anthropic/claude-sonnet-5", createdAt: day(6), updatedAt: day(6, 14), messages: 18 },
   { id: "w-3", title: "Clean up the Downloads folder", mode: "dispatch", createdAt: day(9), updatedAt: day(9, 13), messages: 7 },
-  { id: "w-4", title: "Profile the daemon's idle wakeups", mode: "code", project: "/Users/sam/projects/winter", model: "openai/gpt-5.5", createdAt: day(14), updatedAt: day(14, 18), messages: 63 },
+  { id: "w-4", title: "Profile the daemon's idle wakeups", mode: "code", project: "/Users/sam/projects/assistant", model: "openai/gpt-5.5", createdAt: day(14), updatedAt: day(14, 18), messages: 63 },
   { id: "w-5", mode: "chat", createdAt: day(400), updatedAt: day(400), messages: 2 },
 ];
 

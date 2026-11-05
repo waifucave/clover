@@ -43,7 +43,7 @@ export interface WindowProps {
   cardPending?: boolean;
   /** Closes the dialog: on Escape, and when a card arrives or is already waiting. */
   onCloseDialog?: () => void;
-  /** The `status` bar at the bottom of the main column, when anything fills it (Winter's tiles, §12). */
+  /** The `status` bar at the bottom of the main column, when anything fills it (the inherited tiles, §12). */
   status?: ReactNode;
   /** The window has a system material behind it (sidebar vibrancy on macOS, acrylic on Windows 11; lane E):
    *  the sidebar lets it through. Without one (Linux), the sidebar is a solid colour. */

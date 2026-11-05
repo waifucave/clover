@@ -97,7 +97,7 @@ describe("the conversation entry", () => {
 
   function mount(extra: { archived?: boolean; entries?: Parameters<typeof runtimeWith>[0]["entries"]; component?: EntryComponent } = {}) {
     let listener: ((e: CoreEvent) => void) | undefined;
-    const core = fakeCore({ "archive.history": () => ({ events: [ev("user_message", { text: "From Winter" }), ev("approval_requested", { toolName: "Bash" })] }) });
+    const core = fakeCore({ "archive.history": () => ({ events: [ev("user_message", { text: "From the old app" }), ev("approval_requested", { toolName: "Bash" })] }) });
     const api = fakeApi({
       bots: { list: async () => [], get: async () => { throw new Error("none"); }, watch: () => () => undefined },
       conversation: {
@@ -152,7 +152,7 @@ describe("the conversation entry", () => {
     const { core } = mount({ archived: true });
     await act(() => settle());
     expect(core.calls).toEqual([{ method: "archive.history", params: { id: "s_alpha", limit: 500 } }]);
-    expect(screen.getByText("From Winter")).toBeTruthy();
+    expect(screen.getByText("From the old app")).toBeTruthy();
     expect(screen.getByText("Asked to use Bash")).toBeTruthy();
     expect(screen.queryByText("Hello there")).toBeNull();
   });

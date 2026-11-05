@@ -3,7 +3,7 @@ import { act, cleanup, fireEvent, render, screen, within } from "@testing-librar
 import type { EntryComponent } from "../../shell/runtime/types";
 import { fakeCore, settle } from "../../shell/runtime/testkit";
 import { runtimeWith } from "../../shell/runtime/ui";
-import { ArchiveEntry, WINTER } from "../client/entry";
+import { ArchiveEntry, OLD_APP } from "../client/entry";
 import { UiRuntimeProvider } from "../client/sdk";
 import { ARCHIVED, NOW } from "../gallery/fixtures";
 
@@ -41,7 +41,7 @@ describe("the archive", () => {
   test("lists the old sessions a page at a time, each with its mode, project and date", async () => {
     await mount();
     expect(titles()).toEqual(["Release notes for 0.123", "Trip to Kyoto: what to book first", "Clean up the Downloads folder"]);
-    expect(screen.getAllByRole("button")[0]!.textContent).toContain("Code · winter · Nov 2");
+    expect(screen.getAllByRole("button")[0]!.textContent).toContain("Code · assistant · Nov 2");
     fireEvent.click(screen.getByRole("button", { name: "Show older" }));
     await act(() => settle());
     expect(titles()).toEqual(["Release notes for 0.123", "Trip to Kyoto: what to book first", "Clean up the Downloads folder", "Profile the daemon's idle wakeups", "Untitled session"]);
@@ -49,11 +49,11 @@ describe("the archive", () => {
     expect(within(screen.getByRole("list", { name: "Old sessions" })).getAllByRole("button")[4]!.textContent).toContain("Chat · Oct 1, 2025");
   });
 
-  test("a picked session reads through the conversation spot, archived, Winter speaking", async () => {
+  test("a picked session reads through the conversation spot, archived, the old app speaking", async () => {
     await mount();
     expect(screen.getByText("Pick a session to read it.")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: /Trip to Kyoto/ }));
-    expect(JSON.parse(screen.getByTestId("transcript").textContent!)).toEqual({ bot: WINTER, session: "w-2", archived: true });
+    expect(JSON.parse(screen.getByTestId("transcript").textContent!)).toEqual({ bot: OLD_APP, session: "w-2", archived: true });
     expect(screen.getByRole("region", { name: "Trip to Kyoto: what to book first" }).textContent).toContain("Chat · Oct 30 · anthropic/claude-sonnet-5 · 18 messages");
   });
 

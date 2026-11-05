@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "Clover's default archive view. Old Winter sessions, readable, never a bot's history.",
+  "description": "Clover's default archive view. Sessions from the app Clover replaces, readable, never a bot's history.",
   "scripts": {
     "test": "bun test",
     "typecheck": "tsc --noEmit -p ."

@@ -9,7 +9,7 @@
 // ended sit in the transcript in order: a question for B, since the plugin API's `approvals.watch` gives only the
 // pending list.
 //
-// The archive draws an old Winter session through this spot too, with `archived`: then the part reads the session
+// The archive draws an old session (from the app Clover replaces) through this spot too, with `archived`: then the part reads the session
 // from the core's `archive.history` (the `clover` layer's call), follows nothing and answers nothing.
 import { useEffect, useMemo, useState, type ComponentType, type ReactNode } from "react";
 import { ConversationView, DEFAULT_RENDERERS, type MessageRenderers } from "./ConversationView";
@@ -26,7 +26,7 @@ export interface ConversationEntryProps {
   onOpenFile?: (path: string) => void;
   /** The shared clock's now, for deadlines and day labels; the device's clock when absent. */
   now?: SharedTime;
-  /** An old Winter session from the archive: read once from `archive.history`, read only. */
+  /** An old session from the archive: read once from `archive.history`, read only. */
   archived?: boolean;
 }
 

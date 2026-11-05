@@ -1,5 +1,5 @@
-// The archive on the runtime: the `main` entry keyed `archive`, which its `sidebar.app` button opens. It lists the old
-// Winter sessions through the core (`archive.list`, newest first, a page at a time) and draws the picked one through
+// The archive on the runtime: the `main` entry keyed `archive`, which its `sidebar.app` button opens. It lists the
+// sessions from the app Clover replaces through the core (`archive.list`, newest first, a page at a time) and draws the picked one through
 // the `conversation` spot, read only: the conversation part reads it from `archive.history` when its props say
 // `archived`. An old session's approvals have no sealed card, so they read as notes there.
 import { useEffect, useState } from "react";
@@ -16,8 +16,8 @@ export interface ArchiveEntryProps {
 
 const PAGE = 50;
 
-/** Who speaks in an old session. */
-export const WINTER = { id: "winter", name: "Winter" };
+/** Who speaks in an old session: the app it came from, by name (the one place the archive spells it, with strings.ts). */
+export const OLD_APP = { id: "winter", name: "Winter" };
 
 export function ArchiveEntry({ props }: { props: ArchiveEntryProps }) {
   const core = useCore();
@@ -66,7 +66,7 @@ export function ArchiveEntry({ props }: { props: ArchiveEntryProps }) {
       onSearch={setAsked}
       {...(selected ? { selected } : {})}
       onSelect={setSelected}
-      {...(selected ? { transcript: <Spot name="conversation" props={{ bot: WINTER, session: selected, archived: true }} /> } : {})}
+      {...(selected ? { transcript: <Spot name="conversation" props={{ bot: OLD_APP, session: selected, archived: true }} /> } : {})}
       now={props.now ?? Date.now()}
     />
   );

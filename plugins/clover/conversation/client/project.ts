@@ -3,7 +3,7 @@
 // - the inherited stream (`packages/protocol/src/events.ts`): user_message, turn_started, assistant_delta and
 //   assistant_message, thinking_delta and thinking_block, tool_call and tool_result, question_asked and
 //   question_resolved, turn_completed, session_titled; and approval_requested and approval_resolved, which only old
-//   Winter sessions hold (the archive), drawn as notes since no sealed card exists for them;
+//   sessions from the app Clover replaces hold (the archive), drawn as notes since no sealed card exists for them;
 // - Clover's session events (`sessions.ts`): bot_message, agent_message, agent_finished, routine_result, note,
 //   plugin_message;
 // - the cards (`approvals.ts`): card_pending and card_resolved, for this session's cards. A card carries no text; the
@@ -173,7 +173,7 @@ export function project(events: readonly CoreEvent[], options: ProjectOptions = 
       }
       case "approval_requested":
       case "approval_resolved": {
-        // Only an old Winter session holds these (the archive): no sealed card exists for them, so they read as notes.
+        // Only an old session from the app Clover replaces holds these (the archive): no sealed card exists for them, so they read as notes.
         const tool = str(e.toolName);
         const text = type === "approval_requested" ? `Asked to use ${tool ?? "a tool"}${str(e.summary) ? `: ${str(e.summary)}` : ""}` : e.approved === true ? "Allowed" : "Denied";
         add<NoteItem>({ id: `n${key}`, kind: "note", at, text, tone: "info" });

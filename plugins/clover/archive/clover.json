@@ -1,7 +1,7 @@
 {
   "manifest": 1,
   "name": "Archive",
-  "description": "Your sessions from Winter, kept to read. They aren't part of any bot's history.",
+  "description": "Your sessions from the app Clover replaces, kept to read. They aren't part of any bot's history.",
   "engines": {
     "clover": "^1.0.0"
   },

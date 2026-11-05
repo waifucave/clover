@@ -1,4 +1,4 @@
-// The archive's props: the old Winter sessions the migration kept (spec §14.1, "Existing Winter installs"), readable,
+// The archive's props: the old sessions the migration kept from the app Clover replaces (spec §14.1), readable,
 // never a bot's history. A session opens beside the list, its transcript drawn by the conversation part.
 import type { ReactNode } from "react";
 
