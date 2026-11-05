@@ -108,8 +108,16 @@ if (kind === "platform") {
     md.push("");
     notices.push([`S1 netem ${p} [rpc p50, MB/s, load p50, load p99]`, JSON.stringify(compact)]);
   }
+} else if (kind === "migrate") {
+  md.push("### One connection through network changes", "", "| transport | scenario | survived | replies | longest gap ms | error |", "| :- | :- | :- | -: | -: | :- |");
+  const compact: R = {};
+  for (const r of rows) {
+    md.push(`| ${r.transport} | ${r.label} | ${r.survived ? "yes" : "**no**"} | ${r.received}/${r.sent} | ${f1(r.maxGapMs)} | ${String(r.error ?? "").replace(/\s+/g, " ").slice(0, 100)} |`);
+    compact[`${r.transport}/${r.label}`] = r.survived ? Math.round(r.maxGapMs) : false;
+  }
+  notices.push(["S1 network changes [longest gap ms, false = connection lost]", JSON.stringify(compact)]);
 } else {
-  console.error("usage: summarize.ts platform|nat|netem <files...>");
+  console.error("usage: summarize.ts platform|nat|netem|migrate <files...>");
   process.exit(2);
 }
 

@@ -4,6 +4,7 @@
 //! clover-link-sidecar local-bench --transport quinn|iroh [--cc cubic|bbr|newreno] [--quick]
 //! clover-link-sidecar serve --transport quinn|iroh --bind 0.0.0.0:47000 --info-file f.json
 //! clover-link-sidecar bench --info-file f.json --connect ip:port --profile name
+//! clover-link-sidecar ping --info-file f.json --connect ip:port --duration-s 12 --interval-ms 50
 //! clover-link-sidecar punch --transport quinn|iroh --name a|b --port P --stun ip:port --rendezvous dir
 //! clover-link-sidecar stun-server --bind 0.0.0.0:3478
 //! clover-link-sidecar stun-query --server stun.cloudflare.com:3478
@@ -114,13 +115,14 @@ fn main() -> Result<()> {
             emit("stun-query", body);
             Ok(())
         }
-        "local-bench" | "serve" | "bench" | "punch" => {
+        "local-bench" | "serve" | "bench" | "ping" | "punch" => {
             let rt = tokio::runtime::Builder::new_multi_thread().enable_all().build()?;
             rt.block_on(async {
                 match cmd.as_str() {
                     "local-bench" => bench::local(&args).await,
                     "serve" => bench::serve(&args).await,
                     "bench" => bench::client(&args).await,
+                    "ping" => bench::ping(&args).await,
                     _ => punch::run(&args).await,
                 }
             })

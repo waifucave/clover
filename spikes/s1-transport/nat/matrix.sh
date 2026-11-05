@@ -53,7 +53,8 @@ ns() { ip netns exec "$@"; }
 cleanup_sides() {
   # Delete the bridge-side veth ends first: that is synchronous, while a namespace's own
   # teardown is not, and the next pair reuses these names at once.
-  for i in pa-br pb-br ra-br rb-br rl-br; do ip netns exec s1inet ip link del "$i" 2>/dev/null; done
+  local ifc n
+  for ifc in pa-br pb-br ra-br rb-br rl-br; do ip netns exec s1inet ip link del "$ifc" 2>/dev/null; done
   for n in s1pa s1pb s1ra s1rb s1rl; do ip netns del "$n" 2>/dev/null; done
   return 0
 }
@@ -80,7 +81,7 @@ ip link set s1stun-br netns s1inet
 ns s1inet ip link set s1stun-br master br0 up
 ns s1stun ip addr add 203.0.113.100/24 dev s1stun0
 ns s1stun ip link set s1stun0 up
-ns s1stun "$BIN" stun-server --bind "$STUN" 2>/dev/null &
+ip netns exec s1stun "$BIN" stun-server --bind "$STUN" 2>/dev/null &
 STUN_PID=$!
 trap 'kill $STUN_PID 2>/dev/null; cleanup_all' EXIT
 
@@ -182,10 +183,10 @@ pair() {
   fi
   local RDV
   RDV="$(mktemp -d)"
-  ns s1pa "$BIN" punch --transport "$TR" --strategy "$ST" --name a --port 47001 --stun "$STUN" \
+  ip netns exec s1pa "$BIN" punch --transport "$TR" --strategy "$ST" --name a --port 47001 --stun "$STUN" \
     --rendezvous "$RDV" --timeout "$TIMEOUT" --label "$TA/$TB" >"$RDV/a.out" 2>"$RDV/a.err" &
   local PA=$!
-  ns s1pb "$BIN" punch --transport "$TR" --strategy "$ST" --name b --port 47002 --stun "$STUN" \
+  ip netns exec s1pb "$BIN" punch --transport "$TR" --strategy "$ST" --name b --port 47002 --stun "$STUN" \
     --rendezvous "$RDV" --timeout "$TIMEOUT" --label "$TA/$TB" >"$RDV/b.out" 2>"$RDV/b.err" &
   local PB=$!
   wait "$PA" "$PB"

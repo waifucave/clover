@@ -68,7 +68,7 @@ for prof in "${PROFILES[@]}"; do
       (cd "$SPIKE" && timeout 300 ip netns exec s1n1 "$BUN" src/iroh-napi.ts --dial-ticket-file "$TMP/ticket" \
         --profile "$NAME" "${SIZES[@]}") >"$TMP/client.log" 2>&1
     else
-      ns s1n2 "$BIN" serve --transport "$KIND" --cc "$CC" --bind 198.18.0.2:47000 --info-file "$TMP/info.json" \
+      ip netns exec s1n2 "$BIN" serve --transport "$KIND" --cc "$CC" --bind 198.18.0.2:47000 --info-file "$TMP/info.json" \
         >"$TMP/server.log" 2>&1 &
       SERVER=$!
       for _ in $(seq 100); do [ -s "$TMP/info.json" ] && break; sleep 0.1; done

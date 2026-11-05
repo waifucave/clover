@@ -302,6 +302,117 @@ pub async fn serve(a: &Args) -> Result<()> {
     Ok(())
 }
 
+/// `ping`: one 64-byte echo every `--interval-ms` for `--duration-s` on one connection, sent
+/// without waiting for replies, while nat/migrate.sh changes the client's address or blacks the
+/// link out. Records when replies arrive, so the longest gap shows how long the link was gone,
+/// and whether the connection survived at all.
+pub async fn ping(a: &Args) -> Result<()> {
+    let info: Value = serde_json::from_str(&std::fs::read_to_string(a.get_or("info-file", "server.json"))?)?;
+    let kind: Kind = info["transport"].as_str().unwrap_or("quinn").parse()?;
+    let label = a.get_or("label", "");
+    let interval = Duration::from_millis(a.num("interval-ms", 50));
+    let duration = Duration::from_secs(a.num("duration-s", 12));
+    let grace = Duration::from_secs(a.num("grace-s", 10));
+    let res: Result<Value> = async {
+        let target: SocketAddr = a.get("connect").context("--connect ip:port")?.parse()?;
+        let ep = Endpoint::bind(kind, UdpSocket::bind("0.0.0.0:0")?, Cc::Cubic).await?;
+        let conn = tokio::time::timeout(
+            Duration::from_secs(15),
+            ep.connect(info["identity"].as_str().unwrap_or_default(), &[target]),
+        )
+        .await
+        .context("connect timeout")??;
+        let path_before = conn.path_json();
+        let (mut send, mut recv) = conn.open_bi(10).await?;
+        send.write_all(b"E").await?;
+        let start = Instant::now();
+        let writer = tokio::spawn(async move {
+            let mut seq = 0u64;
+            let mut tick = tokio::time::interval(interval);
+            while start.elapsed() < duration {
+                tick.tick().await;
+                let mut frame = [0u8; FRAME];
+                frame[..8].copy_from_slice(&seq.to_be_bytes());
+                frame[8..16].copy_from_slice(&(start.elapsed().as_micros() as u64).to_be_bytes());
+                if send.write_all(&frame).await.is_err() {
+                    return (seq, send);
+                }
+                seq += 1;
+            }
+            (seq, send)
+        });
+        let mut arrivals: Vec<(f64, f64)> = Vec::new(); // (arrival s, rtt ms)
+        let mut read_error = None;
+        let deadline = duration + grace;
+        let mut back = [0u8; FRAME];
+        loop {
+            let left = deadline.saturating_sub(start.elapsed());
+            if left.is_zero() {
+                break;
+            }
+            match tokio::time::timeout(left, recv.read_exact(&mut back)).await {
+                Ok(Ok(())) => {
+                    let sent_us = u64::from_be_bytes(back[8..16].try_into().unwrap());
+                    let now_s = start.elapsed().as_secs_f64();
+                    arrivals.push((now_s, now_s * 1000.0 - sent_us as f64 / 1000.0));
+                    if writer.is_finished() && arrivals.len() as u64 >= u64::from_be_bytes(back[..8].try_into().unwrap()) + 1 {
+                        // every frame the writer sent has come back
+                        let (sent, _) = writer.await?;
+                        let received = arrivals.len() as u64;
+                        return Ok(ping_json(kind, &label, sent, received, &arrivals, None, path_before, conn.path_json()));
+                    }
+                }
+                Ok(Err(e)) => {
+                    read_error = Some(format!("{e:#}"));
+                    break;
+                }
+                Err(_) => break,
+            }
+        }
+        let sent = if writer.is_finished() {
+            writer.await.map(|(s, _)| s).unwrap_or(0)
+        } else {
+            writer.abort();
+            0
+        };
+        Ok(ping_json(kind, &label, sent, arrivals.len() as u64, &arrivals, read_error, path_before, conn.path_json()))
+    }
+    .await;
+    match res {
+        Ok(body) => emit("ping", body),
+        Err(e) => emit("ping", json!({ "ok": false, "transport": kind.name(), "label": label, "error": format!("{e:#}") })),
+    }
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn ping_json(kind: Kind, label: &str, sent: u64, received: u64, arrivals: &[(f64, f64)], error: Option<String>, before: Value, after: Value) -> Value {
+    let mut max_gap = 0.0f64;
+    let mut gap_at = 0.0f64;
+    for w in arrivals.windows(2) {
+        let g = (w[1].0 - w[0].0) * 1000.0;
+        if g > max_gap {
+            max_gap = g;
+            gap_at = w[0].0;
+        }
+    }
+    let rtts: Vec<f64> = arrivals.iter().map(|x| x.1).collect();
+    json!({
+        "ok": error.is_none() && sent > 0 && received == sent,
+        "transport": kind.name(),
+        "label": label,
+        "sent": sent,
+        "received": received,
+        "survived": error.is_none(),
+        "maxGapMs": (max_gap * 10.0).round() / 10.0,
+        "maxGapAtS": (gap_at * 100.0).round() / 100.0,
+        "rtt": summary(&rtts),
+        "error": error,
+        "pathBefore": before,
+        "pathAfter": after,
+    })
+}
+
 /// `bench`: the client half of `serve`.
 pub async fn client(a: &Args) -> Result<()> {
     let sizes = Sizes::from_args(a);

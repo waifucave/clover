@@ -94,6 +94,35 @@ jobs:
           name: s1-nat
           path: spikes/s1-transport/results/
 
+  migrate:
+    name: network changes (address change, blackouts)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native/link-sidecar -> target
+      - name: build the link sidecar
+        run: cargo build --release --locked --manifest-path native/link-sidecar/Cargo.toml
+      - name: break the path under one live connection
+        run: |
+          mkdir -p spikes/s1-transport/results
+          sudo spikes/s1-transport/nat/migrate.sh native/link-sidecar/target/release/clover-link-sidecar spikes/s1-transport/results/migrate.jsonl
+      - name: summary
+        if: always()
+        working-directory: spikes/s1-transport/bun
+        run: bun scripts/summarize.ts migrate ../results/migrate.jsonl
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: s1-migrate
+          path: spikes/s1-transport/results/
+
   netem:
     name: delay and throughput (tc netem)
     runs-on: ubuntu-24.04

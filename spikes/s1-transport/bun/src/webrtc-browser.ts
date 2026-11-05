@@ -154,7 +154,16 @@ async function main(): Promise<void> {
     port: 0,
     async fetch(req) {
       const url = new URL(req.url);
-      if (req.method === "GET" && url.pathname === "/") return new Response(page(), { headers: { "content-type": "text/html" } });
+      if (req.method === "GET" && url.pathname === "/")
+        return new Response(page(), {
+          headers: {
+            "content-type": "text/html",
+            // Cross-origin isolation lifts the browsers' clamp on performance.now() (Firefox
+            // otherwise rounds to 1 ms, which hides sub-millisecond round trips).
+            "cross-origin-opener-policy": "same-origin",
+            "cross-origin-embedder-policy": "require-corp",
+          },
+        });
       if (req.method === "POST" && url.pathname === "/result") {
         resolveResult(await req.json());
         return new Response("ok");

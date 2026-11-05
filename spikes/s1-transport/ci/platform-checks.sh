@@ -58,6 +58,18 @@ if command -v node >/dev/null; then
   run optional iroh-napi-node node src/iroh-napi.ts --rpc 500 --rpc-streams 100 --bulk-mb 32 --shots 5 --load-mb 16
 fi
 
+# What byte passing costs across napi: Vec<u8> (as @number0/iroh does) against Buffer.
+PROBE_DIR="$ROOT/spikes/s1-transport/napi-probe"
+if cargo build --release --quiet --manifest-path "$PROBE_DIR/Cargo.toml"; then
+  for lib in libs1_napi_probe.dylib libs1_napi_probe.so s1_napi_probe.dll; do
+    [ -f "$PROBE_DIR/target/release/$lib" ] && cp "$PROBE_DIR/target/release/$lib" "$PROBE_DIR/s1-napi-probe.node"
+  done
+  run optional napi-probe bun src/napi-probe.ts --mb 32
+  if command -v node >/dev/null; then run optional napi-probe-node node src/napi-probe.ts --mb 16; fi
+else
+  echo "::warning title=napi-probe::the probe addon did not build"
+fi
+
 # Compiled with `bun build --compile`, then run from a folder outside the source tree.
 run required compile bun scripts/compile.ts
 BIN_DIR="$(mktemp -d)"
