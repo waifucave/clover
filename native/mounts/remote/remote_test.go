@@ -70,6 +70,7 @@ type relay struct {
 	ln    net.Listener
 	to    string
 	held  atomic.Bool
+	rate  atomic.Int64 // bytes per second each way; 0 = unlimited
 	mu    sync.Mutex
 	conns []net.Conn
 }
@@ -107,9 +108,16 @@ func (r *relay) serve(c net.Conn) {
 	pipe := func(dst, src net.Conn) {
 		buf := make([]byte, 64<<10)
 		for {
-			n, err := src.Read(buf)
+			chunk := buf
+			if r.rate.Load() > 0 {
+				chunk = buf[:8<<10]
+			}
+			n, err := src.Read(chunk)
 			for r.held.Load() {
 				time.Sleep(5 * time.Millisecond)
+			}
+			if rate := r.rate.Load(); rate > 0 && n > 0 {
+				time.Sleep(time.Duration(int64(n) * int64(time.Second) / rate))
 			}
 			if n > 0 {
 				if _, werr := dst.Write(buf[:n]); werr != nil {
@@ -378,5 +386,213 @@ func TestBlockedEventHandlerDoesNotStallTheLink(t *testing.T) {
 	}
 	if d := time.Since(t0); d > 500*time.Millisecond {
 		t.Fatalf("stat took %v", d)
+	}
+}
+
+// A link slower than a 1 MiB frame per liveness bound stays up (review S1): the write deadline
+// is per chunk, the holder pings while the helper uploads, liveness counts bytes, and a request's
+// clock starts when it is on the wire. At 256 KiB/s each 1 MiB frame takes 4 s.
+func TestSlowLinkStaysUp(t *testing.T) {
+	root := t.TempDir()
+	svc := startService(t, root, freePort(t))
+	defer svc.kill()
+	r := newRelay(t, "127.0.0.1:"+strconv.Itoa(svc.port))
+	pol, _ := PolicyByName("plain")
+	f := newFS(t, r.addr(), pol)
+	r.rate.Store(256 << 10)
+	payload := bytes.Repeat([]byte("slow-link"), (1<<20)/9)
+	h, _, e := f.Open("big.bin", wire.OWronly|wire.OCreat|wire.OTrunc, 0o644)
+	if e != wire.OK {
+		t.Fatal(e)
+	}
+	if n, e := f.Write(h, 0, payload); e != wire.OK || n != len(payload) {
+		t.Fatalf("write: %d %v", n, e)
+	}
+	f.Release(h)
+	got, e := f.Read("big.bin", nil, 0, len(payload))
+	if e != wire.OK || !bytes.Equal(got, payload) {
+		t.Fatalf("read back %d bytes: %v", len(got), e)
+	}
+	if d, to := f.C.Drops.Load(), f.C.Timeouts.Load(); d != 0 || to != 0 {
+		t.Fatalf("a live link was called dead: %d drops, %d timeouts", d, to)
+	}
+}
+
+// Answers queued behind each other on a slow link are the link's wait, not a stuck holder's
+// (review S1). With a 1 s request clock, six 512 KiB reads at 512 KiB/s arrive over about 6 s
+// with no timeouts; the clock runs only while no answer bytes arrive. A request the holder sits
+// on, on a link that carries nothing else, still fails after about 1 s.
+func TestQueuedAnswersAreNotTimedOut(t *testing.T) {
+	root := t.TempDir()
+	payload := bytes.Repeat([]byte{7}, 512<<10)
+	os.WriteFile(filepath.Join(root, "big.bin"), payload, 0o644)
+	svc := startService(t, root, freePort(t))
+	defer svc.kill()
+	r := newRelay(t, "127.0.0.1:"+strconv.Itoa(svc.port))
+	c := New(Config{Addr: r.addr(), Name: "test", Logf: t.Logf, OpTimeout: time.Second})
+	pol, _ := PolicyByName("plain")
+	f := NewFS(c, pol)
+	c.Start()
+	f.Start()
+	t.Cleanup(c.Close)
+	r.rate.Store(512 << 10)
+	start := time.Now()
+	var wg sync.WaitGroup
+	var bad atomic.Int64
+	for range 6 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if got, e := f.Read("big.bin", nil, 0, len(payload)); e != wire.OK || len(got) != len(payload) {
+				t.Logf("read: %d bytes, %v", len(got), e)
+				bad.Add(1)
+			}
+		}()
+	}
+	wg.Wait()
+	t.Logf("six queued answers took %v", time.Since(start).Round(time.Millisecond))
+	if n, to, d := bad.Load(), c.Timeouts.Load(), c.Drops.Load(); n != 0 || to != 0 || d != 0 {
+		t.Fatalf("%d reads failed, %d timeouts, %d drops", n, to, d)
+	}
+	r.rate.Store(0)
+	start = time.Now()
+	if _, e := c.Do(wire.OpSleep, func(w *wire.Writer) { w.U32(5000) }); e != wire.ETIMEDOUT {
+		t.Fatalf("a request the holder sits on: %v", e)
+	}
+	if d := time.Since(start); d > 2500*time.Millisecond {
+		t.Fatalf("a request the holder sits on failed only after %v", d)
+	}
+}
+
+// The holder's fence holds when a folder the mount knows is swapped for a link to .clover
+// (review S2): a link in the middle of a path answers ELOOP, so a stat, a read, an open for
+// writing, a create and a listing through it all fail and nothing in the fence changes. Links
+// that leave the export answer EACCES instead of a target the reading computer would resolve
+// against its own disk (review S9); a relative link inside the export passes as it is.
+func TestFenceHoldsThroughLinks(t *testing.T) {
+	root := t.TempDir()
+	elsewhere := t.TempDir()
+	os.MkdirAll(filepath.Join(root, ".clover"), 0o700)
+	secret := filepath.Join(root, ".clover", "settings.json")
+	os.WriteFile(secret, []byte(`{"secret":1}`), 0o600)
+	os.MkdirAll(filepath.Join(root, "d"), 0o755)
+	os.WriteFile(filepath.Join(root, "d", "settings.json"), []byte("{}"), 0o644)
+	svc := startService(t, root, freePort(t))
+	defer svc.kill()
+	pol, _ := PolicyByName("nocache")
+	f := newFS(t, "127.0.0.1:"+strconv.Itoa(svc.port), pol)
+	if _, e := f.Stat("d/settings.json"); e != wire.OK {
+		t.Fatal(e)
+	}
+	os.RemoveAll(filepath.Join(root, "d"))
+	if err := os.Symlink(filepath.Join(root, ".clover"), filepath.Join(root, "d")); err != nil {
+		t.Skipf("no symlinks here: %v", err)
+	}
+	if a, e := f.Stat("d/settings.json"); e == wire.OK {
+		t.Fatalf("stat through the swapped folder reached the fence (size %d)", a.Size)
+	}
+	if b, e := f.Read("d/settings.json", nil, 0, 100); e == wire.OK {
+		t.Fatalf("read through the swapped folder: %q", b)
+	}
+	if h, _, e := f.Open("d/settings.json", wire.OWronly|wire.OTrunc, 0); e == wire.OK {
+		f.Write(h, 0, []byte("owned"))
+		f.Release(h)
+		t.Fatal("opened a fenced file for writing through the swapped folder")
+	}
+	if h, _, e := f.Open("d/new.json", wire.OWronly|wire.OCreat, 0o644); e == wire.OK {
+		f.Release(h)
+		t.Fatal("created a file in the fence through the swapped folder")
+	}
+	if ents, e := f.List("d"); e == wire.OK {
+		t.Fatalf("listed the fence through the swapped folder: %d entries", len(ents))
+	}
+	if b, _ := os.ReadFile(secret); string(b) != `{"secret":1}` {
+		t.Fatalf("the fenced file changed: %q", b)
+	}
+	if _, err := os.Stat(filepath.Join(root, ".clover", "new.json")); err == nil {
+		t.Fatal("a file appeared in the fence")
+	}
+
+	os.Symlink(filepath.Join(elsewhere, "x"), filepath.Join(root, "abs-out"))
+	os.Symlink(filepath.Join("..", "..", "outside"), filepath.Join(root, "rel-out"))
+	os.Symlink("d2/x", filepath.Join(root, "rel-in"))
+	if tgt, e := f.Readlink("abs-out"); e != wire.EACCES {
+		t.Fatalf("an absolute link out of the export: %q, %v", tgt, e)
+	}
+	if tgt, e := f.Readlink("rel-out"); e != wire.EACCES {
+		t.Fatalf("a relative link out of the export: %q, %v", tgt, e)
+	}
+	if tgt, e := f.Readlink("rel-in"); e != wire.OK || tgt != "d2/x" {
+		t.Fatalf("a relative link inside the export: %q, %v", tgt, e)
+	}
+}
+
+// A computer that is offline when the mount starts subscribes to change events once its link
+// comes up (review S3); before, the cache never heard of a change and stayed stale for good.
+func TestOfflineAtStartSubscribes(t *testing.T) {
+	root := t.TempDir()
+	os.WriteFile(filepath.Join(root, "f.txt"), []byte("one"), 0o644)
+	port := freePort(t)
+	pol, _ := PolicyByName("cached")
+	f := newFS(t, "127.0.0.1:"+strconv.Itoa(port), pol) // nothing listens yet
+	if _, e := f.Stat("f.txt"); e != wire.EHOSTDOWN {
+		t.Fatalf("offline stat: %v", e)
+	}
+	svc := startService(t, root, port)
+	defer svc.kill()
+	deadline := time.Now().Add(10 * time.Second)
+	for !f.C.Online() {
+		if time.Now().After(deadline) {
+			t.Fatal("never came online")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if a, _ := f.Stat("f.txt"); a.Size != 3 {
+		t.Fatalf("size %d", a.Size)
+	}
+	time.Sleep(300 * time.Millisecond) // let the watch settle
+	os.WriteFile(filepath.Join(root, "f.txt"), []byte("three"), 0o644)
+	deadline = time.Now().Add(5 * time.Second)
+	for {
+		if a, _ := f.Stat("f.txt"); a.Size == 5 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("a change on the holder was never seen: the mount did not subscribe")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// A fill whose request went out before an event must not cache over that event (review S3).
+func TestFillAfterEventIsNotCached(t *testing.T) {
+	pol, _ := PolicyByName("cached")
+	f := NewFS(New(Config{Addr: "127.0.0.1:1", Name: "test"}), pol)
+	e0 := f.mark()
+	f.onEvent(wire.EventChanged, "a/b")
+	for _, c := range []struct {
+		p     string
+		sub   bool
+		stale bool
+	}{
+		{"a/b", false, true},   // the path itself
+		{"a/b/c", false, true}, // inside a folder that changed
+		{"a", false, true},     // its parent: the listing, so the mtime, changed
+		{"a", true, true},      // a listing or bulk fetch of the parent
+		{"", true, true},       // a bulk fetch above it
+		{"a/x", false, false},  // a sibling
+		{"z", true, false},     // elsewhere
+	} {
+		if got := f.staleSince(e0, c.p, c.sub); got != c.stale {
+			t.Errorf("staleSince(%q, sub=%v) = %v, want %v", c.p, c.sub, got, c.stale)
+		}
+	}
+	if f.staleSince(f.mark(), "a/b", false) {
+		t.Error("a fill that started after the event was treated as stale")
+	}
+	e1 := f.mark()
+	f.onEvent(wire.EventResync, "")
+	if !f.staleSince(e1, "z", false) {
+		t.Error("a resync did not make every fill in flight stale")
 	}
 }

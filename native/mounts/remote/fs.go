@@ -3,6 +3,7 @@ package remote
 import (
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/waifucave/clover/native/mounts/wire"
@@ -68,16 +69,83 @@ type FS struct {
 	prefetched map[string]bool
 	inflight   map[string]chan struct{}
 
+	// Fill vs event (review S3): a reply fetched before a change must not be cached after that
+	// change's event dropped the old entry, or it stays for good. Every event bumps epoch and is
+	// remembered in recent; a fill skips what an event touched since its request went out.
+	epoch       uint64
+	recent      []touch
+	recentFloor uint64 // epochs at or below this were trimmed from recent
+
 	// Adapter hooks: tell the kernel to forget a path, or everything.
 	Invalidate    func(path string)
 	InvalidateAll func()
 
-	Hits, Misses, Prefetches int64
+	// Counters for the status endpoint; read them with atomic loads.
+	Hits, Misses, Prefetches atomic.Int64
+}
+
+type touch struct {
+	epoch uint64
+	path  string
+	all   bool
+}
+
+const recentMax = 8192
+
+// touchedLocked records an event (f.mu held).
+func (f *FS) touchedLocked(p string, all bool) {
+	f.epoch++
+	if len(f.recent) >= recentMax {
+		f.recentFloor = f.recent[len(f.recent)/2-1].epoch
+		f.recent = append(f.recent[:0], f.recent[len(f.recent)/2:]...)
+	}
+	f.recent = append(f.recent, touch{f.epoch, p, all})
+}
+
+// under reports whether p is dir or inside it.
+func under(p, dir string) bool {
+	return dir == "" || p == dir || strings.HasPrefix(p, dir+"/")
+}
+
+// staleSince reports whether an event since epoch e0 touched what a fill of p would cache: p,
+// a folder above it, a name in it (p's own mtime changes with its listing), or, for a listing
+// or a bulk fetch (sub), anything inside it. f.mu held.
+func (f *FS) staleSince(e0 uint64, p string, sub bool) bool {
+	if e0 < f.recentFloor {
+		return true
+	}
+	for i := len(f.recent) - 1; i >= 0 && f.recent[i].epoch > e0; i-- {
+		t := f.recent[i]
+		if t.all || under(p, t.path) {
+			return true
+		}
+		if dir, _ := Parent(t.path); dir == p {
+			return true
+		}
+		if sub && under(t.path, p) {
+			return true
+		}
+	}
+	return false
+}
+
+// mark is the epoch a fill starts from.
+func (f *FS) mark() uint64 {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.epoch
 }
 
 func NewFS(c *Client, pol Policy) *FS {
 	f := &FS{C: c, Pol: pol, attrs: map[string]attrEnt{}, dirs: map[string]dirEnt{}, prefetched: map[string]bool{}, inflight: map[string]chan struct{}{}}
 	c.OnEvent = f.onEvent
+	// A computer that was offline when the mount started subscribes when its link first comes
+	// up; before, only reconnects did, and such a mount cached without events for good (S3).
+	c.OnConnect = func(reconnect bool) {
+		if !reconnect && pol.Watch {
+			go f.C.Do(wire.OpWatch, func(w *wire.Writer) { w.U8(1) })
+		}
+	}
 	prev := c.OnReconnect
 	c.OnReconnect = func(w Welcome, changed bool) {
 		f.mu.Lock()
@@ -96,7 +164,8 @@ func NewFS(c *Client, pol Policy) *FS {
 	return f
 }
 
-// Start subscribes to change events when the policy wants them.
+// Start subscribes at once when the link is already up, so the first lookups are covered by
+// change events. (OnConnect subscribes too, without waiting; a second WATCH is harmless.)
 func (f *FS) Start() {
 	if f.Pol.Watch && f.C.Online() {
 		f.C.Do(wire.OpWatch, func(w *wire.Writer) { w.U8(1) })
@@ -167,6 +236,14 @@ func (f *FS) Forget(p string) {
 	f.mu.Unlock()
 }
 
+// forgetEvent is Forget for a change the holder reported: fills in flight skip p (staleSince).
+func (f *FS) forgetEvent(p string) {
+	f.mu.Lock()
+	f.touchedLocked(p, false)
+	f.forgetLocked(p)
+	f.mu.Unlock()
+}
+
 func (f *FS) forgetLocked(p string) {
 	delete(f.attrs, p)
 	if _, ok := f.dirs[p]; ok {
@@ -198,6 +275,7 @@ func (f *FS) forgetLocked(p string) {
 
 func (f *FS) dropAll() {
 	f.mu.Lock()
+	f.touchedLocked("", true)
 	f.attrs = map[string]attrEnt{}
 	f.dirs = map[string]dirEnt{}
 	f.prefetched = map[string]bool{}
@@ -212,7 +290,7 @@ func (f *FS) onEvent(typ uint8, p string) {
 		f.dropAll()
 		return
 	}
-	f.Forget(p)
+	f.forgetEvent(p)
 	if f.Invalidate != nil {
 		f.Invalidate(p)
 	}
@@ -292,22 +370,23 @@ func (f *FS) Stat(p string) (wire.Attr, wire.Errno) {
 			a, e, ok = f.cachedStat(p)
 			f.mu.Unlock()
 		}
-		f.mu.Lock()
 		if ok {
-			f.Hits++
+			f.Hits.Add(1)
 		} else {
-			f.Misses++
+			f.Misses.Add(1)
 		}
-		f.mu.Unlock()
 		if ok {
 			return a, e
 		}
 	}
 	var a wire.Attr
+	e0 := f.mark()
 	r, e := f.C.Do(wire.OpStat, func(w *wire.Writer) { w.Str(p) })
 	if e == wire.ENOENT {
 		f.mu.Lock()
-		f.putNeg(p)
+		if !f.staleSince(e0, p, false) {
+			f.putNeg(p)
+		}
 		f.mu.Unlock()
 		return a, e
 	}
@@ -316,7 +395,9 @@ func (f *FS) Stat(p string) (wire.Attr, wire.Errno) {
 	}
 	r.Attr(&a)
 	f.mu.Lock()
-	f.putAttr(p, &a)
+	if !f.staleSince(e0, p, false) {
+		f.putAttr(p, &a)
+	}
 	f.mu.Unlock()
 	return a, wire.OK
 }
@@ -343,12 +424,12 @@ func (f *FS) List(p string) ([]DirEntry, wire.Errno) {
 	if f.Pol.TTL != 0 {
 		f.mu.Lock()
 		if out, ok := f.cachedList(p); ok {
-			f.Hits++
 			f.mu.Unlock()
+			f.Hits.Add(1)
 			return out, wire.OK
 		}
-		f.Misses++
 		f.mu.Unlock()
+		f.Misses.Add(1)
 		if f.prefetchFor(p, true) {
 			f.mu.Lock()
 			out, ok := f.cachedList(p)
@@ -358,6 +439,7 @@ func (f *FS) List(p string) ([]DirEntry, wire.Errno) {
 			}
 		}
 	}
+	e0 := f.mark()
 	r, e := f.C.Do(wire.OpList, func(w *wire.Writer) { w.Str(p) })
 	if e != wire.OK {
 		return nil, e
@@ -372,19 +454,22 @@ func (f *FS) List(p string) ([]DirEntry, wire.Errno) {
 		return nil, wire.EIO
 	}
 	f.mu.Lock()
-	f.putDir(p, out)
+	if !f.staleSince(e0, p, true) {
+		f.putDir(p, out)
+	}
 	f.mu.Unlock()
 	return out, wire.OK
 }
 
 func (f *FS) tree(p string) ([]DirEntry, wire.Errno) {
+	e0 := f.mark()
 	r, e := f.C.Do(wire.OpTree, func(w *wire.Writer) { w.Str(p).U32(f.Pol.Prefetch) })
 	if e != wire.OK {
 		return nil, e
 	}
 	var first []DirEntry
 	f.mu.Lock()
-	f.Prefetches++
+	f.Prefetches.Add(1)
 	ndirs := r.U32()
 	for i := uint32(0); i < ndirs; i++ {
 		dir := r.Str()
@@ -398,7 +483,9 @@ func (f *FS) tree(p string) ([]DirEntry, wire.Errno) {
 			f.mu.Unlock()
 			return nil, wire.EIO
 		}
-		f.putDir(dir, ents)
+		if !f.staleSince(e0, dir, true) {
+			f.putDir(dir, ents)
+		}
 		if i == 0 {
 			first = ents
 		}
@@ -455,6 +542,7 @@ func (f *FS) Open(p string, flags, mode uint32) (*Handle, wire.Attr, wire.Errno)
 	if flags&wire.OAccMode == wire.ORdonly && flags&(wire.OCreat|wire.OTrunc) == 0 {
 		return h, a, wire.OK
 	}
+	e0 := f.mark()
 	r, e := f.C.Do(wire.OpOpen, func(w *wire.Writer) { w.Str(p).U32(flags).U32(mode) })
 	if e != wire.OK {
 		return nil, a, e
@@ -465,7 +553,9 @@ func (f *FS) Open(p string, flags, mode uint32) (*Handle, wire.Attr, wire.Errno)
 	if flags&(wire.OCreat|wire.OTrunc) != 0 {
 		f.forgetLocked(p)
 	}
-	f.putAttr(p, &a)
+	if !f.staleSince(e0, p, false) {
+		f.putAttr(p, &a)
+	}
 	f.mu.Unlock()
 	return h, a, wire.OK
 }
@@ -536,6 +626,7 @@ func (f *FS) Setattr(p string, h *Handle, mask, mode uint32, size uint64, atimeN
 		rh = h.remoteHandle()
 	}
 	var a wire.Attr
+	e0 := f.mark()
 	r, e := f.C.Do(wire.OpSetattr, func(w *wire.Writer) {
 		w.Str(p).U64(rh).U32(mask).U32(mode).U64(size).I64(atimeNs).I64(mtimeNs)
 	})
@@ -547,13 +638,16 @@ func (f *FS) Setattr(p string, h *Handle, mask, mode uint32, size uint64, atimeN
 	}
 	r.Attr(&a)
 	f.mu.Lock()
-	f.putAttr(p, &a)
+	if !f.staleSince(e0, p, false) {
+		f.putAttr(p, &a)
+	}
 	f.mu.Unlock()
 	return a, wire.OK
 }
 
 func (f *FS) attrOp(op uint8, p string, build func(w *wire.Writer)) (wire.Attr, wire.Errno) {
 	var a wire.Attr
+	e0 := f.mark()
 	r, e := f.C.Do(op, build)
 	f.Forget(p)
 	if e != wire.OK {
@@ -561,7 +655,9 @@ func (f *FS) attrOp(op uint8, p string, build func(w *wire.Writer)) (wire.Attr, 
 	}
 	r.Attr(&a)
 	f.mu.Lock()
-	f.putAttr(p, &a)
+	if !f.staleSince(e0, p, false) {
+		f.putAttr(p, &a)
+	}
 	f.mu.Unlock()
 	return a, wire.OK
 }

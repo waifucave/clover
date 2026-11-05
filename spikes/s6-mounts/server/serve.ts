@@ -51,8 +51,15 @@ function checkRel(rel: string): string[] {
   return parts;
 }
 function fenced(rel: string): boolean {
-  return FENCE.some((f) => rel === f || rel.startsWith(f + "/"));
+  return FENCE.some((f) => (IS_WIN ? rel.toLowerCase() === f.toLowerCase() || rel.toLowerCase().startsWith(f.toLowerCase() + "/") : rel === f || rel.startsWith(f + "/")));
 }
+const within = (root: string, p: string) => { const r = path.relative(root, p); return r === "" || (!r.startsWith("..") && !path.isAbsolute(r)); };
+/** The export-relative form of a real path, or null when it lies outside the export. */
+function relOfReal(real: string): string | null {
+  if (!inside(real)) return null;
+  return path.relative(REAL_ROOT, real).split(path.sep).join("/");
+}
+/** A request's path on this disk, without touching the disk (for bookkeeping only). */
 function resolve(rel: string): string {
   const parts = checkRel(rel);
   // The fence of the computer that holds the files applies to every request from the link,
@@ -60,13 +67,48 @@ function resolve(rel: string): string {
   if (fenced(rel)) fail(Err.EACCES, `fenced: ${rel}`);
   return parts.length ? path.join(ROOT, ...parts) : ROOT;
 }
-/** For anything that writes: the parent's real path must stay inside the export. */
-async function resolveForWrite(rel: string): Promise<string> {
+/**
+ * A request's path, checked against the disk: no component before the last may be a link. A
+ * kernel that mounts the tree follows links itself (READLINK, then a lookup of the target), so a
+ * link in the middle of a request's path means a folder it knew was swapped for a link since,
+ * the way a fenced folder (.clover) would be reached under another name (review S2). Answers
+ * ELOOP, as openat2's RESOLVE_NO_SYMLINKS does. With noFollow the last component may not be a
+ * link either: for the calls that would follow it (open, list, setattr). The walk and the call
+ * after it can still race a swap on the holder; M1 opens with openat2(RESOLVE_BENEATH |
+ * RESOLVE_NO_SYMLINKS) on Linux, O_NOFOLLOW_ANY on macOS and reparse-point checks on Windows.
+ */
+async function resolveSafe(rel: string, noFollow = false): Promise<string> {
   const abs = resolve(rel);
+  const parts = rel === "" ? [] : rel.split("/");
+  let cur = ROOT;
+  for (let i = 0; i < parts.length; i++) {
+    cur = path.join(cur, parts[i]!);
+    if (i === parts.length - 1 && !noFollow) break;
+    let st: fs.Stats;
+    try { st = await fs.promises.lstat(cur); } catch (e: any) { return fail(errFromCode(e.code)); }
+    if (st.isSymbolicLink()) fail(Err.ELOOP, `a link in the path: ${parts.slice(0, i + 1).join("/")}`);
+    if (i < parts.length - 1 && !st.isDirectory()) fail(Err.ENOTDIR);
+  }
+  return abs;
+}
+/** For anything that writes: no link on the way, and the parent's real path inside the export and outside the fence. */
+async function resolveForWrite(rel: string): Promise<string> {
+  const abs = await resolveSafe(rel);
   if (rel === "") return abs;
   const parent = await fs.promises.realpath(path.dirname(abs)).catch((e) => fail(errFromCode(e.code)));
-  if (!inside(parent)) fail(Err.EACCES, `escapes the export: ${rel}`);
+  const prel = relOfReal(parent);
+  if (prel === null) fail(Err.EACCES, `escapes the export: ${rel}`);
+  if (prel !== "" && fenced(prel)) fail(Err.EACCES, `fenced through a link: ${rel}`);
   return abs;
+}
+/** After an open: what was opened must not be fenced, whatever happened to the path meanwhile. */
+async function checkOpened(abs: string, fd: number) {
+  const real = await fs.promises.realpath(abs).catch(() => null);
+  const rel = real === null ? null : relOfReal(real);
+  if (rel === null || (rel !== "" && fenced(rel))) {
+    fs.close(fd, () => {});
+    fail(Err.EACCES, `opened outside the export or inside the fence: ${abs}`);
+  }
 }
 const join = (dir: string, name: string) => (dir === "" ? name : `${dir}/${name}`);
 
@@ -78,7 +120,16 @@ const join = (dir: string, name: string) => (dir === "" ? name : `${dir}/${name}
  */
 function linkTarget(abs: string, target: string): string {
   let t = target.startsWith("\\\\?\\") ? target.slice(4) : target;
-  if (!path.isAbsolute(t)) return t.split(path.sep).join("/");
+  if (!path.isAbsolute(t)) {
+    // A relative link that climbs out of the export would resolve against the reading
+    // computer's own disk, to a file the holder never meant (review S9): it answers EACCES.
+    const lands = path.resolve(path.dirname(abs), t);
+    if (!within(ROOT, lands) && !within(REAL_ROOT, lands)) {
+      count("READLINK_outside");
+      fail(Err.EACCES, `link leaves the export: ${t}`);
+    }
+    return t.split(path.sep).join("/");
+  }
   for (const root of [ROOT, REAL_ROOT]) {
     const rel = path.relative(root, t);
     if (rel === "" || (!rel.startsWith("..") && !path.isAbsolute(rel))) {
@@ -88,7 +139,10 @@ function linkTarget(abs: string, target: string): string {
       return r.split(path.sep).join("/");
     }
   }
-  return t;
+  // An absolute link outside the export names a file on this computer. On another computer the
+  // same path is some other file, so the link answers EACCES there (review S9).
+  count("READLINK_outside");
+  return fail(Err.EACCES, `link leaves the export: ${t}`);
 }
 
 // ---- attributes -----------------------------------------------------------------------------
@@ -110,7 +164,7 @@ async function lstatAttr(abs: string): Promise<Attr> {
   catch (e: any) { return fail(errFromCode(e.code)); }
 }
 async function listDir(rel: string): Promise<Array<[string, Attr]>> {
-  const abs = resolve(rel);
+  const abs = await resolveSafe(rel, true);
   let names: string[];
   try { names = await fs.promises.readdir(abs); } catch (e: any) { return fail(errFromCode(e.code)); }
   names = names.filter((n) => !fenced(join(rel, n)));
@@ -172,6 +226,7 @@ interface Conn {
   out: Uint8Array[];
   handles: Map<bigint, { fd: number; path: string }>;
   watching: boolean;
+  welcomed: boolean;
   lastRecv: number;
   closed: boolean;
 }
@@ -212,6 +267,7 @@ function onFrame(c: Conn, body: Uint8Array) {
       if (VERBOSE) console.error(`[serve] hello v${version} from ${client}`);
       send(c, new Writer().u8(Kind.WELCOME).u32(0).u32(VERSION).str(INSTANCE).str(process.platform)
         .u8(process.platform === "linux" ? 1 : 0).frame());
+      c.welcomed = true;
       return;
     }
     case Kind.PING:
@@ -242,7 +298,7 @@ function onFrame(c: Conn, body: Uint8Array) {
     switch (op) {
       case Op.STAT: {
         const rel = r.str();
-        return ok().attr(await lstatAttr(resolve(rel)));
+        return ok().attr(await lstatAttr(await resolveSafe(rel)));
       }
       case Op.LIST: {
         const rel = r.str();
@@ -284,7 +340,7 @@ function onFrame(c: Conn, body: Uint8Array) {
           const h = c.handles.get(handle) ?? fail(Err.ESTALE);
           fd = h.fd;
         } else {
-          const abs = resolve(rel);
+          const abs = await resolveSafe(rel, true);
           ({ fd, release } = await readFd(abs));
         }
         try {
@@ -298,8 +354,11 @@ function onFrame(c: Conn, body: Uint8Array) {
         const rel = r.str();
         const flags = r.u32();
         const mode = r.u32();
-        const abs = (flags & 3) !== 0 || flags & 0x40 ? await resolveForWrite(rel) : resolve(rel);
-        const fd = await fsCall<number>((cb) => fs.open(abs, openFlags(flags), mode || 0o644, cb));
+        const abs = (flags & 3) !== 0 || flags & 0x40 ? await resolveForWrite(rel) : await resolveSafe(rel);
+        // O_NOFOLLOW: the kernel that mounts the tree follows links itself, so the last component
+        // is never meant to be one; a link there now was swapped in.
+        const fd = await fsCall<number>((cb) => fs.open(abs, openFlags(flags) | fs.constants.O_NOFOLLOW, mode || 0o644, cb));
+        await checkOpened(abs, fd);
         const st = await fsCall<fs.BigIntStats>((cb) => fs.fstat(fd, { bigint: true }, cb as any));
         const h = nextHandle++;
         c.handles.set(h, { fd, path: rel });
@@ -333,7 +392,7 @@ function onFrame(c: Conn, body: Uint8Array) {
         const handle = r.u64();
         const h = c.handles.get(handle);
         if (h) await fsCall<void>((cb) => fs.fsync(h.fd, cb as any));
-        else resolve(rel);
+        else await resolveSafe(rel, true);
         return ok();
       }
       case Op.SETATTR: {
@@ -345,6 +404,7 @@ function onFrame(c: Conn, body: Uint8Array) {
         const atimeNs = r.i64();
         const mtimeNs = r.i64();
         const abs = await resolveForWrite(rel);
+        if (handle === 0n) await resolveSafe(rel, true); // chmod, truncate and utimes follow a last-component link
         const h = handle !== 0n ? c.handles.get(handle) : undefined;
         try {
           if (mask & 1) await fs.promises.chmod(abs, mode & 0o7777);
@@ -397,7 +457,7 @@ function onFrame(c: Conn, body: Uint8Array) {
         return ok().attr(await lstatAttr(abs));
       }
       case Op.READLINK: {
-        const abs = resolve(r.str());
+        const abs = await resolveSafe(r.str());
         const t = await fs.promises.readlink(abs).catch((e) => fail(errFromCode(e.code)));
         return ok().str(linkTarget(abs, t));
       }
@@ -407,7 +467,9 @@ function onFrame(c: Conn, body: Uint8Array) {
         return ok().u64(s.bsize).u64(s.blocks).u64(s.bfree).u64(s.bavail).u64(s.files).u64(s.ffree);
       }
       case Op.LINK: {
-        const from = await resolveForWrite(r.str());
+        const fromRel = r.str();
+        const from = await resolveForWrite(fromRel);
+        await resolveSafe(fromRel, true); // macOS's link() follows a last-component link
         const to = await resolveForWrite(r.str());
         await fs.promises.link(from, to).catch((e) => fail(errFromCode(e.code)));
         return ok().attr(await lstatAttr(to));
@@ -432,6 +494,7 @@ function onFrame(c: Conn, body: Uint8Array) {
 let watcher: fs.FSWatcher | null = null;
 const pendingEvents = new Set<string>();
 let flushTimer: ReturnType<typeof setTimeout> | null = null;
+let rewatchMs = 1000;
 function startWatch() {
   if (watcher || !WATCH) return;
   try {
@@ -440,8 +503,21 @@ function startWatch() {
       const rel = String(filename).split(path.sep).join("/");
       if (rel && !fenced(rel)) queueEvent(rel);
     });
-    watcher.on("error", (e) => { console.error(`[serve] watch error: ${e}`); queueEvent(null); });
-  } catch (e) { console.error(`[serve] cannot watch ${ROOT}: ${e}`); }
+    watcher.on("error", (e) => rewatch(`watch error: ${e}`));
+    rewatchMs = 1000;
+  } catch (e) { rewatch(`cannot watch ${ROOT}: ${e}`); }
+}
+/**
+ * A watch that failed (an inotify limit, the folder replaced) is armed again with backoff, and
+ * every peer gets a RESYNC: changes made while it was down were never reported (review S3).
+ */
+function rewatch(why: string) {
+  console.error(`[serve] ${why}; watching again in ${rewatchMs} ms`);
+  try { watcher?.close(); } catch {}
+  watcher = null;
+  queueEvent(null);
+  setTimeout(() => { if ([...conns].some((c) => c.watching)) { startWatch(); if (watcher) queueEvent(null); } }, rewatchMs).unref();
+  rewatchMs = Math.min(rewatchMs * 2, 30_000);
 }
 function queueEvent(rel: string | null) {
   pendingEvents.add(rel ?? "\0resync");
@@ -467,7 +543,7 @@ Bun.listen<Conn>({
   port: PORT,
   socket: {
     open(sock) {
-      const c: Conn = { sock, split: new FrameSplitter(), out: [], handles: new Map(), watching: false, lastRecv: Date.now(), closed: false };
+      const c: Conn = { sock, split: new FrameSplitter(), out: [], handles: new Map(), watching: false, welcomed: false, lastRecv: Date.now(), closed: false };
       sock.data = c;
       sock.setNoDelay?.(true);
       conns.add(c);
@@ -488,6 +564,14 @@ setInterval(() => {
   const now = Date.now();
   for (const c of conns) if (now - c.lastRecv > 15_000) { console.error("[serve] idle connection closed"); closeConn(c); }
 }, 1000).unref();
+// Liveness from this end too (review S1): the helper calls a link dead after 1.5 s with nothing
+// inbound. While it uploads, its own pings wait behind the data it sends, so they can't prove the
+// link alive; pings from here can, and the helper answers them.
+let pingSeq = 0;
+setInterval(() => {
+  pingSeq = (pingSeq + 1) >>> 0;
+  for (const c of conns) if (c.welcomed) send(c, new Writer().u8(Kind.PING).u32(pingSeq).frame());
+}, 250).unref();
 
 if (CONTROL_PORT) {
   Bun.serve({

@@ -10,6 +10,11 @@
 //   POST /config {"mode": "blackhole"}  stop delivering in both directions, keep sockets open
 //                                       (a dropped Wi-Fi or a sleeping laptop: no FIN, no RST)
 //   POST /config {"mode": "pass"}       deliver again, late bytes first, like TCP after an outage
+//   POST /config {"rateKbps": 2000, "jitterMs": 20, "bufKB": 256}
+//                                       a link of that bandwidth each way, a random extra delay
+//                                       per chunk (order kept), and a buffer of that size per
+//                                       direction: past it the sender is paused, as a real
+//                                       link's TCP window would (0 = no limit, no jitter)
 //   POST /reset                         close every relayed connection at once (a reset link)
 //   GET  /status                        mode, delay and live connections
 
@@ -20,6 +25,9 @@ const TARGET = Number(args.target ?? 7400);
 const CONTROL = Number(args.control ?? 0);
 let rttMs = Number(args["rtt-ms"] ?? 0);
 let mode: "pass" | "blackhole" = "pass";
+let rateKbps = Number(args["rate-kbps"] ?? 0);
+let jitterMs = Number(args["jitter-ms"] ?? 0);
+let bufBytes = Number(args["buf-kb"] ?? 256) * 1024;
 
 type S = import("bun").Socket<Side>;
 interface Side {
@@ -31,13 +39,17 @@ interface Side {
   timer: ReturnType<typeof setTimeout> | null;
   closed: boolean;
   pair: Pair;
+  busyUntil: number; // when this direction's link is free again (rate limit)
+  lastDue: number; // the latest delivery time queued, so jitter never reorders bytes
+  queued: number; // bytes in queue
+  paused: boolean; // the sending socket is paused (the buffer is full)
 }
 interface Pair { client: Side; server: Side; id: number }
 const pairs = new Set<Pair>();
 let nextId = 1;
 
 function newSide(pair: Pair): Side {
-  return { sock: null, peer: null, pending: [], queue: [], out: [], timer: null, closed: false, pair };
+  return { sock: null, peer: null, pending: [], queue: [], out: [], timer: null, closed: false, pair, busyUntil: 0, lastDue: 0, queued: 0, paused: false };
 }
 
 /** Bytes that arrived on `from` go to `from.peer` after half the round trip. */
@@ -45,7 +57,22 @@ function relay(from: Side, chunk: Uint8Array) {
   if (from.closed) return;
   const to = from.peer!;
   const copy = new Uint8Array(chunk); // Bun reuses the read buffer
-  from.queue.push({ due: performance.now() + rttMs / 2, chunk: copy });
+  const now = performance.now();
+  let due = now + rttMs / 2;
+  if (rateKbps > 0) {
+    // The chunk leaves once the link has sent what is ahead of it, at the link's rate.
+    from.busyUntil = Math.max(now, from.busyUntil) + (copy.length * 8) / rateKbps; // ms
+    due = from.busyUntil + rttMs / 2;
+  }
+  if (jitterMs > 0) due += Math.random() * jitterMs;
+  due = Math.max(due, from.lastDue);
+  from.lastDue = due;
+  from.queue.push({ due, chunk: copy });
+  from.queued += copy.length;
+  if (rateKbps > 0 && from.queued > bufBytes && !from.paused && from.sock) {
+    from.paused = true;
+    (from.sock as any).pause?.();
+  }
   pump(from, to);
 }
 function pump(from: Side, to: Side) {
@@ -53,7 +80,13 @@ function pump(from: Side, to: Side) {
   if (mode === "blackhole") return; // held until the link comes back
   const now = performance.now();
   while (from.queue.length && from.queue[0]!.due <= now + 0.25) {
-    write(to, from.queue.shift()!.chunk);
+    const c = from.queue.shift()!.chunk;
+    from.queued -= c.length;
+    write(to, c);
+  }
+  if (from.paused && from.queued < bufBytes / 2 && from.sock) {
+    from.paused = false;
+    (from.sock as any).resume?.();
   }
   if (from.queue.length) {
     from.timer = setTimeout(() => { from.timer = null; pump(from, to); }, Math.max(0, from.queue[0]!.due - now));
@@ -133,20 +166,23 @@ if (CONTROL) {
     async fetch(req) {
       const u = new URL(req.url);
       if (u.pathname === "/config" && req.method === "POST") {
-        const body = (await req.json()) as { rttMs?: number; mode?: "pass" | "blackhole" };
+        const body = (await req.json()) as { rttMs?: number; mode?: "pass" | "blackhole"; rateKbps?: number; jitterMs?: number; bufKB?: number };
         if (typeof body.rttMs === "number") rttMs = body.rttMs;
+        if (typeof body.rateKbps === "number") rateKbps = body.rateKbps;
+        if (typeof body.jitterMs === "number") jitterMs = body.jitterMs;
+        if (typeof body.bufKB === "number") bufBytes = body.bufKB * 1024;
         if (body.mode === "pass" || body.mode === "blackhole") {
           mode = body.mode;
           if (mode === "pass") resumeAll();
         }
-        return Response.json({ mode, rttMs, connections: pairs.size });
+        return Response.json({ mode, rttMs, rateKbps, jitterMs, bufKB: bufBytes / 1024, connections: pairs.size });
       }
       if (u.pathname === "/reset" && req.method === "POST") {
         const n = pairs.size;
         for (const p of [...pairs]) closePair(p);
         return Response.json({ closed: n });
       }
-      if (u.pathname === "/status") return Response.json({ mode, rttMs, connections: pairs.size });
+      if (u.pathname === "/status") return Response.json({ mode, rttMs, rateKbps, jitterMs, bufKB: bufBytes / 1024, connections: pairs.size });
       return new Response("not found", { status: 404 });
     },
   });

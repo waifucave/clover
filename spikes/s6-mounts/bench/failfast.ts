@@ -4,7 +4,10 @@
 // link returns.
 //
 //   bun bench/failfast.ts --root <export> --tree <mountpoint> --helper <clover-mount> --out <json>
-//        [--rtt 20] [--policy plain] [--only a,b]
+//        [--rtt 20] [--policy plain] [--only a,b] [--slow-kbps 2000] [--slow-mib 8] [--slow-jitter-ms 20]
+//
+// --only sleep-wake is for live gate 2 alone: the owner sleeps and wakes the Mac with a read in
+// flight (never part of the default plan).
 //
 // Each scenario mounts fresh, starts a real operation, injects a fault while it is in flight,
 // then measures: how long the operation took to fail and what it saw, how fast a new operation
@@ -13,7 +16,7 @@
 
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { BUN, HERE, IS_LINUX, IS_WIN, Rig, lastOtherStuck, log, machine, mounted, parseArgs, probe, run, sleep, stuckProcesses, summary, tail, writeJson } from "./lib";
+import { BUN, HERE, IS_LINUX, IS_WIN, Rig, lastOtherStuck, log, machine, mounted, nfsFromArgs, nfsInfo, parseArgs, probe, run, sleep, stuckProcesses, summary, tail, writeJson } from "./lib";
 
 const args = parseArgs(process.argv.slice(2));
 const ROOT = path.resolve(args.root!);
@@ -30,7 +33,7 @@ const rig = new Rig({
   remoteName: "Desktop1", selfName: "Runner", selfHome: path.dirname(ROOT),
 });
 if (args["fskit-url"]) rig.fskit = { url: args["fskit-url"], mountpoint: path.resolve(args["fskit-mountpoint"]!) };
-if (args["nfs-helper"]) rig.nfs = { bin: path.resolve(args["nfs-helper"]), port: 12049, mountpoint: path.resolve(args.tree!), ac: args["nfs-ac"], dead: args["nfs-dead"] === undefined ? undefined : Number(args["nfs-dead"]) };
+if (args["nfs-helper"]) rig.nfs = nfsFromArgs(args);
 const results: Array<Record<string, unknown>> = [];
 const out: { [k: string]: any } = { spike: "S6", question: "failfast", machine: machine(), rttMs: RTT, policy: POLICY, started: new Date().toISOString(), results };
 const save = () => writeJson(OUT, out);
@@ -181,6 +184,82 @@ async function offlineAtStart() {
   log(`   list ${JSON.stringify(r.listComputer)}; back after ${r.recoverMs} ms`);
 }
 
+/**
+ * A live but slow link: a bandwidth cap with jitter and a bounded buffer (the sender is paused
+ * past it, as a TCP window would). Writing and then reading back must work with no false
+ * "offline" (S1): before the fixes, a 1 MiB frame that took longer than 1.5 s to cross dropped
+ * the link. Not run on the gate's own FSKit module, which has no status endpoint to count drops.
+ */
+async function slowLink() {
+  const kbps = Number(args["slow-kbps"] ?? 2000), mib = Number(args["slow-mib"] ?? 8), jitter = Number(args["slow-jitter-ms"] ?? 20);
+  const r: Record<string, unknown> = { scenario: "slow-link", op: `write then read ${mib} MiB`, fault: `${kbps} kbit/s each way, +0–${jitter} ms jitter, 256 KiB buffer` };
+  log(`== slow link: ${kbps} kbit/s`);
+  await rig.mount(POLICY);
+  const before = await rig.helperStats();
+  await rig.setLink({ rateKbps: kbps, jitterMs: jitter, bufKB: 256 });
+  try {
+    const file = rig.remotePath("ff-slow.bin");
+    const t0 = performance.now();
+    const w = await run([BUN, RW, "write", file, String(mib)], { timeoutMs: 600_000 });
+    r.writeMs = Math.round(performance.now() - t0);
+    r.writeOk = w.ok;
+    if (!w.ok) r.writeError = firstError(w.stderr || w.stdout);
+    const t1 = performance.now();
+    const rd = await run([BUN, RW, "read", file], { timeoutMs: 600_000 });
+    r.readMs = Math.round(performance.now() - t1);
+    r.readOk = rd.ok;
+    if (!rd.ok) r.readError = firstError(rd.stderr || rd.stdout);
+  } finally {
+    await rig.setLink({ rateKbps: 0, jitterMs: 0 });
+  }
+  const after = await rig.helperStats();
+  r.falseOffline = after && before ? after.drops - before.drops : null;
+  r.requestTimeouts = after && before ? after.timeouts - before.timeouts : null;
+  r.stuckProcesses = await stuckProcesses();
+  await rig.unmount();
+  results.push(r);
+  save();
+  log(`   write ${r.writeOk ? "ok" : "FAILED"} in ${r.writeMs} ms, read ${r.readOk ? "ok" : "FAILED"} in ${r.readMs} ms, false offline ${r.falseOffline}, timeouts ${r.requestTimeouts}`);
+}
+
+/**
+ * Live gate 2 only (--only sleep-wake): the owner puts the Mac to sleep with a mount active and
+ * a read in flight on a 20 Mbit/s link, wakes it, and presses Enter. Records whether the read
+ * finished or failed and how, whether the link dropped and came back, and whether the mount
+ * answers afterwards (review S1).
+ */
+async function sleepWake() {
+  const r: Record<string, unknown> = { scenario: "sleep-wake", op: "read 1 GiB at 20 Mbit/s", fault: "the Mac sleeps and wakes" };
+  await rig.mount(POLICY);
+  await rig.setLink({ rateKbps: 20000, jitterMs: 5, bufKB: 256 });
+  const before = await rig.helperStats();
+  const t0 = performance.now();
+  const child = Bun.spawn({ cmd: [BUN, RW, "read", rig.remotePath("big1g.bin")], stdout: "pipe", stderr: "pipe", stdin: "ignore" });
+  const so = new Response(child.stdout).text(), se = new Response(child.stderr).text();
+  console.log("\nA read is in flight. Put the Mac to sleep now (Apple menu > Sleep), wake it after about a minute, then press Enter here.");
+  for await (const _ of console) break;
+  r.enterAfterMs = Math.round(performance.now() - t0);
+  const exited = await Promise.race([child.exited.then(() => true), sleep(120_000).then(() => false)]);
+  r.readMs = Math.round(performance.now() - t0);
+  r.readFinished = exited;
+  if (exited) {
+    r.readCode = child.exitCode;
+    const o = outcome(await Promise.race([so, sleep(2000).then(() => "")]));
+    r.sawError = o.code ? `${o.code}: ${o.message}` : firstError(await Promise.race([se, sleep(2000).then(() => "")]));
+  } else await reap(child, r);
+  await rig.setLink({ rateKbps: 0, jitterMs: 0 });
+  r.afterWake = await probe("stat", rig.remotePath("clover", "package.json"), 15000);
+  const after = await rig.helperStats();
+  r.drops = after && before ? after.drops - before.drops : null;
+  r.reconnects = after && before ? after.reconnects - before.reconnects : null;
+  r.stuckProcesses = await stuckProcesses();
+  await rig.unmount();
+  r.mountGone = !(await mounted(TREE));
+  results.push(r);
+  save();
+  log(`   read ${r.readFinished ? `ended (exit ${r.readCode})` : "STILL RUNNING"} after ${r.readMs} ms; afterwards ${JSON.stringify(r.afterWake)}`);
+}
+
 /** The helper itself dies with a read in flight; the daemon cleans up and remounts. */
 async function helperCrash() {
   const r: Record<string, unknown> = { scenario: "read+helper-crash", op: OPS.read!.name, fault: "mount helper killed (SIGKILL)" };
@@ -192,6 +271,13 @@ async function helperCrash() {
   const t0 = performance.now();
   rig.helper!.proc.kill(9);
   await rig.helper!.proc.exited;
+  if (rig.nfs) {
+    // The daemon is the helper's parent: it learns of the death at once and force-unmounts, so
+    // callers in the NFS client fail now instead of waiting for macOS's dead timeout (S1).
+    const td = performance.now();
+    r.detachAtDeath = await rig.detach();
+    r.detachAtDeathMs = Math.round(performance.now() - td);
+  }
   const exited = await Promise.race([child.exited.then(() => true), sleep(HANG_MS).then(() => false)]);
   r.failMs = Math.round(performance.now() - t0);
   if (!exited) await reap(child, r);
@@ -231,11 +317,14 @@ async function main() {
     ["idle+blackhole", idleDrop],
     ["offline-at-start", offlineAtStart],
     ["read+helper-crash", helperCrash],
+    ["slow-link", slowLink],
   ];
   if (!IS_WIN) plan.splice(3, 0, ["read+freeze", () => inflight("read", "freeze")]);
   // An FSKit volume has no helper process of ours to kill; the gate script tests the module's
   // own process separately, because a dead module can leave callers stuck.
   if (rig.fskit) plan.splice(plan.findIndex(([n]) => n === "read+helper-crash"), 1);
+  if (rig.fskit) plan.splice(plan.findIndex(([n]) => n === "slow-link"), 1);
+  if (only?.includes("sleep-wake")) plan.push(["sleep-wake", sleepWake]);
   try {
     for (const [name, fn] of plan) {
       if (only && !only.includes(name)) continue;
@@ -247,7 +336,7 @@ async function main() {
   } finally {
     await rig.stopAll();
   }
-  if (rig.nfs) out.nfs = { mountedAs: rig.nfs.mountedAs, userMountError: rig.nfs.mountError };
+  if (rig.nfs) out.nfs = nfsInfo(rig);
   out.finished = new Date().toISOString();
   save();
   report();

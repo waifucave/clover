@@ -7,9 +7,13 @@ name: Spike S6 · folder-tree mounts
 # speed suites (for pushes that change nothing they measure); [s6-skip-<suite>] or
 # [s6-skip-<os>-<suite>] skips one suite, [s6-skip-macos] and [s6-skip-macfuse] the macOS jobs,
 # and [s6-skip-nfs-speed] or [s6-skip-nfs-plain] all or the plain half of the NFS speed step;
-# [s6-nfs-quick] runs a shorter NFS speed matrix ([s6-nfs-writes]: its write workloads only).
+# [s6-nfs-quick] runs a shorter NFS speed matrix ([s6-nfs-writes]: its write workloads only;
+# [s6-nfs-b1]: the three kernel attribute-cache settings of review B1, git status and tsc).
+# The netvol suite runs the Windows workloads on the tree mounted as a network volume, and again
+# with Defender's real-time scanning off.
 # [s6-win-tsc-probe] makes the Windows speed-tsc suite run ci/windows-tsc.ps1 instead of its
 # speed matrix, and [s6-win-netvol] measures tsc on the tree mounted as a network volume.
+# Manual runs (workflow_dispatch) run on the lane branch only; every job checks the ref.
 on:
   push:
     branches: [lane/j-m0]
@@ -21,6 +25,7 @@ permissions:
 jobs:
   unix-like:
     name: ${{ matrix.os }} · ${{ matrix.suite }}
+    if: github.ref == 'refs/heads/lane/j-m0'
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 170
     strategy:
@@ -36,6 +41,7 @@ jobs:
           - { os: windows, runner: windows-2025, suite: speed-plain }
           - { os: windows, runner: windows-2025, suite: speed-git }
           - { os: windows, runner: windows-2025, suite: speed-tsc }
+          - { os: windows, runner: windows-2025, suite: netvol }
     defaults:
       run:
         shell: bash
@@ -69,6 +75,8 @@ jobs:
         run: |
           $msi = "$env:RUNNER_TEMP\winfsp.msi"
           Invoke-WebRequest "https://github.com/winfsp/winfsp/releases/download/v2.1/winfsp-2.1.25156.msi" -OutFile $msi
+          $sha = (Get-FileHash $msi -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($sha -ne "073a70e00f77423e34bed98b86e600def93393ba5822204fac57a29324db9f7a") { throw "winfsp.msi has SHA-256 $sha, not the release's" }
           Start-Process msiexec.exe -ArgumentList "/i `"$msi`" /qn INSTALLLEVEL=1000" -Wait
           Get-ChildItem "C:\Program Files (x86)\WinFsp\bin" | Select-Object -First 5
           [System.Environment]::OSVersion.VersionString
@@ -90,7 +98,7 @@ jobs:
       - name: Protocol tests against the real file service
         if: env.S6_RUN == 'true' && matrix.suite == 'failfast'
         working-directory: native/mounts
-        run: CLOVER_S6_SERVE="$S6/server/serve.ts" go test ./... -count=1 -v
+        run: CLOVER_S6_SERVE="$S6/server/serve.ts" go test ./... github.com/willscott/go-nfs/helpers -count=1 -v
 
       - name: Prepare the other computer's home
         if: env.S6_RUN == 'true'
@@ -146,6 +154,18 @@ jobs:
               # git across the mount when the holder's user has another uid (see speed.ts --owner)
               bun "$S6/bench/speed.ts" "${common[@]}" --policies cached --rtts 0,20,80 --local 0 --timeout 900 \
                 --workloads git-status,git-status-minimal --owner 4242:4242 --out "$res/${{ matrix.os }}-speed-owner.json" ;;
+            netvol)
+              # Windows (review S7): every workload on the tree mounted as a network volume, against
+              # the drive-letter rows; then whether Windows Defender causes the re-reads on open.
+              mkdir -p "$res"
+              pwsh -NoProfile -Command 'Get-MpComputerStatus | Select-Object AMServiceEnabled,AntivirusEnabled,RealTimeProtectionEnabled,OnAccessProtectionEnabled,IoavProtectionEnabled,BehaviorMonitorEnabled | Format-List; Get-MpPreference | Select-Object DisableRealtimeMonitoring,ExclusionPath | Format-List' > "$res/windows-defender.txt" 2>&1 || echo "no Defender status" >> "$res/windows-defender.txt"
+              cat "$res/windows-defender.txt"
+              bun "$S6/bench/speed.ts" "${common[@]}" --policies cached --rtts 0,20 --timeout 600 --volume-prefix '\clover\tree' \
+                --workloads git-status,tsc-protocol,read-256M,write-256M,copy-out,copy-in --out "$res/${{ matrix.os }}-netvol-speed.json"
+              pwsh -NoProfile -Command 'Set-MpPreference -DisableRealtimeMonitoring $true; Start-Sleep 2; "after turning real-time protection off:"; Get-MpComputerStatus | Select-Object RealTimeProtectionEnabled,OnAccessProtectionEnabled | Format-List' >> "$res/windows-defender.txt" 2>&1 || true
+              tail -6 "$res/windows-defender.txt"
+              bun "$S6/bench/speed.ts" "${common[@]}" --policies cached --rtts 0 --local 0 --timeout 600 --volume-prefix '\clover\tree' \
+                --workloads git-status,tsc-protocol,read-256M --out "$res/${{ matrix.os }}-netvol-defender-off-speed.json" ;;
           esac
       - name: Git for Windows inside the tree (drive letter vs Mount Manager)
         if: env.S6_RUN == 'true' && matrix.os == 'windows' && matrix.suite == 'failfast'
@@ -161,7 +181,7 @@ jobs:
 
   macos:
     name: macos · ${{ matrix.runner }} · FSKit module + NFS loopback
-    if: ${{ !contains(github.event.head_commit.message, '[s6-skip-macos]') }}
+    if: ${{ github.ref == 'refs/heads/lane/j-m0' && !contains(github.event.head_commit.message, '[s6-skip-macos]') }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 170
     strategy:
@@ -183,9 +203,15 @@ jobs:
         working-directory: native/mounts
         env:
           CGO_ENABLED: "0"
-        run: CLOVER_S6_SERVE="$GITHUB_WORKSPACE/spikes/s6-mounts/server/serve.ts" go test ./... -count=1 -v
-      - name: xcodegen
-        run: brew install xcodegen >/dev/null 2>&1 || brew install xcodegen
+        run: CLOVER_S6_SERVE="$GITHUB_WORKSPACE/spikes/s6-mounts/server/serve.ts" go test ./... github.com/willscott/go-nfs/helpers -count=1 -v
+      - name: xcodegen 2.46.0 (pinned, hash-checked)
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/xcodegen.zip" https://github.com/yonaskolb/XcodeGen/releases/download/2.46.0/xcodegen.zip
+          echo "4d9e34b62172d645eed6457cac13fc222569974098ef4ee9c3368bedf0196806  $RUNNER_TEMP/xcodegen.zip" | shasum -a 256 -c -
+          unzip -q "$RUNNER_TEMP/xcodegen.zip" -d "$RUNNER_TEMP/xcodegen"
+          bin="$(dirname "$(find "$RUNNER_TEMP/xcodegen" -type f -name xcodegen -perm -u+x | head -1)")"
+          echo "$bin" >> "$GITHUB_PATH"
+          "$bin/xcodegen" --version
       - name: Build the FSKit module and try to turn it on without System Settings
         run: |
           mkdir -p "$RUNNER_TEMP/s6/results"
@@ -210,21 +236,57 @@ jobs:
           res="$RUNNER_TEMP/s6/results"; mkdir -p "$RUNNER_TEMP/s6/nfs-tree"
           common=(--root "$RUNNER_TEMP/s6/export" --tree "$RUNNER_TEMP/s6/nfs-tree" --helper none --nfs-helper "$RUNNER_TEMP/s6/clover-nfs")
           bun spikes/s6-mounts/bench/coherence.ts "${common[@]}" --policies plain --out "$res/macos-nfs-coherence.json" || echo "coherence failed"
-          # the kernel's attribute cache off, the helper's event-fed cache in front of it
+          # the helper's event-fed cache, with each of the kernel's attribute-cache settings in front of it (review B1)
           bun spikes/s6-mounts/bench/coherence.ts "${common[@]}" --policies cached --nfs-ac noac --out "$res/macos-nfs-noac-coherence.json" || echo "coherence (noac) failed"
+          bun spikes/s6-mounts/bench/coherence.ts "${common[@]}" --policies cached --nfs-ac actimeo=1 --out "$res/macos-nfs-ac1-coherence.json" || echo "coherence (actimeo=1) failed"
+          bun spikes/s6-mounts/bench/coherence.ts "${common[@]}" --policies cached --nfs-ac acregmin=0,acregmax=0,acdirmin=0,acdirmax=1 \
+            --out "$res/macos-nfs-files0-dirs1-coherence.json" || echo "coherence (acregmax=0,acdirmax=1) failed"
           bun spikes/s6-mounts/bench/failfast.ts "${common[@]}" --copy-src "$GITHUB_WORKSPACE/packages/protocol" --rtt 20 --policy plain --out "$res/macos-nfs-failfast.json"
+          # the slow link again with smaller NFS calls: 128 KiB, 4 read ahead (review S1)
+          bun spikes/s6-mounts/bench/failfast.ts "${common[@]}" --rtt 20 --policy plain --only slow-link --nfs-rsize 131072 --nfs-readahead 4 \
+            --out "$res/macos-nfs-slowlink-128k-failfast.json" || echo "slow link (128 KiB) failed"
+          # what the NFS client said about the server meanwhile ("not responding" is what raises the dialog)
+          log show --last 90m --style compact --predicate 'eventMessage CONTAINS[c] "nfs server" OR eventMessage CONTAINS[c] "not responding" OR eventMessage CONTAINS[c] "jukebox"' \
+            2>&1 | tail -300 > "$res/macos-nfs-kernel-log.txt" || true
+          grep -c . "$res/macos-nfs-kernel-log.txt" || true
+      - name: NFS loopback — what macOS writes into the other computer's folders (review S6)
+        run: |
+          bun spikes/s6-mounts/bench/volume.ts --root "$RUNNER_TEMP/s6/export" --tree "$RUNNER_TEMP/s6/nfs-tree" \
+            --nfs-helper "$RUNNER_TEMP/s6/clover-nfs" --out "$RUNNER_TEMP/s6/results/macos-nfs-volume.json" || echo "volume checks failed"
       - name: NFS loopback — speed
-        if: matrix.runner == 'xcode-27'
         env:
           S6_SKIP_NFS_PLAIN: ${{ contains(github.event.head_commit.message, '[s6-skip-nfs-plain]') }}
           S6_SKIP_NFS_SPEED: ${{ contains(github.event.head_commit.message, '[s6-skip-nfs-speed]') }}
           S6_NFS_QUICK: ${{ contains(github.event.head_commit.message, '[s6-nfs-quick]') }}
           S6_NFS_WRITES: ${{ contains(github.event.head_commit.message, '[s6-nfs-writes]') }}
+          S6_NFS_B1: ${{ contains(github.event.head_commit.message, '[s6-nfs-b1]') }}
         run: |
           [ "$S6_SKIP_NFS_SPEED" = true ] && { echo "skipped by the commit message"; exit 0; }
           res="$RUNNER_TEMP/s6/results"
           common=(--root "$RUNNER_TEMP/s6/export" --tree "$RUNNER_TEMP/s6/nfs-tree" --helper none \
             --nfs-helper "$RUNNER_TEMP/s6/clover-nfs" --copy-src "$GITHUB_WORKSPACE/packages/protocol" --rtts 0,20,80 --timeout 600)
+          if [ "$S6_NFS_B1" = true ]; then
+            # Review B1: git status and tsc at 0/20/80 ms with the helper's event-fed cache, under
+            # three kernel attribute-cache settings, counting the NFS calls the kernel makes.
+            withlocal=1
+            for tag in noac ac1 files0-dirs1; do
+              case $tag in
+                noac) ac=noac ;;
+                ac1) ac=actimeo=1 ;;
+                files0-dirs1) ac=acregmin=0,acregmax=0,acdirmin=0,acdirmax=1 ;;
+              esac
+              bun spikes/s6-mounts/bench/speed.ts "${common[@]}" --policies cached --nfs-ac "$ac" --local $withlocal \
+                --workloads git-status,tsc-protocol --out "$res/macos-speed-nfs-$tag.json"
+              withlocal=0
+            done
+            # the point the review quoted (39 s): the helper's own 1 s cache under actimeo=1, at +20 ms
+            bun spikes/s6-mounts/bench/speed.ts "${common[@]}" --policies plain --nfs-ac actimeo=1 --rtts 20 --local 0 \
+              --workloads git-status --out "$res/macos-speed-nfs-plain-ac1.json"
+            # writes behind the serial write queue (review S5)
+            bun spikes/s6-mounts/bench/speed.ts "${common[@]}" --policies cached --nfs-ac noac --rtts 0,20 --local 0 \
+              --workloads write-256M,copy-in --out "$res/macos-speed-nfs-writes.json"
+            exit 0
+          fi
           if [ "$S6_NFS_WRITES" = true ]; then
             # the write workloads only, after a change to how the export handles writes
             bun spikes/s6-mounts/bench/speed.ts "${common[@]}" --policies cached --nfs-ac noac --rtts 0,20 --local 0 \
@@ -260,7 +322,7 @@ jobs:
     # AMFI runs it, and this disposable runner adds it to FSKit's enabled list by hand (what the
     # System Settings switch writes). 5.4.0 predates macFUSE's short-read mitigation; 5.5.0 has it.
     name: macos · ${{ matrix.runner }} · macFUSE ${{ matrix.macfuse }} FSKit backend
-    if: ${{ !contains(github.event.head_commit.message, '[s6-skip-macfuse]') }}
+    if: ${{ github.ref == 'refs/heads/lane/j-m0' && !contains(github.event.head_commit.message, '[s6-skip-macfuse]') }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 170
     strategy:

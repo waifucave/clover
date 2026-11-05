@@ -55,6 +55,20 @@ for (const [os, rows] of speedByOs) {
     };
     console.log(`| ${w} | ${mounts.map(cell).join(" | ")} |`);
   }
+  if (rows.some((r) => r.nfsCallsTotal !== undefined)) {
+    console.log(`\n#### ${os}: NFS calls the kernel made, and the helper's time on them (cold / warm)\n`);
+    console.log(`| workload | ${mounts.join(" | ")} |`);
+    console.log(`| :- |${mounts.map(() => " -: |").join("")}`);
+    for (const w of workloads) {
+      const cell = (m: string) => {
+        const c = rows.find((r) => r.workload === w && r.phase === "cold" && r.where === "mount" && `${r.policy} +${r.rttMs}` === m);
+        const h = rows.find((r) => r.workload === w && r.phase === "warm" && r.where === "mount" && `${r.policy} +${r.rttMs}` === m);
+        const one = (r: any) => (r?.nfsCallsTotal === undefined ? "–" : `${r.nfsCallsTotal} (${fmt(r.nfsHelperMs)})`);
+        return `${one(c)} / ${one(h)}`;
+      };
+      console.log(`| ${w} | ${mounts.map(cell).join(" | ")} |`);
+    }
+  }
   const failures = rows.filter((r) => !r.ok && !r.timedOut);
   if (failures.length) {
     console.log(`\nFailures on ${os}:`);

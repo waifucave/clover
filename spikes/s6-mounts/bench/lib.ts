@@ -34,6 +34,31 @@ export function spawnLogged(name: string, cmd: string[], logDir: string, opts: {
   return { proc, name, logFile };
 }
 
+/**
+ * Starts a helper that announces itself with one JSON line on stdout (clover-nfs: its port and
+ * one-time export path), the way it tells the daemon over the pipe. Its log goes to the file.
+ */
+export async function spawnAnnounced(name: string, cmd: string[], logDir: string, ms = 15000): Promise<Proc & { announce: any }> {
+  fs.mkdirSync(logDir, { recursive: true });
+  const logFile = path.join(logDir, `${name}.log`);
+  const fd = fs.openSync(logFile, "a");
+  const proc = Bun.spawn({ cmd, stdout: "pipe", stderr: fd, stdin: "ignore" });
+  fs.closeSync(fd);
+  const reader = (proc.stdout as ReadableStream<Uint8Array>).getReader();
+  let buf = "";
+  const end = Date.now() + ms;
+  while (!buf.includes("\n")) {
+    const left = end - Date.now();
+    if (left <= 0) { proc.kill(9); throw new Error(`${name} announced nothing in ${ms} ms: ${tail(logFile)}`); }
+    const r = await Promise.race([reader.read(), sleep(left).then(() => ({ done: false, value: undefined, late: true }))]) as any;
+    if (r.late) continue;
+    if (r.done) throw new Error(`${name} exited before announcing: ${tail(logFile)}`);
+    buf += new TextDecoder().decode(r.value);
+  }
+  (async () => { try { while (!(await reader.read()).done) {} } catch {} })(); // keep the pipe drained
+  return { proc, name, logFile, announce: JSON.parse(buf.slice(0, buf.indexOf("\n"))) };
+}
+
 export async function waitPort(port: number, ms = 15000) {
   const end = Date.now() + ms;
   while (Date.now() < end) {
@@ -99,7 +124,11 @@ export class Rig {
   // ac: the kernel's attribute caching for the NFS mount (default: noac for nocache, else actimeo=1).
   // With noac every stat reaches the helper on the loopback address, whose own cache the holder's
   // events keep fresh, so the kernel never works from an old size.
-  nfs?: { bin: string; port: number; mountpoint: string; sudo?: boolean; mountedAs?: string; mountError?: string; ac?: string; dead?: number };
+  // port and exportPath come from the helper's announcement, fresh for every helper it starts.
+  nfs?: {
+    bin: string; mountpoint: string; port?: number; exportPath?: string; mountedAs?: string; mountError?: string;
+    ac?: string; dead?: number; timeo?: number; rsize?: number; readahead?: number; extra?: string; treeRootMode?: string; mountArgs?: string;
+  };
   constructor(public o: { root: string; tree: string; helperBin: string; logs: string; remoteName: string; selfName: string; selfHome: string }) {}
 
   async startService(extra: string[] = []) {
@@ -118,7 +147,7 @@ export class Rig {
     await waitPort(PORTS.link);
     await waitPort(PORTS.linkControl);
   }
-  async setLink(cfg: { rttMs?: number; mode?: "pass" | "blackhole" }) { return http(PORTS.linkControl, "/config", cfg); }
+  async setLink(cfg: { rttMs?: number; mode?: "pass" | "blackhole"; rateKbps?: number; jitterMs?: number; bufKB?: number }) { return http(PORTS.linkControl, "/config", cfg); }
   async resetLink() { return http(PORTS.linkControl, "/reset", {}); }
   async serviceStats(): Promise<Record<string, number>> { return http(PORTS.serviceControl, "/stats"); }
   async resetServiceStats() { return http(PORTS.serviceControl, "/stats/reset", {}); }
@@ -165,37 +194,50 @@ export class Rig {
 
   async mountNfs(policy: string) {
     const n = this.nfs!;
+    // The tree's root is the user's alone (0700), so no other local user can reach the mounts in it.
+    const root = path.dirname(n.mountpoint);
     fs.mkdirSync(n.mountpoint, { recursive: true });
-    this.helper = spawnLogged("helper", [n.bin, "--listen", `127.0.0.1:${n.port}`, "--remote", `${this.o.remoteName}=127.0.0.1:${PORTS.link}`,
+    fs.chmodSync(root, 0o700);
+    n.treeRootMode = (fs.statSync(root).mode & 0o777).toString(8);
+    // The helper picks its port and a one-time export path, and tells us over its stdout.
+    const h = await spawnAnnounced("helper", [n.bin, "--remote", `${this.o.remoteName}=127.0.0.1:${PORTS.link}`,
       "--policy", policy, "--status", `127.0.0.1:${PORTS.helperStatus}`], this.o.logs);
-    await waitPort(n.port);
-    // soft + short timeo: if the helper itself dies, calls fail instead of hanging; nobrowse keeps
-    // the volume out of Finder; actimeo matches the plain policy's 1 s; noresvport because a user
-    // can't bind a reserved port (mount_nfs's default), which is what a mount as the user needs.
+    this.helper = h;
+    n.port = h.announce.port;
+    n.exportPath = h.announce.export;
+    // soft + dumbtimer + a fixed timeo of 11 s, above the helper's own bound for a call whose
+    // answer has not started arriving (10 s): the client doesn't give up on a live call, because
+    // the helper answers first, with data or with EIO once the far computer is gone. (Without
+    // dumbtimer the client's estimator, trained on sub-millisecond answers from the helper's
+    // cache, timed big reads out after 443 ms.) A slow link can still keep one call's answer
+    // longer than that; failfast.ts's slow-link case measures what the client does then. If the
+    // helper itself dies, the daemon force-unmounts at once (failfast.ts), and deadtimeout is the
+    // backstop that frees callers stuck in the NFS client. nobrowse keeps the volume out of
+    // Finder; noresvport because a user can't bind a reserved port (mount_nfs's default).
     const ac = n.ac ?? (policy === "nocache" ? "noac" : "actimeo=1");
-    // deadtimeout: if the helper itself stops answering, macOS marks the mount dead after 5 s and
-    // forcibly unmounts it, which frees callers stuck in the NFS client (CI saw a read survive
-    // SIGKILL for 20 minutes without it); the daemon then remounts.
     const dead = n.dead ?? 5;
-    const opts = `vers=3,tcp,port=${n.port},mountport=${n.port},nolocks,locallocks,soft,intr,timeo=10,retrans=2,${dead ? `deadtimeout=${dead},` : ""}rsize=1048576,wsize=1048576,readahead=16,nobrowse,noresvport,${ac}`;
-    const cmd = ["/sbin/mount_nfs", "-o", opts, "127.0.0.1:/", n.mountpoint];
-    if (!n.sudo) {
-      const r = await run(cmd, { timeoutMs: 30000 });
-      if (r.ok) { n.mountedAs = "user"; return; }
+    const timeo = n.timeo ?? 110;
+    const rsize = n.rsize ?? 1048576;
+    const opts = `vers=3,tcp,port=${n.port},mountport=${n.port},nolocks,locallocks,soft,intr,dumbtimer,timeo=${timeo},retrans=2,` +
+      `${dead ? `deadtimeout=${dead},` : ""}rsize=${rsize},wsize=${rsize},readahead=${n.readahead ?? 16},nobrowse,noresvport,${ac}${n.extra ? `,${n.extra}` : ""}`;
+    const r = await run(["/sbin/mount_nfs", "-o", opts, `127.0.0.1:${n.exportPath}`, n.mountpoint], { timeoutMs: 30000 });
+    if (!r.ok) {
+      // The helper accepts one MOUNT. If ours failed, someone may have used it first: never retry
+      // against the same helper (the daemon starts a new one, with a new export path).
       n.mountError = (r.stderr || r.stdout).trim().slice(0, 300);
-      log(`mount_nfs as the user failed: ${n.mountError}; trying sudo`);
-      n.sudo = true;
+      throw new Error(`mount_nfs failed; not mounting with this helper again: ${n.mountError}`);
     }
-    const r = await run(["sudo", ...cmd], { timeoutMs: 30000 });
-    if (!r.ok) throw new Error(`mount_nfs failed: ${(r.stderr || r.stdout).trim()}`);
-    n.mountedAs = "root (sudo)";
+    n.mountedAs = "user";
+    // What the kernel made of the options (acregmin/acregmax and the rest), for the result files.
+    const m = await run(["nfsstat", "-m"], { timeoutMs: 10000 });
+    n.mountArgs = (m.stdout || m.stderr).trim().slice(0, 1500);
   }
 
   /** What the daemon does after its helper died: take the dead mount away so it can remount. */
   async detach() {
     if (IS_LINUX) return (await run(["fusermount3", "-u", "-z", this.o.tree], { timeoutMs: 5000 })).ok;
     if (process.platform === "darwin" && !this.nfs && !this.fskit) return (await run(["/sbin/umount", "-f", this.o.tree], { timeoutMs: 15000 })).ok;
-    if (this.nfs) return (await run([...(this.nfs.sudo ? ["sudo"] : []), "/sbin/umount", "-f", this.nfs.mountpoint], { timeoutMs: 15000 })).ok;
+    if (this.nfs) return (await run(["/sbin/umount", "-f", this.nfs.mountpoint], { timeoutMs: 15000 })).ok;
     return true;
   }
 
@@ -203,8 +245,8 @@ export class Rig {
     if (this.nfs) {
       const h = this.helper;
       this.helper = undefined;
-      await run([...(this.nfs.sudo ? ["sudo"] : []), "/sbin/umount", this.nfs.mountpoint], { timeoutMs: 15000 });
-      if (await mounted(this.nfs.mountpoint)) await run([...(this.nfs.sudo ? ["sudo"] : []), "/sbin/umount", "-f", this.nfs.mountpoint], { timeoutMs: 15000 });
+      await run(["/sbin/umount", this.nfs.mountpoint], { timeoutMs: 15000 });
+      if (await mounted(this.nfs.mountpoint)) await run(["/sbin/umount", "-f", this.nfs.mountpoint], { timeoutMs: 15000 });
       if (h) { h.proc.kill(9); await h.proc.exited; }
       return;
     }
@@ -294,6 +336,30 @@ export function machine() {
   return {
     os: process.platform, release: os.release(), arch: process.arch, cpus: os.cpus().length,
     cpu: os.cpus()[0]?.model, memGB: Math.round(os.totalmem() / 2 ** 30), bun: Bun.version,
+    // Provenance: which commit and CI run produced the file.
+    commit: process.env.GITHUB_SHA, run: process.env.GITHUB_RUN_ID, runAttempt: process.env.GITHUB_RUN_ATTEMPT, job: process.env.GITHUB_JOB,
+  };
+}
+
+/** What a result file records about the NFS mount. */
+export function nfsInfo(rig: Rig) {
+  const n = rig.nfs!;
+  return {
+    mountedAs: n.mountedAs, userMountError: n.mountError, ac: n.ac, timeo: n.timeo ?? 110, deadtimeout: n.dead ?? 5, dumbtimer: true,
+    rsize: n.rsize ?? 1048576, readahead: n.readahead ?? 16, extra: n.extra, treeRootMode: n.treeRootMode, exportPathKind: "one-time token", mountArgs: n.mountArgs,
+  };
+}
+
+/** The NFS rig from a check's command-line arguments (macOS). */
+export function nfsFromArgs(args: Record<string, string>): Rig["nfs"] {
+  if (!args["nfs-helper"]) return undefined;
+  return {
+    bin: path.resolve(args["nfs-helper"]), mountpoint: path.resolve(args.tree!), ac: args["nfs-ac"],
+    dead: args["nfs-dead"] === undefined ? undefined : Number(args["nfs-dead"]),
+    timeo: args["nfs-timeo"] === undefined ? undefined : Number(args["nfs-timeo"]),
+    rsize: args["nfs-rsize"] === undefined ? undefined : Number(args["nfs-rsize"]),
+    readahead: args["nfs-readahead"] === undefined ? undefined : Number(args["nfs-readahead"]),
+    extra: args["nfs-extra"],
   };
 }
 

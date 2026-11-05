@@ -1,3 +1,5 @@
+// Modified for Clover's spike S6 (native/mounts/third_party/README.md): a refused MOUNT answers
+// without a root handle.
 package nfs
 
 import (
@@ -39,10 +41,10 @@ func onMount(ctx context.Context, w *response, userHandle Handler) error {
 		return err
 	}
 
-	rootHndl := userHandle.ToHandle(handle, []string{})
-
+	// Clover: a refused MOUNT has no file system to hand out; upstream made a handle for it
+	// anyway and crashed on the nil file system.
 	if status == MountStatusOk {
-		_ = xdr.Write(writer, rootHndl)
+		_ = xdr.Write(writer, userHandle.ToHandle(handle, []string{}))
 		_ = xdr.Write(writer, flavors)
 	}
 	return w.Write(writer.Bytes())

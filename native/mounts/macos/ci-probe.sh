@@ -4,6 +4,8 @@
 # stops a mount. Answers "can FSKit be tested at all without the System Settings step?"
 #   ci-probe.sh <out dir>
 set -uo pipefail
+# It installs and registers a module, edits FSKit's enabled list and kills fskitd: never on a person's Mac.
+[ "${GITHUB_ACTIONS:-}" = true ] || { echo "ci-probe.sh runs only on a disposable CI runner (GITHUB_ACTIONS=true)" >&2; exit 2; }
 out="$(cd "$1" && pwd)"
 here="$(cd "$(dirname "$0")" && pwd)"
 s6="$(cd "$here/../../../spikes/s6-mounts" && pwd)"

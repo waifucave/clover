@@ -13,7 +13,7 @@ over that computer's link by the helper here. The report is
 | `fuselinux/` | Linux: FUSE through go-fuse (pure Go, no cgo, needs `fusermount3`) |
 | `cgofs/` | Windows: WinFsp's FUSE layer through cgofuse (no cgo: it loads WinFsp's DLL). Also macOS with cgo against macFUSE, which CI uses to drive FSKit through macFUSE's FSKit backend |
 | `nfsloop/`, `cmd/clover-nfs/` | macOS: one computer's home as an NFSv3 export on the loopback address, for the kernel's NFS client |
-| `third_party/go-nfs/` | go-nfs v0.0.4 with four patches (see `third_party/README.md`) |
+| `third_party/go-nfs/` | go-nfs v0.0.4 with patches to five files (see `third_party/README.md`) |
 | `cmd/clover-mount/` | the helper: one process mounts the whole tree (or, with `--single`, one computer's home) |
 | `macos/` | macOS: the `clovertree` FSKit module (Swift), its host app, the CI probe and the live-gate script |
 
@@ -42,10 +42,15 @@ clover-mount --mountpoint /run/user/$UID/clover --self Me=$HOME \
              --remote Desktop1=127.0.0.1:7400 --policy cached                    # Linux
 clover-mount.exe --mountpoint T: --volume-prefix \clover\tree --remote Desktop1=127.0.0.1:7400  # Windows: a network volume
 clover-mount.exe --mountpoint "*" --single --volume-prefix \clover\Desktop1 --remote Desktop1=127.0.0.1:7400  # one computer, \\clover\Desktop1
-clover-nfs --listen 127.0.0.1:12049 --remote Desktop1=127.0.0.1:7400 --policy cached       # macOS, then, as the user:
-mount_nfs -o vers=3,tcp,port=12049,mountport=12049,nolocks,locallocks,soft,intr,timeo=10,retrans=2,deadtimeout=5,noresvport,nobrowse,noac 127.0.0.1:/ ~/tree/home/Desktop1
+clover-nfs --remote Desktop1=127.0.0.1:7400 --policy cached      # macOS: prints {"port":N,"export":"/<token>"}, then, as the user:
+mount_nfs -o vers=3,tcp,port=N,mountport=N,nolocks,locallocks,soft,intr,dumbtimer,timeo=110,retrans=2,deadtimeout=5,rsize=1048576,wsize=1048576,readahead=16,nobrowse,noresvport,noac 127.0.0.1:/<token> ~/tree/home/Desktop1
 mount -F -t clovertree clovertree://127.0.0.1:7400/Desktop1 ~/clover-tree        # macOS FSKit, once enabled
 ```
+
+On macOS, clover-nfs listens on an ephemeral loopback port and accepts exactly one MOUNT, of a
+one-time random export path; it refuses every other MOUNT, whatever path it asks for. The
+port and the path reach the mounting process on the helper's stdout, the daemon's pipe in M2.
+Who else can reach the export, and what M2 adds, is in the report (edit 1).
 
 Policies: `nocache` (every lookup crosses the link), `plain` (1 s caching, like stock FUSE file
 systems) and `cached` (cache until the holder reports a change, plus a breadth-first prefetch

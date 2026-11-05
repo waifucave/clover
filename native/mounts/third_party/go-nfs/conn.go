@@ -1,6 +1,7 @@
 // Modified for Clover's spike S6 (native/mounts/third_party/README.md): a computer that is offline
-// answers NFS3ERR_IO, whatever status the handler chose (offlineAsIO); and the requests of one
-// connection are handled concurrently (serve, readRequestHeader).
+// answers NFS3ERR_IO, whatever status the handler chose (offlineAsIO); the requests of one
+// connection are handled concurrently, writes in order on their own queue (serve,
+// readRequestHeader); and every NFS procedure served is counted (Calls, CallNanos).
 package nfs
 
 import (
@@ -12,7 +13,9 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"sync/atomic"
 	"syscall"
+	"time"
 
 	xdr2 "github.com/rasky/go-xdr/xdr2"
 	"github.com/willscott/go-nfs-client/nfs/rpc"
@@ -57,11 +60,26 @@ func (c *conn) serve(ctx context.Context) {
 	// it. Each request now runs on its own goroutine, at most maxInflight at a time; replies go
 	// out through writeSerializer as before, each whole, in the order they finish.
 	//
-	// WRITE and COMMIT still run in line, as upstream ran everything. With them concurrent too,
-	// macOS's client let a writer run on for 18-29 s after the far computer dropped before it
-	// reported the error; in line, the writer meets it within the link's bound.
+	// WRITE and COMMIT run one at a time, in arrival order, on a queue of their own, while the
+	// loop goes on reading other calls. With writes concurrent, macOS's client let a writer run
+	// on for 18-29 s after the far computer dropped before it reported the error; one at a time,
+	// the writer meets it within the link's bound.
 	const maxInflight = 64
 	sem := make(chan struct{}, maxInflight)
+	writes := make(chan *response, maxInflight)
+	go func() {
+		for {
+			select {
+			case w := <-writes:
+				if !c.serveOne(connCtx, w) {
+					cancel()
+					return
+				}
+			case <-connCtx.Done():
+				return
+			}
+		}
+	}()
 	bio := bufio.NewReader(c.Conn)
 	for {
 		w, err := c.readRequestHeader(connCtx, bio)
@@ -74,7 +92,9 @@ func (c *conn) serve(ctx context.Context) {
 			return
 		}
 		if h := w.req.Header; h.Prog == nfsServiceID && (h.Proc == uint32(NFSProcedureWrite) || h.Proc == uint32(NFSProcedureCommit)) {
-			if !c.serveOne(connCtx, w) {
+			select {
+			case writes <- w:
+			case <-connCtx.Done():
 				return
 			}
 			continue
@@ -91,11 +111,23 @@ func (c *conn) serve(ctx context.Context) {
 	}
 }
 
+// Calls counts the NFS procedures served, indexed by NFSProcedure, and CallNanos sums the time
+// spent handling each (Clover: the spike's per-workload counts).
+var (
+	Calls     [NFSProcedureCommit + 1]atomic.Int64
+	CallNanos [NFSProcedureCommit + 1]atomic.Int64
+)
+
 // serveOne handles one request and sends its reply. It closes the connection and answers false
 // when the connection can't go on.
 func (c *conn) serveOne(ctx context.Context, w *response) bool {
 	Log.Tracef("request: %v", w.req)
+	start := time.Now()
 	err := c.handle(ctx, w)
+	if h := w.req.Header; h.Prog == nfsServiceID && h.Proc <= uint32(NFSProcedureCommit) {
+		Calls[h.Proc].Add(1)
+		CallNanos[h.Proc].Add(int64(time.Since(start)))
+	}
 	respErr := w.finish(ctx)
 	if err != nil {
 		Log.Errorf("error handling req: %v", err)

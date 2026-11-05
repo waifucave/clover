@@ -21,7 +21,7 @@
 
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { BUN, HERE, IS_WIN, Rig, dropCaches, log, machine, parseArgs, run, summary, writeJson } from "./lib";
+import { BUN, HERE, IS_WIN, Rig, dropCaches, log, machine, nfsFromArgs, nfsInfo, parseArgs, run, summary, writeJson } from "./lib";
 
 const args = parseArgs(process.argv.slice(2));
 const ROOT = path.resolve(args.root!);
@@ -68,7 +68,7 @@ const rig = new Rig({
   remoteName: "Desktop1", selfName: "Runner", selfHome: path.dirname(ROOT),
 });
 if (args["fskit-url"]) rig.fskit = { url: args["fskit-url"], mountpoint: path.resolve(args["fskit-mountpoint"]!) };
-if (args["nfs-helper"]) rig.nfs = { bin: path.resolve(args["nfs-helper"]), port: 12049, mountpoint: path.resolve(args.tree!), ac: args["nfs-ac"], dead: args["nfs-dead"] === undefined ? undefined : Number(args["nfs-dead"]) };
+if (args["nfs-helper"]) rig.nfs = nfsFromArgs(args);
 
 async function once(w: Workload, base: string): Promise<Omit<Row, "workload" | "where" | "phase">> {
   const tag = `${process.pid}-${seq++}`;
@@ -83,6 +83,19 @@ function sumOps(s: Record<string, number>) {
   let n = 0;
   for (const [k, v] of Object.entries(s)) if (/^[A-Z]+$/.test(k) && k !== "EVENTS") n += v;
   return n;
+}
+
+/** The NFS calls the kernel made during one run (clover-nfs counts them), and the helper's time on them. */
+function nfsDelta(before: any, after: any): { nfsCalls?: Record<string, number>; nfsCallsTotal?: number; nfsHelperMs?: number } {
+  if (!after?.nfsCalls) return {};
+  const calls: Record<string, number> = {};
+  let total = 0, nanos = 0;
+  for (const [k, v] of Object.entries(after.nfsCalls as Record<string, number>)) {
+    const d = v - (before?.nfsCalls?.[k] ?? 0);
+    if (d > 0) { calls[k] = d; total += d; }
+    nanos += (after.nfsNanos?.[k] ?? 0) - (before?.nfsNanos?.[k] ?? 0);
+  }
+  return { nfsCalls: calls, nfsCallsTotal: total, nfsHelperMs: Math.round(nanos / 1e6) };
 }
 
 async function main() {
@@ -114,15 +127,19 @@ async function main() {
           await rig.mount(policy, HELPER_ARGS);
           const base = rig.remotePath();
           await rig.resetServiceStats();
+          const h0 = await rig.helperStats();
           const cold = await once(w, base);
           const coldOps = await rig.serviceStats();
           const coldHelper = await rig.helperStats();
-          rows.push({ workload: label(w), where: "mount", policy, rttMs: rtt, phase: "cold", requests: sumOps(coldOps), ops: coldOps, helper: coldHelper, ...cold });
+          // Over NFS the kernel's attribute caching is part of the setting: "cached, noac".
+          const pl = rig.nfs?.ac ? `${policy}, ${rig.nfs.ac}` : policy;
+          rows.push({ workload: label(w), where: "mount", policy: pl, rttMs: rtt, phase: "cold", requests: sumOps(coldOps), ops: coldOps, helper: coldHelper, ...nfsDelta(h0, coldHelper), ...cold });
           await rig.resetServiceStats();
           const warm = await once(w, base);
           const warmOps = await rig.serviceStats();
-          rows.push({ workload: label(w), where: "mount", policy, rttMs: rtt, phase: "warm", requests: sumOps(warmOps), ops: warmOps, ...warm });
-          log(`${policy} +${rtt}ms ${label(w)}: cold ${cold.ms} ms (${sumOps(coldOps)} req), warm ${warm.ms} ms (${sumOps(warmOps)} req)` +
+          const warmHelper = await rig.helperStats();
+          rows.push({ workload: label(w), where: "mount", policy: pl, rttMs: rtt, phase: "warm", requests: sumOps(warmOps), ops: warmOps, ...nfsDelta(coldHelper, warmHelper), ...warm });
+          log(`${pl} +${rtt}ms ${label(w)}: cold ${cold.ms} ms (${sumOps(coldOps)} req), warm ${warm.ms} ms (${sumOps(warmOps)} req)` +
             (cold.ok ? "" : ` COLD FAILED ${cold.err}`) + (warm.ok ? "" : ` WARM FAILED ${warm.err}`));
           save();
           await rig.unmount();
@@ -132,7 +149,7 @@ async function main() {
   } finally {
     await rig.stopAll();
   }
-  if (rig.nfs) result.nfs = { mountedAs: rig.nfs.mountedAs, userMountError: rig.nfs.mountError };
+  if (rig.nfs) result.nfs = nfsInfo(rig);
   result.finished = new Date().toISOString();
   save();
   report();

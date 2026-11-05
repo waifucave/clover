@@ -21,7 +21,8 @@ type Config struct {
 	Name        string        // the computer's name, for logs
 	PingEvery   time.Duration // send a PING this often
 	DeadAfter   time.Duration // silence longer than this means the computer dropped
-	OpTimeout   time.Duration // a request on a live link fails after this
+	OpTimeout   time.Duration // a request fails once the link carried no answer bytes for this long
+	OpCap       time.Duration // the longest a request waits while the link keeps delivering answers
 	DialTimeout time.Duration // connect plus HELLO/WELCOME
 	RedialMin   time.Duration
 	RedialMax   time.Duration
@@ -37,6 +38,9 @@ func (c *Config) defaults() {
 	}
 	if c.OpTimeout == 0 {
 		c.OpTimeout = 10 * time.Second
+	}
+	if c.OpCap == 0 {
+		c.OpCap = 60 * time.Second
 	}
 	if c.DialTimeout == 0 {
 		c.DialTimeout = time.Second
@@ -68,10 +72,29 @@ type call struct {
 type link struct {
 	gen     uint64
 	conn    net.Conn
-	sendq   chan []byte
+	sendq   chan outFrame
 	quit    chan struct{}
 	welcome Welcome
+
+	// At most one PING and one PONG wait in sendq: on a saturated uplink they queue behind the
+	// data, and an uncoalesced ping every 250 ms would fill the queue on a long upload.
+	pingQueued atomic.Bool
+	pongQueued atomic.Bool
+	lastSent   atomic.Int64 // unix nanos of the writer's last chunk on the wire
 }
+
+// outFrame is a frame for the writer; sent, when set, is closed once it is on the wire, and
+// once, when set, is cleared then (a coalesced PING or PONG).
+type outFrame struct {
+	b    []byte
+	sent chan struct{}
+	once *atomic.Bool
+}
+
+// writeChunk bounds one write: each chunk gets the liveness bound to leave, so a large frame on
+// a slow link only fails when the link stops taking bytes (review S1), not when the whole frame
+// takes longer than 1.5 s, which a 1 MiB frame does below about 6 Mbit/s.
+const writeChunk = 32 << 10
 
 // Client is one computer's link. It is safe for concurrent use.
 type Client struct {
@@ -85,7 +108,9 @@ type Client struct {
 	dialing bool
 	closed  bool
 
-	lastRecv atomic.Int64 // unix nanos of the last inbound frame on cur
+	lastRecv atomic.Int64 // unix nanos of the last inbound bytes on cur
+	rxBytes  atomic.Int64 // inbound bytes, all links
+	rxCtl    atomic.Int64 // of those, the bytes of PING and PONG frames
 	online   atomic.Bool
 
 	// Hooks, set before Start. They run on the client's own goroutines, never on the reader:
@@ -93,6 +118,7 @@ type Client struct {
 	// that only the reader can deliver (Linux's inval_inode waits on the page locks of a write
 	// in flight on the same file), which would stall the link until the watchdog called it dead.
 	OnEvent     func(typ uint8, path string)
+	OnConnect   func(reconnect bool)                  // after every successful dial, the first included
 	OnReconnect func(w Welcome, instanceChanged bool) // after every reconnect (caches are stale)
 	OnOffline   func(reason string)
 
@@ -197,6 +223,9 @@ func (c *Client) dial() error {
 		_ = tc.SetNoDelay(true)
 		_ = tc.SetKeepAlive(false) // liveness is ours, not TCP's
 	}
+	// Liveness counts bytes, not whole frames: a 1 MiB reply on a slow link takes seconds to
+	// arrive, and the watchdog must not call the link dead while it does (review S1).
+	conn = &progressConn{Conn: conn, last: &c.lastRecv, n: &c.rxBytes}
 	_ = conn.SetDeadline(time.Now().Add(c.cfg.DialTimeout))
 	if _, err := conn.Write(wire.NewWriter(wire.KindHello, 0).U32(wire.Version).Str("clover-mount").Frame()); err != nil {
 		conn.Close()
@@ -233,7 +262,8 @@ func (c *Client) dial() error {
 		return errors.New("closed")
 	}
 	c.gen++
-	l := &link{gen: c.gen, conn: conn, sendq: make(chan []byte, 1024), quit: make(chan struct{}), welcome: w}
+	l := &link{gen: c.gen, conn: conn, sendq: make(chan outFrame, 1024), quit: make(chan struct{}), welcome: w}
+	l.lastSent.Store(time.Now().UnixNano())
 	c.cur = l
 	c.lastRecv.Store(time.Now().UnixNano())
 	reconnect := c.lastInstance != ""
@@ -245,6 +275,9 @@ func (c *Client) dial() error {
 	go c.writer(l)
 	go c.watchdog(l)
 	c.online.Store(true)
+	if c.OnConnect != nil {
+		c.OnConnect(reconnect)
+	}
 	if reconnect {
 		c.Reconnects.Add(1)
 		c.cfg.Logf("[%s] link back (service %s, restarted: %v)", c.cfg.Name, short(w.Instance), changed)
@@ -256,6 +289,26 @@ func (c *Client) dial() error {
 	}
 	return nil
 }
+
+// progressConn records when bytes last arrived, and how many.
+type progressConn struct {
+	net.Conn
+	last *atomic.Int64
+	n    *atomic.Int64
+}
+
+func (p *progressConn) Read(b []byte) (int, error) {
+	n, err := p.Conn.Read(b)
+	if n > 0 {
+		p.last.Store(time.Now().UnixNano())
+		p.n.Add(int64(n))
+	}
+	return n, err
+}
+
+// answerBytes counts inbound bytes that are not pings or pongs: answers and events, including
+// a frame still arriving. A request's clock runs only while this stands still (see Do).
+func (c *Client) answerBytes() int64 { return c.rxBytes.Load() - c.rxCtl.Load() }
 
 func short(s string) string {
 	if len(s) > 8 {
@@ -362,8 +415,17 @@ func (c *Client) reader(l *link, br *bufio.Reader) {
 				c.QueueEvent(typ, p) // never block the reader (see OnEvent)
 			}
 		case wire.KindPing:
-			c.enqueue(l, wire.NewWriter(wire.KindPong, id).Frame())
+			c.rxCtl.Add(int64(4 + len(body)))
+			// Never block the reader on a full queue: the data in it proves the link alive.
+			if l.pongQueued.CompareAndSwap(false, true) {
+				select {
+				case l.sendq <- outFrame{b: wire.NewWriter(wire.KindPong, id).Frame(), once: &l.pongQueued}:
+				default:
+					l.pongQueued.Store(false)
+				}
+			}
 		case wire.KindPong:
+			c.rxCtl.Add(int64(4 + len(body)))
 		default:
 			c.drop(l.gen, fmt.Sprintf("unknown frame kind %d", kind))
 			return
@@ -372,24 +434,36 @@ func (c *Client) reader(l *link, br *bufio.Reader) {
 }
 
 func (c *Client) writer(l *link) {
-	bw := bufio.NewWriterSize(l.conn, 256<<10)
+	bw := bufio.NewWriterSize(l.conn, writeChunk)
 	for {
 		select {
 		case <-l.quit:
 			return
 		case f := <-l.sendq:
-			// A blackholed link fills the socket buffer; the deadline keeps us from blocking past
-			// the liveness bound.
-			_ = l.conn.SetWriteDeadline(time.Now().Add(c.cfg.DeadAfter))
-			if _, err := bw.Write(f); err != nil {
-				c.drop(l.gen, "write: "+err.Error())
-				return
+			// A blackholed link fills the socket buffer; a deadline per chunk keeps us from
+			// blocking past the liveness bound once the link stops taking bytes.
+			for off := 0; off < len(f.b); off += writeChunk {
+				end := min(off+writeChunk, len(f.b))
+				_ = l.conn.SetWriteDeadline(time.Now().Add(c.cfg.DeadAfter))
+				if _, err := bw.Write(f.b[off:end]); err != nil {
+					c.drop(l.gen, "write: "+err.Error())
+					return
+				}
+				l.lastSent.Store(time.Now().UnixNano())
 			}
 			if len(l.sendq) == 0 {
+				_ = l.conn.SetWriteDeadline(time.Now().Add(c.cfg.DeadAfter))
 				if err := bw.Flush(); err != nil {
 					c.drop(l.gen, "flush: "+err.Error())
 					return
 				}
+				l.lastSent.Store(time.Now().UnixNano())
+			}
+			if f.once != nil {
+				f.once.Store(false)
+			}
+			if f.sent != nil {
+				close(f.sent)
 			}
 		}
 	}
@@ -409,24 +483,33 @@ func (c *Client) watchdog(l *link) {
 				c.drop(l.gen, fmt.Sprintf("silent for %v", silent.Round(time.Millisecond)))
 				return
 			}
-			if now.Sub(lastPing) >= c.cfg.PingEvery {
+			if now.Sub(lastPing) >= c.cfg.PingEvery && l.pingQueued.CompareAndSwap(false, true) {
 				seq++
 				lastPing = now
-				c.enqueue(l, wire.NewWriter(wire.KindPing, seq).Frame())
+				c.enqueueOut(l, outFrame{b: wire.NewWriter(wire.KindPing, seq).Frame(), once: &l.pingQueued})
 			}
 		}
 	}
 }
 
-func (c *Client) enqueue(l *link, frame []byte) bool {
-	select {
-	case l.sendq <- frame:
-		return true
-	case <-l.quit:
-		return false
-	case <-time.After(c.cfg.DeadAfter):
-		c.drop(l.gen, "send queue stuck")
-		return false
+func (c *Client) enqueueOut(l *link, f outFrame) bool {
+	t := time.NewTimer(c.cfg.DeadAfter)
+	defer t.Stop()
+	for {
+		select {
+		case l.sendq <- f:
+			return true
+		case <-l.quit:
+			return false
+		case <-t.C:
+			// A full queue is a slow link while the writer keeps putting bytes on the wire; it
+			// is stuck only when the writer has written nothing for the liveness bound.
+			if time.Since(time.Unix(0, l.lastSent.Load())) > c.cfg.DeadAfter {
+				c.drop(l.gen, "send queue stuck")
+				return false
+			}
+			t.Reset(c.cfg.DeadAfter)
+		}
 	}
 }
 
@@ -457,20 +540,42 @@ func (c *Client) Do(op uint8, build func(w *wire.Writer)) (Response, wire.Errno)
 	if build != nil {
 		build(w)
 	}
-	if !c.enqueue(l, w.Frame()) {
+	sent := make(chan struct{})
+	if !c.enqueueOut(l, outFrame{b: w.Frame(), sent: sent}) {
 		c.forget(id)
 		return Response{}, wire.EHOSTDOWN
 	}
+	// The request's own clock starts once it is on the wire: time spent queued behind other
+	// requests' data on a slow link is the link's, and the watchdog bounds that (review S1).
+	select {
+	case <-sent:
+	case <-cl.done:
+	case <-l.quit:
+	}
+	// It runs out after OpTimeout in which no answer bytes arrived at all. While answers keep
+	// arriving (16 × 1 MiB of NFS readahead queue behind each other on a slow link), the wait
+	// is the link's, up to OpCap; a request the holder sits on fails once the link goes quiet.
+	start, mark := time.Now(), c.answerBytes()
 	timer := time.NewTimer(c.cfg.OpTimeout)
 	defer timer.Stop()
-	select {
-	case <-cl.done:
-	case <-timer.C:
-		if c.forget(id) {
-			c.Timeouts.Add(1)
-			return Response{}, wire.ETIMEDOUT
+wait:
+	for {
+		select {
+		case <-cl.done:
+			break wait
+		case <-timer.C:
+			if now := c.answerBytes(); now != mark && time.Since(start) < c.cfg.OpCap {
+				mark = now
+				timer.Reset(min(c.cfg.OpTimeout, c.cfg.OpCap-time.Since(start)))
+				continue
+			}
+			if c.forget(id) {
+				c.Timeouts.Add(1)
+				return Response{}, wire.ETIMEDOUT
+			}
+			<-cl.done // the answer raced the timer
+			break wait
 		}
-		<-cl.done // the answer raced the timer
 	}
 	if cl.err != wire.OK {
 		return Response{}, cl.err

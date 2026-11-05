@@ -1,3 +1,5 @@
+// Modified for Clover's spike S6 (native/mounts/third_party/README.md): FromHandle keeps a
+// handle's ancestors recent by looking each one up, instead of walking every live handle.
 package helpers
 
 import (
@@ -85,17 +87,18 @@ func (c *CachingHandler) FromHandle(fh []byte) (billy.Filesystem, []string, erro
 	}
 
 	if f, ok := c.activeHandles.Get(id); ok {
-		for _, k := range c.activeHandles.Keys() {
-			candidate, _ := c.activeHandles.Peek(k)
-			if hasPrefix(f.p, candidate.p) {
+		// Clover: keep the handle's ancestors recent, so the LRU never evicts a folder before
+		// what is inside it. Upstream did that by walking every live handle on every call
+		// (Keys() copies them all): 112 µs with 4,000 handles live, 5.1 ms with 100,000, on
+		// every GETATTR, LOOKUP, ACCESS, READ and WRITE. Each ancestor is one map lookup.
+		for i := len(f.p) - 1; i >= 0; i-- {
+			for _, k := range c.getReverseHandles(f.f.Join(f.p[:i]...)) {
 				_, _ = c.activeHandles.Get(k)
 			}
 		}
-		if ok {
-			newP := make([]string, len(f.p))
-			copy(newP, f.p)
-			return f.f, newP, nil
-		}
+		newP := make([]string, len(f.p))
+		copy(newP, f.p)
+		return f.f, newP, nil
 	}
 	return nil, []string{}, &nfs.NFSStatusError{NFSStatus: nfs.NFSStatusStale}
 }

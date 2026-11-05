@@ -3,8 +3,16 @@
 # adding it to FSKit's enabled list, which is what the System Settings switch writes.
 #   macfuse.sh <version> <out dir>
 set -euo pipefail
+# It edits FSKit's enabled list and kills fskitd: never on a person's Mac.
+[ "${GITHUB_ACTIONS:-}" = true ] || { echo "macfuse.sh runs only on a disposable CI runner (GITHUB_ACTIONS=true)" >&2; exit 2; }
 v="$1"; out="$2"; mkdir -p "$out"
+case "$v" in # the release assets' SHA-256, as GitHub lists them
+  5.4.0) sha=861814f0ac7fa8f6547ea40cdd49a36ac84bcc7d34f38a1fa74e8cf68b0401c5 ;;
+  5.5.0) sha=92c21ef2db4199bcf5bddc8e6efb57b23ecb9715f74ab38cba2c77ab226d3830 ;;
+  *) echo "no pinned hash for macFUSE $v" >&2; exit 1 ;;
+esac
 curl -fsSL -o "$RUNNER_TEMP/macfuse.dmg" "https://github.com/macfuse/macfuse/releases/download/macfuse-$v/macfuse-$v.dmg"
+echo "$sha  $RUNNER_TEMP/macfuse.dmg" | shasum -a 256 -c -
 hdiutil attach "$RUNNER_TEMP/macfuse.dmg" -nobrowse -mountpoint "$RUNNER_TEMP/macfuse-dmg" >/dev/null
 pkg="$(find "$RUNNER_TEMP/macfuse-dmg" -maxdepth 2 -name '*.pkg' | head -1)"
 sudo installer -pkg "$pkg" -target / | tail -2

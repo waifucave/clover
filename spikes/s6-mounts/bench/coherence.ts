@@ -11,7 +11,7 @@
 
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { IS_WIN, Rig, log, machine, parseArgs, sleep, summary, writeJson } from "./lib";
+import { IS_WIN, Rig, log, machine, nfsFromArgs, parseArgs, sleep, summary, writeJson } from "./lib";
 
 const args = parseArgs(process.argv.slice(2));
 const ROOT = path.resolve(args.root ?? ".");
@@ -114,7 +114,7 @@ async function main() {
       root: ROOT, tree: IS_WIN ? args.tree! : path.resolve(args.tree!), helperBin: path.resolve(args.helper!),
       logs: path.join(path.dirname(OUT), "logs", path.basename(OUT, ".json")), remoteName: "Desktop1", selfName: "Runner", selfHome: path.dirname(ROOT),
     });
-    if (args["nfs-helper"]) rig.nfs = { bin: path.resolve(args["nfs-helper"]), port: 12049, mountpoint: path.resolve(args.tree!), ac: args["nfs-ac"], dead: args["nfs-dead"] === undefined ? undefined : Number(args["nfs-dead"]) };
+    if (args["nfs-helper"]) rig.nfs = nfsFromArgs(args);
     await rig.startService();
     await rig.startLink(0);
     try {
@@ -134,6 +134,7 @@ async function main() {
     } finally { await rig.stopAll(); }
   }
   out.finished = new Date().toISOString();
+  if (!EXTERNAL && args["nfs-helper"]) out.nfs = { ac: args["nfs-ac"], timeo: args["nfs-timeo"] ?? 110, dumbtimer: true };
   writeJson(OUT, out);
   let md = `\n### S6 coherence on ${out.machine.os} (${out.machine.release})\n\n| mount | shrinks after a stat | grows after a stat | shrinks after a read | new size seen after | grows after a read | new name seen after | delete seen after |\n| :- | :- | :- | :- | -: | :- | -: | -: |\n`;
   for (const r of results as any[]) md += `| ${r.label} | ${r.statOnlyShrinkVerdict} | ${r.statOnlyGrowVerdict} | ${r.shrinkVerdict} | ${r.sizeFreshAfterMs} ms | ${r.growVerdict} | ${r.newNameVisibleAfterMs} ms | ${r.deletedGoneAfterMs} ms |\n`;

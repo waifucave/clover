@@ -8,9 +8,10 @@ mount against local disk; failing fast when the computer drops.
 | :- | :- |
 | `server/serve.ts` | the file service: the daemon's half on the computer that holds the files (Bun) |
 | `server/wire.ts` | the wire protocol in TypeScript ([PROTOCOL.md](../../native/mounts/PROTOCOL.md)) |
-| `link/proxy.ts` | the fake link: a TCP relay with an added round trip, blackhole and reset |
+| `link/proxy.ts` | the fake link: a TCP relay with an added round trip, blackhole and reset, and a bandwidth cap with jitter and a bounded buffer |
 | `bench/speed.ts` | question 3: `git status`, `tsc`, 256 MiB reads and writes, folder copies, cold and warm, at 0/20/80 ms |
-| `bench/failfast.ts` | question 4: faults injected while a read, write, `git status` or `tsc` is in flight |
+| `bench/failfast.ts` | question 4: faults injected while a read, write, `git status` or `tsc` is in flight, and a live but slow link |
+| `bench/volume.ts` | macOS: the AppleDouble files macOS writes into the other computer's folders, Spotlight and Time Machine on the volume |
 | `bench/coherence.ts` | question 2: a file that shrinks or grows behind the mount (FSKit's short-read bug), new names, deletions |
 | `bench/rw.ts` | the read/write/copy workload processes |
 | `bench/tables.ts` | renders the report's tables from `results/` |
@@ -18,7 +19,7 @@ mount against local disk; failing fast when the computer drops.
 | `ci/macfuse.sh` | CI only, on a disposable macOS runner: installs macFUSE and turns its FSKit module on by hand |
 | `ci/windows-git.ps1` | CI only: Git for Windows and Git Bash inside the tree, four layouts |
 | `ci/windows-tsc.ps1` | CI only: what Node and `tsc` resolve in `node_modules` inside the tree, five layouts |
-| `results/` | the numbers from CI, as JSON |
+| `results/` | the numbers from CI, as JSON; `results/PROVENANCE.md` says which commit and CI run made each file |
 
 No `package.json` here on purpose: `spikes/*` is a workspace glob, so one would join the root
 workspace. Everything runs as plain Bun scripts.
@@ -53,9 +54,12 @@ bun spikes/s6-mounts/bench/tables.ts spikes/s6-mounts/results
 
 macOS over NFS (no extension): build `clover-nfs` (`GOOS=darwin CGO_ENABLED=0 go build -o /tmp/s6/clover-nfs ./cmd/clover-nfs`)
 and pass `--helper none --nfs-helper /tmp/s6/clover-nfs` to `coherence.ts`, `failfast.ts` or
-`speed.ts`, with `--policies cached --nfs-ac noac` for the setup the report proposes (the
-kernel's attribute cache off, the helper's event-fed cache in front). The rig mounts with
-`mount_nfs` as the user, and falls back to `sudo` if that fails (it records which in the results).
+`speed.ts`, with `--policies cached --nfs-ac <setting>` for the setups the report compares (the
+helper's event-fed cache, behind `noac`, `actimeo=1` or `acregmin=0,acregmax=0,acdirmin=0,acdirmax=1`
+in the kernel). The rig starts `clover-nfs`, reads the port and one-time export path it prints,
+and mounts with `mount_nfs` as the user, never with `sudo`; if that MOUNT fails it does not
+retry against the same helper. `--nfs-rsize`, `--nfs-readahead` and `--nfs-extra` change the
+mount's call size, read-ahead and extra options. `bench/volume.ts` takes the same arguments.
 
 macOS, FSKit: CI builds the module and stops at "Module … is disabled!" (it cannot be turned on
 without System Settings, and an ad-hoc signature can't carry its entitlement). CI reaches FSKit
@@ -69,8 +73,9 @@ CLOVER_TEAM_ID=<team id> native/mounts/macos/gate.sh
 
 which signs the module, asks for the one click in System Settings, then runs the coherence
 check with the short-read guard on and off, the speed matrix and the fail-fast scenarios on the
-FSKit volume, then the NFS loopback checks (asking whether a dead helper made macOS show a
-dialog), and removes the app again.
+FSKit volume, then the NFS loopback checks (asking whether a dead helper or a 2 Mbit/s link made
+macOS show a dialog), optionally sleep and wake with a read in flight, and removes the app, its
+registrations and its enabled-list entry again, whichever step fails.
 
 The CI workflow is `.github/workflows/spike-s6.yml`; every push to `lane/j-m0` runs it. Tags in
 the commit message, such as `[s6-skip-speed]` or `[s6-skip-macos]`, skip the suites a push

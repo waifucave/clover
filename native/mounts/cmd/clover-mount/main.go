@@ -118,9 +118,9 @@ func serveStatus(addr string, remotes []computerLink) {
 				"timeouts":   c.Timeouts.Load(),
 				"drops":      c.Drops.Load(),
 				"reconnects": c.Reconnects.Load(),
-				"cacheHits":  cl.fs.Hits,
-				"cacheMiss":  cl.fs.Misses,
-				"prefetches": cl.fs.Prefetches,
+				"cacheHits":  cl.fs.Hits.Load(),
+				"cacheMiss":  cl.fs.Misses.Load(),
+				"prefetches": cl.fs.Prefetches.Load(),
 			}
 		}
 		w.Header().Set("content-type", "application/json")
