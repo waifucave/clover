@@ -58,17 +58,24 @@ function relay(from: Side, chunk: Uint8Array) {
   const to = from.peer!;
   const copy = new Uint8Array(chunk); // Bun reuses the read buffer
   const now = performance.now();
-  let due = now + rttMs / 2;
-  if (rateKbps > 0) {
-    // The chunk leaves once the link has sent what is ahead of it, at the link's rate.
-    from.busyUntil = Math.max(now, from.busyUntil) + (copy.length * 8) / rateKbps; // ms
-    due = from.busyUntil + rttMs / 2;
+  // Capped, the bytes trickle out in 8 KiB pieces at the link's rate, as on a real link. Sent as
+  // one piece after its whole transmission time, a 1 MiB read reply arrived in one burst after
+  // 4 s of silence at 2 Mbit/s, which no real link does.
+  const piece = rateKbps > 0 ? 8 << 10 : copy.length;
+  for (let off = 0; off < copy.length; off += piece) {
+    const part = copy.subarray(off, Math.min(off + piece, copy.length));
+    let due = now + rttMs / 2;
+    if (rateKbps > 0) {
+      // The piece leaves once the link has sent what is ahead of it, at the link's rate.
+      from.busyUntil = Math.max(now, from.busyUntil) + (part.length * 8) / rateKbps; // ms
+      due = from.busyUntil + rttMs / 2;
+    }
+    if (jitterMs > 0) due += Math.random() * jitterMs;
+    due = Math.max(due, from.lastDue);
+    from.lastDue = due;
+    from.queue.push({ due, chunk: part });
+    from.queued += part.length;
   }
-  if (jitterMs > 0) due += Math.random() * jitterMs;
-  due = Math.max(due, from.lastDue);
-  from.lastDue = due;
-  from.queue.push({ due, chunk: copy });
-  from.queued += copy.length;
   if (rateKbps > 0 && from.queued > bufBytes && !from.paused && from.sock) {
     from.paused = true;
     (from.sock as any).pause?.();
