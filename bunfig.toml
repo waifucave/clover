@@ -1,9 +1,2 @@
 [test]
 preload = ["./packages/core/test/preload.ts"]
-
-# A-M1: the agent SDK's packages (`@waifucave/clover-*`, from clover-sdk) are published to GitHub Packages only
-# (the owner's choice for now). GitHub Packages needs a token even to read: a GitHub token with `read:packages`
-# in CLOVER_PACKAGES_TOKEN (CONTRIBUTING.md). CI passes the workflow's own token. Workspace packages under the
-# same scope never touch the registry.
-[install.scopes]
-"@waifucave" = { url = "https://npm.pkg.github.com/", token = "$CLOVER_PACKAGES_TOKEN" }

@@ -195,9 +195,11 @@ describe("clover rules — what renames and what the allowlist keeps", () => {
   });
 
   test("the SDK's API, fields and fixed env names stay", () => {
-    const s = "import { WINTER_BRAND, resolveWinterHome as sdkResolveHome } from x; peers.winter; handoff: { winterHome: home }; WINTER_TEST_PROVIDER";
+    const s = "import { WINTER_BRAND, resolveWinterHome as sdkResolveHome } from x; peers.winter; handoff.winterHome; WINTER_TEST_PROVIDER";
     expect(cw(s).out).toBe(s);
     expect(cw("const winterHome = home; f({ home: winterHome })").out).toBe("const cloverHome = home; f({ home: cloverHome })");
+    // A-M1: the router's `handoff: { winterHome }` literal left with the router, so it renames like any field.
+    expect(cw("handoff: { winterHome: home }").out).toBe("handoff: { cloverHome: home }");
   });
 
   test("Winter's coding agent and its binary keep their names", () => {
