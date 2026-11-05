@@ -1,8 +1,8 @@
 # Clover S9 layers
 
-Standalone package: `prototype/` is deliberately one level below `spikes/*`, outside the root workspaces. Do not change the root lockfiles. Electron is pinned to 45.2.3, the current stable verified November 5, 2026. It includes `webRequest.initiatorOrigin` (introduced in 45 / backported stable branches), which this spike needs. See https://releases.electronjs.org/release?channel=stable and https://www.electronjs.org/docs/latest/api/web-request.
+Standalone package: `prototype/` is below the root `spikes/*` workspace glob. Its own npm lockfile leaves the root workspaces and lockfiles untouched. Electron remains pinned to **45.2.3 / Chromium 156.0.8078.80**, the stable version verified for the original spike; keeping it fixed makes the review rerun comparable. See the [report](../../docs/research/2026-11-05-s9-layers.md) and [retained evidence](evidence/README.md).
 
-## Local checks (launch nothing)
+## Local checks — launch nothing
 
 From `spikes/s9-layers/prototype`:
 
@@ -12,11 +12,11 @@ npm run typecheck
 npm test
 ```
 
-Never require Electron, run its install script, launch a browser or launch the spike on the owner's Mac. `run.mjs` and `main.cjs` reject non-CI invocation before loading Electron. The npm installation above installs types and JavaScript only. No root scripts are used.
+Strict TypeScript checking and Node tests use no Electron runtime. Never require Electron, run its install script, launch browsers, or run the spike locally. Both launcher guards reject non-CI execution before requiring Electron. The harness has no secret-store implementation or credentials; TURN uses only dummy fixture strings. Fresh CI temporary homes and in-memory sessions isolate all processes.
 
-## CI checks
+## One command per CI check
 
-The push workflow `.github/workflows/spike-s9.yml` installs the binary explicitly using `node node_modules/electron/install.js`. The following commands are for that job only; Linux wraps each command in `xvfb-run -a`:
+The workflow downloads Electron explicitly with `node node_modules/electron/install.js`. These commands are **CI only**; Linux wraps each in `xvfb-run -a`:
 
 ```sh
 npm run process
@@ -25,15 +25,21 @@ npm run crossing
 npm run network
 ```
 
-`npm run all` runs all four sequentially. Every Electron child has a three-minute timeout and a fresh temp home, in-memory session and no secret-store integration. Network probes use only ephemeral loopback HTTP/WebSocket and UDP fixture listeners. No outside service or account is contacted by the runtime probes. Dependencies and Electron downloads are ordinary CI setup traffic.
+`npm run all` runs them sequentially. Individual Electron children have a three-minute deadline; the attributed network matrix has a seven-minute deadline. All listeners bind **127.0.0.1**. Distinct `*.s9.test` fixture names are mapped to loopback by CI host-resolver rules; DNS/STUN/TURN names use unique `*.localhost` labels. No outside account or network service is contacted by the probes. Dependencies, Electron, action downloads and Ubuntu's xdotool setup are normal CI installation traffic.
 
-Each runner uploads JSON plus menu screenshots and fixture-only Chromium netlogs as `clover-s9-<runner>`. The platform, architecture, Electron/Chromium versions and tested commit are embedded in JSON. Harness errors exit nonzero; an empirical negative verdict is still an uploaded successful experiment, not an assertion that the design passed.
+The branch/main push workflow uses Node 24 actions pinned by SHA. It remains a gate on `main`, `lane/e-m0` and `lane/e-m1`, and on changes to the spike or workflow. Dispatch is restricted at job level to those branches. Every Electron upgrade must update the spike's pin and run this suite.
 
-## Reading results
+## Results and interpretation
 
-* `process.json`: Electron frame tree (`processId`, `osProcessId`, routing IDs), app process listing, repeated same-origin p2 frames and a nested child origin. Distinct plugin hosts must have distinct OS PIDs; repeated p2 frames must share their plugin's PID. `typeof require` is checked per frame.
-* `memory-{1,5,10,20}.json`: three samples per process, private KiB from Electron's `process.getProcessMemoryInfo()`, renderer totals, trusted root and main separately, app process metrics. The preload exists only for measurement, runs with sandbox and context isolation, exposes no callable bridge and samples every 500 ms. `nodeIntegrationInSubFrames` is enabled solely to run that measurement preload. These numbers are a minimal fixture baseline, not a production memory budget. Renderer-private totals are not total app RSS or total machine memory. GPU/utility metrics retain their platform-specific fields.
-* `crossing.json`: focus and text input, Tab traversal and host shortcut observation, CDP drop delivery. Screenshots show a clipped child menu and a trusted-root overlay. This is synthetic CI input; native file dragging, drag initiation, accessibility and real IME composition require live gates.
-* `network.json`: control, CSP-only, filter-only and combined variants with renderer outcomes, CSP violations, request decisions (including initiator), server hits, TCP counts, popup/navigation guards and UDP STUN observations. Images/fonts intentionally need request/hit evidence: decode success is not used to judge enforcement. Workers have a CSP response too. Missing/opaque initiators fail closed in filtered variants. All network destinations are rechecked, including redirect targets. Popup/navigation guards are additional host help, distinct from the four spec checks.
+CI uploads JSON, screenshots and netlogs as `clover-s9-<runner>`. JSON embeds the tested commit, platform, architecture and versions. Raw results retained in `evidence/` distinguish original and revised runs. Original speculative resolver extracts are committed before netlog artifact expiry. Harness errors fail CI; a completed empirical negative experiment still uploads a negative JSON verdict. A green job alone is not boundary acceptance.
 
-Candidate Chromium flags and `X-DNS-Prefetch-Control: off` are included, but are **not** proof that WebRTC or all speculative traffic is disabled. Netlogs and the UDP probe reveal gaps. A missing request or a timeout is not automatically a successful block. Controls distinguish unsupported APIs and fixture limitations. No claim is made about sealed-card hardware clicks, real themes, OS overlap or security against a compromised renderer.
+* **Process:** Electron frame/process listings; child and repeated-origin frames; separate schemes for core/sealed origins; independent and related-window PID comparisons. Measurement-only sandboxed preloads use `nodeIntegrationInSubFrames`, expose no callable bridge, and join samples by authoritative Electron OS PIDs, not Linux namespace PIDs.
+* **Memory:** three private-KiB samples at 1/5/10/20 plugin layers. Renderer totals include trusted root, main is separate. GPU/utility private totals remain unavailable uniformly; RSS is not substituted. Minimal fixture numbers exclude real React, transcript, avatar and audio allocations. See the report for slopes, main growth and Windows variance.
+* **Input:** CDP `dispatchKeyEvent`, `insertText`, `imeSetComposition`, source `dragIntercepted` and target drop, Tab/Shift-Tab, overlay focus restoration, and nested IntersectionObserver v2. Ubuntu adds xdotool XTEST input through the known native XID. These are synthetic CI checks, not hardware approval authorization or native IME candidate-window/file-drag tests.
+* **Network:** control, CSP, filter, combined, **combined plus Connection-Allowlist**, an actual per-webContents IP-policy variant, and a non-plugin control. Every vector/context has its own name and port. Two plugins with different exact origin/port grants share one session. STUN cookie/source-port records, TURN/TCP bytes, WebTransport UDP, session preconnect events, CSP violations, filter decisions, canceled downloads, navigation/popup guards and **netlog parsing inside the harness** establish attribution. Positive controls are prerequisites for a successful verdict; constructor presence is not a failure.
+
+Plugin documents require core-issued mount tokens and restrict `frame-ancestors` and `frame-src`. Worker responses carry the same Connection-Allowlist and cannot be framed as UI documents. Inherited nested/srcdoc/opaque/about:blank contexts are probed separately. Dedicated/shared/blob workers are tested; service-worker privileges are deliberately not granted. Missing worker APIs are reported as unsupported, never as measured suppression. Host popup/navigation guards remain separately attributed defenses.
+
+The original report's network conclusion is superseded: link prefetch stayed within the host boundary; DNS prefetch leaked resolver intent; the command-line IP policy never applied; original STUN targeted the declared address. Candidate disabling flags were removed. All revised closures are per document or per webContents; the process-wide resolver rules are fixture routing only, and site isolation remains on. The same application tests that a non-plugin webContents keeps networking.
+
+The report names Electron patch / intercepted https fallbacks if Connection-Allowlist does not take effect on custom-scheme documents. No fallback is implemented or assumed necessary without the attributed evidence.
