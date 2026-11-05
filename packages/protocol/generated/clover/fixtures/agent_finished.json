@@ -1,0 +1,15 @@
+{
+  "type": "agent_finished",
+  "seq": 14,
+  "sessionId": "s_alpha",
+  "ts": 1781270002000,
+  "agent": "s_agent_1",
+  "backend": "claude-code",
+  "stopReason": "end_turn",
+  "text": "Fixed the login bug; PR #12.",
+  "transcript": "bots/alpha/agents/s_agent_1/acp.ndjson",
+  "usage": {
+    "inputTokens": 43467,
+    "outputTokens": 318
+  }
+}

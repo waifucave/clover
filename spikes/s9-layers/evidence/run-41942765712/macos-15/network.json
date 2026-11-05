@@ -1,0 +1,2300 @@
+{
+  "date": "2026-11-05T00:38:52.713Z",
+  "platform": "darwin",
+  "arch": "arm64",
+  "versions": {
+    "node": "24.22.2",
+    "acorn": "8.18.0",
+    "ada": "4.0.0",
+    "amaro": "1.1.11",
+    "ares": "1.34.9",
+    "brotli": "1.2.0",
+    "cldr": "48.0",
+    "icu": "78.2",
+    "llhttp": "9.4.3",
+    "merve": "1.2.2",
+    "modules": "150",
+    "napi": "10",
+    "nbytes": "0.1.4",
+    "ncrypto": "0.0.1",
+    "nghttp2": "1.70.0",
+    "nghttp3": "",
+    "ngtcp2": "",
+    "openssl": "0.0.0",
+    "simdjson": "4.6.11",
+    "simdutf": "7.7.0",
+    "sqlite": "3.53.4",
+    "tz": "2026e",
+    "undici": "7.30.1",
+    "unicode": "17.0",
+    "uv": "1.52.1",
+    "uvwasi": "0.0.23",
+    "v8": "15.6.75.27-electron.0",
+    "zlib": "1.3.2.1-motley",
+    "zstd": "1.6.0",
+    "electron": "45.2.3",
+    "chrome": "156.0.8078.80"
+  },
+  "check": "network",
+  "layers": 3,
+  "commit": "12ca3e48fc2ee614d699d45092f1c87d3e83291b",
+  "verdict": "does not",
+  "variants": [
+    {
+      "mode": "control",
+      "capabilities": {
+        "node": "undefined",
+        "origin": "clover-plugin://p1",
+        "rtc": "function",
+        "secure": true
+      },
+      "outcomes": [
+        {
+          "name": "allowed-fetch",
+          "result": 200,
+          "violations": []
+        },
+        {
+          "name": "allowed-xhr",
+          "result": 200,
+          "violations": []
+        },
+        {
+          "name": "allowed-image",
+          "result": "error",
+          "violations": []
+        },
+        {
+          "name": "allowed-css",
+          "result": "load",
+          "violations": []
+        },
+        {
+          "error": "NetworkError: A network error occurred.",
+          "name": "allowed-font",
+          "violations": []
+        },
+        {
+          "name": "allowed-websocket",
+          "result": "open",
+          "violations": []
+        },
+        {
+          "name": "allowed-beacon",
+          "result": true,
+          "violations": []
+        },
+        {
+          "name": "allowed-dns-prefetch",
+          "result": "inserted",
+          "violations": []
+        },
+        {
+          "name": "allowed-preconnect",
+          "result": "inserted",
+          "violations": []
+        },
+        {
+          "name": "allowed-prefetch",
+          "result": "inserted",
+          "violations": []
+        },
+        {
+          "name": "allowed-prerender",
+          "result": "inserted",
+          "violations": []
+        },
+        {
+          "name": "denied-fetch",
+          "result": 200,
+          "violations": []
+        },
+        {
+          "name": "denied-xhr",
+          "result": 200,
+          "violations": []
+        },
+        {
+          "name": "denied-image",
+          "result": "error",
+          "violations": []
+        },
+        {
+          "name": "denied-css",
+          "result": "load",
+          "violations": []
+        },
+        {
+          "error": "NetworkError: A network error occurred.",
+          "name": "denied-font",
+          "violations": []
+        },
+        {
+          "name": "denied-websocket",
+          "result": "open",
+          "violations": []
+        },
+        {
+          "name": "denied-beacon",
+          "result": true,
+          "violations": []
+        },
+        {
+          "name": "denied-dns-prefetch",
+          "result": "inserted",
+          "violations": []
+        },
+        {
+          "name": "denied-preconnect",
+          "result": "inserted",
+          "violations": []
+        },
+        {
+          "name": "denied-prefetch",
+          "result": "inserted",
+          "violations": []
+        },
+        {
+          "name": "denied-prerender",
+          "result": "inserted",
+          "violations": []
+        },
+        {
+          "name": "denied-script",
+          "result": "load",
+          "violations": []
+        },
+        {
+          "name": "denied-css-import",
+          "result": "inserted",
+          "violations": []
+        },
+        {
+          "name": "denied-eventsource",
+          "result": "error",
+          "violations": []
+        },
+        {
+          "name": "denied-fetch-keepalive",
+          "result": 200,
+          "violations": []
+        },
+        {
+          "error": "SecurityError: Failed to construct 'Worker': Script at 'http://localhost:49182/remote-worker.js' cannot be accessed from origin 'clover-plugin://p1'.",
+          "name": "denied-remote-worker",
+          "violations": []
+        },
+        {
+          "name": "denied-object",
+          "result": "inserted",
+          "violations": []
+        },
+        {
+          "name": "denied-media",
+          "result": "inserted",
+          "violations": []
+        },
+        {
+          "name": "opaque-frame-fetch",
+          "result": "inserted",
+          "violations": []
+        },
+        {
+          "name": "redirect",
+          "result": 200,
+          "violations": []
+        },
+        {
+          "name": "dedicated-worker",
+          "result": "sent",
+          "violations": []
+        },
+        {
+          "name": "blob-worker",
+          "result": "sent",
+          "violations": []
+        },
+        {
+          "name": "shared-worker",
+          "result": "sent",
+          "violations": []
+        },
+        {
+          "name": "service-worker",
+          "result": {
+            "registered": true,
+            "scope": "clover-plugin://p1/"
+          },
+          "violations": []
+        },
+        {
+          "name": "speculationrules",
+          "result": "inserted",
+          "violations": []
+        },
+        {
+          "name": "webrtc",
+          "result": {
+            "disabled": false,
+            "sdp": true,
+            "state": "gathering"
+          },
+          "violations": []
+        },
+        {
+          "name": "window-open",
+          "result": {
+            "returnedWindow": false
+          },
+          "violations": []
+        },
+        {
+          "name": "subframe-navigation",
+          "result": "inserted",
+          "violations": []
+        },
+        {
+          "name": "form",
+          "result": "submitted",
+          "violations": []
+        }
+      ],
+      "violations": [],
+      "requests": [
+        {
+          "url": "clover-plugin://core/",
+          "resourceType": "mainFrame",
+          "frameUrl": "",
+          "cancel": false,
+          "reason": "filter off"
+        },
+        {
+          "url": "clover-plugin://p1/",
+          "resourceType": "subFrame",
+          "initiatorOrigin": "clover-plugin://core",
+          "frameUrl": "",
+          "cancel": false,
+          "reason": "filter off"
+        },
+        {
+          "url": "http://127.0.0.1:49182/allowed-fetch?case=allowed-fetch",
+          "resourceType": "xhr",
+          "initiatorOrigin": "clover-plugin://p1",
+          "frameUrl": "clover-plugin://p1/",
+          "cancel": false,
+          "reason": "filter off"
+        },
+        {
+          "url": "http://127.0.0.1:49182/allowed-xhr?case=allowed-xhr",
+          "resourceType": "xhr",
+          "initiatorOrigin": "clover-plugin://p1",
+          "frameUrl": "clover-plugin://p1/",
+          "cancel": false,
+          "reason": "filter off"
+        },
+        {
+          "url": "http://127.0.0.1:49182/allowed-image?case=allowed-image",
+          "resourceType": "image",
+          "initiatorOrigin": "clover-plugin://p1",
+          "frameUrl": "clover-plugin://p1/",
+          "cancel": false,
+          "reason": "filter off"
+        },
+        {
+          "url": "http://127.0.0.1:49182/allowed-css?case=allowed-css",
+          "resourceType": "stylesheet",
+          "initiatorOrigin": "clover-plugin://p1",
+          "frameUrl": "clover-plugin://p1/",
+          "cancel": false,
+          "reason": "filter off"
+        },
+        {
+          "url": "http://127.0.0.1:49182/allowed-font?case=allowed-font",
+          "resourceType": "font",
+          "initiatorOrigin": "clover-plugin://p1",
+          "frameUrl": "clover-plugin://p1/",
+          "cancel": false,
+          "reason": "filter off"
+        },
+        {
+          "url": "http://127.0.0.1:49182/allowed-font?case=allowed-font",
+          "resourceType": "font",
+          "initiatorOrigin": "clover-plugin://p1",
+          "frameUrl": "clover-plugin://p1/",
+          "cancel": false,
+          "reason": "filter off"
+        },
+        {
+          "url": "ws://127.0.0.1:49182/allowed-websocket?case=allowed-websocket",
+          "resourceType": "webSocket",
+          "initiatorOrigin": "clover-plugin://p1",
+          "frameUrl": "clover-plugin://p1/",
+          "cancel": false,
+          "reason": "filter off"
+        },
+        {
+          "url": "http://127.0.0.1:49182/allowed-beacon?case=allowed-beacon",
+          "resourceType": "ping",
+          "initiatorOrigin": "clover-plugin://p1",
+          "frameUrl": "clover-plugin://p1/",
+          "cancel": false,
+          "reason": "filter off"
+        },
+        {
+          "url": "http://127.0.0.1:49182/allowed-prefetch?case=allowed-prefetch",
+          "resourceType": "other",
+          "initiatorOrigin": "clover-plugin://p1",
+          "frameUrl": "clover-plugin://p1/",
+          "cancel": false,
+          "reason": "filter off"
+        },
+        {
+          "url": "http://localhost:49182/denied-fetch?case=denied-fetch",
+          "resourceType": "xhr",
+          "initiatorOrigin": "clover-plugin://p1",
+          "frameUrl": "clover-plugin://p1/",
+          "cancel": false,
+          "reason": "filter off"
+        },
+        {
+          "url": "http://localhost:49182/denied-xhr?case=denied-xhr",
+          "resourceType": "xhr",
+          "initiatorOrigin": "clover-plugin://p1",
+          "frameUrl": "clover-plugin://p1/",
+          "cancel": false,
+          "reason": "filter off"
+        },
+        {
+          "url": "http://localhost:49182/denied-image?case=denied-image",
+          "resourceType": "image",
+          "initiatorOrigin": "clover-plugin://p1",
+          "frameUrl": "clover-plugin://p1/",
+          "cancel": false,
+          "reason": "filter off"
+        },
+        {
+          "url": "http://localhost:49182/denied-css?case=denied-css",
+          "resourceType": "stylesheet",
+          "initiatorOrigin": "clover-plugin://p1",
+          "frameUrl": "clover-plugin://p1/",
+          "cancel": false,
+          "reason": "filter off"
+        },
+        {
+          "url": "http://localhost:49182/denied-font?case=denied-font",
+          "resourceType": "font",
+          "initiatorOrigin": "clover-plugin://p1",
+          "frameUrl": "clover-plugin://p1/",
+          "cancel": false,
+          "reason": "filter off"
+        },
+        {
+          "url": "http://localhost:49182/denied-font?case=denied-font",
+          "resourceType": "font",
+          "initiatorOrigin": "clover-plugin://p1",
+          "frameUrl": "clover-plugin://p1/",
+          "cancel": false,
+          "reason": "filter off"
+        },
+        {
+          "url": "ws://localhost:49182/denied-websocket?case=denied-websocket",
+          "resourceType": "webSocket",
+          "initiatorOrigin": "clover-plugin://p1",
+          "frameUrl": "clover-plugin://p1/",
+          "cancel": false,
+          "reason": "filter off"
+        },
+        {
+          "url": "http://localhost:49182/denied-beacon?case=denied-beacon",
+          "resourceType": "ping",
+          "initiatorOrigin": "clover-plugin://p1",
+          "frameUrl": "clover-plugin://p1/",
+          "cancel": false,
+          "reason": "filter off"
+        },
+        {
+          "url": "http://localhost:49182/denied-prefetch?case=denied-prefetch",
+          "resourceType": "other",
+          "initiatorOrigin": "clover-plugin://p1",
+          "frameUrl": "clover-plugin://p1/",
+          "cancel": false,
+          "reason": "filter off"
+        },
+        {
+          "url": "http://localhost:49182/external.js",
+          "resourceType": "script",
+          "initiatorOrigin": "clover-plugin://p1",
+          "frameUrl": "clover-plugin://p1/",
+          "cancel": false,
+          "reason": "filter off"
+        },
+        {
+          "url": "http://localhost:49182/css-import",
+          "resourceType": "stylesheet",
+          "initiatorOrigin": "clover-plugin://p1",
+          "frameUrl": "clover-plugin://p1/",
+          "cancel": false,
+          "reason": "filter off"
+        },
+        {
+          "url": "http://localhost:49182/css-background",
+          "resourceType": "image",
+          "initiatorOrigin": "clover-plugin://p1",
+          "frameUrl": "clover-plugin://p1/",
+          "cancel": false,
+          "reason": "filter off"
+        },
+        {
+          "url": "http://localhost:49182/eventsource",
+          "resourceType": "xhr",
+          "initiatorOrigin": "clover-plugin://p1",
+          "frameUrl": "clover-plugin://p1/",
+          "cancel": false,
+          "reason": "filter off"
+        },
+        {
+          "url": "http://localhost:49182/keepalive",
+          "resourceType": "xhr",
+          "initiatorOrigin": "clover-plugin://p1",
+          "frameUrl": "clover-plugin://p1/",
+          "cancel": false,
+          "reason": "filter off"
+        },
+        {
+          "url": "http://localhost:49182/media",
+          "resourceType": "media",
+          "initiatorOrigin": "clover-plugin://p1",
+          "frameUrl": "clover-plugin://p1/",
+          "cancel": false,
+          "reason": "filter off"
+        },
+        {
+          "url": "http://localhost:49182/opaque-fetch",
+          "resourceType": "xhr",
+          "initiatorOrigin": "null",
+          "frameUrl": "about:srcdoc",
+          "cancel": false,
+          "reason": "filter off"
+        },
+        {
+          "url": "http://127.0.0.1:49182/redirect",
+          "resourceType": "xhr",
+          "initiatorOrigin": "clover-plugin://p1",
+          "frameUrl": "clover-plugin://p1/",
+          "cancel": false,
+          "reason": "filter off"
+        },
+        {
+          "url": "http://localhost:49182/redirect-target",
+          "resourceType": "xhr",
+          "initiatorOrigin": "clover-plugin://p1",
+          "frameUrl": "clover-plugin://p1/",
+          "cancel": false,
+          "reason": "filter off"
+        },
+        {
+          "url": "http://localhost:49182/worker-fetch",
+          "resourceType": "xhr",
+          "initiatorOrigin": "clover-plugin://p1",
+          "frameUrl": "clover-plugin://p1/",
+          "cancel": false,
+          "reason": "filter off"
+        },
+        {
+          "url": "http://localhost:49182/blob-worker",
+          "resourceType": "xhr",
+          "initiatorOrigin": "clover-plugin://p1",
+          "frameUrl": "clover-plugin://p1/",
+          "cancel": false,
+          "reason": "filter off"
+        },
+        {
+          "url": "http://localhost:49182/shared-worker-fetch",
+          "resourceType": "xhr",
+          "initiatorOrigin": "clover-plugin://p1",
+          "cancel": false,
+          "reason": "filter off"
+        },
+        {
+          "url": "http://localhost:49182/service-worker-fetch",
+          "resourceType": "xhr",
+          "initiatorOrigin": "clover-plugin://p1",
+          "cancel": false,
+          "reason": "filter off"
+        }
+      ],
+      "navigations": [
+        {
+          "url": "http://localhost:49182/object",
+          "blocked": true
+        },
+        {
+          "url": "http://localhost:49182/subframe-navigation",
+          "blocked": true
+        }
+      ],
+      "popups": [
+        {
+          "url": "http://localhost:49182/window-open"
+        },
+        {
+          "url": "http://localhost:49182/form?"
+        }
+      ],
+      "hits": [
+        {
+          "host": "127.0.0.1:49182",
+          "url": "/allowed-fetch?case=allowed-fetch",
+          "method": "GET"
+        },
+        {
+          "host": "127.0.0.1:49182",
+          "url": "/allowed-xhr?case=allowed-xhr",
+          "method": "GET"
+        },
+        {
+          "host": "127.0.0.1:49182",
+          "url": "/allowed-image?case=allowed-image",
+          "method": "GET"
+        },
+        {
+          "host": "127.0.0.1:49182",
+          "url": "/allowed-css?case=allowed-css",
+          "method": "GET"
+        },
+        {
+          "host": "127.0.0.1:49182",
+          "url": "/allowed-font?case=allowed-font",
+          "method": "GET"
+        },
+        {
+          "host": "127.0.0.1:49182",
+          "url": "/allowed-websocket?case=allowed-websocket",
+          "method": "WS"
+        },
+        {
+          "host": "127.0.0.1:49182",
+          "url": "/allowed-beacon?case=allowed-beacon",
+          "method": "POST"
+        },
+        {
+          "host": "127.0.0.1:49182",
+          "url": "/allowed-prefetch?case=allowed-prefetch",
+          "method": "GET"
+        },
+        {
+          "host": "localhost:49182",
+          "url": "/denied-fetch?case=denied-fetch",
+          "method": "GET"
+        },
+        {
+          "host": "localhost:49182",
+          "url": "/denied-xhr?case=denied-xhr",
+          "method": "GET"
+        },
+        {
+          "host": "localhost:49182",
+          "url": "/denied-image?case=denied-image",
+          "method": "GET"
+        },
+        {
+          "host": "localhost:49182",
+          "url": "/denied-css?case=denied-css",
+          "method": "GET"
+        },
+        {
+          "host": "localhost:49182",
+          "url": "/denied-font?case=denied-font",
+          "method": "GET"
+        },
+        {
+          "host": "localhost:49182",
+          "url": "/denied-websocket?case=denied-websocket",
+          "method": "WS"
+        },
+        {
+          "host": "localhost:49182",
+          "url": "/denied-beacon?case=denied-beacon",
+          "method": "POST"
+        },
+        {
+          "host": "localhost:49182",
+          "url": "/denied-prefetch?case=denied-prefetch",
+          "method": "GET"
+        },
+        {
+          "host": "localhost:49182",
+          "url": "/external.js",
+          "method": "GET"
+        },
+        {
+          "host": "localhost:49182",
+          "url": "/css-import",
+          "method": "GET"
+        },
+        {
+          "host": "localhost:49182",
+          "url": "/css-background",
+          "method": "GET"
+        },
+        {
+          "host": "localhost:49182",
+          "url": "/eventsource",
+          "method": "GET"
+        },
+        {
+          "host": "localhost:49182",
+          "url": "/keepalive",
+          "method": "POST"
+        },
+        {
+          "host": "localhost:49182",
+          "url": "/media",
+          "method": "GET"
+        },
+        {
+          "host": "localhost:49182",
+          "url": "/opaque-fetch",
+          "method": "GET"
+        },
+        {
+          "host": "127.0.0.1:49182",
+          "url": "/redirect",
+          "method": "GET"
+        },
+        {
+          "host": "localhost:49182",
+          "url": "/redirect-target",
+          "method": "GET"
+        },
+        {
+          "host": "localhost:49182",
+          "url": "/worker-fetch",
+          "method": "GET"
+        },
+        {
+          "host": "localhost:49182",
+          "url": "/blob-worker",
+          "method": "GET"
+        },
+        {
+          "host": "localhost:49182",
+          "url": "/shared-worker-fetch",
+          "method": "GET"
+        },
+        {
+          "host": "localhost:49182",
+          "url": "/service-worker-fetch",
+          "method": "GET"
+        }
+      ],
+      "udp": [
+        {
+          "bytes": 20,
+          "time": 1793839145129
+        },
+        {
+          "bytes": 20,
+          "time": 1793839145443
+        },
+        {
+          "bytes": 20,
+          "time": 1793839145988
+        }
+      ],
+      "tcpConnections": 8
+    },
+    {
+      "mode": "csp",
+      "capabilities": {
+        "node": "undefined",
+        "origin": "clover-plugin://p1",
+        "rtc": "function",
+        "secure": true
+      },
+      "outcomes": [
+        {
+          "name": "allowed-fetch",
+          "result": 200,
+          "violations": []
+        },
+        {
+          "name": "allowed-xhr",
+          "result": 200,
+          "violations": []
+        },
+        {
+          "name": "allowed-image",
+          "result": "error",
+          "violations": []
+        },
+        {
+          "name": "allowed-css",
+          "result": "load",
+          "violations": []
+        },
+        {
+          "error": "NetworkError: A network error occurred.",
+          "name": "allowed-font",
+          "violations": []
+        },
+        {
+          "name": "allowed-websocket",
+          "result": "open",
+          "violations": []
+        },
+        {
+          "name": "allowed-beacon",
+          "result": true,
+          "violations": []
+        },
+        {
+          "name": "allowed-dns-prefetch",
+          "result": "inserted",
+          "violations": []
+        },
+        {
+          "name": "allowed-preconnect",
+          "result": "inserted",
+          "violations": []
+        },
+        {
+          "name": "allowed-prefetch",
+          "result": "inserted",
+          "violations": []
+        },
+        {
+          "name": "allowed-prerender",
+          "result": "inserted",
+          "violations": []
+        },
+        {
+          "error": "TypeError: Failed to fetch",
+          "name": "denied-fetch",
+          "violations": []
+        },
+        {
+          "name": "denied-xhr",
+          "result": "error",
+          "violations": [
+            {
+              "blockedURI": "http://localhost:49182/denied-xhr?case=denied-xhr",
+              "directive": "connect-src"
+            }
+          ]
+        },
+        {
+          "name": "denied-image",
+          "result": "error",
+          "violations": [
+            {
+              "blockedURI": "http://localhost:49182/denied-image?case=denied-image",
+              "directive": "img-src"
+            }
+          ]
+        },
+        {
+          "name": "denied-css",
+          "result": "error",
+          "violations": [
+            {
+              "blockedURI": "http://localhost:49182/denied-css?case=denied-css",
+              "directive": "style-src-elem"
+            }
+          ]
+        },
+        {
+          "error": "NetworkError: A network error occurred.",
+          "name": "denied-font",
+          "violations": []
+        },
+        {
+          "name": "denied-websocket",
+          "result": "error",
+          "violations": [
+            {
+              "blockedURI": "ws://localhost:49182/denied-websocket?case=denied-websocket",
+              "directive": "connect-src"
+            }
+          ]
+        },
+        {
+          "name": "denied-beacon",
+          "result": true,
+          "violations": []
+        },
+        {
+          "name": "denied-dns-prefetch",
+          "result": "inserted",
+          "violations": []
+        },
+        {
+          "name": "denied-preconnect",
+          "result": "inserted",
+          "violations": []
+        },
+        {
+          "name": "denied-prefetch",
+          "result": "inserted",
+          "violations": [
+            {
+              "blockedURI": "http://localhost:49182/denied-prefetch?case=denied-prefetch",
+              "directive": "default-src"
+            }
+          ]
+        },
+        {
+          "name": "denied-prerender",
+          "result": "inserted",
+          "violations": []
+        },
+        {
+          "name": "denied-script",
+          "result": "error",
+          "violations": [
+            {
+              "blockedURI": "http://localhost:49182/external.js",
+              "directive": "script-src-elem"
+            }
+          ]
+        },
+        {
+          "name": "denied-css-import",
+          "result": "inserted",
+          "violations": [
+            {
+              "blockedURI": "http://localhost:49182/css-import",
+              "directive": "style-src-elem"
+            },
+            {
+              "blockedURI": "http://localhost:49182/css-background",
+              "directive": "img-src"
+            }
+          ]
+        },
+        {
+          "name": "denied-eventsource",
+          "result": "error",
+          "violations": [
+            {
+              "blockedURI": "http://localhost:49182/eventsource",
+              "directive": "connect-src"
+            }
+          ]
+        },
+        {
+          "error": "TypeError: Failed to fetch",
+          "name": "denied-fetch-keepalive",
+          "violations": []
+        },
+        {
+          "error": "SecurityError: Failed to construct 'Worker': Script at 'http://localhost:49182/remote-worker.js' cannot be accessed from origin 'clover-plugin://p1'.",
+          "name": "denied-remote-worker",
+          "violations": []
+        },
+        {
+          "name": "denied-object",
+          "result": "inserted",
+          "violations": [
+            {
+              "blockedURI": "http://localhost:49182",
+              "directive": "object-src"
+            }
+          ]
+        },
+        {
+          "name": "denied-media",
+          "result": "inserted",
+          "violations": [
+            {
+              "blockedURI": "http://localhost:49182/media",
+              "directive": "media-src"
+            }
+          ]
+        },
+        {
+          "name": "opaque-frame-fetch",
+          "result": "inserted",
+          "violations": []
+        },
+        {
+          "error": "TypeError: Failed to fetch",
+          "name": "redirect",
+          "violations": []
+        },
+        {
+          "name": "dedicated-worker",
+          "result": "blocked",
+          "violations": []
+        },
+        {
+          "name": "blob-worker",
+          "result": "blocked",
+          "violations": []
+        },
+        {
+          "name": "shared-worker",
+          "result": "blocked",
+          "violations": []
+        },
+        {
+          "name": "service-worker",
+          "result": {
+            "registered": true,
+            "scope": "clover-plugin://p1/"
+          },
+          "violations": []
+        },
+        {
+          "name": "speculationrules",
+          "result": "inserted",
+          "violations": []
+        },
+        {
+          "name": "webrtc",
+          "result": {
+            "disabled": false,
+            "sdp": true,
+            "state": "gathering"
+          },
+          "violations": []
+        },
+        {
+          "name": "window-open",
+          "result": {
+            "returnedWindow": false
+          },
+          "violations": []
+        },
+        {
+          "name": "subframe-navigation",
+          "result": "inserted",
+          "violations": [
+            {
+              "blockedURI": "http://localhost:49182",
+              "directive": "frame-src"
+            }
+          ]
+        },
+        {
+          "name": "form",
+          "result": "submitted",
+          "violations": []
+        }
+      ],
+      "violations": [
+        {
+          "blockedURI": "http://localhost:49182/denied-fetch?case=denied-fetch",
+          "directive": "connect-src"
+        },
+        {
+          "blockedURI": "http://localhost:49182/denied-xhr?case=denied-xhr",
+          "directive": "connect-src"
+        },
+        {
+          "blockedURI": "http://localhost:49182/denied-image?case=denied-image",
+          "directive": "img-src"
+        },
+        {
+          "blockedURI": "http://localhost:49182/denied-css?case=denied-css",
+          "directive": "style-src-elem"
+        },
+        {
+          "blockedURI": "http://localhost:49182/denied-font?case=denied-font",
+          "directive": "font-src"
+        },
+        {
+          "blockedURI": "ws://localhost:49182/denied-websocket?case=denied-websocket",
+          "directive": "connect-src"
+        },
+        {
+          "blockedURI": "http://localhost:49182/denied-beacon?case=denied-beacon",
+          "directive": "connect-src"
+        },
+        {
+          "blockedURI": "http://localhost:49182/denied-prefetch?case=denied-prefetch",
+          "directive": "default-src"
+        },
+        {
+          "blockedURI": "http://localhost:49182/external.js",
+          "directive": "script-src-elem"
+        },
+        {
+          "blockedURI": "http://localhost:49182/css-import",
+          "directive": "style-src-elem"
+        },
+        {
+          "blockedURI": "http://localhost:49182/css-background",
+          "directive": "img-src"
+        },
+        {
+          "blockedURI": "http://localhost:49182/eventsource",
+          "directive": "connect-src"
+        },
+        {
+          "blockedURI": "http://localhost:49182/keepalive",
+          "directive": "connect-src"
+        },
+        {
+          "blockedURI": "http://localhost:49182",
+          "directive": "object-src"
+        },
+        {
+          "blockedURI": "http://localhost:49182/media",
+          "directive": "media-src"
+        },
+        {
+          "blockedURI": "http://127.0.0.1:49182/redirect",
+          "directive": "connect-src"
+        },
+        {
+          "blockedURI": "http://localhost:49182",
+          "directive": "frame-src"
+        }
+      ],
+      "requests": [
+        {
+          "url": "clover-plugin://core/",
+          "resourceType": "mainFrame",
+          "frameUrl": "",
+          "cancel": false,
+          "reason": "filter off"
+        },
+        {
+          "url": "clover-plugin://p1/",
+          "resourceType": "subFrame",
+          "initiatorOrigin": "clover-plugin://core",
+          "frameUrl": "",
+          "cancel": false,
+          "reason": "filter off"
+        },
+        {
+          "url": "http://127.0.0.1:49182/allowed-fetch?case=allowed-fetch",
+          "resourceType": "xhr",
+          "initiatorOrigin": "clover-plugin://p1",
+          "frameUrl": "clover-plugin://p1/",
+          "cancel": false,
+          "reason": "filter off"
+        },
+        {
+          "url": "http://127.0.0.1:49182/allowed-xhr?case=allowed-xhr",
+          "resourceType": "xhr",
+          "initiatorOrigin": "clover-plugin://p1",
+          "frameUrl": "clover-plugin://p1/",
+          "cancel": false,
+          "reason": "filter off"
+        },
+        {
+          "url": "http://127.0.0.1:49182/allowed-image?case=allowed-image",
+          "resourceType": "image",
+          "initiatorOrigin": "clover-plugin://p1",
+          "frameUrl": "clover-plugin://p1/",
+          "cancel": false,
+          "reason": "filter off"
+        },
+        {
+          "url": "http://127.0.0.1:49182/allowed-css?case=allowed-css",
+          "resourceType": "stylesheet",
+          "initiatorOrigin": "clover-plugin://p1",
+          "frameUrl": "clover-plugin://p1/",
+          "cancel": false,
+          "reason": "filter off"
+        },
+        {
+          "url": "http://127.0.0.1:49182/allowed-font?case=allowed-font",
+          "resourceType": "font",
+          "initiatorOrigin": "clover-plugin://p1",
+          "frameUrl": "clover-plugin://p1/",
+          "cancel": false,
+          "reason": "filter off"
+        },
+        {
+          "url": "http://127.0.0.1:49182/allowed-font?case=allowed-font",
+          "resourceType": "font",
+          "initiatorOrigin": "clover-plugin://p1",
+          "frameUrl": "clover-plugin://p1/",
+          "cancel": false,
+          "reason": "filter off"
+        },
+        {
+          "url": "ws://127.0.0.1:49182/allowed-websocket?case=allowed-websocket",
+          "resourceType": "webSocket",
+          "initiatorOrigin": "clover-plugin://p1",
+          "frameUrl": "clover-plugin://p1/",
+          "cancel": false,
+          "reason": "filter off"
+        },
+        {
+          "url": "http://127.0.0.1:49182/allowed-beacon?case=allowed-beacon",
+          "resourceType": "ping",
+          "initiatorOrigin": "clover-plugin://p1",
+          "frameUrl": "clover-plugin://p1/",
+          "cancel": false,
+          "reason": "filter off"
+        },
+        {
+          "url": "http://127.0.0.1:49182/allowed-prefetch?case=allowed-prefetch",
+          "resourceType": "other",
+          "initiatorOrigin": "clover-plugin://p1",
+          "frameUrl": "clover-plugin://p1/",
+          "cancel": false,
+          "reason": "filter off"
+        },
+        {
+          "url": "http://127.0.0.1:49182/redirect",
+          "resourceType": "xhr",
+          "initiatorOrigin": "clover-plugin://p1",
+          "frameUrl": "clover-plugin://p1/",
+          "cancel": false,
+          "reason": "filter off"
+        }
+      ],
+      "navigations": [],
+      "popups": [
+        {
+          "url": "http://localhost:49182/window-open"
+        },
+        {
+          "url": "http://localhost:49182/form?"
+        }
+      ],
+      "hits": [
+        {
+          "host": "127.0.0.1:49182",
+          "url": "/allowed-fetch?case=allowed-fetch",
+          "method": "GET"
+        },
+        {
+          "host": "127.0.0.1:49182",
+          "url": "/allowed-xhr?case=allowed-xhr",
+          "method": "GET"
+        },
+        {
+          "host": "127.0.0.1:49182",
+          "url": "/allowed-image?case=allowed-image",
+          "method": "GET"
+        },
+        {
+          "host": "127.0.0.1:49182",
+          "url": "/allowed-css?case=allowed-css",
+          "method": "GET"
+        },
+        {
+          "host": "127.0.0.1:49182",
+          "url": "/allowed-font?case=allowed-font",
+          "method": "GET"
+        },
+        {
+          "host": "127.0.0.1:49182",
+          "url": "/allowed-websocket?case=allowed-websocket",
+          "method": "WS"
+        },
+        {
+          "host": "127.0.0.1:49182",
+          "url": "/allowed-beacon?case=allowed-beacon",
+          "method": "POST"
+        },
+        {
+          "host": "127.0.0.1:49182",
+          "url": "/allowed-prefetch?case=allowed-prefetch",
+          "method": "GET"
+        },
+        {
+          "host": "127.0.0.1:49182",
+          "url": "/redirect",
+          "method": "GET"
+        }
+      ],
+      "udp": [
+        {
+          "bytes": 20,
+          "time": 1793839160388
+        },
+        {
+          "bytes": 20,
+          "time": 1793839160719
+        }
+      ],
+      "tcpConnections": 4
+    },
+    {
+      "mode": "filter",
+      "capabilities": {
+        "node": "undefined",
+        "origin": "clover-plugin://p1",
+        "rtc": "function",
+        "secure": true
+      },
+      "outcomes": [
+        {
+          "name": "allowed-fetch",
+          "result": 200,
+          "violations": []
+        },
+        {
+          "name": "allowed-xhr",
+          "result": 200,
+          "violations": []
+        },
+        {
+          "name": "allowed-image",
+          "result": "error",
+          "violations": []
+        },
+        {
+          "name": "allowed-css",
+          "result": "load",
+          "violations": []
+        },
+        {
+          "error": "NetworkError: A network error occurred.",
+          "name": "allowed-font",
+          "violations": []
+        },
+        {
+          "name": "allowed-websocket",
+          "result": "open",
+          "violations": []
+        },
+        {
+          "name": "allowed-beacon",
+          "result": true,
+          "violations": []
+        },
+        {
+          "name": "allowed-dns-prefetch",
+          "result": "inserted",
+          "violations": []
+        },
+        {
+          "name": "allowed-preconnect",
+          "result": "inserted",
+          "violations": []
+        },
+        {
+          "name": "allowed-prefetch",
+          "result": "inserted",
+          "violations": []
+        },
+        {
+          "name": "allowed-prerender",
+          "result": "inserted",
+          "violations": []
+        },
+        {
+          "error": "TypeError: Failed to fetch",
+          "name": "denied-fetch",
+          "violations": []
+        },
+        {
+          "name": "denied-xhr",
+          "result": "error",
+          "violations": []
+        },
+        {
+          "name": "denied-image",
+          "result": "error",
+          "violations": []
+        },
+        {
+          "name": "denied-css",
+          "result": "error",
+          "violations": []
+        },
+        {
+          "error": "NetworkError: A network error occurred.",
+          "name": "denied-font",
+          "violations": []
+        },
+        {
+          "name": "denied-websocket",
+          "result": "error",
+          "violations": []
+        },
+        {
+          "name": "denied-beacon",
+          "result": true,
+          "violations": []
+        },
+        {
+          "name": "denied-dns-prefetch",
+          "result": "inserted",
+          "violations": []
+        },
+        {
+          "name": "denied-preconnect",
+          "result": "inserted",
+          "violations": []
+        },
+        {
+          "name": "denied-prefetch",
+          "result": "inserted",
+          "violations": []
+        },
+        {
+          "name": "denied-prerender",
+          "result": "inserted",
+          "violations": []
+        },
+        {
+          "name": "denied-script",
+          "result": "error",
+          "violations": []
+        },
+        {
+          "name": "denied-css-import",
+          "result": "inserted",
+          "violations": []
+        },
+        {
+          "name": "denied-eventsource",
+          "result": "error",
+          "violations": []
+        },
+        {
+          "error": "TypeError: Failed to fetch",
+          "name": "denied-fetch-keepalive",
+          "violations": []
+        },
+        {
+          "error": "SecurityError: Failed to construct 'Worker': Script at 'http://localhost:49182/remote-worker.js' cannot be accessed from origin 'clover-plugin://p1'.",
+          "name": "denied-remote-worker",
+          "violations": []
+        },
+        {
+          "name": "denied-object",
+          "result": "inserted",
+          "violations": []
+        },
+        {
+          "name": "denied-media",
+          "result": "inserted",
+          "violations": []
+        },
+        {
+          "name": "opaque-frame-fetch",
+          "result": "inserted",
+          "violations": []
+        },
+        {
+          "error": "TypeError: Failed to fetch",
+          "name": "redirect",
+          "violations": []
+        },
+        {
+          "name": "dedicated-worker",
+          "result": "blocked",
+          "violations": []
+        },
+        {
+          "name": "blob-worker",
+          "result": "blocked",
+          "violations": []
+        },
+        {
+          "name": "shared-worker",
+          "result": "blocked",
+          "violations": []
+        },
+        {
+          "name": "service-worker",
+          "result": {
+            "registered": true,
+            "scope": "clover-plugin://p1/"
+          },
+          "violations": []
+        },
+        {
+          "name": "speculationrules",
+          "result": "inserted",
+          "violations": []
+        },
+        {
+          "name": "webrtc",
+          "result": {
+            "disabled": false,
+            "sdp": true,
+            "state": "gathering"
+          },
+          "violations": []
+        },
+        {
+          "name": "window-open",
+          "result": {
+            "returnedWindow": false
+          },
+          "violations": []
+        },
+        {
+          "name": "subframe-navigation",
+          "result": "inserted",
+          "violations": []
+        },
+        {
+          "name": "form",
+          "result": "submitted",
+          "violations": []
+        }
+      ],
+      "violations": [],
+      "requests": [
+        {
+          "url": "clover-plugin://core/",
+          "resourceType": "mainFrame",
+          "frameUrl": "",
+          "cancel": false,
+          "reason": "local fixture"
+        },
+        {
+          "url": "clover-plugin://p1/",
+          "resourceType": "subFrame",
+          "initiatorOrigin": "clover-plugin://core",
+          "frameUrl": "",
+          "cancel": false,
+          "reason": "local fixture"
+        },
+        {
+          "url": "http://127.0.0.1:49182/allowed-fetch?case=allowed-fetch",
+          "resourceType": "xhr",
+          "initiatorOrigin": "clover-plugin://p1",
+          "frameUrl": "clover-plugin://p1/",
+          "cancel": false,
+          "reason": "declared host"
+        },
+        {
+          "url": "http://127.0.0.1:49182/allowed-xhr?case=allowed-xhr",
+          "resourceType": "xhr",
+          "initiatorOrigin": "clover-plugin://p1",
+          "frameUrl": "clover-plugin://p1/",
+          "cancel": false,
+          "reason": "declared host"
+        },
+        {
+          "url": "http://127.0.0.1:49182/allowed-image?case=allowed-image",
+          "resourceType": "image",
+          "initiatorOrigin": "clover-plugin://p1",
+          "frameUrl": "clover-plugin://p1/",
+          "cancel": false,
+          "reason": "declared host"
+        },
+        {
+          "url": "http://127.0.0.1:49182/allowed-css?case=allowed-css",
+          "resourceType": "stylesheet",
+          "initiatorOrigin": "clover-plugin://p1",
+          "frameUrl": "clover-plugin://p1/",
+          "cancel": false,
+          "reason": "declared host"
+        },
+        {
+          "url": "http://127.0.0.1:49182/allowed-font?case=allowed-font",
+          "resourceType": "font",
+          "initiatorOrigin": "clover-plugin://p1",
+          "frameUrl": "clover-plugin://p1/",
+          "cancel": false,
+          "reason": "declared host"
+        },
+        {
+          "url": "http://127.0.0.1:49182/allowed-font?case=allowed-font",
+          "resourceType": "font",
+          "initiatorOrigin": "clover-plugin://p1",
+          "frameUrl": "clover-plugin://p1/",
+          "cancel": false,
+          "reason": "declared host"
+        },
+        {
+          "url": "ws://127.0.0.1:49182/allowed-websocket?case=allowed-websocket",
+          "resourceType": "webSocket",
+          "initiatorOrigin": "clover-plugin://p1",
+          "frameUrl": "clover-plugin://p1/",
+          "cancel": false,
+          "reason": "declared host"
+        },
+        {
+          "url": "http://127.0.0.1:49182/allowed-beacon?case=allowed-beacon",
+          "resourceType": "ping",
+          "initiatorOrigin": "clover-plugin://p1",
+          "frameUrl": "clover-plugin://p1/",
+          "cancel": false,
+          "reason": "declared host"
+        },
+        {
+          "url": "http://127.0.0.1:49182/allowed-prefetch?case=allowed-prefetch",
+          "resourceType": "other",
+          "initiatorOrigin": "clover-plugin://p1",
+          "frameUrl": "clover-plugin://p1/",
+          "cancel": false,
+          "reason": "declared host"
+        },
+        {
+          "url": "http://localhost:49182/denied-fetch?case=denied-fetch",
+          "resourceType": "xhr",
+          "initiatorOrigin": "clover-plugin://p1",
+          "frameUrl": "clover-plugin://p1/",
+          "cancel": true,
+          "reason": "declared host"
+        },
+        {
+          "url": "http://localhost:49182/denied-xhr?case=denied-xhr",
+          "resourceType": "xhr",
+          "initiatorOrigin": "clover-plugin://p1",
+          "frameUrl": "clover-plugin://p1/",
+          "cancel": true,
+          "reason": "declared host"
+        },
+        {
+          "url": "http://localhost:49182/denied-image?case=denied-image",
+          "resourceType": "image",
+          "initiatorOrigin": "clover-plugin://p1",
+          "frameUrl": "clover-plugin://p1/",
+          "cancel": true,
+          "reason": "declared host"
+        },
+        {
+          "url": "http://localhost:49182/denied-css?case=denied-css",
+          "resourceType": "stylesheet",
+          "initiatorOrigin": "clover-plugin://p1",
+          "frameUrl": "clover-plugin://p1/",
+          "cancel": true,
+          "reason": "declared host"
+        },
+        {
+          "url": "http://localhost:49182/denied-font?case=denied-font",
+          "resourceType": "font",
+          "initiatorOrigin": "clover-plugin://p1",
+          "frameUrl": "clover-plugin://p1/",
+          "cancel": true,
+          "reason": "declared host"
+        },
+        {
+          "url": "ws://localhost:49182/denied-websocket?case=denied-websocket",
+          "resourceType": "webSocket",
+          "initiatorOrigin": "clover-plugin://p1",
+          "frameUrl": "clover-plugin://p1/",
+          "cancel": true,
+          "reason": "declared host"
+        },
+        {
+          "url": "http://localhost:49182/denied-beacon?case=denied-beacon",
+          "resourceType": "ping",
+          "initiatorOrigin": "clover-plugin://p1",
+          "frameUrl": "clover-plugin://p1/",
+          "cancel": true,
+          "reason": "declared host"
+        },
+        {
+          "url": "http://localhost:49182/denied-prefetch?case=denied-prefetch",
+          "resourceType": "other",
+          "initiatorOrigin": "clover-plugin://p1",
+          "frameUrl": "clover-plugin://p1/",
+          "cancel": true,
+          "reason": "declared host"
+        },
+        {
+          "url": "http://localhost:49182/external.js",
+          "resourceType": "script",
+          "initiatorOrigin": "clover-plugin://p1",
+          "frameUrl": "clover-plugin://p1/",
+          "cancel": true,
+          "reason": "declared host"
+        },
+        {
+          "url": "http://localhost:49182/css-import",
+          "resourceType": "stylesheet",
+          "initiatorOrigin": "clover-plugin://p1",
+          "frameUrl": "clover-plugin://p1/",
+          "cancel": true,
+          "reason": "declared host"
+        },
+        {
+          "url": "http://localhost:49182/css-background",
+          "resourceType": "image",
+          "initiatorOrigin": "clover-plugin://p1",
+          "frameUrl": "clover-plugin://p1/",
+          "cancel": true,
+          "reason": "declared host"
+        },
+        {
+          "url": "http://localhost:49182/eventsource",
+          "resourceType": "xhr",
+          "initiatorOrigin": "clover-plugin://p1",
+          "frameUrl": "clover-plugin://p1/",
+          "cancel": true,
+          "reason": "declared host"
+        },
+        {
+          "url": "http://localhost:49182/keepalive",
+          "resourceType": "xhr",
+          "initiatorOrigin": "clover-plugin://p1",
+          "frameUrl": "clover-plugin://p1/",
+          "cancel": true,
+          "reason": "declared host"
+        },
+        {
+          "url": "http://localhost:49182/media",
+          "resourceType": "media",
+          "initiatorOrigin": "clover-plugin://p1",
+          "frameUrl": "clover-plugin://p1/",
+          "cancel": true,
+          "reason": "declared host"
+        },
+        {
+          "url": "http://localhost:49182/opaque-fetch",
+          "resourceType": "xhr",
+          "initiatorOrigin": "null",
+          "frameUrl": "about:srcdoc",
+          "cancel": true,
+          "reason": "missing or unknown initiator"
+        },
+        {
+          "url": "http://127.0.0.1:49182/redirect",
+          "resourceType": "xhr",
+          "initiatorOrigin": "clover-plugin://p1",
+          "frameUrl": "clover-plugin://p1/",
+          "cancel": false,
+          "reason": "declared host"
+        },
+        {
+          "url": "http://localhost:49182/redirect-target",
+          "resourceType": "xhr",
+          "initiatorOrigin": "clover-plugin://p1",
+          "frameUrl": "clover-plugin://p1/",
+          "cancel": true,
+          "reason": "declared host"
+        },
+        {
+          "url": "http://localhost:49182/worker-fetch",
+          "resourceType": "xhr",
+          "initiatorOrigin": "clover-plugin://p1",
+          "frameUrl": "clover-plugin://p1/",
+          "cancel": true,
+          "reason": "declared host"
+        },
+        {
+          "url": "http://localhost:49182/blob-worker",
+          "resourceType": "xhr",
+          "initiatorOrigin": "clover-plugin://p1",
+          "frameUrl": "clover-plugin://p1/",
+          "cancel": true,
+          "reason": "declared host"
+        },
+        {
+          "url": "http://localhost:49182/shared-worker-fetch",
+          "resourceType": "xhr",
+          "initiatorOrigin": "clover-plugin://p1",
+          "cancel": true,
+          "reason": "declared host"
+        },
+        {
+          "url": "http://localhost:49182/service-worker-fetch",
+          "resourceType": "xhr",
+          "initiatorOrigin": "clover-plugin://p1",
+          "cancel": true,
+          "reason": "declared host"
+        }
+      ],
+      "navigations": [
+        {
+          "url": "http://localhost:49182/object",
+          "blocked": true
+        },
+        {
+          "url": "http://localhost:49182/subframe-navigation",
+          "blocked": true
+        }
+      ],
+      "popups": [
+        {
+          "url": "http://localhost:49182/window-open"
+        },
+        {
+          "url": "http://localhost:49182/form?"
+        }
+      ],
+      "hits": [
+        {
+          "host": "127.0.0.1:49182",
+          "url": "/allowed-fetch?case=allowed-fetch",
+          "method": "GET"
+        },
+        {
+          "host": "127.0.0.1:49182",
+          "url": "/allowed-xhr?case=allowed-xhr",
+          "method": "GET"
+        },
+        {
+          "host": "127.0.0.1:49182",
+          "url": "/allowed-image?case=allowed-image",
+          "method": "GET"
+        },
+        {
+          "host": "127.0.0.1:49182",
+          "url": "/allowed-css?case=allowed-css",
+          "method": "GET"
+        },
+        {
+          "host": "127.0.0.1:49182",
+          "url": "/allowed-font?case=allowed-font",
+          "method": "GET"
+        },
+        {
+          "host": "127.0.0.1:49182",
+          "url": "/allowed-websocket?case=allowed-websocket",
+          "method": "WS"
+        },
+        {
+          "host": "127.0.0.1:49182",
+          "url": "/allowed-beacon?case=allowed-beacon",
+          "method": "POST"
+        },
+        {
+          "host": "127.0.0.1:49182",
+          "url": "/allowed-prefetch?case=allowed-prefetch",
+          "method": "GET"
+        },
+        {
+          "host": "127.0.0.1:49182",
+          "url": "/redirect",
+          "method": "GET"
+        }
+      ],
+      "udp": [
+        {
+          "bytes": 20,
+          "time": 1793839175577
+        },
+        {
+          "bytes": 20,
+          "time": 1793839175855
+        },
+        {
+          "bytes": 20,
+          "time": 1793839176391
+        }
+      ],
+      "tcpConnections": 4
+    },
+    {
+      "mode": "combined",
+      "capabilities": {
+        "node": "undefined",
+        "origin": "clover-plugin://p1",
+        "rtc": "function",
+        "secure": true
+      },
+      "outcomes": [
+        {
+          "name": "allowed-fetch",
+          "result": 200,
+          "violations": []
+        },
+        {
+          "name": "allowed-xhr",
+          "result": 200,
+          "violations": []
+        },
+        {
+          "name": "allowed-image",
+          "result": "error",
+          "violations": []
+        },
+        {
+          "name": "allowed-css",
+          "result": "load",
+          "violations": []
+        },
+        {
+          "error": "NetworkError: A network error occurred.",
+          "name": "allowed-font",
+          "violations": []
+        },
+        {
+          "name": "allowed-websocket",
+          "result": "open",
+          "violations": []
+        },
+        {
+          "name": "allowed-beacon",
+          "result": true,
+          "violations": []
+        },
+        {
+          "name": "allowed-dns-prefetch",
+          "result": "inserted",
+          "violations": []
+        },
+        {
+          "name": "allowed-preconnect",
+          "result": "inserted",
+          "violations": []
+        },
+        {
+          "name": "allowed-prefetch",
+          "result": "inserted",
+          "violations": []
+        },
+        {
+          "name": "allowed-prerender",
+          "result": "inserted",
+          "violations": []
+        },
+        {
+          "error": "TypeError: Failed to fetch",
+          "name": "denied-fetch",
+          "violations": []
+        },
+        {
+          "name": "denied-xhr",
+          "result": "error",
+          "violations": [
+            {
+              "blockedURI": "http://localhost:49182/denied-xhr?case=denied-xhr",
+              "directive": "connect-src"
+            }
+          ]
+        },
+        {
+          "name": "denied-image",
+          "result": "error",
+          "violations": [
+            {
+              "blockedURI": "http://localhost:49182/denied-image?case=denied-image",
+              "directive": "img-src"
+            }
+          ]
+        },
+        {
+          "name": "denied-css",
+          "result": "error",
+          "violations": [
+            {
+              "blockedURI": "http://localhost:49182/denied-css?case=denied-css",
+              "directive": "style-src-elem"
+            }
+          ]
+        },
+        {
+          "error": "NetworkError: A network error occurred.",
+          "name": "denied-font",
+          "violations": []
+        },
+        {
+          "name": "denied-websocket",
+          "result": "error",
+          "violations": [
+            {
+              "blockedURI": "ws://localhost:49182/denied-websocket?case=denied-websocket",
+              "directive": "connect-src"
+            }
+          ]
+        },
+        {
+          "name": "denied-beacon",
+          "result": true,
+          "violations": []
+        },
+        {
+          "name": "denied-dns-prefetch",
+          "result": "inserted",
+          "violations": []
+        },
+        {
+          "name": "denied-preconnect",
+          "result": "inserted",
+          "violations": []
+        },
+        {
+          "name": "denied-prefetch",
+          "result": "inserted",
+          "violations": [
+            {
+              "blockedURI": "http://localhost:49182/denied-prefetch?case=denied-prefetch",
+              "directive": "default-src"
+            }
+          ]
+        },
+        {
+          "name": "denied-prerender",
+          "result": "inserted",
+          "violations": []
+        },
+        {
+          "name": "denied-script",
+          "result": "error",
+          "violations": [
+            {
+              "blockedURI": "http://localhost:49182/external.js",
+              "directive": "script-src-elem"
+            }
+          ]
+        },
+        {
+          "name": "denied-css-import",
+          "result": "inserted",
+          "violations": [
+            {
+              "blockedURI": "http://localhost:49182/css-import",
+              "directive": "style-src-elem"
+            },
+            {
+              "blockedURI": "http://localhost:49182/css-background",
+              "directive": "img-src"
+            }
+          ]
+        },
+        {
+          "name": "denied-eventsource",
+          "result": "error",
+          "violations": [
+            {
+              "blockedURI": "http://localhost:49182/eventsource",
+              "directive": "connect-src"
+            }
+          ]
+        },
+        {
+          "error": "TypeError: Failed to fetch",
+          "name": "denied-fetch-keepalive",
+          "violations": []
+        },
+        {
+          "error": "SecurityError: Failed to construct 'Worker': Script at 'http://localhost:49182/remote-worker.js' cannot be accessed from origin 'clover-plugin://p1'.",
+          "name": "denied-remote-worker",
+          "violations": []
+        },
+        {
+          "name": "denied-object",
+          "result": "inserted",
+          "violations": [
+            {
+              "blockedURI": "http://localhost:49182",
+              "directive": "object-src"
+            }
+          ]
+        },
+        {
+          "name": "denied-media",
+          "result": "inserted",
+          "violations": [
+            {
+              "blockedURI": "http://localhost:49182/media",
+              "directive": "media-src"
+            }
+          ]
+        },
+        {
+          "name": "opaque-frame-fetch",
+          "result": "inserted",
+          "violations": []
+        },
+        {
+          "error": "TypeError: Failed to fetch",
+          "name": "redirect",
+          "violations": []
+        },
+        {
+          "name": "dedicated-worker",
+          "result": "blocked",
+          "violations": []
+        },
+        {
+          "name": "blob-worker",
+          "result": "blocked",
+          "violations": []
+        },
+        {
+          "name": "shared-worker",
+          "result": "blocked",
+          "violations": []
+        },
+        {
+          "name": "service-worker",
+          "result": {
+            "registered": true,
+            "scope": "clover-plugin://p1/"
+          },
+          "violations": []
+        },
+        {
+          "name": "speculationrules",
+          "result": "inserted",
+          "violations": []
+        },
+        {
+          "name": "webrtc",
+          "result": {
+            "disabled": false,
+            "sdp": true,
+            "state": "gathering"
+          },
+          "violations": []
+        },
+        {
+          "name": "window-open",
+          "result": {
+            "returnedWindow": false
+          },
+          "violations": []
+        },
+        {
+          "name": "subframe-navigation",
+          "result": "inserted",
+          "violations": [
+            {
+              "blockedURI": "http://localhost:49182",
+              "directive": "frame-src"
+            }
+          ]
+        },
+        {
+          "name": "form",
+          "result": "submitted",
+          "violations": []
+        }
+      ],
+      "violations": [
+        {
+          "blockedURI": "http://localhost:49182/denied-fetch?case=denied-fetch",
+          "directive": "connect-src"
+        },
+        {
+          "blockedURI": "http://localhost:49182/denied-xhr?case=denied-xhr",
+          "directive": "connect-src"
+        },
+        {
+          "blockedURI": "http://localhost:49182/denied-image?case=denied-image",
+          "directive": "img-src"
+        },
+        {
+          "blockedURI": "http://localhost:49182/denied-css?case=denied-css",
+          "directive": "style-src-elem"
+        },
+        {
+          "blockedURI": "http://localhost:49182/denied-font?case=denied-font",
+          "directive": "font-src"
+        },
+        {
+          "blockedURI": "ws://localhost:49182/denied-websocket?case=denied-websocket",
+          "directive": "connect-src"
+        },
+        {
+          "blockedURI": "http://localhost:49182/denied-beacon?case=denied-beacon",
+          "directive": "connect-src"
+        },
+        {
+          "blockedURI": "http://localhost:49182/denied-prefetch?case=denied-prefetch",
+          "directive": "default-src"
+        },
+        {
+          "blockedURI": "http://localhost:49182/external.js",
+          "directive": "script-src-elem"
+        },
+        {
+          "blockedURI": "http://localhost:49182/css-import",
+          "directive": "style-src-elem"
+        },
+        {
+          "blockedURI": "http://localhost:49182/css-background",
+          "directive": "img-src"
+        },
+        {
+          "blockedURI": "http://localhost:49182/eventsource",
+          "directive": "connect-src"
+        },
+        {
+          "blockedURI": "http://localhost:49182/keepalive",
+          "directive": "connect-src"
+        },
+        {
+          "blockedURI": "http://localhost:49182",
+          "directive": "object-src"
+        },
+        {
+          "blockedURI": "http://localhost:49182/media",
+          "directive": "media-src"
+        },
+        {
+          "blockedURI": "http://127.0.0.1:49182/redirect",
+          "directive": "connect-src"
+        },
+        {
+          "blockedURI": "http://localhost:49182",
+          "directive": "frame-src"
+        }
+      ],
+      "requests": [
+        {
+          "url": "clover-plugin://core/",
+          "resourceType": "mainFrame",
+          "frameUrl": "",
+          "cancel": false,
+          "reason": "local fixture"
+        },
+        {
+          "url": "clover-plugin://p1/",
+          "resourceType": "subFrame",
+          "initiatorOrigin": "clover-plugin://core",
+          "frameUrl": "",
+          "cancel": false,
+          "reason": "local fixture"
+        },
+        {
+          "url": "http://127.0.0.1:49182/allowed-fetch?case=allowed-fetch",
+          "resourceType": "xhr",
+          "initiatorOrigin": "clover-plugin://p1",
+          "frameUrl": "clover-plugin://p1/",
+          "cancel": false,
+          "reason": "declared host"
+        },
+        {
+          "url": "http://127.0.0.1:49182/allowed-xhr?case=allowed-xhr",
+          "resourceType": "xhr",
+          "initiatorOrigin": "clover-plugin://p1",
+          "frameUrl": "clover-plugin://p1/",
+          "cancel": false,
+          "reason": "declared host"
+        },
+        {
+          "url": "http://127.0.0.1:49182/allowed-image?case=allowed-image",
+          "resourceType": "image",
+          "initiatorOrigin": "clover-plugin://p1",
+          "frameUrl": "clover-plugin://p1/",
+          "cancel": false,
+          "reason": "declared host"
+        },
+        {
+          "url": "http://127.0.0.1:49182/allowed-css?case=allowed-css",
+          "resourceType": "stylesheet",
+          "initiatorOrigin": "clover-plugin://p1",
+          "frameUrl": "clover-plugin://p1/",
+          "cancel": false,
+          "reason": "declared host"
+        },
+        {
+          "url": "http://127.0.0.1:49182/allowed-font?case=allowed-font",
+          "resourceType": "font",
+          "initiatorOrigin": "clover-plugin://p1",
+          "frameUrl": "clover-plugin://p1/",
+          "cancel": false,
+          "reason": "declared host"
+        },
+        {
+          "url": "http://127.0.0.1:49182/allowed-font?case=allowed-font",
+          "resourceType": "font",
+          "initiatorOrigin": "clover-plugin://p1",
+          "frameUrl": "clover-plugin://p1/",
+          "cancel": false,
+          "reason": "declared host"
+        },
+        {
+          "url": "ws://127.0.0.1:49182/allowed-websocket?case=allowed-websocket",
+          "resourceType": "webSocket",
+          "initiatorOrigin": "clover-plugin://p1",
+          "frameUrl": "clover-plugin://p1/",
+          "cancel": false,
+          "reason": "declared host"
+        },
+        {
+          "url": "http://127.0.0.1:49182/allowed-beacon?case=allowed-beacon",
+          "resourceType": "ping",
+          "initiatorOrigin": "clover-plugin://p1",
+          "frameUrl": "clover-plugin://p1/",
+          "cancel": false,
+          "reason": "declared host"
+        },
+        {
+          "url": "http://127.0.0.1:49182/allowed-prefetch?case=allowed-prefetch",
+          "resourceType": "other",
+          "initiatorOrigin": "clover-plugin://p1",
+          "frameUrl": "clover-plugin://p1/",
+          "cancel": false,
+          "reason": "declared host"
+        },
+        {
+          "url": "http://127.0.0.1:49182/redirect",
+          "resourceType": "xhr",
+          "initiatorOrigin": "clover-plugin://p1",
+          "frameUrl": "clover-plugin://p1/",
+          "cancel": false,
+          "reason": "declared host"
+        }
+      ],
+      "navigations": [],
+      "popups": [
+        {
+          "url": "http://localhost:49182/window-open"
+        },
+        {
+          "url": "http://localhost:49182/form?"
+        }
+      ],
+      "hits": [
+        {
+          "host": "127.0.0.1:49182",
+          "url": "/allowed-fetch?case=allowed-fetch",
+          "method": "GET"
+        },
+        {
+          "host": "127.0.0.1:49182",
+          "url": "/allowed-xhr?case=allowed-xhr",
+          "method": "GET"
+        },
+        {
+          "host": "127.0.0.1:49182",
+          "url": "/allowed-image?case=allowed-image",
+          "method": "GET"
+        },
+        {
+          "host": "127.0.0.1:49182",
+          "url": "/allowed-css?case=allowed-css",
+          "method": "GET"
+        },
+        {
+          "host": "127.0.0.1:49182",
+          "url": "/allowed-font?case=allowed-font",
+          "method": "GET"
+        },
+        {
+          "host": "127.0.0.1:49182",
+          "url": "/allowed-websocket?case=allowed-websocket",
+          "method": "WS"
+        },
+        {
+          "host": "127.0.0.1:49182",
+          "url": "/allowed-beacon?case=allowed-beacon",
+          "method": "POST"
+        },
+        {
+          "host": "127.0.0.1:49182",
+          "url": "/allowed-prefetch?case=allowed-prefetch",
+          "method": "GET"
+        },
+        {
+          "host": "127.0.0.1:49182",
+          "url": "/redirect",
+          "method": "GET"
+        }
+      ],
+      "udp": [
+        {
+          "bytes": 20,
+          "time": 1793839190618
+        },
+        {
+          "bytes": 20,
+          "time": 1793839190886
+        },
+        {
+          "bytes": 20,
+          "time": 1793839191456
+        }
+      ],
+      "tcpConnections": 4
+    }
+  ],
+  "limits": [
+    "Loopback HTTP fixtures; font/image decode failures are not policy evidence: use request/hit logs.",
+    "DNS cache and Chromium feature names require netlog inspection; absence of HTTP does not prove absence of DNS/TCP.",
+    "UDP fixture observes STUN; WebRTC API existence/SDP also reported.",
+    "External HTTPS, WSS, DNS wire capture and OS IMEs remain live gates."
+  ]
+}

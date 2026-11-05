@@ -1,0 +1,8 @@
+{
+  "type": "plugin_ui_changed",
+  "ts": 1781270000000,
+  "pluginIds": [
+    "luna",
+    "luna/tarot-panel"
+  ]
+}

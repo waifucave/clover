@@ -1,0 +1,22 @@
+{
+  "type": "tab_changed",
+  "ts": 1781270000000,
+  "tab": {
+    "id": "tab_1",
+    "computer": "Studio",
+    "owner": {
+      "kind": "bot",
+      "bot": "alpha"
+    },
+    "partition": "persist:bot-alpha",
+    "url": "https://example.com/",
+    "title": "Example Domain",
+    "place": "headless",
+    "viewport": {
+      "width": 1280,
+      "height": 800
+    },
+    "loading": false,
+    "heldByUser": false
+  }
+}
