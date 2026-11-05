@@ -9,6 +9,7 @@ import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { VRMLoaderPlugin, VRMUtils, type VRM } from "@pixiv/three-vrm";
 import type { VisemeWeights } from "../lipsync/visemes";
 import type { Pose } from "../motion/idle";
+import { withoutAnimations } from "./glb";
 import { validateVrm, type AssetRejection, type VrmMeta } from "./validate";
 
 /** Why an avatar file could not be shown: a stable reason (worded through `t()` for the screen) and the check's
@@ -124,9 +125,12 @@ export class AvatarScene {
     if (!check.ok) throw new AvatarError(check.reason, check.detail);
     const loader = new GLTFLoader();
     loader.register((parser) => new VRMLoaderPlugin(parser));
+    // The avatar plays no glTF clips: the loader never sees them, so it builds none of their tracks.
+    const loadable = withoutAnimations(new Uint8Array(bytes));
+    const buffer = loadable.byteOffset === 0 && loadable.byteLength === loadable.buffer.byteLength ? loadable.buffer : loadable.slice().buffer;
     let gltf: Awaited<ReturnType<GLTFLoader["parseAsync"]>>;
     try {
-      gltf = await loader.parseAsync(bytes, "");
+      gltf = await loader.parseAsync(buffer as ArrayBuffer, "");
     } catch (error) {
       throw new AvatarError("malformed", error instanceof Error ? error.message : String(error));
     }

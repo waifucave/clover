@@ -12,7 +12,10 @@
 // accessor counts by count × element size, a bufferView or not (one without is a zero-filled array of that
 // size); every primitive counts its widest attribute; morph targets count as the texture three.js packs them
 // into (vertices × targets × attributes, over every primitive); images count by pixels, once per texture that
-// uploads them; and `EXT_mesh_gpu_instancing` counts every instance's vertices.
+// uploads them; a mesh's vertices count once for every node that draws it, and once more for every instance
+// `EXT_mesh_gpu_instancing` adds; and animations count by channel, each the Float32 keyframes GLTFLoader makes
+// for it (a normalized output is copied again for every channel that names it). The avatar never plays glTF
+// clips and strips them before the loader sees the file (`withoutAnimations`), but the check stands on its own.
 
 export type AssetRejection =
   | "too-large"
@@ -51,7 +54,7 @@ export const VRM_BUDGETS = {
   nodeDepth: 64,
   meshes: 128,
   primitives: 512,
-  /** Over every primitive (one used twice counts twice), its widest attribute, instances included. */
+  /** Each primitive's widest attribute, once for every node and every instance that draws its mesh (once at least). */
   vertices: 1_000_000,
   /** What the accessors decode to: count × element size, summed over every accessor. */
   accessorBytes: 192 * 1024 * 1024,
@@ -67,6 +70,10 @@ export const VRM_BUDGETS = {
   imagePixels: 64 * 1024 * 1024,
   /** `EXT_mesh_gpu_instancing`: instances over every node. */
   instances: 256,
+  /** Channels over every animation: GLTFLoader makes a keyframe track for each. */
+  animationChannels: 4_096,
+  /** The Float32 keyframes those tracks hold, times and values, counted per channel. */
+  animationBytes: 64 * 1024 * 1024,
 } as const
 
 /** The one licence three-vrm 3.x loads a VRM 1.0 under (`VRMMetaLoaderPlugin.acceptLicenseUrls`). */
@@ -100,6 +107,8 @@ export interface VrmStats {
   readonly maxImageHeight: number
   readonly imagePixels: number
   readonly instances: number
+  readonly animationChannels: number
+  readonly animationBytes: number
 }
 
 export type VrmValidation =
@@ -249,7 +258,7 @@ function check(bytes: Uint8Array): VrmValidation {
       }
       if (optUint(val.byteOffset, "sparse offset") + n * elem > vv.length) reject("malformed", `accessor ${i} sparse values overrun their bufferView.`)
     }
-    return { count }
+    return { count, components: TYPE_COMPONENTS[acc.type as string]! }
   })
   const accessorAt = (i: unknown, what: string) => {
     const a = accessors[uint(i, what)]
@@ -289,7 +298,7 @@ function check(bytes: Uint8Array): VrmValidation {
   const meshes = arr(gltf.meshes)
   if (meshes.length > VRM_BUDGETS.meshes) reject("over-budget", `${meshes.length} meshes (limit ${VRM_BUDGETS.meshes}).`)
   let primitives = 0
-  let vertices = 0
+  let loaded = 0
   let maxMorphTargets = 0
   let morphElements = 0
   const meshVertices = meshes.map((m, i) => {
@@ -323,23 +332,60 @@ function check(bytes: Uint8Array): VrmValidation {
         reject("over-budget", `The morph targets come to over ${VRM_BUDGETS.morphElements} values (vertices × targets × attributes).`)
       }
     }
-    vertices += own
-    if (vertices > VRM_BUDGETS.vertices) reject("over-budget", `Over ${VRM_BUDGETS.vertices} vertices.`)
+    // Each mesh once: what the loader builds, a lower bound of what is drawn.
+    loaded += own
+    if (loaded > VRM_BUDGETS.vertices) reject("over-budget", `Over ${VRM_BUDGETS.vertices} vertices.`)
     return own
   })
 
-  // ── instancing: every instance draws its mesh again ──
+  // ── draws: every node that names a mesh draws all of it, once per instance it carries ──
+  // GLTFLoader shares the geometry between the nodes, but the renderer draws it for each: one 900k-vertex mesh
+  // named by 1,900 nodes is 1.7 billion vertices a frame from a 30 KB file.
   let instances = 0
+  const draws = new Array<number>(meshes.length).fill(0)
   nodes.forEach((n, i) => {
     const node = obj(n, `node ${i}`)
     const instancing = isObj(node.extensions) ? node.extensions.EXT_mesh_gpu_instancing : undefined
-    if (instancing === undefined) return
-    const count = Math.max(0, ...Object.entries(obj(obj(instancing, `node ${i} instancing`).attributes, `node ${i} instancing attributes`)).map(([name, index]) => accessorAt(index, `node ${i} instancing ${name}`).count))
-    instances += count
-    if (instances > VRM_BUDGETS.instances) reject("over-budget", `Over ${VRM_BUDGETS.instances} instances.`)
-    const mesh = node.mesh === undefined ? 0 : (meshVertices[uint(node.mesh, `node ${i} mesh`)] ?? reject("malformed", `node ${i} names a missing mesh.`))
-    vertices += Math.max(0, count - 1) * mesh
-    if (vertices > VRM_BUDGETS.vertices) reject("over-budget", `Over ${VRM_BUDGETS.vertices} vertices, its instances drawn.`)
+    let count = 1
+    if (instancing !== undefined) {
+      count = Math.max(0, ...Object.entries(obj(obj(instancing, `node ${i} instancing`).attributes, `node ${i} instancing attributes`)).map(([name, index]) => accessorAt(index, `node ${i} instancing ${name}`).count))
+      instances += count
+      if (instances > VRM_BUDGETS.instances) reject("over-budget", `Over ${VRM_BUDGETS.instances} instances.`)
+    }
+    if (node.mesh === undefined) return
+    const mesh = uint(node.mesh, `node ${i} mesh`)
+    if (mesh >= meshes.length) reject("malformed", `node ${i} names a missing mesh.`)
+    draws[mesh]! += count
+  })
+  let vertices = 0
+  meshVertices.forEach((own, m) => {
+    vertices += own * Math.max(1, draws[m]!)
+    if (vertices > VRM_BUDGETS.vertices) {
+      reject("over-budget", `Over ${VRM_BUDGETS.vertices} vertices drawn (a mesh counts again for every node and instance that draws it).`)
+    }
+  })
+
+  // ── animations: a keyframe track per channel ──
+  const animations = arr(gltf.animations)
+  let animationChannels = 0
+  let animationBytes = 0
+  animations.forEach((a, i) => {
+    const animation = obj(a, `animation ${i}`)
+    const samplers = arr(animation.samplers)
+    for (const c of arr(animation.channels)) {
+      const channel = obj(c, `animation ${i} channel`)
+      if (++animationChannels > VRM_BUDGETS.animationChannels) reject("over-budget", `Over ${VRM_BUDGETS.animationChannels} animation channels.`)
+      const sampler = samplers[uint(channel.sampler, `animation ${i} channel sampler`)]
+      if (sampler === undefined) reject("malformed", `animation ${i} names a missing sampler.`)
+      const s = obj(sampler, `animation ${i} sampler`)
+      const input = accessorAt(s.input, `animation ${i} sampler input`)
+      const output = accessorAt(s.output, `animation ${i} sampler output`)
+      // Times and values as Float32, for this channel alone: a shared output is copied once per channel.
+      animationBytes += (input.count + output.count * output.components) * 4
+      if (animationBytes > VRM_BUDGETS.animationBytes) {
+        reject("over-budget", `The animations come to over ${VRM_BUDGETS.animationBytes / 1024 / 1024} MiB of keyframes (each channel counts its own copy).`)
+      }
+    }
   })
 
   // ── skins ──
@@ -409,6 +455,8 @@ function check(bytes: Uint8Array): VrmValidation {
       maxImageHeight,
       imagePixels,
       instances,
+      animationChannels,
+      animationBytes,
     },
   }
 }

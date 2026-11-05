@@ -5,7 +5,7 @@ import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { VRMLoaderPlugin, type VRM } from "@pixiv/three-vrm";
 import type { Mesh } from "three";
 import { FACE_TARGETS, PLACEHOLDER_NAME, makePlaceholderVrm } from "../src/placeholder/model";
-import { GltfBuilder, glbJson } from "../src/vrm/glb";
+import { GltfBuilder, glbJson, withJson, withoutAnimations } from "../src/vrm/glb";
 import { MAX_VRM_BYTES, VRM_BUDGETS, validateVrm } from "../src/vrm/validate";
 import { AvatarScene, clampStep, SPRING_MAX_STEP, type AvatarRenderer } from "../src/vrm/scene";
 import { idlePose } from "../src/motion/idle";
@@ -318,6 +318,55 @@ describe("the structural check refuses, for every reason", () => {
     expect(reason(instanced(200, 10_000))).toStartWith("over-budget");
   });
 
+  test("over-budget: a mesh counts again for every node that draws it (the review's 1,900-node file)", () => {
+    const reused = (vertices: number, nodes: number) =>
+      vrm((b) => {
+        const mesh = b.mesh({ primitives: [{ attributes: { POSITION: empty(b, "VEC3", vertices) } }] });
+        for (let i = 0; i < nodes; i++) b.node({ mesh });
+      });
+    // One 900k-vertex mesh named by 1,900 nodes: 1.7 billion vertices a frame.
+    const bomb = reused(900_000, 1_900);
+    expect(bomb.byteLength).toBeLessThan(64 * 1024);
+    expect(reason(bomb)).toStartWith("over-budget");
+    expect(reason(bomb)).toContain("drawn");
+    const fine = validateVrm(reused(1_000, 10));
+    expect(fine.ok && fine.stats.vertices).toBe(10_000);
+    // Nodes and instances add up: 4 nodes of 64 instances each draw a 4,000-vertex mesh 256 times.
+    expect(reason(vrm((b) => {
+      const mesh = b.mesh({ primitives: [{ attributes: { POSITION: empty(b, "VEC3", 4_000) } }] });
+      for (let i = 0; i < 4; i++) b.node({ mesh, extensions: { EXT_mesh_gpu_instancing: { attributes: { TRANSLATION: empty(b, "VEC3", 64) } } } });
+      b.use("EXT_mesh_gpu_instancing");
+    }))).toStartWith("over-budget");
+    expect(reason(vrm((b) => b.node({ mesh: 3 })))).toStartWith("malformed");
+  });
+
+  test("over-budget: animations by channel, each counting its own copy of the keyframes (the review's 21 KB file)", () => {
+    /** One normalized byte VEC4 output of `keys` keyframes, named by `channels` channels (the review's probe). */
+    const animated = (keys: number, channels: number) =>
+      vrm((b) => {
+        const node = b.node({ mesh: b.mesh({ primitives: [{ attributes: { POSITION: b.floats([0, 0, 0, 1, 0, 0, 0, 1, 0], "VEC3", { bounds: true }) } }] }) });
+        b.json.accessors.push({ componentType: 5126, count: keys, type: "SCALAR", min: [0], max: [1] });
+        const input = b.json.accessors.length - 1;
+        b.json.accessors.push({ componentType: 5121, normalized: true, count: keys, type: "VEC4" });
+        const output = b.json.accessors.length - 1;
+        (b.json as Record<string, unknown>).animations = [
+          { samplers: [{ input, output, interpolation: "LINEAR" }], channels: Array.from({ length: channels }, () => ({ sampler: 0, target: { node, path: "rotation" } })) },
+        ];
+      });
+    // 9M keyframes reused by 400 channels: GLTFLoader would copy about 54 GiB of Float32.
+    const bomb = animated(9_000_000, 400);
+    expect(bomb.byteLength).toBeLessThan(64 * 1024);
+    expect(reason(bomb)).toStartWith("over-budget");
+    expect(reason(bomb)).toContain("keyframes");
+    // The review's measured case: 500k keyframes by 40 channels, about 305 MiB of copies.
+    expect(reason(animated(500_000, 40))).toContain("keyframes");
+    expect(reason(animated(30, VRM_BUDGETS.animationChannels + 1))).toContain("animation channels");
+    const fine = validateVrm(animated(30, 4));
+    expect(fine.ok && fine.stats.animationChannels).toBe(4);
+    expect(fine.ok && fine.stats.animationBytes).toBe(4 * (30 + 30 * 4) * 4);
+    expect(reason(vrm((b) => ((b.json as Record<string, unknown>).animations = [{ samplers: [], channels: [{ sampler: 0, target: { path: "rotation" } }] }])))).toStartWith("malformed");
+  });
+
   test("passes a model within every budget, and reports what it measured", () => {
     const check = validateVrm(vrm((b) => {
       const p = b.floats([0, 0, 0, 1, 0, 0, 0, 1, 0], "VEC3", { bounds: true });
@@ -361,6 +410,57 @@ function fakeRenderer() {
   };
   return { calls, create: () => renderer };
 }
+
+/** Alpha's placeholder with one small glTF clip added (keyframes with no bufferView: zero-filled). */
+function animatedPlaceholder(): Uint8Array {
+  return withJson(bytes(), (json) => {
+    const accessors = json.accessors as Record<string, unknown>[];
+    accessors.push({ componentType: 5126, count: 2, type: "SCALAR", min: [0], max: [1] });
+    accessors.push({ componentType: 5126, count: 2, type: "VEC4" });
+    json.animations = [{ samplers: [{ input: accessors.length - 2, output: accessors.length - 1 }], channels: [{ sampler: 0, target: { node: 0, path: "rotation" } }] }];
+  });
+}
+
+describe("the loader never sees a glTF clip", () => {
+  test("the clips leave the JSON and nothing else changes", async () => {
+    const animated = animatedPlaceholder();
+    const check = validateVrm(animated);
+    expect(check.ok && check.stats.animationChannels).toBe(1);
+    const stripped = withoutAnimations(animated);
+    expect(glbJson(stripped).animations).toBeUndefined();
+    expect(validateVrm(stripped).ok).toBe(true);
+    // The JSON is all that changed: the BIN chunk is byte for byte the same.
+    const tail = (b: Uint8Array) => b.subarray(20 + new DataView(b.buffer, b.byteOffset, b.byteLength).getUint32(12, true));
+    expect(Buffer.from(tail(stripped)).equals(Buffer.from(tail(animated)))).toBe(true);
+    const { animations, ...rest } = glbJson(animated);
+    expect(animations).toBeDefined();
+    expect(differences(glbJson(stripped), rest)).toEqual([]);
+    const loader = new GLTFLoader();
+    expect((await loader.parseAsync(buffer(animated), "")).animations.length).toBe(1);
+    expect((await loader.parseAsync(buffer(stripped), "")).animations.length).toBe(0);
+    // A file with no clips is handed back as it came.
+    const plain = bytes();
+    expect(withoutAnimations(plain)).toBe(plain);
+  });
+
+  test("the avatar's scene loads a model with clips, and hands the loader none", async () => {
+    const seen: unknown[] = [];
+    const parseAsync = GLTFLoader.prototype.parseAsync;
+    GLTFLoader.prototype.parseAsync = function (data, path) {
+      seen.push(glbJson(new Uint8Array(data as ArrayBuffer)).animations);
+      return parseAsync.call(this, data, path);
+    };
+    try {
+      const scene = new AvatarScene(document.createElement("canvas"), { createRenderer: fakeRenderer().create });
+      const loaded = await scene.load(buffer(animatedPlaceholder()));
+      expect(loaded.meta.placeholder).toBe(true);
+      scene.dispose();
+    } finally {
+      GLTFLoader.prototype.parseAsync = parseAsync;
+    }
+    expect(seen).toEqual([undefined]);
+  });
+});
 
 describe("the avatar's scene", () => {
   test("loads, frames the head and shoulders, poses, drives the face, and lets go of everything", async () => {

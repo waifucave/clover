@@ -153,3 +153,37 @@ export function glbJson(bytes: Uint8Array): Json {
   const length = view.getUint32(12, true);
   return JSON.parse(new TextDecoder().decode(bytes.subarray(20, 20 + length))) as Json;
 }
+
+/** The same GLB with its JSON chunk edited and space-padded again; every chunk after it is copied as it is. */
+export function withJson(bytes: Uint8Array, edit: (json: Json) => void): Uint8Array {
+  const json = glbJson(bytes);
+  edit(json);
+  const jsonLength = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).getUint32(12, true);
+  const encoded = new TextEncoder().encode(JSON.stringify(json));
+  const padded = pad4(encoded.length);
+  const rest = bytes.subarray(20 + jsonLength);
+  const total = 20 + padded + rest.byteLength;
+  const out = new Uint8Array(total);
+  const header = new DataView(out.buffer);
+  header.setUint32(0, GLB_MAGIC, true);
+  header.setUint32(4, 2, true);
+  header.setUint32(8, total, true);
+  header.setUint32(12, padded, true);
+  header.setUint32(16, CHUNK_JSON, true);
+  out.set(encoded, 20);
+  out.fill(0x20, 20 + encoded.length, 20 + padded);
+  out.set(rest, 20 + padded);
+  return out;
+}
+
+/**
+ * The same GLB with no `animations`. The avatar never plays glTF clips, and GLTFLoader would build a keyframe
+ * track for every channel (copying a shared normalized output once per channel), so the loader never sees them.
+ * Bytes with no animations come back unchanged. For bytes `validateVrm` passed.
+ */
+export function withoutAnimations(bytes: Uint8Array): Uint8Array {
+  if (!("animations" in glbJson(bytes))) return bytes;
+  return withJson(bytes, (json) => {
+    delete json.animations;
+  });
+}
