@@ -135,6 +135,23 @@ export const CLOVER_ALLOWLIST: readonly AllowlistEntry[] = [
     why: "the SDK's `winterHome` option on its session functions and seatbelt profile, and what an SDK session function called with no brand reads (Winter's home: the SDK's default)",
   },
   {
+    id: "sdk-host-fields",
+    // C0 review S4: where core hands the SDK an object the SDK reads by its own key names, a renamed key is silently
+    // ignored and the SDK falls back to its Winter defaults. These keep the SDK's names (typed where the SDK exports
+    // the type: `HostSandboxRunInputs`).
+    regex: /\bwinterHome\b|\bWINTER_(?:HOME|KEYCHAIN_SERVICE|DISABLE_GIT_INSTRUCTIONS)\b/g,
+    files: [
+      "packages/core/src/runtime-sdk/host-code-broker.ts",
+      "packages/core/src/runtime-sdk/host-code-authority.ts",
+      "packages/core/test/runtime-sdk/host-code-authority.test.ts",
+      "packages/core/src/cowork/guest-runtime.ts",
+      "packages/core/test/cowork/guest-query.test.ts",
+      "packages/core/test/cowork/provider-broker.integration.test.ts",
+      "packages/core/test/cowork/fixtures/guest-runtime-refusal.ts",
+    ],
+    why: "keys the SDK reads by its own names whatever the brand: the host sandbox's run inputs and the host code policy (`winterHome`), the Cowork guest's runtime config, and the variables a brandless embedded session reads in the guest refusal fixture",
+  },
+  {
     id: "retired-app-bundle",
     // The scripts that build, embed, sign and check the retired Mac app operate on the bundle its Xcode project
     // names; the daemon's own code finds helpers next to its executable, whatever the app is called.

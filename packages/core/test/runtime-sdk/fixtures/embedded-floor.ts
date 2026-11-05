@@ -3,6 +3,7 @@ import { mkdirSync, mkdtempSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createEmbeddedSessionHost } from "../../../src/runtime-sdk/embedded";
+import { buildCoreBrand } from "../../../src/runtime-sdk/brand";
 import { registerHostStorageFences } from "../../../src/runtime-sdk/host-storage-fence";
 
 const root = realpathSync(mkdtempSync(join(tmpdir(), "clover-embedded-descendants-")));
@@ -53,7 +54,7 @@ if (mode === "daemon") {
   process.stdout.write("embedded descendant gate verified\n");
   process.exit(0);
 }
-const q = query({ prompt: "go", options: { model: mode === "live" ? "winter-test/hang" : "winter-test/tooluse", cwd, env, spawnClaudeCodeProcess: options => host.spawn(options) } });
+const q = query({ prompt: "go", options: { model: mode === "live" ? "winter-test/hang" : "winter-test/tooluse", cwd, env, brand: buildCoreBrand(undefined, home), spawnClaudeCodeProcess: options => host.spawn(options) } });
 const draining = (async () => { for await (const _message of q) { received++; } })();
 try {
   if (mode === "live") {

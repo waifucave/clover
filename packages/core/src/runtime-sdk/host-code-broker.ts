@@ -1,5 +1,6 @@
 import { hostToolNameFor } from "./tool-names";
 import { canonicalHostJson } from "./host-code-json";
+import { CORE_BRAND } from "./brand";
 import * as sdk from "@yanlinglabs/winter-agent-sdk";
 import type {
   Options,
@@ -150,7 +151,9 @@ export interface HostCodeSdkAdapter {
   }): HostCodeRegistration;
   executionLimits(name: string, input: Record<string, unknown>): { timeoutMs: number; maxStreamedBytes: number };
   buildPwdCaptureScript(command: string, path: string): string;
-  buildRunInputs(input: Record<string, unknown>): Record<string, unknown>;
+  /** The SDK's `buildHostSandboxRunInputs`, typed by its own input (C0 review S4): a renamed key fails typecheck. A
+   *  type-only reference, so the runtime still loads lazily (see `installedHostCodeAdapter`). */
+  buildRunInputs(input: import("@yanlinglabs/winter-agent-runtime").HostSandboxRunInputs): Record<string, unknown>;
   buildHookEntries?(config: unknown): Array<{ id: string }>;
   createHookStage?(input: Record<string, unknown>): {
     preToolUse(
@@ -664,8 +667,11 @@ export class HostCodeExecutionService {
               ...(binding!.outDir ? [binding!.outDir] : []),
             ],
             home: canonicalEnv.HOME ?? binding!.home,
-            cloverHome: canonicalEnv.CLOVER_HOME,
+            // The SDK's own field (C0 review S4): its sandbox reads `winterHome`, whatever the brand, and fences the
+            // brand's dot-dirs (`.clover`), not its own default's.
+            winterHome: canonicalEnv.CLOVER_HOME,
             storeHome: canonicalEnv.CLOVER_STORE_HOME,
+            brand: CORE_BRAND,
           });
           const limits = this.adapter!.executionLimits(call.name, effectiveCall.input);
           const admittedTimeout = limits.timeoutMs, admittedOutput = limits.maxStreamedBytes;

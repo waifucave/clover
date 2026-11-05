@@ -4,6 +4,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSyn
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createEmbeddedSessionHost } from "../../../src/runtime-sdk/embedded";
+import { buildCoreBrand } from "../../../src/runtime-sdk/brand";
 import { registerHostStorageFences, refreshHostStoragePolicies } from "../../../src/runtime-sdk/host-storage-fence";
 import type { EmbeddedProtectionCapability } from "../../../src/runtime-sdk/embedded-path-protection";
 
@@ -27,6 +28,7 @@ const host = createEmbeddedSessionHost({ home, hostPathProtectionCapability: cap
 try {
   const messages: unknown[] = [];
   for await (const message of query({ prompt: target, options: { model: "winter-test/p5checkpoint", cwd: source, persistSession: false,
+    brand: buildCoreBrand(undefined, home),
     env: { HOME: userHome, CLOVER_HOME: home, CLOVER_DISABLE_GIT_INSTRUCTIONS: "1", CLOVER_KEYCHAIN_SERVICE: "com.waifucave.clover.core.test-isolated", CLOVER_HOST_CODE_PROTECTION: "disabled" },
     canUseTool: async (name, input) => {
       if (name === "Write") {
@@ -60,6 +62,7 @@ try {
   for (const model of ["winter-test/echo", "winter-test/p5skill"]) {
     const observed: unknown[] = [];
     for await (const message of query({ prompt: "fixture", options: { model, cwd: source, persistSession: false,
+      brand: buildCoreBrand(undefined, home),
       env: { HOME: userHome, CLOVER_HOME: home, CLOVER_DISABLE_GIT_INSTRUCTIONS: "1", CLOVER_KEYCHAIN_SERVICE: "com.waifucave.clover.core.test-isolated" },
       canUseTool: async (_name, input) => ({ behavior: "allow", updatedInput: input }),
       spawnClaudeCodeProcess: options => { proc = host.spawn(options); return proc; },

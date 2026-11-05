@@ -7,6 +7,7 @@ import { createProjector } from "../packages/core/src/projector";
 import { FakeCheckpoints } from "../packages/core/test/projector/harness";
 import { HostCodeExecutionService, withHostCodeBinding, withResolvedHostCodeSpawn, type HostCodeSdkAdapter } from "../packages/core/src/runtime-sdk/host-code-broker";
 import { registerHostStorageFences } from "../packages/core/src/runtime-sdk/host-storage-fence";
+import { buildCoreBrand } from "../packages/core/src/runtime-sdk/brand";
 const at = process.argv.indexOf("--sdk-root");
 if (at < 0 || !process.argv[at+1]) throw new Error("--sdk-root <isolated checkout> is required");
 const sdkRoot = realpathSync(resolve(process.argv[at+1]!));
@@ -41,6 +42,8 @@ let generation: ReturnType<typeof service.enroll> | undefined;
 let query: AsyncGenerator<unknown> | undefined;
 try {
   const options = withHostCodeBinding({ sessionId:"fixture-backend",model:"winter-test/echo",cwd:source,pathToClaudeCodeExecutable:process.execPath,tools:["Bash"],persistSession:false,abortController:abort,
+    // Clover's brand on this temp home: the SDK reads the env below by the brand's names (C0 review S4).
+    brand:buildCoreBrand(undefined,home),
     env:{HOME:home,CLOVER_HOME:home,CLOVER_STORE_HOME:home,CLOVER_DISABLE_GIT_INSTRUCTIONS:"1",WINTER_COWORK_SDK_FIXTURE_ROOT:sdkRoot},
     hooks:{PreToolUse:[{matcher:"Bash",failClosed:true,hooks:[async (input: any) => {
       hookCalls++; order.push("PreToolUse");
