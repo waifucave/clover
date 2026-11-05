@@ -102,6 +102,7 @@ export class BrowserHost {
       : OffscreenTab.create(args.id, args.owner, this.env);
     this.tabs.set(args.id, tab);
     tab.contents.once("destroyed", () => this.forget(args.id));
+    if (tab instanceof HostTab) this.hostWindow.tabStarting(tab.contents);
     if (args.url !== undefined) await tab.navigate(args.url);
     if (args.place === "resting") tab.setPlace("resting", AGENT_VIEWPORT);
     return tab.toView();

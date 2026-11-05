@@ -49,7 +49,7 @@ describe.if(enabled)("the Clover Browser in Electron (CI only)", () => {
     console.log(JSON.stringify(result, null, 2));
     expect(result.fatal).toBeUndefined();
     const failed = result.steps.filter((s) => !s.ok);
-    expect(failed, JSON.stringify(failed, null, 2)).toEqual([]);
+    expect(failed, `${JSON.stringify(failed, null, 2)}\n--- electron's output, last 3000 characters ---\n${output.slice(-3000)}`).toEqual([]);
     expect(result.steps.length).toBeGreaterThanOrEqual(18);
   }, 360_000);
 });

@@ -230,10 +230,18 @@ export class OffscreenTab extends BrowserTab {
     // Painting stopped (a resting tab), or no frame came: the compositor's own copy (about one frame's wait).
     try {
       const image = await withTimeout(this.contents.capturePage(), FRESH_MS * 2);
-      return image.isEmpty() ? undefined : { image, contentAgeMs: 0 };
+      if (!image.isEmpty()) return { image, contentAgeMs: 0 };
     } catch {
-      return undefined;
+      // Below.
     }
+    if (painting) return undefined;
+    // Linux gives no copy while painting is stopped (M1's CI; Windows does): wake the tab for one frame.
+    const next = this.frames.next(FRESH_MS);
+    this.contents.startPainting();
+    this.contents.invalidate();
+    const frame = await next;
+    if (this.place === "resting" && !this.contents.isDestroyed()) this.contents.stopPainting();
+    return frame !== undefined ? { image: frame.image, contentAgeMs: Date.now() - frame.at } : undefined;
   }
 
   protected destroy(): void {

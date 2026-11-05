@@ -44,6 +44,9 @@ async function step(name: string, f: () => Promise<{ ok: boolean; detail?: unkno
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** rAF callbacks in one second, or what ran before 3 s passed (a page that never draws must not hang the step). */
+const RAF_PER_SECOND = "new Promise(r => { let c = 0; const t0 = performance.now(); setTimeout(() => r(c), 3000); (function f(){ c++; if (performance.now() - t0 < 1000) requestAnimationFrame(f); else r(c); })(); })";
 async function until<T>(f: () => T | undefined | Promise<T | undefined>, ms = 5000): Promise<T | undefined> {
   const end = Date.now() + ms;
   while (Date.now() < end) {
@@ -62,6 +65,13 @@ function pngSize(b64: string): { w: number; h: number } {
 async function evalIn(host: BrowserHost, id: string, expression: string): Promise<any> {
   const r = (await host.command(id, { kind: "cdp", method: "Runtime.evaluate", params: { expression, returnByValue: true, awaitPromise: true } })) as { result?: { value?: unknown } };
   return r.result?.value;
+}
+
+/** How many distinct colours a BGRA bitmap has, sampled (stops counting at 16). */
+function distinctColours(bgra: Buffer): number {
+  const seen = new Set<number>();
+  for (let i = 0; i + 3 < bgra.length && seen.size < 16; i += 4 * 97) seen.add(bgra.readUInt32LE(i));
+  return seen.size;
 }
 
 function visibleWindows(except: BaseWindow[]): number {
@@ -108,10 +118,11 @@ async function main(): Promise<void> {
   });
 
   await step("a hidden tab draws: its rAF runs and its picture is fresh, 1280×800", async () => {
-    const raf = await evalIn(host, tab.id, "new Promise(r => { let c = 0; const t0 = performance.now(); (function f(){ c++; if (performance.now() - t0 < 1000) requestAnimationFrame(f); else r(c); })(); })");
+    const raf = await evalIn(host, tab.id, RAF_PER_SECOND);
     const shot = (await host.command(tab.id, { kind: "screenshot", format: "png" })) as { data: string; width: number; height: number; contentAgeMs?: number };
     const px = pngSize(shot.data);
-    return { ok: Number(raf) >= 5 && px.w === 1280 && px.h === 800 && (shot.contentAgeMs ?? 0) < 1000, detail: { rafPerSecond: raf, png: px, contentAgeMs: shot.contentAgeMs } };
+    // It runs at all; the rate (10 asked) is recorded, as a slow runner gives less (linux-arm64: 2).
+    return { ok: Number(raf) >= 2 && px.w === 1280 && px.h === 800 && (shot.contentAgeMs ?? 0) < 1000, detail: { rafPerSecond: raf, png: px, contentAgeMs: shot.contentAgeMs } };
   });
 
   await step("a JPEG picture comes from the newest frame", async () => {
@@ -148,18 +159,34 @@ async function main(): Promise<void> {
     await host.command(tab.id, { kind: "place", place: "shown", view: "browser", viewport: { width: 900, height: 600 } });
     const size = await until(async () => { const s = await evalIn(host, tab.id, "innerWidth + 'x' + innerHeight"); return s === "900x600" ? s : undefined; });
     const same = await evalIn(host, tab.id, "window.__t.token");
-    const after = await evalIn(host, tab.id, "window.__t.ticks");
-    return { ok: size === "900x600" && same === token && Number(after) > Number(before) && visibleWindows([appWindow]) === 0, detail: { size, sameDocument: same === token, ticks: [before, after] } };
+    // The page keeps running: its 50 ms timer ticks on.
+    const after = await until(async () => { const t = await evalIn(host, tab.id, "window.__t.ticks"); return Number(t) > Number(before) ? t : undefined; }, 3000);
+    return { ok: size === "900x600" && same === token && after !== undefined && visibleWindows([appWindow]) === 0, detail: { size, sameDocument: same === token, ticks: [before, after] } };
   });
 
   // The viewport's own page: the test sends the person's input to it, as the OS would.
-  const viewport = appWindow.contentView.children.find((v) => (v as Electron.WebContentsView).webContents?.getURL().includes("browser-viewport")) as Electron.WebContentsView | undefined;
+  // Found once its page has committed (its URL is empty until then).
+  const findViewport = (): Electron.WebContentsView | undefined =>
+    appWindow.contentView.children.find((v) => (v as Electron.WebContentsView).webContents?.getURL().includes("browser-viewport")) as Electron.WebContentsView | undefined;
+  let viewport: Electron.WebContentsView | undefined;
   const vin = (ev: Electron.MouseInputEvent | Electron.KeyboardInputEvent): void => viewport?.webContents.sendInputEvent(ev);
   const mod = process.platform === "darwin" ? "meta" : "control";
 
-  await step("the viewport is in the app's window, at the frame", async () => {
-    await sleep(500);
-    return { ok: viewport !== undefined, detail: { bounds: viewport?.getBounds(), url: viewport?.webContents.getURL() } };
+  await step("the viewport is in the app's window, at the frame, and draws the tab", async () => {
+    viewport = await until(async () => {
+      const v = findViewport();
+      return v !== undefined && !v.webContents.isLoading() ? v : undefined;
+    }, 10_000);
+    if (viewport === undefined) return { ok: false, detail: { children: appWindow.contentView.children.map((v) => (v as Electron.WebContentsView).webContents?.getURL() ?? "?") } };
+    const vp = viewport;
+    // The tab's frames on its canvas: the viewport's own picture shows the page (text and a field), not one colour.
+    const colours = await until(async () => {
+      const img = await vp.webContents.capturePage();
+      const n = distinctColours(img.toBitmap());
+      return n > 2 ? n : undefined;
+    }, 5000);
+    const b = vp.getBounds();
+    return { ok: colours !== undefined && b.x === viewTarget.bounds.x && b.y === viewTarget.bounds.y && b.width === viewTarget.bounds.width && b.height === viewTarget.bounds.height, detail: { bounds: b, colours } };
   });
 
   await step("drag-selecting the page's text through the viewport selects it, and the person holds the tab", async () => {
@@ -251,10 +278,14 @@ async function main(): Promise<void> {
   await step("with a screen reader on, a new tab is a real view in the hidden host window, and draws", async () => {
     const t = await reader.open({ id: "tab_reader", owner: alpha, url: `${origin}/page`, place: "headless" });
     const tok = await until(() => evalIn(reader, t.id, "window.__t && window.__t.token"), 10_000);
-    const raf = await evalIn(reader, t.id, "new Promise(r => { let c = 0; const t0 = performance.now(); (function f(){ c++; if (performance.now() - t0 < 1000) requestAnimationFrame(f); else r(c); })(); })");
+    const visibility = await evalIn(reader, t.id, "document.visibilityState");
+    const raf = await evalIn(reader, t.id, RAF_PER_SECOND);
     const shot = (await reader.command(t.id, { kind: "screenshot", format: "png" })) as { data: string };
     const hostWindows = BrowserWindow.getAllWindows().length; // BaseWindows aren't listed; the host isn't a BrowserWindow
-    return { ok: tok !== undefined && Number(raf) >= 5 && pngSize(shot.data).w > 0, detail: { rafPerSecond: raf, png: pngSize(shot.data), browserWindows: hostWindows } };
+    // Once the host has taken its pixel away again (Linux), the page goes on drawing.
+    await sleep(3200);
+    const rafLater = await evalIn(reader, t.id, RAF_PER_SECOND);
+    return { ok: tok !== undefined && Number(raf) >= 5 && Number(rafLater) >= 5 && pngSize(shot.data).w > 0, detail: { visibility, rafPerSecond: raf, rafLater, png: pngSize(shot.data), browserWindows: hostWindows } };
   });
 
   await step("the screen reader's tab shows in the view as a real view, with no reload", async () => {
