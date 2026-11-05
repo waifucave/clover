@@ -2,7 +2,8 @@
 // them, each call run by the computer that holds the files, behind that computer's fence and level, and an answer
 // at once when a computer is offline.
 import { afterEach, describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, readFileSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { isContractError } from "../../src/contracts/common";
 import { Cluster, until } from "./cluster-support";
@@ -106,12 +107,15 @@ describe("the holder's rules (review N2, S6 edits 5 and 6)", () => {
       expect(await code(tree.move("home/Laptop1/.CLOVER", "home/Laptop1/moved", { as: BOT }))).toBe("fenced");
       expect(await code(tree.remove("home/Laptop1/.Clover/settings", { as: BOT, recursive: true }))).toBe("fenced");
     }
-    // A folder swapped for a link into the fence leads nowhere.
-    symlinkSync(join(laptop.cloverHome, "settings"), join(laptop.home, "d"));
+    // A folder swapped for a link into the fence leads nowhere (a junction on Windows).
+    const dirLink = process.platform === "win32" ? "junction" : "dir";
+    symlinkSync(join(laptop.cloverHome, "settings"), join(laptop.home, "d"), dirLink);
     expect(await code(tree.write("home/Laptop1/d/settings.json", { encoding: "utf8", text: "{}" }, { as: BOT }))).toBe("fenced");
     expect(await code(tree.list("home/Laptop1/d", { as: BOT }))).toBe("ok"); // settings are write-fenced, not hidden
     // A link that leaves the home isn't followed, and its target isn't told.
-    symlinkSync("/etc", join(laptop.home, "out"));
+    const outside = mkdtempSync(join(tmpdir(), "lane-j-outside-"));
+    writeFileSync(join(outside, "hosts"), "secret");
+    symlinkSync(outside, join(laptop.home, "out"), dirLink);
     expect(await code(tree.read("home/Laptop1/out/hosts", { as: BOT }))).toBe("refused");
     expect(await code(tree.list("home/Laptop1/out", { as: BOT }))).toBe("refused");
     expect(readFileSync(join(laptop.cloverHome, "settings", "settings.json"), "utf8")).toBe("{}");

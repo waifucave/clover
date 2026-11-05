@@ -221,6 +221,8 @@ export class LocalHolder implements Holder {
     try {
       let off = 0;
       while (off < bytes.length) off += (await fh.write(bytes, off, bytes.length - off)).bytesWritten;
+      // On the holder's disk before the call answers (S6 review S5: a write that returned wasn't always there).
+      await fh.datasync();
       if (this.os !== "windows") {
         const mode = (await fh.stat()).mode & 0o7777;
         const exec = call.executable ?? (r.exists ? (mode & 0o100) !== 0 : false);

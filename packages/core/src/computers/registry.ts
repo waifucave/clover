@@ -22,6 +22,16 @@ import {
 
 const sha256 = (text: string) => createHash("sha256").update(text).digest("hex");
 
+/** Names Windows keeps for devices: a Windows computer's own entry in its tree folder can't carry one (S6 edit 10). */
+const WINDOWS_DEVICE_NAMES = /^(con|prn|aux|nul|com[0-9]|lpt[0-9])$/i;
+
+/** Whether `name` can be a computer's name: letters, digits and hyphens, and not a name Windows reserves. */
+export function computerNameProblem(name: string): string | null {
+  if (!COMPUTER_NAME_RE.test(name)) return "a computer's name is letters, digits and hyphens";
+  if (WINDOWS_DEVICE_NAMES.test(name)) return `${name} is a name Windows keeps for a device`;
+  return null;
+}
+
 export type ComputerInput = Partial<ComputerView> & Pick<ComputerView, "name" | "device">;
 
 /** What this computer keeps of its own entry across restarts: its level and its old names. */
@@ -99,8 +109,9 @@ export class CoreComputerRegistry implements ComputerRegistry {
 
   /** A computer was connected (paired, or created as a cloud computer), or said hello for the first time. */
   add(input: ComputerInput, isSelf = false): ComputerView {
-    if (!COMPUTER_NAME_RE.test(input.name)) throw new ContractError("invalid", "a computer's name is letters, digits and hyphens");
-    if (this.#find(input.name)) throw new ContractError("conflict", `${input.name} is taken`);
+    const problem = computerNameProblem(input.name);
+    if (problem) throw new ContractError("invalid", problem);
+    if (this.#find(input.name) || this.#findFolded(input.name)) throw new ContractError("conflict", `${input.name} is taken`);
     if (this.byDevice(input.device)) throw new ContractError("conflict", `device ${input.device} is already a computer here`);
     const view: ComputerView = {
       aliases: [], os: "macos", hasDisplay: true, agents: [], level: DEFAULT_LEVEL, state: "online", isMain: false,
@@ -193,8 +204,10 @@ export class CoreComputerRegistry implements ComputerRegistry {
 
   async rename(name: string, newName: string): Promise<void> {
     const c = this.#must(name);
-    if (!COMPUTER_NAME_RE.test(newName)) throw new ContractError("invalid", "a computer's name is letters, digits and hyphens");
-    const other = this.#find(newName);
+    const problem = computerNameProblem(newName);
+    if (problem) throw new ContractError("invalid", problem);
+    // Unique ignoring case (S6 edit 10): a path typed in either case means one computer.
+    const other = this.#find(newName) ?? this.#findFolded(newName);
     if (other && other !== c) throw new ContractError("conflict", `${newName} is taken`);
     if (newName === c.name) return;
     this.#computers.delete(c.name);
@@ -318,6 +331,15 @@ export class CoreComputerRegistry implements ComputerRegistry {
     const direct = this.#computers.get(nameOrAlias);
     if (direct) return direct;
     for (const c of this.#computers.values()) if (c.aliases.includes(nameOrAlias)) return c;
+    return this.#findFolded(nameOrAlias);
+  }
+
+  /** By name or old name in any case: names are unique ignoring case. */
+  #findFolded(nameOrAlias: string): ComputerView | undefined {
+    const want = nameOrAlias.toLowerCase();
+    for (const c of this.#computers.values()) {
+      if (c.name.toLowerCase() === want || c.aliases.some((a) => a.toLowerCase() === want)) return c;
+    }
     return undefined;
   }
 

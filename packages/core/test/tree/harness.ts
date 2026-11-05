@@ -9,7 +9,7 @@
 // what each fence is asked.
 import { mkdirSync, mkdtempSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, relative, sep } from "node:path";
 import { DEFAULT_LEVEL, type Level } from "@waifucave/clover-protocol";
 import type { AnswerDevices } from "../../src/contracts/approval-broker";
 import type { Fence } from "../../src/contracts/fence";
@@ -24,8 +24,13 @@ const NO_DEVICES: AnswerDevices = { get: () => undefined, verifyAnswer: async ()
 
 export function realTreeHarness(opts: ConstructorParameters<typeof FakeTree>[0]): TreeHarness {
   const disk = realpathSync(mkdtempSync(join(tmpdir(), "lane-j-tree-")));
-  const toDisk = (p: string) => disk + p;
-  const fromDisk = (p: string) => (p === disk ? "/" : p.startsWith(disk + "/") ? p.slice(disk.length) : p);
+  // The suite's POSIX paths, on this disk and back (Windows included: `\` and a drive letter there).
+  const toDisk = (p: string) => join(disk, ...p.split("/").filter(Boolean));
+  const fromDisk = (p: string) => {
+    const rel = relative(disk, p);
+    if (rel === "") return "/";
+    return rel.startsWith("..") ? p : `/${rel.split(sep).join("/")}`;
+  };
   const ledger = opts.ledger ?? new MemoryAnswerLedger();
   const answers = { devices: opts.devices ?? NO_DEVICES, ledger, render: opts.render ?? (() => undefined) };
   const computers = new Map<string, TreeComputer>();

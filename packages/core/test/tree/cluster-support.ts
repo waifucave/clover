@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AnswerDevices, AnswerLedger, CallCardRenderer } from "../../src/contracts/approval-broker";
 import type { DeviceRegistry } from "../../src/contracts/device-registry";
+import type { Fence, FenceOp } from "../../src/contracts/fence";
 import { FakeFence } from "../../src/contracts/fakes/fence";
 import { FakeLinkNetwork } from "../../src/contracts/fakes/link-transport";
 import { startComputerNode, type ComputerNode } from "../../src/computers/node";
@@ -47,6 +48,12 @@ export const shellExecutor: ToolExecutor = {
   },
 };
 
+/** The fake fence speaks POSIX paths; on Windows the holder's are `C:\\…`, so both sides meet as `C:/…`. */
+const posix = (p: string) => p.replace(/\\/g, "/");
+function posixFence(f: Pick<Fence, "check">): Pick<Fence, "check"> {
+  return { check: (op: FenceOp) => f.check(op.op === "move" ? { ...op, path: posix(op.path), to: posix(op.to) } : { ...op, path: posix(op.path) }) };
+}
+
 export interface ClusterOptions {
   devices?: (name: string) => DeviceRegistry | undefined;
   answers?: (name: string) => { devices: AnswerDevices; ledger: AnswerLedger; render: CallCardRenderer } | undefined;
@@ -72,7 +79,7 @@ export class Cluster {
       self: { name, device, os: hostOs() },
       home,
       cloverHome,
-      fence: new FakeFence({ os: hostOs(), home, cloverHome }),
+      fence: posixFence(new FakeFence({ os: hostOs(), home: posix(home), cloverHome: posix(cloverHome) })),
       executor: shellExecutor,
       bots: () => bots,
       ...(devices ? { devices } : {}),
