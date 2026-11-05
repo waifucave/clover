@@ -5,7 +5,7 @@ import type { Caller } from "@waifucave/clover-protocol";
 import type { Clock, TimerHandle } from "../clock";
 import { ContractError, Listeners, type Unsubscribe } from "../common";
 import {
-  CRASH_LIMIT, CRASH_WINDOW_MS, PLUGIN_CALL_MAX_TIMEOUT_MS, PLUGIN_CALL_TIMEOUT_MS, RELOAD_GRACE_MS, crashBackoffMs,
+  CRASH_LIMIT, CRASH_WINDOW_MS, PLUGIN_CALL_MAX_TIMEOUT_MS, PLUGIN_CALL_TIMEOUT_MS, RELOAD_GRACE_MS, crashBackoffMs, resolveHandler,
   type ApiRouter, type HostedState, type HostedStatus, type InvokeRequest, type McpChannel, type PluginHost,
 } from "../plugin-host";
 import type { HandlerContext, HostModule, McpServerTransport, PluginApi } from "../sdk-types";
@@ -27,7 +27,6 @@ interface Hosted {
   waiters: (() => void)[];
 }
 
-const RESERVED_EXPORTS = new Set(["start", "stop", "mcp"]);
 
 export class FakePluginHost implements PluginHost {
   readonly computer: string;
@@ -99,9 +98,10 @@ export class FakePluginHost implements PluginHost {
           return;
         }
         if (settled) return;
-        const fn = h.module[req.handler];
-        if (RESERVED_EXPORTS.has(req.handler) || typeof fn !== "function") {
-          call.reject(new ContractError("not_installed", `${req.pluginId} has no handler \`${req.handler}\``));
+        const target = resolveHandler(h.module, req.handler, req.method);
+        if (!target) {
+          const name = req.method === undefined ? req.handler : `${req.handler}.${req.method}`;
+          call.reject(new ContractError("not_installed", `${req.pluginId} has no handler \`${name}\``));
           return;
         }
         const ctx: HandlerContext = {
@@ -113,7 +113,7 @@ export class FakePluginHost implements PluginHost {
           api: this.#apiFor(req.pluginId, req.caller),
         };
         try {
-          const result = await (fn as (a: unknown, c: HandlerContext) => unknown)(structuredClone(req.args), ctx);
+          const result = await target.fn.call(target.self, structuredClone(req.args), ctx);
           const copy = structuredClone(result) as R;
           finish(() => resolve(copy));
         } catch (err) {

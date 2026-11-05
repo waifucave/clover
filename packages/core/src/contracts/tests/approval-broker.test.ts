@@ -90,13 +90,17 @@ describe("FakeApprovalBroker", () => {
     expect(await broker.request(bash({ computers: ["Laptop1"], level: "automatic", origin: "routine" }))).toMatchObject({ allowed: true, level: "automatic" });
   });
 
-  test("rule 1: changes, confirms and plugin OKs are always cards, even at automatic", async () => {
+  test("rule 1: changes, confirms, plugin OKs and elicitations are always cards, even at automatic", async () => {
     const { broker } = setup({ levels: { Studio: "automatic" } });
     void broker.request(bash({ kind: "change", change: "computer-level", effect: "other" }));
     void broker.request(bash({ kind: "confirm", pluginId: "weather", origin: "plugin", effect: "other" }));
     void broker.request(bash({ kind: "plugin-ok", pluginId: "luna", effect: "other" }));
+    void broker.request(bash({
+      kind: "elicitation", effect: "fetch",
+      fields: { host: { type: "text", text: "accounts.example.com" }, command: { type: "code", code: "https://accounts.example.com/device?code=XYZ" } },
+    }));
     await flush();
-    expect(broker.cards().map((c) => c.kind)).toEqual(["change", "confirm", "plugin-ok"]);
+    expect(broker.cards().map((c) => c.kind)).toEqual(["change", "confirm", "plugin-ok", "elicitation"]);
   });
 
   test("rule 2: the bridge's own tools on the session's bridge are allowed at once, on an exact match only", async () => {
@@ -199,6 +203,29 @@ describe("FakeApprovalBroker", () => {
     const json = JSON.stringify(meta);
     for (const text of ["Run a command", "git push", "Approve", "Deny"]) expect(json).not.toContain(text);
     expect(meta.options).toEqual([{ id: "approve", kind: "approve" }, { id: "deny", kind: "deny" }]);
+    // The "always" option says so in the meta, so a plugin can place its button; never its label.
+    const always = await carded(broker, bash({ ruleKey: "Bash(git push:*)" }));
+    expect(cardMetaOf(always.card).options).toEqual([
+      { id: "approve", kind: "approve" }, { id: "always", kind: "approve", remember: "always" }, { id: "deny", kind: "deny" },
+    ]);
+  });
+
+  test("get: a pending card in full, then the resolved one with its outcome, option, device and time", async () => {
+    const { clock, broker, events } = setup();
+    const { card, decision } = await carded(broker, bash());
+    expect(broker.get(card.id)).toEqual({ card });
+    clock.advance(1_500);
+    const proof: CardAnswerProof = { via: "device", device: "phone0000000000000", at: 1, signature: "AAAA" };
+    expect(await broker.answer(card.id, { optionId: "approve", hash: card.hash, proof })).toBe("accepted");
+    await decision;
+    expect(broker.get(card.id)).toEqual({ card, outcome: "approved", optionId: "approve", device: "phone0000000000000", resolvedAt: clock.now() });
+    expect(events.at(-1)).toEqual({ type: "resolved", cardId: card.id, outcome: "approved", optionId: "approve", device: "phone0000000000000" });
+    expect(broker.cards()).toEqual([]);
+    expect(broker.get("card_unknown1")).toBeUndefined();
+    // A sealed frame's answer names no device; a withdrawn card keeps its fields too.
+    const two = await carded(broker, bash());
+    broker.withdrawSession("s_alpha");
+    expect(broker.get(two.card.id)).toEqual({ card: two.card, outcome: "withdrawn", resolvedAt: clock.now() });
   });
 
   test("a paired device answers with its signature over the card; a revoked one can't", async () => {

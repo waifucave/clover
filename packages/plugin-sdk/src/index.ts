@@ -27,7 +27,10 @@ export * from "./formats/tree-hash";
 export * from "./catalogs/index";
 
 export type * from "./api/plugin-api";
-export { API_CALL_MAX_TIMEOUT_MS, API_CALL_TIMEOUT_MS, CONFIRM_TIMEOUT_MS, SYNCED_STORE_LIMIT_BYTES } from "./api/plugin-api";
+export {
+  API_CALL_MAX_TIMEOUT_MS, API_CALL_TIMEOUT_MS, CONFIRM_TIMEOUT_MS, KEY_NAME_RE, KEYS_PER_PLUGIN_MAX, SYNCED_STORE_LIMIT_BYTES,
+  WAIFUCAVE_AUTH, WAIFUCAVE_DOMAIN, mayUseWaifucaveAuth,
+} from "./api/plugin-api";
 export type * from "./api/ui-api";
 
 export * from "./legacy-tier2";

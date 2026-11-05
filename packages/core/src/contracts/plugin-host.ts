@@ -7,8 +7,11 @@
 // What it promises:
 // * `invoke` runs a handler (an export of `host.entry`) with structured-clone arguments and result, the caller, and a
 //   limit: 10 seconds by default, at most 10 minutes. Tool calls, hooks, `confirm` and the keyed fetch set their own.
+//   An export may be an object of handlers, a service (a `webhook.ingress` entry, a notifier): `method` names the one
+//   to run (`resolveHandler`).
 // * A call to a stopped plugin fails at once with `plugin_stopped` and the reason; a handler the module doesn't
-//   export fails with `not_installed`; a call past its limit with `timeout`; an aborted one with `cancelled`.
+//   export, or a method its object lacks, fails with `not_installed`; a call past its limit with `timeout`; an aborted
+//   one with `cancelled`.
 // * A crashed worker restarts after 1 second, the delay doubling up to 1 minute. After 3 crashes in 10 minutes the
 //   plugin stops on this computer until the user restarts it. A worker that misses the heartbeat for 30 seconds
 //   counts as crashed. Calls running when a worker crashes fail with `failed` ("the plugin crashed").
@@ -28,6 +31,29 @@ export const HEARTBEAT_TIMEOUT_MS = 30_000;
 /** How long calls in flight get when a worker is replaced (§5.1 "a grace period"); lane B's choice. */
 export const RELOAD_GRACE_MS = 5_000;
 
+/** The exports a host module keeps for the host itself, never callable as handlers. */
+export const RESERVED_EXPORTS: ReadonlySet<string> = new Set(["start", "stop", "mcp"]);
+
+/** The function a call runs, with what it runs on: the export itself, or with `method`, one function of an exported
+ *  object, its own or its class's, never one every object has (`toString`, `constructor`). `undefined` when there is
+ *  none, which `invoke` reports as `not_installed`. */
+export function resolveHandler(
+  module: Readonly<Record<string, unknown>>,
+  handler: string,
+  method?: string,
+): { fn: (args: unknown, ctx: unknown) => unknown; self: unknown } | undefined {
+  if (RESERVED_EXPORTS.has(handler) || !Object.hasOwn(module, handler)) return undefined;
+  const exported = module[handler];
+  if (method === undefined) return typeof exported === "function" ? { fn: exported as (a: unknown, c: unknown) => unknown, self: undefined } : undefined;
+  if (exported === null || typeof exported !== "object" || method === "constructor") return undefined;
+  for (let o: object | null = exported; o !== null && o !== Object.prototype; o = Object.getPrototypeOf(o)) {
+    if (!Object.hasOwn(o, method)) continue;
+    const fn = (o as Record<string, unknown>)[method];
+    return typeof fn === "function" ? { fn: fn as (a: unknown, c: unknown) => unknown, self: exported } : undefined;
+  }
+  return undefined;
+}
+
 /** The delay before the n-th restart (n from 1): 1 s, 2 s, 4 s … up to 1 minute. */
 export function crashBackoffMs(n: number): number {
   return Math.min(CRASH_RESTART_MAX_MS, CRASH_RESTART_FIRST_MS * 2 ** Math.max(0, n - 1));
@@ -37,6 +63,8 @@ export interface InvokeRequest {
   pluginId: string;
   /** The export's name, as the manifest names it. */
   handler: string;
+  /** For an export that is an object of handlers: which one (the plugin API's `points.call` `method`). */
+  method?: string;
   /** Structured-clone data. */
   args: unknown;
   caller: Caller;

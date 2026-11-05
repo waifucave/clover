@@ -3,12 +3,13 @@
 // §9.3 agents' permission requests; spike S5 §8). Owner: lane C, with lane K's sign-off for agents.
 //
 // Every question that gates an action goes through one broker: a bot's tool call at its computer's level, an ACP
-// agent's `session/request_permission`, a sensitive change, a plugin's `confirm`, a found plugin's OK. The broker
+// agent's `session/request_permission`, a sensitive change, a plugin's `confirm`, a found plugin's OK, an MCP server's
+// or an agent's URL-mode elicitation (a sign-in link, whose link the card seals). The broker
 // answers at once where a level, a saved rule or the bridge rule allows, and otherwise shows a sealed card (§5.5) and
 // waits for the first answer from a sealed frame or a paired device.
 //
 // The rules the contract pins (and the fake keeps):
-// 1. Changes, `confirm` and plugin OKs are always cards (§5.5).
+// 1. Changes, `confirm`, plugin OKs and elicitations are always cards (§5.5, S5 §7).
 // 2. An agent's request that exactly names the session's bridge server and one of the bridge's own tools is answered
 //    at once: the bridge applies Clover's approval itself when the call arrives (S5 edit 7). Never read from the title.
 // 3. A request that touches a fenced path is always a card, at every level, and no saved rule covers it (§9.3).
@@ -23,7 +24,7 @@
 // 8. An agent never gets an "always": `acpOutcomeFor` picks `allow_once` or `reject_once`, and a card's "always" is
 //    saved as Clover's own rule instead (S5 edit 5).
 import {
-  type Card, type CardAnswerProof, type CardFieldName, type CardMeta, type CardOption, type CardOutcome,
+  type Card, type CardAnswerProof, type CardFieldName, type CardKind, type CardMeta, type CardOption, type CardOutcome,
   type ChangeSubject, type Level, LEVELS, type SealedValue, type TurnOrigin, cardAnswerSigningInput,
 } from "@waifucave/clover-protocol";
 import type { Unsubscribe } from "./common";
@@ -32,7 +33,8 @@ import type { Unsubscribe } from "./common";
 export const ACTION_EFFECTS = ["read", "search", "think", "fetch", "edit", "move", "delete", "execute", "screen", "purchase", "other"] as const;
 export type ActionEffect = (typeof ACTION_EFFECTS)[number];
 
-export type ApprovalKind = "tool" | "agent-permission" | "change" | "confirm" | "plugin-ok";
+/** The card kinds: `tool`, `agent-permission`, `change`, `confirm`, `plugin-ok`, `elicitation`. */
+export type ApprovalKind = CardKind;
 
 /** One option of ACP's `session/request_permission`. */
 export interface AgentPermissionOption {
@@ -105,7 +107,18 @@ export type AnswerResult = "accepted" | "already-answered" | "unknown-card" | "h
 export type ApprovalEvent =
   /** A new card: the whole of it, for the app's main process and the native iOS app (`card_requested`). */
   | { type: "requested"; card: Card }
-  | { type: "resolved"; cardId: string; outcome: CardOutcome; optionId?: string };
+  /** `card_resolved`; `device` is the paired device whose answer won, when one did. */
+  | { type: "resolved"; cardId: string; outcome: CardOutcome; optionId?: string; device?: string };
+
+/** A card and, once it is resolved, how (`card.get`). */
+export interface CardRecord {
+  card: Card;
+  outcome?: CardOutcome;
+  optionId?: string;
+  /** The paired device whose answer won, when one did. */
+  device?: string;
+  resolvedAt?: number;
+}
 
 export interface SavedRule {
   ruleKey: string;
@@ -126,6 +139,9 @@ export interface ApprovalBroker {
   request(req: ApprovalRequest, opts?: { signal?: AbortSignal }): Promise<ApprovalDecision>;
   /** Pending cards in full, for the app's main process and the native iOS app only (§5.5). */
   cards(): Card[];
+  /** One card in full, pending or resolved, for the same two: the conversation keeps a resolved card in place, with
+   *  its fields and no buttons (`card.get`). Resolved cards are kept as long as their session's log. */
+  get(cardId: string): CardRecord | undefined;
   /** Pending cards without their text (`cardMetaOf`), for plugins with `approvals`. */
   pending(computer?: string): CardMeta[];
   answer(cardId: string, a: { optionId: string; hash: string; proof: CardAnswerProof }): Promise<AnswerResult>;
@@ -195,7 +211,7 @@ export function cardMetaOf(card: Card): CardMeta {
     origin: card.origin,
     issuedAt: card.issuedAt,
     expiresAt: card.expiresAt,
-    options: card.options.map((o) => ({ id: o.id, kind: o.kind })),
+    options: card.options.map((o) => ({ id: o.id, kind: o.kind, ...(o.remember === undefined ? {} : { remember: o.remember }) })),
   };
 }
 

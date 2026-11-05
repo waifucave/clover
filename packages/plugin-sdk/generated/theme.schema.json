@@ -95,8 +95,15 @@
         "pattern": "^[a-z0-9][a-z0-9.-]*$"
       },
       "additionalProperties": {
-        "type": "string",
-        "maxLength": 300
+        "anyOf": [
+          {
+            "type": "string",
+            "maxLength": 300
+          },
+          {
+            "type": "number"
+          }
+        ]
       }
     },
     "__schema1": {

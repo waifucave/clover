@@ -20,7 +20,10 @@ export const PathGlob = z.string().min(1).max(1024).meta({ format: "path", descr
 
 /** A JavaScript export name: of `host.entry` for a handler, of `client.entry` for a component. */
 const EXPORT_RE = /^[A-Za-z_$][A-Za-z0-9_$]*$/;
-export const HandlerName = z.string().min(1).max(128).regex(EXPORT_RE).meta({ format: "handler", description: "An export of `host.entry`." });
+export const HandlerName = z.string().min(1).max(128).regex(EXPORT_RE).meta({
+  format: "handler",
+  description: "An export of `host.entry`: a function, or for a service (a `webhook.ingress` entry, a notifier) an object of functions, whose caller names the one it calls.",
+});
 export const ComponentName = z.string().min(1).max(128).regex(EXPORT_RE).meta({ format: "component", description: "An export of `client.entry`." });
 
 /** A program to run: a command name or a path, which may use interpolation (`${plugin}`, §5.9). */
@@ -44,7 +47,9 @@ export const PointName = z.string().min(1).max(128).regex(POINT_NAME_RE);
 /** A setting's or a secret's key, as `${setting:k}` and `${secret:k}` name it. */
 export const KEY_RE = /^[A-Za-z][A-Za-z0-9_.-]{0,63}$/;
 export const SettingKey = z.string().min(1).max(64).regex(KEY_RE);
-export const SecretName = z.string().min(1).max(64).regex(KEY_RE);
+/** A secret's name. `waifucave` is reserved: as a keyed fetch's `auth`, it names this computer's waifucave account
+ *  token (`WAIFUCAVE_AUTH` in the plugin API). */
+export const SecretName = z.string().min(1).max(64).regex(KEY_RE).regex(/^(?!waifucave$)/, { message: "\"waifucave\" is reserved" });
 
 /** A language tag (BCP 47, simplified): `en`, `pt-BR`, `zh-Hant`. */
 export const LANG_RE = /^[a-z]{2,3}(-[A-Za-z0-9]{2,8})*$/;

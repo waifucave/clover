@@ -8,9 +8,15 @@
 // Limits (§5.4): arguments and results are structured-clone data. A call times out after 10 seconds unless the caller
 // sets a longer limit, up to 10 minutes (tool calls, hooks, `confirm` and the keyed fetch keep their own limits), and
 // a call to a stopped plugin fails at once with the reason.
-import type {
-  BotView, Caller, CardMeta, CommandView, ComputerView, CloverWindow, FileStat, HoldTarget, HoldView, MemoryEntry,
-  PlanReading, RoutineRunView, RoutineView, Screenshot, SessionView, TabOwner, TabView, UsageRow, Viewport,
+//
+// A host half's `console` output goes to its plugin's log, which `logs.read` reads; there is no log call. Development
+// overrides (another service origin, say) are the plugin's own settings, never environment variables, which the
+// plugin host doesn't pass on.
+import {
+  type BotView, type Caller, type CardMeta, type CommandView, type ComputerView, type CloverWindow, type FileStat,
+  type HoldTarget, type HoldView, type MemoryEntry, type PlanReading, type RoutineRunView, type RoutineView,
+  type Screenshot, type SessionView, type TabOwner, type TabView, type UsageRow, type Viewport, BUNDLED_ROOT_PLUGIN,
+  topPluginIdOf,
 } from "@waifucave/clover-protocol";
 
 export type Unsubscribe = () => void;
@@ -46,6 +52,31 @@ export interface HandlerContext {
 /** A handler: any export of `host.entry` that a manifest names (§5.3 "Every handler, adapter, custom sign-in and
  *  component is an export of host or client"). */
 export type Handler<A = unknown, R = unknown> = (args: A, ctx: HandlerContext) => R | Promise<R>;
+
+/** A handler export may also be an object of handlers, a service whose caller names the one it calls: the webhook
+ *  trigger calls a `webhook.ingress` entry's `register`, `next` and `ack` (`points.call`'s `method`), and the core
+ *  calls a notifier's `notify` and `clear`. A plain function is called when no method is named. */
+export type HandlerObject = { readonly [method: string]: Handler<any, any> };
+export type HandlerExport = Handler<any, any> | HandlerObject;
+
+/** A `notifiers` entry's handler (§10), an object of handlers that the core calls on the main computer. Provisional
+ *  for lanes D and I: the core's update carries no content, only what happened and where, since a notifier's service
+ *  may be outside the user's computers (waifucave push sends only a count). */
+export interface NotifierHandler {
+  notify(update: NotifierUpdate, ctx: HandlerContext): void | Promise<void>;
+  /** The user caught up: everything is seen. */
+  clear(args: undefined, ctx: HandlerContext): void | Promise<void>;
+}
+
+export interface NotifierUpdate {
+  kind: "message" | "card" | "question" | "routine-result" | "agent-finished" | "notification";
+  /** How many updates the user hasn't seen, as the core counts them. */
+  unseen: number;
+  bot?: string;
+  session?: string;
+  /** When it happened, on the shared clock. */
+  at: number;
+}
 
 /** What `host.entry` may export besides its handlers. `mcp` serves the plugin's `host` MCP servers by name, each on
  *  the in-process transport the SDK provides (§5.3 "Handlers"); `start` runs when the host half starts, `stop` before
@@ -93,8 +124,9 @@ export interface PointEntry<T = Record<string, unknown>> {
 export interface PointsApi {
   entries<T = Record<string, unknown>>(point: string): Promise<PointEntry<T>[]>;
   watch<T = Record<string, unknown>>(point: string, listener: (entries: PointEntry<T>[]) => void): Unsubscribe;
-  /** Calls the handler an entry names in `field` (a field whose format is `handler`). */
-  call<R = unknown>(point: string, entry: { pluginId: string; entryId: string }, field: string, args?: unknown, opts?: CallOptions): Promise<R>;
+  /** Calls the handler an entry names in `field` (a field whose format is `handler`); `method` picks one handler of a
+   *  handler object, and the call fails `not_installed` when the export has no such function. */
+  call<R = unknown>(point: string, entry: { pluginId: string; entryId: string }, field: string, args?: unknown, opts?: CallOptions & { method?: string }): Promise<R>;
 }
 
 /** Commands (§5.4): another plugin's run only with `call:<plugin-id>`, which the OK lists. A call to a plugin that
@@ -134,9 +166,25 @@ export interface StorageApi {
 
 /** The keyed fetch (§5.4): through the core, which adds the named `auth` entry's key or token (the only one, by
  *  default), reaches only the plugin's `network:` hosts, refuses a redirect elsewhere, streams both ways with no time
- *  limit while data flows, and after a 401 gets a newer token from the refresher and retries once. */
+ *  limit while data flows, and after a 401 gets a newer token from the refresher and retries once. `auth` names an
+ *  entry by its `secret`, or is `"waifucave"` (`WAIFUCAVE_AUTH`). */
 export interface NetApi {
   fetch(url: string, init?: RequestInit, opts?: { auth?: string }): Promise<Response>;
+}
+
+/** The `auth` name that adds this computer's waifucave account token (lane H), which no manifest may use as a secret's
+ *  name. Only plugins of the `clover` tree may use it (the forwarder, push), and only towards waifucave's own hosts in
+ *  their `network:` capabilities: the core adds a token it mints for that host (its `aud`), good for minutes, never
+ *  the account's own credential; any other use is refused. */
+export const WAIFUCAVE_AUTH = "waifucave";
+/** The domain whose hosts take the waifucave token: `hooks.waifucave.com`, `push.waifucave.com`. */
+export const WAIFUCAVE_DOMAIN = "waifucave.com";
+
+/** Whether a plugin may fetch `host` with `auth: "waifucave"`; its `network:` capability is checked as for any
+ *  fetch. */
+export function mayUseWaifucaveAuth(pluginId: string, host: string): boolean {
+  const h = host.toLowerCase().replace(/\.$/, "");
+  return topPluginIdOf(pluginId) === BUNDLED_ROOT_PLUGIN && (h === WAIFUCAVE_DOMAIN || h.endsWith(`.${WAIFUCAVE_DOMAIN}`));
 }
 
 /** Only a process of the plugin's own that must sign with a secret (AWS SigV4, §5.2) reads it; a worker can't, and
@@ -144,6 +192,23 @@ export interface NetApi {
 export interface SecretsApi {
   get(name: string): Promise<string | undefined>;
 }
+
+/** Key pairs the core keeps for a plugin on this computer, whose private halves never leave the core: in the secret
+ *  store, never synced, one set per computer, kept when the plugin is removed (as its data folder is) until `delete`.
+ *  For a host half that must receive what was sealed to this computer, as the waifucave forwarder does, without
+ *  holding a secret a worker could leak. Host halves only. */
+export interface KeysApi {
+  /** The named X25519 key pair's public key (32 bytes, raw), made on first use. */
+  publicKey(name: string): Promise<Uint8Array>;
+  /** Opens an HPKE message sealed to that key (RFC 9180 base mode: DHKEM(X25519, HKDF-SHA256), HKDF-SHA256,
+   *  AES-256-GCM) and returns its plaintext. Fails `not_found` for a key never made, `invalid` when it doesn't open. */
+  open(name: string, sealed: { enc: Uint8Array; ciphertext: Uint8Array; info?: Uint8Array; aad?: Uint8Array }): Promise<Uint8Array>;
+  /** Drops the pair: what was sealed to it can't be opened again. */
+  delete(name: string): Promise<void>;
+}
+/** A key's name, and how many one plugin may keep on a computer. */
+export const KEY_NAME_RE = /^[a-z0-9][a-z0-9_.-]{0,63}$/;
+export const KEYS_PER_PLUGIN_MAX = 16;
 
 /** The plugin's own settings, from its host half or its components alike; a plugin changes only its own values. A
  *  `bot`-scoped setting has one value per bot. */
@@ -272,6 +337,8 @@ export interface PluginApi {
   readonly net: NetApi;
   /** Only in a process of the plugin's own (§5.2). */
   readonly secrets?: SecretsApi;
+  /** Only in host halves. */
+  readonly keys?: KeysApi;
   readonly settings: SettingsApi;
   /** A sealed card that says it comes from this plugin, with its name, id and source and the text; returns only the
    *  user's answer, and no plugin can read or answer it. Denied after 10 minutes unanswered. */

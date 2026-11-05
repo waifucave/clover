@@ -4,7 +4,7 @@
 // in-memory folder in tests.
 import type { ValidationIssue } from "@waifucave/clover-protocol";
 import { spotInfo } from "../catalogs/spots";
-import { TOKENS, isTokenValue, isPluginTokenName } from "../catalogs/tokens";
+import { TOKENS, TOKEN_TYPES, type TokenValue, isTokenValue, isPluginTokenName } from "../catalogs/tokens";
 import { LayoutSchema, layoutPaths, layoutSpots } from "../formats/layout";
 import { LocaleSchema, localeKeyOwner } from "../formats/locale";
 import { ThemeSchema } from "../formats/theme";
@@ -192,13 +192,13 @@ async function checkTheme(reader: PluginFolderReader, base: string, path: string
     return;
   }
   const t = parsed.data;
-  const tokenSets: [Record<string, string>, Seg[]][] = [[t.tokens, ["tokens"]], ...(t.dark ? [[t.dark.tokens, ["dark", "tokens"]] as [Record<string, string>, Seg[]]] : [])];
+  const tokenSets: [Record<string, TokenValue>, Seg[]][] = [[t.tokens, ["tokens"]], ...(t.dark ? [[t.dark.tokens, ["dark", "tokens"]] as [Record<string, TokenValue>, Seg[]]] : [])];
   for (const [tokens, where] of tokenSets) {
     for (const [name, v] of Object.entries(tokens)) {
       const type = TOKEN_TYPE.get(name);
       if (type === undefined) {
         if (!isPluginTokenName(name, topId)) f.error(full, "entry", "token_unknown", [...where, name], `"${name}" is no token of the catalog, nor one of this plugin's (${topId}.…)`);
-        else if (!isTokenValue("shadow", v) && !isTokenValue("color", v) && !isTokenValue("length", v)) f.error(full, "entry", "token_value", [...where, name], "this value isn't a safe token value");
+        else if (!TOKEN_TYPES.some((type) => isTokenValue(type, v))) f.error(full, "entry", "token_value", [...where, name], "this value isn't a safe token value");
       } else if (!isTokenValue(type, v)) {
         f.error(full, "entry", "token_value", [...where, name], `"${v}" is not a ${type}`);
       }

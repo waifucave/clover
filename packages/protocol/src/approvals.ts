@@ -25,6 +25,10 @@ export const CARD_KINDS = [
   "change",
   /** A plugin's `confirm(text)` (§5.4). */
   "confirm",
+  /** An MCP server's or an agent's URL-mode elicitation, such as a sign-in link (spike S5 §7, §12): the link is sealed,
+   *  so no plugin can swap it. `host` is the link's site and `command` the whole link; approving opens it in the
+   *  user's browser (the app does, never a plugin), denying declines. */
+  "elicitation",
 ] as const;
 export const CardKind = z.enum(CARD_KINDS);
 export type CardKind = z.infer<typeof CardKind>;
@@ -39,9 +43,13 @@ export const ChangeSubject = z.enum([
 export type ChangeSubject = z.infer<typeof ChangeSubject>;
 
 /** The sealed fields a plugin can place by name with `<Card.Field name>` (plugin SDK UI API). A card may leave any
- *  out; a plugin may leave any out too (§5.5). */
+ *  out; a plugin may leave any out too (§5.5). `title`: the card's heading. `what`: what it asks, in a sentence ("Run
+ *  this command?"). `command`: the command, the edit or the call's input, as code. `computer`: where it runs. `risk`:
+ *  the safety reviewer's verdict. `reason`: why the bot wants it. `source`: who asks (the bot, the agent, the plugin
+ *  with its id and source). `host`: the site a link or a fetch goes to (an elicitation's link). `paths`: the files it
+ *  touches. `detail`: anything more, as rows. `expires`: when it is denied unanswered. */
 export const CARD_FIELD_NAMES = [
-  "title", "what", "command", "computer", "risk", "reason", "source", "paths", "detail", "expires",
+  "title", "what", "command", "computer", "risk", "reason", "source", "host", "paths", "detail", "expires",
 ] as const;
 export const CardFieldName = z.enum(CARD_FIELD_NAMES);
 export type CardFieldName = z.infer<typeof CardFieldName>;
@@ -78,8 +86,8 @@ export const CardMeta = z.object({
   issuedAt: Timestamp,
   /** Set when the turn's origin isn't the user's: denied then, 10 minutes after it was issued (§5.5). */
   expiresAt: Timestamp.nullable(),
-  /** The options' ids and kinds, so a plugin can place each button; never their labels. */
-  options: z.array(CardOption.pick({ id: true, kind: true })).max(8),
+  /** The options' ids and kinds, and which one is "always", so a plugin can place each button; never their labels. */
+  options: z.array(CardOption.pick({ id: true, kind: true, remember: true })).max(8),
 });
 export type CardMeta = z.infer<typeof CardMeta>;
 
@@ -143,6 +151,19 @@ export const APPROVALS_METHODS = {
     name: "card.list", owner: "C", roles: ["app", "remote"],
     params: Empty, result: z.object({ cards: z.array(Card) }),
     doc: "Every pending card with its sealed fields, for the app's main process and the iOS app.",
+  }),
+  cardGet: defineMethod({
+    name: "card.get", owner: "C", roles: ["app", "remote"],
+    params: z.object({ id: CardId }),
+    result: z.object({
+      card: Card,
+      outcome: CardOutcome.optional(),
+      option: z.string().max(64).optional(),
+      /** The device whose answer won, when one did. */
+      device: DeviceId.optional(),
+      resolvedAt: Timestamp.optional(),
+    }),
+    doc: "One card, pending or resolved, so the app can still draw a resolved card's sealed fields where it shows.",
   }),
   cardPending: defineMethod({
     name: "card.pending", owner: "C", roles: ["layer", "plugin-host"], capability: "approvals",

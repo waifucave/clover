@@ -8,7 +8,8 @@
 //
 // React's types are deliberately not imported: `UiNode` stands for a React node, and lane E's runtime binds the
 // declarations to React's own types when it adds React to the app.
-import type { CardFieldName } from "@waifucave/clover-protocol";
+import type { CardFieldName, CardMeta } from "@waifucave/clover-protocol";
+import type { TokenValue } from "../catalogs/tokens";
 import type { PluginApi, Unsubscribe } from "./plugin-api";
 
 /** A React node. */
@@ -21,7 +22,8 @@ export type UiComponent<P> = (props: P) => UiNode;
  *  and which entry it is. */
 export interface EntryProps<P = Record<string, unknown>> {
   readonly props: P;
-  readonly tokens: Readonly<Record<string, string>>;
+  /** By token name (`color.accent`); the same values are set as `--clover-…` custom properties on the part. */
+  readonly tokens: Readonly<Record<string, TokenValue>>;
   readonly entry: { readonly pluginId: string; readonly id: string; readonly spot: string; readonly key?: string };
 }
 
@@ -36,25 +38,42 @@ export interface SpotElementProps {
 
 /** `<Card id>`: an approval card's sealed frames, for a component whose plugin has `approvals` (§5.5). Style tokens
  *  go in; nothing comes out. A filter, opacity below 1 or a transform other than a move or an enlargement on a frame or
- *  anything around it counts as hidden. */
+ *  anything around it counts as hidden. A resolved card still mounts, its fields as they were, and its buttons draw
+ *  nothing, so a conversation keeps it in place beside its own words for the outcome. */
 export interface CardElementProps {
   id: string;
+  /** `card.*` values over the part's own (§5.5: sealed frames take only these); any other name is ignored. */
+  tokens?: Readonly<Record<`card.${string}`, TokenValue>>;
+  /** Classes for the layout of the element that holds the frames; the frames size themselves to their content. */
+  className?: string;
   children?: UiNode;
 }
-/** `<Card.Field name>`: one sealed field. */
+/** `<Card.Field name>`: one sealed field; a field the card doesn't have draws nothing. */
 export interface CardFieldProps {
   name: CardFieldName;
+  /** Clamps the field to this many lines; the frame itself offers the rest, so nothing sealed is cut unseen. */
+  lines?: number;
+  className?: string;
 }
-/** `<Card.Approve>`, `<Card.Deny>`: a sealed button, the first option of its kind or a named one. A click counts only
- *  while the whole button shows, at 24 by 24 CSS pixels or more, uncovered, from the hardware (§5.5). */
+/** `<Card.Approve>`, `<Card.Deny>`: a sealed button, the first option of its kind, or a named one (`option`, from
+ *  `CardMeta.options`, such as the one whose `remember` is `always`). A click counts only while the whole button
+ *  shows, at 24 by 24 CSS pixels or more, uncovered, from the hardware (§5.5). */
 export interface CardButtonProps {
   option?: string;
+  /** The option's sealed label (the default), or a glyph the core draws with the label as its accessible name: `check`
+   *  ✓, `cross` ✕, `open` ↗ (an elicitation's link). */
+  look?: "label" | "check" | "cross" | "open";
+  /** A glyph button's side in CSS pixels, at least 24 (smaller draws 24). */
+  size?: number;
+  className?: string;
 }
 
 /** `<AppView call>`: places an MCP Apps page where a tool's result shows (§5.5). A page no component places within 2
  *  seconds shows as text. */
 export interface AppViewProps {
+  /** The tool call: its session and its id, which is unique only within the session. */
   call: { session: string; callId: string };
+  className?: string;
 }
 
 export interface CardComponents extends UiComponent<CardElementProps> {
@@ -70,12 +89,12 @@ export interface UiApi {
   AppView: UiComponent<AppViewProps>;
   /** The plugin API in this layer: no secrets, no data folder, and no way to answer cards, change levels or devices. */
   usePluginApi(): PluginApi;
-  /** The part's resolved tokens. */
-  useTokens(): Readonly<Record<string, string>>;
+  /** The part's resolved tokens, by name. */
+  useTokens(): Readonly<Record<string, TokenValue>>;
   /** Strings from the plugin's own keys, in the user's language. */
   useT(): (key: string, params?: Record<string, string | number>) => string;
-  /** Pending cards' ids and computers, for a plugin with `approvals`. */
-  useApprovals(): { readonly cards: readonly { id: string; computer: string | null }[]; subscribe(listener: () => void): Unsubscribe };
+  /** Pending cards without their text (ids, computers, options), for a plugin with `approvals`. */
+  useApprovals(): { readonly cards: readonly CardMeta[]; subscribe(listener: () => void): Unsubscribe };
 }
 
 /** A component module: the exports of `client.entry` that `ui` entries name. */

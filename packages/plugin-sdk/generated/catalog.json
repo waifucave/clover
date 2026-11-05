@@ -374,7 +374,7 @@
             "maxLength": 128,
             "pattern": "^[A-Za-z_$][A-Za-z0-9_$]*$",
             "format": "handler",
-            "description": "An export of `host.entry`."
+            "description": "An export of `host.entry`: a function, or for a service (a `webhook.ingress` entry, a notifier) an object of functions, whose caller names the one it calls."
           }
         },
         "required": [
@@ -1541,7 +1541,7 @@
       "context": [
         "bot"
       ],
-      "doc": "One message, keyed by kind; the `approval` cell can't be hidden.",
+      "doc": "One message, keyed by kind; the `approval` cell can't be hidden. The `tool` cell gets a run of calls.",
       "fields": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -1584,7 +1584,10 @@
               "name"
             ]
           },
-          "message": {
+          "session": {
+            "type": "string"
+          },
+          "item": {
             "type": "object",
             "properties": {
               "id": {
@@ -1593,26 +1596,30 @@
               "kind": {
                 "type": "string"
               },
-              "session": {
-                "type": "string"
-              },
-              "seq": {
-                "type": "integer",
-                "minimum": -9007199254740991,
-                "maximum": 9007199254740991
+              "at": {
+                "type": "number"
               }
             },
             "required": [
               "id",
               "kind",
-              "session",
-              "seq"
-            ]
+              "at"
+            ],
+            "additionalProperties": {}
+          },
+          "ctx": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
           }
         },
         "required": [
           "bot",
-          "message"
+          "session",
+          "item",
+          "ctx"
         ]
       }
     },
@@ -1670,7 +1677,10 @@
               "name"
             ]
           },
-          "message": {
+          "session": {
+            "type": "string"
+          },
+          "item": {
             "type": "object",
             "properties": {
               "id": {
@@ -1679,26 +1689,30 @@
               "kind": {
                 "type": "string"
               },
-              "session": {
-                "type": "string"
-              },
-              "seq": {
-                "type": "integer",
-                "minimum": -9007199254740991,
-                "maximum": 9007199254740991
+              "at": {
+                "type": "number"
               }
             },
             "required": [
               "id",
               "kind",
-              "session",
-              "seq"
-            ]
+              "at"
+            ],
+            "additionalProperties": {}
+          },
+          "ctx": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
           }
         },
         "required": [
           "bot",
-          "message"
+          "session",
+          "item",
+          "ctx"
         ]
       }
     },
@@ -1713,7 +1727,7 @@
       "context": [
         "bot"
       ],
-      "doc": "A tool's result, keyed by tool name (`mcp__blender__*`).",
+      "doc": "A tool's result, keyed by tool name (`mcp__blender__*`); `item` is the one call.",
       "fields": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -1756,7 +1770,10 @@
               "name"
             ]
           },
-          "message": {
+          "session": {
+            "type": "string"
+          },
+          "item": {
             "type": "object",
             "properties": {
               "id": {
@@ -1765,21 +1782,23 @@
               "kind": {
                 "type": "string"
               },
-              "session": {
-                "type": "string"
-              },
-              "seq": {
-                "type": "integer",
-                "minimum": -9007199254740991,
-                "maximum": 9007199254740991
+              "at": {
+                "type": "number"
               }
             },
             "required": [
               "id",
               "kind",
-              "session",
-              "seq"
-            ]
+              "at"
+            ],
+            "additionalProperties": {}
+          },
+          "ctx": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
           },
           "tool": {
             "type": "string"
@@ -1787,7 +1806,9 @@
         },
         "required": [
           "bot",
-          "message",
+          "session",
+          "item",
+          "ctx",
           "tool"
         ]
       }
@@ -1878,7 +1899,10 @@
               "name"
             ]
           },
-          "message": {
+          "session": {
+            "type": "string"
+          },
+          "item": {
             "type": "object",
             "properties": {
               "id": {
@@ -1887,26 +1911,30 @@
               "kind": {
                 "type": "string"
               },
-              "session": {
-                "type": "string"
-              },
-              "seq": {
-                "type": "integer",
-                "minimum": -9007199254740991,
-                "maximum": 9007199254740991
+              "at": {
+                "type": "number"
               }
             },
             "required": [
               "id",
               "kind",
-              "session",
-              "seq"
-            ]
+              "at"
+            ],
+            "additionalProperties": {}
+          },
+          "ctx": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
           }
         },
         "required": [
           "bot",
-          "message"
+          "session",
+          "item",
+          "ctx"
         ]
       }
     },
@@ -2082,402 +2110,854 @@
   ],
   "tokens": [
     {
-      "name": "color.bg",
+      "name": "color.canvas",
       "type": "color",
-      "default": "#ffffff",
-      "dark": "#16161a",
-      "doc": "The part's background."
+      "default": "#F6F6F8",
+      "dark": "#212126",
+      "doc": "The base plane: the sidebar and the app's background."
     },
     {
-      "name": "color.bg.raised",
+      "name": "color.surface",
       "type": "color",
-      "default": "#f6f6f8",
-      "dark": "#1f1f25",
-      "doc": "Panels, menus and cards above the background."
+      "default": "#FFFFFF",
+      "dark": "#18181C",
+      "doc": "The content plane: the conversation and settings pages."
     },
     {
-      "name": "color.bg.sunken",
+      "name": "color.raised",
       "type": "color",
-      "default": "#ececf0",
-      "dark": "#0f0f12",
-      "doc": "Inputs and wells below the background."
+      "default": "#F3F3F6",
+      "dark": "#232329",
+      "doc": "One step above the content: tool output, inner cards, code blocks."
     },
     {
-      "name": "color.fg",
+      "name": "color.control",
       "type": "color",
-      "default": "#16161a",
-      "dark": "#ececf0",
-      "doc": "Text."
+      "default": "#EDEDF1",
+      "dark": "#2D2D34",
+      "doc": "Small controls: chips, toggle tracks, icon circles."
     },
     {
-      "name": "color.fg.muted",
+      "name": "color.float",
       "type": "color",
-      "default": "#55555f",
-      "dark": "#a6a6b3",
-      "doc": "Secondary text."
+      "default": "#FFFFFF",
+      "dark": "#2B2B31",
+      "doc": "Anything floating above content: menus, popovers, palettes."
     },
     {
-      "name": "color.fg.subtle",
+      "name": "color.hairline",
       "type": "color",
-      "default": "#8a8a96",
-      "dark": "#73737f",
-      "doc": "Hints and placeholders."
+      "default": "#E4E4EA",
+      "dark": "#303037",
+      "doc": "Dividers and rims on the canvas and the content plane."
     },
     {
-      "name": "color.border",
+      "name": "color.hairline.raised",
       "type": "color",
-      "default": "#dedee4",
-      "dark": "#2c2c34",
-      "doc": "Hairlines between parts."
+      "default": "#D6D6DE",
+      "dark": "#3B3B44",
+      "doc": "The same rule drawn on raised and control surfaces."
     },
     {
-      "name": "color.border.strong",
+      "name": "color.hover",
       "type": "color",
-      "default": "#b9b9c4",
-      "dark": "#454551",
-      "doc": "Borders that must show."
+      "default": "#EFEFF3",
+      "dark": "#2A2A30",
+      "doc": "A row's fill under the pointer."
+    },
+    {
+      "name": "color.selected",
+      "type": "color",
+      "default": "#E7E7EE",
+      "dark": "#34343C",
+      "doc": "A selected row's fill. Navigation stays neutral: never the accent."
+    },
+    {
+      "name": "color.text",
+      "type": "color",
+      "default": "#1C1B22",
+      "dark": "#F4F3F8",
+      "doc": "Body text."
+    },
+    {
+      "name": "color.text.secondary",
+      "type": "color",
+      "default": "#3B3A45",
+      "dark": "#DCDBE3",
+      "doc": "Sidebar and secondary text."
+    },
+    {
+      "name": "color.text.muted",
+      "type": "color",
+      "default": "#676674",
+      "dark": "#9B9AA8",
+      "doc": "Quiet meta: timestamps, labels, trailing words."
+    },
+    {
+      "name": "color.text.placeholder",
+      "type": "color",
+      "default": "#9C9BA6",
+      "dark": "#66656F",
+      "doc": "A field's placeholder."
+    },
+    {
+      "name": "color.text.inverse",
+      "type": "color",
+      "default": "#FFFFFF",
+      "dark": "#18181C",
+      "doc": "Text on a text-coloured fill."
     },
     {
       "name": "color.accent",
       "type": "color",
-      "default": "#5b5bd6",
-      "dark": "#8b8bf0",
-      "doc": "The accent: links, the selected item, primary buttons."
+      "default": "#C2387A",
+      "dark": "#FF7AB6",
+      "doc": "The brand accent: primary actions, focus, the send button."
     },
     {
-      "name": "color.accent.fg",
+      "name": "color.accent.text",
       "type": "color",
-      "default": "#ffffff",
-      "dark": "#0f0f12",
-      "doc": "Text on the accent."
+      "default": "#B12F6E",
+      "dark": "#FF8CC1",
+      "doc": "The accent carrying text, at 4.5:1 or more on the content plane."
+    },
+    {
+      "name": "color.accent.soft",
+      "type": "color",
+      "default": "#FBEAF2",
+      "dark": "#3A2130",
+      "doc": "A wash of the accent: a chosen chip, a highlighted mention."
+    },
+    {
+      "name": "color.accent.contrast",
+      "type": "color",
+      "default": "#FFFFFF",
+      "dark": "#2A0F1C",
+      "doc": "Text and glyphs on an accent fill."
+    },
+    {
+      "name": "color.attention",
+      "type": "color",
+      "default": "#E09A00",
+      "dark": "#FFC747",
+      "doc": "Needs you: a waiting card, a question for the user."
+    },
+    {
+      "name": "color.attention.text",
+      "type": "color",
+      "default": "#8A5A00",
+      "dark": "#FFD27A",
+      "doc": "Attention carrying text."
     },
     {
       "name": "color.danger",
       "type": "color",
-      "default": "#d6455b",
-      "dark": "#f07a8b",
-      "doc": "Destructive actions and errors."
-    },
-    {
-      "name": "color.danger.fg",
-      "type": "color",
-      "default": "#ffffff",
-      "dark": "#0f0f12",
-      "doc": "Text on danger."
-    },
-    {
-      "name": "color.warning",
-      "type": "color",
-      "default": "#c98a14",
-      "dark": "#f0b84d",
-      "doc": "Warnings."
+      "default": "#C2302E",
+      "dark": "#FF6B70",
+      "doc": "Errors and actions that destroy something."
     },
     {
       "name": "color.success",
       "type": "color",
-      "default": "#2f9e5f",
-      "dark": "#5ccc8c",
-      "doc": "Success."
+      "default": "#1E7F47",
+      "dark": "#4CC38A",
+      "doc": "Done, connected, running."
+    },
+    {
+      "name": "color.diff.added",
+      "type": "color",
+      "default": "#1E7F47",
+      "dark": "#4CC38A",
+      "doc": "Lines a diff adds."
+    },
+    {
+      "name": "color.diff.removed",
+      "type": "color",
+      "default": "#C2302E",
+      "dark": "#FF6B70",
+      "doc": "Lines a diff removes."
     },
     {
       "name": "color.focus",
       "type": "color",
-      "default": "#5b5bd6",
-      "dark": "#8b8bf0",
+      "default": "#C2387A",
+      "dark": "#FF7AB6",
       "doc": "The keyboard focus ring."
     },
     {
-      "name": "color.selection",
+      "name": "bubble.user.background",
       "type": "color",
-      "default": "#d9d9fb",
-      "dark": "#34345f",
-      "doc": "Selected text."
+      "default": "#FBE8F1",
+      "dark": "#3A2433",
+      "doc": "The user's own message."
     },
     {
-      "name": "color.bubble.user.bg",
+      "name": "bubble.user.text",
       "type": "color",
-      "default": "#5b5bd6",
-      "dark": "#3c3c99",
-      "doc": "The user's message bubble."
+      "default": "#1C1B22",
+      "dark": "#F4F3F8",
+      "doc": "Text in the user's message."
     },
     {
-      "name": "color.bubble.user.fg",
+      "name": "bubble.bot.background",
       "type": "color",
-      "default": "#ffffff",
-      "dark": "#ffffff",
-      "doc": "Text in the user's bubble."
+      "default": "#FFFFFF00",
+      "dark": "#18181C00",
+      "doc": "The bot's message. Clear by default: replies sit on the content plane."
     },
     {
-      "name": "color.bubble.bot.bg",
+      "name": "bubble.bot.rim",
       "type": "color",
-      "default": "#f0f0f4",
-      "dark": "#24242b",
-      "doc": "The bot's message bubble."
+      "default": "#FFFFFF00",
+      "dark": "#18181C00",
+      "doc": "The bot's message rim."
     },
     {
-      "name": "color.bubble.bot.fg",
+      "name": "bubble.bot.text",
       "type": "color",
-      "default": "#16161a",
-      "dark": "#ececf0",
-      "doc": "Text in the bot's bubble."
+      "default": "#1C1B22",
+      "dark": "#F4F3F8",
+      "doc": "Text in the bot's message."
     },
     {
-      "name": "font.body",
-      "type": "font-family",
-      "default": "system-ui, sans-serif",
-      "doc": "Body text."
+      "name": "bubble.radius",
+      "type": "dimension",
+      "default": "18px",
+      "doc": "A message bubble's corner."
     },
     {
-      "name": "font.display",
-      "type": "font-family",
-      "default": "system-ui, sans-serif",
-      "doc": "Titles and the bot's name."
+      "name": "composer.background",
+      "type": "color",
+      "default": "#FFFFFF",
+      "dark": "#2E2E35",
+      "doc": "The composer's face."
+    },
+    {
+      "name": "composer.rim",
+      "type": "color",
+      "default": "#E1E1E7",
+      "dark": "#3E3E47",
+      "doc": "The composer's hairline."
+    },
+    {
+      "name": "composer.text",
+      "type": "color",
+      "default": "#1C1B22",
+      "dark": "#F4F3F8",
+      "doc": "What the user types."
+    },
+    {
+      "name": "composer.placeholder",
+      "type": "color",
+      "default": "#9C9BA6",
+      "dark": "#77767F",
+      "doc": "The composer's placeholder."
+    },
+    {
+      "name": "composer.radius",
+      "type": "dimension",
+      "default": "24px",
+      "doc": "The composer's corner."
+    },
+    {
+      "name": "card.background",
+      "type": "color",
+      "default": "#F3F3F6",
+      "dark": "#232329",
+      "doc": "An approval card's face."
+    },
+    {
+      "name": "card.text",
+      "type": "color",
+      "default": "#1C1B22",
+      "dark": "#F4F3F8",
+      "doc": "What the card asks."
+    },
+    {
+      "name": "card.muted",
+      "type": "color",
+      "default": "#676674",
+      "dark": "#9B9AA8",
+      "doc": "The card's meta: the computer, the tool."
+    },
+    {
+      "name": "card.rim",
+      "type": "color",
+      "default": "#D6D6DE",
+      "dark": "#3B3B44",
+      "doc": "The card's rim."
+    },
+    {
+      "name": "card.radius",
+      "type": "dimension",
+      "default": "20px",
+      "doc": "The card's corner."
+    },
+    {
+      "name": "card.padding",
+      "type": "dimension",
+      "default": "16px",
+      "doc": "The card's inset."
+    },
+    {
+      "name": "card.approve.background",
+      "type": "color",
+      "default": "#C2387A",
+      "dark": "#FF7AB6",
+      "doc": "The approve button."
+    },
+    {
+      "name": "card.approve.text",
+      "type": "color",
+      "default": "#FFFFFF",
+      "dark": "#2A0F1C",
+      "doc": "The approve button's label."
+    },
+    {
+      "name": "card.deny.background",
+      "type": "color",
+      "default": "#E6E6EC",
+      "dark": "#34343C",
+      "doc": "The deny button."
+    },
+    {
+      "name": "card.deny.text",
+      "type": "color",
+      "default": "#1C1B22",
+      "dark": "#F4F3F8",
+      "doc": "The deny button's label."
+    },
+    {
+      "name": "card.button.radius",
+      "type": "dimension",
+      "default": "10px",
+      "doc": "The approve and deny buttons' corner."
+    },
+    {
+      "name": "card.font.family",
+      "type": "fontFamily",
+      "default": "system-ui, -apple-system, \"Segoe UI Variable Text\", \"Segoe UI\", \"Noto Sans\", Ubuntu, Cantarell, sans-serif",
+      "doc": "The card's face."
+    },
+    {
+      "name": "card.font.size",
+      "type": "dimension",
+      "default": "14px",
+      "doc": "The card's text size."
+    },
+    {
+      "name": "font.sans",
+      "type": "fontFamily",
+      "default": "system-ui, -apple-system, \"Segoe UI Variable Text\", \"Segoe UI\", \"Noto Sans\", Ubuntu, Cantarell, sans-serif",
+      "doc": "The interface and body face: each OS's own."
+    },
+    {
+      "name": "font.serif",
+      "type": "fontFamily",
+      "default": "ui-serif, \"New York\", \"Iowan Old Style\", \"Noto Serif\", Georgia, serif",
+      "doc": "The serif accent."
     },
     {
       "name": "font.mono",
-      "type": "font-family",
-      "default": "ui-monospace, monospace",
-      "doc": "Code and commands."
+      "type": "fontFamily",
+      "default": "ui-monospace, \"SF Mono\", \"Cascadia Mono\", \"JetBrains Mono\", \"DejaVu Sans Mono\", Menlo, Consolas, monospace",
+      "doc": "Code, paths and ids."
     },
     {
-      "name": "font.size.small",
-      "type": "length",
+      "name": "font.display",
+      "type": "fontFamily",
+      "default": "ui-serif, \"New York\", \"Iowan Old Style\", \"Noto Serif\", Georgia, serif",
+      "doc": "Bot names, greetings and the wordmark."
+    },
+    {
+      "name": "font.size.tiny",
+      "type": "dimension",
+      "default": "10px",
+      "doc": "Timestamps and micro-labels."
+    },
+    {
+      "name": "font.size.caption",
+      "type": "dimension",
+      "default": "11px",
+      "doc": "Small meta."
+    },
+    {
+      "name": "font.size.label",
+      "type": "dimension",
       "default": "12px",
-      "doc": "Small text."
+      "doc": "Labels."
+    },
+    {
+      "name": "font.size.control",
+      "type": "dimension",
+      "default": "13px",
+      "doc": "Sidebar rows and controls."
     },
     {
       "name": "font.size.body",
-      "type": "length",
+      "type": "dimension",
       "default": "14px",
-      "doc": "Body text."
+      "doc": "Body text and typing."
+    },
+    {
+      "name": "font.size.code",
+      "type": "dimension",
+      "default": "13px",
+      "doc": "Code, commands and paths in running text."
     },
     {
       "name": "font.size.large",
-      "type": "length",
-      "default": "17px",
-      "doc": "Large text."
+      "type": "dimension",
+      "default": "15px",
+      "doc": "Large controls."
+    },
+    {
+      "name": "font.size.heading",
+      "type": "dimension",
+      "default": "16px",
+      "doc": "Headings in a pane."
     },
     {
       "name": "font.size.title",
-      "type": "length",
-      "default": "22px",
-      "doc": "Titles."
+      "type": "dimension",
+      "default": "20px",
+      "doc": "A page's title."
     },
     {
-      "name": "font.weight.body",
-      "type": "font-weight",
-      "default": "400",
-      "doc": "Body text's weight."
+      "name": "font.size.display",
+      "type": "dimension",
+      "default": "28px",
+      "doc": "A greeting."
     },
     {
-      "name": "font.weight.strong",
-      "type": "font-weight",
-      "default": "600",
-      "doc": "Strong text's weight."
+      "name": "font.weight.regular",
+      "type": "fontWeight",
+      "default": 400,
+      "doc": "Regular."
     },
     {
-      "name": "font.lineHeight",
+      "name": "font.weight.medium",
+      "type": "fontWeight",
+      "default": 500,
+      "doc": "Medium."
+    },
+    {
+      "name": "font.weight.semibold",
+      "type": "fontWeight",
+      "default": 600,
+      "doc": "Semibold."
+    },
+    {
+      "name": "font.weight.bold",
+      "type": "fontWeight",
+      "default": 700,
+      "doc": "Bold."
+    },
+    {
+      "name": "font.line.body",
       "type": "number",
-      "default": "1.5",
-      "doc": "Body text's line height."
+      "default": 1.62,
+      "doc": "Body line height."
+    },
+    {
+      "name": "font.line.tight",
+      "type": "number",
+      "default": 1.25,
+      "doc": "Line height for one-line labels and headings."
+    },
+    {
+      "name": "radius.small",
+      "type": "dimension",
+      "default": "6px",
+      "doc": "Small corners: chips, rows."
+    },
+    {
+      "name": "radius.medium",
+      "type": "dimension",
+      "default": "10px",
+      "doc": "Medium corners: buttons, fields."
+    },
+    {
+      "name": "radius.large",
+      "type": "dimension",
+      "default": "16px",
+      "doc": "Large corners: panels, inner cards."
+    },
+    {
+      "name": "radius.huge",
+      "type": "dimension",
+      "default": "24px",
+      "doc": "The largest corners: sheets, the stage."
+    },
+    {
+      "name": "radius.round",
+      "type": "dimension",
+      "default": "999px",
+      "doc": "A capsule's end."
     },
     {
       "name": "space.xs",
-      "type": "length",
+      "type": "dimension",
       "default": "4px",
-      "doc": "The smallest gap."
+      "doc": "4 on the grid."
     },
     {
-      "name": "space.sm",
-      "type": "length",
+      "name": "space.s",
+      "type": "dimension",
       "default": "8px",
-      "doc": "A small gap."
+      "doc": "8 on the grid."
     },
     {
-      "name": "space.md",
-      "type": "length",
+      "name": "space.m",
+      "type": "dimension",
       "default": "12px",
-      "doc": "The usual gap."
+      "doc": "12 on the grid."
     },
     {
-      "name": "space.lg",
-      "type": "length",
+      "name": "space.l",
+      "type": "dimension",
       "default": "16px",
-      "doc": "A large gap."
+      "doc": "16 on the grid."
     },
     {
       "name": "space.xl",
-      "type": "length",
+      "type": "dimension",
       "default": "24px",
-      "doc": "The largest gap."
+      "doc": "24 on the grid."
     },
     {
-      "name": "radius.sm",
-      "type": "length",
-      "default": "6px",
-      "doc": "Small corners: chips, inputs."
-    },
-    {
-      "name": "radius.md",
-      "type": "length",
-      "default": "10px",
-      "doc": "Corners of cards and bubbles."
-    },
-    {
-      "name": "radius.lg",
-      "type": "length",
-      "default": "16px",
-      "doc": "Corners of windows and sheets."
+      "name": "space.xxl",
+      "type": "dimension",
+      "default": "32px",
+      "doc": "32 on the grid."
     },
     {
       "name": "shadow.raised",
       "type": "shadow",
-      "default": "0 1px 2px rgba(0,0,0,0.08)",
-      "dark": "0 1px 2px rgba(0,0,0,0.4)",
-      "doc": "Raised parts."
+      "default": "0 1px 2px #1C1B2214, 0 2px 8px #1C1B220F",
+      "dark": "0 1px 2px #00000066, 0 2px 8px #0000004D",
+      "doc": "A raised block's shadow."
     },
     {
-      "name": "shadow.overlay",
+      "name": "shadow.float",
       "type": "shadow",
-      "default": "0 8px 24px rgba(0,0,0,0.16)",
-      "dark": "0 8px 24px rgba(0,0,0,0.5)",
-      "doc": "Menus and popovers."
+      "default": "0 10px 30px #1C1B2224, 0 2px 8px #1C1B2214",
+      "dark": "0 12px 36px #00000099, 0 2px 8px #00000066",
+      "doc": "Something floating: a menu, a popover."
     },
     {
       "name": "motion.fast",
       "type": "duration",
-      "default": "120ms",
-      "doc": "Small transitions."
+      "default": "150ms",
+      "doc": "A hover, a press."
     },
     {
-      "name": "motion.normal",
+      "name": "motion.medium",
       "type": "duration",
-      "default": "220ms",
-      "doc": "Most transitions."
+      "default": "250ms",
+      "doc": "A state change."
+    },
+    {
+      "name": "motion.slow",
+      "type": "duration",
+      "default": "400ms",
+      "doc": "A part arriving."
     },
     {
       "name": "motion.easing",
       "type": "easing",
       "default": "cubic-bezier(0.2, 0, 0, 1)",
-      "doc": "The usual easing."
+      "doc": "The default ease."
     },
     {
-      "name": "layout.sidebar.width",
-      "type": "length",
-      "default": "264px",
-      "doc": "The sidebar's width."
+      "name": "motion.spring.response",
+      "type": "number",
+      "default": 0.3,
+      "doc": "The surfaces' spring: seconds per oscillation."
     },
     {
-      "name": "layout.panel.width",
-      "type": "length",
-      "default": "420px",
-      "doc": "The panel's width."
+      "name": "motion.spring.damping",
+      "type": "number",
+      "default": 0.7,
+      "doc": "The surfaces' spring: damping fraction."
     },
     {
-      "name": "card.bg",
+      "name": "island.surface",
       "type": "color",
-      "default": "#ffffff",
-      "dark": "#1f1f25",
-      "doc": "A card's background."
+      "default": "#000000",
+      "doc": "The island's black."
     },
     {
-      "name": "card.fg",
+      "name": "island.rim",
       "type": "color",
-      "default": "#16161a",
-      "dark": "#ececf0",
-      "doc": "A card's text."
+      "default": "#FFFFFF17",
+      "doc": "A floating island card's hairline rim."
     },
     {
-      "name": "card.fg.muted",
+      "name": "island.text",
       "type": "color",
-      "default": "#55555f",
-      "dark": "#a6a6b3",
-      "doc": "A card's secondary text."
+      "default": "#FFFFFF",
+      "doc": "The island's words."
     },
     {
-      "name": "card.border",
+      "name": "island.muted",
       "type": "color",
-      "default": "#dedee4",
-      "dark": "#2c2c34",
-      "doc": "A card's border."
+      "default": "#8B8B8B",
+      "doc": "The island's quiet words."
     },
     {
-      "name": "card.radius",
-      "type": "length",
-      "default": "10px",
-      "doc": "A card's corners."
-    },
-    {
-      "name": "card.padding",
-      "type": "length",
-      "default": "12px",
-      "doc": "Space inside a card."
-    },
-    {
-      "name": "card.font",
-      "type": "font-family",
-      "default": "system-ui, sans-serif",
-      "doc": "A card's text font."
-    },
-    {
-      "name": "card.font.size",
-      "type": "length",
-      "default": "14px",
-      "doc": "A card's text size."
-    },
-    {
-      "name": "card.code.bg",
+      "name": "island.faint",
       "type": "color",
-      "default": "#ececf0",
-      "dark": "#0f0f12",
-      "doc": "Behind a command on a card."
+      "default": "#FFFFFF59",
+      "doc": "The island's faintest words: positions, hints."
     },
     {
-      "name": "card.code.fg",
+      "name": "island.attention",
       "type": "color",
-      "default": "#16161a",
-      "dark": "#ececf0",
-      "doc": "A command's text on a card."
+      "default": "#FFC747",
+      "doc": "Waiting for you: the hand and its count."
     },
     {
-      "name": "card.code.font",
-      "type": "font-family",
-      "default": "ui-monospace, monospace",
-      "doc": "A command's font on a card."
-    },
-    {
-      "name": "card.approve.bg",
+      "name": "island.accept",
       "type": "color",
-      "default": "#5b5bd6",
-      "dark": "#8b8bf0",
-      "doc": "The approve button."
+      "default": "#0A85FF",
+      "doc": "The ✓ circle."
     },
     {
-      "name": "card.approve.fg",
+      "name": "island.accept.text",
       "type": "color",
-      "default": "#ffffff",
-      "dark": "#0f0f12",
-      "doc": "The approve button's text."
+      "default": "#FFFFFF",
+      "doc": "The ✓ glyph."
     },
     {
-      "name": "card.deny.bg",
+      "name": "island.refuse",
       "type": "color",
-      "default": "#ececf0",
-      "dark": "#2c2c34",
-      "doc": "The deny button."
+      "default": "#FFFFFF",
+      "doc": "The ✕ circle."
     },
     {
-      "name": "card.deny.fg",
+      "name": "island.refuse.text",
       "type": "color",
-      "default": "#16161a",
-      "dark": "#ececf0",
-      "doc": "The deny button's text."
+      "default": "#000000",
+      "doc": "The ✕ glyph."
     },
     {
-      "name": "card.button.radius",
-      "type": "length",
-      "default": "8px",
-      "doc": "A card button's corners."
+      "name": "island.working",
+      "type": "color",
+      "default": "#FF7AB6",
+      "doc": "The working bolt."
+    },
+    {
+      "name": "island.success",
+      "type": "color",
+      "default": "#4CC38A",
+      "doc": "A status that is well: running, connected."
+    },
+    {
+      "name": "island.danger",
+      "type": "color",
+      "default": "#FF6B70",
+      "doc": "A status that is not: an error, a force quit."
+    },
+    {
+      "name": "island.option",
+      "type": "color",
+      "default": "#FFFFFF1F",
+      "doc": "An option row's fill."
+    },
+    {
+      "name": "island.option.hover",
+      "type": "color",
+      "default": "#FFFFFF2E",
+      "doc": "An option row's fill under the pointer."
+    },
+    {
+      "name": "island.card",
+      "type": "color",
+      "default": "#181818",
+      "doc": "An inner card inside the open island: a Needs-you request."
+    },
+    {
+      "name": "island.card.rim",
+      "type": "color",
+      "default": "#3C3C3C",
+      "doc": "That inner card's rim."
+    },
+    {
+      "name": "island.shadow",
+      "type": "shadow",
+      "default": "0 4px 24px #00000073",
+      "doc": "A floating island card's shadow."
+    },
+    {
+      "name": "pill.surface",
+      "type": "color",
+      "default": "#000000",
+      "doc": "The Dispatch pill's black."
+    },
+    {
+      "name": "pill.rim",
+      "type": "color",
+      "default": "#FFFFFF17",
+      "doc": "The pill's hairline rim."
+    },
+    {
+      "name": "pill.text",
+      "type": "color",
+      "default": "#FFFFFF",
+      "doc": "What the user types into the pill."
+    },
+    {
+      "name": "pill.muted",
+      "type": "color",
+      "default": "#8B8B8B",
+      "doc": "The pill's quiet words."
+    },
+    {
+      "name": "pill.placeholder",
+      "type": "color",
+      "default": "#686868",
+      "doc": "The compact pill's placeholder."
+    },
+    {
+      "name": "pill.placeholder.typing",
+      "type": "color",
+      "default": "#FFFFFF80",
+      "doc": "The typing pill's placeholder."
+    },
+    {
+      "name": "pill.send",
+      "type": "color",
+      "default": "#FFFFFF",
+      "doc": "The send and stop circle."
+    },
+    {
+      "name": "pill.send.glyph",
+      "type": "color",
+      "default": "#000000",
+      "doc": "The send and stop glyph."
+    },
+    {
+      "name": "pill.accessory",
+      "type": "color",
+      "default": "#FFFFFF1F",
+      "doc": "The ↗ and ⋯ circles."
+    },
+    {
+      "name": "pill.attention",
+      "type": "color",
+      "default": "#FFC747",
+      "doc": "A card's kind glyph; a child that needs you."
+    },
+    {
+      "name": "pill.accept",
+      "type": "color",
+      "default": "#0A85FF",
+      "doc": "The ✓ circle on a pill card."
+    },
+    {
+      "name": "pill.success",
+      "type": "color",
+      "default": "#4CC38A",
+      "doc": "A child agent that finished."
+    },
+    {
+      "name": "pill.danger",
+      "type": "color",
+      "default": "#FF6B70",
+      "doc": "A child agent that failed."
+    },
+    {
+      "name": "pill.option",
+      "type": "color",
+      "default": "#FFFFFF14",
+      "doc": "A question option's fill on a pill card."
+    },
+    {
+      "name": "pill.option.hover",
+      "type": "color",
+      "default": "#FFFFFF29",
+      "doc": "A question option's fill under the pointer."
+    },
+    {
+      "name": "pill.shadow",
+      "type": "shadow",
+      "default": "0 4px 24px #00000073",
+      "doc": "The pill's shadow."
+    },
+    {
+      "name": "pill.plume.tail",
+      "type": "color",
+      "default": "#0D54FF",
+      "doc": "The working plume where it cools."
+    },
+    {
+      "name": "pill.plume.body",
+      "type": "color",
+      "default": "#298CFF",
+      "doc": "The working plume's body."
+    },
+    {
+      "name": "pill.plume.hot",
+      "type": "color",
+      "default": "#CCEDFF",
+      "doc": "The working plume at the nozzle."
+    },
+    {
+      "name": "stage.background",
+      "type": "paint",
+      "default": "linear-gradient(180deg, #FFFFFF 0%, #F4F2F8 100%)",
+      "dark": "linear-gradient(180deg, #1D1D23 0%, #151519 100%)",
+      "doc": "The stage behind the avatar."
+    },
+    {
+      "name": "stage.floor",
+      "type": "color",
+      "default": "#1C1B221F",
+      "dark": "#0000008C",
+      "doc": "The soft pool of shadow under the avatar."
+    },
+    {
+      "name": "stage.glow",
+      "type": "color",
+      "default": "#C2387A1F",
+      "dark": "#FF7AB61F",
+      "doc": "The light behind the avatar."
+    },
+    {
+      "name": "stage.text",
+      "type": "color",
+      "default": "#676674",
+      "dark": "#9B9AA8",
+      "doc": "Credits and notes on the stage."
+    },
+    {
+      "name": "avatar.light.key",
+      "type": "color",
+      "default": "#FFFFFF",
+      "dark": "#F2EEFF",
+      "doc": "The avatar's key light."
+    },
+    {
+      "name": "avatar.light.fill",
+      "type": "color",
+      "default": "#FFF1F8",
+      "dark": "#B9A8FF",
+      "doc": "The avatar's fill light."
+    },
+    {
+      "name": "avatar.light.rim",
+      "type": "color",
+      "default": "#FFFFFF",
+      "dark": "#FF9CC9",
+      "doc": "The avatar's rim light."
+    },
+    {
+      "name": "avatar.exposure",
+      "type": "number",
+      "default": 1,
+      "dark": 0.95,
+      "doc": "The avatar's exposure: 1 is neutral."
     }
   ],
   "apiCalls": {
@@ -2532,6 +3012,15 @@
       "where": "both"
     },
     "secrets.get": {
+      "where": "host"
+    },
+    "keys.publicKey": {
+      "where": "host"
+    },
+    "keys.open": {
+      "where": "host"
+    },
+    "keys.delete": {
       "where": "host"
     },
     "settings.get": {

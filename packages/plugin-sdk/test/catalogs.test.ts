@@ -3,8 +3,9 @@
 import { describe, expect, test } from "bun:test";
 import {
   API_CALLS, CAPABILITIES, CARD_TOKENS, CLAUDE_HOOK_EVENTS, CORE_CONTRIBUTION_KEYS, CORE_POINTS, DATA_POINTS, HOOK_EVENTS,
-  HOOK_RETURNS, MESSAGE_KINDS, SPOTS, TOKENS, WELL_KNOWN_POINT_NAMES, apiCallAllowed, capabilityOkText, catalogJson, cssVar,
-  fetchesCodeAtRunTime, hookMatchesTool, hookOrder, interpolate, isTokenValue, keyMatches, networkAllows, parseCapability,
+  HOOK_RETURNS, MESSAGE_KINDS, SPOTS, TOKENS, TOKEN_GROUPS, WELL_KNOWN_POINT_NAMES, apiCallAllowed, capabilityOkText, catalogJson, cssProperty, cssVar,
+  fetchesCodeAtRunTime, hookMatchesTool, hookOrder, interpolate, isPluginTokenName, isTokenName, isTokenValue, keyMatches, networkAllows,
+  parseCapability,
   parseInterpolation, splitToolWireName, toolWireName, wrapperId,
 } from "../src/index";
 
@@ -139,24 +140,64 @@ describe("points and spots", () => {
 });
 
 describe("tokens", () => {
-  test("every default fits its type, and sealed frames take only card.*", () => {
+  test("every default fits its type, every name fits the grammar, and sealed frames take only card.*", () => {
     for (const t of TOKENS) {
-      expect([t.name, isTokenValue(t.type, t.default)]).toEqual([t.name, true]);
-      if (t.dark) expect([t.name, isTokenValue(t.type, t.dark)]).toEqual([t.name, true]);
+      expect([t.name, isTokenName(t.name), isTokenValue(t.type, t.default)]).toEqual([t.name, true, true]);
+      if (t.dark !== undefined) expect([t.name, isTokenValue(t.type, t.dark)]).toEqual([t.name, true]);
     }
-    expect(CARD_TOKENS.length).toBeGreaterThan(5);
+    expect(CARD_TOKENS.map((t) => t.name)).toEqual(expect.arrayContaining([
+      "card.background", "card.text", "card.muted", "card.rim", "card.radius", "card.padding", "card.approve.background",
+      "card.approve.text", "card.deny.background", "card.deny.text", "card.button.radius", "card.font.family", "card.font.size",
+    ]));
     expect(CARD_TOKENS.every((t) => t.name.startsWith("card."))).toBe(true);
     expect(new Set(TOKENS.map((t) => t.name)).size).toBe(TOKENS.length);
+    // Two names never map to one custom property.
+    expect(new Set(TOKENS.map((t) => cssProperty(t.name))).size).toBe(TOKENS.length);
+  });
+
+  test("names: lowercase segments, a letter first; the property is --clover- and the name with hyphens", () => {
+    expect(isTokenName("color.text.muted")).toBe(true);
+    for (const bad of ["Color.text", "color..text", "color.text-muted", "1color", "color.", ".color", "color_text"]) {
+      expect([bad, isTokenName(bad)]).toEqual([bad, false]);
+    }
+    expect(cssProperty("color.text.muted")).toBe("--clover-color-text-muted");
+    expect(cssVar("color.text.muted")).toBe("var(--clover-color-text-muted)");
+    expect(cssProperty("mcp-blender.glow")).toBe("--clover-mcp_blender-glow");
+    expect(cssProperty("mcp.blender.glow")).not.toBe(cssProperty("mcp-blender.glow"));
+    expect(() => cssProperty("x; y")).toThrow();
+  });
+
+  test("a plugin's own tokens are <top-level id>.<name>, never under a catalog group", () => {
+    expect(isPluginTokenName("luna.glow.soft", "luna")).toBe(true);
+    expect(isPluginTokenName("tarot-deck.card.back", "tarot-deck")).toBe(true);
+    expect(isPluginTokenName("luna.Glow", "luna")).toBe(false);
+    expect(isPluginTokenName("lunar.glow", "luna")).toBe(false);
+    expect(isPluginTokenName("luna", "luna")).toBe(false);
+    expect(TOKEN_GROUPS.has("card")).toBe(true);
+    expect(isPluginTokenName("card.extra", "card")).toBe(false);
   });
 
   test("a value can never break out of its custom property", () => {
     for (const bad of ["red; } body { x: y", "url(https://evil.example/x.png)", "red /* hi */", "expression(alert(1))", "@import x", "a\\b"]) {
-      expect(isTokenValue("color", bad)).toBe(false);
-      expect(isTokenValue("shadow", bad)).toBe(false);
+      for (const type of ["color", "shadow", "paint", "fontFamily", "dimension"] as const) expect(isTokenValue(type, bad)).toBe(false);
     }
     expect(isTokenValue("color", "oklch(70% 0.1 250)")).toBe(true);
-    expect(isTokenValue("length", "1.5rem")).toBe(true);
-    expect(cssVar("color.bg.raised")).toBe("--clover-color-bg-raised");
+    expect(isTokenValue("dimension", "1.5rem")).toBe(true);
+    expect(isTokenValue("paint", "#FFFFFF")).toBe(true);
+    expect(isTokenValue("paint", "linear-gradient(180deg, rgb(0 0 0 / 50%) 0%, #151519 100%)")).toBe(true);
+    expect(isTokenValue("paint", "linear-gradient(180deg, url(x.png))")).toBe(false);
+    expect(isTokenValue("shadow", "0 4px 24px rgb(0 0 0 / 45%)")).toBe(true);
+  });
+
+  test("numbers fit number and fontWeight tokens only", () => {
+    expect(isTokenValue("number", 1.62)).toBe(true);
+    expect(isTokenValue("fontWeight", 700)).toBe(true);
+    expect(isTokenValue("fontWeight", "700")).toBe(true);
+    expect(isTokenValue("fontWeight", 0)).toBe(false);
+    expect(isTokenValue("fontWeight", 1001)).toBe(false);
+    expect(isTokenValue("dimension", 12)).toBe(false);
+    expect(isTokenValue("number", Number.NaN)).toBe(false);
+    expect(isTokenValue("number", Number.POSITIVE_INFINITY)).toBe(false);
   });
 });
 

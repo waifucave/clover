@@ -3,9 +3,9 @@
 // by this table (B-M2); the UI runtime does the same in layers (lane E). `satisfies` keeps it exactly in step with
 // `PluginApi`: a call added there and missing here, or the reverse, fails the typecheck.
 import type {
-  ApprovalsApi, AudioApi, BotsApi, BrowserApi, CommandsApi, ComputersApi, ConversationApi, FilesApi, HostApi, LogsApi,
-  MemoryApi, NetApi, NotifyApi, PluginApi, PointsApi, RoutinesApi, SecretsApi, SettingsApi, SyncedStore, UiSendApi,
-  UsageApi,
+  ApprovalsApi, AudioApi, BotsApi, BrowserApi, CommandsApi, ComputersApi, ConversationApi, FilesApi, HostApi, KeysApi,
+  LogsApi, MemoryApi, NetApi, NotifyApi, PluginApi, PointsApi, RoutinesApi, SecretsApi, SettingsApi, SyncedStore,
+  UiSendApi, UsageApi,
 } from "../api/plugin-api";
 
 type Fn = (...args: never[]) => unknown;
@@ -15,7 +15,7 @@ type FnKeys<T> = { [K in keyof T & string]-?: NonNullable<T[K]> extends Fn ? K :
 export type ApiCallPath =
   | FnKeys<PluginApi>
   | `points.${FnKeys<PointsApi>}` | `commands.${FnKeys<CommandsApi>}` | `host.${FnKeys<HostApi>}` | `ui.${FnKeys<UiSendApi>}`
-  | `storage.synced.${FnKeys<SyncedStore>}` | `net.${FnKeys<NetApi>}` | `secrets.${FnKeys<SecretsApi>}`
+  | `storage.synced.${FnKeys<SyncedStore>}` | `net.${FnKeys<NetApi>}` | `secrets.${FnKeys<SecretsApi>}` | `keys.${FnKeys<KeysApi>}`
   | `settings.${FnKeys<SettingsApi>}` | `conversation.${FnKeys<ConversationApi>}` | `memory.${FnKeys<MemoryApi>}`
   | `bots.${FnKeys<BotsApi>}` | `routines.${FnKeys<RoutinesApi>}` | `computers.${FnKeys<ComputersApi>}`
   | `approvals.${FnKeys<ApprovalsApi>}` | `files.${FnKeys<FilesApi>}` | `browser.${FnKeys<BrowserApi>}`
@@ -41,6 +41,8 @@ export const API_CALLS = {
   "net.fetch": both("network:*"),
   /** Only a process of the plugin's own; never a worker of the shared host, never a layer (§5.2). */
   "secrets.get": { where: "host" },
+  /** The private halves stay in the core, so any host half may keep key pairs; never a layer. */
+  "keys.publicKey": { where: "host" }, "keys.open": { where: "host" }, "keys.delete": { where: "host" },
   "settings.get": both(), "settings.watch": both(), "settings.set": both(),
   "conversation.list": both("conversation.read"), "conversation.get": both("conversation.read"),
   "conversation.history": both("conversation.read"), "conversation.follow": both("conversation.read"),

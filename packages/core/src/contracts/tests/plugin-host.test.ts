@@ -5,7 +5,10 @@ import type { Caller } from "@waifucave/clover-protocol";
 import { isContractError } from "../common";
 import { FakeClock, advanceAndSettle, flush } from "../fakes/clock";
 import { FakePluginHost } from "../fakes/plugin-host";
-import { CRASH_WINDOW_MS, PLUGIN_CALL_MAX_TIMEOUT_MS, PLUGIN_CALL_TIMEOUT_MS, RELOAD_GRACE_MS, crashBackoffMs, type HostedStatus } from "../plugin-host";
+import {
+  CRASH_WINDOW_MS, PLUGIN_CALL_MAX_TIMEOUT_MS, PLUGIN_CALL_TIMEOUT_MS, RELOAD_GRACE_MS, crashBackoffMs, resolveHandler,
+  type HostedStatus,
+} from "../plugin-host";
 import type { HandlerContext } from "../sdk-types";
 
 const USER: Caller = { kind: "user", client: "app" };
@@ -56,6 +59,38 @@ describe("FakePluginHost", () => {
     expect(isContractError(await rejection(host.invoke({ pluginId: "nope", handler: "ok", args: 0, caller: USER })), "not_installed")).toBe(true);
     expect(isContractError(await rejection(host.invoke({ pluginId: "p", handler: "missing", args: 0, caller: USER })), "not_installed")).toBe(true);
     expect(isContractError(await rejection(host.invoke({ pluginId: "p", handler: "stop", args: 0, caller: USER })), "not_installed")).toBe(true);
+  });
+
+  test("an export that is an object of handlers runs the one `method` names, on its object", async () => {
+    const { host } = setup();
+    class Ingress {
+      #held = ["d1"];
+      next() {
+        return this.#held.shift() ?? null;
+      }
+    }
+    const notifier = { unseen: 0, notify(u: { unseen: number }) { this.unseen = u.unseen; return this.unseen; }, clear: () => 0 };
+    host.define("clover/forwarder", { ingress: new Ingress(), notifier, plain: () => "plain" });
+    const call = (handler: string, method?: string, args: unknown = null) =>
+      host.invoke({ pluginId: "clover/forwarder", handler, ...(method === undefined ? {} : { method }), args, caller: { kind: "core" } });
+    expect(await call("ingress", "next")).toBe("d1");
+    expect(await call("ingress", "next")).toBeNull();
+    expect(await call("notifier", "notify", { unseen: 4 })).toBe(4);
+    expect(notifier.unseen).toBe(4);
+    expect(await call("plain")).toBe("plain");
+    for (const [handler, method] of [["ingress", undefined], ["ingress", "constructor"], ["ingress", "toString"], ["notifier", "unseen"], ["notifier", "missing"], ["plain", "call"]] as const) {
+      expect([handler, method, isContractError(await rejection(call(handler, method)), "not_installed")]).toEqual([handler, method, true]);
+    }
+  });
+
+  test("resolveHandler never reaches what every object has, nor the reserved exports", () => {
+    const mod = { svc: Object.create(null, { go: { value: () => 1, enumerable: true } }), start: () => 0, fn: () => 2 };
+    expect(resolveHandler(mod, "svc", "go")?.fn(null, null)).toBe(1);
+    expect(resolveHandler(mod, "fn")?.fn(null, null)).toBe(2);
+    expect(resolveHandler(mod, "start")).toBeUndefined();
+    expect(resolveHandler(mod, "fn", "apply")).toBeUndefined();
+    expect(resolveHandler(mod, "svc", "__proto__")).toBeUndefined();
+    expect(resolveHandler(mod, "hasOwnProperty")).toBeUndefined();
   });
 
   test("a handler that throws fails `failed` with its message", async () => {

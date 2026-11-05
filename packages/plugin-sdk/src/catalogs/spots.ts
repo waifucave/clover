@@ -35,7 +35,13 @@ const none = z.object({});
 const BotRef = z.object({ id: z.string(), name: Text });
 const titled = z.object({ title: Text, icon: Path.optional() });
 const titledOpt = z.object({ title: Text.optional(), icon: Path.optional() });
-const message = z.object({ id: z.string(), kind: z.string(), session: z.string(), seq: z.number().int() });
+/** A conversation item as the conversation view draws it: its id, its kind and its time on the shared clock, plus the
+ *  kind's own fields (lane F's, settled at F-M2). An approval item carries only its card's id, computer and state; the
+ *  sealed text never reaches a plugin. Under the `tool` key, the item is a run of consecutive calls (`calls`). */
+const item = z.looseObject({ id: z.string(), kind: z.string(), at: z.number() });
+/** Data the view hands on, and callbacks the core routes back (open a link or a file, answer a question). */
+const ctx = z.record(z.string(), z.unknown());
+const inConversation = { bot: BotRef, session: z.string(), item, ctx };
 
 /** The message kinds `conversation.message` is keyed by (§5.5). */
 export const MESSAGE_KINDS = ["user", "bot", "tool", "approval", "question", "routine-result", "task-notification", "agent-report", "note"] as const;
@@ -92,14 +98,15 @@ export const SPOTS: readonly SpotInfo[] = [
   { name: "composer.action", shape: "keyed", declaredBy: "composer", inBotTab: true, context: ["bot"], fields: titledOpt,
     props: z.object({ bot: BotRef, session: z.string() }), doc: "The composer's buttons, keyed by action id." },
   { name: "conversation.message", shape: "keyed", declaredBy: "conversation", inBotTab: true, keys: MESSAGE_KINDS, keep: ["approval"],
-    needs: ["conversation.read"], context: ["bot"], fields: none, props: z.object({ bot: BotRef, message }),
-    doc: "One message, keyed by kind; the `approval` cell can't be hidden." },
+    needs: ["conversation.read"], context: ["bot"], fields: none, props: z.object(inConversation),
+    doc: "One message, keyed by kind; the `approval` cell can't be hidden. The `tool` cell gets a run of calls." },
   { name: "conversation.message.extra", shape: "list", declaredBy: "conversation", inBotTab: true, needs: ["conversation.read"], context: ["bot"],
-    fields: none, props: z.object({ bot: BotRef, message }), doc: "Add-ons under each message." },
+    fields: none, props: z.object(inConversation), doc: "Add-ons under each message." },
   { name: "tool.result", shape: "keyed", declaredBy: "conversation", inBotTab: true, needs: ["conversation.read"], context: ["bot"], fields: none,
-    props: z.object({ bot: BotRef, message, tool: z.string() }), doc: "A tool's result, keyed by tool name (`mcp__blender__*`)." },
+    props: z.object({ ...inConversation, tool: z.string() }),
+    doc: "A tool's result, keyed by tool name (`mcp__blender__*`); `item` is the one call." },
   { name: "menu.message", shape: "list", declaredBy: "conversation", inBotTab: true, needs: ["conversation.read"], context: ["bot"], fields: titled,
-    props: z.object({ bot: BotRef, message }), doc: "Items in a message's menu." },
+    props: z.object(inConversation), doc: "Items in a message's menu." },
   { name: "file.preview", shape: "keyed", declaredBy: "file-view", inBotTab: true, fields: none,
     props: z.object({ path: z.string(), mediaType: z.string() }),
     doc: "A file's preview wherever one shows, keyed by media type (`image/*`); in a bot's plugin, only inside its tab." },

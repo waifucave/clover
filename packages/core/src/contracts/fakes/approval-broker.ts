@@ -8,7 +8,7 @@ import {
 import {
   cardMetaOf, isBridgeCall, levelDecision, strictestLevel,
   type AnswerResult, type ApprovalBroker, type ApprovalDecision, type ApprovalEvent, type ApprovalRequest,
-  type ProofVerifier, type Reviewer, type SavedRule,
+  type CardRecord, type ProofVerifier, type Reviewer, type SavedRule,
 } from "../approval-broker";
 import type { Clock, TimerHandle } from "../clock";
 import { Listeners, type Unsubscribe } from "../common";
@@ -44,7 +44,7 @@ export class FakeApprovalBroker implements ApprovalBroker {
   readonly #reviewer: Reviewer;
   readonly #verify: ProofVerifier;
   readonly #pending = new Map<string, Pending>();
-  readonly #answered = new Set<string>();
+  readonly #resolved = new Map<string, CardRecord>();
   readonly #rules: SavedRule[] = [];
   readonly #listeners = new Listeners<ApprovalEvent>();
 
@@ -67,6 +67,13 @@ export class FakeApprovalBroker implements ApprovalBroker {
     return [...this.#pending.values()].map((p) => structuredClone(p.card));
   }
 
+  get(cardId: string): CardRecord | undefined {
+    const p = this.#pending.get(cardId);
+    if (p) return { card: structuredClone(p.card) };
+    const r = this.#resolved.get(cardId);
+    return r === undefined ? undefined : structuredClone(r);
+  }
+
   pending(computer?: string): CardMeta[] {
     return [...this.#pending.values()]
       .filter((p) => computer === undefined || p.card.computer === computer)
@@ -75,7 +82,7 @@ export class FakeApprovalBroker implements ApprovalBroker {
 
   async answer(cardId: string, a: { optionId: string; hash: string; proof: CardAnswerProof }): Promise<AnswerResult> {
     const p = this.#pending.get(cardId);
-    if (!p) return this.#answered.has(cardId) ? "already-answered" : "unknown-card";
+    if (!p) return this.#resolved.has(cardId) ? "already-answered" : "unknown-card";
     if (a.hash !== p.card.hash) return "hash-mismatch";
     const option = p.card.options.find((o) => o.id === a.optionId);
     if (!option) return "bad-option";
@@ -84,7 +91,8 @@ export class FakeApprovalBroker implements ApprovalBroker {
     const allowed = option.kind === "approve";
     const remembered = allowed && option.remember === "always" && p.req.ruleKey !== undefined;
     if (remembered) this.#rules.push({ ruleKey: p.req.ruleKey!, computers: [...p.req.computers], cardId, savedAt: this.#clock.now() });
-    this.#settle(p, allowed ? "approved" : "denied", { allowed, by: "card", cardId, optionId: option.id, ...(remembered ? { remembered } : {}) }, option.id);
+    const device = a.proof.via === "device" ? a.proof.device : undefined;
+    this.#settle(p, allowed ? "approved" : "denied", { allowed, by: "card", cardId, optionId: option.id, ...(remembered ? { remembered } : {}) }, option.id, device);
     return "accepted";
   }
 
@@ -106,7 +114,7 @@ export class FakeApprovalBroker implements ApprovalBroker {
 
   async #decide(req: ApprovalRequest): Promise<ApprovalDecision | undefined> {
     // Rule 1.
-    if (req.kind === "change" || req.kind === "confirm" || req.kind === "plugin-ok") return undefined;
+    if (req.kind === "change" || req.kind === "confirm" || req.kind === "plugin-ok" || req.kind === "elicitation") return undefined;
     // Rule 2.
     if (req.kind === "agent-permission" && isBridgeCall(req.agent)) return { allowed: true, by: "bridge" };
     // Rule 3.
@@ -170,13 +178,14 @@ export class FakeApprovalBroker implements ApprovalBroker {
     return n;
   }
 
-  #settle(p: Pending, outcome: CardOutcome, decision: ApprovalDecision, optionId?: string): void {
+  #settle(p: Pending, outcome: CardOutcome, decision: ApprovalDecision, optionId?: string, device?: string): void {
     if (p.done) return;
     p.done = true;
     if (p.timer) this.#clock.clearTimeout(p.timer);
     this.#pending.delete(p.card.id);
-    this.#answered.add(p.card.id);
-    this.#listeners.emit({ type: "resolved", cardId: p.card.id, outcome, ...(optionId === undefined ? {} : { optionId }) });
+    const how = { ...(optionId === undefined ? {} : { optionId }), ...(device === undefined ? {} : { device }) };
+    this.#resolved.set(p.card.id, { card: p.card, outcome, ...how, resolvedAt: this.#clock.now() });
+    this.#listeners.emit({ type: "resolved", cardId: p.card.id, outcome, ...how });
     p.resolve(decision);
   }
 }

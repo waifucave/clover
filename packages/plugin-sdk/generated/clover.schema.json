@@ -990,7 +990,14 @@
       "type": "string",
       "minLength": 1,
       "maxLength": 64,
-      "pattern": "^[A-Za-z][A-Za-z0-9_.-]{0,63}$"
+      "allOf": [
+        {
+          "pattern": "^[A-Za-z][A-Za-z0-9_.-]{0,63}$"
+        },
+        {
+          "pattern": "^(?!waifucave$)"
+        }
+      ]
     },
     "__schema21": {
       "type": "string",
@@ -1003,7 +1010,7 @@
       "maxLength": 128,
       "pattern": "^[A-Za-z_$][A-Za-z0-9_$]*$",
       "format": "handler",
-      "description": "An export of `host.entry`."
+      "description": "An export of `host.entry`: a function, or for a service (a `webhook.ingress` entry, a notifier) an object of functions, whose caller names the one it calls."
     },
     "__schema23": {
       "$ref": "#/$defs/__schema7"

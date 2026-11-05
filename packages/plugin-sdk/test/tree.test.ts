@@ -18,7 +18,7 @@ function folder(files: Record<string, string | object>, opts: { outside?: string
   };
 }
 
-const THEME = { theme: 1, name: "Luna", tokens: { "color.accent": "#7a5cff", "card.approve.bg": "#7a5cff", "luna.glow": "#ffffff" } };
+const THEME = { theme: 1, name: "Luna", tokens: { "color.accent": "#7a5cff", "card.approve.background": "#7a5cff", "font.weight.bold": 700, "luna.glow": "#ffffff" } };
 const LAYOUT = { layout: 1, root: { column: [{ spot: "bot.stage", grow: 1 }, { spot: "conversation", grow: 2 }, { spot: "composer" }] } };
 
 const LUNA = {
@@ -76,10 +76,15 @@ describe("a bot plugin with a child", () => {
   });
 
   test("theme tokens are the catalog's or the plugin's own, with safe values", async () => {
-    const bad = { ...LUNA, "tab/theme.json": { theme: 1, name: "Luna", tokens: { "color.accent": "red; } body { display: none", "colour.bg": "#fff", "radius.md": "url(x)" } } };
+    const tokens = {
+      "color.accent": "red; } body { display: none", "colour.bg": "#fff", "radius.medium": "url(x)", "font.size.body": 14,
+      "luna.glow-x": "#fff", "luna.glow.soft": "#ffffff80",
+    };
+    const bad = { ...LUNA, "tab/theme.json": { theme: 1, name: "Luna", tokens } };
     const r = await validateTree(folder(bad), { folderName: "luna" });
     expect(r.issues.map((i) => `${i.code}:${i.path}`).sort()).toEqual([
-      "token_unknown:/tokens/colour.bg", "token_value:/tokens/color.accent", "token_value:/tokens/radius.md",
+      "token_unknown:/tokens/colour.bg", "token_unknown:/tokens/luna.glow-x", "token_value:/tokens/color.accent",
+      "token_value:/tokens/font.size.body", "token_value:/tokens/radius.medium",
     ]);
   });
 
