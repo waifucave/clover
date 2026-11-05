@@ -59,11 +59,13 @@ function DiffChip({ call, ctx }: { call: ToolCall; ctx: MessageContext }) {
   );
   const open = ctx.actions.onOpenDiff;
   return open ? (
-    <button type="button" className="cl-conv-diff" onClick={() => open(diff.diffId)} aria-label={S.toolOpenDiff(diff.path)}>
+    <button type="button" className="cl-conv-diff" onClick={() => open(diff.diffId)} aria-label={S.toolOpenDiff(diff.path)} title={diff.path}>
       {body}
     </button>
   ) : (
-    <span className="cl-conv-diff">{body}</span>
+    <span className="cl-conv-diff" title={diff.path}>
+      {body}
+    </span>
   );
 }
 
@@ -138,7 +140,9 @@ export function ToolRun({ calls, ctx, expanded, onToggle, renderResult }: ToolRu
         <span className="cl-conv-tools__sentence">{toolSentence(calls)}</span>
         {computer && <span className="cl-conv-tools__computer">{S.toolOnComputer(computer)}</span>}
         {reviewing && <span className="cl-conv-tools__reviewing">{S.toolReviewing}</span>}
-        <IconChevron />
+        <span className="cl-conv-chevron" aria-hidden="true">
+          <IconChevron />
+        </span>
       </button>
       {!expanded && failure && <div className="cl-conv-tools__failure">{failure}</div>}
       {!expanded && diffs.length > 0 && (

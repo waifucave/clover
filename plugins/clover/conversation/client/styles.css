@@ -466,13 +466,15 @@
   font-size: var(--clover-text-small);
 }
 
-.cl-conv-thinking__toggle .cl-conv-icon,
-.cl-conv-tools__summary .cl-conv-icon:last-child {
+/* A disclosure chevron: a leaf that turns when its row opens. */
+.cl-conv-chevron {
+  display: inline-flex;
+  flex: none;
   transition: transform 0.15s ease;
 }
 
-.cl-conv-thinking[data-open] .cl-conv-thinking__toggle .cl-conv-icon,
-.cl-conv-tools[data-open] .cl-conv-tools__summary .cl-conv-icon:last-child {
+.cl-conv-thinking[data-open] .cl-conv-chevron,
+.cl-conv-tools[data-open] .cl-conv-tools__summary .cl-conv-chevron {
   transform: rotate(90deg);
 }
 

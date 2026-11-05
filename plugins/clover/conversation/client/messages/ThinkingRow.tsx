@@ -34,7 +34,11 @@ export function ThinkingRow({ item, ctx, defaultOpen = false }: { item: Thinking
       >
         <span className="cl-conv-thinking__glyph" aria-hidden="true">✻</span>
         <span className="cl-conv-thinking__label">{thinkingLabel(item, ctx.turnLive)}</span>
-        {canOpen && <IconChevron />}
+        {canOpen && (
+          <span className="cl-conv-chevron" aria-hidden="true">
+            <IconChevron />
+          </span>
+        )}
       </button>
       {open && (
         <div className="cl-conv-thinking__body" id={bodyId}>

@@ -277,6 +277,7 @@ describe("tool runs", () => {
     expect(statuses).toContain("interrupted");
     expect(statuses.at(-1)).toBe("running");
     expect(screen.getByText("Safety check")).toBeTruthy();
+    expect(screen.getByText("Running a command")).toBeTruthy();
   });
 
   test("an MCP Apps page is placed for its call, and a plugin can draw a tool's result", () => {
@@ -306,6 +307,8 @@ describe("approvals", () => {
     expect([...card.querySelectorAll("[data-sealed-button]")].map((b) => (b as HTMLElement).dataset.sealedButton)).toEqual(["deny", "approve"]);
     // A card from a turn the user started waits: no deadline.
     expect(screen.queryByText(/unless you answer/)).toBeNull();
+    // The call it holds says it is waiting, not that it ran.
+    expect(screen.getByText("Waiting to run a command")).toBeTruthy();
   });
 
   test("a card from a turn the user did not start says when it is denied", () => {

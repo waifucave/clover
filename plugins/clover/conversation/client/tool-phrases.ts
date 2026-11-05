@@ -1,39 +1,45 @@
-// What a run of tool calls says in one line: "Ran 3 commands, read 2 files". Pure, so the sentence a
-// run reads as is tested apart from any view.
+// What a run of tool calls says in one line: "Ran 3 commands, read 2 files", "Running a command",
+// "Waiting to run a command". Pure, so the sentence a run reads as is tested apart from any view.
 import type { ToolCall, ToolStatus } from "./types";
 
-type Phrase = (count: number) => string;
+/** A tool's phrase: its verb in three forms and its object, one or many (`#` is the count). */
+interface Phrase {
+  past: string;
+  doing: string;
+  base: string;
+  one: string;
+  many: string;
+}
 
-const times = (n: number) => (n === 1 ? "" : ` ${n} times`);
-const plural = (n: number, one: string, many: string) => (n === 1 ? one : many.replace("#", String(n)));
+const p = (past: string, doing: string, base: string, one: string, many: string): Phrase => ({ past, doing, base, one, many });
 
 /** The core tools (spec §6.7) and the tools we ship under `mcp__clover__` (spec §5.3). */
 const PHRASES: Record<string, Phrase> = {
-  Bash: (n) => plural(n, "ran a command", "ran # commands"),
-  PowerShell: (n) => plural(n, "ran a PowerShell command", "ran # PowerShell commands"),
-  Read: (n) => plural(n, "read a file", "read # files"),
-  Write: (n) => plural(n, "wrote a file", "wrote # files"),
-  Edit: (n) => plural(n, "made an edit", "made # edits"),
-  Glob: (n) => `looked for files${times(n)}`,
-  Grep: (n) => `searched files${times(n)}`,
-  SendMessage: (n) => plural(n, "sent a message", "sent # messages"),
-  Agent: (n) => plural(n, "started an agent", "started # agents"),
-  TaskStop: (n) => plural(n, "stopped an agent", "stopped # agents"),
-  ListAgents: (n) => `checked running sessions${times(n)}`,
-  Routine: (n) => plural(n, "wrote a routine", "wrote # routines"),
-  Glossary: (n) => `searched the glossary${times(n)}`,
-  AskUserQuestion: (n) => plural(n, "asked a question", "asked # questions"),
-  TaskCreate: (n) => plural(n, "added a task", "added # tasks"),
-  TaskUpdate: (n) => plural(n, "updated a task", "updated # tasks"),
-  TaskList: (n) => `checked the task list${times(n)}`,
-  TaskGet: (n) => `checked a task${times(n)}`,
-  TaskOutput: (n) => `checked a command's output${times(n)}`,
-  Monitor: (n) => plural(n, "watched a command", "watched # commands"),
-  ListMcpResources: (n) => `listed resources${times(n)}`,
-  ReadMcpResource: (n) => plural(n, "read a resource", "read # resources"),
-  mcp__clover__WebSearch: (n) => `searched the web${times(n)}`,
-  mcp__clover__WebFetch: (n) => plural(n, "fetched a page", "fetched # pages"),
-  mcp__clover__Browser: (n) => `used the browser${times(n)}`,
+  Bash: p("ran", "running", "run", "a command", "# commands"),
+  PowerShell: p("ran", "running", "run", "a PowerShell command", "# PowerShell commands"),
+  Read: p("read", "reading", "read", "a file", "# files"),
+  Write: p("wrote", "writing", "write", "a file", "# files"),
+  Edit: p("made", "making", "make", "an edit", "# edits"),
+  Glob: p("looked for", "looking for", "look for", "files", "files # times"),
+  Grep: p("searched", "searching", "search", "files", "files # times"),
+  SendMessage: p("sent", "sending", "send", "a message", "# messages"),
+  Agent: p("started", "starting", "start", "an agent", "# agents"),
+  TaskStop: p("stopped", "stopping", "stop", "an agent", "# agents"),
+  ListAgents: p("checked", "checking", "check", "running sessions", "running sessions # times"),
+  Routine: p("wrote", "writing", "write", "a routine", "# routines"),
+  Glossary: p("searched", "searching", "search", "the glossary", "the glossary # times"),
+  AskUserQuestion: p("asked", "asking", "ask", "a question", "# questions"),
+  TaskCreate: p("added", "adding", "add", "a task", "# tasks"),
+  TaskUpdate: p("updated", "updating", "update", "a task", "# tasks"),
+  TaskList: p("checked", "checking", "check", "the task list", "the task list # times"),
+  TaskGet: p("checked", "checking", "check", "a task", "# tasks"),
+  TaskOutput: p("checked", "checking", "check", "a command's output", "command output # times"),
+  Monitor: p("watched", "watching", "watch", "a command", "# commands"),
+  ListMcpResources: p("listed", "listing", "list", "resources", "resources # times"),
+  ReadMcpResource: p("read", "reading", "read", "a resource", "# resources"),
+  mcp__clover__WebSearch: p("searched", "searching", "search", "the web", "the web # times"),
+  mcp__clover__WebFetch: p("fetched", "fetching", "fetch", "a page", "# pages"),
+  mcp__clover__Browser: p("used", "using", "use", "the browser", "the browser # times"),
 };
 
 /** `mcp__<namespace>__<Tool>` split, or null for any other name. */
@@ -42,22 +48,40 @@ export function splitPluginTool(name: string): { namespace: string; tool: string
   return m ? { namespace: m[1] ?? "", tool: m[2] ?? "" } : null;
 }
 
-/** One stretch of same-named calls as a lowercase fragment. */
-export function toolFragment(name: string, count: number): string {
-  const phrase = PHRASES[name];
-  if (phrase) return phrase(count);
+function phraseFor(name: string): Phrase {
+  const known = PHRASES[name];
+  if (known) return known;
   const plugin = splitPluginTool(name);
-  if (plugin) return `used ${plugin.tool} (${plugin.namespace})${times(count)}`;
-  return `used ${name}${times(count)}`;
+  const thing = plugin ? `${plugin.tool} (${plugin.namespace})` : name;
+  return p("used", "using", "use", thing, `${thing} # times`);
 }
 
-/** Consecutive calls of the same tool, in order. */
-export function stretches(calls: readonly ToolCall[]): { name: string; calls: ToolCall[] }[] {
-  const out: { name: string; calls: ToolCall[] }[] = [];
+/** Done, still going, or held for the user's OK. */
+export type PhraseForm = "done" | "doing" | "waiting";
+
+export function formOf(status: ToolStatus): PhraseForm {
+  if (status === "waiting") return "waiting";
+  if (status === "running") return "doing";
+  return "done";
+}
+
+/** One stretch of same-named calls in one form, as a lowercase fragment. */
+export function toolFragment(name: string, count: number, form: PhraseForm = "done"): string {
+  const phrase = phraseFor(name);
+  const object = count === 1 ? phrase.one : phrase.many.replace("#", String(count));
+  if (form === "doing") return `${phrase.doing} ${object}`;
+  if (form === "waiting") return `waiting to ${phrase.base} ${object}`;
+  return `${phrase.past} ${object}`;
+}
+
+/** Consecutive calls of the same tool in the same form, in order. */
+export function stretches(calls: readonly ToolCall[]): { name: string; form: PhraseForm; calls: ToolCall[] }[] {
+  const out: { name: string; form: PhraseForm; calls: ToolCall[] }[] = [];
   for (const call of calls) {
+    const form = formOf(call.status);
     const last = out[out.length - 1];
-    if (last && last.name === call.name) last.calls.push(call);
-    else out.push({ name: call.name, calls: [call] });
+    if (last && last.name === call.name && last.form === form) last.calls.push(call);
+    else out.push({ name: call.name, form, calls: [call] });
   }
   return out;
 }
@@ -65,7 +89,7 @@ export function stretches(calls: readonly ToolCall[]): { name: string; calls: To
 /** The whole run as one sentence, first letter capitalized. */
 export function toolSentence(calls: readonly ToolCall[]): string {
   const sentence = stretches(calls)
-    .map((s) => toolFragment(s.name, s.calls.length))
+    .map((s) => toolFragment(s.name, s.calls.length, s.form))
     .join(", ");
   return sentence.charAt(0).toUpperCase() + sentence.slice(1);
 }

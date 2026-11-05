@@ -4,6 +4,7 @@
 .cl-composer {
   position: relative;
   box-sizing: border-box;
+  width: 100%;
   max-width: 760px;
   margin: 0 auto;
   padding: 0 24px 16px;

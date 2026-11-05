@@ -13,6 +13,7 @@ import { stories as conversationStories } from "../../conversation/gallery/stori
 
 const outdir = mkdtempSync(join(tmpdir(), "lane-f-gallery-"));
 const errors: string[] = [];
+let root: HTMLElement | undefined;
 
 async function until(check: () => boolean, ms = 10_000) {
   const start = Date.now();
@@ -24,7 +25,7 @@ async function until(check: () => boolean, ms = 10_000) {
 
 beforeAll(async () => {
   await buildGallery(outdir, { production: false });
-  const root = document.createElement("div");
+  root = document.createElement("div");
   root.id = "root";
   document.body.append(root);
   const original = console.error;
@@ -33,13 +34,18 @@ beforeAll(async () => {
   };
   try {
     (0, eval)(readFileSync(join(outdir, "main.js"), "utf8"));
-    await until(() => document.querySelector("[data-gallery-ready]") !== null);
+    await until(() => root!.querySelector("[data-gallery-ready]") !== null);
   } finally {
     console.error = original;
   }
 });
 
-afterAll(() => rmSync(outdir, { recursive: true, force: true }));
+// Every test file shares one document: take the gallery out of it, so no other file finds it.
+afterAll(() => {
+  root?.remove();
+  document.documentElement.removeAttribute("data-theme");
+  rmSync(outdir, { recursive: true, force: true });
+});
 
 describe("the gallery", () => {
   const all = [...conversationStories, ...composerStories, ...sidebarStories, ...composedStories];
@@ -51,19 +57,19 @@ describe("the gallery", () => {
   });
 
   test("shows every story of every part, ids unique", () => {
-    const shown = [...document.querySelectorAll("[data-story]")].map((s) => s.getAttribute("data-story"));
+    const shown = [...root!.querySelectorAll("[data-story]")].map((s) => s.getAttribute("data-story"));
     expect(shown).toEqual(all.map((s) => s.id));
     expect(new Set(shown).size).toBe(shown.length);
   });
 
   test("no story failed, and nothing logged an error", () => {
-    expect([...document.querySelectorAll("[data-story-error]")].map((e) => e.getAttribute("data-story-error"))).toEqual([]);
+    expect([...root!.querySelectorAll("[data-story-error]")].map((e) => e.getAttribute("data-story-error"))).toEqual([]);
     expect(errors).toEqual([]);
   });
 
   test("the composed stories hold all three parts", () => {
     for (const story of composedStories) {
-      const frame = document.querySelector(`[data-story="${story.id}"]`);
+      const frame = root!.querySelector(`[data-story="${story.id}"]`);
       expect(frame?.querySelector(".cl-sidebar")).toBeTruthy();
       expect(frame?.querySelector(".cl-conv")).toBeTruthy();
       expect(frame?.querySelector(".cl-composer")).toBeTruthy();

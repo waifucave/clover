@@ -126,27 +126,24 @@ function SpeechBox({ item }: { item: BotItem; ctx: MessageContext; final?: boole
 }
 
 export const stories: Story[] = [
-  { id: "conversation/empty", title: "A new conversation", height: 240, render: () => <View items={[]} /> },
-  { id: "conversation/greeting", title: "The bot's greeting", height: 260, render: () => <View items={GREETING} /> },
+  { id: "conversation/empty", title: "A new conversation", render: () => <View items={[]} /> },
+  { id: "conversation/greeting", title: "The bot's greeting", render: () => <View items={GREETING} /> },
   {
     id: "conversation/basic",
     title: "An exchange, across two days",
     notes: "Markdown: headings, lists, quotes, a table, a code block with copy, links. The last message came from the phone.",
-    height: 980,
     render: () => <View items={BASIC} />,
   },
   {
     id: "conversation/streaming",
     title: "An answer streaming in",
     notes: "A live thinking row, tool calls, and the answer arriving mid code block with the caret.",
-    height: 600,
     render: () => <View items={STREAMING} turn={{ running: true, phase: "thinking" }} />,
   },
   {
     id: "conversation/thinking",
     title: "Thinking titles",
     notes: "Titled, untitled and hidden blocks once done; a live one breathing while the turn runs.",
-    height: 420,
     render: () => <View items={THINKING} turn={{ running: true, phase: "thinking" }} />,
   },
   {
@@ -162,7 +159,6 @@ export const stories: Story[] = [
     id: "conversation/tools",
     title: "Tool runs in every state",
     notes: "Grouped runs, outputs cut at 40 lines, diffs, web sites, an MCP Apps page, a plugin's own result view (tool.result), a failure, an interruption, and a call under the safety check.",
-    height: 1720,
     render: () => (
       <View items={TOOLS} turn={{ running: true, phase: "working" }} initialExpanded={TOOLS_OPEN} renderToolResult={blenderResult} />
     ),
@@ -171,21 +167,18 @@ export const stories: Story[] = [
     id: "conversation/approval",
     title: "An approval waiting for the user",
     notes: "Every word inside the card is a sealed frame the core draws; the plugin only places them.",
-    height: 560,
     render: () => <View items={APPROVAL_PENDING} turn={{ running: true, phase: "waiting" }} />,
   },
   {
     id: "conversation/approval-states",
     title: "Approvals after the fact, and one with a deadline",
     notes: "Approved on the phone, denied, expired, withdrawn by an interrupt; a routine's card is denied after 10 minutes.",
-    height: 520,
     render: () => <View items={APPROVAL_STATES} />,
   },
   {
     id: "conversation/questions",
     title: "Questions waiting for an answer",
     notes: "One choice; several questions with chips and a multi-select; free text with a deadline.",
-    height: 1020,
     render: () => <View items={[QUESTION_SINGLE, QUESTION_MULTI, QUESTION_FREE]} turn={{ running: true, phase: "waiting" }} />,
   },
   {
@@ -203,28 +196,24 @@ export const stories: Story[] = [
     id: "conversation/events",
     title: "Routines, background agents and other bots",
     notes: "Routine results from side threads; an agent reporting mid-work; another bot's message; finished, stalled and command notifications.",
-    height: 1300,
     render: () => <View items={EVENTS} />,
   },
   {
     id: "conversation/notes",
     title: "Notes",
     notes: "A compaction divider, the core's notices, a plugin's note, a hook's warning, an error.",
-    height: 460,
     render: () => <View items={NOTES} />,
   },
   {
     id: "conversation/interrupt",
     title: "The user interrupts",
     notes: "The answer, the running command and the pending card stop at once; the new message starts the next step.",
-    height: 520,
     render: () => <View items={INTERRUPT} turn={{ running: true, phase: "thinking" }} />,
   },
   {
     id: "conversation/devices",
     title: "Messages from other devices",
     notes: "From the phone and the web page; a message that arrived late keeps its send time.",
-    height: 520,
     render: () => <View items={DEVICES} />,
   },
   {
@@ -240,9 +229,7 @@ export const stories: Story[] = [
             { running: true, phase: "waiting" },
           ] as const
         ).map((turn) => (
-          <div key={turn.phase} style={{ height: 190 }}>
-            <View items={STATUS_RETRYING} turn={turn} />
-          </div>
+          <View key={turn.phase} items={STATUS_RETRYING} turn={turn} />
         ))}
       </div>
     ),
@@ -250,7 +237,6 @@ export const stories: Story[] = [
   {
     id: "conversation/attachments",
     title: "A message with images and a file",
-    height: 420,
     render: () => <View items={ATTACHMENTS} />,
   },
   {
@@ -264,7 +250,6 @@ export const stories: Story[] = [
     id: "conversation/replaced-parts",
     title: "Parts replaced by a plugin",
     notes: "A plugin fills conversation.message for `bot` with a speech box, and adds a line under every message.",
-    height: 420,
     render: () => (
       <View
         items={BASIC.slice(2)}

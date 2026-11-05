@@ -2,12 +2,12 @@ import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { cssVariable, TOKENS } from "../client/tokens";
-import { COLOR_LITERAL, frameUnsafeRules, parseCss } from "./css";
+import { COLOR_LITERAL, frameUnsafeRules, parseCss, subjectOf } from "./css";
 
 const css = readFileSync(join(import.meta.dir, "../client/styles.css"), "utf8");
 
 /** Leaf decorations that never hold a sealed frame: icons, the caret, breathing status text. */
-const LEAVES = [".cl-conv-icon", "::after", ".cl-conv-thinking__glyph", ".cl-conv-thinking__label", ".cl-conv-working__glyph", ".cl-conv-working__text"];
+const LEAVES = [".cl-conv-icon", ".cl-conv-chevron", "::after", ".cl-conv-thinking__glyph", ".cl-conv-thinking__label", ".cl-conv-working__glyph", ".cl-conv-working__text"];
 
 describe("the conversation stylesheet", () => {
   test("uses exactly the tokens tokens.ts names", () => {
@@ -33,6 +33,14 @@ describe("the conversation stylesheet", () => {
     expect(frameUnsafeRules(".cl-conv__column { transform: scale(0.98); }", LEAVES)).toEqual([".cl-conv__column"]);
     expect(frameUnsafeRules("@keyframes f { to { opacity: 0 } } .cl-conv__unit { animation: f 1s; }", LEAVES)).toEqual([".cl-conv__unit"]);
     expect(frameUnsafeRules(".cl-conv__unit { transform: translateY(4px); opacity: 1; filter: none; }", LEAVES)).toEqual([]);
+  });
+
+  test("only a disclosure chevron turns (a status mark never does)", () => {
+    const turning = parseCss(css).filter((r) => r.declarations.some((d) => d.property === "transform" && /rotate/.test(d.value)));
+    expect(turning.length).toBeGreaterThan(0);
+    for (const rule of turning) {
+      for (const selector of rule.prelude.split(",")) expect(subjectOf(selector)).toBe(".cl-conv-chevron");
+    }
   });
 
   test("animations stop for reduced motion", () => {

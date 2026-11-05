@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { afterContentChange, distanceFromBottom, FOLLOW_THRESHOLD_PX, isAtBottom } from "../client/follow";
 import { basename, clip, dayKey, dayLabel, firstLine, formatDuration, formatTime, hostOf, minutesUntil } from "../client/format";
 import { buildTimeline, streamingText } from "../client/timeline";
-import { runStatus, sharedComputer, splitPluginTool, stretches, toolFragment, toolSentence } from "../client/tool-phrases";
+import { formOf, runStatus, sharedComputer, splitPluginTool, stretches, toolFragment, toolSentence } from "../client/tool-phrases";
 import type { ConversationItem, ToolCall } from "../client/types";
 import { at, bot, FORMAT, NOW, note, thinking, tool, user } from "../gallery/fixtures";
 
@@ -67,6 +67,20 @@ describe("tool phrases", () => {
       ["Read", 2], ["Glob", 1], ["Bash", 3], ["Read", 1],
     ]);
     expect(toolSentence(calls)).toBe("Read 2 files, looked for files, ran 3 commands, read a file");
+  });
+
+  test("a call still going reads in the present, a held one as waiting; done ones stay past", () => {
+    expect(formOf("running")).toBe("doing");
+    expect(formOf("waiting")).toBe("waiting");
+    expect(formOf("failed")).toBe("done");
+    expect(toolFragment("Bash", 1, "doing")).toBe("running a command");
+    expect(toolFragment("Bash", 1, "waiting")).toBe("waiting to run a command");
+    expect(toolFragment("Edit", 2, "doing")).toBe("making 2 edits");
+    expect(toolFragment("mcp__clover__WebSearch", 1, "doing")).toBe("searching the web");
+    expect(toolFragment("mcp__blender__Render", 1, "waiting")).toBe("waiting to use Render (blender)");
+    expect(toolSentence([call("Bash"), call("Bash"), call("Bash", { status: "running" })])).toBe("Ran 2 commands, running a command");
+    expect(toolSentence([call("Bash", { status: "waiting" })])).toBe("Waiting to run a command");
+    expect(toolSentence([call("Edit"), call("Bash", { status: "interrupted" })])).toBe("Made an edit, ran a command");
   });
 
   test("a run's status: still going outranks failed outranks interrupted", () => {
