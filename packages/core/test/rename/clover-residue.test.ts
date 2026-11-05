@@ -2,7 +2,8 @@
 // EVERY tracked file in the repo and finds every `winter`/`Winter`/`WINTER`, then asserts:
 //   1. no name of the live Winter install (`CLOVER_NEVER_PERMITTED`: its Keychain services, its homes,
 //      its app) appears outside the files that entry names — checked FIRST, whatever the allowlist
-//      permits (C0 review S3) — and every named file still spells it;
+//      permits (C0 review S3), and in every tracked text file but `NEVER_SCAN_EXEMPT`'s, the paths the
+//      rename leaves alone included (the C0 check) — and every named file still spells it;
 //   2. each `winter` sits in a path `CLOVER_EXEMPT_PATHS` leaves alone, or inside a range permitted by
 //      AT LEAST ONE applicable `CLOVER_ALLOWLIST` entry;
 //   3. every allowlist entry, and every top-level alternative of its regex, matched at least once
@@ -40,6 +41,16 @@ function globToRegex(glob: string): RegExp {
 /** A trailing `/` is a prefix, a `*` a glob, anything else one exact path (`clover.ts`'s header). */
 function isExempt(relPath: string): boolean {
   return CLOVER_EXEMPT_PATHS.some((p) => (p.endsWith("/") ? relPath.startsWith(p) : p.includes("*") ? globToRegex(p).test(relPath) : relPath === p));
+}
+
+/** Where the never-permitted names are NOT looked for: the docs, the release notes, the kept Swift tree, CLAUDE.md, and
+ *  the rename's own rules and tests. Everything else tracked is scanned for them, the paths the rename leaves alone
+ *  included (`native/`, `spikes/`, the spike workflows, `infra/`, the extension, Cowork's native code): a new
+ *  per-OS helper must not reach the live install any more than the renamed code may. */
+const NEVER_SCAN_EXEMPT: readonly string[] = ["docs/", "releases/", "apple/", "CLAUDE.md", "scripts/rename/", "packages/core/test/rename/"];
+
+function isNeverScanExempt(relPath: string): boolean {
+  return NEVER_SCAN_EXEMPT.some((p) => (p.endsWith("/") ? relPath.startsWith(p) : relPath === p));
 }
 
 function entryAppliesTo(entry: AllowlistEntry, relPath: string): boolean {
@@ -139,9 +150,8 @@ function matchRanges(regex: RegExp, text: string): { start: number; end: number 
   return out;
 }
 
-/** One file's findings: never-permitted names outside their files, each `winter` and what permits it, which
- *  alternatives covered a hit, and which never-permitted entries this (named) file spells. */
-function analyze(relPath: string, text: string): { hits: Hit[]; never: NeverHit[]; credited: Set<string>; spelled: Set<string> } {
+/** One file's never-permitted names outside their files, and which never-permitted entries this (named) file spells. */
+function analyzeNever(relPath: string, text: string): { never: NeverHit[]; spelled: Set<string> } {
   const never: NeverHit[] = [];
   const spelled = new Set<string>();
   for (const n of CLOVER_NEVER_PERMITTED) {
@@ -153,6 +163,13 @@ function analyze(relPath: string, text: string): { hits: Hit[]; never: NeverHit[
     }
     for (const r of ranges) never.push({ file: relPath, ...lineAndContext(text, r.start), id: n.id });
   }
+  return { never, spelled };
+}
+
+/** One file's findings: never-permitted names outside their files, each `winter` and what permits it, which
+ *  alternatives covered a hit, and which never-permitted entries this (named) file spells. */
+function analyze(relPath: string, text: string): { hits: Hit[]; never: NeverHit[]; credited: Set<string>; spelled: Set<string> } {
+  const { never, spelled } = analyzeNever(relPath, text);
 
   const hits: Hit[] = [];
   const credited = new Set<string>();
@@ -196,7 +213,9 @@ function scan(): NonNullable<typeof cached> {
   const scanned = new Set<string>();
 
   for (const relPath of files) {
-    if (isBinaryPath(relPath) || isExempt(relPath)) continue;
+    if (isBinaryPath(relPath)) continue;
+    const residue = !isExempt(relPath);
+    if (!residue && isNeverScanExempt(relPath)) continue;
     let text: string;
     try {
       const buf = readFileSync(join(root, relPath));
@@ -207,6 +226,13 @@ function scan(): NonNullable<typeof cached> {
       continue; // gone between `git ls-files` and now
     }
     scanned.add(relPath);
+    if (!residue) {
+      // A path the rename leaves alone: only the never-permitted names are looked for here.
+      const r = analyzeNever(relPath, text);
+      never.push(...r.never);
+      for (const id of r.spelled) spelled.set(id, (spelled.get(id) ?? new Set()).add(relPath));
+      continue;
+    }
     const r = analyze(relPath, text);
     hits.push(...r.hits);
     never.push(...r.never);
@@ -255,6 +281,7 @@ describe("Winter→Clover rename residue (C0)", () => {
     expect(dead, `dead alternatives (each permitted nothing):\n${dead.join("\n")}`).toHaveLength(0);
   }, 120_000);
 
+
   test("every tracked path that still spells winter is exempt or kept on purpose", () => {
     const { files } = scan();
     const stray = files.filter((p) => /winter/i.test(p) && !isExempt(p) && !CLOVER_KEEP_PATHS.some((re) => re.test(p)));
@@ -300,5 +327,19 @@ describe("Winter→Clover rename residue (C0)", () => {
     expect(unpermitted("packages/core/src/computer-use/browser/engine.ts", "const winter = true;")).toBe(1);
     expect(unpermitted("packages/protocol/src/methods.ts", "// run `winter mcp add` first")).toBe(1);
     expect(unpermitted("packages/core/src/computer-use/browser/engine.ts", "opts.winter.legOf(id)")).toBe(1);
+  });
+
+  // The C0 check: the never-permitted names are looked for in the paths the rename leaves alone too, so a new per-OS
+  // helper or spike cannot reach the live install either. Only the docs, the release notes, the kept Swift tree,
+  // CLAUDE.md and the rename's own rules and tests are left out.
+  test("the never-permitted scan reaches the paths the rename leaves alone", () => {
+    for (const path of ["native/sandbox/src/main.rs", "spikes/s9/README.md", ".github/workflows/spike-s1.yml", "infra/relay/main.go", "extensions/winter-for-chrome/src/native.ts", "packages/core/src/cowork/native/launcher.ts"]) {
+      expect([path, isExempt(path), isNeverScanExempt(path)]).toEqual([path, true, false]);
+    }
+    for (const path of ["docs/clover-spec.md", "releases/winter/appcast.xml", "apple/WinterKit/Sources/X.swift", "CLAUDE.md", "scripts/rename/clover.ts", "packages/core/test/rename/residue.test.ts"]) {
+      expect([path, isNeverScanExempt(path)]).toEqual([path, true]);
+    }
+    expect(analyzeNever("native/mounts/main.go", "// mounts ~/.winter/sdk").never.map((n) => n.id)).toEqual(["winter-home"]);
+    expect(analyzeNever("native/sandbox/profile.sb", `(deny file-write* (subpath "/Applications/Winter.app"))`).never.map((n) => n.id)).toEqual(["winter-app"]);
   });
 });
