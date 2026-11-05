@@ -63,7 +63,7 @@ jobs:
         if: always()
         with:
           name: s1-platform-${{ matrix.os }}
-          path: spikes/s1-transport/results/
+          path: spikes/s1-transport/results/*.jsonl
 
   nat:
     name: NAT matrix (netns and iptables)
@@ -92,7 +92,7 @@ jobs:
         if: always()
         with:
           name: s1-nat
-          path: spikes/s1-transport/results/
+          path: spikes/s1-transport/results/*.jsonl
 
   migrate:
     name: network changes (address change, blackouts)
@@ -121,7 +121,7 @@ jobs:
         if: always()
         with:
           name: s1-migrate
-          path: spikes/s1-transport/results/
+          path: spikes/s1-transport/results/*.jsonl
 
   netem:
     name: delay and throughput (tc netem)
@@ -153,4 +153,4 @@ jobs:
         if: always()
         with:
           name: s1-netem
-          path: spikes/s1-transport/results/
+          path: spikes/s1-transport/results/*.jsonl
