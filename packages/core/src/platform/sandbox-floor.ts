@@ -2,10 +2,9 @@
 // runs OUTSIDE every sandbox and escape floor; otherwise it is fenced and can never be the user,
 // however its process tree looks — a bot's command that leaves Bash's sandbox still runs under the
 // escape floor, which a process-tree check alone would miss. This module is the pure policy: given
-// a probe of the peer process, it says whether that peer is outside the floor. Mapping the verdict
-// onto a protocol caller (user vs session vs peer) layers on top of B's roles; wiring the per-OS
-// probe (the peer pid from the socket, then the sandbox inspection) is the rest of C-M1's caller
-// check. Denying `/proc/<pid>/fd` on Linux and process access on Windows is M2.
+// a probe of the peer process, it says whether that peer is outside the floor. `caller-probe.ts`
+// reads the peer and probes it; mapping the verdict onto a protocol caller (user vs session vs peer)
+// layers on top of B's roles. Denying `/proc/<pid>/fd` on Linux and process access on Windows is M2.
 import type { DaemonPlatform } from "./transport";
 
 /** What the per-OS probe reports about the peer process. A field is `undefined` when the probe
