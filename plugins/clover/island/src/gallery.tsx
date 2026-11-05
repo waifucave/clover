@@ -252,7 +252,7 @@ export const ISLAND_STORIES: Story[] = [
     title: "Open island: Needs you",
     width: W,
     height: 220,
-    sealed: { visible: 4, scrolled: 7 },
+    sealed: { visible: 5, scrolled: 6 },
     render: () => (
       <Desktop shape={NOTCH} width={W} height={220}>
         <Strip shape={NOTCH} counts={{ waiting: 3, working: 1 }} />
