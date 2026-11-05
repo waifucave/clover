@@ -3,7 +3,7 @@ import type { SpawnClaudeCodeProcess } from "@waifucave/clover-agent-sdk";
 import { createEmbeddedSessionHost, embeddedVersionCheck, EMBEDDED_SHUTDOWN_BUDGET_MS, type EmbeddedSessionHost } from "../../src/runtime-sdk/embedded";
 
 /**
- * A-M1 review S7: THE GATE FOR SESSION TESTS IS THE EMBEDDED RUNTIME, NOT THE `winter` BINARY. Every session
+ * A-M1 review S7: THE GATE FOR SESSION TESTS IS THE EMBEDDED RUNTIME, NOT THE CODING-AGENT BINARY. Every session
  * (code, dispatch, chat) runs the SDK embedded in clover-core, one Worker per session, so a test that boots a
  * daemon and drives a session needs exactly what the daemon needs: the linked SDK runtime at the version core
  * pins. That is part of core's own install, on every OS, so a missing or mismatched one FAILS here (it would

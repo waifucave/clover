@@ -14,9 +14,9 @@
 // after Clover's name. Installed once and never removed: the bottom frame for the process's whole life.
 //
 // A-M1 review (the SDK has no default brand): the same place installs `CORE_BRAND` as the process's BRAND
-// (`installBrand`). The SDK no longer falls back to Winter's profile anywhere: a reader that was not handed a brand
+// (`installBrand`). The SDK no longer falls back to a built-in profile anywhere: a reader that was not handed a brand
 // reads the one installed for its process, and with none installed it refuses (`BrandRequiredError`). So in core's
-// process an unthreaded SDK call reads Clover's names, never Winter's `~/.winter`, `WINTER_*` or Keychain service.
+// process an unthreaded SDK call reads Clover's names, never the live install's home, variables or Keychain service.
 // Each embedded session's Worker installs its own session's brand (the SDK's production wiring does that).
 import { installBrand } from "@waifucave/clover-agent-sdk";
 import { installBrandIdentity } from "@waifucave/clover-provider-runtime";

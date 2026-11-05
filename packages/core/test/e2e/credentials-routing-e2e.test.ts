@@ -244,7 +244,8 @@ describeWithEmbeddedRuntime("WS-19 end to end: a stored credential routes a real
     for (const spawn of workerSpawns) {
       childCommandLine += [spawn.command, ...spawn.args, ...Object.entries(spawn.env ?? {}).map(([k, v]) => `${k}=${v ?? ""}`)].join(" ") + "\n";
     }
-    expect(childCommandLine).not.toMatch(/\bbin\/winter\b/);
+    // Every session is a Worker started under the embedded marker, never a spawned coding-agent binary.
+    expect(workerSpawns.map((spawn) => spawn.command)).toEqual(workerSpawns.map(() => "clover-embedded"));
 
     // (4) THE ROUTING, measured on the wire: the turn reached the CONFIGURED loopback endpoint,
     // asking for the DeepSeek row's own upstream model id. Before W19-1/W19-6 neither was possible —

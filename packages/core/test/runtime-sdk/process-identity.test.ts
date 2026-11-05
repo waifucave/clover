@@ -3,7 +3,7 @@
 import { describe, expect, test } from "bun:test";
 import "../../src/index";
 import { activeWinterIdentity, winterUserAgent } from "@waifucave/clover-provider-runtime";
-import { installedBrand, requireBrand, resolveWinterHome } from "@waifucave/clover-agent-sdk";
+import { installedBrand, requireBrand } from "@waifucave/clover-agent-sdk";
 import { CODEX } from "../../src/providers/codex-config";
 import { CORE_BRAND } from "../../src/runtime-sdk/brand";
 import { CORE_VERSION } from "../../src/version";
@@ -21,14 +21,13 @@ describe("the process-wide provider identity", () => {
     expect(activeWinterIdentity()).toEqual({ product: CORE_BRAND.packageName, codexOriginator: CORE_BRAND.codexOriginator, contactUrl: CORE_BRAND.contactUrl, version: CORE_BRAND.productVersion });
   });
 
-  test("the process's SDK brand is Clover's, so an unthreaded SDK call reads Clover's names, never Winter's", () => {
+  test("the process's SDK brand is Clover's, so an unthreaded SDK call reads Clover's names, never the live install's", () => {
     // A-M1 review: the SDK has no default brand. Core installs CORE_BRAND when it loads; an SDK reader handed no
-    // brand reads it (and with none installed would refuse), so nothing in this process can land on `~/.winter`.
+    // brand reads it (and with none installed would refuse), so nothing in this process can land on another home.
     expect(installedBrand()).toEqual(CORE_BRAND);
     expect(requireBrand().homeDirName).toBe(".clover");
+    expect(requireBrand().envPrefix).toBe("CLOVER_");
     expect(requireBrand().keychainService).toBe(CORE_BRAND.keychainService);
-    expect(resolveWinterHome({ CLOVER_HOME: "/tmp/clover-test-home" })).toBe("/tmp/clover-test-home");
-    expect(resolveWinterHome({ WINTER_HOME: "/tmp/winter-home" })).not.toContain("winter");
   });
 
   test("codex-config's header table repeats the same originator", () => {

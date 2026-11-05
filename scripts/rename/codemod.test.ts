@@ -173,11 +173,16 @@ describe("clover rules — what renames and what the allowlist keeps", () => {
       .toBe("clover Clover CLOVER resolveCloverHome CLOVER_HOME ~/.clover-dev clover-core");
   });
 
-  test("our four npm packages move to the waifucave scope; the SDK's packages stay", () => {
+  test("our four npm packages and (A-M1) the agent SDK's move to the waifucave scope; Winter's binary and router stay", () => {
     expect(cw('import { a } from "@yanlinglabs/winter-core"; import { b } from "@yanlinglabs/winter-agent-sdk";').out)
-      .toBe('import { a } from "@waifucave/clover-core"; import { b } from "@yanlinglabs/winter-agent-sdk";');
+      .toBe('import { a } from "@waifucave/clover-core"; import { b } from "@waifucave/clover-agent-sdk";');
     expect(cw('"@yanlinglabs/winter-protocol" "@yanlinglabs/winter-cli" "@yanlinglabs/winter-plugin-sdk"').out)
       .toBe('"@waifucave/clover-protocol" "@waifucave/clover-cli" "@waifucave/clover-plugin-sdk"');
+    // A-M1: clover-sdk 0.0.63 renamed the SDK's packages; the sweep is a rule, so it reapplies on any rebase.
+    expect(cw('from "@yanlinglabs/winter-agent-runtime/embedded-host"; from "@yanlinglabs/winter-provider-runtime"; from "@yanlinglabs/winter-provider-catalog"').out)
+      .toBe('from "@waifucave/clover-agent-runtime/embedded-host"; from "@waifucave/clover-provider-runtime"; from "@waifucave/clover-provider-catalog"');
+    // ...but the coding-agent binary package (lane K's) and the archived router stay Winter's.
+    expect(cw('"@yanlinglabs/winter-agent-sdk-darwin-arm64": "0.0.55"').out).toBe('"@yanlinglabs/winter-agent-sdk-darwin-arm64": "0.0.55"');
     expect(cw('"@yanlinglabs/winter-runtime-sdk": "0.0.16"').out).toBe('"@yanlinglabs/winter-runtime-sdk": "0.0.16"');
   });
 

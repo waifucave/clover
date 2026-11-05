@@ -19,7 +19,7 @@ import { resolveWinterExecutable } from "./executable";
 export interface RuntimesReport {
   /** A-M1: how sessions run. Always `"embedded"`: in `clover-core`, one Worker per session. */
   sessions: "embedded";
-  /** The `winter` coding-agent executable. `usedBySessions` is always `false` (A-M1). */
+  /** The coding-agent executable. `usedBySessions` is always `false` (A-M1). */
   clover: { resolved?: { path: string; source: string }; error?: string; usedBySessions: false };
   /** `runtimes/VERSIONS.json` and `runtimes/ant/VERSIONS.json`, each present only when staged — a
    *  dev checkout has neither, which is a normal state, never an error. */
