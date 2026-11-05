@@ -19,6 +19,7 @@ Lane H, milestone M0. It answers spec §8.3 and §14.1 item 1 in the lab: iroh a
 | `nat/netem.sh` | Delay and throughput under `tc netem`, Linux and root only |
 | `nat/migrate.sh` | One live connection through an address change and blackouts, Linux and root only |
 | [`../../native/link-sidecar/`](../../native/link-sidecar/) | The native half: quinn and iroh peers, a STUN responder, the stdio sidecar |
+| `results/2026-11-05/` | The result files behind the report: the platform checks and netem from CI run 3, the NAT matrix and network changes from run 4 |
 
 Every check prints one line, `S1RESULT <json>`. Set `S1_ANNOTATE=1` to also print it as a GitHub `::notice`.
 

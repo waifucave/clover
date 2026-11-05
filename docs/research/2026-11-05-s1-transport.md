@@ -2,7 +2,7 @@
 
 Lane H, milestone M0: the lab half of spike S1 (spec §8.2, §8.3 and §14.1 item 1; plan §4 lane H). November 5, 2026.
 
-Code: [`spikes/s1-transport/`](../../spikes/s1-transport/README.md) (the Bun side, the network labs, the CI glue) and [`native/link-sidecar/`](../../native/link-sidecar/) (the native half: quinn and iroh peers, a STUN responder, a stdio sidecar). CI: `.github/workflows/spike-s1.yml` on `lane/h-m0`, runs [1](https://github.com/waifucave/clover/actions/runs/41942502147), [2](https://github.com/waifucave/clover/actions/runs/41943850278), [3](https://github.com/waifucave/clover/actions/runs/41945403885) and [4](https://github.com/waifucave/clover/actions/runs/41948554183); each run's artifacts hold its result files. The runs on real networks, and how often traffic falls back to n0's relays, wait for live gate 1.
+Code: [`spikes/s1-transport/`](../../spikes/s1-transport/README.md) (the Bun side, the network labs, the CI glue) and [`native/link-sidecar/`](../../native/link-sidecar/) (the native half: quinn and iroh peers, a STUN responder, a stdio sidecar). CI: `.github/workflows/spike-s1.yml` on `lane/h-m0`, runs [1](https://github.com/waifucave/clover/actions/runs/41942502147), [2](https://github.com/waifucave/clover/actions/runs/41943850278), [3](https://github.com/waifucave/clover/actions/runs/41945403885) and [4](https://github.com/waifucave/clover/actions/runs/41948554183); each run's artifacts hold its result files, and [`spikes/s1-transport/results/2026-11-05/`](../../spikes/s1-transport/results/2026-11-05/) keeps the ones the tables below cite (runs 3 and 4). The runs on real networks, and how often traffic falls back to n0's relays, wait for live gate 1.
 
 ## Verdicts
 
