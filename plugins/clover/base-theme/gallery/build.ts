@@ -1,6 +1,6 @@
 // Builds the gallery into `dist/`: one ES module, the page, and the assets the stories load. Every bare
-// import of React, three and three-vrm resolves from the base theme's package, so the parts' sources share one copy
-// of each in the bundle.
+// import of React, three and three-vrm resolves from this folder's node_modules, so the parts' sources
+// (each with its own dev install) share one copy in the bundle.
 
 import { cpSync, existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
