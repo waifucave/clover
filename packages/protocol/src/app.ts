@@ -38,8 +38,10 @@ export const UiSettings = z.object({
   /** The base theme for bot tabs and the global theme; unset means `clover`'s base theme (§5.5). */
   baseTheme: ThemeRef.optional(),
   globalTheme: ThemeRef.optional(),
-  /** The user's own overrides, the top of the theme stack. */
-  overrides: z.object({ tokens: z.record(z.string(), utf16(1000)).optional(), css: utf16(200_000).optional() }).optional(),
+  /** The user's own overrides, the top of the theme stack. They pass the same checks as any theme (review minor):
+   *  each token value fits its token's type (the plugin SDK's `isValueForToken`), and the CSS goes through the
+   *  cleaner, so the user's layer can't load a remote file either; `ui.set` refuses what fails. */
+  overrides: z.object({ tokens: z.record(z.string(), z.union([utf16(300), z.number().finite()])).optional(), css: utf16(200_000).optional() }).optional(),
   language: utf16(35).optional(),
   /** A pack chosen for a language when two translate the same keys (§5.5). */
   packs: z.record(z.string(), AnyPluginId).optional(),

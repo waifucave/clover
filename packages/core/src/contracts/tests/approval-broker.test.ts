@@ -137,6 +137,17 @@ describe("FakeApprovalBroker", () => {
     expect(broker.cards().map((c) => c.kind)).toEqual(["change", "confirm", "plugin-ok", "elicitation"]);
   });
 
+  test("rule 1: an always-card kind never offers always, whatever the requester passes (review minor)", async () => {
+    const { broker } = setup({ levels: { Studio: "automatic" } });
+    const always = { id: "always", kind: "approve" as const, label: "Always allow", remember: "always" as const };
+    for (const kind of ["change", "confirm", "plugin-ok", "elicitation"] as const) {
+      const { card } = await carded(broker, bash({ kind, change: "computer-level", pluginId: "luna", effect: "other", ruleKey: "anything" }));
+      expect([kind, card.options.some((o) => o.remember !== undefined)]).toEqual([kind, false]);
+      const passed = await carded(broker, bash({ kind, change: "computer-level", pluginId: "luna", effect: "other", options: [...card.options, always] }));
+      expect([kind, passed.card.options.map((o) => o.id)]).toEqual([kind, card.options.map((o) => o.id)]);
+    }
+  });
+
   test("rule 2: the bridge's own tools on the session's bridge are allowed at once, on an exact match only", async () => {
     const { broker } = setup({ levels: { Studio: "ask" } });
     const options: AgentPermissionOption[] = [{ optionId: "a", name: "Allow", kind: "allow_once" }, { optionId: "r", name: "Reject", kind: "reject_once" }];
@@ -194,6 +205,15 @@ describe("FakeApprovalBroker", () => {
     expect(broker.cards()).toHaveLength(1);
     const confirm = await carded(broker, bash({ kind: "confirm", pluginId: "weather", origin: "user", effect: "other" }));
     expect(confirm.card.expiresAt).not.toBeNull();
+  });
+
+  test("rule 6: a plugin's OK never expires, however the plugin was found (review minor)", async () => {
+    const { clock, broker } = setup();
+    const { card } = await carded(broker, bash({ kind: "plugin-ok", pluginId: "luna", origin: "bot", effect: "other" }));
+    expect(card.expiresAt).toBeNull();
+    clock.advance(UNATTENDED_CARD_TIMEOUT_MS * 6);
+    await flush();
+    expect(broker.cards().map((c) => c.id)).toEqual([card.id]);
   });
 
   test("rule 7: the user's interrupt withdraws the session's cards; a stop or an abort cancels them", async () => {

@@ -6,7 +6,7 @@ import { Os, Platform, RunsOn, Scope, SemverVersion, TopPluginId, COMPUTER_NAME_
 import { AUTH_SCHEME_RE } from "../api/keyed-fetch";
 import {
   ComponentName, EntryId, HandlerName, JsonSchema, KEY_CHORD_RE, COMMAND_NAME_RE, LangTag, NAMESPACE_RE, Path, PathGlob,
-  PointName, Program, SecretName, SettingKey, Text, TOOL_NAME_RE, Url,
+  LinkUrl, PointName, Program, SecretName, SettingKey, Text, TOOL_NAME_RE, Url,
 } from "./fields";
 
 // -------------------------------------------------------------------------------------------------
@@ -334,9 +334,9 @@ export const ManifestSchema = z.strictObject({
   description: Text.optional(),
   /** svg, png or webp, at most 256 KiB. */
   icon: Path.optional(),
-  author: z.strictObject({ name: z.string().min(1).max(200), url: Url.optional() }).optional(),
+  author: z.strictObject({ name: z.string().min(1).max(200), url: LinkUrl.optional() }).optional(),
   license: z.string().min(1).max(100).optional(),
-  homepage: Url.optional(),
+  homepage: LinkUrl.optional(),
   /** Tool prefix (top level only); default = id; children share it; "clover" reserved. */
   namespace: z.string().min(1).max(40).regex(NAMESPACE_RE).optional(),
   /** Plugin-API semver range; required when the plugin has code. */

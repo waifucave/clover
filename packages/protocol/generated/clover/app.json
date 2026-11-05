@@ -463,8 +463,15 @@
                   "type": "string"
                 },
                 "additionalProperties": {
-                  "type": "string",
-                  "maxLength": 1000
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "maxLength": 300
+                    },
+                    {
+                      "type": "number"
+                    }
+                  ]
                 }
               },
               "css": {
@@ -617,8 +624,15 @@
                       "type": "string"
                     },
                     "additionalProperties": {
-                      "type": "string",
-                      "maxLength": 1000
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "maxLength": 300
+                        },
+                        {
+                          "type": "number"
+                        }
+                      ]
                     }
                   },
                   "css": {
@@ -1154,8 +1168,15 @@
                       "type": "string"
                     },
                     "additionalProperties": {
-                      "type": "string",
-                      "maxLength": 1000
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "maxLength": 300
+                        },
+                        {
+                          "type": "number"
+                        }
+                      ]
                     }
                   },
                   "css": {

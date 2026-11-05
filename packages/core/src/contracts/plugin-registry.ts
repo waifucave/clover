@@ -19,6 +19,10 @@
 // * A well-known name's point is recorded with the catalog's declaration (the plugin SDK's `catalogPointDecl`),
 //   whatever its declarer wrote, so its `keep` and `needs` hold (review S2): `conversation.message` keeps `approval`.
 // * A point declared `private` takes entries only from its declarer's own tree; another plugin's entry is refused.
+// * In a bot's own plugin, a `bot.tab` entry with no key takes that bot's id as its key, so it fills its own bot's tab,
+//   never every bot's (§5.5).
+// * An OK card left unanswered never refuses a plugin: it stays found until the user answers; only their deny
+//   (`refuse`) refuses it (the broker's rule 6).
 // * Only one enabled plugin may use a namespace (§6.7): a later one, by the synced list's order, stays off and says
 //   whose it is.
 // * The OK is bound to the tree the card showed (review S7): `approve` refuses with `changed` when the folder's tree

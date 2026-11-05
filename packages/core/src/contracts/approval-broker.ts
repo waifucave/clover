@@ -9,7 +9,8 @@
 // waits for the first answer from a sealed frame or a paired device.
 //
 // The rules the contract pins (and the fake keeps):
-// 1. Changes, `confirm`, plugin OKs and elicitations are always cards (§5.5, S5 §7).
+// 1. Changes, `confirm`, plugin OKs and elicitations are always cards (§5.5, S5 §7), and none of them offers an
+//    "always", whatever `ruleKey` or `options` the requester passes: each is answered on its own (`ALWAYS_CARD_KINDS`).
 // 2. An agent's request that exactly names the session's bridge server and one of the bridge's own tools is answered
 //    at once: the bridge applies Clover's approval itself when the call arrives (S5 edit 7). Never read from the title.
 // 3. A request that touches a fenced path is always a card, at every level, and no saved rule covers it (§9.3).
@@ -21,7 +22,8 @@
 //    levels form a total order (`LEVELS`): accept-edits is ask-risky plus edits and moves, so a command at
 //    accept-edits is judged as at ask-risky, and a stricter level never allows what a laxer one asks about.
 // 6. A card from a turn the user's own message didn't start is denied 10 minutes after it was issued, and a plugin's
-//    `confirm` always is; one from the user's turn waits (§5.5, §9.1).
+//    `confirm` always is; one from the user's turn waits (§5.5, §9.1). A plugin's OK never expires: a found plugin
+//    waits for the user however it was found, and only the user's deny refuses it (the registry's `refuse`).
 // 7. The user's interrupt withdraws the step's cards; a cancelled or stopped session's cards resolve cancelled, as ACP
 //    requires of a client (S5 §8). The first answer wins; a later one is told so.
 //    An answer counts only as it arrived (`answer`'s `from`): a sealed-frame proof only from the app's main process
@@ -33,9 +35,19 @@
 import {
   type Card, type CardAnswerProof, type CardFieldName, type CardKind, type CardMeta, type CardOption, type CardOutcome,
   type ChangeSubject, type CloverRole, type DeviceKind, type Level, LEVELS, type SealedValue, type SignedCardAnswer,
-  type TurnOrigin, answerTimeOk, callBindingInput, cardAnswerSigningInput, cardHashInput,
+  type TurnOrigin, answerTimeOk, callBindingInput, cardAnswerSigningInput, cardHashInput, isUserTurn,
 } from "@waifucave/clover-protocol";
 import type { Unsubscribe } from "./common";
+
+/** The kinds that are always cards and never offer "always" (rule 1). */
+export const ALWAYS_CARD_KINDS: readonly CardKind[] = ["change", "confirm", "plugin-ok", "elicitation"];
+
+/** The kinds whose card is denied after 10 minutes unanswered when the user's own message didn't start the turn
+ *  (rule 6): every kind but a plugin's OK, which waits for the user. */
+export function cardExpires(kind: CardKind, origin: TurnOrigin): boolean {
+  if (kind === "plugin-ok") return false;
+  return kind === "confirm" || !isUserTurn(origin);
+}
 
 /** What an action does, for the level table: ACP's tool kinds, plus screen control and purchases (§9.1). */
 export const ACTION_EFFECTS = ["read", "search", "think", "fetch", "edit", "move", "delete", "execute", "screen", "purchase", "other"] as const;

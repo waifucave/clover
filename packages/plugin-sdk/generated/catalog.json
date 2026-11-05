@@ -544,7 +544,7 @@
       "context": [
         "bot"
       ],
-      "doc": "Each bot's tab, keyed by bot; an entry with no key fills every bot without one of its own.",
+      "doc": "Each bot's tab, keyed by bot; an entry with no key fills every bot without one of its own, except in a bot's own plugin, where a keyless entry takes that bot's id as its key.",
       "fields": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -3047,7 +3047,7 @@
       "where": "both"
     },
     "secrets.get": {
-      "where": "host"
+      "where": "own-process"
     },
     "keys.publicKey": {
       "where": "host"

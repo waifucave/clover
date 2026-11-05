@@ -57,7 +57,7 @@ export const SPOTS: readonly SpotInfo[] = [
     doc: "Top-level floating windows, such as the island and the Dispatch pill; `window` says how they float." },
   { name: "bot.tab", shape: "keyed", declaredBy: "app", inBotTab: true, context: ["bot"], fields: none,
     props: z.object({ bot: BotRef }),
-    doc: "Each bot's tab, keyed by bot; an entry with no key fills every bot without one of its own." },
+    doc: "Each bot's tab, keyed by bot; an entry with no key fills every bot without one of its own, except in a bot's own plugin, where a keyless entry takes that bot's id as its key." },
   // The shell's spots (`app.root`).
   { name: "sidebar", shape: "single", declaredBy: "shell", inBotTab: false, fields: none, props: none, doc: "The sidebar." },
   { name: "sidebar.bot", shape: "keyed", declaredBy: "shell", inBotTab: false, context: ["bot"], fields: none,

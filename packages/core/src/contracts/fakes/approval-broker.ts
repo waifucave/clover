@@ -4,10 +4,10 @@
 import { createHash, randomBytes } from "node:crypto";
 import {
   type Card, type CardMeta, type CardOption, type CardOutcome, type Level,
-  DEFAULT_LEVEL, UNATTENDED_CARD_TIMEOUT_MS, answerTimeOk, cardHashInput, isUserTurn,
+  DEFAULT_LEVEL, UNATTENDED_CARD_TIMEOUT_MS, answerTimeOk, cardHashInput,
 } from "@waifucave/clover-protocol";
 import {
-  cardMetaOf, isBridgeCall, levelDecision, strictestLevel,
+  ALWAYS_CARD_KINDS, cardExpires, cardMetaOf, isBridgeCall, levelDecision, strictestLevel,
   type AnswerLedger, type AnswerOrigin, type AnswerResult, type ApprovalBroker, type ApprovalDecision, type ApprovalEvent,
   type ApprovalRequest, type CardAnswer, type CardRecord, type ProofVerifier, type Reviewer, type SavedRule,
 } from "../approval-broker";
@@ -142,7 +142,7 @@ export class FakeApprovalBroker implements ApprovalBroker {
 
   async #decide(req: ApprovalRequest): Promise<ApprovalDecision | undefined> {
     // Rule 1.
-    if (req.kind === "change" || req.kind === "confirm" || req.kind === "plugin-ok" || req.kind === "elicitation") return undefined;
+    if (ALWAYS_CARD_KINDS.includes(req.kind)) return undefined;
     // Rule 2.
     if (req.kind === "agent-permission" && isBridgeCall(req.agent)) return { allowed: true, by: "bridge" };
     // read-only is absolute: only reads run, and no fenced-path card, saved rule or reviewer changes that (S1).
@@ -167,10 +167,14 @@ export class FakeApprovalBroker implements ApprovalBroker {
 
   #showCard(req: ApprovalRequest, signal: AbortSignal | undefined): Promise<ApprovalDecision> {
     const issuedAt = this.#clock.now();
-    const expires = req.kind === "confirm" || !isUserTurn(req.origin);
-    const options = req.options ?? (req.ruleKey === undefined ? DEFAULT_OPTIONS : [
-      DEFAULT_OPTIONS[0]!, { id: "always", kind: "approve", label: "Always allow", remember: "always" }, DEFAULT_OPTIONS[1]!,
-    ]);
+    const expires = cardExpires(req.kind, req.origin);
+    // Rule 1: an always-card kind is answered on its own, so it never offers "always".
+    const once = ALWAYS_CARD_KINDS.includes(req.kind);
+    const options = once
+      ? (req.options ?? DEFAULT_OPTIONS).filter((o) => o.remember === undefined)
+      : req.options ?? (req.ruleKey === undefined ? DEFAULT_OPTIONS : [
+        DEFAULT_OPTIONS[0]!, { id: "always", kind: "approve", label: "Always allow", remember: "always" }, DEFAULT_OPTIONS[1]!,
+      ]);
     const unhashed: Omit<Card, "hash"> = {
       id: `card_${randomBytes(12).toString("hex")}`,
       kind: req.kind,

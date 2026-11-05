@@ -147,6 +147,7 @@ async function checkFiles(reader: PluginFolderReader, base: string, m: Manifest,
   if (m.icon !== undefined && !(await reader.exists(at(m.icon)))) f.warn(file, "file_missing", ["icon"], `the icon "${m.icon}" doesn't exist`);
   await must(m.host?.entry, ["host", "entry"], "plugin");
   await must(m.client?.entry, ["client", "entry"], "plugin");
+  for (const [i, css] of (m.client?.css ?? []).entries()) await must(css, ["client", "css", i], "plugin");
   for (const [p, bin] of Object.entries(m.helper?.bin ?? {})) await must(bin, ["helper", "bin", p], "plugin");
   const c = m.contributes ?? {};
   if (c.bot) {

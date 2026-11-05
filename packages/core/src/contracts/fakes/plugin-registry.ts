@@ -398,6 +398,8 @@ export class FakePluginRegistry implements PluginRegistry {
     const held = this.#plugins.get(id)!;
     const top = this.#plugins.get(parentOf(id) ?? id)!;
     const namespace = top.input.manifest.namespace ?? (parentOf(id) ?? id);
+    // A bot's plugin: its tree holds the bot, whose id is the top-level plugin's.
+    const botOfTree = top.input.manifest.contributes?.bot !== undefined ? (parentOf(id) ?? id) : undefined;
     const out: Contribution[] = [];
     const push = (point: string, ref: string, value: unknown, entryId?: string, key?: string) =>
       out.push({
@@ -418,7 +420,7 @@ export class FakePluginRegistry implements PluginRegistry {
           if (point === "commands") entryId = `${namespace}.${String(v.name)}`;
           if (point === "triggers") key = v.type as string;
           if (point === "locales") key = v.lang as string;
-          if (point === "ui") key = v.key as string | undefined;
+          if (point === "ui") key = (v.key as string | undefined) ?? (v.spot === "bot.tab" ? botOfTree : undefined);
           push(point, `${point}/${i}`, value, entryId, key);
         });
       } else if (point.includes(".")) {

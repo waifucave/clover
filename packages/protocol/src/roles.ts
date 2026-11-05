@@ -6,7 +6,7 @@
 // as that session. `protocol.hello`'s result says who the connection counts as.
 import { z } from "zod";
 import { utf16 } from "./strings";
-import { AnyPluginId, Caller, DeviceId, SessionId } from "./common";
+import { AnyPluginId, CLOVER_PROTOCOL_MIN_VERSION, Caller, DeviceId, SessionId } from "./common";
 
 export const CLOVER_ROLES = [
   /** The Clover app's main process (Electron). Its `clover` layer changes the core's settings directly (§5.5). */
@@ -38,6 +38,15 @@ export const REMOTE_ROLES: readonly CloverRole[] = ["remote", "web", "peer"];
 export const PLUGIN_ROLES: readonly CloverRole[] = ["layer", "plugin-host"];
 /** Roles that can count as the user once the caller check passes (§3.1). */
 export const USER_ROLES: readonly CloverRole[] = ["app", "cli", "remote", "web"];
+
+/** Whether a daemon serves a client's hello at this version (review minor): `CLOVER_PROTOCOL_VERSION` or older, down to
+ *  `CLOVER_PROTOCOL_MIN_VERSION` (common.ts). An older hello is refused with `CLOVER_ERR.VERSION_REFUSED` and
+ *  `{ min, max }`; a newer client talks at the daemon's version, which the hello's result says. Within a version the
+ *  daemon may add events and optional fields, so a client skips an event type it doesn't know
+ *  (`decodeCloverCoreEvent`); anything else takes a new version. */
+export function helloVersionServed(clientVersion: number): boolean {
+  return Number.isInteger(clientVersion) && clientVersion >= CLOVER_PROTOCOL_MIN_VERSION;
+}
 
 /** `protocol.hello`, Clover's form. The inherited method's name (`METHODS.hello`); C-M1 switches the daemon to it. */
 export const CloverHelloParams = z.object({

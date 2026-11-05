@@ -24,9 +24,13 @@ export type ApiCallPath =
 export interface ApiCallInfo {
   /** The capability it needs; `call:*` is `call:<the target's top-level id>`, `network:*` the URL's host. */
   readonly capability?: string;
-  /** Host halves, components (UI layers), or both. */
-  readonly where: "host" | "ui" | "both";
+  /** Host halves, only a host half in a process of the plugin's own (never a worker of a shared process), components
+   *  (UI layers), or both. */
+  readonly where: "host" | "own-process" | "ui" | "both";
 }
+
+/** Where a call comes from: a component, a host half in a shared process, or one in a process of its own. */
+export type ApiCaller = "ui" | "host" | "own-process";
 
 const both = (capability?: string): ApiCallInfo => (capability ? { capability, where: "both" } : { where: "both" });
 
@@ -39,8 +43,8 @@ export const API_CALLS = {
   "ui.send": { where: "host" },
   "storage.synced.get": both(), "storage.synced.set": both(), "storage.synced.delete": both(), "storage.synced.keys": both(), "storage.synced.watch": both(),
   "net.fetch": both("network:*"),
-  /** Only a process of the plugin's own; never a worker of the shared host, never a layer (§5.2). */
-  "secrets.get": { where: "host" },
+  /** Only a process of the plugin's own; never a worker of a shared process, never a layer (§5.2). */
+  "secrets.get": { where: "own-process" },
   /** The private halves stay in the core, so any host half may keep key pairs; never a layer. */
   "keys.publicKey": { where: "host" }, "keys.open": { where: "host" }, "keys.delete": { where: "host" },
   "settings.get": both(), "settings.watch": both(), "settings.set": both(),
@@ -69,10 +73,13 @@ export const API_CALLS = {
 
 /** Whether a plugin with these capabilities has a call, where it runs (§5.4: without the capability, the call doesn't
  *  exist for that plugin). `target` is the command's plugin for `commands.run`, the URL's host for `net.fetch`. */
-export function apiCallAllowed(call: string, where: "host" | "ui", capabilities: readonly string[], target?: { plugin?: string; host?: string; port?: number }, allowNetwork?: (caps: readonly string[], host: string, port?: number) => boolean): boolean {
+export function apiCallAllowed(call: string, where: ApiCaller, capabilities: readonly string[], target?: { plugin?: string; host?: string; port?: number }, allowNetwork?: (caps: readonly string[], host: string, port?: number) => boolean): boolean {
   const info = (API_CALLS as Record<string, ApiCallInfo>)[call];
   if (!info) return false;
-  if (info.where !== "both" && info.where !== where) return false;
+  const reaches = info.where === "both"
+    || info.where === where
+    || (info.where === "host" && where === "own-process");
+  if (!reaches) return false;
   if (info.capability === undefined) return true;
   if (info.capability === "call:*") return target?.plugin !== undefined && capabilities.includes(`call:${target.plugin.split("/")[0]}`);
   if (info.capability === "network:*") return target?.host !== undefined && allowNetwork !== undefined && allowNetwork(capabilities, target.host, target.port);

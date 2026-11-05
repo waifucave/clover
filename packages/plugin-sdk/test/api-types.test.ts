@@ -130,7 +130,13 @@ describe("the declarations", () => {
     expect(mayUseWaifucaveAuth("clover/forwarder", "https://waifucave.com.evil.example/")).toBe(false);
     expect(mayUseWaifucaveAuth("clover/forwarder", "https://u:p@hooks.waifucave.com/")).toBe(false);
     expect(mayUseWaifucaveAuth("clover/forwarder", "not a url")).toBe(false);
-    expect(mayUseWaifucaveAuth("clover/forwarder", "https://hooks.emulator.test/", "emulator.test")).toBe(true);
+    expect(mayUseWaifucaveAuth("clover/forwarder", "https://hooks.emulator.test/", { domain: "emulator.test" })).toBe(true);
+    // A development profile's emulators are exact origins, http allowed (review minor).
+    const dev = { origins: ["http://127.0.0.1:8787", "http://127.0.0.1:8788"] };
+    expect(mayUseWaifucaveAuth("clover/forwarder", "http://127.0.0.1:8787/v1/next", dev)).toBe(true);
+    expect(mayUseWaifucaveAuth("clover/forwarder", "http://127.0.0.1:9999/v1/next", dev)).toBe(false);
+    expect(mayUseWaifucaveAuth("clover/forwarder", "https://hooks.waifucave.com/", dev)).toBe(false);
+    expect(mayUseWaifucaveAuth("luna", "http://127.0.0.1:8787/", dev)).toBe(false);
     expect(typeof host.ingress).toBe("object");
     expect(Object.keys(asObject).sort()).toEqual(["ack", "drop", "list", "next", "register", "unregister"]);
   });

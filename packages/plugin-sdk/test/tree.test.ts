@@ -68,6 +68,19 @@ describe("a bot plugin with a child", () => {
     expect([p.restylesCards, p.children[0]!.report.restylesCards]).toEqual([true, true]);
   });
 
+  test("a client stylesheet must exist (review minor)", async () => {
+    const files = {
+      ...LUNA,
+      "plugins/tarot-panel/clover.json": {
+        manifest: 1, name: "Tarot panel", engines: { clover: "^1.0.0" }, client: { entry: "client/index.tsx", css: ["client/panel.css"] },
+        contributes: { ui: [{ spot: "panel", key: "tarot", component: "TarotPanel" }] },
+      },
+    };
+    const r = await validateTree(folder(files), { folderName: "luna" });
+    expect(r.issues.map((i) => `${i.file}:${i.refuses}:${i.code}:${i.path}`)).toEqual(["plugins/tarot-panel/clover.json:plugin:file_missing:/client/css/0"]);
+    expect(r.children[0]!.ok).toBe(false);
+  });
+
   test("a missing referenced file refuses what names it", async () => {
     const files = { ...LUNA } as Record<string, unknown>;
     delete files["bot/instructions.md"];

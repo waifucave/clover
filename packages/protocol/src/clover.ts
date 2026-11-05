@@ -142,10 +142,26 @@ export function pluginMayCall(method: MethodSpec, capabilities: readonly string[
   return capabilities.includes(method.capability);
 }
 
-/** Every Clover `core` event as one union, for clients that decode `core.event`. */
+/** Every Clover `core` event as one union. It refuses a type it doesn't know, so a client decodes with
+ *  `decodeCloverCoreEvent`, which skips one: the daemon may add events within a protocol version. */
 export const CloverCoreEvent = z.discriminatedUnion(
   "type",
   [...CLOVER_EVENTS.values()].filter((e) => e.scope === "core").map((e) => e.schema) as unknown as [
     z.ZodObject<{ type: z.ZodLiteral<string> }>, ...z.ZodObject<{ type: z.ZodLiteral<string> }>[],
   ],
 );
+export type CloverCoreEvent = z.infer<typeof CloverCoreEvent>;
+
+/** A `core.event` as a client reads it: `event` when its type is known and it parses, `skip` with the type when the
+ *  type is one this client doesn't know (a newer daemon's), `invalid` when a known type doesn't parse. */
+export function decodeCloverCoreEvent(raw: unknown):
+  | { kind: "event"; event: CloverCoreEvent }
+  | { kind: "skip"; type: string }
+  | { kind: "invalid"; type?: string; error: string } {
+  const type = typeof raw === "object" && raw !== null && typeof (raw as { type?: unknown }).type === "string" ? (raw as { type: string }).type : undefined;
+  if (type === undefined) return { kind: "invalid", error: "an event has a string `type`" };
+  const spec = CLOVER_EVENTS.get(type);
+  if (!spec || spec.scope !== "core") return { kind: "skip", type };
+  const parsed = CloverCoreEvent.safeParse(raw);
+  return parsed.success ? { kind: "event", event: parsed.data } : { kind: "invalid", type, error: parsed.error.message };
+}

@@ -4,14 +4,15 @@ import { describe, expect, test } from "bun:test";
 import { z } from "zod";
 import {
   AREA_EVENTS, AREA_METHODS, CLOVER_AREAS, CLOVER_EVENTS, CLOVER_METHODS, CloverCoreEvent,
-  PEER_CALL_ROLES, allowedEvents, allowedMethods, daemonRequestsTo, peerCallVerdict, pluginMayCall,
+  PEER_CALL_ROLES, allowedEvents, allowedMethods, daemonRequestsTo, decodeCloverCoreEvent, peerCallVerdict, pluginMayCall,
 } from "../src/clover";
 import { CloverSessionEvent } from "../src/sessions";
 import {
   AnyPluginId, Caller, ComputerName, LANES, LEVELS, TopPluginId, TreePath, isAnyPluginId, isPluginId, levelAbove,
   pluginIdFromSegment, pluginIdToSegment, topPluginIdOf,
 } from "../src/common";
-import { CLOVER_ROLES, PLUGIN_ROLES, REMOTE_ROLES, USER_ROLES, type CloverRole } from "../src/roles";
+import { CLOVER_ROLES, PLUGIN_ROLES, REMOTE_ROLES, USER_ROLES, helloVersionServed, type CloverRole } from "../src/roles";
+import { CLOVER_ERR, CLOVER_PROTOCOL_MIN_VERSION, CLOVER_PROTOCOL_VERSION } from "../src/common";
 import { METHODS, SessionEvent } from "../src/index";
 import { CARD_ANSWER_SKEW_MS, answerTimeOk, canonicalJson, cardAnswerSigningInput, cardHashInput } from "../src/approvals";
 import { buildCloverArtifacts } from "../scripts/clover-artifacts";
@@ -265,6 +266,21 @@ describe("the allow lists", () => {
     expect(call("remote")).toBe(true);
     expect(call("app")).toBe(false);
     expect(call("plugin-host")).toBe(false);
+  });
+
+  test("a hello older than the minimum is refused with its own code; a client skips an event type it doesn't know (review minor)", () => {
+    expect(helloVersionServed(CLOVER_PROTOCOL_VERSION)).toBe(true);
+    expect(helloVersionServed(CLOVER_PROTOCOL_MIN_VERSION - 1)).toBe(false);
+    expect(helloVersionServed(CLOVER_PROTOCOL_VERSION + 1)).toBe(true);
+    expect(helloVersionServed(1.5)).toBe(false);
+    expect(CLOVER_ERR.VERSION_REFUSED).toBe(-32019);
+    expect(new Set(Object.values(CLOVER_ERR)).size).toBe(Object.values(CLOVER_ERR).length);
+    const known = { type: "plugin_removed", ts: 1781270000000, id: "luna" };
+    expect(decodeCloverCoreEvent(known)).toMatchObject({ kind: "event", event: known });
+    expect(decodeCloverCoreEvent({ type: "from_the_future", ts: 1 })).toEqual({ kind: "skip", type: "from_the_future" });
+    expect(decodeCloverCoreEvent({ type: "plugin_removed", ts: 1 })).toMatchObject({ kind: "invalid", type: "plugin_removed" });
+    expect(decodeCloverCoreEvent(null)).toMatchObject({ kind: "invalid" });
+    expect(CloverCoreEvent.safeParse({ type: "from_the_future", ts: 1 }).success).toBe(false);
   });
 
   test("every role says hello", () => {

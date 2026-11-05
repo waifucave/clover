@@ -117,6 +117,20 @@ describe("code, engines and platforms", () => {
     expect(validateManifest({ ...code, engines: { clover: "^1.0.0" } }, { apiVersion: "1.4.0" }).ok).toBe(true);
   });
 
+  test("a homepage or author link is no network host; start, stop and mcp are no handlers; waifucave is reserved in any case", () => {
+    const linked = validateManifest({ ...min(), homepage: "https://luna.example.com/", author: { name: "Me", url: "https://me.example/" } });
+    expect(linked.ok).toBe(true);
+    expect(linked.networkHosts).toEqual([]);
+    for (const handler of ["start", "stop", "mcp"]) {
+      const r = validateManifest({ ...min(), engines: { clover: "^1.0.0" }, host: { entry: "host/index.ts" }, contributes: { commands: [{ name: "go", description: "Go", handler }] } });
+      expect([handler, r.manifest?.contributes?.commands ?? []]).toEqual([handler, []]);
+    }
+    for (const secret of ["waifucave", "WaifuCave", "WAIFUCAVE"]) {
+      const r = validateManifest({ ...min(), auth: [{ method: "api-key", secret }] });
+      expect([secret, r.issues.some((i) => i.severity === "error")]).toEqual([secret, true]);
+    }
+  });
+
   test("handlers need host code, components need a client module", () => {
     const r = validateManifest({ ...min(), contributes: { commands: [{ name: "draw", description: "Draw a card", handler: "draw" }] } });
     expect(r.ok).toBe(true);

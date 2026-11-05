@@ -48,8 +48,22 @@ const HOSTNAME_RE = new RegExp(`^${LABEL}(\\.${LABEL})*$`);
 const IPV4_RE = /^(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}$/;
 const IPV6_RE = /^\[[0-9a-f:.]+\]$/;
 
+/** The generic second-level labels registries sell names under (`co.uk`, `com.au`, `ne.jp`): `*.` over one of these
+ *  and a two-letter country code would reach every site in that country's registry (review minor). */
+const REGISTRY_LABELS = new Set(["ac", "co", "com", "edu", "go", "gob", "gouv", "gov", "int", "ltd", "me", "mil", "ne", "net", "nhs", "nom", "or", "org", "plc", "sch"]);
+
+/** Whether a wildcard's domain is too wide to declare: a run of numbers (`*.0.0.1` would match an IPv4 address), or a
+ *  registry suffix (`*.co.uk`). A single label never gets here. */
+function wildcardTooWide(domain: string): boolean {
+  const labels = domain.split(".");
+  if (labels.every((l) => /^\d+$/.test(l))) return true;
+  if (/^\d+$/.test(labels.at(-1)!)) return true;
+  return labels.length === 2 && REGISTRY_LABELS.has(labels[0]!) && /^[a-z]{2}$/.test(labels[1]!);
+}
+
 /** Parses `network:<host>`'s argument: a name (lowercase), an IPv4 address or a bracketed IPv6 address, with `:port`
- *  if needed, or `*.` and a domain of at least two labels for its subdomains (§5.4). */
+ *  if needed, or `*.` and a domain of at least two labels for its subdomains (§5.4), never one that ends in a number
+ *  (an address) or is a registry suffix such as `co.uk`. */
 export function parseNetworkHost(arg: string): { host: string; port?: number; wildcard: boolean } | null {
   let rest = arg;
   let port: number | undefined;
@@ -63,7 +77,7 @@ export function parseNetworkHost(arg: string): { host: string; port?: number; wi
   if (rest.startsWith("*.")) {
     wildcard = true;
     rest = rest.slice(2);
-    if (!HOSTNAME_RE.test(rest) || !rest.includes(".")) return null;
+    if (!HOSTNAME_RE.test(rest) || !rest.includes(".") || wildcardTooWide(rest)) return null;
     return { host: rest, wildcard, ...(port !== undefined ? { port } : {}) };
   }
   if (HOSTNAME_RE.test(rest) || IPV4_RE.test(rest) || IPV6_RE.test(rest)) return { host: rest, wildcard, ...(port !== undefined ? { port } : {}) };

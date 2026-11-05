@@ -313,21 +313,27 @@ export type KeyedFetchErrorCode = (typeof KEYED_FETCH_ERROR_CODES)[number];
  *  * with no account signed in, the fetch fails `no_account` at once, and the plugin waits for the account rather than
  *    retrying on a timer. */
 export const WAIFUCAVE_AUTH = "waifucave";
-/** The domain whose hosts take the waifucave token: `hooks.waifucave.com`, `push.waifucave.com`. A development
- *  profile may point it at local emulators (the core's own setting, never a plugin's). */
+/** The domain whose hosts take the waifucave token: `hooks.waifucave.com`, `push.waifucave.com`. */
 export const WAIFUCAVE_DOMAIN = "waifucave.com";
 
+/** Where the waifucave token may go: the domain's `https` hosts, or in a development profile the local emulators'
+ *  exact origins, `http` allowed (`http://127.0.0.1:8787`); the core's own setting, never a plugin's. */
+export type WaifucaveTarget = { domain: string } | { origins: readonly string[] };
+
 /** Whether a plugin may fetch `url` with `auth: "waifucave"`; its `network:` capability is checked as for any fetch. */
-export function mayUseWaifucaveAuth(pluginId: string, url: string, domain: string = WAIFUCAVE_DOMAIN): boolean {
+export function mayUseWaifucaveAuth(pluginId: string, url: string, target: WaifucaveTarget = { domain: WAIFUCAVE_DOMAIN }): boolean {
+  if (topPluginIdOf(pluginId) !== BUNDLED_ROOT_PLUGIN) return false;
   let u: URL;
   try {
     u = new URL(url);
   } catch {
     return false;
   }
-  if (u.protocol !== "https:" || u.username !== "" || u.password !== "") return false;
+  if (u.username !== "" || u.password !== "") return false;
+  if ("origins" in target) return target.origins.some((o) => URL.canParse(o) && new URL(o).origin === u.origin);
+  if (u.protocol !== "https:") return false;
   const h = u.hostname.toLowerCase().replace(/\.$/, "");
-  return topPluginIdOf(pluginId) === BUNDLED_ROOT_PLUGIN && (h === domain || h.endsWith(`.${domain}`));
+  return h === target.domain || h.endsWith(`.${target.domain}`);
 }
 
 /** Only a process of the plugin's own that must sign with a secret (AWS SigV4, §5.2) reads it; a worker can't, and

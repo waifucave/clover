@@ -33,7 +33,9 @@ export function keyHeaderFor(placement: KeyPlacement | undefined, key: string): 
   return AUTH_SCHEME_RE.test(scheme) ? { header: "authorization", value: `${scheme} ${key}` } : null;
 }
 
-/** A response's headers with every header whose value holds the key, as sent or %-encoded, taken out. */
+/** A response's headers with every header whose value holds the key, as sent or %-encoded, taken out. It covers
+ *  headers only: a body that echoes the key reaches the plugin as the service sent it, so an adapter must not log or
+ *  return a body it didn't expect (review minor). */
 export function stripEchoedKey(headers: Headers, key: string): Headers {
   const out = new Headers(headers);
   if (key.length === 0) return out;

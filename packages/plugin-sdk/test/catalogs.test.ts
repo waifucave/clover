@@ -30,6 +30,12 @@ describe("capabilities", () => {
     expect(parseCapability("network:192.168.1.10:8080")).toEqual({ kind: "network", host: "192.168.1.10", port: 8080, wildcard: false });
     expect(parseCapability("network:[::1]:8080")).toEqual({ kind: "network", host: "[::1]", port: 8080, wildcard: false });
     expect(parseCapability("network:*.com")).toBeNull();
+    // A wildcard never covers an address or a registry suffix (review minors).
+    for (const wide of ["network:*.0.0.1", "network:*.168.1.10", "network:*.1", "network:*.co.uk", "network:*.com.au", "network:*.ne.jp", "network:*.org.uk:8443"]) {
+      expect([wide, parseCapability(wide)]).toEqual([wide, null]);
+    }
+    expect(parseCapability("network:*.example.co.uk")).toEqual({ kind: "network", host: "example.co.uk", wildcard: true });
+    expect(parseCapability("network:*.github.io")).toEqual({ kind: "network", host: "github.io", wildcard: true });
     expect(parseCapability("network:API.example.com")).toBeNull();
     expect(parseCapability("network:x:70000")).toBeNull();
     expect(parseCapability("call:luna")).toEqual({ kind: "call", plugin: "luna" });
@@ -69,6 +75,11 @@ describe("the plugin API's gating", () => {
     expect(apiCallAllowed("conversation.history", "host", ["conversation.post"])).toBe(false);
     expect(apiCallAllowed("conversation.note", "ui", ["conversation.post"])).toBe(true);
     expect(apiCallAllowed("secrets.get", "ui", [])).toBe(false);
+    // Only a process of the plugin's own reads a secret, never a worker of a shared process (review minor).
+    expect(apiCallAllowed("secrets.get", "host", [])).toBe(false);
+    expect(apiCallAllowed("secrets.get", "own-process", [])).toBe(true);
+    expect(apiCallAllowed("keys.open", "own-process", [])).toBe(true);
+    expect(apiCallAllowed("keys.open", "host", [])).toBe(true);
     expect(apiCallAllowed("host.call", "host", [])).toBe(false);
     expect(apiCallAllowed("commands.run", "host", ["call:luna"], { plugin: "luna/tarot" })).toBe(true);
     expect(apiCallAllowed("commands.run", "host", ["call:luna"], { plugin: "nova" })).toBe(false);

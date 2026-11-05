@@ -8,8 +8,10 @@
 import { z } from "zod";
 import { utf16 } from "./strings";
 
-/** Clover's protocol version, sent in `protocol.hello` (roles.ts). Today's daemon speaks `PROTOCOL_VERSION` (0). */
+/** Clover's protocol version, sent in `protocol.hello` both ways (roles.ts). Today's daemon speaks `PROTOCOL_VERSION`
+ *  (0). `CLOVER_PROTOCOL_MIN_VERSION` is the oldest a daemon still serves (`helloVersionServed`). */
 export const CLOVER_PROTOCOL_VERSION = 1;
+export const CLOVER_PROTOCOL_MIN_VERSION = 1;
 
 /** The thirteen lanes of the plan (§4). Every method and event names the lane that implements it. */
 export const LANES = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M"] as const;
@@ -216,4 +218,6 @@ export const CLOVER_ERR = {
   FENCED: -32017,
   /** This device doesn't hold the main computer's lease (§6.4). */
   NOT_MAIN: -32018,
+  /** `protocol.hello` named a protocol version older than the daemon serves; `data` is `{ min, max }`. */
+  VERSION_REFUSED: -32019,
 } as const;

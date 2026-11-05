@@ -182,6 +182,18 @@ describe("FakePluginRegistry: points", () => {
     expect(point.decl?.props).toMatchObject({ type: "object" });
   });
 
+  test("in a bot's own plugin, a keyless bot.tab entry is keyed by its bot; elsewhere it fills every bot (review minor)", () => {
+    const tab = (id: string, bot: boolean): FakePluginInput => ({
+      id,
+      manifest: m({
+        client: { entry: "c.tsx" },
+        contributes: { ...(bot ? { bot: { name: "Luna", instructions: "i.md" } } : {}), ui: [{ spot: "bot.tab", id: "tab", component: "Tab" }] },
+      }),
+    });
+    const reg = make({ plugins: [tab("luna", true), { id: "luna/look", manifest: m({ client: { entry: "c.tsx" }, contributes: { ui: [{ spot: "bot.tab", id: "look", component: "Look" }] } }) }, tab("shell-tab", false)] });
+    expect(reg.entries("ui").map((c) => [c.pluginId, c.key])).toEqual([["luna", "luna"], ["luna/look", "luna"], ["shell-tab", undefined]]);
+  });
+
   test("a private point takes entries only from its declarer's own tree", () => {
     const luna: FakePluginInput = {
       id: "luna",
