@@ -1,0 +1,12 @@
+{
+  "type": "account_changed",
+  "ts": 1781270000000,
+  "account": {
+    "signedIn": true,
+    "provider": "discord",
+    "user": {
+      "id": "u_1",
+      "name": "me"
+    }
+  }
+}

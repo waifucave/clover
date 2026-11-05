@@ -5,13 +5,16 @@
   "license": "Apache-2.0",
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./schemas/*": "./generated/*"
   },
   "scripts": {
     "test": "bun test",
-    "typecheck": "tsc --noEmit -p ."
+    "typecheck": "tsc --noEmit -p .",
+    "generate": "bun run scripts/generate.ts"
   },
   "dependencies": {
-    "@waifucave/clover-protocol": "workspace:*"
+    "@waifucave/clover-protocol": "workspace:*",
+    "zod": "^4.0.0"
   }
 }

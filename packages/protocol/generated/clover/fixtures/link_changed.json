@@ -1,0 +1,11 @@
+{
+  "type": "link_changed",
+  "ts": 1781270000000,
+  "link": {
+    "peer": "k3x9a7mq2c4d8e1f5g6h0j2k4m6n8p0r",
+    "up": true,
+    "path": "relay",
+    "relay": "clover/relay-n0",
+    "rttMs": 48
+  }
+}
