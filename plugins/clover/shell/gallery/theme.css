@@ -186,7 +186,7 @@
   --clover-color-danger: #D7706A;
   --clover-color-success: #8CC283;
   --clover-color-diff-added: #8CC283;
-  --clover-color-diff-removed: #C65368;
+  --clover-color-diff-removed: #DA6F80;
   --clover-color-focus: #4180E3;
   --clover-bubble-user-background: #2A2A2A;
   --clover-bubble-user-text: #F2F2F2;
@@ -201,7 +201,7 @@
   --clover-card-text: #F2F2F2;
   --clover-card-muted: #9E9E9E;
   --clover-card-rim: #3F3F3F;
-  --clover-card-approve-background: #4180E3;
+  --clover-card-approve-background: #3570D8;
   --clover-card-deny-background: #3B3B3B;
   --clover-card-deny-text: #F2F2F2;
   --clover-shadow-raised: 0 1px 2px #00000066, 0 2px 8px #0000004D;
@@ -220,7 +220,7 @@
   --clover-plugin-clover-bar-tint: #191919C7;
   --clover-plugin-clover-scrim: #00000080;
   --clover-plugin-clover-diff-added-soft: #8CC28324;
-  --clover-plugin-clover-diff-removed-soft: #C6536824;
+  --clover-plugin-clover-diff-removed-soft: #DA6F8024;
   --clover-plugin-clover-branch: #B19EDE;
   --clover-plugin-clover-unread: #848484;
   --clover-plugin-clover-mark: #FF7AB6;

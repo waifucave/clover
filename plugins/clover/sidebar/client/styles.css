@@ -262,6 +262,7 @@
   color: var(--clover-color-attention-text);
 }
 
+/* What needs the user, counted: a quiet wash of the accent, its digits at 5:1 or better in both themes. */
 .cl-sidebar__count {
   flex: none;
   box-sizing: border-box;
@@ -269,8 +270,8 @@
   height: 18px;
   padding: 0 5px;
   border-radius: var(--clover-radius-round);
-  background: var(--clover-color-accent);
-  color: var(--clover-color-accent-contrast);
+  background: var(--clover-color-accent-soft);
+  color: var(--clover-color-accent-text);
   font-size: var(--clover-font-size-caption);
   line-height: 18px;
   text-align: center;
