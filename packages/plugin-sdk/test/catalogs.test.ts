@@ -8,7 +8,7 @@ import {
   fetchesCodeAtRunTime, hookMatchesTool, hookOrder, interpolate, isPluginTokenName, isSafeTokenValue, isTokenName, isTokenValue, keyMatches,
   networkAllows, pluginTokenName,
   parseCapability,
-  parseInterpolation, splitToolWireName, toolWireName, validateManifest, wrapperId,
+  parseInterpolation, splitToolWireName, toolWireName, validateManifest, wrapperId, mayHoldCapability,
 } from "../src/index";
 
 describe("capabilities", () => {
@@ -21,6 +21,19 @@ describe("capabilities", () => {
     expect(CAPABILITIES.filter((c) => c.warns).map((c) => c.ok)).toEqual([
       "controls the screen and input of your computers", "restyles approval cards", "runs commands on your computers", "can hear your microphone",
     ]);
+  });
+
+  test("terminal is for the bundled clover tree only, decided from the install record (review T1)", () => {
+    expect(mayHoldCapability("terminal", { id: "clover/panel-terminal", source: "bundled" })).toBe(true);
+    expect(mayHoldCapability("terminal", { id: "clover/panel-terminal", source: "store" })).toBe(false);
+    expect(mayHoldCapability("terminal", { id: "luna", source: "bundled" })).toBe(false);
+    expect(mayHoldCapability("files", { id: "luna", source: "store" })).toBe(true);
+    const term = (id: string, parent?: { id: string; namespace: string }) => validateManifest(
+      { manifest: 1, ...(parent ? {} : { id }), name: "T", engines: { clover: "^1.0.0" }, client: { entry: "ui/index.js" }, capabilities: ["terminal"] },
+      parent ? { parent, folderName: id, bundled: true } : { folderName: id },
+    );
+    expect(term("shellish").issues.map((i) => i.code)).toEqual(["capability_bundled_only"]);
+    expect(term("panel-terminal", { id: "clover", namespace: "clover" }).issues.map((i) => i.code)).toEqual([]);
   });
 
   test("network:<host> is a name, an IP, with :port if needed, or *. and a domain (§5.4)", () => {
