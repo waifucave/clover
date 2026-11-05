@@ -15,7 +15,7 @@
 // register as "the default" — it overrides `isDefaultCloverHome`'s `homedir()` call, so the real
 // home directory is never consulted, let alone touched, by anything below.
 import { afterEach, describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { startDaemon, type RunningDaemon } from "../src/daemon";
@@ -24,6 +24,7 @@ import { MigrationRefused } from "../src/migration/migrate-b";
 import { readMigrationManifest } from "../src/migration/manifest";
 import { TOKEN_NAMES } from "../src/auth/tokens";
 import { isDefaultCloverHome } from "../src/clover-dir";
+import { LEGACY_HOME_ENV, LEGACY_KEYCHAIN_SERVICE } from "../src/legacy-names";
 
 const dirs: string[] = [];
 function tempParent(): string {
@@ -54,6 +55,44 @@ function captureConsoleError(): { lines: string[]; restore: () => void } {
   console.error = (...args: unknown[]) => { lines.push(args.map(String).join(" ")); };
   return { lines, restore: () => { console.error = original; } };
 }
+
+// C0 (review S2): spec §12 retires the legacy migrations. A production-shaped boot — no injected `secrets`, no
+// seam — with a legacy home exactly where the profile would look for one never reads it: no legacy Keychain store
+// is built (none of its services is ever asked for), nothing is copied, no manifest is written. `Bun.secrets` is
+// swapped for an in-memory recorder for the boot, so the real Keychain is never reached.
+describe("daemon.ts boot hook — a production boot never migrates (C0, review S2)", () => {
+  test("legacy home present, no injected secrets: no legacy store, no copy, no manifest", async () => {
+    const parent = tempParent();
+    const home = join(parent, "home");
+    const legacyHome = join(parent, "legacy");
+    seedLegacyHome(legacyHome);
+    const services = new Set<string>();
+    const items = new Map<string, string>();
+    const recorder = {
+      get: async ({ service, name }: { service: string; name: string }) => { services.add(service); return items.get(`${service}\0${name}`) ?? null; },
+      set: async ({ service, name, value }: { service: string; name: string; value: string }) => { services.add(service); items.set(`${service}\0${name}`, value); },
+      delete: async ({ service, name }: { service: string; name: string }) => { services.add(service); return items.delete(`${service}\0${name}`); },
+    };
+    const realSecrets = Bun.secrets;
+    const previousLegacyHome = process.env[LEGACY_HOME_ENV];
+    process.env[LEGACY_HOME_ENV] = legacyHome; // where `legacyHomeFor` would look
+    (Bun as { secrets: unknown }).secrets = recorder;
+    try {
+      daemon = await startDaemon({ home, agentProvider: null });
+    } finally {
+      (Bun as { secrets: unknown }).secrets = realSecrets;
+      if (previousLegacyHome === undefined) delete process.env[LEGACY_HOME_ENV]; else process.env[LEGACY_HOME_ENV] = previousLegacyHome;
+    }
+    expect(readMigrationManifest(home)).toBeNull();
+    expect(existsSync(join(home, "sessions", "a.jsonl"))).toBe(false);
+    expect(services.size).toBeGreaterThan(0); // the boot did use its own (recorded) store
+    expect([...services].filter((s) => s.startsWith(LEGACY_KEYCHAIN_SERVICE))).toEqual([]);
+    // And the boot path cannot build one: the daemon no longer imports the legacy store or the legacy home resolver.
+    const daemonSource = readFileSync(join(import.meta.dir, "..", "src", "daemon.ts"), "utf8");
+    expect(daemonSource).not.toContain("LegacyKeychainSecretStore");
+    expect(daemonSource).not.toContain("legacyHomeFor");
+  });
+});
 
 describe("daemon.ts boot hook — Migration B (P9c-15: default-home gate)", () => {
   test("(a) a NON-default pristine home with a legacy home present never auto-migrates, and logs exactly one line naming the default-home gate", async () => {
@@ -203,11 +242,10 @@ describe("daemon.ts boot hook — Migration B (P9c-15: default-home gate)", () =
     const migrationLines = capture.lines.filter((l) => l.startsWith("migration:"));
     expect(migrationLines.length).toBe(1);
     expect(migrationLines[0]).toContain("not pristine");
-    // Fix wave C2: the advice here must be the SAME instruction the `clover migrate`/
-    // `planMigrationB` refusal itself prints (`mv <home> <home>.bak`, then restart) — never the old
-    // `clover migrate --from` advice, which would just hit that same non-pristine refusal.
-    expect(migrationLines[0]).toContain(`mv ${home} ${home}.bak`);
-    expect(migrationLines[0]).not.toContain("clover migrate --from");
+    // C0 (review S2): no advice to move the home aside and restart — a boot never migrates outside a
+    // test's seam, so that advice could never work.
+    expect(migrationLines[0]).not.toContain("restart");
+    expect(migrationLines[0]).not.toContain(".bak");
   });
 
   test("(c2) Cowork storage in the legacy source is never auto-copied: boot continues, migrates nothing, and logs exactly one 'skipped' line (docs/cowork-execution-contracts.md, Migration B)", async () => {

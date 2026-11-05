@@ -1726,7 +1726,7 @@ if (import.meta.main) {
     // repair refuses while the lock is held, on the same probe `lock.ts` uses.
     const {
       diagnoseRuntimeState, repairRuntimeState, isDaemonLockHeld, DAEMON_RUNNING_REFUSAL, diagnoseRuntimes, loadSettings,
-      diagnoseMigration, formatMigrationDoctorLines, legacyHomeFor, legacyKeychainPresence, legacyKeychainServiceFor,
+      diagnoseMigration, formatMigrationDoctorLines,
     } = await import("@waifucave/clover-core");
     const home = resolveCloverHome();
     const args = process.argv.slice(3);
@@ -1777,16 +1777,10 @@ if (import.meta.main) {
     // posture as `printRuntimesSection` above — a Keychain read failure degrades to one honest
     // line rather than aborting the whole command.
     const printMigrationSection = async (): Promise<void> => {
-      const profile = resolveCloverProfile();
-      const legacyHome = legacyHomeFor(profile);
       try {
-        const report = await diagnoseMigration({
-          home,
-          legacyHome,
-          legacyKeychainService: legacyKeychainServiceFor(profile),
-          // WS-25 §7: presence without a decrypt — no consent dialog per legacy item.
-          legacyItemPresent: legacyKeychainPresence(profile),
-        });
+        // C0 (review S2): this home's own Migration B record only. No legacy home is looked at and no legacy
+        // Keychain item is probed: only an explicit `clover migrate --from` reads a legacy home.
+        const report = await diagnoseMigration({ home });
         for (const line of formatMigrationDoctorLines(report)) console.log(`${AQUA}${line}${RESET}`);
       } catch (err) {
         console.log(`${AQUA}migration:${RESET} ${DIM}unavailable (${err instanceof Error ? err.message : "unknown error"})${RESET}`);

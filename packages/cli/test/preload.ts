@@ -27,10 +27,9 @@ chalk.level = 3;
 // real per-user tmpdir — the same seam packages/core/test/preload.ts sets for core's own tests.
 process.env.CLOVER_CLAUDE_RESUME_SCAN_ROOT = mkdtempSync(join(tmpdir(), "clover-test-claude-resume-"));
 // Phase 9c Migration B: the SAME redirect packages/core/test/preload.ts sets, for the identical
-// reason — a CLI test that spawns `daemon run` (or a bare `startDaemon()`) as a subprocess inherits
-// `process.env`, and without this, `legacyHomeFor(profile)` would resolve to the developer's REAL
-// legacy dev/dist home whenever that subprocess doesn't inject its own `secrets`. Redirected here to
-// a throwaway, guaranteed-empty directory for the whole run.
+// reason — since C0 (review S2) a boot never looks for a legacy home, but the redirect stays as a
+// second fence, to a throwaway, guaranteed-empty directory for the whole run (spawned children
+// inherit it), so nothing a test runs can resolve the developer's REAL legacy dev/dist home.
 process.env[LEGACY_HOME_ENV] = mkdtempSync(join(tmpdir(), "clover-test-legacy-home-"));
 // Test-keychain-isolation fix: the SAME redirect packages/core/test/preload.ts sets — a CLI test
 // that spawns `daemon run` (or drives a real `clover`/`claude` child) inherits `process.env`, and

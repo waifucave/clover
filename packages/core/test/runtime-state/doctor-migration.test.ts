@@ -96,7 +96,7 @@ describe("diagnoseMigration / formatMigrationDoctorLines", () => {
     const lines = formatMigrationDoctorLines(report);
     expect(lines[0]).toContain("complete");
     expect(lines[0]).toContain(legacyHome);
-    expect(lines.some((l) => l.includes("legacy home present"))).toBe(true);
+    expect(lines.some((l) => l.includes("legacy home present") && l.includes("kept as the rollback source"))).toBe(true);
     expect(lines.some((l) => l.includes("legacy keychain items remaining: 1 under com.example.legacy"))).toBe(true);
     expect(lines.join("\n")).not.toContain("sk-super-secret-value");
   });
@@ -123,10 +123,18 @@ describe("diagnoseMigration / formatMigrationDoctorLines", () => {
     const reasonLine = lines.find((l) => l.includes("not pristine"));
     expect(reasonLine).toBeDefined();
     expect(reasonLine).toContain(join(home, "sessions", "index.db"));
-    // Advice and refusal must agree (fix wave C2) — the SAME instruction `planMigrationB`/
-    // `clover migrate` print, not the old `clover migrate --from` advice.
-    expect(reasonLine).toContain(`mv ${home} ${home}.bak`);
-    expect(reasonLine).not.toContain("clover migrate --from");
+    // C0 (review S2): no boot migrates, so no advice to restart; the explicit door and its rule instead.
+    expect(reasonLine).not.toContain("restart");
+    expect(reasonLine).toContain(`clover migrate --from ${legacyHome}`);
+    expect(reasonLine).toContain("pristine home");
+  });
+
+  test("C0 (review S2): with no legacy home named, only this home's record is reported — no legacy home looked at, no probe", async () => {
+    const parent = tempDir();
+    const report = await diagnoseMigration({ home: join(parent, "home") });
+    expect(report).toMatchObject({ status: "absent", legacyHomePresent: false, legacyKeychainRemaining: 0 });
+    expect(report.legacyHome).toBeUndefined();
+    expect(formatMigrationDoctorLines(report)).toEqual(["migration: absent"]);
   });
 
   test("review M2: absent + legacy home present + home IS pristine (OS noise only) — no not-pristine row at all", async () => {

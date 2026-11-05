@@ -17,14 +17,12 @@ process.env.XDG_CONFIG_HOME = mkdtempSync(join(tmpdir(), "clover-test-xdg-"));
 // `os.tmpdir()` by default; every daemon-booting test must sweep a throwaway root instead of the
 // developer's real per-user tmpdir. `wiring.ts` reads this env seam behind the explicit dep.
 process.env.CLOVER_CLAUDE_RESUME_SCAN_ROOT = mkdtempSync(join(tmpdir(), "clover-test-claude-resume-"));
-// Phase 9c Migration B: `startDaemon`'s boot hook resolves `legacyHomeFor(profile)` from this env
-// var whenever a caller does NOT inject its own `secrets` (the real production shape) — which
-// includes any subprocess a test spawns with `daemon run` / a bare `startDaemon()` call, since a
-// spawned child inherits `process.env` unless a test explicitly narrows it. Redirected here to a
-// throwaway, guaranteed-empty directory for the WHOLE run so that path can never resolve to the
-// developer's REAL legacy dev/dist home — global constraint: no test may ever touch it. A test that
-// specifically wants to exercise Migration B passes an explicit `migration.legacyHome` override to
-// `startDaemon` instead (see `daemon-migration-boot.test.ts`), which always wins over this default.
+// Phase 9c Migration B: `legacyHomeFor(profile)` resolves the legacy home from this env var. Since C0
+// (review S2) nothing calls it on its own — a boot never looks for a legacy home, and only an explicit
+// `clover migrate --from <path>` reads one — but the redirect stays, to a throwaway, guaranteed-empty
+// directory for the WHOLE run (spawned children inherit it), as a second fence: no test may ever touch
+// the developer's REAL legacy dev/dist home. A test that exercises Migration B passes its own
+// `migration.legacyHome` to `startDaemon` (see `daemon-migration-boot.test.ts`).
 process.env[LEGACY_HOME_ENV] = mkdtempSync(join(tmpdir(), "clover-test-legacy-home-"));
 // Test-keychain-isolation fix: a real-binary e2e test's spawned `winter`/`claude` child resolves
 // its OWN Keychain credential refs (`profile.ts`'s `keychainService()`, `runtime-sdk/keychain.ts`)
