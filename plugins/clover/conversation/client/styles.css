@@ -8,7 +8,9 @@
 
    The window's title bar is translucent and the view runs up under it: `--cl-inset-top` (set by the
    frame, 0 elsewhere) is how far down the content starts, where anything scrolled into view stops, and
-   where a pending card pins, so no part of the bar ever covers one. */
+   where a pending card pins, so no part of the bar ever covers one. `--cl-axis-shift` (set by the frame
+   while the session column shows, 0 elsewhere) moves the reading column right, toward the main column's
+   middle, as far as the session column leaves room. */
 
 .cl-conv {
   display: flex;
@@ -31,12 +33,17 @@
   outline-offset: 2px;
 }
 
+/* Its own stacking context: the pending card's z-index below lifts it over the rest of the transcript,
+   never over the window's title bar. */
 .cl-conv__viewport {
+  box-sizing: border-box;
   flex: 1 1 auto;
   min-height: 0;
+  padding-left: var(--cl-axis-shift, 0px);
   overflow-y: auto;
   overscroll-behavior: contain;
   scroll-padding-top: var(--cl-inset-top, 0px);
+  isolation: isolate;
 }
 
 .cl-conv__viewport:focus-visible {
@@ -55,18 +62,22 @@
 }
 
 /* A pending card pins just below the bar when the transcript scrolls past it, and a jump to it stops
-   there too: no part of the bar ever covers it. */
+   there too: no part of the bar ever covers it. It paints over what scrolls under it, a later message's
+   positioned parts (another plugin's tool result, say) included. */
 .cl-conv__unit[data-pending] {
   position: sticky;
   top: calc(var(--cl-inset-top, 0px) + var(--clover-space-xs));
+  z-index: 1;
   scroll-margin-top: var(--clover-space-s);
 }
 
 .cl-conv__footer {
   position: relative;
+  box-sizing: border-box;
   flex: 0 0 auto;
   display: flex;
   justify-content: center;
+  padding-left: var(--cl-axis-shift, 0px);
 }
 
 .cl-conv__jump {

@@ -80,6 +80,11 @@ describe("the window's title bar over the view", () => {
   const decl = (selector: string, property: string) =>
     rules.find((r) => r.prelude === selector && r.context.length === 0)?.declarations.find((d) => d.property === property)?.value ?? "";
 
+  test("the reading column and the jump button follow the frame's axis shift, inside the scrolling area", () => {
+    expect(decl(".cl-conv__viewport", "padding-left")).toBe("var(--cl-axis-shift, 0px)");
+    expect(decl(".cl-conv__footer", "padding-left")).toBe("var(--cl-axis-shift, 0px)");
+  });
+
   test("the content starts below the bar, and anything scrolled into view stops below it", () => {
     expect(decl(".cl-conv__column", "padding")).toMatch(/^calc\(var\(--cl-inset-top, 0px\) \+/);
     expect(decl(".cl-conv__viewport", "scroll-padding-top")).toBe("var(--cl-inset-top, 0px)");
@@ -89,6 +94,9 @@ describe("the window's title bar over the view", () => {
     expect(decl(".cl-conv__unit[data-pending]", "position")).toBe("sticky");
     expect(decl(".cl-conv__unit[data-pending]", "top")).toMatch(/^calc\(var\(--cl-inset-top, 0px\) \+ var\(--clover-space-xs\)\)$/);
     expect(decl(".cl-conv__unit[data-pending]", "scroll-margin-top")).toBe("var(--clover-space-s)");
+    // Over what scrolls under it, inside the viewport's own stacking context (review round 3, B).
+    expect(decl(".cl-conv__unit[data-pending]", "z-index")).toBe("1");
+    expect(decl(".cl-conv__viewport", "isolation")).toBe("isolate");
     // The view's own padding is 0, so the pin and the jump both measure from the scrollport's top edge, the
     // bar's top: the inset is on the column, never on the viewport.
     expect(decl(".cl-conv__viewport", "padding-top")).toBe("");

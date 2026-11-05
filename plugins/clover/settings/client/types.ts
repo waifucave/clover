@@ -1,6 +1,8 @@
 // The settings window's props: the values it shows and one door back for every change. A change to the
 // core's settings goes straight to the host; anything sensitive (a computer's level, removing a device)
-// becomes a sealed card there (spec §5.5), and the page shows it as asked for until the card is answered.
+// becomes a sealed card there (spec §5.5). The window closes Settings while a card it draws waits, so
+// asking from here closes it and the card shows in its place. A change still waiting on a card drawn
+// elsewhere (asked from another device) shows here as asked for, beside the level that holds.
 // Its sections are Clover's own (spec §5.8, §12); a page with nothing to set yet says so.
 
 export type SettingsSection = "account" | "devices" | "appearance" | "notifications" | "plugins" | "levels" | "bots" | "usage";
@@ -33,7 +35,7 @@ export interface SettingsComputerLevel {
   /** This device. */
   here?: boolean;
   level: string;
-  /** A change asked for, waiting for its card. */
+  /** A change asked for, its card still waiting (one drawn on another device). */
   requested?: string;
 }
 
