@@ -19,7 +19,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  PARTS: conversation composer shell sidebar panel panel-terminal panel-diff panel-files settings
+  PARTS: conversation composer shell sidebar panel panel-terminal panel-diff panel-files settings bot-editor plugin-index archive
 
 jobs:
   test:
