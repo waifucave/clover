@@ -12,6 +12,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -30,6 +31,7 @@ type options struct {
 	remotes    []computerLink
 	debug      bool
 	status     string
+	owner      []uint32
 	cfg        remote.Config
 }
 
@@ -50,7 +52,17 @@ func main() {
 	flag.DurationVar(&o.cfg.PingEvery, "ping", 250*time.Millisecond, "liveness ping interval")
 	flag.DurationVar(&o.cfg.DeadAfter, "dead", 1500*time.Millisecond, "silence that means the computer dropped")
 	flag.DurationVar(&o.cfg.OpTimeout, "op-timeout", 10*time.Second, "a request on a live link fails after this")
+	owner := flag.String("owner", "", "uid:gid to report as every file's owner (Linux; a test knob for a holder with another uid)")
 	flag.Parse()
+	if *owner != "" {
+		u, g, ok := strings.Cut(*owner, ":")
+		uid, err1 := strconv.ParseUint(u, 10, 32)
+		gid, err2 := strconv.ParseUint(g, 10, 32)
+		if !ok || err1 != nil || err2 != nil {
+			log.Fatalf("bad --owner %q, want uid:gid", *owner)
+		}
+		o.owner = []uint32{uint32(uid), uint32(gid)}
+	}
 
 	pol, ok := remote.PolicyByName(*policy)
 	if !ok || o.mountpoint == "" || len(remotes)+len(selfs) == 0 {

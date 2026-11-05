@@ -3,6 +3,8 @@ name: Spike S6 · folder-tree mounts
 # Lane J, M0: mounting another computer's folder (FUSE, WinFsp, FSKit), its speed against local
 # disk at 0/20/80 ms of added round trip, and failing fast when the computer drops.
 # Runs on pushes to the lane branch only; results land as artifacts and in the job summaries.
+# A push whose head commit message says [s6-skip-speed] skips the hour-long Linux and Windows
+# speed suites (for pushes that change nothing they measure).
 on:
   push:
     branches: [lane/j-m0]
@@ -10,10 +12,6 @@ on:
 
 permissions:
   contents: read
-
-concurrency:
-  group: spike-s6-${{ github.ref }}
-  cancel-in-progress: false # a new push waits; the speed runs are long
 
 jobs:
   unix-like:
@@ -27,6 +25,7 @@ jobs:
           - { os: linux, runner: ubuntu-26.04, suite: failfast }
           - { os: linux, runner: ubuntu-26.04, suite: speed-cached }
           - { os: linux, runner: ubuntu-26.04, suite: speed-plain }
+          - { os: linux, runner: ubuntu-26.04, suite: git-owner }
           - { os: windows, runner: windows-2025, suite: failfast }
           - { os: windows, runner: windows-2025, suite: speed-cached }
           - { os: windows, runner: windows-2025, suite: speed-plain }
@@ -36,6 +35,7 @@ jobs:
     env:
       S6: ${{ github.workspace }}/spikes/s6-mounts
       CGO_ENABLED: "0" # cgofuse loads WinFsp's DLL itself on Windows; go-fuse is pure Go
+      S6_RUN: ${{ !(startsWith(matrix.suite, 'speed-') && contains(github.event.head_commit.message, '[s6-skip-speed]')) }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
@@ -52,12 +52,12 @@ jobs:
           node-version: 24
 
       - name: FUSE (Linux)
-        if: matrix.os == 'linux'
+        if: env.S6_RUN == 'true' && matrix.os == 'linux'
         run: |
           sudo apt-get update -qq && sudo apt-get install -y -qq fuse3 strace >/dev/null
           ls -l /dev/fuse && fusermount3 --version && uname -a
       - name: WinFsp (Windows)
-        if: matrix.os == 'windows'
+        if: env.S6_RUN == 'true' && matrix.os == 'windows'
         shell: pwsh
         run: |
           $msi = "$env:RUNNER_TEMP\winfsp.msi"
@@ -66,11 +66,13 @@ jobs:
           Get-ChildItem "C:\Program Files (x86)\WinFsp\bin" | Select-Object -First 5
           [System.Environment]::OSVersion.VersionString
       - name: git settings for the runner
+        if: env.S6_RUN == 'true'
         run: |
           git config --global --add safe.directory '*'
           git config --global core.longpaths true
 
       - name: Build the mount helper
+        if: env.S6_RUN == 'true'
         working-directory: native/mounts
         run: |
           mkdir -p "$RUNNER_TEMP/s6"
@@ -79,15 +81,16 @@ jobs:
           go build -o "$RUNNER_TEMP/s6/clover-mount$exe" ./cmd/clover-mount
           ls -l "$RUNNER_TEMP/s6"
       - name: Protocol tests against the real file service
-        if: matrix.suite == 'failfast'
+        if: env.S6_RUN == 'true' && matrix.suite == 'failfast'
         working-directory: native/mounts
         run: CLOVER_S6_SERVE="$S6/server/serve.ts" go test ./... -count=1 -v
 
       - name: Prepare the other computer's home
+        if: env.S6_RUN == 'true'
         run: bash "$S6/ci/prepare.sh" "$RUNNER_TEMP/s6/export"
 
       - name: Syscall counts of the workloads, run locally (Linux)
-        if: matrix.os == 'linux' && matrix.suite == 'speed-cached'
+        if: env.S6_RUN == 'true' && matrix.os == 'linux' && matrix.suite == 'speed-cached'
         working-directory: ${{ runner.temp }}/s6/export/clover
         run: |
           mkdir -p "$RUNNER_TEMP/s6/results"
@@ -97,6 +100,7 @@ jobs:
           for f in "$RUNNER_TEMP"/s6/results/strace-*.txt; do echo "== $f"; head -25 "$f"; done
 
       - name: Run ${{ matrix.suite }}
+        if: env.S6_RUN == 'true'
         run: |
           exe=""; tree="$RUNNER_TEMP/s6/tree"
           if [ "$RUNNER_OS" = Windows ]; then exe=.exe; tree="T:"; fi
@@ -112,13 +116,17 @@ jobs:
             speed-plain)
               bun "$S6/bench/speed.ts" "${common[@]}" --policies plain --rtts 0,20,80 --local 0 --timeout 600 --out "$res/${{ matrix.os }}-speed-plain.json"
               bun "$S6/bench/speed.ts" "${common[@]}" --policies nocache --rtts 0 --local 0 --timeout 600 --out "$res/${{ matrix.os }}-speed-nocache.json" ;;
+            git-owner)
+              # git across the mount when the holder's user has another uid (see speed.ts --owner)
+              bun "$S6/bench/speed.ts" "${common[@]}" --policies cached --rtts 0,20,80 --local 0 --timeout 900 \
+                --workloads git-status,git-status-minimal --owner 4242:4242 --out "$res/${{ matrix.os }}-speed-owner.json" ;;
           esac
       - name: Git for Windows inside the tree (drive letter vs Mount Manager)
-        if: matrix.os == 'windows' && matrix.suite == 'failfast'
+        if: env.S6_RUN == 'true' && matrix.os == 'windows' && matrix.suite == 'failfast'
         shell: pwsh
         run: ./spikes/s6-mounts/ci/windows-git.ps1 -Helper "$env:RUNNER_TEMP\s6\clover-mount.exe" -Export "$env:RUNNER_TEMP\s6\export" -Serve "$env:GITHUB_WORKSPACE\spikes\s6-mounts\server\serve.ts"
       - name: Results
-        if: always()
+        if: always() && env.S6_RUN == 'true'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: s6-${{ matrix.os }}-${{ matrix.suite }}

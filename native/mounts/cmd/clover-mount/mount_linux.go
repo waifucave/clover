@@ -13,7 +13,7 @@ import (
 )
 
 func mount(o *options) error {
-	t := &fuselinux.Tree{Policy: o.policy}
+	t := &fuselinux.Tree{Policy: o.policy, Owner: o.owner}
 	for _, s := range o.self {
 		name, path, _ := strings.Cut(s, "=")
 		t.Computers = append(t.Computers, &fuselinux.Computer{Name: name, Self: path})

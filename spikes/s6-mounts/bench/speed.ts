@@ -3,7 +3,13 @@
 //
 //   bun bench/speed.ts --root <export> --tree <mountpoint> --helper <clover-mount> --out <json>
 //        [--policies cached,plain] [--rtts 0,20,80] [--workloads a,b] [--local 1] [--timeout 600]
-//        [--copy-src <local dir to upload>]
+//        [--copy-src <local dir to upload>] [--owner uid:gid]
+//
+// --owner makes the mount report another owner for every file (Linux), as a holder whose user
+// has another uid would (a Mac's 501, a Linux box's 1000; Git for Windows always records 0).
+// Before each cold run the holder runs its own `git status`, so the index carries the holder's
+// stat data, as it does after anyone works on the repo there. git then finds every entry's
+// owner changed and re-reads each tracked file across the mount.
 //
 // <export>/clover must be a git checkout with node_modules installed (the CI job makes one from
 // this repo). "cold" means the client side's caches are empty: a fresh mount, or for local runs
@@ -25,12 +31,15 @@ const NODE = process.env.NODE_BIN ?? "node";
 const RW = path.join(HERE, "rw.ts");
 const COPY_SRC = path.resolve(args["copy-src"] ?? path.join(ROOT, "clover", "packages", "protocol"));
 const SCRATCH = path.resolve(args.scratch ?? path.join(path.dirname(ROOT), "scratch"));
+const OWNER = args.owner;
 fs.mkdirSync(SCRATCH, { recursive: true });
 
-interface Workload { name: string; cmd: (base: string, tag: string) => string[]; cwd?: (base: string) => string; cleanup?: (tag: string) => void }
+interface Workload { name: string; cmd: (base: string, tag: string) => string[]; cwd?: (base: string) => string; cleanup?: (tag: string) => void; optional?: boolean }
 let seq = 0;
 const WORKLOADS: Workload[] = [
   { name: "git-status", cmd: () => ["git", "-c", "core.fsmonitor=false", "-c", "core.untrackedCache=false", "status", "--porcelain"], cwd: (b) => path.join(b, "clover") },
+  // core.checkStat=minimal: git compares only whole-second mtimes and sizes, not owners or inodes
+  { name: "git-status-minimal", optional: true, cmd: () => ["git", "-c", "core.checkStat=minimal", "-c", "core.fsmonitor=false", "-c", "core.untrackedCache=false", "status", "--porcelain"], cwd: (b) => path.join(b, "clover") },
   { name: "tsc-protocol", cmd: (b) => [NODE, path.join(b, "clover", "node_modules", "typescript", "bin", "tsc"), "--noEmit", "-p", "packages/protocol"], cwd: (b) => path.join(b, "clover") },
   { name: "tsc-core", cmd: (b) => [NODE, path.join(b, "clover", "node_modules", "typescript", "bin", "tsc"), "--noEmit", "-p", "packages/core"], cwd: (b) => path.join(b, "clover") },
   { name: "read-256M", cmd: (b) => [BUN, RW, "read", path.join(b, "big.bin")] },
@@ -38,7 +47,8 @@ const WORKLOADS: Workload[] = [
   { name: "copy-out", cmd: (b, tag) => [BUN, RW, "copy", path.join(b, "clover", "packages", "protocol"), path.join(SCRATCH, `out-${tag}`)], cleanup: (tag) => fs.rmSync(path.join(SCRATCH, `out-${tag}`), { recursive: true, force: true }) },
   { name: "copy-in", cmd: (b, tag) => [BUN, RW, "copy", COPY_SRC, path.join(b, `in-${tag}`)], cleanup: (tag) => fs.rmSync(path.join(ROOT, `in-${tag}`), { recursive: true, force: true }) },
 ];
-const chosen = args.workloads ? WORKLOADS.filter((w) => args.workloads!.split(",").includes(w.name)) : WORKLOADS;
+const chosen = args.workloads ? WORKLOADS.filter((w) => args.workloads!.split(",").includes(w.name)) : WORKLOADS.filter((w) => !w.optional);
+const label = (w: Workload) => (OWNER ? `${w.name}, other owner` : w.name);
 
 interface Row {
   workload: string; where: "local" | "mount"; policy?: string; rttMs?: number; phase: "cold" | "warm";
@@ -79,9 +89,9 @@ async function main() {
     for (const w of chosen) {
       const dropped = await dropCaches();
       const cold = await once(w, ROOT);
-      rows.push({ workload: w.name, where: "local", phase: "cold", cacheDropped: dropped, ...cold });
+      rows.push({ workload: label(w), where: "local", phase: "cold", cacheDropped: dropped, ...cold });
       const warm = await once(w, ROOT);
-      rows.push({ workload: w.name, where: "local", phase: "warm", ...warm });
+      rows.push({ workload: label(w), where: "local", phase: "warm", ...warm });
       log(`local ${w.name}: cold ${cold.ms} ms, warm ${warm.ms} ms${cold.ok ? "" : ` FAILED ${cold.err}`}`);
       save();
     }
@@ -93,18 +103,22 @@ async function main() {
       for (const rtt of RTTS) {
         await rig.setLink({ rttMs: rtt, mode: "pass" });
         for (const w of chosen) {
-          await rig.mount(policy);
+          if (OWNER && w.name.startsWith("git-status")) {
+            const r = await run(["git", "status", "--porcelain"], { cwd: path.join(ROOT, "clover"), timeoutMs: 120000 });
+            if (!r.ok) log(`the holder's own git status failed: ${r.stderr.trim()}`);
+          }
+          await rig.mount(policy, OWNER ? ["--owner", OWNER] : []);
           const base = rig.remotePath();
           await rig.resetServiceStats();
           const cold = await once(w, base);
           const coldOps = await rig.serviceStats();
           const coldHelper = await rig.helperStats();
-          rows.push({ workload: w.name, where: "mount", policy, rttMs: rtt, phase: "cold", requests: sumOps(coldOps), ops: coldOps, helper: coldHelper, ...cold });
+          rows.push({ workload: label(w), where: "mount", policy, rttMs: rtt, phase: "cold", requests: sumOps(coldOps), ops: coldOps, helper: coldHelper, ...cold });
           await rig.resetServiceStats();
           const warm = await once(w, base);
           const warmOps = await rig.serviceStats();
-          rows.push({ workload: w.name, where: "mount", policy, rttMs: rtt, phase: "warm", requests: sumOps(warmOps), ops: warmOps, ...warm });
-          log(`${policy} +${rtt}ms ${w.name}: cold ${cold.ms} ms (${sumOps(coldOps)} req), warm ${warm.ms} ms (${sumOps(warmOps)} req)` +
+          rows.push({ workload: label(w), where: "mount", policy, rttMs: rtt, phase: "warm", requests: sumOps(warmOps), ops: warmOps, ...warm });
+          log(`${policy} +${rtt}ms ${label(w)}: cold ${cold.ms} ms (${sumOps(coldOps)} req), warm ${warm.ms} ms (${sumOps(warmOps)} req)` +
             (cold.ok ? "" : ` COLD FAILED ${cold.err}`) + (warm.ok ? "" : ` WARM FAILED ${warm.err}`));
           save();
           await rig.unmount();
@@ -133,13 +147,13 @@ function report() {
   let md = `\n### S6 speed on ${result.machine.os} (${result.machine.release}), ${POLICIES.join("/")}\n\n`;
   md += `| workload | phase | ${cols.map((c) => c.label).join(" | ")} |\n| :- | :- |${cols.map(() => " -: |").join("")}\n`;
   for (const w of chosen) for (const phase of ["cold", "warm"] as const) {
-    md += `| ${w.name} | ${phase} | ${cols.map((c) => fmt(rows.find((r) => r.workload === w.name && r.phase === phase && c.pick(r)))).join(" | ")} |\n`;
+    md += `| ${label(w)} | ${phase} | ${cols.map((c) => fmt(rows.find((r) => r.workload === label(w) && r.phase === phase && c.pick(r)))).join(" | ")} |\n`;
   }
   md += `\nRequests that crossed the link (cold / warm):\n\n| workload | ${cols.slice(1).map((c) => c.label).join(" | ")} |\n| :- |${cols.slice(1).map(() => " -: |").join("")}\n`;
   for (const w of chosen) {
-    md += `| ${w.name} | ${cols.slice(1).map((c) => {
-      const cold = rows.find((r) => r.workload === w.name && r.phase === "cold" && c.pick(r));
-      const warm = rows.find((r) => r.workload === w.name && r.phase === "warm" && c.pick(r));
+    md += `| ${label(w)} | ${cols.slice(1).map((c) => {
+      const cold = rows.find((r) => r.workload === label(w) && r.phase === "cold" && c.pick(r));
+      const warm = rows.find((r) => r.workload === label(w) && r.phase === "warm" && c.pick(r));
       return `${cold?.requests ?? "–"} / ${warm?.requests ?? "–"}`;
     }).join(" | ")} |\n`;
   }

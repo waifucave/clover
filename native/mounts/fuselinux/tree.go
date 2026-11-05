@@ -34,8 +34,12 @@ type Computer struct {
 type Tree struct {
 	Computers []*Computer
 	Policy    remote.Policy
-	uid, gid  uint32
-	server    *fuse.Server
+	// Owner, when set (uid, gid), is reported as every file's owner instead of the user running
+	// the helper. A test knob: it plays a holder whose user has another uid, as between a Mac
+	// (501) and a Linux box (1000), so git's index never matches what the mount reports.
+	Owner    []uint32
+	uid, gid uint32
+	server   *fuse.Server
 
 	mu   sync.Mutex
 	home *fs.Inode
@@ -45,6 +49,9 @@ type Tree struct {
 // Mount mounts the tree at dir and returns the server; Wait() blocks until unmount.
 func Mount(dir string, t *Tree, debug bool) (*fuse.Server, error) {
 	t.uid, t.gid = uint32(os.Getuid()), uint32(os.Getgid())
+	if len(t.Owner) == 2 {
+		t.uid, t.gid = t.Owner[0], t.Owner[1]
+	}
 	t.tops = map[*remote.FS]*fs.Inode{}
 	for i, c := range t.Computers {
 		c.index = uint64(i)
