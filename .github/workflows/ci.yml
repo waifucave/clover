@@ -358,8 +358,11 @@ jobs:
         # The suite runs as 3 sequential native shards (`bun test --shard=K/3`, so discovery is bun's
         # own). They began as a guard against Bun 1.3.14's intermittent Worker use-after-free
         # ("Segmentation fault at address 0xA", exit 133, in one long process after ~70 Workers); on
-        # 1.4.4 a Worker's memory comes back and A-M1's dispatch soak ran 20 of 20 clean, and the
-        # shards stay because a smaller process is cheaper to re-run and keeps a crash to one shard. Every shard is a fresh process in this directory:
+        # 1.4.4 A-M1's dispatch soak ran 20 of 20 clean (6 of 20 crashed on 1.3.14). Memory is not why
+        # they stay: neither Bun hands a terminated Worker's resident pages back (`ps -o rss=`), and on
+        # 1.4.4 its dirty memory (phys_footprint) no longer piles up (packages/core/scripts/test-shards.ts
+        # has the numbers). They stay because a smaller process is cheaper to re-run and keeps a crash to
+        # one shard. Every shard is a fresh process in this directory:
         # same bunfig preload (per-process temp root, throwaway Keychain service), same env. The
         # script runs all shards (one that clearly crashed Bun - exit 133 or a signal, with no summary -
         # is re-run ONCE, with a ::warning::; a second crash fails), then fails the step on any non-zero or signal exit, a missing
