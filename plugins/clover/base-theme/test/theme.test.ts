@@ -13,14 +13,18 @@ import {
   isTokenName,
   pluginTokenName,
   readTheme,
+  resolveTokens,
   stack,
   tokensFor,
+  AUTO_INKS,
+  SYSTEM_ACCENT_TOKENS,
 } from "../src/index";
 import { checkManifest } from "../src/manifest-check";
 
 const root = join(import.meta.dir, "..");
-const light = tokensFor(BASE_THEME, "light");
-const dark = tokensFor(BASE_THEME, "dark");
+// As the core resolves them with no OS accent to read (Linux): "system" keeps the theme's accent, "auto" inks resolve.
+const light = resolveTokens("light", [tokensFor(BASE_THEME, "light")]);
+const dark = resolveTokens("dark", [tokensFor(BASE_THEME, "dark")]);
 const hex = (tokens: Readonly<Record<string, string | number>>, name: string) => String(tokens[name]);
 
 describe("the base theme file", () => {
@@ -297,5 +301,65 @@ describe("layout format 1", () => {
     );
     expect(check.problems).toEqual([]);
     expect(check.spots).toEqual(["conversation", "avatar#vrm"]);
+  });
+});
+
+describe("the OS accent colour (lane B's rule)", () => {
+  // macOS's accents in light and dark, Windows' default and its dark-mode shade, and the theme's own (Linux).
+  const ACCENTS = [
+    "#007AFF", "#A550A7", "#F74F9E", "#FF5257", "#F7821B", "#FFC600", "#62BA46", "#8C8C8C",
+    "#0A84FF", "#BF5AF2", "#FF375F", "#FF453A", "#FF9F0A", "#FFD60A", "#30D158", "#98989D",
+    "#0078D4", "#4CC2FF", "#C2387A", "#FF7AB6",
+  ];
+
+  test("the base theme's controls follow it: the accent and the approve button are \"system\", their inks \"auto\"", () => {
+    expect(BASE_THEME.tokens["color.accent"]).toBe("system");
+    expect(BASE_THEME.tokens["card.approve.background"]).toBe("system");
+    for (const ink of Object.keys(AUTO_INKS)) expect(BASE_THEME.tokens[ink], ink).toBe("auto");
+    // Nothing in dark undoes it.
+    for (const name of [...SYSTEM_ACCENT_TOKENS, ...Object.keys(AUTO_INKS)]) expect(BASE_THEME.dark?.tokens[name], name).toBeUndefined();
+  });
+
+  test("with no reading the theme's accent stands; with one, the OS accent", () => {
+    expect(light["color.accent"]).toBe("#C2387A");
+    expect(dark["color.accent"]).toBe("#FF7AB6");
+    const blue = resolveTokens("light", [tokensFor(BASE_THEME, "light")], { systemAccent: "#007AFF" });
+    expect(blue["color.accent"]).toBe("#007AFF");
+    expect(blue["card.approve.background"]).toBe("#007AFF");
+    // A theme above that sets its own accent keeps it (Alpha's tab keeps its look); one that says "system" again
+    // falls back to the value beneath it.
+    const own = resolveTokens("light", [tokensFor(BASE_THEME, "light"), { "color.accent": "#7651DD" }], { systemAccent: "#007AFF" });
+    expect(own["color.accent"]).toBe("#7651DD");
+    expect(resolveTokens("light", [tokensFor(BASE_THEME, "light"), { "color.accent": "#7651DD" }, { "color.accent": "system" }])["color.accent"]).toBe("#7651DD");
+  });
+
+  test("a glyph-only control gets white when white reaches 3:1 on the accent, otherwise the theme's dark ink", () => {
+    for (const appearance of ["light", "dark"] as const) {
+      for (const accent of ACCENTS) {
+        const tokens = resolveTokens(appearance, [tokensFor(BASE_THEME, appearance)], { systemAccent: accent });
+        const glyph = hex(tokens, "color.accent.glyph");
+        expect(glyph, `${appearance} ${accent}`).toBe(contrast("#FFFFFF", accent) >= 3 ? "#FFFFFF" : hex(tokens, "color.accent.ink"));
+        expect(contrast(glyph, accent), `${appearance} ${accent} glyph`).toBeGreaterThanOrEqual(3);
+      }
+    }
+  });
+
+  test("a control with a text label reaches 4.5:1 on every one of these accents, the approve button's included", () => {
+    for (const appearance of ["light", "dark"] as const) {
+      for (const accent of ACCENTS) {
+        const tokens = resolveTokens(appearance, [tokensFor(BASE_THEME, appearance)], { systemAccent: accent });
+        expect(contrast(hex(tokens, "color.accent.contrast"), accent), `${appearance} ${accent} label`).toBeGreaterThanOrEqual(4.5);
+        expect(contrast(hex(tokens, "card.approve.text"), accent), `${appearance} ${accent} approve`).toBeGreaterThanOrEqual(4.5);
+      }
+    }
+  });
+
+  test("only the accent tokens may be \"system\", and only the inks on them \"auto\"", () => {
+    expect(checkTheme({ theme: 1, name: "x", tokens: { "island.accept": "system" } })).toHaveLength(1);
+    expect(checkTheme({ theme: 1, name: "x", tokens: { "color.text": "auto" } })).toHaveLength(1);
+    expect(checkTheme({ theme: 1, name: "x", tokens: { "plugin.luna.glow": "system" } })).toHaveLength(1);
+    expect(checkTheme({ theme: 1, name: "x", tokens: { "color.accent": "system", "color.accent.glyph": "auto" } }, { strict: true })).toEqual([]);
+    // An unresolved word never reaches CSS.
+    expect(() => cssVariables({ "color.accent": "system" })).toThrow();
   });
 });

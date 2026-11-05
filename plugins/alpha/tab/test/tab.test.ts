@@ -5,7 +5,7 @@
 import { describe, expect, test } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, normalize } from "node:path";
-import { BASE_THEME, TOKENS, checkTheme, checkThemeCss, contrast, readTheme, stack, tokensFor } from "../../../clover/base-theme/src/index";
+import { BASE_THEME, TOKENS, checkTheme, checkThemeCss, contrast, readTheme, resolveTokens, tokensFor } from "../../../clover/base-theme/src/index";
 import { BOT_TAB_SPOTS, checkLayout } from "../../../clover/base-theme/src/layout-check";
 import theme from "../theme.json" with { type: "json" };
 import layout from "../layout.json" with { type: "json" };
@@ -15,8 +15,8 @@ const ALPHA = join(TAB, "..");
 // A format file's paths are relative to the plugin's folder (lane B, §5.9's `Path`): Alpha's, above `tab/`.
 const css = readFileSync(join(ALPHA, theme.css), "utf8");
 const alpha = readTheme(theme, { strict: true });
-const light = stack(tokensFor(BASE_THEME, "light"), tokensFor(alpha, "light"));
-const dark = stack(tokensFor(BASE_THEME, "dark"), tokensFor(alpha, "dark"));
+const light = resolveTokens("light", [tokensFor(BASE_THEME, "light"), tokensFor(alpha, "light")]);
+const dark = resolveTokens("dark", [tokensFor(BASE_THEME, "dark"), tokensFor(alpha, "dark")]);
 const hex = (tokens: Readonly<Record<string, string | number>>, name: string) => String(tokens[name]);
 
 describe("Alpha's theme", () => {

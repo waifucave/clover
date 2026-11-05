@@ -12,8 +12,21 @@
 // Every value goes into a CSS custom property, so every value — a catalog token's or a plugin's own —
 // is held to lane B's rule first: nothing that could break out of the property (`unsafeValue`).
 
-import { isHexColor } from "./contrast";
-import { cssProperty, isPluginTokenName, isTokenName, PLUGIN_TOKEN_GROUP, PLUGIN_TOKEN_NAME_RE, tokenSpec, type TokenType } from "./catalog";
+import { composite, contrast, isHexColor, parseHex } from "./contrast";
+import {
+  AUTO_INK,
+  AUTO_INKS,
+  CATALOG_ACCENTS,
+  cssProperty,
+  isPluginTokenName,
+  isTokenName,
+  PLUGIN_TOKEN_GROUP,
+  PLUGIN_TOKEN_NAME_RE,
+  SYSTEM_ACCENT,
+  SYSTEM_ACCENT_TOKENS,
+  tokenSpec,
+  type TokenType,
+} from "./catalog";
 
 export type Text = string | ({ en: string } & Record<string, string>);
 export type TokenValue = string | number;
@@ -124,6 +137,15 @@ function checkTokens(where: string, tokens: unknown, problems: string[], options
       problems.push(`${where}: ${name} is neither a string nor a number`);
       continue;
     }
+    // Lane B's two words: "system" only for an accent token, "auto" only for an ink on one.
+    if (value === SYSTEM_ACCENT) {
+      if (!SYSTEM_ACCENT_TOKENS.includes(name)) problems.push(`${where}: only ${SYSTEM_ACCENT_TOKENS.join(" and ")} may follow the OS accent ("system"), not ${name}`);
+      continue;
+    }
+    if (value === AUTO_INK) {
+      if (!Object.hasOwn(AUTO_INKS, name)) problems.push(`${where}: only an ink on an accent (${Object.keys(AUTO_INKS).join(", ")}) may be "auto", not ${name}`);
+      continue;
+    }
     if (spec) {
       const wrong = checkValue(spec.type, value);
       if (wrong) problems.push(`${where}: ${name} = ${JSON.stringify(value)} ${wrong}`);
@@ -191,9 +213,52 @@ export function tokensFor(theme: ThemeFile, appearance: Appearance): Tokens {
   return appearance === "dark" ? { ...theme.tokens, ...(theme.dark?.tokens ?? {}) } : { ...theme.tokens };
 }
 
-/** Layers, lowest first (spec §5.5's stack): a later layer's token wins. */
+/** Layers, lowest first (spec §5.5's stack): a later layer's token wins. Raw: `"system"` and `"auto"` stay as
+ *  they are written (`resolveTokens` turns them into colours). */
 export function stack(...layers: readonly Tokens[]): Tokens {
   return Object.assign({}, ...layers) as Tokens;
+}
+
+/** An `auto` ink (lane B's `resolveAutoInk`): white when white reaches `floor` against the accent as painted (its
+ *  alpha flattened onto `background`), otherwise `darkInk`. */
+export function resolveAutoInk(accent: string, opts: { background: string; darkInk: string; floor: number }): string {
+  // The background's own alpha is dropped, as lane B's `flattenColor` does.
+  const painted = composite(parseHex(accent), { ...parseHex(opts.background), a: 1 });
+  const hex = `#${[painted.r, painted.g, painted.b].map((c) => Math.round(c).toString(16).padStart(2, "0")).join("").toUpperCase()}`;
+  return contrast("#FFFFFF", hex) >= opts.floor ? "#FFFFFF" : opts.darkInk;
+}
+
+/**
+ * One part's tokens in one appearance, as lane B's `resolveTokens` gives them: the layers' values (each from
+ * `tokensFor`), lowest first, a later one winning; an accent token whose winning value is `"system"` takes the OS
+ * accent (`systemAccent`), or with none the value beneath it in the stack (under the base theme, the catalog's);
+ * an ink whose winning value is `"auto"` is then resolved against its accent.
+ */
+export function resolveTokens(appearance: Appearance, layers: readonly Tokens[], opts: { systemAccent?: string } = {}): Tokens {
+  const out: Record<string, TokenValue> = {};
+  const followsOs = new Set<string>();
+  const auto = new Set<string>();
+  for (const layer of layers) {
+    for (const [name, value] of Object.entries(layer)) {
+      followsOs.delete(name);
+      auto.delete(name);
+      if (value === SYSTEM_ACCENT) {
+        followsOs.add(name);
+        if (out[name] === undefined && CATALOG_ACCENTS[name]) out[name] = CATALOG_ACCENTS[name][appearance];
+      } else if (value === AUTO_INK) auto.add(name);
+      else out[name] = value;
+    }
+  }
+  const live = opts.systemAccent !== undefined && isHexColor(opts.systemAccent) ? opts.systemAccent : undefined;
+  if (live !== undefined) for (const name of followsOs) out[name] = live;
+  for (const name of auto) {
+    const ink = AUTO_INKS[name]!;
+    const [accent, background, darkInk] = [out[ink.accent], out[ink.background], out[ink.darkInk]];
+    if (typeof accent !== "string" || typeof background !== "string" || typeof darkInk !== "string") continue;
+    if (!isHexColor(accent) || !isHexColor(background)) continue;
+    out[name] = resolveAutoInk(accent, { background, darkInk, floor: ink.floor });
+  }
+  return out;
 }
 
 /** The custom properties for a set of tokens, as a style object (`{ "--clover-color-text": "#1C1B22" }`). A value that
@@ -203,6 +268,7 @@ export function cssVariables(tokens: Tokens): Record<string, string> {
   for (const [name, value] of Object.entries(tokens)) {
     const unsafe = unsafeValue(value);
     if (unsafe) throw new Error(`token ${name} ${unsafe}`);
+    if (value === SYSTEM_ACCENT || value === AUTO_INK) throw new Error(`token ${name} is "${value}": resolve the stack first (resolveTokens)`);
     out[cssProperty(name)] = String(value);
   }
   return out;

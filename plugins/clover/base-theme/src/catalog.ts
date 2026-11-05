@@ -51,10 +51,12 @@ export const TOKENS: readonly TokenSpec[] = [
   t("color.text.placeholder", "color", "A field's placeholder."),
   t("color.text.inverse", "color", "Text on a text-coloured fill."),
   // Accent and meaning.
-  t("color.accent", "color", "The brand accent: primary actions, focus, the send button."),
+  t("color.accent", "color", "The accent: primary actions, focus, the send button. May be \"system\": the OS accent colour."),
   t("color.accent.text", "color", "The accent carrying text, at 4.5:1 or more on the content plane."),
   t("color.accent.soft", "color", "A wash of the accent: a chosen chip, a highlighted mention."),
-  t("color.accent.contrast", "color", "Text and glyphs on an accent fill."),
+  t("color.accent.contrast", "color", "Text labels on an accent fill, at 4.5:1 or more (`auto` resolves it)."),
+  t("color.accent.glyph", "color", "Glyphs on an accent fill (✓, ↑, ✕), at 3:1 or more (`auto` resolves it)."),
+  t("color.accent.ink", "color", "The theme's dark ink on an accent, where white falls short."),
   t("color.attention", "color", "Needs you: a waiting card, a question for the user."),
   t("color.attention.text", "color", "Attention carrying text."),
   t("color.danger", "color", "Errors and actions that destroy something."),
@@ -82,8 +84,9 @@ export const TOKENS: readonly TokenSpec[] = [
   t("card.rim", "color", "The card's rim."),
   t("card.radius", "dimension", "The card's corner."),
   t("card.padding", "dimension", "The card's inset."),
-  t("card.approve.background", "color", "The approve button."),
-  t("card.approve.text", "color", "The approve button's label."),
+  t("card.approve.background", "color", "The approve button. May be \"system\": the OS accent colour."),
+  t("card.approve.text", "color", "The approve button's label and glyph (`auto` resolves it at 4.5:1)."),
+  t("card.approve.ink", "color", "The card's dark ink on the approve button, where white falls short."),
   t("card.deny.background", "color", "The deny button."),
   t("card.deny.text", "color", "The deny button's label."),
   t("card.button.radius", "dimension", "The approve and deny buttons' corner."),
@@ -221,3 +224,44 @@ export const TOKEN_NAMES: ReadonlySet<string> = new Set(TOKENS.map((spec) => spe
 export function tokenSpec(name: string): TokenSpec | undefined {
   return TOKENS.find((spec) => spec.name === name);
 }
+
+/* ── The OS accent colour (lane B's pin, `tokens.ts`) ──────────────────────────────────────────────────────── */
+//
+// Controls follow the OS accent colour, as Claude's desktop app does. An accent token may be `"system"`: the core
+// reads the OS accent (Electron's `systemPreferences.getAccentColor()` on macOS and Windows), and with no reading
+// (Linux) the token keeps the value beneath it in the stack, the theme's accent. An ink on an accent may be
+// `"auto"`: white when white reaches the ink's floor against the accent as painted, otherwise the theme's dark ink.
+// The floor is 3:1 for glyph-only controls (WCAG 1.4.11) and 4.5:1 for controls with text labels.
+
+/** The value an accent token takes to follow the OS accent colour. */
+export const SYSTEM_ACCENT = "system";
+/** The value an ink on an accent takes to be resolved by the core. */
+export const AUTO_INK = "auto";
+
+/** The tokens that may be `"system"`. */
+export const SYSTEM_ACCENT_TOKENS: readonly string[] = ["color.accent", "card.approve.background"];
+
+/** Lane B's catalog values for those tokens: what a `"system"` falls back to with nothing beneath it but the
+ *  catalog (the base theme's own case) and no OS reading. */
+export const CATALOG_ACCENTS: Readonly<Record<string, { readonly light: string; readonly dark: string }>> = {
+  "color.accent": { light: "#C2387A", dark: "#FF7AB6" },
+  "card.approve.background": { light: "#C2387A", dark: "#FF7AB6" },
+};
+
+export interface AutoInk {
+  /** The accent it is drawn on. */
+  readonly accent: string;
+  /** What the control sits on, which an accent with alpha is flattened onto. */
+  readonly background: string;
+  /** The theme's dark ink, used where white falls short. */
+  readonly darkInk: string;
+  /** 3 for glyph-only controls (WCAG 1.4.11), 4.5 for text labels. */
+  readonly floor: 3 | 4.5;
+}
+
+/** The inks that may be `"auto"`. */
+export const AUTO_INKS: Readonly<Record<string, AutoInk>> = {
+  "color.accent.contrast": { accent: "color.accent", background: "color.surface", darkInk: "color.accent.ink", floor: 4.5 },
+  "color.accent.glyph": { accent: "color.accent", background: "color.surface", darkInk: "color.accent.ink", floor: 3 },
+  "card.approve.text": { accent: "card.approve.background", background: "card.background", darkInk: "card.approve.ink", floor: 4.5 },
+};

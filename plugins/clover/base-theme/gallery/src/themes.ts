@@ -4,7 +4,7 @@
 
 import baseThemeJson from "../../theme.json" with { type: "json" };
 import baseThemeCss from "../../theme.css" with { type: "text" };
-import { cssVariables, readTheme, stack, tokensFor, type Appearance, type ThemeFile, type Tokens } from "../../src/theme";
+import { cssVariables, readTheme, resolveTokens, tokensFor, type Appearance, type ThemeFile, type Tokens } from "../../src/theme";
 
 export const BASE: ThemeFile = readTheme(baseThemeJson, { strict: true });
 
@@ -26,9 +26,10 @@ export function rebase(css: string, base: string | undefined): string {
 
 export const BASE_LAYER: ThemeLayer = { id: "clover", theme: BASE, css: baseThemeCss };
 
-/** The tokens for a stack of themes, lowest first. */
+/** The tokens for a stack of themes, lowest first, resolved as the core resolves them with no OS accent to read (the
+ *  CI machine's case): a "system" accent keeps the theme's, and "auto" inks resolve against it. */
 export function stackTokens(layers: readonly ThemeLayer[], appearance: Appearance): Tokens {
-  return stack(...layers.map((layer) => tokensFor(layer.theme, appearance)));
+  return resolveTokens(appearance, layers.map((layer) => tokensFor(layer.theme, appearance)));
 }
 
 export function themeStyle(layers: readonly ThemeLayer[], appearance: Appearance): Record<string, string> {
