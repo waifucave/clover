@@ -24,7 +24,8 @@ function nonLoopbackIp(){
  * everything else to PROXY 127.0.0.1:4 (a port nothing listens on). Built at runtime
  * because the fixture ports are ephemeral. */
 function beltPac(/** @type {string} */ host,/** @type {number} */ port){
- return `function FindProxyForURL(url, host) {\n  if (shExpMatch(url, "http://${host}:${port}/*") || shExpMatch(url, "ws://${host}:${port}/*")) return "DIRECT";\n  return "PROXY 127.0.0.1:4";\n}`;
+ const src=`function FindProxyForURL(url, host) {\n  if (shExpMatch(url, "http://${host}:${port}/*") || shExpMatch(url, "ws://${host}:${port}/*")) return "DIRECT";\n  return "PROXY 127.0.0.1:4";\n}`;
+ return `data:text/javascript;base64,${Buffer.from(src,'utf8').toString('base64')}`;
 }
 const vectors=['own-fetch','other-plugin-fetch','wrong-port','fetch','xhr','image','css','font','script','media','object','css-import','background','websocket','beacon','eventsource','redirect','redirect-target','keepalive','webtransport','fetchLater','ping','download','worker','shared','blob','window-open','form','navigation','top-location','dns-prefetch','preconnect','prefetch','prerender','speculation','stun','turn','remote-candidate','remote-tcp-candidate'];
 /** UDP listeners: STUN servers, WebTransport (QUIC) and remote-candidate connectivity checks. */
@@ -274,22 +275,23 @@ export async function networkCheck(electron){
       trustAttempts.push({children:frame.frames.map((/** @type {any} */ child)=>{try{return {name:child.name,url:child.url};}catch{return {name:null,url:'disposed'};}})});
       topNavigation=await frame.executeJavaScript(`(()=>{try{top.location=${JSON.stringify(f.endpoints['top-location'].url)};return {attempted:true}}catch(e){return {attempted:true,error:String(e)}}})()`);
       await frame.executeJavaScript(`(()=>{const a=document.createElement('a');a.href=${JSON.stringify(f.endpoints.download.url)};a.download='fixture.txt';document.body.append(a);a.click()})()`).catch(()=>{});
+      const racer=(/** @type {any} */ p,/** @type {number} */ ms)=>Promise.race([p,pause(ms).then(()=>({timeout:true}))]);
       if(mode==='belt'){
        // The declared host must still work, on loopback and a non-loopback listener, or
        // the belt has broken legitimate plugin traffic. Declared-host tests use a listener
        // bound to 0.0.0.0 and reached by the runner's own non-loopback IPv4.
        const nlIp=nonLoopbackIp();
-       belt.declaredFetch={loopback:await frame.executeJavaScript(`fetch(${JSON.stringify(f.endpoints['own-fetch'].url)}).then(r=>({status:r.status})).catch(e=>({error:String(e)}))`)};
+       belt.declaredFetch={loopback:await racer(frame.executeJavaScript(`fetch(${JSON.stringify(f.endpoints['own-fetch'].url)}).then(r=>({status:r.status})).catch(e=>({error:String(e)}))`),8000)};
        const nlTarget=await fixtures(`${mode}-nonloop`,'0.0.0.0');
        const nlOwnPort=nlTarget.endpoints['own-fetch'].port;
-       belt.nonLoopback=await frame.executeJavaScript(`fetch(${JSON.stringify(`http://${nlIp}:${nlOwnPort}/own-fetch`)}).then(r=>({status:r.status})).catch(e=>({error:String(e)}))`);
+       belt.nonLoopback=await racer(frame.executeJavaScript(`fetch(${JSON.stringify(`http://${nlIp}:${nlOwnPort}/own-fetch`)}).then(r=>({status:r.status})).catch(e=>({error:String(e)}))`),10000);
        // Non-loopback WebRTC probes the PAC cannot be skipped for: a remote UDP candidate,
        // a remote TCP candidate and TURN over TCP, each aimed at the runner's non-loopback
        // IPv4 on a fresh listener port. A hit means the belt did not stop the socket.
        const nlUdp=await fixtures(`${mode}-nl-udp`,'0.0.0.0');const nlTcp=await fixtures(`${mode}-nl-tcp`,'0.0.0.0');
-       belt.nonLoopbackRemoteUdp=await frame.executeJavaScript(`(${remoteNlProbe.toString()})('udp',${JSON.stringify(nlIp)},${nlUdp.endpoints['remote-candidate'].port}).then(r=>({r})).catch(e=>({error:String(e)}))`);
-       belt.nonLoopbackRemoteTcp=await frame.executeJavaScript(`(${remoteNlProbe.toString()})('tcp',${JSON.stringify(nlIp)},${nlTcp.endpoints['remote-tcp-candidate'].port}).then(r=>({r})).catch(e=>({error:String(e)}))`);
-       belt.nonLoopbackTurn=await frame.executeJavaScript(`(${turnTcpProbe.toString()})(${JSON.stringify(nlIp)},${nlTcp.endpoints['turn'].port}).then(r=>({r})).catch(e=>({error:String(e)}))`);
+       belt.nonLoopbackRemoteUdp=await racer(frame.executeJavaScript(`(${remoteNlProbe.toString()})('udp',${JSON.stringify(nlIp)},${nlUdp.endpoints['remote-candidate'].port}).then(r=>({r})).catch(e=>({error:String(e)}))`),8000);
+       belt.nonLoopbackRemoteTcp=await racer(frame.executeJavaScript(`(${remoteNlProbe.toString()})('tcp',${JSON.stringify(nlIp)},${nlTcp.endpoints['remote-tcp-candidate'].port}).then(r=>({r})).catch(e=>({error:String(e)}))`),8000);
+       belt.nonLoopbackTurn=await racer(frame.executeJavaScript(`(${turnTcpProbe.toString()})(${JSON.stringify(nlIp)},${nlTcp.endpoints['turn'].port}).then(r=>({r})).catch(e=>({error:String(e)}))`),8000);
        await pause(200);
        belt.nonLoopbackUltimate={remoteUdpHits:nlUdp.records['remote-candidate'].udp.length,remoteTcpHits:nlTcp.records['remote-tcp-candidate'].tcp.length,turnHits:nlTcp.records.turn.tcp.length};
        belt.declaredFetchNonLoopbackHits=nlTarget.records['own-fetch'].http.length;
@@ -298,13 +300,13 @@ export async function networkCheck(electron){
       if(mode==='stub'&&frame){
        // The page's main world is stripped. Can it reach a fresh, working RTCPeerConnection?
        const surface=`(${webRtcSurface.toString()})()`;
-       const freshProbe=(/** @type {string} */ src,/** @type {string} */ srcdoc)=>frame.executeJavaScript(`new Promise(resolve=>{const f=document.createElement('iframe');f.name='stub-fresh';${srcdoc?`f.srcdoc=${JSON.stringify(srcdoc)};`:`f.src=${JSON.stringify(src)};`}f.onload=()=>{try{const w=f.contentWindow;let live=false;try{if(typeof w.RTCPeerConnection==='function'){const p=new w.RTCPeerConnection();p.close();live=true;}}catch{}resolve({rtcp:typeof w.RTCPeerConnection,webkit:typeof w.webkitRTCPeerConnection,rtcpLive:live});}catch(e){resolve({error:String(e)});}};document.body.append(f);setTimeout(()=>resolve({timeout:true}),1500)})`);
-       stub.direct=await frame.executeJavaScript(surface);
+       const freshProbe=(/** @type {string} */ src,/** @type {string} */ srcdoc)=>racer(frame.executeJavaScript(`new Promise(resolve=>{const f=document.createElement('iframe');f.name='stub-fresh';${srcdoc?`f.srcdoc=${JSON.stringify(srcdoc)};`:`f.src=${JSON.stringify(src)};`}f.onload=()=>{try{const w=f.contentWindow;let live=false;try{if(typeof w.RTCPeerConnection==='function'){const p=new w.RTCPeerConnection();p.close();live=true;}}catch{}resolve({rtcp:typeof w.RTCPeerConnection,webkit:typeof w.webkitRTCPeerConnection,rtcpLive:live});}catch(e){resolve({error:String(e)});}};document.body.append(f);setTimeout(()=>resolve({timeout:true}),1500)})`),8000);
+       stub.direct=await racer(frame.executeJavaScript(surface),8000);
        try{
         stub.srcdoc=await freshProbe('','<input>');
         stub.aboutBlank=await freshProbe('about:blank','');
         stub.nested=await freshProbe(f.endpoints['own-fetch'].url,'');
-        stub.worker=await frame.executeJavaScript(`new Promise(resolve=>{const w=new Worker(${JSON.stringify('data:application/javascript,'+encodeURIComponent('postMessage([typeof RTCPeerConnection, typeof webkitRTCPeerConnection])'))});w.onmessage=e=>{w.terminate();resolve({rtcp:e.data[0],webkit:e.data[1]})};w.onerror=e=>{resolve({error:e.message})};setTimeout(()=>{w.terminate();resolve({timeout:true})},1500)})`);
+        stub.worker=await racer(frame.executeJavaScript(`new Promise(resolve=>{const w=new Worker(${JSON.stringify('data:application/javascript,'+encodeURIComponent('postMessage([typeof RTCPeerConnection, typeof webkitRTCPeerConnection])'))});w.onmessage=e=>{w.terminate();resolve({rtcp:e.data[0],webkit:e.data[1]})};w.onerror=e=>{resolve({error:e.message})};setTimeout(()=>{w.terminate();resolve({timeout:true})},1500)})`),8000);
        }catch(e){stub.error=String(e);}
       }
      }
