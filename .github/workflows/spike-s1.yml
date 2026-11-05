@@ -1,0 +1,127 @@
+name: spike-s1
+
+# Spike S1, the transport (lane H, M0): iroh, quinn and WebRTC under Bun and compiled, on every
+# OS Clover ships; relay-free punching through emulated NATs; delay and throughput under netem.
+# Results: each job's summary, its artifact, and compact notices (see spikes/s1-transport/README.md).
+
+on:
+  push:
+    branches: [lane/h-m0]
+    paths:
+      - spikes/s1-transport/**
+      - native/link-sidecar/**
+      - .github/workflows/spike-s1.yml
+  workflow_dispatch:
+
+concurrency:
+  group: spike-s1-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  BUN_VERSION: 1.3.14
+  CARGO_TERM_COLOR: never
+
+jobs:
+  platforms:
+    name: bun and compile · ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest, ubuntu-24.04, ubuntu-24.04-arm]
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native/link-sidecar -> target
+      - name: build the link sidecar
+        run: cargo build --release --locked --manifest-path native/link-sidecar/Cargo.toml
+      - name: install the spike's packages
+        working-directory: spikes/s1-transport/bun
+        run: bun install --frozen-lockfile
+      - name: checks
+        run: spikes/s1-transport/ci/platform-checks.sh "spikes/s1-transport/results/platform-${{ matrix.os }}.jsonl"
+      - name: summary
+        if: always()
+        working-directory: spikes/s1-transport/bun
+        run: bun scripts/summarize.ts platform "../results/platform-${{ matrix.os }}.jsonl"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: s1-platform-${{ matrix.os }}
+          path: spikes/s1-transport/results/
+
+  nat:
+    name: NAT matrix (netns and iptables)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native/link-sidecar -> target
+      - name: build the link sidecar
+        run: cargo build --release --locked --manifest-path native/link-sidecar/Cargo.toml
+      - name: punch through every NAT pair, relays off
+        run: |
+          mkdir -p spikes/s1-transport/results
+          sudo spikes/s1-transport/nat/matrix.sh native/link-sidecar/target/release/clover-link-sidecar spikes/s1-transport/results/nat.jsonl
+      - name: summary
+        if: always()
+        working-directory: spikes/s1-transport/bun
+        run: bun scripts/summarize.ts nat ../results/nat.jsonl
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: s1-nat
+          path: spikes/s1-transport/results/
+
+  netem:
+    name: delay and throughput (tc netem)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native/link-sidecar -> target
+      - name: build the link sidecar
+        run: cargo build --release --locked --manifest-path native/link-sidecar/Cargo.toml
+      - name: install the spike's packages
+        working-directory: spikes/s1-transport/bun
+        run: bun install --frozen-lockfile
+      - name: bench every transport under each netem profile
+        run: |
+          mkdir -p spikes/s1-transport/results
+          sudo spikes/s1-transport/nat/netem.sh native/link-sidecar/target/release/clover-link-sidecar "$(command -v bun)" spikes/s1-transport/results/netem.jsonl
+      - name: summary
+        if: always()
+        working-directory: spikes/s1-transport/bun
+        run: bun scripts/summarize.ts netem ../results/netem.jsonl
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: s1-netem
+          path: spikes/s1-transport/results/

@@ -11,7 +11,7 @@
 //! ```
 //!
 //! Every measuring command prints one `S1RESULT <json>` line (and a GitHub `::notice` annotation
-//! when run under Actions), the same format as the Bun checks in spikes/s1-transport/bun.
+//! when S1_ANNOTATE=1), the same format as the Bun checks in spikes/s1-transport/bun.
 
 mod bench;
 mod ipc;
@@ -84,7 +84,7 @@ pub fn emit(check: &str, body: Value) {
     }
     let text = line.to_string();
     println!("S1RESULT {text}");
-    if std::env::var("GITHUB_ACTIONS").as_deref() == Ok("true") {
+    if std::env::var("S1_ANNOTATE").as_deref() == Ok("1") {
         println!("::notice title={check} {}::{text}", platform());
     }
 }

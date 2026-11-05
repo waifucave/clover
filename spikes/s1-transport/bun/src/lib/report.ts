@@ -1,8 +1,9 @@
 // Shared helpers for every S1 check: timing, percentiles, and one result line per check.
 //
-// Each check prints exactly one line `S1RESULT <json>` on stdout. On GitHub Actions it also
+// Each check prints exactly one line `S1RESULT <json>` on stdout. With S1_ANNOTATE=1 it also
 // prints a `::notice title=<check>::<json>` annotation, which the public check-runs API serves
-// without auth (the brief's fallback for reading CI results).
+// without auth. CI leaves that off (GitHub keeps only 10 notices per step) and annotates a
+// compact summary instead (scripts/summarize.ts).
 
 export const now = (): number => Number(process.hrtime.bigint()) / 1e6; // ms, monotonic
 
@@ -46,7 +47,7 @@ export function emit(check: string, result: Record<string, unknown>): void {
     ...result,
   });
   console.log(`S1RESULT ${line}`);
-  if (process.env.GITHUB_ACTIONS === "true") {
+  if (process.env.S1_ANNOTATE === "1") {
     // Annotations must stay on one line; JSON already is.
     console.log(`::notice title=${check} ${platformTag()}${isCompiled() ? " compiled" : ""}::${line}`);
   }
