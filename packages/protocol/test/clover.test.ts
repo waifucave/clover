@@ -81,9 +81,9 @@ describe("the method table", () => {
     for (const area of CLOVER_AREAS) expect(Object.keys(AREA_METHODS[area]).length).toBeGreaterThan(0);
   });
 
-  test("these Clover methods reuse a Winter method's name; C1 replaces Winter's with them, never both", () => {
-    const winter = new Set<string>(Object.values(METHODS));
-    const reused = methods.map((m) => m.name).filter((n) => winter.has(n)).sort();
+  test("these Clover methods reuse an inherited method's name; C1 replaces the inherited ones with them, never both", () => {
+    const inherited = new Set<string>(Object.values(METHODS));
+    const reused = methods.map((m) => m.name).filter((n) => inherited.has(n)).sort();
     expect(reused).toEqual([
       "plugin.install", "plugin.list", "plugin.restart", "plugin.update", "protocol.hello",
       "session.attach", "session.compact", "session.history", "session.interrupt", "session.list",
@@ -118,9 +118,9 @@ describe("the event table", () => {
     }
   });
 
-  test("Clover's event types never repeat one of Winter's SessionEvent types", () => {
-    const winter = new Set(SessionEvent.options.map((o) => (o.shape.type as z.ZodLiteral<string>).value));
-    for (const e of events) expect(winter.has(e.type)).toBe(false);
+  test("Clover's event types never repeat one of the inherited SessionEvent types", () => {
+    const inherited = new Set(SessionEvent.options.map((o) => (o.shape.type as z.ZodLiteral<string>).value));
+    for (const e of events) expect(inherited.has(e.type)).toBe(false);
   });
 
   test("core events decode as one union; session events as Clover's session union", () => {

@@ -160,7 +160,7 @@
       "kind": "either",
       "runsOn": "every computer running a session; started when first needed",
       "doc": "Calls the adapter, or the declared endpoint, for every turn; the welcome guide reads the sign-in methods (§3.3).",
-      "shipsWith": "every provider Winter has today"
+      "shipsWith": "every provider today's agent SDK has"
     },
     {
       "name": "mcpServers",
@@ -928,7 +928,7 @@
       "shape": "list",
       "declaredBy": "shell",
       "inBotTab": false,
-      "doc": "The shell's status bar; Winter's `tile` becomes an entry here (§12).",
+      "doc": "The shell's status bar; the inherited `tile` becomes an entry here (§12).",
       "fields": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",

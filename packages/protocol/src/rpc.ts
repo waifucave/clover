@@ -1,4 +1,4 @@
-// How Clover's areas describe their methods and events. The wire stays Winter's: JSON-RPC 2.0 over NDJSON
+// How Clover's areas describe their methods and events. The wire stays as it is: JSON-RPC 2.0 over NDJSON
 // (jsonrpc.ts, ndjson.ts), requests and responses in both directions on one connection, and events as
 // notifications. Each area file (plugins.ts, approvals.ts, …) lists its methods with `defineMethod` and its events
 // with `defineEvent`; clover.ts gathers them into one table, derives each role's allow list and generates the JSON
@@ -71,20 +71,20 @@ export function defineMethod<P extends z.ZodType, R extends z.ZodType>(m: Method
 /** Where an event lives:
  *  - `core`: daemon-wide state (plugins, cards, devices, computers, tabs…), delivered as a `core.event` notification
  *    to connections that subscribed to its area (`events.subscribe`, clover.ts).
- *  - `session`: a session's own log, delivered with Winter's `event` notification and envelope (`seq`, `sessionId`,
- *    `ts`). Clover's session events join `SessionEvent` (events.ts) when lane D wires them through Winter's checklist
- *    (docs/claude/protocol-and-remote.md); until then they are their own union (sessions.ts). */
+ *  - `session`: a session's own log, delivered with the inherited `event` notification and envelope (`seq`,
+ *    `sessionId`, `ts`). Clover's session events join `SessionEvent` (events.ts) when lane D wires them through the
+ *    inherited checklist (docs/claude/protocol-and-remote.md); until then they are their own union (sessions.ts). */
 export type EventScope = "core" | "session";
 
 export interface EventSpec<S extends z.ZodType = z.ZodType> {
-  /** The `type` discriminator, unique across Winter's `SessionEvent` and Clover's events. */
+  /** The `type` discriminator, unique across the inherited `SessionEvent` and Clover's events. */
   readonly type: string;
   readonly schema: S;
   /** The roles that receive it. */
   readonly roles: readonly CloverRole[];
   readonly owner: Lane;
   readonly scope: EventScope;
-  /** A transient event is never stored or replayed (Winter's `TRANSIENT_EVENT_TYPES` rule). */
+  /** A transient event is never stored or replayed (the inherited `TRANSIENT_EVENT_TYPES` rule). */
   readonly transient: boolean;
   /** A plugin receiver (`layer`, `plugin-host`) needs this capability. */
   readonly capability?: string;
@@ -124,6 +124,6 @@ export function coreEvent<T extends string, S extends z.ZodRawShape>(type: T, sh
   return z.object({ type: z.literal(type), ts: Timestamp, ...shape });
 }
 
-/** The notification method that carries `core` events (`params` is the event). Session events keep Winter's
+/** The notification method that carries `core` events (`params` is the event). Session events keep the inherited
  *  `event` notification (`METHODS.event`). */
 export const CORE_EVENT_NOTIFICATION = "core.event";

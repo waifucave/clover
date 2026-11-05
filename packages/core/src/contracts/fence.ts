@@ -27,7 +27,7 @@ export const FENCED_KINDS = [
   "dev-folders",
   /** `<home>/plugin-data/<id>/` (§5.4), where add-ons live. */
   "plugin-data",
-  /** The daemon's run folder: denied for reading too, as Winter's is. */
+  /** The daemon's run folder: denied for reading too, as it is today. */
   "run-folder",
   /** Windows and Linux: the encrypted secrets file, hidden from reads too (§8.5, §9.1). */
   "secrets-file",
@@ -67,7 +67,7 @@ export interface SandboxPolicy {
   closedDoors: string[];
   /** Never reachable from a command, approved escapes included: the cloud metadata address first (§9.2). */
   blockedAddresses: string[];
-  /** Winter's sandboxed Bash has no network (spike S8 read it from source); lane C settles Clover's (S8 item 1). */
+  /** Today's sandboxed Bash has no network (spike S8 read it from source); lane C settles Clover's (S8 item 1). */
   network: "none" | "filtered";
 }
 

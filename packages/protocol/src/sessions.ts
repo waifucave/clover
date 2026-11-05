@@ -4,8 +4,8 @@
 // A session is any running conversation: a bot's main conversation, a side thread (a routine run), a background
 // agent, or a coding session the user started (§9.3). The user's message interrupts a bot's main conversation at
 // once (§6.4); messages from other bots, routines, agents and plugins fold into the running turn after its next
-// tool call. A session's log keeps Winter's `SessionEvent` stream (events.ts); the Clover kinds below join it when
-// lane D wires them through Winter's checklist (docs/claude/protocol-and-remote.md).
+// tool call. A session's log keeps the inherited `SessionEvent` stream (events.ts); the Clover kinds below join it when
+// lane D wires them through the inherited checklist (docs/claude/protocol-and-remote.md).
 import { z } from "zod";
 import {
   AnyPluginId, BotId, ChangeResult, ComputerName, Cursor, DeviceId, Empty, Ok, SessionId, SessionKind, Text,
@@ -171,7 +171,7 @@ export const SESSIONS_METHODS = {
     name: "session.attach", owner: "D", roles: ["app", "cli", "remote", "web", "layer", "plugin-host"], capability: "conversation.read",
     params: z.object({ id: SessionId, since: z.number().int().nonnegative().optional() }),
     result: z.object({ lastSeq: z.number().int().nonnegative() }),
-    doc: "Follows a session live: replays events after `since`, then streams them with Winter's `event` notification.",
+    doc: "Follows a session live: replays events after `since`, then streams them with the inherited `event` notification.",
   }),
   sessionDetach: defineMethod({
     name: "session.detach", owner: "D", roles: ["app", "cli", "remote", "web", "layer", "plugin-host"], capability: "conversation.read",
@@ -271,8 +271,8 @@ export const BotsPausedEvent = coreEvent("bots_paused", { paused: z.boolean() })
 export const SessionChangedEvent = coreEvent("session_changed", { session: SessionView });
 export const RoutinesChangedEvent = coreEvent("routines_changed", { bot: BotId.optional() });
 
-/** The envelope of Clover's session events: Winter's (`seq`, `sessionId`, `ts`), plus the lease epoch every log event
- *  carries once lane H's lease exists (§6.4 "Events carry their lease epoch"). */
+/** The envelope of Clover's session events: the inherited one (`seq`, `sessionId`, `ts`), plus the lease epoch every
+ *  log event carries once lane H's lease exists (§6.4 "Events carry their lease epoch"). */
 function sessionEvent<T extends string, S extends z.ZodRawShape>(type: T, shape: S) {
   return z.object({
     type: z.literal(type), seq: z.number().int().nonnegative(), sessionId: SessionId, ts: Timestamp,

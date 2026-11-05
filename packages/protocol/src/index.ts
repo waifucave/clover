@@ -1,4 +1,4 @@
-// Winter's protocol: JSON-RPC 2.0 over NDJSON, `SessionEvent` and Winter's methods. C1 retires it method by method.
+// The inherited protocol: JSON-RPC 2.0 over NDJSON, `SessionEvent` and its methods. C1 retires it method by method.
 export * from "./jsonrpc";
 export * from "./events";
 export * from "./methods";
@@ -7,7 +7,7 @@ export * from "./conn-writer";
 export * from "./cowork";
 
 // Clover's protocol (spec revision 17): the shared vocabulary, the roles, one file per area, and the index that
-// gathers them. Names here never repeat one of Winter's exports above.
+// gathers them. Names here never repeat one of the inherited exports above.
 export * from "./common";
 export * from "./roles";
 export * from "./rpc";

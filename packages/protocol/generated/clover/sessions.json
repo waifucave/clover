@@ -843,7 +843,7 @@
       }
     },
     "session.attach": {
-      "doc": "Follows a session live: replays events after `since`, then streams them with Winter's `event` notification.",
+      "doc": "Follows a session live: replays events after `since`, then streams them with the inherited `event` notification.",
       "owner": "D",
       "direction": "to-daemon",
       "roles": [

@@ -3,11 +3,11 @@
 // browser.ts, usage.ts) builds on these, and so do the plugin SDK and the core's contracts
 // (`packages/core/src/contracts/`). Owner: lane B for M0, then the controller, with the protocol's index (plan §7).
 //
-// Winter's own protocol (events.ts, methods.ts, cowork.ts) stays beside this until C1 retires it method by method;
-// nothing here changes Winter's wire. Names here never repeat one of Winter's exports (the index exports both).
+// The inherited protocol (events.ts, methods.ts, cowork.ts) stays beside this until C1 retires it method by method;
+// nothing here changes the inherited wire. Names here never repeat an inherited export (the index exports both).
 import { z } from "zod";
 
-/** Clover's protocol version, sent in `protocol.hello` (roles.ts). Winter's daemon speaks `PROTOCOL_VERSION` (0). */
+/** Clover's protocol version, sent in `protocol.hello` (roles.ts). Today's daemon speaks `PROTOCOL_VERSION` (0). */
 export const CLOVER_PROTOCOL_VERSION = 1;
 
 /** The thirteen lanes of the plan (§4). Every method and event names the lane that implements it. */
@@ -107,8 +107,8 @@ export type RunsOn = z.infer<typeof RunsOn>;
 // Levels, callers, origins
 // -------------------------------------------------------------------------------------------------
 
-/** A computer's (or a routine's) approval level (§9.1): read only, ask, ask for risky actions (the default, Winter's
- *  `auto` with the reviewer), accept edits, and fully automatic (Winter's `bypass`). Ordered lowest first. */
+/** A computer's (or a routine's) approval level (§9.1): read only, ask, ask for risky actions (the default, today's
+ *  `auto` with the reviewer), accept edits, and fully automatic (today's `bypass`). Ordered lowest first. */
 export const LEVELS = ["read-only", "ask", "ask-risky", "accept-edits", "automatic"] as const;
 export const Level = z.enum(LEVELS);
 export type Level = z.infer<typeof Level>;
@@ -139,7 +139,7 @@ export const Caller = z.discriminatedUnion("kind", [
 export type Caller = z.infer<typeof Caller>;
 
 /** What started a turn. A card or question from a turn the user's own message did not start is denied after 10
- *  minutes unanswered; one from a turn the user started waits (§5.5, §9.1, Winter's `isHumanTurnOrigin`). */
+ *  minutes unanswered; one from a turn the user started waits (§5.5, §9.1, the inherited `isHumanTurnOrigin`). */
 export const TurnOrigin = z.enum(["user", "bot", "routine", "task-notification", "agent", "plugin"]);
 export type TurnOrigin = z.infer<typeof TurnOrigin>;
 export function isUserTurn(origin: TurnOrigin): boolean {
@@ -167,7 +167,7 @@ export const Empty = z.object({});
 /** A page cursor (opaque to clients). */
 export const Cursor = z.string().min(1).max(512);
 
-/** Error codes Clover adds to JSON-RPC's (Winter's `ERR` keeps its own, jsonrpc.ts). */
+/** Error codes Clover adds to JSON-RPC's (the inherited `ERR` keeps its own, jsonrpc.ts). */
 export const CLOVER_ERR = {
   /** The role may not call this method (the allow lists, clover.ts). */
   ROLE_REFUSED: -32010,

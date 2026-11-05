@@ -80,7 +80,7 @@ export const AccountView = z.object({
 });
 export type AccountView = z.infer<typeof AccountView>;
 
-/** No-account pairing (§8.1): a code or QR, plus Winter's 4-word check. */
+/** No-account pairing (§8.1): a code or QR, plus the inherited 4-word check. */
 export const PairingView = z.object({
   pairingId: z.string().min(1).max(128),
   code: z.string().min(1).max(64).optional(),
@@ -224,7 +224,7 @@ export const DEVICES_METHODS = {
     name: "sync.push", owner: "H", roles: ["peer"],
     params: z.object({ stream: SyncStream, base: z.number().int().min(-1), entries: z.array(SyncEntry).max(10_000) }),
     result: z.union([z.object({ ok: z.literal(true), head: z.number().int() }), z.object({ ok: z.literal(false), reason: z.enum(["stale_base", "not_writer", "refused"]) })]),
-    doc: "Appends entries; a stale base is refused, as Winter's phone sync refuses one (`ipc/sync.ts`).",
+    doc: "Appends entries; a stale base is refused, as the inherited phone sync refuses one (`ipc/sync.ts`).",
   }),
 } as const;
 

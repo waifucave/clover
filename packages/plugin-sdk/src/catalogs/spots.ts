@@ -70,7 +70,7 @@ export const SPOTS: readonly SpotInfo[] = [
   { name: "settings.section", shape: "list", declaredBy: "shell", inBotTab: false, fields: titled, props: none,
     doc: "A section of the settings screen." },
   { name: "status", shape: "list", declaredBy: "shell", inBotTab: false, fields: titledOpt, props: none,
-    doc: "The shell's status bar; Winter's `tile` becomes an entry here (§12)." },
+    doc: "The shell's status bar; the inherited `tile` becomes an entry here (§12)." },
   // A bot's tab (`bot.tab`).
   { name: "bot.header", shape: "single", declaredBy: "bot-tab", inBotTab: true, context: ["bot"], fields: none,
     props: z.object({ bot: BotRef }), doc: "The tab's header." },

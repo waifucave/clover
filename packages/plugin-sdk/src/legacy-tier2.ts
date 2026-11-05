@@ -4,8 +4,8 @@ import {
   LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, ERR, type WritableSocket,
 } from "@waifucave/clover-protocol";
 
-// WINTER'S TIER-2 PLUGIN API, kept as it was until lane B's plugin host (B-M2) replaces it with the Clover plugin
-// API (`api/plugin-api.ts`). Winter's daemon (packages/core/src/plugins/supervisor.ts), its tests and
+// THE INHERITED TIER-2 PLUGIN API, kept as it was until lane B's plugin host (B-M2) replaces it with the Clover plugin
+// API (`api/plugin-api.ts`). Today's daemon (packages/core/src/plugins/supervisor.ts), its tests and
 // `examples/sample-echo`, `examples/battery-limiter` still run against it. Moved here unchanged from `index.ts`.
 
 /**

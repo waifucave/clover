@@ -22,8 +22,8 @@
 // * Messages keep send order on the shared clock; one whose stamp falls before output the model already produced is
 //   placed after that output, keeping its real send time (§6.4 "Late arrivals").
 //
-// The log records are the host's own vocabulary. Lane D projects them onto the wire: `input` from the user is Winter's
-// `user_message` with `UserMessageStamp`, from a bot `bot_message`, from an agent `agent_message`, a task
+// The log records are the host's own vocabulary. Lane D projects them onto the wire: the user's `input` is the
+// inherited `user_message` with `UserMessageStamp`, from a bot `bot_message`, from an agent `agent_message`, a task
 // notification `agent_finished`, a routine `routine_result`, a note `note`; turns map to `turn_started` and
 // `turn_completed`; `driver` records are the runtime's own events (tool calls, text, thinking).
 import type { SessionFailure, SessionKind, SessionStatus, SessionView, TurnOrigin } from "@waifucave/clover-protocol";

@@ -1,7 +1,7 @@
 // What every contract in `packages/core/src/contracts/` shares: typed failures and listener sets.
 //
 // The contracts are the spine's interfaces between lanes (plan §3). Each one has an in-memory fake in `fakes/`, and
-// the tests in `test/` pin each fake's behaviour, so a lane can build against the fake and trust it to act as the real
+// the tests in `tests/` pin each fake's behaviour, so a lane can build against the fake and trust it to act as the real
 // implementation will. The real implementations live in their owners' folders and pass the same tests where a test
 // is not about the fake itself. After the spine merges, a contract changes only through the controller (plan §3).
 import { CLOVER_ERR } from "@waifucave/clover-protocol";

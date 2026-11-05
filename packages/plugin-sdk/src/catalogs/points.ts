@@ -26,7 +26,7 @@ export const CORE_POINTS: readonly CorePointInfo[] = [
   { name: "bot", side: "daemon", shape: "single", kind: "data", runsOn: "data, on every device",
     doc: "Builds `<bot-instructions>`, picks the default model, keys memory by the bot's id (§6).", shipsWith: "Alpha only" },
   { name: "models", side: "daemon", shape: "list", uniqueBy: "provider", kind: "either", runsOn: "every computer running a session; started when first needed",
-    doc: "Calls the adapter, or the declared endpoint, for every turn; the welcome guide reads the sign-in methods (§3.3).", shipsWith: "every provider Winter has today" },
+    doc: "Calls the adapter, or the declared endpoint, for every turn; the welcome guide reads the sign-in methods (§3.3).", shipsWith: "every provider today's agent SDK has" },
   { name: "mcpServers", side: "daemon", shape: "keyed", kind: "either", runsOn: "local servers on each computer they are installed on; remote servers on the computer running the session (§9.1)",
     doc: "Dispatches tool calls, builds the MCP block and shows MCP Apps pages.", shipsWith: "the web tools; `mcp__clover__Browser`" },
   { name: "skills", side: "daemon", shape: "list", kind: "data", runsOn: "data, on every device", doc: "Indexes them in `Glossary` (§6.8).", shipsWith: "—" },

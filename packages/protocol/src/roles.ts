@@ -36,7 +36,7 @@ export const PLUGIN_ROLES: readonly CloverRole[] = ["layer", "plugin-host"];
 /** Roles that can count as the user once the caller check passes (§3.1). */
 export const USER_ROLES: readonly CloverRole[] = ["app", "cli", "remote", "web"];
 
-/** `protocol.hello`, Clover's form. Same method name as Winter's (`METHODS.hello`); C-M1 switches the daemon to it. */
+/** `protocol.hello`, Clover's form. The inherited method's name (`METHODS.hello`); C-M1 switches the daemon to it. */
 export const CloverHelloParams = z.object({
   protocolVersion: z.number().int(),
   role: CloverRole,

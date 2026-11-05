@@ -2,7 +2,8 @@
 // each method's params and result schemas and each event's schema, one fixture per event, and every role's allow
 // list. `generate.ts` writes them; `test/clover-generated.test.ts` checks the committed copies are current, so a
 // change to an area file without `pnpm protocol:generate` fails the tests as well as CI's codegen job.
-// Nothing here goes into the Swift test bundle: Winter's mirror stays Winter's until lane I re-points the iOS app.
+// Nothing here goes into the Swift test bundle: the inherited Swift mirror stays as it is until lane I re-points
+// the iOS app.
 import { z } from "zod";
 import { CLOVER_AREAS, AREA_EVENTS, AREA_METHODS, AREA_OWNERS, CORE_METHODS, allowedEvents, allowedMethods, daemonRequestsTo } from "../src/clover";
 import { CLOVER_ROLES } from "../src/roles";

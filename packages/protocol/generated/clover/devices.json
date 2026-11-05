@@ -1414,7 +1414,7 @@
       }
     },
     "sync.push": {
-      "doc": "Appends entries; a stale base is refused, as Winter's phone sync refuses one (`ipc/sync.ts`).",
+      "doc": "Appends entries; a stale base is refused, as the inherited phone sync refuses one (`ipc/sync.ts`).",
       "owner": "H",
       "direction": "to-daemon",
       "roles": [

@@ -13,7 +13,7 @@ import { coreEvent, defineEvent, defineMethod } from "./rpc";
 
 /** DevTools domains the API never passes (§12.1). */
 export const CDP_DENIED_DOMAINS = ["Target", "Browser", "Storage", "SystemInfo", "Tethering", "ServiceWorker"] as const;
-/** DevTools domains the API passes, method by method within lane L's allow list (from Winter's `cdp-allowlist.ts`,
+/** DevTools domains the API passes, method by method within lane L's allow list (from the inherited `cdp-allowlist.ts`,
  *  less `Target`). A method outside these domains is refused before it reaches a tab. */
 export const CDP_ALLOWED_DOMAINS = [
   "Page", "Runtime", "DOM", "Input", "Network", "Emulation", "Log", "Fetch", "IO", "Accessibility", "CSS",
@@ -55,7 +55,7 @@ export const TabView = z.object({
   place: TabPlace,
   viewport: Viewport,
   loading: z.boolean(),
-  /** The user holds it in the view; an agent's commands are refused meanwhile (Winter's control lease). */
+  /** The user holds it in the view; an agent's commands are refused meanwhile (the inherited control lease). */
   heldByUser: z.boolean(),
 });
 export type TabView = z.infer<typeof TabView>;

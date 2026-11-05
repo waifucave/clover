@@ -3,8 +3,8 @@
 // the UI API (§5.5) as declarations; and the validation `clover plugin validate` runs. One source: the zod schemas in
 // `manifest/` and `formats/` give the types, the validation and the JSON Schemas in `generated/`.
 //
-// `src/ui/` is lane E's: the UI API's implementation. Winter's Tier-2 API (`createPlugin`) stays exported until the
-// plugin host replaces it (B-M2).
+// `src/ui/` is lane E's: the UI API's implementation. The inherited Tier-2 API (`createPlugin`) stays exported until
+// the plugin host replaces it (B-M2).
 
 export * from "./version";
 export * from "./jsonc";

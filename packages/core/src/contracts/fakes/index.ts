@@ -1,5 +1,5 @@
 // In-memory fakes of every contract, for lanes to build and test against until the real neighbours merge. Each one's
-// behaviour is pinned by `../test/`.
+// behaviour is pinned by `../tests/`.
 export * from "./clock";
 export * from "./secret-store";
 export * from "./fence";

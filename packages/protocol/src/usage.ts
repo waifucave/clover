@@ -30,7 +30,7 @@ export const UsageRow = z.object({
 });
 export type UsageRow = z.infer<typeof UsageRow>;
 
-/** A plan reading from one of the user's own apps, by its own install (Winter's plan usage readers). */
+/** A plan reading from one of the user's own apps, by its own install (the inherited plan usage readers). */
 export const PlanReading = z.object({
   source: UsageSource,
   computer: ComputerName,

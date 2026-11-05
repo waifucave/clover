@@ -10,11 +10,12 @@
 // * Names are unique, letters, digits and hyphens; a renamed computer keeps its old name as an alias (§9.1).
 // * A computer's level changes only through this registry; raising it is a sealed card, which the caller (the IPC
 //   layer) shows before calling `setLevel` with the card's id. Lowering needs none (§5.5, §9.1).
-// * Holds (Winter's held apps): an app hold and a window hold of that app conflict across sessions, as do two holds of
-//   one window; a session taking what it already holds gets its hold back. A hold is refused `held` (naming the
-//   holder), `user_working` while the user's mark is on that app, or `computer_offline`. Every session lets go at its
-//   turn end (`releaseSession`).
-// * The user-working mark lifts only on the user's message or a card answer, never on a release (Winter 1.22.0).
+// * Holds (the inherited computer-use code's held apps): an app hold and a window hold of that app conflict across
+//   sessions, as do two holds of one window; a session taking what it already holds gets its hold back. A hold is
+//   refused `held` (naming the holder), `user_working` while the user's mark is on that app, or `computer_offline`.
+//   Every session lets go at its turn end (`releaseSession`).
+// * The user-working mark lifts only on the user's message or a card answer, never on a release (as computer-use
+//   helper 1.22.0 does).
 // * While an action runs on a computer, a click on a sealed card there doesn't count (§5.5).
 import type { CloverWindow, ComputerView, HoldTarget, HoldView, Level } from "@waifucave/clover-protocol";
 import type { Unsubscribe } from "./common";

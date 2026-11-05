@@ -38,7 +38,7 @@ export const ComputerView = z.object({
 });
 export type ComputerView = z.infer<typeof ComputerView>;
 
-/** What a hold covers: a whole app, or one window of it (§9.2, Winter's held apps). */
+/** What a hold covers: a whole app, or one window of it (§9.2, the inherited held apps). */
 export const HoldTarget = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("app"), app: z.string().min(1).max(256) }),
   z.object({ kind: z.literal("window"), app: z.string().min(1).max(256), window: z.string().min(1).max(512) }),

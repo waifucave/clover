@@ -115,7 +115,7 @@ export interface SavedRule {
 }
 
 /** The safety reviewer behind "ask for risky actions" (§9.1), injected: lane C's real one picks its model by
- *  Winter's `reviewer.model` rules and answers `unavailable` when no model can run. */
+ *  the inherited `reviewer.model` rules and answers `unavailable` when no model can run. */
 export type Reviewer = (req: ApprovalRequest) => Promise<"safe" | "risky" | "unavailable">;
 
 /** Checks an answer's proof: a sealed frame's channel, or a paired device's signature (§5.5). */
