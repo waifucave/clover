@@ -1,3 +1,5 @@
+// C0 (review S1): loading core installs Clover's process-wide provider identity (`runtime-sdk/process-identity.ts`).
+export { installCloverProcessIdentity } from "./runtime-sdk/process-identity";
 export { startDaemon, CORE_VERSION, type RunningDaemon } from "./daemon";
 export { bootstrapCloverDir, resolveCloverHome, isDefaultCloverHome } from "./clover-dir";
 export { resolveCloverProfile, keychainService, profileDisplayName, cliCommandName, type CloverProfile } from "./profile";

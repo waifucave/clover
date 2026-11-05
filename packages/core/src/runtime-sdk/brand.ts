@@ -22,8 +22,10 @@
 //  - `mcpServerName: "clover"` → every daemon-owned capability tool is `mcp__clover__<key>__<tool>`
 //    (spec item 74); `capabilities/names.ts`'s own header covers why a composed server name can
 //    never collide with this bare value.
-//  - `codexOriginator: "clover"` — spec §3.3, the owner's decision; `providers/codex-config.ts`
-//    sends the same value.
+//  - `codexOriginator: "clover"` — spec §3.3, the owner's decision. THE value Codex calls send: a
+//    runtime session's brand carries it, and `process-identity.ts` installs it process-wide for every
+//    call outside a session (C0, review S1). `providers/codex-config.ts`'s header table repeats it,
+//    pinned equal in `test/runtime-sdk/process-identity.test.ts`.
 //  - `tempRootName: "clover"` → `/private/tmp/clover-<uid>/clover-<uid>/<projectKey>/<uuid>/…`.
 //  - `keychainService: keychainService(profile)` — profile-aware (`com.waifucave.clover.core`,
 //    dev `com.waifucave.clover.core.dev`); `auth/secret-store.ts`'s `SERVICE` resolves the same way,

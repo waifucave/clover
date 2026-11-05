@@ -9,6 +9,7 @@ import { existsSync, mkdirSync, realpathSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import { bootstrapCloverDir, resolveCloverHome, isDefaultCloverHome } from "./clover-dir";
 import { assertNotOtherInstallHome } from "./other-installs";
+import { installCloverProcessIdentity } from "./runtime-sdk/process-identity";
 import { acquireLock, type Lock } from "./lock";
 import { keychainService, resolveCloverProfile } from "./profile";
 import { describeHomePristineness, planMigrationB, runMigrationB, MigrationRefused } from "./migration/migrate-b";
@@ -466,6 +467,9 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   userHomeForTests?: string;
 } = {}): Promise<RunningDaemon> {
   const startedAt = Date.now();
+  // C0 (review S1): the daemon's own provider calls (titles, the reviewer, the dreamer, the cleaner) present as
+  // Clover, not as the SDK's default (`runtime-sdk/process-identity.ts`; already installed when core loaded).
+  installCloverProcessIdentity();
   const home = opts.home ?? resolveCloverHome();
   const profile = resolveCloverProfile();
 
