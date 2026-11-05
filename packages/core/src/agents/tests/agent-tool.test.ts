@@ -190,10 +190,13 @@ describe("the stall watchdog", () => {
     await advanceAndSettle(w.clock, 11 * 60_000, 60_000);
     await new Promise((res) => setTimeout(res, 800));
     expect(w.host.get(r.sessionId)!.status).toBe("prompting");
-    // Past the command's limit, the same process no longer counts.
+    // Past the command's limit, the same process no longer counts. A check reads the process table, which takes
+    // real time, so the clock moves on until one has seen it.
     wall += 11 * 60_000;
-    await advanceAndSettle(w.clock, 60_000);
-    const n = await waitFor(() => notification(w), "the notification");
+    const n = await waitFor(async () => {
+      await advanceAndSettle(w.clock, 60_000);
+      return notification(w);
+    }, "the notification");
     expect(n.stopReason).toBe("stalled");
   });
 });
