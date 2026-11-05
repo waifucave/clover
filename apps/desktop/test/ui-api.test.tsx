@@ -39,6 +39,25 @@ function fakeBridge(views: Record<string, SpotView>) {
       calls.push({ op: "reload", args: [child] });
       return "clover-plugin://other/?mount=fresh";
     },
+    sleep: (child) => calls.push({ op: "sleep", args: [child] }),
+    wake: async (child) => {
+      calls.push({ op: "wake", args: [child] });
+      return "clover-plugin://vn/?mount=woken";
+    },
+    rectReply: (id, rect) => calls.push({ op: "rectReply", args: [id, rect] }),
+    menu: async (mount, items, x, y) => {
+      calls.push({ op: "menu", args: [mount, items, x, y] });
+      return "copy";
+    },
+    surface: (request) => calls.push({ op: "surface", args: [request] }),
+    dragOffer: async (mount, offer) => {
+      calls.push({ op: "dragOffer", args: [mount, offer] });
+      return { token: "g1" };
+    },
+    dragClaim: async (mount, token) => {
+      calls.push({ op: "dragClaim", args: [mount, token] });
+      return { type: "text/plain", data: "dropped" };
+    },
     onMessage: (l) => {
       listeners.add(l);
       return () => listeners.delete(l);
@@ -50,6 +69,26 @@ function fakeBridge(views: Record<string, SpotView>) {
 const tick = () => act(async () => {
   await new Promise((r) => setTimeout(r, 10));
 });
+
+// IntersectionObserver as the frames see it: the test says whether each observed element is near the screen.
+const observers = new Set<{ cb: (e: { isIntersecting: boolean }[]) => void; els: Set<Element> }>();
+(globalThis as { IntersectionObserver?: unknown }).IntersectionObserver = class {
+  private o: { cb: (e: { isIntersecting: boolean }[]) => void; els: Set<Element> };
+  constructor(cb: (e: { isIntersecting: boolean }[]) => void) {
+    this.o = { cb, els: new Set() };
+    observers.add(this.o);
+  }
+  observe(el: Element) {
+    this.o.els.add(el);
+  }
+  disconnect() {
+    observers.delete(this.o);
+  }
+};
+function setNear(near: boolean) {
+  for (const o of observers) if (o.els.size > 0) o.cb([{ isIntersecting: near }]);
+}
+const hooks: { menu?: () => Promise<string | null>; offer?: () => Promise<string | undefined>; claim?: () => Promise<unknown> } = {};
 
 describe("the UI API in a layer", () => {
   let fake: ReturnType<typeof fakeBridge>;
@@ -69,9 +108,14 @@ describe("the UI API in a layer", () => {
         h(ui.Spot, { name: "never-declared" }));
     const Sidebar = ({ props, entry }: { props: { route: string }; entry: { pluginId: string } }) => {
       const tokens = ui.useTokens();
+      const menu = ui.useMenu();
+      const drag = ui.useDrag();
+      hooks.menu = () => menu([{ id: "copy", label: "Copy" }], { x: 3, y: 4 });
+      hooks.offer = () => drag.offer({ type: "text/plain", data: "a row" });
+      hooks.claim = () => drag.claim("g1");
       return h("nav", { "data-route": props.route, "data-plugin": entry.pluginId, "data-accent": String(tokens["color.accent"]) });
     };
-    ui.configureLayer({ bridge: fake.bridge, modules: { "clover/shell": { Window: Shell }, "clover/sidebar": { Sidebar } } });
+    ui.configureLayer({ bridge: fake.bridge, modules: { "clover/shell": { Window: Shell }, "clover/sidebar": { Sidebar } }, sleepAfterMs: 30 });
   });
 
   test("the document's entry renders with its props and tokens; an inline part from the same layer with its own", async () => {
@@ -115,6 +159,35 @@ describe("the UI API in a layer", () => {
     await tick();
     expect(fake.calls.some((c) => c.op === "reload" && c.args[0] === "m3")).toBe(true);
     expect(document.querySelector('iframe[data-clover-entry="vn#composer"]')?.getAttribute("src")).toBe("clover-plugin://other/?mount=fresh");
+  });
+
+  test("the core asks where a child frame is (the menu broker); a part's menu and drags go through the core", async () => {
+    await act(async () => fake.emit({ type: "rect-query", id: "q1", child: "m3" }));
+    const reply = fake.calls.find((c) => c.op === "rectReply")!;
+    expect(reply.args[0]).toBe("q1");
+    expect(reply.args[1]).toMatchObject({ x: expect.any(Number), y: expect.any(Number) });
+    await act(async () => fake.emit({ type: "rect-query", id: "q2", child: "nobody" }));
+    expect(fake.calls.find((c) => c.op === "rectReply" && c.args[0] === "q2")!.args[1]).toBeNull();
+    expect(await hooks.menu!()).toBe("copy");
+    expect(fake.calls.find((c) => c.op === "menu")!.args).toEqual(["m2", [{ id: "copy", label: "Copy" }], 3, 4]);
+    expect(await hooks.offer!()).toBe("g1");
+    expect(await hooks.claim!()).toEqual({ type: "text/plain", data: "dropped" });
+    expect(fake.calls.find((c) => c.op === "dragOffer")!.args).toEqual(["m2", { type: "text/plain", data: "a row" }]);
+  });
+
+  test("a frame away from the screen a while sleeps, keeping its place, and wakes with a fresh URL when it comes near", async () => {
+    await act(async () => setNear(false));
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 60));
+    });
+    expect(fake.calls.some((c) => c.op === "sleep" && c.args[0] === "m3")).toBe(true);
+    const placeholder = document.querySelector('[data-clover-entry="vn#composer"][data-clover-asleep]') as HTMLElement;
+    expect(placeholder).not.toBeNull();
+    expect(document.querySelector('iframe[data-clover-entry="vn#composer"]')).toBeNull();
+    await act(async () => setNear(true));
+    await tick();
+    expect(fake.calls.some((c) => c.op === "wake" && c.args[0] === "m3")).toBe(true);
+    expect(document.querySelector('iframe[data-clover-entry="vn#composer"]')?.getAttribute("src")).toBe("clover-plugin://vn/?mount=woken");
   });
 
   test("a registry change resolves every spot again", async () => {

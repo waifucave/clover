@@ -13,8 +13,9 @@ import { randomBytes } from "node:crypto";
 import type { LayerMessage, MountContext, MountInfo, SpotItem, SpotView } from "@waifucave/clover-plugin-sdk/ui/bridge";
 import type { Appearance, TokenValue } from "@waifucave/clover-plugin-sdk";
 import { spotInfo } from "@waifucave/clover-plugin-sdk";
-import { SAFE_MODE_PLUGINS, type UiPlugin } from "./model";
+import { SAFE_MODE_PLUGINS, type UiEntry, type UiPlugin } from "./model";
 import { NO_CHOICES, SpotTree, entryRef, resolveCell, type CellContext, type Candidate, type Os, type UiChoices } from "./spots";
+import { DRAG_GRANT_TTL_MS, checkDragOffer, mayClaim, type DragOffer } from "./brokers";
 import { defaultFrameMetrics, partTokens, ThemeStore, type FrameMetrics, type ThemeChoices } from "./theme";
 
 /** A frame as Electron describes it. */
@@ -59,7 +60,7 @@ interface Mount {
   surfaceRef?: string;
   // A frame's document.
   token?: string;
-  tokenState?: "issued" | "served" | "bound" | "gone";
+  tokenState?: "issued" | "served" | "bound" | "gone" | "asleep";
   issuedAt?: number;
   frame?: { key: string; processId: number; routingId: number; osPid?: number };
   /** Children by place: `<spot>|<key>|<entry ref>`. */
@@ -106,6 +107,7 @@ export class UiRuntime {
   private systemAccent: string | undefined;
   private safeModeValue: boolean;
   private nextId = 1;
+  private readonly grants = new Map<string, { offer: DragOffer; windowId: number; at: number }>();
   private readonly themes: ThemeStore;
   private readonly now: () => number;
   private readonly token: () => string;
@@ -452,7 +454,10 @@ export class UiRuntime {
   private item(m: Mount, parent: Mount): SpotItem {
     const ref = `${m.plugin!.id}#${m.entryId}`;
     if (m.kind === "web") return { kind: "web", mount: m.id, ref, pluginId: m.plugin!.id, entryId: m.entryId };
-    if (m.kind === "frame") return { kind: "frame", mount: m.id, ref, pluginId: m.plugin!.id, entryId: m.entryId, layer: m.layer, url: this.frameUrl(m) };
+    if (m.kind === "frame") {
+      if (m.tokenState === "asleep") return { kind: "frame", mount: m.id, ref, pluginId: m.plugin!.id, entryId: m.entryId, layer: m.layer, url: "", asleep: true };
+      return { kind: "frame", mount: m.id, ref, pluginId: m.plugin!.id, entryId: m.entryId, layer: m.layer, url: this.frameUrl(m) };
+    }
     return {
       kind: "inline",
       mount: m.id,
@@ -543,6 +548,99 @@ export class UiRuntime {
     if (m.token !== undefined) this.byToken.delete(m.token);
     if (m.frame !== undefined) this.byFrame.delete(m.frame.key);
     this.mounts.delete(id);
+  }
+
+  /** A frame far from the screen for a while sleeps (§5.5): its document and everything under it go, and its process
+   *  with them once no other frame of that layer is left; it wakes rebuilt from the core's state, with a fresh token. */
+  sleep(frame: FrameRef, child: string): boolean {
+    const m = this.childOf(frame, child);
+    if (m.kind !== "frame" || m.tokenState === "asleep") return false;
+    for (const id of [...m.children.values()]) this.drop(id);
+    m.children.clear();
+    if (m.frame !== undefined) this.byFrame.delete(m.frame.key);
+    delete m.frame;
+    if (m.token !== undefined) this.byToken.delete(m.token);
+    delete m.token;
+    m.tokenState = "asleep";
+    return true;
+  }
+
+  /** Wakes a sleeping frame (or reloads one whose layer stopped): a fresh single-use URL. */
+  wake(frame: FrameRef, child: string): string | undefined {
+    return this.reload(frame, child);
+  }
+
+  // ----------------------------------------------------------------------------------------------
+  // Surfaces (the island, the pill: `app.surface` entries with a `window`)
+  // ----------------------------------------------------------------------------------------------
+
+  /** The surfaces to open: every `app.surface` entry with a `window` that may run now. Its id is the surface's. */
+  surfaceEntries(): { id: string; ref: string; pluginId: string; window: NonNullable<UiEntry["window"]> }[] {
+    const out: { id: string; ref: string; pluginId: string; window: NonNullable<UiEntry["window"]> }[] = [];
+    for (const p of this.plugins) {
+      if (this.safeModeValue && !SAFE_MODE_PLUGINS.includes(p.topId)) continue;
+      for (const e of p.entries) {
+        if (e.spot !== "app.surface" || e.window === undefined || e.kind !== "component") continue;
+        const os = e.when?.os;
+        if (os !== undefined && !os.includes(this.opts.os)) continue;
+        out.push({ id: e.id, ref: entryRef(e), pluginId: p.id, window: e.window });
+      }
+    }
+    return out;
+  }
+
+  /** The surface window a document may steer: the frame its window's root placed, and only that one. */
+  surfaceOf(frame: FrameRef): number | undefined {
+    const doc = this.docByFrame(frame);
+    const parent = doc?.parent === undefined ? undefined : this.mounts.get(doc.parent);
+    return doc !== undefined && doc.kind === "frame" && parent?.kind === "root" && parent.surfaceRef !== undefined ? doc.windowId : undefined;
+  }
+
+  // ----------------------------------------------------------------------------------------------
+  // The menu and drag brokers (brokers.ts)
+  // ----------------------------------------------------------------------------------------------
+
+  /** Where a document sits in its window: each step from the root down, the document holding a frame and that frame's
+   *  mount, so the core can ask each for its child's place (the menu broker). */
+  placeOf(frame: FrameRef): { windowId: number; steps: { parent: { processId: number; routingId: number }; child: string }[] } {
+    const doc = this.requireDoc(frame);
+    const steps: { parent: { processId: number; routingId: number }; child: string }[] = [];
+    let at: Mount | undefined = doc;
+    while (at !== undefined && at.kind !== "root") {
+      const parentDoc: Mount | undefined = at.parent === undefined ? undefined : this.docOf(this.mounts.get(at.parent)!);
+      if (parentDoc?.frame === undefined) throw new LayerError("the document has no place in a window");
+      steps.unshift({ parent: { processId: parentDoc.frame.processId, routingId: parentDoc.frame.routingId }, child: at.id });
+      at = parentDoc;
+    }
+    return { windowId: doc.windowId, steps };
+  }
+
+  private partIn(frame: FrameRef, mountId: string): Mount {
+    const doc = this.requireDoc(frame);
+    const part = this.mounts.get(mountId);
+    if (part === undefined || this.docOf(part)?.id !== doc.id) throw new LayerError("that part isn't in this document");
+    return part;
+  }
+
+  /** A part offers data for a drag: a single-use token for the drag's data, or the reason it can't. */
+  dragOffer(frame: FrameRef, mountId: string, raw: unknown): { token: string } | { error: string } {
+    const part = this.partIn(frame, mountId);
+    const offer = checkDragOffer(raw, part.plugin?.capabilities ?? new Set());
+    if ("error" in offer) return offer;
+    for (const [t, g] of this.grants) if (this.now() - g.at > DRAG_GRANT_TTL_MS) this.grants.delete(t);
+    const token = this.token();
+    this.grants.set(token, { offer, windowId: part.windowId, at: this.now() });
+    return { token };
+  }
+
+  /** The part a drag was dropped on claims its data: once, within a minute, in the same window, if its plugin may. */
+  dragClaim(frame: FrameRef, mountId: string, token: string): DragOffer | { error: string } {
+    const part = this.partIn(frame, mountId);
+    const grant = this.grants.get(token);
+    this.grants.delete(token);
+    if (grant === undefined || this.now() - grant.at > DRAG_GRANT_TTL_MS || grant.windowId !== part.windowId) return { error: "no such drag" };
+    if (!mayClaim(grant.offer.type, part.plugin?.capabilities ?? new Set())) return { error: "this part's plugin may not hold that" };
+    return grant.offer;
   }
 
   // ----------------------------------------------------------------------------------------------

@@ -242,3 +242,79 @@ describe("safe mode and the registry", () => {
     expect(s.rt.resolve(shell.shellFrame, shell.info.mount, "panel", "diff", { session: "bot" }).items).toEqual([]);
   });
 });
+
+describe("sleeping frames, surfaces, and the brokers' part of the runtime", () => {
+  function withFixtureFrame() {
+    const s = setup(composerFixture());
+    const shell = mountShell(s);
+    const tab = s.rt.resolve(shell.shellFrame, shell.info.mount, "bot.tab", "alpha").items[0]!;
+    const item = s.rt.resolve(shell.shellFrame, tab.mount, "composer").items[0] as { mount: string; url: string };
+    const token = new URL(item.url).searchParams.get("mount")!;
+    s.rt.serveDocument("fixture-composer", token);
+    const child = frame(item.url, shell.shellFrame);
+    s.rt.describe(child, WIN, token);
+    return { s, shell, tab, item, token, child };
+  }
+
+  test("a frame away from the screen sleeps: its document goes, and it wakes with a fresh single-use URL", () => {
+    const { s, shell, tab, item, child } = withFixtureFrame();
+    expect(s.rt.sleep(shell.shellFrame, item.mount)).toBe(true);
+    // The sleeping document can't act any more, and the spot says it sleeps.
+    expect(() => s.rt.reportSize(child, 10)).toThrow();
+    expect(s.rt.resolve(shell.shellFrame, tab.mount, "composer").items[0]).toMatchObject({ kind: "frame", asleep: true, url: "" });
+    const url = s.rt.wake(shell.shellFrame, item.mount)!;
+    const fresh = new URL(url).searchParams.get("mount")!;
+    expect(s.rt.serveDocument("fixture-composer", fresh)).toBeDefined();
+    expect(s.rt.describe(frame(url, shell.shellFrame), WIN, fresh)).toMatchObject({ pluginId: "fixture-composer" });
+    // Only the document that placed it puts it to sleep.
+    expect(() => s.rt.sleep(child, item.mount)).toThrow();
+  });
+
+  test("the surfaces to open: app.surface entries with a window; their roots show only their own entry", () => {
+    const surface = readUiPlugins([folderView(join(FIXTURES, "fixture-surface"))] as never);
+    const s = setup(surface);
+    expect(s.rt.surfaceEntries().map((e) => e.id).sort()).toEqual(["fixture", "island", "pill"]);
+    s.rt.openWindow(7, { material: "none", surface: { id: "fixture", ref: "fixture-surface#fixture" } });
+    const rootFrame = frame("clover-core://app/?surface=fixture");
+    const root = s.rt.describe(rootFrame, 7, undefined);
+    expect(root).toMatchObject({ spot: "app.surface", context: { surface: "fixture" } });
+    const view = s.rt.resolve(rootFrame, root.mount, "app.surface");
+    expect(view.items).toMatchObject([{ kind: "frame", ref: "fixture-surface#fixture", layer: "fixture-surface" }]);
+    const url = (view.items[0] as { url: string }).url;
+    const token = new URL(url).searchParams.get("mount")!;
+    s.rt.serveDocument("fixture-surface", token);
+    const doc = frame(url, rootFrame);
+    s.rt.describe(doc, 7, token);
+    // That document steers its window; the main window's shell doesn't steer any surface.
+    expect(s.rt.surfaceOf(doc)).toBe(7);
+    expect(s.rt.surfaceOf(mountShell(s).shellFrame)).toBeUndefined();
+    // In safe mode only clover's surfaces open.
+    expect(setup(surface, { safeMode: true }).rt.surfaceEntries().map((e) => e.id).sort()).toEqual(["island", "pill"]);
+  });
+
+  test("the menu broker learns a frame's place from each document above it", () => {
+    const { s, shell, item, child } = withFixtureFrame();
+    const place = s.rt.placeOf(child);
+    expect(place.windowId).toBe(WIN);
+    expect(place.steps.map((x) => x.child)).toEqual([shell.info.mount, item.mount]);
+    expect(place.steps[0]!.parent).toEqual({ processId: s.rootFrame.processId, routingId: s.rootFrame.routingId });
+    expect(place.steps[1]!.parent).toEqual({ processId: shell.shellFrame.processId, routingId: shell.shellFrame.routingId });
+  });
+
+  test("drag grants: offered by a part whose plugin may hand it out, claimed once, by a part whose plugin may hold it", () => {
+    const { s, shell, tab, child, item } = withFixtureFrame();
+    // The fixture composer has no capabilities: plain text only.
+    expect(s.rt.dragOffer(child, item.mount, { type: "application/x-clover-file", data: { path: "a" } })).toHaveProperty("error");
+    const text = s.rt.dragOffer(child, item.mount, { type: "text/plain", data: "hello" });
+    expect(text).toHaveProperty("token");
+    const token = (text as { token: string }).token;
+    expect(s.rt.dragClaim(shell.shellFrame, tab.mount, token)).toEqual({ type: "text/plain", data: "hello" });
+    expect(s.rt.dragClaim(shell.shellFrame, tab.mount, token)).toHaveProperty("error");
+    // A part of another document can't offer for this one.
+    expect(() => s.rt.dragOffer(child, tab.mount, { type: "text/plain", data: "x" })).toThrow();
+    // The conversation (conversation.read) offers a message; the composer's plugin may not hold one.
+    const convo = s.rt.resolve(shell.shellFrame, tab.mount, "conversation").items[0]!;
+    const msg = s.rt.dragOffer(shell.shellFrame, convo.mount, { type: "application/x-clover-message", data: { id: "m1" } }) as { token: string };
+    expect(s.rt.dragClaim(child, item.mount, msg.token)).toHaveProperty("error");
+  });
+});

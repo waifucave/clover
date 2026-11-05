@@ -61,6 +61,7 @@ function mount(item: { mount: string; url: string; ref: string; layer: string })
   frame.title = item.ref;
   frame.dataset.cloverEntry = item.ref;
   frame.dataset.cloverLayer = item.layer;
+  frame.dataset.cloverMount = item.mount;
   frame.setAttribute("allow", "");
   frame.referrerPolicy = "no-referrer";
   stage.replaceChildren(frame);
@@ -88,6 +89,12 @@ async function render(): Promise<void> {
 
 function onMessage(m: LayerMessage): void {
   if (m.type === "respot") void render();
+  if (m.type === "rect-query") {
+    // The menu broker asks where the frame is in the window.
+    const el = Array.from(stage.querySelectorAll("iframe")).find((f) => f.dataset.cloverMount === m.child);
+    const b = el?.getBoundingClientRect();
+    bridge.rectReply(m.id, b === undefined ? null : { x: b.x, y: b.y, width: b.width, height: b.height });
+  }
   if (m.type === "tokens" && m.tokens[info.mount] !== undefined) applyTokens(m.tokens[info.mount]!);
   if (m.type === "child-gone" && m.child === shown?.mount) {
     const child = m.child;

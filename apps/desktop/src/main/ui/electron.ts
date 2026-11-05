@@ -3,9 +3,11 @@
 // design, with decision 94 (stock Electron) and the E-M0 review: the WebRTC UDP policy on every window, no PAC.
 import { readFileSync } from "node:fs";
 import { join, normalize } from "node:path";
+import { randomBytes } from "node:crypto";
 import { app, ipcMain, protocol, webFrameMain, BrowserWindow, type IpcMainEvent, type IpcMainInvokeEvent, type Session, type WebContents, type WebFrameMain } from "electron";
 import type { LayerMessage } from "@waifucave/clover-plugin-sdk/ui/bridge";
 import { CORE_CSP, CORE_SCHEME, LAYER_SCHEME, SEALED_SCHEME, commonHeaders, layerDocument, layerHeaders } from "./documents";
+import { checkMenu, menuPoint, type MenuItem, type Rect } from "./brokers";
 import { isInside, mediaType, pluginFile } from "./files";
 import { LayerError, type FrameRef, type UiRuntime } from "./runtime";
 
@@ -175,6 +177,16 @@ export interface IpcHooks {
   frameMetrics(windowId: number, m: { top: number; start: number; end: number }): void;
   /** A command from the root (restart normally, open the plugin manager…). */
   rootCommand(windowId: number, name: string): void;
+  /** A surface window's own request: show or hide, its size, where it takes clicks. */
+  surface(windowId: number, request: Record<string, unknown>): void;
+  /** Shows a checked menu at a point in the window; the id picked, or null. */
+  menu(windowId: number, items: MenuItem[], point: { x: number; y: number }): Promise<string | null>;
+}
+
+function rect(v: unknown): Rect | undefined {
+  if (v === null || typeof v !== "object") return undefined;
+  const { x, y, width, height } = v as Record<string, unknown>;
+  return [x, y, width, height].every((n) => typeof n === "number" && Number.isFinite(n)) ? { x: x as number, y: y as number, width: width as number, height: height as number } : undefined;
 }
 
 /** The IPC the preload's bridge speaks. Every call is bound to its sender's frame. */
@@ -233,6 +245,63 @@ export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: stri
     if (!Array.isArray(a.mounts)) return;
     runtime.release(sender(event).frame, a.mounts.filter((m): m is string => typeof m === "string").slice(0, 1000));
   });
+  on("clover:sleep", (event, a) => {
+    const child = str(a.child, 32);
+    if (child !== undefined) runtime.sleep(sender(event).frame, child);
+  });
+  handle("clover:wake", (event, a) => {
+    const child = str(a.child, 32);
+    return child === undefined ? undefined : runtime.wake(sender(event).frame, child);
+  });
+  on("clover:surface", (event, a) => {
+    const id = runtime.surfaceOf(sender(event).frame);
+    if (id !== undefined) hooks.surface(id, a);
+  });
+  // The menu broker: where the asking frame sits, from each document above it, then the menu at that point.
+  const rects = new Map<string, { from: string; resolve: (r: Rect | undefined) => void }>();
+  on("clover:rect-reply", (event, a) => {
+    const id = str(a.id, 64);
+    const f = event.senderFrame;
+    const waiting = id === undefined ? undefined : rects.get(id);
+    if (waiting === undefined || f === null || `${f.processId}:${f.routingId}` !== waiting.from) return;
+    rects.delete(id!);
+    waiting.resolve(rect(a.rect));
+  });
+  const askRect = (parent: { processId: number; routingId: number }, child: string) => new Promise<Rect | undefined>((resolve) => {
+    const id = randomBytes(12).toString("hex");
+    const timer = setTimeout(() => {
+      rects.delete(id);
+      resolve(undefined);
+    }, 1000);
+    rects.set(id, { from: `${parent.processId}:${parent.routingId}`, resolve: (r) => {
+      clearTimeout(timer);
+      resolve(r);
+    } });
+    runtime.send(parent, { type: "rect-query", id, child });
+  });
+  handle("clover:menu", async (event, a) => {
+    const s = sender(event);
+    const mount = str(a.mount, 32);
+    const checked = checkMenu(a);
+    if ("error" in checked) throw new LayerError(checked.error);
+    const place = runtime.placeOf(s.frame);
+    const chain = await Promise.all(place.steps.map((step) => askRect(step.parent, step.child)));
+    if (chain.some((r) => r === undefined)) throw new LayerError("the frame's place in the window isn't known");
+    const point = menuPoint({ x: typeof a.x === "number" ? a.x : 0, y: typeof a.y === "number" ? a.y : 0 }, chain as Rect[]);
+    if (point === undefined) throw new LayerError("no place for the menu");
+    return hooks.menu(place.windowId, checked.items, point);
+  });
+  handle("clover:drag-offer", (event, a) => {
+    const mount = str(a.mount, 32);
+    if (mount === undefined) throw new LayerError("bad request");
+    return runtime.dragOffer(sender(event).frame, mount, a.offer);
+  });
+  handle("clover:drag-claim", (event, a) => {
+    const mount = str(a.mount, 32);
+    const token = str(a.token, 128);
+    if (mount === undefined || token === undefined) throw new LayerError("bad request");
+    return runtime.dragClaim(sender(event).frame, mount, token);
+  });
   // The root's own calls: only from a window's main frame on the core's origin.
   const fromRoot = (event: IpcMainEvent): number | undefined => {
     const f = event.senderFrame;
@@ -251,8 +320,8 @@ export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: stri
   });
 
   return () => {
-    for (const c of ["clover:describe", "clover:resolve", "clover:reload"]) ipcMain.removeHandler(c);
-    for (const c of ["clover:props", "clover:callback", "clover:size", "clover:release", "clover:frame-metrics", "clover:root-command"]) ipcMain.removeAllListeners(c);
+    for (const c of ["clover:describe", "clover:resolve", "clover:reload", "clover:wake", "clover:menu", "clover:drag-offer", "clover:drag-claim"]) ipcMain.removeHandler(c);
+    for (const c of ["clover:props", "clover:callback", "clover:size", "clover:release", "clover:sleep", "clover:surface", "clover:rect-reply", "clover:frame-metrics", "clover:root-command"]) ipcMain.removeAllListeners(c);
   };
 }
 

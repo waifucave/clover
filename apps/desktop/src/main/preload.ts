@@ -30,6 +30,13 @@ if (isRoot || isLayer) {
     reportSize: (height) => ipcRenderer.send("clover:size", { height }),
     release: (mounts) => ipcRenderer.send("clover:release", { mounts: [...mounts] }),
     reload: (child) => ipcRenderer.invoke("clover:reload", { child }),
+    sleep: (child) => ipcRenderer.send("clover:sleep", { child }),
+    wake: (child) => ipcRenderer.invoke("clover:wake", { child }),
+    rectReply: (id, rect) => ipcRenderer.send("clover:rect-reply", { id, rect }),
+    menu: (mount, items, x, y) => ipcRenderer.invoke("clover:menu", { mount, items, x, y }),
+    surface: (request) => ipcRenderer.send("clover:surface", request),
+    dragOffer: (mount, offer) => ipcRenderer.invoke("clover:drag-offer", { mount, offer }),
+    dragClaim: (mount, token) => ipcRenderer.invoke("clover:drag-claim", { mount, token }),
     onMessage: (listener) => {
       listeners.add(listener);
       return () => listeners.delete(listener);

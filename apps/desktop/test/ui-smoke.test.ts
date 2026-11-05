@@ -59,7 +59,9 @@ function smoke(executable: string, args: string[], registry: string, extra: Reco
 function expectShell(r: ReturnType<typeof smoke>): Frame {
   expect(r.facts, r.output).toBeDefined();
   const f = r.facts!;
-  expect(f, r.output).toMatchObject({ ok: true, profile: "dist", appId: "com.waifucave.clover", name: "Clover", windows: 1, visibleWindows: 0, pair: "connected", safeMode: false });
+  expect(f, r.output).toMatchObject({ ok: true, profile: "dist", appId: "com.waifucave.clover", name: "Clover", visibleWindows: 0, pair: "connected", safeMode: false });
+  // The main window, and one per surface (the island and the pill are clover's; they stay hidden).
+  expect(f.windows).toBe(1 + (f.surfaces as unknown[]).length);
   const rootFrame = f.frames.find((x) => x.origin === "clover-core://app");
   const shell = f.frames.find((x) => x.origin === "clover-plugin://clover");
   expect(rootFrame, r.output).toBeDefined();
@@ -99,7 +101,7 @@ beforeAll(() => {
   registries.default = join(work, "default.json");
   registries.fixture = join(work, "fixture.json");
   writeFileSync(registries.default, JSON.stringify({ plugins: base }));
-  writeFileSync(registries.fixture, JSON.stringify({ plugins: [...base, folderView(join(FIXTURES, "fixture-composer"))] }));
+  writeFileSync(registries.fixture, JSON.stringify({ plugins: [...base, folderView(join(FIXTURES, "fixture-composer")), folderView(join(FIXTURES, "fixture-surface"), 1001)] }));
 });
 
 afterAll(() => {
@@ -113,12 +115,12 @@ describe.if(enabled)("the app in Electron (UI test: CI, or locally with a backgr
     const shell = expectShell(r);
     expect(shell.composer).toBe(true);
     expect(shell.text).toContain("Alpha");
-    expect(r.facts!.mounts).toMatchObject({ root: 1, frame: 1 });
+    expect(r.facts!.mounts).toMatchObject({ root: 3, frame: 3 });
     expectBothStopped(r);
   }, 120_000);
 
-  test("a third-party part renders in a layer of its own, in its own process, themed by its tab", () => {
-    const r = smoke(electron(), [root], "fixture", { CLOVER_SMOKE_LAYERS: "1" });
+  test("a third-party part renders in a layer of its own, in its own process, themed by its tab; surfaces and menus go through the core", () => {
+    const r = smoke(electron(), [root], "fixture", { CLOVER_SMOKE_LAYERS: "1", CLOVER_SMOKE_WAIT_TEXT: "Menu:", CLOVER_TEST_MENU_PICK: "second" });
     const shell = expectShell(r);
     const part = r.facts!.frames.find((x) => x.origin === "clover-plugin://fixture-composer");
     expect(part, r.output).toMatchObject({ bridge: "object", node: false, text: "Send" });
@@ -127,7 +129,20 @@ describe.if(enabled)("the app in Electron (UI test: CI, or locally with a backgr
     const alpha = JSON.parse(readFileSync(join(REPO, "plugins", "alpha", "tab", "theme.json"), "utf8")) as { tokens: Record<string, string>; dark?: { tokens: Record<string, string> } };
     const accent = (r.facts!.appearance === "dark" ? alpha.dark?.tokens["color.accent"] : undefined) ?? alpha.tokens["color.accent"];
     if (typeof accent === "string" && accent !== "system") expect(part!.accent.toUpperCase()).toBe(accent.toUpperCase());
-    expect(r.facts!.mounts).toMatchObject({ root: 1, frame: 2 });
+    // Surface windows: one per `app.surface` entry with a window, each with its own root, never shown headless. The
+    // fixture's part sized its window and got its menu's answer through the core.
+    const surfaces = r.facts!.surfaces as { id: string; visible: boolean; bounds: { width: number; height: number }; frames: Frame[] }[];
+    const fixture = surfaces.find((x) => x.id === "fixture");
+    expect(fixture, r.output).toMatchObject({ visible: false, bounds: { width: 360, height: 120 } });
+    const surfaceFrame = fixture!.frames.find((x) => x.origin === "clover-plugin://fixture-surface");
+    expect(surfaceFrame, r.output).toMatchObject({ text: "Menu: second", node: false, bridge: "object" });
+    expect(surfaces.map((x) => x.id).sort()).toEqual(["fixture", "island", "pill"]);
+    expect(r.facts!.mounts).toMatchObject({ root: 4, frame: 5 });
+    for (const x of surfaces) expect(x.visible).toBe(false);
+    // The composer's menu came from a frame inside the shell's frame: placed by each frame's offset, low in the window.
+    const at = [...r.output.matchAll(/menu: 1 item\(s\) at (\d+),(\d+)/g)].map((m) => ({ x: Number(m[1]), y: Number(m[2]) }));
+    expect(at.length, r.output).toBeGreaterThan(0);
+    expect(at[0]!.y).toBeGreaterThan(300);
     expectBothStopped(r);
   }, 120_000);
 

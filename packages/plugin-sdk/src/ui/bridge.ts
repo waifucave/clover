@@ -56,7 +56,18 @@ export type SpotItem =
     tokens?: Readonly<Record<string, TokenValue>>;
     context: MountContext;
   }
-  | { kind: "frame"; mount: string; ref: string; pluginId: string; entryId: string; layer: string; url: string }
+  | {
+    kind: "frame";
+    mount: string;
+    ref: string;
+    pluginId: string;
+    entryId: string;
+    layer: string;
+    /** Empty while the frame sleeps. */
+    url: string;
+    /** The frame is asleep (far from the screen a while); it wakes rebuilt from the core's state. */
+    asleep?: boolean;
+  }
   /** A web page entry (§5.5 "Web pages"): an isolated view, E-M2's. Shown as a placeholder until then. */
   | { kind: "web"; mount: string; ref: string; pluginId: string; entryId: string };
 
@@ -91,7 +102,37 @@ export type LayerMessage =
   /** The window got the focus back after the core's own overlay: restore the element that had it (S9). */
   | { type: "focus-returned" }
   /** An app command from the window's shortcuts or menus (open settings, a new chat…). */
-  | { type: "command"; name: string };
+  | { type: "command"; name: string }
+  /** The core asks where a child frame is in this document's viewport (the menu broker); answered by `rectReply`. */
+  | { type: "rect-query"; id: string; child: string };
+
+/** An item of a menu the core shows for a part (it crosses frames, so the core draws it): data only. */
+export interface MenuItem {
+  id?: string;
+  label?: string;
+  enabled?: boolean;
+  checked?: boolean;
+  type?: "normal" | "separator" | "checkbox";
+  submenu?: MenuItem[];
+}
+
+/** What a surface window (the island, the pill) asks of the core: to show, its size, and where it takes clicks
+ *  (elsewhere clicks pass through to whatever is under it). */
+export interface SurfaceRequest {
+  visible?: boolean;
+  width?: number;
+  height?: number;
+  regions?: readonly { x: number; y: number; width: number; height: number }[];
+}
+
+/** Data a part offers for a drag to another part, through the core (the drag broker). */
+export interface DragOffer {
+  type: "text/plain" | "text/uri-list" | "application/x-clover-file" | "application/x-clover-message";
+  data: unknown;
+}
+
+/** The drag's data type that carries a grant token from the core. */
+export const DRAG_GRANT_TYPE = "application/x-clover-grant";
 
 /** A value handed across a frame's edge in place of a function: the core routes calls back to the parent. */
 export interface CallbackMarker {
@@ -119,6 +160,19 @@ export interface LayerBridge {
   release(mounts: readonly string[]): void;
   /** A fresh single-use URL for a child frame whose layer stopped. */
   reload(child: string): Promise<string | undefined>;
+  /** A child frame far from the screen a while goes to sleep; `wake` brings it back with a fresh single-use URL. */
+  sleep(child: string): void;
+  wake(child: string): Promise<string | undefined>;
+  /** Answers the core's `rect-query`: the child frame's place in this document's viewport. */
+  rectReply(id: string, rect: { x: number; y: number; width: number; height: number } | null): void;
+  /** Shows a menu for the part `mount` at a point in this frame; the id picked, or null. */
+  menu(mount: string, items: readonly MenuItem[], x: number, y: number): Promise<string | null>;
+  /** This document's surface window (only the document a surface window's root placed). */
+  surface(request: SurfaceRequest): void;
+  /** Offers data for a drag from the part `mount`: a token to put in the drag's `DRAG_GRANT_TYPE`. */
+  dragOffer(mount: string, offer: DragOffer): Promise<{ token: string } | { error: string }>;
+  /** Claims a dropped grant for the part `mount`. */
+  dragClaim(mount: string, token: string): Promise<DragOffer | { error: string }>;
   onMessage(listener: (message: LayerMessage) => void): () => void;
 }
 

@@ -17,7 +17,7 @@ import type { PluginApi, Unsubscribe } from "../api/plugin-api";
 import type {
   AppViewProps, CardButtonProps, CardComponents, CardElementProps, CardFieldProps, EntryProps, SpotElementProps, UiApi, UiComponent,
 } from "../api/ui-api";
-import { CALLBACK_KEY, type LayerBridge, type LayerMessage, type MountContext, type MountInfo, type SpotItem, type SpotView } from "./bridge";
+import { CALLBACK_KEY, type DragOffer, type LayerBridge, type LayerMessage, type MenuItem, type MountContext, type MountInfo, type SpotItem, type SpotView, type SurfaceRequest } from "./bridge";
 
 export * from "./bridge";
 export type { AppViewProps, CardButtonProps, CardElementProps, CardFieldProps, EntryProps, SpeechFeed, SpeechFrame, UiApi, UiComponent, UiNode } from "../api/ui-api";
@@ -39,7 +39,12 @@ interface Runtime {
   /** The callbacks each child frame was handed, by child mount. */
   callbacks: Map<string, Map<string, (...args: unknown[]) => unknown>>;
   tokens: Map<string, Readonly<Record<string, TokenValue>>>;
+  /** How long a frame stays away from the screen before it sleeps (§5.5). */
+  sleepAfterMs: number;
 }
+
+/** A frame away from the screen this long sleeps (§5.5: "a layer hidden for a while sleeps"). */
+export const SLEEP_AFTER_MS = 60_000;
 
 let runtime: Runtime | undefined;
 
@@ -49,7 +54,7 @@ function rt(): Runtime {
 }
 
 /** Sets the layer up (the app's layer boot calls it once, before rendering). Not for plugins. */
-export function configureLayer(input: { bridge: LayerBridge; modules?: Record<string, ClientModule>; load?: Runtime["load"] }): void {
+export function configureLayer(input: { bridge: LayerBridge; modules?: Record<string, ClientModule>; load?: Runtime["load"]; sleepAfterMs?: number }): void {
   const r: Runtime = {
     bridge: input.bridge,
     modules: new Map(Object.entries(input.modules ?? {})),
@@ -57,6 +62,7 @@ export function configureLayer(input: { bridge: LayerBridge; modules?: Record<st
     listeners: new Set(),
     callbacks: new Map(),
     tokens: new Map(),
+    sleepAfterMs: input.sleepAfterMs ?? SLEEP_AFTER_MS,
   };
   runtime = r;
   input.bridge.onMessage((m) => {
@@ -71,6 +77,12 @@ export function configureLayer(input: { bridge: LayerBridge; modules?: Record<st
       }
     }
     if (m.type === "focus-returned") restoreFocus();
+    if (m.type === "rect-query") {
+      // The menu broker asks where a child frame is in this document's viewport.
+      const el = typeof document === "undefined" ? undefined : Array.from(document.querySelectorAll("iframe[data-clover-mount]")).find((f) => f.getAttribute("data-clover-mount") === m.child);
+      const b = el?.getBoundingClientRect();
+      r.bridge.rectReply(m.id, b === undefined ? null : { x: b.x, y: b.y, width: b.width, height: b.height });
+    }
     for (const l of r.listeners) l(m);
   });
   trackFocus();
@@ -358,17 +370,67 @@ function InlineItem({ item, parent, spot, spotKey, props }: { item: Extract<Spot
   );
 }
 
-/** A part from another layer: a frame from that plugin's own origin, drawn by its own process. */
+/** Whether an element is near the screen: in its document's viewport or within one viewport of it, while the
+ *  document itself shows (a hidden or minimized window counts as away). */
+function useNear(el: Element | null): boolean {
+  const [near, setNear] = useState(true);
+  const [shown, setShown] = useState(() => typeof document === "undefined" || document.visibilityState !== "hidden");
+  useEffect(() => {
+    const onVisibility = () => setShown(document.visibilityState !== "hidden");
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => document.removeEventListener("visibilitychange", onVisibility);
+  }, []);
+  useEffect(() => {
+    if (el === null || typeof IntersectionObserver === "undefined") return;
+    const io = new IntersectionObserver((entries) => {
+      const last = entries[entries.length - 1];
+      if (last !== undefined) setNear(last.isIntersecting);
+    }, { rootMargin: "100% 100% 100% 100%" });
+    io.observe(el);
+    return () => io.disconnect();
+  }, [el]);
+  return near && shown;
+}
+
+/** A part from another layer: a frame from that plugin's own origin, drawn by its own process. Away from the screen
+ *  for a while, it sleeps: the core drops its document (and the layer's process with its last frame), and it wakes
+ *  rebuilt from the core's state when it comes near again (§5.5). */
 function LayerFrame({ item, props }: { item: Extract<SpotItem, { kind: "frame" }>; props: unknown }) {
   const r = rt();
   const [url, setUrl] = useState(item.url);
+  const [asleep, setAsleep] = useState(item.asleep === true);
   const [height, setHeight] = useState<number | undefined>(undefined);
   const [gone, setGone] = useState<string | undefined>(undefined);
-  useEffect(() => setUrl(item.url), [item.url]);
+  const [el, setEl] = useState<Element | null>(null);
+  const near = useNear(el);
+  useEffect(() => {
+    if (item.url !== "") setUrl(item.url);
+  }, [item.url]);
   useEffect(() => onLayerMessage((m) => {
     if (m.type === "child-size" && m.child === item.mount) setHeight(m.height);
     if (m.type === "child-gone" && m.child === item.mount) setGone(m.reason);
   }), [item.mount]);
+  useEffect(() => {
+    if (gone !== undefined) return;
+    if (asleep) {
+      if (!near) return;
+      let live = true;
+      void r.bridge.wake(item.mount).then((next) => {
+        if (!live || next === undefined) return;
+        setUrl(next);
+        setAsleep(false);
+      });
+      return () => {
+        live = false;
+      };
+    }
+    if (near) return;
+    const timer = setTimeout(() => {
+      r.bridge.sleep(item.mount);
+      setAsleep(true);
+    }, r.sleepAfterMs);
+    return () => clearTimeout(timer);
+  }, [near, asleep, gone, item.mount, r]);
   useEffect(() => {
     const fns = new Map<string, (...args: unknown[]) => unknown>();
     let n = 0;
@@ -379,7 +441,7 @@ function LayerFrame({ item, props }: { item: Extract<SpotItem, { kind: "frame" }
     });
     r.callbacks.set(item.mount, fns);
     r.bridge.setProps(item.mount, encoded);
-  }, [props, item.mount, r]);
+  }, [props, item.mount, r, asleep]);
   useEffect(() => () => {
     r.callbacks.delete(item.mount);
   }, [item.mount, r]);
@@ -390,19 +452,26 @@ function LayerFrame({ item, props }: { item: Extract<SpotItem, { kind: "frame" }
         <button type="button" onClick={() => void r.bridge.reload(item.mount).then((next) => {
           if (next !== undefined) {
             setGone(undefined);
+            setAsleep(false);
             setUrl(next);
           }
         })}>Reload</button>
       </div>
     );
   }
+  if (asleep) {
+    // Keeps its place while it sleeps, so nothing around it moves.
+    return <div ref={setEl} data-clover-entry={item.ref} data-clover-asleep="" style={{ display: "block", width: "100%", height: height === undefined ? undefined : `${height}px` }} />;
+  }
   return (
     <iframe
+      ref={setEl}
       key={url}
       src={url}
       title={item.ref}
       data-clover-entry={item.ref}
       data-clover-layer={item.layer}
+      data-clover-mount={item.mount}
       allow=""
       referrerPolicy="no-referrer"
       style={{ display: "block", border: 0, width: "100%", height: height === undefined ? undefined : `${height}px`, colorScheme: "normal", background: "transparent" }}
@@ -452,6 +521,36 @@ export function usePluginApi(): PluginApi {
       t,
     } as PluginApi;
   }, [part.entry.pluginId, t]);
+}
+
+/** A menu the core shows for this part (it crosses the frame's edge, so the core draws it, natively): data only,
+ *  at a point in this frame's viewport; resolves with the id picked, or null. Not in lane B's declarations yet. */
+export function useMenu(): (items: readonly MenuItem[], at: { x: number; y: number }) => Promise<string | null> {
+  const part = usePart();
+  return useCallback((items: readonly MenuItem[], at: { x: number; y: number }) => rt().bridge.menu(part.mount, items, at.x, at.y), [part.mount]);
+}
+
+/** A surface's window (the island, the pill): show or hide it, size it, and say where it takes clicks. Only the part
+ *  a surface window's root placed steers it. Not in lane B's declarations yet. */
+export function useSurface(): (request: SurfaceRequest) => void {
+  return useCallback((request: SurfaceRequest) => rt().bridge.surface(request), []);
+}
+
+/** Drags between parts through the core (the drag broker): `offer` returns a token for the drag's
+ *  `DRAG_GRANT_TYPE`, `claim` turns a dropped token into the data, if this part's plugin may hold it. Not in lane B's
+ *  declarations yet. */
+export function useDrag(): { offer(offer: DragOffer): Promise<string | undefined>; claim(token: string): Promise<DragOffer | undefined> } {
+  const part = usePart();
+  return useMemo(() => ({
+    offer: async (offer: DragOffer) => {
+      const r = await rt().bridge.dragOffer(part.mount, offer);
+      return "token" in r ? r.token : undefined;
+    },
+    claim: async (token: string) => {
+      const r = await rt().bridge.dragClaim(part.mount, token);
+      return "error" in r ? undefined : r;
+    },
+  }), [part.mount]);
 }
 
 /** Pending cards without their text. Sealed cards come in E-M3: none until then. */

@@ -12,7 +12,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { release as osRelease } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { app, BrowserWindow, Menu, dialog, nativeTheme, powerMonitor, session, shell, systemPreferences, type Input, type MenuItemConstructorOptions } from "electron";
+import { app, BrowserWindow, Menu, dialog, nativeTheme, powerMonitor, screen, session, shell, systemPreferences, type Input, type MenuItemConstructorOptions } from "electron";
 import { CLOVER_PROTOCOL_VERSION, type PairStatus, type UiPluginView, type UiSettings } from "@waifucave/clover-protocol";
 import { systemAccentFromOs } from "@waifucave/clover-plugin-sdk";
 import { appIdentity, daemonHome, parseLaunchArgs, resolveAppProfile, SMOKE_PREFIX, UI_PARTITION } from "./identity";
@@ -23,10 +23,11 @@ import { appHello, readAppToken, readStartInfo } from "./pair/start";
 import { daemonEndpoint, type DaemonClient } from "./protocol/client";
 import { AppTray } from "./tray";
 import { readUiPlugins, type UiPluginExtras } from "./ui/model";
+import { checkRegions, inRegions, surfacePlacement, type MenuItem, type Rect } from "./ui/brokers";
 import { guardContents, hardenSession, installIpc, installUiSession, registerSchemes, startCensus } from "./ui/electron";
 import { UiRuntime } from "./ui/runtime";
 import type { Os } from "./ui/spots";
-import { mainWindowPlan, TITLE_BAR_HEIGHT, webPreferences, windowsHasAcrylic } from "./window";
+import { mainWindowPlan, surfaceWindowPlan, TITLE_BAR_HEIGHT, webPreferences, windowsHasAcrylic } from "./window";
 
 const identity = appIdentity(resolveAppProfile(process.env));
 const args = parseLaunchArgs(process.argv, process.env);
@@ -107,6 +108,8 @@ async function ready(): Promise<void> {
       if (name === "restart-normally") void restart(false);
       if (name === "restart-safe-mode") void restart(true);
     },
+    surface: (id, request) => steerSurface(id, request),
+    menu: (id, items, point) => popupMenu(id, items, point),
   }, log);
   startCensus(runtime);
   syncAppearance();
@@ -182,6 +185,7 @@ async function loadRegistry(client: DaemonClient): Promise<void> {
   if (status?.safeMode === true) runtime.setSafeMode(true);
   runtime.setRegistry(readUiPlugins(ui.plugins, extras));
   runtime.setChoices(settings as never);
+  syncSurfaces();
   await client.request("events.subscribe", { areas: ["plugins", "app"] }).catch(() => undefined);
   log(`layers: ${ui.plugins.length} plugin(s) with UI`);
 }
@@ -307,6 +311,124 @@ async function openMainWindow(): Promise<BrowserWindow | undefined> {
   return win;
 }
 
+// ------------------------------------------------------------------------------------------------
+// Surface windows (`app.surface` entries with a `window`: the island, the pill). Each has its own core root, which
+// mounts its one entry from its plugin's layer. They start hidden; the surface shows itself, sizes itself and says
+// where it takes clicks (elsewhere clicks pass through to whatever is under it). Never shown in a headless run.
+// ------------------------------------------------------------------------------------------------
+
+interface Surface {
+  win: BrowserWindow;
+  ref: string;
+  placement?: string;
+  regions: Rect[];
+  poll?: ReturnType<typeof setInterval>;
+}
+const surfaces = new Map<string, Surface>();
+
+function syncSurfaces(): void {
+  const wanted = runtime.surfaceEntries();
+  for (const [id, s] of [...surfaces]) {
+    if (wanted.some((w) => w.id === id && w.ref === s.ref)) continue;
+    clearInterval(s.poll);
+    surfaces.delete(id);
+    if (!s.win.isDestroyed()) s.win.destroy();
+  }
+  for (const w of wanted) {
+    if (surfaces.has(w.id)) continue;
+    const win = new BrowserWindow(surfaceWindowPlan({
+      surface: w.window,
+      title: `${identity.productName} ${w.id}`,
+      webPreferences: webPreferences({ preload: join(here, "preload.cjs"), partition: UI_PARTITION, headless, offscreen: false }),
+    }));
+    if (process.platform === "darwin") win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+    if (w.window.alwaysOnTop === true) win.setAlwaysOnTop(true, process.platform === "darwin" ? "status" : "floating");
+    const placement = w.window.placement?.[os];
+    const s: Surface = { win, ref: w.ref, regions: [], ...(placement !== undefined ? { placement } : {}) };
+    surfaces.set(w.id, s);
+    const id = win.id;
+    runtime.openWindow(id, { material: "none", surface: { id: w.id, ref: w.ref } });
+    win.on("closed", () => {
+      clearInterval(s.poll);
+      runtime.closeWindow(id);
+      if (surfaces.get(w.id) === s) surfaces.delete(w.id);
+    });
+    place(w.id, s, win.getSize());
+    void win.loadURL(`clover-core://app/?surface=${encodeURIComponent(w.id)}`);
+  }
+}
+
+function place(surface: string, s: Surface, [width, height]: number[]): void {
+  const display = screen.getPrimaryDisplay();
+  s.win.setBounds(surfacePlacement({ surface, ...(s.placement !== undefined ? { placement: s.placement } : {}), size: { width: width!, height: height! }, display: display.bounds, workArea: display.workArea }));
+}
+
+function steerSurface(windowId: number, request: Record<string, unknown>): void {
+  const entry = [...surfaces].find(([, s]) => !s.win.isDestroyed() && s.win.id === windowId);
+  if (entry === undefined) return;
+  const [id, s] = entry;
+  const n = (v: unknown, min: number, max: number) => (typeof v === "number" && Number.isFinite(v) ? Math.round(Math.min(max, Math.max(min, v))) : undefined);
+  const width = n(request.width, 40, 2000);
+  const height = n(request.height, 24, 1400);
+  if (width !== undefined || height !== undefined) {
+    const [w, h] = s.win.getSize();
+    place(id, s, [width ?? w!, height ?? h!]);
+  }
+  if (request.regions !== undefined) {
+    const [w, h] = s.win.getSize();
+    s.regions = checkRegions(request.regions, { width: w!, height: h! });
+  }
+  if (request.visible === true && !headless) s.win.showInactive();
+  if (request.visible === false) s.win.hide();
+  clickThrough(s);
+}
+
+/** Clicks pass through the surface outside its regions: while it shows with regions, the cursor's place decides. */
+function clickThrough(s: Surface): void {
+  clearInterval(s.poll);
+  s.poll = undefined;
+  if (s.win.isDestroyed() || !s.win.isVisible() || s.regions.length === 0) {
+    if (!s.win.isDestroyed()) s.win.setIgnoreMouseEvents(false);
+    return;
+  }
+  let ignoring: boolean | undefined;
+  const tick = () => {
+    if (s.win.isDestroyed()) return;
+    const c = screen.getCursorScreenPoint();
+    const b = s.win.getBounds();
+    const over = inRegions({ x: c.x - b.x, y: c.y - b.y }, s.regions);
+    if (ignoring !== !over) {
+      ignoring = !over;
+      s.win.setIgnoreMouseEvents(ignoring, { forward: true });
+    }
+  };
+  tick();
+  s.poll = setInterval(tick, 50);
+}
+
+/** The menu broker's last step: a native menu at the point, in the window the asking frame is in. A headless run
+ *  never shows it: it answers with `CLOVER_TEST_MENU_PICK` (the tests), else nothing. */
+function popupMenu(windowId: number, items: MenuItem[], point: { x: number; y: number }): Promise<string | null> {
+  const win = BrowserWindow.fromId(windowId);
+  if (win === null || win.isDestroyed()) return Promise.resolve(null);
+  if (headless || !win.isVisible()) {
+    log(`menu: ${items.length} item(s) at ${point.x},${point.y} (not shown: headless)`);
+    return Promise.resolve(process.env.CLOVER_TEST_MENU_PICK ?? null);
+  }
+  return new Promise((resolve) => {
+    let picked: string | null = null;
+    const build = (list: MenuItem[]): MenuItemConstructorOptions[] => list.map((it) => (it.type === "separator"
+      ? { type: "separator" }
+      : {
+        label: it.label ?? "",
+        enabled: it.enabled !== false,
+        ...(it.type === "checkbox" ? { type: "checkbox" as const, checked: it.checked === true } : {}),
+        ...(it.submenu !== undefined ? { submenu: build(it.submenu) } : { click: () => (picked = it.id ?? null) }),
+      }));
+    Menu.buildFromTemplate(build(items)).popup({ window: win, x: point.x, y: point.y, callback: () => setTimeout(() => resolve(picked), 0) });
+  });
+}
+
 /** The app's shortcuts, ahead of every layer (S9: the host owns them through `before-input-event`). macOS's come
  *  from the menu's accelerators. */
 function shortcut(event: Electron.Event, input: Input, win: BrowserWindow): void {
@@ -384,22 +506,32 @@ async function smoke(): Promise<void> {
     text: (document.body.innerText || "").slice(0, 200),
   }))()`;
   type Probe = { origin: string; node: boolean; bridge: string; shell: boolean; sidebar: boolean; conversation: boolean; composer: boolean; frames: number; rendered: boolean; accent: string; insetTop: string; text: string };
-  let frames: (Probe & { url: string; osPid: number })[] = [];
-  while (Date.now() < deadline) {
-    frames = [];
-    for (const f of win.webContents.mainFrame.framesInSubtree) {
+  type Probed = Probe & { url: string; osPid: number };
+  const probeWindow = async (w: BrowserWindow): Promise<Probed[]> => {
+    const out: Probed[] = [];
+    for (const f of w.webContents.mainFrame.framesInSubtree) {
       try {
-        frames.push({ ...(await f.executeJavaScript(probe, true) as Probe), url: f.url.replace(/mount=[0-9a-f]+/, "mount=…"), osPid: f.osProcessId });
+        out.push({ ...(await f.executeJavaScript(probe, true) as Probe), url: f.url.replace(/mount=[0-9a-f]+/, "mount=…"), osPid: f.osProcessId });
       } catch {
         // A frame still loading.
       }
     }
+    return out;
+  };
+  let frames: Probed[] = [];
+  let surfaceFacts: { id: string; visible: boolean; bounds: Rect; frames: Probed[] }[] = [];
+  const waitText = process.env.CLOVER_SMOKE_WAIT_TEXT;
+  while (Date.now() < deadline) {
+    frames = await probeWindow(win);
+    surfaceFacts = [];
+    for (const [id, s] of surfaces) if (!s.win.isDestroyed()) surfaceFacts.push({ id, visible: s.win.isVisible(), bounds: s.win.getBounds(), frames: await probeWindow(s.win) });
     const shell = frames.find((f) => f.origin === "clover-plugin://clover");
     const wanted = Number(process.env.CLOVER_SMOKE_LAYERS ?? "0");
     const layers = frames.filter((f) => f.origin.startsWith("clover-plugin://"));
     const others = new Set(layers.filter((f) => f.origin !== "clover-plugin://clover").map((f) => f.origin));
-    // Every layer's part has drawn, and as many other layers as the run expects are there.
-    if (shell?.shell && shell.composer && others.size >= wanted && layers.every((f) => f.rendered)) break;
+    const texts = [...frames, ...surfaceFacts.flatMap((x) => x.frames)].map((f) => f.text);
+    // Every layer's part has drawn, as many other layers as the run expects are there, and any text it waits for.
+    if (shell?.shell && shell.composer && others.size >= wanted && layers.every((f) => f.rendered) && (waitText === undefined || texts.some((t) => t.includes(waitText)))) break;
     await new Promise((r) => setTimeout(r, 250));
   }
   const metrics = app.getAppMetrics();
@@ -433,6 +565,7 @@ async function smoke(): Promise<void> {
     material: runtime ? (process.platform === "darwin" ? "vibrancy" : process.platform === "win32" ? (windowsHasAcrylic(osRelease()) ? "acrylic" : "none") : "none") : "none",
     frames: frames.map((f) => ({ ...f, sandboxed: metrics.find((m) => m.pid === f.osPid)?.sandboxed ?? null })),
     mounts: runtime.stats(),
+    surfaces: surfaceFacts,
     captured,
   });
   if (process.env.CLOVER_SMOKE_KEEP === "1") return;

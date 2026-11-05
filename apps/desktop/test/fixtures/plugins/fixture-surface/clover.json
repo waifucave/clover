@@ -1,0 +1,11 @@
+{
+  "manifest": 1,
+  "id": "fixture-surface",
+  "name": "Fixture surface",
+  "description": "A third-party surface for the app's tests: an overlay window of its own that sizes itself, takes clicks in one region and asks the core for a menu.",
+  "engines": { "clover": "^1.0.0" },
+  "client": { "entry": "client/index.js" },
+  "contributes": {
+    "ui": [{ "spot": "app.surface", "id": "fixture", "component": "FixtureSurface", "window": { "type": "overlay", "alwaysOnTop": true, "transparent": true } }]
+  }
+}
