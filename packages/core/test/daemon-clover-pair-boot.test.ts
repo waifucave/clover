@@ -6,6 +6,7 @@ import { CLOVER_PROTOCOL_VERSION, ConnWriter, encodeLine, LineDecoder, METHODS, 
 import { startDaemon, type RunningDaemon } from "../src/daemon";
 import { FileSecretStore } from "../src/auth/secret-store";
 import { cloverCall } from "../src/ipc/clover-client";
+import { checkDaemonServer } from "../src/platform/server-check";
 
 // C-M1 on a real daemon: the app token in the run directory, an `app` hello through the caller check
 // (this test process is outside every floor), the pair's methods, and the pair's quit ending the run.
@@ -36,6 +37,7 @@ describe("the daemon's Clover side, booted", () => {
     expect(existsSync(tokenFile)).toBe(true);
     if (process.platform !== "win32") expect(statSync(tokenFile).mode & 0o777).toBe(0o600);
     expect(daemon.pair?.launcher).toBeNull(); // no app installed for a test daemon: it runs alone
+    expect(await checkDaemonServer(daemon.socketPath)).toMatchObject({ ok: true }); // what the app runs before its hello
     const c = await rpc(daemon.socketPath);
     const hello = await c.request(METHODS.hello, { protocolVersion: CLOVER_PROTOCOL_VERSION, role: "app", token: readFileSync(tokenFile, "utf8"), clientName: "test-app", features: ["app.quit"] });
     expect(hello.error).toBeUndefined();

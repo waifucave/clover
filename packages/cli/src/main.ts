@@ -1,7 +1,7 @@
 import { join, resolve } from "node:path";
 import { homedir } from "node:os";
 import { existsSync, readFileSync, mkdirSync } from "node:fs";
-import { resolveCloverHome, isDefaultCloverHome, OtherInstallHomeRefused, KeychainSecretStore, startDaemon, TOKEN_NAMES, loadSettings, CORE_VERSION, runWorkflowSubprocess, runAutomationWorker, AUTOMATION_WORKER_ARG, processSatisfiesRequirement, runRuntimeWorkflowWorker, RUNTIME_WORKFLOW_WORKER_ARG, runRuntimeStateProbe, runRuntimesProbe, keychainUnlocked, processStartSecondsViaSysctl, runEmbeddedProbe, runDevKeychainAdopt, DEV_KEYCHAIN_ADOPT_ARG, resolveCloverProfile, splitTag, sdkLocalMcpServers, installCloverProcessIdentity, loginEnable, loginDisable, loginRemove, loginStatus, liveLoginOsDeps, superviseLoop, startDaemonThroughOs, windowsUserSid, stopDaemonCleanly, stopThroughOs, cloverCall, bunRunner, resolveEndpoint, endpointPresent, endpointAnswers, type LoginSpec, type DaemonRun, type DaemonStartResult } from "@waifucave/clover-core";
+import { resolveCloverHome, isDefaultCloverHome, OtherInstallHomeRefused, KeychainSecretStore, startDaemon, TOKEN_NAMES, loadSettings, CORE_VERSION, runWorkflowSubprocess, runAutomationWorker, AUTOMATION_WORKER_ARG, processSatisfiesRequirement, runRuntimeWorkflowWorker, RUNTIME_WORKFLOW_WORKER_ARG, runRuntimeStateProbe, runRuntimesProbe, keychainUnlocked, processStartSecondsViaSysctl, runEmbeddedProbe, runDevKeychainAdopt, DEV_KEYCHAIN_ADOPT_ARG, resolveCloverProfile, splitTag, sdkLocalMcpServers, installCloverProcessIdentity, loginEnable, loginDisable, loginRemove, loginStatus, liveLoginOsDeps, superviseLoop, startDaemonThroughOs, windowsUserSid, stopDaemonCleanly, stopThroughOs, cloverCall, checkDaemonServer, bunRunner, resolveEndpoint, endpointPresent, endpointAnswers, type LoginSpec, type DaemonRun, type DaemonStartResult } from "@waifucave/clover-core";
 import type { CredentialRow, SecretStore, Settings } from "@waifucave/clover-core";
 import { METHODS, type ApprovalPolicy, type Task } from "@waifucave/clover-protocol";
 import { POLICY_ORDER } from "./tui/policy-order";
@@ -2728,6 +2728,16 @@ if (import.meta.main) {
     await runDaemonStart();
     break;
   }
+  case "daemon check-server": {
+    // Before a client sends its token: is this home's endpoint served by this user's daemon (and,
+    // with --image, by that binary)? The app runs it before its hello (E-M1's review). Exit 0 when ok.
+    const rest = process.argv.slice(4);
+    const at = rest.indexOf("--image");
+    const r = await checkDaemonServer(socketPath(), at >= 0 && rest[at + 1] ? { image: rest[at + 1] } : {});
+    console.log(rest.includes("--json") ? JSON.stringify(r) : r.ok ? "ok" : `not ok: ${r.reason}`);
+    process.exitCode = r.ok ? 0 : 1;
+    break;
+  }
   case "login": {
     const { KeychainSecretStore, CodexAuthStore, runLoginFlow, CODEX, writeOpenAiApiKey, EXA_API_KEY_SECRET, OPENAI_API_KEY_SECRET: OPENAI_API_KEY_SECRET_LOGIN, profileDisplayName } = await import("@waifucave/clover-core");
     console.log(`${AQUA}${profileDisplayName()} login${RESET}`);
@@ -3386,7 +3396,7 @@ if (import.meta.main) {
   }
   default:
     console.log(`clover ${CORE_VERSION} — commands:
-  daemon run | daemon start | autostart enable|disable|remove|status [--app <path>] (daemon install|uninstall|status are aliases) | supervise
+  daemon run | daemon start | daemon check-server [--json] [--image <path>] | autostart enable|disable|remove|status [--app <path>] (daemon install|uninstall|status are aliases) | supervise
   ping | sessions | status | quota | send <sessionId|new> <text> | watch <sessionId> | add-dir <sessionId> <path> [--persist] | cd <sessionId> <path>
   steer <sessionId> <text> | interrupt <sessionId> | compact <sessionId>
   doctor [--repair <op> [--session <id>] [--backend <uuid>] [--backup <path>]]   runtime-state diagnostics and repair (runs without a daemon)
