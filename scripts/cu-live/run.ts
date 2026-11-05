@@ -366,11 +366,11 @@ async function topDelta(pid: number, windows: number, seconds: number): Promise<
 async function startLiveDaemon(built: Pick<Built, "daemon">, home: string): Promise<{ proc: LineProcess<Record<string, unknown>>; socket: string; pid: number }> {
   const env: Record<string, string> = {};
   for (const [k, v] of Object.entries(process.env)) if (v !== undefined && !k.startsWith("CLOVER_")) env[k] = v;
-  const winter = process.env.CLOVER_RUNTIME_EXECUTABLE ?? resolvePlatformPackageWinter();
-  if (winter === undefined) throw new Error("no `winter` runtime (the npm platform package) — run `bun install`, or set CLOVER_RUNTIME_EXECUTABLE");
+  const winterBin = process.env.CLOVER_RUNTIME_EXECUTABLE ?? resolvePlatformPackageWinter();
+  if (winterBin === undefined) throw new Error("no `winter` runtime (the npm platform package) — run `bun install`, or set CLOVER_RUNTIME_EXECUTABLE");
   Object.assign(env, {
-    CLOVER_HOME: home, CLOVER_PROFILE: "dev", WINTER_CU_LIVE_TESTS: "1", CLOVER_RUNTIME_EXECUTABLE: winter, TMPDIR: `${userTempDir()}/`,
-    CLOVER_LOGIN_SHELL_PATH: "off", CLOVER_KEYCHAIN_SERVICE: `com.winter.core.test-cu-live-${randomBytes(6).toString("hex")}`,
+    CLOVER_HOME: home, CLOVER_PROFILE: "dev", WINTER_CU_LIVE_TESTS: "1", CLOVER_RUNTIME_EXECUTABLE: winterBin, TMPDIR: `${userTempDir()}/`,
+    CLOVER_LOGIN_SHELL_PATH: "off", CLOVER_KEYCHAIN_SERVICE: `com.waifucave.clover.core.test-cu-live-${randomBytes(6).toString("hex")}`,
     // Never the user's own Codex / Claude Code / Antigravity / OpenCode, nor the background plan beat (the daemon entry
     // also injects `USAGE_INERT` itself).
     ...USAGE_INERT_ENV,

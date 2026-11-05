@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import { OTHER_INSTALL_HOMES } from "../../src/other-installs";
 import { chmodSync, existsSync, linkSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync, openSync, closeSync, constants } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -34,8 +35,8 @@ describe("the Coordination directory and the installation id", () => {
     symlinkSync(fresh, join(root, "link"));
     expect(code(() => ensurePrivateDirectory(join(root, "link")))).toBe("directory_path_alias");
   });
-  test("any .clover component, in any case, is refused before anything is created", () => {
-    for (const bad of ["/Users/x/.clover/coord", "/Users/x/.clover-dev/c", "/Users/x/.CLOVER/c", "/tmp/.Clover-x/y"]) expect(code(() => assertOutsideCloverHomes(bad))).toBe("path_inside_clover_home");
+  test("any .clover component, or another install's home, in any case, is refused before anything is created", () => {
+    for (const bad of ["/Users/x/.clover/coord", "/Users/x/.clover-dev/c", "/Users/x/.CLOVER/c", "/tmp/.Clover-x/y", ...OTHER_INSTALL_HOMES.map((o) => `/Users/x/${o.dir.toUpperCase()}/c`)]) expect(code(() => assertOutsideCloverHomes(bad))).toBe("path_inside_clover_home");
     expect(() => assertOutsideCloverHomes("/Users/x/Library/Application Support/Winter/Coordination/cowork-receipts")).not.toThrow();
   });
   test("the coordination directory must be disjoint from the Clover home: not the home, not inside it, not above it, even through a symlink", () => {

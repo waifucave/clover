@@ -83,11 +83,17 @@ Two rules worth stating outright:
 
 1. **Plain `clover` is the distribution CLI** (and plain `winter` is Winter's). With a dead socket
    it *auto-launches the dist app*.
-   Use `clover-dev`, or a temporary `CLOVER_HOME` with a manually-spawned daemon:
+   Use `clover-dev` and `bun run dev:daemon` (the signed dev binary on `~/.clover-dev`), or a daemon
+   from the checkout on a throwaway home and a throwaway Keychain service:
 
    ```sh
-   CLOVER_HOME=~/.clover-dev CLOVER_PROFILE=dev bun src/main.ts daemon run
+   cd packages/cli
+   CLOVER_HOME="$(mktemp -d)" CLOVER_PROFILE=dev CLOVER_KEYCHAIN_SERVICE=com.waifucave.clover.core.scratch bun src/main.ts daemon run
    ```
+
+   Never run a daemon or the CLI from the checkout under plain `bun` on `~/.clover-dev`: after the
+   dev daemon's one-time `--transition`, the dev Keychain items trust only the signed dev binary,
+   and plain `bun` is prompted for every one.
 
 2. **After any change under `packages/`, restart the daemon**, not just a client. A client-only
    relaunch is a silent no-op for daemon code.
@@ -165,8 +171,9 @@ never pass either one; a security test pins that.
   it only via `bun run version:bump` (patch) / `version:bump:feature` / `version:bump:major` /
   `version:sync`. Never hand-edit a version in a `package.json` or plist.
 - **Minimum OS targets track the latest major Apple OS.** No legacy compatibility shims.
-- **`packages/core/src/providers/codex-config.ts` self-identifies as `originator: "clover"`.** That's
-  a deliberate terms-of-service decision. Don't "fix" it to a first-party value.
+- **Codex's `originator` is `"clover"`.** That's a deliberate terms-of-service decision. Don't "fix" it
+  to a first-party value. The value sent is `codexOriginator` in `packages/core/src/runtime-sdk/brand.ts`
+  (every session's brand, and the process-wide identity `runtime-sdk/process-identity.ts` installs).
 - The Sparkle public key in `apple/Winter/project.yml` is Winter's production key, which its live update
   feed depends on. Its private half exists only in one login Keychain and is committed nowhere.
 

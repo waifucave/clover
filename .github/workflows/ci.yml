@@ -14,7 +14,7 @@ concurrency:
 
 jobs:
   # The TypeScript workspaces. Split per package so a failure names the layer it came from.
-  # NOTE: the Swift side (WinterProtocol / WinterKit / the Clover app) is deliberately NOT built here —
+  # NOTE: the Swift side (WinterProtocol / WinterKit / the retired Mac app) is deliberately NOT built here —
   # it depends on ~480 MB of vendored artifacts (CEF, Monaco, iroh) that are fetched, not committed.
   # Those are covered by the local build; see CONTRIBUTING.md.
   test:
@@ -70,15 +70,15 @@ jobs:
         working-directory: extensions/winter-for-chrome
         run: bun test
 
-  # P9a-8: the `winter-binary` job (P8b-2: build clover from the pinned-tag SDK checkout, upload
-  # as an artifact, every consumer downloads it) is DELETED — clover's ONLY source is the installed
+  # P9a-8: the `winter-binary` job (P8b-2: build the `winter` binary from the pinned-tag SDK
+  # checkout, upload it as an artifact, every consumer downloads it) is DELETED — its ONLY source is the installed
   # npm platform package (`@yanlinglabs/winter-agent-sdk-darwin-arm64`, an optional dependency of
   # the wrapper that `bun install` resolves on darwin-arm64; published at v0.0.5). The 0.0.5 pin
   # flip removed the dated checkout+build fallback blocks and the `versions` job they consumed;
-  # each job that needs `clover` now FAILS LOUDLY if the package did not install.
+  # each job that needs the `winter` binary now FAILS LOUDLY if the package did not install.
 
   # core is split OUT of the matrix above rather than given `needs:` on it, so the other three
-  # entries stay independent of the clover build: a broken/slow SDK checkout must not hold up the
+  # entries stay independent of the `winter` binary's build: a broken/slow SDK checkout must not hold up the
   # protocol, plugin-sdk and cli suites (a matrix-level `needs` would gate all four).
   #
   # CLOVER_RUNTIME_REQUIRE_BINARY=1 is the point of the download: without it, every test that needs a
@@ -110,7 +110,7 @@ jobs:
           echo "bin=${BIN}" >> "$GITHUB_OUTPUT"
           if [ -n "$BIN" ]; then echo "present=true" >> "$GITHUB_OUTPUT"; else echo "::error::the winter platform package (@yanlinglabs/winter-agent-sdk-darwin-arm64 at REQUIRED_WINTER_AGENT_SDK) did not install — bun install is the ONLY winter source since the 0.0.5 pin flip (P9a-8)"; exit 1; fi
 
-      - name: Use the installed platform package's clover (P9a-8 — the strong row-16 path)
+      - name: Use the installed platform package's winter binary (P9a-8 — the strong row-16 path)
         run: |
           mkdir -p dist
           cp "${{ steps.clover-package.outputs.bin }}" dist/winter
@@ -138,7 +138,7 @@ jobs:
   # CloverClient round-trips create sessions, every session is a spawned `winter` child (P8b-2: no
   # binary ⇒ a typed refusal, never a fallback), so the job downloads the built binary and REQUIRES
   # it — without `CLOVER_RUNTIME_REQUIRE_BINARY=1` those tests would skip and CI would go green by
-  # proving nothing. protocol and plugin-sdk stay independent of the clover build.
+  # proving nothing. protocol and plugin-sdk stay independent of the `winter` binary's build.
   test-cli:
     name: test · cli
     runs-on: macos-latest
@@ -164,7 +164,7 @@ jobs:
           echo "bin=${BIN}" >> "$GITHUB_OUTPUT"
           if [ -n "$BIN" ]; then echo "present=true" >> "$GITHUB_OUTPUT"; else echo "::error::the winter platform package (@yanlinglabs/winter-agent-sdk-darwin-arm64 at REQUIRED_WINTER_AGENT_SDK) did not install — bun install is the ONLY winter source since the 0.0.5 pin flip (P9a-8)"; exit 1; fi
 
-      - name: Use the installed platform package's clover (P9a-8 — the strong row-16 path)
+      - name: Use the installed platform package's winter binary (P9a-8 — the strong row-16 path)
         run: |
           mkdir -p dist
           cp "${{ steps.clover-package.outputs.bin }}" dist/winter
@@ -356,7 +356,7 @@ jobs:
         run: swift test --scratch-path "$RUNNER_TEMP/launcher-build-test" -Xswiftc -DWINTER_COWORK_TEST_BUILD
 
   # Winter Phase 8d (P8d-5): the compiled-binary proofs, on the macOS runner, after the pinned
-  # `clover` artifact is available — `verify:runtimes` needs it (via stageRuntimes' `winterPath`
+  # `winter` binary is available — `verify:runtimes` needs it (via stageRuntimes' `winterPath`
   # rung) exactly as `test-core`/`test-cli` do, and `verify:workflow`/`verify:runtime-state` are
   # cheap to run alongside it in the same job rather than three separate ones.
   verify:
@@ -372,7 +372,7 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
-      # P9a-8: `verify:runtimes` (below) resolves clover through its OWN ladder (the installed
+      # P9a-8: `verify:runtimes` (below) resolves the `winter` binary through its OWN ladder (the installed
       # platform package first — the strong row-16 path), so this job only makes SURE the platform
       # package installed (the 0.0.5 pin flip removed the dated checkout+build fallback).
       - name: Check for the installed winter platform package (P9a-8)

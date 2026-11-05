@@ -692,15 +692,15 @@ report({ ok: true });`,
     name: "AppleScript (no Apple Event) and its refusals", group: "applescript",
     code: `
 const form = await win("Fixture Form");
-const r = await form.applescript('return "winter" & " " & (2 + 3)', { emit: false });
+const r = await form.applescript('return "clover" & " " & (2 + 3)', { emit: false });
 let shell = null, other = null, jxa = null;
 try { await form.applescript('do shell script "id"', { emit: false }); } catch (e) { shell = e.name; }
 try { await form.applescript('tell application "Finder" to get name of startup disk', { emit: false }); } catch (e) { other = e.name; }
 const dict = await form.scriptingDictionary({ emit: false });
 report({ result: r.result, shell, other, scriptable: dict.scriptable });`,
     verify: (ctx) => [ok(ctx),
-      // The result comes back as AppleScript writes the value (a string quoted, `"winter 5"`); either form counts.
-      check("a script with no Apple Event ran", fact(ctx, "result") === "winter 5" || fact(ctx, "result") === '"winter 5"', String(fact(ctx, "result"))),
+      // The result comes back as AppleScript writes the value (a string quoted, `"clover 5"`); either form counts.
+      check("a script with no Apple Event ran", fact(ctx, "result") === "clover 5" || fact(ctx, "result") === '"clover 5"', String(fact(ctx, "result"))),
       check("do shell script is refused", fact(ctx, "shell") === "Refused" || fact(ctx, "shell") === "NotAllowed", String(fact(ctx, "shell"))),
       check("another app is refused", fact(ctx, "other") === "Refused" || fact(ctx, "other") === "NotAllowed", String(fact(ctx, "other"))),
       check("scriptingDictionary answers", typeof fact(ctx, "scriptable") === "boolean")],

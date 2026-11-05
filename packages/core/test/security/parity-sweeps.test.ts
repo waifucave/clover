@@ -201,7 +201,7 @@ describe("A-8 part A: opaque state + the carry tag never reach session.history o
     const { store, socketPath, harnessToken } = await boot();
     const sessionId = seedSession(store);
     const mac = await TestClient.connect(socketPath);
-    await mac.hello(harnessToken, "winter.app", "harness");
+    await mac.hello(harnessToken, "clover.app", "harness");
     await mac.request(METHODS.sessionAttach, { sessionId, fromSeq: 0 });
     await waitFor(() => mac.types().includes("harness_attached"), "the replay to finish");
     expect(mac.types()).toContain("reasoning_item");

@@ -72,8 +72,9 @@ export function helperSocketPath(home: string): string {
   return join(home, "run", "computer-use.sock");
 }
 
-/** Clover's own apps: never a target (the "Clover never controls itself" floor), and blacked out of shots. */
-export const CLOVER_OWN_BUNDLE_IDS: readonly string[] = ["com.winter.app", "com.winter.app.dev", "com.winter.computeruse", "com.winter.computeruse.dev"];
+/** The app and its Computer Use helper, by the ids the kept helpers know (spec §4: computer use keeps them until
+ *  opensky): never a target (the "never controls itself" floor), and blacked out of shots. */
+export const WINTER_OWN_BUNDLE_IDS: readonly string[] = ["com.winter.app", "com.winter.app.dev", "com.winter.computeruse", "com.winter.computeruse.dev"];
 
 export interface HelperPermissions { accessibility: boolean; screenRecording: boolean }
 

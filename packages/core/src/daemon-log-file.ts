@@ -1,6 +1,7 @@
 import { closeSync, existsSync, mkdirSync, openSync, renameSync, statSync, writeSync } from "node:fs";
 import { join } from "node:path";
 import { format as formatArg } from "node:util";
+import { assertNotOtherInstallHome } from "./other-installs";
 
 /**
  * 2026-09-17 (field report, 0.114.x): the release app launches `clover-core` with stdout and stderr
@@ -33,7 +34,9 @@ export function daemonLogPathFor(home: string): string {
   return join(home, "logs", DAEMON_LOG_FILE);
 }
 
-export function installDaemonLogFile(home: string, opts: { maxBytes?: number; now?: () => Date } = {}): DaemonLogFileHandle {
+export function installDaemonLogFile(home: string, opts: { maxBytes?: number; now?: () => Date; userHomeForTests?: string } = {}): DaemonLogFileHandle {
+  // Never a log inside another install's home (`other-installs.ts` names them).
+  assertNotOtherInstallHome(home, opts.userHomeForTests);
   const path = daemonLogPathFor(home);
   const maxBytes = opts.maxBytes ?? DAEMON_LOG_MAX_BYTES;
   const now = opts.now ?? (() => new Date());

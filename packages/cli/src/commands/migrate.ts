@@ -19,7 +19,6 @@ import {
   rollbackMigrationC,
   runMigrationC,
   type MigrationCManifest,
-  legacyHomeFor,
   manifestFileState,
   manifestPath,
   planMigrationB,
@@ -249,9 +248,14 @@ export async function runMigrateCommand(deps: MigrateCommandDeps): Promise<numbe
     }
   }
 
-  // Default (and `--from <legacyHome>`): a fresh migration into the current home.
+  // `--from <legacyHome>`: a fresh migration into the current home. C0 (review S2): the operator names the legacy
+  // home; Clover never looks for one by itself (spec §12 retires the legacy migrations), so there is no default.
   const fromIdx = deps.argv.indexOf("--from");
-  const legacyHome = fromIdx === -1 ? legacyHomeFor(deps.profile) : deps.argv[fromIdx + 1];
+  if (fromIdx === -1) {
+    deps.error("clover migrate: name the legacy home with --from <path> — Clover never looks for one by itself");
+    return 1;
+  }
+  const legacyHome = deps.argv[fromIdx + 1];
   if (!legacyHome) {
     deps.error("clover migrate: --from requires a path");
     return 1;

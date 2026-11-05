@@ -133,10 +133,10 @@ await check("browsers.open({ browser: \"headless\" }) starts the helper and prin
 });
 await check("state(), type and click; the page's title says so", async () => {
   const state = await P("state", { full: true, emit: false }) as string;
-  await P("type", { into: refOf(state, /\[(\d+)\] text field "Name"/), text: "winter" });
+  await P("type", { into: refOf(state, /\[(\d+)\] text field "Name"/), text: "clover" });
   await P("click", { target: refOf(state, /\[(\d+)\] button "Go"/) });
   const title = await P("title", { emit: false }) as string;
-  return title === "clicked winter" ? title : false;
+  return title === "clicked clover" ? title : false;
 });
 await check("a screenshot", async () => {
   const shot = await P("screenshot", { emit: false }) as { width?: number };

@@ -28,7 +28,7 @@ export class FakeHelper {
   readonly apps: FakeApp[] = [
     { name: "Notes", bundleId: "com.apple.Notes", pid: 501, running: true },
     { name: "TextEdit", bundleId: "com.apple.TextEdit", pid: 502, running: false },
-    { name: "Clover", bundleId: "com.winter.app", pid: 503, running: true },
+    { name: "Winter", bundleId: "com.winter.app", pid: 503, running: true },
     { name: "1Password", bundleId: "com.1password.1password", pid: 504, running: true },
     { name: "Keychain Access", bundleId: "com.apple.keychainaccess", pid: 505, running: true },
   ];

@@ -23,7 +23,7 @@ import { FOREGROUND_LOCK_KEY, LOCK_WAIT_MS, TargetLocks } from "./locks";
 import { ACT_PRIMITIVES, cardName, cardReason, desktopVisitActReason, newRunGrants, type AppRef, type ComputerPolicy, type DesktopVisitOutcome, type RunGrants } from "./policy";
 import { typingEstimateMs, typingFit } from "./typing-estimate";
 import {
-  HELPER_WORK_LIFT_VERSION, HelperRpcError, HelperUnavailableError, CLOVER_OWN_BUNDLE_IDS, helperVersionAtLeast,
+  HELPER_WORK_LIFT_VERSION, HelperRpcError, HelperUnavailableError, WINTER_OWN_BUNDLE_IDS, helperVersionAtLeast,
   type ActAction, type ActResult, type AppAtResult, type AppleScriptResult, type AppsListResult, type DesktopVisitClosed, type FindResult, type HelperNotification,
   type ScreenWindowsResult, type ScreenshotResult, type ScriptingDictionaryResult, type SnapshotResult, type TargetBindResult, type TargetUseWindowResult, type TargetWindowsResult,
   type WaitForResult, type WaitIdleResult,
@@ -921,7 +921,7 @@ export class ComputerV2Service {
   private async appsList(ctx: RunCtx, args: Record<string, unknown>, metric: PrimitiveMetric): Promise<unknown> {
     const res = await this.helperCall<AppsListResult>(ctx, "apps.list", {}, metric);
     ctx.appCache = res.apps;
-    const apps = res.apps.filter((a) => !CLOVER_OWN_BUNDLE_IDS.includes(a.bundleId)).map((a) => ({ name: a.name, bundleId: a.bundleId, running: a.running }));
+    const apps = res.apps.filter((a) => !WINTER_OWN_BUNDLE_IDS.includes(a.bundleId)).map((a) => ({ name: a.name, bundleId: a.bundleId, running: a.running }));
     ctx.builder.markScreenRead();
     if (args.emit !== false) ctx.builder.text(apps.length === 0 ? "(no apps)" : apps.map((a) => `${a.name} (${a.bundleId})${a.running ? " — running" : ""}`).join("\n"), { screen: true });
     return apps;

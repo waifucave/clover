@@ -340,6 +340,11 @@ describe("upload paths", () => {
     expect(isSecretPath("/USERS/U/.SSH/id_ed25519", "/Users/u")).toBe(true);
     expect(isSecretPath("/Volumes/x/LaunchAgents/a.plist", "/Users/u")).toBe(true);
     expect(isSecretPath("/opt/x/.zshrc", "/Users/u")).toBe(true);
+    // Clover's own names too, anywhere, on top of the helper's (C0 review): its homes and the SDK's config under its brand.
+    expect(isSecretPath("/tmp/h/.CLOVER/settings.json", "/Users/u")).toBe(true);
+    expect(isSecretPath("/tmp/h/.clover-dev/x", "/Users/u")).toBe(true);
+    expect(isSecretPath("/tmp/h/sdk/.clover.json", "/Users/u")).toBe(true);
+    expect(isSecretPath("/tmp/h/clover/notes.txt", "/Users/u")).toBe(false);
   });
   test("secret paths: a home dot segment or a keychain; nothing outside the home", () => {
     expect(isSecretPath("/Users/u/.ssh/id_ed25519", "/Users/u")).toBe(true);
