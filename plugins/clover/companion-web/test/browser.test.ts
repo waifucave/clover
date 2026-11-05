@@ -172,11 +172,29 @@ describe.skipIf(!enabled)("the web companion in headless Chrome", () => {
 
     profile = mkdtempSync(join(tmpdir(), "clover-web-chrome-"));
     browser = Bun.spawn(
-      [chrome!, "--headless=new", "--no-first-run", "--no-default-browser-check", "--disable-gpu", `--user-data-dir=${profile}`, "--remote-debugging-port=0", "about:blank"],
+      [
+        chrome!,
+        "--headless=new",
+        "--no-first-run",
+        "--no-default-browser-check",
+        "--disable-gpu",
+        "--disable-extensions",
+        "--disable-background-networking",
+        "--disable-component-update",
+        "--disable-sync",
+        `--user-data-dir=${profile}`,
+        "--remote-debugging-port=0",
+        "about:blank",
+      ],
       { stdout: "ignore", stderr: "ignore" },
     );
+    // A cold Chrome on a Windows runner can take well over 20 s to start listening.
     const portFile = join(profile, "DevToolsActivePort");
-    for (let i = 0; i < 200 && !existsSync(portFile); i++) await Bun.sleep(100);
+    for (let i = 0; i < 900 && !existsSync(portFile); i++) {
+      if (browser.exitCode !== null) throw new Error(`Chrome exited with ${browser.exitCode} before it was listening`);
+      await Bun.sleep(100);
+    }
+    if (!existsSync(portFile)) throw new Error("Chrome didn't start listening within 90 s");
     page = await Page.attach(Number(readFileSync(portFile, "utf8").split("\n")[0]));
     await page.send("Page.enable");
     await page.send("Page.navigate", { url });
@@ -199,5 +217,5 @@ describe.skipIf(!enabled)("the web companion in headless Chrome", () => {
     await page.until("document.getElementById('status').textContent === 'Connected to Studio'", 60_000);
     page.close();
     host.stop();
-  }, 180_000);
+  }, 240_000);
 });
