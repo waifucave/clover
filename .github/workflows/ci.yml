@@ -13,24 +13,66 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # The TypeScript workspaces. Split per package so a failure names the layer it came from.
-  # NOTE: the Swift side (WinterProtocol / WinterKit / the retired Mac app) is deliberately NOT built here —
-  # it depends on ~480 MB of vendored artifacts (CEF, Monaco, iroh) that are fetched, not committed.
-  # Those are covered by the local build; see CONTRIBUTING.md.
-  test:
-    name: test · ${{ matrix.package }}
-    runs-on: macos-latest
+  # CI covers four machines (plan §3): macOS arm64, Windows x64, and Ubuntu x64 and arm64. On each it runs the
+  # workspace packages' tests, builds the daemon binary and builds the unsigned app, whose window the UI test then
+  # opens (CI only: no app window on a developer's screen, plan §8). The typecheck and the lockfile check run once,
+  # on Linux: their answer is the same everywhere. The macOS jobs below are the ones from before that still
+  # apply: core, cli and the scripts (which need the agent runtime's darwin-arm64 binary), the extension, the Swift
+  # kits the iOS app links, the protocol codegen and the compiled-binary gates.
+
+  # Every workspace package's `test` (docs/clover-layout.md): `scripts/workspaces.ts` runs each one that has the
+  # script, where its `cloverCi.os` allows, and skips core and cli (`cloverCi.ownJob`). On Linux the tests run under
+  # a private D-Bus session with a gnome-keyring of their own, so the harness's throwaway Secret Service store
+  # never meets a real keyring.
+  test-workspaces:
+    name: test · workspaces (${{ matrix.target }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
         include:
-          - package: protocol
-            args: ""
-          - package: plugin-sdk
-            args: ""
-          # cli moved to its own `test-cli` job below (Winter Phase 8b fix wave 2): its CloverClient
-          # round-trips create sessions, and every session is a spawned `winter` child now, so the
-          # job needs the built binary exactly as `test-core` does.
+          - { target: darwin-arm64, runner: macos-latest }
+          - { target: linux-x64, runner: ubuntu-24.04 }
+          - { target: linux-arm64, runner: ubuntu-24.04-arm }
+          - { target: windows-x64, runner: windows-latest }
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: .bun-version
+
+      - name: The private Secret Service's tools (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends dbus gnome-keyring libsecret-1-0
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Test
+        if: runner.os != 'Linux'
+        run: bun scripts/workspaces.ts run test
+
+      - name: Test (on a private Secret Service)
+        if: runner.os == 'Linux'
+        run: scripts/with-private-secret-service.sh bun scripts/workspaces.ts run test
+
+  # The daemon binary, `clover-core`, built on each of the four machines for its own target
+  # (`scripts/build-daemon.ts`: packages/cli's compile:core with the target set), then run once with `--version` on
+  # a temp home: it prints and exits, so no daemon starts. Unsigned on every OS; signing is M2's.
+  daemon:
+    name: daemon · ${{ matrix.target }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { target: darwin-arm64, runner: macos-latest }
+          - { target: linux-x64, runner: ubuntu-24.04 }
+          - { target: linux-arm64, runner: ubuntu-24.04-arm }
+          - { target: windows-x64, runner: windows-latest }
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
@@ -41,9 +83,112 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
-      - name: Test
-        working-directory: packages/${{ matrix.package }}
-        run: bun test ${{ matrix.args }}
+      - name: Build clover-core for ${{ matrix.target }}, and run its --version
+        run: bun scripts/build-daemon.ts --target ${{ matrix.target }} --smoke
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: clover-core-${{ matrix.target }}
+          path: dist/daemon/${{ matrix.target }}/
+          retention-days: 5
+          if-no-files-found: error
+
+  # The app (apps/desktop): built and packaged unsigned and unpacked by electron-builder (`bun run build:app`), then
+  # the UI test opens it twice, under Electron and as the packaged app, and reads back its one sandboxed window.
+  # Linux runs it under xvfb, with unprivileged user namespaces allowed again for Chromium's sandbox (Ubuntu 24.04's
+  # AppArmor turns them off by default).
+  app:
+    name: app · ${{ matrix.target }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { target: darwin-arm64, runner: macos-latest }
+          - { target: linux-x64, runner: ubuntu-24.04 }
+          - { target: linux-arm64, runner: ubuntu-24.04-arm }
+          - { target: windows-x64, runner: windows-latest }
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: .bun-version
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build the unsigned app
+        run: bun run build:app
+
+      - name: The display and the sandbox (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends xvfb xauth
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+
+      - name: UI test
+        if: runner.os != 'Linux'
+        working-directory: apps/desktop
+        env:
+          CLOVER_UI_TESTS: "1"
+        run: bun test test/ui-smoke.test.ts
+
+      - name: UI test (under xvfb)
+        if: runner.os == 'Linux'
+        working-directory: apps/desktop
+        env:
+          CLOVER_UI_TESTS: "1"
+        run: xvfb-run -a bun test test/ui-smoke.test.ts
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: clover-app-${{ matrix.target }}
+          path: apps/desktop/out/dist/
+          retention-days: 5
+          if-no-files-found: error
+
+  # P8b-9: `bun test` does not typecheck — bun strips types and runs, so a compile error in a project nobody
+  # compiles is not a tripwire (the protocol checklist's step 4 trap, `satisfies Record<SessionEvent["type"],
+  # boolean>`, fails core's tsc when a `SessionEvent` variant is added). `bun run typecheck` is every workspace
+  # package's own `typecheck` (core, cli, protocol, plugin-sdk, the test harness, the app, the services: each
+  # named in the log as it runs), the page runtime and the repo's scripts.
+  typecheck:
+    name: typecheck
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: .bun-version
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Typecheck
+        run: bun run typecheck
+
+  # The two lockfiles agree with the manifests: bun.lock (the install above every job fails on drift) and
+  # pnpm-lock.yaml, which the pnpm scripts and the browser extension use. Resolution only: nothing installed.
+  lockfiles:
+    name: lockfiles
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: .bun-version
+
+      - name: bun.lock
+        run: bun install --frozen-lockfile --ignore-scripts
+
+      - name: pnpm-lock.yaml
+        run: npx --yes pnpm@10.33.0 install --frozen-lockfile --lockfile-only
 
   # Winter for Chrome (extensions/winter-for-chrome): the MV3 extension's typecheck and its unit tests (the CDP guard,
   # the controller over a fake browser, the native port, the manifest and the build — which renders the icons with the
@@ -77,9 +222,8 @@ jobs:
   # flip removed the dated checkout+build fallback blocks and the `versions` job they consumed;
   # each job that needs the `winter` binary now FAILS LOUDLY if the package did not install.
 
-  # core is split OUT of the matrix above rather than given `needs:` on it, so the other three
-  # entries stay independent of the `winter` binary's build: a broken/slow SDK checkout must not hold up the
-  # protocol, plugin-sdk and cli suites (a matrix-level `needs` would gate all four).
+  # core and cli run in jobs of their own (their package.json says `cloverCi.ownJob`), so the other packages'
+  # tests stay independent of the `winter` binary: a broken platform package must not hold them up.
   #
   # CLOVER_RUNTIME_REQUIRE_BINARY=1 is the point of the download: without it, every test that needs a
   # real `winter` child SKIPS, and CI would go green by proving nothing.
@@ -179,21 +323,14 @@ jobs:
           CLOVER_CLAUDE_REQUIRE_RUNTIME: "1"
         run: bun test test/*.ts
 
-  # P8b-9: `bun test` does not typecheck — bun strips types and runs. So `tsc` had been RED on `main`
-  # and nothing said so, which means the protocol checklist's step 4 trap
-  # (`subagent-transcript.ts`'s `satisfies Record<SessionEvent["type"], boolean>` map, whose entire
-  # job is to FAIL core's tsc when a `SessionEvent` variant is added) had been disarmed: a compile
-  # error in a project nobody compiles is not a tripwire. These two jobs arm it — and keep arming it
-  # once the map relocates to `projector/event-coverage.ts` in Task 10.
-  #
-  # SCOPE, precisely (review F-3): `tsc -p packages/core` covers `packages/core/{src,test}` ONLY. Six
-  # of the nine errors this batch fixed were there; the other three were in
-  # `packages/protocol/test/events.test.ts`, which core's program never sees — hence the second job
-  # below. `packages/cli`, `packages/plugin-sdk` and the repo-root `scripts/` (its own tsconfig since
-  # 0.122.1) have the typecheck-rest job: an unchecked CLI shipped a ReferenceError in 0.121.0/0.122.0.
-  typecheck-core:
-    name: typecheck · core
+  # The repo's own scripts' tests (`scripts/**/*.test.ts`): the layout's conventions, the build, dev and release
+  # tools' pure halves, the held scripts, the limiter, the rename's codemod. None builds an app or starts a
+  # daemon. `embed-runtimes.test.ts` stages the agent runtime's binary, so this job copies it into dist/ as
+  # test-core does.
+  test-scripts:
+    name: test · scripts
     runs-on: macos-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
@@ -204,43 +341,26 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
-      - name: Typecheck
-        run: bun run typecheck:core
+      # P9a-8: see test-core's identical block — the platform package must be installed.
+      - name: Check for the installed winter platform package (P9a-8)
+        id: clover-package
+        working-directory: packages/core
+        run: |
+          BIN=$(bun -e '
+          import { resolvePlatformPackageWinter } from "./src/runtime-sdk/executable";
+          console.log(resolvePlatformPackageWinter() ?? "");
+          ')
+          echo "bin=${BIN}" >> "$GITHUB_OUTPUT"
+          if [ -n "$BIN" ]; then echo "present=true" >> "$GITHUB_OUTPUT"; else echo "::error::the winter platform package (@yanlinglabs/winter-agent-sdk-darwin-arm64 at REQUIRED_WINTER_AGENT_SDK) did not install — bun install is the ONLY winter source since the 0.0.5 pin flip (P9a-8)"; exit 1; fi
 
-  # The other half of P8b-9's nine: `packages/protocol/{src,test,scripts}`. Without this, the three
-  # errors fixed in `test/events.test.ts` can rot back in tomorrow, in a file this batch had to fix.
-  typecheck-protocol:
-    name: typecheck · protocol
-    runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: Use the installed platform package's winter binary
+        run: |
+          mkdir -p dist
+          cp "${{ steps.clover-package.outputs.bin }}" dist/winter
+          chmod +x dist/winter
 
-      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
-        with:
-          bun-version-file: .bun-version
-
-      - name: Install dependencies
-        run: bun install --frozen-lockfile
-
-      - name: Typecheck
-        run: bun run typecheck:protocol
-
-  # Everything else with a tsconfig: the CLI, the plugin SDK and the release/build scripts.
-  typecheck-rest:
-    name: typecheck · cli, plugin-sdk, scripts
-    runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-
-      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
-        with:
-          bun-version-file: .bun-version
-
-      - name: Install dependencies
-        run: bun install --frozen-lockfile
-
-      - name: Typecheck
-        run: bun run typecheck:cli && bun run typecheck:plugin-sdk && bun run typecheck:scripts
+      - name: Test
+        run: bun test scripts
 
   # The protocol package generates a JSON schema and the Swift round-trip fixtures. If a schema
   # change landed without re-running the generator, the tree is dirty here — which is exactly the
