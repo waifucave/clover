@@ -8,7 +8,9 @@ import {csp,decision} from './policy.mjs';
 import {extractNetlog} from './netlog.mjs';
 import {networkProbe} from './probes.mjs';
 const pause=(/** @type {any} */ ms)=>new Promise(r=>setTimeout(r,ms));
-const vectors=['own-fetch','other-plugin-fetch','wrong-port','fetch','xhr','image','css','font','script','media','object','css-import','background','websocket','beacon','eventsource','redirect','redirect-target','keepalive','webtransport','fetchLater','ping','download','worker','shared','blob','window-open','form','navigation','top-location','dns-prefetch','preconnect','prefetch','prerender','speculation','stun','turn'];
+const vectors=['own-fetch','other-plugin-fetch','wrong-port','fetch','xhr','image','css','font','script','media','object','css-import','background','websocket','beacon','eventsource','redirect','redirect-target','keepalive','webtransport','fetchLater','ping','download','worker','shared','blob','window-open','form','navigation','top-location','dns-prefetch','preconnect','prefetch','prerender','speculation','stun','turn','remote-candidate'];
+/** UDP listeners: STUN servers, WebTransport (QUIC) and remote-candidate connectivity checks. */
+const udpVectors=['stun','webtransport','remote-candidate'];
 /** Build inherited-context markup without executing it locally.
  * @param {string} kind @param {string} nestedurl */
 export function inheritedScript(kind,nestedurl){
@@ -22,10 +24,10 @@ async function fixtures(prefix){
  /** @type {Record<string,any>} */ const records={};
  /** @type {(()=>void)[]} */ const closers=[];
  for(const name of vectors){
-  const host=`${prefix}-${name.replaceAll(/[^a-z0-9-]/gi,'-').toLowerCase()}.${['dns-prefetch','stun','turn'].includes(name)?'localhost':'s9.test'}`;
+  const host=`${prefix}-${name.replaceAll(/[^a-z0-9-]/gi,'-').toLowerCase()}.${['dns-prefetch','stun','turn','remote-candidate'].includes(name)?'localhost':'s9.test'}`;
   /** @type {any} */ const rec=records[name]={host,http:[],tcp:[],udp:[]};
   /** @type {any} */ let server;
-  if(name==='stun'||name==='webtransport'){
+  if(udpVectors.includes(name)){
    server=dgram.createSocket('udp4');server.on('message',(/** @type {any} */ data,/** @type {any} */ remote)=>rec.udp.push({bytes:data.length,address:remote.address,sourcePort:remote.port,magicCookie:data.length>=8?data.readUInt32BE(4).toString(16):null,stun:data.length>=20&&data.readUInt32BE(4)===0x2112a442,time:Date.now()}));
    await new Promise(r=>server.bind(0,'127.0.0.1',()=>r(undefined)));
   }else if(name==='turn'){
@@ -56,7 +58,7 @@ function liveFrame(parent,url){
 }
 /** Zero STUN/TURN listener traffic is the network-side closure signal.
  * @param {any} records */
-function zeroRtc(records){return (records?.stun?.udp?.length||0)===0&&(records?.turn?.tcp?.length||0)===0;}
+function zeroRtc(records){return (records?.stun?.udp?.length||0)===0&&(records?.turn?.tcp?.length||0)===0&&(records?.['remote-candidate']?.udp?.length||0)===0;}
 /** ICE candidate types. Host candidates are local interface enumeration, normally
  * mDNS-obfuscated; srflx/relay candidates mean a STUN/TURN round trip left the process.
  * @param {string[]} candidates */
@@ -273,9 +275,10 @@ export async function networkCheck(electron){
  const dns=(/** @type {any} */ v,/** @type {string} */ host)=>v?.netlog?.speculative?.filter((/** @type {any} */ e)=>JSON.stringify(e.params).includes(host))||[];
  const directClosed=!!a&&!a.error&&tested(a.main)&&zeroRtc(a.records)&&mainCandidates(a.main).network===0&&dns(a,a.records['dns-prefetch'].host).length===0;
  const inheritedClosed=!!a&&!a.error&&Array.isArray(a.contexts)&&a.contexts.length>0&&a.contexts.every((/** @type {any} */ c)=>c.closed);
- const assertions={undeclaredStunPositive:!!control&&control.records?.stun?.udp?.some((/** @type {any} */ p)=>p.stun),undeclaredTurnPositive:!!control&&(control.records?.turn?.tcp?.length||0)>0,allowlistDirectClosed:directClosed,allowlistInheritedClosed:inheritedClosed,allowlistInheritedCrashClosure:!!a&&Array.isArray(a.contexts)&&a.contexts.some((/** @type {any} */ c)=>c.rendererGone||c.result?.rendererKilled),ipPolicyRan:!!ip&&!ip.error,nonPluginStillConnects:!!non&&(non.records?.stun?.udp?.length||0)>0&&(non.records?.turn?.tcp?.length||0)>0,nonPluginDns:!!non&&dns(non,non.records['dns-prefetch'].host).length>0,dnsPositive:!!plain&&dns(plain,plain.records['dns-prefetch'].host).length>0,dnsRefused:!!a&&dns(a,a.records['dns-prefetch'].host).length===0,preconnectEventPositive:!!plain&&plain.preconnect?.some((/** @type {any} */ e)=>e.url.includes(plain.records.preconnect.host))};
+ const checks=(/** @type {any} */ v)=>v?.records?.['remote-candidate']?.udp?.filter((/** @type {any} */ p)=>p.stun).length||0;
+ const assertions={undeclaredStunPositive:!!control&&control.records?.stun?.udp?.some((/** @type {any} */ p)=>p.stun),undeclaredTurnPositive:!!control&&(control.records?.turn?.tcp?.length||0)>0,undeclaredRemoteCandidatePositive:checks(control)>0,allowlistRemoteCandidateClosed:!!a&&!a.error&&(a.records?.['remote-candidate']?.udp?.length||0)===0,allowlistDirectClosed:directClosed,allowlistInheritedClosed:inheritedClosed,allowlistInheritedCrashClosure:!!a&&Array.isArray(a.contexts)&&a.contexts.some((/** @type {any} */ c)=>c.rendererGone||c.result?.rendererKilled),ipPolicyRan:!!ip&&!ip.error,nonPluginStillConnects:!!non&&(non.records?.stun?.udp?.length||0)>0&&(non.records?.turn?.tcp?.length||0)>0,nonPluginDns:!!non&&dns(non,non.records['dns-prefetch'].host).length>0,dnsPositive:!!plain&&dns(plain,plain.records['dns-prefetch'].host).length>0,dnsRefused:!!a&&dns(a,a.records['dns-prefetch'].host).length===0,preconnectEventPositive:!!plain&&plain.preconnect?.some((/** @type {any} */ e)=>e.url.includes(plain.records.preconnect.host))};
  // Crash-closure of inherited contexts is an explicit Chromium 156 outcome, not a fail.
- const required=['undeclaredStunPositive','undeclaredTurnPositive','allowlistDirectClosed','allowlistInheritedClosed','ipPolicyRan','nonPluginStillConnects','nonPluginDns','dnsPositive','dnsRefused','preconnectEventPositive'];
+ const required=['undeclaredStunPositive','undeclaredTurnPositive','undeclaredRemoteCandidatePositive','allowlistRemoteCandidateClosed','allowlistDirectClosed','allowlistInheritedClosed','ipPolicyRan','nonPluginStillConnects','nonPluginDns','dnsPositive','dnsRefused','preconnectEventPositive'];
  app.removeListener('render-process-gone',onRendererGone);
  return {verdict:required.every(k=>assertions[/** @type {keyof typeof assertions} */(k)])?'works with limits':'does not',assertions,variants};
 }

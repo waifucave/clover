@@ -12,8 +12,19 @@ export async function networkProbe(endpoints, full = true) {
   /** @type {string[]} */ const candidates=[];pc.onicecandidate=e=>{if(e.candidate)candidates.push(e.candidate.candidate);};
   try{pc.createDataChannel('fixture');await pc.setLocalDescription(await pc.createOffer());await wait(900);return {supported:true,candidates,state:pc.iceGatheringState};}catch(e){return {supported:true,candidates,error:String(e),state:pc.iceGatheringState};}finally{pc.close();}
  };
+ // No ICE server at all: a remote description whose candidate names an undeclared address.
+ // Connectivity checks (STUN binding requests) then go to that address from the P2P sockets.
+ const remote=async(/** @type {any} */ port)=>{
+  if(typeof RTCPeerConnection==='undefined')return {supported:false};
+  const pc=new RTCPeerConnection();
+  try{pc.createDataChannel('fixture');const offer=await pc.createOffer();await pc.setLocalDescription(offer);
+   const sdp=String(offer.sdp).replace(/a=setup:actpass/g,'a=setup:active')+`a=candidate:1 1 udp 2122260223 127.0.0.1 ${port} typ host\r\n`;
+   await pc.setRemoteDescription({type:'answer',sdp});await wait(900);return {supported:true,state:pc.iceConnectionState};}
+  catch(e){return {supported:true,error:String(e),state:pc.iceConnectionState};}finally{pc.close();}
+ };
  await attempt('stun',()=>rtc(endpoints.stun.ice));
  await attempt('turn-tcp',()=>rtc(endpoints.turn.ice));
+ await attempt('remote-candidate',()=>remote(endpoints['remote-candidate'].port));
  if(typeof document!=='undefined'){
   for(const rel of (full?['dns-prefetch','preconnect','prefetch','prerender']:['dns-prefetch']))await attempt(rel,async()=>{const el=document.createElement('link');el.rel=rel;el.href=endpoints[rel].url;document.head.append(el);await wait(200);return 'inserted';});
   if(full)await attempt('speculationrules',async()=>{const s=document.createElement('script');s.type='speculationrules';s.textContent=JSON.stringify({prefetch:[{source:'list',urls:[endpoints.speculation.url]}],prerender:[{source:'list',urls:[endpoints.prerender.url]}]});document.head.append(s);await wait(200);return 'inserted';});
