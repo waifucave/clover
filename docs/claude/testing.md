@@ -38,7 +38,7 @@ Each builds a real binary; none runs under `bun test`: `verify:workflow` (sandbo
 
 ## Idle wakeups
 
-`bun run check:idle-wakeups` boots an isolated daemon, fails over 50 wakeups/s; `--pid N` measures a running one read-only. `top`'s IDLEW is the SINCE-LAUNCH count unless `-c d` (3,962 on an 8 h daemon is ~0.14/s).
+`bun run check:idle-wakeups` boots an isolated daemon, fails over 50 interrupt wakeups/s; `--pid N` measures a running one read-only. It reads the process's own counters (`proc_pid_rusage`) and prints `top`'s IDLEW (package-idle wakeups) beside them: on macOS 26 under load IDLEW read 0 for every process, a 5 ms timer included (2026-11-05), so it no longer gates. Measured then: an idle daemon wakes about once a second on Bun 1.4.4 and ten times on 1.3.14. (`top`'s IDLEW is the SINCE-LAUNCH count unless `-c d`.)
 
 ## The live computer-use suite
 
