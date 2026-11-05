@@ -3,12 +3,9 @@ import { describe, expect, test } from "bun:test";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { miniflareOptions, readWranglerConfig, startWorker } from "../src/workers";
+import { miniflareOptions, readWranglerConfig, startWithRetry, startWorker, type StartableRuntime } from "../src/workers";
 
 const fixture = join(import.meta.dir, "fixtures", "worker");
-// Windows: in CI one Worker start in a run has hung (workerd never answered, and the runner killed it when the test
-// timed out) while the starts before and after it took under a second. One retry there, with a shorter wait.
-const START = { timeout: 30_000, retry: process.platform === "win32" ? 1 : 0 };
 
 describe("startWorker", () => {
   test("runs the Worker with its variables and an in-memory KV namespace", async () => {
@@ -22,7 +19,7 @@ describe("startWorker", () => {
     } finally {
       await worker.dispose();
     }
-  }, START);
+  }, 60_000);
 
   test("a test's bindings override the config's variables", async () => {
     const worker = await startWorker({ dir: fixture, bindings: { WHO: "override" } });
@@ -31,7 +28,7 @@ describe("startWorker", () => {
     } finally {
       await worker.dispose();
     }
-  }, START);
+  }, 60_000);
 
   test("two Workers at once, each with its own storage", async () => {
     const [a, b] = await Promise.all([startWorker({ dir: fixture }), startWorker({ dir: fixture })]);
@@ -41,7 +38,39 @@ describe("startWorker", () => {
     } finally {
       await Promise.all([a.dispose(), b.dispose()]);
     }
-  }, START);
+  }, 60_000);
+});
+
+// A start that does not come up is retried once (startWithRetry's comment says why), on fakes: no workerd here.
+describe("startWithRetry", () => {
+  const url = new URL("http://127.0.0.1:1/");
+
+  test("a start that is not ready in time is disposed, and a fresh one started", async () => {
+    const made: { disposed: boolean }[] = [];
+    const started = await startWithRetry(() => {
+      const runtime = { disposed: false, ready: made.length === 0 ? new Promise<URL>(() => {}) : Promise.resolve(url), dispose: async () => { runtime.disposed = true; } };
+      made.push(runtime);
+      return runtime;
+    }, { timeoutMs: 50 });
+    expect(started.url).toBe(url);
+    expect(made.map((m) => m.disposed)).toEqual([true, false]);
+  });
+
+  test("a start that fails every time says so, attempt by attempt", async () => {
+    let disposed = 0;
+    const failing = (): StartableRuntime => ({ ready: Promise.reject(new Error("workerd exited")), dispose: async () => { disposed++; } });
+    await expect(startWithRetry(failing, { timeoutMs: 50 })).rejects.toThrow("the Worker did not start (attempt 1: workerd exited; attempt 2: workerd exited)");
+    expect(disposed).toBe(2);
+  });
+
+  test("a dispose that never returns does not hold up the next attempt for long", async () => {
+    const made: number[] = [];
+    const started = await startWithRetry(() => {
+      made.push(made.length);
+      return { ready: made.length === 1 ? Promise.reject(new Error("no")) : Promise.resolve(url), dispose: () => new Promise<void>(() => {}) };
+    }, { timeoutMs: 50 });
+    expect(started.url).toBe(url);
+  }, 10_000);
 });
 
 describe("readWranglerConfig", () => {

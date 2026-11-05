@@ -91,14 +91,56 @@ export interface RunningWorker {
   dispose(): Promise<void>;
 }
 
+/** What a start needs of a Miniflare instance: the seam `startWithRetry`'s own test uses. */
+export interface StartableRuntime {
+  readonly ready: Promise<URL>;
+  dispose(): Promise<void>;
+}
+
+function deadline(ms: number, message: string): { promise: Promise<never>; clear(): void } {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const promise = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(message)), ms);
+  });
+  return { promise, clear: () => clearTimeout(timer) };
+}
+
+/**
+ * Starts a runtime, and a fresh one once more when the first is not ready within `timeoutMs`. workerd answers in well
+ * under a second, but on CI runners (macOS and Windows) one start in a run has failed: workerd exited before reporting
+ * its ports, and Miniflare's `ready` neither resolved nor rejected for 30 s, while the starts just before and after
+ * it took under a second. A failed attempt is disposed, with a deadline of its own, before the next one starts.
+ */
+export async function startWithRetry<T extends StartableRuntime>(create: () => T, opts: { attempts?: number; timeoutMs?: number } = {}): Promise<{ runtime: T; url: URL }> {
+  const attempts = opts.attempts ?? 2;
+  const timeoutMs = opts.timeoutMs ?? 15_000;
+  const failures: string[] = [];
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    const runtime = create();
+    const ready = runtime.ready;
+    ready.catch(() => {}); // an abandoned attempt's late rejection is not the caller's error
+    const wait = deadline(timeoutMs, `not ready within ${timeoutMs} ms`);
+    try {
+      return { runtime, url: await Promise.race([ready, wait.promise]) };
+    } catch (err) {
+      failures.push(`attempt ${attempt}: ${err instanceof Error ? err.message : String(err)}`);
+      const stop = deadline(5_000, "dispose timed out");
+      await Promise.race([runtime.dispose(), stop.promise]).catch(() => {});
+      stop.clear();
+    } finally {
+      wait.clear();
+    }
+  }
+  throw new Error(`the Worker did not start (${failures.join("; ")})`);
+}
+
 /** Runs the Worker in `dir` (its wrangler config's `main` and bindings). `bindings` add or override variables. */
 export async function startWorker(opts: { dir: string; bindings?: Record<string, unknown> }): Promise<RunningWorker> {
   const dir = resolve(opts.dir);
   const config = readWranglerConfig(dir);
   const entry = isAbsolute(config.main) ? config.main : join(dir, config.main);
   const script = await bundleWorker(entry);
-  const miniflare = new Miniflare(miniflareOptions(config, script, opts));
-  const url = await miniflare.ready;
+  const { runtime: miniflare, url } = await startWithRetry(() => new Miniflare(miniflareOptions(config, script, opts)));
   return {
     url,
     miniflare,
