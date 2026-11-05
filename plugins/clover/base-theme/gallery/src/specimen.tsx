@@ -97,7 +97,7 @@ export function Specimen({ title }: { title: string }): ReactElement {
             </div>
           </div>
         </div>
-        <div style={{ display: "flex", gap: 22, alignItems: "center", fontSize: v("font.size.label") }}>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "10px 18px", alignItems: "center", whiteSpace: "nowrap", fontSize: v("font.size.label") }}>
           <span style={{ color: v("color.text") }}>Text</span>
           <span style={{ color: v("color.text.secondary") }}>Secondary</span>
           <span style={{ color: v("color.text.muted") }}>Muted</span>
