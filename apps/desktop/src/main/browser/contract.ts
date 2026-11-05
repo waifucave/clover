@@ -1,6 +1,6 @@
-// The Clover Browser's contract (spec §12.1), mirrored from lane B's `packages/protocol/src/browser.ts` (on
-// `lane/b-m0`, PR #157) until that merges and the app depends on `@waifucave/clover-protocol`. The core keeps the same
-// mirror in `packages/core/src/browser/contract.ts`; the two must stay identical.
+// The Clover Browser's contract (spec §12.1), a copy of lane B's `packages/protocol/src/browser.ts` (#157) until the
+// app depends on `@waifucave/clover-protocol`. The core re-exports B's own (`packages/core/src/browser/contract.ts`,
+// with R10's session owner), and `test/browser-unit.test.ts` checks this copy against it.
 //
 // Owner decisions since the pin (items 92–94): bot tabs are drawn offscreen and shown through a viewport, so
 // `headless` means "offscreen, drawing for a bot"; while a screen reader is on, new bot tabs start as real views in a
