@@ -73,20 +73,21 @@ describe("account", () => {
     expect(await done).toMatchObject({ signedIn: true, provider: "discord" });
   });
 
-  test("an expired access token is refreshed once; a reused refresh token ends the session", async () => {
+  test("an expired access token is refreshed once, even when two callers ask at the same time", async () => {
     const s = stack();
     const d = await device(s, "Studio");
     await d.account.signInWithPassword("someone@example.invalid", new Secret("correct horse"));
     const first = await d.account.accessToken();
     s.auth.advanceClock(3600);
-    const stale = JSON.parse((await d.store.get(ACCOUNT_SESSION_REF))!.value.reveal()) as { expiresAt: number };
     // The stub's clock moved, not ours: make the stored session look expired too.
-    await d.store.set(ACCOUNT_SESSION_REF, new Secret(JSON.stringify({ ...JSON.parse((await d.store.get(ACCOUNT_SESSION_REF))!.value.reveal()), expiresAt: Date.now() - 1 })), { synced: false });
+    const stored = JSON.parse((await d.store.get(ACCOUNT_SESSION_REF))!.value.reveal()) as Record<string, unknown>;
+    await d.store.set(ACCOUNT_SESSION_REF, new Secret(JSON.stringify({ ...stored, expiresAt: Date.now() - 1 })), { synced: false });
     const other = new AccountClient({ config: { authUrl: s.auth.url, anonKey: s.auth.anonKey, serviceUrl: s.service.url }, store: d.store, device: d.key, clock });
+    // Two refreshes with one refresh token would end the session at the stub (a reused token); one refresh doesn't.
     const [a, b] = await Promise.all([other.accessToken(), other.accessToken()]);
     expect(a).toBe(b);
     expect(a).not.toBe(first);
-    expect(stale.expiresAt).toBeGreaterThan(0);
+    expect(await other.status()).toMatchObject({ signedIn: true });
   });
 
   test("minted tokens: one per audience, at most 5 minutes, accepted by lane I's verifier for that audience only", async () => {
