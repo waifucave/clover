@@ -9,7 +9,7 @@ import { act, fireEvent, render } from "@testing-library/react";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import type { CSSProperties, ReactElement } from "react";
-import { BASE_THEME, tokensFor } from "../../base-theme/src/index";
+import { BASE_THEME, resolveTokens, tokensFor } from "../../base-theme/src/index";
 import { sealedProblems } from "../../base-theme/src/sealed-check";
 import * as client from "../client/index";
 import { cardGeometry } from "../src/model/geometry";
@@ -218,7 +218,7 @@ describe("the frames take the island's own tokens", () => {
   });
 
   test("every card value comes from an island token, the base theme's value when nothing sets it", () => {
-    const base = tokensFor(BASE_THEME, "light");
+    const base = resolveTokens("light", [tokensFor(BASE_THEME, "light")]);
     for (const [name, source] of Object.entries(ISLAND_CARD_SOURCES)) {
       expect(name.startsWith("card.")).toBe(true);
       if ("token" in source) expect(source.fallback, name).toBe(String(base[source.token]));

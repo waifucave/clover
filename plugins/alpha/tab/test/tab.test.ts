@@ -51,7 +51,8 @@ describe("Alpha's theme", () => {
     ["color.text.muted", "color.raised", 4.5],
     ["color.accent.text", "color.surface", 4.5],
     ["color.accent", "color.surface", 3],
-    ["color.accent.contrast", "color.accent", 4.5],
+    // Alpha keeps its own filled controls: the accent itself, a dark label on the light lilac in dark.
+    ["color.accent.contrast", "color.accent.fill", 4.5],
     ["color.success", "color.surface", 4.5],
     ["bubble.user.text", "bubble.user.background", 7],
     ["composer.text", "composer.background", 7],

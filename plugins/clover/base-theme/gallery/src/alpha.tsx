@@ -77,7 +77,7 @@ function Composer(): ReactElement {
     <div style={{ padding: "4px 24px 20px", background: v("color.surface") }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 8px 8px 18px", borderRadius: v("composer.radius"), background: v("composer.background"), boxShadow: `inset 0 0 0 1px ${v("composer.rim")}`, fontFamily: v("font.sans"), fontSize: v("font.size.large") }}>
         <span style={{ flex: 1, color: v("composer.placeholder") }}>Message Alpha</span>
-        <span style={{ width: 34, height: 34, borderRadius: "50%", background: v("color.accent"), color: v("color.accent.contrast"), display: "inline-flex", alignItems: "center", justifyContent: "center", fontWeight: 700 }}>↑</span>
+        <span style={{ width: 34, height: 34, borderRadius: "50%", background: v("color.accent.fill"), color: v("color.accent.contrast"), display: "inline-flex", alignItems: "center", justifyContent: "center", fontWeight: 700 }}>↑</span>
       </div>
     </div>
   );
