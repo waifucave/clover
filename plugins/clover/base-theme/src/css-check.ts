@@ -17,8 +17,8 @@
 //      set.
 //   3. Nothing is drawn over a frame: Chromium's check counts anything painted over it, even a
 //      transparent box that ignores the pointer. So a theme keeps pseudo-elements in flow or beneath the
-//      content (a negative z-index), takes no element out of flow, shifts or moves none, and lifts
-//      nothing with a positive z-index. A part's own stylesheet positions its layout, so it is checked
+//      content (a negative z-index), takes no element out of flow, shifts or moves none, pulls none over
+//      its neighbours with a negative margin, and lifts nothing with a positive z-index. A part's own stylesheet positions its layout, so it is checked
 //      on the rendered part instead (`sealed-check.ts`), with `{ component: true }` here.
 //
 // Not a general CSS parser: comments, strings, parentheses, nesting and the at-rules above, which is all
@@ -375,6 +375,19 @@ export function lifts(declarations: readonly Declaration[]): boolean {
   return z !== undefined && /^\+?\d+$/.test(z) && Number(z) > 0;
 }
 
+const MARGINS = new Set(["margin", "margin-top", "margin-right", "margin-bottom", "margin-left", "margin-block", "margin-block-start", "margin-block-end", "margin-inline", "margin-inline-start", "margin-inline-end"]);
+
+/** A margin that pulls the box over its neighbours (in flow, painted after them): a negative one, or one whose
+ *  sign the lint cannot know (a variable, `env()`, `attr()` or a math function). The declaration, or null. */
+export function pullsOver(declarations: readonly Declaration[]): string | null {
+  for (const { property, value } of declarations) {
+    if (!MARGINS.has(property)) continue;
+    const v = clean(value);
+    if (/(^|[\s(,*/])-\s*(\d|\.\d)/.test(v) || /\b(var|env|attr|calc|min|max|clamp|round|mod|rem|abs|sign)\s*\(/.test(v)) return `${property}: ${value}`;
+  }
+  return null;
+}
+
 /** Whether declarations move an element from where it is laid out. */
 function moves(declarations: readonly Declaration[]): boolean {
   const translate = last(declarations, "translate");
@@ -424,6 +437,8 @@ export function checkThemeCss(css: string, options: CssCheckOptions = {}): strin
       }
       if (lifts(item.declarations)) problems.push(`${where} { z-index: ${last(item.declarations, "z-index")} } lifts it over the content around it, which could cover a sealed approval frame`);
       if (!pseudo && moves(item.declarations)) problems.push(`${where} moves an element from its place, over whatever lies there; that could cover a sealed approval frame`);
+      const pull = pullsOver(item.declarations);
+      if (pull) problems.push(`${where} { ${pull} } could pull it over its neighbours, a sealed approval frame among them; keep margins zero or more, as plain lengths`);
     }
     if (pseudo) continue;
     for (const declaration of item.declarations) {

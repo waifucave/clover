@@ -166,6 +166,20 @@ describe("checkThemeCss: nothing is drawn over a sealed frame", () => {
     }
   });
 
+  test("refuses a margin that could pull an element over its neighbours (the review's pull-over)", () => {
+    for (const css of [
+      `.card { margin-top: -400px }`,
+      `.card { margin: 0 0 -1px }`,
+      `.card { margin-inline-start: -.5em }`,
+      `.card { margin-block: calc(0px - 40px) }`,
+      `.card { margin-top: var(--clover-space-4) }`,
+      `.card::after { content: "·"; margin-left: -8px }`,
+    ]) {
+      expect(checkThemeCss(css).length, css).toBeGreaterThan(0);
+    }
+    expect(checkThemeCss(`.card { margin: 0 auto 12px; padding: 4px }`)).toEqual([]);
+  });
+
   test("allows an element positioned in place, and anything beneath", () => {
     expect(checkThemeCss(`.stage { position: relative }`)).toEqual([]);
     expect(checkThemeCss(`.stage { position: relative; top: 0; left: auto }`)).toEqual([]);

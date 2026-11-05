@@ -6,8 +6,8 @@
 // anything is painted over, even a transparent box that ignores the pointer, a shadow or a glow included. Without
 // layout this check is conservative. It counts as over a sealed part:
 //
-//   - an element after it in the tree (painted later) that is out of flow or shifted, or that draws outside its
-//     own box (an outer shadow, an outline, a filter);
+//   - an element after it in the tree (painted later) that is out of flow or shifted, that a negative margin
+//     pulls back over what came before, or that draws outside its own box (an outer shadow, an outline, a filter);
 //   - an element before it, inside the same positioned box, that is out of flow or shifted (positioned boxes
 //     paint after the flow around them), and any element lifted by a positive z-index;
 //   - a positioned pseudo-element on the part, on anything around it or on anything after it;
@@ -18,7 +18,7 @@
 // unless a negative z-index puts it beneath (in the part's own layer). Hover, focus and active states count as if they were on: a glow
 // under the pointer shows exactly when the user is about to click.
 
-import { animatesAny, drawsOver, hidesFrames, hidingKeyframes, lifts, styleRules, type Declaration } from "./css-check";
+import { animatesAny, drawsOver, hidesFrames, hidingKeyframes, lifts, pullsOver, styleRules, type Declaration } from "./css-check";
 
 type Pseudo = "before" | "after";
 
@@ -150,6 +150,10 @@ export function sealedProblems(root: Element, css: string): string[] {
       if (lifts(declarations) && positioned(declarations)) problems.add(`${describe(el)} is lifted over ${describe(part)} by its z-index`);
       if ((part.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0) {
         if (drawsOver(declarations)) problems.add(`${describe(el)} comes after ${describe(part)}, out of flow: it is drawn over it`);
+        // In flow, a negative margin pulls a later box back over what came before it; one that is out of flow is
+        // judged above (positioned boxes are placed by their offsets).
+        const pull = positioned(declarations) ? null : pullsOver(declarations);
+        if (pull) problems.add(`${describe(el)} comes after ${describe(part)} and ${pull} pulls it back over it`);
         const spill = overflows(declarations);
         if (spill) problems.add(`${describe(el)} comes after ${describe(part)} and draws outside its box (${spill})`);
         pseudoOver(el, part);

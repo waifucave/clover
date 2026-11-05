@@ -180,6 +180,9 @@ describe("the check itself catches what would cover a part", () => {
     [`<div class="row" style="filter: blur(1px)">${part}</div>`, ``],
     [`<div class="row">${part}</div>`, `.row { visibility: hidden }`],
     [`<div class="row">${part}</div><div class="top"></div>`, `.top { position: relative; z-index: 3 }`],
+    // In flow, a negative margin pulls a later box back over the part (the review's pull-over).
+    [`<div class="row">${part}</div><div class="next"></div>`, `.next { margin-top: -40px }`],
+    [`<div class="row">${part}</div><div class="next" style="margin: -8px 0 0"></div>`, ``],
     // A row of its own (a stacking context) paints after the card's flow: its glow, "beneath" in the row, lands on
     // the field below it. What Chromium caught in the gallery.
     [
