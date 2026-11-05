@@ -1,0 +1,11 @@
+{"ms":0,"kind":"start","server":"s5-stdio","pid":26688,"ppid":26008,"cwd":"$RUNS/work/agy","envNames":["AGY_CLI_DISABLE_AUTO_UPDATE","HOME","LANG","LOGNAME","NO_COLOR","PATH","S5_BRIDGE_TOKEN","S5_INSTRUCTION_WORD","S5_NONCE","SHELL","TERM","TMPDIR","USER"],"bridgeCheck":"present sha256=d5cce70250a0"}
+{"ms":3,"kind":"in","note":"server/discover → legacy","msg":{"jsonrpc":"2.0","id":1,"method":"server/discover","params":{"_meta":{"io.modelcontextprotocol/clientCapabilities":{"elicitation":{"form":{},"url":{}},"roots":{"listChanged":true}},"io.modelcontextprotocol/clientInfo":{"name":"antigravity-client","version":"v1.0.0"},"io.modelcontextprotocol/protocolVersion":"2026-07-28"}}}}
+{"ms":3,"kind":"out","id":1,"error":{"code":-32601,"message":"Method not found: server/discover (legacy-era server; use initialize)"}}
+{"ms":4,"kind":"in","note":"initialize asked=2025-11-25 answered=2025-11-25","msg":{"jsonrpc":"2.0","id":2,"method":"initialize","params":{"clientInfo":{"name":"antigravity-client","version":"v1.0.0"},"protocolVersion":"2025-11-25","capabilities":{"elicitation":{"form":{},"url":{}},"roots":{"listChanged":true}}}}}
+{"ms":4,"kind":"out","id":2}
+{"ms":4,"kind":"in","note":"notification notifications/initialized","msg":{"jsonrpc":"2.0","method":"notifications/initialized","params":{}}}
+{"ms":4,"kind":"in","note":"tools/list","msg":{"jsonrpc":"2.0","id":3,"method":"tools/list","params":{}}}
+{"ms":4,"kind":"out","id":3}
+{"ms":3025,"kind":"in","note":"notification notifications/roots/list_changed","msg":{"jsonrpc":"2.0","method":"notifications/roots/list_changed","params":{}}}
+{"ms":5842,"kind":"in","note":"tools/call s5_stdio_echo text=\"alpha\"","msg":{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"_meta":{"antigravity.google/artifacts_dir":"~/.gemini/antigravity-cli/brain/agy-session-2","antigravity.google/conversation_id":"agy-session-2","antigravity.google/root_conversation_id":"agy-session-2","progressToken":"<redacted:9991ed5d57c2>"},"name":"s5_stdio_echo","arguments":{"text":"alpha"}}}}
+{"ms":5842,"kind":"out","id":4}
