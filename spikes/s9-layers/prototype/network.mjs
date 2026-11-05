@@ -243,6 +243,7 @@ export async function networkCheck(electron){
    writeFileSync(resolve('results',`network-variant-${mode}.json`),JSON.stringify(entry,null,2));
    if(logging&&ses){try{await ses.netLog.stopLogging();}catch{}}
   }finally{
+   activeGone=null;
    try{if(win&&!win.isDestroyed())win.destroy();}catch{}
    try{f?.close();}catch{}
    contexts.forEach(c=>{try{c.fixture.close();}catch{}});
