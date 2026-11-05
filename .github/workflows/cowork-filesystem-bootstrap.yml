@@ -1,10 +1,7 @@
 name: Cowork disposable Linux filesystem bootstrap
 on:
+  # Cowork is paused (spec §12): this runs on demand only (workflow_dispatch).
   workflow_dispatch:
-  pull_request:
-    paths:
-      - 'spikes/cowork-filesystem-bootstrap/**'
-      - '.github/workflows/cowork-filesystem-bootstrap.yml'
 permissions:
   contents: read
 jobs:

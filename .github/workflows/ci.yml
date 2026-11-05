@@ -339,6 +339,8 @@ jobs:
   # signs ad-hoc (`codesign --sign -`) in a temp directory; nothing touches a Keychain or `~/.clover*`. No bun, no workspace install: the package imports nothing but the system.
   swift-cowork-launcher:
     name: swift (WinterCoworkLauncher)
+    # Cowork is paused (spec §12): this runs on demand only (workflow_dispatch).
+    if: github.event_name == 'workflow_dispatch'
     runs-on: macos-latest
     permissions:
       contents: read
@@ -401,6 +403,8 @@ jobs:
       # N2 S7B: the Cowork native pair's packaging gate. Builds the real launcher (swift build, scratch path), embeds it with a stand-in worker into a
       # scratch bundle (ad hoc), accepts it and proves seven refusals. Never runs either binary, never signs with a real identity.
       - name: verify:cowork-native
+        # Cowork is paused (spec §12): this runs on demand only (workflow_dispatch).
+        if: github.event_name == 'workflow_dispatch'
         run: bun run verify:cowork-native
 
       # N2 S7B: the Cowork channel's receiver thread must start in the COMPILED daemon (a third compile:core entrypoint). Compiles clover-core and runs a temp copy's
@@ -425,6 +429,8 @@ jobs:
   # (success when the change is out of scope), so it can become a required check without ever being "skipped".
   libkrun-queue:
     name: libkrun patch queue
+    # Cowork is paused (spec §12): this runs on demand only (workflow_dispatch). Skipped, the job reports success.
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:

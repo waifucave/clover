@@ -309,9 +309,11 @@ describe("guest image build workflow gates", () => {
     for (const name of ["pull_request", "pull_request_target", "workflow_dispatch", "schedule", "workflow_run", "repository_dispatch", "release", "issue_comment"]) expect(Object.keys(doc.on ?? {})).not.toContain(name);
   });
 
-  test("the gate test itself is picked up by normal PR CI: the artifact tests run under cowork-guest-boot.yml and this file under test · core", () => {
+  // C0: Cowork is paused (spec §12), so cowork-guest-boot.yml runs on demand only; when it is dispatched it still runs
+  // the artifact tests, and this file still runs under test · core on every PR.
+  test("the gate test itself is picked up by CI: the artifact tests run under cowork-guest-boot.yml (on demand while Cowork is paused) and this file under test · core", () => {
     const boot = loadContext().others["cowork-guest-boot.yml"] ?? "";
-    expect(boot).toContain("'scripts/cowork-guest-artifact/**'");
+    expect(boot).toContain("workflow_dispatch:");
     expect(boot).toContain("discover -s scripts/cowork-guest-artifact -p 'test_*.py'");
     expect(boot).toContain("discover -s scripts/cowork-guest-artifact/kernel -p 'test_*.py'");
   });
