@@ -40,6 +40,15 @@ describe("FakeFence", () => {
     expect(f.check({ op: "list", path: CLOVER })).toEqual({ allowed: true });
   });
 
+  test("the registry's own records are fenced: its OKs, the installed list and the 18+ confirmation (review S8)", () => {
+    const f = fence();
+    for (const kind of ["plugin-oks", "installed-plugins", "adult-confirmation"] as const) {
+      const item = f.fencedSet().find((i) => i.kind === kind)!;
+      expect(item.deny).toBe("write");
+      expect(f.check({ op: "write", path: item.path })).toEqual({ allowed: false, reason: kind, path: item.path });
+    }
+  });
+
   test("the plugins folder and routine files are not fenced: bots write plugins and routines as files", () => {
     const f = fence();
     expect(f.check({ op: "write", path: `${CLOVER}/plugins/luna/clover.json` })).toEqual({ allowed: true });

@@ -23,6 +23,13 @@ export const FENCED_KINDS = [
   "device-list",
   "user-layers",
   "credential-store",
+  /** The registry's own records (review S8): a bot that could write them would approve its own plugin. The OKs (each
+   *  plugin's approved tree hash, child switches and card styling last OK'd), */
+  "plugin-oks",
+  /** the installed-plugins list that syncs (§8.5: ids, versions, hashes, on/off states, opt-outs), */
+  "installed-plugins",
+  /** and the user's confirmation that they are 18 or older (§5.7). */
+  "adult-confirmation",
   /** Development folders themselves (§5.6): they reload on every change without asking. */
   "dev-folders",
   /** `<home>/plugin-data/<id>/` (§5.4), where add-ons live. */
