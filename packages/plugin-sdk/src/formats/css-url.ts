@@ -13,6 +13,11 @@
 //    backslashes, a leading `/` or `//`, and any scheme (`https:`, `data:`, `file:`) are refused, whatever their
 //    spelling.
 // 4. What the browser then loads is the core's asset URL for the resolved file, never the raw string.
+// 5. A URL-taking function whose arguments hold `var()`, `env()` or `attr()` is dropped with its declaration
+//    (`cssUrlArgumentsAreDynamic`, review S6): its URL is known only when the page computes it, so rule 3 can't see
+//    it (`--u: "https://…"; background: image-set(var(--u))`).
+// 6. Custom properties (`--x: …`) are scanned like any declaration: a URL function in one must pass rule 3, and a
+//    dropped function drops it, though nothing loads until another declaration uses it.
 import { treePathProblem } from "./tree-hash";
 
 /** Functions whose argument is a URL, or whose strings are URLs (`image-set`). */
@@ -72,6 +77,16 @@ export function isCssUrlFunction(raw: string): boolean {
 
 export function isDroppedCssFunction(raw: string): boolean {
   return CSS_DROPPED_FUNCTIONS.includes(cssFunctionName(raw));
+}
+
+/** Functions whose value the page computes, so a URL built from them can't be checked. */
+export const CSS_DYNAMIC_FUNCTIONS: readonly string[] = ["var", "env", "attr"];
+
+/** Whether a URL-taking function's raw arguments hold `var()`, `env()` or `attr()`, however they are spelled
+ *  (escapes decoded, any case): the cleaner then drops the declaration (rule 5). */
+export function cssUrlArgumentsAreDynamic(rawArgs: string): boolean {
+  const text = cssUnescape(rawArgs).replace(/[A-Z]/g, (c) => c.toLowerCase());
+  return CSS_DYNAMIC_FUNCTIONS.some((name) => new RegExp(`(^|[^a-z0-9_\\-])${name}\\(`).test(text));
 }
 
 export type CssUrlVerdict =

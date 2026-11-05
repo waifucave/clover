@@ -26,7 +26,7 @@
 // them waits for its own OK while the rest of the change applies at once. Until the user OKs it, the core passes the
 // layer's last OK'd values as `heldCard`, and `resolveTokens` takes that layer's `card.*` values from there.
 import { z } from "zod";
-import { CARD_TOKENS, TOKENS, isSafeTokenValue, type TokenValue } from "../catalogs/tokens";
+import { CARD_TOKENS, TOKENS, isValueForToken, type TokenValue } from "../catalogs/tokens";
 import { Path, Text } from "../manifest/fields";
 
 /** A token's value: a string, or a plain number for `number` and `fontWeight` tokens. The catalog
@@ -57,13 +57,15 @@ export type Theme = z.infer<typeof ThemeSchema>;
 
 export type Appearance = "light" | "dark";
 
-/** A theme's values in one appearance, or `undefined` when it doesn't apply there. Unsafe values are dropped. */
+/** A theme's values in one appearance, or `undefined` when it doesn't apply there. A value that doesn't fit its token
+ *  (the catalog's type, or any type for a plugin's own token) is dropped, so a quoted string survives only in a
+ *  `fontFamily` value. */
 export function themeTokensFor(theme: Pick<Theme, "appearance" | "tokens" | "dark">, appearance: Appearance): Record<string, TokenValue> | undefined {
   const applies = theme.appearance ?? "both";
   if (applies !== "both" && applies !== appearance) return undefined;
   const merged: Record<string, TokenValue> = { ...theme.tokens };
   if (applies === "both" && appearance === "dark") Object.assign(merged, theme.dark?.tokens ?? {});
-  for (const [name, value] of Object.entries(merged)) if (!isSafeTokenValue(value)) delete merged[name];
+  for (const [name, value] of Object.entries(merged)) if (!isValueForToken(name, value)) delete merged[name];
   return merged;
 }
 

@@ -4,7 +4,7 @@ import { describe, expect, test } from "bun:test";
 import {
   API_CALLS, CAPABILITIES, CARD_TOKENS, CLAUDE_HOOK_EVENTS, CORE_CONTRIBUTION_KEYS, CORE_POINTS, DATA_POINTS, HOOK_EVENTS,
   HOOK_RETURNS, MESSAGE_KINDS, PointDeclSchema, SPOTS, TOKENS, TOKEN_GROUPS, WELL_KNOWN_POINT_NAMES, apiCallAllowed, capabilityOkText, catalogJson,
-  catalogPointDecl, cssProperty, cssVar,
+  catalogPointDecl, cssProperty, cssVar, isAnyTokenValue, isValueForToken,
   fetchesCodeAtRunTime, hookMatchesTool, hookOrder, interpolate, isPluginTokenName, isSafeTokenValue, isTokenName, isTokenValue, keyMatches,
   networkAllows, pluginTokenName,
   parseCapability,
@@ -202,7 +202,23 @@ describe("tokens", () => {
     for (const bad of ["red; x", "a\nb", '"open', "red !important", "src(x)", "cross-fade(a, b)", Number.NaN, {}, null]) {
       expect([bad, isSafeTokenValue(bad)]).toEqual([bad, false]);
     }
-    for (const ok of ['"Segoe UI", sans-serif', "#fff", 1.5, "0 1px 2px rgb(0 0 0 / 40%)"]) expect([ok, isSafeTokenValue(ok)]).toEqual([ok, true]);
+    for (const ok of ["#fff", 1.5, "0 1px 2px rgb(0 0 0 / 40%)"]) expect([ok, isSafeTokenValue(ok)]).toEqual([ok, true]);
+  });
+
+  test("quoted strings fit only a font family, and every one must close, read as CSS reads it (review S6)", () => {
+    expect(isSafeTokenValue('"Segoe UI", sans-serif', "fontFamily")).toBe(true);
+    expect(isSafeTokenValue('"Segoe UI", sans-serif')).toBe(false);
+    expect(isSafeTokenValue('"https://evil.example/x.png"', "paint")).toBe(false);
+    expect(isTokenValue("shadow", "0 0 'x'")).toBe(false);
+    // Counting quotes would pass these; reading them leaves a string open.
+    for (const open of [`'"'"`, `"a'b`, `'a"b' "`]) {
+      expect([open, isSafeTokenValue(open, "fontFamily"), isTokenValue("fontFamily", open)]).toEqual([open, false, false]);
+    }
+    expect(isTokenValue("fontFamily", `"It's Mine", serif`)).toBe(true);
+    expect(isAnyTokenValue('"Luna Sans", serif')).toBe(true);
+    expect(isAnyTokenValue('"https://evil.example/"')).toBe(false);
+    expect(isValueForToken("color.accent", '"Luna"')).toBe(false);
+    expect(isValueForToken("font.sans", '"Luna Sans", serif')).toBe(true);
   });
 
   test("a value can never break out of its custom property", () => {

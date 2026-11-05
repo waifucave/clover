@@ -244,21 +244,34 @@ const EASING = /^(linear|ease|ease-in|ease-out|ease-in-out|step-start|step-end|(
 const FAMILY = /^[A-Za-z0-9 ,"'_-]{1,200}$/;
 const SHADOW = /^[A-Za-z0-9 ,.#()%/-]{1,300}$/;
 
-/** Whether a value can go into a CSS custom property at all, whatever its token: a finite number, or a string of at
- *  most 300 characters on one line with no `;`, braces, angle brackets, `@`, backslash, comment, open quote, `!important`,
- *  `url(` or other resource function.
- *  The theme engine (lane E) applies it to every value it sets, a plugin's own tokens included. */
-export function isSafeTokenValue(value: unknown): value is TokenValue {
+/** Whether every quoted string in a value closes, read as CSS reads it: a quote opens a string that only the same
+ *  quote closes, so `'"'"` leaves a `"` open (counting quotes would pass it; review S6). Backslashes never reach here. */
+function quotesClose(value: string): boolean {
+  let open: string | undefined;
+  for (const c of value) {
+    if (open === undefined) {
+      if (c === '"' || c === "'") open = c;
+    } else if (c === open) open = undefined;
+  }
+  return open === undefined;
+}
+
+/** Whether a value can go into a CSS custom property at all: a finite number, or a string of at most 300 characters
+ *  on one line with no `;`, braces, angle brackets, `@`, backslash, comment, `!important`, `url(` or other resource
+ *  function. Quoted strings are allowed only in a `fontFamily` value, and every one must close (review S6), so a
+ *  string can't carry a URL into `image-set()` or run on past the value. The theme engine (lane E) applies it to every
+ *  value it sets with the token's type (`isTokenValue`), and to a plugin's own tokens through `isAnyTokenValue`. */
+export function isSafeTokenValue(value: unknown, type?: TokenType): value is TokenValue {
   if (typeof value === "number") return Number.isFinite(value);
   if (typeof value !== "string" || value.length > 300 || UNSAFE.test(value)) return false;
-  // A quote left open would run on past the value.
-  return (value.match(/"/g)?.length ?? 0) % 2 === 0 && (value.match(/'/g)?.length ?? 0) % 2 === 0;
+  if (!value.includes('"') && !value.includes("'")) return true;
+  return type === "fontFamily" && quotesClose(value);
 }
 
 /** Whether a value fits a token type, and is safe to put in a CSS custom property. A number fits only `number` and
  *  `fontWeight` (1 to 1000). */
 export function isTokenValue(type: TokenType, value: TokenValue): boolean {
-  if (!isSafeTokenValue(value)) return false;
+  if (!isSafeTokenValue(value, type)) return false;
   if (typeof value === "number") return type === "number" || (type === "fontWeight" && value >= 1 && value <= 1000);
   const v = value.trim();
   switch (type) {
@@ -272,6 +285,18 @@ export function isTokenValue(type: TokenType, value: TokenValue): boolean {
     case "shadow": return SHADOW.test(value);
     case "paint": return COLOR.test(v) || GRADIENT.test(v);
   }
+}
+
+/** Whether a value fits some token type: the check for a plugin's own tokens, which have none of their own. */
+export function isAnyTokenValue(value: unknown): value is TokenValue {
+  return (typeof value === "string" || typeof value === "number") && TOKEN_TYPES.some((type) => isTokenValue(type, value));
+}
+
+/** Whether a value may be set for a token by name: the catalog token's own type, or any type for a plugin's own. */
+export function isValueForToken(name: string, value: unknown): value is TokenValue {
+  const type = TOKENS.find((t) => t.name === name)?.type;
+  if (type === undefined) return isAnyTokenValue(value);
+  return (typeof value === "string" || typeof value === "number") && isTokenValue(type, value);
 }
 
 /** The text a value takes in CSS. */

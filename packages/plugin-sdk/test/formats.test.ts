@@ -4,7 +4,7 @@ import { createHash } from "node:crypto";
 import {
   IndexSchema, LayoutSchema, LocaleSchema, RevocationsSchema, ThemeSchema, compareVersions, isRevoked, isTreeHashExcluded,
   layoutPaths, layoutSpots, localeFallbacks, parseRange, parseSignatureFile, parseVersion, placeholdersOf, satisfies,
-  cardTokensChanged, cssFunctionName, cssUnescape, isCssUrlFunction, isDroppedCssFunction, resolveCssUrl, resolveTokens, setsCardTokens, sha256Hex,
+  cardTokensChanged, cssFunctionName, cssUnescape, cssUrlArgumentsAreDynamic, isCssUrlFunction, isDroppedCssFunction, resolveCssUrl, resolveTokens, setsCardTokens, sha256Hex,
   themeTokensFor, treeHash, treeHashInput, treePathProblem,
 } from "../src/index";
 
@@ -61,6 +61,18 @@ describe("appearance and the fallback order", () => {
 });
 
 describe("what a plugin's CSS may load", () => {
+  test("a URL function whose arguments the page computes is dropped: var(), env(), attr(), however spelled (review S6)", () => {
+    expect(cssUrlArgumentsAreDynamic("var(--u)")).toBe(true);
+    expect(cssUrlArgumentsAreDynamic('"a.png" 1x, var(--u) 2x')).toBe(true);
+    expect(cssUrlArgumentsAreDynamic("VAR(--u)")).toBe(true);
+    expect(cssUrlArgumentsAreDynamic("\\76 ar(--u)")).toBe(true);
+    expect(cssUrlArgumentsAreDynamic("env(safe-area-inset-top)")).toBe(true);
+    expect(cssUrlArgumentsAreDynamic("attr(data-src url)")).toBe(true);
+    expect(cssUrlArgumentsAreDynamic('"img/a.png" 1x, "img/b.png" 2x')).toBe(false);
+    expect(cssUrlArgumentsAreDynamic("img/avatar.png")).toBe(false);
+    expect(cssUrlArgumentsAreDynamic("img/xvar(1).png")).toBe(false);
+  });
+
   test("escapes decode before any comparison, as CSS Syntax 3 says", () => {
     expect(cssUnescape("u\\72 l")).toBe("url");
     expect(cssUnescape("\\2e\\2e/x")).toBe("../x");
