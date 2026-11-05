@@ -1,0 +1,331 @@
+/* The browser panel: the tab row, the toolbar, the frame the browser's live view fills, and the annotate strip.
+   Every colour, face and size is a theme token; the sizes follow the reference app's (measured for lane G's base
+   theme): the tab row is the panel's 45 px header row, its buttons 28 px square, the address bar 28 px high on the
+   raised fill with an 8 px radius.
+
+   Nothing here is positioned out of the flow. The live view is a native view drawn above all of the page's DOM, so
+   anything over the frame would be hidden or would hide the page: the failure notice is a line above the frame and
+   the annotate tools are a strip below it. */
+
+.cl-browser-panel {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--clover-color-surface);
+  color: var(--clover-color-text);
+  font-family: var(--clover-font-sans);
+  font-size: var(--clover-font-size-control);
+}
+
+.cl-browser-panel button,
+.cl-browser-panel input {
+  font: inherit;
+}
+
+.cl-browser-panel :focus-visible {
+  outline: 2px solid var(--clover-color-focus);
+  outline-offset: -2px;
+}
+
+/* The tab row: the panel's header row, 45 px with its rule. */
+.cl-browser-panel__head {
+  box-sizing: border-box;
+  display: flex;
+  flex: none;
+  align-items: center;
+  height: var(--clover-plugin-clover-bar-height);
+  padding: 0 var(--clover-space-s) 0 var(--clover-space-m);
+  border-bottom: 1px solid var(--clover-color-hairline-raised);
+}
+
+.cl-browser-tabs {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: var(--clover-space-xs);
+  min-width: 0;
+  overflow: hidden;
+}
+
+.cl-browser-tabs__tab {
+  display: inline-flex;
+  flex: 0 1 200px;
+  align-items: center;
+  min-width: 72px;
+  height: 28px;
+  border-radius: var(--clover-radius-medium);
+}
+
+.cl-browser-tabs__tab:hover {
+  background: var(--clover-color-hover);
+}
+
+.cl-browser-tabs__tab[data-active] {
+  background: var(--clover-color-selected);
+}
+
+.cl-browser-tabs__select {
+  display: inline-flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  height: 28px;
+  padding: 0 0 0 var(--clover-space-s);
+  border: none;
+  border-radius: var(--clover-radius-medium);
+  background: transparent;
+  color: var(--clover-color-text-secondary);
+  font-size: var(--clover-font-size-label);
+  cursor: pointer;
+}
+
+.cl-browser-tabs__tab[data-active] .cl-browser-tabs__select {
+  color: var(--clover-color-text);
+}
+
+.cl-browser-tabs__title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cl-browser-tabs__held {
+  display: inline-flex;
+  flex: none;
+  color: var(--clover-color-accent-text);
+}
+
+.cl-browser-tabs__close,
+.cl-browser-tabs__new {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--clover-color-text-muted);
+  cursor: pointer;
+}
+
+.cl-browser-tabs__close {
+  width: 24px;
+  height: 24px;
+  margin-right: 2px;
+  border-radius: var(--clover-radius-small);
+}
+
+.cl-browser-tabs__new {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--clover-radius-medium);
+}
+
+.cl-browser-tabs__close:hover,
+.cl-browser-tabs__new:hover {
+  background: var(--clover-color-hover);
+  color: var(--clover-color-text);
+}
+
+/* The chrome under the row: toolbar, frame, annotate strip. */
+.cl-browser {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.cl-browser__top {
+  flex: none;
+  border-bottom: 1px solid var(--clover-color-hairline);
+}
+
+/* 8 + 28 + 8 = 44 px, and the rule makes it 45. */
+.cl-browser__bar {
+  display: flex;
+  align-items: center;
+  gap: var(--clover-space-xs);
+  padding: var(--clover-space-s);
+}
+
+.cl-browser__button {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: var(--clover-radius-medium);
+  background: transparent;
+  color: var(--clover-color-text-muted);
+  cursor: pointer;
+}
+
+.cl-browser__button:hover:not(:disabled) {
+  background: var(--clover-color-hover);
+  color: var(--clover-color-text);
+}
+
+.cl-browser__button:disabled {
+  color: var(--clover-color-text-placeholder);
+  cursor: default;
+}
+
+.cl-browser__address {
+  box-sizing: border-box;
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 28px;
+  margin-left: var(--clover-space-xs);
+  padding: 0 var(--clover-space-m);
+  border: none;
+  border-radius: var(--clover-radius-medium);
+  background: var(--clover-color-raised);
+  color: var(--clover-color-text);
+  text-align: center;
+  text-overflow: ellipsis;
+}
+
+.cl-browser__address:disabled {
+  color: var(--clover-color-text-placeholder);
+}
+
+.cl-browser__address:focus-visible {
+  outline-offset: -2px;
+  text-align: left;
+}
+
+.cl-browser__address[aria-invalid="true"] {
+  outline: 1px solid var(--clover-color-danger);
+  outline-offset: -1px;
+}
+
+/* A failure, in plain words, attached to the bar. A line of the flow above the frame, never over it. */
+.cl-browser__error {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 0;
+  padding: 0 var(--clover-space-m) var(--clover-space-s);
+  color: var(--clover-color-danger);
+  font-size: var(--clover-font-size-label);
+}
+
+.cl-browser__error .cl-browser-icon {
+  margin-top: 1px;
+}
+
+.cl-browser__error-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* The frame the browser's live view fills. */
+.cl-browser__frame {
+  position: relative;
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.cl-browser__placeholder {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--clover-space-xs);
+  margin: var(--clover-space-m);
+  padding: var(--clover-space-xl);
+  border: 1px dashed var(--clover-color-hairline-raised);
+  border-radius: var(--clover-radius-large);
+  background: var(--clover-color-raised);
+  color: var(--clover-color-text-muted);
+  text-align: center;
+}
+
+.cl-browser__placeholder-title {
+  margin: var(--clover-space-s) 0 0;
+  color: var(--clover-color-text);
+  font-size: var(--clover-font-size-body);
+}
+
+.cl-browser__placeholder-text {
+  max-width: 300px;
+  margin: 0;
+}
+
+/* The annotate tools: a strip of their own under the page, never over it. */
+.cl-browser__annotate {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  gap: var(--clover-space-xs);
+  padding: var(--clover-space-xs);
+  border-top: 1px solid var(--clover-color-hairline-raised);
+  background: var(--clover-color-surface);
+}
+
+.cl-browser__tool {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: none;
+  border-radius: var(--clover-radius-medium);
+  background: transparent;
+  color: var(--clover-color-text-secondary);
+  cursor: pointer;
+}
+
+.cl-browser__tool:hover {
+  background: var(--clover-color-hover);
+  color: var(--clover-color-text);
+}
+
+.cl-browser__tool[aria-pressed="true"] {
+  background: var(--clover-color-accent-soft);
+  color: var(--clover-color-accent-text);
+}
+
+.cl-browser__tool-gap {
+  width: 1px;
+  height: 20px;
+  margin: 0 var(--clover-space-xs);
+  background: var(--clover-color-hairline-raised);
+}
+
+.cl-browser-icon {
+  flex: none;
+}
+
+/* A tab's spinner while its page loads. */
+.cl-browser-icon[data-spin] {
+  animation: cl-browser-spin 1s linear infinite;
+}
+
+@keyframes cl-browser-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cl-browser-panel * {
+    transition: none;
+  }
+
+  .cl-browser-icon[data-spin] {
+    animation: none;
+  }
+}

@@ -113,6 +113,32 @@
         "typescript": "5.9.3",
       },
     },
+    "plugins/clover/browser": {
+      "name": "@waifucave/clover-plugin-browser",
+      "version": "0.0.0",
+      "devDependencies": {
+        "@types/bun": "1.3.14",
+        "typescript": "5.9.3",
+      },
+    },
+    "plugins/clover/browser-view": {
+      "name": "@waifucave/clover-plugin-browser-view",
+      "version": "0.0.0",
+      "dependencies": {
+        "lucide-react": "1.61.0",
+        "react": "19.3.1",
+        "react-dom": "19.3.1",
+      },
+      "devDependencies": {
+        "@happy-dom/global-registrator": "21.0.4",
+        "@testing-library/dom": "10.4.2",
+        "@testing-library/react": "16.3.3",
+        "@types/bun": "1.3.14",
+        "@types/react": "19.3.0",
+        "@types/react-dom": "19.3.0",
+        "typescript": "5.9.3",
+      },
+    },
     "plugins/clover/composer": {
       "name": "@waifucave/clover-plugin-composer",
       "version": "0.0.0",
@@ -785,6 +811,10 @@
     "@waifucave/clover-plugin-alpha-tab": ["@waifucave/clover-plugin-alpha-tab@workspace:plugins/alpha/tab"],
 
     "@waifucave/clover-plugin-base-theme": ["@waifucave/clover-plugin-base-theme@workspace:plugins/clover/base-theme"],
+
+    "@waifucave/clover-plugin-browser": ["@waifucave/clover-plugin-browser@workspace:plugins/clover/browser"],
+
+    "@waifucave/clover-plugin-browser-view": ["@waifucave/clover-plugin-browser-view@workspace:plugins/clover/browser-view"],
 
     "@waifucave/clover-plugin-composer": ["@waifucave/clover-plugin-composer@workspace:plugins/clover/composer"],
 
@@ -1717,6 +1747,10 @@
     "@poppinss/dumper/supports-color": ["supports-color@10.2.2", "", {}, "sha512-SS+jx45GF1QjgEXQx4NJZV9ImqmO2NPz5FNsIHrsDjh2YsHnawpan7SNQ1o8NuhrbHZy9AZhIoCUiCeaW/C80g=="],
 
     "@types/react-dom/@types/react": ["@types/react@19.3.0", "", { "dependencies": { "csstype": "^3.2.2" } }, "sha512-N0rFCuH9YoxG9/m61l9MfpJKfmLOVU0em7ipIz6TRgSSkvReLB9vL85GB+yr8Bs5leqpvg96JSwF4ZS1s4viQg=="],
+
+    "@waifucave/clover-plugin-browser-view/@types/react": ["@types/react@19.3.0", "", { "dependencies": { "csstype": "^3.2.2" } }, "sha512-N0rFCuH9YoxG9/m61l9MfpJKfmLOVU0em7ipIz6TRgSSkvReLB9vL85GB+yr8Bs5leqpvg96JSwF4ZS1s4viQg=="],
+
+    "@waifucave/clover-plugin-browser-view/react": ["react@19.3.1", "", {}, "sha512-QNhWdt7nrgVWWQG58QuGsAR3jv3Hbe4mb4vz7w2csnHavciZJgda1CPNaldF6eVxv90ud3jUXpKlHL69gO38yw=="],
 
     "@waifucave/clover-plugin-composer/@types/react": ["@types/react@19.3.0", "", { "dependencies": { "csstype": "^3.2.2" } }, "sha512-N0rFCuH9YoxG9/m61l9MfpJKfmLOVU0em7ipIz6TRgSSkvReLB9vL85GB+yr8Bs5leqpvg96JSwF4ZS1s4viQg=="],
 
