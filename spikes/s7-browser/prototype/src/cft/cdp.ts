@@ -81,6 +81,21 @@ export class Browser {
   exitCode: number | null = null;
   exitSignal: string | null = null;
   private readonly exitWaiters: Array<() => void> = [];
+  /** The last messages each way ("→ 12 Runtime.evaluate", "← 12", "← Page.lifecycleEvent"), for a timeout's report. */
+  private readonly trace: string[] = [];
+  private readonly born = Date.now();
+  private lastIn = 0;
+  private bytesIn = 0;
+
+  private note(line: string): void {
+    this.trace.push(`${Date.now() - this.born} ${line}`);
+    if (this.trace.length > 24) this.trace.shift();
+  }
+
+  /** What went over the pipe last, and how long since the browser last sent anything. */
+  traceText(n = 12): string {
+    return `last bytes from the browser ${this.lastIn === 0 ? "never" : `${Date.now() - this.lastIn} ms ago`} (${this.bytesIn} in all); trace: ${this.trace.slice(-n).join(", ")}`;
+  }
 
   private constructor(proc: ProcHandle, transport: Transport) {
     this.proc = proc;
@@ -185,6 +200,8 @@ export class Browser {
   }
 
   private onData(text: string): void {
+    this.lastIn = Date.now();
+    this.bytesIn += text.length;
     const { messages, rest } = splitNul(this.buf + text);
     this.buf = rest;
     for (const m of messages) this.onMessage(m);
@@ -193,6 +210,8 @@ export class Browser {
   private onMessage(text: string): void {
     let msg: { id?: number; result?: unknown; error?: { code: number; message: string }; method?: string; params?: Record<string, unknown>; sessionId?: string };
     try { msg = JSON.parse(text); } catch { return; }
+    if (this.transport === "port") { this.lastIn = Date.now(); this.bytesIn += text.length; } // whole messages, no onData
+    this.note(typeof msg.id === "number" ? `← ${msg.id}${msg.error !== undefined ? " error" : ""}` : `← ${msg.method ?? "?"}`);
     if (typeof msg.id === "number") {
       const p = this.pending.get(msg.id);
       if (p === undefined) return;
@@ -210,8 +229,9 @@ export class Browser {
     if (this.exited) return Promise.reject(new CdpError(`browser gone (${method})`));
     const id = this.nextId++;
     const text = JSON.stringify({ id, method, params, ...(sessionId === undefined ? {} : { sessionId }) });
+    this.note(`→ ${id} ${method}`);
     return new Promise<T>((resolve, reject) => {
-      const timer = setTimeout(() => { this.pending.delete(id); reject(new CdpError(`${method} timed out`)); }, timeoutMs);
+      const timer = setTimeout(() => { this.pending.delete(id); reject(new CdpError(`${method} timed out (${this.traceText()})`)); }, timeoutMs);
       this.pending.set(id, { resolve: resolve as (v: unknown) => void, reject, timer, method });
       try {
         if (this.transport === "fdpipe") { if (!this.fd!.write(`${text}\0`)) throw new Error("the pipe is closed"); }

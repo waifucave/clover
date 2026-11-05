@@ -147,14 +147,15 @@ async function forArtifact(artifact: Artifact, server: SpikeServer): Promise<Rec
     return out;
   }
 
-  const b = (await launch(l, join(profiles, `${artifact}-main`))).b;
-  try {
-    // --- background tabs: are timers, rAF and media throttled? ------------------------------------------------------
-    if (want("tabs")) {
+  // --- background tabs: are timers and rAF throttled? (a browser of its own) --------------------------------------
+  if (want("tabs")) {
+    const b = (await launch(l, join(profiles, `${artifact}-tabs`))).b;
+    try {
       try {
         // two tabs in one window (Target.createTarget's default), then two tabs each in a window of its own
         const tabRows: Array<Record<string, unknown>> = [];
         for (const own of [false, true]) {
+          log(`${artifact}: tabs, ${own ? "windows of their own" : "one window"}: opening`);
           const t1 = await probeTab(b, server, `scenario=probe&sse=0&tab=c1${own ? "w" : ""}`, undefined, own);
           const t2 = await probeTab(b, server, `scenario=probe&sse=0&tab=c2${own ? "w" : ""}`, undefined, own);
           await sleep(2000);
@@ -197,10 +198,15 @@ async function forArtifact(artifact: Artifact, server: SpikeServer): Promise<Rec
       } catch (e) {
         errors.push(`tabs: ${errorText(e)}${died(b)}`);
       }
+    } finally {
+      await b.close();
     }
+  }
 
-    // --- screenshots ---------------------------------------------------------------------------------------------
-    if (want("screenshots")) {
+  // --- screenshots and a screencast (a browser of its own) -------------------------------------------------------
+  if (want("screenshots")) {
+    const b = (await launch(l, join(profiles, `${artifact}-shots`))).b;
+    try {
       try {
         const t = await probeTab(b, server, "scenario=anim&sse=0&tab=c3", undefined, true);
         await sleep(1000);
@@ -258,9 +264,9 @@ async function forArtifact(artifact: Artifact, server: SpikeServer): Promise<Rec
       } catch (e) {
         errors.push(`screenshots: ${errorText(e)}${died(b)}`);
       }
+    } finally {
+      await b.close();
     }
-  } finally {
-    await b.close();
   }
 
   // --- media: video with sound and an AudioContext, in a browser of its own, so a hang can't spoil the other steps --
