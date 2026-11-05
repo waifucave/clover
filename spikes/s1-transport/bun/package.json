@@ -1,0 +1,10 @@
+{
+  "name": "@waifucave/spike-s1-transport",
+  "private": true,
+  "type": "module",
+  "description": "Spike S1 (lab half): iroh, quinn and WebRTC under Bun. Deliberately one level below spikes/ so the root workspace glob (spikes/*) does not pick it up.",
+  "dependencies": {
+    "@number0/iroh": "1.2.0",
+    "node-datachannel": "0.33.6"
+  }
+}
