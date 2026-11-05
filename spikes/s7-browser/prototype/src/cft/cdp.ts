@@ -94,7 +94,8 @@ export class Browser {
 
   /** What went over the pipe last, and how long since the browser last sent anything. */
   traceText(n = 12): string {
-    return `last bytes from the browser ${this.lastIn === 0 ? "never" : `${Date.now() - this.lastIn} ms ago`} (${this.bytesIn} in all); trace: ${this.trace.slice(-n).join(", ")}`;
+    const ours = this.fd === undefined ? "" : `; our writes ${JSON.stringify(this.fd.stats())}`;
+    return `last bytes from the browser ${this.lastIn === 0 ? "never" : `${Date.now() - this.lastIn} ms ago`} (${this.bytesIn} in all)${ours}; trace: ${this.trace.slice(-n).join(", ")}`;
   }
 
   private constructor(proc: ProcHandle, transport: Transport) {
@@ -142,11 +143,14 @@ export class Browser {
    * Start a browser and connect to it. `args` are the browser's own switches (no debugging switch). A start that
    * fails kills the browser (so its profile is free again) and says what it printed.
    */
+  /** macOS and Linux: how fdpipe reads and writes ("async" is Winter's road; "worker", round six's comparison). */
+  static posixReader: "async" | "worker" = "async";
+
   static async launch(bin: string, args: string[], transport: Transport, timeoutMs = 30_000): Promise<Browser> {
     let b: Browser | undefined;
     try {
       if (transport === "fdpipe") {
-        const fd = await spawnWithFdPipes(bin, ["--remote-debugging-pipe", ...args]);
+        const fd = await spawnWithFdPipes(bin, ["--remote-debugging-pipe", ...args], Browser.posixReader);
         b = new Browser(fromBun(fd.proc), "fdpipe");
         b.fd = fd;
         const self = b;

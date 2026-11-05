@@ -4,7 +4,7 @@
 // still holds the pipe, and the browser then shuts down cleanly ("Connection terminated while reading from pipe", the
 // round-one failure here). Every end is close-on-exec, so no other child inherits one; the child's two are dup2'd
 // into 3 and 4 (a duplicate does not carry the flag) and closed here once it has them. Bun only (bun:ffi).
-import { createReadStream, write as fsWrite } from "node:fs";
+import { createReadStream, write as fsWrite, writeSync } from "node:fs";
 import { StringDecoder } from "node:string_decoder";
 
 interface Libc { pipe(fds: Int32Array): number; close(fd: number): number; cloexec(fd: number, on: boolean): number }
@@ -29,10 +29,16 @@ export interface FdPipeProcess {
   write(text: string): boolean;
   onData(listener: (text: string) => void): void;
   closeInput(): void;
+  /** Our side of the commands pipe: what waits to be written, whether a write is in flight, what went out. */
+  stats(): { queued: number; inFlight: boolean; writes: number; bytesOut: number; writeError?: string };
 }
 
-/** Start `command` with fd 3 (our commands) and fd 4 (its answers); stderr piped, stdin/stdout ignored. */
-export async function spawnWithFdPipes(command: string, args: string[]): Promise<FdPipeProcess> {
+/**
+ * Start `command` with fd 3 (our commands) and fd 4 (its answers); stderr piped, stdin/stdout ignored. `reader`:
+ * "async" reads with node's createReadStream and writes with fs.write (Winter's road); "worker" reads with blocking
+ * read(2) calls in a Bun Worker and writes with writeSync, so neither direction waits on the event loop's pool.
+ */
+export async function spawnWithFdPipes(command: string, args: string[], reader: "async" | "worker" = "async"): Promise<FdPipeProcess> {
   const c = await lib();
   const make = (): [number, number] => {
     const fds = new Int32Array(2);
@@ -55,7 +61,8 @@ export async function spawnWithFdPipes(command: string, args: string[]): Promise
   c.close(childRead);
   c.close(childWrite);
 
-  let open = true, writing = false;
+  let open = true, writing = false, writes = 0, bytesOut = 0;
+  let writeError: string | undefined;
   const queue: Buffer[] = [];
   const closeWrite = (): void => {
     if (!open) return;
@@ -70,15 +77,47 @@ export async function spawnWithFdPipes(command: string, args: string[]): Promise
     writing = true;
     fsWrite(ourWrite, next, (err, n) => {
       writing = false;
-      if (err !== null) { closeWrite(); return; }
+      if (err !== null && err !== undefined) { writeError = String(err); closeWrite(); return; }
+      writes++;
+      bytesOut += n;
       if (n < next.length) queue.unshift(next.subarray(n));
       if (!open) { c.close(ourWrite); return; }
       pump();
     });
   };
+  const decoder = new StringDecoder("utf8");
+  if (reader === "worker") {
+    const listeners: Array<(text: string) => void> = [];
+    const worker = new Worker(new URL("./fdreader-worker.ts", import.meta.url).href);
+    worker.onmessage = (e: MessageEvent<{ chunk?: Uint8Array; eof?: boolean; error?: string }>) => {
+      if (e.data.chunk !== undefined) { const text = decoder.write(Buffer.from(e.data.chunk)); for (const l of listeners) l(text); }
+      else { worker.terminate(); c.close(ourRead); }
+    };
+    worker.postMessage({ fd: ourRead });
+    void proc.exited.then(() => { setTimeout(() => { try { worker.terminate(); } catch { /* gone */ } }, 2000); });
+    return {
+      proc,
+      write(text) {
+        if (!open) return false;
+        const b = Buffer.from(text, "utf8");
+        try {
+          for (let off = 0; off < b.length;) off += writeSync(ourWrite, b, off, b.length - off);
+          writes++;
+          bytesOut += b.length;
+        } catch (err) {
+          writeError = String(err);
+          closeWrite();
+          return false;
+        }
+        return true;
+      },
+      onData(listener) { listeners.push(listener); },
+      closeInput() { closeWrite(); },
+      stats() { return { queued: 0, inFlight: false, writes, bytesOut, ...(writeError === undefined ? {} : { writeError }) }; },
+    };
+  }
   const input = createReadStream("", { fd: ourRead, autoClose: true, highWaterMark: 1024 * 1024 });
   input.on("error", () => { /* the exit says what happened */ });
-  const decoder = new StringDecoder("utf8");
   return {
     proc,
     write(text) {
@@ -89,5 +128,6 @@ export async function spawnWithFdPipes(command: string, args: string[]): Promise
     },
     onData(listener) { input.on("data", (chunk) => listener(decoder.write(typeof chunk === "string" ? Buffer.from(chunk) : chunk))); },
     closeInput() { closeWrite(); },
+    stats() { return { queued: queue.length, inFlight: writing, writes, bytesOut, ...(writeError === undefined ? {} : { writeError }) }; },
   };
 }

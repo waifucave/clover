@@ -31,6 +31,7 @@ const artifacts = arg("artifacts", "chrome-headless-shell,chrome").split(",").fi
 const home = resolve(arg("home", mkdtempSync(join(tmpdir(), "clover-s7-home-"))));
 const only = arg("only", "").split(",").filter(Boolean);
 const keepHome = process.argv.includes("--keep-home");
+Browser.posixReader = arg("posix-reader", "async") === "worker" ? "worker" : "async";
 const started = Date.now();
 const log = (s: string): void => console.log(`[cft ${((Date.now() - started) / 1000).toFixed(1)}s] ${s}`);
 const want = (step: string): boolean => only.length === 0 || only.includes(step);
@@ -152,30 +153,43 @@ async function forArtifact(artifact: Artifact, server: SpikeServer): Promise<Rec
     const b = (await launch(l, join(profiles, `${artifact}-tabs`))).b;
     try {
       try {
-        // two tabs in one window (Target.createTarget's default), then two tabs each in a window of its own
+        // two tabs each in a window of its own, then two tabs in one window (Target.createTarget's default; on Linux
+        // the second of those stopped answering in rounds three to five, so a tab that stops answering is recorded
+        // and the step goes on)
         const tabRows: Array<Record<string, unknown>> = [];
-        for (const own of [false, true]) {
+        for (const own of [true, false]) {
           log(`${artifact}: tabs, ${own ? "windows of their own" : "one window"}: opening`);
           const t1 = await probeTab(b, server, `scenario=probe&sse=0&tab=c1${own ? "w" : ""}`, undefined, own);
           const t2 = await probeTab(b, server, `scenario=probe&sse=0&tab=c2${own ? "w" : ""}`, undefined, own);
           await sleep(2000);
-          for (const t of [t1, t2]) await t.eval("window.__s7.resetGaps()");
-          const a = [await t1.eval<Snap>("window.__s7.snapshot()"), await t2.eval<Snap>("window.__s7.snapshot()")];
+          const answer = async (t: Page): Promise<Snap | undefined> => { try { return await t.eval<Snap>("window.__s7.snapshot()", 5000); } catch { return undefined; } };
+          for (const t of [t1, t2]) await t.eval("window.__s7.resetGaps()", 5000).catch(() => undefined);
+          const a = [await answer(t1), await answer(t2)];
           await sleep(5000);
-          const z = [await t1.eval<Snap>("window.__s7.snapshot()"), await t2.eval<Snap>("window.__s7.snapshot()")];
+          const z = [await answer(t1), await answer(t2)];
           for (const i of [0, 1]) {
-            const s0 = a[i]!, s1 = z[i]!;
-            const secs = (s1.now - s0.now) / 1000;
+            const s0 = a[i], s1 = z[i];
+            const label = `${own ? "own window" : "one window"}: ${i === 0 ? "first (background)" : "second (front)"}`;
+            if (s0 === undefined || s1 === undefined) { tabRows.push({ tab: label, stoppedAnswering: true }); continue; }
             tabRows.push({
-              tab: `${own ? "own window" : "one window"}: ${i === 0 ? "first (background)" : "second (front)"}`,
+              tab: label,
               visibility: s1.visibility,
               layout: `${s1.innerWidth}x${s1.innerHeight}`,
               intervalHz: rate(s0.interval.n, s0.now, s1.interval.n, s1.now),
               chainHz: rate(s0.chain.n, s0.now, s1.chain.n, s1.now),
               rafHz: rate(s0.raf.n, s0.now, s1.raf.n, s1.now),
               maxRafGapMs: s1.raf.maxGap,
-              seconds: secs,
+              seconds: (s1.now - s0.now) / 1000,
             });
+          }
+          if (tabRows.some((r) => r.stoppedAnswering === true)) {
+            // does the browser itself still answer, and can it still open a tab?
+            const probe = async (f: () => Promise<unknown>): Promise<string> => { const t0 = Date.now(); try { await f(); return `yes, ${Date.now() - t0} ms`; } catch (e) { return `no: ${errorText(e).slice(0, 300)}`; } };
+            out.afterStoppedTab = {
+              getVersion: await probe(() => b.send("Browser.getVersion", {}, undefined, 5000)),
+              createTarget: await probe(() => b.send("Target.createTarget", { url: "about:blank", newWindow: true }, undefined, 5000)),
+              trace: b.traceText(16),
+            };
           }
           if (own) {
             // --- a resize (a person watching at another size) without a reload, on a tab in its own window ---------
@@ -419,7 +433,7 @@ async function main(): Promise<void> {
 
 function write(results: Record<string, unknown>, status: string): void {
   mkdirSync(dirname(outFile), { recursive: true });
-  const meta = { status, platform: process.platform, arch: process.arch, osRelease: release(), cpus: cpus().length, memGiB: Math.round(totalmem() / 1073741824), bun: Bun.version, seconds: (Date.now() - started) / 1000 };
+  const meta = { status, platform: process.platform, arch: process.arch, osRelease: release(), cpus: cpus().length, memGiB: Math.round(totalmem() / 1073741824), bun: Bun.version, posixReader: Browser.posixReader, seconds: (Date.now() - started) / 1000 };
   writeFileSync(outFile, JSON.stringify(rounded({ meta, results }, 2), null, 2));
 }
 

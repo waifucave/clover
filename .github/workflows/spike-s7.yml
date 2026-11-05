@@ -3,6 +3,7 @@ name: Spike S7 (the Clover Browser)
 # Lane L's M0: every check that launches Electron or a browser runs here, never on a developer's Mac.
 # spikes/s7-browser/README.md says what each job answers.
 
+# A push whose message says [cft only] runs the unit and Chrome for Testing jobs alone.
 on:
   push:
     branches: [lane/l-m0]
@@ -12,7 +13,8 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: spike-s7-${{ github.ref }}
+  # a [cft only] push gets a group of its own, so it doesn't cancel a full run still going
+  group: spike-s7-${{ github.ref }}${{ contains(github.event.head_commit.message, '[cft only]') && '-cft' || '' }}
   cancel-in-progress: true
 
 permissions:
@@ -44,6 +46,7 @@ jobs:
 
   electron:
     name: electron · ${{ matrix.label }}
+    if: ${{ !contains(github.event.head_commit.message, '[cft only]') }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
     strategy:
@@ -102,6 +105,7 @@ jobs:
 
   wayland:
     name: electron · linux-wayland (headless Weston)
+    if: ${{ !contains(github.event.head_commit.message, '[cft only]') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
@@ -130,6 +134,7 @@ jobs:
 
   ozone-headless:
     name: "electron · ${{ matrix.label }} (no display, as on a server)"
+    if: ${{ !contains(github.event.head_commit.message, '[cft only]') }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     strategy:
@@ -213,6 +218,9 @@ jobs:
           mkdir -p "$RESULTS"
           if [ "$RUNNER_OS" = "Linux" ]; then echo "userns restriction: $(sysctl -n kernel.apparmor_restrict_unprivileged_userns)"; fi
           bun src/cft/run.ts --out="$RESULTS/cft-${{ matrix.label }}.json" --home="$RUNNER_TEMP/clover-s7-home" --keep-home
+      - name: Linux — the same with the DevTools pipe read in a worker thread (round six's comparison)
+        if: runner.os == 'Linux'
+        run: bun src/cft/run.ts --posix-reader=worker --artifacts=chrome-headless-shell,chrome --out="$RESULTS/cft-${{ matrix.label }}-worker.json" --home="$RUNNER_TEMP/clover-s7-home" --keep-home
       - name: Linux — a sandboxed start with the AppArmor profile
         if: runner.os == 'Linux'
         run: |
@@ -236,6 +244,7 @@ jobs:
 
   pair:
     name: the pair · ${{ matrix.label }}
+    if: ${{ !contains(github.event.head_commit.message, '[cft only]') }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     strategy:
