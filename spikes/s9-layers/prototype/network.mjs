@@ -111,6 +111,7 @@ export async function networkCheck(electron){
   const invoke=(/** @type {any} */ fr,/** @type {any} */ ep,/** @type {any} */ full)=>fr.executeJavaScript(`(${networkProbe.toString()})(${JSON.stringify(ep)},${full})`);
   const main=await Promise.race([invoke(frame,f.endpoints,mode!=='non-plugin'),pause(16000).then(()=>({error:'document probe deadline'}))]);
   /** @type {any[]} */ const trustAttempts=[];
+  /** @type {any} */ let topNavigation=null;
   let second=null;
   if(mode!=='non-plugin'){
    const p2=win.webContents.mainFrame.frames.find((/** @type {any} */ x)=>x.url===p2url);
@@ -131,14 +132,14 @@ export async function networkCheck(electron){
     trustAttempts.push(await frame.executeJavaScript(`new Promise(resolve=>{const f=document.createElement('iframe');f.name='trust-'+${JSON.stringify(target)};f.src=${JSON.stringify(target)};f.onload=()=>resolve({target:${JSON.stringify(target)},loaded:true});f.onerror=()=>resolve({target:${JSON.stringify(target)},error:true});document.body.append(f);setTimeout(()=>resolve({target:${JSON.stringify(target)},settled:true}),150)})`));
    }
    trustAttempts.push({violations:await frame.executeJavaScript('window.trustViolations'),children:frame.frames.map((/** @type {any} */ child)=>({name:child.name,url:child.url}))});
-   await frame.executeJavaScript(`(()=>{try{top.location=${JSON.stringify(f.endpoints['top-location'].url)}}catch(e){window.topError=String(e)}})()`);
+   topNavigation=await frame.executeJavaScript(`(()=>{try{top.location=${JSON.stringify(f.endpoints['top-location'].url)};return {attempted:true}}catch(e){return {attempted:true,error:String(e)}}})()`);
    // External download can replace the initiating frame with an error document; run it last.
    await frame.executeJavaScript(`(()=>{const a=document.createElement('a');a.href=${JSON.stringify(f.endpoints.download.url)};a.download='fixture.txt';document.body.append(a);a.click()})()`).catch(()=>{});
   }
   await pause(350);await ses.netLog.stopLogging();
   const log=extractNetlog(JSON.parse(readFileSync(logPath,'utf8')));
   const inherited=contexts.map(c=>({kind:c.kind,result:c.result,records:c.fixture.records,dnsEvents:log.speculative.filter((/** @type {any} */ e)=>JSON.stringify(e.params).includes(c.fixture.records['dns-prefetch'].host))}));
-  variants.push({mode,header:header?'Connection-Allowlist on documents and worker scripts':null,ipPolicy:win.webContents.getWebRTCIPHandlingPolicy(),main,second,records:f.records,requests,preconnect,popups,navigations,downloads,mountAttempts,trustAttempts,contexts:inherited,netlog:log});
+  variants.push({mode,header:header?'Connection-Allowlist on documents and worker scripts':null,ipPolicy:win.webContents.getWebRTCIPHandlingPolicy(),main,second,records:f.records,requests,preconnect,popups,navigations,downloads,downloadAttempt:mode!=='non-plugin',topNavigation,mountAttempts,trustAttempts,contexts:inherited,netlog:log});
   writeFileSync(resolve('results',`network-variant-${mode}.json`),JSON.stringify(variants[variants.length-1],null,2));
   win.destroy();f.close();contexts.forEach(c=>c.fixture.close());
  }
