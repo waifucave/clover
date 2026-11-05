@@ -317,6 +317,8 @@ jobs:
 
       - name: pnpm-lock.yaml
         run: npx --yes pnpm@10.33.0 install --frozen-lockfile --lockfile-only
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   # Winter for Chrome (extensions/winter-for-chrome): the MV3 extension's typecheck and its unit tests (the CDP guard,
   # the controller over a fake browser, the native port, the manifest and the build — which renders the icons with the
