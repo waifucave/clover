@@ -9,7 +9,8 @@
 // this event log.
 import { createHash, randomBytes } from "node:crypto";
 import { join } from "node:path";
-import { pluginIdToSegment, type SessionKind } from "@waifucave/clover-protocol";
+import { isAnyPluginId, pluginIdToSegment, type SessionKind } from "@waifucave/clover-protocol";
+import { ContractError } from "../contracts/common";
 
 /** The prefix of a minted id, per kind. A bot's main conversation is never minted: it is `mainSessionIdFor(bot)`. */
 export const SESSION_ID_PREFIX: Readonly<Record<SessionKind, string>> = {
@@ -26,7 +27,7 @@ export function mintSessionId(kind: SessionKind): string {
 /** The one conversation of a bot (§6.3): the same id on every boot, for `alpha` `b_alpha`, for `pack/luna`
  *  `b_pack--luna`. */
 export function mainSessionIdFor(botId: string): string {
-  return `b_${pluginIdToSegment(botId)}`;
+  return `b_${botSegment(botId)}`;
 }
 
 /** `<home>/transcripts`: every session's event log and its meta file. */
@@ -34,9 +35,16 @@ export function transcriptsDir(home: string): string {
   return join(home, "transcripts");
 }
 
+/** A bot's id as one path segment (`/` written `--`). Anything that isn't a plugin id is refused before it can name a
+ *  path, so no id leads out of the folder it is joined to. */
+export function botSegment(bot: string): string {
+  if (!isAnyPluginId(bot)) throw new ContractError("invalid", `"${bot.slice(0, 80)}" isn't a bot's id`);
+  return pluginIdToSegment(bot);
+}
+
 /** The folder holding a session's files: its bot's segment, or `_` for a session with no bot (no plugin id is `_`). */
 export function sessionFolder(home: string, bot: string | undefined): string {
-  return join(transcriptsDir(home), bot === undefined ? "_" : pluginIdToSegment(bot));
+  return join(transcriptsDir(home), bot === undefined ? "_" : botSegment(bot));
 }
 
 const WINDOWS_RESERVED = /^(con|prn|aux|nul|com[0-9]|lpt[0-9])$/i;

@@ -10,6 +10,8 @@
 //   and memory, on the computer that holds the routine; its short result posts into the main conversation and the
 //   side thread ends. A run a crash cut off says it was interrupted when its bot loads again, and ends. The routine
 //   engine that decides when runs happen is M3's; `runSideThread` is its door.
+// * **A bot that breaks its own files** (§6.1 lets it edit its plugin folder) keeps running on its last good version,
+//   so it can still fix them; the reason is logged.
 // * **The user layer** (user-layer.ts) wins field by field over the plugin; model and effort apply at the next turn,
 //   instructions at the next compaction (§5.6, §6.3), since drivers read the bot through `current()`.
 // * **The model**: the user layer's, else the plugin's default when the user has a key for it, else the user's
@@ -143,6 +145,10 @@ export class BotService {
     this.#offs.push(this.#o.host.watch((view) => this.#onSession(view)));
     this.#offs.push(this.#o.registry.watch(() => void this.#queueSync()));
     await this.#queueSync();
+    // Runs a crash cut off whose bot is no longer installed: ended too, with the result posted for when it returns.
+    const host = this.#o.host;
+    const orphans = new Set(host.list({ kind: "side-thread" }).filter((s) => s.bot !== undefined && !this.#bots.has(s.bot)).map((s) => s.bot!));
+    for (const bot of orphans) await this.#endCutOffRuns(bot, mainSessionIdFor(bot));
   }
 
   /** Detaches every bot's sessions, leaving them dormant on disk (a shutdown). */
@@ -198,6 +204,7 @@ export class BotService {
   async setUserLayer(id: string, patch: unknown, caller: Caller): Promise<ChangeResult> {
     if (caller.kind === "session") throw new ContractError("refused", "a bot or an agent can't change a bot's user layer: it edits its plugin folder instead", { rpc: CLOVER_ERR.NOT_THE_USER });
     if (caller.kind === "plugin") throw new ContractError("refused", "only the user changes a bot's user layer; a plugin's change goes to the user as a sealed card", { rpc: CLOVER_ERR.NOT_THE_USER });
+    if (caller.kind !== "user") throw new ContractError("refused", "only the user changes a bot's user layer", { rpc: CLOVER_ERR.NOT_THE_USER });
     const live = this.#must(id);
     this.#layers.set(id, parseUserLayerPatch(patch));
     this.#syncMainSession(live);
@@ -266,7 +273,13 @@ export class BotService {
     for (const { record, contribution } of botEntries(this.#o.registry)) {
       const load = loadPluginBot(record, contribution.value);
       if (!load.ok) {
-        this.#warn(`the bot ${load.id} isn't loaded: ${load.reason}`);
+        // A bot that broke its own files (§6.1 lets it edit them) keeps running on its last good version, so it can
+        // still fix them; one that never loaded isn't loaded.
+        const live = this.#bots.get(load.id);
+        if (live) {
+          this.#warn(`the bot ${load.id} keeps its last good version: ${load.reason}`);
+          found.set(load.id, live.plugin);
+        } else this.#warn(`the bot ${load.id} isn't loaded: ${load.reason}`);
         continue;
       }
       found.set(load.bot.id, load.bot);
@@ -283,7 +296,6 @@ export class BotService {
     const live: Live = { plugin: bot, mainSession: mainSessionIdFor(bot.id) };
     this.#seed(bot);
     const host = this.#o.host;
-    const isNew = host.get(live.mainSession) === undefined;
     const eff = this.#effective(live);
     try {
       host.open({
@@ -295,23 +307,26 @@ export class BotService {
       return;
     }
     this.#bots.set(bot.id, live);
-    if (isNew && bot.greeting !== undefined) {
+    // A conversation that holds nothing yet but its opening: the greeting goes first, once (a log picked up again
+    // after its meta was lost holds more, and gets none).
+    if (host.length(live.mainSession) <= 1 && bot.greeting !== undefined) {
       host.recordCore(live.mainSession, { type: "assistant_message", threadId: live.mainSession, text: bot.greeting, greeting: true });
     }
-    await this.#endCutOffRuns(live);
+    await this.#endCutOffRuns(bot.id, live.mainSession);
     this.#emitBot(live);
   }
 
   /** Side threads a crash cut off: restored dormant with their run interrupted, and nothing left to finish them. Each
    *  posts that it was interrupted, as a run cut off by a shutdown does, and ends. Whether it runs again is the routine
    *  engine's missed-run rule (M3). */
-  async #endCutOffRuns(live: Live): Promise<void> {
+  async #endCutOffRuns(botId: string, mainSession: string): Promise<void> {
     const host = this.#o.host;
-    for (const s of host.list({ bot: live.plugin.id, kind: "side-thread" })) {
+    for (const s of host.list({ bot: botId, kind: "side-thread" })) {
       if (host.isAttached(s.id) || s.status === "stopped" || s.status === "failed") continue;
       try {
-        if (s.routine !== undefined) {
-          await host.deliver(live.mainSession, { from: "routine", routine: s.routine, name: s.title ?? s.routine, sideThread: s.id, text: sideThreadResult({ reason: "interrupted" }) });
+        const main = host.get(mainSession);
+        if (s.routine !== undefined && main !== undefined && main.status !== "stopped" && main.status !== "failed") {
+          await host.deliver(mainSession, { from: "routine", routine: s.routine, name: s.title ?? s.routine, sideThread: s.id, text: sideThreadResult({ reason: "interrupted" }) });
         }
         await host.stop(s.id, "the daemon restarted");
       } catch (err) {
@@ -343,7 +358,7 @@ export class BotService {
     if (state.seededMemory === true) return;
     if (bot.memorySeed !== undefined) {
       try {
-        seedMemory(bot.memorySeed, botPaths(this.#o.home, bot.id).memory, this.#warn);
+        seedMemory(bot.memorySeed, botPaths(this.#o.home, bot.id).memory, { base: this.#o.home, warn: this.#warn });
       } catch (err) {
         this.#warn(`the bot ${bot.id}'s starter memories weren't copied: ${err instanceof Error ? err.message : String(err)}`);
         return;

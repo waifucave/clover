@@ -5,10 +5,9 @@
 //
 // One file per bot, `<home>/user-layers/<bot>.json`, rewritten whole (atomic-file.ts). The layer syncs with the
 // account's settings once lane H's sync exists (§8.5 "bots' user layers … sync").
-import { rmSync } from "node:fs";
 import { UserLayerPatch, type Text } from "@waifucave/clover-protocol";
 import { ContractError } from "../contracts/common";
-import { readJson, writeJsonAtomic } from "../sessions/atomic-file";
+import { readJson, removeFileDurably, writeJsonAtomic } from "../sessions/atomic-file";
 import { userLayerFile } from "./paths";
 
 export const USER_LAYER_FIELDS = ["name", "instructions", "model", "effort", "voice", "avatar", "theme", "layout"] as const;
@@ -101,7 +100,7 @@ export class UserLayerStore {
   set(botId: string, patch: UserLayerPatch): UserLayer {
     const next = applyUserLayerPatch(this.get(botId), patch);
     const path = userLayerFile(this.#home, botId);
-    if (userLayerFields(next).length === 0) rmSync(path, { force: true });
+    if (userLayerFields(next).length === 0) removeFileDurably(path);
     else writeJsonAtomic(path, { userLayer: 1, bot: botId, fields: next } satisfies StoredLayer);
     this.#cache.set(botId, next);
     return structuredClone(next);
@@ -109,7 +108,7 @@ export class UserLayerStore {
 
   /** Reset: every field back to the plugin's. */
   reset(botId: string): void {
-    rmSync(userLayerFile(this.#home, botId), { force: true });
+    removeFileDurably(userLayerFile(this.#home, botId));
     this.#cache.set(botId, {});
   }
 }

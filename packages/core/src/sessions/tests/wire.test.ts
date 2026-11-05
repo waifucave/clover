@@ -84,7 +84,7 @@ describe("projecting a session's log", () => {
       event: { type: "approval_requested", callId: "call_2", toolName: "Bash", summary: "rm -rf build", reviewerReason: "deletes files" },
     };
     expect(projectRecord(record, { kind: "bot" })).toMatchObject({ summary: "rm -rf build", reviewerReason: "deletes files" });
-    const forPlugin = projectRecord(record, { kind: "bot", forPlugin: true })!;
+    const forPlugin = projectRecord(record, { kind: "bot", sealed: true })!;
     expect(forPlugin.summary).toBeUndefined();
     expect(forPlugin.reviewerReason).toBeUndefined();
     expect(forPlugin).toMatchObject({ type: "approval_requested", callId: "call_2", toolName: "Bash" });

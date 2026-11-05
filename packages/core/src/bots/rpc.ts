@@ -8,14 +8,15 @@
 // (agents and coding sessions, K), `session.compact` (A-M3), `bots.pause` (M2), and the routines' methods (M3).
 import { existsSync } from "node:fs";
 import {
-  CLOVER_ERR, ERR, SESSIONS_METHODS,
-  type BotView, type Caller, type ChangeResult, type MemoryEntry, type MethodSpec, type SessionView,
+  CLOVER_ERR, ERR, IMAGE_REFERENCE_INVALID, SESSIONS_METHODS,
+  type BotView, type Caller, type ChangeResult, type MemoryEntry, type MethodSpec, type SessionView, type UserMessageImageRef,
 } from "@waifucave/clover-protocol";
 import type { z } from "zod";
+import { StageImageRefusal, validateImageRefs } from "../agent/stage-image";
 import type { Clock } from "../contracts/clock";
 import { ContractError, isContractError, RPC_ERROR_OF, type Unsubscribe } from "../contracts/common";
 import type { DurableSessionHost } from "../sessions/durable-host";
-import { projectRecord, projectRecords, type WireEvent } from "../sessions/wire";
+import { projectRecord, projectRecords, readsSealed, transientFor, type WireEvent } from "../sessions/wire";
 import { listMemory, readMemory } from "./memory";
 import { botPaths } from "./paths";
 import type { BotService } from "./service";
@@ -79,11 +80,27 @@ export interface SessionsMethodsDeps {
 }
 
 const HISTORY_SCAN_STEP = 200;
+/** How many records `session.attach` reads at a time while it replays. */
+const REPLAY_PAGE = 500;
 
 export function sessionsMethods(deps: SessionsMethodsDeps): Record<string, MethodHandler> {
   const { bots, host } = deps;
   const M = SESSIONS_METHODS;
-  const forPlugin = (ctx: MethodContext) => ctx.caller.kind === "plugin";
+  /** A caller other than the user's own app and devices gets cards without their sealed parts. */
+  const sealed = (ctx: MethodContext) => !readsSealed(ctx.caller);
+  /** A message's images (§6.6 "attachments"): only a client on this computer names a file here, and each one is held to
+   *  the inherited rules (staged for this session, or the user's own image file, never inside the Clover home). */
+  const checkedImages = (caller: Extract<Caller, { kind: "user" }>, id: string, text: string, images: readonly UserMessageImageRef[] | undefined): UserMessageImageRef[] | undefined => {
+    if (images === undefined || images.length === 0) return undefined;
+    const local = (caller.client === "app" || caller.client === "cli") && (caller.device === undefined || caller.device === deps.localDevice);
+    if (!local) throw new MethodError(ERR.INVALID_PARAMS, "images can only be sent by a client on this computer", { code: IMAGE_REFERENCE_INVALID });
+    try {
+      return validateImageRefs(id, text, images, { cloverHome: deps.home });
+    } catch (err) {
+      if (err instanceof StageImageRefusal) throw new MethodError(err.internal ? ERR.INTERNAL : ERR.INVALID_PARAMS, err.message, { code: err.code, ...(err.n === undefined ? {} : { n: err.n }) });
+      throw new MethodError(ERR.INTERNAL, "the message's images couldn't be checked", { code: IMAGE_REFERENCE_INVALID });
+    }
+  };
   const view = (id: string): SessionView => {
     const v = host.get(id);
     if (!v) throw new ContractError("not_found", `no session ${id}`);
@@ -115,7 +132,7 @@ export function sessionsMethods(deps: SessionsMethodsDeps): Record<string, Metho
 
     [M.sessionHistory.name]: handler(M.sessionHistory, async ({ id, before, limit }, ctx) => {
       const v = view(id);
-      const opts = { kind: v.kind, forPlugin: forPlugin(ctx) };
+      const opts = { kind: v.kind, sealed: sealed(ctx) };
       const eventsIn = (start: number, end: number) => projectRecords(host.history(id, { afterSeq: start - 1, limit: end - start }), opts);
       // Back from `before` until the page holds `limit` events: records with no event (status changes) don't count.
       let end = Math.min(before ?? host.length(id), host.length(id));
@@ -140,18 +157,25 @@ export function sessionsMethods(deps: SessionsMethodsDeps): Record<string, Metho
       return { events: page, hasMore };
     }),
 
+    // With `since`, the events after it are replayed a page of records at a time; without it, the stream starts now and
+    // the backlog is `session.history`'s, so a bot's lifelong conversation is never read whole.
     [M.sessionAttach.name]: handler(M.sessionAttach, async ({ id, since }, ctx) => {
       const v = view(id);
       const stream = ctx.stream;
       if (!stream) throw new MethodError(ERR.INVALID_REQUEST, "session.attach needs a connection that takes events");
       stream.follows.get(id)?.();
-      const opts = { kind: v.kind, forPlugin: forPlugin(ctx) };
-      for (const event of projectRecords(host.history(id, since === undefined ? {} : { afterSeq: since }), opts)) stream.send(event);
+      const opts = { kind: v.kind, sealed: sealed(ctx) };
+      if (since !== undefined) {
+        for (let after = since; after < host.length(id) - 1; after += REPLAY_PAGE) {
+          for (const event of projectRecords(host.history(id, { afterSeq: after, limit: REPLAY_PAGE }), opts)) stream.send(event);
+        }
+      }
       const offRecords = host.subscribe(id, (record) => {
         const event = projectRecord(record, opts);
         if (event) stream.send(event);
       });
       const offTransient = host.onTransient(id, (event) => {
+        if (!transientFor(ctx.caller, event.type)) return;
         stream.send({ ...event, seq: Math.max(0, host.length(id) - 1), sessionId: id, ts: deps.clock.now() });
       });
       stream.follows.set(id, () => {
@@ -171,12 +195,13 @@ export function sessionsMethods(deps: SessionsMethodsDeps): Record<string, Metho
       const caller = requireUser(ctx, "send a message as the user");
       reachable(id);
       if (message.text.trim() === "") throw new ContractError("invalid", "a message needs text");
+      const images = checkedImages(caller, id, message.text, message.images);
       const { seq } = await host.sendUser(id, {
         text: message.text,
         device: caller.device ?? deps.localDevice,
         sentAt: deps.clock.now(),
         clientMessageId: message.clientMessageId,
-        ...(message.images === undefined ? {} : { images: message.images }),
+        ...(images === undefined ? {} : { images }),
         ...(message.files === undefined ? {} : { files: message.files }),
       });
       return { seq };

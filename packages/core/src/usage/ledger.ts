@@ -4,10 +4,13 @@
 //
 // `<home>/usage/clover.db`, beside the inherited `usage.db` (whose readers of Codex, Claude Code, OpenCode and
 // Antigravity carry over, §12), with a schema of its own (`PRAGMA user_version`). A row's wire id is
-// `<computer>:<n>`, unique per computer, so rows synced from several computers never clash (protocol `UsageRow`).
-// Each row has a dedupe key (`<session>:<seq>…`), so counting the same turn twice, after a crash or a catch-up, adds
-// nothing. `cursors` holds how far the counter has read each session's log.
+// `<computer>:<database>:<n>`, where `<database>` is minted when the file is made, so rows synced from several
+// computers never clash, nor do a computer's rows from before and after its ledger was made again (protocol
+// `UsageRow`). Each row has a dedupe key (`<session>:<seq>…`), so counting the same turn twice, after a crash or a
+// catch-up, adds nothing. `cursors` holds how far the counter has read each session's log. Days are the user's: a
+// `day` summary groups by the date in the ledger's time zone (this computer's, unless given).
 import { Database } from "bun:sqlite";
+import { randomBytes } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type { UsageRow, UsageSource } from "@waifucave/clover-protocol";
@@ -35,6 +38,12 @@ export interface LedgerRowInput {
   cacheReadTokens?: number;
   cacheWriteTokens?: number;
   costUsd?: number;
+}
+
+/** The last record the counter read in a session's log: a turn's end, by its seq and its time. */
+export interface LedgerCursor {
+  seq: number;
+  ts: number;
 }
 
 export type UsageGroupBy = "source" | "model" | "bot" | "computer" | "day" | "session";
@@ -95,10 +104,14 @@ function decodeCursor(cursor: string): { at: number; n: number } {
 
 export class UsageLedger {
   readonly computer: string;
+  /** This file's own id, part of every row's id. */
+  readonly database: string;
   readonly #db: Database;
+  readonly #day: Intl.DateTimeFormat;
 
-  constructor(opts: { path: string; computer: string }) {
+  constructor(opts: { path: string; computer: string; timeZone?: string }) {
     this.computer = opts.computer;
+    this.#day = new Intl.DateTimeFormat("en-CA", { timeZone: opts.timeZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone, year: "numeric", month: "2-digit", day: "2-digit" });
     mkdirSync(dirname(opts.path), { recursive: true });
     this.#db = new Database(opts.path, { create: true });
     this.#db.exec("PRAGMA journal_mode = WAL");
@@ -121,9 +134,12 @@ export class UsageLedger {
       CREATE INDEX IF NOT EXISTS rows_at ON rows(at, n);
       CREATE INDEX IF NOT EXISTS rows_bot ON rows(bot, at);
       CREATE INDEX IF NOT EXISTS rows_session ON rows(session, at);
-      CREATE TABLE IF NOT EXISTS cursors (session TEXT PRIMARY KEY, seq INTEGER NOT NULL);
+      CREATE TABLE IF NOT EXISTS cursors (session TEXT PRIMARY KEY, seq INTEGER NOT NULL, ts INTEGER NOT NULL);
+      CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
       PRAGMA user_version = ${LEDGER_SCHEMA_VERSION};
     `);
+    this.#db.query("INSERT OR IGNORE INTO meta (key, value) VALUES ('database', $v)").run({ $v: randomBytes(6).toString("hex") });
+    this.database = (this.#db.query("SELECT value FROM meta WHERE key = 'database'").get() as { value: string }).value;
   }
 
   close(): void {
@@ -132,7 +148,7 @@ export class UsageLedger {
 
   /** Adds rows, skipping any already counted, and moves a session's cursor, in one transaction. Returns the rows it
    *  added. */
-  add(rows: readonly LedgerRowInput[], cursor?: { session: string; seq: number }): UsageRow[] {
+  add(rows: readonly LedgerRowInput[], cursor?: LedgerCursor & { session: string }): UsageRow[] {
     const insert = this.#db.query(`INSERT OR IGNORE INTO rows (id, dedupe, computer, source, at, provider, model, bot, session, input, output, cache_read, cache_write, cost_usd)
       VALUES ($id, $dedupe, $computer, $source, $at, $provider, $model, $bot, $session, $input, $output, $cacheRead, $cacheWrite, $cost)`);
     const rename = this.#db.query("UPDATE rows SET id = $id WHERE n = $n");
@@ -149,7 +165,7 @@ export class UsageLedger {
         });
         if (res.changes === 0) continue;
         const n = Number(res.lastInsertRowid);
-        const id = `${this.computer}:${n}`;
+        const id = `${this.computer}:${this.database}:${n}`;
         rename.run({ $id: id, $n: n });
         added.push(toWire({
           n, id, computer: this.computer, source: r.source, at: r.at, provider: r.provider ?? null, model: r.model ?? null,
@@ -158,16 +174,16 @@ export class UsageLedger {
         }));
       }
       if (cursor !== undefined) {
-        this.#db.query("INSERT INTO cursors (session, seq) VALUES ($s, $q) ON CONFLICT(session) DO UPDATE SET seq = MAX(seq, excluded.seq)").run({ $s: cursor.session, $q: cursor.seq });
+        this.#db.query("INSERT INTO cursors (session, seq, ts) VALUES ($s, $q, $t) ON CONFLICT(session) DO UPDATE SET seq = excluded.seq, ts = excluded.ts").run({ $s: cursor.session, $q: cursor.seq, $t: cursor.ts });
       }
     })();
     return added;
   }
 
-  /** How far the counter has read a session's log: the last record it has counted, or -1. */
-  cursor(session: string): number {
-    const row = this.#db.query("SELECT seq FROM cursors WHERE session = $s").get({ $s: session }) as { seq: number } | null;
-    return row?.seq ?? -1;
+  /** How far the counter has read a session's log: the turn's end it counted last (its seq and time), if any. */
+  cursor(session: string): LedgerCursor | undefined {
+    const row = this.#db.query("SELECT seq, ts FROM cursors WHERE session = $s").get({ $s: session }) as LedgerCursor | null;
+    return row ?? undefined;
   }
 
   /** Rows from `since`, oldest first, a page at a time (`usage.rows`). */
@@ -192,22 +208,37 @@ export class UsageLedger {
     return { rows: page.map(toWire), ...(found.length > limit && last ? { next: encodeCursor(last.at, last.n) } : {}) };
   }
 
-  /** Totals over `[from, to)`, grouped (`usage.summary`); `day` is the UTC date. */
+  /** Totals over `[from, to)`, grouped (`usage.summary`); `day` is the date in the ledger's time zone. */
   summary(q: { from: number; to: number; groupBy: UsageGroupBy; bot?: string; session?: string }): { key: string; inputTokens: number; outputTokens: number; costUsd?: number }[] {
+    const where = ["at >= $from", "at < $to"];
+    const params: Record<string, string | number> = { $from: q.from, $to: q.to };
+    if (q.bot !== undefined) (where.push("bot = $bot"), (params.$bot = q.bot));
+    if (q.session !== undefined) (where.push("session = $session"), (params.$session = q.session));
+    const out = (rows: { k: string; i: number; o: number; c: number | null }[]) =>
+      rows.map((r) => ({ key: r.k, inputTokens: r.i, outputTokens: r.o, ...(r.c === null ? {} : { costUsd: r.c }) }));
+    if (q.groupBy === "day") {
+      // A day's bounds move with daylight saving, so dates are worked out here, per quarter hour of rows (every time
+      // zone's offset is a whole number of quarter hours).
+      const quarters = this.#db.query(`SELECT (at / 900000) AS h, SUM(input) AS i, SUM(output) AS o, SUM(cost_usd) AS c FROM rows WHERE ${where.join(" AND ")} GROUP BY h`).all(params) as { h: number; i: number; o: number; c: number | null }[];
+      const days = new Map<string, { k: string; i: number; o: number; c: number | null }>();
+      for (const h of quarters) {
+        const k = this.#day.format(new Date(h.h * 900_000));
+        const d = days.get(k) ?? { k, i: 0, o: 0, c: null };
+        d.i += h.i;
+        d.o += h.o;
+        if (h.c !== null) d.c = (d.c ?? 0) + h.c;
+        days.set(k, d);
+      }
+      return out([...days.values()].sort((a, b) => (a.k < b.k ? -1 : 1)));
+    }
     const key = {
       source: "source",
       model: "COALESCE(model, 'unknown')",
       bot: "COALESCE(bot, '-')",
       computer: "computer",
-      day: "strftime('%Y-%m-%d', at / 1000, 'unixepoch')",
       session: "COALESCE(session, '-')",
     }[q.groupBy];
-    const where = ["at >= $from", "at < $to"];
-    const params: Record<string, string | number> = { $from: q.from, $to: q.to };
-    if (q.bot !== undefined) (where.push("bot = $bot"), (params.$bot = q.bot));
-    if (q.session !== undefined) (where.push("session = $session"), (params.$session = q.session));
-    const rows = this.#db.query(`SELECT ${key} AS k, SUM(input) AS i, SUM(output) AS o, SUM(cost_usd) AS c FROM rows WHERE ${where.join(" AND ")} GROUP BY k ORDER BY k`).all(params) as { k: string; i: number; o: number; c: number | null }[];
-    return rows.map((r) => ({ key: r.k, inputTokens: r.i, outputTokens: r.o, ...(r.c === null ? {} : { costUsd: r.c }) }));
+    return out(this.#db.query(`SELECT ${key} AS k, SUM(input) AS i, SUM(output) AS o, SUM(cost_usd) AS c FROM rows WHERE ${where.join(" AND ")} GROUP BY k ORDER BY k`).all(params) as { k: string; i: number; o: number; c: number | null }[]);
   }
 
   /** Everything a bot or a session has used, over all time or a period. */

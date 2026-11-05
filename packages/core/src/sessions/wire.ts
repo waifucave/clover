@@ -16,11 +16,13 @@
 // | a turn starting / ending                 | the inherited `turn_started` / `turn_completed`                |
 // | a status change                          | none: it reaches clients as `session_changed`                  |
 // | the runtime's own event                  | itself, when it is a `SessionEvent` or a Clover session event  |
+// |                                          | the host doesn't project itself (`HOST_EVENT_TYPES`)           |
 //
 // Runtime events of other types are the runtime's private bookkeeping (`turn_usage`, which the usage counter reads)
-// and never leave the daemon. For a plugin reader (`conversation.read`), the sealed parts of approval and elicitation
-// events are left out (§5.4: "sealed card fields never reach it").
-import { CloverSessionEvent, SessionEvent, type SessionKind } from "@waifucave/clover-protocol";
+// and never leave the daemon. For any reader but the user's own app and devices (a plugin's `conversation.read`, a
+// session, the CLI a bot can run), the sealed parts of approval and elicitation events are left out (§5.4: "sealed card
+// fields never reach it"), and of the streaming events only the reply's text is sent.
+import { CloverSessionEvent, SessionEvent, type Caller, type SessionKind } from "@waifucave/clover-protocol";
 import type { SessionRecord, TurnEnd } from "../contracts/session-host";
 
 export type WireEvent = { type: string; seq: number; sessionId: string; ts: number; [key: string]: unknown };
@@ -31,7 +33,14 @@ export const WIRE_EVENT_TYPES: ReadonlySet<string> = new Set([
   ...CloverSessionEvent.options.map((o) => o.shape.type.value as string),
 ]);
 
-/** The parts of a card a plugin never reads, by event type. */
+/** The types the host projects from its own records. A runtime event of one of them is an echo (or a forgery: a
+ *  driver's `user_message` would read as the user's) and never reaches clients. */
+export const HOST_EVENT_TYPES: ReadonlySet<string> = new Set([
+  "user_message", "turn_started", "turn_completed", "bot_message", "agent_message", "agent_finished", "routine_result",
+  "note", "plugin_message",
+]);
+
+/** The parts of a card only the user's own app and devices read, by event type. */
 const SEALED_FIELDS: Readonly<Record<string, readonly string[]>> = {
   approval_requested: ["summary", "reviewerReason", "options"],
   elicitation_requested: ["message", "host", "origin", "serverName"],
@@ -40,8 +49,19 @@ const SEALED_FIELDS: Readonly<Record<string, readonly string[]>> = {
 export interface ProjectOptions {
   /** The session's kind decides what a routine's input is. */
   kind: SessionKind;
-  /** A plugin reads it: sealed card parts are left out. */
-  forPlugin?: boolean;
+  /** A reader other than the user's own app or devices (a plugin, a session, the CLI a bot can run): sealed card parts
+   *  are left out. */
+  sealed?: boolean;
+}
+
+/** Whether a caller reads sealed card parts: only the user, through the app, a phone or the web, never the CLI. */
+export function readsSealed(caller: Caller): boolean {
+  return caller.kind === "user" && caller.client !== "cli";
+}
+
+/** The streaming events a caller gets: everything for the user's own clients, only the reply's text otherwise. */
+export function transientFor(caller: Caller, type: string): boolean {
+  return readsSealed(caller) || type === "assistant_delta";
 }
 
 function turnCompletedStopReason(reason: TurnEnd["reason"]): "end_turn" | "aborted" | "error" {
@@ -111,9 +131,9 @@ export function projectRecord(record: SessionRecord, opts: ProjectOptions): Wire
       return undefined;
     case "driver": {
       const event = record.event;
-      if (!WIRE_EVENT_TYPES.has(event.type)) return undefined;
+      if (!WIRE_EVENT_TYPES.has(event.type) || HOST_EVENT_TYPES.has(event.type)) return undefined;
       const out: WireEvent = { ...structuredClone(event), ...envelope, ...(typeof event.threadId === "string" ? {} : { threadId }) };
-      if (opts.forPlugin) for (const field of SEALED_FIELDS[event.type] ?? []) delete out[field];
+      if (opts.sealed) for (const field of SEALED_FIELDS[event.type] ?? []) delete out[field];
       return out;
     }
   }

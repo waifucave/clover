@@ -221,6 +221,55 @@ describe("bots from plugins", () => {
     expect(b.drivers.made).toHaveLength(1);
     await b.shutdown();
   });
+
+  test("a bot that breaks its own instructions keeps its last good version, so it can fix them", async () => {
+    const root = tempDir();
+    const dir = writePlugin(root, "luna", { "clover.json": botManifest("luna", "Luna"), "bot/instructions.md": "You are Luna." });
+    const b = await boot({ home: tempDir(), plugins: (await pluginFromFolder(dir)).inputs });
+    await b.host.sendUser("b_luna", user("hello"));
+    await flush();
+    // The fake registry tells of a change when the manifest changes (B-M1's hashes the files).
+    writeFileSync(join(dir, "bot", "instructions.md"), "   ");
+    writeFileSync(join(dir, "clover.json"), JSON.stringify(botManifest("luna", "Luna II")));
+    b.registry.put((await pluginFromFolder(dir)).inputs[0]!);
+    await b.bots.settled();
+    expect(b.bots.get("luna")).toBeDefined();
+    expect(b.drivers.for("b_luna").interrupts).toBe(0);
+    expect(b.drivers.made[0]!.ctx.current().instructions).toBe("You are Luna.");
+    expect(b.warnings.join("\n")).toContain("keeps its last good version");
+    // Fixed, the new version applies.
+    writeFileSync(join(dir, "bot", "instructions.md"), "You are Luna, mended.");
+    writeFileSync(join(dir, "clover.json"), JSON.stringify(botManifest("luna", "Luna III")));
+    b.registry.put((await pluginFromFolder(dir)).inputs[0]!);
+    await b.bots.settled();
+    expect(b.drivers.made[0]!.ctx.current().instructions).toBe("You are Luna, mended.");
+    await b.shutdown();
+  });
+
+  test("a run a crash cut off ends at the next start even when its bot is gone, its result kept for its return", async () => {
+    const home = tempDir();
+    const clock = new FakeClock();
+    const first = await boot({ home, clock, plugins: await alphaInputs() });
+    void first.bots.runSideThread("alpha", { routine: "r_digest", name: "Digest", text: "Summarise the feeds." });
+    await flush();
+    const side = first.drivers.made.at(-1)!.ctx.sessionId;
+    // The daemon dies mid-run, and Alpha is uninstalled before it starts again.
+    const again = await boot({ home, clock, plugins: [] });
+    expect(again.bots.list()).toEqual([]);
+    expect(again.host.get(side)?.status).toBe("stopped");
+    expect(again.host.history("b_alpha").filter((r) => r.type === "input").map((r) => (r.type === "input" ? r.input.from : ""))).toEqual(["routine"]);
+    await again.shutdown();
+  });
+
+  test("ids that aren't plugin ids never name a path", () => {
+    const home = tempDir();
+    for (const bad of ["../escape", "a/../../b", "", "UPPER"]) {
+      expect(() => botPaths(home, bad)).toThrow("isn't a bot's id");
+      expect(() => userLayerFile(home, bad)).toThrow("isn't a bot's id");
+      expect(() => sessionLogPath(home, bad, "b_x")).toThrow("isn't a bot's id");
+    }
+    expect(botPaths(home, "pack/luna").memory).toBe(join(home, "bots", "pack--luna", "memory"));
+  });
 });
 
 describe("the user layer", () => {
@@ -257,6 +306,8 @@ describe("the user layer", () => {
     expect(isContractError(asBot, "refused")).toBe(true);
     expect((asBot as { detail?: { rpc?: number } }).detail?.rpc).toBe(CLOVER_ERR.NOT_THE_USER);
     expect(isContractError(await b.bots.setUserLayer("luna", { name: "X" }, { kind: "plugin", pluginId: "weather" }).catch((e: unknown) => e), "refused")).toBe(true);
+    // Only the user: not even the core's own caller.
+    expect(isContractError(await b.bots.setUserLayer("luna", { name: "X" }, { kind: "core" }).catch((e: unknown) => e), "refused")).toBe(true);
     expect(b.bots.get("luna")?.userLayer).toEqual([]);
     await b.bots.setUserLayer("luna", { theme: "night" }, theUser);
     const fence = new FakeFence({ home: "/home/sam", cloverHome: b.home });

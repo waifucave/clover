@@ -172,7 +172,7 @@ describe("the Fish Audio plugin in the core", () => {
   test("a wrong key is Fish's refusal, and no message carries the key", async () => {
     const { call, fish } = await running({ key: "the-wrong-key" });
     const err = await failure(call("speak", { text: "Hello?", voice: VOICE }));
-    expect(err.message).toContain("Invalid API key");
+    expect(err.message).toContain("didn't accept the key");
     expect(err.message).not.toContain("the-wrong-key");
     expect(JSON.stringify(err)).not.toContain("the-wrong-key");
     expect(fish.calls).toMatchObject([{ path: "/v1/tts", status: 401, authorized: false }]);

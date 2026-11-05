@@ -2,16 +2,16 @@
 // durable host alike, so the two route the same way; then what only a host with a log on disk does: survive a restart,
 // repair a torn log, remember resends, hand notes and routine results to the next turn, count what needs the user.
 import { afterEach, describe, expect, test } from "bun:test";
-import { appendFileSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, chmodSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ApprovalDecision } from "../../contracts/approval-broker";
 import { isContractError } from "../../contracts/common";
 import { FakeApprovalBroker } from "../../contracts/fakes/approval-broker";
-import { FakeClock, flush } from "../../contracts/fakes/clock";
+import { advanceAndSettle, FakeClock, flush } from "../../contracts/fakes/clock";
 import { FakeSessionDriver, FakeSessionHost } from "../../contracts/fakes/session-host";
 import type { DeliveredInput, SessionHost, SessionRecord, UserInput } from "../../contracts/session-host";
-import { DurableSessionHost, INTERRUPT_GRACE_MS } from "../durable-host";
+import { DurableSessionHost, INTERRUPT_GRACE_MS, PUMP_RETRY_MS } from "../durable-host";
 import { sessionLogPath, sessionMetaPath } from "../ids";
 
 const homes: string[] = [];
@@ -341,7 +341,7 @@ describe("DurableSessionHost on disk", () => {
     expect(await again.sendUser("b_alpha", user("and now?"))).toMatchObject({ disposition: "turn" });
   });
 
-  test("a torn last line is dropped; a corrupt line ends the log there, with the file copied aside first", async () => {
+  test("a torn last line is dropped; a corrupt line in the middle is a lost record, with the file copied aside first", async () => {
     const { home, clock, host } = durable();
     const d = new FakeSessionDriver();
     host.open({ id: "b_alpha", kind: "bot", bot: "alpha", computer: "Studio" }, d);
@@ -361,12 +361,13 @@ describe("DurableSessionHost on disk", () => {
     lines[1] = "not json";
     writeFileSync(path, `${lines.join("\n")}\n`);
     const b = durable(home, clock);
-    expect(b.host.length("b_alpha")).toBe(1);
-    expect(b.warnings.join("\n")).toContain("corrupt line");
+    expect(b.host.length("b_alpha")).toBe(n);
+    expect(b.host.history("b_alpha")[1]).toMatchObject({ type: "driver", event: { type: "record_lost" } });
+    expect(b.warnings.join("\n")).toContain("unreadable record(s) in the middle");
     expect(readdirSync(join(home, "transcripts", "alpha")).some((f) => f.includes(".corrupt-"))).toBe(true);
-    // The log goes on from the last good record.
+    // The log goes on after its last record.
     b.host.open({ id: "b_alpha", kind: "bot", bot: "alpha", computer: "Studio" }, new FakeSessionDriver());
-    expect((await b.host.sendUser("b_alpha", user("two"))).seq).toBe(1);
+    expect((await b.host.sendUser("b_alpha", user("two"))).seq).toBe(n);
   });
 
   test("a resend of the same client message is not a second message, across a restart too", async () => {
@@ -515,5 +516,145 @@ describe("DurableSessionHost on disk", () => {
     const b = durable(home, clock);
     expect(b.host.get("b_alpha")).toBeUndefined();
     expect(b.warnings.join("\n")).toContain("whose files live elsewhere");
+  });
+});
+
+describe("DurableSessionHost when things go wrong", () => {
+  const open = (host: DurableSessionHost, driver = new FakeSessionDriver()) => {
+    host.open({ id: "b_alpha", kind: "bot", bot: "alpha", computer: "Studio" }, driver);
+    return driver;
+  };
+
+  test("a log whose meta was lost is picked up by `open`, never written over", async () => {
+    const { home, clock, host } = durable();
+    const d1 = open(host);
+    for (const t of ["one", "two"]) {
+      await host.sendUser("b_alpha", user(t));
+      await flush();
+      d1.end({ text: `re ${t}` });
+      await flush();
+    }
+    const before = host.history("b_alpha");
+    await host.close();
+    writeFileSync(sessionMetaPath(home, "alpha", "b_alpha"), "{ not json");
+
+    const again = durable(home, clock);
+    expect(again.host.get("b_alpha")).toBeUndefined();
+    const d2 = open(again.host);
+    expect(again.warnings.join("\n")).toContain("picked up again");
+    expect(again.host.history("b_alpha").slice(0, before.length)).toEqual(before);
+    expect(await again.host.sendUser("b_alpha", user("three"))).toEqual({ disposition: "turn", seq: before.length });
+    await flush();
+    expect(d2.turns.map((t) => t.input.from === "user" && t.input.text)).toEqual(["three"]);
+    const seqs = readFileSync(sessionLogPath(home, "alpha", "b_alpha"), "utf8").trimEnd().split("\n").map((l) => (JSON.parse(l) as SessionRecord).seq);
+    expect(seqs).toEqual(seqs.map((_, i) => i));
+  });
+
+  test("a meta written by a newer Clover stops the start rather than be skipped", async () => {
+    const { home, clock, host } = durable();
+    open(host);
+    await host.close();
+    writeFileSync(sessionMetaPath(home, "alpha", "b_alpha"), JSON.stringify({ meta: 2, id: "b_alpha" }));
+    expect(() => new DurableSessionHost({ home, clock })).toThrow("newer Clover");
+  });
+
+  test("when the disk refuses a turn's start, the input stays first in line and runs once the disk is back", async () => {
+    const { home, clock, host, warnings } = durable();
+    const d = open(host);
+    const log = sessionLogPath(home, "alpha", "b_alpha");
+    let armed = true;
+    host.subscribe("b_alpha", (r) => {
+      if (armed && r.type === "input") {
+        armed = false;
+        chmodSync(log, 0o444); // the disk is full from here
+      }
+    });
+    expect(await host.sendUser("b_alpha", user("hello", 1, "m1"))).toMatchObject({ disposition: "turn" });
+    await flush();
+    expect(d.turns).toHaveLength(0);
+    expect(warnings.join("\n")).toContain("turn_started record wasn't written");
+    // A bot's message now is refused, not folded into a turn that doesn't exist.
+    await expect(host.deliver("b_alpha", fromBot)).rejects.toThrow();
+    chmodSync(log, 0o644);
+    // A resend is the same message, and the retry runs it.
+    expect(await host.sendUser("b_alpha", user("hello", 1, "m1"))).toMatchObject({ disposition: "turn" });
+    await advanceAndSettle(clock, PUMP_RETRY_MS);
+    expect(d.turns.map((t) => t.input.from === "user" && t.input.text)).toEqual(["hello"]);
+    expect(host.get("b_alpha")?.status).toBe("prompting");
+  });
+
+  test("folds and the notes waiting for a turn reach a driver that subscribes after it starts building its prompt", async () => {
+    const { host } = durable();
+    const heard: string[] = [];
+    let end: ((e: { reason: "end_turn" }) => void) | undefined;
+    const late = {
+      canFold: true,
+      async turn(_input: unknown, ctl: { onFold(fn: (i: { from: string; text?: string }) => void): () => void }) {
+        await Promise.resolve();
+        ctl.onFold((i) => heard.push(`${i.from}:${i.text}`));
+        return new Promise<{ reason: "end_turn" }>((resolve) => (end = resolve));
+      },
+      async interrupt() {},
+      async stop() {},
+    };
+    host.open({ id: "b_alpha", kind: "bot", bot: "alpha", computer: "Studio" }, late as never);
+    await host.deliver("b_alpha", { from: "note", label: "weather", text: "Rain at 6", by: { kind: "core" } });
+    await host.deliver("b_alpha", { from: "routine", routine: "r1", name: "Inbox", sideThread: "t_1", text: "3 new mails" });
+    await host.sendUser("b_alpha", user("hi"));
+    expect(await host.deliver("b_alpha", fromBot)).toMatchObject({ disposition: "folded" });
+    await flush();
+    expect(heard).toEqual(["note:Rain at 6", "routine:3 new mails", "bot:The deploy finished."]);
+    end?.({ reason: "end_turn" });
+    await flush();
+  });
+
+  test("what a driver never subscribed to take waits for the next turn", async () => {
+    const { host } = durable();
+    const d = new FakeSessionDriver({ canFold: true });
+    const realTurn = d.turn.bind(d);
+    d.turn = (input, ctl) => realTurn(input, { ...ctl, onFold: () => () => {} });
+    open(host, d);
+    await host.sendUser("b_alpha", user("hi"));
+    await host.deliver("b_alpha", { from: "note", label: "weather", text: "Rain at 6", by: { kind: "core" } });
+    await host.deliver("b_alpha", fromBot);
+    await flush();
+    d.end();
+    await flush();
+    // The bot's message runs as a turn of its own, and the note is folded into it.
+    expect(d.turns.map((t) => t.input.from)).toEqual(["user", "bot"]);
+  });
+
+  test("a driver that never finishes stopping holds nobody up past the grace", async () => {
+    const { clock, host, warnings } = durable();
+    const d = new FakeSessionDriver();
+    d.stop = () => new Promise<void>(() => {});
+    d.interrupt = () => new Promise<void>(() => {});
+    open(host, d);
+    await host.sendUser("b_alpha", user("hi"));
+    await flush();
+    let released = false;
+    void host.release("b_alpha").then(() => (released = true));
+    await flush();
+    expect(released).toBe(false);
+    await advanceAndSettle(clock, INTERRUPT_GRACE_MS * 2, INTERRUPT_GRACE_MS);
+    expect(released).toBe(true);
+    expect(host.isAttached("b_alpha")).toBe(false);
+    expect(warnings.join("\n")).toContain("didn't interrupt within");
+    expect(warnings.join("\n")).toContain("didn't stop within");
+  });
+
+  test("an ended session's log is read only when asked for", async () => {
+    const { home, clock, host } = durable();
+    host.open({ id: "t_run1", kind: "side-thread", bot: "alpha", parent: "b_alpha", computer: "Studio", routine: "r1" }, new FakeSessionDriver());
+    await host.stop("t_run1", "the run ended");
+    const length = host.length("t_run1");
+    await host.close();
+    expect(JSON.parse(readFileSync(sessionMetaPath(home, "alpha", "t_run1"), "utf8"))).toMatchObject({ ended: { status: "stopped" } });
+    // A log that couldn't even be read wouldn't stop the start: it isn't read.
+    writeFileSync(sessionLogPath(home, "alpha", "t_run1"), "{ broken\n" + readFileSync(sessionLogPath(home, "alpha", "t_run1"), "utf8"));
+    const again = durable(home, clock);
+    expect(again.host.get("t_run1")).toMatchObject({ status: "stopped" });
+    expect(again.warnings).toEqual([]);
+    expect(again.host.length("t_run1")).toBe(length);
   });
 });

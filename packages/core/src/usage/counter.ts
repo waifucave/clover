@@ -29,6 +29,9 @@ export interface TurnUsageEvent {
 /** A list price for tokens the runtime didn't price (the inherited `UsagePricer`, over the model catalogs). */
 export type Pricer = (row: { provider?: string; model: string; inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheWriteTokens: number }) => number | undefined;
 
+/** How many records the catch-up reads at a time. */
+const CATCH_UP_PAGE = 1_000;
+
 const isCount = (n: unknown): n is number => typeof n === "number" && Number.isSafeInteger(n) && n >= 0;
 
 export function isTurnUsage(event: { type: string; [key: string]: unknown }): event is TurnUsageEvent & { [key: string]: unknown } {
@@ -74,11 +77,24 @@ export class CloverUsageCounter {
     if (this.#off) return;
     this.#off = this.#host.tap(({ record, view }) => this.#count(record, { ...(view.bot === undefined ? {} : { bot: view.bot }), ...(view.model === undefined ? {} : { model: view.model }) }));
     for (const view of this.#host.list()) {
-      const from = this.#ledger.cursor(view.id) + 1;
-      if (from >= this.#host.length(view.id)) continue;
+      const cursor = this.#ledger.cursor(view.id);
+      // An ended session counted up to a turn's end has nothing left to count, and its log needn't be read.
+      if ((view.status === "stopped" || view.status === "failed") && cursor !== undefined) continue;
+      const length = this.#host.length(view.id);
+      let from = 0;
+      if (cursor !== undefined) {
+        // The cursor rests on a turn's end, by its seq and its time. Anything else there means the log was cut back
+        // (a repair) and written again: it is counted again from the start, and the dedupe keys, which hold each
+        // record's time, keep what was counted already from counting twice.
+        const at = cursor.seq < length ? this.#host.history(view.id, { afterSeq: cursor.seq - 1, limit: 1 })[0] : undefined;
+        if (at?.type === "turn_ended" && at.ts === cursor.ts) from = cursor.seq + 1;
+      }
+      if (from >= length) continue;
       const info: SessionInfo = { ...(view.bot === undefined ? {} : { bot: view.bot }), ...(view.model === undefined ? {} : { model: view.model }) };
-      // Starting after a whole turn, so whether a turn had its own `turn_usage` is known by its end.
-      for (const record of this.#host.history(view.id, { afterSeq: from - 1 })) this.#count(record, info);
+      // Starting after a whole turn, so whether a turn had its own `turn_usage` is known by its end; a page at a time.
+      for (let after = from - 1; after < length - 1; after += CATCH_UP_PAGE) {
+        for (const record of this.#host.history(view.id, { afterSeq: after, limit: CATCH_UP_PAGE })) this.#count(record, info);
+      }
     }
   }
 
@@ -91,7 +107,7 @@ export class CloverUsageCounter {
     try {
       const rows = this.#rowsFor(record, info);
       // The cursor moves at a turn's end, so a catch-up never starts inside a turn.
-      const cursor = record.type === "turn_ended" ? { session: record.sessionId, seq: record.seq } : undefined;
+      const cursor = record.type === "turn_ended" ? { session: record.sessionId, seq: record.seq, ts: record.ts } : undefined;
       if (rows.length === 0 && cursor === undefined) return;
       const added = this.#ledger.add(rows, cursor);
       if (added.length > 0) this.#onChange?.(Math.min(...added.map((r) => r.at)));

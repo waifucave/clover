@@ -3,7 +3,7 @@
 // file tools. The core seeds a bot's starter memories once (§5.9 `memory`), and lists and reads the folder for
 // `memory.list` and `memory.read` (`memory.read` capability). Syncing it, and merging after a takeover, are lane H's
 // (§6.5, §8.5). Owner: lane D.
-import { copyFileSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
+import { closeSync, constants, existsSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, realpathSync, statSync, writeSync } from "node:fs";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import type { MemoryEntry } from "@waifucave/clover-protocol";
 import { ContractError } from "../contracts/common";
@@ -16,9 +16,37 @@ export const SEED_MAX_BYTES = 8 * 1024 * 1024;
 export const LIST_MAX_ENTRIES = 5_000;
 export const READ_MAX_BYTES = 1024 * 1024;
 
-/** Copies a plugin's starter memories into the bot's memory folder: regular files only, never over a file already
- *  there, never through a symlink. Returns how many it copied. */
-export function seedMemory(from: string, to: string, warn: (message: string) => void = () => {}): number {
+/** `O_NOFOLLOW` where the system has it (not on Windows, where a bot can't make links without the user's say). */
+const NO_FOLLOW = constants.O_NOFOLLOW ?? 0;
+
+/** A folder the core writes into, made if missing; false when the path is a link or not a folder. */
+function realFolder(path: string): boolean {
+  try {
+    mkdirSync(path);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== "EEXIST") throw err;
+  }
+  const st = lstatSync(path);
+  return st.isDirectory() && !st.isSymbolicLink();
+}
+
+/** Copies a plugin's starter memories into the bot's memory folder (spec §5.9 `memory`): regular files only, read
+ *  without following a link; never over anything already there; and never through a link the bot planted in its
+ *  memory, since this runs as the core, outside the fence. Each folder on the way, from `base` (the home) down, must be
+ *  a real folder, and each file is created with `O_CREAT | O_EXCL | O_NOFOLLOW`, which fails on any name already taken,
+ *  a dangling link included. Returns how many it copied. */
+export function seedMemory(from: string, to: string, opts: { base: string; warn?: (message: string) => void }): number {
+  const warn = opts.warn ?? (() => {});
+  const rel = relative(opts.base, to);
+  if (rel === "" || rel.startsWith("..") || isAbsolute(rel)) throw new ContractError("invalid", `the memory folder ${to} isn't inside ${opts.base}`);
+  let at = opts.base;
+  for (const part of rel.split(sep)) {
+    at = join(at, part);
+    if (!realFolder(at)) {
+      warn(`starter memories weren't copied: ${at} is a link or not a folder`);
+      return 0;
+    }
+  }
   let files = 0;
   let bytes = 0;
   const walk = (src: string, dest: string): boolean => {
@@ -29,6 +57,10 @@ export function seedMemory(from: string, to: string, warn: (message: string) => 
       const st = lstatSync(s);
       if (st.isSymbolicLink()) continue;
       if (st.isDirectory()) {
+        if (!realFolder(d)) {
+          warn(`starter memories under ${d} weren't copied: it is a link or not a folder`);
+          continue;
+        }
         if (!walk(s, d)) return false;
         continue;
       }
@@ -37,15 +69,31 @@ export function seedMemory(from: string, to: string, warn: (message: string) => 
         warn(`starter memories past ${SEED_MAX_FILES} files or ${SEED_MAX_BYTES} bytes were not copied`);
         return false;
       }
-      if (existsSync(d)) continue;
-      mkdirSync(dest, { recursive: true });
-      copyFileSync(s, d);
+      let data: Buffer;
+      const inFd = openSync(s, constants.O_RDONLY | NO_FOLLOW);
+      try {
+        data = readFileSync(inFd);
+      } finally {
+        closeSync(inFd);
+      }
+      let outFd: number;
+      try {
+        outFd = openSync(d, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | NO_FOLLOW, 0o644);
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code === "EEXIST") continue; // the bot's own file, or a link: left alone
+        throw err;
+      }
+      try {
+        let written = 0;
+        while (written < data.length) written += writeSync(outFd, data, written, data.length - written);
+      } finally {
+        closeSync(outFd);
+      }
       files++;
-      bytes += st.size;
+      bytes += data.length;
     }
     return true;
   };
-  mkdirSync(to, { recursive: true });
   walk(from, to);
   return files;
 }

@@ -13,8 +13,7 @@
 // `<bot>` is the bot's id with `/` written `--` (`pack--luna`, §5.1). The user layers' folder is part of the fenced
 // set (§9.1 "bots' user layers"): lane C's fence names `userLayersDir(home)`.
 import { join } from "node:path";
-import { pluginIdToSegment } from "@waifucave/clover-protocol";
-import { transcriptsDir } from "../sessions/ids";
+import { botSegment, transcriptsDir } from "../sessions/ids";
 
 export interface BotPaths {
   /** `<home>/bots/<bot>`: what the tree's `bots/<bot>/` will name (§9.1). */
@@ -25,7 +24,7 @@ export interface BotPaths {
 }
 
 export function botPaths(home: string, botId: string): BotPaths {
-  const seg = pluginIdToSegment(botId);
+  const seg = botSegment(botId);
   const root = join(home, "bots", seg);
   return { root, memory: join(root, "memory"), agents: join(root, "agents"), scratch: join(home, "scratch", seg) };
 }
@@ -36,10 +35,10 @@ export function userLayersDir(home: string): string {
 }
 
 export function userLayerFile(home: string, botId: string): string {
-  return join(userLayersDir(home), `${pluginIdToSegment(botId)}.json`);
+  return join(userLayersDir(home), `${botSegment(botId)}.json`);
 }
 
 /** The core's own record of a bot on this computer (its starter memories copied, when it was first seen). */
 export function botStateFile(home: string, botId: string): string {
-  return join(transcriptsDir(home), pluginIdToSegment(botId), "bot.json");
+  return join(transcriptsDir(home), botSegment(botId), "bot.json");
 }
