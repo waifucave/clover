@@ -20,7 +20,7 @@ export const APPROVAL_CHILD: ApprovalCard = { id: "ask-2", kind: "approval", sou
 export const LINK: LinkCard = { id: "ask-3", kind: "link", source: { id: "alpha", name: "Alpha" } };
 /** An approval whose answers include "always allow": three sealed buttons, each its option. */
 export const APPROVAL_ALWAYS: ApprovalCard = {
-  id: "ask-5",
+  id: "ask-6",
   kind: "approval",
   source: { id: "luna", name: "Luna" },
   computer: "Studio",
@@ -48,7 +48,7 @@ export const SEALED: SealedFixtures = {
     what: "GitHub asks you to sign in to finish connecting",
     host: "github.com",
   },
-  "ask-5": {
+  "ask-6": {
     source: "Luna · WebFetch",
     what: "Read pages on wikipedia.org",
     options: { once: "Allow once", always: "Always allow", deny: "Deny" },

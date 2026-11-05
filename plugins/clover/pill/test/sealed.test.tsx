@@ -117,6 +117,14 @@ describe("the sealed buttons", () => {
     ]);
   });
 
+  test("a field the card lacks leaves no empty box, and the buttons still show whole", () => {
+    // A web fetch asks with no command: the kit draws nothing for it (lane B's rule), so no grey slab shows.
+    const { container } = render(withKit(<CardBody card={APPROVAL_ALWAYS} draft={emptyDraft()} />));
+    expect(container.querySelector('[data-field="command"]')).toBeNull();
+    expect(container.querySelector('[data-field="what"]')?.textContent).toBe("Read pages on wikipedia.org");
+    assertVisible(container);
+  });
+
   test("a card that lists no options gets the first of each kind", () => {
     const { container } = render(withKit(<CardBody card={LINK} draft={emptyDraft()} />));
     const buttons = [...container.querySelectorAll('[data-sealed="approve"], [data-sealed="deny"]')];

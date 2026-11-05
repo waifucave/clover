@@ -66,7 +66,8 @@ export interface SealedButtonProps {
 
 export interface SealedCardKit {
   Card(props: SealedCardProps): ReactElement;
-  Field(props: SealedFieldProps): ReactElement;
+  /** A field the card lacks draws nothing. */
+  Field(props: SealedFieldProps): ReactElement | null;
   Approve(props: SealedButtonProps): ReactElement;
   Deny(props: SealedButtonProps): ReactElement;
 }
