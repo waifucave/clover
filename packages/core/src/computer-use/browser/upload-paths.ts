@@ -41,6 +41,11 @@ export const SHELL_STARTUP_NAMES: readonly string[] = [
 export const PROTECTED_FOLDER_NAMES: readonly string[] = [".ssh", "LaunchAgents", "LaunchDaemons", ".winter", ".winter-dev", ".claude"];
 export const PROTECTED_CONFIG_NAMES: readonly string[] = [".claude.json", ".winter.json"];
 export const SECRET_LIBRARY_FOLDERS: readonly string[] = ["Keychains", "Cookies"];
+/** Clover's own names for the same folders and file — its homes, and the SDK's global config under Clover's brand
+ *  (`sdk/.clover.json`) — refused on top of the helper's lists while both installs share the machine. The helper's
+ *  lists above stay equal to its Swift ones. */
+export const CLOVER_PROTECTED_FOLDER_NAMES: readonly string[] = [".clover", ".clover-dev"];
+export const CLOVER_PROTECTED_CONFIG_NAMES: readonly string[] = [".clover.json"];
 
 const lowerSet = (xs: readonly string[]): Set<string> => new Set(xs.map((x) => x.toLowerCase()));
 
@@ -51,8 +56,8 @@ export function isSecretPath(path: string, userHome: string): boolean {
   const p = path.toLowerCase();
   const names = p.split(sep).filter((s) => s.length > 0);
   const last = names.at(-1);
-  if (last !== undefined && (lowerSet(SHELL_STARTUP_NAMES).has(last) || lowerSet(PROTECTED_CONFIG_NAMES).has(last))) return true;
-  if (names.some((n) => lowerSet(PROTECTED_FOLDER_NAMES).has(n))) return true;
+  if (last !== undefined && (lowerSet(SHELL_STARTUP_NAMES).has(last) || lowerSet(PROTECTED_CONFIG_NAMES).has(last) || lowerSet(CLOVER_PROTECTED_CONFIG_NAMES).has(last))) return true;
+  if (names.some((n) => lowerSet(PROTECTED_FOLDER_NAMES).has(n) || lowerSet(CLOVER_PROTECTED_FOLDER_NAMES).has(n))) return true;
   if (p.includes("/.config/fish/")) return true;
   const h = userHome.toLowerCase();
   if (!inside(p, h) || p === h) return false;

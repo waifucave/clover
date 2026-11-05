@@ -34,6 +34,13 @@ process.env[LEGACY_HOME_ENV] = mkdtempSync(join(tmpdir(), "clover-test-legacy-ho
 // instead of blocking on a macOS Keychain consent dialog or, worse, reading the user's real
 // `openai:default`/`codex-oauth:default`/`anthropic:default` material.
 process.env.CLOVER_KEYCHAIN_SERVICE = "com.waifucave.clover.core.test-isolated";
+// C0 review (minor): the agent SDK reads its OWN variables whenever a call carries no brand (`runtime-sdk/brand.ts`):
+// its home (`WINTER_HOME`) and temp root (`WINTER_TMPDIR`), which default to the live Winter install's folders, and
+// its Keychain. Point both folders at throwaway ones and turn on the SDK's in-memory test Keychain, so a brandless
+// call in a test lands in this run's temp root and never in that install's home or Keychain.
+process.env.WINTER_HOME = mkdtempSync(join(tmpdir(), "clover-test-sdk-home-"));
+process.env.WINTER_TMPDIR = mkdtempSync(join(tmpdir(), "clover-test-sdk-tmp-"));
+process.env.WINTER_TEST_KEYCHAIN = "memory";
 // Login-shell PATH (`src/login-shell-path.ts`): every `startDaemon` boot resolves the user's login
 // shell PATH by default. No test may run the developer's REAL login shell (their rc files, their
 // agents) — this turns that off for every in-process boot AND every daemon subprocess a test spawns

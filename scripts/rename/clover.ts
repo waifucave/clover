@@ -200,6 +200,13 @@ export const CLOVER_ALLOWLIST: readonly AllowlistEntry[] = [
     why: "names the agent SDK fixes whatever the brand: its test provider's and in-memory Keychain's variables, its `canUseTool` warning, and the local constant for its `WinterCredentialMissing` code",
   },
   {
+    id: "sdk-env-fence",
+    // The preloads point the SDK's own brandless defaults at throwaway places (C0 review, minor).
+    regex: /\bWINTER_HOME\b|\bWINTER_TMPDIR\b|(?<=the live )Winter(?= install's)/g,
+    files: ["packages/core/test/preload.ts", "packages/cli/test/preload.ts"],
+    why: "the test preloads point the SDK's own variables (`WINTER_HOME`, `WINTER_TMPDIR`), which it reads when a call carries no brand, at temp folders, so no test can reach the live Winter install's home",
+  },
+  {
     id: "other-installs",
     regex: /(?:winter|Winter|WINTER)/g,
     files: ["packages/core/src/other-installs.ts", "packages/core/test/other-installs.test.ts"],

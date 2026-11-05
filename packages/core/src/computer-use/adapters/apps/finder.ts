@@ -19,6 +19,7 @@ import { homedir } from "node:os";
 import { basename, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { AutomationFailure } from "../../errors";
+import { OTHER_INSTALL_HOMES } from "../../../other-installs";
 import { FINDER_GUIDE } from "../guides/finder";
 import type { AppAdapter } from "../types";
 import { appScript, pathArg, posixFile, stringArg } from "./common";
@@ -31,7 +32,8 @@ function realHome(): string {
 }
 
 /** Folders Clover never trashes (or anything below the second list): the system, the user's home and its key folders,
- *  the credential stores and Clover's own homes. Compared CASE-INSENSITIVELY (macOS disks are): pass the real path. */
+ *  the credential stores, Clover's own homes and the other installs' that share the machine (`other-installs.ts`).
+ *  Compared CASE-INSENSITIVELY (macOS disks are): pass the real path. */
 export function trashRefusal(path: string, home: string = realHome()): string | undefined {
   const p = path.toLowerCase();
   const h = home.toLowerCase();
@@ -39,7 +41,7 @@ export function trashRefusal(path: string, home: string = realHome()): string | 
     ...["library", "desktop", "documents", "downloads", "applications", "pictures", "movies", "music"].map((d) => `${h}/${d}`)]);
   if (exact.has(p)) return `Clover doesn't trash ${path} — it is a system or home folder; ask the user`;
   const below = ["/system/", "/usr/", "/bin/", "/sbin/", "/etc/", "/private/etc/", "/private/var/db/", "/library/keychains/",
-    `${h}/library/keychains/`, `${h}/.ssh/`, `${h}/.gnupg/`, `${h}/.clover`];
+    `${h}/library/keychains/`, `${h}/.ssh/`, `${h}/.gnupg/`, `${h}/.clover`, ...OTHER_INSTALL_HOMES.map((o) => `${h}/${o.dir.toLowerCase()}`)];
   for (const b of below) if (p === b.replace(/\/$/, "") || p.startsWith(b)) return `Clover doesn't trash anything in ${b.replace(/\/$/, "")} — ask the user`;
   return undefined;
 }

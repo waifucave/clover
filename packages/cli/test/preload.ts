@@ -37,6 +37,13 @@ process.env[LEGACY_HOME_ENV] = mkdtempSync(join(tmpdir(), "clover-test-legacy-ho
 // NON-default `CLOVER_HOME` (P9c-15's guard), so it is inert against a real `~/.clover[-dev]` home
 // and active only for these tests' own temp homes. The named service has no items.
 process.env.CLOVER_KEYCHAIN_SERVICE = "com.waifucave.clover.core.test-isolated";
+// C0 review (minor): the agent SDK reads its OWN variables whenever a call carries no brand (`runtime-sdk/brand.ts`):
+// its home (`WINTER_HOME`) and temp root (`WINTER_TMPDIR`), which default to the live Winter install's folders, and
+// its Keychain. Point both folders at throwaway ones and turn on the SDK's in-memory test Keychain, so a brandless
+// call in a test lands in this run's temp root and never in that install's home or Keychain.
+process.env.WINTER_HOME = mkdtempSync(join(tmpdir(), "clover-test-sdk-home-"));
+process.env.WINTER_TMPDIR = mkdtempSync(join(tmpdir(), "clover-test-sdk-tmp-"));
+process.env.WINTER_TEST_KEYCHAIN = "memory";
 // Login-shell PATH: the SAME switch packages/core/test/preload.ts sets — a CLI test that spawns
 // `daemon run` (or boots `startDaemon()` in-process) must never run the developer's real login shell.
 process.env.CLOVER_LOGIN_SHELL_PATH = "off";
