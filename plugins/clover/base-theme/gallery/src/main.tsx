@@ -4,6 +4,7 @@
 import { useEffect, type CSSProperties, type ReactElement, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { ISLAND_STORIES } from "../../../island/src/gallery";
+import { PILL_STORIES } from "../../../pill/src/gallery";
 import { Specimen } from "./specimen";
 import { BASE_LAYER, scopedCss, themeStyle, type ThemeLayer } from "./themes";
 import type { Appearance } from "../../src/theme";
@@ -30,7 +31,7 @@ const THEME_STORIES: GalleryStory[] = [
   { id: "theme/base-dark", title: "Base theme, dark", width: 1000, height: 470, theme: "base-dark", render: () => <Specimen title="Clover, dark" /> },
 ];
 
-export const STORIES: GalleryStory[] = [...THEME_STORIES, ...ISLAND_STORIES];
+export const STORIES: GalleryStory[] = [...THEME_STORIES, ...ISLAND_STORIES, ...PILL_STORIES];
 
 declare global {
   interface Window {

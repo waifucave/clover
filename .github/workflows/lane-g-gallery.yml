@@ -21,6 +21,7 @@ env:
   PACKAGES: >-
     plugins/clover/base-theme
     plugins/clover/island
+    plugins/clover/pill
   GALLERY: plugins/clover/base-theme/gallery
 
 jobs:

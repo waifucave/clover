@@ -1,0 +1,18 @@
+{
+  "manifest": 1,
+  "name": "Dispatch pill",
+  "description": "A pill at the bottom of the screen for messaging a bot from anywhere: it grows as you type, shows the bot at work, and turns into its questions and approvals.",
+  "engines": { "clover": "^1.0.0" },
+  "capabilities": ["approvals"],
+  "client": { "entry": "client/index.tsx" },
+  "contributes": {
+    "ui": [
+      {
+        "spot": "app.surface",
+        "id": "pill",
+        "component": "DispatchPill",
+        "window": { "type": "overlay", "alwaysOnTop": true, "transparent": true }
+      }
+    ]
+  }
+}
