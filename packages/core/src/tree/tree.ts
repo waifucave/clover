@@ -6,8 +6,9 @@
 // * A computer that is off answers `computer_offline` at once, before anything is sent.
 // * A call for another computer carries the calling computer's level for it, the stricter of the computers it touches
 //   (§9.1 "Approvals follow the files"), and the holder judges it at the stricter of that and its own (review N2).
-// * A move between two computers copies the files to the destination, folders and links included, then removes the
-//   source; a failure leaves the source as it was. (M2's direct path streams instead, edit J8.)
+// * A move or copy between two computers takes the direct path (edit J8, `transfer.ts`): the destination's holder
+//   takes the files straight from the source's over the link between them, and a move removes the source only once
+//   they're in place. Without it (the tree alone, in tests) a move copies through this computer.
 import type { FileStat, Level, Os } from "@waifucave/clover-protocol";
 import { DEFAULT_LEVEL, pluginIdFromSegment, pluginIdToSegment } from "@waifucave/clover-protocol";
 import { strictestLevel } from "../contracts/approval-broker";
@@ -43,9 +44,11 @@ export interface CoreTreeOptions {
   holder(computer: string): Holder;
   /** Which computer runs `bot` (its `bots/<bot>/` lives there). */
   botComputer(bot: string): string | undefined;
+  /** The direct path between holders (`transfer.ts`): a move between computers, or any copy. */
+  transfer?: (o: { from: string; to: string; move: boolean; source: string; destination: string; call: HolderCall }) => Promise<void>;
 }
 
-/** The most a move between computers copies of one file in this milestone; M2's direct path streams. */
+/** The most a move through this computer copies of one file (no direct path); the direct path streams any size. */
 export const CROSS_MOVE_FILE_MAX = TREE_IO_MAX * 4;
 
 /** A real path inside `home`, joined the way that computer's OS writes paths. */
@@ -130,6 +133,10 @@ export class CoreTree implements Tree {
       return;
     }
     const { call } = this.#reach([from, to], opts);
+    if (this.#o.transfer) {
+      await this.#o.transfer({ from, to, move: true, source: src.computer, destination: dst.computer, call });
+      return;
+    }
     const a = this.#o.holder(src.computer);
     const b = this.#o.holder(dst.computer);
     const top = await a.stat(from, call);
@@ -143,6 +150,29 @@ export class CoreTree implements Tree {
       throw e;
     }
     await a.remove(from, { ...call, recursive: true });
+  }
+
+  /** Copies a file or a folder, on one computer or between two, by the direct path: the files never pass through
+   *  this computer unless it holds one end. */
+  async copy(from: string, to: string, opts: TreeCallOptions): Promise<void> {
+    const src = this.resolve(from);
+    const dst = this.resolve(to);
+    const { call } = this.#reach([from, to], opts);
+    if (this.#o.transfer) {
+      await this.#o.transfer({ from, to, move: false, source: src.computer, destination: dst.computer, call });
+      return;
+    }
+    const a = this.#o.holder(src.computer);
+    const b = this.#o.holder(dst.computer);
+    const top = await a.stat(from, call);
+    if (!top) throw new ContractError("not_found", `${from} doesn't exist`);
+    if (await b.stat(to, call)) throw new ContractError("conflict", `${to} already exists`);
+    try {
+      await this.#copy(a, b, from, to, top, call);
+    } catch (e) {
+      await b.remove(to, { ...call, recursive: true }).catch(() => {});
+      throw e;
+    }
   }
 
   async glob(pattern: string, opts: TreeCallOptions & { cwd: string }): Promise<string[]> {
@@ -239,7 +269,7 @@ export class CoreTree implements Tree {
       return;
     }
     if (st.type !== "file") throw new ContractError("invalid", `${from} isn't a file, folder or link; it can't move to another computer`);
-    if (st.size > CROSS_MOVE_FILE_MAX) throw new ContractError("invalid", `${from} is ${st.size} bytes; moving a file this large to another computer waits for the direct path`);
+    if (st.size > CROSS_MOVE_FILE_MAX) throw new ContractError("invalid", `${from} is ${st.size} bytes; moving a file this large needs the direct path`);
     const parts: Uint8Array[] = [];
     for (let off = 0; off < st.size || off === 0; off += TREE_IO_MAX) {
       const d = await a.read(from, { ...call, encoding: "base64", offset: off, length: Math.min(TREE_IO_MAX, Math.max(1, st.size - off)) });

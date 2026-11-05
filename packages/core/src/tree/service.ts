@@ -23,6 +23,7 @@ import { ContractError, type Unsubscribe } from "../contracts/common";
 import type { LinkTransport } from "../contracts/link-transport";
 import type { HolderCall, LocalHolder } from "./holder";
 import type { TreeChangedNotice } from "./remote";
+import { judgePeer, type PeerReviewer } from "./judge";
 
 const M = COMPUTERS_METHODS;
 const Via = { session: SessionId.optional(), level: Level.optional(), answer: SignedCardAnswer.optional() };
@@ -88,6 +89,8 @@ export interface TreeServiceOptions {
   level?: () => Level;
   answers?: { devices: AnswerDevices; ledger: AnswerLedger; render: CallCardRenderer };
   tools?: ToolExecutor;
+  /** This computer's reviewer for a peer's command at `ask-risky` (R1). */
+  reviewer?: PeerReviewer;
 }
 
 interface Running {
@@ -227,19 +230,16 @@ export class TreeService {
     }
   }
 
-  /** A peer's tool call, at the stricter of this computer's level and the call's: allowed, refused, or let through by
-   *  the user's signed answer bound to exactly this call (`tool.run` with its tool and input). */
+  /** A peer's tool call, at the stricter of this computer's level and the call's (`judge.ts`, R1): the reviewer
+   *  passes what isn't risky at `ask-risky`; the rest needs the user's answer bound to `tool.run` with its tool and
+   *  input. */
   async #judge(p: z.infer<(typeof TREE_PEER_PARAMS)["tool.run"]>, call: HolderCall): Promise<void> {
-    const level = strictestLevel([this.#o.level?.() ?? DEFAULT_LEVEL, p.level])!;
-    const d = levelDecision(level, "execute");
-    if (d === "allow") return;
-    if (d === "deny") throw new ContractError("refused", `${this.#o.holder.name} runs no commands for another computer at its level`);
-    if (!call.answer) throw new ContractError("refused", "this command needs the user's answer, signed and bound to it");
-    const a = this.#o.answers ?? { devices: NO_DEVICES, ledger: NEVER, render: () => undefined };
-    const verdict = await verifySignedAnswer(call.answer, {
-      self: this.#o.holder.name, method: "tool.run", params: toolCallBinding(p.tool, p.input), now: this.#o.clock.now(), sha256, ...a,
+    await judgePeer({
+      computer: this.#o.holder.name, ownLevel: this.#o.level?.(), callLevel: p.level, effect: "execute",
+      method: "tool.run", params: toolCallBinding(p.tool, p.input), as: call.as, now: this.#o.clock.now(),
+      ...(call.answer ? { answer: call.answer } : {}), ...(this.#o.reviewer ? { reviewer: this.#o.reviewer } : {}),
+      ...(this.#o.answers ? { answers: this.#o.answers } : {}),
     });
-    if (verdict !== "ok") throw new ContractError("refused", `the answer doesn't hold for this command (${verdict})`);
   }
 }
 

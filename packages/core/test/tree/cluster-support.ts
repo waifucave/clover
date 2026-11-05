@@ -11,7 +11,9 @@ import { FakeFence } from "../../src/contracts/fakes/fence";
 import { FakeLinkNetwork } from "../../src/contracts/fakes/link-transport";
 import { startComputerNode, type ComputerNode } from "../../src/computers/node";
 import { hostOs } from "../../src/tree/names";
+import type { AnswerAsker, PeerReviewer } from "../../src/tree/judge";
 import type { ToolExecutor } from "../../src/tree/service";
+import type { ShellLauncher } from "../../src/tree/terminals";
 
 export interface TestComputer {
   name: string;
@@ -62,6 +64,10 @@ export interface ClusterOptions {
   devices?: (name: string) => DeviceRegistry | undefined;
   answers?: (name: string) => { devices: AnswerDevices; ledger: AnswerLedger; render: CallCardRenderer } | undefined;
   deviceIds?: Record<string, string>;
+  /** The calling computer's side of R1: shows the user another computer's card and signs their answer. */
+  askUser?: (name: string) => AnswerAsker | undefined;
+  reviewer?: (name: string) => PeerReviewer | undefined;
+  terminals?: (name: string) => { launch?: ShellLauncher; confirmPaste?: (text: string, terminalId: string) => Promise<boolean> } | undefined;
 }
 
 export class Cluster {
@@ -78,6 +84,9 @@ export class Cluster {
     const bots: string[] = [];
     const devices = opts.devices?.(name);
     const answers = opts.answers?.(name);
+    const askUser = opts.askUser?.(name);
+    const reviewer = opts.reviewer?.(name);
+    const terminals = opts.terminals?.(name);
     const node = startComputerNode({
       clock: { now: () => Date.now() },
       transport: this.net.endpoint(device),
@@ -89,6 +98,9 @@ export class Cluster {
       bots: () => bots,
       ...(devices ? { devices } : {}),
       ...(answers ? { answers } : {}),
+      ...(askUser ? { askUser } : {}),
+      ...(reviewer ? { reviewer } : {}),
+      ...(terminals ? { terminals } : {}),
     });
     const c: TestComputer = { name, device, home, cloverHome, node, bots };
     this.computers.set(name, c);

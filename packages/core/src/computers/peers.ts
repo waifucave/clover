@@ -7,9 +7,12 @@
 // clover-core); a revoked device leaves the tree at once. Without a device list (tests on the fake link), a hello
 // introduces its computer. `computer.hello` is lane J's addition to the protocol (requested of lane B).
 import { z } from "zod";
-import { ComputerName, Level, Os, type ComputerView } from "@waifucave/clover-protocol";
+import { ComputerName, Level, Os, SignedCardAnswer, levelAbove, type ComputerView } from "@waifucave/clover-protocol";
 import { utf16 } from "@waifucave/clover-protocol";
-import { Listeners, type Unsubscribe } from "../contracts/common";
+import { ContractError, Listeners, type Unsubscribe } from "../contracts/common";
+import type { CallCardRenderer } from "../contracts/approval-broker";
+import { needsAnswer, withAnswer, type AnswerAsker } from "../tree/judge";
+import { offlineAs } from "../tree/remote";
 import type { DeviceRecord, DeviceRegistry } from "../contracts/device-registry";
 import type { LinkTransport } from "../contracts/link-transport";
 import type { TreeComputer, TreeDirectory } from "../tree/tree";
@@ -35,6 +38,8 @@ export const ComputerHello = z.object({
 });
 export type ComputerHello = z.infer<typeof ComputerHello>;
 
+const SetLevelParams = z.object({ level: Level, answer: SignedCardAnswer.optional() });
+
 export interface ComputerPeersOptions {
   registry: CoreComputerRegistry;
   transport: LinkTransport;
@@ -42,6 +47,10 @@ export interface ComputerPeersOptions {
   roots: () => TreeRoots;
   /** The device list; without it, a hello introduces its computer. */
   devices?: DeviceRegistry;
+  /** This computer's own card for a call, which a raise from another computer must answer (review N1). */
+  render?: CallCardRenderer;
+  /** Shows the user another computer's card for a raise, and gives back their signed answer (R1). */
+  ask?: AnswerAsker;
   log?: (line: string) => void;
 }
 
@@ -68,6 +77,31 @@ export class ComputerPeers {
       }));
     }
     this.#off.push(transport.onNotify("computer.hello", (params, from) => this.#hello(params, from)));
+    // Levels per computer (J-M2): another computer asks this one to change its own level. A lowering applies; a raise
+    // needs the user's answer signed for this computer's own card, which the caller is told to show.
+    this.#off.push(transport.handle("computer.setLevel", async (raw, from) => {
+      if (devices && !(devices.get(from)?.runsCore && devices.get(from)?.revokedAt === undefined)) throw new ContractError("refused", "this computer isn't paired with yours");
+      const p = SetLevelParams.safeParse(raw);
+      if (!p.success) throw new ContractError("invalid", "computer.setLevel takes a level");
+      const self = registry.self();
+      if (levelAbove(p.data.level, self.level) && !p.data.answer) {
+        throw needsAnswer(self.name, "computer.setLevel", { name: self.name, level: p.data.level }, opts.render, `raising ${self.name}'s level takes the user's answer`);
+      }
+      await registry.setLevel(self.name, p.data.level, p.data.answer ? { via: "signed", answer: p.data.answer } : undefined);
+      return { applied: true };
+    }));
+    registry.setRemoteLevel((name, level, answer) => {
+      const c = registry.get(name);
+      if (!c) return Promise.reject(new ContractError("not_found", `no computer ${name}`));
+      return withAnswer(answer ? undefined : opts.ask, async (a) => {
+        try {
+          const link = await transport.connect(c.device);
+          await link.request("computer.setLevel", { level, ...((a ?? answer) ? { answer: a ?? answer } : {}) });
+        } catch (e) {
+          throw offlineAs(c.name, e);
+        }
+      });
+    });
     this.#off.push(transport.watch((view) => {
       const c = registry.byDevice(view.peer);
       if (c) {

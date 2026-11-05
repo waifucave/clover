@@ -16,6 +16,9 @@ import { RemoteHolder } from "../tree/remote";
 import { ensureTreeRoot } from "../tree/root";
 import { TreeService, type ToolExecutor } from "../tree/service";
 import { TreeTools } from "../tree/tools";
+import type { AnswerAsker, PeerReviewer } from "../tree/judge";
+import { LocalTerminals, serveTerminals, TerminalRouter, type ShellLauncher } from "../tree/terminals";
+import { serveTransfer, transfer } from "../tree/transfer";
 import { CoreTree } from "../tree/tree";
 import { FolderWatches } from "../tree/watch";
 import { ComputerPeers } from "./peers";
@@ -44,6 +47,13 @@ export interface ComputerNodeOptions {
   /** This computer's tree folder (`defaultTreeRoot()`), made and kept: `home/<this computer>` links to the home
    *  folder, `bots/` to the bots' folder. Left out, no folder is made (tests). */
   treeRoot?: string;
+  /** The calling computer's side of R1: shows the user another computer's card and gives back their signed answer
+   *  (lanes B and C's broker). Without it, a call another computer's level asks about is refused. */
+  askUser?: AnswerAsker;
+  /** This computer's reviewer for another computer's calls at `ask-risky` (R1; lane C's). */
+  reviewer?: PeerReviewer;
+  /** The terminal panel's shells here (R4): how a shell starts, and the card for a paste of several lines. */
+  terminals?: { launch?: ShellLauncher; confirmPaste?: (text: string, terminalId: string) => Promise<boolean> };
   log?: (line: string) => void;
 }
 
@@ -54,6 +64,7 @@ export interface ComputerNode {
   service: TreeService;
   tree: CoreTree;
   tools: TreeTools;
+  terminals: TerminalRouter;
   /** Settles once the tree folder is made (at once without `treeRoot`). */
   treeRootReady(): Promise<void>;
   close(): void;
@@ -72,6 +83,7 @@ export function startComputerNode(o: ComputerNodeOptions): ComputerNode {
   const peers = new ComputerPeers({
     registry, transport: o.transport, roots: () => ({ home: o.home, botsRoot, os, bots: bots() }),
     ...(o.devices ? { devices: o.devices } : {}), ...(o.log ? { log: o.log } : {}),
+    ...(o.answers ? { render: o.answers.render } : {}), ...(o.askUser ? { ask: o.askUser } : {}),
   });
   const holder = new LocalHolder({
     clock: o.clock,
@@ -83,6 +95,7 @@ export function startComputerNode(o: ComputerNodeOptions): ComputerNode {
     os,
     level: () => registry.self().level,
     watches: new FolderWatches(),
+    ...(o.reviewer ? { reviewer: o.reviewer } : {}),
     ...(o.fence ? { fence: o.fence } : {}),
     ...(o.answers ? { answers: o.answers } : {}),
   });
@@ -95,6 +108,12 @@ export function startComputerNode(o: ComputerNodeOptions): ComputerNode {
   const service = new TreeService({
     transport: o.transport, holder, clock: o.clock, level: () => registry.self().level,
     ...(mayCall ? { mayCall } : {}), ...(o.answers ? { answers: o.answers } : {}), ...(o.executor ? { tools: o.executor } : {}),
+    ...(o.reviewer ? { reviewer: o.reviewer } : {}),
+  });
+  const localTerminals = new LocalTerminals(o.terminals ?? {});
+  const offTerminals = serveTerminals({
+    transport: o.transport, holder, terminals: localTerminals, level: () => registry.self().level, clock: o.clock,
+    ...(mayCall ? { mayCall } : {}), ...(o.answers ? { answers: o.answers } : {}),
   });
   const remotes = new Map<string, RemoteHolder>();
   const holderFor = (name: string): Holder => {
@@ -104,17 +123,53 @@ export function startComputerNode(o: ComputerNodeOptions): ComputerNode {
     let r = remotes.get(c.device);
     if (!r) {
       const device = c.device;
-      r = new RemoteHolder({ transport: o.transport, device, computer: () => registry.byDevice(device)?.name ?? device });
+      r = new RemoteHolder({ transport: o.transport, device, computer: () => registry.byDevice(device)?.name ?? device, ...(o.askUser ? { ask: o.askUser } : {}) });
       remotes.set(device, r);
     }
     return r;
   };
   const directory = peers.directory();
-  const tree = new CoreTree({ directory, holder: holderFor, botComputer: (bot) => peers.botComputer(bot) });
+  const where = (name: string) => {
+    const c = registry.get(name);
+    if (!c) throw new ContractError("not_found", `no computer ${name}`);
+    return { computer: c.name, device: c.name === registry.self().name ? null : c.device };
+  };
+  // The direct path (edit J8): this computer as a destination or a source of another computer's move or copy.
+  const xfer = serveTransfer({
+    transport: o.transport, holder, clock: o.clock,
+    deviceFor: (path) => where(tree.resolve(path).computer),
+    ...(mayCall ? { mayCall } : {}),
+  });
+  const tree: CoreTree = new CoreTree({
+    directory, holder: holderFor, botComputer: (bot) => peers.botComputer(bot),
+    transfer: async ({ from, to, move, source, destination, call }) => {
+      const session = call.as.kind === "session" || call.as.kind === "peer" ? call.as.sessionId : undefined;
+      await transfer({
+        transport: o.transport, destination: where(destination), receiveHere: xfer.receiveHere, as: call.as, sourceComputer: source,
+        params: {
+          from, to, move, level: call.level ?? registry.self().level,
+          ...(session === undefined ? {} : { session }), ...(call.answer ? { answer: call.answer } : {}),
+        },
+        ...(o.askUser ? { ask: o.askUser } : {}),
+      });
+    },
+  });
   const tools = new TreeTools({
     tree, directory, transport: o.transport,
     deviceOf: (name) => registry.get(name)?.device,
     ...(o.executor ? { local: { holder, executor: o.executor } } : {}),
+    ...(o.askUser ? { ask: o.askUser } : {}),
+  });
+  const terminals = new TerminalRouter({
+    transport: o.transport,
+    self: () => registry.self().name,
+    local: { holder, terminals: localTerminals },
+    locate: (cwd) => {
+      const name = tree.resolve(cwd).computer;
+      const c = registry.get(name)!;
+      return { computer: c.name, device: c.device, online: c.state === "online", level: c.level };
+    },
+    ...(o.askUser ? { ask: o.askUser } : {}),
   });
   let rootReady: Promise<void> = Promise.resolve();
   let offRoot = () => {};
@@ -134,11 +189,15 @@ export function startComputerNode(o: ComputerNodeOptions): ComputerNode {
     });
   }
   return {
-    registry, peers, holder, service, tree, tools,
+    registry, peers, holder, service, tree, tools, terminals,
     treeRootReady: () => rootReady,
     close: () => {
       offRoot();
+      terminals.dispose();
+      offTerminals();
+      localTerminals.closeAll();
       tools.close();
+      xfer.close();
       service.close();
       for (const r of remotes.values()) r.close();
       holder.watches.close();

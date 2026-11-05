@@ -35,6 +35,7 @@ import type { Fence, FenceOp } from "../contracts/fence";
 import { peerTreeDecision, splitTreePath, treeCallBinding, type TreeChange, type TreeData } from "../contracts/tree";
 import { checkSegment, foldName, hostOs, mayBeShortName } from "./names";
 import { FolderWatches, type TreeWatchEvent } from "./watch";
+import { judgePeer, type PeerReviewer } from "./judge";
 
 /** Who a call is for, and what a peer's change carries (review N2). */
 export interface HolderCall {
@@ -92,6 +93,8 @@ export interface LocalHolderOptions {
   answers?: { devices: AnswerDevices; ledger: AnswerLedger; render: CallCardRenderer };
   /** This computer's folder watches (one set per computer). */
   watches?: FolderWatches;
+  /** This computer's reviewer for a peer's change at `ask-risky` (R1; lane C's). */
+  reviewer?: PeerReviewer;
 }
 
 interface Located {
@@ -165,6 +168,31 @@ export class LocalHolder implements Holder {
   async watch(path: string, call: HolderCall, fn: (e: TreeWatchEvent) => void): Promise<Unsubscribe> {
     const real = await this.realFolder(path, call);
     return this.watches.subscribe(real, this.#treePath(path), (child) => this.#mayRead(child, call), fn);
+  }
+
+  /** Where a tree path is on this disk, resolved and checked as a call of `op` (`read`, `write` or `delete`) by
+   *  `call`, for the direct path between computers (`transfer.ts`). `follow` follows a link at the last name. */
+  async realEntry(path: string, call: HolderCall, op: "read" | "write" | "delete", follow = false): Promise<{ real: string; root: string; exists: boolean; dir: boolean }> {
+    this.#caller(call);
+    const r = await this.#resolve(path, { follow, create: op === "write" });
+    if (r.real === r.root && op !== "read") throw new ContractError("invalid", `${path} is a whole area of the tree`);
+    this.#fenced({ op, path: r.real }, call);
+    return { real: r.real, root: r.root, exists: r.exists, dir: r.st?.isDirectory() ?? false };
+  }
+
+  /** Makes the folders above an entry `realEntry` gave for a write, safely (inside its area, never through a link out). */
+  async makeParents(entry: { real: string; root: string }, path: string): Promise<void> {
+    await this.#mkdirs(entry.root, dirname(entry.real), path);
+  }
+
+  /** Whether `call` may see a real path here (the fence's read-denied items are hidden). */
+  visible(real: string, call: HolderCall): boolean {
+    return this.#mayRead(real, call);
+  }
+
+  /** Judges a peer's call that isn't one of the tree's own methods (the direct path's `tree.receive`, `tree.send`). */
+  async judge(call: HolderCall, method: string, params: unknown, effect: "edit" | "delete" | "move"): Promise<void> {
+    await this.#judge(call, { method, params } as unknown as TreeChange, effect);
   }
 
   /** The real path a tree path names here, without touching the disk (for bookkeeping and `Tree.resolve`). */
@@ -630,20 +658,11 @@ export class LocalHolder implements Holder {
   async #judge(call: HolderCall, change: TreeChange, effect: "edit" | "delete" | "move"): Promise<void> {
     if (call.as.kind !== "peer") return;
     if (call.level === undefined) throw new ContractError("invalid", "a peer's change says its level");
-    const self = this.#o.name();
-    const decision = peerTreeDecision([this.#o.level?.() ?? DEFAULT_LEVEL], call.level, effect);
-    if (decision === "allow") return;
-    if (decision === "refuse") throw new ContractError("refused", `${self} doesn't let another computer change files at its level`);
-    if (!call.answer) throw new ContractError("refused", "this change needs the user's answer, signed and bound to it");
-    const verdict = await verifySignedAnswer(call.answer, {
-      self, method: change.method, params: change.params, now: this.#o.clock.now(), sha256, ...this.#answers,
+    await judgePeer({
+      computer: this.#o.name(), ownLevel: this.#o.level?.(), callLevel: call.level, effect,
+      method: change.method, params: change.params, as: call.as, now: this.#o.clock.now(), answers: this.#answers,
+      ...(call.answer ? { answer: call.answer } : {}), ...(this.#o.reviewer ? { reviewer: this.#o.reviewer } : {}),
     });
-    if (verdict !== "ok") throw new ContractError("refused", `the answer doesn't hold for this change (${verdict})`);
-  }
-
-  /** Judges a peer's change without making it (a move across computers asks both holders before it copies). */
-  async judgeOnly(call: HolderCall, change: TreeChange, effect: "edit" | "delete" | "move"): Promise<void> {
-    await this.#judge(call, change, effect);
   }
 
   #treePath(path: string): string {
