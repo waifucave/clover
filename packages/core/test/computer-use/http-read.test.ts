@@ -664,12 +664,15 @@ describe("the review's smaller findings", () => {
     const https = new URL("https://example.com/");
     const v6 = new URL("http://[::1]:3000/");
     expect(proxyFor("93.184.216.34", https, {})).toBeUndefined();
-    // The scheme picks the variable; ALL_PROXY is ignored.
+    // The scheme picks the variable; since Bun 1.4 ALL_PROXY is the fallback (counted for both schemes).
     expect(proxyFor("93.184.216.34", https, { HTTPS_PROXY: "http://proxy:3128" })).toBe("HTTPS_PROXY");
     expect(proxyFor("93.184.216.34", https, { HTTP_PROXY: "http://proxy:3128" })).toBeUndefined();
     expect(proxyFor("127.0.0.1", http(), { https_proxy: "http://proxy:3128" })).toBeUndefined();
     expect(proxyFor("127.0.0.1", http(), { http_proxy: "http://proxy:3128" })).toBe("http_proxy");
-    expect(proxyFor("127.0.0.1", http(), { ALL_PROXY: "http://proxy:3128" })).toBeUndefined();
+    expect(proxyFor("127.0.0.1", http(), { ALL_PROXY: "http://proxy:3128" })).toBe("ALL_PROXY");
+    expect(proxyFor("93.184.216.34", https, { all_proxy: "http://proxy:3128" })).toBe("all_proxy");
+    expect(proxyFor("127.0.0.1", http(), { http_proxy: "http://proxy:3128", ALL_PROXY: "http://other:3128" })).toBe("http_proxy");
+    expect(proxyFor("127.0.0.1", http(), { ALL_PROXY: "http://proxy:3128", NO_PROXY: "127.0.0.1" })).toBeUndefined();
     // NO_PROXY: *, the host exactly, host:port with the dial's own port — an IPv6 address only bracketed.
     const P = { HTTP_PROXY: "http://proxy:3128" };
     expect(proxyFor("127.0.0.1", http(), { ...P, NO_PROXY: "example.com, 127.0.0.1" })).toBeUndefined();
