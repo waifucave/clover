@@ -9,6 +9,7 @@ on:
     branches: [lane/l-m0]
     paths:
       - "spikes/s7-browser/**"
+      - "!spikes/s7-browser/results/**"
       - ".github/workflows/spike-s7.yml"
   workflow_dispatch:
 

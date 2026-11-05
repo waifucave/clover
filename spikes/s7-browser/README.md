@@ -63,6 +63,7 @@ results/         every round's JSON from CI, with summary.md (bun src/summarize.
   round5/        a browser per Chrome for Testing step and a trace of the pipe; a cover that occludes on Windows;
                  the 1x1 host at opacity 0 on macOS and Windows
   round6/        Linux Chrome for Testing twice, the pipe read by createReadStream and by a worker thread
+  round7/        the native pipe tried first, node's stdio pipes never on the way (the Linux stall's suspect)
 ```
 
 The report quotes round two for the Electron tables (rounds three and five re-ran them and agreed), round three for
