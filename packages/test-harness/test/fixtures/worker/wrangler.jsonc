@@ -1,0 +1,8 @@
+// A fixture Worker for the emulator's own test: a variable and a KV namespace.
+{
+  "name": "harness-fixture",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-07-01",
+  "vars": { "WHO": "fixture" },
+  "kv_namespaces": [{ "binding": "STORE" }],
+}
