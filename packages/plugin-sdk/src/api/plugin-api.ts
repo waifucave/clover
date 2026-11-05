@@ -220,8 +220,9 @@ export interface StorageApi {
 /** The keyed fetch (§5.4), the same door as lane A's reference `createKeyedFetch` (clover-sdk), and held to its
  *  conformance kit (`runKeyedFetchConformance`):
  *  1. only the plugin's `network:` hosts, `https:` only (plain `http:` only to this computer's loopback);
- *  2. the core adds the key or token in `placement` (default `Authorization: Bearer …`), and refuses a request that
- *     sets that header itself;
+ *  2. the core adds the key or token where the `auth` entry's `placement` says, from a fixed list (`keyed-fetch.ts`;
+ *     default `Authorization: Bearer …`), never where the caller says; a request that sets that header itself fails
+ *     `credential_header`, and every response comes back with each header that holds the key taken out;
  *  3. redirects are followed by hand: each hop held to rule 1, a hop to another origin drops the key;
  *  4. no time limit while data flows either way: only `idle_timeout` (5 minutes of silence) ends a request;
  *  5. a 401 gets one retry with a newer token from the refresher (a higher generation), when the body can be resent.
@@ -230,14 +231,12 @@ export interface NetApi {
   fetch(url: string, init?: RequestInit, opts?: KeyedFetchOptions): Promise<Response>;
 }
 
+/** There is no per-call placement: where the key goes is the `auth` entry's own `placement` (§5.9, lane A's B1). */
 export interface KeyedFetchOptions {
   /** The `auth` entry whose key or token goes in, by its `secret` name, or `"waifucave"` (`WAIFUCAVE_AUTH`); `false`
    *  adds none. Left out: the plugin's one entry when it has exactly one, none when it has none, and `ambiguous_auth`
    *  when it has several. */
   auth?: string | false;
-  /** Where the key goes: `header` (default `authorization`) and `scheme` (default `Bearer` for `authorization`,
-   *  none for any other header). */
-  placement?: { header?: string; scheme?: string };
 }
 
 /** Lane A's codes, plus `no_account`: `auth: "waifucave"` with no waifucave account signed in on this computer. */

@@ -3,6 +3,7 @@
 // details §5.9 leaves open are noted where they are chosen.
 import { z } from "zod";
 import { Os, Platform, RunsOn, Scope, SemverVersion, TopPluginId, COMPUTER_NAME_RE } from "@waifucave/clover-protocol";
+import { AUTH_SCHEME_RE } from "../api/keyed-fetch";
 import {
   ComponentName, EntryId, HandlerName, JsonSchema, KEY_CHORD_RE, COMMAND_NAME_RE, LangTag, NAMESPACE_RE, Path, PathGlob,
   PointName, Program, SecretName, SettingKey, Text, TOOL_NAME_RE, Url,
@@ -37,16 +38,24 @@ const declares = { declares: DeclaresSchema.optional() };
 // Sign-ins and settings
 // -------------------------------------------------------------------------------------------------
 
+/** Where the keyed fetch puts this entry's key (`api/keyed-fetch.ts`): `authorization` with a scheme (`Bearer` when
+ *  none is named), `x-api-key`, `api-key` or `x-goog-api-key`. Left out: `Authorization: Bearer`. */
+export const KeyPlacementSchema = z.discriminatedUnion("header", [
+  z.strictObject({ header: z.literal("authorization"), scheme: z.string().regex(AUTH_SCHEME_RE).optional() }),
+  z.strictObject({ header: z.enum(["x-api-key", "api-key", "x-goog-api-key"]) }),
+]);
+
 /** A sign-in for the plugin's own service (§5.1 "Sign-ins"). `secret` names where the core keeps the key or token. */
 export const AuthSchema = z.discriminatedUnion("method", [
-  z.strictObject({ method: z.literal("api-key"), secret: SecretName, help: z.string().max(2000).optional() }),
+  z.strictObject({ method: z.literal("api-key"), secret: SecretName, help: z.string().max(2000).optional(), placement: KeyPlacementSchema.optional() }),
   z.strictObject({
     method: z.literal("oauth-pkce"),
     authorizeUrl: Url, tokenUrl: Url, clientId: z.string().min(1).max(512),
     scopes: z.array(z.string().min(1).max(512)).max(64).optional(),
     secret: SecretName,
+    placement: KeyPlacementSchema.optional(),
   }),
-  z.strictObject({ method: z.literal("custom"), handler: HandlerName }),
+  z.strictObject({ method: z.literal("custom"), handler: HandlerName, placement: KeyPlacementSchema.optional() }),
 ]);
 
 export const SettingSchema = z.strictObject({

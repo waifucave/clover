@@ -8,6 +8,7 @@ import {
   type PluginApi, type UiApi, type WebhookIngressHandler,
 } from "../src/index";
 import { createHash } from "node:crypto";
+import { DEFAULT_KEY_PLACEMENT, keyHeaderFor, stripEchoedKey, validateManifest } from "../src/index";
 
 // A host half: handlers named by the manifest, a `host` MCP server, and the lifecycle.
 const draw: Handler<{ count: number }, { cards: string[] }> = async (args, ctx) => {
@@ -29,7 +30,7 @@ const ingress: WebhookIngressHandler = {
   unregister: async () => ({}),
   list: async () => ({ routines: [] }),
   next: async (_args, ctx) => {
-    const res = await ctx.api.net.fetch("https://hooks.waifucave.com/v1/next", undefined, { auth: WAIFUCAVE_AUTH, placement: { header: "x-clover-account" } });
+    const res = await ctx.api.net.fetch("https://hooks.waifucave.com/v1/next", undefined, { auth: WAIFUCAVE_AUTH });
     const sealed = new Uint8Array(await res.arrayBuffer());
     await ctx.api.keys?.open("forwarder", { enc: sealed.subarray(0, 32), ciphertext: sealed.subarray(32), info: new Uint8Array([1]) });
     return { deliveries: [] };
@@ -109,6 +110,28 @@ describe("the declarations", () => {
     expect(mayUseWaifucaveAuth("clover/forwarder", "https://hooks.emulator.test/", "emulator.test")).toBe(true);
     expect(typeof host.ingress).toBe("object");
     expect(Object.keys(asObject).sort()).toEqual(["ack", "drop", "list", "next", "register", "unregister"]);
+  });
+
+  test("a key goes only where its auth entry's placement says, from a fixed list, and never comes back", () => {
+    const key = ["k", Math.random().toString(36).slice(2), "z9"].join("-");
+    expect(keyHeaderFor(undefined, key)).toEqual({ header: "authorization", value: `Bearer ${key}` });
+    expect(keyHeaderFor(DEFAULT_KEY_PLACEMENT, key)?.header).toBe("authorization");
+    expect(keyHeaderFor({ header: "authorization", scheme: "Token" }, key)).toEqual({ header: "authorization", value: `Token ${key}` });
+    expect(keyHeaderFor({ header: "x-goog-api-key" }, key)).toEqual({ header: "x-goog-api-key", value: key });
+    expect(keyHeaderFor({ header: "x-echo" } as never, key)).toBeNull();
+    expect(keyHeaderFor({ header: "authorization", scheme: "Bearer x" }, key)).toBeNull();
+    const echoed = new Headers([["content-type", "application/json"], ["x-echo", `you sent ${key}`], ["location", `https://a.example/?k=${encodeURIComponent(key)}`], ["set-cookie", `s=${key}`]]);
+    const clean = stripEchoedKey(echoed, key);
+    expect([...clean.keys()]).toEqual(["content-type"]);
+    // The manifest takes a placement only from the list.
+    const auth = (placement: unknown) => validateManifest({
+      manifest: 1, id: "weather", name: "W", engines: { clover: "^1.0.0" }, host: { entry: "host/index.ts" },
+      auth: [{ method: "api-key", secret: "api_key", placement }],
+    });
+    expect(auth({ header: "x-api-key" }).ok).toBe(true);
+    expect(auth({ header: "authorization", scheme: "Bearer" }).ok).toBe(true);
+    expect(auth({ header: "x-echo" }).ok).toBe(false);
+    expect(auth({ header: "x-api-key", scheme: "Bearer" }).ok).toBe(false);
   });
 
   test("a routine's key reaches an ingress only as its hash; the long poll fits the 10-minute cap", async () => {
