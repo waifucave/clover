@@ -136,6 +136,8 @@ export type RunsOn = z.infer<typeof RunsOn>;
 
 /** A computer's (or a routine's) approval level (§9.1): read only, ask, ask for risky actions (the default, today's
  *  `auto` with the reviewer), accept edits, and fully automatic (today's `bypass`). Ordered lowest first. */
+/** A total order, strictest first (the controller's ruling on the review's S1): accept-edits is ask-risky plus edits and
+ *  moves, so each level allows everything the one before it does. read-only is absolute: no saved rule overrides it. */
 export const LEVELS = ["read-only", "ask", "ask-risky", "accept-edits", "automatic"] as const;
 export const Level = z.enum(LEVELS);
 export type Level = z.infer<typeof Level>;

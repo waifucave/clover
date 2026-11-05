@@ -13,10 +13,13 @@
 // 2. An agent's request that exactly names the session's bridge server and one of the bridge's own tools is answered
 //    at once: the bridge applies Clover's approval itself when the call arrives (S5 edit 7). Never read from the title.
 // 3. A request that touches a fenced path is always a card, at every level, and no saved rule covers it (§9.3).
-// 4. A saved rule (from a card's "always") covers the same rule key on the same computers.
+// 4. A saved rule (from a card's "always") covers the same rule key on the same computers, except at read-only, which
+//    is absolute: there only reads run, whatever was saved.
 // 5. Otherwise the level decides (`levelDecision`): the strictest level of the computers touched (§9.1 "a move between
 //    computers needs both computers' levels"), or a routine's own level once its card was answered (§7). At
-//    "ask for risky actions" the safety reviewer judges what isn't plainly safe; when no model can run, it asks.
+//    "ask for risky actions" the safety reviewer judges what isn't plainly safe; when no model can run, it asks. The
+//    levels form a total order (`LEVELS`): accept-edits is ask-risky plus edits and moves, so a command at
+//    accept-edits is judged as at ask-risky, and a stricter level never allows what a laxer one asks about.
 // 6. A card from a turn the user's own message didn't start is denied 10 minutes after it was issued, and a plugin's
 //    `confirm` always is; one from the user's turn waits (§5.5, §9.1).
 // 7. The user's interrupt withdraws the step's cards; a cancelled or stopped session's cards resolve cancelled, as ACP
@@ -184,7 +187,9 @@ export interface ApprovalBroker {
 }
 
 /** What a level does with an effect: `review` means the reviewer judges at "ask for risky actions" (§9.1). Reads
- *  run freely at every level; deleting files, purchases and screen control outside the bot's own windows ask. */
+ *  run freely at every level; deleting files, purchases and screen control outside the bot's own windows ask. Each
+ *  level allows everything the one before it in `LEVELS` does (a test pins it): accept-edits is ask-risky, plus edits
+ *  and moves. */
 export function levelDecision(level: Level, effect: ActionEffect, ownTarget = false): "allow" | "deny" | "ask" | "review" {
   if (effect === "read" || effect === "search" || effect === "think") return "allow";
   switch (level) {
@@ -192,16 +197,20 @@ export function levelDecision(level: Level, effect: ActionEffect, ownTarget = fa
       return "deny";
     case "ask":
       return "ask";
+    case "accept-edits":
+      if (effect === "edit" || effect === "move") return "allow";
+      return levelDecision("ask-risky", effect, ownTarget);
     case "ask-risky":
       if (effect === "delete" || effect === "purchase") return "ask";
       if (effect === "screen") return ownTarget ? "allow" : "ask";
       return "review";
-    case "accept-edits":
-      return effect === "edit" || effect === "move" ? "allow" : "ask";
     case "automatic":
       return "allow";
   }
 }
+
+/** How much a decision lets through, for the order test: deny < ask < review < allow. */
+export const DECISION_RANK: Record<ReturnType<typeof levelDecision>, number> = { deny: 0, ask: 1, review: 2, allow: 3 };
 
 /** The strictest of some levels (§9.1); `undefined` for none. */
 export function strictestLevel(levels: readonly Level[]): Level | undefined {

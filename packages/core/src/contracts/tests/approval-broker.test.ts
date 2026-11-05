@@ -7,7 +7,7 @@ import {
   type Level, type SignedCardAnswer,
 } from "@waifucave/clover-protocol";
 import {
-  ACTION_EFFECTS, acpOutcomeFor, cardMetaOf, deviceProofVerifier, levelDecision, strictestLevel, verifySignedAnswer,
+  ACTION_EFFECTS, DECISION_RANK, acpOutcomeFor, cardMetaOf, deviceProofVerifier, levelDecision, strictestLevel, verifySignedAnswer,
   type AgentPermissionOption, type AnswerOrigin, type ApprovalDecision, type ApprovalEvent, type ApprovalRequest,
 } from "../approval-broker";
 import { FakeApprovalBroker, MemoryAnswerLedger } from "../fakes/approval-broker";
@@ -64,8 +64,34 @@ describe("the level table (§9.1)", () => {
     expect(row("ask")).toMatchObject({ edit: "ask", execute: "ask", fetch: "ask", delete: "ask" });
     expect(row("ask-risky")).toMatchObject({ edit: "review", execute: "review", fetch: "review", move: "review", delete: "ask", purchase: "ask", screen: "ask" });
     expect(levelDecision("ask-risky", "screen", true)).toBe("allow");
-    expect(row("accept-edits")).toMatchObject({ edit: "allow", move: "allow", execute: "ask", delete: "ask" });
+    // accept-edits is ask-risky plus edits and moves: a command is judged as at ask-risky.
+    expect(row("accept-edits")).toMatchObject({ edit: "allow", move: "allow", execute: "review", fetch: "review", delete: "ask", purchase: "ask", screen: "ask" });
     expect(new Set(Object.values(row("automatic")))).toEqual(new Set(["allow"]));
+  });
+
+  test("the levels form a total order: each allows everything the one before it does, effect by effect", () => {
+    for (let i = 1; i < LEVELS.length; i++) {
+      for (const effect of ACTION_EFFECTS) {
+        for (const own of [false, true]) {
+          const stricter = DECISION_RANK[levelDecision(LEVELS[i - 1]!, effect, own)];
+          const laxer = DECISION_RANK[levelDecision(LEVELS[i]!, effect, own)];
+          expect([LEVELS[i], effect, own, laxer >= stricter]).toEqual([LEVELS[i], effect, own, true]);
+        }
+      }
+    }
+    // So the strictest level of a move between computers is the one that lets through least, for every effect.
+    expect(strictestLevel(["ask-risky", "accept-edits"])).toBe("ask-risky");
+  });
+
+  test("read-only is absolute: no saved rule, fenced-path card or reviewer lets anything but a read through", async () => {
+    const { broker } = setup({ levels: { Studio: "ask-risky", Vault: "read-only" } });
+    const { card } = await carded(broker, bash({ ruleKey: "Bash(git push:*)" }));
+    expect(await broker.answer(card.id, { optionId: "always", hash: card.hash, proof: viaFrame(broker, card) }, APP)).toBe("accepted");
+    expect(await broker.request(bash({ ruleKey: "Bash(git push:*)" }))).toEqual({ allowed: true, by: "rule" });
+    expect(await broker.request(bash({ ruleKey: "Bash(git push:*)", computers: ["Vault"] }))).toEqual({ allowed: false, by: "level", level: "read-only" });
+    expect(await broker.request(bash({ effect: "edit", computers: ["Vault"], paths: ["/Users/me/.clover/settings/settings.json"] }))).toEqual({ allowed: false, by: "level", level: "read-only" });
+    expect(await broker.request(bash({ effect: "read", computers: ["Vault"] }))).toEqual({ allowed: true, by: "level", level: "read-only" });
+    expect(broker.cards()).toEqual([]);
   });
 
   test("the strictest level judges", () => {

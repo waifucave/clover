@@ -145,6 +145,9 @@ export class FakeApprovalBroker implements ApprovalBroker {
     if (req.kind === "change" || req.kind === "confirm" || req.kind === "plugin-ok" || req.kind === "elicitation") return undefined;
     // Rule 2.
     if (req.kind === "agent-permission" && isBridgeCall(req.agent)) return { allowed: true, by: "bridge" };
+    // read-only is absolute: only reads run, and no fenced-path card, saved rule or reviewer changes that (S1).
+    const level = req.level ?? strictestLevel(req.computers.map((c) => this.#levels(c))) ?? DEFAULT_LEVEL;
+    if (level === "read-only") return levelDecision(level, req.effect) === "allow" ? { allowed: true, by: "level", level } : { allowed: false, by: "level", level };
     // Rule 3.
     if (req.paths?.length && this.#fence) {
       for (const computer of req.computers) if (this.#fence(computer)?.touches(req.paths)) return undefined;
@@ -155,7 +158,6 @@ export class FakeApprovalBroker implements ApprovalBroker {
       if (rule) return { allowed: true, by: "rule" };
     }
     // Rule 5.
-    const level = req.level ?? strictestLevel(req.computers.map((c) => this.#levels(c))) ?? DEFAULT_LEVEL;
     const verdict = levelDecision(level, req.effect, req.ownTarget);
     if (verdict === "allow") return { allowed: true, by: "level", level };
     if (verdict === "deny") return { allowed: false, by: "level", level };
