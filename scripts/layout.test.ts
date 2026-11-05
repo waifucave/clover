@@ -38,6 +38,15 @@ function pnpmWorkspaces(): string[] {
 
 const governed = (p: WorkspacePackage): boolean => expectedPackageName(p.dir) !== undefined;
 
+/** Top-level plugin folders whose clover.json an open pull request adds. Until it lands such a folder may have none;
+ *  once it does, the manifest is checked like any other, and the entry can go. */
+export const MANIFEST_AWAITS: Readonly<Record<string, string>> = {
+  alpha: "lane D's D-M1 (#161) adds plugins/alpha/clover.json",
+};
+
+/** The one folder under services/ that is not a Worker: the source the Workers share (each Worker's tsconfig includes it). */
+const SERVICES_SHARED = "shared";
+
 describe("the repo layout (docs/clover-layout.md)", () => {
   test("one workspace list: the root package.json and pnpm-workspace.yaml agree, and hold the layout's globs", () => {
     const bun = rootWorkspaces();
@@ -83,11 +92,15 @@ describe("the repo layout (docs/clover-layout.md)", () => {
     const problems: string[] = [];
     for (const top of dirsIn("plugins")) {
       const file = `plugins/${top}/clover.json`;
-      if (!existsSync(join(ROOT, file))) { problems.push(`plugins/${top}: no clover.json`); continue; }
-      const m = Bun.JSONC.parse(read(file)) as { manifest?: unknown; id?: unknown; name?: unknown };
-      if (m.manifest !== 1) problems.push(`${file}: manifest is not 1`);
-      if (m.id !== top) problems.push(`${file}: id ${JSON.stringify(m.id)}, but a top-level plugin's id is its folder's name, ${JSON.stringify(top)}`);
-      if (m.name === undefined) problems.push(`${file}: no name`);
+      if (existsSync(join(ROOT, file))) {
+        const m = Bun.JSONC.parse(read(file)) as { manifest?: unknown; id?: unknown; name?: unknown };
+        if (m.manifest !== 1) problems.push(`${file}: manifest is not 1`);
+        if (m.id !== top) problems.push(`${file}: id ${JSON.stringify(m.id)}, but a top-level plugin's id is its folder's name, ${JSON.stringify(top)}`);
+        if (m.name === undefined) problems.push(`${file}: no name`);
+      } else if (MANIFEST_AWAITS[top] === undefined) {
+        problems.push(`plugins/${top}: no clover.json`);
+        continue;
+      }
       for (const child of dirsIn(`plugins/${top}`)) {
         const childFile = `plugins/${top}/${child}/clover.json`;
         if (!existsSync(join(ROOT, childFile))) continue; // a folder of the plugin's own (assets, code), not a child
@@ -102,10 +115,12 @@ describe("the repo layout (docs/clover-layout.md)", () => {
     expect(dirsIn("plugins")).toContain("clover");
   });
 
-  test("services: each one is a Worker with its wrangler config", () => {
-    const missing = dirsIn("services").filter((s) => !["wrangler.jsonc", "wrangler.json", "wrangler.toml"].some((f) => existsSync(join(ROOT, "services", s, f))));
+  test("services: each one is a Worker with its wrangler config; services/shared is their shared source, not a package", () => {
+    const workers = dirsIn("services").filter((s) => s !== SERVICES_SHARED);
+    const missing = workers.filter((s) => !["wrangler.jsonc", "wrangler.json", "wrangler.toml"].some((f) => existsSync(join(ROOT, "services", s, f))));
     expect(missing).toEqual([]);
-    expect(dirsIn("services")).toContain("hello");
+    expect(existsSync(join(ROOT, "services", SERVICES_SHARED, "package.json"))).toBe(false);
+    expect(workers).toContain("hello");
   });
 
   test("native: each area has its README, and native/README.md lists it", () => {
