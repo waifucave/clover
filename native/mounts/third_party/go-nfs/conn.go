@@ -56,6 +56,10 @@ func (c *conn) serve(ctx context.Context) {
 	// them one after another, so a read waiting on the far computer held up every lookup behind
 	// it. Each request now runs on its own goroutine, at most maxInflight at a time; replies go
 	// out through writeSerializer as before, each whole, in the order they finish.
+	//
+	// WRITE and COMMIT still run in line, as upstream ran everything. With them concurrent too,
+	// macOS's client let a writer run on for 18-29 s after the far computer dropped before it
+	// reported the error; in line, the writer meets it within the link's bound.
 	const maxInflight = 64
 	sem := make(chan struct{}, maxInflight)
 	bio := bufio.NewReader(c.Conn)
@@ -69,6 +73,12 @@ func (c *conn) serve(ctx context.Context) {
 			}
 			return
 		}
+		if h := w.req.Header; h.Prog == nfsServiceID && (h.Proc == uint32(NFSProcedureWrite) || h.Proc == uint32(NFSProcedureCommit)) {
+			if !c.serveOne(connCtx, w) {
+				return
+			}
+			continue
+		}
 		select {
 		case sem <- struct{}{}:
 		case <-connCtx.Done():
@@ -76,21 +86,29 @@ func (c *conn) serve(ctx context.Context) {
 		}
 		go func(w *response) {
 			defer func() { <-sem }()
-			Log.Tracef("request: %v", w.req)
-			err := c.handle(connCtx, w)
-			respErr := w.finish(connCtx)
-			if err != nil {
-				Log.Errorf("error handling req: %v", err)
-				// failure to handle at a level needing to close the connection.
-				c.Close()
-				return
-			}
-			if respErr != nil {
-				Log.Errorf("error sending response: %v", respErr)
-				c.Close()
-			}
+			c.serveOne(connCtx, w)
 		}(w)
 	}
+}
+
+// serveOne handles one request and sends its reply. It closes the connection and answers false
+// when the connection can't go on.
+func (c *conn) serveOne(ctx context.Context, w *response) bool {
+	Log.Tracef("request: %v", w.req)
+	err := c.handle(ctx, w)
+	respErr := w.finish(ctx)
+	if err != nil {
+		Log.Errorf("error handling req: %v", err)
+		// failure to handle at a level needing to close the connection.
+		c.Close()
+		return false
+	}
+	if respErr != nil {
+		Log.Errorf("error sending response: %v", respErr)
+		c.Close()
+		return false
+	}
+	return true
 }
 
 func (c *conn) serializeWrites(ctx context.Context) {

@@ -7,9 +7,9 @@ name: Spike S6 · folder-tree mounts
 # speed suites (for pushes that change nothing they measure); [s6-skip-<suite>] or
 # [s6-skip-<os>-<suite>] skips one suite, [s6-skip-macos] and [s6-skip-macfuse] the macOS jobs,
 # and [s6-skip-nfs-speed] or [s6-skip-nfs-plain] all or the plain half of the NFS speed step;
-# [s6-nfs-quick] runs a shorter NFS speed matrix, and [s6-win-tsc-probe] makes the Windows
-# speed-tsc suite run ci/windows-tsc.ps1 instead of its speed matrix ([s6-win-netvol]: tsc's
-# speed on the tree mounted as a network volume).
+# [s6-nfs-quick] runs a shorter NFS speed matrix ([s6-nfs-writes]: its write workloads only).
+# [s6-win-tsc-probe] makes the Windows speed-tsc suite run ci/windows-tsc.ps1 instead of its
+# speed matrix, and [s6-win-netvol] measures tsc on the tree mounted as a network volume.
 on:
   push:
     branches: [lane/j-m0]
@@ -219,11 +219,20 @@ jobs:
           S6_SKIP_NFS_PLAIN: ${{ contains(github.event.head_commit.message, '[s6-skip-nfs-plain]') }}
           S6_SKIP_NFS_SPEED: ${{ contains(github.event.head_commit.message, '[s6-skip-nfs-speed]') }}
           S6_NFS_QUICK: ${{ contains(github.event.head_commit.message, '[s6-nfs-quick]') }}
+          S6_NFS_WRITES: ${{ contains(github.event.head_commit.message, '[s6-nfs-writes]') }}
         run: |
           [ "$S6_SKIP_NFS_SPEED" = true ] && { echo "skipped by the commit message"; exit 0; }
           res="$RUNNER_TEMP/s6/results"
           common=(--root "$RUNNER_TEMP/s6/export" --tree "$RUNNER_TEMP/s6/nfs-tree" --helper none \
             --nfs-helper "$RUNNER_TEMP/s6/clover-nfs" --copy-src "$GITHUB_WORKSPACE/packages/protocol" --rtts 0,20,80 --timeout 600)
+          if [ "$S6_NFS_WRITES" = true ]; then
+            # the write workloads only, after a change to how the export handles writes
+            bun spikes/s6-mounts/bench/speed.ts "${common[@]}" --policies cached --nfs-ac noac --rtts 0,20 --local 0 \
+              --workloads write-256M,copy-in --out "$res/macos-speed-nfs-noac-writes.json"
+            bun spikes/s6-mounts/bench/speed.ts "${common[@]}" --policies cached --nfs-ac noac --rtts 80 --local 0 \
+              --workloads write-256M --out "$res/macos-speed-nfs-noac-writes-80.json"
+            exit 0
+          fi
           if [ "$S6_NFS_QUICK" = true ]; then
             # a shorter matrix: the workloads that tell, the plain run only where it was slowest
             bun spikes/s6-mounts/bench/speed.ts "${common[@]}" --policies cached --nfs-ac noac --rtts 0,20 \
