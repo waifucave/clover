@@ -69,7 +69,8 @@ for (const f of files.filter((f) => f.includes("failfast"))) {
   console.log("| scenario | in-flight op fails after | what the program saw | a new op while away | stuck processes | works again after |");
   console.log("| :- | -: | :- | :- | -: | -: |");
   for (const r of d.results) {
-    const fail = r.hung ? "**hung**" : r.failMs !== undefined ? `${r.failMs} ms` : r.firstCall ? `${Math.round(r.firstCall.ms)} ms (first call)` : "–";
+    const hung = r.killedBySigkill ? "**hung**, SIGKILL freed it" : r.freedByDetachMs > 0 ? `**hung**, umount -f freed it after ${r.freedByDetachMs} ms` : "**hung**, still stuck";
+    const fail = r.hung ? hung : r.failMs !== undefined ? `${r.failMs} ms` : r.firstCall ? `${Math.round(r.firstCall.ms)} ms (first call)` : "–";
     const saw = String(r.sawError ?? r.firstCall?.code ?? r.listComputer?.code ?? r.error ?? "").replace(/\|/g, "/").replace(/\s+/g, " ").slice(0, 80);
     const p = r.whileDown ?? r.laterCall ?? r.statFile ?? r.deadMount;
     const down = p ? (p.ok ? `ok in ${Math.round(p.ms)} ms` : `${p.code} in ${p.ms < 1 ? "<1" : Math.round(p.ms)} ms`) : "–";

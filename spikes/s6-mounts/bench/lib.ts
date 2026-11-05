@@ -173,7 +173,10 @@ export class Rig {
     // the volume out of Finder; actimeo matches the plain policy's 1 s; noresvport because a user
     // can't bind a reserved port (mount_nfs's default), which is what a mount as the user needs.
     const ac = n.ac ?? (policy === "nocache" ? "noac" : "actimeo=1");
-    const opts = `vers=3,tcp,port=${n.port},mountport=${n.port},nolocks,locallocks,soft,intr,timeo=10,retrans=2,rsize=1048576,wsize=1048576,readahead=16,nobrowse,noresvport,${ac}`;
+    // deadtimeout: if the helper itself stops answering, macOS marks the mount dead after 5 s and
+    // forcibly unmounts it, which frees callers stuck in the NFS client (CI saw a read survive
+    // SIGKILL for 20 minutes without it); the daemon then remounts.
+    const opts = `vers=3,tcp,port=${n.port},mountport=${n.port},nolocks,locallocks,soft,intr,timeo=10,retrans=2,deadtimeout=5,rsize=1048576,wsize=1048576,readahead=16,nobrowse,noresvport,${ac}`;
     const cmd = ["/sbin/mount_nfs", "-o", opts, "127.0.0.1:/", n.mountpoint];
     if (!n.sudo) {
       const r = await run(cmd, { timeoutMs: 30000 });

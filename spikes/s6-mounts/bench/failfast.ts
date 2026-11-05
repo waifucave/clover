@@ -74,6 +74,22 @@ async function recover(): Promise<number> {
   }
 }
 
+/**
+ * A program that didn't fail in time: kill it, and if the kernel holds it (an NFS client waiting
+ * on a server that is gone), let the daemon's detach (umount -f) free it. Never waits forever,
+ * and the result says what it took.
+ */
+async function reap(child: ReturnType<typeof Bun.spawn>, r: Record<string, unknown>) {
+  r.hung = true;
+  child.kill(9);
+  if (await Promise.race([child.exited.then(() => true), sleep(3000).then(() => false)])) { r.killedBySigkill = true; return; }
+  r.killedBySigkill = false; // in the kernel, past SIGKILL
+  const t = performance.now();
+  r.detachToFree = await rig.detach();
+  const freed = await Promise.race([child.exited.then(() => true), sleep(30000).then(() => false)]);
+  r.freedByDetachMs = freed ? Math.round(performance.now() - t) : -1;
+}
+
 async function checks(r: Record<string, unknown>) {
   r.stuckProcesses = await stuckProcesses();
   r.systemUninterruptible = lastOtherStuck().map((p) => `${p.comm.split("/").pop()}:${p.stat}`);
@@ -97,10 +113,10 @@ async function inflight(opKey: string, faultKey: string) {
   await fault.inject();
   const exited = await Promise.race([child.exited.then(() => true), sleep(HANG_MS).then(() => false)]);
   r.failMs = Math.round(performance.now() - t0);
-  if (!exited) { r.hung = true; child.kill(9); await child.exited; }
+  if (!exited) await reap(child, r);
   r.exitCode = child.exitCode;
-  const so = await stdoutP;
-  const se = await stderrP;
+  const so = await Promise.race([stdoutP, sleep(2000).then(() => "")]); // a child the kernel still holds keeps its pipes open
+  const se = await Promise.race([stderrP, sleep(2000).then(() => "")]);
   const o = outcome(so);
   r.sawError = o.code ? `${o.code}: ${o.message}` : firstError(se || so);
   r.progressBytes = o.bytes;
@@ -178,8 +194,8 @@ async function helperCrash() {
   await rig.helper!.proc.exited;
   const exited = await Promise.race([child.exited.then(() => true), sleep(HANG_MS).then(() => false)]);
   r.failMs = Math.round(performance.now() - t0);
-  if (!exited) { r.hung = true; child.kill(9); await child.exited; }
-  const o = outcome(await so);
+  if (!exited) await reap(child, r);
+  const o = outcome(await Promise.race([so, sleep(2000).then(() => "")]));
   r.sawError = o.code ? `${o.code}: ${o.message}` : "";
   r.deadMount = await probe("stat", rig.nfs ? rig.remotePath("clover", "package.json") : path.join(rig.treeRoot, "home"), 15000); // what a dead mount answers
   r.stuckProcesses = await stuckProcesses();
