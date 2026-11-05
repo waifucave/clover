@@ -61,11 +61,13 @@ function within(path: string, root: string): boolean {
   return path === root || path.startsWith(root.endsWith(sep) ? root : root + sep);
 }
 
-/** The other install whose home `home` is, or is inside, by real path — or `undefined` when it is none of them. */
+/** The other install whose home `home` is, or is inside, by real path — or `undefined` when it is none of them. Each
+ *  home is matched where it sits under the user's home AND where it leads: an install whose home is itself a link
+ *  (say Winter Dev's, moved to an external drive) is refused by its link and by its target alike. */
 export function otherInstallHome(home: string, userHome: string = homedir()): { dir: string; what: string } | undefined {
   const real = realPathOf(home);
   const user = realPathOf(userHome);
-  return OTHER_INSTALL_HOMES.find((o) => within(real, join(user, o.dir)));
+  return OTHER_INSTALL_HOMES.find((o) => within(real, join(user, o.dir)) || within(real, realPathOf(join(user, o.dir))));
 }
 
 /** Throws `OtherInstallHomeRefused` when `home` is another install's home (see `otherInstallHome`). */

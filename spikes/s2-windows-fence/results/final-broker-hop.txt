@@ -1,0 +1,12 @@
+Uploading public source chunk 1
+Uploading public source chunk 2
+Uploading public source chunk 3
+Uploading public source chunk 4
+Uploading public source chunk 5
+Running broker-hop.ps1 on clover-c-win
+Broker hop: fenced and unfenced requests to a user-context named pipe, public fixture reply only
+directory_status=0xC0000035 alias_status=0x00000000
+{"test":"broker-hop","actor":"unfenced","pipe_names_sandbox_user":true,"server_ready":true,"completed":25,"median_ms":1.43,"p95_ms":4.42}
+{"test":"broker-hop","actor":"fenced","pipe_names_sandbox_user":true,"server_ready":true,"completed":25,"median_ms":1.31,"p95_ms":4.95}
+{"test":"broker-hop","actor":"unfenced","pipe_names_sandbox_user":false,"server_ready":true,"completed":1,"median_ms":27.64,"p95_ms":27.64}
+{"test":"broker-hop","actor":"fenced","pipe_names_sandbox_user":false,"server_ready":true,"completed":0,"median_ms":null,"p95_ms":null,"failure":"EPERM"}

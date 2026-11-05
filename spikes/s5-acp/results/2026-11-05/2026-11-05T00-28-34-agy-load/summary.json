@@ -1,0 +1,268 @@
+{
+  "check": "load",
+  "agent": "agy",
+  "command": "/opt/homebrew/bin/agy acp --disable-telemetry",
+  "started": "2026-11-05T00:28:34.268Z",
+  "bridgeTokenSha": {
+    "stdio": "3474d96af9de"
+  },
+  "nonces": {
+    "stdio": "SN-f9fc1ed3a258",
+    "http": "HN-7065f33d8fdd",
+    "stdioWord": "sword3a7a42",
+    "httpWord": "hword3c45cc"
+  },
+  "initialize": {
+    "protocolVersion": 1,
+    "agentCapabilities": {
+      "loadSession": true,
+      "load_session": true,
+      "sessionCapabilities": {
+        "resume": {},
+        "close": {},
+        "load": {},
+        "list": {},
+        "additionalDirectories": {}
+      },
+      "session_capabilities": {
+        "resume": {},
+        "close": {},
+        "load": {},
+        "list": {},
+        "additionalDirectories": {}
+      },
+      "auth": {
+        "logout": {}
+      },
+      "_meta": {
+        "antigravity": {
+          "tier": true,
+          "systemPrompt": {
+            "append": true
+          }
+        }
+      }
+    },
+    "agentInfo": {
+      "name": "Antigravity ACP Server",
+      "version": "1.4.12"
+    },
+    "authMethods": [
+      {
+        "id": "oauth-personal",
+        "name": "Log in with Google",
+        "description": "Log in with your Google account"
+      },
+      {
+        "id": "oauth-business",
+        "name": "Log in with Gemini Enterprise",
+        "description": "Log in with your Gemini Enterprise account"
+      },
+      {
+        "id": "gemini-api-key",
+        "name": "Gemini API key",
+        "description": "Use an API key with Gemini Developer API"
+      },
+      {
+        "id": "agent-platform",
+        "name": "Gemini Enterprise Agent Platform",
+        "description": "Use Gemini Enterprise Agent Platform (formerly Vertex AI) with Application Default Credentials"
+      }
+    ]
+  },
+  "load": {
+    "method": "session/load",
+    "sessionId": "agy-session-2",
+    "ms": 1798,
+    "replayedUpdates": 6,
+    "replayedKinds": {
+      "user_message_chunk": 1,
+      "tool_call": 5
+    },
+    "replayedText": "",
+    "previousNoncesInReplay": {
+      "stdio": true,
+      "http": true
+    },
+    "response": {
+      "sessionId": "agy-session-2",
+      "models": {
+        "availableModels": [
+          {
+            "modelId": "gemini-3.8-flash-high",
+            "name": "Gemini 3.8 Flash (High)"
+          },
+          {
+            "modelId": "gemini-3.8-flash-medium",
+            "name": "Gemini 3.8 Flash (Medium)"
+          },
+          {
+            "modelId": "gemini-3.8-flash-low",
+            "name": "Gemini 3.8 Flash (Low)"
+          }
+        ],
+        "currentModelId": "gemini-3.8-flash-high"
+      },
+      "configOptions": [
+        {
+          "id": "model",
+          "name": "Model",
+          "category": "model",
+          "type": "select",
+          "currentValue": "gemini-3.8-flash",
+          "options": [
+            {
+              "value": "gemini-3.8-flash",
+              "name": "Gemini 3.8 Flash"
+            }
+          ]
+        },
+        {
+          "id": "thought_level",
+          "name": "Thinking Level",
+          "category": "thought_level",
+          "type": "select",
+          "currentValue": "high",
+          "options": [
+            {
+              "value": "low",
+              "name": "Low"
+            },
+            {
+              "value": "medium",
+              "name": "Medium"
+            },
+            {
+              "value": "high",
+              "name": "High"
+            }
+          ]
+        }
+      ],
+      "_meta": {
+        "antigravity": {
+          "tier": "<omitted: it names the account's plan>"
+        }
+      }
+    }
+  },
+  "result": {
+    "stopReason": "end_turn",
+    "text": "s5-stdio echo: alpha [nonce SN-f1eba99fc3fa], s5-http echo: beta [nonce HN-f85752789006]\nnone",
+    "remembers": {
+      "stdio": true,
+      "http": true
+    },
+    "instructionsReachedModel": {
+      "stdio": false,
+      "http": false
+    }
+  },
+  "agentStop": {
+    "code": 0,
+    "signal": null,
+    "forced": false
+  },
+  "mcp": {
+    "stdio": {
+      "starts": 1,
+      "bridgeCheck": "present sha256=3474d96af9de",
+      "envTokenMatches": true,
+      "envNames": [
+        "AGY_CLI_DISABLE_AUTO_UPDATE",
+        "HOME",
+        "LANG",
+        "LOGNAME",
+        "NO_COLOR",
+        "PATH",
+        "S5_BRIDGE_TOKEN",
+        "S5_INSTRUCTION_WORD",
+        "S5_NONCE",
+        "SHELL",
+        "TERM",
+        "TMPDIR",
+        "USER"
+      ],
+      "methods": [
+        "server/discover",
+        "initialize",
+        "notifications/initialized",
+        "tools/list",
+        "notifications/roots/list_changed"
+      ],
+      "calls": []
+    },
+    "http": {
+      "requests": [
+        "POST /mcp → 400 server/discover → legacy",
+        "POST /mcp → 200 initialize asked=2025-11-25 answered=2025-11-25",
+        "POST /mcp → 202 notification notifications/initialized",
+        "GET /.well-known/oauth-protected-resource/mcp → 404",
+        "GET /.well-known/oauth-protected-resource → 404",
+        "POST /mcp → 200 tools/list",
+        "POST /mcp → 202 notification notifications/roots/list_changed",
+        "DELETE /mcp → 200"
+      ],
+      "authCheck": [
+        "match",
+        "missing"
+      ],
+      "protocolVersionHeader": [
+        "2026-07-28",
+        "2025-11-25"
+      ],
+      "userAgent": [
+        "Go-http-client/1.1"
+      ],
+      "calls": []
+    }
+  },
+  "client": {
+    "permissions": [],
+    "fsCalls": [],
+    "terminalCalls": [],
+    "elicitations": 0,
+    "unknownMethods": [],
+    "updateKinds": {
+      "user_message_chunk": 2,
+      "tool_call": 5,
+      "available_commands_update": 1,
+      "session_info_update": 1,
+      "agent_message_chunk": 4
+    },
+    "toolCalls": [
+      {
+        "id": "agy-call-4",
+        "title": "Run mcp_s5-stdio_s5_stdio_echo",
+        "kind": "other",
+        "status": "completed"
+      },
+      {
+        "id": "agy-call-5",
+        "title": "Run mcp_s5-http_s5_http_echo",
+        "kind": "other",
+        "status": "completed"
+      },
+      {
+        "id": "agy-call-1",
+        "title": "File s5-out.txt",
+        "kind": "edit",
+        "status": "completed"
+      },
+      {
+        "id": "agy-call-2",
+        "title": "cat s5-out.txt",
+        "kind": "execute",
+        "status": "completed"
+      },
+      {
+        "id": "agy-call-3",
+        "title": "touch s5-should-not-exist.txt",
+        "kind": "execute",
+        "status": "failed"
+      }
+    ]
+  },
+  "shimsUsed": [],
+  "finished": "2026-11-05T00:28:39.147Z"
+}

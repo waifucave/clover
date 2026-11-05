@@ -1,0 +1,4 @@
+sent for 8 s: 148/160 echoes back; longest gap 5.84 s, from 2.92 s to 8.76 s
+sent for 16 s: 319/320 echoes back; longest gap 6.45 s, from 8.77 s to 15.23 s
+sent for 30 s: 599/600 echoes back; longest gap 5.84 s, from 2.92 s to 8.76 s
+sent for 16 s: 319/320 echoes back; longest gap 6.45 s, from 8.78 s to 15.23 s (with RUST_LOG=iroh=debug,noq_proto=debug)

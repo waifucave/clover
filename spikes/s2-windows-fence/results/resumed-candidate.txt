@@ -1,0 +1,5 @@
+Uploading public source chunk 1
+Uploading public source chunk 2
+Running run-candidate.ps1 on clover-c-win
+Evaluating dedicated-principal WFP candidate and mandatory-floor attempts
+{"test":"candidate-initialize","launch_error":"Error","diagnostic":"Sandbox dependencies not available: no srt-win path configured; set windows.srtWin.path (e.g. to the exported VENDORED_SRT_WIN_EXE constant for the packaged binary)"}

@@ -1,0 +1,21 @@
+{
+  "name": "@waifucave/clover-desktop",
+  "version": "0.124.0",
+  "private": true,
+  "description": "Clover's desktop app (Electron).",
+  "author": "waifucave",
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "out/main/index.js",
+  "scripts": {
+    "build": "bun run scripts/build.ts",
+    "dist": "bun run scripts/build.ts && electron-builder --dir --publish never",
+    "test": "bun test",
+    "typecheck": "tsc --noEmit -p . && tsc --noEmit -p tsconfig.tools.json"
+  },
+  "devDependencies": {
+    "@types/node": "25.9.3",
+    "electron": "45.2.3",
+    "electron-builder": "26.18.0"
+  }
+}

@@ -1,0 +1,7 @@
+{"at":"2026-11-05T00:21:11.971Z","agent":"cursor","check":"prompt","kind":"prompt","run":"2026-11-05T00-21-04-cursor-prompt","model":"claude-haiku-5-5[thinking=true,context=300k,reasoning_effort=high]"}
+{"at":"2026-11-05T00:21:48.648Z","agent":"cursor","check":"prompt","kind":"prompt","run":"2026-11-05T00-21-41-cursor-prompt","model":"default[]"}
+{"at":"2026-11-05T00:24:24.958Z","agent":"cursor","check":"cancel","kind":"cancel","run":"2026-11-05T00-24-15-cursor-cancel","model":"default[]"}
+{"at":"2026-11-05T00:24:55.817Z","agent":"cursor","check":"load","kind":"follow-up","run":"2026-11-05T00-24-52-cursor-load"}
+{"at":"2026-11-05T00:26:22.016Z","agent":"agy","check":"prompt","kind":"prompt","run":"2026-11-05T00-26-17-agy-prompt","model":"gemini-3.8-flash"}
+{"at":"2026-11-05T00:28:06.913Z","agent":"agy","check":"cancel","kind":"cancel","run":"2026-11-05T00-28-02-agy-cancel","model":"gemini-3.8-flash"}
+{"at":"2026-11-05T00:28:36.124Z","agent":"agy","check":"load","kind":"follow-up","run":"2026-11-05T00-28-34-agy-load"}

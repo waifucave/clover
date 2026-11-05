@@ -1,0 +1,6 @@
+{"ms":0,"kind":"start","server":"s5-stdio","pid":76792,"ppid":74480,"cwd":"$RUNS/work/cursor","envNames":["HOME","LOGNAME","PATH","S5_BRIDGE_TOKEN","S5_INSTRUCTION_WORD","S5_NONCE","SHELL","TERM","USER"],"bridgeCheck":"present sha256=5bc4eb9955cb"}
+{"ms":2,"kind":"in","note":"initialize asked=2025-11-25 answered=2025-11-25","msg":{"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{"elicitation":{"form":{}}},"clientInfo":{"name":"Cursor","version":"1.0.0"}},"jsonrpc":"2.0","id":0}}
+{"ms":3,"kind":"out","id":0}
+{"ms":4,"kind":"in","note":"notification notifications/initialized","msg":{"method":"notifications/initialized","jsonrpc":"2.0"}}
+{"ms":4842,"kind":"in","note":"tools/list","msg":{"method":"tools/list","params":{},"jsonrpc":"2.0","id":1}}
+{"ms":4842,"kind":"out","id":1}

@@ -1,0 +1,174 @@
+{
+  "spike": "S6",
+  "question": "speed",
+  "machine": {
+    "os": "win32",
+    "release": "10.0.26100",
+    "arch": "x64",
+    "cpus": 4,
+    "cpu": "AMD EPYC 7763 64-Core Processor                ",
+    "memGB": 16,
+    "bun": "1.3.14",
+    "commit": "044fbedb494c92cdc97d320183f235e8f8c7bce6",
+    "run": "42001348205",
+    "runAttempt": "1",
+    "job": "unix-like"
+  },
+  "started": "2026-11-05T09:24:58.503Z",
+  "rows": [
+    {
+      "workload": "git-status",
+      "where": "mount",
+      "policy": "cached",
+      "rttMs": 0,
+      "phase": "cold",
+      "requests": 66,
+      "ops": {
+        "STAT": 7,
+        "TREE": 4,
+        "TREE_entries": 13504,
+        "READ": 50,
+        "READ_bytes": 676281,
+        "OPEN": 1,
+        "EVENTS": 2,
+        "LIST": 1,
+        "STATFS": 1,
+        "CLOSE": 1,
+        "UNLINK": 1
+      },
+      "helper": {
+        "cacheHits": 4128,
+        "cacheMiss": 8,
+        "drops": 0,
+        "fastFails": 0,
+        "online": true,
+        "prefetches": 2,
+        "reconnects": 0,
+        "requests": 70,
+        "timeouts": 0
+      },
+      "ms": 1446,
+      "ok": true,
+      "code": 0,
+      "timedOut": false
+    },
+    {
+      "workload": "git-status",
+      "where": "mount",
+      "policy": "cached",
+      "rttMs": 0,
+      "phase": "warm",
+      "requests": 71,
+      "ops": {
+        "EVENTS": 4,
+        "STATFS": 3,
+        "STAT": 15,
+        "READ": 48,
+        "READ_bytes": 557077,
+        "LIST": 2,
+        "OPEN": 1,
+        "CLOSE": 1,
+        "UNLINK": 1
+      },
+      "ms": 188,
+      "ok": true,
+      "code": 0,
+      "timedOut": false
+    },
+    {
+      "workload": "tsc-protocol",
+      "where": "mount",
+      "policy": "cached",
+      "rttMs": 0,
+      "phase": "cold",
+      "requests": 917,
+      "ops": {
+        "STAT": 329,
+        "TREE": 116,
+        "TREE_entries": 14916,
+        "EVENTS": 1,
+        "READLINK": 102,
+        "STATFS": 1,
+        "READ": 369,
+        "READ_bytes": 13081449
+      },
+      "helper": {
+        "cacheHits": 19185,
+        "cacheMiss": 329,
+        "drops": 0,
+        "fastFails": 0,
+        "online": true,
+        "prefetches": 10,
+        "reconnects": 0,
+        "requests": 921,
+        "timeouts": 0
+      },
+      "ms": 5452,
+      "ok": true,
+      "code": 0,
+      "timedOut": false
+    },
+    {
+      "workload": "tsc-protocol",
+      "where": "mount",
+      "policy": "cached",
+      "rttMs": 0,
+      "phase": "warm",
+      "requests": 471,
+      "ops": {
+        "READLINK": 102,
+        "READ": 369,
+        "READ_bytes": 13081449
+      },
+      "ms": 4124,
+      "ok": true,
+      "code": 0,
+      "timedOut": false
+    },
+    {
+      "workload": "read-256M",
+      "where": "mount",
+      "policy": "cached",
+      "rttMs": 0,
+      "phase": "cold",
+      "requests": 259,
+      "ops": {
+        "STAT": 2,
+        "READ": 257,
+        "READ_bytes": 268435456
+      },
+      "helper": {
+        "cacheHits": 1,
+        "cacheMiss": 2,
+        "drops": 0,
+        "fastFails": 0,
+        "online": true,
+        "prefetches": 0,
+        "reconnects": 0,
+        "requests": 263,
+        "timeouts": 0
+      },
+      "ms": 1404,
+      "ok": true,
+      "code": 0,
+      "timedOut": false
+    },
+    {
+      "workload": "read-256M",
+      "where": "mount",
+      "policy": "cached",
+      "rttMs": 0,
+      "phase": "warm",
+      "requests": 257,
+      "ops": {
+        "READ": 257,
+        "READ_bytes": 268435456
+      },
+      "ms": 1088,
+      "ok": true,
+      "code": 0,
+      "timedOut": false
+    }
+  ],
+  "finished": "2026-11-05T09:25:13.129Z"
+}

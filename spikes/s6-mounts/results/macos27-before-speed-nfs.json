@@ -1,0 +1,108 @@
+{
+  "spike": "S6",
+  "question": "speed",
+  "machine": {
+    "os": "darwin",
+    "release": "27.0.0",
+    "arch": "arm64",
+    "cpus": 3,
+    "cpu": "Apple M1 (Virtual)",
+    "memGB": 7,
+    "bun": "1.3.14"
+  },
+  "started": "2026-11-05T04:14:41.479Z",
+  "rows": [
+    {
+      "workload": "git-status",
+      "where": "mount",
+      "policy": "plain",
+      "rttMs": 20,
+      "phase": "cold",
+      "requests": 5238,
+      "ops": {
+        "STAT": 4749,
+        "READ": 45,
+        "READ_bytes": 18075577,
+        "SETATTR": 4,
+        "OPEN": 1,
+        "LIST": 437,
+        "CLOSE": 1,
+        "UNLINK": 1
+      },
+      "helper": {
+        "drops": 0,
+        "fastFails": 0,
+        "online": true,
+        "reconnects": 0,
+        "requests": 5239,
+        "timeouts": 0
+      },
+      "ms": 39136,
+      "ok": true,
+      "code": 0,
+      "timedOut": false
+    },
+    {
+      "workload": "git-status",
+      "where": "mount",
+      "policy": "plain",
+      "rttMs": 20,
+      "phase": "warm",
+      "requests": 5112,
+      "ops": {
+        "STAT": 4668,
+        "SETATTR": 4,
+        "OPEN": 1,
+        "LIST": 437,
+        "CLOSE": 1,
+        "UNLINK": 1
+      },
+      "ms": 37232,
+      "ok": true,
+      "code": 0,
+      "timedOut": false
+    },
+    {
+      "workload": "read-256M",
+      "where": "mount",
+      "policy": "plain",
+      "rttMs": 20,
+      "phase": "cold",
+      "requests": 269,
+      "ops": {
+        "STAT": 13,
+        "READ": 256,
+        "READ_bytes": 268435456
+      },
+      "helper": {
+        "drops": 0,
+        "fastFails": 0,
+        "online": true,
+        "reconnects": 0,
+        "requests": 270,
+        "timeouts": 0
+      },
+      "ms": 913,
+      "ok": true,
+      "code": 0,
+      "timedOut": false
+    },
+    {
+      "workload": "read-256M",
+      "where": "mount",
+      "policy": "plain",
+      "rttMs": 20,
+      "phase": "warm",
+      "requests": 0,
+      "ops": {},
+      "ms": 47,
+      "ok": true,
+      "code": 0,
+      "timedOut": false
+    }
+  ],
+  "nfs": {
+    "mountedAs": "user"
+  },
+  "finished": "2026-11-05T04:15:59.341Z"
+}

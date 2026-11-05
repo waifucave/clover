@@ -1,0 +1,9 @@
+Running headless-probe.py on clover-c-linux
+{"test": "tpm-inventory", "tpm0": true, "tpmrm0": true}
+{"test": "systemd-creds-tpm2", "encrypt_exit": 1, "diagnostic": "Selected key not available in --uid= scoped mode, refusing.\n"}
+{"test": "systemd-creds-host+tpm2", "encrypt_exit": 0, "decrypt_exit": 0, "roundtrip": true}
+{"test": "systemd-creds-auto", "encrypt_exit": 0, "decrypt_exit": 0, "roundtrip": true}
+{"test": "systemd-creds-tpm-unavailable", "encrypt_exit": 1, "diagnostic": "Selected key not available in --uid= scoped mode, refusing.\n"}
+{"test": "systemd-creds-host+tpm2-unavailable", "encrypt_exit": 0, "decrypt_exit": 0, "roundtrip": true}
+{"test": "systemd-creds-host", "encrypt_exit": 0, "decrypt_exit": 0, "roundtrip": true}
+{"test": "plaintext-fallback", "mode": "0o600", "roundtrip": true, "label": "plaintext", "fence_masks_all_store_files": true, "masked_file_count": 6, "fence_exit": 0}

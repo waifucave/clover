@@ -1,0 +1,16 @@
+{
+  "name": "@waifucave/clover-plugin-alpha-tab",
+  "version": "0.0.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "type": "module",
+  "description": "Alpha's tab look: its theme on top of Clover's base theme, its layout, its stage art. Data only; this package holds its tests.",
+  "scripts": {
+    "test": "bun test",
+    "typecheck": "tsc --noEmit -p ."
+  },
+  "devDependencies": {
+    "@types/bun": "1.3.14",
+    "typescript": "5.9.3"
+  }
+}

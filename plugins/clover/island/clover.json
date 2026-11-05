@@ -1,0 +1,18 @@
+{
+  "manifest": 1,
+  "name": "Island",
+  "description": "What needs you, at the top of the screen: requests born from the notch, and an island with tabs.",
+  "engines": { "clover": "^1.0.0" },
+  "capabilities": ["approvals"],
+  "client": { "entry": "client/index.tsx" },
+  "contributes": {
+    "ui": [
+      {
+        "spot": "app.surface",
+        "id": "island",
+        "component": "Island",
+        "window": { "type": "overlay", "alwaysOnTop": true, "transparent": true }
+      }
+    ]
+  }
+}

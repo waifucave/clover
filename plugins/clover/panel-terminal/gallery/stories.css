@@ -1,0 +1,15 @@
+/* Gallery-only: the panel header a terminal story's tabs sit in. */
+.story-term {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.story-term__head {
+  display: flex;
+  align-items: center;
+  height: 45px;
+  padding: 0 8px 0 14px;
+  border-bottom: 1px solid var(--clover-color-hairline-raised);
+  background: var(--clover-color-surface);
+}

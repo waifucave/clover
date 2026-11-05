@@ -1,0 +1,285 @@
+name: spike-s1
+
+# Spike S1, the transport (lane H): iroh, quinn and WebRTC under Bun and compiled, on every OS
+# Clover ships; punching through emulated NATs, with and without a local relay; delay and
+# throughput under netem. Results: each job's summary, its artifact, and compact notices (see
+# spikes/s1-transport/README.md). Actions are pinned to full commit SHAs, Rust to one version.
+
+on:
+  push:
+    branches: ['lane/h-*']
+    paths:
+      - spikes/s1-transport/**
+      - '!spikes/s1-transport/results/**'
+      - native/link-sidecar/**
+      - .github/workflows/spike-s1.yml
+  workflow_dispatch:
+
+# Lab evidence: a newer push waits for the running labs instead of cancelling them.
+concurrency:
+  group: spike-s1-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  BUN_VERSION: 1.3.14
+  RUST_TOOLCHAIN: 1.99.1
+  CARGO_TERM_COLOR: never
+
+jobs:
+  platforms:
+    name: bun and compile · ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest, ubuntu-24.04, ubuntu-24.04-arm]
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable branch; the version is pinned below
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: native/link-sidecar -> target
+      - name: build the link sidecar
+        run: cargo build --release --locked --manifest-path native/link-sidecar/Cargo.toml
+      - name: install the spike's packages
+        run: |
+          (cd spikes/s1-transport/bun && bun install --frozen-lockfile)
+          (cd spikes/s1-transport/interop && bun install --frozen-lockfile)
+      - name: let safaridriver drive Safari
+        if: runner.os == 'macOS'
+        run: sudo safaridriver --enable
+      - name: checks
+        run: spikes/s1-transport/ci/platform-checks.sh "spikes/s1-transport/results/platform-${{ matrix.os }}.jsonl"
+      - name: summary
+        if: always()
+        working-directory: spikes/s1-transport/bun
+        run: bun scripts/summarize.ts platform "../results/platform-${{ matrix.os }}.jsonl"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: s1-platform-${{ matrix.os }}
+          path: spikes/s1-transport/results/*.jsonl
+
+  nat:
+    name: NAT matrix (netns and iptables)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable branch; the version is pinned below
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: native/link-sidecar -> target
+      - name: build the link sidecar
+        run: cargo build --release --locked --manifest-path native/link-sidecar/Cargo.toml
+      - name: punch through every NAT pair, relays off; time the 1 s case
+        run: |
+          mkdir -p spikes/s1-transport/results
+          sudo PHASES="matrix timing" spikes/s1-transport/nat/matrix.sh native/link-sidecar/target/release/clover-link-sidecar spikes/s1-transport/results/nat.jsonl
+      - name: summary
+        if: always()
+        working-directory: spikes/s1-transport/bun
+        run: bun scripts/summarize.ts nat ../results/nat.jsonl
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: s1-nat
+          path: spikes/s1-transport/results/*.jsonl
+
+  relay:
+    name: NAT pairs with a local iroh relay
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable branch; the version is pinned below
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: native/link-sidecar -> target
+          key: relay-server
+      - name: build the link sidecar with the relay server
+        run: cargo build --release --locked --features relay-server --manifest-path native/link-sidecar/Cargo.toml
+      - name: each dial policy with the relay on
+        run: |
+          mkdir -p spikes/s1-transport/results
+          sudo PHASES="relay" spikes/s1-transport/nat/matrix.sh native/link-sidecar/target/release/clover-link-sidecar spikes/s1-transport/results/relay.jsonl
+      - name: summary
+        if: always()
+        working-directory: spikes/s1-transport/bun
+        run: bun scripts/summarize.ts relay ../results/relay.jsonl
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: s1-relay
+          path: spikes/s1-transport/results/*.jsonl
+
+  migrate:
+    name: network changes (address change, blackouts, re-dial)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable branch; the version is pinned below
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: native/link-sidecar -> target
+      - name: build the link sidecar
+        run: cargo build --release --locked --manifest-path native/link-sidecar/Cargo.toml --bin clover-link-sidecar --example iroh_address_change
+      - name: the upstream reproduction, iroh's address change with relays off
+        run: |
+          mkdir -p spikes/s1-transport/results
+          sudo spikes/s1-transport/nat/iroh-address-change.sh native/link-sidecar/target/release/examples/iroh_address_change spikes/s1-transport/results
+          { echo '### iroh, address change, relays off'; echo; sed 's/^/    /' spikes/s1-transport/results/iroh-address-change.txt; } >>"$GITHUB_STEP_SUMMARY"
+      - name: break the path under one live connection
+        run: |
+          mkdir -p spikes/s1-transport/results
+          sudo spikes/s1-transport/nat/migrate.sh native/link-sidecar/target/release/clover-link-sidecar spikes/s1-transport/results/migrate.jsonl
+      - name: summary
+        if: always()
+        working-directory: spikes/s1-transport/bun
+        run: bun scripts/summarize.ts migrate ../results/migrate.jsonl
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: s1-migrate
+          path: |
+            spikes/s1-transport/results/*.jsonl
+            spikes/s1-transport/results/iroh-address-change*
+
+  netem:
+    name: delay and throughput (tc netem)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable branch; the version is pinned below
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: native/link-sidecar -> target
+      - name: build the link sidecar
+        run: cargo build --release --locked --manifest-path native/link-sidecar/Cargo.toml
+      - name: install the spike's packages
+        working-directory: spikes/s1-transport/bun
+        run: bun install --frozen-lockfile
+      - name: bench every transport under each netem profile
+        run: |
+          mkdir -p spikes/s1-transport/results
+          sudo LOAD_MIN_SAMPLES=200 spikes/s1-transport/nat/netem.sh native/link-sidecar/target/release/clover-link-sidecar "$(command -v bun)" spikes/s1-transport/results/netem.jsonl
+      - name: summary
+        if: always()
+        working-directory: spikes/s1-transport/bun
+        run: bun scripts/summarize.ts netem ../results/netem.jsonl
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: s1-netem
+          path: spikes/s1-transport/results/*.jsonl
+
+  netem-window:
+    name: delay under load with a stream window sized to the path
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable branch; the version is pinned below
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: native/link-sidecar -> target
+      - name: build the link sidecar
+        run: cargo build --release --locked --manifest-path native/link-sidecar/Cargo.toml
+      - name: the default 1.25 MB window against 1.25x the bandwidth-delay product
+        run: |
+          mkdir -p spikes/s1-transport/results
+          sudo PROFILES="lan:1:0:1000mbit:64:32 wan:20:0.1:100mbit:32:16" IMPLS="quinn:cubic quinn:bbr iroh:cubic iroh:bbr" \
+            WINDOWS="default bdp" REPS=2 LOAD_MIN_SAMPLES=200 \
+            spikes/s1-transport/nat/netem.sh native/link-sidecar/target/release/clover-link-sidecar "$(command -v bun)" spikes/s1-transport/results/netem-window.jsonl
+      - name: summary
+        if: always()
+        working-directory: spikes/s1-transport/bun
+        run: bun scripts/summarize.ts netem ../results/netem-window.jsonl
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: s1-netem-window
+          path: spikes/s1-transport/results/*.jsonl
+
+  netem-loss:
+    name: loss without GSO batches · ${{ matrix.profile }} · rep ${{ matrix.rep }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        profile: ['lossy:40:1:50mbit:16:8', 'far:75:0.5:50mbit:16:8']
+        rep: [1, 2, 3, 4, 5]
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable branch; the version is pinned below
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: native/link-sidecar -> target
+      - name: build the link sidecar
+        run: cargo build --release --locked --manifest-path native/link-sidecar/Cargo.toml
+      - name: GSO off and on, on the same runner
+        id: run
+        run: |
+          mkdir -p spikes/s1-transport/results
+          name="$(echo '${{ matrix.profile }}' | cut -d: -f1)"
+          echo "file=netem-loss-$name-${{ matrix.rep }}.jsonl" >>"$GITHUB_OUTPUT"
+          sudo PROFILES="${{ matrix.profile }}" IMPLS="quinn:cubic quinn:bbr iroh:cubic iroh:bbr" GSOS="off on" \
+            LOAD_MIN_SAMPLES=200 RPC=100 RPC_STREAMS=20 S1_RUN_LABEL="rep ${{ matrix.rep }}" \
+            spikes/s1-transport/nat/netem.sh native/link-sidecar/target/release/clover-link-sidecar "$(command -v bun)" "spikes/s1-transport/results/netem-loss-$name-${{ matrix.rep }}.jsonl"
+      - name: summary
+        if: always()
+        working-directory: spikes/s1-transport/bun
+        run: bun scripts/summarize.ts netem "../results/${{ steps.run.outputs.file }}"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: s1-netem-loss-${{ strategy.job-index }}
+          path: spikes/s1-transport/results/*.jsonl

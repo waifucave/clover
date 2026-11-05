@@ -1,0 +1,40 @@
+{
+  "manifest": 1,
+  "name": "Conversation",
+  "description": "The conversation view: a bot's one continuous conversation, with every message kind, streaming and thinking titles.",
+  "engines": {
+    "clover": "^1.0.0"
+  },
+  "client": {
+    "entry": "client/index.tsx",
+    "css": [
+      "client/styles.css"
+    ]
+  },
+  "capabilities": [
+    "conversation.read",
+    "approvals"
+  ],
+  "contributes": {
+    "ui": [
+      {
+        "spot": "conversation",
+        "component": "ConversationView",
+        "declares": {
+          "conversation.message": {
+            "shape": "keyed",
+            "props": {}
+          },
+          "conversation.message.extra": {
+            "shape": "list",
+            "props": {}
+          },
+          "tool.result": {
+            "shape": "keyed",
+            "props": {}
+          }
+        }
+      }
+    ]
+  }
+}

@@ -1,0 +1,2 @@
+Running headless-no-tpm.py on clover-c-linux
+{"test": "user-scoped-no-tpm-namespace", "uid": 0, "host_credential_ipc_hidden": true, "tpm_devices_hidden": true, "encrypt_exit": 0, "roundtrip": true, "format_id": "55b9ed1d38594d43a8319d2ebb332ac6", "fence_hides_credential": true}

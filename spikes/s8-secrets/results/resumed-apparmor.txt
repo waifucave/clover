@@ -1,0 +1,3 @@
+Running linux-apparmor.sh on clover-c-linux
+Installing a path-scoped AppArmor profile for the trusted Clover test launcher
+clover-spike-bwrap (unconfined)

@@ -1,0 +1,380 @@
+/* The composer. Every colour, face and size is a theme token from lane B's catalog (`--clover-*`,
+   listed in tokens.ts). A composer several tabs share takes each tab's tokens (spec §5.5). Sizes follow
+   the reference app's (as measured for lane G's base theme): a box at most 768 px wide and 44 tall for a
+   line, at least 32 px from each side; + and the microphone 28 px square; the pills in a 40 px row.
+
+   Nothing here leaves the part: menus open in the flow above the box, never over the conversation,
+   and the box casts no shadow onto it (review item 1). */
+
+.cl-composer {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: var(--clover-space-xs);
+  width: 100%;
+  max-width: 832px;
+  margin: 0 auto;
+  padding: 0 var(--clover-space-xxl);
+  color: var(--clover-composer-text);
+  font-family: var(--clover-font-sans);
+  font-size: var(--clover-font-size-body);
+  line-height: var(--clover-font-line-body);
+}
+
+.cl-composer button {
+  font: inherit;
+}
+
+.cl-composer :focus-visible {
+  outline: 2px solid var(--clover-color-focus);
+  outline-offset: 2px;
+}
+
+/* The box: attachments, then the row of + / text / microphone / send. */
+.cl-composer__box {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--clover-space-s);
+  padding: 7px 6px 7px 5px;
+  border: 1px solid var(--clover-composer-rim);
+  border-radius: var(--clover-composer-radius);
+  background: var(--clover-composer-background);
+}
+
+/* The field shows its focus on the box around it. */
+.cl-composer__box:focus-within {
+  border-color: var(--clover-color-focus);
+}
+
+.cl-composer__row {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--clover-space-xs);
+}
+
+.cl-composer__field {
+  box-sizing: border-box;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 28px;
+  max-height: 240px;
+  margin: 0;
+  padding: 3px 5px;
+  overflow-y: auto;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  resize: none;
+}
+
+.cl-composer__field:focus-visible {
+  outline: none;
+}
+
+.cl-composer__field::placeholder {
+  color: var(--clover-composer-placeholder);
+}
+
+.cl-composer__icon-button {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: var(--clover-radius-medium);
+  background: transparent;
+  color: var(--clover-color-text-secondary);
+  cursor: pointer;
+}
+
+.cl-composer__icon-button:hover {
+  background: var(--clover-color-hover);
+  color: var(--clover-color-text);
+}
+
+.cl-composer__voice[aria-pressed="true"] {
+  background: var(--clover-color-accent-soft);
+  color: var(--clover-color-accent-text);
+}
+
+/* Send: an arrow on the accent, round. */
+.cl-composer__send {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: var(--clover-radius-round);
+  background: var(--clover-color-accent);
+  color: var(--clover-color-accent-contrast);
+  cursor: pointer;
+}
+
+.cl-composer__send:disabled {
+  background: var(--clover-color-control);
+  color: var(--clover-color-text-placeholder);
+  cursor: default;
+}
+
+/* Stop: a square on the control colour, with a rim. Never mistaken for Send. */
+.cl-composer__stop {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--clover-color-hairline-raised);
+  border-radius: var(--clover-radius-medium);
+  background: var(--clover-color-control);
+  color: var(--clover-color-text);
+  cursor: pointer;
+}
+
+.cl-composer__stop:hover {
+  background: var(--clover-color-hover);
+}
+
+/* Beneath the box, in a 40 px row: the approval level at the start, the model at the end. */
+.cl-composer__under {
+  display: flex;
+  align-items: center;
+  gap: var(--clover-space-s);
+  min-height: 40px;
+  padding: 0 var(--clover-space-s) 2px;
+}
+
+.cl-composer__spacer {
+  flex: 1 1 auto;
+}
+
+.cl-composer__pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  padding: 0 var(--clover-space-s);
+  border: none;
+  border-radius: var(--clover-radius-small);
+  background: transparent;
+  color: var(--clover-color-text-muted);
+  font-size: var(--clover-font-size-label);
+  cursor: pointer;
+}
+
+.cl-composer__pill:hover,
+.cl-composer__pill[aria-expanded="true"] {
+  background: var(--clover-color-hover);
+  color: var(--clover-color-text);
+}
+
+/* While a card waits, the pills wait too, and look it. */
+.cl-composer__pill:disabled,
+.cl-composer__pill:disabled .cl-composer__pill-label,
+.cl-composer__pill:disabled .cl-composer__pill-detail {
+  color: var(--clover-color-text-placeholder);
+  cursor: default;
+}
+
+.cl-composer__pill-label {
+  color: var(--clover-color-text);
+}
+
+.cl-composer__pill-detail {
+  color: var(--clover-color-text-muted);
+}
+
+/* A level asked for, waiting for its card: beside the level that still stands. */
+.cl-composer__pill-request {
+  color: var(--clover-color-attention-text);
+}
+
+.cl-composer__pill[data-level="automatic"] .cl-composer__pill-label {
+  color: var(--clover-color-attention-text);
+}
+
+/* A menu: in the flow, above the box, lined up with its pill. */
+.cl-composer__menu {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: var(--clover-space-xs);
+  width: min(100%, 320px);
+  padding: var(--clover-space-xs);
+  border: 1px solid var(--clover-color-hairline-raised);
+  border-radius: var(--clover-radius-large);
+  background: var(--clover-color-float);
+}
+
+.cl-composer__menu[data-side="end"] {
+  align-self: flex-end;
+}
+
+.cl-composer__menu[data-side="start"] {
+  align-self: flex-start;
+}
+
+.cl-composer__menu-section + .cl-composer__menu-section {
+  padding-top: var(--clover-space-xs);
+  border-top: 1px solid var(--clover-color-hairline);
+}
+
+.cl-composer__menu-title {
+  padding: var(--clover-space-xs) var(--clover-space-s) 2px;
+  color: var(--clover-color-text-muted);
+  font-size: var(--clover-font-size-caption);
+}
+
+.cl-composer__menu-item {
+  display: grid;
+  grid-template-columns: 18px 1fr;
+  align-items: center;
+  column-gap: var(--clover-space-xs);
+  width: 100%;
+  padding: 6px var(--clover-space-s);
+  border: none;
+  border-radius: var(--clover-radius-medium);
+  background: transparent;
+  color: var(--clover-color-text);
+  font-size: var(--clover-font-size-control);
+  text-align: left;
+  cursor: pointer;
+}
+
+.cl-composer__menu-item:hover,
+.cl-composer__menu-item:focus-visible {
+  background: var(--clover-color-hover);
+}
+
+.cl-composer__menu-check {
+  display: inline-flex;
+  color: var(--clover-color-accent-text);
+}
+
+.cl-composer__menu-detail {
+  grid-column: 2;
+  color: var(--clover-color-text-muted);
+  font-size: var(--clover-font-size-caption);
+}
+
+.cl-composer__menu-tag {
+  margin-left: var(--clover-space-s);
+  color: var(--clover-color-attention-text);
+  font-size: var(--clover-font-size-caption);
+}
+
+.cl-composer__menu-note {
+  margin: 0;
+  padding: var(--clover-space-xs) var(--clover-space-s) 2px;
+  border-top: 1px solid var(--clover-color-hairline);
+  color: var(--clover-color-text-muted);
+  font-size: var(--clover-font-size-caption);
+}
+
+/* Attachments ride above the text. */
+.cl-composer__attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cl-composer__attachment {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 220px;
+  padding: var(--clover-space-xs) 6px var(--clover-space-xs) var(--clover-space-xs);
+  border: 1px solid var(--clover-color-hairline);
+  border-radius: var(--clover-radius-medium);
+  background: var(--clover-color-raised);
+  font-size: var(--clover-font-size-control);
+}
+
+.cl-composer__thumb {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--clover-radius-small);
+  object-fit: cover;
+}
+
+.cl-composer__attachment-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cl-composer__remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: var(--clover-radius-round);
+  background: transparent;
+  color: var(--clover-color-text-muted);
+  cursor: pointer;
+}
+
+.cl-composer__remove:hover {
+  background: var(--clover-color-hover);
+  color: var(--clover-color-text);
+}
+
+.cl-composer__error {
+  color: var(--clover-color-danger);
+  font-size: var(--clover-font-size-control);
+}
+
+/* While files are dragged over, the box says it takes them. Inside the box, never beyond it. */
+.cl-composer__drop {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px dashed var(--clover-color-accent);
+  border-radius: var(--clover-composer-radius);
+  background: var(--clover-color-accent-soft);
+  color: var(--clover-color-accent-text);
+  font-size: var(--clover-font-size-control);
+}
+
+.cl-composer__note {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 var(--clover-space-s);
+  color: var(--clover-color-text-muted);
+  font-size: var(--clover-font-size-caption);
+}
+
+.cl-composer__note[data-kind="asleep"] {
+  color: var(--clover-color-attention-text);
+}
+
+.cl-composer-icon {
+  flex: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cl-composer * {
+    transition: none;
+  }
+}

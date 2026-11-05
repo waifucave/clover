@@ -1,0 +1,106 @@
+Running check.ps1 on clover-c-win
+Clover token compatibility probe (not a security admission)
+CHECK privileges powershell-pipeline
+{"mode":"privileges","launch_ms":20,"elapsed_ms":541,"exit":0,"timeout":false,"check":"powershell-pipeline"}
+CHECK privileges bash-pipeline-subshell
+{"mode":"privileges","launch_ms":6,"elapsed_ms":184,"exit":0,"timeout":false,"check":"bash-pipeline-subshell"}
+CHECK privileges git
+{"mode":"privileges","launch_ms":5,"elapsed_ms":192,"exit":0,"timeout":false,"check":"git"}
+CHECK privileges ssh-version
+OpenSSH_10.2p1, OpenSSL 3.5.4 30 Sep 2025
+{"mode":"privileges","launch_ms":5,"elapsed_ms":100,"exit":0,"timeout":false,"check":"ssh-version"}
+CHECK privileges node
+{"mode":"privileges","launch_ms":5,"elapsed_ms":146,"exit":0,"timeout":false,"check":"node"}
+CHECK privileges bun
+{"mode":"privileges","launch_ms":5,"elapsed_ms":164,"exit":0,"timeout":false,"check":"bun"}
+CHECK privileges build
+Bundled 1 module in 21ms
+
+  output.js  75 bytes  (entry point)
+
+{"mode":"privileges","launch_ms":5,"elapsed_ms":150,"exit":0,"timeout":false,"check":"build"}
+CHECK privileges-low powershell-pipeline
+{"mode":"privileges-low","launch_ms":3,"elapsed_ms":524,"exit":0,"timeout":false,"check":"powershell-pipeline"}
+CHECK privileges-low bash-pipeline-subshell
+{"mode":"privileges-low","launch_ms":2,"elapsed_ms":188,"exit":0,"timeout":false,"check":"bash-pipeline-subshell"}
+CHECK privileges-low git
+fatal: cannot mkdir repo: Permission denied
+{"mode":"privileges-low","launch_ms":2,"elapsed_ms":118,"exit":128,"timeout":false,"check":"git"}
+CHECK privileges-low ssh-version
+OpenSSH_10.2p1, OpenSSL 3.5.4 30 Sep 2025
+{"mode":"privileges-low","launch_ms":2,"elapsed_ms":91,"exit":0,"timeout":false,"check":"ssh-version"}
+CHECK privileges-low node
+{"mode":"privileges-low","launch_ms":2,"elapsed_ms":138,"exit":0,"timeout":false,"check":"node"}
+CHECK privileges-low bun
+{"mode":"privileges-low","launch_ms":2,"elapsed_ms":161,"exit":0,"timeout":false,"check":"bun"}
+CHECK privileges-low build
+/usr/bin/bash: line 1: input.js: Permission denied
+{"mode":"privileges-low","launch_ms":2,"elapsed_ms":64,"exit":1,"timeout":false,"check":"build"}
+CHECK restricted powershell-pipeline
+Starting the CLR failed with HRESULT 80070005.
+{"mode":"restricted","launch_ms":2,"elapsed_ms":49,"exit":4294901760,"timeout":false,"check":"powershell-pipeline"}
+CHECK restricted bash-pipeline-subshell
+      0 [main] bash (5144) cygheap_user::init: NtSetInformationToken (TokenDefaultDacl), 0xC0000022
+    655 [main] bash (5144) C:\Program Files\Git\bin\..\usr\bin\bash.exe: *** fatal error - NtCreateDirectoryObject(\BaseNamedObjects\msys-2.0S5-1888ae32e00d56aa): 0xC0000022
+{"mode":"restricted","launch_ms":2,"elapsed_ms":45,"exit":3221225794,"timeout":false,"check":"bash-pipeline-subshell"}
+CHECK restricted git
+      0 [main] bash (4348) cygheap_user::init: NtSetInformationToken (TokenDefaultDacl), 0xC0000022
+    605 [main] bash (4348) C:\Program Files\Git\bin\..\usr\bin\bash.exe: *** fatal error - NtCreateDirectoryObject(\BaseNamedObjects\msys-2.0S5-1888ae32e00d56aa): 0xC0000022
+{"mode":"restricted","launch_ms":2,"elapsed_ms":42,"exit":3221225794,"timeout":false,"check":"git"}
+CHECK restricted ssh-version
+      0 [main] bash (5292) cygheap_user::init: NtSetInformationToken (TokenDefaultDacl), 0xC0000022
+    571 [main] bash (5292) C:\Program Files\Git\bin\..\usr\bin\bash.exe: *** fatal error - NtCreateDirectoryObject(\BaseNamedObjects\msys-2.0S5-1888ae32e00d56aa): 0xC0000022
+{"mode":"restricted","launch_ms":2,"elapsed_ms":39,"exit":3221225794,"timeout":false,"check":"ssh-version"}
+CHECK restricted node
+      1 [main] bash (6020) cygheap_user::init: NtSetInformationToken (TokenDefaultDacl), 0xC0000022
+    584 [main] bash (6020) C:\Program Files\Git\bin\..\usr\bin\bash.exe: *** fatal error - NtCreateDirectoryObject(\BaseNamedObjects\msys-2.0S5-1888ae32e00d56aa): 0xC0000022
+{"mode":"restricted","launch_ms":2,"elapsed_ms":40,"exit":3221225794,"timeout":false,"check":"node"}
+CHECK restricted bun
+      0 [main] bash (3696) cygheap_user::init: NtSetInformationToken (TokenDefaultDacl), 0xC0000022
+    572 [main] bash (3696) C:\Program Files\Git\bin\..\usr\bin\bash.exe: *** fatal error - NtCreateDirectoryObject(\BaseNamedObjects\msys-2.0S5-1888ae32e00d56aa): 0xC0000022
+{"mode":"restricted","launch_ms":2,"elapsed_ms":39,"exit":3221225794,"timeout":false,"check":"bun"}
+CHECK restricted build
+      1 [main] bash (912) cygheap_user::init: NtSetInformationToken (TokenDefaultDacl), 0xC0000022
+    528 [main] bash (912) C:\Program Files\Git\bin\..\usr\bin\bash.exe: *** fatal error - NtCreateDirectoryObject(\BaseNamedObjects\msys-2.0S5-1888ae32e00d56aa): 0xC0000022
+{"mode":"restricted","launch_ms":2,"elapsed_ms":38,"exit":3221225794,"timeout":false,"check":"build"}
+CHECK low powershell-pipeline
+Starting the CLR failed with HRESULT 80070005.
+{"mode":"low","launch_ms":2,"elapsed_ms":27,"exit":4294901760,"timeout":false,"check":"powershell-pipeline"}
+CHECK low bash-pipeline-subshell
+      0 [main] bash (1116) cygheap_user::init: NtSetInformationToken (TokenDefaultDacl), 0xC0000022
+    601 [main] bash (1116) C:\Program Files\Git\bin\..\usr\bin\bash.exe: *** fatal error - NtCreateDirectoryObject(\BaseNamedObjects\msys-2.0S5-1888ae32e00d56aa): 0xC0000022
+{"mode":"low","launch_ms":2,"elapsed_ms":40,"exit":3221225794,"timeout":false,"check":"bash-pipeline-subshell"}
+CHECK low git
+      0 [main] bash (3476) cygheap_user::init: NtSetInformationToken (TokenDefaultDacl), 0xC0000022
+    541 [main] bash (3476) C:\Program Files\Git\bin\..\usr\bin\bash.exe: *** fatal error - NtCreateDirectoryObject(\BaseNamedObjects\msys-2.0S5-1888ae32e00d56aa): 0xC0000022
+{"mode":"low","launch_ms":2,"elapsed_ms":39,"exit":3221225794,"timeout":false,"check":"git"}
+CHECK low ssh-version
+      0 [main] bash (5564) cygheap_user::init: NtSetInformationToken (TokenDefaultDacl), 0xC0000022
+    593 [main] bash (5564) C:\Program Files\Git\bin\..\usr\bin\bash.exe: *** fatal error - NtCreateDirectoryObject(\BaseNamedObjects\msys-2.0S5-1888ae32e00d56aa): 0xC0000022
+{"mode":"low","launch_ms":2,"elapsed_ms":40,"exit":3221225794,"timeout":false,"check":"ssh-version"}
+CHECK low node
+      0 [main] bash (3480) cygheap_user::init: NtSetInformationToken (TokenDefaultDacl), 0xC0000022
+    546 [main] bash (3480) C:\Program Files\Git\bin\..\usr\bin\bash.exe: *** fatal error - NtCreateDirectoryObject(\BaseNamedObjects\msys-2.0S5-1888ae32e00d56aa): 0xC0000022
+{"mode":"low","launch_ms":2,"elapsed_ms":40,"exit":3221225794,"timeout":false,"check":"node"}
+CHECK low bun
+      0 [main] bash (1332) cygheap_user::init: NtSetInformationToken (TokenDefaultDacl), 0xC0000022
+    620 [main] bash (1332) C:\Program Files\Git\bin\..\usr\bin\bash.exe: *** fatal error - NtCreateDirectoryObject(\BaseNamedObjects\msys-2.0S5-1888ae32e00d56aa): 0xC0000022
+{"mode":"low","launch_ms":2,"elapsed_ms":39,"exit":3221225794,"timeout":false,"check":"bun"}
+CHECK low build
+      0 [main] bash (1028) cygheap_user::init: NtSetInformationToken (TokenDefaultDacl), 0xC0000022
+    669 [main] bash (1028) C:\Program Files\Git\bin\..\usr\bin\bash.exe: *** fatal error - NtCreateDirectoryObject(\BaseNamedObjects\msys-2.0S5-1888ae32e00d56aa): 0xC0000022
+{"mode":"low","launch_ms":2,"elapsed_ms":41,"exit":3221225794,"timeout":false,"check":"build"}
+CHECK appcontainer powershell-pipeline
+{"mode":"appcontainer","launch_ms":5,"elapsed_ms":17,"exit":3221225794,"timeout":false,"check":"powershell-pipeline"}
+CHECK appcontainer bash-pipeline-subshell
+{"mode":"appcontainer","launch_ms":2,"elapsed_ms":13,"exit":3221225794,"timeout":false,"check":"bash-pipeline-subshell"}
+CHECK appcontainer git
+{"mode":"appcontainer","launch_ms":2,"elapsed_ms":13,"exit":3221225794,"timeout":false,"check":"git"}
+CHECK appcontainer ssh-version
+{"mode":"appcontainer","launch_ms":2,"elapsed_ms":13,"exit":3221225794,"timeout":false,"check":"ssh-version"}
+CHECK appcontainer node
+{"mode":"appcontainer","launch_ms":2,"elapsed_ms":13,"exit":3221225794,"timeout":false,"check":"node"}
+CHECK appcontainer bun
+{"mode":"appcontainer","launch_ms":2,"elapsed_ms":13,"exit":3221225794,"timeout":false,"check":"bun"}
+CHECK appcontainer build
+{"mode":"appcontainer","launch_ms":2,"elapsed_ms":13,"exit":3221225794,"timeout":false,"check":"build"}

@@ -1,0 +1,10 @@
+Uploading public source chunk 1
+Uploading public source chunk 2
+Running scheduled-store.ps1 on clover-c-win
+Testing credential primitives in a password-backed scheduled-task startup context
+Waiting for batch startup 0s
+Waiting for batch startup 15s
+Waiting for batch startup 30s
+Waiting for batch startup 45s
+Waiting for batch startup 60s
+{"result_file":false,"started":false,"task_result":267011,"task_state":"Ready","logon":"Scheduled Task password principal, on-demand and timed trigger"}

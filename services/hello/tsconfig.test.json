@@ -1,0 +1,5 @@
+{
+  "extends": "../../tsconfig.base.json",
+  // The tests run on Bun and reach the Worker over HTTP.
+  "include": ["test"]
+}

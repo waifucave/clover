@@ -1,0 +1,4 @@
+[test]
+# The harness's own preload: the core test environment (one temp root per process, a throwaway Keychain service,
+# no legacy home, no login shell, no real usage sources), which every daemon a test boots inherits.
+preload = ["./src/preload.ts"]

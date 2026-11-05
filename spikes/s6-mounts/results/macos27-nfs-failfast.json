@@ -1,0 +1,696 @@
+{
+  "spike": "S6",
+  "question": "failfast",
+  "machine": {
+    "os": "darwin",
+    "release": "27.0.0",
+    "arch": "arm64",
+    "cpus": 3,
+    "cpu": "Apple M1 (Virtual)",
+    "memGB": 7,
+    "bun": "1.3.14",
+    "commit": "147f346c9c621585e2d7596eb51348d64e2ae075",
+    "run": "42004174774",
+    "runAttempt": "1",
+    "job": "macos"
+  },
+  "rttMs": 20,
+  "policy": "plain",
+  "started": "2026-11-05T09:54:07.802Z",
+  "results": [
+    {
+      "scenario": "read+blackhole",
+      "op": "read 1 GiB",
+      "fault": "link goes silent (no FIN, no RST)",
+      "failMs": 1537,
+      "exitCode": 1,
+      "sawError": "EIO: EIO: i/o error, read",
+      "progressBytes": 83886080,
+      "whileDown": {
+        "ok": false,
+        "ms": 0.7827500000000001,
+        "code": "EIO",
+        "message": "EIO: i/o error, stat '/Users/runner/work/_temp/s6/nfs-tree/clover/package.json'"
+      },
+      "whileDownAgain": {
+        "ok": false,
+        "ms": 0.9822500000000005,
+        "code": "EIO",
+        "message": "EIO: i/o error, scandir '/Users/runner/work/_temp/s6/nfs-tree'"
+      },
+      "stuckProcesses": [],
+      "systemUninterruptible": [
+        "trustd:Us",
+        "softwareupdated:Us",
+        "triald:U",
+        "helpd:U"
+      ],
+      "helperAlive": true,
+      "recoverMs": 100,
+      "restoreCallMs": 6,
+      "afterRecovery": {
+        "ok": true,
+        "ms": 28.050874999999998
+      },
+      "stuckAfter": [],
+      "helperStats": {
+        "drops": 1,
+        "fastFails": 5,
+        "mounted": true,
+        "mountsRefused": 0,
+        "nfsCalls": {
+          "Access": 6,
+          "FSInfo": 1,
+          "FSStat": 2,
+          "GetAttr": 19,
+          "Lookup": 14,
+          "Null": 1,
+          "PathConf": 1,
+          "Read": 98,
+          "ReadDirPlus": 1
+        },
+        "nfsNanos": {
+          "Access": 280333,
+          "FSInfo": 409250,
+          "FSStat": 82792,
+          "GetAttr": 42092669,
+          "Lookup": 388345415,
+          "Null": 81000,
+          "PathConf": 41500,
+          "Read": 29150412535,
+          "ReadDirPlus": 127667
+        },
+        "online": true,
+        "reconnects": 1,
+        "requests": 116,
+        "timeouts": 0
+      },
+      "helperLog": "09:54:11.830952 [Desktop1] link back (service 3f1c5290, restarted: false)\n2026/11/05 09:54:11 STAT clover/package.json size=3073\n2026/11/05 09:54:11 STAT clover/package.json size=3073\n2026/11/05 09:54:11 STAT clover/package.json size=3073\n2026/11/05 09:54:11 STAT clover/package.json size=3073\n2026/11/05 09:54:11 READ clover/package.json off=0 want=3073 got=3073",
+      "unmountMs": 56,
+      "mountGone": true
+    },
+    {
+      "scenario": "read+reset",
+      "op": "read 1 GiB",
+      "fault": "link reset (connections closed)",
+      "failMs": 4,
+      "exitCode": 1,
+      "sawError": "EIO: EIO: i/o error, read",
+      "progressBytes": 117440512,
+      "whileDown": {
+        "ok": false,
+        "ms": 0.7877499999999991,
+        "code": "EIO",
+        "message": "EIO: i/o error, stat '/Users/runner/work/_temp/s6/nfs-tree/clover/package.json'"
+      },
+      "whileDownAgain": {
+        "ok": false,
+        "ms": 0.42504200000000125,
+        "code": "EIO",
+        "message": "EIO: i/o error, scandir '/Users/runner/work/_temp/s6/nfs-tree'"
+      },
+      "stuckProcesses": [],
+      "systemUninterruptible": [
+        "softwareupdated:Us",
+        "triald:U",
+        "ModelCatalogAgent:U",
+        "DiskUnmountWatcher:U",
+        "helpd:U",
+        "spindump:Us"
+      ],
+      "helperAlive": true,
+      "recoverMs": 96,
+      "restoreCallMs": 0,
+      "afterRecovery": {
+        "ok": true,
+        "ms": 24.763082999999998
+      },
+      "stuckAfter": [],
+      "helperStats": {
+        "drops": 1,
+        "fastFails": 3,
+        "mounted": true,
+        "mountsRefused": 0,
+        "nfsCalls": {
+          "Access": 6,
+          "FSInfo": 1,
+          "FSStat": 3,
+          "GetAttr": 24,
+          "Lookup": 13,
+          "Null": 1,
+          "PathConf": 1,
+          "Read": 130,
+          "ReadDirPlus": 1
+        },
+        "nfsNanos": {
+          "Access": 271875,
+          "FSInfo": 65583,
+          "FSStat": 104375,
+          "GetAttr": 26373832,
+          "Lookup": 309609414,
+          "Null": 18917,
+          "PathConf": 22583,
+          "Read": 5200996040,
+          "ReadDirPlus": 51334
+        },
+        "online": true,
+        "reconnects": 1,
+        "requests": 146,
+        "timeouts": 0
+      },
+      "helperLog": "09:54:12.829726 [Desktop1] link back (service 3f1c5290, restarted: false)\n2026/11/05 09:54:12 STAT clover/package.json size=3073\n2026/11/05 09:54:12 STAT clover/package.json size=3073\n2026/11/05 09:54:12 STAT clover/package.json size=3073\n2026/11/05 09:54:12 STAT clover/package.json size=3073\n2026/11/05 09:54:12 READ clover/package.json off=0 want=3073 got=3073",
+      "unmountMs": 156,
+      "mountGone": true
+    },
+    {
+      "scenario": "read+kill",
+      "op": "read 1 GiB",
+      "fault": "file service killed (SIGKILL)",
+      "failMs": 13,
+      "exitCode": 1,
+      "sawError": "EIO: EIO: i/o error, read",
+      "progressBytes": 117440512,
+      "whileDown": {
+        "ok": false,
+        "ms": 0.3642080000000014,
+        "code": "EIO",
+        "message": "EIO: i/o error, stat '/Users/runner/work/_temp/s6/nfs-tree/clover/package.json'"
+      },
+      "whileDownAgain": {
+        "ok": false,
+        "ms": 0.4707920000000012,
+        "code": "EIO",
+        "message": "EIO: i/o error, scandir '/Users/runner/work/_temp/s6/nfs-tree'"
+      },
+      "stuckProcesses": [],
+      "systemUninterruptible": [
+        "softwareupdated:Us",
+        "helpd:U",
+        "spindump:Us"
+      ],
+      "helperAlive": true,
+      "recoverMs": 245,
+      "restoreCallMs": 60,
+      "afterRecovery": {
+        "ok": true,
+        "ms": 26.010749999999998
+      },
+      "stuckAfter": [],
+      "helperStats": {
+        "drops": 1,
+        "fastFails": 17,
+        "mounted": true,
+        "mountsRefused": 0,
+        "nfsCalls": {
+          "Access": 6,
+          "FSInfo": 1,
+          "FSStat": 3,
+          "GetAttr": 28,
+          "Lookup": 15,
+          "Null": 1,
+          "PathConf": 1,
+          "Read": 130,
+          "ReadDirPlus": 1
+        },
+        "nfsNanos": {
+          "Access": 240541,
+          "FSInfo": 68750,
+          "FSStat": 216083,
+          "GetAttr": 30433376,
+          "Lookup": 424146082,
+          "Null": 17875,
+          "PathConf": 23833,
+          "Read": 5129733047,
+          "ReadDirPlus": 35833
+        },
+        "online": true,
+        "reconnects": 1,
+        "requests": 148,
+        "timeouts": 0
+      },
+      "helperLog": "2026/11/05 09:54:14 STAT clover/package.json size=3073\n2026/11/05 09:54:14 STAT clover/package.json size=3073\n2026/11/05 09:54:14 STAT clover/package.json size=3073\n2026/11/05 09:54:14 STAT clover/package.json size=3073\n2026/11/05 09:54:14 STAT clover/package.json size=3073\n2026/11/05 09:54:14 READ clover/package.json off=0 want=3073 got=3073",
+      "unmountMs": 37,
+      "mountGone": true
+    },
+    {
+      "scenario": "read+freeze",
+      "op": "read 1 GiB",
+      "fault": "file service frozen (SIGSTOP; its TCP stays up)",
+      "failMs": 1579,
+      "exitCode": 1,
+      "sawError": "EIO: EIO: i/o error, read",
+      "progressBytes": 134217728,
+      "whileDown": {
+        "ok": false,
+        "ms": 0.7652910000000013,
+        "code": "EIO",
+        "message": "EIO: i/o error, stat '/Users/runner/work/_temp/s6/nfs-tree/clover/package.json'"
+      },
+      "whileDownAgain": {
+        "ok": false,
+        "ms": 0.8381670000000021,
+        "code": "EIO",
+        "message": "EIO: i/o error, scandir '/Users/runner/work/_temp/s6/nfs-tree'"
+      },
+      "stuckProcesses": [],
+      "systemUninterruptible": [
+        "mobileassetd:Us",
+        "usernotificationsd:U",
+        "BiomeAgent:U",
+        "agentstored:U",
+        "triald:U",
+        "ScreenTimeSettingsAgent:U",
+        "analyticsagent:U",
+        "ModelCatalogAgent:U",
+        "spindump:Us",
+        "businessservicesd:U",
+        "appleaccounttransparencyd:U",
+        "filevaultd:U"
+      ],
+      "helperAlive": true,
+      "recoverMs": 117,
+      "restoreCallMs": 0,
+      "afterRecovery": {
+        "ok": true,
+        "ms": 24.415083
+      },
+      "stuckAfter": [],
+      "helperStats": {
+        "drops": 1,
+        "fastFails": 5,
+        "mounted": true,
+        "mountsRefused": 0,
+        "nfsCalls": {
+          "Access": 6,
+          "FSInfo": 1,
+          "FSStat": 3,
+          "GetAttr": 32,
+          "Lookup": 14,
+          "Null": 1,
+          "PathConf": 1,
+          "Read": 146,
+          "ReadDirPlus": 1
+        },
+        "nfsNanos": {
+          "Access": 187250,
+          "FSInfo": 34292,
+          "FSStat": 59959,
+          "GetAttr": 28863916,
+          "Lookup": 327478125,
+          "Null": 29834,
+          "PathConf": 13458,
+          "Read": 30179686831,
+          "ReadDirPlus": 74875
+        },
+        "online": true,
+        "reconnects": 1,
+        "requests": 164,
+        "timeouts": 0
+      },
+      "helperLog": "09:54:16.831965 [Desktop1] link back (service 1e3c136e, restarted: false)\n2026/11/05 09:54:16 STAT clover/package.json size=3073\n2026/11/05 09:54:16 STAT clover/package.json size=3073\n2026/11/05 09:54:16 STAT clover/package.json size=3073\n2026/11/05 09:54:16 STAT clover/package.json size=3073\n2026/11/05 09:54:16 READ clover/package.json off=0 want=3073 got=3073",
+      "unmountMs": 75,
+      "mountGone": true
+    },
+    {
+      "scenario": "write+blackhole",
+      "op": "write 1 GiB",
+      "fault": "link goes silent (no FIN, no RST)",
+      "failMs": 1579,
+      "exitCode": 1,
+      "sawError": "EIO: EIO: i/o error, write",
+      "progressBytes": 16777216,
+      "whileDown": {
+        "ok": false,
+        "ms": 0.3579170000000005,
+        "code": "EIO",
+        "message": "EIO: i/o error, stat '/Users/runner/work/_temp/s6/nfs-tree/clover/package.json'"
+      },
+      "whileDownAgain": {
+        "ok": false,
+        "ms": 0.5377080000000003,
+        "code": "EIO",
+        "message": "EIO: i/o error, scandir '/Users/runner/work/_temp/s6/nfs-tree'"
+      },
+      "stuckProcesses": [],
+      "systemUninterruptible": [],
+      "helperAlive": true,
+      "recoverMs": 95,
+      "restoreCallMs": 0,
+      "afterRecovery": {
+        "ok": true,
+        "ms": 24.724458
+      },
+      "stuckAfter": [],
+      "helperStats": {
+        "drops": 1,
+        "fastFails": 20,
+        "mounted": true,
+        "mountsRefused": 0,
+        "nfsCalls": {
+          "Access": 5,
+          "Create": 1,
+          "FSInfo": 1,
+          "FSStat": 3,
+          "GetAttr": 6,
+          "Lookup": 17,
+          "Null": 1,
+          "PathConf": 1,
+          "Read": 1,
+          "ReadDirPlus": 1,
+          "Write": 16
+        },
+        "nfsNanos": {
+          "Access": 178250,
+          "Create": 46719042,
+          "FSInfo": 70708,
+          "FSStat": 60000,
+          "GetAttr": 24257002,
+          "Lookup": 325979753,
+          "Null": 20500,
+          "PathConf": 31417,
+          "Read": 23056959,
+          "ReadDirPlus": 43292,
+          "Write": 1911750206
+        },
+        "online": true,
+        "reconnects": 1,
+        "requests": 51,
+        "timeouts": 0
+      },
+      "helperLog": "09:54:19.429460 [Desktop1] link back (service 1e3c136e, restarted: false)\n2026/11/05 09:54:19 STAT clover/package.json size=3073\n2026/11/05 09:54:19 STAT clover/package.json size=3073\n2026/11/05 09:54:19 STAT clover/package.json size=3073\n2026/11/05 09:54:19 STAT clover/package.json size=3073\n2026/11/05 09:54:19 READ clover/package.json off=0 want=3073 got=3073",
+      "unmountMs": 20,
+      "mountGone": true
+    },
+    {
+      "scenario": "write+kill",
+      "op": "write 1 GiB",
+      "fault": "file service killed (SIGKILL)",
+      "failMs": 16,
+      "exitCode": 1,
+      "sawError": "EIO: EIO: i/o error, write",
+      "progressBytes": 18874368,
+      "whileDown": {
+        "ok": false,
+        "ms": 0.42729199999999956,
+        "code": "EIO",
+        "message": "EIO: i/o error, stat '/Users/runner/work/_temp/s6/nfs-tree/clover/package.json'"
+      },
+      "whileDownAgain": {
+        "ok": false,
+        "ms": 0.49375000000000036,
+        "code": "EIO",
+        "message": "EIO: i/o error, scandir '/Users/runner/work/_temp/s6/nfs-tree'"
+      },
+      "stuckProcesses": [],
+      "systemUninterruptible": [
+        "helpd:U",
+        "spindump:Us"
+      ],
+      "helperAlive": true,
+      "recoverMs": 288,
+      "restoreCallMs": 58,
+      "afterRecovery": {
+        "ok": true,
+        "ms": 25.126417000000004
+      },
+      "stuckAfter": [],
+      "helperStats": {
+        "drops": 1,
+        "fastFails": 18,
+        "mounted": true,
+        "mountsRefused": 0,
+        "nfsCalls": {
+          "Access": 5,
+          "Create": 1,
+          "FSInfo": 1,
+          "FSStat": 4,
+          "GetAttr": 5,
+          "Lookup": 19,
+          "Null": 1,
+          "PathConf": 1,
+          "Read": 1,
+          "ReadDirPlus": 1,
+          "Write": 18
+        },
+        "nfsNanos": {
+          "Access": 178791,
+          "Create": 51034875,
+          "FSInfo": 25917,
+          "FSStat": 144250,
+          "GetAttr": 53992915,
+          "Lookup": 311139959,
+          "Null": 18042,
+          "PathConf": 37375,
+          "Read": 23987250,
+          "ReadDirPlus": 49708,
+          "Write": 388785083
+        },
+        "online": true,
+        "reconnects": 1,
+        "requests": 52,
+        "timeouts": 0
+      },
+      "helperLog": "2026/11/05 09:54:20 STAT clover/package.json size=3073\n2026/11/05 09:54:20 STAT clover/package.json size=3073\n2026/11/05 09:54:20 STAT ff-write.bin size=8388608\n2026/11/05 09:54:20 STAT clover/package.json size=3073\n2026/11/05 09:54:20 STAT clover/package.json size=3073\n2026/11/05 09:54:20 READ clover/package.json off=0 want=3073 got=3073",
+      "unmountMs": 21,
+      "mountGone": true
+    },
+    {
+      "scenario": "git+blackhole",
+      "op": "git status (cold)",
+      "fault": "link goes silent (no FIN, no RST)",
+      "failMs": 1621,
+      "exitCode": 128,
+      "sawError": "fatal: .git/index: index file open failed: Input/output error",
+      "whileDown": {
+        "ok": false,
+        "ms": 0.3840419999999991,
+        "code": "EIO",
+        "message": "EIO: i/o error, stat '/Users/runner/work/_temp/s6/nfs-tree/clover/package.json'"
+      },
+      "whileDownAgain": {
+        "ok": false,
+        "ms": 0.4351250000000011,
+        "code": "EIO",
+        "message": "EIO: i/o error, scandir '/Users/runner/work/_temp/s6/nfs-tree'"
+      },
+      "stuckProcesses": [],
+      "systemUninterruptible": [
+        "helpd:U",
+        "spindump:Us"
+      ],
+      "helperAlive": true,
+      "recoverMs": 142,
+      "restoreCallMs": 0,
+      "afterRecovery": {
+        "ok": true,
+        "ms": 23.947208000000003
+      },
+      "stuckAfter": [],
+      "helperStats": {
+        "drops": 1,
+        "fastFails": 11,
+        "mounted": true,
+        "mountsRefused": 0,
+        "nfsCalls": {
+          "Access": 11,
+          "FSInfo": 1,
+          "FSStat": 3,
+          "GetAttr": 6,
+          "Lookup": 25,
+          "Null": 1,
+          "PathConf": 1,
+          "Read": 3,
+          "ReadDirPlus": 1
+        },
+        "nfsNanos": {
+          "Access": 478751,
+          "FSInfo": 76750,
+          "FSStat": 62833,
+          "GetAttr": 305212792,
+          "Lookup": 2133861582,
+          "Null": 18500,
+          "PathConf": 27916,
+          "Read": 80388876,
+          "ReadDirPlus": 51417
+        },
+        "online": true,
+        "reconnects": 1,
+        "requests": 38,
+        "timeouts": 0
+      },
+      "helperLog": "09:54:22.981267 [Desktop1] link back (service 84c34ed8, restarted: false)\n2026/11/05 09:54:23 STAT clover/package.json size=3073\n2026/11/05 09:54:23 STAT clover/package.json size=3073\n2026/11/05 09:54:23 STAT clover/package.json size=3073\n2026/11/05 09:54:23 STAT clover/package.json size=3073\n2026/11/05 09:54:23 READ clover/package.json off=0 want=3073 got=3073",
+      "unmountMs": 28,
+      "mountGone": true
+    },
+    {
+      "scenario": "tsc+blackhole",
+      "op": "tsc packages/protocol (cold)",
+      "fault": "link goes silent (no FIN, no RST)",
+      "failMs": 1539,
+      "exitCode": 1,
+      "sawError": "node:internal/modules/cjs/loader:1568",
+      "whileDown": {
+        "ok": false,
+        "ms": 0.36574999999999847,
+        "code": "EIO",
+        "message": "EIO: i/o error, stat '/Users/runner/work/_temp/s6/nfs-tree/clover/package.json'"
+      },
+      "whileDownAgain": {
+        "ok": false,
+        "ms": 0.5706670000000003,
+        "code": "EIO",
+        "message": "EIO: i/o error, scandir '/Users/runner/work/_temp/s6/nfs-tree'"
+      },
+      "stuckProcesses": [],
+      "systemUninterruptible": [],
+      "helperAlive": true,
+      "recoverMs": 105,
+      "restoreCallMs": 1,
+      "afterRecovery": {
+        "ok": true,
+        "ms": 30.554875
+      },
+      "stuckAfter": [],
+      "helperStats": {
+        "drops": 1,
+        "fastFails": 20,
+        "mounted": true,
+        "mountsRefused": 0,
+        "nfsCalls": {
+          "Access": 4,
+          "FSInfo": 1,
+          "FSStat": 4,
+          "GetAttr": 2,
+          "Lookup": 23,
+          "Null": 1,
+          "PathConf": 1,
+          "Read": 1,
+          "ReadDirPlus": 1
+        },
+        "nfsNanos": {
+          "Access": 121750,
+          "FSInfo": 55000,
+          "FSStat": 255917,
+          "GetAttr": 183202417,
+          "Lookup": 1720867712,
+          "Null": 30417,
+          "PathConf": 23083,
+          "Read": 29404958,
+          "ReadDirPlus": 47959
+        },
+        "online": true,
+        "reconnects": 1,
+        "requests": 37,
+        "timeouts": 0
+      },
+      "helperLog": "09:54:25.259469 [Desktop1] link back (service 84c34ed8, restarted: false)\n2026/11/05 09:54:25 STAT clover/package.json size=3073\n2026/11/05 09:54:25 STAT clover/package.json size=3073\n2026/11/05 09:54:25 STAT clover/package.json size=3073\n2026/11/05 09:54:25 STAT clover/package.json size=3073\n2026/11/05 09:54:25 READ clover/package.json off=0 want=3073 got=3073",
+      "unmountMs": 23,
+      "mountGone": true
+    },
+    {
+      "scenario": "idle+blackhole",
+      "op": "stat after the drop",
+      "fault": "link goes silent (no FIN, no RST)",
+      "firstCall": {
+        "ok": false,
+        "ms": 1488.683375,
+        "code": "EIO",
+        "message": "EIO: i/o error, stat '/Users/runner/work/_temp/s6/nfs-tree/clover/README.md'"
+      },
+      "laterCall": {
+        "ok": false,
+        "ms": 0.5872079999999986,
+        "code": "EIO",
+        "message": "EIO: i/o error, stat '/Users/runner/work/_temp/s6/nfs-tree/clover/LICENSE'"
+      },
+      "laterCallCached": {
+        "ok": false,
+        "ms": 0.39620800000000145,
+        "code": "EIO",
+        "message": "EIO: i/o error, stat '/Users/runner/work/_temp/s6/nfs-tree/clover/package.json'"
+      },
+      "stuckProcesses": [],
+      "systemUninterruptible": [],
+      "helperAlive": true,
+      "recoverMs": 103
+    },
+    {
+      "scenario": "offline-at-start",
+      "op": "list an offline computer",
+      "fault": "file service not running",
+      "listHome": {
+        "ok": false,
+        "ms": 0.3822499999999991,
+        "code": "EIO",
+        "message": "EIO: i/o error, scandir '/Users/runner/work/_temp/s6/nfs-tree/home'"
+      },
+      "listComputer": {
+        "ok": false,
+        "ms": 0.41229099999999974,
+        "code": "EIO",
+        "message": "EIO: i/o error, scandir '/Users/runner/work/_temp/s6/nfs-tree'"
+      },
+      "statFile": {
+        "ok": false,
+        "ms": 0.5446249999999999,
+        "code": "EIO",
+        "message": "EIO: i/o error, stat '/Users/runner/work/_temp/s6/nfs-tree/clover/package.json'"
+      },
+      "stuckProcesses": [],
+      "systemUninterruptible": [],
+      "helperAlive": true,
+      "recoverMs": 251
+    },
+    {
+      "scenario": "read+helper-crash",
+      "op": "read 1 GiB",
+      "fault": "mount helper killed (SIGKILL)",
+      "detachAtDeath": true,
+      "detachAtDeathMs": 1018,
+      "failMs": 1020,
+      "sawError": "EIO: EIO: i/o error, read",
+      "deadMount": {
+        "ok": false,
+        "ms": 0.09954199999999958,
+        "code": "ENOENT",
+        "message": "ENOENT: no such file or directory, stat '/Users/runner/work/_temp/s6/nfs-tree/clover/package.json'"
+      },
+      "stuckProcesses": [],
+      "systemUninterruptible": [],
+      "detach": false,
+      "remountMs": 116,
+      "afterRemount": {
+        "ok": true,
+        "ms": 54.216125
+      },
+      "stuckAfter": [],
+      "mountGone": true
+    },
+    {
+      "scenario": "slow-link",
+      "op": "write then read 8 MiB",
+      "fault": "2000 kbit/s each way, +0–20 ms jitter, 256 KiB buffer",
+      "writeMs": 30234,
+      "writeOk": false,
+      "writeError": "{\"ok\":false,\"ms\":30209.926417000002,\"bytes\":8388608,\"files\":0,\"code\":\"ENXIO\",\"message\":\"ENXIO: no such device or address, fsync\"}",
+      "readMs": 128,
+      "readOk": false,
+      "readError": "{\"ok\":false,\"ms\":0.5618750000000006,\"bytes\":0,\"files\":0,\"code\":\"ENOENT\",\"message\":\"ENOENT: no such file or directory, open '/Users/runner/work/_temp/s6/nfs-tree/ff-slow-src.bin'\"}",
+      "falseOffline": 0,
+      "requestTimeouts": 0,
+      "stuckProcesses": []
+    }
+  ],
+  "nfs": {
+    "mountedAs": "user",
+    "timeo": 110,
+    "deadtimeout": 5,
+    "dumbtimer": true,
+    "rsize": 1048576,
+    "readahead": 16,
+    "treeRootMode": "700",
+    "exportPathKind": "one-time token",
+    "mountArgs": "/Users/runner/work/_temp/s6/nfs-tree from 127.0.0.1:/<one-time export path>\n  -- Original mount options:\n     General mount flags: 0x100000 nobrowse\n     NFS parameters: vers=3,tcp,port=49665,mountport=49665,soft,intr,noresvport,nolocks,rsize=1048576,wsize=1048576,readahead=16,dumbtimer,timeo=110,retrans=2,acregmin=1,acregmax=1,acdirmin=1,acdirmax=1,acrootdirmin=1,acrootdirmax=1,deadtimeout=5\n     File system locations:\n       /<one-time export path> @ 127.0.0.1 (127.0.0.1)\n  -- Current mount parameters:\n     General mount flags: 0x4100018 nodev,nosuid,nobrowse,multilabel\n     NFS parameters: vers=3,tcp,port=49665,mountport=49665,nomntudp,soft,intr,noresvport,negnamecache,callumnt,nolocks,quota,rsize=1048576,wsize=1048576,readahead=16,dsize=8192,rdirplus,dumbtimer,timeo=110,retrans=2,maxgroups=16,acregmin=1,acregmax=1,acdirmin=1,acdirmax=1,acrootdirmin=1,acrootdirmax=1,deadtimeout=5,nomutejukebox,nonfc,sec=none,accesscache=3\n     File system locations:\n       /<one-time export path> @ 127.0.0.1 (127.0.0.1)\n     Status flags: 0x0"
+  },
+  "finished": "2026-11-05T09:55:02.673Z"
+}
