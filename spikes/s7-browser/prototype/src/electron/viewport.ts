@@ -9,7 +9,7 @@
 //             its timers, its SSE socket, its form state), then every kind of input, a resize, find-in-page, DevTools,
 //             the accessibility tree, input-to-frame latency and frames per second against a native view
 //   dialogs   JavaScript dialogs answered over CDP, offscreen and in the host window: does a native box still show?
-import { app, BaseWindow, BrowserWindow, clipboard, ipcMain, sharedTexture, WebContentsView, type BrowserWindowConstructorOptions, type IpcMainEvent, type KeyboardInputEvent, type MouseInputEvent, type MouseWheelInputEvent, type Rectangle, type WebContents } from "electron";
+import { app, BaseWindow, BrowserWindow, clipboard, ipcMain, sharedTexture, WebContentsView, type BrowserWindowConstructorOptions, type ContextMenuParams, type IpcMainEvent, type KeyboardInputEvent, type MouseInputEvent, type MouseWheelInputEvent, type Rectangle, type WebContents } from "electron";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -851,14 +851,57 @@ export async function viewportCheck(host: TabHost, server: SpikeServer, root: st
       return { ok: st.field.endsWith("日本") && st.compositions.some((c) => c.startsWith("start")) && st.compositions.some((c) => c.startsWith("end")), detail: { field: st.field, midField: mid.field, compositions: st.compositions.slice(-6), forwarded: { set: vp.forwarded["ime-set"] ?? 0, commit: vp.forwarded["ime-commit"] ?? 0, text: vp.forwarded.text ?? 0 } } };
     });
     await step("paste: the person's paste reaches the page as a paste", async () => {
-      clipboard.writeText("s7-paste-ok");
+      await clipboard.writeText("s7-paste-ok");
       const r = await rect("field");
       await vclick(r.cx, r.cy);
       await vkey("End");
       vp.wc.paste();
       await sleep(800);
       const st = await state();
-      return { ok: st.field.includes("s7-paste-ok") && st.pastes.includes("s7-paste-ok"), detail: { field: st.field, pasteEvents: st.pastes, clipboard: clipboard.readText(), forwarded: vp.forwarded.paste ?? 0 } };
+      return { ok: st.field.includes("s7-paste-ok") && st.pastes.includes("s7-paste-ok"), detail: { field: st.field, pasteEvents: st.pastes, clipboard: await clipboard.readText(), forwarded: vp.forwarded.paste ?? 0 } };
+    });
+    // round fifteen: selecting the page's text with a mouse drag, and copying it with the keys and with the right-click
+    // menu's Copy (what the app's own menu item would call), read back from the clipboard. Recorded, not asserted yet.
+    const selection = (): Promise<string> => host.exec<string>(t, "String(window.getSelection())");
+    await step("select text: a mouse drag across the page's text selects it", async () => {
+      const r = await rect("copyText");
+      await host.exec(t, "window.getSelection().removeAllRanges()");
+      const y = r.cy, x0 = r.x + 1, x1 = r.x + r.w - 2;
+      vin({ type: "mouseMove", x: x0, y });
+      vin({ type: "mouseDown", x: x0, y, button: "left", clickCount: 1 });
+      await sleep(50);
+      for (let i = 1; i <= 10; i++) {
+        vin({ type: "mouseMove", x: Math.round(x0 + ((x1 - x0) * i) / 10), y, modifiers: ["leftbuttondown"] });
+        await sleep(30);
+      }
+      vin({ type: "mouseUp", x: x1, y, button: "left", clickCount: 1 });
+      await sleep(400);
+      const sel = await selection();
+      return { ok: sel.includes("copy this sentence"), detail: { selection: sel } };
+    });
+    await step("copy: the copy key (⌘C, Ctrl+C) in the viewport copies the page's selection", async () => {
+      const sel = await selection();
+      await clipboard.writeText("s7-before-copy");
+      await vkey("c", undefined, [modKey]);
+      const got = await waitFor(async () => { const c = await clipboard.readText(); return c !== "s7-before-copy" ? c : undefined; }, 2000);
+      return { ok: got !== undefined && got.length > 0 && got === sel, detail: { selection: sel, clipboard: await clipboard.readText(), forwardedEdits: vp.forwarded.edit ?? 0 } };
+    });
+    await step("copy: a right click on the selection, then the menu's Copy (webContents.copy)", async () => {
+      const r = await rect("copyText");
+      await clipboard.writeText("s7-before-menu");
+      let params: ContextMenuParams | undefined;
+      const onMenu = (_e: unknown, p: ContextMenuParams): void => { params = p; };
+      t.wc.once("context-menu", onMenu);
+      vin({ type: "mouseMove", x: r.cx, y: r.cy });
+      vin({ type: "mouseDown", x: r.cx, y: r.cy, button: "right", clickCount: 1 });
+      await sleep(60);
+      vin({ type: "mouseUp", x: r.cx, y: r.cy, button: "right", clickCount: 1 });
+      await waitFor(() => params, 3000);
+      t.wc.removeListener("context-menu", onMenu);
+      if (params === undefined) return { ok: false, detail: { why: "no context-menu event", selection: await selection() } };
+      if (params.editFlags.canCopy) t.wc.copy();
+      const got = await waitFor(async () => { const c = await clipboard.readText(); return c !== "s7-before-menu" ? c : undefined; }, 2000);
+      return { ok: params.editFlags.canCopy && got !== undefined && got.includes("copy this sentence"), detail: { at: `${params.x},${params.y}`, selectionText: params.selectionText, canCopy: params.editFlags.canCopy, menuSourceType: params.menuSourceType, clipboard: await clipboard.readText() } };
     });
     await step("<select>: it opens, and the keys choose an option", async () => {
       const r = await rect("sel");

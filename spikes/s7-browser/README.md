@@ -97,6 +97,8 @@ results/         every round's JSON from CI, with summary.md (bun src/summarize.
                  (viewport jobs only; the first try hung on Linux asking for shared textures without a GPU)
   round13/       the whole workflow again with round twelve's checks asserted, and the pair's held lock
   round14/       a cross-site window the page opens, against Electron #55565's same-site bug (viewport jobs only)
+  round15/       selecting the page's text with a mouse drag, and copying it with the keys and the right-click menu
+                 (viewport jobs only)
 ```
 
 The report quotes round two for the Electron tables (rounds three and eight to ten re-ran them on every OS, and round
