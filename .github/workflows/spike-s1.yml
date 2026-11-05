@@ -154,7 +154,12 @@ jobs:
         with:
           workspaces: native/link-sidecar -> target
       - name: build the link sidecar
-        run: cargo build --release --locked --manifest-path native/link-sidecar/Cargo.toml
+        run: cargo build --release --locked --manifest-path native/link-sidecar/Cargo.toml --bin clover-link-sidecar --example iroh_address_change
+      - name: the upstream reproduction, iroh's address change with relays off
+        run: |
+          mkdir -p spikes/s1-transport/results
+          sudo spikes/s1-transport/nat/iroh-address-change.sh native/link-sidecar/target/release/examples/iroh_address_change spikes/s1-transport/results
+          { echo '### iroh, address change, relays off'; echo; sed 's/^/    /' spikes/s1-transport/results/iroh-address-change.txt; } >>"$GITHUB_STEP_SUMMARY"
       - name: break the path under one live connection
         run: |
           mkdir -p spikes/s1-transport/results
@@ -167,7 +172,9 @@ jobs:
         if: always()
         with:
           name: s1-migrate
-          path: spikes/s1-transport/results/*.jsonl
+          path: |
+            spikes/s1-transport/results/*.jsonl
+            spikes/s1-transport/results/iroh-address-change*
 
   netem:
     name: delay and throughput (tc netem)

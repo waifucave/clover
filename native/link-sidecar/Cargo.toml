@@ -28,6 +28,10 @@ noq-proto = "=1.4.0"
 # feature the relay itself (nat/matrix.sh's relay phase). The same version iroh uses.
 iroh-relay = { version = "=1.4.1", default-features = false, features = ["tls-ring"] }
 
+[dev-dependencies]
+# Logs for examples/iroh_address_change.rs, the upstream reproduction. Already in the lock via iroh.
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
 [features]
 # A local iroh relay for the netns lab: `clover-link-sidecar relay-server`.
 relay-server = ["iroh-relay/server"]
