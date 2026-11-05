@@ -1,0 +1,27 @@
+2026-11-05T08:59:49.9116772Z probe: /home/runner/work/clover/clover/spikes/s7-browser/prototype/node_modules/electron/dist/electron --ozone-platform=x11 /home/runner/work/clover/clover/spikes/s7-browser/prototype/out/electron/main.cjs --checks=osr,viewport --out=/home/runner/work/clover/clover/spikes/s7-browser/prototype/out/results/electron-viewport-linux-x11.json --label=viewport-linux-x11
+2026-11-05T08:59:52.0370200Z [2723:1105/085952.036076:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+2026-11-05T08:59:52.0389921Z [s7 0.5s] electron 45.2.2 (chrome 156.0.8078.80) on linux-x64, ozone x11, checks osr,viewport
+2026-11-05T08:59:52.0464748Z [s7 0.5s] check osr
+2026-11-05T08:59:52.0810211Z [2723:1105/085952.080811:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+2026-11-05T08:59:52.0854585Z [2723:1105/085952.085257:ERROR:dbus/object_proxy.cc:589] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: 
+2026-11-05T08:59:52.0862867Z [2723:1105/085952.086013:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+2026-11-05T08:59:52.0916265Z [2723:1105/085952.089787:ERROR:dbus/object_proxy.cc:589] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: 
+2026-11-05T08:59:57.5884533Z [2776:1105/085957.588150:ERROR:cc/raster/one_copy_raster_buffer_provider.cc:285] Creation of StagingBuffer's SharedImage failed.
+2026-11-05T08:59:57.5885843Z [2776:1105/085957.588154:ERROR:cc/raster/one_copy_raster_buffer_provider.cc:285] Creation of StagingBuffer's SharedImage failed.
+2026-11-05T08:59:57.5886813Z [2776:1105/085957.588266:ERROR:cc/raster/one_copy_raster_buffer_provider.cc:285] Creation of StagingBuffer's SharedImage failed.
+2026-11-05T08:59:57.5887816Z [2776:1105/085957.588294:ERROR:cc/raster/one_copy_raster_buffer_provider.cc:285] Creation of StagingBuffer's SharedImage failed.
+2026-11-05T08:59:57.5888759Z [2776:1105/085957.588374:ERROR:cc/raster/one_copy_raster_buffer_provider.cc:285] Creation of StagingBuffer's SharedImage failed.
+2026-11-05T08:59:57.5889796Z [2776:1105/085957.588388:ERROR:cc/raster/one_copy_raster_buffer_provider.cc:285] Creation of StagingBuffer's SharedImage failed.
+2026-11-05T08:59:57.5890635Z [2776:1105/085957.588468:ERROR:cc/raster/one_copy_raster_buffer_provider.cc:285] Creation of StagingBuffer's SharedImage failed.
+2026-11-05T08:59:57.5891350Z [2776:1105/085957.588465:ERROR:cc/raster/one_copy_raster_buffer_provider.cc:285] Creation of StagingBuffer's SharedImage failed.
+2026-11-05T08:59:57.5892512Z [2776:1105/085957.588610:ERROR:cc/raster/one_copy_raster_buffer_provider.cc:285] Creation of StagingBuffer's SharedImage failed.
+2026-11-05T08:59:57.5893328Z [2776:1105/085957.588668:ERROR:cc/raster/one_copy_raster_buffer_provider.cc:285] Creation of StagingBuffer's SharedImage failed.
+2026-11-05T08:59:57.5894340Z [2776:1105/085957.588650:ERROR:cc/raster/one_copy_raster_buffer_provider.cc:285] Creation of StagingBuffer's SharedImage failed.
+2026-11-05T08:59:57.5895141Z [2776:1105/085957.588701:ERROR:cc/raster/one_copy_raster_buffer_provider.cc:285] Creation of StagingBuffer's SharedImage failed.
+2026-11-05T08:59:57.5895830Z [2776:1105/085957.588875:ERROR:cc/raster/one_copy_raster_buffer_provider.cc:285] Creation of StagingBuffer's SharedImage failed.
+2026-11-05T08:59:57.5896549Z [2776:1105/085957.588865:ERROR:cc/raster/one_copy_raster_buffer_provider.cc:285] Creation of StagingBuffer's SharedImage failed.
+2026-11-05T08:59:57.5897492Z [2776:1105/085957.588977:ERROR:cc/raster/one_copy_raster_buffer_provider.cc:285] Creation of StagingBuffer's SharedImage failed.
+2026-11-05T08:59:57.5898523Z [2776:1105/085957.589198:ERROR:cc/raster/one_copy_raster_buffer_provider.cc:285] Creation of StagingBuffer's SharedImage failed.
+2026-11-05T08:59:58.8385783Z [s7 7.3s]   osr size, default: window 1280x800, content 1280x800, page 1280x800@1, frame 1280x800
+2026-11-05T08:59:58.8409249Z [2723:1105/085958.840671:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+2026-11-05T09:20:01.9792023Z ##[error]The action 'Offscreen tabs, and one shown through the viewport' has timed out after 20 minutes.
