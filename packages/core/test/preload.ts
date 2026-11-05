@@ -41,6 +41,10 @@ process.env.CLOVER_KEYCHAIN_SERVICE = "com.waifucave.clover.core.test-isolated";
 process.env.WINTER_HOME = mkdtempSync(join(tmpdir(), "clover-test-sdk-home-"));
 process.env.WINTER_TMPDIR = mkdtempSync(join(tmpdir(), "clover-test-sdk-tmp-"));
 process.env.WINTER_TEST_KEYCHAIN = "memory";
+// The C0 check: an ambient `CLOVER_TMPDIR` (the developer's own) would take every session's scratch folder
+// (`agent/session-tmp.ts`) out of this run's temp root. Unset here, so it falls back to `os.tmpdir()`, which is that
+// root, for this process and every daemon it spawns; a test of the variable sets it itself.
+delete process.env.CLOVER_TMPDIR;
 // Login-shell PATH (`src/login-shell-path.ts`): every `startDaemon` boot resolves the user's login
 // shell PATH by default. No test may run the developer's REAL login shell (their rc files, their
 // agents) — this turns that off for every in-process boot AND every daemon subprocess a test spawns
