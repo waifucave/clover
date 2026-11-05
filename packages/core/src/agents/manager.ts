@@ -198,6 +198,7 @@ export class AgentManager {
       ended: () => {
         this.#o.tokens.revoke(id);
         entry.unwatch?.();
+        if (this.#entries.get(id) === entry) this.#entries.delete(id);
       },
     });
     this.#entries.set(id, entry);
