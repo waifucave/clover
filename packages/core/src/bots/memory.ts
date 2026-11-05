@@ -3,8 +3,8 @@
 // file tools. The core seeds a bot's starter memories once (§5.9 `memory`), and lists and reads the folder for
 // `memory.list` and `memory.read` (`memory.read` capability). Syncing it, and merging after a takeover, are lane H's
 // (§6.5, §8.5). Owner: lane D.
-import { closeSync, constants, existsSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, realpathSync, statSync, writeSync } from "node:fs";
-import { isAbsolute, join, relative, resolve, sep } from "node:path";
+import { closeSync, constants, existsSync, fstatSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, realpathSync, statSync, unlinkSync, writeSync } from "node:fs";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import type { MemoryEntry } from "@waifucave/clover-protocol";
 import { ContractError } from "../contracts/common";
 
@@ -34,8 +34,15 @@ function realFolder(path: string): boolean {
  *  without following a link; never over anything already there; and never through a link the bot planted in its
  *  memory, since this runs as the core, outside the fence. Each folder on the way, from `base` (the home) down, must be
  *  a real folder, and each file is created with `O_CREAT | O_EXCL | O_NOFOLLOW`, which fails on any name already taken,
- *  a dangling link included. Returns how many it copied. */
-export function seedMemory(from: string, to: string, opts: { base: string; warn?: (message: string) => void }): number {
+ *  a dangling link included. A folder swapped for a link after it was checked is caught before a byte is written: the
+ *  new file must be where the memory folder really is, by its real path and its device and inode (as the inherited
+ *  image staging checks), or it is removed. A seed file with more than one link (a hard link to something else) is
+ *  skipped. Returns how many it copied. */
+export function seedMemory(
+  from: string,
+  to: string,
+  opts: { base: string; warn?: (message: string) => void; /** TEST-ONLY: runs right before each file is created, the window a swap would use. */ beforeCreate?: (path: string) => void },
+): number {
   const warn = opts.warn ?? (() => {});
   const rel = relative(opts.base, to);
   if (rel === "" || rel.startsWith("..") || isAbsolute(rel)) throw new ContractError("invalid", `the memory folder ${to} isn't inside ${opts.base}`);
@@ -47,6 +54,7 @@ export function seedMemory(from: string, to: string, opts: { base: string; warn?
       return 0;
     }
   }
+  const realTo = realpathSync(to);
   let files = 0;
   let bytes = 0;
   const walk = (src: string, dest: string): boolean => {
@@ -72,11 +80,17 @@ export function seedMemory(from: string, to: string, opts: { base: string; warn?
       let data: Buffer;
       const inFd = openSync(s, constants.O_RDONLY | NO_FOLLOW);
       try {
+        const opened = fstatSync(inFd);
+        if (!opened.isFile() || opened.nlink > 1) {
+          warn(`the starter memory ${s} wasn't copied: it isn't a file of its own`);
+          continue;
+        }
         data = readFileSync(inFd);
       } finally {
         closeSync(inFd);
       }
       let outFd: number;
+      opts.beforeCreate?.(d);
       try {
         outFd = openSync(d, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | NO_FOLLOW, 0o644);
       } catch (err) {
@@ -84,6 +98,21 @@ export function seedMemory(from: string, to: string, opts: { base: string; warn?
         throw err;
       }
       try {
+        // The new file must be where the memory folder really is, before a single byte is written.
+        const made = fstatSync(outFd);
+        let real = "";
+        try {
+          real = realpathSync(d);
+        } catch {
+          // gone already: not ours
+        }
+        const there = real === "" ? undefined : statSync(real, { throwIfNoEntry: false });
+        if (real !== join(realTo, relative(to, d)) || there === undefined || there.ino !== made.ino || there.dev !== made.dev) {
+          warn(`starter memories under ${dirname(d)} weren't copied: a folder changed while they were`);
+          const now = lstatSync(d, { throwIfNoEntry: false });
+          if (now !== undefined && now.ino === made.ino && now.dev === made.dev) unlinkSync(d);
+          return false;
+        }
         let written = 0;
         while (written < data.length) written += writeSync(outFd, data, written, data.length - written);
       } finally {
