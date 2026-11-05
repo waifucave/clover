@@ -26,7 +26,7 @@
 // them waits for its own OK while the rest of the change applies at once. Until the user OKs it, the core passes the
 // layer's last OK'd values as `heldCard`, and `resolveTokens` takes that layer's `card.*` values from there.
 import { z } from "zod";
-import { CARD_TOKENS, TOKENS, isValueForToken, type TokenValue } from "../catalogs/tokens";
+import { ACCENT_TOKENS, CARD_TOKENS, SYSTEM_ACCENT, TOKENS, isTokenValue, isValueForToken, onAccentFor, type TokenValue } from "../catalogs/tokens";
 import { Path, Text } from "../manifest/fields";
 
 /** A token's value: a string, or a plain number for `number` and `fontWeight` tokens. The catalog
@@ -94,8 +94,10 @@ export function cardTokensChanged(before: ThemeTokens, after: ThemeTokens): bool
 
 /** One part's token values in one appearance: the catalog's defaults, then each layer's values over them, `layers`
  *  given lowest first (base theme, global theme, the bot's theme, the dressing plugins from the outermost part in,
- *  the user's overrides). */
-export function resolveTokens(appearance: Appearance, layers: readonly TokenLayer[]): Record<string, TokenValue> {
+ *  the user's overrides). An accent token left at `"system"` takes `systemAccent`, the OS accent as the engine last
+ *  read it, and its on-accent token is derived from it (`onAccentFor`); with no reading (Linux), both take their
+ *  fixed fallback, the catalog defaults for the appearance. */
+export function resolveTokens(appearance: Appearance, layers: readonly TokenLayer[], opts: { systemAccent?: string } = {}): Record<string, TokenValue> {
   const out: Record<string, TokenValue> = {};
   for (const t of TOKENS) out[t.name] = appearance === "dark" && t.dark !== undefined ? t.dark : t.default;
   for (const layer of layers) {
@@ -106,5 +108,22 @@ export function resolveTokens(appearance: Appearance, layers: readonly TokenLaye
     }
     Object.assign(out, values);
   }
+  const live = opts.systemAccent !== undefined && isTokenValue("color", opts.systemAccent) ? opts.systemAccent : undefined;
+  for (const [accent, on] of Object.entries(ACCENT_TOKENS)) {
+    if (out[accent] !== SYSTEM_ACCENT) continue;
+    const derived = live === undefined ? undefined : onAccentFor(live);
+    if (live !== undefined && derived !== undefined) {
+      out[accent] = live;
+      out[on] = derived;
+    } else {
+      out[accent] = catalogDefault(accent, appearance);
+      out[on] = catalogDefault(on, appearance);
+    }
+  }
   return out;
+}
+
+function catalogDefault(name: string, appearance: Appearance): TokenValue {
+  const t = TOKENS.find((x) => x.name === name)!;
+  return appearance === "dark" && t.dark !== undefined ? t.dark : t.default;
 }

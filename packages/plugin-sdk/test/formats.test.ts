@@ -4,6 +4,7 @@ import { createHash } from "node:crypto";
 import {
   IndexSchema, LayoutSchema, LocaleSchema, RevocationsSchema, ThemeSchema, compareVersions, isRevoked, isTreeHashExcluded,
   layoutPaths, layoutSpots, localeFallbacks, parseRange, parseSignatureFile, parseVersion, placeholdersOf, satisfies,
+  ACCENT_TOKENS, SYSTEM_ACCENT, TOKENS, contrastRatio, isValueForToken, onAccentFor, systemAccentFromOs, validateTree,
   cardTokensChanged, cssFunctionName, cssUnescape, cssUrlArgumentsAreDynamic, isCssUrlFunction, isDroppedCssFunction, resolveCssUrl, resolveTokens, setsCardTokens, sha256Hex,
   themeTokensFor, treeHash, treeHashInput, treePathProblem,
 } from "../src/index";
@@ -41,6 +42,51 @@ describe("appearance and the fallback order", () => {
     const dark = resolveTokens("dark", [base, bot, user]);
     expect(dark["color.accent"]).toBe("#FF7AB6");
     expect(dark["color.canvas"]).toBe("#212126");
+  });
+
+  test("an accent may follow the OS: system resolves live, its on-accent text passes 4.5:1, and the fallback is fixed", async () => {
+    const theme = { tokens: { "color.accent": SYSTEM_ACCENT, "card.approve.background": SYSTEM_ACCENT } };
+    // A yellow accent never gets white text; a deep one gets white.
+    const yellow = resolveTokens("light", [theme], { systemAccent: "#FFD60A" });
+    expect([yellow["color.accent"], yellow["color.accent.contrast"]]).toEqual(["#FFD60A", "#000000"]);
+    const purple = resolveTokens("dark", [theme], { systemAccent: systemAccentFromOs("5e2ca5ff")! });
+    expect([purple["color.accent"], purple["color.accent.contrast"]]).toEqual(["#5E2CA5", "#FFFFFF"]);
+    // Sealed card parts take the resolved values like any token.
+    expect([yellow["card.approve.background"], yellow["card.approve.text"]]).toEqual(["#FFD60A", "#000000"]);
+    // Whatever the OS says, the derived text passes 4.5:1.
+    for (let i = 0; i < 4096; i += 7) {
+      const accent = `#${(i * 4099 % 0x1000000).toString(16).padStart(6, "0").toUpperCase()}`;
+      const v = resolveTokens("light", [theme], { systemAccent: accent });
+      expect([accent, contrastRatio(accent, String(v["color.accent.contrast"]))! >= 4.5]).toEqual([accent, true]);
+    }
+    // No reading (Linux), or a value that isn't a colour: the fixed fallback, the catalog's pairing.
+    const def = (name: string, dark: boolean) => { const t = TOKENS.find((x) => x.name === name)!; return dark && t.dark !== undefined ? t.dark : t.default; };
+    for (const appearance of ["light", "dark"] as const) {
+      for (const opts of [{}, { systemAccent: "not a colour" }]) {
+        const v = resolveTokens(appearance, [theme], opts);
+        for (const [accent, on] of Object.entries(ACCENT_TOKENS)) {
+          expect([v[accent], v[on]]).toEqual([def(accent, appearance === "dark"), def(on, appearance === "dark")]);
+          // G's floors cover the fallback: its pairing passes 4.5:1.
+          expect(contrastRatio(String(v[accent]), String(v[on]))!).toBeGreaterThanOrEqual(4.5);
+        }
+      }
+    }
+    // A fixed accent stays as the theme set it; the OS is read only for "system".
+    expect(resolveTokens("light", [{ tokens: { "color.accent": "#123456" } }], { systemAccent: "#FFD60A" })["color.accent"]).toBe("#123456");
+    // Only accent tokens take "system".
+    expect(isValueForToken("color.accent", SYSTEM_ACCENT)).toBe(true);
+    expect(isValueForToken("color.text", SYSTEM_ACCENT)).toBe(false);
+    expect(isValueForToken("plugin.luna.glow", SYSTEM_ACCENT)).toBe(false);
+    expect(onAccentFor("rgb(0 0 0)")).toBeUndefined();
+    expect(systemAccentFromOs("0a84ffff")).toBe("#0A84FF");
+    expect(systemAccentFromOs("blue")).toBeUndefined();
+    // A theme file may say so.
+    const files = new Map([
+      ["clover.json", JSON.stringify({ manifest: 1, id: "luna", name: "Luna", contributes: { themes: [{ id: "luna", file: "t.json" }] } })],
+      ["t.json", JSON.stringify({ theme: 1, name: "Luna", tokens: { "color.accent": "system", "color.text": "system" } })],
+    ]);
+    const r = await validateTree({ readText: (p) => files.get(p), exists: (p) => files.has(p), listDirs: () => [] }, { folderName: "luna" });
+    expect(r.issues.map((i) => `${i.code}:${i.path}`)).toEqual(["token_value:/tokens/color.text"]);
   });
 
   test("a change to card styling waits for its OK: cards keep the values last OK'd, the rest applies (review S7)", () => {

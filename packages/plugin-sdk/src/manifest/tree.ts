@@ -4,7 +4,7 @@
 // in-memory folder in tests.
 import type { ValidationIssue } from "@waifucave/clover-protocol";
 import { spotInfo } from "../catalogs/spots";
-import { TOKENS, TOKEN_TYPES, type TokenValue, isTokenValue, isPluginTokenName } from "../catalogs/tokens";
+import { TOKENS, TOKEN_TYPES, type TokenValue, isTokenValue, isPluginTokenName, isValueForToken } from "../catalogs/tokens";
 import { LayoutSchema, layoutPaths, layoutSpots } from "../formats/layout";
 import { LocaleSchema, localeKeyOwner } from "../formats/locale";
 import { ThemeSchema, setsCardTokens } from "../formats/theme";
@@ -207,7 +207,7 @@ async function checkTheme(reader: PluginFolderReader, base: string, path: string
       if (type === undefined) {
         if (!isPluginTokenName(name, topId)) f.error(full, "entry", "token_unknown", [...where, name], `"${name}" is no token of the catalog, nor one of this plugin's (plugin.${topId}.…)`);
         else if (!TOKEN_TYPES.some((type) => isTokenValue(type, v))) f.error(full, "entry", "token_value", [...where, name], "this value isn't a safe token value");
-      } else if (!isTokenValue(type, v)) {
+      } else if (!isValueForToken(name, v)) {
         f.error(full, "entry", "token_value", [...where, name], `"${v}" is not a ${type}`);
       }
     }

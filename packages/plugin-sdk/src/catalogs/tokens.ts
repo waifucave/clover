@@ -15,6 +15,16 @@
 // (`--clover-plugin-mcp_blender-glow`), so the name-to-property map stays one to one.
 //
 // Every value, a catalog token's or a plugin's own, passes `isSafeTokenValue` before it reaches CSS.
+//
+// The OS accent colour (the owner's ask: controls follow it, as Claude's desktop app does). An accent token
+// (`ACCENT_TOKENS`) may take the value `"system"`. Lane E's theme engine resolves it from the OS:
+// `systemPreferences.getAccentColor()` on macOS and Windows (`systemAccentFromOs`), re-read live when the OS accent
+// changes (the OS's change notification), and on Linux, or with no reading, the fixed fallback: the token's catalog
+// default for the appearance, whose pairing with its on-accent token G's contrast floors cover. Text and glyphs drawn
+// on an accent take its on-accent token, which for a live value is derived: black or white, whichever passes 4.5:1
+// against the resolved accent (`onAccentFor`), so a yellow accent never gets white text. Sealed card parts take the
+// resolved values like any token (`card.approve.background` is an accent token too, and resolves on its own, so
+// `card.*` still never derives from a token outside it). `resolveTokens` (formats/theme.ts) does all of this.
 
 export const TOKEN_TYPES = ["color", "dimension", "fontFamily", "fontWeight", "number", "duration", "easing", "shadow", "paint"] as const;
 /** `paint` is a CSS background: a colour or a gradient. */
@@ -275,7 +285,7 @@ export function isTokenValue(type: TokenType, value: TokenValue): boolean {
   if (typeof value === "number") return type === "number" || (type === "fontWeight" && value >= 1 && value <= 1000);
   const v = value.trim();
   switch (type) {
-    case "color": return COLOR.test(v);
+    case "color": return v.toLowerCase() !== SYSTEM_ACCENT && COLOR.test(v);
     case "dimension": return DIMENSION.test(v);
     case "number": return NUMBER.test(v);
     case "fontFamily": return FAMILY.test(value);
@@ -292,11 +302,58 @@ export function isAnyTokenValue(value: unknown): value is TokenValue {
   return (typeof value === "string" || typeof value === "number") && TOKEN_TYPES.some((type) => isTokenValue(type, value));
 }
 
-/** Whether a value may be set for a token by name: the catalog token's own type, or any type for a plugin's own. */
+/** Whether a value may be set for a token by name: the catalog token's own type, or any type for a plugin's own;
+ *  `"system"` only for an accent token. */
 export function isValueForToken(name: string, value: unknown): value is TokenValue {
+  if (value === SYSTEM_ACCENT) return Object.hasOwn(ACCENT_TOKENS, name);
   const type = TOKENS.find((t) => t.name === name)?.type;
   if (type === undefined) return isAnyTokenValue(value);
   return (typeof value === "string" || typeof value === "number") && isTokenValue(type, value);
+}
+
+/** The value an accent token takes to follow the OS accent colour. */
+export const SYSTEM_ACCENT = "system";
+
+/** The accent tokens, which may be `"system"`, each with the token that draws text and glyphs on it. */
+export const ACCENT_TOKENS: Readonly<Record<string, string>> = {
+  "color.accent": "color.accent.contrast",
+  "card.approve.background": "card.approve.text",
+};
+
+/** Electron's `systemPreferences.getAccentColor()` (`RRGGBBAA`) as a token value (`#RRGGBB`), or undefined when it
+ *  isn't one. */
+export function systemAccentFromOs(raw: string): string | undefined {
+  const m = /^#?([0-9a-f]{6})([0-9a-f]{2})?$/i.exec(raw.trim());
+  return m ? `#${m[1]!.toUpperCase()}` : undefined;
+}
+
+/** A `#rgb`, `#rgba`, `#rrggbb` or `#rrggbbaa` colour's WCAG relative luminance, ignoring alpha; undefined otherwise. */
+function luminance(color: string): number | undefined {
+  let hex = /^#([0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})$/i.exec(color.trim())?.[1];
+  if (hex === undefined) return undefined;
+  if (hex.length <= 4) hex = [...hex].map((c) => c + c).join("");
+  const channel = (i: number) => {
+    const c = Number.parseInt(hex!.slice(i, i + 2), 16) / 255;
+    return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  };
+  return 0.2126 * channel(0) + 0.7152 * channel(2) + 0.0722 * channel(4);
+}
+
+/** The WCAG contrast ratio of two hex colours, from 1 to 21; undefined when either isn't hex. */
+export function contrastRatio(a: string, b: string): number | undefined {
+  const la = luminance(a);
+  const lb = luminance(b);
+  if (la === undefined || lb === undefined) return undefined;
+  return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
+}
+
+/** Text and glyphs on an accent: black or white, whichever passes 4.5:1 against it (one always does), the higher
+ *  when both do; undefined for a value that isn't hex. */
+export function onAccentFor(accent: string): "#000000" | "#FFFFFF" | undefined {
+  const black = contrastRatio(accent, "#000000");
+  const white = contrastRatio(accent, "#FFFFFF");
+  if (black === undefined || white === undefined) return undefined;
+  return black >= white ? "#000000" : "#FFFFFF";
 }
 
 /** The text a value takes in CSS. */
