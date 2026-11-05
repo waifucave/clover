@@ -71,21 +71,26 @@ describe("the plugin API's gating", () => {
   });
 
   test("without the capability the call doesn't exist; secrets only in a host's own process", () => {
-    expect(apiCallAllowed("conversation.history", "host", ["conversation.read"])).toBe(true);
-    expect(apiCallAllowed("conversation.history", "host", ["conversation.post"])).toBe(false);
+    expect(apiCallAllowed("conversation.history", "shared", ["conversation.read"])).toBe(true);
+    expect(apiCallAllowed("conversation.history", "shared", ["conversation.post"])).toBe(false);
     expect(apiCallAllowed("conversation.note", "ui", ["conversation.post"])).toBe(true);
     expect(apiCallAllowed("secrets.get", "ui", [])).toBe(false);
     // Only a process of the plugin's own reads a secret, never a worker of a shared process (review minor).
-    expect(apiCallAllowed("secrets.get", "host", [])).toBe(false);
-    expect(apiCallAllowed("secrets.get", "own-process", [])).toBe(true);
-    expect(apiCallAllowed("keys.open", "own-process", [])).toBe(true);
-    expect(apiCallAllowed("keys.open", "host", [])).toBe(true);
-    expect(apiCallAllowed("host.call", "host", [])).toBe(false);
-    expect(apiCallAllowed("commands.run", "host", ["call:luna"], { plugin: "luna/tarot" })).toBe(true);
-    expect(apiCallAllowed("commands.run", "host", ["call:luna"], { plugin: "nova" })).toBe(false);
-    expect(apiCallAllowed("net.fetch", "host", ["network:api.acme.ai"], { host: "api.acme.ai" }, networkAllows)).toBe(true);
-    expect(apiCallAllowed("net.fetch", "host", ["network:api.acme.ai"], { host: "evil.example" }, networkAllows)).toBe(false);
-    expect(apiCallAllowed("no.such.call", "host", ["files"])).toBe(false);
+    expect(apiCallAllowed("secrets.get", "shared", [])).toBe(false);
+    expect(apiCallAllowed("secrets.get", "clover", [])).toBe(false);
+    expect(apiCallAllowed("secrets.get", "own", [])).toBe(true);
+    // Key pairs only from the clover process (the owner's answer to S4).
+    for (const call of ["keys.open", "keys.publicKey", "keys.delete"]) {
+      expect([call, apiCallAllowed(call, "clover", []), apiCallAllowed(call, "shared", []), apiCallAllowed(call, "own", []), apiCallAllowed(call, "ui", [])]).toEqual([call, true, false, false, false]);
+    }
+    // Calls for any host half reach every process.
+    for (const from of ["clover", "shared", "own"] as const) expect(apiCallAllowed("ui.send", from, [])).toBe(true);
+    expect(apiCallAllowed("host.call", "shared", [])).toBe(false);
+    expect(apiCallAllowed("commands.run", "shared", ["call:luna"], { plugin: "luna/tarot" })).toBe(true);
+    expect(apiCallAllowed("commands.run", "shared", ["call:luna"], { plugin: "nova" })).toBe(false);
+    expect(apiCallAllowed("net.fetch", "shared", ["network:api.acme.ai"], { host: "api.acme.ai" }, networkAllows)).toBe(true);
+    expect(apiCallAllowed("net.fetch", "shared", ["network:api.acme.ai"], { host: "evil.example" }, networkAllows)).toBe(false);
+    expect(apiCallAllowed("no.such.call", "shared", ["files"])).toBe(false);
   });
 });
 

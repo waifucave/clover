@@ -64,6 +64,15 @@ export const BotId = AnyPluginId;
 
 /** The plugins we ship (§5.1). No core rule names any other plugin (§5.3). */
 export const BUNDLED_ROOT_PLUGIN = "clover";
+
+/** The plugin-host process a host half runs in (§5.2, amended by the owner's answer to S4). `clover`: the bundled
+ *  `clover` tree's own, which no third-party worker shares, so none can act as the forwarder, use the account token
+ *  or open with the core's key pairs; `shared`: the one every other plugin's host halves share, whose workers aren't
+ *  isolated from each other's memory; `own`: a process of the plugin's own (Node or native modules, an adapter that
+ *  signs with its secret). The core decides it from the install record, never from what a plugin claims. */
+export const HOST_PROCESSES = ["clover", "shared", "own"] as const;
+export const HostProcess = z.enum(HOST_PROCESSES);
+export type HostProcess = z.infer<typeof HostProcess>;
 export const BUNDLED_BOT_PLUGIN = "alpha";
 
 /** A session: a bot's main conversation, a side thread, a background agent or a coding session (§9.3). */
@@ -220,4 +229,7 @@ export const CLOVER_ERR = {
   NOT_MAIN: -32018,
   /** `protocol.hello` named a protocol version older than the daemon serves; `data` is `{ min, max }`. */
   VERSION_REFUSED: -32019,
+  /** A plugin-host connection named a plugin that doesn't run in its process (a third-party worker presenting a
+   *  `clover/*` id), or made a call only the `clover` process makes (the account token, `keys.*`; S4). */
+  PROCESS_REFUSED: -32020,
 } as const;

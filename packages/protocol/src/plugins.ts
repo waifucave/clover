@@ -7,7 +7,7 @@
 import { z } from "zod";
 import { utf16 } from "./strings";
 import {
-  AnyPluginId, BotId, Caller, CardId, ChangeResult, ComputerName, Empty, Ok, Scope, SemverVersion, Text,
+  AnyPluginId, BotId, Caller, CardId, ChangeResult, ComputerName, Empty, HostProcess, Ok, Scope, SemverVersion, Text,
   Timestamp, TopPluginId, TreeHash,
 } from "./common";
 import { coreEvent, defineEvent, defineMethod } from "./rpc";
@@ -32,15 +32,6 @@ export const PluginProvenance = z.object({
   bot: BotId.optional(),
 });
 export type PluginProvenance = z.infer<typeof PluginProvenance>;
-
-/** The process a host half runs in (§5.2, review S4). `shared`: a worker in the shared host, whose workers aren't
- *  isolated from each other's memory; `clover`: a worker in a process only the `clover` tree's host halves share, so
- *  no third-party worker can act as the forwarder or use the account token; `own`: a process of the plugin's own
- *  (Node, native modules). Which one the `clover` tree gets waits on the owner (S4); the core's `hostProcessFor`
- *  decides, so either answer is a one-line change there. */
-export const HOST_PROCESSES = ["shared", "clover", "own"] as const;
-export const HostProcess = z.enum(HOST_PROCESSES);
-export type HostProcess = z.infer<typeof HostProcess>;
 
 /** Worked out from the manifest, never declared (§5.3). */
 export const PluginClass = z.enum(["data", "web", "code"]);
@@ -433,11 +424,15 @@ export const PLUGINS_METHODS = {
   }),
 
   // -----------------------------------------------------------------------------------------------
-  // The plugin host's channel (§5.2). One connection, over the pipe the daemon started it with. The plugin host speaks
-  // only this channel (review S3): a host half's plugin-API calls all go through `pluginHost.api`, whose `pluginId`
-  // the host stamps from its own worker table (the worker that sent the call, never a value a worker gives), and the
-  // daemon checks each call against the plugin SDK's `API_CALLS`, the one gate, then acts as that plugin: the
-  // fence's `as`, a `plugin_message`'s `from`, a hold's owner. A watch's values come back as `pluginHost.deliver`;
+  // The plugin host's channel (§5.2). One connection per plugin-host process, over the pipe the daemon started it
+  // with and bound by its token to that process (`HostProcess`): the bundled `clover` tree's, the shared one every
+  // other plugin's host halves share, and a Node or native plugin's own (the owner's answer to S4). The plugin host
+  // speaks only this channel (review S3): a host half's plugin-API calls all go through `pluginHost.api`, whose
+  // `pluginId` the host stamps from its own worker table (the worker that sent the call, never a value a worker
+  // gives). The daemon refuses a call naming a plugin it didn't start in that connection's process
+  // (`CLOVER_ERR.PROCESS_REFUSED`: a third-party worker presenting a `clover/*` id), checks it against the plugin
+  // SDK's `API_CALLS`, the one gate, then acts as that plugin: the fence's `as`, a `plugin_message`'s `from`, a hold's
+  // owner. A watch's values come back as `pluginHost.deliver`;
   // streams go by `pluginHost.chunk` (to the daemon) and `pluginHost.feed` (to a call's handler). Lane B fills in the
   // details at B-M2.
   // -----------------------------------------------------------------------------------------------
@@ -447,7 +442,7 @@ export const PLUGINS_METHODS = {
     params: z.object({
       pluginId: AnyPluginId, folder: utf16(4096), entry: utf16(4096),
       runtime: z.enum(["bun", "node"]), dataFolder: utf16(4096),
-      /** Which process the host half runs in (`HOST_PROCESSES`; review S4). */
+      /** The process the host half runs in, which the core decides from the install record, never the plugin (S4). */
       process: HostProcess,
     }),
     result: Ok,

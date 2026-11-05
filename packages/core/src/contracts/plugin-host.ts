@@ -1,9 +1,11 @@
 // Contract: PluginHost (spec §3.2 "Plugin host", §5.1 "Live changes" and "Crashes and logs", §5.2, §5.4 "Limits").
 // Owner: lane B.
 //
-// One plugin-host process per computer, separate from the daemon, with each plugin's host half in its own worker
-// (Node or native plugins in a process of their own, and the `clover` tree's host halves in one of theirs while
-// `CLOVER_TREE_PROCESS` says so: `hostProcessFor`). The daemon calls into it; it never runs plugin code itself.
+// Two plugin-host processes per computer, separate from the daemon (the owner's answer to S4, amending §5.2's one
+// shared host): the bundled `clover` tree's host halves run in a process of their own, and every other plugin's share
+// the other one, each plugin in its own worker; Node or native plugins get a process of their own. The core decides
+// the process from the install record (`hostProcessFor`), never from anything a plugin claims. The daemon calls into
+// them; it never runs plugin code itself.
 //
 // What it promises:
 // * `invoke` runs a handler (an export of `host.entry`) with structured-clone arguments and result, the caller, and a
@@ -20,12 +22,15 @@
 // * `host` MCP servers are reached as a raw JSON-RPC channel (the in-process transport the plugin SDK gives them).
 // * A plugin's own calls into the plugin API come back to the core through `serveApi`, which checks capabilities.
 //   The host stamps each call's `pluginId` from its own worker table, the worker that made the call, never from
-//   anything the worker says (review S3); across the pipe it is `pluginHost.api`'s `pluginId`.
+//   anything the worker says (review S3); across the pipe it is `pluginHost.api`'s `pluginId`, on a connection bound
+//   to its process. The core's router refuses a call whose plugin doesn't run in the process it came from, so a
+//   third-party worker presenting a `clover/*` id is refused, and honours the account token and `keys.*` only from
+//   the `clover` process (`guardApiRouter`, S4).
 // * `stream` runs a handler that returns an async iterable (a model adapter's output, a voice's audio; review S16):
 //   values arrive in order, the iterable's return value ends the stream, and `input` feeds a handler that takes one
 //   (a voice's microphone audio) as `ctx.input`. The limits, cancelling, crashes and reloads are `invoke`'s.
-import type { Caller, HostProcess } from "@waifucave/clover-protocol";
-import type { Unsubscribe } from "./common";
+import { BUNDLED_ROOT_PLUGIN, type Caller, type HostProcess, type PluginSource } from "@waifucave/clover-protocol";
+import { ContractError, type Unsubscribe } from "./common";
 
 export const PLUGIN_CALL_TIMEOUT_MS = 10_000;
 export const PLUGIN_CALL_MAX_TIMEOUT_MS = 600_000;
@@ -37,17 +42,48 @@ export const HEARTBEAT_TIMEOUT_MS = 30_000;
 /** How long calls in flight get when a worker is replaced (§5.1 "a grace period"); lane B's choice. */
 export const RELOAD_GRACE_MS = 5_000;
 
-/** Where the `clover` tree's host halves run (review S4, waiting on the owner): `clover` keeps them in a process of
- *  their own, so no third-party worker shares memory with the account token or the forwarder's keys; `shared` puts
- *  them with every other worker. Changing the answer is this one line. */
-export const CLOVER_TREE_PROCESS: Extract<HostProcess, "clover" | "shared"> = "clover";
+/** What the core knows of an installed plugin, from its own install record: never what the plugin says of itself. */
+export interface InstallRecord {
+  id: string;
+  source: PluginSource;
+  /** The manifest's `host.runtime`. */
+  runtime?: "bun" | "node";
+}
 
-/** The process a host half runs in: its own for a Node plugin, the `clover` tree's per `CLOVER_TREE_PROCESS`, else
- *  the shared host. */
-export function hostProcessFor(pluginId: string, runtime: "bun" | "node"): HostProcess {
-  if (runtime === "node") return "own";
-  const top = pluginId.includes("/") ? pluginId.slice(0, pluginId.indexOf("/")) : pluginId;
-  return top === "clover" ? CLOVER_TREE_PROCESS : "shared";
+/** The process a host half runs in (the owner's answer to S4): a Node or native plugin's own; the `clover` process for
+ *  the bundled `clover` tree (installed with the app, top-level id `clover`); the shared one for every other. */
+export function hostProcessFor(plugin: InstallRecord): HostProcess {
+  if (plugin.runtime === "node") return "own";
+  const top = plugin.id.includes("/") ? plugin.id.slice(0, plugin.id.indexOf("/")) : plugin.id;
+  return plugin.source === "bundled" && top === BUNDLED_ROOT_PLUGIN ? "clover" : "shared";
+}
+
+/** The `auth` name of the account token (the plugin SDK's `WAIFUCAVE_AUTH`). */
+const ACCOUNT_AUTH = "waifucave";
+
+/** Whether a plugin-API call is one the core honours only from the `clover` process: the account token
+ *  (`net.fetch` with `auth: "waifucave"`) and the core's key pairs (`keys.*`). */
+export function cloverProcessOnly(path: string, args: readonly unknown[]): boolean {
+  if (path.startsWith("keys.")) return true;
+  if (path !== "net.fetch") return false;
+  const opts = args[2];
+  return typeof opts === "object" && opts !== null && (opts as { auth?: unknown }).auth === ACCOUNT_AUTH;
+}
+
+/** The process checks every router sits behind (S4): a call whose plugin the core didn't start in the process it came
+ *  from is refused (`refused`), as is a `clover`-only call from any other process; the rest go to `router`, which
+ *  checks capabilities. `recordOf` reads the core's install records. */
+export function guardApiRouter(router: ApiRouter, recordOf: (pluginId: string) => InstallRecord | undefined): ApiRouter {
+  return async (call) => {
+    const record = recordOf(call.pluginId);
+    if (record === undefined || hostProcessFor(record) !== call.process) {
+      throw new ContractError("refused", `${call.pluginId} doesn't run in the ${call.process} process`);
+    }
+    if (call.process !== "clover" && cloverProcessOnly(call.path, call.args)) {
+      throw new ContractError("refused", `${call.path} is honoured only from the clover process`);
+    }
+    return router(call);
+  };
 }
 
 /** The exports a host module keeps for the host itself, never callable as handlers. */
@@ -125,7 +161,7 @@ export interface McpChannel {
  *  capabilities (the SDK's `API_CALLS` table) and refuses a call the plugin may not make. `pluginId` is the one the
  *  host stamped. A listener reaches the router as a function and a streamed argument as an async iterable; across
  *  the pipe they are a subscription (`pluginHost.deliver`) and pieces (`pluginHost.chunk`). */
-export type ApiRouter = (call: { pluginId: string; path: string; args: unknown[]; caller: Caller }) => Promise<unknown>;
+export type ApiRouter = (call: { pluginId: string; process: HostProcess; path: string; args: unknown[]; caller: Caller }) => Promise<unknown>;
 
 export interface PluginHost {
   /** The computer this host runs on. */

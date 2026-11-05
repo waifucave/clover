@@ -11,8 +11,8 @@ import {
   AnyPluginId, Caller, ComputerName, LANES, LEVELS, TopPluginId, TreePath, isAnyPluginId, isPluginId, levelAbove,
   pluginIdFromSegment, pluginIdToSegment, topPluginIdOf,
 } from "../src/common";
-import { CLOVER_ROLES, PLUGIN_ROLES, REMOTE_ROLES, USER_ROLES, helloVersionServed, type CloverRole } from "../src/roles";
-import { CLOVER_ERR, CLOVER_PROTOCOL_MIN_VERSION, CLOVER_PROTOCOL_VERSION } from "../src/common";
+import { CLOVER_ROLES, CloverHelloParams, PLUGIN_ROLES, REMOTE_ROLES, USER_ROLES, helloVersionServed, type CloverRole } from "../src/roles";
+import { CLOVER_ERR, CLOVER_PROTOCOL_MIN_VERSION, CLOVER_PROTOCOL_VERSION, HOST_PROCESSES } from "../src/common";
 import { METHODS, SessionEvent } from "../src/index";
 import { CARD_ANSWER_SKEW_MS, answerTimeOk, canonicalJson, cardAnswerSigningInput, cardHashInput } from "../src/approvals";
 import { buildCloverArtifacts } from "../scripts/clover-artifacts";
@@ -198,6 +198,12 @@ describe("the allow lists", () => {
     for (const name of calls("plugin-host")) expect(name === "protocol.hello" || name.startsWith("pluginHost.")).toBe(true);
     for (const name of daemonRequestsTo("plugin-host")) expect(name.startsWith("pluginHost.")).toBe(true);
     for (const e of CLOVER_EVENTS.values()) expect(e.roles).not.toContain("plugin-host");
+    // Each plugin-host connection is bound to its process, which the core decided (the owner's answer to S4).
+    expect(CloverHelloParams.safeParse({ protocolVersion: 1, role: "plugin-host", token: "t", clientName: "host", hostProcess: "clover" }).success).toBe(true);
+    expect(CloverHelloParams.safeParse({ protocolVersion: 1, role: "plugin-host", token: "t", clientName: "host", hostProcess: "mine" }).success).toBe(false);
+    expect([...HOST_PROCESSES]).toEqual(["clover", "shared", "own"]);
+    expect(Object.keys((CLOVER_METHODS.get("pluginHost.start")!.params as z.ZodObject).shape)).toContain("process");
+    expect(CLOVER_ERR.PROCESS_REFUSED).toBe(-32020);
     // Every call it makes for a plugin names the plugin, which the host stamps from its worker table.
     for (const name of ["pluginHost.api", "pluginHost.unwatch", "pluginHost.state", "pluginHost.log"]) {
       expect(Object.keys((CLOVER_METHODS.get(name)!.params as z.ZodObject).shape)).toContain("pluginId");

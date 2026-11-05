@@ -6,9 +6,10 @@ import { isContractError } from "../common";
 import { FakeClock, advanceAndSettle, flush } from "../fakes/clock";
 import { FakePluginHost } from "../fakes/plugin-host";
 import {
-  CLOVER_TREE_PROCESS, CRASH_WINDOW_MS, PLUGIN_CALL_MAX_TIMEOUT_MS, PLUGIN_CALL_TIMEOUT_MS, RELOAD_GRACE_MS, crashBackoffMs,
-  hostProcessFor, resolveHandler, type HostedStatus,
+  CRASH_WINDOW_MS, PLUGIN_CALL_MAX_TIMEOUT_MS, PLUGIN_CALL_TIMEOUT_MS, RELOAD_GRACE_MS, cloverProcessOnly, crashBackoffMs,
+  guardApiRouter, hostProcessFor, resolveHandler, type ApiRouter, type HostedStatus, type InstallRecord,
 } from "../plugin-host";
+import { WAIFUCAVE_AUTH } from "../../../../plugin-sdk/src/api/plugin-api";
 import type { HandlerContext } from "../sdk-types";
 
 const USER: Caller = { kind: "user", client: "app" };
@@ -238,14 +239,14 @@ describe("FakePluginHost", () => {
 
   test("a plugin's own API calls reach the core's router by path, with its id and the caller", async () => {
     const { host } = setup();
-    const calls: { pluginId: string; path: string; args: unknown[]; caller: Caller }[] = [];
+    const calls: Parameters<ApiRouter>[0][] = [];
     host.serveApi(async (call) => {
       calls.push(call);
       return call.path === "storage.synced.get" ? ["fool", "tower"] : undefined;
     });
     host.define("tarot", { deck: async (_a: unknown, ctx: HandlerContext) => ctx.api.storage.synced.get<string[]>("deck") });
     expect(await host.invoke<string[]>({ pluginId: "tarot", handler: "deck", args: 0, caller: USER })).toEqual(["fool", "tower"]);
-    expect(calls).toEqual([{ pluginId: "tarot", path: "storage.synced.get", args: ["deck"], caller: USER }]);
+    expect(calls).toEqual([{ pluginId: "tarot", process: "shared", path: "storage.synced.get", args: ["deck"], caller: USER }]);
   });
 
   test("the plugin id on an API call is the worker's, stamped by the host, whatever the plugin passes (review S3)", async () => {
@@ -262,12 +263,54 @@ describe("FakePluginHost", () => {
     expect(ids).toEqual(["third-party", "third-party"]);
   });
 
-  test("the clover tree's host halves run in a process of their own while the switch says so (review S4)", () => {
-    expect(hostProcessFor("clover/forwarder", "bun")).toBe(CLOVER_TREE_PROCESS);
-    expect(hostProcessFor("clover", "bun")).toBe(CLOVER_TREE_PROCESS);
-    expect(hostProcessFor("cloverleaf", "bun")).toBe("shared");
-    expect(hostProcessFor("luna/tarot", "bun")).toBe("shared");
-    expect(hostProcessFor("luna", "node")).toBe("own");
+  test("the core decides the process from the install record: the bundled clover tree's own, the shared one, a Node plugin's own (S4)", () => {
+    expect(hostProcessFor({ id: "clover/forwarder", source: "bundled" })).toBe("clover");
+    expect(hostProcessFor({ id: "clover", source: "bundled" })).toBe("clover");
+    // An id is no claim: a clover id that wasn't installed with the app is a third-party plugin.
+    expect(hostProcessFor({ id: "clover/forwarder", source: "local" })).toBe("shared");
+    expect(hostProcessFor({ id: "cloverleaf", source: "bundled" })).toBe("shared");
+    expect(hostProcessFor({ id: "luna/tarot", source: "index" })).toBe("shared");
+    expect(hostProcessFor({ id: "opensky", source: "index", runtime: "node" })).toBe("own");
+    expect(hostProcessFor({ id: "clover/model-bedrock", source: "bundled", runtime: "node" })).toBe("own");
+  });
+
+  test("a third-party worker presenting a clover/* id is refused, and the account token and keys answer only the clover process (S4)", async () => {
+    const { host } = setup();
+    const records = new Map<string, InstallRecord>([
+      ["clover/forwarder", { id: "clover/forwarder", source: "bundled" }],
+      ["luna", { id: "luna", source: "index" }],
+    ]);
+    const served: { pluginId: string; process: string; path: string }[] = [];
+    const inner: ApiRouter = async (call) => void served.push({ pluginId: call.pluginId, process: call.process, path: call.path });
+    host.serveApi(guardApiRouter(inner, (id) => records.get(id)));
+    host.define("clover/forwarder", {
+      next: async (_a: unknown, ctx: HandlerContext) => {
+        await ctx.api.keys!.open("forwarder", { enc: new Uint8Array(32), ciphertext: new Uint8Array(16) });
+        await ctx.api.net.fetch("https://hooks.waifucave.com/v1/next", undefined, { auth: WAIFUCAVE_AUTH });
+      },
+    }, { source: "bundled" });
+    host.define("luna", {
+      sneak: async (_a: unknown, ctx: HandlerContext) => ctx.api.net.fetch("https://hooks.waifucave.com/v1/next", undefined, { auth: WAIFUCAVE_AUTH }),
+      keys: async (_a: unknown, ctx: HandlerContext) => ctx.api.keys!.publicKey("mine"),
+      fine: async (_a: unknown, ctx: HandlerContext) => ctx.api.storage.synced.get("x"),
+    }, { source: "index" });
+    expect([host.processOf("clover/forwarder"), host.processOf("luna")]).toEqual(["clover", "shared"]);
+    await host.invoke({ pluginId: "clover/forwarder", handler: "next", args: null, caller: USER });
+    expect(served.map((c) => `${c.pluginId}@${c.process}:${c.path}`)).toEqual(["clover/forwarder@clover:keys.open", "clover/forwarder@clover:net.fetch"]);
+    // From the shared process: the account token and key pairs are refused, even for luna's own pair.
+    expect(isContractError(await rejection(host.invoke({ pluginId: "luna", handler: "sneak", args: null, caller: USER })), "refused")).toBe(true);
+    expect(isContractError(await rejection(host.invoke({ pluginId: "luna", handler: "keys", args: null, caller: USER })), "refused")).toBe(true);
+    await host.invoke({ pluginId: "luna", handler: "fine", args: null, caller: USER });
+    // A compromised shared process presenting the forwarder's id, or an unknown one, is refused before any call runs.
+    served.length = 0;
+    for (const path of ["keys.open", "net.fetch", "storage.synced.get"]) {
+      expect(isContractError(await rejection(host.forgeApiCall("shared", "clover/forwarder", path, [])), "refused")).toBe(true);
+    }
+    expect(isContractError(await rejection(host.forgeApiCall("clover", "luna", "storage.synced.get", [])), "refused")).toBe(true);
+    expect(isContractError(await rejection(host.forgeApiCall("shared", "no-such-plugin", "storage.synced.get", [])), "refused")).toBe(true);
+    expect(served).toEqual([]);
+    expect(cloverProcessOnly("net.fetch", ["https://api.example.com", {}, { auth: "luna" }])).toBe(false);
+    expect(cloverProcessOnly("keys.delete", ["x"])).toBe(true);
   });
 
   test("a streamed handler's values arrive in order, then its return value; its input arrives as ctx.input (review S16)", async () => {

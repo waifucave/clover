@@ -6,7 +6,7 @@
 // as that session. `protocol.hello`'s result says who the connection counts as.
 import { z } from "zod";
 import { utf16 } from "./strings";
-import { AnyPluginId, CLOVER_PROTOCOL_MIN_VERSION, Caller, DeviceId, SessionId } from "./common";
+import { AnyPluginId, CLOVER_PROTOCOL_MIN_VERSION, Caller, DeviceId, HostProcess, SessionId } from "./common";
 
 export const CLOVER_ROLES = [
   /** The Clover app's main process (Electron). Its `clover` layer changes the core's settings directly (§5.5). */
@@ -16,9 +16,12 @@ export const CLOVER_ROLES = [
   "layer",
   /** The CLI and TUI. The user from their own terminal; a bot's or agent's session from inside one (§3.1). */
   "cli",
-  /** The plugin host (§5.2), over the pipe it was started with. It speaks only its channel (`pluginHost.*`): a host
-   *  half's plugin-API calls go through `pluginHost.api`, whose `pluginId` the host stamps from its own worker table,
-   *  so the daemon knows which plugin each call is for (review S3). */
+  /** A plugin-host process (§5.2), over the pipe it was started with: the bundled `clover` tree's own, the shared one
+   *  for every other plugin, or a plugin's own (the owner's answer to S4). Its token binds the connection to that
+   *  process (`hostProcess` in the hello), which the core decided from the install record. It speaks only its
+   *  channel (`pluginHost.*`): a host half's plugin-API calls go through `pluginHost.api`, whose `pluginId` the host
+   *  stamps from its own worker table, and a call naming a plugin that doesn't run in the connection's process is
+   *  refused (review S3, S4). */
   "plugin-host",
   /** One ACP agent session's bridge MCP server (§9.3): its tools, `SendMessage` and `Glossary`, nothing else. */
   "bridge",
@@ -58,6 +61,8 @@ export const CloverHelloParams = z.object({
   pluginId: AnyPluginId.optional(),
   /** `bridge`: the agent session the bridge serves (the token is bound to it, §9.3). */
   agentSessionId: SessionId.optional(),
+  /** `plugin-host`: which plugin-host process this is; the token is bound to it, so a claim that differs is refused. */
+  hostProcess: HostProcess.optional(),
   /** `remote`, `web`, `peer`: the device on the other end, which the link also proves. */
   device: DeviceId.optional(),
   /** Client features the daemon may rely on, by name; unknown names are ignored. */

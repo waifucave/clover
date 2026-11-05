@@ -13,7 +13,7 @@
 // overrides (another service origin, say) are the plugin's own settings, never environment variables, which the
 // plugin host doesn't pass on.
 import {
-  type BotView, type Caller, type CardMeta, type CommandView, type ComputerView, type CloverWindow, type DeviceView, type FileStat,
+  type BotView, type Caller, type CardMeta, type CommandView, type ComputerView, type CloverWindow, type DeviceView, type FileStat, type HostProcess,
   type HoldTarget, type HoldView, type MemoryEntry, type PlanReading, type RoutineRunView, type RoutineView,
   type Screenshot, type SessionView, type TabOwner, type TabView, type UsageRow, type Viewport, BUNDLED_ROOT_PLUGIN,
   topPluginIdOf,
@@ -300,7 +300,8 @@ export type KeyedFetchErrorCode = (typeof KEYED_FETCH_ERROR_CODES)[number];
 
 /** The `auth` name that adds this computer's waifucave account token (lane H mints it), the key to every computer
  *  (§8.1). No manifest may name a secret `waifucave`. The rules:
- *  * only plugins of the `clover` tree may use it (the forwarder, push); for any other it is no entry of theirs
+ *  * only plugins of the `clover` tree may use it (the forwarder, push), and only from the `clover` process, which the
+ *    core decides from the install record (the owner's answer to S4); for any other it is no entry of theirs
  *    (`unknown_auth`);
  *  * only `https://` URLs on a `waifucave.com` host in the plugin's `network:` capabilities (`mayUseWaifucaveAuth`);
  *    any other URL fails `refused`;
@@ -320,9 +321,16 @@ export const WAIFUCAVE_DOMAIN = "waifucave.com";
  *  exact origins, `http` allowed (`http://127.0.0.1:8787`); the core's own setting, never a plugin's. */
 export type WaifucaveTarget = { domain: string } | { origins: readonly string[] };
 
-/** Whether a plugin may fetch `url` with `auth: "waifucave"`; its `network:` capability is checked as for any fetch. */
-export function mayUseWaifucaveAuth(pluginId: string, url: string, target: WaifucaveTarget = { domain: WAIFUCAVE_DOMAIN }): boolean {
-  if (topPluginIdOf(pluginId) !== BUNDLED_ROOT_PLUGIN) return false;
+/** Whether a plugin may fetch `url` with `auth: "waifucave"`: a `clover` plugin, calling from the `clover` process
+ *  (`from`, the process its connection is bound to; a component is `ui`). Its `network:` capability is checked as for
+ *  any fetch. */
+export function mayUseWaifucaveAuth(
+  pluginId: string,
+  url: string,
+  from: HostProcess | "ui",
+  target: WaifucaveTarget = { domain: WAIFUCAVE_DOMAIN },
+): boolean {
+  if (from !== "clover" || topPluginIdOf(pluginId) !== BUNDLED_ROOT_PLUGIN) return false;
   let u: URL;
   try {
     u = new URL(url);
@@ -345,7 +353,8 @@ export interface SecretsApi {
 /** Key pairs the core keeps for a plugin on this computer, whose private halves never leave the core: in the secret
  *  store, never synced, one set per computer, kept when the plugin is removed (as its data folder is) until `delete`.
  *  For a host half that must receive what was sealed to this computer, as the waifucave forwarder does, without
- *  holding a secret a worker could leak. Host halves only. */
+ *  holding a secret a worker could leak. Only from the `clover` process (the owner's answer to S4): the core honours
+ *  `open` there alone, so the other calls are the `clover` tree's too, since a pair no one can open with is no use. */
 export interface KeysApi {
   /** The named X25519 key pair's public key (32 bytes, raw), made on first use. */
   publicKey(name: string): Promise<Uint8Array>;

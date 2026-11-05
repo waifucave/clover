@@ -7,6 +7,7 @@ import type {
   LogsApi, MemoryApi, NetApi, NotifyApi, PluginApi, PointsApi, RoutinesApi, SecretsApi, SettingsApi, SyncedStore,
   UiSendApi, UsageApi,
 } from "../api/plugin-api";
+import type { HostProcess } from "@waifucave/clover-protocol";
 
 type Fn = (...args: never[]) => unknown;
 type FnKeys<T> = { [K in keyof T & string]-?: NonNullable<T[K]> extends Fn ? K : never }[keyof T & string];
@@ -24,13 +25,13 @@ export type ApiCallPath =
 export interface ApiCallInfo {
   /** The capability it needs; `call:*` is `call:<the target's top-level id>`, `network:*` the URL's host. */
   readonly capability?: string;
-  /** Host halves, only a host half in a process of the plugin's own (never a worker of a shared process), components
-   *  (UI layers), or both. */
-  readonly where: "host" | "own-process" | "ui" | "both";
+  /** Host halves in any process; only a host half in a process of the plugin's own (`own`, never a worker of a shared
+   *  process); only the `clover` process (the owner's answer to S4); components (UI layers); or both. */
+  readonly where: "host" | "own" | "clover" | "ui" | "both";
 }
 
-/** Where a call comes from: a component, a host half in a shared process, or one in a process of its own. */
-export type ApiCaller = "ui" | "host" | "own-process";
+/** Where a call comes from: a component, or a host half in the process the core started it in (`HostProcess`). */
+export type ApiCaller = "ui" | HostProcess;
 
 const both = (capability?: string): ApiCallInfo => (capability ? { capability, where: "both" } : { where: "both" });
 
@@ -44,9 +45,10 @@ export const API_CALLS = {
   "storage.synced.get": both(), "storage.synced.set": both(), "storage.synced.delete": both(), "storage.synced.keys": both(), "storage.synced.watch": both(),
   "net.fetch": both("network:*"),
   /** Only a process of the plugin's own; never a worker of a shared process, never a layer (§5.2). */
-  "secrets.get": { where: "own-process" },
-  /** The private halves stay in the core, so any host half may keep key pairs; never a layer. */
-  "keys.publicKey": { where: "host" }, "keys.open": { where: "host" }, "keys.delete": { where: "host" },
+  "secrets.get": { where: "own" },
+  /** Only the `clover` process (S4): the core honours `keys.open` there alone, and a pair no one can open with is no
+   *  use; never a layer. */
+  "keys.publicKey": { where: "clover" }, "keys.open": { where: "clover" }, "keys.delete": { where: "clover" },
   "settings.get": both(), "settings.watch": both(), "settings.set": both(),
   "conversation.list": both("conversation.read"), "conversation.get": both("conversation.read"),
   "conversation.history": both("conversation.read"), "conversation.follow": both("conversation.read"),
@@ -78,7 +80,7 @@ export function apiCallAllowed(call: string, where: ApiCaller, capabilities: rea
   if (!info) return false;
   const reaches = info.where === "both"
     || info.where === where
-    || (info.where === "host" && where === "own-process");
+    || (info.where === "host" && where !== "ui");
   if (!reaches) return false;
   if (info.capability === undefined) return true;
   if (info.capability === "call:*") return target?.plugin !== undefined && capabilities.includes(`call:${target.plugin.split("/")[0]}`);

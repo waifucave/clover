@@ -1,11 +1,13 @@
 // FakePluginHost: host modules defined in the test, run in-process, with the host's limits, crash backoff, reloads and
 // MCP channels on an injected clock. A handler's `ctx.api` routes every plugin-API call to the router the core
-// serves (`serveApi`), as the real host's worker does over its pipe; callbacks reach the router as functions.
-import type { Caller } from "@waifucave/clover-protocol";
+// serves (`serveApi`), as the real host's worker does over its pipe, stamped with the worker's plugin id and the
+// process the core put it in (`hostProcessFor`, from the install record `define` takes); callbacks reach the router
+// as functions. `forgeApiCall` is what a compromised process could send on its connection.
+import type { Caller, HostProcess, PluginSource } from "@waifucave/clover-protocol";
 import type { Clock, TimerHandle } from "../clock";
 import { ContractError, Listeners, type Unsubscribe } from "../common";
 import {
-  CRASH_LIMIT, CRASH_WINDOW_MS, PLUGIN_CALL_MAX_TIMEOUT_MS, PLUGIN_CALL_TIMEOUT_MS, RELOAD_GRACE_MS, crashBackoffMs, resolveHandler,
+  CRASH_LIMIT, CRASH_WINDOW_MS, PLUGIN_CALL_MAX_TIMEOUT_MS, PLUGIN_CALL_TIMEOUT_MS, RELOAD_GRACE_MS, crashBackoffMs, hostProcessFor, resolveHandler,
   type ApiRouter, type HostedState, type HostedStatus, type InvokeRequest, type McpChannel, type PluginHost, type StreamRequest,
 } from "../plugin-host";
 import type { HandlerContext, HostModule, McpServerTransport, PluginApi } from "../sdk-types";
@@ -16,6 +18,8 @@ interface Call {
 
 interface Hosted {
   module: HostModule;
+  /** Decided by the core from the install record, never by the plugin. */
+  process: HostProcess;
   /** A module defined while the old one runs: it takes over at the next start, as a new worker would. */
   next?: HostModule;
   state: HostedState;
@@ -42,13 +46,26 @@ export class FakePluginHost implements PluginHost {
     this.computer = opts.computer ?? "Studio";
   }
 
-  /** Installs a plugin's host module. For a plugin already running, the new module takes over at its next start
-   *  (a reload, a restart, or after a crash), as a new worker would; the running one keeps serving until then. */
-  define(pluginId: string, module: HostModule): void {
+  /** Installs a plugin's host module, with what its install record says (default: a local plugin on Bun). For a
+   *  plugin already running, the new module takes over at its next start (a reload, a restart, or after a crash), as
+   *  a new worker would; the running one keeps serving until then. */
+  define(pluginId: string, module: HostModule, record: { source?: PluginSource; runtime?: "bun" | "node" } = {}): void {
+    const process = hostProcessFor({ id: pluginId, source: record.source ?? "local", ...(record.runtime ? { runtime: record.runtime } : {}) });
     const h = this.#hosted.get(pluginId);
-    if (!h) this.#hosted.set(pluginId, { module, state: "idle", crashTimes: [], calls: new Set(), waiters: [] });
-    else if (h.state === "idle" || h.state === "stopped") h.module = module;
+    if (!h) this.#hosted.set(pluginId, { module, process, state: "idle", crashTimes: [], calls: new Set(), waiters: [] });
+    else if (h.state === "idle" || h.state === "stopped") [h.module, h.process] = [module, process];
     else h.next = module;
+  }
+
+  /** The process a plugin's host half runs in. */
+  processOf(pluginId: string): HostProcess | undefined {
+    return this.#hosted.get(pluginId)?.process;
+  }
+
+  /** What a compromised process could send on its own connection: any plugin id, which the core's router must refuse
+   *  unless that plugin runs in that process (`guardApiRouter`). */
+  forgeApiCall(process: HostProcess, pluginId: string, path: string, args: unknown[]): Promise<unknown> {
+    return this.#router({ pluginId, process, path, args, caller: { kind: "core" } });
   }
 
   /** The plugin was removed: calls in flight and new ones fail `not_installed`. */
@@ -354,10 +371,11 @@ export class FakePluginHost implements PluginHost {
   /** A plugin API whose every call, at any depth, goes to the router by its dotted path. */
   #apiFor(pluginId: string, caller: Caller): PluginApi {
     const router = () => this.#router;
+    const process = () => this.#hosted.get(pluginId)?.process ?? "shared";
     const make = (path: string[]): unknown =>
       new Proxy(() => {}, {
         get: (_t, prop) => (typeof prop === "string" && prop !== "then" ? make([...path, prop]) : undefined),
-        apply: (_t, _this, args: unknown[]) => router()({ pluginId, path: path.join("."), args, caller }),
+        apply: (_t, _this, args: unknown[]) => router()({ pluginId, process: process(), path: path.join("."), args, caller }),
       });
     return make([]) as PluginApi;
   }

@@ -3047,16 +3047,16 @@
       "where": "both"
     },
     "secrets.get": {
-      "where": "own-process"
+      "where": "own"
     },
     "keys.publicKey": {
-      "where": "host"
+      "where": "clover"
     },
     "keys.open": {
-      "where": "host"
+      "where": "clover"
     },
     "keys.delete": {
-      "where": "host"
+      "where": "clover"
     },
     "settings.get": {
       "where": "both"

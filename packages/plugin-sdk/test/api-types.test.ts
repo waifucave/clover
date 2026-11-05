@@ -121,22 +121,25 @@ describe("the declarations", () => {
     expect(manifest.contributes?.commands?.[0]?.handler).toBe("draw");
   });
 
-  test("only the clover tree fetches waifucave's own https hosts with the account token", () => {
-    expect(mayUseWaifucaveAuth("clover/forwarder", "https://hooks.waifucave.com/v1/next")).toBe(true);
-    expect(mayUseWaifucaveAuth("clover", "https://push.waifucave.com./v1/notify")).toBe(true);
-    expect(mayUseWaifucaveAuth("luna", "https://hooks.waifucave.com/")).toBe(false);
-    expect(mayUseWaifucaveAuth("clover/forwarder", "http://hooks.waifucave.com/")).toBe(false);
-    expect(mayUseWaifucaveAuth("clover/forwarder", "https://evil-waifucave.com/")).toBe(false);
-    expect(mayUseWaifucaveAuth("clover/forwarder", "https://waifucave.com.evil.example/")).toBe(false);
-    expect(mayUseWaifucaveAuth("clover/forwarder", "https://u:p@hooks.waifucave.com/")).toBe(false);
-    expect(mayUseWaifucaveAuth("clover/forwarder", "not a url")).toBe(false);
-    expect(mayUseWaifucaveAuth("clover/forwarder", "https://hooks.emulator.test/", { domain: "emulator.test" })).toBe(true);
+  test("only the clover tree, from the clover process, fetches waifucave's own https hosts with the account token", () => {
+    const C = "clover" as const;
+    expect(mayUseWaifucaveAuth("clover/forwarder", "https://hooks.waifucave.com/v1/next", C)).toBe(true);
+    expect(mayUseWaifucaveAuth("clover", "https://push.waifucave.com./v1/notify", C)).toBe(true);
+    expect(mayUseWaifucaveAuth("luna", "https://hooks.waifucave.com/", C)).toBe(false);
+    expect(mayUseWaifucaveAuth("clover/forwarder", "http://hooks.waifucave.com/", C)).toBe(false);
+    expect(mayUseWaifucaveAuth("clover/forwarder", "https://evil-waifucave.com/", C)).toBe(false);
+    expect(mayUseWaifucaveAuth("clover/forwarder", "https://waifucave.com.evil.example/", C)).toBe(false);
+    expect(mayUseWaifucaveAuth("clover/forwarder", "https://u:p@hooks.waifucave.com/", C)).toBe(false);
+    expect(mayUseWaifucaveAuth("clover/forwarder", "not a url", C)).toBe(false);
+    expect(mayUseWaifucaveAuth("clover/forwarder", "https://hooks.emulator.test/", C, { domain: "emulator.test" })).toBe(true);
+    // A clover id from any other process is no clover plugin's call (the owner's answer to S4).
+    for (const from of ["shared", "own", "ui"] as const) expect(mayUseWaifucaveAuth("clover/forwarder", "https://hooks.waifucave.com/v1/next", from)).toBe(false);
     // A development profile's emulators are exact origins, http allowed (review minor).
     const dev = { origins: ["http://127.0.0.1:8787", "http://127.0.0.1:8788"] };
-    expect(mayUseWaifucaveAuth("clover/forwarder", "http://127.0.0.1:8787/v1/next", dev)).toBe(true);
-    expect(mayUseWaifucaveAuth("clover/forwarder", "http://127.0.0.1:9999/v1/next", dev)).toBe(false);
-    expect(mayUseWaifucaveAuth("clover/forwarder", "https://hooks.waifucave.com/", dev)).toBe(false);
-    expect(mayUseWaifucaveAuth("luna", "http://127.0.0.1:8787/", dev)).toBe(false);
+    expect(mayUseWaifucaveAuth("clover/forwarder", "http://127.0.0.1:8787/v1/next", C, dev)).toBe(true);
+    expect(mayUseWaifucaveAuth("clover/forwarder", "http://127.0.0.1:9999/v1/next", C, dev)).toBe(false);
+    expect(mayUseWaifucaveAuth("clover/forwarder", "https://hooks.waifucave.com/", C, dev)).toBe(false);
+    expect(mayUseWaifucaveAuth("luna", "http://127.0.0.1:8787/", C, dev)).toBe(false);
     expect(typeof host.ingress).toBe("object");
     expect(Object.keys(asObject).sort()).toEqual(["ack", "drop", "list", "next", "register", "unregister"]);
   });

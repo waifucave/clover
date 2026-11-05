@@ -2753,8 +2753,8 @@
           "process": {
             "type": "string",
             "enum": [
-              "shared",
               "clover",
+              "shared",
               "own"
             ]
           }
