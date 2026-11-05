@@ -92,5 +92,11 @@ export async function waitFor<T>(probe: () => Promise<T | undefined> | T | undef
 
 export function errorText(e: unknown): string {
   if (e instanceof Error) return e.message;
+  if (e !== null && typeof e === "object") {
+    // a page's rejection (a DOMException, say) reaches the main process as a plain object
+    const o = e as { name?: unknown; message?: unknown };
+    if (typeof o.message === "string") return typeof o.name === "string" ? `${o.name}: ${o.message}` : o.message;
+    try { return JSON.stringify(e); } catch { /* fall through */ }
+  }
   return String(e);
 }

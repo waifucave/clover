@@ -100,7 +100,7 @@ export function installAndStart(cfg: PairConfig, n: PairNames, windowsLogon: "In
     const write = (file: string, text: string): void => { writeFileSync(file, Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from(text, "utf16le")])); };
     const coreXml = join(cfg.home, "core-task.xml");
     const appXml = join(cfg.home, "app-task.xml");
-    write(coreXml, windowsTaskXml({ user, command: cfg.daemonBin, args: `daemon "--home=${cfg.home}"`, description: "Clover core (S7 spike)", logon: true, logonType: windowsLogon }));
+    write(coreXml, windowsTaskXml({ user, command: cfg.daemonBin, args: `${cfg.windowsSupervise === true ? "supervise" : "daemon"} "--home=${cfg.home}"`, description: "Clover core (S7 spike)", logon: true, logonType: windowsLogon }));
     write(appXml, windowsTaskXml({ user, command: cfg.electron, args: `"${cfg.appDir}" "--home=${cfg.home}"`, description: "Clover app (S7 spike)", logon: false, logonType: windowsLogon }));
     steps.push(run("schtasks", ["/Create", "/TN", n.coreTask, "/XML", coreXml, "/F"]));
     steps.push(run("schtasks", ["/Create", "/TN", n.appTask, "/XML", appXml, "/F"]));

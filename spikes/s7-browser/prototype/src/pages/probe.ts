@@ -188,12 +188,10 @@ async function startMedia(): Promise<string> {
     S.media.lastTime = cur;
   });
   box.appendChild(video);
-  let result = "ok";
-  try {
-    await video.play();
-  } catch (e) {
-    result = `video.play: ${String(e)}`;
-  }
+  // Neither promise is guaranteed to settle (a browser with no audio device, a headless shell): never wait forever.
+  const settle = <T>(p: Promise<T>, ms: number): Promise<string> =>
+    Promise.race([p.then(() => "ok", (e: unknown) => `failed: ${String(e)}`), new Promise<string>((r) => setTimeout(() => r(`no answer in ${ms} ms`), ms))]);
+  let result = `video.play ${await settle(video.play(), 3000)}`;
   try {
     audio = new AudioContext();
     const osc = audio.createOscillator();
@@ -201,7 +199,8 @@ async function startMedia(): Promise<string> {
     gain.gain.value = 0.0001;
     osc.connect(gain).connect(audio.destination);
     osc.start();
-    if (audio.state !== "running") await audio.resume().catch(() => undefined);
+    if (audio.state !== "running") result += `; audio.resume ${await settle(audio.resume(), 2000)}`;
+    result += `; audio ${audio.state}`;
   } catch (e) {
     result += `; audio: ${String(e)}`;
   }

@@ -153,7 +153,7 @@ jobs:
       - name: Probe with Ozone's headless platform (no X, no Wayland)
         run: |
           mkdir -p "$RESULTS"
-          env -u DISPLAY -u WAYLAND_DISPLAY bun scripts/probe.ts --checks=move,throttle,capture,cost --out="$RESULTS/electron-${{ matrix.label }}.json" --label=${{ matrix.label }} -- --ozone-platform=headless
+          env -u DISPLAY -u WAYLAND_DISPLAY bun scripts/probe.ts --checks=move,throttle,capture,cost --out="$RESULTS/electron-${{ matrix.label }}.json" --label=${{ matrix.label }} -- --ozone-platform=headless --ozone-override-screen-size=1920,1080
       - if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
@@ -163,6 +163,8 @@ jobs:
 
   long:
     name: electron · linux-x11 long run (past five hidden minutes)
+    # answered in the first round (results/); run again by hand
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     steps:
@@ -243,6 +245,7 @@ jobs:
           - { os: macos-latest, label: macos, app: task }
           - { os: windows-latest, label: windows-task, app: task }
           - { os: windows-latest, label: windows-spawn, app: spawn }
+          - { os: windows-latest, label: windows-supervise, app: task, supervise: true }
           - { os: ubuntu-24.04, label: linux, app: task }
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
@@ -281,7 +284,7 @@ jobs:
             DISPLAY=:99 bun src/pair/run.ts --daemon-bin="out/pair/clover-core-s7" --electron="$electron" --app-dir=out/pair/app --display=:99 --out="$RESULTS/pair-${{ matrix.label }}.json"
             kill $xvfb || true
           else
-            bun src/pair/run.ts --daemon-bin="out/pair/clover-core-s7$exe" --electron="$electron" --app-dir=out/pair/app --windows-app-start=${{ matrix.app }} --out="$RESULTS/pair-${{ matrix.label }}.json"
+            bun src/pair/run.ts --daemon-bin="out/pair/clover-core-s7$exe" --electron="$electron" --app-dir=out/pair/app --windows-app-start=${{ matrix.app }} ${{ matrix.supervise && '--windows-supervise' || '' }} --out="$RESULTS/pair-${{ matrix.label }}.json"
           fi
       - if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

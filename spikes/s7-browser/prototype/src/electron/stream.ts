@@ -11,7 +11,7 @@ import type { IncomingMessage } from "node:http";
 import type { Duplex } from "node:stream";
 import { WebSocketServer, type RawData, type WebSocket } from "ws";
 import { cpuBetween, sample } from "./metrics.ts";
-import type { Place, Tab, TabHost } from "./tabs.ts";
+import { placeAvailable, type Place, type Tab, type TabHost } from "./tabs.ts";
 import { errorText, sleep, summarize, waitFor, withTimeout, type Summary } from "../shared/stats.ts";
 
 type Log = (line: string) => void;
@@ -33,6 +33,8 @@ export interface StreamRow {
   senderCpuPct: number;
   viewerCpuPct: number;
   dropped?: number;
+  /** The source tab's own rAF rate while it was streamed (does streaming keep a hidden tab's frames coming?). */
+  sourceRafHz?: number;
   extra?: Record<string, unknown>;
   errors: string[];
 }
@@ -122,21 +124,25 @@ export async function streamCheck(host: TabHost, origin: string, link: Link, log
   const codecs = await exec<string[]>(streamer.webContents, "window.__st.codecs()").catch(() => [] as string[]);
   log(`  stream: WebRTC send codecs here: ${codecs.join(", ")}`);
 
-  const measure = async (road: string, scenario: string, source: Place, tab: Tab, innerWidth: number, run: () => Promise<Record<string, unknown> | undefined>, after?: () => Promise<Record<string, unknown>>): Promise<void> => {
+  const measure = async (road: string, scenario: string, source: Place, tab: Tab, innerWidth: number, innerHeight: number, run: () => Promise<Record<string, unknown> | undefined>, after?: () => Promise<Record<string, unknown>>): Promise<void> => {
     const row: StreamRow = {
       road, scenario, source, seconds, framesPerSec: 0, decodedPerSec: 0, latencyMs: summarize([]), interFrameMs: summarize([]),
       bytesPerSec: 0, kbitPerSec: 0, avgFrameBytes: 0, frameWidths: {}, senderCpuPct: 0, viewerCpuPct: 0, errors: [],
     };
     try {
-      await exec(viewer.webContents, `window.__v.reset(${JSON.stringify(road)}, ${innerWidth})`);
+      await exec(viewer.webContents, `window.__v.reset(${JSON.stringify(road)}, ${innerWidth}, ${innerHeight})`);
       const startExtra = await run();
-      await sleep(2000); // warm up
-      await exec(viewer.webContents, `window.__v.reset(${JSON.stringify(road)}, ${innerWidth})`);
+      // warm up; WebRTC's congestion control starts low and ramps up, so it gets longer
+      await sleep(road.startsWith("webrtc") ? 6000 : 2000);
+      await exec(viewer.webContents, `window.__v.reset(${JSON.stringify(road)}, ${innerWidth}, ${innerHeight})`);
       link.reset();
       const rtc0 = road.startsWith("webrtc") ? await exec<Record<string, number>>(viewer.webContents, "window.__v.rtcStats()") : undefined;
+      const src0 = await host.snapshot(tab).catch(() => undefined);
       const m0 = sample();
       await sleep(seconds * 1000);
       const m1 = sample();
+      const src1 = await host.snapshot(tab).catch(() => undefined);
+      if (src0 !== undefined && src1 !== undefined) row.sourceRafHz = ((src1.raf.n - src0.raf.n) * 1000) / (src1.now - src0.now);
       const vs = await exec<ViewerStats>(viewer.webContents, "window.__v.stats()");
       const cpu = cpuBetween(m0, m1);
       row.viewerCpuPct = cpu.byPid[viewerPid()] ?? 0;
@@ -174,12 +180,17 @@ export async function streamCheck(host: TabHost, origin: string, link: Link, log
   for (const scenario of ["anim", "static"]) {
     for (const road of ["screencast", "capturePoll", "webrtc-vp8", "webrtc-h264", "webcodecs-vp8", "webcodecs-h264"]) plan.push({ road, scenario, source: "hiddenWindow" });
   }
-  plan.push({ road: "screencast", scenario: "anim", source: "shown" });
-  plan.push({ road: "webrtc-vp8", scenario: "anim", source: "shown" });
+  for (const road of ["screencast", "capturePoll", "webcodecs-h264"]) plan.push({ road, scenario: "anim", source: "invisibleWindow" });
+  for (const road of ["screencast", "webcodecs-h264"]) plan.push({ road, scenario: "anim", source: "tinyWindow" });
+  for (const road of ["screencast", "webrtc-vp8", "webcodecs-h264"]) plan.push({ road, scenario: "anim", source: "shown" });
 
   for (const p of plan) {
     let tab: Tab | undefined;
     let stop: (() => Promise<void>) | undefined;
+    if (!placeAvailable(p.source)) {
+      rows.push({ road: p.road, scenario: p.scenario, source: p.source, seconds: 0, framesPerSec: 0, decodedPerSec: 0, latencyMs: summarize([]), interFrameMs: summarize([]), bytesPerSec: 0, kbitPerSec: 0, avgFrameBytes: 0, frameWidths: {}, senderCpuPct: 0, viewerCpuPct: 0, errors: ["not possible here"] });
+      continue;
+    }
     try {
       tab = await host.create({ place: p.source, partition: "bot-stream", throttling: false, path: `/pages/probe.html?scenario=${p.scenario}&sse=0` });
       await sleep(1000);
@@ -216,7 +227,7 @@ export async function streamCheck(host: TabHost, origin: string, link: Link, log
           t.wc.debugger.removeListener("message", onMessage);
           link.onAck = undefined;
         };
-        await measure(p.road, p.scenario, p.source, t, snap.innerWidth, async () => {
+        await measure(p.road, p.scenario, p.source, t, snap.innerWidth, snap.innerHeight, async () => {
           await t.wc.debugger.sendCommand("Page.startScreencast", { format: "jpeg", quality: 70, maxWidth: 1280, maxHeight: 800, everyNthFrame: 1 });
           return undefined;
         }, async () => ({ droppedInMain: dropped }));
@@ -240,7 +251,7 @@ export async function streamCheck(host: TabHost, origin: string, link: Link, log
           }
         };
         stop = async () => { running = false; await sleep(100); link.onAck = undefined; };
-        await measure(p.road, p.scenario, p.source, t, snap.innerWidth, async () => { void loop(); return undefined; },
+        await measure(p.road, p.scenario, p.source, t, snap.innerWidth, snap.innerHeight, async () => { void loop(); return undefined; },
           async () => ({ mainThreadJpegMsPerFrame: captures > 0 ? encodeMs / captures : 0 }));
       } else {
         // tab capture for webrtc-* and webcodecs-*
@@ -259,7 +270,7 @@ export async function streamCheck(host: TabHost, origin: string, link: Link, log
             rows.push({ road: p.road, scenario: p.scenario, source: p.source, seconds: 0, framesPerSec: 0, decodedPerSec: 0, latencyMs: summarize([]), interFrameMs: summarize([]), bytesPerSec: 0, kbitPerSec: 0, avgFrameBytes: 0, frameWidths: {}, senderCpuPct: 0, viewerCpuPct: 0, errors: [`${prefer} not offered here`] });
             continue;
           }
-          await measure(p.road, p.scenario, p.source, t, snap.innerWidth, async () => {
+          await measure(p.road, p.scenario, p.source, t, snap.innerWidth, snap.innerHeight, async () => {
             const offer = await exec<RTCSessionDescriptionInitLike>(streamer.webContents, `window.__st.rtcOffer(${JSON.stringify(prefer)})`);
             const answer = await exec<RTCSessionDescriptionInitLike>(viewer.webContents, `window.__v.rtcAnswer(${JSON.stringify(offer)})`);
             await exec(streamer.webContents, `window.__st.rtcAccept(${JSON.stringify(answer)})`);
@@ -272,7 +283,7 @@ export async function streamCheck(host: TabHost, origin: string, link: Link, log
         } else {
           const codec = p.road === "webcodecs-h264" ? "avc1.42E028" : "vp8";
           await exec(viewer.webContents, `window.__v.connect(${JSON.stringify(`${wsOrigin}/link/viewer`)})`);
-          await measure(p.road, p.scenario, p.source, t, snap.innerWidth, async () => {
+          await measure(p.road, p.scenario, p.source, t, snap.innerWidth, snap.innerHeight, async () => {
             await exec(streamer.webContents, "window.__st.resetCounters()");
             const cfg = await exec<Record<string, unknown>>(streamer.webContents, `window.__st.webcodecs(${JSON.stringify(`${wsOrigin}/link/streamer`)}, ${JSON.stringify(codec)}, 2000000, ${snap.innerWidth})`);
             return { capture: via, encoder: cfg };

@@ -7,7 +7,7 @@ import { tmpdir, release, cpus, totalmem } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { captureCheck, costCheck, longCheck, moveCheck, throttleCheck } from "./checks.ts";
 import { Link, streamCheck } from "./stream.ts";
-import { TabHost } from "./tabs.ts";
+import { placeAvailable, TabHost } from "./tabs.ts";
 import { startServer } from "../shared/server.ts";
 import { errorText, rounded } from "../shared/stats.ts";
 
@@ -86,10 +86,15 @@ async function main(): Promise<void> {
     await host.closeAll();
     write("running");
   };
-  await run("move", async () => ({
-    detached: await moveCheck(host, server, "detached", log),
-    hiddenWindow: await moveCheck(host, server, "hiddenWindow", log),
-  }));
+  await run("move", async () => {
+    const out: Record<string, unknown> = {};
+    out.detached = await moveCheck(host, server, "detached", log);
+    out.hiddenWindow = await moveCheck(host, server, "hiddenWindow", log);
+    out.hiddenWindowFit = await moveCheck(host, server, "hiddenWindow", log, { fit: true });
+    if (placeAvailable("invisibleWindow")) out.invisibleWindow = await moveCheck(host, server, "invisibleWindow", log);
+    out.tinyWindow = await moveCheck(host, server, "tinyWindow", log);
+    return out;
+  });
   await run("throttle", () => throttleCheck(host, log));
   await run("capture", () => captureCheck(host, log));
   await run("cost", () => costCheck(host, log));

@@ -8,7 +8,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { cpus, release, tmpdir, totalmem } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import jpeg from "jpeg-js";
-import { Browser, Page } from "./cdp.ts";
+import { Browser, Page, type Transport } from "./cdp.ts";
 import { install, type Artifact, type InstallResult } from "./install.ts";
 import { ageMs, decodeMarker, rgbaReader } from "../shared/marker.ts";
 import { sampleTree, treeCpuPct } from "../shared/procmem.ts";
@@ -50,13 +50,16 @@ function baseArgs(artifact: Artifact, profile: string, extra: string[]): string[
   ];
 }
 
-interface Launcher { bin: string; artifact: Artifact; extra: string[]; sandbox: string }
+interface Launcher { bin: string; artifact: Artifact; extra: string[]; sandbox: string; transport: Transport }
 
-async function launch(l: Launcher, profile: string, transport: "pipe" | "port" = "pipe"): Promise<{ b: Browser; ms: number }> {
+async function launch(l: Launcher, profile: string, transport: Transport = l.transport): Promise<{ b: Browser; ms: number }> {
   const t0 = Date.now();
   const b = await Browser.launch(l.bin, baseArgs(l.artifact, profile, l.extra), transport);
   return { b, ms: Date.now() - t0 };
 }
+
+/** The transports to try, best first: a pipe no other process can reach, else the loopback port. */
+const TRANSPORTS: Transport[] = process.platform === "win32" ? ["winpipe", "pipe", "port"] : ["pipe", "port"];
 
 function decodeJpeg(data: Buffer, pageWidth: number, at: number): number | undefined {
   try {
@@ -87,38 +90,52 @@ async function forArtifact(artifact: Artifact, server: SpikeServer): Promise<Rec
     errors.push(`install: ${errorText(e)}`);
     return out;
   }
-  const l: Launcher = { bin: inst.bin, artifact, extra: [], sandbox: "on" };
+  const l: Launcher = { bin: inst.bin, artifact, extra: [], sandbox: "on", transport: TRANSPORTS[0]! };
   const profiles = join(home, "browsers", "profiles");
 
-  // --- start: cold, warm, the pipe and the port --------------------------------------------------------------------
+  // --- start: which transport works, with the sandbox if possible; cold, warm and the port to compare -------------
   try {
     const prof = join(profiles, `${artifact}-start`);
-    let first: { b: Browser; ms: number };
-    try {
-      first = await launch(l, prof);
-    } catch (e) {
-      // Ubuntu 23.10+ restricts unprivileged user namespaces: without an AppArmor profile Chrome's sandbox can't start.
-      out.sandboxedStartError = errorText(e);
-      l.extra = ["--no-sandbox"];
-      l.sandbox = "off (--no-sandbox: the sandboxed start failed)";
-      first = await launch(l, prof);
+    const attempts: Array<Record<string, unknown>> = [];
+    let first: { b: Browser; ms: number } | undefined;
+    for (const sandboxed of [true, false]) {
+      if (!sandboxed && process.platform !== "linux") break; // only Linux's sandbox needs an OS profile
+      for (const t of TRANSPORTS) {
+        const cand: Launcher = { ...l, transport: t, extra: sandboxed ? [] : ["--no-sandbox"] };
+        try {
+          first = await launch(cand, prof);
+          attempts.push({ transport: t, sandboxed, ok: true, ms: first.ms });
+          l.transport = t;
+          l.extra = cand.extra;
+          l.sandbox = sandboxed ? "on" : "off (--no-sandbox: every sandboxed start failed)";
+          break;
+        } catch (e) {
+          attempts.push({ transport: t, sandboxed, ok: false, error: errorText(e).slice(0, 600) });
+        }
+      }
+      if (first !== undefined) break;
     }
+    out.startAttempts = attempts;
+    if (first === undefined) throw new Error("no start worked");
     const version = await first.b.send<{ product: string; userAgent: string }>("Browser.getVersion");
     out.product = version.product;
     out.sandbox = l.sandbox;
+    out.transport = l.transport;
     await first.b.close();
     const warm = await launch(l, prof);
     await warm.b.close();
     let port: { ms?: number; error?: string } = {};
-    try {
-      const p = await launch(l, join(profiles, `${artifact}-port`), "port");
-      port = { ms: p.ms };
-      await p.b.close();
-    } catch (e) {
-      port = { error: errorText(e) };
+    if (l.transport !== "port") {
+      try {
+        const p = await launch(l, join(profiles, `${artifact}-port`), "port");
+        port = { ms: p.ms };
+        await p.b.close();
+      } catch (e) {
+        port = { error: errorText(e) };
+      }
     }
-    out.start = { coldPipeMs: first.ms, warmPipeMs: warm.ms, portMs: port.ms, portError: port.error, pipe: "works" };
-    log(`${artifact}: ${version.product}, cold start ${first.ms} ms, warm ${warm.ms} ms over the pipe; sandbox ${l.sandbox}`);
+    out.start = { transport: l.transport, coldMs: first.ms, warmMs: warm.ms, portMs: port.ms, portError: port.error };
+    log(`${artifact}: ${version.product}, cold start ${first.ms} ms, warm ${warm.ms} ms over ${l.transport}; sandbox ${l.sandbox}`);
   } catch (e) {
     errors.push(`start: ${errorText(e)}`);
     return out;
@@ -168,7 +185,7 @@ async function forArtifact(artifact: Artifact, server: SpikeServer): Promise<Rec
         await t1.close();
         await t2.close();
       } catch (e) {
-        errors.push(`tabs: ${errorText(e)}`);
+        errors.push(`tabs: ${errorText(e)}${b.exited ? ` — the browser exited (${b.exitCode ?? b.exitSignal}); stderr: ${b.tail(10)}` : ""}`);
       }
     }
 
@@ -225,7 +242,7 @@ async function forArtifact(artifact: Artifact, server: SpikeServer): Promise<Rec
         log(`${artifact}: screencast ${JSON.stringify(rounded(out.screencast, 1))}`);
         await t.close();
       } catch (e) {
-        errors.push(`screenshots: ${errorText(e)}`);
+        errors.push(`screenshots: ${errorText(e)}${b.exited ? ` — the browser exited (${b.exitCode ?? b.exitSignal}); stderr: ${b.tail(10)}` : ""}`);
       }
     }
   } finally {
@@ -314,7 +331,7 @@ async function forArtifact(artifact: Artifact, server: SpikeServer): Promise<Rec
       };
       log(`${artifact}: cost ${JSON.stringify(rounded(out.cost, 1))}`);
     } catch (e) {
-      errors.push(`cost: ${errorText(e)}`);
+      errors.push(`cost: ${errorText(e)}${main?.exited ? ` — the browser exited (${main.exitCode ?? main.exitSignal}); stderr: ${main.tail(10)}` : ""}`);
     } finally {
       for (const p of pages) await p.close().catch(() => undefined);
       await main?.close();

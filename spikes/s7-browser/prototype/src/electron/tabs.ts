@@ -1,11 +1,17 @@
 // The tab host for the Electron checks: tabs as WebContentsViews, each in a session partition, sandboxed, with no
 // Node and no preload (spec §12.1), in one of these places:
-//   detached      — a WebContentsView in no window at all
-//   hiddenWindow  — a view in a BaseWindow that is never shown (shared by several tabs, or one per tab)
-//   shown         — a view in a visible window (the browser view), laid out at that view's size
-//   osr           — an offscreen-rendering BrowserWindow (frames arrive as 'paint' events; can't be shown as a view)
+//   detached         a WebContentsView in no window at all
+//   hiddenWindow     a view in a BaseWindow that is never shown (one window shared by many tabs)
+//   ownHiddenWindow  the same, one never-shown window per tab
+//   invisibleWindow  a view in a window that IS shown, but can't be seen or touched: opacity 0 (macOS, Windows) or
+//                    placed off every screen (X11), click-through, not focusable, not in the taskbar (not on Wayland,
+//                    where an app can neither hide nor place a shown window)
+//   tinyWindow       a view of 1280x800 in a shown 1x1 window, click-through, not focusable, not in the taskbar
+//   shown            a view in the visible browser view's window, laid out at that view's size
+//   osr              an offscreen-rendering BrowserWindow (frames arrive as 'paint' events; can't be shown as a view)
+//   osrView          an offscreen-rendering WebContentsView in no window
 // Headless tabs are laid out at the agent's 1280x800; a shown tab at the window's 1000x700.
-import { BaseWindow, BrowserWindow, nativeImage, WebContentsView, type NativeImage, type WebContents } from "electron";
+import { app, BaseWindow, BrowserWindow, nativeImage, WebContentsView, type NativeImage, type WebContents } from "electron";
 import { ageMs, decodeMarker, rgbaReader, type Marker } from "../shared/marker.ts";
 import { errorText, sleep, waitFor, withTimeout } from "../shared/stats.ts";
 
@@ -14,7 +20,20 @@ export const AGENT_H = 800;
 export const SHOWN_W = 1000;
 export const SHOWN_H = 700;
 
-export type Place = "detached" | "hiddenWindow" | "ownHiddenWindow" | "shown" | "osr";
+export type Place = "detached" | "hiddenWindow" | "ownHiddenWindow" | "invisibleWindow" | "tinyWindow" | "shown" | "osr" | "osrView";
+
+/** The places a headless tab can live in, as views that can later be shown. */
+export type HeadlessPlace = "detached" | "hiddenWindow" | "ownHiddenWindow" | "invisibleWindow" | "tinyWindow";
+
+export function onWayland(): boolean {
+  return process.platform === "linux" && (app.commandLine.getSwitchValue("ozone-platform") === "wayland" || (app.commandLine.getSwitchValue("ozone-platform") === "" && process.env.WAYLAND_DISPLAY !== undefined && process.env.DISPLAY === undefined));
+}
+
+/** Whether a place can be made on this platform (an invisible window can't on Wayland). */
+export function placeAvailable(p: Place): boolean {
+  if (p === "invisibleWindow") return !onWayland();
+  return true;
+}
 
 export interface Tab {
   id: string;
@@ -23,8 +42,10 @@ export interface Tab {
   throttling: boolean;
   wc: WebContents;
   view?: WebContentsView;
-  /** The window this tab's view is in now (a hidden host or the shown window), or its own OSR window. */
+  /** The window this tab's view is in now (a hidden host, its own window, or the shown window), or its OSR window. */
   win?: BaseWindow | BrowserWindow;
+  /** The window a headless tab goes back to (undefined: detached). */
+  home?: BaseWindow;
   ownWin?: BaseWindow;
   loads: number;
   navigations: number;
@@ -33,6 +54,10 @@ export interface Tab {
   paints: number;
   lastPaint?: { at: number; image: NativeImage };
   debuggerOn: boolean;
+  /** Frames delivered to a running frame pump. */
+  pumpFrames: number;
+  pumping: boolean;
+  fitted: boolean;
 }
 
 export interface CreateOptions {
@@ -62,6 +87,28 @@ export interface CaptureResult {
 
 let nextId = 1;
 
+function invisibleWindow(title: string): BaseWindow {
+  const w = new BaseWindow({
+    show: false, x: 0, y: 0, width: AGENT_W, height: AGENT_H, useContentSize: true, frame: false, focusable: false,
+    skipTaskbar: true, hasShadow: false, resizable: false, minimizable: false, maximizable: false, title,
+  });
+  w.setIgnoreMouseEvents(true);
+  if (process.platform === "darwin" || process.platform === "win32") w.setOpacity(0);
+  else w.setPosition(-AGENT_W - 200, -AGENT_H - 200); // X11: off every screen
+  w.showInactive();
+  return w;
+}
+
+function tinyWindow(title: string): BaseWindow {
+  const w = new BaseWindow({
+    show: false, x: 0, y: 0, width: 1, height: 1, useContentSize: true, frame: false, focusable: false,
+    skipTaskbar: true, hasShadow: false, resizable: false, minimizable: false, maximizable: false, title,
+  });
+  w.setIgnoreMouseEvents(true);
+  w.showInactive();
+  return w;
+}
+
 export class TabHost {
   private hiddenHost?: BaseWindow;
   private shownWin?: BaseWindow;
@@ -86,6 +133,7 @@ export class TabHost {
   }
 
   async create(o: CreateOptions): Promise<Tab> {
+    if (!placeAvailable(o.place)) throw new Error(`${o.place} is not possible here`);
     const id = `t${nextId++}`;
     const webPreferences = {
       partition: o.partition,
@@ -94,40 +142,44 @@ export class TabHost {
       nodeIntegration: false,
       backgroundThrottling: o.throttling,
     };
+    const base = { id, place: o.place, partition: o.partition, throttling: o.throttling, loads: 0, navigations: 0, gone: [], paints: 0, debuggerOn: false, pumpFrames: 0, pumping: false, fitted: false };
     let tab: Tab;
     if (o.place === "osr") {
       const win = new BrowserWindow({ show: false, width: AGENT_W, height: AGENT_H, useContentSize: true, webPreferences: { ...webPreferences, offscreen: true } });
-      tab = this.track({ id, place: o.place, partition: o.partition, throttling: o.throttling, wc: win.webContents, win, loads: 0, navigations: 0, gone: [], paints: 0, debuggerOn: false });
-      win.webContents.setFrameRate(o.fps ?? 30);
-      win.webContents.on("paint", (_e, _dirty, image) => {
-        tab.paints++;
-        tab.lastPaint = { at: Date.now(), image };
-      });
+      tab = this.track({ ...base, wc: win.webContents, win });
+      this.paints(tab, o.fps ?? 30);
+    } else if (o.place === "osrView") {
+      const view = new WebContentsView({ webPreferences: { ...webPreferences, offscreen: true } });
+      view.setBounds({ x: 0, y: 0, width: AGENT_W, height: AGENT_H });
+      tab = this.track({ ...base, wc: view.webContents, view });
+      this.paints(tab, o.fps ?? 30);
     } else {
       const view = new WebContentsView({ webPreferences });
-      tab = this.track({ id, place: o.place, partition: o.partition, throttling: o.throttling, wc: view.webContents, view, loads: 0, navigations: 0, gone: [], paints: 0, debuggerOn: false });
-      if (o.place === "hiddenWindow") {
-        this.host().contentView.addChildView(view);
-        tab.win = this.host();
-        view.setBounds({ x: 0, y: 0, width: AGENT_W, height: AGENT_H });
-      } else if (o.place === "ownHiddenWindow") {
-        const own = new BaseWindow({ show: false, width: AGENT_W, height: AGENT_H, useContentSize: true, title: `S7 hidden ${id}` });
-        own.contentView.addChildView(view);
-        view.setBounds({ x: 0, y: 0, width: AGENT_W, height: AGENT_H });
-        tab.win = own;
-        tab.ownWin = own;
-      } else if (o.place === "shown") {
-        this.shown().contentView.addChildView(view);
-        tab.win = this.shown();
-        view.setBounds({ x: 0, y: 0, width: SHOWN_W, height: SHOWN_H });
-      } else {
-        view.setBounds({ x: 0, y: 0, width: AGENT_W, height: AGENT_H }); // detached: bounds, but no parent
-      }
+      tab = this.track({ ...base, wc: view.webContents, view });
+      let home: BaseWindow | undefined;
+      if (o.place === "hiddenWindow") home = this.host();
+      else if (o.place === "ownHiddenWindow") home = new BaseWindow({ show: false, width: AGENT_W, height: AGENT_H, useContentSize: true, title: `S7 hidden ${id}` });
+      else if (o.place === "invisibleWindow") home = invisibleWindow(`S7 invisible ${id}`);
+      else if (o.place === "tinyWindow") home = tinyWindow(`S7 tiny ${id}`);
+      else if (o.place === "shown") home = this.shown();
+      if (o.place === "ownHiddenWindow" || o.place === "invisibleWindow" || o.place === "tinyWindow") tab.ownWin = home;
+      if (o.place !== "shown") tab.home = home;
+      if (home !== undefined) home.contentView.addChildView(view);
+      tab.win = home;
+      view.setBounds(o.place === "shown" ? { x: 0, y: 0, width: SHOWN_W, height: SHOWN_H } : { x: 0, y: 0, width: AGENT_W, height: AGENT_H });
     }
     const sep = o.path.includes("?") ? "&" : "?";
     const url = `${this.origin}${o.path}${sep}tab=${id}`;
     await withTimeout(tab.wc.loadURL(url), 20_000, `load ${url}`);
     return tab;
+  }
+
+  private paints(tab: Tab, fps: number): void {
+    tab.wc.setFrameRate(fps);
+    tab.wc.on("paint", (_e, _dirty, image) => {
+      tab.paints++;
+      tab.lastPaint = { at: Date.now(), image };
+    });
   }
 
   private track(t: Tab): Tab {
@@ -140,27 +192,46 @@ export class TabHost {
 
   /** Move a tab into the visible window, at the view's size. */
   show(t: Tab): void {
-    if (t.view === undefined) throw new Error("an OSR tab can't be shown as a view");
+    if (t.view === undefined || t.place === "osr" || t.place === "osrView") throw new Error("an OSR tab can't be shown as a view");
     if (t.win !== undefined && t.win !== this.shown()) t.win.contentView.removeChildView(t.view);
     this.shown().contentView.addChildView(t.view);
     t.view.setBounds({ x: 0, y: 0, width: SHOWN_W, height: SHOWN_H });
     t.win = this.shown();
   }
 
-  /** Move a tab back to headless: into its hidden window, or out of every window (detached), at 1280x800. */
-  hide(t: Tab, place: "detached" | "hiddenWindow" | "ownHiddenWindow"): void {
-    if (t.view === undefined) throw new Error("an OSR tab is always hidden");
+  /** Move a tab back to headless: to its home window (or out of every window when detached), at 1280x800. */
+  hide(t: Tab): void {
+    if (t.view === undefined) throw new Error("no view");
     if (t.win !== undefined) t.win.contentView.removeChildView(t.view);
-    t.win = undefined;
-    if (place === "hiddenWindow") {
-      this.host().contentView.addChildView(t.view);
-      t.win = this.host();
-    } else if (place === "ownHiddenWindow") {
-      if (t.ownWin === undefined || t.ownWin.isDestroyed()) t.ownWin = new BaseWindow({ show: false, width: AGENT_W, height: AGENT_H, useContentSize: true });
-      t.ownWin.contentView.addChildView(t.view);
-      t.win = t.ownWin;
-    }
+    t.win = t.home;
+    t.home?.contentView.addChildView(t.view);
     t.view.setBounds({ x: 0, y: 0, width: AGENT_W, height: AGENT_H });
+  }
+
+  /** The agent's layout for a headless tab, whatever its view's size: a CDP device-metrics override (1280x800 at 1). */
+  async fit(t: Tab): Promise<void> {
+    await this.debuggerFor(t);
+    await t.wc.debugger.sendCommand("Emulation.setDeviceMetricsOverride", { width: AGENT_W, height: AGENT_H, deviceScaleFactor: 1, mobile: false });
+    t.fitted = true;
+  }
+
+  async unfit(t: Tab): Promise<void> {
+    if (!t.fitted) return;
+    await t.wc.debugger.sendCommand("Emulation.clearDeviceMetricsOverride");
+    t.fitted = false;
+  }
+
+  /** Keep frames coming for a hidden tab: a frame subscription that only counts what it gets. */
+  startPump(t: Tab): void {
+    t.pumpFrames = 0;
+    t.wc.beginFrameSubscription(true, () => { t.pumpFrames++; });
+    t.pumping = true;
+  }
+
+  stopPump(t: Tab): void {
+    if (!t.pumping) return;
+    t.wc.endFrameSubscription();
+    t.pumping = false;
   }
 
   async exec<T = unknown>(t: Tab, code: string, ms = 5000): Promise<T> {
@@ -173,11 +244,8 @@ export class TabHost {
 
   async close(t: Tab): Promise<void> {
     this.tabs.delete(t);
-    try {
-      if (t.debuggerOn) t.wc.debugger.detach();
-    } catch {
-      // gone
-    }
+    try { this.stopPump(t); } catch { /* gone */ }
+    try { if (t.debuggerOn) t.wc.debugger.detach(); } catch { /* gone */ }
     try {
       if (t.view !== undefined && t.win !== undefined && !t.win.isDestroyed()) t.win.contentView.removeChildView(t.view);
       if (t.place === "osr" && t.win !== undefined && !t.win.isDestroyed()) t.win.destroy();
@@ -216,8 +284,20 @@ export class TabHost {
         const params = method === "cdpPng" ? { format: "png" } : { format: "jpeg", quality: 80 };
         const r = (await withTimeout(t.wc.debugger.sendCommand("Page.captureScreenshot", { ...params, captureBeyondViewport: false }), timeoutMs, "Page.captureScreenshot")) as { data: string };
         image = nativeImage.createFromBuffer(Buffer.from(r.data, "base64"));
+      } else if (method === "frameSub") {
+        // one frame from a frame subscription (Chromium's frame-sink video capturer), then unsubscribe
+        const wasPumping = t.pumping;
+        image = await withTimeout(new Promise<NativeImage>((resolve) => {
+          t.wc.beginFrameSubscription(false, (img) => {
+            try { t.wc.endFrameSubscription(); } catch { /* ended */ }
+            resolve(img);
+          });
+        }), timeoutMs, "frame subscription").finally(() => {
+          try { t.wc.endFrameSubscription(); } catch { /* ended */ }
+          if (wasPumping) this.startPump(t);
+        });
       } else if (method === "osrPaint") {
-        const p = await waitFor(() => t.lastPaint, timeoutMs);
+        const p = await waitFor(() => (t.lastPaint !== undefined && t.lastPaint.at >= start - 2000 ? t.lastPaint : undefined), timeoutMs);
         if (p === undefined) throw new Error("no paint event");
         image = p.image;
       } else {

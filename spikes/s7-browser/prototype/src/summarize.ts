@@ -28,34 +28,28 @@ function electron(name: string, j: J): string {
   const c = j.checks ?? {};
   const out: string[] = [`### Electron · ${m.label} (${name})`, "", `Electron ${m.electron} (Chromium ${m.chrome}), ${m.platform}-${m.arch} ${m.osRelease}, ozone ${m.ozone}, displays ${(m.displays ?? []).join(", ")}, status **${m.status}**, ${f1(m.seconds, 0)} s${(j.errors ?? []).length ? `, errors: ${j.errors.join("; ")}` : ""}`, ""];
   if (c.move) {
-    out.push("**Q1 hidden ⇄ shown** (5 cycles; times are p50 / p95 ms from the move)", "");
-    out.push(table(["hidden place", "same document", "field", "scroll", "SSE", "media ×", "decoded fps", "→shown resize", "first rAF", "fresh picture", "→hidden resize", "layout hidden → shown", "error"],
-      ["detached", "hiddenWindow"].filter((k) => c.move[k]).map((k) => {
+    out.push("**Q1 hidden ⇄ shown** (times are p50 / p95 ms from the move)", "");
+    out.push(table(["hidden place", "same document", "field", "scroll", "SSE", "media ×", "decoded fps", "fresh picture shown", "first rAF shown", "layout hidden → shown → hidden", "fit to 1280×800", "rAF while hidden", "error"],
+      Object.keys(c.move).map((k) => {
         const r = c.move[k];
-        return [k, f1(r.checks?.sameDocument), f1(r.checks?.fieldKept), f1(r.checks?.scrollKept), `${f1(r.checks?.sseKept)} (${f1(r.checks?.sseOpensServer, 0)} opens)`, f1(r.checks?.mediaPlayedPerSec, 2), f1(r.checks?.mediaDecodedFps, 1),
-          ms(r.timing?.showResizeMs), ms(r.timing?.showFirstRafMs), ms(r.timing?.showFreshPictureMs), ms(r.timing?.hideResizeMs), `${r.layout?.hidden} → ${r.layout?.shown}`, r.error ?? ""];
+        const hiddenRaf = (r.cycles ?? []).map((x: J) => x.hiddenRates?.rafHz).filter((v: unknown) => typeof v === "number");
+        const back = [...new Set((r.cycles ?? []).map((x: J) => x.toHidden?.layoutAfter))].join("/");
+        return [`${k}`, f1(r.checks?.sameDocument), f1(r.checks?.fieldKept), f1(r.checks?.scrollKept), `${f1(r.checks?.sseKept)} (${f1(r.checks?.sseOpensServer, 0)})`, f1(r.checks?.mediaPlayedPerSec, 2), f1(r.checks?.mediaDecodedFps, 1),
+          ms(r.timing?.showFreshPictureMs), ms(r.timing?.showFirstRafMs), `${r.layout?.hidden} → ${r.layout?.shown} → ${back}`, r.fit ? ms(r.timing?.hideFitMs) : "–",
+          hiddenRaf.length ? f1(hiddenRaf.reduce((a: number, b: number) => a + b, 0) / hiddenRaf.length) : "–", r.error ?? ""];
       })));
-    out.push("");
-    for (const k of ["detached", "hiddenWindow"]) {
-      const r = c.move[k];
-      if (!r?.cycles?.length) continue;
-      const h = r.cycles.map((x: J) => x.hiddenRates).filter(Boolean);
-      const s = r.cycles.map((x: J) => x.shownRates).filter(Boolean);
-      const avg = (a: J[], f: string) => (a.length ? a.reduce((t, x) => t + (x[f] ?? 0), 0) / a.length : NaN);
-      out.push(`- ${k}: while hidden, interval ${f1(avg(h, "intervalHz"))} Hz, rAF ${f1(avg(h, "rafHz"))} Hz, media ×${f1(avg(h, "mediaPlayedPerSec"), 2)}, decoded ${f1(avg(h, "decodedFps"))} fps, visibility ${h[0]?.visibility}; while shown, rAF ${f1(avg(s, "rafHz"))} Hz, visibility ${s[0]?.visibility}; initial (hidden) rAF ${f1(r.initialRates?.rafHz)} Hz`);
-    }
     out.push("");
   }
   if (c.throttle) {
     out.push("**Q2 throttling** (5 s windows)", "");
-    out.push(table(["config", "visibility", "interval Hz", "chain Hz", "rAF Hz", "max rAF gap ms", "media ×", "decoded fps", "audio", "renderer CPU %", "error"],
-      c.throttle.map((r: J) => [r.config, r.rates?.visibility ?? "–", f1(r.rates?.intervalHz), f1(r.rates?.chainHz), f1(r.rates?.rafHz), f1(r.rates?.maxRafGapMs, 0), f1(r.rates?.mediaPlayedPerSec, 2), f1(r.rates?.decodedFps), r.rates?.audioState ?? "–", f1(r.rendererCpuPct), r.error ?? ""])));
+    out.push(table(["config", "visibility", "layout", "interval Hz", "chain Hz", "rAF Hz", "max rAF gap ms", "media ×", "decoded fps", "pump fps", "renderer CPU %", "all CPU %", "error"],
+      c.throttle.map((r: J) => [r.config, r.rates?.visibility ?? "–", r.rates?.layout ?? "–", f1(r.rates?.intervalHz), f1(r.rates?.chainHz), f1(r.rates?.rafHz), f1(r.rates?.maxRafGapMs, 0), r.media ? f1(r.rates?.mediaPlayedPerSec, 2) : "–", r.media ? f1(r.rates?.decodedFps) : "–", f1(r.pumpFps), f1(r.rendererCpuPct), f1(r.allCpuPct), r.error ?? ""])));
     out.push("");
   }
   if (c.capture) {
     out.push("**Q2 pictures of tabs** (8 tries; ms and staleness are p50 / p95; stale < 0 means drawn after the call began)", "");
     out.push(table(["place", "throttling", "method", "ok", "decoded", "ms", "stale ms", "size", "CPU ms/picture", "frames/s", "visibility events", "errors"],
-      c.capture.map((r: J) => [r.place, f1(r.throttling), r.method, `${r.ok}/${r.tries}`, f1(r.decoded, 0), ms(r.ms), ms(r.staleMs), r.size, f1(r.cpuMsPerPicture, 0), f1(r.framesPerSec), (r.visibilityEvents ?? []).length ? r.visibilityEvents.join(" ") : "", (r.errors ?? []).join("; ")])));
+      c.capture.map((r: J) => [`${r.place}${r.pump ? " + pump" : ""}`, f1(r.throttling), r.method, `${r.ok}/${r.tries}`, f1(r.decoded, 0), ms(r.ms), ms(r.staleMs), r.size, f1(r.cpuMsPerPicture, 0), f1(r.framesPerSec), (r.visibilityEvents ?? []).length ? r.visibilityEvents.join(" ") : "", (r.errors ?? []).join("; ")])));
     out.push("");
   }
   if (c.cost) {
@@ -63,13 +57,13 @@ function electron(name: string, j: J): string {
     out.push("**Q2 cost**", "");
     out.push(table(["idle hidden tabs", "memory MiB", "kind", "RSS MiB", "processes", "CPU %"], (k.idle ?? []).map((s: J) => [f1(s.tabs, 0), f1(s.memBest / 1048576, 0), s.memKind, f1(s.memRss / 1048576, 0), f1(s.procs, 0), f1(s.cpuPct)])));
     out.push("", `Per idle hidden tab: **${f1(k.perIdleTabMiB, 0)} MiB**, ${f1(k.perIdleTabCpuPct, 2)}% CPU. Four tabs: one partition +${f1(k.partitions?.samePartitionMiB, 0)} MiB, four partitions +${f1(k.partitions?.ownPartitionsMiB, 0)} MiB.${k.error ? ` Error: ${k.error}` : ""}`, "");
-    out.push(table(["animated tab", "all CPU %", "renderer %", "GPU %"], (k.animated ?? []).map((a: J) => [a.config, f1(a.cpuPct), f1(a.rendererPct), f1(a.gpuPct)])));
+    out.push(table(["animated tab", "all CPU %", "renderer %", "GPU %", "rAF Hz"], (k.animated ?? []).map((a: J) => [a.config, f1(a.cpuPct), f1(a.rendererPct), f1(a.gpuPct), f1(a.rafHz, 0)])));
     out.push("");
   }
   if (c.stream) {
     out.push("**Q6 streamed view** (10 s at the viewer; latency p50 / p95 ms)", "");
-    out.push(table(["road", "content", "source", "fps", "decoded fps", "latency", "gap p95", "kbit/s", "bytes/frame", "sender CPU %", "viewer CPU %", "notes"],
-      c.stream.map((r: J) => [r.road, r.scenario, r.source, f1(r.framesPerSec), f1(r.decodedPerSec), ms(r.latencyMs), f1(r.interFrameMs?.p95, 0), f1(r.kbitPerSec, 0), f1(r.avgFrameBytes, 0), f1(r.senderCpuPct, 0), f1(r.viewerCpuPct, 0),
+    out.push(table(["road", "content", "source", "fps", "decoded fps", "latency", "gap p95", "kbit/s", "bytes/frame", "sender CPU %", "viewer CPU %", "source rAF", "notes"],
+      c.stream.map((r: J) => [r.road, r.scenario, r.source, f1(r.framesPerSec), f1(r.decodedPerSec), ms(r.latencyMs), f1(r.interFrameMs?.p95, 0), f1(r.kbitPerSec, 0), f1(r.avgFrameBytes, 0), f1(r.senderCpuPct, 0), f1(r.viewerCpuPct, 0), f1(r.sourceRafHz, 0),
         [r.extra?.sender?.encoderImplementation, r.extra?.viewer?.codec, r.extra?.viewer?.decoderImplementation, r.extra?.mainThreadJpegMsPerFrame !== undefined ? `toJPEG ${f1(r.extra.mainThreadJpegMsPerFrame)} ms` : undefined, r.extra?.encoder?.hardware, ...(r.errors ?? []).slice(0, 2)].filter(Boolean).join("; ")])));
     out.push("");
   }
@@ -88,7 +82,8 @@ function cft(name: string, j: J): string {
     const i = r.install ?? {};
     out.push(`**${artifact}** — ${r.product ?? ""}; sandbox ${r.sandbox ?? "–"}${r.sandboxedStartError ? ` (sandboxed start failed: ${String(r.sandboxedStartError).slice(0, 160)})` : ""}`, "");
     out.push(`- install: ${f1(i.zipBytes / 1048576, 0)} MiB archive, ${f1(i.unpackedBytes / 1048576, 0)} MiB unpacked, ${i.files} files, ${i.symlinks} symlinks; download ${f1(i.downloadMs, 0)} ms, unpack ${f1(i.extractMs, 0)} ms; sha256 \`${i.sha256}\` (${i.verified ? "matches the pin" : "trust on first use"}; server MD5 ${f1(i.serverMd5Matched)})`);
-    if (r.start) out.push(`- start: cold ${f1(r.start.coldPipeMs, 0)} ms, warm ${f1(r.start.warmPipeMs, 0)} ms over the pipe; port ${r.start.portMs !== undefined ? `${f1(r.start.portMs, 0)} ms` : r.start.portError}`);
+    if (r.start) out.push(`- start: over **${r.start.transport}**, cold ${f1(r.start.coldMs, 0)} ms, warm ${f1(r.start.warmMs, 0)} ms; the port for comparison ${r.start.portMs !== undefined ? `${f1(r.start.portMs, 0)} ms` : r.start.portError ?? "–"}`);
+    if (r.startAttempts) out.push(`- start attempts: ${(r.startAttempts as J[]).map((a) => `${a.transport}${a.sandboxed ? "" : " --no-sandbox"} ${a.ok ? `ok ${f1(a.ms, 0)} ms` : `failed (${String(a.error).slice(0, 220)})`}`).join("; ")}`);
     if (r.tabs) out.push(`- tabs: ${(r.tabs as J[]).map((t) => `${t.tab}: ${t.visibility}, ${t.layout}, interval ${f1(t.intervalHz)} Hz, rAF ${f1(t.rafHz)} Hz, media ×${f1(t.mediaPlayedPerSec, 2)}, decoded ${f1(t.decodedFps)} fps, audio ${t.audioState}`).join("; ")}`);
     if (r.resize) out.push(`- resize to 1000×700 and back: ${f1(r.resize.toViewMs, 0)} ms / ${f1(r.resize.backMs, 0)} ms, same document ${f1(r.resize.sameDocument)} (${(r.resize.layouts ?? []).join(" → ")})`);
     if (r.screenshots) out.push(`- screenshots: png ${ms(r.screenshots.png?.ms)} ms (${f1(r.screenshots.png?.bytes?.p50 / 1024, 0)} KiB, CPU ${f1(r.screenshots.png?.cpuMsPerShot, 0)} ms), jpeg ${ms(r.screenshots.jpeg?.ms)} ms (${f1(r.screenshots.jpeg?.bytes?.p50 / 1024, 0)} KiB, stale ${ms(r.screenshots.jpeg?.staleMs)} ms, CPU ${f1(r.screenshots.jpeg?.cpuMsPerShot, 0)} ms)`);
@@ -106,7 +101,7 @@ function cft(name: string, j: J): string {
 
 function pair(name: string, j: J): string {
   const m = j.meta ?? {};
-  const out: string[] = [`### The pair · ${m.platform}-${m.arch} (${name})`, "", `${m.osRelease}, ${f1(m.seconds, 0)} s, state **${m.state}**${m.windowsAppStart ? `, Windows app start: ${m.windowsAppStart}` : ""}`, ""];
+  const out: string[] = [`### The pair · ${m.platform}-${m.arch} (${name})`, "", `${m.osRelease}, ${f1(m.seconds, 0)} s, state **${m.state}**${m.platform === "win32" ? `, Windows app start: ${m.windowsAppStart}${m.windowsSupervise ? ", daemon under the supervisor" : ""}` : ""}`, ""];
   for (const s of j.steps ?? []) {
     const { step, ...rest } = s as J;
     if (step === "uninstall") continue;

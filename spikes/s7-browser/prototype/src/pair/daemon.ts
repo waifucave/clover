@@ -15,7 +15,7 @@ import { Conn, dial, type Msg } from "./ndjson.ts";
 import { startApp, type OsResult } from "./oslaunch.ts";
 
 const argv = process.argv.slice(1);
-const command = argv.find((a) => a === "daemon" || a === "status" || a === "quit") ?? "daemon";
+const command = argv.find((a) => a === "daemon" || a === "status" || a === "quit" || a === "supervise") ?? "daemon";
 const homeArg = argv.find((a) => a.startsWith("--home="))?.slice("--home=".length) ?? process.env.CLOVER_HOME;
 if (homeArg === undefined || homeArg === "") {
   console.error("clover-core-s7: --home=<dir> (or CLOVER_HOME) is required");
@@ -38,6 +38,26 @@ if (command === "status" || command === "quit") {
   console.log(JSON.stringify(r.result ?? r));
   c.close();
   process.exit(0);
+}
+
+// --- the supervisor (Windows: Task Scheduler does not restart a task whose process crashed) ------------------------
+// `supervise` runs `daemon` as its child and starts it again after a crash, with growing delays; a clean exit (the
+// pair's Quit) ends the supervisor too, so the task is finished and nothing restarts it until the next login.
+if (command === "supervise") {
+  const { spawn } = await import("node:child_process");
+  const delays = [500, 1000, 2000, 4000, 8000, 15_000];
+  const crashes: number[] = [];
+  for (;;) {
+    const child = spawn(process.execPath, ["daemon", `--home=${home}`], { stdio: "ignore", windowsHide: true });
+    const code = await new Promise<number | null>((resolve) => child.on("exit", (c) => resolve(c)));
+    if (code === 0) { log("supervisor: the daemon exited cleanly; done"); process.exit(0); }
+    const now = Date.now();
+    crashes.push(now);
+    const recent = crashes.filter((t) => now - t < 120_000).length;
+    const delay = delays[Math.min(delays.length - 1, recent - 1)]!;
+    log(`supervisor: the daemon exited ${code ?? "on a signal"}; starting it again in ${delay} ms`);
+    await new Promise((r) => setTimeout(r, delay));
+  }
 }
 
 // --- the daemon --------------------------------------------------------------------------------------------------

@@ -1,9 +1,12 @@
-// A minimal CDP client for a browser the daemon starts itself, over --remote-debugging-pipe (fd 3 commands in,
-// fd 4 answers out, NUL-framed JSON): no port, so no other local process — a bot's Bash included — can reach the
-// browser. The port road (--remote-debugging-port=0, read from stderr) is here only to compare, and as a fallback
-// where the pipe can't be made.
+// A minimal CDP client for a browser the daemon starts itself, over --remote-debugging-pipe (NUL-framed JSON): no
+// port, so no other local process — a bot's Bash included — can reach the browser. On macOS and Linux the pipe is
+// fds 3 (commands in) and 4 (answers out); on Windows it is two inherited pipe handles named with
+// --remote-debugging-io-pipes (winpipe.ts). The port road (--remote-debugging-port=0, read from stderr) is here to
+// compare, and as the fallback where no pipe can be made.
 import { spawn, type ChildProcess } from "node:child_process";
 import type { Readable, Writable } from "node:stream";
+import { StringDecoder } from "node:string_decoder";
+import { makeWinPipes, type WinPipes } from "./winpipe.ts";
 
 export type CdpEvent = { method: string; params: Record<string, unknown>; sessionId?: string };
 
@@ -26,11 +29,14 @@ export function splitNul(buf: string): { messages: string[]; rest: string } {
   return { messages, rest };
 }
 
+export type Transport = "pipe" | "winpipe" | "port";
+
 export class Browser {
   readonly proc: ChildProcess;
-  readonly transport: "pipe" | "port";
+  readonly transport: Transport;
   readonly stderr: string[] = [];
   private out?: Writable;
+  private win?: WinPipes;
   private ws?: WebSocket;
   private nextId = 1;
   private buf = "";
@@ -39,12 +45,21 @@ export class Browser {
   exited = false;
   exitCode: number | null = null;
   exitSignal: string | null = null;
+  private readonly exitWaiters: Array<() => void> = [];
 
-  private constructor(proc: ChildProcess, transport: "pipe" | "port") {
+  private constructor(proc: ChildProcess, transport: Transport) {
     this.proc = proc;
     this.transport = transport;
+    const dec = new StringDecoder("utf8");
+    let partial = "";
     proc.stderr?.on("data", (d: Buffer) => {
-      for (const line of d.toString("utf8").split("\n")) if (line.trim() !== "" && this.stderr.length < 400) this.stderr.push(line.slice(0, 300));
+      const lines = (partial + dec.write(d)).split("\n");
+      partial = lines.pop() ?? "";
+      for (const line of lines) {
+        if (line.trim() === "") continue;
+        this.stderr.push(line.slice(0, 300));
+        if (this.stderr.length > 200) this.stderr.shift(); // keep the newest
+      }
     });
     proc.on("exit", (code, signal) => {
       this.exited = true;
@@ -52,39 +67,75 @@ export class Browser {
       this.exitSignal = signal;
       for (const p of this.pending.values()) { clearTimeout(p.timer); p.reject(new CdpError(`browser exited (${code ?? signal}) during ${p.method}`)); }
       this.pending.clear();
+      this.win?.close();
+      for (const w of this.exitWaiters.splice(0)) w();
     });
   }
 
-  /** Start a browser and connect to it. `args` are the browser's own switches (no debugging switch). */
-  static async launch(bin: string, args: string[], transport: "pipe" | "port" = "pipe", timeoutMs = 30_000): Promise<Browser> {
-    if (transport === "pipe") {
-      const proc = spawn(bin, ["--remote-debugging-pipe", ...args], { stdio: ["ignore", "ignore", "pipe", "pipe", "pipe"], windowsHide: true });
-      const b = new Browser(proc, "pipe");
-      b.out = proc.stdio[3] as Writable;
-      const input = proc.stdio[4] as Readable | null;
-      if (b.out == null || input == null) { proc.kill("SIGKILL"); throw new CdpError("the runtime did not give the child fds 3 and 4"); }
-      b.out.on("error", () => undefined);
-      input.on("data", (chunk: Buffer) => b.onData(chunk.toString("utf8")));
+  /** The last lines the browser printed (for an error report). */
+  tail(n = 12): string {
+    return this.stderr.slice(-n).join(" | ");
+  }
+
+  private async kill(): Promise<void> {
+    if (this.exited) return;
+    this.proc.kill("SIGKILL");
+    await Promise.race([new Promise<void>((r) => this.exitWaiters.push(r)), new Promise((r) => setTimeout(r, 5000))]);
+  }
+
+  /**
+   * Start a browser and connect to it. `args` are the browser's own switches (no debugging switch). A start that
+   * fails kills the browser (so its profile is free again) and says what it printed.
+   */
+  static async launch(bin: string, args: string[], transport: Transport = "pipe", timeoutMs = 30_000): Promise<Browser> {
+    let b: Browser | undefined;
+    try {
+      if (transport === "pipe") {
+        const proc = spawn(bin, ["--remote-debugging-pipe", ...args], { stdio: ["ignore", "ignore", "pipe", "pipe", "pipe"], windowsHide: true });
+        b = new Browser(proc, "pipe");
+        b.out = proc.stdio[3] as Writable;
+        const input = proc.stdio[4] as Readable | null;
+        if (b.out == null || input == null) throw new CdpError("the runtime did not give the child fds 3 and 4");
+        b.out.on("error", () => undefined);
+        const dec = new StringDecoder("utf8");
+        const self = b;
+        input.on("data", (chunk: Buffer) => self.onData(dec.write(chunk)));
+      } else if (transport === "winpipe") {
+        const pipes = await makeWinPipes();
+        const proc = spawn(bin, ["--remote-debugging-pipe", `--remote-debugging-io-pipes=${pipes.childRead},${pipes.childWrite}`, ...args], { stdio: ["ignore", "ignore", "pipe"], windowsHide: true });
+        b = new Browser(proc, "winpipe");
+        b.win = pipes;
+        pipes.closeChildEnds();
+        const self = b;
+        pipes.start((text) => self.onData(text), () => undefined);
+      } else {
+        const proc = spawn(bin, ["--remote-debugging-port=0", ...args], { stdio: ["ignore", "ignore", "pipe"], windowsHide: true });
+        b = new Browser(proc, "port");
+        const self = b;
+        const url = await new Promise<string>((resolve, reject) => {
+          const timer = setTimeout(() => reject(new CdpError("no DevTools URL on stderr")), timeoutMs);
+          const onData = (d: Buffer): void => {
+            const m = /DevTools listening on (ws:\/\/\S+)/.exec(d.toString("utf8"));
+            if (m !== null) { clearTimeout(timer); proc.stderr?.off("data", onData); resolve(m[1]!); }
+          };
+          proc.stderr?.on("data", onData);
+          proc.on("exit", () => { clearTimeout(timer); reject(new CdpError(`browser exited before listening`)); });
+        });
+        const ws = new WebSocket(url);
+        b.ws = ws;
+        await new Promise<void>((resolve, reject) => { ws.onopen = () => resolve(); ws.onerror = () => reject(new CdpError("websocket")); });
+        ws.onmessage = (e) => self.onMessage(String(e.data));
+      }
       await b.send("Browser.getVersion", {}, undefined, timeoutMs);
       return b;
+    } catch (e) {
+      const why = e instanceof Error ? e.message : String(e);
+      if (b !== undefined) {
+        await b.kill();
+        throw new CdpError(`${transport} start failed: ${why}${b.exitCode !== null || b.exitSignal !== null ? ` (exit ${b.exitCode ?? b.exitSignal})` : ""}; stderr: ${b.tail(8)}`);
+      }
+      throw new CdpError(`${transport} start failed: ${why}`);
     }
-    const proc = spawn(bin, ["--remote-debugging-port=0", ...args], { stdio: ["ignore", "ignore", "pipe"], windowsHide: true });
-    const b = new Browser(proc, "port");
-    const url = await new Promise<string>((resolve, reject) => {
-      const timer = setTimeout(() => reject(new CdpError("no DevTools URL on stderr")), timeoutMs);
-      const onData = (d: Buffer): void => {
-        const m = /DevTools listening on (ws:\/\/\S+)/.exec(d.toString("utf8"));
-        if (m !== null) { clearTimeout(timer); proc.stderr?.off("data", onData); resolve(m[1]!); }
-      };
-      proc.stderr?.on("data", onData);
-      proc.on("exit", () => { clearTimeout(timer); reject(new CdpError(`browser exited before listening: ${b.stderr.slice(-5).join(" | ")}`)); });
-    });
-    const ws = new WebSocket(url);
-    b.ws = ws;
-    await new Promise<void>((resolve, reject) => { ws.onopen = () => resolve(); ws.onerror = () => reject(new CdpError("websocket")); });
-    ws.onmessage = (e) => b.onMessage(String(e.data));
-    await b.send("Browser.getVersion", {}, undefined, timeoutMs);
-    return b;
   }
 
   private onData(text: string): void {
@@ -116,8 +167,15 @@ export class Browser {
     return new Promise<T>((resolve, reject) => {
       const timer = setTimeout(() => { this.pending.delete(id); reject(new CdpError(`${method} timed out`)); }, timeoutMs);
       this.pending.set(id, { resolve: resolve as (v: unknown) => void, reject, timer, method });
-      if (this.transport === "pipe") this.out!.write(`${text}\0`);
-      else this.ws!.send(text);
+      try {
+        if (this.transport === "pipe") this.out!.write(`${text}\0`);
+        else if (this.transport === "winpipe") this.win!.write(text);
+        else this.ws!.send(text);
+      } catch (e) {
+        clearTimeout(timer);
+        this.pending.delete(id);
+        reject(new CdpError(`${method}: write failed: ${e instanceof Error ? e.message : String(e)}`));
+      }
     });
   }
 

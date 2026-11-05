@@ -58,6 +58,8 @@ export interface PairConfig {
   appGraceMs: number;
   /** Windows: how the daemon starts the app — through its own scheduled task, or a detached child. */
   windowsAppStart: "task" | "spawn";
+  /** Windows: the task runs `supervise` (which restarts a crashed daemon) instead of `daemon`. */
+  windowsSupervise?: boolean;
   /** Linux: the display the app should use (the session's, imported into the user manager). */
   display?: string;
 }

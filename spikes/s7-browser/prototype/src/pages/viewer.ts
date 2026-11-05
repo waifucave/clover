@@ -26,6 +26,7 @@ function fresh(mode: string): Stats {
 }
 
 let sourceWidth = 1280;
+let sourceHeight = 800;
 let ws: WebSocket | null = null;
 let decoder: VideoDecoder | null = null;
 let decoderCodec = "";
@@ -39,13 +40,21 @@ function note(e: unknown): void {
   if (stats.errors.length < 20 && !stats.errors.includes(s)) stats.errors.push(s);
 }
 
-/** Decode the marker from a drawable of `width` image pixels whose page was `pageWidth` CSS px wide. */
-function readMarker(src: CanvasImageSource, width: number, pageWidth: number): void {
+/**
+ * Decode the marker from a picture `width` x `height` image pixels of a page `pageWidth` x `pageHeight` CSS px. A tab
+ * capture scales the page to fit its frame, keeping the aspect ratio (letterboxed), so the strip may be offset.
+ */
+function readMarker(src: CanvasImageSource, width: number, pageWidth: number, height = 0, pageHeight = 0): void {
   if (ctx === null) return;
-  const scale = width / pageWidth;
+  let scale = width / pageWidth, ox = 0, oy = 0;
+  if (height > 0 && pageHeight > 0) {
+    scale = Math.min(width / pageWidth, height / pageHeight);
+    ox = Math.round((width - pageWidth * scale) / 2);
+    oy = Math.round((height - pageHeight * scale) / 2);
+  }
   const w = Math.ceil(MARKER_WIDTH * scale), h = Math.ceil(MARKER_HEIGHT * scale);
   if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
-  ctx.drawImage(src, 0, 0, w, h, 0, 0, w, h);
+  ctx.drawImage(src, ox, oy, w, h, 0, 0, w, h);
   const img = ctx.getImageData(0, 0, w, h);
   const m = decodeMarker(rgbaReader(img.data, w, h), scale);
   const now = Date.now();
@@ -80,7 +89,7 @@ function onChunk(header: Record<string, unknown>, payload: Uint8Array): void {
       const pageWidth = Number(header.innerWidth ?? sourceWidth);
       decoder = new VideoDecoder({
         output: (frame) => {
-          try { readMarker(frame, frame.displayWidth, pageWidth); } catch (e) { note(e); }
+          try { readMarker(frame, frame.displayWidth, pageWidth, frame.displayHeight, sourceHeight); } catch (e) { note(e); }
           frame.close();
         },
         error: (e) => note(e),
@@ -101,7 +110,7 @@ async function readTrack(track: MediaStreamTrack): Promise<void> {
     while (rtcRunning) {
       const { value, done } = await reader.read();
       if (done || value === undefined) break;
-      try { readMarker(value, value.displayWidth, sourceWidth); } catch (e) { note(e); }
+      try { readMarker(value, value.displayWidth, sourceWidth, value.displayHeight, sourceHeight); } catch (e) { note(e); }
       value.close();
     }
     return;
@@ -115,16 +124,17 @@ async function readTrack(track: MediaStreamTrack): Promise<void> {
   await video.play();
   const onFrame = (): void => {
     if (!rtcRunning) return;
-    try { readMarker(video, video.videoWidth, sourceWidth); } catch (e) { note(e); }
+    try { readMarker(video, video.videoWidth, sourceWidth, video.videoHeight, sourceHeight); } catch (e) { note(e); }
     video.requestVideoFrameCallback(onFrame);
   };
   video.requestVideoFrameCallback(onFrame);
 }
 
 const api = {
-  reset(mode: string, pageWidth: number): void {
+  reset(mode: string, pageWidth: number, pageHeight: number): void {
     stats = fresh(mode);
     sourceWidth = pageWidth;
+    sourceHeight = pageHeight;
   },
   stats(): Stats {
     return stats;

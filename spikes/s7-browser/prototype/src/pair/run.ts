@@ -35,6 +35,7 @@ const cfg: PairConfig = {
   appDir: resolve(arg("app-dir")),
   appGraceMs: 2000,
   windowsAppStart: arg("windows-app-start", "task") === "spawn" ? "spawn" : "task",
+  windowsSupervise: process.argv.includes("--windows-supervise"),
   display: arg("display") || undefined,
 };
 const n = pairNames(home);
@@ -234,7 +235,7 @@ function write(state: string): void {
   mkdirSync(dirname(outFile), { recursive: true });
   const daemonLog = existsSync(join(n.logsDir, "daemon.log")) ? readFileSync(join(n.logsDir, "daemon.log"), "utf8").split("\n").slice(-80) : [];
   writeFileSync(outFile, JSON.stringify(rounded({
-    meta: { state, platform: process.platform, arch: process.arch, osRelease: release(), seconds: (Date.now() - started) / 1000, names: n, windowsAppStart: cfg.windowsAppStart },
+    meta: { state, platform: process.platform, arch: process.arch, osRelease: release(), seconds: (Date.now() - started) / 1000, names: n, windowsAppStart: cfg.windowsAppStart, windowsSupervise: cfg.windowsSupervise === true },
     steps,
     daemonLog,
   }, 0), null, 2));
