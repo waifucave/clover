@@ -7,6 +7,14 @@ import { join } from "node:path";
 import { isContractError } from "../../src/contracts/common";
 import { defaultTreeRoot, ensureTreeRoot, treeHomeWritable } from "../../src/tree/root";
 
+/** Whether this process runs as an elevated administrator (Windows). */
+async function elevated(): Promise<boolean> {
+  if (process.platform !== "win32") return false;
+  const script = "([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)";
+  const proc = Bun.spawn(["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script], { stdout: "pipe", stderr: "pipe", windowsHide: true });
+  return (await new Response(proc.stdout).text()).trim() === "True";
+}
+
 describe("the tree folder", () => {
   test("home/<this computer> is the home folder; other computers aren't on disk; home/ is read-only", async () => {
     const base = realpathSync(mkdtempSync(join(tmpdir(), "lane-j-root-")));
@@ -20,9 +28,13 @@ describe("the tree folder", () => {
     expect(readdirSync(join(root, "home"))).toEqual(["Studio"]);
     expect(existsSync(join(root, "home", "Laptop1"))).toBe(false);
     expect(realpathSync(join(root, "bots"))).toBe(realpathSync(botsRoot));
-    expect(await treeHomeWritable(root)).toBe(false);
-    expect(() => writeFileSync(join(root, "home", "Laptop1"), "x")).toThrow();
-    expect(() => mkdirSync(join(root, "home", "Laptop1"))).toThrow();
+    // On Windows an elevated administrator (the CI runner) passes the access list's deny; the next test reads the
+    // list itself.
+    if (process.platform !== "win32" || !(await elevated())) {
+      expect(await treeHomeWritable(root)).toBe(false);
+      expect(() => writeFileSync(join(root, "home", "Laptop1"), "x")).toThrow();
+      expect(() => mkdirSync(join(root, "home", "Laptop1"))).toThrow();
+    }
     // A rename moves the link, and leaves no other.
     await ensureTreeRoot({ root, self: "Studio-2", home, botsRoot });
     expect(readdirSync(join(root, "home"))).toEqual(["Studio-2"]);
@@ -52,7 +64,11 @@ describe("the tree folder", () => {
     // Made again (a rename), it stays closed.
     await ensureTreeRoot({ root, self: "Studio-2", home, botsRoot: join(home, ".clover", "bots") });
     expect(readdirSync(join(root, "home"))).toEqual(["Studio-2"]);
-    expect(await treeHomeWritable(root)).toBe(false);
+    const again = await acl(join(root, "home"));
+    expect(again[0]).toBe("protected=True");
+    expect(again.some((l) => l.startsWith("S-1-1-0 Deny"))).toBe(true);
+    if (!(await elevated())) expect(await treeHomeWritable(root)).toBe(false);
+    else console.log(`lane-j: an elevated administrator can${(await treeHomeWritable(root)) ? "" : "'t"} make a folder in home\\ past its deny`);
   });
 
   test("where it lives on each OS, outside every home folder", () => {
