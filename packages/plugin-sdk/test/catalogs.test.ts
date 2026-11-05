@@ -4,7 +4,8 @@ import { describe, expect, test } from "bun:test";
 import {
   API_CALLS, CAPABILITIES, CARD_TOKENS, CLAUDE_HOOK_EVENTS, CORE_CONTRIBUTION_KEYS, CORE_POINTS, DATA_POINTS, HOOK_EVENTS,
   HOOK_RETURNS, MESSAGE_KINDS, SPOTS, TOKENS, TOKEN_GROUPS, WELL_KNOWN_POINT_NAMES, apiCallAllowed, capabilityOkText, catalogJson, cssProperty, cssVar,
-  fetchesCodeAtRunTime, hookMatchesTool, hookOrder, interpolate, isPluginTokenName, isTokenName, isTokenValue, keyMatches, networkAllows,
+  fetchesCodeAtRunTime, hookMatchesTool, hookOrder, interpolate, isPluginTokenName, isSafeTokenValue, isTokenName, isTokenValue, keyMatches,
+  networkAllows, pluginTokenName,
   parseCapability,
   parseInterpolation, splitToolWireName, toolWireName, wrapperId,
 } from "../src/index";
@@ -162,19 +163,33 @@ describe("tokens", () => {
     }
     expect(cssProperty("color.text.muted")).toBe("--clover-color-text-muted");
     expect(cssVar("color.text.muted")).toBe("var(--clover-color-text-muted)");
-    expect(cssProperty("mcp-blender.glow")).toBe("--clover-mcp_blender-glow");
-    expect(cssProperty("mcp.blender.glow")).not.toBe(cssProperty("mcp-blender.glow"));
-    expect(() => cssProperty("x; y")).toThrow();
+    expect(cssProperty("plugin.mcp-blender.glow")).toBe("--clover-plugin-mcp_blender-glow");
+    expect(cssProperty("plugin.mcp.blender.glow")).not.toBe(cssProperty("plugin.mcp-blender.glow"));
+    for (const bad of ["x; y", "mcp-blender.glow", "color.text-muted", "plugin.-x.glow"]) expect(() => cssProperty(bad)).toThrow();
   });
 
-  test("a plugin's own tokens are <top-level id>.<name>, never under a catalog group", () => {
-    expect(isPluginTokenName("luna.glow.soft", "luna")).toBe(true);
-    expect(isPluginTokenName("tarot-deck.card.back", "tarot-deck")).toBe(true);
-    expect(isPluginTokenName("luna.Glow", "luna")).toBe(false);
-    expect(isPluginTokenName("lunar.glow", "luna")).toBe(false);
-    expect(isPluginTokenName("luna", "luna")).toBe(false);
-    expect(TOKEN_GROUPS.has("card")).toBe(true);
-    expect(isPluginTokenName("card.extra", "card")).toBe(false);
+  test("a plugin's own tokens are plugin.<top-level id>.<name>, so no id can name a catalog token", () => {
+    expect(pluginTokenName("luna", "glow.soft")).toBe("plugin.luna.glow.soft");
+    expect(isPluginTokenName("plugin.luna.glow.soft", "luna")).toBe(true);
+    expect(isPluginTokenName("plugin.tarot-deck.card.back", "tarot-deck")).toBe(true);
+    expect(isPluginTokenName("plugin.luna.Glow", "luna")).toBe(false);
+    expect(isPluginTokenName("plugin.lunar.glow", "luna")).toBe(false);
+    expect(isPluginTokenName("plugin.luna", "luna")).toBe(false);
+    expect(isPluginTokenName("luna.glow", "luna")).toBe(false);
+    // A plugin whose id is a catalog group still can't reach the catalog's names, `card.*` included.
+    expect(isPluginTokenName("card.background", "card")).toBe(false);
+    expect(isPluginTokenName("plugin.card.background", "card")).toBe(true);
+    expect(TOKEN_GROUPS.has("plugin")).toBe(false);
+    // Every catalog property and every plugin property differ, whatever the ids.
+    const plugin = new Set(["card", "color", "font", "card-background"].flatMap((id) => TOKENS.map((t) => cssProperty(pluginTokenName(id, t.name)))));
+    for (const t of TOKENS) expect(plugin.has(cssProperty(t.name))).toBe(false);
+  });
+
+  test("every value, the catalog's or a plugin's own, passes the safety check", () => {
+    for (const bad of ["red; x", "a\nb", '"open', "red !important", "src(x)", "cross-fade(a, b)", Number.NaN, {}, null]) {
+      expect([bad, isSafeTokenValue(bad)]).toEqual([bad, false]);
+    }
+    for (const ok of ['"Segoe UI", sans-serif', "#fff", 1.5, "0 1px 2px rgb(0 0 0 / 40%)"]) expect([ok, isSafeTokenValue(ok)]).toEqual([ok, true]);
   });
 
   test("a value can never break out of its custom property", () => {

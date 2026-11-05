@@ -4,7 +4,7 @@ import { createHash } from "node:crypto";
 import {
   IndexSchema, LayoutSchema, LocaleSchema, RevocationsSchema, ThemeSchema, compareVersions, isRevoked, isTreeHashExcluded,
   layoutPaths, layoutSpots, localeFallbacks, parseRange, parseSignatureFile, parseVersion, placeholdersOf, satisfies,
-  sha256Hex, treeHash, treeHashInput, treePathProblem,
+  resolveTokens, sha256Hex, themeTokensFor, treeHash, treeHashInput, treePathProblem,
 } from "../src/index";
 
 const H = (c: string) => c.repeat(64);
@@ -15,6 +15,31 @@ describe("theme format 1", () => {
     expect(ThemeSchema.safeParse(t).success).toBe(true);
     expect(ThemeSchema.safeParse({ ...t, theme: 2 }).success).toBe(false);
     expect(ThemeSchema.safeParse({ ...t, script: "x.js" }).success).toBe(false);
+  });
+});
+
+describe("appearance and the fallback order", () => {
+  test("a light-only theme does nothing in dark; a `both` theme's dark.tokens replace some of its tokens", () => {
+    const light = { appearance: "light" as const, tokens: { "color.accent": "#111111" } };
+    expect(themeTokensFor(light, "light")).toEqual({ "color.accent": "#111111" });
+    expect(themeTokensFor(light, "dark")).toBeUndefined();
+    const both = { tokens: { "color.accent": "#111111", "color.text": "#222222" }, dark: { tokens: { "color.accent": "#eeeeee" } } };
+    expect(themeTokensFor(both, "dark")).toEqual({ "color.accent": "#eeeeee", "color.text": "#222222" });
+    expect(themeTokensFor({ appearance: "dark" as const, tokens: { "color.text": "#fafafa" } }, "light")).toBeUndefined();
+  });
+
+  test("the catalog's default for the appearance, then each layer, lowest first; unsafe values never apply", () => {
+    const base = { tokens: { "color.accent": "#C2387A" }, dark: { tokens: { "color.accent": "#FF7AB6" } } };
+    const bot = { appearance: "light" as const, tokens: { "color.accent": "#7A5CFF", "plugin.luna.glow": "red; x" } };
+    const user = { tokens: { "color.text": "#000000" } };
+    const light = resolveTokens("light", [base, bot, user]);
+    expect(light["color.accent"]).toBe("#7A5CFF");
+    expect(light["color.text"]).toBe("#000000");
+    expect(light["color.canvas"]).toBe("#F6F6F8");
+    expect(light["plugin.luna.glow"]).toBeUndefined();
+    const dark = resolveTokens("dark", [base, bot, user]);
+    expect(dark["color.accent"]).toBe("#FF7AB6");
+    expect(dark["color.canvas"]).toBe("#212126");
   });
 });
 

@@ -8,6 +8,13 @@
 // The property is `--clover-` and the name with its dots as hyphens (`--clover-color-text-muted`); with no hyphen or
 // capital inside a segment, two names never map to one property. `card.*` stays self-contained: a card value never
 // derives from another token, so restyling the accent never silently restyles approval cards.
+//
+// A plugin's own tokens live under the reserved group `plugin`: `plugin.<top-level id>.<name>` (`plugin.luna.glow`,
+// `plugin.mcp-blender.glow`), so no plugin id, however it is spelled, can name a catalog token, `card.*` included, and
+// no group the catalog adds later can meet one. The id may hold hyphens; they become underscores in the property
+// (`--clover-plugin-mcp_blender-glow`), so the name-to-property map stays one to one.
+//
+// Every value, a catalog token's or a plugin's own, passes `isSafeTokenValue` before it reaches CSS.
 
 export const TOKEN_TYPES = ["color", "dimension", "fontFamily", "fontWeight", "number", "duration", "easing", "shadow", "paint"] as const;
 /** `paint` is a CSS background: a colour or a gradient. */
@@ -180,9 +187,10 @@ export const TOKENS: readonly TokenInfo[] = [
 export const TOKEN_NAMES: ReadonlySet<string> = new Set(TOKENS.map((x) => x.name));
 /** The tokens sealed frames take (§5.5). */
 export const CARD_TOKENS: readonly TokenInfo[] = TOKENS.filter((x) => x.name.startsWith("card."));
-/** The catalog's first segments (`color`, `card`, …). A plugin whose top-level id is one of them has no tokens of its
- *  own, so its names can never be mistaken for the catalog's. */
+/** The catalog's first segments (`color`, `card`, …); `plugin` is never one of them. */
 export const TOKEN_GROUPS: ReadonlySet<string> = new Set(TOKENS.map((x) => x.name.split(".")[0]!));
+/** The group a plugin's own tokens live under: `plugin.<top-level id>.<name>`. */
+export const PLUGIN_TOKEN_GROUP = "plugin";
 
 export function tokenInfo(name: string): TokenInfo | undefined {
   return TOKENS.find((x) => x.name === name);
@@ -194,18 +202,26 @@ export function isTokenName(name: string): boolean {
   return name.length <= 128 && TOKEN_NAME_RE.test(name);
 }
 
-/** A plugin's own tokens are allowed too, named `<top-level plugin id>.<name>` (`luna.glow.soft`); they apply only
- *  where its own CSS reads them. */
-export function isPluginTokenName(name: string, pluginTopId: string): boolean {
-  if (TOKEN_GROUPS.has(pluginTopId) || !name.startsWith(`${pluginTopId}.`) || name.length > 128) return false;
-  return TOKEN_NAME_RE.test(name.slice(pluginTopId.length + 1));
+/** Any plugin's own token name: `plugin.<top-level id>.<name>`, the id with single hyphens, the rest the catalog's
+ *  grammar. */
+export const PLUGIN_TOKEN_NAME_RE = /^plugin\.[a-z][a-z0-9]*(-[a-z0-9]+)*(\.[a-z][a-z0-9]*)+$/;
+
+/** A plugin's own token name, for one plugin: `pluginTokenName("luna", "glow.soft")` → `plugin.luna.glow.soft`. */
+export function pluginTokenName(pluginTopId: string, name: string): string {
+  return `${PLUGIN_TOKEN_GROUP}.${pluginTopId}.${name}`;
 }
 
-/** The CSS custom property a token sets: `color.text.muted` → `--clover-color-text-muted`. Dots become hyphens; the
- *  hyphens a plugin id may hold become underscores (`mcp-blender.glow` → `--clover-mcp_blender-glow`), so the map is
- *  one to one. */
+/** Whether `name` is one of this plugin's own tokens (`plugin.<its top-level id>.…`); they apply only where its own CSS
+ *  reads them, and only the plugin itself sets them. */
+export function isPluginTokenName(name: string, pluginTopId: string): boolean {
+  return name.length <= 128 && name.startsWith(`${PLUGIN_TOKEN_GROUP}.${pluginTopId}.`) && PLUGIN_TOKEN_NAME_RE.test(name);
+}
+
+/** The CSS custom property a token sets: `color.text.muted` → `--clover-color-text-muted`. Dots become hyphens, and the
+ *  hyphens a plugin id may hold become underscores (`plugin.mcp-blender.glow` → `--clover-plugin-mcp_blender-glow`), so
+ *  the map is one to one. Throws for anything that is neither a catalog-grammar name nor a plugin token name. */
 export function cssProperty(name: string): string {
-  if (!/^[a-z0-9][a-z0-9.-]*$/.test(name)) throw new Error(`not a token name: ${name}`);
+  if (name.length > 128 || !(TOKEN_NAME_RE.test(name) || PLUGIN_TOKEN_NAME_RE.test(name))) throw new Error(`not a token name: ${name}`);
   return `--clover-${name.replace(/-/g, "_").replace(/\./g, "-")}`;
 }
 
@@ -216,7 +232,7 @@ export function cssVar(name: string): string {
 
 // A token's value goes into a CSS custom property, so it may never break out of it: no `;`, braces, `url(`, `@`,
 // backslashes or comments, whatever its type.
-const UNSAFE = /[;{}\\@<>]|\/\*|url\s*\(|expression\s*\(|image-set|image\s*\(|element\s*\(/i;
+const UNSAFE = /[;{}\\@<>\n\r\f\0]|\/\*|url\s*\(|src\s*\(|expression\s*\(|image-set|image\s*\(|element\s*\(|cross-fade|!\s*important/i;
 const DIMENSION = /^-?(\d+(\.\d+)?|\.\d+)(px|rem|em|%|vh|vw|vmin|vmax|ch|ex|pt)$|^0$/;
 const COLOR = /^(#[0-9a-f]{3,4}|#[0-9a-f]{6}|#[0-9a-f]{8}|(rgb|rgba|hsl|hsla|hwb|lab|lch|oklab|oklch|color)\([^()]*\)|transparent|currentcolor|[a-z]{3,20})$/i;
 /** A gradient whose arguments may hold one level of brackets: `linear-gradient(180deg, rgb(0 0 0 / 50%) 0%, …)`. */
@@ -228,14 +244,22 @@ const EASING = /^(linear|ease|ease-in|ease-out|ease-in-out|step-start|step-end|(
 const FAMILY = /^[A-Za-z0-9 ,"'_-]{1,200}$/;
 const SHADOW = /^[A-Za-z0-9 ,.#()%/-]{1,300}$/;
 
+/** Whether a value can go into a CSS custom property at all, whatever its token: a finite number, or a string of at
+ *  most 300 characters on one line with no `;`, braces, angle brackets, `@`, backslash, comment, open quote, `!important`,
+ *  `url(` or other resource function.
+ *  The theme engine (lane E) applies it to every value it sets, a plugin's own tokens included. */
+export function isSafeTokenValue(value: unknown): value is TokenValue {
+  if (typeof value === "number") return Number.isFinite(value);
+  if (typeof value !== "string" || value.length > 300 || UNSAFE.test(value)) return false;
+  // A quote left open would run on past the value.
+  return (value.match(/"/g)?.length ?? 0) % 2 === 0 && (value.match(/'/g)?.length ?? 0) % 2 === 0;
+}
+
 /** Whether a value fits a token type, and is safe to put in a CSS custom property. A number fits only `number` and
  *  `fontWeight` (1 to 1000). */
 export function isTokenValue(type: TokenType, value: TokenValue): boolean {
-  if (typeof value === "number") {
-    if (!Number.isFinite(value)) return false;
-    return type === "number" || (type === "fontWeight" && value >= 1 && value <= 1000);
-  }
-  if (typeof value !== "string" || value.length > 300 || UNSAFE.test(value)) return false;
+  if (!isSafeTokenValue(value)) return false;
+  if (typeof value === "number") return type === "number" || (type === "fontWeight" && value >= 1 && value <= 1000);
   const v = value.trim();
   switch (type) {
     case "color": return COLOR.test(v);
