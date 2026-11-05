@@ -2,14 +2,21 @@
 // implementation `make` builds; `tests/tree.test.ts` runs it against FakeTree, and the lane that writes the real
 // one runs it there through a harness with the same drivers. What it pins:
 // where tree paths live, files on each computer, fast failure when one is
-// off, the fence of the computer that holds the files, moves across computers, glob and grep.
+// off, the fence of the computer that holds the files, moves across computers, glob and grep, and a peer's calls:
+// always fenced, its changes judged at the stricter level with a bound signed answer where that level asks (N2).
+import { createHash } from "node:crypto";
 import { describe, expect, test } from "bun:test";
-import type { Caller } from "@waifucave/clover-protocol";
+import {
+  callBindingInput, cardAnswerSigningInput, cardHashInput, type Caller, type Card, type CardOption, type SignedCardAnswer,
+} from "@waifucave/clover-protocol";
+import type { CallCardRenderer } from "../approval-broker";
 import { isContractError } from "../common";
+import { MemoryAnswerLedger } from "../fakes/approval-broker";
 import { FakeClock } from "../fakes/clock";
+import { FakeDeviceRegistry, makeFakeDevice, toBase64 } from "../fakes/device-registry";
 import { FakeFence } from "../fakes/fence";
 import { type FakeTree } from "../fakes/tree";
-import { splitTreePath } from "../tree";
+import { splitTreePath, treeCallBinding } from "../tree";
 
 /** What the suite drives: the contract and the fake's own drivers (what a test does to the world around it),
  *  as public members, so a real implementation's harness can provide them. */
@@ -126,6 +133,82 @@ export function runTreeConformance(make: TreeFactory): void {
       ]);
       expect(await tree.grep("token", { path: "home/Laptop1/p", glob: "**/*.md", as: USER })).toEqual([]);
       expect(await tree.grep("o", { path: "home/Laptop1/p", limit: 1, as: USER })).toHaveLength(1);
+    });
+
+    test("a peer's call is always fenced, and its changes are judged at the stricter level, with a bound signed answer where it asks (N2)", async () => {
+      const clock = new FakeClock();
+      const sha256 = (text: string) => createHash("sha256").update(text).digest("hex");
+      const { registry } = await FakeDeviceRegistry.create({ clock, name: "Studio" });
+      const phone = await makeFakeDevice();
+      await registry.add({ id: phone.id, name: "Phone", kind: "phone", runsCore: false, publicKey: phone.publicKey }, { via: "account", account: "acct_1" });
+      const options: CardOption[] = [{ id: "approve", kind: "approve", label: "Allow" }, { id: "deny", kind: "deny", label: "Deny" }];
+      const binds = (computer: string, method: string, params: unknown) => ({ computer, method, params: sha256(callBindingInput(method, params)) });
+      // The holder's own card for a tree change, from its built-in tables.
+      const render: CallCardRenderer = (call) => call.method.startsWith("tree.")
+        ? { kind: "tool", fields: { title: { type: "text", text: `${call.method} on ${call.computer}` } }, options, binds: binds(call.computer, call.method, call.params) }
+        : undefined;
+      const tree = make({
+        clock,
+        computers: {
+          Studio: { home: "/Users/me", fence: new FakeFence({ home: "/Users/me", cloverHome: "/Users/me/.clover" }), level: "ask-risky" },
+          Laptop1: { home: "/home/me", fence: new FakeFence({ os: "linux", home: "/home/me", cloverHome: "/home/me/.clover" }), level: "automatic" },
+        },
+        botComputer: () => undefined,
+        devices: registry,
+        ledger: new MemoryAnswerLedger(),
+        render,
+      });
+      const PEER: Caller = { kind: "peer", device: "desk0000000000000001", sessionId: "s_remote" };
+      let n = 0;
+      const answer = async (computer: string, method: string, params: unknown, title = `${method} on ${computer}`): Promise<SignedCardAnswer> => {
+        const unhashed = {
+          id: `card_0011223344556677889900${String(++n).padStart(2, "0")}`, kind: "tool" as const, computer, origin: "user" as const,
+          issuedAt: clock.now(), expiresAt: null, fields: { title: { type: "text" as const, text: title } }, options, binds: binds(computer, method, params),
+        };
+        const card = { ...unhashed, hash: sha256(cardHashInput(unhashed as never)) } as Card;
+        const at = clock.now();
+        return { card, option: "approve", device: phone.id, at, signature: toBase64(await phone.sign(new TextEncoder().encode(cardAnswerSigningInput({ id: card.id, hash: card.hash, option: "approve", at })))) };
+      };
+      const code = async (p: Promise<unknown>) => ((await rejection(p)) as { code?: string } | undefined)?.code ?? "ok";
+
+      // Always fenced: a peer never passes as the user, whatever its level.
+      expect(await code(tree.write("home/Laptop1/.clover/settings/settings.json", utf8("{}"), { as: PEER, level: "automatic" }))).toBe("fenced");
+      expect(await code(tree.read("home/Laptop1/.clover/secrets.enc", { as: PEER }))).toBe("fenced");
+      // Reads are never asked about; a change says its level.
+      expect(await code(tree.stat("home/Studio/a.txt", { as: PEER }))).toBe("ok");
+      expect(await code(tree.write("home/Laptop1/a.txt", utf8("a"), { as: PEER }))).toBe("invalid");
+      // The stricter level: Laptop1 is automatic, but a call at read-only from its own computer stays read-only.
+      expect(await code(tree.write("home/Laptop1/a.txt", utf8("a"), { as: PEER, level: "read-only" }))).toBe("refused");
+      expect(await code(tree.write("home/Laptop1/a.txt", utf8("a"), { as: PEER, level: "automatic" }))).toBe("ok");
+      // A read-only holder refuses a peer's change however the caller's level reads, signed answer or not.
+      tree.setLevel("Laptop1", "read-only");
+      const w = treeCallBinding("tree.write", { path: "home/Laptop1/b.txt", data: utf8("b"), session: "s_remote", level: "automatic" });
+      expect(w.params).toEqual({ path: "home/Laptop1/b.txt", data: utf8("b") });
+      expect(await code(tree.write("home/Laptop1/b.txt", utf8("b"), { as: PEER, level: "automatic", answer: await answer("Laptop1", w.method, w.params) }))).toBe("refused");
+      expect(await tree.stat("home/Laptop1/b.txt", { as: USER })).toBeNull();
+      // Studio asks for risky actions: a peer's delete there needs the user's answer bound to exactly this call.
+      await tree.write("home/Studio/old.log", utf8("x"), { as: USER });
+      const rm = treeCallBinding("tree.remove", { path: "home/Studio/old.log" });
+      expect(await code(tree.remove("home/Studio/old.log", { as: PEER, level: "automatic" }))).toBe("refused");
+      const other = treeCallBinding("tree.remove", { path: "home/Studio/keep.log" });
+      expect(await code(tree.remove("home/Studio/old.log", { as: PEER, level: "automatic", answer: await answer("Studio", other.method, other.params) }))).toBe("refused");
+      expect(await code(tree.remove("home/Studio/old.log", { as: PEER, level: "automatic", answer: await answer("Laptop1", rm.method, rm.params) }))).toBe("refused");
+      // A card that reads something else can't carry it, however well it is signed.
+      expect(await code(tree.remove("home/Studio/old.log", { as: PEER, level: "automatic", answer: await answer("Studio", rm.method, rm.params, "Show the weather") }))).toBe("refused");
+      expect(await tree.stat("home/Studio/old.log", { as: USER })).not.toBeNull();
+      const good = await answer("Studio", rm.method, rm.params);
+      expect(await code(tree.remove("home/Studio/old.log", { as: PEER, level: "automatic", answer: good }))).toBe("ok");
+      expect(await tree.stat("home/Studio/old.log", { as: USER })).toBeNull();
+      // The same answer counts once.
+      await tree.write("home/Studio/old.log", utf8("x"), { as: USER });
+      expect(await code(tree.remove("home/Studio/old.log", { as: PEER, level: "automatic", answer: good }))).toBe("refused");
+      // A move between computers is judged at the strictest of both computers' levels and the call's.
+      tree.setLevel("Laptop1", "automatic");
+      tree.setLevel("Studio", "automatic");
+      expect(await code(tree.move("home/Studio/old.log", "home/Laptop1/old.log", { as: PEER, level: "automatic" }))).toBe("ok");
+      tree.setLevel("Studio", "read-only");
+      expect(await code(tree.move("home/Laptop1/old.log", "home/Studio/old.log", { as: PEER, level: "automatic" }))).toBe("refused");
+      expect(await tree.stat("home/Laptop1/old.log", { as: USER })).not.toBeNull();
     });
 
     test("computersFor lists the computers an action touches", () => {

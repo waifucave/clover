@@ -175,6 +175,9 @@ export const Caller = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("session"), sessionId: SessionId, sessionKind: SessionKind, bot: BotId.optional() }),
   z.object({ kind: z.literal("plugin"), pluginId: AnyPluginId }),
   z.object({ kind: z.literal("core") }),
+  /** Another computer over the link (§8.2), for one of its sessions: never the user, always fenced, and its writes
+   *  judged at the stricter of this computer's level and the call's (review N2). */
+  z.object({ kind: z.literal("peer"), device: DeviceId, sessionId: SessionId.optional(), bot: BotId.optional() }),
 ]);
 export type Caller = z.infer<typeof Caller>;
 
