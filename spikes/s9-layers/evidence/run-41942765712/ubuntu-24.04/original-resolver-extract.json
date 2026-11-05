@@ -1,0 +1,166 @@
+{
+  "run": 41942765712,
+  "source": "netlog-*.json, constants.logEventTypes decoded; speculative host resolver events retained verbatim",
+  "events": [
+    {
+      "variant": "filter",
+      "event": "HOST_RESOLVER_MANAGER_REQUEST",
+      "params": {
+        "allow_cached_response": true,
+        "dns_query_type": "UNSPECIFIED",
+        "host": "http://127.0.0.1:45493",
+        "is_speculative": true,
+        "network_anonymization_key": "null",
+        "secure_dns_policy": 0
+      },
+      "phase": 1,
+      "source": {
+        "id": 305,
+        "start_time": "86442",
+        "type": 43
+      },
+      "time": "86442",
+      "type": 5
+    },
+    {
+      "variant": "filter",
+      "event": "HOST_RESOLVER_MANAGER_REQUEST",
+      "params": {
+        "allow_cached_response": true,
+        "dns_query_type": "UNSPECIFIED",
+        "host": "http://localhost:45493",
+        "is_speculative": true,
+        "network_anonymization_key": "null",
+        "secure_dns_policy": 0
+      },
+      "phase": 1,
+      "source": {
+        "id": 310,
+        "start_time": "89149",
+        "type": 43
+      },
+      "time": "89149",
+      "type": 5
+    },
+    {
+      "variant": "control",
+      "event": "HOST_RESOLVER_MANAGER_REQUEST",
+      "params": {
+        "allow_cached_response": true,
+        "dns_query_type": "UNSPECIFIED",
+        "host": "http://127.0.0.1:45493",
+        "is_speculative": true,
+        "network_anonymization_key": "null",
+        "secure_dns_policy": 0
+      },
+      "phase": 1,
+      "source": {
+        "id": 90,
+        "start_time": "60846",
+        "type": 43
+      },
+      "time": "60846",
+      "type": 5
+    },
+    {
+      "variant": "control",
+      "event": "HOST_RESOLVER_MANAGER_REQUEST",
+      "params": {
+        "allow_cached_response": true,
+        "dns_query_type": "UNSPECIFIED",
+        "host": "http://localhost:45493",
+        "is_speculative": true,
+        "network_anonymization_key": "null",
+        "secure_dns_policy": 0
+      },
+      "phase": 1,
+      "source": {
+        "id": 134,
+        "start_time": "63563",
+        "type": 43
+      },
+      "time": "63563",
+      "type": 5
+    },
+    {
+      "variant": "csp",
+      "event": "HOST_RESOLVER_MANAGER_REQUEST",
+      "params": {
+        "allow_cached_response": true,
+        "dns_query_type": "UNSPECIFIED",
+        "host": "http://127.0.0.1:45493",
+        "is_speculative": true,
+        "network_anonymization_key": "null",
+        "secure_dns_policy": 0
+      },
+      "phase": 1,
+      "source": {
+        "id": 243,
+        "start_time": "73764",
+        "type": 43
+      },
+      "time": "73764",
+      "type": 5
+    },
+    {
+      "variant": "csp",
+      "event": "HOST_RESOLVER_MANAGER_REQUEST",
+      "params": {
+        "allow_cached_response": true,
+        "dns_query_type": "UNSPECIFIED",
+        "host": "http://localhost:45493",
+        "is_speculative": true,
+        "network_anonymization_key": "null",
+        "secure_dns_policy": 0
+      },
+      "phase": 1,
+      "source": {
+        "id": 248,
+        "start_time": "76471",
+        "type": 43
+      },
+      "time": "76471",
+      "type": 5
+    },
+    {
+      "variant": "combined",
+      "event": "HOST_RESOLVER_MANAGER_REQUEST",
+      "params": {
+        "allow_cached_response": true,
+        "dns_query_type": "UNSPECIFIED",
+        "host": "http://127.0.0.1:45493",
+        "is_speculative": true,
+        "network_anonymization_key": "null",
+        "secure_dns_policy": 0
+      },
+      "phase": 1,
+      "source": {
+        "id": 367,
+        "start_time": "99124",
+        "type": 43
+      },
+      "time": "99124",
+      "type": 5
+    },
+    {
+      "variant": "combined",
+      "event": "HOST_RESOLVER_MANAGER_REQUEST",
+      "params": {
+        "allow_cached_response": true,
+        "dns_query_type": "UNSPECIFIED",
+        "host": "http://localhost:45493",
+        "is_speculative": true,
+        "network_anonymization_key": "null",
+        "secure_dns_policy": 0
+      },
+      "phase": 1,
+      "source": {
+        "id": 372,
+        "start_time": "101831",
+        "type": 43
+      },
+      "time": "101831",
+      "type": 5
+    }
+  ]
+}
