@@ -117,6 +117,9 @@ describe("the Dispatch pill", () => {
     expect(underlay.getAttribute("data-shown")).toBe("false");
     expect(pill.size().width).toBeGreaterThan(PILL.compactWidth);
     expect(screen.getByLabelText("Message Alpha").getAttribute("placeholder")).toBe("Alpha is working");
+    // Hidden under the typing pill the plume stops drawing; once the shape settles, nothing runs.
+    pill.clock.run(1500);
+    expect(pill.clock.pending).toBe(0);
   });
 
   test("an ask morphs the pill into its card: the bar fades first, then the shape springs", () => {

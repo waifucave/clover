@@ -380,7 +380,8 @@ export function DispatchPill(props: DispatchPillProps): ReactElement {
           target={s.target}
           visibility={visibility}
           label={t("clover.pill.name")}
-          underlay={running ? <Plume width={PILL.compactWidth} height={PILL.pillHeight} thrown={thrown} repeating={repeating} animates={!reducedMotion} timers={timers} /> : undefined}
+          // The plume stays mounted while the turn runs, and runs frames only while it shows.
+          underlay={running ? <Plume width={PILL.compactWidth} height={PILL.pillHeight} thrown={thrown} repeating={repeating} animates={!reducedMotion && look.working && drawn === "bar"} timers={timers} /> : undefined}
           underlayShown={look.working && drawn === "bar"}
         >
           <Bar
