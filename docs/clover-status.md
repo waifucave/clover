@@ -110,7 +110,7 @@ Spec items 76–94, written into revision 18 (spec §14.2):
 * **93, screen-reader users:** a hybrid. While a screen reader is on, new bot tabs start as real views in a hidden host window (design A, only then), so no tab ever reloads.
 * **94, Electron (decision 2 of S7's edit 1, and S9's WebRTC gap):** "Stock Electron, wait upstream". Clover ships stock Electron with no patches.
   * The browser patches S7 proposed (popups, dropdowns and dialogs) are dropped. Electron #55565's same-site popup case works only while the person watches.
-  * The WebRTC escape S9 found stays a documented known gap: a plugin UI can still send WebRTC connectivity checks to an undeclared address. The no-patch belt and the preload stub stay on where they help.
+  * The WebRTC escape S9 found stays a documented known gap: a plugin UI can still try to send WebRTC connectivity checks to an undeclared address. As the controller ruled after E's final review, plugin webContents get `Connection-Allowlist` and the `disable_non_proxied_udp` policy as defence in depth, and the PAC belt and the preload stub are off; the gap stays documented because the TCP route and the sandboxed srcdoc are unproven.
   * Fixes go upstream instead.
 
 How the work runs:
@@ -158,6 +158,7 @@ How the work runs:
   * **The n0 fallback:** only account-less devices publish to n0's lookup, with the relay URL only. Links refuse unpaired and revoked keys.
 * **November 5, the account-less lease with three or more devices** (H's finding on decision 85): use a group record per user for their account-less devices. Each device joins the group at pairing, and the service holds one lease record per group, so "the first computer to take it wins" still holds. This links the pairs only within one user's own devices, which is acceptable. Per-pair leases could split the main computer, so they're rejected. H-M1 item 14 builds it, with lane I.
 * **November 5, the Cursor `Co-authored-by` trailer** on lane C's `94ae95409`: it stays; no history rewrite.
+* **November 5, item 94's stock measures** (E's final review, B3): follow S9. The PAC belt and the preload stub are both off. Plugin webContents get `Connection-Allowlist` plus Chromium's `disable_non_proxied_udp` WebRTC policy as defence in depth; in S9's runs they read zero on every vector with a positive control. The gap stays documented, because the TCP route and the sandboxed srcdoc are unproven.
 * **November 5, Bun 1.4:** lane M moves CI and the daemon to Bun 1.4.x. Reasons: H's timer finding (fixed in 1.4.4) and A's Worker-churn crash on 1.3.14 (A's review, S3). Run the full suites and A's soak first.
 
 ## Blockers

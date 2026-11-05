@@ -159,7 +159,7 @@ Every lane runs on this Mac, in its own worktree, with CI for the other OSes (§
   * the levels' total order confirmed: read only < ask < ask for risky actions < accept edits < fully automatic
   * on Linux, spawning only through `Bun.spawn` until the `node:child_process` stall is isolated (the recipe is in the S7 report)
 * **M2, the fence:**
-  * Bash and PowerShell under the fence on all three OSes, with network denied and the escape floor's metadata block
+  * Bash and PowerShell under the fence on all three OSes, with network denied (confirmed against Winter's real behaviour) and the escape floor's metadata block
   * the fenced set, the read fence and the escape floor, with transcripts, usage rows, per-bot browser profiles and the login-start locations of all three OSes in the set
   * on Windows, nothing carrying over: a principal per running session or one session at a time, the profile and hive reset per session, measured on every launch and failing closed, and per-session grants and temp folders
   * `/proc/<pid>/fd` denied on Linux (a PID namespace in bubblewrap), and process access denied on Windows
@@ -226,7 +226,7 @@ Every lane runs on this Mac, in its own worktree, with CI for the other OSes (§
   * the island and the pill as related windows
   * `<Spot>`, keyed defaults, precedence and the smaller-part measure
   * style and hide entries, `needs` and `keep`
-  * plugin sessions with spellcheck downloads off and an explicit proxy on every session; S9's remote-candidate check rerun on every Electron upgrade
+  * plugin webContents with `Connection-Allowlist` and the `disable_non_proxied_udp` WebRTC policy, and S9's PAC belt and preload stub off; plugin sessions with spellcheck downloads off and an explicit proxy on every session; S9's remote-candidate check rerun on every Electron upgrade
 * **M2, looks and words:**
   * the theme engine: tokens, the stack and the CSS cleaner
   * layouts and web views
@@ -540,7 +540,7 @@ Everything else runs beside these chains. A spike that fails reroutes its lane: 
 
 ## 8. Machines
 
-This Mac has 14 cores, 24 GB of memory and 90 GB of free disk. So:
+Every lane shares this Mac. So:
 
 * **Disk, in Wave 0:** an agent frees space by removing old builds, dead worktrees and other leftovers. Before deleting anything another session might use, it checks with that session: "GitHub repo setup (fork)" (the overthrown project), `norma-v2-71` and `waifucave-a6`. It never deletes unmerged work it hasn't backed up, and it leaves the live Winter install alone.
 * **Every lane runs on this Mac,** each in its own worktree, with CI for the other OSes: Windows, Linux and the app builds. Remote cloud agents turned out not to be available from the controller's session (the Agent tool's remote isolation ran lane H in a local worktree), so the six lanes once planned as remote (A, B, D, F, H and K) run here too.
