@@ -1,0 +1,84 @@
+// A desktop's answer key (item 91; the owner's decision on review N1): the key a desktop signs card answers for other
+// computers with, held by the app apart from the core's link key, so plugin code (which runs beside the core, never in
+// the app's main process) can't sign with it where the OS allows:
+// * macOS: a Keychain item only the signed app can read (`app-keychain`; Electron's safeStorage key is one);
+// * Windows: a key behind Windows Hello (`hello`) or the TPM (`tpm`);
+// * otherwise (Linux, Windows without either) the key is kept as well as the OS lets the app, and is marked `none`:
+//   the owner accepted that a compromised plugin there could approve actions on other computers.
+//
+// This module is for the app's main process (lane E): it makes or loads the key through storage the app provides,
+// proves it to the core (`registration`, which `FileDeviceRegistry.setOwnAnswerKey` checks), and signs answers.
+// Receivers rebuild the card and compare hashes before they check the signature (`verifySignedAnswer`).
+import type { AnswerKeyHolder, Os } from "@waifucave/clover-protocol";
+import { ContractError } from "../contracts/common";
+import type { Secret } from "../contracts/secret-store";
+import { cardAnswerSigningInput } from "@waifucave/clover-protocol";
+import { fromBase64, toBase64, utf8 } from "./bytes";
+import { type Ed25519Key, ed25519FromSeed, generateEd25519 } from "./keys";
+
+/** What the OS offers the app to keep a key from other code on the same computer. */
+export interface AnswerKeyProtections {
+  /** macOS: a Keychain item whose access list names only the signed app. */
+  appKeychain?: boolean;
+  /** Windows: Windows Hello can guard the key. */
+  hello?: boolean;
+  /** Windows: the TPM can hold it. */
+  tpm?: boolean;
+}
+
+/** How the key will be held, from the OS and what it offers; `none` when nothing keeps plugin code from it. */
+export function answerKeyHolder(os: Os, can: AnswerKeyProtections): AnswerKeyHolder {
+  if (os === "macos" && can.appKeychain) return "app-keychain";
+  if (os === "windows" && can.hello) return "hello";
+  if (os === "windows" && can.tpm) return "tpm";
+  return "none";
+}
+
+/** Where the app keeps the key's seed: its Keychain item, its Hello- or TPM-wrapped blob, or (for `none`) a file the
+ *  app alone writes. The seed passes through here only as a `Secret`. */
+export interface AnswerKeyStorage {
+  load(): Promise<Secret | null>;
+  save(seed: Secret): Promise<void>;
+}
+
+export class AnswerKey {
+  readonly held: AnswerKeyHolder;
+  readonly #key: Ed25519Key;
+
+  private constructor(key: Ed25519Key, held: AnswerKeyHolder) {
+    this.#key = key;
+    this.held = held;
+  }
+
+  static async loadOrCreate(storage: AnswerKeyStorage, held: AnswerKeyHolder): Promise<AnswerKey> {
+    const stored = await storage.load();
+    if (stored) {
+      const seed = fromBase64(stored.reveal());
+      if (!seed || seed.length !== 32) throw new ContractError("invalid", "the stored answer key isn't an Ed25519 seed");
+      return new AnswerKey(ed25519FromSeed(seed), held);
+    }
+    const key = generateEd25519();
+    await storage.save(key.seed());
+    return new AnswerKey(key, held);
+  }
+
+  get publicKey(): string {
+    return toBase64(this.#key.publicKey);
+  }
+
+  /** What the app hands the core so it takes the key: the public half, how it is held, and the proof. */
+  registration(deviceId: string): { publicKey: string; held: AnswerKeyHolder; signature: string } {
+    const statement = utf8(`clover/answer-key/1\n${deviceId}\n${this.publicKey}\n${this.held}`);
+    return { publicKey: this.publicKey, held: this.held, signature: toBase64(this.#key.sign(statement)) };
+  }
+
+  /** Signs the user's answer to a card, for any computer to verify (`cardAnswerSigningInput`). */
+  signAnswer(a: { id: string; hash: string; option: string; at: number; children?: readonly string[] }): string {
+    return toBase64(this.#key.sign(utf8(cardAnswerSigningInput(a))));
+  }
+
+  toJSON(): string {
+    return "[answer key]";
+  }
+}
+
