@@ -12,7 +12,7 @@
 // Prints one JSON line: rounds, leaked processes, live Workers left, and RSS readings (start, a quarter in,
 // halfway, the end, the peak) so the test can hold the daemon's memory to a plateau under a budget.
 import { METHODS } from "@waifucave/clover-protocol";
-import { mb, memory, memoryReport, type MemoryReading, startSoakDaemon } from "./soak-support";
+import { budgetMeter, mb, memory, perMeter, startSoakDaemon, type MemoryReading } from "./soak-support";
 
 const rounds = Number(process.env["SOAK_ROUNDS"] ?? "150");
 // A duration no other process on the machine runs, so `pgrep` finds exactly this soak's tools.
@@ -74,25 +74,24 @@ try {
       for (const pid of left) try { process.kill(pid, "SIGKILL"); } catch { /* gone */ }
     }
     samples.push(memory());
-    if ((i + 1) % 10 === 0) {
-      const m = samples.at(-1)!;
-      console.error(`round ${i + 1}: ps-rss=${mb(m.psRss)}MB footprint=${m.footprint === null ? "n/a" : `${mb(m.footprint)}MB`} bun-rss=${mb(m.bunRss)}MB leaked=${leaked} live=${daemon.embedded.live().length}`);
-    }
+    if ((i + 1) % 10 === 0) { const r = samples.at(-1)!; console.error(`round ${i + 1}: resident=${mb(r.resident)}MB footprint=${r.footprint === null ? "-" : mb(r.footprint)}MB leaked=${leaked} live=${daemon.embedded.live().length}`); }
   }
   await Bun.sleep(500);
   const at = (fraction: number): MemoryReading => samples[Math.max(0, Math.ceil(samples.length * fraction) - 1)] ?? start;
-  const peakOf = (field: "psRss" | "bunRss" | "footprint"): MemoryReading => [start, ...samples].reduce((a, b) => ((b[field] ?? 0) > (a[field] ?? 0) ? b : a));
   out["completedRounds"] = samples.length;
   out["roundsWithTools"] = toolsSeen;
   out["leakedProcesses"] = leaked;
   out["liveAfter"] = daemon.embedded.live().length;
-  // Side by side and labelled (`soak-support.ts`): the budget and plateau below are `ps -o rss=`'s, the resident set.
-  // Each `peak*` entry is the reading where that field peaked.
-  out["memory"] = memoryReport({ start, quarter: at(0.25), half: at(0.5), end: at(1), peakPsRss: peakOf("psRss"), peakFootprint: peakOf("footprint"), peakBunRss: peakOf("bunRss") });
-  out["peakPsRssMb"] = mb(peakOf("psRss").psRss);
-  out["secondHalfGrowthMb"] = mb(at(1).psRss - at(0.5).psRss);
-  const fp = (r: MemoryReading): number | null => r.footprint;
-  out["secondHalfFootprintGrowthMb"] = fp(at(1)) === null || fp(at(0.5)) === null ? null : mb(fp(at(1))! - fp(at(0.5))!);
+  out["memoryMb"] = {
+    start: perMeter((m) => m(start)),
+    quarter: perMeter((m) => m(at(0.25))),
+    half: perMeter((m) => m(at(0.5))),
+    end: perMeter((m) => m(at(1))),
+    peak: perMeter((m) => Math.max(m(start), ...samples.map(m))),
+  };
+  out["secondHalfGrowthMb"] = perMeter((m) => m(at(1)) - m(at(0.5)));
+  // The budget holds footprint on macOS (resident pages there include reclaimable ones), resident elsewhere.
+  out["budget"] = { meter: start.footprint === null ? "resident" : "footprint", peakMb: mb(Math.max(budgetMeter(start), ...samples.map(budgetMeter))), secondHalfGrowthMb: mb(budgetMeter(at(1)) - budgetMeter(at(0.5))) };
 } finally {
   await stop();
 }

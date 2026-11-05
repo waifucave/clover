@@ -8,7 +8,7 @@
 //      code session's Worker costs the daemon in resident memory.
 // Prints one JSON line: the rounds completed, the RSS readings, and the per-session estimate.
 import { METHODS } from "@waifucave/clover-protocol";
-import { mb, memory, memoryReport, startSoakDaemon } from "./soak-support";
+import { memory, perMeter, startSoakDaemon } from "./soak-support";
 
 const rounds = Number(process.env["SOAK_ROUNDS"] ?? "80");
 const concurrent = Number(process.env["SOAK_CONCURRENT"] ?? "8");
@@ -45,10 +45,14 @@ try {
   for (const sid of ids) await daemon.clover.get(sid)?.end();
   await Bun.sleep(500);
   const afterEnd = memory();
-  // The memory readings side by side (`soak-support.ts`'s MemoryReading); the estimates below are `ps -o rss=`'s.
-  out["memory"] = memoryReport({ start, afterChurn, withLive, afterEnd });
-  out["perLiveCodeSessionMb"] = mb((withLive.psRss - afterChurn.psRss) / concurrent);
-  out["retainedPerChurnRoundMb"] = mb((afterChurn.psRss - start.psRss) / Math.max(1, completed));
+  out["memoryMb"] = {
+    start: perMeter((m) => m(start)),
+    afterChurn: perMeter((m) => m(afterChurn)),
+    withLive: perMeter((m) => m(withLive)),
+    afterEnd: perMeter((m) => m(afterEnd)),
+  };
+  out["perLiveCodeSessionMb"] = perMeter((m) => (m(withLive) - m(afterChurn)) / concurrent);
+  out["retainedPerChurnRoundMb"] = perMeter((m) => (m(afterChurn) - m(start)) / Math.max(1, completed));
 } finally {
   await stop();
 }

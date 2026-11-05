@@ -12,20 +12,23 @@
 //     to 1387 MB after 80 rounds and to 1602 MB after 160, and a full GC does not lower it.
 //   mid-turn (`worker-midturn-soak.ts`): the trigger itself. Sessions torn down while their turn runs two Bash
 //     tools (process groups of their own): interrupt and end racing, end alone, interrupt then end. Every tool
-//     process must be gone after each round, and the daemon's RSS must plateau under a budget:
+//     process must be gone after each round, and the daemon's memory must plateau under a budget:
 //     SOAK_RSS_BUDGET_MB (peak, default 1024) and SOAK_RSS_PLATEAU_MB (growth over the second half, default 96).
-//     The budgets read `ps -o rss=` (the resident set). Each soak prints it beside macOS's phys_footprint and Bun's
-//     `process.memoryUsage().rss`, labelled: from Bun 1.4.3 that one IS phys_footprint on macOS, not the resident
-//     set, so a reading taken through it before and after the upgrade would compare two measures.
+//     The budget holds macOS's phys_footprint (resident pages there include reclaimable ones) and resident memory
+//     elsewhere. Every soak prints all three meters, labelled (`soak-support.ts`'s MemoryReading): resident
+//     (`ps -o rss=`), footprint, and Bun's `process.memoryUsage().rss`, which is phys_footprint on macOS since
+//     Bun 1.4.3, so the same number would compare two meters across a Bun upgrade.
 //   dispatch (`test/e2e/dispatch-spawn-e2e.test.ts`, SOAK_DISPATCH_RUNS times, default 20): Dispatch spawning,
 //     stopping and messaging children, each run a fresh process that must exit cleanly.
 //
-// Lane M runs the mid-turn and dispatch soaks on each Bun upgrade as a release gate: crash-free, and the RSS
+// Lane M runs the mid-turn and dispatch soaks on each Bun upgrade as a release gate: crash-free, and the memory
 // plateau under budget. Measured on Bun 1.3.14 (A-M1, macOS arm64): the mid-turn soak did not crash in 150
-// rounds, left no tool process running, and fails the plateau (peak 2003 MB, 380 MB over the second half:
-// terminated Workers' memory is kept); the dispatch soak CRASHED 6 runs in 20 (SIGTRAP, EXC_BREAKPOINT on a
-// thread named Worker), more often while other heavy jobs ran. If a newer Bun still keeps the memory, Worker
-// reuse is the fix (A-M2).
+// rounds and left no tool process running; the dispatch soak CRASHED 6 runs in 20 (SIGTRAP, EXC_BREAKPOINT on a
+// thread named Worker), more often while other heavy jobs ran. Lane M, on both meters: on 1.3.14 a terminated
+// Worker leaves about 6.5 MB of footprint behind, on Bun 1.4.4 about 0.3 MB (the mid-turn soak's 150 rounds:
+// footprint peak 167 MB, +17.6 MB over the second half); neither version hands resident pages back (1.4.4: 753 MB
+// resident at the peak). One live code session costs about 70 MB of footprint. So on 1.4.4 Worker reuse is not
+// needed for memory.
 import { expect, test } from "bun:test";
 import { fileURLToPath } from "node:url";
 
@@ -60,14 +63,14 @@ test.skipIf(SOAK)("mid-turn: sessions torn down while their tools run, no crash,
   console.log(`worker mid-turn soak: exit ${r.code}${r.signal ? ` (${r.signal})` : ""}: ${last}`);
   if (r.code !== 0) console.log(crashLines(r.stderr));
   expect(r.code).toBe(0);
-  const result = JSON.parse(last) as { rounds: number; completedRounds: number; roundsWithTools: number; leakedProcesses: number; liveAfter: number; peakPsRssMb: number; secondHalfGrowthMb: number };
+  const result = JSON.parse(last) as { rounds: number; completedRounds: number; roundsWithTools: number; leakedProcesses: number; liveAfter: number; budget: { peakMb: number; secondHalfGrowthMb: number } };
   expect(result.completedRounds).toBe(result.rounds);
   // Vacuous if the tools were not running when the sessions were torn down.
   expect(result.roundsWithTools).toBe(result.rounds);
   expect(result.leakedProcesses).toBe(0);
   expect(result.liveAfter).toBe(0);
-  expect(result.peakPsRssMb).toBeLessThanOrEqual(Number(process.env["SOAK_RSS_BUDGET_MB"] ?? "1024"));
-  expect(result.secondHalfGrowthMb).toBeLessThanOrEqual(Number(process.env["SOAK_RSS_PLATEAU_MB"] ?? "96"));
+  expect(result.budget.peakMb).toBeLessThanOrEqual(Number(process.env["SOAK_RSS_BUDGET_MB"] ?? "1024"));
+  expect(result.budget.secondHalfGrowthMb).toBeLessThanOrEqual(Number(process.env["SOAK_RSS_PLATEAU_MB"] ?? "96"));
 }, 8 * 60_000);
 
 test.skipIf(SOAK)("dispatch: dispatch-spawn-e2e, run again and again, every run a clean exit", async () => {
