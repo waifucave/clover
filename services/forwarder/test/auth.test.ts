@@ -1,9 +1,11 @@
 // Account tokens, tags and tickets: who may use the plugin API, and what a made-up value gets.
 
 import { env } from "cloudflare:workers";
+import { evictDurableObject, runInDurableObject } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
 
 import { verifyAccountToken } from "../../shared/account-token";
+import type { ForwarderDO } from "../src/forwarder-do";
 import { accountTag, isValidTag, mintTicket, readTicket } from "../src/identity";
 import { accountToken, apiCall, registerComputer, uniqueAccount, upgrade, worker } from "./helpers";
 
@@ -103,13 +105,49 @@ describe("tickets", () => {
     expect((await upgrade(ticket.url)).status).toBe(403);
   });
 
-  it("the same ticket cannot replace a live connection", async () => {
+  it("a ticket opens one connection, even after that connection closes and the object is evicted", async () => {
     const laptop = await registerComputer(uniqueAccount(), "laptop");
     const ticket = (await (await apiCall(laptop.token, "POST", "/v1/tickets")).json()) as { url: string };
+    // Each refusal's body is read: an unread one keeps its request open, and eviction waits for it.
+    const again = async () => {
+      const response = await upgrade(ticket.url);
+      await response.text();
+      return response.status;
+    };
     const first = await upgrade(ticket.url);
     expect(first.status).toBe(101);
     first.webSocket!.accept();
-    expect((await upgrade(ticket.url)).status).toBe(409);
+    expect(await again()).toBe(409);
     first.webSocket!.close(1000, "done");
+    await new Promise((r) => setTimeout(r, 100));
+    expect(await again()).toBe(409);
+    await evictDurableObject(env.FORWARDER.getByName(laptop.tag), { webSockets: "close" });
+    expect(await again()).toBe(409);
+    // A fresh ticket still connects.
+    const fresh = (await (await apiCall(laptop.token, "POST", "/v1/tickets")).json()) as { url: string };
+    const next = await upgrade(fresh.url);
+    expect(next.status).toBe(101);
+    next.webSocket!.accept();
+    next.webSocket!.close(1000, "done");
+  });
+
+  it("forgets a used ticket once it can no longer be presented", async () => {
+    const laptop = await registerComputer(uniqueAccount(), "laptop");
+    const object = env.FORWARDER.getByName(laptop.tag);
+    const used = (await (await apiCall(laptop.token, "POST", "/v1/tickets")).json()) as { url: string };
+    (await upgrade(used.url)).webSocket!.accept();
+    await runInDurableObject(object, (_i: ForwarderDO, state) => {
+      state.storage.sql.exec("INSERT INTO tickets (nonce, expires) VALUES ('expired-long-ago', ?)", Date.now() - 120_001);
+    });
+    const fresh = (await (await apiCall(laptop.token, "POST", "/v1/tickets")).json()) as { url: string };
+    const next = await upgrade(fresh.url);
+    expect(next.status).toBe(101);
+    next.webSocket!.accept();
+    const left = await runInDurableObject(object, (_i: ForwarderDO, state) =>
+      state.storage.sql.exec<{ nonce: string }>("SELECT nonce FROM tickets").toArray().map((row) => row.nonce),
+    );
+    expect(left).toHaveLength(2);
+    expect(left).not.toContain("expired-long-ago");
+    next.webSocket!.close(1000, "done");
   });
 });

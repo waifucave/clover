@@ -8,7 +8,8 @@
 //
 // A ticket lets one connection open: "<tag>.<device>.<exp>.<nonce>.<mac>", mac = HMAC(TICKET_SECRET, "ticket|" + the rest).
 // The forwarder plugin never holds the account token (the core's keyed fetch adds it), so it trades it for a
-// ticket over HTTP and opens the WebSocket with that.
+// ticket over HTTP and opens the WebSocket with that. The account's object keeps each used nonce until the
+// ticket has expired, so a ticket opens one connection only, even after that connection closes.
 
 import { b64u, concatBytes, equalBytes, fromB64u, hmacSha256, sha256, utf8 } from "../../shared/encoding";
 

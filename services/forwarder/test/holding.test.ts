@@ -174,13 +174,14 @@ describe("the cost of holding", () => {
     await deliverAndAck(socket, 1);
     expect(await read()).toEqual({ rows: 2, alarms: 0 });
 
-    // Held while the computer is away, then taken when it reconnects.
+    // Held while the computer is away, then taken when it reconnects: two more rows for the webhook, and one
+    // for the new connection's ticket (deleted at a later connection once it has expired), not per payload.
     socket.close();
     await new Promise((r) => setTimeout(r, 100));
     await postHook(url, key, "later");
     socket = await openSocket(pc);
     await deliverAndAck(socket, 1);
-    expect(await read()).toEqual({ rows: 4, alarms: 0 });
+    expect(await read()).toEqual({ rows: 2 + 2 + 1, alarms: 0 });
     socket.close();
   });
 });

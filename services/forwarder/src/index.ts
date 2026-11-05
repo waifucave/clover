@@ -175,5 +175,6 @@ async function connect(request: Request, env: Env, url: URL): Promise<Response> 
   headers.delete("cookie");
   headers.set("x-clover-device", claims.device);
   headers.set("x-clover-nonce", claims.nonce);
+  headers.set("x-clover-ticket-expires", String(claims.expiresAt));
   return env.FORWARDER.getByName(claims.tag).fetch(new Request("https://forwarder.internal/connect", { method: "GET", headers }));
 }

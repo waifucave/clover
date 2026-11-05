@@ -10,6 +10,8 @@
 //   * expiry is one alarm, set only when none is pending and moved at most once an hour, so a week of
 //     waiting adds at most a few alarm writes for the whole account, not per payload;
 //   * stored bytes are billed per GB-month, a rounding error for webhook payloads.
+// A connection costs two rows of its own (its ticket's nonce, kept until the ticket has expired, in a
+// WITHOUT ROWID table so no index row is written beside it, and that row's delete), however many payloads it carries.
 // So the hold ends only on the policy's limits: until the routine's computer takes it, for at most HOLD_DAYS,
 // with the account capped at MAX_HELD payloads and MAX_HELD_BYTES bytes, oldest dropped first.
 
@@ -49,7 +51,6 @@ interface SocketState {
   device: string;
   /** The highest sequence number sent on this socket: frames at or below it are in flight until acknowledged. */
   sentUpTo: number;
-  nonce: string;
   connectedAt: number;
   lastSeen: number;
 }
@@ -61,6 +62,9 @@ interface HeldRow extends Record<string, SqlStorageValue> {
 }
 
 const SOCKET_TAG = (device: string) => `d:${device}`;
+
+/** A used ticket's nonce is kept this long past the ticket's expiry, in case this object's clock runs ahead of the Worker's. */
+const TICKET_SLACK_MS = 60_000;
 
 export class ForwarderDO extends DurableObject<Env> {
   private readonly sql: SqlStorage;
@@ -91,6 +95,7 @@ export class ForwarderDO extends DurableObject<Env> {
       CREATE TABLE routines (id TEXT PRIMARY KEY, key_hash BLOB NOT NULL, device TEXT NOT NULL, registered INTEGER NOT NULL);
       CREATE TABLE held (seq INTEGER PRIMARY KEY, routine TEXT NOT NULL, pid BLOB NOT NULL,
                          received INTEGER NOT NULL, size INTEGER NOT NULL, env BLOB NOT NULL);
+      CREATE TABLE tickets (nonce TEXT PRIMARY KEY, expires INTEGER NOT NULL) WITHOUT ROWID;
       INSERT INTO meta (k, v) VALUES ('schema', '1');
     `);
   }
@@ -360,22 +365,27 @@ export class ForwarderDO extends DurableObject<Env> {
   /** A computer's WebSocket, forwarded by the Worker once it has checked the ticket. */
   override async fetch(request: Request): Promise<Response> {
     if (request.headers.get("upgrade")?.toLowerCase() !== "websocket") return new Response("expected a websocket", { status: 426 });
+    // Set by the Worker from the ticket it verified; nothing else can reach this object.
     const device = request.headers.get("x-clover-device") ?? "";
     const nonce = request.headers.get("x-clover-nonce") ?? "";
+    const expires = Number(request.headers.get("x-clover-ticket-expires"));
+    if (!nonce || !Number.isSafeInteger(expires)) return new Response("bad ticket", { status: 400 });
     if (!this.deviceRow(device) || this.isRevoked(device)) return new Response("unknown device", { status: 403 });
-    const previous = this.ctx.getWebSockets(SOCKET_TAG(device));
-    for (const ws of previous) {
-      if ((ws.deserializeAttachment() as SocketState | null)?.nonce === nonce) return new Response("ticket already used", { status: 409 });
+    // A ticket opens one connection, ever: its nonce is kept until the ticket can no longer be presented.
+    const now = Date.now();
+    this.sql.exec("DELETE FROM tickets WHERE expires <= ?", now - TICKET_SLACK_MS);
+    if (this.sql.exec("SELECT 1 AS x FROM tickets WHERE nonce = ?", nonce).toArray().length > 0) {
+      return new Response("ticket already used", { status: 409 });
     }
+    this.sql.exec("INSERT INTO tickets (nonce, expires) VALUES (?, ?)", nonce, expires);
     // One connection per computer: a new one replaces the old.
-    for (const ws of previous) this.closeSocket(ws, CLOSE_REPLACED, "replaced");
+    for (const ws of this.ctx.getWebSockets(SOCKET_TAG(device))) this.closeSocket(ws, CLOSE_REPLACED, "replaced");
 
     const pair = new WebSocketPair();
     const client = pair[0];
     const server = pair[1];
     this.ctx.acceptWebSocket(server, [SOCKET_TAG(device)]);
-    const now = Date.now();
-    const state: SocketState = { device, sentUpTo: 0, nonce, connectedAt: now, lastSeen: now };
+    const state: SocketState = { device, sentUpTo: 0, connectedAt: now, lastSeen: now };
     server.serializeAttachment(state);
     this.dropWhere("received <= ?", now - this.limits.holdMs);
     const pending = this.sql
