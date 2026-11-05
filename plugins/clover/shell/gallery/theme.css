@@ -1,0 +1,112 @@
+/* A STAND-IN THEME for the gallery: values for every token the parts wear, in light and dark. The
+   real defaults come from the token catalog (lane B) and `clover`'s base theme (lane G); these are a
+   neutral placeholder so the parts can be seen, not Clover's look. The `card.*` set is what the core's
+   sealed frames take (spec §5.5); the mock runtime draws with it. */
+
+:root,
+[data-theme="light"] {
+  --clover-color-canvas: #f7f7f8;
+  --clover-color-surface: #ffffff;
+  --clover-color-raised: #f6f6f7;
+  --clover-color-control: #efeff0;
+  --clover-color-floating: #ffffff;
+  --clover-color-bubble: #eaf3fd;
+  --clover-color-composer: #ffffff;
+  --clover-color-composer-rim: #e2e2e4;
+  --clover-color-hairline: #e9e9eb;
+  --clover-color-hairline-raised: #dadadc;
+  --clover-color-hover: #efeff1;
+  --clover-color-selected: #e6e7e9;
+  --clover-color-text: #1a1c1f;
+  --clover-color-text-secondary: #3b3d3f;
+  --clover-color-text-muted: #6c6e71;
+  --clover-color-text-placeholder: #a7a8ab;
+  --clover-color-link: #1f6aa8;
+  --clover-color-accent: #5bb2e6;
+  --clover-color-on-accent: #0b2a3d;
+  --clover-color-strong: #1a1c1f;
+  --clover-color-on-strong: #ffffff;
+  --clover-color-danger: #b3261e;
+  --clover-color-warning: #9a5a00;
+  --clover-color-diff-added: #1f7a3d;
+  --clover-color-diff-removed: #b3261e;
+  --clover-color-focus: #5bb2e6;
+  --clover-color-shadow: rgba(16, 18, 22, 0.08);
+
+  --clover-font-body: system-ui, -apple-system, "Segoe UI", Roboto, Ubuntu, sans-serif;
+  --clover-font-display: system-ui, -apple-system, "Segoe UI", Roboto, Ubuntu, sans-serif;
+  --clover-font-mono: ui-monospace, "SF Mono", Menlo, Consolas, "Cascadia Mono", "DejaVu Sans Mono", monospace;
+  --clover-text-body: 14px;
+  --clover-text-small: 13px;
+  --clover-text-caption: 12px;
+  --clover-text-code: 12.5px;
+  --clover-line-body: 1.6;
+  --clover-radius-bubble: 18px;
+  --clover-radius-card: 12px;
+  --clover-radius-control: 8px;
+  --clover-radius-pill: 999px;
+  --clover-radius-composer: 22px;
+
+  --clover-card-background: #ffffff;
+  --clover-card-text: #1a1c1f;
+  --clover-card-muted: #6c6e71;
+  --clover-card-border: #dadadc;
+  --clover-card-radius: 8px;
+  --clover-card-font: system-ui, -apple-system, "Segoe UI", Roboto, Ubuntu, sans-serif;
+  --clover-card-mono: ui-monospace, "SF Mono", Menlo, Consolas, "DejaVu Sans Mono", monospace;
+  --clover-card-approve: #1a1c1f;
+  --clover-card-on-approve: #ffffff;
+  --clover-card-deny: #ffffff;
+  --clover-card-on-deny: #1a1c1f;
+
+  --gallery-page: #ececee;
+  --gallery-ink: #1a1c1f;
+  --gallery-muted: #66686b;
+  --gallery-rim: #d4d4d7;
+  color-scheme: light;
+}
+
+[data-theme="dark"] {
+  --clover-color-canvas: #1f1f20;
+  --clover-color-surface: #171718;
+  --clover-color-raised: #222224;
+  --clover-color-control: #303032;
+  --clover-color-floating: #2b2b2d;
+  --clover-color-bubble: #223d72;
+  --clover-color-composer: #262628;
+  --clover-color-composer-rim: #38383b;
+  --clover-color-hairline: #2d2d30;
+  --clover-color-hairline-raised: #3b3b3e;
+  --clover-color-hover: #2a2a2c;
+  --clover-color-selected: #333336;
+  --clover-color-text: #f1f1f2;
+  --clover-color-text-secondary: #d9d9db;
+  --clover-color-text-muted: #8e8f92;
+  --clover-color-text-placeholder: #67686b;
+  --clover-color-link: #8ccbf0;
+  --clover-color-accent: #8ccbf0;
+  --clover-color-on-accent: #0b2a3d;
+  --clover-color-strong: #f1f1f2;
+  --clover-color-on-strong: #141415;
+  --clover-color-danger: #ff6b70;
+  --clover-color-warning: #f0b35a;
+  --clover-color-diff-added: #4cc38a;
+  --clover-color-diff-removed: #ff6b70;
+  --clover-color-focus: #8ccbf0;
+  --clover-color-shadow: rgba(0, 0, 0, 0.45);
+
+  --clover-card-background: #1c1c1e;
+  --clover-card-text: #f1f1f2;
+  --clover-card-muted: #9a9b9e;
+  --clover-card-border: #3b3b3e;
+  --clover-card-approve: #f1f1f2;
+  --clover-card-on-approve: #141415;
+  --clover-card-deny: #222224;
+  --clover-card-on-deny: #f1f1f2;
+
+  --gallery-page: #0f0f10;
+  --gallery-ink: #f1f1f2;
+  --gallery-muted: #9a9b9e;
+  --gallery-rim: #2f2f32;
+  color-scheme: dark;
+}

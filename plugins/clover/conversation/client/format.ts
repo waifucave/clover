@@ -22,13 +22,16 @@ export function dayKey(at: SharedTime, format: ConversationFormat = {}): string 
   return `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
 }
 
-/** "10:42" (or "10:42 AM", by locale). */
+/** "10:42" (or "10:42 AM", by locale). Newer ICU puts a narrow no-break space before "AM"; it is
+ *  read as a plain space, so every platform writes the same text. */
 export function formatTime(at: SharedTime, format: ConversationFormat = {}): string {
   return new Intl.DateTimeFormat(format.locale, {
     timeZone: format.timeZone,
     hour: "numeric",
     minute: "2-digit",
-  }).format(new Date(at));
+  })
+    .format(new Date(at))
+    .replace(/[\u202f\u00a0]/g, " ");
 }
 
 /** "Today", "Yesterday", "Monday, November 3", or with the year when it is not this year's. */
