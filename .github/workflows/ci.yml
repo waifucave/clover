@@ -12,6 +12,15 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# A-M1: the agent SDK's packages (`@waifucave/clover-*`) come from GitHub Packages, which wants a token even to
+# read. Every job reads them with this workflow's own token (`packages: read`); `bunfig.toml` binds the scope to
+# `CLOVER_PACKAGES_TOKEN`. A job with its own `permissions:` block sets `packages: read` itself if it installs.
+permissions:
+  contents: read
+  packages: read
+env:
+  CLOVER_PACKAGES_TOKEN: ${{ github.token }}
+
 jobs:
   # The TypeScript workspaces. Split per package so a failure names the layer it came from.
   # NOTE: the Swift side (WinterProtocol / WinterKit / the retired Mac app) is deliberately NOT built here —

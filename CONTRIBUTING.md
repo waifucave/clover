@@ -28,6 +28,7 @@ Found a security problem? Don't open an issue — see [SECURITY.md](SECURITY.md)
 | **macOS 26+**, Apple silicon | The deployment target. There is no legacy compatibility path — see [rules](#rules-that-bite). |
 | **[Bun](https://bun.sh) ≥ 1.3** | The runtime. TypeScript runs directly; there is no build step in dev. |
 | **pnpm** | Orchestrates the workspaces. `bun install` is what you actually run. |
+| **A GitHub token with `read:packages`** | The agent SDK's packages (`@waifucave/clover-*`) are on GitHub Packages, which needs a token even to read. Export it as `CLOVER_PACKAGES_TOKEN` before `bun install` (see [First build](#first-build)). |
 | **Xcode 26+** | Only if you're touching the Swift packages the iPhone app uses (`apple/WinterKit`, `apple/WinterProtocol`). |
 
 TypeScript-only contributions (the daemon, the CLI, tools, providers) need nothing from the Xcode
@@ -38,8 +39,12 @@ column.
 ```sh
 git clone https://github.com/waifucave/clover.git
 cd clover
+export CLOVER_PACKAGES_TOKEN=<a GitHub token with read:packages>   # e.g. a classic token, or `gh auth refresh -s read:packages` then `gh auth token`
 bun install
 ```
+
+`bunfig.toml` reads the `@waifucave` scope from GitHub Packages with that token. CI uses the workflow's own
+token (`packages: read`), so nothing needs to be configured there.
 
 That's the whole TypeScript setup. The Swift packages the iPhone app uses fetch one large artifact
 rather than committing it:
