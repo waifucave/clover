@@ -2,12 +2,13 @@
 // when none answers, coming back after a crash (the OS first, the app after 3 s), Quit and Hand over and quit, the
 // daemon's own quit, the token, how the app was started, and Quit's question.
 import { afterEach, describe, expect, test } from "bun:test";
+import { createHash } from "node:crypto";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { CloverHelloParams } from "@waifucave/clover-protocol";
 import { daemonEndpoint } from "../src/main/protocol/client";
-import type { DaemonLauncher } from "../src/main/pair/login";
+import { parseAutostartStatus, type DaemonLauncher } from "../src/main/pair/login";
 import { Pair, type PairState } from "../src/main/pair/pair";
 import { quitQuestion } from "../src/main/pair/quit";
 import { appHello, readAppToken, readStartInfo, startFilePath } from "../src/main/pair/start";
@@ -278,12 +279,19 @@ describe("how the app was started, and its token", () => {
     expect(readAppToken(home, { CLOVER_APP_TOKEN: "env" })).toBe("env");
   });
 
-  test("the endpoint: a socket in the home, or a pipe named after it on Windows", () => {
-    expect(daemonEndpoint("/h", "darwin")).toBe(join("/h", "run", "core.sock"));
+  test("the endpoint, as lane C resolves it: a socket in the run directory, or a pipe named after it on Windows", () => {
+    expect(daemonEndpoint("/h", "darwin")).toBe("/h/run/core.sock");
     const pipe = daemonEndpoint("C:\\Users\\me\\.clover", "win32");
-    expect(pipe).toMatch(/^\\\\\.\\pipe\\clover-core-[0-9a-f]{16}$/);
-    expect(daemonEndpoint("c:\\users\\ME\\.clover", "win32")).toBe(pipe);
+    const id = createHash("sha256").update("C:\\Users\\me\\.clover\\run").digest("hex").slice(0, 16);
+    expect(pipe).toBe(`\\\\.\\pipe\\clover-core-${id}`);
     expect(daemonEndpoint("C:\\Users\\me\\.clover-dev", "win32")).not.toBe(pipe);
+  });
+
+  test("lane C's `autostart status`, as text or JSON", () => {
+    expect(parseAutostartStatus("autostart: enabled (/Users/u/Library/LaunchAgents/x.plist) [registered]\n")).toEqual({ registered: true });
+    expect(parseAutostartStatus("autostart: disabled\n")).toEqual({ registered: false });
+    expect(parseAutostartStatus('{"registered":true,"running":false}')).toEqual({ registered: true, running: false });
+    expect(parseAutostartStatus("something else")).toBeUndefined();
   });
 });
 

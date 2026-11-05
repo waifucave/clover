@@ -70,6 +70,8 @@ export interface UiPlugin {
   bots: "all" | readonly string[];
   /** It is a bot's plugin: the bot's id is the plugin's id, and its entries count as limited to that bot. */
   isBot: boolean;
+  /** Its name, for a bot's row until the plugin API's `bots` reaches layers. */
+  name?: string;
   /** For a bot: the theme its tab wears (`bot.theme`), one of `themes`. */
   botTheme?: string;
   themes: readonly { id: string; file: string }[];
@@ -96,6 +98,7 @@ export interface UiPluginExtras {
   capabilities?: readonly string[];
   isBot?: boolean;
   botTheme?: string;
+  name?: string;
   css?: readonly string[];
 }
 
@@ -160,10 +163,24 @@ export function readUiEntry(pluginId: string, raw: Readonly<Record<string, unkno
   };
 }
 
+function fromView(v: Record<string, unknown>): UiPluginExtras {
+  const strings = (x: unknown) => (Array.isArray(x) && x.every((y) => typeof y === "string") ? (x as string[]) : undefined);
+  return {
+    ...(v.source === "bundled" || v.source === "installed" || v.source === "dev" ? { source: v.source } : {}),
+    ...(typeof v.enabledAt === "number" ? { enabledAt: v.enabledAt } : {}),
+    ...(strings(v.capabilities) ? { capabilities: strings(v.capabilities)! } : {}),
+    ...(typeof v.isBot === "boolean" ? { isBot: v.isBot } : {}),
+    ...(typeof v.botTheme === "string" ? { botTheme: v.botTheme } : {}),
+    ...(typeof v.name === "string" ? { name: v.name } : {}),
+    ...(strings(v.css) ? { css: strings(v.css)! } : {}),
+  };
+}
+
 /** The daemon's `plugin.ui` list as the runtime uses it. `extras` fills what the view lacks (see the header). */
 export function readUiPlugins(views: readonly UiPluginView[], extras: Readonly<Record<string, UiPluginExtras>> = {}): UiPlugin[] {
   return views.map((view, index) => {
-    const x = extras[view.pluginId] ?? {};
+    // Fields lane B is asked to add to `UiPluginView` are read from the view when it carries them.
+    const x: UiPluginExtras = { ...fromView(view as unknown as Record<string, unknown>), ...extras[view.pluginId] };
     const top = topIdOf(view.pluginId);
     const entries = view.ui.map((raw) => readUiEntry(view.pluginId, raw)).filter((e): e is UiEntry => e !== undefined);
     return {
@@ -179,6 +196,7 @@ export function readUiPlugins(views: readonly UiPluginView[], extras: Readonly<R
       capabilities: new Set(x.capabilities ?? []),
       bots: view.bots,
       isBot: x.isBot ?? false,
+      ...(x.name !== undefined ? { name: x.name } : {}),
       ...(x.botTheme !== undefined ? { botTheme: x.botTheme } : {}),
       themes: view.themes,
       locales: view.locales,

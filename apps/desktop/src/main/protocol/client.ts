@@ -6,14 +6,16 @@
 // handler answers each, and a method with no handler is answered "method not found".
 import { connect, type Socket } from "node:net";
 import { createHash } from "node:crypto";
-import { join } from "node:path";
+import { posix, win32 } from "node:path";
 import { LineDecoder, encodeLine } from "@waifucave/clover-protocol";
 
-/** Where the daemon listens for a home: `<home>/run/core.sock`, or on Windows a named pipe named after the home, so
- *  two homes (the dist one, the dev one, a test's) never meet. Proposed to lane C (C-M1) as the pair's endpoint. */
+/** Where the daemon listens for a home, as lane C's `platform/transport.ts` resolves it: `<home>/run/core.sock`, or
+ *  on Windows the named pipe `\\.\pipe\clover-core-<id>`, `<id>` the first 16 hex of SHA-256 over the run
+ *  directory's path, so two homes (the dist one, the dev one, a test's) never meet. */
 export function daemonEndpoint(home: string, platform: NodeJS.Platform = process.platform): string {
-  if (platform !== "win32") return join(home, "run", "core.sock");
-  const id = createHash("sha256").update(home.toLowerCase()).digest("hex").slice(0, 16);
+  const runDir = platform === "win32" ? win32.join(home, "run") : posix.join(home, "run");
+  if (platform !== "win32") return posix.join(runDir, "core.sock");
+  const id = createHash("sha256").update(runDir).digest("hex").slice(0, 16);
   return `\\\\.\\pipe\\clover-core-${id}`;
 }
 

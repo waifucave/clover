@@ -1,15 +1,16 @@
 // The app's side of installing and starting the daemon (spec §3.1 "The app can install, start and update the
 // daemon"; "Each starts the other through the OS"). Lane C's daemon binary owns the login items (what the launchd
-// plist, the `systemd --user` unit and the Task Scheduler task say, `clover-core supervise` on Windows) and starting
-// itself through the OS; the app never names a launchd label, a unit or a task. It runs one command:
+// plist, the `systemd --user` unit and the Task Scheduler task say; each runs `clover-core supervise`) and starting
+// itself through the OS, so the app never names a launchd label, a unit or a task. It runs lane C's command:
 //
-//   clover-core login status --json   → { "registered": boolean, "running"?: boolean }
-//   clover-core login enable          registers the login item for this home (idempotent)
-//   clover-core login start           starts the daemon through the OS now: `launchctl kickstart`,
-//                                     `systemctl --user start`, `schtasks /Run` — never as the app's child
+//   clover-core autostart status    "autostart: <state> (<unit>) [registered]", or with `--json` (proposed to C)
+//                                   { "registered": boolean, "running"?: boolean }
+//   clover-core autostart enable    registers the login item for this home (idempotent)
+//   clover-core autostart start     (proposed to C) starts the daemon through the OS now — `launchctl kickstart`,
+//                                   `systemctl --user start`, `schtasks /Run` — never as the app's child
 //
-// each with `CLOVER_HOME` and `CLOVER_PROFILE` set, exit code 0 on success. That is the contract proposed to lane C
-// (C-M1); a fake binary stands in for it in the tests.
+// each with `CLOVER_HOME` and `CLOVER_PROFILE` set, exit code 0 on success. A fake binary stands in for it in the
+// tests until C-M1 lands.
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, statSync, chmodSync } from "node:fs";
@@ -50,21 +51,29 @@ function run(cfg: LauncherConfig, args: string[]): Promise<LoginResult> {
   });
 }
 
+/** `autostart status`'s answer: JSON when the command gives it, else lane C's line ("… [registered]"). */
+export function parseAutostartStatus(out: string): { registered: boolean; running?: boolean } | undefined {
+  const json = out.split("\n").map((l) => l.trim()).filter((l) => l.startsWith("{")).pop();
+  if (json !== undefined) {
+    try {
+      const parsed = JSON.parse(json) as { registered?: unknown; running?: unknown };
+      if (typeof parsed.registered === "boolean") return { registered: parsed.registered, ...(typeof parsed.running === "boolean" ? { running: parsed.running } : {}) };
+    } catch {
+      /* the text form */
+    }
+  }
+  const line = out.split("\n").find((l) => l.startsWith("autostart:"));
+  return line === undefined ? undefined : { registered: line.includes("[registered]") };
+}
+
 export function cliLauncher(cfg: LauncherConfig): DaemonLauncher {
   return {
     async status() {
-      const r = await run(cfg, ["login", "status", "--json"]);
-      if (!r.ok) return undefined;
-      try {
-        const parsed = JSON.parse(r.out.split("\n").filter((l) => l.trim().startsWith("{")).pop() ?? "") as { registered?: unknown; running?: unknown };
-        if (typeof parsed.registered !== "boolean") return undefined;
-        return { registered: parsed.registered, ...(typeof parsed.running === "boolean" ? { running: parsed.running } : {}) };
-      } catch {
-        return undefined;
-      }
+      const r = await run(cfg, ["autostart", "status"]);
+      return r.ok ? parseAutostartStatus(r.out) : undefined;
     },
-    enable: () => run(cfg, ["login", "enable"]),
-    start: () => run(cfg, ["login", "start"]),
+    enable: () => run(cfg, ["autostart", "enable"]),
+    start: () => run(cfg, ["autostart", "start"]),
   };
 }
 

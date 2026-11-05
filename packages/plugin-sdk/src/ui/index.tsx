@@ -1,0 +1,473 @@
+// `@waifucave/clover-plugin-sdk/ui`: the UI API that a plugin's React components use (spec §5.5), implementing lane
+// B's declarations (`../api/ui-api.ts`). Each layer loads one copy, shared by every component in it: the app maps the
+// bare specifier to the layer's own copy, beside React's.
+//
+// E-M1 builds `<Spot>` (inline in the same layer, a frame from the entry's own layer otherwise), the tokens hook and
+// the layer's root. Strings (`useT`, E-M2), sealed cards (`<Card>`, `useApprovals`, E-M3), MCP Apps (`<AppView>`,
+// E-M3) and the plugin API in layers (`usePluginApi`, with lane B's host side) are placeholders that draw nothing
+// and never fail, so components written against the declarations already run.
+import {
+  Component, createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState,
+  type ErrorInfo, type ReactNode,
+} from "react";
+import type { CardMeta } from "@waifucave/clover-protocol";
+import type { TokenValue } from "../catalogs/tokens";
+import { cssProperty } from "../catalogs/tokens";
+import type { PluginApi, Unsubscribe } from "../api/plugin-api";
+import type {
+  AppViewProps, CardButtonProps, CardComponents, CardElementProps, CardFieldProps, EntryProps, SpotElementProps, UiApi, UiComponent,
+} from "../api/ui-api";
+import { CALLBACK_KEY, type LayerBridge, type LayerMessage, type MountContext, type MountInfo, type SpotItem, type SpotView } from "./bridge";
+
+export * from "./bridge";
+export type { AppViewProps, CardButtonProps, CardElementProps, CardFieldProps, EntryProps, SpeechFeed, SpeechFrame, UiApi, UiComponent, UiNode } from "../api/ui-api";
+
+// -------------------------------------------------------------------------------------------------
+// The layer's runtime: one per document
+// -------------------------------------------------------------------------------------------------
+
+/** A plugin's client module: its exports by name. */
+export type ClientModule = Readonly<Record<string, unknown>>;
+
+interface Runtime {
+  bridge: LayerBridge;
+  /** The client modules this layer holds, by plugin id. */
+  modules: Map<string, ClientModule>;
+  /** Loads a plugin's module on demand (a third-party layer's own). */
+  load?: (pluginId: string) => Promise<ClientModule | undefined>;
+  listeners: Set<(m: LayerMessage) => void>;
+  /** The callbacks each child frame was handed, by child mount. */
+  callbacks: Map<string, Map<string, (...args: unknown[]) => unknown>>;
+  tokens: Map<string, Readonly<Record<string, TokenValue>>>;
+}
+
+let runtime: Runtime | undefined;
+
+function rt(): Runtime {
+  if (runtime === undefined) throw new Error("the Clover UI runtime isn't set up in this document");
+  return runtime;
+}
+
+/** Sets the layer up (the app's layer boot calls it once, before rendering). Not for plugins. */
+export function configureLayer(input: { bridge: LayerBridge; modules?: Record<string, ClientModule>; load?: Runtime["load"] }): void {
+  const r: Runtime = {
+    bridge: input.bridge,
+    modules: new Map(Object.entries(input.modules ?? {})),
+    ...(input.load ? { load: input.load } : {}),
+    listeners: new Set(),
+    callbacks: new Map(),
+    tokens: new Map(),
+  };
+  runtime = r;
+  input.bridge.onMessage((m) => {
+    if (m.type === "callback") {
+      const fn = r.callbacks.get(m.child)?.get(m.id);
+      if (fn !== undefined) {
+        try {
+          fn(...m.args);
+        } catch (err) {
+          console.error("a callback a frame called failed", err);
+        }
+      }
+    }
+    if (m.type === "focus-returned") restoreFocus();
+    for (const l of r.listeners) l(m);
+  });
+  trackFocus();
+}
+
+/** Hears the core's messages to this document (app commands such as `open-settings`). For the `clover` layer's own
+ *  parts; not in lane B's declarations. */
+export function useLayerMessage(listener: (m: LayerMessage) => void): void {
+  const ref = useRef(listener);
+  ref.current = listener;
+  useEffect(() => onLayerMessage((m) => ref.current(m)), []);
+}
+
+function onLayerMessage(listener: (m: LayerMessage) => void): () => void {
+  const r = rt();
+  r.listeners.add(listener);
+  return () => r.listeners.delete(listener);
+}
+
+// S9: after the core's own overlay closes, the frame gets the focus back but not the element inside it, so the layer
+// restores the element it last had.
+let lastFocused: Element | null = null;
+function trackFocus(): void {
+  if (typeof document === "undefined") return;
+  document.addEventListener("focusin", (e) => {
+    if (e.target instanceof Element && e.target !== document.body) lastFocused = e.target;
+  });
+  window.addEventListener("focus", () => queueMicrotask(restoreFocus));
+}
+function restoreFocus(): void {
+  if (typeof document === "undefined") return;
+  const active = document.activeElement;
+  if ((active === null || active === document.body) && lastFocused instanceof HTMLElement && lastFocused.isConnected) lastFocused.focus();
+}
+
+// -------------------------------------------------------------------------------------------------
+// Props across a frame's edge: data, plus callbacks the core routes back (§5.5)
+// -------------------------------------------------------------------------------------------------
+
+const MAX_DEPTH = 32;
+
+/** Props for a child frame: plain data, each function replaced by a marker the core routes back to it. */
+export function encodeProps(props: unknown, register: (fn: (...args: unknown[]) => unknown) => string, depth = 0): unknown {
+  if (typeof props === "function") return { [CALLBACK_KEY]: register(props as (...args: unknown[]) => unknown) };
+  if (props === null || typeof props !== "object" || depth > MAX_DEPTH) return props;
+  if (Array.isArray(props)) return props.map((p) => encodeProps(p, register, depth + 1));
+  const proto = Object.getPrototypeOf(props);
+  if (proto !== Object.prototype && proto !== null) return undefined;
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(props as Record<string, unknown>)) {
+    const e = encodeProps(v, register, depth + 1);
+    if (e !== undefined) out[k] = e;
+  }
+  return out;
+}
+
+/** A frame's props as its component sees them: each marker is a function that calls back to the parent. */
+export function decodeProps(props: unknown, call: (id: string, args: unknown[]) => void, depth = 0): unknown {
+  if (props === null || typeof props !== "object" || depth > MAX_DEPTH) return props;
+  if (Array.isArray(props)) return props.map((p) => decodeProps(p, call, depth + 1));
+  const marker = (props as Record<string, unknown>)[CALLBACK_KEY];
+  if (typeof marker === "string" && Object.keys(props).length === 1) {
+    return (...args: unknown[]) => call(marker, args.map((a) => (typeof a === "function" ? undefined : a)));
+  }
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(props as Record<string, unknown>)) out[k] = decodeProps(v, call, depth + 1);
+  return out;
+}
+
+/** CSS custom properties for a set of tokens (`color.text` → `--clover-color-text`). */
+export function tokenStyle(tokens: Readonly<Record<string, TokenValue>>): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [name, value] of Object.entries(tokens)) {
+    try {
+      out[cssProperty(name)] = typeof value === "number" ? String(value) : value;
+    } catch {
+      // Not a token name: never reaches CSS.
+    }
+  }
+  return out;
+}
+
+// -------------------------------------------------------------------------------------------------
+// The part a component renders in
+// -------------------------------------------------------------------------------------------------
+
+interface Part {
+  mount: string;
+  entry: EntryProps["entry"];
+  tokens: Readonly<Record<string, TokenValue>>;
+  context: MountContext;
+}
+
+const PartContext = createContext<Part | null>(null);
+
+/** What the `clover` layer tells the core about the parts under it: the kind of session they show (`when.session`).
+ *  Heard from the `clover` layer only. Not for plugins. */
+export const SpotHints = createContext<{ session?: string }>({});
+
+function usePart(): Part {
+  const part = useContext(PartContext);
+  if (part === null) throw new Error("a Clover UI hook ran outside a mounted entry");
+  return part;
+}
+
+class PartBoundary extends Component<{ name: string; children: ReactNode }, { failed: boolean }> {
+  override state = { failed: false };
+  static getDerivedStateFromError(): { failed: boolean } {
+    return { failed: true };
+  }
+  override componentDidCatch(error: Error, info: ErrorInfo): void {
+    console.error(`the part ${this.props.name} stopped`, error, info.componentStack);
+  }
+  override render(): ReactNode {
+    if (this.state.failed) return <div className="clover-part-stopped" role="status" data-clover-stopped={this.props.name}>This part stopped.</div>;
+    return this.props.children;
+  }
+}
+
+function findComponent(mod: ClientModule | undefined, name: string): UiComponent<EntryProps<any>> | undefined {
+  const c = mod?.[name];
+  return typeof c === "function" ? (c as UiComponent<EntryProps<any>>) : undefined;
+}
+
+/** Renders one entry's component in its part. */
+function EntryView({ part, component, props }: { part: Part; component: UiComponent<EntryProps<any>>; props: unknown }) {
+  const C = component as (p: EntryProps<any>) => ReactNode;
+  return (
+    <PartContext.Provider value={part}>
+      <PartBoundary name={`${part.entry.pluginId}#${part.entry.id}`}>
+        <C props={(props ?? {}) as Record<string, unknown>} tokens={part.tokens} entry={part.entry} />
+      </PartBoundary>
+    </PartContext.Provider>
+  );
+}
+
+/** The document's own entry: what the layer boot renders. Not for plugins. */
+export function LayerRoot({ info }: { info: MountInfo }) {
+  const r = rt();
+  const [props, setProps] = useState<unknown>(() => decodeProps(info.props, (id, args) => r.bridge.callback(id, args)));
+  const [tokens, setTokens] = useState(info.tokens);
+  const [mod, setMod] = useState<ClientModule | undefined>(() => r.modules.get(info.pluginId));
+  useEffect(() => onLayerMessage((m) => {
+    if (m.type === "props" && m.mount === info.mount) setProps(decodeProps(m.props, (id, args) => r.bridge.callback(id, args)));
+    if (m.type === "tokens" && m.tokens[info.mount] !== undefined) setTokens(m.tokens[info.mount]!);
+  }), [info.mount, r]);
+  useEffect(() => {
+    if (mod !== undefined || r.load === undefined) return;
+    void r.load(info.pluginId).then((m) => {
+      if (m !== undefined) {
+        r.modules.set(info.pluginId, m);
+        setMod(m);
+      }
+    });
+  }, [info.pluginId, mod, r]);
+  useLayoutEffect(() => {
+    const style = document.documentElement.style;
+    for (const [k, v] of Object.entries(tokenStyle(tokens))) style.setProperty(k, v);
+  }, [tokens]);
+  useEffect(() => {
+    // The core sizes the frame: report the content's height as it changes (the bottom of the part's own elements, so
+    // a part that fills its frame reports the frame, and a small one its own size).
+    const host = document.getElementById("clover-root") ?? document.body;
+    let frame = 0;
+    let last = -1;
+    const measure = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        let bottom = 0;
+        for (const c of Array.from(host.children)) bottom = Math.max(bottom, c.getBoundingClientRect().bottom);
+        const h = Math.ceil(bottom);
+        if (h !== last) {
+          last = h;
+          r.bridge.reportSize(h);
+        }
+      });
+    };
+    const resize = new ResizeObserver(measure);
+    const watch = () => {
+      resize.disconnect();
+      resize.observe(host);
+      for (const c of Array.from(host.children)) resize.observe(c);
+      measure();
+    };
+    const children = new MutationObserver(watch);
+    children.observe(host, { childList: true });
+    watch();
+    return () => {
+      resize.disconnect();
+      children.disconnect();
+      cancelAnimationFrame(frame);
+    };
+  }, [r]);
+  const part: Part = useMemo(() => ({
+    mount: info.mount,
+    entry: { pluginId: info.pluginId, id: info.entryId, spot: info.spot, ...(info.key !== undefined ? { key: info.key } : {}) },
+    tokens,
+    context: info.context,
+  }), [info, tokens]);
+  const component = info.component === undefined ? undefined : findComponent(mod, info.component);
+  if (component === undefined) {
+    return mod === undefined && r.load !== undefined ? null : <div className="clover-part-missing" role="status">This part has no component {info.component}.</div>;
+  }
+  return <EntryView part={part} component={component} props={props} />;
+}
+
+// -------------------------------------------------------------------------------------------------
+// <Spot>
+// -------------------------------------------------------------------------------------------------
+
+function sameView(a: SpotView | undefined, b: SpotView): boolean {
+  return a !== undefined && JSON.stringify(a) === JSON.stringify(b);
+}
+
+/** `<Spot name spotKey props>`'s props. Lane B's declaration names the key `key`, which React keeps for itself and
+ *  never hands a component, so the runtime reads `spotKey` (asked of lane B: rename it). */
+export type SpotProps = Omit<SpotElementProps, "key"> & { spotKey?: string };
+
+/** `<Spot name spotKey props>`: shows a spot this part declares (§5.5). */
+export function Spot({ name, spotKey, props }: SpotProps) {
+  const part = usePart();
+  const hints = useContext(SpotHints);
+  const r = rt();
+  const [view, setView] = useState<SpotView | undefined>(undefined);
+  const session = hints.session;
+  const resolve = useCallback(() => {
+    void r.bridge.resolve(part.mount, name, spotKey, session !== undefined ? { session } : undefined)
+      .then((v) => setView((old) => (sameView(old, v) ? old : v)), () => setView(undefined));
+  }, [r, part.mount, name, spotKey, session]);
+  useEffect(() => {
+    resolve();
+    return onLayerMessage((m) => {
+      if (m.type === "respot") resolve();
+    });
+  }, [resolve]);
+  // Parts no longer shown are released, with everything under them.
+  const shown = useRef<string[]>([]);
+  useEffect(() => {
+    const now = view?.items.map((i) => i.mount) ?? [];
+    const gone = shown.current.filter((m) => !now.includes(m));
+    if (gone.length > 0) r.bridge.release(gone);
+    shown.current = now;
+  }, [view, r]);
+  useEffect(() => () => {
+    if (shown.current.length > 0) r.bridge.release(shown.current);
+  }, [r]);
+  if (view === undefined || view.hidden || view.items.length === 0) {
+    return <div data-clover-spot={name} data-clover-key={spotKey} data-clover-empty={view?.hidden ? "hidden" : view?.undeclared ? "waiting" : ""} style={{ display: "contents" }} />;
+  }
+  return (
+    <div data-clover-spot={name} data-clover-key={spotKey} data-clover-conflict={view.conflict ? "" : undefined} style={{ display: "contents" }}>
+      {view.items.map((item) => <SpotItemView key={item.mount} item={item} parent={part} spot={name} spotKey={view.key} props={props} />)}
+    </div>
+  );
+}
+
+function SpotItemView({ item, parent, spot, spotKey, props }: { item: SpotItem; parent: Part; spot: string; spotKey: string | undefined; props: unknown }) {
+  if (item.kind === "frame") return <LayerFrame item={item} props={props} />;
+  if (item.kind === "web") {
+    return <div className="clover-web-placeholder" data-clover-entry={item.ref} role="note">This part is a web page, which shows in a later version.</div>;
+  }
+  return <InlineItem item={item} parent={parent} spot={spot} spotKey={spotKey} props={props} />;
+}
+
+function InlineItem({ item, parent, spot, spotKey, props }: { item: Extract<SpotItem, { kind: "inline" }>; parent: Part; spot: string; spotKey: string | undefined; props: unknown }) {
+  const r = rt();
+  const [tokens, setTokens] = useState(item.tokens ?? parent.tokens);
+  useEffect(() => setTokens(item.tokens ?? parent.tokens), [item.tokens, parent.tokens]);
+  useEffect(() => onLayerMessage((m) => {
+    if (m.type === "tokens" && m.tokens[item.mount] !== undefined) setTokens(m.tokens[item.mount]!);
+  }), [item.mount]);
+  const part: Part = useMemo(() => ({
+    mount: item.mount,
+    entry: { pluginId: item.pluginId, id: item.entryId, spot, ...(spotKey !== undefined ? { key: spotKey } : {}) },
+    tokens,
+    context: item.context,
+  }), [item, tokens, spot, spotKey]);
+  const component = findComponent(r.modules.get(item.pluginId), item.component);
+  if (component === undefined) return <div className="clover-part-missing" role="status" data-clover-entry={item.ref}>This part has no component {item.component}.</div>;
+  const own = tokens !== parent.tokens ? tokenStyle(tokens) : undefined;
+  return (
+    <div data-clover-entry={item.ref} style={{ display: "contents", ...own }}>
+      <EntryView part={part} component={component} props={props} />
+    </div>
+  );
+}
+
+/** A part from another layer: a frame from that plugin's own origin, drawn by its own process. */
+function LayerFrame({ item, props }: { item: Extract<SpotItem, { kind: "frame" }>; props: unknown }) {
+  const r = rt();
+  const [url, setUrl] = useState(item.url);
+  const [height, setHeight] = useState<number | undefined>(undefined);
+  const [gone, setGone] = useState<string | undefined>(undefined);
+  useEffect(() => setUrl(item.url), [item.url]);
+  useEffect(() => onLayerMessage((m) => {
+    if (m.type === "child-size" && m.child === item.mount) setHeight(m.height);
+    if (m.type === "child-gone" && m.child === item.mount) setGone(m.reason);
+  }), [item.mount]);
+  useEffect(() => {
+    const fns = new Map<string, (...args: unknown[]) => unknown>();
+    let n = 0;
+    const encoded = encodeProps(props ?? {}, (fn) => {
+      const id = String(++n);
+      fns.set(id, fn);
+      return id;
+    });
+    r.callbacks.set(item.mount, fns);
+    r.bridge.setProps(item.mount, encoded);
+  }, [props, item.mount, r]);
+  useEffect(() => () => {
+    r.callbacks.delete(item.mount);
+  }, [item.mount, r]);
+  if (gone !== undefined) {
+    return (
+      <div className="clover-part-stopped" role="status" data-clover-entry={item.ref} data-clover-gone={gone}>
+        This part stopped.{" "}
+        <button type="button" onClick={() => void r.bridge.reload(item.mount).then((next) => {
+          if (next !== undefined) {
+            setGone(undefined);
+            setUrl(next);
+          }
+        })}>Reload</button>
+      </div>
+    );
+  }
+  return (
+    <iframe
+      key={url}
+      src={url}
+      title={item.ref}
+      data-clover-entry={item.ref}
+      data-clover-layer={item.layer}
+      allow=""
+      referrerPolicy="no-referrer"
+      style={{ display: "block", border: 0, width: "100%", height: height === undefined ? undefined : `${height}px`, colorScheme: "normal", background: "transparent" }}
+    />
+  );
+}
+
+// -------------------------------------------------------------------------------------------------
+// Hooks and the later parts
+// -------------------------------------------------------------------------------------------------
+
+/** Where the part is (its tab's bot, the surface, the OS, the window's material, safe mode). For the `clover` layer's
+ *  own parts; not in lane B's declarations. */
+export function useMountContext(): MountContext {
+  return usePart().context;
+}
+
+/** The part's resolved tokens, by name. */
+export function useTokens(): Readonly<Record<string, TokenValue>> {
+  return usePart().tokens;
+}
+
+/** Strings from the plugin's own keys. E-M2 brings the tables; until then a key reads as itself. */
+export function useT(): (key: string, params?: Record<string, string | number>) => string {
+  return useCallback((key: string, params?: Record<string, string | number>) => {
+    if (params === undefined) return key;
+    return key.replace(/\{(\w+)\}/g, (m, k: string) => (params[k] === undefined ? m : String(params[k])));
+  }, []);
+}
+
+/** The plugin API in this layer: only `plugin` and `t` in E-M1; the rest reaches layers with lane B's host side. */
+export function usePluginApi(): PluginApi {
+  const part = usePart();
+  const t = useT();
+  return useMemo(() => {
+    const unavailable = (what: string) => () => Promise.reject(new Error(`${what} isn't available in layers yet`));
+    return {
+      plugin: { id: part.entry.pluginId } as PluginApi["plugin"],
+      points: { list: unavailable("points") } as unknown as PluginApi["points"],
+      commands: { list: unavailable("commands"), run: unavailable("commands") } as unknown as PluginApi["commands"],
+      host: { call: unavailable("host"), on: () => () => {} } as unknown as PluginApi["host"],
+      ui: { send: () => {} } as unknown as PluginApi["ui"],
+      storage: {} as PluginApi["storage"],
+      net: { fetch: unavailable("net.fetch") } as unknown as PluginApi["net"],
+      settings: {} as PluginApi["settings"],
+      confirm: unavailable("confirm") as unknown as PluginApi["confirm"],
+      t,
+    } as PluginApi;
+  }, [part.entry.pluginId, t]);
+}
+
+/** Pending cards without their text. Sealed cards come in E-M3: none until then. */
+export function useApprovals(): { readonly cards: readonly CardMeta[]; subscribe(listener: () => void): Unsubscribe } {
+  return useMemo(() => ({ cards: [], subscribe: () => () => {} }), []);
+}
+
+// Sealed cards (E-M3): the frames come from a core-owned origin. Until then they draw nothing, and the app's own
+// fallback card stands in for any card a component places.
+const CardRoot = (_props: CardElementProps) => null;
+const CardField = (_props: CardFieldProps) => null;
+const CardButton = (_props: CardButtonProps) => null;
+export const Card: CardComponents = Object.assign(CardRoot, { Field: CardField, Approve: CardButton, Deny: CardButton });
+
+/** MCP Apps views (E-M3): until then the tool's result shows as text, as for a page no component places. */
+export const AppView = (_props: AppViewProps) => null;
+
+/** The UI API as lane B declared it. */
+export const ui: UiApi = { Spot: Spot as unknown as UiComponent<SpotElementProps>, Card, AppView, usePluginApi, useTokens, useT, useApprovals };

@@ -11,7 +11,7 @@
     "build": "bun run scripts/build.ts",
     "dist": "bun run scripts/build.ts && electron-builder --dir --publish never",
     "test": "bun test",
-    "typecheck": "tsc --noEmit -p . && tsc --noEmit -p tsconfig.tools.json"
+    "typecheck": "tsc --noEmit -p . && tsc --noEmit -p tsconfig.layer.json && tsc --noEmit -p tsconfig.tools.json"
   },
   "devDependencies": {
     "@types/node": "25.9.3",

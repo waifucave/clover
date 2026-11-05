@@ -1,0 +1,16 @@
+{
+  "extends": "../../tsconfig.base.json",
+  // The window's core root and the layers' own code run in the browser: the DOM and React. Node's types are here only
+  // because the protocol's index (which the UI API's types reach) names Buffer; test/main-no-bun.test.ts keeps Node out
+  // of src/layer and src/core. The clover children are reached by name (`@clover-child/<folder>`), wherever lane M's
+  // layout puts them; the build resolves the same names from their manifests.
+  "compilerOptions": {
+    "lib": ["ESNext", "DOM", "DOM.Iterable"],
+    "types": ["node"],
+    "jsx": "react-jsx",
+    "paths": {
+      "@clover-child/*": ["../../plugins/clover/*/client/index.tsx", "../../plugins/clover/plugins/*/client/index.tsx"]
+    }
+  },
+  "include": ["src/layer", "src/core"]
+}

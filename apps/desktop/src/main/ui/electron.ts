@@ -1,0 +1,280 @@
+// The Electron half of the plugin runtime: the app's schemes, the UI session's hardening, the protocol handlers that
+// serve the core root and the layers, the IPC the preload's bridge speaks, and the crash census. Spike S9's measured
+// design, with decision 94 (stock Electron) and the E-M0 review: the WebRTC UDP policy on every window, no PAC.
+import { readFileSync } from "node:fs";
+import { join, normalize } from "node:path";
+import { app, ipcMain, protocol, webFrameMain, BrowserWindow, type IpcMainEvent, type IpcMainInvokeEvent, type Session, type WebContents, type WebFrameMain } from "electron";
+import type { LayerMessage } from "@waifucave/clover-plugin-sdk/ui/bridge";
+import { CORE_CSP, CORE_SCHEME, LAYER_SCHEME, SEALED_SCHEME, commonHeaders, layerDocument, layerHeaders } from "./documents";
+import { isInside, mediaType, pluginFile } from "./files";
+import { LayerError, type FrameRef, type UiRuntime } from "./runtime";
+
+/** Registers the app's schemes as standard and secure origins, before the app is ready. Service workers and
+ *  `bypassCSP` are never granted. */
+export function registerSchemes(): void {
+  protocol.registerSchemesAsPrivileged([CORE_SCHEME, LAYER_SCHEME, SEALED_SCHEME].map((scheme) => ({
+    scheme,
+    privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true },
+  })));
+}
+
+/** Every session the app has, the default one included (S9, and the E-M0 review's S2): no permission, an explicit
+ *  proxy (no WPAD lookups), no spellchecker (whose dictionary download no request filter sees). */
+export async function hardenSession(ses: Session, log: (line: string) => void): Promise<void> {
+  ses.setPermissionRequestHandler((_wc, _permission, callback) => callback(false));
+  ses.setPermissionCheckHandler(() => false);
+  ses.setSpellCheckerEnabled(false);
+  ses.on("spellcheck-dictionary-download-begin", (_e, lang) => log(`session: the spellchecker began a dictionary download (${lang}); it should be off`));
+  ses.on("will-download", (e) => e.preventDefault());
+  await ses.setProxy({ mode: "direct" });
+}
+
+const ALLOWED_PROTOCOLS = new Set([`${CORE_SCHEME}:`, `${LAYER_SCHEME}:`, `${SEALED_SCHEME}:`, "data:", "blob:", "devtools:"]);
+
+function forbidden(): Response {
+  return new Response("forbidden", { status: 403, headers: commonHeaders() });
+}
+
+function notFound(): Response {
+  return new Response("not found", { status: 404, headers: commonHeaders() });
+}
+
+function fileResponse(path: string, type: string, headers: Record<string, string>): Response {
+  try {
+    return new Response(readFileSync(path), { headers: { ...headers, "Content-Type": type } });
+  } catch {
+    return notFound();
+  }
+}
+
+/** Serves the core root (`clover-core://app/`) and the layers on the UI session, and keeps the session off the
+ *  network: no plugin layer declares a host until lane B's registry hands them over, so every request outside the
+ *  app's own schemes is cancelled. */
+export function installUiSession(ses: Session, runtime: UiRuntime, dirs: { core: string; layer: string }, log: (line: string) => void): void {
+  ses.protocol.handle(CORE_SCHEME, (request) => {
+    const url = new URL(request.url);
+    if (url.host !== "app") return notFound();
+    const name = url.pathname === "/" ? "index.html" : url.pathname.slice(1);
+    const file = normalize(join(dirs.core, ...name.split("/")));
+    if (!isInside(dirs.core, file)) return forbidden();
+    const type = mediaType(file) ?? (file.endsWith(".html") ? "text/html; charset=utf-8" : undefined);
+    if (type === undefined) return notFound();
+    return fileResponse(file, type, { ...commonHeaders(), ...(type.startsWith("text/html") ? { "Content-Security-Policy": CORE_CSP } : {}) });
+  });
+
+  ses.protocol.handle(LAYER_SCHEME, (request) => {
+    const url = new URL(request.url);
+    const layer = url.host;
+    if (url.pathname === "/") {
+      const mount = runtime.serveDocument(layer, url.searchParams.get("mount"));
+      if (mount === undefined) return forbidden();
+      const doc = runtime.mountForDocument(mount);
+      return new Response(layerDocument({ css: doc.assets.css, title: doc.pluginId }), { headers: layerHeaders("text/html; charset=utf-8") });
+    }
+    if (url.pathname.startsWith("/_clover/")) {
+      const file = normalize(join(dirs.layer, ...url.pathname.slice("/_clover/".length).split("/")));
+      if (!isInside(dirs.layer, file)) return forbidden();
+      const type = mediaType(file);
+      if (type === undefined) return notFound();
+      // The `clover` tree's bundle is served only in the `clover` layer.
+      if (/^clover\.(js|css)$/.test(url.pathname.slice("/_clover/".length)) && layer !== "clover") return forbidden();
+      return fileResponse(file, type, layerHeaders(type));
+    }
+    if (url.pathname.startsWith("/_p/")) {
+      const [, , encoded, ...rest] = url.pathname.split("/");
+      let id: string;
+      let path: string;
+      try {
+        id = decodeURIComponent(encoded ?? "");
+        path = rest.map((p) => decodeURIComponent(p)).join("/");
+      } catch {
+        return notFound();
+      }
+      // A layer serves its own plugin's files only.
+      const plugin = runtime.registry.find((p) => p.id === id && p.layer === layer);
+      if (plugin === undefined) return forbidden();
+      let file: string;
+      try {
+        file = pluginFile(plugin, path);
+      } catch {
+        return notFound();
+      }
+      const type = mediaType(file);
+      if (type === undefined) return forbidden();
+      return fileResponse(file, type, layerHeaders(type));
+    }
+    return notFound();
+  });
+
+  // Sealed card frames are E-M3's.
+  ses.protocol.handle(SEALED_SCHEME, () => forbidden());
+
+  const refused = new Set<string>();
+  ses.webRequest.onBeforeRequest((details, callback) => {
+    let protocolName = "";
+    try {
+      protocolName = new URL(details.url).protocol;
+    } catch {
+      /* refused */
+    }
+    if (ALLOWED_PROTOCOLS.has(protocolName)) return callback({});
+    const origin = details.initiatorOrigin ?? "unknown";
+    if (!refused.has(origin)) {
+      refused.add(origin);
+      log(`layers: refused a request to the network from ${origin} (no layer declares a host yet)`);
+    }
+    callback({ cancel: true });
+  });
+}
+
+/** The guards every app window's page gets: no popups, no navigation away, no `<webview>`, WebRTC's UDP only through
+ *  a proxy (the E-M0 review's B3: with Connection-Allowlist it read zero on every vector with a positive control). */
+export function guardContents(wc: WebContents, log: (line: string) => void): void {
+  wc.setWindowOpenHandler(() => ({ action: "deny" }));
+  wc.on("will-navigate", (e) => e.preventDefault());
+  wc.on("will-frame-navigate", (e) => {
+    if (e.isMainFrame) {
+      if (!e.url.startsWith(`${CORE_SCHEME}://app/`)) e.preventDefault();
+      return;
+    }
+    if (!e.url.startsWith(`${LAYER_SCHEME}://`)) {
+      log(`layers: a frame tried to leave for ${e.url.slice(0, 120)}`);
+      e.preventDefault();
+    }
+  });
+  wc.on("will-attach-webview", (e) => e.preventDefault());
+  wc.setWebRTCIPHandlingPolicy("disable_non_proxied_udp");
+}
+
+function frameRef(f: WebFrameMain, depth = 0): FrameRef {
+  return {
+    processId: f.processId,
+    routingId: f.routingId,
+    url: f.url,
+    osPid: f.osProcessId,
+    parent: f.parent !== null && depth < 1 ? frameRef(f.parent, depth + 1) : null,
+  };
+}
+
+function sender(event: IpcMainEvent | IpcMainInvokeEvent): { frame: FrameRef; windowId: number } {
+  const f = event.senderFrame;
+  if (f === null || f.detached) throw new LayerError("the frame is gone");
+  const win = BrowserWindow.fromWebContents(event.sender);
+  if (win === null) throw new LayerError("no window");
+  return { frame: frameRef(f), windowId: win.id };
+}
+
+const MAX_PROPS_BYTES = 1_000_000;
+
+function str(v: unknown, max = 256): string | undefined {
+  return typeof v === "string" && v.length > 0 && v.length <= max ? v : undefined;
+}
+
+export interface IpcHooks {
+  /** The root's measured title-bar area, for the frame's variables. */
+  frameMetrics(windowId: number, m: { top: number; start: number; end: number }): void;
+  /** A command from the root (restart normally, open the plugin manager…). */
+  rootCommand(windowId: number, name: string): void;
+}
+
+/** The IPC the preload's bridge speaks. Every call is bound to its sender's frame. */
+export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: string) => void): () => void {
+  runtime.send = (frame, message: LayerMessage) => {
+    const f = webFrameMain.fromId(frame.processId, frame.routingId);
+    if (f === undefined || f === null || f.detached) return;
+    f.send("clover:message", message);
+  };
+  const handle = (channel: string, fn: (event: IpcMainInvokeEvent, arg: Record<string, unknown>) => unknown) =>
+    ipcMain.handle(channel, (event, arg) => fn(event, (arg ?? {}) as Record<string, unknown>));
+  const on = (channel: string, fn: (event: IpcMainEvent, arg: Record<string, unknown>) => void) =>
+    ipcMain.on(channel, (event, arg) => {
+      try {
+        fn(event, (arg ?? {}) as Record<string, unknown>);
+      } catch (err) {
+        if (!(err instanceof LayerError)) log(`layers: ${channel} failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    });
+
+  handle("clover:describe", (event, a) => {
+    const s = sender(event);
+    return runtime.describe(s.frame, s.windowId, str(a.token, 128));
+  });
+  handle("clover:resolve", (event, a) => {
+    const s = sender(event);
+    const mount = str(a.mount, 32);
+    const spot = str(a.spot, 128);
+    if (mount === undefined || spot === undefined) throw new LayerError("bad request");
+    const hints = typeof a.hints === "object" && a.hints !== null ? (a.hints as { session?: unknown }) : {};
+    return runtime.resolve(s.frame, mount, spot, str(a.key), { ...(str(hints.session, 32) ? { session: str(hints.session, 32)! } : {}) });
+  });
+  handle("clover:reload", (event, a) => {
+    const s = sender(event);
+    const child = str(a.child, 32);
+    return child === undefined ? undefined : runtime.reload(s.frame, child);
+  });
+  on("clover:props", (event, a) => {
+    const child = str(a.child, 32);
+    if (child === undefined) return;
+    if (JSON.stringify(a.props ?? null).length > MAX_PROPS_BYTES) {
+      log(`layers: props for ${child} were too large and were dropped`);
+      return;
+    }
+    runtime.setProps(sender(event).frame, child, a.props);
+  });
+  on("clover:callback", (event, a) => {
+    const id = str(a.id, 32);
+    if (id === undefined || !Array.isArray(a.args) || JSON.stringify(a.args).length > MAX_PROPS_BYTES) return;
+    runtime.callback(sender(event).frame, id, a.args);
+  });
+  on("clover:size", (event, a) => {
+    if (typeof a.height === "number") runtime.reportSize(sender(event).frame, a.height);
+  });
+  on("clover:release", (event, a) => {
+    if (!Array.isArray(a.mounts)) return;
+    runtime.release(sender(event).frame, a.mounts.filter((m): m is string => typeof m === "string").slice(0, 1000));
+  });
+  // The root's own calls: only from a window's main frame on the core's origin.
+  const fromRoot = (event: IpcMainEvent): number | undefined => {
+    const f = event.senderFrame;
+    if (f === null || f.parent !== null || !f.url.startsWith(`${CORE_SCHEME}://app/`)) return undefined;
+    return BrowserWindow.fromWebContents(event.sender)?.id;
+  };
+  on("clover:frame-metrics", (event, a) => {
+    const id = fromRoot(event);
+    const n = (v: unknown, d: number) => (typeof v === "number" && Number.isFinite(v) ? Math.max(0, Math.min(1000, Math.round(v))) : d);
+    if (id !== undefined) hooks.frameMetrics(id, { top: n(a.top, 45), start: n(a.start, 0), end: n(a.end, 0) });
+  });
+  on("clover:root-command", (event, a) => {
+    const id = fromRoot(event);
+    const name = str(a.name, 64);
+    if (id !== undefined && name !== undefined) hooks.rootCommand(id, name);
+  });
+
+  return () => {
+    for (const c of ["clover:describe", "clover:resolve", "clover:reload"]) ipcMain.removeHandler(c);
+    for (const c of ["clover:props", "clover:callback", "clover:size", "clover:release", "clover:frame-metrics", "clover:root-command"]) ipcMain.removeAllListeners(c);
+  };
+}
+
+/** S9: Electron 45 raises nothing when a subframe's renderer is killed, so the runtime counts processes. A census runs
+ *  every few seconds while windows exist, and at once when any child process goes. */
+export function startCensus(runtime: UiRuntime, intervalMs = 5_000): () => void {
+  const run = () => {
+    if (BrowserWindow.getAllWindows().length === 0) return;
+    const pids = new Set(app.getAppMetrics().map((m) => m.pid));
+    runtime.census((f) => {
+      const wf = webFrameMain.fromId(f.processId, f.routingId);
+      if (wf === undefined || wf === null || wf.detached) return false;
+      return f.osPid === undefined || pids.has(f.osPid);
+    });
+  };
+  const timer = setInterval(run, intervalMs);
+  const soon = () => setTimeout(run, 50);
+  app.on("render-process-gone", soon);
+  app.on("child-process-gone", soon);
+  return () => {
+    clearInterval(timer);
+    app.removeListener("render-process-gone", soon);
+    app.removeListener("child-process-gone", soon);
+  };
+}

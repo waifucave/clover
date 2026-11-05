@@ -1,8 +1,8 @@
 // A fake clover-core for the app's tests, until lane C's daemon side of the pair (C-M1) lands. It speaks the pair's
-// part of the protocol as proposed to lane C (src/main/pair/*.ts): `protocol.hello` with the `app` token from
+// part of the protocol as agreed with lane C (src/main/pair/*.ts): `protocol.hello` with the `app` token from
 // `<home>/run/app.token`, `events.subscribe`, `pair.status`, `pair.quit`, `pair.exiting`, `plugin.ui`, `ui.settings`,
-// `layer.token`, and the daemon's own requests to the app (`app.quit`, `app.show`). As a program it is also the login
-// command (`login status|enable|start`), which "starts through the OS" by spawning itself detached.
+// `layer.token`, and the daemon's own requests to the app (`app.quit`, `app.show`). As a program it is also lane C's
+// login command (`autostart status|enable|start`), whose `start` "starts through the OS" by spawning itself detached.
 //
 // Everything it does goes to `<home>/fake/calls.jsonl`, which the tests read. It never touches a real home.
 import { spawn } from "node:child_process";
@@ -180,16 +180,17 @@ export async function startFakeDaemon(opts: FakeOptions): Promise<FakeDaemon> {
   };
 }
 
-/** The fake as a program: `daemon` runs it; `login status|enable|start` is the login command. */
+/** The fake as a program: `daemon` runs it; `autostart status|enable|start` is the login command. */
 async function main(argv: string[]): Promise<void> {
   const home = process.env.CLOVER_HOME;
   if (home === undefined || home === "") throw new Error("CLOVER_HOME must be set");
   const [cmd, sub] = argv;
   const registered = join(fakeDir(home), "registered");
-  if (cmd === "login") {
-    record(home, `login-${sub}`);
+  if (cmd === "autostart") {
+    record(home, `autostart-${sub}`);
     if (sub === "status") {
-      process.stdout.write(`${JSON.stringify({ registered: existsSync(registered) })}\n`);
+      // Lane C's text form.
+      process.stdout.write(existsSync(registered) ? "autostart: enabled (fake) [registered]\n" : "autostart: disabled\n");
       return;
     }
     if (sub === "enable") {
