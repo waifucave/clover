@@ -10,7 +10,7 @@ import { BrowserWindow, WebContentsView, type BaseWindow, type ContextMenuParams
 import { TabDebugger } from "./cdp";
 import { AGENT_VIEWPORT, isBrowserUrlAllowed, partitionFor, type AppTabEvent, type Screenshot, type ScreenshotFormat, type TabOwner, type TabPlace, type TabView, type Viewport } from "./contract";
 import { FrameStore } from "./frames";
-import { hardenSession } from "./session";
+import { guardPage, hardenSession } from "./session";
 
 /** Frame rates (S7 §7.1): a bot's tab draws at 10 fps while nobody watches, at 60 while the person does. */
 export const BOT_FPS = 10;
@@ -69,14 +69,10 @@ export abstract class BrowserTab {
   /** Wires the page's events; called once by each kind's constructor, after its contents exist. */
   protected wire(): void {
     const c = this.contents;
-    hardenSession(c.session);
-    // The URL rule for navigations however they start (the session refuses the requests too).
-    const guard = (event: { preventDefault(): void }, url: string): void => { if (!isBrowserUrlAllowed(url)) event.preventDefault(); };
-    c.on("will-navigate", (e, url) => guard(e, url));
-    c.on("will-frame-navigate", (e) => guard(e, e.url));
-    c.on("will-redirect", (e, url) => guard(e, url));
-    // A page's `beforeunload` never holds a tab open or asks the person anything.
-    c.on("will-prevent-unload", (e) => e.preventDefault());
+    hardenSession(c.session); // already done before the tab was made (`prepareTabSession`); a no-op then
+    // The URL rule for navigations however they start (the session refuses the requests too), no `beforeunload`
+    // prompt, no <webview>, the WebRTC policy.
+    guardPage(c);
     c.setWindowOpenHandler((details) => this.env.windowOpen(this, details));
     c.on("did-create-window", (child, details) => this.env.windowCreated(this, child, details));
     for (const ev of ["did-start-loading", "did-stop-loading", "page-title-updated", "did-navigate", "did-navigate-in-page"] as const) {

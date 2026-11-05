@@ -3,6 +3,7 @@
 // (`viewport-page/`) draws the tab's frames and sends the person's input back, and the tab is laid out at the view's
 // size while shown. Nothing about the tab changes but its size and frame rate, so it never reloads.
 import { ipcMain, WebContentsView, type BaseWindow, type IpcMainEvent, type KeyboardInputEvent, type MouseInputEvent, type MouseWheelInputEvent, type NativeImage, type Rectangle } from "electron";
+import { BROWSER_WEBRTC_POLICY, prepareViewportSession, VIEWPORT_PARTITION } from "./session";
 import type { OffscreenTab } from "./tab";
 
 export const VIEWPORT_CHANNEL = "clover-browser-viewport";
@@ -40,13 +41,20 @@ export class Viewport {
   private readonly onAck = (e: IpcMainEvent, seq: number): void => { if (e.sender === this.view.webContents) this.inFlight.delete(seq); };
 
   constructor(assets: ViewportAssets, private readonly hooks: { took(tab: OffscreenTab): void }) {
+    // Its own in-memory partition, locked down first (no network, only its page's file), so `isBrowserContents` holds
+    // from `web-contents-created` on and lane E's window guards leave it to this module.
+    prepareViewportSession(assets.html);
     this.view = new WebContentsView({
-      webPreferences: { preload: assets.preload, sandbox: true, contextIsolation: true, nodeIntegration: false, backgroundThrottling: false, spellcheck: false },
+      webPreferences: { partition: VIEWPORT_PARTITION, preload: assets.preload, sandbox: true, contextIsolation: true, nodeIntegration: false, webviewTag: false, backgroundThrottling: false, spellcheck: false },
     });
     this.view.setBackgroundColor("#00000000");
-    // The viewport page is the app's own; it never navigates or opens anything.
-    this.view.webContents.on("will-navigate", (e) => e.preventDefault());
-    this.view.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+    // The viewport page is the app's own; it never navigates, opens anything or holds a frame.
+    const wc = this.view.webContents;
+    wc.on("will-navigate", (e) => e.preventDefault());
+    wc.on("will-frame-navigate", (e) => { if (!e.isMainFrame) e.preventDefault(); });
+    wc.on("will-attach-webview", (e) => e.preventDefault());
+    wc.setWindowOpenHandler(() => ({ action: "deny" }));
+    wc.setWebRTCIPHandlingPolicy(BROWSER_WEBRTC_POLICY);
     void this.view.webContents.loadFile(assets.html);
     ipcMain.on(`${VIEWPORT_CHANNEL}:input`, this.onInput);
     ipcMain.on(`${VIEWPORT_CHANNEL}:ack`, this.onAck);

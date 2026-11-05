@@ -2,11 +2,11 @@
 // lane E's runtime will, against pages served on loopback, and writes what it saw as JSON. `../browser.test.ts`
 // builds and runs it (CI only: it shows a window) and asserts on the result. Each step records ok/detail and never
 // throws past itself, so one failure doesn't hide the rest.
-import { app, BrowserWindow, clipboard, type BaseWindow } from "electron";
+import { app, BrowserWindow, clipboard, webContents, type BaseWindow } from "electron";
 import { createServer } from "node:http";
 import { writeFileSync } from "node:fs";
 import type { AddressInfo } from "node:net";
-import { createBrowserHost, type BrowserHost, type TabView } from "../../src/main/browser/index";
+import { BROWSER_WEBRTC_POLICY, createBrowserHost, isBrowserContents, isBrowserTab, type BrowserHost, type TabView } from "../../src/main/browser/index";
 import type { AppTabEvent } from "../../src/main/browser/contract";
 
 const out = process.env.CLOVER_BROWSER_TEST_OUT ?? "";
@@ -79,6 +79,9 @@ function visibleWindows(except: BaseWindow[]): number {
 }
 
 async function main(): Promise<void> {
+  // What lane E's guards would see: whether each webContents is the browser's, at the moment it is made.
+  const created: { id: number; tab: boolean; contents: boolean }[] = [];
+  app.on("web-contents-created", (_e, wc) => { created.push({ id: wc.id, tab: isBrowserTab(wc), contents: isBrowserContents(wc) }); });
   const server = createServer((req, res) => {
     const body = req.url?.startsWith("/popup") ? POPUP : PAGE;
     res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
@@ -238,6 +241,19 @@ async function main(): Promise<void> {
     for (const ch of "hi") { vin({ type: "keyDown", keyCode: ch }); vin({ type: "char", keyCode: ch }); vin({ type: "keyUp", keyCode: ch }); }
     const v = await until(async () => { const s = await evalIn(host, tab.id, "document.getElementById('field').value"); return s === "hi" ? s : undefined; });
     return { ok: v === "hi", detail: { value: v } };
+  });
+
+  await step("the browser's webContents are its own from their making on, with its WebRTC policy, a direct proxy and no spellchecker; the app's window's aren't", async () => {
+    const tabWc = webContents.getAllWebContents().find((w) => isBrowserTab(w) && w.getURL().startsWith(`${origin}/page`));
+    const ses = tabWc?.session;
+    const proxy = ses !== undefined ? await ses.resolveProxy("https://example.com/") : undefined;
+    const own = created.find((c) => c.id === appWindow.webContents.id);
+    const others = created.filter((c) => c.id !== appWindow.webContents.id);
+    const vp = viewport;
+    const ok = tabWc !== undefined && own !== undefined && !own.contents && others.length >= 2 && others.every((c) => c.contents)
+      && tabWc.getWebRTCIPHandlingPolicy() === BROWSER_WEBRTC_POLICY && proxy === "DIRECT" && ses?.isSpellCheckerEnabled() === false
+      && vp !== undefined && isBrowserContents(vp.webContents) && !isBrowserTab(vp.webContents) && vp.webContents.session.isSpellCheckerEnabled() === false;
+    return { ok, detail: { created, webrtc: tabWc?.getWebRTCIPHandlingPolicy(), proxy, spellchecker: ses?.isSpellCheckerEnabled() } };
   });
 
   await step("hidden again: back to 1280×800, the same document", async () => {

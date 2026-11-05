@@ -6,16 +6,22 @@
 //   const browser = createBrowserHost({ computer, report, hold, assets });
 //   transport.handle("app.tab.open", (p) => browser.open(p));            // and command, list
 //   runtime.onViewMoved("browser", (target) => browser.setView("browser", target));
+//   app.on("web-contents-created", (_e, wc) => { if (!isBrowserContents(wc)) guardContents(wc); });
+//
+// Its webContents (tabs, the windows pages open, the viewport pages) get the browser's own policy (`session.ts`), and
+// the app's window guards leave them alone: `isBrowserContents` tells them apart from the moment each is made.
 import { app, BrowserWindow, dialog, Menu, type BaseWindow, type ContextMenuParams, type Rectangle } from "electron";
 import { randomBytes } from "node:crypto";
 import { AGENT_VIEWPORT, isBrowserUrlAllowed, partitionFor, type AppTabCommand, type AppTabEvent, type TabOwner, type TabPlace, type TabView, type Viewport as Size } from "./contract";
 import { HostWindow } from "./host-window";
 import { choosePopup } from "./popups";
 import { ScreenReaderSwitch, type ScreenReaderProbe } from "./screen-reader";
+import { guardPage, prepareTabSession } from "./session";
 import { BrowserTab, HostTab, OffscreenTab, tabWebPreferences, type TabEnv } from "./tab";
 import { Viewport, type ViewportAssets } from "./viewport";
 
 export { BROWSER_ASSETS } from "./assets";
+export { BROWSER_WEBRTC_POLICY, isBrowserContents, isBrowserTab } from "./session";
 export type { AppTabCommand, AppTabEvent, TabOwner, TabPlace, TabView } from "./contract";
 export type { ViewportAssets } from "./viewport";
 
@@ -94,8 +100,11 @@ export class BrowserHost {
   /** `app.tab.open`. */
   async open(args: { id: string; owner: TabOwner; url?: string; place: TabPlace }): Promise<TabView> {
     if (this.tabs.has(args.id)) throw new Error(`there's already a tab ${args.id}`);
-    partitionFor(args.owner); // refuses a bad owner before anything is made
+    const partition = partitionFor(args.owner); // refuses a bad owner before anything is made
     if (args.url !== undefined && !isBrowserUrlAllowed(args.url)) throw new Error(`the browser doesn't open ${args.url}`);
+    // Locked down, its proxy set, before the tab exists: `isBrowserTab` holds from `web-contents-created` on.
+    await prepareTabSession(partition);
+    if (this.tabs.has(args.id)) throw new Error(`there's already a tab ${args.id}`);
     // The switch decides where a NEW tab starts, and never moves one (decision 93).
     const tab = this.screenReader.on
       ? HostTab.create(args.id, args.owner, this.hostWindow.get(), this.env)
@@ -270,7 +279,16 @@ export class BrowserHost {
   }
 
   private windowCreated(tab: BrowserTab, child: BrowserWindow, details: { url: string }): void {
-    if (!child.webContents.isOffscreen()) return; // a real window the person uses
+    if (!child.webContents.isOffscreen()) {
+      // A real window the person uses (a same-site window while they watch, item 94): in the tab's partition, so the
+      // session's rules hold; the page's guards here, and any window it opens in turn becomes a tab of the owner's.
+      guardPage(child.webContents);
+      child.webContents.setWindowOpenHandler((d) => {
+        if (isBrowserUrlAllowed(d.url)) void this.adoptUrl(tab.owner, d.url);
+        return { action: "deny" };
+      });
+      return;
+    }
     const id = this.newId();
     const popup = OffscreenTab.adopt(id, tab.owner, child, this.env);
     this.tabs.set(id, popup);
