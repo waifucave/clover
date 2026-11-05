@@ -117,6 +117,12 @@ describe("the repo layout (docs/clover-layout.md)", () => {
     expect(problems).toEqual([]);
   });
 
+  test("CI is one set of workflows: no lane keeps its own (their checks run in ci.yml, galleries included)", () => {
+    const lane = readdirSync(join(ROOT, ".github", "workflows")).filter((f) => /^lane-.*\.ya?ml$/.test(f));
+    expect(lane).toEqual([]);
+    expect(read(".github/workflows/ci.yml")).toContain("bun scripts/workspaces.ts run gallery");
+  });
+
   test("the conventions' names follow the folders", () => {
     expect(expectedPackageName("packages/core")).toBe("@waifucave/clover-core");
     expect(expectedPackageName("apps/desktop")).toBe("@waifucave/clover-desktop");

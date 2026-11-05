@@ -14,9 +14,9 @@ concurrency:
 
 jobs:
   # CI covers four machines (plan §3): macOS arm64, Windows x64, and Ubuntu x64 and arm64. On each it runs the
-  # workspace packages' tests, builds the daemon binary and builds the unsigned app, whose window the UI test then
-  # opens (CI only: no app window on a developer's screen, plan §8). The typecheck and the lockfile check run once,
-  # on Linux: their answer is the same everywhere. The macOS jobs below are the ones from before that still
+  # workspace packages' tests (the plugins' and services' among them), builds the daemon binary and builds the
+  # unsigned app, whose window the UI test then opens (CI only: no app window on a developer's screen, plan §8). The
+  # typecheck, the lockfile check and the galleries run once, on Linux: their answer is the same everywhere. The macOS jobs below are the ones from before that still
   # apply: core, cli and the scripts (which need the agent runtime's darwin-arm64 binary), the extension, the Swift
   # kits the iOS app links, the protocol codegen and the compiled-binary gates.
 
@@ -148,6 +148,36 @@ jobs:
           path: apps/desktop/out/dist/
           retention-days: 5
           if-no-files-found: error
+
+  # The galleries: every workspace package with a `gallery` script (a plugin's parts, the base theme) builds its
+  # gallery and renders each story to PNGs under $CLOVER_GALLERY_OUT/<its folder name>, light and dark, with a renderer
+  # it brings itself (docs/clover-layout.md). They replace the lanes' own gallery workflows. Linux, so every gallery
+  # renders with the same fonts; the PNGs are kept as one artifact for review.
+  gallery:
+    name: gallery
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: .bun-version
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build and render every gallery
+        env:
+          CLOVER_GALLERY_OUT: ${{ runner.temp }}/gallery
+        run: bun scripts/workspaces.ts run gallery
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: gallery
+          path: ${{ runner.temp }}/gallery
+          retention-days: 14
+          if-no-files-found: ignore
 
   # P8b-9: `bun test` does not typecheck — bun strips types and runs, so a compile error in a project nobody
   # compiles is not a tripwire (the protocol checklist's step 4 trap, `satisfies Record<SessionEvent["type"],

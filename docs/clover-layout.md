@@ -60,6 +60,11 @@ docs/                    the spec, the plan, these conventions, and research rep
 * A child is a folder inside it with its own `clover.json`, with no `id`: it takes its parent's id and namespace.
 * A plugin's code (its host entry, its client entry, its tests) is a workspace package in the same folder, named as above.
 
+## A gallery
+
+* A package with a gallery (a plugin's parts, the base theme) has a `gallery` script. It builds the gallery and renders every story to PNG files, light and dark, under `$CLOVER_GALLERY_OUT/<the package's folder name>/`, with a renderer it brings itself (Playwright, as a devDependency, installing its own Chromium).
+* CI's `gallery` job runs every package's `gallery` script on Linux and keeps the PNGs as one artifact for review. A lane keeps no workflow of its own: `.github/workflows/` is CI's (lane M), and the layout test refuses a `lane-*.yml` there.
+
 ## A service
 
 * A Cloudflare Worker: `wrangler.jsonc` (or `wrangler.json`, `wrangler.toml`) beside `src/`, with `main`, `compatibility_date` and its bindings.
