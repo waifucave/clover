@@ -127,7 +127,8 @@ describe("targets", () => {
     expect(left).toEqual(["fresh", "lately"]);
   });
 
-  it("rate-limits listing, removing targets and revoking, per account", async () => {
+  // Waiting for a clear minute takes up to 12 s by itself; slow runners (Windows CI) need room for the burst.
+  it("rate-limits listing, removing targets and revoking, per account", { timeout: 90_000 }, async () => {
     const account = uniqueAccount();
     const phone = await device(account, "phone");
     await clearOfMinuteBoundary();
@@ -269,7 +270,8 @@ describe("notify", () => {
     }
   });
 
-  it("rate-limits an account's notifies", async () => {
+  // Waiting for a clear minute takes up to 12 s by itself; slow runners (Windows CI) need room for the burst.
+  it("rate-limits an account's notifies", { timeout: 90_000 }, async () => {
     const { token } = await device(uniqueAccount(), "computer");
     await clearOfMinuteBoundary();
     const statuses: number[] = [];

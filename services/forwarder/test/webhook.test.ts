@@ -105,7 +105,8 @@ describe("webhook ingress", () => {
     socket.close();
   });
 
-  it("rate-limits a routine's webhooks at the edge", async () => {
+  // Waiting for a clear minute takes up to 12 s by itself; slow runners (Windows CI) need room for the burst.
+  it("rate-limits a routine's webhooks at the edge", { timeout: 90_000 }, async () => {
     const pc = await registerComputer(uniqueAccount(), "pc");
     const { key, url } = await registeredRoutine(pc, "flood");
     await clearOfMinuteBoundary();

@@ -32,7 +32,8 @@ function from(address: string): RequestInit {
 }
 
 describe("senders without the key", () => {
-  it("spend only their own address's check limit; the routine's real sender is unaffected", async () => {
+  // Waiting for a clear minute takes up to 12 s by itself; slow runners (Windows CI) need room for the burst.
+  it("spend only their own address's check limit; the routine's real sender is unaffected", { timeout: 90_000 }, async () => {
     const pc = await registerComputer(uniqueAccount(), "pc");
     const { key, url } = await registeredRoutine(pc, "guarded");
     await clearOfMinuteBoundary();
@@ -55,7 +56,8 @@ describe("senders without the key", () => {
 });
 
 describe("a noisy routine", () => {
-  it("is rate-limited on its own: the account's other routines still get through", async () => {
+  // Waiting for a clear minute takes up to 12 s by itself; slow runners (Windows CI) need room for the burst.
+  it("is rate-limited on its own: the account's other routines still get through", { timeout: 90_000 }, async () => {
     const pc = await registerComputer(uniqueAccount(), "pc");
     const noisy = await registeredRoutine(pc, "noisy");
     const quiet = await registeredRoutine(pc, "quiet");
