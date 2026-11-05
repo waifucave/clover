@@ -1,7 +1,7 @@
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { writeFileSync, unlinkSync, existsSync } from "node:fs";
-import { LEGACY_LAUNCHD_LABEL, resolveCloverProfile, type CloverProfile } from "@waifucave/clover-core";
+import { LEGACY_LAUNCHD_LABEL, legacyImportOn, resolveCloverProfile, type CloverProfile } from "@waifucave/clover-core";
 
 /** Resolves the profile at CALL time (default param, not a module-level snapshot) so a settings
  *  change mid-process — or simply different callers under different envs — is always honored. */
@@ -79,6 +79,9 @@ export async function daemonStatus(): Promise<string> {
 /** Injectable seams for `migrateFromLaunchdAgent` — real filesystem/launchctl by default, fakes in
  * tests. Never touches a real user's home directory or launchd from a test process. */
 export interface MigrateLaunchdDeps {
+  /** M-M0: whether to run at all. Absent: `migration/legacy-imports.ts`'s `launchdAgent` (off), so the
+   *  legacy agent and its plist stay untouched. A test passes `true` with its fakes. */
+  enabled?: boolean;
   plistPath?: string;
   exists?: (path: string) => boolean;
   remove?: (path: string) => void;
@@ -99,6 +102,7 @@ export interface MigrateLaunchdDeps {
  * targeting the pre-rename install regardless, mirroring the Swift `LaunchdMigrationDeps.live`
  * hardcoding the same historical literal independently. */
 export async function migrateFromLaunchdAgent(deps: MigrateLaunchdDeps = {}): Promise<void> {
+  if (!(deps.enabled ?? legacyImportOn("launchdAgent"))) return;
   // Deliberately NOT `plistPath()` — that resolves the CURRENT profile's label/path, but this
   // teardown targets the historical pre-rename agent, which predates profiles and was always filed
   // under the literal `LEGACY_LAUNCHD_LABEL` regardless of what profile (or product name) is
