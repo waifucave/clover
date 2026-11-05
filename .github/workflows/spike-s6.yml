@@ -1,0 +1,161 @@
+name: Spike S6 · folder-tree mounts
+
+# Lane J, M0: mounting another computer's folder (FUSE, WinFsp, FSKit), its speed against local
+# disk at 0/20/80 ms of added round trip, and failing fast when the computer drops.
+# Runs on pushes to the lane branch only; results land as artifacts and in the job summaries.
+on:
+  push:
+    branches: [lane/j-m0]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: spike-s6-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  unix-like:
+    name: ${{ matrix.os }} · ${{ matrix.suite }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 170
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: linux, runner: ubuntu-26.04, suite: failfast }
+          - { os: linux, runner: ubuntu-26.04, suite: speed-cached }
+          - { os: linux, runner: ubuntu-26.04, suite: speed-plain }
+          - { os: windows, runner: windows-2025, suite: failfast }
+          - { os: windows, runner: windows-2025, suite: speed-cached }
+          - { os: windows, runner: windows-2025, suite: speed-plain }
+    defaults:
+      run:
+        shell: bash
+    env:
+      S6: ${{ github.workspace }}/spikes/s6-mounts
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: native/mounts/go.mod
+          cache-dependency-path: native/mounts/go.sum
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: .bun-version
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: 24
+
+      - name: FUSE (Linux)
+        if: matrix.os == 'linux'
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq fuse3 strace >/dev/null
+          ls -l /dev/fuse && fusermount3 --version && uname -a
+      - name: WinFsp (Windows)
+        if: matrix.os == 'windows'
+        shell: pwsh
+        run: |
+          $msi = "$env:RUNNER_TEMP\winfsp.msi"
+          Invoke-WebRequest "https://github.com/winfsp/winfsp/releases/download/v2.1/winfsp-2.1.25156.msi" -OutFile $msi
+          Start-Process msiexec.exe -ArgumentList "/i `"$msi`" /qn INSTALLLEVEL=1000" -Wait
+          Get-ChildItem "C:\Program Files (x86)\WinFsp\bin" | Select-Object -First 5
+          [System.Environment]::OSVersion.VersionString
+      - name: git settings for the runner
+        run: |
+          git config --global --add safe.directory '*'
+          git config --global core.longpaths true
+
+      - name: Build the mount helper
+        working-directory: native/mounts
+        env:
+          CGO_ENABLED: "0"
+        run: |
+          mkdir -p "$RUNNER_TEMP/s6"
+          go vet ./...
+          go build -o "$RUNNER_TEMP/s6/clover-mount$([ "$RUNNER_OS" = Windows ] && echo .exe)" ./cmd/clover-mount
+          ls -l "$RUNNER_TEMP/s6"
+      - name: Protocol tests against the real file service
+        if: matrix.suite == 'failfast'
+        working-directory: native/mounts
+        run: CLOVER_S6_SERVE="$S6/server/serve.ts" go test ./... -count=1 -v
+
+      - name: Prepare the other computer's home
+        run: bash "$S6/ci/prepare.sh" "$RUNNER_TEMP/s6/export"
+
+      - name: Syscall counts of the workloads, run locally (Linux)
+        if: matrix.os == 'linux' && matrix.suite == 'speed-cached'
+        working-directory: ${{ runner.temp }}/s6/export/clover
+        run: |
+          mkdir -p "$RUNNER_TEMP/s6/results"
+          strace -f -c -o "$RUNNER_TEMP/s6/results/strace-git-status.txt" git -c core.fsmonitor=false status --porcelain >/dev/null
+          strace -f -c -o "$RUNNER_TEMP/s6/results/strace-tsc-protocol.txt" node node_modules/typescript/bin/tsc --noEmit -p packages/protocol
+          strace -f -c -o "$RUNNER_TEMP/s6/results/strace-tsc-core.txt" node node_modules/typescript/bin/tsc --noEmit -p packages/core || true
+          for f in "$RUNNER_TEMP"/s6/results/strace-*.txt; do echo "== $f"; head -25 "$f"; done
+
+      - name: Run ${{ matrix.suite }}
+        run: |
+          helper="$RUNNER_TEMP/s6/clover-mount$([ "$RUNNER_OS" = Windows ] && echo .exe)"
+          tree="$([ "$RUNNER_OS" = Windows ] && echo 'T:' || echo "$RUNNER_TEMP/s6/tree")"
+          res="$RUNNER_TEMP/s6/results"
+          common=(--root "$RUNNER_TEMP/s6/export" --tree "$tree" --helper "$helper" --copy-src "$GITHUB_WORKSPACE/packages/protocol")
+          case "${{ matrix.suite }}" in
+            failfast)
+              bun "$S6/bench/failfast.ts" "${common[@]}" --rtt 20 --policy plain --out "$res/${{ matrix.os }}-failfast.json" ;;
+            speed-cached)
+              bun "$S6/bench/speed.ts" "${common[@]}" --policies cached --rtts 0,20,80 --out "$res/${{ matrix.os }}-speed-cached.json" ;;
+            speed-plain)
+              bun "$S6/bench/speed.ts" "${common[@]}" --policies plain --rtts 0,20,80 --local 0 --timeout 600 --out "$res/${{ matrix.os }}-speed-plain.json"
+              bun "$S6/bench/speed.ts" "${common[@]}" --policies nocache --rtts 0 --local 0 --timeout 600 --out "$res/${{ matrix.os }}-speed-nocache.json" ;;
+          esac
+      - name: Results
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: s6-${{ matrix.os }}-${{ matrix.suite }}
+          path: ${{ runner.temp }}/s6/results
+          if-no-files-found: warn
+
+  macos:
+    name: macos · ${{ matrix.runner }} · FSKit module
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [macos-26, xcode-27]
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: native/mounts/go.mod
+          cache-dependency-path: native/mounts/go.sum
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: .bun-version
+      - name: Protocol tests against the real file service (no mount)
+        working-directory: native/mounts
+        run: CLOVER_S6_SERVE="$GITHUB_WORKSPACE/spikes/s6-mounts/server/serve.ts" go test ./... -count=1 -v
+      - name: xcodegen
+        run: brew install xcodegen >/dev/null 2>&1 || brew install xcodegen
+      - name: Build the FSKit module and try to turn it on without System Settings
+        run: |
+          mkdir -p "$RUNNER_TEMP/s6/results"
+          bash native/mounts/macos/ci-probe.sh "$RUNNER_TEMP/s6/results"
+          {
+            echo "### FSKit on ${{ matrix.runner }}"; echo; echo '```'
+            cat "$RUNNER_TEMP/s6/results/probe.txt" | tail -80
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Results
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: s6-macos-${{ matrix.runner }}
+          path: ${{ runner.temp }}/s6/results
+          if-no-files-found: warn

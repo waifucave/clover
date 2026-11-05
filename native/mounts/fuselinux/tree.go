@@ -28,6 +28,7 @@ type Computer struct {
 	Self  string     // set for this computer: the home folder the entry links to
 	FS    *remote.FS // set for another computer
 	index uint64
+	link  *fs.Inode
 }
 
 type Tree struct {
@@ -37,7 +38,8 @@ type Tree struct {
 	server    *fuse.Server
 
 	mu   sync.Mutex
-	tops map[*remote.FS]*fs.Inode // each computer's top inode, once looked up
+	home *fs.Inode
+	tops map[*remote.FS]*fs.Inode // each computer's top inode, created once
 }
 
 // Mount mounts the tree at dir and returns the server; Wait() blocks until unmount.
@@ -203,42 +205,53 @@ func (d *staticDir) Getattr(ctx context.Context, f fs.FileHandle, out *fuse.Attr
 }
 
 func (d *staticDir) Lookup(ctx context.Context, name string, out *fuse.EntryOut) (*fs.Inode, syscall.Errno) {
+	t := d.t
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	// Each fixed entry gets one inode for the life of the mount, so the paths of the inodes
+	// below it stay valid however often the kernel looks it up again.
 	if d.kind == "root" {
 		if name != "home" {
 			return nil, syscall.ENOENT
 		}
-		ch := d.NewPersistentInode(ctx, &staticDir{t: d.t, kind: "home"}, fs.StableAttr{Mode: syscall.S_IFDIR})
+		if t.home == nil {
+			t.home = d.NewPersistentInode(ctx, &staticDir{t: t, kind: "home"}, fs.StableAttr{Mode: syscall.S_IFDIR})
+		}
 		out.Mode = syscall.S_IFDIR | 0o755
-		return ch, 0
+		return t.home, 0
 	}
-	for _, c := range d.t.Computers {
+	for _, c := range t.Computers {
 		if c.Name != name {
 			continue
 		}
 		if c.Self != "" {
-			ln := &selfLink{target: c.Self}
+			if c.link == nil {
+				c.link = d.NewPersistentInode(ctx, &selfLink{target: c.Self}, fs.StableAttr{Mode: syscall.S_IFLNK})
+			}
 			out.Mode = syscall.S_IFLNK | 0o777
 			out.Size = uint64(len(c.Self))
-			return d.NewPersistentInode(ctx, ln, fs.StableAttr{Mode: syscall.S_IFLNK}), 0
+			return c.link, 0
 		}
-		// Another computer: its top directory. Offline computers still appear (as empty
-		// directories that answer EHOSTDOWN), so `ls home/` never hangs or lies.
+		// Another computer: its top directory. An offline computer still appears, as a
+		// directory whose contents answer EHOSTDOWN at once, so `ls home/` never hangs or lies.
+		top := t.tops[c.FS]
+		if top == nil {
+			top = d.NewPersistentInode(ctx, &remoteNode{t: t, c: c}, fs.StableAttr{Mode: syscall.S_IFDIR})
+			t.tops[c.FS] = top
+		}
+		t.mu.Unlock()
 		a, e := c.FS.Stat("")
-		top := &remoteNode{t: d.t, c: c}
-		var ch *fs.Inode
+		t.mu.Lock()
 		if e == wire.OK {
-			d.t.fill(&a, &out.Attr)
-			ch = d.NewPersistentInode(ctx, top, fs.StableAttr{Mode: syscall.S_IFDIR, Ino: stable(c, &a).Ino})
+			t.fill(&a, &out.Attr)
 		} else {
 			out.Mode = syscall.S_IFDIR | 0o755
-			ch = d.NewPersistentInode(ctx, top, fs.StableAttr{Mode: syscall.S_IFDIR})
+			out.Nlink = 2
+			out.Owner = fuse.Owner{Uid: t.uid, Gid: t.gid}
 		}
-		out.SetEntryTimeout(time.Second)
+		out.SetEntryTimeout(time.Hour)
 		out.SetAttrTimeout(time.Second)
-		d.t.mu.Lock()
-		d.t.tops[c.FS] = ch
-		d.t.mu.Unlock()
-		return ch, 0
+		return top, 0
 	}
 	return nil, syscall.ENOENT
 }

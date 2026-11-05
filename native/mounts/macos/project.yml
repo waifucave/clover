@@ -1,0 +1,52 @@
+# xcodegen spec for the clovertree FSKit module (spike S6). Generate with `xcodegen generate`.
+# Builds unsigned here and in CI ("Sign to Run Locally" off); the live gate signs it (gate.sh).
+name: CloverTree
+options:
+  bundleIdPrefix: com.waifucave.clover
+  deploymentTarget:
+    macOS: "26.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    MACOSX_DEPLOYMENT_TARGET: "26.0"
+    ARCHS: arm64
+    CODE_SIGN_STYLE: Manual
+    CODE_SIGN_IDENTITY: ""
+    CODE_SIGNING_REQUIRED: "NO"
+    CODE_SIGNING_ALLOWED: "NO"
+    DEVELOPMENT_TEAM: ""
+    ENABLE_HARDENED_RUNTIME: "YES"
+targets:
+  CloverTree:
+    type: application
+    platform: macOS
+    sources: [CloverTreeHost]
+    info:
+      path: CloverTreeHost/Info.plist
+      properties:
+        CFBundleDisplayName: CloverTree
+        LSUIElement: true
+        LSBackgroundOnly: true
+        LSMinimumSystemVersion: "26.0"
+        CFBundleShortVersionString: "0.1"
+        CFBundleVersion: "1"
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.waifucave.clover.tree.dev
+    dependencies:
+      - target: CloverTreeFS
+        embed: true
+        codeSign: false
+  CloverTreeFS:
+    type: extensionkit-extension
+    platform: macOS
+    sources: [CloverTreeFS]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.waifucave.clover.tree.dev.fs
+        INFOPLIST_FILE: CloverTreeFS/Info.plist
+        CODE_SIGN_ENTITLEMENTS: CloverTreeFS/CloverTreeFS.entitlements
+        GENERATE_INFOPLIST_FILE: "NO"
+    dependencies:
+      - sdk: FSKit.framework

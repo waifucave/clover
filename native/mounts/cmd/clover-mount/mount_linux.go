@@ -4,6 +4,7 @@ package main
 
 import (
 	"os"
+	"os/exec"
 	"os/signal"
 	"strings"
 	"syscall"
@@ -30,7 +31,7 @@ func mount(o *options) error {
 		<-sig
 		if err := srv.Unmount(); err != nil {
 			// Busy: detach lazily so the helper can exit and never leaves a dead mount behind.
-			_ = syscall.Unmount(o.mountpoint, syscall.MNT_DETACH)
+			_ = exec.Command("fusermount3", "-u", "-z", o.mountpoint).Run()
 			os.Exit(0)
 		}
 	}()

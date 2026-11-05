@@ -42,6 +42,7 @@ function newSide(pair: Pair): Side {
 
 /** Bytes that arrived on `from` go to `from.peer` after half the round trip. */
 function relay(from: Side, chunk: Uint8Array) {
+  if (from.closed) return;
   const to = from.peer!;
   const copy = new Uint8Array(chunk); // Bun reuses the read buffer
   from.queue.push({ due: performance.now() + rttMs / 2, chunk: copy });
@@ -104,24 +105,24 @@ Bun.listen<Side>({
         port: TARGET,
         socket: {
           open(up) {
-            if (pair.client.closed) { up.end(); return; }
             up.data = pair.server;
+            if (pair.client.closed) { up.end(); return; }
             up.setNoDelay?.(true);
             pair.server.sock = up;
             for (const c of pair.server.pending.splice(0)) write(pair.server, c);
           },
-          data(up, chunk) { relay(up.data, chunk); },
-          drain(up) { drain(up.data); },
-          close(up) { closePair(up.data.pair); },
-          error(up) { closePair(up.data.pair); },
+          data(up, chunk) { if (up.data) relay(up.data, chunk); },
+          drain(up) { if (up.data) drain(up.data); },
+          close(up) { closePair(up.data?.pair ?? pair); },
+          error(up) { closePair(up.data?.pair ?? pair); },
           connectError() { closePair(pair); },
         },
       }).catch(() => closePair(pair));
     },
-    data(sock, chunk) { relay(sock.data, chunk); },
-    drain(sock) { drain(sock.data); },
-    close(sock) { closePair(sock.data.pair); },
-    error(sock) { closePair(sock.data.pair); },
+    data(sock, chunk) { if (sock.data && !sock.data.closed) relay(sock.data, chunk); },
+    drain(sock) { if (sock.data) drain(sock.data); },
+    close(sock) { if (sock.data) closePair(sock.data.pair); },
+    error(sock) { if (sock.data) closePair(sock.data.pair); },
   },
 });
 

@@ -66,6 +66,27 @@ async function resolveForWrite(rel: string): Promise<string> {
 }
 const join = (dir: string, name: string) => (dir === "" ? name : `${dir}/${name}`);
 
+/**
+ * An absolute link target means a path on this computer, which another computer would resolve
+ * against its own disk. A target inside the export becomes relative, so it resolves through the
+ * tree everywhere (Bun's Windows junctions in node_modules are absolute). Targets outside the
+ * export are passed on unchanged and resolve on the reader's own computer — see the report.
+ */
+function linkTarget(abs: string, target: string): string {
+  let t = target.startsWith("\\\\?\\") ? target.slice(4) : target;
+  if (!path.isAbsolute(t)) return t.split(path.sep).join("/");
+  for (const root of [ROOT, REAL_ROOT]) {
+    const rel = path.relative(root, t);
+    if (rel === "" || (!rel.startsWith("..") && !path.isAbsolute(rel))) {
+      const fromDir = path.relative(root, path.dirname(abs));
+      const r = path.relative(path.join(root, fromDir), path.join(root, rel)) || ".";
+      count("READLINK_rewritten");
+      return r.split(path.sep).join("/");
+    }
+  }
+  return t;
+}
+
 // ---- attributes -----------------------------------------------------------------------------
 function toAttr(st: fs.BigIntStats): Attr {
   const type = st.isFile() ? FileType.FILE : st.isDirectory() ? FileType.DIR : st.isSymbolicLink() ? FileType.SYMLINK : FileType.OTHER;
@@ -369,7 +390,7 @@ function onFrame(c: Conn, body: Uint8Array) {
       case Op.READLINK: {
         const abs = resolve(r.str());
         const t = await fs.promises.readlink(abs).catch((e) => fail(errFromCode(e.code)));
-        return ok().str(t);
+        return ok().str(linkTarget(abs, t));
       }
       case Op.STATFS: {
         const s = await fs.promises.statfs(ROOT, { bigint: true }).catch(() => null);
