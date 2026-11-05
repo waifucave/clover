@@ -8,7 +8,7 @@ import { readTheme, type ThemeFile } from "./theme";
 export * from "./catalog";
 export * from "./contrast";
 export * from "./theme";
-export { checkThemeCss, hidesFrames, ALLOWED_AT_RULES } from "./css-check";
+export { checkThemeCss, hidesFrames, drawsOver, lifts, styleRules, hidingKeyframes, ALLOWED_AT_RULES, type CssCheckOptions, type Declaration } from "./css-check";
 export { checkLayout, BOT_TAB_SPOTS, type LayoutCheck } from "./layout-check";
 
 /** The base theme, read and checked. */

@@ -5,6 +5,11 @@
 // beside it. In M2 this mounts in its own `app.surface` window; here it draws into any container whose
 // top edge stands for the screen's.
 //
+// A card that leaves the top — answered anywhere, compacted into the count, or replaced — goes back up into
+// the housing as its birth played backwards, faster (Winter's return), drawn as the bare shape beneath
+// whatever is on top now; with Reduce Motion it just goes. A choice in a question never sends by itself:
+// ✓ does, as in the pill.
+//
 // Idle cost: nothing. No frame runs while nothing moves; the only timer is ONE wake-up at the queue's next
 // self-compaction, armed only while a card is on top and not held.
 
@@ -22,10 +27,11 @@ import {
   type QuestionDraft,
 } from "../model/cards";
 import { cardGeometry, ISLAND, islandRect, showsWings, stripAction, stripRect, tabForPart, waitingRect, type StripPart } from "../model/geometry";
-import { FLUID } from "../model/fluid";
+import { FLUID, fluidSeconds } from "../model/fluid";
 import { beginClosing, beginOpening, MORPH, morphSeconds, type MorphClock } from "../model/morph";
 import { IslandQueue } from "../model/queue";
 import { NEEDS_YOU, select, selectedTab, tabState, type IslandTab } from "../model/tabs";
+import { t } from "../strings";
 import { QuestionCardContent, SealedCardContent } from "./CardContent";
 import { LiquidCard } from "./Liquid";
 import { NeedsYou, OpenIsland } from "./OpenIsland";
@@ -102,11 +108,18 @@ export function Island(props: IslandProps): ReactElement {
   const nowS = () => timers.now() / 1000;
   const byId = useMemo(() => new Map(cards.map((c) => [c.id, c])), [cards]);
 
+  // The card going back up into the housing, if one is: its birth clock and the height it had.
+  const leaving = useRef<{ id: string; bornAt: number; returningAt: number; height: number } | null>(null);
+
   const syncBirths = useCallback(() => {
     const current = queue.current?.id;
-    for (const id of [...births.current.keys()]) if (id !== current) births.current.delete(id);
+    for (const [id, bornAt] of [...births.current]) {
+      if (id === current) continue;
+      births.current.delete(id);
+      if (!reducedMotion) leaving.current = { id, bornAt, returningAt: timers.now(), height: heights.current.get(id) ?? ESTIMATED_CARD_HEIGHT };
+    }
     if (current && !births.current.has(current)) births.current.set(current, timers.now());
-  }, [queue, timers]);
+  }, [queue, timers, reducedMotion]);
 
   // Cards in and out of the queue, as the pending list changes.
   useLayoutEffect(() => {
@@ -138,7 +151,16 @@ export function Island(props: IslandProps): ReactElement {
   const bornAt = current ? births.current.get(current.id) : undefined;
   const birthSeconds = bornAt === undefined ? FLUID.settle : (now - bornAt) / 1000;
   const morphMoving = isOpen && (morph.closing !== null || morphSeconds(morph, now) < MORPH.settle);
-  const moving = (!isOpen && current !== undefined && birthSeconds < FLUID.settle && !reducedMotion) || (morphMoving && !reducedMotion);
+  const back = leaving.current;
+  const backSeconds = back ? fluidSeconds(now, back.bornAt, back.returningAt) : 0;
+  const returning = back !== null && backSeconds > 0 && !isOpen && !reducedMotion;
+  const moving = (!isOpen && current !== undefined && birthSeconds < FLUID.settle && !reducedMotion) || (morphMoving && !reducedMotion) || returning;
+
+  // A return that has played out (or that the island opened over) is done; one that began after this render
+  // is the next render's to judge.
+  useEffect(() => {
+    if (back !== null && leaving.current === back && !returning) leaving.current = null;
+  });
 
   // Frames only while a shape moves.
   useEffect(() => {
@@ -206,7 +228,7 @@ export function Island(props: IslandProps): ReactElement {
     setErrors((e) => {
       const next = { ...e };
       if (ok) delete next[card.id];
-      else next[card.id] = "Not sent. Try again.";
+      else next[card.id] = t("clover.island.notSent");
       return next;
     });
   };
@@ -222,11 +244,8 @@ export function Island(props: IslandProps): ReactElement {
   const questionHandlers = (card: IslandCard) => ({
     onChoose: (q: number, o: number) => {
       if (card.kind !== "question") return;
-      const question = card.questions[q]!;
-      const next = chooseOption(draftOf(card), question, q, o);
-      setDraft(card, next);
-      // A single-choice question answers on the click, and a card's last one sends.
-      if (!question.multiSelect) advance(card, next);
+      // Choosing only chooses: ✓ (or › before the last question) moves on, as in the pill.
+      setDraft(card, chooseOption(draftOf(card), card.questions[q]!, q, o));
     },
     onType: (q: number, text: string) => {
       if (card.kind === "question") setDraft(card, typeOther(draftOf(card), card.questions[q]!, q, text));
@@ -274,6 +293,13 @@ export function Island(props: IslandProps): ReactElement {
       <span onMouseEnter={() => setStripHovered(true)} onMouseLeave={() => setStripHovered(false)}>
         <Strip shape={shape} counts={counts} hovered={stripHovered && !isOpen} onPart={onStripPart} />
       </span>
+      {returning && back ? (
+        <div className="clv-returning" aria-hidden="true">
+          <LiquidCard geometry={cardGeometry(shape, { width: ISLAND.cardWidth, height: back.height }, { rounded: true })} seconds={backSeconds}>
+            <div />
+          </LiquidCard>
+        </div>
+      ) : null}
       {isOpen ? (
         <OpenIsland
           shape={shape}
@@ -311,21 +337,7 @@ export function Island(props: IslandProps): ReactElement {
             }
           }}
         >
-          <LiquidCard
-            geometry={geometry}
-            seconds={birthSeconds < FLUID.settle ? birthSeconds : undefined}
-            hovered={queue.currentHovered}
-            reducedMotion={reducedMotion}
-            label={current.kind === "question" ? "Question" : current.kind === "link" ? "Link request" : "Approval"}
-          >
-            <div ref={contentRef}>
-              {isSealed(current) ? (
-                <SealedCardContent card={current} />
-              ) : (
-                <QuestionCardContent card={current} draft={draftOf(current)} error={errors[current.id]} sending={sending.has(current.id)} {...questionHandlers(current)} />
-              )}
-            </div>
-          </LiquidCard>
+          {/* Before the card in the tree, so the card paints over it: nothing is ever drawn over a sealed part. */}
           {waiting ? (
             <div className="clv-card-panel" style={{ width: geometry.panelSize.width, height: geometry.panelSize.height + ISLAND.waitingGap + ISLAND.waitingHeight, left: `calc(50% - ${geometry.panelSize.width / 2}px)` }}>
               <span onMouseEnter={() => setWaitingHovered(true)} onMouseLeave={() => setWaitingHovered(false)}>
@@ -343,6 +355,21 @@ export function Island(props: IslandProps): ReactElement {
               </span>
             </div>
           ) : null}
+          <LiquidCard
+            geometry={geometry}
+            seconds={birthSeconds < FLUID.settle ? birthSeconds : undefined}
+            hovered={queue.currentHovered}
+            reducedMotion={reducedMotion}
+            label={t(current.kind === "question" ? "clover.island.question" : current.kind === "link" ? "clover.island.linkRequest" : "clover.island.approval")}
+          >
+            <div ref={contentRef}>
+              {isSealed(current) ? (
+                <SealedCardContent card={current} />
+              ) : (
+                <QuestionCardContent card={current} draft={draftOf(current)} error={errors[current.id]} sending={sending.has(current.id)} {...questionHandlers(current)} />
+              )}
+            </div>
+          </LiquidCard>
         </div>
       ) : null}
     </div>

@@ -187,12 +187,12 @@ export function TabDots({ tabs, onSelect }: { tabs: TabState; onSelect?: (id: st
   );
 }
 
-/** A tab's body: scrolling inside the island's fixed size, or laid out flat and cut (the gallery). */
 /**
- * A tab's body inside the open island's fixed size: it scrolls, and its top and bottom edges fade softly
- * where more of the list lies beyond them (Winter's `IslandScrollEdges`), judged on scroll and on a change of
- * size, never on a timer. The fades are overlays drawn only while there is more: no mask on the list, which
- * would hide the sealed parts inside it.
+ * A tab's body inside the open island's fixed size: it scrolls (or, in the gallery, lies flat and cut), and
+ * where more of the list lies beyond an edge the island says so OUTSIDE the list — a hairline on the
+ * list's own top border when more lies above, a chevron in a band of its own below it when more lies
+ * below (Winter's `IslandScrollEdges` faded the edges with a mask instead, which here would hide the
+ * sealed parts inside). Judged on scroll and on a change of size, never on a timer.
  */
 export function TabScroll({ scrolls = true, children }: { scrolls?: boolean; children: ReactNode }): ReactElement {
   const ref = useRef<HTMLDivElement | null>(null);
@@ -214,11 +214,12 @@ export function TabScroll({ scrolls = true, children }: { scrolls?: boolean; chi
   }, [judge]);
   return (
     <>
-      <div ref={ref} className={scrolls ? "clv-tab-scroll" : "clv-tab-flat"} onScroll={judge}>
+      <div ref={ref} className={scrolls ? "clv-tab-scroll" : "clv-tab-flat"} data-more-above={edges.top || undefined} onScroll={judge}>
         {children}
       </div>
-      {edges.top ? <div className="clv-edge" data-edge="top" aria-hidden="true" /> : null}
-      {edges.bottom ? <div className="clv-edge" data-edge="bottom" aria-hidden="true" /> : null}
+      <div className="clv-more" aria-hidden="true" data-more-below={edges.bottom || undefined}>
+        {edges.bottom ? <Glyph name="chevronDown" size={9} /> : null}
+      </div>
     </>
   );
 }
@@ -258,7 +259,7 @@ export function NeedsYou({ cards, drafts = {}, errors = {}, onChoose, onType, on
           <div className="clv-needs-row" key={card.id}>
             <div className="clv-inner-card">
               {isSealed(card) ? (
-                <SealedCardContent card={card} lines={6} withCommand />
+                <SealedCardContent card={card} lines={2} withCommand />
               ) : (
                 <QuestionCardContent
                   card={card}

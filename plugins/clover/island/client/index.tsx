@@ -11,14 +11,18 @@ export { CircleButton, SealedSlot } from "../src/ui/Buttons";
 export { LiftRow, RowWords, StatusWord, StatusMarkView, GroupTitle, LinkWords, ActionWords, type StatusMark, type ActionTone } from "../src/ui/rows";
 export {
   SealedKitContext,
+  SealedCardIdProvider,
   EMPTY_KIT,
-  mockSealedKit,
   useSealedKit,
-  ISLAND_CARD_TOKENS,
+  useSealedCardId,
+  useCardTokens,
+  resolveCardTokens,
+  tokenProperty,
+  ISLAND_CARD_SOURCES,
   MIN_SEALED_BUTTON,
+  type CardTokenSource,
   type SealedCardKit,
   type SealedField,
-  type SealedFixtures,
 } from "../src/ui/sealed";
 export { Glyph, type GlyphName } from "../src/ui/glyphs";
 export { ensureIslandStyles, ISLAND_CSS } from "../src/ui/styles";

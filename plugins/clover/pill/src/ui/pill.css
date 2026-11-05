@@ -7,7 +7,9 @@
    a part, may carry a filter, an opacity below 1 or a transform other than a move or an enlargement at
    rest. This sheet sets none of those on anything (`styles.test.ts` holds it to the theme rules); what
    fades, shrinks or spins does so inline, on elements that never hold a sealed part, and the morph's blur
-   and fade only while the shape moves. */
+   and fade only while the shape moves. Nothing is drawn over a part either, not even something
+   transparent (Chromium counts it as covering): the shell's rim is its own inset shadow, the slots' glows
+   sit beneath their row, and nothing positioned comes after a card (`sealed.test.tsx`). */
 
 .clp-stage {
   position: relative;
@@ -15,8 +17,8 @@
   flex-direction: column;
   align-items: center;
   justify-content: flex-end;
-  font-family: var(--font-sans, system-ui, -apple-system, "Segoe UI Variable Text", "Segoe UI", "Noto Sans", Ubuntu, Cantarell, sans-serif);
-  color: var(--pill-text, #FFFFFF);
+  font-family: var(--clover-font-sans, system-ui, -apple-system, "Segoe UI Variable Text", "Segoe UI", "Noto Sans", Ubuntu, Cantarell, sans-serif);
+  color: var(--clover-pill-text, #FFFFFF);
   -webkit-font-smoothing: antialiased;
   line-height: 1.3;
   user-select: none;
@@ -45,18 +47,12 @@
 .clp-shell {
   position: relative;
   overflow: hidden;
-  background: var(--pill-surface, #000000);
-  box-shadow: var(--pill-shadow, 0 4px 24px #00000073);
+  background: var(--clover-pill-surface, #000000);
+  /* The rim is the shell's own inset shadow, painted under its content. */
+  box-shadow:
+    inset 0 0 0 1px var(--clover-pill-rim, #FFFFFF17),
+    var(--clover-pill-shadow, 0 4px 24px #00000073);
   flex: none;
-}
-
-.clp-shell::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  box-shadow: inset 0 0 0 1px var(--pill-rim, #FFFFFF17);
-  pointer-events: none;
 }
 
 .clp-underlay {
@@ -104,10 +100,10 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: var(--font-size-caption, 11px);
+  font-size: var(--clover-font-size-caption, 11px);
   font-weight: 700;
-  color: var(--pill-surface, #000000);
-  background: var(--pill-text, #FFFFFF);
+  color: var(--clover-pill-surface, #000000);
+  background: var(--clover-pill-text, #FFFFFF);
   transition: box-shadow 150ms ease-out;
 }
 
@@ -119,7 +115,7 @@
 
 .clp-portrait:hover,
 .clp-portrait[aria-expanded="true"] {
-  box-shadow: 0 0 0 2px var(--pill-accessory, #FFFFFF1F);
+  box-shadow: 0 0 0 2px var(--clover-pill-accessory, #FFFFFF1F);
 }
 
 .clp-field {
@@ -148,21 +144,21 @@
   resize: none;
   overflow-y: auto;
   background: transparent;
-  color: var(--pill-text, #FFFFFF);
-  caret-color: var(--pill-text, #FFFFFF);
+  color: var(--clover-pill-text, #FFFFFF);
+  caret-color: var(--clover-pill-text, #FFFFFF);
   font: inherit;
-  font-size: var(--font-size-large, 15px);
+  font-size: var(--clover-font-size-large, 15px);
   line-height: 20px;
   scrollbar-width: none;
 }
 
 .clp-input::placeholder {
-  color: var(--pill-placeholder, #686868);
+  color: var(--clover-pill-placeholder, #686868);
   opacity: 1;
 }
 
 .clp-stage[data-presentation="expanded"] .clp-input::placeholder {
-  color: var(--pill-placeholder-typing, #FFFFFF80);
+  color: var(--clover-pill-placeholder-typing, #FFFFFF80);
 }
 
 .clp-accessories {
@@ -185,9 +181,9 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: var(--font-size-label, 12px);
-  color: var(--pill-text, #FFFFFF);
-  background: var(--pill-accessory, #FFFFFF1F);
+  font-size: var(--clover-font-size-label, 12px);
+  color: var(--clover-pill-text, #FFFFFF);
+  background: var(--clover-pill-accessory, #FFFFFF1F);
   transition: box-shadow 150ms ease-out;
 }
 
@@ -200,9 +196,9 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: var(--font-size-label, 12px);
-  color: var(--pill-send-glyph, #000000);
-  background: var(--pill-send, #FFFFFF);
+  font-size: var(--clover-font-size-label, 12px);
+  color: var(--clover-pill-send-glyph, #000000);
+  background: var(--clover-pill-send, #FFFFFF);
   transition: box-shadow 150ms ease-out, transform 120ms ease-out;
 }
 
@@ -222,8 +218,11 @@
   box-shadow: 0 0 8px #FFFFFF73, 0 0 20px #FFFFFF38;
 }
 
-.clp-answer[data-role="accept"]:hover {
-  box-shadow: 0 0 8px #0A85FF73, 0 0 20px #0A85FF38;
+.clp-answer[data-role="accept"]:hover,
+.clp-answer[data-role="accept"][data-hover="true"]:not(:disabled) {
+  box-shadow:
+    0 0 8px color-mix(in srgb, var(--clover-pill-accept, #C2387A) 45%, transparent),
+    0 0 20px color-mix(in srgb, var(--clover-pill-accept, #C2387A) 22%, transparent);
 }
 
 /* The ⋯ menu and the target menu: small dark lists floating above the pill, in the stack over it. */
@@ -241,8 +240,8 @@
   padding: 6px;
   box-sizing: border-box;
   border-radius: 14px;
-  background: var(--pill-surface, #000000);
-  box-shadow: var(--pill-shadow, 0 4px 24px #00000073), inset 0 0 0 1px var(--pill-rim, #FFFFFF17);
+  background: var(--clover-pill-surface, #000000);
+  box-shadow: var(--clover-pill-shadow, 0 4px 24px #00000073), inset 0 0 0 1px var(--clover-pill-rim, #FFFFFF17);
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -255,14 +254,14 @@
   padding: 7px 10px;
   border-radius: 9px;
   text-align: left;
-  font-size: var(--font-size-control, 13px);
+  font-size: var(--clover-font-size-control, 13px);
   white-space: nowrap;
 }
 
 .clp-menu-item:hover,
 .clp-menu-item:focus-visible,
 .clp-menu-item[aria-checked="true"] {
-  background: var(--pill-option, #FFFFFF14);
+  background: var(--clover-pill-option, #FFFFFF14);
   outline: none;
 }
 
@@ -274,8 +273,8 @@
   width: 16px;
   display: inline-flex;
   justify-content: center;
-  font-size: var(--font-size-control, 13px);
-  color: var(--pill-muted, #8B8B8B);
+  font-size: var(--clover-font-size-control, 13px);
+  color: var(--clover-pill-muted, #8B8B8B);
 }
 
 /* A pinned turn: its prompt line, its whole reply, where it sits. */
@@ -303,17 +302,17 @@
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
-  font-size: var(--font-size-large, 15px);
+  font-size: var(--clover-font-size-large, 15px);
   font-weight: 500;
   line-height: 20px;
-  color: var(--pill-placeholder-typing, #FFFFFF80);
+  color: var(--clover-pill-placeholder-typing, #FFFFFF80);
 }
 
 .clp-preview-position {
   flex: none;
-  font-size: var(--font-size-caption, 11px);
+  font-size: var(--clover-font-size-caption, 11px);
   font-variant-numeric: tabular-nums;
-  color: var(--pill-muted, #8B8B8B);
+  color: var(--clover-pill-muted, #8B8B8B);
 }
 
 .clp-preview-reply {
@@ -322,13 +321,18 @@
   overflow-y: auto;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  font-size: var(--font-size-large, 15px);
+  font-size: var(--clover-font-size-large, 15px);
   line-height: 20px;
   scrollbar-width: thin;
   scrollbar-color: #FFFFFF40 transparent;
 }
 
 /* A card: the pill grown into an ask. */
+
+/* What wraps a sealed card: no box of its own, only where the card's tokens are read. */
+.clp-card-frame {
+  display: contents;
+}
 
 .clp-card {
   box-sizing: border-box;
@@ -343,14 +347,14 @@
   align-items: center;
   gap: 6px;
   min-width: 0;
-  font-size: var(--font-size-caption, 11px);
+  font-size: var(--clover-font-size-caption, 11px);
   font-weight: 500;
-  color: var(--pill-muted, #8B8B8B);
+  color: var(--clover-pill-muted, #8B8B8B);
 }
 
 .clp-card-header svg {
   flex: none;
-  color: var(--pill-attention, #FFC747);
+  color: var(--clover-pill-attention, #FFC747);
 }
 
 .clp-card-source {
@@ -368,9 +372,9 @@
 
 .clp-card-ask {
   display: block;
-  font-size: var(--font-size-large, 15px);
+  font-size: var(--clover-font-size-large, 15px);
   line-height: 20px;
-  color: var(--pill-text, #FFFFFF);
+  color: var(--clover-pill-text, #FFFFFF);
   overflow-wrap: anywhere;
 }
 
@@ -378,9 +382,9 @@
   display: block;
   padding: 7px 10px;
   border-radius: 10px;
-  background: var(--pill-option, #FFFFFF14);
-  font-family: var(--font-mono, ui-monospace, "SF Mono", "Cascadia Mono", "JetBrains Mono", "DejaVu Sans Mono", Menlo, Consolas, monospace);
-  font-size: var(--font-size-label, 12px);
+  background: var(--clover-pill-option, #FFFFFF14);
+  font-family: var(--clover-font-mono, ui-monospace, "SF Mono", "Cascadia Mono", "JetBrains Mono", "DejaVu Sans Mono", Menlo, Consolas, monospace);
+  font-size: var(--clover-font-size-label, 12px);
   line-height: 17px;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -388,9 +392,9 @@
 
 .clp-card-risk {
   display: block;
-  font-size: var(--font-size-caption, 11px);
+  font-size: var(--clover-font-size-caption, 11px);
   font-weight: 500;
-  color: var(--pill-attention, #FFC747);
+  color: var(--clover-pill-attention, #FFC747);
 }
 
 .clp-card-actions {
@@ -398,18 +402,20 @@
   align-items: center;
   gap: 8px;
   min-height: 30px;
+  /* Its own stacking context: the slots' glows sit beneath everything in it. */
+  isolation: isolate;
 }
 
 .clp-card-status {
   flex: 1 1 auto;
   min-width: 0;
-  font-size: var(--font-size-caption, 11px);
+  font-size: var(--clover-font-size-caption, 11px);
   font-weight: 500;
-  color: var(--pill-muted, #8B8B8B);
+  color: var(--clover-pill-muted, #8B8B8B);
 }
 
 .clp-card-status[data-tone="error"] {
-  color: var(--pill-attention, #FFC747);
+  color: var(--clover-pill-attention, #FFC747);
 }
 
 .clp-answer {
@@ -420,25 +426,25 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: var(--font-size-label, 12px);
-  color: var(--pill-send-glyph, #000000);
-  background: var(--pill-send, #FFFFFF);
+  font-size: var(--clover-font-size-label, 12px);
+  color: var(--clover-pill-send-glyph, #000000);
+  background: var(--clover-pill-send, #FFFFFF);
   transition: box-shadow 150ms ease-out, transform 120ms ease-out;
 }
 
 .clp-answer[data-role="accept"] {
-  color: var(--pill-text, #FFFFFF);
-  background: var(--pill-accept, #0A85FF);
+  color: var(--clover-pill-text, #FFFFFF);
+  background: var(--clover-pill-accept, #C2387A);
 }
 
 .clp-answer[data-role="quiet"] {
-  color: var(--pill-text, #FFFFFF);
-  background: var(--pill-accessory, #FFFFFF1F);
+  color: var(--clover-pill-text, #FFFFFF);
+  background: var(--clover-pill-accessory, #FFFFFF1F);
 }
 
 .clp-answer:disabled {
-  color: var(--pill-muted, #8B8B8B);
-  background: var(--pill-accessory, #FFFFFF1F);
+  color: var(--clover-pill-muted, #8B8B8B);
+  background: var(--clover-pill-accessory, #FFFFFF1F);
 }
 
 /* The sealed buttons' slots: the slot draws the circle and its glow; the core's frame fills it, see-through. */
@@ -449,14 +455,25 @@
   height: 30px;
   border-radius: 50%;
   display: inline-flex;
-  color: var(--pill-send-glyph, #000000);
-  background: var(--pill-send, #FFFFFF);
+  color: var(--clover-pill-send-glyph, #000000);
+  background: var(--clover-pill-send, #FFFFFF);
+}
+
+/* The glow under the pointer, in the circle's own colour: two rings drawn BENEATH the row, so it never lies
+   over the other button or the words beside it. */
+.clp-slot::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: 50%;
+  pointer-events: none;
   transition: box-shadow 150ms ease-out;
 }
 
 .clp-slot[data-role="accept"] {
-  color: var(--pill-text, #FFFFFF);
-  background: var(--pill-accept, #0A85FF);
+  color: var(--clover-pill-text, #FFFFFF);
+  background: var(--clover-pill-accept, #C2387A);
 }
 
 .clp-slot > * {
@@ -472,27 +489,31 @@
   justify-content: center;
 }
 
-.clp-slot:hover,
-.clp-slot[data-hover="true"] {
-  box-shadow: 0 0 8px #FFFFFF73, 0 0 20px #FFFFFF38;
+.clp-slot:hover::before,
+.clp-slot[data-hover="true"]::before {
+  box-shadow:
+    0 0 8px color-mix(in srgb, var(--clover-pill-send, #FFFFFF) 45%, transparent),
+    0 0 20px color-mix(in srgb, var(--clover-pill-send, #FFFFFF) 22%, transparent);
 }
 
-.clp-slot[data-role="accept"]:hover,
-.clp-slot[data-role="accept"][data-hover="true"] {
-  box-shadow: 0 0 8px #0A85FF73, 0 0 20px #0A85FF38;
+.clp-slot[data-role="accept"]:hover::before,
+.clp-slot[data-role="accept"][data-hover="true"]::before {
+  box-shadow:
+    0 0 8px color-mix(in srgb, var(--clover-pill-accept, #C2387A) 45%, transparent),
+    0 0 20px color-mix(in srgb, var(--clover-pill-accept, #C2387A) 22%, transparent);
 }
 
 .clp-question {
   display: block;
-  font-size: var(--font-size-large, 15px);
+  font-size: var(--clover-font-size-large, 15px);
   line-height: 20px;
 }
 
 .clp-question-hint {
   display: block;
   margin-top: 2px;
-  font-size: var(--font-size-caption, 11px);
-  color: var(--pill-muted, #8B8B8B);
+  font-size: var(--clover-font-size-caption, 11px);
+  color: var(--clover-pill-muted, #8B8B8B);
 }
 
 .clp-options {
@@ -510,21 +531,21 @@
   padding: 7px 14px;
   border-radius: 17px;
   text-align: left;
-  font-size: var(--font-size-large, 15px);
+  font-size: var(--clover-font-size-large, 15px);
   line-height: 20px;
-  color: var(--pill-text, #FFFFFF);
-  background: var(--pill-option, #FFFFFF14);
+  color: var(--clover-pill-text, #FFFFFF);
+  background: var(--clover-pill-option, #FFFFFF14);
   transition: background-color 120ms ease-out;
 }
 
 .clp-option:hover,
 .clp-option[data-hovered="true"] {
-  background: var(--pill-option-hover, #FFFFFF29);
+  background: var(--clover-pill-option-hover, #FFFFFF29);
 }
 
 .clp-option[aria-checked="true"] {
-  color: var(--pill-send-glyph, #000000);
-  background: var(--pill-send, #FFFFFF);
+  color: var(--clover-pill-send-glyph, #000000);
+  background: var(--clover-pill-send, #FFFFFF);
 }
 
 .clp-option-words {
@@ -535,9 +556,9 @@
 }
 
 .clp-option-detail {
-  font-size: var(--font-size-caption, 11px);
+  font-size: var(--clover-font-size-caption, 11px);
   line-height: 15px;
-  color: var(--pill-muted, #8B8B8B);
+  color: var(--clover-pill-muted, #8B8B8B);
 }
 
 .clp-option[aria-checked="true"] .clp-option-detail {
@@ -546,12 +567,12 @@
 
 .clp-option-mark {
   flex: none;
-  font-size: var(--font-size-label, 12px);
+  font-size: var(--clover-font-size-label, 12px);
   color: #FFFFFF80;
 }
 
 .clp-option[aria-checked="true"] .clp-option-mark {
-  color: var(--pill-send-glyph, #000000);
+  color: var(--clover-pill-send-glyph, #000000);
 }
 
 .clp-option-box {
@@ -568,9 +589,9 @@
 }
 
 .clp-option[aria-checked="true"] .clp-option-box {
-  border-color: var(--pill-send-glyph, #000000);
-  color: var(--pill-send, #FFFFFF);
-  background: var(--pill-send-glyph, #000000);
+  border-color: var(--clover-pill-send-glyph, #000000);
+  color: var(--clover-pill-send, #FFFFFF);
+  background: var(--clover-pill-send-glyph, #000000);
 }
 
 .clp-other {
@@ -582,20 +603,20 @@
   border-radius: 17px;
   outline: none;
   font: inherit;
-  font-size: var(--font-size-large, 15px);
+  font-size: var(--clover-font-size-large, 15px);
   line-height: 20px;
-  color: var(--pill-text, #FFFFFF);
-  caret-color: var(--pill-text, #FFFFFF);
-  background: var(--pill-option, #FFFFFF14);
+  color: var(--clover-pill-text, #FFFFFF);
+  caret-color: var(--clover-pill-text, #FFFFFF);
+  background: var(--clover-pill-option, #FFFFFF14);
 }
 
 .clp-other::placeholder {
-  color: var(--pill-placeholder-typing, #FFFFFF80);
+  color: var(--clover-pill-placeholder-typing, #FFFFFF80);
   opacity: 1;
 }
 
 .clp-other[data-filled="true"] {
-  background: var(--pill-option-hover, #FFFFFF29);
+  background: var(--clover-pill-option-hover, #FFFFFF29);
 }
 
 /* The child row: agents working for the pill's bot. */
@@ -618,8 +639,8 @@
   padding: 0 6px 0 12px;
   border-radius: 22px;
   overflow: hidden;
-  background: var(--pill-surface, #000000);
-  box-shadow: var(--pill-shadow, 0 4px 24px #00000073);
+  background: var(--clover-pill-surface, #000000);
+  box-shadow: var(--clover-pill-shadow, 0 4px 24px #00000073);
   transition: opacity 300ms ease-in-out;
 }
 
@@ -628,12 +649,12 @@
   position: absolute;
   inset: 0;
   border-radius: inherit;
-  box-shadow: inset 0 0 0 1px var(--pill-rim, #FFFFFF17);
+  box-shadow: inset 0 0 0 1px var(--clover-pill-rim, #FFFFFF17);
   pointer-events: none;
 }
 
 .clp-child[data-status="needsYou"]::after {
-  box-shadow: inset 0 0 0 1px var(--pill-attention, #FFC747);
+  box-shadow: inset 0 0 0 1px var(--clover-pill-attention, #FFC747);
 }
 
 .clp-child-plume {
@@ -659,7 +680,7 @@
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
-  font-size: var(--font-size-label, 12px);
+  font-size: var(--clover-font-size-label, 12px);
   font-weight: 500;
 }
 
@@ -674,20 +695,20 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: var(--font-size-caption, 11px);
+  font-size: var(--clover-font-size-caption, 11px);
 }
 
 .clp-child-glyph[data-status="needsYou"] {
-  color: var(--pill-attention, #FFC747);
+  color: var(--clover-pill-attention, #FFC747);
 }
 
 .clp-child-glyph[data-status="failed"] {
-  color: var(--pill-danger, #FF6B70);
+  color: var(--clover-pill-danger, #FF6B70);
   --glyph-cut: #000000;
 }
 
 .clp-child-glyph[data-status="done"] {
-  color: var(--pill-success, #4CC38A);
+  color: var(--clover-pill-success, #4CC38A);
 }
 
 .clp-child-stop {
@@ -699,8 +720,8 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: var(--font-size-label, 12px);
-  color: var(--pill-text, #FFFFFF);
+  font-size: var(--clover-font-size-label, 12px);
+  color: var(--clover-pill-text, #FFFFFF);
 }
 
 .clp-child-more {
@@ -711,10 +732,10 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: var(--font-size-label, 12px);
+  font-size: var(--clover-font-size-label, 12px);
   font-weight: 600;
-  background: var(--pill-surface, #000000);
-  box-shadow: var(--pill-shadow, 0 4px 24px #00000073), inset 0 0 0 1px var(--pill-rim, #FFFFFF17);
+  background: var(--clover-pill-surface, #000000);
+  box-shadow: var(--clover-pill-shadow, 0 4px 24px #00000073), inset 0 0 0 1px var(--clover-pill-rim, #FFFFFF17);
 }
 
 @media (prefers-reduced-motion: reduce) {

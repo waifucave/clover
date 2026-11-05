@@ -10,8 +10,8 @@
   min-height: 160px;
   margin: 0;
   overflow: hidden;
-  font-family: var(--font-sans, system-ui, -apple-system, "Segoe UI Variable Text", "Segoe UI", "Noto Sans", Ubuntu, Cantarell, sans-serif);
-  color: var(--stage-text, #676674);
+  font-family: var(--clover-font-sans, system-ui, -apple-system, "Segoe UI Variable Text", "Segoe UI", "Noto Sans", Ubuntu, Cantarell, sans-serif);
+  color: var(--clover-stage-text, #676674);
 }
 
 .clvr-canvas {
@@ -41,27 +41,27 @@
   height: 96px;
   border-radius: 50%;
   object-fit: cover;
-  box-shadow: 0 0 0 6px var(--stage-glow, #C2387A1F);
+  box-shadow: 0 0 0 6px var(--clover-stage-glow, #C2387A1F);
 }
 
 .clvr-silhouette {
   width: 88px;
   height: 112px;
   border-radius: 44px 44px 20px 20px;
-  background: var(--stage-glow, #C2387A1F);
+  background: var(--clover-stage-glow, #C2387A1F);
 }
 
 .clvr-wait-line,
 .clvr-error-line {
   max-width: 260px;
-  font-size: var(--font-size-label, 12px);
+  font-size: var(--clover-font-size-label, 12px);
   line-height: 1.45;
 }
 
 .clvr-error-title {
-  font-size: var(--font-size-control, 13px);
+  font-size: var(--clover-font-size-control, 13px);
   font-weight: 600;
-  color: var(--color-text, #1C1B22);
+  color: var(--clover-color-text, #1C1B22);
 }
 
 .clvr-credit {
@@ -69,8 +69,8 @@
   left: 12px;
   right: 12px;
   bottom: 10px;
-  font-size: var(--font-size-caption, 11px);
+  font-size: var(--clover-font-size-caption, 11px);
   line-height: 1.35;
-  color: var(--stage-text, #676674);
+  color: var(--clover-stage-text, #676674);
   pointer-events: none;
 }

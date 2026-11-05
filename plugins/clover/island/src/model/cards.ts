@@ -6,6 +6,8 @@
 // carries no words here: the words arrive inside sealed frames (`SealedCardKit`). A question is not a
 // security boundary (`AskUserQuestion`, spec §5.5), so its text and options are the island's to show.
 
+import { t } from "../strings";
+
 export type CardKind = "approval" | "link" | "question";
 
 /** The bot (or agent) a card belongs to, when the island knows it. */
@@ -93,11 +95,11 @@ export function waitingLine(card: IslandCard): string {
 export function answerLabels(card: IslandCard): { refuse: string; accept: string } {
   switch (card.kind) {
     case "link":
-      return { refuse: "Decline the link", accept: "Open the link" };
+      return { refuse: t("clover.island.declineLink"), accept: t("clover.island.openLink") };
     case "approval":
-      return { refuse: "Deny", accept: "Allow once" };
+      return { refuse: t("clover.island.deny"), accept: t("clover.island.allowOnce") };
     case "question":
-      return { refuse: "Previous question", accept: "Send" };
+      return { refuse: t("clover.island.previous"), accept: t("clover.island.send") };
   }
 }
 

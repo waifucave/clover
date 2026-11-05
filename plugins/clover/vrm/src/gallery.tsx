@@ -37,13 +37,13 @@ export async function avatarsSettled(timeoutMs = 25_000): Promise<void> {
   await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
 }
 
-const STAGE: CSSProperties = { position: "relative", background: "var(--stage-background, linear-gradient(180deg, #FFFFFF 0%, #F4F2F8 100%))", overflow: "hidden" };
+const STAGE: CSSProperties = { position: "relative", background: "var(--clover-stage-background, linear-gradient(180deg, #FFFFFF 0%, #F4F2F8 100%))", overflow: "hidden" };
 
 /** A stage the size of the frame, with the theme's floor shadow under the avatar. */
 export function Stage({ width, height, children }: { width: number; height: number; children: ReactNode }): ReactElement {
   return (
     <div style={{ ...STAGE, width, height }}>
-      <div style={{ position: "absolute", left: "50%", bottom: "6%", width: "56%", height: 26, marginLeft: "-28%", borderRadius: "50%", background: "radial-gradient(closest-side, var(--stage-floor, #1C1B221F), #00000000)" }} />
+      <div style={{ position: "absolute", left: "50%", bottom: "6%", width: "56%", height: 26, marginLeft: "-28%", borderRadius: "50%", background: "radial-gradient(closest-side, var(--clover-stage-floor, #1C1B221F), #00000000)" }} />
       {children}
     </div>
   );
@@ -56,14 +56,14 @@ function Avatar({ still, framing = "bust", credit = "auto" }: { still: AvatarSti
 /** A labelled grid of small stages. */
 function Sheet({ cells, columns, cell, label }: { cells: { label: string; still: AvatarStill }[]; columns: number; cell: { width: number; height: number }; label?: (i: number) => string }): ReactElement {
   return (
-    <div style={{ display: "grid", gridTemplateColumns: `repeat(${columns}, ${cell.width}px)`, gap: 6, background: "var(--color-canvas, #F6F6F8)" }}>
+    <div style={{ display: "grid", gridTemplateColumns: `repeat(${columns}, ${cell.width}px)`, gap: 6, background: "var(--clover-color-canvas, #F6F6F8)" }}>
       {cells.map((c, i) => (
         <div key={i} style={{ position: "relative" }}>
           <Stage width={cell.width} height={cell.height}>
             {/* The credit shows on the single stories; in a sheet of small stages it would cover the figure. */}
             <Avatar still={c.still} credit="never" />
           </Stage>
-          <span style={{ position: "absolute", left: 8, top: 6, font: "600 11px system-ui, sans-serif", color: "var(--color-text, #1C1B22)", background: "#FFFFFFB3", borderRadius: 6, padding: "1px 6px" }}>{label?.(i) ?? c.label}</span>
+          <span style={{ position: "absolute", left: 8, top: 6, font: "600 11px system-ui, sans-serif", color: "var(--clover-color-text, #1C1B22)", background: "#FFFFFFB3", borderRadius: 6, padding: "1px 6px" }}>{label?.(i) ?? c.label}</span>
         </div>
       ))}
     </div>

@@ -7,7 +7,7 @@ import type { Exchange } from "./model/preview";
 import type { PlumeThrow, ToolGlyph } from "./model/plume";
 import type { ScheduledThrow } from "./ui/Plume";
 import type { PillTarget } from "./ui/Bar";
-import type { SealedFixtures } from "./ui/sealed";
+import type { SealedFixtures } from "./mock-kit";
 
 /** Alpha's portrait lives in Alpha's plugin; the gallery serves it at this path. */
 export const ALPHA: PillTarget = { id: "alpha", name: "Alpha", portrait: "plugins/alpha/assets/portrait.svg", color: "#B9A6FF" };

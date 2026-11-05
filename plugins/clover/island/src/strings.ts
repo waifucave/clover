@@ -22,6 +22,14 @@ export const EN: Readonly<Record<string, Entry>> = {
   "clover.island.showWaiting": "Waiting: {line}. Show it.",
   "clover.island.tabs": "Island tabs",
   "clover.island.onComputer": "on {computer}",
+  "clover.island.notSent": "Not sent. Try again.",
+  "clover.island.approval": "Approval",
+  "clover.island.linkRequest": "Link request",
+  "clover.island.moreBelow": "More below",
+  "clover.island.declineLink": "Decline the link",
+  "clover.island.openLink": "Open the link",
+  "clover.island.deny": "Deny",
+  "clover.island.allowOnce": "Allow once",
 };
 
 export function t(key: string, vars: Record<string, string | number> = {}): string {

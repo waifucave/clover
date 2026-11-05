@@ -5,8 +5,8 @@
 .alpha-stage {
   position: relative;
   isolation: isolate;
-  border-left: 1px solid var(--color-hairline, #E6DEF5);
-  background: var(--stage-background, linear-gradient(180deg, #F3EEFF 0%, #EEF0FF 52%, #E4F7EE 100%));
+  border-left: 1px solid var(--clover-color-hairline, #E6DEF5);
+  background: var(--clover-stage-background, linear-gradient(180deg, #F3EEFF 0%, #EEF0FF 52%, #E4F7EE 100%));
 }
 
 /* The meadow: soft hills with clover leaves along the bottom of the stage. */
@@ -35,10 +35,10 @@
     radial-gradient(circle at 70% 30%, #FFFFFF 0 1px, #7FF2D266 1.8px, #7FF2D200 3px),
     radial-gradient(circle at 27% 38%, #FFFFFF 0 1px, #B8A5FF66 1.8px, #B8A5FF00 3px),
     radial-gradient(circle at 44% 8%, #FFFFFF 0 1px, #B8A5FF4D 1.6px, #B8A5FF00 3px),
-    radial-gradient(ellipse 55% 42% at 50% 46%, var(--stage-glow, #B8A5FF3D) 0%, #FFFFFF00 100%);
+    radial-gradient(ellipse 55% 42% at 50% 46%, var(--clover-stage-glow, #B8A5FF3D) 0%, #FFFFFF00 100%);
   pointer-events: none;
 }
 
 .alpha-talk {
-  background: var(--color-surface, #FCFAFF);
+  background: var(--clover-color-surface, #FCFAFF);
 }

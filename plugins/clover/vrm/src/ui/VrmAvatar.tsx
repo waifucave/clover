@@ -76,11 +76,11 @@ export function themeLights(el: Element | null): StageLights {
   if (!el || typeof getComputedStyle !== "function") return DEFAULT_LIGHTS;
   const style = getComputedStyle(el);
   const read = (name: string, fallback: string) => style.getPropertyValue(name).trim() || fallback;
-  const exposure = Number.parseFloat(read("--avatar-exposure", "1"));
+  const exposure = Number.parseFloat(read("--clover-avatar-exposure", "1"));
   return {
-    key: read("--avatar-light-key", DEFAULT_LIGHTS.key),
-    fill: read("--avatar-light-fill", DEFAULT_LIGHTS.fill),
-    rim: read("--avatar-light-rim", DEFAULT_LIGHTS.rim),
+    key: read("--clover-avatar-light-key", DEFAULT_LIGHTS.key),
+    fill: read("--clover-avatar-light-fill", DEFAULT_LIGHTS.fill),
+    rim: read("--clover-avatar-light-rim", DEFAULT_LIGHTS.rim),
     exposure: Number.isFinite(exposure) ? exposure : 1,
   };
 }

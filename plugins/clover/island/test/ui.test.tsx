@@ -10,7 +10,8 @@ import { LiquidCard } from "../src/ui/Liquid";
 import { NeedsYou, OpenIsland } from "../src/ui/OpenIsland";
 import { QuestionCardContent, SealedCardContent } from "../src/ui/CardContent";
 import { WaitingPill } from "../src/ui/WaitingPill";
-import { mockSealedKit, SealedKitContext } from "../src/ui/sealed";
+import { mockSealedKit } from "../src/mock-kit";
+import { SealedKitContext } from "../src/ui/sealed";
 import { LiftRow, StatusWord } from "../src/ui/rows";
 import { APPROVAL, APPROVAL_2, LINK, NOTCH, NO_NOTCH, QUESTION, QUESTIONS_2, SEALED } from "../src/fixtures";
 
@@ -228,7 +229,37 @@ describe("rows", () => {
 });
 
 describe("a tab's scrolling list", () => {
-  test("fades an edge only where more of the list lies beyond it", async () => {
+  test("says where more of the list lies, outside the list and never over it", async () => {
+    const { TabScroll } = await import("../src/ui/OpenIsland");
+    const proto = HTMLElement.prototype as unknown as Record<string, unknown>;
+    const saved = ["scrollHeight", "clientHeight", "scrollTop"].map((name) => [name, Object.getOwnPropertyDescriptor(HTMLElement.prototype, name)] as const);
+    const lists = (el: HTMLElement) => el.classList.contains("clv-tab-scroll");
+    Object.defineProperty(proto, "scrollHeight", { configurable: true, get() { return lists(this) ? 300 : 0; } });
+    Object.defineProperty(proto, "clientHeight", { configurable: true, get() { return lists(this) ? 120 : 0; } });
+    Object.defineProperty(proto, "scrollTop", { configurable: true, get() { return lists(this) ? 90 : 0; }, set() {} });
+    try {
+      const { container } = render(
+        <TabScroll>
+          <div style={{ height: 300 }} />
+        </TabScroll>,
+      );
+      const list = container.querySelector(".clv-tab-scroll")!;
+      const more = container.querySelector(".clv-more")!;
+      expect(list.getAttribute("data-more-above")).toBe("true");
+      expect(more.getAttribute("data-more-below")).toBe("true");
+      expect(more.querySelector("svg")).not.toBeNull();
+      // The band follows the list; nothing sits inside or over it.
+      expect(list.nextElementSibling).toBe(more);
+      expect(container.querySelector(".clv-edge")).toBeNull();
+    } finally {
+      for (const [name, descriptor] of saved) {
+        if (descriptor) Object.defineProperty(HTMLElement.prototype, name, descriptor);
+        else delete proto[name];
+      }
+    }
+  });
+
+  test("judges where more of the list lies beyond an edge", async () => {
     const { scrollEdges } = await import("../src/ui/OpenIsland");
     expect(scrollEdges(0, 120, 120)).toEqual({ top: false, bottom: false });
     expect(scrollEdges(0, 120, 300)).toEqual({ top: false, bottom: true });

@@ -8,7 +8,21 @@ export { Preview, type PreviewProps } from "../src/ui/Preview";
 export { Children, type ChildrenProps } from "../src/ui/Children";
 export { Plume, drawPlume, plumeStill, BROWSER_FRAMES, PILL_EMITTER_INSET, type PlumeProps, type FrameTimers, type ScheduledThrow } from "../src/ui/Plume";
 export { Glyph, GLYPHS, drawGlyph, type PillGlyphName } from "../src/ui/glyphs";
-export { SealedKitContext, EMPTY_KIT, mockSealedKit, useSealedKit, PILL_CARD_TOKENS, MIN_SEALED_BUTTON, type SealedCardKit, type SealedField, type SealedFixtures } from "../src/ui/sealed";
+export {
+  SealedKitContext,
+  SealedCardIdProvider,
+  EMPTY_KIT,
+  useSealedKit,
+  useSealedCardId,
+  useCardTokens,
+  resolveCardTokens,
+  tokenProperty,
+  PILL_CARD_SOURCES,
+  MIN_SEALED_BUTTON,
+  type CardTokenSource,
+  type SealedCardKit,
+  type SealedField,
+} from "../src/ui/sealed";
 export { ensurePillStyles, PILL_CSS } from "../src/ui/styles";
 export * from "../src/model/metrics";
 export * from "../src/model/spring";

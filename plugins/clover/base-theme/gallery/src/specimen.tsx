@@ -3,8 +3,7 @@
 // parts that read it; the parts themselves (sidebar, conversation, composer) are lane F's.
 
 import type { CSSProperties, ReactElement } from "react";
-
-const v = (name: string) => `var(--${name.replaceAll(".", "-")})`;
+import { cssVar as v } from "../../src/catalog";
 
 const label: CSSProperties = { fontSize: v("font.size.caption"), color: v("color.text.muted") };
 

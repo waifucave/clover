@@ -2,6 +2,8 @@
 // to one line, its WHOLE reply read as plain words where that is safe, and where it sits ("3/7"). Ported
 // from Winter's `dispatchPillTurnPreview` and `dispatchPillReplyText`. Pure.
 
+import { t } from "../strings";
+
 export interface Exchange {
   prompt: string;
   reply: string;
@@ -15,7 +17,7 @@ export interface TurnPreview {
 }
 
 /** The prompt line of a turn the user did not start: the bot reporting on its own. */
-export const UPDATE_LABEL = "An update from your bot";
+export const UPDATE_LABEL = t("clover.pill.update");
 export const PROMPT_LIMIT = 90;
 
 export function shortened(text: string, limit: number): string {

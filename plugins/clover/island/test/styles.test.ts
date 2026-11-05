@@ -26,8 +26,9 @@ describe("the island's stylesheet", () => {
   });
 
   test("puts nothing on an element that could hide a sealed frame", () => {
-    // The component CSS is held to the theme rules too: anything that hides would hide a card part.
-    expect(checkThemeCss(ISLAND_CSS)).toEqual([]);
+    // The component CSS is held to the theme rules too: anything that hides would hide a card part. What it
+    // positions is checked on the rendered surfaces instead (`sealed.test.tsx`).
+    expect(checkThemeCss(ISLAND_CSS, { component: true })).toEqual([]);
   });
 });
 

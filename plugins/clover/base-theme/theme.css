@@ -6,28 +6,28 @@
    could hold one. Decoration lives in pseudo-elements, which never contain a frame. */
 
 :scope {
-  color: var(--color-text);
-  font-family: var(--font-sans);
-  font-size: var(--font-size-body);
-  line-height: var(--font-line-body);
-  accent-color: var(--color-accent);
-  caret-color: var(--color-accent);
+  color: var(--clover-color-text);
+  font-family: var(--clover-font-sans);
+  font-size: var(--clover-font-size-body);
+  line-height: var(--clover-font-line-body);
+  accent-color: var(--clover-color-accent);
+  caret-color: var(--clover-color-accent);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
 
 ::selection {
-  background: var(--color-accent-soft);
-  color: var(--color-text);
+  background: var(--clover-color-accent-soft);
+  color: var(--clover-color-text);
 }
 
 :focus-visible {
-  outline: 2px solid var(--color-focus);
+  outline: 2px solid var(--clover-color-focus);
   outline-offset: 2px;
 }
 
 a {
-  color: var(--color-accent-text);
+  color: var(--clover-color-accent-text);
   text-underline-offset: 0.2em;
 }
 
@@ -35,13 +35,13 @@ code,
 kbd,
 pre,
 samp {
-  font-family: var(--font-mono);
+  font-family: var(--clover-font-mono);
   font-size: 0.92em;
 }
 
 hr {
   border: 0;
-  border-top: 1px solid var(--color-hairline);
+  border-top: 1px solid var(--clover-color-hairline);
 }
 
 @media (prefers-reduced-motion: reduce) {

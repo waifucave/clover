@@ -8,12 +8,13 @@ import alphaCss from "../../../../alpha/tab/theme.css" with { type: "text" };
 import alphaLayout from "../../../../alpha/tab/layout.json" with { type: "json" };
 import { VrmAvatar } from "../../../vrm/src/ui/VrmAvatar";
 import { ALPHA_PORTRAIT, ALPHA_VRM, avatarsSettled } from "../../../vrm/src/gallery";
+import { cssVar } from "../../src/catalog";
 import { readTheme } from "../../src/theme";
 import type { ThemeLayer } from "./themes";
 
 export const ALPHA_LAYER: ThemeLayer = { id: "alpha", theme: readTheme(alphaTheme, { strict: true }), css: alphaCss, base: "plugins/alpha/tab/" };
 
-const v = (token: string) => `var(--${token.replaceAll(".", "-")})`;
+const v = cssVar;
 
 type LayoutNode = Record<string, unknown>;
 

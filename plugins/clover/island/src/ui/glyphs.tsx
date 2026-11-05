@@ -15,6 +15,7 @@ export type GlyphName =
   | "open"
   | "chevronLeft"
   | "chevronRight"
+  | "chevronDown"
   | "checkCircle";
 
 const STROKE = { fill: "none", stroke: "currentColor", strokeLinecap: "round", strokeLinejoin: "round" } as const;
@@ -56,6 +57,7 @@ const PATHS: Record<GlyphName, ReactElement> = {
   open: <path {...STROKE} strokeWidth="2" d="M5 11 11 5M6.2 5H11v4.8" />,
   chevronLeft: <path {...STROKE} strokeWidth="2.1" d="M10 3.6 5.6 8l4.4 4.4" />,
   chevronRight: <path {...STROKE} strokeWidth="2.1" d="M6 3.6 10.4 8 6 12.4" />,
+  chevronDown: <path {...STROKE} strokeWidth="2.1" d="M3.6 6 8 10.4 12.4 6" />,
   checkCircle: (
     <g {...STROKE} strokeWidth="0.9">
       <circle cx="8" cy="8" r="6.6" />

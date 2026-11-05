@@ -3,6 +3,9 @@
 // where or which question — then the words with ✕ and ✓ at the trailing end, bottom-aligned with the last
 // line. An approval's and a link request's words and buttons are sealed parts; a question's are the
 // island's own.
+//
+// The answer line always comes first after the header, so the buttons sit where the card's top shows:
+// an approval's risk and, in Needs you, its command follow below them.
 
 import type { ReactElement } from "react";
 import {
@@ -18,13 +21,13 @@ import {
 import { t } from "../strings";
 import { CircleButton, SealedSlot } from "./Buttons";
 import { Glyph, kindGlyph } from "./glyphs";
-import { ISLAND_CARD_TOKENS, useSealedKit } from "./sealed";
+import { ISLAND_CARD_SOURCES, useCardTokens, useSealedKit } from "./sealed";
 
 export interface SealedCardContentProps {
   card: ApprovalCard | LinkCard;
   /** The most lines the request shows. */
   lines?: number;
-  /** Show the command or input as well (the open island's Needs you has room for it). */
+  /** Show the command or input as well, below the answer line (the open island's Needs you has room for it). */
   withCommand?: boolean;
   /** Draw a button as if under the pointer (gallery). */
   hover?: "accept" | "refuse";
@@ -32,30 +35,35 @@ export interface SealedCardContentProps {
 
 export function SealedCardContent({ card, lines = 4, withCommand = false, hover }: SealedCardContentProps): ReactElement {
   const kit = useSealedKit();
+  // The frames take the island's own tokens, resolved where this card sits.
+  const { ref, tokens } = useCardTokens(ISLAND_CARD_SOURCES);
   return (
-    <kit.Card id={card.id} tokens={ISLAND_CARD_TOKENS} className="clv-card-parts">
-      <div className="clv-card-header">
-        <Glyph name={kindGlyph(card.kind)} />
-        <span className="clv-card-header-line">
-          <kit.Field name="source" />
-        </span>
-        {card.computer ? <span className="clv-card-header-trailing">{card.computer}</span> : null}
-      </div>
-      {withCommand && card.kind === "approval" ? <kit.Field name="command" className="clv-command" lines={6} /> : null}
-      <div className="clv-answer-line">
-        <div className="clv-answer-words">
-          <kit.Field name="ask" lines={lines} />
-          {card.kind === "link" ? (
-            <span className="clv-host-line">
-              <Glyph name="lock" />
-              <kit.Field name="host" />
-            </span>
-          ) : null}
+    <div ref={ref} className="clv-card-frame">
+      <kit.Card id={card.id} tokens={tokens} className="clv-card-parts">
+        <div className="clv-card-header">
+          <Glyph name={kindGlyph(card.kind)} />
+          <span className="clv-card-header-line">
+            <kit.Field name="source" />
+          </span>
+          {card.computer ? <span className="clv-card-header-trailing">{card.computer}</span> : null}
         </div>
-        <SealedSlot approve={false} look="cross" hover={hover === "refuse"} />
-        <SealedSlot approve look={card.kind === "link" ? "open" : "check"} hover={hover === "accept"} />
-      </div>
-    </kit.Card>
+        <div className="clv-answer-line">
+          <div className="clv-answer-words">
+            <kit.Field name="ask" lines={lines} />
+            {card.kind === "link" ? (
+              <span className="clv-host-line">
+                <Glyph name="lock" />
+                <kit.Field name="host" />
+              </span>
+            ) : null}
+          </div>
+          <SealedSlot approve={false} look="cross" hover={hover === "refuse"} />
+          <SealedSlot approve look={card.kind === "link" ? "open" : "check"} hover={hover === "accept"} />
+        </div>
+        {card.kind === "approval" ? <kit.Field name="risk" lines={2} className="clv-risk" /> : null}
+        {withCommand && card.kind === "approval" ? <kit.Field name="command" className="clv-command" lines={6} /> : null}
+      </kit.Card>
+    </div>
   );
 }
 

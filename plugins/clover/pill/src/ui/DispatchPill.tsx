@@ -337,7 +337,7 @@ export function DispatchPill(props: DispatchPillProps): ReactElement {
       next.delete(c.id);
       return next;
     });
-    if (!ok) setErrors((e) => ({ ...e, [c.id]: "That answer didn't go through. Try again." }));
+    if (!ok) setErrors((e) => ({ ...e, [c.id]: t("clover.pill.notSent") }));
   };
 
   // What the bar shows, and what the shape holds now.

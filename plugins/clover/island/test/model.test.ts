@@ -118,6 +118,20 @@ describe("a card's geometry", () => {
 });
 
 describe("the liquid birth", () => {
+  test("without a housing (Windows, Linux, a screen with no notch) the card is born from the screen's top edge", () => {
+    const g = cardGeometry(bare, { width: 400, height: 120 }, { rounded: true });
+    expect(g.sourceIsHousing).toBe(false);
+    expect(g.source.y).toBe(0);
+    expect(g.source.height).toBe(0);
+    // Top centre: the source sits in the middle of the card's panel.
+    expect(g.source.x + g.source.width / 2).toBeCloseTo(g.panelSize.width / 2, 6);
+    const early = fluidFrame(g, 0.06);
+    // The liquid hangs from the top edge: its band reaches up past y = 0 and falls from there.
+    expect(Math.min(...early.blobs.map((b) => b.rect.y))).toBeLessThan(0);
+    const rest = fluidFrame(g, FLUID.settle).card;
+    for (const key of ["x", "y", "width", "height"] as const) expect(Math.abs(rest[key] - g.card[key])).toBeLessThan(2);
+  });
+
   const g = cardGeometry(notch, { width: 400, height: 120 }, { rounded: true });
 
   test("starts inside the housing and ends as the card at rest", () => {

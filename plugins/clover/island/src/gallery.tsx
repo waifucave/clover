@@ -11,7 +11,8 @@ import { APPROVAL, APPROVAL_2, LINK, NOTCH, NO_NOTCH, QUESTION, QUESTIONS_2, SEA
 import { QuestionCardContent, SealedCardContent } from "./ui/CardContent";
 import { LiquidCard } from "./ui/Liquid";
 import { NeedsYou, OpenIsland, TabScroll } from "./ui/OpenIsland";
-import { mockSealedKit, SealedKitContext } from "./ui/sealed";
+import { mockSealedKit } from "./mock-kit";
+import { SealedKitContext } from "./ui/sealed";
 import { Strip } from "./ui/Strip";
 import { WaitingPill } from "./ui/WaitingPill";
 import { GroupTitle, LiftRow, LinkWords, RowWords, StatusWord } from "./ui/rows";

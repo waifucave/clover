@@ -8,9 +8,12 @@
 // Assumed until lane B pins the format: `tokens` is a flat map from a dotted token name to a value
 // (a string, or a number for weights and unitless numbers); `dark.tokens` overrides `tokens` in the
 // dark appearance, and a token it leaves out keeps its `tokens` value.
+//
+// Every value goes into a CSS custom property, so every value — a catalog token's or a plugin's own —
+// is held to lane B's rule first: nothing that could break out of the property (`unsafeValue`).
 
 import { isHexColor } from "./contrast";
-import { cssProperty, isTokenName, tokenSpec, type TokenType } from "./catalog";
+import { cssProperty, isPluginTokenName, isTokenName, TOKEN_GROUPS, tokenSpec, type TokenType } from "./catalog";
 
 export type Text = string | ({ en: string } & Record<string, string>);
 export type TokenValue = string | number;
@@ -37,7 +40,22 @@ export function isPluginPath(path: unknown): path is string {
   return path.split("/").every((segment) => segment !== ".." && segment !== "");
 }
 
-const FORBIDDEN_IN_VALUES = /url\(|expression\(|[;{}<>@\\]|\/\*/i;
+// Lane B's `UNSAFE` (packages/plugin-sdk/src/catalogs/tokens.ts): no `;`, braces, `@`, `<`, `>`,
+// backslashes or comments, and no function that loads something, whatever the token's type.
+const UNSAFE = /[;{}\\@<>]|\/\*|url\s*\(|expression\s*\(|image-set|image\s*\(|element\s*\(/i;
+const MAX_VALUE = 300;
+
+/** Why a value could never sit in a CSS custom property, or null when it can. */
+export function unsafeValue(value: unknown): string | null {
+  if (typeof value === "number") return Number.isFinite(value) ? null : "is not a finite number";
+  if (typeof value !== "string") return "is neither a string nor a number";
+  if (value.length > MAX_VALUE) return `is longer than ${MAX_VALUE} characters`;
+  if (UNSAFE.test(value)) return "holds characters a token may not (;, braces, @, <, >, a backslash, a comment, url(, image-set, image(, element(, expression()";
+  return null;
+}
+
+/** A plugin's own token name when its top-level id is not known: `<id>.<name>`, the id possibly hyphenated. */
+const ANY_PLUGIN_TOKEN = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z][a-z0-9]*)+$/;
 const DIMENSION = /^(0|-?\d+(\.\d+)?px)$/;
 const DURATION = /^\d+(\.\d+)?ms$/;
 const EASING = /^(linear|ease|ease-in|ease-out|ease-in-out|cubic-bezier\(\s*-?[\d.]+(\s*,\s*-?[\d.]+){3}\s*\)|linear\([\d.,%\s-]+\))$/;
@@ -51,7 +69,8 @@ export function checkValue(type: TokenType, value: TokenValue): string | null {
     if (type === "number") return null;
     return `is a number; a ${type} is a string`;
   }
-  if (FORBIDDEN_IN_VALUES.test(value)) return "holds characters a token may not (url(, ;, braces, @, comments)";
+  const unsafe = unsafeValue(value);
+  if (unsafe) return unsafe;
   switch (type) {
     case "color":
       return isHexColor(value) ? null : "is not a #RGB, #RRGGBB or #RRGGBBAA colour";
@@ -73,13 +92,28 @@ export function checkValue(type: TokenType, value: TokenValue): string | null {
   }
 }
 
-function checkTokens(where: string, tokens: unknown, problems: string[], strict: boolean): void {
+export interface CheckThemeOptions {
+  /** Refuse tokens the catalog does not list: how the themes we ship are held to it. */
+  strict?: boolean;
+  /** The theme's plugin's top-level id: its own tokens are `<id>.<name>` (lane B's `isPluginTokenName`). Without
+   *  it, a non-strict check takes any `<id>.<name>` whose id could be a plugin's. */
+  plugin?: string;
+}
+
+/** A plugin's own token when the plugin is not known: `<id>.<name>`, the id never one of the catalog's groups. */
+function isAnyPluginToken(name: string): boolean {
+  return name.length <= 128 && ANY_PLUGIN_TOKEN.test(name) && !TOKEN_GROUPS.has(name.slice(0, name.indexOf(".")));
+}
+
+function checkTokens(where: string, tokens: unknown, problems: string[], options: CheckThemeOptions): void {
   if (typeof tokens !== "object" || tokens === null || Array.isArray(tokens)) {
     problems.push(`${where} is not an object`);
     return;
   }
   for (const [name, value] of Object.entries(tokens)) {
-    if (!isTokenName(name)) {
+    const spec = tokenSpec(name);
+    const own = !spec && (options.plugin !== undefined ? isPluginTokenName(name, options.plugin) : isAnyPluginToken(name));
+    if (!spec && !own && !isTokenName(name)) {
       problems.push(`${where}: "${name}" is not a token name`);
       continue;
     }
@@ -87,13 +121,16 @@ function checkTokens(where: string, tokens: unknown, problems: string[], strict:
       problems.push(`${where}: ${name} is neither a string nor a number`);
       continue;
     }
-    const spec = tokenSpec(name);
-    if (!spec) {
-      if (strict) problems.push(`${where}: ${name} is not in the token catalog`);
+    if (spec) {
+      const wrong = checkValue(spec.type, value);
+      if (wrong) problems.push(`${where}: ${name} = ${JSON.stringify(value)} ${wrong}`);
       continue;
     }
-    const wrong = checkValue(spec.type, value);
-    if (wrong) problems.push(`${where}: ${name} = ${JSON.stringify(value)} ${wrong}`);
+    // Strict: the catalog's tokens, and the plugin's own when it is named.
+    if (options.strict && !(own && options.plugin !== undefined)) problems.push(`${where}: ${name} is not in the token catalog`);
+    // A token the catalog does not type is still a CSS value: held to what any value may hold.
+    const unsafe = unsafeValue(value);
+    if (unsafe) problems.push(`${where}: ${name} = ${JSON.stringify(value)} ${unsafe}`);
   }
 }
 
@@ -101,8 +138,7 @@ function checkTokens(where: string, tokens: unknown, problems: string[], strict:
  * Every problem with a theme file, as plain sentences (empty when there is none). `strict` also refuses
  * tokens the catalog does not list, which is how the themes we ship are held to it.
  */
-export function checkTheme(json: unknown, options: { strict?: boolean } = {}): string[] {
-  const strict = options.strict ?? false;
+export function checkTheme(json: unknown, options: CheckThemeOptions = {}): string[] {
   const problems: string[] = [];
   if (typeof json !== "object" || json === null || Array.isArray(json)) return ["the theme is not an object"];
   const theme = json as Record<string, unknown>;
@@ -116,11 +152,11 @@ export function checkTheme(json: unknown, options: { strict?: boolean } = {}): s
   if (theme.appearance !== undefined && !["light", "dark", "both"].includes(theme.appearance as string)) {
     problems.push(`"appearance" must be light, dark or both`);
   }
-  checkTokens("tokens", theme.tokens, problems, strict);
+  checkTokens("tokens", theme.tokens, problems, options);
   if (theme.dark !== undefined) {
     const dark = theme.dark as { tokens?: unknown } | null;
     if (typeof dark !== "object" || dark === null) problems.push(`"dark" must be { tokens }`);
-    else checkTokens("dark.tokens", dark.tokens, problems, strict);
+    else checkTokens("dark.tokens", dark.tokens, problems, options);
   }
   if (theme.css !== undefined && !isPluginPath(theme.css)) problems.push(`"css" must be a path inside the plugin`);
   if (theme.fonts !== undefined) {
@@ -138,7 +174,7 @@ export function checkTheme(json: unknown, options: { strict?: boolean } = {}): s
 }
 
 /** Throws with every problem at once; returns the theme typed. */
-export function readTheme(json: unknown, options: { strict?: boolean } = {}): ThemeFile {
+export function readTheme(json: unknown, options: CheckThemeOptions = {}): ThemeFile {
   const problems = checkTheme(json, options);
   if (problems.length > 0) throw new Error(`invalid theme:\n  ${problems.join("\n  ")}`);
   return json as ThemeFile;
@@ -154,10 +190,15 @@ export function stack(...layers: readonly Tokens[]): Tokens {
   return Object.assign({}, ...layers) as Tokens;
 }
 
-/** The custom properties for a set of tokens, as a style object (`{ "--color-text": "#1C1B22" }`). */
+/** The custom properties for a set of tokens, as a style object (`{ "--clover-color-text": "#1C1B22" }`). A value that
+ *  could break out of its property throws, whatever checked it before. */
 export function cssVariables(tokens: Tokens): Record<string, string> {
   const out: Record<string, string> = {};
-  for (const [name, value] of Object.entries(tokens)) out[cssProperty(name)] = String(value);
+  for (const [name, value] of Object.entries(tokens)) {
+    const unsafe = unsafeValue(value);
+    if (unsafe) throw new Error(`token ${name} ${unsafe}`);
+    out[cssProperty(name)] = String(value);
+  }
   return out;
 }
 

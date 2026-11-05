@@ -125,12 +125,12 @@ describe("token names", () => {
   });
 
   test("become custom properties and a rule", () => {
-    expect(cssProperty("color.text.muted")).toBe("--color-text-muted");
+    expect(cssProperty("color.text.muted")).toBe("--clover-color-text-muted");
     expect(cssVariables({ "color.text": "#000000", "font.weight.bold": 700 })).toEqual({
-      "--color-text": "#000000",
-      "--font-weight-bold": "700",
+      "--clover-color-text": "#000000",
+      "--clover-font-weight-bold": "700",
     });
-    expect(cssRule(".x", { "space.s": "8px" })).toBe(".x {\n  --space-s: 8px;\n}\n");
+    expect(cssRule(".x", { "space.s": "8px" })).toBe(".x {\n  --clover-space-s: 8px;\n}\n");
   });
 });
 
@@ -174,6 +174,27 @@ describe("checkTheme", () => {
   test("lets a lenient reader pass tokens it does not know", () => {
     expect(checkTheme({ theme: 1, name: "x", tokens: { "luna.sparkle": "#FFFFFF" } })).toEqual([]);
     expect(checkTheme({ theme: 1, name: "x", tokens: { "luna.sparkle": "#FFFFFF" } }, { strict: true })).toHaveLength(1);
+  });
+
+  test("holds every value to what a custom property may hold, a token it does not know included", () => {
+    const injection = "red; } body { background: url(https://evil.test/x.png) } x {";
+    expect(checkTheme({ theme: 1, name: "x", tokens: { "luna.sparkle": injection } })).toHaveLength(1);
+    expect(checkTheme({ theme: 1, name: "x", tokens: { "color.unlisted": injection } })).toHaveLength(1);
+    for (const value of ["image-set('https://evil.test/x.png' 1x)", "a\\62 c", "x /* y */", "<b>", "@x", "x".repeat(301)]) {
+      expect(checkTheme({ theme: 1, name: "x", tokens: { "luna.sparkle": value } }), value).toHaveLength(1);
+    }
+    expect(() => cssRule(".x", { "luna.sparkle": injection })).toThrow();
+    expect(() => cssVariables({ "color.text": "red;}" })).toThrow();
+  });
+
+  test("takes a plugin's own tokens by lane B's names: its top-level id, hyphens and all", () => {
+    expect(checkTheme({ theme: 1, name: "x", tokens: { "mcp-blender.glow.soft": "#FFFFFF" } })).toEqual([]);
+    expect(checkTheme({ theme: 1, name: "x", tokens: { "mcp-blender.glow": "#FFFFFF" } }, { strict: true, plugin: "mcp-blender" })).toEqual([]);
+    expect(checkTheme({ theme: 1, name: "x", tokens: { "luna.glow": "#FFFFFF" } }, { strict: true, plugin: "mcp-blender" })).toHaveLength(1);
+    // A catalog group is never a plugin's id.
+    expect(checkTheme({ theme: 1, name: "x", tokens: { "color.glow": "#FFFFFF" } }, { strict: true, plugin: "color" })).toHaveLength(1);
+    expect(checkTheme({ theme: 1, name: "x", tokens: { "-bad.glow": "#FFFFFF", "mcp-.glow": "#FFFFFF" } })).toHaveLength(2);
+    expect(cssProperty("mcp-blender.glow")).toBe("--clover-mcp_blender-glow");
   });
 });
 

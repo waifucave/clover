@@ -21,7 +21,7 @@ describe("the avatar's stylesheet", () => {
   });
 
   test("keeps to the theme CSS rules", () => {
-    expect(checkThemeCss(AVATAR_CSS)).toEqual([]);
+    expect(checkThemeCss(AVATAR_CSS, { component: true })).toEqual([]);
   });
 
   test("the component reads the stage's light tokens", () => {

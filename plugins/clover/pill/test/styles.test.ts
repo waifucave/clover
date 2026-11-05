@@ -26,7 +26,7 @@ describe("the pill's stylesheet", () => {
   });
 
   test("puts nothing on an element that could hide a sealed frame", () => {
-    expect(checkThemeCss(PILL_CSS)).toEqual([]);
+    expect(checkThemeCss(PILL_CSS, { component: true })).toEqual([]);
   });
 });
 

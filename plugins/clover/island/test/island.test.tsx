@@ -3,7 +3,8 @@ import { act, fireEvent, render, screen } from "@testing-library/react";
 import { Island, type IslandTimers } from "../src/ui/Island";
 import { IslandQueue } from "../src/model/queue";
 import { MORPH } from "../src/model/morph";
-import { mockSealedKit, SealedKitContext } from "../src/ui/sealed";
+import { mockSealedKit } from "../src/mock-kit";
+import { SealedKitContext } from "../src/ui/sealed";
 import { APPROVAL, APPROVAL_2, LINK, NOTCH, QUESTION, SEALED } from "../src/fixtures";
 import type { IslandCard, QuestionCard } from "../src/model/cards";
 
@@ -88,6 +89,23 @@ describe("Island", () => {
     expect(clock.frameCount).toBe(0);
   });
 
+  test("a card that leaves goes back up into the housing, then frames stop; with Reduce Motion it just goes", () => {
+    const { clock, view, update } = mount([APPROVAL]);
+    clock.advance(2000);
+    update([]);
+    expect(view.container.querySelector(".clv-returning")).not.toBeNull();
+    expect(clock.frameCount).toBe(1);
+    for (let i = 0; i < 80; i++) clock.advance(16);
+    expect(view.container.querySelector(".clv-returning")).toBeNull();
+    expect(clock.frameCount).toBe(0);
+
+    const calm = mount([APPROVAL], { reducedMotion: true });
+    calm.clock.advance(2000);
+    calm.update([]);
+    expect(calm.view.container.querySelector(".clv-returning")).toBeNull();
+    expect(calm.clock.frameCount).toBe(0);
+  });
+
   test("a newcomer replaces the card on top, which goes to the strip's count", () => {
     const { clock, view, update } = mount([APPROVAL]);
     clock.advance(2000);
@@ -142,12 +160,17 @@ describe("Island", () => {
     expect(view.container.querySelector(".clv-open")).toBeNull();
   });
 
-  test("a single-choice question answers on the click", async () => {
+  test("a choice only chooses; ✓ sends (as in the pill)", async () => {
     const onAnswerQuestion = mock((_card: QuestionCard, _answers: Record<string, string>) => true);
     const { clock } = mount([QUESTION], { onAnswerQuestion });
     clock.advance(2000);
     await act(async () => {
       fireEvent.click(screen.getByRole("radio", { name: "release/1.111" }));
+    });
+    expect(onAnswerQuestion).not.toHaveBeenCalled();
+    expect(screen.getByRole("radio", { name: "release/1.111" }).getAttribute("aria-checked")).toBe("true");
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Send" }));
     });
     expect(onAnswerQuestion).toHaveBeenCalledTimes(1);
     expect(onAnswerQuestion.mock.calls[0]![1]).toEqual({ "Which branch should I open the pull request against?": "release/1.111" });
@@ -158,6 +181,9 @@ describe("Island", () => {
     clock.advance(2000);
     await act(async () => {
       fireEvent.click(screen.getByRole("radio", { name: "main" }));
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Send" }));
     });
     expect(screen.getByRole("alert").textContent).toBe("Not sent. Try again.");
   });

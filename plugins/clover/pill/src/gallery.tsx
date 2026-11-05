@@ -14,7 +14,8 @@ import { CardBody } from "./ui/Card";
 import { Children } from "./ui/Children";
 import { Plume } from "./ui/Plume";
 import { Preview } from "./ui/Preview";
-import { mockSealedKit, SealedKitContext } from "./ui/sealed";
+import { mockSealedKit } from "./mock-kit";
+import { SealedKitContext } from "./ui/sealed";
 import { Shell } from "./ui/Shell";
 
 export interface Story {

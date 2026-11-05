@@ -1,15 +1,25 @@
-// A lint for the theme CSS we ship (the base theme, Alpha's tab), holding it to two of spec §5.5's rules
-// before the app's cleaner (lane E) ever sees it:
+// A lint for the theme CSS we ship (the base theme, Alpha's tab), holding it to spec §5.5's rules before
+// the app's cleaner (lane E) ever sees it:
 //
-//   1. The cleaner's limits: no `@import`, `url()` only for files inside the plugin (no scheme, no `..`),
-//      and only the at-rules it keeps — @media, @supports, @container, @scope, @starting-style, and the
-//      named ones (@keyframes, @font-face, @layer, @counter-style, @font-palette-values). `@property` is
-//      dropped by the cleaner, so a theme must not rely on it.
+//   1. The cleaner's limits: no `@import`, and only the at-rules it keeps — @media, @supports, @container,
+//      @scope, @starting-style, and the named ones (@keyframes, @font-face, @layer, @counter-style,
+//      @font-palette-values). `@property` is dropped by the cleaner, so a theme must not rely on it.
+//      Nothing loads from outside the plugin: a `url()` must RESOLVE, against a base inside the plugin, to
+//      a file inside it (no scheme, no host, no escape out of the folder), and holds no `%` or `\`
+//      escape; `image-set()`, `image()`, `element()`, `cross-fade()`, `src()` and a typed `attr()` are
+//      refused outright; and no CSS escape stands outside a string, where it could spell `url(` or a
+//      property this lint looks for.
 //   2. Sealed approval frames stay visible: "every ancestor of a sealed frame stays free of filters,
 //      opacity below 1 and transforms other than moves or enlargements, whatever a theme says". A theme
-//      cannot know which element will hold a frame, so ours put no such effect on any ELEMENT at all —
-//      decoration that needs one lives in pseudo-elements, which never contain a frame. An animation
-//      counts by what its keyframes set.
+//      cannot know which element will hold a frame, so ours put no such effect — nor `visibility:
+//      hidden`, nor a motion path that turns an element — on any ELEMENT at all; decoration that needs one
+//      lives in pseudo-elements, which never contain a frame. An animation counts by what its keyframes
+//      set.
+//   3. Nothing is drawn over a frame: Chromium's check counts anything painted over it, even a
+//      transparent box that ignores the pointer. So a theme keeps pseudo-elements in flow or beneath the
+//      content (a negative z-index), takes no element out of flow, shifts or moves none, and lifts
+//      nothing with a positive z-index. A part's own stylesheet positions its layout, so it is checked
+//      on the rendered part instead (`sealed-check.ts`), with `{ component: true }` here.
 //
 // Not a general CSS parser: comments, strings, parentheses, nesting and the at-rules above, which is all
 // a theme of ours may use.
@@ -173,6 +183,25 @@ function parseRule(prelude: string, body: string, parents: string[], items: Item
   items.push({ kind: "style", selectors, declarations });
 }
 
+/** The style rules in a stylesheet, those inside @media, @supports and the like included (whatever their
+ *  condition), nesting resolved. */
+export function styleRules(css: string): { selectors: string[]; declarations: Declaration[] }[] {
+  return parse(css).filter((item): item is StyleRule => item.kind === "style");
+}
+
+/** The @keyframes whose frames set something that would hide a sealed frame. */
+export function hidingKeyframes(css: string): Set<string> {
+  const names = new Set<string>();
+  for (const item of parse(css)) if (item.kind === "keyframes" && item.declarations.some(hidesFrames)) names.add(item.name);
+  return names;
+}
+
+/** Whether an `animation` or `animation-name` value runs one of `names`. */
+export function animatesAny(value: string, names: ReadonlySet<string>): string | null {
+  for (const name of names) if (new RegExp(`(^|[\\s,])${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}($|[\\s,])`).test(value)) return name;
+  return null;
+}
+
 function parse(css: string): Item[] {
   const items: Item[] = [];
   const text = stripComments(css);
@@ -212,6 +241,20 @@ export function hidesFrames({ property, value }: Declaration): boolean {
       return v !== "none";
     case "mix-blend-mode":
       return v !== "normal";
+    case "visibility":
+      return v === "hidden" || v === "collapse";
+    case "content-visibility":
+      return v === "hidden";
+    // A motion path turns the element along it (`offset-rotate: auto`).
+    case "offset":
+    case "offset-path":
+      return v !== "none";
+    case "-webkit-box-reflect":
+    case "mask-border":
+    case "mask-border-source":
+    case "-webkit-mask-box-image":
+    case "-webkit-mask-box-image-source":
+      return v !== "none";
     case "opacity": {
       const n = v.endsWith("%") ? parseFloat(v) / 100 : parseFloat(v);
       return !(n >= 1);
@@ -249,51 +292,147 @@ function isPseudoElementOnly(selectors: string[]): boolean {
   return selectors.length > 0 && selectors.every((s) => PSEUDO_ELEMENT.test(s));
 }
 
-function urlProblems(css: string): string[] {
+/** The text with every string's contents blanked (its quotes kept), for searching outside strings. */
+function blankStrings(css: string): string {
+  let out = "";
+  for (let i = 0; i < css.length; i++) {
+    const c = css[i]!;
+    if (c === '"' || c === "'") {
+      let end: number;
+      try {
+        end = endOfString(css, i);
+      } catch {
+        end = css.length - 1;
+      }
+      out += c + " ".repeat(Math.max(0, end - i - 1)) + (end < css.length ? css[end] : "");
+      i = end;
+    } else out += c;
+  }
+  return out;
+}
+
+const PLUGIN_BASE = "https://plugin.invalid/root/";
+
+function urlProblems(text: string, path: string): string[] {
   const problems: string[] = [];
-  for (const match of stripComments(css).matchAll(/url\(\s*(['"]?)([^'")]*)\1\s*\)/gi)) {
+  const folder = path.includes("/") ? path.slice(0, path.lastIndexOf("/") + 1) : "";
+  const base = new URL(folder, PLUGIN_BASE);
+  for (const match of text.matchAll(/url\(\s*(['"]?)([^'")]*)\1\s*\)/gi)) {
     const target = match[2]!.trim();
-    const ok =
-      target.length > 0 &&
-      !target.startsWith("/") &&
-      !target.includes("\\") &&
-      !/^[a-z][a-z0-9+.-]*:/i.test(target) &&
-      target.split("/").every((segment) => segment !== "..");
+    let ok = target.length > 0 && !/[\\%\s]/.test(target) && !target.startsWith("/") && !/^[a-z][a-z0-9+.-]*:/i.test(target);
+    if (ok) {
+      // Resolved, it must stay a file inside the plugin's folder.
+      const resolved = new URL(target, base);
+      ok = resolved.origin === new URL(PLUGIN_BASE).origin && resolved.pathname.startsWith("/root/") && resolved.pathname.length > "/root/".length && !resolved.pathname.endsWith("/");
+    }
     if (!ok) problems.push(`url(${target}) is not a file inside the plugin`);
   }
   return problems;
 }
 
+/** Functions that load an image or a document by a string or from elsewhere: refused whatever they hold. */
+const LOADERS = /(?<![\w-])(-webkit-)?(image-set|image|element|cross-fade|src)\s*\(/gi;
+/** `attr()` typed as a url (CSS Values 5) loads too. */
+const TYPED_ATTR = /(?<![\w-])attr\s*\(((?:[^()]|\([^()]*\))*)\)/gi;
+
+function loaderProblems(blanked: string): string[] {
+  const problems: string[] = [];
+  for (const match of blanked.matchAll(LOADERS)) problems.push(`${match[0]!.replace(/\s+/g, "")}…) can load from outside the plugin; use url() with a file inside it`);
+  for (const match of blanked.matchAll(TYPED_ATTR)) if (/\burl\b|type\s*\(/i.test(match[0]!)) problems.push(`${match[0]} can load a url; give attr() no url type`);
+  return problems;
+}
+
+function escapeProblems(blanked: string): string[] {
+  return blanked.includes("\\") ? ["a CSS escape (\\) outside a string could spell url( or a property; write it plainly"] : [];
+}
+
+const OUT_OF_FLOW = new Set(["absolute", "fixed", "sticky"]);
+const OFFSETS = ["top", "right", "bottom", "left", "inset", "inset-block", "inset-inline", "inset-block-start", "inset-block-end", "inset-inline-start", "inset-inline-end"];
+
+const clean = (value: string) => value.toLowerCase().replace(/!important/, "").trim();
+function last(declarations: readonly Declaration[], property: string): string | undefined {
+  for (let i = declarations.length - 1; i >= 0; i--) if (declarations[i]!.property === property) return clean(declarations[i]!.value);
+  return undefined;
+}
+
+/** Whether a set of declarations, applied together, draws its box (or its pseudo-element's) over the content
+ *  around it: out of flow, or shifted, unless a negative z-index puts it beneath. */
+export function drawsOver(declarations: readonly Declaration[]): boolean {
+  const position = last(declarations, "position");
+  if (position === undefined) return false;
+  const shifted = position === "relative" && OFFSETS.some((p) => {
+    const v = last(declarations, p);
+    return v !== undefined && !/^(auto|0(px|%|em|rem)?)( (auto|0(px|%|em|rem)?))*$/.test(v);
+  });
+  if (!OUT_OF_FLOW.has(position) && !shifted) return false;
+  const z = last(declarations, "z-index");
+  return !(z !== undefined && /^-\d+$/.test(z));
+}
+
+/** Whether declarations lift a box above the content around it: a positive z-index. */
+export function lifts(declarations: readonly Declaration[]): boolean {
+  const z = last(declarations, "z-index");
+  return z !== undefined && /^\+?\d+$/.test(z) && Number(z) > 0;
+}
+
+/** Whether declarations move an element from where it is laid out. */
+function moves(declarations: readonly Declaration[]): boolean {
+  const translate = last(declarations, "translate");
+  if (translate !== undefined && !/^(none|0(px|%)?( 0(px|%)?)*)$/.test(translate)) return true;
+  const transform = last(declarations, "transform");
+  return transform !== undefined && /translate/i.test(transform);
+}
+
+export interface CssCheckOptions {
+  /** A part's own stylesheet (the island's, the pill's, the avatar's): its layout positions elements, so the
+   *  overlap rule (3) is checked on the rendered part instead (`sealed-check.ts`). */
+  component?: boolean;
+  /** Where the file sits in its plugin (`theme.css`, `styles/tab.css`), for resolving its url()s. */
+  path?: string;
+}
+
 /** Every problem in a theme's CSS (empty when there is none). */
-export function checkThemeCss(css: string): string[] {
-  const problems: string[] = [...urlProblems(css)];
+export function checkThemeCss(css: string, options: CssCheckOptions = {}): string[] {
+  const text = stripComments(css);
+  const blanked = blankStrings(text);
+  const problems: string[] = [...escapeProblems(blanked), ...urlProblems(text, options.path ?? "theme.css"), ...loaderProblems(blanked)];
   let items: Item[];
   try {
     items = parse(css);
   } catch (error) {
     return [...problems, `the CSS does not parse: ${(error as Error).message}`];
   }
-  const hidingKeyframes = new Set<string>();
+  const hiding = new Set<string>();
   for (const item of items) {
     if (item.kind === "at") {
       if (!ALLOWED_AT_RULES.has(item.name)) problems.push(`@${item.name} is not an at-rule the cleaner keeps`);
     } else if (item.kind === "keyframes" && item.declarations.some(hidesFrames)) {
-      hidingKeyframes.add(item.name);
+      hiding.add(item.name);
     }
   }
   for (const item of items) {
-    if (item.kind !== "style" || isPseudoElementOnly(item.selectors)) continue;
+    if (item.kind !== "style") continue;
     const where = item.selectors.join(", ");
+    const pseudo = isPseudoElementOnly(item.selectors);
+    if (!options.component) {
+      if (drawsOver(item.declarations)) {
+        problems.push(
+          pseudo
+            ? `${where} is positioned over its element's content and could cover a sealed approval frame; keep it in flow, or beneath with a negative z-index`
+            : `${where} takes an element out of flow or shifts it, over whatever lies there; that could cover a sealed approval frame`,
+        );
+      }
+      if (lifts(item.declarations)) problems.push(`${where} { z-index: ${last(item.declarations, "z-index")} } lifts it over the content around it, which could cover a sealed approval frame`);
+      if (!pseudo && moves(item.declarations)) problems.push(`${where} moves an element from its place, over whatever lies there; that could cover a sealed approval frame`);
+    }
+    if (pseudo) continue;
     for (const declaration of item.declarations) {
       if (hidesFrames(declaration)) {
         problems.push(`${where} { ${declaration.property}: ${declaration.value} } could hide a sealed approval frame`);
       }
       if (declaration.property === "animation" || declaration.property === "animation-name") {
-        for (const name of hidingKeyframes) {
-          if (new RegExp(`(^|[\\s,])${name}($|[\\s,])`).test(declaration.value)) {
-            problems.push(`${where} animates ${name}, whose keyframes could hide a sealed approval frame`);
-          }
-        }
+        const name = animatesAny(declaration.value, hiding);
+        if (name) problems.push(`${where} animates ${name}, whose keyframes could hide a sealed approval frame`);
       }
     }
   }

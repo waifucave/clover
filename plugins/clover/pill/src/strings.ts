@@ -33,6 +33,8 @@ export const EN: Readonly<Record<string, Entry>> = {
   "clover.pill.untitled": "Agent",
   "clover.pill.leavePreview": "Back to the message box",
   "clover.pill.turn": "Turn {position}",
+  "clover.pill.notSent": "That answer didn't go through. Try again.",
+  "clover.pill.update": "An update from your bot",
 };
 
 export function t(key: string, vars: Record<string, string | number> = {}): string {

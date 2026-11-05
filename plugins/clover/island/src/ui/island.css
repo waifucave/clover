@@ -5,12 +5,15 @@
 
    Sealed approval parts sit inside `.clv-card-shell`, `.clv-open-body` and `.clv-inner-card`: none of
    those, nor anything between them and a part, may carry a filter, an opacity below 1 or a transform
-   other than a move or an enlargement at rest. The birth and morph set those inline, only while moving. */
+   other than a move or an enlargement at rest. The birth and morph set those inline, only while moving.
+   And nothing is drawn over a part, not even something transparent (Chromium counts it as covering):
+   rims are each box's own inset shadow, glows sit beneath their row (a pseudo-element at z-index -1 in
+   the row's own stacking context), and nothing positioned comes after a part (`sealed.test.tsx`). */
 
 .clv-island {
   position: relative;
-  font-family: var(--font-sans, system-ui, -apple-system, "Segoe UI Variable Text", "Segoe UI", "Noto Sans", Ubuntu, Cantarell, sans-serif);
-  color: var(--island-text, #FFFFFF);
+  font-family: var(--clover-font-sans, system-ui, -apple-system, "Segoe UI Variable Text", "Segoe UI", "Noto Sans", Ubuntu, Cantarell, sans-serif);
+  color: var(--clover-island-text, #FFFFFF);
   -webkit-font-smoothing: antialiased;
   user-select: none;
   line-height: 1.25;
@@ -31,7 +34,7 @@
   align-items: stretch;
   justify-content: center;
   box-sizing: border-box;
-  background: var(--island-surface, #000000);
+  background: var(--clover-island-surface, #000000);
   border-radius: 0 0 10px 10px;
   transition: box-shadow 150ms ease-out;
 }
@@ -49,7 +52,7 @@
   align-items: center;
   justify-content: center;
   gap: 4px;
-  font-size: var(--font-size-label, 12px);
+  font-size: var(--clover-font-size-label, 12px);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
@@ -70,17 +73,17 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  font-size: var(--font-size-label, 12px);
+  font-size: var(--clover-font-size-label, 12px);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
 
 .clv-attention {
-  color: var(--island-attention, #FFC747);
+  color: var(--clover-island-attention, #FFC747);
 }
 
 .clv-working {
-  color: var(--island-working, #FF7AB6);
+  color: var(--clover-island-working, #FF7AB6);
 }
 
 /* A card's panel, its liquid birth and its shell. */
@@ -89,6 +92,11 @@
   position: absolute;
   top: 0;
   pointer-events: none;
+}
+
+/* A card going back up into the housing: the bare shape, beneath what is on top, taking no pointer. */
+.clv-returning .clv-card-shell {
+  pointer-events: none !important;
 }
 
 .clv-melt {
@@ -100,19 +108,13 @@
 .clv-card-shell {
   position: absolute;
   overflow: hidden;
-  background: var(--island-surface, #000000);
-  box-shadow: var(--island-shadow, 0 4px 24px #00000073);
+  background: var(--clover-island-surface, #000000);
+  /* The rim is the shell's own inset shadow, painted under its content. */
+  box-shadow:
+    inset 0 0 0 1px var(--clover-island-rim, #FFFFFF17),
+    var(--clover-island-shadow, 0 4px 24px #00000073);
   transform-origin: 50% 0;
   pointer-events: auto;
-}
-
-.clv-card-shell::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  box-shadow: inset 0 0 0 1px var(--island-rim, #FFFFFF17);
-  pointer-events: none;
 }
 
 .clv-card-content {
@@ -135,15 +137,15 @@
   align-items: center;
   gap: 6px;
   min-height: 14px;
-  font-size: var(--font-size-caption, 11px);
+  font-size: var(--clover-font-size-caption, 11px);
   font-weight: 500;
-  color: var(--island-muted, #8B8B8B);
+  color: var(--clover-island-muted, #8B8B8B);
 }
 
 .clv-card-header > svg {
   flex: none;
-  color: var(--island-attention, #FFC747);
-  --glyph-cut: var(--island-surface, #000000);
+  color: var(--clover-island-attention, #FFC747);
+  --glyph-cut: var(--clover-island-surface, #000000);
 }
 
 .clv-card-header-line {
@@ -163,6 +165,8 @@
   display: flex;
   align-items: flex-end;
   gap: 8px;
+  /* Its own stacking context: the circles' glows sit beneath everything in it. */
+  isolation: isolate;
 }
 
 .clv-answer-words {
@@ -173,26 +177,37 @@
   flex-direction: column;
   justify-content: center;
   gap: 4px;
-  font-size: var(--font-size-body, 14px);
+  font-size: var(--clover-font-size-body, 14px);
   line-height: 1.38;
-  color: var(--island-text, #FFFFFF);
+  color: var(--clover-island-text, #FFFFFF);
 }
 
 .clv-host-line {
   display: flex;
   align-items: center;
   gap: 5px;
-  font-family: var(--font-mono, ui-monospace, "SF Mono", "Cascadia Mono", "JetBrains Mono", "DejaVu Sans Mono", Menlo, Consolas, monospace);
-  font-size: var(--font-size-label, 12px);
-  color: var(--island-muted, #8B8B8B);
+  font-family: var(--clover-font-mono, ui-monospace, "SF Mono", "Cascadia Mono", "JetBrains Mono", "DejaVu Sans Mono", Menlo, Consolas, monospace);
+  font-size: var(--clover-font-size-label, 12px);
+  color: var(--clover-island-muted, #8B8B8B);
+}
+
+/* What wraps a sealed card: no box of its own, only where the card's tokens are read. */
+.clv-card-frame {
+  display: contents;
+}
+
+.clv-risk {
+  font-size: var(--clover-font-size-label, 12px);
+  line-height: 1.38;
+  color: var(--clover-island-muted, #8B8B8B);
 }
 
 .clv-command {
-  font-family: var(--font-mono, ui-monospace, "SF Mono", "Cascadia Mono", "JetBrains Mono", "DejaVu Sans Mono", Menlo, Consolas, monospace);
-  font-size: var(--font-size-label, 12px);
+  font-family: var(--clover-font-mono, ui-monospace, "SF Mono", "Cascadia Mono", "JetBrains Mono", "DejaVu Sans Mono", Menlo, Consolas, monospace);
+  font-size: var(--clover-font-size-label, 12px);
   line-height: 1.45;
-  color: var(--island-text, #FFFFFF);
-  background: var(--island-option, #FFFFFF1F);
+  color: var(--clover-island-text, #FFFFFF);
+  background: var(--clover-island-option, #FFFFFF1F);
   border-radius: 10px;
   padding: 8px 10px;
 }
@@ -201,6 +216,7 @@
 
 .clv-circle,
 .clv-sealed-slot {
+  position: relative;
   flex: none;
   width: 30px;
   height: 30px;
@@ -211,42 +227,57 @@
   border: 0;
   padding: 0;
   font-weight: 700;
+}
+
+/* The soft glow under the pointer, in the circle's own colour: two rings drawn BENEATH the row, so it never
+   lies over a neighbour (a sealed part least of all). */
+.clv-circle::before,
+.clv-sealed-slot::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: 50%;
+  pointer-events: none;
   transition: box-shadow 150ms ease-out;
 }
 
 .clv-circle[data-role="refuse"],
 .clv-sealed-slot[data-role="refuse"] {
-  background: var(--island-refuse, #FFFFFF);
-  color: var(--island-refuse-text, #000000);
+  background: var(--clover-island-refuse, #FFFFFF);
+  color: var(--clover-island-refuse-text, #000000);
 }
 
 .clv-circle[data-role="accept"],
 .clv-sealed-slot[data-role="accept"] {
-  background: var(--island-accept, #0A85FF);
-  color: var(--island-accept-text, #FFFFFF);
+  background: var(--clover-island-accept, #C2387A);
+  color: var(--clover-island-accept-text, #FFFFFF);
 }
 
-.clv-circle[data-role="refuse"]:hover,
-.clv-sealed-slot[data-role="refuse"]:hover,
-.clv-circle[data-role="refuse"][data-hover="true"],
-.clv-sealed-slot[data-role="refuse"][data-hover="true"] {
+.clv-circle[data-role="refuse"]:hover::before,
+.clv-sealed-slot[data-role="refuse"]:hover::before,
+.clv-circle[data-role="refuse"][data-hover="true"]::before,
+.clv-sealed-slot[data-role="refuse"][data-hover="true"]::before {
   box-shadow:
-    0 0 8px #FFFFFF73,
-    0 0 20px #FFFFFF38;
+    0 0 8px color-mix(in srgb, var(--clover-island-refuse, #FFFFFF) 45%, transparent),
+    0 0 20px color-mix(in srgb, var(--clover-island-refuse, #FFFFFF) 22%, transparent);
 }
 
-.clv-circle[data-role="accept"]:hover,
-.clv-sealed-slot[data-role="accept"]:hover,
-.clv-circle[data-role="accept"][data-hover="true"],
-.clv-sealed-slot[data-role="accept"][data-hover="true"] {
+.clv-circle[data-role="accept"]:hover::before,
+.clv-sealed-slot[data-role="accept"]:hover::before,
+.clv-circle[data-role="accept"][data-hover="true"]::before,
+.clv-sealed-slot[data-role="accept"][data-hover="true"]::before {
   box-shadow:
-    0 0 8px #0A85FF73,
-    0 0 20px #0A85FF38;
+    0 0 8px color-mix(in srgb, var(--clover-island-accept, #C2387A) 45%, transparent),
+    0 0 20px color-mix(in srgb, var(--clover-island-accept, #C2387A) 22%, transparent);
 }
 
 .clv-circle:disabled {
-  background: var(--island-option, #FFFFFF1F);
-  color: var(--island-faint, #FFFFFF59);
+  background: var(--clover-island-option, #FFFFFF1F);
+  color: var(--clover-island-faint, #FFFFFF59);
+}
+
+.clv-circle:disabled::before {
   box-shadow: none;
 }
 
@@ -266,9 +297,9 @@
 /* A question. */
 
 .clv-question-text {
-  font-size: var(--font-size-body, 14px);
+  font-size: var(--clover-font-size-body, 14px);
   line-height: 1.38;
-  color: var(--island-text, #FFFFFF);
+  color: var(--clover-island-text, #FFFFFF);
   display: -webkit-box;
   -webkit-line-clamp: 4;
   -webkit-box-orient: vertical;
@@ -290,21 +321,21 @@
   padding: 5px 12px;
   border: 0;
   border-radius: 15px;
-  background: var(--island-option, #FFFFFF1F);
-  color: var(--island-text, #FFFFFF);
-  font-size: var(--font-size-body, 14px);
+  background: var(--clover-island-option, #FFFFFF1F);
+  color: var(--clover-island-text, #FFFFFF);
+  font-size: var(--clover-font-size-body, 14px);
   text-align: left;
   transition: background-color 150ms ease-out;
 }
 
 .clv-option:hover,
 .clv-option[data-hover="true"] {
-  background: var(--island-option-hover, #FFFFFF2E);
+  background: var(--clover-island-option-hover, #FFFFFF2E);
 }
 
 .clv-option[aria-checked="true"] {
-  background: var(--island-text, #FFFFFF);
-  color: var(--island-surface, #000000);
+  background: var(--clover-island-text, #FFFFFF);
+  color: var(--clover-island-surface, #000000);
 }
 
 .clv-option-label {
@@ -333,15 +364,15 @@
   border-radius: 15px;
   padding: 0 12px;
   background: #FFFFFF14;
-  color: var(--island-text, #FFFFFF);
+  color: var(--clover-island-text, #FFFFFF);
   font: inherit;
-  font-size: var(--font-size-body, 14px);
+  font-size: var(--clover-font-size-body, 14px);
   outline: none;
   user-select: text;
 }
 
 .clv-other::placeholder {
-  color: var(--island-faint, #FFFFFF59);
+  color: var(--clover-island-faint, #FFFFFF59);
 }
 
 .clv-card-actions {
@@ -350,13 +381,14 @@
   justify-content: flex-end;
   gap: 8px;
   min-height: 30px;
+  isolation: isolate;
 }
 
 .clv-card-status {
   flex: 1 1 auto;
   min-width: 0;
-  font-size: var(--font-size-caption, 11px);
-  color: var(--island-attention, #FFC747);
+  font-size: var(--clover-font-size-caption, 11px);
+  color: var(--clover-island-attention, #FFC747);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -373,12 +405,12 @@
   padding: 0 14px;
   border: 0;
   border-radius: 16px;
-  background: var(--island-surface, #000000);
-  color: var(--island-text, #FFFFFF);
+  background: var(--clover-island-surface, #000000);
+  color: var(--clover-island-text, #FFFFFF);
   box-shadow:
-    inset 0 0 0 1px var(--island-rim, #FFFFFF17),
+    inset 0 0 0 1px var(--clover-island-rim, #FFFFFF17),
     0 3px 20px #00000073;
-  font-size: var(--font-size-label, 12px);
+  font-size: var(--clover-font-size-label, 12px);
   font-weight: 500;
   transform-origin: 50% 0;
   pointer-events: auto;
@@ -386,9 +418,9 @@
 
 .clv-waiting > svg {
   flex: none;
-  color: var(--island-attention, #FFC747);
-  font-size: var(--font-size-caption, 11px);
-  --glyph-cut: var(--island-surface, #000000);
+  color: var(--clover-island-attention, #FFC747);
+  font-size: var(--clover-font-size-caption, 11px);
+  --glyph-cut: var(--clover-island-surface, #000000);
 }
 
 .clv-waiting-line {
@@ -420,7 +452,7 @@
   position: absolute;
   inset: 0;
   overflow: hidden;
-  background: var(--island-surface, #000000);
+  background: var(--clover-island-surface, #000000);
 }
 
 .clv-open-shoulder {
@@ -430,7 +462,7 @@
 }
 
 .clv-open-shoulder path {
-  fill: var(--island-surface, #000000);
+  fill: var(--clover-island-surface, #000000);
 }
 
 .clv-open-content {
@@ -464,8 +496,8 @@
 
 .clv-open-title {
   min-width: 0;
-  font-size: var(--font-size-body, 14px);
-  color: var(--island-text, #FFFFFF);
+  font-size: var(--clover-font-size-body, 14px);
+  color: var(--clover-island-text, #FFFFFF);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -478,9 +510,9 @@
   height: 18px;
   padding: 0 6px;
   border-radius: 9px;
-  background: var(--island-attention, #FFC747);
-  color: var(--island-surface, #000000);
-  font-size: var(--font-size-caption, 11px);
+  background: var(--clover-island-attention, #FFC747);
+  color: var(--clover-island-surface, #000000);
+  font-size: var(--clover-font-size-caption, 11px);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   display: inline-flex;
@@ -506,18 +538,28 @@
 
 .clv-dot[aria-selected="true"] {
   width: 16px;
-  background: var(--island-text, #FFFFFF);
+  background: var(--clover-island-text, #FFFFFF);
 }
 
 .clv-tab-body {
   flex: 1 1 auto;
   min-height: 0;
-  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+/* A tab's list. Where more of it lies beyond an edge, the island says so OUTSIDE the list, never over it
+   (Winter faded the edges with a mask, which here would hide the sealed parts in Needs you): a hairline on
+   the list's own top border when more lies above, a chevron in a band of its own below it when more lies
+   below. */
+.clv-tab-scroll,
+.clv-tab-flat {
+  flex: 1 1 auto;
+  min-height: 0;
+  border-top: 1px solid transparent;
 }
 
 .clv-tab-scroll {
-  position: absolute;
-  inset: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
   scrollbar-width: thin;
@@ -525,28 +567,22 @@
 }
 
 .clv-tab-flat {
-  position: absolute;
-  inset: 0;
   overflow: hidden;
 }
 
-/* Where more of a list lies beyond an edge, the edge fades into the island's black. */
-.clv-edge {
-  position: absolute;
-  left: 0;
-  right: 0;
-  height: 22px;
-  pointer-events: none;
+.clv-tab-scroll[data-more-above="true"],
+.clv-tab-flat[data-more-above="true"] {
+  border-top-color: var(--clover-island-rim, #FFFFFF17);
 }
 
-.clv-edge[data-edge="top"] {
-  top: 0;
-  background: linear-gradient(to top, #00000000, var(--island-surface, #000000));
-}
-
-.clv-edge[data-edge="bottom"] {
-  bottom: 0;
-  background: linear-gradient(to bottom, #00000000, var(--island-surface, #000000));
+.clv-more {
+  flex: none;
+  height: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9px;
+  color: var(--clover-island-faint, #FFFFFF59);
 }
 
 /* Needs you. */
@@ -569,30 +605,22 @@
 }
 
 .clv-inner-card {
-  position: relative;
   padding: 16px;
   border-radius: 28px;
-  background: var(--island-card, #181818);
-}
-
-.clv-inner-card::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  box-shadow: inset 0 0 0 0.5px var(--island-card-rim, #3C3C3C);
-  pointer-events: none;
+  background: var(--clover-island-card, #181818);
+  /* The rim is the card's own inset shadow, painted under its content. */
+  box-shadow: inset 0 0 0 0.5px var(--clover-island-card-rim, #3C3C3C);
 }
 
 .clv-empty {
-  height: 100%;
+  flex: 1 1 auto;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 8px;
-  color: var(--island-muted, #8B8B8B);
-  font-size: var(--font-size-control, 13px);
+  color: var(--clover-island-muted, #8B8B8B);
+  font-size: var(--clover-font-size-control, 13px);
 }
 
 .clv-empty > svg {
@@ -627,7 +655,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: var(--font-size-tiny, 10px);
+  font-size: var(--clover-font-size-tiny, 10px);
 }
 
 .clv-row-main {
@@ -648,7 +676,7 @@
 .clv-row-title {
   flex: 0 1 auto;
   min-width: 0;
-  font-size: var(--font-size-label, 12px);
+  font-size: var(--clover-font-size-label, 12px);
   font-weight: 500;
   color: #FFFFFFEB;
   white-space: nowrap;
@@ -662,7 +690,7 @@
 }
 
 .clv-row[data-hovered="true"] .clv-row-title {
-  color: var(--island-text, #FFFFFF);
+  color: var(--clover-island-text, #FFFFFF);
   transform: scale(1.12);
   margin-right: 14px;
 }
@@ -670,8 +698,8 @@
 .clv-row-side {
   flex: 0 1 auto;
   min-width: 0;
-  font-size: var(--font-size-tiny, 10px);
-  color: var(--island-muted, #8B8B8B);
+  font-size: var(--clover-font-size-tiny, 10px);
+  color: var(--clover-island-muted, #8B8B8B);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -686,8 +714,8 @@
   align-items: center;
   gap: 8px;
   min-height: 16px;
-  font-size: var(--font-size-tiny, 10px);
-  color: var(--island-muted, #8B8B8B);
+  font-size: var(--clover-font-size-tiny, 10px);
+  color: var(--clover-island-muted, #8B8B8B);
 }
 
 .clv-row-words > span:first-child {
@@ -715,9 +743,9 @@
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  font-size: var(--font-size-tiny, 10px);
+  font-size: var(--clover-font-size-tiny, 10px);
   font-variant-numeric: tabular-nums;
-  color: var(--island-muted, #8B8B8B);
+  color: var(--clover-island-muted, #8B8B8B);
   white-space: nowrap;
 }
 
@@ -727,15 +755,15 @@
   justify-content: space-between;
   gap: 8px;
   min-height: 18px;
-  font-size: var(--font-size-caption, 11px);
+  font-size: var(--clover-font-size-caption, 11px);
   font-weight: 600;
-  color: var(--island-text, #FFFFFF);
+  color: var(--clover-island-text, #FFFFFF);
 }
 
 .clv-group-meta {
-  font-size: var(--font-size-tiny, 10px);
+  font-size: var(--clover-font-size-tiny, 10px);
   font-weight: 400;
-  color: var(--island-muted, #8B8B8B);
+  color: var(--clover-island-muted, #8B8B8B);
 }
 
 .clv-link-words,
@@ -747,7 +775,7 @@
   padding: 0;
   border: 0;
   background: transparent;
-  font-size: var(--font-size-tiny, 10px);
+  font-size: var(--clover-font-size-tiny, 10px);
   font-weight: 500;
   font-variant-numeric: tabular-nums;
   color: #FFFFFFEB;
@@ -755,15 +783,15 @@
 }
 
 .clv-action-words[data-tone="amber"] {
-  color: var(--island-attention, #FFC747);
+  color: var(--clover-island-attention, #FFC747);
 }
 
 .clv-action-words[data-tone="red"] {
-  color: var(--island-danger, #FF6B70);
+  color: var(--clover-island-danger, #FF6B70);
 }
 
 .clv-action-words[data-tone="muted"] {
-  color: var(--island-muted, #8B8B8B);
+  color: var(--clover-island-muted, #8B8B8B);
 }
 
 @media (prefers-reduced-motion: reduce) {

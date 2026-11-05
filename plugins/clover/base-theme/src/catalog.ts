@@ -1,11 +1,13 @@
-// The tokens Clover's base theme sets (spec §5.5): a PROPOSAL for the plugin SDK's token catalog, which
-// lane B pins in `packages/plugin-sdk`. Until it lands, this list is what every part we ship reads, and
-// what the base theme must give a value in both appearances.
+// The tokens Clover's base theme sets (spec §5.5). Lane B's catalog in `packages/plugin-sdk`
+// (`src/catalogs/tokens.ts`) is the source of truth: these are its names, its grammar and its CSS
+// property mapping, mirrored here until the parts import the SDK. The base theme must give every token
+// a value in both appearances.
 //
 // Names: dot-separated segments of lowercase letters and digits, each starting with a letter
-// (`color.text.muted`). A token is a CSS custom property inside the part a theme dresses: the dots
-// become hyphens (`--color-text-muted`). With no hyphen or capital inside a segment, two names can
-// never map to one property.
+// (`color.text.muted`). A token is a CSS custom property inside the part a theme dresses: `--clover-`
+// and the name with its dots as hyphens (`--clover-color-text-muted`). A plugin's own tokens are
+// `<top-level plugin id>.<name>`; the hyphens an id may hold become underscores
+// (`mcp-blender.glow` → `--clover-mcp_blender-glow`), so the map stays one to one.
 //
 // `card.*` is the set sealed approval frames take (spec §5.5); keep it self-contained: a card value
 // never derives from another token, so restyling the accent never silently restyles approval cards.
@@ -56,6 +58,8 @@ export const TOKENS: readonly TokenSpec[] = [
   t("color.attention.text", "color", "Attention carrying text."),
   t("color.danger", "color", "Errors and actions that destroy something."),
   t("color.success", "color", "Done, connected, running."),
+  t("color.diff.added", "color", "Lines a diff adds."),
+  t("color.diff.removed", "color", "Lines a diff removes."),
   t("color.focus", "color", "The keyboard focus ring."),
   // Messages.
   t("bubble.user.background", "color", "The user's own message."),
@@ -94,6 +98,7 @@ export const TOKENS: readonly TokenSpec[] = [
   t("font.size.label", "dimension", "Labels."),
   t("font.size.control", "dimension", "Sidebar rows and controls."),
   t("font.size.body", "dimension", "Body text and typing."),
+  t("font.size.code", "dimension", "Code, commands and paths in running text."),
   t("font.size.large", "dimension", "Large controls."),
   t("font.size.heading", "dimension", "Headings in a pane."),
   t("font.size.title", "dimension", "A page's title."),
@@ -177,17 +182,29 @@ export const TOKENS: readonly TokenSpec[] = [
 
 const NAME = /^[a-z][a-z0-9]*(\.[a-z][a-z0-9]*)*$/;
 
+/** A catalog token's name. */
 export function isTokenName(name: string): boolean {
-  return NAME.test(name);
+  return name.length <= 128 && NAME.test(name);
 }
 
-/** The CSS custom property a token is inside a dressed part: `color.text.muted` → `--color-text-muted`. */
+/** The catalog's first segments (`color`, `card`, …). A plugin whose top-level id is one of them has no
+ *  tokens of its own, so its names can never be mistaken for the catalog's. */
+export const TOKEN_GROUPS: ReadonlySet<string> = new Set(TOKENS.map((spec) => spec.name.split(".")[0]!));
+
+/** A plugin's own token, `<top-level plugin id>.<name>` (`luna.glow.soft`); the id may hold hyphens. */
+export function isPluginTokenName(name: string, pluginTopId: string): boolean {
+  if (TOKEN_GROUPS.has(pluginTopId) || !name.startsWith(`${pluginTopId}.`) || name.length > 128) return false;
+  return NAME.test(name.slice(pluginTopId.length + 1));
+}
+
+/** The CSS custom property a token sets: `color.text.muted` → `--clover-color-text-muted`. Dots become
+ *  hyphens; the hyphens a plugin id may hold become underscores, so the map is one to one. */
 export function cssProperty(name: string): string {
-  if (!isTokenName(name)) throw new Error(`not a token name: ${name}`);
-  return `--${name.replaceAll(".", "-")}`;
+  if (!/^[a-z0-9][a-z0-9.-]*$/.test(name)) throw new Error(`not a token name: ${name}`);
+  return `--clover-${name.replace(/-/g, "_").replace(/\./g, "-")}`;
 }
 
-/** `var(--color-text-muted)`, for component styles. */
+/** `var(--clover-color-text-muted)`, for component styles. */
 export function cssVar(name: string): string {
   return `var(${cssProperty(name)})`;
 }

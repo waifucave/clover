@@ -2,7 +2,7 @@
 
 import type { ApprovalCard, LinkCard, QuestionCard } from "./model/cards";
 import type { ScreenShape } from "./model/geometry";
-import type { SealedFixtures } from "./ui/sealed";
+import type { SealedFixtures } from "./mock-kit";
 
 export const NOTCH: ScreenShape = { housing: { width: 185, height: 32 }, menuBarHeight: 32 };
 export const NO_NOTCH: ScreenShape = { housing: null, menuBarHeight: 24 };

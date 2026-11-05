@@ -7,7 +7,7 @@ import type { ReactElement } from "react";
 import { cardTrailing, questionAdvance, type ApprovalCard, type LinkCard, type PillCard, type QuestionCard, type QuestionDraft } from "../model/cards";
 import { t } from "../strings";
 import { Glyph } from "./glyphs";
-import { PILL_CARD_TOKENS, useSealedKit } from "./sealed";
+import { PILL_CARD_SOURCES, useCardTokens, useSealedKit } from "./sealed";
 
 export interface SealedCardBodyProps {
   card: ApprovalCard | LinkCard;
@@ -19,29 +19,33 @@ export interface SealedCardBodyProps {
 
 export function SealedCardBody({ card, waiting = 0, hover }: SealedCardBodyProps): ReactElement {
   const kit = useSealedKit();
+  // The frames take the pill's own tokens, resolved where this card sits.
+  const { ref, tokens } = useCardTokens(PILL_CARD_SOURCES);
   const trailing = [card.computer, cardTrailing(0, 1, waiting)].filter(Boolean).join(" · ");
   return (
-    <kit.Card id={card.id} tokens={PILL_CARD_TOKENS} className="clp-card">
-      <div className="clp-card-header">
-        <Glyph name={card.kind === "link" ? "link" : "hand"} />
-        <span className="clp-card-source">
-          <kit.Field name="source" />
-        </span>
-        {trailing ? <span className="clp-card-trailing">{trailing}</span> : null}
-      </div>
-      <kit.Field name="ask" lines={4} className="clp-card-ask" />
-      {card.kind === "approval" ? <kit.Field name="command" lines={5} className="clp-card-command" /> : <kit.Field name="host" className="clp-card-command" />}
-      {card.kind === "approval" ? <kit.Field name="risk" lines={2} className="clp-card-risk" /> : null}
-      <div className="clp-card-actions">
-        <span className="clp-card-status" />
-        <span className="clp-slot" data-role="refuse" data-hover={hover === "refuse" || undefined}>
-          <kit.Deny look="cross" size={30} />
-        </span>
-        <span className="clp-slot" data-role="accept" data-hover={hover === "accept" || undefined}>
-          <kit.Approve look={card.kind === "link" ? "open" : "check"} size={30} />
-        </span>
-      </div>
-    </kit.Card>
+    <div ref={ref} className="clp-card-frame">
+      <kit.Card id={card.id} tokens={tokens} className="clp-card">
+        <div className="clp-card-header">
+          <Glyph name={card.kind === "link" ? "link" : "hand"} />
+          <span className="clp-card-source">
+            <kit.Field name="source" />
+          </span>
+          {trailing ? <span className="clp-card-trailing">{trailing}</span> : null}
+        </div>
+        <kit.Field name="ask" lines={4} className="clp-card-ask" />
+        {card.kind === "approval" ? <kit.Field name="command" lines={5} className="clp-card-command" /> : <kit.Field name="host" className="clp-card-command" />}
+        {card.kind === "approval" ? <kit.Field name="risk" lines={2} className="clp-card-risk" /> : null}
+        <div className="clp-card-actions">
+          <span className="clp-card-status" />
+          <span className="clp-slot" data-role="refuse" data-hover={hover === "refuse" || undefined}>
+            <kit.Deny look="cross" size={30} />
+          </span>
+          <span className="clp-slot" data-role="accept" data-hover={hover === "accept" || undefined}>
+            <kit.Approve look={card.kind === "link" ? "open" : "check"} size={30} />
+          </span>
+        </div>
+      </kit.Card>
+    </div>
   );
 }
 
@@ -144,7 +148,6 @@ export function QuestionCardBody(props: QuestionCardBodyProps): ReactElement {
           title={advance.action === "send" ? t("clover.pill.send") : t("clover.pill.next")}
           disabled={!advance.enabled}
           data-hover={hoverAccept || undefined}
-          style={hoverAccept && advance.enabled ? { boxShadow: "0 0 8px #0A85FF73, 0 0 20px #0A85FF38" } : undefined}
           onClick={props.onAdvance}
         >
           <Glyph name="check" />
