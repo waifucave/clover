@@ -4,7 +4,7 @@ import { describe, expect, test } from "bun:test";
 import { isContractError } from "../common";
 import { FakeClock } from "../fakes/clock";
 import { MemorySecretStore } from "../fakes/secret-store";
-import { Secret, type SecretChange, type SecretRef } from "../secret-store";
+import { Secret, secretTokenSource, type SecretChange, type SecretRef } from "../secret-store";
 
 // Built at run time, so no secret-looking literal sits in a fixture.
 const VALUE = ["sk", "test", Math.random().toString(36).slice(2)].join("-");
@@ -75,6 +75,32 @@ describe("MemorySecretStore", () => {
     store.unlock();
     expect(seen).toEqual([{ status: { backend: "memory", state: "unlocked" } }]);
     expect((await store.set(core("a"), VALUE)).generation).toBe(1);
+  });
+
+  test("a token source hands out generations: the current one, then after a 401 only a newer one", async () => {
+    const store = new MemorySecretStore({ clock: new FakeClock() });
+    const ref = plugin("weather", "api_token");
+    const refreshed: number[] = [];
+    const source = secretTokenSource(store, ref, async (g) => {
+      refreshed.push(g);
+      await store.set(ref, `${VALUE}-${g + 1}`);
+    });
+    expect(await source.current()).toBeNull();
+    await store.set(ref, VALUE);
+    const first = await source.current();
+    expect(first?.generation).toBe(1);
+    expect(String(first?.value)).toBe("[secret]");
+    // The refused generation is the stored one: the refresher writes a newer one.
+    const next = await source.newer(1);
+    expect(next?.generation).toBe(2);
+    expect(next?.value.reveal()).toBe(`${VALUE}-2`);
+    expect(refreshed).toEqual([1]);
+    // Someone already wrote a newer one: no refresh needed.
+    await store.set(ref, `${VALUE}-3`);
+    expect((await source.newer(2))?.generation).toBe(3);
+    expect(refreshed).toEqual([1]);
+    // An API key has no refresher: a 401 is the answer.
+    expect(await secretTokenSource(store, ref).newer(3)).toBeNull();
   });
 
   test("names are checked", async () => {

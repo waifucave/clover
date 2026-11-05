@@ -24,8 +24,10 @@
 //
 // The log records are the host's own vocabulary. Lane D projects them onto the wire: the user's `input` is the
 // inherited `user_message` with `UserMessageStamp`, from a bot `bot_message`, from an agent `agent_message`, a task
-// notification `agent_finished`, a routine `routine_result`, a note `note`; turns map to `turn_started` and
-// `turn_completed`; `driver` records are the runtime's own events (tool calls, text, thinking).
+// notification `agent_finished`, a routine `routine_result`, a plugin's message `plugin_message`, a note `note`; turns
+// map to `turn_started` and `turn_completed`; `driver` records are the runtime's own events (tool calls, text,
+// thinking). A session's view carries its needs-you counts (`SessionView.needsYou`): its pending cards and its
+// unanswered questions.
 import type { SessionFailure, SessionKind, SessionStatus, SessionView, TurnOrigin } from "@waifucave/clover-protocol";
 import type { Unsubscribe } from "./common";
 
@@ -48,7 +50,8 @@ export type DeliveredInput =
   | { from: "agent"; agent: string; text: string }
   | { from: "task-notification"; agent: string; backend: string; stopReason: AgentStopReason; text: string; transcript: string; usage?: { inputTokens: number; outputTokens: number } }
   | { from: "routine"; routine: string; name: string; sideThread: string; text: string }
-  | { from: "plugin"; pluginId: string; text: string }
+  /** A plugin's `conversation.send`, or an MCP Apps page's `ui/message` (`app`) without the user's own key press. */
+  | { from: "plugin"; pluginId: string; text: string; app?: { callId: string } }
   | { from: "note"; label: string; text: string; by: { kind: "plugin"; pluginId: string } | { kind: "hook"; pluginId: string; hook: string } | { kind: "core" } };
 
 export type TurnInput = UserInput | DeliveredInput;

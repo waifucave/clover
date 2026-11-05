@@ -4,7 +4,8 @@ import { createHash } from "node:crypto";
 import {
   IndexSchema, LayoutSchema, LocaleSchema, RevocationsSchema, ThemeSchema, compareVersions, isRevoked, isTreeHashExcluded,
   layoutPaths, layoutSpots, localeFallbacks, parseRange, parseSignatureFile, parseVersion, placeholdersOf, satisfies,
-  resolveTokens, sha256Hex, themeTokensFor, treeHash, treeHashInput, treePathProblem,
+  cssFunctionName, cssUnescape, isCssUrlFunction, isDroppedCssFunction, resolveCssUrl, resolveTokens, sha256Hex,
+  themeTokensFor, treeHash, treeHashInput, treePathProblem,
 } from "../src/index";
 
 const H = (c: string) => c.repeat(64);
@@ -40,6 +41,44 @@ describe("appearance and the fallback order", () => {
     const dark = resolveTokens("dark", [base, bot, user]);
     expect(dark["color.accent"]).toBe("#FF7AB6");
     expect(dark["color.canvas"]).toBe("#212126");
+  });
+});
+
+describe("what a plugin's CSS may load", () => {
+  test("escapes decode before any comparison, as CSS Syntax 3 says", () => {
+    expect(cssUnescape("u\\72 l")).toBe("url");
+    expect(cssUnescape("\\2e\\2e/x")).toBe("../x");
+    expect(cssUnescape("\\55\r\nrl")).toBe("Url");
+    expect(cssUnescape("\\0 a")).toBe("\uFFFDa");
+    expect(cssUnescape("\\D800")).toBe("\uFFFD");
+    expect(cssUnescape("\\110000")).toBe("\uFFFD");
+    expect(cssUnescape("a\\")).toBe("a\uFFFD");
+    expect(cssUnescape("a\\\nb")).toBe("ab");
+    expect(cssFunctionName("U\\52 L")).toBe("url");
+    expect(isCssUrlFunction("u\\72 l")).toBe(true);
+    expect(isCssUrlFunction("-WEBKIT-Image-Set")).toBe(true);
+    expect(isCssUrlFunction("rgb")).toBe(false);
+    expect(isDroppedCssFunction("\\69mage")).toBe(true);
+    expect(isDroppedCssFunction("cross-fade")).toBe(true);
+  });
+
+  test("a URL is resolved against its CSS file's folder, and kept only inside the plugin's folder", () => {
+    expect(resolveCssUrl("img/a.png", "tab/theme.css")).toEqual({ ok: true, path: "tab/img/a.png", suffix: "" });
+    expect(resolveCssUrl("../assets/a.png", "tab/theme.css")).toEqual({ ok: true, path: "assets/a.png", suffix: "" });
+    expect(resolveCssUrl("%2e%2e/meadow.svg", "tab/theme.css")).toEqual({ ok: true, path: "meadow.svg", suffix: "" });
+    expect(resolveCssUrl(" fonts/a.woff2?#iefix ", "tab/theme.css")).toEqual({ ok: true, path: "tab/fonts/a.woff2", suffix: "#iefix" });
+    expect(resolveCssUrl("sprite.svg#send", "theme.css")).toEqual({ ok: true, path: "sprite.svg", suffix: "#send" });
+    expect(resolveCssUrl("my%20font.woff2", "my dir/x.css")).toEqual({ ok: true, path: "my dir/my font.woff2", suffix: "" });
+    const refused = [
+      "%2e%2e/%2e%2e/secret", "../../secret", "..\\..\\secret", ".%2E/.%2e/secret", "/tab/a.png", "//evil.example/a.png",
+      "https://evil.example/a.png", "HTTPS://evil.example/a.png", "ht\ttps://evil.example/a.png", "data:image/png;base64,AAAA",
+      "file:///etc/passwd", "javascript:alert(1)", "a%2fb.png", "a%5cb.png", "%zz.png", "", "  ",
+      "https://plugin.clover.invalid/__plugin__/x.png",
+    ];
+    for (const raw of refused) expect([raw, resolveCssUrl(raw, "tab/theme.css").ok]).toEqual([raw, false]);
+    // A string in image-set() is a URL like any other.
+    expect(resolveCssUrl("https://cdn.example/x.png", "theme.css").ok).toBe(false);
+    expect(resolveCssUrl("x.png", "../theme.css").ok).toBe(false);
   });
 });
 

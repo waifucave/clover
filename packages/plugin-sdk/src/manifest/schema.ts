@@ -352,7 +352,12 @@ export const ManifestSchema = z.strictObject({
     declares: DeclaresSchema.optional(),
   }).optional(),
   /** React module loaded into the app. */
-  client: z.strictObject({ entry: Path }).optional(),
+  /** Components (§5.5). In an installed plugin `entry` is one bundled ES module of JavaScript: its only bare imports
+   *  are `react`, `react/jsx-runtime`, `react-dom` and `@waifucave/clover-plugin-sdk/ui`, which the layer's runtime
+   *  provides (one React per layer, lane E), and it imports no CSS. `css` lists the stylesheets its components wear,
+   *  cleaned like a theme's CSS and loaded in each layer that mounts one of them, before them. A development folder
+   *  may name TypeScript or TSX with CSS imports: the core bundles it the same way (§5.6). */
+  client: z.strictObject({ entry: Path, css: z.array(Path).max(32).optional() }).optional(),
   /** A native program the plugin host starts and supervises; a signed .app on macOS, started through Launch Services. */
   helper: z.strictObject({
     bin: z.partialRecord(Platform, Path),

@@ -97,5 +97,25 @@ export interface UiApi {
   useApprovals(): { readonly cards: readonly CardMeta[]; subscribe(listener: () => void): Unsubscribe };
 }
 
+/** One frame of the speech the app plays for a bot, for lip-sync: what the `avatar` spot's `speech` feed hands on, so
+ *  an avatar needs no `audio` capability. Provisional: lane G proposes the shape, and lane E, whose runtime carries
+ *  the feed across layers, agrees it. */
+export interface SpeechFrame {
+  /** When it plays: seconds on the layer's audio clock, output latency already added. */
+  t: number;
+  /** Loudness, 0 to 1 (RMS). */
+  rms: number;
+  /** Brightness: the spectral centroid, in Hz. */
+  centroid: number;
+}
+
+/** The `avatar` spot's `speech` prop. */
+export interface SpeechFeed {
+  /** Frames as they're made, in time order, a little ahead of when they play. */
+  subscribe(listener: (frames: readonly SpeechFrame[]) => void): Unsubscribe;
+  /** The audio clock now, in the frames' seconds. */
+  now(): number;
+}
+
 /** A component module: the exports of `client.entry` that `ui` entries name. */
 export type ClientModule = Record<string, UiComponent<EntryProps<any>>>;

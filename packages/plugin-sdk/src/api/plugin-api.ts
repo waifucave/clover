@@ -59,23 +59,76 @@ export type Handler<A = unknown, R = unknown> = (args: A, ctx: HandlerContext) =
 export type HandlerObject = { readonly [method: string]: Handler<any, any> };
 export type HandlerExport = Handler<any, any> | HandlerObject;
 
-/** A `notifiers` entry's handler (§10), an object of handlers that the core calls on the main computer. Provisional
- *  for lanes D and I: the core's update carries no content, only what happened and where, since a notifier's service
- *  may be outside the user's computers (waifucave push sends only a count). */
+/** A `notifiers` entry's handler (§10): an object of handlers the core calls on the main computer (or where the
+ *  entry's `runsOn` says), `notify` when something happens that the user hasn't seen and `clear` when they catch up.
+ *  Provisional for lanes D and I. */
 export interface NotifierHandler {
   notify(update: NotifierUpdate, ctx: HandlerContext): void | Promise<void>;
   /** The user caught up: everything is seen. */
   clear(args: undefined, ctx: HandlerContext): void | Promise<void>;
 }
 
+/** What the core tells a notifier. It never holds a message's, a card's, a question's or a tool's text, a file or a
+ *  memory: only what happened, where, and the count. `notification` is there only for `kind: "notification"`, with
+ *  what a plugin's `notify.send` (or the core's own notice) asked to show. A notifier whose service is off the user's
+ *  computers sends that service no content at all: waifucave push sends `{ badge: unseen }` alone. */
 export interface NotifierUpdate {
   kind: "message" | "card" | "question" | "routine-result" | "agent-finished" | "notification";
-  /** How many updates the user hasn't seen, as the core counts them. */
+  /** How many updates the user hasn't seen, as the core counts them; always sent. */
   unseen: number;
   bot?: string;
   session?: string;
   /** When it happened, on the shared clock. */
   at: number;
+  notification?: { title: string; body?: string };
+}
+
+/** A `webhook.ingress` entry's handler (§7): an object of handlers the webhook trigger calls through `points.call`
+ *  with `method`. Provisional for lanes D (the trigger) and I (the forwarder). Webhooks reach the trigger by pull:
+ *  `next` waits up to `waitMs` (at most `WEBHOOK_NEXT_WAIT_MAX_MS`), and the trigger sets that call's `timeoutMs` to
+ *  `waitMs` plus `WEBHOOK_NEXT_GRACE_MS`, inside the plugin API's 10-minute cap. Delivery is at least once: the
+ *  trigger keeps the ids it has run, and acks or drops every delivery promptly. */
+export interface WebhookIngressHandler {
+  /** A webhook routine this computer holds. The trigger passes `webhookKeyHash(key)`, so the routine's key never
+   *  enters an ingress plugin. `conflict`: another computer holds it, unless `takeover`. */
+  register(args: { routine: string; keyHash: string; takeover?: boolean }, ctx: HandlerContext): Promise<{ url: string } | { conflict: { device: string } }>;
+  unregister(args: { routine: string }, ctx: HandlerContext): Promise<Record<string, never>>;
+  list(args: undefined, ctx: HandlerContext): Promise<{ routines: { id: string; device: string; held: boolean }[] }>;
+  /** A long poll: up to `max` deliveries (default 16, at most 64), waiting up to `waitMs` for the first. */
+  next(args: { max?: number; waitMs?: number }, ctx: HandlerContext): Promise<{ deliveries: WebhookDelivery[] }>;
+  /** Taken: the service deletes them. */
+  ack(args: { ids: string[] }, ctx: HandlerContext): Promise<Record<string, never>>;
+  /** Refused: the service deletes them too. */
+  drop(args: { ids: string[] }, ctx: HandlerContext): Promise<Record<string, never>>;
+}
+
+export interface WebhookDelivery {
+  /** Stable across repeats, so the trigger drops a delivery it has already run. */
+  id: string;
+  routine: string;
+  /** When the service received it, for the missed-run rule (§7). */
+  receivedAt: number;
+  method: string;
+  query: string;
+  headers: [string, string][];
+  ip?: string;
+  body: Uint8Array;
+  /** Outside text: the bot sees it marked untrusted (§7). */
+  untrusted: true;
+}
+
+/** A routine's id as an ingress takes it, and the long poll's limits. */
+export const WEBHOOK_ROUTINE_ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
+export const WEBHOOK_NEXT_WAIT_MAX_MS = 300_000;
+export const WEBHOOK_NEXT_GRACE_MS = 10_000;
+
+/** What `register` takes in place of a routine's key: base64url (no padding) of SHA-256 over
+ *  `clover hook key v1|<key>`, as the waifucave forwarder's service stores it. */
+export async function webhookKeyHash(key: string): Promise<string> {
+  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`clover hook key v1|${key}`)));
+  let bin = "";
+  for (const b of digest) bin += String.fromCharCode(b);
+  return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
 /** What `host.entry` may export besides its handlers. `mcp` serves the plugin's `host` MCP servers by name, each on
@@ -164,27 +217,64 @@ export interface StorageApi {
   readonly synced: SyncedStore;
 }
 
-/** The keyed fetch (§5.4): through the core, which adds the named `auth` entry's key or token (the only one, by
- *  default), reaches only the plugin's `network:` hosts, refuses a redirect elsewhere, streams both ways with no time
- *  limit while data flows, and after a 401 gets a newer token from the refresher and retries once. `auth` names an
- *  entry by its `secret`, or is `"waifucave"` (`WAIFUCAVE_AUTH`). */
+/** The keyed fetch (§5.4), the same door as lane A's reference `createKeyedFetch` (clover-sdk), and held to its
+ *  conformance kit (`runKeyedFetchConformance`):
+ *  1. only the plugin's `network:` hosts, `https:` only (plain `http:` only to this computer's loopback);
+ *  2. the core adds the key or token in `placement` (default `Authorization: Bearer …`), and refuses a request that
+ *     sets that header itself;
+ *  3. redirects are followed by hand: each hop held to rule 1, a hop to another origin drops the key;
+ *  4. no time limit while data flows either way: only `idle_timeout` (5 minutes of silence) ends a request;
+ *  5. a 401 gets one retry with a newer token from the refresher (a higher generation), when the body can be resent.
+ *  Failures carry a closed code (`KEYED_FETCH_ERROR_CODES`) and never a key, a token or a response body. */
 export interface NetApi {
-  fetch(url: string, init?: RequestInit, opts?: { auth?: string }): Promise<Response>;
+  fetch(url: string, init?: RequestInit, opts?: KeyedFetchOptions): Promise<Response>;
 }
 
-/** The `auth` name that adds this computer's waifucave account token (lane H), which no manifest may use as a secret's
- *  name. Only plugins of the `clover` tree may use it (the forwarder, push), and only towards waifucave's own hosts in
- *  their `network:` capabilities: the core adds a token it mints for that host (its `aud`), good for minutes, never
- *  the account's own credential; any other use is refused. */
+export interface KeyedFetchOptions {
+  /** The `auth` entry whose key or token goes in, by its `secret` name, or `"waifucave"` (`WAIFUCAVE_AUTH`); `false`
+   *  adds none. Left out: the plugin's one entry when it has exactly one, none when it has none, and `ambiguous_auth`
+   *  when it has several. */
+  auth?: string | false;
+  /** Where the key goes: `header` (default `authorization`) and `scheme` (default `Bearer` for `authorization`,
+   *  none for any other header). */
+  placement?: { header?: string; scheme?: string };
+}
+
+/** Lane A's codes, plus `no_account`: `auth: "waifucave"` with no waifucave account signed in on this computer. */
+export const KEYED_FETCH_ERROR_CODES = [
+  "host_not_declared", "insecure_url", "redirect_refused", "unknown_auth", "ambiguous_auth", "no_credential", "no_account",
+  "credential_header", "idle_timeout", "aborted", "network", "refused",
+] as const;
+export type KeyedFetchErrorCode = (typeof KEYED_FETCH_ERROR_CODES)[number];
+
+/** The `auth` name that adds this computer's waifucave account token (lane H mints it), the key to every computer
+ *  (§8.1). No manifest may name a secret `waifucave`. The rules:
+ *  * only plugins of the `clover` tree may use it (the forwarder, push); for any other it is no entry of theirs
+ *    (`unknown_auth`);
+ *  * only `https://` URLs on a `waifucave.com` host in the plugin's `network:` capabilities (`mayUseWaifucaveAuth`);
+ *    any other URL fails `refused`;
+ *  * each request gets a token minted for its host alone (`aud` is exactly the request's host), good for minutes,
+ *    never the account's own credential; a redirect to another host drops it (rule 3);
+ *  * plugin code never reads it: it exists only in the request the core sends;
+ *  * after a 401 the core mints a newer one and retries once (rule 5);
+ *  * with no account signed in, the fetch fails `no_account` at once, and the plugin waits for the account rather than
+ *    retrying on a timer. */
 export const WAIFUCAVE_AUTH = "waifucave";
-/** The domain whose hosts take the waifucave token: `hooks.waifucave.com`, `push.waifucave.com`. */
+/** The domain whose hosts take the waifucave token: `hooks.waifucave.com`, `push.waifucave.com`. A development
+ *  profile may point it at local emulators (the core's own setting, never a plugin's). */
 export const WAIFUCAVE_DOMAIN = "waifucave.com";
 
-/** Whether a plugin may fetch `host` with `auth: "waifucave"`; its `network:` capability is checked as for any
- *  fetch. */
-export function mayUseWaifucaveAuth(pluginId: string, host: string): boolean {
-  const h = host.toLowerCase().replace(/\.$/, "");
-  return topPluginIdOf(pluginId) === BUNDLED_ROOT_PLUGIN && (h === WAIFUCAVE_DOMAIN || h.endsWith(`.${WAIFUCAVE_DOMAIN}`));
+/** Whether a plugin may fetch `url` with `auth: "waifucave"`; its `network:` capability is checked as for any fetch. */
+export function mayUseWaifucaveAuth(pluginId: string, url: string, domain: string = WAIFUCAVE_DOMAIN): boolean {
+  let u: URL;
+  try {
+    u = new URL(url);
+  } catch {
+    return false;
+  }
+  if (u.protocol !== "https:" || u.username !== "" || u.password !== "") return false;
+  const h = u.hostname.toLowerCase().replace(/\.$/, "");
+  return topPluginIdOf(pluginId) === BUNDLED_ROOT_PLUGIN && (h === domain || h.endsWith(`.${domain}`));
 }
 
 /** Only a process of the plugin's own that must sign with a secret (AWS SigV4, §5.2) reads it; a worker can't, and

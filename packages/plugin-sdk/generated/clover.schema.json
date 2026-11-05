@@ -132,6 +132,13 @@
       "properties": {
         "entry": {
           "$ref": "#/$defs/__schema1"
+        },
+        "css": {
+          "maxItems": 32,
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/__schema1"
+          }
         }
       },
       "required": [

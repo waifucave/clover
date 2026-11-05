@@ -129,7 +129,7 @@ describe("the event table", () => {
       else expect(CloverSessionEvent.safeParse(e.fixture).success).toBe(true);
     }
     const sessionTypes = events.filter((e) => e.scope === "session").map((e) => e.type).sort();
-    expect(sessionTypes).toEqual(["agent_finished", "agent_message", "bot_message", "note", "routine_result"]);
+    expect(sessionTypes).toEqual(["agent_finished", "agent_message", "bot_message", "note", "plugin_message", "routine_result"]);
   });
 
   test("every area has events, and each event names an owner and roles", () => {

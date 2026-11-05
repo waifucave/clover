@@ -86,6 +86,9 @@ export const SessionView = z.object({
   root: TreePath.optional(),
   /** A routine run's routine. */
   routine: z.string().max(128).optional(),
+  /** What waits for the user in it: pending cards and unanswered questions, as counts only (the shell's needs-you
+   *  marks; a card's content stays behind `approvals` and the sealed frames). */
+  needsYou: z.object({ cards: z.number().int().nonnegative(), questions: z.number().int().nonnegative() }).optional(),
 });
 export type SessionView = z.infer<typeof SessionView>;
 
@@ -309,12 +312,21 @@ export const NoteEvent = sessionEvent("note", {
   label: z.string().max(120),
   text: z.string().max(100_000),
 });
+/** A message a plugin sends a bot: its `conversation.send` (with `conversation.post`), or an MCP Apps page's
+ *  `ui/message` sent without the user's own key press or click (§5.4, §5.5). The turn it starts is the plugin's, never
+ *  the user's; shown with the plugin's name (`from.kind: "plugin"`). */
+export const PluginMessageEvent = sessionEvent("plugin_message", {
+  from: z.object({ kind: z.literal("plugin"), pluginId: AnyPluginId }),
+  text: z.string().max(1_000_000),
+  /** An MCP Apps page's message: the tool call whose page sent it. */
+  app: z.object({ callId: z.string().min(1).max(128) }).optional(),
+});
 /** The fields the user's `user_message` gains (§6.4): the device it came from and its send time on the shared
  *  clock. A message stamped before output the model already produced sits after that output, showing its time. */
 export const UserMessageStamp = z.object({ device: DeviceId, sentAt: Timestamp });
 
 export const CloverSessionEvent = z.discriminatedUnion("type", [
-  BotMessageEvent, AgentMessageEvent, AgentFinishedEvent, RoutineResultEvent, NoteEvent,
+  BotMessageEvent, AgentMessageEvent, AgentFinishedEvent, RoutineResultEvent, NoteEvent, PluginMessageEvent,
 ]);
 export type CloverSessionEvent = z.infer<typeof CloverSessionEvent>;
 
@@ -380,5 +392,10 @@ export const SESSIONS_EVENTS = {
     type: "note", owner: "D", roles: READERS, capability: "conversation.read", scope: "session", schema: NoteEvent,
     fixture: { type: "note", seq: 16, sessionId: "s_alpha", ts: 1781270004000, from: { kind: "plugin", pluginId: "weather" }, label: "Forecast", text: "Rain after 4 pm." },
     doc: "A labelled note in the conversation.",
+  }),
+  pluginMessage: defineEvent({
+    type: "plugin_message", owner: "D", roles: READERS, capability: "conversation.read", scope: "session", schema: PluginMessageEvent,
+    fixture: { type: "plugin_message", seq: 17, sessionId: "s_alpha", ts: 1781270005000, from: { kind: "plugin", pluginId: "blender" }, text: "Render the next frame.", app: { callId: "call_7" } },
+    doc: "A plugin's message to the bot; the turn it starts is the plugin's.",
   }),
 } as const;

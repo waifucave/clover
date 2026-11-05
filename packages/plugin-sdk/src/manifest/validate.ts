@@ -151,7 +151,10 @@ function collectPaths(m: Record<string, unknown>): { path: Seg[]; value: string;
   };
   add(["icon"], m.icon, "plugin");
   if (isObject(m.host)) add(["host", "entry"], m.host.entry, "plugin");
-  if (isObject(m.client)) add(["client", "entry"], m.client.entry, "plugin");
+  if (isObject(m.client)) {
+    add(["client", "entry"], m.client.entry, "plugin");
+    if (Array.isArray(m.client.css)) m.client.css.forEach((p, i) => add(["client", "css", i], p, "plugin"));
+  }
   if (isObject(m.helper) && isObject(m.helper.bin)) for (const [k, v] of Object.entries(m.helper.bin)) add(["helper", "bin", k], v, "plugin");
   const c = isObject(m.contributes) ? m.contributes : {};
   if (isObject(c.bot)) {

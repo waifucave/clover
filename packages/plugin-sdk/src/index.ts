@@ -19,6 +19,7 @@ export * from "./manifest/validate";
 export * from "./manifest/tree";
 
 export * from "./formats/theme";
+export * from "./formats/css-url";
 export * from "./formats/layout";
 export * from "./formats/locale";
 export * from "./formats/index-file";
@@ -28,8 +29,9 @@ export * from "./catalogs/index";
 
 export type * from "./api/plugin-api";
 export {
-  API_CALL_MAX_TIMEOUT_MS, API_CALL_TIMEOUT_MS, CONFIRM_TIMEOUT_MS, KEY_NAME_RE, KEYS_PER_PLUGIN_MAX, SYNCED_STORE_LIMIT_BYTES,
-  WAIFUCAVE_AUTH, WAIFUCAVE_DOMAIN, mayUseWaifucaveAuth,
+  API_CALL_MAX_TIMEOUT_MS, API_CALL_TIMEOUT_MS, CONFIRM_TIMEOUT_MS, KEY_NAME_RE, KEYED_FETCH_ERROR_CODES, KEYS_PER_PLUGIN_MAX,
+  SYNCED_STORE_LIMIT_BYTES, WAIFUCAVE_AUTH, WAIFUCAVE_DOMAIN, WEBHOOK_NEXT_GRACE_MS, WEBHOOK_NEXT_WAIT_MAX_MS,
+  WEBHOOK_ROUTINE_ID_RE, mayUseWaifucaveAuth, webhookKeyHash,
 } from "./api/plugin-api";
 export type * from "./api/ui-api";
 

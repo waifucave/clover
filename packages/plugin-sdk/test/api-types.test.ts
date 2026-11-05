@@ -3,9 +3,11 @@
 import { describe, expect, test } from "bun:test";
 import {
   API_CALL_MAX_TIMEOUT_MS, API_CALL_TIMEOUT_MS, CONFIRM_TIMEOUT_MS, SYNCED_STORE_LIMIT_BYTES, WAIFUCAVE_AUTH,
-  mayUseWaifucaveAuth, type ClientModule, type EntryProps, type Handler, type HandlerObject, type HookInput,
-  type HookOutput, type HostModule, type Manifest, type NotifierHandler, type PluginApi, type UiApi,
+  WEBHOOK_NEXT_GRACE_MS, WEBHOOK_NEXT_WAIT_MAX_MS, mayUseWaifucaveAuth, webhookKeyHash, type ClientModule, type EntryProps,
+  type Handler, type HandlerObject, type HookInput, type HookOutput, type HostModule, type Manifest, type NotifierHandler,
+  type PluginApi, type UiApi, type WebhookIngressHandler,
 } from "../src/index";
+import { createHash } from "node:crypto";
 
 // A host half: handlers named by the manifest, a `host` MCP server, and the lifecycle.
 const draw: Handler<{ count: number }, { cards: string[] }> = async (args, ctx) => {
@@ -18,17 +20,24 @@ const beforeTool: Handler<HookInput, HookOutput> = (input) =>
   input.event === "tool.before" && input.tool?.name === "Bash" ? { event: "tool.before", ask: { reason: "a tarot reading first" } } : { event: "turn.end" };
 
 // A service: an object of handlers, whose caller names the one it calls (the waifucave forwarder's `webhook.ingress`).
-const ingress: HandlerObject = {
-  register: async (args: { routine: string }, ctx) => {
+const ingress: WebhookIngressHandler = {
+  register: async (args, ctx) => {
     const pub = await ctx.api.keys?.publicKey("forwarder");
-    return { routine: args.routine, key: pub?.length };
+    const res = await ctx.api.net.fetch("https://hooks.waifucave.com/v1/routines", { method: "POST", body: JSON.stringify({ ...args, key: pub?.length }) }, { auth: WAIFUCAVE_AUTH });
+    return res.status === 409 ? { conflict: { device: "Laptop" } } : { url: `https://hooks.waifucave.com/t/${args.routine}` };
   },
-  next: async (_args: undefined, ctx) => {
-    const res = await ctx.api.net.fetch("https://hooks.waifucave.com/v1/next", undefined, { auth: WAIFUCAVE_AUTH });
+  unregister: async () => ({}),
+  list: async () => ({ routines: [] }),
+  next: async (_args, ctx) => {
+    const res = await ctx.api.net.fetch("https://hooks.waifucave.com/v1/next", undefined, { auth: WAIFUCAVE_AUTH, placement: { header: "x-clover-account" } });
     const sealed = new Uint8Array(await res.arrayBuffer());
-    return ctx.api.keys?.open("forwarder", { enc: sealed.subarray(0, 32), ciphertext: sealed.subarray(32), info: new Uint8Array([1]) });
+    await ctx.api.keys?.open("forwarder", { enc: sealed.subarray(0, 32), ciphertext: sealed.subarray(32), info: new Uint8Array([1]) });
+    return { deliveries: [] };
   },
+  ack: async () => ({}),
+  drop: async () => ({}),
 };
+const asObject: HandlerObject = { ...ingress };
 const notifier: NotifierHandler = {
   notify: async (update, ctx) => void (await ctx.api.storage.synced.set("unseen", update.unseen)),
   clear: async (_args, ctx) => void (await ctx.api.storage.synced.set("unseen", 0)),
@@ -88,13 +97,24 @@ describe("the declarations", () => {
     expect(manifest.contributes?.commands?.[0]?.handler).toBe("draw");
   });
 
-  test("only the clover tree fetches waifucave's own hosts with the account token", () => {
-    expect(mayUseWaifucaveAuth("clover/forwarder", "hooks.waifucave.com")).toBe(true);
-    expect(mayUseWaifucaveAuth("clover", "push.waifucave.com.")).toBe(true);
-    expect(mayUseWaifucaveAuth("luna", "hooks.waifucave.com")).toBe(false);
-    expect(mayUseWaifucaveAuth("clover/forwarder", "evil-waifucave.com")).toBe(false);
-    expect(mayUseWaifucaveAuth("clover/forwarder", "waifucave.com.evil.example")).toBe(false);
+  test("only the clover tree fetches waifucave's own https hosts with the account token", () => {
+    expect(mayUseWaifucaveAuth("clover/forwarder", "https://hooks.waifucave.com/v1/next")).toBe(true);
+    expect(mayUseWaifucaveAuth("clover", "https://push.waifucave.com./v1/notify")).toBe(true);
+    expect(mayUseWaifucaveAuth("luna", "https://hooks.waifucave.com/")).toBe(false);
+    expect(mayUseWaifucaveAuth("clover/forwarder", "http://hooks.waifucave.com/")).toBe(false);
+    expect(mayUseWaifucaveAuth("clover/forwarder", "https://evil-waifucave.com/")).toBe(false);
+    expect(mayUseWaifucaveAuth("clover/forwarder", "https://waifucave.com.evil.example/")).toBe(false);
+    expect(mayUseWaifucaveAuth("clover/forwarder", "https://u:p@hooks.waifucave.com/")).toBe(false);
+    expect(mayUseWaifucaveAuth("clover/forwarder", "not a url")).toBe(false);
+    expect(mayUseWaifucaveAuth("clover/forwarder", "https://hooks.emulator.test/", "emulator.test")).toBe(true);
     expect(typeof host.ingress).toBe("object");
+    expect(Object.keys(asObject).sort()).toEqual(["ack", "drop", "list", "next", "register", "unregister"]);
+  });
+
+  test("a routine's key reaches an ingress only as its hash; the long poll fits the 10-minute cap", async () => {
+    const want = createHash("sha256").update("clover hook key v1|k3y").digest("base64url");
+    expect(await webhookKeyHash("k3y")).toBe(want);
+    expect(WEBHOOK_NEXT_WAIT_MAX_MS + WEBHOOK_NEXT_GRACE_MS).toBeLessThanOrEqual(API_CALL_MAX_TIMEOUT_MS);
   });
 
   test("the limits are §5.4's", () => {

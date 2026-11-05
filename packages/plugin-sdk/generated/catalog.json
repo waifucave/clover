@@ -612,7 +612,7 @@
       "context": [
         "bot"
       ],
-      "doc": "A bot's row in the sidebar, keyed by bot.",
+      "doc": "A bot's row in the sidebar, keyed by bot: its state and what waits for the user.",
       "fields": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -657,11 +657,35 @@
           },
           "selected": {
             "type": "boolean"
+          },
+          "state": {
+            "type": "string"
+          },
+          "needsYou": {
+            "type": "object",
+            "properties": {
+              "cards": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "questions": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": [
+              "cards",
+              "questions"
+            ]
           }
         },
         "required": [
           "bot",
-          "selected"
+          "selected",
+          "state",
+          "needsYou"
         ]
       }
     },
@@ -767,7 +791,7 @@
       "shape": "keyed",
       "declaredBy": "shell",
       "inBotTab": false,
-      "doc": "The panel, keyed by app.",
+      "doc": "The panel host, keyed by panel: each panel (session, terminal, diff, files, browser) is a plugin of its own, and replaceable.",
       "fields": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -1365,7 +1389,7 @@
       "context": [
         "bot"
       ],
-      "doc": "Draws the bot's avatar, keyed by the avatar file's format (VRM by default), and lip-syncs it.",
+      "doc": "Draws the bot's avatar, keyed by the avatar file's format (VRM by default), and lip-syncs it from `speech` (a `SpeechFeed`).",
       "fields": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -1416,6 +1440,11 @@
           },
           "speaking": {
             "type": "boolean"
+          },
+          "speech": {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": {}
           }
         },
         "required": [

@@ -108,3 +108,37 @@ export function secretOwnerKey(owner: SecretOwner): string {
 export function secretRefKey(ref: SecretRef): string {
   return `${secretOwnerKey(ref.owner)}/${ref.name}`;
 }
+
+/** One key or token as the keyed fetch sends it, with its generation (lane A's `KeyedToken`). */
+export interface KeyedToken {
+  value: Secret;
+  generation: number;
+}
+
+/** Where one `auth` entry's key or token comes from, in the shape of lane A's `KeyedTokenSource` (clover-sdk): the
+ *  current one, or after a 401 one newer than the generation that was refused. Lane A's reference fetch takes the
+ *  value as a string; the core's adapter calls `reveal()` only where it sets the header. */
+export interface KeyedTokenSource {
+  current(): Promise<KeyedToken | null>;
+  newer(generation: number): Promise<KeyedToken | null>;
+}
+
+/** The token source for one stored item. `refresh`, the refresher's door (§8.5), is asked for a newer token after a
+ *  401 when the stored one is no newer than the one refused; an API key has none, so a 401 is the answer. */
+export function secretTokenSource(store: Pick<SecretStore, "get">, ref: SecretRef, refresh?: (generation: number) => Promise<void>): KeyedTokenSource {
+  const read = async (): Promise<KeyedToken | null> => {
+    const v = await store.get(ref);
+    return v === null ? null : { value: v.value, generation: v.generation };
+  };
+  return {
+    current: read,
+    async newer(generation) {
+      let t = await read();
+      if ((t === null || t.generation <= generation) && refresh) {
+        await refresh(generation);
+        t = await read();
+      }
+      return t !== null && t.generation > generation ? t : null;
+    },
+  };
+}

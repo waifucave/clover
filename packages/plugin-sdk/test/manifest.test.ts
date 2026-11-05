@@ -246,6 +246,9 @@ describe("paths stay inside the folder", () => {
     expect(has(validateManifest({ ...min(), icon: "/etc/passwd" }), "path_escape", "plugin")).toBe(true);
     expect(has(validateManifest({ ...min(), contributes: { bot: { name: "L", instructions: "../outside.md" } } }), "path_escape", "contribution")).toBe(true);
     expect(has(validateManifest({ ...min(), contributes: { themes: [{ id: "t", file: "tab\\theme.json" }] } }), "path_escape", "entry")).toBe(true);
+    const client = (css: string[]) => validateManifest({ ...min(), engines: { clover: "^1.0.0" }, client: { entry: "client/index.js", css } });
+    expect(has(client(["client/../../out.css"]), "path_escape", "plugin")).toBe(true);
+    expect(client(["client/index.css"]).issues.filter((i) => i.code === "path_escape")).toEqual([]);
     expect(validateManifest({ ...min(), contributes: { skills: ["skills/*"], themes: [{ id: "t", file: "./tab/theme.json" }] } }).issues).toEqual([]);
   });
 });
