@@ -37,6 +37,12 @@ cd apple/WinterProtocol && swift test   # also apple/WinterKit
 cd packages/cli && bun src/main.ts daemon run   # headless daemon; `-p "hello"` one-shot; no args = TUI (a throwaway home only, below)
 bun run build:winter                 # dist/winter from ../clover-sdk, for the built-binary e2e
 
+# Build and dev, on macOS, Linux and Windows (heavy: through scripts/heavy here)
+bun run build:daemon                 # dist/daemon/<target>/clover-core; --target linux-x64,… or --all cross-compiles; --dry-run
+bun run build:app                    # apps/desktop, unsigned and unpacked (apps/desktop/out/dist); opens no window
+bun run dev:daemon --dry-run         # the dev daemon's plan; without --dry-run it builds and STARTS it (see Profiles)
+bun run dev:app --dry-run            # the dev app's plan; without --dry-run it OPENS A WINDOW: never from an agent here
+
 # Live suites: WINTER_CU_LIVE_TESTS=1 bun run e2e:cu-live (NEVER from an agent); CLOVER_BROWSER_E2E=1 bun run e2e:browser (likewise)
 ```
 
@@ -47,8 +53,8 @@ Run a daemon from the checkout under plain `bun` only on a throwaway home with a
 - The home and the profile are set INDEPENDENTLY: `CLOVER_HOME` picks the home (default `~/.clover`, treat it as a live install); `CLOVER_PROFILE=dev` changes only the Keychain service and the app identity, never the home. Always set BOTH — dev is `CLOVER_HOME=~/.clover-dev CLOVER_PROFILE=dev`.
 - Identities: dist `com.waifucave.clover` with Keychain `com.waifucave.clover.core`; dev `com.waifucave.clover.dev` with `com.waifucave.clover.core.dev`.
 - A plain `clover` is the dist CLI and, on a dead socket, tries to launch the dist app. A plain `winter` is **Winter's** dist CLI and launches the live Winter app. Never run either for dev or test work.
-- `bun run dev:daemon` builds, signs and runs the dev daemon (`dist/dev/clover-core`) on `~/.clover-dev`. It refuses `~/.clover` and, by real path, every other install's home (`packages/core/src/other-installs.ts`); `clover daemon run` and `startDaemon` refuse those homes too. A boot never imports anything from another install: Migration B (`packages/core/src/migration/`) runs only for an explicit `clover migrate --from <legacy home>`, and Clover's carry-over from Winter is a later lane's.
-- After the dev daemon's one-time `bun run dev:daemon --transition`, the dev Keychain items trust only the signed dev binary: never run a dev daemon or the dev CLI on `~/.clover-dev` under plain `bun`, which is prompted for every Keychain item. Use `bun run dev:daemon` (`--no-build` reuses the binary; `bun scripts/dev-daemon.ts --no-build --cli <args>` runs the dev CLI through it).
+- `bun run dev:daemon` builds and runs the dev daemon (`dist/dev/clover-core`, `.exe` on Windows) on `~/.clover-dev`, signing it on macOS only; `bun run dev:app` runs apps/desktop as "Clover Dev" on the same home. Both refuse `~/.clover` and, by real path, every other install's home (`packages/core/src/other-installs.ts`); `clover daemon run` and `startDaemon` refuse those homes too. A boot never imports anything from another install: Migration B (`packages/core/src/migration/`) runs only for an explicit `clover migrate --from <legacy home>`, and Clover's carry-over from Winter is a later lane's.
+- macOS: after the dev daemon's one-time `bun run dev:daemon --transition`, the dev Keychain items trust only the signed dev binary: never run a dev daemon or the dev CLI on `~/.clover-dev` under plain `bun`, which is prompted for every Keychain item. Use `bun run dev:daemon` (`--no-build` reuses the binary; `bun scripts/dev-daemon.ts --no-build --cli <args>` runs the dev CLI through it).
 - `dev:helper` and `dev:headless` refuse to run in this repo until opensky: they would build and register Winter's Computer Use and Headless helpers under Winter's identities, replacing Winter Dev's own registrations and its native-messaging manifests.
 
 ## Where to read more
