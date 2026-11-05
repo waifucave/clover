@@ -18,7 +18,9 @@
 // reads the one installed for its process, and with none installed it refuses (`BrandRequiredError`). So in core's
 // process an unthreaded SDK call reads Clover's names, never the live install's home, variables or Keychain service.
 // Each embedded session's Worker installs its own session's brand (the SDK's production wiring does that).
-import { installBrand } from "@waifucave/clover-agent-sdk";
+// When another brand was installed first, core refuses to load: the SDK keeps the first install, so carrying on
+// would run core under that brand's names (another product's home, variables and Keychain service).
+import { installBrand, installedBrand } from "@waifucave/clover-agent-sdk";
 import { installBrandIdentity } from "@waifucave/clover-provider-runtime";
 import { CORE_BRAND } from "./brand";
 
@@ -26,14 +28,18 @@ let installed = false;
 
 /**
  * Installs Clover's identity and brand process-wide, once. The identity is the bottom frame (a session's own
- * frame sits above it); the brand is the process's (the SDK's first install wins, and nothing installs before
- * core loads).
+ * frame sits above it); the brand is the process's. The SDK's first install wins, so when another brand was
+ * installed before core loaded this throws instead of running core under it.
  */
 export function installCloverProcessIdentity(): void {
   if (installed) return;
-  installed = true;
-  installBrand(CORE_BRAND);
+  if (!installBrand(CORE_BRAND)) {
+    throw new Error(
+      `clover-core: this process already serves another brand (${installedBrand()?.packageName ?? "unknown"}), installed before core loaded; core runs only under ${CORE_BRAND.packageName}'s`,
+    );
+  }
   installBrandIdentity(CORE_BRAND);
+  installed = true;
 }
 
 installCloverProcessIdentity();

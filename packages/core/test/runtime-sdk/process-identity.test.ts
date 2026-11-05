@@ -1,9 +1,10 @@
 // C0 (review S1): loading core makes every provider call in this process present as Clover — the product token in
 // `User-Agent`, the Codex backend's `originator` (spec §3.3: "clover") and the contact URL — not the SDK's defaults.
 import { describe, expect, test } from "bun:test";
+import { fileURLToPath } from "node:url";
 import "../../src/index";
 import { activeWinterIdentity, winterUserAgent } from "@waifucave/clover-provider-runtime";
-import { installedBrand, requireBrand } from "@waifucave/clover-agent-sdk";
+import { WINTER_BRAND, installedBrand, requireBrand } from "@waifucave/clover-agent-sdk";
 import { CODEX } from "../../src/providers/codex-config";
 import { CORE_BRAND } from "../../src/runtime-sdk/brand";
 import { CORE_VERSION } from "../../src/version";
@@ -29,6 +30,19 @@ describe("the process-wide provider identity", () => {
     expect(requireBrand().envPrefix).toBe("CLOVER_");
     expect(requireBrand().keychainService).toBe(CORE_BRAND.keychainService);
   });
+
+  test("core refuses to load in a process that installed another brand first, instead of running under it", async () => {
+    // A fresh process (no test preload): another product's profile (the SDK's WINTER_BRAND) is installed first, then core is loaded.
+    const script = [
+      `import { WINTER_BRAND, installBrand } from "@waifucave/clover-agent-sdk";`,
+      `installBrand(WINTER_BRAND);`,
+      `try { await import(${JSON.stringify(fileURLToPath(new URL("../../src/runtime-sdk/process-identity.ts", import.meta.url)))}); console.log("LOADED"); }`,
+      `catch (err) { console.log("REFUSED " + (err instanceof Error ? err.message : String(err))); }`,
+    ].join("\n");
+    const proc = Bun.spawn([process.execPath, "-e", script], { cwd: fileURLToPath(new URL("../..", import.meta.url)), stdout: "pipe", stderr: "pipe" });
+    const [out] = await Promise.all([new Response(proc.stdout).text(), proc.exited]);
+    expect(out.trim()).toBe(`REFUSED clover-core: this process already serves another brand (${WINTER_BRAND.packageName}), installed before core loaded; core runs only under ${CORE_BRAND.packageName}'s`);
+  }, 30_000);
 
   test("codex-config's header table repeats the same originator", () => {
     expect(CODEX.headers.originator).toBe(CORE_BRAND.codexOriginator);

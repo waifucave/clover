@@ -13,15 +13,13 @@ concurrency:
   cancel-in-progress: true
 
 # A-M1: the `@waifucave` scope (the agent SDK's packages, `@waifucave/clover-*`, and the owner's other packages)
-# comes from GitHub Packages, which wants a token even to read. Every job reads it with this workflow's own token
-# (`packages: read`); the repo's `.npmrc` takes it from NODE_AUTH_TOKEN. A job with its own `permissions:` block
-# sets `packages: read` itself if it installs. A private package must also grant this repository Actions read
-# access in its own package settings.
+# comes from GitHub Packages, which wants a token even to read. Every job may read it with this workflow's own
+# token (`packages: read`); the repo's `.npmrc` takes it from NODE_AUTH_TOKEN, which only the install steps are
+# given, so no test or build step sees it. A job with its own `permissions:` block sets `packages: read` itself if
+# it installs. A private package must also grant this repository Actions read access in its own package settings.
 permissions:
   contents: read
   packages: read
-env:
-  NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
 jobs:
   # The TypeScript workspaces. Split per package so a failure names the layer it came from.
@@ -51,6 +49,8 @@ jobs:
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Test
         working-directory: packages/${{ matrix.package }}
@@ -72,6 +72,8 @@ jobs:
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Typecheck
         working-directory: extensions/winter-for-chrome
@@ -107,6 +109,8 @@ jobs:
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       # P9a-8: `bun install` above must have brought the winter platform package (the same
       # dual-hop resolver the daemon's ladder uses); absent = a loud failure, never a fallback.
@@ -162,6 +166,8 @@ jobs:
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       # P9a-8: see test-core's identical block — the platform package must be installed.
       - name: Check for the installed winter platform package (P9a-8)
@@ -214,6 +220,8 @@ jobs:
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Typecheck
         run: bun run typecheck:core
@@ -232,6 +240,8 @@ jobs:
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Typecheck
         run: bun run typecheck:protocol
@@ -249,6 +259,8 @@ jobs:
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Typecheck
         run: bun run typecheck:cli && bun run typecheck:plugin-sdk && bun run typecheck:scripts
@@ -268,6 +280,8 @@ jobs:
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Regenerate
         working-directory: packages/protocol
@@ -303,6 +317,8 @@ jobs:
 
       - name: Install dependencies (the WinterKit daemon fixture imports @waifucave/clover-core)
         run: bun install --frozen-lockfile
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: WinterProtocol — swift test
         working-directory: apple/WinterProtocol
@@ -382,6 +398,8 @@ jobs:
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       # P9a-8: `verify:runtimes` (below) resolves the `winter` binary through its OWN ladder (the installed
       # platform package first — the strong row-16 path), so this job only makes SURE the platform
