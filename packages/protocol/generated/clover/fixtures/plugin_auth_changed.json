@@ -1,0 +1,11 @@
+{
+  "type": "plugin_auth_changed",
+  "ts": 1781270000000,
+  "id": "clover/model-openai",
+  "auth": {
+    "index": 0,
+    "method": "api-key",
+    "secret": "openai",
+    "state": "signed-in"
+  }
+}
