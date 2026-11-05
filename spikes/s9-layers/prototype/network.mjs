@@ -9,6 +9,13 @@ import {extractNetlog} from './netlog.mjs';
 import {networkProbe} from './probes.mjs';
 const pause=(/** @type {any} */ ms)=>new Promise(r=>setTimeout(r,ms));
 const vectors=['own-fetch','other-plugin-fetch','wrong-port','fetch','xhr','image','css','font','script','media','object','css-import','background','websocket','beacon','eventsource','redirect','redirect-target','keepalive','webtransport','fetchLater','ping','download','worker','shared','blob','window-open','form','navigation','top-location','dns-prefetch','preconnect','prefetch','prerender','speculation','stun','turn'];
+/** Build inherited-context markup without executing it locally.
+ * @param {string} kind @param {string} nestedurl */
+export function inheritedScript(kind,nestedurl){
+ if(!['nested','srcdoc','opaque-srcdoc','about-blank'].includes(kind))throw new Error('unknown inherited context');
+ const setup=kind==='nested'?`f.src=${JSON.stringify(nestedurl)}`:kind==='about-blank'?`f.src='about:blank'`:`f.srcdoc='<input>';${kind==='opaque-srcdoc'?"f.sandbox='allow-scripts'":''}`;
+ return `(()=>{const f=document.createElement('iframe');f.name=${JSON.stringify(kind)};${setup};document.body.append(f)})()`;
+}
 /** @param {string} prefix */
 async function fixtures(prefix){
  /** @type {Record<string,any>} */ const endpoints={};
@@ -111,7 +118,7 @@ export async function networkCheck(electron){
    // Test inheritance in nested, srcdoc, opaque srcdoc and about:blank documents.
    for(const kind of ['nested','srcdoc','opaque-srcdoc','about-blank']){
     const cf=await fixtures(`${mode}-${kind}`);contexts.push({kind,fixture:cf,result:null});
-    await frame.executeJavaScript(`(()=>{const f=document.createElement('iframe');f.name=${JSON.stringify(kind)};${kind==='nested'?`f.src=${JSON.stringify(nestedurl)}`:kind==='about-blank'?`f.src='about:blank'`:`f.srcdoc='<input>';${kind==='opaque-srcdoc'?"f.sandbox='allow-scripts'":''}`};document.body.append(f)})()`);
+    await frame.executeJavaScript(inheritedScript(kind,nestedurl));
     await pause(180);const child=frame.frames.find((/** @type {any} */ x)=>x.name===kind);contexts[contexts.length-1].result=await Promise.race([invoke(child,cf.endpoints,false),pause(6000).then(()=>({error:'inherited probe deadline'}))]);
    }
    const wf=await fixtures(`${mode}-worker`);contexts.push({kind:'worker',fixture:wf,result:null});

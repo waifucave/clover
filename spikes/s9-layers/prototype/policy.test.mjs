@@ -15,3 +15,11 @@ test('different plugins, ports, redirects and opaque initiators fail closed',()=
 test('netlog extracts resolver intent and failure instead of inferring from HTTP silence',()=>{
  const d=extractNetlog({constants:{logEventTypes:{HOST_RESOLVER_MANAGER_REQUEST:1},logEventPhase:{BEGIN:1,END:2}},events:[{type:1,phase:1,source:{id:9},params:{host:'dns.localhost',is_speculative:true}},{type:1,phase:2,source:{id:9},params:{net_error:-138}}]});assert.equal(d.speculative.length,1);assert.equal(d.errors.length,1);
 });
+
+import {inheritedScript} from './network.mjs';
+import {networkProbe} from './probes.mjs';
+test('generated document/worker probes parse before CI without executing UI code',()=>{
+ for(const kind of ['nested','srcdoc','opaque-srcdoc','about-blank'])assert.doesNotThrow(()=>new Function(inheritedScript(kind,'clover-plugin://p1/?mount=fixture')));
+ assert.doesNotThrow(()=>new Function(`return (${networkProbe.toString()})`));
+ assert.throws(()=>inheritedScript('unknown',''));
+});
