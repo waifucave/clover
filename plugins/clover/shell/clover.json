@@ -1,0 +1,47 @@
+{
+  "manifest": 1,
+  "name": "Shell",
+  "description": "The default shell: the window frame, with a translucent title bar over the conversation, the sidebar on the window's material, and the main, panel and dialog layers.",
+  "engines": {
+    "clover": "^1.0.0"
+  },
+  "client": {
+    "entry": "client/index.tsx",
+    "css": [
+      "client/styles.css"
+    ]
+  },
+  "capabilities": [
+    "approvals"
+  ],
+  "contributes": {
+    "ui": [
+      {
+        "spot": "app.root",
+        "component": "Window",
+        "declares": {
+          "sidebar": {
+            "shape": "single",
+            "props": {}
+          },
+          "main": {
+            "shape": "keyed",
+            "props": {}
+          },
+          "panel": {
+            "shape": "keyed",
+            "props": {}
+          },
+          "panel.view": {
+            "shape": "keyed",
+            "props": {}
+          },
+          "status": {
+            "shape": "list",
+            "props": {}
+          }
+        }
+      }
+    ]
+  }
+}

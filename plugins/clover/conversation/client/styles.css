@@ -1,0 +1,1221 @@
+/* The conversation view. Every colour, face and type size is a theme token (`--clover-*`, listed in
+   tokens.ts): the theme stack decides what the view looks like, this file only how it is laid out.
+
+   Sealed approval frames sit inside this view, and the core counts a click on one only while the
+   frame and everything around it is unfaded, unfiltered and untransformed (spec §5.5). So opacity,
+   filters and transforms appear here only on leaf decorations that never hold a frame (the caret,
+   the breathing status text, icons); test/styles.test.ts holds that line.
+
+   The window's title bar is translucent and the view runs up under it: `--cl-inset-top` (set by the
+   frame, 0 elsewhere) is how far down the content starts, where anything scrolled into view stops, and
+   where a pending card pins, so no part of the bar ever covers one. `--cl-axis-shift` (set by the frame
+   while the session column shows, 0 elsewhere) moves the reading column right, toward the main column's
+   middle, as far as the session column leaves room. */
+
+.cl-conv {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background: var(--clover-color-surface);
+  color: var(--clover-color-text);
+  font-family: var(--clover-font-sans);
+  font-size: var(--clover-font-size-body);
+  line-height: var(--clover-font-line-body);
+}
+
+.cl-conv button {
+  font: inherit;
+}
+
+.cl-conv :focus-visible {
+  outline: 2px solid var(--clover-color-focus);
+  outline-offset: 2px;
+}
+
+/* Its own stacking context: the pending card's z-index below lifts it over the rest of the transcript,
+   never over the window's title bar. */
+.cl-conv__viewport {
+  box-sizing: border-box;
+  flex: 1 1 auto;
+  min-height: 0;
+  padding-left: var(--cl-axis-shift, 0px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scroll-padding-top: var(--cl-inset-top, 0px);
+  isolation: isolate;
+}
+
+.cl-conv__viewport:focus-visible {
+  outline-offset: -2px;
+}
+
+/* The reading column: at most 728 px of text, at least 36 px from each side. */
+.cl-conv__column {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: var(--clover-space-l);
+  max-width: 800px;
+  margin: 0 auto;
+  padding: calc(var(--cl-inset-top, 0px) + var(--clover-space-xl)) 36px var(--clover-space-l);
+}
+
+/* A pending card pins just below the bar when the transcript scrolls past it, and a jump to it stops
+   there too: no part of the bar ever covers it. It paints over what scrolls under it, a later message's
+   positioned parts (another plugin's tool result, say) included. */
+.cl-conv__unit[data-pending] {
+  position: sticky;
+  top: calc(var(--cl-inset-top, 0px) + var(--clover-space-xs));
+  z-index: 1;
+  scroll-margin-top: var(--clover-space-s);
+}
+
+.cl-conv__footer {
+  position: relative;
+  box-sizing: border-box;
+  flex: 0 0 auto;
+  display: flex;
+  justify-content: center;
+  padding-left: var(--cl-axis-shift, 0px);
+}
+
+.cl-conv__jump {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 6px 0 8px;
+  padding: 6px 12px;
+  border: 1px solid var(--clover-color-hairline-raised);
+  border-radius: var(--clover-radius-round);
+  background: var(--clover-color-control);
+  color: var(--clover-color-text);
+  font-size: var(--clover-font-size-label);
+  cursor: pointer;
+}
+
+.cl-conv__empty {
+  margin: 48px auto;
+  color: var(--clover-color-text-muted);
+  font-size: var(--clover-font-size-control);
+  text-align: center;
+}
+
+.cl-conv__earlier,
+.cl-conv-link-button,
+.cl-conv-fold__toggle {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--clover-color-accent-text);
+  font-size: var(--clover-font-size-control);
+  cursor: pointer;
+}
+
+.cl-conv__earlier {
+  align-self: center;
+}
+
+.cl-conv__earlier:hover,
+.cl-conv-link-button:hover,
+.cl-conv-fold__toggle:hover {
+  text-decoration: underline;
+}
+
+.cl-conv__extra:empty {
+  display: none;
+}
+
+.cl-conv__extra {
+  margin-top: 6px;
+}
+
+.cl-conv-icon {
+  flex: none;
+  display: inline-block;
+  vertical-align: middle;
+}
+
+/* Day dividers and divider notes (a compaction). */
+
+.cl-conv-day,
+.cl-conv-divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 6px 0;
+  color: var(--clover-color-text-muted);
+  font-size: var(--clover-font-size-caption);
+}
+
+.cl-conv-day::before,
+.cl-conv-day::after,
+.cl-conv-divider::before,
+.cl-conv-divider::after {
+  content: "";
+  flex: 1;
+  border-top: 1px solid var(--clover-color-hairline);
+}
+
+.cl-conv-day__label {
+  font-weight: 600;
+}
+
+/* The user's message. */
+
+.cl-conv-user {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+}
+
+.cl-conv-user__bubble {
+  box-sizing: border-box;
+  max-width: min(80%, 560px);
+  padding: 9px 14px;
+  border-radius: var(--clover-bubble-radius);
+  background: var(--clover-bubble-user-background);
+  color: var(--clover-color-text);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.cl-conv-user__images {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+  max-width: 80%;
+}
+
+.cl-conv-user__thumb {
+  display: block;
+  max-width: 180px;
+  max-height: 140px;
+  border: 1px solid var(--clover-color-hairline);
+  border-radius: var(--clover-radius-large);
+  object-fit: cover;
+}
+
+.cl-conv-user__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0 2px;
+  padding: 0 7px;
+  border-radius: var(--clover-radius-small);
+  background: var(--clover-color-control);
+  color: var(--clover-color-text);
+  font-size: var(--clover-font-size-control);
+  vertical-align: baseline;
+}
+
+.cl-conv-user__meta {
+  display: flex;
+  gap: 6px;
+  padding: 0 4px;
+  color: var(--clover-color-text-muted);
+  font-size: var(--clover-font-size-caption);
+}
+
+/* The bot's message, and Markdown wherever it shows. */
+
+.cl-conv-bot__interrupted {
+  margin-top: 6px;
+  color: var(--clover-color-text-muted);
+  font-size: var(--clover-font-size-caption);
+}
+
+.cl-conv-bot__actions {
+  display: flex;
+  gap: 4px;
+  margin: 4px 0 0 -6px;
+}
+
+.cl-conv-bot__actions .cl-conv-copy__label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.cl-conv-copy {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 6px;
+  border: none;
+  border-radius: var(--clover-radius-small);
+  background: transparent;
+  color: var(--clover-color-text-muted);
+  font-size: var(--clover-font-size-caption);
+  cursor: pointer;
+}
+
+.cl-conv-copy:hover {
+  background: var(--clover-color-hover);
+  color: var(--clover-color-text);
+}
+
+.cl-conv-md {
+  overflow-wrap: anywhere;
+}
+
+.cl-conv-md > :first-child {
+  margin-top: 0;
+}
+
+.cl-conv-md > :last-child {
+  margin-bottom: 0;
+}
+
+.cl-conv-md p,
+.cl-conv-md ul,
+.cl-conv-md ol,
+.cl-conv-md blockquote,
+.cl-conv-md .cl-conv-md__table {
+  margin: 0 0 var(--clover-space-m);
+}
+
+.cl-conv-md h1,
+.cl-conv-md h2,
+.cl-conv-md h3,
+.cl-conv-md h4 {
+  margin: 18px 0 8px;
+  font-family: var(--clover-font-display);
+  line-height: var(--clover-font-line-tight);
+}
+
+.cl-conv-md h1 {
+  font-size: 1.35em;
+}
+
+.cl-conv-md h2 {
+  font-size: 1.2em;
+}
+
+.cl-conv-md h3,
+.cl-conv-md h4 {
+  font-size: 1.05em;
+}
+
+.cl-conv-md ul,
+.cl-conv-md ol {
+  padding-left: 22px;
+}
+
+.cl-conv-md li + li {
+  margin-top: var(--clover-space-xs);
+}
+
+.cl-conv-md blockquote {
+  padding-left: 12px;
+  border-left: 3px solid var(--clover-color-hairline-raised);
+  color: var(--clover-color-text-secondary);
+}
+
+.cl-conv-md hr {
+  margin: 14px 0;
+  border: none;
+  border-top: 1px solid var(--clover-color-hairline);
+}
+
+/* A link reads as a soft chip in the accent, and underlines under the pointer. */
+.cl-conv-md a,
+.cl-conv-md__link,
+.cl-conv-md__image-link {
+  padding: 1px 3px;
+  border-radius: var(--clover-radius-small);
+  background: var(--clover-color-accent-soft);
+  color: var(--clover-color-accent-text);
+  text-decoration: none;
+}
+
+.cl-conv-md a:hover,
+.cl-conv-md__link:hover {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.cl-conv-md code {
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: var(--clover-color-control);
+  font-family: var(--clover-font-mono);
+  font-size: var(--clover-font-size-code);
+}
+
+.cl-conv-md pre code {
+  padding: 0;
+  border-radius: 0;
+  background: none;
+}
+
+.cl-conv-md table {
+  border-collapse: collapse;
+}
+
+.cl-conv-md th,
+.cl-conv-md td {
+  padding: 6px 10px;
+  border: 1px solid var(--clover-color-hairline);
+  text-align: left;
+}
+
+.cl-conv-md th {
+  background: var(--clover-color-raised);
+  font-weight: 600;
+}
+
+.cl-conv-md__table {
+  overflow-x: auto;
+}
+
+.cl-conv-code {
+  margin: 0 0 10px;
+  overflow: hidden;
+  border: 1px solid var(--clover-color-hairline-raised);
+  border-radius: var(--clover-radius-large);
+  background: var(--clover-color-raised);
+}
+
+.cl-conv-code__bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 3px 6px 3px 12px;
+  border-bottom: 1px solid var(--clover-color-hairline-raised);
+  color: var(--clover-color-text-muted);
+  font-size: var(--clover-font-size-caption);
+}
+
+.cl-conv-code__pre {
+  margin: 0;
+  padding: 12px;
+  overflow-x: auto;
+  font-family: var(--clover-font-mono);
+  font-size: var(--clover-font-size-code);
+  line-height: var(--clover-plugin-clover-line-code);
+}
+
+/* The streaming caret: a leaf at the end of the last line of text, inside a list's last item or a
+   code block's last line rather than below them. */
+.cl-conv-bot[data-streaming] .cl-conv-md > :last-child:not(ul):not(ol):not(.cl-conv-code):not(.cl-conv-md__table)::after,
+.cl-conv-bot[data-streaming] .cl-conv-md > ul:last-child > li:last-child::after,
+.cl-conv-bot[data-streaming] .cl-conv-md > ol:last-child > li:last-child::after,
+.cl-conv-bot[data-streaming] .cl-conv-md > .cl-conv-code:last-child .cl-conv-code__pre > code::after,
+.cl-conv-bot[data-streaming] .cl-conv-md[data-empty]::after {
+  content: "";
+  display: inline-block;
+  width: 7px;
+  height: 1em;
+  margin-left: 2px;
+  border-radius: var(--clover-radius-small);
+  background: currentColor;
+  vertical-align: text-bottom;
+  animation: cl-conv-caret 1s steps(1) infinite;
+}
+
+@keyframes cl-conv-caret {
+  50% {
+    opacity: 0;
+  }
+}
+
+/* Thinking rows, and the turn's own status line. */
+
+.cl-conv-thinking__toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 2px 6px;
+  margin-left: -6px;
+  border: none;
+  border-radius: var(--clover-radius-small);
+  background: none;
+  color: var(--clover-color-text-muted);
+  font-size: var(--clover-font-size-control);
+  text-align: left;
+  cursor: pointer;
+}
+
+.cl-conv-thinking__toggle:hover:not(:disabled) {
+  background: var(--clover-color-hover);
+  color: var(--clover-color-text-secondary);
+}
+
+.cl-conv-thinking__toggle:disabled {
+  cursor: default;
+}
+
+.cl-conv-thinking__label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cl-conv-thinking__body {
+  margin: 6px 0 2px 8px;
+  padding-left: 12px;
+  border-left: 2px solid var(--clover-color-hairline);
+  color: var(--clover-color-text-secondary);
+  font-size: var(--clover-font-size-control);
+  white-space: pre-wrap;
+}
+
+.cl-conv-thinking__truncated {
+  margin-top: 6px;
+  color: var(--clover-color-text-muted);
+  font-size: var(--clover-font-size-caption);
+}
+
+.cl-conv-thinking[data-running] .cl-conv-thinking__glyph,
+.cl-conv-thinking[data-running] .cl-conv-thinking__label,
+.cl-conv-working__glyph,
+.cl-conv-working__text {
+  animation: cl-conv-breathe 2s ease-in-out infinite;
+}
+
+@keyframes cl-conv-breathe {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+
+.cl-conv-working {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--clover-color-text-muted);
+  font-size: var(--clover-font-size-control);
+}
+
+/* A disclosure chevron: a leaf that turns when its row opens. */
+.cl-conv-chevron {
+  display: inline-flex;
+  flex: none;
+  transition: transform 0.15s ease;
+}
+
+.cl-conv-thinking[data-open] .cl-conv-chevron,
+.cl-conv-tools[data-open] .cl-conv-tools__summary .cl-conv-chevron {
+  transform: rotate(90deg);
+}
+
+/* Tool runs. */
+
+/* A run reads as one quiet line, the way the rest of the window is quiet: the summary in muted text
+   with the chevron after it, and a status mark only when the run needs a look (still going, held,
+   failed, cut off). A click opens the calls below it. */
+.cl-conv-tools {
+  color: var(--clover-color-text-muted);
+  font-size: var(--clover-font-size-body);
+}
+
+.cl-conv-tools[data-status="succeeded"] .cl-conv-tools__summary > .cl-conv-status {
+  display: none;
+}
+
+/* With no status mark before the line, what sits under it lines up with the line itself. */
+.cl-conv-tools[data-status="succeeded"] .cl-conv-tools__diffs {
+  margin-left: 0;
+}
+
+.cl-conv-tools__summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 3px 6px;
+  margin-left: -6px;
+  border: none;
+  border-radius: var(--clover-radius-small);
+  background: none;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.cl-conv-tools__summary:hover {
+  background: var(--clover-color-hover);
+  color: var(--clover-color-text);
+}
+
+.cl-conv-tools__sentence {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cl-conv-tools__computer,
+.cl-conv-call__computer {
+  color: var(--clover-color-text-muted);
+  white-space: nowrap;
+}
+
+.cl-conv-tools__reviewing {
+  padding: 0 7px;
+  border: 1px solid currentColor;
+  border-radius: var(--clover-radius-round);
+  color: var(--clover-color-attention-text);
+  font-size: var(--clover-font-size-caption);
+  white-space: nowrap;
+}
+
+.cl-conv-tools__failure {
+  margin: 2px 0 0 22px;
+  color: var(--clover-color-text);
+  font-family: var(--clover-font-mono);
+  font-size: var(--clover-font-size-caption);
+  overflow-wrap: anywhere;
+}
+
+.cl-conv-tools__diffs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 4px 0 0 22px;
+}
+
+.cl-conv-tools__calls {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 6px 0 0 7px;
+  padding: 2px 0 2px 14px;
+  border-left: 2px solid var(--clover-color-hairline);
+  list-style: none;
+}
+
+.cl-conv-call__head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.cl-conv-call__name {
+  flex: none;
+  color: var(--clover-color-text);
+  font-weight: 500;
+}
+
+.cl-conv-call__detail,
+.cl-conv-call__path {
+  min-width: 0;
+  overflow: hidden;
+  font-family: var(--clover-font-mono);
+  font-size: var(--clover-font-size-caption);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cl-conv-call__path {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--clover-color-accent-text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.cl-conv-call__custom {
+  margin-top: 6px;
+}
+
+.cl-conv-output {
+  margin-top: 6px;
+  overflow: hidden;
+  border: 1px solid var(--clover-color-hairline-raised);
+  border-radius: var(--clover-radius-small);
+  background: var(--clover-color-raised);
+}
+
+.cl-conv-output[data-error] {
+  border-color: var(--clover-color-danger);
+}
+
+/* Exactly the lines the cell keeps (MAX_OUTPUT_LINES): never a scroll box that cuts a line in half. */
+.cl-conv-output__text {
+  margin: 0;
+  padding: 8px 10px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  color: var(--clover-color-text);
+  font-family: var(--clover-font-mono);
+  font-size: var(--clover-font-size-caption);
+  line-height: var(--clover-plugin-clover-line-code);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.cl-conv-output__more {
+  padding: 4px 10px;
+  border-top: 1px solid var(--clover-color-hairline-raised);
+  color: var(--clover-color-text-muted);
+  font-size: var(--clover-font-size-caption);
+}
+
+.cl-conv-diff {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  padding: 2px 8px;
+  border: none;
+  border-radius: var(--clover-radius-small);
+  background: var(--clover-color-control);
+  color: var(--clover-color-text);
+  font-family: var(--clover-font-mono);
+  font-size: var(--clover-font-size-caption);
+}
+
+.cl-conv-tools__diffs .cl-conv-diff {
+  margin-top: 0;
+}
+
+button.cl-conv-diff {
+  cursor: pointer;
+}
+
+button.cl-conv-diff:hover {
+  background: var(--clover-color-hover);
+}
+
+.cl-conv-diff__added {
+  color: var(--clover-color-diff-added);
+}
+
+.cl-conv-diff__removed {
+  color: var(--clover-color-diff-removed);
+}
+
+.cl-conv-sites {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cl-conv-sites__link {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 9px;
+  border-radius: var(--clover-radius-round);
+  background: var(--clover-color-control);
+  color: var(--clover-color-text);
+  font-size: var(--clover-font-size-caption);
+  text-decoration: none;
+}
+
+.cl-conv-sites__icon {
+  width: 14px;
+  height: 14px;
+  border-radius: var(--clover-radius-small);
+}
+
+.cl-conv-app {
+  display: block;
+  margin-top: 8px;
+}
+
+.cl-conv-status {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  color: var(--clover-color-text-muted);
+}
+
+.cl-conv-status[data-status="running"] {
+  color: var(--clover-color-text);
+}
+
+.cl-conv-status[data-status="waiting"] {
+  color: var(--clover-color-attention-text);
+}
+
+.cl-conv-status[data-status="failed"] {
+  color: var(--clover-color-danger);
+}
+
+/* Approval cards: this view's layout around the core's sealed frames. */
+
+.cl-conv-approval__card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 16px;
+  border: 1px solid var(--clover-color-hairline-raised);
+  border-radius: var(--clover-radius-large);
+  background: var(--clover-color-raised);
+}
+
+.cl-conv-approval__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--clover-color-text);
+  font-weight: 600;
+}
+
+.cl-conv-approval__title,
+.cl-conv-approval__command,
+.cl-conv-approval__reason {
+  display: block;
+  min-width: 0;
+}
+
+.cl-conv-approval__head .cl-conv-approval__title {
+  flex: 1 1 auto;
+}
+
+/* Each sealed field sits in a holder of the view's own; a field the card doesn't have draws nothing,
+   and its holder takes no room. */
+.cl-conv-approval__field:empty {
+  display: none;
+}
+
+.cl-conv-approval__facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--clover-space-xs) var(--clover-space-m);
+}
+
+.cl-conv-approval__buttons {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--clover-space-s);
+  margin-top: var(--clover-space-xs);
+}
+
+/* A sealed button keeps at least the 24 by 24 the core counts clicks on. */
+.cl-conv-approval__button {
+  display: inline-flex;
+  min-width: 24px;
+  min-height: 24px;
+}
+
+.cl-conv-approval__deadline {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  color: var(--clover-color-text-muted);
+  font-size: var(--clover-font-size-caption);
+}
+
+.cl-conv-approval__resolved {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  color: var(--clover-color-text-secondary);
+  font-size: var(--clover-font-size-control);
+}
+
+.cl-conv-approval__outcome {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--clover-color-text);
+  font-weight: 500;
+}
+
+.cl-conv-approval[data-state="denied"] .cl-conv-approval__outcome .cl-conv-icon,
+.cl-conv-approval[data-state="expired"] .cl-conv-approval__outcome .cl-conv-icon {
+  color: var(--clover-color-danger);
+}
+
+.cl-conv-approval__resolved-title {
+  display: block;
+  min-width: 0;
+}
+
+/* Question cards. */
+
+.cl-conv-question {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid var(--clover-color-hairline-raised);
+  border-radius: var(--clover-radius-large);
+  background: var(--clover-color-raised);
+}
+
+.cl-conv-question:not([data-state="pending"]) {
+  gap: 8px;
+  padding: 10px 14px;
+  background: transparent;
+}
+
+.cl-conv-question__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--clover-color-text-muted);
+  font-size: var(--clover-font-size-control);
+  font-weight: 500;
+}
+
+.cl-conv-question__field {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: none;
+}
+
+.cl-conv-question__legend {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 8px;
+  padding: 0;
+  color: var(--clover-color-text);
+  font-weight: 600;
+}
+
+.cl-conv-question__chip {
+  padding: 1px 8px;
+  border-radius: var(--clover-radius-round);
+  background: var(--clover-color-control);
+  color: var(--clover-color-text-secondary);
+  font-size: var(--clover-font-size-caption);
+  font-weight: 600;
+}
+
+.cl-conv-question__body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+}
+
+.cl-conv-question__body[data-preview] {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+
+.cl-conv-question__choices {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.cl-conv-question__option {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--clover-color-hairline-raised);
+  border-radius: var(--clover-radius-small);
+  background: var(--clover-color-surface);
+  cursor: pointer;
+}
+
+.cl-conv-question__option:hover {
+  background: var(--clover-color-hover);
+}
+
+.cl-conv-question__option[data-selected] {
+  border-color: var(--clover-color-accent);
+  background: var(--clover-color-selected);
+}
+
+.cl-conv-question__option input {
+  margin: 3px 0 0;
+  accent-color: var(--clover-color-accent);
+}
+
+.cl-conv-question__option-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.cl-conv-question__option-label {
+  color: var(--clover-color-text);
+  font-weight: 500;
+}
+
+.cl-conv-question__option-description {
+  color: var(--clover-color-text-muted);
+  font-size: var(--clover-font-size-control);
+}
+
+.cl-conv-question__other {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 2px;
+}
+
+.cl-conv-question__other-label {
+  color: var(--clover-color-text-muted);
+  font-size: var(--clover-font-size-caption);
+}
+
+.cl-conv-question__input {
+  padding: 7px 10px;
+  border: 1px solid var(--clover-color-hairline-raised);
+  border-radius: var(--clover-radius-small);
+  background: var(--clover-color-surface);
+  color: var(--clover-color-text);
+  font: inherit;
+}
+
+.cl-conv-question__input::placeholder {
+  color: var(--clover-color-text-placeholder);
+}
+
+.cl-conv-question__preview {
+  margin: 0;
+  overflow: hidden;
+  border: 1px solid var(--clover-color-hairline-raised);
+  border-radius: var(--clover-radius-small);
+  background: var(--clover-color-surface);
+}
+
+.cl-conv-question__preview figcaption {
+  padding: 4px 10px;
+  border-bottom: 1px solid var(--clover-color-hairline-raised);
+  color: var(--clover-color-text-muted);
+  font-size: var(--clover-font-size-caption);
+}
+
+.cl-conv-question__preview pre {
+  margin: 0;
+  padding: 8px 10px;
+  color: var(--clover-color-text);
+  font-family: var(--clover-font-mono);
+  font-size: var(--clover-font-size-caption);
+  white-space: pre-wrap;
+}
+
+.cl-conv-question__footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+.cl-conv-question__deadline {
+  margin-right: auto;
+  color: var(--clover-color-text-muted);
+  font-size: var(--clover-font-size-caption);
+}
+
+.cl-conv-question__send {
+  padding: 7px 14px;
+  border: none;
+  border-radius: var(--clover-radius-round);
+  background: var(--clover-color-accent);
+  color: var(--clover-color-accent-contrast);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.cl-conv-question__send:disabled {
+  background: var(--clover-color-control);
+  color: var(--clover-color-text-muted);
+  cursor: default;
+}
+
+.cl-conv-question__answers {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+}
+
+.cl-conv-question__answer dt {
+  color: var(--clover-color-text-muted);
+  font-size: var(--clover-font-size-control);
+}
+
+.cl-conv-question__answer dd {
+  margin: 0;
+  color: var(--clover-color-text);
+  font-weight: 500;
+}
+
+.cl-conv-question__closed {
+  color: var(--clover-color-text-muted);
+  font-size: var(--clover-font-size-control);
+}
+
+/* Routine results, task notifications and agent reports: events with a header. */
+
+.cl-conv-event {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 2px 0 2px 12px;
+  border-left: 2px solid var(--clover-color-accent);
+}
+
+.cl-conv-event[data-kind="agent-report"] {
+  border-left-color: var(--clover-color-hairline-raised);
+}
+
+.cl-conv-event[data-status="failed"],
+.cl-conv-event[data-status="stalled"] {
+  border-left-color: var(--clover-color-danger);
+}
+
+.cl-conv-event__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  color: var(--clover-color-text-secondary);
+  font-size: var(--clover-font-size-control);
+}
+
+.cl-conv-event__title,
+.cl-conv-event__head .cl-conv-link-button.cl-conv-event__title {
+  color: var(--clover-color-text);
+  font-size: var(--clover-font-size-control);
+  font-weight: 600;
+}
+
+.cl-conv-event__facts,
+.cl-conv-event__sub {
+  color: var(--clover-color-text-muted);
+}
+
+.cl-conv-event__sub {
+  font-size: var(--clover-font-size-caption);
+}
+
+.cl-conv-event__badge {
+  padding: 0 7px;
+  border: 1px solid currentColor;
+  border-radius: var(--clover-radius-round);
+  color: var(--clover-color-danger);
+  font-size: var(--clover-font-size-caption);
+}
+
+.cl-conv-event__command {
+  align-self: flex-start;
+  padding: 2px 6px;
+  border-radius: var(--clover-radius-small);
+  background: var(--clover-color-control);
+  font-family: var(--clover-font-mono);
+  font-size: var(--clover-font-size-caption);
+}
+
+.cl-conv-event__actions {
+  display: flex;
+  gap: 14px;
+}
+
+.cl-conv-fold__body {
+  max-height: 15em;
+  overflow: hidden;
+}
+
+.cl-conv-fold[data-open] .cl-conv-fold__body {
+  max-height: none;
+}
+
+.cl-conv-fold__toggle {
+  margin-top: 4px;
+}
+
+/* Notes. */
+
+.cl-conv-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  color: var(--clover-color-text-muted);
+  font-size: var(--clover-font-size-control);
+}
+
+.cl-conv-note .cl-conv-icon {
+  margin-top: 2px;
+}
+
+.cl-conv-note[data-tone="warning"] .cl-conv-icon {
+  color: var(--clover-color-attention-text);
+}
+
+.cl-conv-note[data-tone="error"] {
+  color: var(--clover-color-text);
+}
+
+.cl-conv-note[data-tone="error"] .cl-conv-icon {
+  color: var(--clover-color-danger);
+}
+
+.cl-conv-note__source {
+  color: var(--clover-color-text-secondary);
+  font-weight: 500;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cl-conv *,
+  .cl-conv *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+.cl-conv-note__id {
+  color: var(--clover-color-text-muted);
+}
+
+.cl-conv-question__failed {
+  margin-top: var(--clover-space-s);
+  color: var(--clover-color-danger);
+  font-size: var(--clover-font-size-control);
+}
+
+/* Read by screen readers, drawn nowhere. A leaf. */
+.cl-conv__announce {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.cl-conv-mark {
+  color: var(--clover-plugin-clover-mark);
+}
+
+/* An attachment opens like any file the conversation names. */
+.cl-conv-user__open {
+  display: inline-flex;
+  padding: 0;
+  border: none;
+  border-radius: var(--clover-radius-small);
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+span.cl-conv-user__open {
+  cursor: default;
+}
+
+.cl-conv-event__plain {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
