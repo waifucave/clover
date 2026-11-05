@@ -330,7 +330,10 @@ export class AcpAgentSession implements AgentSession {
     // Pending permission requests are answered `cancelled` (ACP requires it of a client).
     turn.abort.abort();
     const done = this.#turnDone;
-    if (done) await Promise.race([done, new Promise((r) => setTimeout(r, AGENT_CANCEL_WAIT_MS))]);
+    if (!done) return;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    await Promise.race([done, new Promise((r) => (timer = setTimeout(r, AGENT_CANCEL_WAIT_MS)))]);
+    clearTimeout(timer);
   }
 
   async setConfig(option: "model" | "effort", value: string): Promise<void> {
