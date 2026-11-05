@@ -18,6 +18,6 @@ export function decision(url, initiatorOrigin, allowedHost) {
   return { cancel: !['http:', 'https:', 'ws:', 'wss:'].includes(target.protocol) || target.hostname !== allowedHost, reason: 'declared host' };
 }
 export function csp(allowed, enabled) {
-  if (!enabled) return "default-src * data: blob: 'unsafe-inline' 'unsafe-eval';";
+  if (!enabled) return "default-src 'self' * data: blob: 'unsafe-inline' 'unsafe-eval';";
   return `default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' ${allowed}; img-src 'self' ${allowed}; font-src 'self' ${allowed}; connect-src 'self' ${allowed} ${allowed.replace('http:', 'ws:')}; worker-src 'self' blob:; frame-src 'self' clover-plugin:; form-action 'none'; object-src 'none'; base-uri 'none'`;
 }

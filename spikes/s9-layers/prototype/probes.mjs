@@ -21,6 +21,14 @@ export async function networkProbe(base, denied, udpPort) {
     await attempt(`${label}-beacon`, async () => navigator.sendBeacon(target(host, `${label}-beacon`), 'fixture'));
     for (const rel of ['dns-prefetch', 'preconnect', 'prefetch', 'prerender']) await attempt(`${label}-${rel}`, async () => { const el = document.createElement('link'); el.rel = rel; el.href = target(host, `${label}-${rel}`); document.head.append(el); await wait(400); return 'inserted'; });
   }
+  await attempt('denied-script', () => new Promise(resolve => { const s = document.createElement('script'); s.src = denied + '/external.js'; s.onload=()=>resolve('load'); s.onerror=()=>resolve('error'); document.head.append(s); }));
+  await attempt('denied-css-import', async () => { const s=document.createElement('style');s.textContent=`@import url('${denied}/css-import'); body{background-image:url('${denied}/css-background')}`;document.head.append(s);await wait(300);return 'inserted'; });
+  await attempt('denied-eventsource', () => new Promise(resolve => { const es=new EventSource(denied+'/eventsource');es.onopen=()=>{es.close();resolve('open')};es.onerror=()=>{es.close();resolve('error')}; }));
+  await attempt('denied-fetch-keepalive', () => fetch(denied+'/keepalive',{method:'POST',body:'fixture',keepalive:true}).then(r=>r.status));
+  await attempt('denied-remote-worker', async () => {const w=new Worker(denied+'/remote-worker.js');w.terminate();return 'created';});
+  await attempt('denied-object', async () => {const o=document.createElement('object');o.data=denied+'/object';document.body.append(o);await wait(300);return 'inserted';});
+  await attempt('denied-media', async () => {const v=document.createElement('video');v.muted=true;v.preload='auto';v.src=denied+'/media';document.body.append(v);v.load();await wait(300);return 'inserted';});
+  await attempt('opaque-frame-fetch', async () => { const f=document.createElement('iframe');f.sandbox.add('allow-scripts');f.srcdoc=`<script>fetch(${JSON.stringify(denied+'/opaque-fetch')}).catch(()=>{})<\/script>`;document.body.append(f);await wait(300);return 'inserted'; });
   await attempt('redirect', () => fetch(`${base}/redirect`).then(r => r.status));
   await attempt('dedicated-worker', () => new Promise(resolve => { const w = new Worker('/worker.js'); w.onmessage = e => { resolve(e.data); w.terminate(); }; w.onerror = () => resolve('error'); }));
   await attempt('blob-worker', () => new Promise(resolve => { const w = new Worker(URL.createObjectURL(new Blob([`fetch(${JSON.stringify(denied + '/blob-worker')}).then(()=>postMessage('sent')).catch(()=>postMessage('blocked'))`], {type:'text/javascript'}))); w.onmessage = e => { resolve(e.data); w.terminate(); }; w.onerror = () => resolve('error'); }));
