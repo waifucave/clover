@@ -15,18 +15,22 @@ with tempfile.TemporaryDirectory(prefix='clover-srt-') as tmp:
     allowed = root / 'allowed'
     allowed.mkdir()
     settings = root / 'settings.json'
-    settings.write_text(json.dumps({'filesystem': {'denyRead': [str(hidden)],
+    config={'filesystem': {'denyRead': [str(hidden)],
         'allowWrite': [str(allowed)], 'denyWrite': [str(hidden)]},
-        'network': {'allowedDomains': [], 'deniedDomains': []}}))
+        'network': {'allowedDomains': [], 'deniedDomains': []}}
+    trusted_bwrap=Path('/usr/local/libexec/clover-spike-bwrap')
+    if trusted_bwrap.exists(): config['bwrapPath']=str(trusted_bwrap)
+    settings.write_text(json.dumps(config))
     env = {'PATH': os.environ['PATH'], 'HOME': str(root), 'TMPDIR': str(root),
         'XDG_CONFIG_HOME': str(root / 'config'), 'XDG_CACHE_HOME': str(root / 'cache')}
     print('Running standalone Anthropic sandbox checks', flush=True)
     command = ['node', str(cli), '--settings', str(settings), '--', '/bin/sh', '-c',
         'test -r /etc/hosts && ! cat "$1/public-sentinel" >/dev/null 2>&1 && '
-        'touch "$2/ok" && ! touch "$1/blocked" 2>/dev/null', 'probe', str(hidden), str(allowed)]
+        'touch "$2/ok" && { if touch "$1/blocked" 2>/dev/null; then printf private-view-writable; fi; true; }', 'probe', str(hidden), str(allowed)]
     result = subprocess.run(command, env=env, cwd=allowed, capture_output=True, text=True, timeout=45)
     print(json.dumps({'test': 'anthropic-standalone-sandbox', 'exit': result.returncode,
         'allowed_write_observed': (allowed / 'ok').exists(),
         'hidden_write_observed': (hidden / 'blocked').exists(),
+        'private_mask_view_writable': 'private-view-writable' in result.stdout,
         'diagnostic': result.stderr[:1600]}))
-    raise SystemExit(result.returncode)
+    raise SystemExit(result.returncode or int((hidden / 'blocked').exists()))

@@ -2,18 +2,17 @@
 
 Date: 2026-11-05. Lane C, `lane/c-m0`, based on `a481f7e14`; spec revision 17.
 
-**Status: stopped for a controller decision; incomplete M0, not security admission.**
-Windows remains a release blocker. This draft records reproducible positive and negative
-experiments; it does not assert that every requested escape route or agent has been tested.
-No Winter source, installation, daemon, real Keychain, real agent home, or SDK source was changed.
+**Status: C-M0 resumed under the controller's rulings; not security admission.**
+Windows remains a release blocker. Generated test keys in disposable homes/stores are authorized;
+real credentials, tokens, fixtures containing real secrets and secret-bearing logs remain prohibited.
+Spec §8.5's unattended headless fallback stays: per-user systemd sealing with TPM where available,
+otherwise an owner-readable plaintext key file, visibly labelled plaintext and hidden by the fence.
+The earlier stop-condition interpretation was incorrect. No policy conflict remains.
 
-The binding stop condition is a written conflict: plan §9 and this lane's brief say secrets
-never go on disk, whereas spec §4 and §8.5 explicitly permit a **plaintext** file containing
-the encryption key when no keyring/usable sealing is available. The encrypted file and OS-store
-experiments were expressly authorized; the plaintext fallback was not exercised. The controller
-must reconcile this before the fallback is implemented or tested. Proposed text is below.
-The deficient Windows candidates and missing semantic D-Bus filtering are also reported rather
-than routed around by silently running unfenced commands.
+The locked-persistence proposal is a **rejected alternative**: cloud/main/refresher computers must
+operate unattended across reboots. Requiring a person to unlock them would break that requirement.
+The other proposed network, semantic D-Bus, caller-check and protected-backend edits remain proposals
+for the controller after review. No Winter source, install or real agent home was changed.
 
 ## Evidence and scope
 

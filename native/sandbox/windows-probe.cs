@@ -35,6 +35,12 @@ public static class CloverLaunchProbe {
     [DllImport("userenv.dll",CharSet=CharSet.Unicode)] static extern int DeriveAppContainerSidFromAppContainerName(string name,out IntPtr sid);
     [DllImport("userenv.dll",CharSet=CharSet.Unicode)] static extern int DeleteAppContainerProfile(string name);
     [DllImport("advapi32.dll")] static extern IntPtr FreeSid(IntPtr sid);
+    [DllImport("advapi32.dll",CharSet=CharSet.Unicode,SetLastError=true)] static extern bool ConvertStringSecurityDescriptorToSecurityDescriptor(string text,uint revision,out IntPtr sd,out uint size);
+    [DllImport("advapi32.dll",SetLastError=true)] static extern bool SetKernelObjectSecurity(IntPtr h,uint info,IntPtr sd);
+    [DllImport("advapi32.dll",SetLastError=true)] static extern bool GetSecurityDescriptorDacl(IntPtr sd,out bool present,out IntPtr acl,out bool defaulted);
+    [StructLayout(LayoutKind.Sequential)] struct SA { public int size; public IntPtr sd; public bool inherit; }
+    [DllImport("user32.dll",CharSet=CharSet.Unicode,SetLastError=true)] static extern IntPtr CreateDesktop(string name,IntPtr device,IntPtr mode,uint flags,uint access,ref SA sa);
+    [DllImport("user32.dll")] static extern bool CloseDesktop(IntPtr desktop);
     static void Check(bool ok) { if(!ok) throw new Win32Exception(Marshal.GetLastWin32Error()); }
     // Well-known Restricted Code SID, for compatibility only; not a per-session identity.
     public const string RestrictSid = "S-1-5-12";
@@ -45,7 +51,7 @@ public static class CloverLaunchProbe {
     }
     public static void RemoveApp(string name) { int hr=DeleteAppContainerProfile(name); if(hr<0) Marshal.ThrowExceptionForHR(hr); }
     public static string Run(string mode,string exe,string arguments,string cwd,string appName) {
-        IntPtr original=IntPtr.Zero,token=IntPtr.Zero,sid=IntPtr.Zero,entry=IntPtr.Zero,attrs=IntPtr.Zero,cap=IntPtr.Zero;
+        IntPtr original=IntPtr.Zero,token=IntPtr.Zero,sid=IntPtr.Zero,entry=IntPtr.Zero,attrs=IntPtr.Zero,cap=IntPtr.Zero,sd=IntPtr.Zero,desktop=IntPtr.Zero;
         PI pi=new PI(); bool initialized=false; var watch=Stopwatch.StartNew();
         try {
             SI si=new SI(); si.cb=Marshal.SizeOf(typeof(SI)); si.desktop="";
@@ -62,8 +68,22 @@ public static class CloverLaunchProbe {
                 Check(OpenProcessToken(GetCurrentProcess(),0xF01FF,out original));
                 Check(ConvertStringSidToSid(RestrictSid,out sid));
                 SIDATTR restrict=new SIDATTR(); restrict.Sid=sid; entry=Marshal.AllocHGlobal(Marshal.SizeOf(typeof(SIDATTR))); Marshal.StructureToPtr(restrict,entry,false);
-                bool writeRestricted=mode=="restricted" || mode=="low";
+                bool writeRestricted=mode.StartsWith("restricted") || mode.StartsWith("desktop") || mode=="low";
                 Check(CreateRestrictedToken(original,writeRestricted ? 1u|8u : 1u,0,IntPtr.Zero,0,IntPtr.Zero,writeRestricted ? 1u : 0u,writeRestricted ? entry : IntPtr.Zero,out token));
+                if(mode.EndsWith("fixed")) {
+                    string owner=System.Security.Principal.WindowsIdentity.GetCurrent().User.Value;
+                    uint length; Check(ConvertStringSecurityDescriptorToSecurityDescriptor("D:(A;;GA;;;SY)(A;;GA;;;"+owner+")(A;;GA;;;"+RestrictSid+")",1,out sd,out length));
+                    Check(SetKernelObjectSecurity(token,4,sd));
+                    bool present,def; IntPtr acl; Check(GetSecurityDescriptorDacl(sd,out present,out acl,out def));
+                    IntPtr ptr=Marshal.AllocHGlobal(IntPtr.Size);
+                    try { Marshal.WriteIntPtr(ptr,acl); Check(SetTokenInformation(token,6,ptr,IntPtr.Size)); } finally { Marshal.FreeHGlobal(ptr); }
+                    if(mode.StartsWith("desktop")) {
+                        SA sa=new SA(); sa.size=Marshal.SizeOf(typeof(SA)); sa.sd=sd;
+                        string name="clover_spike_"+Guid.NewGuid().ToString("N");
+                        desktop=CreateDesktop(name,IntPtr.Zero,IntPtr.Zero,0,0x10000000,ref sa);
+                        Check(desktop!=IntPtr.Zero); si.desktop=name;
+                    }
+                }
                 if(mode=="low" || mode=="privileges-low") {
                     IntPtr low; Check(ConvertStringSidToSid("S-1-16-4096",out low));
                     try {
@@ -82,6 +102,7 @@ public static class CloverLaunchProbe {
         } finally {
             if(pi.thread!=IntPtr.Zero) CloseHandle(pi.thread); if(pi.process!=IntPtr.Zero) CloseHandle(pi.process);
             if(token!=IntPtr.Zero) CloseHandle(token); if(original!=IntPtr.Zero) CloseHandle(original);
+            if(desktop!=IntPtr.Zero) CloseDesktop(desktop); if(sd!=IntPtr.Zero) LocalFree(sd);
             if(initialized) DeleteProcThreadAttributeList(attrs);
             if(attrs!=IntPtr.Zero) Marshal.FreeHGlobal(attrs); if(cap!=IntPtr.Zero) Marshal.FreeHGlobal(cap); if(entry!=IntPtr.Zero) Marshal.FreeHGlobal(entry);
             if(sid!=IntPtr.Zero) { if(mode=="appcontainer") FreeSid(sid); else LocalFree(sid); }

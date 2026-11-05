@@ -7,6 +7,7 @@ import gzip
 from pathlib import Path
 import shlex
 import subprocess
+import uuid
 
 parser = argparse.ArgumentParser()
 parser.add_argument('os', choices=['windows', 'linux'])
@@ -15,19 +16,34 @@ parser.add_argument('script_args', nargs='*')
 args = parser.parse_args()
 data = base64.b64encode(args.script.read_bytes()).decode()
 if args.os == 'windows':
-    native = (Path(__file__).resolve().parents[2] / 'native/sandbox/windows-probe.cs').read_text()
-    compressed = base64.b64encode(gzip.compress(json.dumps({'script': args.script.read_text(), 'native': native}).encode())).decode()
+    files={'probe.ps1':args.script.read_text()}
+    if args.script.name=='scheduled-store.ps1': files['windows-store.ps1']=args.script.with_name('windows-store.ps1').read_text()
+    if 'windows-probe.cs' in files['probe.ps1']:
+        files['windows-probe.cs']=(Path(__file__).resolve().parents[2] / 'native/sandbox/windows-probe.cs').read_text()
+    if 'session0-bno.cs' in files['probe.ps1']:
+        files['session0-bno.cs']=(Path(__file__).resolve().parents[2] / 'native/sandbox/session0-bno.cs').read_text()
+    files.update({p.name:p.read_text() for p in args.script.parent.glob('*.mjs')})
+    compressed = base64.b64encode(gzip.compress(json.dumps(files).encode())).decode()
     payload = None
+    chunkfile='clover-transport-'+uuid.uuid4().hex+'.b64'
+    for i in range(0,len(compressed),3500):
+        chunk=compressed[i:i+3500]
+        transfer="[IO.File]::AppendAllText((Join-Path $env:TEMP '"+chunkfile+"'),'"+chunk+"')"
+        print('Uploading public source chunk '+str(i//3500+1),flush=True)
+        r=subprocess.run(['gcloud','compute','ssh','clover-c-win','--zone=europe-west1-b','--quiet',
+            '--command=powershell -NoProfile -NonInteractive -Command "'+transfer+'"'],timeout=60)
+        if r.returncode: raise SystemExit(r.returncode)
     program = ("$ErrorActionPreference='Stop'; $global:ProgressPreference='SilentlyContinue'; "
-        "$bytes=[Convert]::FromBase64String('" + compressed + "'); "
+        "$transport=Join-Path $env:TEMP '"+chunkfile+"'; "
+        "$bytes=[Convert]::FromBase64String([IO.File]::ReadAllText($transport)); Remove-Item $transport -Force; "
         "$stream=New-Object IO.MemoryStream(,$bytes); "
         "$gzip=New-Object IO.Compression.GzipStream($stream,[IO.Compression.CompressionMode]::Decompress); "
         "$reader=New-Object IO.StreamReader($gzip); $payload=$reader.ReadToEnd() | ConvertFrom-Json; "
         "$p=Join-Path $env:TEMP ('clover-lane-c-'+[Guid]::NewGuid().ToString('N')); "
         "New-Item -ItemType Directory -Force $p | Out-Null; "
         "$f=Join-Path $p 'probe.ps1'; "
-        "[IO.File]::WriteAllText((Join-Path $p 'windows-probe.cs'),$payload.native); "
-        "[IO.File]::WriteAllText($f,$payload.script); try { & $f } finally { Remove-Item -Recurse -Force $p }")
+        "foreach($entry in $payload.PSObject.Properties) { [IO.File]::WriteAllText((Join-Path $p $entry.Name),[string]$entry.Value) }; "
+        "try { & $f } finally { Remove-Item -Recurse -Force $p }")
     command = 'powershell -NoProfile -NonInteractive -OutputFormat Text -Command "' + program + '"'
     if len(command) > 8000:
         raise SystemExit('Compressed Windows command exceeds cmd.exe transport limit')
