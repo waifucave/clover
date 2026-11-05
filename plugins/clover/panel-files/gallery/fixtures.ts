@@ -8,7 +8,7 @@ const e = (folder: string, name: string, type: FileEntry["type"] = "file"): File
 export const LISTING: Record<string, FileEntry[]> = {
   [ROOT]: [e(ROOT, ".github", "dir"), e(ROOT, "docs", "dir"), e(ROOT, "packages", "dir"), e(ROOT, "plugins", "dir"), e(ROOT, "README.md"), e(ROOT, "package.json"), e(ROOT, ".gitignore")],
   [`${ROOT}/plugins`]: [e(`${ROOT}/plugins`, "clover", "dir")],
-  [`${ROOT}/plugins/clover`]: ["composer", "conversation", "panel", "panel-browser", "panel-diff", "panel-files", "panel-terminal", "settings", "shell"].map((n) => e(`${ROOT}/plugins/clover`, n, "dir")),
+  [`${ROOT}/plugins/clover`]: ["composer", "conversation", "panel", "panel-diff", "panel-files", "panel-terminal", "settings", "shell", "sidebar"].map((n) => e(`${ROOT}/plugins/clover`, n, "dir")),
   [`${ROOT}/plugins/clover/panel`]: [e(`${ROOT}/plugins/clover/panel`, "client", "dir"), e(`${ROOT}/plugins/clover/panel`, "clover.json"), e(`${ROOT}/plugins/clover/panel`, "package.json")],
   [`${ROOT}/docs`]: [e(`${ROOT}/docs`, "clover-spec.md"), e(`${ROOT}/docs`, "clover-plan.md")],
 };

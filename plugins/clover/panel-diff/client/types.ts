@@ -24,7 +24,7 @@ export interface DiffFile {
   added: number;
   removed: number;
   hunks?: DiffHunk[];
-  /** Too large to show here; it opens in the editor instead. */
+  /** Too big to draw here; it opens in the editor instead. */
   tooLarge?: boolean;
   binary?: boolean;
 }

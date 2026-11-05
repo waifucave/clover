@@ -25,7 +25,7 @@ describe("the diff panel", () => {
     render(<DiffPanel files={FILES} layout="unified" />);
     const large = screen.getByRole("button", { name: /^plugins\/clover\/shell\/client\/Sidebar.tsx, Changed/ }) as HTMLButtonElement;
     expect(large.disabled).toBe(true);
-    expect(within(large).getByText("Too large to show")).toBeTruthy();
+    expect(within(large).getByText("Too big to draw here")).toBeTruthy();
     expect(screen.getByText("Binary file")).toBeTruthy();
     expect(screen.getByText("from plugins/clover/shell/gallery/window.tsx")).toBeTruthy();
   });
@@ -62,5 +62,44 @@ describe("the diff panel", () => {
     render(<DiffPanel files={FILES} layout="unified" onOpenFile={onOpenFile} />);
     fireEvent.click(screen.getByRole("button", { name: `Open ${first.path}` }));
     expect(onOpenFile).toHaveBeenCalledWith(first.path);
+  });
+});
+
+describe("hidden characters (review SF5: the Trojan Source attack)", () => {
+  const sneaky = {
+    path: "src/access\u200B.ts",
+    status: "modified" as const,
+    added: 1,
+    removed: 0,
+    hunks: [
+      {
+        header: "@@ -1,3 +1,4 @@",
+        lines: [
+          { kind: "context" as const, old: 1, new: 1, text: "const role = user.role;" },
+          { kind: "add" as const, new: 2, text: 'if (role != "admin\u202E \u2066// check later\u2069 \u2066") {' },
+        ],
+      },
+    ],
+  };
+
+  test("a bidi control or a zero-width character shows as a mark naming it, and is never drawn itself", () => {
+    const { container } = render(<DiffPanel files={[sneaky]} layout="unified" initialOpen={[sneaky.path]} />);
+    const marks = [...container.querySelectorAll(".cl-diff-hidden")];
+    expect(marks.map((m) => m.textContent)).toEqual(["U+200B", "U+202E", "U+2066", "U+2069", "U+2066"]);
+    expect(screen.getAllByRole("img", { name: "Hidden character U+202E, right-to-left override" })).toHaveLength(1);
+    const line = container.querySelector('.cl-diff-line[data-kind="add"] .cl-diff-line__text')!;
+    expect(line.textContent).not.toMatch(/[\u202E\u2066\u2069]/);
+  });
+
+  test("a file that holds any says so in its row, and in its name for screen readers", () => {
+    render(<DiffPanel files={[sneaky, ...FILES]} layout="unified" />);
+    const row = screen.getByRole("button", { name: /Has hidden characters$/ });
+    expect(row.textContent).toContain("Has hidden characters");
+    expect(screen.getAllByText("Has hidden characters")).toHaveLength(1);
+  });
+
+  test("the same in the split layout", () => {
+    const { container } = render(<DiffPanel files={[sneaky]} layout="split" initialOpen={[sneaky.path]} />);
+    expect(container.querySelectorAll(".cl-diff-split .cl-diff-hidden").length).toBe(4);
   });
 });

@@ -48,7 +48,58 @@ describe("the files panel", () => {
     expect(visiblePaths(ROOT, LISTING, "")).toBeUndefined();
     expect(visiblePaths(ROOT, LISTING, "?x")).toBeUndefined();
     expect([...visiblePaths(ROOT, LISTING, "panel-")!].sort()).toEqual(
-      [`${ROOT}/plugins`, `${ROOT}/plugins/clover`, ...["panel-browser", "panel-diff", "panel-files", "panel-terminal"].map((n) => `${ROOT}/plugins/clover/${n}`)].sort(),
+      [`${ROOT}/plugins`, `${ROOT}/plugins/clover`, ...["panel-diff", "panel-files", "panel-terminal"].map((n) => `${ROOT}/plugins/clover/${n}`)].sort(),
     );
+  });
+});
+
+describe("the tree for the keyboard (review minor)", () => {
+  test("one item takes Tab; the arrows move, Right opens and steps in, Left closes and steps out", () => {
+    const onList = mock((_p: string) => undefined);
+    render(<FilesPanel root={ROOT} listing={LISTING} onList={onList} onOpen={() => undefined} />);
+    const items = () => screen.getAllByRole("treeitem");
+    expect(items().filter((i) => i.tabIndex === 0).map((i) => i.textContent)).toEqual([".github"]);
+    const github = screen.getByRole("treeitem", { name: ".github" });
+    github.focus();
+    fireEvent.keyDown(github, { key: "ArrowDown" });
+    const docs = screen.getByRole("treeitem", { name: "docs" });
+    expect(document.activeElement).toBe(docs);
+    fireEvent.keyDown(docs, { key: "ArrowRight" });
+    expect(docs.getAttribute("aria-expanded")).toBe("true");
+    fireEvent.keyDown(docs, { key: "ArrowRight" });
+    expect(document.activeElement).toBe(screen.getByRole("treeitem", { name: "clover-plan.md" }));
+    fireEvent.keyDown(document.activeElement!, { key: "ArrowLeft" });
+    expect(document.activeElement).toBe(screen.getByRole("treeitem", { name: "docs" }));
+    fireEvent.keyDown(document.activeElement!, { key: "ArrowLeft" });
+    expect(screen.getByRole("treeitem", { name: "docs" }).getAttribute("aria-expanded")).toBe("false");
+    fireEvent.keyDown(document.activeElement!, { key: "End" });
+    expect(document.activeElement).toBe(screen.getByRole("treeitem", { name: "README.md" }));
+    fireEvent.keyDown(document.activeElement!, { key: "Home" });
+    expect(document.activeElement).toBe(screen.getByRole("treeitem", { name: ".github" }));
+    // Only one item takes Tab at a time: the one last moved to.
+    expect(items().filter((i) => i.tabIndex === 0)).toHaveLength(1);
+  });
+
+  test("a listing that loops back on itself draws each folder once and never hangs", () => {
+    const loop = `${ROOT}/loop`;
+    const listing = { ...LISTING, [ROOT]: [...LISTING[ROOT]!, { path: loop, name: "loop", type: "dir" as const }], [loop]: [{ path: ROOT, name: "back-to-root", type: "dir" as const }] };
+    render(<FilesPanel root={ROOT} listing={listing} initialOpen={[loop, ROOT]} onOpen={() => undefined} />);
+    expect(screen.getAllByRole("treeitem", { name: "back-to-root" })).toHaveLength(1);
+    expect(screen.getByRole("treeitem", { name: "back-to-root" }).getAttribute("aria-expanded")).toBe("false");
+    expect(visiblePaths(ROOT, listing, "back")).toBeDefined();
+  });
+});
+
+describe("hidden characters (review SF5)", () => {
+  test("a name and the file's lines show bidi and zero-width characters as marks, and the file says it holds some", () => {
+    const sneaky = { path: `${ROOT}/rea\u200Bdme.md`, name: "rea\u200Bdme.md", type: "file" as const };
+    const listing = { ...LISTING, [ROOT]: [...LISTING[ROOT]!, sneaky] };
+    const { container } = render(
+      <FilesPanel root={ROOT} listing={listing} onOpen={() => undefined} open={{ path: sneaky.path, text: 'const ok = "yes\u202E\u2066";' }} />,
+    );
+    expect(screen.getByRole("treeitem", { name: /rea.*Hidden character U\+200B, zero-width space.*dme\.md/ })).toBeTruthy();
+    expect([...container.querySelectorAll(".cl-files__code .cl-files-hidden")].map((m) => m.textContent)).toEqual(["U+202E", "U+2066"]);
+    expect(screen.getByText("Has hidden characters")).toBeTruthy();
+    expect(container.querySelector(".cl-files__code")?.textContent).not.toMatch(/[\u202E\u2066]/);
   });
 });

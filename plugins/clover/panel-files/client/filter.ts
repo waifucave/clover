@@ -6,7 +6,11 @@ export function visiblePaths(root: string, listing: Readonly<Record<string, read
   const query = filter.trim().toLowerCase();
   if (query.length === 0 || query.startsWith("?")) return undefined;
   const keep = new Set<string>();
+  // Each folder once: a listing that loops back on itself (a link to a folder above) ends here.
+  const seen = new Set<string>();
   const walk = (folder: string): boolean => {
+    if (seen.has(folder)) return false;
+    seen.add(folder);
     let any = false;
     for (const entry of listing[folder] ?? []) {
       const hit = entry.name.toLowerCase().includes(query);
