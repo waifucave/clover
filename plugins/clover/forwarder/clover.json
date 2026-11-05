@@ -1,0 +1,19 @@
+{
+  "manifest": 1,
+  "name": { "en": "waifucave forwarder" },
+  "description": {
+    "en": "Brings your routines' webhooks from hooks.waifucave.com to the computer that holds each routine. Each webhook is encrypted to your computers when it arrives and deleted once delivered; one held for a computer that is away waits up to 7 days."
+  },
+  "engines": { "clover": "^1.0.0" },
+  "host": { "entry": "host/index.ts", "runtime": "bun", "start": "each" },
+  "capabilities": ["network:hooks.waifucave.com"],
+  "contributes": {
+    "webhook.ingress": [
+      {
+        "id": "waifucave",
+        "name": { "en": "waifucave forwarder (hooks.waifucave.com)" },
+        "handler": "ingress"
+      }
+    ]
+  }
+}
