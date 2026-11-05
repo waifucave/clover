@@ -1,5 +1,5 @@
 // The diff panel: the session's changes, base against the working tree, one row per file with its
-// counts, opening to its hunks in a unified or a split layout. It fills `panel.view` keyed `diff`;
+// counts, opening to its hunks in a unified or a split layout. It fills `panel` keyed `diff`;
 // `DiffTitle` and `DiffLayoutSwitch` go in the panel's header.
 import { useState } from "react";
 import { splitRows } from "./split";

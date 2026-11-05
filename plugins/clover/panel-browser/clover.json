@@ -6,9 +6,22 @@
     "clover": "^1.0.0"
   },
   "client": {
-    "entry": "client/index.tsx"
+    "entry": "client/index.tsx",
+    "css": [
+      "client/styles.css"
+    ]
   },
   "capabilities": [
     "browser"
-  ]
+  ],
+  "contributes": {
+    "ui": [
+      {
+        "spot": "panel",
+        "key": "browser",
+        "title": "Browser",
+        "component": "BrowserPanel"
+      }
+    ]
+  }
 }

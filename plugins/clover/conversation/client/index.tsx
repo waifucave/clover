@@ -1,7 +1,5 @@
-// The conversation plugin's client entry (`client.entry` in clover.json): the components a spot
-// mounts, and the stylesheet they wear.
-import "./styles.css";
-
+// The conversation plugin's client entry (`client.entry` in clover.json): the components its `ui` entries
+// name. It imports no CSS: `client.css` lists the stylesheet they wear (lane B).
 export { ConversationView, DEFAULT_RENDERERS, workingText } from "./ConversationView";
 export type { ConversationViewProps, MessageRenderers } from "./ConversationView";
 export type { MessageContext } from "./context";

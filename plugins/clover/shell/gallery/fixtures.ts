@@ -15,10 +15,10 @@ export const ALPHA_AGENTS: SidebarAgent[] = [
 ];
 
 export const BOTS: SidebarBot[] = [
-  { id: "alpha", name: "Alpha", portraitUrl: portrait("A", "#8ccbf0", "#3d7fb0"), status: "working", agents: ALPHA_AGENTS },
-  { id: "luna", name: "Luna", portraitUrl: portrait("L", "#c9a7f2", "#6f4ab0"), status: "needs-you", needsYou: 2 },
-  { id: "juniper", name: "Juniper", status: "idle", activity: "Morning brief running on Studio" },
-  { id: "mira", name: "Mira", portraitUrl: portrait("M", "#f6b8a0", "#b0583d"), status: "idle", unread: true },
+  { id: "alpha", name: "Alpha", portraitUrl: portrait("A", "#8ccbf0", "#3d7fb0"), state: "working", agents: ALPHA_AGENTS },
+  { id: "luna", name: "Luna", portraitUrl: portrait("L", "#c9a7f2", "#6f4ab0"), state: "needs-you", needsYou: { cards: 1, questions: 1 } },
+  { id: "juniper", name: "Juniper", state: "idle", activity: "Morning brief running on Studio" },
+  { id: "mira", name: "Mira", portraitUrl: portrait("M", "#f6b8a0", "#b0583d"), state: "idle", unread: true },
 ];
 
 export const PROJECTS: SidebarProject[] = [
@@ -28,7 +28,7 @@ export const PROJECTS: SidebarProject[] = [
     path: "home/Studio/projects/clover",
     sessions: [
       { id: "session-panels", title: "The panels as plugins", branch: "lane/f-m1", changes: 14, status: "running" },
-      { id: "session-hub", title: "Hub migrations on staging", branch: "hub-staging", changes: 3, status: "needs-you", needsYou: 1 },
+      { id: "session-hub", title: "Hub migrations on staging", branch: "hub-staging", changes: 3, status: "needs-you", needsYou: { cards: 1, questions: 0 } },
       { id: "session-docs", title: "README for the plugin index", branch: "main", changes: 0, status: "completed" },
     ],
   },

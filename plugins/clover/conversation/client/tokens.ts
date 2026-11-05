@@ -1,4 +1,4 @@
-// The theme tokens this part wears, by lane B's catalog names (`packages/plugin-sdk/src/catalogs/tokens.ts`,
+// The theme tokens the conversation wears, by lane B's catalog names (`packages/plugin-sdk/src/catalogs/tokens.ts`,
 // B-M0 cde691273): `color.text.muted` arrives in CSS as `--clover-color-text-muted`. test/styles.test.ts
 // fails if styles.css uses a token this list doesn't name, or this list names one styles.css doesn't use.
 // The shell's gallery test checks every catalog name here against a snapshot of B's catalog.
@@ -8,6 +8,7 @@ export const CATALOG_TOKENS = [
   "bubble.radius",
   "bubble.user.background",
   "color.accent",
+  "color.accent.contrast",
   "color.accent.text",
   "color.attention.text",
   "color.control",
@@ -22,7 +23,6 @@ export const CATALOG_TOKENS = [
   "color.selected",
   "color.surface",
   "color.text",
-  "color.text.inverse",
   "color.text.muted",
   "color.text.placeholder",
   "color.text.secondary",
@@ -36,7 +36,6 @@ export const CATALOG_TOKENS = [
   "font.size.code",
   "font.size.control",
   "radius.large",
-  "radius.medium",
   "radius.round",
   "radius.small",
   "space.m",
@@ -44,14 +43,13 @@ export const CATALOG_TOKENS = [
   "space.xs",
 ] as const;
 
-/** Part-local tokens, named as B's rule has a plugin's own (`<top-level id>.<name>`, so `clover.…`), each
- *  a request to B for a catalog entry (listed in the PR body). A theme sets them like any other. */
-export const PART_TOKENS = [
+/** Part-local tokens, named as B's rule names a plugin's own (`<top-level id>.<name>`, so `clover.…`),
+ *  each a request to B for a catalog entry (listed in the PR body). */
+export const PART_TOKENS: readonly string[] = [
   "clover.line.code",
-] as const;
+];
 
 export const TOKENS: readonly string[] = [...CATALOG_TOKENS, ...PART_TOKENS];
 
-/** `color.text.muted` → `--clover-color-text-muted`; a hyphen inside a segment would become `_` (B's
- *  `cssProperty`), and none of these has one. */
+/** `color.text.muted` → `--clover-color-text-muted` (B's `cssProperty`). */
 export const cssVariable = (token: string) => `--clover-${token.replace(/-/g, "_").replace(/\./g, "-")}`;

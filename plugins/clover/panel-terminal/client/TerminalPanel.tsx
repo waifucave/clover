@@ -1,6 +1,6 @@
 // The terminal panel: tabs across the top (one per terminal, and + for a new one), then the active
 // terminal's output, which takes the keyboard while it has focus and sends what is typed to the PTY.
-// It fills the `panel.view` spot keyed `terminal`.
+// It fills the `panel` spot keyed `terminal`.
 import { useLayoutEffect, useRef } from "react";
 import { keyToData } from "./keys";
 import { S } from "./strings";

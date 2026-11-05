@@ -107,7 +107,8 @@ export interface ToolItem extends ItemBase {
 
 /** An approval card. Its text is sealed: the view knows only its id, computer and state, and places
  *  the core's sealed frames (spec §5.5). */
-export type ApprovalState = "pending" | "approved" | "denied" | "expired" | "withdrawn";
+/** Lane B's `CardOutcome`, plus pending: `cancelled` is a card whose session stopped. */
+export type ApprovalState = "pending" | "approved" | "denied" | "expired" | "withdrawn" | "cancelled";
 
 /** A device by its id (what comparisons use) and its name (what shows). */
 export interface DeviceRef {
@@ -211,9 +212,12 @@ export interface TaskNotificationItem extends ItemBase {
  *  works, or another bot. It folded into the running turn after a tool call (spec §6.4). */
 export interface AgentReportItem extends ItemBase {
   kind: "agent-report";
-  /** Who sent it: a background agent, another bot, another session, or a plugin (`conversation.post`, or
-   *  an MCP Apps page's `ui/message`, spec §5.4, §5.5). A plugin's message is never drawn as the user's. */
+  /** Who sent it: a background agent, another bot, another session, or a plugin. A plugin's message is
+   *  lane B's `plugin_message` session event (`{ from: { kind: "plugin", pluginId }, text, app? }`): `id` is
+   *  its `pluginId`, `name` the plugin's name as the host resolves it. It is never drawn as the user's. */
   from: { kind: "agent" | "bot" | "session" | "plugin"; id: string; name: string; backend?: string; computer?: string };
+  /** A plugin's message that came from its MCP Apps page (`ui/message`): the tool call that drew the page. */
+  app?: { callId: string };
   /** Markdown. */
   text: string;
   /** It joined a turn already running rather than starting one. */
@@ -235,6 +239,14 @@ export interface NoteItem extends ItemBase {
   from?: NoteSource;
   /** `divider` draws it across the conversation, as for a compaction. */
   variant?: "line" | "divider";
+}
+
+/** A run of consecutive tool calls, as the `tool` key of `conversation.message` gets it. */
+export interface ToolRunItem {
+  id: string;
+  kind: "tool";
+  at: SharedTime;
+  calls: ToolCall[];
 }
 
 export type ConversationItem =

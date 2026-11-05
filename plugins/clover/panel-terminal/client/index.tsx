@@ -1,6 +1,5 @@
-// The terminal panel's client entry: fills `panel.view` keyed `terminal`.
-import "./styles.css";
-
+// The terminal panel's client entry: fills `panel` keyed `terminal`. It imports no CSS: `client.css`
+// lists the stylesheet (lane B).
 export { TerminalPanel } from "./TerminalPanel";
 export { keyToData } from "./keys";
 export { TOKENS } from "./tokens";

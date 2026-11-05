@@ -1,6 +1,7 @@
 // The browser panel: the tabs (in the panel's header), then back, forward, reload and the address bar,
-// then the live page with the annotate tools floating at its foot. It fills `panel.view` keyed
-// `browser`; the page itself is the Clover Browser's view (lane L), placed where `renderView` says.
+// then the live page with the annotate tools floating at its foot. It fills `panel` keyed
+// `browser`; the page itself is the Clover Browser's view (lane L), which fills `panel.view` keyed
+// `browser` inside the frame (`renderView` until the runtime places spots).
 import { useEffect, useState, type ReactNode } from "react";
 import { S } from "./strings";
 import type { AnnotateTool, BrowserPanelProps, BrowserTabsProps } from "./types";

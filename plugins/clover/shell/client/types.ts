@@ -13,6 +13,15 @@ export type SidebarRoute =
  *  running it can be reached (spec §6.4). `paused`: the core's pause switch is on (spec §9.2). */
 export type BotStatus = "idle" | "thinking" | "working" | "needs-you" | "asleep" | "paused";
 
+/** What waits for the user: approval cards and questions, counted without their content (lane B). */
+export interface NeedsYou {
+  cards: number;
+  questions: number;
+}
+
+/** The two counts as one number, for a badge. */
+export const needsYouCount = (n: NeedsYou | undefined): number => (n ? n.cards + n.questions : 0);
+
 export type AgentStatus = "running" | "needs-you" | "completed" | "failed" | "stopped" | "stalled";
 
 /** A session the user can open as a live tab: a bot's background agent, or a coding session the user
@@ -32,9 +41,10 @@ export interface SidebarBot {
   name: string;
   /** An asset URL for the bot's portrait (its avatar's `portrait`, spec §5.9). */
   portraitUrl?: string;
-  status: BotStatus;
-  /** How many approvals and questions wait for the user. */
-  needsYou?: number;
+  /** Its state (`sidebar.bot`'s `state`, lane B). */
+  state: BotStatus;
+  /** The approvals and questions that wait for the user (`sidebar.bot`'s `needsYou`, lane B). */
+  needsYou?: NeedsYou;
   /** Something arrived since the user last looked. */
   unread?: boolean;
   /** What it is doing besides talking: a routine running in a side thread, say. */
@@ -78,7 +88,8 @@ export interface SidebarSession {
   /** Files it has changed on that branch. */
   changes?: number;
   status: AgentStatus | "idle";
-  needsYou?: number;
+  /** What waits for the user in it (lane B's `SessionView.needsYou`). */
+  needsYou?: NeedsYou;
   backend?: string;
   computer?: string;
 }

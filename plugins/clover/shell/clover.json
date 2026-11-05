@@ -6,10 +6,59 @@
     "clover": "^1.0.0"
   },
   "client": {
-    "entry": "client/index.tsx"
+    "entry": "client/index.tsx",
+    "css": [
+      "client/styles.css"
+    ]
   },
   "capabilities": [
     "bots.read",
-    "computers.read"
-  ]
+    "computers.read",
+    "conversation.read",
+    "approvals"
+  ],
+  "contributes": {
+    "ui": [
+      {
+        "spot": "app.root",
+        "component": "Window",
+        "declares": {
+          "sidebar": {
+            "shape": "single",
+            "props": {}
+          },
+          "main": {
+            "shape": "keyed",
+            "props": {}
+          },
+          "panel": {
+            "shape": "keyed",
+            "props": {}
+          },
+          "panel.view": {
+            "shape": "keyed",
+            "props": {}
+          },
+          "status": {
+            "shape": "list",
+            "props": {}
+          }
+        }
+      },
+      {
+        "spot": "sidebar",
+        "component": "Sidebar",
+        "declares": {
+          "sidebar.bot": {
+            "shape": "keyed",
+            "props": {}
+          },
+          "sidebar.app": {
+            "shape": "list",
+            "props": {}
+          }
+        }
+      }
+    ]
+  }
 }

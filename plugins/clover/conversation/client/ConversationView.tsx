@@ -10,7 +10,7 @@
 // count a click only while nothing covers them (spec §5.5), so the "Jump to latest" pill lives in a
 // strip below the scrolling area rather than over it.
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentType, type ReactNode } from "react";
-import type { MessageContext } from "./context";
+import type { MessageContext, MessageSpotProps } from "./context";
 import { afterContentChange, isAtBottom } from "./follow";
 import { IconArrowDown, IconClover } from "./icons";
 import { AgentReport } from "./messages/AgentReport";
@@ -43,12 +43,12 @@ import type {
   UserItem,
 } from "./types";
 
-type Renderer<T> = ComponentType<{ item: T; ctx: MessageContext }>;
+type Renderer<T> = ComponentType<MessageSpotProps<T>>;
 
 /** One renderer per `conversation.message` key. */
 export interface MessageRenderers {
   user: Renderer<UserItem>;
-  bot: ComponentType<{ item: BotItem; ctx: MessageContext; final?: boolean }>;
+  bot: ComponentType<MessageSpotProps<BotItem> & { final?: boolean }>;
   tool: ComponentType<ToolRunProps>;
   approval: Renderer<ApprovalItem>;
   question: Renderer<QuestionItem>;
@@ -129,42 +129,52 @@ function MessageUnit({
 }) {
   if (unit.type === "tools") {
     const Tool = renderers.tool;
-    return <Tool calls={unit.calls} ctx={ctx} expanded={expanded} onToggle={onToggle} renderResult={renderToolResult} />;
+    return (
+      <Tool
+        bot={{ id: ctx.botId, name: ctx.botName }}
+        session={ctx.session}
+        item={{ id: unit.key, kind: "tool", at: unit.at, calls: unit.calls }}
+        ctx={ctx}
+        expanded={expanded}
+        onToggle={onToggle}
+        renderResult={renderToolResult}
+      />
+    );
   }
   if (unit.type === "thinking") return <ThinkingRow item={unit.item} ctx={ctx} />;
   const item = unit.item;
   switch (item.kind) {
     case "user": {
       const R = renderers.user;
-      return <R item={item} ctx={ctx} />;
+      return <R bot={{ id: ctx.botId, name: ctx.botName }} session={ctx.session} item={item} ctx={ctx} />;
     }
     case "bot": {
       const R = renderers.bot;
-      return <R item={item} ctx={ctx} final={unit.final} />;
+      return <R bot={{ id: ctx.botId, name: ctx.botName }} session={ctx.session} item={item} ctx={ctx} final={unit.final} />;
     }
     case "approval": {
       const R = renderers.approval;
-      return <R item={item} ctx={ctx} />;
+      return <R bot={{ id: ctx.botId, name: ctx.botName }} session={ctx.session} item={item} ctx={ctx} />;
     }
     case "question": {
       const R = renderers.question;
-      return <R item={item} ctx={ctx} />;
+      return <R bot={{ id: ctx.botId, name: ctx.botName }} session={ctx.session} item={item} ctx={ctx} />;
     }
     case "routine-result": {
       const R = renderers["routine-result"];
-      return <R item={item} ctx={ctx} />;
+      return <R bot={{ id: ctx.botId, name: ctx.botName }} session={ctx.session} item={item} ctx={ctx} />;
     }
     case "task-notification": {
       const R = renderers["task-notification"];
-      return <R item={item} ctx={ctx} />;
+      return <R bot={{ id: ctx.botId, name: ctx.botName }} session={ctx.session} item={item} ctx={ctx} />;
     }
     case "agent-report": {
       const R = renderers["agent-report"];
-      return <R item={item} ctx={ctx} />;
+      return <R bot={{ id: ctx.botId, name: ctx.botName }} session={ctx.session} item={item} ctx={ctx} />;
     }
     case "note": {
       const R = renderers.note;
-      return <R item={item} ctx={ctx} />;
+      return <R bot={{ id: ctx.botId, name: ctx.botName }} session={ctx.session} item={item} ctx={ctx} />;
     }
   }
 }
@@ -200,8 +210,8 @@ export function ConversationView(props: ConversationViewProps) {
     [onAnswerQuestion, onOpenLink, onOpenFile, onOpenDiff, onOpenThread, onOpenAgent, onCopy],
   );
   const ctx = useMemo<MessageContext>(
-    () => ({ botName: bot.name, session: props.session ?? "", now, format, device, turnLive: turn?.running === true, actions }),
-    [bot.name, props.session, now, format.locale, format.timeZone, device?.id, device?.name, turn?.running, actions],
+    () => ({ botId: bot.id, botName: bot.name, session: props.session ?? "", now, format, device, turnLive: turn?.running === true, actions }),
+    [bot.id, bot.name, props.session, now, format.locale, format.timeZone, device?.id, device?.name, turn?.running, actions],
   );
 
   const [open, setOpen] = useState<ReadonlySet<string>>(() => new Set((initialExpanded ?? []).map((id) => `tools:${id}`)));

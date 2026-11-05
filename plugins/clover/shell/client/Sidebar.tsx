@@ -29,6 +29,7 @@ import {
   IconSidebar,
 } from "./icons";
 import { S } from "./strings";
+import { needsYouCount } from "./types";
 import type { AgentStatus, SidebarAgent, SidebarApp, SidebarBot, SidebarProject, SidebarProps, SidebarRoute, SidebarSession } from "./types";
 
 const FINISHED: ReadonlySet<AgentStatus | "idle"> = new Set(["completed", "failed", "stopped"]);
@@ -49,14 +50,14 @@ export function sameRoute(a: SidebarRoute, b: SidebarRoute): boolean {
 
 /** The line under a bot's name: what it is doing, else nothing. */
 export function botStatusLine(bot: SidebarBot): string {
-  if (bot.status === "idle") return bot.activity ?? "";
-  return S.botStatus[bot.status];
+  if (bot.state === "idle") return bot.activity ?? "";
+  return S.botStatus[bot.state];
 }
 
 function Portrait({ bot }: { bot: SidebarBot }) {
   const url = bot.portraitUrl && /^(blob:|data:image\/|clover-asset:)/i.test(bot.portraitUrl) ? bot.portraitUrl : undefined;
   return (
-    <span className="cl-sidebar__portrait" data-status={bot.status} aria-hidden="true">
+    <span className="cl-sidebar__portrait" data-status={bot.state} aria-hidden="true">
       {url ? <img src={url} alt="" /> : <span className="cl-sidebar__initial">{bot.name.slice(0, 1).toUpperCase()}</span>}
     </span>
   );
@@ -123,13 +124,13 @@ function BotRow({ bot, props }: { bot: SidebarBot; props: SidebarProps }) {
       <span className="cl-sidebar__names">
         <span className="cl-sidebar__title">{bot.name}</span>
         {line && (
-          <span className="cl-sidebar__line" data-status={bot.status}>
+          <span className="cl-sidebar__line" data-status={bot.state}>
             {line}
           </span>
         )}
       </span>
       {bot.unread && <span className="cl-sidebar__unread" aria-label={S.unread} title={S.unread} />}
-      <Count count={bot.needsYou} label={S.needsYou} />
+      <Count count={needsYouCount(bot.needsYou)} label={S.needsYou} />
     </button>
   );
   return (
@@ -166,7 +167,7 @@ function SessionRow({ session, props }: { session: SidebarSession; props: Sideba
             {session.changes !== undefined && <span>{session.changes}</span>}
           </span>
         )}
-        <Count count={session.needsYou} label={S.needsYou} />
+        <Count count={needsYouCount(session.needsYou)} label={S.needsYou} />
         {(session.status === "running" || session.status === "needs-you") && (
           <span className="cl-sidebar__dot" data-status={session.status} role="img" aria-label={S.agentStatus[session.status]} />
         )}
@@ -369,12 +370,12 @@ export function Sidebar(props: SidebarProps) {
                       type="button"
                       className="cl-sidebar__row cl-sidebar__bot"
                       aria-current={sameRoute(props.route, { kind: "bot", botId: bot.id }) ? "page" : undefined}
-                      aria-label={[bot.name, botStatusLine(bot), bot.needsYou ? S.needsYou(bot.needsYou) : ""].filter(Boolean).join(", ")}
+                      aria-label={[bot.name, botStatusLine(bot), needsYouCount(bot.needsYou) ? S.needsYou(needsYouCount(bot.needsYou)) : ""].filter(Boolean).join(", ")}
                       title={bot.name}
                       onClick={() => props.onNavigate({ kind: "bot", botId: bot.id })}
                     >
                       <Portrait bot={bot} />
-                      {bot.needsYou ? <span className="cl-sidebar__count cl-sidebar__count--corner">{bot.needsYou}</span> : null}
+                      {needsYouCount(bot.needsYou) ? <span className="cl-sidebar__count cl-sidebar__count--corner">{needsYouCount(bot.needsYou)}</span> : null}
                     </button>
                   </li>
                 ) : (

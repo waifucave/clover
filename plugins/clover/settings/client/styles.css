@@ -232,7 +232,7 @@
   padding: 0;
   border: none;
   border-radius: var(--clover-radius-round);
-  background: var(--clover-color-control);
+  background: var(--clover-color-hairline-raised);
   cursor: pointer;
 }
 
@@ -251,6 +251,7 @@
 }
 
 .cl-settings__switch[aria-checked="true"] .cl-settings__knob {
+  background: var(--clover-color-accent-contrast);
   left: 19px;
 }
 

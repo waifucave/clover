@@ -103,7 +103,7 @@ function Parts({ children }: { children: ReactNode }) {
   );
 }
 
-const CTX: MessageContext = { botName: BOT.name, session: "s_alpha", now: NOW, format: FORMAT, device: DEVICE, turnLive: false, actions: COMMON };
+const CTX: MessageContext = { botId: BOT.id, botName: BOT.name, session: "s_alpha", now: NOW, format: FORMAT, device: DEVICE, turnLive: false, actions: COMMON };
 
 /** The `tool.result` spot in use: a plugin draws its own tool's result. */
 function blenderResult(call: ToolCall): ReactNode | undefined {

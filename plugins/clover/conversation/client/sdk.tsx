@@ -5,7 +5,8 @@
 // <UiRuntimeProvider>. The view never sees a sealed field's text or an option's label: it only says
 // where each frame goes.
 //
-// Layout classes are never handed to a sealed part: the view wraps each in an element of its own.
+// Each part takes `className` (B pinned it); this view still wraps each sealed part in an element of its
+// own and passes none, so its layout never depends on how the core draws a frame.
 import { createContext, useContext, type ReactNode } from "react";
 import { S } from "./strings";
 
@@ -31,17 +32,18 @@ export interface CardButtonProps {
   option?: string;
   look?: "label" | "check" | "cross" | "open";
   size?: number;
+  className?: string;
 }
 
 export interface UiRuntime {
   /** A sealed card's frame set for one card id. */
-  Card: (props: { id: string; children: ReactNode }) => ReactNode;
+  Card: (props: { id: string; children: ReactNode; className?: string }) => ReactNode;
   /** One sealed field of the card around it. */
-  CardField: (props: { name: SealedField; lines?: number }) => ReactNode;
+  CardField: (props: { name: SealedField; lines?: number; className?: string }) => ReactNode;
   CardApprove: (props: CardButtonProps) => ReactNode;
   CardDeny: (props: CardButtonProps) => ReactNode;
   /** An MCP Apps page for a tool call, in its isolated view. */
-  AppView: (props: { call: { session: string; callId: string } }) => ReactNode;
+  AppView: (props: { call: { session: string; callId: string }; className?: string }) => ReactNode;
 }
 
 const RuntimeContext = createContext<UiRuntime | null>(null);
@@ -54,13 +56,13 @@ function useRuntime(): UiRuntime | null {
   return useContext(RuntimeContext);
 }
 
-function CardRoot(props: { id: string; children: ReactNode }) {
+function CardRoot(props: { id: string; children: ReactNode; className?: string }) {
   const runtime = useRuntime();
   if (!runtime) return <div data-sealed-unavailable="">{S.sealedUnavailable}</div>;
   return <>{runtime.Card(props)}</>;
 }
 
-function Field(props: { name: SealedField; lines?: number }) {
+function Field(props: { name: SealedField; lines?: number; className?: string }) {
   const runtime = useRuntime();
   return runtime ? <>{runtime.CardField(props)}</> : null;
 }
@@ -77,7 +79,7 @@ function Deny(props: CardButtonProps) {
 
 export const Card = Object.assign(CardRoot, { Field, Approve, Deny });
 
-export function AppView(props: { call: { session: string; callId: string } }) {
+export function AppView(props: { call: { session: string; callId: string }; className?: string }) {
   const runtime = useRuntime();
   return runtime ? <>{runtime.AppView(props)}</> : null;
 }

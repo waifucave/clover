@@ -1,6 +1,7 @@
 // The browser panel's props: the chrome around the Clover Browser's live view. The view itself is lane
-// L's tab host; this panel draws the tabs, the address bar and the annotate tools, and leaves a spot
-// the view fills (a `browser.view` spot is a request to B; until then the host passes `renderView`).
+// L's tab host; this panel draws the tabs, the address bar and the annotate tools, and leaves the frame
+// that L's view fills through `panel.view` keyed `browser` (until the runtime places spots, the host
+// passes `renderView`).
 // Tabs follow lane B's `TabView` (`id`, `url`, `title`, `loading`).
 import type { ReactNode } from "react";
 

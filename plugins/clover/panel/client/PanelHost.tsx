@@ -1,7 +1,7 @@
-// The right-hand panel: the views it holds, at most two, one above the other, each with its header
-// (its title or its own header, such as a browser's tabs), its actions, expand and close. It holds
-// the `panel.view` spot, keyed by view: the terminal, changes, browser and files views are plugins
-// of their own, and any of them can be replaced by a third-party plugin.
+// The right-hand panel: the panels it holds, at most two, one above the other, each with its header
+// (its title or its own header, such as a browser's tabs), its actions, expand and close. Each panel is
+// a plugin of its own that fills the `panel` spot keyed by its id (session, terminal, diff, files,
+// browser; lane B's catalog), so a third-party plugin can replace any of them.
 import { IconClose, IconExpand } from "./icons";
 import { S } from "./strings";
 import type { PanelHostProps } from "./types";

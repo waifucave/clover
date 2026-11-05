@@ -42,11 +42,11 @@ const CODE_ITEMS: ConversationItem[] = [
   tool(at(0, 15, 3), { name: "Edit", detail: "plugins/clover/panel/client/PanelHost.tsx", computer: "Studio", diff: { path: "plugins/clover/panel/client/PanelHost.tsx", added: 41, removed: 12, diffId: "d1" } }),
   tool(at(0, 15, 3), { name: "Edit", detail: "plugins/clover/panel/client/PanelToggles.tsx", computer: "Studio", diff: { path: "plugins/clover/panel/client/PanelToggles.tsx", added: 6, removed: 2, diffId: "d2" } }),
   tool(at(0, 15, 4), { name: "Read", detail: "plugins/clover/shell/client/Window.tsx", computer: "Studio" }),
-  tool(at(0, 15, 4), { name: "Grep", detail: "panel.view", computer: "Studio" }),
+  tool(at(0, 15, 4), { name: "Grep", detail: "spot: \"panel\"", computer: "Studio" }),
   tool(at(0, 15, 5), { name: "Bash", detail: "bun test plugins/clover/panel", computer: "Studio", output: "16 pass\n0 fail" }),
   bot(
     at(0, 15, 6),
-    "Done. The host now holds at most two views, one above the other, and each panel is a plugin of its own:\n\n- **Terminal**, **Changes**, **Browser** and **Files** each fill `panel.view`, keyed by their name.\n- The session column stays beside the conversation, apart from the two.\n\nThe panel's tests pass. Want me to open a pull request?",
+    "Done. The host now holds at most two views, one above the other, and each panel is a plugin of its own:\n\n- **Terminal**, **Changes**, **Browser** and **Files** each fill the `panel` spot, keyed by their name.\n- The session column stays beside the conversation, apart from the two.\n\nThe panel's tests pass. Want me to open a pull request?",
   ),
 ];
 
@@ -180,7 +180,7 @@ const SCREENS: { id: string; title: string; notes: string; config: (narrow: bool
   {
     id: "terminal",
     title: "The terminal panel open",
-    notes: "panel-terminal fills panel.view keyed terminal.",
+    notes: "panel-terminal fills the panel spot keyed terminal.",
     config: (narrow) => ({ side: "code", rail: narrow, items: CODE_ITEMS, title: "The panels as plugins", panels: ["terminal"] }),
   },
   {

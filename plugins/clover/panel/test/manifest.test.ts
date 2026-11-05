@@ -35,4 +35,20 @@ describe("clover.json (spec §5.9, format 1)", () => {
     expect(pkg.name).toBe("@waifucave/clover-plugin-panel");
     expect(pkg.private).toBe(true);
   });
+
+  test("client.css names stylesheets that exist, and the entry imports none (lane B: they load before the components)", () => {
+    expect(manifest.client.css.length).toBeGreaterThan(0);
+    for (const css of manifest.client.css) expect(existsSync(join(root, css))).toBe(true);
+    expect(readFileSync(join(root, manifest.client.entry), "utf8")).not.toMatch(/import\s+["'][^"']+\.css["']/);
+  });
+
+  test("each ui entry names a component the entry exports, and declares spots with props", async () => {
+    const entry = await import(join(root, manifest.client.entry));
+    for (const ui of manifest.contributes.ui) {
+      expect([ui.component, typeof entry[ui.component]]).toEqual([ui.component, "function"]);
+      for (const [name, decl] of Object.entries(ui.declares ?? {})) {
+        expect([name, typeof (decl as { props?: unknown }).props]).toEqual([name, "object"]);
+      }
+    }
+  });
 });

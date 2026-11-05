@@ -190,7 +190,8 @@ button.cl-window__title:hover {
   outline-offset: -2px;
 }
 
-.cl-sidebar ul {
+/* No specificity, so each list's own class sets its margins (the nested tabs' indent, say). */
+:where(.cl-sidebar) ul {
   margin: 0;
   padding: 0;
   list-style: none;
@@ -490,6 +491,13 @@ button.cl-window__title:hover {
   display: flex;
   align-items: center;
   gap: 2px;
+}
+
+/* The row takes what Close leaves it. */
+.cl-sidebar__agent > .cl-sidebar__row {
+  flex: 1 1 auto;
+  width: auto;
+  min-width: 0;
 }
 
 .cl-sidebar__row--nested {

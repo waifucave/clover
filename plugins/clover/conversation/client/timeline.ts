@@ -7,7 +7,7 @@ export type MessageItem = Exclude<ConversationItem, { kind: "tool" } | { kind: "
 
 export type Unit =
   | { type: "day"; key: string; label: string }
-  | { type: "tools"; key: string; calls: ToolCall[] }
+  | { type: "tools"; key: string; at: SharedTime; calls: ToolCall[] }
   | { type: "thinking"; key: string; item: ThinkingItem }
   | { type: "message"; key: string; item: MessageItem; final?: boolean };
 
@@ -35,7 +35,7 @@ export function buildTimeline(items: readonly ConversationItem[], now: SharedTim
     if (item.kind === "tool") {
       const last = units[units.length - 1];
       if (last?.type === "tools") last.calls.push(item.call);
-      else units.push({ type: "tools", key: `tools:${item.id}`, calls: [item.call] });
+      else units.push({ type: "tools", key: `tools:${item.id}`, at: item.at, calls: [item.call] });
       continue;
     }
     if (item.kind === "thinking") {

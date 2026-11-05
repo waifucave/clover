@@ -32,7 +32,7 @@ export const IconMore = () => (<Svg><path d="M3.5 8h.01M8 8h.01M12.5 8h.01" stro
 export const IconChevronDown = () => (<Svg size={12}><path d="M4.5 6.5L8 10l3.5-3.5" /></Svg>);
 export const IconChevronRight = () => (<Svg size={12}><path d="M6.5 4.5L10 8l-3.5 3.5" /></Svg>);
 export const IconBranch = () => (<Svg size={13}><circle cx="4.5" cy="3.5" r="1.5" /><circle cx="4.5" cy="12.5" r="1.5" /><circle cx="11.5" cy="5.5" r="1.5" /><path d="M4.5 5v6M11.5 7c0 2.5-3 3-6.5 4" /></Svg>);
-export const IconGear = () => (<Svg><circle cx="8" cy="8" r="2.2" /><path d="M8 1.8v1.7M8 12.5v1.7M1.8 8h1.7M12.5 8h1.7M3.6 3.6l1.2 1.2M11.2 11.2l1.2 1.2M3.6 12.4l1.2-1.2M11.2 4.8l1.2-1.2" /></Svg>);
+export const IconGear = () => (<Svg><path d="M12.90 7.01 L14.54 7.14 L14.54 8.86 L12.90 8.99 L12.17 10.76 L13.23 12.02 L12.02 13.23 L10.76 12.17 L8.99 12.90 L8.86 14.54 L7.14 14.54 L7.01 12.90 L5.24 12.17 L3.98 13.23 L2.77 12.02 L3.83 10.76 L3.10 8.99 L1.46 8.86 L1.46 7.14 L3.10 7.01 L3.83 5.24 L2.77 3.98 L3.98 2.77 L5.24 3.83 L7.01 3.10 L7.14 1.46 L8.86 1.46 L8.99 3.10 L10.76 3.83 L12.02 2.77 L13.23 3.98 L12.17 5.24 Z" /><circle cx="8" cy="8" r="2" /></Svg>);
 export const IconClose = () => (<Svg size={12}><path d="M4.5 4.5l7 7M11.5 4.5l-7 7" /></Svg>);
 export const IconShield = () => (<Svg><path d="M8 2.5l4.5 1.8v3.4c0 2.8-1.9 4.9-4.5 5.8-2.6-.9-4.5-3-4.5-5.8V4.3L8 2.5z" /></Svg>);
 export const IconPause = () => (<Svg><path d="M6 4.5v7M10 4.5v7" /></Svg>);

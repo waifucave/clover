@@ -229,6 +229,7 @@ export const APPROVAL_STATES: ConversationItem[] = [
   approval(at(0, 9, 5), { cardId: "card-denied", state: "denied", answeredOn: "Studio" }),
   approval(at(0, 9, 10), { cardId: "card-expired", state: "expired" }),
   approval(at(0, 9, 15), { cardId: "card-withdrawn", state: "withdrawn", withdrawnBy: "turn-end" }),
+  approval(at(0, 9, 17), { cardId: "card-cancelled", state: "cancelled" }),
   note(at(0, 16, 22), "The Nightly backup routine needs your OK:", { tone: "info" }),
   approval(at(0, 16, 22), { cardId: "card-routine", computer: "Studio", expiresAt: at(0, 16, 32) }),
 ];
@@ -247,6 +248,7 @@ export const SEALED_CARDS: Record<string, SealedCardData> = {
   "card-expired": { title: "Install a plugin: tarot-panel" },
   "card-withdrawn": { title: "Run a command on Laptop" },
   "card-migrate": { title: "Run a command on Studio" },
+  "card-cancelled": { title: "Read the shared calendar" },
   [CONFIRM_CARD]: {
     title: "A plugin asks",
     source: "Tarot panel · tarot-panel · from the plugin index",
@@ -392,7 +394,8 @@ export const EVENTS: ConversationItem[] = [
   {
     kind: "agent-report", id: "ar-3", at: at(0, 10, 30),
     from: { kind: "plugin", id: "tarot-panel", name: "Tarot panel" },
-    text: "The user pinned **The Star** to today's page.",
+    app: { callId: "call-tarot" },
+    text: "The user pinned The Star to today's page.",
   } satisfies AgentReportItem,
   {
     kind: "task-notification", id: "tn-1", at: at(0, 10, 44),

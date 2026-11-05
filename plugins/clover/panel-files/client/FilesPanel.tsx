@@ -1,6 +1,6 @@
 // The files panel: the open file on the left (or a note saying how to open one), and on the right the
 // project's tree under a filter box. A filter narrows the tree to matching names among the folders
-// listed so far; one that starts with `?` searches inside files instead. It fills `panel.view` keyed
+// listed so far; one that starts with `?` searches inside files instead. It fills `panel` keyed
 // `files`.
 import { useState, type ReactElement } from "react";
 import { visiblePaths } from "./filter";

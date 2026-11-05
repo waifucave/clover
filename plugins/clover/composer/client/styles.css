@@ -36,7 +36,7 @@
   gap: var(--clover-space-s);
   padding: var(--clover-space-s);
   border: 1px solid var(--clover-composer-rim);
-  border-radius: var(--clover-radius-large);
+  border-radius: var(--clover-composer-radius);
   background: var(--clover-composer-background);
 }
 
@@ -176,7 +176,11 @@
   color: var(--clover-color-text);
 }
 
-.cl-composer__pill:disabled {
+/* While a card waits, the pills wait too, and look it. */
+.cl-composer__pill:disabled,
+.cl-composer__pill:disabled .cl-composer__pill-label,
+.cl-composer__pill:disabled .cl-composer__pill-detail {
+  color: var(--clover-color-text-placeholder);
   cursor: default;
 }
 
@@ -324,7 +328,7 @@
   align-items: center;
   justify-content: center;
   border: 2px dashed var(--clover-color-accent);
-  border-radius: var(--clover-radius-large);
+  border-radius: var(--clover-composer-radius);
   background: var(--clover-color-accent-soft);
   color: var(--clover-color-accent-text);
   font-size: var(--clover-font-size-control);

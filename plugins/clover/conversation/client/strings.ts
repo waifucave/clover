@@ -65,6 +65,7 @@ export const S = {
   approvalDenied: "Denied",
   approvalExpired: "Denied: no answer in time",
   approvalWithdrawn: "Withdrawn when the turn ended",
+  approvalCancelled: "Cancelled: its session stopped",
   approvalWithdrawnInterrupt: "Withdrawn when you interrupted",
   answeredOn: (device: string) => `on ${device}`,
 
@@ -112,6 +113,7 @@ export const S = {
   reportBot: "bot",
   reportSession: "session",
   reportPlugin: (id: string) => `plugin ${id}`,
+  reportFromApp: "from its app page",
   reportFolded: "joined the turn",
 
   // Notes.

@@ -21,6 +21,7 @@ export function AgentReport({ item, ctx }: { item: AgentReportItem; ctx: Message
   if (from.computer) facts.push(S.toolOnComputer(from.computer));
   facts.push(formatTime(item.at, ctx.format));
   if (item.folded) facts.push(S.reportFolded);
+  if (item.app) facts.push(S.reportFromApp);
   const openAgent = from.kind === "agent" ? ctx.actions.onOpenAgent : undefined;
   return (
     <section className="cl-conv-event" data-kind="agent-report" data-from={from.kind}>
@@ -39,9 +40,14 @@ export function AgentReport({ item, ctx }: { item: AgentReportItem; ctx: Message
         )}
         <span className="cl-conv-event__facts">{facts.join(" · ")}</span>
       </header>
-      <div className="cl-conv-md cl-conv-event__body">
-        <MarkdownText text={item.text} onOpenLink={ctx.actions.onOpenLink} onCopy={ctx.actions.onCopy} />
-      </div>
+      {from.kind === "plugin" ? (
+        // A plugin wrote it, so it shows as the plain text it is, as a plugin's note does.
+        <div className="cl-conv-event__body cl-conv-event__plain">{item.text}</div>
+      ) : (
+        <div className="cl-conv-md cl-conv-event__body">
+          <MarkdownText text={item.text} onOpenLink={ctx.actions.onOpenLink} onCopy={ctx.actions.onCopy} />
+        </div>
+      )}
     </section>
   );
 }

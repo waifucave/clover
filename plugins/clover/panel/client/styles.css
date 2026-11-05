@@ -267,7 +267,7 @@ button.cl-session__row:hover {
   padding: 0;
   border: none;
   border-radius: var(--clover-radius-round);
-  background: var(--clover-color-control);
+  background: var(--clover-color-hairline-raised);
   cursor: pointer;
 }
 
@@ -286,6 +286,7 @@ button.cl-session__row:hover {
 }
 
 .cl-session__switch[aria-checked="true"] .cl-session__switch-knob {
+  background: var(--clover-color-accent-contrast);
   left: 16px;
 }
 

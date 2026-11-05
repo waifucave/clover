@@ -1,7 +1,7 @@
 // The panel's props contract: plain data and callbacks the host routes back (spec §5.5).
 import type { ReactNode } from "react";
 
-/** The views the default panel plugins fill (`panel.view`, keyed by these). A third-party plugin may
+/** The panels the default plugins are (each fills `panel`, keyed by these). A third-party plugin may
  *  fill any of them instead, or add its own key. */
 export type PanelViewId = "session" | "terminal" | "diff" | "browser" | "files";
 

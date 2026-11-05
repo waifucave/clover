@@ -6,6 +6,19 @@
     "clover": "^1.0.0"
   },
   "client": {
-    "entry": "client/index.tsx"
+    "entry": "client/index.tsx",
+    "css": [
+      "client/styles.css"
+    ]
+  },
+  "contributes": {
+    "ui": [
+      {
+        "spot": "panel",
+        "key": "terminal",
+        "title": "Terminal",
+        "component": "TerminalPanel"
+      }
+    ]
   }
 }

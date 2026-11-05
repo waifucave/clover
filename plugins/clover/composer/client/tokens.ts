@@ -24,6 +24,7 @@ export const CATALOG_TOKENS = [
   "color.text.secondary",
   "composer.background",
   "composer.placeholder",
+  "composer.radius",
   "composer.rim",
   "composer.text",
   "font.line.body",

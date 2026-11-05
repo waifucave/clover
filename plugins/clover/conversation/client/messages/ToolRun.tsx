@@ -1,5 +1,5 @@
 import { useId, type ReactNode } from "react";
-import type { MessageContext } from "../context";
+import type { MessageContext, MessageSpotProps } from "../context";
 import { clip, firstLine, hostOf } from "../format";
 import { IconChevron } from "../icons";
 import { StatusGlyph } from "../parts";
@@ -8,7 +8,7 @@ import { safeAsset } from "../links";
 import { AppView } from "../sdk";
 import { S } from "../strings";
 import { runStatus, sharedComputer, splitPluginTool, toolSentence } from "../tool-phrases";
-import type { ToolCall } from "../types";
+import type { ToolCall, ToolRunItem } from "../types";
 
 /** Bounds on what one output block DRAWS (the core already capped what it stores). */
 export const MAX_OUTPUT_LINES = 16;
@@ -18,9 +18,9 @@ export const MAX_FAILURE_SUMMARY = 140;
 
 const FILE_TOOLS = new Set(["Read", "Write", "Edit"]);
 
-export interface ToolRunProps {
-  calls: ToolCall[];
-  ctx: MessageContext;
+/** The `tool` key's props: the spot's `{ bot, session, item, ctx }`, where `item` is the run, plus the
+ *  view's own open state. */
+export interface ToolRunProps extends MessageSpotProps<ToolRunItem> {
   expanded: boolean;
   onToggle: () => void;
   /** The `tool.result` spot (keyed by tool name): a replacement for one call's result, or
@@ -113,7 +113,8 @@ function CallDetail({ call, ctx }: { call: ToolCall; ctx: MessageContext }) {
   return <span className="cl-conv-call__detail">{detail ?? callName(call)}</span>;
 }
 
-export function ToolRun({ calls, ctx, expanded, onToggle, renderResult }: ToolRunProps) {
+export function ToolRun({ item, ctx, expanded, onToggle, renderResult }: ToolRunProps) {
+  const calls = item.calls;
   const bodyId = useId();
   const status = runStatus(calls);
   const computer = sharedComputer(calls);

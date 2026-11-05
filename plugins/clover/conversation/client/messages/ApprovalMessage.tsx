@@ -20,6 +20,8 @@ function outcome(item: ApprovalItem): { text: string; icon: ReactElement } {
       return { text: `${S.approvalDenied}${on}`, icon: <IconCross /> };
     case "expired":
       return { text: S.approvalExpired, icon: <IconClock /> };
+    case "cancelled":
+      return { text: S.approvalCancelled, icon: <IconDash /> };
     case "withdrawn":
       return { text: item.withdrawnBy === "interrupt" ? S.approvalWithdrawnInterrupt : S.approvalWithdrawn, icon: <IconDash /> };
     case "pending":
@@ -35,8 +37,9 @@ function Slot({ name, lines }: { name: SealedField; lines?: number }) {
   );
 }
 
-/** One sealed button per option: the deny options first, then the approve ones, so the plain "allow"
- *  sits last, where the eye ends. With no options known, the first of each kind. */
+/** One sealed button per option: the deny options first, then an "always" approve, then the plain
+ *  approve, so the one-time OK sits last, where the eye ends. With no options known, the first of
+ *  each kind. */
 function Buttons({ options }: { options: readonly ApprovalOption[] | undefined }) {
   if (!options || options.length === 0) {
     return (
@@ -50,7 +53,11 @@ function Buttons({ options }: { options: readonly ApprovalOption[] | undefined }
       </div>
     );
   }
-  const ordered = [...options.filter((o) => o.kind === "deny"), ...options.filter((o) => o.kind === "approve")];
+  const ordered = [
+    ...options.filter((o) => o.kind === "deny"),
+    ...options.filter((o) => o.kind === "approve" && o.remember === "always"),
+    ...options.filter((o) => o.kind === "approve" && o.remember !== "always"),
+  ];
   return (
     <div className="cl-conv-approval__buttons">
       {ordered.map((o) => (

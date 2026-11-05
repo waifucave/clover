@@ -26,7 +26,7 @@ export const panelStories: Story[] = [
   {
     id: "panel/host-two",
     title: "Two views at once",
-    notes: "One above the other, each with its header, expand and close. Each view is the panel.view spot, keyed by view.",
+    notes: "One above the other, each with its header, expand and close. Each panel fills the panel spot, keyed by its id.",
     width: 640,
     height: 520,
     render: () => (

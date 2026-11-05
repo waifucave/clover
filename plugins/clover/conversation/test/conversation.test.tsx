@@ -32,6 +32,7 @@ import {
   approval,
   at,
   bot,
+  note,
   thinking,
   tool,
   user,
@@ -378,7 +379,7 @@ describe("tool runs", () => {
 });
 
 describe("approvals", () => {
-  test("a pending card places every sealed field it has and one sealed button per option, deny first", () => {
+  test("a pending card places every sealed field it has and one sealed button per option: deny, always, once", () => {
     const { container } = renderView({ items: APPROVAL_PENDING });
     const card = container.querySelector(`[data-sealed-card="${APPROVAL_PENDING_CARD}"]`) as HTMLElement;
     expect(card).toBeTruthy();
@@ -390,7 +391,7 @@ describe("approvals", () => {
       "title", "command", "computer", "risk", "reason", "expires",
     ]);
     const buttons = [...card.querySelectorAll("[data-sealed-button]")] as HTMLElement[];
-    expect(buttons.map((b) => b.dataset.option)).toEqual(["deny", "allow_once", "allow_always"]);
+    expect(buttons.map((b) => b.dataset.option)).toEqual(["deny", "allow_always", "allow_once"]);
     expect(buttons.map((b) => b.dataset.sealedButton)).toEqual(["deny", "approve", "approve"]);
     // The view adds no deadline words of its own: the core's sealed field says when.
     expect(screen.queryByText(/Denied in/)).toBeNull();
@@ -425,6 +426,7 @@ describe("approvals", () => {
     expect(screen.getByText("Denied on Studio")).toBeTruthy();
     expect(screen.getByText("Denied: no answer in time")).toBeTruthy();
     expect(screen.getByText("Withdrawn when the turn ended")).toBeTruthy();
+    expect(screen.getByText("Cancelled: its session stopped")).toBeTruthy();
     cleanup();
     renderView({ items: INTERRUPT });
     expect(screen.getByText("Withdrawn when you interrupted")).toBeTruthy();
@@ -545,6 +547,9 @@ describe("events and notes", () => {
     // is never a user bubble.
     const fromPlugin = container.querySelector('[data-kind="agent-report"][data-from="plugin"]') as HTMLElement;
     expect(fromPlugin.textContent).toContain("plugin tarot-panel");
+    // lane B's plugin_message: plain text, as a plugin's note is, and it says when an app page sent it.
+    expect(fromPlugin.querySelector(".cl-conv-md")).toBeNull();
+    expect(fromPlugin.textContent).toContain("from its app page");
     expect(fromPlugin.closest(".cl-conv-user")).toBeNull();
     for (const bubble of container.querySelectorAll(".cl-conv-user")) expect(bubble.textContent).not.toContain("pinned");
   });
@@ -591,3 +596,25 @@ describe("spots", () => {
     expect(screen.getByRole("button", { name: /Ran 2 commands/ }).getAttribute("aria-expanded")).toBe("true");
   });
 });
+
+describe("the conversation.message spot", () => {
+  test("each entry gets lane B's props: { bot, session, item, ctx }; under tool, item is the run", () => {
+    const seen: string[] = [];
+    renderView({
+      session: "s_alpha",
+      items: [note(at(0, 1, 0), "A note"), tool(at(0, 1, 1), { name: "Bash", detail: "ls" }), tool(at(0, 1, 1), { name: "Read", detail: "a.md" })],
+      renderers: {
+        note: ({ bot, session, item, ctx }) => {
+          seen.push(`note ${bot.id}/${bot.name} ${session} ${item.kind} ${typeof ctx.actions}`);
+          return null;
+        },
+        tool: ({ bot, session, item }) => {
+          seen.push(`tool ${bot.id} ${session} ${item.kind} ${item.calls.map((c) => c.name).join("+")}`);
+          return null;
+        },
+      },
+    });
+    expect(seen).toEqual(["note alpha/Alpha s_alpha note object", "tool alpha s_alpha tool Bash+Read"]);
+  });
+});
+

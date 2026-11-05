@@ -6,9 +6,22 @@
     "clover": "^1.0.0"
   },
   "client": {
-    "entry": "client/index.tsx"
+    "entry": "client/index.tsx",
+    "css": [
+      "client/styles.css"
+    ]
   },
   "capabilities": [
     "files"
-  ]
+  ],
+  "contributes": {
+    "ui": [
+      {
+        "spot": "panel",
+        "key": "files",
+        "title": "Files",
+        "component": "FilesPanel"
+      }
+    ]
+  }
 }
