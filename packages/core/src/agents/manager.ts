@@ -143,6 +143,7 @@ export class AgentManager {
       v: 1, sessionId: id, backend: backend.id, computer, root: req.root, rootPath: loc.path, startedAt: this.#o.clock.now(),
       ...(bot === undefined ? {} : { bot }), ...(parent === undefined ? {} : { parent }),
       ...(req.model === undefined ? {} : { model: req.model }), ...(req.effort === undefined ? {} : { effort: req.effort }),
+      ...(req.caller.kind === "bot" && req.caller.level !== undefined ? { level: req.caller.level } : {}),
     };
     transcript.writeRecord(record);
     const entry = this.#entry(id, backend, transcript, record, req.caller.kind === "bot" ? req.caller.level : undefined);
@@ -173,7 +174,7 @@ export class AgentManager {
     const backend = this.#o.backends().find((b) => b.id === record.backend);
     if (!backend) return false;
     const transcript = new AgentTranscript(this.#o.home, view.id, view.bot);
-    const entry = this.#entry(view.id, backend, transcript, record, undefined, { agentSessionId: record.agentSessionId });
+    const entry = this.#entry(view.id, backend, transcript, record, record.level as Level | undefined, { agentSessionId: record.agentSessionId });
     this.#o.host.open({
       id: view.id, kind: view.kind, computer: view.computer, backend: backend.id, root: record.root,
       ...(record.bot === undefined ? {} : { bot: record.bot }), ...(record.parent === undefined ? {} : { parent: record.parent }),

@@ -56,6 +56,8 @@ export interface AgentRecordFile {
   rootPath: string;
   model?: string;
   effort?: string;
+  /** A routine's raised level the delegation runs at (§7), kept across a restart. */
+  level?: string;
   startedAt: number;
 }
 
