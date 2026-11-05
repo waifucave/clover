@@ -22,12 +22,12 @@ export type Installer = "homebrew" | "dmg" | "nsis" | "winget" | "deb" | "rpm" |
 
 /** Where each installer leaves the daemon binary, as its own script spells it. */
 export const INSTALLED_DAEMON: Readonly<Record<Installer, string>> = {
-  homebrew: "#{appdir}/Clover.app/Contents/Resources/clover-core",
-  dmg: "/Applications/Clover.app/Contents/Resources/clover-core",
-  nsis: "$INSTDIR\\resources\\clover-core.exe",
-  winget: "$INSTDIR\\resources\\clover-core.exe", // winget runs the NSIS installer
-  deb: "/opt/Clover/resources/clover-core",
-  rpm: "/opt/Clover/resources/clover-core",
+  homebrew: "#{appdir}/Clover.app/Contents/Resources/daemon/clover-core",
+  dmg: "/Applications/Clover.app/Contents/Resources/daemon/clover-core",
+  nsis: "$INSTDIR\\resources\\daemon\\clover-core.exe",
+  winget: "$INSTDIR\\resources\\daemon\\clover-core.exe", // winget runs the NSIS installer
+  deb: "/opt/Clover/resources/daemon/clover-core",
+  rpm: "/opt/Clover/resources/daemon/clover-core",
   appimage: "(inside the AppImage; the app copies it out, spec §3.1)",
 };
 

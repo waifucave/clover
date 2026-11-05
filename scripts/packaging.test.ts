@@ -44,7 +44,7 @@ describe("the installers' hooks", () => {
 
   test("the Homebrew cask's uninstall turns it off through the daemon, as the user", () => {
     const code = codeLines(read("packaging/clover.rb.tmpl"), "#").join("\n");
-    expect(code).toContain('executable: "#{appdir}/Clover.app/Contents/Resources/clover-core"');
+    expect(code).toContain('executable: "#{appdir}/Clover.app/Contents/Resources/daemon/clover-core"');
     expect(code).toContain(`args:       ${JSON.stringify(autostartArgs("disable")).replace(/,/g, ", ")}`);
     expect(code).toContain("sudo:       false");
   });
@@ -53,7 +53,7 @@ describe("the installers' hooks", () => {
     const code = codeLines(read("packaging/windows/installer.nsh"), ";");
     expect(code).toContain("!macro customUnInstall");
     expect(code).toContain("${ifNot} ${isUpdated}");
-    expect(code).toContain(`ExecWait '"$INSTDIR\\resources\\clover-core.exe" ${autostartArgs("disable").join(" ")}'`);
+    expect(code).toContain(`ExecWait '"$INSTDIR\\resources\\daemon\\clover-core.exe" ${autostartArgs("disable").join(" ")}'`);
   });
 
   test("none reaches launchctl, systemctl or Task Scheduler itself, and none turns it on", () => {
@@ -108,7 +108,18 @@ describe("the Linux packages (electron-builder.yml and packaging/linux)", () => 
   });
 
   test("the daemon goes in every package's resources, from where build-packages.ts stages it", () => {
-    expect(builder.extraResources).toEqual([{ from: "out/daemon", to: ".", filter: ["clover-core", "clover-core.exe"] }]);
+    expect(builder.extraResources).toEqual([{ from: "out/daemon", to: "daemon", filter: ["clover-core", "clover-core.exe"] }]);
+  });
+
+  test("the deb's and the rpm's launcher entry carries Quit, which runs the app with --quit (no tray on stock GNOME)", () => {
+    for (const format of ["deb", "rpm"]) {
+      expect(builder[format].desktop.entry.Actions, format).toBe("Quit;");
+      expect(builder[format].desktop.desktopActions.Quit, format).toEqual({ Name: "Quit Clover", Exec: `/opt/Clover/${builder.linux.executableName} --quit` });
+    }
+  });
+
+  test("on macOS the app is a menu-bar app: no Dock icon", () => {
+    expect(builder.mac.extendInfo.LSUIElement).toBe(true);
   });
 
   test("the Windows installer, once there is an app to package, is per user and carries packaging/windows/installer.nsh", () => {
@@ -176,12 +187,12 @@ describe("build-packages.ts", () => {
     const debListing = [
       "drwxr-xr-x 0/0 0 2026-11-05 12:00 ./opt/Clover/",
       "-rwxr-xr-x 0/0 100 2026-11-05 12:00 ./opt/Clover/clover",
-      "-rwxr-xr-x 0/0 100 2026-11-05 12:00 ./opt/Clover/resources/clover-core",
+      "-rwxr-xr-x 0/0 100 2026-11-05 12:00 ./opt/Clover/resources/daemon/clover-core",
       "-rw-r--r-- 0/0 100 2026-11-05 12:00 ./opt/Clover/resources/apparmor-profile",
     ].join("\n");
     const scripts = `CLI='${AFTER_INSTALL_MARK}'\napparmor_parser --replace x`;
     expect(checkPackage("deb", debListing, scripts)).toEqual([]);
-    expect(checkPackage("rpm", "/opt/Clover/clover\n/opt/Clover/resources/apparmor-profile\n", scripts)).toEqual(["rpm: /opt/Clover/resources/clover-core is missing"]);
+    expect(checkPackage("rpm", "/opt/Clover/clover\n/opt/Clover/resources/apparmor-profile\n", scripts)).toEqual(["rpm: /opt/Clover/resources/daemon/clover-core is missing"]);
     expect(checkPackage("deb", debListing, "ln -sf /opt/Clover/clover /usr/bin/clover")).toEqual([
       `deb: its after-install script is not packaging/linux/after-install.sh (no ${AFTER_INSTALL_MARK})`,
       "deb: its scripts never load the AppArmor profile",

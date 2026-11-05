@@ -29,7 +29,8 @@ export const CI_AREAS: Readonly<Record<CiArea, readonly Pattern[]>> = {
   // every workspace package's own tests, on all four machines
   workspaces: ["packages/", "apps/", "plugins/", "services/", "native/", "examples/", "spikes/", "scripts/workspaces.ts", "scripts/with-private-secret-service.sh"],
   daemon: [...CORE, "packages/cli/", "scripts/build-daemon.ts"],
-  app: ["apps/"],
+  // the app, and what it loads: Clover's own plugins and the plugin SDK's UI API (E-M1)
+  app: ["apps/", "plugins/clover/", "packages/plugin-sdk/"],
   // the Linux packages: the app, its builder config, packaging/ and the scripts that build them
   packages: ["apps/desktop/", "packaging/", "scripts/build-packages.ts", "scripts/build-daemon.ts"],
   gallery: ["plugins/"],

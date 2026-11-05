@@ -7,6 +7,6 @@
 
 !macro customUnInstall
   ${ifNot} ${isUpdated}
-    ExecWait '"$INSTDIR\resources\clover-core.exe" autostart disable'
+    ExecWait '"$INSTDIR\resources\daemon\clover-core.exe" autostart disable'
   ${endIf}
 !macroend

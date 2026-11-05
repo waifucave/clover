@@ -3,12 +3,12 @@
 # (every dollar-brace macro here must be one it knows, or the build fails).
 # It does what electron-builder's own does (the Chromium sandbox helper, the MIME and desktop databases, and the
 # AppArmor profile Ubuntu needs for Electron's sandbox, spec §4), except for one thing: `clover` on the PATH is
-# the daemon's command line, `resources/clover-core`, as on macOS. The app itself starts from its desktop entry.
+# the daemon's command line, `resources/daemon/clover-core`, as on macOS. The app itself starts from its desktop entry.
 #
 # It never turns on login start: it runs as root, outside every user's session. The app does that at its first
 # launch (spec §3.1, packaging/installer-hooks.ts).
 
-CLI='/opt/${sanitizedProductName}/resources/clover-core'
+CLI='/opt/${sanitizedProductName}/resources/daemon/clover-core'
 
 if type update-alternatives >/dev/null 2>&1; then
     # Remove a previous link that doesn't use update-alternatives

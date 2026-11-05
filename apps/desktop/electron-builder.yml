@@ -12,11 +12,11 @@ files:
   - out/renderer/**
   - package.json
 asar: true
-# The daemon, clover-core, beside the app's resources: scripts/build-packages.ts stages the package target's binary
-# in out/daemon first. A plain `bun run dist` has none, and packages the app alone.
+# The daemon, clover-core, in the app's resources/daemon/, where E-M1's app starts it: scripts/build-packages.ts stages
+# the package target's binary in out/daemon first. A plain `bun run dist` has none, and packages the app alone.
 extraResources:
   - from: out/daemon
-    to: .
+    to: daemon
     filter:
       - clover-core
       - clover-core.exe
@@ -31,6 +31,9 @@ mac:
   category: public.app-category.productivity
   # Unsigned: macOS signing and notarization are M2.
   identity: null
+  # A menu-bar app (spec §3.1: the pair is always on, with no window until the user opens one): no Dock icon.
+  extendInfo:
+    LSUIElement: true
 win:
   target:
     - target: dir
@@ -49,6 +52,15 @@ linux:
 # Ubuntu (spec §4). Their scripts and the profile live in packaging/linux/. Besides electron-builder's own
 # dependencies, the daemon's Bash tool needs bubblewrap (spec §4) and its secrets need libsecret.
 deb:
+  # GNOME without the AppIndicator extension shows no tray, so the launcher entry carries Quit (spec §4): the app's
+  # own executable with --quit (E-M1's app quits the pair). `clover` on the PATH is the daemon's command line.
+  desktop:
+    entry:
+      Actions: Quit;
+    desktopActions:
+      Quit:
+        Name: Quit Clover
+        Exec: /opt/Clover/clover --quit
   afterInstall: ../../packaging/linux/after-install.sh
   afterRemove: ../../packaging/linux/after-remove.sh
   appArmorProfile: ../../packaging/linux/apparmor-profile
@@ -67,6 +79,14 @@ deb:
     - libappindicator3-1
     - gnome-keyring
 rpm:
+  # The same Quit action as the deb's.
+  desktop:
+    entry:
+      Actions: Quit;
+    desktopActions:
+      Quit:
+        Name: Quit Clover
+        Exec: /opt/Clover/clover --quit
   afterInstall: ../../packaging/linux/after-install.sh
   afterRemove: ../../packaging/linux/after-remove.sh
   appArmorProfile: ../../packaging/linux/apparmor-profile

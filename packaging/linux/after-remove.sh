@@ -6,7 +6,7 @@
 # as root, outside every user's session. The unit has to stay inert once its binary is gone (packaging/installer-
 # hooks.ts), and `clover autostart disable` removes it for good.
 
-CLI='/opt/${sanitizedProductName}/resources/clover-core'
+CLI='/opt/${sanitizedProductName}/resources/daemon/clover-core'
 
 if type update-alternatives >/dev/null 2>&1; then
     update-alternatives --remove 'clover' "$CLI"

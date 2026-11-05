@@ -273,7 +273,7 @@ jobs:
           deb=$(ls apps/desktop/out/dist/*_amd64.deb)
           name=$(dpkg-deb -f "$deb" Package)
           sudo apt-get install -y -qq "./$deb"
-          test "$(readlink -f /usr/bin/clover)" = /opt/Clover/resources/clover-core
+          test "$(readlink -f /usr/bin/clover)" = /opt/Clover/resources/daemon/clover-core
           CLOVER_HOME="$(mktemp -d)" clover --version
           test -f /etc/apparmor.d/clover
           sudo apt-get remove -y -qq "$name"

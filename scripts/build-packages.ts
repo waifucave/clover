@@ -1,6 +1,6 @@
 // The Linux packages (plan §4 M1): the deb and the rpm, the main ones, which install the AppArmor profile Electron's
 // sandbox needs on Ubuntu, and the AppImage, the fallback (spec §4). Each holds the desktop app and the daemon,
-// clover-core, in its resources. The dmg and the Windows installer come with E-M1's app; signing and updates are M2.
+// clover-core, in its resources/daemon/, where E-M1's app starts it. The dmg and the Windows installer come with E-M1's app; signing and updates are M2.
 //
 //   bun scripts/build-packages.ts [--arch x64|arm64[,…]] [--formats deb,rpm,AppImage] [--check] [--dry-run]
 //
@@ -74,9 +74,9 @@ export function electronBuilderArgs(arch: LinuxArch, formats: readonly LinuxForm
 }
 
 /** What a package must hold: the daemon and the AppArmor profile in the app's resources. */
-export const REQUIRED_FILES = ["/opt/Clover/resources/clover-core", "/opt/Clover/resources/apparmor-profile", "/opt/Clover/clover"] as const;
+export const REQUIRED_FILES = ["/opt/Clover/resources/daemon/clover-core", "/opt/Clover/resources/apparmor-profile", "/opt/Clover/clover"] as const;
 /** What its after-install script must do: link `clover` to the daemon's command line (packaging/linux/after-install.sh). */
-export const AFTER_INSTALL_MARK = "/opt/Clover/resources/clover-core";
+export const AFTER_INSTALL_MARK = "/opt/Clover/resources/daemon/clover-core";
 
 /**
  * The problems with one package, from its file list (`dpkg-deb -c`, `rpm -qlp`) and its scripts (`dpkg-deb -I … postinst`,
