@@ -25,7 +25,8 @@ docs/                    the spec, the plan, these conventions, and research rep
 
 * One workspace list, in the root `package.json` (`workspaces`) and mirrored in `pnpm-workspace.yaml`:
   * `packages/*`, `apps/*`, `services/*`, `native/*`, `spikes/*`, `examples/*`;
-  * `plugins/*` for a top-level plugin's own package, and `plugins/*/*` for its children's.
+  * `plugins/*` for a top-level plugin's own package, and `plugins/*/*` for its children's;
+  * `plugins/*/*/gallery` for a child's gallery when it is a package of its own (the base theme's).
   * A folder is a workspace package when one of these globs matches it and it holds a `package.json`. A deeper folder is not one; ask the controller for a glob if a lane needs it.
 * One lockfile: `bun.lock` at the root, with `pnpm-lock.yaml` beside it for pnpm. A package keeps no lockfile of its own (no `package-lock.json`).
 * Bun is the runtime and the package manager (`.bun-version` pins it).
@@ -63,7 +64,7 @@ docs/                    the spec, the plan, these conventions, and research rep
 
 ## A gallery
 
-* A package with a gallery (a plugin's parts, the base theme) has a `gallery` script. It builds the gallery and renders every story to PNG files, light and dark, under `$CLOVER_GALLERY_OUT/<the package's folder name>/`, with a renderer it brings itself (Playwright, as a devDependency, installing its own Chromium).
+* A package with a gallery (a plugin's parts, the base theme) has a `gallery` script. It builds the gallery and renders every story to PNG files, light and dark, under `$CLOVER_GALLERY_OUT/<the part's folder name>/`, with a renderer it brings itself (Playwright, as a devDependency, installing its own Chromium). It runs in CI only, and refuses elsewhere: it downloads and runs a browser. `plugins/clover/shell/gallery/ci.ts` and `plugins/clover/base-theme/gallery/ci.ts` are the two there are.
 * CI's `gallery` job runs every package's `gallery` script on Linux and keeps the PNGs as one artifact for review. A lane keeps no workflow of its own: `.github/workflows/` is CI's (lane M), and the layout test refuses a `lane-*.yml` there.
 
 ## A service
