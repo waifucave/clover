@@ -265,7 +265,7 @@ Plaintexts are UTF-8 JSON. Unknown fields are ignored, and `at` (ms) lets the re
 {"v": 1, "at": 1793000000123, "session": "<id>", "type": "offer", "sdp": "v=0…"}
 {"v": 1, "at": 1793000000123, "session": "<id>", "type": "candidate", "candidate": {"candidate": "…", "sdpMid": "0", "sdpMLineIndex": 0}}
 ```
-`signal`: `type` is `offer`, `answer`, `candidate` or `end`.
+`signal`: `type` is `offer`, `answer`, `candidate` or `end`. The web companion's one-time browser pairing uses the same kind for its own messages (`pair-request`, `pair-words`, `paired`, `pair-refused`; `services/web/protocol/pairing.ts`).
 
 ## Limits
 

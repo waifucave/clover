@@ -2,7 +2,7 @@
 // here is made fresh for the run, in memory: the test account service's signing keys and the ticket secret. Nothing
 // is written to disk. The one outbound request the Worker may make, the account service's JWKS, is answered here.
 
-import { generateKeyPairSync, randomBytes } from "node:crypto";
+import { generateKeyPairSync, type KeyObject, randomBytes } from "node:crypto";
 
 import { cloudflareTest } from "@cloudflare/vitest-plugin";
 import { defineConfig } from "vitest/config";
@@ -11,7 +11,7 @@ const es256 = generateKeyPairSync("ec", { namedCurve: "P-256" });
 const ed25519 = generateKeyPairSync("ed25519");
 const rotated = generateKeyPairSync("ed25519");
 
-const publicJwk = (key: ReturnType<typeof generateKeyPairSync>["publicKey"], kid: string, alg: string) => ({ ...key.export({ format: "jwk" }), kid, alg, use: "sig" });
+const publicJwk = (key: KeyObject, kid: string, alg: string) => ({ ...key.export({ format: "jwk" }), kid, alg, use: "sig" });
 
 const jwks = JSON.stringify({ keys: [publicJwk(es256.publicKey, "test-es256", "ES256"), publicJwk(ed25519.publicKey, "test-ed25519", "EdDSA")] });
 // What the JWKS URL serves: the same keys plus one added later, as a rotation would.
