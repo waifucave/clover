@@ -42,9 +42,15 @@ describe("a plugin's own files", () => {
     mkdirSync(join(plugin, "client"), { recursive: true });
     writeFileSync(join(plugin, "client", "index.js"), "export {}");
     writeFileSync(join(dir, "secret.txt"), "no");
-    symlinkSync(join(dir, "secret.txt"), join(plugin, "client", "link.js"));
+    let linked = true;
+    try {
+      symlinkSync(join(dir, "secret.txt"), join(plugin, "client", "link.js"));
+    } catch {
+      // Windows without the symlink privilege: the link case can't be made here.
+      linked = false;
+    }
     expect(readFileSync(pluginFile({ assetBase: plugin }, "client/index.js"), "utf8")).toBe("export {}");
-    for (const bad of ["../secret.txt", "client/../../secret.txt", "/etc/passwd", "client//index.js", "client/link.js", "missing.js"]) {
+    for (const bad of ["../secret.txt", "client/../../secret.txt", "/etc/passwd", "C:/Windows/win.ini", "client//index.js", ...(linked ? ["client/link.js"] : []), "missing.js"]) {
       expect(() => pluginFile({ assetBase: plugin }, bad)).toThrow();
     }
     expect(mediaType("a.js")).toStartWith("text/javascript");
