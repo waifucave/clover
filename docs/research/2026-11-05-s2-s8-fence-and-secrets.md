@@ -2,14 +2,17 @@
 
 Date: 2026-11-05. Lane C, `lane/c-m0`, spec revision 17; base `a481f7e14`.
 
-**M0 experiments complete, with negative and limited results. Windows is not admitted for release.**
+**Review revision in progress. Windows is not admitted for release.** The historical **29/30 + 7/7**
+figures are provisional, alias-assisted measurements on an artificially modified Session 0 namespace.
+The unmodified candidate admitted zero workload checks: initialization failed.
 The dedicated-principal candidate runs useful work and passes most focused checks, but requires a
 Session 0 compatibility diagnostic and leaves one COM route inconclusive. Supported Windows 11
 and authenticated agent integration remain live gates. Nothing here establishes production readiness.
 
 The controller ruled that generated test keys in disposable stores are authorized, and that §8.5's
 unattended fallback remains: user-scoped systemd sealing with TPM where available, otherwise an
-owner-only plaintext key file, labelled plaintext and hidden by the fence. There is no policy conflict.
+owner-only plaintext key file, labelled plaintext and hidden by the fence. That fallback ruling is resolved;
+the separate-principal conflict with §9.1 **[D]** below is a different, unresolved owner decision.
 **Locked persistence is a rejected alternative:** cloud computers can be main/refresher computers and
 must work unattended after reboot; requiring a person to unlock them would break that requirement.
 No spec or shared contract was edited. Network, semantic D-Bus, caller-check and backend edits below
@@ -122,6 +125,73 @@ remain gaps. No claim is made that every COM server or token-impersonation techn
 
 ## S2.3–4 — Helper, design and M1 entry
 
+### Blocking finding: the candidate changes the [D] Windows credential model
+
+Spec §9.1 says Windows Bash runs as the user and leaves that user's OS store open to `gh`, Docker
+and git. The only tested posture that both fenced writes and ran Bash uses a **different principal**.
+It cannot transparently use the real user's DPAPI, Credential Manager or Windows OpenSSH agent.
+`resumed-provision-v2.txt` records no profile read grant; granting files would not change per-user
+DPAPI/Credential Manager identity. Original-user strong-token configurations failed Bash startup.
+The candidate **does not implement this [D] decision**. Its recommendation is conditional on an owner
+decision. Controller authorization to evaluate it is not adoption of that product change.
+
+Proposed §9.1 text, **[P], touches [D] — owner decides**:
+
+> On Windows, model-run Bash and PowerShell execute as a dedicated sandbox principal under the
+> persistent floor. They do not directly inherit the user's DPAPI, Credential Manager or ssh-agent
+> access. Approved external-tool credentials are mediated by a Clover credential broker acting in
+> the user's authenticated logon context, as credential access is mediated on Linux. Clover's own
+> secrets, approval tokens and device keys are never served to model commands. The broker admits
+> only the explicitly allowed credential operation for that session, destination and identity.
+
+The broker must cover `gh` host/account token lookup; git credential-helper `get` plus approved
+store/erase lifecycle keyed by protocol/host/path/user; Docker's registry credential-helper protocol
+(not unrestricted host daemon-pipe access); and ssh-agent identity listing/signing with allowed keys,
+session/destination constraints where supported, no private-key export and no blanket forwarding.
+Raw host store/agent pipes stay closed. Requests must not become arbitrary host command execution.
+
+Costs: an extra IPC/authorization plus OS-store operation per uncached lookup/sign, per-tool adapters,
+rotation/recovery, logon/profile lifecycle, packaging/version compatibility and secret-safe audit.
+Caching trades fewer lookups for retained credential material. **Broker latency was not measured**;
+the 706/634 ms shell-fixture medians are not broker overhead estimates. Setup also requires account/
+WFP provisioning. The current external-credential fixtures do not prove these Windows integrations.
+
+Alternatives: continue original-user AppContainer/restricted-token research (no working write-fenced
+Bash proof yet); use WSL2/a VM (still needs credential forwarding and changes process/filesystem
+semantics); or explicitly reduce supported credential integrations. Unfenced original-user commands
+restore store access by abandoning the required floor and are not an acceptable silent fallback.
+Copying user tokens or raw stores defeats the separation. The controller takes this [D] change to
+the owner before M1 can adopt the recommendation.
+
+**M1 entry:** resolve that decision and define the Windows credential broker. Separately, implement
+a real **per-command escape API**: the experiment resets/reinitializes an entire vendor session to
+widen roots, not one `dangerouslyDisableSandbox` call. M1 must retain an immutable floor, isolate
+per-launch grants from concurrent ordinary commands, and cover cleanup/crash recovery. Session-wide
+reconfiguration must not ship as a per-command escape.
+
+### Fenced-set coverage against the concrete source list
+
+The candidate's blanket deny on synthetic `control` covers only `settings.json`, `run/token`,
+`secrets.enc` and `plaintext.key`. It does not test registrations for omitted real paths. Against
+`selfGrantDenyWrite` (`mode-options.ts:925`) and the additions made by `sandboxConfigFor`:
+
+| Source/spec group | Measured coverage and missing enumeration |
+| --- | --- |
+| `run`, `runtimes`, `cache` | Synthetic run only; runtimes/cache not individually exercised |
+| `plugins` | Not exercised; reconcile with Clover's intentionally writable installed plugin folders |
+| `permissions`, `trust.json` | Saved-rule/connector permission/trust registrations not exercised |
+| `agents`, `sdk/agents`, `sdk/plugins` | Not exercised; distinguish authority/config from writable installed plugins |
+| `sdk/settings.json`, `sdk/.winter.json` | Synthetic settings only, not these concrete paths |
+| `computer-use` | Not exercised; legacy entry must be reconciled with opensky scope |
+| `permissions.local.json`, `settings.json`, `settings.local.json` | Only synthetic settings.json exercised |
+| Active `hostStorageWriteRoots`: participating homes' cowork/runtimes/run and coordination directories | Not exercised; retained-storage/registration/alias cases remain separate |
+| Additional protected-home, project and any-depth child rules | Not exercised; these are additional to selfGrantDenyWrite |
+| Clover levels, device list, bots' user layers, development folders, plugin data | Not exercised as concrete paths |
+
+M1/M2 must derive the complete canonical list from the approved Clover contract, map every source/
+spec row to file/directory/glob fixtures, and test normal/per-command-escape reads, writes, links and
+ancestor replacement across OSes. **Full Mac-fence parity is not established by this representative set.**
+
 `native/sandbox/windows-probe.cs` is the C# diagnostic; `session0-bno.cs` is its temporary namespace
 control. `AppSid`, `Run` and `RemoveApp` are documented in the native README. Neither is an admitted
 launcher. `candidate.mjs` exercises the pinned upstream native account/WFP/token/job implementation.
@@ -148,7 +218,7 @@ OS stores, encrypted files and the explicitly authorized plaintext fallback.
 | Actual password-principal scheduled-task startup | No started/result marker; result 267011 (not yet run), despite enabled/on-demand/timed/COM RunEx attempts |
 | SYSTEM scheduled-task infrastructure control | Started, result 0; therefore password-principal result is not treated as a global scheduler outage |
 | Ubuntu private real Secret Service | Key store/retrieve and AES-256-GCM file roundtrip passed; tamper rejected; 64 bytes became 92 bytes |
-| TPM inventory | `/dev/tpm0` and `/dev/tpmrm0` present; after installing TSS libraries, systemd reported full support |
+| TPM inventory | Device nodes and `systemd-analyze has-tpm2` output: `spikes/s8-secrets/results/review-tpm-inventory-v2.txt` |
 | `systemd-creds --user`, host+tpm2 / auto | Roundtrip passed; format `ef4ac13679a9480ea7db68897f9f165d` identifies UID-scoped host-plus-TPM wrapping |
 | Pure tpm2 with `--user` | Rejected as unavailable in UID-scoped mode; use the combined mechanism |
 | System-scope TPM control | Real TPM encryption/decryption passed; nonexistent-device control failed |
@@ -162,7 +232,8 @@ simulate absence: the credential IPC service selected its own device and still p
 The format identifiers are public algorithm identifiers, confirmed against
 [systemd v259's header](https://github.com/systemd/systemd/blob/v259/src/shared/creds-util.h).
 The no-TPM control uses root's user scope to avoid delegating back to the host credential service;
-ordinary-user behaviour on a truly TPM-less host remains a deployment check. The non-root plaintext
+ordinary-user behaviour on a truly TPM-less host is an **explicit live gate**, including unattended
+reboot, host-scoped sealing/decryption and fence hiding at that UID. The non-root plaintext
 fallback and mask check are independently exercised. No global user-namespace sysctl was relaxed.
 
 The keyring fixture used a private bus and temporary home/config/data/runtime directories. Windows
@@ -249,6 +320,8 @@ Keep the owner-decided own-sandbox/no-outer-wrapper rule and unsupported-backend
    combinations require the existing explicit OK. No outer sandbox is proposed over the [D] rule.
 5. **Rejected alternative, §8.5:** locked persistence/in-memory-only unlock. Controller rejected it
    because unattended main/refresher/cloud computers must survive reboot. The existing fallback stays.
+6. **[P], touches [D], §9.1:** sandbox-principal Windows execution plus the user-context credential
+   broker specified in the blocking finding; owner approval is required before M1 adoption.
 
 No relaxation of the [D] Windows Bash release blocker is proposed. The Session 0, COM, startup-task
 and protected-backend gaps go to the controller; this report does not silently route around them.
@@ -259,6 +332,8 @@ M1 starts with a reviewed native broker, stable floor and secret-store contracts
 correct Session 0 handling, caller identity and a production semantic credential policy. The failed
 or unavailable backend combinations remain explicitly unsupported pending resolution. Broader home
 write policy, concurrent sessions, crash cleanup and real credential-helper protocols need coverage.
+The principal/broker [D] decision, per-command escape API and full fenced-set enumeration above are
+explicit M1 entry requirements, not features proved by the spike counts.
 
 Owner-batch gates: real Windows 11 install/Bash/island (§10.3), actual Ubuntu/Fedora deb/rpm/SELinux
 and desktop keyrings (§10.4), macOS 27 integration (§10.5), authenticated ACP/file-tool/retry checks for

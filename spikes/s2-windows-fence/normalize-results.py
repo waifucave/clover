@@ -13,7 +13,8 @@ def normalize(text):
     text=re.sub(r'[^\s"\']*google-cloud-sdk[^\s"\'\)\]]*',
         lambda m:'<gcloud-install>/'+m[0].rsplit('/',1)[-1],text)
     text=text.replace(str(Path.home()),'<host-home>').replace(Path.home().name,'<test-user>')
-    text=re.sub(r'C:(?:\\)+Users(?:\\)+[^\\\s"\']+',r'C:\\Users\\<test-user>',text)
+    text=re.sub(r'C:(\\+)Users(\\+)[^\\\s"\']+',
+        lambda m:'C:'+m[1]+'Users'+m[2]+'<test-user>',text)
     return '\n'.join(line.rstrip() for line in text.splitlines()).rstrip()+'\n'
 
 if __name__=='__main__':
