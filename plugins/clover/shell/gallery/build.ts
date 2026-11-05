@@ -1,8 +1,8 @@
 // Builds the gallery into a static page: `bun gallery/build.ts [outdir]` (default gallery/dist).
-// The parts are separate packages with their own node_modules until the workspace globs land, so
-// React is pinned to this package's copy here: one React for every part in the bundle.
+// The parts are separate workspace packages, each with its dependencies beside it, so React is pinned
+// to this package's copy here: one React for every part in the bundle.
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import type { BunPlugin } from "bun";
 
 const here = import.meta.dir;
@@ -11,7 +11,10 @@ const shell = join(here, "..");
 const oneReact: BunPlugin = {
   name: "one-react",
   setup(build) {
-    build.onResolve({ filter: /^(react|react-dom|scheduler)(\/.*)?$/ }, (args) => ({ path: Bun.resolveSync(args.path, shell) }));
+    // scheduler is react-dom's own dependency, not the shell's: it resolves from react-dom's folder (the root
+    // workspace install keeps each package's dependencies beside it).
+    const reactDom = dirname(Bun.resolveSync("react-dom/package.json", shell));
+    build.onResolve({ filter: /^(react|react-dom|scheduler)(\/.*)?$/ }, (args) => ({ path: Bun.resolveSync(args.path, /^scheduler(\/|$)/.test(args.path) ? reactDom : shell) }));
   },
 };
 
