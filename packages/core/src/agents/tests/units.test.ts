@@ -13,7 +13,7 @@ import { buildAgentEnv } from "../process/launch";
 import { descendantsOf, isDescendant, parseElapsed, parsePs, type ProcessRow } from "../process/table";
 import { ANTIGRAVITY_QUIRKS, CURSOR_QUIRKS } from "../quirks";
 import { S5_ANTIGRAVITY_QUIRKS, S5_CURSOR_QUIRKS } from "../../contracts/fakes/agent-backend";
-import { AgentTranscript, REDACTED_TOKEN, botSegment } from "../transcript";
+import { AgentTranscript, REDACTED_TOKEN, botSegment, transcriptPaths } from "../transcript";
 import { effectOf, promptOf, ruleKeyOf } from "../manager";
 
 function pair(opts: { stringIds?: boolean } = {}) {
@@ -152,6 +152,9 @@ describe("the transcript", () => {
       const t = new AgentTranscript(home, "agent_x", "pack/luna");
       expect(t.treeWirePath).toBe("bots/pack--luna/agents/agent_x/acp.ndjson");
       expect(botSegment("pack/luna")).toBe("pack--luna");
+      // No id climbs out of bots/<bot>/agents/.
+      expect(() => transcriptPaths(home, "..", "alpha")).toThrow();
+      expect(() => transcriptPaths(home, "agent_x", "../etc")).toThrow();
       const token = "tok_0123456789abcdefghijklmnopqrstuv";
       t.redact(token);
       t.wire("out", { method: "session/new", params: { mcpServers: [{ env: [{ name: "CLOVER_BRIDGE_TOKEN", value: token }] }] } }, false, 1);

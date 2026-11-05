@@ -14,15 +14,26 @@
 // session the user started) keeps its transcript under `<home>/agents/<session>/`.
 import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { isAnyPluginId, pluginIdToSegment } from "@waifucave/clover-protocol";
+import { ContractError } from "../contracts/common";
 import type { JsonRpcMessage } from "./acp/jsonrpc";
 
-/** A bot's id as one path segment: `/` written `--` (`pack--luna`, spec §5.1), as lane D's paths write it. */
+/** A bot's id as one path segment: `/` written `--` (`pack--luna`, spec §5.1), as lane D's paths write it. Anything
+ *  that isn't a plugin id is refused, so no id can climb out of `bots/`. */
 export function botSegment(botId: string): string {
-  return botId.replace(/\//g, "--");
+  if (!isAnyPluginId(botId)) throw new ContractError("invalid", `"${botId.slice(0, 80)}" isn't a bot's id`);
+  return pluginIdToSegment(botId);
+}
+
+/** A session id as a folder name: never `.`, `..` or anything with a separator. */
+function sessionSegment(id: string): string {
+  if (!/^[A-Za-z0-9_:-][A-Za-z0-9._:-]{0,127}$/.test(id)) throw new ContractError("invalid", `"${id.slice(0, 80)}" isn't a session id`);
+  return id;
 }
 
 /** The transcript folder's real path and its tree path. */
 export function transcriptPaths(home: string, sessionId: string, bot?: string): { dir: string; treeDir: string } {
+  sessionSegment(sessionId);
   if (bot === undefined) return { dir: join(home, "agents", sessionId), treeDir: `agents/${sessionId}` };
   const seg = botSegment(bot);
   return { dir: join(home, "bots", seg, "agents", sessionId), treeDir: `bots/${seg}/agents/${sessionId}` };

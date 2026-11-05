@@ -33,8 +33,7 @@ export type AgentLogEvent =
   | { type: "agent_tool_call"; id: string; kind: string; title: string; status: string; rawInput?: unknown }
   | { type: "agent_tool_call_update"; id: string; status: string; refused?: boolean; closedByClover?: boolean }
   | { type: "agent_usage"; inputTokens: number; outputTokens: number }
-  | { type: "agent_started"; agentSessionId: string }
-  | { type: "agent_stalled" };
+  | { type: "agent_started"; agentSessionId: string };
 
 export class AgentDriver implements SessionDriver {
   readonly canFold = false;
@@ -91,8 +90,9 @@ export class AgentDriver implements SessionDriver {
     this.#signal = ctl.signal;
     let session: AgentSession;
     try {
+      const fresh = !this.#session;
       session = await this.#ensure();
-      ctl.record({ type: "agent_started", agentSessionId: session.agentSessionId } satisfies AgentLogEvent);
+      if (fresh) ctl.record({ type: "agent_started", agentSessionId: session.agentSessionId } satisfies AgentLogEvent);
     } catch (err) {
       this.#origin = undefined;
       this.#signal = undefined;
