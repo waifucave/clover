@@ -11,11 +11,13 @@ Lane H, milestone M0. It answers spec §8.3 and §14.1 item 1 in the lab: iroh a
 | `bun/src/webrtc-dc.ts` | WebRTC data channels through `node-datachannel` 0.33.6 (libdatachannel), Bun to Bun |
 | `bun/src/webrtc-browser.ts` | A headless Chrome or Firefox to the Bun side over a data channel |
 | `bun/src/sidecar-ipc.ts` | clover-core's hop to the native sidecar over stdio |
+| `bun/src/napi-probe.ts` | What byte passing across napi costs under Bun and Node, with `napi-probe/` (a tiny napi-rs addon) |
 | `bun/scripts/compile.ts` | Builds every check with `bun build --compile` |
 | `bun/scripts/summarize.ts` | Result files to Markdown tables and compact CI notices |
 | `ci/platform-checks.sh` | Every per-OS check in one go (what CI runs on macOS, Windows and Linux) |
 | `nat/matrix.sh` | The NAT matrix: network namespaces and iptables, Linux and root only |
 | `nat/netem.sh` | Delay and throughput under `tc netem`, Linux and root only |
+| `nat/migrate.sh` | One live connection through an address change and blackouts, Linux and root only |
 | [`../../native/link-sidecar/`](../../native/link-sidecar/) | The native half: quinn and iroh peers, a STUN responder, the stdio sidecar |
 
 Every check prints one line, `S1RESULT <json>`. Set `S1_ANNOTATE=1` to also print it as a GitHub `::notice`.
@@ -38,6 +40,7 @@ From `spikes/s1-transport/bun`, with `SIDECAR=../../../native/link-sidecar/targe
 | 2 | the same binding under Node, for comparison | `node src/iroh-napi.ts` |
 | 2 | WebRTC (node-datachannel) under Bun | `bun src/webrtc-dc.ts` |
 | 2 | the sidecar hop from Bun | `bun src/sidecar-ipc.ts --sidecar $SIDECAR` |
+| 2 | napi byte passing, `Vec<u8>` against `Buffer` | `cargo build --release --manifest-path ../napi-probe/Cargo.toml`, copy `target/release/libs1_napi_probe.{dylib,so}` (or `s1_napi_probe.dll`) to `../napi-probe/s1-napi-probe.node`, then `bun src/napi-probe.ts` |
 | 2 | every check compiled | `bun scripts/compile.ts && ./out/iroh-napi --quick && ./out/webrtc-dc --quick && ./out/sidecar-ipc --sidecar $SIDECAR` |
 | 1, 4 | native quinn, loopback | `$SIDECAR local-bench --transport quinn [--cc bbr]` |
 | 1, 4 | native iroh, loopback | `$SIDECAR local-bench --transport iroh [--cc bbr]` |
@@ -45,6 +48,7 @@ From `spikes/s1-transport/bun`, with `SIDECAR=../../../native/link-sidecar/targe
 | 5 | Firefox to Bun | `bun src/webrtc-browser.ts --browser firefox` |
 | 3 | the NAT matrix (Linux, root) | `sudo ../nat/matrix.sh $SIDECAR ../results/nat.jsonl` |
 | 4 | netem delay and throughput (Linux, root) | `sudo ../nat/netem.sh $SIDECAR "$(command -v bun)" ../results/netem.jsonl` |
+| 4 | an address change and blackouts under one connection (Linux, root) | `sudo ../nat/migrate.sh $SIDECAR ../results/migrate.jsonl` |
 | 2–5 | everything for one OS | `../ci/platform-checks.sh ../results/local.jsonl` (from the repo root: `spikes/s1-transport/ci/platform-checks.sh`) |
 | — | a public STUN server's view of this machine | `$SIDECAR stun-query --server stun.cloudflare.com:3478` |
 
@@ -62,4 +66,4 @@ The same protocol runs in TypeScript (`iroh-napi.ts`) and Rust (`native/link-sid
 
 ## CI
 
-`.github/workflows/spike-s1.yml` runs on pushes to `lane/h-m0`: the platform checks on `macos-latest`, `windows-latest`, `ubuntu-24.04` and `ubuntu-24.04-arm`, the NAT matrix and netem on `ubuntu-24.04`. Each job writes a Markdown summary, uploads its result files, and leaves up to ten compact notices, which `GET https://api.github.com/repos/waifucave/clover/commits/<sha>/check-runs` and each run's `/annotations` serve without auth.
+`.github/workflows/spike-s1.yml` runs on pushes to `lane/h-m0`: the platform checks on `macos-latest`, `windows-latest`, `ubuntu-24.04` and `ubuntu-24.04-arm`, and the NAT matrix, netem and network changes on `ubuntu-24.04`. Each job writes a Markdown summary, uploads its result files, and leaves up to ten compact notices, which `GET https://api.github.com/repos/waifucave/clover/commits/<sha>/check-runs` and each run's `/annotations` serve without auth.

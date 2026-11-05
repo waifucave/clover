@@ -6,7 +6,7 @@
 //   bun src/iroh-napi.ts --serve --ticket-file t.txt [--bind 0.0.0.0:47000]
 //   bun src/iroh-napi.ts --dial-ticket-file t.txt   the client half, across network namespaces
 //
-// The bench protocol is the same one native/link-sidecar speaks (see its README): the first byte
+// The bench protocol is the one native/link-sidecar's bench.rs speaks (spikes/s1-transport/README.md): the first byte
 // of every bidirectional stream picks the handler — E echoes 64-byte frames, R answers one RPC,
 // S sinks a bulk transfer and acks its byte count.
 
