@@ -26,6 +26,8 @@ with tempfile.TemporaryDirectory(prefix='clover-codex-') as tmp:
     command = ['codex', 'sandbox', '-C', str(allowed), '-P', 'clover', '--', '/bin/sh', '-c',
         'test -r /etc/hosts && ! cat "$1/public-sentinel" >/dev/null 2>&1 && '
         'touch "$2/ok" && ! touch "$1/blocked" 2>/dev/null', 'probe', str(hidden), str(allowed)]
+    if Path('/usr/local/libexec/clover-spike-bwrap').exists() and shutil.which('aa-exec'):
+        command=['aa-exec','-p','clover-spike-bwrap','--']+command
     result = subprocess.run(command, env=env, cwd=allowed, capture_output=True, text=True, timeout=30)
     print(json.dumps({'test': 'codex-own-sandbox', 'exit': result.returncode,
         'allowed_write_observed': (allowed / 'ok').exists(),

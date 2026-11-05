@@ -19,7 +19,7 @@ jobs:
         run: |
           echo 'Installing focused probe dependencies'
           sudo apt-get update -qq
-          sudo apt-get install -y bubblewrap xdg-dbus-proxy dbus-daemon python3-dbus python3-gi python3-cryptography gnome-keyring libsecret-tools gcc git
+          sudo apt-get install -y bubblewrap xdg-dbus-proxy dbus-daemon python3-dbus python3-gi python3-cryptography gnome-keyring libsecret-tools gcc git ripgrep socat
       - name: Install the scoped AppArmor launcher profile
         run: bash spikes/s8-secrets/linux-apparmor.sh
       - name: Filesystem, network and IPC fixture

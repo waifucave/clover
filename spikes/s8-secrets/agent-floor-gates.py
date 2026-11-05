@@ -3,6 +3,7 @@
 import argparse
 import json
 import os
+import shutil
 from pathlib import Path
 import subprocess
 import sys
@@ -42,6 +43,8 @@ sys.exit(0 if ok else 9)
     if args.backend=='codex':
         (config/'config.toml').write_text('[permissions.clover.filesystem]\n":root"="read"\n'+json.dumps(str(work))+'="write"\n'+json.dumps(str(control))+'="deny"\n[permissions.clover.network]\nenabled=false\n')
         prefix=['codex','sandbox','-C',str(work),'-P','clover','--']
+        if Path('/usr/local/libexec/clover-spike-bwrap').exists() and shutil.which('aa-exec'):
+            prefix=['aa-exec','-p','clover-spike-bwrap','--']+prefix
     else:
         settings={'filesystem':{'allowWrite':[str(work)],'denyRead':[str(control)],'denyWrite':[str(control)]},'network':{'allowedDomains':[],'deniedDomains':[]}}
         bwrap=Path('/usr/local/libexec/clover-spike-bwrap')
