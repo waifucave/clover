@@ -5,8 +5,8 @@
 //
 //  - the router's shared transcript store (router 0.0.11: `<home>/projects`; a run-home router:
 //    `sdkHomeOf(home)/projects`), and
-//  - the Winter child's own store and agent scan (agent SDK 0.0.20 under `WINTER_HOME=<home>`:
-//    `<home>/projects`, `<home>/agents`; a run-home child under `WINTER_STORE_HOME`: `<home>/sdk/…`).
+//  - the Clover child's own store and agent scan (agent SDK 0.0.20 under `CLOVER_HOME=<home>`:
+//    `<home>/projects`, `<home>/agents`; a run-home child under `CLOVER_STORE_HOME`: `<home>/sdk/…`).
 //
 // Both stores write through `ensureSecureDir`, which REFUSES a symlink at `<store>/projects` — so the
 // daemon cannot bridge the two layouts with a compatibility link. It follows the runtimes instead:
@@ -68,7 +68,7 @@ export function quarantinedBackendSessions(report: RecoveryReport): string[] {
  * query nobody iterated). Everything else KEEPS the folder:
  *  - `quarantined` → the router copied the working copy under `<home>/cache/quarantine/`; the folder is
  *    kept and handed to `onQuarantined` (the daemon records it, so the boot sweep never re-reconciles
- *    it and `winter doctor` reports it);
+ *    it and `clover doctor` reports it);
  *  - `pending` / no answer → recovery's to reconcile at the next boot (`reconcileRootForRecovery`),
  *    never a delete here.
  * A query that threw before it was created records nothing: that open disposes through
@@ -82,7 +82,7 @@ export async function settleRunHome(
   if (outcome !== "safe") {
     if (outcome === "quarantined") {
       try { opts.onQuarantined?.(runHome.dir); } catch { /* bounded: the record is evidence, never a dependency */ }
-      opts.log?.(`run home ${runHome.runId} kept: the router quarantined its working copy (see \`winter doctor\`)`);
+      opts.log?.(`run home ${runHome.runId} kept: the router quarantined its working copy (see \`clover doctor\`)`);
     } else {
       opts.log?.(`run home ${runHome.runId} kept: the router has not settled its exit (recovery reconciles it)`);
     }

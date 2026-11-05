@@ -3,7 +3,7 @@ import { dirname, join } from "node:path";
 import { homedir } from "node:os";
 
 /** The user's GLOBAL git excludes. git honors `core.excludesfile`, else `$XDG_CONFIG_HOME/git/ignore`
- *  (default `~/.config/git/ignore`). We target the XDG default — Winter manages only its OWN personal
+ *  (default `~/.config/git/ignore`). We target the XDG default — Clover manages only its OWN personal
  *  patterns there, never a repo's `.gitignore`. */
 function defaultGlobalGitignorePath(): string {
   const xdg = process.env.XDG_CONFIG_HOME;
@@ -32,9 +32,9 @@ export function ensureGlobalGitignore(patterns: string[], opts: { path?: string 
   }
 }
 
-/** The personal `.winter/` patterns Winter manages in the global excludes (shared config stays committable). */
-export const WINTER_PERSONAL_IGNORES = [
-  "**/.winter/settings.local.json",
-  "**/.winter/permissions.local.json",
-  "**/.winter/worktrees/",
+/** The personal `.clover/` patterns Clover manages in the global excludes (shared config stays committable). */
+export const CLOVER_PERSONAL_IGNORES = [
+  "**/.clover/settings.local.json",
+  "**/.clover/permissions.local.json",
+  "**/.clover/worktrees/",
 ];

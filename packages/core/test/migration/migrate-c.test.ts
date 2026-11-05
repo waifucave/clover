@@ -1,5 +1,5 @@
 import { authorityFixtureSessions } from "../cowork/committed-sessions";
-// WS-21 L3.7 (spec §8): Migration C on a fixture home in the old layout — a Winter-leg session, an
+// WS-21 L3.7 (spec §8): Migration C on a fixture home in the old layout — a Clover-leg session, an
 // official-leg session whose `claude-config` working copy holds one extra trailing entry, a subagent,
 // memory, provider-state, the moved settings keys, and a DeepSeek tag in provider.model, pins and
 // selection_json. The router's reconcile is a stub here (its real outcomes are L2's, proven at R.2).
@@ -28,18 +28,18 @@ afterEach(() => setCatalogKeysForTests(undefined));
 const write = (p: string, body: string): void => { mkdirSync(join(p, ".."), { recursive: true }); writeFileSync(p, body); };
 
 function fixture(opts: { officialExtra?: boolean } = {}) {
-  const home = realpathSync(mkdtempSync(join(tmpdir(), "winter-migc-")));
+  const home = realpathSync(mkdtempSync(join(tmpdir(), "clover-migc-")));
   const key = "-Users-x-app";
   // the old layout: the runtime store at <home>/projects, skills at <home>/skills, agents, backups
-  write(join(home, "projects", key, "s-winter.jsonl"), '{"type":"user","uuid":"u1"}\n');
-  write(join(home, "projects", key, "s-winter", "subagents", "agent-a.jsonl"), '{"type":"user","uuid":"a1"}\n');
-  write(join(home, "projects", key, "s-winter.provider-state.jsonl"), '{"opaque":true}\n');
+  write(join(home, "projects", key, "s-clover.jsonl"), '{"type":"user","uuid":"u1"}\n');
+  write(join(home, "projects", key, "s-clover", "subagents", "agent-a.jsonl"), '{"type":"user","uuid":"a1"}\n');
+  write(join(home, "projects", key, "s-clover.provider-state.jsonl"), '{"opaque":true}\n');
   write(join(home, "projects", key, "memory", "MEMORY.md"), "- remembers\n");
   write(join(home, "projects", key, "s-official.jsonl"), '{"type":"user","uuid":"o1"}\n');
   write(join(home, "skills", "self", "deploy", "SKILL.md"), "---\nname: deploy\n---\n");
   write(join(home, "agents", "reviewer.md"), "---\nname: reviewer\n---\n");
-  write(join(home, "backups", "s-winter", "a.bak"), "x");
-  write(join(home, "WINTER.md"), "# my instructions\n");
+  write(join(home, "backups", "s-clover", "a.bak"), "x");
+  write(join(home, "CLOVER.md"), "# my instructions\n");
   write(join(home, "history.jsonl"), `${JSON.stringify({ display: "hi", ts: 1700000000000, sessionId: "s_1" })}\n`);
   write(join(home, "mcp.json"), "{}"); // a dead legacy file
   // the official leg's working copy, one extra trailing entry past the canonical transcript
@@ -55,7 +55,7 @@ function fixture(opts: { officialExtra?: boolean } = {}) {
     permissions: { allow: ["Bash(git status)", "Bash(rm *)"] }, outputStyle: "terse", memory: { enabled: true },
     mcpServers: { local: { type: "stdio", command: "node" } },
   }));
-  // runtime-state: a Winter-leg row and an official row, backend_root in the OLD store
+  // runtime-state: a Clover-leg row and an official row, backend_root in the OLD store
   const rs = openRuntimeStateDb(home);
   const ins = (id: string, kind: string, root: string) => rs.db.run(`INSERT INTO runtime_sessions (winter_session_id, runtime_kind, provider_id, model_ref, backend_root, transcript_project_key, memory_project_key, temp_project_key,
     transcript_health, compatibility_level, conformance_corpus_version, version_provenance, created_at, updated_at, state, selection_json, active_local_write_root, active_local_write_root_kind)
@@ -78,7 +78,7 @@ describe("the old-layout definition (spec §8, r3)", () => {
   test("real projects/ or skills/ CONTENT; moved keys never count; a fresh home never matches", () => {
     const { home } = fixture();
     expect(isOldLayout(home)).toBe(true);
-    const fresh = mkdtempSync(join(tmpdir(), "winter-migc-fresh-"));
+    const fresh = mkdtempSync(join(tmpdir(), "clover-migc-fresh-"));
     for (const d of ["projects", "skills/self", "sdk/projects"]) mkdirSync(join(fresh, d), { recursive: true });
     writeFileSync(join(fresh, "settings.json"), JSON.stringify({ schemaVersion: 3, permissions: { allow: ["Bash"] }, mcpServers: { a: { command: "x" } } }));
     expect(isOldLayout(fresh)).toBe(false);
@@ -87,11 +87,11 @@ describe("the old-layout definition (spec §8, r3)", () => {
   // Post-merge fix round, minor 1 (promoted): <home>/plugins was never in SDK_COMPAT_LINKS (its own
   // conversion is a copy, never a move+symlink) -- a home whose ONLY legacy content is a plugin must
   // still be detected as old layout, or it never migrates at all.
-  test("a home whose ONLY legacy content is a plugin (with a winter-plugin.json) is old layout too", () => {
-    const home = realpathSync(mkdtempSync(join(tmpdir(), "winter-migc-pluginsonly-")));
+  test("a home whose ONLY legacy content is a plugin (with a clover-plugin.json) is old layout too", () => {
+    const home = realpathSync(mkdtempSync(join(tmpdir(), "clover-migc-pluginsonly-")));
     mkdirSync(join(home, "sdk", "projects"), { recursive: true });
     mkdirSync(join(home, "plugins", "battery-limiter"), { recursive: true });
-    writeFileSync(join(home, "plugins", "battery-limiter", "winter-plugin.json"), JSON.stringify({ id: "battery-limiter", tier: "capability" }));
+    writeFileSync(join(home, "plugins", "battery-limiter", "clover-plugin.json"), JSON.stringify({ id: "battery-limiter", tier: "capability" }));
     expect(isOldLayout(home)).toBe(true);
   });
 
@@ -100,8 +100,8 @@ describe("the old-layout definition (spec §8, r3)", () => {
   // manifest is generated from just its own name). The old-layout check must count exactly what a
   // real conversion run would pick up, via the SAME shared predicate (`isLegacyPluginDir`) -- so
   // this now DOES trigger, flipped from the earlier (buggy) "does NOT alone trigger" expectation.
-  test("reviewer round, item 3: a <home>/plugins dir with only a plugin.json (no winter-plugin.json) DOES trigger old layout", () => {
-    const home = realpathSync(mkdtempSync(join(tmpdir(), "winter-migc-metaonly-")));
+  test("reviewer round, item 3: a <home>/plugins dir with only a plugin.json (no clover-plugin.json) DOES trigger old layout", () => {
+    const home = realpathSync(mkdtempSync(join(tmpdir(), "clover-migc-metaonly-")));
     mkdirSync(join(home, "sdk", "projects"), { recursive: true });
     mkdirSync(join(home, "plugins", "meta-only"), { recursive: true });
     writeFileSync(join(home, "plugins", "meta-only", "plugin.json"), JSON.stringify({ name: "Meta Only" }));
@@ -112,7 +112,7 @@ describe("the old-layout definition (spec §8, r3)", () => {
   // Migration C on every boot (and then convert into an empty plugin). What still counts with no manifest:
   // something the pre-WS-21 build could load from it, or a folder the legacy settings name.
   test("WS-24: a <home>/plugins dir holding nothing a plugin could load (no manifest, no .mcp.json, no skill) does NOT trigger old layout", () => {
-    const home = realpathSync(mkdtempSync(join(tmpdir(), "winter-migc-nomanifest-")));
+    const home = realpathSync(mkdtempSync(join(tmpdir(), "clover-migc-nomanifest-")));
     mkdirSync(join(home, "sdk", "projects"), { recursive: true });
     mkdirSync(join(home, "plugins", "bare"), { recursive: true }); // nothing at all
     mkdirSync(join(home, "plugins", "marketplaces", "x"), { recursive: true }); // a stray tool's tree
@@ -132,7 +132,7 @@ describe("the old-layout definition (spec §8, r3)", () => {
         writeFileSync(join(h, "settings.json"), JSON.stringify({ schemaVersion: 3, plugins: { enabled: ["enabled-bare"] } }));
       },
     ]) {
-      const home = realpathSync(mkdtempSync(join(tmpdir(), "winter-migc-marker-")));
+      const home = realpathSync(mkdtempSync(join(tmpdir(), "clover-migc-marker-")));
       mkdirSync(join(home, "sdk", "projects"), { recursive: true });
       seed(home);
       expect(isOldLayout(home)).toBe(true);
@@ -140,7 +140,7 @@ describe("the old-layout definition (spec §8, r3)", () => {
   });
 
   test("WS-24: the converter picks up exactly what the old-layout check counts — never a stray folder", async () => {
-    const home = realpathSync(mkdtempSync(join(tmpdir(), "winter-migc-stray-convert-")));
+    const home = realpathSync(mkdtempSync(join(tmpdir(), "clover-migc-stray-convert-")));
     mkdirSync(join(home, "plugins", "stray"), { recursive: true });
     mkdirSync(join(home, "plugins", "real"), { recursive: true });
     writeFileSync(join(home, "plugins", "real", "plugin.json"), JSON.stringify({ name: "Real" }));
@@ -151,7 +151,7 @@ describe("the old-layout definition (spec §8, r3)", () => {
   });
 
   test("an EMPTY <home>/plugins directory does not trigger old layout", () => {
-    const home = realpathSync(mkdtempSync(join(tmpdir(), "winter-migc-emptyplugins-")));
+    const home = realpathSync(mkdtempSync(join(tmpdir(), "clover-migc-emptyplugins-")));
     mkdirSync(join(home, "sdk", "projects"), { recursive: true });
     mkdirSync(join(home, "plugins"), { recursive: true });
     expect(isOldLayout(home)).toBe(false);
@@ -162,11 +162,11 @@ describe("the old-layout definition (spec §8, r3)", () => {
   // target's, so a symlinked plugin folder (a dev checkout linked into <home>/plugins) was silently
   // missed entirely.
   test("reviewer round, item 2: a SYMLINKED plugin folder under <home>/plugins is old layout too", () => {
-    const home = realpathSync(mkdtempSync(join(tmpdir(), "winter-migc-pluginsymlink-")));
+    const home = realpathSync(mkdtempSync(join(tmpdir(), "clover-migc-pluginsymlink-")));
     mkdirSync(join(home, "sdk", "projects"), { recursive: true });
     mkdirSync(join(home, "plugins"), { recursive: true });
-    const real = mkdtempSync(join(tmpdir(), "winter-migc-realplugin-"));
-    writeFileSync(join(real, "winter-plugin.json"), JSON.stringify({ id: "linked", tier: "capability" }));
+    const real = mkdtempSync(join(tmpdir(), "clover-migc-realplugin-"));
+    writeFileSync(join(real, "clover-plugin.json"), JSON.stringify({ id: "linked", tier: "capability" }));
     symlinkSync(real, join(home, "plugins", "linked"));
     expect(isOldLayout(home)).toBe(true);
   });
@@ -178,10 +178,10 @@ describe("review M7: every moved directory and the instructions file count", () 
     ["workflows/", (h: string) => { mkdirSync(join(h, "workflows"), { recursive: true }); writeFileSync(join(h, "workflows", "w.js"), "x"); }, (h: string) => existsSync(join(h, "sdk", "workflows", "w.js"))],
     ["output-styles/", (h: string) => { mkdirSync(join(h, "output-styles"), { recursive: true }); writeFileSync(join(h, "output-styles", "o.md"), "x"); }, (h: string) => existsSync(join(h, "sdk", "output-styles", "o.md"))],
     ["backups/", (h: string) => { mkdirSync(join(h, "backups", "s"), { recursive: true }); writeFileSync(join(h, "backups", "s", "b"), "x"); }, (h: string) => existsSync(join(h, "sdk", "file-history", "s", "b"))],
-    ["WINTER.md", (h: string) => { writeFileSync(join(h, "WINTER.md"), "# mine\n"); }, (h: string) => readFileSync(join(h, "sdk", "WINTER.md"), "utf8") === "# mine\n"],
+    ["CLOVER.md", (h: string) => { writeFileSync(join(h, "CLOVER.md"), "# mine\n"); }, (h: string) => readFileSync(join(h, "sdk", "CLOVER.md"), "utf8") === "# mine\n"],
   ] as const) {
     test(`a home with only ${what} is in the old layout, and migrates it`, async () => {
-      const home = realpathSync(mkdtempSync(join(tmpdir(), "winter-m7-")));
+      const home = realpathSync(mkdtempSync(join(tmpdir(), "clover-m7-")));
       mkdirSync(join(home, "sdk", "projects"), { recursive: true });
       seed(home);
       expect(isOldLayout(home)).toBe(true);
@@ -191,11 +191,11 @@ describe("review M7: every moved directory and the instructions file count", () 
     });
   }
 
-  test("WINTER.md beside an existing sdk/WINTER.md is no old layout (nothing unread)", () => {
-    const home = realpathSync(mkdtempSync(join(tmpdir(), "winter-m7b-")));
+  test("CLOVER.md beside an existing sdk/CLOVER.md is no old layout (nothing unread)", () => {
+    const home = realpathSync(mkdtempSync(join(tmpdir(), "clover-m7b-")));
     mkdirSync(join(home, "sdk"), { recursive: true });
-    writeFileSync(join(home, "WINTER.md"), "a");
-    writeFileSync(join(home, "sdk", "WINTER.md"), "b");
+    writeFileSync(join(home, "CLOVER.md"), "a");
+    writeFileSync(join(home, "sdk", "CLOVER.md"), "b");
     expect(isOldLayout(home)).toBe(false);
   });
 });
@@ -241,7 +241,7 @@ describe("preflight", () => {
     const a = fixture();
     mkdirSync(join(a.home, "plugins", "battery-limiter"), { recursive: true });
     // WS-24: a plugin, not a stray folder — it holds something a legacy plugin loads.
-    writeFileSync(join(a.home, "plugins", "battery-limiter", "winter-plugin.json"), JSON.stringify({ id: "battery-limiter", tier: "capability" }));
+    writeFileSync(join(a.home, "plugins", "battery-limiter", "clover-plugin.json"), JSON.stringify({ id: "battery-limiter", tier: "capability" }));
     await expect(runMigrationC(a.home, deps())).rejects.toBeInstanceOf(MigrationCRefused);
     const b = fixture();
     writeFileSync(join(b.home, "sdk", "projects", "stray.jsonl"), "x");
@@ -259,7 +259,7 @@ describe("BLOCKING: convertLegacyPlugins wired into Migration C's convert-plugin
   test("a home with a legacy plugin (battery-limiter-shaped) migrates end to end: converted, original kept, manifest records it", async () => {
     const { home } = fixture();
     mkdirSync(join(home, "plugins", "battery-limiter"), { recursive: true });
-    writeFileSync(join(home, "plugins", "battery-limiter", "winter-plugin.json"), JSON.stringify({
+    writeFileSync(join(home, "plugins", "battery-limiter", "clover-plugin.json"), JSON.stringify({
       id: "battery-limiter", tier: "capability", permissions: { hardware: ["battery"] },
     }));
     // The legacy home had this plugin ENABLED and fully consented (finding 1, post-merge fix round:
@@ -285,7 +285,7 @@ describe("BLOCKING: convertLegacyPlugins wired into Migration C's convert-plugin
     // COPY, never move (spec §2.1/§8's "originals kept for downgrade") — the legacy directory is
     // untouched, not archived, not deleted, not even a symlink.
     expect(lstatSync(join(home, "plugins", "battery-limiter")).isDirectory()).toBe(true);
-    expect(existsSync(join(home, "plugins", "battery-limiter", "winter-plugin.json"))).toBe(true);
+    expect(existsSync(join(home, "plugins", "battery-limiter", "clover-plugin.json"))).toBe(true);
 
     // Registered through Contract B under the shared sdk/ home, converted+enabled.
     const installed = JSON.parse(readFileSync(join(home, "sdk", "plugins", "installed_plugins.json"), "utf8"));
@@ -301,7 +301,7 @@ describe("BLOCKING: convertLegacyPlugins wired into Migration C's convert-plugin
     // after an interrupted convert-plugins step would) must not refuse or duplicate.
     const { home } = fixture();
     mkdirSync(join(home, "plugins", "battery-limiter"), { recursive: true });
-    writeFileSync(join(home, "plugins", "battery-limiter", "winter-plugin.json"), JSON.stringify({
+    writeFileSync(join(home, "plugins", "battery-limiter", "clover-plugin.json"), JSON.stringify({
       id: "battery-limiter", tier: "capability", permissions: { hardware: ["battery"] },
     }));
     const migrationDeps = deps({ reconcile: stubReconcile().reconcile, convertLegacyPlugins: convertLegacyPluginsForMigration });
@@ -396,7 +396,7 @@ describe("review I1: a rolled-back home can migrate again", () => {
     const err = await runMigrationC(home, deps()).catch((e: Error) => e);
     expect((err as Error).message).not.toContain("--resume");
     expect((err as Error).message).toContain("by hand");
-    expect((err as Error).message).toContain("winter migrate --sdk-home");
+    expect((err as Error).message).toContain("clover migrate --sdk-home");
     expect(migrationCState(home)).toEqual({ kind: "absent" });
   });
 
@@ -405,7 +405,7 @@ describe("review I1: a rolled-back home can migrate again", () => {
   // re-upgrade would refuse forever. On a rolled-back home the sdk/ side is DISPLACED into this migration's
   // archive instead (recorded; rollback puts it back); anywhere else a collision still refuses.
   test("round 3: a rolled-back home whose old dir AND sdk target both gained content re-migrates: the sdk side is displaced, and rollback restores it", async () => {
-    const home = realpathSync(mkdtempSync(join(tmpdir(), "winter-migc-displace-")));
+    const home = realpathSync(mkdtempSync(join(tmpdir(), "clover-migc-displace-")));
     mkdirSync(join(home, "sdk", "projects"), { recursive: true });
     mkdirSync(join(home, "backups"), { recursive: true });               // an EMPTY old dir: linked, not moved
     write(join(home, "skills", "s", "SKILL.md"), "x");                    // something to migrate
@@ -450,12 +450,12 @@ describe("both phases", () => {
       expect(readlinkSync(join(home, name!))).toBe(target!);
     }
     expect(readFileSync(join(home, "sdk", "projects", key, "memory", "MEMORY.md"), "utf8")).toBe("- remembers\n");
-    expect(existsSync(join(home, "sdk", "projects", key, "s-winter", "subagents", "agent-a.jsonl"))).toBe(true);
-    expect(existsSync(join(home, "sdk", "projects", key, "s-winter.provider-state.jsonl"))).toBe(true);
+    expect(existsSync(join(home, "sdk", "projects", key, "s-clover", "subagents", "agent-a.jsonl"))).toBe(true);
+    expect(existsSync(join(home, "sdk", "projects", key, "s-clover.provider-state.jsonl"))).toBe(true);
     expect(existsSync(join(home, "sdk", "skills", "self", "deploy", "SKILL.md"))).toBe(true);
-    expect(existsSync(join(home, "sdk", "file-history", "s-winter", "a.bak"))).toBe(true);
+    expect(existsSync(join(home, "sdk", "file-history", "s-clover", "a.bak"))).toBe(true);
     // copy-files
-    expect(readFileSync(join(home, "sdk", "WINTER.md"), "utf8")).toBe("# my instructions\n");
+    expect(readFileSync(join(home, "sdk", "CLOVER.md"), "utf8")).toBe("# my instructions\n");
     expect(JSON.parse(readFileSync(join(home, "sdk", "history.jsonl"), "utf8").trim())).toEqual({ display: "hi", pastedContents: {}, timestamp: 1700000000000, project: "", sessionId: "s_1" });
     // split-settings
     expect((readSdkSettings(home) as Record<string, any>).permissions.allow).toEqual(["Bash(git status)"]);
@@ -503,11 +503,11 @@ describe("both phases", () => {
   // re-keys transcripts, and a staging copy swept after that would be appended into an orphan).
   test("round 4: a claude staging root in the scan root leaves phase 2 to the daemon's late site", async () => {
     const { home } = fixture({ officialExtra: false });
-    const scan = realpathSync(mkdtempSync(join(tmpdir(), "winter-migc-scan-")));
+    const scan = realpathSync(mkdtempSync(join(tmpdir(), "clover-migc-scan-")));
     mkdirSync(join(scan, "claude-resume-x", "projects"), { recursive: true });
     expect((await runMigrationC(home, deps({ claudeResumeScanRoot: scan }))).status).toBe("phase1-complete");
     const { home: other } = fixture({ officialExtra: false });
-    expect((await runMigrationC(other, deps({ claudeResumeScanRoot: realpathSync(mkdtempSync(join(tmpdir(), "winter-migc-scan-"))) }))).status).toBe("complete");
+    expect((await runMigrationC(other, deps({ claudeResumeScanRoot: realpathSync(mkdtempSync(join(tmpdir(), "clover-migc-scan-"))) }))).status).toBe("complete");
   });
 
   // Round 5: with no router door (the runtime spine offline, the router failed) the late site cannot sweep, so
@@ -515,7 +515,7 @@ describe("both phases", () => {
   // at the OLD key and recreate the orphan. Refused typed, like an official working copy with no door.
   test("round 5: no door + a claude staging root: phase 2 refuses typed and re-keys nothing; with a door it finishes", async () => {
     const { home } = fixture({ officialExtra: false });
-    const scan = realpathSync(mkdtempSync(join(tmpdir(), "winter-migc-scan5-")));
+    const scan = realpathSync(mkdtempSync(join(tmpdir(), "clover-migc-scan5-")));
     mkdirSync(join(scan, "claude-resume-y", "projects"), { recursive: true });
     expect((await runMigrationC(home, deps({ claudeResumeScanRoot: scan }))).status).toBe("phase1-complete");
     await expect(finishMigrationC(home, { log: () => {}, claudeResumeScanRoot: scan })).rejects.toMatchObject({ name: "MigrationCRefused", code: "sdk_home_migration_refused" });
@@ -694,8 +694,8 @@ describe("rollback", () => {
     expect(existsSync(join(home, "permissions", "projects.json"))).toBe(true);
     expect(existsSync(join(home, "mcp.json"))).toBe(true);
     expect(existsSync(join(home, "runtimes", "claude-config", "projects", key, "s-official.jsonl"))).toBe(true);
-    expect(existsSync(join(home, "sdk", "WINTER.md"))).toBe(false);
-    expect(existsSync(join(m.archiveDir, "rolled-back", "sdk", "WINTER.md"))).toBe(true); // moved aside, never deleted
+    expect(existsSync(join(home, "sdk", "CLOVER.md"))).toBe(false);
+    expect(existsSync(join(m.archiveDir, "rolled-back", "sdk", "CLOVER.md"))).toBe(true); // moved aside, never deleted
     // the split's sdk files stay (an older build never reads them; they may hold post-upgrade answers)
     expect(existsSync(join(home, "sdk", "settings.json"))).toBe(true);
     expect(existsSync(join(home, "sdk", "projects"))).toBe(true); // bootstrap's placeholder
@@ -754,7 +754,7 @@ describe("R.3 I-5: an interrupted rollback is guarded", () => {
     expect(migrationCState(home)).toEqual({ kind: "absent" });
     expect(lstatSync(join(home, "projects")).isSymbolicLink()).toBe(false);
     expect(readFileSync(join(home, "projects", key, "memory", "MEMORY.md"), "utf8")).toBe("- remembers\n");
-    expect(existsSync(join(m.archiveDir, "rolled-back", "sdk", "WINTER.md"))).toBe(true);
+    expect(existsSync(join(m.archiveDir, "rolled-back", "sdk", "CLOVER.md"))).toBe(true);
     expect(isOldLayout(home)).toBe(true);
   });
 
@@ -796,8 +796,8 @@ describe("round 3: the bulk canonical-cwd re-key", () => {
   const COLLIDING = "7c4f1c2e-1111-4bbb-8ccc-ddddeeeeffff";
   function symlinkedFixture() {
     const f = fixture();
-    const real = realpathSync(mkdtempSync(join(tmpdir(), "winter-migc-real-")));
-    const link = join(realpathSync(mkdtempSync(join(tmpdir(), "winter-migc-link-"))), "proj");
+    const real = realpathSync(mkdtempSync(join(tmpdir(), "clover-migc-real-")));
+    const link = join(realpathSync(mkdtempSync(join(tmpdir(), "clover-migc-link-"))), "proj");
     symlinkSync(real, link);
     const rawKey = transcriptProjectKey(link);
     const canonKey = transcriptProjectKey(real);
@@ -870,7 +870,7 @@ describe("round 3: the bulk canonical-cwd re-key", () => {
     expect(steps.indexOf("reconcile-official-roots")).toBeLessThan(steps.indexOf("rekey-transcripts"));
     expect(steps.indexOf("rekey-transcripts")).toBeLessThan(steps.indexOf("archive"));
     // the fixture's own sessions (no sessions-index cwd) and the Users-x-app key are untouched
-    expect(existsSync(join(sdkProjects, "-Users-x-app", "s-winter.jsonl"))).toBe(true);
+    expect(existsSync(join(sdkProjects, "-Users-x-app", "s-clover.jsonl"))).toBe(true);
   });
 
   test("a collision (both keys hold the transcript) moves nothing, marks the session repair-required and records it", async () => {
@@ -928,10 +928,10 @@ describe("round 3: the bulk canonical-cwd re-key", () => {
 describe("WS-24: a revoked consent survives rollback + re-migrate", () => {
   const SPEC = "bl@winter-legacy";
   function legacyHome(): string {
-    const home = realpathSync(mkdtempSync(join(tmpdir(), "winter-migc-revoke-")));
+    const home = realpathSync(mkdtempSync(join(tmpdir(), "clover-migc-revoke-")));
     mkdirSync(join(home, "sdk", "projects"), { recursive: true });
     write(join(home, "skills", "s", "SKILL.md"), "x"); // something else to migrate
-    write(join(home, "plugins", "bl", "winter-plugin.json"), JSON.stringify({ id: "bl", tier: "capability", permissions: { hardware: ["battery"] } }));
+    write(join(home, "plugins", "bl", "clover-plugin.json"), JSON.stringify({ id: "bl", tier: "capability", permissions: { hardware: ["battery"] } }));
     writeFileSync(join(home, "settings.json"), JSON.stringify({ schemaVersion: 3, plugins: { enabled: ["bl"], consents: { bl: { hardware: 1_700_000_000_000 } } } }));
     return home;
   }

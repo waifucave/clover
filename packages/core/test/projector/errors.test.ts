@@ -28,7 +28,7 @@ describe("projector/errors: one distinct agent_error code per class", () => {
     ["invalid request", { error: "invalid_request" }, "bad_request"],
     ["model not found", { error: "model_not_found" }, "model_not_found"],
     ["max output tokens", { error: "max_output_tokens" }, "max_output_tokens"],
-    // 0.0.3 has NO wire producer for this: Winter auto-compacts before an overflow and the
+    // 0.0.3 has NO wire producer for this: Clover auto-compacts before an overflow and the
     // 11-member taxonomy has no overflow member. The class is implemented and tested so the code is
     // distinct and has a home the day a signal appears — NOT claimed to be reachable today.
     ["context overflow (no 0.0.3 producer)", { terminal_reason: "context_overflow" }, "context_overflow"],
@@ -207,13 +207,13 @@ describe("projector/errors: a credential-resolution api_error classifies as auth
       is_error: true,
       terminal_reason: "api_error",
       api_error_status: null,
-      result: "provider request failed (network): the keychain record for keychain:com.winter.core.dev/codex-access-token is not valid JSON credential material",
+      result: "provider request failed (network): the keychain record for keychain:com.waifucave.clover.core.dev/codex-access-token is not valid JSON credential material",
     }));
     expect(classified.code).toBe("auth");
     // The runtime's own `provider request failed (network): ` wrapper is dropped from the detail
     // (0.0.49): the class sentence already says what kind of failure it is.
     expect(classified.message).toBe(
-      "the provider rejected these credentials: the keychain record for keychain:com.winter.core.dev/codex-access-token is not valid JSON credential material",
+      "the provider rejected these credentials: the keychain record for keychain:com.waifucave.clover.core.dev/codex-access-token is not valid JSON credential material",
     );
   });
 
@@ -222,7 +222,7 @@ describe("projector/errors: a credential-resolution api_error classifies as auth
       is_error: true,
       terminal_reason: "api_error",
       api_error_status: null,
-      result: "the keychain record for keychain:com.winter.core.dev/openai:default is not a recognized credential material shape",
+      result: "the keychain record for keychain:com.waifucave.clover.core.dev/openai:default is not a recognized credential material shape",
     }));
     expect(classified.code).toBe("auth");
   });
@@ -268,11 +268,11 @@ describe("Codex usage limit (2026-09-16 field report)", () => {
   });
 });
 
-describe("Winter-side capability refusal (2026-09-17 field report)", () => {
-  test("the child's own pre-flight refusal is bad_request with a Winter prefix, never 'unavailable or overloaded'", () => {
+describe("Clover-side capability refusal (2026-09-17 field report)", () => {
+  test("the child's own pre-flight refusal is bad_request with a Clover prefix, never 'unavailable or overloaded'", () => {
     const c = classifyResult(res({ terminal_reason: "api_error", api_error_status: null, result: 'provider request failed (capability): a bare model id needs a provider: set `provider.providerId`, or use a qualified "<providerId>/<model>" key' }));
     expect(c.code).toBe("bad_request");
-    expect(c.message.startsWith("Winter refused the request before sending it")).toBe(true);
+    expect(c.message.startsWith("Clover refused the request before sending it")).toBe(true);
     expect(c.message).not.toContain("unavailable or overloaded");
   });
 });
@@ -366,7 +366,7 @@ describe("status-less provider failures are classed by the runtime's own code (a
   test("the capability refusal and the credential marker keep their own doors", () => {
     const cap = classifyResult(res({ terminal_reason: "api_error", api_error_status: null, result: "provider request failed (capability): a bare model id needs a provider" }));
     expect(cap.code).toBe("bad_request");
-    expect(cap.message).toBe("Winter refused the request before sending it: a bare model id needs a provider");
+    expect(cap.message).toBe("Clover refused the request before sending it: a bare model id needs a provider");
     const cred = classifyResult(res({ terminal_reason: "api_error", api_error_status: null, result: "provider request failed (network): the keychain record for x is not valid JSON credential material" }));
     expect(cred.code).toBe("auth");
   });

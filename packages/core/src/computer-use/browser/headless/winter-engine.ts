@@ -2,7 +2,7 @@
 // apple/Winter/Sources/HeadlessHelper/HeadlessWire.swift). The daemon spawns the helper's executable directly with two
 // extra descriptors: fd 3 carries the daemon's commands to it, fd 4 everything it says back, one JSON-RPC 2.0
 // notification per line. No socket, no token: whoever is on the far end of a pipe the daemon made is the helper it
-// spawned (and that process is checked against Winter's designated requirement before anything is sent).
+// spawned (and that process is checked against Clover's designated requirement before anything is sent).
 //
 // The vocabulary is the browser link's: `browserLink.command {linkId, cmdId, op, params}` answered by ONE
 // `browserLink.result`, plus the helper's own `browserLink.events` and `browserLink.tabGone`. The helper speaks first
@@ -12,7 +12,7 @@
 // and how a daemon that dies takes it along.
 //
 // FEATURES (the protocol stays 1): what a helper can do beyond it, named in its hello. `present` — a live tab shown to
-// Winter.app through the GPU (`apple/Winter/Sources/HeadlessPresent`): the ops `headless.present {tabId, nonce,
+// Clover.app through the GPU (`apple/Winter/Sources/HeadlessPresent`): the ops `headless.present {tabId, nonce,
 // viewerRequirement, control, scale}` → `{service, cssWidth, cssHeight}`, `headless.unpresent {tabId}` → its stats,
 // `headless.control {tabId, control}`, and the helper's `headless.presentationStarted {tabId}` (its viewer was accepted),
 // `headless.presentationEnded {tabId, reason}` (the viewer ended it) and `headless.popupOpened {tabId, openerTabId, url}`
@@ -49,7 +49,7 @@ export const HEADLESS_TIMEOUTS = { send: 15_000, screenshot: 20_000, ensure: 20_
 /** How long a helper whose pipe was closed has to exit before it is killed. */
 export const HEADLESS_EXIT_GRACE_MS = 3_000;
 
-const STOPPED = "Winter's headless browser stopped — open the page again";
+const STOPPED = "Clover's headless browser stopped — open the page again";
 
 /** The spawned helper, as the pipe sees it. */
 export interface EngineChild {
@@ -254,7 +254,7 @@ export class WinterHeadlessProcess {
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         this.helloWaiter = undefined;
-        reject(new TransportError("timeout", "Winter's headless browser did not start in time"));
+        reject(new TransportError("timeout", "Clover's headless browser did not start in time"));
       }, this.timeout("hello"));
       this.helloWaiter = {
         resolve: (h) => { clearTimeout(timer); resolve(h); },
@@ -272,11 +272,11 @@ export class WinterHeadlessProcess {
       return Promise.reject(new TransportError("not_allowed", "the command can't be encoded"));
     }
     const size = Buffer.byteLength(line);
-    if (size > HEADLESS_COMMAND_MAX) return Promise.reject(new TransportError("not_allowed", `the command is too large for Winter's headless browser (${size} bytes)`));
+    if (size > HEADLESS_COMMAND_MAX) return Promise.reject(new TransportError("not_allowed", `the command is too large for Clover's headless browser (${size} bytes)`));
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(cmdId);
-        reject(new TransportError("timeout", `Winter's headless browser did not answer ${op} in time`));
+        reject(new TransportError("timeout", `Clover's headless browser did not answer ${op} in time`));
       }, timeoutMs);
       this.pending.set(cmdId, { op, resolve, reject, timer });
       if (!this.child.write(line)) {
@@ -324,7 +324,7 @@ export class WinterHeadlessProcess {
       if (line.length > 0) this.onLine(line);
     }
     if (this.buffer.length > HEADLESS_LINE_MAX) {
-      this.opts.log?.(`computer-use: Winter's headless browser sent a line over ${HEADLESS_LINE_MAX} bytes — dropped`);
+      this.opts.log?.(`computer-use: Clover's headless browser sent a line over ${HEADLESS_LINE_MAX} bytes — dropped`);
       this.buffer = Buffer.alloc(0);
     }
   }
@@ -425,7 +425,7 @@ export class WinterHeadlessProcess {
     if (this.stderrLines >= 200) return;
     for (const raw of chunk.toString("utf8").split("\n")) {
       const line = raw.trim();
-      if (line.length === 0 || !/^Winter(CEF|Headless):/.test(line)) continue;
+      if (line.length === 0 || !/^Clover(CEF|Headless):/.test(line)) continue;
       if (++this.stderrLines > 200) { this.opts.log?.("computer-use: headless: (further helper log lines dropped)"); return; }
       this.opts.log?.(`computer-use: headless: ${line.slice(0, 300)}`);
     }
@@ -437,7 +437,7 @@ export class WinterHeadlessProcess {
     if (this.killTimer !== undefined) clearTimeout(this.killTimer);
     // The daemon's write end goes with the process (a crash would otherwise leave it open).
     this.child.closeInput();
-    this.helloWaiter?.reject(new TransportError("disconnected", `Winter's headless browser exited before it was ready (${signal ?? `exit ${code ?? "?"}`})`));
+    this.helloWaiter?.reject(new TransportError("disconnected", `Clover's headless browser exited before it was ready (${signal ?? `exit ${code ?? "?"}`})`));
     this.helloWaiter = undefined;
     for (const [id, p] of this.pending) {
       clearTimeout(p.timer);

@@ -1,6 +1,6 @@
 // Wake triggers, the PRODUCTION wiring (`createComputerUseRuntime` with no backend injected): the tab backend over the
 // browser engine and the app backend over the helper are both built, and the engine asks the service whether the
-// helper's input to a browser bound as an app is Winter's own (`ownAppInputAt`) — so a click the helper sends a
+// helper's input to a browser bound as an app is Clover's own (`ownAppInputAt`) — so a click the helper sends a
 // browser's window is never a tab trigger's user click.
 import { describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -21,7 +21,7 @@ import { FakeHelper } from "./fake-helper";
 const macOnly = sandboxAvailable() ? test : test.skip;
 
 function runtime() {
-  const home = mkdtempSync(join(tmpdir(), "winter-wake-wiring-"));
+  const home = mkdtempSync(join(tmpdir(), "clover-wake-wiring-"));
   const store = new SessionStore(home);
   const hub = new SessionHub(store);
   const fake = new FakeHelper();
@@ -51,7 +51,7 @@ describe("the wake backends as the daemon builds them", () => {
     } finally { w.done(); }
   });
 
-  macOnly("the engine sees the helper's act on an app as Winter's own input to it, from the service's record", async () => {
+  macOnly("the engine sees the helper's act on an app as Clover's own input to it, from the service's record", async () => {
     const w = runtime();
     try {
       let during: boolean | undefined;

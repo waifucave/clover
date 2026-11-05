@@ -1,6 +1,6 @@
-// P8b Task 16 — THE PER-SESSION DRIVER for a Winter session running on the Winter leg.
+// P8b Task 16 — THE PER-SESSION DRIVER for a Clover session running on the Clover leg.
 //
-// One `WinterSession` per Winter session (`s_<hex>`), owning a sequence of INCARNATIONS: each is one
+// One `CloverSession` per Clover session (`s_<hex>`), owning a sequence of INCARNATIONS: each is one
 // spawned `winter` child (`runtime.sdk.query({ prompt: queue, options })`), one host prompt queue
 // (P8b-6: the streaming prompt is the only thing that keeps a session reachable by messaging), one
 // projector (P8b-14: the SDK→SessionEvent fold, keyed by the 8a generation the incarnation bumped),
@@ -33,7 +33,7 @@
 //  2. **No transcript exists until the first turn completes**, and `resume` on a transcript that
 //     was never written hangs ~10 s and dies "before init". Whether to resume is therefore a
 //     question the transcript answers (`deps.hasTranscript`, the SDK's own `getSessionInfo`), not
-//     the record: a session that idled out before its first turn is leg=winter AND transcript-less,
+//     the record: a session that idled out before its first turn is leg=clover AND transcript-less,
 //     and starts fresh under the same uuid.
 //  3. **A live predecessor holds the transcript's `.lock`**, and a resume racing it dies before
 //     init. `open()` therefore awaits the previous incarnation's `done` — state alone is not enough.
@@ -96,14 +96,14 @@
 // spawns (finding 3), and no push can reach the closed queue in between.
 import type { AgentInfo, McpServerConfig, Options, Query } from "@yanlinglabs/winter-agent-sdk";
 import { canonicalMcpServerUrl } from "@yanlinglabs/winter-agent-runtime/mcp-auth";
-import type { NewSessionEvent, SessionEvent, UserMessageFileRef, UserMessageImageRef } from "@yanlinglabs/winter-protocol";
+import type { NewSessionEvent, SessionEvent, UserMessageFileRef, UserMessageImageRef } from "@waifucave/clover-protocol";
 import { modelTextOf } from "../sessions/model-text";
 import { MAIN_THREAD, ProjectorRefusedError, classifyThrown, type ProjectedBatch, type Projector, type ProtocolSdkMessage } from "../projector";
 import { PROJECTOR_PASSTHROUGH_CLIENT } from "../projector/index";
 import { asAssistantFrame, asInitFrame, asResultFrame } from "../projector/conversation";
 import { ALLOWED_TRANSITIONS, type RuntimeSessionState } from "../runtime-state/records";
 import type { WinterRuntimeSdk, SessionMode } from "./create";
-import type { attachWinterSession, WinterSessionAttachHandle, WinterSessionAttachment } from "./messaging";
+import type { attachWinterSession, CloverSessionAttachHandle, CloverSessionAttachment } from "./messaging";
 import { createHostPromptQueue, type HostPromptQueue } from "./prompt-queue";
 import { CAPABILITY_PLAIN_NAMES, permissionModeFor, toolSurfaceViolations } from "./mode-options";
 import type { SessionApprovalPolicy } from "../agent/gate";
@@ -115,7 +115,7 @@ import type { HostCodeGeneration } from "./host-code-broker";
 
 /**
  * WS-21 (spec §3.1): the per-run folder an incarnation's `Options` carry as `runtime.runHome` — the
- * router's Winter overload reads it there (`query({ prompt, options: { ...options, runtime: { runHome } } })`).
+ * router's Clover overload reads it there (`query({ prompt, options: { ...options, runtime: { runHome } } })`).
  * `optionsFor` puts it there when the linked router applies run homes; absent otherwise.
  */
 export function runHomeOf(options: Options): RunHome | undefined {
@@ -137,11 +137,11 @@ export function withRunHome(options: Options, runHome: RunHome): Options {
  * (`JSON.stringify`, the SDK's wire config) nor forwarded by the router (it copies string keys), while an
  * object spread (`withRunHome`) keeps it. Absent: `options.mcpServers` is the whole configuration.
  */
-export const SESSION_MCP_SERVERS: unique symbol = Symbol("winter.sessionMcpServers");
+export const SESSION_MCP_SERVERS: unique symbol = Symbol("clover.sessionMcpServers");
 
-/** The runtime version an incarnation's spawn hook reported (`WinterSpawnHook.runtimeVersion`), riding the
+/** The runtime version an incarnation's spawn hook reported (`CloverSpawnHook.runtimeVersion`), riding the
  *  `Options` object under a symbol key like `SESSION_MCP_SERVERS` — never on the wire. */
-export const SESSION_RUNTIME_VERSION: unique symbol = Symbol("winter.sessionRuntimeVersion");
+export const SESSION_RUNTIME_VERSION: unique symbol = Symbol("clover.sessionRuntimeVersion");
 
 export function withRuntimeVersion(options: Options, version: string | undefined): Options {
   return version === undefined ? options : Object.assign(options, { [SESSION_RUNTIME_VERSION]: version });
@@ -168,18 +168,18 @@ function canonicalOrUndefined(url: string): string | undefined {
   }
 }
 
-export type WinterSessionState = "live" | "resumable" | "ended";
+export type CloverSessionState = "live" | "resumable" | "ended";
 
 /** The pre-abort budget inside `end()`, spent TWICE (close-then-wait, abort-then-wait): 2 × 120 =
  *  240 ms < `SHUTDOWN_QUERY_GRACE_MS` (300), so `end()` resolves before `dispose()`'s own deadline
  *  aborts the same controller a second time. `create.test.ts` pins the outer number; this one is
- *  pinned beside it in `winter-session.test.ts`. */
-export const WINTER_SESSION_END_GRACE_MS = 120;
+ *  pinned beside it in `clover-session.test.ts`. */
+export const CLOVER_SESSION_END_GRACE_MS = 120;
 
 /** What one incarnation is told about itself. `generation` is the 8a record's, ALREADY BUMPED
  *  (a projector built on the previous generation replays its first frames into
  *  `already-committed` and projects nothing — projector `ProjectorDeps.generation`'s own doc). */
-export interface WinterIncarnation {
+export interface CloverIncarnation {
   generation: number;
   /** `true` ⇒ `Options.resume = backendSessionId`; `false` ⇒ `Options.sessionId = backendSessionId`. */
   resume: boolean;
@@ -191,7 +191,7 @@ export interface WinterIncarnation {
  *  generation is bumped only after the options were built (a refused executable must not leave a
  *  generation row with no child behind it), so the thunk cannot see it — and needs nothing but
  *  the resume decision and the abort controller. */
-export type WinterIncarnationShape = Pick<WinterIncarnation, "resume" | "abort"> & {
+export type CloverIncarnationShape = Pick<CloverIncarnation, "resume" | "abort"> & {
   /**
    * WS-27: the options thunk reports the MCP server fold the moment it has computed it — before its remaining
    * awaits (the run home) and the spawn — so `mcpServerNames()` covers an incarnation still being opened.
@@ -201,7 +201,7 @@ export type WinterIncarnationShape = Pick<WinterIncarnation, "resume" | "abort">
 
 /** The last `system/init` the child reported — the id proves a resume landed on the same backend
  *  session, and `tools` is the integration tripwire's subject (Task 16's e2e). */
-export interface WinterInitFacts {
+export interface CloverInitFacts {
   sessionId?: string;
   model?: string;
   tools: string[];
@@ -209,7 +209,7 @@ export interface WinterInitFacts {
 
 /** The structural subset of 8a's `RuntimeSessionRecords` the driver writes. Optional as a whole
  *  (the record is the daemon's; a unit test hands in a counting fake or nothing). */
-export interface WinterSessionRecords {
+export interface CloverSessionRecords {
   bumpGeneration(winterSessionId: string, input: { runtimeKind: "winter-agent"; backendSessionId: string }): { generation: number };
   endGeneration(winterSessionId: string, generation: number, endReason: string): void;
   transition(winterSessionId: string, to: RuntimeSessionState): unknown;
@@ -223,8 +223,8 @@ export interface WinterSessionRecords {
   setTranscriptHealth?(winterSessionId: string, health: "repair-required"): void;
 }
 
-export interface WinterSessionDeps {
-  /** Winter's own session id — what every persisted event is stamped with. */
+export interface CloverSessionDeps {
+  /** Clover's own session id — what every persisted event is stamped with. */
   sessionId: string;
   /** The BACKEND uuid allocated by the creation transaction: `Options.sessionId` on a fresh start,
    *  `Options.resume` afterwards, the messaging address, the name of the child's transcript. */
@@ -236,17 +236,17 @@ export interface WinterSessionDeps {
   /** `Options` for ONE incarnation. Re-reads the session's LIVE facts (model, effort, policy) and
    *  re-resolves the spawn hook, so a `session.setModel` while resumable is honoured on resume. May
    *  throw a typed refusal (an executable that has gone away) — `open()` surfaces it. */
-  options: (incarnation: WinterIncarnationShape) => Options | Promise<Options>;
+  options: (incarnation: CloverIncarnationShape) => Options | Promise<Options>;
   /**
    * WS-19 (W19-7, fix round 2): a PRE-TURN gate, run before anything a turn does — before `open()`
    * spawns an incarnation and before the `user_message` is appended — so a refusal leaves no orphan
-   * log entry and no child. May throw a typed refusal (`WinterLegRefusal`); `send`/`steer` surface
+   * log entry and no child. May throw a typed refusal (`CloverLegRefusal`); `send`/`steer` surface
    * it to their caller unchanged.
    *
    * It lives HERE rather than in the options thunk because `options` runs at every `open()`,
    * including the one `session.create`/`session.dispatch` do eagerly — and a session with no
    * credential must still be CREATABLE (a fresh install has no key yet, and the Mac app dispatches a
-   * session at launch). What must not happen is a TURN against a provider Winter has no credential
+   * session at launch). What must not happen is a TURN against a provider Clover has no credential
    * for, and this is the one place every turn passes.
    *
    * `deliver` is deliberately NOT gated: it never opens an incarnation of its own (a delivery with
@@ -260,7 +260,7 @@ export interface WinterSessionDeps {
    *  typed `session_replaced`); a plain Error when absent. */
   endedWhileOpeningRefusal?: () => Error;
   /** A projector for ONE incarnation, built on ITS generation. */
-  projector: (incarnation: WinterIncarnation) => Projector;
+  projector: (incarnation: CloverIncarnation) => Projector;
   /** A fresh queue per incarnation (a closed queue cannot be reused). */
   queue?: () => HostPromptQueue;
   /** Persist one event and broadcast it (the hub's `append`). Returns the stamped event. */
@@ -274,9 +274,9 @@ export interface WinterSessionDeps {
     /** Task 12's door. */
     attach: typeof attachWinterSession;
     /** Attachment facts beyond the pinned four, read at attach time (title, cwd, selection…). */
-    facts?: () => Partial<Pick<WinterSessionAttachment, "displayName" | "title" | "cwd" | "selection">>;
+    facts?: () => Partial<Pick<CloverSessionAttachment, "displayName" | "title" | "cwd" | "selection">>;
   };
-  records?: WinterSessionRecords;
+  records?: CloverSessionRecords;
   /** Does the backend transcript exist? Decides `resume` vs a fresh start under the same uuid. */
   hasTranscript: () => boolean | Promise<boolean>;
   /** P8b-39: the LOG's unconsumed user texts — `unconsumedUserMessages(store.read(sessionId))` —
@@ -292,39 +292,39 @@ export interface WinterSessionDeps {
   /** An EVICTED driver of this same session that is still ending (`session-driver.ts`'s `evict`): the first
    *  `open()` waits for it (bounded by the end budget) before reading the log. */
   predecessorDone?: Promise<void>;
-  /** HOT: `winterOptionsFromSettings(settings()).idleTimeoutSec * 1000`, read when the timer is armed. */
+  /** HOT: `cloverOptionsFromSettings(settings()).idleTimeoutSec * 1000`, read when the timer is armed. */
   idleTimeoutMs: () => number;
-  /** Test seam for `WINTER_SESSION_END_GRACE_MS`. */
+  /** Test seam for `CLOVER_SESSION_END_GRACE_MS`. */
   endGraceMs?: number;
   /** The idle timer's clock (a test hands in a fake it fires by hand). Default: `setTimeout`, unref'd. */
-  timers?: WinterTimers;
+  timers?: CloverTimers;
   /** Task 17 (P8b-15): the persisted child roster. The projector opens a child thread with the
    *  spawning `tool_use.id` (`thread_started`), the child's own frames follow on that thread, and
    *  the spawning call's `tool_result` closes it (`thread_completed`); the driver relays the three
-   *  moments so `runtime_children` and the progress watchdog see every Winter child. */
-  children?: WinterChildrenSink;
+   *  moments so `runtime_children` and the progress watchdog see every Clover child. */
+  children?: CloverChildrenSink;
   /** Fired when the incarnation goes idle after a turn (the activity enforcement's re-check hook). */
   onTurnSettled?: () => void;
-  /** Daemon settings surface (2026-09-17 plan, item 3): see `WinterLegDeps.onSupportedAgents`
+  /** Daemon settings surface (2026-09-17 plan, item 3): see `CloverLegDeps.onSupportedAgents`
    *  (session-driver.ts) for the full contract — this is the per-session slice of it (already
-   *  bound to `sessionId` by `session-driver.ts`'s own `startWinterSession` call). */
+   *  bound to `sessionId` by `session-driver.ts`'s own `startCloverSession` call). */
   onSupportedAgents?: (agents: AgentInfo[]) => void;
   log?: (line: string) => void;
 }
 
-export interface WinterChildrenSink {
+export interface CloverChildrenSink {
   started(child: { threadId: string; agentType: string; prompt: string; description?: string }): void;
   /** A frame on the child's thread — the resettable progress window's feed (no wall clock). */
   progress(threadId: string): void;
   completed(threadId: string, stopReason: string): void;
 }
 
-export interface WinterTimers {
+export interface CloverTimers {
   set(fn: () => void, ms: number): unknown;
   clear(handle: unknown): void;
 }
 
-const REAL_TIMERS: WinterTimers = {
+const REAL_TIMERS: CloverTimers = {
   set(fn, ms) { const t = setTimeout(fn, ms); (t as { unref?: () => void }).unref?.(); return t; },
   clear(handle) { clearTimeout(handle as ReturnType<typeof setTimeout>); },
 };
@@ -375,11 +375,11 @@ export function unconsumedUserMessages(events: readonly SessionEvent[]): string[
   return owed;
 }
 
-export interface WinterSession {
+export interface CloverSession {
   readonly sessionId: string;
   readonly backendSessionId: string;
   readonly mode: DrivableSessionMode;
-  readonly state: WinterSessionState;
+  readonly state: CloverSessionState;
   /** The 8a generation of the current (or last) incarnation; 0 before the first opens. */
   readonly generation: number;
   /** Whether the current (or last) incarnation opened under `Options.resume` (true) or started
@@ -387,7 +387,7 @@ export interface WinterSession {
   readonly resumed: boolean;
   /** The live `Query`, or undefined while `resumable`/`ended`. */
   readonly query: Query | undefined;
-  readonly init: WinterInitFacts | undefined;
+  readonly init: CloverInitFacts | undefined;
   /** A host-side fact: pushes minus results, for the current incarnation. */
   readonly turnRunning: boolean;
   /** When the running turn's first push happened (epoch ms); undefined while idle. */
@@ -411,16 +411,16 @@ export interface WinterSession {
    *  See `interrupt`. Without it (`session.interrupt`, the Mac's stop) nothing queued is dropped. */
   interrupt(opts?: { discardQueued?: boolean }): Promise<{ wasRunning: boolean; discarded?: number }>;
   /** A steer now reaches the running turn: the live child folds a mid-turn push into it — its runtime reports
-   *  agent SDK ≥ 0.0.44 (`WinterSpawnHook.runtimeVersion`; a configured code binary may be older, and an
+   *  agent SDK ≥ 0.0.44 (`CloverSpawnHook.runtimeVersion`; a configured code binary may be older, and an
    *  unknown version counts as not folding). False while not live, ending, or with a provider handoff
    *  pending (a steer is then HELD for the target). SendMessage steers a running session only when true. */
   readonly foldsQueuedInput: boolean;
   /**
    * WS-23 (reasoning-state, decision 5): compacts the LIVE child's conversation NOW, on the model it runs
-   * (`Query.compact`, the Winter SDK's `compact` control), and resolves once the compaction finished.
+   * (`Query.compact`, the Clover SDK's `compact` control), and resolves once the compaction finished.
    * `planAndApplySwitch` calls it before a switch to another provider whose model cannot hold the
    * conversation -- the model being left writes the summary (the user's rule). A typed
-   * `WinterLegUnsupported` when there is no live child, or its SDK has no compaction control; never a
+   * `CloverLegUnsupported` when there is no live child, or its SDK has no compaction control; never a
    * silent no-op.
    */
   compact(opts?: CompactOptions): Promise<{ retainedCount: number }>;
@@ -458,7 +458,7 @@ export interface WinterSession {
    * WS-25: reconnect one of the live child's MCP servers (`Query.reconnectMcpServer`, the runtime's
    * `mcp_reconnect` control) — how a new sign-in reaches a session without replacing its child (a
    * Keychain write never evicts, spec §1). Code children and embedded chat/dispatch alike. A typed
-   * `WinterLegUnsupported` when there is no live child or its SDK has no reconnect control; the SDK's own
+   * `CloverLegUnsupported` when there is no live child or its SDK has no reconnect control; the SDK's own
    * error (an unknown server name) propagates.
    */
   reconnectMcpServer(name: string): Promise<void>;
@@ -468,7 +468,7 @@ export interface WinterSession {
   deliver(text: string): void;
   /** Open an incarnation if none is live (the creation transaction's start; `send`/`steer`/`deliver`
    *  call it implicitly). Rejects with the options thunk's typed refusal when the child cannot be
-   *  spawned, and with `WinterSessionEnded` when the session can never run again. */
+   *  spawned, and with `CloverSessionEnded` when the session can never run again. */
   open(): Promise<void>;
   /** Resolves when no turn is in flight on the current incarnation (at once while idle, resumable
    *  or ended; when the incarnation ends with a turn open, at that end). A headless caller's
@@ -476,32 +476,32 @@ export interface WinterSession {
   idle(): Promise<void>;
 }
 
-/** `WinterSession.compact`'s options: the SDK control's own, plus a continuity warning to show first. */
+/** `CloverSession.compact`'s options: the SDK control's own, plus a continuity warning to show first. */
 export interface CompactOptions {
   customInstructions?: string;
   /** Review r1 I-3: appended to the log as a `continuity_warning` before the compaction runs. */
   announce?: { warning: string; text: string };
 }
 
-/** A driver operation the Winter leg cannot perform. Carried to the RPC layer as `data.code`. */
-export class WinterLegUnsupported extends Error {
+/** A driver operation the Clover leg cannot perform. Carried to the RPC layer as `data.code`. */
+export class CloverLegUnsupported extends Error {
   readonly code = "not_supported_on_winter_leg" as const;
-  constructor(what: string, why = "no live Winter child, or its SDK has no compaction control") {
+  constructor(what: string, why = "no live Clover child, or its SDK has no compaction control") {
     super(`${what} is not supported here (${why})`);
-    this.name = "WinterLegUnsupported";
+    this.name = "CloverLegUnsupported";
   }
 }
 
 /** A push to a session that can never run again. */
-export class WinterSessionEnded extends Error {
+export class CloverSessionEnded extends Error {
   readonly code = "winter_session_ended" as const;
   constructor(sessionId: string, reason: string) {
-    super(`session ${sessionId} has ended on the Winter leg and cannot be resumed: ${reason}`);
-    this.name = "WinterSessionEnded";
+    super(`session ${sessionId} has ended on the Clover leg and cannot be resumed: ${reason}`);
+    this.name = "CloverSessionEnded";
   }
 }
 
-interface Incarnation extends WinterIncarnation {
+interface Incarnation extends CloverIncarnation {
   queue: HostPromptQueue;
   projector: Projector;
   /** Live child lineage for progress only; never authority and never reused by another incarnation. */
@@ -513,7 +513,7 @@ interface Incarnation extends WinterIncarnation {
   runHome: RunHome | undefined;
   /** WS-25: the MCP servers this incarnation was configured with (`sessionMcpServersOf`). */
   mcpServers: Readonly<Record<string, McpServerConfig>>;
-  attachment: WinterSessionAttachHandle | undefined;
+  attachment: CloverSessionAttachHandle | undefined;
   /** Frames seen — a child that never reached init is a spawn failure, not a turn failure. */
   sawInit: boolean;
   /** `Options.tools` this incarnation was opened with — the allowed built-ins its init must stay inside. */
@@ -532,25 +532,25 @@ const isExpectedEndError = (err: unknown): boolean => {
   return name === "ProcessError" || name === "AbortError" || name === "CLIConnectionError";
 };
 
-export function startWinterSession(deps: WinterSessionDeps): WinterSession {
-  return new WinterSessionImpl(deps);
+export function startCloverSession(deps: CloverSessionDeps): CloverSession {
+  return new CloverSessionImpl(deps);
 }
 
-class WinterSessionImpl implements WinterSession {
+class CloverSessionImpl implements CloverSession {
   readonly sessionId: string;
   readonly backendSessionId: string;
   readonly mode: DrivableSessionMode;
-  private stateValue: WinterSessionState = "resumable";
+  private stateValue: CloverSessionState = "resumable";
   private inc: Incarnation | undefined;
   private lastDone: Promise<void> = Promise.resolve();
   private gen = 0;
   private resumedValue = false;
-  private initFacts: WinterInitFacts | undefined;
+  private initFacts: CloverInitFacts | undefined;
   private inFlight = 0;
   private ending = false;
   private endingPromise: Promise<void> | undefined;
   private idleTimer: unknown;
-  private readonly timers: WinterTimers;
+  private readonly timers: CloverTimers;
   private readonly pending: string[] = [];
   /** Set by an interrupt: the held texts wait for the next `send`/`steer` instead of the next
    *  `result` (engine parity). Cleared by those two doors and by every `open()`. */
@@ -583,7 +583,7 @@ class WinterSessionImpl implements WinterSession {
   private opening: Promise<void> | undefined;
   /** `end()` landed while `opening` was in flight: that open spawns nothing (checked at its spawn point). */
   private endedWhileOpening = false;
-  /** WS-27: the fold of an incarnation still being opened (`WinterIncarnationShape.noteMcpServers`). */
+  /** WS-27: the fold of an incarnation still being opened (`CloverIncarnationShape.noteMcpServers`). */
   private pendingMcpServerNames: string[] = [];
   private idleWaiters: Array<() => void> = [];
   /** `deps.predecessorDone` is waited for once, by the first open. */
@@ -595,7 +595,7 @@ class WinterSessionImpl implements WinterSession {
   private handoff: Promise<void> | undefined;
   private heldForHandoff = 0;
 
-  constructor(private readonly deps: WinterSessionDeps) {
+  constructor(private readonly deps: CloverSessionDeps) {
     if (deps.mode !== "cowork" && deps.messaging === undefined) throw new TypeError(`a ${deps.mode} session needs the router's messaging attach`);
     this.sessionId = deps.sessionId;
     this.backendSessionId = deps.backendSessionId;
@@ -603,11 +603,11 @@ class WinterSessionImpl implements WinterSession {
     this.timers = deps.timers ?? REAL_TIMERS;
   }
 
-  get state(): WinterSessionState { return this.stateValue; }
+  get state(): CloverSessionState { return this.stateValue; }
   get generation(): number { return this.gen; }
   get resumed(): boolean { return this.resumedValue; }
   get query(): Query | undefined { return this.inc?.query; }
-  get init(): WinterInitFacts | undefined { return this.initFacts; }
+  get init(): CloverInitFacts | undefined { return this.initFacts; }
   get turnRunning(): boolean { return this.inFlight > 0; }
   get turnStartedAt(): number | undefined { return this.inFlight > 0 ? this.turnStart : undefined; }
   get done(): Promise<void> { return this.inc?.done ?? this.lastDone; }
@@ -742,7 +742,7 @@ class WinterSessionImpl implements WinterSession {
       this.discardOnSettle = held;
       let resolve!: () => void;
       const promise = new Promise<void>((r) => { resolve = r; });
-      const timer = this.timers.set(() => this.onStopSettleTimeout(), WinterSessionImpl.STOP_SETTLE_MAX_MS);
+      const timer = this.timers.set(() => this.onStopSettleTimeout(), CloverSessionImpl.STOP_SETTLE_MAX_MS);
       const gate = { promise, resolve, timer };
       this.stopSettled = gate;
       let clearDone!: () => void;
@@ -802,7 +802,7 @@ class WinterSessionImpl implements WinterSession {
     // (`applyCleared`), so pushes the child did drop are still closed in the log.
     let timer: unknown;
     const bounded = new Promise<"gave-up">((resolve) => {
-      timer = this.timers.set(() => resolve("gave-up"), WinterSessionImpl.STOP_SETTLE_MAX_MS);
+      timer = this.timers.set(() => resolve("gave-up"), CloverSessionImpl.STOP_SETTLE_MAX_MS);
       this.clearAbort = () => resolve("gave-up");
     });
     const first = await Promise.race([answered, bounded]);
@@ -870,7 +870,7 @@ class WinterSessionImpl implements WinterSession {
 
   async compact(opts?: CompactOptions): Promise<{ retainedCount: number }> {
     const compact = this.stateValue === "live" ? this.inc?.query.compact : undefined;
-    if (compact === undefined || this.inc === undefined) throw new WinterLegUnsupported("session.compact");
+    if (compact === undefined || this.inc === undefined) throw new CloverLegUnsupported("session.compact");
     // Review r1 I-3: what the caller announces reaches the transcript BEFORE the compaction starts.
     if (opts?.announce !== undefined) {
       this.safeAppend({ type: "continuity_warning", sessionId: this.sessionId, threadId: MAIN_THREAD, warning: opts.announce.warning.slice(0, 64), text: opts.announce.text.slice(0, 4_000) });
@@ -908,7 +908,7 @@ class WinterSessionImpl implements WinterSession {
   async reconnectMcpServer(name: string): Promise<void> {
     const inc = this.stateValue === "live" && !this.ending ? this.inc : undefined;
     const reconnect = inc?.query.reconnectMcpServer;
-    if (inc === undefined || reconnect === undefined) throw new WinterLegUnsupported("an MCP reconnect", "no live Winter child, or its SDK has no reconnect control");
+    if (inc === undefined || reconnect === undefined) throw new CloverLegUnsupported("an MCP reconnect", "no live Clover child, or its SDK has no reconnect control");
     await reconnect.call(inc.query, name);
   }
 
@@ -977,14 +977,14 @@ class WinterSessionImpl implements WinterSession {
       const opening = this.opening;
       if (opening !== undefined) {
         this.endedWhileOpening = true;
-        const budget = 2 * (this.deps.endGraceMs ?? WINTER_SESSION_END_GRACE_MS);
+        const budget = 2 * (this.deps.endGraceMs ?? CLOVER_SESSION_END_GRACE_MS);
         return Promise.race([opening.then(() => undefined, () => undefined), sleep(budget)]).then(() => undefined);
       }
       return this.done;
     }
     this.ending = true;
     this.clearIdleTimer();
-    const grace = this.deps.endGraceMs ?? WINTER_SESSION_END_GRACE_MS;
+    const grace = this.deps.endGraceMs ?? CLOVER_SESSION_END_GRACE_MS;
     this.endingPromise = (async () => {
       try {
         try { inc.queue.close(); } catch { /* already closed */ }
@@ -1020,13 +1020,13 @@ class WinterSessionImpl implements WinterSession {
     this.opening = (async () => {
       this.assertNotEnded();
       await this.lastDone;
-      // An EVICTED predecessor driver (another `WinterSession` for this session, still ending) must close its
+      // An EVICTED predecessor driver (another `CloverSession` for this session, still ending) must close its
       // books first — its child's own terminal is the log's to see before this one decides a turn was left
       // open. Bounded by the end budget, once: a predecessor that outlives it has been aborted already.
       const predecessor = this.deps.predecessorDone;
       if (predecessor !== undefined && !this.awaitedPredecessor) {
         this.awaitedPredecessor = true;
-        await Promise.race([predecessor, sleep(2 * (this.deps.endGraceMs ?? WINTER_SESSION_END_GRACE_MS))]);
+        await Promise.race([predecessor, sleep(2 * (this.deps.endGraceMs ?? CLOVER_SESSION_END_GRACE_MS))]);
       }
       // ONE read of the log for this open (`deps.logFacts`): what it still owes and whether a turn was left
       // open. Nothing appends to it until the replay below (a `send` opens before it appends, a delivery
@@ -1062,7 +1062,7 @@ class WinterSessionImpl implements WinterSession {
       const runHome = runHomeOf(options);
       if (runHome !== undefined) this.deps.records?.noteRunFolder?.(this.sessionId, runHome.dir);
       let generation: number;
-      let shape: WinterIncarnation;
+      let shape: CloverIncarnation;
       let queue: HostPromptQueue;
       let projector: Projector;
       let query: Query;
@@ -1093,7 +1093,7 @@ class WinterSessionImpl implements WinterSession {
       // Daemon settings surface (2026-09-17 plan, item 3): best-effort, fire-and-forget — a
       // rejection (a torn/aborted child before this resolves) must never affect `open()` itself,
       // which is why this is neither awaited nor placed before `this.inc = inc` below. See
-      // `WinterSessionDeps.onSupportedAgents`'s own doc comment for why this is the ONE place a
+      // `CloverSessionDeps.onSupportedAgents`'s own doc comment for why this is the ONE place a
       // built-in-agent-type list can come from.
       if (this.deps.onSupportedAgents) {
         try {
@@ -1173,7 +1173,7 @@ class WinterSessionImpl implements WinterSession {
             ? ["(init.tools missing)"]
             : toolSurfaceViolations(this.initFacts.tools, inc.allowedTools, CAPABILITY_PLAIN_NAMES);
           if (violations.length > 0) {
-            const message = `this session's runtime offered tools its allowed list leaves out (${violations.slice(0, 8).join(", ")}${violations.length > 8 ? ", …" : ""}), so it does not enforce Winter's tool surface — refused`;
+            const message = `this session's runtime offered tools its allowed list leaves out (${violations.slice(0, 8).join(", ")}${violations.length > 8 ? ", …" : ""}), so it does not enforce Clover's tool surface — refused`;
             this.log(`the winter child for ${this.sessionId}: ${message}`);
             const refusal = new Error(message);
             if (this.inFlight > 0) {
@@ -1256,7 +1256,7 @@ class WinterSessionImpl implements WinterSession {
         this.releaseDeliveries();
       }
       // WS-21 (spec §3.8; L2 fix round 1): the iteration is over (drained, closed or failed), which is
-      // exactly when the router reports a Winter run home `safe` — dispose it only then.
+      // exactly when the router reports a Clover run home `safe` — dispose it only then.
       if (inc.runHome !== undefined) {
         const runHome = inc.runHome;
         const settled = await settleRunHome(runHome, this.deps.runtime.runHomeOutcome?.(runHome.runId), {
@@ -1390,7 +1390,7 @@ class WinterSessionImpl implements WinterSession {
   }
 
   private push(text: string, inc: Incarnation | undefined = this.inc): void {
-    if (inc === undefined) throw new Error(`no live winter incarnation for ${this.sessionId}`);
+    if (inc === undefined) throw new Error(`no live clover incarnation for ${this.sessionId}`);
     inc.queue.push(text);
     if (this.inFlight === 0) this.turnStart = Date.now();
     this.inFlight++;
@@ -1551,7 +1551,7 @@ class WinterSessionImpl implements WinterSession {
   }
 
   private assertNotEnded(): void {
-    if (this.stateValue === "ended") throw new WinterSessionEnded(this.sessionId, this.endedReason ?? "the backend store refused it");
+    if (this.stateValue === "ended") throw new CloverSessionEnded(this.sessionId, this.endedReason ?? "the backend store refused it");
   }
 
   private log(line: string): void { this.deps.log?.(line); }

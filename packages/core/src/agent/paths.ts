@@ -3,7 +3,7 @@ import { isAbsolute, resolve, sep, dirname, basename, join } from "node:path";
 import { linkedRouterSupportsRunHome } from "../runtime-sdk/run-home-support";
 
 /**
- * Where the daemon keeps the SKILLS-ONLY plugin views it hands a Winter child
+ * Where the daemon keeps the SKILLS-ONLY plugin views it hands a Clover child
  * (`SkillStore.childSkillSurface`): `<home>/cache/skill-plugins/<plugin>/skills` → the plugin's own
  * skills directory. Here, in this leaf module, because two owners must agree on it without importing
  * each other: `agent/skills.ts` builds the views and `runtime-sdk/mode-options.ts` write-fences them.
@@ -17,8 +17,8 @@ import { linkedRouterSupportsRunHome } from "../runtime-sdk/run-home-support";
  * archives them). Write-fenced WHOLE on both legs (re-review M-a). A user may deliberately make it a link
  * (a cache on another volume); boot recovery then reconciles and removes nothing through it.
  */
-export function homeCacheDir(winterHome: string): string {
-  return join(winterHome, "cache");
+export function homeCacheDir(cloverHome: string): string {
+  return join(cloverHome, "cache");
 }
 
 /**
@@ -26,8 +26,8 @@ export function homeCacheDir(winterHome: string): string {
  * (`agent/approved-project-rules.ts`) — `<home>/permissions`. A leaf helper: the store reads it and
  * `runtime-sdk/mode-options.ts` write-fences it.
  */
-export function approvedProjectRulesDir(winterHome: string): string {
-  return join(winterHome, "permissions");
+export function approvedProjectRulesDir(cloverHome: string): string {
+  return join(cloverHome, "permissions");
 }
 
 /**
@@ -35,19 +35,19 @@ export function approvedProjectRulesDir(winterHome: string): string {
  * daemon builds the store on it and `runtime-sdk/mode-options.ts` write-fences it (writing it trusts
  * any project).
  */
-export function trustRecordFile(winterHome: string): string {
-  return join(winterHome, "trust.json");
+export function trustRecordFile(cloverHome: string): string {
+  return join(cloverHome, "trust.json");
 }
 
 // ── WS-21: the shared runtime home (`<home>/sdk`) ─────────────────────────────────────────────────
 //
-// `<home>` stays the daemon's own home (Winter's settings, event log, trust, runtime-state). The
+// `<home>` stays the daemon's own home (Clover's settings, event log, trust, runtime-state). The
 // runtime-facing files — the transcript store, skills, agents, plugins, the claude-format settings and
 // global config — live one level down, in `<home>/sdk`, in claude's formats, and BOTH runtimes read
 // them there (through the router's per-run folder once the router applies run homes).
 //
 // CONVENTION: every helper below, and every path function that reaches a runtime-facing directory
-// (`memoryDirFor`, `winterSessions`, `loadUserAgentDefinitions`, …), takes the DAEMON home and applies
+// (`memoryDirFor`, `cloverSessions`, `loadUserAgentDefinitions`, …), takes the DAEMON home and applies
 // `sdkHomeFor`/`storeHomeFor` itself. No caller computes either home by hand, so there is exactly one
 // spelling of each.
 
@@ -61,10 +61,10 @@ export function sdkSettingsPath(home: string): string {
   return join(sdkHomeFor(home), "settings.json");
 }
 
-/** `<home>/sdk/.winter.json` — claude's `.claude.json` shape: user `mcpServers` and
+/** `<home>/sdk/.clover.json` — claude's `.claude.json` shape: user `mcpServers` and
  *  `projects[<abs root>].mcpServers` (local scope). Spec §2.2. */
 export function sdkGlobalConfigPath(home: string): string {
-  return join(sdkHomeFor(home), ".winter.json");
+  return join(sdkHomeFor(home), ".clover.json");
 }
 
 /** `<home>/sdk/plugins` — claude's plugins root (install records, marketplaces, `cache/`, …; F15). */
@@ -86,7 +86,7 @@ export function sdkPluginsRoot(home: string): string {
  * build where this answers `sdk/`, so the reads and the data always agree.
  */
 /**
- * WS-21 (L2 O-1): a session working directory as the RUNTIMES key it — its realpath (the Winter child keys
+ * WS-21 (L2 O-1): a session working directory as the RUNTIMES key it — its realpath (the Clover child keys
  * its transcript by `realpath(cwd)`, while the router keys by the cwd it is handed). The daemon hands the
  * canonical path everywhere a transcript or run home is keyed: `RunHomeInput.cwd`, `Options.cwd` on both
  * legs, and the recorded transcript key. A directory that does not exist (yet) keeps its given spelling.
@@ -115,7 +115,7 @@ export const SDK_PERSISTENT_ENTRIES = ["file-history", "tasks", "teams", "agent-
  * top-level paths (spec §2.1, §8 step 3), as `[old top-level name, link text relative to <home>]`.
  * RELATIVE link text on purpose: the home can be moved or copied as a unit.
  *
- * NEVER planted by `bootstrapWinterDir`: the agent SDK's store refuses a symlink at `<store>/projects`
+ * NEVER planted by `bootstrapCloverDir`: the agent SDK's store refuses a symlink at `<store>/projects`
  * on every append (`ensureSecureDir`), so a link there is only safe once nothing writes the old path.
  */
 export const SDK_COMPAT_LINKS: ReadonlyArray<readonly [name: string, target: string]> = [

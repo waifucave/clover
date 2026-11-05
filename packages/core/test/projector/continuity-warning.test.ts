@@ -51,7 +51,7 @@ describe("projector: WS-23 continuity warnings are shown", () => {
   });
 });
 
-// 2026-10-07: a compaction is something Winter did to the conversation. The runtime's `compact_boundary`
+// 2026-10-07: a compaction is something Clover did to the conversation. The runtime's `compact_boundary`
 // (and its `status` failure pair) used to be dropped, so a `/compact` or an auto-compaction left no trace
 // the user could see.
 describe("projector: compactions are shown as continuity warnings", () => {

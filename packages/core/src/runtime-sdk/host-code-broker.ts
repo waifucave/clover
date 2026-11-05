@@ -9,7 +9,7 @@ import type {
   HookCallback,
   HookJSONOutput,
 } from "@yanlinglabs/winter-agent-sdk";
-import type { NewSessionEvent } from "@yanlinglabs/winter-protocol";
+import type { NewSessionEvent } from "@waifucave/clover-protocol";
 import { randomUUID, createHash } from "node:crypto";
 import { lstatSync, realpathSync } from "node:fs";
 import { basename, dirname, isAbsolute, resolve } from "node:path";
@@ -77,7 +77,7 @@ export interface HostCodeContext {
   workflow?: {
     command: { file: string; args: string[] };
     home?: string;
-    winterHome?: string;
+    cloverHome?: string;
   };
 }
 export interface HostCodeDrainEvidence {
@@ -193,10 +193,10 @@ export function installedHostCodeAdapter(): HostCodeSdkAdapter | undefined {
   };
 }
 export const HOST_CODE_BINDING: unique symbol = Symbol(
-  "winter.hostCodeBinding",
+  "clover.hostCodeBinding",
 );
 const HOST_CODE_RESOLVED_SPAWN: unique symbol = Symbol(
-  "winter.hostCodeResolvedSpawn",
+  "clover.hostCodeResolvedSpawn",
 );
 /** Trusted executable/env resolver. Floor application happens AFTER this callback, before the one actual spawn. */
 export function withResolvedHostCodeSpawn(
@@ -244,7 +244,7 @@ export interface HostCodeBinding {
     | {
         command: { file: string; args: string[] };
         home?: string;
-        winterHome?: string;
+        cloverHome?: string;
       }
     | undefined;
 }
@@ -386,7 +386,7 @@ export class HostCodeExecutionService {
   }
   enroll(input: {
     options: Options;
-    /** Explicit Winter-owned worker/bridge operation; never inferred from storage activation. */
+    /** Explicit Clover-owned worker/bridge operation; never inferred from storage activation. */
     ownedBridge?: true;
     sessionId: string;
     backendSessionId: string;
@@ -664,8 +664,8 @@ export class HostCodeExecutionService {
               ...(binding!.outDir ? [binding!.outDir] : []),
             ],
             home: canonicalEnv.HOME ?? binding!.home,
-            winterHome: canonicalEnv.WINTER_HOME,
-            storeHome: canonicalEnv.WINTER_STORE_HOME,
+            cloverHome: canonicalEnv.CLOVER_HOME,
+            storeHome: canonicalEnv.CLOVER_STORE_HOME,
           });
           const limits = this.adapter!.executionLimits(call.name, effectiveCall.input);
           const admittedTimeout = limits.timeoutMs, admittedOutput = limits.maxStreamedBytes;

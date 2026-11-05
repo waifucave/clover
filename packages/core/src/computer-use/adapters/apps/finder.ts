@@ -30,17 +30,17 @@ function realHome(): string {
   try { return realpathSync(homedir()); } catch { return homedir(); }
 }
 
-/** Folders Winter never trashes (or anything below the second list): the system, the user's home and its key folders,
- *  the credential stores and Winter's own homes. Compared CASE-INSENSITIVELY (macOS disks are): pass the real path. */
+/** Folders Clover never trashes (or anything below the second list): the system, the user's home and its key folders,
+ *  the credential stores and Clover's own homes. Compared CASE-INSENSITIVELY (macOS disks are): pass the real path. */
 export function trashRefusal(path: string, home: string = realHome()): string | undefined {
   const p = path.toLowerCase();
   const h = home.toLowerCase();
   const exact = new Set(["/", "/users", "/volumes", "/applications", "/library", "/system", "/private", h,
     ...["library", "desktop", "documents", "downloads", "applications", "pictures", "movies", "music"].map((d) => `${h}/${d}`)]);
-  if (exact.has(p)) return `Winter doesn't trash ${path} — it is a system or home folder; ask the user`;
+  if (exact.has(p)) return `Clover doesn't trash ${path} — it is a system or home folder; ask the user`;
   const below = ["/system/", "/usr/", "/bin/", "/sbin/", "/etc/", "/private/etc/", "/private/var/db/", "/library/keychains/",
-    `${h}/library/keychains/`, `${h}/.ssh/`, `${h}/.gnupg/`, `${h}/.winter`];
-  for (const b of below) if (p === b.replace(/\/$/, "") || p.startsWith(b)) return `Winter doesn't trash anything in ${b.replace(/\/$/, "")} — ask the user`;
+    `${h}/library/keychains/`, `${h}/.ssh/`, `${h}/.gnupg/`, `${h}/.clover`];
+  for (const b of below) if (p === b.replace(/\/$/, "") || p.startsWith(b)) return `Clover doesn't trash anything in ${b.replace(/\/$/, "")} — ask the user`;
   return undefined;
 }
 
@@ -138,7 +138,7 @@ function selectionRefusal(app: string, r: string): AutomationFailure | undefined
     case "NOTFRONT": return new AutomationFailure("NoWindow", "Finder's scripting reads the selection of its frontmost window only, and the bound window is behind another Finder window — read what is selected with state() (selected items are marked)");
     case "DESKTOP": return new AutomationFailure("NoWindow", "the bound Finder window shows the Desktop folder, so Finder's selection could be the desktop's rather than this window's — read what is selected with state()");
     case "NOTFOCUSED": return new AutomationFailure("NoWindow", "Finder's selection is not the bound window's right now (the user's focus in Finder is elsewhere, the desktop perhaps) — read what is selected with state()");
-    case "UNPROVEN": return new AutomationFailure("NoWindow", "Winter could not prove Finder's selection is the bound window's (its folder could not be read) — read what is selected with state()");
+    case "UNPROVEN": return new AutomationFailure("NoWindow", "Clover could not prove Finder's selection is the bound window's (its folder could not be read) — read what is selected with state()");
     default: return undefined;
   }
 }
@@ -183,7 +183,7 @@ export const finderAdapter: AppAdapter = {
           ...selectionIsBound(w),
           "set out to \"SEL:\"",
           "repeat with i in (get selection)",
-          "  set out to out & (URL of i) & winterLF",
+          "  set out to out & (URL of i) & cloverLF",
           "end repeat",
           "return out",
         ]));
@@ -213,7 +213,7 @@ export const finderAdapter: AppAdapter = {
         for (const p of paths) {
           const st = existing(p, "trash(paths)");
           // Finder trashes what a link points to: never a link.
-          if (st.isSymbolicLink()) throw new AutomationFailure("Refused", `${p} is a symbolic link — Winter doesn't trash links (Finder would trash what it points to); ask the user`);
+          if (st.isSymbolicLink()) throw new AutomationFailure("Refused", `${p} is a symbolic link — Clover doesn't trash links (Finder would trash what it points to); ask the user`);
           let real: string;
           try { real = realpathSync(p); } catch { throw new Error(`trash(paths): ${p} could not be resolved`); }
           const why = trashRefusal(real);

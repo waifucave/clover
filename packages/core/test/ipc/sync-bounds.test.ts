@@ -6,7 +6,7 @@ import {
   LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, ERR,
   SESSION_TITLE_MAX_CHARS, SYNC_MAX_CHUNK_B64, IROH_MAX_FRAME_BYTES,
   type WritableSocket,
-} from "@yanlinglabs/winter-protocol";
+} from "@waifucave/clover-protocol";
 import { startIpcServer } from "../../src/ipc/server";
 import { SyncPushBuffers, SYNC_PAGE_BYTES } from "../../src/ipc/sync";
 import { SessionStore } from "../../src/sessions/store";
@@ -133,7 +133,7 @@ describe("I1 — a pushed meta.model is validated exactly like session.setModel'
   afterEach(() => { stop?.(); stop = undefined; });
 
   async function boot(): Promise<{ store: SessionStore; socketPath: string; token: string }> {
-    const home = mkdtempSync(join(tmpdir(), "winter-sync-model-"));
+    const home = mkdtempSync(join(tmpdir(), "clover-sync-model-"));
     // WS-20 (review round 2, M4): `validateSyncMeta`'s `modelTagIsKnown` now enforces real catalog
     // MEMBERSHIP, not just provider existence — a BYO `providers.codex-oauth.baseUrl` keeps this
     // block's off-catalog-model control below meaning what it says (same escape hatch
@@ -143,7 +143,7 @@ describe("I1 — a pushed meta.model is validated exactly like session.setModel'
     const socketPath = join(home, "core.sock");
     const authority = new TokenAuthority(new FileSecretStore(join(home, "secrets.json")));
     const tokens = await authority.ensureTokens();
-    const server = startIpcServer({ socketPath, serverVersion: "test", tokens: authority, store, winterHome: home });
+    const server = startIpcServer({ socketPath, serverVersion: "test", tokens: authority, store, cloverHome: home });
     stop = () => { server.stop(); store.close(); };
     return { store, socketPath, token: tokens.harness };
   }
@@ -245,12 +245,12 @@ describe("I1 — a pushed meta.model is validated exactly like session.setModel'
   // handler's own non-fatal policy still holds (the log itself still lands), only which models
   // qualify for the drop got stricter.
   test("M4: a typo model on a real provider, with NO BYO baseUrl, is dropped (log still lands)", async () => {
-    const home = mkdtempSync(join(tmpdir(), "winter-sync-model-notypo-"));
+    const home = mkdtempSync(join(tmpdir(), "clover-sync-model-notypo-"));
     const store = new SessionStore(home);
     const socketPath = join(home, "core.sock");
     const authority = new TokenAuthority(new FileSecretStore(join(home, "secrets.json")));
     const tokens = await authority.ensureTokens();
-    // No `winterHome` — no BYO baseUrl to consult.
+    // No `cloverHome` — no BYO baseUrl to consult.
     const server = startIpcServer({ socketPath, serverVersion: "test", tokens: authority, store });
     try {
       const c = await TestClient.connect(socketPath);
@@ -277,7 +277,7 @@ describe("I2 — title is bounded at every ingress, so heads/list can never outg
   afterEach(() => { stop?.(); stop = undefined; });
 
   async function boot(): Promise<{ store: SessionStore; socketPath: string; token: string }> {
-    const home = mkdtempSync(join(tmpdir(), "winter-sync-title-"));
+    const home = mkdtempSync(join(tmpdir(), "clover-sync-title-"));
     const store = new SessionStore(home);
     const socketPath = join(home, "core.sock");
     const authority = new TokenAuthority(new FileSecretStore(join(home, "secrets.json")));
@@ -438,7 +438,7 @@ describe("I3 — the push chunk ceiling is sized against the PHONE frame, not th
   afterEach(() => { stop?.(); stop = undefined; });
 
   async function boot(): Promise<{ store: SessionStore; socketPath: string; token: string }> {
-    const home = mkdtempSync(join(tmpdir(), "winter-sync-chunk-"));
+    const home = mkdtempSync(join(tmpdir(), "clover-sync-chunk-"));
     const store = new SessionStore(home);
     const socketPath = join(home, "core.sock");
     const authority = new TokenAuthority(new FileSecretStore(join(home, "secrets.json")));
@@ -517,7 +517,7 @@ describe("fix-round minors (M1/M2/M4/M5)", () => {
   afterEach(() => { stop?.(); stop = undefined; });
 
   async function boot(): Promise<{ store: SessionStore; socketPath: string; token: string }> {
-    const home = mkdtempSync(join(tmpdir(), "winter-sync-minors-"));
+    const home = mkdtempSync(join(tmpdir(), "clover-sync-minors-"));
     const store = new SessionStore(home);
     const socketPath = join(home, "core.sock");
     const authority = new TokenAuthority(new FileSecretStore(join(home, "secrets.json")));

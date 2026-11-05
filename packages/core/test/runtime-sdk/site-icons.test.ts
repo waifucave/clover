@@ -1,12 +1,12 @@
 // `tool_result.siteIcons` end to end: the runtime's own report (`winter_site_icons` on a host-facing
-// tool_result block — the Winter agent SDK's WebFetch/WebSearch/Search, fixture-shaped) → the REAL
+// tool_result block — the Clover agent SDK's WebFetch/WebSearch/Search, fixture-shaped) → the REAL
 // projector's `tool_result`; the url checks; and the caps on history / the remote stream.
 //
 // (Until 2026-10-01 the daemon's own `Search` was a second producer, through a PostToolUse hook. `Search`
 // is the agent SDK's built-in now and reports its citations' icons on its own block like the other two,
 // so that path and its tests are gone; one test below pins that no hook step survived.)
 import { describe, expect, test } from "bun:test";
-import { SITE_ICONS_MAX, SessionEvent, ToolResultEvent } from "@yanlinglabs/winter-protocol";
+import { SITE_ICONS_MAX, SessionEvent, ToolResultEvent } from "@waifucave/clover-protocol";
 import { sessionHooksFor } from "../../src/runtime-sdk/hooks";
 import { cleanSiteIcons, siteIconUrl, siteIconsFromRuntimeBlock } from "../../src/runtime-sdk/site-icons";
 import { capEvent } from "../../src/sessions/history";
@@ -44,14 +44,14 @@ describe("the SDK's Search reports its citations' icons on its own block", () =>
 
   test("no daemon-side hook step is left: the unmatched PostToolUse group is the plugin callback alone, in every mode", () => {
     for (const mode of ["code", "chat", "dispatch"] as const) {
-      const unmatched = (sessionHooksFor({ sessionId: SID, roots: ["/tmp"], mode }).winter?.PostToolUse ?? []).filter((g) => g.matcher === undefined);
+      const unmatched = (sessionHooksFor({ sessionId: SID, roots: ["/tmp"], mode }).clover?.PostToolUse ?? []).filter((g) => g.matcher === undefined);
       expect(unmatched.flatMap((g) => g.hooks)).toHaveLength(1);
     }
   });
 });
 
 describe("the runtime's own report (winter_site_icons on the block)", () => {
-  // Fixture: what the Winter agent SDK's WebFetch puts on its host-facing tool_result block.
+  // Fixture: what the Clover agent SDK's WebFetch puts on its host-facing tool_result block.
   const fetchFrame = {
     type: "user",
     message: { content: [{ type: "tool_result", tool_use_id: "toolu_wf", content: "digest", winter_site_icons: [{ url: "https://docs.example.com/page", icon_url: "https://docs.example.com/static/icon.png" }] }] },

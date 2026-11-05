@@ -1,5 +1,5 @@
-// ComputerV2 Phase 4 — the HEADLESS POOL: the `headless` backend (family `headless`, one instance, "Winter
-// (headless)"). Winter's private, invisible browser for background reading: every tab is an agent tab of the session
+// ComputerV2 Phase 4 — the HEADLESS POOL: the `headless` backend (family `headless`, one instance, "Clover
+// (headless)"). Clover's private, invisible browser for background reading: every tab is an agent tab of the session
 // that opened it, in that session's own in-memory browser context, and nothing of it is ever shown to anyone.
 //
 // The pool implements the pinned `CdpTransport` and runs its ENGINE — Winter Headless, the windowless CEF helper
@@ -26,13 +26,13 @@
 // (`disposeSession`) or the helper exits.
 //
 // PRESENTATION (lane H3, the helper's feature `present` and the browser link's feature `headless`): a live headless
-// tab can be SHOWN in Winter.app's panel — the same page, drawn from the helper's own GPU frames; nothing is reloaded or
+// tab can be SHOWN in Clover.app's panel — the same page, drawn from the helper's own GPU frames; nothing is reloaded or
 // moved — for the `waitForUser` hand-off (`present`, the person in control) or for the person to watch (`watch`) and take
 // over (`takeOver`) from the panel. While the person holds CONTROL, every agent command on that tab (attach, send,
 // subscribe) is refused `capacity` ("the user has this tab", which the engine reads as `TargetBusy`); taking control
 // first stops new agent commands and lets the ones in flight finish (`HEADLESS_DRAIN_MS` at most). The CDP events keep
 // flowing, so the engine still follows the page. A presentation nobody connected to within `HEADLESS_PRESENT_START_MS`
-// (Winter.app not there, its viewer refused) is ended here. A tab the turn's end closes while the person holds it is
+// (Clover.app not there, its viewer refused) is ended here. A tab the turn's end closes while the person holds it is
 // closed when they let it go.
 import { randomBytes } from "node:crypto";
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -76,15 +76,15 @@ export const HEADLESS_ENABLED_POLL_MS = 10_000;
  *  every tab it held is lost; answering, only the tabs those commands named are lost. */
 export const HEADLESS_WEDGED_AFTER_TIMEOUTS = 3;
 
-export const HEADLESS_NAME = "Winter (headless)";
+export const HEADLESS_NAME = "Clover (headless)";
 export const HEADLESS_DISABLED_REASON = "turned off in Settings";
 
-const STOPPED = "Winter's headless browser stopped — open the page again";
+const STOPPED = "Clover's headless browser stopped — open the page again";
 
 /** The daemon's line for a refusal the helper reported, once per tab and kind. */
 const NOTICE_LINES: Record<HeadlessNoticeKind, string> = {
-  popup: "computer-use: a page in Winter's headless browser tried to open a window — refused",
-  "local-network": "computer-use: a page in Winter's headless browser tried to reach the local network — refused before anything was sent",
+  popup: "computer-use: a page in Clover's headless browser tried to open a window — refused",
+  "local-network": "computer-use: a page in Clover's headless browser tried to reach the local network — refused before anything was sent",
 };
 
 /** A view the helper did not confirm ending is asked again this many times, `HEADLESS_UNPRESENT_RETRY_MS` × the attempt
@@ -92,13 +92,13 @@ const NOTICE_LINES: Record<HeadlessNoticeKind, string> = {
 export const HEADLESS_UNPRESENT_RETRIES = 5;
 export const HEADLESS_UNPRESENT_RETRY_MS = 2_000;
 /** How the agent's tab listing names a tab the person holds (its address and title kept from before they took it). */
-export const HELD_BY_THE_USER = "held by the user in Winter's panel";
+export const HELD_BY_THE_USER = "held by the user in Clover's panel";
 
 export interface HeadlessPoolDeps {
   home: string;
   /** `computerUse.headless.enabled` (read live). */
   enabled(): boolean;
-  /** The engine to run, or why there is none (`resolveWinterHeadless`). */
+  /** The engine to run, or why there is none (`resolveCloverHeadless`). */
   resolve(): ResolvedEngine | { missing: string };
   spawn?: SpawnEngine;
   /** Does the spawned process satisfy the engine's designated requirement (`processSatisfiesRequirement`)? */
@@ -107,10 +107,10 @@ export interface HeadlessPoolDeps {
   memoryOf?(rootPid: number): number | undefined;
   /** How long the guard waits for closes in flight before it decides (`HEADLESS_CLOSE_SETTLE_MS`). */
   closeSettleMs?: number;
-  /** Presentation: Winter.app's panel as a viewer (the browser link's feature `headless`), or why there is none. */
+  /** Presentation: Clover.app's panel as a viewer (the browser link's feature `headless`), or why there is none. */
   viewer?(): HeadlessViewer | undefined;
   viewerMissing?(): string | undefined;
-  /** The code requirement the viewer (Winter.app) must satisfy (`winterAppRequirementFor`). */
+  /** The code requirement the viewer (Clover.app) must satisfy (`cloverAppRequirementFor`). */
   viewerRequirement?(): string;
   presentStartMs?: number;
   drainMs?: number;
@@ -127,7 +127,7 @@ interface PoolTab {
   tabKey: string; sessionId: string; proc: WinterHeadlessProcess; url: string; title: string; noticed: Set<HeadlessNoticeKind>; localNetworkAt?: number;
   /** The agent's commands on this tab in flight (attach, send, subscribe, detach) — a take-over waits for them. */
   inflight: number;
-  /** Shown in Winter's panel. */
+  /** Shown in Clover's panel. */
   presentation?: Presentation;
   /** A window the page opened while the person held this tab's opener (a sign-in window): the person's alone — never
    *  listed to the agent, shown in the panel in front of its opener, closed when the person lets the opener go. */
@@ -142,7 +142,7 @@ interface PoolTab {
   personHolds?: { count: number; since: number };
 }
 
-/** One headless tab shown in Winter's panel. */
+/** One headless tab shown in Clover's panel. */
 interface Presentation {
   nonce: string;
   service: string;
@@ -255,7 +255,7 @@ export class HeadlessPool implements CdpTransport {
 
   /** Why it is not offered, when it is not (`browsers.list()`'s reason). */
   get reason(): string | undefined {
-    if (this.stopped) return "Winter is shutting down";
+    if (this.stopped) return "Clover is shutting down";
     try { if (!this.deps.enabled()) return HEADLESS_DISABLED_REASON; } catch { return HEADLESS_DISABLED_REASON; }
     const r = this.engineFor();
     return "missing" in r ? r.missing : undefined;
@@ -279,7 +279,7 @@ export class HeadlessPool implements CdpTransport {
     const now = this.now();
     if (this.resolved !== undefined && now - this.resolved.at < 5_000) return this.resolved.value;
     let value: ResolvedEngine | { missing: string };
-    try { value = this.deps.resolve(); } catch { value = { missing: "Winter's headless browser is missing — reinstall Winter" }; }
+    try { value = this.deps.resolve(); } catch { value = { missing: "Clover's headless browser is missing — reinstall Clover" }; }
     this.resolved = { at: now, value };
     return value;
   }
@@ -304,7 +304,7 @@ export class HeadlessPool implements CdpTransport {
     mkdirSync(runDir, { recursive: true, mode: 0o700 });
     // The kept components first, so the browser starts on them and its updater only checks them.
     seedHeadlessComponents(headlessComponentsDir(this.deps.home), runDir, this.deps.log);
-    const child = (this.deps.spawn ?? spawnEngineProcess)(r.executable, [`--winter-cache-root=${runDir}`]);
+    const child = (this.deps.spawn ?? spawnEngineProcess)(r.executable, [`--clover-cache-root=${runDir}`]);
     const proc = new WinterHeadlessProcess(child, { ...(this.deps.timeouts === undefined ? {} : { timeouts: this.deps.timeouts }), ...(this.deps.log === undefined ? {} : { log: this.deps.log }) });
     this.proc = proc;
     this.runDirs.set(proc, runDir);
@@ -317,20 +317,20 @@ export class HeadlessPool implements CdpTransport {
     proc.onNotice((tabKey, kind) => this.notice(proc, tabKey, kind));
     proc.onPresentation((e) => this.presentationEvent(proc, e));
     this.writePidFile(proc.pid);
-    // The process this daemon just spawned must be Winter's own before anything is sent to it.
+    // The process this daemon just spawned must be Clover's own before anything is sent to it.
     if (this.deps.verify !== undefined && !this.deps.verify(proc.pid, r.requirement)) {
-      throw this.abandon(proc, "Winter's headless browser is not signed by Winter — reinstall Winter");
+      throw this.abandon(proc, "Clover's headless browser is not signed by Clover — reinstall Clover");
     }
     let hello;
     try { hello = await proc.ready(); } catch (err) {
-      throw this.abandon(proc, `Winter's headless browser did not start (${err instanceof Error ? err.message : "error"})`);
+      throw this.abandon(proc, `Clover's headless browser did not start (${err instanceof Error ? err.message : "error"})`);
     }
     if (hello.protocol !== HEADLESS_PIPE_PROTOCOL) {
-      throw this.abandon(proc, "Winter's headless browser is from another version of Winter — reinstall Winter");
+      throw this.abandon(proc, "Clover's headless browser is from another version of Clover — reinstall Clover");
     }
     this.launchedAt = this.now();
     this.lastSeenPresent = proc.has("present");
-    this.deps.log?.(`computer-use: Winter's headless browser started (pid ${proc.pid}, ${this.launchedAt - t0} ms)`);
+    this.deps.log?.(`computer-use: Clover's headless browser started (pid ${proc.pid}, ${this.launchedAt - t0} ms)`);
     this.metric("headless.launch", this.launchedAt - t0, { headlessEngine: r.engine, ...(hello.version === undefined ? {} : { headlessVersion: hello.version }) });
     this.watchEnabled();
     return proc;
@@ -374,7 +374,7 @@ export class HeadlessPool implements CdpTransport {
     try { rmSync(headlessUploadDir(this.deps.home), { recursive: true, force: true }); } catch { /* the next boot sweeps it */ }
     // A crash, or the setting turned off: the tabs the model still holds read why.
     if (reason === "crash" || reason === "disabled") for (const t of lost) this.emitGone(t.tabKey, reason === "crash" ? "crashed" : "closed");
-    if (reason === "crash") this.deps.log?.(`computer-use: Winter's headless browser exited unexpectedly (${signal ?? `exit ${code ?? "?"}`}); ${lost.length} tab(s) lost`);
+    if (reason === "crash") this.deps.log?.(`computer-use: Clover's headless browser exited unexpectedly (${signal ?? `exit ${code ?? "?"}`}); ${lost.length} tab(s) lost`);
     this.metric("headless.exit", this.launchedAt === 0 ? 0 : this.now() - this.launchedAt, { headlessEngine: DEFAULT_HEADLESS_ENGINE, exitReason: reason });
     try { rmSync(headlessPidPath(this.deps.home), { force: true }); } catch { /* best effort */ }
   }
@@ -423,7 +423,7 @@ export class HeadlessPool implements CdpTransport {
     let on = true;
     try { on = this.deps.enabled(); } catch { on = false; }
     if (!on && this.proc?.alive === true && this.exitReason === undefined) {
-      this.deps.log?.("computer-use: Winter's headless browser was turned off in Settings — stopping it");
+      this.deps.log?.("computer-use: Clover's headless browser was turned off in Settings — stopping it");
       this.shutdown("disabled");
     }
     return on;
@@ -480,7 +480,7 @@ export class HeadlessPool implements CdpTransport {
     }
     if (this.proc !== proc || !proc.alive) return;
     if (!answered) {
-      this.deps.log?.(`computer-use: Winter's headless browser stopped answering (${streak} commands in a row timed out, and it did not answer a check of itself) — restarting it`);
+      this.deps.log?.(`computer-use: Clover's headless browser stopped answering (${streak} commands in a row timed out, and it did not answer a check of itself) — restarting it`);
       proc.kill();
       return;
     }
@@ -493,8 +493,8 @@ export class HeadlessPool implements CdpTransport {
       this.emitGone(t.tabKey, "crashed");
     }
     this.deps.log?.(lost.length > 0
-      ? `computer-use: a page in Winter's headless browser stopped answering (${streak} commands in a row timed out) — its tab closed (${lost.length}); the browser itself still answers`
-      : `computer-use: ${streak} commands to Winter's headless browser timed out, but it still answers — nothing closed`);
+      ? `computer-use: a page in Clover's headless browser stopped answering (${streak} commands in a row timed out) — its tab closed (${lost.length}); the browser itself still answers`
+      : `computer-use: ${streak} commands to Clover's headless browser timed out, but it still answers — nothing closed`);
     this.armIdle();
   }
 
@@ -577,7 +577,7 @@ export class HeadlessPool implements CdpTransport {
       await this.recycle(proc, bytes);
       return;
     }
-    throw this.capacity("Winter's headless browser is using too much memory — close some tabs with tab.close()");
+    throw this.capacity("Clover's headless browser is using too much memory — close some tabs with tab.close()");
   }
 
   /**
@@ -590,7 +590,7 @@ export class HeadlessPool implements CdpTransport {
     if (this.recycling !== undefined) return this.recycling;
     const run = (async () => {
       if (this.proc !== proc || !proc.alive) return;
-      this.deps.log?.(`computer-use: Winter's headless browser used ${Math.round(bytes / (1024 * 1024))} MiB with no tab open — starting a fresh one`);
+      this.deps.log?.(`computer-use: Clover's headless browser used ${Math.round(bytes / (1024 * 1024))} MiB with no tab open — starting a fresh one`);
       // From here the pool no longer knows it: a new tab launches anew, and its exit is not reported a second time.
       this.proc = undefined;
       this.clearTimers();
@@ -604,7 +604,7 @@ export class HeadlessPool implements CdpTransport {
   }
 
   async createTab(opts: { sessionId: string; sessionTitle?: string; url: string; tabKey?: string; engine?: string }): Promise<TransportTab> {
-    if (this.stopped) throw new TransportError("disconnected", "Winter is shutting down");
+    if (this.stopped) throw new TransportError("disconnected", "Clover is shutting down");
     const engine = opts.engine ?? DEFAULT_HEADLESS_ENGINE;
     if (!(HEADLESS_ENGINES as readonly string[]).includes(engine)) throw new TransportError("not_allowed", `no headless engine "${engine}" — the engines are: ${HEADLESS_ENGINES.join(", ")}`);
     if (!this.connected) throw new TransportError("disconnected", this.reason ?? "unavailable");
@@ -612,12 +612,12 @@ export class HeadlessPool implements CdpTransport {
     const mine = this.tabCount(opts.sessionId) + (this.reserved.get(opts.sessionId) ?? 0);
     const all = this.tabs.size + [...this.reserved.values()].reduce((a, b) => a + b, 0);
     if (mine >= HEADLESS_TABS_PER_SESSION) throw this.capacity(`this session already has ${HEADLESS_TABS_PER_SESSION} headless tabs open — close one with tab.close()`);
-    if (all >= HEADLESS_TABS_GLOBAL) throw this.capacity(`Winter's headless browser already has ${HEADLESS_TABS_GLOBAL} tabs open — close one with tab.close()`);
+    if (all >= HEADLESS_TABS_GLOBAL) throw this.capacity(`Clover's headless browser already has ${HEADLESS_TABS_GLOBAL} tabs open — close one with tab.close()`);
     this.reserved.set(opts.sessionId, (this.reserved.get(opts.sessionId) ?? 0) + 1);
     if (this.idleTimer !== undefined) { clearTimeout(this.idleTimer); this.idleTimer = undefined; }
     try {
       await this.guardMemory();
-      if (this.stopped) throw new TransportError("disconnected", "Winter is shutting down");
+      if (this.stopped) throw new TransportError("disconnected", "Clover is shutting down");
       const proc = await this.engine();
       const tabKey = `w-${randomBytes(6).toString("hex")}`;
       this.ensuring++;
@@ -642,7 +642,7 @@ export class HeadlessPool implements CdpTransport {
   async closeTab(tabKey: string): Promise<void> {
     const t = this.tabs.get(tabKey);
     if (t === undefined) return;
-    // The person holds it in Winter's panel: it closes when they let it go (`releaseControl`, `endPresentation`).
+    // The person holds it in Clover's panel: it closes when they let it go (`releaseControl`, `endPresentation`).
     if (t.presentation !== undefined && (t.presentation.control || t.presentation.taking || t.presentation.yielded === true)) {
       t.presentation.closeWhenReleased = true;
       return;
@@ -759,20 +759,20 @@ export class HeadlessPool implements CdpTransport {
     await this.agentCommand(t, () => this.command(t.proc, "cdp.subscribe", { tabId: tabKey, events: [...events] }));
   }
 
-  // ── presentation: a headless tab shown in Winter's panel (lane H3) ─────────────────────────────────────────────
+  // ── presentation: a headless tab shown in Clover's panel (lane H3) ─────────────────────────────────────────────
 
-  /** Why a headless tab can't be shown in Winter's panel now (the model's sentence), or undefined when it can. */
+  /** Why a headless tab can't be shown in Clover's panel now (the model's sentence), or undefined when it can. */
   presentMissing(): string | undefined {
-    const missing = this.deps.viewerMissing?.() ?? (this.deps.viewer === undefined ? "this Winter can't show a headless tab" : undefined);
+    const missing = this.deps.viewerMissing?.() ?? (this.deps.viewer === undefined ? "this Clover can't show a headless tab" : undefined);
     if (missing !== undefined) return missing;
-    if (this.deps.viewer?.() === undefined) return "Winter isn't running — ask the user to open Winter";
+    if (this.deps.viewer?.() === undefined) return "Clover isn't running — ask the user to open Clover";
     const proc = this.proc;
     const lacks = proc?.alive === true ? proc.version !== undefined && !proc.has("present") : this.lastSeenPresent === false;
-    if (lacks) return "Winter's headless browser is too old to show a tab — ask the user to update Winter";
+    if (lacks) return "Clover's headless browser is too old to show a tab — ask the user to update Clover";
     return undefined;
   }
 
-  /** The `waitForUser` hand-off (`CdpTransport.present`): the tab shown in Winter's panel with the person in control. */
+  /** The `waitForUser` hand-off (`CdpTransport.present`): the tab shown in Clover's panel with the person in control. */
   async present(tabKey: string, opts: { sessionId: string }): Promise<void> {
     const t = this.live(tabKey);
     if (t.sessionId !== opts.sessionId) throw new TransportError("not_allowed", "that headless tab belongs to another session");
@@ -898,18 +898,18 @@ export class HeadlessPool implements CdpTransport {
   }
 
   /**
-   * Show `t` in the panel: the helper checks in a presentation service for it (accepting only Winter.app, by code
+   * Show `t` in the panel: the helper checks in a presentation service for it (accepting only Clover.app, by code
    * signature, naming a fresh nonce), the app is told to connect to it, and the viewer's acceptance is awaited. Nobody
    * accepted in time: the presentation is ended and the call fails, typed. `control`: the person holds the tab from the
    * start (the agent's commands in flight finish first).
    */
   private async startPresentation(t: PoolTab, purpose: "handoff" | "watch" | "popup", control: boolean): Promise<void> {
     const missing = this.presentMissing();
-    if (missing !== undefined) throw new AutomationFailure("BrowserUnavailable", `Winter can't show the headless tab: ${missing}`);
+    if (missing !== undefined) throw new AutomationFailure("BrowserUnavailable", `Clover can't show the headless tab: ${missing}`);
     const viewer = this.deps.viewer?.();
     const engine = this.engineFor();
-    if (viewer === undefined || "missing" in engine) throw new AutomationFailure("BrowserUnavailable", "Winter can't show the headless tab right now");
-    if (!t.proc.has("present")) throw new AutomationFailure("BrowserUnavailable", "Winter's headless browser is too old to show a tab — ask the user to update Winter");
+    if (viewer === undefined || "missing" in engine) throw new AutomationFailure("BrowserUnavailable", "Clover can't show the headless tab right now");
+    if (!t.proc.has("present")) throw new AutomationFailure("BrowserUnavailable", "Clover's headless browser is too old to show a tab — ask the user to update Clover");
     const nonce = randomBytes(8).toString("hex");
     const p: Presentation = {
       nonce, service: "", purpose, control: false, taking: control, started: false, startWaiters: new Set(), handoffPending: false, closeWhenReleased: false,
@@ -938,12 +938,12 @@ export class HeadlessPool implements CdpTransport {
         url: t.url, title: t.title, uploadDir,
       };
       await viewer.show(show);
-      if (!(await this.waitStarted(p))) throw new Error("Winter's panel did not connect to it in time");
+      if (!(await this.waitStarted(p))) throw new Error("Clover's panel did not connect to it in time");
       this.pushTabs(t.sessionId);
     } catch (err) {
       if (t.presentation === p) await this.endPresentation(t, "not shown");
       if (err instanceof AutomationFailure) throw err;
-      throw new AutomationFailure("BrowserUnavailable", `Winter could not show the headless tab (${err instanceof Error ? err.message : "error"})`);
+      throw new AutomationFailure("BrowserUnavailable", `Clover could not show the headless tab (${err instanceof Error ? err.message : "error"})`);
     }
   }
 
@@ -976,7 +976,7 @@ export class HeadlessPool implements CdpTransport {
 
   /**
    * Before the person gets control: what the agent's attachment turned on that a person would trip over goes — the
-   * file chooser it intercepts (the page's file input then opens Winter's picker), its emulated focus and viewport — and
+   * file chooser it intercepts (the page's file input then opens Clover's picker), its emulated focus and viewport — and
    * the engine is told the tab "stopped", so it attaches afresh (turning them back on) at its next command after the
    * hand-back. Best effort: a tab the agent never attached has nothing to undo.
    */
@@ -995,7 +995,7 @@ export class HeadlessPool implements CdpTransport {
     }
   }
 
-  /** Lane H3: does the person hold `tabKey` in Winter's panel now? */
+  /** Lane H3: does the person hold `tabKey` in Clover's panel now? */
   held(tabKey: string): boolean {
     const p = this.tabs.get(tabKey)?.presentation;
     return p !== undefined && (p.control || p.yielded === true);
@@ -1016,7 +1016,7 @@ export class HeadlessPool implements CdpTransport {
     try {
       await this.command(t.proc, "headless.control", { tabId: t.tabKey, control: true });
       p.control = true;
-      this.deps.log?.(`computer-use: headless tab ${t.tabKey}: the person took control in Winter's panel`);
+      this.deps.log?.(`computer-use: headless tab ${t.tabKey}: the person took control in Clover's panel`);
     } catch (err) {
       // The helper may have given the viewer control all the same: it never keeps it while the agent has the tab.
       void this.command(t.proc, "headless.control", { tabId: t.tabKey, control: false }).catch(() => undefined);
@@ -1044,7 +1044,7 @@ export class HeadlessPool implements CdpTransport {
       }
       if (t.presentation !== p) return;
       p.control = false;
-      this.deps.log?.(`computer-use: headless tab ${t.tabKey}: the person handed it back in Winter's panel`);
+      this.deps.log?.(`computer-use: headless tab ${t.tabKey}: the person handed it back in Clover's panel`);
     }
     p.yielded = false;
     await this.closeWindowsOf(t);
@@ -1069,7 +1069,7 @@ export class HeadlessPool implements CdpTransport {
   private async adoptWindow(proc: WinterHeadlessProcess, e: { tabKey: string; openerTabKey: string; url: string }): Promise<void> {
     const opener = this.tabs.get(e.openerTabKey);
     const refuse = (why: string): void => {
-      this.deps.log?.(`computer-use: a window a page in Winter's headless browser opened was closed (${why})`);
+      this.deps.log?.(`computer-use: a window a page in Clover's headless browser opened was closed (${why})`);
       void this.closingWhile(this.command(proc, "tab.close", { tabId: e.tabKey })).catch(() => undefined);
     };
     if (opener === undefined || opener.proc !== proc || opener.presentation?.control !== true) { refuse("its opener is no longer the person's"); return; }
@@ -1177,7 +1177,7 @@ export class HeadlessPool implements CdpTransport {
       for (const w of [...p.startWaiters]) w(true);
       return;
     }
-    // The viewer went away (the person closed it, Winter.app quit): the presentation is over and control returns to the
+    // The viewer went away (the person closed it, Clover.app quit): the presentation is over and control returns to the
     // agent. A hand-off it was answering reads as not done.
     t.presentation = undefined;
     if (p.control || p.yielded === true) this.deps.log?.(`computer-use: headless tab ${t.tabKey}: control back with the agent (the viewer ended it: ${e.reason})`);

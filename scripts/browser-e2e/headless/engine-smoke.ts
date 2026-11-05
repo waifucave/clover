@@ -8,7 +8,7 @@
 //
 //   bun scripts/browser-e2e/headless/engine-smoke.ts --app "<Winter Headless .app>" [--no-verify]
 //
-// For a Release-built Winter.app, --app is its nested `Contents/Helpers/Winter Headless.app` (it carries Winter's one
+// For a Release-built Clover.app, --app is its nested `Contents/Helpers/Winter Headless.app` (it carries Clover's one
 // Chromium). Everything it writes is in temp directories.
 import { spawn } from "node:child_process";
 import { mkdtempSync, writeFileSync } from "node:fs";
@@ -44,16 +44,16 @@ const newPool = (home: string, metric?: (m: PrimitiveMetric) => void, log?: (l: 
 
 // ── the DRIVER mode: a separate process that starts the helper, says its pid, and waits to be killed ──
 if (process.argv.includes("--driver")) {
-  const pool = newPool(mkdtempSync(join(tmpdir(), "winter-headless-driver-")));
+  const pool = newPool(mkdtempSync(join(tmpdir(), "clover-headless-driver-")));
   const page = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: () => new Response("<title>driver</title><h1>driver</h1>", { headers: { "content-type": "text/html" } }) });
   await pool.createTab({ sessionId: "s_driver", url: `http://localhost:${page.port}/` });
   process.stdout.write(`${JSON.stringify({ helperPid: pool.pid })}\n`);
   await new Promise(() => {});
 }
 
-const home = mkdtempSync(join(tmpdir(), "winter-headless-engine-"));
-// The session's working directory (an upload comes from there — never from Winter's own home).
-const cwd = mkdtempSync(join(tmpdir(), "winter-headless-engine-cwd-"));
+const home = mkdtempSync(join(tmpdir(), "clover-headless-engine-"));
+// The session's working directory (an upload comes from there — never from Clover's own home).
+const cwd = mkdtempSync(join(tmpdir(), "clover-headless-engine-cwd-"));
 writeFileSync(join(cwd, "receipt.txt"), "a receipt");
 
 // Two sites (localhost and 127.0.0.1): an iframe from the second is an out-of-process iframe.
@@ -86,7 +86,7 @@ const registry = new BrowserBackendRegistry();
 registry.register(pool, { family: "headless", name: HEADLESS_NAME, instanceKey: "headless" });
 const ended: string[] = [];
 const engine = new BrowserEngine({
-  registry, mintWinterTab: () => "unused", winterTabs: () => ({ tabs: [] }), sessionInfo: () => ({ cwd, title: "smoke" }),
+  registry, mintCloverTab: () => "unused", cloverTabs: () => ({ tabs: [] }), sessionInfo: () => ({ cwd, title: "smoke" }),
   home, uploadRoots: () => ({ denyRead: [] }),
   headlessSessionEnded: (sid) => { ended.push(sid); pool.disposeSession(sid); }, headlessReason: () => pool.reason,
   headlessLocalNetworkRefusedAt: (tabKey) => pool.localNetworkRefusedAt(tabKey),
@@ -102,7 +102,7 @@ function scope(runId: string) {
   const s: TabRunScope = {
     sessionId: "smoke", runId, callId: "cv2", vision: true, signal: abort.signal, live: () => {}, timeLeft: () => 60_000, clampWait: (ms) => Math.min(ms, 60_000),
     lock: async (key, label) => { if (!held.has(key)) held.set(key, await locks.acquire(key, { runId, sessionId: "smoke" }, { label })); },
-    lockRun: (key) => locks.holder(key)?.runId, authorize: async () => { throw new Error("no card may be raised for Winter's own browser"); },
+    lockRun: (key) => locks.holder(key)?.runId, authorize: async () => { throw new Error("no card may be raised for Clover's own browser"); },
     sessionPolicy: () => facts.policy, sessionFacts: () => facts, siteCard: async () => ({ approved: false }), persistentlyAllowed: () => false, granted: () => false,
     builder, keepImage: (img) => ({ image: "img", width: img.width, height: img.height }), lastTargetShot: new Map(), acted: new Set(), diffBases, metric,
     noteSite: () => {}, noteBrowser: () => {}, trusted: () => {},
@@ -129,7 +129,7 @@ await check("browsers.open({ browser: \"headless\" }) starts the helper and prin
   const t0 = Date.now();
   tab = await engine.global(r.s, "browsers.open", { url: `${base}/`, browser: "headless" }) as TabHandle;
   const text = r.text();
-  return text.includes("opened a new tab in Winter's headless browser") && text.includes("Engine smoke") ? `${Date.now() - t0} ms to the first state` : false;
+  return text.includes("opened a new tab in Clover's headless browser") && text.includes("Engine smoke") ? `${Date.now() - t0} ms to the first state` : false;
 });
 await check("state(), type and click; the page's title says so", async () => {
   const state = await P("state", { full: true, emit: false }) as string;

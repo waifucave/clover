@@ -9,7 +9,7 @@ import type { ModelTag } from "../../src/runtime-sdk/model-tag";
 import type { ModelInfo, Provider, ProviderEvent, TurnRequest } from "../../src/providers/types";
 
 function tmpSettingsFile(settings: Settings): string {
-  const p = join(mkdtempSync(join(tmpdir(), "winter-manager-")), "settings.json");
+  const p = join(mkdtempSync(join(tmpdir(), "clover-manager-")), "settings.json");
   writeFileSync(p, JSON.stringify(settings));
   return p;
 }
@@ -163,7 +163,7 @@ describe("ActiveProvider.liveModel (no-restart model resolution)", () => {
   });
 
   test("parse failure (missing file) on re-read falls back to the LAST GOOD value, never throws", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "winter-manager-missing-"));
+    const dir = mkdtempSync(join(tmpdir(), "clover-manager-missing-"));
     const settingsPath = join(dir, "settings.json");
     writeFileSync(settingsPath, JSON.stringify({ schemaVersion: 3, provider: { model: "codex-oauth/gpt-5.6-terra" } }));
     const p = await createInternalProvider(

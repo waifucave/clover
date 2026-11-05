@@ -17,7 +17,7 @@
  * EFFORT IS NORMALISED HERE, and it has to be. The pre-2026-09-19 factories passed
  * `descriptors: () => undefined`, which makes the runtime's `mapEffortAgainst` forward any NAMED effort
  * verbatim. With real descriptors it VALIDATES, and measured 2026-09-19 against the pinned runtime
- * 0.0.17 it refuses `capability` for both directions Winter actually produces:
+ * 0.0.17 it refuses `capability` for both directions Clover actually produces:
  *   - `"none"` on an `openai`/`codex-oauth` row (vocabulary `[low, medium, high, xhigh, max]`) —
  *     `effortToSpendForRole` emits `"none"` verbatim whenever the row has a non-empty vocabulary;
  *   - `"medium"` on a `deepseek` row (vocabulary `[none, low, high, max]`) — the dreamer's own
@@ -31,7 +31,7 @@
  * fallback (the row's `defaultEffort`) could land on something as heavy as `"medium"` — an
  * ESCALATION, never what a role asking for `"none"` wanted. That measurement was right about the
  * fallback but wrong about the fix: dropping the effort field entirely does not avoid the
- * escalation, it just lets the PROVIDER pick the escalation instead of Winter (still `"medium"` for
+ * escalation, it just lets the PROVIDER pick the escalation instead of Clover (still `"medium"` for
  * a `gpt-5.6` row, per its own `defaultEffort`) — which is precisely the root cause the dist log's
  * `[cleaner]`/`[titles]` timeouts traced back to: a role pinned to `"none"` for SPEED ran slower
  * than the row's `CLEANER_EFFORT = "low"` design point, not faster. The rule now sends the row's own
@@ -141,7 +141,7 @@ export function buildInternalProvider(cfg: {
   }
   const adapter = internalAdapterFor(providerId, cfg.testBackendUrl === undefined ? {} : { tokenUrl: `${cfg.testBackendUrl}/oauth/token` });
   if (adapter === undefined) {
-    return { refusal: { code: "provider-unsupported", detail: `${providerId}'s adapter family is not one Winter's own jobs can be driven over` } };
+    return { refusal: { code: "provider-unsupported", detail: `${providerId}'s adapter family is not one Clover's own jobs can be driven over` } };
   }
   // The user's own override wins; otherwise the catalog's endpoint. A multi-provider adapter family has
   // no vendor default of its own, so an absent endpoint here is a real refusal rather than a silent
@@ -157,7 +157,7 @@ export function buildInternalProvider(cfg: {
     return { refusal: { code: "provider-unsupported", detail: `the pinned catalog ships no API endpoint for ${providerId}` } };
   }
   // `local: true` ONLY for an endpoint the USER entered (`providers.<id>.baseUrl`) or the loopback test
-  // seam. The pre-2026-09-19 openai-compatible factory declared it unconditionally to preserve Winter's
+  // seam. The pre-2026-09-19 openai-compatible factory declared it unconditionally to preserve Clover's
   // historically unrestricted BYO-endpoint behaviour — "arbitrary API models are legitimate there" —
   // and that carve-out has to survive: an `openai` user pointed at `http://localhost:11434` (Ollama,
   // LM Studio, a LAN gateway) would otherwise have every internal job refused by the runtime's

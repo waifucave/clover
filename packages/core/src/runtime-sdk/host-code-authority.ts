@@ -40,7 +40,7 @@ export interface CanonicalHostCodePolicy {
   settingsRules?: unknown;
   sessionRoot: string;
   home: string;
-  winterHome?: string;
+  cloverHome?: string;
   storeHome?: string;
   trustedWorkspace: boolean;
   brand: BrandProfile;

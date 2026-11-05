@@ -3,7 +3,7 @@
 // `callId` and `threadId` (the projector puts a subagent's call on the spawning call's thread) — and forgotten at
 // the call's `tool_result`. The runtime sends a call's assistant frame before it runs the call's PreToolUse hooks,
 // so the call is known by the time its review starts; an unknown call reads as the main thread.
-import type { SessionEvent } from "@yanlinglabs/winter-protocol";
+import type { SessionEvent } from "@waifucave/clover-protocol";
 
 /** Calls remembered per session at most (a call that never gets a result — a killed child — is dropped oldest
  *  first past this). */

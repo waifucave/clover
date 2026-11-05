@@ -11,7 +11,7 @@
  *     shared/{instructions,memory,outputs}/**    regular files only
  *
  * The contents are a WHITELIST. Nothing outside it is ever read into a bundle: no authority database, no bookmark, no
- * credential, no Keychain item, nothing from `~/.winter*` beyond the workspace's own two images and three shared roots.
+ * credential, no Keychain item, nothing from `~/.clover*` beyond the workspace's own two images and three shared roots.
  *
  * WHAT THE INTEGRITY INDEX IS AND IS NOT. It detects corruption and truncation of any file. It does NOT detect a deliberate
  * rewrite of the whole bundle (an attacker can recompute the index), because nothing in the database binds it: the closed v1

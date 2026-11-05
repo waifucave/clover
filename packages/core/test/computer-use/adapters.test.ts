@@ -6,7 +6,7 @@ import { describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { SessionEvent } from "@yanlinglabs/winter-protocol";
+import type { SessionEvent } from "@waifucave/clover-protocol";
 import { ApprovalBroker } from "../../src/agent/approvals";
 import type { SessionApprovalPolicy } from "../../src/agent/gate";
 import { AppAdapters, purposeFor } from "../../src/computer-use/adapters";
@@ -76,7 +76,7 @@ describe("the adapter table", () => {
     expect(classes("com.apple.mail")).toEqual({ messages: "view", unreadCount: "view", compose: "full" });
     expect(classes("com.apple.Notes")).toEqual({ list: "view", read: "view", search: "view", create: "full" });
     expect(classes("com.apple.dt.Xcode")).toMatchObject({ schemes: "view", build: "full" });
-    // The Chromium family: a guide and NO extras — its scripting cannot name the bound window exactly, and Winter never
+    // The Chromium family: a guide and NO extras — its scripting cannot name the bound window exactly, and Clover never
     // guesses which window to act in.
     for (const id of ["com.google.Chrome", "com.microsoft.edgemac", "com.brave.Browser", "com.vivaldi.Vivaldi", "com.operasoftware.Opera", "company.thebrowser.Browser", "org.chromium.Chromium"]) {
       expect(CHROMIUM_BUNDLE_IDS).toContain(id as never);
@@ -220,9 +220,9 @@ describe("dictionary wrappers: the source and its values", () => {
     expect(asString('a"b\\c')).toBe('"a\\"b\\\\c"');
     const src = buildDictSource("x.y", cmd("search"), [{ for: "one\ntwo\tthree\rfour", limit: 5, exact: false, tags: ["a", "b"] }]);
     expect(src).toBe([
-      "set winterLF to linefeed", "set winterCR to return", "set winterTAB to tab",
+      "set cloverLF to linefeed", "set cloverCR to return", "set cloverTAB to tab",
       'tell application id "x.y"',
-      'search for ("one" & winterLF & "two" & winterTAB & "three" & winterCR & "four") limit 5 exact false tags {"a", "b"}',
+      'search for ("one" & cloverLF & "two" & cloverTAB & "three" & cloverCR & "four") limit 5 exact false tags {"a", "b"}',
       "end tell",
     ].join("\n"));
     expect(() => buildDictSource("x.y", cmd("search"), [{ for: "bell\u0007" }])).toThrow("control characters");
@@ -348,7 +348,7 @@ describe("access classes through the policy", () => {
     expect(await kindOf(policyFor("dont-ask").authorize(run, FINDER, purposeFor("full", "extras.trash")))).toContain("no \"Always allow\" grant");
     expect(await kindOf(policyFor("dont-ask", { "com.apple.finder": { grant: "always" } }).authorize(run, FINDER, purposeFor("full", "extras.trash")))).toBe("ok");
     expect(await kindOf(policyFor("bypass").authorize(run, FINDER, purposeFor("full", "dict.delete")))).toBe("ok");
-    expect(await kindOf(policyFor("bypass").authorize(run, { bundleId: "com.winter.app", name: "Winter" }, purposeFor("view", "extras.x")))).toContain("Refused");
+    expect(await kindOf(policyFor("bypass").authorize(run, { bundleId: "com.winter.app", name: "Clover" }, purposeFor("view", "extras.x")))).toContain("Refused");
   });
 });
 
@@ -428,7 +428,7 @@ describe("the worker: app.extras / app.dict / app.help", () => {
 
 // ── the built-in adapters' own AppleScript, held to the helper's source rules ────────────────────────────────
 
-/** A TS mirror of `CUAppleScriptPolicy.checkSource` (the helper is the check; this keeps Winter's own scripts clean):
+/** A TS mirror of `CUAppleScriptPolicy.checkSource` (the helper is the check; this keeps Clover's own scripts clean):
  *  strings and comments out, then no bridge phrase, and every `application`/`app` names the bound app by id. */
 function sourceProblems(source: string, bundleId: string): string[] {
   const strings: string[] = [];
@@ -474,7 +474,7 @@ async function scriptsOf(bundleId: string, def: ExtraDef, args: unknown[], answe
 }
 
 describe("the built-in adapters' AppleScript", () => {
-  const dir = mkdtempSync(join(tmpdir(), "winter-adapters-"));
+  const dir = mkdtempSync(join(tmpdir(), "clover-adapters-"));
   const file = join(dir, "a file \"quoted\".txt");
   writeFileSync(file, "x");
   /**
@@ -537,7 +537,7 @@ describe("the built-in adapters' AppleScript", () => {
       const [src] = await scriptsOf("com.apple.Notes", def, [...args], "");
       // Live: a note in Recently Deleted answered `name of container` with -1728 and failed the whole call.
       expect(src).toMatch(/set f to ""\n\s*try\n\s*set f to name of container of x\n\s*end try/);
-      expect(src).not.toMatch(/winterText\(name of container of x\)/);
+      expect(src).not.toMatch(/cloverText\(name of container of x\)/);
     }
   });
 
@@ -578,7 +578,7 @@ describe("the built-in adapters' AppleScript", () => {
 
   test("Finder's trash refuses system and home folders; Notes' HTML is escaped; bad arguments are TypeErrors", async () => {
     const home = "/Users/someone";
-    for (const p of ["/", "/System/Library", "/Users", home, `${home}/Documents`, `${home}/.ssh/id_rsa`, `${home}/Library/Keychains/x`, `${home}/.winter-dev/x`]) {
+    for (const p of ["/", "/System/Library", "/Users", home, `${home}/Documents`, `${home}/.ssh/id_rsa`, `${home}/Library/Keychains/x`, `${home}/.clover-dev/x`]) {
       expect(trashRefusal(p, home)).toBeDefined();
     }
     expect(trashRefusal(`${home}/Documents/old.txt`, home)).toBeUndefined();
@@ -652,7 +652,7 @@ describe("browser and window extras act on the BOUND window only", () => {
     const safari = { targetId: "t1", bundleId: "com.apple.Safari", name: "Safari", pid: 1 }; // no windowId
     for (const name of ["tabs", "currentURL", "pageText", "openURL"]) {
       const r = await kind(adapters.primitive(scope, safari, "extra", { name, args: name === "openURL" ? ["https://x.test"] : [] }));
-      expect(r).toContain("NoWindow: Winter doesn't know which Safari window is bound");
+      expect(r).toContain("NoWindow: Clover doesn't know which Safari window is bound");
     }
     expect(await kind(adapters.primitive(scope, { ...safari, targetId: "t2", bundleId: "com.apple.finder", name: "Finder" }, "extra", { name: "selection", args: [] }))).toContain("NoWindow");
     expect(await kind(adapters.primitive(scope, { ...safari, targetId: "t3", bundleId: "com.apple.dt.Xcode", name: "Xcode" }, "extra", { name: "build", args: [] }))).toContain("NoWindow");
@@ -681,7 +681,7 @@ describe("browser and window extras act on the BOUND window only", () => {
     const own = byName("com.apple.Safari", "openWindow");
     expect(await own.run(scopeAnswering("com.apple.Safari", "WINDOW:108006"), ["file:///tmp/p.html"])).toEqual({ window: 108006 });
     expect(await kind(own.run(scopeAnswering("com.apple.Safari", "FRONTMOST"), ["file:///tmp/p.html"]))).toContain("NeedsForeground: Safari is the app the user is using");
-    expect(await kind(own.run(scopeAnswering("com.apple.Safari", "AMBIGUOUS"), ["file:///tmp/p.html"]))).toContain("NoWindow: a new Safari window was made, but Winter could not tell which one");
+    expect(await kind(own.run(scopeAnswering("com.apple.Safari", "AMBIGUOUS"), ["file:///tmp/p.html"]))).toContain("NoWindow: a new Safari window was made, but Clover could not tell which one");
     const sources: string[] = [];
     await own.run(scopeAnswering("com.apple.Safari", "WINDOW:1", sources), ["https://x.test"]);
     expect(sources[0]).toContain("set before to id of every window");
@@ -692,7 +692,7 @@ describe("browser and window extras act on the BOUND window only", () => {
   test("Finder: selection() only when the bound window is Finder's frontmost; reveal() shows the folder in the bound window, selecting only then", async () => {
     expect(await kind(byName("com.apple.finder", "selection").run(scopeAnswering("com.apple.finder", "NOTFRONT"), []))).toContain("NoWindow: Finder's scripting reads the selection of its frontmost window only");
     expect(await kind(byName("com.apple.finder", "selection").run(scopeAnswering("com.apple.finder", "NOWINDOW"), []))).toContain("NoWindow: Finder has no window with the bound window's id");
-    const dir = mkdtempSync(join(tmpdir(), "winter-adapters-reveal-"));
+    const dir = mkdtempSync(join(tmpdir(), "clover-adapters-reveal-"));
     const file = join(dir, "x.txt");
     writeFileSync(file, "x");
     const sources: string[] = [];
@@ -723,7 +723,7 @@ describe("review fixes", () => {
   };
 
   test("trash: a symbolic link is refused (Finder would trash what it points to) — and nothing runs", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "winter-trash-link-"));
+    const dir = mkdtempSync(join(tmpdir(), "clover-trash-link-"));
     const target = join(dir, "Precious");
     mkdirSync(target);
     const link = join(dir, "link-to-precious");
@@ -741,7 +741,7 @@ describe("review fixes", () => {
     }
     expect(trashRefusal(`${home}/documents/old.txt`, home)).toBeUndefined();
     // A path whose parent is a link to a refused folder: refused once resolved (the extra resolves before the floor).
-    const dir = mkdtempSync(join(tmpdir(), "winter-trash-real-"));
+    const dir = mkdtempSync(join(tmpdir(), "clover-trash-real-"));
     const fakeHome = join(dir, "home");
     mkdirSync(join(fakeHome, "Documents"), { recursive: true });
     symlinkSync(fakeHome, join(dir, "via"));
@@ -782,7 +782,7 @@ describe("review fixes", () => {
     expect(src.indexOf("set frontAfter to frontmost")).toBeGreaterThan(make);
     const block = BUILTIN_ADAPTERS[1]!.guide!.text + def("com.apple.Safari", "openWindow").summary + (def("com.apple.Safari", "openWindow").doc ?? "");
     expect(block).not.toMatch(/background/i);
-    expect(BUILTIN_ADAPTERS[1]!.guide!.text).toContain("prefer Winter's built-in browser (browsers.open)");
+    expect(BUILTIN_ADAPTERS[1]!.guide!.text).toContain("prefer Clover's built-in browser (browsers.open)");
   });
 
   test("Safari openURL: the current tab is put back ONLY when Safari itself moved to the new tab", async () => {
@@ -803,7 +803,7 @@ describe("review fixes", () => {
     });
     expect(out.length).toBe(4);
     expect(sources[0]).toContain("set r to build d");
-    expect(sources[0]).toContain("my winterText(id of r)");
+    expect(sources[0]).toContain("my cloverText(id of r)");
     for (const poll of sources.slice(1)) {
       expect(poll).toContain('set r to scheme action result id "sar-7" of d');
       expect(poll).not.toContain("last scheme action result");

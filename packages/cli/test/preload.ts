@@ -5,11 +5,11 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import chalk from "chalk";
-import { LEGACY_HOME_ENV } from "@yanlinglabs/winter-core";
+import { LEGACY_HOME_ENV } from "@waifucave/clover-core";
 // Cowork-aware host fences must never inspect the user's shared coordination ledger or Git
 // configuration during private daemon/client fixtures. Match the core package test isolation.
-process.env.WINTER_COWORK_COORDINATION_DIR = mkdtempSync(join(tmpdir(), "winter-test-cowork-coordination-"));
-process.env.XDG_CONFIG_HOME = mkdtempSync(join(tmpdir(), "winter-test-xdg-"));
+process.env.WINTER_COWORK_COORDINATION_DIR = mkdtempSync(join(tmpdir(), "clover-test-cowork-coordination-"));
+process.env.XDG_CONFIG_HOME = mkdtempSync(join(tmpdir(), "clover-test-xdg-"));
 // Ink's own <Text dimColor>/<Text inverse> render through chalk's default (shared, singleton)
 // export, whose color LEVEL chalk auto-detects from `process.stdout` at first import — 0 whenever
 // stdout isn't a real TTY, which is every `bun test` process, with or without FORCE_COLOR (that env
@@ -25,36 +25,36 @@ chalk.level = 3;
 // Phase 8d (whole-branch review, Major 1): the CLI tests that spawn `daemon run` inherit this env, so
 // the daemon's `claude-resume-*` sweep (recovery step 8) reads a throwaway root, never the developer's
 // real per-user tmpdir — the same seam packages/core/test/preload.ts sets for core's own tests.
-process.env.WINTER_CLAUDE_RESUME_SCAN_ROOT = mkdtempSync(join(tmpdir(), "winter-test-claude-resume-"));
+process.env.CLOVER_CLAUDE_RESUME_SCAN_ROOT = mkdtempSync(join(tmpdir(), "clover-test-claude-resume-"));
 // Phase 9c Migration B: the SAME redirect packages/core/test/preload.ts sets, for the identical
 // reason — a CLI test that spawns `daemon run` (or a bare `startDaemon()`) as a subprocess inherits
 // `process.env`, and without this, `legacyHomeFor(profile)` would resolve to the developer's REAL
 // legacy dev/dist home whenever that subprocess doesn't inject its own `secrets`. Redirected here to
 // a throwaway, guaranteed-empty directory for the whole run.
-process.env[LEGACY_HOME_ENV] = mkdtempSync(join(tmpdir(), "winter-test-legacy-home-"));
+process.env[LEGACY_HOME_ENV] = mkdtempSync(join(tmpdir(), "clover-test-legacy-home-"));
 // Test-keychain-isolation fix: the SAME redirect packages/core/test/preload.ts sets — a CLI test
-// that spawns `daemon run` (or drives a real `winter`/`claude` child) inherits `process.env`, and
-// `keychainService()` (`@yanlinglabs/winter-core`) only ever honours this override for a
-// NON-default `WINTER_HOME` (P9c-15's guard), so it is inert against a real `~/.winter[-dev]` home
+// that spawns `daemon run` (or drives a real `clover`/`claude` child) inherits `process.env`, and
+// `keychainService()` (`@waifucave/clover-core`) only ever honours this override for a
+// NON-default `CLOVER_HOME` (P9c-15's guard), so it is inert against a real `~/.clover[-dev]` home
 // and active only for these tests' own temp homes. The named service has no items.
-process.env.WINTER_KEYCHAIN_SERVICE = "com.winter.core.test-isolated";
+process.env.CLOVER_KEYCHAIN_SERVICE = "com.waifucave.clover.core.test-isolated";
 // Login-shell PATH: the SAME switch packages/core/test/preload.ts sets — a CLI test that spawns
 // `daemon run` (or boots `startDaemon()` in-process) must never run the developer's real login shell.
-process.env.WINTER_LOGIN_SHELL_PATH = "off";
+process.env.CLOVER_LOGIN_SHELL_PATH = "off";
 // Usage tracking (`src/usage/wiring.ts`, docs/claude/usage.md): no test may read the developer's REAL Codex sessions,
 // Claude Code transcripts or `~/.claude.json`, nor spawn their real `codex` / `claude` / `agy` / `opencode`. Every root
 // points at an empty throwaway directory and every executable is "off" (authoritative: never a fall-through to $PATH).
 // A test that exercises them injects fixture roots and a fake executable through `startDaemon({ usage })` or the
 // service itself.
 {
-  const none = mkdtempSync(join(tmpdir(), "winter-test-usage-none-"));
-  process.env.WINTER_USAGE_CODEX_HOME = join(none, "codex");
-  process.env.WINTER_USAGE_CLAUDE_HOME = join(none, "claude");
-  process.env.WINTER_USAGE_CLAUDE_JSON = join(none, "claude.json");
-  process.env.WINTER_USAGE_CODEX_EXECUTABLE = "off";
-  process.env.WINTER_USAGE_CLAUDE_EXECUTABLE = "off";
-  process.env.WINTER_USAGE_AGY_EXECUTABLE = "off";
-  process.env.WINTER_USAGE_OPENCODE_EXECUTABLE = "off";
+  const none = mkdtempSync(join(tmpdir(), "clover-test-usage-none-"));
+  process.env.CLOVER_USAGE_CODEX_HOME = join(none, "codex");
+  process.env.CLOVER_USAGE_CLAUDE_HOME = join(none, "claude");
+  process.env.CLOVER_USAGE_CLAUDE_JSON = join(none, "claude.json");
+  process.env.CLOVER_USAGE_CODEX_EXECUTABLE = "off";
+  process.env.CLOVER_USAGE_CLAUDE_EXECUTABLE = "off";
+  process.env.CLOVER_USAGE_AGY_EXECUTABLE = "off";
+  process.env.CLOVER_USAGE_OPENCODE_EXECUTABLE = "off";
   // No background plan checks either (the 30-min beat, the alarms' fast beats): a test that wants them starts them.
-  process.env.WINTER_USAGE_BACKGROUND = "off";
+  process.env.CLOVER_USAGE_BACKGROUND = "off";
 }

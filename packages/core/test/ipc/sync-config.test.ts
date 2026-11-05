@@ -3,7 +3,7 @@ import { storeProjectsDir } from "../../src/agent/paths";
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { ERR, LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, SyncConfigResult, type WritableSocket } from "@yanlinglabs/winter-protocol";
+import { ERR, LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, SyncConfigResult, type WritableSocket } from "@waifucave/clover-protocol";
 import { loadCatalog } from "@yanlinglabs/winter-provider-catalog";
 import { startIpcServer } from "../../src/ipc/server";
 import { syncConfig, syncMemory, effortsForModel, clientEfforts, SYNC_PAGE_BYTES, SYNC_MEMORY_TRUNCATION_MARKER } from "../../src/ipc/sync";
@@ -108,9 +108,9 @@ describe("sync.config (Chat Slice D task 3)", () => {
     liveModel?: () => string;
     liveEffort?: () => string;
     liveProvider?: () => string;
-    winterHome?: string;
+    cloverHome?: string;
   } = {}): Promise<{ home: string; socketPath: string; harnessToken: string; remoteToken: string }> {
-    const home = mkdtempSync(join(tmpdir(), "winter-sync-config-"));
+    const home = mkdtempSync(join(tmpdir(), "clover-sync-config-"));
     const store = new SessionStore(home);
     const socketPath = join(home, "core.sock");
     const authority = new TokenAuthority(new FileSecretStore(join(home, "secrets")));
@@ -119,7 +119,7 @@ describe("sync.config (Chat Slice D task 3)", () => {
       socketPath, serverVersion: "test", tokens: authority, store,
       secrets: over.secrets, dangerousDomainsAdded: over.dangerousDomainsAdded, liveModel: over.liveModel,
       liveEffort: over.liveEffort, liveProvider: over.liveProvider,
-      winterHome: over.winterHome ?? home,
+      cloverHome: over.cloverHome ?? home,
     });
     stop = () => { server.stop(); store.close(); };
     return { home, socketPath, harnessToken: tokens.harness, remoteToken: tokens.remote };
@@ -295,9 +295,9 @@ describe("sync.config model catalogue (provider-correctness T3, WS-20)", () => {
     liveModel?: () => string;
     liveEffort?: () => string;
     liveProvider?: () => string;
-    winterHome?: string;
+    cloverHome?: string;
   } = {}): Promise<{ home: string; socketPath: string; harnessToken: string; remoteToken: string }> {
-    const home = mkdtempSync(join(tmpdir(), "winter-sync-catalogue-"));
+    const home = mkdtempSync(join(tmpdir(), "clover-sync-catalogue-"));
     const store = new SessionStore(home);
     const socketPath = join(home, "core.sock");
     const authority = new TokenAuthority(new FileSecretStore(join(home, "secrets")));
@@ -305,7 +305,7 @@ describe("sync.config model catalogue (provider-correctness T3, WS-20)", () => {
     const server = startIpcServer({
       socketPath, serverVersion: "test", tokens: authority, store,
       secrets: over.secrets, liveModel: over.liveModel, liveEffort: over.liveEffort, liveProvider: over.liveProvider,
-      winterHome: over.winterHome ?? home,
+      cloverHome: over.cloverHome ?? home,
     });
     stop = () => { server.stop(); store.close(); };
     return { home, socketPath, harnessToken: tokens.harness, remoteToken: tokens.remote };
@@ -431,7 +431,7 @@ describe("sync.config model catalogue (provider-correctness T3, WS-20)", () => {
     const { socketPath, harnessToken, remoteToken } = await boot({ secrets, liveEffort: () => "medium", liveModel: () => "codex-oauth/gpt-5.6-sol" });
 
     const harness = await TestClient.connect(socketPath);
-    await harness.hello(harnessToken, "winter-app");
+    await harness.hello(harnessToken, "clover-app");
     const asHarness = await harness.request(METHODS.syncConfig, {});
     expect(asHarness.error).toBeUndefined();
 
@@ -490,7 +490,7 @@ describe("sync.config model catalogue (provider-correctness T3, WS-20)", () => {
   // provider-correctness T5 — the OTHER tripwire on this seam, and the one that guards the identity
   // Task 4 hardened, unaffected by WS-20 (it holds regardless of whether a row is found at all).
   // `effortsForModel` is what `session.setEffort` validates a WIRE effort against AND what
-  // `sync.config` advertises per model; a Winter-level tier is accepted by the same handler but must
+  // `sync.config` advertises per model; a Clover-level tier is accepted by the same handler but must
   // never appear in that list, because the daemon would then be advertising a level its own request
   // would be 400'd on — the exact bug (`ultra` offered by a phone-side mock) that the catalogue
   // field was added to fix, arriving through the fix.
@@ -523,7 +523,7 @@ describe("sync.config model catalogue (provider-correctness T3, WS-20)", () => {
     const secrets = await codexCredentialedSecrets();
     const { credentialPresenceFrom } = await import("../../src/runtime-sdk/keychain");
     const credentials = await credentialPresenceFrom(secrets);
-    const home = mkdtempSync(join(tmpdir(), "winter-picker-models-unit-"));
+    const home = mkdtempSync(join(tmpdir(), "clover-picker-models-unit-"));
     const models = pickerModels({ credentials, home });
     expect(models.length).toBeGreaterThan(0);
     for (const m of models) {
@@ -552,7 +552,7 @@ describe("sync.config model catalogue (provider-correctness T3, WS-20)", () => {
     await writeCredentialMaterial(secrets, `${row.providerId}:default`, { kind: "api-key", key: "sk-test" });
     const { credentialPresenceFrom } = await import("../../src/runtime-sdk/keychain");
     const credentials = await credentialPresenceFrom(secrets);
-    const home = mkdtempSync(join(tmpdir(), "winter-picker-models-anthropic-family-"));
+    const home = mkdtempSync(join(tmpdir(), "clover-picker-models-anthropic-family-"));
     const models = pickerModels({ credentials, home });
     const ids = models.filter((m) => m.providerId === row.providerId).map((m) => m.id);
     // `row` is `toolCalling: "none"` at `confidence: "unknown"` on one of the four adapter families
@@ -567,7 +567,7 @@ describe("sync.config model catalogue (provider-correctness T3, WS-20)", () => {
     await writeCredentialMaterial(secrets, "groq:default", { kind: "api-key", key: "sk-groq-test" });
     const { credentialPresenceFrom } = await import("../../src/runtime-sdk/keychain");
     const credentials = await credentialPresenceFrom(secrets);
-    const home = mkdtempSync(join(tmpdir(), "winter-picker-models-chat-completions-"));
+    const home = mkdtempSync(join(tmpdir(), "clover-picker-models-chat-completions-"));
     const models = pickerModels({ credentials, home });
     const ids = models.filter((m) => m.providerId === "groq").map((m) => m.id);
     // `toolCalling: "none"` at `confidence: "unknown"` — the catalog's fail-closed placeholder for a
@@ -581,7 +581,7 @@ describe("sync.config model catalogue (provider-correctness T3, WS-20)", () => {
     await writeCredentialMaterial(secrets, "xai:default", { kind: "api-key", key: "sk-xai-test" });
     const { credentialPresenceFrom } = await import("../../src/runtime-sdk/keychain");
     const credentials = await credentialPresenceFrom(secrets);
-    const home = mkdtempSync(join(tmpdir(), "winter-picker-models-confident-"));
+    const home = mkdtempSync(join(tmpdir(), "clover-picker-models-confident-"));
     const models = pickerModels({ credentials, home });
     const ids = models.filter((m) => m.providerId === "xai").map((m) => m.id);
     // xAI's adapter (`winter.openai-responses`) does not gate on `toolCalling` at all, but this row's
@@ -614,9 +614,9 @@ describe("sync.config model catalogue (provider-correctness T3, WS-20)", () => {
 // at construction time (the token is only read at stream time, and no turn is ever driven here).
 // WS-20: `models` is now credential-presence-driven rather than boot-provider-driven (see this
 // file's header comment), so a real codex-oauth credential is seeded into the SAME `SecretStore`
-// `startDaemon` is booted with — exactly the shape a real `winter login` would leave behind — so
+// `startDaemon` is booted with — exactly the shape a real `clover login` would leave behind — so
 // this test still covers the catalogue AND the effort through the genuine wiring. Nothing here
-// touches `~/.winter` — temp home, temp secret store.
+// touches `~/.clover` — temp home, temp secret store.
 // ================================================================================================
 
 describe("sync.config through a real startDaemon (T3 review I1)", () => {
@@ -654,7 +654,7 @@ describe("sync.config through a real startDaemon (T3 review I1)", () => {
   }
 
   test("a real daemon serves the effort AND the catalogue from settings.json, and re-reads both live", async () => {
-    const home = mkdtempSync(join(tmpdir(), "winter-sync-config-real-"));
+    const home = mkdtempSync(join(tmpdir(), "clover-sync-config-real-"));
     writeProviderSettings(home, "codex-oauth/gpt-5.6-terra", "xhigh");
 
     daemon = await bootReal(home);
@@ -675,7 +675,7 @@ describe("sync.config through a real startDaemon (T3 review I1)", () => {
     expect(before.result.models.map((m: { id: string }) => m.id)).toEqual(codexOauthTags);
     for (const row of before.result.models as Array<{ efforts: string[] }>) expect(row.efforts).toEqual([...REASONING_EFFORTS]);
 
-    // A live `winter model codex-oauth/gpt-5.6-luna --effort low` — a plain settings.json rewrite,
+    // A live `clover model codex-oauth/gpt-5.6-luna --effort low` — a plain settings.json rewrite,
     // no restart, no RPC. The provider's resolver is mtime-cached, so poll rather than assuming the
     // first read past the write already sees it.
     writeProviderSettings(home, "codex-oauth/gpt-5.6-luna", "low");
@@ -701,7 +701,7 @@ describe("sync.config through a real startDaemon (T3 review I1)", () => {
     // every request omit the `reasoning` block entirely, while "none" is an explicit level the
     // backend honours. A phone told "none" for an unset Mac would start sending a level the Mac
     // never sends.
-    const home = mkdtempSync(join(tmpdir(), "winter-sync-config-real-unset-"));
+    const home = mkdtempSync(join(tmpdir(), "clover-sync-config-real-unset-"));
     writeProviderSettings(home, "codex-oauth/gpt-5.6-sol"); // no reasoningEffort key at all
 
     daemon = await bootReal(home);
@@ -779,11 +779,11 @@ describe("sync.config `provider` through a real startDaemon (whole-branch review
   }
 
   test("a codex-oauth Mac states `codex-oauth` beside its real catalogue", async () => {
-    const home = mkdtempSync(join(tmpdir(), "winter-sync-provider-codex-"));
+    const home = mkdtempSync(join(tmpdir(), "clover-sync-provider-codex-"));
     const booted = await bootWithSettings(home, { model: "codex-oauth/gpt-5.6-terra", reasoningEffort: "high" });
     daemon = booted.daemon;
     // WS-20: `models` is credential-presence-driven — seed the real codex-oauth material into the
-    // SAME secrets store the daemon is running on, exactly what a real `winter login` leaves behind.
+    // SAME secrets store the daemon is running on, exactly what a real `clover login` leaves behind.
     await new CodexAuthStore(booted.secrets).save({ accessToken: "at_test", refreshToken: null, idToken: null, accountId: null, expiresAt: 0 });
     const c = await TestClient.connect(daemon.socketPath);
     await c.hello(daemon.tokens.harness, "phone");
@@ -800,7 +800,7 @@ describe("sync.config `provider` through a real startDaemon (whole-branch review
   }, 20_000);
 
   test("a BYOK (openai-compatible) Mac states `openai` — provider identity, not an empty catalogue, is what protects a phone", async () => {
-    const home = mkdtempSync(join(tmpdir(), "winter-sync-provider-byok-"));
+    const home = mkdtempSync(join(tmpdir(), "clover-sync-provider-byok-"));
     ({ daemon } = await bootWithSettings(home, {
       model: "openai/llama-3.3-70b-local", openaiBaseUrl: "http://127.0.0.1:11434/v1",
     }));
@@ -839,7 +839,7 @@ describe("sync.config `provider` through a real startDaemon (whole-branch review
     // purely by `splitTag(settings.provider.model).providerId === "codex-oauth"`. Pinned so a new
     // provider whose adapter drifts from this two-way split fails here rather than by serving a
     // phone a `provider` value it cannot compare against anything.
-    const home = mkdtempSync(join(tmpdir(), "winter-sync-provider-ids-"));
+    const home = mkdtempSync(join(tmpdir(), "clover-sync-provider-ids-"));
     const secrets = new FileSecretStore(join(home, "test-secrets"));
     await secrets.set("openai-api-key", "sk-test-not-a-real-key");
     for (const model of ["codex-oauth/gpt-5.6-sol", "openai/gpt-5.6-sol"]) {
@@ -870,13 +870,13 @@ describe("sync.memory (Chat Slice D task 3)", () => {
     const socketPath = join(home, "core.sock");
     const authority = new TokenAuthority(new FileSecretStore(join(home, "secrets")));
     const tokens = await authority.ensureTokens();
-    const server = startIpcServer({ socketPath, serverVersion: "test", tokens: authority, store, winterHome: home });
+    const server = startIpcServer({ socketPath, serverVersion: "test", tokens: authority, store, cloverHome: home });
     stop = () => { server.stop(); store.close(); };
     return { socketPath, harnessToken: tokens.harness, remoteToken: tokens.remote };
   }
 
   test("an empty (never-dreamed) bucket -> {files: [], complete: true}", async () => {
-    const home = mkdtempSync(join(tmpdir(), "winter-sync-memory-"));
+    const home = mkdtempSync(join(tmpdir(), "clover-sync-memory-"));
     const { socketPath, harnessToken } = await boot(home);
     const c = await TestClient.connect(socketPath);
     await c.hello(harnessToken, "phone");
@@ -888,7 +888,7 @@ describe("sync.memory (Chat Slice D task 3)", () => {
   });
 
   test("a bucket directory that exists but holds nothing -> {files: [], complete: true}", async () => {
-    const home = mkdtempSync(join(tmpdir(), "winter-sync-memory-"));
+    const home = mkdtempSync(join(tmpdir(), "clover-sync-memory-"));
     mkdirSync(assistantDir(home), { recursive: true });
     const { socketPath, harnessToken } = await boot(home);
     const c = await TestClient.connect(socketPath);
@@ -899,13 +899,13 @@ describe("sync.memory (Chat Slice D task 3)", () => {
     c.close();
   });
 
-  test("a no-winterHome server degrades sync.memory to the same empty-bucket shape, never a crash", async () => {
-    const home = mkdtempSync(join(tmpdir(), "winter-sync-memory-"));
+  test("a no-cloverHome server degrades sync.memory to the same empty-bucket shape, never a crash", async () => {
+    const home = mkdtempSync(join(tmpdir(), "clover-sync-memory-"));
     const store = new SessionStore(home);
     const socketPath = join(home, "core.sock");
     const authority = new TokenAuthority(new FileSecretStore(join(home, "secrets")));
     const tokens = await authority.ensureTokens();
-    const server = startIpcServer({ socketPath, serverVersion: "test", tokens: authority, store }); // no winterHome
+    const server = startIpcServer({ socketPath, serverVersion: "test", tokens: authority, store }); // no cloverHome
     stop = () => { server.stop(); store.close(); };
     const c = await TestClient.connect(socketPath);
     await c.hello(tokens.harness, "phone");
@@ -917,7 +917,7 @@ describe("sync.memory (Chat Slice D task 3)", () => {
   });
 
   test("a multi-file bucket pages across cursors, in stable name order, byte-identical content", async () => {
-    const home = mkdtempSync(join(tmpdir(), "winter-sync-memory-"));
+    const home = mkdtempSync(join(tmpdir(), "clover-sync-memory-"));
     const dir = assistantDir(home);
     mkdirSync(dir, { recursive: true });
     const chunk = (label: string) => `${label}-`.repeat(20_480); // 81,920 bytes, well under one page
@@ -954,7 +954,7 @@ describe("sync.memory (Chat Slice D task 3)", () => {
   });
 
   test("a single file larger than the whole budget is truncated with the trailing marker, alone on its page", async () => {
-    const home = mkdtempSync(join(tmpdir(), "winter-sync-memory-"));
+    const home = mkdtempSync(join(tmpdir(), "clover-sync-memory-"));
     const dir = assistantDir(home);
     mkdirSync(dir, { recursive: true });
     const big = "y".repeat(SYNC_PAGE_BYTES + 4096);
@@ -976,7 +976,7 @@ describe("sync.memory (Chat Slice D task 3)", () => {
   });
 
   test("hidden/dotfile temp artifacts (the Dreamer's own atomic-write temporaries) are never replicated", async () => {
-    const home = mkdtempSync(join(tmpdir(), "winter-sync-memory-"));
+    const home = mkdtempSync(join(tmpdir(), "clover-sync-memory-"));
     const dir = assistantDir(home);
     mkdirSync(dir, { recursive: true });
     writeFileSync(join(dir, "MEMORY.md"), "- topic.md: a real memory\n");
@@ -996,7 +996,7 @@ describe("sync.memory (Chat Slice D task 3)", () => {
   });
 
   test("a REMOTE (phone) caller may call sync.memory with no session context at all", async () => {
-    const home = mkdtempSync(join(tmpdir(), "winter-sync-memory-"));
+    const home = mkdtempSync(join(tmpdir(), "clover-sync-memory-"));
     mkdirSync(assistantDir(home), { recursive: true });
     writeFileSync(join(assistantDir(home), "topic.md"), "hi");
     const { socketPath, remoteToken } = await boot(home);
@@ -1014,7 +1014,7 @@ describe("sync.memory (Chat Slice D task 3)", () => {
   // ----------------------------------------------------------------------------------------------
 
   test("syncMemory() with an out-of-range cursor (bucket shrank since the last page) -> empty, complete", () => {
-    const home = mkdtempSync(join(tmpdir(), "winter-sync-memory-unit-"));
+    const home = mkdtempSync(join(tmpdir(), "clover-sync-memory-unit-"));
     mkdirSync(assistantDir(home), { recursive: true });
     writeFileSync(join(assistantDir(home), "only.md"), "x");
     const result = syncMemory(home, 5);
@@ -1031,13 +1031,13 @@ describe("sync.memory (Chat Slice D task 3)", () => {
   // ----------------------------------------------------------------------------------------------
 
   test("syncMemory() -> empty+complete for a bucket that does not exist (ENOENT is the honest empty)", () => {
-    const home = mkdtempSync(join(tmpdir(), "winter-sync-memory-unit-"));
+    const home = mkdtempSync(join(tmpdir(), "clover-sync-memory-unit-"));
     // No assistant dir at all — no dream cycle has ever run.
     expect(syncMemory(home, 0)).toEqual({ files: [], complete: true });
   });
 
   test("syncMemory() THROWS on an unreadable bucket rather than reporting it empty", () => {
-    const home = mkdtempSync(join(tmpdir(), "winter-sync-memory-unit-"));
+    const home = mkdtempSync(join(tmpdir(), "clover-sync-memory-unit-"));
     const dir = assistantDir(home);
     mkdirSync(dir, { recursive: true });
     writeFileSync(join(dir, "MEMORY.md"), "- [tea](tea.md)");
@@ -1056,7 +1056,7 @@ describe("sync.memory (Chat Slice D task 3)", () => {
   });
 
   test("syncMemory() THROWS when a listed file cannot be read (but still skips one that VANISHED)", () => {
-    const home = mkdtempSync(join(tmpdir(), "winter-sync-memory-unit-"));
+    const home = mkdtempSync(join(tmpdir(), "clover-sync-memory-unit-"));
     const dir = assistantDir(home);
     mkdirSync(dir, { recursive: true });
     writeFileSync(join(dir, "MEMORY.md"), "- [tea](tea.md)");
@@ -1087,7 +1087,7 @@ describe("sync.memory (Chat Slice D task 3)", () => {
   /// became a stalled sync pass. This drives the REAL server, so the assertion depends on the pump's
   /// `e.code ?? ERR.INTERNAL` seeing a number.
   test("an unreadable bucket surfaces as a NUMERIC JSON-RPC error code, not an errno string", async () => {
-    const home = mkdtempSync(join(tmpdir(), "winter-sync-memory-"));
+    const home = mkdtempSync(join(tmpdir(), "clover-sync-memory-"));
     const dir = assistantDir(home);
     mkdirSync(dir, { recursive: true });
     writeFileSync(join(dir, "MEMORY.md"), "- [tea](tea.md)");

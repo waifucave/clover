@@ -3,12 +3,12 @@ import { Database } from "bun:sqlite";
 import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { FileSecretStore, openRuntimeStateDb, readMigrationManifest, type SecretStore } from "@yanlinglabs/winter-core";
+import { FileSecretStore, openRuntimeStateDb, readMigrationManifest, type SecretStore } from "@waifucave/clover-core";
 import { runMigrateCommand, type MigrateCommandDeps } from "../src/commands/migrate";
 
 const dirs: string[] = [];
 function tempDir(): string {
-  const d = mkdtempSync(join(tmpdir(), "winter-cli-migrate-"));
+  const d = mkdtempSync(join(tmpdir(), "clover-cli-migrate-"));
   dirs.push(d);
   return d;
 }
@@ -42,7 +42,7 @@ function baseDeps(overrides: Partial<MigrateCommandDeps> = {}): { deps: MigrateC
   return { deps, lines, errLines };
 }
 
-describe("winter migrate --cowork-schema --rollback", () => {
+describe("clover migrate --cowork-schema --rollback", () => {
   test("only removes unused Cowork tables, preserving the SDK layout and v7 records", async () => {
     const home = tempDir(), rs = openRuntimeStateDb(home);
     rs.db.run("INSERT INTO run_root_quarantine(root,recorded_at,detail_json) VALUES('/retained/run','now','{}')"); rs.close();
@@ -65,7 +65,7 @@ describe("winter migrate --cowork-schema --rollback", () => {
   });
 });
 
-describe("winter migrate — --status", () => {
+describe("clover migrate — --status", () => {
   test("prints 'none' when the home has never migrated", async () => {
     const { deps, lines } = baseDeps({ argv: ["--status"] });
     const code = await runMigrateCommand(deps);
@@ -121,7 +121,7 @@ describe("winter migrate — --status", () => {
   });
 });
 
-describe("winter migrate — refuses every writing action while the daemon is running", () => {
+describe("clover migrate — refuses every writing action while the daemon is running", () => {
   for (const argv of [["--resume", "--yes"], ["--rollback", "--yes"], ["--yes"]]) {
     test(`argv=${JSON.stringify(argv)}`, async () => {
       const { deps, errLines } = baseDeps({ argv, isDaemonLockHeld: () => true });
@@ -132,7 +132,7 @@ describe("winter migrate — refuses every writing action while the daemon is ru
   }
 });
 
-describe("winter migrate — a fresh run (--from, or the default legacyHomeFor)", () => {
+describe("clover migrate — a fresh run (--from, or the default legacyHomeFor)", () => {
   test("--from runs a migration into the current home", async () => {
     const parent = tempDir();
     const legacyHome = join(parent, "legacy");
@@ -179,7 +179,7 @@ describe("winter migrate — a fresh run (--from, or the default legacyHomeFor)"
   });
 });
 
-describe("winter migrate — --resume and --rollback", () => {
+describe("clover migrate — --resume and --rollback", () => {
   test("--resume continues a real interrupted run to completion", async () => {
     const parent = tempDir();
     const legacyHome = join(parent, "legacy");
@@ -187,7 +187,7 @@ describe("winter migrate — --resume and --rollback", () => {
     const secretsTo = new FileSecretStore(join(parent, "secrets-to")) as SecretStore;
     const legacySecrets = new FileSecretStore(join(parent, "secrets-from")) as SecretStore;
     const home = join(parent, "home");
-    const core = await import("@yanlinglabs/winter-core");
+    const core = await import("@waifucave/clover-core");
     const plan = await core.planMigrationB({ legacyHome, home, profile: "dev" });
     let n = 0;
     await expect(
@@ -230,8 +230,8 @@ describe("winter migrate — --resume and --rollback", () => {
   });
 });
 
-// WS-21 L3.7 (spec §8): `winter migrate --sdk-home [--home <dir>] [--resume | --rollback | --status]`.
-describe("winter migrate --sdk-home (Migration C)", () => {
+// WS-21 L3.7 (spec §8): `clover migrate --sdk-home [--home <dir>] [--resume | --rollback | --status]`.
+describe("clover migrate --sdk-home (Migration C)", () => {
   function oldLayoutHome(): string {
     const home = join(tempDir(), "old");
     mkdirSync(join(home, "projects", "-Users-x-app", "memory"), { recursive: true });
@@ -290,7 +290,7 @@ describe("winter migrate --sdk-home (Migration C)", () => {
   // run refuse naming --rollback, and --rollback run again finishes the job.
   test("R.3 I-5: an interrupted --rollback is finished by --rollback; --resume and a plain run refuse", async () => {
     const home = oldLayoutHome();
-    writeFileSync(join(home, "WINTER.md"), "# mine\n"); // copy-files has something to put back
+    writeFileSync(join(home, "CLOVER.md"), "# mine\n"); // copy-files has something to put back
     const run = baseDeps({ argv: ["--sdk-home", "--home", home, "--yes"], routerSupportsRunHome: () => true });
     expect(await runMigrateCommand(run.deps)).toBe(0);
     const archiveDir = readdirSync(join(home, "migration")).filter((d) => d.startsWith("c-")).map((d) => join(home, "migration", d))[0]!;

@@ -1,7 +1,7 @@
 import { assertDaemonPathAccess } from "../../runtime-sdk/daemon-path-fence";
 // ComputerV2 Phase 2 — `tab.upload(ref, paths)`: which files a script may hand a page's file input. Each path is
 // resolved (`realpath`) and must be a regular file — not a symlink (`lstat`) — inside the session's working directory
-// (its stored cwd) or its temp directory, never under the Winter home and never on the sandbox's read-deny list. At
+// (its stored cwd) or its temp directory, never under the Clover home and never on the sandbox's read-deny list. At
 // most 10 files and 50 MiB together.
 //
 // What the browser gets is a private COPY (`stageUploads`): each checked file is opened without following a link and
@@ -23,7 +23,7 @@ export interface UploadRoots {
   cwd: string | null | undefined;
   /** The session's temp directory (`sessionTmpDir`). */
   tmpDir?: string;
-  /** The Winter home: never uploaded from. */
+  /** The Clover home: never uploaded from. */
   home: string;
   /** The sandbox's read-deny list for the session (`sandboxConfigFor(home, cwd).filesystem.denyRead`). */
   denyRead: readonly string[];
@@ -96,7 +96,7 @@ export function checkUploadFiles(input: unknown, roots: UploadRoots): CheckedUpl
     const path = real(given);
     if (path === undefined) throw new AutomationFailure("NotAllowed", `${shown}: no such file`);
     try { assertDaemonPathAccess(roots.home, path, "/"); } catch {
-      throw new AutomationFailure("NotAllowed", "Protected Winter storage cannot be uploaded");
+      throw new AutomationFailure("NotAllowed", "Protected Clover storage cannot be uploaded");
     }
     const st = statSync(path);
     if (!st.isFile()) throw new AutomationFailure("NotAllowed", `${shown} is not a regular file`);
@@ -105,7 +105,7 @@ export function checkUploadFiles(input: unknown, roots: UploadRoots): CheckedUpl
     if (st.nlink > 1) throw new AutomationFailure("NotAllowed", `${shown} has another hard link to it, so where it really lives can't be told — it can't be uploaded`);
     // The floors first, wherever the file is: a protected file is refused plainly — never with the copy advice below,
     // which would be a recipe for taking it out (the review of the open panel, MED-3).
-    if (inside(path, home)) throw new AutomationFailure("NotAllowed", `${shown} is inside Winter's own home — it can't be uploaded`);
+    if (inside(path, home)) throw new AutomationFailure("NotAllowed", `${shown} is inside Clover's own home — it can't be uploaded`);
     if (denied.some((d) => inside(path, d))) throw new AutomationFailure("NotAllowed", `${shown} is on the sandbox's read-deny list — it can't be uploaded`);
     const secret = isSecretPath(path, real(roots.userHome ?? homedir()) ?? (roots.userHome ?? homedir()));
     if (!allowedRoots.some((r) => inside(path, r))) {

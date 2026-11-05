@@ -6,7 +6,7 @@
 // dev build once per REBUILD (`.superpowers/sdd/2026-09-27-keychain-prompts/progress.md`). With
 // `Options.onCredentialResolve` set, the agent SDK puts `hostCredentials: true` on the wire and the child
 // builds no Keychain store at all: every `{ kind: "keychain" }` read becomes a control request answered
-// HERE, by `winter-core` — the binary that created the items, so its own reads never prompt. An embedded
+// HERE, by `clover-core` — the binary that created the items, so its own reads never prompt. An embedded
 // chat/dispatch Worker gets the same handler: it already ran in-process, but the daemon being the ONE
 // refresher (spec §1.1) matters there too.
 //
@@ -31,7 +31,7 @@
 //   A GENERATION PER ITEM, API KEYS INCLUDED. The SDK counts on `generation` rising with every write of
 //   an item, so a child that got a 401 can ask for "newer than N" (`minGeneration`). A Keychain item has
 //   no version of its own and is written by processes this one never hears from (the CLI's in-process
-//   `winter login`, `ant`'s own profile refresh, a human with `security`), so the generation is DERIVED:
+//   `clover login`, `ant`'s own profile refresh, a human with `security`), so the generation is DERIVED:
 //   a digest of the last value this daemon handed out, per account, and a counter that moves whenever
 //   the digest does. The digest is SHA-256 of the value — the value itself is never kept. An MCP token
 //   record carries its own `generation` (the SDK's refresh and login write it), so that one is used as is.
@@ -305,7 +305,7 @@ export function createHostCredentialBroker(deps: HostCredentialDeps): HostCreden
       expiresAt = record.expiresAt;
     } catch (err) {
       // A malformed record reads as "not signed in" (the SDK's own lenient read does the same); a NEWER
-      // record version is not ours to interpret, and "sign in again" would overwrite what a newer Winter wrote.
+      // record version is not ours to interpret, and "sign in again" would overwrite what a newer Clover wrote.
       if (err instanceof McpOAuthError && err.code === "malformed_record") return { answer: { ok: false, reason: "not_found" } };
       log(`host credentials: ${account} could not be read (${err instanceof McpOAuthError ? err.code : "unreadable"})`);
       return { answer: { ok: false, reason: "unavailable" } };

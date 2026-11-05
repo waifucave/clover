@@ -8,7 +8,7 @@
 //     phase introduces (`ENC-DUMMY`, `SIG-DUMMY`, `<recovered_reasoning`) — proving the EXISTING
 //     allowlist filters (`HISTORY_EVENT_TYPES`, `REMOTE_STREAM_EVENT_TYPES`) hold for THESE payloads
 //     too, with a harness-role CONTROL proving it is a scoped filter, not a blanket outage.
-//   Part B — a REAL e2e (Claude with a `thinking` block -> GPT, both on the Winter runtime since
+//   Part B — a REAL e2e (Claude with a `thinking` block -> GPT, both on the Clover runtime since
 //     WS-23 retired the official leg this used to start on) sweeping the REAL captured request bodies,
 //     the REAL canonical transcript file and a REAL `session.history` call for the same markers, plus
 //     I-3 over the real record's own credential locator.
@@ -27,7 +27,7 @@ import { join } from "node:path";
 import { openaiResponsesFake } from "@yanlinglabs/winter-provider-conformance/fakes";
 import {
   LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, type WritableSocket, type SessionEvent,
-} from "@yanlinglabs/winter-protocol";
+} from "@waifucave/clover-protocol";
 import { startIpcServer } from "../../src/ipc/server";
 import { SessionStore } from "../../src/sessions/store";
 import { SessionHub } from "../../src/sessions/hub";
@@ -129,7 +129,7 @@ describe("A-8 part A: opaque state + the carry tag never reach session.history o
   afterEach(() => { stop?.(); stop = undefined; });
 
   async function boot(): Promise<{ store: SessionStore; hub: SessionHub; socketPath: string; harnessToken: string; remoteToken: string }> {
-    const home = mkdtempSync(join(tmpdir(), "winter-parity-sweep-"));
+    const home = mkdtempSync(join(tmpdir(), "clover-parity-sweep-"));
     const store = new SessionStore(home);
     const hub = new SessionHub(store);
     const socketPath = join(home, "core.sock");
@@ -211,10 +211,10 @@ describe("A-8 part A: opaque state + the carry tag never reach session.history o
 });
 
 // ════════════════════════════════════════════════════════════════════════════════════════════════
-// Part B — a REAL e2e (Claude -> GPT, both on the Winter runtime): sweep the REAL captured request
+// Part B — a REAL e2e (Claude -> GPT, both on the Clover runtime): sweep the REAL captured request
 // bodies, the REAL canonical transcript file, and a REAL session.history call.
 // ════════════════════════════════════════════════════════════════════════════════════════════════
-describeWithWinterBinary("A-8 part B: real captures (Claude -> GPT on the Winter runtime)", (winterBin) => {
+describeWithWinterBinary("A-8 part B: real captures (Claude -> GPT on the Clover runtime)", (winterBin) => {
   describe("sweep the real request bodies + canonical file + session.history", () => {
     let home: string;
     let daemon: RunningDaemon | undefined;
@@ -281,7 +281,7 @@ describeWithWinterBinary("A-8 part B: real captures (Claude -> GPT on the Winter
       const PRIOR_TEXT = "remember P10B-SWEEP-1";
       const { sessionId } = await client.call<{ sessionId: string }>(METHODS.sessionCreate, { scope: "e2e", mode: "code", model: "anthropic/claude-sonnet-5" });
       await client.call(METHODS.sessionAttach, { sessionId, fromSeq: 0 });
-      expect(d.winter.legOf(sessionId)).toBe("winter");
+      expect(d.clover.legOf(sessionId)).toBe("winter");
       await client.call(METHODS.sessionSend, { sessionId, text: PRIOR_TEXT });
       await client.waitFor((e) => e.type === "turn_completed" && e.sessionId === sessionId, 45_000);
 
@@ -331,7 +331,7 @@ describeWithWinterBinary("A-8 part B: real captures (Claude -> GPT on the Winter
       // WS-23 (decision 9): Claude -> GPT is the PLAIN switch — the signed thinking is parked in the
       // sidecar, not lost — so it applies with no confirmation at all. A prompt here would throw.
       await client.call(METHODS.sessionSetModel, { sessionId, model: "openai/gpt-5.6-sol" });
-      expect(d.winter.legOf(sessionId)).toBe("winter");
+      expect(d.clover.legOf(sessionId)).toBe("winter");
 
       // I-3: the destination's own credential locator names ONLY the fresh (openai) selection —
       // nothing from the anthropic source is merged in.

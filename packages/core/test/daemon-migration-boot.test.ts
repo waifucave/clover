@@ -7,12 +7,12 @@
 // `FileSecretStore`s — this file never touches `Bun.secrets` or any real home.
 //
 // P9c-15: auto-migration additionally requires `home` to resolve to the profile's OWN DEFAULT home
-// (`~/.winter` dist, `~/.winter-dev` dev) — a real safety ruling made AFTER a review found that any
-// real daemon spawned against a temp/custom `WINTER_HOME` with no injected `secrets` (a binary-
-// backed e2e test, `verify:workflow`, a live-gate script, a developer's ad-hoc `WINTER_HOME=/tmp/x
-// winter daemon run`) would otherwise auto-migrate the user's REAL legacy home into a throwaway
+// (`~/.clover` dist, `~/.clover-dev` dev) — a real safety ruling made AFTER a review found that any
+// real daemon spawned against a temp/custom `CLOVER_HOME` with no injected `secrets` (a binary-
+// backed e2e test, `verify:workflow`, a live-gate script, a developer's ad-hoc `CLOVER_HOME=/tmp/x
+// clover daemon run`) would otherwise auto-migrate the user's REAL legacy home into a throwaway
 // directory. `opts.migration.homedirOverride` is the ONLY way this file ever makes a temp `home`
-// register as "the default" — it overrides `isDefaultWinterHome`'s `homedir()` call, so the real
+// register as "the default" — it overrides `isDefaultCloverHome`'s `homedir()` call, so the real
 // home directory is never consulted, let alone touched, by anything below.
 import { afterEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
@@ -23,11 +23,11 @@ import { FileSecretStore } from "../src/auth/secret-store";
 import { MigrationRefused } from "../src/migration/migrate-b";
 import { readMigrationManifest } from "../src/migration/manifest";
 import { TOKEN_NAMES } from "../src/auth/tokens";
-import { isDefaultWinterHome } from "../src/winter-dir";
+import { isDefaultCloverHome } from "../src/clover-dir";
 
 const dirs: string[] = [];
 function tempParent(): string {
-  const d = mkdtempSync(join(tmpdir(), "winter-migration-boot-"));
+  const d = mkdtempSync(join(tmpdir(), "clover-migration-boot-"));
   dirs.push(d);
   return d;
 }
@@ -81,15 +81,15 @@ describe("daemon.ts boot hook — Migration B (P9c-15: default-home gate)", () =
     expect(migrationLines.length).toBe(1);
     expect(migrationLines[0]).toContain("not the default home");
     expect(migrationLines[0]).toContain(home);
-    expect(migrationLines[0]).toContain("winter migrate --from");
+    expect(migrationLines[0]).toContain("clover migrate --from");
   });
 
   test("(a2) with homedirOverride making `home` resolve as the default, migration proceeds end to end — proves the gate is additive, not a silent replacement for isPristineHome", async () => {
     const parent = tempParent();
-    // `home` = <parent>/.winter, and homedirOverride makes `homedir()` resolve to `parent` — so
-    // `isDefaultWinterHome(home, "dist", homedirOverride)` is true WITHOUT ever consulting the real
-    // home directory (the daemon's ambient profile is "dist" — no WINTER_PROFILE set in this suite).
-    const home = join(parent, ".winter");
+    // `home` = <parent>/.clover, and homedirOverride makes `homedir()` resolve to `parent` — so
+    // `isDefaultCloverHome(home, "dist", homedirOverride)` is true WITHOUT ever consulting the real
+    // home directory (the daemon's ambient profile is "dist" — no CLOVER_PROFILE set in this suite).
+    const home = join(parent, ".clover");
     const legacyHome = join(parent, "legacy");
     seedLegacyHome(legacyHome);
 
@@ -168,7 +168,7 @@ describe("daemon.ts boot hook — Migration B (P9c-15: default-home gate)", () =
     const message = (caught as MigrationRefused).message;
     expect(message).toContain(join(home, "migration", "manifest.json"));
     expect(message).toContain("manifest.json.bad");
-    expect(message).toContain("winter migrate --rollback");
+    expect(message).toContain("clover migrate --rollback");
     // The unreadable flavour never suggests `--resume` — there is nothing readable to resume from
     // (rollbackMigrationB's own doc comment: rollback needs a readable manifest too, but stays a
     // valid second step once files are known to have already been copied).
@@ -177,7 +177,7 @@ describe("daemon.ts boot hook — Migration B (P9c-15: default-home gate)", () =
 
   test("(c) a NON-pristine default-resolved home with a legacy home present boots normally, migrates nothing, and logs exactly one 'not pristine' line", async () => {
     const parent = tempParent();
-    const home = join(parent, ".winter"); // resolves as default under homedirOverride, below
+    const home = join(parent, ".clover"); // resolves as default under homedirOverride, below
     const legacyHome = join(parent, "legacy");
     seedLegacyHome(legacyHome);
     // Give `home` content of its own BEFORE boot — a top-level file outside the bootstrap set is
@@ -203,16 +203,16 @@ describe("daemon.ts boot hook — Migration B (P9c-15: default-home gate)", () =
     const migrationLines = capture.lines.filter((l) => l.startsWith("migration:"));
     expect(migrationLines.length).toBe(1);
     expect(migrationLines[0]).toContain("not pristine");
-    // Fix wave C2: the advice here must be the SAME instruction the `winter migrate`/
+    // Fix wave C2: the advice here must be the SAME instruction the `clover migrate`/
     // `planMigrationB` refusal itself prints (`mv <home> <home>.bak`, then restart) — never the old
-    // `winter migrate --from` advice, which would just hit that same non-pristine refusal.
+    // `clover migrate --from` advice, which would just hit that same non-pristine refusal.
     expect(migrationLines[0]).toContain(`mv ${home} ${home}.bak`);
-    expect(migrationLines[0]).not.toContain("winter migrate --from");
+    expect(migrationLines[0]).not.toContain("clover migrate --from");
   });
 
   test("(c2) Cowork storage in the legacy source is never auto-copied: boot continues, migrates nothing, and logs exactly one 'skipped' line (docs/cowork-execution-contracts.md, Migration B)", async () => {
     const parent = tempParent();
-    const home = join(parent, ".winter");
+    const home = join(parent, ".clover");
     const legacyHome = join(parent, "legacy");
     seedLegacyHome(legacyHome, (root) => {
       mkdirSync(join(root, "cowork", "workspaces", "ws_fixture", "shared"), { recursive: true });
@@ -243,7 +243,7 @@ describe("daemon.ts boot hook — Migration B (P9c-15: default-home gate)", () =
 
   test("(c3) a legacy runtime-state database that cannot be inspected is skipped with a line that says so, never reported as Cowork storage", async () => {
     const parent = tempParent();
-    const home = join(parent, ".winter");
+    const home = join(parent, ".clover");
     const legacyHome = join(parent, "legacy");
     seedLegacyHome(legacyHome, (root) => {
       mkdirSync(join(root, "runtimes"), { recursive: true });
@@ -272,7 +272,7 @@ describe("daemon.ts boot hook — Migration B (P9c-15: default-home gate)", () =
 
   test("(d) fix wave C3 (P9c-17): a residual throw during Migration B becomes a typed migration_failed refusal, not a crash — and the manifest is left in-progress for --resume", async () => {
     const parent = tempParent();
-    const home = join(parent, ".winter"); // resolves as default under homedirOverride, below
+    const home = join(parent, ".clover"); // resolves as default under homedirOverride, below
     const legacyHome = join(parent, "legacy");
     seedLegacyHome(legacyHome);
 
@@ -300,10 +300,10 @@ describe("daemon.ts boot hook — Migration B (P9c-15: default-home gate)", () =
     daemon = undefined; // startDaemon never returned a handle to stop
     expect(caught).toBeInstanceOf(MigrationRefused);
     expect((caught as MigrationRefused).code).toBe("migration_failed");
-    expect((caught as MigrationRefused).message).toContain("winter migrate --resume");
+    expect((caught as MigrationRefused).message).toContain("clover migrate --resume");
 
     // The file phase ran to completion (and was written to disk) before the keychain phase hit the
-    // throwing store — the manifest is genuinely in-progress on disk, exactly what `winter migrate
+    // throwing store — the manifest is genuinely in-progress on disk, exactly what `clover migrate
     // --resume`/`--rollback` expects to find.
     const manifest = readMigrationManifest(home);
     expect(manifest?.status).toBe("in-progress");
@@ -319,24 +319,24 @@ describe("daemon.ts boot hook — Migration B (P9c-15: default-home gate)", () =
   });
 });
 
-describe("isDefaultWinterHome (P9c-15) — pure predicate, a fake homedir only, NEVER the real ~", () => {
-  test("recognises the dist default (~/.winter) under a fake home directory", () => {
-    expect(isDefaultWinterHome("/fake/home/.winter", "dist", () => "/fake/home")).toBe(true);
-    expect(isDefaultWinterHome("/fake/home/.winter-dev", "dist", () => "/fake/home")).toBe(false);
+describe("isDefaultCloverHome (P9c-15) — pure predicate, a fake homedir only, NEVER the real ~", () => {
+  test("recognises the dist default (~/.clover) under a fake home directory", () => {
+    expect(isDefaultCloverHome("/fake/home/.clover", "dist", () => "/fake/home")).toBe(true);
+    expect(isDefaultCloverHome("/fake/home/.clover-dev", "dist", () => "/fake/home")).toBe(false);
   });
 
-  test("recognises the dev default (~/.winter-dev) under a fake home directory", () => {
-    expect(isDefaultWinterHome("/fake/home/.winter-dev", "dev", () => "/fake/home")).toBe(true);
-    expect(isDefaultWinterHome("/fake/home/.winter", "dev", () => "/fake/home")).toBe(false);
+  test("recognises the dev default (~/.clover-dev) under a fake home directory", () => {
+    expect(isDefaultCloverHome("/fake/home/.clover-dev", "dev", () => "/fake/home")).toBe(true);
+    expect(isDefaultCloverHome("/fake/home/.clover", "dev", () => "/fake/home")).toBe(false);
   });
 
   test("a custom/temp home is never the default, for either profile", () => {
-    expect(isDefaultWinterHome("/tmp/some-random-dir", "dist", () => "/fake/home")).toBe(false);
-    expect(isDefaultWinterHome("/tmp/some-random-dir", "dev", () => "/fake/home")).toBe(false);
+    expect(isDefaultCloverHome("/tmp/some-random-dir", "dist", () => "/fake/home")).toBe(false);
+    expect(isDefaultCloverHome("/tmp/some-random-dir", "dev", () => "/fake/home")).toBe(false);
   });
 
   test("path.resolve semantics: a trailing slash or a redundant segment still matches", () => {
-    expect(isDefaultWinterHome("/fake/home/.winter/", "dist", () => "/fake/home")).toBe(true);
-    expect(isDefaultWinterHome("/fake/home/foo/../.winter", "dist", () => "/fake/home")).toBe(true);
+    expect(isDefaultCloverHome("/fake/home/.clover/", "dist", () => "/fake/home")).toBe(true);
+    expect(isDefaultCloverHome("/fake/home/foo/../.clover", "dist", () => "/fake/home")).toBe(true);
   });
 });

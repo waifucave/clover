@@ -8,7 +8,7 @@ import { signedFacts } from "./dev-daemon-lib";
 const REPO = join(import.meta.dir, "..");
 
 /**
- * The helper's three identities. dist ships inside Winter.app; dev is what `bun run dev:helper` builds into
+ * The helper's three identities. dist ships inside Clover.app; dev is what `bun run dev:helper` builds into
  * `dist/dev/`; test is built only by `bun run verify:computer-helper`, with the `WINTER_CU_TEST_BUILD`
  * compilation condition, and is never registered with LaunchServices or kept.
  */
@@ -19,7 +19,7 @@ export const HELPER = {
 } as const;
 export type HelperFlavor = keyof typeof HELPER;
 
-/** Where the dist helper sits inside Winter.app. */
+/** Where the dist helper sits inside Clover.app. */
 export const HELPER_EMBED_RELATIVE = join("Contents", "Helpers", `${HELPER.dist.name}.app`);
 
 /** The helper's ONE entitlement: sending Apple Events, for `applescript()` (the hardened runtime refuses them
@@ -27,9 +27,9 @@ export const HELPER_EMBED_RELATIVE = join("Contents", "Helpers", `${HELPER.dist.
 export const HELPER_ENTITLEMENT = "com.apple.security.automation.apple-events";
 export const HELPER_ENTITLEMENTS_FILE = join(REPO, "apple", "ComputerUse", "WinterComputerUse", "Support", "WinterComputerUse.entitlements");
 
-// The helper's OWN version — semver, independent of Winter's #.###.# VERSION — lives in `apple/ComputerUse/VERSION`
+// The helper's OWN version — semver, independent of Clover's #.###.# VERSION — lives in `apple/ComputerUse/VERSION`
 // (bump rules: apple/ComputerUse/PROTOCOL.md). `syncHelperVersion` stamps it into the helper target's two lines of
-// apple/Winter/project.yml (marked with `HELPER_VERSION_MARKER`, which Winter's own stamp skips) and into the
+// apple/Winter/project.yml (marked with `HELPER_VERSION_MARKER`, which Clover's own stamp skips) and into the
 // generated Support/Info.plist; version:sync, dev:helper and verify:computer-helper run it, and release.ts and
 // embed-computer-helper.sh check the built bundle against it. The helper reports it as `helperVersion`.
 export const HELPER_VERSION_FILE = join(REPO, "apple", "ComputerUse", "VERSION");
@@ -86,7 +86,7 @@ export function syncHelperVersion(paths: { versionFile?: string; projectYml?: st
   return written;
 }
 
-/** `<WINTER_HOME>/run/<this>`. */
+/** `<CLOVER_HOME>/run/<this>`. */
 export const HELPER_SOCKET_NAME = "computer-use.sock";
 
 /** The compilation condition that compiles the test hooks in; passed only on the test flavor's command line. */
@@ -101,7 +101,7 @@ export const LSREGISTER = "/System/Library/Frameworks/CoreServices.framework/Fra
 export const DAEMON_IDENTIFIER = { dist: "winter-core", dev: "com.winter.core.dev" } as const;
 
 /**
- * A stated designated requirement — identifier + Winter's team (the certificate's OU) under Apple's anchor —
+ * A stated designated requirement — identifier + Clover's team (the certificate's OU) under Apple's anchor —
  * the `scripts/dev-daemon-lib.ts` shape. TCC keys the helper's grants on it, so stating it (instead of letting
  * codesign derive one naming the certificate's common name) keeps the grants across rebuilds and signers.
  */
@@ -117,7 +117,7 @@ export function helperExecutable(appPath: string, flavor: HelperFlavor): string 
 /**
  * xcodebuild for the dev or test flavor: the WinterComputerUse scheme only (no CEF, no app), Debug, unsigned
  * — the scripts sign it themselves with the stated requirement. The bundle id is always given here: project.yml's
- * Debug id is a placeholder (`com.winter.computeruse.xcode-debug`) so an ordinary Debug Winter build never
+ * Debug id is a placeholder (`com.winter.computeruse.xcode-debug`) so an ordinary Debug Clover build never
  * registers a second com.winter.computeruse.dev with LaunchServices. The test flavor also takes its own name and
  * the test-hook compilation condition, so it can never be mistaken for, or replace, the dev helper.
  */
@@ -170,7 +170,7 @@ export interface SignedHelperFacts {
 
 /**
  * Everything a signed helper bundle must be, as failure lines (empty = good): the flavor's bundle id and
- * identifier, Winter's team, the hardened runtime, EXACTLY the stated designated requirement, exactly one
+ * identifier, Clover's team, the hardened runtime, EXACTLY the stated designated requirement, exactly one
  * entitlement (Apple Events, set to true), an LSUIElement Info.plist at `version` that says why it sends Apple
  * Events, and test hooks compiled in only for the test flavor.
  */
@@ -208,7 +208,7 @@ export function checkSignedHelper(flavor: HelperFlavor, teamId: string, version:
 
 /**
  * The host's codesign identifier per helper flavor. It is nested code with its OWN identity — the daemon checks the
- * host's process against `identifier "<this>" + Winter's team` — so every signing site signs it, with its stated
+ * host's process against `identifier "<this>" + Clover's team` — so every signing site signs it, with its stated
  * requirement and no entitlements, BEFORE it signs the helper (never `--deep`, which would re-sign it as the helper).
  */
 export const BROWSER_HOST = {
@@ -244,7 +244,7 @@ export interface SignedHostFacts {
   executable: Uint8Array;
 }
 
-/** Everything a signed host must be, as failure lines (empty = good): the flavor's identifier, Winter's team, the
+/** Everything a signed host must be, as failure lines (empty = good): the flavor's identifier, Clover's team, the
  *  hardened runtime, EXACTLY the stated requirement, no entitlements at all, and test hooks only in the test flavor. */
 export function checkSignedBrowserHost(flavor: HelperFlavor, teamId: string, facts: SignedHostFacts): string[] {
   const id = BROWSER_HOST[flavor].identifier;

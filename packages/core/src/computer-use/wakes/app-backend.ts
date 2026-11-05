@@ -4,17 +4,17 @@
 // The registry (`wakes/registry.ts`) arms a trigger here for a bound APP target (a tab binding goes to the browser
 // backend). This backend checks what only the daemon knows — the target is bound in that session and allowed for the
 // SESSION or ALWAYS (a once-bound app can't be watched: it is released when its call ends) — and the helper does the
-// rest: the target alive and readable, never a secure field, never Winter; the condition not already true; the watch
+// rest: the target alive and readable, never a secure field, never Clover; the condition not already true; the watch
 // itself, which outlives the script's binding (a reset, a worker restart or its idle end release the target; the watch
 // holds on to the window by itself). The helper reports ONE `watchEvent` per watch; a helper that goes away (its
-// connection closed: it quit or crashed) takes every armed watch with it — each is reported `lost`, "Winter
+// connection closed: it quit or crashed) takes every armed watch with it — each is reported `lost`, "Clover
 // Computer Use quit".
 //
 // "Only the user's action counts" on an app (the controller's ruling): `clicked` fires on the user's HARDWARE click on
-// the element (the helper's listen-only mouse-down tap — never a synthetic event, never Winter's own input); `changed`
+// the element (the helper's listen-only mouse-down tap — never a synthetic event, never Clover's own input); `changed`
 // needs the user's input too, but the helper can't see keys without Input Monitoring (which is never asked for), so a
 // change counts as theirs when the field holds the keyboard focus in the frontmost app, or their own hardware click
-// went to it; the STATE kinds (`appeared`, `gone`, `titled`) fire on any false→true transition Winter's own input did
+// went to it; the STATE kinds (`appeared`, `gone`, `titled`) fire on any false→true transition Clover's own input did
 // not cause (in flight, or within 500 ms after). A condition already true at arming is refused (`already_met`).
 //
 // Every sentence this backend throws is the daemon's own — app names and the model's own words only, never a window
@@ -74,11 +74,11 @@ export class AppWakeBackend implements WakeBackend {
     if (TAB_ONLY_WAKE_KINDS.has(req.condition.kind)) {
       throw new AutomationFailure("NotAllowed", `${req.condition.kind === "submitted" ? "submitted" : "navigated and url"} are for browser tabs only — an app can't be watched for it`);
     }
-    // A browser Winter drives tab by tab is watched on its TABS (the ruling, review L4): its page is the tab backend's,
+    // A browser Clover drives tab by tab is watched on its TABS (the ruling, review L4): its page is the tab backend's,
     // with its own floors. Safari, which has no tab backend, stays an app.
     const family = familyForBundleId(t.bundleId);
     if (family !== undefined && family.bundleIds.length > 0) {
-      throw new AutomationFailure("NotAllowed", `${t.name} is a browser Winter drives tab by tab — wait on the tab instead: bind it with browsers.tab(…) and call tab.wakeWhen(…)`);
+      throw new AutomationFailure("NotAllowed", `${t.name} is a browser Clover drives tab by tab — wait on the tab instead: bind it with browsers.tab(…) and call tab.wakeWhen(…)`);
     }
     if (!this.deps.persistentlyAllowed(req.sessionId, t.bundleId)) {
       throw new AutomationFailure("NotAllowed", `${t.name} was allowed for one call only — a wake trigger needs it allowed for this session`);
@@ -92,7 +92,7 @@ export class AppWakeBackend implements WakeBackend {
     }
     if (!helperVersionAtLeast(this.deps.helper.version, HELPER_WATCH_VERSION)) {
       const v = this.deps.helper.version;
-      throw new AutomationFailure("HelperUnavailable", `Winter Computer Use${v === undefined ? "" : ` ${v}`} is too old to wait on an app (it needs ${HELPER_WATCH_VERSION} or later) — update Winter`);
+      throw new AutomationFailure("HelperUnavailable", `Winter Computer Use${v === undefined ? "" : ` ${v}`} is too old to wait on an app (it needs ${HELPER_WATCH_VERSION} or later) — update Clover`);
     }
     const entry: Armed = { sessionId: req.sessionId, app: t.name, onEvent, arming: true };
     this.armed.set(req.wakeId, entry);
@@ -234,11 +234,11 @@ function failure(err: unknown, t: AppWakeTarget, c: WakeCondition): Error {
     case "target_lost": return new AutomationFailure("TargetLost", lostWords(t.name, reason || "unknown"));
     case "not_allowed":
       if (reason === "already_met") return new AutomationFailure("NotAllowed", alreadyMetSentence(c, t.name));
-      return new AutomationFailure("NotAllowed", `Winter can't watch ${t.name} for that`);
+      return new AutomationFailure("NotAllowed", `Clover can't watch ${t.name} for that`);
     case "refused":
       switch (reason) {
-        case "secure_field": return new AutomationFailure("Refused", "that is a password or payment field — Winter never watches one; ask the user to tell you when they are done");
-        case "winter_itself": return new AutomationFailure("Refused", "Winter never watches itself");
+        case "secure_field": return new AutomationFailure("Refused", "that is a password or payment field — Clover never watches one; ask the user to tell you when they are done");
+        case "winter_itself": return new AutomationFailure("Refused", "Clover never watches itself");
         case "privacy_pane": return new AutomationFailure("Refused", "System Settings' Privacy & Security panes are off limits — ask the user to change them");
         case "auth_dialog": return new AutomationFailure("Refused", "that is a system authentication dialog — ask the user to handle it");
         default: return new AutomationFailure("Refused", `${t.name} can't be watched for that${reason ? ` (${reason})` : ""}`);
@@ -246,8 +246,8 @@ function failure(err: unknown, t: AppWakeTarget, c: WakeCondition): Error {
     case "unsupported":
       // Three things answer `unsupported`: a window with no accessibility (the one the model can act on), a helper too
       // old to know `watch.arm`, and a helper whose engine is going away (review L6).
-      if (reason === "no_accessibility") return new AutomationFailure("NotAllowed", `${t.name}'s window exposes no accessibility here, so Winter can't watch it — ask the user to show the window once on its desktop, then bind it again`);
-      if (/^unknown method/i.test(err.message)) return new AutomationFailure("HelperUnavailable", `Winter Computer Use is too old to wait on an app (it needs ${HELPER_WATCH_VERSION} or later) — update Winter`);
+      if (reason === "no_accessibility") return new AutomationFailure("NotAllowed", `${t.name}'s window exposes no accessibility here, so Clover can't watch it — ask the user to show the window once on its desktop, then bind it again`);
+      if (/^unknown method/i.test(err.message)) return new AutomationFailure("HelperUnavailable", `Winter Computer Use is too old to wait on an app (it needs ${HELPER_WATCH_VERSION} or later) — update Clover`);
       return new AutomationFailure("HelperUnavailable", "Winter Computer Use could not arm the trigger (it may be quitting) — try again", true);
     case "permission_missing": return new AutomationFailure("PermissionMissing", `Winter Computer Use needs the ${err.data.permission === "screenRecording" ? "Screen Recording" : "Accessibility"} permission — ask the user to grant it in Settings → Computer Use`);
     case "busy": return new AutomationFailure("TargetBusy", `${t.name} is busy, or Winter Computer Use holds too many watches — try again in a moment`);

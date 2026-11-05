@@ -6,7 +6,7 @@
 // accepts as a resume target: it imports a fixture engine-era log through the REAL
 // `WinterCompatibilitySessionStore` (no fake), then drives the actual compiled binary with
 // `Options.resume` pointed at the freshly-imported backend id, exactly the way
-// `session-driver.ts`'s `resume()` would on the daemon's own Winter-leg path.
+// `session-driver.ts`'s `resume()` would on the daemon's own Clover-leg path.
 //
 // TWO CLAIMS:
 //   (a) the real binary does not refuse the imported transcript — resume succeeds (`system/init`
@@ -27,7 +27,7 @@ import { mkdtempSync, readFileSync, rmSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { query, transcriptProjectKey } from "@yanlinglabs/winter-agent-sdk";
-import type { SessionEvent } from "@yanlinglabs/winter-protocol";
+import type { SessionEvent } from "@waifucave/clover-protocol";
 import { importEngineEraSession } from "../../src/runtime-sdk/import-legacy";
 import { openRuntimeStateDb, RuntimeSessionRecords, backfillNativeSessions } from "../../src/runtime-state";
 import { sessionLegOf } from "../../src/runtime-sdk/leg";
@@ -39,10 +39,10 @@ interface ProtocolSdkMessage { type?: string; [k: string]: unknown }
 
 describeWithWinterBinary("engine-era import — the REAL winter binary resumes the converted transcript", (bin) => {
   test("import then resume: no refusal, and the imported turns lead the new one on disk", async () => {
-    const home = mkdtempSync(join(tmpdir(), "winter-import-e2e-home-"));
+    const home = mkdtempSync(join(tmpdir(), "clover-import-e2e-home-"));
     // WS-21 (L2 O-1): the daemon hands the child — and keys the imported transcript by — the CANONICAL cwd
     // (`canonicalCwd`); this test drives the child directly, so it spawns it the same way.
-    const cwd = realpathSync(mkdtempSync(join(tmpdir(), "winter-import-e2e-cwd-")));
+    const cwd = realpathSync(mkdtempSync(join(tmpdir(), "clover-import-e2e-cwd-")));
     try {
       // ── Build an engine-era session exactly the way a pre-8b daemon would have left one ──────
       const store = new SessionStore(home);
@@ -80,13 +80,13 @@ describeWithWinterBinary("engine-era import — the REAL winter binary resumes t
           stderr: (chunk: string) => { stderrText += chunk; },
           env: {
             PATH: process.env.PATH ?? "/usr/bin:/bin",
-            // Pre-rename this set two distinct env keys — the daemon's own home var, and WINTER_HOME (the SDK's
+            // Pre-rename this set two distinct env keys — the daemon's own home var, and CLOVER_HOME (the SDK's
             // brand-derived home); the rename makes them the same key, so it is written once now.
-            HOME: home, TMPDIR: home, WINTER_HOME: home,
+            HOME: home, TMPDIR: home, CLOVER_HOME: home,
             // R.1: the import writes the transcript to the STORE home (`sdk/projects` on a run-home build);
             // a child driven directly (no run home) is pointed at that store the way a run home would.
-            WINTER_STORE_HOME: storeHomeFor(home),
-            WINTER_PROFILE: "test",
+            CLOVER_STORE_HOME: storeHomeFor(home),
+            CLOVER_PROFILE: "test",
             WINTER_TEST_PROVIDER: "echo",
           },
         },

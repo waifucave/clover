@@ -19,7 +19,7 @@ const advertisement = Buffer.concat([pkt("# service=git-upload-pack\n"), Buffer.
 const response = (bytes: BodyInit | Uint8Array = advertisement, operation = "advertisement") => new Response(bytes instanceof Uint8Array ? new Uint8Array(bytes) : bytes, { headers: { "content-type": `application/x-git-upload-pack-${operation}` } });
 const roots: string[] = [], stops: Array<() => void | Promise<void>> = [];
 afterEach(async () => { for (const stop of stops.splice(0)) await stop(); for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
-function temp() { const root = mkdtempSync(join(tmpdir(), "winter-git-read-")); roots.push(root); return root; }
+function temp() { const root = mkdtempSync(join(tmpdir(), "clover-git-read-")); roots.push(root); return root; }
 function transport(http: GitReadHttp = async () => response(), limits = {}, resolve = () => ({ ...grant })) { return new CoworkGitHubReadTransport({ authorize: resolve }, { get: async name => name === "fixture-slot" ? sentinel : null }, http, limits, { isolatedFixture: true }); }
 
 test("production read entry refuses before credential/packet/network work until sandboxed parser admission exists", async () => {
@@ -76,7 +76,7 @@ async function git(cwd: string, home: string, args: string[], input?: Uint8Array
 test("real Git clone + incremental fetch through private fake upstream keep credentials/helpers out of guest", async () => {
   const root = temp(), home = join(root, "home"), upstream = join(root, "upstream"), guest = join(root, "guest"); mkdirSync(home); mkdirSync(upstream);
   await git(upstream, home, ["init", "--initial-branch=main"]); writeFileSync(join(upstream, "hello.txt"), "first\n"); await git(upstream, home, ["add", "."]); await git(upstream, home, ["commit", "-m", "first"]);
-  const parser = process.env.WINTER_GIT_READ_NODE_FIXTURE ? (await buildGitReadParserFixture(join(root, "parser-helper"))).parser : undefined;
+  const parser = process.env.CLOVER_GIT_READ_NODE_FIXTURE ? (await buildGitReadParserFixture(join(root, "parser-helper"))).parser : undefined;
   const secretStore = new FileSecretStore(join(root, "host-secrets")); await secretStore.set("fixture-slot", sentinel); let privateCalls = 0, gatewayCalls = 0;
   const fake = Bun.serve({ hostname: "127.0.0.1", port: 0, async fetch(req) {
     if (req.headers.get("authorization") !== `Basic ${Buffer.from(`x-access-token:${sentinel}`).toString("base64")}`) return new Response("no", { status: 401 }); privateCalls++; const url = new URL(req.url);

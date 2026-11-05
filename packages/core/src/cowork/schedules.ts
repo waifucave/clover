@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { CoworkScheduleDefinition, type CoworkSchedule, type CoworkScheduleOccurrence, type CoworkScheduleView } from "@yanlinglabs/winter-protocol";
+import { CoworkScheduleDefinition, type CoworkSchedule, type CoworkScheduleOccurrence, type CoworkScheduleView } from "@waifucave/clover-protocol";
 import { parseSpec, type CronField } from "../routines/spec";
 import { CoworkAuthority, intersectCeilings, type CoworkGrantResolver } from "./authority";
 import type { CoworkRepository } from "./repository";

@@ -22,9 +22,9 @@ import type { ModelInfo, Provider, ProviderEvent, ToolSpec, TurnInputItem, TurnR
 /**
  * P8c lane 5: the daemon's internal model calls (compactor/titler/bash-reviewer, and — through
  * `withQuota`'s usage/rate-limit tracking — the `quota`/`status` view) run over
- * `@yanlinglabs/winter-provider-runtime` adapters instead of Winter's own raw-HTTP request/SSE code
+ * `@yanlinglabs/winter-provider-runtime` adapters instead of Clover's own raw-HTTP request/SSE code
  * (`openai-compatible.ts`/`codex-oauth.ts`, kept — see this module's own header for the ruling).
- * `RuntimeBackedProvider` is the ONE adapter shape both provider types share: it implements Winter's
+ * `RuntimeBackedProvider` is the ONE adapter shape both provider types share: it implements Clover's
  * own `Provider` interface (`streamTurn`/`models`/`id`) over a provider-runtime `ProviderAdapter` +
  * `ProviderContext`, so every existing consumer (Compactor, SessionTitler, BashReviewer,
  * `providers/quota.ts`'s `withQuota`) needs no changes at all — they only ever depended on
@@ -45,7 +45,7 @@ const STALL_TIMEOUT_MS = 60_000;
 function toRuntimeMessage(item: TurnInputItem): ProviderMessageLike | undefined {
   switch (item.type) {
     case "message":
-      // Winter's own callers never emit `role: "system"` inside `input` (the system prompt is
+      // Clover's own callers never emit `role: "system"` inside `input` (the system prompt is
       // `TurnRequest.instructions`, mapped to the runtime's separate `system` field below) — a
       // defensive collapse to `"user"` for the shape provider-runtime's `ProviderMessageLike`
       // does not have a slot for, rather than a silent drop.
@@ -97,7 +97,7 @@ function mapTurnRequest(req: TurnRequest): RuntimeTurnRequest {
     tools: mapTools(req.tools),
     // Cast, not a narrowed literal: with `descriptors: () => undefined` (both factories below), the
     // runtime's `mapEffortAgainst` descriptor-less arm passes a NAMED (non-numeric) effort through
-    // VERBATIM regardless of value (`shared.ts`'s own doc comment) — including Winter's own
+    // VERBATIM regardless of value (`shared.ts`'s own doc comment) — including Clover's own
     // `REASONING_EFFORTS` member `"none"`, which is not in the runtime's narrower declared literal
     // union but is handled identically to every other named tier on this code path.
     ...(req.reasoningEffort ? { effort: req.reasoningEffort as RuntimeTurnRequest["effort"] } : {}),
@@ -118,7 +118,7 @@ function mapErrorCode(
     case "bad_request":
       return code;
     // `timeout`/`stall`: the connection never produced a usable response — the closest of
-    // Winter's five coarse codes is "network" (no server verdict was ever reached).
+    // Clover's five coarse codes is "network" (no server verdict was ever reached).
     case "timeout":
     case "stall":
       return "network";
@@ -135,12 +135,12 @@ function mapErrorCode(
 }
 
 /**
- * Translates one adapter's normalized event stream into Winter's own `ProviderEvent`s. A one-shot
+ * Translates one adapter's normalized event stream into Clover's own `ProviderEvent`s. A one-shot
  * per-turn accumulator (`calls`) folds the runtime's streamed `tool_call_start/delta/end` triple
- * into Winter's single complete `tool_call` event — unexercised today (every internal caller passes
+ * into Clover's single complete `tool_call` event — unexercised today (every internal caller passes
  * `tools: []`) but mapped for a future caller rather than silently dropped.
  *
- * `onSubscriptionQuota` is the P8d-13 carry's own door: Winter's `ProviderEvent` union
+ * `onSubscriptionQuota` is the P8d-13 carry's own door: Clover's `ProviderEvent` union
  * (`providers/types.ts`, a zod schema outside this lane's file ownership) has no slot for R6-B's
  * `rate_limit`/`kind:"subscription-quota"` frame, so this side channel is how the detail reaches
  * `QuotaManager` (`manager.ts` wires it to `quota.noteSubscriptionQuota`) without widening that
@@ -185,7 +185,7 @@ async function* translateEvents(
         break;
       }
       case "done":
-        // Winter's `done.stopReason` is a 3-way enum (`end_turn`|`tool_calls`|`aborted`); the
+        // Clover's `done.stopReason` is a 3-way enum (`end_turn`|`tool_calls`|`aborted`); the
         // runtime's is 5-way. `max_tokens`/`refusal` both fold to `end_turn` — the turn DID
         // complete, just not the way the caller hoped, and none of today's three internal
         // one-shot callers branch on anything but `aborted`.
@@ -218,7 +218,7 @@ async function* translateEvents(
         if (ev.kind === "subscription-quota") onSubscriptionQuota?.(ev.info);
         break;
       // `message_start`/`thinking_summary_delta`/`thinking_exposed_delta`/`native_state`/
-      // `retry`/`auth_status`: still no Winter `ProviderEvent` target for a one-shot internal-model
+      // `retry`/`auth_status`: still no Clover `ProviderEvent` target for a one-shot internal-model
       // call — none of compactor/titler/bash-reviewer ever continues a turn across provider-native
       // state, and `providers/quota.ts`'s `QuotaManager` already tracks HTTP rate limiting off the
       // `error`+`usage` events above (the adapter's own `withRetry` already retries a rate-limited
@@ -283,7 +283,7 @@ export function runtimeBackedProvider(cfg: {
  * `settings.provider.type === "openai-compatible"`: `local: true` on the connection profile is a
  * DELIBERATE compatibility decision, not an oversight — provider-runtime's endpoint policy refuses
  * a plain-http or literal loopback/private-address base URL unless the connection declares itself
- * local (SSRF-shaped protection this package is new, and Winter's `openai-compatible` type has never
+ * local (SSRF-shaped protection this package is new, and Clover's `openai-compatible` type has never
  * had an endpoint allowlist: "arbitrary API models are legitimate there", `manager.ts`'s own
  * doc comment). Declaring `local: true` unconditionally preserves that pre-existing unrestricted
  * behaviour for a self-hosted/LAN endpoint (Ollama, LM Studio, a local gateway) and is a no-op for
@@ -304,7 +304,7 @@ export function createOpenAiCompatibleRuntimeProvider(secrets: SecretStore, base
 /**
  * `settings.provider.type === "codex-oauth"`: one fixed `default` account
  * (`codexCredentialRef("default").account === "codex-oauth:default"`, the SAME record name
- * `auth/credential-material.ts`'s `CREDENTIAL_MATERIAL_NAMES.codexOauth` already names) — Winter has
+ * `auth/credential-material.ts`'s `CREDENTIAL_MATERIAL_NAMES.codexOauth` already names) — Clover has
  * no multi-account codex support, matching the pre-existing `CodexAuthStore` facade this replaces
  * as the live turn path (see this module's header for what stays).
  *

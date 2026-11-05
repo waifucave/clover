@@ -1,4 +1,4 @@
-import type { ApprovalPolicy } from "@yanlinglabs/winter-protocol";
+import type { ApprovalPolicy } from "@waifucave/clover-protocol";
 import { coworkGuestSourceRoot } from "./guest-paths";
 import { relativeCoworkPath } from "./repository";
 import type { CoworkGuestConversation, CoworkGuestConversationContext, CoworkGuestConversationSet, CoworkProviderRoute, CoworkProviderRouteScope, CoworkProviderSelection } from "./session-ports";
@@ -160,7 +160,7 @@ export interface CoworkConversationSetInput {
   readonly uids?: { readonly runtimeUid: number; readonly toolUid: number };
 }
 
-/** The plan scratch guest path of one conversation at one policy epoch (`/workspace/plan/<sid>/<epoch>`, outside `.winter`). */
+/** The plan scratch guest path of one conversation at one policy epoch (`/workspace/plan/<sid>/<epoch>`, outside `.clover`). */
 export function coworkPlanScratchPath(sessionId: string, epoch: number): string {
   if (!Number.isSafeInteger(epoch) || epoch < 0) throw new CoworkError("invalid_request");
   return `/workspace/plan/${sessionId}/${epoch}`;

@@ -11,7 +11,7 @@
  *
  * WS-24 (pickers lane): this is NOT the SESSION model picker's listing (`ipc/picker-models.ts`'s
  * `pickerModels()`, which feeds `sync.config` and is what the Mac's session composer, the CLI's
- * `winter model` and the TUI's `/model` all actually choose a session's model FROM) — it is the Roles
+ * `clover model` and the TUI's `/model` all actually choose a session's model FROM) — it is the Roles
  * pane's FACTS join (family, pricing, credential door) over whatever a role's `permitted` already
  * names, keyed by tag. A role may legitimately be pinned to a row a real turn would refuse tools on
  * (`sessionUsable: false` below): EVERY ONE of the four daemon-internal jobs this pane can pin
@@ -55,7 +55,7 @@ export interface ModelCatalogWireModel {
    *  and `[]` are different answers here and must not be collapsed. */
   efforts: string[] | null;
   defaultEffort: string | null;
-  /** WS-24 (pickers lane, fix round 1): whether a REAL Winter turn on this row can actually carry
+  /** WS-24 (pickers lane, fix round 1): whether a REAL Clover turn on this row can actually carry
    *  tools — `!toolsRefusedFor(row)` (`runtime-sdk/provider-selection.ts`), never the catalog's bare
    *  `toolCalling` verbatim. `toolCalling: "none"` alone is mostly the catalog's fail-closed
    *  placeholder for a capability upstream never stated (most rows are `confidence: "unknown"`) and
@@ -145,7 +145,7 @@ function wirePricing(pricing: CapabilityEvidence<ModelPricing> | undefined): Mod
  * `deps` is the credential-readiness input, and it is a PARAMETER rather than a probe this function
  * runs itself: reading the Keychain is asynchronous and ~150 slots wide (`credentialPresenceFrom`),
  * and the caller (`ipc/server.ts`'s `models.catalog` handler) already computes exactly this pair for
- * `sync.config` on the very same `opts.secrets`/`opts.winterHome`. Taking the ALREADY-COMPUTED
+ * `sync.config` on the very same `opts.secrets`/`opts.cloverHome`. Taking the ALREADY-COMPUTED
  * presence keeps this reader synchronous and keeps the two surfaces on one probe per call. A server
  * with no secret store wired hands over an empty `{byProvider:{}}`, which reports every provider as
  * not-ready — the same degradation `sync.config` documents for the same inputs. (`home` is no longer
@@ -175,7 +175,7 @@ export function modelCatalogWire(deps: { credentials: CredentialPresence; home: 
       const slotId = slots.find((s) => s.provider === p.id)?.secretName ?? null;
       // The DOOR answers "which flow fixes this provider when it is not ready", named explicitly and
       // derived from data rather than from a provider id — a slot id alone cannot say it:
-      //   "console-profile" -> `winter login --anthropic-console` (or the app's Sign in). Checked
+      //   "console-profile" -> `clover login --anthropic-console` (or the app's Sign in). Checked
       //                        FIRST: the Console HAS a Keychain slot now (`anthropic:console`), but
       //                        the broker fills it from the `ant` login — there is no key to paste,
       //                        so a picker must never offer "add a key" for it.
@@ -213,7 +213,7 @@ export function modelCatalogWire(deps: { credentials: CredentialPresence; home: 
       // `settings.modelRoles`' per-role `efforts` answers with. Catalog truth, in the row's own
       // order: no `"none"` is prepended, unlike `sync.config`'s `models[].efforts`, where the
       // prepend is that surface's PICKER convention (`effortsForModel`, ipc/sync.ts — the catalog
-      // excludes `"none"` because it is Winter's unset, not a catalog tier). A consumer building a
+      // excludes `"none"` because it is Clover's unset, not a catalog tier). A consumer building a
       // selection control from this field adds `"none"` by that same rule; a consumer reporting what
       // the catalog KNOWS must not see a value the catalog never declared.
       efforts: effortVocabularyOf(m),

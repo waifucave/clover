@@ -1,6 +1,6 @@
 // WS-25 §7 B: the app-token ACL migration and the Keychain FFI under it — against a THROWAWAY keychain
 // FILE only (`security create-keychain` in a temp dir, deleted after; measured 2026-09-27 not to touch the
-// user's search list). Never the login keychain, never `com.winter.core*`. Every item here is created by
+// user's search list). Never the login keychain, never `com.waifucave.clover.core*`. Every item here is created by
 // this test process, so no read below can raise a consent prompt; ACLs are inspected with
 // `security dump-keychain -a`, which prints access lists without decrypting anything.
 //
@@ -15,7 +15,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
-  appTokenAclMarkerPath, enclosingAppBundle, migrateAppTokenAcl, prepareAppTokenAccess, recoverAppTokenShadows, REAL_APP_TOKEN_KEYCHAIN_OPS, trustFor, WINTER_TEAM_ID,
+  appTokenAclMarkerPath, enclosingAppBundle, migrateAppTokenAcl, prepareAppTokenAccess, recoverAppTokenShadows, REAL_APP_TOKEN_KEYCHAIN_OPS, trustFor, CLOVER_TEAM_ID,
   type AppTokenAccess, type AppTokenKeychain, type AppTokenKeychainOps, type AppTokenTrust,
 } from "../../src/auth/app-token-acl";
 import {
@@ -159,11 +159,11 @@ describe.skipIf(!darwin)("the Keychain FFI and the app-token migration (throwawa
     }
     const logs: string[] = [];
     const { k, access } = keychainWith({ logs });
-    const gap: AppTokenTrust = { ...trust(CALCULATOR), unpartitionedTeams: [WINTER_TEAM_ID] };
+    const gap: AppTokenTrust = { ...trust(CALCULATOR), unpartitionedTeams: [CLOVER_TEAM_ID] };
     const a = access(gap);
     try {
       expect(migrateAppTokenAcl(k, a, gap, home, { "harness-token": "h-1", "remote-token": "r-1" })).toMatchObject({ kind: "migrated" });
-      expect(logs.at(-1)).toContain(`not teamid:${WINTER_TEAM_ID}`);
+      expect(logs.at(-1)).toContain(`not teamid:${CLOVER_TEAM_ID}`);
       // Re-creating cannot widen the partition list (securityd keys it to the creator), and would drop a
       // team the user's "Always Allow" appended — so the same trusted set is current, gap or not.
       expect(migrateAppTokenAcl(k, a, gap, home, { "harness-token": "h-1", "remote-token": "r-1" })).toEqual({ kind: "current" });
@@ -212,7 +212,7 @@ describe.skipIf(!darwin)("the Keychain FFI and the app-token migration (throwawa
     clean();
   });
 
-  test("I2: recovery runs with NOTHING to trust (no Winter Dev registered) — the value comes back self-only", () => {
+  test("I2: recovery runs with NOTHING to trust (no Clover Dev registered) — the value comes back self-only", () => {
     clean();
     addGenericPasswordWithAccess(kc, { service: SERVICE, account: "remote-token.migrating", value: "r-shadow", trustedApplications: [null] });
     const { k, access } = keychainWith();
@@ -286,24 +286,24 @@ describe.skipIf(!darwin)("the Keychain FFI and the app-token migration (throwawa
 describe("who the wide ACL trusts", () => {
   const signed = (map: Record<string, { teamId?: string; requirement?: string }>) => (p: string, _timeoutMs: number) => map[p] ?? {};
 
-  test("dist: only the bundle winter-core itself lives in — never a Launch Services guess", () => {
-    expect(enclosingAppBundle("/Applications/Winter.app/Contents/Resources/winter-core")).toBe("/Applications/Winter.app");
-    expect(enclosingAppBundle("/usr/local/bin/winter-core")).toBeUndefined();
-    const inspect = signed({ "/Applications/Winter.app": { teamId: WINTER_TEAM_ID, requirement: "R-app" }, "/Applications/Winter.app/Contents/Resources/winter-core": { teamId: WINTER_TEAM_ID, requirement: "R-core" } });
-    const t = trustFor({ profile: "dist", executable: "/Applications/Winter.app/Contents/Resources/winter-core", lookup: () => ["/out/release/Winter.app"], inspect, exists: () => true });
-    // winter-core and the app share Winter's team, so the partition list securityd gives the items covers it.
-    expect(t).toEqual({ apps: ["/Applications/Winter.app"], requirements: ["R-app", "R-core"] });
-    // An unsigned embedded winter-core (a broken build) would partition by cdhash: reported, not hidden.
-    const unsignedCore = signed({ "/Applications/Winter.app": { teamId: WINTER_TEAM_ID, requirement: "R-app" } });
-    expect(trustFor({ profile: "dist", executable: "/Applications/Winter.app/Contents/Resources/winter-core", lookup: () => [], inspect: unsignedCore, exists: () => true })?.unpartitionedTeams).toEqual([WINTER_TEAM_ID]);
-    expect(trustFor({ profile: "dist", executable: "/opt/dist/winter-core", lookup: () => ["/x/Winter.app"], inspect, exists: () => true })).toBeUndefined();
+  test("dist: only the bundle clover-core itself lives in — never a Launch Services guess", () => {
+    expect(enclosingAppBundle("/Applications/Clover.app/Contents/Resources/clover-core")).toBe("/Applications/Clover.app");
+    expect(enclosingAppBundle("/usr/local/bin/clover-core")).toBeUndefined();
+    const inspect = signed({ "/Applications/Clover.app": { teamId: CLOVER_TEAM_ID, requirement: "R-app" }, "/Applications/Clover.app/Contents/Resources/clover-core": { teamId: CLOVER_TEAM_ID, requirement: "R-core" } });
+    const t = trustFor({ profile: "dist", executable: "/Applications/Clover.app/Contents/Resources/clover-core", lookup: () => ["/out/release/Clover.app"], inspect, exists: () => true });
+    // clover-core and the app share Clover's team, so the partition list securityd gives the items covers it.
+    expect(t).toEqual({ apps: ["/Applications/Clover.app"], requirements: ["R-app", "R-core"] });
+    // An unsigned embedded clover-core (a broken build) would partition by cdhash: reported, not hidden.
+    const unsignedCore = signed({ "/Applications/Clover.app": { teamId: CLOVER_TEAM_ID, requirement: "R-app" } });
+    expect(trustFor({ profile: "dist", executable: "/Applications/Clover.app/Contents/Resources/clover-core", lookup: () => [], inspect: unsignedCore, exists: () => true })?.unpartitionedTeams).toEqual([CLOVER_TEAM_ID]);
+    expect(trustFor({ profile: "dist", executable: "/opt/dist/clover-core", lookup: () => ["/x/Clover.app"], inspect, exists: () => true })).toBeUndefined();
   });
 
-  test("dev: Winter Dev bundles signed by Winter's team only, one per designated requirement; bun by its requirement", () => {
+  test("dev: Clover Dev bundles signed by Clover's team only, one per designated requirement; bun by its requirement", () => {
     const lookups: string[] = [];
     const inspect = signed({
-      "/dd/b/Winter Dev.app": { teamId: WINTER_TEAM_ID, requirement: "R-dev" },
-      "/dd/a/Winter Dev.app": { teamId: WINTER_TEAM_ID, requirement: "R-dev" },
+      "/dd/b/Winter Dev.app": { teamId: CLOVER_TEAM_ID, requirement: "R-dev" },
+      "/dd/a/Winter Dev.app": { teamId: CLOVER_TEAM_ID, requirement: "R-dev" },
       "/dd/evil/Winter Dev.app": { teamId: "EVILTEAM01", requirement: "R-evil" },
       "/dd/adhoc/Winter Dev.app": { requirement: "cdhash H\"00\"" },
       "/opt/homebrew/Cellar/bun/1.3.14/bin/bun": { teamId: "7FRXF46ZSN", requirement: "R-bun" },
@@ -313,15 +313,15 @@ describe("who the wide ACL trusts", () => {
       lookup: (id) => { lookups.push(id); return ["/dd/b/Winter Dev.app", "/dd/evil/Winter Dev.app", "/dd/a/Winter Dev.app", "/dd/adhoc/Winter Dev.app", "/dd/gone/Winter Dev.app"]; },
       inspect, exists: (p) => !p.includes("gone"),
     });
-    expect(lookups).toEqual(["com.winter.app.dev"]);
+    expect(lookups).toEqual(["com.waifucave.clover.dev"]);
     // bun is another team's binary: the items it creates are partitioned `teamid:7FRXF46ZSN` alone, so the
-    // Winter Dev team is named as the gap (the app is asked once per item — see `app-token-acl.ts`).
-    expect(t).toEqual({ apps: ["/dd/a/Winter Dev.app"], requirements: ["R-bun", "R-dev"], unpartitionedTeams: [WINTER_TEAM_ID] });
+    // Clover Dev team is named as the gap (the app is asked once per item — see `app-token-acl.ts`).
+    expect(t).toEqual({ apps: ["/dd/a/Winter Dev.app"], requirements: ["R-bun", "R-dev"], unpartitionedTeams: [CLOVER_TEAM_ID] });
     // A DerivedData move or a bun upgrade keeps the SAME requirement set, so the marker stays current.
-    const moved = trustFor({ profile: "dev", executable: "/opt/homebrew/Cellar/bun/1.3.15/bin/bun", lookup: () => ["/dd/c/Winter Dev.app"], exists: () => true, inspect: (p: string) => (p.endsWith(".app") ? { teamId: WINTER_TEAM_ID, requirement: "R-dev" } : { requirement: "R-bun" }) });
+    const moved = trustFor({ profile: "dev", executable: "/opt/homebrew/Cellar/bun/1.3.15/bin/bun", lookup: () => ["/dd/c/Winter Dev.app"], exists: () => true, inspect: (p: string) => (p.endsWith(".app") ? { teamId: CLOVER_TEAM_ID, requirement: "R-dev" } : { requirement: "R-bun" }) });
     expect(moved?.requirements).toEqual(t!.requirements);
-    // A dev daemon signed by Winter's team (a compiled winter-core) partitions its items by that team: no gap.
-    const teamSigned = trustFor({ profile: "dev", executable: "/src/dist/winter-core", lookup: () => ["/dd/a/Winter Dev.app"], exists: () => true, inspect: (p: string) => (p.endsWith(".app") ? { teamId: WINTER_TEAM_ID, requirement: "R-dev" } : { teamId: WINTER_TEAM_ID, requirement: "R-core-dev" }) });
+    // A dev daemon signed by Clover's team (a compiled clover-core) partitions its items by that team: no gap.
+    const teamSigned = trustFor({ profile: "dev", executable: "/src/dist/clover-core", lookup: () => ["/dd/a/Winter Dev.app"], exists: () => true, inspect: (p: string) => (p.endsWith(".app") ? { teamId: CLOVER_TEAM_ID, requirement: "R-dev" } : { teamId: CLOVER_TEAM_ID, requirement: "R-core-dev" }) });
     expect(teamSigned).toEqual({ apps: ["/dd/a/Winter Dev.app"], requirements: ["R-core-dev", "R-dev"] });
   });
 
@@ -333,7 +333,7 @@ describe("who the wide ACL trusts", () => {
       inspected.push(p);
       timeouts.push(timeoutMs);
       clock += 3_000; // every codesign takes 3 s
-      return p.endsWith(".app") ? { teamId: WINTER_TEAM_ID, requirement: `R-${p}` } : { requirement: "R-bun" };
+      return p.endsWith(".app") ? { teamId: CLOVER_TEAM_ID, requirement: `R-${p}` } : { requirement: "R-bun" };
     };
     const t = trustFor({
       profile: "dev", executable: "/bin/bun", exists: () => true, now: () => clock, budgetMs: 5_000, inspect: slow,
@@ -341,7 +341,7 @@ describe("who the wide ACL trusts", () => {
     });
     // bun (3 s) + the first bundle (3 s) spend the 5 s budget; bundles 2 and 3 are never inspected nor trusted.
     expect(inspected).toEqual(["/bin/bun", "/dd/1/Winter Dev.app"]);
-    expect(t).toEqual({ apps: ["/dd/1/Winter Dev.app"], requirements: ["R-/dd/1/Winter Dev.app", "R-bun"], unpartitionedTeams: [WINTER_TEAM_ID] });
+    expect(t).toEqual({ apps: ["/dd/1/Winter Dev.app"], requirements: ["R-/dd/1/Winter Dev.app", "R-bun"], unpartitionedTeams: [CLOVER_TEAM_ID] });
     // Each codesign got only what was left of the budget.
     expect(timeouts).toEqual([5_000, 2_000]);
   });

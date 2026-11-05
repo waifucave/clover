@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, type WritableSocket } from "@yanlinglabs/winter-protocol";
+import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, type WritableSocket } from "@waifucave/clover-protocol";
 import { startDaemon, type RunningDaemon } from "../src/daemon";
 import { FileSecretStore } from "../src/auth/secret-store";
 import { FakeProvider } from "../src/agent/fake-provider";
@@ -101,7 +101,7 @@ function writeSettingsFile(home: string, overrides: Record<string, unknown> = {}
       titles: { enabled: false },
       toolSearch: { enabled: false },
       // These are ENGINE hot-reload proofs (registry re-registration): pin the engine leg for the
-      // code sessions they mint, since Task 17 flipped the Winter defaults (P8b-13 keeps the engine
+      // code sessions they mint, since Task 17 flipped the Clover defaults (P8b-13 keeps the engine
       // selectable while it exists).
       runtimes: { winterLeg: { code: false, dispatch: false } },
       ...overrides,
@@ -134,7 +134,7 @@ function endTurnScript(): ProviderEvent[][] {
 // registry, a torn write mid-turn) retired with the engine; the hot re-registration WRITER itself
 // (`makeApply` → `registerComputer`) is pinned by test/settings-apply.test.ts.
 
-describe("hot-settings P8b: the Winter-leg keys reach the live holder with no restart", () => {
+describe("hot-settings P8b: the Clover-leg keys reach the live holder with no restart", () => {
   let daemon: RunningDaemon | undefined;
 
   // CLEARED, not just stopped: a later test that throws before its own `startDaemon` lands would
@@ -153,7 +153,7 @@ describe("hot-settings P8b: the Winter-leg keys reach the live holder with no re
   }
 
   test("winterLeg.chat, winterExecutable, winterIdleTimeoutSec and retention all flip live on ONE daemon", async () => {
-    const home = mkdtempSync(join(tmpdir(), "winter-hot-e2e-winter-"));
+    const home = mkdtempSync(join(tmpdir(), "clover-hot-e2e-clover-"));
     writeSettingsFile(home, { runtimes: undefined })   // no block at all: the absent-block state; // no `runtimes` block at all — the shipped default
     const secrets = new FileSecretStore(join(home, "test-secrets"));
     const fake = new FakeProvider(endTurnScript());
@@ -165,7 +165,7 @@ describe("hot-settings P8b: the Winter-leg keys reach the live holder with no re
     expect(daemon.settings()?.runtimes).toBeUndefined();
 
     // The `winter` binary the setting points at: a real file, so Task 2's resolver would accept it.
-    const winterBin = join(mkdtempSync(join(tmpdir(), "winter-hot-e2e-winter-bin-")), "winter");
+    const winterBin = join(mkdtempSync(join(tmpdir(), "clover-hot-e2e-clover-bin-")), "winter");
     writeFileSync(winterBin, "#!/bin/sh\nexit 0\n");
 
     writeSettingsFile(home, {
@@ -199,7 +199,7 @@ describe("hot-settings P8b: the Winter-leg keys reach the live holder with no re
   }, 20_000); // two waits on the live holder, each bounded at 5 s by untilSettings: the test's own timeout must sit above both
 
   test("advisorModel reaches the live holder too — Task 5's create.ts reads it there", async () => {
-    const home = mkdtempSync(join(tmpdir(), "winter-hot-e2e-advisor-"));
+    const home = mkdtempSync(join(tmpdir(), "clover-hot-e2e-advisor-"));
     writeSettingsFile(home);
     const secrets = new FileSecretStore(join(home, "test-secrets"));
     daemon = await startDaemon({ home, secrets, agentProvider: { provider: new FakeProvider(endTurnScript()), model: "fake-1" } });

@@ -4,11 +4,11 @@
 // Chrome for Testing on a temp profile, `--use-mock-keychain`; nothing installed or downloaded) on the cu-live suite's
 // own Material-like page (`scripts/cu-live/fixture-web/material.html`, our own markup of the ARIA patterns).
 //
-//   WINTER_BROWSER_E2E=1 bun run scripts/browser-e2e/material-run.ts [--report <file.json>]
+//   CLOVER_BROWSER_E2E=1 bun run scripts/browser-e2e/material-run.ts [--report <file.json>]
 //
 // The page POSTs what it sees to this runner's `/log`: every row compares what the engine SAID with what the page
 // SAW. Headless: the renderer, the DOM and CDP's `Input.*` are the browser's own; what this does not cover is the
-// transport (Winter for Chrome's `chrome.debugger`, Winter.app's link). The app legs (the browser bound as an app,
+// transport (Winter for Chrome's `chrome.debugger`, Clover.app's link). The app legs (the browser bound as an app,
 // the screen) are the cu-live suite's `chrome` group.
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
@@ -27,15 +27,15 @@ import type { TabHandle } from "../../packages/core/src/computer-use/worker/brid
 import { PipeTransport } from "./pipe-transport";
 import { pageEventsSince, type PageEvent } from "../cu-live/chrome";
 
-if (process.env.WINTER_BROWSER_E2E !== "1") {
-  console.log("material-run is opt-in: run with WINTER_BROWSER_E2E=1 (it launches a headless Chrome for Testing on a temp profile)");
+if (process.env.CLOVER_BROWSER_E2E !== "1") {
+  console.log("material-run is opt-in: run with CLOVER_BROWSER_E2E=1 (it launches a headless Chrome for Testing on a temp profile)");
   process.exit(0);
 }
 const argv = process.argv.slice(2);
 const reportAt: string = (argv.includes("--report") ? argv[argv.indexOf("--report") + 1] : undefined) ?? join(import.meta.dir, "..", "..", "out", "browser-e2e", "material-report.json");
 
 function findChrome(): string | undefined {
-  const env = process.env.WINTER_TEST_CHROME;
+  const env = process.env.CLOVER_TEST_CHROME;
   if (env !== undefined && env.length > 0) return env;
   const cache = join(homedir(), "Library", "Caches", "ms-playwright");
   if (!existsSync(cache)) return undefined;
@@ -46,7 +46,7 @@ function findChrome(): string | undefined {
   return undefined;
 }
 const chrome = findChrome();
-if (chrome === undefined) { console.error("no Chrome for Testing: set WINTER_TEST_CHROME"); process.exit(1); }
+if (chrome === undefined) { console.error("no Chrome for Testing: set CLOVER_TEST_CHROME"); process.exit(1); }
 
 // ── the page and its log ──────────────────────────────────────────────────────────────────────────────────────────
 const PAGE = join(import.meta.dir, "..", "cu-live", "fixture-web", "material.html");
@@ -71,13 +71,13 @@ const browser = new PipeTransport("chrome", "chrome");
 browser.features = new Set(["cdp3"]);
 await browser.launch(chrome, []);
 registry.register(browser, { family: "chrome", name: "Chrome for Testing", bundleId: "com.google.chrome.for.testing", instanceKey: "chrome-material" });
-const cwd = mkdtempSync(join(tmpdir(), "winter-material-e2e-cwd-"));
+const cwd = mkdtempSync(join(tmpdir(), "clover-material-e2e-cwd-"));
 const engine = new BrowserEngine({
-  registry, mintWinterTab: () => "unused", winterTabs: () => ({ tabs: [] }), sessionInfo: () => ({ cwd, title: "material" }),
+  registry, mintCloverTab: () => "unused", cloverTabs: () => ({ tabs: [] }), sessionInfo: () => ({ cwd, title: "material" }),
   site: { dangerousDomainsAdded: () => [], savedAllowRules: () => [] },
-  home: mkdtempSync(join(tmpdir(), "winter-material-e2e-home-")),
+  home: mkdtempSync(join(tmpdir(), "clover-material-e2e-home-")),
   uploadRoots: () => ({ denyRead: [] }),
-  downloadRoots: () => ({ tmpDir: mkdtempSync(join(tmpdir(), "winter-material-e2e-tmp-")), denyWrite: [], denyRead: [] }),
+  downloadRoots: () => ({ tmpDir: mkdtempSync(join(tmpdir(), "clover-material-e2e-tmp-")), denyWrite: [], denyRead: [] }),
 });
 const locks = new TargetLocks();
 const diffBases = new DiffBases();

@@ -1,4 +1,4 @@
-// P8b Task 17 Step 0(a) — WINTER'S VOICE ON THE WINTER LEG, pinned byte-for-byte per mode against
+// P8b Task 17 Step 0(a) — CLOVER'S VOICE ON THE CLOVER LEG, pinned byte-for-byte per mode against
 // the engine's `assemble({...})` mapping. Until Step 4 this file ran a REAL `AgentEngine` turn over
 // the fake provider and compared its recorded `instructions` (equality, not prefix — the engine ran
 // with no ToolSearch config under `auto`, so `buildInstructionsFull` added nothing); the engine is
@@ -17,23 +17,23 @@ import { sessionTmpDir } from "../../src/agent/session-tmp";
 import { SkillStore } from "../../src/agent/skills";
 import { TrustStore } from "../../src/agent/trust";
 import { clientEffortEligible, isClientEffort } from "../../src/settings";
-import { buildWinterOptions } from "../../src/runtime-sdk/mode-options";
-import { winterSystemPromptFor } from "../../src/runtime-sdk/system-prompt";
+import { buildCloverOptions } from "../../src/runtime-sdk/mode-options";
+import { cloverSystemPromptFor } from "../../src/runtime-sdk/system-prompt";
 import { SessionHub } from "../../src/sessions/hub";
 import { SessionStore } from "../../src/sessions/store";
 import { storeHomeFor } from "../../src/agent/paths";
 
 function world(style?: ResolvedStyle) {
-  const home = realpathSync(mkdtempSync(join(tmpdir(), "winter-voice-")));
-  const cwd = realpathSync(mkdtempSync(join(tmpdir(), "winter-voice-cwd-")));
+  const home = realpathSync(mkdtempSync(join(tmpdir(), "clover-voice-")));
+  const cwd = realpathSync(mkdtempSync(join(tmpdir(), "clover-voice-cwd-")));
   const trust = new TrustStore(join(home, "trust.json"));
   trust.trust(cwd);
-  writeFileSync(join(cwd, "WINTER.md"), "PROJECT_RULE_SENTINEL");
+  writeFileSync(join(cwd, "CLOVER.md"), "PROJECT_RULE_SENTINEL");
   mkdirSync(join(home, "memory", "_assistant"), { recursive: true });
   writeFileSync(join(home, "memory", "_assistant", "MEMORY.md"), "- ASSISTANT_MEMORY_SENTINEL\n");
-  const skills = new SkillStore({ winterHome: home, trust });
+  const skills = new SkillStore({ cloverHome: home, trust });
   const assembler = new ContextAssembler({
-    winterHome: home, trust, skills,
+    cloverHome: home, trust, skills,
     memory: { enabled: () => true, dirFor: () => join(home, "memory", "project"), assistantDir: () => join(home, "memory", "_assistant") },
     ...(style === undefined ? {} : { styleResolver: () => style }),
   });
@@ -83,32 +83,32 @@ function engineInstructions(w: ReturnType<typeof world>, session: { mode?: "code
   const sessionId = w.store.createSession("global", { approvalPolicy: "auto", ...session });
   return engineAssemble(w.assembler, session, sessionId);
 }
-describe("winterSystemPromptFor — the engine's composed instructions, per mode", () => {
-  test("chat: Winter's chat persona + the _assistant bucket, byte-identical to the engine's turn", async () => {
+describe("cloverSystemPromptFor — the engine's composed instructions, per mode", () => {
+  test("chat: Clover's chat persona + the _assistant bucket, byte-identical to the engine's turn", async () => {
     const w = world();
     // the Mac app creates chat sessions with cwd = the home directory; the persona reads no
     // project instructions, but the assembler's other sections still key off the cwd
     const engine = await engineInstructions(w, { mode: "chat", cwd: w.cwd });
-    const ours = winterSystemPromptFor(w.assembler, { mode: "chat", primary: w.cwd, cwd: w.cwd });
+    const ours = cloverSystemPromptFor(w.assembler, { mode: "chat", primary: w.cwd, cwd: w.cwd });
     expect(engine).toContain("ASSISTANT_MEMORY_SENTINEL");
     expect(ours).toBe(engine);
     // and a chat session WITHOUT a cwd (a phone-created one after SP3.4 gets homedir; a harness one may not)
     const bare = await engineInstructions(w, { mode: "chat" });
     const sid = w.store.list().find((r) => r.cwd === undefined && r.mode === "chat")!.sessionId;
-    expect(winterSystemPromptFor(w.assembler, { mode: "chat", primary: undefined, cwd: sessionTmpDir(sid) })).toBe(bare);
+    expect(cloverSystemPromptFor(w.assembler, { mode: "chat", primary: undefined, cwd: sessionTmpDir(sid) })).toBe(bare);
   });
 
   test("dispatch: the coordinator's own base + the _assistant bucket", async () => {
     const w = world();
     const engine = await engineInstructions(w, { mode: "dispatch", cwd: w.cwd });
-    const ours = winterSystemPromptFor(w.assembler, { mode: "dispatch", primary: w.cwd, cwd: w.cwd });
+    const ours = cloverSystemPromptFor(w.assembler, { mode: "dispatch", primary: w.cwd, cwd: w.cwd });
     expect(ours).toBe(engine);
   });
 
-  test("code with a cwd: the base prompt, the TRUSTED project WINTER.md, the project bucket", async () => {
+  test("code with a cwd: the base prompt, the TRUSTED project CLOVER.md, the project bucket", async () => {
     const w = world();
     const engine = await engineInstructions(w, { mode: "code", cwd: w.cwd });
-    const ours = winterSystemPromptFor(w.assembler, { mode: "code", primary: w.cwd, cwd: w.cwd });
+    const ours = cloverSystemPromptFor(w.assembler, { mode: "code", primary: w.cwd, cwd: w.cwd });
     expect(engine).toContain("PROJECT_RULE_SENTINEL");
     expect(ours).toBe(engine);
   });
@@ -117,7 +117,7 @@ describe("winterSystemPromptFor — the engine's composed instructions, per mode
     const w = world();
     const sessionId = w.store.createSession("global", { approvalPolicy: "auto" });
     const engine = engineAssemble(w.assembler, {}, sessionId);
-    const ours = winterSystemPromptFor(w.assembler, { mode: "code", primary: undefined, cwd: sessionTmpDir(sessionId) });
+    const ours = cloverSystemPromptFor(w.assembler, { mode: "code", primary: undefined, cwd: sessionTmpDir(sessionId) });
     expect(ours).toBe(engine);
   });
 
@@ -126,22 +126,22 @@ describe("winterSystemPromptFor — the engine's composed instructions, per mode
     const w = world(style);
     const code = await engineInstructions(w, { mode: "code", cwd: w.cwd });
     expect(code).toContain("PIRATE_STYLE_BODY");
-    expect(winterSystemPromptFor(w.assembler, { mode: "code", primary: w.cwd, cwd: w.cwd })).toBe(code);
+    expect(cloverSystemPromptFor(w.assembler, { mode: "code", primary: w.cwd, cwd: w.cwd })).toBe(code);
     const child = await engineInstructions(w, { mode: "code", cwd: w.cwd, origin: "dispatch-child" });
     expect(child).not.toContain("PIRATE_STYLE_BODY");
-    expect(winterSystemPromptFor(w.assembler, { mode: "code", origin: "dispatch-child", primary: w.cwd, cwd: w.cwd })).toBe(child);
+    expect(cloverSystemPromptFor(w.assembler, { mode: "code", origin: "dispatch-child", primary: w.cwd, cwd: w.cwd })).toBe(child);
     const chat = await engineInstructions(w, { mode: "chat", cwd: w.cwd });
     expect(chat).not.toContain("PIRATE_STYLE_BODY");
-    expect(winterSystemPromptFor(w.assembler, { mode: "chat", primary: w.cwd, cwd: w.cwd })).toBe(chat);
+    expect(cloverSystemPromptFor(w.assembler, { mode: "chat", primary: w.cwd, cwd: w.cwd })).toBe(chat);
   });
 
   test("ultra effort on a code session adds the delegation paragraph on both sides; on chat it is inert", async () => {
     const w = world();
     const code = await engineInstructions(w, { mode: "code", cwd: w.cwd, effort: "ultra" });
-    expect(winterSystemPromptFor(w.assembler, { mode: "code", primary: w.cwd, cwd: w.cwd, effort: "ultra" })).toBe(code);
-    expect(code).not.toBe(winterSystemPromptFor(w.assembler, { mode: "code", primary: w.cwd, cwd: w.cwd }));
+    expect(cloverSystemPromptFor(w.assembler, { mode: "code", primary: w.cwd, cwd: w.cwd, effort: "ultra" })).toBe(code);
+    expect(code).not.toBe(cloverSystemPromptFor(w.assembler, { mode: "code", primary: w.cwd, cwd: w.cwd }));
     const chat = await engineInstructions(w, { mode: "chat", cwd: w.cwd, effort: "ultra" });
-    expect(winterSystemPromptFor(w.assembler, { mode: "chat", primary: w.cwd, cwd: w.cwd, effort: "ultra" })).toBe(chat);
+    expect(cloverSystemPromptFor(w.assembler, { mode: "chat", primary: w.cwd, cwd: w.cwd, effort: "ultra" })).toBe(chat);
   });
 
   // B1 (2026-09-22): the dist session was told about skills in the SYSTEM PROMPT that its child could
@@ -156,7 +156,7 @@ describe("winterSystemPromptFor — the engine's composed instructions, per mode
     mkdirSync(join(w.home, "plugins", "superpowers", "skills", "brainstorming"), { recursive: true });
     writeFileSync(join(w.home, "plugins", "superpowers", "skills", "brainstorming", "SKILL.md"), "---\nname: brainstorming\ndescription: PLUGIN_SKILL_SENTINEL\n---\nx\n");
     for (const mode of ["chat", "dispatch", "code"] as const) {
-      const text = winterSystemPromptFor(w.assembler, { mode, primary: w.cwd, cwd: w.cwd });
+      const text = cloverSystemPromptFor(w.assembler, { mode, primary: w.cwd, cwd: w.cwd });
       expect(text).not.toContain("### Skills");
       expect(text).not.toContain("GREET_SKILL_SENTINEL");
       expect(text).not.toContain("PLUGIN_SKILL_SENTINEL");
@@ -173,19 +173,19 @@ describe("winterSystemPromptFor — the engine's composed instructions, per mode
     const a = world();
     const b = world();
     const nullStyle = new ContextAssembler({
-      winterHome: b.home, trust: new TrustStore(join(b.home, "trust.json")), skills: new SkillStore({ winterHome: b.home, trust: new TrustStore(join(b.home, "trust.json")) }),
+      cloverHome: b.home, trust: new TrustStore(join(b.home, "trust.json")), skills: new SkillStore({ cloverHome: b.home, trust: new TrustStore(join(b.home, "trust.json")) }),
       memory: { enabled: () => true, dirFor: () => join(b.home, "memory", "project"), assistantDir: () => join(b.home, "memory", "_assistant") },
       styleResolver: () => null,
     });
     for (const mode of ["chat", "dispatch", "code"] as const) {
-      const x = winterSystemPromptFor(a.assembler, { mode, primary: a.cwd, cwd: a.cwd });
-      const y = winterSystemPromptFor(nullStyle, { mode, primary: b.cwd, cwd: b.cwd });
+      const x = cloverSystemPromptFor(a.assembler, { mode, primary: a.cwd, cwd: a.cwd });
+      const y = cloverSystemPromptFor(nullStyle, { mode, primary: b.cwd, cwd: b.cwd });
       // the two worlds differ only in their paths; normalise them out
       const norm = (text: string, w: ReturnType<typeof world>) => text.split(w.home).join("<home>").split(w.cwd).join("<cwd>");
       expect(norm(y, b)).toBe(norm(x, a));
-      const options = buildWinterOptions({
+      const options = buildCloverOptions({
         mode, policy: mode === "chat" ? "chat" : "auto", sessionId: "00000000-0000-4000-8000-000000000001", home: a.home, cwd: a.cwd,
-        credentials: { byProvider: {} }, spawn: { pathToClaudeCodeExecutable: "/x/winter" }, canUseTool: async () => ({ behavior: "deny", message: "no" }),
+        credentials: { byProvider: {} }, spawn: { pathToClaudeCodeExecutable: "/x/clover" }, canUseTool: async () => ({ behavior: "deny", message: "no" }),
         abort: new AbortController(), systemPrompt: x,
       });
       expect(options.systemPrompt).toBe(x);
@@ -199,7 +199,7 @@ describe("winterSystemPromptFor — the engine's composed instructions, per mode
 // ------------------------------------------------------------------------------------------------
 
 describe("image-path guidance (code and dispatch)", () => {
-  const LINE = "An image path in the user's message that sits inside a `winter-session-…/images/` folder is a staged copy you may move to keep; any other image path is the user's own file — read or copy it, never move, rename or edit it unless the user asks.";
+  const LINE = "An image path in the user's message that sits inside a `clover-session-…/images/` folder is a staged copy you may move to keep; any other image path is the user's own file — read or copy it, never move, rename or edit it unless the user asks.";
 
   test("the line is exactly the ruled sentence", () => {
     expect(IMAGE_PATH_GUIDANCE).toBe(LINE);
@@ -209,11 +209,11 @@ describe("image-path guidance (code and dispatch)", () => {
     const w = world();
     const sessionId = w.store.createSession("global", { approvalPolicy: "auto" });
     const prompts = [
-      winterSystemPromptFor(w.assembler, { mode: "code", primary: w.cwd, cwd: w.cwd }),
-      winterSystemPromptFor(w.assembler, { mode: "code", primary: undefined, cwd: sessionTmpDir(sessionId) }),
-      winterSystemPromptFor(w.assembler, { mode: "code", origin: "dispatch-child", primary: w.cwd, cwd: w.cwd }),
-      winterSystemPromptFor(w.assembler, { mode: "code", primary: w.cwd, cwd: w.cwd, effort: "ultra" }),
-      winterSystemPromptFor(w.assembler, { mode: "code", primary: w.cwd, cwd: w.cwd, outDir: join(w.home, "outputs", "s"), runHomeApplied: true }),
+      cloverSystemPromptFor(w.assembler, { mode: "code", primary: w.cwd, cwd: w.cwd }),
+      cloverSystemPromptFor(w.assembler, { mode: "code", primary: undefined, cwd: sessionTmpDir(sessionId) }),
+      cloverSystemPromptFor(w.assembler, { mode: "code", origin: "dispatch-child", primary: w.cwd, cwd: w.cwd }),
+      cloverSystemPromptFor(w.assembler, { mode: "code", primary: w.cwd, cwd: w.cwd, effort: "ultra" }),
+      cloverSystemPromptFor(w.assembler, { mode: "code", primary: w.cwd, cwd: w.cwd, outDir: join(w.home, "outputs", "s"), runHomeApplied: true }),
     ];
     for (const text of prompts) expect(text.split(LINE).length - 1).toBe(1);
   });
@@ -221,13 +221,13 @@ describe("image-path guidance (code and dispatch)", () => {
   test("it is NOT in chat's prompt (chat takes no attachments)", () => {
     const w = world();
     for (const exaKeyPresent of [true, false]) {
-      expect(winterSystemPromptFor(w.assembler, { mode: "chat", primary: w.cwd, cwd: w.cwd, exaKeyPresent })).not.toContain("never move, rename or edit it");
-      expect(winterSystemPromptFor(w.assembler, { mode: "chat", primary: undefined, cwd: w.cwd, exaKeyPresent, runHomeApplied: true })).not.toContain("never move, rename or edit it");
-      expect(winterSystemPromptFor(w.assembler, { mode: "chat", primary: w.cwd, cwd: w.cwd, exaKeyPresent })).not.toContain("winter-session-…/images/");
+      expect(cloverSystemPromptFor(w.assembler, { mode: "chat", primary: w.cwd, cwd: w.cwd, exaKeyPresent })).not.toContain("never move, rename or edit it");
+      expect(cloverSystemPromptFor(w.assembler, { mode: "chat", primary: undefined, cwd: w.cwd, exaKeyPresent, runHomeApplied: true })).not.toContain("never move, rename or edit it");
+      expect(cloverSystemPromptFor(w.assembler, { mode: "chat", primary: w.cwd, cwd: w.cwd, exaKeyPresent })).not.toContain("clover-session-…/images/");
     }
   });
 
-  const DISPATCH_LINE = "An image path in the user's message that sits inside a `winter-session-…/images/` folder is a staged copy of a pasted image, kept for about two weeks; any other image or file path is the user's own file. Read either (Read, or Bash for inspection) — anything that changes, moves or copies files routes to SpawnSession, with the path in the child's prompt.";
+  const DISPATCH_LINE = "An image path in the user's message that sits inside a `clover-session-…/images/` folder is a staged copy of a pasted image, kept for about two weeks; any other image or file path is the user's own file. Read either (Read, or Bash for inspection) — anything that changes, moves or copies files routes to SpawnSession, with the path in the child's prompt.";
 
   test("the dispatch coordinator gets ITS OWN line (2026-10-19) — exactly once, after its base, before the date; never the code line's move/copy licence", () => {
     expect(DISPATCH_IMAGE_PATH_GUIDANCE).toBe(DISPATCH_LINE);
@@ -236,25 +236,25 @@ describe("image-path guidance (code and dispatch)", () => {
     expect(dispatchSystemPrompt()).toContain("Anything that CHANGES FILES routes to SpawnSession");
     const w = world();
     const prompts = [
-      winterSystemPromptFor(w.assembler, { mode: "dispatch", primary: w.cwd, cwd: w.cwd }),
-      winterSystemPromptFor(w.assembler, { mode: "dispatch", primary: undefined, cwd: w.cwd, exaKeyPresent: false, computerOffered: false }),
-      winterSystemPromptFor(w.assembler, { mode: "dispatch", primary: undefined, cwd: w.cwd, outDir: join(w.home, "outputs", "d"), runHomeApplied: true }),
+      cloverSystemPromptFor(w.assembler, { mode: "dispatch", primary: w.cwd, cwd: w.cwd }),
+      cloverSystemPromptFor(w.assembler, { mode: "dispatch", primary: undefined, cwd: w.cwd, exaKeyPresent: false, computerOffered: false }),
+      cloverSystemPromptFor(w.assembler, { mode: "dispatch", primary: undefined, cwd: w.cwd, outDir: join(w.home, "outputs", "d"), runHomeApplied: true }),
     ];
     for (const text of prompts) {
       expect(text.split(DISPATCH_LINE).length - 1).toBe(1);
       expect(text).not.toContain(LINE);
       expect(text).not.toContain("never move, rename or edit it");
-      expect(text.startsWith("You are Winter in Dispatch mode")).toBe(true);
+      expect(text.startsWith("You are Clover in Dispatch mode")).toBe(true);
       expect(text.indexOf(DISPATCH_LINE)).toBeLessThan(text.indexOf("Today's date is"));
     }
     // The cached prefix stays put: two dispatch sessions get the same bytes up to the date line, and the line names
     // no session or path.
     const s1 = w.store.createSession("global", { approvalPolicy: "auto", mode: "dispatch" });
     const s2 = w.store.createSession("global", { approvalPolicy: "auto", mode: "dispatch" });
-    const a = winterSystemPromptFor(w.assembler, { mode: "dispatch", primary: undefined, cwd: sessionTmpDir(s1) });
-    const b = winterSystemPromptFor(w.assembler, { mode: "dispatch", primary: undefined, cwd: sessionTmpDir(s2) });
+    const a = cloverSystemPromptFor(w.assembler, { mode: "dispatch", primary: undefined, cwd: sessionTmpDir(s1) });
+    const b = cloverSystemPromptFor(w.assembler, { mode: "dispatch", primary: undefined, cwd: sessionTmpDir(s2) });
     expect(a.slice(0, a.indexOf("Today's date is"))).toBe(b.slice(0, b.indexOf("Today's date is")));
-    expect(DISPATCH_LINE).not.toMatch(/\$\{|s_[0-9a-f]{6}|\/tmp|winter-session-[0-9a-z_]/);
+    expect(DISPATCH_LINE).not.toMatch(/\$\{|s_[0-9a-f]{6}|\/tmp|clover-session-[0-9a-z_]/);
   });
 
   test("an explicit imagePathGuidance picks the line under either base", () => {
@@ -271,13 +271,13 @@ describe("image-path guidance (code and dispatch)", () => {
   test("it is static: nothing per-message or per-session is in it, and a base-replacing output style keeps it", () => {
     const style: ResolvedStyle = { name: "pirate", description: "arr", body: "PIRATE_STYLE_BODY", keepCodingInstructions: false };
     const w = world(style);
-    const a = winterSystemPromptFor(w.assembler, { mode: "code", primary: w.cwd, cwd: w.cwd });
+    const a = cloverSystemPromptFor(w.assembler, { mode: "code", primary: w.cwd, cwd: w.cwd });
     expect(a).toContain("PIRATE_STYLE_BODY"); // the style replaced the base slot…
     expect(a).toContain(LINE);                // …and the line, which is not part of the base, survived
     // …and it names the staged FOLDER SHAPE — the one thing the daemon guarantees about a staged copy —
     // while carrying no concrete session id or path.
-    expect(LINE).toContain("`winter-session-…/images/`");
-    expect(LINE).not.toMatch(/\$\{|s_[0-9a-f]{6}|\/tmp|winter-session-[0-9a-z_]/);
+    expect(LINE).toContain("`clover-session-…/images/`");
+    expect(LINE).not.toMatch(/\$\{|s_[0-9a-f]{6}|\/tmp|clover-session-[0-9a-z_]/);
   });
 });
 
@@ -303,7 +303,7 @@ describe("chat/dispatch base prompts follow the Exa key", () => {
       expect(text).toContain("WebFetch");
       // `Search` appears only inside the sentence that says it is NOT available and how to turn it on —
       // never as an instruction to use it.
-      expect(text).toContain("winter login --exa-key");
+      expect(text).toContain("clover login --exa-key");
     }
   });
 
@@ -321,16 +321,16 @@ describe("chat/dispatch base prompts follow the Exa key", () => {
     }
   });
 
-  test("winterSystemPromptFor threads it through, and code mode is unaffected either way", () => {
+  test("cloverSystemPromptFor threads it through, and code mode is unaffected either way", () => {
     const w = world();
-    const chatWith = winterSystemPromptFor(w.assembler, { mode: "chat", primary: w.cwd, cwd: w.cwd, exaKeyPresent: true });
-    const chatWithout = winterSystemPromptFor(w.assembler, { mode: "chat", primary: w.cwd, cwd: w.cwd, exaKeyPresent: false });
+    const chatWith = cloverSystemPromptFor(w.assembler, { mode: "chat", primary: w.cwd, cwd: w.cwd, exaKeyPresent: true });
+    const chatWithout = cloverSystemPromptFor(w.assembler, { mode: "chat", primary: w.cwd, cwd: w.cwd, exaKeyPresent: false });
     expect(chatWith).not.toBe(chatWithout);
     expect(chatWithout).toContain("WebSearch");
-    expect(winterSystemPromptFor(w.assembler, { mode: "chat", primary: w.cwd, cwd: w.cwd })).toBe(chatWith);
+    expect(cloverSystemPromptFor(w.assembler, { mode: "chat", primary: w.cwd, cwd: w.cwd })).toBe(chatWith);
     // Code mode has no base-prompt override at all, so the key changes nothing there.
-    expect(winterSystemPromptFor(w.assembler, { mode: "code", primary: w.cwd, cwd: w.cwd, exaKeyPresent: false }))
-      .toBe(winterSystemPromptFor(w.assembler, { mode: "code", primary: w.cwd, cwd: w.cwd, exaKeyPresent: true }));
+    expect(cloverSystemPromptFor(w.assembler, { mode: "code", primary: w.cwd, cwd: w.cwd, exaKeyPresent: false }))
+      .toBe(cloverSystemPromptFor(w.assembler, { mode: "code", primary: w.cwd, cwd: w.cwd, exaKeyPresent: true }));
   });
 });
 
@@ -375,10 +375,10 @@ describe("dispatch's base prompt follows which computer tool was built", () => {
     expect(dispatchSystemPrompt({ exaKeyPresent: false })).toBe(dispatchSystemPrompt({ exaKeyPresent: false, computerOffered: "ComputerV2" }));
   });
 
-  test("winterSystemPromptFor threads it to dispatch only; chat and code are unaffected", () => {
+  test("cloverSystemPromptFor threads it to dispatch only; chat and code are unaffected", () => {
     const w = world();
     const at = (mode: "chat" | "code" | "dispatch", computerOffered?: boolean | "Computer" | "ComputerV2") =>
-      winterSystemPromptFor(w.assembler, { mode, primary: w.cwd, cwd: w.cwd, ...(computerOffered === undefined ? {} : { computerOffered }) });
+      cloverSystemPromptFor(w.assembler, { mode, primary: w.cwd, cwd: w.cwd, ...(computerOffered === undefined ? {} : { computerOffered }) });
     expect(at("dispatch", false)).toContain("Computer use is turned off");
     expect(at("dispatch", true)).not.toContain("Computer use is turned off");
     expect(at("dispatch")).toBe(at("dispatch", true));
@@ -457,8 +457,8 @@ describe("dispatch's base prompt — act first, ask with the tool, click by ref"
 
   test("chat and code are unaffected; code's BASE_PROMPT names the question tool as the model sees it", () => {
     const w = world();
-    const code = winterSystemPromptFor(w.assembler, { mode: "code", primary: w.cwd, cwd: w.cwd });
-    const chat = winterSystemPromptFor(w.assembler, { mode: "chat", primary: w.cwd, cwd: w.cwd });
+    const code = cloverSystemPromptFor(w.assembler, { mode: "code", primary: w.cwd, cwd: w.cwd });
+    const chat = cloverSystemPromptFor(w.assembler, { mode: "chat", primary: w.cwd, cwd: w.cwd });
     for (const text of [code, chat]) {
       expect(text).not.toContain("# Act first; ask with the tool");
       expect(text).not.toContain("# Answer briefly");

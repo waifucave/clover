@@ -7,7 +7,7 @@
 // model no longer has the old state in its context, so a diff against it would describe changes to something
 // it cannot see. Compaction is read off the session log: a main-thread `continuity_warning` with
 // `warning: "compacted"` (`projector/index.ts`).
-import type { SessionEvent } from "@yanlinglabs/winter-protocol";
+import type { SessionEvent } from "@waifucave/clover-protocol";
 
 export class DiffBases {
   private readonly bases = new Map<string, Map<string, string>>();

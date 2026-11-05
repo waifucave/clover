@@ -12,7 +12,7 @@ const APP = "/tmp/x/Winter Headless Dev.app";
 
 describe("the command line", () => {
   test("defaults, the app from the environment, and every flag", () => {
-    const o = parseHeadlessOptions([], { WINTER_HEADLESS_APP: APP });
+    const o = parseHeadlessOptions([], { CLOVER_HEADLESS_APP: APP });
     if ("error" in o) throw new Error(o.error);
     expect(o).toMatchObject({ app: APP, verify: true, userTyping: false, load: false, promptProbes: false, keepTemp: false });
     expect([...o.checks].sort()).toEqual([...HEADLESS_CHECKS].sort());
@@ -101,7 +101,7 @@ describe("the readers", () => {
 
   test("the processes inside the helper app — never this run's own command line naming it", () => {
     const ps = [
-      `  101 ${APP}/Contents/MacOS/Winter Headless Dev --winter-cache-root=/tmp/c`,
+      `  101 ${APP}/Contents/MacOS/Winter Headless Dev --clover-cache-root=/tmp/c`,
       `  102 ${APP}/Contents/Frameworks/Winter Helper (Renderer).app/Contents/MacOS/Winter Helper (Renderer) --type=renderer`,
       `  103 /usr/local/bin/bun scripts/cu-live/headless.ts --app ${APP}`,
       `  104 /tmp/x/Winter Headless Dev.app.bak/Contents/MacOS/other`,
@@ -112,12 +112,12 @@ describe("the readers", () => {
     expect(processesInside(ps, `${APP}/`, ours).map((p) => p.pid)).toEqual([101, 102]);
   });
 
-  test("a process inside the helper app that this run's helper never held is not its — Winter.app's own CEF runs from there too", () => {
+  test("a process inside the helper app that this run's helper never held is not its — Clover.app's own CEF runs from there too", () => {
     const nested = "/Applications/Winter.app/Contents/Helpers/Winter Headless.app";
     const ps = [
-      `  201 ${nested}/Contents/MacOS/Winter Headless --winter-cache-root=/tmp/c`,
+      `  201 ${nested}/Contents/MacOS/Winter Headless --clover-cache-root=/tmp/c`,
       `  202 ${nested}/Contents/Frameworks/Winter Helper (Renderer).app/Contents/MacOS/Winter Helper (Renderer) --type=renderer`,
-      // Winter.app's own panel browser: the same executables, another parent.
+      // Clover.app's own panel browser: the same executables, another parent.
       `  301 ${nested}/Contents/Frameworks/Winter Helper (GPU).app/Contents/MacOS/Winter Helper (GPU) --type=gpu-process`,
       `  302 ${nested}/Contents/Frameworks/Winter Helper (Renderer).app/Contents/MacOS/Winter Helper (Renderer) --type=renderer`,
     ].join("\n");

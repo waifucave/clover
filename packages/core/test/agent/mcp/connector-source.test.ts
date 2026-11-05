@@ -15,18 +15,18 @@ function git(dir: string): void {
 }
 
 function fixture() {
-  const home = realpathSync(mkdtempSync(join(tmpdir(), "winter-conn-src-")));
-  const project = realpathSync(mkdtempSync(join(tmpdir(), "winter-conn-proj-")));
-  const localOnly = realpathSync(mkdtempSync(join(tmpdir(), "winter-conn-local-")));
+  const home = realpathSync(mkdtempSync(join(tmpdir(), "clover-conn-src-")));
+  const project = realpathSync(mkdtempSync(join(tmpdir(), "clover-conn-proj-")));
+  const localOnly = realpathSync(mkdtempSync(join(tmpdir(), "clover-conn-local-")));
   git(project);
   git(localOnly);
   mkdirSync(join(home, "sdk"), { recursive: true });
-  writeFileSync(join(home, "sdk", ".winter.json"), JSON.stringify({
+  writeFileSync(join(home, "sdk", ".clover.json"), JSON.stringify({
     mcpServers: { cf: { type: "stdio", command: "cf" }, remote: { type: "http", url: "https://example.test/mcp" } },
     projects: { [localOnly]: { mcpServers: { cf: { type: "stdio", command: "cf-local" } } } },
   }));
-  mkdirSync(join(project, ".winter"), { recursive: true });
-  writeFileSync(join(project, ".winter", "mcp.json"), JSON.stringify({ mcpServers: { cf: { type: "stdio", command: "cf-project" } } }));
+  mkdirSync(join(project, ".clover"), { recursive: true });
+  writeFileSync(join(project, ".clover", "mcp.json"), JSON.stringify({ mcpServers: { cf: { type: "stdio", command: "cf-project" } } }));
   const trust = { isTrusted: (d: string) => d === project } as unknown as TrustStore;
   const connects: string[] = [];
   const manager = new McpManager({

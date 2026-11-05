@@ -1,6 +1,6 @@
 export { startDaemon, CORE_VERSION, type RunningDaemon } from "./daemon";
-export { bootstrapWinterDir, resolveWinterHome, isDefaultWinterHome } from "./winter-dir";
-export { resolveWinterProfile, keychainService, profileDisplayName, cliCommandName, type WinterProfile } from "./profile";
+export { bootstrapCloverDir, resolveCloverHome, isDefaultCloverHome } from "./clover-dir";
+export { resolveCloverProfile, keychainService, profileDisplayName, cliCommandName, type CloverProfile } from "./profile";
 export {
   LEGACY_LAUNCHD_LABEL, LEGACY_HOME_DIR, LEGACY_DEV_HOME_DIR, LEGACY_HOME_ENV, LEGACY_PROFILE_ENV,
   LEGACY_TMPDIR_ENV, LEGACY_KEYCHAIN_SERVICE, LEGACY_KEYCHAIN_SERVICE_DEV, LEGACY_CLI_LINK,
@@ -14,7 +14,7 @@ export {
   REASONING_EFFORTS, setProviderModel, setReasoningEffort, setOutputStyle, setAdvisorModel, memoryEnabledFrom,
   workflowsEnabledFrom, keywordTriggerEnabledFrom,
   setMcpServerEntry, removeMcpServerEntry,
-  // `winter mcp get`'s no-daemon path (`mcp-cli.ts`) needs the SAME read-door correction the RPC
+  // `clover mcp get`'s no-daemon path (`mcp-cli.ts`) needs the SAME read-door correction the RPC
   // handler already applies (`ipc/server.ts`'s `mcp.get`/`mcp.list`): which credential-shaped
   // headers `loadSettings` silently stripped from a USER-scope entry, read fresh off the raw file
   // (never off the already-stripped `Settings` value, which can no longer say what it removed).
@@ -22,7 +22,7 @@ export {
   // WS-21: the runtime-facing keys live in `sdk/` now — these are their only doors (spec §4.1).
   MOVED_SETTINGS_KEYS, withoutMovedKeys, sdkAllowRules, sdkDenyRules, sdkAdditionalDirectories, sdkOutputStyle,
   sdkAutoMemory, sdkEnabledPlugins, sdkUserMcpServers, sdkLocalMcpServers, validateMcpServerEntryForWrite,
-  // WS-26: `winter mcp permissions`'s no-daemon path writes and reads the same table the daemon enforces.
+  // WS-26: `clover mcp permissions`'s no-daemon path writes and reads the same table the daemon enforces.
   setConnectorToolPermission, connectorPermissionTable,
   type Settings, type McpServerSettingsEntry,
 } from "./settings";
@@ -37,7 +37,7 @@ export {
   type SdkSettingsFile, type SdkGlobalConfigFile, type SdkFileRead,
 } from "./sdk-files";
 export { linkedRouterSupportsRunHome, routerSupportsRunHome } from "./runtime-sdk/run-home-support";
-// `winter mcp add/remove` (CLI parity with `claude mcp add/remove`): the ONE validated write door
+// `clover mcp add/remove` (CLI parity with `claude mcp add/remove`): the ONE validated write door
 // for either scope (`agent/mcp/mcp-write.ts`'s own header explains the reuse), plus the project
 // (`.mcp.json`) file helpers that scope needs directly — that file is never daemon state / never
 // RPC-routed, so the CLI reads and writes it itself with or without a daemon running.
@@ -53,7 +53,7 @@ export {
   type ParsedProjectMcpServers, type SkippedProjectMcpServer,
 } from "./agent/mcp/project-file";
 export { reservedMcpServerNames } from "./capabilities/names";
-// Winter Phase 8d (Task 4.3): `winter model --advisor <slug>` validates against the SAME pinned
+// Winter Phase 8d (Task 4.3): `clover model --advisor <slug>` validates against the SAME pinned
 // catalog `session.setModel`'s handler consults — the CLI runs with no live daemon/RPC for this
 // command (direct settings.json read/write, `case "model"`'s own doc comment), so the STATIC
 // compiled-in catalog, not a `sync.config` round trip, is the only thing it can validate against
@@ -64,7 +64,7 @@ export { rowForTag } from "./runtime-sdk/provider-selection";
 // ("<providerId>/<modelId>") in code; nothing else may pick a provider for a bare id.
 export {
   splitTag, parseModelTag, isModelTag, modelTagIsKnown, canonicalizeModelTag, tagsForSlot, facingNameToTag, facingNameOf,
-  UNSTATED_TAG, WINTER_TEST_PREFIX,
+  UNSTATED_TAG, CLOVER_TEST_PREFIX,
   type ModelTag,
 } from "./runtime-sdk/model-tag";
 export { runWorkflowSubprocess } from "./workflows/subprocess-entry";
@@ -121,11 +121,11 @@ export {
   type CredentialMaterial, type ApiKeyMaterial, type OauthMaterial, type BearerMaterial, type CredentialMigrationReport,
 } from "./auth/credential-material";
 export { runLoginFlow } from "./providers/pkce";
-// P8c-10: `winter login --anthropic-key` (cli/main.ts) writes through this door.
+// P8c-10: `clover login --anthropic-key` (cli/main.ts) writes through this door.
 export { writeAnthropicApiKey, ANTHROPIC_CREDENTIAL_SECRET_NAME, ANTHROPIC_CONSOLE_CREDENTIAL_SECRET_NAME, credentialInventory } from "./runtime-sdk/keychain";
-// WS-19 (W19-11): `winter credentials list/set/remove` runs IN-PROCESS against the same library the
+// WS-19 (W19-11): `clover credentials list/set/remove` runs IN-PROCESS against the same library the
 // daemon's own `credential.*` handlers call — never a second implementation, and never an RPC (the
-// daemon may not be running, exactly like `winter login`).
+// daemon may not be running, exactly like `clover login`).
 export {
   credentialRows, setCredential, removeCredential, credentialDisplayNameFor, credentialValueRefusal,
   CredentialStoreUnavailable,
@@ -136,20 +136,20 @@ export { CODEX } from "./providers/codex-config";
 // WS-20 L4: `CODEX_MODELS`/`DEFAULT_CODEX_MODEL` are deleted — `packages/cli/src/model-cli.ts`
 // imports them today and needs the L4 cross-lane update to `catalogRowsFor`/`isModelTag`/tags.
 export { DEFAULT_PROVIDER, INTERNAL_PROVIDER_IDS, pinsFor, internalEligibleProviderIds, CLAUDE_FIRST_PARTY_PROVIDER_IDS } from "./settings";
-// Winter Phase 10a (O7, P10a-2/6): `winter login/logout --anthropic-console` and `winter doctor`'s
-// console-profile row all run IN-PROCESS against WINTER_HOME (the CLI door inherits stdio and
+// Winter Phase 10a (O7, P10a-2/6): `clover login/logout --anthropic-console` and `clover doctor`'s
+// console-profile row all run IN-PROCESS against CLOVER_HOME (the CLI door inherits stdio and
 // drives the SDK's login directly — see console-profile-broker.ts's own header — never an RPC), so
 // they reach these through the package barrel exactly like the doctor exports just below.
 export { anthropicConfigDirFor, ANTHROPIC_PROFILE_NAME } from "./runtime-sdk/anthropic-paths";
 export { createConsoleProfileBroker, type ConsoleProfileBroker, type AnthropicLoginHandle } from "./auth/console-profile-broker";
 // Fix wave (C2): `resolveAntExecutable`/`antExecutablePath` — the SAME ladder `daemon.ts` wires its
-// broker's `antExecutable` dep from (settings.runtimes.antExecutable -> $WINTER_ANT_EXECUTABLE ->
+// broker's `antExecutable` dep from (settings.runtimes.antExecutable -> $CLOVER_ANT_EXECUTABLE ->
 // the bundle path -> `which ant` dev-only) — reached through this barrel by BOTH CLI doors
-// (`winter login/logout --anthropic-console`) so the CLI's own broker can actually refresh the
+// (`clover login/logout --anthropic-console`) so the CLI's own broker can actually refresh the
 // native-provider bearer on the very first sign-in, instead of the antExecutable-less broker that
 // left the CLI stuck reporting a failed refresh after a successful login.
 export { resolveAntExecutable, antExecutablePath } from "./runtime-sdk/bundle-layout";
-// WS-16 §15's `winter doctor` runs IN-PROCESS against WINTER_HOME — no RPC, because the whole point
+// WS-16 §15's `clover doctor` runs IN-PROCESS against CLOVER_HOME — no RPC, because the whole point
 // is to work when the daemon does not — so the CLI reaches these two through the package barrel.
 export {
   diagnoseRuntimeState,
@@ -206,7 +206,7 @@ export {
 } from "./agent/memory-dir";
 export { PluginStore, PluginManifest, type PluginInfo } from "./agent/plugins";
 // WS-21 lane L4 DECISION (spec §5.2): `packages/core/src/index.ts` is nominally L3-owned
-// (file-ownership table, WS-21 lane brief), but the CLI's `winter plugin`/`winter mcp` surface can
+// (file-ownership table, WS-21 lane brief), but the CLI's `clover plugin`/`clover mcp` surface can
 // only reach `packages/core/src/plugins/` through this one barrel — `package.json`'s own `exports`
 // map is `{".": "./src/index.ts"}`, no subpath. This block is purely ADDITIVE (no existing line
 // touched) and mirrors the exact pattern every other "WS-21 (Contract C):" block in this file
@@ -226,12 +226,12 @@ export { BackgroundTaskRegistry, type BgDeps } from "./agent/bg-registry";
 export { Compactor, SUMMARIZE_INSTRUCTION } from "./agent/compactor";
 export { bashLooksSafe, BashReviewer, REVIEW_INSTRUCTION, type ReviewVerdict } from "./agent/reviewer";
 export { McpManager, type McpServerStatus, type McpServerConfig } from "./agent/mcp/manager";
-// WS-25 (MCP OAuth): the sign-in doors, for `winter mcp login|logout|set-secret`'s no-daemon path — the
+// WS-25 (MCP OAuth): the sign-in doors, for `clover mcp login|logout|set-secret`'s no-daemon path — the
 // SAME code the daemon's `mcp.*` handlers run — and the daemon's one MCP OAuth store per Keychain service.
 export { McpOAuthDoors, McpOAuthDoorRefusal, type McpOAuthDoorDeps, type ResolvedMcpServer } from "./agent/mcp/oauth-doors";
 export { daemonMcpOAuthStore } from "./runtime-sdk/mcp-oauth-store";
 export { WorktreeManager, type ActiveWorktree } from "./agent/worktree";
-// Phase 9c Migration B (WS-16 §18) — the `winter migrate`/`winter migrate-project` CLI commands'
+// Phase 9c Migration B (WS-16 §18) — the `clover migrate`/`clover migrate-project` CLI commands'
 // only door into the migrator; see `migration/migrate-b.ts`'s own header for the module layout.
 export {
   MIGRATION_B_SECRET_NAMES,
@@ -258,8 +258,8 @@ export {
 export { LegacyKeychainSecretStore, legacyKeychainPresence, legacyKeychainServiceFor } from "./migration/legacy-keychain-store";
 export { DEAD_LEGACY_TOP_LEVEL_FILES, findDeadLegacyFiles, describeDeadLegacyFiles, type DeadLegacyFile } from "./migration/dead-legacy-files";
 export { rekeySettings, type RekeyChange, type RekeyResult } from "./migration/rekey-settings";
-// WS-21 (spec §8): Migration C and the settings split — the CLI's `winter migrate --sdk-home` and
-// `winter doctor` read these; the daemon's boot hook is the other caller.
+// WS-21 (spec §8): Migration C and the settings split — the CLI's `clover migrate --sdk-home` and
+// `clover doctor` read these; the daemon's boot hook is the other caller.
 export {
   MIGRATION_C_PHASE1, MIGRATION_C_PHASE2, MigrationCRefused, finishMigrationC, isOldLayout,
   migrationCCompletePath, migrationCManifestPath, migrationCRolledBackPath, migrationCState,
@@ -269,14 +269,14 @@ export {
 export { splitSettingsToSdk, settingsSplitMarkerPath, SPLIT_KEYS, type SettingsSplitReport } from "./migration/settings-split";
 export { sdkHomeDoctorLines } from "./migration/sdk-home-doctor";
 export { downgradeRuntimeStateToV6, downgradeCoworkRuntimeStateToV7, CoworkDowngradeRefused, openRuntimeStateDb } from "./runtime-state/db";
-// Review I5: THE local MCP/settings scope key — the CLI's `winter mcp` uses it too (lane L4).
+// Review I5: THE local MCP/settings scope key — the CLI's `clover mcp` uses it too (lane L4).
 export { localScopeKeyFor, projectScopeRootFor, projectScopeTrusted } from "./runtime-sdk/run-home-input";
 export {
   ProjectMigrationRefused,
   planProjectMigration,
   runProjectMigration,
-  WINTER_INSTRUCTIONS_FILE,
-  WINTER_PROJECT_DIR,
+  CLOVER_INSTRUCTIONS_FILE,
+  CLOVER_PROJECT_DIR,
   type ProjectMigrationPlan,
   type ProjectMigrationStep,
 } from "./migration/project-files";

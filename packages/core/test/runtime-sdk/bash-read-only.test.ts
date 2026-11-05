@@ -1,4 +1,4 @@
-// PORTED with `src/runtime-sdk/bash-read-only.ts` from Winter's own agent SDK (yanlingLabs/winter-agent-sdk,
+// PORTED with `src/runtime-sdk/bash-read-only.ts` from Clover's own agent SDK (waifucave/clover-sdk,
 // packages/runtime/src/permissions/bash-read-only.test.ts, v0.0.53), verbatim but for the import path: the
 // SDK's own cases pin that the daemon's copy of the classifier reads every command as the runtime does.
 import { afterAll, describe, expect, test } from "bun:test";

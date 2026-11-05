@@ -1,5 +1,5 @@
 // Session door D3: the Cowork driver table end to end against a SCRIPTED guest: the real host agent SDK `query()`, the
-// real WinterSession, projector and approval bridge, the real supervisor and runtime channel, and a scripted native start
+// real CloverSession, projector and approval bridge, the real supervisor and runtime channel, and a scripted native start
 // that validates the conversation set on the native wire. The scripted guest checks every inbound frame with a copy of
 // the host-query profile's own check, so a frame the real guest would refuse fails the test.
 //
@@ -11,7 +11,7 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { query as agentQuery, type Options, type ProtocolSdkMessage } from "@yanlinglabs/winter-agent-sdk";
-import type { ApprovalPolicy, SessionEvent } from "@yanlinglabs/winter-protocol";
+import type { ApprovalPolicy, SessionEvent } from "@waifucave/clover-protocol";
 import { ApprovalBroker } from "../../src/agent/approvals";
 import { PermissionGate } from "../../src/agent/gate";
 import { QuestionBroker } from "../../src/agent/questions";
@@ -20,7 +20,7 @@ import { parseCoworkNativeMuxFrame, serializeCoworkNativeMuxFrame } from "../../
 import { coworkApprovalPort } from "../../src/cowork/session-door";
 import { coworkAcknowledgeMountedShares, coworkGuestPermissionAnswer, createCoworkSessionDrivers, type CoworkSessionDriverDeps } from "../../src/cowork/session-driver";
 import type { CoworkApprovalPort, CoworkGuestConversationContext, CoworkGuestConversationSet, CoworkGuestStartRequest, CoworkGuestRun, CoworkGuestRuntimeLink, CoworkGuestRuntimeOffer, CoworkGuestStarter, CoworkGuestStopOutcome } from "../../src/cowork/session-ports";
-import { startWinterSession } from "../../src/runtime-sdk/winter-session";
+import { startCloverSession } from "../../src/runtime-sdk/clover-session";
 import { CoworkRepository } from "../../src/cowork/repository";
 import { openRuntimeStateDb } from "../../src/runtime-state/db";
 import { CoworkError } from "../../src/cowork/types";
@@ -146,7 +146,7 @@ function harness(opts: { policy?: ApprovalPolicy; conversations?: number; produc
   deps?: Partial<CoworkSessionDriverDeps>; capabilities?: string[]; echo?: ("fresh" | "resume" | undefined)[]; beforeSet?: (n: number) => void; wrapQuery?: (query: ReturnType<typeof agentQuery>) => unknown } = {}) {
   const offer: CoworkGuestRuntimeOffer = { ...OFFER, readiness: [...OFFER.readiness], ...(opts.capabilities ? { runtimeCapability: { ...OFFER.runtimeCapability, capabilities: opts.capabilities } } : {}) };
   const starts: CoworkGuestStartRequest[] = [];
-  const storeHome = mkdtempSync(join(tmpdir(), "winter-door-d3-store-")), store = new SessionStore(storeHome), hub = new SessionHub(store);
+  const storeHome = mkdtempSync(join(tmpdir(), "clover-door-d3-store-")), store = new SessionStore(storeHome), hub = new SessionHub(store);
   const sessions = Array.from({ length: opts.conversations ?? 1 }, () => store.createSession("t", { mode: "code" }));
   const f: DoorFixture = doorFixture({ policy: opts.policy ?? "ask", sessions, ...(opts.toolClasses ? { toolClasses: opts.toolClasses } : {}), ...(opts.location ? { location: opts.location } : {}), ...(opts.shares ? { ack: false } : {}) });
   const guests: ScriptedGuest[] = [], launched: Options[] = [], approvals = new ApprovalBroker(), questions = new QuestionBroker();
@@ -317,7 +317,7 @@ test("#92 N2: without shares_mounted the unacknowledged source refuses the set; 
 });
 
 test("#92 N2: only a present folder source can be acknowledged by a share (a repository is never mounted as one)", () => {
-  const home = mkdtempSync(join(tmpdir(), "winter-door-n2-")), db = openRuntimeStateDb(home), records = new CoworkRepository(db);
+  const home = mkdtempSync(join(tmpdir(), "clover-door-n2-")), db = openRuntimeStateDb(home), records = new CoworkRepository(db);
   cleanups.push(() => { db.close(); rmSync(home, { recursive: true, force: true }); });
   const made = records.create({ principalId: "fixture", requestId: "c" }, { ownership: "project", title: "t", ceiling: { toolClasses: ["read"], hostServices: [], connectors: [], network: "none" },
     sources: [{ kind: "githubRepository", access: "read-only", label: "repo", detail: { repositoryId: "repo-1", authorityRef: "auth-1", initialRef: "main" } }] });
@@ -344,17 +344,17 @@ test("D3b: under plan the outputs root is read-only and the runtime runs plan", 
   expect(h.launched[0]!.permissionMode).toBe("plan");
 });
 
-test("plan view: not expressible in host-query-v1 yet. The real validator refuses any .winter root, so planViewMounted is false by construction", async () => {
+test("plan view: not expressible in host-query-v1 yet. The real validator refuses any .clover root, so planViewMounted is false by construction", async () => {
   const h = harness({ policy: "plan", script: reply("ok") });
   const session = await h.drivers.ensure(h.sid);
   await session.open();
   const item = h.guests[0]!.set.conversations[0]!, sid = h.sid;
   for (const guestPath of [`/workspace/.winter/scratch/${sid}`, "/workspace/.winter/memory"]) {
-    // Read-only, so the refusal is the .winter rule itself, not plan's read-only rule.
+    // Read-only, so the refusal is the .clover rule itself, not plan's read-only rule.
     const extra = { ...item, roots: [...item.roots, { id: "plan-view", guestPath, source: guestPath, readOnly: true }] };
     expect(() => onTheWire({ profile: "host-query-v1", conversations: [extra] }, "incarnation-1")).toThrow();
   }
-  // The control: the same set with a non-.winter extra root passes, so the throw above is the .winter rule.
+  // The control: the same set with a non-.clover extra root passes, so the throw above is the .clover rule.
   const control = { ...item, roots: [...item.roots, { id: "other", guestPath: "/workspace/folders/other", source: "/workspace/folders/other", readOnly: true }] };
   expect(() => onTheWire({ profile: "host-query-v1", conversations: [control] }, "incarnation-1")).not.toThrow();
   // The driver never asks for the view: the approvals bridge sees planViewInstalled false (a plan scratch write is refused).
@@ -542,8 +542,8 @@ test("the router's messaging attach is required for every runnable mode; only a 
   const h = harness();
   const base = { sessionId: h.sid, backendSessionId: "0b6d7c4e-5a1f-4c2e-9d3b-7e8f9a0b1c2d", runtime: {} as never, options: () => ({}), projector: () => ({}) as never,
     append: () => ({}) as never, broadcast: () => {}, hasTranscript: () => false, idleTimeoutMs: () => Number.POSITIVE_INFINITY };
-  for (const mode of ["code", "dispatch", "chat"] as const) expect(() => startWinterSession({ ...base, mode })).toThrow("messaging attach");
-  expect(() => startWinterSession({ ...base, mode: "cowork" })).not.toThrow();
+  for (const mode of ["code", "dispatch", "chat"] as const) expect(() => startCloverSession({ ...base, mode })).toThrow("messaging attach");
+  expect(() => startCloverSession({ ...base, mode: "cowork" })).not.toThrow();
 });
 
 test("between the runtime's exit and the incarnation's stop outcome, a send refuses before the log (the runtime is gone, cold resume is D10)", async () => {
@@ -564,7 +564,7 @@ test("between the runtime's exit and the incarnation's stop outcome, a send refu
 });
 
 test("#92 N2 fix: a mixed report acknowledges nothing: no source ready, nothing published, no operation concluded", () => {
-  const home = mkdtempSync(join(tmpdir(), "winter-door-n2-mixed-")), db = openRuntimeStateDb(home), records = new CoworkRepository(db);
+  const home = mkdtempSync(join(tmpdir(), "clover-door-n2-mixed-")), db = openRuntimeStateDb(home), records = new CoworkRepository(db);
   cleanups.push(() => { db.close(); rmSync(home, { recursive: true, force: true }); });
   const folder = { kind: "folder" as const, access: "read-write" as const, label: "f", detail: { grantRef: "grant", rootIdentity: "root" } };
   const made = records.create({ principalId: "fixture", requestId: "c" }, { ownership: "project", title: "t", ceiling: { toolClasses: ["read"], hostServices: [], connectors: [], network: "none" }, sources: [folder, folder] });

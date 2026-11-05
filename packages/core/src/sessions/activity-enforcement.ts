@@ -15,7 +15,7 @@ export type HarnessKind = "terminal" | "app";
  *
  *  The real hello strings this covers, as of this task — verified in source, and pinned verbatim by
  *  `test/sessions/activity-enforcement.test.ts`'s "harness kinds" block:
- *    - `cli-p`     — `winter -p`, the one-shot   (packages/cli/src/main.ts:613)
+ *    - `cli-p`     — `clover -p`, the one-shot   (packages/cli/src/main.ts:613)
  *    - `cli-chat`  — the interactive Ink TUI     (same line)
  *    - `cli-<verb>` × 22 more, plus two built by template string
  *      (`cli-plugin-revoke-<id>`, `cli-plugin-restart-<name>`) — which is why this is a PREFIX rule
@@ -166,7 +166,7 @@ export function createActivityEnforcement(deps: ActivityEnforcementDeps): Activi
    *  Separate because the two have different lifetimes. The plan's words are "auto-background FOR
    *  THAT TURN": the protection belongs to the turn and ends with it (`onTurnSettled`), while the
    *  derivation mark belongs to the moment and ends as soon as anyone attaches. Collapsing them let
-   *  a read-only viewer strip the protection just by looking: `winter watch` attaches, and it is
+   *  a read-only viewer strip the protection just by looking: `clover watch` attaches, and it is
    *  terminal-kind (`cli-watch`), so closing it would have aborted a turn the app had deliberately
    *  left running — the stored `backgrounded` flag is not set (that is the whole point of the mark
    *  being provisional), so nothing else stood in the way. */
@@ -263,7 +263,7 @@ export function createActivityEnforcement(deps: ActivityEnforcementDeps): Activi
           const terminal = harnessKindOf(client.clientName, client.role) === "terminal";
           // A terminal "owns" (may abort) only a turn a HUMAN started. Since 2026-10-02 Dispatch
           // children carry no background flag and SendMessage resumes sessions nobody has open, so a
-          // `winter watch` attaching to one of those turns and leaving must not kill it.
+          // `clover watch` attaching to one of those turns and leaving must not kill it.
           const automated = terminal && AUTOMATED_TURN_ORIGINS.has(deps.turnOrigin?.(sessionId) ?? "");
           const ownsTheTurn = terminal && !automated && !protectedTurns.has(sessionId);
           if (automated) {

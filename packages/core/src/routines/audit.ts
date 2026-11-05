@@ -1,9 +1,9 @@
 import { appendFileSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { resolveWinterHome } from "../winter-dir";
+import { resolveCloverHome } from "../clover-dir";
 
 /** Append-only JSONL audit trail for the routine scheduler (phase 5 routines, design doc §2:
- *  "every fire/defer/error appends an audit line to ~/.winter/routines-audit.jsonl"). Mirrors
+ *  "every fire/defer/error appends an audit line to ~/.clover/routines-audit.jsonl"). Mirrors
  *  peripheral/audit.ts's AuditLog byte-for-byte — see that file's doc comment for the full
  *  rationale; the short version: every line is stamped with the WRITE-time `ts` (a caller-supplied
  *  `ts` field is silently clobbered), the parent directory is created lazily on first successful
@@ -31,11 +31,11 @@ export class RoutineAuditLog {
   }
 }
 
-/** Standalone default path (~/.winter/routines-audit.jsonl) — daemon.ts overrides this with the
- *  bootstrapped winterHome-relative path instead (mirrors routines/store.ts's openRoutineStore
+/** Standalone default path (~/.clover/routines-audit.jsonl) — daemon.ts overrides this with the
+ *  bootstrapped cloverHome-relative path instead (mirrors routines/store.ts's openRoutineStore
  *  default, which is likewise only for standalone/no-daemon-wiring use). */
 export function defaultRoutinesAuditPath(): string {
-  // P9b-12: routed through the resolver rather than hardcoding `~/.winter` — a `WINTER_HOME`
+  // P9b-12: routed through the resolver rather than hardcoding `~/.clover` — a `CLOVER_HOME`
   // override must move this file with everything else.
-  return join(resolveWinterHome(), "routines-audit.jsonl");
+  return join(resolveCloverHome(), "routines-audit.jsonl");
 }

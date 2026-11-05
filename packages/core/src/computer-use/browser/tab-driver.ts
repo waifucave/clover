@@ -51,7 +51,7 @@ export function transportHasCdp3(transport: CdpTransport): boolean {
   return features === undefined || features.has("cdp3");
 }
 
-/** What the browser keeps of response bodies while Winter is attached (networkBody()); request bodies never. */
+/** What the browser keeps of response bodies while Clover is attached (networkBody()); request bodies never. */
 export const NETWORK_BUFFERS = { maxResourceBufferSize: CDP_NETWORK_BUFFER_MAX.resource, maxTotalBufferSize: CDP_NETWORK_BUFFER_MAX.total, maxPostDataSize: 0 } as const;
 
 export const NAVIGATION_WAIT_MS = 10_000;
@@ -61,7 +61,7 @@ const MAX_FRAME_DEPTH = 6;
 const TYPE_AS_KEYS_MAX = 200;
 
 /** The secure-field floor's sentences (Phase 1's words — the helper's `refused` reasons). */
-export const SECURE_FIELD_SENTENCE = "that is a password or payment field — Winter never reads or types into one; ask the user to fill it in";
+export const SECURE_FIELD_SENTENCE = "that is a password or payment field — Clover never reads or types into one; ask the user to fill it in";
 export const FOCUS_UNKNOWN_SENTENCE = (where: string): string => `can't tell which field has focus in ${where}, so it could be a password field — pass \`into\` or click a text field first`;
 
 interface FrameRec {
@@ -116,26 +116,26 @@ export function transportFailure(err: unknown, browserName: string): Error {
   if (!(err instanceof TransportError)) return err instanceof Error ? err : new Error(String(err));
   switch (err.code) {
     case "disconnected":
-      if (browserName === "Winter's headless browser") return new AutomationFailure("BrowserUnavailable", `Winter's headless browser can't be reached: ${err.message}`, true);
-      return new AutomationFailure("BrowserUnavailable", browserName === "Winter's browser"
-        ? "Winter's browser can't be reached: Winter isn't running — ask the user to open Winter"
+      if (browserName === "Clover's headless browser") return new AutomationFailure("BrowserUnavailable", `Clover's headless browser can't be reached: ${err.message}`, true);
+      return new AutomationFailure("BrowserUnavailable", browserName === "Clover's browser"
+        ? "Clover's browser can't be reached: Clover isn't running — ask the user to open Clover"
         : `${browserName} can't be reached: Winter for Chrome is not connected — ask the user`, true);
     case "protocol_mismatch":
       return new AutomationFailure("BrowserUnavailable", err.data.side === "extension"
-        ? "Winter for Chrome is too old or too new for this Winter — ask the user to update Winter for Chrome"
-        : "Winter's browser speaks another version — ask the user to update Winter");
+        ? "Winter for Chrome is too old or too new for this Clover — ask the user to update Winter for Chrome"
+        : "Clover's browser speaks another version — ask the user to update Clover");
     case "tab_gone": return new AutomationFailure("TargetLost", "the tab was closed, crashed or stopped — open it again with browsers.open() or bind another with browsers.tab()");
     case "attach_refused": return new AutomationFailure("Refused", "that tab can't be controlled (a browser-internal page, a store page, or another debugger is attached)");
     case "timeout": return new AutomationFailure("TargetBusy", "the browser did not answer in time — the page may be busy; try again in a moment", true);
     // The backend's own tab or memory budget (headless): its sentence says what to close; not retryable at once.
     case "capacity": return new AutomationFailure("TargetBusy", err.message);
     case "not_allowed":
-      // Winter.app's ceiling on held built-in tabs (`tab.ensure` refused: "… already holds 24 tabs for automation …").
+      // Clover.app's ceiling on held built-in tabs (`tab.ensure` refused: "… already holds 24 tabs for automation …").
       if (err.data.holdCeiling === true || /already holds \d+ tabs/i.test(err.message)) return new AutomationFailure("TargetBusy", HOLD_CEILING_SENTENCE);
       return new Error(`the browser refused that request (${err.message})`);
     case "cdp_error": {
       if (err.data.navigated === true) return new AutomationFailure("StaleRef", "the page navigated meanwhile — call state() to read it again");
-      // -32603 from Winter's app: the browser's answer was too large for the link, or not valid JSON.
+      // -32603 from Clover's app: the browser's answer was too large for the link, or not valid JSON.
       if (err.data.cdpCode === -32603) return new Error("the browser's answer was too large or unreadable — read less at once (state({ within }), a region screenshot)");
       const msg = typeof err.data.cdpMessage === "string" ? err.data.cdpMessage : err.message;
       return new Error(msg.slice(0, 300));
@@ -233,14 +233,14 @@ export class TabDriver {
   readonly wakeHolders = new Map<string, string>();
   /** WATCH-ONLY (wake triggers): while only `wake:` holders hold the tab, the attachment changes nothing the user sees
    *  or does — no file-chooser interception, no focus emulation, no emulated screen size, no agent overlay, and (the
-   *  built-in browser, link feature `watchOnly`) none of Winter.app's native-UI holds. A primitive's hold turns them
+   *  built-in browser, link feature `watchOnly`) none of Clover.app's native-UI holds. A primitive's hold turns them
    *  back on; the tab drops back to watch-only when only wake holders remain. */
   private watchMode = false;
   private modeChain: Promise<void> = Promise.resolve();
   /** A release (or the drop to watch-only) held back because it would dismiss a page dialog the user raised around a
    *  wake trigger firing (`keepsDialogHeld`); done once the dialog closes. */
   private deferredLeave = false;
-  /** When the open page dialog opened, and whether Winter's own input was in flight then. */
+  /** When the open page dialog opened, and whether Clover's own input was in flight then. */
   private dialogAt = 0;
   private dialogOwn = false;
   /** The open dialog is kept held for the session a wake trigger woke over it (`keepDialog`), until it closes. */
@@ -260,7 +260,7 @@ export class TabDriver {
     readonly backend: string,
     public tabKey: string,
     public transport: CdpTransport,
-    /** "Winter's browser", "Google Chrome" — for error sentences. */
+    /** "Clover's browser", "Google Chrome" — for error sentences. */
     readonly browserName: string,
     private readonly now: () => number = () => Date.now(),
   ) {
@@ -277,7 +277,7 @@ export class TabDriver {
     const pausable = o.dialogRace !== false && (method.startsWith("Input.") || method === "Runtime.callFunctionOn" || method === "Runtime.evaluate");
     if (pausable && this.dialog !== undefined) throw new AutomationFailure("TargetBusy", this.dialogBusySentence());
     const sent = this.transport.send<T>(this.tabKey, method, params, { ...(session === undefined ? {} : { cdpSessionId: session }), ...(timeoutMs === undefined ? {} : { timeoutMs }) });
-    // Winter's own input to the tab, from any session: what lands meanwhile (and just after) is never the user's.
+    // Clover's own input to the tab, from any session: what lands meanwhile (and just after) is never the user's.
     if (OWN_INPUT_METHOD.test(method)) {
       this.beginOwnInput();
       const end = (): void => this.endOwnInput();
@@ -327,7 +327,7 @@ export class TabDriver {
   }
 
   lost(): AutomationFailure {
-    const why = this.gone === "crashed" ? "the tab crashed" : this.gone === "detached_by_user" ? "the user stopped Winter from controlling this tab" : "the tab was closed";
+    const why = this.gone === "crashed" ? "the tab crashed" : this.gone === "detached_by_user" ? "the user stopped Clover from controlling this tab" : "the tab was closed";
     return new AutomationFailure("TargetLost", `${why} — open a new one with browsers.open() or bind another with browsers.tab()`);
   }
 
@@ -358,7 +358,7 @@ export class TabDriver {
       // session does not hold now).
       this.watchMode = this.watchOnlyWanted;
       // Taken back after a hand-off: what the page logged while the user had it is replayed by the browser on
-      // Runtime.enable / Log.enable, and is not Winter's to read.
+      // Runtime.enable / Log.enable, and is not Clover's to read.
       const handedOff = this.handedOffAt;
       if (handedOff !== undefined) {
         this.devtools.hideWindow(handedOff, this.now());
@@ -389,7 +389,7 @@ export class TabDriver {
           if (this.viewportWish !== undefined) await this.applyViewport(this.viewportWish).catch(() => undefined);
         }
         await this.loadTopFrame();
-        if (this.detaches !== detachesAtStart) throw new AutomationFailure("TargetBusy", "the tab was let go while Winter was taking it — try again");
+        if (this.detaches !== detachesAtStart) throw new AutomationFailure("TargetBusy", "the tab was let go while Clover was taking it — try again");
         this.attached = true;
         this.handedOffAt = undefined;
       } finally {
@@ -400,7 +400,7 @@ export class TabDriver {
   }
 
   /**
-   * The frame tree. A hostile page can make it too large to come back (Winter's app caps an answer); then the tab
+   * The frame tree. A hostile page can make it too large to come back (Clover's app caps an answer); then the tab
    * still works from its own target info (a page target's id IS its main frame's) and the frame events that follow.
    */
   private async loadTopFrame(): Promise<void> {
@@ -504,7 +504,7 @@ export class TabDriver {
         if (want) {
           if (this.keepsDialogHeld()) {
             this.deferLeave();
-            // The page is paused on a dialog Winter's browser holds unseen: the waits on it can't go on — their
+            // The page is paused on a dialog Clover's browser holds unseen: the waits on it can't go on — their
             // backend wakes the session over it (and keeps it held for that session).
             for (const l of [...this.pausedListeners]) { try { l(); } catch { /* a listener never breaks the driver */ } }
             return;
@@ -525,7 +525,7 @@ export class TabDriver {
     this.clearDeferred();
     this.overlay(false);
     const holder = [...this.holders][0]!;
-    // The built-in browser first: Winter.app's native-UI holds come off (the page's dialogs, prompts, file choosers,
+    // The built-in browser first: Clover.app's native-UI holds come off (the page's dialogs, prompts, file choosers,
     // downloads, context menus, keys and focus are the user's again).
     if (this.transport.watchOnlyHolds === true) {
       try { await this.transport.attach(this.tabKey, { sessionId: this.sessionOf(holder), watchOnly: true }); } catch { /* the tab or the link went */ }
@@ -552,7 +552,7 @@ export class TabDriver {
   /**
    * Would letting go of the hold now (a full detach, or the drop to watch-only) dismiss a page dialog the USER raised?
    * The built-in browser holds a dialog unseen while it fully holds the tab, and taking its native-UI holds off
-   * dismisses it as Cancel. So a dialog that opened outside Winter's own input is kept while a wake trigger waits on the
+   * dismisses it as Cancel. So a dialog that opened outside Clover's own input is kept while a wake trigger waits on the
    * tab (the user acted there while the arming run still held it: their submit's confirm(), say — its wake's report is
    * stuck behind the paused page), for the session a trigger woke over it (`keepDialog`), and around a trigger firing on
    * the user's action: that session reads it in state() and answers it — the wake path never cancels it. Any other
@@ -598,13 +598,13 @@ export class TabDriver {
     else void this.syncMode();
   }
 
-  /** When the tab was handed to the user (`handOff`), until Winter attaches again. */
+  /** When the tab was handed to the user (`handOff`), until Clover attaches again. */
   private handedOffAt: number | undefined;
 
   /**
-   * The sign-in hand-off: the tab is let go for EVERY session that holds it — a full detach, so nothing of Winter's
+   * The sign-in hand-off: the tab is let go for EVERY session that holds it — a full detach, so nothing of Clover's
    * reads it while the user works there, and the built-in browser's hold (which keeps native prompts — passkeys,
-   * permission prompts — from showing) is dropped. Whatever the page logs until Winter attaches again stays out of
+   * permission prompts — from showing) is dropped. Whatever the page logs until Clover attaches again stays out of
    * `console()`. Another session's next primitive on the tab attaches it afresh (its refs are new).
    */
   async handOff(): Promise<void> {
@@ -628,7 +628,7 @@ export class TabDriver {
 
   // ── events ──────────────────────────────────────────────────────────────────────────────────────
 
-  /** One event of the tab. `person`: the user holds the tab in Winter's panel (a headless tab, lane H3) — the page is still
+  /** One event of the tab. `person`: the user holds the tab in Clover's panel (a headless tab, lane H3) — the page is still
    *  followed (its frames, navigations, dialogs), but what it logs, loads or downloads meanwhile is the person's and never
    *  reaches `console()`, `network()` or the state's download line. */
   onEvent(e: CdpEvent, o: { person?: boolean } = {}): void {
@@ -640,7 +640,7 @@ export class TabDriver {
     }
     switch (e.method) {
       case "Runtime.consoleAPICalled": case "Runtime.exceptionThrown": case "Log.entryAdded": case "Network.responseReceived":
-        if (!person) this.devtools.onEvent(e.method, p, session, (id) => this.isWinterContext(id, session));
+        if (!person) this.devtools.onEvent(e.method, p, session, (id) => this.isCloverContext(id, session));
         break;
       case "Page.downloadWillBegin": {
         if (this.capturing > 0 || person) break; // the armed capture says what became of it; the person's is theirs
@@ -832,7 +832,7 @@ export class TabDriver {
   }
 
   /** Is `id` (in `session`) one of the engine's own "winter" worlds? Its console output is never the page's. */
-  private isWinterContext(id: number, session: string | undefined): boolean {
+  private isCloverContext(id: number, session: string | undefined): boolean {
     for (const rec of this.frames.values()) if (rec.ctx === id && (rec.ctxSession ?? undefined) === session) return true;
     return false;
   }
@@ -959,7 +959,7 @@ export class TabDriver {
         else delete rec.ctxUnique;
       }
       const res = await this.send<{ result?: { value?: unknown }; exceptionDetails?: unknown }>("Runtime.evaluate", {
-        expression: `${PAGE_RUNTIME_SOURCE}\n;globalThis.__winterRuntime.id`, contextId: rec.ctx, returnByValue: true,
+        expression: `${PAGE_RUNTIME_SOURCE}\n;globalThis.__cloverRuntime.id`, contextId: rec.ctx, returnByValue: true,
       }, rec.ctxSession);
       if (res.exceptionDetails !== undefined || typeof res.result?.value !== "string") throw new Error("the page runtime could not be installed in this page");
       rec.rtId = res.result.value;
@@ -1145,9 +1145,9 @@ export class TabDriver {
     const notes: string[] = [];
     if (this.fileChooser !== undefined) notes.push(`the page asked for a file — use upload(${this.fileChooser.ref === undefined ? "ref" : `[${this.fileChooser.ref}]`}, paths) on its file input`);
     for (const name of this.takeUncaughtDownloads()) {
-      notes.push(this.browserName === "Winter's headless browser"
-        ? `the page started a download of "${redactText(name)}" — it was not saved (Winter's headless browser doesn't download files)`
-        : `the page started a download of "${redactText(name)}" — ${this.browserName === "Winter's browser" ? "it was not saved" : `${this.browserName} saved it in its own Downloads folder`}; download(ref) saves a file into this session`);
+      notes.push(this.browserName === "Clover's headless browser"
+        ? `the page started a download of "${redactText(name)}" — it was not saved (Clover's headless browser doesn't download files)`
+        : `the page started a download of "${redactText(name)}" — ${this.browserName === "Clover's browser" ? "it was not saved" : `${this.browserName} saved it in its own Downloads folder`}; download(ref) saves a file into this session`);
     }
     return {
       title: this.shownTitle, url: this.shownUrl,
@@ -1235,7 +1235,7 @@ export class TabDriver {
   // ── Phase 4: WebMCP — the page's own agent tools ──────────────────────────────────────────────
 
   /** The top document's tools: every name and — `describe` — the first ones described (`page-runtime/webmcp.ts`'s
-   *  caps); `null` when the page has none or no such API. A page-runtime failure other than Winter's own typed ones
+   *  caps); `null` when the page has none or no such API. A page-runtime failure other than Clover's own typed ones
    *  reads as none (fails closed). */
   async siteTools(describe: boolean): Promise<RtSiteTools | null> {
     this.requireNoDialog("tools()");
@@ -1514,7 +1514,7 @@ export class TabDriver {
 
   /**
    * Lane H3: the view a headless tab's page is laid out in, as the pool last heard it from the helper — a tab shown in
-   * Winter's panel is laid out in the panel's size while the person looks (watching too), and gets the agent's 1280×800
+   * Clover's panel is laid out in the panel's size while the person looks (watching too), and gets the agent's 1280×800
    * back after. Called at the start of every primitive. A change since the last call (a new `epoch`): the Points of
    * every screenshot taken before it are refused (`VIEW_RESIZED_POINT`) — refs keep working — and the one daemon line
    * for the state header is answered, once.
@@ -1529,8 +1529,8 @@ export class TabDriver {
   }
 
   /**
-   * Lane H3: the person's holds of a headless tab in Winter's panel, as the pool counts them (and when the latest
-   * began). A new one since the last call: what the browser replays on Winter's next attach from then on is hidden, as
+   * Lane H3: the person's holds of a headless tab in Clover's panel, as the pool counts them (and when the latest
+   * began). A new one since the last call: what the browser replays on Clover's next attach from then on is hidden, as
    * after a hand-off (`ensureAttached`), and the next primitive says once that the user had the tab — what the page
    * logged and loaded meanwhile was theirs (`onEvent`'s `person`). Called at the start of every primitive.
    */
@@ -1766,7 +1766,7 @@ export class TabDriver {
     const t0 = this.now();
     for (;;) {
       if (this.loaded(state)) return { waitedMs: this.now() - t0 };
-      // A page that finished before Winter attached sent no event: its document's own ready state says.
+      // A page that finished before Clover attached sent no event: its document's own ready state says.
       try {
         const q = await this.quietInfo();
         if (q.readyState === "complete" || (state === "domcontentloaded" && q.readyState === "interactive")) return { waitedMs: this.now() - t0 };
@@ -1918,7 +1918,7 @@ export class TabDriver {
 
   /** `setValue` on a combo box that pops up a list (an ARIA select): open it with a press where the page takes one,
    *  wait for its list (often drawn in an overlay elsewhere in the document), press the option the value names, and
-   *  check the combo box now shows it. A list Winter opened is closed again (Escape) when nothing in it matches. */
+   *  check the combo box now shows it. A list Clover opened is closed again (Escape) when nothing in it matches. */
   private async chooseOption(ref: number, value: string, o: { live?: () => void; signal?: AbortSignal }): Promise<string> {
     const { rec, id, rtId } = this.resolve(ref);
     const read = async (): Promise<RtComboOptions> => await this.callIn<RtComboOptions>(rec, "comboOptions", { id }, { expectRt: rtId });
@@ -2111,7 +2111,7 @@ export class TabDriver {
 
   // ── wake triggers (`wake/backend.ts`) ─────────────────────────────────────────────────────────────
 
-  /** Winter's own input to this tab starts (the engine marks each act primitive; `send` each input or navigation). */
+  /** Clover's own input to this tab starts (the engine marks each act primitive; `send` each input or navigation). */
   beginOwnInput(): void {
     if (this.ownInputDepth++ === 0) this.ownInputStart = this.now();
   }
@@ -2124,14 +2124,14 @@ export class TabDriver {
     while (this.ownInputWindows.length > 32 || (this.ownInputWindows.length > 0 && end - this.ownInputWindows[0]![1] > 60_000)) this.ownInputWindows.shift();
   }
 
-  /** Was Winter's own input to this tab in flight at `at` (epoch ms), or did it end at most the grace before? */
+  /** Was Clover's own input to this tab in flight at `at` (epoch ms), or did it end at most the grace before? */
   ownInputAt(at: number): boolean {
     const grace = WAKE_LIMITS.ownInputGraceMs;
     if (this.ownInputDepth > 0 && at >= this.ownInputStart - 50) return true;
     return this.ownInputWindows.some(([start, end]) => at >= start - 50 && at <= end + grace);
   }
 
-  /** Winter's own input to this tab is in flight now, or ended within the grace. */
+  /** Clover's own input to this tab is in flight now, or ended within the grace. */
   get ownInputNow(): boolean { return this.ownInputAt(this.now()); }
 
   /** A watch's frame: its document's page runtime instance. Gone (another document, or the world went with a detach):
@@ -2294,7 +2294,7 @@ export class WakeWorldGone extends Error {
   constructor() { super("the watch's page world is gone"); this.name = "WakeWorldGone"; }
 }
 
-/** Winter's own input to a tab, for the wake triggers' rule (only the user's action counts). */
+/** Clover's own input to a tab, for the wake triggers' rule (only the user's action counts). */
 const OWN_INPUT_METHOD = /^(?:Input\.|Page\.navigate$|Page\.reload$|Page\.navigateToHistoryEntry$)/;
 
 /** A wake trigger's holder (`wake:<id>`), never a session's. */
@@ -2308,16 +2308,16 @@ export const WAKE_DIALOG_HOLD_MAX_MS = 10 * 60_000;
 /** A full-page screenshot's document height at most this (CSS px). */
 export const FULL_PAGE_MAX_CSS = 10_000;
 
-/** Lane H3: said once after the person held a headless tab in Winter's panel (their console and network were theirs). */
-export const PERSON_HELD_NOTE = "the user had this tab in Winter's panel since you last used it — what the page logged and loaded while they had it is left out of console() and network()";
+/** Lane H3: said once after the person held a headless tab in Clover's panel (their console and network were theirs). */
+export const PERSON_HELD_NOTE = "the user had this tab in Clover's panel since you last used it — what the page logged and loaded while they had it is left out of console() and network()";
 
-/** Lane H3: a Point of a screenshot taken before the tab's view changed (a headless tab shown in Winter's panel follows the
+/** Lane H3: a Point of a screenshot taken before the tab's view changed (a headless tab shown in Clover's panel follows the
  *  panel's size while the user looks, and gets the agent's view back after). */
 export const VIEW_RESIZED_POINT = "the tab was resized while the user was looking — take a new screenshot before using a Point";
 
 /** The user's own tab is never moved for a picture: `fullPage` lays the page out again, `within` would scroll. */
-export const USER_TAB_FULL_PAGE = "screenshot({ fullPage }) lays the page out again, which can move what the user sees — on the user's own tab Winter takes only what is in view: screenshot(), or text() for the whole page";
-export const USER_TAB_SHOT_OUT_OF_VIEW = "that element is not wholly in view, and Winter doesn't scroll the user's own tab for a picture — scroll() it into view first, or take screenshot()";
+export const USER_TAB_FULL_PAGE = "screenshot({ fullPage }) lays the page out again, which can move what the user sees — on the user's own tab Clover takes only what is in view: screenshot(), or text() for the whole page";
+export const USER_TAB_SHOT_OUT_OF_VIEW = "that element is not wholly in view, and Clover doesn't scroll the user's own tab for a picture — scroll() it into view first, or take screenshot()";
 
 interface FrameTreeNode { frame: { id: string; parentId?: string; url: string; urlFragment?: string }; childFrames?: FrameTreeNode[] }
 
@@ -2345,7 +2345,7 @@ export function pickerSentence(ref: number | undefined, what: string): string {
   return `${ref === undefined ? "that control" : `[${ref}]`} opens ${what} when pressed or keyed — use ${pickerAdvice(what)} instead`;
 }
 
-/** A tab's URL as the model reads it: Winter's start page (a `data:` URL, loaded for about:blank) reads as about:blank. */
+/** A tab's URL as the model reads it: Clover's start page (a `data:` URL, loaded for about:blank) reads as about:blank. */
 export function shownUrl(url: string): string {
   return url.startsWith("data:") ? "about:blank" : url;
 }

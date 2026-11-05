@@ -1,5 +1,5 @@
 // MEASUREMENT (lane B, 2026-09-22) — on a REAL, spawned `winter` child, under the daemon's own
-// `buildWinterOptions`: does a SAVED allow rule take effect without asking the host, and does the
+// `buildCloverOptions`: does a SAVED allow rule take effect without asking the host, and does the
 // control-plane DENY still beat a saved allow rule that matches the same call?
 //
 // The scripted `winter-test/laneb` double makes exactly ONE `Write` to the path on the prompt's last
@@ -18,7 +18,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { query, type CanUseTool } from "@yanlinglabs/winter-agent-sdk";
 import type { CredentialPresence } from "@yanlinglabs/winter-runtime-sdk";
-import { buildWinterOptions } from "../../src/runtime-sdk/mode-options";
+import { buildCloverOptions } from "../../src/runtime-sdk/mode-options";
 import type { ModelTag } from "../../src/runtime-sdk/model-tag";
 import { createHostPromptQueue } from "../../src/runtime-sdk/prompt-queue";
 import { describeWithWinterBinary } from "../helpers/winter-binary";
@@ -29,7 +29,7 @@ async function writeOnce(bin: string, opts: { home: string; cwd: string; target:
     asked.push(name);
     return { behavior: "deny", message: "measurement: the host refuses everything" };
   };
-  const options = buildWinterOptions({
+  const options = buildCloverOptions({
     mode: "code", policy: "ask", sessionId: crypto.randomUUID(), home: opts.home, cwd: opts.cwd,
     model: "winter-test/laneb" as ModelTag, credentials: { byProvider: {} } as unknown as CredentialPresence,
     systemPrompt: "You are a measurement.", exaKeyPresent: false,
@@ -42,7 +42,7 @@ async function writeOnce(bin: string, opts: { home: string; cwd: string; target:
   queue.push(opts.target);
   try {
     for await (const m of q) {
-      if (process.env.WINTER_DEBUG_MEASURE === "1") console.warn(JSON.stringify(m).slice(0, 600));
+      if (process.env.CLOVER_DEBUG_MEASURE === "1") console.warn(JSON.stringify(m).slice(0, 600));
       if ((m as { type?: string }).type === "result") break;
     }
   } finally {
@@ -53,8 +53,8 @@ async function writeOnce(bin: string, opts: { home: string; cwd: string; target:
 
 describeWithWinterBinary("saved allow rules on a real winter child — applied natively, and never over a deny", (bin) => {
   test("no rule → asked and refused; `Edit` saved → written unasked; `Edit` saved → a control-plane file is still denied", async () => {
-    const home = realpathSync(mkdtempSync(join(tmpdir(), "winter-allow-measure-home-")));
-    const cwd = realpathSync(mkdtempSync(join(tmpdir(), "winter-allow-measure-cwd-")));
+    const home = realpathSync(mkdtempSync(join(tmpdir(), "clover-allow-measure-home-")));
+    const cwd = realpathSync(mkdtempSync(join(tmpdir(), "clover-allow-measure-cwd-")));
     try {
       const first = join(cwd, "first.txt");
       const without = await writeOnce(bin, { home, cwd, target: first });

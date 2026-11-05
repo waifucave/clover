@@ -88,7 +88,7 @@ export class SessionTitler {
     /** See the field's own doc comment. A real daemon passes this and nothing else. */
     source?: InternalCallSource;
     /** B-1: `InternalProviderView.refreshSoon` — asked when the provider REJECTS the credential, which
-     *  is the `winter logout` symptom (the snapshot still says it is there). Titles are the most frequent
+     *  is the `clover logout` symptom (the snapshot still says it is there). Titles are the most frequent
      *  internal call — every session's first turn — so this is the fastest carrier of all of them.
      *  Rate-limited and non-blocking inside. Absent in every test double. */
     refreshCredentials?: () => void;
@@ -104,7 +104,7 @@ export class SessionTitler {
     this.roleHealth = deps.roleHealth;
     // A junk env value must fall back to the default, not become NaN — setTimeout(fn, NaN) fires
     // immediately (dreamer.ts's constructor guards the same footgun the same way).
-    const n = Number(process.env.WINTER_TITLE_TIMEOUT_MS);
+    const n = Number(process.env.CLOVER_TITLE_TIMEOUT_MS);
     // D2 (2026-09-22 dist-session-fixes): raised from 15000. Measured cause of the dist log's
     // "title timeout after 15000ms" — `titles.model`'s stored role effort of `"none"` was, at the
     // time, dropped by `internalWireEffortFor` (providers/internal-provider.ts) rather than sent, so
@@ -161,7 +161,7 @@ export class SessionTitler {
     const ac = new AbortController();
     // 2026-09-19: resolved ONCE per call, so the provider, the model, the tag and the effort provably
     // come from one settings/credential generation. A refusal means the job is not runnable right now
-    // (no credentialed provider, or an explicit pin on one Winter cannot use): return empty, which
+    // (no credentialed provider, or an explicit pin on one Clover cannot use): return empty, which
     // `maybeTitle` already treats as "no title", exactly as a blank model reply does.
     const resolved = this.source?.();
     if (resolved !== undefined && isInternalRefusal(resolved)) return "";
@@ -199,7 +199,7 @@ export class SessionTitler {
         // + swallowed" — that swallowing is unchanged).
         else if (ev.type === "error" && wire.tag !== undefined) {
           sawProviderError = true;
-          // B-1: a REJECTED credential is the `winter logout` symptom — ask for a rate-limited re-probe
+          // B-1: a REJECTED credential is the `clover logout` symptom — ask for a rate-limited re-probe
           // so the next call goes quietly inert instead of failing the same way again.
           if (ev.code === "auth") this.refreshCredentials?.();
           this.roleHealth?.recordFailure("titles.model", wire.tag, classifyProviderFailure({ ...ev, subscriptionQuota: wire.quota?.subscriptionQuota() }));

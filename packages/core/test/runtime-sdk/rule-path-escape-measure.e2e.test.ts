@@ -6,20 +6,20 @@
 // (SV-6). A home or project named `r[1]*\x` must therefore be matched LITERALLY by the escaped rule — and,
 // as the control, NOT by the raw spelling, whose `[1]` is a character class. This measures the deny side
 // (the one the daemon relies on for its fences) with a real Write: the built `winter` binary
-// (`WINTER_RUNTIME_EXECUTABLE`), the `winter-test/laneb` double (one Write to the path its prompt names),
+// (`CLOVER_RUNTIME_EXECUTABLE`), the `winter-test/laneb` double (one Write to the path its prompt names),
 // `Options.permissions.deny`. `acceptEdits` plus an allowing `canUseTool`: nothing but the deny rule can
 // stop the write.
 //
 // MEASURED at agent SDK 5e37898 (claude's rule-content parse, from 6170adb on): every name below is denied
-// on the Winter leg — the rows are real assertions. (WS-23: the official-leg half of this measurement —
+// on the Clover leg — the rows are real assertions. (WS-23: the official-leg half of this measurement —
 // the pinned `claude` binary, and claude's own double-backslash grammar case — is gone with that leg; the
 // router's `escapeRulePath` is still claude's rule-content escape over the gitignore escape, which is the
-// grammar the Winter runtime reads.)
+// grammar the Clover runtime reads.)
 import { describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { query as winterQuery } from "@yanlinglabs/winter-agent-sdk";
+import { query as cloverQuery } from "@yanlinglabs/winter-agent-sdk";
 import { escapeRulePath } from "@yanlinglabs/winter-runtime-sdk";
 import { fsRootAnchored } from "../../src/runtime-sdk/mode-options";
 import { describeWithWinterBinary } from "../helpers/winter-binary";
@@ -48,11 +48,11 @@ function denyRules(dir: string, escaped: boolean | "single" | "double"): string[
  *  and parens (router 3279a1d's table escapes them at both layers). */
 const NAMES = ["r[1]*x", "b\\x", "p (old)"] as const;
 
-describeWithWinterBinary("R.2 carry — escaped rule paths on the Winter leg", (bin) => {
+describeWithWinterBinary("R.2 carry — escaped rule paths on the Clover leg", (bin) => {
   async function writeUnder(name: string, escaped: boolean): Promise<boolean> {
-    const b = bed("winter-rule-escape-w-", name);
+    const b = bed("clover-rule-escape-w-", name);
     try {
-      const q = winterQuery({
+      const q = cloverQuery({
         prompt: b.target,
         options: {
           pathToClaudeCodeExecutable: bin,
@@ -62,7 +62,7 @@ describeWithWinterBinary("R.2 carry — escaped rule paths on the Winter leg", (
           sandbox: { enabled: false },
           permissions: { deny: denyRules(b.dir, escaped) },
           canUseTool: async (_tool, input) => ({ behavior: "allow", updatedInput: input }),
-          env: { PATH: process.env.PATH ?? "/usr/bin:/bin", HOME: b.home, TMPDIR: b.home, WINTER_HOME: b.home, WINTER_PROFILE: "test", WINTER_TEST_PROVIDER: "laneb" },
+          env: { PATH: process.env.PATH ?? "/usr/bin:/bin", HOME: b.home, TMPDIR: b.home, CLOVER_HOME: b.home, CLOVER_PROFILE: "test", WINTER_TEST_PROVIDER: "laneb" },
         },
       });
       for await (const m of q) if ((m as { type?: string }).type === "result") break;
@@ -72,13 +72,13 @@ describeWithWinterBinary("R.2 carry — escaped rule paths on the Winter leg", (
     }
   }
 
-  // Real since the SDK pin reached 5e37898 (claude's rule-content parse on the Winter leg; at dd9f17d
+  // Real since the SDK pin reached 5e37898 (claude's rule-content parse on the Clover leg; at dd9f17d
   // neither spelling denied once the router escaped for claude).
   for (const name of NAMES) {
     test(`${JSON.stringify(name)}: the ESCAPED rule denies the write (the raw spelling is recorded as the control)`, async () => {
       const deniedEscaped = !(await writeUnder(name, true));
       const deniedRaw = !(await writeUnder(name, false));
-      console.error(`R.2 rule-escape (winter) ${JSON.stringify(name)}: escaped rule denies=${deniedEscaped}; raw rule denies=${deniedRaw}`);
+      console.error(`R.2 rule-escape (clover) ${JSON.stringify(name)}: escaped rule denies=${deniedEscaped}; raw rule denies=${deniedRaw}`);
       expect(deniedEscaped).toBe(true);
     }, 60_000);
   }

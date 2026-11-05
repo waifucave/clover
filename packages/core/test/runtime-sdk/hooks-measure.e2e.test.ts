@@ -18,7 +18,7 @@
 // child actually running it is whatever `Options.hooks` decides — which is precisely the seam this
 // file measures.
 //
-// SKIPS cleanly when `WINTER_RUNTIME_EXECUTABLE` is unset; `WINTER_RUNTIME_REQUIRE_BINARY=1` (CI) makes
+// SKIPS cleanly when `CLOVER_RUNTIME_EXECUTABLE` is unset; `CLOVER_RUNTIME_REQUIRE_BINARY=1` (CI) makes
 // a missing binary a FAILURE (P8b-2 contract, `describeWithWinterBinary`).
 import { expect, test } from "bun:test";
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
@@ -42,8 +42,8 @@ function contentOf(m: unknown): Array<Record<string, unknown>> | undefined {
 async function driveWithHooks(bin: string, hooks: Options["hooks"]): Promise<{
   messages: Array<Record<string, unknown>>;
 }> {
-  const home = mkdtempSync(join(tmpdir(), "winter-hooks-measure-home-"));
-  const cwd = mkdtempSync(join(tmpdir(), "winter-hooks-measure-cwd-"));
+  const home = mkdtempSync(join(tmpdir(), "clover-hooks-measure-home-"));
+  const cwd = mkdtempSync(join(tmpdir(), "clover-hooks-measure-cwd-"));
   const queue = createHostPromptQueue();
   const messages: Array<Record<string, unknown>> = [];
 
@@ -58,10 +58,10 @@ async function driveWithHooks(bin: string, hooks: Options["hooks"]): Promise<{
       hooks,
       env: {
         PATH: process.env.PATH ?? "/usr/bin:/bin",
-        // Pre-rename this set two distinct env keys — the daemon's own home var, and WINTER_HOME (the SDK's
+        // Pre-rename this set two distinct env keys — the daemon's own home var, and CLOVER_HOME (the SDK's
         // brand-derived home); the rename makes them the same key, so it is written once now.
-        HOME: home, TMPDIR: home, WINTER_HOME: home,
-        WINTER_PROFILE: "test",
+        HOME: home, TMPDIR: home, CLOVER_HOME: home,
+        CLOVER_PROFILE: "test",
         WINTER_TEST_PROVIDER: "lanec",
       },
     },

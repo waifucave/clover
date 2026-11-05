@@ -1,8 +1,8 @@
 // Dispatch's children — the `session_spawn` door and everything that follows a spawned session.
 //
-// REBUILT on the Winter leg. The engine-era `DispatchChildren` (deleted with `agent/engine.ts` in
+// REBUILT on the Clover leg. The engine-era `DispatchChildren` (deleted with `agent/engine.ts` in
 // Phase 8b Task 17) was driven by an engine BRIDGE that intercepted `session_spawn` before the tool
-// registry ran; on the Winter leg the dispatch coordinator is a runtime child calling the daemon's
+// registry ran; on the Clover leg the dispatch coordinator is a runtime child calling the daemon's
 // `sessions` capability server (`capabilities/sessions.ts`), so the tool's own `run()` is the door
 // and this file is what it calls. The behaviour is the old design's, re-seated on today's seams:
 //
@@ -74,7 +74,7 @@
 // you (TaskStop)." (`manage_session stop` was the third door until ManageSession left Dispatch, 2026-10-02.)
 import { existsSync, statSync } from "node:fs";
 import { isAbsolute } from "node:path";
-import { COMPUTER_WAKE_CLIENT_NAME, DISPATCH_WAKE_CLIENT_NAME, type SessionEvent } from "@yanlinglabs/winter-protocol";
+import { COMPUTER_WAKE_CLIENT_NAME, DISPATCH_WAKE_CLIENT_NAME, type SessionEvent } from "@waifucave/clover-protocol";
 import { canonicalSessionCwd } from "../sessions/dirs";
 import { TurnOriginPairer } from "../sessions/turn-origins";
 
@@ -146,7 +146,7 @@ export interface DispatchChildrenDeps {
     attachedCount(sessionId: string): number;
   };
   /** THE creation transaction (`ipc/server.ts`'s `createSessionInternal`, published through
-   *  `onSessionCreator`). Throws a typed `WinterLegRefusal` (`code`, `message`) or an `RpcFailure`
+   *  `onSessionCreator`). Throws a typed `CloverLegRefusal` (`code`, `message`) or an `RpcFailure`
    *  (a model the catalog cannot resolve). Undefined until the IPC server is up. */
   createSession: () => ((input: {
     scope: string; cwd: string; approvalPolicy: ChildPolicy; origin: "dispatch-child"; mode: "code";
@@ -155,7 +155,7 @@ export interface DispatchChildrenDeps {
   /** Delete a session the spawn could not start — the creation-refusal rollback's own two steps
    *  (`store.deleteSession` + the daemon's `onSessionDeleted`, which ends its driver and runtime rows). */
   deleteSession?: (sessionId: string) => void;
-  /** The driver table (`WinterSessionDrivers`): `get` a live driver, `ensure` one (resuming a
+  /** The driver table (`CloverSessionDrivers`): `get` a live driver, `ensure` one (resuming a
    *  resumable session). */
   sessions: {
     get(sessionId: string): DispatchDriverHandle | undefined;
@@ -315,7 +315,7 @@ export class DispatchChildren {
    * fails after creation removes what it created.
    */
   async spawn(callerSessionId: string, args: SessionSpawnArgs, opts: { signal?: AbortSignal } = {}): Promise<string> {
-    if (this.draining) throw new SessionSpawnRefusal("SpawnSession is not available — Winter is shutting down.");
+    if (this.draining) throw new SessionSpawnRefusal("SpawnSession is not available — Clover is shutting down.");
     // Stamped when the call BEGINS (several spawns of one round run at once since agent SDK 0.0.41, so the
     // child that finishes being created first is not necessarily the one asked for first).
     const startedAt = this.now();
@@ -828,7 +828,7 @@ export class DispatchChildren {
       this.interruptedByRestart.set(childId, { dispatchId, title });
       this.safeAppend(dispatchId, {
         type: "child_update", sessionId: dispatchId, threadId: "main", childSessionId: childId, status: "error", title,
-        resultSummary: "Winter restarted while this session was working, so that turn was stopped. The session is kept — open it or send it a message to continue.",
+        resultSummary: "Clover restarted while this session was working, so that turn was stopped. The session is kept — open it or send it a message to continue.",
       });
     }
   }

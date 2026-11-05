@@ -12,7 +12,7 @@ import { RoleHealthRegistry } from "../../src/providers/role-health";
 import { Settings } from "../../src/settings";
 
 function setup(script: ProviderEvent[][]) {
-  const home = mkdtempSync(join(tmpdir(), "winter-titles-home-"));
+  const home = mkdtempSync(join(tmpdir(), "clover-titles-home-"));
   const store = new SessionStore(home);
   const hub = new SessionHub(store);
   const provider = new FakeProvider(script);
@@ -55,7 +55,7 @@ class HangingProvider implements Provider {
 }
 
 /** A provider that resolves successfully after a short real delay — used to prove a malformed
- *  WINTER_TITLE_TIMEOUT_MS env value falls back to the documented default instead of NaN-ing
+ *  CLOVER_TITLE_TIMEOUT_MS env value falls back to the documented default instead of NaN-ing
  *  setTimeout into an instant timeout. Mirrors dreamer-gates.test.ts's DelayedProvider. */
 class DelayedProvider implements Provider {
   readonly id = "delayed";
@@ -93,7 +93,7 @@ describe("SessionTitler", () => {
   // so two real provider calls happen against the SAME titler instance, no reconstruction between
   // them — exactly what a `titles.model` write hitting a running daemon needs.
   test("model is read LIVE — a getter mutated between calls changes the NEXT call, no restart", async () => {
-    const home = mkdtempSync(join(tmpdir(), "winter-titles-home-"));
+    const home = mkdtempSync(join(tmpdir(), "clover-titles-home-"));
     const store = new SessionStore(home);
     const hub = new SessionHub(store);
     const provider = new FakeProvider([...titleScript("first"), ...titleScript("second")]);
@@ -118,7 +118,7 @@ describe("SessionTitler", () => {
   // mismatched provider) falls back to `deps.provider.model` — identical to no override at all,
   // same fallback `deps.model ?? deps.provider.model` always had.
   test("a getter returning undefined falls back to the provider's own model", async () => {
-    const home = mkdtempSync(join(tmpdir(), "winter-titles-home-"));
+    const home = mkdtempSync(join(tmpdir(), "clover-titles-home-"));
     const store = new SessionStore(home);
     const hub = new SessionHub(store);
     const provider = new FakeProvider(titleScript("t"));
@@ -136,7 +136,7 @@ describe("SessionTitler", () => {
   // in sight to fix it. `deps.provider.live` (when present — `RebindableProvider.live`) is now
   // consulted FIRST, mirroring `agentProvider.live?.().model`'s hot re-read every real daemon uses.
   test("no override -> falls back to the LIVE bound model (deps.provider.live), not the static snapshot", async () => {
-    const home = mkdtempSync(join(tmpdir(), "winter-titles-home-"));
+    const home = mkdtempSync(join(tmpdir(), "clover-titles-home-"));
     const store = new SessionStore(home);
     const hub = new SessionHub(store);
     const provider = new FakeProvider([...titleScript("first"), ...titleScript("second")]);
@@ -166,7 +166,7 @@ describe("SessionTitler", () => {
   });
 
   test("provider error → resolves without throwing, no event", async () => {
-    const home = mkdtempSync(join(tmpdir(), "winter-titles-home-"));
+    const home = mkdtempSync(join(tmpdir(), "clover-titles-home-"));
     const store = new SessionStore(home);
     const hub = new SessionHub(store);
     const titler = new SessionTitler({ provider: { provider: new ThrowingProvider(), model: "fake-1" }, store, hub });
@@ -200,7 +200,7 @@ describe("SessionTitler", () => {
 
   describe("carried-over review fix: timeout aborts the in-flight provider call", () => {
     test("timeoutMs elapses -> maybeTitle resolves without throwing, no event, provider's request.signal is aborted", async () => {
-      const home = mkdtempSync(join(tmpdir(), "winter-titles-home-"));
+      const home = mkdtempSync(join(tmpdir(), "clover-titles-home-"));
       const store = new SessionStore(home);
       const hub = new SessionHub(store);
       const provider = new HangingProvider();
@@ -216,11 +216,11 @@ describe("SessionTitler", () => {
       expect(store.read(sessionId).filter((e) => e.type === "session_titled").length).toBe(0);
     });
 
-    test("malformed WINTER_TITLE_TIMEOUT_MS env value falls back to the default instead of NaN-ing an instant timeout", async () => {
-      const original = process.env.WINTER_TITLE_TIMEOUT_MS;
+    test("malformed CLOVER_TITLE_TIMEOUT_MS env value falls back to the default instead of NaN-ing an instant timeout", async () => {
+      const original = process.env.CLOVER_TITLE_TIMEOUT_MS;
       try {
-        process.env.WINTER_TITLE_TIMEOUT_MS = "not-a-number";
-        const home = mkdtempSync(join(tmpdir(), "winter-titles-home-"));
+        process.env.CLOVER_TITLE_TIMEOUT_MS = "not-a-number";
+        const home = mkdtempSync(join(tmpdir(), "clover-titles-home-"));
         const store = new SessionStore(home);
         const hub = new SessionHub(store);
         const provider = new DelayedProvider(30); // resolves in 30ms — fine under the real default, fatal under NaN
@@ -235,8 +235,8 @@ describe("SessionTitler", () => {
         expect(events.length).toBe(1);
         expect((events[0] as any).title).toBe("Fixing the login flow");
       } finally {
-        if (original === undefined) delete process.env.WINTER_TITLE_TIMEOUT_MS;
-        else process.env.WINTER_TITLE_TIMEOUT_MS = original;
+        if (original === undefined) delete process.env.CLOVER_TITLE_TIMEOUT_MS;
+        else process.env.CLOVER_TITLE_TIMEOUT_MS = original;
       }
     });
   });
@@ -253,7 +253,7 @@ describe("SessionTitler: the titles.model role effort", () => {
 
   /** One titler over a mutable settings holder; each `title()` is a fresh session (a session titles once). */
   function liveTitler(initial: Settings) {
-    const home = mkdtempSync(join(tmpdir(), "winter-titles-effort-"));
+    const home = mkdtempSync(join(tmpdir(), "clover-titles-effort-"));
     const store = new SessionStore(home);
     const provider = new FakeProvider(titleScript("A title"));
     const holder = { settings: initial };
@@ -315,10 +315,10 @@ describe("SessionTitler: the titles.model role effort", () => {
 
 describe("SessionTitler role-health wiring (2026-09-18) — observation only", () => {
   test("a provider error (a class titles.ts never had a branch for before) records titles.model, never throws or changes maybeTitle's swallow-and-log behaviour", async () => {
-    const home = mkdtempSync(join(tmpdir(), "winter-titles-rh-home-"));
+    const home = mkdtempSync(join(tmpdir(), "clover-titles-rh-home-"));
     const store = new SessionStore(home);
     const hub = new SessionHub(store);
-    const roleHealth = new RoleHealthRegistry(mkdtempSync(join(tmpdir(), "winter-titles-rh-registry-")));
+    const roleHealth = new RoleHealthRegistry(mkdtempSync(join(tmpdir(), "clover-titles-rh-registry-")));
     const failing = new FakeProvider([[{ type: "error", code: "rate_limit", providerCode: "insufficient_quota", message: "429" }]]);
     const titler = new SessionTitler({
       provider: { provider: failing, model: "fake-1" }, store, hub,
@@ -337,10 +337,10 @@ describe("SessionTitler role-health wiring (2026-09-18) — observation only", (
   });
 
   test("a successful title clears a previously recorded note", async () => {
-    const home = mkdtempSync(join(tmpdir(), "winter-titles-rh-home2-"));
+    const home = mkdtempSync(join(tmpdir(), "clover-titles-rh-home2-"));
     const store = new SessionStore(home);
     const hub = new SessionHub(store);
-    const roleHealth = new RoleHealthRegistry(mkdtempSync(join(tmpdir(), "winter-titles-rh-registry2-")));
+    const roleHealth = new RoleHealthRegistry(mkdtempSync(join(tmpdir(), "clover-titles-rh-registry2-")));
     roleHealth.recordFailure("titles.model", "openai/fake-1", { reason: "other", detail: "stale" });
     const ok = new FakeProvider(titleScript("Fix the login flow"));
     const titler = new SessionTitler({
@@ -379,11 +379,11 @@ describe("a first turn that failed still gets a title", () => {
 });
 
 // B-1 (2026-09-19 review): titles are the most frequent internal call — every session's first turn —
-// so after a `winter logout` they are the first thing to fail `credential-rejected`. A rejected
+// so after a `clover logout` they are the first thing to fail `credential-rejected`. A rejected
 // credential asks for a rate-limited re-probe so the next call goes quietly inert instead.
 describe("SessionTitler — the credential-rejection self-heal", () => {
   function titlerWith(events: ProviderEvent[][], onRefresh: () => void) {
-    const home = mkdtempSync(join(tmpdir(), "winter-titles-refresh-"));
+    const home = mkdtempSync(join(tmpdir(), "clover-titles-refresh-"));
     const store = new SessionStore(home);
     const hub = new SessionHub(store);
     const provider = new FakeProvider(events);

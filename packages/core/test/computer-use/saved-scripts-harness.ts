@@ -78,7 +78,7 @@ export class InProcessWorker {
 }
 
 export function savedScriptsWorld(opts: { idleMs?: number; savedScripts?: SavedScripts } = {}) {
-  const home = mkdtempSync(join(tmpdir(), "winter-cu-saved-"));
+  const home = mkdtempSync(join(tmpdir(), "clover-cu-saved-"));
   const workers: InProcessWorker[] = [];
   const audits: Array<Record<string, unknown>> = [];
   const telemetry = new AutomationTelemetry(home);

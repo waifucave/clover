@@ -29,7 +29,7 @@ export function registerHostStorageFences(home: string, options: HostStorageFenc
   const domains = spelling(options.coordinationDir);
   for (const h of [home, ...(options.participatingHomes ?? [])]) {
     for (const candidate of spelling(h)) for (const domain of domains) {
-      if (candidate === domain || candidate.startsWith(`${domain}/`) || domain.startsWith(`${candidate}/`)) throw new Error("Winter homes may not overlap host coordination storage");
+      if (candidate === domain || candidate.startsWith(`${domain}/`) || domain.startsWith(`${candidate}/`)) throw new Error("Clover homes may not overlap host coordination storage");
     }
   }
   const previous = registered.get(key);
@@ -98,7 +98,7 @@ export function hostStorageReadPatterns(home: string, options?: HostStorageFence
   ];
 }
 
-/** Host-owned descriptor for Winter-owned Cowork workers/bridges, never ordinary Code runtimes
+/** Host-owned descriptor for Clover-owned Cowork workers/bridges, never ordinary Code runtimes
  * or third-party tools. Ordinary host execution uses its existing sandbox and approval pipeline;
  * approved escapes have no persistent outer profile. This descriptor alone does not activate
  * worker kernel enforcement or enable Cowork. */

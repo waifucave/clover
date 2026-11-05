@@ -1,5 +1,5 @@
 // ListSessions' free-form `query` (user ruling 2026-10-02): "the session that edited
-// ~/projects/winter/config.toml", "the login bug from yesterday", "last week's build fix". Interpreted
+// ~/projects/clover/config.toml", "the login bug from yesterday", "last week's build fix". Interpreted
 // HERE, by plain structured/lexical rules — no embeddings, no model call — so the same query over the
 // same sessions at the same instant always ranks the same way (the tests pin it).
 //

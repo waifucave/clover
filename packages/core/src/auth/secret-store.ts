@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { keychainService, resolveWinterProfile } from "../profile";
+import { keychainService, resolveCloverProfile } from "../profile";
 
 export interface SecretStore {
   get(name: string): Promise<string | null>;
@@ -9,7 +9,7 @@ export interface SecretStore {
    * WS-19 (W19-2): remove the item outright. `true` when something was actually removed, `false`
    * when there was nothing there — the exact shape `credential.remove`'s `removed` field reports.
    *
-   * Winter used to have no delete at all: `clearCredentialMaterial` wrote an EMPTY STRING and every
+   * Clover used to have no delete at all: `clearCredentialMaterial` wrote an EMPTY STRING and every
    * reader treated a blank as absent (`readCredentialMaterial`'s own `if (!raw) return null`). That
    * blank-as-absent rule is NOT retired by this method — a home written by an older build still
    * holds blanked items, and they must keep reading as absent — but a *new* removal deletes rather
@@ -19,21 +19,21 @@ export interface SecretStore {
 }
 
 // DD branch review rider: resolved ONCE at module load (unlike `launchdLabel()`'s call-time
-// `resolveWinterProfile()` default param) — deliberate, but it means `WINTER_PROFILE` must be set
-// in the environment BEFORE this module is first imported. Mutating `process.env.WINTER_PROFILE`
+// `resolveCloverProfile()` default param) — deliberate, but it means `CLOVER_PROFILE` must be set
+// in the environment BEFORE this module is first imported. Mutating `process.env.CLOVER_PROFILE`
 // afterward is inert; `SERVICE` will not re-resolve. This is why a launchd-installed dev daemon
-// MUST have `WINTER_PROFILE` baked into its plist's `EnvironmentVariables` (see
+// MUST have `CLOVER_PROFILE` baked into its plist's `EnvironmentVariables` (see
 // `packages/cli/src/launchd.ts` `renderPlist`) rather than relying on any later mutation.
 //
-// ISOLATION FIX (2026-10-09): the home an EXPLICIT `WINTER_HOME` names is passed through, so a process run on a
-// custom home honours `WINTER_KEYCHAIN_SERVICE` (`keychainService`'s own rule). Without it this store — the
+// ISOLATION FIX (2026-10-09): the home an EXPLICIT `CLOVER_HOME` names is passed through, so a process run on a
+// custom home honours `CLOVER_KEYCHAIN_SERVICE` (`keychainService`'s own rule). Without it this store — the
 // daemon's and the CLI's — always used the profile's REAL service: a hand-started daemon on a temp home probed
-// `com.winter.core[.dev]` and raised one Keychain prompt per item another binary created. No `WINTER_HOME`
+// `com.waifucave.clover.core[.dev]` and raised one Keychain prompt per item another binary created. No `CLOVER_HOME`
 // still means "assert nothing" (the real service), exactly as before.
-export const DEFAULT_SECRET_SERVICE = keychainService(resolveWinterProfile(), explicitWinterHome());
+export const DEFAULT_SECRET_SERVICE = keychainService(resolveCloverProfile(), explicitCloverHome());
 
-function explicitWinterHome(): string | undefined {
-  const home = process.env.WINTER_HOME;
+function explicitCloverHome(): string | undefined {
+  const home = process.env.CLOVER_HOME;
   return home !== undefined && home.length > 0 ? home : undefined;
 }
 

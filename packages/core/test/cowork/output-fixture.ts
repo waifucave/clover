@@ -9,7 +9,7 @@ import { SessionStore } from "../../src/sessions/store";
 import { CoworkError } from "../../src/cowork/types";
 export const outputUser = { kind: "local-user" as const, id: "fixture-user" };
 export function outputFixture(checkpoint: (phase: string) => void = () => {}) {
-  const home = mkdtempSync(join(tmpdir(), "winter-output-fixture-")), db = openRuntimeStateDb(home), records = new CoworkRepository(db), store = new SessionStore(home);
+  const home = mkdtempSync(join(tmpdir(), "clover-output-fixture-")), db = openRuntimeStateDb(home), records = new CoworkRepository(db), store = new SessionStore(home);
   const grants = { folder: () => ({ rootIdentity: "root", writable: true, revoked: false }), repository: () => undefined };
   const made = records.create({ principalId: outputUser.id, requestId: "create" }, { ownership: "project", title: "Output fixture", sources: [{ kind: "folder", label: "Fixture", access: "read-write", detail: { grantRef: "grant", rootIdentity: "root" } }], ceiling: { toolClasses: [], hostServices: [], connectors: [], network: "none" } });
   const workspaceId = made.workspaceId, epoch = records.beginIncarnation(workspaceId, "fixture-incarnation", records.get(workspaceId).configRevision), sourceId = made.value.sources[0]!.sourceId;

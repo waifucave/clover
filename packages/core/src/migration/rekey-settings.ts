@@ -1,4 +1,4 @@
-// Phase 9c Migration B / `winter migrate-project` (P9b-8's explicit map, replayed on settings
+// Phase 9c Migration B / `clover migrate-project` (P9b-8's explicit map, replayed on settings
 // VALUES): a legacy `settings.json` (the daemon's own, or a project's legacy-project-dir one — see
 // `legacy-names.ts`'s `LEGACY_PROJECT_DIR`) may carry the pre-rename env-var names or legacy home
 // directory path segments (`LEGACY_HOME_DIR`/`LEGACY_DEV_HOME_DIR`) inside plain STRING values
@@ -6,18 +6,18 @@
 // hand-written absolute path under the old home). Keys are NEVER renamed — the schema is unchanged
 // across the rename, so a settings.json's shape survives verbatim; only the legacy spellings living
 // inside its string values are rewritten.
-import { LEGACY_CLAUDE_EXECUTABLE_ENV, LEGACY_DEV_HOME_DIR, LEGACY_HOME_DIR, LEGACY_HOME_ENV, LEGACY_PROFILE_ENV, LEGACY_TMPDIR_ENV, LEGACY_WINTER_EXECUTABLE_ENV } from "../legacy-names";
+import { LEGACY_CLAUDE_EXECUTABLE_ENV, LEGACY_DEV_HOME_DIR, LEGACY_HOME_DIR, LEGACY_HOME_ENV, LEGACY_PROFILE_ENV, LEGACY_TMPDIR_ENV, LEGACY_CLOVER_EXECUTABLE_ENV } from "../legacy-names";
 
 /** The P9b-8 whole-token env-var map, verbatim (global-constraints.md, Task M Step 5). */
 const ENV_TOKEN_MAP: readonly (readonly [string, string])[] = [
-  [LEGACY_HOME_ENV, "WINTER_HOME"],
-  [LEGACY_PROFILE_ENV, "WINTER_PROFILE"],
-  [LEGACY_TMPDIR_ENV, "WINTER_TMPDIR"],
-  [LEGACY_WINTER_EXECUTABLE_ENV, "WINTER_RUNTIME_EXECUTABLE"],
-  [LEGACY_CLAUDE_EXECUTABLE_ENV, "WINTER_CLAUDE_EXECUTABLE"],
+  [LEGACY_HOME_ENV, "CLOVER_HOME"],
+  [LEGACY_PROFILE_ENV, "CLOVER_PROFILE"],
+  [LEGACY_TMPDIR_ENV, "CLOVER_TMPDIR"],
+  [LEGACY_CLOVER_EXECUTABLE_ENV, "CLOVER_RUNTIME_EXECUTABLE"],
+  [LEGACY_CLAUDE_EXECUTABLE_ENV, "CLOVER_CLAUDE_EXECUTABLE"],
 ];
 
-/** The path-segment map (`LEGACY_DEV_HOME_DIR` → `.winter-dev`, `LEGACY_HOME_DIR` → `.winter`,
+/** The path-segment map (`LEGACY_DEV_HOME_DIR` → `.clover-dev`, `LEGACY_HOME_DIR` → `.clover`,
  *  each as a whole path segment — global-constraints.md, Task M Step 5, verbatim). `LEGACY_HOME_DIR`
  *  is a strict prefix of `LEGACY_DEV_HOME_DIR` (one dotfile name plus a `-dev` suffix), but
  *  `replacePathSegment`'s trailing lookahead (`/` or end-of-string right after the legacy spelling)
@@ -25,8 +25,8 @@ const ENV_TOKEN_MAP: readonly (readonly [string, string])[] = [
  *  `-`, not a segment boundary — so listing the dev variant first is a readability choice, not a
  *  correctness requirement; either order produces the same result. */
 const PATH_TOKEN_MAP: readonly (readonly [string, string])[] = [
-  [LEGACY_DEV_HOME_DIR, ".winter-dev"],
-  [LEGACY_HOME_DIR, ".winter"],
+  [LEGACY_DEV_HOME_DIR, ".clover-dev"],
+  [LEGACY_HOME_DIR, ".clover"],
 ];
 
 function escapeRegExp(s: string): string {
@@ -47,15 +47,15 @@ function replaceToken(s: string, from: string, to: string): string {
  *  end of the string. This is a superset of the brief's literal `/…/`-bounded patterns (it also
  *  catches the no-trailing-slash case, e.g. a bare tilde-relative reference naming the legacy home
  *  itself) without ever matching a mid-segment substring. */
-function replacePathSegment(s: string, legacy: string, winter: string): string {
+function replacePathSegment(s: string, legacy: string, clover: string): string {
   const re = new RegExp(`(^|[/~])${escapeRegExp(legacy)}(?=\\/|$)`, "g");
-  return s.replace(re, (_m, boundary: string) => `${boundary}${winter}`);
+  return s.replace(re, (_m, boundary: string) => `${boundary}${clover}`);
 }
 
 function rekeyString(value: string): string {
   let out = value;
   for (const [from, to] of ENV_TOKEN_MAP) out = replaceToken(out, from, to);
-  for (const [legacy, winter] of PATH_TOKEN_MAP) out = replacePathSegment(out, legacy, winter);
+  for (const [legacy, clover] of PATH_TOKEN_MAP) out = replacePathSegment(out, legacy, clover);
   return out;
 }
 

@@ -119,7 +119,7 @@ describe("free-text questions (2026-10-20)", () => {
   });
 
   test("a free-text question's hint line is its placeholder, dim — or nothing", () => {
-    expect(freeTextHintLine({ question: "Name?", options: [], placeholder: "e.g. Winter" })).toBe(`  ${DIM}e.g. Winter${RESET}\n`);
+    expect(freeTextHintLine({ question: "Name?", options: [], placeholder: "e.g. Clover" })).toBe(`  ${DIM}e.g. Clover${RESET}\n`);
     expect(freeTextHintLine({ question: "Name?", options: [] })).toBeNull();
   });
 });

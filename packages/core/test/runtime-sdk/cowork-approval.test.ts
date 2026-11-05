@@ -5,7 +5,7 @@ import { afterEach, expect, jest, test } from "bun:test";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import type { CanUseTool, PermissionResult } from "@yanlinglabs/winter-agent-sdk";
-import { ApprovalRequestedEvent, type ApprovalPolicy, type NewSessionEvent } from "@yanlinglabs/winter-protocol";
+import { ApprovalRequestedEvent, type ApprovalPolicy, type NewSessionEvent } from "@waifucave/clover-protocol";
 import { ApprovalBroker } from "../../src/agent/approvals";
 import { PermissionGate } from "../../src/agent/gate";
 import type { ConnectorPermissionSource, ConnectorPermissionTable } from "../../src/agent/mcp/connector-permissions";
@@ -31,7 +31,7 @@ function classifyPath(path: string): string {
   // Roots and every conversation's folder are "outputs"/"scratch" to the host; the projection narrows them to the OWN folder.
   if (path === "/workspace/.winter/scratch" || path.startsWith("/workspace/.winter/scratch/")) return "scratch";
   if (path === "/workspace/outputs" || path.startsWith("/workspace/outputs/")) return "outputs";
-  // The epoch-scoped plan scratch lives OUTSIDE `.winter`; the host calls the root and everything under it planScratch.
+  // The epoch-scoped plan scratch lives OUTSIDE `.clover`; the host calls the root and everything under it planScratch.
   if (path === "/workspace/plan" || path.startsWith("/workspace/plan/")) return "planScratch";
   if (path.startsWith("/workspace/.winter/") || path === "/workspace/.winter" || path.startsWith("/proc")) return "protected";
   if (path.startsWith("/workspace/repos/")) return "admitted";
@@ -160,10 +160,10 @@ test("an explicit allow the host resolved lifts dont-ask and ask but never plan;
 });
 
 const OWN_OUT = "/workspace/outputs/cowork-1", OWN_SCRATCH = "/workspace/.winter/scratch/cowork-1";
-test("the conversation's own outputs and `.winter` scratch: read everywhere, write like an admitted root (plan denies); others' folders and the roots are denied", async () => {
+test("the conversation's own outputs and `.clover` scratch: read everywhere, write like an admitted root (plan denies); others' folders and the roots are denied", async () => {
   for (const policy of POLICIES) {
     for (const [name, own, other, root] of [["outputs", OWN_OUT, "/workspace/outputs/someone-else", "/workspace/outputs"], ["scratch", OWN_SCRATCH, "/workspace/.winter/scratch/someone-else", "/workspace/.winter/scratch"]] as const) {
-      const writeKind: Outcome = GRID[policy].Write;   // plan x `.winter` scratch is a plain deny: the plan scratch lives elsewhere
+      const writeKind: Outcome = GRID[policy].Write;   // plan x `.clover` scratch is a plain deny: the plan scratch lives elsewhere
       const editKind: Outcome = GRID[policy].Edit;
       const row = (dir: string) => ({
         Read: ["Read", { file_path: `${dir}/a.txt` }], Write: ["Write", { file_path: `${dir}/a.txt`, content: "x" }], Edit: ["Edit", { file_path: `${dir}/a.txt`, old_string: "a", new_string: "b" }],

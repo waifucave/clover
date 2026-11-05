@@ -6,7 +6,7 @@ import { FakeCheckpoints, assistantToolUse, init, makeProjector, run, toolResult
 /**
  * `TaskCreate`/`TaskUpdate` synthesize `task_updated` from the CALL, not from any wire frame — the
  * SDK's to-do store puts nothing on the wire (`children.ts`'s module doc). These builders mirror the
- * pinned executor shapes measured against a real session (`~/.winter-dev/sessions/global/
+ * pinned executor shapes measured against a real session (`~/.clover-dev/sessions/global/
  * s_98250c036992.jsonl`) and `tools/impl/task-graph.ts`'s own T8 notes.
  */
 const create = (id: string, subject: string, description: string, activeForm?: string) =>
@@ -182,7 +182,7 @@ describe("projector: the to-do list (TaskCreate/TaskUpdate) → task_updated", (
     expect(created).toMatchObject({ threadId: MAIN_THREAD });
   });
 
-  test("readWinterTasks/task.list sees the synthesized row through the ordinary task_updated fold", () => {
+  test("readCloverTasks/task.list sees the synthesized row through the ordinary task_updated fold", () => {
     // `tasksFromEvents` (`runtime-sdk/tasks-reader.ts`) is what `ipc/server.ts`'s `task.list` folds
     // a session's persisted log through — it has no idea whether a `task_updated` came from a
     // TaskCreate/TaskUpdate call or a background-task frame, which is exactly the point: once the

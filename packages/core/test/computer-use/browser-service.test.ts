@@ -28,7 +28,7 @@ const SHOP: FakePage = {
 };
 
 function world(o: { policy?: SessionFacts["policy"] } = {}) {
-  const home = mkdtempSync(join(tmpdir(), "winter-browser-svc-"));
+  const home = mkdtempSync(join(tmpdir(), "clover-browser-svc-"));
   const fake = new FakeHelper();
   const settings = { computerUse: { apps: {} } } as unknown as Settings;
   const facts: SessionFacts = { policy: o.policy ?? "bypass", mode: "code" };
@@ -45,14 +45,14 @@ function world(o: { policy?: SessionFacts["policy"] } = {}) {
   const winter = new FakeCdpTransport("winter", "winter");
   const chrome = new FakeCdpTransport("chrome", "chrome");
   winter.pages[SHOP.url] = SHOP;
-  registry.register(winter, { family: "winter", name: "Winter (built-in)", instanceKey: "winter" });
+  registry.register(winter, { family: "winter", name: "Clover (built-in)", instanceKey: "winter" });
   registry.register(chrome, { family: "chrome", name: "Google Chrome", bundleId: "com.google.Chrome", instanceKey: "c1" });
   let n = 0;
   const strip: Array<{ tabId: string; url?: string }> = [];
   const engine = new BrowserEngine({
     registry, sessionInfo: () => ({ cwd: home, title: "t" }), home,
-    mintWinterTab: (_sid, url) => { const tabId = `w${++n}`; strip.push({ tabId, ...(url === undefined ? {} : { url }) }); return tabId; },
-    winterTabs: () => ({ tabs: strip.map((t) => ({ ...t, url: winter.tabs.get(t.tabId)?.page.url ?? t.url })) }),
+    mintCloverTab: (_sid, url) => { const tabId = `w${++n}`; strip.push({ tabId, ...(url === undefined ? {} : { url }) }); return tabId; },
+    cloverTabs: () => ({ tabs: strip.map((t) => ({ ...t, url: winter.tabs.get(t.tabId)?.page.url ?? t.url })) }),
     persistentlyAllowed: (sid, b) => policy.persistentlyAllowed(sid, b), stopScript: (sid, why) => svc.stopScript(sid, why),
     heldElsewhere: (sid, b, name, title) => svc.heldBrowserWindow(sid, b, name, title),
   });
@@ -71,7 +71,7 @@ describe("browser tabs through the ComputerV2 service", () => {
     const r = await w.run("const tab = await browsers.open('https://shop.example.com/cart')\nprint(String(tab), tab.browser, tab.id)\nawait tab.type('SAVE10', { into: 2 })\nawait tab.click(3)\nawait tab.state()");
     expect(r.isError).toBe(false);
     const t = text(r);
-    expect(t).toContain("opened a new tab in Winter's browser\n");
+    expect(t).toContain("opened a new tab in Clover's browser\n");
     expect(t).toContain("[Tab winter:w1] winter winter:w1");
     expect(t).toMatch(/<screen-data id="[0-9a-f]+">\nTab "Checkout"/);
     expect(t).toContain('~ [2] value "" → "SAVE10"');

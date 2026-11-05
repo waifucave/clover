@@ -42,7 +42,7 @@ describe("projector/event-coverage: the relocated exhaustiveness maps", () => {
     expect(PROJECTED_EVENT_COVERAGE.tool_review).not.toBe(SUBAGENT_TRANSCRIPT_INCLUDE.tool_review);
   });
 
-  test("every HISTORY_EVENT_TYPE the phone folds has a NAMED producer on the Winter leg", () => {
+  test("every HISTORY_EVENT_TYPE the phone folds has a NAMED producer on the Clover leg", () => {
     // The obligation is that nothing the phone's transcript folds silently loses its producer when
     // the engine retires — NOT that the projector produces all ten. Four of them belong to Task 8's
     // bridges by construction (they must be emitted from inside `canUseTool`, before any frame
@@ -54,7 +54,7 @@ describe("projector/event-coverage: the relocated exhaustiveness maps", () => {
       workspace_operation_changed: "cowork/workspace-events.ts — daemon durable outbox",
       workspace_instructions_changed: "cowork/workspace-events.ts — daemon durable outbox",
       workspace_metadata_changed: "cowork/workspace-events.ts — daemon durable outbox",
-      user_message: "the host's push path (P8b-5) — ipc/server.ts's session.send / the Winter prompt queue",
+      user_message: "the host's push path (P8b-5) — ipc/server.ts's session.send / the Clover prompt queue",
       approval_requested: "runtime-sdk/approval-bridge.ts (Task 8), plus daemon.ts:143-213 for peripheral leases",
       approval_resolved: "runtime-sdk/approval-bridge.ts (Task 8), plus daemon.ts:143-213",
       question_asked: "runtime-sdk/question-bridge.ts (Task 8)",

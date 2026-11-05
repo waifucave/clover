@@ -1,12 +1,12 @@
 // WS-21 L3 fix round 2 MEASUREMENT — under `bypassPermissions`, does a `PreToolUse` hook answering `ask`
-// still reach `canUseTool` on the WINTER leg (a real spawned `winter` child)? The protected-path Bash check
+// still reach `canUseTool` on the CLOVER leg (a real spawned `winter` child)? The protected-path Bash check
 // (`hooks.ts`'s `bashProtectedWriteHook`) answers `ask`, and the approval bridge turns that into a card
 // (code) or a typed deny (dispatch/chat) — which only works if the child consults `canUseTool` at all.
 // Claude's own evaluator checks a hook's ask before its bypass step (the pinned fact); this measures the
-// Winter runtime. The scripted `winter-test/lanec` double makes exactly ONE real Bash call
+// Clover runtime. The scripted `winter-test/lanec` double makes exactly ONE real Bash call
 // (`echo winter-t8-lanec`), as in `hooks-measure.e2e.test.ts`.
 //
-// SKIPS cleanly when `WINTER_RUNTIME_EXECUTABLE` is unset (`describeWithWinterBinary`).
+// SKIPS cleanly when `CLOVER_RUNTIME_EXECUTABLE` is unset (`describeWithWinterBinary`).
 import { expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -20,10 +20,10 @@ const contentOf = (m: unknown): Array<Record<string, unknown>> | undefined => {
   return Array.isArray(content) ? (content as Array<Record<string, unknown>>) : undefined;
 };
 
-describeWithWinterBinary("fix round 2 measurement — a hook `ask` under bypassPermissions on the Winter leg", (bin) => {
+describeWithWinterBinary("fix round 2 measurement — a hook `ask` under bypassPermissions on the Clover leg", (bin) => {
   test("the ask reaches canUseTool (and its deny is honoured): the command never runs", async () => {
-    const home = mkdtempSync(join(tmpdir(), "winter-ask-bypass-home-"));
-    const cwd = mkdtempSync(join(tmpdir(), "winter-ask-bypass-cwd-"));
+    const home = mkdtempSync(join(tmpdir(), "clover-ask-bypass-home-"));
+    const cwd = mkdtempSync(join(tmpdir(), "clover-ask-bypass-cwd-"));
     const queue = createHostPromptQueue();
     const messages: Array<Record<string, unknown>> = [];
     const canUseCalls: string[] = [];
@@ -45,7 +45,7 @@ describeWithWinterBinary("fix round 2 measurement — a hook `ask` under bypassP
         sandbox: { enabled: false },
         hooks: { PreToolUse: [{ matcher: "Bash", hooks: [askHook] }] },
         canUseTool,
-        env: { PATH: process.env.PATH ?? "/usr/bin:/bin", HOME: home, TMPDIR: home, WINTER_HOME: home, WINTER_PROFILE: "test", WINTER_TEST_PROVIDER: "lanec" },
+        env: { PATH: process.env.PATH ?? "/usr/bin:/bin", HOME: home, TMPDIR: home, CLOVER_HOME: home, CLOVER_PROFILE: "test", WINTER_TEST_PROVIDER: "lanec" },
       },
     });
     queue.push("go");

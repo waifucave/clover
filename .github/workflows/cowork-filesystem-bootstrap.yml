@@ -19,5 +19,5 @@ jobs:
         run: command -v mke2fs && command -v e2fsck && command -v blkid
       - name: Format and probe new disposable regular files only
         env:
-          WINTER_RUN_LINUX_FILESYSTEM_FIXTURE: '1'
+          CLOVER_RUN_LINUX_FILESYSTEM_FIXTURE: '1'
         run: python3 -I -S spikes/cowork-filesystem-bootstrap/test_bootstrap.py

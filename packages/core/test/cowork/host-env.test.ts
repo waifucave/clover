@@ -3,7 +3,7 @@ import { chmodSync, existsSync, linkSync, lstatSync, mkdirSync, mkdtempSync, rea
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Database } from "bun:sqlite";
-import { COWORK_INSTALLATION_ID_FILE, CoworkHostEnvError, assertDisjointFromHome, assertOutsideWinterHomes, coordinationDirectory, ensurePrivateDirectory, loadOrCreateInstallationId } from "../../src/cowork/host-env/coordination";
+import { COWORK_INSTALLATION_ID_FILE, CoworkHostEnvError, assertDisjointFromHome, assertOutsideCloverHomes, coordinationDirectory, ensurePrivateDirectory, loadOrCreateInstallationId } from "../../src/cowork/host-env/coordination";
 import { createCoworkRecoverGuards, processStartToken } from "../../src/cowork/host-env/guards";
 import { COWORK_HOME_BINDING_DDL, createCoworkHomeBindingStore, createCoworkLaunchJournal, createCoworkReceiptStore } from "../../src/cowork/host-env/stores";
 import { parseVolumeUuidReply, readVolumeId } from "../../src/cowork/host-env/volume-identity";
@@ -14,7 +14,7 @@ import type { CoworkVolumeRecord } from "../../src/cowork/volumes";
 // N2 S7B part 1: the host facts of the production native environment, over temp directories and fakes. No real machine id, process or Keychain item is read.
 const roots: string[] = [];
 afterEach(() => { roots.splice(0).forEach(root => rmSync(root, { recursive: true, force: true })); });
-const temp = (): string => { const root = realpathSync(mkdtempSync(join(tmpdir(), "winter-host-env-"))); roots.push(root); return root; };
+const temp = (): string => { const root = realpathSync(mkdtempSync(join(tmpdir(), "clover-host-env-"))); roots.push(root); return root; };
 const code = (body: () => unknown): string => { try { body(); return "accepted"; } catch (error) { return (error as { code?: string }).code ?? String(error); } };
 
 describe("the Coordination directory and the installation id", () => {
@@ -34,18 +34,18 @@ describe("the Coordination directory and the installation id", () => {
     symlinkSync(fresh, join(root, "link"));
     expect(code(() => ensurePrivateDirectory(join(root, "link")))).toBe("directory_path_alias");
   });
-  test("any .winter component, in any case, is refused before anything is created", () => {
-    for (const bad of ["/Users/x/.winter/coord", "/Users/x/.winter-dev/c", "/Users/x/.WINTER/c", "/tmp/.Winter-x/y"]) expect(code(() => assertOutsideWinterHomes(bad))).toBe("path_inside_winter_home");
-    expect(() => assertOutsideWinterHomes("/Users/x/Library/Application Support/Winter/Coordination/cowork-receipts")).not.toThrow();
+  test("any .clover component, in any case, is refused before anything is created", () => {
+    for (const bad of ["/Users/x/.clover/coord", "/Users/x/.clover-dev/c", "/Users/x/.CLOVER/c", "/tmp/.Clover-x/y"]) expect(code(() => assertOutsideCloverHomes(bad))).toBe("path_inside_clover_home");
+    expect(() => assertOutsideCloverHomes("/Users/x/Library/Application Support/Winter/Coordination/cowork-receipts")).not.toThrow();
   });
-  test("the coordination directory must be disjoint from the Winter home: not the home, not inside it, not above it, even through a symlink", () => {
+  test("the coordination directory must be disjoint from the Clover home: not the home, not inside it, not above it, even through a symlink", () => {
     const root = temp(), home = join(root, "home"); mkdirSync(home);
     expect(code(() => assertDisjointFromHome(join(root, "coord"), home))).toBe("accepted");
-    expect(code(() => assertDisjointFromHome(home, home))).toBe("path_inside_winter_home");
-    expect(code(() => assertDisjointFromHome(join(home, "not-yet", "coord"), home))).toBe("path_inside_winter_home");
-    expect(code(() => assertDisjointFromHome(root, home))).toBe("path_inside_winter_home");
+    expect(code(() => assertDisjointFromHome(home, home))).toBe("path_inside_clover_home");
+    expect(code(() => assertDisjointFromHome(join(home, "not-yet", "coord"), home))).toBe("path_inside_clover_home");
+    expect(code(() => assertDisjointFromHome(root, home))).toBe("path_inside_clover_home");
     symlinkSync(home, join(root, "alias"));
-    expect(code(() => assertDisjointFromHome(join(root, "alias", "coord"), home))).toBe("path_inside_winter_home");
+    expect(code(() => assertDisjointFromHome(join(root, "alias", "coord"), home))).toBe("path_inside_clover_home");
     expect(code(() => assertDisjointFromHome(join(root, "homestead"), home))).toBe("accepted"); // a sibling that merely shares a name prefix is fine
   });
   test("a symlinked ancestor is refused BEFORE anything is created (the recursive mkdir must not follow it)", () => {
@@ -180,8 +180,8 @@ describe("the receipt store (S2's DirectoryReceiptStore format)", () => {
     expect(lstatSync(target).isFile()).toBe(true); expect(existsSync(path)).toBe(false);
     store.retire({ ...scope, workspaceId: "../escape" }); // no throw, nothing outside the directory
   });
-  test("a directory under a .winter component is refused outright", () => {
-    expect(code(() => createCoworkReceiptStore("/tmp/.winter-dev/receipts"))).toBe("path_inside_winter_home");
+  test("a directory under a .clover component is refused outright", () => {
+    expect(code(() => createCoworkReceiptStore("/tmp/.clover-dev/receipts"))).toBe("path_inside_clover_home");
   });
 });
 

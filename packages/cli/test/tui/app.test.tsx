@@ -17,8 +17,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { cleanup, render } from "ink-testing-library";
 import { settle, until, wait as settledWait } from "../helpers/settle";
-import { METHODS } from "@yanlinglabs/winter-protocol";
-import { CORE_VERSION } from "@yanlinglabs/winter-core";
+import { METHODS } from "@waifucave/clover-protocol";
+import { CORE_VERSION } from "@waifucave/clover-core";
 import { App, bottomBarRows } from "../../src/tui/app";
 import { DELTA_COALESCE_MS, makeEventBridge } from "../../src/tui/event-bridge";
 import type { ClipboardImage } from "../../src/tui/images";
@@ -84,7 +84,7 @@ function fakeClient(opts: {
       calls.push({ method: "stageImage", args: [sessionId, mediaType, dataBase64] });
       if (opts.stageImage) return opts.stageImage(sessionId, mediaType, dataBase64);
       const n = calls.filter((c) => c.method === "stageImage").length;
-      return Promise.resolve({ path: `/tmp/winter-session-${sessionId}/images/image_${n}.png`, imagesOnSend: true });
+      return Promise.resolve({ path: `/tmp/clover-session-${sessionId}/images/image_${n}.png`, imagesOnSend: true });
     },
   };
 }
@@ -109,7 +109,7 @@ describe("App (fullscreen shell)", () => {
   test("a file click opens the local target, while dragging across it only selects", async () => {
     // A SHORT path on purpose: the TUI draws the cwd on a fixed 80-column frame, and a cwd past that wraps and
     // moves the transcript row this test clicks on. `tmpdir()` is a per-process root under the user's temp
-    // folder (`/var/folders/…/T/winter-test-XXXXXX/…`, ~90 columns once the dir name is added), so it is not used.
+    // folder (`/var/folders/…/T/clover-test-XXXXXX/…`, ~90 columns once the dir name is added), so it is not used.
     const dir = mkdtempSync("/tmp/wfc-");
     const path = join(dir, "Sushi_Story.pptx");
     writeFileSync(path, "fixture");
@@ -362,14 +362,14 @@ describe("App (fullscreen shell)", () => {
     expect(frame).toContain(COMPOSER_CURSOR); // composer still rendered below it (invisible-prompt invariant)
   });
 
-  test("(d) welcome banner is the first line: bold Winter + version, then model · cwd", async () => {
+  test("(d) welcome banner is the first line: bold Clover + version, then model · cwd", async () => {
     const bridge = makeEventBridge();
     const { lastFrame } = render(
       <App client={fakeClient()} bridge={bridge} sessionId="s" cwd="/work/proj" initialPolicy="ask" version="0.0.1" model="gpt-5-codex" />,
     );
     await wait();
     const frame = lastFrame() ?? "";
-    expect(frame).toContain("Winter");
+    expect(frame).toContain("Clover");
     expect(frame).toContain("v0.0.1");
     expect(frame).toContain("gpt-5-codex · /work/proj");
   });
@@ -395,7 +395,7 @@ describe("App (fullscreen shell)", () => {
     const lines = (lastFrame() ?? "").split("\n");
 
     expect(lines).toHaveLength(23); // rows-1 (HARD CONSTRAINT 1: outputHeight < stdout.rows)
-    expect(lines[0]).toContain("Winter"); // welcome header rides the top of the log
+    expect(lines[0]).toContain("Clover"); // welcome header rides the top of the log
     expect(lines.at(-1)).toContain(FOOTER_HINT); // footer is the very last row
 
     // The composer sits at the frame BOTTOM (pushed down by the flexGrow transcript region), not
@@ -909,7 +909,7 @@ describe("App — Home/End transcript jumps on an empty composer (3c whole-branc
     stdin.write("\x1b[H"); // Home, empty composer -> transcript top
     await wait();
     const frame = lastFrame() ?? "";
-    expect(frame.split("\n")[0]).toContain("Winter"); // the welcome header — the very first log line
+    expect(frame.split("\n")[0]).toContain("Clover"); // the welcome header — the very first log line
     expect(frame).toContain("HE-1"); // oldest transcript lines in view
     expect(frame).not.toContain("HE-39");
 
@@ -938,7 +938,7 @@ describe("App — Home/End transcript jumps on an empty composer (3c whole-branc
     let frame = lastFrame() ?? "";
     expect(frame).toContain("\x1b[7ma\x1b[27m"); // inverse cursor sits ON "a" (cursor really moved to 0)
     expect(frame).toContain("TX-39"); // still at the bottom — did not jump to the top
-    expect(frame.split("\n")[0]).not.toContain("Winter"); // top of the log NOT in view
+    expect(frame.split("\n")[0]).not.toContain("Clover"); // top of the log NOT in view
 
     stdin.write("\x1b[F"); // End with text -> cursor back to the end, still no scroll
     await wait();
@@ -1090,7 +1090,7 @@ describe("App — slash-command wiring (Phase 3d T2: onRunCommand + local_note)"
 
 describe("App — @-file mention index lifecycle (Phase 3d T3)", () => {
   test("(x1) the first '@'-trigger builds the real file index against the session's cwd, and matches appear once it resolves", async () => {
-    const root = mkdtempSync(join(tmpdir(), "winter-app-file-index-"));
+    const root = mkdtempSync(join(tmpdir(), "clover-app-file-index-"));
     writeFileSync(join(root, "alpha.ts"), "");
     writeFileSync(join(root, "beta.md"), "");
     try {
@@ -1111,8 +1111,8 @@ describe("App — @-file mention index lifecycle (Phase 3d T3)", () => {
   });
 
   test("(x2) a '/cd' issued BEFORE the first '@' redirects the index build to the daemon-confirmed new cwd", async () => {
-    const original = mkdtempSync(join(tmpdir(), "winter-app-file-index-orig-"));
-    const redirected = mkdtempSync(join(tmpdir(), "winter-app-file-index-new-"));
+    const original = mkdtempSync(join(tmpdir(), "clover-app-file-index-orig-"));
+    const redirected = mkdtempSync(join(tmpdir(), "clover-app-file-index-new-"));
     writeFileSync(join(original, "onlyinoriginal.ts"), "");
     writeFileSync(join(redirected, "onlyinredirected.ts"), "");
     try {
@@ -1124,7 +1124,7 @@ describe("App — @-file mention index lifecycle (Phase 3d T3)", () => {
       await wait();
       stdin.write("\r");
       await wait();
-      // The long tmpdir path can hard-wrap onto its own line at 80 columns (P9b: the "winter-"
+      // The long tmpdir path can hard-wrap onto its own line at 80 columns (P9b: the "clover-"
       // prefix is one character longer than this file's own pre-rename prefix, which is enough to
       // move the wrap point mid-word) — strip ANSI codes AND newlines before checking, so the
       // match survives wherever the terminal happens to break the line.
@@ -1209,7 +1209,7 @@ describe("App — command + mention e2e wiring (Phase 3d T4)", () => {
   });
 
   test("(T4-b) '@' mention: type + Tab-complete + Enter composes the FULL text with the path inline and really sends it", async () => {
-    const root = mkdtempSync(join(tmpdir(), "winter-app-help-e2e-"));
+    const root = mkdtempSync(join(tmpdir(), "clover-app-help-e2e-"));
     writeFileSync(join(root, "target.ts"), "");
     try {
       const bridge = makeEventBridge();
@@ -1500,7 +1500,7 @@ describe("App — headless sanity (Phase 3d T4)", () => {
     expect(proc.exitCode).toBe(0);
     // Handoff Task 2: the header is now version-bearing (the Phase 1b-ii-d fossil is gone) —
     // main.test.ts pins the exact form; this test's job stays exit-0 + usage-not-hang.
-    expect(proc.stdout.toString()).toContain(`winter ${CORE_VERSION} — commands:`);
+    expect(proc.stdout.toString()).toContain(`clover ${CORE_VERSION} — commands:`);
   });
 });
 
@@ -1979,17 +1979,17 @@ const codexOauthCatalogue = () => ({
 const catalogueClient = () => fakeClient({ request: (method) => (method === METHODS.syncConfig ? codexOauthCatalogue() : {}) });
 
 describe("App — B2 the /model bottom picker end-to-end", () => {
-  // Same temp-WINTER_HOME discipline as commands.test.ts's /model suite — never ~/.winter.
+  // Same temp-CLOVER_HOME discipline as commands.test.ts's /model suite — never ~/.clover.
   const withTempHome = async (fn: (home: string) => Promise<void>) => {
-    const home = mkdtempSync(join(tmpdir(), "winter-tui-b2-picker-"));
+    const home = mkdtempSync(join(tmpdir(), "clover-tui-b2-picker-"));
     writeFileSync(join(home, "settings.json"), JSON.stringify({ schemaVersion: 2, provider: { type: "codex-oauth", model: "codex-oauth/gpt-5.6-sol" } }));
-    const prevHome = process.env.WINTER_HOME;
-    process.env.WINTER_HOME = home;
+    const prevHome = process.env.CLOVER_HOME;
+    process.env.CLOVER_HOME = home;
     try {
       await fn(home);
     } finally {
-      if (prevHome === undefined) delete process.env.WINTER_HOME;
-      else process.env.WINTER_HOME = prevHome;
+      if (prevHome === undefined) delete process.env.CLOVER_HOME;
+      else process.env.CLOVER_HOME = prevHome;
       rmSync(home, { recursive: true, force: true });
     }
   };
@@ -2095,11 +2095,11 @@ describe("App — T5 status chrome end-to-end (live sources, zero daemon changes
   });
 
   test("(sc3) the footer shows the mount model; /model switches it IMMEDIATELY (live through the CommandCtx callback)", async () => {
-    // Same temp-WINTER_HOME discipline as commands.test.ts's /model suite — never ~/.winter.
-    const home = mkdtempSync(join(tmpdir(), "winter-tui-t5-model-"));
+    // Same temp-CLOVER_HOME discipline as commands.test.ts's /model suite — never ~/.clover.
+    const home = mkdtempSync(join(tmpdir(), "clover-tui-t5-model-"));
     writeFileSync(join(home, "settings.json"), JSON.stringify({ schemaVersion: 2, provider: { type: "codex-oauth", model: "codex-oauth/gpt-5.6-sol" } }));
-    const prevHome = process.env.WINTER_HOME;
-    process.env.WINTER_HOME = home;
+    const prevHome = process.env.CLOVER_HOME;
+    process.env.CLOVER_HOME = home;
     try {
       const bridge = makeEventBridge();
       const client = fakeClient();
@@ -2122,8 +2122,8 @@ describe("App — T5 status chrome end-to-end (live sources, zero daemon changes
       // (the global write stays a direct settings.json write) — exactly one daemon call, this one.
       expect(client.calls).toEqual([{ method: "setModel", args: ["s1", "codex-oauth/gpt-5.6-luna", false] }]);
     } finally {
-      if (prevHome === undefined) delete process.env.WINTER_HOME;
-      else process.env.WINTER_HOME = prevHome;
+      if (prevHome === undefined) delete process.env.CLOVER_HOME;
+      else process.env.CLOVER_HOME = prevHome;
       rmSync(home, { recursive: true, force: true });
     }
   });
@@ -2227,7 +2227,7 @@ describe("App — code-mode image input", () => {
   const callsOf = (client: ReturnType<typeof fakeClient>, method: string) => client.calls.filter((c) => c.method === method);
 
   test("a pasted image path becomes [Image #1]; Enter sends the placeholder plus the ORIGINAL path in images — nothing is staged", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "winter-tui-image-"));
+    const dir = mkdtempSync(join(tmpdir(), "clover-tui-image-"));
     const path = join(dir, "My Shot.png");
     writeFileSync(path, PNG);
     try {
@@ -2247,7 +2247,7 @@ describe("App — code-mode image input", () => {
   });
 
   test("a big image FILE is never read or downscaled: only its path goes (a 3 MB-header PNG stands in for a Retina shot)", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "winter-tui-image-"));
+    const dir = mkdtempSync(join(tmpdir(), "clover-tui-image-"));
     const path = join(dir, "huge.png");
     // A real header declaring 6000x4000 px, padded sparse to 40 MB (> the request budget, < the 64 MiB file cap).
     const header = Buffer.from(PNG);
@@ -2270,7 +2270,7 @@ describe("App — code-mode image input", () => {
   });
 
   test("an image file over 64 MiB is refused with a note and typed as its path instead", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "winter-tui-image-"));
+    const dir = mkdtempSync(join(tmpdir(), "clover-tui-image-"));
     const path = join(dir, "enormous.png");
     writeFileSync(path, PNG);
     truncateSync(path, 64 * 1024 * 1024 + 1);
@@ -2289,7 +2289,7 @@ describe("App — code-mode image input", () => {
   });
 
   test("ctrl+v with a FILE on the clipboard (Finder ⌘C) attaches that file's own path — not its bytes", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "winter-tui-image-"));
+    const dir = mkdtempSync(join(tmpdir(), "clover-tui-image-"));
     const path = join(dir, "copied.heic");
     writeFileSync(path, new Uint8Array([0, 0, 0, 24, ...Buffer.from("ftypheic"), 0, 0, 0, 0]));
     try {
@@ -2308,7 +2308,7 @@ describe("App — code-mode image input", () => {
   });
 
   test("a mixed draft: the file keeps its own path, the clipboard data is staged raw — in placeholder order", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "winter-tui-image-"));
+    const dir = mkdtempSync(join(tmpdir(), "clover-tui-image-"));
     const path = join(dir, "a.png");
     writeFileSync(path, PNG);
     try {
@@ -2325,13 +2325,13 @@ describe("App — code-mode image input", () => {
       await until(() => callsOf(client, "send").length > 0, "the draft to be sent");
       expect(callsOf(client, "stageImage").map((c) => c.args)).toEqual([["s1", "image/png", Buffer.from(PNG).toString("base64")]]); // raw bytes, once
       expect(client.calls.find((c) => c.method === "send")?.args).toEqual(["s1", "x [Image #1][Image #2]", [
-        { n: 1, path }, { n: 2, path: "/tmp/winter-session-s1/images/image_1.png" },
+        { n: 1, path }, { n: 2, path: "/tmp/clover-session-s1/images/image_1.png" },
       ]]);
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 
   test("a send the daemon REFUSES (a model switched to a text-only one) hands the draft back WITH its attachments, so a retry still sends them", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "winter-tui-image-"));
+    const dir = mkdtempSync(join(tmpdir(), "clover-tui-image-"));
     const path = join(dir, "a.png");
     writeFileSync(path, PNG);
     try {
@@ -2468,7 +2468,7 @@ describe("App — code-mode image input", () => {
   });
 
   test("a refused image PATH is still typed as text, beside the note", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "winter-tui-image-"));
+    const dir = mkdtempSync(join(tmpdir(), "clover-tui-image-"));
     const path = join(dir, "shot.png");
     writeFileSync(path, PNG);
     try {
@@ -2501,7 +2501,7 @@ describe("App — code-mode image input", () => {
     await until(() => callsOf(client, "send").length > 0, "the message to be sent");
     // #1 was never attached in THIS draft, so it stays literal and is not named; only #2 is staged.
     expect(client.calls.filter((c) => c.method === "stageImage").length).toBe(1);
-    expect(client.calls.find((c) => c.method === "send")?.args.slice(1)).toEqual(["old [Image #1] [Image #2]", [{ n: 2, path: "/tmp/winter-session-s1/images/image_1.png" }]]);
+    expect(client.calls.find((c) => c.method === "send")?.args.slice(1)).toEqual(["old [Image #1] [Image #2]", [{ n: 2, path: "/tmp/clover-session-s1/images/image_1.png" }]]);
   });
 
   test("a daemon row that does not state supportsImages (an older daemon) lets the attach through", async () => {
@@ -2531,7 +2531,7 @@ describe("App — code-mode image input", () => {
     await until(() => plain(lastFrame()).includes("[Image #1]x"), "the typed character");
     stdin.write("\r");
     await until(() => callsOf(client, "send").length > 0, "the message to be sent");
-    expect(client.calls.find((c) => c.method === "send")?.args).toEqual(["s1", "[Image #1]x", [{ n: 1, path: "/tmp/winter-session-s1/images/image_1.png" }]]);
+    expect(client.calls.find((c) => c.method === "send")?.args).toEqual(["s1", "[Image #1]x", [{ n: 1, path: "/tmp/clover-session-s1/images/image_1.png" }]]);
     bridge.push(ev({ type: "approval_requested", callId: "c1", toolName: "bash", summary: "ls" }));
     await until(() => plain(lastFrame()).includes("approve bash?"), "the approval card");
     bridge.push(ev({ type: "approval_resolved", callId: "c1", approved: true }));
@@ -2543,7 +2543,7 @@ describe("App — code-mode image input", () => {
   test("a daemon whose stage result lacks imagesOnSend is sent the paths in the text (it would drop images)", async () => {
     const client = fakeClient({
       request: syncConfig(true),
-      stageImage: (sid) => Promise.resolve({ path: `/tmp/winter-session-${sid}/images/image_1.png` }),
+      stageImage: (sid) => Promise.resolve({ path: `/tmp/clover-session-${sid}/images/image_1.png` }),
     });
     const { stdin, lastFrame } = render(
       <App client={client} bridge={makeEventBridge()} {...baseProps} model={TAG} readClipboardImage={() => Promise.resolve(CLIP)} />,
@@ -2555,7 +2555,7 @@ describe("App — code-mode image input", () => {
     await until(() => plain(lastFrame()).includes("see [Image #1]"), "the clipboard image to become [Image #1]");
     stdin.write("\r");
     await until(() => callsOf(client, "send").length > 0, "the message to be sent");
-    expect(client.calls.find((c) => c.method === "send")?.args).toEqual(["s1", "see /tmp/winter-session-s1/images/image_1.png"]);
+    expect(client.calls.find((c) => c.method === "send")?.args).toEqual(["s1", "see /tmp/clover-session-s1/images/image_1.png"]);
   });
 
   test("a steer into a running turn carries the placeholder and images too", async () => {
@@ -2574,7 +2574,7 @@ describe("App — code-mode image input", () => {
     stdin.write("\r");
     await until(() => callsOf(client, "steer").length > 0, "the steer to go out");
     expect(client.calls.some((c) => c.method === "send")).toBe(false);
-    expect(client.calls.find((c) => c.method === "steer")?.args).toEqual(["s1", "also [Image #1]", [{ n: 1, path: "/tmp/winter-session-s1/images/image_1.png" }]]);
+    expect(client.calls.find((c) => c.method === "steer")?.args).toEqual(["s1", "also [Image #1]", [{ n: 1, path: "/tmp/clover-session-s1/images/image_1.png" }]]);
   });
 
   test("a child view's message (thread.send has no images door) is sent with the paths in the text", async () => {
@@ -2597,14 +2597,14 @@ describe("App — code-mode image input", () => {
     await until(() => plain(lastFrame()).includes("look [Image #1]"), "the clipboard image to become [Image #1]");
     stdin.write("\r");
     await until(() => callsOf(client, "sendToThread").length > 0, "the child-view message to go out");
-    expect(client.calls.find((c) => c.method === "sendToThread")?.args).toEqual(["s1", "th_1", "look /tmp/winter-session-s1/images/image_1.png"]);
+    expect(client.calls.find((c) => c.method === "sendToThread")?.args).toEqual(["s1", "th_1", "look /tmp/clover-session-s1/images/image_1.png"]);
     expect(client.calls.some((c) => c.method === "send" || c.method === "steer")).toBe(false);
   });
 
   // The exact sequence of review finding 4: send #1 → attach a NEW #1 while that send is in flight → the send is refused.
   // The refused text used to come back as "[Image #1]" with the NEW image bound to it (the old one was not restored).
   test("a refused send hands back the OLD image under a fresh number even though a new image took #1 in the meantime", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "winter-tui-image-"));
+    const dir = mkdtempSync(join(tmpdir(), "clover-tui-image-"));
     const a = join(dir, "old.png");
     const b = join(dir, "new.png");
     writeFileSync(a, PNG);
@@ -2644,7 +2644,7 @@ describe("App — code-mode image input", () => {
   }, 30_000);
 
   test("a daemon that did not announce original-path support gets the file's path substituted into the text", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "winter-tui-image-"));
+    const dir = mkdtempSync(join(tmpdir(), "clover-tui-image-"));
     const path = join(dir, "My Shot.png");
     writeFileSync(path, PNG);
     try {
@@ -2664,7 +2664,7 @@ describe("App — code-mode image input", () => {
   });
 
   test("a child view's message naming an ORIGINAL file gets that file's own path in the text", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "winter-tui-image-"));
+    const dir = mkdtempSync(join(tmpdir(), "clover-tui-image-"));
     const path = join(dir, "a.png");
     writeFileSync(path, PNG);
     try {
@@ -2691,7 +2691,7 @@ describe("App — code-mode image input", () => {
   });
 
   test("a deleted placeholder is not staged; a pasted .png that is not an image types as text", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "winter-tui-image-"));
+    const dir = mkdtempSync(join(tmpdir(), "clover-tui-image-"));
     const fake = join(dir, "not-really.png");
     writeFileSync(fake, "plain text, not an image");
     try {

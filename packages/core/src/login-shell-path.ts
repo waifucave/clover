@@ -2,7 +2,7 @@
 //
 // WHY. A daemon launched by the Mac app (a `Process` with no `environment`), by Sparkle's relaunch
 // or by the launchd plist inherits LaunchServices' PATH — measured on the live app:
-// `/usr/bin:/bin:/usr/sbin:/sbin`. Everything the daemon spawns inherits that in turn: the Winter
+// `/usr/bin:/bin:/usr/sbin:/sbin`. Everything the daemon spawns inherits that in turn: the Clover
 // child (`buildChildEnv` forwards PATH verbatim), its Bash tool, every stdio MCP server, the daemon's
 // own `McpManager`, plugins. So `node`, `npx`, `gh`, `ffmpeg`… in `/opt/homebrew/bin` were all
 // "command not found" in an app-launched session, while a terminal-launched daemon had them.
@@ -14,7 +14,7 @@
 // `[shell, '-c', '-l', script]`; `source "<rc>" < /dev/null`; a bounded timeout). Claude Code itself
 // keeps its OWN process PATH (`ShellSnapshot.ts:271,336` writes `process.env.PATH` into the
 // snapshot) — it is terminal-launched and already has the user's PATH. Taking PATH FROM the login
-// shell is Winter's own policy, because an app-launched daemon does not. The PATH is printed between
+// shell is Clover's own policy, because an app-launched daemon does not. The PATH is printed between
 // two markers, so whatever an rc file prints to stdout (a banner, nvm, an update prompt) can never be
 // mistaken for it. The result is MERGED into `process.env.PATH` — login-shell entries first, then the
 // inherited ones, de-duplicated.
@@ -24,7 +24,7 @@
 // option keep the process's ORIGINAL environment (measured, Bun 1.3.14); only async
 // `child_process.spawn` re-reads it. So: A SPAWN THAT NEEDS THE USER'S TOOLS MUST PASS AN `env`
 // DERIVED FROM `process.env` AT SPAWN TIME. Every spawn that matters does today — `buildChildEnv`
-// (the Winter child, its Bash tool and its stdio MCP servers — the daemon's MCP status probe included, WS-25), the hook runner, the plugin supervisor, the
+// (the Clover child, its Bash tool and its stdio MCP servers — the daemon's MCP status probe included, WS-25), the hook runner, the plugin supervisor, the
 // background-task registry; the router and SDK wrappers spawn with `env: options.env`.
 //
 // NEVER HANGS BOOT. Bounded (`LOGIN_SHELL_TIMEOUT_MS`), the shell runs in its own process group and
@@ -32,7 +32,7 @@
 // a spawn error) falls back to the inherited PATH plus the standard Homebrew directories that exist.
 // Never throws. `daemon.ts` runs it after the daemon's tokens are minted and before anything spawns.
 //
-// TESTS NEVER SPAWN THE REAL SHELL. `run` is injectable, and `WINTER_LOGIN_SHELL_PATH=off` (also
+// TESTS NEVER SPAWN THE REAL SHELL. `run` is injectable, and `CLOVER_LOGIN_SHELL_PATH=off` (also
 // `0`/`false`, any case; set by both test preloads, the WinterKit real-daemon fixture and
 // `verify:runtime-state`, and inherited by any daemon subprocess a test spawns) turns it off.
 //
@@ -44,7 +44,7 @@ import { existsSync } from "node:fs";
 import { basename, isAbsolute } from "node:path";
 
 /** The env seam: `off` / `0` / `false` (any case) disables resolution (the test preloads set it). */
-export const LOGIN_SHELL_PATH_ENV = "WINTER_LOGIN_SHELL_PATH";
+export const LOGIN_SHELL_PATH_ENV = "CLOVER_LOGIN_SHELL_PATH";
 
 /** Whether the env seam turns resolution off. */
 export function loginShellPathDisabled(env: Record<string, string | undefined>): boolean {
@@ -57,8 +57,8 @@ export const LOGIN_SHELL_TIMEOUT_MS = 5_000;
 /** The failure fallback only — never appended unconditionally (a working login shell is the
  *  authority on the user's PATH). Order follows `brew shellenv`. */
 export const HOMEBREW_FALLBACK_DIRS: readonly string[] = ["/opt/homebrew/bin", "/opt/homebrew/sbin", "/usr/local/bin"];
-export const LOGIN_SHELL_PATH_START = "__WINTER_LOGIN_PATH_START__";
-export const LOGIN_SHELL_PATH_END = "__WINTER_LOGIN_PATH_END__";
+export const LOGIN_SHELL_PATH_START = "__CLOVER_LOGIN_PATH_START__";
+export const LOGIN_SHELL_PATH_END = "__CLOVER_LOGIN_PATH_END__";
 /** The fallback shell when `SHELL` is absent (LaunchServices does not always set it), relative, or
  *  a dialect this module has no script for. macOS's default login shell. */
 const DEFAULT_SHELL = "/bin/zsh";

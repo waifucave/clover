@@ -1,4 +1,4 @@
-// WS-16 §15's diagnostics and repair — what `winter doctor` runs.
+// WS-16 §15's diagnostics and repair — what `clover doctor` runs.
 //
 // TWO RULES SHAPE EVERY LINE HERE.
 //
@@ -61,7 +61,7 @@ export type FindingKind =
    *  copied each working transcript under `<home>/cache/quarantine/`; the root is kept and never swept
    *  again. Nothing to repair automatically: the operator compares the copy with the session. */
   | "run-roots-quarantined"
-  /** WS-23 (R2, fix round 1): a session the retired official leg created whose adoption onto the Winter
+  /** WS-23 (R2, fix round 1): a session the retired official leg created whose adoption onto the Clover
    *  runtime is refused — its transcript is marked `repair-required` (an earlier collision or refused
    *  move, or a quarantined working copy). `adopt-legacy-session` clears it; a COLLISION (both keys hold
    *  the transcript) needs the operator's `--keep recorded|canonical`. */
@@ -243,7 +243,7 @@ interface SessionDiagRow {
   state: string;
 }
 
-/** Where a legacy session's transcript is and where the Winter runtime will look for it. */
+/** Where a legacy session's transcript is and where the Clover runtime will look for it. */
 interface LegacyTranscriptPlaces {
   projects: string;
   recordedKey: string;
@@ -254,7 +254,7 @@ interface LegacyTranscriptPlaces {
 
 /**
  * The same two keys the driver's adoption compares (`rekeyTranscriptToCwd`): the key recorded on the
- * row, and the key of the cwd the Winter child will run in — `meta.cwd`, else the session's temp dir,
+ * row, and the key of the cwd the Clover child will run in — `meta.cwd`, else the session's temp dir,
  * canonicalized. The cwd comes from the product index (or an injected store), never guessed.
  */
 function legacyTranscriptPlaces(home: string, sessionId: string, backendSessionId: string, recordedKey: string, cwd: string | null | undefined, tmpDirOf: (id: string) => string): LegacyTranscriptPlaces {
@@ -275,7 +275,7 @@ export async function diagnoseRuntimeState(home: string, deps: { tmpDirOf?: (ses
     if (!(e instanceof RuntimeStateUnavailableError)) throw e;
     // §14: an authoritative store that is missing or corrupt refuses runtime resume/routing — and
     // NOTHING further is inferred from the rebuildable index, so this is the only finding returned.
-    if (e.reason === "newer-schema") return [{ kind: "db-newer-schema", detail: `${e.path}: written by a newer Winter; this build will not open it. To go back to an older Winter, first run "winter migrate --cowork-schema --rollback" with the NEWER Winter's CLI (daemon stopped), then install the older one`, repairable: [] }];
+    if (e.reason === "newer-schema") return [{ kind: "db-newer-schema", detail: `${e.path}: written by a newer Clover; this build will not open it. To go back to an older Clover, first run "clover migrate --cowork-schema --rollback" with the NEWER Clover's CLI (daemon stopped), then install the older one`, repairable: [] }];
     if (e.reason === "missing") {
       // A home that has never run a daemon has no `runtimes/` at all, and therefore no backups
       // either — offering `restore-backup` there sends the operator hunting for a file that cannot
@@ -352,8 +352,8 @@ export async function diagnoseRuntimeState(home: string, deps: { tmpDirOf?: (ses
           kind: "legacy-adoption-blocked",
           winterSessionId: id,
           detail: places.collisions.length > 0
-            ? `a session the retired official runtime created cannot be adopted: its transcript exists at BOTH ${at(places.recordedKey)} (recorded) and ${at(places.canonicalKey)} (where Winter reads it). Compare them, then run --repair adopt-legacy-session --session ${id} --keep recorded|canonical — the other copy is moved to ${join(home, "cache", "quarantine")}, never deleted`
-            : `a session the retired official runtime created cannot be adopted: its transcript is marked repair-required. --repair adopt-legacy-session --session ${id} keeps the canonical copy (${at(places.recordedKey)}), clears the flag, and the next resume adopts it onto the Winter runtime`,
+            ? `a session the retired official runtime created cannot be adopted: its transcript exists at BOTH ${at(places.recordedKey)} (recorded) and ${at(places.canonicalKey)} (where Clover reads it). Compare them, then run --repair adopt-legacy-session --session ${id} --keep recorded|canonical — the other copy is moved to ${join(home, "cache", "quarantine")}, never deleted`
+            : `a session the retired official runtime created cannot be adopted: its transcript is marked repair-required. --repair adopt-legacy-session --session ${id} keeps the canonical copy (${at(places.recordedKey)}), clears the flag, and the next resume adopts it onto the Clover runtime`,
           repairable: ["adopt-legacy-session"],
         });
       }
@@ -398,7 +398,7 @@ export async function diagnoseRuntimeState(home: string, deps: { tmpDirOf?: (ses
           findings.push({
             kind: "cursor-mismatch",
             winterSessionId: id,
-            detail: `generation ${cursor.generation} is checkpointed at winter seq ${cursor.last_winter_seq}, past the product log's ${indexRow.last_seq}`,
+            detail: `generation ${cursor.generation} is checkpointed at clover seq ${cursor.last_winter_seq}, past the product log's ${indexRow.last_seq}`,
             repairable: [],
           });
         }
@@ -541,7 +541,7 @@ export interface RecoveryAttemptSummary {
 }
 
 /**
- * P8d-11: `winter doctor`'s read of the daemon's own `runtime_recovery_attempts` audit trail — the
+ * P8d-11: `clover doctor`'s read of the daemon's own `runtime_recovery_attempts` audit trail — the
  * one boot-level (`winter_session_id IS NULL`) row per step from the MOST RECENT boot, so an
  * operator sees today's recovery rather than every boot this home has ever done. `restampStep`
  * (`recovery.ts`) updates step 10's row IN PLACE once the late `sdk.directory.recover()` call
@@ -593,7 +593,7 @@ export function latestRecoveryAttempts(home: string): RecoveryAttemptSummary[] {
  *
  * Review r1 (Important 2): the type promised that and the code did not. `openRuntimeStateDb` refuses
  * a corrupt/newer/unmigrated store by THROWING, and the filesystem can refuse a write for a dozen
- * reasons (EACCES, ENOSPC, a read-only volume) — so `winter doctor --repair` printed a raw stack
+ * reasons (EACCES, ENOSPC, a read-only volume) — so `clover doctor --repair` printed a raw stack
  * trace in exactly the broken-home state the verb exists for. Unlike the recovery path, a message is
  * safe to carry here: nothing on this path ever touches a message body or a transcript body.
  */
@@ -632,7 +632,7 @@ export async function repairRuntimeState(home: string, op: RepairOp, deps: { sto
  *
  * NEVER DELETES A TRANSCRIPT. With one copy, nothing moves: the flag is cleared and the next resume
  * re-keys and adopts it exactly as the driver always would. With a COLLISION (the recorded key and the
- * key Winter reads both hold this session's names) the operator names the copy to keep, and every one
+ * key Clover reads both hold this session's names) the operator names the copy to keep, and every one
  * of the OTHER key's names for this session is MOVED to `<home>/cache/quarantine/<stamp>-legacy-adoption-
  * <id>/<key>/` — never through a link, put back on any failure. The adoption itself stays the driver's:
  * one code path rewrites a record, so a repaired session is adopted exactly like an untroubled one.
@@ -648,7 +648,7 @@ function adoptLegacySession(home: string, sessionId: string, keep: "recorded" | 
       return { applied: false, detail: `${sessionId} is not a session the retired official runtime created — nothing to adopt` };
     }
     if (record.transcriptHealth !== "repair-required") {
-      return { applied: false, detail: `${sessionId} is not blocked: its next resume adopts it onto the Winter runtime` };
+      return { applied: false, detail: `${sessionId} is not blocked: its next resume adopts it onto the Clover runtime` };
     }
     const backend = record.backendSessionId;
     let cwd: string | null | undefined;
@@ -661,7 +661,7 @@ function adoptLegacySession(home: string, sessionId: string, keep: "recorded" | 
     let moved = "";
     if (places.collisions.length > 0) {
       if (keep === undefined) {
-        return { applied: false, detail: `both ${transcriptAt(places.recordedKey)} (recorded) and ${transcriptAt(places.canonicalKey)} (where Winter reads it) hold this session — compare them and pass --keep recorded or --keep canonical; the other copy is moved to quarantine, never deleted` };
+        return { applied: false, detail: `both ${transcriptAt(places.recordedKey)} (recorded) and ${transcriptAt(places.canonicalKey)} (where Clover reads it) hold this session — compare them and pass --keep recorded or --keep canonical; the other copy is moved to quarantine, never deleted` };
       }
       const loserKey = keep === "recorded" ? places.canonicalKey : places.recordedKey;
       const loserDir = join(places.projects, loserKey);
@@ -686,7 +686,7 @@ function adoptLegacySession(home: string, sessionId: string, keep: "recorded" | 
       }
       moved = `; the ${keep === "recorded" ? "canonical-key" : "recorded-key"} copy (${done.length} file(s)) was moved to ${destination}`;
     }
-    // Fix round 2: the next resume MOVES the transcript to the key Winter reads it from. If that move
+    // Fix round 2: the next resume MOVES the transcript to the key Clover reads it from. If that move
     // would be refused (a link in the way, a destination outside the store), clearing the flag would
     // only report success and send the user round the same refusal again — so refuse, with the cause.
     if (places.recordedKey !== places.canonicalKey && transcriptEntriesOf(join(places.projects, places.recordedKey), backend).length > 0) {
@@ -696,7 +696,7 @@ function adoptLegacySession(home: string, sessionId: string, keep: "recorded" | 
       }
     }
     records.setTranscriptHealth(sessionId, "clean");
-    return { applied: true, detail: `${sessionId}: repair-required cleared${moved}; its next resume adopts it onto the Winter runtime` };
+    return { applied: true, detail: `${sessionId}: repair-required cleared${moved}; its next resume adopts it onto the Clover runtime` };
   } catch (e) {
     return { applied: false, detail: e instanceof Error ? `${e.name}: ${e.message}` : "legacy adoption repair failed" };
   } finally {
@@ -940,7 +940,7 @@ function restoreBackup(home: string, backupPath: string, promote: typeof renameS
     // Caught here, while the current file is still intact (review r1, minor 7).
     const version = probe.query<{ user_version: number }, []>("PRAGMA user_version").get()?.user_version ?? 0;
     if (version > RUNTIME_STATE_SCHEMA_VERSION)
-      return { applied: false, detail: `backup was written by a newer Winter (schema ${version} > ${RUNTIME_STATE_SCHEMA_VERSION}): ${backupPath}` };
+      return { applied: false, detail: `backup was written by a newer Clover (schema ${version} > ${RUNTIME_STATE_SCHEMA_VERSION}): ${backupPath}` };
   } catch (e) {
     return { applied: false, detail: `backup is not a readable database: ${e instanceof Error ? e.name : "unknown"}` };
   } finally {
@@ -1104,7 +1104,7 @@ export interface MigrationDoctorReport {
   finishedAt?: string;
   /** Fix wave C2: kept on the report (not just the request `input`) so `formatMigrationDoctorLines`
    *  can print the SAME `mv <home> <home>.bak` advice the daemon boot skip line and the
-   *  `winter migrate`/`planMigrationB` refusal itself print — advice and refusal must always agree. */
+   *  `clover migrate`/`planMigrationB` refusal itself print — advice and refusal must always agree. */
   home: string;
   legacyHome: string;
   legacyHomePresent: boolean;
@@ -1142,7 +1142,7 @@ export async function diagnoseMigration(input: {
   const legacyHomePresent = existsSync(input.legacyHome);
   // Skip the 14 presence probes when there is nothing to report anyway: a machine that never had a
   // legacy home and never ran Migration B has no legacy Keychain items to find, by construction —
-  // `winter doctor` would otherwise touch the Keychain on every single run, forever, for a count that can
+  // `clover doctor` would otherwise touch the Keychain on every single run, forever, for a count that can
   // only ever come back zero. (Since WS-25 §7 a probe raises no dialog either: it never decrypts.)
   let legacyKeychainRemaining = 0;
   if (legacyHomePresent || status !== "absent") {
@@ -1151,7 +1151,7 @@ export async function diagnoseMigration(input: {
     }
   }
   // Review M2: only worth explaining when there's a live mystery — a legacy home sits right there,
-  // but Migration B never ran at all. `homedirOverride`/profile play no part here: `winter doctor`
+  // but Migration B never ran at all. `homedirOverride`/profile play no part here: `clover doctor`
   // reports against whatever `home` it was actually given.
   const homeNotPristineReason = legacyHomePresent && status === "absent" ? describeHomePristineness(input.home).reason : undefined;
   return {
@@ -1175,16 +1175,16 @@ export function formatMigrationDoctorLines(report: MigrationDoctorReport): strin
   if (report.status === "complete") {
     lines.push(`migration: complete${report.finishedAt ? ` ${report.finishedAt}` : ""} from ${report.legacyHome}`);
   } else if (report.status === "in-progress") {
-    lines.push("migration: IN PROGRESS — run `winter migrate --resume` or `winter migrate --rollback`");
+    lines.push("migration: IN PROGRESS — run `clover migrate --resume` or `clover migrate --rollback`");
   } else {
     lines.push("migration: absent");
   }
   if (report.legacyHomePresent) {
-    lines.push(`legacy home present: ${report.legacyHome} (safe to remove after verifying Winter)`);
+    lines.push(`legacy home present: ${report.legacyHome} (safe to remove after verifying Clover)`);
   }
   // Review M2: WHY it never auto-migrated, with a path forward. Fix wave C2: the SAME instruction
-  // the daemon boot skip line and the `winter migrate`/`planMigrationB` refusal itself print — advice
-  // and refusal must always agree (a `winter migrate --from` into a non-pristine home just hits that
+  // the daemon boot skip line and the `clover migrate`/`planMigrationB` refusal itself print — advice
+  // and refusal must always agree (a `clover migrate --from` into a non-pristine home just hits that
   // same refusal).
   if (report.homeNotPristineReason) {
     lines.push(`this home is not pristine (found ${report.homeNotPristineReason}) — legacy data at ${report.legacyHome} was never migrated; move ${report.home} aside, e.g. \`mv ${report.home} ${report.home}.bak\`, then restart to migrate`);

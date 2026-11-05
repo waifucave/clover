@@ -1,6 +1,6 @@
 // Code-mode image input: `session.send`/`session.steer`'s `images`. The stored `user_message` keeps
 // the user's `[Image #n]` placeholders (the bubble shows them) and names each one's file in `images`;
-// only the model is given the paths (winter-session.test.ts covers the push). Every entry is checked
+// only the model is given the paths (clover-session.test.ts covers the push). Every entry is checked
 // before anything is appended: the file is either one `session.stageImage` wrote for THIS session or
 // (2026-10-10, raw image paths) the user's ORIGINAL image file — an absolute path resolving to a regular
 // file of at most 64 MiB, an image by its magic bytes, outside the Read tool's read-deny set — and `n` is unique
@@ -14,7 +14,7 @@ import {
   ConnWriter, DAEMON_FEATURE_IMAGE_ORIGINAL_PATHS, ERR, HelloResult, IMAGE_FILE_MAX_BYTES, IMAGE_FILE_TOO_LARGE_MESSAGE, IMAGE_FILE_UNREADABLE, IMAGE_INPUT_UNSUPPORTED, IMAGE_REFERENCE_INVALID, IMAGE_SESSION_NOT_CODE, IMAGE_SESSION_NO_MODEL,
   IMAGE_TOO_LARGE, IMAGE_TYPE_UNSUPPORTED, LineDecoder, METHODS, PROTOCOL_VERSION, SessionEvent,
   USER_MESSAGE_IMAGES_MAX, encodeLine, type WritableSocket,
-} from "@yanlinglabs/winter-protocol";
+} from "@waifucave/clover-protocol";
 import { loadCatalog } from "@yanlinglabs/winter-provider-catalog";
 import { startIpcServer } from "../../src/ipc/server";
 import { SessionStore } from "../../src/sessions/store";
@@ -23,7 +23,7 @@ import { TokenAuthority } from "../../src/auth/tokens";
 import { capEvent, readHistoryPage } from "../../src/sessions/history";
 import { filterRemoteStreamEvent } from "../../src/sessions/remote-stream";
 import { modelTextOf } from "../../src/sessions/model-text";
-import type { LegSession, WinterSessionDrivers } from "../../src/runtime-sdk/session-driver";
+import type { LegSession, CloverSessionDrivers } from "../../src/runtime-sdk/session-driver";
 
 /** Minimal raw NDJSON JSON-RPC client — the same per-file copy every test in test/ipc carries. */
 class TestClient {
@@ -80,20 +80,20 @@ describe("session.send / session.steer — images (code-mode image input)", () =
   let savedTmp: string | undefined;
   const cleanup: string[] = [];
   beforeEach(() => {
-    savedTmp = process.env.WINTER_TMPDIR;
-    tmpBase = mkdtempSync(join(tmpdir(), "winter-sendimg-tmp-"));
-    process.env.WINTER_TMPDIR = tmpBase;
+    savedTmp = process.env.CLOVER_TMPDIR;
+    tmpBase = mkdtempSync(join(tmpdir(), "clover-sendimg-tmp-"));
+    process.env.CLOVER_TMPDIR = tmpBase;
   });
   afterEach(() => {
     stop?.(); stop = undefined;
-    if (savedTmp === undefined) delete process.env.WINTER_TMPDIR; else process.env.WINTER_TMPDIR = savedTmp;
+    if (savedTmp === undefined) delete process.env.CLOVER_TMPDIR; else process.env.CLOVER_TMPDIR = savedTmp;
     rmSync(tmpBase, { recursive: true, force: true });
     for (const d of cleanup.splice(0)) rmSync(d, { recursive: true, force: true });
   });
 
-  /** `withHome`: wire the daemon's `winterHome` (the "never under the home" rule needs one). */
-  async function boot(winter?: WinterSessionDrivers, withHome = false) {
-    const home = mkdtempSync(join(tmpdir(), "winter-sendimg-"));
+  /** `withHome`: wire the daemon's `cloverHome` (the "never under the home" rule needs one). */
+  async function boot(clover?: CloverSessionDrivers, withHome = false) {
+    const home = mkdtempSync(join(tmpdir(), "clover-sendimg-"));
     cleanup.push(home);
     const store = new SessionStore(home);
     const socketPath = join(home, "core.sock");
@@ -101,7 +101,7 @@ describe("session.send / session.steer — images (code-mode image input)", () =
     const tokens = await authority.ensureTokens();
     const server = startIpcServer({
       socketPath, serverVersion: "test", tokens: authority, store,
-      ...(winter === undefined ? {} : { winter }), ...(withHome ? { winterHome: home } : {}),
+      ...(clover === undefined ? {} : { clover }), ...(withHome ? { cloverHome: home } : {}),
     });
     stop = () => { server.stop(); store.close(); };
     const c = await TestClient.connect(socketPath);
@@ -145,7 +145,7 @@ describe("session.send / session.steer — images (code-mode image input)", () =
 
   test("every bad reference refuses typed image_reference_invalid and appends NOTHING", async () => {
     const { store, c, sid, path } = await staged();
-    const imagesDir = join(realpathSync(tmpBase), `winter-session-${sid}`, "images");
+    const imagesDir = join(realpathSync(tmpBase), `clover-session-${sid}`, "images");
     // Planted by the agent (the folder is a sandbox writable root): a symlink to the staged file
     // under a name staging WOULD pick, and a subfolder under one too — both of the staged shape, so
     // both held to the strict staged rules.
@@ -180,7 +180,7 @@ describe("session.send / session.steer — images (code-mode image input)", () =
 
   /** A scratch folder OUTSIDE the daemon's home (so no home rule is in play), with a distinctive name no error may echo. */
   function userDir(): string {
-    const dir = realpathSync(mkdtempSync(join(tmpdir(), "winter-userpics-SECRETNAME-")));
+    const dir = realpathSync(mkdtempSync(join(tmpdir(), "clover-userpics-SECRETNAME-")));
     cleanup.push(dir);
     return dir;
   }
@@ -423,7 +423,7 @@ describe("session.send / session.steer — images (code-mode image input)", () =
       expect({ path: path.replace(home, "<home>"), error: res.error }).toEqual({ path: path.replace(home, "<home>"), error: undefined });
     }
 
-    // The read-deny set: <home>/run, <home>/runtimes, sdk/.winter.json, a run folder's or staging root's
+    // The read-deny set: <home>/run, <home>/runtimes, sdk/.clover.json, a run folder's or staging root's
     // generated config files and their backups/. Each file holds real PNG bytes.
     const staging = join(realpathSync(tmpdir()), `claude-resume-${crypto.randomUUID()}`);
     cleanup.push(staging);
@@ -437,8 +437,8 @@ describe("session.send / session.steer — images (code-mode image input)", () =
       ["staging backups", plant(staging, "backups/shot.png")],
     ];
     const config: Array<[string, string]> = [
-      ["sdk/.winter.json", plant(home, "sdk/.winter.json")],
-      ["run folder .winter.json", plant(home, "cache/runs/abc/.winter.json")],
+      ["sdk/.clover.json", plant(home, "sdk/.clover.json")],
+      ["run folder .clover.json", plant(home, "cache/runs/abc/.clover.json")],
       ["run folder .claude.json", plant(home, "cache/runs/abc/.claude.json")],
       ["run folder .credentials.json", plant(home, "cache/runs/abc/.credentials.json")],
       ["staging .claude.json", plant(staging, ".claude.json")],
@@ -485,7 +485,7 @@ describe("session.send / session.steer — images (code-mode image input)", () =
   });
 
   test("a daemon with no home wired cannot apply the home rule (the production daemon always has one)", async () => {
-    const { c, sid } = await staged(); // no winterHome
+    const { c, sid } = await staged(); // no cloverHome
     const dir = userDir();
     writeFileSync(join(dir, "ok.png"), PNG_FILE);
     expect((await c.request(METHODS.sessionSend, { sessionId: sid, text: "[Image #1]", images: [{ n: 1, path: join(dir, "ok.png") }] })).error).toBeUndefined();
@@ -544,7 +544,7 @@ describe("session.send / session.steer — images (code-mode image input)", () =
     const res = await phone.request(METHODS.sessionSend, { sessionId: sid, text: "[Image #1]", images: [{ n: 1, path }] });
     expect(res.error.data.code).toBe(IMAGE_REFERENCE_INVALID);
     // Nor can it name a file on this Mac: an original image path is a local client's alone.
-    const dir = realpathSync(mkdtempSync(join(tmpdir(), "winter-remote-pic-")));
+    const dir = realpathSync(mkdtempSync(join(tmpdir(), "clover-remote-pic-")));
     cleanup.push(dir);
     writeFileSync(join(dir, "mine.png"), PNG);
     const original = await phone.request(METHODS.sessionSend, { sessionId: sid, text: "[Image #1]", images: [{ n: 1, path: join(dir, "mine.png") }] });
@@ -579,7 +579,7 @@ describe("session.send / session.steer — images (code-mode image input)", () =
     c.close();
   });
 
-  test("on the Winter leg the driver receives the text as written plus the checked images (send and steer); a refusal never resumes it", async () => {
+  test("on the Clover leg the driver receives the text as written plus the checked images (send and steer); a refusal never resumes it", async () => {
     const calls: Array<{ door: string; text: string; clientName?: string; images?: unknown }> = [];
     let ensures = 0;
     const never = (): never => { throw new Error("not reached by this test"); };
@@ -591,7 +591,7 @@ describe("session.send / session.steer — images (code-mode image input)", () =
       interrupt: never, compact: never, setModel: never, setPolicy: never,
       end: async () => {}, deliver: never, open: async () => {}, idle: async () => {},
     };
-    const table: WinterSessionDrivers = {
+    const table: CloverSessionDrivers = {
       legForNewSession: () => "winter", legOf: () => "winter", assertAvailable: () => {}, create: async () => never(),
       get: () => session, runTurn: async () => never(),
       ensure: async () => { ensures++; return session; },

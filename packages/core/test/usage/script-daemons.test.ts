@@ -7,7 +7,7 @@
 //   - a spawn that boots a daemon (`daemon run`, the cu-live daemon binary, a compiled probe route that boots one, a
 //     `bun` probe file) passes an `env` that carries `USAGE_INERT_ENV` — in the call, or in the definition of the
 //     variable or function it names (and any `Object.assign` onto it before the call);
-//   - STRUCTURALLY, whatever the spawn's shape: every file under `scripts/` whose code names the daemon (`winter-core`,
+//   - STRUCTURALLY, whatever the spawn's shape: every file under `scripts/` whose code names the daemon (`clover-core`,
 //     `startDaemon`, `daemon run`) carries `USAGE_INERT_ENV` / `USAGE_INERT` / a `background: false` injection, or is
 //     listed in `NO_DAEMON_OF_ITS_OWN` with its reason (no stale entries).
 import { describe, expect, test } from "bun:test";
@@ -34,9 +34,9 @@ const NOT_A_DAEMON = [
 ];
 const SPAWN_CALL = /\b(?:Bun\.spawnSync|Bun\.spawn|spawnSync|spawn|execFileSync|execFile|runChild)\(/g;
 
-/** The structural rule's subject: a script that names the daemon binary (`winter-core`, `winter-core-live`, a
- *  `dist/dev/winter-core`, never the `@yanlinglabs/winter-core` package), `startDaemon` or `daemon run`… */
-const NAMES_A_DAEMON = /(?<!@yanlinglabs\/)\bwinter-core\b|\bstartDaemon\b|\bdaemon run\b|["']daemon["']\s*,\s*["']run["']/;
+/** The structural rule's subject: a script that names the daemon binary (`clover-core`, `clover-core-live`, a
+ *  `dist/dev/clover-core`, never the `@waifucave/clover-core` package), `startDaemon` or `daemon run`… */
+const NAMES_A_DAEMON = /(?<!@yanlinglabs\/)\bclover-core\b|\bstartDaemon\b|\bdaemon run\b|["']daemon["']\s*,\s*["']run["']/;
 /** …carries the usage-inert switch somewhere in its code (not a comment)… */
 const CARRIES_INERT = /\bUSAGE_INERT_ENV\b|\bUSAGE_INERT\b|\busage\s*:\s*\{[^}]*\bbackground\s*:\s*false\b/;
 /** …or is one of these, each for its reason. A NEW script naming the daemon fails until it is one or the other, so a
@@ -46,16 +46,16 @@ const NO_DAEMON_OF_ITS_OWN: Record<string, string> = {
   "scripts/dev-daemon-lib.ts": "the dev daemon's helpers (paths, signing, the transition)",
   "scripts/dev-daemon.test.ts": "tests the dev daemon's helpers; boots none",
   "scripts/computer-helper-lib.ts": "names the daemon's code-signing identities for the helper's allowlist",
-  "scripts/cu-live/build.ts": "compiles and signs winter-core-live; runs it never",
+  "scripts/cu-live/build.ts": "compiles and signs clover-core-live; runs it never",
   "scripts/verify-automation-worker-compiled.ts": "runs only the `__automation-worker` route (a worker, no daemon)",
   "scripts/verify-workflow-compiled.ts": "runs only the `__workflow-worker` route (a worker, no daemon)",
   "scripts/verify-fd-receiver-compiled.ts": "runs only the `__fd-receiver-probe`, `__host-code-adapter-probe` and `__host-env-lazy-probe` routes of the compiled binary (no daemon)",
   "scripts/verify-runtimes-compiled.ts": "runs only `__runtimes-probe` (resolves the bundled runtimes, no daemon)",
-  "scripts/release.ts": "builds, signs and notarizes winter-core; runs only `__keychain-ffi-probe` (an ffi check, no daemon)",
+  "scripts/release.ts": "builds, signs and notarizes clover-core; runs only `__keychain-ffi-probe` (an ffi check, no daemon)",
   "scripts/release.test.ts": "tests the release's helpers; boots none",
   "scripts/release-lib.test.ts": "tests the release's helpers; boots none",
   "scripts/rename/codemod.test.ts": "the rename codemod's fixtures (strings)",
-  "scripts/embed-cowork-native.test.ts": "tests the Cowork native embed script's helpers; names winter-core as a string, boots none",
+  "scripts/embed-cowork-native.test.ts": "tests the Cowork native embed script's helpers; names clover-core as a string, boots none",
 };
 
 /** Every script file (any language this repo writes them in), tests included. */
@@ -249,7 +249,7 @@ describe("script and probe daemons are usage-inert", () => {
     expect(USAGE_INERT).toMatchObject({ codexHome: null, claudeHome: null, claudeJsonPath: null, codexExecutable: null, claudeExecutable: null,
       agyExecutable: null, opencodeExecutable: null, catchUp: false, background: false });
     for (const k of ["CODEX_HOME", "CLAUDE_HOME", "CLAUDE_JSON", "CODEX_EXECUTABLE", "CLAUDE_EXECUTABLE", "AGY_EXECUTABLE", "OPENCODE_EXECUTABLE", "BACKGROUND", "CATCH_UP"]) {
-      expect(USAGE_INERT_ENV[`WINTER_USAGE_${k}`]).toBe("off");
+      expect(USAGE_INERT_ENV[`CLOVER_USAGE_${k}`]).toBe("off");
     }
   });
 

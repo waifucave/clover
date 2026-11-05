@@ -1,7 +1,7 @@
-// WS-21 L3.7: `winter daemon run` treats Migration C's typed refusals exactly like Migration B's — a
+// WS-21 L3.7: `clover daemon run` treats Migration C's typed refusals exactly like Migration B's — a
 // message and exit 1, never a stack (a launchd crash loop otherwise).
 import { describe, expect, test } from "bun:test";
-import { CredentialMigrationBusy, MigrationCRefused, MigrationRefused } from "@yanlinglabs/winter-core";
+import { CredentialMigrationBusy, MigrationCRefused, MigrationRefused } from "@waifucave/clover-core";
 import { bootRefusalExitCode, CREDENTIAL_MIGRATION_BUSY_EXIT_CODE, migrationRefusalMessage } from "../src/daemon-boot-refusal";
 
 describe("migrationRefusalMessage", () => {

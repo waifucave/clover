@@ -1,6 +1,6 @@
 /**
  * Winter Phase 8d — the compiled-binary proof that the P8d-1 bundle layout resolves inside the
- * REAL Release artifact (`dist/winter-core`, a `bun build --compile` single-file binary), the same
+ * REAL Release artifact (`dist/clover-core`, a `bun build --compile` single-file binary), the same
  * way `scripts/verify-runtime-state-compiled.ts` proves 8a's runtime spine.
  *
  * Why this can't be proven under plain `bun test`: `executable.ts`'s and `bundle-layout.ts`'s bundle
@@ -10,20 +10,20 @@
  * bundle rung (not the dev `node_modules` package door) is what actually resolves.
  *
  * Steps:
- *   1. `bun run --filter '@yanlinglabs/winter-cli' compile:core` -> dist/winter-core (the same invocation
+ *   1. `bun run --filter '@waifucave/clover-cli' compile:core` -> dist/clover-core (the same invocation
  *      verify-workflow-compiled.ts and verify-runtime-state-compiled.ts use).
- *   2. mkdtemp a fake `Contents/Resources/` — copy the compiled binary in as `winter-core` (so
- *      `process.execPath` inside the spawned process really is `<tmp>/Resources/winter-core`, and
+ *   2. mkdtemp a fake `Contents/Resources/` — copy the compiled binary in as `clover-core` (so
+ *      `process.execPath` inside the spawned process really is `<tmp>/Resources/clover-core`, and
  *      `dirname(execPath)` really is `<tmp>/Resources`, exactly like a Release app).
  *   3. `stageRuntimes({ out: <tmp>/Resources/runtimes, winterPath: dist/winter if present })` —
  *      reuses an already-built `dist/winter` (CI's `winter-binary` artifact, or a prior
  *      `bun run build:winter`) rather than paying for a fresh SDK-checkout build here. WS-23: no
  *      `claude` binary is staged — the official leg is retired. `ant` is staged beside it with its
  *      own record when a vendored copy exists (step 3b).
- *   4. Take a signature of the REAL homes (`~/.winter`, `~/.winter-dev`) BEFORE the run.
- *   5. `spawn(<tmp>/Resources/winter-core, ["__runtimes-probe"], { env: { WINTER_HOME: <tmp>/home } })`,
+ *   4. Take a signature of the REAL homes (`~/.clover`, `~/.clover-dev`) BEFORE the run.
+ *   5. `spawn(<tmp>/Resources/clover-core, ["__runtimes-probe"], { env: { CLOVER_HOME: <tmp>/home } })`,
  *      with cwd = a HOSTILE directory (a `bunfig.toml` whose `preload` writes a marker, and a `.env`
- *      naming a `WINTER_RUNTIME_EXECUTABLE`) — the no-autoload proof, see `hostileCwd` below.
+ *      naming a `CLOVER_RUNTIME_EXECUTABLE`) — the no-autoload proof, see `hostileCwd` below.
  *   6. Parse the one JSON result line; assert the ladders resolved via "bundle" and the staged
  *      `VERSIONS.json` records parsed and match this build's pins.
  *   7. Re-take the real-home signature and assert it is UNCHANGED.
@@ -49,14 +49,14 @@ import { REQUIRED_WINTER_AGENT_SDK } from "../packages/core/src/runtime-sdk/vers
 
 const SCRIPTS_DIR = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = join(SCRIPTS_DIR, "..");
-const DIST_BINARY = join(REPO_ROOT, "dist", "winter-core");
+const DIST_BINARY = join(REPO_ROOT, "dist", "clover-core");
 const DIST_WINTER = join(REPO_ROOT, "dist", "winter");
 const VERSIONS_JSON_PATH = join(REPO_ROOT, "VERSIONS.json");
 const COMPILE_TIMEOUT_MS = 180_000;
 /** The probe resolves the ladders and best-effort `codesign`s them — seconds in practice; this only
  *  guards against a genuine hang. */
 const PROBE_TIMEOUT_MS = 60_000;
-const REAL_HOMES = [join(homedir(), ".winter"), join(homedir(), ".winter-dev")];
+const REAL_HOMES = [join(homedir(), ".clover"), join(homedir(), ".clover-dev")];
 
 function log(line: string): void { console.log(line); }
 
@@ -92,14 +92,14 @@ function homeSignature(dir: string): string {
 
 /**
  * SECURITY (no-autoload): by default a `bun build --compile` binary loads the `bunfig.toml` (whose
- * `preload` runs AS the binary) and the `.env` of the directory it is STARTED in. `winter` is a
- * symlink to `winter-core` that users run inside arbitrary repositories, so `compile`/`compile:core`
+ * `preload` runs AS the binary) and the `.env` of the directory it is STARTED in. `clover` is a
+ * symlink to `clover-core` that users run inside arbitrary repositories, so `compile`/`compile:core`
  * pass `--no-compile-autoload-bunfig --no-compile-autoload-dotenv`. This builds the directory that
  * would exploit each, for the probe to run in:
  *   - `bunfig.toml` preloads `preload.ts`, which writes `preloadMarker`;
- *   - `.env` sets `WINTER_RUNTIME_EXECUTABLE` to `envMarker` (a path that does not exist). The
+ *   - `.env` sets `CLOVER_RUNTIME_EXECUTABLE` to `envMarker` (a path that does not exist). The
  *     probe's env is narrow and never sets it, and an explicit env path is AUTHORITATIVE in the
- *     winter ladder (`resolveWinterExecutable`), so a loaded `.env` turns `winter.source` away from
+ *     clover ladder (`resolveWinterExecutable`), so a loaded `.env` turns `winter.source` away from
  *     `bundle` and names the marker in `errors`.
  * Both fixtures are shown live under plain `bun` first (positive controls), so a green result can
  * never be a probe that could not have seen them.
@@ -108,11 +108,11 @@ function hostileCwd(root: string): { dir: string; preloadMarker: string; envMark
   const dir = join(root, "hostile-cwd");
   mkdirSync(dir, { recursive: true });
   const preloadMarker = join(dir, "PRELOAD_RAN");
-  const envMarker = join(dir, "not-a-winter-from-dotenv");
+  const envMarker = join(dir, "not-a-clover-from-dotenv");
   writeFileSync(join(dir, "bunfig.toml"), 'preload = ["./preload.ts"]\n');
   writeFileSync(join(dir, "preload.ts"), `require("node:fs").writeFileSync(${JSON.stringify(preloadMarker)}, "ran");\n`);
-  writeFileSync(join(dir, ".env"), `WINTER_RUNTIME_EXECUTABLE=${envMarker}\n`);
-  writeFileSync(join(dir, "show-env.ts"), 'console.log(process.env.WINTER_RUNTIME_EXECUTABLE ?? "");\n');
+  writeFileSync(join(dir, ".env"), `CLOVER_RUNTIME_EXECUTABLE=${envMarker}\n`);
+  writeFileSync(join(dir, "show-env.ts"), 'console.log(process.env.CLOVER_RUNTIME_EXECUTABLE ?? "");\n');
   return { dir, preloadMarker, envMarker };
 }
 
@@ -157,11 +157,11 @@ async function main(): Promise<void> {
   log(`dist binary : ${DIST_BINARY}`);
 
   // ---- Step 1: compile the REAL Release artifact -----------------------------------------------
-  log("\n--- Step 1: compiling dist/winter-core (bun run --filter '@yanlinglabs/winter-cli' compile:core) ---");
+  log("\n--- Step 1: compiling dist/clover-core (bun run --filter '@waifucave/clover-cli' compile:core) ---");
   const compileStart = Date.now();
   const compile = spawnSync(
     process.execPath,
-    ["run", "--filter", "@yanlinglabs/winter-cli", "compile:core"],
+    ["run", "--filter", "@waifucave/clover-cli", "compile:core"],
     { cwd: REPO_ROOT, encoding: "utf8", timeout: COMPILE_TIMEOUT_MS },
   );
   log(`compile:core exit=${compile.status ?? "null"} signal=${compile.signal ?? "none"} (${Date.now() - compileStart}ms)`);
@@ -172,20 +172,20 @@ async function main(): Promise<void> {
   if (!existsSync(DIST_BINARY)) fail(`compile:core reported success but ${DIST_BINARY} was not produced`);
 
   // ---- Step 2: a fake Contents/Resources/ with the compiled binary copied in -------------------
-  const tmpRoot = mkdtempSync(join(tmpdir(), "winter-runtimes-probe-"));
+  const tmpRoot = mkdtempSync(join(tmpdir(), "clover-runtimes-probe-"));
   const resources = join(tmpRoot, "Resources");
   mkdirSync(resources, { recursive: true });
-  const stagedBinary = join(resources, "winter-core");
+  const stagedBinary = join(resources, "clover-core");
   copyFileSync(DIST_BINARY, stagedBinary);
   chmodSync(stagedBinary, 0o755);
   log(`\n--- Step 2: staged binary at ${stagedBinary} (dirname(execPath) is what the bundle rung resolves against) ---`);
 
   // ---- Step 3: stage the runtime payload beside it ----------------------------------------------
-  // P9a-8: winter's source is now a ladder — the installed platform package first (the strong
+  // P9a-8: clover's source is now a ladder — the installed platform package first (the strong
   // row-16 path), an already-built dist/winter next (checkout-build, e.g. CI's fallback step or a
   // prior `bun run build:winter`), and only as a last resort a real from-source build. This proof
   // is about the BUNDLE RUNG resolving inside the compiled binary (step 6 below), never about
-  // which winter-source ladder rung staged it — so it takes whichever is cheapest and available,
+  // which clover-source ladder rung staged it — so it takes whichever is cheapest and available,
   // loudly, rather than paying for a two-minute SDK-checkout build when something staged already
   // exists.
   log("\n--- Step 3: staging runtimes/ (stageRuntimes) ---");
@@ -205,11 +205,11 @@ async function main(): Promise<void> {
   } catch (err) {
     fail(`stageRuntimes failed: ${err instanceof Error ? err.message : String(err)}`);
   }
-  log(`staged: winter=${staged.winterPath} versions=${staged.versionsPath}`);
+  log(`staged: clover=${staged.winterPath} versions=${staged.versionsPath}`);
   log(`VERSIONS.json: ${JSON.stringify(staged.versions)}`);
 
   // ---- Step 3b: stage ant (Winter Phase 10a, P10a-4) — best-effort, mirrors the DIST_WINTER
-  // fallback above: this proof's PRIMARY point is winter's bundle-rung resolution inside the
+  // fallback above: this proof's PRIMARY point is clover's bundle-rung resolution inside the
   // compiled binary, unchanged by this addition; ant coverage is additive when a vendored copy is
   // available (`bun run scripts/fetch-ant.ts`), never a hard requirement of this script. WS-23: ant's
   // own record is written beside it in embed-runtimes.sh's shape, so the probe's parse of it is
@@ -233,18 +233,18 @@ async function main(): Promise<void> {
     log(`WARNING: could not resolve/stage ant (${err instanceof Error ? err.message : String(err)}) — the ant bundle-rung assertions below are skipped`);
   }
 
-  const tmpHome = mkdtempSync(join(tmpdir(), "winter-runtimes-probe-home-"));
-  log(`\n--- Step 4: temp WINTER_HOME = ${tmpHome} ---`);
+  const tmpHome = mkdtempSync(join(tmpdir(), "clover-runtimes-probe-home-"));
+  log(`\n--- Step 4: temp CLOVER_HOME = ${tmpHome} ---`);
   const before = REAL_HOMES.map(homeSignature);
 
   try {
     // ---- Step 5: run the compiled binary's probe route, from a hostile cwd -----------------------
     const hostile = hostileCwd(tmpRoot);
     // Narrow env, same reasoning as verify-runtime-state-compiled.ts: inheriting process.env
-    // could drag this shell's own WINTER_HOME/WINTER_RUNTIME_EXECUTABLE/WINTER_ANT_EXECUTABLE in,
+    // could drag this shell's own CLOVER_HOME/CLOVER_RUNTIME_EXECUTABLE/CLOVER_ANT_EXECUTABLE in,
     // which would defeat the entire point of proving the BUNDLE rung resolves (and, for the hostile
     // cwd, a `.env` never overrides a variable that is already set).
-    const probeEnv = { PATH: process.env.PATH ?? "", HOME: process.env.HOME ?? homedir(), WINTER_HOME: tmpHome };
+    const probeEnv = { PATH: process.env.PATH ?? "", HOME: process.env.HOME ?? homedir(), CLOVER_HOME: tmpHome };
 
     // Positive controls: plain bun, in the same directory, DOES run the preload and load the .env.
     const bunControl = spawnSync(process.execPath, ["run", "show-env.ts"], { cwd: hostile.dir, env: probeEnv, encoding: "utf8", timeout: PROBE_TIMEOUT_MS });
@@ -253,9 +253,9 @@ async function main(): Promise<void> {
     rmSync(hostile.preloadMarker, { force: true });
     log(`\n--- Step 5a: hostile cwd ${hostile.dir} — plain bun ran its preload: ${bunRanPreload}, loaded its .env: ${bunLoadedDotenv} (both must be true) ---`);
     // And the variable, really in the environment, is observable through the probe.
-    const exported = await runProbe(stagedBinary, { ...probeEnv, WINTER_RUNTIME_EXECUTABLE: hostile.envMarker }, hostile.dir);
-    const exportedWinter = exported.result?.winter as Record<string, unknown> | undefined;
-    const exportedObservable = exportedWinter?.source !== "bundle" && JSON.stringify(exported.result ?? {}).includes(hostile.envMarker);
+    const exported = await runProbe(stagedBinary, { ...probeEnv, CLOVER_RUNTIME_EXECUTABLE: hostile.envMarker }, hostile.dir);
+    const exportedClover = exported.result?.clover as Record<string, unknown> | undefined;
+    const exportedObservable = exportedClover?.source !== "bundle" && JSON.stringify(exported.result ?? {}).includes(hostile.envMarker);
     const preloadAfterExported = existsSync(hostile.preloadMarker);
     rmSync(hostile.preloadMarker, { force: true });
 
@@ -275,7 +275,7 @@ async function main(): Promise<void> {
     const untouched = REAL_HOMES.map((dir, i) => [dir, before[i] === after[i]] as const);
     for (const [dir, ok] of untouched) if (!ok) log(`\n[real home CHANGED] ${dir}`);
 
-    const winter = result.winter as Record<string, unknown> | undefined;
+    const clover = result.clover as Record<string, unknown> | undefined;
     const ant = result.ant as Record<string, unknown> | undefined;
     const versions = result.versions as Record<string, unknown> | undefined;
     const antVersions = result.antVersions as Record<string, unknown> | undefined;
@@ -283,17 +283,17 @@ async function main(): Promise<void> {
     const checks: Array<[string, boolean]> = [
       ["the compiled binary produced a JSON result line", true],
       ["result.ok === true", result.ok === true],
-      ["result.winter.source === 'bundle'", winter?.source === "bundle"],
-      ["result.winter.executable === true", winter?.executable === true],
+      ["result.clover.source === 'bundle'", clover?.source === "bundle"],
+      ["result.clover.executable === true", clover?.executable === true],
       // WS-23: the official leg is retired — nothing about a `claude` runtime is probed or reported.
       ["result has no `claude` entry (WS-23)", !("claude" in result)],
       [`result.versions.schema === 2 and winterAgentSdk === ${REQUIRED_WINTER_AGENT_SDK} (this build's pin)`, versions?.schema === 2 && versions?.winterAgentSdk === REQUIRED_WINTER_AGENT_SDK],
       [`result.versions.winterSource === '${staged.versions.winterSource}' (P9a-8: matches what Step 3 actually staged)`, versions?.winterSource === staged.versions.winterSource],
       ["probe exited 0", exitCode === 0],
       // Winter Phase 10a (P10a-4): ant resolves via the SAME 'bundle' rung inside the compiled
-      // binary, the way winter does above — asserted for real when Step 3b staged a vendored copy
+      // binary, the way clover does above — asserted for real when Step 3b staged a vendored copy
       // (`antStaged`); a vacuous pass (never a silent green) when it did not, since ant coverage here
-      // is additive to this proof's primary winter subject, not a new hard requirement of every
+      // is additive to this proof's primary clover subject, not a new hard requirement of every
       // environment that runs this script.
       [
         antStaged ? "result.ant.source === 'bundle'" : "result.ant.source === 'bundle' (SKIPPED — no vendored ant staged, see WARNING above)",
@@ -317,9 +317,9 @@ async function main(): Promise<void> {
       // while each fixture was demonstrably live (the controls) — see `hostileCwd`.
       ["control: plain bun in the hostile cwd RAN its bunfig.toml preload (the fixture is live)", bunRanPreload],
       ["control: plain bun in the hostile cwd LOADED its .env (the fixture is live)", bunLoadedDotenv],
-      ["control: an EXPORTED WINTER_RUNTIME_EXECUTABLE is observable through the probe", exportedObservable],
-      ["no-autoload: winter-core did NOT run the hostile cwd's bunfig.toml preload", !preloadRanInBinary],
-      ["no-autoload: winter-core did NOT load the hostile cwd's .env (the marker path appears nowhere)", !dotenvReachedBinary],
+      ["control: an EXPORTED CLOVER_RUNTIME_EXECUTABLE is observable through the probe", exportedObservable],
+      ["no-autoload: clover-core did NOT run the hostile cwd's bunfig.toml preload", !preloadRanInBinary],
+      ["no-autoload: clover-core did NOT load the hostile cwd's .env (the marker path appears nowhere)", !dotenvReachedBinary],
       ...untouched.map(([dir, ok]) => [`${dir}: unchanged`, ok] as [string, boolean]),
     ];
 
@@ -333,7 +333,7 @@ async function main(): Promise<void> {
           "JSON line at all -> the __runtimes-probe route or the runtime-sdk barrel did not survive " +
           "`bun build --compile`; (b) source !== 'bundle' -> bundleRuntimePath's execPath math is " +
           "wrong for this layout, or stageRuntimes wrote somewhere else; (c) a real home changed -> " +
-          "the probe resolved a home instead of reading WINTER_HOME, the one failure this script must " +
+          "the probe resolved a home instead of reading CLOVER_HOME, the one failure this script must " +
           "never let through; (d) a no-autoload row -> compile/compile:core lost " +
           "`--no-compile-autoload-bunfig`/`--no-compile-autoload-dotenv` (a control row failing instead " +
           "means the fixture, not the binary, is wrong).",
@@ -341,7 +341,7 @@ async function main(): Promise<void> {
     }
 
     log(
-      "\nRESULT: PASS — dist/winter-core (the real `bun build --compile` Release artifact), laid out " +
+      "\nRESULT: PASS — dist/clover-core (the real `bun build --compile` Release artifact), laid out " +
         "exactly as the app bundle will be, resolved the runtime executables through the P8d-1 " +
         "'bundle' rung and parsed matching VERSIONS.json records, ignoring a hostile cwd's " +
         "bunfig.toml and .env — the user's real homes were left " +

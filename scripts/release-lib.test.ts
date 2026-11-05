@@ -66,7 +66,7 @@ describe("preflight", () => {
 describe("appcastItem", () => {
   const base = {
     version: "0.2.002",
-    zipName: "Winter-0.2.002.zip",
+    zipName: "Clover-0.2.002.zip",
     edSignature: "gr6VoIYzbcgIf6ScRRcbnPRnKPKtNGeHmVBqZlHEr3XQ0V6WQdT/E1eeGz1nA9Am==",
     length: 12345678,
     minSystem: "26.0",
@@ -102,8 +102,8 @@ describe("appcastItem", () => {
   });
 
   test("P8d-2: an optional description renders as a CDATA-wrapped standard <description> element", () => {
-    const xml = appcastItem({ ...base, beta: false, description: "Winter agent SDK 0.0.4 · Claude Agent SDK 0.3.250" });
-    expect(xml).toContain("<description><![CDATA[Winter agent SDK 0.0.4 · Claude Agent SDK 0.3.250]]></description>");
+    const xml = appcastItem({ ...base, beta: false, description: "Clover agent SDK 0.0.4 · Claude Agent SDK 0.3.250" });
+    expect(xml).toContain("<description><![CDATA[Clover agent SDK 0.0.4 · Claude Agent SDK 0.3.250]]></description>");
   });
 
   test("item 9: a `]]>` in the description cannot close the CDATA early", () => {
@@ -116,8 +116,8 @@ describe("appcastItem", () => {
 });
 
 describe("embeddedRuntimesDescriptionLine (P8d-2)", () => {
-  test("names the pinned Winter agent SDK — and, since WS-23, no official runtime", () => {
-    expect(embeddedRuntimesDescriptionLine({ winterAgentSdk: REQUIRED_WINTER_AGENT_SDK })).toBe(`Winter agent SDK ${REQUIRED_WINTER_AGENT_SDK}`);
+  test("names the pinned Clover agent SDK — and, since WS-23, no official runtime", () => {
+    expect(embeddedRuntimesDescriptionLine({ winterAgentSdk: REQUIRED_WINTER_AGENT_SDK })).toBe(`Clover agent SDK ${REQUIRED_WINTER_AGENT_SDK}`);
   });
 });
 
@@ -130,11 +130,11 @@ describe("releaseNotesHtml (2026-09-17 settings-surface plan, item 9)", () => {
     expect(render("# Top\n\n## Mid\n\n### Low")).toBe("<h1>Top</h1>\n<h2>Mid</h2>\n<h3>Low</h3>");
   });
 
-  test("the leading `# Winter <version>` heading is dropped for THIS version only", () => {
-    expect(render("# Winter 0.115.0\n\n## Something")).toBe("<h2>Something</h2>");
-    expect(render("# Winter 0.114.0\n\n## Something")).toBe("<h1>Winter 0.114.0</h1>\n<h2>Something</h2>");
+  test("the leading `# Clover <version>` heading is dropped for THIS version only", () => {
+    expect(render("# Clover 0.115.0\n\n## Something")).toBe("<h2>Something</h2>");
+    expect(render("# Clover 0.114.0\n\n## Something")).toBe("<h1>Clover 0.114.0</h1>\n<h2>Something</h2>");
     // Only the FIRST block, never a later one.
-    expect(render("## Something\n\n# Winter 0.115.0")).toBe("<h2>Something</h2>\n<h1>Winter 0.115.0</h1>");
+    expect(render("## Something\n\n# Clover 0.115.0")).toBe("<h2>Something</h2>\n<h1>Clover 0.115.0</h1>");
   });
 
   test("a paragraph's soft line wraps are joined with a single space", () => {
@@ -154,8 +154,8 @@ describe("releaseNotesHtml (2026-09-17 settings-surface plan, item 9)", () => {
   });
 
   test("a fence renders verbatim (escaped, never inline-converted) and drops the language hint", () => {
-    expect(render("```sh\nbrew install --cask winter && echo a<b **not bold**\n```")).toBe(
-      "<pre><code>brew install --cask winter &amp;&amp; echo a&lt;b **not bold**</code></pre>",
+    expect(render("```sh\nbrew install --cask clover && echo a<b **not bold**\n```")).toBe(
+      "<pre><code>brew install --cask clover &amp;&amp; echo a&lt;b **not bold**</code></pre>",
     );
   });
 
@@ -188,7 +188,7 @@ describe("releaseNotesHtml (2026-09-17 settings-surface plan, item 9)", () => {
     const files = readdirSync(notesDir).filter((f: string) => f.endsWith(".md")).sort();
     // A guard on the guard: if this ever globs zero files the assertions below all vacuously pass.
     expect(files.length).toBeGreaterThanOrEqual(10);
-    const dir = mkdtempSync(join(tmpdir(), "winter-appcast-notes-"));
+    const dir = mkdtempSync(join(tmpdir(), "clover-appcast-notes-"));
     tmpDirs.push(dir);
     const tagsSeen = new Set<string>();
     const entitiesSeen = new Set<string>();
@@ -200,13 +200,13 @@ describe("releaseNotesHtml (2026-09-17 settings-surface plan, item 9)", () => {
         notesMarkdown: readFileSync(join(notesDir, file), "utf8"),
       });
       // The P8d-2 line is still there verbatim, first, and the notes follow it.
-      expect(description.startsWith(`<p>Winter agent SDK ${REQUIRED_WINTER_AGENT_SDK}</p>\n`)).toBe(true);
+      expect(description.startsWith(`<p>Clover agent SDK ${REQUIRED_WINTER_AGENT_SDK}</p>\n`)).toBe(true);
       expect(description.length).toBeGreaterThan(200);
       // release.ts validates the whole feed with xmllint; do the same for one item here, since a
       // CDATA or entity mistake in the rendered notes is exactly what would only surface there.
       const item = appcastItem({
         version,
-        zipName: `Winter-${version}.zip`,
+        zipName: `Clover-${version}.zip`,
         edSignature: "sig==",
         length: 1,
         beta: false,
@@ -239,7 +239,7 @@ describe("releaseNotesHtml (2026-09-17 settings-surface plan, item 9)", () => {
 });
 
 describe("appcastDescription (item 9)", () => {
-  const versionLine = "Winter agent SDK 0.0.16 · Claude Agent SDK 0.3.250";
+  const versionLine = "Clover agent SDK 0.0.16 · Claude Agent SDK 0.3.250";
 
   test("no notes -> byte-identical to the pre-item-9 description", () => {
     expect(appcastDescription({ versionLine, version: "0.115.0" })).toBe(versionLine);
@@ -247,7 +247,7 @@ describe("appcastDescription (item 9)", () => {
   });
 
   test("with notes -> the version line first, then the rendered notes", () => {
-    expect(appcastDescription({ versionLine, version: "0.115.0", notesMarkdown: "# Winter 0.115.0\n\n## A change\n\nIt changed." })).toBe(
+    expect(appcastDescription({ versionLine, version: "0.115.0", notesMarkdown: "# Clover 0.115.0\n\n## A change\n\nIt changed." })).toBe(
       `<p>${versionLine}</p>\n<h2>A change</h2>\n<p>It changed.</p>`,
     );
   });
@@ -338,11 +338,11 @@ describe("verifyAntEmbed (Winter Phase 10a, Task L3's ant CONTENT-IDENTITY gate,
 });
 
 describe("caskFrom", () => {
-  const tmpl = `cask "winter" do
+  const tmpl = `cask "clover" do
   version "{{version}}"
   sha256 "{{sha256}}"
   url "{{url}}"
-  name "Winter {{version}}"
+  name "Clover {{version}}"
 end
 `;
 
@@ -350,14 +350,14 @@ end
     const rendered = caskFrom(tmpl, {
       version: "0.2.002",
       sha256: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-      url: "https://github.com/yanlingLabs/winter/releases/download/v0.2.002/Winter-0.2.002.dmg",
+      url: "https://github.com/waifucave/clover/releases/download/v0.2.002/Clover-0.2.002.dmg",
     });
     expect(rendered).toContain('version "0.2.002"');
     expect(rendered).toContain('sha256 "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"');
     expect(rendered).toContain(
-      'url "https://github.com/yanlingLabs/winter/releases/download/v0.2.002/Winter-0.2.002.dmg"',
+      'url "https://github.com/waifucave/clover/releases/download/v0.2.002/Clover-0.2.002.dmg"',
     );
-    expect(rendered).toContain('name "Winter 0.2.002"');
+    expect(rendered).toContain('name "Clover 0.2.002"');
     expect(rendered).not.toContain("{{");
     expect(rendered).not.toContain("}}");
   });
@@ -365,29 +365,29 @@ end
 
 describe("dmgStagePlan", () => {
   test("plans a copy of the app plus an /Applications symlink", () => {
-    const ops = dmgStagePlan("/out/release/0.2.002/dd/Build/Products/Release/Winter.app");
+    const ops = dmgStagePlan("/out/release/0.2.002/dd/Build/Products/Release/Clover.app");
     expect(ops).toEqual([
       {
         kind: "copy",
-        source: "/out/release/0.2.002/dd/Build/Products/Release/Winter.app",
-        destName: "Winter.app",
+        source: "/out/release/0.2.002/dd/Build/Products/Release/Clover.app",
+        destName: "Clover.app",
       },
       { kind: "symlink", source: "/Applications", destName: "Applications" },
     ]);
   });
 
   test("throws on a path that doesn't end in .app", () => {
-    expect(() => dmgStagePlan("/out/release/0.2.002/Winter.zip")).toThrow();
+    expect(() => dmgStagePlan("/out/release/0.2.002/Clover.zip")).toThrow();
   });
 
   test("tolerates a trailing slash on the app path", () => {
-    const ops = dmgStagePlan("/tmp/Winter.app/");
-    expect(ops[0]).toEqual({ kind: "copy", source: "/tmp/Winter.app/", destName: "Winter.app" });
+    const ops = dmgStagePlan("/tmp/Clover.app/");
+    expect(ops[0]).toEqual({ kind: "copy", source: "/tmp/Clover.app/", destName: "Clover.app" });
   });
 });
 
 describe("nameScanPlan (panel-cef Task 5 — §11b's exclusion, expressed in the repo)", () => {
-  // A miniature Winter.app: two locally-compiled bits, one third-party framework in the VERSIONED
+  // A miniature Clover.app: two locally-compiled bits, one third-party framework in the VERSIONED
   // layout project.yml actually embeds (Versions/A + Current + top-level symlinks), and the
   // licence notices. Keys are POSIX-relative paths; a value of null is a file, and names listed
   // in SYMLINKS are symlinks — which release.ts's real callbacks filter out, because `find
@@ -401,11 +401,11 @@ describe("nameScanPlan (panel-cef Task 5 — §11b's exclusion, expressed in the
   const tree: Record<string, string[] | null> = {
     "": ["Contents"],
     Contents: ["MacOS", "Resources", "Frameworks", "Helpers"],
-    "Contents/MacOS": ["Winter", "WinterHelper"],
-    "Contents/MacOS/Winter": null,
+    "Contents/MacOS": ["Clover", "WinterHelper"],
+    "Contents/MacOS/Clover": null,
     "Contents/MacOS/WinterHelper": null,
-    "Contents/Resources": ["winter-core", "Licenses"],
-    "Contents/Resources/winter-core": null,
+    "Contents/Resources": ["clover-core", "Licenses"],
+    "Contents/Resources/clover-core": null,
     "Contents/Resources/Licenses": ["CEF-LICENSE.txt", "CREDITS.html"],
     "Contents/Resources/Licenses/CEF-LICENSE.txt": null,
     "Contents/Resources/Licenses/CREDITS.html": null,
@@ -413,7 +413,7 @@ describe("nameScanPlan (panel-cef Task 5 — §11b's exclusion, expressed in the
     "Contents/Frameworks": ["Sparkle.framework"],
     "Contents/Frameworks/Sparkle.framework": ["Sparkle"],
     "Contents/Frameworks/Sparkle.framework/Sparkle": null,
-    // Winter's one Chromium, inside the nested Winter Headless helper.
+    // Clover's one Chromium, inside the nested Winter Headless helper.
     "Contents/Helpers": ["Winter Headless.app"],
     "Contents/Helpers/Winter Headless.app": ["Contents"],
     "Contents/Helpers/Winter Headless.app/Contents": ["Frameworks"],
@@ -438,7 +438,7 @@ describe("nameScanPlan (panel-cef Task 5 — §11b's exclusion, expressed in the
     "Contents/Helpers/Winter Headless.app/Contents/Frameworks/Chromium Embedded Framework.framework/Versions/A/Resources/sw.lproj": ["locale.pak"],
     "Contents/Helpers/Winter Headless.app/Contents/Frameworks/Chromium Embedded Framework.framework/Versions/A/Resources/sw.lproj/locale.pak": null,
   };
-  const ROOT = "/out/Winter.app";
+  const ROOT = "/out/Clover.app";
   const rel = (absPath: string) => (absPath === ROOT ? "" : absPath.slice(ROOT.length + 1));
   // Mirrors release.ts's real callbacks: symlink-filtered listing + lstat-style isDir.
   const io = {
@@ -481,7 +481,7 @@ describe("nameScanPlan (panel-cef Task 5 — §11b's exclusion, expressed in the
 
   test("subtrees with nothing excluded are emitted whole, so the target list stays auditable", () => {
     const plan = nameScanPlan({ ...io, isExcluded });
-    // Sparkle (all of Winter.app's own Frameworks now) and MacOS are untouched by the exclusion: one path each, not one
+    // Sparkle (all of Clover.app's own Frameworks now) and MacOS are untouched by the exclusion: one path each, not one
     // per file.
     expect(plan.targets).toContain(`${ROOT}/Contents/Frameworks`);
     expect(plan.targets).toContain(`${ROOT}/Contents/MacOS`);
@@ -523,15 +523,15 @@ describe("nameScanPlan (panel-cef Task 5 — §11b's exclusion, expressed in the
     expect(m(`${fw}/Versions/A/Resources/resources.pak`)).toBe(false);
     expect(m(`${fw}/Versions/A/Libraries/libcef_sandbox.dylib`)).toBe(false);
     expect(m("Contents/Resources/Licenses/CREDITS.html")).toBe(false);
-    expect(m("Contents/MacOS/Winter")).toBe(false);
-    // Not a blanket "any .lproj anywhere" — Winter's own resources stay scanned.
+    expect(m("Contents/MacOS/Clover")).toBe(false);
+    // Not a blanket "any .lproj anywhere" — Clover's own resources stay scanned.
     expect(m("Contents/Resources/en.lproj")).toBe(false);
     // Nor a subdirectory sneaking past the anchor.
     expect(m(`${fw}/Versions/A/Resources/sw.lproj/locale.pak`)).toBe(false);
     // The top-level `Resources` SYMLINK route is deliberately unmatched — the walker never
     // follows it, so matching it too would be dead policy hiding a walker regression.
     expect(m(`${fw}/Resources/sw.lproj`)).toBe(false);
-    // The old layout's path (Winter.app's own Frameworks) holds no Chromium any more: nothing there is excluded.
+    // The old layout's path (Clover.app's own Frameworks) holds no Chromium any more: nothing there is excluded.
     expect(m("Contents/Frameworks/Chromium Embedded Framework.framework/Versions/A/Resources/sw.lproj")).toBe(false);
   });
 
@@ -542,7 +542,7 @@ describe("nameScanPlan (panel-cef Task 5 — §11b's exclusion, expressed in the
     expect(m("Contents/Resources/EditorAssets/vs")).toBe(true);
     expect(m("Contents/Resources/EditorAssets/vs/loader.js")).toBe(true);
     expect(m("Contents/Resources/EditorAssets/vs/base/worker/workerMain.js")).toBe(true);
-    // Task 4's in-repo page shell — Winter's OWN code — stays scanned.
+    // Task 4's in-repo page shell — Clover's OWN code — stays scanned.
     expect(m("Contents/Resources/EditorAssets/app")).toBe(false);
     expect(m("Contents/Resources/EditorAssets/app/index.html")).toBe(false);
     // The parent dir itself (not the vs/ child) stays scanned.
@@ -552,7 +552,7 @@ describe("nameScanPlan (panel-cef Task 5 — §11b's exclusion, expressed in the
     // Not a blanket prefix match — a sibling name merely starting with "vs" must not sneak in.
     expect(m("Contents/Resources/EditorAssets/vsx")).toBe(false);
     // Unrelated CEF paths are unaffected by this rule.
-    expect(m("Contents/MacOS/Winter")).toBe(false);
+    expect(m("Contents/MacOS/Clover")).toBe(false);
   });
 
   test("NAME_SCAN_EXCLUSIONS matches the LibreOffice language-subtag-registry.xml file only — nothing else in that tree", () => {
@@ -575,7 +575,7 @@ describe("appcastInsertPlan", () => {
   const emptyChannel = `<?xml version="1.0"?>
 <rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
   <channel>
-    <title>Winter Changelog</title>
+    <title>Clover Changelog</title>
   </channel>
 </rss>
 `;
@@ -644,9 +644,9 @@ describe("appcastInsertPlan", () => {
 
 describe("resolveSigningIdentity", () => {
   const sampleOutput = `Policy: Code Signing
-  1) AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA "Developer ID Application: Winter (37N77U9RSZ)"
+  1) AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA "Developer ID Application: Clover (37N77U9RSZ)"
   2) BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB "Apple Development: dev@example.com (37N77U9RSZ)"
-  3) CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC "Developer ID Application: Winter (OTHERTEAM1)"
+  3) CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC "Developer ID Application: Clover (OTHERTEAM1)"
      3 valid identities found
 `;
 
@@ -700,7 +700,7 @@ describe("publishGuard", () => {
   });
 
   // Fix wave M4 (whole-branch review, Major, P9c-19): the skip-list documents the explicit
-  // `gh release edit --latest` step too — Winter's release must never rely on create-order alone.
+  // `gh release edit --latest` step too — Clover's release must never rely on create-order alone.
   test("the skip-list names the explicit gh release edit --latest step", () => {
     const g = publishGuard({ dryRun: true, resumePublish: false, tagExists: false, releaseExists: false, ...base });
     expect(g.lines).toContain("gh release edit v0.2.002 --latest");
@@ -818,13 +818,13 @@ describe("row16IdentityCheck (P9a-8: the STRONG checksum-equality path)", () => 
   const tempFile = (content: string): string => {
     const dir = mkdtempSync(join(tmpdir(), "row16-identity-"));
     temps.push(dir);
-    const p = join(dir, "winter-fake");
+    const p = join(dir, "clover-fake");
     writeFileSync(p, content);
     return p;
   };
 
   test("STRONG OK: winterSource=platform-package and the embedded checksum equals the installed package's own checksum", () => {
-    const pkgPath = tempFile("the installed platform package's own winter bytes\n");
+    const pkgPath = tempFile("the installed platform package's own clover bytes\n");
     const embeddedSha = sha256File(pkgPath); // the embed is byte-identical to what's installed
     const r = row16IdentityCheck({
       versionsJsonText: goodVersionsJson({ checksums: { winterPreSign: embeddedSha } }),
@@ -835,7 +835,7 @@ describe("row16IdentityCheck (P9a-8: the STRONG checksum-equality path)", () => 
   });
 
   test("STRONG MISMATCH: winterSource=platform-package but the checksums disagree — the embed does not match what npm shipped", () => {
-    const pkgPath = tempFile("the CURRENTLY installed platform package's winter bytes (post-republish)\n");
+    const pkgPath = tempFile("the CURRENTLY installed platform package's clover bytes (post-republish)\n");
     const installedSha = sha256File(pkgPath);
     const staleEmbeddedSha = sha("f"); // whatever was embedded at a prior staging time
     const r = row16IdentityCheck({

@@ -24,7 +24,7 @@ function service(over: Partial<UsageServiceDeps> & { clock: { now: number } }) {
   const { clock, ...rest } = over;
   const svc = new UsageService({
     db, pricer, tracking: () => ({ codex: true, claudeCode: true, antigravity: true, opencode: true }), codexExecutable: () => undefined,
-    claudeExecutable: () => undefined, winterCodexWindows: () => [], probeRoot: () => probeRootIn(home), ingestEveryMs: 0, now: () => clock.now,
+    claudeExecutable: () => undefined, cloverCodexWindows: () => [], probeRoot: () => probeRootIn(home), ingestEveryMs: 0, now: () => clock.now,
     log: { warn: (m, meta) => logs.push(`${m} ${JSON.stringify(meta ?? {})}`), info: (m, meta) => logs.push(`${m} ${JSON.stringify(meta ?? {})}`) },
     ...rest,
   });
@@ -261,7 +261,7 @@ describe("OpenCode in the usage DB", () => {
     expect(svc.series("30d", ["opencode"]).totals.input).toBe(180);
   }, 30_000);
 
-  test("every run gets TZ: the zone Winter counts its days in", async () => {
+  test("every run gets TZ: the zone Clover counts its days in", async () => {
     const fake = fakeOpencode(tempDir("bin"), { daily: { 0: [m("a", 1)] } });
     const { svc } = service({ opencodeExecutable: () => fake.path, clock: { now: AFTERNOON } });
     await svc.ingest(true);
@@ -296,7 +296,7 @@ describe("OpenCode in the usage DB", () => {
       const db = new UsageDb(join(home, "usage", "usage.db"));
       return { db, svc: new UsageService({
         db, pricer, tracking: () => ({ codex: false, claudeCode: false, antigravity: false, opencode: true }), codexExecutable: () => undefined,
-        claudeExecutable: () => undefined, winterCodexWindows: () => [], probeRoot: () => probeRootIn(home), ingestEveryMs: 0,
+        claudeExecutable: () => undefined, cloverCodexWindows: () => [], probeRoot: () => probeRootIn(home), ingestEveryMs: 0,
         now: () => clock.now, opencodeExecutable: () => fake.path, opencodeSpawnBudget: 5,
       }) };
     };

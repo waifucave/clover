@@ -30,7 +30,7 @@ const homes: string[] = [];
 afterEach(() => { for (const dir of homes.splice(0)) rmSync(dir, { recursive: true, force: true }); });
 
 function harness() {
-  const home = mkdtempSync(join(tmpdir(), "winter-list-sessions-"));
+  const home = mkdtempSync(join(tmpdir(), "clover-list-sessions-"));
   homes.push(home);
   const store = new SessionStore(home);
   const registry = new ToolRegistry();
@@ -151,19 +151,19 @@ describe("list_sessions: query", () => {
   test("finds the session that EDITED a file — by full path, ~ path, trailing path or file name — across idle and archived sessions", async () => {
     const h = harness();
     const editor = h.session({ title: "Tidy configs" });
-    h.edit(editor, "/Users/someone/projects/winter/config.toml");
+    h.edit(editor, "/Users/someone/projects/clover/config.toml");
     h.store.setArchived(editor, true);
     const other = h.session({ title: "Something else" });
     h.edit(other, "/Users/someone/projects/other/config.yaml");
     for (const q of [
-      "the session that edited /Users/someone/projects/winter/config.toml",
-      "winter/config.toml",
+      "the session that edited /Users/someone/projects/clover/config.toml",
+      "clover/config.toml",
       "config.toml",
     ]) {
       const res = await h.call({ query: q });
       const rows = rowsOf(res.output);
       expect(rows[0]).toStartWith(`${editor} | archived`);
-      expect(rows[0]).toContain("matched: edited /Users/someone/projects/winter/config.toml");
+      expect(rows[0]).toContain("matched: edited /Users/someone/projects/clover/config.toml");
       expect(res.output).not.toContain(other);
     }
   });
@@ -309,8 +309,8 @@ describe("session-query: the interpreter (pure, deterministic)", () => {
   });
 
   test("paths, words and filler are told apart", () => {
-    const p = parseSessionQuery("the session that edited ~/projects/winter/config.toml about the reaper yesterday", NOW);
-    expect(p.paths).toEqual([`${require("node:os").homedir()}/projects/winter/config.toml`]);
+    const p = parseSessionQuery("the session that edited ~/projects/clover/config.toml about the reaper yesterday", NOW);
+    expect(p.paths).toEqual([`${require("node:os").homedir()}/projects/clover/config.toml`]);
     expect(p.words).toEqual(["reaper"]);
     expect(p.ranges.map((r) => r.label)).toEqual(["yesterday"]);
   });
@@ -334,13 +334,13 @@ describe("session-query: the interpreter (pure, deterministic)", () => {
   test("an exact edited path outranks a basename match and a cwd match", () => {
     const sessions = [
       s("s_base", { editedFiles: ["/elsewhere/config.toml"] }),
-      s("s_exact", { editedFiles: ["/p/winter/config.toml"] }),
-      s("s_cwd", { cwd: "/p/winter" }),
+      s("s_exact", { editedFiles: ["/p/clover/config.toml"] }),
+      s("s_cwd", { cwd: "/p/clover" }),
     ];
     // The file sits inside s_cwd's directory, so it is a (weaker) match too.
-    expect(rankSessions(sessions, parseSessionQuery("/p/winter/config.toml", NOW)).map((r) => r.session.sessionId)).toEqual(["s_exact", "s_cwd"]);
+    expect(rankSessions(sessions, parseSessionQuery("/p/clover/config.toml", NOW)).map((r) => r.session.sessionId)).toEqual(["s_exact", "s_cwd"]);
     expect(rankSessions(sessions, parseSessionQuery("config.toml", NOW)).map((r) => r.session.sessionId).sort()).toEqual(["s_base", "s_exact"]);
-    expect(rankSessions(sessions, parseSessionQuery("/p/winter", NOW)).map((r) => r.session.sessionId)).toEqual(["s_cwd"]);
+    expect(rankSessions(sessions, parseSessionQuery("/p/clover", NOW)).map((r) => r.session.sessionId)).toEqual(["s_cwd"]);
   });
 });
 

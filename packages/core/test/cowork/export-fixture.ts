@@ -42,7 +42,7 @@ export function poke(path: string, offset: number, text: string): void {
 const receiptFor = (plan: VolumeFilesystemPlan): VolumeFilesystemReceipt => ({ ...plan, volumes: plan.volumes.map(v => ({ ...v, journalReplayed: false, journalReplay: "none", filesystemFeatures: [...plan.ext4Features], transientFilesystemFeatures: [], fullReadOnlyCheck: plan.checkMode === "full-read-only", filesystemType: "ext4", filesystemUUID: v.expectedFilesystemUUID, flushConfirmed: true, checked: true })) });
 
 export async function fixture(options: { ready?: boolean; pin?: boolean; backupFails?: boolean } = {}) {
-  const base = realpathSync(mkdtempSync(join(tmpdir(), "winter-content-out-")));
+  const base = realpathSync(mkdtempSync(join(tmpdir(), "clover-content-out-")));
   const home = join(base, "home"); mkdirSync(home, { mode: 0o700 });
   const destination = join(base, "exports"); mkdirSync(destination, { mode: 0o700 });
   const db: RuntimeStateDb = openRuntimeStateDb(home), repo = new CoworkRepository(db);

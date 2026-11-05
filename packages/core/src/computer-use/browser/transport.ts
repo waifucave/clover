@@ -1,5 +1,5 @@
 // ComputerV2 Phase 2 — the ONE interface between the browser engine and a browser backend. The engine speaks
-// CDP through it and nothing else; the built-in browser (Winter.app over the browser link), Winter's headless browser
+// CDP through it and nothing else; the built-in browser (Clover.app over the browser link), Clover's headless browser
 // (private, windowless engines the daemon runs over pipes) and the user's browsers (the Winter for Chrome extension
 // over winter-browser-host) each implement it. Change it only through the controller.
 import type { WatchArmResult, WatchSpec } from "./page-runtime/watch";
@@ -11,17 +11,17 @@ export type BrowserFamily = "winter" | "headless" | "chrome" | "edge" | "brave" 
 export type BackendId = string;
 
 export interface TransportTab {
-  /** The backend's own tab id as a string: a panel tab id (winter), an engine-prefixed id (headless: "w-…" for Winter's
+  /** The backend's own tab id as a string: a panel tab id (winter), an engine-prefixed id (headless: "w-…" for Clover's
    *  own engine, "chrome-…" and so on for an installed one) or a chrome.tabs id (extension). */
   tabKey: string;
   url: string;
   title: string;
   active: boolean;
-  /** Opened by Winter's automation — winter: minted by `browsers.open` in this daemon run; headless: every tab (the
-   *  browser is Winter's own); extension: in a Winter group. */
+  /** Opened by Clover's automation — winter: minted by `browsers.open` in this daemon run; headless: every tab (the
+   *  browser is Clover's own); extension: in a Clover group. */
   agent: boolean;
-  /** The Winter session it belongs to — winter: the panel tab's session; headless: the session whose browser context
-   *  holds it; extension: the Winter group's session. */
+  /** The Clover session it belongs to — winter: the panel tab's session; headless: the session whose browser context
+   *  holds it; extension: the Clover group's session. */
   sessionId?: string;
   /** Phase 3 (extension): when the user last had the tab in front (epoch ms), its tab group's title, its window. */
   lastAccessed?: number;
@@ -33,7 +33,7 @@ export interface TransportTab {
 export interface TransportDownload {
   /** The backend's own id for this download. */
   id: string;
-  /** `refused`: a download the tab started while NOT armed (winter: Winter.app refused it; the engine only says so). */
+  /** `refused`: a download the tab started while NOT armed (winter: Clover.app refused it; the engine only says so). */
   state: "started" | "progress" | "done" | "failed" | "refused";
   /** The suggested file name. */
   name: string;
@@ -56,7 +56,7 @@ export interface CdpEvent {
 }
 
 export type TransportErrorCode =
-  | "disconnected"        // the backend went away (Winter.app quit, the host or extension disconnected) — retryable
+  | "disconnected"        // the backend went away (Clover.app quit, the host or extension disconnected) — retryable
   | "tab_gone"            // the tab was closed, crashed, or its browser was stopped
   | "attach_refused"      // the tab cannot be debugged (a browser-internal page, a store page, another debugger, the user cancelled)
   | "not_allowed"         // a method or event outside cdp-allowlist.ts, or a world rule broken — refused before sending
@@ -77,13 +77,13 @@ export interface CdpTransport {
   readonly family: BrowserFamily;
   /** False once the far side is gone; every call then rejects `disconnected`. */
   readonly connected: boolean;
-  /** Open a tab without activating anything the user is looking at outside Winter (extension: `active: false`, in the
-   *  session's Winter group; winter: the daemon has already minted the panel tab, so this makes its browser live;
+  /** Open a tab without activating anything the user is looking at outside Clover (extension: `active: false`, in the
+   *  session's Clover group; winter: the daemon has already minted the panel tab, so this makes its browser live;
    *  headless: a windowless or background page in the session's own private context, on `engine` — "winter" (the
-   *  default: Winter's own CEF helper) or an installed browser's family id; every other backend ignores `engine`). */
+   *  default: Clover's own CEF helper) or an installed browser's family id; every other backend ignores `engine`). */
   createTab(opts: { sessionId: string; sessionTitle?: string; url: string; tabKey?: string; engine?: string }): Promise<TransportTab>;
   closeTab(tabKey: string): Promise<void>;
-  /** extension: take it out of the Winter group (it stays as the user's tab) — into the user's own group named `group`
+  /** extension: take it out of the Clover group (it stays as the user's tab) — into the user's own group named `group`
    *  in its window when given (Phase 3); winter, headless: nothing. */
   keepTab(tabKey: string, opts?: { group?: string }): Promise<void>;
   listTabs(opts?: { sessionId?: string }): Promise<TransportTab[]>;
@@ -112,7 +112,7 @@ export interface CdpTransport {
   /** extension: the user answered Done (`true`) or Stop waiting (`false`) in the toolbar for a tab waiting on them. */
   onUserDone?(listener: (tabKey: string, done: boolean) => void): () => void;
   setMuted?(tabKey: string, muted: boolean): Promise<void>;
-  /** extension: the session's Winter group — its title (shown "Winter · <title>"), color, collapsed state. */
+  /** extension: the session's Clover group — its title (shown "Clover · <title>"), color, collapsed state. */
   updateGroup?(opts: { sessionId: string; title?: string; color?: string; collapsed?: boolean }): Promise<void>;
   /** extension: the normal, non-private windows. */
   listWindows?(): Promise<Array<{ id: number; focused: boolean; tabs: number }>>;
@@ -121,7 +121,7 @@ export interface CdpTransport {
   bookmarks?(q: { text?: string; maxResults: number }): Promise<Array<{ url: string; title: string; folder: string }>>;
   /**
    * Downloads the BROWSER itself saves for this tab until `until` (epoch ms), at most `maxBytes` each; `null` disarms.
-   * winter: Winter.app's own handler writes into `dir` (Winter's staging, inside its home); extension (its optional
+   * winter: Clover.app's own handler writes into `dir` (Clover's staging, inside its home); extension (its optional
    * `downloads` permission granted): the browser writes into `<its download folder>/<subdir>/` and may show its own
    * "save as" dialog if the user asked it to. Each is reported through `onDownload`. Absent, or refused `not_allowed`
    * (`data.permission`): the engine catches http(s) downloads over CDP Fetch instead.
@@ -143,7 +143,7 @@ export interface CdpTransport {
   /** Idempotent; the watcher (its ring and pill) leaves the page. */
   unwatch?(tabKey: string, watchId: string): Promise<void>;
   onWatchEvent?(listener: (tabKey: string, e: TransportWatchEvent) => void): () => void;
-  /** Wake triggers on Winter's built-in browser (link feature `watchOnly`): its hold has native-UI effects (Winter.app
+  /** Wake triggers on Clover's built-in browser (link feature `watchOnly`): its hold has native-UI effects (Clover.app
    *  holds the tab's dialogs, denies its prompts, cancels its file choosers and downloads, …), and it can hold a tab
    *  WATCH-ONLY, with none of them (`attach`'s `watchOnly`). Absent or false: holds have no such effects (a user's
    *  browser, a headless engine) — or, on the built-in browser, the app is older, and a built-in tab is never held for
@@ -159,8 +159,8 @@ export interface TransportWatchEvent {
   outcome: "fired" | "pressed" | "lost" | "url";
   /** Epoch ms. */
   at: number;
-  /** submitted / changed: when the trusted pointer or key event that made it the user's landed (epoch ms) — Winter's
-   *  own input then makes it Winter's too. */
+  /** submitted / changed: when the trusted pointer or key event that made it the user's landed (epoch ms) — Clover's
+   *  own input then makes it Clover's too. */
   cause?: number;
   /** The tab's address as `watchUrlShape` gives it (origin and path; never a query or a fragment). */
   url?: string;
@@ -177,7 +177,7 @@ export interface TransportWatchEvent {
 export interface BrowserBackendInfo {
   id: BackendId;
   family: BrowserFamily;
-  /** "Winter (built-in)", "Google Chrome", "Google Chrome (2)". */
+  /** "Clover (built-in)", "Google Chrome", "Google Chrome (2)". */
   name: string;
   /** Extension backends: the browser app's bundle id (the per-app card and access settings). */
   bundleId?: string;

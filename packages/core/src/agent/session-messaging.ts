@@ -1,8 +1,8 @@
-// SendMessage / TaskStop between Winter sessions: the daemon's half of the agent SDK's `Options.hostMessaging`.
+// SendMessage / TaskStop between Clover sessions: the daemon's half of the agent SDK's `Options.hostMessaging`.
 //
 // WHY THIS EXISTS. A session's `SendMessage` runs inside its own runtime child (a `winter` process for a
 // code session, a Worker for dispatch), and that child can resolve only what it holds: its own subagents
-// and itself. Every other Winter session lives in another child, so before agent SDK 0.0.39 a message to
+// and itself. Every other Clover session lives in another child, so before agent SDK 0.0.39 a message to
 // one answered `not_found … is currently reachable` (dev, 2026-10-02: Dispatch could not follow up a single
 // child). Since 0.0.39 the runtime asks its HOST for anything it cannot resolve in-process
 // (`host_message_send`), for the rows ListAgents adds (`host_message_list`), and — for a `TaskStop` whose
@@ -89,7 +89,7 @@ export const DELIVERY_DEDUPE_TTL_MS = 10 * 60_000;
 export const DELIVERY_DEDUPE_MAX = 500;
 
 /** The refusal a chat session gets (it has no SendMessage; defensive). */
-export const CHAT_SENDER_REFUSAL = "a chat session cannot message or stop other Winter sessions";
+export const CHAT_SENDER_REFUSAL = "a chat session cannot message or stop other Clover sessions";
 /** The refusal for a chat or dispatch TARGET, after the workspace authority check. */
 export const TARGET_MODE_REFUSAL = "only code sessions can currently be messaged or stopped; chat and dispatch targets are unsupported";
 
@@ -99,14 +99,14 @@ export interface MessagingDriverHandle {
   /** `live` (a child is running), `resumable`, `ended` — absent on a test double, read as live. */
   readonly state?: "live" | "resumable" | "ended";
   send(text: string, clientName?: string): Promise<{ seq: number; queued: boolean }>;
-  /** Push into the RUNNING turn now (`WinterSession.steer`). Optional on a test double. */
+  /** Push into the RUNNING turn now (`CloverSession.steer`). Optional on a test double. */
   steer?(text: string, clientName?: string): Promise<{ seq: number; injected: boolean }>;
-  /** A steer now reaches the running turn (`WinterSession.foldsQueuedInput`). Absent: false. */
+  /** A steer now reaches the running turn (`CloverSession.foldsQueuedInput`). Absent: false. */
   readonly foldsQueuedInput?: boolean;
   /** The session's own interrupt (`session.interrupt`, the Mac's stop button); `discardQueued` also drops
    *  the messages held behind the stopped turn. Optional on a test double. */
   interrupt?(opts?: { discardQueued?: boolean }): Promise<{ wasRunning: boolean; discarded?: number }>;
-  /** Messages queued behind the running turn (`WinterSession.pendingSends`). Optional on a test double. */
+  /** Messages queued behind the running turn (`CloverSession.pendingSends`). Optional on a test double. */
   readonly pendingSends?: readonly string[];
   /** A COWORK driver only: the recipient workspace's guest incarnation and lease epoch this driver was started under.
    *  The peer inbox fences every offer and ack on it. Absent (a Code/Dispatch driver, or a Cowork driver that has no
@@ -236,14 +236,14 @@ export class SessionMessaging {
   private resolveTarget(callerSessionId: string, to: string, operation: CoworkPeerOperation = "send"): { id: string; meta: Meta } | { answer: { status: "refused" | "not_found"; reason: string } } {
     const id = sessionIdFromAddress(to);
     if (id === undefined) {
-      return { answer: { status: "not_found", reason: `no agent or session named "${to}" is reachable — address a Winter session by its id (s_…), from SpawnSession, ListSessions or ListAgents` } };
+      return { answer: { status: "not_found", reason: `no agent or session named "${to}" is reachable — address a Clover session by its id (s_…), from SpawnSession, ListSessions or ListAgents` } };
     }
     if (id === callerSessionId) return { answer: { status: "refused", reason: "cannot target your own session" } };
     let meta: Meta, caller: Meta;
-    const hidden = { answer: { status: "not_found" as const, reason: `no reachable Winter session '${id}'` } };
+    const hidden = { answer: { status: "not_found" as const, reason: `no reachable Clover session '${id}'` } };
     try { caller = this.deps.store.meta(callerSessionId); } catch { return hidden; }
     try { meta = this.deps.store.meta(id); } catch {
-      return caller.mode === "cowork" ? hidden : { answer: { status: "not_found", reason: `no Winter session '${id}'` } };
+      return caller.mode === "cowork" ? hidden : { answer: { status: "not_found", reason: `no Clover session '${id}'` } };
     }
     if (!this.mayContact(callerSessionId, caller, id, meta, operation)) return hidden;
     if (!participatesInActivity(meta.mode)) return { answer: { status: "refused", reason: TARGET_MODE_REFUSAL } };
@@ -311,9 +311,9 @@ export class SessionMessaging {
     const notDelivered = (why: string): SendAnswer => ({ status: "unavailable", reason: `${why}; nothing was delivered`, retryable: true });
     // A function, not a narrowed field: the signal can abort during the awaits below.
     const cancelled = (): boolean => signal?.aborted === true;
-    if (this.draining) return notDelivered("Winter is shutting down");
+    if (this.draining) return notDelivered("Clover is shutting down");
     let caller: Meta;
-    try { caller = this.deps.store.meta(callerSessionId); } catch { return refused("the sending session is not known to Winter"); }
+    try { caller = this.deps.store.meta(callerSessionId); } catch { return refused("the sending session is not known to Clover"); }
     if (caller.mode === "chat") return refused(CHAT_SENDER_REFUSAL);
 
     const resolved = this.resolveTarget(callerSessionId, request.to);
@@ -360,7 +360,7 @@ export class SessionMessaging {
     }
     // Re-checked AFTER the (possibly long) resume: nothing goes in once the sender was cancelled or the
     // daemon began stopping while the target came up.
-    if (this.draining) return notDelivered("Winter began shutting down");
+    if (this.draining) return notDelivered("Clover began shutting down");
     if (cancelled()) return notDelivered("the sender was interrupted");
     const current = this.resolveTarget(callerSessionId, targetId);
     if ("answer" in current) return current.answer;
@@ -405,7 +405,7 @@ export class SessionMessaging {
         ? `${named} is your child: you'll be woken with a <child_update> when this turn finishes.`
         : `${named} is ${notOwn}`;
     const notify = request.notifyWhenIdle === true
-      ? { refused: ownChild ? "no separate idle notice for a Winter session — the <child_update> wake is that notice" : "Winter sessions send no idle notice" }
+      ? { refused: ownChild ? "no separate idle notice for a Clover session — the <child_update> wake is that notice" : "Clover sessions send no idle notice" }
       : undefined;
     return {
       status: sent.steered ? "delivered" : sent.queued ? "queued" : resumed ? "resumed_and_delivered" : "delivered",
@@ -422,7 +422,7 @@ export class SessionMessaging {
     const inbox = this.deps.peerInbox;
     const notDelivered = (why: string): SendAnswer => ({ status: "unavailable", reason: `${why}; nothing was delivered`, retryable: true });
     if (inbox === undefined) return { status: "unavailable", reason: "the Cowork peer inbox is not available; nothing was delivered", retryable: false };
-    if (this.draining) return notDelivered("Winter is shutting down");
+    if (this.draining) return notDelivered("Clover is shutting down");
     // A restarted sender's message ids restart too: without its runtime incarnation a replay would be swallowed as a retry.
     if (incarnation === "") return refused("the sender's runtime identity is unknown; a Cowork message cannot be accepted without it");
     if (signal?.aborted === true) return notDelivered("the sender was interrupted");
@@ -431,7 +431,7 @@ export class SessionMessaging {
       const accepted = inbox.accept({ senderSessionId: callerSessionId, senderIncarnation: incarnation, sendId: request.messageId, recipientSessionId: targetId, text: encodePeerEnvelope(request) });
       if (accepted.outcome === "refused") {
         switch (accepted.reason) {
-          case "not_found": return { status: "not_found", reason: `no reachable Winter session '${targetId}'` };
+          case "not_found": return { status: "not_found", reason: `no reachable Clover session '${targetId}'` };
           case "recipient_archived": return refused(`session '${targetId}' is archived — a message never brings it back; only the user can restore it`);
           default: return { status: "unavailable", reason: `session '${targetId}' cannot take more messages right now (${accepted.reason}); nothing was accepted`, retryable: true };
         }
@@ -452,9 +452,9 @@ export class SessionMessaging {
     const title = this.titleOf(targetId);
     const named = title === undefined ? `session ${targetId}` : `session ${targetId} ("${title}")`;
     const notOwn = `not one of your children, so you will not be told when it finishes; it can answer you with SendMessage to ${callerSessionId}.`;
-    const notify = request.notifyWhenIdle === true ? { refused: "Winter sessions send no idle notice" } : undefined;
+    const notify = request.notifyWhenIdle === true ? { refused: "Clover sessions send no idle notice" } : undefined;
     // Authority was lost between accept and delivery: the sender learns only the uniform answer; the record stays parked and visible.
-    if (state === "blocked" && reason === "authority") return { status: "not_found", reason: `no reachable Winter session '${targetId}'` };
+    if (state === "blocked" && reason === "authority") return { status: "not_found", reason: `no reachable Clover session '${targetId}'` };
     if (state === "refused") return refused(`the message ${receiptId} was ended (${reason ?? "refused"}) before it was delivered`);
     if (state !== "delivered") {
       return { status: "queued", note: `${named} cannot take the message right now: the daemon holds it as receipt ${receiptId} and delivers it, in order, when the session is running again (it is not lost).`, ...(notify !== undefined ? { notify } : {}) };
@@ -666,10 +666,10 @@ export class SessionMessaging {
 
   /** `TaskStop` on a session id: interrupt its running turn and clear what was queued behind it. Never throws. */
   async stop(callerSessionId: string, request: HostSessionStopRequest, signal?: AbortSignal): Promise<HostSessionStopAnswer> {
-    if (this.draining) return { status: "unavailable", reason: "Winter is shutting down; nothing was stopped" };
+    if (this.draining) return { status: "unavailable", reason: "Clover is shutting down; nothing was stopped" };
     if (signal?.aborted === true) return { status: "unavailable", reason: "the caller was interrupted; nothing was stopped" };
     let caller: Meta;
-    try { caller = this.deps.store.meta(callerSessionId); } catch { return { status: "refused", reason: "the calling session is not known to Winter" }; }
+    try { caller = this.deps.store.meta(callerSessionId); } catch { return { status: "refused", reason: "the calling session is not known to Clover" }; }
     if (caller.mode === "chat") return { status: "refused", reason: CHAT_SENDER_REFUSAL };
     const resolved = this.resolveTarget(callerSessionId, request.id, "stop");
     if ("answer" in resolved) {

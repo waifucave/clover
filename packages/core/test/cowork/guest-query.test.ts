@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { query, type ProtocolSdkMessage } from "@yanlinglabs/winter-agent-sdk";
-import { ApprovalRequestedEvent, ApprovalResolvedEvent, type ApprovalPolicy, type SessionEvent } from "@yanlinglabs/winter-protocol";
+import { ApprovalRequestedEvent, ApprovalResolvedEvent, type ApprovalPolicy, type SessionEvent } from "@waifucave/clover-protocol";
 import { ApprovalBroker } from "../../src/agent/approvals";
 import { QuestionBroker } from "../../src/agent/questions";
 import { PermissionGate } from "../../src/agent/gate";
@@ -181,7 +181,7 @@ test("one-use guest spawn ignores SDK argv/env and cannot replay its prepared la
   const f = fixture(); f.resume(); const options = buildCoworkGuestQueryOptions(f.supervisor, "conversation", f.callbacks);
   expect(options.resume).toBe("backend-stable");
   options.spawnClaudeCodeProcess!({ command: "/arbitrary/host-command", args: ["--arbitrary"], cwd: f.home, env: { SYNTHETIC_SECRET: "must-not-travel" } });
-  expect(f.wires[0]!.launch.runtime).toMatchObject({ sessionId: "backend-stable", resume: "backend-stable", winterHome: "/run/winter/conversations/conversation", storeHome: "/workspace/.winter/conversations/conversation" });
+  expect(f.wires[0]!.launch.runtime).toMatchObject({ sessionId: "backend-stable", resume: "backend-stable", cloverHome: "/run/winter/conversations/conversation", storeHome: "/workspace/.winter/conversations/conversation" });
   expect(JSON.stringify(f.wires[0]!.launch)).not.toContain(f.home); expect(JSON.stringify(f.wires[0]!.launch)).not.toContain("must-not-travel");
   expect(() => options.spawnClaudeCodeProcess!({ command: "ignored", args: [], cwd: f.home, env: {} })).toThrow("recovery_required"); expect(f.wires).toHaveLength(1);
 });

@@ -1,13 +1,13 @@
 /** Disk-backed prompt history (Phase 3c Task 3; WS-21: claude's own format and location) — one JSON
  *  line per submitted/steered/cleared entry at `<home>/sdk/history.jsonl` by default (the composer
  *  injects the path via `historyPathFor`; tests always pass a temp file so nothing here ever
- *  touches a real `~/.winter`). Every read/write is best-effort: a missing file, an unwritable
+ *  touches a real `~/.clover`). Every read/write is best-effort: a missing file, an unwritable
  *  directory, or a corrupt line degrades to "no history" rather than crashing the TUI — prompt
  *  history is a convenience, never load-bearing.
  *
  *  WS-21 (spec §2.2): entries move to claude's own history-entry shape —
  *  `{display, pastedContents, timestamp, project, sessionId}` — written by `sdk/history.jsonl`'s
- *  one producer, the Winter CLI TUI (spec's own table). `appendHistory` always writes the NEW
+ *  one producer, the Clover CLI TUI (spec's own table). `appendHistory` always writes the NEW
  *  shape; `loadHistory` reads a file that may hold a MIX of old lines (`{display, ts, sessionId}`,
  *  pre-WS-21) and new ones — both shapes carry `display`/`sessionId` under the same names, so no
  *  parsing branch is needed for those; `timestamp`/`ts` and `pastedContents`/`project` are never
@@ -16,16 +16,16 @@
 
 import { appendFileSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { sdkHomeFor } from "@yanlinglabs/winter-core";
+import { sdkHomeFor } from "@waifucave/clover-core";
 
-/** `<home>/sdk/history.jsonl` — claude's own history-file location (spec §2.2). The Winter CLI
+/** `<home>/sdk/history.jsonl` — claude's own history-file location (spec §2.2). The Clover CLI
  *  TUI's composer is the one producer; tests always pass a temp path directly instead. */
 export function historyPathFor(home: string): string {
   return join(sdkHomeFor(home), "history.jsonl");
 }
 
 /** Claude's own history-entry shape (pinned reference, F9: `{display, pastedContents, timestamp,
- *  project, sessionId?}`) — `pastedContents` is always `{}` from this CLI (Winter has no paste-
+ *  project, sessionId?}`) — `pastedContents` is always `{}` from this CLI (Clover has no paste-
  *  tracking of its own yet); `project` is the session's cwd at submit time. */
 export interface HistoryEntry {
   display: string;

@@ -9,7 +9,7 @@ import { BACKUP_XATTR, listXattrs, setXattr } from "./export-fixture";
 
 const dirs: string[] = [];
 afterEach(() => { for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true }); });
-const temp = () => { const dir = realpathSync(mkdtempSync(join(tmpdir(), "winter-export-io-"))); dirs.push(dir); return dir; };
+const temp = () => { const dir = realpathSync(mkdtempSync(join(tmpdir(), "clover-export-io-"))); dirs.push(dir); return dir; };
 const MIB = 1024 * 1024;
 function image(path: string, size: number) {
   const fd = openSync(path, "wx", 0o600); writeSync(fd, Buffer.from("head-bytes"), 0, 10, 8192); writeSync(fd, Buffer.from("tail"), 0, 4, size - 4); closeSync(fd);

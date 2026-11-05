@@ -3,7 +3,7 @@ import {
   checkCodeSession, filterCodeSessions, isCodeMode, nonCodeRefusalMessage, sessionModeMarker,
   sessionRuntimeMarker,
 } from "../src/session-mode";
-import type { WinterClient } from "../src/client";
+import type { CloverClient } from "../src/client";
 
 // Plan-immunity Task 2 (mode×surface matrix — ledger .superpowers/sdd/2026-07-28-plan-immunity/
 // progress.md): the TUI/CLI's single source for "is this session's mode one the CLI is allowed to
@@ -51,7 +51,7 @@ describe("filterCodeSessions", () => {
   });
 });
 
-describe("sessionModeMarker — `winter sessions`' inventory tag (MARKS, never hides)", () => {
+describe("sessionModeMarker — `clover sessions`' inventory tag (MARKS, never hides)", () => {
   test("code (absent or explicit) -> no marker", () => {
     expect(sessionModeMarker(undefined)).toBe("");
     expect(sessionModeMarker("code")).toBe("");
@@ -68,9 +68,9 @@ describe("sessionModeMarker — `winter sessions`' inventory tag (MARKS, never h
   });
 });
 
-// Winter Phase 8d (Task 4.3): `winter sessions`' runtime tag — the RAW wire value, never a display
+// Winter Phase 8d (Task 4.3): `clover sessions`' runtime tag — the RAW wire value, never a display
 // label (that's the Mac app's job, WS-14 §14) — and blank whenever the daemon doesn't know.
-describe("sessionRuntimeMarker — `winter sessions`' runtime tag", () => {
+describe("sessionRuntimeMarker — `clover sessions`' runtime tag", () => {
   test("absent -> no marker", () => {
     expect(sessionRuntimeMarker(undefined)).toBe("");
   });
@@ -81,8 +81,8 @@ describe("sessionRuntimeMarker — `winter sessions`' runtime tag", () => {
 });
 
 describe("nonCodeRefusalMessage — attach/send/watch/resume refusal wording", () => {
-  test("chat -> points at the Winter app", () => {
-    expect(nonCodeRefusalMessage("chat")).toBe("chat sessions live in the Winter app");
+  test("chat -> points at the Clover app", () => {
+    expect(nonCodeRefusalMessage("chat")).toBe("chat sessions live in the Clover app");
   });
   test("dispatch -> points at the orb and the app", () => {
     expect(nonCodeRefusalMessage("dispatch")).toBe("dispatch lives in the orb and the app");
@@ -118,7 +118,7 @@ describe("checkCodeSession — shared attach/send/watch gate", () => {
 
   test("chat session -> refused with the chat-specific message", () => {
     const r = checkCodeSession(rows, "s-chat");
-    expect(r).toEqual({ ok: false, message: "chat sessions live in the Winter app" });
+    expect(r).toEqual({ ok: false, message: "chat sessions live in the Clover app" });
   });
 
   test("dispatch session -> refused with the dispatch-specific message", () => {
@@ -129,11 +129,11 @@ describe("checkCodeSession — shared attach/send/watch gate", () => {
 
 // Cowork (session door): the protocol now RECOGNISES `cowork` and `session.create` refuses it for every role
 // (`unsupported_topology`). The CLI is code-only: it cannot ask for any non-code session (its `createSession`
-// takes no `mode`), and a cowork row that reaches it — a stored one, listed by `winter sessions` — is
+// takes no `mode`), and a cowork row that reaches it — a stored one, listed by `clover sessions` — is
 // "app-only" in every surface, never code.
 describe("cowork is recognised but never actionable from the CLI", () => {
-  test("WinterClient.createSession cannot name a mode, so the CLI cannot even ask for a cowork session", () => {
-    const compileTimeOnly = (c: WinterClient): void => {
+  test("CloverClient.createSession cannot name a mode, so the CLI cannot even ask for a cowork session", () => {
+    const compileTimeOnly = (c: CloverClient): void => {
       // @ts-expect-error the CLI's createSession options have no `mode`
       void c.createSession("global", { mode: "cowork" });
     };

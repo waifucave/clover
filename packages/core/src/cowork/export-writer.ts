@@ -98,7 +98,7 @@ export class CoworkWorkspaceExporter {
     this.active.add(prepared.exportId);
     let owned: string | undefined;
     try {
-      const finalPath = join(parent, `${name ?? `winter-workspace-g${prepared.generation}-${prepared.exportId}`}${BUNDLE_SUFFIX}`);
+      const finalPath = join(parent, `${name ?? `clover-workspace-g${prepared.generation}-${prepared.exportId}`}${BUNDLE_SUFFIX}`);
       if (lstatOrNull(finalPath)) return lifecycleFail("bundle_exists");
       const partial = join(parent, `.${randomUUID()}.partial`);
       mkdirSync(partial, { mode: 0o700 });

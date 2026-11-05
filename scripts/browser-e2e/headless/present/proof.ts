@@ -1,6 +1,6 @@
 // ComputerV2 Phase 4 — the SURFACE PROOF for a headless presentation: Winter Headless keeps the page, a viewer sees it
 // through the GPU and takes it over, the agent gets the SAME live page back — repeatedly — and nothing of the page is
-// lost on the way. No daemon, no Winter.app: this script is the daemon (the helper's pipe, fds 3/4) and runs the proof
+// lost on the way. No daemon, no Clover.app: this script is the daemon (the helper's pipe, fds 3/4) and runs the proof
 // viewer (`viewer.m`, built and ad-hoc signed here; the helper accepts it by its cdhash) as the panel's stand-in. Only
 // local pages; nothing is shown on screen.
 //
@@ -18,7 +18,7 @@
 // The page also runs a CSS animation, so frames keep coming at the presentation's 60 a second.
 //
 // Every presentation is laid out in the PANEL's size (`--panel WxH`, points; 704×900 by default — the drill's panel) at
-// a backing scale of 2, as Winter.app asks: input→pixel and the GPU copy are measured at that size, and one step drags the
+// a backing scale of 2, as Clover.app asks: input→pixel and the GPU copy are measured at that size, and one step drags the
 // panel's edge (a wish every 40 ms), moves it to a 1× display and back, and checks the agent's own 1280×800 at 1 comes
 // back when the presentation ends — the oracle holding through all of it (a reflow, never a reload).
 //
@@ -49,7 +49,7 @@ const cycles = Number(arg("--cycles") ?? "8");
 const [panelW, panelH] = (arg("--panel") ?? "704x900").split("x").map(Number) as [number, number];
 const exe = join(app, "Contents", "MacOS", app.split("/").pop()!.replace(/\.app$/, ""));
 const repo = join(import.meta.dir, "..", "..", "..", "..");
-const work = mkdtempSync(join(tmpdir(), "winter-present-proof-"));
+const work = mkdtempSync(join(tmpdir(), "clover-present-proof-"));
 // The daemon's layout (`<home>/cache/headless-cef/<random>`): the helper takes file-chooser answers only from
 // `<home>/cache/headless-uploads`, beside it.
 const cacheRoot = join(work, "home", "cache", "headless-cef", "run");
@@ -166,7 +166,7 @@ serverPort = server.port ?? 0;
 const pageUrl = `http://127.0.0.1:${serverPort}/`;
 
 // ── the pipe (the daemon's half) ─────────────────────────────────────────────────────────────────────────────────────
-const proc = spawn(exe, [`--winter-cache-root=${cacheRoot}`], { stdio: ["ignore", "ignore", "pipe", "pipe", "pipe"], env: { ...process.env } });
+const proc = spawn(exe, [`--clover-cache-root=${cacheRoot}`], { stdio: ["ignore", "ignore", "pipe", "pipe", "pipe"], env: { ...process.env } });
 const toHelper = proc.stdio[3] as Writable;
 const fromHelper = proc.stdio[4] as Readable;
 let stderr = "";
@@ -792,7 +792,7 @@ try {
   // ── a STATIC window (nothing moving on it, as a real sign-in page) laid out in the panel's size at once ──
   // The drill (2026-10-13): the window's first frames after the panel's view was applied were the capturer's old
   // 1280×800 box with the new layout letterboxed inside it, and — the page painting nothing more — they stayed until the
-  // person clicked. Winter.app asks for the panel's view as soon as it is welcomed; the frames must follow with no input.
+  // person clicked. Clover.app asks for the panel's view as soon as it is welcomed; the frames must follow with no input.
   if (!skip.includes("window-view")) {
     const { viewer } = await present(true);
     await viewer.until("welcome");
@@ -896,7 +896,7 @@ try {
     await command("headless.unpresent", { tabId: "w-1" });
     wrongNonce.send({ cmd: "bye" });
     await wrongNonce.exited();
-    check("a viewer with Winter's signature but another presentation's nonce gets no frame", Number(vs.frames) === 0, `${String(vs.frames)} frame(s)`);
+    check("a viewer with Clover's signature but another presentation's nonce gets no frame", Number(vs.frames) === 0, `${String(vs.frames)} frame(s)`);
   }
   {
     const nonce = nonceHex();

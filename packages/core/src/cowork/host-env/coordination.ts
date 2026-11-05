@@ -5,7 +5,7 @@ import { COORDINATION_LEDGER_FILE, coordinationLedgerPath, type CoordinationPath
 
 /*
  * The Coordination directory and what lives beside the admission ledger (N2 S7B part 1). Everything here is host-side state that must outlive a
- * Winter home and must not be copied with one: the ledger, the installation id, the launcher's retained receipts and the launch journal.
+ * Clover home and must not be copied with one: the ledger, the installation id, the launcher's retained receipts and the launch journal.
  *
  * No function here reads `process.env` or the real home directory: the caller passes `CoordinationPathInputs` (the same two inputs
  * `coordinationLedgerPath` takes), so a test names a temp directory and nothing else is reachable.
@@ -42,9 +42,9 @@ export function ensurePrivateDirectory(path: string): void {
   if (realpathSync(path) !== path) fail("directory_path_alias");
 }
 
-/** The launcher refuses any path with a `.winter*` component, in any case (volumes are case-insensitive). The daemon refuses the same, before it creates anything. */
-export function assertOutsideWinterHomes(path: string): void {
-  for (const component of path.split("/")) if (component.toLowerCase().startsWith(".winter")) fail("path_inside_winter_home");
+/** The launcher refuses any path with a `.clover*` component, in any case (volumes are case-insensitive). The daemon refuses the same, before it creates anything. */
+export function assertOutsideCloverHomes(path: string): void {
+  for (const component of path.split("/")) if (component.toLowerCase().startsWith(".clover")) fail("path_inside_clover_home");
 }
 
 /** `path` with its deepest existing ancestor resolved through symlinks (the rest, which does not exist yet, appended as written). */
@@ -57,10 +57,10 @@ function canonicalizeExisting(path: string): string {
     rest = join(basename(existing), rest); existing = parent;
   }
 }
-/** The Coordination directory must be disjoint from the Winter home: not the home, not inside it (a home wipe or copy would take the ledger, receipts and journal with it), not above it. The name-based `.winter*` refusal above is not enough: the home can be anywhere. */
+/** The Coordination directory must be disjoint from the Clover home: not the home, not inside it (a home wipe or copy would take the ledger, receipts and journal with it), not above it. The name-based `.clover*` refusal above is not enough: the home can be anywhere. */
 export function assertDisjointFromHome(directory: string, home: string): void {
   const a = canonicalizeExisting(directory), b = canonicalizeExisting(home);
-  if (a === b || a.startsWith(`${b}/`) || b.startsWith(`${a}/`)) fail("path_inside_winter_home");
+  if (a === b || a.startsWith(`${b}/`) || b.startsWith(`${a}/`)) fail("path_inside_clover_home");
 }
 
 const INSTALLATION_ID = /^inst-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;

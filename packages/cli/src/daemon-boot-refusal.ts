@@ -1,9 +1,9 @@
-// `winter daemon run`: a typed MIGRATION refusal from `startDaemon` is an operator message and a clean
+// `clover daemon run`: a typed MIGRATION refusal from `startDaemon` is an operator message and a clean
 // non-zero exit, never an uncaught-exception stack (P9c-17: under launchd KeepAlive a raw throw is a
 // crash loop with a stack in daemon.log). Migration B's `MigrationRefused` and — WS-21 — Migration C's
 // `MigrationCRefused` (`sdk_home_migration_required`, `sdk_home_migration_refused`,
 // `sdk_home_half_migrated`) both land here.
-import { CredentialMigrationBusy, MigrationCRefused, MigrationRefused } from "@yanlinglabs/winter-core";
+import { CredentialMigrationBusy, MigrationCRefused, MigrationRefused } from "@waifucave/clover-core";
 
 /** WS-27: the exit code for "another process holds the credential migration lock" (`EX_TEMPFAIL`): the Mac
  *  app's DaemonSupervisor waits and retries with a back-off on this code instead of respawning at once. */

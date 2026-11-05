@@ -52,7 +52,7 @@ describe("the sandboxed automation worker", () => {
   // Review I2: name shadowing is defense in depth only — `this.process`, `Function("return process")()` and
   // `import("node:fs")` ARE reachable from a script. The worker's own profile and environment make them useless.
   macOnly("ambient process and fs are reachable but useless: no environment, no read of the user's home or the daemon's", async () => {
-    const daemonHome = mkdtempSync(join(tmpdir(), "winter-cu-denied-home-"));
+    const daemonHome = mkdtempSync(join(tmpdir(), "clover-cu-denied-home-"));
     writeFileSync(join(daemonHome, "secret.json"), "{}");
     const prefs = join(homedir(), "Library", "Preferences", ".GlobalPreferences.plist");
     const w = await AutomationWorker.start({ denyRead: [daemonHome] });

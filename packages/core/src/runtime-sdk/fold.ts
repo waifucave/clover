@@ -20,9 +20,9 @@
 //
 // The embedded runtime, the platform package and a Release bundle are version-locked to the pin
 // (`REQUIRED_WINTER_AGENT_SDK`). A CONFIGURED code runtime is not: `runtimes.winterExecutable`,
-// `$WINTER_RUNTIME_EXECUTABLE` and `<home>/runtimes/bin/winter` run whatever binary is there (logged when it
+// `$CLOVER_RUNTIME_EXECUTABLE` and `<home>/runtimes/bin/winter` run whatever binary is there (logged when it
 // differs, never refused). So what a session may assume is read from the version its spawn hook reports
-// (`WinterSpawnHook.runtimeVersion`, the binary's own `--version`): `runtimeFolds` says whether that runtime
+// (`CloverSpawnHook.runtimeVersion`, the binary's own `--version`): `runtimeFolds` says whether that runtime
 // folds. An older one never sends the fold frame (each push then gets its own `result`, ordinary C2
 // accounting) and answers `clear_queued_input` with `WinterRpcError` `unknown_subtype` — caught here, as
 // the SDK tells hosts to: any failure of the control means "nothing was cleared", never a thrown TaskStop.

@@ -1,5 +1,5 @@
 import type { CanUseTool } from "@yanlinglabs/winter-agent-sdk";
-import type { NewSessionEvent } from "@yanlinglabs/winter-protocol";
+import type { NewSessionEvent } from "@waifucave/clover-protocol";
 import type { LegSession } from "../runtime-sdk/session-driver";
 import type { CoworkHostApprovalPorts } from "./approval-ports";
 import type { CoworkPrincipal } from "./authority";

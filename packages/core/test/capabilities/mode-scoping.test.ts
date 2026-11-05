@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { WinterMcpServerInstance } from "@yanlinglabs/winter-agent-sdk";
 import {
-  CAPABILITY_SERVER_KEYS, WINTER_CAPABILITY_TOOLS,
+  CAPABILITY_SERVER_KEYS, CLOVER_CAPABILITY_TOOLS,
   buildCapabilitiesFor, capabilityServerName, capabilityToolName,
   type CapabilityDeps, type CapabilityServerRecord, type CapabilitySession, type SessionMode,
 } from "../../src/capabilities";
@@ -54,18 +54,18 @@ function toolsOf(record: CapabilityServerRecord, key: string): string[] {
 /** What the TABLE says this key serves in this mode — the same source `capabilityServer` filters on
  *  and Task 9 derives `CAPABILITY_TOOL_MODES` from. Derived, never pasted. */
 function expectedToolsOf(key: string, mode: SessionMode): string[] {
-  return Object.entries(WINTER_CAPABILITY_TOOLS)
-    .filter(([name, facts]) => name.startsWith(`mcp__winter__${key}__`) && (facts.modes as readonly string[]).includes(mode))
-    .map(([name]) => name.slice(`mcp__winter__${key}__`.length))
+  return Object.entries(CLOVER_CAPABILITY_TOOLS)
+    .filter(([name, facts]) => name.startsWith(`mcp__clover__${key}__`) && (facts.modes as readonly string[]).includes(mode))
+    .map(([name]) => name.slice(`mcp__clover__${key}__`.length))
     .sort();
 }
 
 describe("ComputerV2 (2026-10-08): exactly one computer server", () => {
   test("computer_v2 by default; the old computer with legacyComputer; neither with computer use off", () => {
-    const keys = (d: CapabilityDeps) => Object.keys(buildCapabilitiesFor(SESSION, d)).filter((k) => k.startsWith("winter__computer"));
-    expect(keys(deps())).toEqual(["winter__computer_v2"]);
-    expect(keys({ ...deps(), legacyComputer: () => false })).toEqual(["winter__computer_v2"]);
-    expect(keys({ ...deps(), legacyComputer: () => true })).toEqual(["winter__computer"]);
+    const keys = (d: CapabilityDeps) => Object.keys(buildCapabilitiesFor(SESSION, d)).filter((k) => k.startsWith("clover__computer"));
+    expect(keys(deps())).toEqual(["clover__computer_v2"]);
+    expect(keys({ ...deps(), legacyComputer: () => false })).toEqual(["clover__computer_v2"]);
+    expect(keys({ ...deps(), legacyComputer: () => true })).toEqual(["clover__computer"]);
     expect(keys({ ...deps(), computerUseEnabled: () => false })).toEqual([]);
   });
 
@@ -144,8 +144,8 @@ describe("P8b-37: what each server EXECUTES follows the session's mode", () => {
   test("no tool is executable in a mode the table does not grant it", async () => {
     for (const mode of ["code", "dispatch", "chat"] as const) {
       for (const key of CAPABILITY_SERVER_KEYS) {
-        for (const [wire, facts] of Object.entries(WINTER_CAPABILITY_TOOLS)) {
-          const prefix = `mcp__winter__${key}__`;
+        for (const [wire, facts] of Object.entries(CLOVER_CAPABILITY_TOOLS)) {
+          const prefix = `mcp__clover__${key}__`;
           if (!wire.startsWith(prefix)) continue;
           const tool = wire.slice(prefix.length);
           if ((facts.modes as readonly string[]).includes(mode)) continue;
@@ -166,7 +166,7 @@ describe("P8b-37: the filter and the name table cannot disagree", () => {
         for (const tool of toolsOf(serversFor(mode), key)) seen.add(capabilityToolName(key, tool));
       }
     }
-    expect([...seen].sort()).toEqual(Object.keys(WINTER_CAPABILITY_TOOLS).sort());
+    expect([...seen].sort()).toEqual(Object.keys(CLOVER_CAPABILITY_TOOLS).sort());
   });
 
   test("every server key still exists in every mode, even when it serves nothing", () => {

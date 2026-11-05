@@ -25,7 +25,7 @@ import { durableCoworkTransaction } from "./durable-transaction";
 import { canonicalJson, lifecycleFail, lifecycleId, sha256Hex, assertAtRest, readWorkspaceFacts, type CoworkLifecycleAuthority, type LifecycleAction, type WorkspaceFacts } from "./storage-lifecycle";
 
 export const EXPORT_MANIFEST_MAX_BYTES = 64 * 1024;
-export const EXPORT_PLAINTEXT_DISCLOSURE = "Exported disk images are plaintext raw ext4 volumes. Winter does not encrypt them: anyone who can read the exported files can read the workspace's files.";
+export const EXPORT_PLAINTEXT_DISCLOSURE = "Exported disk images are plaintext raw ext4 volumes. Clover does not encrypt them: anyone who can read the exported files can read the workspace's files.";
 
 const Id = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/);
 const Digest = z.string().regex(/^[a-f0-9]{64}$/);

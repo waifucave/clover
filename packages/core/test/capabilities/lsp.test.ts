@@ -1,5 +1,5 @@
 // The `lsp` capability server (fix wave, whole-branch review F7): the single multi-purpose `lsp`
-// tool over the daemon's one `LspManager`, reinstated on the Winter leg because the 0.0.4 child
+// tool over the daemon's one `LspManager`, reinstated on the Clover leg because the 0.0.4 child
 // advertises no `LSP` of its own. Same obligations as the other capability servers: schema parity
 // with the registry door BY CONSTRUCTION (one `ToolDefinition`), the fence checked BEFORE the
 // manager is touched (with the registry door's own wording), code-only, hot-disable per call.
@@ -12,7 +12,7 @@ import { ToolRegistry, type ToolContext } from "../../src/agent/tools/registry";
 import { registerLspTools } from "../../src/agent/tools/lsp";
 import { LspManager } from "../../src/agent/lsp/manager";
 import { lspCapability } from "../../src/capabilities/lsp";
-import { WINTER_CAPABILITY_TOOLS, buildCapabilitiesFor, capabilityServerName, type CapabilityDeps, type CapabilitySession } from "../../src/capabilities";
+import { CLOVER_CAPABILITY_TOOLS, buildCapabilitiesFor, capabilityServerName, type CapabilityDeps, type CapabilitySession } from "../../src/capabilities";
 import { CAPABILITY_TOOL_MODES, disallowedToolsFor } from "../../src/runtime-sdk/mode-options";
 import { gateClassFor, hostToolNameFor } from "../../src/runtime-sdk/tool-names";
 import { PermissionGate } from "../../src/agent/gate";
@@ -21,7 +21,7 @@ const FIXTURE = join(import.meta.dir, "../agent/lsp/fake-server.ts");
 const FAKE = { command: "bun", args: ["run", FIXTURE] };
 const isMac = process.platform === "darwin";
 
-function realDir(): string { return realpathSync(mkdtempSync(join(tmpdir(), "winter-cap-lsp-"))); }
+function realDir(): string { return realpathSync(mkdtempSync(join(tmpdir(), "clover-cap-lsp-"))); }
 
 function harness(over: { manager?: LspManager | undefined } = {}) {
   const root = realDir();
@@ -44,12 +44,12 @@ function harness(over: { manager?: LspManager | undefined } = {}) {
 const text = (res: { content: unknown[] }): string => (res.content[0] as { text: string }).text;
 
 describe("lspCapability: the server shape", () => {
-  test("is an `sdk` server named `winter__lsp` carrying exactly the `lsp` tool", () => {
+  test("is an `sdk` server named `clover__lsp` carrying exactly the `lsp` tool", () => {
     const h = harness();
     try {
       expect(h.server.type).toBe("sdk");
       expect(h.server.name).toBe(capabilityServerName("lsp"));
-      expect(h.server.name).toBe("winter__lsp");
+      expect(h.server.name).toBe("clover__lsp");
       expect(isWinterMcpServerInstance(h.server.instance)).toBe(true);
       expect(h.instance.listTools().map((t) => t.name)).toEqual(["lsp"]);
     } finally { h.cleanup(); }
@@ -69,20 +69,20 @@ describe("lspCapability: the server shape", () => {
   });
 
   test("the tables agree: code-only, deferred (no `eager`), classified READ_ONLY under the bare name `lsp`", () => {
-    expect(WINTER_CAPABILITY_TOOLS["mcp__winter__lsp__lsp"]).toEqual({ modes: ["code"] });
-    expect(CAPABILITY_TOOL_MODES["mcp__winter__lsp__lsp"]).toEqual({ modes: ["code"] });
-    expect(disallowedToolsFor("chat", {})).toContain("mcp__winter__lsp__lsp");
-    expect(disallowedToolsFor("dispatch", {})).toContain("mcp__winter__lsp__lsp");
-    expect(disallowedToolsFor("code", {})).not.toContain("mcp__winter__lsp__lsp");
+    expect(CLOVER_CAPABILITY_TOOLS["mcp__clover__lsp__lsp"]).toEqual({ modes: ["code"] });
+    expect(CAPABILITY_TOOL_MODES["mcp__clover__lsp__lsp"]).toEqual({ modes: ["code"] });
+    expect(disallowedToolsFor("chat", {})).toContain("mcp__clover__lsp__lsp");
+    expect(disallowedToolsFor("dispatch", {})).toContain("mcp__clover__lsp__lsp");
+    expect(disallowedToolsFor("code", {})).not.toContain("mcp__clover__lsp__lsp");
     // the bridge's names: the wire name strips to `lsp` (the seventh capability key), which the
     // gate allows under every policy including `plan` — a read-only tool, exactly as before
-    expect(hostToolNameFor("mcp__winter__lsp__lsp")).toBe("lsp");
-    expect(gateClassFor("mcp__winter__lsp__lsp")).toBe("lsp");
+    expect(hostToolNameFor("mcp__clover__lsp__lsp")).toBe("lsp");
+    expect(gateClassFor("mcp__clover__lsp__lsp")).toBe("lsp");
     const gate = new PermissionGate();
     for (const policy of ["plan", "ask", "auto", "chat", "dont-ask"] as const) expect(gate.evaluate("lsp", policy)).toBe(policy === "chat" ? "allow" : "allow");
   });
 
-  test("buildCapabilitiesFor includes `winter__lsp` for a code session and it advertises nothing in chat/dispatch (P8b-37)", () => {
+  test("buildCapabilitiesFor includes `clover__lsp` for a code session and it advertises nothing in chat/dispatch (P8b-37)", () => {
     const panel = { dispatch: () => ({ commandId: "c", settled: Promise.resolve({ kind: "timeout" as const, deadlineMs: 1 }) }), harnesses: () => [] };
     const deps: CapabilityDeps = {
       sessions: { models: [], sessions: { store: { list: () => [], lastEventTs: () => 0, transcriptPath: () => "" } } as never },
@@ -93,7 +93,7 @@ describe("lspCapability: the server shape", () => {
     };
     const base: CapabilitySession = { sessionId: "s", mode: "code", cwd: "/tmp", roots: ["/tmp"] };
     const tools = (mode: CapabilitySession["mode"]): string[] =>
-      (buildCapabilitiesFor({ ...base, mode }, deps)["winter__lsp"]!.instance as WinterMcpServerInstance).listTools().map((t) => t.name);
+      (buildCapabilitiesFor({ ...base, mode }, deps)["clover__lsp"]!.instance as WinterMcpServerInstance).listTools().map((t) => t.name);
     expect(tools("code")).toEqual(["lsp"]);
     expect(tools("dispatch")).toEqual([]);
     expect(tools("chat")).toEqual([]);
@@ -157,8 +157,8 @@ describe("lspCapability: the fence and the guards run BEFORE the manager, with t
 describe.if(isMac)("lspCapability: a real fake language server through the capability door", () => {
   test("action 'definition' round-trips the 1-based position convention and previews in-fence locations", async () => {
     const h = harness();
-    const prev = process.env.WINTER_LSP_FAKE_DEFINITION;
-    process.env.WINTER_LSP_FAKE_DEFINITION = JSON.stringify([{ uri: `file://${encodeURI(join(h.root, "target.ts"))}`, range: { start: { line: 3, character: 9 }, end: { line: 3, character: 15 } } }]);
+    const prev = process.env.CLOVER_LSP_FAKE_DEFINITION;
+    process.env.CLOVER_LSP_FAKE_DEFINITION = JSON.stringify([{ uri: `file://${encodeURI(join(h.root, "target.ts"))}`, range: { start: { line: 3, character: 9 }, end: { line: 3, character: 15 } } }]);
     try {
       const res = await h.instance.callTool("lsp", { action: "definition", file_path: "usage.ts", line: 1, character: 10 });
       expect(res.isError).toBe(false);
@@ -167,7 +167,7 @@ describe.if(isMac)("lspCapability: a real fake language server through the capab
       const viaRegistry = await h.registry.execute("lsp", { action: "definition", file_path: "usage.ts", line: 1, character: 10 }, h.ctx());
       expect(viaRegistry.output).toBe(text(res));
     } finally {
-      if (prev === undefined) delete process.env.WINTER_LSP_FAKE_DEFINITION; else process.env.WINTER_LSP_FAKE_DEFINITION = prev;
+      if (prev === undefined) delete process.env.CLOVER_LSP_FAKE_DEFINITION; else process.env.CLOVER_LSP_FAKE_DEFINITION = prev;
       await h.manager!.stopAll();
       h.cleanup();
     }

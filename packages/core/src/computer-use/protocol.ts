@@ -4,8 +4,8 @@
 // never spawns it (TCC would attribute it to the parent) — it is launched through LaunchServices by bundle id.
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { WINTER_TEAM_ID } from "../auth/app-token-acl";
-import type { WinterProfile } from "../profile";
+import { CLOVER_TEAM_ID } from "../auth/app-token-acl";
+import type { CloverProfile } from "../profile";
 
 /** The helper protocol this daemon speaks — `apple/ComputerUse/PROTOCOL.md`'s "Protocol version", the helper's
  *  `RPCWire.protocolVersion` and WinterKit's `ComputerUseHelperProtocol.version` (a repo test keeps them equal). */
@@ -34,26 +34,26 @@ export function helperVersionAtLeast(version: unknown, minimum: string = HELPER_
 }
 
 /** The helper's bundle id per profile: dist `com.winter.computeruse`, dev `com.winter.computeruse.dev`. */
-export function helperBundleIdFor(profile: WinterProfile): string {
+export function helperBundleIdFor(profile: CloverProfile): string {
   return profile === "dev" ? "com.winter.computeruse.dev" : "com.winter.computeruse";
 }
 
 /** The helper app's display name per profile (its bundle's file name). */
-export function helperAppNameFor(profile: WinterProfile): string {
+export function helperAppNameFor(profile: CloverProfile): string {
   return profile === "dev" ? "Winter Computer Use Dev.app" : "Winter Computer Use.app";
 }
 
 /**
  * WHERE the helper app is, so the daemon can launch it BY PATH (`open -g -a <path>` — spine, after L1a): a
  * bundle-id launch can resolve to any registered copy, a path cannot.
- *   - dist: `Winter.app/Contents/Helpers/Winter Computer Use.app` — `winter-core` lives in `Contents/MacOS`;
- *   - dev: `<repo>/dist/dev/Winter Computer Use Dev.app`, beside the signed dev daemon `dist/dev/winter-core`
+ *   - dist: `Clover.app/Contents/Helpers/Winter Computer Use.app` — `clover-core` lives in `Contents/MacOS`;
+ *   - dev: `<repo>/dist/dev/Winter Computer Use Dev.app`, beside the signed dev daemon `dist/dev/clover-core`
  *     (built by `bun run dev:helper`); a daemon run from source under `bun` finds the repo from this file.
- * `$WINTER_COMPUTER_USE_APP` overrides both (a test, an unusual layout). The helper is verified by its code
+ * `$CLOVER_COMPUTER_USE_APP` overrides both (a test, an unusual layout). The helper is verified by its code
  * signature after it answers, so a wrong path can only fail, never impersonate it.
  */
-export function helperAppPathFor(profile: WinterProfile, env: NodeJS.ProcessEnv = process.env, execPath: string = process.execPath): string {
-  const override = env.WINTER_COMPUTER_USE_APP;
+export function helperAppPathFor(profile: CloverProfile, env: NodeJS.ProcessEnv = process.env, execPath: string = process.execPath): string {
+  const override = env.CLOVER_COMPUTER_USE_APP;
   if (override !== undefined && override.trim().length > 0) return override;
   if (profile === "dist") return join(dirname(execPath), "..", "Helpers", helperAppNameFor("dist"));
   const compiled = typeof Bun !== "undefined" && (Bun.main.startsWith("/$bunfs/") || Bun.main.includes("/$bunfs/"));
@@ -61,19 +61,19 @@ export function helperAppPathFor(profile: WinterProfile, env: NodeJS.ProcessEnv 
   return fileURLToPath(new URL(`../../../../dist/dev/${helperAppNameFor("dev")}`, import.meta.url));
 }
 
-/** The designated requirement the daemon holds the helper to (identifier + Winter's team), checked on the
+/** The designated requirement the daemon holds the helper to (identifier + Clover's team), checked on the
  *  pid the helper reports in `hello` (`helper-verify.ts`). */
-export function helperRequirementFor(profile: WinterProfile, teamId: string = WINTER_TEAM_ID): string {
+export function helperRequirementFor(profile: CloverProfile, teamId: string = CLOVER_TEAM_ID): string {
   return `identifier "${helperBundleIdFor(profile)}" and anchor apple generic and certificate leaf[subject.OU] = "${teamId}"`;
 }
 
-/** `<WINTER_HOME>/run/computer-use.sock` — created by the helper, mode 0600. */
+/** `<CLOVER_HOME>/run/computer-use.sock` — created by the helper, mode 0600. */
 export function helperSocketPath(home: string): string {
   return join(home, "run", "computer-use.sock");
 }
 
-/** Winter's own apps: never a target (the "Winter never controls itself" floor), and blacked out of shots. */
-export const WINTER_OWN_BUNDLE_IDS: readonly string[] = ["com.winter.app", "com.winter.app.dev", "com.winter.computeruse", "com.winter.computeruse.dev"];
+/** Clover's own apps: never a target (the "Clover never controls itself" floor), and blacked out of shots. */
+export const CLOVER_OWN_BUNDLE_IDS: readonly string[] = ["com.winter.app", "com.winter.app.dev", "com.winter.computeruse", "com.winter.computeruse.dev"];
 
 export interface HelperPermissions { accessibility: boolean; screenRecording: boolean }
 
@@ -111,17 +111,17 @@ export class HelperUnavailableError extends Error {
 export interface HelperProtocolMismatch {
   helperProtocol?: number;
   helperVersion?: string;
-  winterProtocol: number;
+  cloverProtocol: number;
   message: string;
 }
 
 /** The ONE sentence for a protocol mismatch, which side is out of date first; the fix is always the same. */
-export function helperProtocolMismatchMessage(helperProtocol: number | undefined, winterProtocol: number = HELPER_PROTOCOL): string {
+export function helperProtocolMismatchMessage(helperProtocol: number | undefined, cloverProtocol: number = HELPER_PROTOCOL): string {
   if (helperProtocol === undefined) {
-    return `Winter Computer Use speaks a different helper protocol than this Winter (${winterProtocol}) — update Winter`;
+    return `Winter Computer Use speaks a different helper protocol than this Clover (${cloverProtocol}) — update Clover`;
   }
-  const side = helperProtocol < winterProtocol ? "too old" : "too new";
-  return `Winter Computer Use is ${side} for this Winter (it speaks helper protocol ${helperProtocol}, Winter speaks ${winterProtocol}) — update Winter`;
+  const side = helperProtocol < cloverProtocol ? "too old" : "too new";
+  return `Winter Computer Use is ${side} for this Clover (it speaks helper protocol ${helperProtocol}, Clover speaks ${cloverProtocol}) — update Clover`;
 }
 
 /** The helper answered, but speaks another protocol: a `helper_unavailable` that no retry can cure. Typed by
@@ -129,24 +129,24 @@ export function helperProtocolMismatchMessage(helperProtocol: number | undefined
 export class HelperProtocolMismatchError extends HelperUnavailableError {
   readonly reason = "protocol_mismatch" as const;
   readonly mismatch: HelperProtocolMismatch;
-  constructor(helperProtocol: number | undefined, helperVersion?: string, winterProtocol: number = HELPER_PROTOCOL) {
-    const message = helperProtocolMismatchMessage(helperProtocol, winterProtocol);
+  constructor(helperProtocol: number | undefined, helperVersion?: string, cloverProtocol: number = HELPER_PROTOCOL) {
+    const message = helperProtocolMismatchMessage(helperProtocol, cloverProtocol);
     super(message, false);
     this.name = "HelperProtocolMismatchError";
     this.mismatch = {
       ...(helperProtocol === undefined ? {} : { helperProtocol }),
       ...(helperVersion === undefined ? {} : { helperVersion }),
-      winterProtocol, message,
+      cloverProtocol, message,
     };
   }
 }
 
 /** The running helper is older than `HELPER_MIN_VERSION` and a relaunch did not bring a newer one: unusable until
- *  Winter (and so its helper) is updated — never retried. */
+ *  Clover (and so its helper) is updated — never retried. */
 export class HelperOutdatedError extends HelperUnavailableError {
   readonly reason = "outdated" as const;
   constructor(readonly helperVersion: string | undefined, readonly minimum: string = HELPER_MIN_VERSION) {
-    super(`Winter Computer Use ${helperVersion ?? "(unknown version)"} is older than this Winter needs (${minimum} or later) — update Winter, or quit Winter Computer Use so its current version starts`, false);
+    super(`Winter Computer Use ${helperVersion ?? "(unknown version)"} is older than this Clover needs (${minimum} or later) — update Clover, or quit Winter Computer Use so its current version starts`, false);
     this.name = "HelperOutdatedError";
   }
 }
@@ -165,7 +165,7 @@ export interface TargetBindResult {
   /** What the bind had to do to reach a usable window (another Space, moved here, a new one opened). */
   detail?: string;
   /** helper 1.9.8: the window holds web content (an AXWebArea — WebKit or Chromium): its pages don't react to hover from
-   *  Winter's pointer while the app is in the background — said once per session per app. */
+   *  Clover's pointer while the app is in the background — said once per session per app. */
   webContent?: boolean;
 }
 export interface TargetUseWindowResult { window: { id: number; title: string; frame: Rect }; detail?: string; webContent?: boolean }

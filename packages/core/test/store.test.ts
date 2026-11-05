@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { SessionStore } from "../src/sessions/store";
 
 function makeStore(): { store: SessionStore; dir: string } {
-  const dir = mkdtempSync(join(tmpdir(), "winter-store-"));
+  const dir = mkdtempSync(join(tmpdir(), "clover-store-"));
   return { store: new SessionStore(dir), dir };
 }
 
@@ -237,7 +237,7 @@ describe("SessionStore", () => {
   });
 
   test("lastSeq returns the current last persisted seq; throws on unknown session", () => {
-    const store = new SessionStore(mkdtempSync(join(tmpdir(), "winter-store-")));
+    const store = new SessionStore(mkdtempSync(join(tmpdir(), "clover-store-")));
     const id = store.createSession("global");
     expect(store.lastSeq(id)).toBe(1); // session_created
     store.append(id, { type: "user_message", sessionId: id, threadId: "main", text: "hi", clientName: "t" });

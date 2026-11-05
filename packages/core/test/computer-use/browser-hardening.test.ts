@@ -336,7 +336,7 @@ describe("M5: uploads hand the browser a private copy", () => {
     const t2 = await h.engine.global(r2.scope, "browsers.open", { url: "https://f.example/" }) as TabHandle;
     await h.engine.primitive(r2.scope, t2.targetId, "upload", { ref: 1, paths: "a.txt" });
     expect(readdirSync(uploadStagingRoot(h.home)).length).toBe(1);
-    new BrowserEngine({ registry: new BrowserBackendRegistry(), mintWinterTab: () => "x", winterTabs: () => ({ tabs: [] }), sessionInfo: () => ({}), home: h.home }).stop();
+    new BrowserEngine({ registry: new BrowserBackendRegistry(), mintCloverTab: () => "x", cloverTabs: () => ({ tabs: [] }), sessionInfo: () => ({}), home: h.home }).stop();
     expect(existsSync(uploadStagingRoot(h.home))).toBe(false);
   });
 
@@ -455,7 +455,7 @@ describe("L5: an orphan whose session is mid-turn", () => {
     const late = new FakeCdpTransport("chrome", "chrome");
     late.addTab({ url: "https://busy.example/", title: "B", nodes: [] }, { tabKey: "2", sessionId: "s-busy", agent: true });
     const engine = new BrowserEngine({
-      registry, mintWinterTab: () => "x", winterTabs: () => ({ tabs: [] }), sessionInfo: () => ({}), home: "/nonexistent",
+      registry, mintCloverTab: () => "x", cloverTabs: () => ({ tabs: [] }), sessionInfo: () => ({}), home: "/nonexistent",
       turnRunning: (sid) => sid === "s-busy",
     });
     registry.register(late, { family: "chrome", name: "Google Chrome", bundleId: "com.google.Chrome", instanceKey: "chrome-1" });
@@ -776,7 +776,7 @@ describe("the controller's follow-ups", () => {
     expect(h.chrome.sent.slice(n).some((x) => /^Page\.(navigate|reload|navigateToHistoryEntry|getNavigationHistory)$/.test(x.method))).toBe(false);
     await h.engine.primitive(r.scope, kept.targetId, "state", {});
     await h.engine.primitive(r.scope, handed.targetId, "goto", { url: "https://v.example/" });
-    // Winter's own browser hides its dialogs: a kept built-in tab still navigates.
+    // Clover's own browser hides its dialogs: a kept built-in tab still navigates.
     const w = await h.engine.global(r.scope, "browsers.open", { url: "https://w.example/" }) as TabHandle;
     await h.engine.primitive(r.scope, w.targetId, "keep", {});
     await h.engine.primitive(r.scope, w.targetId, "goto", { url: "https://x.example/" });
@@ -786,7 +786,7 @@ describe("the controller's follow-ups", () => {
     const h = harness();
     const r = h.run();
     const t = await h.engine.global(r.scope, "browsers.open", { url: "https://a.example/" }) as TabHandle;
-    const CEILING = new TransportError("not_allowed", "Winter's built-in browser already holds 24 tabs for automation — release one first");
+    const CEILING = new TransportError("not_allowed", "Clover's built-in browser already holds 24 tabs for automation — release one first");
     const createTab = h.winter.createTab.bind(h.winter);
     h.winter.createTab = async () => { throw CEILING; };
     const e = await failure(h.engine.global(r.scope, "browsers.open", { url: "https://b.example/" }));

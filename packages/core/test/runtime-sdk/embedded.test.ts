@@ -1,4 +1,4 @@
-// WS-23 (ruling R1): the daemon's embedded-session host — chat and dispatch run the Winter runtime in
+// WS-23 (ruling R1): the daemon's embedded-session host — chat and dispatch run the Clover runtime in
 // a Bun Worker per session. These drive REAL Workers (the SDK's own Worker entry, through this
 // package's `embedded-worker-entry.ts`) on `winter-test/*` doubles and temp homes; no binary, no
 // network, no Keychain.
@@ -39,12 +39,12 @@ afterAll(() => {
   for (const d of TEMP) rmSync(d, { recursive: true, force: true });
 });
 function temp(label: string): string {
-  const d = mkdtempSync(join(tmpdir(), `winter-embedded-${label}-`));
+  const d = mkdtempSync(join(tmpdir(), `clover-embedded-${label}-`));
   TEMP.push(d);
   return d;
 }
 function sessionEnv(): Record<string, string> {
-  return { PATH: process.env.PATH ?? "/usr/bin:/bin", WINTER_HOME: temp("home"), WINTER_DISABLE_GIT_INSTRUCTIONS: "1", WINTER_KEYCHAIN_SERVICE: process.env.WINTER_KEYCHAIN_SERVICE ?? "com.winter.core.test-isolated" };
+  return { PATH: process.env.PATH ?? "/usr/bin:/bin", CLOVER_HOME: temp("home"), CLOVER_DISABLE_GIT_INSTRUCTIONS: "1", CLOVER_KEYCHAIN_SERVICE: process.env.CLOVER_KEYCHAIN_SERVICE ?? "com.waifucave.clover.core.test-isolated" };
 }
 async function drain(gen: AsyncIterable<SdkMessage>): Promise<SdkMessage[]> {
   const out: SdkMessage[] = [];
@@ -68,9 +68,9 @@ describe("the topology", () => {
     expect(existsSync(dev)).toBe(true);
   });
 
-  test("the workflow worker command never names `__workflow-worker` (winter-core routes that token to its OWN worker)", () => {
-    const compiled = runtimeWorkflowWorkerCommand(true, "/Applications/Winter.app/Contents/Resources/winter-core");
-    expect(compiled).toEqual({ file: "/Applications/Winter.app/Contents/Resources/winter-core", args: [RUNTIME_WORKFLOW_WORKER_ARG, "--bridge"] });
+  test("the workflow worker command never names `__workflow-worker` (clover-core routes that token to its OWN worker)", () => {
+    const compiled = runtimeWorkflowWorkerCommand(true, "/Applications/Clover.app/Contents/Resources/clover-core");
+    expect(compiled).toEqual({ file: "/Applications/Clover.app/Contents/Resources/clover-core", args: [RUNTIME_WORKFLOW_WORKER_ARG, "--bridge"] });
     const dev = runtimeWorkflowWorkerCommand(false, process.execPath);
     expect(dev.file).toBe(process.execPath);
     expect(existsSync(dev.args[0]!)).toBe(true);
@@ -172,7 +172,7 @@ describe("createEmbeddedSessionHost — workerProcess() over a real Worker", () 
     expect(host.live()).toEqual([]);
     // The query sees its runtime end without a terminal result (a spawned child killed mid-turn looks the same).
     await draining;
-    expect(() => host.spawn({ command: "winter-embedded", args: ["--run", "--config-json", "{}"], cwd: "/", env: {} })).toThrow(EmbeddedRuntimeUnavailable);
+    expect(() => host.spawn({ command: "clover-embedded", args: ["--run", "--config-json", "{}"], cwd: "/", env: {} })).toThrow(EmbeddedRuntimeUnavailable);
   }, 30_000);
 
   test("two concurrent sessions each get their own Worker, and both complete", async () => {
@@ -221,8 +221,8 @@ describe("review round 1", () => {
   describe("I-3: the embedded probe refuses a live home, typed, before writing anything", () => {
     test("either profile's default home is refused, however it is spelled", () => {
       const fakeHome = temp("fake-user");
-      for (const name of [".winter", ".winter-dev", ".winter/", "./.winter-dev"]) {
-        expect(embeddedProbeHomeRefusal(join(fakeHome, name), { homedirFn: () => fakeHome })).toContain("default Winter home");
+      for (const name of [".clover", ".clover-dev", ".clover/", "./.clover-dev"]) {
+        expect(embeddedProbeHomeRefusal(join(fakeHome, name), { homedirFn: () => fakeHome })).toContain("default Clover home");
       }
     });
 
@@ -242,7 +242,7 @@ describe("review round 1", () => {
 
     test("runEmbeddedProbe refuses with code probe_home_refused and writes NOTHING (a fake default home, a fake populated one)", async () => {
       const fakeHome = temp("fake-user");
-      const liveDefault = join(fakeHome, ".winter-dev");
+      const liveDefault = join(fakeHome, ".clover-dev");
       mkdirSync(liveDefault);
       writeFileSync(join(liveDefault, "settings.json"), "LIVE");
       const r1 = await runEmbeddedProbe({ home: liveDefault, homedirFn: () => fakeHome });
@@ -281,7 +281,7 @@ describe("WS-24: process groups a Worker leaves behind are killed when it closes
     return { proc, close: () => settle({ code: null, signal: "SIGKILL" }) };
   }
 
-  const spawnOptions = (sessionId: string) => ({ command: "winter-embedded", args: ["--run", "--config-json", JSON.stringify({ sessionId })], cwd: "/", env: {} });
+  const spawnOptions = (sessionId: string) => ({ command: "clover-embedded", args: ["--run", "--config-json", JSON.stringify({ sessionId })], cwd: "/", env: {} });
 
   test("orphanedProcessGroupsOf: an SDK without the mirror reports nothing; ids that are no group leader, or this process, are never returned", () => {
     const { proc: old } = fakeWorker(() => []);

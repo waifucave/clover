@@ -5,7 +5,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, CLIENT_CAPABILITY_ISLAND, type WritableSocket } from "@yanlinglabs/winter-protocol";
+import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, CLIENT_CAPABILITY_ISLAND, type WritableSocket } from "@waifucave/clover-protocol";
 import { USAGE_DB_SCHEMA_VERSION, UsageDb } from "../../src/usage/db";
 import { UsagePricer } from "../../src/usage/pricing";
 import { planScopeKey, planWindowKey } from "../../src/usage/plan";
@@ -33,7 +33,7 @@ function service(over: Partial<UsageServiceDeps> = {}) {
   const tracking = { codex: true, claudeCode: true, antigravity: true, opencode: true };
   const svc = new UsageService({
     db, pricer, tracking: () => tracking,
-    codexExecutable: () => undefined, claudeExecutable: () => undefined, winterCodexWindows: () => [],
+    codexExecutable: () => undefined, claudeExecutable: () => undefined, cloverCodexWindows: () => [],
     probeRoot: () => probeRootIn(home), ingestEveryMs: 0, planWaitMs: 20_000, fallbackEveryMs: 0,
     onAlarmNotices: () => { counts.notices++; fired.splice(0, fired.length, ...db.firedAlarms()); },
     setInterval: (fn, ms) => {
@@ -138,7 +138,7 @@ describe("the usage_alarms table (schema 5)", () => {
     let told = 0;
     const svc2 = new UsageService({
       db: again, pricer, tracking: () => ({ codex: true, claudeCode: true, antigravity: true, opencode: true }), codexExecutable: () => undefined,
-      claudeExecutable: () => undefined, winterCodexWindows: () => [], probeRoot: () => probeRootIn(home), onAlarmNotices: () => { told++; },
+      claudeExecutable: () => undefined, cloverCodexWindows: () => [], probeRoot: () => probeRootIn(home), onAlarmNotices: () => { told++; },
     });
     expect(svc2.firedAlarms().map((f) => [f.id, f.usedPercent])).toEqual([[a.id, 90]]);
     expect(svc2.ackAlarm(a.id)).toBe(true);
@@ -351,13 +351,13 @@ describe("the background beats", () => {
     expect(fastBeatFloor(6_000)).toBe(3_000);
   });
 
-  test("WINTER_USAGE_BACKGROUND=off (both preloads) keeps it off; without it the daemon's service starts it", () => {
-    expect(process.env.WINTER_USAGE_BACKGROUND).toBe("off");
+  test("CLOVER_USAGE_BACKGROUND=off (both preloads) keeps it off; without it the daemon's service starts it", () => {
+    expect(process.env.CLOVER_USAGE_BACKGROUND).toBe("off");
     const off = createUsageService({ home: tempDir("wire"), settings: () => undefined, injection: { catchUp: false } })!;
     expect(off.service.backgroundRunning).toBe(false);
     off.close();
-    const saved = process.env.WINTER_USAGE_BACKGROUND;
-    delete process.env.WINTER_USAGE_BACKGROUND;
+    const saved = process.env.CLOVER_USAGE_BACKGROUND;
+    delete process.env.CLOVER_USAGE_BACKGROUND;
     try {
       const on = createUsageService({ home: tempDir("wire"), settings: () => undefined, injection: { catchUp: false } })!;
       expect(on.service.backgroundRunning).toBe(true);
@@ -367,7 +367,7 @@ describe("the background beats", () => {
       expect(injectedOff.service.backgroundRunning).toBe(false);
       injectedOff.close();
     } finally {
-      process.env.WINTER_USAGE_BACKGROUND = saved;
+      process.env.CLOVER_USAGE_BACKGROUND = saved;
     }
   });
 });

@@ -1,5 +1,5 @@
 // TEST ONLY — a `CdpTransport` over a headless Chromium's `--remote-debugging-pipe` (fd 3 in, fd 4 out, NUL-framed
-// JSON), standing in for Winter.app's link so the browser engine can be driven end to end against a real browser.
+// JSON), standing in for Clover.app's link so the browser engine can be driven end to end against a real browser.
 // It enforces what every real transport enforces before anything reaches the browser — `cdp-allowlist.ts`'s methods
 // and events and its world rules — and strips Network events to their allowed params. Tabs are the browser's page
 // targets (created and attached at the BROWSER level here, which the engine itself can never do).
@@ -18,8 +18,8 @@ interface Tab {
   /** "winter" worlds this transport itself created (`<session>:<contextId>`), and their unique ids when reported; the
    *  frame each was made in; the ones that ENDED (destroyed, cleared, or their frame navigated to a new document); the
    *  sessions with Runtime enabled (a world is made and used only there). */
-  winterCtx: Set<string>; winterUnique: Map<string, string>; ctxFrame: Map<string, string>; endedCtx: Set<string>; runtimeOn: Set<string>;
-  winterObjects: Set<string>; children: Set<string>; sessionId?: string; agent: boolean;
+  cloverCtx: Set<string>; cloverUnique: Map<string, string>; ctxFrame: Map<string, string>; endedCtx: Set<string>; runtimeOn: Set<string>;
+  cloverObjects: Set<string>; children: Set<string>; sessionId?: string; agent: boolean;
 }
 
 export class PipeTransport implements CdpTransport {
@@ -43,7 +43,7 @@ export class PipeTransport implements CdpTransport {
   /** As Winter for Chrome says in its hello (Phase 3: `cdp3`); undefined for the built-in browser's stand-in. */
   features?: Set<string>;
 
-  /** Wake triggers: standing in for Winter.app with the link feature `watchOnly` (it holds no native UI, so a
+  /** Wake triggers: standing in for Clover.app with the link feature `watchOnly` (it holds no native UI, so a
    *  watch-only hold is an ordinary attach). */
   watchOnlyHolds?: boolean;
 
@@ -55,7 +55,7 @@ export class PipeTransport implements CdpTransport {
   }
 
   async launch(chrome: string, extraArgs: string[] = []): Promise<void> {
-    this.profile = mkdtempSync(join(tmpdir(), "winter-browser-e2e-profile-"));
+    this.profile = mkdtempSync(join(tmpdir(), "clover-browser-e2e-profile-"));
     const args = [
       "--headless=new", "--remote-debugging-pipe", `--user-data-dir=${this.profile}`, "--no-first-run", "--no-default-browser-check",
       "--use-mock-keychain", "--password-store=basic", "--disable-background-networking", "--disable-component-update", "--disable-sync",
@@ -134,16 +134,16 @@ export class PipeTransport implements CdpTransport {
     // never by its name. Its creation event adds the unique id; its destruction ends it.
     if (method === "Runtime.executionContextCreated") {
       const c = params.context as { id: number; uniqueId?: string };
-      if (tab.winterCtx.has(`${sessKey}:${c.id}`) && typeof c.uniqueId === "string") tab.winterUnique.set(c.uniqueId, `${sessKey}:${c.id}`);
+      if (tab.cloverCtx.has(`${sessKey}:${c.id}`) && typeof c.uniqueId === "string") tab.cloverUnique.set(c.uniqueId, `${sessKey}:${c.id}`);
     }
-    const end = (key: string): void => { if (tab.winterCtx.delete(key)) tab.endedCtx.add(key); tab.ctxFrame.delete(key); };
+    const end = (key: string): void => { if (tab.cloverCtx.delete(key)) tab.endedCtx.add(key); tab.ctxFrame.delete(key); };
     if (method === "Runtime.executionContextDestroyed") {
       const unique = typeof params.executionContextUniqueId === "string" ? params.executionContextUniqueId : undefined;
-      const key = unique !== undefined ? tab.winterUnique.get(unique) : `${sessKey}:${String(params.executionContextId)}`;
+      const key = unique !== undefined ? tab.cloverUnique.get(unique) : `${sessKey}:${String(params.executionContextId)}`;
       if (key !== undefined) end(key);
     }
     if (method === "Runtime.executionContextsCleared") {
-      for (const k of [...tab.winterCtx]) if (k.startsWith(`${sessKey}:`)) end(k);
+      for (const k of [...tab.cloverCtx]) if (k.startsWith(`${sessKey}:`)) end(k);
     }
     // A cross-document navigation of a world's frame ends that world.
     if (method === "Page.frameNavigated") {
@@ -167,7 +167,7 @@ export class PipeTransport implements CdpTransport {
   async createTab(opts: { sessionId: string; url: string; tabKey?: string }): Promise<TransportTab> {
     const r = await this.raw<{ targetId: string }>("Target.createTarget", { url: opts.url, background: true });
     const tabKey = opts.tabKey ?? `t${this.nextTab++}`;
-    this.tabs.set(tabKey, { tabKey, targetId: r.targetId, events: new Set(), winterCtx: new Set(), winterUnique: new Map(), ctxFrame: new Map(), endedCtx: new Set(), runtimeOn: new Set(), winterObjects: new Set(), children: new Set(), sessionId: opts.sessionId, agent: true });
+    this.tabs.set(tabKey, { tabKey, targetId: r.targetId, events: new Set(), cloverCtx: new Set(), cloverUnique: new Map(), ctxFrame: new Map(), endedCtx: new Set(), runtimeOn: new Set(), cloverObjects: new Set(), children: new Set(), sessionId: opts.sessionId, agent: true });
     return { tabKey, url: opts.url, title: "", active: false, agent: true, sessionId: opts.sessionId };
   }
 
@@ -189,7 +189,7 @@ export class PipeTransport implements CdpTransport {
     return out;
   }
 
-  /** Wake triggers: every attach asked for, and whether it was watch-only (what Winter.app would have been told). */
+  /** Wake triggers: every attach asked for, and whether it was watch-only (what Clover.app would have been told). */
   readonly attaches: Array<{ tabKey: string; watchOnly: boolean }> = [];
 
   async attach(tabKey: string, opts?: { sessionId: string; watchOnly?: boolean }): Promise<{ viewport: [number, number]; dpr: number }> {
@@ -208,12 +208,12 @@ export class PipeTransport implements CdpTransport {
     if (t?.session === undefined) return;
     const s = t.session;
     delete t.session;
-    t.winterCtx.clear();
-    t.winterUnique.clear();
+    t.cloverCtx.clear();
+    t.cloverUnique.clear();
     t.ctxFrame.clear();
     t.endedCtx.clear();
     t.runtimeOn.clear();
-    t.winterObjects.clear();
+    t.cloverObjects.clear();
     t.events.clear();
     try { await this.raw("Target.detachFromTarget", { sessionId: s }); } catch { /* gone */ }
   }
@@ -222,7 +222,7 @@ export class PipeTransport implements CdpTransport {
     const t = this.tab(tabKey);
     this.sent.push(method);
     const refuse = (why: string): never => {
-      const detail = JSON.stringify({ session: opts.cdpSessionId, contextId: params.contextId, executionContextId: params.executionContextId, objectId: params.objectId, op: (params.arguments as Array<{ value?: unknown }> | undefined)?.[0]?.value, known: [...t.winterCtx] });
+      const detail = JSON.stringify({ session: opts.cdpSessionId, contextId: params.contextId, executionContextId: params.executionContextId, objectId: params.objectId, op: (params.arguments as Array<{ value?: unknown }> | undefined)?.[0]?.value, known: [...t.cloverCtx] });
       this.refused.push(`${method}: ${why} ${detail}`);
       throw new TransportError("not_allowed", `${method}: ${why}`);
     };
@@ -233,8 +233,8 @@ export class PipeTransport implements CdpTransport {
     const ended = (id: unknown): void => {
       if (t.endedCtx.has(`${sessKey}:${String(id)}`)) throw new TransportError("cdp_error", "Cannot find context with specified id", { cdpCode: -32000, cdpMessage: "Cannot find context with specified id" });
     };
-    const winterCtx = (id: unknown): boolean => { ended(id); return t.winterCtx.has(`${sessKey}:${String(id)}`); };
-    const winterUnique = (u: unknown): boolean => typeof u === "string" && t.winterUnique.has(u);
+    const cloverCtx = (id: unknown): boolean => { ended(id); return t.cloverCtx.has(`${sessKey}:${String(id)}`); };
+    const cloverUnique = (u: unknown): boolean => typeof u === "string" && t.cloverUnique.has(u);
     const runtimeOn = (): void => { if (!t.runtimeOn.has(sessKey)) refuse("Runtime is not enabled in this session"); };
     switch (method) {
       case "Page.reload": if (params.scriptToEvaluateOnLoad !== undefined) refuse("a script to evaluate on load runs in the page's own world"); break;
@@ -243,13 +243,13 @@ export class PipeTransport implements CdpTransport {
         if (url !== "about:blank" && !/^https?:/i.test(url)) refuse("only http(s) and about:blank navigations");
         break;
       }
-      case "Runtime.evaluate": runtimeOn(); if (!(winterCtx(params.contextId) || winterUnique(params.uniqueContextId))) refuse("outside the winter world"); break;
+      case "Runtime.evaluate": runtimeOn(); if (!(cloverCtx(params.contextId) || cloverUnique(params.uniqueContextId))) refuse("outside the winter world"); break;
       case "Runtime.callFunctionOn":
         runtimeOn();
-        if (typeof params.objectId === "string" && t.winterObjects.has(params.objectId)) break;
-        if (!(winterCtx(params.executionContextId) || winterUnique(params.uniqueContextId))) refuse("outside the winter world");
+        if (typeof params.objectId === "string" && t.cloverObjects.has(params.objectId)) break;
+        if (!(cloverCtx(params.executionContextId) || cloverUnique(params.uniqueContextId))) refuse("outside the winter world");
         break;
-      case "DOM.resolveNode": if (!winterCtx(params.executionContextId)) refuse("outside the winter world"); break;
+      case "DOM.resolveNode": if (!cloverCtx(params.executionContextId)) refuse("outside the winter world"); break;
       case "Page.createIsolatedWorld":
         runtimeOn();
         if (params.worldName !== CDP_WORLD_NAME || params.grantUniveralAccess === true) refuse("a world other than winter");
@@ -261,7 +261,7 @@ export class PipeTransport implements CdpTransport {
     // The world this transport just made is "winter" (by the id it answered, not by any name).
     if (method === "Page.createIsolatedWorld" && typeof res.executionContextId === "number") {
       const key = `${sessKey}:${res.executionContextId}`;
-      t.winterCtx.add(key);
+      t.cloverCtx.add(key);
       t.endedCtx.delete(key);
       t.ctxFrame.set(key, String(params.frameId));
     }
@@ -269,7 +269,7 @@ export class PipeTransport implements CdpTransport {
     if (method === "Runtime.disable") t.runtimeOn.delete(sessKey);
     // Object ids minted in the winter world may be used again (the world rule's second half).
     const minted = (res.result as { objectId?: string } | undefined)?.objectId ?? (res.object as { objectId?: string } | undefined)?.objectId;
-    if (typeof minted === "string" && (method === "Runtime.callFunctionOn" || method === "Runtime.evaluate" || method === "DOM.resolveNode")) t.winterObjects.add(minted);
+    if (typeof minted === "string" && (method === "Runtime.callFunctionOn" || method === "Runtime.evaluate" || method === "DOM.resolveNode")) t.cloverObjects.add(minted);
     return res as T;
   }
 
@@ -280,7 +280,7 @@ export class PipeTransport implements CdpTransport {
   }
 
   /** TEST ONLY — the USER: a CDP session of the test's own on the tab's page (never one the engine sends on, so nothing
-   *  of Winter's knows about it), for a click or a key the browser delivers as trusted input, or a read of the page. */
+   *  of Clover's knows about it), for a click or a key the browser delivers as trusted input, or a read of the page. */
   async asUser<T>(tabKey: string, fn: (send: (method: string, params?: Record<string, unknown>) => Promise<Record<string, unknown>>) => Promise<T>): Promise<T> {
     const t = this.tab(tabKey);
     const { sessionId } = await this.raw<{ sessionId: string }>("Target.attachToTarget", { targetId: t.targetId, flatten: true });

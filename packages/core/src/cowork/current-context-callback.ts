@@ -1,7 +1,7 @@
 import { CoworkCurrentContextResolver, type CoworkCurrentContextResolverDeps, type CoworkCurrentContextSnapshot } from "./current-context-resolver";
 import type { CoworkContextLookup } from "./current-context";
 
-/** Structural copy of the public SDK8603 RuntimeContextHandler contract. Winter's
+/** Structural copy of the public SDK8603 RuntimeContextHandler contract. Clover's
  * pinned SDK predates it; do not import a mutable candidate checkout or change pins.
  * The candidate's compile-only fixture must check assignability before wiring. */
 export interface CoworkRuntimeContextRequest {

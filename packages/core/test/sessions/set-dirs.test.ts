@@ -20,7 +20,7 @@ import {
 // -----------------------------------------------------------------------------------------
 
 function makeStore(): { store: SessionStore; dir: string } {
-  const dir = mkdtempSync(join(tmpdir(), "winter-set-dirs-store-"));
+  const dir = mkdtempSync(join(tmpdir(), "clover-set-dirs-store-"));
   return { store: new SessionStore(dir), dir };
 }
 
@@ -29,7 +29,7 @@ function makeDeps(store: SessionStore, grantDenied: (dir: string) => boolean = (
 }
 
 function fixtureBase(): string {
-  return mkdtempSync(join(tmpdir(), "winter-set-dirs-fixture-"));
+  return mkdtempSync(join(tmpdir(), "clover-set-dirs-fixture-"));
 }
 
 describe("setSessionDirs — NOT_FOUND (resolved first)", () => {

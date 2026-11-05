@@ -6,7 +6,7 @@
 //
 // This proves the corrected boundary end to end through the REAL boot path (`startDaemon`, the same
 // seam `daemon-internal-provider-boot.test.ts` already uses for an analogous "narrow failure, not a
-// boot refusal" claim — an in-process daemon over a real Unix socket, never a spawned `winter daemon
+// boot refusal" claim — an in-process daemon over a real Unix socket, never a spawned `clover daemon
 // run` subprocess): the daemon boots normally, the agent stays enabled (registry is built), and the
 // only log line this scenario produces names the stripped header — never "settings unavailable,
 // agent disabled", never the header's VALUE.
@@ -27,10 +27,10 @@ afterEach(async () => {
 const SENTINEL = "Bearer sk-SENTINEL-daemon-boot-leak-check";
 
 function tempHomeWithCredentialShapedMcpHeader(): string {
-  const home = mkdtempSync(join(tmpdir(), "winter-mcp-header-boot-"));
+  const home = mkdtempSync(join(tmpdir(), "clover-mcp-header-boot-"));
   // Hand-edited, never through `Settings.parse`/`saveSettings` (the write door, which still
   // refuses this shape unconditionally) — this IS what a human editing settings.json outside
-  // Winter can produce, and it's the only way this shape reaches disk at all.
+  // Clover can produce, and it's the only way this shape reaches disk at all.
   writeFileSync(join(home, "settings.json"), JSON.stringify({
     schemaVersion: 3,
     // codex-oauth so the daemon's internal Provider actually builds (mirrors the "control" case in

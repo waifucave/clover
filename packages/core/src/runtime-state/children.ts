@@ -1,8 +1,8 @@
-// WS-16 §12's `PersistedWinterChild`: the durable roster of a session's Winter children, which is
+// WS-16 §12's `PersistedCloverChild`: the durable roster of a session's Clover children, which is
 // what replaces the in-memory `BackgroundAgentRegistry` a daemon restart used to lose wholesale.
 //
 // EVERY VALUE HERE IS A LOCATOR OR AN EFFECTIVE FACT — never a live handle. `resumeContextRef`
-// points at what Winter needs to reconstruct the child through its own engine ("only what Winter
+// points at what Clover needs to reconstruct the child through its own engine ("only what Clover
 // needs… never an in-memory closure or `AbortController`"), so a closure reaching `upsert` is a
 // programming error caught here rather than a row that silently stores `[object Function]` and
 // resurrects nothing. `providerId`/`modelRef`/`slot`/`permission` are the child's POST-inheritance
@@ -20,7 +20,7 @@ import { canonicalModelTag } from "../runtime-sdk/model-tag";
 
 export type ChildStatus = "running" | "interrupted" | "completed" | "failed" | "stopped" | "timeout";
 
-export interface PersistedWinterChild {
+export interface PersistedCloverChild {
   parentWinterSessionId: string;
   childId: string;
   name?: string;
@@ -122,7 +122,7 @@ const optJson = <T>(v: string | null): T | undefined => {
   }
 };
 
-function fromRow(row: ChildDbRow): PersistedWinterChild {
+function fromRow(row: ChildDbRow): PersistedCloverChild {
   return {
     parentWinterSessionId: row.parent_winter_session_id,
     childId: row.child_id,
@@ -144,15 +144,15 @@ function fromRow(row: ChildDbRow): PersistedWinterChild {
     requestedModel: row.requested_model == null ? undefined : canonicalModelTag(row.requested_model),
     effectiveModel: row.effective_model == null ? undefined : canonicalModelTag(row.effective_model),
     effectiveProvider: opt(row.effective_provider),
-    slot: optJson<NonNullable<PersistedWinterChild["slot"]>>(row.slot_json),
-    permission: optJson<NonNullable<PersistedWinterChild["permission"]>>(row.permission_json),
+    slot: optJson<NonNullable<PersistedCloverChild["slot"]>>(row.slot_json),
+    permission: optJson<NonNullable<PersistedCloverChild["permission"]>>(row.permission_json),
   };
 }
 
 export class RuntimeChildren {
   constructor(private readonly rs: RuntimeStateDb, private readonly now: () => string = () => new Date().toISOString()) {}
 
-  upsert(child: PersistedWinterChild): void {
+  upsert(child: PersistedCloverChild): void {
     if (child.resumeContextRef !== undefined && typeof child.resumeContextRef !== "string")
       throw new TypeError("resumeContextRef must be a locator string — never a closure or handle (WS-16 §12)");
     // Read-then-write (the terminal-status check decides the write), so it begins IMMEDIATE: a
@@ -192,7 +192,7 @@ export class RuntimeChildren {
     );
   }
 
-  get(parent: string, childId: string): PersistedWinterChild | undefined {
+  get(parent: string, childId: string): PersistedCloverChild | undefined {
     const row = this.rs.db
       .query(`SELECT ${CHILD_COLUMNS} FROM runtime_children WHERE parent_winter_session_id = ? AND child_id = ?`)
       .get(parent, childId) as ChildDbRow | null;
@@ -200,7 +200,7 @@ export class RuntimeChildren {
   }
 
   /** See `findByName` for what `ORDER BY started_at, child_id` does and does not guarantee (N5). */
-  list(parent: string, filter: { status?: ChildStatus | ChildStatus[] } = {}): PersistedWinterChild[] {
+  list(parent: string, filter: { status?: ChildStatus | ChildStatus[] } = {}): PersistedCloverChild[] {
     const values: string[] = [parent];
     let where = "parent_winter_session_id = ?";
     if (filter.status !== undefined) {
@@ -239,7 +239,7 @@ export class RuntimeChildren {
    *  the same millisecond come back in id order, which for `b1` before `a2` is the reverse of how
    *  they were made. Honest ordering would need a monotonic sequence column on the 8a table; no
    *  caller depends on the distinction today (N5). */
-  findByName(name: string, parent?: string): PersistedWinterChild[] {
+  findByName(name: string, parent?: string): PersistedCloverChild[] {
     const where = parent === undefined ? "name = ?" : "name = ? AND parent_winter_session_id = ?";
     const args = parent === undefined ? [name] : [name, parent];
     const rows = this.rs.db
@@ -269,7 +269,7 @@ export class RuntimeChildren {
    * `{parent, childId}` pairs — a bare id cannot say whose child it was.
    */
   reclassifyAfterRestart(
-    isGone: (child: PersistedWinterChild) => boolean,
+    isGone: (child: PersistedCloverChild) => boolean,
     // Review r1 (Important 1): the whole sweep is ONE transaction, so its blast radius is whatever
     // it enumerates. Scoping it to a single parent is what lets startup recovery bound step 7 per
     // session — a parent whose roster (or whose `isGone` proof) throws costs that parent's children
@@ -304,7 +304,7 @@ export class RuntimeChildren {
  * ─────────────────────────────────────────────────────────────────────────────────────────────────
  * THE CHILD PROFILE — what `resumeContextRef` points AT (P8b Task 13).
  *
- * `PersistedWinterChild` is identity and outcome: who this child is, what it ran as, whether it is
+ * `PersistedCloverChild` is identity and outcome: who this child is, what it ran as, whether it is
  * over. WS-16 §12's rule that every value on that row is "a locator or an effective fact" is what
  * keeps it a row rather than a serialized closure — and it is also why the row cannot hold the
  * `ResumeContext` itself, which is a dozen fields of agent definition, instructions and the child's
@@ -345,7 +345,7 @@ export class ChildProfiles {
     this.root = join(home, "runtimes", "children");
   }
 
-  /** The value written to `PersistedWinterChild.resumeContextRef`: a RELATIVE locator, so a home
+  /** The value written to `PersistedCloverChild.resumeContextRef`: a RELATIVE locator, so a home
    *  that moves (a dev profile, a restored backup) does not orphan every child's profile. */
   refFor(parent: string, childId: string): string {
     return join("children", encodeURIComponent(parent), `${encodeURIComponent(childId)}.json`);

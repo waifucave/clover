@@ -8,27 +8,27 @@ import { bundleRuntimePath } from "../../src/runtime-sdk/bundle-layout";
 import { REQUIRED_WINTER_AGENT_SDK } from "../../src/runtime-sdk/versions";
 
 const exists = (set: string[]) => (p: string) => set.includes(p);
-const base = { env: {}, execPath: "/bundle/Contents/MacOS/winter-core", home: "/tmp/h" };
+const base = { env: {}, execPath: "/bundle/Contents/MacOS/clover-core", home: "/tmp/h" };
 // P8d-1: the bundle rung moved under `Resources/runtimes/` — this is that exact path for `base`.
-const BUNDLE_WINTER = bundleRuntimePath(base.execPath, "winter");
+const BUNDLE_CLOVER = bundleRuntimePath(base.execPath, "winter");
 
 describe("resolveWinterExecutable (P8b-2 ladder, P8d-1 bundle layout)", () => {
   test("setting wins over everything", () => {
-    const r = resolveWinterExecutable({ ...base, setting: "/s/winter", env: { WINTER_RUNTIME_EXECUTABLE: "/e/winter" }, exists: exists(["/s/winter", "/e/winter"]) });
-    expect(r).toEqual({ ok: true, path: "/s/winter", source: "setting" });
+    const r = resolveWinterExecutable({ ...base, setting: "/s/clover", env: { CLOVER_RUNTIME_EXECUTABLE: "/e/clover" }, exists: exists(["/s/clover", "/e/clover"]) });
+    expect(r).toEqual({ ok: true, path: "/s/clover", source: "setting" });
   });
   test("env beats bundle and home", () => {
-    const r = resolveWinterExecutable({ ...base, env: { WINTER_RUNTIME_EXECUTABLE: "/e/winter" }, exists: exists(["/e/winter", BUNDLE_WINTER]) });
-    expect(r).toEqual({ ok: true, path: "/e/winter", source: "env" });
+    const r = resolveWinterExecutable({ ...base, env: { CLOVER_RUNTIME_EXECUTABLE: "/e/clover" }, exists: exists(["/e/clover", BUNDLE_CLOVER]) });
+    expect(r).toEqual({ ok: true, path: "/e/clover", source: "env" });
   });
   test("bundle rung is <dirname(execPath)>/runtimes/winter, then <home>/runtimes/bin/winter", () => {
-    expect(resolveWinterExecutable({ ...base, exists: exists([BUNDLE_WINTER]) })).toEqual({ ok: true, path: BUNDLE_WINTER, source: "bundle" });
+    expect(resolveWinterExecutable({ ...base, exists: exists([BUNDLE_CLOVER]) })).toEqual({ ok: true, path: BUNDLE_CLOVER, source: "bundle" });
     expect(resolveWinterExecutable({ ...base, exists: exists(["/tmp/h/runtimes/bin/winter"]) })).toEqual({ ok: true, path: "/tmp/h/runtimes/bin/winter", source: "home" });
   });
   test("a configured path that does not exist is NOT skipped silently — it is the failure", () => {
-    const r = resolveWinterExecutable({ ...base, setting: "/gone/winter", exists: exists([BUNDLE_WINTER]) });
+    const r = resolveWinterExecutable({ ...base, setting: "/gone/clover", exists: exists([BUNDLE_CLOVER]) });
     expect(r.ok).toBe(false);
-    if (!r.ok) { expect(r.error).toBeInstanceOf(WinterExecutableUnavailable); expect(r.error.code).toBe("winter_executable_unavailable"); expect(r.error.tried).toEqual(["/gone/winter"]); }
+    if (!r.ok) { expect(r.error).toBeInstanceOf(WinterExecutableUnavailable); expect(r.error.code).toBe("winter_executable_unavailable"); expect(r.error.tried).toEqual(["/gone/clover"]); }
   });
   test("nothing found → typed failure listing every path tried, never a throw", () => {
     // P9a fix wave, M1: this is a pre-existing P8b-2 test about the FILESYSTEM ladder only — it
@@ -37,7 +37,7 @@ describe("resolveWinterExecutable (P8b-2 ladder, P8d-1 bundle layout)", () => {
     // explicitly so this test is about the fs rungs, never the package rung.
     const r = resolveWinterExecutable({ ...base, exists: () => false, resolvePlatformPackageBin: () => undefined });
     expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.error.tried).toEqual([BUNDLE_WINTER, "/tmp/h/runtimes/bin/winter"]);
+    if (!r.ok) expect(r.error.tried).toEqual([BUNDLE_CLOVER, "/tmp/h/runtimes/bin/winter"]);
   });
 
   // Review F-8: two ladder behaviours the brief's five tests left unpinned.
@@ -46,17 +46,17 @@ describe("resolveWinterExecutable (P8b-2 ladder, P8d-1 bundle layout)", () => {
     // Both spellings of "configured with nothing": a blank `winterExecutable` in settings.json and
     // an exported-but-empty env var. Neither may become the authoritative-and-missing failure —
     // they fall through to the implicit locations like the absent values they are.
-    const r = resolveWinterExecutable({ ...base, setting: "   ", env: { WINTER_RUNTIME_EXECUTABLE: "\t\n" }, exists: exists([BUNDLE_WINTER]) });
-    expect(r).toEqual({ ok: true, path: BUNDLE_WINTER, source: "bundle" });
+    const r = resolveWinterExecutable({ ...base, setting: "   ", env: { CLOVER_RUNTIME_EXECUTABLE: "\t\n" }, exists: exists([BUNDLE_CLOVER]) });
+    expect(r).toEqual({ ok: true, path: BUNDLE_CLOVER, source: "bundle" });
   });
 
   test("an ENV path that does not exist is the failure too — not just the setting branch", () => {
-    const r = resolveWinterExecutable({ ...base, env: { WINTER_RUNTIME_EXECUTABLE: "/gone/winter" }, exists: exists([BUNDLE_WINTER, "/tmp/h/runtimes/bin/winter"]) });
+    const r = resolveWinterExecutable({ ...base, env: { CLOVER_RUNTIME_EXECUTABLE: "/gone/clover" }, exists: exists([BUNDLE_CLOVER, "/tmp/h/runtimes/bin/winter"]) });
     expect(r.ok).toBe(false);
     if (!r.ok) {
       expect(r.error).toBeInstanceOf(WinterExecutableUnavailable);
       // Only the path the user named — the two implicit locations were never probed.
-      expect(r.error.tried).toEqual(["/gone/winter"]);
+      expect(r.error.tried).toEqual(["/gone/clover"]);
     }
   });
 
@@ -67,16 +67,16 @@ describe("resolveWinterExecutable (P8b-2 ladder, P8d-1 bundle layout)", () => {
       expect(r).toEqual({ ok: true, path: "/pkg/bin/winter", source: "platform-package" });
     });
     test("an earlier rung (bundle) still wins over the platform package", () => {
-      const r = resolveWinterExecutable({ ...base, exists: exists([BUNDLE_WINTER]), resolvePlatformPackageBin: () => "/pkg/bin/winter" });
-      expect(r).toEqual({ ok: true, path: BUNDLE_WINTER, source: "bundle" });
+      const r = resolveWinterExecutable({ ...base, exists: exists([BUNDLE_CLOVER]), resolvePlatformPackageBin: () => "/pkg/bin/winter" });
+      expect(r).toEqual({ ok: true, path: BUNDLE_CLOVER, source: "bundle" });
     });
     test("home still wins over the platform package", () => {
       const r = resolveWinterExecutable({ ...base, exists: exists(["/tmp/h/runtimes/bin/winter"]), resolvePlatformPackageBin: () => "/pkg/bin/winter" });
       expect(r).toEqual({ ok: true, path: "/tmp/h/runtimes/bin/winter", source: "home" });
     });
     test("an explicit setting/env still wins over the platform package even when it too is configured", () => {
-      const r = resolveWinterExecutable({ ...base, setting: "/s/winter", exists: exists(["/s/winter"]), resolvePlatformPackageBin: () => "/pkg/bin/winter" });
-      expect(r).toEqual({ ok: true, path: "/s/winter", source: "setting" });
+      const r = resolveWinterExecutable({ ...base, setting: "/s/clover", exists: exists(["/s/clover"]), resolvePlatformPackageBin: () => "/pkg/bin/winter" });
+      expect(r).toEqual({ ok: true, path: "/s/clover", source: "setting" });
     });
     test("the resolver returning undefined is the typed refusal, naming the platform-package rung", () => {
       const r = resolveWinterExecutable({ ...base, exists: () => false, resolvePlatformPackageBin: () => undefined });
@@ -86,7 +86,7 @@ describe("resolveWinterExecutable (P8b-2 ladder, P8d-1 bundle layout)", () => {
         expect(r.error.code).toBe("winter_executable_unavailable");
         // `.tried` stays pure filesystem paths (the package door has no fixed path to report on a
         // miss) — the rung is named in the message text instead.
-        expect(r.error.tried).toEqual([BUNDLE_WINTER, "/tmp/h/runtimes/bin/winter"]);
+        expect(r.error.tried).toEqual([BUNDLE_CLOVER, "/tmp/h/runtimes/bin/winter"]);
         expect(r.error.message).toMatch(/nor the installed platform package \(@yanlinglabs\/winter-agent-sdk-darwin-arm64\)/);
       }
     });
@@ -120,7 +120,7 @@ describe("resolvePlatformPackageWinter (P9a-9, fix wave C1/M2)", () => {
    *  probe module's own directory created) — the "not installed at all" legitimate-skip shape,
    *  proven through a real fixture rather than by trusting the ambient dev tree. */
   function emptyFixture(): string {
-    const root = mkdtempSync(join(tmpdir(), "winter-p9a-empty-"));
+    const root = mkdtempSync(join(tmpdir(), "clover-p9a-empty-"));
     cleanups.push(() => rmSync(root, { recursive: true, force: true }));
     const probeDir = join(root, "packages", "core", "src", "runtime-sdk");
     mkdirSync(probeDir, { recursive: true });
@@ -131,7 +131,7 @@ describe("resolvePlatformPackageWinter (P9a-9, fix wave C1/M2)", () => {
    * Bun's ISOLATED-LINKER shape (C1's exact production layout, copied from the real
    * `node_modules/.bun/@anthropic-ai+claude-agent-sdk@…/` store entry): the platform package is an
    * optional dependency of the WRAPPER, nested under the wrapper's OWN store entry —
-   * `<root>/node_modules/.bun/@yanlinglabs+winter-agent-sdk@<ver>/node_modules/@yanlinglabs/{winter-agent-sdk,winter-agent-sdk-darwin-arm64}`
+   * `<root>/node_modules/.bun/@yanlinglabs+winter-agent-sdk@<ver>/node_modules/@yanlinglabs/{clover-sdk,winter-agent-sdk-darwin-arm64}`
    * — with only the wrapper itself (never the platform package) linked at the top-level
    * `<root>/node_modules/@yanlinglabs/winter-agent-sdk`. A single-hop `createRequire` rooted at the
    * probe module walks straight past the platform package here; only the dual hop reaches it.
@@ -140,7 +140,7 @@ describe("resolvePlatformPackageWinter (P9a-9, fix wave C1/M2)", () => {
     const wrapperVersion = opts.wrapperVersion ?? REQUIRED_WINTER_AGENT_SDK;
     const platformVersion = opts.platformVersion ?? REQUIRED_WINTER_AGENT_SDK;
     const binPresent = opts.binPresent ?? true;
-    const root = mkdtempSync(join(tmpdir(), "winter-p9a-nested-"));
+    const root = mkdtempSync(join(tmpdir(), "clover-p9a-nested-"));
     cleanups.push(() => rmSync(root, { recursive: true, force: true }));
     const storeScope = join(root, "node_modules", ".bun", `@yanlinglabs+winter-agent-sdk@${wrapperVersion}`, "node_modules", "@yanlinglabs");
     const wrapperDir = join(storeScope, "winter-agent-sdk");
@@ -168,7 +168,7 @@ describe("resolvePlatformPackageWinter (P9a-9, fix wave C1/M2)", () => {
   function directFixture(opts: { platformVersion?: string; binPresent?: boolean } = {}): string {
     const platformVersion = opts.platformVersion ?? REQUIRED_WINTER_AGENT_SDK;
     const binPresent = opts.binPresent ?? true;
-    const root = mkdtempSync(join(tmpdir(), "winter-p9a-direct-"));
+    const root = mkdtempSync(join(tmpdir(), "clover-p9a-direct-"));
     cleanups.push(() => rmSync(root, { recursive: true, force: true }));
     const platformDir = join(root, "node_modules", "@yanlinglabs", "winter-agent-sdk-darwin-arm64");
     mkdirSync(join(platformDir, "bin"), { recursive: true });
@@ -236,36 +236,36 @@ describe("resolvePlatformPackageWinter (P9a-9, fix wave C1/M2)", () => {
 
 describe("winterBinaryVersion: what a configured binary reports — the spawn hook's runtimeVersion", () => {
   test("the reported version, cached per path + size + mtime; undefined when it cannot be asked", () => {
-    expect(winterBinaryVersion("/x/winter-v1", { runVersion: () => "0.0.43", statKey: () => "1:1" })).toBe("0.0.43");
-    expect(winterBinaryVersion("/x/winter-v1", { runVersion: () => "0.0.44", statKey: () => "1:1" })).toBe("0.0.43");   // cached
-    expect(winterBinaryVersion("/x/winter-v1", { runVersion: () => "0.0.44", statKey: () => "2:2" })).toBe("0.0.44");   // rebuilt
-    expect(winterBinaryVersion("/x/winter-v2", { runVersion: () => undefined, statKey: () => "1:1" })).toBeUndefined();
+    expect(winterBinaryVersion("/x/clover-v1", { runVersion: () => "0.0.43", statKey: () => "1:1" })).toBe("0.0.43");
+    expect(winterBinaryVersion("/x/clover-v1", { runVersion: () => "0.0.44", statKey: () => "1:1" })).toBe("0.0.43");   // cached
+    expect(winterBinaryVersion("/x/clover-v1", { runVersion: () => "0.0.44", statKey: () => "2:2" })).toBe("0.0.44");   // rebuilt
+    expect(winterBinaryVersion("/x/clover-v2", { runVersion: () => undefined, statKey: () => "1:1" })).toBeUndefined();
   });
 });
 
 describe("explicitRuntimeVersionNote", () => {
   test("a configured runtime reporting the pinned version says nothing", () => {
-    expect(explicitRuntimeVersionNote("/x/winter-a", { runVersion: () => REQUIRED_WINTER_AGENT_SDK, statKey: () => "1:1" })).toBeUndefined();
+    expect(explicitRuntimeVersionNote("/x/clover-a", { runVersion: () => REQUIRED_WINTER_AGENT_SDK, statKey: () => "1:1" })).toBeUndefined();
   });
   test("a stale configured runtime is named, with both versions and the fix", () => {
-    const note = explicitRuntimeVersionNote("/x/winter-b", { runVersion: () => "0.0.1", statKey: () => "1:1" });
-    expect(note).toContain("/x/winter-b");
+    const note = explicitRuntimeVersionNote("/x/clover-b", { runVersion: () => "0.0.1", statKey: () => "1:1" });
+    expect(note).toContain("/x/clover-b");
     expect(note).toContain("winter 0.0.1");
     expect(note).toContain(`pinned to ${REQUIRED_WINTER_AGENT_SDK}`);
     expect(note).toContain("bun run build:winter");
   });
   test("a binary that can't be asked says nothing (the spawn itself reports a broken binary)", () => {
-    expect(explicitRuntimeVersionNote("/x/winter-c", { runVersion: () => undefined, statKey: () => "1:1" })).toBeUndefined();
+    expect(explicitRuntimeVersionNote("/x/clover-c", { runVersion: () => undefined, statKey: () => "1:1" })).toBeUndefined();
   });
   test("asked once per path + size + mtime: a rebuild is asked again", () => {
     let calls = 0;
     let stat = "1:1";
     const deps = { runVersion: () => { calls++; return "0.0.1"; }, statKey: () => stat };
-    explicitRuntimeVersionNote("/x/winter-d", deps);
-    explicitRuntimeVersionNote("/x/winter-d", deps);
+    explicitRuntimeVersionNote("/x/clover-d", deps);
+    explicitRuntimeVersionNote("/x/clover-d", deps);
     expect(calls).toBe(1);
     stat = "2:2";
-    expect(explicitRuntimeVersionNote("/x/winter-d", { ...deps, runVersion: () => { calls++; return REQUIRED_WINTER_AGENT_SDK; } })).toBeUndefined();
+    expect(explicitRuntimeVersionNote("/x/clover-d", { ...deps, runVersion: () => { calls++; return REQUIRED_WINTER_AGENT_SDK; } })).toBeUndefined();
     expect(calls).toBe(2);
   });
 });

@@ -11,7 +11,7 @@
 //
 // (the controller's rulings after the daemon review: per-app consent covers BINDING, not only acting.) Observing
 // an app this call may already use (state, find, screenshot, waits) needs no second card. And, under EVERY
-// policy (bypass included): the floors (Winter never controls itself; the system's authentication dialogs, the
+// policy (bypass included): the floors (Clover never controls itself; the system's authentication dialogs, the
 // login window and Keychain Access are refused) and the app's EFFECTIVE access — `deny` (never bound), `view`
 // (observe only), `click` (click, scroll and AX actions only), `full`. Effective access is the user ruling's
 // "master switch plus exceptions" (`effectiveAppAccess`): the user's own exception for the app; else, if they
@@ -28,7 +28,7 @@
 // the turn (`dispatchCardTimeoutMs`).
 //
 // RUNG 4 (the foreground: the user's real pointer) needs its own card under `ask`/`accept-edits`/`auto` —
-// "Winter needs to bring <App> to the front and use your mouse for a moment" — and a session nobody is watching
+// "Clover needs to bring <App> to the front and use your mouse for a moment" — and a session nobody is watching
 // from the Mac (`attended`: a Mac or terminal harness on the session itself — never the phone, never the Dispatch
 // pill alone) is refused it. `bypass` shows NO computer-use prompt at all (the user ruling at the live gate,
 // reversing the earlier controller ruling): rung 4 is allowed at once, attended or not. `dont-ask` (which never
@@ -45,7 +45,7 @@
 // mirror like its other cards. The floors and the app's effective access still apply first (a `deny` app is never
 // bound; a `view`/`click` app never reaches the act that would need it — a live read under `view` may ask).
 import { randomBytes } from "node:crypto";
-import type { ApprovalOption, NewSessionEvent } from "@yanlinglabs/winter-protocol";
+import type { ApprovalOption, NewSessionEvent } from "@waifucave/clover-protocol";
 import type { SessionApprovalPolicy } from "../agent/gate";
 import type { ApprovalBroker } from "../agent/approvals";
 import { dispatchCardTimeoutMs } from "../runtime-sdk/approval-bridge";
@@ -53,7 +53,7 @@ import { NO_PARK_TIMEOUT_MS } from "../runtime-sdk/bridge-common";
 import type { SessionMode } from "../runtime-sdk/create";
 import { computerUseAllowAllAppsFrom, computerUseAppsFrom, type ComputerUseAccess, type ComputerUseAppSetting, type Settings } from "../settings";
 import { AutomationFailure } from "./errors";
-import { WINTER_OWN_BUNDLE_IDS } from "./protocol";
+import { CLOVER_OWN_BUNDLE_IDS } from "./protocol";
 
 export const COMPUTER_V2_TOOL_NAME = "ComputerV2";
 
@@ -65,7 +65,7 @@ export const ACT_PRIMITIVES: ReadonlySet<string> = new Set(["click", "setValue",
   // Phase 4: a site's own tool (WebMCP) — always asked for with access "full"
   "callTool"]);
 /** What a `click`-only app still permits (R17): clicks, scrolls and accessibility actions — and, on a browser's tab,
- *  its history moves, a reload, keeping, handing over or closing a tab Winter opened. */
+ *  its history moves, a reload, keeping, handing over or closing a tab Clover opened. */
 export const CLICK_ONLY_PRIMITIVES: ReadonlySet<string> = new Set(["click", "scroll", "action", "hover", "back", "forward", "reload", "keep", "handoff", "close",
   "answerDialog", "viewport", "mute", "browsers.group"]);
 
@@ -163,9 +163,9 @@ export const DESKTOP_VISIT_GRACE_MS = 1_000;
 /** The `by` of a desktop-switch card answered on the helper's on-screen panel. */
 export const DESKTOP_PROMPT_BY = "desktop-prompt";
 
-/** "Allow Winter to use Notes (com.apple.Notes)?" — the bundle id is part of the question (the ruling). */
+/** "Allow Clover to use Notes (com.apple.Notes)?" — the bundle id is part of the question (the ruling). */
 export function appCardSummary(app: AppRef): string {
-  return `Allow Winter to use ${cardName(app.name)} (${app.bundleId})?`;
+  return `Allow Clover to use ${cardName(app.name)} (${app.bundleId})?`;
 }
 
 /** An app's NAME as a card shows it: it comes from the app's own bundle, so it is cleaned like the model's reason —
@@ -180,8 +180,8 @@ export function cardName(name: string): string {
  *  are about THIS desktop: a window on another one is the desktop-switch prompt's (`desktopVisitCardSummary`). */
 export function foregroundCardSummary(app: AppRef, reason?: string): string {
   const name = cardName(app.name);
-  if (reason === undefined) return `Winter needs to bring ${name} (${app.bundleId}) to the front and use your mouse for a moment`;
-  return `Winter asks to bring ${name} (${app.bundleId}) to the front and keep it there until this step ends: ${reason}`;
+  if (reason === undefined) return `Clover needs to bring ${name} (${app.bundleId}) to the front and use your mouse for a moment`;
+  return `Clover asks to bring ${name} (${app.bundleId}) to the front and keep it there until this step ends: ${reason}`;
 }
 
 /** What needs the visit: an act (the primitive), or a live picture. */
@@ -193,7 +193,7 @@ export type DesktopVisitPurpose = { kind: "act"; primitive: string } | { kind: "
 export function desktopVisitCardSummary(app: AppRef, reason: string): string {
   const name = cardName(app.name);
   return `Switch to ${name}'s desktop for a moment? ${name} (${app.bundleId}) — ${reason}. `
-    + "Winter brings you back right after; with no answer within a minute, it switches.";
+    + "Clover brings you back right after; with no answer within a minute, it switches.";
 }
 
 /** The words an act's prompt gives as its reason: what it does and where (the script's `title`, when it has one, is
@@ -348,10 +348,10 @@ export class ComputerPolicy {
   }
 
   /** Must the app stay off a whole-screen read (a shot, `screen.windows`)? The system's authentication surfaces,
-   *  and every app whose effective access is `deny` — never Winter's own windows (the user ruling: a whole-screen
-   *  read is only for seeing; acting needs a bind, and binding Winter stays refused by `checkFloors`). */
+   *  and every app whose effective access is `deny` — never Clover's own windows (the user ruling: a whole-screen
+   *  read is only for seeing; acting needs a bind, and binding Clover stays refused by `checkFloors`). */
   hiddenFromScreen(bundleId: string): boolean {
-    if (WINTER_OWN_BUNDLE_IDS.includes(bundleId)) return false;
+    if (CLOVER_OWN_BUNDLE_IDS.includes(bundleId)) return false;
     return AUTH_DIALOG_BUNDLE_IDS.has(bundleId) || this.accessFor(bundleId) === "deny";
   }
 
@@ -360,14 +360,14 @@ export class ComputerPolicy {
    * effective access is `deny` — the user's rows, the built-in defaults and, since an app with no row is `deny`
    * while the master switch is OFF, every RUNNING app (`running`, from the helper's `apps.list`) without an
    * allowing exception. With the switch on, an app with no row is `full`, so `running` adds nothing and the caller
-   * need not ask the helper for it. Winter's own apps are NEVER on it (the user ruling: they are shown, not
+   * need not ask the helper for it. Clover's own apps are NEVER on it (the user ruling: they are shown, not
    * controlled — binding them is refused).
    */
   excludedFromScreen(running: readonly string[] = []): string[] {
     const settings = this.deps.settings();
     const out = new Set<string>(AUTH_DIALOG_BUNDLE_IDS);
     const candidates = new Set<string>([...Object.keys(computerUseAppsFrom(settings)), ...Object.keys(DEFAULT_APP_EXCEPTIONS), ...running]);
-    for (const id of candidates) if (!WINTER_OWN_BUNDLE_IDS.includes(id) && effectiveAppAccess(settings, id).access === "deny") out.add(id);
+    for (const id of candidates) if (!CLOVER_OWN_BUNDLE_IDS.includes(id) && effectiveAppAccess(settings, id).access === "deny") out.add(id);
     return [...out];
   }
 
@@ -378,11 +378,11 @@ export class ComputerPolicy {
 
   /** The floors — the same under every policy and every setting. Throws `Refused`. */
   checkFloors(app: AppRef): void {
-    if (WINTER_OWN_BUNDLE_IDS.includes(app.bundleId)) {
-      throw new AutomationFailure("Refused", "Winter never controls itself (Winter and Winter Computer Use are off limits)");
+    if (CLOVER_OWN_BUNDLE_IDS.includes(app.bundleId)) {
+      throw new AutomationFailure("Refused", "Clover never controls itself (Clover and Winter Computer Use are off limits)");
     }
     if (AUTH_DIALOG_BUNDLE_IDS.has(app.bundleId)) {
-      throw new AutomationFailure("Refused", `${app.name} is a system authentication surface — Winter never controls it; ask the user to handle it`);
+      throw new AutomationFailure("Refused", `${app.name} is a system authentication surface — Clover never controls it; ask the user to handle it`);
     }
   }
 
@@ -445,7 +445,7 @@ export class ComputerPolicy {
   }
 
   private declined(app: AppRef): AutomationFailure {
-    return new AutomationFailure("NotAllowed", `The user did not allow Winter to use ${app.name}. Don't retry — ask the user what to do instead.`);
+    return new AutomationFailure("NotAllowed", `The user did not allow Clover to use ${app.name}. Don't retry — ask the user what to do instead.`);
   }
 
   /** The per-app card. Resolves `true` when allowed (recording the grant), `false` otherwise. */
@@ -481,7 +481,7 @@ export class ComputerPolicy {
   }
 
   /**
-   * RUNG 4: may Winter bring the app to the front and use the real pointer for this action? `false` means
+   * RUNG 4: may Clover bring the app to the front and use the real pointer for this action? `false` means
    * "refuse with `NeedsForeground`" (the caller words it). On THIS desktop only — a window on another desktop is
    * `askDesktopVisit`'s.
    */
@@ -497,7 +497,7 @@ export class ComputerPolicy {
   }
 
   /**
-   * THE DESKTOP SWITCH (the ruling, 2026-10-10): may Winter move the user to `app`'s desktop for a moment? Asked under
+   * THE DESKTOP SWITCH (the ruling, 2026-10-10): may Clover move the user to `app`'s desktop for a moment? Asked under
    * EVERY policy — the session's card and the helper's on-screen panel at once, the first answer resolving both —
    * for `DESKTOP_VISIT_PROMPT_MS`; no answer ALLOWS. Chat has no computer use. The caller has already applied the
    * floors and the app's access (`authorize`), and scopes the answer to the script run.

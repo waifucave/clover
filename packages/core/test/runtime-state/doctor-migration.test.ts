@@ -1,4 +1,4 @@
-// Phase 9c (Task M Step 10) — the `winter doctor` migration rows.
+// Phase 9c (Task M Step 10) — the `clover doctor` migration rows.
 import { afterEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -9,7 +9,7 @@ import { runMigrationB, planMigrationB } from "../../src/migration/migrate-b";
 
 const dirs: string[] = [];
 function tempDir(): string {
-  const d = mkdtempSync(join(tmpdir(), "winter-doctor-migration-"));
+  const d = mkdtempSync(join(tmpdir(), "clover-doctor-migration-"));
   dirs.push(d);
   return d;
 }
@@ -124,9 +124,9 @@ describe("diagnoseMigration / formatMigrationDoctorLines", () => {
     expect(reasonLine).toBeDefined();
     expect(reasonLine).toContain(join(home, "sessions", "index.db"));
     // Advice and refusal must agree (fix wave C2) — the SAME instruction `planMigrationB`/
-    // `winter migrate` print, not the old `winter migrate --from` advice.
+    // `clover migrate` print, not the old `clover migrate --from` advice.
     expect(reasonLine).toContain(`mv ${home} ${home}.bak`);
-    expect(reasonLine).not.toContain("winter migrate --from");
+    expect(reasonLine).not.toContain("clover migrate --from");
   });
 
   test("review M2: absent + legacy home present + home IS pristine (OS noise only) — no not-pristine row at all", async () => {
@@ -179,7 +179,7 @@ describe("diagnoseMigration / formatMigrationDoctorLines", () => {
     expect(report.status).toBe("in-progress");
     const lines = formatMigrationDoctorLines(report);
     expect(lines[0]).toContain("IN PROGRESS");
-    expect(lines[0]).toContain("winter migrate --resume");
-    expect(lines[0]).toContain("winter migrate --rollback");
+    expect(lines[0]).toContain("clover migrate --resume");
+    expect(lines[0]).toContain("clover migrate --rollback");
   });
 });

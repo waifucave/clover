@@ -5,13 +5,13 @@
  *   bun run dev:headless               build and sign into dist/dev/Winter Headless Dev.app
  *   bun run dev:headless --out <dir>   build and sign into <dir> instead (dist/dev is never touched — a proof build)
  *
- * Like every Winter Headless, it carries Winter's one Chromium — the CEF framework and the five "Winter Helper" bundles —
- * in its own Contents/Frameworks (an APFS clone where the volume allows it), so it runs with no Winter.app around it. The build signs the nested code with the team identity (the hardened runtime's
+ * Like every Winter Headless, it carries Clover's one Chromium — the CEF framework and the five "Winter Helper" bundles —
+ * in its own Contents/Frameworks (an APFS clone where the volume allows it), so it runs with no Clover.app around it. The build signs the nested code with the team identity (the hardened runtime's
  * library validation needs the framework from the same team); this script then re-signs the OUTER bundle with a STATED
  * designated requirement — `identifier "com.winter.headless.dev" and anchor apple generic and certificate
  * leaf[subject.OU] = "<team>"` — the hardened runtime and no entitlements, which is exactly what the daemon checks the
  * spawned process against. Never `--deep`. The signing identity is the dev daemon's (`dev-daemon-lib.ts`'s
- * `resolveDevSigningIdentity`, `WINTER_DEV_SIGN_IDENTITY` overrides).
+ * `resolveDevSigningIdentity`, `CLOVER_DEV_SIGN_IDENTITY` overrides).
  *
  * Nothing is registered with LaunchServices (Xcode's own registration of the build product is undone): the daemon
  * spawns the helper by path, never through LaunchServices. Refuses while a dev headless helper is running (it names
@@ -21,7 +21,7 @@ import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { WINTER_TEAM_ID } from "../packages/core/src/auth/app-token-acl";
+import { CLOVER_TEAM_ID } from "../packages/core/src/auth/app-token-acl";
 import { LSREGISTER, pidsRunning } from "./computer-helper-lib";
 import { resolveDevSigningIdentity } from "./dev-daemon-lib";
 import {
@@ -48,8 +48,8 @@ function run(cmd: string, args: string[], opts: { cwd?: string } = {}): { status
 export function signingIdentity(): { hash: string; name: string } {
   return resolveDevSigningIdentity({
     identitiesOutput: run("security", ["find-identity", "-v", "-p", "codesigning"]).stdout,
-    teamId: WINTER_TEAM_ID,
-    override: process.env.WINTER_DEV_SIGN_IDENTITY,
+    teamId: CLOVER_TEAM_ID,
+    override: process.env.CLOVER_DEV_SIGN_IDENTITY,
     subjectOf: (name) => {
       const pem = run("security", ["find-certificate", "-c", name, "-p"]).stdout;
       if (pem === "") return undefined;
@@ -80,7 +80,7 @@ export function buildHeadless(log: (line: string) => void): string {
 
 /** Signs the outer bundle and checks it; the failures (empty = good). */
 export function signHeadless(appPath: string, identityHash: string): string[] {
-  const signed = run("codesign", headlessSignArgs({ identityHash, flavor: "dev", teamId: WINTER_TEAM_ID, appPath }));
+  const signed = run("codesign", headlessSignArgs({ identityHash, flavor: "dev", teamId: CLOVER_TEAM_ID, appPath }));
   if (signed.status !== 0) return [`codesign failed: ${signed.stderr.trim()}`];
   return inspectHeadless(appPath, "dev");
 }
@@ -91,7 +91,7 @@ export function inspectHeadless(appPath: string, flavor: "dist" | "dev"): string
   if (!existsSync(headlessExecutable(appPath, flavor))) return [`no executable at ${headlessExecutable(appPath, flavor)}`];
   const dr = run("codesign", ["-d", "-r-", appPath]);
   const plist = run("plutil", ["-convert", "json", "-o", "-", join(appPath, "Contents", "Info.plist")]);
-  const failures = checkSignedHeadless(flavor, WINTER_TEAM_ID, readCanonical(), {
+  const failures = checkSignedHeadless(flavor, CLOVER_TEAM_ID, readCanonical(), {
     codesignDvv: run("codesign", ["-dvv", appPath]).stderr,
     codesignDr: `${dr.stdout}\n${dr.stderr}`,
     entitlementsXml: run("codesign", ["-d", "--entitlements", "-", "--xml", appPath]).stdout,
@@ -104,7 +104,7 @@ export function inspectHeadless(appPath: string, flavor: "dist" | "dev"): string
       })),
     } : {}),
   });
-  const strict = run("codesign", ["--verify", "--deep", "--strict", `-R=${headlessRequirement(HEADLESS[flavor].identifier, WINTER_TEAM_ID)}`, appPath]);
+  const strict = run("codesign", ["--verify", "--deep", "--strict", `-R=${headlessRequirement(HEADLESS[flavor].identifier, CLOVER_TEAM_ID)}`, appPath]);
   if (strict.status !== 0) failures.push(`codesign --verify --deep --strict against the stated requirement failed: ${strict.stderr.trim()}`);
   return failures;
 }
@@ -149,7 +149,7 @@ function main(): void {
     rmSync(tmp, { recursive: true, force: true });
   }
   if (failure !== undefined) die(failure);
-  console.error(`dev:headless: ${target} — ${HEADLESS.dev.identifier}, team ${WINTER_TEAM_ID}, designated => ${headlessRequirement(HEADLESS.dev.identifier, WINTER_TEAM_ID)}, hardened runtime, no entitlements, self-contained`);
+  console.error(`dev:headless: ${target} — ${HEADLESS.dev.identifier}, team ${CLOVER_TEAM_ID}, designated => ${headlessRequirement(HEADLESS.dev.identifier, CLOVER_TEAM_ID)}, hardened runtime, no entitlements, self-contained`);
 }
 
 if (import.meta.main) main();

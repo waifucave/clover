@@ -22,19 +22,19 @@
  *            launches its own and quits it), --safari-webkit-prefs (the same with three Safari WebKitPreferences keys NO,
  *            restored exactly; needs --yes-restart-safari),
  *            --freshness-copy-to <dir> (or $CU_LIVE_FRESHNESS_COPY_DIR): also copy freshness.json there,
- *            --helper-app <path to "Winter Computer Use Dev.app"> (else $WINTER_COMPUTER_USE_APP, else dist/dev/),
+ *            --helper-app <path to "Winter Computer Use Dev.app"> (else $CLOVER_COMPUTER_USE_APP, else dist/dev/),
  *            --chrome (also the `chrome` group, chrome.ts: the leftovers' probes on Chrome for Testing bound as an app —
  *            launched on temp profiles, never the user's Chrome; `--only chrome` runs only them;
- *            $WINTER_TEST_CHROME_APP names the .app, else Playwright's chromium-1248 build)
+ *            $CLOVER_TEST_CHROME_APP names the .app, else Playwright's chromium-1248 build)
  *
- * WHAT RUNS (all isolated — nothing touches ~/.winter*, the Keychain, or the user's own daemon and helper):
- *   - a temp home `$TMPDIR/winter-cu-live-*`, and `winter-core-live` on it: the real daemon, compiled from
+ * WHAT RUNS (all isolated — nothing touches ~/.clover*, the Keychain, or the user's own daemon and helper):
+ *   - a temp home `$TMPDIR/clover-cu-live-*`, and `clover-core-live` on it: the real daemon, compiled from
  *     `daemon-entry.ts`, signed as the dev daemon (the helper accepts only that), with a FILE secret store;
  *   - a SECOND instance of the dev helper for that home (`open -n -g --env WINTER_CU_HOME=<home>`): the dev helper
  *     honours WINTER_CU_HOME, and TCC keys its Accessibility/Screen Recording grants on its designated requirement,
  *     so the instance already holds them — the runner itself needs no grant;
- *   - two fixture apps (`swift/Fixture`): "Winter CU Fixture" (the target, launched in the background, one window in
- *     full screen = on its own Space) and "Winter CU User App" (frontmost: the user's app);
+ *   - two fixture apps (`swift/Fixture`): "Clover CU Fixture" (the target, launched in the background, one window in
+ *     full screen = on its own Space) and "Clover CU User App" (frontmost: the user's app);
  *   - `cu-live-tool monitor`: the frontmost app, the active Space and the HID idle time every 20 ms (+ every
  *     activation) — every scenario asserts the user's frontmost app and Space never change, from its start until 3 s
  *     after it, and a drop of the HID idle time (real input) aborts the run. The one consented exception is the
@@ -177,7 +177,7 @@ function sh(cmd: string, args: string[], input?: string, env?: Record<string, st
 
 /**
  * The per-user temp dir (`getconf DARWIN_USER_TEMP_DIR`) — the one a LaunchServices-launched helper sees as its
- * `NSTemporaryDirectory()`. The run dir must live there: only a home inside `<it>/winter-cu-live-*` makes the dev
+ * `NSTemporaryDirectory()`. The run dir must live there: only a home inside `<it>/clover-cu-live-*` makes the dev
  * helper a live-test instance (`HelperIdentity.isLiveTestHome`), whatever `$TMPDIR` this shell has.
  */
 function userTempDir(): string {
@@ -186,7 +186,7 @@ function userTempDir(): string {
 }
 
 function makeRunDir(): string {
-  return realpathSync(mkdtempSync(join(userTempDir(), "winter-cu-live-")));
+  return realpathSync(mkdtempSync(join(userTempDir(), "clover-cu-live-")));
 }
 
 /** A unix socket path is at most 103 bytes (`sockaddr_un`); the per-user temp dir alone is ~57, so the run dir's
@@ -200,9 +200,9 @@ function homeIn(root: string): string {
 }
 
 /** `cu-live-tool image-stats` on every screenshot the live daemon wrote since `since` (`<home>/cu-live-shots`). */
-/** The chrome group's browser: `$WINTER_TEST_CHROME_APP`, else Playwright's build. */
+/** The chrome group's browser: `$CLOVER_TEST_CHROME_APP`, else Playwright's build. */
 function chromeAppPath(): string {
-  return process.env.WINTER_TEST_CHROME_APP ?? join(homedir(), CFT_DEFAULT_APP);
+  return process.env.CLOVER_TEST_CHROME_APP ?? join(homedir(), CFT_DEFAULT_APP);
 }
 
 /** Whether the chrome group is in this run: `--chrome`, or an `--only` naming it. */
@@ -249,7 +249,7 @@ async function until<T>(what: string, ms: number, probe: () => T | undefined | f
   }
 }
 
-/** One call to the live-test helper as its (test) daemon: `winter-core-live __helper-call`. */
+/** One call to the live-test helper as its (test) daemon: `clover-core-live __helper-call`. */
 function helperCall(built: Pick<Built, "daemon">, socket: string, home: string, method: string, params: unknown): { accepted?: boolean; result?: unknown; error?: unknown } {
   const r = sh(built.daemon, ["__helper-call", socket, home, method, JSON.stringify(params)], undefined, { ...cleanEnv(), WINTER_CU_LIVE_TESTS: "1" });
   try { return JSON.parse(r.stdout.trim().split("\n").at(-1) ?? "{}") as { accepted?: boolean; result?: unknown; error?: unknown }; } catch { return { error: (r.stderr || r.stdout).trim().slice(0, 200) }; }
@@ -257,7 +257,7 @@ function helperCall(built: Pick<Built, "daemon">, socket: string, home: string, 
 
 function cleanEnv(): Record<string, string> {
   const env: Record<string, string> = {};
-  for (const [k, v] of Object.entries(process.env)) if (v !== undefined && !k.startsWith("WINTER_")) env[k] = v;
+  for (const [k, v] of Object.entries(process.env)) if (v !== undefined && !k.startsWith("CLOVER_")) env[k] = v;
   return env;
 }
 
@@ -270,9 +270,9 @@ function processAlive(pid: number): boolean {
   try { process.kill(pid, 0); return true; } catch { return false; }
 }
 
-/** The dev helper app: the option, `$WINTER_COMPUTER_USE_APP`, else this checkout's `dist/dev`. Must be the DEV build. */
+/** The dev helper app: the option, `$CLOVER_COMPUTER_USE_APP`, else this checkout's `dist/dev`. Must be the DEV build. */
 function helperAppPath(o: Options): string {
-  const candidates = [o.helperApp, process.env.WINTER_COMPUTER_USE_APP, join(REPO_ROOT, "dist", "dev", "Winter Computer Use Dev.app")].filter((p): p is string => typeof p === "string" && p.length > 0);
+  const candidates = [o.helperApp, process.env.CLOVER_COMPUTER_USE_APP, join(REPO_ROOT, "dist", "dev", "Winter Computer Use Dev.app")].filter((p): p is string => typeof p === "string" && p.length > 0);
   for (const p of candidates) {
     if (!existsSync(p)) continue;
     const id = sh("plutil", ["-extract", "CFBundleIdentifier", "raw", join(p, "Contents", "Info.plist")]).stdout.trim();
@@ -365,12 +365,12 @@ async function topDelta(pid: number, windows: number, seconds: number): Promise<
 
 async function startLiveDaemon(built: Pick<Built, "daemon">, home: string): Promise<{ proc: LineProcess<Record<string, unknown>>; socket: string; pid: number }> {
   const env: Record<string, string> = {};
-  for (const [k, v] of Object.entries(process.env)) if (v !== undefined && !k.startsWith("WINTER_")) env[k] = v;
-  const winter = process.env.WINTER_RUNTIME_EXECUTABLE ?? resolvePlatformPackageWinter();
-  if (winter === undefined) throw new Error("no `winter` runtime (the npm platform package) — run `bun install`, or set WINTER_RUNTIME_EXECUTABLE");
+  for (const [k, v] of Object.entries(process.env)) if (v !== undefined && !k.startsWith("CLOVER_")) env[k] = v;
+  const winter = process.env.CLOVER_RUNTIME_EXECUTABLE ?? resolvePlatformPackageWinter();
+  if (winter === undefined) throw new Error("no `winter` runtime (the npm platform package) — run `bun install`, or set CLOVER_RUNTIME_EXECUTABLE");
   Object.assign(env, {
-    WINTER_HOME: home, WINTER_PROFILE: "dev", WINTER_CU_LIVE_TESTS: "1", WINTER_RUNTIME_EXECUTABLE: winter, TMPDIR: `${userTempDir()}/`,
-    WINTER_LOGIN_SHELL_PATH: "off", WINTER_KEYCHAIN_SERVICE: `com.winter.core.test-cu-live-${randomBytes(6).toString("hex")}`,
+    CLOVER_HOME: home, CLOVER_PROFILE: "dev", WINTER_CU_LIVE_TESTS: "1", CLOVER_RUNTIME_EXECUTABLE: winter, TMPDIR: `${userTempDir()}/`,
+    CLOVER_LOGIN_SHELL_PATH: "off", CLOVER_KEYCHAIN_SERVICE: `com.winter.core.test-cu-live-${randomBytes(6).toString("hex")}`,
     // Never the user's own Codex / Claude Code / Antigravity / OpenCode, nor the background plan beat (the daemon entry
     // also injects `USAGE_INERT` itself).
     ...USAGE_INERT_ENV,
@@ -381,7 +381,7 @@ async function startLiveDaemon(built: Pick<Built, "daemon">, home: string): Prom
   const proc = new LineProcess<Record<string, unknown>>(child, (l) => { try { return JSON.parse(l) as Record<string, unknown>; } catch { return undefined; } });
   try {
     const ready = await until("the live daemon to come up", 60_000, () => {
-      if (child.exitCode !== null) throw new Error(`winter-core-live exited (${child.exitCode}): ${proc.stderr.slice(-5).join(" | ")}`);
+      if (child.exitCode !== null) throw new Error(`clover-core-live exited (${child.exitCode}): ${proc.stderr.slice(-5).join(" | ")}`);
       return proc.items.find((i) => i.ready === true);
     });
     return { proc, socket: String(ready.socket), pid: Number(ready.pid) };
@@ -540,8 +540,8 @@ function readSession(tool: string): SessionState | null {
 /**
  * Which dev helpers accept the suite's TEST identities — no screen, no script (so no Esc tap): the dev helper's
  * executable is run as a plain child on two temp homes, as `verify:computer-helper` does. On an ordinary home it must
- * close both the test daemon (`winter-core-live __peer-hello`) and the test probe unanswered; on a live-test home
- * (`<user temp>/winter-cu-live-*`) it must accept both. A helper built before the live-test rule fails the second
+ * close both the test daemon (`clover-core-live __peer-hello`) and the test probe unanswered; on a live-test home
+ * (`<user temp>/clover-cu-live-*`) it must accept both. A helper built before the live-test rule fails the second
  * half — rebuild it from this branch (`bun run dev:helper`; its TCC grants survive, its requirement is stated).
  */
 async function peerCheck(built: Built, o: Options): Promise<ScenarioResult> {
@@ -552,14 +552,14 @@ async function peerCheck(built: Built, o: Options): Promise<ScenarioResult> {
     return { name: "the dev helper accepts the test identities only on a live-test home", group: "identity", status: "skip", ms: 0, checks: [], note: err instanceof Error ? err.message : String(err) };
   }
   const exe = join(helperApp, "Contents", "MacOS", "Winter Computer Use Dev");
-  const normalRoot = realpathSync(mkdtempSync(join(userTempDir(), "winter-cu-x-")));
+  const normalRoot = realpathSync(mkdtempSync(join(userTempDir(), "clover-cu-x-")));
   const liveRoot = makeRunDir();
   try {
     for (const [label, root, expectAccepted] of [["an ordinary temp home", normalRoot, false], ["a live-test home", liveRoot, true]] as const) {
       const home = homeIn(root);
       mkdirSync(home);
       const env: Record<string, string> = {};
-      for (const [k, v] of Object.entries(process.env)) if (v !== undefined && !k.startsWith("WINTER_")) env[k] = v;
+      for (const [k, v] of Object.entries(process.env)) if (v !== undefined && !k.startsWith("CLOVER_")) env[k] = v;
       stopCheck();
       const helper = new LineProcess<string>(spawn(exe, [], { env: { ...env, WINTER_CU_HOME: home, TMPDIR: `${userTempDir()}/` }, stdio: ["ignore", "pipe", "pipe"] }), (l) => l);
       try {
@@ -834,7 +834,7 @@ async function liveRun(built: Built, o: Options): Promise<ScenarioResult[]> {
     // where the user is, and, from a full-screen app's Space, where to return them at the end.
     const reading = await waitToStart(built, o);
     // Nothing of an earlier run may stay up: a fixture a crashed run left (binds resolve the fixture by NAME, so a
-    // second "Winter CU Fixture" is picked up), or the previous run's completion window. Every process of the
+    // second "Clover CU Fixture" is picked up), or the previous run's completion window. Every process of the
     // suite's fixture binary (its own executable name, whatever checkout built it) is closed.
     const leftovers = sh("pgrep", ["-x", "WinterCUFixture"]).stdout.split("\n").map(Number).filter((n) => Number.isInteger(n) && n > 0);
     for (const pid of leftovers) { try { process.kill(pid, "SIGTERM"); } catch { /* gone */ } }
@@ -842,7 +842,7 @@ async function liveRun(built: Built, o: Options): Promise<ScenarioResult[]> {
       await until("earlier fixture processes to exit", 5_000, () => leftovers.every((p) => !processAlive(p))).catch(() => undefined);
       log(`closed ${leftovers.length} fixture process(es) an earlier run left (a completion window included)`);
     }
-    // For the whole run: "Winter test running — don't touch the Mac" (never key, left out of every capture).
+    // For the whole run: "Clover test running — don't touch the Mac" (never key, left out of every capture).
     openBanner(built, { kind: "running", watchPid: process.pid });
     const plan = startPlan(reading);
     if (plan.kind === "refuse") throw new Error(plan.reason);
@@ -995,7 +995,7 @@ async function liveRun(built: Built, o: Options): Promise<ScenarioResult[]> {
     // ── scenarios ──────────────────────────────────────────────────────────────────────────────────────────────
     /**
      * A `wake` scenario's second half (`wake.ts`): the USER brings the fixture forward and clicks the named element (the
-     * live-test helper's `test.userClick` — a real click, stamped as the user's, or with `stamp: "winter"` as Winter's own),
+     * live-test helper's `test.userClick` — a real click, stamped as the user's, or with `stamp: "winter"` as Clover's own),
      * the helper's new on-screen windows are counted while the trigger waits (its ring and pill), and the session's
      * `computer-wake` turn is waited for (and its end, so the next scenario starts on an idle session); then the
      * scenario's cleanup turn, if any. Real input and a permission prompt are checked throughout — before the pointer
@@ -1248,7 +1248,7 @@ async function liveRun(built: Built, o: Options): Promise<ScenarioResult[]> {
     if (scenarios.some(needsChrome)) {
       const app = chromeAppPath();
       const running = runningChromeForTesting(sh("ps", ["-axo", "pid=,command="]).stdout);
-      const why = !existsSync(app) ? `Chrome for Testing is not at ${app} (set WINTER_TEST_CHROME_APP)`
+      const why = !existsSync(app) ? `Chrome for Testing is not at ${app} (set CLOVER_TEST_CHROME_APP)`
         : running.length > 0 ? `Chrome for Testing is already running (pid ${running.join(", ")}) — the group never shares a browser` : undefined;
       if (why !== undefined) {
         results.push({ name: "chrome: preflight", group: "chrome", status: "fail", ms: 0, checks: [check("Chrome for Testing is there and not running", false, why)] });
@@ -1256,7 +1256,7 @@ async function liveRun(built: Built, o: Options): Promise<ScenarioResult[]> {
       } else {
         panelFile = join(root, "panel", PANEL_FILE_NAME);
         mkdirSync(join(root, "panel"), { recursive: true });
-        writeFileSync(panelFile, "Winter's open-panel probe\n");
+        writeFileSync(panelFile, "Clover's open-panel probe\n");
         chromeRig = new ChromeRig({
           app, root, webDir: join(REPO_ROOT, "scripts", "cu-live", "fixture-web"), outDir: OUT_DIR, tool: built.tool, log, sh: (cmd, args) => sh(cmd, args),
           activateUser: () => activateUser(), activateAsUser: async (pid) => { await bringToFront(pid, "Chrome for Testing (shown once, as the user)", undefined, true); },
@@ -1763,7 +1763,7 @@ async function main(): Promise<void> {
         "  its own Space and you are brought back to yours. DON'T type, click or move the mouse until it finishes —",
         "  real input stops the run. Your clipboard's text is restored at the end (rich clipboard content is not).",
         "  Start it from a regular desktop, not from a full-screen app (the user's app must open on your Space).",
-        "  Nothing touches ~/.winter*, the Keychain, or your own Winter.",
+        "  Nothing touches ~/.clover*, the Keychain, or your own Clover.",
         "",
       ].join("\n"));
       if (!o.yes) for (let i = 5; i > 0; i--) { process.stderr.write(`  starting in ${i}… (ctrl+C to cancel)\r`); await sleep(1_000); stopCheck(); }

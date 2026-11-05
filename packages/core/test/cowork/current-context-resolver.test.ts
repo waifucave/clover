@@ -17,7 +17,7 @@ afterEach(() => { for (const db of databases.splice(0)) db.close(); for (const h
 const boot = "12345678-1234-1234-1234-123456789abc";
 const caps: CapabilityCeiling = { toolClasses: ["execute", "write", "read"], hostServices: ["git.publish"], connectors: [], network: "internet" };
 function fixture(kind: "folder" | "githubRepository" = "githubRepository") {
-  const home = mkdtempSync(join(tmpdir(), "winter-context-plan-")); roots.push(home);
+  const home = mkdtempSync(join(tmpdir(), "clover-context-plan-")); roots.push(home);
   const db = openRuntimeStateDb(home); databases.push(db);
   let mint = 0; const records = new CoworkRepository(db, () => "2026-10-13T00:00:00.000Z", prefix => `${prefix}_${++mint}`);
   const selection = (kind: "folder" | "githubRepository", suffix = "one"): SourceSelection => kind === "folder"
@@ -112,10 +112,10 @@ test("normal requested guidance aliases preserve Code ordering with admitted pat
   const f = fixture();
   const result = await resolver(f, async request => { const value = reply(request), root = request.scopes.source.root;
     value.blocks[1]!.admittedPath = `${root}/guidance/source.txt`; value.files[1]!.admittedPath = `${root}/guidance/source.txt`;
-    const extra = { requestedPath: `${root}/.winter/WINTER.md`, admittedPath: `${root}/guidance/local.txt`, text: "local", sha256: sha("local"), tier: "project" as const };
+    const extra = { requestedPath: `${root}/.clover/WINTER.md`, admittedPath: `${root}/guidance/local.txt`, text: "local", sha256: sha("local"), tier: "project" as const };
     value.blocks.push(extra); value.files.push({ ...extra, depth: 0 }); return value;
   }).resolve(f.lookup);
-  expect(result.instructions.indexOf(`${f.lookup.cwd.split("/live/")[0]}/WINTER.md)`)).toBeLessThan(result.instructions.indexOf(`${f.lookup.cwd.split("/live/")[0]}/.winter/WINTER.md)`));
+  expect(result.instructions.indexOf(`${f.lookup.cwd.split("/live/")[0]}/WINTER.md)`)).toBeLessThan(result.instructions.indexOf(`${f.lookup.cwd.split("/live/")[0]}/.clover/WINTER.md)`));
 });
 test("empty required shared guidance and confined raw imports are accepted, expansion remains reader-owned", async () => {
   const f = fixture();
@@ -282,10 +282,10 @@ function diamond(request: CoworkInstructionReadRequest): CoworkInstructionReadRe
     requestedPath: `${root}/${name}`, admittedPath: `${root}/${name}`, text, sha256: sha(text), tier: parent.tier,
     depth: parent.depth + 1, importerPath: parent.requestedPath, importerAdmittedPath: parent.admittedPath,
   });
-  top.text = "ROOT @./b.md @./c.md @./WINTER.local.md"; top.sha256 = sha(top.text);
+  top.text = "ROOT @./b.md @./c.md @./CLOVER.local.md"; top.sha256 = sha(top.text);
   const b = read("b.md", top, "B @./d.md"), d1 = read("d.md", b, "D");
   const c = read("c.md", top, "C @./d.md"), d2 = read("d.md", c, "D");
-  const local = read("WINTER.local.md", top, "LOCAL");
+  const local = read("CLOVER.local.md", top, "LOCAL");
   value.files.push(b, d1, c, d2, local);
   const localBlock = { requestedPath: local.requestedPath, admittedPath: local.admittedPath, text: "LOCAL\n", sha256: sha("LOCAL\n"), tier: "local" as const };
   value.blocks[1]!.text = "ROOT B D C D LOCAL\n"; value.blocks[1]!.sha256 = sha(value.blocks[1]!.text);
@@ -295,9 +295,9 @@ function diamond(request: CoworkInstructionReadRequest): CoworkInstructionReadRe
 test("completed diamonds and imported-then-local top-level reads retain consistent occurrence provenance", async () => {
   const f = fixture(); let observed!: CoworkInstructionReadResult;
   const snapshot = await resolver(f, async request => { observed = diamond(request); return observed; }).resolve(f.lookup);
-  expect(snapshot.instructions).toContain("ROOT B D C D LOCAL\n"); expect(snapshot.instructions).toContain("/WINTER.local.md)");
+  expect(snapshot.instructions).toContain("ROOT B D C D LOCAL\n"); expect(snapshot.instructions).toContain("/CLOVER.local.md)");
   expect(observed.files.filter(file => file.requestedPath.endsWith("/d.md"))).toHaveLength(2);
-  expect(observed.files.filter(file => file.requestedPath.endsWith("/WINTER.local.md")).map(file => file.tier)).toEqual(["project", "local"]);
+  expect(observed.files.filter(file => file.requestedPath.endsWith("/CLOVER.local.md")).map(file => file.tier)).toEqual(["project", "local"]);
 });
 test("consistent aliases may read the same admitted file in completed sibling occurrences", async () => {
   const f = fixture();

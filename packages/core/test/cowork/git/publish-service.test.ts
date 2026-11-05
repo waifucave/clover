@@ -146,7 +146,7 @@ test("a feature branch publishes end to end: host-derived path, claim, journal, 
   // canonical source revision, and a path computed from the request id.
   for (const call of [...f.guest.statCalls, ...f.guest.readCalls]) {
     expect(call).toMatchObject({ workspaceId: f.workspaceId, sessionId: "session-one", locationId: "location-one", incarnationId: "incarnation-one",
-      sourceRevision: f.source.revision, relativePath: ".winter-publish/request-one.bundle" });
+      sourceRevision: f.source.revision, relativePath: ".clover-publish/request-one.bundle" });
   }
   expect(f.guest.locateCalls).toEqual([{ workspaceId: f.workspaceId, sessionId: "session-one", sourceId: f.source.sourceId }]);
   // The claim, the dispatch and the result are one durable operation with its outbox notifications.
@@ -358,7 +358,7 @@ test("a service cannot be built over a nonsensical budget", async () => {
 });
 
 test("the intake rejects a hostile path argument shape: the path is derived from the request id alone", () => {
-  expect(publishBundlePath("req_1-A")).toBe(".winter-publish/req_1-A.bundle");
+  expect(publishBundlePath("req_1-A")).toBe(".clover-publish/req_1-A.bundle");
   for (const id of ["", "../x", "a/b", "a.b", "a b", "x".repeat(129), "a\0b", ".."]) expect(() => publishBundlePath(id)).toThrow(GitPublicationError);
 });
 

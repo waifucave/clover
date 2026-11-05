@@ -4,11 +4,11 @@ import { COWORK_TABLES } from "../../src/cowork/schema";
 import { closeSync, existsSync, mkdtempSync, openSync, rmSync, writeFileSync, writeSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { bootstrapWinterDir } from "../../src/winter-dir";
+import { bootstrapCloverDir } from "../../src/clover-dir";
 import { openRuntimeStateDb, RUNTIME_STATE_SCHEMA_VERSION, RuntimeStateUnavailableError } from "../../src/runtime-state/db";
 
 const homes: string[] = [];
-const home = () => { const h = mkdtempSync(join(tmpdir(), "winter-8a-")); homes.push(h); bootstrapWinterDir(h); return h; };
+const home = () => { const h = mkdtempSync(join(tmpdir(), "clover-8a-")); homes.push(h); bootstrapCloverDir(h); return h; };
 afterEach(() => { for (const h of homes.splice(0)) rmSync(h, { recursive: true, force: true }); });
 
 const CURRENT_TABLES = [...COWORK_TABLES, "directory_cursors", "directory_entries", "global_message_receipts", "global_messages", "held_messages", "idle_subscriptions", "memory_key_manifest", "name_leases", "projection_applied", "runtime_children", "runtime_generations", "runtime_handoffs", "runtime_projection_cursors", "run_root_quarantine", "runtime_recovery_attempts", "runtime_sessions", "runtime_sink_calls", "schema_meta", "transcript_dialects"].sort();
@@ -28,7 +28,7 @@ describe("runtime-state.db", () => {
     rs.close();
   });
   // P8b-29: schema v2 re-shapes `memory_key_manifest` to one row per moved ENTRY, because the
-  // destination directory is shared with the Winter SDK's transcripts and only an entry-level move
+  // destination directory is shared with the Clover SDK's transcripts and only an entry-level move
   // can merge into it reversibly. A v1 file must migrate IN PLACE, and the one thing a v1 row can
   // carry forward — where a tree went — must survive, or a relocated tree would lose its way back.
   describe("the v1 -> v2 memory-key manifest migration", () => {

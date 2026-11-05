@@ -21,8 +21,8 @@ import { diagnoseRuntimeState } from "../../src/runtime-state/doctor";
 type Outcome = "clean" | "appended" | "quarantined";
 
 function world() {
-  const home = mkdtempSync(join(tmpdir(), "winter-rrr-home-"));
-  const scan = mkdtempSync(join(tmpdir(), "winter-rrr-tmp-"));
+  const home = mkdtempSync(join(tmpdir(), "clover-rrr-home-"));
+  const scan = mkdtempSync(join(tmpdir(), "clover-rrr-tmp-"));
   const rs = openRuntimeStateDb(home);
   const runs = join(home, "cache", "runs");
   mkdirSync(runs, { recursive: true });
@@ -96,7 +96,7 @@ describe("recoverRunRoots — the boot sweep of cache/runs/*", () => {
 
   test("a planted LINK under cache/runs is never reconciled nor followed (it could point at any projects/ tree)", async () => {
     const w = world();
-    const elsewhere = mkdtempSync(join(tmpdir(), "winter-rrr-elsewhere-"));
+    const elsewhere = mkdtempSync(join(tmpdir(), "clover-rrr-elsewhere-"));
     mkdirSync(join(elsewhere, "projects"), { recursive: true });
     symlinkSync(elsewhere, join(w.runs, "evil"));
     writeFileSync(join(w.runs, "stray.txt"), "x");
@@ -108,24 +108,24 @@ describe("recoverRunRoots — the boot sweep of cache/runs/*", () => {
   });
 
   test("a linked cache (or cache/runs) refuses the whole sweep", async () => {
-    const home = mkdtempSync(join(tmpdir(), "winter-rrr-linked-"));
+    const home = mkdtempSync(join(tmpdir(), "clover-rrr-linked-"));
     const rs = openRuntimeStateDb(home);
-    const elsewhere = mkdtempSync(join(tmpdir(), "winter-rrr-target-"));
+    const elsewhere = mkdtempSync(join(tmpdir(), "clover-rrr-target-"));
     mkdirSync(join(elsewhere, "runs", "x", "projects"), { recursive: true });
     symlinkSync(elsewhere, join(home, "cache"));
     const { reconcile, seen } = stub({});
-    const report = await recoverRunRoots({ home, rs, reconcile, claudeResumeScanRoot: mkdtempSync(join(tmpdir(), "winter-rrr-s-")) });
+    const report = await recoverRunRoots({ home, rs, reconcile, claudeResumeScanRoot: mkdtempSync(join(tmpdir(), "clover-rrr-s-")) });
     expect(seen).toEqual([]);
     expect(report.runFolders.refused).toBe(1);
     expect(existsSync(join(elsewhere, "runs", "x"))).toBe(true);
   });
 
-  test("review M1: a Winter-leg run folder (projects/ is a link to the store) has no working copy — removed, never reconciled", async () => {
+  test("review M1: a Clover-leg run folder (projects/ is a link to the store) has no working copy — removed, never reconciled", async () => {
     const w = world();
-    const store = mkdtempSync(join(tmpdir(), "winter-rrr-store-"));
+    const store = mkdtempSync(join(tmpdir(), "clover-rrr-store-"));
     mkdirSync(join(store, "k"), { recursive: true });
     writeFileSync(join(store, "k", "s.jsonl"), "{}\n");
-    const dir = join(w.runs, "winterleg");
+    const dir = join(w.runs, "cloverleg");
     mkdirSync(dir, { recursive: true });
     symlinkSync(store, join(dir, "projects"));
     const { reconcile, seen } = stub({});
@@ -244,7 +244,7 @@ describe("recoverRunRoots — recorded local-write roots (step 6)", () => {
 
   test("a recorded official-spool root is reconciled but never deleted (not a run folder)", async () => {
     const w = world();
-    const spool = mkdtempSync(join(tmpdir(), "winter-rrr-spool-"));
+    const spool = mkdtempSync(join(tmpdir(), "clover-rrr-spool-"));
     recordRoot(w.rs, "s_1", spool, "official-spool");
     const { reconcile, seen } = stub({ [spool]: "clean" });
     await recoverRunRoots({ home: w.home, rs: w.rs, reconcile, claudeResumeScanRoot: w.scan });
@@ -314,7 +314,7 @@ describe("round 3: a crashed official resume's staging root", () => {
     const named = w.staging("claude-resume-aaaa", 0.1);
     const unnamed = w.staging("claude-resume-bbbb", 0.1);
     w.rs.db.run("INSERT INTO directory_entries (address, entry_json, updated_at) VALUES (?, ?, 't')",
-      ["winter://session/s_1", JSON.stringify({ address: "winter://session/s_1", objectKind: "session", configDir: named, processIdentity: { pid: 1, startedAt: "x" } })]);
+      ["clover://session/s_1", JSON.stringify({ address: "clover://session/s_1", objectKind: "session", configDir: named, processIdentity: { pid: 1, startedAt: "x" } })]);
     const { reconcile, seen } = stub({});
     const report = await recoverRunRoots({ home: w.home, rs: w.rs, reconcile, claudeResumeScanRoot: w.scan });
     expect(seen).toContain(named);
@@ -329,7 +329,7 @@ describe("round 3: a crashed official resume's staging root", () => {
     const named = w.staging("claude-resume-cccc", 0.1);
     recordRoot(w.rs, "s_9", join(w.runs, "gone"), "run-folder");
     w.rs.db.run("UPDATE runtime_sessions SET backend_session_id = 'be-9' WHERE winter_session_id = 's_9'");
-    w.rs.db.run("INSERT INTO directory_entries (address, entry_json, updated_at) VALUES (?, ?, 't')", ["winter://session/s_9", JSON.stringify({ configDir: named })]);
+    w.rs.db.run("INSERT INTO directory_entries (address, entry_json, updated_at) VALUES (?, ?, 't')", ["clover://session/s_9", JSON.stringify({ configDir: named })]);
     await recoverRunRoots({
       home: w.home, rs: w.rs, claudeResumeScanRoot: w.scan,
       reconcile: async () => ({ outcome: "quarantined" as const, transcripts: [{ projectKey: "k", sessionId: "be-9", outcome: "quarantined" as const, appended: 0, reason: "diverged" }] }),

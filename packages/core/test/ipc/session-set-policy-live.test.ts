@@ -1,7 +1,7 @@
 // `session.setPolicy` REPORTS a live child's refusal, and never leaves the store ahead of the child.
 //
 // The handler used to be fire-and-forget on the leg: it wrote the `approval_policy` column, called
-// `winter.get(sessionId)?.setPolicy(policy)` without awaiting, logged a rejection to the daemon log
+// `clover.get(sessionId)?.setPolicy(policy)` without awaiting, logged a rejection to the daemon log
 // and answered `{ ok: true }` regardless. That was survivable only while the official leg's own
 // `setPolicy` was a documented no-op. Now that BOTH legs tell a running child through
 // `Query.setPermissionMode`, a refusal is real — the router refuses a mode this branch may not offer,
@@ -15,19 +15,19 @@
 //     request that failed. A stored `ask` over a child in `accept-edits` is worse than either end
 //     state: this session's own gate would start denying calls the child never asks about.
 //
-// One fake driver table, both legs: `WinterSessionDrivers.get` is leg-agnostic (it answers with
+// One fake driver table, both legs: `CloverSessionDrivers.get` is leg-agnostic (it answers with
 // whichever `LegSession` a session is running on), which is exactly why one change here fixes both.
 import { describe, expect, test } from "bun:test";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, type WritableSocket } from "@yanlinglabs/winter-protocol";
+import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, type WritableSocket } from "@waifucave/clover-protocol";
 import { startIpcServer } from "../../src/ipc/server";
 import { SessionStore } from "../../src/sessions/store";
 import { FileSecretStore } from "../../src/auth/secret-store";
 import { TokenAuthority } from "../../src/auth/tokens";
 import type { SessionApprovalPolicy } from "../../src/agent/gate";
-import type { WinterSessionDrivers, LegSession } from "../../src/runtime-sdk/session-driver";
+import type { CloverSessionDrivers, LegSession } from "../../src/runtime-sdk/session-driver";
 
 class TestClient {
   private decoder = new LineDecoder();
@@ -64,7 +64,7 @@ class TestClient {
 }
 
 /** A driver table with one live session, whose `setPolicy` records — or refuses. */
-function fakeTable(opts: { told: SessionApprovalPolicy[]; refuse?: string; present?: boolean }): WinterSessionDrivers {
+function fakeTable(opts: { told: SessionApprovalPolicy[]; refuse?: string; present?: boolean }): CloverSessionDrivers {
   const never = (): never => { throw new Error("not reached by this test"); };
   const session: LegSession = {
     sessionId: "s1", backendSessionId: "be-1", mode: "code", state: "live", generation: 1, resumed: false,
@@ -91,13 +91,13 @@ function fakeTable(opts: { told: SessionApprovalPolicy[]; refuse?: string; prese
   };
 }
 
-async function boot(winter: WinterSessionDrivers): Promise<{ store: SessionStore; client: TestClient; stop: () => void }> {
-  const home = mkdtempSync(join(tmpdir(), "winter-set-policy-live-"));
+async function boot(clover: CloverSessionDrivers): Promise<{ store: SessionStore; client: TestClient; stop: () => void }> {
+  const home = mkdtempSync(join(tmpdir(), "clover-set-policy-live-"));
   const store = new SessionStore(home);
   const socketPath = join(home, "core.sock");
   const authority = new TokenAuthority(new FileSecretStore(join(home, "secrets.json")));
   const tokens = await authority.ensureTokens();
-  const server = startIpcServer({ socketPath, serverVersion: "test", tokens: authority, store, winter });
+  const server = startIpcServer({ socketPath, serverVersion: "test", tokens: authority, store, clover });
   const client = await TestClient.connect(socketPath);
   await client.hello(tokens.harness, "mac");
   return { store, client, stop: () => { client.close(); server.stop(); store.close(); } };

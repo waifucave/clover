@@ -16,7 +16,7 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { WinterMcpServerInstance } from "@yanlinglabs/winter-agent-sdk";
-import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, type WritableSocket, type SessionEvent } from "@yanlinglabs/winter-protocol";
+import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, type WritableSocket, type SessionEvent } from "@waifucave/clover-protocol";
 import { FileSecretStore } from "../../src/auth/secret-store";
 import { startDaemon, type RunningDaemon } from "../../src/daemon";
 import { sandboxAvailable } from "../../src/workflows/sandbox";
@@ -133,8 +133,8 @@ run("ComputerV2 wake triggers through a real daemon (fake helper, fake wake back
 
   beforeAll(async () => {
     notifications = guardHeadlessNotifications();
-    home = realpathSync(mkdtempSync(join(tmpdir(), "winter-wake-e2e-")));
-    cwd = realpathSync(mkdtempSync(join(tmpdir(), "winter-wake-e2e-cwd-")));
+    home = realpathSync(mkdtempSync(join(tmpdir(), "clover-wake-e2e-")));
+    cwd = realpathSync(mkdtempSync(join(tmpdir(), "clover-wake-e2e-cwd-")));
     writeFileSync(join(home, "settings.json"), JSON.stringify({
       schemaVersion: 3,
       provider: { model: "winter-test/calls" },
@@ -300,12 +300,12 @@ run("ComputerV2 wake triggers through a real daemon (fake helper, fake wake back
     const d = daemon!;
     await retire();
     const dispatchId =(await client.call<{ sessionId: string }>(METHODS.sessionDispatch, {})).sessionId;
-    await d.winter.get(dispatchId)?.end();
+    await d.clover.get(dispatchId)?.end();
     d.sessions.setModel(dispatchId, "winter-test/echo");
     const work = join(cwd, "dispatch-work");
     mkdirSync(work, { recursive: true });
     const servers = d.buildSessionCapabilities({ sessionId: dispatchId, mode: "dispatch", cwd: home, roots: [home] });
-    const spawn = await (servers["winter__sessions"]!.instance as WinterMcpServerInstance).callTool("session_spawn", {
+    const spawn = await (servers["clover__sessions"]!.instance as WinterMcpServerInstance).callTool("session_spawn", {
       dir: work, model: "winter-test/calls", title: "Listing", prompt: script(arm("await notes.wakeWhen({ clicked: 14 })")),
     }) as { content: Array<{ text: string }>; isError: boolean };
     expect(spawn.isError).toBe(false);
@@ -334,7 +334,7 @@ run("ComputerV2 wake triggers through a real daemon (fake helper, fake wake back
     await stop();
     await boot();
     const wake = await until(() => wakeMessages(log(sid))[0], 60_000, "the restart wake");
-    expect(wake.text).toContain("Winter restarted, so this wait ended — arm it again with wakeWhen() if you still need it.");
+    expect(wake.text).toContain("Clover restarted, so this wait ended — arm it again with wakeWhen() if you still need it.");
     expect(wake.text).toContain(`- ${armed.wakeId} (armed at`);
     expect(wake.text).toContain("Your note: ship it");
     expect(ended(log(sid))).toEqual([expect.objectContaining({ wakeId: armed.wakeId, reason: "restart", woken: true })]);

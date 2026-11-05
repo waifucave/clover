@@ -451,8 +451,8 @@ describe("makeApply: the runtime options diff (P8b Task 15)", () => {
     const lines: string[] = [];
     const apply = makeApply(baseDeps({ log: (m) => lines.push(m) }));
     await apply(
-      withRuntimes({ winterLeg: { chat: false, dispatch: false, code: false }, winterExecutable: "/a/winter", advisorModel: "m1", winterIdleTimeoutSec: 900 }),
-      withRuntimes({ winterLeg: { chat: true, dispatch: false, code: false }, winterExecutable: "/b/winter", advisorModel: "m2", winterIdleTimeoutSec: 60 }),
+      withRuntimes({ winterLeg: { chat: false, dispatch: false, code: false }, winterExecutable: "/a/clover", advisorModel: "m1", winterIdleTimeoutSec: 900 }),
+      withRuntimes({ winterLeg: { chat: true, dispatch: false, code: false }, winterExecutable: "/b/clover", advisorModel: "m2", winterIdleTimeoutSec: 60 }),
     );
     expect(lines.filter((l) => l.includes("takes effect for new sessions"))).toHaveLength(3);   // Task 17: winterLeg no longer re-wires anything
     // Task 17: a `false` is accepted and reported as ignored — the engine leg no longer exists

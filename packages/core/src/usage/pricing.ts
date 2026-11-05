@@ -1,7 +1,7 @@
 import { loadCatalog, type WinterModelDescriptor } from "@yanlinglabs/winter-provider-catalog";
 import { estimateCostUsd } from "@yanlinglabs/winter-provider-runtime";
 
-// Pricing for the usage DB (`docs/claude/usage.md`): the SAME catalog and the SAME price function the Winter runtime
+// Pricing for the usage DB (`docs/claude/usage.md`): the SAME catalog and the SAME price function the Clover runtime
 // prices a generation with (`@yanlinglabs/winter-provider-runtime`'s `estimateCostUsd` over the pinned catalog's
 // `pricing` evidence — only `official-doc` evidence prices; anything else is "unknown", never a guess).
 //
@@ -9,7 +9,7 @@ import { estimateCostUsd } from "@yanlinglabs/winter-provider-runtime";
 // `openai/<model>`), and the Codex CLI's and Claude Code's usage. Every such figure is a LIST-PRICE ESTIMATE: a
 // subscription is not billed per token, so the number says what the same tokens would cost on the API.
 
-/** Tokens in Winter's normalized shape: `input` EXCLUDES cache reads and writes (they are their own fields). */
+/** Tokens in Clover's normalized shape: `input` EXCLUDES cache reads and writes (they are their own fields). */
 export interface NormalizedUsage {
   input: number;
   output: number;
