@@ -1,0 +1,230 @@
+{
+  "date": "2026-11-05T11:26:52.394Z",
+  "platform": "linux",
+  "arch": "x64",
+  "versions": {
+    "node": "24.22.2",
+    "acorn": "8.18.0",
+    "ada": "4.0.0",
+    "amaro": "1.1.11",
+    "ares": "1.34.9",
+    "brotli": "1.2.0",
+    "cldr": "48.0",
+    "icu": "78.2",
+    "llhttp": "9.4.3",
+    "merve": "1.2.2",
+    "modules": "150",
+    "napi": "10",
+    "nbytes": "0.1.4",
+    "ncrypto": "0.0.1",
+    "nghttp2": "1.70.0",
+    "nghttp3": "",
+    "ngtcp2": "",
+    "openssl": "0.0.0",
+    "simdjson": "4.6.11",
+    "simdutf": "7.7.0",
+    "sqlite": "3.53.4",
+    "tz": "2026e",
+    "undici": "7.30.1",
+    "unicode": "17.0",
+    "uv": "1.52.1",
+    "uvwasi": "0.0.23",
+    "v8": "15.6.75.27-electron.0",
+    "zlib": "1.3.2.1-motley",
+    "zstd": "1.6.0",
+    "electron": "45.2.3",
+    "chrome": "156.0.8078.80"
+  },
+  "check": "memory",
+  "layers": 1,
+  "commit": "115ca242fee8d2fe3a7bff251c21be25c455fdf4",
+  "verdict": "works with limits",
+  "unit": "KiB",
+  "workload": "empty inputs, CSS menu and drag/drop fixture; no React, avatar or production UI",
+  "frames": [
+    {
+      "url": "clover-core://shell/",
+      "processId": 4,
+      "osProcessId": 3107,
+      "routingId": 1
+    },
+    {
+      "url": "clover-plugin://p1/?mount=3bb2bc1b-d8ef-4ab8-9ae5-493f1ae6a63e",
+      "processId": 5,
+      "osProcessId": 3122,
+      "routingId": 5
+    }
+  ],
+  "samples": [
+    [
+      {
+        "pid": 3107,
+        "memory": {
+          "residentSet": 108852,
+          "private": 19068,
+          "shared": 900
+        },
+        "sandboxed": true,
+        "isolated": true,
+        "namespacePid": 4,
+        "frameUrl": "clover-core://shell/",
+        "received": 1793878015487
+      },
+      {
+        "pid": 3122,
+        "memory": {
+          "residentSet": 109116,
+          "private": 19112,
+          "shared": 894
+        },
+        "sandboxed": true,
+        "isolated": true,
+        "namespacePid": 15,
+        "frameUrl": "clover-plugin://p1/?mount=3bb2bc1b-d8ef-4ab8-9ae5-493f1ae6a63e",
+        "received": 1793878015526
+      }
+    ],
+    [
+      {
+        "pid": 3107,
+        "memory": {
+          "residentSet": 108860,
+          "private": 19076,
+          "shared": 900
+        },
+        "sandboxed": true,
+        "isolated": true,
+        "namespacePid": 4,
+        "frameUrl": "clover-core://shell/",
+        "received": 1793878015987
+      },
+      {
+        "pid": 3122,
+        "memory": {
+          "residentSet": 109132,
+          "private": 19128,
+          "shared": 894
+        },
+        "sandboxed": true,
+        "isolated": true,
+        "namespacePid": 15,
+        "frameUrl": "clover-plugin://p1/?mount=3bb2bc1b-d8ef-4ab8-9ae5-493f1ae6a63e",
+        "received": 1793878016025
+      }
+    ],
+    [
+      {
+        "pid": 3107,
+        "memory": {
+          "residentSet": 108876,
+          "private": 19092,
+          "shared": 900
+        },
+        "sandboxed": true,
+        "isolated": true,
+        "namespacePid": 4,
+        "frameUrl": "clover-core://shell/",
+        "received": 1793878016987
+      },
+      {
+        "pid": 3122,
+        "memory": {
+          "residentSet": 109144,
+          "private": 19140,
+          "shared": 894
+        },
+        "sandboxed": true,
+        "isolated": true,
+        "namespacePid": 15,
+        "frameUrl": "clover-plugin://p1/?mount=3bb2bc1b-d8ef-4ab8-9ae5-493f1ae6a63e",
+        "received": 1793878017025
+      }
+    ]
+  ],
+  "rendererPrivateTotals": [
+    38180,
+    38204,
+    38232
+  ],
+  "mainMemory": {
+    "residentSet": 177040,
+    "private": 33756,
+    "shared": 1796
+  },
+  "appMetrics": [
+    {
+      "cpu": {
+        "cumulativeCPUUsage": 0.39,
+        "percentCPUUsage": 0,
+        "idleWakeupsPerSecond": 0
+      },
+      "pid": 3047,
+      "type": "Browser",
+      "creationTime": 1793878011660,
+      "memory": {
+        "workingSetSize": 178028,
+        "peakWorkingSetSize": 178104
+      }
+    },
+    {
+      "cpu": {
+        "cumulativeCPUUsage": 0.12,
+        "percentCPUUsage": 0,
+        "idleWakeupsPerSecond": 0
+      },
+      "pid": 3083,
+      "type": "GPU",
+      "creationTime": 1793878011840,
+      "serviceName": "GPU",
+      "memory": {
+        "workingSetSize": 155268,
+        "peakWorkingSetSize": 155268
+      }
+    },
+    {
+      "cpu": {
+        "cumulativeCPUUsage": 0.05,
+        "percentCPUUsage": 0,
+        "idleWakeupsPerSecond": 0
+      },
+      "pid": 3088,
+      "type": "Utility",
+      "creationTime": 1793878011850,
+      "serviceName": "network.mojom.NetworkService",
+      "name": "Network Service",
+      "memory": {
+        "workingSetSize": 99788,
+        "peakWorkingSetSize": 99932
+      }
+    },
+    {
+      "cpu": {
+        "cumulativeCPUUsage": 0.06,
+        "percentCPUUsage": 0,
+        "idleWakeupsPerSecond": 0
+      },
+      "pid": 3107,
+      "type": "Tab",
+      "creationTime": 1793878011890,
+      "memory": {
+        "workingSetSize": 108876,
+        "peakWorkingSetSize": 108876
+      }
+    },
+    {
+      "cpu": {
+        "cumulativeCPUUsage": 0.06,
+        "percentCPUUsage": 0,
+        "idleWakeupsPerSecond": 0
+      },
+      "pid": 3122,
+      "type": "Tab",
+      "creationTime": 1793878011950,
+      "memory": {
+        "workingSetSize": 109148,
+        "peakWorkingSetSize": 109148
+      }
+    }
+  ],
+  "note": "Renderer totals include trusted root. appMetrics retained separately; do not sum resident RSS as private memory."
+}
