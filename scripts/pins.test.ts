@@ -68,10 +68,12 @@ describe("packages/core/package.json's SDK pins agree with versions.ts's REQUIRE
     expect(bareVersion(range!)).toBe(REQUIRED_WINTER_AGENT_SDK);
   });
 
-  test("winter-runtime-sdk", () => {
-    const range = CORE_PACKAGE_JSON.dependencies?.["@yanlinglabs/winter-runtime-sdk"];
-    expect(range).toBeDefined();
-    expect(bareVersion(range!)).toBe(REQUIRED_WINTER_RUNTIME_SDK);
+  // A-M1 (spec §3.3): the router is archived, and what the daemon still needs of it lives in core
+  // (`runtime-sdk/host/`). Its pin names the release that code came from; no package installs it.
+  test("winter-runtime-sdk (the router) is no longer a daemon dependency", () => {
+    expect(CORE_PACKAGE_JSON.dependencies?.["@yanlinglabs/winter-runtime-sdk"]).toBeUndefined();
+    expect(BUN_LOCK.packages?.["@yanlinglabs/winter-runtime-sdk"]).toBeUndefined();
+    expect(REQUIRED_WINTER_RUNTIME_SDK).toBe("0.0.16");
   });
 
   // WS-23: the official leg is retired — the daemon depends on no claude-agent-sdk at all.

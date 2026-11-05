@@ -239,7 +239,7 @@ describe("daemon wiring — the runtime store is not readable by the model", () 
     await withTempHome(async (home) => {
       const { controlPlaneDenyRules } = await import("../../src/runtime-sdk/mode-options");
       const { tmpdir } = await import("node:os");
-      const { RESUME_STAGING_PREFIX } = await import("@yanlinglabs/winter-runtime-sdk");
+      const { RESUME_STAGING_PREFIX } = await import("../../src/runtime-sdk/host");
       const deny = controlPlaneDenyRules(home);
       // `//`-anchored (filesystem-root), never a bare single `/` (inert for an SDK-seeded rule —
       // see `fsRootAnchored`'s own comment), and the pattern itself is rooted at the SYSTEM temp

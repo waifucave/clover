@@ -108,7 +108,7 @@ import { createHostPromptQueue, type HostPromptQueue } from "./prompt-queue";
 import { CAPABILITY_PLAIN_NAMES, permissionModeFor, toolSurfaceViolations } from "./mode-options";
 import type { SessionApprovalPolicy } from "../agent/gate";
 import type { DrivableSessionMode } from "../sessions/session-mode";
-import type { RunHome } from "@yanlinglabs/winter-runtime-sdk";
+import type { RunHome } from "./host";
 import { disposeFailedRunHome, settleRunHome } from "./run-home-support";
 import { clearQueuedInput, hostInputFoldedCount, runtimeFolds } from "./fold";
 import type { HostCodeGeneration } from "./host-code-broker";

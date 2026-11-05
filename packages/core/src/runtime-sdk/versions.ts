@@ -1,5 +1,4 @@
 import { SDK_VERSION } from "@yanlinglabs/winter-agent-sdk";
-import { readResolvedManifestVersion } from "@yanlinglabs/winter-runtime-sdk";
 
 /** The exact peer versions this daemon was written against (P8b-3). The ^ ranges in package.json
  *  are what INSTALLS; these are what the tests PROVE installed. Bump together with the pins. */
@@ -131,7 +130,11 @@ export const REQUIRED_WINTER_AGENT_SDK = "0.0.55";
  *  v0.0.21 first; that release's CI run failed on pre-existing, unrelated test/build defects (no
  *  behavioural change), so the fixed build published as v0.0.22 instead — v0.0.21 was never
  *  published and this pin skips straight to it. */
-/** Bumped to 0.0.16 (2026-10-03): a clean-room rewrite of the frontmatter reader, the rule-path escape,
+/** A-M1: NO ROUTER PACKAGE IS INSTALLED ANY MORE (spec §3.3). This names the router release whose code
+ *  `runtime-sdk/host/` holds (`yanlingLabs/winter-runtime-sdk` @ c542420), for `versions.get`'s `pins`
+ *  and the staged bundle record, which still carry the field. The history below is that release's.
+ *
+ *  Bumped to 0.0.16 (2026-10-03): a clean-room rewrite of the frontmatter reader, the rule-path escape,
  *  the MCP server-name normaliser and the metadata projection. There is no behaviour change, and recorded
  *  corpora prove it. The two unreleased WS-24 run-home fixes ship here too: the `.git` search for a
  *  null gitRoot continues above the trusted root, and a project output style never redefines a user's
@@ -174,20 +177,14 @@ export const REQUIRED_WINTER_RUNTIME_SDK = "0.0.16";
 // no longer depends on `@anthropic-ai/claude-agent-sdk` at all.
 
 /**
- * Daemon settings surface (2026-09-17 plan, item 3): the installed `@yanlinglabs/winter-runtime-sdk`
- * (the router)'s own declared version, or `undefined` when it cannot be resolved — a compiled
- * `$bunfs` binary, per `readResolvedManifestVersion`'s own doc (it walks up from the resolved entry
- * file to find a `package.json`, which does not exist inside the bundle), never a throw. This is
- * NOT `CLOVER_PEER_VERSIONS.winterAgentSdk` (the WRAPPER's own `SDK_VERSION`, re-exported by that
- * package) — it is the ROUTER package's own manifest, the second installed peer `versions.get`
- * reports.
+ * A.M1: the router is gone (spec §3.3). Its run homes, runtime directory, messaging router and switch
+ * review now live in core (`runtime-sdk/host/`), taken from router 0.0.16, so there is no installed
+ * router package whose version this could read: always `undefined`, which `versions.get` reports by
+ * leaving `installed.winterRuntimeSdk` out. `REQUIRED_WINTER_RUNTIME_SDK` above stays the release the
+ * host code came from, for the `pins` field and the staged bundle record that still name it.
  */
 export function installedWinterRuntimeSdkVersion(): string | undefined {
-  try {
-    return readResolvedManifestVersion("@yanlinglabs/winter-runtime-sdk");
-  } catch {
-    return undefined;
-  }
+  return undefined;
 }
 
 /** Host-declared peer versions (router 0.0.2 consults these FIRST — the only answer that works

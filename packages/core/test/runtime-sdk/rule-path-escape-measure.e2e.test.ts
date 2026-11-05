@@ -21,7 +21,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { query as cloverQuery } from "@yanlinglabs/winter-agent-sdk";
 import { CORE_BRAND } from "../../src/runtime-sdk/brand";
-import { escapeRulePath } from "@yanlinglabs/winter-runtime-sdk";
+import { escapeRulePath } from "../../src/runtime-sdk/host";
 import { fsRootAnchored } from "../../src/runtime-sdk/mode-options";
 import { describeWithWinterBinary } from "../helpers/winter-binary";
 

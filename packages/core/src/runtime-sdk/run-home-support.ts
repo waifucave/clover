@@ -17,8 +17,8 @@
 // This is a property of the BUILD (which router package is linked), not of a daemon instance, so it
 // is read from the module namespace once and cached. Tests pin either answer with the seam below and
 // must restore it.
-import * as routerModule from "@yanlinglabs/winter-runtime-sdk";
-import type { RecoveryReport, RunHome, RunHomeInput, RunHomeOutcome, RuntimeSdk } from "@yanlinglabs/winter-runtime-sdk";
+import * as routerModule from "./host";
+import type { RecoveryReport, RunHome, RunHomeInput, RunHomeOutcome, RuntimeSdk } from "./host";
 
 /** The router HANDLE's run-home members (`createRuntimeSdk(...)`'s result on a run-home router). */
 export type RouterRunHomeHandle = Pick<RuntimeSdk, "runHomeOutcome" | "reconcileRootForRecovery">;

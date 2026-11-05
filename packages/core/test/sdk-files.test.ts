@@ -128,7 +128,7 @@ describe("the store home follows the linked router (storeHomeFor)", () => {
   afterEach(() => setRunHomeSupportForTests(undefined));
 
   test("with no override, the store home is the linked router's answer (router 0.0.11 on the lane branch: <home>)", async () => {
-    const linked = routerSupportsRunHome(await import("@yanlinglabs/winter-runtime-sdk"));
+    const linked = routerSupportsRunHome(await import("../src/runtime-sdk/host"));
     expect(linkedRouterSupportsRunHome()).toBe(linked);
     expect(storeHomeFor("/h")).toBe(linked ? "/h/sdk" : "/h");
   });

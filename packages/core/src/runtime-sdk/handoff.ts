@@ -28,8 +28,8 @@
 // overwrite, never a second one.
 import { buildSessionAddress, serializeRuntimeAddress } from "@yanlinglabs/winter-agent-sdk/messaging";
 import type { SessionKey } from "@yanlinglabs/winter-agent-sdk";
-import type { RuntimeSelection, SelectionAlternative, SerializedRuntimeAddress } from "@yanlinglabs/winter-runtime-sdk";
-import { runtimeSdkInternals } from "@yanlinglabs/winter-runtime-sdk";
+import type { RuntimeSelection, SelectionAlternative, SerializedRuntimeAddress } from "./host";
+import { runtimeSdkInternals } from "./host";
 // Winter Phase 10b (D1-6, W18-20): `SwitchReview` is `@yanlinglabs/winter-provider-runtime`'s own
 // type — the router's `reviewSwitch` declares it by importing it from THAT package too (its own
 // top-level barrel never re-exports it), so this is the one place the daemon can name the type

@@ -11,7 +11,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { buildSessionAddress, serializeRuntimeAddress } from "@yanlinglabs/winter-agent-sdk/messaging";
 import { isWinterMcpServerInstance, type Query, type WinterMcpServerInstance } from "@yanlinglabs/winter-agent-sdk";
 import type { CapabilitySession } from "../src/capabilities";
-import type { RuntimeDirectoryEntry } from "@yanlinglabs/winter-runtime-sdk";
+import type { RuntimeDirectoryEntry } from "../src/runtime-sdk/host";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { FileSecretStore } from "../src/auth/secret-store";

@@ -27,7 +27,7 @@
  */
 import { loadCatalog } from "@yanlinglabs/winter-provider-catalog";
 import type { CapabilityEvidence, ModelPricing } from "@yanlinglabs/winter-provider-catalog";
-import type { CredentialPresence } from "@yanlinglabs/winter-runtime-sdk";
+import type { CredentialPresence } from "../runtime-sdk/host";
 import { permittedProviders } from "../settings";
 import { credentialInventory, credentialPresentProbe } from "../runtime-sdk/keychain";
 import { effortVocabularyOf, imagesAcceptedBy, toolsRefusedFor } from "../runtime-sdk/provider-selection";

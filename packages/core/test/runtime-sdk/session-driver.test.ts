@@ -22,7 +22,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Options, Query } from "@yanlinglabs/winter-agent-sdk";
 import * as clover from "@yanlinglabs/winter-agent-sdk";
-import { createInMemoryRuntimeDirectoryStore, createRuntimeSdk, RunHomeError } from "@yanlinglabs/winter-runtime-sdk";
+import { createInMemoryRuntimeDirectoryStore, createRuntimeSdk, RunHomeError } from "../../src/runtime-sdk/host";
 import { ApprovalBroker } from "../../src/agent/approvals";
 import { FakeProvider } from "../../src/agent/fake-provider";
 import { SessionTitler, TITLE_INSTRUCTION } from "../../src/agent/titles";
@@ -2050,7 +2050,7 @@ describe("WS-21 round 3: the lazy canonical-cwd re-key at resume (Clover leg)", 
   test("round 4: the router's cold-resume runHomeFor canonicalizes the cwd and re-keys the transcript first", async () => {
     const { t, sid, id, real, projects, rawKey, canonKey } = await oldLayoutSession();
     try {
-      const built: import("@yanlinglabs/winter-runtime-sdk").RunHomeInput[] = [];
+      const built: import("../../src/runtime-sdk/host").RunHomeInput[] = [];
       const facts: import("../../src/runtime-sdk/run-home-input").RunHomeSessionFacts[] = [];
       const runHome: NonNullable<CloverLegDeps["runHome"]> = {
         inputFor: (f) => { facts.push(f); return { home: t.home, mode: f.mode, dispatchChild: f.dispatchChild, leg: f.leg, cwd: f.cwd, trustedProjectRoot: null, gitRoot: null, mcpDisabled: [], reservedMcpServerNames: [], memoryDir: "/m" }; },

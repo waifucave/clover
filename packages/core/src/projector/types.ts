@@ -4,7 +4,7 @@
 // name is precisely the trap G-8 / ruling P8b-8 exists to prevent: the declared contract then says
 // `user` and `stream_event` frames cannot occur, while the runtime yields both. Import the real one.
 import type { ProtocolSdkMessage } from "@yanlinglabs/winter-agent-sdk";
-import type { RuntimeKind } from "@yanlinglabs/winter-runtime-sdk";
+import type { RuntimeKind } from "../runtime-sdk/host";
 import type { NewSessionEvent, SessionEvent } from "@waifucave/clover-protocol";
 import type { DrivableSessionMode, RunnableSessionMode } from "../sessions/session-mode";
 

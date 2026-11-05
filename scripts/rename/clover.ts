@@ -56,6 +56,9 @@ export const CLOVER_EXEMPT_PATHS: readonly string[] = [
   "packages/core/test/cowork/native/",
   // ...and the guest image's builder, whose paths (`opt/winter/...`, `/usr/share/winter/...`) are that image's layout.
   "scripts/cowork-guest-artifact/",
+  // A-M1: the router's code, moved into core from router 0.0.16 and kept as it was until lane A renames it.
+  "packages/core/src/runtime-sdk/host/",
+  "packages/core/test/runtime-sdk/host/",
   // Past experiments, and the spike lanes' new ones.
   "spikes/",
   // Written for Clover after C0 (plan §7's layout): the per-OS helpers and the spike lanes' workflows. A Winter

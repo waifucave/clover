@@ -54,7 +54,7 @@ import { buildCloverOptions, toolsFor } from "../../src/runtime-sdk/mode-options
 import type { ModelTag } from "../../src/runtime-sdk/model-tag";
 import { CLOVER_ADVERTISED_MCP_TOOLS_0_0_4, CLOVER_ADVERTISED_TOOLS_0_0_4_BASE } from "../../src/runtime-sdk/tool-names";
 import { createHostPromptQueue } from "../../src/runtime-sdk/prompt-queue";
-import { buildRunHome } from "@yanlinglabs/winter-runtime-sdk";
+import { buildRunHome } from "../../src/runtime-sdk/host";
 import { runHomeInputFor } from "../../src/runtime-sdk/run-home-input";
 import { withRunHome } from "../../src/runtime-sdk/clover-session";
 import { CLOVER_CAPABILITY_TOOLS } from "../../src/capabilities";

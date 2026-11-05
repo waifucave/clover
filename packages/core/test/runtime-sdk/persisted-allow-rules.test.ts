@@ -16,7 +16,7 @@ import { mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } fro
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { CanUseTool } from "@yanlinglabs/winter-agent-sdk";
-import type { RuntimeSelection } from "@yanlinglabs/winter-runtime-sdk";
+import type { RuntimeSelection } from "../../src/runtime-sdk/host";
 import { ApprovalBroker } from "../../src/agent/approvals";
 import { PermissionGate } from "../../src/agent/gate";
 import { QuestionBroker } from "../../src/agent/questions";

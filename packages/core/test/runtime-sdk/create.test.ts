@@ -3,7 +3,7 @@
 // spawned anywhere here: the topology is exercised through `spawnHookFor`'s RESOLUTION only, which
 // is a pure function of settings/env/paths.
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { createInMemoryRuntimeDirectoryStore, type RuntimeSdk, type RuntimeSdkOptions } from "@yanlinglabs/winter-runtime-sdk";
+import { createInMemoryRuntimeDirectoryStore, type RuntimeSdk, type RuntimeSdkOptions } from "../../src/runtime-sdk/host";
 import { buildSessionAddress, serializeRuntimeAddress } from "@yanlinglabs/winter-agent-sdk/messaging";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -82,7 +82,7 @@ async function build(
   extra: Partial<WinterRuntimeSdkDeps> = {},
   grace?: number,
 ): Promise<{ handle: WinterRuntimeSdk; opts: RuntimeSdkOptions; disposeOrder: string[] }> {
-  const { createRuntimeSdk } = await import("@yanlinglabs/winter-runtime-sdk");
+  const { createRuntimeSdk } = await import("../../src/runtime-sdk/host");
   const disposeOrder: string[] = [];
   let captured: RuntimeSdkOptions | undefined;
   const handle = await createWinterRuntimeSdk(deps(extra), {

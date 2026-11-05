@@ -18,7 +18,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { query, type CanUseTool } from "@yanlinglabs/winter-agent-sdk";
 import { CORE_BRAND } from "../../src/runtime-sdk/brand";
-import type { CredentialPresence } from "@yanlinglabs/winter-runtime-sdk";
+import type { CredentialPresence } from "../../src/runtime-sdk/host";
 import { buildCloverOptions } from "../../src/runtime-sdk/mode-options";
 import type { ModelTag } from "../../src/runtime-sdk/model-tag";
 import { createHostPromptQueue } from "../../src/runtime-sdk/prompt-queue";

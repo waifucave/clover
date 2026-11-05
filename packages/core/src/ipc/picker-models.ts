@@ -1,5 +1,5 @@
 import { loadCatalog } from "@yanlinglabs/winter-provider-catalog";
-import type { CredentialPresence } from "@yanlinglabs/winter-runtime-sdk";
+import type { CredentialPresence } from "../runtime-sdk/host";
 import type { SyncConfigModel } from "@waifucave/clover-protocol";
 import { facingNameOf, type ModelTag } from "../runtime-sdk/model-tag";
 import { effortVocabularyFor, imagesAcceptedBy, toolsRefusedFor } from "../runtime-sdk/provider-selection";

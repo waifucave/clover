@@ -7,7 +7,7 @@ import type {
 import {
   disableCronEnvName, envName, mcpToolName, pluginCacheDirEnvName, providerManagedByHostEnvName, storeHomeEnvName,
 } from "@yanlinglabs/winter-agent-sdk";
-import { escapeRulePath, escapeSandboxGlobPath, PROTECTED_ITEM_DIRS, RESUME_STAGING_PREFIX, type CredentialPresence } from "@yanlinglabs/winter-runtime-sdk";
+import { escapeRulePath, escapeSandboxGlobPath, PROTECTED_ITEM_DIRS, RESUME_STAGING_PREFIX, type CredentialPresence } from "./host";
 import { EXA_API_KEY_SECRET } from "../agent/exa-key";
 import { approvedProjectRulesDir, homeCacheDir, sdkHomeFor, storeHomeFor, trustRecordFile } from "../agent/paths";
 import { repoRootFor } from "../agent/memory-dir";

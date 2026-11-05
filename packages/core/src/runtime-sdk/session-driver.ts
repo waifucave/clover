@@ -39,7 +39,7 @@ import type { PermissionClassLabel } from "@yanlinglabs/winter-agent-sdk/messagi
 import type { EffortLevel, McpServerConfig, Options, PermissionResult, ProviderConnectionConfig } from "@yanlinglabs/winter-agent-sdk";
 import { transcriptProjectKey } from "@yanlinglabs/winter-agent-sdk";
 import { loadCatalog } from "@yanlinglabs/winter-provider-catalog";
-import { isSelectionRefusal, type RuntimeDirectoryEntry, type RuntimeSelection, type SelectionAlternative } from "@yanlinglabs/winter-runtime-sdk";
+import { isSelectionRefusal, type RuntimeDirectoryEntry, type RuntimeSelection, type SelectionAlternative } from "./host";
 import type { SecretStore } from "../auth/secret-store";
 import type { ApprovalBroker } from "../agent/approvals";
 import type { PermissionGate, SessionApprovalPolicy } from "../agent/gate";
@@ -103,7 +103,7 @@ import type { ContextAssembler } from "../agent/context";
 import type { SkillStore } from "../agent/skills";
 import { startCloverSession, unconsumedUserMessages, withRunHome, withRuntimeVersion, withSessionMcpServers, type CompactOptions, type CloverChildrenSink, type CloverIncarnation, type CloverIncarnationShape, type CloverSession } from "./clover-session";
 import type { UserMessageFileRef, UserMessageImageRef } from "@waifucave/clover-protocol";
-import { RunHomeError, type RunHome, type RunHomeErrorCode, type RunHomeFor, type RunHomeInput } from "@yanlinglabs/winter-runtime-sdk";
+import { RunHomeError, type RunHome, type RunHomeErrorCode, type RunHomeFor, type RunHomeInput } from "./host";
 import { projectScopeTrusted, projectScopeRootFor, type RunHomeSessionFacts } from "./run-home-input";
 import { readCloverTasks } from "./tasks-reader";
 import { keychainService } from "../profile";

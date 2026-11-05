@@ -20,7 +20,7 @@
 // refuses records that misdescribe themselves, and a `transcriptHealth: "clean"` on a transcript
 // that does not exist would send a resume hunting for a file forever.
 import { transcriptProjectKey } from "@yanlinglabs/winter-agent-sdk";
-import type { RuntimeSelection } from "@yanlinglabs/winter-runtime-sdk";
+import type { RuntimeSelection } from "../../runtime-sdk/host";
 import { loadCatalog } from "@yanlinglabs/winter-provider-catalog";
 import { join } from "node:path";
 import { repoRootFor, sanitizeProjectKey } from "../../agent/memory-dir";

@@ -10,7 +10,7 @@
 //   - `built`: the run homes themselves (untouched — the router checks their identity);
 //   - `disposed()`: the run ids whose folder is gone (a run home is disposed by removing its folder).
 import { existsSync } from "node:fs";
-import { buildRunHome, type RunHome, type RunHomeInput } from "@yanlinglabs/winter-runtime-sdk";
+import { buildRunHome, type RunHome, type RunHomeInput } from "../../src/runtime-sdk/host";
 import { runHomeInputFor, type RunHomeSessionFacts } from "../../src/runtime-sdk/run-home-input";
 import type { CloverLegDeps } from "../../src/runtime-sdk/session-driver";
 import type { Settings } from "../../src/settings";

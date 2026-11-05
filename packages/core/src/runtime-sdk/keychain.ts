@@ -1,5 +1,5 @@
 import type { CredentialRef } from "@yanlinglabs/winter-agent-sdk";
-import type { CredentialPresence } from "@yanlinglabs/winter-runtime-sdk";
+import type { CredentialPresence } from "./host";
 import { loadCatalog } from "@yanlinglabs/winter-provider-catalog";
 import type { WinterProviderDescriptor } from "@yanlinglabs/winter-provider-catalog";
 import type { SecretStore } from "../auth/secret-store";

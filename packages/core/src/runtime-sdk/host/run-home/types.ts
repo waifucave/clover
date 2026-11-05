@@ -1,0 +1,223 @@
+// WS-21 CONTRACT A — THE RUN HOME, as the router builds it and the daemon consumes it.
+//
+// ONE SHARED RUNTIME HOME. The runtime reads `<home>/sdk` (claude's config-dir formats, Winter's
+// names), and never DIRECTLY: before every generation the router builds a
+// per-run folder, `<home>/cache/runs/<runId>`, holding exactly what this generation may see — the
+// persistent set linked in, the clash-settled items, the generated instructions, the effective
+// settings and the MCP config — and points the child at it (the brand's `HOME` variable). The spec is
+// WS-21 §3; this file is the part of it a host programs against. WS-23: the official `claude` runtime,
+// the second reader this was built for, is retired — `RunLeg` names only the Winter leg now, and the
+// formats stay claude's because the Winter runtime reads them.
+//
+// THE LIFECYCLE, IN ONE PARAGRAPH (spec §3.1, §3.8). The daemon awaits `buildRunHome` at the start of
+// every incarnation and passes the result as `runtime.runHome` on `query()`. The router applies it
+// synchronously and refuses (`run_home_required`) a generation that arrives without one when the
+// router was created with `requireRunHome: true`. When the incarnation ends the router records the run
+// home's outcome; the daemon disposes the folder only once `runHomeOutcome(runId)` says `safe`. A
+// crash — or an upgrading home's leftover official working copy — is recovered through
+// `reconcileRootForRecovery(root)`.
+//
+// EVERY PRODUCT NAME HERE DERIVES FROM A BRAND. The instructions file, the project directory, the
+// global config file and the product env variables are the brand's (`RunHomeInput.brand`, defaulting
+// to the Winter SDK's own profile). Claude's names — `CLAUDE.md`, `.claude.json`, `file-history`,
+// `CLAUDE_CODE_*` — are the official runtime's own and stay fixed (WS-01 §5).
+import { join, isAbsolute } from "node:path";
+import { WINTER_BRAND, type BrandProfile } from "@yanlinglabs/winter-agent-sdk";
+
+
+/** The session modes a run home is built for (spec §3.2's columns). */
+export type RunMode = "code" | "dispatch" | "chat";
+
+/**
+ * Which runtime the generation runs on. WS-23: only the Winter leg — the official leg (whose
+ * `projects/` was a mirrored working copy, spec §3.3) is retired, and `buildRunHome` refuses it typed.
+ */
+export type RunLeg = "winter";
+
+/** The brand fields the builder spells names from. Absent = the Winter SDK's own profile. */
+export type RunHomeBrand = Pick<BrandProfile, "homeDirName" | "projectDirName" | "instructionsFile" | "envPrefix" | "mcpServerName">;
+
+export interface RunHomeInput {
+  /** The daemon's home (`WINTER_HOME`). The shared runtime home is `sdkHomeOf(home)`. */
+  home: string;
+  mode: RunMode;
+  /** A code-mode child of a dispatch session: its output style is skipped (spec §3.2). */
+  dispatchChild: boolean;
+  leg: RunLeg;
+  /** The session's working directory. The router refuses to apply a run home to a different cwd. */
+  cwd: string;
+  /** `repoRootFor(cwd)` when the project is trusted, else `null` (no project tier at all). */
+  trustedProjectRoot: string | null;
+  /** The canonical git root — the local settings tier's anchor (F17). `null` outside a repository. */
+  gitRoot: string | null;
+  /** `mcp.disabled`: servers dropped from the generated `.winter.json`, and reported. */
+  mcpDisabled: readonly string[];
+  /**
+   * The daemon's capability-server names; a configured server under one is dropped and reported — compared
+   * on claude's NORMALISED server name (R.3 M5), so a name spelling the same tool names is dropped too.
+   */
+  reservedMcpServerNames: readonly string[];
+  /** The auto-memory directory for this incarnation (spec §3.7), pinned on both legs. */
+  memoryDir: string;
+  /**
+   * WS-21 DECISION (L2): the brand the product names are spelled from. Optional, and absent means the
+   * Winter SDK's own profile — a Winter daemon never passes it. It exists because the router spells
+   * no product name literally (its brand gate), and the router refuses to apply a run home built for a
+   * different brand than its own.
+   */
+  brand?: RunHomeBrand;
+}
+
+/** What the builder did not do, and why — surfaced by `winter doctor` (spec §8). */
+export interface RunHomeReport {
+  /** A project-tier item whose link target lies outside the project root, or a vanished target. */
+  skippedLinks: { path: string; reason: "outside-root" | "missing" }[];
+  /** A user-tier item linked although it points outside `sdk/` (linked as-is, spec §3.4.6). */
+  externalUserLinks: string[];
+  droppedMcpServers: { name: string; reason: "disabled" | "reserved-name" }[];
+  /** Project rules whose `paths:` could not be expressed from the cwd, loaded unconditionally. */
+  unconditionalRules: string[];
+  /** `@imports` a project or local instructions file, or a project rule (R.3, C1 i), named outside the project root. */
+  droppedImports: string[];
+  /**
+   * Agent definitions not copied (fix round 1, I1): the runtime's own parse of the frontmatter failed,
+   * the rewrite could not be proved to read back as intended, or this process has no `Bun.YAML`.
+   */
+  skippedAgents: { path: string; reason: "unparseable" | "no-yaml-parser" }[];
+  /**
+   * Rules and settings the builder dropped rather than widen: a re-anchored ALLOW under an anchor holding `?`
+   * (review minor); a sandbox ALLOW entry whose anchor holds `*`/`?`, on either leg; a repository tier's
+   * escalating `permissions.defaultMode` (`"permissions.defaultMode: <mode>"`, R.3 I1); `fallbackModel` and
+   * `modelOverrides` from any tier, and `model`/`availableModels`/`advisorModel`/`enforceAvailableModels`
+   * from a repository tier (the key's name, R.3 M3, Touch 4); from a repository tier also the effort keys
+   * (`effortLevel`, `modelSettings`, `ultracode`, `alwaysThinkingEnabled`), `outputStyle` and an unsafe
+   * `plansDirectory` (WS-24); and a project output style whose frontmatter could not be rewritten
+   * (`"output style: <path>"`, WS-24). A local tier the repository shipped is filtered as the project tier.
+   */
+  droppedRules: { rule: string; tier: "user" | "project" | "local"; reason: string }[];
+}
+
+export interface RunHome {
+  /** A random UUID. The folder's name, and the key `runHomeOutcome` answers for. */
+  runId: string;
+  /** `<home>/cache/runs/<runId>` — 0700, files 0600. */
+  dir: string;
+  /** `sdkHomeOf(input.home)`. */
+  sdkHome: string;
+  input: RunHomeInput;
+  /** Exactly what `<dir>/settings.json` holds. */
+  effectiveSettings: Record<string, unknown>;
+  report: RunHomeReport;
+  /** `rm -rf <dir>`: links are removed, their targets untouched. The caller reconciles first. Idempotent. */
+  dispose(): Promise<void>;
+}
+
+/** Bumped when a field a host reads changes meaning. */
+export const RUN_HOME_CONTRACT_VERSION = 1;
+
+/**
+ * claude's persistent config-dir set (spec F18): pre-created in `sdk/` and symlinked into every run
+ * folder, so what a runtime writes there outlives the folder. `projects/` is not in it — it differs by
+ * leg — and neither is `plugins/`, which is reached through the plugin-cache variable.
+ */
+export const RUN_HOME_PERSISTENT_ENTRIES = ["file-history", "tasks", "teams", "agent-memory", "workflows"] as const;
+
+/** `outcome` of a run home, by run id. `pending` = the incarnation is still running (or unknown). */
+export type RunHomeOutcome = "safe" | "quarantined" | "pending";
+
+/** The context the router's own cold-resume path hands the host when it needs a run home. */
+export interface RunHomeForContext {
+  /** The Winter session id of the session being resumed. */
+  sessionId: string;
+  leg: RunLeg;
+  cwd: string;
+  mode: RunMode;
+}
+
+/** Registered at router creation (`RuntimeSdkOptions.runHomeFor`). */
+export type RunHomeFor = (ctx: RunHomeForContext) => Promise<RunHome>;
+
+/** `join(home, "sdk")` — the one shared runtime home both runtimes read. */
+export function sdkHomeOf(home: string): string {
+  return join(home, "sdk");
+}
+
+/**
+ * claude's ABSOLUTE permission-rule spelling: `/` followed by the absolute path, so `/Users/x` is
+ * `//Users/x` (F17: `//x` is absolute, `/x` is relative to the rule's source, `~/x` is `$HOME`).
+ *
+ * The one helper every rule the router writes goes through (spec §7.2, r2 I8) — never string
+ * concatenation at a call site. A relative path is refused: there is nothing to anchor it on.
+ */
+export function fsRootAnchored(absPath: string): string {
+  if (typeof absPath !== "string" || absPath.length === 0 || !isAbsolute(absPath)) {
+    throw new TypeError(`fsRootAnchored: ${JSON.stringify(absPath)} is not an absolute path, so it has no root to anchor on`);
+  }
+  return `/${absPath}`;
+}
+
+/** Characters the gitignore-pattern layer of `escapeRulePath` puts a backslash before. */
+const GITIGNORE_ESCAPED = new Set(["\\", "[", "]", "(", ")", "|", "+", "^", "$", "*"]);
+
+/** A literal path spelled for the content of a permission rule (`Tool(<content>)`): a gitignore-pattern escape, then a rule-content escape over it. */
+export function escapeRulePath(path: string): string {
+  // Layer 1 (gitignore pattern): a backslash and the pattern metacharacters are escaped. `?`, braces,
+  // `!`/`#` mid-path and inner spaces are matched literally as written, so they stay raw.
+  let pattern = "";
+  for (const char of path) pattern += GITIGNORE_ESCAPED.has(char) ? `\\${char}` : char;
+  // A leading `!` (negation) or `#` (comment) would change what the pattern means.
+  if (pattern.startsWith("!") || pattern.startsWith("#")) pattern = `\\${pattern}`;
+  // Trailing whitespace is trimmed by the pattern reader unless each character is escaped.
+  pattern = pattern.replace(/\s+$/, (run) => run.replace(/[\s\S]/g, (c) => `\\${c}`));
+  // Layer 2 (rule content): the content is unescaped once before the pattern is read, so every backslash
+  // is doubled, and parens are escaped so the rule's own `Tool(...)` delimiters stay unambiguous.
+  return pattern.replace(/\\/g, "\\\\").replace(/[()]/g, (paren) => `\\${paren}`);
+}
+
+/** The item directories whose writes are protected (spec §7.2). */
+export const PROTECTED_ITEM_DIRS = ["skills", "commands", "rules", "output-styles"] as const;
+
+/**
+ * Spec §7.2's protected paths, as flag-layer `permissions.ask` rules: `Edit(...)` and `Write(...)` over
+ * `sdk/{skills,commands,rules,output-styles}/**`, `sdk/<instructions file>` and, for a trusted project,
+ * `<root>/**\/<project dir>/{skills,commands,rules,output-styles}/**` — the project's item dirs AT ANY
+ * DEPTH under the root (C1).
+ *
+ * WHY ANY DEPTH, not the walk: a later session whose cwd is deeper loads that deeper directory's items
+ * (the walk runs from ITS cwd), so a write from the root's session into `packages/app/<project dir>/
+ * skills/` must ask now — the walk-only rules (fix round 1, I2) covered only the dirs between THIS
+ * session's cwd and the root. MEASURED on the pinned runtime (scripted loopback): a mid-path `**` in an
+ * `//`-anchored rule matches zero or more directories — the root's own `<project dir>/` and one two
+ * levels down both reach `canUseTool`, under `acceptEdits` and under `bypassPermissions` alike, and an
+ * unprotected sibling does not (`test/official/protected-ask-fires.test.ts`).
+ *
+ * Every PATH part is spelled with `escapeRulePath` (the glob parts — `**`, `/**` — are the rule's own).
+ * A root at or above `$HOME` is protected as given (more asks, never fewer).
+ *
+ * @param walk DEPRECATED (minors round, item 1) and IGNORED: every walk directory is under the root,
+ * which the any-depth rule already covers. Kept optional only so existing callers still compile.
+ */
+export function protectedPathRules(
+  sdkHome: string,
+  trustedProjectRoot: string | null,
+  brand: Pick<RunHomeBrand, "projectDirName" | "instructionsFile"> = WINTER_BRAND,
+  /** @deprecated Ignored — the any-depth rule covers every walk directory. */
+  walk?: { cwd: string; userHome?: string },
+): string[] {
+  void walk;
+  const sdk = escapeRulePath(sdkHome);
+  const targets: string[] = [];
+  for (const kind of PROTECTED_ITEM_DIRS) targets.push(`${fsRootAnchored(join(sdk, kind))}/**`);
+  targets.push(fsRootAnchored(join(sdk, brand.instructionsFile)));
+  if (trustedProjectRoot !== null) {
+    const root = escapeRulePath(trustedProjectRoot);
+    for (const kind of PROTECTED_ITEM_DIRS) targets.push(`${fsRootAnchored(join(root, "**", brand.projectDirName, kind))}/**`);
+  }
+  return ["Edit", "Write"].flatMap((tool) => targets.map((target) => `${tool}(${target})`));
+}
+
+/** The brand a run home was built with, filled in. */
+export function runHomeBrandOf(input: Pick<RunHomeInput, "brand">): RunHomeBrand {
+  const brand = input.brand ?? WINTER_BRAND;
+  return { homeDirName: brand.homeDirName, projectDirName: brand.projectDirName, instructionsFile: brand.instructionsFile, envPrefix: brand.envPrefix, mcpServerName: brand.mcpServerName };
+}

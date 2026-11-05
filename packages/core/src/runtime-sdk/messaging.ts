@@ -59,7 +59,7 @@ import type {
   RuntimeDirectoryStore,
   RuntimeSdk,
   SerializedRuntimeAddress,
-} from "@yanlinglabs/winter-runtime-sdk";
+} from "./host";
 import type { WinterRuntimeSdk } from "./create";
 import { CLOVER_PEER_VERSIONS } from "./versions";
 import { UNSTATED_TAG } from "./model-tag";

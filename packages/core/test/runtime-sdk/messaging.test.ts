@@ -15,8 +15,8 @@ import {
 import type { DeliveryOutcome, GlobalAgentMessage, ListedRuntimeObject, PermissionClassLabel } from "@yanlinglabs/winter-agent-sdk/messaging";
 import type { Query, SessionMessagingFacet } from "@yanlinglabs/winter-agent-sdk";
 import * as clover from "@yanlinglabs/winter-agent-sdk";
-import { createInMemoryRuntimeDirectoryStore, createRuntimeSdk } from "@yanlinglabs/winter-runtime-sdk";
-import type { RuntimeDirectoryStore, RuntimeSdk, SerializedRuntimeAddress } from "@yanlinglabs/winter-runtime-sdk";
+import { createInMemoryRuntimeDirectoryStore, createRuntimeSdk } from "../../src/runtime-sdk/host";
+import type { RuntimeDirectoryStore, RuntimeSdk, SerializedRuntimeAddress } from "../../src/runtime-sdk/host";
 import { CORE_BRAND } from "../../src/runtime-sdk/brand";
 import { attachWinterSession, parkRecoveredSessions, releaseAllHeld, renderAttributedTurn } from "../../src/runtime-sdk/messaging";
 import type { WinterRuntimeSdk } from "../../src/runtime-sdk/create";
