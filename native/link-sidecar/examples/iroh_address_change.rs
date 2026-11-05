@@ -43,6 +43,9 @@ async fn main() -> Result<()> {
                     let conn = incoming.accept()?.await?;
                     let (mut send, mut recv) = conn.accept_bi().await?;
                     tokio::io::copy(&mut recv, &mut send).await?;
+                    send.finish()?;
+                    // Keep the connection until the client closes it, so the last echoes arrive.
+                    conn.closed().await;
                     anyhow::Ok(())
                 });
             }
@@ -64,8 +67,8 @@ async fn main() -> Result<()> {
                 }
                 anyhow::Ok(())
             });
-            // Replies, and the longest wait between two of them (from, to), in seconds.
-            let (mut got, mut last, mut gap) = (0, 0.0f64, (0.0f64, 0.0f64));
+            // Replies, and every wait of over a second between two of them (from, to), in seconds.
+            let (mut got, mut last, mut gaps) = (0, 0.0f64, Vec::new());
             let mut buf = [0u8; 64];
             while got < total {
                 match tokio::time::timeout(Duration::from_secs(20), recv.read_exact(&mut buf)).await
@@ -74,17 +77,24 @@ async fn main() -> Result<()> {
                     _ => break,
                 }
                 let now = start.elapsed().as_secs_f64();
-                if now - last > gap.1 - gap.0 {
-                    gap = (last, now);
+                if now - last > 1.0 {
+                    gaps.push(format!(
+                        "{:.2} s from {last:.2} s to {now:.2} s",
+                        now - last
+                    ));
                 }
                 last = now;
             }
             println!(
-                "sent for {secs} s: {got}/{total} echoes back; longest gap {:.2} s, from {:.2} s to {:.2} s",
-                gap.1 - gap.0,
-                gap.0,
-                gap.1
+                "sent for {secs} s: {got}/{total} echoes back; gaps over 1 s: {}",
+                if gaps.is_empty() {
+                    "none".to_string()
+                } else {
+                    gaps.join(", ")
+                }
             );
+            conn.close(0u32.into(), b"done");
+            ep.close().await;
         }
         _ => eprintln!(
             "usage: iroh_address_change serve <ip:port> | ping <ip:port> <endpoint id> <seconds>"
