@@ -1,0 +1,9 @@
+{
+  "type": "cdp_event",
+  "ts": 1781270000000,
+  "tab": "tab_1",
+  "method": "Page.loadEventFired",
+  "params": {
+    "timestamp": 1234.5
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "type": "ui_settings_changed",
+  "ts": 1781270000000,
+  "settings": {
+    "picks": [
+      {
+        "spot": "composer",
+        "bot": "alpha",
+        "entry": "vn-composer"
+      }
+    ],
+    "lists": [],
+    "language": "pt-BR"
+  }
+}

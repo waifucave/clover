@@ -1,0 +1,480 @@
+{
+  "area": "agents",
+  "owner": "K",
+  "methods": {
+    "agent.backends": {
+      "doc": "The agent backends plugins contribute, with what each computer has (§5.3, §9.3).",
+      "owner": "K",
+      "direction": "to-daemon",
+      "roles": [
+        "app",
+        "cli"
+      ],
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {}
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "backends": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                },
+                "name": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "en": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "en"
+                      ],
+                      "additionalProperties": {
+                        "type": "string"
+                      }
+                    }
+                  ]
+                },
+                "pluginId": {
+                  "type": "string",
+                  "maxLength": 81,
+                  "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+                },
+                "protocol": {
+                  "type": "string",
+                  "enum": [
+                    "acp",
+                    "cloud"
+                  ]
+                },
+                "placement": {
+                  "type": "string",
+                  "enum": [
+                    "local",
+                    "cloud"
+                  ]
+                },
+                "computers": {
+                  "maxItems": 256,
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "computer": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 63,
+                        "pattern": "^[A-Za-z0-9]+(-[A-Za-z0-9]+)*$"
+                      },
+                      "installed": {
+                        "type": "boolean"
+                      },
+                      "version": {
+                        "type": "string",
+                        "maxLength": 64
+                      },
+                      "sandboxed": {
+                        "type": "boolean"
+                      },
+                      "marks": {
+                        "maxItems": 16,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "enum": [
+                            "stores-plain-text",
+                            "passes-environment",
+                            "no-deny-list",
+                            "unsandboxed",
+                            "unasked-actions",
+                            "persists-model-choice"
+                          ]
+                        }
+                      }
+                    },
+                    "required": [
+                      "computer",
+                      "installed",
+                      "marks"
+                    ],
+                    "additionalProperties": false
+                  }
+                }
+              },
+              "required": [
+                "id",
+                "name",
+                "pluginId",
+                "protocol",
+                "placement",
+                "computers"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "backends"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "agent.definitions": {
+      "doc": "Agent definitions from plugins, the presets `Agent` offers.",
+      "owner": "K",
+      "direction": "to-daemon",
+      "roles": [
+        "app",
+        "cli"
+      ],
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {}
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "definitions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                },
+                "name": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "en": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "en"
+                      ],
+                      "additionalProperties": {
+                        "type": "string"
+                      }
+                    }
+                  ]
+                },
+                "pluginId": {
+                  "type": "string",
+                  "maxLength": 81,
+                  "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+                },
+                "backend": {
+                  "type": "string",
+                  "maxLength": 128
+                },
+                "model": {
+                  "type": "string",
+                  "maxLength": 200
+                },
+                "effort": {
+                  "type": "string",
+                  "maxLength": 32
+                },
+                "computer": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 63,
+                  "pattern": "^[A-Za-z0-9]+(-[A-Za-z0-9]+)*$"
+                },
+                "root": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096,
+                  "pattern": "^(home|bots)(\\/|$)"
+                }
+              },
+              "required": [
+                "id",
+                "name",
+                "pluginId",
+                "backend"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "definitions"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "agent.start": {
+      "doc": "Starts a coding session the user drives directly, with no bot (`clover code`, §9.3).",
+      "owner": "K",
+      "direction": "to-daemon",
+      "roles": [
+        "app",
+        "cli"
+      ],
+      "userOnly": true,
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "backend": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "computer": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 63,
+            "pattern": "^[A-Za-z0-9]+(-[A-Za-z0-9]+)*$"
+          },
+          "root": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096,
+            "pattern": "^(home|bots)(\\/|$)"
+          },
+          "model": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "effort": {
+            "type": "string",
+            "maxLength": 32
+          },
+          "definition": {
+            "type": "string",
+            "maxLength": 128
+          },
+          "prompt": {
+            "type": "string",
+            "maxLength": 1000000
+          }
+        },
+        "required": [
+          "backend",
+          "computer",
+          "root"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "session": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9._:-]+$"
+          }
+        },
+        "required": [
+          "session"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "bridge.tools": {
+      "doc": "The plugin tools in this agent's scope, plus `SendMessage` and `Glossary`, and the instructions the bridge sends as its own.",
+      "owner": "K",
+      "direction": "to-daemon",
+      "roles": [
+        "bridge"
+      ],
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {}
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "tools": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64
+                },
+                "description": {
+                  "type": "string",
+                  "maxLength": 10000
+                },
+                "inputSchema": {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "additionalProperties": {}
+                }
+              },
+              "required": [
+                "name",
+                "description",
+                "inputSchema"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "instructions": {
+            "type": "string",
+            "maxLength": 64000
+          }
+        },
+        "required": [
+          "tools",
+          "instructions"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "bridge.call": {
+      "doc": "Runs a bridged tool wherever it actually runs, under the same approval rules (§9.3).",
+      "owner": "K",
+      "direction": "to-daemon",
+      "roles": [
+        "bridge"
+      ],
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "callId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "tool": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "input": {}
+        },
+        "required": [
+          "callId",
+          "tool",
+          "input"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "content": {
+            "type": "array",
+            "items": {}
+          },
+          "isError": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "content",
+          "isError"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "bridge.sendMessage": {
+      "doc": "The agent messages its bot (or another session); it folds in like any bot message (§9.3).",
+      "owner": "K",
+      "direction": "to-daemon",
+      "roles": [
+        "bridge"
+      ],
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000000
+          },
+          "to": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9._:-]+$"
+          }
+        },
+        "required": [
+          "text"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "events": {
+    "agent_backends_changed": {
+      "doc": "A backend was added, removed or detected anew; clients re-read `agent.backends`.",
+      "owner": "K",
+      "scope": "core",
+      "roles": [
+        "app",
+        "cli"
+      ],
+      "schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "agent_backends_changed"
+          },
+          "ts": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "type",
+          "ts"
+        ]
+      }
+    }
+  }
+}

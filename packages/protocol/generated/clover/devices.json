@@ -1,0 +1,2493 @@
+{
+  "area": "devices",
+  "owner": "H",
+  "methods": {
+    "device.list": {
+      "doc": "Every paired device, phones and browsers included, with its link.",
+      "owner": "H",
+      "direction": "to-daemon",
+      "roles": [
+        "app",
+        "cli",
+        "remote",
+        "layer"
+      ],
+      "capability": "devices.read",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {}
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "devices": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "pattern": "^[a-z0-9]{16,64}$"
+                },
+                "name": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 63
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "desktop",
+                    "server",
+                    "cloud",
+                    "phone",
+                    "browser"
+                  ]
+                },
+                "os": {
+                  "type": "string",
+                  "enum": [
+                    "macos",
+                    "windows",
+                    "linux"
+                  ]
+                },
+                "runsCore": {
+                  "type": "boolean"
+                },
+                "computer": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 63,
+                  "pattern": "^[A-Za-z0-9]+(-[A-Za-z0-9]+)*$"
+                },
+                "hasDisplay": {
+                  "type": "boolean"
+                },
+                "online": {
+                  "type": "boolean"
+                },
+                "link": {
+                  "type": "object",
+                  "properties": {
+                    "peer": {
+                      "type": "string",
+                      "pattern": "^[a-z0-9]{16,64}$"
+                    },
+                    "up": {
+                      "type": "boolean"
+                    },
+                    "path": {
+                      "type": "string",
+                      "enum": [
+                        "lan",
+                        "direct",
+                        "relay"
+                      ]
+                    },
+                    "relay": {
+                      "type": "string",
+                      "maxLength": 128
+                    },
+                    "rttMs": {
+                      "type": "number",
+                      "minimum": 0
+                    },
+                    "since": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    }
+                  },
+                  "required": [
+                    "peer",
+                    "up"
+                  ],
+                  "additionalProperties": false
+                },
+                "isThis": {
+                  "type": "boolean"
+                },
+                "isMain": {
+                  "type": "boolean"
+                },
+                "addedAt": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "lastSeenAt": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "answers": {
+                  "type": "object",
+                  "properties": {
+                    "held": {
+                      "type": "string",
+                      "enum": [
+                        "secure-enclave",
+                        "keystore",
+                        "app-keychain",
+                        "tpm",
+                        "hello",
+                        "none"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "held"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "id",
+                "name",
+                "kind",
+                "runsCore",
+                "online",
+                "isThis",
+                "isMain",
+                "addedAt"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "devices"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "device.rename": {
+      "doc": "Renames a device; a computer keeps its old tree name as an alias (§9.1).",
+      "owner": "H",
+      "direction": "to-daemon",
+      "roles": [
+        "app",
+        "cli",
+        "remote"
+      ],
+      "userOnly": true,
+      "change": "core",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z0-9]{16,64}$"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 63
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "applied": {
+                "type": "boolean",
+                "const": true
+              }
+            },
+            "required": [
+              "applied"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "applied": {
+                "type": "boolean",
+                "const": false
+              },
+              "card": {
+                "type": "string",
+                "pattern": "^card_[A-Za-z0-9_-]{6,64}$"
+              }
+            },
+            "required": [
+              "applied",
+              "card"
+            ],
+            "additionalProperties": false
+          }
+        ]
+      }
+    },
+    "device.revoke": {
+      "doc": "Revokes a device: its links are cut at once and a guided rotation of synced keys starts (§8.1).",
+      "owner": "H",
+      "direction": "to-daemon",
+      "roles": [
+        "app",
+        "cli",
+        "remote"
+      ],
+      "userOnly": true,
+      "change": "sensitive",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z0-9]{16,64}$"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "applied": {
+                "type": "boolean",
+                "const": true
+              }
+            },
+            "required": [
+              "applied"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "applied": {
+                "type": "boolean",
+                "const": false
+              },
+              "card": {
+                "type": "string",
+                "pattern": "^card_[A-Za-z0-9_-]{6,64}$"
+              }
+            },
+            "required": [
+              "applied",
+              "card"
+            ],
+            "additionalProperties": false
+          }
+        ]
+      }
+    },
+    "device.pair.begin": {
+      "doc": "Shows a pairing code and QR for a device to join, without an account (§8.1).",
+      "owner": "H",
+      "direction": "to-daemon",
+      "roles": [
+        "app",
+        "cli"
+      ],
+      "userOnly": true,
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {}
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "pairingId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "code": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "qr": {
+            "type": "string",
+            "maxLength": 4096
+          },
+          "words": {
+            "minItems": 4,
+            "maxItems": 4,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 32
+            }
+          },
+          "expiresAt": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "pairingId",
+          "expiresAt"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "device.pair.join": {
+      "doc": "Joins another device's pairing by its code or QR payload; both then show the same four words.",
+      "owner": "H",
+      "direction": "to-daemon",
+      "roles": [
+        "app",
+        "cli"
+      ],
+      "userOnly": true,
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          }
+        },
+        "required": [
+          "code"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "pairingId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "code": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "qr": {
+            "type": "string",
+            "maxLength": 4096
+          },
+          "words": {
+            "minItems": 4,
+            "maxItems": 4,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 32
+            }
+          },
+          "expiresAt": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "pairingId",
+          "expiresAt"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "device.pair.confirm": {
+      "doc": "Confirms the four words; adding a device is a sealed card unless made in the user's own terminal.",
+      "owner": "H",
+      "direction": "to-daemon",
+      "roles": [
+        "app",
+        "cli"
+      ],
+      "userOnly": true,
+      "change": "sensitive",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "pairingId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "words": {
+            "minItems": 4,
+            "maxItems": 4,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 32
+            }
+          }
+        },
+        "required": [
+          "pairingId",
+          "words"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "applied": {
+                "type": "boolean",
+                "const": true
+              }
+            },
+            "required": [
+              "applied"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "applied": {
+                "type": "boolean",
+                "const": false
+              },
+              "card": {
+                "type": "string",
+                "pattern": "^card_[A-Za-z0-9_-]{6,64}$"
+              }
+            },
+            "required": [
+              "applied",
+              "card"
+            ],
+            "additionalProperties": false
+          }
+        ]
+      }
+    },
+    "device.pair.cancel": {
+      "doc": "Cancels a pairing.",
+      "owner": "H",
+      "direction": "to-daemon",
+      "roles": [
+        "app",
+        "cli"
+      ],
+      "userOnly": true,
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "pairingId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        },
+        "required": [
+          "pairingId"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "account.status": {
+      "doc": "The waifucave account this computer is signed in with, if any (§8.1).",
+      "owner": "H",
+      "direction": "to-daemon",
+      "roles": [
+        "app",
+        "cli",
+        "remote"
+      ],
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {}
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "signedIn": {
+            "type": "boolean"
+          },
+          "provider": {
+            "type": "string",
+            "enum": [
+              "email",
+              "discord",
+              "google"
+            ]
+          },
+          "user": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "maxLength": 128
+              },
+              "email": {
+                "type": "string",
+                "maxLength": 320
+              },
+              "name": {
+                "type": "string",
+                "maxLength": 200
+              }
+            },
+            "required": [
+              "id"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "signedIn"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "account.signIn": {
+      "doc": "Starts a sign-in; the client opens the URL. Signing in is enough to add a device (§8.1).",
+      "owner": "H",
+      "direction": "to-daemon",
+      "roles": [
+        "app",
+        "cli"
+      ],
+      "userOnly": true,
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "provider": {
+            "type": "string",
+            "enum": [
+              "email",
+              "discord",
+              "google"
+            ]
+          }
+        },
+        "required": [
+          "provider"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "format": "uri"
+          }
+        },
+        "required": [
+          "url"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "account.signOut": {
+      "doc": "Signs this computer out of the account.",
+      "owner": "H",
+      "direction": "to-daemon",
+      "roles": [
+        "app",
+        "cli"
+      ],
+      "userOnly": true,
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {}
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "main.get": {
+      "doc": "The main computer, the lease's holder and epoch, and the refresher.",
+      "owner": "H",
+      "direction": "to-daemon",
+      "roles": [
+        "app",
+        "cli",
+        "remote",
+        "web"
+      ],
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {}
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "lease": {
+            "type": "object",
+            "properties": {
+              "main": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "pattern": "^[a-z0-9]{16,64}$"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "holder": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "pattern": "^[a-z0-9]{16,64}$"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "epoch": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "expiresAt": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "refresher": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "pattern": "^[a-z0-9]{16,64}$"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "state": {
+                "type": "string",
+                "enum": [
+                  "held",
+                  "lapsed",
+                  "unreachable",
+                  "handing-over"
+                ]
+              }
+            },
+            "required": [
+              "main",
+              "holder",
+              "epoch",
+              "expiresAt",
+              "refresher",
+              "state"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "lease"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "main.set": {
+      "doc": "Chooses the main computer; a new cloud computer becomes main only after the user confirms (§6.4).",
+      "owner": "H",
+      "direction": "to-daemon",
+      "roles": [
+        "app",
+        "cli",
+        "remote"
+      ],
+      "userOnly": true,
+      "change": "sensitive",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "device": {
+            "type": "string",
+            "pattern": "^[a-z0-9]{16,64}$"
+          }
+        },
+        "required": [
+          "device"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "applied": {
+                "type": "boolean",
+                "const": true
+              }
+            },
+            "required": [
+              "applied"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "applied": {
+                "type": "boolean",
+                "const": false
+              },
+              "card": {
+                "type": "string",
+                "pattern": "^card_[A-Za-z0-9_-]{6,64}$"
+              }
+            },
+            "required": [
+              "applied",
+              "card"
+            ],
+            "additionalProperties": false
+          }
+        ]
+      }
+    },
+    "main.handOver": {
+      "doc": "Releases the lease now so another computer takes the bots (Hand over and quit, a laptop's sleep; §3.1, §6.4).",
+      "owner": "H",
+      "direction": "to-daemon",
+      "roles": [
+        "app",
+        "cli"
+      ],
+      "userOnly": true,
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {}
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "to": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[a-z0-9]{16,64}$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "to"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "clock.status": {
+      "doc": "This device's shared-clock offset and accuracy (§6.4).",
+      "owner": "H",
+      "direction": "to-daemon",
+      "roles": [
+        "app",
+        "cli"
+      ],
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {}
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "reference": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[a-z0-9]{16,64}$"
+              },
+              {
+                "type": "string",
+                "const": "public"
+              }
+            ]
+          },
+          "offsetMs": {
+            "type": "number"
+          },
+          "accuracyMs": {
+            "type": "number",
+            "minimum": 0
+          },
+          "synced": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "reference",
+          "offsetMs",
+          "accuracyMs",
+          "synced"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "link.list": {
+      "doc": "This computer's links and their paths.",
+      "owner": "H",
+      "direction": "to-daemon",
+      "roles": [
+        "app",
+        "cli"
+      ],
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {}
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "links": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "peer": {
+                  "type": "string",
+                  "pattern": "^[a-z0-9]{16,64}$"
+                },
+                "up": {
+                  "type": "boolean"
+                },
+                "path": {
+                  "type": "string",
+                  "enum": [
+                    "lan",
+                    "direct",
+                    "relay"
+                  ]
+                },
+                "relay": {
+                  "type": "string",
+                  "maxLength": 128
+                },
+                "rttMs": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "since": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                }
+              },
+              "required": [
+                "peer",
+                "up"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "links"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "peer.hello": {
+      "doc": "Opens a link's session: links negotiate a protocol version and support one release back (§14.2 item 22).",
+      "owner": "H",
+      "direction": "to-daemon",
+      "roles": [
+        "peer"
+      ],
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "protocolVersion": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "device": {
+            "type": "string",
+            "pattern": "^[a-z0-9]{16,64}$"
+          },
+          "epoch": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "features": {
+            "maxItems": 64,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 64
+            }
+          }
+        },
+        "required": [
+          "protocolVersion",
+          "device",
+          "epoch",
+          "features"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "protocolVersion": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "device": {
+            "type": "string",
+            "pattern": "^[a-z0-9]{16,64}$"
+          },
+          "epoch": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "features": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 64
+            }
+          }
+        },
+        "required": [
+          "protocolVersion",
+          "device",
+          "epoch",
+          "features"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "peer.call": {
+      "doc": "Runs a method on this computer for a caller on another one: a message to a bot that thinks here, a card's answer.",
+      "owner": "H",
+      "direction": "to-daemon",
+      "roles": [
+        "peer"
+      ],
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "method": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "params": {},
+          "as": {
+            "oneOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "user"
+                  },
+                  "client": {
+                    "type": "string",
+                    "enum": [
+                      "app",
+                      "cli",
+                      "ios",
+                      "web"
+                    ]
+                  },
+                  "device": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9]{16,64}$"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "client"
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "session"
+                  },
+                  "sessionId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128,
+                    "pattern": "^[A-Za-z0-9._:-]+$"
+                  },
+                  "sessionKind": {
+                    "type": "string",
+                    "enum": [
+                      "bot",
+                      "side-thread",
+                      "agent",
+                      "coding"
+                    ]
+                  },
+                  "bot": {
+                    "type": "string",
+                    "maxLength": 81,
+                    "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "sessionId",
+                  "sessionKind"
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "plugin"
+                  },
+                  "pluginId": {
+                    "type": "string",
+                    "maxLength": 81,
+                    "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "pluginId"
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "core"
+                  }
+                },
+                "required": [
+                  "kind"
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "peer"
+                  },
+                  "device": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9]{16,64}$"
+                  },
+                  "sessionId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128,
+                    "pattern": "^[A-Za-z0-9._:-]+$"
+                  },
+                  "bot": {
+                    "type": "string",
+                    "maxLength": 81,
+                    "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "device"
+                ]
+              }
+            ]
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "remote",
+              "web"
+            ]
+          },
+          "answer": {
+            "type": "object",
+            "properties": {
+              "card": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "pattern": "^card_[A-Za-z0-9_-]{6,64}$"
+                  },
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "tool",
+                      "agent-permission",
+                      "plugin-ok",
+                      "change",
+                      "confirm",
+                      "elicitation"
+                    ]
+                  },
+                  "computer": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 63,
+                        "pattern": "^[A-Za-z0-9]+(-[A-Za-z0-9]+)*$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "session": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128,
+                    "pattern": "^[A-Za-z0-9._:-]+$"
+                  },
+                  "bot": {
+                    "type": "string",
+                    "maxLength": 81,
+                    "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+                  },
+                  "pluginId": {
+                    "type": "string",
+                    "maxLength": 81,
+                    "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+                  },
+                  "origin": {
+                    "type": "string",
+                    "enum": [
+                      "user",
+                      "bot",
+                      "routine",
+                      "task-notification",
+                      "agent",
+                      "plugin",
+                      "peer"
+                    ]
+                  },
+                  "issuedAt": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "expiresAt": {
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "options": {
+                    "minItems": 1,
+                    "maxItems": 8,
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 64,
+                          "pattern": "^[a-z0-9_-]{1,64}$"
+                        },
+                        "kind": {
+                          "type": "string",
+                          "enum": [
+                            "approve",
+                            "deny"
+                          ]
+                        },
+                        "label": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "en": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "en"
+                              ],
+                              "additionalProperties": {
+                                "type": "string"
+                              }
+                            }
+                          ]
+                        },
+                        "remember": {
+                          "type": "string",
+                          "enum": [
+                            "always"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "kind",
+                        "label"
+                      ]
+                    }
+                  },
+                  "hash": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$"
+                  },
+                  "change": {
+                    "type": "string",
+                    "enum": [
+                      "routine-level",
+                      "computer-level",
+                      "device-add",
+                      "device-revoke",
+                      "main-computer",
+                      "plugin-load",
+                      "dev-folder",
+                      "repo-trust",
+                      "saved-rule",
+                      "connector-permission",
+                      "computer-create",
+                      "computer-resize",
+                      "computer-delete",
+                      "agent-unsandboxed",
+                      "core-setting"
+                    ]
+                  },
+                  "binds": {
+                    "type": "object",
+                    "properties": {
+                      "computer": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 63,
+                        "pattern": "^[A-Za-z0-9]+(-[A-Za-z0-9]+)*$"
+                      },
+                      "method": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 128
+                      },
+                      "params": {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{64}$"
+                      }
+                    },
+                    "required": [
+                      "computer",
+                      "method",
+                      "params"
+                    ]
+                  },
+                  "fields": {
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string",
+                      "enum": [
+                        "title",
+                        "what",
+                        "command",
+                        "computer",
+                        "risk",
+                        "reason",
+                        "source",
+                        "host",
+                        "paths",
+                        "detail",
+                        "expires"
+                      ]
+                    },
+                    "additionalProperties": {
+                      "oneOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "type": {
+                              "type": "string",
+                              "const": "text"
+                            },
+                            "text": {
+                              "type": "string",
+                              "maxLength": 4000
+                            }
+                          },
+                          "required": [
+                            "type",
+                            "text"
+                          ]
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "type": {
+                              "type": "string",
+                              "const": "code"
+                            },
+                            "code": {
+                              "type": "string",
+                              "maxLength": 64000
+                            },
+                            "language": {
+                              "type": "string",
+                              "maxLength": 32
+                            }
+                          },
+                          "required": [
+                            "type",
+                            "code"
+                          ]
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "type": {
+                              "type": "string",
+                              "const": "list"
+                            },
+                            "items": {
+                              "maxItems": 200,
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "maxLength": 4000
+                              }
+                            }
+                          },
+                          "required": [
+                            "type",
+                            "items"
+                          ]
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "type": {
+                              "type": "string",
+                              "const": "rows"
+                            },
+                            "rows": {
+                              "maxItems": 100,
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "label": {
+                                    "type": "string",
+                                    "maxLength": 200
+                                  },
+                                  "value": {
+                                    "type": "string",
+                                    "maxLength": 4000
+                                  }
+                                },
+                                "required": [
+                                  "label",
+                                  "value"
+                                ]
+                              }
+                            }
+                          },
+                          "required": [
+                            "type",
+                            "rows"
+                          ]
+                        }
+                      ]
+                    }
+                  },
+                  "children": {
+                    "maxItems": 256,
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "maxLength": 81,
+                          "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+                        },
+                        "label": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "en": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "en"
+                              ],
+                              "additionalProperties": {
+                                "type": "string"
+                              }
+                            }
+                          ]
+                        },
+                        "checked": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "label",
+                        "checked"
+                      ]
+                    }
+                  }
+                },
+                "required": [
+                  "id",
+                  "kind",
+                  "computer",
+                  "origin",
+                  "issuedAt",
+                  "expiresAt",
+                  "options",
+                  "hash",
+                  "fields"
+                ]
+              },
+              "option": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64,
+                "pattern": "^[a-z0-9_-]{1,64}$"
+              },
+              "children": {
+                "maxItems": 256,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "maxLength": 81,
+                  "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+                }
+              },
+              "device": {
+                "type": "string",
+                "pattern": "^[a-z0-9]{16,64}$"
+              },
+              "at": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "signature": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256
+              }
+            },
+            "required": [
+              "card",
+              "option",
+              "device",
+              "at",
+              "signature"
+            ]
+          }
+        },
+        "required": [
+          "method",
+          "params",
+          "as",
+          "role"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "result": {}
+        },
+        "required": [
+          "result"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "peer.session.send": {
+      "doc": "A user's message from another device, for a bot that thinks here (§6.4). The receiver verifies the sending device's signature over the session, message id, message hash and send time; without a good one the turn it starts isn't the user's (review N3).",
+      "owner": "D",
+      "direction": "to-daemon",
+      "roles": [
+        "peer"
+      ],
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9._:-]+$"
+          },
+          "message": {
+            "type": "object",
+            "properties": {
+              "text": {
+                "type": "string",
+                "maxLength": 1000000
+              },
+              "images": {
+                "maxItems": 32,
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "n": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "path": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 4096
+                    }
+                  },
+                  "required": [
+                    "n",
+                    "path"
+                  ]
+                }
+              },
+              "files": {
+                "maxItems": 64,
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "n": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "path": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 4096,
+                      "pattern": "^(home|bots)(\\/|$)"
+                    }
+                  },
+                  "required": [
+                    "n",
+                    "path"
+                  ]
+                }
+              },
+              "clientMessageId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "sentAt": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "signature": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256
+              }
+            },
+            "required": [
+              "text",
+              "clientMessageId"
+            ]
+          },
+          "device": {
+            "type": "string",
+            "pattern": "^[a-z0-9]{16,64}$"
+          },
+          "sentAt": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "id",
+          "message",
+          "device",
+          "sentAt"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "seq": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "seq"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "sync.heads": {
+      "doc": "The last entry of each stream this computer holds.",
+      "owner": "H",
+      "direction": "to-daemon",
+      "roles": [
+        "peer"
+      ],
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "streams": {
+            "maxItems": 10000,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256,
+              "pattern": "^[a-z][a-z-]*(:[A-Za-z0-9._:/-]+)?$"
+            }
+          }
+        }
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "heads": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {
+              "type": "object",
+              "properties": {
+                "seq": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "epoch": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                }
+              },
+              "required": [
+                "seq",
+                "epoch"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "heads"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "sync.pull": {
+      "doc": "Entries of a stream after a seq.",
+      "owner": "H",
+      "direction": "to-daemon",
+      "roles": [
+        "peer"
+      ],
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "stream": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256,
+            "pattern": "^[a-z][a-z-]*(:[A-Za-z0-9._:/-]+)?$"
+          },
+          "after": {
+            "type": "integer",
+            "minimum": -1,
+            "maximum": 9007199254740991
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10000
+          }
+        },
+        "required": [
+          "stream",
+          "after",
+          "limit"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "entries": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "seq": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "epoch": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "ts": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "device": {
+                  "type": "string",
+                  "pattern": "^[a-z0-9]{16,64}$"
+                },
+                "payload": {}
+              },
+              "required": [
+                "seq",
+                "epoch",
+                "ts",
+                "device",
+                "payload"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "more": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "entries",
+          "more"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "sync.push": {
+      "doc": "Appends entries; a stale base is refused, as the inherited phone sync refuses one (`ipc/sync.ts`). An entry that grants something (`PEER_STREAM_GRANTS`) waits for this computer's own card or a bound signed answer (review N7).",
+      "owner": "H",
+      "direction": "to-daemon",
+      "roles": [
+        "peer"
+      ],
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "stream": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256,
+            "pattern": "^[a-z][a-z-]*(:[A-Za-z0-9._:/-]+)?$"
+          },
+          "base": {
+            "type": "integer",
+            "minimum": -1,
+            "maximum": 9007199254740991
+          },
+          "entries": {
+            "maxItems": 10000,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "seq": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "epoch": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "ts": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "device": {
+                  "type": "string",
+                  "pattern": "^[a-z0-9]{16,64}$"
+                },
+                "payload": {}
+              },
+              "required": [
+                "seq",
+                "epoch",
+                "ts",
+                "device",
+                "payload"
+              ]
+            }
+          }
+        },
+        "required": [
+          "stream",
+          "base",
+          "entries"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "ok": {
+                "type": "boolean",
+                "const": true
+              },
+              "head": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": [
+              "ok",
+              "head"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "ok": {
+                "type": "boolean",
+                "const": false
+              },
+              "reason": {
+                "type": "string",
+                "enum": [
+                  "stale_base",
+                  "not_writer",
+                  "refused"
+                ]
+              }
+            },
+            "required": [
+              "ok",
+              "reason"
+            ],
+            "additionalProperties": false
+          }
+        ]
+      }
+    }
+  },
+  "events": {
+    "device_changed": {
+      "doc": "A device was added or changed, or came online or went offline.",
+      "owner": "H",
+      "scope": "core",
+      "roles": [
+        "app",
+        "cli",
+        "remote",
+        "layer"
+      ],
+      "capability": "devices.read",
+      "schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "device_changed"
+          },
+          "ts": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "device": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[a-z0-9]{16,64}$"
+              },
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 63
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "desktop",
+                  "server",
+                  "cloud",
+                  "phone",
+                  "browser"
+                ]
+              },
+              "os": {
+                "type": "string",
+                "enum": [
+                  "macos",
+                  "windows",
+                  "linux"
+                ]
+              },
+              "runsCore": {
+                "type": "boolean"
+              },
+              "computer": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 63,
+                "pattern": "^[A-Za-z0-9]+(-[A-Za-z0-9]+)*$"
+              },
+              "hasDisplay": {
+                "type": "boolean"
+              },
+              "online": {
+                "type": "boolean"
+              },
+              "link": {
+                "type": "object",
+                "properties": {
+                  "peer": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9]{16,64}$"
+                  },
+                  "up": {
+                    "type": "boolean"
+                  },
+                  "path": {
+                    "type": "string",
+                    "enum": [
+                      "lan",
+                      "direct",
+                      "relay"
+                    ]
+                  },
+                  "relay": {
+                    "type": "string",
+                    "maxLength": 128
+                  },
+                  "rttMs": {
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  "since": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  }
+                },
+                "required": [
+                  "peer",
+                  "up"
+                ]
+              },
+              "isThis": {
+                "type": "boolean"
+              },
+              "isMain": {
+                "type": "boolean"
+              },
+              "addedAt": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "lastSeenAt": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "answers": {
+                "type": "object",
+                "properties": {
+                  "held": {
+                    "type": "string",
+                    "enum": [
+                      "secure-enclave",
+                      "keystore",
+                      "app-keychain",
+                      "tpm",
+                      "hello",
+                      "none"
+                    ]
+                  }
+                },
+                "required": [
+                  "held"
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "name",
+              "kind",
+              "runsCore",
+              "online",
+              "isThis",
+              "isMain",
+              "addedAt"
+            ]
+          }
+        },
+        "required": [
+          "type",
+          "ts",
+          "device"
+        ]
+      }
+    },
+    "device_removed": {
+      "doc": "A device was revoked or removed.",
+      "owner": "H",
+      "scope": "core",
+      "roles": [
+        "app",
+        "cli",
+        "remote",
+        "layer"
+      ],
+      "capability": "devices.read",
+      "schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "device_removed"
+          },
+          "ts": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z0-9]{16,64}$"
+          },
+          "revoked": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "type",
+          "ts",
+          "id",
+          "revoked"
+        ]
+      }
+    },
+    "lease_changed": {
+      "doc": "The main computer, the lease's holder, its epoch or the refresher changed.",
+      "owner": "H",
+      "scope": "core",
+      "roles": [
+        "app",
+        "cli",
+        "remote",
+        "web"
+      ],
+      "schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "lease_changed"
+          },
+          "ts": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "lease": {
+            "type": "object",
+            "properties": {
+              "main": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "pattern": "^[a-z0-9]{16,64}$"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "holder": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "pattern": "^[a-z0-9]{16,64}$"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "epoch": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "expiresAt": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "refresher": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "pattern": "^[a-z0-9]{16,64}$"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "state": {
+                "type": "string",
+                "enum": [
+                  "held",
+                  "lapsed",
+                  "unreachable",
+                  "handing-over"
+                ]
+              }
+            },
+            "required": [
+              "main",
+              "holder",
+              "epoch",
+              "expiresAt",
+              "refresher",
+              "state"
+            ]
+          }
+        },
+        "required": [
+          "type",
+          "ts",
+          "lease"
+        ]
+      }
+    },
+    "link_changed": {
+      "doc": "A link came up, went down or changed path.",
+      "owner": "H",
+      "scope": "core",
+      "roles": [
+        "app",
+        "cli"
+      ],
+      "schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "link_changed"
+          },
+          "ts": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "link": {
+            "type": "object",
+            "properties": {
+              "peer": {
+                "type": "string",
+                "pattern": "^[a-z0-9]{16,64}$"
+              },
+              "up": {
+                "type": "boolean"
+              },
+              "path": {
+                "type": "string",
+                "enum": [
+                  "lan",
+                  "direct",
+                  "relay"
+                ]
+              },
+              "relay": {
+                "type": "string",
+                "maxLength": 128
+              },
+              "rttMs": {
+                "type": "number",
+                "minimum": 0
+              },
+              "since": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": [
+              "peer",
+              "up"
+            ]
+          }
+        },
+        "required": [
+          "type",
+          "ts",
+          "link"
+        ]
+      }
+    },
+    "pairing_changed": {
+      "doc": "A pairing moved on.",
+      "owner": "H",
+      "scope": "core",
+      "roles": [
+        "app",
+        "cli"
+      ],
+      "schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "pairing_changed"
+          },
+          "ts": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "pairingId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "step": {
+            "type": "string",
+            "enum": [
+              "waiting",
+              "words",
+              "card",
+              "done",
+              "failed",
+              "expired"
+            ]
+          },
+          "words": {
+            "minItems": 4,
+            "maxItems": 4,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 32
+            }
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "en": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "en"
+                ],
+                "additionalProperties": {
+                  "type": "string"
+                }
+              }
+            ]
+          }
+        },
+        "required": [
+          "type",
+          "ts",
+          "pairingId",
+          "step"
+        ]
+      }
+    },
+    "account_changed": {
+      "doc": "The account was signed in or out.",
+      "owner": "H",
+      "scope": "core",
+      "roles": [
+        "app",
+        "cli",
+        "remote"
+      ],
+      "schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "account_changed"
+          },
+          "ts": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "account": {
+            "type": "object",
+            "properties": {
+              "signedIn": {
+                "type": "boolean"
+              },
+              "provider": {
+                "type": "string",
+                "enum": [
+                  "email",
+                  "discord",
+                  "google"
+                ]
+              },
+              "user": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "maxLength": 128
+                  },
+                  "email": {
+                    "type": "string",
+                    "maxLength": 320
+                  },
+                  "name": {
+                    "type": "string",
+                    "maxLength": 200
+                  }
+                },
+                "required": [
+                  "id"
+                ]
+              }
+            },
+            "required": [
+              "signedIn"
+            ]
+          }
+        },
+        "required": [
+          "type",
+          "ts",
+          "account"
+        ]
+      }
+    }
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "type": "lease_changed",
+  "ts": 1781270000000,
+  "lease": {
+    "main": "m4p0studio7c2d9e1f3a5b7c9d1e3f5a",
+    "holder": "m4p0studio7c2d9e1f3a5b7c9d1e3f5a",
+    "epoch": 4,
+    "expiresAt": 1781270030000,
+    "refresher": "m4p0studio7c2d9e1f3a5b7c9d1e3f5a",
+    "state": "held"
+  }
+}
