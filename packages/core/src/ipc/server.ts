@@ -176,6 +176,7 @@ import {
 import { loadManifest, requiredConsentClasses } from "../agent/plugin-manifest";
 import { pluginSkillsFor } from "../plugins/plugin-skills";
 import { sdkPluginsRoot, sdkSettingsPath } from "../agent/paths";
+import type { CloverConn, CloverServer } from "./clover";
 
 interface ConnState {
   /** Chat Slice D task 2: a process-unique id for this socket, minted at `open`. The first key of
@@ -203,6 +204,8 @@ interface ConnState {
   // SUCCESSFUL results only (a thrown RpcFailure is never stored), so a retry after a transient
   // failure still re-attempts.
   seenCommands: Map<string, unknown>;
+  /** C-M1: set by a Clover hello (`opts.cloverConnections`); every request on the connection then goes there. */
+  clover: CloverConn | null;
 }
 
 /** The engine's public surface the IPC layer still reads after the retirement (Task 17). */
@@ -237,6 +240,9 @@ export interface InternalSessionCreateInput {
 export type InternalSessionCreator = (input: InternalSessionCreateInput) => Promise<{ sessionId: string; trusted: boolean }>;
 
 export interface IpcServerOptions {
+  /** C-M1: Clover's connections (a hello at protocol version 1 or later; `ipc/clover.ts`). The inherited
+   *  protocol's roles keep their own path below. */
+  cloverConnections?: CloverServer;
   cowork?: CoworkWorkspaceService;
   coworkEvents?: CoworkWorkspaceEvents;
   /** Cowork session door (D1 spine): THE single activation switch for Cowork sessions. Absent — every production daemon
@@ -2054,7 +2060,9 @@ export function startIpcServer(opts: IpcServerOptions): IpcServer {
           writer: new ConnWriter(socket as unknown as WritableSocket),
           pluginId: null,
           seenCommands: new Map(),
+          clover: null,
         };
+        opts.cloverConnections?.opened(socket);
       },
       drain(socket) {
         socket.data?.writer?.onDrain();
@@ -2063,6 +2071,7 @@ export function startIpcServer(opts: IpcServerOptions): IpcServer {
       close(socket) {
         if (!socket.data) return; // rejected at cap before data was set (sentinel null)
         connections--;
+        opts.cloverConnections?.closed(socket.data.clover, socket);
         opts.cowork?.closeConnection(socket.data.connId);
         if (socket.data.helloTimer) clearTimeout(socket.data.helloTimer);
         if (socket.data.hubClient) hub.detach(socket.data.hubClient);
@@ -2163,9 +2172,21 @@ export function startIpcServer(opts: IpcServerOptions): IpcServer {
   if (!isPipe(opts.socketPath)) chmodSync(opts.socketPath, 0o600);
 
   async function handle(socket: { data: ConnState }, method: string, params: unknown): Promise<unknown> {
+    // C-M1: a Clover connection speaks only Clover's methods, through its role's gate.
+    if (socket.data.clover) return opts.cloverConnections!.handle(socket.data.clover, method, params);
     if (method === METHODS.hello) {
       if (socket.data.authedRole !== null) {
         throw new RpcFailure(ERR.INVALID_REQUEST, "already authenticated — open a new connection to change role");
+      }
+      if (opts.cloverConnections?.isCloverHello(params)) {
+        const writer = socket.data.writer;
+        const { conn, result } = await opts.cloverConnections.hello(socket, socket.data.connId, params, (bytes) => { writer.enqueue(bytes); });
+        socket.data.clover = conn;
+        socket.data.authedRole = `clover:${conn.role}`;
+        socket.data.clientName = conn.clientName;
+        if (socket.data.helloTimer) { clearTimeout(socket.data.helloTimer); socket.data.helloTimer = null; }
+        socket.data.decoder = new LineDecoder(); // authed: default 8 MiB line cap
+        return result;
       }
       const p = parseParams(HelloParams, params);
       if (p.protocolVersion !== PROTOCOL_VERSION) {

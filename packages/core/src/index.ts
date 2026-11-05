@@ -18,6 +18,9 @@ export {
   type AppExitReason, type PairStopReason, type AppStart, type RunFileDeps, type DaemonPairSide, type DaemonPairSideInput,
 } from "./platform/pair";
 export { callerFloorVerdict, mayBeUser, type SandboxProbe, type FloorVerdict } from "./platform/sandbox-floor";
+export { CloverTokens, isRefusal, type CloverBinding, type HelloRefusal } from "./auth/clover-tokens";
+export { resolveCloverCaller, isFencedCaller, gateCloverRequest, SessionProcesses, type SessionRef } from "./auth/clover-caller";
+export { createCloverServer, CloverRpcError, type CloverConn, type CloverServer, type CloverServerDeps, type CloverHandler } from "./ipc/clover";
 export { probePeer, peerPid, parentPid, ancestry, sandboxProbe, socketFd, descendsFrom, WindowsPipePeers, type PeerFacts } from "./platform/caller-probe";
 export { lockPipeDacl, currentUserSid, pipeDaclSddl, pipeServerIdentity, isOurDaemon, ownerOnlyPipeSddl, type PipeServerIdentity } from "./platform/win-pipe";
 export { acquireLock, AlreadyRunningError, LockHeldNoDaemonError, LockFailedError, classifyLockFailure, endpointAnswers, type Lock, type AcquireLockOptions } from "./lock";
