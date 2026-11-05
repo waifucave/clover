@@ -2,10 +2,14 @@
 // them, each call run by the computer that holds the files, behind that computer's fence and level, and an answer
 // at once when a computer is offline.
 import { afterEach, describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, linkSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { isContractError } from "../../src/contracts/common";
+import { FileSelfStateStore, selfStatePath } from "../../src/computers/store";
+import { BULK_PER_DEVICE, BulkSlots } from "../../src/tree/service";
+import { FolderWatches } from "../../src/tree/watch";
+import { answersFor, makePhone } from "./answer-support";
 import { Cluster, until } from "./cluster-support";
 
 const BOT = { kind: "session", sessionId: "s_alpha", sessionKind: "bot", bot: "alpha" } as const;
@@ -18,8 +22,8 @@ afterEach(() => cluster?.close());
 
 async function two(levels: { Studio?: "automatic" | "ask-risky" | "read-only"; Laptop1?: "automatic" | "ask-risky" | "read-only" } = {}) {
   cluster = new Cluster();
-  const studio = cluster.add("Studio");
-  const laptop = cluster.add("Laptop1");
+  const studio = await cluster.add("Studio");
+  const laptop = await cluster.add("Laptop1");
   for (const [name, level] of Object.entries(levels)) {
     if (level) await cluster.get(name).node.registry.setLevel(name, level, { via: "terminal" });
   }
@@ -61,8 +65,8 @@ describe("one tree across computers", () => {
 
   test("bots/<bot>/ lives on the computer that runs the bot", async () => {
     cluster = new Cluster();
-    const studio = cluster.add("Studio");
-    const laptop = cluster.add("Laptop1");
+    const studio = await cluster.add("Studio");
+    const laptop = await cluster.add("Laptop1");
     laptop.bots.push("alpha");
     await laptop.node.registry.setLevel("Laptop1", "automatic", { via: "terminal" });
     await cluster.join();
@@ -121,6 +125,122 @@ describe("the holder's rules (review N2, S6 edits 5 and 6)", () => {
     expect(readFileSync(join(laptop.cloverHome, "settings", "settings.json"), "utf8")).toBe("{}");
     // The user on Laptop1 itself never meets its fence.
     await laptop.node.tree.write("home/Laptop1/.clover/settings/settings.json", { encoding: "utf8", text: "{\"mine\":1}" }, { as: { kind: "user", client: "app" } });
+  });
+});
+
+describe("a fenced name in another case (review B1)", () => {
+  const utf8 = (text: string) => ({ encoding: "utf8" as const, text });
+
+  test("a name that isn't on disk yet can't reach a fenced item in another case, for a peer or a bot here", async () => {
+    const { studio, laptop } = await two({ Laptop1: "automatic" });
+    const t = studio.node.tree;
+    const ch = laptop.cloverHome;
+    expect(await code(t.write("home/Laptop1/.clover/rules/allow.json", utf8("{}"), { as: BOT }))).toBe("fenced");
+    expect(await code(t.write("home/Laptop1/.clover/RULES/allow.json", utf8('{"allow":["*"]}'), { as: BOT }))).toBe("fenced");
+    expect(await code(t.write("home/Laptop1/.clover/plugins-state/INSTALLED.json", utf8('["evil"]'), { as: BOT }))).toBe("fenced");
+    expect(await code(t.write("home/Laptop1/.clover/Trust/x.json", utf8("{}"), { as: BOT }))).toBe("fenced");
+    expect(await code(t.write("home/Laptop1/.clover/levels/COMPUTER.JSON", utf8("{}"), { as: BOT }))).toBe("fenced");
+    await t.write("home/Laptop1/stage/x.json", utf8("{}"), { as: BOT });
+    expect(await code(t.move("home/Laptop1/stage", "home/Laptop1/.clover/CONNECTORS", { as: BOT }))).toBe("fenced");
+    // A bot on Laptop1 itself, through its own tree.
+    expect(await code(laptop.node.tree.write("home/Laptop1/.clover/Settings/settings.json", utf8('{"evil":1}'), { as: BOT }))).toBe("fenced");
+    expect(existsSync(join(ch, "rules", "allow.json"))).toBe(false);
+    expect(existsSync(join(ch, "plugins-state", "installed.json"))).toBe(false);
+    expect(existsSync(join(ch, "connectors", "x.json"))).toBe(false);
+    expect(existsSync(join(ch, "settings", "settings.json"))).toBe(false);
+  });
+
+  test("the levels file can't be planted in another case, so a restart doesn't raise the level", async () => {
+    cluster = new Cluster();
+    const studio = await cluster.add("Studio");
+    const laptop = await cluster.add("Laptop1");
+    await cluster.join();
+    const raise = utf8(JSON.stringify({ level: "automatic", name: "Laptop1" }));
+    expect(await code(studio.node.tree.write("home/Laptop1/.clover/LEVELS/computer.json", raise, { as: BOT, level: "automatic" }))).toBe("fenced");
+    expect(await code(laptop.node.tree.write("home/Laptop1/.clover/LEVELS/computer.json", raise, { as: BOT }))).toBe("fenced");
+    expect(await code(laptop.node.tree.write("home/Laptop1/.clover/levels/computer.json", raise, { as: BOT }))).toBe("fenced");
+    expect(new FileSelfStateStore(selfStatePath(laptop.cloverHome)).load()?.level).not.toBe("automatic");
+    expect(readdirSync(laptop.cloverHome).filter((n) => n.toLowerCase() === "levels")).toEqual(["levels"]);
+  });
+
+  test("Clover's fenced folders are made at start", async () => {
+    cluster = new Cluster();
+    const studio = await cluster.add("Studio");
+    for (const name of ["settings", "levels", "rules", "connectors", "trust", "user-layers", "plugin-data", "run", "plugins-state/oks"]) {
+      expect(statSync(join(studio.cloverHome, ...name.split("/"))).isDirectory()).toBe(true);
+    }
+    if (process.platform !== "win32") expect(statSync(join(studio.cloverHome, "levels")).mode & 0o077).toBe(0);
+  });
+});
+
+describe("hard links (review S4)", () => {
+  test("a file with other names is refused to anyone the fence judges, untouched", async () => {
+    const { studio, laptop } = await two({ Laptop1: "automatic" });
+    writeFileSync(join(laptop.cloverHome, "rules", "allow.json"), "{}");
+    linkSync(join(laptop.cloverHome, "rules", "allow.json"), join(laptop.home, "innocent.json"));
+    expect(await code(studio.node.tree.write("home/Laptop1/innocent.json", { encoding: "utf8", text: '{"allow":["*"]}' }, { as: BOT }))).toBe("refused");
+    expect(await code(studio.node.tree.read("home/Laptop1/innocent.json", { as: BOT }))).toBe("refused");
+    expect(await code(laptop.node.tree.read("home/Laptop1/innocent.json", { as: BOT }))).toBe("refused");
+    expect(readFileSync(join(laptop.cloverHome, "rules", "allow.json"), "utf8")).toBe("{}");
+    // The user's own call isn't fenced.
+    expect(await laptop.node.tree.read("home/Laptop1/innocent.json", { as: { kind: "user", client: "app" } })).toEqual({ encoding: "utf8", text: "{}" });
+  });
+});
+
+describe("a bot two computers claim (review S2)", () => {
+  test("its folder is refused rather than guessed", async () => {
+    cluster = new Cluster();
+    const studio = await cluster.add("Studio");
+    const laptop = await cluster.add("Laptop1");
+    studio.bots.push("alpha");
+    laptop.bots.push("alpha");
+    await cluster.join();
+    expect(isContractError((() => { try { studio.node.tree.resolve("bots/alpha/x"); } catch (e) { return e; } })(), "conflict")).toBe(true);
+    expect(await code(studio.node.tree.read("bots/alpha/x", { as: BOT }))).toBe("conflict");
+  });
+});
+
+describe("limits (review minors 2, 5 and 7)", () => {
+  test("a watch is a project's folder, never a whole home, and each watcher has its own budget", async () => {
+    const { studio } = await two();
+    expect(await code(studio.node.tree.watch("home/Laptop1", { as: BOT }, () => {}))).toBe("invalid");
+    const fake = (() => ({ on: () => {}, close: () => {} })) as unknown as typeof import("node:fs").watch;
+    const w = new FolderWatches({ budget: 2, total: 3, watch: fake });
+    w.subscribe("/a", "home/X/a", () => true, () => {}, "peer:one");
+    w.subscribe("/b", "home/X/b", () => true, () => {}, "peer:one");
+    expect(() => w.subscribe("/c", "home/X/c", () => true, () => {}, "peer:one")).toThrow();
+    const stop = w.subscribe("/c", "home/X/c", () => true, () => {}, "peer:two");
+    expect(() => w.subscribe("/d", "home/X/d", () => true, () => {}, "peer:two")).toThrow(); // this computer's total
+    stop();
+    w.subscribe("/d", "home/X/d", () => true, () => {}, "peer:two");
+    w.close();
+  });
+
+  test("one write carries at most 16 MiB, and one computer's bulk calls queue behind a few slots", async () => {
+    const { studio } = await two({ Laptop1: "automatic" });
+    const big = Buffer.alloc(16 * 1024 * 1024 + 1).toString("base64");
+    expect(await code(studio.node.tree.write("home/Laptop1/big.bin", { encoding: "base64", data: big }, { as: BOT }))).toBe("invalid");
+    const slots = new BulkSlots();
+    const gates: (() => void)[] = [];
+    const hold = () => new Promise<void>((r) => gates.push(r));
+    const running = Array.from({ length: BULK_PER_DEVICE + 32 }, () => slots.run("dev", hold));
+    await Bun.sleep(5);
+    expect(gates.length).toBe(BULK_PER_DEVICE);
+    expect(await code(slots.run("dev", async () => {}))).toBe("refused");
+    await slots.run("other", async () => {}); // another computer has its own slots
+    gates.shift()!();
+    await until(() => gates.length === BULK_PER_DEVICE, 1000, "a queued call to take the freed slot");
+    while (gates.length) gates.shift()!(), await Bun.sleep(1);
+    await Promise.all(running);
+  });
+
+  test("a running call is known by its session too: two sessions may use the same call id", async () => {
+    if (process.platform === "win32") return;
+    const { studio, laptop } = await two({ Laptop1: "automatic" });
+    const run = (session: string) => studio.node.tools.run("Bash", { command: "cd home/Laptop1 && sleep 0.3 && echo done" }, { session, sessionKind: "bot", callId: "same", cwd: "home/Studio" });
+    const [a, b] = await Promise.all([run("s_a"), run("s_b")]);
+    expect([a.isError, b.isError]).toEqual([false, false]);
+    expect(laptop.node.service.counts.running).toBe(0);
   });
 });
 
@@ -244,6 +364,99 @@ describe("moves between computers", () => {
   });
 });
 
+describe("moves between computers take the direct path (review S1)", () => {
+  test("a big file moves in one piece, holder to holder, with no cap per file", async () => {
+    const { studio, laptop } = await two({ Studio: "automatic", Laptop1: "automatic" });
+    const bytes = Buffer.alloc(20 * 1024 * 1024 + 7);
+    for (let i = 0; i < bytes.length; i += 4096) bytes[i] = i % 251;
+    writeFileSync(join(studio.home, "big.bin"), bytes);
+    await studio.node.tree.move("home/Studio/big.bin", "home/Laptop1/big.bin", { as: BOT });
+    expect(existsSync(join(studio.home, "big.bin"))).toBe(false);
+    expect(readFileSync(join(laptop.home, "big.bin")).equals(bytes)).toBe(true);
+    expect(readdirSync(laptop.home).some((n) => n.startsWith(".clover-receiving-"))).toBe(false);
+  });
+
+  test("each holder judges the whole move once, and a refusal leaves both sides as they were", async () => {
+    const { studio, laptop } = await two({ Studio: "automatic" });
+    mkdirSync(join(studio.home, "proj"));
+    writeFileSync(join(studio.home, "proj", "a.txt"), "a");
+    writeFileSync(join(studio.home, "proj", "b.txt"), "b");
+    // Laptop1 asks for risky actions: a move into it from another computer needs the user's answer there.
+    expect(await code(studio.node.tree.move("home/Studio/proj", "home/Laptop1/proj", { as: BOT }))).toBe("refused");
+    expect(existsSync(join(studio.home, "proj", "a.txt"))).toBe(true);
+    expect(existsSync(join(laptop.home, "proj"))).toBe(false);
+    // Refused at the source (Studio, judged at the call's stricter level) after Laptop1 made the folders for it:
+    // they go too.
+    await laptop.node.registry.setLevel("Laptop1", "automatic", { via: "terminal" });
+    await until(() => studio.node.registry.get("Laptop1")!.level === "automatic", 2000, "Laptop1's level to reach Studio");
+    await studio.node.registry.setLevel("Studio", "ask-risky");
+    expect(await code(laptop.node.tree.move("home/Studio/proj", "home/Laptop1/deep/er/proj", { as: BOT }))).toBe("refused");
+    expect(existsSync(join(laptop.home, "deep"))).toBe(false);
+    expect(existsSync(join(studio.home, "proj", "a.txt"))).toBe(true);
+    await studio.node.registry.setLevel("Studio", "automatic", { via: "terminal" });
+    expect(readdirSync(laptop.home).some((n) => n.startsWith(".clover-receiving-"))).toBe(false);
+    // At accept-edits a move is allowed whole: no answer for each file and none for the delete at the source.
+    await laptop.node.registry.setLevel("Laptop1", "accept-edits", { via: "terminal" });
+    await until(() => studio.node.registry.get("Laptop1")!.level === "accept-edits", 2000, "Laptop1's level to reach Studio");
+    await studio.node.tree.move("home/Studio/proj", "home/Laptop1/proj", { as: BOT });
+    expect(readFileSync(join(laptop.home, "proj", "b.txt"), "utf8")).toBe("b");
+    expect(existsSync(join(studio.home, "proj"))).toBe(false);
+  });
+
+  test("one signed answer per holder for the whole move, bound to its from and to", async () => {
+    const phone = await makePhone();
+    cluster = new Cluster();
+    const studio = await cluster.add("Studio", { answers: () => answersFor(phone) });
+    const laptop = await cluster.add("Laptop1", { answers: () => answersFor(phone) });
+    await studio.node.registry.setLevel("Studio", "automatic", { via: "terminal" });
+    await cluster.join();
+    mkdirSync(join(studio.home, "proj"));
+    writeFileSync(join(studio.home, "proj", "a.txt"), "a");
+    const wrong = await phone.approve("Laptop1", "tree.move", { from: "home/Studio/proj", to: "home/Laptop1/elsewhere" });
+    expect(await code(studio.node.tree.move("home/Studio/proj", "home/Laptop1/proj", { as: BOT, answer: wrong }))).toBe("refused");
+    // The call carries the stricter of both levels, so Studio, the source, asks too: one answer for each holder,
+    // each for the same whole move.
+    const binding = { from: "home/Studio/proj", to: "home/Laptop1/proj" };
+    const atLaptop = await phone.approve("Laptop1", "tree.move", binding);
+    expect(await code(studio.node.tree.move("home/Studio/proj", "home/Laptop1/proj", { as: BOT, answer: atLaptop }))).toBe("refused");
+    expect(existsSync(join(laptop.home, "proj"))).toBe(false);
+    const both = [await phone.approve("Laptop1", "tree.move", binding), await phone.approve("Studio", "tree.move", binding)];
+    await studio.node.tree.move("home/Studio/proj", "home/Laptop1/proj", { as: BOT, answers: both });
+    expect(readFileSync(join(laptop.home, "proj", "a.txt"), "utf8")).toBe("a");
+    expect(existsSync(join(studio.home, "proj"))).toBe(false);
+  });
+
+  test("what changed at the source while it moved stays there too; the rest is removed", async () => {
+    const { studio, laptop } = await two({ Studio: "automatic", Laptop1: "automatic" });
+    mkdirSync(join(studio.home, "proj"));
+    writeFileSync(join(studio.home, "proj", "a.txt"), "a");
+    writeFileSync(join(studio.home, "proj", "b.txt"), "b");
+    // Just before the destination tells the source it has the files, b.txt changes at the source.
+    const link = await cluster.net.endpoint(laptop.device).connect(studio.device);
+    const request = link.request.bind(link);
+    (link as { request: typeof link.request }).request = (async (method: string, params: unknown, opts?: Parameters<typeof link.request>[2]) => {
+      if (method === "tree.sent") appendFileSync(join(studio.home, "proj", "b.txt"), " and more");
+      return request(method, params, opts);
+    }) as typeof link.request;
+    const err = await rejection(studio.node.tree.move("home/Studio/proj", "home/Laptop1/proj", { as: BOT }));
+    expect(isContractError(err, "conflict")).toBe(true);
+    expect(readFileSync(join(laptop.home, "proj", "b.txt"), "utf8")).toBe("b");
+    expect(readFileSync(join(studio.home, "proj", "b.txt"), "utf8")).toBe("b and more");
+    expect(existsSync(join(studio.home, "proj", "a.txt"))).toBe(false);
+  });
+
+  test("a link out of what moves refuses the whole move before anything lands", async () => {
+    if (process.platform === "win32") return;
+    const { studio, laptop } = await two({ Studio: "automatic", Laptop1: "automatic" });
+    mkdirSync(join(studio.home, "proj"));
+    writeFileSync(join(studio.home, "proj", "a.txt"), "a");
+    symlinkSync("../secret.txt", join(studio.home, "proj", "out"));
+    expect(await code(studio.node.tree.move("home/Studio/proj", "home/Laptop1/proj", { as: BOT }))).toBe("invalid");
+    expect(existsSync(join(laptop.home, "proj"))).toBe(false);
+    expect(existsSync(join(studio.home, "proj", "a.txt"))).toBe(true);
+  });
+});
+
 describe("the Files panel's data: change events from the holder", () => {
   test("a watch on another computer's folder reports changes there, and never the fenced ones", async () => {
     const { studio, laptop } = await two();
@@ -289,6 +502,10 @@ describe("the registry over the link", () => {
   test("a renamed computer keeps its old name as an alias in every computer's tree", async () => {
     const { studio, laptop } = await two({ Laptop1: "automatic" });
     await laptop.node.registry.rename("Laptop1", "Laptop-2");
+    // A hello never renames (names come from the device list); lane H's list carries the new name to every computer.
+    await Bun.sleep(50);
+    expect(studio.node.registry.get("Laptop-2")).toBeUndefined();
+    cluster.renameComputer(laptop.device, "Laptop-2");
     await until(() => studio.node.registry.get("Laptop-2") !== undefined, 2000, "the new name to reach Studio");
     expect(studio.node.registry.get("Laptop1")!.name).toBe("Laptop-2");
     writeFileSync(join(laptop.home, "n.txt"), "n");

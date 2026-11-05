@@ -5009,7 +5009,7 @@
       }
     },
     "terminal.open": {
-      "doc": "Opens a terminal on a computer, in the user's shell; its output streams as `terminal_output`.",
+      "doc": "Opens a terminal on a computer, in the user's shell; its output streams as `terminal_output`. A computer at read-only never opens one for a plugin (`refused`).",
       "owner": "J",
       "direction": "to-daemon",
       "roles": [
@@ -5074,7 +5074,7 @@
       }
     },
     "terminal.write": {
-      "doc": "The user's key presses, or a paste, into a terminal.",
+      "doc": "What lane E's runtime derived from the user's key presses or a paste in the terminal panel.",
       "owner": "J",
       "direction": "to-daemon",
       "roles": [

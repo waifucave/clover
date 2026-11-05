@@ -3,9 +3,9 @@
 // the tree lives (its home folder's real path, the bots it runs). The registry and the tree take the rest from there:
 // a computer whose link is down is offline, and answers "computer offline" at once (§9.1).
 //
-// Names come from the device list where there is one (lane H's `DeviceRegistry`, `computer` on each record that runs
-// clover-core); a revoked device leaves the tree at once. Without a device list (tests on the fake link), a hello
-// introduces its computer. `computer.hello` is lane J's addition to the protocol (requested of lane B).
+// The computers and their names come only from the device list (lane H's `DeviceRegistry`, `computer` on each record
+// that runs clover-core); a hello from a device that isn't on it is ignored, and a revoked device leaves the tree at
+// once. `computer.hello` is lane J's addition to the protocol (requested of lane B).
 import { z } from "zod";
 import { ComputerName, Level, Os, SignedCardAnswer, levelAbove, type ComputerView } from "@waifucave/clover-protocol";
 import { utf16 } from "@waifucave/clover-protocol";
@@ -45,8 +45,11 @@ export interface ComputerPeersOptions {
   transport: LinkTransport;
   /** This computer's part of the tree. */
   roots: () => TreeRoots;
-  /** The device list; without it, a hello introduces its computer. */
-  devices?: DeviceRegistry;
+  /** The device list: the only source of the computers in the tree and their names (review minor 1). */
+  devices: DeviceRegistry;
+  /** Which computer runs a bot, from lane D's registry (review S2). Left out, the hellos say, and a bot that two
+   *  computers claim is refused rather than guessed. */
+  placement?: (bot: string) => string | undefined;
   /** This computer's own card for a call, which a raise from another computer must answer (review N1). */
   render?: CallCardRenderer;
   /** Shows the user another computer's card for a raise, and gives back their signed answer (R1). */
@@ -64,23 +67,21 @@ export class ComputerPeers {
   constructor(opts: ComputerPeersOptions) {
     this.#o = opts;
     const { registry, transport, devices } = opts;
-    if (devices) {
-      for (const d of devices.list()) this.#fromDevice(d);
-      this.#off.push(devices.watch((change) => {
-        if (change.type === "revoked") {
-          const c = registry.byDevice(change.id);
-          if (c) registry.remove(c.name);
-          this.#roots.delete(change.id);
-          return;
-        }
-        this.#fromDevice(change.device);
-      }));
-    }
+    for (const d of devices.list()) this.#fromDevice(d);
+    this.#off.push(devices.watch((change) => {
+      if (change.type === "revoked") {
+        const c = registry.byDevice(change.id);
+        if (c) registry.remove(c.name);
+        this.#roots.delete(change.id);
+        return;
+      }
+      this.#fromDevice(change.device);
+    }));
     this.#off.push(transport.onNotify("computer.hello", (params, from) => this.#hello(params, from)));
     // Levels per computer (J-M2): another computer asks this one to change its own level. A lowering applies; a raise
     // needs the user's answer signed for this computer's own card, which the caller is told to show.
     this.#off.push(transport.handle("computer.setLevel", async (raw, from) => {
-      if (devices && !(devices.get(from)?.runsCore && devices.get(from)?.revokedAt === undefined)) throw new ContractError("refused", "this computer isn't paired with yours");
+      if (!(devices.get(from)?.runsCore && devices.get(from)?.revokedAt === undefined)) throw new ContractError("refused", "this computer isn't paired with yours");
       const p = SetLevelParams.safeParse(raw);
       if (!p.success) throw new ContractError("invalid", "computer.setLevel takes a level");
       const self = registry.self();
@@ -159,12 +160,19 @@ export class ComputerPeers {
   /** Which computer runs `bot`: this one if its own roots say so, else the one whose hello lists it. */
   botComputer(bot: string): string | undefined {
     const registry = this.#o.registry;
-    if (this.#o.roots().bots?.includes(bot)) return registry.self().name;
+    if (this.#o.placement) return this.#o.placement(bot);
+    const claims = new Set<string>();
+    if (this.#o.roots().bots?.includes(bot)) claims.add(registry.self().name);
     for (const [device, r] of this.#roots) {
-      if (r.bots?.includes(bot)) return registry.byDevice(device)?.name;
+      const name = registry.byDevice(device)?.name;
+      if (name !== undefined && r.bots?.includes(bot)) claims.add(name);
     }
-    return undefined;
+    if (claims.size > 1) {
+      throw new ContractError("conflict", `${[...claims].join(" and ")} each say they run ${bot}; its folder waits until only one does`, { bot, computers: [...claims] });
+    }
+    return claims.values().next().value;
   }
+
 
   close(): void {
     for (const off of this.#off.splice(0)) off();
@@ -187,23 +195,12 @@ export class ComputerPeers {
       return;
     }
     const h = parsed.data;
-    const { registry, devices } = this.#o;
-    let c = registry.byDevice(from);
+    const { registry } = this.#o;
+    const c = registry.byDevice(from);
     if (!c) {
-      // A device the list doesn't know as a computer never joins the tree from its own word.
-      if (devices) {
-        this.#o.log?.(`computers: a hello from ${from}, which isn't a paired computer, was ignored`);
-        return;
-      }
-      try {
-        registry.add({ name: h.name, device: from, os: h.os, hasDisplay: h.hasDisplay, agents: h.agents, level: h.level, state: "online" });
-      } catch (e) {
-        this.#o.log?.(`computers: ${from} said hello as ${h.name}, which can't join: ${(e as Error).message}`);
-        return;
-      }
-      c = registry.byDevice(from)!;
-    } else if (!devices && c.name !== h.name) {
-      void registry.rename(c.name, h.name).catch((e) => this.#o.log?.(`computers: ${c!.name} can't be renamed ${h.name}: ${(e as Error).message}`));
+      // A device the list doesn't know as a computer never joins the tree from its own word, nor names itself.
+      this.#o.log?.(`computers: a hello from ${from}, which isn't a paired computer, was ignored`);
+      return;
     }
     this.#roots.set(from, h.tree);
     const up = this.#o.transport.links().find((v) => v.peer === from)?.up ?? true;

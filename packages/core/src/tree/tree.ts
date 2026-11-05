@@ -6,15 +6,16 @@
 // * A computer that is off answers `computer_offline` at once, before anything is sent.
 // * A call for another computer carries the calling computer's level for it, the stricter of the computers it touches
 //   (§9.1 "Approvals follow the files"), and the holder judges it at the stricter of that and its own (review N2).
-// * A move or copy between two computers takes the direct path (edit J8, `transfer.ts`): the destination's holder
-//   takes the files straight from the source's over the link between them, and a move removes the source only once
-//   they're in place. Without it (the tree alone, in tests) a move copies through this computer.
-import type { FileStat, Level, Os } from "@waifucave/clover-protocol";
+// * A move between two computers, and any copy, takes the direct path (`transfer.ts`; edit J8, review S1): the
+//   destination's holder takes the files straight from the source's, each judging the whole operation once, and for a
+//   move the source lets go of what it sent only once the files are in place.
+import type { FileStat, Level, Os, SignedCardAnswer } from "@waifucave/clover-protocol";
 import { DEFAULT_LEVEL, pluginIdFromSegment, pluginIdToSegment } from "@waifucave/clover-protocol";
 import { strictestLevel } from "../contracts/approval-broker";
 import { ContractError, type Unsubscribe } from "../contracts/common";
 import { splitTreePath, type Tree, type TreeCallOptions, type TreeData, type TreeLocation } from "../contracts/tree";
-import { TREE_IO_MAX, type Holder, type HolderCall } from "./holder";
+import type { Holder, HolderCall } from "./holder";
+import type { TransferResult } from "./transfer";
 import { foldName } from "./names";
 import type { TreeWatchEvent } from "./watch";
 
@@ -44,12 +45,19 @@ export interface CoreTreeOptions {
   holder(computer: string): Holder;
   /** Which computer runs `bot` (its `bots/<bot>/` lives there). */
   botComputer(bot: string): string | undefined;
-  /** The direct path between holders (`transfer.ts`): a move between computers, or any copy. */
-  transfer?: (o: { from: string; to: string; move: boolean; source: string; destination: string; call: HolderCall }) => Promise<void>;
+  /** The direct path between holders (`transfer.ts`), for a move between computers or any copy: `call` carries no
+   *  answer; each holder's comes in `answers`. */
+  transfer?: (o: {
+    from: string; to: string; move: boolean; source: string; destination: string; call: HolderCall;
+    answers: { source?: SignedCardAnswer; destination?: SignedCardAnswer };
+  }) => Promise<TransferResult>;
 }
 
-/** The most a move through this computer copies of one file (no direct path); the direct path streams any size. */
-export const CROSS_MOVE_FILE_MAX = TREE_IO_MAX * 4;
+/** The answer whose card binds `computer`, as `key`. */
+function pick<K extends string>(answers: readonly SignedCardAnswer[], computer: string, key: K): Partial<Record<K, SignedCardAnswer>> {
+  const a = answers.find((x) => x.card.binds?.computer === computer);
+  return (a ? { [key]: a } : {}) as Partial<Record<K, SignedCardAnswer>>;
+}
 
 /** A real path inside `home`, joined the way that computer's OS writes paths. */
 function joinReal(os: Os | undefined, root: string, rest: string): string {
@@ -124,7 +132,9 @@ export class CoreTree implements Tree {
     await holder.remove(path, { ...call, ...(opts.recursive === undefined ? {} : { recursive: opts.recursive }) });
   }
 
-  async move(from: string, to: string, opts: TreeCallOptions): Promise<void> {
+  /** A move between computers is judged by both holders, each at the stricter of its level and the call's, so it may
+   *  need the user's answer at each: `answer` and `answers` go to the holder whose card each binds. */
+  async move(from: string, to: string, opts: TreeCallOptions & { answers?: readonly SignedCardAnswer[] }): Promise<void> {
     const src = this.resolve(from);
     const dst = this.resolve(to);
     if (src.computer === dst.computer) {
@@ -132,46 +142,26 @@ export class CoreTree implements Tree {
       await holder.move(from, to, call);
       return;
     }
-    const { call } = this.#reach([from, to], opts);
-    if (this.#o.transfer) {
-      await this.#o.transfer({ from, to, move: true, source: src.computer, destination: dst.computer, call });
-      return;
-    }
-    const a = this.#o.holder(src.computer);
-    const b = this.#o.holder(dst.computer);
-    const top = await a.stat(from, call);
-    if (!top) throw new ContractError("not_found", `${from} doesn't exist`);
-    if (await b.stat(to, call)) throw new ContractError("conflict", `${to} already exists`);
-    try {
-      await this.#copy(a, b, from, to, top, call);
-    } catch (e) {
-      // Nothing of the source was touched; take back what was copied, if the holder lets the same caller.
-      await b.remove(to, { ...call, recursive: true }).catch(() => {});
-      throw e;
-    }
-    await a.remove(from, { ...call, recursive: true });
+    await this.#direct(true, from, to, opts);
   }
 
   /** Copies a file or a folder, on one computer or between two, by the direct path: the files never pass through
    *  this computer unless it holds one end. */
-  async copy(from: string, to: string, opts: TreeCallOptions): Promise<void> {
+  async copy(from: string, to: string, opts: TreeCallOptions & { answers?: readonly SignedCardAnswer[] }): Promise<void> {
+    await this.#direct(false, from, to, opts);
+  }
+
+  async #direct(move: boolean, from: string, to: string, opts: TreeCallOptions & { answers?: readonly SignedCardAnswer[] }): Promise<void> {
     const src = this.resolve(from);
     const dst = this.resolve(to);
     const { call } = this.#reach([from, to], opts);
-    if (this.#o.transfer) {
-      await this.#o.transfer({ from, to, move: false, source: src.computer, destination: dst.computer, call });
-      return;
-    }
-    const a = this.#o.holder(src.computer);
-    const b = this.#o.holder(dst.computer);
-    const top = await a.stat(from, call);
-    if (!top) throw new ContractError("not_found", `${from} doesn't exist`);
-    if (await b.stat(to, call)) throw new ContractError("conflict", `${to} already exists`);
-    try {
-      await this.#copy(a, b, from, to, top, call);
-    } catch (e) {
-      await b.remove(to, { ...call, recursive: true }).catch(() => {});
-      throw e;
+    if (!this.#o.transfer) throw new ContractError("invalid", "this tree has no direct path between computers");
+    const { answer: _one, ...plain } = call;
+    const given = [...(opts.answer ? [opts.answer] : []), ...(opts.answers ?? [])];
+    const answers = { ...pick(given, src.computer, "source"), ...pick(given, dst.computer, "destination") };
+    const r = await this.#o.transfer({ from, to, move, source: src.computer, destination: dst.computer, call: plain, answers });
+    if (r.kept > 0) {
+      throw new ContractError("conflict", `${to} has the files; ${r.kept} of them changed at ${from} while they moved, so they stay there too`, { kept: r.kept });
     }
   }
 
@@ -252,31 +242,5 @@ export class CoreTree implements Tree {
       ...(opts.answer === undefined ? {} : { answer: opts.answer }),
     };
     return { holder: this.#o.holder(computers[0]!), call };
-  }
-
-  /** Copies `from` (on `a`) to `to` (on `b`): files in parts, folders, and links whose target stays in the tree. */
-  async #copy(a: Holder, b: Holder, from: string, to: string, st: FileStat, call: HolderCall): Promise<void> {
-    if (st.type === "dir") {
-      await b.mkdir(to, call);
-      for (const e of await a.list(from, call)) {
-        const name = e.path.slice(e.path.lastIndexOf("/") + 1);
-        await this.#copy(a, b, `${from.replace(/\/+$/, "")}/${name}`, `${to.replace(/\/+$/, "")}/${name}`, e, call);
-      }
-      return;
-    }
-    if (st.type === "symlink") {
-      await b.symlink(to, await a.readlink(from, call), call);
-      return;
-    }
-    if (st.type !== "file") throw new ContractError("invalid", `${from} isn't a file, folder or link; it can't move to another computer`);
-    if (st.size > CROSS_MOVE_FILE_MAX) throw new ContractError("invalid", `${from} is ${st.size} bytes; moving a file this large needs the direct path`);
-    const parts: Uint8Array[] = [];
-    for (let off = 0; off < st.size || off === 0; off += TREE_IO_MAX) {
-      const d = await a.read(from, { ...call, encoding: "base64", offset: off, length: Math.min(TREE_IO_MAX, Math.max(1, st.size - off)) });
-      parts.push(Buffer.from(d.encoding === "base64" ? d.data : d.text, d.encoding === "base64" ? "base64" : "utf8"));
-      if (st.size === 0) break;
-    }
-    const bytes = Buffer.concat(parts);
-    await b.write(to, { encoding: "base64", data: bytes.toString("base64") }, { ...call, executable: st.executable });
   }
 }

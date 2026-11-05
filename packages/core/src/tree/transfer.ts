@@ -1,54 +1,87 @@
-// The direct path for moves and copies between computers (the owner's item 89; J-M0 edit 8): the files stream from
-// the computer that holds them straight to the one that will, over a link stream between those two, never through a
-// third computer and never one round trip per file.
+// The direct path for moves and copies between computers (the owner's item 89; J-M0 edit 8; J-M1 review S1): the files
+// stream from the computer that holds them straight to the one that will, over a link stream between those two, never
+// through a third computer and never one round trip per file.
 //
 //   caller ──tree.receive──▶ destination ──stream "tree.send"──▶ source
 //                                        ◀── entries, in order ──
-//            ◀── ok ──────── (renamed into place) ──tree.sent──▶ (a move removes the source)
+//            ◀── ok ──────── (renamed into place) ──tree.sent──▶ (a move removes what it sent)
 //
-// * The destination checks its own fence and level for the write before anything moves, then takes the entries into a
-//   hidden folder beside the destination and renames it into place only once everything arrived. A failure removes it;
-//   the source is untouched.
-// * The source checks its fence for the read, and for a move its level for the move (the delete it implies), before it
-//   sends; it removes its copy only when the destination says it has the files (`tree.sent`).
-// * Each holder judges at the stricter of its own level and the caller's (R1). A holder that needs the user's answer
-//   says so with its own card; the caller asks the user and sends `answer` (for the destination) or `sourceAnswer`
-//   (for the source) with the call again.
-// * Links travel as links when their target stays inside the moved folder; anything else that isn't a file or a
-//   folder is refused before anything moves.
+// * Each holder judges the whole operation once, with one binding (`tree.move` or `tree.copy` with `from` and `to`),
+//   before anything lands: the destination before it asks for the files, the source before it sends any. Each judges
+//   at the stricter of its own level and the call's (review N2), and the user's signed answer for each is the one whose
+//   card binds that computer.
+// * The destination takes the entries into a hidden folder beside the destination, made exclusively (`O_EXCL`), and
+//   moves it into place only once everything arrived, never over something that's there. A failure removes only that
+//   hidden copy.
+// * The source sends what its fence lets the caller read. For a move it first checks it may remove every entry, and it
+//   removes only what it sent, each only if it is unchanged since (size, time and inode): anything that changed or
+//   came meanwhile stays, and the move says so (two copies, never none).
+// * Links travel as links when their target stays inside what moves; anything that isn't a file, a folder or a link
+//   refuses the whole operation before anything moves.
+// * R1, the caller's side (`transferAsking`): before it sends the call, it asks each holder that will judge it as a
+//   peer whether its level needs the user's answer (`tree.judge`, which takes no answer and so spends none), shows
+//   the user each holder's own card, and sends every answer with the one call.
 import { randomUUID } from "node:crypto";
-import { constants as fsConstants, promises as fsp } from "node:fs";
+import { constants as FS, promises as fsp } from "node:fs";
 import type { FileHandle } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve as resolvePath, sep } from "node:path";
 import { z } from "zod";
 import { Level, SessionId, SignedCardAnswer, TreePath, type Caller } from "@waifucave/clover-protocol";
 import { ContractError, type Unsubscribe } from "../contracts/common";
 import type { Link, LinkStream, LinkTransport } from "../contracts/link-transport";
+import type { TreeChange } from "../contracts/tree";
 import type { HolderCall, LocalHolder } from "./holder";
-import { answerNeeded, type AnswerAsker } from "./judge";
+import { answerNeeded, type AnswerAsker, type NeedsAnswer } from "./judge";
 import { offlineAs } from "./remote";
 
+/** Bytes per frame of file data. */
 const CHUNK = 256 * 1024;
-/** A sent tree that waits for the destination's word this long is dropped (the source stays). */
+/** A sent move whose destination never says it has the files is forgotten after this (the source stays). */
 const SENT_WAIT_MS = 10 * 60 * 1000;
 
 export const ReceiveParams = z.object({
   from: TreePath, to: TreePath, move: z.boolean(),
-  session: SessionId.optional(), level: Level, answer: SignedCardAnswer.optional(), sourceAnswer: SignedCardAnswer.optional(),
+  session: SessionId.optional(), level: Level,
+  /** The user's signed answer whose card binds the destination. */
+  answer: SignedCardAnswer.optional(),
+  /** The one whose card binds the source. */
+  sourceAnswer: SignedCardAnswer.optional(),
 });
 export type ReceiveParams = z.infer<typeof ReceiveParams>;
 const SendMeta = z.object({ from: TreePath, to: TreePath, move: z.boolean(), session: SessionId.optional(), level: Level, answer: SignedCardAnswer.optional() });
 
+export interface TransferResult {
+  files: number;
+  bytes: number;
+  /** A move's entries that changed at the source while they moved, and stay there too. */
+  kept: number;
+}
+
+/** What one holder judges for the whole operation: the same binding at both ends. */
+export function transferChange(move: boolean, from: string, to: string): TreeChange {
+  return { method: move ? "tree.move" : "tree.copy", params: { from, to } } as unknown as TreeChange;
+}
+
 interface Entry {
   kind: "dir" | "file" | "link";
-  /** Inside the moved folder, with `/`; "" is the folder (or file) itself. */
+  /** Inside what moves, with `/`; "" is the folder (or file) itself. */
   rel: string;
   mode: number;
   size?: number;
   target?: string;
 }
+/** The source's own record of an entry: what it was when sent. */
+interface Sent extends Entry {
+  mtimeMs: number;
+  ino: bigint;
+}
 
 // ---- framing: 1 byte type, 4 bytes length, payload ------------------------------------------------------------------
+
+const T_START = 0x53; // 'S': { sendId }
+const T_ENTRY = 0x48; // 'H': an Entry
+const T_DATA = 0x44; // 'D': file bytes
+const T_ERROR = 0x58; // 'X': a ContractError, as JSON
 
 function frame(type: number, payload: Uint8Array): Uint8Array {
   const out = new Uint8Array(5 + payload.length);
@@ -57,10 +90,6 @@ function frame(type: number, payload: Uint8Array): Uint8Array {
   out.set(payload, 5);
   return out;
 }
-const T_START = 0x53; // 'S': { sendId }
-const T_ENTRY = 0x48; // 'H': an Entry
-const T_DATA = 0x44; // 'D': file bytes
-const T_ERROR = 0x58; // 'X': a ContractError, as JSON
 
 class Frames {
   #buf = new Uint8Array(0);
@@ -71,6 +100,7 @@ class Frames {
     this.#buf = next;
     while (this.#buf.length >= 5) {
       const len = new DataView(this.#buf.buffer, this.#buf.byteOffset).getUint32(1);
+      if (len > CHUNK * 2) throw new ContractError("invalid", "a frame larger than the direct path sends");
       if (this.#buf.length < 5 + len) break;
       fn(this.#buf[0]!, this.#buf.slice(5, 5 + len));
       this.#buf = this.#buf.slice(5 + len);
@@ -80,56 +110,69 @@ class Frames {
 
 const json = (v: unknown) => new TextEncoder().encode(JSON.stringify(v));
 const unjson = (b: Uint8Array) => JSON.parse(new TextDecoder().decode(b)) as unknown;
+const at = (root: string, rel: string) => (rel === "" ? root : join(root, ...rel.split("/")));
+
+/** Whether `child` is `parent` or inside it. */
+function inside(parent: string, child: string): boolean {
+  const r = relative(parent, child);
+  return r === "" || (r !== ".." && !r.startsWith(`..${sep}`) && !isAbsolute(r));
+}
 
 // ---- the source -------------------------------------------------------------------------------------------------
 
-/** Walks what's sent: folders before their contents, files and links, nothing the caller may not see. Anything else
- *  (a socket, a device) refuses the whole send before a byte moves. */
-async function walk(holder: LocalHolder, root: string, call: HolderCall): Promise<Entry[]> {
-  const out: Entry[] = [];
-  const top = await fsp.lstat(root);
-  const visit = async (real: string, rel: string, st: Awaited<ReturnType<typeof fsp.lstat>>) => {
-    if (!holder.visible(real, call)) return;
+/** Walks what's sent: folders before their contents, files and links, nothing the caller may not see. For a move,
+ *  every entry must be one the caller may remove. Anything else (a socket, a device, a link out) refuses the whole
+ *  operation before a byte moves. */
+async function walk(holder: LocalHolder, root: string, call: HolderCall, move: boolean): Promise<Sent[]> {
+  const out: Sent[] = [];
+  const visit = async (real: string, rel: string) => {
+    const st = await fsp.lstat(real, { bigint: true });
+    const name = rel || basename(root);
+    if (!holder.visible(real, call)) {
+      if (move) throw new ContractError("fenced", `${name} is fenced; it can't move`);
+      return;
+    }
+    if (move && !holder.changeable(real, call)) throw new ContractError("fenced", `${name} is fenced; it can't move`);
+    const base = { rel, mode: Number(st.mode) & 0o777, mtimeMs: Number(st.mtimeMs), ino: st.ino };
     if (st.isDirectory()) {
-      out.push({ kind: "dir", rel, mode: Number(st.mode) & 0o777 });
-      for (const name of (await fsp.readdir(real)).sort()) {
-        const child = join(real, name);
-        await visit(child, rel === "" ? name : `${rel}/${name}`, await fsp.lstat(child));
-      }
+      out.push({ kind: "dir", ...base });
+      for (const child of (await fsp.readdir(real)).sort()) await visit(join(real, child), rel === "" ? child : `${rel}/${child}`);
     } else if (st.isFile()) {
-      out.push({ kind: "file", rel, mode: Number(st.mode) & 0o777, size: Number(st.size) });
+      if (st.nlink > 1n && call.as.kind !== "user" && call.as.kind !== "core") throw new ContractError("refused", `${name} has other names (hard links)`);
+      out.push({ kind: "file", ...base, size: Number(st.size) });
     } else if (st.isSymbolicLink()) {
       const raw = await fsp.readlink(real);
-      const lands = isAbsolute(raw) ? raw : resolvePath(dirname(real), raw);
-      const inside = relative(root, lands);
-      if (inside === ".." || inside.startsWith(`..${sep}`) || isAbsolute(inside) || isAbsolute(raw)) {
-        throw new ContractError("invalid", `${rel || basename(root)} is a link that leads out of what's moving`);
+      if (isAbsolute(raw) || !inside(root, resolvePath(dirname(real), raw))) {
+        throw new ContractError("invalid", `${name} is a link that leads out of what's moving`);
       }
-      out.push({ kind: "link", rel, mode: 0o777, target: raw.split(sep).join("/") });
+      out.push({ kind: "link", ...base, target: raw.split(sep).join("/") });
     } else {
-      throw new ContractError("invalid", `${rel || basename(root)} isn't a file, folder or link`);
+      throw new ContractError("invalid", `${name} isn't a file, folder or link`);
     }
   };
-  await visit(root, "", top);
+  await visit(root, "");
   return out;
 }
 
-async function send(stream: LinkStream, root: string, entries: Entry[], sendId: string): Promise<void> {
+const wire = ({ kind, rel, mode, size, target }: Sent): Entry => ({ kind, rel, mode, ...(size === undefined ? {} : { size }), ...(target === undefined ? {} : { target }) });
+
+async function send(stream: LinkStream, root: string, entries: readonly Sent[], sendId: string): Promise<void> {
   await stream.write(frame(T_START, json({ sendId })));
   for (const e of entries) {
-    await stream.write(frame(T_ENTRY, json(e)));
+    await stream.write(frame(T_ENTRY, json(wire(e))));
     if (e.kind !== "file") continue;
-    const fh = await fsp.open(e.rel === "" ? root : join(root, ...e.rel.split("/")), "r");
+    const fh = await fsp.open(at(root, e.rel), FS.O_RDONLY | (process.platform === "win32" ? 0 : FS.O_NOFOLLOW ?? 0));
     try {
+      if ((await fh.stat({ bigint: true })).ino !== e.ino) throw new ContractError("conflict", `${e.rel || basename(root)} changed while it was being sent`);
       const buf = new Uint8Array(CHUNK);
       let left = e.size ?? 0;
-      let at = 0;
+      let pos = 0;
       while (left > 0) {
-        const { bytesRead } = await fh.read(buf, 0, Math.min(CHUNK, left), at);
-        if (bytesRead === 0) throw new ContractError("failed", `${e.rel} got shorter while it was being sent`);
+        const { bytesRead } = await fh.read(buf, 0, Math.min(CHUNK, left), pos);
+        if (bytesRead === 0) throw new ContractError("conflict", `${e.rel || basename(root)} got shorter while it was being sent`);
         await stream.write(frame(T_DATA, buf.slice(0, bytesRead)));
         left -= bytesRead;
-        at += bytesRead;
+        pos += bytesRead;
       }
     } finally {
       await fh.close();
@@ -137,9 +180,66 @@ async function send(stream: LinkStream, root: string, entries: Entry[], sendId: 
   }
 }
 
+/** Removes what was sent, and only what is unchanged since: files and links, then the folders left empty, deepest
+ *  first. Returns how many entries stay. */
+async function removeSent(root: string, entries: readonly Sent[]): Promise<number> {
+  let kept = 0;
+  for (const e of entries) {
+    if (e.kind === "dir") continue;
+    const p = at(root, e.rel);
+    const st = await fsp.lstat(p, { bigint: true }).catch(() => null);
+    if (!st) continue;
+    const same = st.ino === e.ino && Number(st.mtimeMs) === e.mtimeMs && (e.kind !== "file" || Number(st.size) === e.size);
+    if (!same) {
+      kept++;
+      continue;
+    }
+    await fsp.unlink(p).catch(() => { kept++; });
+  }
+  for (const e of [...entries].reverse()) {
+    if (e.kind !== "dir") continue;
+    await fsp.rmdir(at(root, e.rel)).catch((err: NodeJS.ErrnoException) => { if (err.code !== "ENOENT") kept++; });
+  }
+  return kept;
+}
+
 // ---- the destination ----------------------------------------------------------------------------------------------
 
-/** Takes a stream of entries into `staging` (made empty), then the caller renames it into place. */
+/** Where an entry lands in `staging`, refusing anything that isn't a plain relative path. */
+function landing(staging: string, rel: string): string {
+  const parts = rel === "" ? [] : rel.split("/");
+  if (parts.some((p) => p === "" || p === "." || p === ".." || p.includes("\\") || p.includes("\0") || (process.platform === "win32" && p.includes(":")))) {
+    throw new ContractError("invalid", `${rel} isn't a plain path`);
+  }
+  return at(staging, rel);
+}
+
+/** One entry into `staging`, made exclusively. */
+async function make(staging: string, e: Entry): Promise<FileHandle | null> {
+  const p = landing(staging, e.rel);
+  if (e.kind === "dir") {
+    await fsp.mkdir(p, { mode: (e.mode & 0o777) | 0o700 });
+    return null;
+  }
+  if (e.kind === "link") {
+    const t = String(e.target ?? "");
+    if (t === "" || isAbsolute(t) || t.includes("\\") || !inside(staging, resolvePath(dirname(p), t))) throw new ContractError("refused", `${e.rel} would lead out of what's moving`);
+    await fsp.symlink(t.split("/").join(sep), p);
+    return null;
+  }
+  return fsp.open(p, FS.O_WRONLY | FS.O_CREAT | FS.O_EXCL, 0o600);
+}
+
+async function finishFile(fh: FileHandle, mode: number): Promise<void> {
+  try {
+    await fh.datasync();
+    if (process.platform !== "win32") await fh.chmod(mode & 0o777);
+  } finally {
+    await fh.close();
+  }
+}
+
+/** Takes a stream of entries into `staging` (which must not exist). */
 function receive(stream: LinkStream, staging: string): Promise<{ sendId: string; files: number; bytes: number }> {
   return new Promise((resolveP, rejectP) => {
     const frames = new Frames();
@@ -148,17 +248,15 @@ function receive(stream: LinkStream, staging: string): Promise<{ sendId: string;
     let bytes = 0;
     let current: { fh: FileHandle; left: number; mode: number } | null = null;
     let chain = Promise.resolve();
-    let failed: Error | null = null;
+    let failed = false;
     const fail = (e: unknown) => {
       if (failed) return;
-      failed = e instanceof Error ? e : new Error(String(e));
+      failed = true;
       stream.abort("the destination couldn't take it");
-      rejectP(failed);
-    };
-    const place = (rel: string) => {
-      const parts = rel === "" ? [] : rel.split("/");
-      if (parts.some((p) => p === "" || p === "." || p === ".." || p.includes("\\") || p.includes("\0"))) throw new ContractError("invalid", `${rel} isn't a plain path`);
-      return parts.length === 0 ? staging : join(staging, ...parts);
+      const c = current;
+      current = null;
+      void c?.fh.close().catch(() => {});
+      rejectP(e);
     };
     const onFrame = async (type: number, payload: Uint8Array) => {
       if (type === T_ERROR) throw ContractError.fromJSON(unjson(payload));
@@ -166,45 +264,42 @@ function receive(stream: LinkStream, staging: string): Promise<{ sendId: string;
         sendId = String((unjson(payload) as { sendId?: unknown }).sendId ?? "");
         return;
       }
+      if (!sendId) throw new ContractError("invalid", "entries came before the start");
       if (type === T_ENTRY) {
         if (current) throw new ContractError("failed", "an entry came before the last file was whole");
         const e = unjson(payload) as Entry;
-        const at = place(e.rel);
-        if (e.kind === "dir") await fsp.mkdir(at, { recursive: e.rel === "", mode: (e.mode & 0o777) | 0o700 }).catch((err: NodeJS.ErrnoException) => { if (err.code !== "EEXIST") throw err; });
-        else if (e.kind === "link") {
-          const t = String(e.target ?? "");
-          const lands = resolvePath(dirname(at), t);
-          const inside = relative(staging, lands);
-          if (isAbsolute(t) || inside === ".." || inside.startsWith(`..${sep}`)) throw new ContractError("refused", `${e.rel} would lead out of what's moving`);
-          await fsp.symlink(t.split("/").join(sep), at);
-        } else {
-          const fh = await fsp.open(at, "wx", 0o600);
-          current = { fh, left: e.size ?? 0, mode: e.mode };
+        const fh = await make(staging, e);
+        if (fh) {
           files++;
-          if (current.left === 0) await finishFile();
+          if ((e.size ?? 0) === 0) await finishFile(fh, e.mode);
+          else current = { fh, left: e.size ?? 0, mode: e.mode };
         }
         return;
       }
       if (type === T_DATA) {
-        if (!current) throw new ContractError("failed", "file bytes came with no file");
-        if (payload.length > current.left) throw new ContractError("failed", "a file came longer than it said");
-        await current.fh.write(payload);
-        current.left -= payload.length;
+        const c = current;
+        if (!c) throw new ContractError("failed", "file bytes came with no file");
+        if (payload.length > c.left) throw new ContractError("failed", "a file came longer than it said");
+        let off = 0;
+        while (off < payload.length) off += (await c.fh.write(payload, off, payload.length - off)).bytesWritten;
+        c.left -= payload.length;
         bytes += payload.length;
-        if (current.left === 0) await finishFile();
+        if (c.left === 0) {
+          current = null;
+          await finishFile(c.fh, c.mode);
+        }
+        return;
       }
-    };
-    const finishFile = async () => {
-      const c = current!;
-      current = null;
-      await c.fh.datasync();
-      if (process.platform !== "win32") await c.fh.chmod(c.mode & 0o777);
-      await c.fh.close();
+      throw new ContractError("invalid", "a frame the direct path doesn't send");
     };
     stream.onData((chunk) => {
-      frames.push(chunk, (type, payload) => {
-        chain = chain.then(() => (failed ? undefined : onFrame(type, payload))).catch(fail);
-      });
+      try {
+        frames.push(chunk, (type, payload) => {
+          chain = chain.then(() => (failed ? undefined : onFrame(type, payload))).catch(fail);
+        });
+      } catch (e) {
+        fail(e);
+      }
     });
     stream.onEnd((err) => {
       chain = chain.then(() => {
@@ -218,37 +313,104 @@ function receive(stream: LinkStream, staging: string): Promise<{ sendId: string;
   });
 }
 
-/** Whether `child` is `parent` or inside it. */
-function inside(parent: string, child: string): boolean {
-  const r = relative(parent, child);
-  return r === "" || (!r.startsWith(`..${sep}`) && r !== ".." && !isAbsolute(r));
+/** A file's bytes from the source into `fh`, in parts, from the very file that was walked (opened without following
+ *  a link, its inode compared). */
+async function copyInto(root: string, e: Sent, fh: FileHandle): Promise<void> {
+  const src = await fsp.open(at(root, e.rel), FS.O_RDONLY | (process.platform === "win32" ? 0 : FS.O_NOFOLLOW ?? 0));
+  try {
+    if ((await src.stat({ bigint: true })).ino !== e.ino) throw new ContractError("conflict", `${e.rel || basename(root)} changed while it was being copied`);
+    const buf = new Uint8Array(CHUNK);
+    let left = e.size ?? 0;
+    let pos = 0;
+    while (left > 0) {
+      const { bytesRead } = await src.read(buf, 0, Math.min(CHUNK, left), pos);
+      if (bytesRead === 0) throw new ContractError("conflict", `${e.rel || basename(root)} got shorter while it was being copied`);
+      let off = 0;
+      while (off < bytesRead) off += (await fh.write(buf, off, bytesRead - off)).bytesWritten;
+      left -= bytesRead;
+      pos += bytesRead;
+    }
+  } finally {
+    await src.close();
+  }
 }
 
-/** Removes what was sent, and only that: files and links, then the folders left empty, deepest first. Anything that
- *  came into the source after it was sent stays (two copies, never none). */
-async function removeSent(root: string, entries: readonly Entry[]): Promise<void> {
-  const at = (rel: string) => (rel === "" ? root : join(root, ...rel.split("/")));
-  for (const e of entries) if (e.kind !== "dir") await fsp.unlink(at(e.rel)).catch(() => {});
-  for (const e of [...entries].reverse()) if (e.kind === "dir") await fsp.rmdir(at(e.rel)).catch(() => {});
+/** Moves the finished copy into place, never over something that's there: a file by a new link (which refuses an
+ *  existing name), a folder by a rename after checking the name is still free. */
+async function placeInto(staging: string, real: string, label: string): Promise<void> {
+  const st = await fsp.lstat(staging);
+  if (st.isFile()) {
+    try {
+      await fsp.link(staging, real);
+      await fsp.unlink(staging);
+      return;
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code === "EEXIST") throw new ContractError("conflict", `${label} already exists`);
+      // A disk without hard links: the rename below, after the same check.
+    }
+  }
+  if (await fsp.lstat(real).then(() => true, () => false)) throw new ContractError("conflict", `${label} already exists`);
+  await fsp.rename(staging, real);
 }
 
-/** A copy within this computer, entry by entry into `staging`. */
-async function copyHere(root: string, entries: Entry[], staging: string): Promise<{ files: number; bytes: number }> {
+/** The deepest folder above `real` that exists already: what a failure leaves in place. */
+async function existingAbove(real: string): Promise<string> {
+  let d = dirname(real);
+  while (!(await fsp.lstat(d).then(() => true, () => false))) {
+    const up = dirname(d);
+    if (up === d) break;
+    d = up;
+  }
+  return d;
+}
+
+/** After a failure: the hidden copy, and the folders made above it for it while they are still empty. */
+async function cleanUp(staging: string, made: string): Promise<void> {
+  await fsp.rm(staging, { recursive: true, force: true }).catch(() => {});
+  for (let d = dirname(staging); d !== made && inside(made, d); d = dirname(d)) {
+    if (!(await fsp.rmdir(d).then(() => true, () => false))) break;
+  }
+}
+
+/** A move or copy whose two ends are on this disk: two holders here (the conformance harness), or one. */
+export async function localTransfer(src: LocalHolder, dst: LocalHolder, p: ReceiveParams, as: Caller): Promise<TransferResult> {
+  const change = transferChange(p.move, p.from, p.to);
+  const dcall: HolderCall = { as, level: p.level, ...(p.answer ? { answer: p.answer } : {}) };
+  const scall: HolderCall = { as, level: p.level, ...(p.sourceAnswer ? { answer: p.sourceAnswer } : {}) };
+  const to = await dst.realEntry(p.to, dcall, "write");
+  if (to.exists) throw new ContractError("conflict", `${p.to} already exists`);
+  const from = await src.realEntry(p.from, scall, p.move ? "delete" : "read");
+  if (!from.exists) throw new ContractError("not_found", `${p.from} doesn't exist`);
+  if (inside(from.real, to.real)) throw new ContractError("invalid", `${p.to} is inside ${p.from}`);
+  // The whole operation, judged once at each end before anything lands.
+  await dst.judge(dcall, change, p.move ? "move" : "edit");
+  if (p.move && src !== dst) await src.judge(scall, change, "move");
+  const entries = await walk(src, from.real, scall, p.move);
+  const kept = await existingAbove(to.real);
+  await dst.makeParents(to, p.to);
+  const staging = join(dirname(to.real), `.clover-receiving-${randomUUID()}`);
   let files = 0;
   let bytes = 0;
-  for (const e of entries) {
-    const from = e.rel === "" ? root : join(root, ...e.rel.split("/"));
-    const at = e.rel === "" ? staging : join(staging, ...e.rel.split("/"));
-    if (e.kind === "dir") await fsp.mkdir(at, { mode: (e.mode & 0o777) | 0o700 });
-    else if (e.kind === "link") await fsp.symlink(e.target!.split("/").join(sep), at);
-    else {
-      await fsp.copyFile(from, at, fsConstants.COPYFILE_EXCL);
-      if (process.platform !== "win32") await fsp.chmod(at, e.mode & 0o777);
+  try {
+    for (const e of entries) {
+      const fh = await make(staging, e);
+      if (!fh) continue;
+      try {
+        await copyInto(from.real, e, fh);
+      } catch (err) {
+        await fh.close().catch(() => {});
+        throw err;
+      }
+      await finishFile(fh, e.mode);
       files++;
       bytes += e.size ?? 0;
     }
+    await placeInto(staging, to.real, p.to);
+  } catch (e) {
+    await cleanUp(staging, kept);
+    throw e;
   }
-  return { files, bytes };
+  return { files, bytes, kept: p.move ? await removeSent(from.real, entries) : 0 };
 }
 
 // ---- serving both ends --------------------------------------------------------------------------------------------
@@ -256,51 +418,42 @@ async function copyHere(root: string, entries: Entry[], staging: string): Promis
 export interface TransferOptions {
   transport: LinkTransport;
   holder: LocalHolder;
-  /** Where a tree path lives: its computer's device, or null for this computer. */
+  /** Where a tree path lives: its computer and device, or a null device for this computer. */
   deviceFor: (path: string) => { computer: string; device: string | null };
-  mayCall?: (device: string) => boolean;
-  clock: { now(): number };
+  /** Whether `device` may call at all: a paired computer, not revoked. */
+  mayCall: (device: string) => boolean;
 }
 
-/** Serves `tree.receive` (this computer is the destination), the `tree.send` stream and `tree.sent` (the source). */
-export function serveTransfer(o: TransferOptions): { receiveHere: (p: ReceiveParams, as: Caller) => Promise<{ files: number; bytes: number }>; close: Unsubscribe } {
+const JudgeParams = z.object({ from: TreePath, to: TreePath, move: z.boolean(), role: z.enum(["source", "destination"]), session: SessionId.optional(), level: Level });
+
+/** How one holder judges its part of a move or copy: the destination the whole operation, the source a move. */
+async function judgePart(holder: LocalHolder, call: HolderCall, role: "source" | "destination", move: boolean, from: string, to: string): Promise<void> {
+  if (role === "source" && !move) return;
+  await holder.judge(call, transferChange(move, from, to), role === "source" || move ? "move" : "edit");
+}
+
+/** Serves `tree.receive` (this computer is the destination), the `tree.send` stream and `tree.sent` (the source), and
+ *  `tree.judge`: whether this computer's level needs the user's answer for its part, with its card if so. */
+export function serveTransfer(o: TransferOptions): { receiveHere: (p: ReceiveParams, as: Caller) => Promise<TransferResult>; close: Unsubscribe } {
   const t = o.transport;
-  const pending = new Map<string, { device: string; real: string; entries: Entry[]; timer: ReturnType<typeof setTimeout> }>();
+  const pending = new Map<string, { device: string; real: string; entries: Sent[]; timer: ReturnType<typeof setTimeout> }>();
   const offs: Unsubscribe[] = [];
 
-  const receiveHere = async (p: ReceiveParams, as: Caller): Promise<{ files: number; bytes: number }> => {
+  const receiveHere = async (p: ReceiveParams, as: Caller): Promise<TransferResult> => {
+    const src = o.deviceFor(p.from);
+    if (src.device === null) return localTransfer(o.holder, o.holder, p, as);
     const call: HolderCall = { as, level: p.level, ...(p.answer ? { answer: p.answer } : {}) };
     const dst = await o.holder.realEntry(p.to, call, "write");
     if (dst.exists) throw new ContractError("conflict", `${p.to} already exists`);
-    await o.holder.judge(call, "tree.receive", { from: p.from, to: p.to, move: p.move }, p.move ? "move" : "edit");
-    const src = o.deviceFor(p.from);
+    await o.holder.judge(call, transferChange(p.move, p.from, p.to), p.move ? "move" : "edit");
+    const above = await existingAbove(dst.real);
     await o.holder.makeParents(dst, p.to);
     const staging = join(dirname(dst.real), `.clover-receiving-${randomUUID()}`);
-    const into = async () => {
-      // Into place only where nothing came meanwhile.
-      if (await fsp.lstat(dst.real).then(() => true, () => false)) throw new ContractError("conflict", `${p.to} already exists`);
-      await fsp.rename(staging, dst.real);
-    };
-    if (src.device === null) {
-      // Both ends here (a copy, or a peer's move within this computer): the same checks, no link.
-      const from = await o.holder.realEntry(p.from, call, p.move ? "delete" : "read");
-      if (!from.exists) throw new ContractError("not_found", `${p.from} doesn't exist`);
-      if (inside(from.real, dst.real)) throw new ContractError("invalid", `${p.to} is inside ${p.from}`);
-      try {
-        const entries = await walk(o.holder, from.real, call);
-        const got = await copyHere(from.real, entries, staging);
-        await into();
-        if (p.move) await removeSent(from.real, entries);
-        return got;
-      } catch (e) {
-        await fsp.rm(staging, { recursive: true, force: true }).catch(() => {});
-        throw e;
-      }
-    }
     let link: Link;
     try {
       link = await t.connect(src.device);
     } catch (e) {
+      await cleanUp(staging, above);
       throw offlineAs(src.computer, e);
     }
     const stream = link.openStream("tree.send", "files", {
@@ -310,20 +463,25 @@ export function serveTransfer(o: TransferOptions): { receiveHere: (p: ReceivePar
     let got: { sendId: string; files: number; bytes: number };
     try {
       got = await receive(stream, staging);
-      await into();
+      await placeInto(staging, dst.real, p.to);
     } catch (e) {
-      await fsp.rm(staging, { recursive: true, force: true }).catch(() => {});
+      await cleanUp(staging, above);
       throw offlineAs(src.computer, e);
     }
-    // In place: the source may let go of its copy. A source that doesn't hear this keeps it (two copies, never none).
-    await link.request("tree.sent", { sendId: got.sendId, ok: true }, { priority: "files" }).catch(() => {});
-    return { files: got.files, bytes: got.bytes };
+    // In place: the source may let go of what it sent. A source that doesn't hear this keeps it (two copies, never none).
+    let kept = 0;
+    if (p.move) {
+      const r = await link.request<{ kept?: number }>("tree.sent", { sendId: got.sendId }, { priority: "files" }).catch(() => ({ kept: -1 }));
+      kept = r.kept === -1 ? got.files : Math.max(0, Number(r.kept ?? 0));
+    }
+    return { files: got.files, bytes: got.bytes, kept };
   };
 
   offs.push(t.handle("tree.receive", async (raw, from) => {
-    if (o.mayCall && !o.mayCall(from)) throw new ContractError("refused", "this computer isn't paired with yours");
+    if (!o.mayCall(from)) throw new ContractError("refused", "this computer isn't paired with yours");
     const p = ReceiveParams.safeParse(raw);
     if (!p.success) throw new ContractError("invalid", `tree.receive: ${p.error.issues[0]?.message ?? "bad params"}`);
+    // The receiver stamps who the call is for (review N2): a peer, for the session it names.
     const as: Caller = { kind: "peer", device: from, ...(p.data.session ? { sessionId: p.data.session } : {}) };
     return receiveHere(p.data, as);
   }));
@@ -331,18 +489,21 @@ export function serveTransfer(o: TransferOptions): { receiveHere: (p: ReceivePar
   offs.push(t.onStream("tree.send", (stream, meta, from) => {
     void (async () => {
       try {
-        if (o.mayCall && !o.mayCall(from)) throw new ContractError("refused", "this computer isn't paired with yours");
-        const m = SendMeta.parse(meta);
+        if (!o.mayCall(from)) throw new ContractError("refused", "this computer isn't paired with yours");
+        const parsed = SendMeta.safeParse(meta);
+        if (!parsed.success) throw new ContractError("invalid", "tree.send: bad params");
+        const m = parsed.data;
+        if (o.deviceFor(m.from).device !== null) throw new ContractError("invalid", `${m.from} isn't on this computer`);
         const as: Caller = { kind: "peer", device: from, ...(m.session ? { sessionId: m.session } : {}) };
         const call: HolderCall = { as, level: m.level, ...(m.answer ? { answer: m.answer } : {}) };
         const src = await o.holder.realEntry(m.from, call, m.move ? "delete" : "read");
         if (!src.exists) throw new ContractError("not_found", `${m.from} doesn't exist`);
-        if (m.move) await o.holder.judge(call, "tree.send", { from: m.from, to: m.to, move: true }, "move");
-        const entries = await walk(o.holder, src.real, call);
+        if (m.move) await o.holder.judge(call, transferChange(true, m.from, m.to), "move");
+        const entries = await walk(o.holder, src.real, call, m.move);
         const sendId = randomUUID();
         if (m.move) {
           const timer = setTimeout(() => pending.delete(sendId), SENT_WAIT_MS);
-          timer.unref?.();
+          (timer as { unref?: () => void }).unref?.();
           pending.set(sendId, { device: from, real: src.real, entries, timer });
         }
         await send(stream, src.real, entries, sendId);
@@ -359,14 +520,23 @@ export function serveTransfer(o: TransferOptions): { receiveHere: (p: ReceivePar
     })();
   }));
 
-  offs.push(t.handle("tree.sent", async (raw, from) => {
-    const p = (raw ?? {}) as { sendId?: string; ok?: boolean };
-    const s = pending.get(String(p.sendId));
-    if (!s || s.device !== from) return { ok: true };
-    pending.delete(String(p.sendId));
-    clearTimeout(s.timer);
-    if (p.ok === true) await removeSent(s.real, s.entries);
+  offs.push(t.handle("tree.judge", async (raw, from) => {
+    if (!o.mayCall(from)) throw new ContractError("refused", "this computer isn't paired with yours");
+    const p = JudgeParams.safeParse(raw);
+    if (!p.success) throw new ContractError("invalid", `tree.judge: ${p.error.issues[0]?.message ?? "bad params"}`);
+    const as: Caller = { kind: "peer", device: from, ...(p.data.session ? { sessionId: p.data.session } : {}) };
+    // No answer goes with it, so none is spent: allowed, refused, or a refusal that names this computer's card.
+    await judgePart(o.holder, { as, level: p.data.level }, p.data.role, p.data.move, p.data.from, p.data.to);
     return { ok: true };
+  }));
+
+  offs.push(t.handle("tree.sent", async (raw, from) => {
+    const id = String((raw as { sendId?: unknown } | null)?.sendId ?? "");
+    const s = pending.get(id);
+    if (!s || s.device !== from) return { kept: 0 };
+    pending.delete(id);
+    clearTimeout(s.timer);
+    return { kept: await removeSent(s.real, s.entries) };
   }));
 
   return {
@@ -379,42 +549,99 @@ export function serveTransfer(o: TransferOptions): { receiveHere: (p: ReceivePar
   };
 }
 
-/** The caller's side: asks the destination to take `from` straight from its holder. A holder that needs the user's
- *  answer says so with its card; `ask` shows it and the call goes again with that answer, at most once per holder. */
+/** The caller's side: asks the destination to take `from` straight from its holder. */
 export async function transfer(o: {
   transport: LinkTransport;
-  /** The destination's computer and device, or null when it is this computer. */
+  /** The destination's computer and device, or a null device when it is this computer. */
   destination: { computer: string; device: string | null };
   /** This computer's own `receiveHere`, for a destination here. */
-  receiveHere: (p: ReceiveParams, as: Caller) => Promise<{ files: number; bytes: number }>;
+  receiveHere: (p: ReceiveParams, as: Caller) => Promise<TransferResult>;
+  params: ReceiveParams;
+  as: Caller;
+}): Promise<TransferResult> {
+  if (o.destination.device === null) return o.receiveHere(o.params, o.as);
+  let link: Link;
+  try {
+    link = await o.transport.connect(o.destination.device);
+  } catch (e) {
+    throw offlineAs(o.destination.computer, e);
+  }
+  try {
+    return await link.request<TransferResult>("tree.receive", o.params, { priority: "files" });
+  } catch (e) {
+    throw offlineAs(o.destination.computer, e);
+  }
+}
+
+type End = { computer: string; device: string | null };
+
+/** R1 for the direct path: asks every holder that will judge the operation as a peer whether it needs the user's
+ *  answer, asks the user with each holder's card, then sends the call once with every answer. A holder that still
+ *  asks (its reviewer changed its mind) is asked about once more. */
+export async function transferAsking(o: {
+  transport: LinkTransport;
+  /** This computer's holder, for its own part when it is the source. */
+  holder: LocalHolder;
+  receiveHere: (p: ReceiveParams, as: Caller) => Promise<TransferResult>;
+  source: End;
+  destination: End;
   params: ReceiveParams;
   as: Caller;
   ask?: AnswerAsker;
-  sourceComputer: string;
-}): Promise<{ files: number; bytes: number }> {
+}): Promise<TransferResult> {
   const p: ReceiveParams = { ...o.params };
+  const put = (need: NeedsAnswer, answer: SignedCardAnswer) => {
+    if (need.computer === o.destination.computer) p.answer = answer;
+    else if (need.computer === o.source.computer) p.sourceAnswer = answer;
+  };
+  if (o.ask) {
+    const parts: { role: "source" | "destination"; end: End }[] = [];
+    // The destination judges the call as a peer's unless it is this computer; the source judges the destination's
+    // stream as a peer's whenever the two differ.
+    if (o.destination.device !== null && !p.answer) parts.push({ role: "destination", end: o.destination });
+    if (p.move && o.source.computer !== o.destination.computer && !p.sourceAnswer) parts.push({ role: "source", end: o.source });
+    for (const { role, end } of parts) {
+      const need = await judgeAt(o, role, end, p).then(() => null, (e: unknown) => {
+        const n = answerNeeded(e);
+        if (!n) throw e;
+        return n;
+      });
+      if (!need) continue;
+      const answer = await o.ask(need);
+      if (!answer) throw new ContractError("refused", `the user didn't approve this on ${end.computer}`);
+      put(need, answer);
+    }
+  }
   for (let attempt = 0; ; attempt++) {
     try {
-      if (o.destination.device === null) return await o.receiveHere(p, o.as);
-      let link: Link;
-      try {
-        link = await o.transport.connect(o.destination.device);
-      } catch (e) {
-        throw offlineAs(o.destination.computer, e);
-      }
-      try {
-        return await link.request<{ files: number; bytes: number }>("tree.receive", p, { priority: "files" });
-      } catch (e) {
-        throw offlineAs(o.destination.computer, e);
-      }
+      return await transfer({ transport: o.transport, destination: o.destination, receiveHere: o.receiveHere, params: p, as: o.as });
     } catch (e) {
       const need = answerNeeded(e);
-      if (!need || !o.ask || attempt >= 2) throw e;
+      if (!need || !o.ask || attempt >= 1) throw e;
       const answer = await o.ask(need);
       if (!answer) throw e;
-      if (need.computer === o.sourceComputer && !p.sourceAnswer) p.sourceAnswer = answer;
-      else if (need.computer === o.destination.computer && !p.answer) p.answer = answer;
-      else throw e;
+      put(need, answer);
     }
+  }
+}
+
+/** One holder's answer to `tree.judge`, here or over the link. */
+async function judgeAt(o: { transport: LinkTransport; holder: LocalHolder; destination: End }, role: "source" | "destination", end: End, p: ReceiveParams): Promise<void> {
+  if (end.device === null) {
+    // This computer as the source: it will judge the destination's stream as that computer's peer call.
+    const as: Caller = { kind: "peer", device: o.destination.device ?? "", ...(p.session ? { sessionId: p.session } : {}) };
+    await judgePart(o.holder, { as, level: p.level }, role, p.move, p.from, p.to);
+    return;
+  }
+  let link: Link;
+  try {
+    link = await o.transport.connect(end.device);
+  } catch (e) {
+    throw offlineAs(end.computer, e);
+  }
+  try {
+    await link.request("tree.judge", { from: p.from, to: p.to, move: p.move, role, level: p.level, ...(p.session ? { session: p.session } : {}) });
+  } catch (e) {
+    throw offlineAs(end.computer, e);
   }
 }

@@ -8,6 +8,7 @@ import {
 } from "../src/clover";
 import { CloverSessionEvent, SENT_AT_WINDOW_MS, clampSentAt, userMessageHashInput, userMessageSigningInput } from "../src/sessions";
 import { Caller as CallerSchema } from "../src/common";
+import { PEER_STREAM_GRANTS } from "../src/devices";
 import {
   AnyPluginId, Caller, ComputerName, LANES, LEVELS, TopPluginId, TreePath, isAnyPluginId, isPluginId, levelAbove,
   pluginIdFromSegment, pluginIdToSegment, topPluginIdOf,
@@ -395,6 +396,13 @@ describe("relayed messages and peer file calls (review N2, N3, N5)", () => {
   test("the user-message signing input is pinned, and the hash covers the words and attachments only", () => {
     expect(userMessageSigningInput({ session: "s_alpha", clientMessageId: "m-1", hash: "ab", sentAt: 5 })).toBe("clover/user-message/1\ns_alpha\nm-1\nab\n5");
     expect(userMessageHashInput({ text: "hi" })).toBe('{"files":[],"images":[],"text":"hi"}');
+  });
+
+  test("a peer's stream grants none of §5.5's sensitive changes by itself (N7)", () => {
+    expect([...PEER_STREAM_GRANTS].sort()).toEqual([
+      "adult-confirmation", "computer-level", "connector-permission", "dev-folder", "device-add", "device-revoke", "main-computer",
+      "plugin-ok", "provider-credential", "repo-trust", "routine-level-raise", "saved-rule",
+    ]);
   });
 
   test("a peer caller is its own kind, and tree calls carry the peer's session, level and answer", () => {

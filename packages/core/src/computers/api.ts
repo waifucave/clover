@@ -43,10 +43,11 @@ export function computersApiRoutes(registry: ComputerRegistry): Record<string, A
       const c = must(s(name, "computer"));
       return { holds: registry.holds(c.name), userWorking: registry.userWorking(c.name).length > 0 };
     },
-    "computers.takeHold": async ([computer, t, o], { pluginId }) => {
-      const session = opt(o).session;
+    "computers.takeHold": async ([computer, t], { pluginId, caller }) => {
+      // The hold's session is the one the router says made the call, never one the plugin names (review minor 3).
+      const session = caller.kind === "session" || caller.kind === "peer" ? caller.sessionId : undefined;
       try {
-        const hold: HoldView = registry.takeHold({ computer: s(computer, "computer"), target: target(t), pluginId, ...(typeof session === "string" ? { session } : {}) });
+        const hold: HoldView = registry.takeHold({ computer: s(computer, "computer"), target: target(t), pluginId, ...(session === undefined ? {} : { session }) });
         return { held: true, hold };
       } catch (e) {
         if (isContractError(e, "held")) return { held: false, reason: "held-by-other", by: String(e.detail?.holder ?? "") };

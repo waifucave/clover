@@ -6,8 +6,12 @@
 // `approvals` capability hears only which cards are pending and where (`card_pending`), and places their sealed
 // frames, never their text. The core takes an answer only from a sealed frame, through the app's main process (role
 // `app`) on a channel the core minted for that card (`card.frame`), or from a paired device's own app, signed with
-// its device key over the card's id and hash, the option, the time and the children checked. The device must be the
-// one the link authenticated, and never a `browser` device: the web companion answers no card. Every device shows a
+// its answer key over the card's id and hash, the option, the time and the children checked. The answer key is apart
+// from the device's link key (review N1): a phone's own key, or a desktop app's key the OS keeps from plugin code where
+// it can (`ANSWER_KEY_HOLDERS`; the owner accepted that on Linux, and on Windows without a TPM or Hello, it can't).
+// Servers, cloud computers and browsers never sign: the web companion answers no card. A signed answer counts
+// whichever computer relays it (review N4); a sealed frame's only from the app on its own channel. The receiver
+// rebuilds its own card for a bound call and refuses a signed card that says anything else. Every device shows a
 // pending card; the first answer wins, and a signed answer is used once per card id on every computer, since it also
 // travels as the proof of a raise (`SignedCardAnswer`).
 //
@@ -132,8 +136,9 @@ export type Card = z.infer<typeof Card>;
 
 /** How an answer proves it came from the user (§5.5). A sealed frame's click or key press counts only when the app
  *  saw it come from the hardware, while the button showed whole and uncovered and no computer-use action ran; the core
- *  takes it only from role `app`. A device's answer counts only from the device the link authenticated, never a
- *  `browser` one, with `at` inside `answerTimeOk`'s bounds. */
+ *  takes it only from role `app`, on the channel it minted for that card. A device's answer is signed with its answer
+ *  key, apart from its link key (a phone's own, a desktop app's; never a server's, a cloud computer's or a browser's,
+ *  review N1), with `at` inside `answerTimeOk`'s bounds, and counts whichever computer relays it (review N4). */
 export const CardAnswerProof = z.discriminatedUnion("via", [
   z.object({
     via: z.literal("sealed-frame"),
@@ -146,7 +151,7 @@ export const CardAnswerProof = z.discriminatedUnion("via", [
     via: z.literal("device"),
     device: DeviceId,
     at: Timestamp,
-    /** Ed25519 over `cardAnswerSigningInput(...)`, base64. */
+    /** Ed25519 with the device's answer key over `cardAnswerSigningInput(...)`, base64. */
     signature: utf16(256, 1),
   }),
 ]);

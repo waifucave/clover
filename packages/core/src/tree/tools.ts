@@ -18,7 +18,7 @@ import type { LinkTransport } from "../contracts/link-transport";
 import { splitTreePath, type TreeData } from "../contracts/tree";
 import type { LocalHolder } from "./holder";
 import { offlineAs } from "./remote";
-import type { ToolExecutor } from "./service";
+import { runKey, type ToolExecutor } from "./service";
 import { withAnswer, type AnswerAsker } from "./judge";
 import type { CoreTree, TreeDirectory } from "./tree";
 
@@ -123,16 +123,16 @@ export function transferCommand(command: string, cwd: string): { move: boolean; 
 
 export class TreeTools {
   readonly #o: TreeToolsOptions;
-  /** Output listeners for remote calls, by `<device>\n<callId>`. */
+  /** Output listeners for remote calls, by `runKey(device, session, callId)`. */
   readonly #outputs = new Map<string, (chunk: string, stream: "stdout" | "stderr") => void>();
   readonly #offOutput: Unsubscribe;
 
   constructor(opts: TreeToolsOptions) {
     this.#o = opts;
     this.#offOutput = opts.transport.onNotify("tool_output", (params, from) => {
-      const p = params as { callId?: string; chunk?: string; stream?: "stdout" | "stderr" };
-      if (typeof p.callId !== "string" || typeof p.chunk !== "string") return;
-      this.#outputs.get(`${from}\n${p.callId}`)?.(p.chunk, p.stream === "stderr" ? "stderr" : "stdout");
+      const p = params as { session?: string; callId?: string; chunk?: string; stream?: "stdout" | "stderr" };
+      if (typeof p.session !== "string" || typeof p.callId !== "string" || typeof p.chunk !== "string") return;
+      this.#outputs.get(runKey(from, p.session, p.callId))?.(p.chunk, p.stream === "stderr" ? "stderr" : "stdout");
     });
   }
 
@@ -252,7 +252,7 @@ export class TreeTools {
     const device = this.#o.deviceOf(loc.computer);
     if (!device) throw new ContractError("computer_offline", `${loc.computer} can't be reached`, { computer: loc.computer });
     const level = ctx.level ?? strictestLevel([c.level])!;
-    const key = `${device}\n${ctx.callId}`;
+    const key = runKey(device, ctx.session, ctx.callId);
     this.#outputs.set(key, output);
     let link: Awaited<ReturnType<LinkTransport["connect"]>>;
     try {
@@ -261,7 +261,7 @@ export class TreeTools {
       this.#outputs.delete(key);
       throw offlineAs(loc.computer, e);
     }
-    const off = ctx.signal ? onAbort(ctx.signal, () => { void link.request("tool.cancel", { callId: ctx.callId }).catch(() => {}); }) : () => {};
+    const off = ctx.signal ? onAbort(ctx.signal, () => { void link.request("tool.cancel", { session: ctx.session, callId: ctx.callId }).catch(() => {}); }) : () => {};
     try {
       const r = await withAnswer(ctx.answer === undefined ? this.#o.ask : undefined, (answer) => link.request<{ output: unknown; isError: boolean }>("tool.run", {
         session: ctx.session, callId: ctx.callId, epoch: ctx.epoch ?? 0, tool: "Bash", input, level,

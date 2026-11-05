@@ -4,7 +4,8 @@
 // The holder watches the folder on its own disk and says which tree paths changed, coalesced; the panel drops what it
 // cached for them and lists again. A watch that fails (an inotify limit, the folder replaced) says `resync` and is
 // armed again with backoff, since changes made while it was down were never reported (S6 review S3). Each computer
-// watches a bounded number of folders at once; a code session's folder is one, never a whole home.
+// that watches here has its own budget of folders, and this computer watches a bounded number in all; a code session's
+// folder is one, never a whole home or a bot's whole folder (the holder refuses those; J-M1 review minor 2).
 import { watch as fsWatch, type FSWatcher } from "node:fs";
 import { sep } from "node:path";
 import type { Unsubscribe } from "../contracts/common";
@@ -12,8 +13,10 @@ import { ContractError } from "../contracts/common";
 
 export type TreeWatchEvent = { type: "changed"; paths: string[] } | { type: "resync" };
 
-/** The most folders one computer watches at once. */
+/** The most watches one watcher (this computer's own app, or one other computer) holds here at once. */
 export const WATCH_BUDGET = 64;
+/** The most folders this computer watches at once, for everyone. */
+export const WATCH_TOTAL = 256;
 /** Changes inside this window are reported together. */
 const COALESCE_MS = 50;
 /** The most paths one event names; more says `resync`. */
@@ -32,27 +35,40 @@ interface Watched {
 /** One computer's watches, shared by everyone who watches the same real folder. */
 export class FolderWatches {
   readonly #watched = new Map<string, Watched>();
+  /** Watches held, by watcher. */
+  readonly #held = new Map<string, number>();
   readonly #budget: number;
+  readonly #total: number;
   readonly #watchFn: typeof fsWatch;
 
-  constructor(opts: { budget?: number; watch?: typeof fsWatch } = {}) {
+  constructor(opts: { budget?: number; total?: number; watch?: typeof fsWatch } = {}) {
     this.#budget = opts.budget ?? WATCH_BUDGET;
+    this.#total = opts.total ?? WATCH_TOTAL;
     this.#watchFn = opts.watch ?? fsWatch;
   }
 
   /** Watches `real` (a folder's real path) for a subscriber who sees it as `treeRoot`. `visible` hides what the
    *  subscriber's fence keeps from it. */
-  subscribe(real: string, treeRoot: string, visible: (realChild: string) => boolean, fn: (e: TreeWatchEvent) => void): Unsubscribe {
+  subscribe(real: string, treeRoot: string, visible: (realChild: string) => boolean, fn: (e: TreeWatchEvent) => void, watcher = "local"): Unsubscribe {
+    const held = this.#held.get(watcher) ?? 0;
+    if (held >= this.#budget) throw new ContractError("refused", `you already watch ${this.#budget} folders on this computer`);
     let w = this.#watched.get(real);
     if (!w) {
-      if (this.#watched.size >= this.#budget) throw new ContractError("refused", `this computer already watches ${this.#budget} folders`);
+      if (this.#watched.size >= this.#total) throw new ContractError("refused", `this computer already watches ${this.#total} folders`);
       w = { real, watcher: null, subscribers: new Set(), pending: new Set(), flush: null, retry: null, backoffMs: 500 };
       this.#watched.set(real, w);
       this.#arm(w);
     }
     const sub = { treeRoot: treeRoot.replace(/\/+$/, ""), visible, fn };
     w.subscribers.add(sub);
+    this.#held.set(watcher, held + 1);
+    let done = false;
     return () => {
+      if (done) return;
+      done = true;
+      const n = (this.#held.get(watcher) ?? 1) - 1;
+      if (n <= 0) this.#held.delete(watcher);
+      else this.#held.set(watcher, n);
       w!.subscribers.delete(sub);
       if (w!.subscribers.size === 0) this.#drop(w!);
     };

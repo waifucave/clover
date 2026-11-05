@@ -9,8 +9,8 @@
 // * Another computer can't prove a write is the user's (review N2), so opening a terminal for a peer is judged like a
 //   command, at the stricter of the holder's level and the call's: below `automatic` it takes the user's signed answer
 //   bound to that open (`terminal.open` with its folder). A dropped link closes the peer's terminals, as ssh does.
-import type { Caller, Level, SignedCardAnswer } from "@waifucave/clover-protocol";
-import { DEFAULT_LEVEL } from "@waifucave/clover-protocol";
+import { z } from "zod";
+import { Level, SessionId, SignedCardAnswer, TerminalId, TreePath, type Caller } from "@waifucave/clover-protocol";
 import { ContractError, type Unsubscribe } from "../contracts/common";
 import type { LinkTransport } from "../contracts/link-transport";
 import type { LocalHolder } from "./holder";
@@ -45,11 +45,22 @@ interface Open {
   id: string;
   /** The device that opened it over the link, or null for this computer's own app. */
   device: string | null;
+  /** The session it belongs to; only that session on that device writes to it (R4). */
+  session: string | undefined;
   write(data: string): void;
   resize(cols: number, rows: number): void;
   close(): void;
   bracketed: boolean;
 }
+
+/** Who a terminal is for: the device that opened it (null for this computer's own app) and its session. */
+export interface Owner {
+  device: string | null;
+  session?: string | undefined;
+}
+const HERE: Owner = { device: null };
+/** This computer's own app reaches every terminal opened here; a peer only those it opened, for the same session. */
+const owns = (t: Open, o: Owner) => (o.device === null && t.device === null) || (t.device === o.device && t.session === o.session);
 
 /** This computer's terminals. */
 export class LocalTerminals {
@@ -70,7 +81,8 @@ export class LocalTerminals {
   }
 
   /** A shell in `cwd` (a real folder, resolved and fenced by the caller); its output goes to `output`. */
-  open(cwd: string, size: { cols: number; rows: number }, device: string | null, output: (o: TerminalOutput) => void): string {
+  open(cwd: string, size: { cols: number; rows: number }, owner: Owner, output: (o: TerminalOutput) => void): string {
+    const { device, session } = owner;
     const id = `term_${++this.#seq}_${Date.now().toString(36)}`;
     const { cmd, env } = this.#launch(cwd);
     const dec = new TextDecoder();
@@ -91,7 +103,7 @@ export class LocalTerminals {
       });
       void proc.exited.then((code) => { proc.terminal?.close(); done(code); });
       entry = {
-        id, device, bracketed: false,
+        id, device, session, bracketed: false,
         write: (d) => { proc.terminal?.write(d); },
         resize: (c, r) => proc.terminal?.resize(c, r),
         close: () => { proc.kill(); proc.terminal?.close(); },
@@ -104,7 +116,7 @@ export class LocalTerminals {
       void pump(proc.stderr);
       void proc.exited.then((code) => done(code));
       entry = {
-        id, device, bracketed: false,
+        id, device, session, bracketed: false,
         write: (d) => { proc.stdin.write(d); void proc.stdin.flush(); },
         resize: () => {},
         close: () => proc.kill(),
@@ -114,8 +126,8 @@ export class LocalTerminals {
     return id;
   }
 
-  async write(id: string, data: string, opts: { paste?: boolean; device?: string | null } = {}): Promise<void> {
-    const t = this.#mine(id, opts.device ?? null);
+  async write(id: string, data: string, opts: { paste?: boolean; owner?: Owner } = {}): Promise<void> {
+    const t = this.#mine(id, opts.owner ?? HERE);
     if (data.length > TERMINAL_WRITE_MAX) throw new ContractError("invalid", `a write carries at most ${TERMINAL_WRITE_MAX} characters`);
     if (!opts.paste) {
       t.write(data);
@@ -128,13 +140,13 @@ export class LocalTerminals {
     t.write(t.bracketed ? `\u001b[200~${data}\u001b[201~` : data);
   }
 
-  resize(id: string, cols: number, rows: number, device: string | null = null): void {
-    this.#mine(id, device).resize(cols, rows);
+  resize(id: string, cols: number, rows: number, owner: Owner = HERE): void {
+    this.#mine(id, owner).resize(cols, rows);
   }
 
-  close(id: string, device: string | null = null): void {
+  close(id: string, owner: Owner = HERE): void {
     const t = this.#open.get(id);
-    if (!t || t.device !== device) return;
+    if (!t || !owns(t, owner)) return;
     t.close();
   }
 
@@ -147,21 +159,35 @@ export class LocalTerminals {
     for (const t of [...this.#open.values()]) t.close();
   }
 
-  #mine(id: string, device: string | null): Open {
+  #mine(id: string, owner: Owner): Open {
     const t = this.#open.get(id);
-    if (!t || t.device !== device) throw new ContractError("not_found", `no terminal ${id}`);
+    if (!t || !owns(t, owner)) throw new ContractError("not_found", `no terminal ${id}`);
     return t;
   }
 }
 
 /** The holder's side over the link: `terminal.open`, `terminal.write`, `terminal.resize`, `terminal.close` from a peer,
  *  and `terminal_output` back to it. */
+/** What another computer's terminal calls carry here (lane J's peer side of B's `terminal.*`): B's params, with the
+ *  folder required, plus the session, the calling computer's level and the user's answer. */
+const PeerOpen = z.object({ cwd: TreePath, cols: z.number().int().min(2).max(1000), rows: z.number().int().min(1).max(1000), session: SessionId.optional(), level: Level, answer: SignedCardAnswer.optional() });
+const PeerWrite = z.object({ terminalId: TerminalId, data: z.string().max(TERMINAL_WRITE_MAX), paste: z.boolean().optional(), session: SessionId.optional() });
+const PeerResize = z.object({ terminalId: TerminalId, cols: z.number().int().min(2).max(1000), rows: z.number().int().min(1).max(1000), session: SessionId.optional() });
+const PeerClose = z.object({ terminalId: TerminalId, session: SessionId.optional() });
+
+function parse<T>(schema: z.ZodType<T>, raw: unknown, method: string): T {
+  const r = schema.safeParse(raw);
+  if (!r.success) throw new ContractError("invalid", `${method}: ${r.error.issues[0]?.message ?? "bad params"}`);
+  return r.data;
+}
+
 export function serveTerminals(o: {
   transport: LinkTransport;
   holder: LocalHolder;
   terminals: LocalTerminals;
   level: () => Level;
-  mayCall?: (device: string) => boolean;
+  /** Whether `device` may call at all: a paired computer, not revoked. */
+  mayCall: (device: string) => boolean;
   /** What checks the user's signed answer bound to `terminal.open` with its folder (the holder's own card). */
   answers?: Answers;
   clock: { now(): number };
@@ -169,37 +195,41 @@ export function serveTerminals(o: {
   const t = o.transport;
   const offs: Unsubscribe[] = [];
   const guard = (from: string) => {
-    if (o.mayCall && !o.mayCall(from)) throw new ContractError("refused", "this computer isn't paired with yours");
+    if (!o.mayCall(from)) throw new ContractError("refused", "this computer isn't paired with yours");
   };
   offs.push(t.handle("terminal.open", async (raw, from) => {
     guard(from);
-    const p = (raw ?? {}) as { cwd?: string; cols?: number; rows?: number; session?: string; level?: Level; answer?: SignedCardAnswer };
-    if (typeof p.cwd !== "string" || !Number.isInteger(p.cols) || !Number.isInteger(p.rows)) throw new ContractError("invalid", "terminal.open takes cwd, cols and rows");
+    const p = parse(PeerOpen, raw, "terminal.open");
+    // Stamped as tool.run is (review N2): a peer, for the session it names, fenced at the folder.
     const as: Caller = { kind: "peer", device: from, ...(p.session ? { sessionId: p.session } : {}) };
     const real = await o.holder.realFolder(p.cwd, { as });
     // An interactive shell has nothing for a reviewer to read: below `automatic` it takes the user's answer.
     await judgePeer({
-      computer: o.holder.name, ownLevel: o.level(), callLevel: p.level ?? DEFAULT_LEVEL, effect: "execute",
+      computer: o.holder.name, ownLevel: o.level(), callLevel: p.level, effect: "execute",
       method: "terminal.open", params: { cwd: p.cwd }, as, now: o.clock.now(),
       ...(p.answer ? { answer: p.answer } : {}), ...(o.answers ? { answers: o.answers } : {}),
     });
-    const id = o.terminals.open(real, { cols: p.cols!, rows: p.rows! }, from, (out) => {
+    const id = o.terminals.open(real, { cols: p.cols, rows: p.rows }, { device: from, session: p.session }, (out) => {
       void t.connect(from).then((l) => l.notify("terminal_output", out, { priority: "tokens" }), () => {});
     });
     return { terminalId: id };
   }));
   offs.push(t.handle("terminal.write", async (raw, from) => {
-    const p = (raw ?? {}) as { terminalId?: string; data?: string; paste?: boolean };
-    await o.terminals.write(String(p.terminalId), String(p.data ?? ""), { paste: p.paste === true, device: from });
+    guard(from);
+    const p = parse(PeerWrite, raw, "terminal.write");
+    await o.terminals.write(p.terminalId, p.data, { paste: p.paste === true, owner: { device: from, session: p.session } });
     return { ok: true };
   }));
   offs.push(t.handle("terminal.resize", (raw, from) => {
-    const p = (raw ?? {}) as { terminalId?: string; cols?: number; rows?: number };
-    o.terminals.resize(String(p.terminalId), Number(p.cols), Number(p.rows), from);
+    guard(from);
+    const p = parse(PeerResize, raw, "terminal.resize");
+    o.terminals.resize(p.terminalId, p.cols, p.rows, { device: from, session: p.session });
     return { ok: true };
   }));
   offs.push(t.handle("terminal.close", (raw, from) => {
-    o.terminals.close(String((raw as { terminalId?: string })?.terminalId), from);
+    guard(from);
+    const p = parse(PeerClose, raw, "terminal.close");
+    o.terminals.close(p.terminalId, { device: from, session: p.session });
     return { ok: true };
   }));
   offs.push(t.watch((view) => { if (!view.up) o.terminals.closeDevice(view.peer); }));
@@ -209,18 +239,19 @@ export function serveTerminals(o: {
 export interface TerminalRouterOptions {
   transport: LinkTransport;
   self: () => string;
-  local: { holder: LocalHolder; terminals: LocalTerminals };
-  /** Where a tree folder lives, the device of that computer, whether it is online, and its level. */
-  locate: (cwd: string) => { computer: string; device?: string; online: boolean; level: Level };
+  local: { holder: LocalHolder; terminals: LocalTerminals; level: () => Level };
+  /** A computer by name: its device, whether it is online, and the calling computer's level for it. */
+  computer: (name: string) => { computer: string; device: string; online: boolean; level: Level } | undefined;
   /** Shows the user the holder's card for opening a terminal there (R1). */
   ask?: AnswerAsker;
 }
 
-/** The terminals the app and the panel open, on any computer: this one's here, another's over the link. */
+/** The terminals the app and the panel open (B's `terminal.*`, behind the router's `terminal` capability), on any
+ *  computer, in a folder of the tree: this computer's here, another's over the link. */
 export class TerminalRouter {
   readonly #o: TerminalRouterOptions;
-  /** Remote terminals, by id: which device holds each. */
-  readonly #remote = new Map<string, { device: string; computer: string }>();
+  /** Remote terminals, by id: which device holds each, and its session. */
+  readonly #remote = new Map<string, { device: string; computer: string; session?: string }>();
   readonly #listeners = new Set<(o: TerminalOutput) => void>();
   readonly #off: Unsubscribe;
 
@@ -241,23 +272,28 @@ export class TerminalRouter {
     return () => this.#listeners.delete(fn);
   }
 
-  /** Opens the user's shell in `cwd`, a tree folder; `as` is the user (the app) here. */
-  async open(p: { cwd: string; cols: number; rows: number; session?: string; answer?: SignedCardAnswer }): Promise<{ terminalId: string }> {
-    const where = this.#o.locate(p.cwd);
+  /** B's `terminal.open`: the user's shell on `computer`, in `cwd` (a tree folder there; its home when left out). `as`
+   *  is who asked: the user's app, or a layer with the `terminal` capability, which a computer at read-only refuses. */
+  async open(p: { computer: string; cwd?: string; cols: number; rows: number; session?: string; answer?: SignedCardAnswer }, as: Caller = { kind: "user", client: "app" }): Promise<{ terminalId: string }> {
+    const where = this.#o.computer(p.computer);
+    if (!where) throw new ContractError("not_found", `no computer ${p.computer}`);
     if (!where.online) throw new ContractError("computer_offline", `${where.computer} is offline`, { computer: where.computer });
+    const cwd = p.cwd ?? `home/${where.computer}`;
     if (where.computer === this.#o.self()) {
-      const real = await this.#o.local.holder.realFolder(p.cwd, { as: { kind: "user", client: "app" } });
-      const terminalId = this.#o.local.terminals.open(real, p, null, (o) => this.#emit(o));
+      if (as.kind !== "user" && as.kind !== "core" && this.#o.local.level() === "read-only") {
+        throw new ContractError("refused", `${where.computer} is read-only; it opens no terminal for a plugin`);
+      }
+      const real = await this.#o.local.holder.realFolder(cwd, { as });
+      const terminalId = this.#o.local.terminals.open(real, p, { device: null, session: p.session }, (o) => this.#emit(o));
       return { terminalId };
     }
-    if (!where.device) throw new ContractError("computer_offline", `${where.computer} can't be reached`, { computer: where.computer });
     try {
       const link = await this.#o.transport.connect(where.device);
       const r = await withAnswer(p.answer ? undefined : this.#o.ask, (answer) => link.request<{ terminalId: string }>("terminal.open", {
-        cwd: p.cwd, cols: p.cols, rows: p.rows, level: where.level,
+        cwd, cols: p.cols, rows: p.rows, level: where.level,
         ...(p.session ? { session: p.session } : {}), ...((answer ?? p.answer) ? { answer: answer ?? p.answer } : {}),
       }));
-      this.#remote.set(r.terminalId, { device: where.device, computer: where.computer });
+      this.#remote.set(r.terminalId, { device: where.device, computer: where.computer, ...(p.session ? { session: p.session } : {}) });
       return r;
     } catch (e) {
       throw offlineAs(where.computer, e);
@@ -267,20 +303,20 @@ export class TerminalRouter {
   async write(terminalId: string, data: string, opts: { paste?: boolean } = {}): Promise<void> {
     const r = this.#remote.get(terminalId);
     if (!r) return this.#o.local.terminals.write(terminalId, data, opts);
-    await this.#request(r, "terminal.write", { terminalId, data, ...(opts.paste ? { paste: true } : {}) });
+    await this.#request(r, "terminal.write", { terminalId, data, ...(opts.paste ? { paste: true } : {}), ...(r.session ? { session: r.session } : {}) });
   }
 
   async resize(terminalId: string, cols: number, rows: number): Promise<void> {
     const r = this.#remote.get(terminalId);
     if (!r) return this.#o.local.terminals.resize(terminalId, cols, rows);
-    await this.#request(r, "terminal.resize", { terminalId, cols, rows });
+    await this.#request(r, "terminal.resize", { terminalId, cols, rows, ...(r.session ? { session: r.session } : {}) });
   }
 
   async close(terminalId: string): Promise<void> {
     const r = this.#remote.get(terminalId);
     if (!r) return this.#o.local.terminals.close(terminalId);
     this.#remote.delete(terminalId);
-    await this.#request(r, "terminal.close", { terminalId }).catch(() => {});
+    await this.#request(r, "terminal.close", { terminalId, ...(r.session ? { session: r.session } : {}) }).catch(() => {});
   }
 
   dispose(): void {
