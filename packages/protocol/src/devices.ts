@@ -6,6 +6,7 @@
 // lapses (§6.4). Peer methods run daemon to daemon over that link; a peer acts for the user who called on its own
 // computer, under the same allow lists (`peer.call`).
 import { z } from "zod";
+import { utf16 } from "./strings";
 import {
   Caller, ChangeResult, ComputerName, DeviceId, Empty, Ok, Os, SessionId, Text, Timestamp,
 } from "./common";
@@ -25,7 +26,7 @@ export const LinkView = z.object({
   up: z.boolean(),
   path: LinkPath.optional(),
   /** The relay plugin carrying it, when `path` is `relay`. */
-  relay: z.string().max(128).optional(),
+  relay: utf16(128).optional(),
   rttMs: z.number().nonnegative().optional(),
   since: Timestamp.optional(),
 });
@@ -33,7 +34,7 @@ export type LinkView = z.infer<typeof LinkView>;
 
 export const DeviceView = z.object({
   id: DeviceId,
-  name: z.string().min(1).max(63),
+  name: utf16(63, 1),
   kind: DeviceKind,
   os: Os.optional(),
   /** Runs clover-core, so it is a computer in the tree (§9.1) and can take over (§6.4). */
@@ -76,23 +77,23 @@ export type ClockView = z.infer<typeof ClockView>;
 export const AccountView = z.object({
   signedIn: z.boolean(),
   provider: z.enum(["email", "discord", "google"]).optional(),
-  user: z.object({ id: z.string().max(128), email: z.string().max(320).optional(), name: z.string().max(200).optional() }).optional(),
+  user: z.object({ id: utf16(128), email: utf16(320).optional(), name: utf16(200).optional() }).optional(),
 });
 export type AccountView = z.infer<typeof AccountView>;
 
 /** No-account pairing (§8.1): a code or QR, plus the inherited 4-word check. */
 export const PairingView = z.object({
-  pairingId: z.string().min(1).max(128),
-  code: z.string().min(1).max(64).optional(),
+  pairingId: utf16(128, 1),
+  code: utf16(64, 1).optional(),
   /** What the QR encodes. */
-  qr: z.string().max(4096).optional(),
-  words: z.array(z.string().max(32)).length(4).optional(),
+  qr: utf16(4096).optional(),
+  words: z.array(utf16(32)).length(4).optional(),
   expiresAt: Timestamp,
 });
 
 /** An append-only stream two devices replicate (§8.5): `transcript:<session>`, `memory:<bot>`, `plugins`,
  *  `credentials`, `settings`, `routines`, `usage`. Lane H settles the streams and their payloads at H-M3. */
-export const SyncStream = z.string().min(1).max(256).regex(/^[a-z][a-z-]*(:[A-Za-z0-9._:/-]+)?$/);
+export const SyncStream = utf16(256, 1).regex(/^[a-z][a-z-]*(:[A-Za-z0-9._:/-]+)?$/);
 export const SyncEntry = z.object({
   seq: z.number().int().nonnegative(),
   epoch: z.number().int().nonnegative(),
@@ -111,7 +112,7 @@ export const DEVICES_METHODS = {
   }),
   deviceRename: defineMethod({
     name: "device.rename", owner: "H", roles: ["app", "cli", "remote"], userOnly: true, change: "core",
-    params: z.object({ id: DeviceId, name: z.string().min(1).max(63) }), result: ChangeResult,
+    params: z.object({ id: DeviceId, name: utf16(63, 1) }), result: ChangeResult,
     doc: "Renames a device; a computer keeps its old tree name as an alias (§9.1).",
   }),
   deviceRevoke: defineMethod({
@@ -126,18 +127,18 @@ export const DEVICES_METHODS = {
   }),
   devicePairJoin: defineMethod({
     name: "device.pair.join", owner: "H", roles: ["app", "cli"], userOnly: true,
-    params: z.object({ code: z.string().min(1).max(4096) }), result: PairingView,
+    params: z.object({ code: utf16(4096, 1) }), result: PairingView,
     doc: "Joins another device's pairing by its code or QR payload; both then show the same four words.",
   }),
   devicePairConfirm: defineMethod({
     name: "device.pair.confirm", owner: "H", roles: ["app", "cli"], userOnly: true, change: "sensitive",
-    params: z.object({ pairingId: z.string().min(1).max(128), words: z.array(z.string().max(32)).length(4) }),
+    params: z.object({ pairingId: utf16(128, 1), words: z.array(utf16(32)).length(4) }),
     result: ChangeResult,
     doc: "Confirms the four words; adding a device is a sealed card unless made in the user's own terminal.",
   }),
   devicePairCancel: defineMethod({
     name: "device.pair.cancel", owner: "H", roles: ["app", "cli"], userOnly: true,
-    params: z.object({ pairingId: z.string().min(1).max(128) }), result: Ok,
+    params: z.object({ pairingId: utf16(128, 1) }), result: Ok,
     doc: "Cancels a pairing.",
   }),
   accountStatus: defineMethod({
@@ -185,14 +186,14 @@ export const DEVICES_METHODS = {
   // Daemon to daemon, over the link.
   peerHello: defineMethod({
     name: "peer.hello", owner: "H", roles: ["peer"],
-    params: z.object({ protocolVersion: z.number().int(), device: DeviceId, epoch: z.number().int().nonnegative(), features: z.array(z.string().max(64)).max(64) }),
-    result: z.object({ protocolVersion: z.number().int(), device: DeviceId, epoch: z.number().int().nonnegative(), features: z.array(z.string().max(64)) }),
+    params: z.object({ protocolVersion: z.number().int(), device: DeviceId, epoch: z.number().int().nonnegative(), features: z.array(utf16(64)).max(64) }),
+    result: z.object({ protocolVersion: z.number().int(), device: DeviceId, epoch: z.number().int().nonnegative(), features: z.array(utf16(64)) }),
     doc: "Opens a link's session: links negotiate a protocol version and support one release back (§14.2 item 22).",
   }),
   peerCall: defineMethod({
     name: "peer.call", owner: "H", roles: ["peer"],
     params: z.object({
-      method: z.string().min(1).max(128),
+      method: utf16(128, 1),
       params: z.unknown(),
       /** Who called on the peer's own computer, after its caller check, and through which role. The receiving daemon
        *  applies that role's allow list, as if the caller were connected to it. */
@@ -233,9 +234,9 @@ export const DeviceRemovedEvent = coreEvent("device_removed", { id: DeviceId, re
 export const LeaseChangedEvent = coreEvent("lease_changed", { lease: LeaseView });
 export const LinkChangedEvent = coreEvent("link_changed", { link: LinkView });
 export const PairingChangedEvent = coreEvent("pairing_changed", {
-  pairingId: z.string().min(1).max(128),
+  pairingId: utf16(128, 1),
   step: z.enum(["waiting", "words", "card", "done", "failed", "expired"]),
-  words: z.array(z.string().max(32)).length(4).optional(),
+  words: z.array(utf16(32)).length(4).optional(),
   reason: Text.optional(),
 });
 export const AccountChangedEvent = coreEvent("account_changed", { account: AccountView });

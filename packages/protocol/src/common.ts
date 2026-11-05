@@ -6,6 +6,7 @@
 // The inherited protocol (events.ts, methods.ts, cowork.ts) stays beside this until C1 retires it method by method;
 // nothing here changes the inherited wire. Names here never repeat an inherited export (the index exports both).
 import { z } from "zod";
+import { utf16 } from "./strings";
 
 /** Clover's protocol version, sent in `protocol.hello` (roles.ts). Today's daemon speaks `PROTOCOL_VERSION` (0). */
 export const CLOVER_PROTOCOL_VERSION = 1;
@@ -51,10 +52,10 @@ export function topPluginIdOf(id: string): string {
   return id.split("/")[0]!;
 }
 
-export const TopPluginId = z.string().min(PLUGIN_ID_MIN).max(PLUGIN_ID_MAX).regex(PLUGIN_ID_RE);
+export const TopPluginId = utf16(PLUGIN_ID_MAX, PLUGIN_ID_MIN).regex(PLUGIN_ID_RE);
 /** A top-level or child plugin id: `luna`, `luna/tarot-panel`. */
 export const ANY_PLUGIN_ID_PATTERN = "^[a-z][a-z0-9]*(-[a-z0-9]+)*(/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$";
-export const AnyPluginId = z.string().max(PLUGIN_ID_MAX * 2 + 1).regex(new RegExp(ANY_PLUGIN_ID_PATTERN))
+export const AnyPluginId = utf16(PLUGIN_ID_MAX * 2 + 1).regex(new RegExp(ANY_PLUGIN_ID_PATTERN))
   .refine(isAnyPluginId, { message: "not a plugin id: each part is 2–40 characters" });
 /** A bot's id is its plugin's id (§6.1), a child's included (`pack/luna`). */
 export const BotId = AnyPluginId;
@@ -64,24 +65,24 @@ export const BUNDLED_ROOT_PLUGIN = "clover";
 export const BUNDLED_BOT_PLUGIN = "alpha";
 
 /** A session: a bot's main conversation, a side thread, a background agent or a coding session (§9.3). */
-export const SessionId = z.string().min(1).max(128).regex(/^[A-Za-z0-9._:-]+$/);
+export const SessionId = utf16(128, 1).regex(/^[A-Za-z0-9._:-]+$/);
 /** A device: its Ed25519 public key in the text form the link uses (lane H fixes the exact encoding at H-M1). */
 export const DeviceId = z.string().regex(/^[a-z0-9]{16,64}$/);
 /** A computer's name in the folder tree (`home/<Computer>/`): letters, digits and hyphens, unique (§9.1). */
 export const COMPUTER_NAME_RE = /^[A-Za-z0-9]+(-[A-Za-z0-9]+)*$/;
-export const ComputerName = z.string().min(1).max(63).regex(COMPUTER_NAME_RE);
+export const ComputerName = utf16(63, 1).regex(COMPUTER_NAME_RE);
 /** An approval card (§5.5). */
 export const CardId = z.string().regex(/^card_[A-Za-z0-9_-]{6,64}$/);
 export const Sha256Hex = z.string().regex(/^[0-9a-f]{64}$/);
 /** A plugin tree's hash (§5.1): SHA-256 over the sorted file list, written `sha256:<hex>` (plugin SDK `treeHash`). */
 export const TreeHash = z.string().regex(/^sha256:[0-9a-f]{64}$/);
 /** A path in the folder tree (§9.1): `home/<Computer>/…` or `bots/<bot>/…`, always with `/`. */
-export const TreePath = z.string().min(1).max(4096).regex(/^(home|bots)(\/|$)/);
+export const TreePath = utf16(4096, 1).regex(/^(home|bots)(\/|$)/);
 /** Milliseconds since the Unix epoch, in the shared clock's time (§6.4). */
 export const Timestamp = z.number().int().nonnegative();
 /** A semver version, as plugins and the app carry them. */
 export const SEMVER_RE = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+([0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$/;
-export const SemverVersion = z.string().max(256).regex(SEMVER_RE);
+export const SemverVersion = utf16(256).regex(SEMVER_RE);
 
 // -------------------------------------------------------------------------------------------------
 // Text, platforms, scope
@@ -115,7 +116,7 @@ export const SecretStoreView = z.object({
    *  falls back to `systemd-creds` or the key file and never waits. */
   state: z.enum(["unlocked", "locked"]),
   /** Why it is locked, for Settings. */
-  reason: z.string().max(200).optional(),
+  reason: utf16(200).optional(),
 });
 export type SecretStoreView = z.infer<typeof SecretStoreView>;
 export type Os = z.infer<typeof Os>;
@@ -191,7 +192,7 @@ export const Ok = z.object({ ok: z.literal(true) });
 export const Empty = z.object({});
 
 /** A page cursor (opaque to clients). */
-export const Cursor = z.string().min(1).max(512);
+export const Cursor = utf16(512, 1);
 
 /** Error codes Clover adds to JSON-RPC's (the inherited `ERR` keeps its own, jsonrpc.ts). */
 export const CLOVER_ERR = {

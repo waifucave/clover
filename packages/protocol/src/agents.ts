@@ -9,6 +9,7 @@
 // else. Everything handed to an agent counts as stored in plain text; the bridge token is the only secret, in the
 // bridge entry's `env` (S5 edit 4).
 import { z } from "zod";
+import { utf16 } from "./strings";
 import { AnyPluginId, ComputerName, Empty, SessionId, Text, TreePath } from "./common";
 import { coreEvent, defineEvent, defineMethod } from "./rpc";
 
@@ -30,7 +31,7 @@ export const BackendMark = z.enum([
 export type BackendMark = z.infer<typeof BackendMark>;
 
 export const AgentBackendView = z.object({
-  id: z.string().min(1).max(128),
+  id: utf16(128, 1),
   name: Text,
   pluginId: AnyPluginId,
   protocol: z.enum(["acp", "cloud"]),
@@ -39,7 +40,7 @@ export const AgentBackendView = z.object({
   computers: z.array(z.object({
     computer: ComputerName,
     installed: z.boolean(),
-    version: z.string().max(64).optional(),
+    version: utf16(64).optional(),
     sandboxed: z.boolean().optional(),
     marks: z.array(BackendMark).max(16),
   })).max(256),
@@ -48,12 +49,12 @@ export type AgentBackendView = z.infer<typeof AgentBackendView>;
 
 /** An agent definition from a plugin's `agents` (§5.3): a preset for `Agent`. */
 export const AgentDefView = z.object({
-  id: z.string().min(1).max(128),
+  id: utf16(128, 1),
   name: Text,
   pluginId: AnyPluginId,
-  backend: z.string().max(128),
-  model: z.string().max(200).optional(),
-  effort: z.string().max(32).optional(),
+  backend: utf16(128),
+  model: utf16(200).optional(),
+  effort: utf16(32).optional(),
   computer: ComputerName.optional(),
   root: TreePath.optional(),
 });
@@ -62,8 +63,8 @@ export type AgentDefView = z.infer<typeof AgentDefView>;
 /** A bridge tool as the agent sees it: one of the plugin tools in its scope, with a description that stands on its
  *  own, since Cursor and Antigravity keep server instructions out of the prompt (S5 edit 3). */
 export const BridgeTool = z.object({
-  name: z.string().min(1).max(64),
-  description: z.string().max(10_000),
+  name: utf16(64, 1),
+  description: utf16(10_000),
   inputSchema: z.record(z.string(), z.unknown()),
 });
 
@@ -81,14 +82,14 @@ export const AGENTS_METHODS = {
   agentStart: defineMethod({
     name: "agent.start", owner: "K", roles: ["app", "cli"], userOnly: true,
     params: z.object({
-      backend: z.string().min(1).max(128),
+      backend: utf16(128, 1),
       computer: ComputerName,
       /** A folder in the tree; refused if it contains the Clover home (§9.3). */
       root: TreePath,
-      model: z.string().max(200).optional(),
-      effort: z.string().max(32).optional(),
-      definition: z.string().max(128).optional(),
-      prompt: z.string().max(1_000_000).optional(),
+      model: utf16(200).optional(),
+      effort: utf16(32).optional(),
+      definition: utf16(128).optional(),
+      prompt: utf16(1_000_000).optional(),
     }),
     result: z.object({ session: SessionId }),
     doc: "Starts a coding session the user drives directly, with no bot (`clover code`, §9.3).",
@@ -97,18 +98,18 @@ export const AGENTS_METHODS = {
   // The bridge (role `bridge`): bound to one agent session by its token.
   bridgeTools: defineMethod({
     name: "bridge.tools", owner: "K", roles: ["bridge"],
-    params: Empty, result: z.object({ tools: z.array(BridgeTool), instructions: z.string().max(64_000) }),
+    params: Empty, result: z.object({ tools: z.array(BridgeTool), instructions: utf16(64_000) }),
     doc: "The plugin tools in this agent's scope, plus `SendMessage` and `Glossary`, and the instructions the bridge sends as its own.",
   }),
   bridgeCall: defineMethod({
     name: "bridge.call", owner: "K", roles: ["bridge"],
-    params: z.object({ callId: z.string().min(1).max(128), tool: z.string().min(1).max(64), input: z.unknown() }),
+    params: z.object({ callId: utf16(128, 1), tool: utf16(64, 1), input: z.unknown() }),
     result: z.object({ content: z.array(z.unknown()), isError: z.boolean() }),
     doc: "Runs a bridged tool wherever it actually runs, under the same approval rules (§9.3).",
   }),
   bridgeSendMessage: defineMethod({
     name: "bridge.sendMessage", owner: "K", roles: ["bridge"],
-    params: z.object({ text: z.string().min(1).max(1_000_000), to: SessionId.optional() }),
+    params: z.object({ text: utf16(1_000_000, 1), to: SessionId.optional() }),
     result: z.object({ ok: z.literal(true) }),
     doc: "The agent messages its bot (or another session); it folds in like any bot message (§9.3).",
   }),

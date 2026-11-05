@@ -8,6 +8,7 @@
 // headless shell over the DevTools pipe. Plugins with `browser` drive it through this API, which passes only
 // allowlisted DevTools domains; while the user holds a tab, an agent's commands on it are refused.
 import { z } from "zod";
+import { utf16 } from "./strings";
 import { BotId, ComputerName, Ok, Timestamp } from "./common";
 import { coreEvent, defineEvent, defineMethod } from "./rpc";
 
@@ -46,12 +47,12 @@ export type Viewport = z.infer<typeof Viewport>;
 export const AGENT_VIEWPORT: Viewport = { width: 1280, height: 800 };
 
 export const TabView = z.object({
-  id: z.string().min(1).max(128),
+  id: utf16(128, 1),
   computer: ComputerName,
   owner: TabOwner,
-  partition: z.string().max(256),
-  url: z.string().max(8192),
-  title: z.string().max(1024),
+  partition: utf16(256),
+  url: utf16(8192),
+  title: utf16(1024),
   place: TabPlace,
   viewport: Viewport,
   loading: z.boolean(),
@@ -73,7 +74,7 @@ export const Screenshot = z.object({
 });
 export type Screenshot = z.infer<typeof Screenshot>;
 
-const Tab = z.object({ id: z.string().min(1).max(128) });
+const Tab = z.object({ id: utf16(128, 1) });
 const API = { roles: ["app", "layer", "plugin-host"] as const, capability: "browser" };
 
 export const BROWSER_METHODS = {
@@ -86,7 +87,7 @@ export const BROWSER_METHODS = {
   }),
   browserOpen: defineMethod({
     name: "browser.open", owner: "L", ...API,
-    params: z.object({ owner: TabOwner, url: z.string().max(8192).optional(), show: z.boolean().optional(), computer: ComputerName.optional() }),
+    params: z.object({ owner: TabOwner, url: utf16(8192).optional(), show: z.boolean().optional(), computer: ComputerName.optional() }),
     result: z.object({ tab: TabView }),
     doc: "Opens a tab in its owner's partition, headless unless shown.",
   }),
@@ -96,13 +97,13 @@ export const BROWSER_METHODS = {
   }),
   browserNavigate: defineMethod({
     name: "browser.navigate", owner: "L", ...API,
-    params: z.object({ id: z.string().min(1).max(128), url: z.string().min(1).max(8192) }),
+    params: z.object({ id: utf16(128, 1), url: utf16(8192, 1) }),
     result: z.object({ tab: TabView }),
     doc: "Loads a URL in a tab.",
   }),
   browserShow: defineMethod({
     name: "browser.show", owner: "L", ...API,
-    params: z.object({ id: z.string().min(1).max(128), view: z.string().min(1).max(128), viewport: Viewport }),
+    params: z.object({ id: utf16(128, 1), view: utf16(128, 1), viewport: Viewport }),
     result: z.object({ tab: TabView }),
     doc: "Moves a tab into a browser view without reloading; it lays out at the view's size.",
   }),
@@ -114,20 +115,20 @@ export const BROWSER_METHODS = {
     /** From the app only: its main process sees the user's gesture in the view (§5.5's rule for sends, applied to
      *  taking a tab). */
     name: "browser.hold", owner: "L", roles: ["app"], userOnly: true,
-    params: z.object({ id: z.string().min(1).max(128), held: z.boolean() }), result: Ok,
+    params: z.object({ id: utf16(128, 1), held: z.boolean() }), result: Ok,
     doc: "The user takes or gives back a tab in the view; an agent's commands on it are refused while held.",
   }),
   browserScreenshot: defineMethod({
     name: "browser.screenshot", owner: "L", ...API,
-    params: z.object({ id: z.string().min(1).max(128), format: z.enum(["png", "jpeg", "webp"]).optional(), quality: z.number().int().min(1).max(100).optional() }),
+    params: z.object({ id: utf16(128, 1), format: z.enum(["png", "jpeg", "webp"]).optional(), quality: z.number().int().min(1).max(100).optional() }),
     result: Screenshot,
     doc: "A picture of a tab, taken without showing it.",
   }),
   browserCdp: defineMethod({
     name: "browser.cdp", owner: "L", ...API,
     params: z.object({
-      id: z.string().min(1).max(128),
-      method: z.string().min(3).max(128),
+      id: utf16(128, 1),
+      method: utf16(128, 3),
       params: z.record(z.string(), z.unknown()).optional(),
       /** The viewport a Point came from; refused if the tab's is different now (§12.1). */
       viewport: Viewport.optional(),
@@ -137,28 +138,28 @@ export const BROWSER_METHODS = {
   }),
   browserStream: defineMethod({
     name: "browser.stream", owner: "L", roles: ["app", "remote", "peer"],
-    params: z.object({ id: z.string().min(1).max(128), on: z.boolean(), maxKbps: z.number().int().min(50).max(50_000).optional() }),
-    result: z.object({ stream: z.string().max(128).optional() }),
+    params: z.object({ id: utf16(128, 1), on: z.boolean(), maxKbps: z.number().int().min(50).max(50_000).optional() }),
+    result: z.object({ stream: utf16(128).optional() }),
     doc: "Streams a tab to another device as video on a link stream of its own (S7 edit 3).",
   }),
 
   // The daemon drives the app's tabs (desktops). The app reports back with `browser.report`.
   appTabOpen: defineMethod({
     name: "app.tab.open", owner: "L", roles: ["app"], direction: "from-daemon",
-    params: z.object({ id: z.string().min(1).max(128), owner: TabOwner, url: z.string().max(8192).optional(), place: TabPlace }),
+    params: z.object({ id: utf16(128, 1), owner: TabOwner, url: utf16(8192).optional(), place: TabPlace }),
     result: z.object({ tab: TabView }),
     doc: "Opens a `WebContentsView` in the owner's partition.",
   }),
   appTabCommand: defineMethod({
     name: "app.tab.command", owner: "L", roles: ["app"], direction: "from-daemon",
     params: z.object({
-      id: z.string().min(1).max(128),
+      id: utf16(128, 1),
       command: z.discriminatedUnion("kind", [
         z.object({ kind: z.literal("close") }),
-        z.object({ kind: z.literal("navigate"), url: z.string().min(1).max(8192) }),
-        z.object({ kind: z.literal("place"), place: TabPlace, view: z.string().max(128).optional(), viewport: Viewport.optional() }),
+        z.object({ kind: z.literal("navigate"), url: utf16(8192, 1) }),
+        z.object({ kind: z.literal("place"), place: TabPlace, view: utf16(128).optional(), viewport: Viewport.optional() }),
         z.object({ kind: z.literal("screenshot"), format: z.enum(["png", "jpeg", "webp"]), quality: z.number().int().min(1).max(100).optional() }),
-        z.object({ kind: z.literal("cdp"), method: z.string().min(3).max(128), params: z.record(z.string(), z.unknown()).optional() }),
+        z.object({ kind: z.literal("cdp"), method: utf16(128, 3), params: z.record(z.string(), z.unknown()).optional() }),
       ]),
     }),
     result: z.object({ result: z.unknown() }),
@@ -174,9 +175,9 @@ export const BROWSER_METHODS = {
     params: z.object({
       events: z.array(z.discriminatedUnion("kind", [
         z.object({ kind: z.literal("changed"), tab: TabView }),
-        z.object({ kind: z.literal("closed"), id: z.string().min(1).max(128), by: z.enum(["user", "page", "crash"]) }),
-        z.object({ kind: z.literal("cdp"), id: z.string().min(1).max(128), method: z.string().max(128), params: z.unknown() }),
-        z.object({ kind: z.literal("stalled"), id: z.string().min(1).max(128), sinceMs: z.number().nonnegative() }),
+        z.object({ kind: z.literal("closed"), id: utf16(128, 1), by: z.enum(["user", "page", "crash"]) }),
+        z.object({ kind: z.literal("cdp"), id: utf16(128, 1), method: utf16(128), params: z.unknown() }),
+        z.object({ kind: z.literal("stalled"), id: utf16(128, 1), sinceMs: z.number().nonnegative() }),
       ])).max(1000),
     }),
     result: Ok,
@@ -185,8 +186,8 @@ export const BROWSER_METHODS = {
 } as const;
 
 export const TabChangedEvent = coreEvent("tab_changed", { tab: TabView });
-export const TabClosedEvent = coreEvent("tab_closed", { id: z.string().min(1).max(128), computer: ComputerName });
-export const CdpEventEvent = coreEvent("cdp_event", { tab: z.string().min(1).max(128), method: z.string().max(128), params: z.unknown() });
+export const TabClosedEvent = coreEvent("tab_closed", { id: utf16(128, 1), computer: ComputerName });
+export const CdpEventEvent = coreEvent("cdp_event", { tab: utf16(128, 1), method: utf16(128), params: z.unknown() });
 
 export const BROWSER_EVENTS = {
   tabChanged: defineEvent({

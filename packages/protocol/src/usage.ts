@@ -5,6 +5,7 @@
 // Antigravity) and syncs append-only rows to the main. The readers take only numbers, never content. Plugins with
 // `usage.read` read rows and plan readings.
 import { z } from "zod";
+import { utf16 } from "./strings";
 import { BotId, ComputerName, Cursor, Empty, SessionId, Timestamp } from "./common";
 import { coreEvent, defineEvent, defineMethod } from "./rpc";
 
@@ -13,12 +14,12 @@ export type UsageSource = z.infer<typeof UsageSource>;
 
 export const UsageRow = z.object({
   /** Unique per computer: `<computer>:<n>`, so rows synced from several computers never clash. */
-  id: z.string().min(1).max(200),
+  id: utf16(200, 1),
   computer: ComputerName,
   source: UsageSource,
   at: Timestamp,
-  provider: z.string().max(128).optional(),
-  model: z.string().max(200).optional(),
+  provider: utf16(128).optional(),
+  model: utf16(200).optional(),
   bot: BotId.optional(),
   session: SessionId.optional(),
   inputTokens: z.number().int().nonnegative(),
@@ -34,8 +35,8 @@ export type UsageRow = z.infer<typeof UsageRow>;
 export const PlanReading = z.object({
   source: UsageSource,
   computer: ComputerName,
-  plan: z.string().max(128),
-  window: z.string().max(32),
+  plan: utf16(128),
+  window: utf16(32),
   usedPercent: z.number().min(0).max(1000),
   resetsAt: Timestamp.optional(),
   readAt: Timestamp,
@@ -64,7 +65,7 @@ export const USAGE_METHODS = {
     params: z.object({ from: Timestamp, to: Timestamp, groupBy: z.enum(["source", "model", "bot", "computer", "day"]) }),
     result: z.object({
       groups: z.array(z.object({
-        key: z.string().max(256),
+        key: utf16(256),
         inputTokens: z.number().int().nonnegative(),
         outputTokens: z.number().int().nonnegative(),
         costUsd: z.number().nonnegative().optional(),

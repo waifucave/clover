@@ -381,9 +381,9 @@
                   "anyOf": [
                     {
                       "type": "string",
-                      "minLength": 2,
                       "maxLength": 300,
-                      "pattern": "^[a-z][a-z0-9/-]*(#[A-Za-z0-9._-]+)?$"
+                      "pattern": "^[a-z][a-z0-9/-]*(#[A-Za-z0-9._-]+)?$",
+                      "minLength": 2
                     },
                     {
                       "type": "null"
@@ -418,9 +418,9 @@
                   "type": "array",
                   "items": {
                     "type": "string",
-                    "minLength": 2,
                     "maxLength": 300,
-                    "pattern": "^[a-z][a-z0-9/-]*(#[A-Za-z0-9._-]+)?$"
+                    "pattern": "^[a-z][a-z0-9/-]*(#[A-Za-z0-9._-]+)?$",
+                    "minLength": 2
                   }
                 },
                 "hidden": {
@@ -428,9 +428,9 @@
                   "type": "array",
                   "items": {
                     "type": "string",
-                    "minLength": 2,
                     "maxLength": 300,
-                    "pattern": "^[a-z][a-z0-9/-]*(#[A-Za-z0-9._-]+)?$"
+                    "pattern": "^[a-z][a-z0-9/-]*(#[A-Za-z0-9._-]+)?$",
+                    "minLength": 2
                   }
                 }
               },
@@ -444,15 +444,15 @@
           },
           "baseTheme": {
             "type": "string",
-            "minLength": 3,
             "maxLength": 300,
-            "pattern": "^[a-z][a-z0-9/-]*#[A-Za-z0-9._-]+$"
+            "pattern": "^[a-z][a-z0-9/-]*#[A-Za-z0-9._-]+$",
+            "minLength": 3
           },
           "globalTheme": {
             "type": "string",
-            "minLength": 3,
             "maxLength": 300,
-            "pattern": "^[a-z][a-z0-9/-]*#[A-Za-z0-9._-]+$"
+            "pattern": "^[a-z][a-z0-9/-]*#[A-Za-z0-9._-]+$",
+            "minLength": 3
           },
           "overrides": {
             "type": "object",
@@ -537,9 +537,9 @@
                       "anyOf": [
                         {
                           "type": "string",
-                          "minLength": 2,
                           "maxLength": 300,
-                          "pattern": "^[a-z][a-z0-9/-]*(#[A-Za-z0-9._-]+)?$"
+                          "pattern": "^[a-z][a-z0-9/-]*(#[A-Za-z0-9._-]+)?$",
+                          "minLength": 2
                         },
                         {
                           "type": "null"
@@ -573,9 +573,9 @@
                       "type": "array",
                       "items": {
                         "type": "string",
-                        "minLength": 2,
                         "maxLength": 300,
-                        "pattern": "^[a-z][a-z0-9/-]*(#[A-Za-z0-9._-]+)?$"
+                        "pattern": "^[a-z][a-z0-9/-]*(#[A-Za-z0-9._-]+)?$",
+                        "minLength": 2
                       }
                     },
                     "hidden": {
@@ -583,9 +583,9 @@
                       "type": "array",
                       "items": {
                         "type": "string",
-                        "minLength": 2,
                         "maxLength": 300,
-                        "pattern": "^[a-z][a-z0-9/-]*(#[A-Za-z0-9._-]+)?$"
+                        "pattern": "^[a-z][a-z0-9/-]*(#[A-Za-z0-9._-]+)?$",
+                        "minLength": 2
                       }
                     }
                   },
@@ -598,15 +598,15 @@
               },
               "baseTheme": {
                 "type": "string",
-                "minLength": 3,
                 "maxLength": 300,
-                "pattern": "^[a-z][a-z0-9/-]*#[A-Za-z0-9._-]+$"
+                "pattern": "^[a-z][a-z0-9/-]*#[A-Za-z0-9._-]+$",
+                "minLength": 3
               },
               "globalTheme": {
                 "type": "string",
-                "minLength": 3,
                 "maxLength": 300,
-                "pattern": "^[a-z][a-z0-9/-]*#[A-Za-z0-9._-]+$"
+                "pattern": "^[a-z][a-z0-9/-]*#[A-Za-z0-9._-]+$",
+                "minLength": 3
               },
               "overrides": {
                 "type": "object",
@@ -1075,9 +1075,9 @@
                       "anyOf": [
                         {
                           "type": "string",
-                          "minLength": 2,
                           "maxLength": 300,
-                          "pattern": "^[a-z][a-z0-9/-]*(#[A-Za-z0-9._-]+)?$"
+                          "pattern": "^[a-z][a-z0-9/-]*(#[A-Za-z0-9._-]+)?$",
+                          "minLength": 2
                         },
                         {
                           "type": "null"
@@ -1111,9 +1111,9 @@
                       "type": "array",
                       "items": {
                         "type": "string",
-                        "minLength": 2,
                         "maxLength": 300,
-                        "pattern": "^[a-z][a-z0-9/-]*(#[A-Za-z0-9._-]+)?$"
+                        "pattern": "^[a-z][a-z0-9/-]*(#[A-Za-z0-9._-]+)?$",
+                        "minLength": 2
                       }
                     },
                     "hidden": {
@@ -1121,9 +1121,9 @@
                       "type": "array",
                       "items": {
                         "type": "string",
-                        "minLength": 2,
                         "maxLength": 300,
-                        "pattern": "^[a-z][a-z0-9/-]*(#[A-Za-z0-9._-]+)?$"
+                        "pattern": "^[a-z][a-z0-9/-]*(#[A-Za-z0-9._-]+)?$",
+                        "minLength": 2
                       }
                     }
                   },
@@ -1136,15 +1136,15 @@
               },
               "baseTheme": {
                 "type": "string",
-                "minLength": 3,
                 "maxLength": 300,
-                "pattern": "^[a-z][a-z0-9/-]*#[A-Za-z0-9._-]+$"
+                "pattern": "^[a-z][a-z0-9/-]*#[A-Za-z0-9._-]+$",
+                "minLength": 3
               },
               "globalTheme": {
                 "type": "string",
-                "minLength": 3,
                 "maxLength": 300,
-                "pattern": "^[a-z][a-z0-9/-]*#[A-Za-z0-9._-]+$"
+                "pattern": "^[a-z][a-z0-9/-]*#[A-Za-z0-9._-]+$",
+                "minLength": 3
               },
               "overrides": {
                 "type": "object",

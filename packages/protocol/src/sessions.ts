@@ -7,6 +7,7 @@
 // tool call. A session's log keeps the inherited `SessionEvent` stream (events.ts); the Clover kinds below join it when
 // lane D wires them through the inherited checklist (docs/claude/protocol-and-remote.md).
 import { z } from "zod";
+import { utf16 } from "./strings";
 import {
   AnyPluginId, BotId, ChangeResult, ComputerName, Cursor, DeviceId, Empty, Ok, SessionId, SessionKind, Text,
   Timestamp, TreePath,
@@ -25,12 +26,12 @@ export const BotView = z.object({
   id: BotId,
   name: Text,
   /** Asset URL of its portrait, when it has one. */
-  portrait: z.string().max(4096).optional(),
+  portrait: utf16(4096).optional(),
   /** A qualified catalog id; the user's default model when there is no key for the bot's own (§6.1). */
-  model: z.string().max(200),
-  effort: z.string().max(32).optional(),
-  voice: z.object({ provider: z.string().max(128), voice: z.string().max(256), model: z.string().max(128).optional() }).optional(),
-  theme: z.string().max(256).optional(),
+  model: utf16(200),
+  effort: utf16(32).optional(),
+  voice: z.object({ provider: utf16(128), voice: utf16(256), model: utf16(128).optional() }).optional(),
+  theme: utf16(256).optional(),
   /** The fields the user layer sets over the plugin's (§6.1). */
   userLayer: z.array(z.enum(["name", "instructions", "model", "effort", "voice", "avatar", "theme", "layout"])),
   state: BotState,
@@ -44,13 +45,13 @@ export type BotView = z.infer<typeof BotView>;
  *  Bots can't write the user layer (§9.1). */
 export const UserLayerPatch = z.object({
   name: Text.nullable().optional(),
-  instructions: z.string().max(200_000).nullable().optional(),
-  model: z.string().max(200).nullable().optional(),
-  effort: z.string().max(32).nullable().optional(),
-  voice: z.object({ provider: z.string().max(128), voice: z.string().max(256), model: z.string().max(128).optional() }).nullable().optional(),
-  avatar: z.object({ file: z.string().max(4096), format: z.string().max(32), portrait: z.string().max(4096).optional() }).nullable().optional(),
-  theme: z.string().max(256).nullable().optional(),
-  layout: z.string().max(4096).nullable().optional(),
+  instructions: utf16(200_000).nullable().optional(),
+  model: utf16(200).nullable().optional(),
+  effort: utf16(32).nullable().optional(),
+  voice: z.object({ provider: utf16(128), voice: utf16(256), model: utf16(128).optional() }).nullable().optional(),
+  avatar: z.object({ file: utf16(4096), format: utf16(32), portrait: utf16(4096).optional() }).nullable().optional(),
+  theme: utf16(256).nullable().optional(),
+  layout: utf16(4096).nullable().optional(),
 });
 export type UserLayerPatch = z.infer<typeof UserLayerPatch>;
 
@@ -73,19 +74,19 @@ export const SessionView = z.object({
   parent: SessionId.optional(),
   /** The computer running it (§6.4). */
   computer: ComputerName,
-  title: z.string().max(200).optional(),
+  title: utf16(200).optional(),
   status: SessionStatus,
   failure: SessionFailure.optional(),
   startedAt: Timestamp,
   updatedAt: Timestamp,
   /** A background agent's or coding session's backend (an `agentBackends` id, §9.3). */
-  backend: z.string().max(128).optional(),
-  model: z.string().max(200).optional(),
-  effort: z.string().max(32).optional(),
+  backend: utf16(128).optional(),
+  model: utf16(200).optional(),
+  effort: utf16(32).optional(),
   /** An agent's root folder in the tree (§9.1). */
   root: TreePath.optional(),
   /** A routine run's routine. */
-  routine: z.string().max(128).optional(),
+  routine: utf16(128).optional(),
   /** What waits for the user in it: pending cards and unanswered questions, as counts only (the shell's needs-you
    *  marks; a card's content stays behind `approvals` and the sealed frames). */
   needsYou: z.object({ cards: z.number().int().nonnegative(), questions: z.number().int().nonnegative() }).optional(),
@@ -96,25 +97,25 @@ export type SessionView = z.infer<typeof SessionView>;
  *  §9.1 "Each user message says which device it came from"). An attached image becomes part of the transcript;
  *  other attachments are passed as folder-tree paths (§8.5). */
 export const UserMessageInput = z.object({
-  text: z.string().max(1_000_000),
+  text: utf16(1_000_000),
   /** Images the client staged, by the path the daemon gave it. */
-  images: z.array(z.object({ n: z.number().int().positive(), path: z.string().min(1).max(4096) })).max(32).optional(),
+  images: z.array(z.object({ n: z.number().int().positive(), path: utf16(4096, 1) })).max(32).optional(),
   files: z.array(z.object({ n: z.number().int().positive(), path: TreePath })).max(64).optional(),
   /** The client's id for this message, so a resend is not a second message. */
-  clientMessageId: z.string().min(1).max(128),
+  clientMessageId: utf16(128, 1),
 });
 export type UserMessageInput = z.infer<typeof UserMessageInput>;
 
 /** A routine, as the synced list keeps it (§8.5): any device can show it, even while its computer is off. */
 export const RoutineView = z.object({
-  id: z.string().min(1).max(128),
-  name: z.string().max(200),
+  id: utf16(128, 1),
+  name: utf16(200),
   bot: BotId,
   computer: ComputerName,
   /** Its file in the tree: `home/<Computer>/.clover/routines/<bot>/<name>.md` (§7). */
   file: TreePath,
-  triggers: z.array(z.object({ type: z.string().max(128), summary: z.string().max(500) })).max(32),
-  level: z.string().max(32),
+  triggers: z.array(z.object({ type: utf16(128), summary: utf16(500) })).max(32),
+  level: utf16(32),
   /** A raised level waiting for its card, or a copy with the same id paused (§7). */
   state: z.enum(["active", "paused", "waiting-for-ok", "duplicate", "bot-removed"]),
   lastRunAt: Timestamp.optional(),
@@ -123,17 +124,17 @@ export const RoutineView = z.object({
 export type RoutineView = z.infer<typeof RoutineView>;
 
 export const RoutineRunView = z.object({
-  routine: z.string().max(128),
+  routine: utf16(128),
   session: SessionId,
   startedAt: Timestamp,
   endedAt: Timestamp.optional(),
   outcome: z.enum(["running", "done", "failed", "skipped", "missed"]),
-  summary: z.string().max(4000).optional(),
+  summary: utf16(4000).optional(),
 });
 
 export type RoutineRunView = z.infer<typeof RoutineRunView>;
 
-export const MemoryEntry = z.object({ path: z.string().max(1024), size: z.number().int().nonnegative(), modifiedAt: Timestamp });
+export const MemoryEntry = z.object({ path: utf16(1024), size: z.number().int().nonnegative(), modifiedAt: Timestamp });
 export type MemoryEntry = z.infer<typeof MemoryEntry>;
 
 const SessionParams = z.object({ id: SessionId });
@@ -198,9 +199,9 @@ export const SESSIONS_METHODS = {
     params: z.object({
       id: SessionId,
       kind: z.enum(["note", "message"]),
-      text: z.string().min(1).max(100_000),
+      text: utf16(100_000, 1),
       /** A note's label, shown with the plugin's name. */
-      label: z.string().max(120).optional(),
+      label: utf16(120).optional(),
     }),
     result: z.object({ seq: z.number().int().nonnegative() }),
     doc: "A plugin adds a note, or sends a bot a message that folds in; a turn it starts is the plugin's (§5.4).",
@@ -218,16 +219,16 @@ export const SESSIONS_METHODS = {
   sessionAnswer: defineMethod({
     name: "session.answer", owner: "D", roles: ["app", "cli", "remote", "web", "layer"], capability: "conversation.post",
     params: z.object({
-      id: SessionId, callId: z.string().min(1).max(128),
-      answers: z.record(z.string(), z.string().max(10_000)),
-      notes: z.record(z.string(), z.string().max(10_000)).optional(),
+      id: SessionId, callId: utf16(128, 1),
+      answers: z.record(z.string(), utf16(10_000)),
+      notes: z.record(z.string(), utf16(10_000)).optional(),
     }),
     result: Ok,
     doc: "Answers an `AskUserQuestion`, which plugins may read and show in any form (§5.5).",
   }),
   sessionSetModel: defineMethod({
     name: "session.setModel", owner: "D", roles: ["app", "cli", "remote"], userOnly: true,
-    params: z.object({ id: SessionId, model: z.string().min(1).max(200), effort: z.string().max(32).optional() }),
+    params: z.object({ id: SessionId, model: utf16(200, 1), effort: utf16(32).optional() }),
     result: Ok,
     doc: "Switches an agent's or coding session's model mid-session; a bot's model is its user layer (§6.3).",
   }),
@@ -243,7 +244,7 @@ export const SESSIONS_METHODS = {
   }),
   memoryRead: defineMethod({
     name: "memory.read", owner: "D", roles: ["app", "cli", "layer", "plugin-host"], capability: "memory.read",
-    params: z.object({ bot: BotId, path: z.string().min(1).max(1024) }), result: z.object({ text: z.string() }),
+    params: z.object({ bot: BotId, path: utf16(1024, 1) }), result: z.object({ text: z.string() }),
     doc: "One memory file.",
   }),
   routineList: defineMethod({
@@ -253,13 +254,13 @@ export const SESSIONS_METHODS = {
   }),
   routineRuns: defineMethod({
     name: "routine.runs", owner: "D", roles: ["app", "cli", "remote", "layer", "plugin-host"], capability: "routines.read",
-    params: z.object({ id: z.string().min(1).max(128), cursor: Cursor.optional(), limit: z.number().int().min(1).max(200).optional() }),
+    params: z.object({ id: utf16(128, 1), cursor: Cursor.optional(), limit: z.number().int().min(1).max(200).optional() }),
     result: z.object({ runs: z.array(RoutineRunView), next: Cursor.optional() }),
     doc: "A routine's runs, newest first.",
   }),
   routineRunNow: defineMethod({
     name: "routine.runNow", owner: "D", roles: ["app", "cli"], userOnly: true,
-    params: z.object({ id: z.string().min(1).max(128) }), result: z.object({ session: SessionId }),
+    params: z.object({ id: utf16(128, 1) }), result: z.object({ session: SessionId }),
     doc: "Runs a routine now, in a side thread on its computer.",
   }),
 } as const;
@@ -284,42 +285,42 @@ function sessionEvent<T extends string, S extends z.ZodRawShape>(type: T, shape:
 }
 
 /** Another bot's `SendMessage`, folded into this conversation (§6.4). */
-export const BotMessageEvent = sessionEvent("bot_message", { from: BotId, fromSession: SessionId, text: z.string().max(1_000_000) });
+export const BotMessageEvent = sessionEvent("bot_message", { from: BotId, fromSession: SessionId, text: utf16(1_000_000) });
 /** A background agent's `SendMessage` to its bot while it works (§9.3). Shown as `agent-report` (§5.5). */
-export const AgentMessageEvent = sessionEvent("agent_message", { agent: SessionId, text: z.string().max(1_000_000) });
+export const AgentMessageEvent = sessionEvent("agent_message", { agent: SessionId, text: utf16(1_000_000) });
 /** A background agent finished: the task notification, with the final text unchanged (spike S5 §8). */
 export const AgentFinishedEvent = sessionEvent("agent_finished", {
   agent: SessionId,
-  backend: z.string().max(128),
+  backend: utf16(128),
   stopReason: z.enum(["end_turn", "refusal", "cancelled", "stopped", "stalled", "sign-in", "crashed", "error"]),
-  text: z.string().max(1_000_000),
+  text: utf16(1_000_000),
   /** Its full transcript in the tree (`bots/<bot>/agents/…`). */
   transcript: TreePath,
   usage: z.object({ inputTokens: z.number().int().nonnegative(), outputTokens: z.number().int().nonnegative() }).optional(),
 });
 /** A routine run's short result, posted into the bot's main conversation (§7). */
 export const RoutineResultEvent = sessionEvent("routine_result", {
-  routine: z.string().max(128), name: z.string().max(200), sideThread: SessionId, text: z.string().max(100_000),
+  routine: utf16(128), name: utf16(200), sideThread: SessionId, text: utf16(100_000),
 });
 /** A labelled note: a plugin's (`conversation.post`), a `turn.start` hook's, or the core's (servers added between
  *  compactions, §6.1). */
 export const NoteEvent = sessionEvent("note", {
   from: z.discriminatedUnion("kind", [
     z.object({ kind: z.literal("plugin"), pluginId: AnyPluginId }),
-    z.object({ kind: z.literal("hook"), pluginId: AnyPluginId, hook: z.string().max(128) }),
+    z.object({ kind: z.literal("hook"), pluginId: AnyPluginId, hook: utf16(128) }),
     z.object({ kind: z.literal("core") }),
   ]),
-  label: z.string().max(120),
-  text: z.string().max(100_000),
+  label: utf16(120),
+  text: utf16(100_000),
 });
 /** A message a plugin sends a bot: its `conversation.send` (with `conversation.post`), or an MCP Apps page's
  *  `ui/message` sent without the user's own key press or click (§5.4, §5.5). The turn it starts is the plugin's, never
  *  the user's; shown with the plugin's name (`from.kind: "plugin"`). */
 export const PluginMessageEvent = sessionEvent("plugin_message", {
   from: z.object({ kind: z.literal("plugin"), pluginId: AnyPluginId }),
-  text: z.string().max(1_000_000),
+  text: utf16(1_000_000),
   /** An MCP Apps page's message: the tool call whose page sent it. */
-  app: z.object({ callId: z.string().min(1).max(128) }).optional(),
+  app: z.object({ callId: utf16(128, 1) }).optional(),
 });
 /** The fields the user's `user_message` gains (§6.4): the device it came from and its send time on the shared
  *  clock. A message stamped before output the model already produced sits after that output, showing its time. */

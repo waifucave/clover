@@ -7,6 +7,7 @@
 // a crashed app (safe mode after three crashes in two minutes), and Quit stops both, first offering Hand over and
 // quit on a computer running bots, routines or agents. A side that exits on purpose tells the other first.
 import { z } from "zod";
+import { utf16 } from "./strings";
 import { AnyPluginId, BotId, CardId, ChangeResult, Empty, Ok, SessionId, Text, Timestamp } from "./common";
 import { coreEvent, defineEvent, defineMethod } from "./rpc";
 
@@ -19,27 +20,27 @@ export const PairStatus = z.object({
   canHandOver: z.boolean(),
   safeMode: z.boolean(),
   /** An update is downloaded and waits for an idle moment (§3.1). */
-  updateReady: z.string().max(64).optional(),
+  updateReady: utf16(64).optional(),
 });
 export type PairStatus = z.infer<typeof PairStatus>;
 
 /** A reference to one UI entry: `<plugin-id>` or `<plugin-id>#<entry-id>` (§5.5 `prefer`). */
-export const EntryRef = z.string().min(2).max(300).regex(/^[a-z][a-z0-9/-]*(#[A-Za-z0-9._-]+)?$/);
+export const EntryRef = utf16(300, 2).regex(/^[a-z][a-z0-9/-]*(#[A-Za-z0-9._-]+)?$/);
 /** A theme, `<plugin-id>#<theme-id>` (§5.1 "Entry ids"). */
-export const ThemeRef = z.string().min(3).max(300).regex(/^[a-z][a-z0-9/-]*#[A-Za-z0-9._-]+$/);
+export const ThemeRef = utf16(300, 3).regex(/^[a-z][a-z0-9/-]*#[A-Za-z0-9._-]+$/);
 
 /** The user's UI choices (§5.5), synced as account settings (§8.5). */
 export const UiSettings = z.object({
   /** The user's pick in a single spot or keyed cell, for one bot or globally; `null` shows nothing there (a hide). */
-  picks: z.array(z.object({ spot: z.string().max(128), key: z.string().max(256).optional(), bot: BotId.optional(), entry: EntryRef.nullable() })).max(10_000),
+  picks: z.array(z.object({ spot: utf16(128), key: utf16(256).optional(), bot: BotId.optional(), entry: EntryRef.nullable() })).max(10_000),
   /** Order and hidden entries of list spots. */
-  lists: z.array(z.object({ spot: z.string().max(128), bot: BotId.optional(), order: z.array(EntryRef).max(1000), hidden: z.array(EntryRef).max(1000) })).max(1000),
+  lists: z.array(z.object({ spot: utf16(128), bot: BotId.optional(), order: z.array(EntryRef).max(1000), hidden: z.array(EntryRef).max(1000) })).max(1000),
   /** The base theme for bot tabs and the global theme; unset means `clover`'s base theme (§5.5). */
   baseTheme: ThemeRef.optional(),
   globalTheme: ThemeRef.optional(),
   /** The user's own overrides, the top of the theme stack. */
-  overrides: z.object({ tokens: z.record(z.string(), z.string().max(1000)).optional(), css: z.string().max(200_000).optional() }).optional(),
-  language: z.string().max(35).optional(),
+  overrides: z.object({ tokens: z.record(z.string(), utf16(1000)).optional(), css: utf16(200_000).optional() }).optional(),
+  language: utf16(35).optional(),
   /** A pack chosen for a language when two translate the same keys (§5.5). */
   packs: z.record(z.string(), AnyPluginId).optional(),
 });
@@ -69,7 +70,7 @@ export const APP_METHODS = {
         z.object({ kind: z.literal("bot"), bot: BotId }),
         z.object({ kind: z.literal("session"), session: SessionId }),
         z.object({ kind: z.literal("card"), card: CardId }),
-        z.object({ kind: z.literal("settings"), section: z.string().max(128).optional() }),
+        z.object({ kind: z.literal("settings"), section: utf16(128).optional() }),
         z.object({ kind: z.literal("url"), url: z.string().url() }),
       ]),
     }),
@@ -83,7 +84,7 @@ export const APP_METHODS = {
   }),
   layerToken: defineMethod({
     name: "layer.token", owner: "C", roles: ["app"],
-    params: z.object({ pluginId: AnyPluginId }), result: z.object({ token: z.string().min(1).max(4096) }),
+    params: z.object({ pluginId: AnyPluginId }), result: z.object({ token: utf16(4096, 1) }),
     doc: "A token for one plugin layer's connection (role `layer`), which the app's main process opens for it.",
   }),
   uiSettings: defineMethod({
@@ -99,18 +100,18 @@ export const APP_METHODS = {
   voiceListen: defineMethod({
     name: "voice.listen", owner: "D", roles: ["app"], userOnly: true,
     params: z.object({
-      bot: BotId, utterance: z.string().min(1).max(128), seq: z.number().int().nonnegative(),
+      bot: BotId, utterance: utf16(128, 1), seq: z.number().int().nonnegative(),
       /** Audio the app recorded while push-to-talk was held (or listening was on), base64. */
-      audio: z.string().max(2_000_000), format: z.enum(["pcm16-16k", "opus"]), final: z.boolean(),
+      audio: utf16(2_000_000), format: z.enum(["pcm16-16k", "opus"]), final: z.boolean(),
     }),
-    result: z.object({ text: z.string().max(100_000).optional() }),
+    result: z.object({ text: utf16(100_000).optional() }),
     doc: "Push-to-talk audio for a bot's listening voice plugin, on the computer the user talks on (§6.6).",
   }),
   voicePlay: defineMethod({
     name: "voice.play", owner: "D", roles: ["app"], direction: "from-daemon",
     params: z.object({
-      bot: BotId, session: SessionId, utterance: z.string().min(1).max(128), seq: z.number().int().nonnegative(),
-      audio: z.string().max(2_000_000), format: z.enum(["pcm16-24k", "mp3", "opus"]), final: z.boolean(),
+      bot: BotId, session: SessionId, utterance: utf16(128, 1), seq: z.number().int().nonnegative(),
+      audio: utf16(2_000_000), format: z.enum(["pcm16-24k", "mp3", "opus"]), final: z.boolean(),
     }),
     result: Ok,
     doc: "Speech for the app to play, which the avatar lip-syncs to (§6.6).",
@@ -122,14 +123,14 @@ export const APP_METHODS = {
   }),
   appNotify: defineMethod({
     name: "app.notify", owner: "G", roles: ["app"], direction: "from-daemon",
-    params: z.object({ id: z.string().min(1).max(128), title: z.string().max(256), body: z.string().max(4000).optional(), session: SessionId.optional() }),
+    params: z.object({ id: utf16(128, 1), title: utf16(256), body: utf16(4000).optional(), session: SessionId.optional() }),
     result: Ok,
     doc: "A desktop notification, which the app shows for the bundled desktop notifier.",
   }),
   updateStatus: defineMethod({
     name: "update.status", owner: "M", roles: ["app", "cli"],
     params: Empty,
-    result: z.object({ current: z.string().max(64), available: z.string().max(64).optional(), channel: z.string().max(32), ready: z.boolean() }),
+    result: z.object({ current: utf16(64), available: utf16(64).optional(), channel: utf16(32), ready: z.boolean() }),
     doc: "The app's and the daemon's version and the update waiting, if any.",
   }),
   updateApply: defineMethod({
@@ -140,7 +141,7 @@ export const APP_METHODS = {
 } as const;
 
 export const UiSettingsChangedEvent = coreEvent("ui_settings_changed", { settings: UiSettings });
-export const UpdateAvailableEvent = coreEvent("update_available", { version: z.string().max(64), ready: z.boolean(), at: Timestamp.optional() });
+export const UpdateAvailableEvent = coreEvent("update_available", { version: utf16(64), ready: z.boolean(), at: Timestamp.optional() });
 
 export const APP_EVENTS = {
   uiSettingsChanged: defineEvent({

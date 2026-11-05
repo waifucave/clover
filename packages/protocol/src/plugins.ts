@@ -5,6 +5,7 @@
 // (`command.list`, `command.run`, §5.4), and the plugin host's channel to the daemon (§5.2). A plugin's own manifest,
 // formats and catalogs are the plugin SDK's (`@waifucave/clover-plugin-sdk`); here a manifest travels as JSON.
 import { z } from "zod";
+import { utf16 } from "./strings";
 import {
   AnyPluginId, BotId, Caller, CardId, ChangeResult, ComputerName, Empty, Ok, Scope, SemverVersion, Text,
   Timestamp, TopPluginId, TreeHash,
@@ -42,10 +43,10 @@ export type PluginClass = z.infer<typeof PluginClass>;
 export const ValidationIssue = z.object({
   severity: z.enum(["error", "warning"]),
   refuses: z.enum(["plugin", "contribution", "entry", "none"]),
-  code: z.string().min(1).max(64),
-  message: z.string().max(2000),
-  file: z.string().max(1024),
-  path: z.string().max(1024),
+  code: utf16(64, 1),
+  message: utf16(2000),
+  file: utf16(1024),
+  path: utf16(1024),
 });
 export type ValidationIssue = z.infer<typeof ValidationIssue>;
 
@@ -54,17 +55,17 @@ export const PluginSummary = z.object({
   /** Set for a child plugin (`<parent>/<folder>`). */
   parent: TopPluginId.optional(),
   name: Text,
-  version: z.string().max(256),
+  version: utf16(256),
   state: PluginState,
   /** Why it is in that state: "waiting for `island.tab`", "plugin stopped: …", the revocation's reason. */
-  reason: z.string().max(2000).optional(),
-  waitingFor: z.array(z.string().max(256)).max(64).optional(),
+  reason: utf16(2000).optional(),
+  waitingFor: z.array(utf16(256)).max(64).optional(),
   enabled: z.boolean(),
   source: PluginSource,
   class: PluginClass,
   treeHash: TreeHash.optional(),
   /** Tool prefix: `mcp__<namespace>__<Tool>` (§6.7). Children share their top-level plugin's. */
-  namespace: z.string().max(40),
+  namespace: utf16(40),
   scope: Scope,
   adult: z.boolean(),
   children: z.array(AnyPluginId).max(256),
@@ -77,13 +78,13 @@ export const PluginDetail = PluginSummary.extend({
   /** The manifest as read (JSON with comments removed); the plugin SDK types it. */
   manifest: z.record(z.string(), z.unknown()),
   provenance: PluginProvenance,
-  capabilities: z.array(z.string().max(256)).max(256),
+  capabilities: z.array(utf16(256)).max(256),
   /** The hosts its components can reach (§5.3). */
-  networkHosts: z.array(z.string().max(256)).max(256),
-  helperPermissions: z.array(z.string().max(64)).max(16),
+  networkHosts: z.array(utf16(256)).max(256),
+  helperPermissions: z.array(utf16(64)).max(16),
   issues: z.array(ValidationIssue).max(500),
   /** Its last log lines (`logs/plugins/<id>.log`), shown when it stopped. */
-  logTail: z.array(z.string().max(4000)).max(200),
+  logTail: z.array(utf16(4000)).max(200),
   /** Computers ticked for `chosen` and for its local servers (§5.2, §9.1), by server name; `*` is its host half. */
   computers: z.record(z.string(), z.array(ComputerName)).optional(),
   pinned: z.boolean(),
@@ -93,38 +94,38 @@ export type PluginDetail = z.infer<typeof PluginDetail>;
 /** Where to install a plugin from (§5.1). Installing only downloads a folder into the plugins directory. */
 export const InstallSource = z.discriminatedUnion("from", [
   z.object({ from: z.literal("index"), id: TopPluginId, version: SemverVersion.optional(), index: z.string().url().optional() }),
-  z.object({ from: z.literal("npm"), name: z.string().min(1).max(214), version: z.string().max(256).optional() }),
-  z.object({ from: z.literal("folder"), path: z.string().min(1).max(4096) }),
+  z.object({ from: z.literal("npm"), name: utf16(214, 1), version: utf16(256).optional() }),
+  z.object({ from: z.literal("folder"), path: utf16(4096, 1) }),
   /** A bare item that the core wraps into a plugin (§5.1): a pasted MCP config, an MCP URL, a skill folder, an agent
    *  file or a Claude Code plugin folder. */
-  z.object({ from: z.literal("wrap"), kind: z.enum(["mcp-config", "mcp-url", "skill-folder", "agent-file", "claude-plugin"]), value: z.string().min(1).max(1_000_000) }),
+  z.object({ from: z.literal("wrap"), kind: z.enum(["mcp-config", "mcp-url", "skill-folder", "agent-file", "claude-plugin"]), value: utf16(1_000_000, 1) }),
 ]);
 export type InstallSource = z.infer<typeof InstallSource>;
 
 /** A command for the palette (§5.4): a plugin's public function, run as `<namespace>.<name>`. */
 export const CommandView = z.object({
-  name: z.string().min(3).max(128),
+  name: utf16(128, 3),
   pluginId: AnyPluginId,
   description: Text,
   /** JSON Schema for its `args`. */
   args: z.record(z.string(), z.unknown()).optional(),
   /** Its default shortcut; a core shortcut or the user's own binding wins (§5.4). */
-  key: z.string().max(64).optional(),
+  key: utf16(64).optional(),
   runsOn: z.enum(["each", "main", "chosen"]).optional(),
 });
 export type CommandView = z.infer<typeof CommandView>;
 
 /** An extension point, for Settings and for `Glossary` (§6.8): shape, schemas, occupants, waiting entries. */
 export const PointView = z.object({
-  name: z.string().min(1).max(128),
+  name: utf16(128, 1),
   shape: z.enum(["single", "list", "keyed"]),
   /** `core` for the core's points (§5.3); otherwise the declaring entry. */
-  declaredBy: z.union([z.literal("core"), z.object({ pluginId: AnyPluginId, entry: z.string().max(256) })]),
+  declaredBy: z.union([z.literal("core"), z.object({ pluginId: AnyPluginId, entry: utf16(256) })]),
   spot: z.boolean(),
   fields: z.record(z.string(), z.unknown()).optional(),
   props: z.record(z.string(), z.unknown()).optional(),
-  occupants: z.array(z.object({ pluginId: AnyPluginId, entry: z.string().max(256) })).max(1000),
-  waiting: z.array(z.object({ pluginId: AnyPluginId, entry: z.string().max(256) })).max(1000),
+  occupants: z.array(z.object({ pluginId: AnyPluginId, entry: utf16(256) })).max(1000),
+  waiting: z.array(z.object({ pluginId: AnyPluginId, entry: utf16(256) })).max(1000),
   /** Filling it replaces UI we ship (§6.8). */
   replacesShipped: z.boolean(),
   private: z.boolean(),
@@ -140,12 +141,12 @@ export const UiPluginView = z.object({
   pluginId: AnyPluginId,
   treeHash: TreeHash,
   /** The layer's origin label: the id with `/` written `--` (§5.5). Everything under `clover` shares `clover`. */
-  layer: z.string().max(128),
-  assetBase: z.string().max(2048),
-  clientEntry: z.string().max(4096).optional(),
+  layer: utf16(128),
+  assetBase: utf16(2048),
+  clientEntry: utf16(4096).optional(),
   ui: z.array(z.record(z.string(), z.unknown())).max(500),
-  themes: z.array(z.object({ id: z.string().max(128), file: z.string().max(4096) })).max(100),
-  locales: z.array(z.object({ lang: z.string().max(35), file: z.string().max(4096) })).max(200),
+  themes: z.array(z.object({ id: utf16(128), file: utf16(4096) })).max(100),
+  locales: z.array(z.object({ lang: utf16(35), file: utf16(4096) })).max(200),
   /** Bots whose tabs it dresses (`when.bot`, or the user's ticks, §5.5); `all` includes bots added later. */
   bots: z.union([z.literal("all"), z.array(BotId)]),
 });
@@ -154,7 +155,7 @@ export type UiPluginView = z.infer<typeof UiPluginView>;
 /** A development folder (§5.6): reloads on every change without asking, on this computer only, off after 24 hours
  *  unless renewed. */
 export const DevFolderView = z.object({
-  path: z.string().max(4096),
+  path: utf16(4096),
   pluginId: AnyPluginId.optional(),
   addedAt: Timestamp,
   expiresAt: Timestamp,
@@ -163,7 +164,7 @@ export const DevFolderView = z.object({
 
 export const IndexView = z.object({
   url: z.string().url(),
-  name: z.string().max(256).optional(),
+  name: utf16(256).optional(),
   /** The index's Ed25519 public key, hex. The official index's ships in the app (§5.1). */
   key: z.string().regex(/^[0-9a-f]{64}$/),
   official: z.boolean(),
@@ -182,16 +183,16 @@ export const IndexEntryView = z.object({
 
 /** `Glossary` (§6.8) as the bridge serves it to an ACP agent (§9.3): searches and loads in one call. */
 export const GlossaryItem = z.object({
-  name: z.string().max(256),
+  name: utf16(256),
   kind: z.enum(["tool", "skill", "agent", "plugin", "point"]),
-  description: z.string().max(4000),
+  description: utf16(4000),
   pluginId: AnyPluginId.optional(),
 });
 export const GlossaryLoaded = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("tool"), name: z.string().max(256), inputSchema: z.record(z.string(), z.unknown()) }),
-  z.object({ kind: z.literal("skill"), name: z.string().max(256), instructions: z.string().max(200_000) }),
-  z.object({ kind: z.literal("agent"), name: z.string().max(256) }),
-  z.object({ kind: z.literal("missing"), name: z.string().max(256) }),
+  z.object({ kind: z.literal("tool"), name: utf16(256), inputSchema: z.record(z.string(), z.unknown()) }),
+  z.object({ kind: z.literal("skill"), name: utf16(256), instructions: utf16(200_000) }),
+  z.object({ kind: z.literal("agent"), name: utf16(256) }),
+  z.object({ kind: z.literal("missing"), name: utf16(256) }),
 ]);
 
 // -------------------------------------------------------------------------------------------------
@@ -231,7 +232,7 @@ export const PLUGINS_METHODS = {
     params: z.object({
       id: AnyPluginId,
       /** A local server's name, or `*` for the host half's `chosen` computers. */
-      target: z.string().min(1).max(128),
+      target: utf16(128, 1),
       computers: z.array(ComputerName).max(256),
     }),
     result: ChangeResult,
@@ -245,7 +246,7 @@ export const PLUGINS_METHODS = {
   pluginLogs: defineMethod({
     name: "plugin.logs", owner: "B", roles: ["app", "cli", "layer", "plugin-host"], capability: "logs.read",
     params: z.object({ id: AnyPluginId, lines: z.number().int().min(1).max(5000).optional() }),
-    result: z.object({ lines: z.array(z.string().max(4000)) }),
+    result: z.object({ lines: z.array(utf16(4000)) }),
     doc: "A plugin's log (`logs/plugins/<id>.log`), newest last.",
   }),
   pluginInstall: defineMethod({
@@ -272,7 +273,7 @@ export const PLUGINS_METHODS = {
   }),
   pluginRenameFolder: defineMethod({
     name: "plugin.renameFolder", owner: "B", roles: ["app"], userOnly: true,
-    params: z.object({ folder: z.string().min(1).max(255) }), result: z.object({ id: TopPluginId }),
+    params: z.object({ folder: utf16(255, 1) }), result: z.object({ id: TopPluginId }),
     doc: "The one-click rename of a folder whose name isn't its manifest's id (§5.1).",
   }),
   pluginConfirmAdult: defineMethod({
@@ -287,17 +288,17 @@ export const PLUGINS_METHODS = {
   }),
   pluginDevAdd: defineMethod({
     name: "plugin.dev.add", owner: "B", roles: ["app", "cli"], userOnly: true, change: "sensitive",
-    params: z.object({ path: z.string().min(1).max(4096) }), result: ChangeResult,
+    params: z.object({ path: utf16(4096, 1) }), result: ChangeResult,
     doc: "Adds a development folder: a sealed card unless the user adds it in their own terminal (§5.6).",
   }),
   pluginDevRemove: defineMethod({
     name: "plugin.dev.remove", owner: "B", roles: ["app", "cli"], userOnly: true,
-    params: z.object({ path: z.string().min(1).max(4096) }), result: Ok,
+    params: z.object({ path: utf16(4096, 1) }), result: Ok,
     doc: "Removes a development folder.",
   }),
   pluginDevRenew: defineMethod({
     name: "plugin.dev.renew", owner: "B", roles: ["app", "cli"], userOnly: true,
-    params: z.object({ path: z.string().min(1).max(4096) }), result: z.object({ expiresAt: Timestamp }),
+    params: z.object({ path: utf16(4096, 1) }), result: z.object({ expiresAt: Timestamp }),
     doc: "Keeps a development folder on for another 24 hours (§5.6).",
   }),
   pluginIndexList: defineMethod({
@@ -317,7 +318,7 @@ export const PLUGINS_METHODS = {
   }),
   pluginIndexSearch: defineMethod({
     name: "plugin.index.search", owner: "B", roles: ["app", "cli"],
-    params: z.object({ query: z.string().max(256).optional(), limit: z.number().int().min(1).max(200).optional() }),
+    params: z.object({ query: utf16(256).optional(), limit: z.number().int().min(1).max(200).optional() }),
     result: z.object({ entries: z.array(IndexEntryView) }),
     doc: "Searches the indexes, for the plugin index browser.",
   }),
@@ -340,15 +341,15 @@ export const PLUGINS_METHODS = {
     name: "command.run", owner: "B", roles: ["app", "cli", "remote", "layer", "plugin-host"],
     /** A plugin caller needs `call:<the target's top-level id>`, which its OK lists (§5.4). */
     capability: "call:*",
-    params: z.object({ name: z.string().min(3).max(128), args: z.unknown().optional() }),
+    params: z.object({ name: utf16(128, 3), args: z.unknown().optional() }),
     result: z.object({ result: z.unknown() }),
     doc: "Runs `<namespace>.<name>` at once, with no model turn; the handler is told who called (§5.4).",
   }),
   glossaryQuery: defineMethod({
     name: "glossary.query", owner: "B", roles: ["bridge"],
     params: z.object({
-      query: z.union([z.string().max(1000), z.array(z.string().max(1000)).max(16)]).optional(),
-      load: z.union([z.string().max(256), z.array(z.string().max(256)).max(64)]).optional(),
+      query: z.union([utf16(1000), z.array(utf16(1000)).max(16)]).optional(),
+      load: z.union([utf16(256), z.array(utf16(256)).max(64)]).optional(),
     }),
     result: z.object({ results: z.array(GlossaryItem), loaded: z.array(GlossaryLoaded) }),
     doc: "`Glossary` for an ACP agent through its bridge (§6.8, §9.3); bots call the tool in-process.",
@@ -362,24 +363,24 @@ export const PLUGINS_METHODS = {
   pluginHostStart: defineMethod({
     name: "pluginHost.start", owner: "B", roles: ["plugin-host"], direction: "from-daemon",
     params: z.object({
-      pluginId: AnyPluginId, folder: z.string().max(4096), entry: z.string().max(4096),
-      runtime: z.enum(["bun", "node"]), dataFolder: z.string().max(4096),
+      pluginId: AnyPluginId, folder: utf16(4096), entry: utf16(4096),
+      runtime: z.enum(["bun", "node"]), dataFolder: utf16(4096),
     }),
     result: Ok,
     doc: "Starts a plugin's host half: a worker in the shared host, or a Node process of its own.",
   }),
   pluginHostStop: defineMethod({
     name: "pluginHost.stop", owner: "B", roles: ["plugin-host"], direction: "from-daemon",
-    params: z.object({ pluginId: AnyPluginId, reason: z.string().max(500), graceMs: z.number().int().min(0).max(60_000) }),
+    params: z.object({ pluginId: AnyPluginId, reason: utf16(500), graceMs: z.number().int().min(0).max(60_000) }),
     result: Ok,
     doc: "Stops a host half; calls in flight get the grace period, then are recorded as interrupted (§5.1).",
   }),
   pluginHostInvoke: defineMethod({
     name: "pluginHost.invoke", owner: "B", roles: ["plugin-host"], direction: "from-daemon",
     params: z.object({
-      callId: z.string().min(1).max(128), pluginId: AnyPluginId,
+      callId: utf16(128, 1), pluginId: AnyPluginId,
       /** An export of `host.entry` (a handler, adapter, custom sign-in, …). */
-      handler: z.string().min(1).max(256),
+      handler: utf16(256, 1),
       args: z.unknown(), caller: Caller,
       timeoutMs: z.number().int().min(1).max(600_000),
     }),
@@ -388,7 +389,7 @@ export const PLUGINS_METHODS = {
   }),
   pluginHostCancel: defineMethod({
     name: "pluginHost.cancel", owner: "B", roles: ["plugin-host"], direction: "from-daemon",
-    params: z.object({ callId: z.string().min(1).max(128) }), result: Ok,
+    params: z.object({ callId: utf16(128, 1) }), result: Ok,
     doc: "Cancels an invocation (an interrupt, a timeout, a stop).",
   }),
   pluginHostApi: defineMethod({
@@ -397,7 +398,7 @@ export const PLUGINS_METHODS = {
       pluginId: AnyPluginId,
       /** A plugin-API function by name (`points.entries`, `net.fetch`, …). The plugin SDK's catalog says which
        *  capability each one needs; without it the call doesn't exist for that plugin (§5.4). */
-      call: z.string().min(1).max(128),
+      call: utf16(128, 1),
       args: z.unknown(),
       timeoutMs: z.number().int().min(1).max(600_000).optional(),
     }),
@@ -409,14 +410,14 @@ export const PLUGINS_METHODS = {
     params: z.object({
       pluginId: AnyPluginId,
       state: z.enum(["starting", "running", "crashed", "stopped", "heartbeat-missed"]),
-      reason: z.string().max(2000).optional(),
+      reason: utf16(2000).optional(),
     }),
     result: Ok,
     doc: "The plugin host reports a worker's state; the registry applies the crash rules (§5.1).",
   }),
   pluginHostLog: defineMethod({
     name: "pluginHost.log", owner: "B", roles: ["plugin-host"],
-    params: z.object({ pluginId: AnyPluginId, lines: z.array(z.string().max(4000)).max(500) }), result: Ok,
+    params: z.object({ pluginId: AnyPluginId, lines: z.array(utf16(4000)).max(500) }), result: Ok,
     doc: "A worker's log lines, for `logs/plugins/<id>.log`.",
   }),
 } as const;
@@ -427,17 +428,17 @@ export const PLUGINS_METHODS = {
 
 export const PluginChangedEvent = coreEvent("plugin_changed", {
   id: AnyPluginId, state: PluginState, enabled: z.boolean(),
-  reason: z.string().max(2000).optional(), waitingFor: z.array(z.string().max(256)).max(64).optional(),
+  reason: utf16(2000).optional(), waitingFor: z.array(utf16(256)).max(64).optional(),
 });
 export const PluginRemovedEvent = coreEvent("plugin_removed", { id: AnyPluginId });
 export const PluginUiChangedEvent = coreEvent("plugin_ui_changed", { pluginIds: z.array(AnyPluginId).max(1000) });
 export const CommandsChangedEvent = coreEvent("commands_changed", {});
-export const PluginLogEvent = coreEvent("plugin_log", { id: AnyPluginId, line: z.string().max(4000) });
+export const PluginLogEvent = coreEvent("plugin_log", { id: AnyPluginId, line: utf16(4000) });
 export const DevFolderReloadedEvent = coreEvent("dev_folder_reloaded", {
-  path: z.string().max(4096), pluginId: AnyPluginId.optional(), ok: z.boolean(), reason: z.string().max(2000).optional(),
+  path: utf16(4096), pluginId: AnyPluginId.optional(), ok: z.boolean(), reason: utf16(2000).optional(),
 });
 /** A plugin was found on disk and waits for its OK, which is a sealed card (§5.1). */
-export const PluginFoundEvent = coreEvent("plugin_found", { id: TopPluginId, folder: z.string().max(4096), card: CardId });
+export const PluginFoundEvent = coreEvent("plugin_found", { id: TopPluginId, folder: utf16(4096), card: CardId });
 
 export const PLUGINS_EVENTS = {
   pluginChanged: defineEvent({

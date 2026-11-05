@@ -1024,8 +1024,8 @@
           },
           "method": {
             "type": "string",
-            "minLength": 3,
-            "maxLength": 128
+            "maxLength": 128,
+            "minLength": 3
           },
           "params": {
             "type": "object",
@@ -1433,8 +1433,8 @@
                   },
                   "method": {
                     "type": "string",
-                    "minLength": 3,
-                    "maxLength": 128
+                    "maxLength": 128,
+                    "minLength": 3
                   },
                   "params": {
                     "type": "object",

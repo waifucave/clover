@@ -5,6 +5,7 @@
 // user only from outside every sandbox and escape floor, and a `cli` started under a bot's or agent's session acts
 // as that session. `protocol.hello`'s result says who the connection counts as.
 import { z } from "zod";
+import { utf16 } from "./strings";
 import { AnyPluginId, Caller, DeviceId, SessionId } from "./common";
 
 export const CLOVER_ROLES = [
@@ -40,8 +41,8 @@ export const USER_ROLES: readonly CloverRole[] = ["app", "cli", "remote", "web"]
 export const CloverHelloParams = z.object({
   protocolVersion: z.number().int(),
   role: CloverRole,
-  token: z.string().min(1).max(4096),
-  clientName: z.string().min(1).max(128),
+  token: utf16(4096, 1),
+  clientName: utf16(128, 1),
   /** `layer`: the plugin whose layer this is (the token is bound to it). */
   pluginId: AnyPluginId.optional(),
   /** `bridge`: the agent session the bridge serves (the token is bound to it, §9.3). */
@@ -49,7 +50,7 @@ export const CloverHelloParams = z.object({
   /** `remote`, `web`, `peer`: the device on the other end, which the link also proves. */
   device: DeviceId.optional(),
   /** Client features the daemon may rely on, by name; unknown names are ignored. */
-  features: z.array(z.string().min(1).max(64)).max(32).optional(),
+  features: z.array(utf16(64, 1)).max(32).optional(),
 });
 export type CloverHelloParams = z.infer<typeof CloverHelloParams>;
 

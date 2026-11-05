@@ -8,6 +8,7 @@
 // opens for that frame alone, or from a paired device's own app, signed with its device key over the card's id and
 // hash. Every device shows a pending card; the first answer wins.
 import { z } from "zod";
+import { utf16 } from "./strings";
 import {
   AnyPluginId, BotId, CardId, ComputerName, DeviceId, Empty, SessionId, Sha256Hex, Text, Timestamp, TurnOrigin,
 } from "./common";
@@ -56,17 +57,17 @@ export type CardFieldName = z.infer<typeof CardFieldName>;
 
 /** A sealed field's content. Strings come from the built-in tables and trusted packs only (§5.5 "Translations"). */
 export const SealedValue = z.discriminatedUnion("type", [
-  z.object({ type: z.literal("text"), text: z.string().max(4000) }),
-  z.object({ type: z.literal("code"), code: z.string().max(64_000), language: z.string().max(32).optional() }),
-  z.object({ type: z.literal("list"), items: z.array(z.string().max(4000)).max(200) }),
-  z.object({ type: z.literal("rows"), rows: z.array(z.object({ label: z.string().max(200), value: z.string().max(4000) })).max(100) }),
+  z.object({ type: z.literal("text"), text: utf16(4000) }),
+  z.object({ type: z.literal("code"), code: utf16(64_000), language: utf16(32).optional() }),
+  z.object({ type: z.literal("list"), items: z.array(utf16(4000)).max(200) }),
+  z.object({ type: z.literal("rows"), rows: z.array(z.object({ label: utf16(200), value: utf16(4000) })).max(100) }),
 ]);
 export type SealedValue = z.infer<typeof SealedValue>;
 
 /** A sealed button. `<Card.Approve>` and `<Card.Deny>` place the first option of their kind, or a named one. An
  *  "always" option saves Clover's own rule; an agent still gets `allow_once` (§9.3, spike S5 edit 5). */
 export const CardOption = z.object({
-  id: z.string().min(1).max(64).regex(/^[a-z0-9_-]+$/),
+  id: utf16(64, 1).regex(/^[a-z0-9_-]+$/),
   kind: z.enum(["approve", "deny"]),
   label: Text,
   remember: z.enum(["always"]).optional(),
@@ -109,7 +110,7 @@ export const CardAnswerProof = z.discriminatedUnion("via", [
   z.object({
     via: z.literal("sealed-frame"),
     /** The channel the app's main process opened for that frame alone. */
-    frame: z.string().min(1).max(128),
+    frame: utf16(128, 1),
     input: z.enum(["click", "key"]),
     at: Timestamp,
   }),
@@ -118,7 +119,7 @@ export const CardAnswerProof = z.discriminatedUnion("via", [
     device: DeviceId,
     at: Timestamp,
     /** Ed25519 over `cardAnswerSigningInput(...)`, base64. */
-    signature: z.string().min(1).max(256),
+    signature: utf16(256, 1),
   }),
 ]);
 export type CardAnswerProof = z.infer<typeof CardAnswerProof>;
@@ -158,7 +159,7 @@ export const APPROVALS_METHODS = {
     result: z.object({
       card: Card,
       outcome: CardOutcome.optional(),
-      option: z.string().max(64).optional(),
+      option: utf16(64).optional(),
       /** The device whose answer won, when one did. */
       device: DeviceId.optional(),
       resolvedAt: Timestamp.optional(),
@@ -172,13 +173,13 @@ export const APPROVALS_METHODS = {
   }),
   cardAnswer: defineMethod({
     name: "card.answer", owner: "C", roles: ["app", "remote", "peer"],
-    params: z.object({ id: CardId, hash: Sha256Hex, option: z.string().min(1).max(64), proof: CardAnswerProof }),
-    result: z.object({ accepted: z.boolean(), reason: z.string().max(500).optional() }),
+    params: z.object({ id: CardId, hash: Sha256Hex, option: utf16(64, 1), proof: CardAnswerProof }),
+    result: z.object({ accepted: z.boolean(), reason: utf16(500).optional() }),
     doc: "Answers a card from a sealed frame, or with a paired device's signature; the first answer wins.",
   }),
   cardConfirm: defineMethod({
     name: "card.confirm", owner: "C", roles: ["layer", "plugin-host"],
-    params: z.object({ pluginId: AnyPluginId, text: z.string().min(1).max(2000) }),
+    params: z.object({ pluginId: AnyPluginId, text: utf16(2000, 1) }),
     result: z.object({ answer: z.enum(["yes", "no", "timeout"]) }),
     doc: "A plugin's `confirm(text)`: a sealed card naming the plugin; denied after 10 minutes unanswered (§5.4).",
   }),
@@ -189,7 +190,7 @@ export const CardPendingEvent = coreEvent("card_pending", { card: CardMeta });
 export const CardResolvedEvent = coreEvent("card_resolved", {
   id: CardId,
   outcome: CardOutcome,
-  option: z.string().max(64).optional(),
+  option: utf16(64).optional(),
   /** The device that answered, when one did. */
   device: DeviceId.optional(),
 });
