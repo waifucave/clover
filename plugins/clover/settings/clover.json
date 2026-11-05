@@ -1,7 +1,7 @@
 {
   "manifest": 1,
   "name": "Settings",
-  "description": "The settings window and the language chooser.",
+  "description": "The settings window, with Clover's own sections (account, devices, appearance, notifications, plugins, levels), and the language chooser.",
   "engines": {
     "clover": "^1.0.0"
   },

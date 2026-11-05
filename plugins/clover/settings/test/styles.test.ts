@@ -7,10 +7,10 @@ import { COLOR_LITERAL, frameUnsafeRules, parseCss, positionedRules } from "./cs
 const css = readFileSync(join(import.meta.dir, "../client/styles.css"), "utf8");
 
 /** Leaves that may move or fade: they never hold a sealed frame. */
-const LEAVES: string[] = [];
+const LEAVES: string[] = [".cl-settings-icon"];
 
-/** A switch's knob inside its switch, and the check inside a language's button. */
-const POSITIONED: string[] = [".cl-settings__knob", ".cl-languages__check"];
+/** Nothing leaves the flow: a switch's knob and a language's check are laid out in their buttons. */
+const POSITIONED: string[] = [];
 
 describe("the settings stylesheet", () => {
   test("uses exactly the tokens tokens.ts names", () => {

@@ -2,6 +2,7 @@
 // the language the app shows now, the current one checked. A pick goes to the host, which loads the
 // strings (spec §5.5, "Translations").
 import { useEffect, useId, useRef, useState } from "react";
+import { IconCheck, IconClose, IconSearch } from "./icons";
 import { S } from "./strings";
 import type { LanguageChooserProps } from "./types";
 
@@ -30,13 +31,14 @@ export function LanguageChooser({ languages, current, onPick, onClose }: Languag
           {S.chooseLanguage}
         </h2>
         <button type="button" className="cl-settings__close" aria-label={S.closeLanguages} onClick={onClose}>
-          <svg width={14} height={14} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" aria-hidden="true" focusable="false">
-            <path d="M4 4l8 8M12 4l-8 8" />
-          </svg>
+          <IconClose />
         </button>
       </header>
       <div className="cl-languages__body">
-        <input ref={search} className="cl-settings__search cl-languages__search" type="search" placeholder={S.searchLanguages} aria-label={S.searchLanguages} value={query} onChange={(e) => setQuery(e.target.value)} />
+        <label className="cl-settings__search cl-languages__search">
+          <IconSearch />
+          <input ref={search} className="cl-settings__search-input" type="search" placeholder={S.searchLanguages} aria-label={S.searchLanguages} value={query} onChange={(e) => setQuery(e.target.value)} />
+        </label>
         <div className="cl-languages__grid" role="radiogroup" aria-label={S.chooseLanguage}>
           {shown.map((l) => (
             <button key={l.id} type="button" role="radio" aria-checked={l.id === current} className="cl-languages__option" lang={l.id} onClick={() => onPick(l.id)}>
@@ -45,9 +47,9 @@ export function LanguageChooser({ languages, current, onPick, onClose }: Languag
                 {l.name}
               </span>
               {l.id === current && (
-                <svg className="cl-languages__check" width={14} height={14} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
-                  <path d="M3.5 8.5l3 3 6-7" />
-                </svg>
+                <span className="cl-languages__check">
+                  <IconCheck />
+                </span>
               )}
             </button>
           ))}

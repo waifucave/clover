@@ -1,31 +1,28 @@
 // The settings window: a dialog over the app, with a searchable list of sections on the left and the
-// chosen section's page of settings on the right. Pages with something to set now are drawn; the rest
-// say they fill in later. It fills the shell's `settings.section` spot with its own sections; a
-// plugin adds one there.
+// chosen section's page of settings on the right. The sections are Clover's own (spec §5.8, §12): the
+// account and devices, appearance and notifications, plugins with their states, OKs and logs, and each
+// computer's level. Pages with nothing to set yet say so. It fills the shell's `settings.section` spot
+// with its own sections; a plugin adds one there.
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { IconClose, IconSearch, SECTION_ICONS } from "./icons";
 import { S } from "./strings";
 import type { SettingsModalProps, SettingsSection } from "./types";
 
-export const SECTIONS: readonly SettingsSection[] = [
-  "account", "usage", "appearance", "bots", "capabilities", "notifications", "privacy", "customize", "code", "devices", "desktop",
-];
+export const SECTIONS: readonly SettingsSection[] = ["account", "devices", "appearance", "notifications", "plugins", "levels", "bots", "usage"];
 
 /** Where the section list breaks into groups, as the dividers show. */
-const GROUP_ENDS: ReadonlySet<SettingsSection> = new Set(["usage", "privacy", "devices"]);
+const GROUP_ENDS: ReadonlySet<SettingsSection> = new Set(["devices", "notifications", "levels"]);
 
 /** The settings each page holds, for the search box. */
 const INDEX: Record<SettingsSection, string[]> = {
   account: [S.name, S.main],
-  usage: [],
-  appearance: [S.theme, S.textSize, S.language],
-  bots: [],
-  capabilities: [],
-  notifications: [S.notifyNeedsYou, S.notifyAgentDone, S.notifyRoutineFailed, S.notifySounds],
-  privacy: [],
-  customize: [S.plugins, S.appTheme],
-  code: [S.branchPrefix, S.labelSessions, S.transcript, S.draftPrs, S.outputStyle],
   devices: [S.devices],
-  desktop: [],
+  appearance: [S.theme, S.themePlugin, S.textSize, S.language],
+  notifications: [S.notifyNeedsYou, S.notifyAgentDone, S.notifyRoutineFailed, S.notifySounds],
+  plugins: [S.plugins, S.pluginManager, S.pluginLogs],
+  levels: [S.levels],
+  bots: [],
+  usage: [],
 };
 
 export function sectionsMatching(query: string): SettingsSection[] {
@@ -89,6 +86,15 @@ function Page({ props }: { props: SettingsModalProps }) {
           <Row label={S.theme} detail={S.themeDetail}>
             <Choice label={S.theme} value={values.appearance.theme} options={["light", "dark", "system"] as const} labels={S.themes} onChange={(v) => onChange("appearance.theme", v)} />
           </Row>
+          <Row label={S.themePlugin} detail={S.themePluginDetail}>
+            <select className="cl-settings__select" aria-label={S.themePlugin} value={values.theme} onChange={(e) => onChange("theme", e.target.value)}>
+              {values.themes.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.name}
+                </option>
+              ))}
+            </select>
+          </Row>
           <Row label={S.textSize}>
             <Choice label={S.textSize} value={values.appearance.textSize} options={["small", "default", "large"] as const} labels={S.textSizes} onChange={(v) => onChange("appearance.textSize", v)} />
           </Row>
@@ -117,24 +123,32 @@ function Page({ props }: { props: SettingsModalProps }) {
           </Row>
         </>
       );
-    case "customize":
+    case "plugins":
       return (
         <>
-          <Row label={S.appTheme}>
-            <select className="cl-settings__select" aria-label={S.appTheme} value={values.theme} onChange={(e) => onChange("theme", e.target.value)}>
-              {values.themes.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.name}
-                </option>
-              ))}
-            </select>
-          </Row>
           <h3 className="cl-settings__subhead">{S.plugins}</h3>
           <p className="cl-settings__note">{S.pluginsDetail}</p>
           {values.plugins.map((p) => (
-            <Row key={p.id} label={p.name} detail={p.source}>
-              <Toggle label={p.name} on={p.enabled} onChange={(v) => onChange(`plugins.${p.id}.enabled`, v)} />
-            </Row>
+            <div key={p.id} className="cl-settings__row cl-settings__plugin" role="group" aria-label={p.name} data-state={p.state}>
+              <div className="cl-settings__text">
+                <span className="cl-settings__label">
+                  {p.name}
+                  <span className="cl-settings__state" data-state={p.state}>
+                    {S.pluginState[p.state]}
+                  </span>
+                </span>
+                <span className="cl-settings__detail">{p.source}</span>
+                <span className="cl-settings__detail cl-settings__oks">{S.pluginOks(p.oks)}</span>
+              </div>
+              <div className="cl-settings__control">
+                {props.onOpenPluginLogs && (
+                  <button type="button" className="cl-settings__button" aria-label={S.pluginLogsFor(p.name)} onClick={() => props.onOpenPluginLogs?.(p.id)}>
+                    {S.pluginLogs}
+                  </button>
+                )}
+                <Toggle label={p.name} on={p.state === "on"} onChange={(v) => onChange(`plugins.${p.id}.enabled`, v)} />
+              </div>
+            </div>
           ))}
           {props.onOpenPluginManager && (
             <button type="button" className="cl-settings__button cl-settings__button--wide" onClick={props.onOpenPluginManager}>
@@ -143,30 +157,36 @@ function Page({ props }: { props: SettingsModalProps }) {
           )}
         </>
       );
-    case "code":
+    case "levels":
       return (
         <>
-          <Row label={S.branchPrefix} detail={S.branchPrefixDetail}>
-            <input className="cl-settings__input" aria-label={S.branchPrefix} value={values.code.branchPrefix} onChange={(e) => onChange("code.branchPrefix", e.target.value)} />
-          </Row>
-          <Row label={S.labelSessions} detail={S.labelSessionsDetail}>
-            <Toggle label={S.labelSessions} on={values.code.labelSessions} onChange={(v) => onChange("code.labelSessions", v)} />
-          </Row>
-          <Row label={S.transcript} detail={S.transcriptDetail}>
-            <Choice label={S.transcript} value={values.code.transcript} options={["normal", "thinking", "everything"] as const} labels={S.transcripts} onChange={(v) => onChange("code.transcript", v)} />
-          </Row>
-          <Row label={S.draftPrs} detail={S.draftPrsDetail}>
-            <Toggle label={S.draftPrs} on={values.code.draftPrs} onChange={(v) => onChange("code.draftPrs", v)} />
-          </Row>
-          <Row label={S.outputStyle} detail={S.outputStyleDetail}>
-            <select className="cl-settings__select" aria-label={S.outputStyle} value={values.code.outputStyle} onChange={(e) => onChange("code.outputStyle", e.target.value)}>
-              {values.outputStyles.map((o) => (
-                <option key={o.id} value={o.id}>
-                  {o.name}
-                </option>
-              ))}
-            </select>
-          </Row>
+          <h3 className="cl-settings__subhead">{S.levels}</h3>
+          <p className="cl-settings__note">{S.levelsDetail}</p>
+          {values.levels.map((l) => {
+            const name = (id: string) => values.levelOptions.find((o) => o.id === id)?.label ?? id;
+            const asked = l.requested && l.requested !== l.level ? l.requested : undefined;
+            return (
+              <Row key={l.computer} label={l.computer} detail={[l.here ? S.thisDevice : "", asked ? S.levelAsked(name(asked)) : ""].filter(Boolean).join(" · ") || undefined}>
+                <select
+                  className="cl-settings__select"
+                  aria-label={S.levelFor(l.computer)}
+                  value={l.level}
+                  data-requested={asked}
+                  disabled={!props.onRequestLevel}
+                  onChange={(e) => {
+                    // A pick only asks: the select stays at the level that holds until the card is answered.
+                    if (e.target.value !== l.level) props.onRequestLevel?.(l.computer, e.target.value);
+                  }}
+                >
+                  {values.levelOptions.map((o) => (
+                    <option key={o.id} value={o.id}>
+                      {o.label}
+                    </option>
+                  ))}
+                </select>
+              </Row>
+            );
+          })}
         </>
       );
     case "devices":
@@ -220,22 +240,27 @@ export function SettingsModal(props: SettingsModalProps) {
           {S.title}
         </h2>
         <button type="button" className="cl-settings__close" aria-label={S.close} onClick={onClose}>
-          <svg width={14} height={14} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" aria-hidden="true" focusable="false">
-            <path d="M4 4l8 8M12 4l-8 8" />
-          </svg>
+          <IconClose />
         </button>
       </header>
       <div className="cl-settings__body">
         <nav className="cl-settings__nav" aria-label={S.sections}>
-          <input ref={search} className="cl-settings__search" type="search" placeholder={S.search} aria-label={S.search} value={query} onChange={(e) => setQuery(e.target.value)} />
+          <label className="cl-settings__search">
+            <IconSearch />
+            <input ref={search} className="cl-settings__search-input" type="search" placeholder={S.search} aria-label={S.search} value={query} onChange={(e) => setQuery(e.target.value)} />
+          </label>
           <ul className="cl-settings__sections">
-            {shown.map((s) => (
-              <li key={s} data-group-end={(GROUP_ENDS.has(s) && query.length === 0) || undefined}>
-                <button type="button" className="cl-settings__section" aria-current={s === section ? "page" : undefined} onClick={() => onSection(s)}>
-                  {S.section[s]}
-                </button>
-              </li>
-            ))}
+            {shown.map((s) => {
+              const Icon = SECTION_ICONS[s];
+              return (
+                <li key={s} data-group-end={(GROUP_ENDS.has(s) && query.length === 0) || undefined}>
+                  <button type="button" className="cl-settings__section" aria-current={s === section ? "page" : undefined} onClick={() => onSection(s)}>
+                    <Icon />
+                    <span>{S.section[s]}</span>
+                  </button>
+                </li>
+              );
+            })}
             {shown.length === 0 && <li className="cl-settings__note">{S.noMatch}</li>}
           </ul>
         </nav>

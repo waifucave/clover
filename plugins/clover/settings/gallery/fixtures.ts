@@ -7,20 +7,27 @@ export const VALUES: SettingsValues = {
   language: { id: "en-US", name: "English (United States)" },
   notifications: { needsYou: true, agentDone: true, routineFailed: true, sounds: false },
   plugins: [
-    { id: "clover", name: "Clover", source: "Bundled", enabled: true },
-    { id: "tarot-panel", name: "Tarot panel", source: "From the plugin index", enabled: true },
-    { id: "story-mode", name: "Story mode", source: "From a folder: home/Laptop/code/story-mode", enabled: false },
+    { id: "clover", name: "Clover", source: "Bundled", state: "on", oks: ["Reads your bots and conversations", "Answers cards", "Uses your computers' files"] },
+    { id: "tarot-panel", name: "Tarot panel", source: "From the plugin index", state: "on", oks: ["Reads conversations"] },
+    { id: "weather-routine", name: "Weather routine", source: "From the plugin index", state: "waiting", oks: ["Reaches api.weather.example"] },
+    { id: "story-mode", name: "Story mode", source: "From a folder: home/Laptop/code/story-mode", state: "failed", oks: [] },
   ],
   themes: [
     { id: "clover", name: "Clover" },
     { id: "alpha-tab", name: "Alpha's tab" },
   ],
   theme: "clover",
-  code: { branchPrefix: "clover/", labelSessions: true, transcript: "normal", draftPrs: true, outputStyle: "default" },
-  outputStyles: [
-    { id: "default", name: "Default" },
-    { id: "explanatory", name: "Explains as it goes" },
-    { id: "terse", name: "Terse" },
+  levels: [
+    { computer: "Studio", here: true, level: "risky" },
+    { computer: "Laptop", level: "ask", requested: "accept-edits" },
+    { computer: "Cloud computer", level: "automatic" },
+  ],
+  levelOptions: [
+    { id: "read-only", label: "Read only" },
+    { id: "ask", label: "Ask first" },
+    { id: "risky", label: "Ask when risky" },
+    { id: "accept-edits", label: "Accept edits" },
+    { id: "automatic", label: "Fully automatic" },
   ],
   devices: [
     { id: "d1", name: "Studio", kind: "computer", here: true, main: true },
