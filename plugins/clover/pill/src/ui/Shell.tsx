@@ -19,13 +19,15 @@ export interface ShellProps {
   underlay?: ReactNode;
   /** Whether the underlay shows (it stays mounted while a turn runs). */
   underlayShown?: boolean;
+  /** The content stays what it was while the shape moves (the bar widening as the user types): it does not blur. */
+  steady?: boolean;
   label?: string;
   children?: ReactNode;
 }
 
-export function Shell({ size, target, visibility = 1, underlay, underlayShown = false, label, children }: ShellProps): ReactElement {
+export function Shell({ size, target, visibility = 1, underlay, underlayShown = false, steady = false, label, children }: ShellProps): ReactElement {
   usePillStyles();
-  const blur = Math.max(morphBlur(size, target), contentBlur(visibility));
+  const blur = Math.max(steady ? 0 : morphBlur(size, target), contentBlur(visibility));
   const content: CSSProperties = { width: size.width, height: target.height };
   if (visibility < 1) content.opacity = visibility;
   if (blur > 0) content.filter = `blur(${blur.toFixed(2)}px)`;

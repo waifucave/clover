@@ -1,6 +1,8 @@
 // Renders every gallery story to a PNG with headless Chromium (software WebGL for the avatar), one page
-// load per story. CI ONLY: it refuses to run anywhere else, so it can never put a browser on someone's
-// desk. Output: out/png/<story>.png, out/index.html (every picture with its title), out/report.json.
+// load per story, and checks every sealed part drawn at rest with IntersectionObserver v2 (the visibility
+// check spec §5.5's frames rely on). CI ONLY: it refuses to run anywhere else, so it can never put a
+// browser on someone's desk. Output: out/png/<story>.png, out/index.html (every picture with its title),
+// out/report.json.
 
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import { dirname, extname, join, normalize } from "node:path";
@@ -64,10 +66,53 @@ for (const story of stories) {
     await page.waitForFunction(() => window.__galleryReady === true, null, { timeout: 60_000 });
     const failure = await page.evaluate(() => window.__galleryError ?? null);
     if (failure) errors.push(`story: ${failure}`);
+    // Spec §5.5's own check, in the browser the app runs: IntersectionObserver v2 says whether each sealed part
+    // shows uncovered and unaffected. Every part the story draws at rest (nothing around it fades, blurs, hides or
+    // turns) must count as visible; anything drawn over one, even a transparent box that ignores the pointer, fails
+    // the story.
+    const sealed = await page.evaluate(
+      () =>
+        new Promise((resolve) => {
+          const parts = [...document.querySelectorAll("[data-sealed]")];
+          if (parts.length === 0) return resolve({ checked: 0, covered: [] });
+          if (!("isVisible" in IntersectionObserverEntry.prototype)) return resolve({ checked: 0, covered: [], unsupported: true });
+          const atRest = (el) => {
+            for (let n = el; n && n !== document.documentElement; n = n.parentElement) {
+              const cs = getComputedStyle(n);
+              if (Number(cs.opacity) < 1 || cs.filter !== "none" || cs.visibility !== "visible") return false;
+              if (cs.transform !== "none") {
+                const m = /^matrix\(([^)]+)\)$/.exec(cs.transform);
+                if (!m) return false;
+                const [a, b, c, d] = m[1].split(",").map(Number);
+                if (b !== 0 || c !== 0 || a !== d || a < 1) return false;
+              }
+            }
+            return true;
+          };
+          const seen = new Map();
+          const observer = new IntersectionObserver((entries) => entries.forEach((e) => seen.set(e.target, e)), { trackVisibility: true, delay: 100 });
+          parts.forEach((p) => observer.observe(p));
+          setTimeout(() => {
+            observer.disconnect();
+            let checked = 0;
+            const covered = [];
+            for (const p of parts) {
+              const e = seen.get(p);
+              const box = p.getBoundingClientRect();
+              if (!atRest(p) || !e || !e.isIntersecting || box.width === 0 || box.height === 0) continue;
+              checked++;
+              if (!e.isVisible) covered.push(`${p.getAttribute("data-sealed")}${p.getAttribute("data-field") ? `:${p.getAttribute("data-field")}` : ""}${p.getAttribute("data-option") ? `:${p.getAttribute("data-option")}` : ""}`);
+            }
+            resolve({ checked, covered });
+          }, 700);
+        }),
+    );
+    if (sealed.unsupported) report.notes = [...(report.notes ?? []), `${story.id}: IntersectionObserver v2 is unavailable here`];
+    if (sealed.covered.length) errors.push(`sealed parts covered or hidden at rest (IntersectionObserver v2): ${sealed.covered.join(", ")}`);
     const file = `${story.id.replaceAll("/", "__")}.png`;
     await page.locator("[data-frame]").first().screenshot({ path: join(out, "png", file), animations: "disabled", omitBackground: false });
-    report.stories.push({ ...story, file, ms: Date.now() - started, errors });
-    console.log(`${errors.length ? "!" : "✓"} ${story.id} (${Date.now() - started} ms)${errors.length ? " " + errors.join(" | ") : ""}`);
+    report.stories.push({ ...story, file, ms: Date.now() - started, errors, sealedChecked: sealed.checked });
+    console.log(`${errors.length ? "!" : "✓"} ${story.id} (${Date.now() - started} ms${sealed.checked ? `, ${sealed.checked} sealed parts visible` : ""})${errors.length ? " " + errors.join(" | ") : ""}`);
   } catch (error) {
     errors.push(String(error));
     report.stories.push({ ...story, file: null, ms: Date.now() - started, errors });

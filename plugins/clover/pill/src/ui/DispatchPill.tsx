@@ -87,6 +87,9 @@ interface Swap {
   fadeStart: number | null;
   /** The size the shape had when the new content took over: the reveal measures from it. */
   origin: Size;
+  /** A swap's new content is still being carried to its size, revealed near the end of the travel. False once the
+   *  shape rests, and for a shape that only resizes around the same content (the bar as the user types). */
+  changed: boolean;
 }
 
 export function DispatchPill(props: DispatchPillProps): ReactElement {
@@ -146,7 +149,7 @@ export function DispatchPill(props: DispatchPillProps): ReactElement {
   // The shape's spring and the swap, mutable between frames.
   const spring = useRef<SizeSpring | null>(null);
   spring.current ??= restingSpring(targetFor(wanted));
-  const swap = useRef<Swap>({ shown: wanted, next: null, fadeStart: null, origin: spring.current.size });
+  const swap = useRef<Swap>({ shown: wanted, next: null, fadeStart: null, origin: spring.current.size, changed: false });
   // Cards seen, so one answered mid-fade keeps drawing while it fades out.
   const seenCards = useRef(new Map<string, PillCard>());
   for (const c of cards) seenCards.current.set(c.id, c);
@@ -194,9 +197,12 @@ export function DispatchPill(props: DispatchPillProps): ReactElement {
       sw.next = null;
       sw.fadeStart = null;
       sw.origin = spring.current!.size;
+      sw.changed = true;
       spring.current = retarget(spring.current!, targetFor(sw.shown));
     }
     if (sw.fadeStart === null) spring.current = stepSpring(spring.current!, dt);
+    const s = spring.current!;
+    if (settled(s) && s.size.width === s.target.width && s.size.height === s.target.height) sw.changed = false;
     for (const [id, start] of arrivals.current) if (now - start >= ENTRANCE * 1000) arrivals.current.delete(id);
     bump();
   }, [timers, targetFor]);
@@ -219,6 +225,7 @@ export function DispatchPill(props: DispatchPillProps): ReactElement {
         sw.fadeStart = null;
         spring.current = restingSpring(targetFor(wanted));
         sw.origin = spring.current.size;
+        sw.changed = false;
       }
     } else if (sw.fadeStart !== null) {
       if (wanted === sw.shown) {
@@ -345,7 +352,8 @@ export function DispatchPill(props: DispatchPillProps): ReactElement {
   const look = barLook(presentation === "expanded", running, draft, card !== null, t("clover.pill.placeholder", { name: target.name }), verb ?? t("clover.pill.working", { name: target.name }));
   const now = timers.now();
   const fade = swap.current.fadeStart === null ? 1 : Math.max(0, 1 - (now - swap.current.fadeStart) / (FADE_OUT * 1000));
-  const reveal = swap.current.fadeStart === null ? contentReveal(swap.current.origin, s.size, s.target) : 1;
+  // Only a swap's new content is revealed as the shape arrives; the same content resizing stays as it is.
+  const reveal = swap.current.fadeStart === null && swap.current.changed ? contentReveal(swap.current.origin, s.size, s.target) : 1;
   const visibility = reducedMotion ? 1 : fade * reveal;
   const entering: Record<string, number> = {};
   for (const [id, start] of arrivals.current) entering[id] = Math.min(1, (now - start) / (ENTRANCE * 1000));
@@ -383,6 +391,8 @@ export function DispatchPill(props: DispatchPillProps): ReactElement {
           // The plume stays mounted while the turn runs, and runs frames only while it shows.
           underlay={running ? <Plume width={PILL.compactWidth} height={PILL.pillHeight} thrown={thrown} repeating={repeating} animates={!reducedMotion && look.working && drawn === "bar"} timers={timers} /> : undefined}
           underlayShown={look.working && drawn === "bar"}
+          // The bar widening as the user types stays sharp: the letter just typed never blurs away.
+          steady={swap.current.fadeStart === null && swap.current.next === null && !swap.current.changed}
         >
           <Bar
             presentation={presentation}

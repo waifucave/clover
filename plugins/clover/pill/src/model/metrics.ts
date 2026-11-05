@@ -34,7 +34,9 @@ export const PILL = {
   /** Between the stacked layers: cards, child pills, the main pill. */
   stackGap: 8,
   childPillGap: 6,
-  minChildPillWidth: 72,
+  /** A chip's own chrome (its padding, glyph and stop button) takes about 82 points; this leaves its title a few
+   *  letters even beside a "+n" circle (the review saw names cut to one letter at 72). */
+  minChildPillWidth: 120,
   /** The width the pill morphs to as a card; a typing pill keeps its own. */
   cardWidth: 440,
   maxCardHeight: 520,

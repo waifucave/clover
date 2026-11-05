@@ -58,12 +58,52 @@ function mount(extra: Partial<DispatchPillProps> = {}) {
   return { ...view, clock, shell, size, update: (props: Partial<DispatchPillProps>) => view.rerender(ui(props)) };
 }
 
+describe("the plume's frame budget", () => {
+  test("draws at most 60 pictures a second, whatever the display's rate", async () => {
+    const { Plume, PLUME_FPS } = await import("../src/ui/Plume");
+    let now = 0;
+    let seq = 0;
+    const pending = new Map<number, (time: number) => void>();
+    const timers: FrameTimers = { now: () => now, requestFrame: (fn) => (pending.set(++seq, fn), seq), cancelFrame: (id) => void pending.delete(id) };
+    let drawn = 0;
+    const real = HTMLCanvasElement.prototype.getContext;
+    HTMLCanvasElement.prototype.getContext = function (this: HTMLCanvasElement) {
+      const canvas = this;
+      return new Proxy({}, { get: (_t, key) => (key === "canvas" ? canvas : key === "clearRect" ? () => void drawn++ : () => ({ addColorStop() {} })), set: () => true });
+    } as unknown as typeof real;
+    try {
+      render(<Plume width={316} height={44} thrown={[]} repeating={[]} animates timers={timers} />);
+      const before = drawn;
+      // A 120 Hz display for one second.
+      for (let i = 0; i < 120; i++) {
+        act(() => {
+          now += 1000 / 120;
+          for (const [id, fn] of [...pending]) (pending.delete(id), fn(now));
+        });
+      }
+      expect(drawn - before).toBeLessThanOrEqual(PLUME_FPS + 1);
+      expect(drawn - before).toBeGreaterThanOrEqual(PLUME_FPS - 2);
+    } finally {
+      HTMLCanvasElement.prototype.getContext = real;
+    }
+  });
+});
+
 describe("the Dispatch pill", () => {
   test("rests compact, and frames stop once nothing moves", () => {
     const pill = mount();
     expect(pill.size()).toEqual({ width: PILL.compactWidth, height: PILL.pillHeight });
     expect(pill.shell().style.borderRadius).toBe("22px");
     expect(pill.clock.pending).toBe(0);
+  });
+
+  test("the letter just typed stays sharp while the bar widens around it (only a change of content blurs)", () => {
+    const pill = mount();
+    fireEvent.change(screen.getByLabelText("Message Alpha"), { target: { value: "C" } });
+    pill.clock.run(48);
+    const content = pill.container.querySelector(".clp-content") as HTMLElement;
+    expect(pill.size().width).toBeLessThan(PILL.expandedWidth);
+    expect(content.style.filter).toBe("");
   });
 
   test("the first keystroke opens the typing pill; the spring carries the shape there and settles", () => {

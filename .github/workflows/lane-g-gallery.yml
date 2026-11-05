@@ -2,12 +2,12 @@ name: Lane G gallery
 
 # Lane G's parts (the base theme, the island, the Dispatch pill, the VRM avatar, Alpha's tab): their
 # tests on all three OSes, and the gallery of every part in every state rendered to PNGs with headless
-# Chromium and software WebGL. Runs on the lane's branch only; each package installs on its own until
+# Chromium and software WebGL. Runs on the lane's branches (lane/g-*) only; each package installs on its own until
 # the workspace globs land (lane M).
 
 on:
   push:
-    branches: [lane/g-m1]
+    branches: ["lane/g-*"]
   workflow_dispatch:
 
 permissions:

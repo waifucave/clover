@@ -15,6 +15,9 @@ export interface FrameTimers {
   cancelFrame(id: number): void;
 }
 
+/** The most pictures a second the plume draws: its flame reads smooth at 60 and costs half as much on a 120 Hz display. */
+export const PLUME_FPS = 60;
+
 export const BROWSER_FRAMES: FrameTimers = {
   now: () => performance.now(),
   requestFrame: (callback) => requestAnimationFrame(callback),
@@ -151,13 +154,20 @@ export function Plume({ width, height, emitterInset = PILL_EMITTER_INSET, palett
       paint();
       return;
     }
+    // At most PLUME_FPS pictures a second (a 120 Hz display draws every other frame; the idle budget, OQ 33),
+    // on a steady schedule with a few milliseconds' grace for frames landing early.
     let last = timers.now();
+    let due = last;
     let frame = timers.requestFrame(function step() {
       const now = timers.now();
-      const dt = (now - last) / 1000;
-      last = now;
-      animation.current!.tick(dt, latest.current.thrown, latest.current.repeating, true);
-      paint();
+      if (now >= due - 4) {
+        const dt = (now - last) / 1000;
+        last = now;
+        due += 1000 / PLUME_FPS;
+        if (due <= now) due = now + 1000 / PLUME_FPS;
+        animation.current!.tick(dt, latest.current.thrown, latest.current.repeating, true);
+        paint();
+      }
       frame = timers.requestFrame(step);
     });
     return () => timers.cancelFrame(frame);

@@ -7,7 +7,7 @@ import { cardGeometry, ISLAND, islandRect, stripRect, topInset, waitingRect, typ
 import { FLUID } from "./model/fluid";
 import { MORPH } from "./model/morph";
 import { NEEDS_YOU, tabState } from "./model/tabs";
-import { APPROVAL, APPROVAL_2, LINK, NOTCH, NO_NOTCH, QUESTION, QUESTIONS_2, SEALED } from "./fixtures";
+import { APPROVAL, APPROVAL_2, APPROVAL_ALWAYS, LINK, NOTCH, NO_NOTCH, QUESTION, QUESTIONS_2, SEALED } from "./fixtures";
 import { QuestionCardContent, SealedCardContent } from "./ui/CardContent";
 import { LiquidCard } from "./ui/Liquid";
 import { NeedsYou, OpenIsland, TabScroll } from "./ui/OpenIsland";
@@ -26,6 +26,11 @@ export interface Story {
 }
 
 const kit = mockSealedKit(SEALED);
+
+/** The island's tabs in every story, in one order: Needs you, then the two sample guests. */
+const DEVICES = { id: "devices", title: "Devices" };
+const USAGE = { id: "usage", title: "Usage" };
+const TABS = [NEEDS_YOU, DEVICES, USAGE];
 
 /** A screen's top edge: wallpaper, the menu bar, and the camera housing when there is one. */
 function Desktop({ shape, width, height, dark = false, children }: { shape: ScreenShape; width: number; height: number; dark?: boolean; children: ReactNode }): ReactElement {
@@ -64,12 +69,12 @@ interface MeasuredCardProps {
   seconds?: number;
   hovered?: boolean;
   shape?: ScreenShape;
-  /** Drawn after the card, placed from its geometry (the waiting pill). */
-  after?: (g: CardGeometry) => ReactNode;
+  /** Drawn BENEATH the card (before it in the tree, as the island does), placed from its geometry: the waiting pill. */
+  beneath?: (g: CardGeometry) => ReactNode;
 }
 
 /** A card on top, its height measured from its own content as the island measures it. */
-function MeasuredCard({ content, seconds, hovered, shape = NOTCH, after }: MeasuredCardProps): ReactElement {
+function MeasuredCard({ content, seconds, hovered, shape = NOTCH, beneath }: MeasuredCardProps): ReactElement {
   const ref = useRef<HTMLDivElement | null>(null);
   const [height, setHeight] = useState(132);
   useLayoutEffect(() => {
@@ -79,10 +84,10 @@ function MeasuredCard({ content, seconds, hovered, shape = NOTCH, after }: Measu
   const g = cardGeometry(shape, { width: ISLAND.cardWidth, height }, { rounded: true });
   return (
     <>
+      {beneath?.(g)}
       <LiquidCard geometry={g} seconds={seconds} hovered={hovered}>
         <div ref={ref}>{content}</div>
       </LiquidCard>
-      {after?.(g)}
     </>
   );
 }
@@ -128,6 +133,20 @@ function SampleDevices({ hovered = false }: { hovered?: boolean }): ReactElement
   );
 }
 
+/** A sample Usage tab: what the usage plugin will show, in the island's row language (sample data). */
+function SampleUsage(): ReactElement {
+  return (
+    <TabScroll scrolls={false}>
+      <div className="clv-rows">
+        <GroupTitle title="This week" meta="sample" />
+        <LiftRow title="Claude" side="Max plan" trailing={<StatusWord mark={{ kind: "dot", color: "#4CC38A" }} word="62% left" />} />
+        <LiftRow title="Codex" side="Plus plan" trailing={<StatusWord mark={{ kind: "dot", color: "#FFC747" }} word="18% left" />} below={<RowWords text="Resets Monday at 09:00" />} hovered />
+        <LiftRow title="Grok" side="API key" quiet trailing={<StatusWord mark={{ kind: "ring", color: "#8B8B8B" }} word="Pay as you go" />} />
+      </div>
+    </TabScroll>
+  );
+}
+
 const W = 640;
 
 export const ISLAND_STORIES: Story[] = [
@@ -149,6 +168,13 @@ export const ISLAND_STORIES: Story[] = [
     width: W,
     height: 200,
     render: () => <Desktop shape={NOTCH} width={W} height={200}><Strip shape={NOTCH} counts={{ waiting: 1, working: 1 }} /><MeasuredCard content={<SealedCardContent card={APPROVAL} hover="accept" />} hovered /></Desktop>,
+  },
+  {
+    id: "island/card-approval-always",
+    title: "Card on top: an approval whose answers include \"Always allow\" (one sealed button per option)",
+    width: W,
+    height: 200,
+    render: () => <Desktop shape={NOTCH} width={W} height={200}><Strip shape={NOTCH} counts={{ waiting: 1, working: 0 }} /><MeasuredCard content={<SealedCardContent card={APPROVAL_ALWAYS} />} /></Desktop>,
   },
   {
     id: "island/card-link",
@@ -182,7 +208,7 @@ export const ISLAND_STORIES: Story[] = [
         <MeasuredCard
           content={<SealedCardContent card={APPROVAL} />}
           hovered
-          after={(g) => (
+          beneath={(g) => (
             <div className="clv-card-panel" style={{ width: g.panelSize.width, height: g.panelSize.height + 48, left: `calc(50% - ${g.panelSize.width / 2}px)` }}>
               <WaitingPill card={APPROVAL_2} rect={waitingRect(g)} />
             </div>
@@ -219,7 +245,7 @@ export const ISLAND_STORIES: Story[] = [
     render: () => (
       <Desktop shape={NOTCH} width={W} height={220}>
         <Strip shape={NOTCH} counts={{ waiting: 3, working: 1 }} />
-        <OpenIsland shape={NOTCH} tabs={tabState([NEEDS_YOU, { id: "usage", title: "Usage and limits" }, { id: "devices", title: "Devices" }])} count={3}>
+        <OpenIsland shape={NOTCH} tabs={tabState(TABS)} count={3}>
           <NeedsYou cards={[APPROVAL, LINK, QUESTION]} scrolls={false} />
         </OpenIsland>
       </Desktop>
@@ -232,7 +258,7 @@ export const ISLAND_STORIES: Story[] = [
     height: 220,
     render: () => (
       <Desktop shape={NO_NOTCH} width={W} height={220}>
-        <OpenIsland shape={NO_NOTCH} tabs={tabState([NEEDS_YOU, { id: "devices", title: "Devices" }])} count={2}>
+        <OpenIsland shape={NO_NOTCH} tabs={tabState(TABS)} count={2}>
           <NeedsYou cards={[APPROVAL_2, APPROVAL]} scrolls={false} />
         </OpenIsland>
       </Desktop>
@@ -245,7 +271,7 @@ export const ISLAND_STORIES: Story[] = [
     height: 220,
     render: () => (
       <Desktop shape={NOTCH} width={W} height={220} dark>
-        <OpenIsland shape={NOTCH} tabs={tabState([NEEDS_YOU, { id: "devices", title: "Devices" }])}>
+        <OpenIsland shape={NOTCH} tabs={tabState(TABS)}>
           <NeedsYou cards={[]} />
         </OpenIsland>
       </Desktop>
@@ -259,8 +285,22 @@ export const ISLAND_STORIES: Story[] = [
     render: () => (
       <Desktop shape={NOTCH} width={W} height={220}>
         <Strip shape={NOTCH} counts={{ waiting: 0, working: 2 }} />
-        <OpenIsland shape={NOTCH} tabs={tabState([NEEDS_YOU, { id: "devices", title: "Devices" }, { id: "usage", title: "Usage" }], 1)}>
+        <OpenIsland shape={NOTCH} tabs={tabState(TABS, 1)}>
           <SampleDevices hovered />
+        </OpenIsland>
+      </Desktop>
+    ),
+  },
+  {
+    id: "island/open-usage",
+    title: "Open island: Usage, a sample body until the usage plugin lands",
+    width: W,
+    height: 220,
+    render: () => (
+      <Desktop shape={NOTCH} width={W} height={220}>
+        <Strip shape={NOTCH} counts={{ waiting: 0, working: 1 }} />
+        <OpenIsland shape={NOTCH} tabs={tabState(TABS, 2)}>
+          <SampleUsage />
         </OpenIsland>
       </Desktop>
     ),
@@ -272,7 +312,7 @@ export const ISLAND_STORIES: Story[] = [
     height: 2 * 220 + 8,
     render: () => {
       const from = stripRect(NOTCH, true)!;
-      const tabs = tabState([NEEDS_YOU, { id: "devices", title: "Devices" }]);
+      const tabs = tabState(TABS);
       return filmstrip(
         [0.03, 0.08, 0.14, 0.22, 0.32, MORPH.settle],
         (t) => (
