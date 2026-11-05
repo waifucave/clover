@@ -1,7 +1,7 @@
 import { join, resolve } from "node:path";
 import { homedir } from "node:os";
 import { existsSync, readFileSync, mkdirSync } from "node:fs";
-import { resolveCloverHome, isDefaultCloverHome, OtherInstallHomeRefused, KeychainSecretStore, startDaemon, TOKEN_NAMES, loadSettings, CORE_VERSION, runWorkflowSubprocess, runAutomationWorker, AUTOMATION_WORKER_ARG, processSatisfiesRequirement, runRuntimeWorkflowWorker, RUNTIME_WORKFLOW_WORKER_ARG, runRuntimeStateProbe, runRuntimesProbe, keychainUnlocked, processStartSecondsViaSysctl, runEmbeddedProbe, runDevKeychainAdopt, DEV_KEYCHAIN_ADOPT_ARG, resolveCloverProfile, splitTag, sdkLocalMcpServers, installCloverProcessIdentity, loginEnable, loginDisable, loginRemove, loginStatus, liveLoginOsDeps, superviseLoop, startDaemonThroughOs, bunRunner, resolveEndpoint, endpointPresent, endpointAnswers, type LoginSpec, type DaemonRun, type DaemonStartResult } from "@waifucave/clover-core";
+import { resolveCloverHome, isDefaultCloverHome, OtherInstallHomeRefused, KeychainSecretStore, startDaemon, TOKEN_NAMES, loadSettings, CORE_VERSION, runWorkflowSubprocess, runAutomationWorker, AUTOMATION_WORKER_ARG, processSatisfiesRequirement, runRuntimeWorkflowWorker, RUNTIME_WORKFLOW_WORKER_ARG, runRuntimeStateProbe, runRuntimesProbe, keychainUnlocked, processStartSecondsViaSysctl, runEmbeddedProbe, runDevKeychainAdopt, DEV_KEYCHAIN_ADOPT_ARG, resolveCloverProfile, splitTag, sdkLocalMcpServers, installCloverProcessIdentity, loginEnable, loginDisable, loginRemove, loginStatus, liveLoginOsDeps, superviseLoop, startDaemonThroughOs, windowsUserSid, bunRunner, resolveEndpoint, endpointPresent, endpointAnswers, type LoginSpec, type DaemonRun, type DaemonStartResult } from "@waifucave/clover-core";
 import type { CredentialRow, SecretStore, Settings } from "@waifucave/clover-core";
 import { METHODS, type ApprovalPolicy, type Task } from "@waifucave/clover-protocol";
 import { POLICY_ORDER } from "./tui/policy-order";
@@ -1470,13 +1470,8 @@ function currentDaemonPlatform(): "darwin" | "linux" | "win32" {
  *  app's executable (macOS: its bundle), which the installer passes with `--app`. */
 function currentLoginSpec(app?: string): LoginSpec {
   const home = resolveCloverHome();
-  const os = currentDaemonPlatform();
-  const winUser = os === "win32" && process.env.USERNAME
-    ? (process.env.USERDOMAIN ? `${process.env.USERDOMAIN}\\${process.env.USERNAME}` : process.env.USERNAME)
-    : undefined;
   return {
-    os, bin: process.execPath, home, logsDir: join(home, "logs"), profile: resolveCloverProfile(),
-    ...(winUser ? { winUser } : {}),
+    os: currentDaemonPlatform(), bin: process.execPath, home, logsDir: join(home, "logs"), profile: resolveCloverProfile(),
     ...(app ? { app: { bin: resolve(app) } } : {}),
   };
 }
@@ -1492,7 +1487,10 @@ async function runAutostartCommand(sub: string | undefined, rest: readonly strin
   const appAt = rest.indexOf("--app");
   const app = appAt >= 0 ? rest[appAt + 1] : undefined;
   if (appAt >= 0 && !app) { console.error(AUTOSTART_USAGE); process.exitCode = 1; return; }
-  const spec = currentLoginSpec(app);
+  const base = currentLoginSpec(app);
+  // Windows: the task and its logon trigger name this user by SID.
+  const winUser = base.os === "win32" ? await windowsUserSid(bunRunner) : undefined;
+  const spec: LoginSpec = winUser ? { ...base, winUser } : base;
   // One login unit per profile, serving the profile's default home: a unit for another home would
   // take over the profile's label.
   if (sub !== "status" && sub !== undefined && !isDefaultCloverHome(spec.home, spec.profile)) {

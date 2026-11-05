@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { liveLoginOsDeps, logonTriggerState, type Runner, type TaskXmlWriter } from "../../src/platform/login/live";
+import { liveLoginOsDeps, logonTriggerState, windowsUserSid, type Runner, type TaskXmlWriter } from "../../src/platform/login/live";
 import { startDaemonThroughOs } from "../../src/platform/login/start";
 import { loginUnitPath, parkedPlistPath, renderSchtasksXml, type LoginSpec } from "../../src/platform/login/render";
 import { appBundleOf, hasGraphicalSession, resolveAppLauncher } from "../../src/platform/pair/launch";
@@ -75,6 +75,12 @@ describe("live login commands (recorded, never run)", () => {
       "schtasks /End /TN \\Clover\\clover-core", "schtasks /Delete /F /TN \\Clover\\clover-core",
       "schtasks /End /TN \\Clover\\clover-app", "schtasks /Delete /F /TN \\Clover\\clover-app",
     ]);
+  });
+
+  test("the Windows user's SID from whoami /user", async () => {
+    const r = recorder([["whoami /user", true, '"clover-c-win\\someone","S-1-5-21-1111-2222-3333-1001"\r\n']]);
+    expect(await windowsUserSid(r.run)).toBe("S-1-5-21-1111-2222-3333-1001");
+    expect(await windowsUserSid(recorder([["whoami", false, ""]]).run)).toBeUndefined();
   });
 
   test("the logon trigger's state from schtasks /Query /XML, UTF-16 or not", () => {

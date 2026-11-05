@@ -33,8 +33,8 @@ export interface LoginSpec {
   readonly logsDir: string;
   readonly profile: CloverProfile;
   readonly homedir?: string;
-  /** Windows: the account the logon trigger and the task belong to (`DOMAIN\user`). Without it the
-   *  trigger would fire for any user's logon, which only an administrator may register. */
+  /** Windows: the account the logon trigger and the task belong to, as its SID (`windowsUserSid`).
+   *  Without it the trigger would fire for any user's logon, which only an administrator may register. */
   readonly winUser?: string;
   /** The app, on a computer that runs it: its executable (macOS: the `.app` bundle). */
   readonly app?: { readonly bin: string };

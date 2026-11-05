@@ -4,7 +4,7 @@ export { startDaemon, CORE_VERSION, type RunningDaemon } from "./daemon";
 export { bootstrapCloverDir, resolveCloverHome, isDefaultCloverHome } from "./clover-dir";
 export { resolveEndpoint, homePipeId, isPipe, endpointPresent, WINDOWS_PIPE_PREFIX, type DaemonPlatform, type Endpoint } from "./platform/transport";
 export {
-  loginEnable, loginDisable, loginRemove, loginStatus, readUnit, liveLoginOsDeps, bunRunner, startDaemonThroughOs,
+  loginEnable, loginDisable, loginRemove, loginStatus, readUnit, liveLoginOsDeps, bunRunner, startDaemonThroughOs, windowsUserSid,
   renderLaunchdPlist, renderSystemdUnit, renderSchtasksXml, loginLabel, loginUnitPath,
   systemdUnitName, schtasksTaskName, SUPERVISE_ARGS,
   superviseLoop, backoffMs,

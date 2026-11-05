@@ -28,6 +28,15 @@ export async function launchdDomain(run: Runner, uid: number = process.getuid?.(
   return (await run(["launchctl", "print", `gui/${uid}`])).ok ? `gui/${uid}` : `user/${uid}`;
 }
 
+/** The current Windows user's SID, from `whoami /user`: the form of `<UserId>` Task Scheduler resolves
+ *  on any machine. (`USERDOMAIN\USERNAME` doesn't: over SSH on a workgroup machine USERDOMAIN reads
+ *  WORKGROUP, which no account belongs to, and the task is refused.) */
+export async function windowsUserSid(run: Runner): Promise<string | undefined> {
+  const r = await run(["whoami", "/user", "/fo", "csv", "/nh"]);
+  const m = /"(S-1-[\d-]+)"/.exec(r.out);
+  return r.ok && m ? m[1] : undefined;
+}
+
 /** Writes a task's XML as UTF-16LE with a BOM (what `schtasks /XML` reads) to a temp file. */
 export type TaskXmlWriter = (xml: string) => { path: string; cleanup(): void };
 

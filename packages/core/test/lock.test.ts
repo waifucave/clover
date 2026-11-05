@@ -3,12 +3,20 @@ import { mkdtempSync, writeFileSync, existsSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { acquireLock, AlreadyRunningError, LockHeldNoDaemonError, LockFailedError, classifyLockFailure, endpointAnswers } from "../src/lock";
+import { resolveEndpoint } from "../src/platform/transport";
 
+/** A run directory: its lock, and its endpoint as the daemon resolves it (a socket file on
+ *  macOS/Linux, a named pipe on Windows). */
 function tmpRun(): { lockPath: string; socketPath: string } {
   const d = mkdtempSync(join(tmpdir(), "clover-lock-"));
-  return { lockPath: join(d, "core.lock"), socketPath: join(d, "core.sock") };
+  return { lockPath: join(d, "core.lock"), socketPath: resolveEndpoint(d).path };
 }
+const windows = process.platform === "win32";
 const fast = { confirmMs: 300, pollMs: 50 };
+/** The holder's pid: in the lock file on macOS/Linux, beside it on Windows (the lock file is opened
+ *  with no sharing there, so it can't be read while held). */
+const pidOf = (lockPath: string): number =>
+  JSON.parse(readFileSync(process.platform === "win32" ? join(lockPath, "..", "core.pid") : lockPath, "utf8")).pid;
 
 describe("classifyLockFailure (S7 §5)", () => {
   test("only another holder is busy, per OS", () => {
@@ -29,10 +37,11 @@ describe("acquireLock", () => {
   test("acquires, records its pid, and frees the home on release", async () => {
     const p = tmpRun();
     const lock = await acquireLock(p.lockPath, p.socketPath, fast);
-    expect(JSON.parse(readFileSync(p.lockPath, "utf8")).pid).toBe(process.pid);
+    expect(pidOf(p.lockPath)).toBe(process.pid);
     lock.release();
     // The file stays (with a kernel lock it is only a name) but no longer names a holder.
-    expect(readFileSync(p.lockPath, "utf8")).toBe("");
+    if (process.platform === "win32") expect(existsSync(join(p.lockPath, "..", "core.pid"))).toBe(false);
+    else expect(readFileSync(p.lockPath, "utf8")).toBe("");
     const again = await acquireLock(p.lockPath, p.socketPath, fast);
     again.release();
   });
@@ -54,7 +63,7 @@ describe("acquireLock", () => {
     const p = tmpRun();
     const first = await acquireLock(p.lockPath, p.socketPath, fast);
     await expect(acquireLock(p.lockPath, p.socketPath, fast)).rejects.toBeInstanceOf(LockHeldNoDaemonError);
-    expect(JSON.parse(readFileSync(p.lockPath, "utf8")).pid).toBe(process.pid); // the holder's record is untouched
+    expect(pidOf(p.lockPath)).toBe(process.pid); // the holder's record is untouched
     first.release();
   });
 
@@ -68,12 +77,12 @@ describe("acquireLock", () => {
     first.release();
   });
 
-  test("a lock file and socket left by a crashed daemon do not hold the home", async () => {
+  test.skipIf(windows)("a lock file and socket left by a crashed daemon do not hold the home", async () => {
     const p = tmpRun();
     writeFileSync(p.lockPath, JSON.stringify({ pid: 999999999 })); // the crash freed the kernel lock
     writeFileSync(p.socketPath, ""); // and left a stale socket file
     const lock = await acquireLock(p.lockPath, p.socketPath, fast);
-    expect(JSON.parse(readFileSync(p.lockPath, "utf8")).pid).toBe(process.pid);
+    expect(pidOf(p.lockPath)).toBe(process.pid);
     expect(existsSync(p.socketPath)).toBe(false);
     lock.release();
   });
@@ -82,7 +91,7 @@ describe("acquireLock", () => {
     const p = tmpRun();
     writeFileSync(p.lockPath, "not json {{{");
     const lock = await acquireLock(p.lockPath, p.socketPath, fast);
-    expect(JSON.parse(readFileSync(p.lockPath, "utf8")).pid).toBe(process.pid);
+    expect(pidOf(p.lockPath)).toBe(process.pid);
     lock.release();
   });
 
@@ -92,7 +101,7 @@ describe("acquireLock", () => {
     await expect(acquireLock(missing, p.socketPath, fast)).rejects.toBeInstanceOf(LockFailedError);
   });
 
-  test("release removes the socket file but never a named pipe", async () => {
+  test.skipIf(windows)("release removes the socket file but never a named pipe", async () => {
     const p = tmpRun();
     const lock = await acquireLock(p.lockPath, p.socketPath, fast);
     writeFileSync(p.socketPath, "");
@@ -116,11 +125,13 @@ describe("acquireLock", () => {
 });
 
 describe("endpointAnswers", () => {
-  test("true for a listening socket, false for a missing or dead one", async () => {
+  test("true for a listening endpoint, false for a missing or dead one", async () => {
     const p = tmpRun();
     expect(await endpointAnswers(p.socketPath)).toBe(false);
-    writeFileSync(p.socketPath, "");
-    expect(await endpointAnswers(p.socketPath)).toBe(false);
+    if (!windows) {
+      writeFileSync(p.socketPath, ""); // a stale socket file
+      expect(await endpointAnswers(p.socketPath)).toBe(false);
+    }
     const q = tmpRun();
     const server = Bun.listen({ unix: q.socketPath, socket: { data() {} } });
     expect(await endpointAnswers(q.socketPath)).toBe(true);
