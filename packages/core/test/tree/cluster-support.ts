@@ -41,7 +41,11 @@ export const shellExecutor: ToolExecutor = {
     };
     const out: string[] = [];
     const err: string[] = [];
-    await Promise.all([pump(proc.stdout, "stdout", out), pump(proc.stderr, "stderr", err), proc.exited]);
+    // A killed shell can leave its child holding the pipes (dash doesn't exec the last command), so a cancelled call
+    // answers once the shell is gone rather than when the pipes close.
+    const done = Promise.all([pump(proc.stdout, "stdout", out), pump(proc.stderr, "stderr", err), proc.exited]);
+    const cancelled = new Promise<void>((resolve) => ctx.signal.addEventListener("abort", () => resolve(), { once: true }));
+    await Promise.race([done, cancelled.then(() => proc.exited)]);
     ctx.signal.removeEventListener("abort", onAbort);
     const code = proc.exitCode;
     return { output: { stdout: out.join(""), stderr: err.join(""), code, aborted: ctx.signal.aborted }, isError: code !== 0 };
@@ -63,7 +67,8 @@ export interface ClusterOptions {
 export class Cluster {
   readonly net = new FakeLinkNetwork();
   readonly computers = new Map<string, TestComputer>();
-  readonly #root = realpathSync(mkdtempSync(join(tmpdir(), "lane-j-cluster-")));
+  // The native realpath, as the holder's: on Windows it gives long names where the JS one keeps `RUNNER~1`.
+  readonly #root = realpathSync.native(mkdtempSync(join(tmpdir(), "lane-j-cluster-")));
 
   add(name: string, opts: ClusterOptions = {}): TestComputer {
     const device = opts.deviceIds?.[name] ?? `${name.toLowerCase().replace(/[^a-z0-9]/g, "")}0000000000000000`.slice(0, 20);

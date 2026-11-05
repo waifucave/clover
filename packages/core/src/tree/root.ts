@@ -5,7 +5,7 @@
 // a program that names one gets "no such file", and `home/` is read-only, so nothing a program writes there lands on
 // the wrong computer. A search of the home folder never walks into the tree, since the tree sits outside it.
 import { constants as FS, promises as fsp } from "node:fs";
-import { join } from "node:path";
+import { join, posix } from "node:path";
 import type { Os } from "@waifucave/clover-protocol";
 import { ContractError } from "../contracts/common";
 import { hostOs } from "./names";
@@ -17,7 +17,7 @@ export function defaultTreeRoot(env: NodeJS.ProcessEnv = process.env, os: Os = h
   if (os === "linux") {
     const run = env.XDG_RUNTIME_DIR;
     if (!run) throw new ContractError("invalid", "XDG_RUNTIME_DIR isn't set, so there's nowhere outside the home folder for the tree");
-    return join(run, "clover");
+    return posix.join(run, "clover");
   }
   if (os === "macos") return `/Users/Shared/clover-${process.getuid?.() ?? 0}`;
   const data = env.ProgramData ?? env.PROGRAMDATA ?? "C:\\ProgramData";

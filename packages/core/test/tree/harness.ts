@@ -23,7 +23,7 @@ import { CoreTree, type TreeComputer } from "../../src/tree/tree";
 const NO_DEVICES: AnswerDevices = { get: () => undefined, verifyAnswer: async () => false };
 
 export function realTreeHarness(opts: ConstructorParameters<typeof FakeTree>[0]): TreeHarness {
-  const disk = realpathSync(mkdtempSync(join(tmpdir(), "lane-j-tree-")));
+  const disk = realpathSync.native(mkdtempSync(join(tmpdir(), "lane-j-tree-")));
   // The suite's POSIX paths, on this disk and back (Windows included: `\` and a drive letter there).
   const toDisk = (p: string) => join(disk, ...p.split("/").filter(Boolean));
   const fromDisk = (p: string) => {
