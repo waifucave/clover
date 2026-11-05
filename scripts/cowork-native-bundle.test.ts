@@ -12,6 +12,10 @@ import { workerBuildArgs } from "./build-cowork-native";
 import { stageDevPair } from "./dev-cowork-native";
 import { verifyCoworkNative } from "./verify-cowork-native";
 
+// The tests that sign stand-ins with codesign (an embed and its mutants, a dev stage, the embed script) take about
+// 1 s here and over 5 s on a loaded CI macOS runner (5.3 s on #157's run), past bun's 5 s default.
+const SIGNING_TIMEOUT_MS = 60_000;
+
 const REPO = join(import.meta.dir, "..");
 const temps: string[] = [];
 afterEach(() => { for (const d of temps.splice(0)) rmSync(d, { recursive: true, force: true }); });
@@ -88,7 +92,7 @@ describe("the embed phase writes the manifest the gate reads", () => {
     expect(result.lines.some((l) => l.startsWith("omit: the stale pair"))).toBe(true);
     expect(result.lines.some((l) => l.startsWith("no inputs: the build succeeded"))).toBe(true);
     expect(COWORK_NATIVE_MANIFEST_RELATIVE).toBe("Contents/Resources/cowork-native-pins.json");
-  });
+  }, SIGNING_TIMEOUT_MS);
 });
 
 describe("dev:cowork-native stages and signs into a directory it is given", () => {
@@ -103,7 +107,7 @@ describe("dev:cowork-native stages and signs into a directory it is given", () =
     expect(failures.length).toBeGreaterThan(0);
     expect(readFileSync(join(target, COWORK_NATIVE.worker.name)).equals(before)).toBe(true);
     expect(readdirSync(join(target, "..")).filter((n) => n.startsWith(".WinterCowork-"))).toEqual([]);
-  });
+  }, SIGNING_TIMEOUT_MS);
   test("the ad-hoc default refuses to write the dev daemon's own directory (the script's rule, pinned in its source)", () => {
     expect(readFileSync(join(REPO, "scripts", "dev-cowork-native.ts"), "utf8")).toContain("--identity - (ad hoc) needs --out <scratch dir>");
   });
@@ -168,19 +172,19 @@ describe("the release choice: inputs or an explicit omit", () => {
       expect(existsSync(join(contents(built), "Helpers", "WinterCowork"))).toBe(false);
       expect(existsSync(join(contents(built), "Resources", "cowork-native-pins.json"))).toBe(false);
       expect(run({ COWORK_NATIVE: "omit" }, scratch()).status).toBe(0);
-    });
+    }, SIGNING_TIMEOUT_MS);
     test("omit wins even when valid inputs are present (the plan refuses the combination before the build; here nothing is embedded)", () => {
       const built = scratch();
       expect(run({ COWORK_NATIVE: "omit" }, built).status).toBe(0);
       expect(existsSync(join(contents(built), "Helpers"))).toBe(false);
-    });
+    }, SIGNING_TIMEOUT_MS);
     test("an unknown COWORK_NATIVE value fails and embeds nothing", () => {
       const built = scratch();
       const result = run({ COWORK_NATIVE: "skip" }, built);
       expect(result.status).not.toBe(0);
       expect(result.stderr).toContain("is not a choice");
       expect(existsSync(contents(built))).toBe(false);
-    });
+    }, SIGNING_TIMEOUT_MS);
     test("no input at all (a developer's Release build, CI): succeeds, embeds nothing, removes a stale pair", () => {
       const built = scratch();
       expect(run({}, built).status).toBe(0);
@@ -189,7 +193,7 @@ describe("the release choice: inputs or an explicit omit", () => {
       expect(none.stdout).toContain("no inputs");
       expect(existsSync(join(contents(built), "Helpers", "WinterCowork"))).toBe(false);
       expect(existsSync(join(contents(built), "Resources", "cowork-native-pins.json"))).toBe(false);
-    });
+    }, SIGNING_TIMEOUT_MS);
     test("exactly one input is an error, whichever it is", () => {
       for (const missing of ["COWORK_LAUNCHER_BINARY", "COWORK_WORKER_BINARY"]) {
         const built = scratch();
@@ -197,13 +201,13 @@ describe("the release choice: inputs or an explicit omit", () => {
         expect(`${missing}: ${result.status !== 0}`).toBe(`${missing}: true`);
         expect(result.stderr).toContain("is not at");
       }
-    });
+    }, SIGNING_TIMEOUT_MS);
     test("a Debug build embeds nothing whatever the inputs", () => {
       const built = scratch();
       const result = run({ CONFIGURATION: "Debug" }, built);
       expect(result.status).toBe(0);
       expect(existsSync(contents(built))).toBe(false);
-    });
+    }, SIGNING_TIMEOUT_MS);
   });
   test("an omitted bundle gives the daemon nothing to spawn: the default launcher port refuses launcher_missing before spawning anything (core test)", () => {
     expect(readFileSync(join(REPO, "packages", "core", "test", "cowork", "host-env-assembly.test.ts"), "utf8")).toContain("an omitted bundle");
