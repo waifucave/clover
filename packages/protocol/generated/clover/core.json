@@ -224,7 +224,6 @@
         "app",
         "cli",
         "layer",
-        "plugin-host",
         "remote",
         "web",
         "peer"
@@ -280,7 +279,6 @@
         "app",
         "cli",
         "layer",
-        "plugin-host",
         "remote",
         "web",
         "peer"

@@ -141,12 +141,12 @@ const SessionParams = z.object({ id: SessionId });
 
 export const SESSIONS_METHODS = {
   botList: defineMethod({
-    name: "bot.list", owner: "D", roles: ["app", "cli", "remote", "web", "layer", "plugin-host"], capability: "bots.read",
+    name: "bot.list", owner: "D", roles: ["app", "cli", "remote", "web", "layer"], capability: "bots.read",
     params: Empty, result: z.object({ bots: z.array(BotView) }),
     doc: "Every bot, with its state and settings.",
   }),
   botGet: defineMethod({
-    name: "bot.get", owner: "D", roles: ["app", "cli", "remote", "web", "layer", "plugin-host"], capability: "bots.read",
+    name: "bot.get", owner: "D", roles: ["app", "cli", "remote", "web", "layer"], capability: "bots.read",
     params: z.object({ id: BotId }), result: z.object({ bot: BotView }),
     doc: "One bot, with its state and settings.",
   }),
@@ -161,29 +161,29 @@ export const SESSIONS_METHODS = {
     doc: "The core switch that pauses every bot and routine at once (§9.2).",
   }),
   sessionList: defineMethod({
-    name: "session.list", owner: "D", roles: ["app", "cli", "remote", "web", "layer", "plugin-host"], capability: "conversation.read",
+    name: "session.list", owner: "D", roles: ["app", "cli", "remote", "web", "layer"], capability: "conversation.read",
     params: z.object({ kinds: z.array(SessionKind).max(4).optional(), bot: BotId.optional() }),
     result: z.object({ sessions: z.array(SessionView) }),
     doc: "Every session: bots' conversations, side threads, background agents and coding sessions (`ListAgents`).",
   }),
   sessionGet: defineMethod({
-    name: "session.get", owner: "D", roles: ["app", "cli", "remote", "web", "layer", "plugin-host"], capability: "conversation.read",
+    name: "session.get", owner: "D", roles: ["app", "cli", "remote", "web", "layer"], capability: "conversation.read",
     params: SessionParams, result: z.object({ session: SessionView }),
     doc: "One session, with its state.",
   }),
   sessionAttach: defineMethod({
-    name: "session.attach", owner: "D", roles: ["app", "cli", "remote", "web", "layer", "plugin-host"], capability: "conversation.read",
+    name: "session.attach", owner: "D", roles: ["app", "cli", "remote", "web", "layer"], capability: "conversation.read",
     params: z.object({ id: SessionId, since: z.number().int().nonnegative().optional() }),
     result: z.object({ lastSeq: z.number().int().nonnegative() }),
     doc: "Follows a session live: replays events after `since`, then streams them with the inherited `event` notification.",
   }),
   sessionDetach: defineMethod({
-    name: "session.detach", owner: "D", roles: ["app", "cli", "remote", "web", "layer", "plugin-host"], capability: "conversation.read",
+    name: "session.detach", owner: "D", roles: ["app", "cli", "remote", "web", "layer"], capability: "conversation.read",
     params: SessionParams, result: Ok,
     doc: "Stops following a session.",
   }),
   sessionHistory: defineMethod({
-    name: "session.history", owner: "D", roles: ["app", "cli", "remote", "web", "layer", "plugin-host"], capability: "conversation.read",
+    name: "session.history", owner: "D", roles: ["app", "cli", "remote", "web", "layer"], capability: "conversation.read",
     params: z.object({ id: SessionId, before: z.number().int().nonnegative().optional(), limit: z.number().int().min(1).max(500) }),
     result: z.object({ events: z.array(z.record(z.string(), z.unknown())), hasMore: z.boolean() }),
     doc: "A page of a session's past events, newest last; sealed card fields never reach a plugin (§5.4).",
@@ -195,7 +195,7 @@ export const SESSIONS_METHODS = {
     doc: "The user's message: it interrupts a bot's main conversation at once; it needs a live connection to the computer running the bot (`BOT_ASLEEP`).",
   }),
   sessionPost: defineMethod({
-    name: "session.post", owner: "D", roles: ["layer", "plugin-host"], capability: "conversation.post",
+    name: "session.post", owner: "D", roles: ["layer"], capability: "conversation.post",
     params: z.object({
       id: SessionId,
       kind: z.enum(["note", "message"]),
@@ -238,22 +238,22 @@ export const SESSIONS_METHODS = {
     doc: "Compacts now, so new instructions apply at once at the cost of a cache miss (§5.6).",
   }),
   memoryList: defineMethod({
-    name: "memory.list", owner: "D", roles: ["app", "cli", "layer", "plugin-host"], capability: "memory.read",
+    name: "memory.list", owner: "D", roles: ["app", "cli", "layer"], capability: "memory.read",
     params: z.object({ bot: BotId }), result: z.object({ entries: z.array(MemoryEntry) }),
     doc: "A bot's memory files: `MEMORY.md` and the files it links to (§6.5).",
   }),
   memoryRead: defineMethod({
-    name: "memory.read", owner: "D", roles: ["app", "cli", "layer", "plugin-host"], capability: "memory.read",
+    name: "memory.read", owner: "D", roles: ["app", "cli", "layer"], capability: "memory.read",
     params: z.object({ bot: BotId, path: utf16(1024, 1) }), result: z.object({ text: z.string() }),
     doc: "One memory file.",
   }),
   routineList: defineMethod({
-    name: "routine.list", owner: "D", roles: ["app", "cli", "remote", "web", "layer", "plugin-host"], capability: "routines.read",
+    name: "routine.list", owner: "D", roles: ["app", "cli", "remote", "web", "layer"], capability: "routines.read",
     params: z.object({ bot: BotId.optional() }), result: z.object({ routines: z.array(RoutineView) }),
     doc: "The synced list of routines (§8.5).",
   }),
   routineRuns: defineMethod({
-    name: "routine.runs", owner: "D", roles: ["app", "cli", "remote", "layer", "plugin-host"], capability: "routines.read",
+    name: "routine.runs", owner: "D", roles: ["app", "cli", "remote", "layer"], capability: "routines.read",
     params: z.object({ id: utf16(128, 1), cursor: Cursor.optional(), limit: z.number().int().min(1).max(200).optional() }),
     result: z.object({ runs: z.array(RoutineRunView), next: Cursor.optional() }),
     doc: "A routine's runs, newest first.",
@@ -331,7 +331,7 @@ export const CloverSessionEvent = z.discriminatedUnion("type", [
 ]);
 export type CloverSessionEvent = z.infer<typeof CloverSessionEvent>;
 
-const READERS = ["app", "cli", "remote", "web", "layer", "plugin-host"] as const;
+const READERS = ["app", "cli", "remote", "web", "layer"] as const;
 
 export const SESSIONS_EVENTS = {
   botChanged: defineEvent({

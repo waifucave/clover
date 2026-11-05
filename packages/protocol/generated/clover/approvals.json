@@ -809,8 +809,7 @@
       "owner": "C",
       "direction": "to-daemon",
       "roles": [
-        "layer",
-        "plugin-host"
+        "layer"
       ],
       "capability": "approvals",
       "params": {
@@ -1542,8 +1541,7 @@
       "owner": "C",
       "scope": "core",
       "roles": [
-        "layer",
-        "plugin-host"
+        "layer"
       ],
       "capability": "approvals",
       "schema": {
@@ -1692,8 +1690,7 @@
       "roles": [
         "app",
         "remote",
-        "layer",
-        "plugin-host"
+        "layer"
       ],
       "capability": "approvals",
       "schema": {

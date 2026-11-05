@@ -16,7 +16,9 @@ export const CLOVER_ROLES = [
   "layer",
   /** The CLI and TUI. The user from their own terminal; a bot's or agent's session from inside one (§3.1). */
   "cli",
-  /** The plugin host (§5.2), over the pipe it was started with; every call names the plugin it is for. */
+  /** The plugin host (§5.2), over the pipe it was started with. It speaks only its channel (`pluginHost.*`): a host
+   *  half's plugin-API calls go through `pluginHost.api`, whose `pluginId` the host stamps from its own worker table,
+   *  so the daemon knows which plugin each call is for (review S3). */
   "plugin-host",
   /** One ACP agent session's bridge MCP server (§9.3): its tools, `SendMessage` and `Glossary`, nothing else. */
   "bridge",

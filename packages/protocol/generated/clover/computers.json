@@ -10,8 +10,7 @@
         "app",
         "cli",
         "remote",
-        "layer",
-        "plugin-host"
+        "layer"
       ],
       "capability": "computers.read",
       "params": {
@@ -213,8 +212,7 @@
         "app",
         "cli",
         "remote",
-        "layer",
-        "plugin-host"
+        "layer"
       ],
       "capability": "computers.read",
       "params": {
@@ -564,8 +562,7 @@
       "direction": "to-daemon",
       "roles": [
         "app",
-        "layer",
-        "plugin-host"
+        "layer"
       ],
       "capability": "computers.control",
       "params": {
@@ -689,471 +686,13 @@
         "additionalProperties": false
       }
     },
-    "hold.take": {
-      "doc": "Takes a hold on an app or window, so two bots don't fight over it (§9.2).",
-      "owner": "J",
-      "direction": "to-daemon",
-      "roles": [
-        "plugin-host"
-      ],
-      "capability": "computers.control",
-      "params": {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "type": "object",
-        "properties": {
-          "computer": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 63,
-            "pattern": "^[A-Za-z0-9]+(-[A-Za-z0-9]+)*$"
-          },
-          "target": {
-            "oneOf": [
-              {
-                "type": "object",
-                "properties": {
-                  "kind": {
-                    "type": "string",
-                    "const": "app"
-                  },
-                  "app": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 256
-                  }
-                },
-                "required": [
-                  "kind",
-                  "app"
-                ]
-              },
-              {
-                "type": "object",
-                "properties": {
-                  "kind": {
-                    "type": "string",
-                    "const": "window"
-                  },
-                  "app": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 256
-                  },
-                  "window": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 512
-                  }
-                },
-                "required": [
-                  "kind",
-                  "app",
-                  "window"
-                ]
-              }
-            ]
-          },
-          "session": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 128,
-            "pattern": "^[A-Za-z0-9._:-]+$"
-          }
-        },
-        "required": [
-          "computer",
-          "target"
-        ]
-      },
-      "result": {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "anyOf": [
-          {
-            "type": "object",
-            "properties": {
-              "held": {
-                "type": "boolean",
-                "const": true
-              },
-              "hold": {
-                "type": "object",
-                "properties": {
-                  "id": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 128
-                  },
-                  "computer": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 63,
-                    "pattern": "^[A-Za-z0-9]+(-[A-Za-z0-9]+)*$"
-                  },
-                  "target": {
-                    "oneOf": [
-                      {
-                        "type": "object",
-                        "properties": {
-                          "kind": {
-                            "type": "string",
-                            "const": "app"
-                          },
-                          "app": {
-                            "type": "string",
-                            "minLength": 1,
-                            "maxLength": 256
-                          }
-                        },
-                        "required": [
-                          "kind",
-                          "app"
-                        ],
-                        "additionalProperties": false
-                      },
-                      {
-                        "type": "object",
-                        "properties": {
-                          "kind": {
-                            "type": "string",
-                            "const": "window"
-                          },
-                          "app": {
-                            "type": "string",
-                            "minLength": 1,
-                            "maxLength": 256
-                          },
-                          "window": {
-                            "type": "string",
-                            "minLength": 1,
-                            "maxLength": 512
-                          }
-                        },
-                        "required": [
-                          "kind",
-                          "app",
-                          "window"
-                        ],
-                        "additionalProperties": false
-                      }
-                    ]
-                  },
-                  "session": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 128,
-                    "pattern": "^[A-Za-z0-9._:-]+$"
-                  },
-                  "pluginId": {
-                    "type": "string",
-                    "maxLength": 81,
-                    "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
-                  },
-                  "since": {
-                    "type": "integer",
-                    "minimum": 0,
-                    "maximum": 9007199254740991
-                  }
-                },
-                "required": [
-                  "id",
-                  "computer",
-                  "target",
-                  "pluginId",
-                  "since"
-                ],
-                "additionalProperties": false
-              }
-            },
-            "required": [
-              "held",
-              "hold"
-            ],
-            "additionalProperties": false
-          },
-          {
-            "type": "object",
-            "properties": {
-              "held": {
-                "type": "boolean",
-                "const": false
-              },
-              "reason": {
-                "type": "string",
-                "enum": [
-                  "held-by-other",
-                  "user-working",
-                  "computer-offline"
-                ]
-              },
-              "by": {
-                "type": "string",
-                "minLength": 1,
-                "maxLength": 128,
-                "pattern": "^[A-Za-z0-9._:-]+$"
-              }
-            },
-            "required": [
-              "held",
-              "reason"
-            ],
-            "additionalProperties": false
-          }
-        ]
-      }
-    },
-    "hold.release": {
-      "doc": "Releases a hold.",
-      "owner": "J",
-      "direction": "to-daemon",
-      "roles": [
-        "plugin-host"
-      ],
-      "capability": "computers.control",
-      "params": {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 128
-          }
-        },
-        "required": [
-          "id"
-        ]
-      },
-      "result": {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "type": "object",
-        "properties": {
-          "ok": {
-            "type": "boolean",
-            "const": true
-          }
-        },
-        "required": [
-          "ok"
-        ],
-        "additionalProperties": false
-      }
-    },
-    "userWorking.set": {
-      "doc": "Takes or releases the user-working mark; the core lifts it on the user's message or a card's answer.",
-      "owner": "J",
-      "direction": "to-daemon",
-      "roles": [
-        "plugin-host"
-      ],
-      "capability": "computers.control",
-      "params": {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "type": "object",
-        "properties": {
-          "computer": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 63,
-            "pattern": "^[A-Za-z0-9]+(-[A-Za-z0-9]+)*$"
-          },
-          "on": {
-            "type": "boolean"
-          },
-          "target": {
-            "oneOf": [
-              {
-                "type": "object",
-                "properties": {
-                  "kind": {
-                    "type": "string",
-                    "const": "app"
-                  },
-                  "app": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 256
-                  }
-                },
-                "required": [
-                  "kind",
-                  "app"
-                ]
-              },
-              {
-                "type": "object",
-                "properties": {
-                  "kind": {
-                    "type": "string",
-                    "const": "window"
-                  },
-                  "app": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 256
-                  },
-                  "window": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 512
-                  }
-                },
-                "required": [
-                  "kind",
-                  "app",
-                  "window"
-                ]
-              }
-            ]
-          }
-        },
-        "required": [
-          "computer",
-          "on"
-        ]
-      },
-      "result": {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "type": "object",
-        "properties": {
-          "ok": {
-            "type": "boolean",
-            "const": true
-          }
-        },
-        "required": [
-          "ok"
-        ],
-        "additionalProperties": false
-      }
-    },
-    "action.setRunning": {
-      "doc": "Says a computer-use action is running, so no card click counts on that computer meanwhile (§5.5).",
-      "owner": "J",
-      "direction": "to-daemon",
-      "roles": [
-        "plugin-host"
-      ],
-      "capability": "computers.control",
-      "params": {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "type": "object",
-        "properties": {
-          "computer": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 63,
-            "pattern": "^[A-Za-z0-9]+(-[A-Za-z0-9]+)*$"
-          },
-          "running": {
-            "type": "boolean"
-          },
-          "session": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 128,
-            "pattern": "^[A-Za-z0-9._:-]+$"
-          }
-        },
-        "required": [
-          "computer",
-          "running"
-        ]
-      },
-      "result": {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "type": "object",
-        "properties": {
-          "ok": {
-            "type": "boolean",
-            "const": true
-          }
-        },
-        "required": [
-          "ok"
-        ],
-        "additionalProperties": false
-      }
-    },
-    "windows.clover": {
-      "doc": "Where Clover's own windows are, which a computer-use plugin must not act on (§5.5).",
-      "owner": "J",
-      "direction": "to-daemon",
-      "roles": [
-        "plugin-host"
-      ],
-      "capability": "computers.control",
-      "params": {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "type": "object",
-        "properties": {
-          "computer": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 63,
-            "pattern": "^[A-Za-z0-9]+(-[A-Za-z0-9]+)*$"
-          }
-        },
-        "required": [
-          "computer"
-        ]
-      },
-      "result": {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "type": "object",
-        "properties": {
-          "windows": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "properties": {
-                "id": {
-                  "type": "string",
-                  "maxLength": 128
-                },
-                "x": {
-                  "type": "number"
-                },
-                "y": {
-                  "type": "number"
-                },
-                "width": {
-                  "type": "number",
-                  "minimum": 0
-                },
-                "height": {
-                  "type": "number",
-                  "minimum": 0
-                },
-                "display": {
-                  "type": "string",
-                  "maxLength": 128
-                }
-              },
-              "required": [
-                "id",
-                "x",
-                "y",
-                "width",
-                "height"
-              ],
-              "additionalProperties": false
-            }
-          }
-        },
-        "required": [
-          "windows"
-        ],
-        "additionalProperties": false
-      }
-    },
     "tree.stat": {
       "doc": "A path's type, size and time; null when it doesn't exist.",
       "owner": "J",
       "direction": "to-daemon",
       "roles": [
         "peer",
-        "layer",
-        "plugin-host"
+        "layer"
       ],
       "capability": "files",
       "params": {
@@ -1236,8 +775,7 @@
       "direction": "to-daemon",
       "roles": [
         "peer",
-        "layer",
-        "plugin-host"
+        "layer"
       ],
       "capability": "files",
       "params": {
@@ -1318,8 +856,7 @@
       "direction": "to-daemon",
       "roles": [
         "peer",
-        "layer",
-        "plugin-host"
+        "layer"
       ],
       "capability": "files",
       "params": {
@@ -1398,8 +935,7 @@
       "direction": "to-daemon",
       "roles": [
         "peer",
-        "layer",
-        "plugin-host"
+        "layer"
       ],
       "capability": "files",
       "params": {
@@ -1478,8 +1014,7 @@
       "direction": "to-daemon",
       "roles": [
         "peer",
-        "layer",
-        "plugin-host"
+        "layer"
       ],
       "capability": "files",
       "params": {
@@ -1521,8 +1056,7 @@
       "direction": "to-daemon",
       "roles": [
         "peer",
-        "layer",
-        "plugin-host"
+        "layer"
       ],
       "capability": "files",
       "params": {
@@ -1568,8 +1102,7 @@
       "direction": "to-daemon",
       "roles": [
         "peer",
-        "layer",
-        "plugin-host"
+        "layer"
       ],
       "capability": "files",
       "params": {
@@ -1628,8 +1161,7 @@
       "direction": "to-daemon",
       "roles": [
         "peer",
-        "layer",
-        "plugin-host"
+        "layer"
       ],
       "capability": "files",
       "params": {
@@ -2213,8 +1745,7 @@
         "app",
         "cli",
         "remote",
-        "layer",
-        "plugin-host"
+        "layer"
       ],
       "capability": "computers.read",
       "schema": {
@@ -2415,8 +1946,7 @@
         "app",
         "cli",
         "remote",
-        "layer",
-        "plugin-host"
+        "layer"
       ],
       "capability": "computers.read",
       "schema": {
@@ -2452,8 +1982,7 @@
       "scope": "core",
       "roles": [
         "app",
-        "layer",
-        "plugin-host"
+        "layer"
       ],
       "capability": "computers.control",
       "schema": {

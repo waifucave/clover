@@ -117,7 +117,7 @@ export const APP_METHODS = {
     doc: "Speech for the app to play, which the avatar lip-syncs to (§6.6).",
   }),
   notifySend: defineMethod({
-    name: "notify.send", owner: "G", roles: ["layer", "plugin-host"], capability: "notify",
+    name: "notify.send", owner: "G", roles: ["layer"], capability: "notify",
     params: z.object({ title: Text, body: Text.optional(), session: SessionId.optional() }), result: Ok,
     doc: "A plugin sends the user a notification through the `notifiers` (§10).",
   }),

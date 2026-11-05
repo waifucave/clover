@@ -6,8 +6,8 @@ import { isContractError } from "../common";
 import { FakeClock, advanceAndSettle, flush } from "../fakes/clock";
 import { FakePluginHost } from "../fakes/plugin-host";
 import {
-  CRASH_WINDOW_MS, PLUGIN_CALL_MAX_TIMEOUT_MS, PLUGIN_CALL_TIMEOUT_MS, RELOAD_GRACE_MS, crashBackoffMs, resolveHandler,
-  type HostedStatus,
+  CLOVER_TREE_PROCESS, CRASH_WINDOW_MS, PLUGIN_CALL_MAX_TIMEOUT_MS, PLUGIN_CALL_TIMEOUT_MS, RELOAD_GRACE_MS, crashBackoffMs,
+  hostProcessFor, resolveHandler, type HostedStatus,
 } from "../plugin-host";
 import type { HandlerContext } from "../sdk-types";
 
@@ -246,5 +246,99 @@ describe("FakePluginHost", () => {
     host.define("tarot", { deck: async (_a: unknown, ctx: HandlerContext) => ctx.api.storage.synced.get<string[]>("deck") });
     expect(await host.invoke<string[]>({ pluginId: "tarot", handler: "deck", args: 0, caller: USER })).toEqual(["fool", "tower"]);
     expect(calls).toEqual([{ pluginId: "tarot", path: "storage.synced.get", args: ["deck"], caller: USER }]);
+  });
+
+  test("the plugin id on an API call is the worker's, stamped by the host, whatever the plugin passes (review S3)", async () => {
+    const { host } = setup();
+    const ids: string[] = [];
+    host.serveApi(async (call) => void ids.push(call.pluginId));
+    host.define("third-party", {
+      spoof: async (_a: unknown, ctx: HandlerContext) => {
+        await ctx.api.net.fetch("https://hooks.waifucave.com/x", {}, { auth: "waifucave" });
+        await (ctx.api as unknown as { call(o: unknown): Promise<unknown> }).call({ pluginId: "clover/forwarder" });
+      },
+    });
+    await host.invoke({ pluginId: "third-party", handler: "spoof", args: 0, caller: USER });
+    expect(ids).toEqual(["third-party", "third-party"]);
+  });
+
+  test("the clover tree's host halves run in a process of their own while the switch says so (review S4)", () => {
+    expect(hostProcessFor("clover/forwarder", "bun")).toBe(CLOVER_TREE_PROCESS);
+    expect(hostProcessFor("clover", "bun")).toBe(CLOVER_TREE_PROCESS);
+    expect(hostProcessFor("cloverleaf", "bun")).toBe("shared");
+    expect(hostProcessFor("luna/tarot", "bun")).toBe("shared");
+    expect(hostProcessFor("luna", "node")).toBe("own");
+  });
+
+  test("a streamed handler's values arrive in order, then its return value; its input arrives as ctx.input (review S16)", async () => {
+    const { host } = setup();
+    let heard: unknown[] = [];
+    host.define("voice", {
+      speak: async function* (a: { text: string }) {
+        for (const word of a.text.split(" ")) yield { audio: word };
+        return { words: a.text.split(" ").length };
+      },
+      listen: async function* (_a: unknown, ctx: HandlerContext) {
+        heard = [];
+        for await (const chunk of ctx.input!) {
+          heard.push(chunk);
+          yield { partial: heard.length };
+        }
+        return { text: heard.join(" ") };
+      },
+      notAStream: () => 1,
+    });
+    const out: unknown[] = [];
+    const speak = host.stream<{ audio: string }, { words: number }>({ pluginId: "voice", handler: "speak", args: { text: "hello there" }, caller: USER });
+    for (;;) {
+      const next = await speak.next();
+      if (next.done) {
+        expect(next.value).toEqual({ words: 2 });
+        break;
+      }
+      out.push(next.value);
+    }
+    expect(out).toEqual([{ audio: "hello" }, { audio: "there" }]);
+    async function* mic() {
+      yield "good";
+      yield "morning";
+    }
+    const partials: unknown[] = [];
+    const listen = host.stream({ pluginId: "voice", handler: "listen", args: null, caller: USER, input: mic() });
+    let result: unknown;
+    for (;;) {
+      const next = await listen.next();
+      if (next.done) {
+        result = next.value;
+        break;
+      }
+      partials.push(next.value);
+    }
+    expect([partials, result]).toEqual([[{ partial: 1 }, { partial: 2 }], { text: "good morning" }]);
+    expect(isContractError(await rejection(host.stream({ pluginId: "voice", handler: "notAStream", args: null, caller: USER }).next()), "failed")).toBe(true);
+  });
+
+  test("a stream is cancelled by its signal and fails when its worker crashes", async () => {
+    const { host } = setup();
+    let aborted = false;
+    host.define("adapter", {
+      turn: async function* (_a: unknown, ctx: HandlerContext) {
+        ctx.signal.addEventListener("abort", () => void (aborted = true));
+        yield "first";
+        await hang();
+      },
+    });
+    const ac = new AbortController();
+    const s = host.stream({ pluginId: "adapter", handler: "turn", args: null, caller: USER, signal: ac.signal });
+    expect((await s.next()).value).toBe("first");
+    const pending = rejection(s.next());
+    ac.abort();
+    expect(isContractError(await pending, "cancelled")).toBe(true);
+    expect(aborted).toBe(true);
+    const t = host.stream({ pluginId: "adapter", handler: "turn", args: null, caller: USER });
+    expect((await t.next()).value).toBe("first");
+    const crashed = rejection(t.next());
+    host.crash("adapter");
+    expect(isContractError(await crashed, "failed")).toBe(true);
   });
 });

@@ -33,6 +33,15 @@ export const PluginProvenance = z.object({
 });
 export type PluginProvenance = z.infer<typeof PluginProvenance>;
 
+/** The process a host half runs in (§5.2, review S4). `shared`: a worker in the shared host, whose workers aren't
+ *  isolated from each other's memory; `clover`: a worker in a process only the `clover` tree's host halves share, so
+ *  no third-party worker can act as the forwarder or use the account token; `own`: a process of the plugin's own
+ *  (Node, native modules). Which one the `clover` tree gets waits on the owner (S4); the core's `hostProcessFor`
+ *  decides, so either answer is a one-line change there. */
+export const HOST_PROCESSES = ["shared", "clover", "own"] as const;
+export const HostProcess = z.enum(HOST_PROCESSES);
+export type HostProcess = z.infer<typeof HostProcess>;
+
 /** Worked out from the manifest, never declared (§5.3). */
 export const PluginClass = z.enum(["data", "web", "code"]);
 export type PluginClass = z.infer<typeof PluginClass>;
@@ -244,7 +253,7 @@ export const PLUGINS_METHODS = {
     doc: "Restarts a plugin that stopped after crashes (§5.1).",
   }),
   pluginLogs: defineMethod({
-    name: "plugin.logs", owner: "B", roles: ["app", "cli", "layer", "plugin-host"], capability: "logs.read",
+    name: "plugin.logs", owner: "B", roles: ["app", "cli", "layer"], capability: "logs.read",
     params: z.object({ id: AnyPluginId, lines: z.number().int().min(1).max(5000).optional() }),
     result: z.object({ lines: z.array(utf16(4000)) }),
     doc: "A plugin's log (`logs/plugins/<id>.log`), newest last.",
@@ -338,7 +347,7 @@ export const PLUGINS_METHODS = {
     doc: "Every plugin command, for the palette (§5.4).",
   }),
   commandRun: defineMethod({
-    name: "command.run", owner: "B", roles: ["app", "cli", "remote", "layer", "plugin-host"],
+    name: "command.run", owner: "B", roles: ["app", "cli", "remote", "layer"],
     /** A plugin caller needs `call:<the target's top-level id>`, which its OK lists (§5.4). */
     capability: "call:*",
     params: z.object({ name: utf16(128, 3), args: z.unknown().optional() }),
@@ -356,8 +365,13 @@ export const PLUGINS_METHODS = {
   }),
 
   // -----------------------------------------------------------------------------------------------
-  // The plugin host's channel (§5.2). One connection, over the pipe the daemon started it with; every call names
-  // the plugin. Lane B fills in the details at B-M2.
+  // The plugin host's channel (§5.2). One connection, over the pipe the daemon started it with. The plugin host speaks
+  // only this channel (review S3): a host half's plugin-API calls all go through `pluginHost.api`, whose `pluginId`
+  // the host stamps from its own worker table (the worker that sent the call, never a value a worker gives), and the
+  // daemon checks each call against the plugin SDK's `API_CALLS`, the one gate, then acts as that plugin: the
+  // fence's `as`, a `plugin_message`'s `from`, a hold's owner. A watch's values come back as `pluginHost.deliver`;
+  // streams go by `pluginHost.chunk` (to the daemon) and `pluginHost.feed` (to a call's handler). Lane B fills in the
+  // details at B-M2.
   // -----------------------------------------------------------------------------------------------
 
   pluginHostStart: defineMethod({
@@ -365,9 +379,11 @@ export const PLUGINS_METHODS = {
     params: z.object({
       pluginId: AnyPluginId, folder: utf16(4096), entry: utf16(4096),
       runtime: z.enum(["bun", "node"]), dataFolder: utf16(4096),
+      /** Which process the host half runs in (`HOST_PROCESSES`; review S4). */
+      process: HostProcess,
     }),
     result: Ok,
-    doc: "Starts a plugin's host half: a worker in the shared host, or a Node process of its own.",
+    doc: "Starts a plugin's host half: a worker in a shared process, or a process of its own.",
   }),
   pluginHostStop: defineMethod({
     name: "pluginHost.stop", owner: "B", roles: ["plugin-host"], direction: "from-daemon",
@@ -381,8 +397,15 @@ export const PLUGINS_METHODS = {
       callId: utf16(128, 1), pluginId: AnyPluginId,
       /** An export of `host.entry` (a handler, adapter, custom sign-in, …). */
       handler: utf16(256, 1),
+      /** For an export that is an object of handlers (a service): the one to run. */
+      method: utf16(128, 1).optional(),
       args: z.unknown(), caller: Caller,
       timeoutMs: z.number().int().min(1).max(600_000),
+      /** The handler returns an async iterable (a model adapter's output, a voice's audio, review S16): each value
+       *  comes back as `pluginHost.chunk`, in order, and this call's result is the iterable's return value. */
+      stream: z.boolean().optional(),
+      /** The handler also takes a stream (a voice's microphone audio): its pieces follow as `pluginHost.feed`. */
+      input: z.boolean().optional(),
     }),
     result: z.object({ result: z.unknown() }),
     doc: "Calls a handler in the plugin's worker, telling it who called (§5.4).",
@@ -392,18 +415,61 @@ export const PLUGINS_METHODS = {
     params: z.object({ callId: utf16(128, 1) }), result: Ok,
     doc: "Cancels an invocation (an interrupt, a timeout, a stop).",
   }),
+  pluginHostFeed: defineMethod({
+    name: "pluginHost.feed", owner: "B", roles: ["plugin-host"], direction: "from-daemon",
+    params: z.object({
+      callId: utf16(128, 1),
+      /** From 0, one more each time; the host hands the pieces to the handler in this order. */
+      seq: z.number().int().min(0),
+      value: z.unknown().optional(),
+      /** The last piece: the handler's input iterable ends. */
+      end: z.boolean().optional(),
+    }),
+    result: Ok,
+    doc: "The next piece of a streamed call's input, for the handler's input iterable.",
+  }),
+  pluginHostDeliver: defineMethod({
+    name: "pluginHost.deliver", owner: "B", roles: ["plugin-host"], direction: "from-daemon",
+    params: z.object({ pluginId: AnyPluginId, subscription: utf16(128, 1), value: z.unknown() }),
+    result: Ok,
+    doc: "A value for one of a host half's watches (`points.watch`, `approvals.watch`, …); the host hands it only to that plugin's worker.",
+  }),
   pluginHostApi: defineMethod({
     name: "pluginHost.api", owner: "B", roles: ["plugin-host"],
     params: z.object({
+      /** Stamped by the plugin host from its worker table: the worker that made the call (review S3). */
       pluginId: AnyPluginId,
+      /** The host's id for this call, which `pluginHost.chunk` names when an argument is a stream. */
+      callId: utf16(128, 1),
       /** A plugin-API function by name (`points.entries`, `net.fetch`, …). The plugin SDK's catalog says which
-       *  capability each one needs; without it the call doesn't exist for that plugin (§5.4). */
+       *  capability each one needs and where it exists; without them the call doesn't exist for that plugin (§5.4). */
       call: utf16(128, 1),
+      /** The arguments, structured-clone data. A listener is replaced by a subscription the daemon answers through
+       *  `pluginHost.deliver`; a streamed argument (`audio.play`'s audio) by the pieces that follow it. */
       args: z.unknown(),
+      /** An argument is a stream, whose pieces follow as `pluginHost.chunk` with this `callId`. */
+      stream: z.boolean().optional(),
       timeoutMs: z.number().int().min(1).max(600_000).optional(),
     }),
     result: z.object({ result: z.unknown() }),
-    doc: "A plugin's host half calls the plugin API (§5.4).",
+    doc: "A plugin's host half calls the plugin API (§5.4). A watch's result is `{ subscription }`.",
+  }),
+  pluginHostChunk: defineMethod({
+    name: "pluginHost.chunk", owner: "B", roles: ["plugin-host"],
+    params: z.object({
+      /** A streamed `pluginHost.invoke`'s id, or a `pluginHost.api` call's with a streamed argument. */
+      callId: utf16(128, 1),
+      seq: z.number().int().min(0),
+      value: z.unknown().optional(),
+      end: z.boolean().optional(),
+    }),
+    result: Ok,
+    doc: "The next piece of a stream: a streamed handler's output, or a streamed argument of an API call.",
+  }),
+  pluginHostUnwatch: defineMethod({
+    name: "pluginHost.unwatch", owner: "B", roles: ["plugin-host"],
+    params: z.object({ pluginId: AnyPluginId, subscription: utf16(128, 1) }), result: Ok,
+    doc: "Ends one of a host half's watches; a worker's watches also end when it stops.",
   }),
   pluginHostState: defineMethod({
     name: "pluginHost.state", owner: "B", roles: ["plugin-host"],

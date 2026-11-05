@@ -35,12 +35,12 @@ export const CORE_METHODS = {
     doc: "The first call on every connection: the role, its token, and who the connection counts as (§3.1).",
   }),
   eventsSubscribe: defineMethod({
-    name: "events.subscribe", owner: "C", roles: ["app", "cli", "layer", "plugin-host", "remote", "web", "peer"],
+    name: "events.subscribe", owner: "C", roles: ["app", "cli", "layer", "remote", "web", "peer"],
     params: z.object({ areas: z.array(z.enum(CLOVER_AREAS)).min(1).max(CLOVER_AREAS.length) }), result: Ok,
     doc: "Receive the `core.event`s of these areas that this role may receive.",
   }),
   eventsUnsubscribe: defineMethod({
-    name: "events.unsubscribe", owner: "C", roles: ["app", "cli", "layer", "plugin-host", "remote", "web", "peer"],
+    name: "events.unsubscribe", owner: "C", roles: ["app", "cli", "layer", "remote", "web", "peer"],
     params: z.object({ areas: z.array(z.enum(CLOVER_AREAS)).min(1).max(CLOVER_AREAS.length) }), result: Ok,
     doc: "Stop receiving these areas' events.",
   }),

@@ -8,8 +8,7 @@
       "direction": "to-daemon",
       "roles": [
         "app",
-        "layer",
-        "plugin-host"
+        "layer"
       ],
       "capability": "browser",
       "params": {
@@ -189,8 +188,7 @@
       "direction": "to-daemon",
       "roles": [
         "app",
-        "layer",
-        "plugin-host"
+        "layer"
       ],
       "capability": "browser",
       "params": {
@@ -377,8 +375,7 @@
       "direction": "to-daemon",
       "roles": [
         "app",
-        "layer",
-        "plugin-host"
+        "layer"
       ],
       "capability": "browser",
       "params": {
@@ -416,8 +413,7 @@
       "direction": "to-daemon",
       "roles": [
         "app",
-        "layer",
-        "plugin-host"
+        "layer"
       ],
       "capability": "browser",
       "params": {
@@ -568,8 +564,7 @@
       "direction": "to-daemon",
       "roles": [
         "app",
-        "layer",
-        "plugin-host"
+        "layer"
       ],
       "capability": "browser",
       "params": {
@@ -740,8 +735,7 @@
       "direction": "to-daemon",
       "roles": [
         "app",
-        "layer",
-        "plugin-host"
+        "layer"
       ],
       "capability": "browser",
       "params": {
@@ -927,8 +921,7 @@
       "direction": "to-daemon",
       "roles": [
         "app",
-        "layer",
-        "plugin-host"
+        "layer"
       ],
       "capability": "browser",
       "params": {
@@ -1009,8 +1002,7 @@
       "direction": "to-daemon",
       "roles": [
         "app",
-        "layer",
-        "plugin-host"
+        "layer"
       ],
       "capability": "browser",
       "params": {
@@ -1848,8 +1840,7 @@
       "scope": "core",
       "roles": [
         "app",
-        "layer",
-        "plugin-host"
+        "layer"
       ],
       "capability": "browser",
       "schema": {
@@ -1986,8 +1977,7 @@
       "scope": "core",
       "roles": [
         "app",
-        "layer",
-        "plugin-host"
+        "layer"
       ],
       "capability": "browser",
       "schema": {
@@ -2028,8 +2018,7 @@
       "owner": "L",
       "scope": "core",
       "roles": [
-        "layer",
-        "plugin-host"
+        "layer"
       ],
       "capability": "browser",
       "transient": true,

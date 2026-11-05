@@ -47,11 +47,17 @@ export interface HandlerContext {
   /** When the call runs out of time, in the shared clock's milliseconds. */
   readonly deadline: number;
   readonly api: PluginApi;
+  /** A streamed call's input, when the caller streams one (a voice's microphone audio). */
+  readonly input?: AsyncIterable<unknown>;
 }
 
 /** A handler: any export of `host.entry` that a manifest names (§5.3 "Every handler, adapter, custom sign-in and
  *  component is an export of host or client"). */
 export type Handler<A = unknown, R = unknown> = (args: A, ctx: HandlerContext) => R | Promise<R>;
+
+/** A handler whose caller streams its result (a model adapter's output, a voice's audio): it returns an async
+ *  iterable, an async generator most simply, whose values reach the caller in order and whose return value ends it. */
+export type StreamHandler<A = unknown, T = unknown, R = void> = (args: A, ctx: HandlerContext) => AsyncIterable<T> | AsyncGenerator<T, R, undefined>;
 
 /** A handler export may also be an object of handlers, a service whose caller names the one it calls: the webhook
  *  trigger calls a `webhook.ingress` entry's `register`, `next` and `ack` (`points.call`'s `method`), and the core

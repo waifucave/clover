@@ -2,7 +2,8 @@
 // Owner: lane B.
 //
 // One plugin-host process per computer, separate from the daemon, with each plugin's host half in its own worker
-// (Node or native plugins in a process of their own). The daemon calls into it; it never runs plugin code itself.
+// (Node or native plugins in a process of their own, and the `clover` tree's host halves in one of theirs while
+// `CLOVER_TREE_PROCESS` says so: `hostProcessFor`). The daemon calls into it; it never runs plugin code itself.
 //
 // What it promises:
 // * `invoke` runs a handler (an export of `host.entry`) with structured-clone arguments and result, the caller, and a
@@ -18,7 +19,12 @@
 // * On reload the worker is replaced: calls in flight get a grace period, then fail as interrupted (`cancelled`).
 // * `host` MCP servers are reached as a raw JSON-RPC channel (the in-process transport the plugin SDK gives them).
 // * A plugin's own calls into the plugin API come back to the core through `serveApi`, which checks capabilities.
-import type { Caller } from "@waifucave/clover-protocol";
+//   The host stamps each call's `pluginId` from its own worker table, the worker that made the call, never from
+//   anything the worker says (review S3); across the pipe it is `pluginHost.api`'s `pluginId`.
+// * `stream` runs a handler that returns an async iterable (a model adapter's output, a voice's audio; review S16):
+//   values arrive in order, the iterable's return value ends the stream, and `input` feeds a handler that takes one
+//   (a voice's microphone audio) as `ctx.input`. The limits, cancelling, crashes and reloads are `invoke`'s.
+import type { Caller, HostProcess } from "@waifucave/clover-protocol";
 import type { Unsubscribe } from "./common";
 
 export const PLUGIN_CALL_TIMEOUT_MS = 10_000;
@@ -30,6 +36,19 @@ export const CRASH_WINDOW_MS = 10 * 60_000;
 export const HEARTBEAT_TIMEOUT_MS = 30_000;
 /** How long calls in flight get when a worker is replaced (§5.1 "a grace period"); lane B's choice. */
 export const RELOAD_GRACE_MS = 5_000;
+
+/** Where the `clover` tree's host halves run (review S4, waiting on the owner): `clover` keeps them in a process of
+ *  their own, so no third-party worker shares memory with the account token or the forwarder's keys; `shared` puts
+ *  them with every other worker. Changing the answer is this one line. */
+export const CLOVER_TREE_PROCESS: Extract<HostProcess, "clover" | "shared"> = "clover";
+
+/** The process a host half runs in: its own for a Node plugin, the `clover` tree's per `CLOVER_TREE_PROCESS`, else
+ *  the shared host. */
+export function hostProcessFor(pluginId: string, runtime: "bun" | "node"): HostProcess {
+  if (runtime === "node") return "own";
+  const top = pluginId.includes("/") ? pluginId.slice(0, pluginId.indexOf("/")) : pluginId;
+  return top === "clover" ? CLOVER_TREE_PROCESS : "shared";
+}
 
 /** The exports a host module keeps for the host itself, never callable as handlers. */
 export const RESERVED_EXPORTS: ReadonlySet<string> = new Set(["start", "stop", "mcp"]);
@@ -77,6 +96,11 @@ export interface InvokeRequest {
   signal?: AbortSignal;
 }
 
+/** A streamed call: `invoke`'s request, with the handler's input stream when it takes one. */
+export interface StreamRequest extends InvokeRequest {
+  input?: AsyncIterable<unknown>;
+}
+
 export type HostedState = "idle" | "starting" | "running" | "restarting" | "stopped";
 
 export interface HostedStatus {
@@ -98,13 +122,17 @@ export interface McpChannel {
 }
 
 /** How the core answers a plugin's own plugin-API call (`storage.synced.get`, `net.fetch` …). It checks the plugin's
- *  capabilities (the SDK's `API_CALLS` table) and refuses a call the plugin may not make. */
+ *  capabilities (the SDK's `API_CALLS` table) and refuses a call the plugin may not make. `pluginId` is the one the
+ *  host stamped. A listener reaches the router as a function and a streamed argument as an async iterable; across
+ *  the pipe they are a subscription (`pluginHost.deliver`) and pieces (`pluginHost.chunk`). */
 export type ApiRouter = (call: { pluginId: string; path: string; args: unknown[]; caller: Caller }) => Promise<unknown>;
 
 export interface PluginHost {
   /** The computer this host runs on. */
   readonly computer: string;
   invoke<R = unknown>(req: InvokeRequest): Promise<R>;
+  /** A handler that returns an async iterable: its values in order, then its return value. */
+  stream<T = unknown, R = unknown>(req: StreamRequest): AsyncGenerator<T, R, undefined>;
   /** Starts the plugin's host half if it isn't running (its `start` export runs first). */
   ensureStarted(pluginId: string): Promise<void>;
   /** Stops it on this computer, until `restart`. */

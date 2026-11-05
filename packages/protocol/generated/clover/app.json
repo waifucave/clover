@@ -827,8 +827,7 @@
       "owner": "G",
       "direction": "to-daemon",
       "roles": [
-        "layer",
-        "plugin-host"
+        "layer"
       ],
       "capability": "notify",
       "params": {

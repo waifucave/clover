@@ -11,8 +11,7 @@
         "cli",
         "remote",
         "web",
-        "layer",
-        "plugin-host"
+        "layer"
       ],
       "capability": "bots.read",
       "params": {
@@ -158,8 +157,7 @@
         "cli",
         "remote",
         "web",
-        "layer",
-        "plugin-host"
+        "layer"
       ],
       "capability": "bots.read",
       "params": {
@@ -555,8 +553,7 @@
         "cli",
         "remote",
         "web",
-        "layer",
-        "plugin-host"
+        "layer"
       ],
       "capability": "conversation.read",
       "params": {
@@ -729,8 +726,7 @@
         "cli",
         "remote",
         "web",
-        "layer",
-        "plugin-host"
+        "layer"
       ],
       "capability": "conversation.read",
       "params": {
@@ -891,8 +887,7 @@
         "cli",
         "remote",
         "web",
-        "layer",
-        "plugin-host"
+        "layer"
       ],
       "capability": "conversation.read",
       "params": {
@@ -940,8 +935,7 @@
         "cli",
         "remote",
         "web",
-        "layer",
-        "plugin-host"
+        "layer"
       ],
       "capability": "conversation.read",
       "params": {
@@ -983,8 +977,7 @@
         "cli",
         "remote",
         "web",
-        "layer",
-        "plugin-host"
+        "layer"
       ],
       "capability": "conversation.read",
       "params": {
@@ -1151,8 +1144,7 @@
       "owner": "D",
       "direction": "to-daemon",
       "roles": [
-        "layer",
-        "plugin-host"
+        "layer"
       ],
       "capability": "conversation.post",
       "params": {
@@ -1450,8 +1442,7 @@
       "roles": [
         "app",
         "cli",
-        "layer",
-        "plugin-host"
+        "layer"
       ],
       "capability": "memory.read",
       "params": {
@@ -1514,8 +1505,7 @@
       "roles": [
         "app",
         "cli",
-        "layer",
-        "plugin-host"
+        "layer"
       ],
       "capability": "memory.read",
       "params": {
@@ -1561,8 +1551,7 @@
         "cli",
         "remote",
         "web",
-        "layer",
-        "plugin-host"
+        "layer"
       ],
       "capability": "routines.read",
       "params": {
@@ -1686,8 +1675,7 @@
         "app",
         "cli",
         "remote",
-        "layer",
-        "plugin-host"
+        "layer"
       ],
       "capability": "routines.read",
       "params": {
@@ -1830,8 +1818,7 @@
         "cli",
         "remote",
         "web",
-        "layer",
-        "plugin-host"
+        "layer"
       ],
       "capability": "bots.read",
       "schema": {
@@ -1977,8 +1964,7 @@
         "cli",
         "remote",
         "web",
-        "layer",
-        "plugin-host"
+        "layer"
       ],
       "capability": "bots.read",
       "schema": {
@@ -2016,8 +2002,7 @@
         "cli",
         "remote",
         "web",
-        "layer",
-        "plugin-host"
+        "layer"
       ],
       "capability": "bots.read",
       "schema": {
@@ -2053,8 +2038,7 @@
         "cli",
         "remote",
         "web",
-        "layer",
-        "plugin-host"
+        "layer"
       ],
       "capability": "conversation.read",
       "schema": {
@@ -2208,8 +2192,7 @@
         "cli",
         "remote",
         "web",
-        "layer",
-        "plugin-host"
+        "layer"
       ],
       "capability": "routines.read",
       "schema": {
@@ -2246,8 +2229,7 @@
         "cli",
         "remote",
         "web",
-        "layer",
-        "plugin-host"
+        "layer"
       ],
       "capability": "conversation.read",
       "schema": {
@@ -2315,8 +2297,7 @@
         "cli",
         "remote",
         "web",
-        "layer",
-        "plugin-host"
+        "layer"
       ],
       "capability": "conversation.read",
       "schema": {
@@ -2378,8 +2359,7 @@
         "cli",
         "remote",
         "web",
-        "layer",
-        "plugin-host"
+        "layer"
       ],
       "capability": "conversation.read",
       "schema": {
@@ -2486,8 +2466,7 @@
         "cli",
         "remote",
         "web",
-        "layer",
-        "plugin-host"
+        "layer"
       ],
       "capability": "conversation.read",
       "schema": {
@@ -2559,8 +2538,7 @@
         "cli",
         "remote",
         "web",
-        "layer",
-        "plugin-host"
+        "layer"
       ],
       "capability": "conversation.read",
       "schema": {
@@ -2678,8 +2656,7 @@
         "cli",
         "remote",
         "web",
-        "layer",
-        "plugin-host"
+        "layer"
       ],
       "capability": "conversation.read",
       "schema": {

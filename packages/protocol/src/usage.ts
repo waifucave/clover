@@ -43,7 +43,7 @@ export const PlanReading = z.object({
 });
 export type PlanReading = z.infer<typeof PlanReading>;
 
-const Read = { roles: ["app", "cli", "layer", "plugin-host"] as const, capability: "usage.read" };
+const Read = { roles: ["app", "cli", "layer"] as const, capability: "usage.read" };
 
 export const USAGE_METHODS = {
   usageRows: defineMethod({
@@ -61,7 +61,7 @@ export const USAGE_METHODS = {
     doc: "The latest plan reading of each of the user's apps on each computer.",
   }),
   usageSummary: defineMethod({
-    name: "usage.summary", owner: "D", roles: ["app", "cli", "remote", "layer", "plugin-host"], capability: "usage.read",
+    name: "usage.summary", owner: "D", roles: ["app", "cli", "remote", "layer"], capability: "usage.read",
     params: z.object({ from: Timestamp, to: Timestamp, groupBy: z.enum(["source", "model", "bot", "computer", "day"]) }),
     result: z.object({
       groups: z.array(z.object({

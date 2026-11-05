@@ -193,6 +193,16 @@ describe("the allow lists", () => {
     }
   });
 
+  test("the plugin host speaks only its channel, and hears nothing else (review S3)", () => {
+    for (const name of calls("plugin-host")) expect(name === "protocol.hello" || name.startsWith("pluginHost.")).toBe(true);
+    for (const name of daemonRequestsTo("plugin-host")) expect(name.startsWith("pluginHost.")).toBe(true);
+    for (const e of CLOVER_EVENTS.values()) expect(e.roles).not.toContain("plugin-host");
+    // Every call it makes for a plugin names the plugin, which the host stamps from its worker table.
+    for (const name of ["pluginHost.api", "pluginHost.unwatch", "pluginHost.state", "pluginHost.log"]) {
+      expect(Object.keys((CLOVER_METHODS.get(name)!.params as z.ZodObject).shape)).toContain("pluginId");
+    }
+  });
+
   test("a method only the user may call is open to user roles, or to a layer when it becomes a card", () => {
     for (const m of methods.filter((x) => x.userOnly)) {
       for (const r of m.roles) {

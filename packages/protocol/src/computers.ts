@@ -85,16 +85,16 @@ export const TreeData = z.discriminatedUnion("encoding", [
   z.object({ encoding: z.literal("base64"), data: z.string() }),
 ]);
 
-const Files = { roles: ["peer", "layer", "plugin-host"] as const, capability: "files" };
+const Files = { roles: ["peer", "layer"] as const, capability: "files" };
 
 export const COMPUTERS_METHODS = {
   computerList: defineMethod({
-    name: "computer.list", owner: "J", roles: ["app", "cli", "remote", "layer", "plugin-host"], capability: "computers.read",
+    name: "computer.list", owner: "J", roles: ["app", "cli", "remote", "layer"], capability: "computers.read",
     params: Empty, result: z.object({ computers: z.array(ComputerView) }),
     doc: "Every computer: its folders' owner, OS, display, agents, level and state (§9.1).",
   }),
   computerGet: defineMethod({
-    name: "computer.get", owner: "J", roles: ["app", "cli", "remote", "layer", "plugin-host"], capability: "computers.read",
+    name: "computer.get", owner: "J", roles: ["app", "cli", "remote", "layer"], capability: "computers.read",
     params: z.object({ name: ComputerName }), result: z.object({ computer: ComputerView }),
     doc: "One computer, by name or alias.",
   }),
@@ -109,39 +109,15 @@ export const COMPUTERS_METHODS = {
     doc: "Renames a computer in the tree; the old name stays as an alias.",
   }),
   holdList: defineMethod({
-    name: "hold.list", owner: "J", roles: ["app", "layer", "plugin-host"], capability: "computers.control",
+    name: "hold.list", owner: "J", roles: ["app", "layer"], capability: "computers.control",
     params: z.object({ computer: ComputerName }), result: z.object({ holds: z.array(HoldView), userWorking: z.boolean() }),
     doc: "A computer's holds and its user-working mark.",
   }),
-  holdTake: defineMethod({
-    name: "hold.take", owner: "J", roles: ["plugin-host"], capability: "computers.control",
-    params: z.object({ computer: ComputerName, target: HoldTarget, session: SessionId.optional() }),
-    result: z.union([
-      z.object({ held: z.literal(true), hold: HoldView }),
-      z.object({ held: z.literal(false), reason: z.enum(["held-by-other", "user-working", "computer-offline"]), by: SessionId.optional() }),
-    ]),
-    doc: "Takes a hold on an app or window, so two bots don't fight over it (§9.2).",
-  }),
-  holdRelease: defineMethod({
-    name: "hold.release", owner: "J", roles: ["plugin-host"], capability: "computers.control",
-    params: z.object({ id: utf16(128, 1) }), result: Ok,
-    doc: "Releases a hold.",
-  }),
-  userWorkingSet: defineMethod({
-    name: "userWorking.set", owner: "J", roles: ["plugin-host"], capability: "computers.control",
-    params: z.object({ computer: ComputerName, on: z.boolean(), target: HoldTarget.optional() }), result: Ok,
-    doc: "Takes or releases the user-working mark; the core lifts it on the user's message or a card's answer.",
-  }),
-  actionSetRunning: defineMethod({
-    name: "action.setRunning", owner: "J", roles: ["plugin-host"], capability: "computers.control",
-    params: z.object({ computer: ComputerName, running: z.boolean(), session: SessionId.optional() }), result: Ok,
-    doc: "Says a computer-use action is running, so no card click counts on that computer meanwhile (§5.5).",
-  }),
-  windowsClover: defineMethod({
-    name: "windows.clover", owner: "J", roles: ["plugin-host"], capability: "computers.control",
-    params: z.object({ computer: ComputerName }), result: z.object({ windows: z.array(CloverWindow) }),
-    doc: "Where Clover's own windows are, which a computer-use plugin must not act on (§5.5).",
-  }),
+  // A computer-use plugin's own calls (taking and releasing holds, the user-working mark, a running action, where
+  // Clover's windows are) are plugin-API calls (`computers.takeHold`, `computers.releaseHold`,
+  // `computers.setUserWorking`, `computers.setActionRunning`, `computers.cloverWindows`), made through
+  // `pluginHost.api` with the plugin id the host stamps (review S3). Their shapes are `HoldTarget`, `HoldView` and
+  // `CloverWindow` above.
 
   // The folder tree. Between computers (`peer`), and for plugins with `files`, inside the fence (§5.4, §9.1).
   treeStat: defineMethod({
@@ -216,17 +192,17 @@ export const ToolOutputEvent = coreEvent("tool_output", { callId: utf16(128, 1),
 
 export const COMPUTERS_EVENTS = {
   computerChanged: defineEvent({
-    type: "computer_changed", owner: "J", roles: ["app", "cli", "remote", "layer", "plugin-host"], capability: "computers.read", schema: ComputerChangedEvent,
+    type: "computer_changed", owner: "J", roles: ["app", "cli", "remote", "layer"], capability: "computers.read", schema: ComputerChangedEvent,
     fixture: { type: "computer_changed", ts: 1781270000000, computer: { name: "Desktop1", aliases: ["Gaming-PC"], device: "d1sk7t0p3a5b7c9d1e3f5a7b9c1d3e5f", os: "windows", hasDisplay: true, agents: ["claude-code", "codex"], level: "ask-risky", state: "online", link: "lan", isMain: false, secrets: { backend: "encrypted-file", keySource: "credential-manager", plaintext: false, state: "unlocked" } } },
     doc: "A computer was added or changed state, level or name.",
   }),
   computerRemoved: defineEvent({
-    type: "computer_removed", owner: "J", roles: ["app", "cli", "remote", "layer", "plugin-host"], capability: "computers.read", schema: ComputerRemovedEvent,
+    type: "computer_removed", owner: "J", roles: ["app", "cli", "remote", "layer"], capability: "computers.read", schema: ComputerRemovedEvent,
     fixture: { type: "computer_removed", ts: 1781270000000, name: "Desktop1" },
     doc: "A computer left the tree.",
   }),
   holdsChanged: defineEvent({
-    type: "holds_changed", owner: "J", roles: ["app", "layer", "plugin-host"], capability: "computers.control", schema: HoldsChangedEvent,
+    type: "holds_changed", owner: "J", roles: ["app", "layer"], capability: "computers.control", schema: HoldsChangedEvent,
     fixture: { type: "holds_changed", ts: 1781270000000, computer: "Studio", holds: [{ id: "h_1", computer: "Studio", target: { kind: "window", app: "com.apple.Safari", window: "Checkout" }, session: "s_alpha", pluginId: "opensky", since: 1781269990000 }], userWorking: false },
     doc: "A computer's holds or user-working mark changed.",
   }),

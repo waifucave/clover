@@ -9,8 +9,7 @@
       "roles": [
         "app",
         "cli",
-        "layer",
-        "plugin-host"
+        "layer"
       ],
       "capability": "usage.read",
       "params": {
@@ -167,8 +166,7 @@
       "roles": [
         "app",
         "cli",
-        "layer",
-        "plugin-host"
+        "layer"
       ],
       "capability": "usage.read",
       "params": {
@@ -251,8 +249,7 @@
         "app",
         "cli",
         "remote",
-        "layer",
-        "plugin-host"
+        "layer"
       ],
       "capability": "usage.read",
       "params": {
@@ -338,8 +335,7 @@
       "roles": [
         "app",
         "cli",
-        "layer",
-        "plugin-host"
+        "layer"
       ],
       "capability": "usage.read",
       "schema": {

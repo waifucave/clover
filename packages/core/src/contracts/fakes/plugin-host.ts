@@ -6,7 +6,7 @@ import type { Clock, TimerHandle } from "../clock";
 import { ContractError, Listeners, type Unsubscribe } from "../common";
 import {
   CRASH_LIMIT, CRASH_WINDOW_MS, PLUGIN_CALL_MAX_TIMEOUT_MS, PLUGIN_CALL_TIMEOUT_MS, RELOAD_GRACE_MS, crashBackoffMs, resolveHandler,
-  type ApiRouter, type HostedState, type HostedStatus, type InvokeRequest, type McpChannel, type PluginHost,
+  type ApiRouter, type HostedState, type HostedStatus, type InvokeRequest, type McpChannel, type PluginHost, type StreamRequest,
 } from "../plugin-host";
 import type { HandlerContext, HostModule, McpServerTransport, PluginApi } from "../sdk-types";
 
@@ -121,6 +121,63 @@ export class FakePluginHost implements PluginHost {
         }
       })();
     });
+  }
+
+  async *stream<T = unknown, R = unknown>(req: StreamRequest): AsyncGenerator<T, R, undefined> {
+    const h = this.#hosted.get(req.pluginId);
+    if (!h) throw new ContractError("not_installed", `${req.pluginId} isn't installed`);
+    if (h.state === "stopped") throw this.#stoppedError(req.pluginId, h);
+    if (req.signal?.aborted) throw new ContractError("cancelled", "the call was cancelled");
+    const limit = req.ownLimit ? (req.timeoutMs ?? PLUGIN_CALL_TIMEOUT_MS) : Math.min(req.timeoutMs ?? PLUGIN_CALL_TIMEOUT_MS, PLUGIN_CALL_MAX_TIMEOUT_MS);
+    const abort = new AbortController();
+    let failed: (err: unknown) => void = () => {};
+    const failure = new Promise<never>((_resolve, reject) => {
+      failed = reject;
+    });
+    failure.catch(() => {});
+    const call: Call = {
+      reject: (err) => {
+        abort.abort(err);
+        failed(err);
+      },
+    };
+    const onAbort = () => call.reject(new ContractError("cancelled", "the call was cancelled"));
+    const timer = this.#clock.setTimeout(() => call.reject(new ContractError("timeout", `${req.pluginId}.${req.handler} ran past ${limit} ms`)), limit);
+    req.signal?.addEventListener("abort", onAbort, { once: true });
+    h.calls.add(call);
+    let iterator: AsyncIterator<unknown, unknown> | undefined;
+    try {
+      await Promise.race([this.ensureStarted(req.pluginId), failure]);
+      const target = resolveHandler(h.module, req.handler, req.method);
+      if (!target) throw new ContractError("not_installed", `${req.pluginId} has no handler \`${req.method === undefined ? req.handler : `${req.handler}.${req.method}`}\``);
+      const ctx: HandlerContext = {
+        caller: req.caller,
+        ...(req.session === undefined ? {} : { session: req.session }),
+        computer: this.computer,
+        signal: abort.signal,
+        deadline: this.#clock.now() + limit,
+        api: this.#apiFor(req.pluginId, req.caller),
+        ...(req.input === undefined ? {} : { input: req.input }),
+      };
+      const out = (await Promise.race([Promise.resolve(target.fn.call(target.self, structuredClone(req.args), ctx)), failure])) as AsyncIterable<unknown> | undefined;
+      if (out === null || typeof out !== "object" || typeof (out as AsyncIterable<unknown>)[Symbol.asyncIterator] !== "function") {
+        throw new ContractError("failed", `${req.pluginId}.${req.handler} returned no stream`);
+      }
+      iterator = out[Symbol.asyncIterator]();
+      for (;;) {
+        const next = await Promise.race([iterator.next(), failure]);
+        if (next.done) return structuredClone(next.value) as R;
+        yield structuredClone(next.value) as T;
+      }
+    } catch (err) {
+      throw err instanceof ContractError ? err : new ContractError("failed", err instanceof Error ? err.message : String(err));
+    } finally {
+      this.#clock.clearTimeout(timer);
+      req.signal?.removeEventListener("abort", onAbort);
+      h.calls.delete(call);
+      if (!abort.signal.aborted) abort.abort(new ContractError("cancelled", "the stream ended"));
+      void iterator?.return?.(undefined);
+    }
   }
 
   async ensureStarted(pluginId: string): Promise<void> {

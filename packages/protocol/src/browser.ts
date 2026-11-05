@@ -75,7 +75,7 @@ export const Screenshot = z.object({
 export type Screenshot = z.infer<typeof Screenshot>;
 
 const Tab = z.object({ id: utf16(128, 1) });
-const API = { roles: ["app", "layer", "plugin-host"] as const, capability: "browser" };
+const API = { roles: ["app", "layer"] as const, capability: "browser" };
 
 export const BROWSER_METHODS = {
   // For plugins with `browser`, and the browser view.
@@ -191,17 +191,17 @@ export const CdpEventEvent = coreEvent("cdp_event", { tab: utf16(128, 1), method
 
 export const BROWSER_EVENTS = {
   tabChanged: defineEvent({
-    type: "tab_changed", owner: "L", roles: ["app", "layer", "plugin-host"], capability: "browser", schema: TabChangedEvent,
+    type: "tab_changed", owner: "L", roles: ["app", "layer"], capability: "browser", schema: TabChangedEvent,
     fixture: { type: "tab_changed", ts: 1781270000000, tab: { id: "tab_1", computer: "Studio", owner: { kind: "bot", bot: "alpha" }, partition: "persist:bot-alpha", url: "https://example.com/", title: "Example Domain", place: "headless", viewport: { width: 1280, height: 800 }, loading: false, heldByUser: false } },
     doc: "A tab opened, loaded, moved or was taken by the user.",
   }),
   tabClosed: defineEvent({
-    type: "tab_closed", owner: "L", roles: ["app", "layer", "plugin-host"], capability: "browser", schema: TabClosedEvent,
+    type: "tab_closed", owner: "L", roles: ["app", "layer"], capability: "browser", schema: TabClosedEvent,
     fixture: { type: "tab_closed", ts: 1781270000000, id: "tab_1", computer: "Studio" },
     doc: "A tab closed, by its owner, the page or a crash.",
   }),
   cdpEvent: defineEvent({
-    type: "cdp_event", owner: "L", roles: ["layer", "plugin-host"], capability: "browser", schema: CdpEventEvent, transient: true,
+    type: "cdp_event", owner: "L", roles: ["layer"], capability: "browser", schema: CdpEventEvent, transient: true,
     fixture: { type: "cdp_event", ts: 1781270000000, tab: "tab_1", method: "Page.loadEventFired", params: { timestamp: 1234.5 } },
     doc: "An allowlisted DevTools event from a tab the plugin follows.",
   }),

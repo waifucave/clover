@@ -222,7 +222,7 @@ export const APPROVALS_METHODS = {
     doc: "One card, pending or resolved, so the app can still draw a resolved card's sealed fields where it shows.",
   }),
   cardPending: defineMethod({
-    name: "card.pending", owner: "C", roles: ["layer", "plugin-host"], capability: "approvals",
+    name: "card.pending", owner: "C", roles: ["layer"], capability: "approvals",
     params: Empty, result: z.object({ cards: z.array(CardMeta) }),
     doc: "Pending cards' ids and computers, never their text (§5.5 `approvals.watch`).",
   }),
@@ -285,7 +285,7 @@ export const APPROVALS_EVENTS = {
     doc: "A new card, with its sealed fields.",
   }),
   cardPending: defineEvent({
-    type: "card_pending", owner: "C", roles: ["layer", "plugin-host"], capability: "approvals", schema: CardPendingEvent,
+    type: "card_pending", owner: "C", roles: ["layer"], capability: "approvals", schema: CardPendingEvent,
     fixture: {
       type: "card_pending", ts: 1781270000000,
       card: {
@@ -297,7 +297,7 @@ export const APPROVALS_EVENTS = {
     doc: "A new card, without its text, for plugins that place sealed frames.",
   }),
   cardResolved: defineEvent({
-    type: "card_resolved", owner: "C", roles: ["app", "remote", "layer", "plugin-host"], capability: "approvals",
+    type: "card_resolved", owner: "C", roles: ["app", "remote", "layer"], capability: "approvals",
     schema: CardResolvedEvent,
     fixture: { type: "card_resolved", ts: 1781270004000, id: "card_0a1b2c3d", outcome: "approved", option: "allow_once" },
     doc: "A card was answered, expired, withdrawn (an interrupt) or cancelled (its session stopped).",

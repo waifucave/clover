@@ -761,8 +761,7 @@
       "roles": [
         "app",
         "cli",
-        "layer",
-        "plugin-host"
+        "layer"
       ],
       "capability": "logs.read",
       "params": {
@@ -2100,8 +2099,7 @@
         "app",
         "cli",
         "remote",
-        "layer",
-        "plugin-host"
+        "layer"
       ],
       "capability": "call:*",
       "params": {
@@ -2318,7 +2316,7 @@
       }
     },
     "pluginHost.start": {
-      "doc": "Starts a plugin's host half: a worker in the shared host, or a Node process of its own.",
+      "doc": "Starts a plugin's host half: a worker in a shared process, or a process of its own.",
       "owner": "B",
       "direction": "from-daemon",
       "roles": [
@@ -2351,6 +2349,14 @@
           "dataFolder": {
             "type": "string",
             "maxLength": 4096
+          },
+          "process": {
+            "type": "string",
+            "enum": [
+              "shared",
+              "clover",
+              "own"
+            ]
           }
         },
         "required": [
@@ -2358,7 +2364,8 @@
           "folder",
           "entry",
           "runtime",
-          "dataFolder"
+          "dataFolder",
+          "process"
         ]
       },
       "result": {
@@ -2448,6 +2455,11 @@
             "type": "string",
             "minLength": 1,
             "maxLength": 256
+          },
+          "method": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
           },
           "args": {},
           "caller": {
@@ -2548,6 +2560,12 @@
             "type": "integer",
             "minimum": 1,
             "maximum": 600000
+          },
+          "stream": {
+            "type": "boolean"
+          },
+          "input": {
+            "type": "boolean"
           }
         },
         "required": [
@@ -2607,8 +2625,98 @@
         "additionalProperties": false
       }
     },
+    "pluginHost.feed": {
+      "doc": "The next piece of a streamed call's input, for the handler's input iterable.",
+      "owner": "B",
+      "direction": "from-daemon",
+      "roles": [
+        "plugin-host"
+      ],
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "callId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "seq": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "value": {},
+          "end": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "callId",
+          "seq"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "pluginHost.deliver": {
+      "doc": "A value for one of a host half's watches (`points.watch`, `approvals.watch`, …); the host hands it only to that plugin's worker.",
+      "owner": "B",
+      "direction": "from-daemon",
+      "roles": [
+        "plugin-host"
+      ],
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "pluginId": {
+            "type": "string",
+            "maxLength": 81,
+            "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+          },
+          "subscription": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "value": {}
+        },
+        "required": [
+          "pluginId",
+          "subscription",
+          "value"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "additionalProperties": false
+      }
+    },
     "pluginHost.api": {
-      "doc": "A plugin's host half calls the plugin API (§5.4).",
+      "doc": "A plugin's host half calls the plugin API (§5.4). A watch's result is `{ subscription }`.",
       "owner": "B",
       "direction": "to-daemon",
       "roles": [
@@ -2623,12 +2731,20 @@
             "maxLength": 81,
             "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
           },
+          "callId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
           "call": {
             "type": "string",
             "minLength": 1,
             "maxLength": 128
           },
           "args": {},
+          "stream": {
+            "type": "boolean"
+          },
           "timeoutMs": {
             "type": "integer",
             "minimum": 1,
@@ -2637,6 +2753,7 @@
         },
         "required": [
           "pluginId",
+          "callId",
           "call",
           "args"
         ]
@@ -2649,6 +2766,94 @@
         },
         "required": [
           "result"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "pluginHost.chunk": {
+      "doc": "The next piece of a stream: a streamed handler's output, or a streamed argument of an API call.",
+      "owner": "B",
+      "direction": "to-daemon",
+      "roles": [
+        "plugin-host"
+      ],
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "callId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "seq": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "value": {},
+          "end": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "callId",
+          "seq"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "pluginHost.unwatch": {
+      "doc": "Ends one of a host half's watches; a worker's watches also end when it stops.",
+      "owner": "B",
+      "direction": "to-daemon",
+      "roles": [
+        "plugin-host"
+      ],
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "pluginId": {
+            "type": "string",
+            "maxLength": 81,
+            "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+          },
+          "subscription": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        },
+        "required": [
+          "pluginId",
+          "subscription"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "ok"
         ],
         "additionalProperties": false
       }
