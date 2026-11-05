@@ -470,30 +470,27 @@ func (c *Client) writer(l *link) {
 	}
 }
 
-// writeAll puts b on the wire, at most writeChunk per call, each with the liveness bound as its
-// deadline. A blackholed link stops taking bytes and stops sending them: that fails the link.
-// A congested uplink can also take nothing for seconds (a full socket buffer, a TCP window that
-// opens in bursts) while the holder's pings still arrive; then the link is alive and the write
-// goes on (review S1: on Windows a 2 Mbit/s link stalled a 32 KiB write past 1.5 s, and the
-// link was called dead with the holder's pings still arriving).
+// writeAll puts b on the wire, at most writeChunk per call. It sets no short deadline. A
+// blackholed link stops sending too, and the watchdog then closes the connection, which ends a
+// write blocked on a full socket at once. A congested uplink can take nothing for seconds while
+// the holder's pings still arrive (review S1: on Windows a 2 Mbit/s link stalled one 32 KiB
+// write past 1.5 s); that link is alive, and the write waits. A write that timed out is never
+// retried: on Windows a cancelled send can still put its bytes on the wire, and a retry garbled
+// the stream in CI. OpCap bounds a write that makes no progress at all, as a backstop.
 func (c *Client) writeAll(l *link, b []byte) bool {
+	_ = l.conn.SetWriteDeadline(time.Now().Add(c.cfg.OpCap))
 	for off := 0; off < len(b); {
 		end := min(off+writeChunk, len(b))
-		_ = l.conn.SetWriteDeadline(time.Now().Add(c.cfg.DeadAfter))
 		n, err := l.conn.Write(b[off:end])
 		off += n
 		if n > 0 {
 			l.lastSent.Store(time.Now().UnixNano())
+			_ = l.conn.SetWriteDeadline(time.Now().Add(c.cfg.OpCap))
 		}
-		if err == nil {
-			continue
+		if err != nil {
+			c.drop(l.gen, "write: "+err.Error())
+			return false
 		}
-		var ne net.Error
-		if errors.As(err, &ne) && ne.Timeout() && time.Since(time.Unix(0, c.lastRecv.Load())) < c.cfg.DeadAfter {
-			continue
-		}
-		c.drop(l.gen, "write: "+err.Error())
-		return false
 	}
 	return true
 }
