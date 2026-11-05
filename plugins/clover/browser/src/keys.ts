@@ -1,5 +1,5 @@
 // Keys as DevTools `Input.dispatchKeyEvent` events: the page's own events only, never the computer's keyboard. Ported
-// from Winter's `packages/core/src/computer-use/browser/input.ts`. Combos read "ctrl+a", "Enter", "shift+Tab".
+// from `packages/core/src/computer-use/browser/input.ts`. Combos read "ctrl+a", "Enter", "shift+Tab".
 
 export const MOD_ALT = 1;
 export const MOD_CTRL = 2;

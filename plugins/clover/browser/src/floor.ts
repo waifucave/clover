@@ -1,5 +1,5 @@
 // The tool's floors, as pure functions over plain facts, so the tests reach them without a browser. Ported from
-// Winter: the secure-field floor and the keyboard target's fail-closed class
+// this repo's computer use: the secure-field floor and the keyboard target's fail-closed class
 // (`packages/core/src/computer-use/browser/page-runtime/rules.ts`), the dangerous-domain list and its matcher
 // (`packages/core/src/agent/dangerous-domains.ts`, through `agent/tools/page-core.ts`), and the safe subset of CSS a
 // model may wait on (`rules.ts`' `cssSelectorRefusal`).
@@ -109,7 +109,7 @@ export const NO_FOCUS_SENTENCE =
 // ---- Addresses -----------------------------------------------------------------------------------------------------
 
 /** Paste hosts, one-shot file hosts, request collectors and tunnels: the places a page (or text hidden in one) would
- *  tell a model to send what it found. Winter's shipped list (`dangerous-domains.ts`, with one reason per entry
+ *  tell a model to send what it found. The shipped list (`dangerous-domains.ts`, with one reason per entry
  *  there), copied as is; a subdomain of an entry matches it. */
 export const DANGEROUS_DOMAINS: readonly string[] = [
   // paste hosts

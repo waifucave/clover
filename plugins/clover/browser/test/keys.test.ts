@@ -1,4 +1,4 @@
-// Key combos as DevTools key events (ported from Winter's input.ts), and which presses count as editing text.
+// Key combos as DevTools key events (ported from computer use's input.ts), and which presses count as editing text.
 
 import { describe, expect, test } from "bun:test";
 

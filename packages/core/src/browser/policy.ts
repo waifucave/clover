@@ -61,7 +61,7 @@ export function checkCdpMethod(method: string): void {
 
 /** DevTools methods that act at a point on the page. A point taken from a screenshot at another size lands somewhere
  *  else, so these are refused when the caller says which viewport its point came from and the tab's differs (§12.1,
- *  from Winter's headless lessons). */
+ *  the headless lessons it carries over). */
 export const POINT_METHODS: readonly string[] = [
   "Input.dispatchMouseEvent",
   "Input.dispatchTouchEvent",

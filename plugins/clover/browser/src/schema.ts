@@ -1,5 +1,5 @@
 // The one tool, `Browser` (the core names it `mcp__clover__Browser`): its description, its input schema, and the
-// checks its arguments go through. One schema with fields per verb, as Winter's browser tool has.
+// checks its arguments go through. One schema with fields per verb, as the core's browser tool has.
 import { ToolFailure } from "./errors";
 
 export const TOOL_NAME = "Browser";

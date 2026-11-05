@@ -1,4 +1,4 @@
-// The `Browser` tool's verbs, over the plugin API's browser calls (`api.browser`). Ported from Winter's browser tool
+// The `Browser` tool's verbs, over the plugin API's browser calls (`api.browser`). Ported from the core's browser tool
 // (`packages/core/src/agent/tools/browser.ts`), whose verbs went to the Mac app's panel; here each one is the API's
 // own call or a few DevTools calls on the tab, all in the allowed domains (Page, Runtime, Input).
 //
@@ -44,7 +44,7 @@ export interface BrowserToolOptions {
 export const READ_TEXT_MAX = 12_000;
 export const READ_ELEMENTS_MAX = 200;
 /** Text up to this long, on one line, is typed as key presses, so the page's key listeners (a search box's
- *  suggestions) see each one; longer text is inserted at once (Winter's rule). */
+ *  suggestions) see each one; longer text is inserted at once (the core tool's rule). */
 export const TYPE_AS_KEYS_MAX = 200;
 
 /** The last screenshot of a tab: the view's size when it was taken, and the picture's. */

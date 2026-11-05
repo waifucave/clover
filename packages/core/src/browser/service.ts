@@ -7,7 +7,7 @@
 // What the core decides, before anything reaches the app:
 // * who may touch a tab: a bot's session only its bot's tabs, a session without a bot only the user's, the user and
 //   plugins acting on their own any tab;
-// * while the person holds a tab in the view, an agent's commands on it are refused (Winter's control lease), except
+// * while the person holds a tab in the view, an agent's commands on it are refused (the control lease, §12.1), except
 //   looking at it (`tabs`, `screenshot`);
 // * the DevTools allow list, the URL rule, and a point from a picture taken at another size;
 // * a tab that stopped drawing gives an error, never an old picture.

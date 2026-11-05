@@ -1,7 +1,7 @@
 // The page side of the tool: one self-contained function, `pageScript`, run inside the tab through
 // `Runtime.evaluate`, and `PageRunner`, which runs it in an isolated world of the tab's top frame.
 //
-// Why an isolated world (`Page.createIsolatedWorld`, as Winter's page runtime does): it shares the page's DOM but not
+// Why an isolated world (`Page.createIsolatedWorld`, as computer use's page runtime does): it shares the page's DOM but not
 // its JavaScript, so the page can't see the script, call it, or change what `querySelectorAll` or `innerText` answer.
 // The world lives as long as the document; refs are kept in it, in a WeakRef map, so `e12` from a `read` still means
 // the same element at the next `click`. A new document gets a new world, and its refs carry on counting from where the

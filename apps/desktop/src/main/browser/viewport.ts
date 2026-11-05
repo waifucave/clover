@@ -1,4 +1,4 @@
-// The viewport: how the person sees a bot's offscreen tab (design B, the owner's decision 92; Winter's panel, S7 §7).
+// The viewport: how the person sees a bot's offscreen tab (design B, the owner's decision 92; S7 §7).
 // It is an app-owned view placed where the browser view's frame is (lane E's runtime says where); its page
 // (`viewport-page/`) draws the tab's frames and sends the person's input back, and the tab is laid out at the view's
 // size while shown. Nothing about the tab changes but its size and frame rate, so it never reloads.
