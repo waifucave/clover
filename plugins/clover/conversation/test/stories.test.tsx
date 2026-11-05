@@ -17,7 +17,8 @@ for (const story of stories) {
     console.error = (...args: unknown[]) => errors.push(args);
     try {
       const { container } = render(<div style={{ width: story.width ?? 880, height: story.height }}>{story.render()}</div>);
-      expect(container.textContent?.length ?? 0).toBeGreaterThan(0);
+      // Something drew inside the frame.
+      expect(container.firstElementChild?.children.length ?? 0).toBeGreaterThan(0);
     } finally {
       console.error = original;
     }

@@ -1,0 +1,329 @@
+/* The composer. Every colour, face and type size is a theme token (`--clover-*`, listed in
+   tokens.ts). A composer several tabs share takes each tab's tokens (spec §5.5). */
+
+.cl-composer {
+  position: relative;
+  box-sizing: border-box;
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 0 24px 16px;
+  color: var(--clover-color-text);
+  font-family: var(--clover-font-body);
+  font-size: var(--clover-text-body);
+  line-height: var(--clover-line-body);
+}
+
+.cl-composer button {
+  font: inherit;
+}
+
+.cl-composer :focus-visible {
+  outline: 2px solid var(--clover-color-focus);
+  outline-offset: 2px;
+}
+
+.cl-composer__card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 10px 8px 14px;
+  border: 1px solid var(--clover-color-composer-rim);
+  border-radius: var(--clover-radius-composer);
+  background: var(--clover-color-composer);
+  box-shadow: 0 2px 12px var(--clover-color-shadow);
+}
+
+.cl-composer__field {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 24px;
+  max-height: 240px;
+  margin: 0;
+  padding: 4px 0;
+  overflow-y: auto;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  resize: none;
+}
+
+.cl-composer__field:focus-visible {
+  outline: none;
+}
+
+.cl-composer__field::placeholder {
+  color: var(--clover-color-text-placeholder);
+}
+
+.cl-composer[data-listening] .cl-composer__field::placeholder {
+  color: var(--clover-color-text-secondary);
+}
+
+.cl-composer__bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.cl-composer__spacer {
+  flex: 1;
+}
+
+.cl-composer__button {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: none;
+  border-radius: var(--clover-radius-pill);
+  background: var(--clover-color-control);
+  color: var(--clover-color-text);
+  cursor: pointer;
+}
+
+.cl-composer__button:hover {
+  background: var(--clover-color-hover);
+}
+
+.cl-composer__primary,
+.cl-composer__primary:hover {
+  background: var(--clover-color-strong);
+  color: var(--clover-color-on-strong);
+}
+
+.cl-composer__primary:disabled {
+  background: var(--clover-color-control);
+  color: var(--clover-color-text-muted);
+  cursor: default;
+}
+
+.cl-composer__voice[aria-pressed="true"],
+.cl-composer__voice[aria-pressed="true"]:hover {
+  background: var(--clover-color-accent);
+  color: var(--clover-color-on-accent);
+}
+
+.cl-composer[data-listening] .cl-composer__voice .cl-composer-icon {
+  animation: cl-composer-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes cl-composer-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.4;
+  }
+}
+
+.cl-composer__model {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 32px;
+  padding: 0 10px;
+  border: none;
+  border-radius: var(--clover-radius-pill);
+  background: transparent;
+  color: var(--clover-color-text-secondary);
+  font-size: var(--clover-text-small);
+  cursor: pointer;
+}
+
+.cl-composer__model:hover,
+.cl-composer__model[aria-expanded="true"] {
+  background: var(--clover-color-hover);
+  color: var(--clover-color-text);
+}
+
+.cl-composer__model-effort {
+  color: var(--clover-color-text-muted);
+}
+
+.cl-composer__menu {
+  position: absolute;
+  right: 8px;
+  bottom: calc(100% + 6px);
+  z-index: 10;
+  box-sizing: border-box;
+  min-width: 270px;
+  padding: 6px;
+  border: 1px solid var(--clover-color-hairline-raised);
+  border-radius: var(--clover-radius-card);
+  background: var(--clover-color-floating);
+  box-shadow: 0 8px 28px var(--clover-color-shadow);
+}
+
+.cl-composer__menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 8px;
+  border: none;
+  border-radius: var(--clover-radius-control);
+  background: none;
+  color: var(--clover-color-text);
+  font-size: var(--clover-text-small);
+  text-align: left;
+  cursor: pointer;
+}
+
+.cl-composer__menu-item:hover,
+.cl-composer__menu-item:focus-visible {
+  background: var(--clover-color-hover);
+  outline: none;
+}
+
+.cl-composer__menu-item[aria-checked="true"] {
+  font-weight: 600;
+}
+
+.cl-composer__menu-check {
+  display: inline-flex;
+  width: 14px;
+}
+
+.cl-composer__menu-detail {
+  margin-left: auto;
+  color: var(--clover-color-text-muted);
+  font-size: var(--clover-text-caption);
+  font-weight: 400;
+}
+
+.cl-composer__menu-title {
+  margin-top: 4px;
+  padding: 6px 8px 4px;
+  border-top: 1px solid var(--clover-color-hairline-raised);
+  color: var(--clover-color-text-muted);
+  font-size: var(--clover-text-caption);
+  font-weight: 600;
+}
+
+.cl-composer__efforts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 2px 8px 6px;
+}
+
+.cl-composer__effort {
+  padding: 3px 10px;
+  border: 1px solid var(--clover-color-hairline-raised);
+  border-radius: var(--clover-radius-pill);
+  background: none;
+  color: var(--clover-color-text-secondary);
+  font-size: var(--clover-text-caption);
+  cursor: pointer;
+}
+
+.cl-composer__effort[aria-checked="true"] {
+  border-color: var(--clover-color-accent);
+  background: var(--clover-color-selected);
+  color: var(--clover-color-text);
+}
+
+.cl-composer__attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cl-composer__attachment {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 220px;
+  padding: 4px 4px 4px 6px;
+  border-radius: var(--clover-radius-control);
+  background: var(--clover-color-control);
+  font-size: var(--clover-text-small);
+}
+
+.cl-composer__thumb {
+  width: 28px;
+  height: 28px;
+  border-radius: 5px;
+  object-fit: cover;
+}
+
+.cl-composer__attachment-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cl-composer__remove {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  border-radius: var(--clover-radius-pill);
+  background: transparent;
+  color: var(--clover-color-text-muted);
+  cursor: pointer;
+}
+
+.cl-composer__remove:hover {
+  background: var(--clover-color-hover);
+  color: var(--clover-color-text);
+}
+
+.cl-composer__error {
+  color: var(--clover-color-danger);
+  font-size: var(--clover-text-caption);
+}
+
+.cl-composer__note {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 6px 4px 0;
+  color: var(--clover-color-text-muted);
+  font-size: var(--clover-text-caption);
+}
+
+.cl-composer__note[data-kind="asleep"] {
+  color: var(--clover-color-text-secondary);
+}
+
+.cl-composer__drop {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px dashed var(--clover-color-accent);
+  border-radius: inherit;
+  background: var(--clover-color-composer);
+  color: var(--clover-color-text);
+  font-weight: 600;
+}
+
+.cl-composer-icon {
+  flex: none;
+  display: inline-block;
+  vertical-align: middle;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cl-composer * {
+    animation: none !important;
+    transition: none !important;
+  }
+}

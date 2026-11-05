@@ -1,0 +1,7 @@
+{
+  "manifest": 1,
+  "name": "Composer",
+  "description": "The composer: where the user writes to a bot, attaches files, holds to talk and picks the model.",
+  "engines": { "clover": "^1.0.0" },
+  "client": { "entry": "client/index.tsx" }
+}
