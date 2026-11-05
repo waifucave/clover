@@ -83,8 +83,11 @@ scenario() {
   for _ in $(seq 100); do [ -s "$TMP/info.json" ] && break; sleep 0.1; done
   TRIGGER="$TMP/network-changed"
   REDIAL="$TMP/redial"
+  # Only the "+redial" scenarios dial a second connection, so only they get the trigger.
+  local REDIAL_ARGS=()
+  case " $* " in *:redial_now\ *) REDIAL_ARGS=(--redial-trigger "$REDIAL") ;; esac
   ip netns exec s1m1 "$BIN" ping --info-file "$TMP/info.json" --connect 198.19.0.2:47000 --duration-s "$DUR" --grace-s "$GRACE" \
-    --rebind-trigger "$TRIGGER" --redial-trigger "$REDIAL" --label "$NAME" >"$TMP/client.log" 2>&1 &
+    --rebind-trigger "$TRIGGER" ${REDIAL_ARGS[@]+"${REDIAL_ARGS[@]}"} --label "$NAME" >"$TMP/client.log" 2>&1 &
   local CLIENT=$!
   local t=0
   for step in "$@"; do

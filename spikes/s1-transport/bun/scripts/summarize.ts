@@ -7,7 +7,7 @@ import { appendFileSync, readFileSync } from "node:fs";
 
 type R = Record<string, any>;
 const [kind, ...files] = process.argv.slice(2);
-const rows: R[] = files.flatMap((f) =>
+const readRows = (f: string): R[] =>
   readFileSync(f, "utf8")
     .split("\n")
     .filter((l) => l.trim().startsWith("{"))
@@ -17,15 +17,17 @@ const rows: R[] = files.flatMap((f) =>
       } catch {
         return { check: "unparsed", ok: false, error: l.slice(0, 200) };
       }
-    }),
-);
+    });
+const rows: R[] = files.flatMap(readRows);
 
 const md: string[] = [];
 const notices: Array<[string, string]> = [];
 const f1 = (x: unknown) => (typeof x === "number" ? (Math.round(x * 10) / 10).toString() : "–");
 const f2 = (x: unknown) => (typeof x === "number" ? (Math.round(x * 100) / 100).toString() : "–");
 
-if (kind === "platform") {
+// One table per file for the platform checks: each file is one OS's run.
+for (const file of kind === "platform" ? files : []) {
+  const rows = readRows(file);
   const platform = rows.find((r) => r.platform)?.platform ?? "unknown";
   md.push(`### S1 platform checks · ${platform}`, "", "| check | compiled | ok | numbers |", "| :- | :- | :- | :- |");
   const compact: R = { platform };
@@ -57,6 +59,10 @@ if (kind === "platform") {
       : false;
   }
   notices.push([`S1 platform ${platform}`, JSON.stringify(compact)]);
+  md.push("");
+}
+if (kind === "platform") {
+  // Done above.
 } else if (kind === "nat") {
   const runs = new Map<string, R[]>();
   for (const r of rows.filter((r) => r.name === "a" && (r.phase ?? "matrix") === "matrix")) {

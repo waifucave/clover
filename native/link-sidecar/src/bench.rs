@@ -481,6 +481,14 @@ pub async fn ping(a: &Args) -> Result<()> {
         }
         let end_s = start.elapsed().as_secs_f64();
         writer.abort();
+        // The old connection can be gone (a 40 s blackout outlasts its 30 s idle timeout) before
+        // the wake's re-dial starts; wait for that re-dial, which needs no old connection, until
+        // the deadline. `end_s` above keeps the old connection's numbers as they were.
+        if redial_trigger.is_some() {
+            while redial.lock().unwrap().is_none() && start.elapsed() < deadline + Duration::from_secs(16) {
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+        }
         let rebind = rebind_at.lock().unwrap().clone();
         let mut body = ping_json(kind, &label, sent.load(Ordering::Relaxed), &arrivals, end_s, read_error);
         body["rebindAtS"] = json!(rebind.as_ref().map(|r| (r.0 * 100.0).round() / 100.0));
