@@ -12,10 +12,10 @@ export {
   type SuperviseDeps, type SuperviseResult, type DaemonRun,
 } from "./platform/login";
 export {
-  DaemonPair, appRestartPlan, resolveAppLauncher, appStarter, PAIR_DEFAULTS,
+  DaemonPair, appRestartPlan, resolveAppLauncher, appStarter, startDaemonPairSide, PAIR_DEFAULTS,
   mintAppToken, removeAppToken, writeAppStart, appTokenPath, appStartPath, APP_TOKEN_FILE, APP_START_FILE,
   type DaemonPairDeps, type DaemonPairOptions, type DaemonPairStatus, type AppLauncher, type AppStartOutcome,
-  type AppExitReason, type PairStopReason, type AppStart, type RunFileDeps,
+  type AppExitReason, type PairStopReason, type AppStart, type RunFileDeps, type DaemonPairSide, type DaemonPairSideInput,
 } from "./platform/pair";
 export { callerFloorVerdict, mayBeUser, type SandboxProbe, type FloorVerdict } from "./platform/sandbox-floor";
 export { probePeer, peerPid, parentPid, ancestry, sandboxProbe, socketFd, descendsFrom, type PeerFacts } from "./platform/caller-probe";
