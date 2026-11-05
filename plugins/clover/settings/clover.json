@@ -1,7 +1,7 @@
 {
   "manifest": 1,
   "name": "Settings",
-  "description": "The settings window, with Clover's own sections (account, devices, appearance, notifications, plugins, levels), and the language chooser.",
+  "description": "The settings window, with Clover's own sections (account, devices, appearance, notifications, plugins, levels, bots), and the language chooser.",
   "engines": {
     "clover": "^1.0.0"
   },
@@ -11,16 +11,34 @@
       "client/styles.css"
     ]
   },
+  "capabilities": [
+    "bots.read",
+    "computers.read",
+    "devices.read",
+    "logs.read"
+  ],
   "contributes": {
     "ui": [
       {
         "spot": "main",
         "key": "settings",
-        "component": "SettingsModal",
+        "component": "SettingsEntry",
         "declares": {
           "settings.section": {
             "shape": "list",
-            "props": {}
+            "props": {},
+            "fields": {
+              "type": "object",
+              "properties": {
+                "title": {
+                  "type": "string"
+                },
+                "icon": {
+                  "type": "string"
+                }
+              }
+            },
+            "doc": "Sections plugins add after Clover's own; each entry draws its page."
           }
         }
       }

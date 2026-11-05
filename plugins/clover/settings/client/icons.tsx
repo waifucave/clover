@@ -23,3 +23,4 @@ export const SECTION_ICONS: Record<SettingsSection, () => ReturnType<ReturnType<
 export const IconClose = icon(X, 18);
 export const IconSearch = icon(Search);
 export const IconCheck = icon(Check);
+export const IconPlugin = icon(Puzzle);

@@ -1,7 +1,7 @@
 {
   "manifest": 1,
   "name": "Shell",
-  "description": "The default shell: the window frame, with a translucent title bar over the conversation, the sidebar on the window's material, and the main, panel and dialog layers.",
+  "description": "The default shell: the window frame with a translucent title bar, the panel host and its toggles, a bot's tab and an agent's live tab. It places every spot it declares: the sidebar, main keyed by route, the panels, the column beside the conversation, the status bar and a dialog layer for Settings.",
   "engines": {
     "clover": "^1.0.0"
   },
@@ -12,34 +12,316 @@
     ]
   },
   "capabilities": [
-    "approvals"
+    "approvals",
+    "bots.read",
+    "conversation.read"
   ],
   "contributes": {
     "ui": [
       {
         "spot": "app.root",
-        "component": "Window",
+        "component": "Shell",
         "declares": {
           "sidebar": {
             "shape": "single",
-            "props": {}
+            "props": {
+              "type": "object",
+              "properties": {
+                "route": {
+                  "type": "object",
+                  "properties": {
+                    "route": {
+                      "type": "string"
+                    },
+                    "params": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "doc": "The sidebar."
           },
           "main": {
             "shape": "keyed",
-            "props": {}
+            "props": {
+              "type": "object",
+              "properties": {
+                "route": {
+                  "type": "string"
+                },
+                "params": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "string"
+                  }
+                }
+              }
+            },
+            "doc": "The main area, keyed by route: bot, agent, settings, plugins, bot-editor, and the keys app buttons open."
           },
           "panel": {
             "shape": "keyed",
-            "props": {}
+            "props": {
+              "type": "object",
+              "properties": {
+                "app": {
+                  "type": "string"
+                },
+                "session": {
+                  "type": "string"
+                }
+              }
+            },
+            "context": [
+              "session"
+            ],
+            "doc": "The panel host, keyed by panel: session, terminal, diff, files, browser, agent. A key no plugin fills shows the host's placeholder."
           },
           "panel.view": {
             "shape": "keyed",
-            "props": {}
+            "props": {
+              "type": "object",
+              "properties": {
+                "view": {
+                  "type": "string"
+                },
+                "session": {
+                  "type": "string"
+                }
+              }
+            },
+            "doc": "The panel's contents."
           },
           "status": {
             "shape": "list",
-            "props": {}
+            "props": {},
+            "doc": "The status bar under the main column."
           }
+        }
+      },
+      {
+        "spot": "bot.tab",
+        "id": "bot-tab",
+        "component": "DefaultBotTab",
+        "declares": {
+          "bot.header": {
+            "shape": "single",
+            "props": {
+              "type": "object",
+              "properties": {
+                "bot": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            },
+            "context": [
+              "bot"
+            ],
+            "doc": "The tab's header: in place of the title."
+          },
+          "bot.header.action": {
+            "shape": "list",
+            "props": {
+              "type": "object",
+              "properties": {
+                "bot": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            },
+            "context": [
+              "bot"
+            ],
+            "doc": "Buttons in the tab's header."
+          },
+          "bot.stage": {
+            "shape": "single",
+            "props": {
+              "type": "object",
+              "properties": {
+                "bot": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            },
+            "context": [
+              "bot"
+            ],
+            "doc": "The stage, where the avatar stands."
+          },
+          "bot.side": {
+            "shape": "single",
+            "props": {
+              "type": "object",
+              "properties": {
+                "bot": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            },
+            "context": [
+              "bot"
+            ],
+            "doc": "The tab's side: the slim column."
+          },
+          "conversation": {
+            "shape": "single",
+            "props": {
+              "type": "object",
+              "properties": {
+                "bot": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "session": {
+                  "type": "string"
+                }
+              }
+            },
+            "context": [
+              "bot"
+            ],
+            "needs": [
+              "conversation.read"
+            ],
+            "doc": "The conversation view."
+          },
+          "composer": {
+            "shape": "single",
+            "props": {
+              "type": "object",
+              "properties": {
+                "bot": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "session": {
+                  "type": "string"
+                }
+              }
+            },
+            "context": [
+              "bot"
+            ],
+            "doc": "The composer."
+          }
+        }
+      },
+      {
+        "spot": "main",
+        "id": "agent-tab",
+        "key": "agent",
+        "component": "AgentTab",
+        "declares": {
+          "conversation": {
+            "shape": "single",
+            "props": {
+              "type": "object",
+              "properties": {
+                "bot": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "session": {
+                  "type": "string"
+                }
+              }
+            },
+            "needs": [
+              "conversation.read"
+            ],
+            "doc": "The agent's transcript."
+          },
+          "composer": {
+            "shape": "single",
+            "props": {
+              "type": "object",
+              "properties": {
+                "bot": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "session": {
+                  "type": "string"
+                }
+              }
+            },
+            "doc": "The agent's composer."
+          }
+        }
+      },
+      {
+        "spot": "panel",
+        "id": "agent-panel",
+        "key": "agent",
+        "title": "Agent",
+        "component": "AgentTab",
+        "when": {
+          "session": "agent"
         }
       }
     ]

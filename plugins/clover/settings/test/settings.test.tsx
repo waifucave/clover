@@ -76,7 +76,7 @@ describe("the settings window", () => {
   test("each computer has its level; a pick is a request, the old level standing until its card is answered", () => {
     const h = setup({ section: "levels" });
     const studio = screen.getByRole("combobox", { name: "Studio's level" }) as HTMLSelectElement;
-    expect(studio.value).toBe("risky");
+    expect(studio.value).toBe("ask-risky");
     fireEvent.change(studio, { target: { value: "automatic" } });
     expect(h.onRequestLevel).toHaveBeenCalledWith("Studio", "automatic");
     const laptop = screen.getByRole("combobox", { name: "Laptop's level" }) as HTMLSelectElement;

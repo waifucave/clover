@@ -4,7 +4,7 @@
 // computer's level. Pages with nothing to set yet say so. It fills the shell's `settings.section` spot
 // with its own sections; a plugin adds one there.
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
-import { IconClose, IconSearch, SECTION_ICONS } from "./icons";
+import { IconClose, IconPlugin, IconSearch, SECTION_ICONS } from "./icons";
 import { S } from "./strings";
 import type { SettingsModalProps, SettingsSection } from "./types";
 
@@ -68,6 +68,28 @@ function Choice<T extends string>({ label, value, options, labels, onChange }: {
 
 function Page({ props }: { props: SettingsModalProps }) {
   const { section, values, onChange } = props;
+  const extra = props.extraSections?.find((x) => x.id === section);
+  if (extra) return <>{extra.render()}</>;
+  if (section === "plugins" && props.logs) {
+    const { name, lines, onBack } = props.logs;
+    return (
+      <>
+        <div className="cl-settings__logs-head">
+          <button type="button" className="cl-settings__button" onClick={onBack}>
+            {S.back}
+          </button>
+          <h3 className="cl-settings__subhead">{S.pluginLogsFor(name)}</h3>
+        </div>
+        {lines.length === 0 ? (
+          <p className="cl-settings__note">{S.noLogs}</p>
+        ) : (
+          <pre className="cl-settings__log" aria-label={S.pluginLogsFor(name)}>
+            {lines.join("\n")}
+          </pre>
+        )}
+      </>
+    );
+  }
   switch (section) {
     case "account":
       return (
@@ -138,6 +160,7 @@ function Page({ props }: { props: SettingsModalProps }) {
                   </span>
                 </span>
                 <span className="cl-settings__detail">{p.source}</span>
+                {p.reason && <span className="cl-settings__detail cl-settings__reason">{p.reason}</span>}
                 <span className="cl-settings__detail cl-settings__oks">{S.pluginOks(p.oks)}</span>
               </div>
               <div className="cl-settings__control">
@@ -146,7 +169,7 @@ function Page({ props }: { props: SettingsModalProps }) {
                     {S.pluginLogs}
                   </button>
                 )}
-                <Toggle label={p.name} on={p.state === "on"} onChange={(v) => onChange(`plugins.${p.id}.enabled`, v)} />
+                <Toggle label={p.name} on={p.enabled} onChange={(v) => onChange(`plugins.${p.id}.enabled`, v)} />
               </div>
             </div>
           ))}
@@ -205,6 +228,30 @@ function Page({ props }: { props: SettingsModalProps }) {
           ))}
         </>
       );
+    case "bots":
+      if (values.bots && values.bots.length > 0) {
+        return (
+          <>
+            <h3 className="cl-settings__subhead">{S.botsTitle}</h3>
+            <p className="cl-settings__note">{S.botsDetail}</p>
+            {values.bots.map((b) => (
+              <Row key={b.id} label={b.name}>
+                {props.onEditBot && (
+                  <button type="button" className="cl-settings__button" aria-label={S.editBot(b.name)} onClick={() => props.onEditBot?.(b.id)}>
+                    {S.edit}
+                  </button>
+                )}
+              </Row>
+            ))}
+          </>
+        );
+      }
+      return (
+        <div className="cl-settings__later">
+          <p className="cl-settings__later-title">{S.later}</p>
+          <p className="cl-settings__note">{S.laterDetail}</p>
+        </div>
+      );
     default:
       return (
         <div className="cl-settings__later">
@@ -222,6 +269,9 @@ export function SettingsModal(props: SettingsModalProps) {
   const titleId = useId();
   useEffect(() => search.current?.focus(), []);
   const shown = sectionsMatching(query);
+  const q = query.trim().toLowerCase();
+  const extras = (props.extraSections ?? []).filter((x) => q.length === 0 || x.title.toLowerCase().includes(q));
+  const title = (SECTIONS as readonly string[]).includes(section) ? S.section[section as SettingsSection] : (props.extraSections?.find((x) => x.id === section)?.title ?? "");
   return (
     <div
       className="cl-settings"
@@ -261,11 +311,19 @@ export function SettingsModal(props: SettingsModalProps) {
                 </li>
               );
             })}
-            {shown.length === 0 && <li className="cl-settings__note">{S.noMatch}</li>}
+            {extras.map((x) => (
+              <li key={x.id}>
+                <button type="button" className="cl-settings__section" aria-current={x.id === section ? "page" : undefined} onClick={() => onSection(x.id)}>
+                  <IconPlugin />
+                  <span>{x.title}</span>
+                </button>
+              </li>
+            ))}
+            {shown.length === 0 && extras.length === 0 && <li className="cl-settings__note">{S.noMatch}</li>}
           </ul>
         </nav>
-        <section className="cl-settings__page" aria-label={S.section[section]}>
-          <h3 className="cl-settings__page-title">{S.section[section]}</h3>
+        <section className="cl-settings__page" aria-label={title}>
+          <h3 className="cl-settings__page-title">{title}</h3>
           <Page props={props} />
         </section>
       </div>

@@ -13,13 +13,11 @@ export const CATALOG_TOKENS = [
   "color.diff.removed",
   "color.focus",
   "color.hairline",
-  "color.hairline.raised",
   "color.hover",
   "color.selected",
   "color.surface",
   "color.text",
   "color.text.muted",
-  "color.text.secondary",
   "font.line.body",
   "font.line.tight",
   "font.sans",
@@ -31,14 +29,12 @@ export const CATALOG_TOKENS = [
   "radius.round",
   "radius.small",
   "space.s",
-  "space.xl",
   "space.xs",
 ] as const;
 
 /** The `clover` plugin's own tokens (`plugin.clover.<name>`, B's rule for a plugin's own), each a request to
  *  B for a catalog entry (listed in the PR body). */
 export const PART_TOKENS: readonly string[] = [
-  "plugin.clover.bar.height",
   "plugin.clover.branch",
 ];
 

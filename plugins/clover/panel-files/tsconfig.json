@@ -1,18 +1,17 @@
 {
+  "extends": "../../../tsconfig.base.json",
   "compilerOptions": {
-    "target": "ESNext",
-    "module": "ESNext",
-    "moduleResolution": "bundler",
-    "lib": ["ESNext", "DOM", "DOM.Iterable"],
-    "jsx": "react-jsx",
-    "strict": true,
-    "noUncheckedIndexedAccess": true,
+    "lib": [
+      "ESNext",
+      "DOM",
+      "DOM.Iterable"
+    ],
     "noUnusedLocals": true,
-    "skipLibCheck": true,
-    "types": ["bun"],
-    "noEmit": true,
-    "verbatimModuleSyntax": true,
     "isolatedModules": true
   },
-  "include": ["client", "gallery", "test"]
+  "include": [
+    "client",
+    "gallery",
+    "test"
+  ]
 }

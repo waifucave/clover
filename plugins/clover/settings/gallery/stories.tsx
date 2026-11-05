@@ -3,18 +3,22 @@ import { useState } from "react";
 import { LanguageChooser } from "../client/LanguageChooser";
 import { SettingsModal } from "../client/SettingsModal";
 import type { SettingsSection } from "../client/types";
-import { LANGUAGES, VALUES } from "./fixtures";
+import { LANGUAGES, LOG_LINES, VALUES } from "./fixtures";
 import type { Story } from "./story";
 
 const noop = () => undefined;
 
 /** Settings over the gallery's fixtures. A host that draws the cards Settings raises passes their doors. */
-export function SettingsDemo({ start, onRequestLevel = noop, onRemoveDevice = noop }: { start: SettingsSection; onRequestLevel?: () => void; onRemoveDevice?: () => void }) {
-  const [section, setSection] = useState<SettingsSection>(start);
+export function SettingsDemo({ start, onRequestLevel = noop, onRemoveDevice = noop, logs }: { start: SettingsSection; onRequestLevel?: () => void; onRemoveDevice?: () => void; logs?: boolean }) {
+  const [section, setSection] = useState<SettingsSection | string>(start);
+  const [showLogs, setShowLogs] = useState(logs === true);
   return (
     <SettingsModal
       section={section}
-      onSection={setSection}
+      onSection={(s) => {
+        setShowLogs(false);
+        setSection(s);
+      }}
       onClose={noop}
       values={VALUES}
       onChange={noop}
@@ -23,6 +27,8 @@ export function SettingsDemo({ start, onRequestLevel = noop, onRemoveDevice = no
       onOpenPluginLogs={noop}
       onRequestLevel={onRequestLevel}
       onRemoveDevice={onRemoveDevice}
+      onEditBot={noop}
+      {...(showLogs ? { logs: { name: "Story mode", lines: LOG_LINES, onBack: () => setShowLogs(false) } } : {})}
     />
   );
 }
@@ -30,6 +36,8 @@ export function SettingsDemo({ start, onRequestLevel = noop, onRemoveDevice = no
 export const settingsStories: Story[] = [
   { id: "settings/appearance", title: "Settings: Appearance", notes: "Light or dark, the theme (themes are plugins), text size, and the language, which opens the chooser.", width: 1060, height: 820, render: () => <SettingsDemo start="appearance" /> },
   { id: "settings/plugins", title: "Settings: Plugins", notes: "Each plugin with its state, the OKs it runs with, its logs and its switch (spec §5.8).", width: 1060, height: 820, render: () => <SettingsDemo start="plugins" /> },
+  { id: "settings/plugin-logs", title: "Settings: a plugin's logs", notes: "A plugin's log in place of the list, with Back (spec §5.8). Story mode stopped after an error.", width: 1060, height: 820, render: () => <SettingsDemo start="plugins" logs /> },
+  { id: "settings/bots", title: "Settings: Bots", notes: "Each bot, opening in the bot editor.", width: 1060, height: 820, render: () => <SettingsDemo start="bots" /> },
   { id: "settings/levels", title: "Settings: Levels", notes: "Each computer's level (spec §9.1). A pick raises a sealed card, and Settings closes for it; Laptop's change, asked from another device, still waits for its card.", width: 1060, height: 820, render: () => <SettingsDemo start="levels" /> },
   { id: "settings/devices", title: "Settings: Devices", notes: "The paired devices; removing one asks on a card first.", width: 1060, height: 820, render: () => <SettingsDemo start="devices" /> },
   { id: "settings/later", title: "A page still to come", width: 1060, height: 820, render: () => <SettingsDemo start="usage" /> },

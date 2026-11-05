@@ -1,0 +1,135 @@
+// Settings on the runtime: Clover's own settings from the core and the plugin API, every change through them.
+import { afterEach, describe, expect, test } from "bun:test";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { fakeApi, fakeCore, settle } from "../../shell/runtime/testkit";
+import type { EntryComponent, PluginDetail, PluginSummary } from "../../shell/runtime/types";
+import { runtimeWith } from "../../shell/runtime/ui";
+import { okWords, SettingsEntry } from "../client/entry";
+import { UiRuntimeProvider } from "../client/sdk";
+
+afterEach(cleanup);
+
+const summary = (id: string, name: string, extra: Partial<PluginSummary> = {}): PluginSummary => ({ id, name, version: "1.0.0", state: "running", enabled: true, source: "bundled", class: "code", adult: false, children: [], dev: false, ...extra });
+const PLUGINS = [
+  summary("clover", "Clover"),
+  summary("weather-routine", "Weather routine", { state: "found", enabled: false, source: "index" }),
+  summary("story-mode", "Story mode", { state: "stopped", reason: "Stopped after three crashes in two minutes", source: "local" }),
+];
+const detail = (p: PluginSummary, capabilities: string[], networkHosts: string[] = []): PluginDetail => ({ ...p, provenance: { by: "user-app", at: 0 }, capabilities, networkHosts, logTail: [] });
+
+async function mount(params: { section?: string } = {}, extra: { component?: EntryComponent } = {}) {
+  const core = fakeCore({
+    "plugin.list": () => ({ plugins: PLUGINS }),
+    "plugin.get": ({ id }) => ({ plugin: detail(PLUGINS.find((p) => p.id === id)!, id === "weather-routine" ? ["notify", "network:api.weather.example"] : ["conversation.read", "call:clover"], id === "weather-routine" ? ["api.weather.example"] : []) }),
+    "plugin.setEnabled": () => ({ applied: true }),
+    "plugin.logs": () => ({ lines: ["14:05 started", "14:06 TypeError: scene"] }),
+    "plugin.ui": () => ({ plugins: [{ pluginId: "clover/base-theme", themes: [{ id: "base", file: "base.css" }], locales: [] }, { pluginId: "midnight", themes: [{ id: "night", file: "night.css" }], locales: [{ lang: "de", file: "de.json" }] }] }),
+    "account.status": () => ({ signedIn: true, provider: "email", user: { id: "u1", name: "Sam" } }),
+    "ui.settings": () => ({ picks: [], lists: [], language: "en-US", globalTheme: { pluginId: "midnight", id: "night" } }),
+    "ui.set": () => ({ applied: true }),
+    "computer.setLevel": () => ({ applied: false, card: "card-1" }),
+    "device.revoke": () => ({ applied: false, card: "card-2" }),
+  });
+  const api = fakeApi({
+    computers: { list: async () => [{ name: "Studio", device: "d1", os: "macos", level: "ask-risky", state: "online", link: "self", isMain: true, agents: [] }, { name: "Laptop", device: "d2", os: "macos", level: "ask", state: "online", link: "lan", isMain: false, agents: [] }] },
+    devices: { list: async () => [{ id: "d1", name: "Studio", kind: "computer", runsCore: true, online: true, isThis: true, isMain: true, addedAt: 0 }, { id: "d3", name: "iPhone", kind: "phone", runsCore: false, online: true, isThis: false, isMain: false, addedAt: 0 }], watch: () => () => undefined },
+    bots: { list: async () => [{ id: "alpha", name: "Alpha", model: "m", userLayer: [], state: "idle", mainSession: "s" }], get: async () => { throw new Error("x"); }, watch: () => () => undefined },
+  });
+  const routes: unknown[] = [];
+  let closed = 0;
+  const runtime = runtimeWith({
+    api: () => api,
+    core: () => core,
+    spot: (name) => (name === "settings.section" ? { shape: "list" } : undefined),
+    entries: extra.component ? [{ pluginId: "tarot-panel", id: "settings", spot: "settings.section", component: "Section", fields: { title: "Tarot" }, source: "installed", enabledAt: 1 }] : [],
+    component: () => extra.component,
+  });
+  render(
+    <UiRuntimeProvider runtime={runtime}>
+      <SettingsEntry props={{ route: "settings", params, navigate: (r) => routes.push(r), close: () => closed++ }} />
+    </UiRuntimeProvider>,
+  );
+  await act(() => settle());
+  return { core, api, routes, closed: () => closed };
+}
+
+describe("settings on the runtime", () => {
+  test("a plugin's OKs read in plain words", () => {
+    expect(okWords({ capabilities: ["conversation.read", "call:tarot", "network:x.example", "something.new"], networkHosts: ["x.example"] })).toEqual([
+      "Reads your bots' conversations", "Runs tarot's commands", "something.new", "Reaches x.example",
+    ]);
+  });
+
+  test("the plugins page: each plugin's state, reason and OKs; the switch, the logs and the plugin index", async () => {
+    const { core, routes } = await mount({ section: "plugins" });
+    const weather = screen.getByText("Weather routine").closest(".cl-settings__row") as HTMLElement;
+    expect(weather.textContent).toContain("Waits for your OK");
+    expect(weather.textContent).toContain("Sends you notifications");
+    expect(weather.textContent).toContain("Reaches api.weather.example");
+    expect(screen.getByText("Story mode").closest(".cl-settings__row")!.textContent).toContain("Stopped after three crashes in two minutes");
+    fireEvent.click(within(weather).getByRole("switch"));
+    await act(() => settle());
+    expect(core.calls.filter((c) => c.method === "plugin.setEnabled").map((c) => c.params)).toEqual([{ id: "weather-routine", enabled: true }]);
+    fireEvent.click(screen.getByRole("button", { name: "Story mode's logs" }));
+    await act(() => settle());
+    expect(screen.getByText(/TypeError: scene/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    expect(screen.getByText("Weather routine")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Open the plugin manager" }));
+    expect(routes).toEqual([{ route: "plugins", params: {} }]);
+  });
+
+  test("levels: each computer's, and a change asks the core (a card)", async () => {
+    const { core } = await mount({ section: "levels" });
+    const select = screen.getAllByRole("combobox")[0] as HTMLSelectElement;
+    expect(select.value).toBe("ask-risky");
+    fireEvent.change(select, { target: { value: "automatic" } });
+    await act(() => settle());
+    expect(core.calls.filter((c) => c.method === "computer.setLevel").map((c) => c.params)).toEqual([{ name: "Studio", level: "automatic" }]);
+  });
+
+  test("devices: removing one asks the core; this device can't be removed", async () => {
+    const { core } = await mount({ section: "devices" });
+    expect(screen.queryByRole("button", { name: "Remove Studio" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Remove iPhone" }));
+    await act(() => settle());
+    expect(core.calls.filter((c) => c.method === "device.revoke").map((c) => c.params)).toEqual([{ id: "d3" }]);
+  });
+
+  test("appearance: the theme plugin through `ui.set`; light or dark and the text size as this plugin's settings; the language", async () => {
+    const { core, api } = await mount({ section: "appearance" });
+    const theme = screen.getByRole("combobox", { name: /theme/i }) as HTMLSelectElement;
+    expect([...theme.options].map((o) => o.textContent)).toEqual(["Plain", "midnight"]);
+    expect(theme.value).toBe("midnight#night");
+    fireEvent.change(theme, { target: { value: "clover/base-theme#base" } });
+    fireEvent.click(screen.getByRole("radio", { name: "Dark" }));
+    await act(() => settle());
+    expect(core.calls.filter((c) => c.method === "ui.set").map((c) => c.params)).toEqual([{ patch: { globalTheme: { pluginId: "clover/base-theme", id: "base" } } }]);
+    expect(api.stored.get("appearance")).toEqual({ theme: "dark", textSize: "default" });
+    expect(screen.getByText("English (United States)")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Change" }));
+    const chooser = screen.getByRole("dialog", { name: "Language" });
+    fireEvent.click(within(chooser).getByRole("radio", { name: /Deutsch/ }));
+    await act(() => settle());
+    expect(core.calls.filter((c) => c.method === "ui.set").map((c) => c.params)).toContainEqual({ patch: { language: "de" } });
+  });
+
+  test("the account and the bots, each opening in the bot editor", async () => {
+    const { routes } = await mount({ section: "bots" });
+    fireEvent.click(screen.getByRole("button", { name: "Edit Alpha" }));
+    expect(routes).toEqual([{ route: "bot-editor", params: { bot: "alpha" } }]);
+  });
+
+  test("a section a plugin adds shows after Clover's own and draws its page", async () => {
+    const Section: EntryComponent = () => <p>Tarot settings</p>;
+    await mount({}, { component: Section });
+    fireEvent.click(screen.getByRole("button", { name: "Tarot" }));
+    expect(screen.getByText("Tarot settings")).toBeTruthy();
+  });
+
+  test("Close closes", async () => {
+    const { closed } = await mount();
+    fireEvent.click(screen.getByRole("button", { name: "Close settings" }));
+    expect(closed()).toBe(1);
+  });
+});

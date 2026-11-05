@@ -5,10 +5,13 @@
 // elsewhere (asked from another device) shows here as asked for, beside the level that holds.
 // Its sections are Clover's own (spec §5.8, §12); a page with nothing to set yet says so.
 
+import type { ReactNode } from "react";
+
 export type SettingsSection = "account" | "devices" | "appearance" | "notifications" | "plugins" | "levels" | "bots" | "usage";
 
-/** A plugin's state, as the plugin manager knows it (spec §5.8). */
-export type PluginState = "on" | "off" | "failed" | "waiting";
+/** A plugin's state (lane B's `PLUGIN_STATES`, spec §5.1): found and waiting for the user's OK, refused, invalid, off,
+ *  waiting for a point another plugin declares, running, stopped after crashes, or blocked (revoked). */
+export type PluginState = "found" | "refused" | "invalid" | "off" | "waiting" | "running" | "stopped" | "blocked";
 
 export interface SettingsPlugin {
   id: string;
@@ -16,6 +19,10 @@ export interface SettingsPlugin {
   /** Where it came from: bundled, the plugin index, a folder. */
   source: string;
   state: PluginState;
+  /** Switched on: the toggle. A plugin can be on and still waiting or stopped. */
+  enabled: boolean;
+  /** Why it is in that state: "waiting for `island.tab`", what stopped it. */
+  reason?: string;
   /** What it may do, each an OK the user gave it, in plain words. */
   oks: string[];
 }
@@ -52,11 +59,21 @@ export interface SettingsValues {
   /** Clover's levels, from the most careful. */
   levelOptions: { id: string; label: string }[];
   devices: SettingsDevice[];
+  /** The bots, for the Bots page: each opens in the bot editor. */
+  bots?: { id: string; name: string }[];
+}
+
+/** A section a plugin adds (`settings.section`): its title, and what its page draws. */
+export interface ExtraSection {
+  id: string;
+  title: string;
+  render: () => ReactNode;
 }
 
 export interface SettingsModalProps {
-  section: SettingsSection;
-  onSection: (section: SettingsSection) => void;
+  /** One of Clover's own sections, or an added one's id. */
+  section: SettingsSection | string;
+  onSection: (section: SettingsSection | string) => void;
   onClose: () => void;
   values: SettingsValues;
   /** One door for every plain change: a dotted path into `values` (`appearance.theme`) and the new value. */
@@ -69,6 +86,12 @@ export interface SettingsModalProps {
   onRequestLevel?: (computer: string, level: string) => void;
   /** Ask to remove a device: a sealed card too. */
   onRemoveDevice?: (id: string) => void;
+  /** Sections plugins add, after Clover's own. */
+  extraSections?: ExtraSection[];
+  /** A plugin's log, shown on the Plugins page in place of the list. */
+  logs?: { name: string; lines: string[]; onBack: () => void };
+  /** Open a bot in the bot editor. */
+  onEditBot?: (id: string) => void;
 }
 
 export interface Language {

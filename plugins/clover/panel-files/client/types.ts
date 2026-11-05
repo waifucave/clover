@@ -11,8 +11,8 @@ export interface FileEntry {
 }
 
 export interface FilesPanelProps {
-  /** The session's folder, as a path on the computer that holds it: the tree shows it and what's inside
-   *  it, nothing more. */
+  /** The session's folder, by its tree path (`home/<Computer>/…`): the tree shows it and what's inside it, nothing
+   *  more. The computer that holds it serves it over the link (lane J); nothing is mounted. */
   root: string;
   /** Each listed folder's entries, by its path. A folder not here is still to be listed. */
   listing: Readonly<Record<string, readonly FileEntry[]>>;
@@ -26,6 +26,8 @@ export interface FilesPanelProps {
   open?: { path: string; text: string };
   /** Search inside files: a filter that starts with `?` (`files.grep`). */
   onSearch?: (query: string) => void;
+  /** What the last search found, shown in place of the tree while the filter still asks for it. */
+  matches?: { query: string; items: { path: string; line: number; text: string }[]; truncated?: boolean };
 }
 
 export interface FilesTitleProps {

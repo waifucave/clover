@@ -1,41 +1,20 @@
-// Whole-window screens, for the owner's approval: the parts composed the way a desktop agent app lays
-// them out (the sidebar on the window's material, the translucent title bar with the panel toggles, the
-// conversation over the composer, the column beside it, the right-hand panel with up to two views, and
-// dialogs over it all), on a desktop wallpaper with the macOS window controls drawn in. Each at 1440 by
-// 900 and 1024 by 700, and three at the reference shots' own window size, 1512 by 950. The gallery
-// shoots each in light and dark.
+// Whole-window screens, for the owner's approval: the default shell on the runtime (`<Spot name="app.root">`) in a
+// pretend world (`world.tsx`), every spot filled by the entry the resolution rules pick, on a desktop wallpaper with the
+// macOS window controls drawn in. The M1 screens at 1440 by 900 and 1024 by 700, three at the reference shots' own
+// window size (1512 by 950), and the M2 screens (Settings' plugins, the plugin index, the bot editor, the archive, an
+// agent's live tab, add-ons) at 1440 by 900. The gallery shoots each in light and dark.
 //
-// A code session has every panel: its column, the terminal, the changes, the files (its folder) and the
-// browser. A bot's tab has its slim column and the browser; one of its coding agents opens in the panel.
-import { useState, type ReactNode } from "react";
-import { Composer } from "../../composer/client/Composer";
-import { LEVEL, MODELS } from "../../composer/gallery/stories";
-import { ConversationView } from "../../conversation/client/ConversationView";
-import { UiRuntimeProvider } from "../../conversation/client/sdk";
-import type { ConversationItem, TurnState } from "../../conversation/client/types";
-import { APPROVAL_PENDING, BASIC, BOT, DEVICE, FORMAT, GREETING, NOW, SEALED_CARDS, at, bot, tool, user } from "../../conversation/gallery/fixtures";
-import { mockRuntime } from "../../conversation/gallery/mock-runtime";
-import { DiffLayoutSwitch, DiffPanel, DiffTitle } from "../../panel-diff/client/DiffPanel";
-import type { DiffLayout } from "../../panel-diff/client/types";
-import { FILES } from "../../panel-diff/gallery/fixtures";
-import { FilesPanel, FilesTitle } from "../../panel-files/client/FilesPanel";
-import { COMPUTER, LISTING, OPEN_FILE, ROOT } from "../../panel-files/gallery/fixtures";
-import { TerminalPanel, TerminalTabs } from "../../panel-terminal/client/TerminalPanel";
-import { FEED, TABS as TERMINAL_TABS } from "../../panel-terminal/gallery/fixtures";
-import { PanelHost } from "../../panel/client/PanelHost";
-import { belongsIn, PanelToggles, toggleView } from "../../panel/client/PanelToggles";
-import { SessionView } from "../../panel/client/SessionView";
-import type { PanelView, SessionKind } from "../../panel/client/types";
-import { BOT_COLUMN, SESSION } from "../../panel/gallery/fixtures";
-import { LanguageChooser } from "../../settings/client/LanguageChooser";
-import { LANGUAGES } from "../../settings/gallery/fixtures";
-import { SettingsDemo } from "../../settings/gallery/stories";
-import { SidebarDemo } from "../../sidebar/gallery/stories";
-import { BotTab, Window } from "../client/Window";
+// A code session has every panel: its column, the terminal, the changes, the files (its folder) and the browser (lane
+// L's, so the host's placeholder for now). A bot's tab has its slim column and the browser; one of its coding agents
+// opens in the panel as a live tab of its own (the owner's item 90).
+import { useState } from "react";
+import type { ConversationItem } from "../../conversation/client/types";
+import { APPROVAL_PENDING, APPROVAL_PENDING_CARD, at, BASIC, bot, GREETING, tool, user } from "../../conversation/gallery/fixtures";
+import { Spot, UiRuntimeProvider } from "../client/sdk";
+import type { ShellStart } from "../client/Shell";
+import type { EntryComponent } from "../runtime/types";
 import type { Story } from "./story";
-
-const noop = () => undefined;
-const runtime = mockRuntime({ cards: SEALED_CARDS });
+import { waitingCard, world, type WorldOptions } from "./world";
 
 /** A coding session: the user's ask, one run of work folded into a line, and the answer. */
 const CODE_ITEMS: ConversationItem[] = [
@@ -72,14 +51,10 @@ const LONG_ITEMS: ConversationItem[] = [
 const BOT_AGENT_ITEMS: ConversationItem[] = [
   ...GREETING,
   user(at(0, 10, 0), "The garden planner's CSV export puts every date a day early. Can you get that fixed?"),
-  bot(
-    at(0, 10, 1),
-    "I've started **Codex** on it, in `~/projects/garden-planner` on Studio. It's working now: open it from the column to follow along or tell it something.",
-  ),
+  bot(at(0, 10, 1), "I've started **Codex** on it, in `~/projects/garden-planner` on Studio. It's working now: open it from the column to follow along or tell it something."),
 ];
 
-/** The coding agent's own transcript, as the panel shows it: Alpha's ask, its run, its answer. */
-const AGENT_ID = "agent-export";
+/** The coding agent's own transcript: Alpha's ask, its run, its answer. */
 const AGENT_ITEMS: ConversationItem[] = [
   user(at(0, 10, 1), "Dates in the CSV export come out a day early for anyone east of UTC. Find out why and fix it in ~/projects/garden-planner."),
   tool(at(0, 10, 2), { name: "Grep", detail: "toISOString src/export", computer: "Studio", output: "src/export/csv.ts:41:  row.date.toISOString().slice(0, 10)," }),
@@ -92,8 +67,7 @@ const AGENT_ITEMS: ConversationItem[] = [
   ),
 ];
 
-/** A long session with a card waiting in it and more after it, so the transcript scrolls past the card:
- *  the card pins below the title bar, never under it (spec §5.5; the gallery job checks it). */
+/** A long session with a card waiting in it and more after it, so the transcript scrolls past the card. */
 const CARD_UNDER_BAR_ITEMS: ConversationItem[] = [
   ...LONG_ITEMS,
   ...APPROVAL_PENDING,
@@ -105,10 +79,7 @@ const CARD_UNDER_BAR_ITEMS: ConversationItem[] = [
     "Yes. The docs build is green:\n\n- 42 pages, built in about six seconds\n- no broken links inside the docs\n- two outside links redirect, both to the same pages under a new address\n- the plugin pages list all nine parts\n- the screenshots in the gallery guide are from this week\n\nI'll update the two redirected links after the push, so the build doesn't have to follow them.",
   ),
   user(at(0, 16, 5), "Fine. And the release notes?"),
-  bot(
-    at(0, 16, 6),
-    "Drafted, not published. They cover the panels as plugins, the sidebar plugin, the Files panel for code sessions, and the hidden-character marks in the changes and files views. I'll put them up once the push is through and CI is green on all three systems.",
-  ),
+  bot(at(0, 16, 6), "Drafted, not published. They cover the panels as plugins, the sidebar plugin, the Files panel for code sessions, and the hidden-character marks in the changes and files views. I'll put them up once the push is through and CI is green on all three systems."),
   user(at(0, 16, 7), "Add a line about the terminal's paste, too."),
   bot(
     at(0, 16, 7),
@@ -116,168 +87,62 @@ const CARD_UNDER_BAR_ITEMS: ConversationItem[] = [
   ),
 ];
 
-type PanelKind = "terminal" | "diff" | "browser" | "files" | "agent";
+// -------------------------------------------------------------------------------------------------
+// An add-on plugin, for the add-ons screen: it adds to the parts without replacing them (spec §5.5)
+// -------------------------------------------------------------------------------------------------
 
-interface PanelState {
-  layout: DiffLayout;
-  setLayout: (l: DiffLayout) => void;
-  agentDraft: string;
-  setAgentDraft: (d: string) => void;
-}
+const TarotButton: EntryComponent = () => (
+  <button type="button" className="cl-panel-toggle story-addon-button" aria-label="Draw a card" title="Draw a card">
+    ✦
+  </button>
+);
+const UsageStatus: EntryComponent = () => <span className="story-addon-status">Usage today: 42% of your budget · resets at midnight</span>;
+const Reactions: EntryComponent = ({ props }) =>
+  (props.item as { kind?: string } | undefined)?.kind === "bot" ? (
+    <div className="story-addon-reactions" aria-label="Reactions">
+      <span>👍 2</span>
+      <span>✨ 1</span>
+    </div>
+  ) : null;
+const Badge: EntryComponent = () => null;
 
-function panelView(kind: PanelKind, state: PanelState): PanelView {
-  switch (kind) {
-    case "terminal":
-      return {
-        id: "terminal",
-        title: "Terminal",
-        header: <TerminalTabs tabs={TERMINAL_TABS} active="t1" onSelect={noop} onNew={noop} onClose={noop} />,
-        content: <TerminalPanel tabs={TERMINAL_TABS} active="t1" chunks={FEED} onInput={noop} onPaste={noop} />,
-      };
-    case "diff":
-      return {
-        id: "diff",
-        title: "Changes",
-        header: <DiffTitle base="main" target="working tree" targets={["last commit"]} onTarget={noop} />,
-        actions: <DiffLayoutSwitch layout={state.layout} onChange={state.setLayout} />,
-        content: <DiffPanel files={FILES} layout={state.layout} initialOpen={[FILES[0]!.path]} onOpenFile={noop} notice="Large files start folded. Open one to see it whole." />,
-      };
-    case "browser":
-      // The browser panel is lane L's plugin, not in this build: the host's placeholder shows instead.
-      return { id: "browser", title: "Browser" };
-    case "files":
-      // The session's own folder, read from the computer that holds it.
-      return {
-        id: "files",
-        title: "Files",
-        header: <FilesTitle root={ROOT} computer={COMPUTER} />,
-        content: <FilesPanel root={ROOT} listing={LISTING} initialOpen={[`${ROOT}/plugins`, `${ROOT}/plugins/clover`, `${ROOT}/plugins/clover/panel`]} onOpen={noop} open={OPEN_FILE} />,
-      };
-    case "agent":
-      // A bot's coding agent, opened from its slim column: its transcript and a composer of its own,
-      // without the code side's panels or a column of its own.
-      return { id: "agent", title: "Codex · Fix the CSV export's dates", content: <AgentTab draft={state.agentDraft} setDraft={state.setAgentDraft} /> };
-  }
-}
+const TAROT: NonNullable<WorldOptions["extra"]>[number] = {
+  pluginId: "tarot-panel",
+  capabilities: ["conversation.read"],
+  components: { TarotButton, UsageStatus, Reactions, Badge },
+  entries: [
+    { id: "draw", spot: "bot.header.action", component: "TarotButton", fields: { title: "Draw a card" } },
+    { id: "usage", spot: "status", component: "UsageStatus" },
+    { id: "reactions", spot: "conversation.message.extra", component: "Reactions" },
+    { id: "app", spot: "sidebar.app", component: "Badge", fields: { title: "Tarot", opens: "tarot" } },
+  ],
+};
 
-function AgentTab({ draft, setDraft }: { draft: string; setDraft: (d: string) => void }) {
-  return (
-    <BotTab
-      conversation={
-        <UiRuntimeProvider runtime={runtime}>
-          <ConversationView
-            bot={{ id: "codex", name: "Codex" }}
-            session={AGENT_ID}
-            items={AGENT_ITEMS}
-            turn={{ running: true, phase: "working" }}
-            now={NOW}
-            device={DEVICE}
-            format={FORMAT}
-            onOpenLink={noop}
-            onOpenFile={noop}
-            onOpenDiff={noop}
-            onAnswerQuestion={noop}
-            onCopy={noop}
-          />
-        </UiRuntimeProvider>
-      }
-      composer={<Composer botName="Codex" value={draft} onChange={setDraft} onSend={() => setDraft("")} onAttach={noop} onStop={noop} running model={MODELS} />}
-    />
-  );
-}
+// -------------------------------------------------------------------------------------------------
+// The screens
+// -------------------------------------------------------------------------------------------------
 
 interface ScreenConfig {
-  side: "bots" | "code";
-  /** The sidebar as a rail. */
-  rail?: boolean;
-  items: ConversationItem[];
-  turn?: TurnState;
-  title: string;
-  /** The column beside the conversation: a code session's, or a bot's slim one. */
-  session?: boolean;
-  panels?: PanelKind[];
-  dialog?: "settings" | "languages";
-  cardPending?: boolean;
-  draft?: string;
-  /** The files panel with no file open. */
-  noFile?: boolean;
+  start: ShellStart;
+  world?: WorldOptions;
 }
 
+const BOT_TAB = { route: "bot", params: { bot: "alpha" } };
+const CODE_TAB = { route: "agent", params: { session: "session-panels" } };
+const code = (panels: string[], items: readonly ConversationItem[] = CODE_ITEMS): ScreenConfig => ({ start: { route: CODE_TAB, panels }, world: { transcripts: { "session-panels": { items } } } });
+const alpha = (items: readonly ConversationItem[], extra: Partial<ScreenConfig> = {}): ScreenConfig => ({
+  start: { route: BOT_TAB },
+  ...extra,
+  world: { ...extra.world, transcripts: { s_alpha: { items }, "agent-export": { items: AGENT_ITEMS, running: true }, ...extra.world?.transcripts } },
+});
+
 function Screen({ config }: { config: ScreenConfig }) {
-  const [open, setOpen] = useState<string[]>([...(config.session ? ["session"] : []), ...(config.panels ?? [])]);
-  const [draft, setDraft] = useState(config.draft ?? "");
-  const [layout, setLayout] = useState<DiffLayout>("unified");
-  const [agentDraft, setAgentDraft] = useState("");
-  const [dialog, setDialog] = useState(config.dialog);
-  // Every card this window will draw: the conversation's, and one Settings raises (a level change,
-  // removing a device), which closes Settings.
-  const [cardPending, setCardPending] = useState(config.cardPending ?? false);
-  const raiseCard = () => setCardPending(true);
-  const panels = open.filter((v): v is PanelKind => v !== "session");
-  const coding = config.side === "code";
-  const kind: SessionKind = coding ? "code" : "bot";
-  const conversation = (
-    <UiRuntimeProvider runtime={runtime}>
-      <ConversationView
-        bot={coding ? { id: "session-panels", name: "Codex" } : BOT}
-        session={coding ? "session-panels" : "s_alpha"}
-        items={config.items}
-        turn={config.turn}
-        now={NOW}
-        device={DEVICE}
-        format={FORMAT}
-        onOpenLink={noop}
-        onOpenFile={noop}
-        onOpenDiff={noop}
-        onAnswerQuestion={noop}
-        onCopy={noop}
-      />
-    </UiRuntimeProvider>
-  );
-  const composer = (
-    <Composer
-      botName={coding ? "Codex" : BOT.name}
-      value={draft}
-      onChange={setDraft}
-      onSend={() => setDraft("")}
-      onAttach={noop}
-      onStop={noop}
-      running={config.turn?.running}
-      cardPending={cardPending}
-      model={MODELS}
-      level={LEVEL}
-      voice={{ listening: false, onPressStart: noop, onPressEnd: noop }}
-    />
-  );
-  let dialogNode: ReactNode;
-  if (dialog === "settings") dialogNode = <SettingsDemo start="appearance" onRequestLevel={raiseCard} onRemoveDevice={raiseCard} />;
-  if (dialog === "languages") dialogNode = <LanguageChooser languages={LANGUAGES} current="en-US" onPick={() => setDialog(undefined)} onClose={() => setDialog(undefined)} />;
-  const views = panels
-    .map((p) => {
-      const view = panelView(p, { layout, setLayout, agentDraft, setAgentDraft });
-      return p === "files" && config.noFile ? { ...view, content: <FilesPanel root={ROOT} listing={LISTING} onOpen={noop} /> } : view;
-    })
-    .filter((v) => belongsIn(v, kind));
-  const column = coding ? SESSION : BOT_COLUMN;
+  // One world per screen for its life: a new one each render would start every part's loads again.
+  const [runtime] = useState(() => world(config.world));
   return (
-    <Window
-      translucent
-      sidebar={<SidebarDemo side={config.side} collapsed={config.rail} start={coding ? { kind: "agent", agentId: "session-panels" } : { kind: "bot", botId: "alpha" }} />}
-      title={config.title}
-      onTitleMenu={noop}
-      toggles={<PanelToggles kind={kind} open={open} onToggle={(id) => setOpen((o) => toggleView(o, id))} onMore={noop} />}
-      side={
-        open.includes("session") ? (
-          <SessionView {...column} openAgent={open.includes("agent") ? AGENT_ID : undefined} onOpenAgent={() => setOpen((o) => (o.includes("agent") ? o : toggleView(o, "agent")))} />
-        ) : undefined
-      }
-      panel={views.length > 0 ? <PanelHost kind={kind} views={views} onClose={(id) => setOpen((o) => o.filter((v) => v !== id))} onExpand={noop} onFindPlugin={noop} /> : undefined}
-      dialog={dialogNode}
-      cardPending={cardPending}
-      onCloseDialog={() => setDialog(undefined)}
-    >
-      <BotTab conversation={conversation} composer={composer} />
-    </Window>
+    <UiRuntimeProvider runtime={runtime}>
+      <Spot name="app.root" props={{ translucent: true, start: config.start }} />
+    </UiRuntimeProvider>
   );
 }
 
@@ -286,106 +151,60 @@ const SIZES = [
   { tag: "1024", width: 1024, height: 700 },
 ] as const;
 
-const SCREENS: { id: string; title: string; notes: string; config: (narrow: boolean) => ScreenConfig }[] = [
-  {
-    id: "bots",
-    title: "The bot side",
-    notes: "Alpha's tab: the conversation over the composer, the level (on Studio) and model pills under it. The sidebar lets the desktop through; the title bar lets the transcript through.",
-    config: () => ({ side: "bots", items: [...GREETING, ...BASIC], title: "Alpha" }),
-  },
-  {
-    id: "bot-column",
-    title: "A bot's tab with its slim column",
-    notes: "Alpha has started a coding agent. The slim column shows its agents and tasks, context and outputs; the title bar offers only the column and the browser.",
-    config: () => ({ side: "bots", items: BOT_AGENT_ITEMS, title: "Alpha", session: true }),
-  },
-  {
-    id: "bot-agent",
-    title: "A bot's coding agent open in the panel",
-    notes: "Picked from the slim column: the agent's own transcript, with its own composer and model picker, and none of the code side's panels.",
-    config: () => ({ side: "bots", items: BOT_AGENT_ITEMS, title: "Alpha", session: true, panels: ["agent"] }),
-  },
-  {
-    id: "code",
-    title: "The code side, a run folded into one line",
-    notes: "A coding session with the session column open: where it runs (the computer and its level), context, connectors, outputs, changes.",
-    config: (narrow) => ({ side: "code", rail: narrow, items: CODE_ITEMS, title: "The panels as plugins", session: true }),
-  },
-  {
-    id: "terminal",
-    title: "The terminal panel open",
-    notes: "panel-terminal fills the panel spot keyed terminal; its tabs sit in the panel's header.",
-    config: (narrow) => ({ side: "code", rail: narrow, items: CODE_ITEMS, title: "The panels as plugins", panels: ["terminal"] }),
-  },
-  {
-    id: "diff",
-    title: "The changes panel open",
-    notes: "panel-diff: main → working tree, the first file open, unified.",
-    config: (narrow) => ({ side: "code", rail: narrow, items: CODE_ITEMS, title: "The panels as plugins", panels: ["diff"] }),
-  },
-  {
-    id: "browser",
-    title: "The browser panel, with no browser plugin yet",
-    notes: "The browser panel is lane L's plugin. Until a plugin fills the key, the panel host says so in its place.",
-    config: (narrow) => ({ side: "code", rail: narrow, items: CODE_ITEMS, title: "The panels as plugins", panels: ["browser"] }),
-  },
-  {
-    id: "files",
-    title: "The files panel open",
-    notes: "panel-files: the open file beside the filtered tree.",
-    config: (narrow) => ({ side: "code", rail: narrow, items: CODE_ITEMS, title: "The panels as plugins", panels: ["files"] }),
-  },
-  {
-    id: "two-panels",
-    title: "Two panels at once",
-    notes: "The changes over the terminal, each with its own header.",
-    config: (narrow) => ({ side: "code", rail: narrow, items: CODE_ITEMS, title: "The panels as plugins", panels: ["diff", "terminal"] }),
-  },
-  {
-    id: "settings",
-    title: "Settings",
-    notes: "The settings window over the app: Clover's own sections on the left, Appearance on the right.",
-    config: () => ({ side: "code", items: CODE_ITEMS, title: "The panels as plugins", session: true, dialog: "settings" }),
-  },
+/** The M1 screens, now through the runtime. */
+const SCREENS: { id: string; title: string; notes: string; config: ScreenConfig }[] = [
+  { id: "bots", title: "The bot side", notes: "Alpha's tab: the conversation over the composer, the level (on Studio) and model pills under it. The sidebar lets the desktop through; the title bar lets the transcript through.", config: alpha([...GREETING, ...BASIC]) },
+  { id: "bot-column", title: "A bot's tab with its slim column", notes: "Alpha has started a coding agent. The slim column shows its agents and tasks, context and outputs; the title bar offers only the column and the browser.", config: alpha(BOT_AGENT_ITEMS, { start: { route: BOT_TAB, panels: ["session"] } }) },
+  { id: "bot-agent", title: "A bot's coding agent open in the panel", notes: "Picked from the slim column: the agent's own transcript, with its own composer and model picker, and none of the code side's panels.", config: alpha(BOT_AGENT_ITEMS, { start: { route: BOT_TAB, panels: ["session", "agent"], agent: "agent-export" } }) },
+  { id: "code", title: "The code side, a run folded into one line", notes: "A coding session with the session column open: where it runs (the computer and its level), context, connectors, outputs, changes.", config: code(["session"]) },
+  { id: "terminal", title: "The terminal panel open", notes: "panel-terminal fills the panel spot keyed terminal; its tabs sit in the panel's header.", config: code(["terminal"]) },
+  { id: "diff", title: "The changes panel open", notes: "panel-diff: main → working tree, the first file open, unified.", config: code(["diff"]) },
+  { id: "browser", title: "The browser panel, with no browser plugin yet", notes: "The browser panel is lane L's plugin. Until a plugin fills the key, the panel host says so in its place, and offers to find one.", config: code(["browser"]) },
+  { id: "files", title: "The files panel open", notes: "panel-files: the session's folder, read from the computer that holds it.", config: code(["files"]) },
+  { id: "two-panels", title: "Two panels at once", notes: "The changes over the terminal, each with its own header.", config: code(["diff", "terminal"]) },
+  { id: "settings", title: "Settings", notes: "The settings window over the app: Clover's own sections on the left, Appearance on the right.", config: { start: { route: { route: "settings", params: {} }, under: CODE_TAB, panels: ["session"] }, world: { transcripts: { "session-panels": { items: CODE_ITEMS } } } } },
   {
     id: "settings-pending-card",
     title: "Settings asked for while a card waits",
     notes: "No dialog opens over a waiting card (spec §5.5): settings stays shut, the title bar says why, and the card stays clickable.",
-    config: () => ({ side: "bots", items: APPROVAL_PENDING, title: "Alpha", turn: { running: true, phase: "waiting" }, cardPending: true, dialog: "settings" }),
+    config: { start: { route: { route: "settings", params: {} }, under: BOT_TAB }, world: { transcripts: { s_alpha: { items: APPROVAL_PENDING, running: true } }, cards: [waitingCard(APPROVAL_PENDING_CARD, "s_alpha")] } },
   },
-  {
-    id: "languages",
-    title: "The language chooser",
-    notes: "Each language in itself and in English; the current one checked.",
-    config: () => ({ side: "bots", items: [...GREETING, ...BASIC], title: "Alpha", dialog: "languages" }),
-  },
+  { id: "languages", title: "The language chooser", notes: "Each language in itself and in English; the current one checked.", config: { start: { route: { route: "settings", params: { section: "languages" } }, under: BOT_TAB }, world: { transcripts: { s_alpha: { items: [...GREETING, ...BASIC] } } } } },
   {
     id: "approval",
     title: "A pending approval",
     notes: "The sealed card in the conversation, one sealed button per option; the composer's pills wait while it's pending.",
-    config: () => ({ side: "bots", items: APPROVAL_PENDING, title: "Alpha", turn: { running: true, phase: "waiting" }, cardPending: true }),
+    config: alpha(APPROVAL_PENDING, { world: { transcripts: { s_alpha: { items: APPROVAL_PENDING, running: true } }, cards: [waitingCard(APPROVAL_PENDING_CARD, "s_alpha")] } }),
   },
 ];
 
 /** At the reference shots' window size: two laid out like them, and the card under the bar. */
 const OWNER: { id: string; title: string; notes: string; config: ScreenConfig }[] = [
-  {
-    id: "owner-session",
-    title: "Like the first reference shot: a session with its column",
-    notes: "1512 × 950, the reference shots' window. The code side, a long session scrolled to its end under the title bar, and the session column.",
-    config: { side: "code", items: LONG_ITEMS, title: "The panels as plugins", session: true },
-  },
-  {
-    id: "owner-files",
-    title: "Like the annotated shot: the files panel open",
-    notes: "1512 × 950. The conversation beside the files panel, no file open; the sidebar's material and the title bar's blur are what the annotations point at.",
-    config: { side: "code", items: LONG_ITEMS, title: "The panels as plugins", panels: ["files"], noFile: true },
-  },
+  { id: "owner-session", title: "Like the first reference shot: a session with its column", notes: "1512 × 950, the reference shots' window. The code side, a long session scrolled to its end under the title bar, and the session column.", config: code(["session"], LONG_ITEMS) },
+  { id: "owner-files", title: "Like the annotated shot: the files panel open", notes: "1512 × 950. The conversation beside the files panel, no file open; the sidebar's material and the title bar's blur are what the annotations point at.", config: code(["files"], LONG_ITEMS) },
   {
     id: "card-under-bar",
     title: "A waiting card, the transcript scrolled past it",
     notes: "1512 × 950. The card pins just below the translucent title bar instead of scrolling under it. The gallery job scrolls this transcript and checks that the card's top stays at or below the bar and that every sealed button is what a click at its centre reaches.",
-    config: { side: "code", items: CARD_UNDER_BAR_ITEMS, title: "The panels as plugins", session: true, turn: { running: true, phase: "waiting" }, cardPending: true },
+    config: { start: { route: CODE_TAB, panels: ["session"] }, world: { transcripts: { "session-panels": { items: CARD_UNDER_BAR_ITEMS, running: true } }, cards: [waitingCard(APPROVAL_PENDING_CARD, "session-panels")] } },
+  },
+];
+
+/** F-M2's new screens: the pages the runtime adds, and what add-ons look like. */
+const M2: { id: string; title: string; notes: string; config: ScreenConfig }[] = [
+  { id: "settings-plugins", title: "Settings: the plugins and their states", notes: "Each plugin with its state (B's eight), why it is in it, the OKs it runs with in plain words, its logs and its switch.", config: { start: { route: { route: "settings", params: { section: "plugins" } }, under: BOT_TAB }, world: { transcripts: { s_alpha: { items: [...GREETING, ...BASIC] } } } } },
+  { id: "settings-levels", title: "Settings: each computer's level", notes: "From the computers the core knows; a pick raises a sealed card, and Settings closes for it.", config: { start: { route: { route: "settings", params: { section: "levels" } }, under: BOT_TAB }, world: { transcripts: { s_alpha: { items: [...GREETING, ...BASIC] } } } } },
+  { id: "plugin-index", title: "The plugin index", notes: "Search the indexes you added: what's installed, what has a newer version, what isn't reviewed. Install asks for the plugin's OK on a sealed card.", config: { start: { route: { route: "plugins", params: {} } } } },
+  { id: "plugin-index-for-panel", title: "The plugin index, from a panel no plugin fills", notes: "Find a plugin, from the terminal panel's placeholder: the page says what it's looking for and searches for it.", config: { start: { route: { route: "plugins", params: { spot: "panel", key: "terminal" } } } } },
+  { id: "bot-editor", title: "The bot editor", notes: "Alpha's fields, kept as your own layer over its plugin's: the theme is yours (Reset), the rest Alpha's. The avatars come from the installed packs.", config: { start: { route: { route: "bot-editor", params: { bot: "alpha" } } } } },
+  { id: "archive", title: "The archive of old Winter sessions", notes: "Readable, never a bot's history; it has its own button in the sidebar.", config: { start: { route: { route: "archive", params: {} } } } },
+  { id: "archive-session", title: "An old session, read", notes: "The conversation part draws it, read only. Its approvals read as notes, since no sealed card exists for them.", config: { start: { route: { route: "archive", params: { session: "w-1" } } } } },
+  { id: "agent-tab", title: "An agent's live tab", notes: "Opened from the sidebar: watch it, type to it, interrupt it, stop it. Its column and the browser are its panels.", config: { start: { route: { route: "agent", params: { session: "agent-export" } }, panels: ["session"] }, world: { transcripts: { "agent-export": { items: AGENT_ITEMS, running: true } } } } },
+  {
+    id: "addons",
+    title: "Add-ons from another plugin",
+    notes: "A plugin adds without replacing: a button in the bot's header (bot.header.action), reactions under each answer (conversation.message.extra), a status bar line (status) and an app button (sidebar.app).",
+    config: alpha([...GREETING, ...BASIC], { world: { extra: [TAROT] } }),
   },
 ];
 
@@ -398,16 +217,12 @@ export const screenStories: Story[] = [
       width: size.width,
       height: size.height,
       desktop: true,
-      render: () => <Screen config={s.config(size.width < 1200)} />,
+      render: () => <Screen config={s.config} />,
     })),
   ),
-  ...OWNER.map((s) => ({
-    id: `screen/${s.id}-1512`,
-    title: `${s.title} (1512 × 950)`,
-    notes: s.notes,
-    width: 1512,
-    height: 950,
-    desktop: true,
-    render: () => <Screen config={s.config} />,
-  })),
+  ...OWNER.map((s) => ({ id: `screen/${s.id}-1512`, title: `${s.title} (1512 × 950)`, notes: s.notes, width: 1512, height: 950, desktop: true, render: () => <Screen config={s.config} /> })),
+  ...M2.map((s) => ({ id: `screen/${s.id}-1440`, title: `${s.title} (1440 × 900)`, notes: s.notes, width: 1440, height: 900, desktop: true, render: () => <Screen config={s.config} /> })),
 ];
+
+/** The M2 screens' ids, for the gallery test. */
+export const M2_SCREENS = M2.map((s) => `screen/${s.id}-1440`);

@@ -5,12 +5,19 @@
 
 /** Tokens from lane B's catalog. */
 export const CATALOG_TOKENS = [
+  "color.accent",
   "color.attention.text",
+  "color.control",
+  "color.danger",
   "color.focus",
+  "color.hairline",
   "color.hairline.raised",
   "color.hover",
+  "color.selected",
   "color.surface",
   "color.text",
+  "color.text.muted",
+  "color.text.secondary",
   "font.line.body",
   "font.line.tight",
   "font.sans",
@@ -19,9 +26,13 @@ export const CATALOG_TOKENS = [
   "font.size.label",
   "font.weight.regular",
   "radius.medium",
+  "radius.round",
+  "radius.small",
   "space.m",
   "space.s",
   "space.xl",
+  "space.xs",
+  "space.xxl",
 ] as const;
 
 /** The `clover` plugin's own tokens (`plugin.clover.<name>`, B's rule for a plugin's own), each a request to

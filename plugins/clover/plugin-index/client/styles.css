@@ -1,0 +1,244 @@
+/* The plugin index browser: a page in the main area, below the title bar. Every colour, face and size is a theme token
+   from lane B's catalog (`--clover-*`, listed in tokens.ts). Results are rows like Settings' plugin rows: an icon, the
+   name with its badges, where it comes from, and the action at the end. */
+
+.cl-plugin-index {
+  box-sizing: border-box;
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: var(--clover-space-l) var(--clover-space-xl) var(--clover-space-xl);
+  overflow-y: auto;
+  color: var(--clover-color-text);
+  font-family: var(--clover-font-sans);
+  font-size: var(--clover-font-size-control);
+  line-height: var(--clover-font-line-tight);
+}
+
+.cl-plugin-index button,
+.cl-plugin-index input {
+  font: inherit;
+}
+
+.cl-plugin-index :focus-visible {
+  outline: 2px solid var(--clover-color-focus);
+  outline-offset: -2px;
+}
+
+.cl-plugin-index__page {
+  max-width: 760px;
+  margin: 0 auto;
+}
+
+.cl-plugin-index__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--clover-space-m);
+}
+
+.cl-plugin-index__title {
+  margin: 0;
+  font-size: var(--clover-font-size-title);
+  font-weight: var(--clover-font-weight-medium);
+  line-height: var(--clover-font-line-body);
+}
+
+.cl-plugin-index__intro,
+.cl-plugin-index__note {
+  margin: var(--clover-space-xs) 0 var(--clover-space-m);
+  color: var(--clover-color-text-muted);
+  line-height: var(--clover-font-line-body);
+}
+
+.cl-plugin-index__search {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: var(--clover-space-s);
+  height: 36px;
+  padding: 0 var(--clover-space-xs) 0 var(--clover-space-m);
+  border-radius: var(--clover-radius-large);
+  background: var(--clover-color-raised);
+  color: var(--clover-color-text-muted);
+}
+
+.cl-plugin-index__search:focus-within {
+  outline: 2px solid var(--clover-color-focus);
+  outline-offset: -2px;
+}
+
+.cl-plugin-index__search-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--clover-color-text);
+}
+
+.cl-plugin-index__search-input::placeholder {
+  color: var(--clover-color-text-placeholder);
+}
+
+.cl-plugin-index__search-input:focus-visible {
+  outline: none;
+}
+
+.cl-plugin-index__button,
+.cl-plugin-index__install {
+  flex: none;
+  height: 28px;
+  padding: 0 var(--clover-space-m);
+  border: none;
+  border-radius: var(--clover-radius-small);
+  background: var(--clover-color-selected);
+  color: var(--clover-color-text);
+  cursor: pointer;
+}
+
+.cl-plugin-index__button:hover {
+  background: var(--clover-color-hover);
+}
+
+.cl-plugin-index__install {
+  background: var(--clover-color-accent);
+  color: var(--clover-color-accent-contrast);
+}
+
+.cl-plugin-index__looking {
+  margin-top: var(--clover-space-m);
+  padding: var(--clover-space-m);
+  border: 1px solid var(--clover-color-hairline-raised);
+  border-radius: var(--clover-radius-large);
+  background: var(--clover-color-surface);
+  line-height: var(--clover-font-line-body);
+}
+
+.cl-plugin-index__looking-title {
+  margin: 0;
+  font-weight: var(--clover-font-weight-medium);
+}
+
+.cl-plugin-index__looking-detail {
+  margin: var(--clover-space-xs) 0 0;
+  color: var(--clover-color-text-muted);
+}
+
+.cl-plugin-index__subhead {
+  margin: var(--clover-space-xl) 0 var(--clover-space-xs);
+  font-size: var(--clover-font-size-control);
+  font-weight: var(--clover-font-weight-medium);
+}
+
+.cl-plugin-index__results,
+.cl-plugin-index__indexes {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cl-plugin-index__result,
+.cl-plugin-index__index {
+  display: flex;
+  align-items: center;
+  gap: var(--clover-space-m);
+  box-sizing: border-box;
+  min-height: 68px;
+  padding: var(--clover-space-m) 0;
+  border-bottom: 1px solid var(--clover-color-hairline);
+}
+
+.cl-plugin-index__index {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--clover-space-xs);
+  min-height: 0;
+}
+
+.cl-plugin-index__icon {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--clover-radius-medium);
+  background: var(--clover-color-raised);
+  color: var(--clover-color-text-secondary);
+}
+
+.cl-plugin-index__text {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: var(--clover-space-xs);
+  min-width: 0;
+  line-height: var(--clover-font-line-body);
+}
+
+.cl-plugin-index__name {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--clover-space-s);
+}
+
+.cl-plugin-index__meta {
+  color: var(--clover-color-text-muted);
+  font-size: var(--clover-font-size-label);
+  overflow-wrap: anywhere;
+}
+
+.cl-plugin-index__description {
+  color: var(--clover-color-text-secondary);
+}
+
+.cl-plugin-index__badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--clover-space-xs);
+  padding: 0 var(--clover-space-s);
+  border: 1px solid var(--clover-color-hairline-raised);
+  border-radius: var(--clover-radius-round);
+  color: var(--clover-color-text-muted);
+  font-size: var(--clover-font-size-caption);
+  line-height: 18px;
+}
+
+.cl-plugin-index__badge[data-tone="accent"] {
+  color: var(--clover-color-accent-text);
+}
+
+.cl-plugin-index__badge[data-tone="attention"] {
+  color: var(--clover-color-attention-text);
+}
+
+.cl-plugin-index__badge[data-tone="danger"] {
+  color: var(--clover-color-danger);
+}
+
+.cl-plugin-index__action {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--clover-space-s);
+}
+
+.cl-plugin-index__state {
+  color: var(--clover-color-text-secondary);
+}
+
+.cl-plugin-index__state[data-state="waiting"] {
+  color: var(--clover-color-attention-text);
+}
+
+.cl-plugin-index__state[data-state="failed"] {
+  color: var(--clover-color-danger);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cl-plugin-index * {
+    transition: none;
+  }
+}

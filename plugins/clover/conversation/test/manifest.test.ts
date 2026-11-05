@@ -6,10 +6,12 @@ const root = join(import.meta.dir, "..");
 const manifest = JSON.parse(readFileSync(join(root, "clover.json"), "utf8"));
 const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
 
-/** Spec §5.4's capabilities (plus the two families). */
+/** Spec §5.4's capabilities (plus the two families), and lane B's `terminal` and `devices.read`. */
 const CAPABILITIES = new Set([
   "conversation.read", "conversation.post", "memory.read", "bots.read", "routines.read", "computers.read",
   "computers.control", "approvals", "files", "browser", "usage.read", "logs.read", "notify", "audio",
+  // Lane B's, beyond the spec's list: the terminal (F's request) and the devices list.
+  "terminal", "devices.read",
 ]);
 
 describe("clover.json (spec §5.9, format 1)", () => {

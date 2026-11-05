@@ -43,6 +43,8 @@ export interface WindowProps {
   cardPending?: boolean;
   /** Closes the dialog: on Escape, and when a card arrives or is already waiting. */
   onCloseDialog?: () => void;
+  /** The `status` bar at the bottom of the main column, when anything fills it (Winter's tiles, §12). */
+  status?: ReactNode;
   /** The window has a system material behind it (sidebar vibrancy on macOS, acrylic on Windows 11; lane E):
    *  the sidebar lets it through. Without one (Linux), the sidebar is a solid colour. */
   translucent?: boolean;
@@ -96,7 +98,7 @@ function DialogLayer({ children, onClose }: { children: ReactNode; onClose?: () 
   );
 }
 
-export function Window({ sidebar, title, onTitleMenu, toggles, children, side, panel, dialog, cardPending = false, onCloseDialog, translucent = false }: WindowProps) {
+export function Window({ sidebar, title, onTitleMenu, toggles, children, side, panel, dialog, cardPending = false, onCloseDialog, translucent = false, status }: WindowProps) {
   // A dialog asked for while a card waits stays shut, and one open when a card arrives closes; either way
   // the bar says so until the card is answered.
   const [held, setHeld] = useState(false);
@@ -140,6 +142,11 @@ export function Window({ sidebar, title, onTitleMenu, toggles, children, side, p
           <div className="cl-window__content">{children}</div>
           {side && <aside className="cl-window__side">{side}</aside>}
         </div>
+        {status && (
+          <footer className="cl-window__status" role="status" aria-label={S.statusBar}>
+            {status}
+          </footer>
+        )}
       </section>
       {panel && <aside className="cl-window__panel">{panel}</aside>}
       {showDialog && <DialogLayer onClose={onCloseDialog}>{dialog}</DialogLayer>}
@@ -147,12 +154,14 @@ export function Window({ sidebar, title, onTitleMenu, toggles, children, side, p
   );
 }
 
-/** A bot tab's or a session's own layout: the conversation over the composer. In `main`, the conversation
- *  runs up under the title bar (`--cl-inset-top` tells it how far down its content starts) and both follow
- *  the axis shift. In the panel (an agent opened from a bot's slim column), neither applies. */
-export function BotTab({ conversation, composer }: { conversation: ReactNode; composer: ReactNode }) {
+/** A bot tab's or a session's own layout: the stage when something stands on it, then the conversation over the
+ *  composer. In `main`, the conversation runs up under the title bar (`--cl-inset-top` tells it how far down its content
+ *  starts) and both follow the axis shift; with a stage, the stage takes the top instead. In the panel (an agent opened
+ *  from a bot's slim column), neither applies. */
+export function BotTab({ stage, conversation, composer }: { stage?: ReactNode; conversation: ReactNode; composer: ReactNode }) {
   return (
     <div className="cl-bot-tab">
+      {stage && <div className="cl-bot-tab__stage">{stage}</div>}
       <div className="cl-bot-tab__conversation">{conversation}</div>
       <div className="cl-bot-tab__composer">{composer}</div>
     </div>

@@ -26,6 +26,7 @@ export const CATALOG_TOKENS = [
   "color.text.secondary",
   "font.line.body",
   "font.line.tight",
+  "font.mono",
   "font.sans",
   "font.size.body",
   "font.size.caption",
@@ -48,7 +49,7 @@ export const CATALOG_TOKENS = [
 /** The `clover` plugin's own tokens (`plugin.clover.<name>`, B's rule for a plugin's own), each a request to
  *  B for a catalog entry (listed in the PR body). */
 export const PART_TOKENS: readonly string[] = [
-
+  "plugin.clover.line.code",
 ];
 
 export const TOKENS: readonly string[] = [...CATALOG_TOKENS, ...PART_TOKENS];

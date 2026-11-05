@@ -1,0 +1,33 @@
+{
+  "manifest": 1,
+  "name": "Archive",
+  "description": "Your sessions from Winter, kept to read. They aren't part of any bot's history.",
+  "engines": {
+    "clover": "^1.0.0"
+  },
+  "client": {
+    "entry": "client/index.tsx",
+    "css": [
+      "client/styles.css"
+    ]
+  },
+  "capabilities": [],
+  "contributes": {
+    "ui": [
+      {
+        "spot": "main",
+        "key": "archive",
+        "component": "ArchiveEntry"
+      },
+      {
+        "spot": "sidebar.app",
+        "id": "archive-app",
+        "component": "ArchiveAppBadge",
+        "title": "Archive",
+        "icon": "assets/archive.svg",
+        "opens": "archive",
+        "order": 900
+      }
+    ]
+  }
+}
