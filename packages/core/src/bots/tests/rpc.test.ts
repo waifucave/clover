@@ -77,6 +77,20 @@ describe("the sessions area's methods", () => {
     await b.shutdown();
   });
 
+  test("session.send keeps the client's own send stamp; without one, the message is stamped as it arrives", async () => {
+    // (Waiting messages then run in `(sentAt, device)` order: lane B's conformance suite, run on the durable host.)
+    const { b, call } = await setup();
+    await call(M.sessionSend, { id: "b_alpha", message: { text: "from the phone", clientMessageId: "p", sentAt: 1_700_000_000_000 } }, thePhone);
+    await flush();
+    expect(b.drivers.for("b_alpha").turns[0]!.input).toMatchObject({ sentAt: 1_700_000_000_000, device: "phone00000000000000" });
+    b.drivers.for("b_alpha").end();
+    await flush();
+    await call(M.sessionSend, { id: "b_alpha", message: { text: "no clock", clientMessageId: "n" } });
+    await flush();
+    expect(b.drivers.for("b_alpha").turns[1]!.input).toMatchObject({ sentAt: b.clock.now() });
+    await b.shutdown();
+  });
+
   test("session.post is a plugin's note or message; the turn a message starts is the plugin's", async () => {
     const { b, call, fails } = await setup();
     await call(M.sessionPost, { id: "b_alpha", kind: "note", text: "Rain after 4", label: "Forecast" }, aPlugin);

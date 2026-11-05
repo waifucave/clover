@@ -23,6 +23,7 @@ import type { SecretStore } from "../../contracts/secret-store";
 import type { HostModule, Manifest } from "../../contracts/sdk-types";
 import type { ListenResult, SpeakResult } from "../../../../../plugins/clover/fish-audio/host/index";
 import { FakeFish } from "../../../../../plugins/clover/fish-audio/test/fake-fish";
+import { catalogPointDecl } from "../../../../plugin-sdk/src/catalogs/index";
 
 const PLUGIN = "clover/fish-audio";
 const KEY = "test-key-not-a-secret";
@@ -88,7 +89,7 @@ async function installed() {
   writeFileSync(join(root, "clover.json"), existsSync(parent) ? readFileSync(parent, "utf8") : `${JSON.stringify({ manifest: 1, id: "clover", name: "Clover" })}\n`);
   cpSync(join(REPO, "plugins", "clover", "fish-audio"), join(root, "plugins", "fish-audio"), { recursive: true });
   const { report, inputs } = await pluginFromFolder(root, { bundled: true });
-  const registry = new FakePluginRegistry({ plugins: inputs });
+  const registry = new FakePluginRegistry({ catalog: catalogPointDecl, plugins: inputs });
   return { report, inputs, registry };
 }
 

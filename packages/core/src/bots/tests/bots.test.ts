@@ -213,7 +213,8 @@ describe("bots from plugins", () => {
     writeFileSync(join(dir, "bot", "instructions.md"), "You are Luna, and you love the night sky.");
     writeFileSync(join(dir, "clover.json"), JSON.stringify(botManifest("luna", "Luna Moon")));
     const changed = await pluginFromFolder(dir);
-    b.registry.put(changed.inputs[0]!);
+    // A data edit applies at once (§5.6); a change to what runs would wait for the user's OK.
+    b.registry.put({ ...changed.inputs[0]!, change: "applies" });
     await b.bots.settled();
     expect(ctx.current().instructions).toBe("You are Luna, and you love the night sky.");
     expect(b.bots.get("luna")?.name).toBe("Luna Moon");
@@ -231,7 +232,7 @@ describe("bots from plugins", () => {
     // The fake registry tells of a change when the manifest changes (B-M1's hashes the files).
     writeFileSync(join(dir, "bot", "instructions.md"), "   ");
     writeFileSync(join(dir, "clover.json"), JSON.stringify(botManifest("luna", "Luna II")));
-    b.registry.put((await pluginFromFolder(dir)).inputs[0]!);
+    b.registry.put({ ...(await pluginFromFolder(dir)).inputs[0]!, change: "applies" });
     await b.bots.settled();
     expect(b.bots.get("luna")).toBeDefined();
     expect(b.drivers.for("b_luna").interrupts).toBe(0);
@@ -240,7 +241,7 @@ describe("bots from plugins", () => {
     // Fixed, the new version applies.
     writeFileSync(join(dir, "bot", "instructions.md"), "You are Luna, mended.");
     writeFileSync(join(dir, "clover.json"), JSON.stringify(botManifest("luna", "Luna III")));
-    b.registry.put((await pluginFromFolder(dir)).inputs[0]!);
+    b.registry.put({ ...(await pluginFromFolder(dir)).inputs[0]!, change: "applies" });
     await b.bots.settled();
     expect(b.drivers.made[0]!.ctx.current().instructions).toBe("You are Luna, mended.");
     await b.shutdown();

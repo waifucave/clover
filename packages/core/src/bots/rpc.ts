@@ -199,7 +199,8 @@ export function sessionsMethods(deps: SessionsMethodsDeps): Record<string, Metho
       const { seq } = await host.sendUser(id, {
         text: message.text,
         device: caller.device ?? deps.localDevice,
-        sentAt: deps.clock.now(),
+        // The client's own stamp on the shared clock orders the user's messages (§6.4); without one, when it arrived.
+        sentAt: message.sentAt ?? deps.clock.now(),
         clientMessageId: message.clientMessageId,
         ...(images === undefined ? {} : { images }),
         ...(message.files === undefined ? {} : { files: message.files }),

@@ -11,6 +11,7 @@ import { FakePluginRegistry, type FakePluginInput } from "../../contracts/fakes/
 import { FakeSessionDriver } from "../../contracts/fakes/session-host";
 import { DurableSessionHost } from "../../sessions/durable-host";
 import { BotService, type BotSessionContext } from "../service";
+import { catalogPointDecl } from "../../../../plugin-sdk/src/catalogs/index";
 
 /** The repo's root, from `packages/core/src/bots/tests/`. */
 export const REPO = resolve(import.meta.dir, "../../../../..");
@@ -102,7 +103,7 @@ export interface Boot {
 export async function boot(opts: { home: string; plugins: FakePluginInput[]; clock?: FakeClock; hasKeyFor?: (model: string) => boolean; computer?: string }): Promise<Boot & { shutdown(): Promise<void> }> {
   const clock = opts.clock ?? new FakeClock();
   const warnings: string[] = [];
-  const registry = new FakePluginRegistry({ plugins: opts.plugins });
+  const registry = new FakePluginRegistry({ catalog: catalogPointDecl, plugins: opts.plugins });
   const host = new DurableSessionHost({ home: opts.home, clock, warn: (m) => warnings.push(m) });
   const drivers = new Drivers();
   const bots = new BotService({
