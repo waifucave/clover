@@ -1,4 +1,4 @@
-// The small pill a newcomer waits in, just below a card the user is hovering or typing into (Winter's
+// The small pill a newcomer waits in, just below a card the user is hovering or typing into (the Swift
 // `IslandWaitingPill`): one short line; a click expands it and tucks the current card away. It grows a few
 // points under the pointer, like every floating island panel.
 

@@ -1,5 +1,5 @@
 /* Clover's island: the strip, the cards born from the housing, the waiting pill and the open island,
-   rebuilt from Winter's Swift island (docs/claude/island.md). Black liquid over any desktop, dark
+   rebuilt from the Swift island (docs/claude/island.md). Black liquid over any desktop, dark
    whatever the appearance. Every colour reads a token; the fallback after it is the base theme's value
    (`styles.test.ts` keeps the two equal).
 
@@ -568,7 +568,7 @@
 }
 
 /* A tab's list. Where more of it lies beyond an edge, the island says so OUTSIDE the list, never over it
-   (Winter faded the edges with a mask, which here would hide the sealed parts in Needs you): a hairline on
+   (the Swift island faded the edges with a mask, which here would hide the sealed parts in Needs you): a hairline on
    the list's own top border when more lies above, a chevron in a band of its own below it when more lies
    below. */
 .clv-tab-scroll,
@@ -646,7 +646,7 @@
   font-size: 28px;
 }
 
-/* The tabs' rows (Winter's "island visual language"): no boxes, typography carries the hierarchy,
+/* The tabs' rows (the Swift reference's "island visual language"): no boxes, typography carries the hierarchy,
    quiet at rest and lifting under the pointer. */
 
 .clv-rows {

@@ -23,7 +23,7 @@ import { UPDATE_LABEL, plainReply, shortened, stripBold, turnPreview } from "../
 import { cardTrailing, chooseOption, draftComplete, emptyDraft, isSealed, questionAdvance, questionAnswers, typeOther, type Question } from "../src/model/cards";
 import { APPROVAL, LINK, QUESTION, QUESTIONS } from "../src/fixtures";
 
-describe("the pill's geometry (Winter's DispatchPillMetrics)", () => {
+describe("the pill's geometry (the Swift reference's DispatchPillMetrics)", () => {
   test("compact, typing and its ceiling", () => {
     expect(mainSize("compact", 200)).toEqual({ width: 316, height: 44 });
     expect(mainSize("expanded", 26)).toEqual({ width: 560, height: 44 });
@@ -87,7 +87,7 @@ describe("the pill's geometry (Winter's DispatchPillMetrics)", () => {
     expect(accessoriesVisible("x", room - PILL.accessoryApproachMargin + 1)).toBe(false);
   });
 
-  test("the bar's look (Winter's dispatchPillBarLook)", () => {
+  test("the bar's look (the Swift reference's dispatchPillBarLook)", () => {
     // Working: compact, running, no card. The circle: running beats send beats voice.
     expect(barLook(false, true, "", false, "Message Alpha", "Reading…")).toEqual({ working: true, circle: "stop", placeholder: null });
     expect(barLook(true, true, "", false, "Message Alpha", "Reading…")).toEqual({ working: false, circle: "stop", placeholder: "Reading…" });
@@ -104,7 +104,7 @@ describe("the pill's geometry (Winter's DispatchPillMetrics)", () => {
   });
 });
 
-describe("the shape's spring (Winter's morphStep)", () => {
+describe("the shape's spring (the Swift reference's morphStep)", () => {
   test("one step is semi-implicit Euler with stiffness 140 and damping 22", () => {
     const next = springStep({ value: 0, velocity: 0 }, 100, 1 / 60);
     const velocity = (140 * 100) / 60;
@@ -143,7 +143,7 @@ describe("the shape's spring (Winter's morphStep)", () => {
   });
 });
 
-describe("the plume (Winter's PropulsionPlume and WorkingAnimationModel)", () => {
+describe("the plume (the Swift reference's PropulsionPlume and WorkingAnimationModel)", () => {
   test("each tool its glyph", () => {
     expect(toolGlyph("Bash")).toBe("terminal");
     expect(toolGlyph("Read")).toBe("doc");
@@ -269,7 +269,7 @@ describe("the agents' row", () => {
   });
 });
 
-describe("a pinned turn (Winter's dispatchPillTurnPreview and dispatchPillReplyText)", () => {
+describe("a pinned turn (the Swift reference's dispatchPillTurnPreview and dispatchPillReplyText)", () => {
   test("the prompt on one line, where the turn sits, an update's own label", () => {
     const turns = [
       { prompt: "First\n   line", reply: "ok" },

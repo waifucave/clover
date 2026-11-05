@@ -1,5 +1,5 @@
 // The island's answer circles: a white ✕ and a blue ✓, glowing softly in their own colour under the
-// pointer (Winter's `IslandAnswerButton`). A question's are the island's own buttons; an approval's are
+// pointer (the Swift reference's `IslandAnswerButton`). A question's are the island's own buttons; an approval's are
 // the core's sealed buttons, which the island only places, in a slot of the same shape.
 
 import type { ReactElement } from "react";

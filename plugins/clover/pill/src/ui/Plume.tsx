@@ -1,4 +1,4 @@
-// The working plume on a canvas (Winter's `PlumeLayerView`): every puff a disc in its heat's colour over a
+// The working plume on a canvas (the Swift reference's `PlumeLayerView`): every puff a disc in its heat's colour over a
 // soft radial glow, the sparks over the puffs, and each thrown tool a white disc carrying its glyph in the
 // plume's cool colour. The model is `WorkingAnimation`; this draws it, once a frame while it runs, or once
 // for a still (the gallery's frames, reduced motion).
@@ -58,7 +58,7 @@ export function drawPlume(ctx: PlumeCanvas, plume: PropulsionPlume, layout: Plum
   const midY = height / 2;
   const circles = plume.circles(height, midY, emitterX, tailX);
 
-  // The glows first, under every disc, as Winter's glow layer sat under its disc layer.
+  // The glows first, under every disc, as the Swift reference's glow layer sat under its disc layer.
   for (const c of circles) {
     if (c.spark) continue;
     const radius = c.diameter * GLOW_REACH;

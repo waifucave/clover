@@ -1,4 +1,4 @@
-// The island's glyphs: small SVGs in place of the SF Symbols Winter's island drew (hand.raised.fill,
+// The island's glyphs: small SVGs in place of the SF Symbols the Swift island drew (hand.raised.fill,
 // bolt.fill, questionmark.bubble.fill, link, lock.fill, xmark, checkmark, arrow.up.right, chevrons,
 // checkmark.circle). Each takes the current colour and sizes to its font size, as a symbol does.
 

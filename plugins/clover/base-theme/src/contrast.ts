@@ -1,6 +1,6 @@
 // WCAG 2.x relative luminance and contrast, for the theme tests (and for anyone tuning a theme).
 // Colours are `#RGB`, `#RRGGBB` or `#RRGGBBAA`; a translucent colour is composited over the ground
-// it is drawn on before it is measured, the way brand.md §3.5 measured Winter's palette.
+// it is drawn on before it is measured, the way brand.md §3.5 measured the Swift app's palette.
 
 export interface Rgba {
   r: number;

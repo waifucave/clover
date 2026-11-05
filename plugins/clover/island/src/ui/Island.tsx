@@ -1,4 +1,4 @@
-// The island as one surface (Winter's `IslandStore` + `IslandController`, without the AppKit): every
+// The island as one surface (the Swift reference's `IslandStore` + `IslandController`, without the AppKit): every
 // pending card goes through the queue — one on top, born from the housing; a newcomer replacing it unless
 // it is hovered or typed into, when it waits in a small pill below; cards compacting by themselves into
 // the strip's count after a while — and a click on the strip opens the island on Needs you, the tabs
@@ -6,7 +6,7 @@
 // top edge stands for the screen's.
 //
 // A card that leaves the top — answered anywhere, compacted into the count, or replaced — goes back up into
-// the housing as its birth played backwards, faster (Winter's return), drawn as the bare shape beneath
+// the housing as its birth played backwards, faster (the Swift island's return), drawn as the bare shape beneath
 // whatever is on top now; with Reduce Motion it just goes. A choice in a question never sends by itself:
 // ✓ does, as in the pill.
 //

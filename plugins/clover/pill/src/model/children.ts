@@ -1,5 +1,5 @@
 // The row of small pills above the main one: the agents and side threads working for the pill's bot
-// (Winter's child sessions; in Clover, `Agent` delegations and their kin, spec §9.3). Ported from
+// (the Swift app's child sessions; in Clover, `Agent` delegations and their kin, spec §9.3). Ported from
 // `ChildSessionPillsView`'s pure parts. Pure.
 
 import { CHILD_ROW_HEIGHT, PILL } from "./metrics";

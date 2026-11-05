@@ -1,4 +1,4 @@
-// The pill grown into an ask (Winter's `DispatchPillCardView`): a header (the amber kind glyph, who asks, and
+// The pill grown into an ask (the Swift reference's `DispatchPillCardView`): a header (the amber kind glyph, who asks, and
 // on the right where and how many wait), the body, and the answer row (a status line, then ✕ and ✓). An
 // approval's and a link request's words and buttons are sealed parts the pill places but cannot read; a
 // question's are the pill's own, one question at a time, and choosing never sends by itself.

@@ -1,4 +1,4 @@
-// Which tab the open island shows (Winter's `IslandTabState`). In Clover the island's tabs are entries of
+// Which tab the open island shows (the Swift reference's `IslandTabState`). In Clover the island's tabs are entries of
 // the `island.tab` point it declares (spec §5.4); Needs you ships as its own default guest. Pure.
 
 import { t } from "../strings";

@@ -1,4 +1,4 @@
-// The open island (Winter's `IslandOpenFrame`, `IslandExpandedContent`, `IslandOpenHeader`,
+// The open island (the Swift reference's `IslandOpenFrame`, `IslandExpandedContent`, `IslandOpenHeader`,
 // `IslandTabDots`, `IslandNeedsYouList`): pure black, the hardware housing grown — a flat top flush with
 // the screen's edge flaring into it through concave shoulders, rounded below — at ONE size for every tab,
 // each tab scrolling inside. With a housing the header sits in the housing's own band: the title left of
@@ -191,7 +191,7 @@ export function TabDots({ tabs, onSelect }: { tabs: TabState; onSelect?: (id: st
  * A tab's body inside the open island's fixed size: it scrolls (or, in the gallery, lies flat and cut), and
  * where more of the list lies beyond an edge the island says so OUTSIDE the list — a hairline on the
  * list's own top border when more lies above, a chevron in a band of its own below it when more lies
- * below (Winter's `IslandScrollEdges` faded the edges with a mask instead, which here would hide the
+ * below (the Swift reference's `IslandScrollEdges` faded the edges with a mask instead, which here would hide the
  * sealed parts inside). Judged on scroll and on a change of size, never on a timer.
  */
 export function TabScroll({ scrolls = true, children }: { scrolls?: boolean; children: ReactNode }): ReactElement {

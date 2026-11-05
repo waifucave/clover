@@ -1,5 +1,5 @@
-// The island's geometry, ported from Winter's `IslandLayout` and `DesktopIslandGeometry`
-// (apple/Winter/Sources/Island/IslandLayout.swift, WinterCUPresentation/Platform/DesktopIsland.swift).
+// The island's geometry, ported from the Swift reference's `IslandLayout` and `DesktopIslandGeometry`
+// (the Swift reference: IslandLayout.swift, DesktopIsland.swift).
 // CSS pixels, top-left origin. Strip and island rects are given with x measured from the screen's
 // horizontal centre (the island always hangs centred under the housing); a card's geometry is in its
 // own panel's space. Pure.

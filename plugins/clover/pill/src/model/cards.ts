@@ -1,4 +1,4 @@
-// What the pill asks the user (Winter's pill cards): the main pill MORPHS into the card on top, the rest
+// What the pill asks the user (the Swift pill's cards): the main pill MORPHS into the card on top, the rest
 // wait behind it. As on the island, an approval or a link request is SEALED in Clover (spec §5.5): the pill
 // hears a pending card's id and computer, never its words, and places the core's sealed parts. A question
 // (`AskUserQuestion`) is readable, so its words and options are the pill's to draw.

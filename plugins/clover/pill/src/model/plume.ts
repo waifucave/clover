@@ -1,4 +1,4 @@
-// What the pill shows while its bot works (Winter's `PropulsionPlume` and `WorkingAnimationModel`): a
+// What the pill shows while its bot works (the Swift reference's `PropulsionPlume` and `WorkingAnimationModel`): a
 // sideways rocket plume filling the pill. Flat puffs leave a nozzle behind the stop button big, bunched and
 // white-hot, and stream toward the leading end, cooling, spreading and shrinking; a few sparks shoot
 // through faster. Every tool the bot uses is THROWN out of the nozzle as a small disc — its glyph, or a
@@ -13,7 +13,7 @@ export interface PlumeThrow {
 
 export type ToolGlyph = "terminal" | "doc" | "pencil" | "search" | "globe" | "people" | "checklist" | "box" | "sparkle";
 
-/** A tool's glyph on its disc, from the tool's name (Winter's `workingToolSymbol`). */
+/** A tool's glyph on its disc, from the tool's name (the Swift reference's `workingToolSymbol`). */
 export function toolGlyph(rawName: string): ToolGlyph {
   const name = rawName.toLowerCase();
   if (name.startsWith("mcp__")) {
@@ -310,7 +310,7 @@ export function cssRgb([r, g, b]: Rgb, alpha = 1): string {
   return `rgba(${Math.round(r * 255)}, ${Math.round(g * 255)}, ${Math.round(b * 255)}, ${alpha})`;
 }
 
-/** The soft bloom under each puff (Winter's `PlumeGlow`): a disc blurred by 22 % of the plume's height. */
+/** The soft bloom under each puff (the Swift reference's `PlumeGlow`): a disc blurred by 22 % of the plume's height. */
 export const GLOW = {
   blurShare: 0.22,
   strength: 0.9,

@@ -1,4 +1,4 @@
-// The open island's morph, ported from Winter's `IslandOpenMorph` and `IslandEdgeShape`: the black mass
+// The open island's morph, ported from the Swift reference's `IslandOpenMorph` and `IslandEdgeShape`: the black mass
 // grows out of the strip into the open island as ONE shape whose width, height, bottom corners and top
 // shoulders reshape on critically damped springs (no overshoot), its top flush with the screen's edge on
 // every frame, flaring into it through two concave shoulders. The contents fade and un-blur in once the

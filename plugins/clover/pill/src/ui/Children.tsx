@@ -1,4 +1,4 @@
-// The child row above the main pill (Winter's `ChildSessionPillsView`): one small pill per agent working for
+// The child row above the main pill (the Swift reference's `ChildSessionPillsView`): one small pill per agent working for
 // the pill's bot. A working child wears its own plume colour, nozzle on its stop circle and dimmed so the
 // title stays readable; one that needs the user is ringed in amber; a finished or failed one shows its glyph.
 // One child takes the row's whole width, more split it, and past the minimum a "+n" circle stands for the rest.

@@ -1,4 +1,4 @@
-// The tabs' shared language (Winter's `IslandQuietRow`, docs/claude/island.md "Island visual language"):
+// The tabs' shared language (the Swift reference's `IslandQuietRow`, docs/claude/island.md "Island visual language"):
 // no boxes — content floats on the island's black; typography carries the hierarchy, a clear title over
 // muted words; one accent per source, used sparingly, amber only for what needs you; quiet at rest and
 // lifting under the pointer, the title growing from its leading edge while the details appear under it;

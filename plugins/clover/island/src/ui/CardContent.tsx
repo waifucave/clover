@@ -1,4 +1,4 @@
-// What a card says, laid out the way every island card is (Winter's `IslandRectContent`,
+// What a card says, laid out the way every island card is (the Swift reference's `IslandRectContent`,
 // `IslandAnswerLine`, `IslandQuestionBody`): a header — the amber kind glyph, who asks, and on the right
 // where or which question — then the words with ✕ and ✓ at the trailing end, bottom-aligned with the last
 // line. An approval's and a link request's words and buttons are sealed parts; a question's are the

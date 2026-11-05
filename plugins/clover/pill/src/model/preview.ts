@@ -1,6 +1,6 @@
 // A pinned turn — a reply that just arrived, or one swiped to — as the pill shows it alone: its prompt cut
 // to one line, its WHOLE reply read as plain words where that is safe, and where it sits ("3/7"). Ported
-// from Winter's `dispatchPillTurnPreview` and `dispatchPillReplyText`. Pure.
+// from the Swift reference's `dispatchPillTurnPreview` and `dispatchPillReplyText`. Pure.
 
 import { t } from "../strings";
 

@@ -1,5 +1,5 @@
-// The Dispatch pill's geometry, ported from Winter's `DispatchPillMetrics` and its pure functions
-// (apple/Winter/Sources/DispatchPill/DispatchPillLayout.swift). Geometry only: no type metric lives here,
+// The Dispatch pill's geometry, ported from the Swift reference's `DispatchPillMetrics` and its pure functions
+// (the Swift reference: DispatchPillLayout.swift). Geometry only: no type metric lives here,
 // and the composer's measured height is an input, never a constant. Pure.
 
 export interface Size {

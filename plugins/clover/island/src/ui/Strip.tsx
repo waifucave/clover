@@ -1,4 +1,4 @@
-// The slim strip extending the housing (Winter's `IslandStripView`). Idle — nothing waits, nothing works —
+// The slim strip extending the housing (the Swift reference's `IslandStripView`). Idle — nothing waits, nothing works —
 // it is the housing alone, black on black; while something waits it grows its wings: the amber hand and
 // the count of every pending card on the left, the bolt and the working bots' count on the right.
 // Without a housing it is a short tab hanging from the top centre. Static: it redraws only when a count

@@ -1,4 +1,4 @@
-// The Dispatch pill as one component (Winter's `DispatchPillController` and `DispatchPillView`, as React
+// The Dispatch pill as one component (the Swift reference's `DispatchPillController` and `DispatchPillView`, as React
 // state): the compact pill grows into the typing pill on the first keystroke, compresses into the working
 // pill (the plume) when a message goes, morphs into the card on top while an ask waits, and shows a pinned
 // turn alone. One spring drives the shape; a content swap fades the old content out before the shape moves

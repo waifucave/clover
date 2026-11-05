@@ -1,4 +1,4 @@
-// A floating card's birth as a liquid, ported from Winter's `DesktopIslandFluid`: the housing's whole lower
+// A floating card's birth as a liquid, ported from the Swift reference's `DesktopIslandFluid`: the housing's whole lower
 // edge sags into a body of liquid that falls on a heavy spring; the neck between them pinches in like an
 // hourglass and parts; once free, the body spreads into the card on an underdamped spring, overshooting
 // and squashing, then settling. Drawn through a blur and an alpha threshold (an SVG "goo" filter here),

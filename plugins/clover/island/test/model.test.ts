@@ -241,7 +241,7 @@ describe("the open morph", () => {
   });
 });
 
-describe("the queue (Winter's IslandQueue rules)", () => {
+describe("the queue (the Swift reference's IslandQueue rules)", () => {
   test("a newcomer replaces the current card, which compacts", () => {
     const q = new IslandQueue();
     q.arrive("a", true, 0);
@@ -396,7 +396,7 @@ describe("tabs", () => {
   });
 });
 
-describe("hover growth (Winter's HoverGrowth)", () => {
+describe("hover growth (the Swift reference's HoverGrowth)", () => {
   test("grows every panel by the compact pill's points", () => {
     expect(hoverScale(316)).toBeCloseTo(1.03, 9);
     expect(400 * hoverScale(400) - 400).toBeCloseTo(9.48, 9);

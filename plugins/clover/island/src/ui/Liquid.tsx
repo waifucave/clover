@@ -1,4 +1,4 @@
-// One frame of a floating card (Winter's `CUIslandLiquidFrame`): the melt — the birth's blobs through a
+// One frame of a floating card (the Swift reference's `CUIslandLiquidFrame`): the melt — the birth's blobs through a
 // blur and an alpha threshold, an SVG goo filter here — while it shows anything the crisp shell does
 // not, then the shell: black, a hairline rim, its shadow, the content laid out at its resting size,
 // blurred and faded by how far the shape still has to go, and growing a few points under the pointer.

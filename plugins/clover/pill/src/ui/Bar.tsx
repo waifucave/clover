@@ -1,4 +1,4 @@
-// The pill's bar (Winter's `DispatchPillComposerBar` row): who the pill messages at the leading end (Clover:
+// The pill's bar (the Swift reference's `DispatchPillComposerBar` row): who the pill messages at the leading end (Clover:
 // the target's portrait, `pill.target`), the text field, ↗ and ⋯ floating over the field's end while there
 // is room, and the trailing circle — send with text, stop while the bot works, the voice glyph otherwise.
 // One bar for the compact and the typing pill, so the field survives the first keystroke.

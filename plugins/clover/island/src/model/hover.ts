@@ -1,5 +1,5 @@
 // Every floating island panel grows under the pointer by the SAME few points as the compact Dispatch
-// pill (Winter's `HoverGrowth`): its width by 316 × 3 % = 9.48, the height in proportion, from its top
+// pill (the Swift reference's `HoverGrowth`): its width by 316 × 3 % = 9.48, the height in proportion, from its top
 // edge. The open island itself never grows. Pure.
 
 import type { Rect, Size } from "./geometry";

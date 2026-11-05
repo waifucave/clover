@@ -1,4 +1,4 @@
-// The pill's shape spring (Winter's `morphStep` and `DispatchPillController.springTick`): width and height
+// The pill's shape spring (the Swift reference's `morphStep` and `DispatchPillController.springTick`): width and height
 // each pulled toward the target by a damped spring, stepped once a frame by the real time since the last
 // one. A value, never a render loop, so a test or a gallery frame can step it to any moment. Pure.
 

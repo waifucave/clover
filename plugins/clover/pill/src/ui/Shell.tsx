@@ -1,4 +1,4 @@
-// The main pill's shape (Winter's `DispatchPillShell`): a black capsule at rest, a rounded rect once it
+// The main pill's shape (the Swift reference's `DispatchPillShell`): a black capsule at rest, a rounded rect once it
 // grows taller, its corner following the spring's CURRENT height. The content is laid out at the target
 // height, bottom-anchored, so a growing pill reveals its upper lines as the shape rises; its width follows
 // the spring's current width, so the circle rides the edge. While the shape changes the content blurs by

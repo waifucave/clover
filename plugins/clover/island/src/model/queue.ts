@@ -1,4 +1,4 @@
-// What is on top, born from the housing — ported from Winter's `IslandQueue`. Pure state with an
+// What is on top, born from the housing — ported from the Swift reference's `IslandQueue`. Pure state with an
 // injected clock (seconds); the island schedules ONE wake-up at `nextDeadline`, none while nothing is due.
 //
 //   - Cards do not stack: a new card REPLACES the current one, which compacts (the strip's waiting count

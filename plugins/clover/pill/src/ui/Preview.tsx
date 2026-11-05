@@ -1,4 +1,4 @@
-// A pinned turn shown alone (Winter's `ExpandedPillTurnPreview`): the prompt cut to one line, quiet, with
+// A pinned turn shown alone (the Swift reference's `ExpandedPillTurnPreview`): the prompt cut to one line, quiet, with
 // where the turn sits ("3/7") on the right; under it the whole reply in plain words, scrolling once it
 // passes the pill's ceiling. A click goes back to the message box.
 

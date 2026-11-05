@@ -1,4 +1,4 @@
-// The pill's glyphs: small shapes in place of the SF Symbols Winter's pill drew (stop.fill, arrow.up, mic.fill,
+// The pill's glyphs: small shapes in place of the SF Symbols the Swift pill drew (stop.fill, arrow.up, mic.fill,
 // ellipsis, the full-screen arrows, hand.raised.fill, exclamationmark.triangle.fill, the checkmark and the
 // tool symbols its plume throws). Each is path data in a 16 × 16 box, so the same shape draws as an SVG in
 // the bar and on a canvas in the plume.

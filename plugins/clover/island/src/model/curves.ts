@@ -41,5 +41,5 @@ export function springEasing(response: number, damping: number, samples = 40): {
   return { easing: `linear(${points.join(", ")})`, durationMs: Math.round(settle * 1000) };
 }
 
-/** The surfaces' spring (Winter's `HoverGrowth.animation`, the Dispatch pill's). */
+/** The surfaces' spring (the Swift reference's `HoverGrowth.animation`, the Dispatch pill's). */
 export const SURFACE_SPRING = { response: 0.3, damping: 0.7 } as const;

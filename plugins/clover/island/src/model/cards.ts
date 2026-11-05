@@ -1,6 +1,6 @@
 // What a card asks, as the island draws it.
 //
-// The one change from Winter's island: in Clover an approval is SEALED (spec §5.5). The island hears a
+// The one change from the Swift island: in Clover an approval is SEALED (spec §5.5). The island hears a
 // pending card's id and its computer, never its text, and places the core's sealed parts — the fields
 // and the approve and deny buttons — wherever its layout wants them. So an approval or a link request
 // carries no words here: the words arrive inside sealed frames (`SealedCardKit`). A question is not a
