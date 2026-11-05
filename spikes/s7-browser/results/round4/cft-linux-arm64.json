@@ -1,0 +1,306 @@
+{
+  "meta": {
+    "status": "done",
+    "platform": "linux",
+    "arch": "arm64",
+    "osRelease": "7.0.0-1017-azure",
+    "cpus": 4,
+    "memGiB": 16,
+    "bun": "1.3.14",
+    "seconds": 204.12
+  },
+  "results": {
+    "chrome-headless-shell": {
+      "artifact": "chrome-headless-shell",
+      "errors": [
+        "tabs: event timed out — the browser is still running; stderr: [1105/014305.149563:ERROR:dbus/bus.cc:405] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are \"tcp\" and on UNIX \"unix\") | [1105/014305.166895:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type:  | [1105/014305.170461:ERROR:dbus/bus.cc:405] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are \"tcp\" and on UNIX \"unix\") | [1105/014305.173772:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type:  | [1105/014305.175140:WARNING:media/gpu/vaapi/vaapi_wrapper.cc:1655] drmGetDevices2() has not found any devices | [1105/014305.176790:WARNING:sandbox/policy/linux/sandbox_linux.cc:405] InitializeSandbox() called with multiple threads in process gpu-process.",
+        "screenshots: Target.createTarget timed out — the browser is still running; stderr: [1105/014305.149563:ERROR:dbus/bus.cc:405] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are \"tcp\" and on UNIX \"unix\") | [1105/014305.166895:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type:  | [1105/014305.170461:ERROR:dbus/bus.cc:405] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are \"tcp\" and on UNIX \"unix\") | [1105/014305.173772:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type:  | [1105/014305.175140:WARNING:media/gpu/vaapi/vaapi_wrapper.cc:1655] drmGetDevices2() has not found any devices | [1105/014305.176790:WARNING:sandbox/policy/linux/sandbox_linux.cc:405] InitializeSandbox() called with multiple threads in process gpu-process."
+      ],
+      "install": {
+        "artifact": "chrome-headless-shell",
+        "platform": "linux-arm64",
+        "version": "156.0.8078.80",
+        "dir": "/home/runner/work/_temp/clover-s7-home/browsers/cft/156.0.8078.80/chrome-headless-shell-linux-arm64",
+        "bin": "/home/runner/work/_temp/clover-s7-home/browsers/cft/156.0.8078.80/chrome-headless-shell-linux-arm64/chrome-headless-shell-linux-arm64/chrome-headless-shell",
+        "reused": false,
+        "zipBytes": 126679292,
+        "unpackedBytes": 290184932,
+        "files": 287,
+        "symlinks": 0,
+        "downloadMs": 431,
+        "extractMs": 1003,
+        "sha256": "5bb6a00a4285c13303d3f72c5afdb70f144ea7a93eed462365a52b69631c9607",
+        "verified": true,
+        "trustOnFirstUse": false,
+        "serverMd5Matched": true
+      },
+      "startAttempts": [
+        {
+          "transport": "fdpipe",
+          "sandboxed": true,
+          "ok": false,
+          "error": "fdpipe start failed: browser exited (SIGTRAP) during Browser.getVersion (exit SIGTRAP); stderr: [1105/014304.323802:FATAL:content/browser/zygote_host/zygote_host_impl_linux.cc:130] No usable sandbox! If you are running on Ubuntu 23.10+ or another Linux distro that has disabled unprivileged user namespaces with AppArmor, see https://chromium.googlesource.com/chromium/src/+/main/docs/security/ap"
+        },
+        {
+          "transport": "pipe",
+          "sandboxed": true,
+          "ok": false,
+          "error": "pipe start failed: browser exited (SIGTRAP) during Browser.getVersion (exit SIGTRAP); stderr: [1105/014304.479780:FATAL:content/browser/zygote_host/zygote_host_impl_linux.cc:130] No usable sandbox! If you are running on Ubuntu 23.10+ or another Linux distro that has disabled unprivileged user namespaces with AppArmor, see https://chromium.googlesource.com/chromium/src/+/main/docs/security/ap"
+        },
+        {
+          "transport": "port",
+          "sandboxed": true,
+          "ok": false,
+          "error": "port start failed: browser exited before listening (exit SIGTRAP); stderr: [1105/014304.610436:FATAL:content/browser/zygote_host/zygote_host_impl_linux.cc:130] No usable sandbox! If you are running on Ubuntu 23.10+ or another Linux distro that has disabled unprivileged user namespaces with AppArmor, see https://chromium.googlesource.com/chromium/src/+/main/docs/security/ap"
+        },
+        {
+          "transport": "fdpipe",
+          "sandboxed": false,
+          "ok": true,
+          "ms": 147
+        }
+      ],
+      "product": "HeadlessChrome/156.0.8078.80",
+      "sandbox": "off (--no-sandbox: every sandboxed start failed)",
+      "transport": "fdpipe",
+      "start": {
+        "transport": "fdpipe",
+        "coldMs": 147,
+        "warmMs": 44,
+        "portMs": 42
+      },
+      "media": [
+        {
+          "flags": "default flags",
+          "setup": {
+            "media": "video.play ok; audio running",
+            "scrollY": 0
+          },
+          "setupMs": 48,
+          "ok": true,
+          "visibility": "visible",
+          "intervalHz": 99.96,
+          "rafHz": 59.98,
+          "mediaPlayedPerSec": 0.94,
+          "decodedFps": 28.99,
+          "audioState": "running",
+          "browserAnswersMs": 0
+        }
+      ],
+      "profiles": {
+        "alphaSees": {
+          "cookie": "s7bot=alpha",
+          "local": "alpha"
+        },
+        "betaSees": {
+          "cookie": "s7bot=beta",
+          "local": "beta"
+        },
+        "alphaAfterRestart": {
+          "cookie": "s7bot=alpha",
+          "local": "alpha"
+        },
+        "isolated": true,
+        "persisted": true,
+        "note": "--password-store=basic / --use-mock-keychain: cookies on disk are not encrypted with an OS key here"
+      },
+      "cost": {
+        "steps": [
+          {
+            "tabs": 0,
+            "memMiB": 218.58,
+            "memKind": "pss",
+            "rssMiB": 520.84,
+            "procs": 6,
+            "cpuPct": 0
+          },
+          {
+            "tabs": 1,
+            "memMiB": 248.78,
+            "memKind": "pss",
+            "rssMiB": 647.88,
+            "procs": 7,
+            "cpuPct": 2.49
+          },
+          {
+            "tabs": 2,
+            "memMiB": 269.98,
+            "memKind": "pss",
+            "rssMiB": 767.57,
+            "procs": 8,
+            "cpuPct": 4.49
+          },
+          {
+            "tabs": 4,
+            "memMiB": 312.2,
+            "memKind": "pss",
+            "rssMiB": 1003.61,
+            "procs": 10,
+            "cpuPct": 9.96
+          },
+          {
+            "tabs": 8,
+            "memMiB": 396.78,
+            "memKind": "pss",
+            "rssMiB": 1479.5,
+            "procs": 14,
+            "cpuPct": 18.65
+          }
+        ],
+        "perIdleTabMiB": 22.28,
+        "browserBaseMiB": 218.58,
+        "fourContextsMiB": 89.97,
+        "animatedTabCpuPct": 54.57,
+        "secondBrowserBaseMiB": 110.37,
+        "secondBrowserProcs": 6,
+        "firstBrowserMiBAtThatMoment": 707.2
+      }
+    },
+    "chrome": {
+      "artifact": "chrome",
+      "errors": [
+        "tabs: event timed out — the browser exited (0); stderr: [3836:3836:1105/014453.313346:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type:  | [3836:3848:1105/014453.314353:ERROR:dbus/bus.cc:405] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are \"tcp\" and on UNIX \"unix\") | [3836:3836:1105/014453.316421:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type:  | [3836:3836:1105/014453.358067:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type:  | [3836:3836:1105/014453.358134:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.Properties.GetAll: object_path= /org/freedesktop/UPower/devices/DisplayDevice: org.freedesktop.DBus.Error.ServiceUnknown: The name org.freedesktop.UPower was not provided by any .service files | [3836:3848:1105/014453.358150:ERROR:dbus/bus.cc:405] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are \"tcp\" and on UNIX \"unix\") | [3836:3836:1105/014453.381120:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type:  | [3836:3848:1105/014453.381201:ERROR:dbus/bus.cc:405] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are \"tcp\" and on UNIX \"unix\") | [3836:3836:1105/014453.398724:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type:  | [3836:3836:1105/014453.407036:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.NetworkManager.GetDevices: object_path= /org/freedesktop/NetworkManager: org.freedesktop.DBus.Error.ServiceUnknown: The name org.freedesktop.NetworkManager was not provided by any .service files",
+        "screenshots: browser gone (Target.createTarget) — the browser exited (0); stderr: [3836:3836:1105/014453.313346:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type:  | [3836:3848:1105/014453.314353:ERROR:dbus/bus.cc:405] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are \"tcp\" and on UNIX \"unix\") | [3836:3836:1105/014453.316421:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type:  | [3836:3836:1105/014453.358067:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type:  | [3836:3836:1105/014453.358134:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.Properties.GetAll: object_path= /org/freedesktop/UPower/devices/DisplayDevice: org.freedesktop.DBus.Error.ServiceUnknown: The name org.freedesktop.UPower was not provided by any .service files | [3836:3848:1105/014453.358150:ERROR:dbus/bus.cc:405] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are \"tcp\" and on UNIX \"unix\") | [3836:3836:1105/014453.381120:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type:  | [3836:3848:1105/014453.381201:ERROR:dbus/bus.cc:405] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are \"tcp\" and on UNIX \"unix\") | [3836:3836:1105/014453.398724:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type:  | [3836:3836:1105/014453.407036:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.NetworkManager.GetDevices: object_path= /org/freedesktop/NetworkManager: org.freedesktop.DBus.Error.ServiceUnknown: The name org.freedesktop.NetworkManager was not provided by any .service files"
+      ],
+      "install": {
+        "artifact": "chrome",
+        "platform": "linux-arm64",
+        "version": "156.0.8078.80",
+        "dir": "/home/runner/work/_temp/clover-s7-home/browsers/cft/156.0.8078.80/chrome-linux-arm64",
+        "bin": "/home/runner/work/_temp/clover-s7-home/browsers/cft/156.0.8078.80/chrome-linux-arm64/chrome-linux-arm64/chrome",
+        "reused": false,
+        "zipBytes": 200722708,
+        "unpackedBytes": 420273649,
+        "files": 301,
+        "symlinks": 0,
+        "downloadMs": 884,
+        "extractMs": 1395,
+        "sha256": "1f496a826c9ba4d6a5f5bf2de686145fe718528c2cc3dbeb96b5893b89653724",
+        "verified": true,
+        "trustOnFirstUse": false,
+        "serverMd5Matched": true
+      },
+      "startAttempts": [
+        {
+          "transport": "fdpipe",
+          "sandboxed": true,
+          "ok": false,
+          "error": "fdpipe start failed: browser exited (SIGABRT) during Browser.getVersion (exit SIGABRT); stderr: #10 0xaac9b0649138 (/home/runner/work/_temp/clover-s7-home/browsers/cft/156.0.8078.80/chrome-linux-arm64/chrome-linux-arm64/chrome+0xa869137) | #11 0xaac9ad3d2288 (/home/runner/work/_temp/clover-s7-home/browsers/cft/156.0.8078.80/chrome-linux-arm64/chrome-linux-arm64/chrome+0x75f2287) | #12 0xaac9ad3d0060 (/home/runner/work/_temp/clover-s7-home/browsers/cft/156.0.8078.80/chrome-linux-arm64/chrome-linux-arm64/chrome+0x75f005f) | #13 0xaac9b0ae2030 (/home/runner/work/_temp/clover-s7-home/browsers/cft/"
+        },
+        {
+          "transport": "pipe",
+          "sandboxed": true,
+          "ok": false,
+          "error": "pipe start failed: browser exited (SIGABRT) during Browser.getVersion (exit SIGABRT); stderr: #10 0xab08cf689138 (/home/runner/work/_temp/clover-s7-home/browsers/cft/156.0.8078.80/chrome-linux-arm64/chrome-linux-arm64/chrome+0xa869137) | #11 0xab08cc412288 (/home/runner/work/_temp/clover-s7-home/browsers/cft/156.0.8078.80/chrome-linux-arm64/chrome-linux-arm64/chrome+0x75f2287) | #12 0xab08cc410060 (/home/runner/work/_temp/clover-s7-home/browsers/cft/156.0.8078.80/chrome-linux-arm64/chrome-linux-arm64/chrome+0x75f005f) | #13 0xab08cfb22030 (/home/runner/work/_temp/clover-s7-home/browsers/cft/15"
+        },
+        {
+          "transport": "port",
+          "sandboxed": true,
+          "ok": false,
+          "error": "port start failed: browser exited before listening (exit SIGABRT); stderr: #10 0xab4d0e759138 (/home/runner/work/_temp/clover-s7-home/browsers/cft/156.0.8078.80/chrome-linux-arm64/chrome-linux-arm64/chrome+0xa869137) | #11 0xab4d0b4e2288 (/home/runner/work/_temp/clover-s7-home/browsers/cft/156.0.8078.80/chrome-linux-arm64/chrome-linux-arm64/chrome+0x75f2287) | #12 0xab4d0b4e0060 (/home/runner/work/_temp/clover-s7-home/browsers/cft/156.0.8078.80/chrome-linux-arm64/chrome-linux-arm64/chrome+0x75f005f) | #13 0xab4d0ebf2030 (/home/runner/work/_temp/clover-s7-home/browsers/cft/156.0.8078.80/chrome-"
+        },
+        {
+          "transport": "fdpipe",
+          "sandboxed": false,
+          "ok": true,
+          "ms": 261
+        }
+      ],
+      "product": "Chrome/156.0.8078.80",
+      "sandbox": "off (--no-sandbox: every sandboxed start failed)",
+      "transport": "fdpipe",
+      "start": {
+        "transport": "fdpipe",
+        "coldMs": 261,
+        "warmMs": 210,
+        "portMs": 250
+      },
+      "media": [
+        {
+          "flags": "default flags",
+          "setup": {
+            "media": "video.play ok; audio running",
+            "scrollY": 0
+          },
+          "setupMs": 74,
+          "ok": true,
+          "visibility": "visible",
+          "intervalHz": 99.96,
+          "rafHz": 60.18,
+          "mediaPlayedPerSec": 0.95,
+          "decodedFps": 28.79,
+          "audioState": "running",
+          "browserAnswersMs": 0
+        }
+      ],
+      "profiles": {
+        "alphaSees": {
+          "cookie": "s7bot=alpha",
+          "local": "alpha"
+        },
+        "betaSees": {
+          "cookie": "s7bot=beta",
+          "local": "beta"
+        },
+        "alphaAfterRestart": {
+          "cookie": "s7bot=alpha",
+          "local": "alpha"
+        },
+        "isolated": true,
+        "persisted": true,
+        "note": "--password-store=basic / --use-mock-keychain: cookies on disk are not encrypted with an OS key here"
+      },
+      "cost": {
+        "steps": [
+          {
+            "tabs": 0,
+            "memMiB": 450.01,
+            "memKind": "pss",
+            "rssMiB": 1378.08,
+            "procs": 12,
+            "cpuPct": 1.24
+          },
+          {
+            "tabs": 1,
+            "memMiB": 520.62,
+            "memKind": "pss",
+            "rssMiB": 1577.94,
+            "procs": 13,
+            "cpuPct": 2.73
+          },
+          {
+            "tabs": 2,
+            "memMiB": 593.15,
+            "memKind": "pss",
+            "rssMiB": 1780.09,
+            "procs": 14,
+            "cpuPct": 5.21
+          },
+          {
+            "tabs": 4,
+            "memMiB": 651.58,
+            "memKind": "pss",
+            "rssMiB": 2100.41,
+            "procs": 16,
+            "cpuPct": 11.41
+          },
+          {
+            "tabs": 8,
+            "memMiB": 858,
+            "memKind": "pss",
+            "rssMiB": 2636.15,
+            "procs": 18,
+            "cpuPct": 20.55
+          }
+        ],
+        "perIdleTabMiB": 51,
+        "browserBaseMiB": 450.01,
+        "fourContextsMiB": 310.27,
+        "animatedTabCpuPct": 60.49,
+        "secondBrowserBaseMiB": 285.41,
+        "secondBrowserProcs": 11,
+        "firstBrowserMiBAtThatMoment": 3311.46
+      }
+    }
+  }
+}

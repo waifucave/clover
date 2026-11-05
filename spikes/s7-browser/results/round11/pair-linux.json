@@ -1,0 +1,322 @@
+{
+  "meta": {
+    "state": "done",
+    "platform": "linux",
+    "arch": "x64",
+    "osRelease": "7.0.0-1017-azure",
+    "seconds": 35,
+    "names": {
+      "suffix": "deced5af",
+      "label": "com.waifucave.clover.s7.core.deced5af",
+      "coreUnit": "clover-s7-core-deced5af.service",
+      "appUnit": "clover-s7-app-deced5af.service",
+      "coreTask": "\\Clover S7\\core-deced5af",
+      "appTask": "\\Clover S7\\app-deced5af",
+      "socket": "/tmp/clover-s7-pair-u0sq8O/run/core.sock",
+      "lockFile": "/tmp/clover-s7-pair-u0sq8O/run/core.lock",
+      "pidFile": "/tmp/clover-s7-pair-u0sq8O/run/core.pid",
+      "bootsFile": "/tmp/clover-s7-pair-u0sq8O/run/boots.jsonl",
+      "appStartFile": "/tmp/clover-s7-pair-u0sq8O/run/app-start.json",
+      "appLog": "/tmp/clover-s7-pair-u0sq8O/run/app.jsonl",
+      "configFile": "/tmp/clover-s7-pair-u0sq8O/pair.json",
+      "logsDir": "/tmp/clover-s7-pair-u0sq8O/logs"
+    },
+    "windowsAppStart": "task",
+    "windowsSupervise": false
+  },
+  "steps": [
+    {
+      "step": "login start",
+      "install": [
+        {
+          "ok": true,
+          "how": "systemctl --user daemon-reload",
+          "code": 0,
+          "out": ""
+        },
+        {
+          "ok": true,
+          "how": "systemctl --user set-environment DISPLAY=:99",
+          "code": 0,
+          "out": ""
+        },
+        {
+          "ok": true,
+          "how": "systemctl --user enable --now clover-s7-core-deced5af.service",
+          "code": 0,
+          "out": "Created symlink /home/runner/.config/systemd/user/default.target.wants/clover-s7-core-deced5af.service → /home/runner/.config/systemd/user/clover-s7-core-deced5af.service."
+        }
+      ],
+      "daemonUpMs": 111,
+      "daemonUp": true,
+      "appConnectedMs": 2814,
+      "appStartedBy": "daemon",
+      "appStart": {
+        "at": 1793858685432,
+        "safeMode": false,
+        "reason": "daemon start",
+        "ok": true,
+        "how": "systemctl --user start clover-s7-app-deced5af.service",
+        "out": ""
+      },
+      "daemonParent": 1049,
+      "registeredForLogin": {
+        "ok": true,
+        "how": "systemctl --user is-enabled clover-s7-core-deced5af.service",
+        "code": 0,
+        "out": "enabled"
+      }
+    },
+    {
+      "step": "second daemon on the same home",
+      "exitCode": 0,
+      "ms": 30,
+      "said": "2026-11-05T06:04:46.073Z [core 2328] another daemon holds this home (flock: held by another process) and answers on its socket; exiting",
+      "firstStillServing": true
+    },
+    {
+      "step": "app crash",
+      "killed": 2276,
+      "kill": {
+        "ok": true,
+        "how": "kill -9 2276",
+        "code": 0,
+        "out": ""
+      },
+      "restartedMs": 1220,
+      "newPid": 2338,
+      "startedBy": "daemon",
+      "safeMode": false,
+      "how": "systemctl --user start clover-s7-app-deced5af.service",
+      "eventsSinceKill": [
+        "start",
+        "tray",
+        "connected"
+      ]
+    },
+    {
+      "step": "app crash loop → safe mode",
+      "rounds": [
+        {
+          "killed": 2338,
+          "restartedMs": 2225,
+          "safeMode": false,
+          "crashesInDaemon": 2
+        },
+        {
+          "killed": 2391,
+          "restartedMs": 4148,
+          "safeMode": true,
+          "crashesInDaemon": 3
+        }
+      ],
+      "thirdRestartInSafeMode": true
+    },
+    {
+      "step": "daemon crash, restarted by the OS alone",
+      "killed": 2264,
+      "kill": {
+        "ok": true,
+        "how": "kill -9 2264",
+        "code": 0,
+        "out": ""
+      },
+      "daemonBackMs": 1408,
+      "newDaemonPid": 2492,
+      "appSurvived": true,
+      "appPidAfter": 2445,
+      "samePid": true,
+      "appStartedTheDaemon": false,
+      "appEvents": [
+        "5ms daemon-lost",
+        "1509ms connected",
+        "1509ms reconnected"
+      ],
+      "unit": {
+        "ok": true,
+        "how": "systemctl --user show clover-s7-core-deced5af.service -p ActiveState,SubState,MainPID,NRestarts,Result,ExecMainStatus",
+        "code": 0,
+        "out": "MainPID=2492\nResult=success\nNRestarts=1\nExecMainStatus=0\nActiveState=active\nSubState=running"
+      }
+    },
+    {
+      "step": "daemon crash, the app helps after 3 s",
+      "killed": 2492,
+      "kill": {
+        "ok": true,
+        "how": "kill -9 2492",
+        "code": 0,
+        "out": ""
+      },
+      "daemonBackMs": 1406,
+      "newDaemonPid": 2502,
+      "appSurvived": true,
+      "appPidAfter": 2445,
+      "samePid": true,
+      "appStartedTheDaemon": false,
+      "appEvents": [
+        "2ms daemon-lost",
+        "1506ms connected",
+        "1506ms reconnected"
+      ],
+      "unit": {
+        "ok": true,
+        "how": "systemctl --user show clover-s7-core-deced5af.service -p ActiveState,SubState,MainPID,NRestarts,Result,ExecMainStatus",
+        "code": 0,
+        "out": "MainPID=2502\nResult=success\nNRestarts=2\nExecMainStatus=0\nActiveState=active\nSubState=running"
+      }
+    },
+    {
+      "step": "tray Quit stops both, and they stay down",
+      "forwarded": {
+        "forwarded": true
+      },
+      "bothDownMs": 402,
+      "restartedWithin12s": false,
+      "appEvents": [
+        "quit",
+        "quit-acked",
+        "daemon-quitting"
+      ],
+      "unit": {
+        "ok": true,
+        "how": "systemctl --user show clover-s7-core-deced5af.service -p ActiveState,SubState,MainPID,NRestarts,Result,ExecMainStatus",
+        "code": 0,
+        "out": "MainPID=0\nResult=success\nNRestarts=2\nExecMainStatus=0\nActiveState=inactive\nSubState=dead"
+      }
+    },
+    {
+      "step": "a user starts the app → it starts the daemon",
+      "start": {
+        "ok": true,
+        "how": "spawn detached (as from a launcher)",
+        "code": 0,
+        "out": "2524"
+      },
+      "bothUpMs": 513,
+      "startedBy": "user",
+      "appStartedTheDaemon": [
+        {
+          "ok": true,
+          "how": "systemctl --user start clover-s7-core-deced5af.service",
+          "out": ""
+        }
+      ],
+      "appEvents": [
+        "start",
+        "tray",
+        "start-daemon",
+        "connected"
+      ]
+    },
+    {
+      "step": "the daemon side's Quit stops both",
+      "bothDownMs": 401,
+      "restartedWithin8s": false
+    },
+    {
+      "step": "uninstall",
+      "results": [
+        {
+          "ok": true,
+          "how": "systemctl --user disable --now clover-s7-core-deced5af.service",
+          "code": 0,
+          "out": "Removed \"/home/runner/.config/systemd/user/default.target.wants/clover-s7-core-deced5af.service\"."
+        },
+        {
+          "ok": true,
+          "how": "systemctl --user stop clover-s7-app-deced5af.service",
+          "code": 0,
+          "out": ""
+        },
+        {
+          "ok": true,
+          "how": "systemctl --user daemon-reload",
+          "code": 0,
+          "out": ""
+        },
+        {
+          "ok": true,
+          "how": "systemctl --user reset-failed",
+          "code": 0,
+          "out": ""
+        }
+      ]
+    }
+  ],
+  "assertions": [
+    {
+      "name": "the login item starts the daemon, and the daemon the app",
+      "ok": true,
+      "detail": "{\"daemonUpMs\":111,\"appConnectedMs\":2814}"
+    },
+    {
+      "name": "a second daemon is refused and exits 0",
+      "ok": true,
+      "detail": "{\"exitCode\":0,\"firstStillServing\":true}"
+    },
+    {
+      "name": "a crashed app is back within 6 s",
+      "ok": true,
+      "detail": "{\"restartedMs\":1220}"
+    },
+    {
+      "name": "the start after the third crash in two minutes is in safe mode",
+      "ok": true,
+      "detail": "{\"rounds\":[{\"killed\":2338,\"restartedMs\":2225,\"safeMode\":false,\"crashesInDaemon\":2},{\"killed\":2391,\"restartedMs\":4148,\"safeMode\":true,\"crashesInDaemon\":3}]}"
+    },
+    {
+      "name": "a crashed daemon is back within 5 s without the app's help",
+      "ok": true,
+      "detail": "{\"daemonBackMs\":1408}"
+    },
+    {
+      "name": "a crashed daemon is back within 10 s, and the app lives on",
+      "ok": true,
+      "detail": "{\"daemonBackMs\":1406,\"samePid\":true}"
+    },
+    {
+      "name": "the tray's Quit stops both, and nothing restarts them",
+      "ok": true,
+      "detail": "{\"bothDownMs\":402,\"restarted\":false}"
+    },
+    {
+      "name": "a user's start of the app brings up both within 10 s",
+      "ok": true,
+      "detail": "{\"bothUpMs\":513}"
+    },
+    {
+      "name": "the daemon side's Quit stops both, and nothing restarts them",
+      "ok": true,
+      "detail": "{\"bothDownMs\":401,\"restarted\":false}"
+    }
+  ],
+  "daemonLog": [
+    "2026-11-05T06:04:43.417Z [core 2264] up (lock: flock, ppid 1049)",
+    "2026-11-05T06:04:43.420Z [core 2264] listening on /tmp/clover-s7-pair-u0sq8O/run/core.sock",
+    "2026-11-05T06:04:45.432Z [core 2264] started the app (daemon start): systemctl --user start clover-s7-app-deced5af.service → ok",
+    "2026-11-05T06:04:46.015Z [core 2264] app 2276 connected (started by daemon)",
+    "2026-11-05T06:04:46.073Z [core 2328] another daemon holds this home (flock: held by another process) and answers on its socket; exiting",
+    "2026-11-05T06:04:46.082Z [core 2264] app 2276 went away without saying so: restart in 1000 ms",
+    "2026-11-05T06:04:47.094Z [core 2264] started the app (crash): systemctl --user start clover-s7-app-deced5af.service → ok",
+    "2026-11-05T06:04:47.256Z [core 2264] app 2338 connected (started by daemon)",
+    "2026-11-05T06:04:47.304Z [core 2264] app 2338 went away without saying so: restart in 2000 ms",
+    "2026-11-05T06:04:49.317Z [core 2264] started the app (crash): systemctl --user start clover-s7-app-deced5af.service → ok",
+    "2026-11-05T06:04:49.441Z [core 2264] app 2391 connected (started by daemon)",
+    "2026-11-05T06:04:49.530Z [core 2264] app 2391 went away without saying so: restart in 4000 ms in safe mode",
+    "2026-11-05T06:04:53.541Z [core 2264] started the app (crash, safe mode): systemctl --user start clover-s7-app-deced5af.service → ok",
+    "2026-11-05T06:04:53.660Z [core 2264] app 2445 connected (started by daemon, safe mode)",
+    "2026-11-05T06:04:54.941Z [core 2492] up (lock: flock, ppid 1049)",
+    "2026-11-05T06:04:54.944Z [core 2492] listening on /tmp/clover-s7-pair-u0sq8O/run/core.sock",
+    "2026-11-05T06:04:55.184Z [core 2492] app 2445 connected (started by daemon, safe mode)",
+    "2026-11-05T06:04:56.440Z [core 2502] up (lock: flock, ppid 1049)",
+    "2026-11-05T06:04:56.443Z [core 2502] listening on /tmp/clover-s7-pair-u0sq8O/run/core.sock",
+    "2026-11-05T06:04:56.698Z [core 2502] app 2445 connected (started by daemon, safe mode)",
+    "2026-11-05T06:04:56.707Z [core 2502] exiting 0: the app's Quit (tray)",
+    "2026-11-05T06:05:09.308Z [core 2568] up (lock: flock, ppid 1049)",
+    "2026-11-05T06:05:09.311Z [core 2568] listening on /tmp/clover-s7-pair-u0sq8O/run/core.sock",
+    "2026-11-05T06:05:09.585Z [core 2568] app 2524 connected (started by user)",
+    "2026-11-05T06:05:09.653Z [core 2568] exiting 0: the daemon side's Quit",
+    ""
+  ]
+}

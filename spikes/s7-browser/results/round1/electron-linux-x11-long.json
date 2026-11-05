@@ -1,0 +1,170 @@
+{
+  "meta": {
+    "label": "linux-x11-long",
+    "status": "done",
+    "platform": "linux",
+    "arch": "x64",
+    "osRelease": "7.0.0-1017-azure",
+    "cpus": 4,
+    "memGiB": 16,
+    "electron": "45.2.2",
+    "chrome": "156.0.8078.80",
+    "ozone": "x11",
+    "sessionType": "",
+    "waylandDisplay": "",
+    "display": ":99",
+    "displays": [
+      "1920x1080@1"
+    ],
+    "gpu": {
+      "2d_canvas": "disabled_software",
+      "direct_rendering_display_compositor": "disabled_off_ok",
+      "gpu_compositing": "disabled_software",
+      "multiple_raster_threads": "disabled_off",
+      "opengl": "disabled_off",
+      "rasterization": "disabled_software",
+      "raw_draw": "disabled_off_ok",
+      "skia_graphite": "disabled_off",
+      "trees_in_viz": "disabled_off",
+      "video_decode": "disabled_software",
+      "video_encode": "disabled_software",
+      "vulkan": "disabled_off",
+      "webgl": "disabled_off",
+      "webgpu": "disabled_off",
+      "webgpu_on_vk_via_gl_interop": "disabled_off",
+      "webnn": "disabled_off"
+    },
+    "seconds": 401.46
+  },
+  "checks": {
+    "long": [
+      {
+        "config": "own hidden window, throttling on",
+        "at": "0.5 min",
+        "rates": {
+          "seconds": 30.01,
+          "intervalHz": 2,
+          "chainHz": 1,
+          "rafHz": 0,
+          "maxIntervalGapMs": 998,
+          "maxChainGapMs": 1000,
+          "maxRafGapMs": 0,
+          "visibility": "hidden"
+        }
+      },
+      {
+        "config": "own hidden window, throttling off",
+        "at": "0.5 min",
+        "rates": {
+          "seconds": 30.01,
+          "intervalHz": 100.01,
+          "chainHz": 99.21,
+          "rafHz": 0,
+          "maxIntervalGapMs": 10,
+          "maxChainGapMs": 11,
+          "maxRafGapMs": 0,
+          "visibility": "visible"
+        }
+      },
+      {
+        "config": "detached, throttling off",
+        "at": "0.5 min",
+        "rates": {
+          "seconds": 30.01,
+          "intervalHz": 100.02,
+          "chainHz": 99.22,
+          "rafHz": 0,
+          "maxIntervalGapMs": 11,
+          "maxChainGapMs": 11,
+          "maxRafGapMs": 0,
+          "visibility": "visible"
+        }
+      },
+      {
+        "config": "own hidden window, throttling on",
+        "at": "5 min",
+        "rates": {
+          "seconds": 270.01,
+          "intervalHz": 0.19,
+          "chainHz": 0.09,
+          "rafHz": 0,
+          "maxIntervalGapMs": 59998,
+          "maxChainGapMs": 60000,
+          "maxRafGapMs": 0,
+          "visibility": "hidden"
+        }
+      },
+      {
+        "config": "own hidden window, throttling off",
+        "at": "5 min",
+        "rates": {
+          "seconds": 270.01,
+          "intervalHz": 100,
+          "chainHz": 99.12,
+          "rafHz": 0,
+          "maxIntervalGapMs": 11,
+          "maxChainGapMs": 11,
+          "maxRafGapMs": 0,
+          "visibility": "visible"
+        }
+      },
+      {
+        "config": "detached, throttling off",
+        "at": "5 min",
+        "rates": {
+          "seconds": 270.01,
+          "intervalHz": 100,
+          "chainHz": 99.12,
+          "rafHz": 0,
+          "maxIntervalGapMs": 10,
+          "maxChainGapMs": 11,
+          "maxRafGapMs": 0,
+          "visibility": "visible"
+        }
+      },
+      {
+        "config": "own hidden window, throttling on",
+        "at": "6.5 min",
+        "rates": {
+          "seconds": 90,
+          "intervalHz": 0.02,
+          "chainHz": 0.01,
+          "rafHz": 0,
+          "maxIntervalGapMs": 3,
+          "maxChainGapMs": 0,
+          "maxRafGapMs": 0,
+          "visibility": "hidden"
+        }
+      },
+      {
+        "config": "own hidden window, throttling off",
+        "at": "6.5 min",
+        "rates": {
+          "seconds": 89.99,
+          "intervalHz": 100.01,
+          "chainHz": 99.11,
+          "rafHz": 0,
+          "maxIntervalGapMs": 10,
+          "maxChainGapMs": 11,
+          "maxRafGapMs": 0,
+          "visibility": "visible"
+        }
+      },
+      {
+        "config": "detached, throttling off",
+        "at": "6.5 min",
+        "rates": {
+          "seconds": 89.99,
+          "intervalHz": 100,
+          "chainHz": 99.11,
+          "rafHz": 0,
+          "maxIntervalGapMs": 10,
+          "maxChainGapMs": 11,
+          "maxRafGapMs": 0,
+          "visibility": "visible"
+        }
+      }
+    ]
+  },
+  "errors": []
+}
