@@ -1,8 +1,9 @@
 import { z } from "zod";
+import { utf16 } from "./strings";
 
 const Id = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/);
 const Revision = z.number().int().positive().max(Number.MAX_SAFE_INTEGER);
-const Label = z.string().min(1).max(200).refine(value => value.trim().length > 0 && !/[\0\r\n]/.test(value));
+const Label = utf16(200, 1).refine(value => value.trim().length > 0 && !/[\0\r\n]/.test(value));
 const Policy = z.enum(["plan", "dont-ask", "ask", "accept-edits", "auto", "bypass"]);
 export const CoworkCapabilityCeiling = z.object({
   toolClasses: z.array(Label).max(256), hostServices: z.array(Label).max(256),
@@ -52,7 +53,7 @@ const WorkspaceId = z.object({ workspaceId: Id }).strict();
 
 /** Relative to the bound location, the guest's own rule (`relativeCoworkPath` in core's cowork/repository.ts):
  *  no leading `/`, no `..` segment, no backslash or NUL. */
-export const CoworkRelativeCwd = z.string().min(1).max(4096)
+export const CoworkRelativeCwd = utf16(4096, 1)
   .refine(value => !value.startsWith("/") && !/[\\\0]/.test(value) && !value.split("/").includes(".."), { message: "relative cwd" });
 /** Where a conversation works. `outputs` is the conversation's own outputs location: the first-session working root
  *  (owner decision O1, 2026-10-18), because no source can honestly become ready in N2. `source` binds a ready source. */
@@ -87,10 +88,10 @@ export const CoworkCapabilities = z.object({ folderPreparation: z.boolean(), rep
 export const CoworkPreparedFolder = z.object({ selectionId: Id, kind: z.literal("folder"), label: Label, access: z.enum(["read-only", "read-write"]), state: z.literal("prepared"), expiresAt: z.string() }).strict();
 export const CoworkScheduleDefinition = z.object({
   target: z.discriminatedUnion("kind", [z.object({ kind: z.literal("conversation"), sessionId: Id }).strict(), z.object({ kind: z.literal("project"), projectId: Id }).strict()]),
-  sourceId: Id, prompt: z.string().min(1).max(8192).refine(value => !value.includes("\0")),
-  timing: z.discriminatedUnion("kind", [z.object({ kind: z.literal("once"), at: z.number().int().nonnegative().max(8640000000000000) }).strict(), z.object({ kind: z.literal("recurring"), spec: z.string().min(1).max(200) }).strict()]),
-  timezone: z.string().min(1).max(100), savedCeiling: CoworkCapabilityCeiling,
-  policy: Policy, overlap: z.literal("one-active-one-pending"), branchPrecondition: z.string().min(1).max(200).optional(),
+  sourceId: Id, prompt: utf16(8192, 1).refine(value => !value.includes("\0")),
+  timing: z.discriminatedUnion("kind", [z.object({ kind: z.literal("once"), at: z.number().int().nonnegative().max(8640000000000000) }).strict(), z.object({ kind: z.literal("recurring"), spec: utf16(200, 1) }).strict()]),
+  timezone: utf16(100, 1), savedCeiling: CoworkCapabilityCeiling,
+  policy: Policy, overlap: z.literal("one-active-one-pending"), branchPrecondition: utf16(200, 1).optional(),
 }).strict();
 export const CoworkSchedule = z.object({ scheduleId: Id, workspaceId: Id, definition: CoworkScheduleDefinition,
   state: z.enum(["enabled", "cancelled", "handled"]), revision: Revision, nextDue: z.number().nullable(), createdAt: z.number() }).strict();
@@ -111,7 +112,7 @@ export const CoworkInstructionUpdate = WorkspaceId.extend({ requestId: Id, expec
   content: z.string().refine(value => !value.includes("\0") && new TextEncoder().encode(value).length <= COWORK_INSTRUCTION_MAX_BYTES && new TextDecoder("utf-8", { ignoreBOM: true }).decode(new TextEncoder().encode(value)) === value),
 }).strict();
 export const CoworkInstructionMetadata = z.object({ workspaceId: Id, instructionRevision: Revision, digest: Digest, bytes: z.number().int().min(0).max(COWORK_INSTRUCTION_MAX_BYTES), refreshState: z.enum(["refresh-required", "unavailable"]) }).strict();
-export const CoworkInstructionRead = CoworkInstructionMetadata.extend({ contentBase64: z.string().max(87384), encoding: z.literal("utf-8") }).strict();
+export const CoworkInstructionRead = CoworkInstructionMetadata.extend({ contentBase64: utf16(87384), encoding: z.literal("utf-8") }).strict();
 export const CoworkInstructionProvenance = CoworkInstructionMetadata.extend({ entries: z.array(z.object({ kind: z.literal("workspace"), guestPath: z.literal("/workspace/.winter/WINTER.md"), digest: Digest }).strict()).length(1), sourceDiscovery: z.literal("unavailable") }).strict();
 export const CoworkInstructionReceipt = receipt(CoworkInstructionMetadata);
 /** Local recorded-output inventory only; this never enumerates filesystem entries. */
@@ -120,8 +121,8 @@ export const COWORK_FILE_CHUNK_MAX_BYTES = 256 * 1024;
 export const COWORK_FILE_CHUNK_DEFAULT_BYTES = 64 * 1024;
 export const CoworkOutputLocation = z.object({ workspaceId: Id, sessionId: Id, locationId: Id,
   kind: z.literal("conversation-outputs"), revision: Revision }).strict();
-export const CoworkOutputPage = z.object({ locations: z.array(CoworkOutputLocation).max(100), nextCursor: z.string().max(200).nullable() }).strict();
-export const CoworkOutputPath = z.string().min(1).max(4096).refine(value => {
+export const CoworkOutputPage = z.object({ locations: z.array(CoworkOutputLocation).max(100), nextCursor: utf16(200).nullable() }).strict();
+export const CoworkOutputPath = utf16(4096, 1).refine(value => {
   if (value.includes("\0") || Buffer.byteLength(value, "utf8") > 4096 || Buffer.from(value, "utf8").toString("utf8") !== value) return false;
   const parts = value.split("/");
   return parts.length <= 32 && parts.every(part => part !== "" && part !== "." && part !== ".." && Buffer.byteLength(part, "utf8") <= 255);
@@ -130,7 +131,7 @@ const FileRequest = WorkspaceId.extend({ locationId: Id, relativePath: CoworkOut
 export const CoworkOutputFileStat = z.object({ workspaceId: Id, locationId: Id, relativePath: CoworkOutputPath,
   locationRevision: Revision, generation: Digest, bytes: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER), kind: z.literal("file") }).strict();
 export const CoworkOutputFileChunk = CoworkOutputFileStat.extend({ offset: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
-  nextOffset: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER), eof: z.boolean(), contentBase64: z.string().max(349528).refine(value => Buffer.from(value, "base64").toString("base64") === value && Buffer.from(value, "base64").length <= COWORK_FILE_CHUNK_MAX_BYTES), encoding: z.literal("base64") }).strict().refine(value => value.nextOffset >= value.offset && value.nextOffset <= value.bytes && value.nextOffset - value.offset === Buffer.from(value.contentBase64, "base64").length && value.eof === (value.nextOffset === value.bytes));
+  nextOffset: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER), eof: z.boolean(), contentBase64: utf16(349528).refine(value => Buffer.from(value, "base64").toString("base64") === value && Buffer.from(value, "base64").length <= COWORK_FILE_CHUNK_MAX_BYTES), encoding: z.literal("base64") }).strict().refine(value => value.nextOffset >= value.offset && value.nextOffset <= value.bytes && value.nextOffset - value.offset === Buffer.from(value.contentBase64, "base64").length && value.eof === (value.nextOffset === value.bytes));
 const FileReadRequest = FileRequest.extend({ expectedGeneration: Digest, maxBytes: z.number().int().min(1).max(COWORK_FILE_CHUNK_MAX_BYTES).default(COWORK_FILE_CHUNK_DEFAULT_BYTES) }).strict();
 /** Local Unix subscription contract. Paired Gateway negotiation is not implemented. */
 export const WORKSPACE_WATCH_LEASE_MS = 60_000;
@@ -146,7 +147,7 @@ export const CoworkWatchFrame = z.discriminatedUnion("phase", [
 export type CoworkWatchFrame = z.infer<typeof CoworkWatchFrame>;
 export const COWORK_WATCH_METHODS = ["workspace.watch", "workspace.watch.renew", "workspace.watch.detach"] as const;
 export const COWORK_RPC = {
-  "workspace.output.list": { params: WorkspaceId.extend({ cursor: z.string().max(200).optional(), limit: z.number().int().min(1).max(100).default(100) }).strict(), result: CoworkOutputPage },
+  "workspace.output.list": { params: WorkspaceId.extend({ cursor: utf16(200).optional(), limit: z.number().int().min(1).max(100).default(100) }).strict(), result: CoworkOutputPage },
   "workspace.file.stat": { params: FileRequest, result: CoworkOutputFileStat },
   "workspace.file.read": { params: FileReadRequest, result: CoworkOutputFileChunk },
   "workspace.file.readRange": { params: FileReadRequest.extend({ offset: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER) }).strict(), result: CoworkOutputFileChunk },
@@ -161,7 +162,7 @@ export const COWORK_RPC = {
   "workspace.schedule.cancel": { params: WorkspaceId.extend({ scheduleId: Id, expectedRevision: Revision }).strict(), result: CoworkScheduleView },
   "workspace.schedule.status": { params: WorkspaceId.extend({ scheduleId: Id }).strict(), result: z.object({ schedule: CoworkScheduleView, occurrences: z.array(CoworkScheduleOccurrence).max(100), execution: z.literal("unavailable") }).strict() },
   "workspace.capabilities.get": { params: z.object({}).strict(), result: CoworkCapabilities },
-  "workspace.selection.prepareFolder": { params: z.object({ requestId: Id, bookmarkBase64: z.string().min(4).max(87384).regex(/^[A-Za-z0-9+/]+={0,2}$/), label: Label, access: z.enum(["read-only", "read-write"]) }).strict(), result: CoworkPreparedFolder },
+  "workspace.selection.prepareFolder": { params: z.object({ requestId: Id, bookmarkBase64: utf16(87384, 4).regex(/^[A-Za-z0-9+/]+={0,2}$/), label: Label, access: z.enum(["read-only", "read-write"]) }).strict(), result: CoworkPreparedFolder },
   "workspace.selection.revoke": { params: z.object({ selectionId: Id }).strict(), result: z.object({ revoked: z.literal(true) }).strict() },
   "workspace.list": { params: Page, result: z.object({ workspaces: z.array(CoworkWorkspace).max(100), nextCursor: Id.nullable() }) },
   "workspace.get": { params: WorkspaceId, result: CoworkWorkspace },
