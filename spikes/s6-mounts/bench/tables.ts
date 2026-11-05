@@ -17,13 +17,13 @@ const fmt = (ms?: number, timedOut?: boolean, ok?: boolean) => {
 };
 
 // ---- speed ------------------------------------------------------------------------------------
-// One table per mount kind: linux, windows, macos-nfs, macos-fskit. A "-writes" file is a later
-// rerun of some workloads, and its rows replace the earlier ones.
+// One table per mount kind: linux, windows, macos-nfs, macos-fskit. A later run of the same
+// workload (a rerun after a fix) replaces the earlier rows; each file says when it started.
 const speedByOs = new Map<string, any[]>();
-const speedFiles = files.filter((f) => f.includes("speed")).sort((a, b) => Number(a.includes("-writes")) - Number(b.includes("-writes")));
+const speedFiles = files.filter((f) => f.includes("speed")).map((f) => ({ f, d: load(f) }))
+  .sort((a, b) => String(a.d.started).localeCompare(String(b.d.started)));
 const rowKey = (r: any) => [r.workload, r.where, r.policy, r.rttMs, r.phase].join("|");
-for (const f of speedFiles) {
-  const d = load(f);
+for (const { f, d } of speedFiles) {
   const os = f.replace(/-speed.*$/, "") + (f.includes("nfs") ? "-nfs" : "");
   const fresh = d.rows.map((r: any) => ({ ...r, file: f }));
   const keys = new Set(fresh.map(rowKey));

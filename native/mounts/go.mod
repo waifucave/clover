@@ -16,3 +16,6 @@ require (
 	github.com/rasky/go-xdr v0.0.0-20170124162913-1a41d1a06c93 // indirect
 	golang.org/x/sys v0.28.0 // indirect
 )
+
+// go-nfs with three patches for the macOS loopback (third_party/README.md)
+replace github.com/willscott/go-nfs => ./third_party/go-nfs

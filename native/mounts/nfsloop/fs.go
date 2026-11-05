@@ -321,12 +321,21 @@ type file struct {
 func (x *file) Name() string { return x.path }
 
 func (x *file) ReadAt(p []byte, off int64) (int, error) {
-	data, e := x.fs.R.Read(x.path, x.h, off, len(p))
-	if e != wire.OK {
-		return 0, perr("read", x.path, e)
+	n := 0
+	for n < len(p) {
+		data, e := x.fs.R.Read(x.path, x.h, off+int64(n), len(p)-n)
+		if e != wire.OK {
+			return n, perr("read", x.path, e)
+		}
+		n += copy(p[n:], data)
+		if len(data) == 0 {
+			break
+		}
 	}
-	n := copy(p, data)
 	if n < len(p) {
+		// The file ends before the size the client was given. Drop the cached size, so the
+		// reply's post-op attributes (patched go-nfs, onRead) carry the new one.
+		x.fs.R.Forget(x.path)
 		return n, io.EOF
 	}
 	return n, nil

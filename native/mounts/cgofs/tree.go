@@ -39,6 +39,8 @@ type Tree struct {
 	// mounted on a folder, <tree>\home\<Other>, beside a junction for this computer: WinFsp's
 	// FUSE layer can't make a link that leaves the volume (see the report).
 	Single bool
+	// CaseInsensitive tells WinFsp the volume ignores case (a test knob; off by default).
+	CaseInsensitive bool
 
 	handles sync.Map // uint64 -> *remote.Handle
 	next    atomic.Uint64
@@ -51,7 +53,10 @@ func Mount(mountpoint string, t *Tree, debug bool) bool {
 	t.started = time.Now()
 	t.Host = fuse.NewFileSystemHost(t)
 	t.Host.SetCapReaddirPlus(t.Policy.TTL != 0)
-	t.Host.SetCapCaseInsensitive(runtime.GOOS == "windows") // see the report on case clashes
+	// Case-insensitive makes WinFsp's FUSE layer hand out upper-cased names (\HOME\DESKTOP1),
+	// which git then stats and can't find. Without it names keep the holder's case; the holder
+	// decides how case is matched (NTFS and APFS ignore it, Linux doesn't). See the report.
+	t.Host.SetCapCaseInsensitive(t.CaseInsensitive)
 	for _, c := range t.Computers {
 		if c.FS != nil {
 			comp := c
@@ -154,7 +159,7 @@ func (t *Tree) where(path string) (kind string, c *Computer, rel string) {
 		return "root", nil, ""
 	}
 	parts := strings.SplitN(p, "/", 3)
-	if parts[0] != "home" {
+	if parts[0] != "home" && !(t.CaseInsensitive && strings.EqualFold(parts[0], "home")) {
 		return "", nil, ""
 	}
 	if len(parts) == 1 {
