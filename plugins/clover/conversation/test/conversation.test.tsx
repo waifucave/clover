@@ -217,6 +217,16 @@ describe("user and bot messages", () => {
     expect(onOpenLink).toHaveBeenLastCalledWith("https://clover.dev/a");
   });
 
+  test("an attachment opens like any file the conversation names", () => {
+    const onOpenFile = mock((_p: string) => undefined);
+    renderView({
+      items: [user(at(0, 1, 1), "This one", { attachments: [{ n: 1, kind: "image", name: "a.png", path: "home/Studio/a.png", previewUrl: "blob:clover/a" }] })],
+      onOpenFile,
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Open a.png" }));
+    expect(onOpenFile).toHaveBeenCalledWith("home/Studio/a.png");
+  });
+
   test("nothing in the conversation loads an image from the web", () => {
     const { container } = renderView({
       items: [

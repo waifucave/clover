@@ -27,6 +27,7 @@ export const S = {
   botSaid: (bot: string) => `${bot}`,
   you: "You",
   fromDevice: (device: string) => `from ${device}`,
+  openAttachment: (name: string) => `Open ${name}`,
   arrivedLate: "arrived late",
   interrupted: "Interrupted",
   copy: "Copy",

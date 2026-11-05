@@ -40,16 +40,28 @@ export function UserMessage({ item, ctx }: { item: UserItem; ctx: MessageContext
     <article className="cl-conv-user" data-kind="user" aria-label={S.you}>
       {images.length > 0 && (
         <div className="cl-conv-user__images">
-          {images.map((a) =>
-            safeAsset(a.previewUrl) ? (
-              <img key={a.n} className="cl-conv-user__thumb" src={safeAsset(a.previewUrl)} alt={a.name} title={a.path} />
+          {images.map((a) => {
+            const src = safeAsset(a.previewUrl);
+            const body = src ? (
+              <img className="cl-conv-user__thumb" src={src} alt={a.name} />
             ) : (
-              <span key={a.n} className="cl-conv-user__chip" title={a.path}>
+              <span className="cl-conv-user__chip">
                 <IconImage />
                 {a.name}
               </span>
-            ),
-          )}
+            );
+            // An attachment opens like any file the conversation names (review: they couldn't be opened).
+            const open = ctx.actions.onOpenFile;
+            return open ? (
+              <button key={a.n} type="button" className="cl-conv-user__open" title={a.path} aria-label={S.openAttachment(a.name)} onClick={() => open(a.path)}>
+                {body}
+              </button>
+            ) : (
+              <span key={a.n} className="cl-conv-user__open" title={a.path}>
+                {body}
+              </span>
+            );
+          })}
         </div>
       )}
       <div className="cl-conv-user__bubble">{withChips(item.text, attachments)}</div>

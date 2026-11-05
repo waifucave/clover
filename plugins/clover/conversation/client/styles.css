@@ -1181,3 +1181,19 @@ button.cl-conv-diff:hover {
 .cl-conv-app {
   margin-top: var(--clover-space-s);
 }
+
+/* An attachment opens like any file the conversation names. */
+.cl-conv-user__open {
+  display: inline-flex;
+  padding: 0;
+  border: none;
+  border-radius: var(--clover-radius-medium);
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+span.cl-conv-user__open {
+  cursor: default;
+}
