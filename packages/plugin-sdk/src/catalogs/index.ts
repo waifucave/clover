@@ -11,6 +11,7 @@ import { SPOTS, spotInfo } from "./spots";
 import { TOKENS } from "./tokens";
 
 export * from "./api-calls";
+export * from "./avatars";
 export * from "./capabilities";
 export * from "./hooks";
 export * from "./points";

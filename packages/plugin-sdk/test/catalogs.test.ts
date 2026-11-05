@@ -4,7 +4,7 @@ import { describe, expect, test } from "bun:test";
 import {
   API_CALLS, CAPABILITIES, CARD_TOKENS, CLAUDE_HOOK_EVENTS, CORE_CONTRIBUTION_KEYS, CORE_POINTS, DATA_POINTS, HOOK_EVENTS,
   HOOK_RETURNS, MESSAGE_KINDS, PointDeclSchema, SPOTS, TOKENS, TOKEN_GROUPS, WELL_KNOWN_POINT_NAMES, apiCallAllowed, capabilityOkText, catalogJson,
-  catalogPointDecl, cssProperty, cssVar, isAnyTokenValue, isValueForToken,
+  AVATAR_FORMATS, avatarFileProblem, catalogPointDecl, cssProperty, cssVar, isAnyTokenValue, isValueForToken,
   fetchesCodeAtRunTime, hookMatchesTool, hookOrder, interpolate, isPluginTokenName, isSafeTokenValue, isTokenName, isTokenValue, keyMatches,
   networkAllows, pluginTokenName,
   parseCapability,
@@ -159,6 +159,19 @@ describe("points and spots", () => {
     expect(catalogPointDecl("webhook.ingress")).toMatchObject({ shape: "list", fields: { type: "object" } });
     expect(catalogPointDecl("webhook.ingress")!.props).toBeUndefined();
     for (const name of ["app.root", "bot.tab", "models", "luna.cards"]) expect(catalogPointDecl(name)).toBeUndefined();
+  });
+
+  test("avatars are VRM or Live2D Cubism models, the avatar spot keyed by format (the owner's decision)", () => {
+    expect(AVATAR_FORMATS.map((a) => a.format)).toEqual(["vrm", "live2d"]);
+    expect(SPOTS.find((s) => s.name === "avatar")!.keys).toEqual(["vrm", "live2d"]);
+    expect(avatarFileProblem("live2d", "assets/alpha/alpha.model3.json")).toBeUndefined();
+    expect(avatarFileProblem("live2d", "assets/alpha.zip")).toBeUndefined();
+    expect(avatarFileProblem("live2d", "assets/alpha.vrm")).toBeDefined();
+    expect(avatarFileProblem("vrm", "assets/alpha.model3.json")).toBeDefined();
+    expect(avatarFileProblem("sprite-sheet", "anything.png")).toBeUndefined();
+    const pack = DATA_POINTS.find((p) => p.name === "avatar.packs")!.entry;
+    expect(pack.safeParse({ id: "alpha", file: "alpha/alpha.model3.json", format: "live2d" }).success).toBe(true);
+    expect(pack.safeParse({ id: "alpha", file: "alpha.png", format: "live2d" }).success).toBe(false);
   });
 
   test("a keyed spot's entry with no key fills every key; a key ending in * fills what it matches", () => {

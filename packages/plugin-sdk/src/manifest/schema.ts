@@ -4,6 +4,7 @@
 import { z } from "zod";
 import { Os, Platform, RunsOn, Scope, SemverVersion, TopPluginId, COMPUTER_NAME_RE } from "@waifucave/clover-protocol";
 import { AUTH_SCHEME_RE } from "../api/keyed-fetch";
+import { avatarFileProblem } from "../catalogs/avatars";
 import {
   ComponentName, EntryId, HandlerName, JsonSchema, KEY_CHORD_RE, COMMAND_NAME_RE, LangTag, NAMESPACE_RE, Path, PathGlob,
   LinkUrl, PointName, Program, SecretName, SettingKey, Text, TOOL_NAME_RE, Url,
@@ -82,7 +83,14 @@ export const BotSchema = z.strictObject({
   instructions: Path,
   /** A qualified catalog id; with no key for it, the user's default model. */
   model: z.strictObject({ default: z.string().min(1).max(200), effort: z.string().min(1).max(32).optional() }).optional(),
-  avatar: z.strictObject({ file: Path, format: z.string().min(1).max(32).regex(/^[a-z0-9-]+$/), portrait: Path.optional() }).optional(),
+  /** `format` is `vrm` or `live2d` (`AVATAR_FORMATS`), or one a renderer plugin brings; a `live2d` file is a Cubism
+   *  `.model3.json` or a `.zip` holding one. */
+  avatar: z.strictObject({ file: Path, format: z.string().min(1).max(32).regex(/^[a-z0-9-]+$/), portrait: Path.optional() })
+    .superRefine((a, ctx) => {
+      const problem = avatarFileProblem(a.format, a.file);
+      if (problem) ctx.addIssue({ code: "custom", path: ["file"], message: problem });
+    })
+    .optional(),
   voice: z.strictObject({
     provider: EntryId, voice: z.string().min(1).max(256), model: z.string().min(1).max(128).optional(),
     /** Listening from another voice provider (§6.6). */

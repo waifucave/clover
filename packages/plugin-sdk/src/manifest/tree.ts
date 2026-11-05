@@ -3,6 +3,7 @@
 // to. Nothing runs. The reader is how the folder is reached: the real file system for the CLI and the registry, or an
 // in-memory folder in tests.
 import type { ValidationIssue } from "@waifucave/clover-protocol";
+import { live2dReferences } from "../catalogs/avatars";
 import { spotInfo } from "../catalogs/spots";
 import { TOKENS, TOKEN_TYPES, type TokenValue, isTokenValue, isPluginTokenName, isValueForToken } from "../catalogs/tokens";
 import { LayoutSchema, layoutPaths, layoutSpots } from "../formats/layout";
@@ -152,7 +153,9 @@ async function checkFiles(reader: PluginFolderReader, base: string, m: Manifest,
   const c = m.contributes ?? {};
   if (c.bot) {
     for (const k of ["instructions", "greeting", "memory"] as const) await must(c.bot[k], ["contributes", "bot", k], "contribution");
-    if (c.bot.avatar) await must(c.bot.avatar.file, ["contributes", "bot", "avatar", "file"], "contribution");
+    if (c.bot.avatar && (await must(c.bot.avatar.file, ["contributes", "bot", "avatar", "file"], "contribution")) && c.bot.avatar.format === "live2d") {
+      await checkLive2d(reader, base, c.bot.avatar.file, file, f);
+    }
     if (c.bot.layout && (await must(c.bot.layout, ["contributes", "bot", "layout"], "contribution"))) {
       await checkLayout(reader, base, c.bot.layout, file, isBot, f);
     }
@@ -218,6 +221,27 @@ async function checkTheme(reader: PluginFolderReader, base: string, path: string
     if (problem) f.error(full, "entry", "path_escape", [], `"${p}" has ${problem}`);
   }
   return setsCardTokens(t);
+}
+
+/** A Live2D avatar's `model3.json` names files beside it (`live2dReferences`); each must exist and stay inside the
+ *  folder. A `.zip` is checked when the core unpacks it. */
+async function checkLive2d(reader: PluginFolderReader, base: string, path: string, manifestFile: string, f: TreeFindings): Promise<void> {
+  if (!path.toLowerCase().endsWith(".model3.json")) return;
+  const full = `${base}${path.startsWith("./") ? path.slice(2) : path}`;
+  const value = await readFormat(reader, base, path, full, f);
+  if (value === undefined) return;
+  const refs = live2dReferences(value);
+  if (refs === null) {
+    f.error(full, "contribution", "file_format", [], "not a Cubism model3.json: it needs FileReferences with a Moc and Textures");
+    return;
+  }
+  const dir = full.includes("/") ? full.slice(0, full.lastIndexOf("/") + 1) : "";
+  for (const ref of refs) {
+    const problem = manifestPathProblem(`${dir.slice(base.length)}${ref}`);
+    if (problem) f.error(full, "contribution", "path_escape", [], `"${ref}" has ${problem}`);
+    else if (!(await reader.exists(`${dir}${ref}`))) f.error(full, "contribution", "file_missing", [], `"${ref}" doesn't exist`);
+  }
+  void manifestFile;
 }
 
 async function checkLayout(reader: PluginFolderReader, base: string, path: string, file: string, isBot: boolean, f: TreeFindings): Promise<void> {

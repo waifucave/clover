@@ -94,9 +94,9 @@ export const SPOTS: readonly SpotInfo[] = [
     props: z.object({ bot: BotRef, session: z.string() }),
     doc: "The composer; a send counts as the user's only on a real key press or click (§5.5)." },
   // Inside the tab's parts.
-  { name: "avatar", shape: "keyed", declaredBy: "bot-stage", inBotTab: true, keys: ["vrm"], context: ["bot"], fields: none,
+  { name: "avatar", shape: "keyed", declaredBy: "bot-stage", inBotTab: true, keys: ["vrm", "live2d"], context: ["bot"], fields: none,
     props: z.object({ bot: BotRef, file: z.string(), format: z.string(), speaking: z.boolean(), speech: z.looseObject({}).optional() }),
-    doc: "Draws the bot's avatar, keyed by the avatar file's format (VRM by default), and lip-syncs it from `speech` (a `SpeechFeed`)." },
+    doc: "Draws the bot's avatar, keyed by the avatar file's format (`vrm`, `live2d`, or a plugin's own; `AVATAR_FORMATS`), and lip-syncs it from `speech` (a `SpeechFeed`)." },
   { name: "composer.action", shape: "keyed", declaredBy: "composer", inBotTab: true, context: ["bot"], fields: titledOpt,
     props: z.object({ bot: BotRef, session: z.string() }), doc: "The composer's buttons, keyed by action id." },
   { name: "conversation.message", shape: "keyed", declaredBy: "conversation", inBotTab: true, keys: MESSAGE_KINDS, keep: ["approval"],

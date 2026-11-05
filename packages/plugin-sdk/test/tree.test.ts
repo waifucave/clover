@@ -68,6 +68,31 @@ describe("a bot plugin with a child", () => {
     expect([p.restylesCards, p.children[0]!.report.restylesCards]).toEqual([true, true]);
   });
 
+  test("a Live2D avatar is a model3.json whose files exist inside the folder, or a zip; a vrm is a .vrm (the owner's decision)", async () => {
+    const live2d = (avatar: object, extra: Record<string, unknown> = {}) => ({
+      ...LUNA,
+      "clover.json": { ...(LUNA["clover.json"] as object), contributes: { ...(LUNA["clover.json"] as { contributes: object }).contributes, bot: { name: "Luna", instructions: "bot/instructions.md", avatar } } },
+      ...extra,
+    });
+    const model3 = { Version: 3, FileReferences: { Moc: "luna.moc3", Textures: ["luna.4096/texture_00.png"], Physics: "luna.physics3.json", Motions: { Idle: [{ File: "motions/idle.motion3.json", Sound: "voice/hi.wav" }] } } };
+    const files = {
+      "assets/luna/luna.model3.json": model3, "assets/luna/luna.moc3": "moc", "assets/luna/luna.4096/texture_00.png": "png",
+      "assets/luna/luna.physics3.json": "{}", "assets/luna/motions/idle.motion3.json": "{}", "assets/luna/voice/hi.wav": "wav",
+    };
+    const ok = await validateTree(folder(live2d({ file: "assets/luna/luna.model3.json", format: "live2d" }, files)), { folderName: "luna" });
+    expect([ok.ok, ok.issues, ok.top.issues]).toEqual([true, [], []]);
+    const zipped = await validateTree(folder(live2d({ file: "assets/luna.zip", format: "live2d" }, { "assets/luna.zip": "zip" })), { folderName: "luna" });
+    expect(zipped.issues).toEqual([]);
+    const missing = { ...files } as Record<string, unknown>;
+    delete missing["assets/luna/voice/hi.wav"];
+    const gap = await validateTree(folder(live2d({ file: "assets/luna/luna.model3.json", format: "live2d" }, missing as Record<string, string>)), { folderName: "luna" });
+    expect(gap.issues.map((i) => `${i.refuses}:${i.code}`)).toEqual(["contribution:file_missing"]);
+    const escape = await validateTree(folder(live2d({ file: "assets/luna/luna.model3.json", format: "live2d" }, { ...files, "assets/luna/luna.model3.json": { FileReferences: { Moc: "../../secrets.moc3", Textures: [] } } })), { folderName: "luna" });
+    expect(escape.issues.map((i) => i.code)).toEqual(["path_escape"]);
+    const wrong = await validateTree(folder(live2d({ file: "assets/luna.vrm", format: "live2d" }, { "assets/luna.vrm": "vrm" })), { folderName: "luna" });
+    expect(wrong.top.issues.some((i) => i.path === "/contributes/bot/avatar/file")).toBe(true);
+  });
+
   test("a client stylesheet must exist (review minor)", async () => {
     const files = {
       ...LUNA,

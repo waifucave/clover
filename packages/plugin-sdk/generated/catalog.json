@@ -1390,12 +1390,13 @@
       "declaredBy": "bot-stage",
       "inBotTab": true,
       "keys": [
-        "vrm"
+        "vrm",
+        "live2d"
       ],
       "context": [
         "bot"
       ],
-      "doc": "Draws the bot's avatar, keyed by the avatar file's format (VRM by default), and lip-syncs it from `speech` (a `SpeechFeed`).",
+      "doc": "Draws the bot's avatar, keyed by the avatar file's format (`vrm`, `live2d`, or a plugin's own; `AVATAR_FORMATS`), and lip-syncs it from `speech` (a `SpeechFeed`).",
       "fields": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",

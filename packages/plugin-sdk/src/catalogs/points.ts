@@ -4,6 +4,7 @@
 // declaration, or it is refused (§5.4).
 import { z } from "zod";
 import { EntryId, HandlerName, Path, Text } from "../manifest/fields";
+import { avatarFileProblem } from "./avatars";
 import { SPOTS } from "./spots";
 
 export interface CorePointInfo {
@@ -81,7 +82,11 @@ export const DATA_POINTS: readonly DataPointInfo[] = [
     entry: z.strictObject({ id: EntryId, name: Text.optional(), handler: HandlerName }),
     doc: "Ways for webhooks to reach a device: the waifucave forwarder, the user's cloud computer, a tunnel (§7)." },
   { name: "avatar.packs", shape: "list", declaredBy: "clover/bot-editor", kind: "data",
-    entry: z.strictObject({ id: EntryId, name: Text.optional(), file: Path, format: z.string().min(1).max(32).regex(/^[a-z0-9-]+$/), portrait: Path.optional(), license: z.string().max(200).optional() }),
+    entry: z.strictObject({ id: EntryId, name: Text.optional(), file: Path, format: z.string().min(1).max(32).regex(/^[a-z0-9-]+$/), portrait: Path.optional(), license: z.string().max(200).optional() })
+      .superRefine((a, ctx) => {
+        const problem = avatarFileProblem(a.format, a.file);
+        if (problem) ctx.addIssue({ code: "custom", path: ["file"], message: problem });
+      }),
     doc: "Avatar files with their format and portrait, so an avatar pack is a data plugin (§5.5)." },
 ];
 
