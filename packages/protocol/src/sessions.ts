@@ -66,8 +66,8 @@ export type SessionStatus = z.infer<typeof SessionStatus>;
 export const SessionFailure = z.enum(["sign-in", "crashed", "stalled", "error"]);
 export type SessionFailure = z.infer<typeof SessionFailure>;
 
-/** An old Winter session in the archive view (§14.1 "Existing Winter installs", review S16): readable, never a bot's
- *  history. */
+/** A session from the app Clover replaces, in the archive view (§14.1 "Existing … installs", review S16): readable,
+ *  never a bot's history. */
 export const ArchivedSessionView = z.object({
   id: utf16(128, 1),
   title: utf16(500).optional(),
@@ -287,18 +287,18 @@ export const SESSIONS_METHODS = {
       limit: z.number().int().min(1).max(200).optional(),
     }),
     result: z.object({ sessions: z.array(ArchivedSessionView).max(200), more: z.boolean() }),
-    doc: "Old Winter sessions, newest first, for the archive view (§14.1).",
+    doc: "The previous app's sessions, newest first, for the archive view (§14.1).",
   }),
   archiveHistory: defineMethod({
     name: "archive.history", owner: "D", roles: ["app", "cli"],
     params: z.object({ id: utf16(128, 1), cursor: Cursor.optional(), limit: z.number().int().min(1).max(500).optional() }),
     result: z.object({
-      /** Winter's `SessionEvent`s as it stored them, oldest first: read with the inherited schema, skipping what a
-       *  client doesn't know. */
+      /** The previous app's `SessionEvent`s as it stored them, oldest first: read with the inherited schema,
+       *  skipping what a client doesn't know. */
       events: z.array(z.unknown()).max(500),
       cursor: Cursor.optional(),
     }),
-    doc: "An old Winter session's transcript, read-only; it never becomes a bot's history.",
+    doc: "A previous-app session's transcript, read-only; it never becomes a bot's history.",
   }),
 } as const;
 
