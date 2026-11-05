@@ -182,8 +182,16 @@ export async function networkCheck(electron){
       const url=issue('p1',['clover-core://shell']);
       try{await win.webContents.executeJavaScript(`(()=>{document.querySelector('#context-host')?.remove();const f=document.createElement('iframe');f.id='context-host';f.style='position:fixed;top:0;left:0;width:480px;height:500px';f.src=${JSON.stringify(url)};document.body.append(f)})()`);}
       catch{return null;}
-      await pause(250);return liveFrame(win.webContents.mainFrame,url);
+      // Loading a fresh mount can take longer than one frame on a loaded runner.
+      for(let i=0;i<8;i++){const frame=liveFrame(win.webContents.mainFrame,url);if(frame)return frame;await pause(250);}
+      return null;
      };
+     /** A renderer killed by the browser may not emit render-process-gone for an
+      * out-of-process subframe. Its OS PID leaving app metrics is the fallback proof.
+      * @param {any} fr */
+     const framePid=(fr)=>{try{return fr.osProcessId;}catch{return null;}};
+     /** @param {number|null} pid */
+     const pidAlive=(pid)=>pid==null||app.getAppMetrics().some((/** @type {any} */ m)=>m.pid===pid);
      for(const kind of ['nested','srcdoc','opaque-srcdoc','about-blank']){
       const goneBefore=rendererGone.length;
       const cf=await fixtures(`${mode}-${kind}`);const context={kind,fixture:cf,result:/** @type {any} */ (null),rendererGone:false};contexts.push(context);
@@ -195,8 +203,13 @@ export async function networkCheck(electron){
        await frame.executeJavaScript(inheritedScript(kind,nestedurl));
        await pause(180);const child=frame.frames.find((/** @type {any} */ x)=>{try{return x.name===kind;}catch{return false;}});
        if(!child){context.result={error:'inherited child missing',completed:false,rendererKilled:rendererGone.length>goneBefore};context.rendererGone=rendererGone.length>goneBefore;continue;}
+       const probePid=framePid(child);
        context.result=await Promise.race([invoke(child,cf.endpoints,false),pause(12000).then(()=>({error:'inherited probe deadline',rendererKilled:rendererGone.length>goneBefore}))]);
-       if(rendererGone.length>goneBefore){context.rendererGone=true;context.result={...context.result,rendererKilled:true};}
+       // The browser-side kill of a subframe renderer is not reported by app or
+       // webContents events in Electron 45. A vanished Tab PID is independent proof.
+       if(!pidAlive(probePid)){context.rendererGone=true;console.log(`Clover S9 inherited ${kind} renderer PID ${probePid} gone`);}
+       if(rendererGone.length>goneBefore)context.rendererGone=true;
+       if(context.rendererGone)context.result={...context.result,rendererKilled:true};
       }catch(e){context.result={error:String(e),completed:false,rendererKilled:rendererGone.length>goneBefore};context.rendererGone=rendererGone.length>goneBefore;}
      }
      frame=await fresh();
