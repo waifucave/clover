@@ -11,7 +11,7 @@ import type { z } from "zod";
 import {
   BUNDLED_BOT_PLUGIN, BUNDLED_ROOT_PLUGIN, isPluginId, type ValidationIssue,
 } from "@waifucave/clover-protocol";
-import { capabilityOkText, isCapability, parseCapability } from "../catalogs/capabilities";
+import { CAPABILITIES, capabilityOkText, isCapability, parseCapability } from "../catalogs/capabilities";
 import { TOOL_HOOK_EVENTS, type HookEvent } from "../catalogs/hooks";
 import { CORE_POINT_NAMES, WELL_KNOWN_POINT_NAMES, dataPointInfo } from "../catalogs/points";
 import { SPOT_NAMES, spotInfo } from "../catalogs/spots";
@@ -355,6 +355,9 @@ export function validateManifest(input: unknown, opts: ValidateOptions = {}): Ma
   capabilities.forEach((c, i) => {
     if (!isCapability(c)) f.error("plugin", "capability_unknown", ["capabilities", i], `"${c}" is not a capability (see the catalog)`);
     else if (capabilities.indexOf(c) !== i) f.warn("capability_duplicate", ["capabilities", i], `"${c}" is listed twice`);
+    else if (CAPABILITIES.find((x) => x.name === c)?.bundledOnly && topId !== BUNDLED_ROOT_PLUGIN) {
+      f.error("plugin", "capability_bundled_only", ["capabilities", i], `"${c}" is only for the plugins Clover ships`);
+    }
   });
 
   if (isObject(top.settings)) for (const [k, s] of Object.entries(top.settings)) if (isObject(s)) checkSetting(f, k, s);

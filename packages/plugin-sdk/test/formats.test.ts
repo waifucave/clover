@@ -51,17 +51,26 @@ describe("appearance and the fallback order", () => {
     };
     const ink = (v: Record<string, unknown>) => [v["color.accent"], v["color.accent.glyph"], v["color.accent.contrast"], v["card.approve.background"], v["card.approve.text"]];
     const INK = "#111111";
-    // The OSes' default blues get white glyphs; a text label takes white at 4.5:1, else black; the approve button is
-    // the accent darkened in its own hue until its white label reads at 4.5:1.
+    // The OSes' default blues get white glyphs on the raw accent; every filled control (the accent fill, the approve
+    // button) is the accent darkened in its own hue until its white label reads at 4.5:1 (review A1).
     const blue = resolveTokens("light", [theme], { systemAccent: systemAccentFromOs("007affff") });
-    expect(ink(blue)).toEqual(["#007AFF", "#FFFFFF", LABEL_INK, fillForWhiteLabel("#007AFF", "#FFFFFF"), "#FFFFFF"]);
+    expect(ink(blue)).toEqual(["#007AFF", "#FFFFFF", "#FFFFFF", fillForWhiteLabel("#007AFF", "#FFFFFF"), "#FFFFFF"]);
+    expect(blue["color.accent.fill"]).toBe(fillForWhiteLabel("#007AFF", "#FFFFFF"));
     expect(contrastRatio("#FFFFFF", String(blue["card.approve.background"]))).toBeGreaterThanOrEqual(4.5);
     expect(ink(resolveTokens("light", [theme], { systemAccent: "#0078D4" }))).toEqual(["#0078D4", "#FFFFFF", "#FFFFFF", "#0078D4", "#FFFFFF"]);
-    // A yellow accent never gets white glyphs or labels on it; the approve button still darkens until white reads.
+    // A yellow accent never gets white glyphs on it; its fills still darken until white reads.
     const yellow = resolveTokens("light", [theme], { systemAccent: "#FFC600" });
-    expect(ink(yellow).slice(0, 3)).toEqual(["#FFC600", INK, LABEL_INK]);
+    expect(ink(yellow).slice(0, 3)).toEqual(["#FFC600", INK, "#FFFFFF"]);
     expect([yellow["card.approve.text"], contrastRatio("#FFFFFF", String(yellow["card.approve.background"]))! >= 4.5]).toEqual(["#FFFFFF", true]);
-    expect(ink(resolveTokens("light", [theme], { systemAccent: "#8C8C8C" })).slice(0, 3)).toEqual(["#8C8C8C", "#FFFFFF", LABEL_INK]);
+    expect(contrastRatio("#FFFFFF", String(yellow["color.accent.fill"]))).toBeGreaterThanOrEqual(4.5);
+    expect(ink(resolveTokens("light", [theme], { systemAccent: "#8C8C8C" })).slice(0, 3)).toEqual(["#8C8C8C", "#FFFFFF", "#FFFFFF"]);
+    // The fill follows the accent as resolved, a theme's own included; a fill a theme sets itself is its own.
+    expect(resolveTokens("light", [{ tokens: { "color.accent": "#5E2CA5" } }])["color.accent.fill"]).toBe("#5E2CA5");
+    expect(resolveTokens("light", [{ tokens: { "color.accent": "#FFC600" } }])["color.accent.fill"]).toBe(fillForWhiteLabel("#FFC600", "#FFFFFF"));
+    const ownFill = resolveTokens("light", [{ tokens: { "color.accent.fill": "#FFC600" } }], { systemAccent: "#007AFF" });
+    expect([ownFill["color.accent.fill"], ownFill["color.accent.contrast"]]).toEqual(["#FFC600", LABEL_INK]);
+    // A glyph's dark ink that misses 3:1 too gives way to black (review A2).
+    expect(resolveTokens("light", [{ tokens: { "color.accent.ink": "#999999" } }], { systemAccent: "#FFC600" })["color.accent.glyph"]).toBe("#000000");
     // Darkened in its own hue: hue and saturation kept, lighter ones left alone.
     expect(fillForWhiteLabel("#2F6FDF", "#FFFFFF")).toBe("#2F6FDF");
     expect(fillForWhiteLabel("#0A84FF", "#191919")).toMatch(/^#[0-9A-F]{6}$/);
@@ -74,7 +83,8 @@ describe("appearance and the fallback order", () => {
       const accent = `#${(i * 4099 % 0x1000000).toString(16).padStart(6, "0").toUpperCase()}`;
       const v = resolveTokens("light", [theme], { systemAccent: accent });
       if (v["color.accent.glyph"] === "#FFFFFF") expect([accent, contrastRatio("#FFFFFF", accent)! >= 3]).toEqual([accent, true]);
-      if (v["color.accent.contrast"] === "#FFFFFF") expect([accent, contrastRatio("#FFFFFF", accent)! >= 4.5]).toEqual([accent, true]);
+      expect([accent, v["color.accent.contrast"], contrastRatio("#FFFFFF", String(v["color.accent.fill"]))! >= 4.5]).toEqual([accent, "#FFFFFF", true]);
+      if (v["color.accent.glyph"] !== "#FFFFFF") expect([accent, contrastRatio(String(v["color.accent.glyph"]), accent)! >= 3]).toEqual([accent, true]);
       expect([accent, v["card.approve.text"], contrastRatio("#FFFFFF", String(v["card.approve.background"]))! >= 4.5]).toEqual([accent, "#FFFFFF", true]);
     }
     // With no theme at all, the catalog itself follows the OS and resolves its inks.
@@ -99,6 +109,7 @@ describe("appearance and the fallback order", () => {
     expect(isValueForToken("color.text", AUTO_INK)).toBe(false);
     expect(isValueForToken("plugin.luna.glow", SYSTEM_ACCENT)).toBe(false);
     expect(Object.values(AUTO_INKS).map((i) => i.floor)).toEqual([4.5, 3, 4.5, 3, 3]);
+    expect(isValueForToken("color.accent.fill", SYSTEM_ACCENT)).toBe(true);
     expect(isValueForToken("color.focus", SYSTEM_ACCENT) && isValueForToken("island.accept", SYSTEM_ACCENT) && isValueForToken("pill.accept", SYSTEM_ACCENT)).toBe(true);
     expect(isValueForToken("pill.accept.text", AUTO_INK)).toBe(true);
     // The frame's variables are the shell's: no theme sets them.
