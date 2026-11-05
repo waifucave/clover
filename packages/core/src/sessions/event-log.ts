@@ -9,7 +9,8 @@
 //
 // Loading repairs what a crash can leave: a last line with no newline is a write the process never finished, so it is
 // dropped; any other line that doesn't parse, or breaks the `seq` order, ends the log there, after the whole file is
-// copied aside as `<file>.corrupt-<time>`, so nothing is lost silently.
+// copied aside as `<file>.corrupt-<time>`, so nothing is lost silently. An append that fails part way (a full disk, a
+// failed flush) is cut off again before the error goes up, so the next record never follows half of one.
 import {
   closeSync, copyFileSync, existsSync, fstatSync, fsyncSync, ftruncateSync, mkdirSync, openSync, readSync, writeSync,
 } from "node:fs";
@@ -18,6 +19,32 @@ import type { SessionRecord } from "../contracts/session-host";
 
 const CHUNK_BYTES = 1 << 20;
 const RECENT_RECORDS = 512;
+
+/** The file calls an append makes, so a test can fail one part way. */
+export interface AppendIo {
+  writeSync(fd: number, buffer: Buffer, offset: number, length: number): number;
+  fsyncSync(fd: number): void;
+  ftruncateSync(fd: number, length: number): void;
+}
+
+const FS_IO: AppendIo = { writeSync: (fd, b, o, l) => writeSync(fd, b, o, l), fsyncSync, ftruncateSync };
+
+/** Writes one whole line at the end of the file whose good part is `size` bytes, flushed when `durable`; on any failure
+ *  the file is cut back to `size` before the error goes up. */
+export function appendLine(fd: number, line: Buffer, size: number, durable: boolean, io: AppendIo = FS_IO): void {
+  let written = 0;
+  try {
+    while (written < line.length) written += io.writeSync(fd, line, written, line.length - written);
+    if (durable) io.fsyncSync(fd);
+  } catch (err) {
+    try {
+      io.ftruncateSync(fd, size);
+    } catch {
+      // The load's repair is the last resort: a torn or corrupt tail is cut there.
+    }
+    throw err;
+  }
+}
 
 export interface LogLoadResult {
   records: number;
@@ -114,9 +141,7 @@ export class SessionLogFile {
     }
     const fd = openSync(this.path, "a");
     try {
-      let written = 0;
-      while (written < line.length) written += writeSync(fd, line, written, line.length - written);
-      if (opts.durable) fsyncSync(fd);
+      appendLine(fd, line, this.#size, opts.durable);
     } finally {
       closeSync(fd);
     }
