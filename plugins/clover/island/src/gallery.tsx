@@ -384,7 +384,9 @@ export const ISLAND_STORIES: Story[] = [
     title: "The surface on Linux (Wayland): a normal window, always open on Needs you",
     width: 760,
     height: 300,
-    sealed: { visible: 5 },
+    // As on a screen with no housing: the open island's header is a row of its own, so the newest card's last parts
+    // lie below the fold of Needs you, a scroll away.
+    sealed: { visible: 4, scrolled: 2 },
     render: () => <WaylandWindow width={760} height={300} cards={[{ ...QUESTION, issuedAt: 1 }, { ...APPROVAL, issuedAt: 6 }]} />,
   },
   {
