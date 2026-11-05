@@ -15,9 +15,12 @@ import { hardenSession } from "./session";
 /** Frame rates (S7 §7.1): a bot's tab draws at 10 fps while nobody watches, at 60 while the person does. */
 export const BOT_FPS = 10;
 export const WATCHED_FPS = 60;
-/** A picture older than this is taken again; a tab that gives none in this long has stalled. */
-export const FRESH_MS = 1000;
-/** A new or resized tab's first frame can take longer (a slow Linux runner: seconds), so it gets this long. */
+/** The newest frame is the picture while it is younger than this; older, the tab is asked for a fresh one. */
+export const FRESH_MS = 250;
+/** A tab asked for a frame that gives none in this long has stalled. A slow machine's full repaint can take over a
+ *  second (the linux-arm64 runner drew about 2 frames a second). */
+export const STALL_MS = 3000;
+/** A new or resized tab's first frame can take longer still (seconds on that runner). */
 export const FIRST_FRAME_MS = 5000;
 
 export interface TabEnv {
@@ -140,7 +143,7 @@ export abstract class BrowserTab {
     }
     const pic = await this.picture();
     if (pic === undefined || pic.image.isEmpty()) {
-      this.env.report({ kind: "stalled", id: this.id, sinceMs: FRESH_MS });
+      this.env.report({ kind: "stalled", id: this.id, sinceMs: STALL_MS });
       throw new Error("the tab stopped drawing, so there's no fresh picture of it");
     }
     const { width, height } = pic.image.getSize();
@@ -230,15 +233,15 @@ export class OffscreenTab extends BrowserTab {
     const now = Date.now();
     // A still page sends no frames, so an old frame can still be the page as it is; ask for a fresh one to be sure.
     if (painting) {
-      if (newest !== undefined && now - newest.at < FRESH_MS / 4) return { image: newest.image, contentAgeMs: now - newest.at };
-      const next = this.frames.next(this.drawn ? FRESH_MS : FIRST_FRAME_MS);
+      if (newest !== undefined && now - newest.at < FRESH_MS) return { image: newest.image, contentAgeMs: now - newest.at };
+      const next = this.frames.next(this.drawn ? STALL_MS : FIRST_FRAME_MS);
       this.contents.invalidate();
       const frame = await next;
       if (frame !== undefined) return { image: frame.image, contentAgeMs: Date.now() - frame.at };
     }
     // Painting stopped (a resting tab), or no frame came: the compositor's own copy (about one frame's wait).
     try {
-      const image = await withTimeout(this.contents.capturePage(), FRESH_MS * 2);
+      const image = await withTimeout(this.contents.capturePage(), STALL_MS);
       // Linux can hand back the compositor's last frame from before a resize: that one isn't the page now.
       if (this.fits(image)) return { image, contentAgeMs: 0 };
     } catch {
@@ -246,7 +249,7 @@ export class OffscreenTab extends BrowserTab {
     }
     if (painting) return undefined;
     // Linux gives no copy while painting is stopped (M1's CI; Windows does): wake the tab for one frame.
-    const next = this.frames.next(this.drawn ? FRESH_MS : FIRST_FRAME_MS);
+    const next = this.frames.next(this.drawn ? STALL_MS : FIRST_FRAME_MS);
     this.contents.startPainting();
     this.contents.invalidate();
     const frame = await next;
@@ -304,7 +307,7 @@ export class HostTab extends BrowserTab {
 
   protected async picture(): Promise<{ image: NativeImage; contentAgeMs: number } | undefined> {
     try {
-      const image = await withTimeout(this.contents.capturePage(undefined, { stayHidden: true }), FRESH_MS * 2);
+      const image = await withTimeout(this.contents.capturePage(undefined, { stayHidden: true }), STALL_MS);
       return image.isEmpty() ? undefined : { image, contentAgeMs: 0 };
     } catch {
       return undefined;

@@ -36,7 +36,7 @@ const menus: { selectionText: string; canCopy: boolean }[] = [];
 async function step(name: string, f: () => Promise<{ ok: boolean; detail?: unknown }>): Promise<void> {
   const t0 = Date.now();
   try {
-    const r = await Promise.race([f(), new Promise<never>((_, reject) => setTimeout(() => reject(new Error("timed out after 30 s")), 30_000))]);
+    const r = await Promise.race([f(), new Promise<never>((_, reject) => setTimeout(() => reject(new Error("timed out after 45 s")), 45_000))]);
     steps.push({ name, ok: r.ok, detail: r.detail ?? null, ms: Date.now() - t0 });
   } catch (e) {
     steps.push({ name, ok: false, detail: `error: ${e instanceof Error ? e.message : String(e)}`, ms: Date.now() - t0 });
