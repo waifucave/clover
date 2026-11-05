@@ -18,7 +18,7 @@ import {
   type KeyObject,
 } from "node:crypto";
 
-import type { FakeLogEntry } from "../fake-log";
+import type { FakeLogEntry } from "../fake-log.ts";
 
 export type { FakeLogEntry };
 

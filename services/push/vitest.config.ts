@@ -7,7 +7,7 @@ import { generateKeyPairSync } from "node:crypto";
 import { cloudflareTest } from "@cloudflare/vitest-plugin";
 import { defineConfig } from "vitest/config";
 
-import { createPushFakes } from "./test/node/fakes";
+import { createPushFakes } from "./test/node/fakes.ts";
 
 const es256 = generateKeyPairSync("ec", { namedCurve: "P-256" });
 const jwks = JSON.stringify({ keys: [{ ...es256.publicKey.export({ format: "jwk" }), kid: "test-es256", alg: "ES256", use: "sig" }] });
