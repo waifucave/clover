@@ -28,8 +28,7 @@ Found a security problem? Don't open an issue — see [SECURITY.md](SECURITY.md)
 | **macOS 26+**, Apple silicon | The deployment target. There is no legacy compatibility path — see [rules](#rules-that-bite). |
 | **[Bun](https://bun.sh) ≥ 1.3** | The runtime. TypeScript runs directly; there is no build step in dev. |
 | **pnpm** | Orchestrates the workspaces. `bun install` is what you actually run. |
-| **Xcode 26+** | Only if you're touching Swift. |
-| **[XcodeGen](https://github.com/yonaskolb/XcodeGen)** | `brew install xcodegen`. The `.xcodeproj` is generated from `apple/Winter/project.yml`; the pbxproj is not the source of truth. |
+| **Xcode 26+** | Only if you're touching the Swift packages the iPhone app uses (`apple/WinterKit`, `apple/WinterProtocol`). |
 
 TypeScript-only contributions (the daemon, the CLI, tools, providers) need nothing from the Xcode
 column.
@@ -42,28 +41,15 @@ cd clover
 bun install
 ```
 
-That's the whole TypeScript setup. For the **Mac app**, three large artifacts are fetched rather
-than committed — the Xcode build fails loudly and names the fix command if any is missing, but you
-may as well get them out of the way first:
+That's the whole TypeScript setup. The Swift packages the iPhone app uses fetch one large artifact
+rather than committing it:
 
 ```sh
-bun run cef:fetch                      # Chromium Embedded Framework  (~332 MB, SHA1-pinned)
-bun run monaco:fetch                   # Monaco editor                (~14 MB, sha512-pinned)
 ./apple/WinterKit/vendor/fetch-iroh.sh  # iroh transport xcframework   (~133 MB, checksum-pinned)
 ```
 
-Then generate and build:
-
-```sh
-cd apple/Winter
-xcodegen generate
-xcodebuild -project Winter.xcodeproj -scheme Clover -destination 'platform=macOS' \
-  -derivedDataPath build/DerivedData build
-```
-
-**Always pass an explicit `-derivedDataPath`.** `xcodegen generate` mints a new DerivedData hash each
-time, and without this you will eventually test a days-old binary and lose hours to it. This has
-happened; it is in the repo's scar tissue.
+The Mac app under `apple/Winter` is retired: it stays in the repo for reference and is not built.
+Clover's own desktop app comes with the plan's app phase ([docs/clover-plan.md](docs/clover-plan.md)).
 
 ## Running Clover in development
 
@@ -79,35 +65,32 @@ Useful CLI surface while developing: `clover status`, `clover ping`, `clover ses
 
 ## The dev/dist split — read this one
 
-Clover ships as two separate installs that must never be confused:
+Clover keeps two separate installs that must never be confused:
 
 | | Distribution | Development |
 | --- | --- | --- |
-| App | `Clover.app` | `Winter Dev.app` (Debug build) |
 | Bundle id | `com.waifucave.clover` | `com.waifucave.clover.dev` |
 | Home | `~/.clover` | `~/.clover-dev` |
 | Keychain service | `com.waifucave.clover.core` | `com.waifucave.clover.core.dev` |
 | Command | `clover` | `clover-dev` |
 
-**Never launch the distribution app during development.** It's somebody's daily driver, updated by
-Sparkle; a locally-launched copy under the same bundle id is indistinguishable from it in the menu
-bar and defeats the entire split. The same goes for local Release builds — build them, don't run
-them.
+**Never launch a distribution install during development**, and never Winter's: `Winter.app`, with
+its `~/.winter` home and `com.winter.core` Keychain, is somebody's daily driver, updated by Sparkle. A
+locally launched copy under the same bundle id is indistinguishable from it in the menu bar and
+defeats the entire split. The same goes for local Release builds — build them, don't run them.
 
-Two traps worth stating outright:
+Two rules worth stating outright:
 
-1. **Plain `clover` is the distribution CLI.** With a dead socket it *auto-launches the dist app*.
+1. **Plain `clover` is the distribution CLI** (and plain `winter` is Winter's). With a dead socket
+   it *auto-launches the dist app*.
    Use `clover-dev`, or a temporary `CLOVER_HOME` with a manually-spawned daemon:
 
    ```sh
    CLOVER_HOME=~/.clover-dev CLOVER_PROFILE=dev bun src/main.ts daemon run
    ```
 
-2. **Debug builds don't embed `clover-core`.** "Clover Dev" cannot spawn its own daemon — start the
-   dev daemon *first* or the orb just shows disconnected.
-
-And: **after any change under `packages/`, restart the daemon, not just the app.** An app-only
-relaunch is a silent no-op for daemon code.
+2. **After any change under `packages/`, restart the daemon**, not just a client. A client-only
+   relaunch is a silent no-op for daemon code.
 
 ## Tests
 
@@ -144,8 +127,7 @@ changing a `SessionEvent` variant or an RPC method touches these, **in order**:
    fails until synced
 6. `apple/WinterKit` — has exhaustive `switch`es over event variants (the `seq`/`sessionId`
    accessors). A new variant breaks compilation **here**, not in WinterProtocol
-7. **Build WinterKit *and* the app** — not just `swift test` in WinterProtocol. That's the only way to
-   catch step 6
+7. **Build WinterKit** — not just `swift test` in WinterProtocol. That's the only way to catch step 6
 
 ### Adding a *field* is more dangerous than adding a variant
 
@@ -170,8 +152,8 @@ never pass either one; a security test pins that.
 
 ## Rules that bite
 
-- **Tests must never touch `~/.clover`.** Always point at a temp `CLOVER_HOME`. Never kill or restart
-  a user's live daemon or app.
+- **Tests must never touch `~/.clover`, or Winter's `~/.winter`.** Always point at a temp `CLOVER_HOME`.
+  Never kill or restart a user's live daemon or app.
 - **No setting may ever require a daemon restart.** `~/.clover/settings.json` is watched and
   hot-swapped atomically; feature code reads live getters. New settings follow that pattern — this
   is a product promise, not a preference.
@@ -185,8 +167,8 @@ never pass either one; a security test pins that.
 - **Minimum OS targets track the latest major Apple OS.** No legacy compatibility shims.
 - **`packages/core/src/providers/codex-config.ts` self-identifies as `originator: "clover"`.** That's
   a deliberate terms-of-service decision. Don't "fix" it to a first-party value.
-- The Sparkle public key in `apple/Winter/project.yml` is the production key. Its private half exists
-  only in one login Keychain and is committed nowhere.
+- The Sparkle public key in `apple/Winter/project.yml` is Winter's production key, which its live update
+  feed depends on. Its private half exists only in one login Keychain and is committed nowhere.
 
 ## Sending a pull request
 

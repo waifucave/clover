@@ -12,6 +12,10 @@
   and reports back, using the AI you already pay for.
 </p>
 
+> **Clover is being built.** It grows from Winter, a Mac assistant, into one assistant for macOS, Windows and Linux,
+> made of bots and plugins: see [the spec](docs/clover-spec.md) and [the plan](docs/clover-plan.md). Until its first
+> release, this page describes the Mac code Clover starts from, and the install steps are for when that release exists.
+
 <p align="center">
   <a href="https://github.com/waifucave/clover/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/waifucave/clover?label=release&color=2E9484"></a>
   <img alt="macOS 26+ on Apple silicon" src="https://img.shields.io/badge/macOS-26%2B%20·%20Apple%20silicon-lightgrey.svg">
@@ -165,7 +169,8 @@ everything on your Mac, one that can run several jobs at once and tell you how t
 **Can I use it only from the terminal?** For Code, yes: `clover` gives you full Code sessions in the
 terminal. Dispatch and Chat live in the app.
 
-**Windows or Linux?** No. Clover is built for the Mac from the ground up.
+**Windows or Linux?** Not yet. Today's code runs on the Mac; Clover's first release ships on macOS, Windows and Linux
+at once.
 
 **Is Clover affiliated with OpenAI or Anthropic?** No, it's an independent project. Signing in with
 a ChatGPT account uses that account under OpenAI's terms, which don't specifically cover third-party
@@ -174,17 +179,17 @@ your credentials stay in your Mac's Keychain and Clover keeps no copy.
 
 ## For developers
 
-Clover is a TypeScript/Bun background service (`clover-core`) plus a native Swift app, talking
-JSON-RPC over a local socket. The service is the single source of truth: every session is an
-append-only log of events, and the Mac app, the terminal UI and the phone are all live views of
-that log. That one choice is why background sessions, several windows on one session and phone sync
+Clover is a TypeScript/Bun background service (`clover-core`) that its clients talk to over
+JSON-RPC on a local socket. The service is the single source of truth: every session is an
+append-only log of events, and every client, the terminal UI and the phone included, is a live
+view of that log. That one choice is why background sessions, several windows on one session and phone sync
 all come for free.
 
 ```
 packages/protocol   the contract: schemas for every RPC method and session event
 packages/core       the service: sessions, tools, models, memory, routines
 packages/cli        the `clover` command and its terminal UI
-apple/              the Mac app and the Swift client packages (also used by the iPhone app)
+apple/              the Swift client packages the iPhone app uses, and the retired Mac app (reference only)
 ```
 
 ```sh
@@ -194,8 +199,8 @@ bun src/main.ts daemon run     # run the service
 bun src/main.ts                # open the terminal UI (in another terminal)
 ```
 
-Building the Mac app, running the tests and keeping a dev copy apart from your everyday one are all
-covered in **[CONTRIBUTING.md](CONTRIBUTING.md)**. Read it before your first build.
+Running the tests and keeping a dev copy apart from your everyday one are covered in
+**[CONTRIBUTING.md](CONTRIBUTING.md)**. Read it before your first build.
 
 The [Cowork implementation map](docs/cowork-status.md) distinguishes existing shared infrastructure
 from the unavailable Cowork mode and its remaining work.
