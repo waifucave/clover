@@ -63,10 +63,11 @@ export const OVERLAY = {
   maxScreenFraction: 0.6,
 } as const;
 
-/** The normal window on Wayland: the open island and its header, and the window's own frame around it. */
+/** The normal window's content on Wayland: the open island, header included, exactly; the compositor draws the frame
+ *  around it. */
 export const ISLAND_WINDOW = {
   width: ISLAND.islandWidth,
-  height: ISLAND.islandHeight + ISLAND.headerHeight + 120,
+  height: ISLAND.islandHeight,
 } as const;
 
 /** The smallest housing the island takes as one: anything less is a display that reports a sliver. */
