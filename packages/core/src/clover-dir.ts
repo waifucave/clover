@@ -3,6 +3,7 @@ import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import type { CloverProfile } from "./profile";
 import { SDK_PERSISTENT_ENTRIES, sdkHomeFor } from "./agent/paths";
+import { assertNotOtherInstallHome } from "./other-installs";
 
 export interface CloverDirs {
   home: string;
@@ -16,8 +17,15 @@ export interface CloverDirs {
   runtimeStatePath: string;
 }
 
+/**
+ * The Clover home: `CLOVER_HOME`, else `~/.clover`. Never another install's home: this throws
+ * `OtherInstallHomeRefused` for one, by real path (`other-installs.ts`), so every caller is covered — the daemon,
+ * and the CLI's commands that write without one (`mcp`, `plugin`, `output-style`, `workflow`, settings).
+ */
 export function resolveCloverHome(): string {
-  return process.env.CLOVER_HOME ?? join(homedir(), ".clover");
+  const home = process.env.CLOVER_HOME ?? join(homedir(), ".clover");
+  assertNotOtherInstallHome(home);
+  return home;
 }
 
 /**
