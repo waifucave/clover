@@ -130,6 +130,11 @@ func (f *FS) info(p string, a wire.Attr) *info {
 func (f *FS) Lstat(name string) (os.FileInfo, error) {
 	p := clean(name)
 	a, e := f.R.Stat(p)
+	if e == wire.EHOSTDOWN && p == "" {
+		// An offline computer still has a folder, so the mount itself succeeds (and `ls home/`
+		// never fails); everything inside it answers EIO until the computer is back.
+		return f.info(p, wire.Attr{Type: wire.TypeDir, Mode: 0o755, Nlink: 2, Ino: 1}), nil
+	}
 	if e != wire.OK {
 		return nil, perr("lstat", name, e)
 	}
