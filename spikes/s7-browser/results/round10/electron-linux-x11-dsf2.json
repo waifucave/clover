@@ -1,0 +1,1966 @@
+{
+  "meta": {
+    "label": "linux-x11-dsf2",
+    "status": "done",
+    "platform": "linux",
+    "arch": "x64",
+    "osRelease": "7.0.0-1017-azure",
+    "cpus": 4,
+    "memGiB": 16,
+    "electron": "45.2.2",
+    "chrome": "156.0.8078.80",
+    "ozone": "x11",
+    "sessionType": "",
+    "waylandDisplay": "",
+    "display": ":99",
+    "displays": [
+      "960x540@2"
+    ],
+    "gpu": {
+      "2d_canvas": "disabled_software",
+      "direct_rendering_display_compositor": "disabled_off_ok",
+      "gpu_compositing": "disabled_software",
+      "multiple_raster_threads": "disabled_off",
+      "opengl": "disabled_off",
+      "rasterization": "disabled_software",
+      "raw_draw": "disabled_off_ok",
+      "skia_graphite": "disabled_off",
+      "trees_in_viz": "disabled_off",
+      "video_decode": "disabled_software",
+      "video_encode": "disabled_software",
+      "vulkan": "disabled_off",
+      "webgl": "disabled_off",
+      "webgpu": "disabled_off",
+      "webgpu_on_vk_via_gl_interop": "disabled_off",
+      "webnn": "disabled_off"
+    },
+    "seconds": 278.33
+  },
+  "checks": {
+    "capture": [
+      {
+        "place": "shown",
+        "throttling": true,
+        "pump": false,
+        "method": "capturePageHidden",
+        "tries": 6,
+        "ok": 6,
+        "decoded": 6,
+        "ms": {
+          "n": 6,
+          "min": 39,
+          "p50": 47,
+          "p95": 51,
+          "max": 51,
+          "mean": 46.5
+        },
+        "staleMs": {
+          "n": 6,
+          "min": 1,
+          "p50": 4,
+          "p95": 14,
+          "max": 14,
+          "mean": 6.5
+        },
+        "size": "2000x1400",
+        "errors": [],
+        "visibilityEvents": [],
+        "cpuMsPerPicture": 238.33,
+        "scaleMs": {
+          "n": 6,
+          "min": 27,
+          "p50": 28,
+          "p95": 37,
+          "max": 37,
+          "mean": 31.5
+        },
+        "geometry": "view 0,0 1000x700 in content 40,67 960x540; page 1000x700 at 2x"
+      },
+      {
+        "place": "shown",
+        "throttling": true,
+        "pump": false,
+        "method": "capturePage",
+        "tries": 6,
+        "ok": 6,
+        "decoded": 6,
+        "ms": {
+          "n": 6,
+          "min": 42,
+          "p50": 46,
+          "p95": 49,
+          "max": 49,
+          "mean": 45.67
+        },
+        "staleMs": {
+          "n": 6,
+          "min": 3,
+          "p50": 6,
+          "p95": 10,
+          "max": 10,
+          "mean": 6.33
+        },
+        "size": "2000x1400",
+        "errors": [],
+        "visibilityEvents": [],
+        "cpuMsPerPicture": 241.67,
+        "scaleMs": {
+          "n": 6,
+          "min": 28,
+          "p50": 29,
+          "p95": 35,
+          "max": 35,
+          "mean": 30.17
+        },
+        "geometry": "view 0,0 1000x700 in content 40,67 960x540; page 1000x700 at 2x"
+      },
+      {
+        "place": "shown",
+        "throttling": true,
+        "pump": false,
+        "method": "cdpJpeg",
+        "tries": 6,
+        "ok": 6,
+        "decoded": 6,
+        "ms": {
+          "n": 6,
+          "min": 129,
+          "p50": 139,
+          "p95": 155,
+          "max": 155,
+          "mean": 140.33
+        },
+        "staleMs": {
+          "n": 6,
+          "min": -47,
+          "p50": -45,
+          "p95": -33,
+          "max": -33,
+          "mean": -41.83
+        },
+        "size": "2000x1400",
+        "errors": [],
+        "visibilityEvents": [],
+        "cpuMsPerPicture": 320,
+        "geometry": "view 0,0 1000x700 in content 40,67 960x540; page 1000x700 at 2x"
+      },
+      {
+        "place": "shown",
+        "throttling": true,
+        "pump": false,
+        "method": "frameSub",
+        "tries": 6,
+        "ok": 6,
+        "decoded": 6,
+        "ms": {
+          "n": 6,
+          "min": 56,
+          "p50": 58,
+          "p95": 80,
+          "max": 80,
+          "mean": 64.17
+        },
+        "staleMs": {
+          "n": 6,
+          "min": 5,
+          "p50": 9,
+          "p95": 11,
+          "max": 11,
+          "mean": 8.33
+        },
+        "size": "2000x1400",
+        "errors": [],
+        "visibilityEvents": [],
+        "cpuMsPerPicture": 211.67,
+        "geometry": "view 0,0 1000x700 in content 40,67 960x540; page 1000x700 at 2x"
+      },
+      {
+        "place": "shown",
+        "throttling": true,
+        "pump": false,
+        "method": "cdpPng",
+        "tries": 6,
+        "ok": 6,
+        "decoded": 6,
+        "ms": {
+          "n": 6,
+          "min": 432,
+          "p50": 448,
+          "p95": 469,
+          "max": 469,
+          "mean": 449.33
+        },
+        "staleMs": {
+          "n": 6,
+          "min": -47,
+          "p50": -44,
+          "p95": -34,
+          "max": -34,
+          "mean": -41.5
+        },
+        "size": "2000x1400",
+        "errors": [],
+        "visibilityEvents": [],
+        "cpuMsPerPicture": 965,
+        "geometry": "view 0,0 1000x700 in content 40,67 960x540; page 1000x700 at 2x"
+      },
+      {
+        "place": "shown",
+        "throttling": true,
+        "pump": false,
+        "method": "beginFrameSubscription",
+        "tries": 0,
+        "ok": 0,
+        "decoded": 0,
+        "ms": {
+          "n": 0,
+          "min": null,
+          "p50": null,
+          "p95": null,
+          "max": null,
+          "mean": null
+        },
+        "staleMs": {
+          "n": 0,
+          "min": null,
+          "p50": null,
+          "p95": null,
+          "max": null,
+          "mean": null
+        },
+        "size": "-",
+        "errors": [],
+        "visibilityEvents": [],
+        "framesPerSec": 26
+      },
+      {
+        "place": "detached",
+        "throttling": false,
+        "pump": false,
+        "method": "capturePageHidden",
+        "tries": 6,
+        "ok": 0,
+        "decoded": 0,
+        "ms": {
+          "n": 0,
+          "min": null,
+          "p50": null,
+          "p95": null,
+          "max": null,
+          "mean": null
+        },
+        "staleMs": {
+          "n": 0,
+          "min": null,
+          "p50": null,
+          "p95": null,
+          "max": null,
+          "mean": null
+        },
+        "size": "-",
+        "errors": [
+          "Current display surface not available for capture"
+        ],
+        "visibilityEvents": [],
+        "cpuMsPerPicture": 1.67,
+        "geometry": "view 0,0 1280x800 in content -; page 1280x800 at 1x"
+      },
+      {
+        "place": "detached",
+        "throttling": false,
+        "pump": false,
+        "method": "capturePage",
+        "tries": 6,
+        "ok": 0,
+        "decoded": 0,
+        "ms": {
+          "n": 0,
+          "min": null,
+          "p50": null,
+          "p95": null,
+          "max": null,
+          "mean": null
+        },
+        "staleMs": {
+          "n": 0,
+          "min": null,
+          "p50": null,
+          "p95": null,
+          "max": null,
+          "mean": null
+        },
+        "size": "-",
+        "errors": [
+          "Current display surface not available for capture"
+        ],
+        "visibilityEvents": [],
+        "cpuMsPerPicture": 1.67,
+        "geometry": "view 0,0 1280x800 in content -; page 1280x800 at 1x"
+      },
+      {
+        "place": "detached",
+        "throttling": false,
+        "pump": false,
+        "method": "cdpJpeg",
+        "tries": 2,
+        "ok": 0,
+        "decoded": 0,
+        "ms": {
+          "n": 0,
+          "min": null,
+          "p50": null,
+          "p95": null,
+          "max": null,
+          "mean": null
+        },
+        "staleMs": {
+          "n": 0,
+          "min": null,
+          "p50": null,
+          "p95": null,
+          "max": null,
+          "mean": null
+        },
+        "size": "-",
+        "errors": [
+          "Page.captureScreenshot: timed out after 5000 ms"
+        ],
+        "visibilityEvents": [],
+        "cpuMsPerPicture": 60,
+        "geometry": "view 0,0 1280x800 in content -; page 1280x800 at 1x"
+      },
+      {
+        "place": "detached",
+        "throttling": false,
+        "pump": false,
+        "method": "frameSub",
+        "tries": 2,
+        "ok": 0,
+        "decoded": 0,
+        "ms": {
+          "n": 0,
+          "min": null,
+          "p50": null,
+          "p95": null,
+          "max": null,
+          "mean": null
+        },
+        "staleMs": {
+          "n": 0,
+          "min": null,
+          "p50": null,
+          "p95": null,
+          "max": null,
+          "mean": null
+        },
+        "size": "-",
+        "errors": [
+          "frame subscription: timed out after 5000 ms"
+        ],
+        "visibilityEvents": [],
+        "cpuMsPerPicture": 95,
+        "geometry": "view 0,0 1280x800 in content -; page 1280x800 at 1x"
+      },
+      {
+        "place": "detached",
+        "throttling": false,
+        "pump": false,
+        "method": "beginFrameSubscription",
+        "tries": 0,
+        "ok": 0,
+        "decoded": 0,
+        "ms": {
+          "n": 0,
+          "min": null,
+          "p50": null,
+          "p95": null,
+          "max": null,
+          "mean": null
+        },
+        "staleMs": {
+          "n": 0,
+          "min": null,
+          "p50": null,
+          "p95": null,
+          "max": null,
+          "mean": null
+        },
+        "size": "-",
+        "errors": [],
+        "visibilityEvents": [],
+        "framesPerSec": 0
+      },
+      {
+        "place": "hiddenWindow",
+        "throttling": false,
+        "pump": false,
+        "method": "capturePageHidden",
+        "tries": 6,
+        "ok": 0,
+        "decoded": 0,
+        "ms": {
+          "n": 0,
+          "min": null,
+          "p50": null,
+          "p95": null,
+          "max": null,
+          "mean": null
+        },
+        "staleMs": {
+          "n": 0,
+          "min": null,
+          "p50": null,
+          "p95": null,
+          "max": null,
+          "mean": null
+        },
+        "size": "-",
+        "errors": [
+          "Current display surface not available for capture"
+        ],
+        "visibilityEvents": [],
+        "cpuMsPerPicture": 0,
+        "geometry": "view 0,0 1280x800 in content 0,27 960x540; page 1280x800 at 2x"
+      },
+      {
+        "place": "hiddenWindow",
+        "throttling": false,
+        "pump": false,
+        "method": "capturePage",
+        "tries": 6,
+        "ok": 0,
+        "decoded": 0,
+        "ms": {
+          "n": 0,
+          "min": null,
+          "p50": null,
+          "p95": null,
+          "max": null,
+          "mean": null
+        },
+        "staleMs": {
+          "n": 0,
+          "min": null,
+          "p50": null,
+          "p95": null,
+          "max": null,
+          "mean": null
+        },
+        "size": "-",
+        "errors": [
+          "Current display surface not available for capture"
+        ],
+        "visibilityEvents": [],
+        "cpuMsPerPicture": 3.33,
+        "geometry": "view 0,0 1280x800 in content 0,27 960x540; page 1280x800 at 2x"
+      },
+      {
+        "place": "hiddenWindow",
+        "throttling": false,
+        "pump": false,
+        "method": "cdpJpeg",
+        "tries": 3,
+        "ok": 1,
+        "decoded": 1,
+        "ms": {
+          "n": 1,
+          "min": 180,
+          "p50": 180,
+          "p95": 180,
+          "max": 180,
+          "mean": 180
+        },
+        "staleMs": {
+          "n": 1,
+          "min": -41,
+          "p50": -41,
+          "p95": -41,
+          "max": -41,
+          "mean": -41
+        },
+        "size": "2560x1600",
+        "errors": [
+          "Page.captureScreenshot: timed out after 5000 ms"
+        ],
+        "visibilityEvents": [],
+        "cpuMsPerPicture": 180,
+        "geometry": "view 0,0 1280x800 in content 0,27 960x540; page 1280x800 at 2x"
+      },
+      {
+        "place": "hiddenWindow",
+        "throttling": false,
+        "pump": false,
+        "method": "frameSub",
+        "tries": 6,
+        "ok": 6,
+        "decoded": 6,
+        "ms": {
+          "n": 6,
+          "min": 48,
+          "p50": 49,
+          "p95": 52,
+          "max": 52,
+          "mean": 49.83
+        },
+        "staleMs": {
+          "n": 6,
+          "min": 29,
+          "p50": 57,
+          "p95": 3038,
+          "max": 3038,
+          "mean": 549.67
+        },
+        "size": "2560x1600",
+        "errors": [],
+        "visibilityEvents": [],
+        "cpuMsPerPicture": 138.33,
+        "geometry": "view 0,0 1280x800 in content 0,27 960x540; page 1280x800 at 2x"
+      },
+      {
+        "place": "hiddenWindow",
+        "throttling": false,
+        "pump": false,
+        "method": "beginFrameSubscription",
+        "tries": 0,
+        "ok": 0,
+        "decoded": 0,
+        "ms": {
+          "n": 0,
+          "min": null,
+          "p50": null,
+          "p95": null,
+          "max": null,
+          "mean": null
+        },
+        "staleMs": {
+          "n": 0,
+          "min": null,
+          "p50": null,
+          "p95": null,
+          "max": null,
+          "mean": null
+        },
+        "size": "-",
+        "errors": [],
+        "visibilityEvents": [],
+        "framesPerSec": 29.5
+      },
+      {
+        "place": "hiddenWindow",
+        "throttling": false,
+        "pump": true,
+        "method": "capturePageHidden",
+        "tries": 6,
+        "ok": 0,
+        "decoded": 0,
+        "ms": {
+          "n": 0,
+          "min": null,
+          "p50": null,
+          "p95": null,
+          "max": null,
+          "mean": null
+        },
+        "staleMs": {
+          "n": 0,
+          "min": null,
+          "p50": null,
+          "p95": null,
+          "max": null,
+          "mean": null
+        },
+        "size": "-",
+        "errors": [
+          "Current display surface not available for capture"
+        ],
+        "visibilityEvents": [],
+        "cpuMsPerPicture": 0,
+        "geometry": "view 0,0 1280x800 in content 0,27 960x540; page 1280x800 at 2x"
+      },
+      {
+        "place": "hiddenWindow",
+        "throttling": false,
+        "pump": true,
+        "method": "capturePage",
+        "tries": 6,
+        "ok": 0,
+        "decoded": 0,
+        "ms": {
+          "n": 0,
+          "min": null,
+          "p50": null,
+          "p95": null,
+          "max": null,
+          "mean": null
+        },
+        "staleMs": {
+          "n": 0,
+          "min": null,
+          "p50": null,
+          "p95": null,
+          "max": null,
+          "mean": null
+        },
+        "size": "-",
+        "errors": [
+          "Current display surface not available for capture"
+        ],
+        "visibilityEvents": [],
+        "cpuMsPerPicture": 3.33,
+        "geometry": "view 0,0 1280x800 in content 0,27 960x540; page 1280x800 at 2x"
+      },
+      {
+        "place": "hiddenWindow",
+        "throttling": false,
+        "pump": true,
+        "method": "cdpJpeg",
+        "tries": 6,
+        "ok": 6,
+        "decoded": 6,
+        "ms": {
+          "n": 6,
+          "min": 224,
+          "p50": 265,
+          "p95": 305,
+          "max": 305,
+          "mean": 261.67
+        },
+        "staleMs": {
+          "n": 6,
+          "min": -107,
+          "p50": -94,
+          "p95": -22,
+          "max": -22,
+          "mean": -75.5
+        },
+        "size": "2560x1600",
+        "errors": [],
+        "visibilityEvents": [],
+        "cpuMsPerPicture": 638.33,
+        "geometry": "view 0,0 1280x800 in content 0,27 960x540; page 1280x800 at 2x"
+      },
+      {
+        "place": "hiddenWindow",
+        "throttling": false,
+        "pump": true,
+        "method": "frameSub",
+        "tries": 6,
+        "ok": 6,
+        "decoded": 6,
+        "ms": {
+          "n": 6,
+          "min": 71,
+          "p50": 72,
+          "p95": 95,
+          "max": 95,
+          "mean": 78.17
+        },
+        "staleMs": {
+          "n": 6,
+          "min": 45,
+          "p50": 72,
+          "p95": 77,
+          "max": 77,
+          "mean": 69.5
+        },
+        "size": "2560x1600",
+        "errors": [],
+        "visibilityEvents": [],
+        "cpuMsPerPicture": 243.33,
+        "geometry": "view 0,0 1280x800 in content 0,27 960x540; page 1280x800 at 2x"
+      },
+      {
+        "place": "hiddenWindow",
+        "throttling": false,
+        "pump": true,
+        "method": "beginFrameSubscription",
+        "tries": 0,
+        "ok": 0,
+        "decoded": 0,
+        "ms": {
+          "n": 0,
+          "min": null,
+          "p50": null,
+          "p95": null,
+          "max": null,
+          "mean": null
+        },
+        "staleMs": {
+          "n": 0,
+          "min": null,
+          "p50": null,
+          "p95": null,
+          "max": null,
+          "mean": null
+        },
+        "size": "-",
+        "errors": [],
+        "visibilityEvents": [],
+        "framesPerSec": 28
+      },
+      {
+        "place": "invisibleWindow",
+        "throttling": false,
+        "pump": false,
+        "method": "capturePageHidden",
+        "tries": 6,
+        "ok": 0,
+        "decoded": 0,
+        "ms": {
+          "n": 0,
+          "min": null,
+          "p50": null,
+          "p95": null,
+          "max": null,
+          "mean": null
+        },
+        "staleMs": {
+          "n": 0,
+          "min": null,
+          "p50": null,
+          "p95": null,
+          "max": null,
+          "mean": null
+        },
+        "size": "-",
+        "errors": [
+          "Current display surface not available for capture"
+        ],
+        "visibilityEvents": [],
+        "cpuMsPerPicture": 0,
+        "geometry": "view 0,0 1280x800 in content -1480,-1000 960x540; page 1280x800 at 2x"
+      },
+      {
+        "place": "invisibleWindow",
+        "throttling": false,
+        "pump": false,
+        "method": "capturePage",
+        "tries": 6,
+        "ok": 0,
+        "decoded": 0,
+        "ms": {
+          "n": 0,
+          "min": null,
+          "p50": null,
+          "p95": null,
+          "max": null,
+          "mean": null
+        },
+        "staleMs": {
+          "n": 0,
+          "min": null,
+          "p50": null,
+          "p95": null,
+          "max": null,
+          "mean": null
+        },
+        "size": "-",
+        "errors": [
+          "Current display surface not available for capture"
+        ],
+        "visibilityEvents": [],
+        "cpuMsPerPicture": 0,
+        "geometry": "view 0,0 1280x800 in content -1480,-1000 960x540; page 1280x800 at 2x"
+      },
+      {
+        "place": "invisibleWindow",
+        "throttling": false,
+        "pump": false,
+        "method": "cdpJpeg",
+        "tries": 6,
+        "ok": 6,
+        "decoded": 6,
+        "ms": {
+          "n": 6,
+          "min": 166,
+          "p50": 178,
+          "p95": 197,
+          "max": 197,
+          "mean": 181.83
+        },
+        "staleMs": {
+          "n": 6,
+          "min": -50,
+          "p50": -41,
+          "p95": -28,
+          "max": -28,
+          "mean": -39.17
+        },
+        "size": "2560x1600",
+        "errors": [],
+        "visibilityEvents": [],
+        "cpuMsPerPicture": 406.67,
+        "geometry": "view 0,0 1280x800 in content -1480,-1000 960x540; page 1280x800 at 2x"
+      },
+      {
+        "place": "invisibleWindow",
+        "throttling": false,
+        "pump": false,
+        "method": "frameSub",
+        "tries": 6,
+        "ok": 6,
+        "decoded": 6,
+        "ms": {
+          "n": 6,
+          "min": 69,
+          "p50": 75,
+          "p95": 77,
+          "max": 77,
+          "mean": 74.67
+        },
+        "staleMs": {
+          "n": 6,
+          "min": 22,
+          "p50": 24,
+          "p95": 28,
+          "max": 28,
+          "mean": 24.5
+        },
+        "size": "2560x1600",
+        "errors": [],
+        "visibilityEvents": [],
+        "cpuMsPerPicture": 228.33,
+        "geometry": "view 0,0 1280x800 in content -1480,-1000 960x540; page 1280x800 at 2x"
+      },
+      {
+        "place": "invisibleWindow",
+        "throttling": false,
+        "pump": false,
+        "method": "beginFrameSubscription",
+        "tries": 0,
+        "ok": 0,
+        "decoded": 0,
+        "ms": {
+          "n": 0,
+          "min": null,
+          "p50": null,
+          "p95": null,
+          "max": null,
+          "mean": null
+        },
+        "staleMs": {
+          "n": 0,
+          "min": null,
+          "p50": null,
+          "p95": null,
+          "max": null,
+          "mean": null
+        },
+        "size": "-",
+        "errors": [],
+        "visibilityEvents": [],
+        "framesPerSec": 23
+      },
+      {
+        "place": "tinyWindow",
+        "throttling": false,
+        "pump": false,
+        "method": "capturePageHidden",
+        "tries": 6,
+        "ok": 6,
+        "decoded": 6,
+        "ms": {
+          "n": 6,
+          "min": 52,
+          "p50": 56,
+          "p95": 68,
+          "max": 68,
+          "mean": 58.17
+        },
+        "staleMs": {
+          "n": 6,
+          "min": 17,
+          "p50": 28,
+          "p95": 31,
+          "max": 31,
+          "mean": 26.17
+        },
+        "size": "2560x1600",
+        "errors": [],
+        "visibilityEvents": [],
+        "cpuMsPerPicture": 175,
+        "scaleMs": {
+          "n": 6,
+          "min": 33,
+          "p50": 34,
+          "p95": 42,
+          "max": 42,
+          "mean": 35.33
+        },
+        "geometry": "view 0,0 1280x800 in content 0,0 1x1; page 1280x800 at 2x"
+      },
+      {
+        "place": "tinyWindow",
+        "throttling": false,
+        "pump": false,
+        "method": "capturePage",
+        "tries": 6,
+        "ok": 6,
+        "decoded": 6,
+        "ms": {
+          "n": 6,
+          "min": 55,
+          "p50": 55,
+          "p95": 64,
+          "max": 64,
+          "mean": 58.33
+        },
+        "staleMs": {
+          "n": 6,
+          "min": 18,
+          "p50": 26,
+          "p95": 31,
+          "max": 31,
+          "mean": 25.83
+        },
+        "size": "2560x1600",
+        "errors": [],
+        "visibilityEvents": [],
+        "cpuMsPerPicture": 171.67,
+        "scaleMs": {
+          "n": 6,
+          "min": 33,
+          "p50": 33,
+          "p95": 42,
+          "max": 42,
+          "mean": 35
+        },
+        "geometry": "view 0,0 1280x800 in content 0,0 1x1; page 1280x800 at 2x"
+      },
+      {
+        "place": "tinyWindow",
+        "throttling": false,
+        "pump": false,
+        "method": "cdpJpeg",
+        "tries": 6,
+        "ok": 6,
+        "decoded": 6,
+        "ms": {
+          "n": 6,
+          "min": 170,
+          "p50": 173,
+          "p95": 178,
+          "max": 178,
+          "mean": 174
+        },
+        "staleMs": {
+          "n": 6,
+          "min": -40,
+          "p50": -39,
+          "p95": -35,
+          "max": -35,
+          "mean": -37.5
+        },
+        "size": "2560x1600",
+        "errors": [],
+        "visibilityEvents": [],
+        "cpuMsPerPicture": 210,
+        "geometry": "view 0,0 1280x800 in content 0,0 1x1; page 1280x800 at 2x"
+      },
+      {
+        "place": "tinyWindow",
+        "throttling": false,
+        "pump": false,
+        "method": "frameSub",
+        "tries": 6,
+        "ok": 6,
+        "decoded": 6,
+        "ms": {
+          "n": 6,
+          "min": 68,
+          "p50": 72,
+          "p95": 77,
+          "max": 77,
+          "mean": 72.5
+        },
+        "staleMs": {
+          "n": 6,
+          "min": 5,
+          "p50": 25,
+          "p95": 30,
+          "max": 30,
+          "mean": 22.5
+        },
+        "size": "2560x1600",
+        "errors": [],
+        "visibilityEvents": [],
+        "cpuMsPerPicture": 161.67,
+        "geometry": "view 0,0 1280x800 in content 0,0 1x1; page 1280x800 at 2x"
+      },
+      {
+        "place": "tinyWindow",
+        "throttling": false,
+        "pump": false,
+        "method": "beginFrameSubscription",
+        "tries": 0,
+        "ok": 0,
+        "decoded": 0,
+        "ms": {
+          "n": 0,
+          "min": null,
+          "p50": null,
+          "p95": null,
+          "max": null,
+          "mean": null
+        },
+        "staleMs": {
+          "n": 0,
+          "min": null,
+          "p50": null,
+          "p95": null,
+          "max": null,
+          "mean": null
+        },
+        "size": "-",
+        "errors": [],
+        "visibilityEvents": [],
+        "framesPerSec": 24
+      },
+      {
+        "place": "tinyWindow",
+        "throttling": false,
+        "pump": false,
+        "variant": "covered",
+        "method": "capturePageHidden",
+        "tries": 6,
+        "ok": 6,
+        "decoded": 6,
+        "ms": {
+          "n": 6,
+          "min": 51,
+          "p50": 56,
+          "p95": 65,
+          "max": 65,
+          "mean": 57
+        },
+        "staleMs": {
+          "n": 6,
+          "min": 1,
+          "p50": 11,
+          "p95": 15,
+          "max": 15,
+          "mean": 10.17
+        },
+        "size": "2560x1600",
+        "errors": [],
+        "visibilityEvents": [],
+        "cpuMsPerPicture": 171.67,
+        "scaleMs": {
+          "n": 6,
+          "min": 34,
+          "p50": 35,
+          "p95": 42,
+          "max": 42,
+          "mean": 35.83
+        },
+        "geometry": "view 0,0 1280x800 in content 0,0 1x1; page 1280x800 at 2x"
+      },
+      {
+        "place": "tinyWindow",
+        "throttling": false,
+        "pump": false,
+        "variant": "covered",
+        "method": "capturePage",
+        "tries": 6,
+        "ok": 6,
+        "decoded": 6,
+        "ms": {
+          "n": 6,
+          "min": 53,
+          "p50": 55,
+          "p95": 66,
+          "max": 66,
+          "mean": 56.67
+        },
+        "staleMs": {
+          "n": 6,
+          "min": 1,
+          "p50": 11,
+          "p95": 12,
+          "max": 12,
+          "mean": 9.5
+        },
+        "size": "2560x1600",
+        "errors": [],
+        "visibilityEvents": [],
+        "cpuMsPerPicture": 170,
+        "scaleMs": {
+          "n": 6,
+          "min": 34,
+          "p50": 35,
+          "p95": 42,
+          "max": 42,
+          "mean": 36.17
+        },
+        "geometry": "view 0,0 1280x800 in content 0,0 1x1; page 1280x800 at 2x"
+      },
+      {
+        "place": "tinyWindow",
+        "throttling": false,
+        "pump": false,
+        "variant": "covered",
+        "method": "cdpJpeg",
+        "tries": 6,
+        "ok": 6,
+        "decoded": 6,
+        "ms": {
+          "n": 6,
+          "min": 153,
+          "p50": 156,
+          "p95": 162,
+          "max": 162,
+          "mean": 157.83
+        },
+        "staleMs": {
+          "n": 6,
+          "min": -41,
+          "p50": -39,
+          "p95": -34,
+          "max": -34,
+          "mean": -38.17
+        },
+        "size": "2560x1600",
+        "errors": [],
+        "visibilityEvents": [],
+        "cpuMsPerPicture": 206.67,
+        "geometry": "view 0,0 1280x800 in content 0,0 1x1; page 1280x800 at 2x"
+      },
+      {
+        "place": "tinyWindow",
+        "throttling": false,
+        "pump": false,
+        "variant": "covered",
+        "method": "frameSub",
+        "tries": 6,
+        "ok": 6,
+        "decoded": 6,
+        "ms": {
+          "n": 6,
+          "min": 67,
+          "p50": 73,
+          "p95": 74,
+          "max": 74,
+          "mean": 72.33
+        },
+        "staleMs": {
+          "n": 6,
+          "min": 8,
+          "p50": 8,
+          "p95": 16,
+          "max": 16,
+          "mean": 9.67
+        },
+        "size": "2560x1600",
+        "errors": [],
+        "visibilityEvents": [],
+        "cpuMsPerPicture": 170,
+        "geometry": "view 0,0 1280x800 in content 0,0 1x1; page 1280x800 at 2x"
+      },
+      {
+        "place": "tinyWindow",
+        "throttling": false,
+        "pump": false,
+        "variant": "covered",
+        "method": "beginFrameSubscription",
+        "tries": 0,
+        "ok": 0,
+        "decoded": 0,
+        "ms": {
+          "n": 0,
+          "min": null,
+          "p50": null,
+          "p95": null,
+          "max": null,
+          "mean": null
+        },
+        "staleMs": {
+          "n": 0,
+          "min": null,
+          "p50": null,
+          "p95": null,
+          "max": null,
+          "mean": null
+        },
+        "size": "-",
+        "errors": [],
+        "visibilityEvents": [],
+        "framesPerSec": 24
+      },
+      {
+        "place": "tinyWindow",
+        "throttling": false,
+        "pump": false,
+        "variant": "fit 1280x800 at 1x",
+        "method": "capturePageHidden",
+        "tries": 6,
+        "ok": 6,
+        "decoded": 6,
+        "ms": {
+          "n": 6,
+          "min": 53,
+          "p50": 54,
+          "p95": 65,
+          "max": 65,
+          "mean": 58.5
+        },
+        "staleMs": {
+          "n": 6,
+          "min": 3,
+          "p50": 12,
+          "p95": 21,
+          "max": 21,
+          "mean": 11.33
+        },
+        "size": "2560x1600",
+        "errors": [],
+        "visibilityEvents": [],
+        "cpuMsPerPicture": 168.33,
+        "scaleMs": {
+          "n": 6,
+          "min": 33,
+          "p50": 33,
+          "p95": 44,
+          "max": 44,
+          "mean": 35.5
+        },
+        "geometry": "view 0,0 1280x800 in content 0,0 1x1; page 1280x800 at 1x"
+      },
+      {
+        "place": "tinyWindow",
+        "throttling": false,
+        "pump": false,
+        "variant": "fit 1280x800 at 1x",
+        "method": "capturePage",
+        "tries": 6,
+        "ok": 6,
+        "decoded": 6,
+        "ms": {
+          "n": 6,
+          "min": 54,
+          "p50": 58,
+          "p95": 63,
+          "max": 63,
+          "mean": 58.5
+        },
+        "staleMs": {
+          "n": 6,
+          "min": 2,
+          "p50": 8,
+          "p95": 11,
+          "max": 11,
+          "mean": 8.17
+        },
+        "size": "2560x1600",
+        "errors": [],
+        "visibilityEvents": [],
+        "cpuMsPerPicture": 173.33,
+        "scaleMs": {
+          "n": 6,
+          "min": 32,
+          "p50": 33,
+          "p95": 40,
+          "max": 40,
+          "mean": 34
+        },
+        "geometry": "view 0,0 1280x800 in content 0,0 1x1; page 1280x800 at 1x"
+      },
+      {
+        "place": "tinyWindow",
+        "throttling": false,
+        "pump": false,
+        "variant": "fit 1280x800 at 1x",
+        "method": "cdpJpeg",
+        "tries": 6,
+        "ok": 6,
+        "decoded": 6,
+        "ms": {
+          "n": 6,
+          "min": 63,
+          "p50": 69,
+          "p95": 76,
+          "max": 76,
+          "mean": 70.33
+        },
+        "staleMs": {
+          "n": 6,
+          "min": -49,
+          "p50": -39,
+          "p95": -36,
+          "max": -36,
+          "mean": -39.83
+        },
+        "size": "1280x800",
+        "errors": [],
+        "visibilityEvents": [],
+        "cpuMsPerPicture": 90,
+        "geometry": "view 0,0 1280x800 in content 0,0 1x1; page 1280x800 at 1x"
+      },
+      {
+        "place": "tinyWindow",
+        "throttling": false,
+        "pump": false,
+        "variant": "fit 1280x800 at 1x",
+        "method": "frameSub",
+        "tries": 6,
+        "ok": 6,
+        "decoded": 6,
+        "ms": {
+          "n": 6,
+          "min": 68,
+          "p50": 73,
+          "p95": 79,
+          "max": 79,
+          "mean": 73.33
+        },
+        "staleMs": {
+          "n": 6,
+          "min": -10,
+          "p50": -7,
+          "p95": 13,
+          "max": 13,
+          "mean": -3
+        },
+        "size": "2560x1600",
+        "errors": [],
+        "visibilityEvents": [],
+        "cpuMsPerPicture": 160,
+        "geometry": "view 0,0 1280x800 in content 0,0 1x1; page 1280x800 at 1x"
+      },
+      {
+        "place": "tinyWindow",
+        "throttling": false,
+        "pump": false,
+        "variant": "fit 1280x800 at 1x",
+        "method": "beginFrameSubscription",
+        "tries": 0,
+        "ok": 0,
+        "decoded": 0,
+        "ms": {
+          "n": 0,
+          "min": null,
+          "p50": null,
+          "p95": null,
+          "max": null,
+          "mean": null
+        },
+        "staleMs": {
+          "n": 0,
+          "min": null,
+          "p50": null,
+          "p95": null,
+          "max": null,
+          "mean": null
+        },
+        "size": "-",
+        "errors": [],
+        "visibilityEvents": [],
+        "framesPerSec": 24
+      },
+      {
+        "place": "osr",
+        "throttling": false,
+        "pump": false,
+        "method": "osrPaint",
+        "tries": 6,
+        "ok": 6,
+        "decoded": 6,
+        "ms": {
+          "n": 6,
+          "min": 0,
+          "p50": 0,
+          "p95": 1,
+          "max": 1,
+          "mean": 0.17
+        },
+        "staleMs": {
+          "n": 6,
+          "min": 22,
+          "p50": 26,
+          "p95": 30,
+          "max": 30,
+          "mean": 26.5
+        },
+        "size": "960x540",
+        "errors": [],
+        "visibilityEvents": [],
+        "cpuMsPerPicture": 11.67,
+        "geometry": "view - in content 0,0 960x540; page 960x540 at 1x"
+      },
+      {
+        "place": "osr",
+        "throttling": false,
+        "pump": false,
+        "method": "capturePage",
+        "tries": 6,
+        "ok": 6,
+        "decoded": 6,
+        "ms": {
+          "n": 6,
+          "min": 8,
+          "p50": 17,
+          "p95": 18,
+          "max": 18,
+          "mean": 15.67
+        },
+        "staleMs": {
+          "n": 6,
+          "min": -11,
+          "p50": -9,
+          "p95": 0,
+          "max": 0,
+          "mean": -8
+        },
+        "size": "960x540",
+        "errors": [],
+        "visibilityEvents": [],
+        "cpuMsPerPicture": 45,
+        "scaleMs": {
+          "n": 6,
+          "min": 13,
+          "p50": 14,
+          "p95": 15,
+          "max": 15,
+          "mean": 14
+        },
+        "geometry": "view - in content 0,0 960x540; page 960x540 at 1x"
+      },
+      {
+        "place": "osr",
+        "throttling": false,
+        "pump": false,
+        "method": "cdpJpeg",
+        "tries": 6,
+        "ok": 6,
+        "decoded": 6,
+        "ms": {
+          "n": 6,
+          "min": 92,
+          "p50": 98,
+          "p95": 99,
+          "max": 99,
+          "mean": 97.17
+        },
+        "staleMs": {
+          "n": 6,
+          "min": -83,
+          "p50": -82,
+          "p95": -76,
+          "max": -76,
+          "mean": -81.33
+        },
+        "size": "960x540",
+        "errors": [],
+        "visibilityEvents": [],
+        "cpuMsPerPicture": 51.67,
+        "geometry": "view - in content 0,0 960x540; page 960x540 at 1x"
+      },
+      {
+        "place": "osr",
+        "throttling": false,
+        "pump": false,
+        "method": "paint events",
+        "tries": 0,
+        "ok": 0,
+        "decoded": 0,
+        "ms": {
+          "n": 0,
+          "min": null,
+          "p50": null,
+          "p95": null,
+          "max": null,
+          "mean": null
+        },
+        "staleMs": {
+          "n": 0,
+          "min": null,
+          "p50": null,
+          "p95": null,
+          "max": null,
+          "mean": null
+        },
+        "size": "-",
+        "errors": [],
+        "visibilityEvents": [],
+        "framesPerSec": 30
+      },
+      {
+        "place": "osrView",
+        "throttling": false,
+        "pump": false,
+        "method": "osrPaint",
+        "tries": 6,
+        "ok": 0,
+        "decoded": 0,
+        "ms": {
+          "n": 0,
+          "min": null,
+          "p50": null,
+          "p95": null,
+          "max": null,
+          "mean": null
+        },
+        "staleMs": {
+          "n": 0,
+          "min": null,
+          "p50": null,
+          "p95": null,
+          "max": null,
+          "mean": null
+        },
+        "size": "-",
+        "errors": [
+          "no paint event"
+        ],
+        "visibilityEvents": [],
+        "cpuMsPerPicture": 161.67,
+        "geometry": "view 0,0 1280x800 in content -; page 0x0 at 1x"
+      },
+      {
+        "place": "osrView",
+        "throttling": false,
+        "pump": false,
+        "method": "capturePage",
+        "tries": 6,
+        "ok": 0,
+        "decoded": 0,
+        "ms": {
+          "n": 0,
+          "min": null,
+          "p50": null,
+          "p95": null,
+          "max": null,
+          "mean": null
+        },
+        "staleMs": {
+          "n": 0,
+          "min": null,
+          "p50": null,
+          "p95": null,
+          "max": null,
+          "mean": null
+        },
+        "size": "-",
+        "errors": [
+          "empty image"
+        ],
+        "visibilityEvents": [],
+        "cpuMsPerPicture": 3.33,
+        "geometry": "view 0,0 1280x800 in content -; page 0x0 at 1x"
+      },
+      {
+        "place": "osrView",
+        "throttling": false,
+        "pump": false,
+        "method": "cdpJpeg",
+        "tries": 2,
+        "ok": 0,
+        "decoded": 0,
+        "ms": {
+          "n": 0,
+          "min": null,
+          "p50": null,
+          "p95": null,
+          "max": null,
+          "mean": null
+        },
+        "staleMs": {
+          "n": 0,
+          "min": null,
+          "p50": null,
+          "p95": null,
+          "max": null,
+          "mean": null
+        },
+        "size": "-",
+        "errors": [
+          "Page.captureScreenshot: timed out after 5000 ms"
+        ],
+        "visibilityEvents": [],
+        "cpuMsPerPicture": 130,
+        "geometry": "view 0,0 1280x800 in content -; page 0x0 at 1x"
+      },
+      {
+        "place": "osrView",
+        "throttling": false,
+        "pump": false,
+        "method": "paint events",
+        "tries": 0,
+        "ok": 0,
+        "decoded": 0,
+        "ms": {
+          "n": 0,
+          "min": null,
+          "p50": null,
+          "p95": null,
+          "max": null,
+          "mean": null
+        },
+        "staleMs": {
+          "n": 0,
+          "min": null,
+          "p50": null,
+          "p95": null,
+          "max": null,
+          "mean": null
+        },
+        "size": "-",
+        "errors": [],
+        "visibilityEvents": [],
+        "framesPerSec": 0
+      }
+    ],
+    "cost": {
+      "idle": [
+        {
+          "tabs": 0,
+          "memBest": 302419968,
+          "memKind": "pss",
+          "memRss": 505118720,
+          "cpuPct": 0,
+          "cpuByType": {
+            "Browser": 0,
+            "GPU": 0,
+            "Utility": 0
+          },
+          "procs": 3
+        },
+        {
+          "tabs": 1,
+          "memBest": 333419520,
+          "memKind": "pss",
+          "memRss": 614420480,
+          "cpuPct": 0,
+          "cpuByType": {
+            "Browser": 0,
+            "GPU": 0,
+            "Utility": 0,
+            "Tab": 0
+          },
+          "procs": 4
+        },
+        {
+          "tabs": 2,
+          "memBest": 349330432,
+          "memKind": "pss",
+          "memRss": 723394560,
+          "cpuPct": 0.25,
+          "cpuByType": {
+            "Browser": 0,
+            "GPU": 0,
+            "Utility": 0,
+            "Tab": 0.25
+          },
+          "procs": 5
+        },
+        {
+          "tabs": 4,
+          "memBest": 380653568,
+          "memKind": "pss",
+          "memRss": 943001600,
+          "cpuPct": 0.25,
+          "cpuByType": {
+            "Browser": 0.25,
+            "GPU": 0,
+            "Utility": 0,
+            "Tab": 0
+          },
+          "procs": 7
+        },
+        {
+          "tabs": 8,
+          "memBest": 439313408,
+          "memKind": "pss",
+          "memRss": 1382621184,
+          "cpuPct": 0.75,
+          "cpuByType": {
+            "Browser": 0.25,
+            "GPU": 0,
+            "Utility": 0,
+            "Tab": 0.5
+          },
+          "procs": 11
+        }
+      ],
+      "animated": [
+        {
+          "config": "animated, shown",
+          "cpuPct": 83.48,
+          "rendererPct": 20.24,
+          "gpuPct": 63.23,
+          "rafHz": 59.97
+        },
+        {
+          "config": "animated, never-shown window, throttling off",
+          "cpuPct": 2,
+          "rendererPct": 1.5,
+          "gpuPct": 0,
+          "rafHz": 0
+        },
+        {
+          "config": "animated, never-shown window, throttling on",
+          "cpuPct": 0.25,
+          "rendererPct": 0,
+          "gpuPct": 0,
+          "rafHz": 0
+        },
+        {
+          "config": "animated, never-shown window, throttling off + frame pump",
+          "cpuPct": 1.5,
+          "rendererPct": 1.25,
+          "gpuPct": 0.25,
+          "rafHz": 0
+        },
+        {
+          "config": "animated, invisible shown window",
+          "cpuPct": 1.75,
+          "rendererPct": 1.25,
+          "gpuPct": 0.25,
+          "rafHz": 0
+        },
+        {
+          "config": "animated, 1x1 shown window",
+          "cpuPct": 24.74,
+          "rendererPct": 21.74,
+          "gpuPct": 2.5,
+          "rafHz": 59.97
+        },
+        {
+          "config": "animated, osr 30 fps",
+          "cpuPct": 17.25,
+          "rendererPct": 9,
+          "gpuPct": 3,
+          "rafHz": 29.99
+        }
+      ],
+      "partitions": {
+        "samePartitionMiB": 67.14,
+        "ownPartitionsMiB": 72.9
+      },
+      "perIdleTabMiB": 16.32,
+      "perIdleTabCpuPct": 0.09,
+      "host": {
+        "steps": [
+          {
+            "tabs": 0,
+            "memBest": 329392128,
+            "memKind": "pss",
+            "memRss": 532459520,
+            "cpuPct": 0,
+            "cpuByType": {
+              "Browser": 0,
+              "GPU": 0,
+              "Utility": 0
+            },
+            "procs": 3
+          },
+          {
+            "tabs": 1,
+            "memBest": 405510144,
+            "memKind": "pss",
+            "memRss": 689266688,
+            "cpuPct": 2.25,
+            "cpuByType": {
+              "Browser": 0.25,
+              "GPU": 0.5,
+              "Utility": 0,
+              "Tab": 1.5
+            },
+            "procs": 4
+          },
+          {
+            "tabs": 4,
+            "memBest": 588717056,
+            "memKind": "pss",
+            "memRss": 1161887744,
+            "cpuPct": 7.25,
+            "cpuByType": {
+              "Browser": 0.25,
+              "GPU": 1,
+              "Utility": 0,
+              "Tab": 6
+            },
+            "procs": 7
+          },
+          {
+            "tabs": 8,
+            "memBest": 830346240,
+            "memKind": "pss",
+            "memRss": 1797283840,
+            "cpuPct": 14.49,
+            "cpuByType": {
+              "Browser": 0.25,
+              "GPU": 2.5,
+              "Utility": 0,
+              "Tab": 11.74
+            },
+            "procs": 11
+          }
+        ],
+        "perTabMiB": 59.72,
+        "perTabCpuPct": 1.81
+      }
+    },
+    "shared": {
+      "tabs": [
+        {
+          "rates": {
+            "seconds": 4,
+            "intervalHz": 100.15,
+            "chainHz": 88.66,
+            "rafHz": 59.94,
+            "maxIntervalGapMs": 29,
+            "maxChainGapMs": 29,
+            "maxRafGapMs": 33,
+            "visibility": "visible",
+            "layout": "1280x800",
+            "ioHz": 2,
+            "roHz": 2
+          },
+          "capture": {
+            "ok": 4,
+            "tries": 4,
+            "ms": {
+              "n": 4,
+              "min": 61,
+              "p50": 62,
+              "p95": 67,
+              "max": 67,
+              "mean": 63.25
+            },
+            "staleMs": {
+              "n": 4,
+              "min": 6,
+              "p50": 9,
+              "p95": 25,
+              "max": 25,
+              "mean": 12.75
+            },
+            "size": "2560x1600"
+          }
+        },
+        {
+          "rates": {
+            "seconds": 4.87,
+            "intervalHz": 99.84,
+            "chainHz": 87.51,
+            "rafHz": 58.96,
+            "maxIntervalGapMs": 26,
+            "maxChainGapMs": 26,
+            "maxRafGapMs": 50,
+            "visibility": "visible",
+            "layout": "1280x800",
+            "ioHz": 2.05,
+            "roHz": 2.05
+          },
+          "capture": {
+            "ok": 4,
+            "tries": 4,
+            "ms": {
+              "n": 4,
+              "min": 63,
+              "p50": 67,
+              "p95": 69,
+              "max": 69,
+              "mean": 66.75
+            },
+            "staleMs": {
+              "n": 4,
+              "min": 20,
+              "p50": 21,
+              "p95": 23,
+              "max": 23,
+              "mean": 21.25
+            },
+            "size": "2560x1600"
+          }
+        },
+        {
+          "rates": {
+            "seconds": 5.73,
+            "intervalHz": 99.6,
+            "chainHz": 88.26,
+            "rafHz": 57.74,
+            "maxIntervalGapMs": 20,
+            "maxChainGapMs": 18,
+            "maxRafGapMs": 51,
+            "visibility": "visible",
+            "layout": "1280x800",
+            "ioHz": 1.92,
+            "roHz": 1.92
+          },
+          "capture": {
+            "ok": 4,
+            "tries": 4,
+            "ms": {
+              "n": 4,
+              "min": 61,
+              "p50": 64,
+              "p95": 69,
+              "max": 69,
+              "mean": 64.75
+            },
+            "staleMs": {
+              "n": 4,
+              "min": 19,
+              "p50": 22,
+              "p95": 25,
+              "max": 25,
+              "mean": 22.5
+            },
+            "size": "2560x1600"
+          }
+        },
+        {
+          "rates": {
+            "seconds": 6.6,
+            "intervalHz": 99.74,
+            "chainHz": 87.62,
+            "rafHz": 57.15,
+            "maxIntervalGapMs": 20,
+            "maxChainGapMs": 20,
+            "maxRafGapMs": 53,
+            "visibility": "visible",
+            "layout": "1280x800",
+            "ioHz": 1.97,
+            "roHz": 1.97
+          },
+          "capture": {
+            "ok": 4,
+            "tries": 4,
+            "ms": {
+              "n": 4,
+              "min": 60,
+              "p50": 65,
+              "p95": 69,
+              "max": 69,
+              "mean": 65.25
+            },
+            "staleMs": {
+              "n": 4,
+              "min": 4,
+              "p50": 22,
+              "p95": 27,
+              "max": 27,
+              "mean": 19.75
+            },
+            "size": "2560x1600"
+          }
+        }
+      ],
+      "fitted": true
+    }
+  },
+  "errors": [],
+  "assertions": [
+    {
+      "name": "capturePage works in the 1x1 host with the agent's 1280x800 at 1x held",
+      "ok": true,
+      "detail": "{\"dsf\":2,\"ok\":6,\"tries\":6,\"size\":\"2560x1600\",\"errors\":[]}"
+    },
+    {
+      "name": "every tab in one shared host draws and is pictured",
+      "ok": true,
+      "detail": "{\"tabs\":[{\"rafHz\":59.940059940059946,\"ok\":4,\"tries\":4},{\"rafHz\":58.95645028759244,\"ok\":4,\"tries\":4},{\"rafHz\":57.73591487877203,\"ok\":4,\"tries\":4},{\"rafHz\":57.147188115810216,\"ok\":4,\"tries\":4}]}"
+    }
+  ]
+}

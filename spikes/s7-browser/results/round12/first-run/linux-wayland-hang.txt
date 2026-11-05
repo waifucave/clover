@@ -1,0 +1,15 @@
+2026-11-05T08:59:21.9361709Z probe: /home/runner/work/clover/clover/spikes/s7-browser/prototype/node_modules/electron/dist/electron --ozone-platform=wayland /home/runner/work/clover/clover/spikes/s7-browser/prototype/out/electron/main.cjs --checks=osr,viewport --out=/home/runner/work/clover/clover/spikes/s7-browser/prototype/out/results/electron-viewport-linux-wayland.json --label=viewport-linux-wayland
+2026-11-05T08:59:22.0219711Z [3942:1105/085922.021599:ERROR:ui/ozone/platform/wayland/common/drm_render_node_path_finder.cc:40] drmGetDevices2() has not found any devices: Invalid argument (22)
+2026-11-05T08:59:22.3952172Z [3942:1105/085922.394926:ERROR:content/browser/browser_main_loop.cc:287] Gdk: gdk_seat_get_keyboard: assertion 'GDK_IS_SEAT (seat)' failed
+2026-11-05T08:59:22.5960905Z [3942:1105/085922.595415:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+2026-11-05T08:59:22.5989440Z [s7 0.4s] electron 45.2.2 (chrome 156.0.8078.80) on linux-x64, ozone wayland, checks osr,viewport
+2026-11-05T08:59:22.6043167Z [3979:1105/085922.603887:ERROR:ui/ozone/platform/wayland/common/drm_render_node_path_finder.cc:40] drmGetDevices2() has not found any devices: Success (0)
+2026-11-05T08:59:22.6060289Z [s7 0.4s] check osr
+2026-11-05T08:59:22.6309317Z [3942:1105/085922.629592:ERROR:dbus/object_proxy.cc:589] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: 
+2026-11-05T08:59:22.6340740Z [3942:1105/085922.629736:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+2026-11-05T08:59:22.6370550Z [3942:1105/085922.636718:ERROR:dbus/object_proxy.cc:589] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: 
+2026-11-05T08:59:24.2818321Z [s7 2.1s]   osr size, default: window 1280x800, content 1280x800, page 1280x800@1, frame 1280x800
+2026-11-05T08:59:24.3506361Z [3942:1105/085924.350322:ERROR:content/browser/browser_main_loop.cc:287] Gdk: gdk_seat_get_keyboard: assertion 'GDK_IS_SEAT (seat)' failed
+2026-11-05T08:59:24.3507814Z [3942:1105/085924.350343:ERROR:content/browser/browser_main_loop.cc:287] Gdk: gdk_seat_get_keyboard: assertion 'GDK_IS_SEAT (seat)' failed
+2026-11-05T08:59:24.5735684Z [3942:1105/085924.573320:ERROR:content/browser/browser_main_loop.cc:287] Gdk: gdk_seat_get_keyboard: assertion 'GDK_IS_SEAT (seat)' failed
+2026-11-05T09:19:33.8824578Z ##[error]The action 'Offscreen tabs, and one shown through the viewport' has timed out after 20 minutes.
