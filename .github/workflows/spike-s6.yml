@@ -35,6 +35,7 @@ jobs:
         shell: bash
     env:
       S6: ${{ github.workspace }}/spikes/s6-mounts
+      CGO_ENABLED: "0" # cgofuse loads WinFsp's DLL itself on Windows; go-fuse is pure Go
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
@@ -71,12 +72,11 @@ jobs:
 
       - name: Build the mount helper
         working-directory: native/mounts
-        env:
-          CGO_ENABLED: "0"
         run: |
           mkdir -p "$RUNNER_TEMP/s6"
+          exe=""; if [ "$RUNNER_OS" = Windows ]; then exe=.exe; fi
           go vet ./...
-          go build -o "$RUNNER_TEMP/s6/clover-mount$([ "$RUNNER_OS" = Windows ] && echo .exe)" ./cmd/clover-mount
+          go build -o "$RUNNER_TEMP/s6/clover-mount$exe" ./cmd/clover-mount
           ls -l "$RUNNER_TEMP/s6"
       - name: Protocol tests against the real file service
         if: matrix.suite == 'failfast'
@@ -98,12 +98,14 @@ jobs:
 
       - name: Run ${{ matrix.suite }}
         run: |
-          helper="$RUNNER_TEMP/s6/clover-mount$([ "$RUNNER_OS" = Windows ] && echo .exe)"
-          tree="$([ "$RUNNER_OS" = Windows ] && echo 'T:' || echo "$RUNNER_TEMP/s6/tree")"
+          exe=""; tree="$RUNNER_TEMP/s6/tree"
+          if [ "$RUNNER_OS" = Windows ]; then exe=.exe; tree="T:"; fi
+          helper="$RUNNER_TEMP/s6/clover-mount$exe"
           res="$RUNNER_TEMP/s6/results"
           common=(--root "$RUNNER_TEMP/s6/export" --tree "$tree" --helper "$helper" --copy-src "$GITHUB_WORKSPACE/packages/protocol")
           case "${{ matrix.suite }}" in
             failfast)
+              bun "$S6/bench/coherence.ts" "${common[@]}" --policies plain,cached --out "$res/${{ matrix.os }}-coherence.json" || echo "coherence failed"
               bun "$S6/bench/failfast.ts" "${common[@]}" --rtt 20 --policy plain --out "$res/${{ matrix.os }}-failfast.json" ;;
             speed-cached)
               bun "$S6/bench/speed.ts" "${common[@]}" --policies cached --rtts 0,20,80 --out "$res/${{ matrix.os }}-speed-cached.json" ;;

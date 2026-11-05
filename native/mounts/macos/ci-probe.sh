@@ -74,6 +74,45 @@ cat "$RUNNER_TEMP/s6probe/tree/hello.txt" 2>&1 | tee -a "$out/probe.txt"
 /sbin/umount "$RUNNER_TEMP/s6probe/tree" 2>/dev/null
 kill $svc 2>/dev/null
 
+note "EXPERIMENT (disposable runner only, unsupported): add the module to FSKit's enabled list by hand"
+settings="$HOME/Library/Group Containers/group.com.apple.fskit.settings/enabledModules.plist"
+python3 - "$settings" <<'PY' 2>&1 | tee -a "$out/probe.txt"
+import plistlib, sys
+p = sys.argv[1]
+with open(p, "rb") as f: mods = plistlib.load(f)
+if "com.waifucave.clover.tree.dev.fs" not in mods: mods.append("com.waifucave.clover.tree.dev.fs")
+with open(p, "wb") as f: plistlib.dump(mods, f, fmt=plistlib.FMT_BINARY)
+print("enabledModules now:", mods)
+PY
+killall -9 fskit_agent extensionkitservice 2>/dev/null
+sudo killall -9 fskitd 2>/dev/null
+sleep 3
+bun "$s6/server/serve.ts" --root "$export_dir" --port 7400 > "$out/service2.log" 2>&1 &
+svc=$!
+sleep 2
+( /sbin/mount -F -t clovertree "clovertree://127.0.0.1:7400/Desktop1" "$RUNNER_TEMP/s6probe/tree" > "$out/mount2.txt" 2>&1; echo "exit $?" >> "$out/mount2.txt" ) &
+mpid=$!
+for _ in $(seq 1 30); do kill -0 $mpid 2>/dev/null || break; sleep 1; done
+if kill -0 $mpid 2>/dev/null; then echo "mount still waiting after 30 s; killed" >> "$out/mount2.txt"; kill -9 $mpid; fi
+cat "$out/mount2.txt" | tee -a "$out/probe.txt"
+if /sbin/mount | grep -q "$RUNNER_TEMP/s6probe/tree"; then
+  echo "FSKIT_MOUNTED=1" | tee -a "$out/probe.txt"
+  /sbin/mount | grep "$RUNNER_TEMP/s6probe/tree" | tee -a "$out/probe.txt"
+  ls -la "$RUNNER_TEMP/s6probe/tree" 2>&1 | tee -a "$out/probe.txt"
+  cat "$RUNNER_TEMP/s6probe/tree/hello.txt" 2>&1 | tee -a "$out/probe.txt"
+  echo written-through-fskit > "$RUNNER_TEMP/s6probe/tree/w.txt" 2>&1 && cat "$export_dir/w.txt" 2>&1 | tee -a "$out/probe.txt"
+  bun "$s6/bench/coherence.ts" --root "$export_dir" --external "$RUNNER_TEMP/s6probe/tree" --label "fskit, guard on" --out "$out/coherence-fskit.json" 2>&1 | tail -12 | tee -a "$out/probe.txt"
+  /sbin/umount "$RUNNER_TEMP/s6probe/tree" 2>&1 | tee -a "$out/probe.txt"
+  # The same checks with the short-read guard off: does this macOS still have the bug?
+  ( /sbin/mount -F -t clovertree "clovertree://127.0.0.1:7400/Desktop1?mitigate=0" "$RUNNER_TEMP/s6probe/tree" >> "$out/mount2.txt" 2>&1 ) &
+  mpid=$!; for _ in $(seq 1 30); do kill -0 $mpid 2>/dev/null || break; sleep 1; done
+  bun "$s6/bench/coherence.ts" --root "$export_dir" --external "$RUNNER_TEMP/s6probe/tree" --label "fskit, guard off" --out "$out/coherence-fskit-noguard.json" 2>&1 | tail -12 | tee -a "$out/probe.txt"
+  /sbin/umount "$RUNNER_TEMP/s6probe/tree" 2>&1 | tee -a "$out/probe.txt"
+else
+  echo "FSKIT_MOUNTED=0" | tee -a "$out/probe.txt"
+fi
+kill $svc 2>/dev/null
+
 note "system log (fskitd, extensionkit, amfi, the module)"
 log show --last 3m --style compact --predicate 'process == "fskitd" OR process == "fskit_agent" OR subsystem BEGINSWITH "com.apple.fskit" OR subsystem == "com.waifucave.clover.tree" OR (process == "kernel" AND eventMessage CONTAINS[c] "AMFI") OR eventMessage CONTAINS[c] "clovertree"' > "$out/fskit-log.txt" 2>&1
 grep -i -E "clover|disabled|not enabled|denied|amfi|entitle|profile|error" "$out/fskit-log.txt" | head -60 | tee -a "$out/probe.txt"

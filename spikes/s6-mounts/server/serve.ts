@@ -25,7 +25,11 @@ const WATCH = !args["no-watch"];
 const VERBOSE = Boolean(args.verbose);
 const INSTANCE = randomUUID();
 const IS_WIN = process.platform === "win32";
-const REAL_ROOT = fs.realpathSync(ROOT);
+// The same realpath function for the root and for every parent, so Windows' 8.3 names and drive
+// case compare equal; Windows paths compare case-insensitively.
+const REAL_ROOT = await fs.promises.realpath(ROOT);
+const samePath = (a: string, b: string) => (IS_WIN ? a.toLowerCase() === b.toLowerCase() : a === b);
+const inside = (p: string) => samePath(p, REAL_ROOT) || (IS_WIN ? p.toLowerCase().startsWith(REAL_ROOT.toLowerCase() + path.sep) : p.startsWith(REAL_ROOT + path.sep));
 
 class WireError extends Error {
   constructor(public err: number, message?: string) { super(message ?? `wire error ${err}`); }
@@ -61,7 +65,7 @@ async function resolveForWrite(rel: string): Promise<string> {
   const abs = resolve(rel);
   if (rel === "") return abs;
   const parent = await fs.promises.realpath(path.dirname(abs)).catch((e) => fail(errFromCode(e.code)));
-  if (parent !== REAL_ROOT && !parent.startsWith(REAL_ROOT + path.sep)) fail(Err.EACCES, `escapes the export: ${rel}`);
+  if (!inside(parent)) fail(Err.EACCES, `escapes the export: ${rel}`);
   return abs;
 }
 const join = (dir: string, name: string) => (dir === "" ? name : `${dir}/${name}`);
