@@ -50,7 +50,7 @@ if (mode === "--version") {
 }
 
 const report = (rec: Record<string, unknown>) => appendFileSync(cfg.report, `${JSON.stringify({ ...rec, at: Date.now() })}\n`);
-report({ type: "started", pid: process.pid });
+report({ type: "started", pid: process.pid, env: Object.keys(process.env).sort() });
 
 let sessionSeq = 0;
 let toolSeq = 0;
