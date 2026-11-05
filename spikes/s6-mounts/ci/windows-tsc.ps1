@@ -1,6 +1,6 @@
 # Windows diagnostic: tsc inside the WinFsp tree doesn't see the Bun and Node types that resolve
 # on the holder's own disk ("Cannot find module 'bun:test'", "Cannot find module 'node:os'").
-# For the holder's folder and for the same folder through the tree (three layouts), it asks Node
+# For the holder's folder and for the same folder through the tree (five layouts), it asks Node
 # what node_modules holds (links, their targets, what they resolve to) and asks tsc which type
 # packages it loaded and how it resolved them.
 #
@@ -63,7 +63,9 @@ New-Item -ItemType Directory -Force "$layout\home" | Out-Null
 $cases = @(
   @{ Name = "tree on T: (DefineDosDevice), as the speed runs mount it"; Mount = "T:"; Args = ""; Repo = "T:\home\Desktop1\clover" },
   @{ Name = "tree on T: as a network volume (\\clover\tree)"; Mount = "T:"; Args = "--volume-prefix \clover\tree"; Repo = "T:\home\Desktop1\clover" },
-  @{ Name = "real folder, the other computer mounted on it (--single)"; Mount = "$layout\home\Desktop1"; Args = "--single"; Repo = "$layout\home\Desktop1\clover" }
+  @{ Name = "real folder, the other computer mounted on it (--single)"; Mount = "$layout\home\Desktop1"; Args = "--single"; Repo = "$layout\home\Desktop1\clover" },
+  @{ Name = "real folder, the other computer a network volume on it (--single, \\clover\Desktop1)"; Mount = "$layout\home\Desktop1"; Args = "--single --volume-prefix \clover\Desktop1"; Repo = "$layout\home\Desktop1\clover" },
+  @{ Name = "a network volume on a drive letter WinFsp picks, the folder a symlink to its UNC path"; Mount = "*"; Args = "--single --volume-prefix \clover\Desktop1"; Repo = "$layout\home\Desktop1\clover"; Link = "\\clover\Desktop1" }
 )
 $i = 0
 foreach ($c in $cases) {
@@ -72,10 +74,17 @@ foreach ($c in $cases) {
   Say "#### $($c.Name): --mountpoint $($c.Mount)"
   $log = "$env:RUNNER_TEMP\s6\results\windows-tsc-helper-$i.log"
   $h = Start-Process $Helper -ArgumentList "--mountpoint `"$($c.Mount)`" --policy cached --remote Desktop1=127.0.0.1:7400 $($c.Args)" -PassThru -WindowStyle Hidden -RedirectStandardError $log
+  if ($c.Link) {
+    # the volume on a drive letter WinFsp picks, the folder a symlink to its UNC path
+    for ($k = 0; ($k -lt 75) -and -not (Test-Path "$($c.Link)\clover"); $k++) { Start-Sleep -Milliseconds 200 }
+    Say "UNC path visible: $(Test-Path "$($c.Link)\clover")"
+    New-Item -ItemType SymbolicLink -Path "$layout\home\Desktop1" -Target $c.Link -ErrorAction Continue | Out-Null
+  }
   for ($k = 0; ($k -lt 75) -and -not (Test-Path $c.Repo); $k++) { Start-Sleep -Milliseconds 200 }
   Say "repo visible: $(Test-Path $c.Repo)"
   if (Test-Path $c.Repo) { Check $c.Repo }
   Stop-Process -Id $h.Id -Force
+  if ($c.Link) { Remove-Item "$layout\home\Desktop1" -Force -ErrorAction Continue }
   for ($k = 0; ($k -lt 50) -and (Test-Path $c.Repo); $k++) { Start-Sleep -Milliseconds 200 }
   Get-Content $log -Tail 4 -ErrorAction SilentlyContinue | ForEach-Object { Say "helper: $_" }
 }
