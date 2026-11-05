@@ -1,10 +1,12 @@
 // Live gate 5's run of spike S4, against Fish Audio itself, with the owner's own key. Nothing else runs this: the
 // tests run the same measurements against the recorded fake (test/s4.test.ts).
 //
-//   FISH_API_KEY=… bun plugins/clover/fish-audio/scripts/s4-live.ts --live [--voice <id>] [--runs <n>] [--paid] [--save <dir>]
+//   bun plugins/clover/fish-audio/scripts/s4-live.ts --live [--voice <id>] [--runs <n>] [--paid] [--save <dir>]
 //
-// The key is read from the environment, added only to requests for https://api.fish.audio (a redirect fails rather
-// than carry it elsewhere), and never printed: the report is the JSON on stdout, progress goes to stderr. The first
+// It asks for the key with input that isn't shown, or reads it as the first line piped in (a password manager's
+// command), so the key never sits in the shell's history or the environment. It is added only to requests for
+// https://api.fish.audio (a redirect fails rather than carry it elsewhere) and never printed: the report is the JSON
+// on stdout, progress goes to stderr. The first
 // audio of each text is saved as WAV, in `--save <dir>` or a new temporary folder, for the owner to listen to; nothing
 // is played. The free model costs nothing; `--paid` also measures s2.1-pro, about six cents at the default 5 runs, and
 // the round trip's listening costs a fraction of a cent.
@@ -26,9 +28,36 @@ if (!flag("--live")) {
   console.error("s4-live: this calls Fish Audio with a real key, so it runs only with --live (live gate 5)");
   process.exit(2);
 }
-const key = process.env.FISH_API_KEY;
-if (key === undefined || key.trim() === "") {
-  console.error("s4-live: set FISH_API_KEY to the key to test with");
+/** The key: typed at a prompt that shows nothing, or the first line piped in. */
+async function readKey(): Promise<string> {
+  if (!process.stdin.isTTY) return ((await new Response(Bun.stdin.stream()).text()).split(/\r?\n/)[0] ?? "").trim();
+  process.stderr.write("Fish Audio API key (not shown): ");
+  process.stdin.setRawMode(true);
+  process.stdin.resume();
+  return new Promise<string>((resolve) => {
+    let typed = "";
+    const done = (key: string) => {
+      process.stdin.off("data", onData);
+      process.stdin.setRawMode(false);
+      process.stdin.pause();
+      process.stderr.write("\n");
+      resolve(key);
+    };
+    const onData = (chunk: Buffer) => {
+      for (const ch of chunk.toString("utf8")) {
+        if (ch === "\r" || ch === "\n") return done(typed.trim());
+        if (ch === "\u0003") return done("");
+        if (ch === "\u007f" || ch === "\b") typed = typed.slice(0, -1);
+        else typed += ch;
+      }
+    };
+    process.stdin.on("data", onData);
+  });
+}
+
+const key = await readKey();
+if (key === "") {
+  console.error("s4-live: no key was given");
   process.exit(2);
 }
 

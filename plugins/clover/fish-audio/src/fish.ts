@@ -18,7 +18,10 @@
 //   missing or unknown model runs and bills as `transcribe-1`. Raw headerless PCM is refused, so PCM goes as WAV.
 // * Errors are JSON `{ status, message }` (speech-to-text's newer errors add `code` and `request_id`); some from the
 //   network edge have no body. 429 means the account's concurrent requests are all in use (5 on the starter tier) and
-//   comes with no `Retry-After`; it and 5xx are retried with backoff. 401, 402 and 4xx are not.
+//   comes with no `Retry-After`; it and 5xx are retried with backoff. 401, 402 and 4xx are not. A retry after a 5xx or
+//   a dropped connection can bill a paid speech twice, if Fish did the work before it failed; that is accepted, since
+//   the free model costs nothing and a reply that never speaks costs more. The errors for 401 and 403 are fixed texts,
+//   never Fish's body, which could echo the key.
 import { pcm16ToWav, sniffAudio } from "./audio";
 
 export const FISH_ORIGIN = "https://api.fish.audio";
@@ -64,16 +67,20 @@ export const realTimer: Timer = {
   sleep: (ms, signal) =>
     new Promise<void>((resolve, reject) => {
       if (signal?.aborted) return reject(abortedError());
-      const t = setTimeout(resolve, ms);
-      signal?.addEventListener("abort", () => {
+      const onAbort = () => {
         clearTimeout(t);
         reject(abortedError());
-      }, { once: true });
+      };
+      const t = setTimeout(() => {
+        signal?.removeEventListener("abort", onAbort);
+        resolve();
+      }, ms);
+      signal?.addEventListener("abort", onAbort, { once: true });
     }),
 };
 
 export type FishErrorCode =
-  | "unauthorized" | "payment_required" | "rate_limited" | "unavailable" | "invalid_request" | "not_found" | "too_large"
+  | "unauthorized" | "forbidden" | "payment_required" | "rate_limited" | "unavailable" | "invalid_request" | "not_found" | "too_large"
   | "unsupported_media" | "network" | "aborted" | "bad_response"
   /** The core's keyed fetch has no key for this plugin: the user hasn't added one, so the bot stays text-only. */
   | "no_key"
@@ -129,7 +136,19 @@ const ERROR_FOR_STATUS: Readonly<Record<number, FishErrorCode>> = {
   503: "unavailable", 504: "unavailable",
 };
 
+/** What a refused key says, whatever Fish's body says: a 401's or 403's body could echo the key, and the keyed fetch
+ *  takes it out of headers only. */
+const KEY_REFUSED: Readonly<Record<number, string>> = {
+  401: "Fish Audio didn't accept the key: check the one saved in the Fish Audio plugin",
+  403: "Fish Audio refused this key for this request",
+};
+
 async function errorFromResponse(res: Response): Promise<FishError> {
+  const refused = KEY_REFUSED[res.status];
+  if (refused !== undefined) {
+    await res.body?.cancel().catch(() => {});
+    return new FishError(res.status === 401 ? "unauthorized" : "forbidden", refused, res.status);
+  }
   let message = `Fish Audio answered ${res.status}`;
   let fishCode: string | undefined;
   try {

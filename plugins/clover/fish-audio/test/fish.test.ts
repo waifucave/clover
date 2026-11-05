@@ -88,6 +88,17 @@ describe("speaking", () => {
     expect(fish.calls).toHaveLength(1);
   });
 
+  test("a refused key's error is a fixed text, even when Fish's body echoes the key", async () => {
+    const timer = new VirtualTimer();
+    for (const status of [401, 403]) {
+      const echoing: FetchLike = async () => new Response(JSON.stringify({ status, message: `bad key the-real-key-123` }), { status, headers: { "content-type": "application/json" } });
+      const err = await failure(new FishAudioClient({ fetch: echoing, timer }).voices());
+      expect(err).toMatchObject({ code: status === 401 ? "unauthorized" : "forbidden", status });
+      expect(err.message).not.toContain("the-real-key-123");
+      expect(err.retryable).toBe(false);
+    }
+  });
+
   test("a paid model needs credit; the free one doesn't, unless Fish says otherwise at the live gate", async () => {
     const { client, fish } = setup({ balanceUsd: 0 });
     expect(await failure(client.speak({ text: "hello", model: "s2.1-pro" }))).toMatchObject({ code: "payment_required", status: 402 });
