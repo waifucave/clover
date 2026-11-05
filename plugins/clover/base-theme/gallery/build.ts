@@ -38,12 +38,16 @@ if (!result.success) {
 }
 
 // Assets the stories fetch, at the same paths they have in their plugins.
-const assets: [string, string][] = [["alpha/assets", "plugins/alpha/assets"]];
+const assets: [string, string][] = [
+  ["alpha/assets", "plugins/alpha/assets"],
+  ["alpha/tab", "plugins/alpha/tab"],
+];
 for (const [from, to] of assets) {
   const source = join(plugins, from);
   if (existsSync(source)) {
     mkdirSync(dirname(join(dist, to)), { recursive: true });
-    cpSync(source, join(dist, to), { recursive: true });
+    // Only what a page loads: no tests, no installs.
+    cpSync(source, join(dist, to), { recursive: true, filter: (path) => !/node_modules|\/test(\/|$)|package\.json$|bun\.lock$|tsconfig\.json$/.test(path) });
   }
 }
 

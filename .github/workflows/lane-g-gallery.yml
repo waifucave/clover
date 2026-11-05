@@ -22,6 +22,8 @@ env:
     plugins/clover/base-theme
     plugins/clover/island
     plugins/clover/pill
+    plugins/clover/vrm
+    plugins/alpha/tab
   GALLERY: plugins/clover/base-theme/gallery
 
 jobs:

@@ -12,6 +12,16 @@ export interface ThemeLayer {
   id: string;
   theme: ThemeFile;
   css: string;
+  /** Where the theme's plugin folder is served, so its CSS's url()s find its files (the engine's job in the app). */
+  base?: string;
+}
+
+/** A theme's plugin-relative url()s, pointed at where its folder is served. */
+export function rebase(css: string, base: string | undefined): string {
+  if (!base) return css;
+  return css.replace(/url\(\s*(["']?)([^"')]+)\1\s*\)/g, (whole, quote: string, path: string) =>
+    /^(?:[a-z][a-z0-9+.-]*:|\/|#)/i.test(path) ? whole : `url(${quote || '"'}${base}${path}${quote || '"'})`,
+  );
 }
 
 export const BASE_LAYER: ThemeLayer = { id: "clover", theme: BASE, css: baseThemeCss };
@@ -29,7 +39,7 @@ export function themeStyle(layers: readonly ThemeLayer[], appearance: Appearance
 export function scopedCss(rootAttr: string, stacks: Record<string, readonly ThemeLayer[]>): string {
   const out: string[] = [];
   for (const [name, layers] of Object.entries(stacks)) {
-    for (const layer of layers) out.push(`@scope ([${rootAttr}="${name}"]) {\n${layer.css}\n}`);
+    for (const layer of layers) out.push(`@scope ([${rootAttr}="${name}"]) {\n${rebase(layer.css, layer.base)}\n}`);
   }
   return out.join("\n");
 }

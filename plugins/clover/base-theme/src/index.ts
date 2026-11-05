@@ -9,6 +9,7 @@ export * from "./catalog";
 export * from "./contrast";
 export * from "./theme";
 export { checkThemeCss, hidesFrames, ALLOWED_AT_RULES } from "./css-check";
+export { checkLayout, BOT_TAB_SPOTS, type LayoutCheck } from "./layout-check";
 
 /** The base theme, read and checked. */
 export const BASE_THEME: ThemeFile = readTheme(baseTheme, { strict: true });

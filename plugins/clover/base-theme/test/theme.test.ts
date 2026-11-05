@@ -190,3 +190,32 @@ describe("the manifest", () => {
     expect(check.kind).toBe("data");
   });
 });
+
+describe("layout format 1", () => {
+  test("a sound layout passes and lists its spots and files", async () => {
+    const { checkLayout, BOT_TAB_SPOTS } = await import("../src/layout-check");
+    const check = checkLayout(
+      { layout: 1, root: { column: [{ spot: "bot.header" }, { row: [{ spot: "conversation", grow: 1 }, { image: "art/a.png", size: 40 }], gap: 8 }, { tabs: [{ title: "Notes", node: { markdown: "notes.md" } }] }, { spacer: true }] }, background: "bg.svg" },
+      { spots: BOT_TAB_SPOTS },
+    );
+    expect(check.problems).toEqual([]);
+    expect(check.spots).toEqual(["bot.header", "conversation"]);
+    expect(check.paths).toEqual(["bg.svg", "art/a.png", "notes.md"]);
+  });
+
+  test("what it refuses", async () => {
+    const { checkLayout, BOT_TAB_SPOTS } = await import("../src/layout-check");
+    const problems = (json: unknown) => checkLayout(json, { spots: BOT_TAB_SPOTS }).problems;
+    expect(problems({ layout: 2, root: { spacer: true } })).toContain("`layout` must be 1.");
+    expect(problems({ layout: 1 })).toContain("A layout needs a `root`.");
+    expect(problems({ layout: 1, root: { row: [], column: [] } })[0]).toMatch(/exactly one of/);
+    expect(problems({ layout: 1, root: { spot: "island" } })[0]).toMatch(/not a spot here/);
+    expect(problems({ layout: 1, root: { row: [{ spot: "composer" }, { spot: "composer" }] } })[0]).toMatch(/placed twice/);
+    expect(problems({ layout: 1, root: { image: "../outside.png" } })[0]).toMatch(/inside the plugin/);
+    expect(problems({ layout: 1, root: { image: "https://x.test/a.png" } })[0]).toMatch(/inside the plugin/);
+    expect(problems({ layout: 1, root: { spot: "composer", min: 400, max: 200 } })[0]).toMatch(/`min` is more than `max`/);
+    expect(problems({ layout: 1, root: { spot: "composer", grow: -1 } })[0]).toMatch(/0 or more/);
+    expect(problems({ layout: 1, root: { spot: "composer", class: "Bad Class!" } })[0]).toMatch(/lowercase/);
+    expect(problems({ layout: 1, root: { spot: "composer", onClick: "x" } })[0]).toMatch(/unknown key/);
+  });
+});

@@ -5,6 +5,8 @@ import { useEffect, type CSSProperties, type ReactElement, type ReactNode } from
 import { createRoot } from "react-dom/client";
 import { ISLAND_STORIES } from "../../../island/src/gallery";
 import { PILL_STORIES } from "../../../pill/src/gallery";
+import { VRM_STORIES } from "../../../vrm/src/gallery";
+import { ALPHA_LAYER, ALPHA_STORIES } from "./alpha";
 import { Specimen } from "./specimen";
 import { BASE_LAYER, scopedCss, themeStyle, type ThemeLayer } from "./themes";
 import type { Appearance } from "../../src/theme";
@@ -24,6 +26,8 @@ export interface GalleryStory {
 const STACKS: Record<string, { layers: readonly ThemeLayer[]; appearance: Appearance }> = {
   "base-light": { layers: [BASE_LAYER], appearance: "light" },
   "base-dark": { layers: [BASE_LAYER], appearance: "dark" },
+  "alpha-light": { layers: [BASE_LAYER, ALPHA_LAYER], appearance: "light" },
+  "alpha-dark": { layers: [BASE_LAYER, ALPHA_LAYER], appearance: "dark" },
 };
 
 const THEME_STORIES: GalleryStory[] = [
@@ -31,7 +35,7 @@ const THEME_STORIES: GalleryStory[] = [
   { id: "theme/base-dark", title: "Base theme, dark", width: 1000, height: 470, theme: "base-dark", render: () => <Specimen title="Clover, dark" /> },
 ];
 
-export const STORIES: GalleryStory[] = [...THEME_STORIES, ...ISLAND_STORIES, ...PILL_STORIES];
+export const STORIES: GalleryStory[] = [...THEME_STORIES, ...ISLAND_STORIES, ...PILL_STORIES, ...VRM_STORIES, ...ALPHA_STORIES];
 
 declare global {
   interface Window {
