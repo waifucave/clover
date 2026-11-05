@@ -20,10 +20,11 @@ Names that still say Winter on purpose: the SDK's npm packages (`@yanlinglabs/wi
 ```sh
 bun install                          # bun is the runtime; pnpm workspaces orchestrate
 
-pnpm test                            # every workspace, serially
+pnpm test                            # every workspace, serially (`bun scripts/workspaces.ts run test` is CI's per-OS run)
 cd packages/core && bun test         # one package
 bun test path/to/file.test.ts        # one file (substring match); `bun test -t "name"` for one test
-bun run typecheck                    # every package (typecheck:core / typecheck:protocol / … for one)
+bun test scripts                     # the repo scripts' tests, the layout's conventions among them (docs/clover-layout.md)
+bun run typecheck                    # every package's own `typecheck`, the page runtime and scripts/ (typecheck:core / … for one)
 pnpm protocol:generate               # REQUIRED after changing packages/protocol/src/events.ts
 
 # Compiled-artifact gates — each builds a real binary

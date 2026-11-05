@@ -1,0 +1,33 @@
+# Clover's desktop app, packaged by electron-builder (lane M owns this file). M-M0 builds only the unsigned,
+# unpacked app on each OS (`bun run dist`); the dmg, the Windows installer, deb/rpm/AppImage, signing and
+# updates come in M1 and M2.
+appId: com.waifucave.clover
+productName: Clover
+copyright: Copyright © 2026 waifucave
+directories:
+  output: out/dist
+  buildResources: build
+files:
+  - out/main/**
+  - out/renderer/**
+  - package.json
+asar: true
+# The main process is one bundle with no runtime dependencies: nothing to rebuild or collect.
+npmRebuild: false
+nodeGypRebuild: false
+buildDependenciesFromSource: false
+publish: null
+mac:
+  target:
+    - target: dir
+  category: public.app-category.productivity
+  # Unsigned: macOS signing and notarization are M2.
+  identity: null
+win:
+  target:
+    - target: dir
+linux:
+  target:
+    - target: dir
+  category: Utility
+  executableName: clover

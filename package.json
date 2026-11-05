@@ -7,6 +7,7 @@
   },
   "scripts": {
     "test": "pnpm -r --workspace-concurrency=1 test",
+    "test:workspaces": "bun scripts/workspaces.ts run test",
     "protocol:generate": "pnpm --filter @waifucave/clover-protocol generate",
     "version:sync": "bun run scripts/sync-version.ts",
     "version:bump": "bun run scripts/bump-version.ts",
@@ -35,7 +36,7 @@
     "typecheck:cli": "tsc --noEmit -p packages/cli",
     "typecheck:plugin-sdk": "tsc --noEmit -p packages/plugin-sdk",
     "typecheck:scripts": "tsc --noEmit -p scripts",
-    "typecheck": "bun run typecheck:core && bun run typecheck:page-runtime && bun run typecheck:protocol && bun run typecheck:cli && bun run typecheck:plugin-sdk && bun run typecheck:scripts",
+    "typecheck": "bun run typecheck:page-runtime && bun run typecheck:scripts && bun scripts/workspaces.ts run typecheck",
     "verify:office-agent": "bun run scripts/office-agent-gate.ts",
     "dev:daemon": "bun run scripts/dev-daemon.ts",
     "dev:helper": "bun run scripts/dev-helper.ts",
@@ -53,6 +54,11 @@
   },
   "workspaces": [
     "packages/*",
+    "apps/*",
+    "plugins/*",
+    "plugins/*/*",
+    "services/*",
+    "native/*",
     "spikes/*",
     "examples/*"
   ],

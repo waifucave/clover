@@ -1,0 +1,5 @@
+{
+  "extends": "../../tsconfig.base.json",
+  // The tests and the build script run on Bun.
+  "include": ["test", "scripts"]
+}
