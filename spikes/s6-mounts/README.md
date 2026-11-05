@@ -13,7 +13,10 @@ mount against local disk; failing fast when the computer drops.
 | `bench/failfast.ts` | question 4: faults injected while a read, write, `git status` or `tsc` is in flight |
 | `bench/coherence.ts` | question 2: a file that shrinks or grows behind the mount (FSKit's short-read bug), new names, deletions |
 | `bench/rw.ts` | the read/write/copy workload processes |
+| `bench/tables.ts` | renders the report's tables from `results/` |
 | `ci/prepare.sh` | makes "the other computer's home": a clone of this repo with `node_modules` |
+| `ci/macfuse.sh` | CI only, on a disposable macOS runner: installs macFUSE and turns its FSKit module on by hand |
+| `ci/windows-git.ps1` | CI only: Git for Windows and Git Bash inside the tree, three layouts |
 | `results/` | the numbers from CI, as JSON |
 
 No `package.json` here on purpose: `spikes/*` is a workspace glob, so one would join the root
@@ -38,10 +41,24 @@ bun spikes/s6-mounts/bench/speed.ts --root /tmp/s6/export --tree /tmp/s6/tree --
 
 # question 4: fail fast and recover
 bun spikes/s6-mounts/bench/failfast.ts --root /tmp/s6/export --tree /tmp/s6/tree --helper /tmp/s6/clover-mount --rtt 20 --out /tmp/s6/results/failfast.json
+
+# git across the mount when the holder's user has another uid (Linux)
+bun spikes/s6-mounts/bench/speed.ts --root /tmp/s6/export --tree /tmp/s6/tree --helper /tmp/s6/clover-mount --policies cached --rtts 0,20,80 --local 0 --workloads git-status,git-status-minimal --owner 4242:4242 --out /tmp/s6/results/speed-owner.json
+
+# the tables in the report
+bun spikes/s6-mounts/bench/tables.ts spikes/s6-mounts/results
 ```
 
+macOS over NFS (no extension): build `clover-nfs` (`GOOS=darwin CGO_ENABLED=0 go build -o /tmp/s6/clover-nfs ./cmd/clover-nfs`)
+and pass `--helper none --nfs-helper /tmp/s6/clover-nfs` to `coherence.ts`, `failfast.ts` or
+`speed.ts`. The rig mounts with `mount_nfs` as the user, and falls back to `sudo` if that fails
+(it records which in the results).
+
 macOS, FSKit: CI builds the module and stops at "Module … is disabled!" (it cannot be turned on
-without System Settings). At live gate 2 the owner runs, in a terminal:
+without System Settings, and an ad-hoc signature can't carry its entitlement). CI reaches FSKit
+itself through macFUSE's FSKit backend instead (`ci/macfuse.sh`, then the helper built with cgo
+and `CLOVER_MACFUSE_BACKEND=fskit`), on disposable runners only. At live gate 2 the owner runs,
+in a terminal:
 
 ```sh
 CLOVER_TEAM_ID=<team id> native/mounts/macos/gate.sh

@@ -13,7 +13,7 @@ import (
 )
 
 func mount(o *options) error {
-	t := &cgofs.Tree{Policy: o.policy, Single: o.single, CaseInsensitive: o.caseless}
+	t := &cgofs.Tree{Policy: o.policy, Single: o.single, CaseInsensitive: o.caseless, VolumePrefix: o.volPrefix}
 	for _, s := range o.self {
 		name, path, _ := strings.Cut(s, "=")
 		t.Computers = append(t.Computers, &cgofs.Computer{Name: name, Self: path})

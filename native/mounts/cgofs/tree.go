@@ -41,6 +41,9 @@ type Tree struct {
 	Single bool
 	// CaseInsensitive tells WinFsp the volume ignores case (a test knob; off by default).
 	CaseInsensitive bool
+	// VolumePrefix makes the WinFsp volume a network one (\\server\share), as sshfs-win does,
+	// so Windows can name its files without the Mount Manager (a test knob; see the report).
+	VolumePrefix string
 
 	handles sync.Map // uint64 -> *remote.Handle
 	next    atomic.Uint64
@@ -77,6 +80,9 @@ func Mount(mountpoint string, t *Tree, debug bool) bool {
 		}
 		if t.Policy.KeepCache {
 			opts = append(opts, "-o", "KeepFileCache")
+		}
+		if t.VolumePrefix != "" {
+			opts = append(opts, "--VolumePrefix="+t.VolumePrefix)
 		}
 	} else {
 		secs := strconv.FormatFloat(t.Policy.KernelTTL.Seconds(), 'f', 3, 64)

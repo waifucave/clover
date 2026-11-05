@@ -94,8 +94,13 @@ function linkTarget(abs: string, target: string): string {
 // ---- attributes -----------------------------------------------------------------------------
 function toAttr(st: fs.BigIntStats): Attr {
   const type = st.isFile() ? FileType.FILE : st.isDirectory() ? FileType.DIR : st.isSymbolicLink() ? FileType.SYMLINK : FileType.OTHER;
+  let mode = Number(st.mode & 0o7777n);
+  // Windows has no POSIX modes; libuv reports 0666 (0444 when read-only) for everything. A folder
+  // without x can't be entered on the computer that mounts it: WinFsp maps x to FILE_TRAVERSE,
+  // and Git for Windows' chdir() into it failed with "Permission denied".
+  if (process.platform === "win32" && type === FileType.DIR) mode |= 0o111;
   return {
-    type, mode: Number(st.mode & 0o7777n), size: st.size, mtimeNs: st.mtimeNs, ctimeNs: st.ctimeNs,
+    type, mode, size: st.size, mtimeNs: st.mtimeNs, ctimeNs: st.ctimeNs,
     atimeNs: st.atimeNs, birthNs: st.birthtimeNs, ino: st.ino, nlink: Number(st.nlink),
     uid: Number(st.uid), gid: Number(st.gid),
   };

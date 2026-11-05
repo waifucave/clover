@@ -4,9 +4,10 @@
 #   1. the whole tree on a drive letter that DefineDosDevice makes (T:, WinFsp's default);
 #   2. the whole tree on a drive letter the Mount Manager knows (\\.\T:, needs admin);
 #   3. no link inside a WinFsp volume at all: a real folder, C:\s6tree\home, holding a junction to
-#      this computer's home and the other computer's home mounted on a folder (--single).
-# For each it asks Windows for the repo folder's final path (what git's getcwd() does) and runs
-# git and Git Bash inside it.
+#      this computer's home and the other computer's home mounted on a folder (--single);
+#   4. the whole tree on T: as a network volume (\\clover\tree, --volume-prefix), as sshfs-win does.
+# For each it asks Windows for the repo folder's final path (what git's getcwd() and, with
+# core.symlinks on, its chdir() do) and runs git and Git Bash inside it.
 #
 #   windows-git.ps1 -Helper <clover-mount.exe> -Export <export dir> -Serve <serve.ts> [-Out <file>]
 param([string]$Helper, [string]$Export, [string]$Serve, [string]$Out = "$env:RUNNER_TEMP\s6\results\windows-git.txt")
@@ -67,8 +68,12 @@ $cases = @(
   @{ Name = "2. tree on \\.\T: (Mount Manager)"; Mount = "\\.\T:"; Args = "--self Runner=$env:USERPROFILE"; Repo = "T:\home\Desktop1\clover"
      Probe = @("T:\", "T:\home\Desktop1\clover", "T:\home\Runner") },
   @{ Name = "3. real folder, junction for this computer, the other one mounted on a folder"; Mount = "$layout\home\Desktop1"; Args = "--single"; Repo = "$layout\home\Desktop1\clover"
-     Probe = @("$layout\home\Desktop1", "$layout\home\Desktop1\clover", "$layout\home\Runner") }
+     Probe = @("$layout\home\Desktop1", "$layout\home\Desktop1\clover", "$layout\home\Runner") },
+  @{ Name = "4. tree on T: as a network volume (\\clover\tree)"; Mount = "T:"; Args = "--self Runner=$env:USERPROFILE --volume-prefix \clover\tree"; Repo = "T:\home\Desktop1\clover"
+     Probe = @("T:\", "T:\home\Desktop1\clover", "\\clover\tree\home\Desktop1\clover") }
 )
+Say "git: $(git --version); core.symlinks here: $(git config --show-origin --get core.symlinks)"
+
 $i = 0
 foreach ($c in $cases) {
   $i++
@@ -85,6 +90,10 @@ foreach ($c in $cases) {
   Say "git status, started in the repo: exit $LASTEXITCODE $o"
   $o = (git rev-parse --show-toplevel 2>&1) -join " / "
   Say "git rev-parse --show-toplevel: $o"
+  foreach ($sl in @("false", "true")) {
+    $o = (git -c core.symlinks=$sl status --porcelain 2>&1 | Select-Object -First 2) -join " / "
+    Say "git -c core.symlinks=$sl status: exit $LASTEXITCODE $o"
+  }
   $o = (& "C:\Program Files\Git\bin\bash.exe" -lc 'pwd; git status --porcelain | head -3; echo git exit ${PIPESTATUS[0]}' 2>&1) -join " / "
   Say "Git Bash, started in the repo: $o"
   Pop-Location

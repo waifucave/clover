@@ -34,6 +34,7 @@ type options struct {
 	owner      []uint32
 	single     bool
 	caseless   bool
+	volPrefix  string
 	cfg        remote.Config
 }
 
@@ -54,6 +55,7 @@ func main() {
 	flag.DurationVar(&o.cfg.PingEvery, "ping", 250*time.Millisecond, "liveness ping interval")
 	flag.DurationVar(&o.cfg.DeadAfter, "dead", 1500*time.Millisecond, "silence that means the computer dropped")
 	flag.DurationVar(&o.cfg.OpTimeout, "op-timeout", 10*time.Second, "a request on a live link fails after this")
+	flag.StringVar(&o.volPrefix, "volume-prefix", "", `mount as a network volume \server\share (Windows; see cgofs.Tree.VolumePrefix)`)
 	flag.BoolVar(&o.caseless, "case-insensitive", false, "tell WinFsp the volume ignores case (Windows; upper-cases names, see the report)")
 	flag.BoolVar(&o.single, "single", false, "serve the one --remote computer's home as the whole volume (Windows and macOS; see cgofs.Tree.Single)")
 	owner := flag.String("owner", "", "uid:gid to report as every file's owner (Linux; a test knob for a holder with another uid)")
