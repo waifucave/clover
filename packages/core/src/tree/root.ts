@@ -130,12 +130,15 @@ async function windowsAccess(root: string, homeDir: string, mode: "open" | "clos
 async function link(at: string, target: string, os: Os, fresh = false): Promise<void> {
   const st = await fsp.lstat(at).catch(() => null);
   if (!fresh && st?.isSymbolicLink() && (await fsp.readlink(at)).replace(/[\\/]+$/, "") === target.replace(/[\\/]+$/, "")) return;
-  if (st) await fsp.rm(at, { recursive: st.isDirectory() && !st.isSymbolicLink(), force: true });
+  // A link (a junction on Windows) is removed itself, never what it leads to; Bun's `rm` can't remove a junction.
+  if (st?.isSymbolicLink()) await fsp.unlink(at).catch(() => fsp.rmdir(at));
+  else if (st) await fsp.rm(at, { recursive: st.isDirectory(), force: true });
   await fsp.symlink(target, at, os === "windows" ? "junction" : "dir");
 }
 
 /** Whether a program here can write in `home/` of the tree (it must not). On Windows the access list decides, which
- *  `access` doesn't read, so it tries to make a folder there. */
+ *  `access` doesn't read, so it tries to make a folder there; an elevated administrator's privileges can pass the
+ *  list's deny, as they can take the folder over anyway. */
 export async function treeHomeWritable(root: string, os: Os = hostOs()): Promise<boolean> {
   if (os === "windows") {
     const probe = join(root, "home", `.clover-probe-${process.pid}-${Date.now()}`);
