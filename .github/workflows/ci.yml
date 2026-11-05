@@ -248,7 +248,7 @@ jobs:
           name: gallery
           path: ${{ runner.temp }}/gallery
           retention-days: 14
-          if-no-files-found: ignore
+          if-no-files-found: error
 
   # P8b-9: `bun test` does not typecheck — bun strips types and runs, so a compile error in a project nobody
   # compiles is not a tripwire (the protocol checklist's step 4 trap, `satisfies Record<SessionEvent["type"],
