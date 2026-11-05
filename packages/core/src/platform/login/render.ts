@@ -119,6 +119,11 @@ export function systemdArg(s: string): string {
   return `"${s.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/%/g, "%%").replace(/\$/g, "$$$$")}"`;
 }
 
+/** A path as a unit-file value outside a command line (`ConditionPathExists=`): `%` doubled. */
+function systemdPath(s: string): string {
+  return s.replace(/%/g, "%%");
+}
+
 /** One `Environment=` assignment, quoted the same way (`$` is not expanded there). */
 function systemdEnv(key: string, value: string): string {
   return `Environment="${`${key}=${value}`.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/%/g, "%%")}"`;
@@ -160,12 +165,14 @@ export function renderLaunchdPlist(spec: LoginSpec): string {
 /** The daemon's `systemd --user` unit. `Restart=on-failure` is crash-only, matching launchd's
  *  `KeepAlive`, after 1 s as S7 measured (`supervise` restarts the daemon itself; this restarts
  *  `supervise`). `enable` hooks it to `default.target` (the login trigger); disabled, it can still be
- *  started with `systemctl --user start`. */
+ *  started with `systemctl --user start`. `ConditionPathExists` makes it inert once the binary is
+ *  gone: a deb or rpm removal runs as root and can't reach the user's units (lane M). */
 export function renderSystemdUnit(spec: LoginSpec): string {
   const env = [systemdEnv("CLOVER_HOME", spec.home)];
   if (spec.profile === "dev") env.push(systemdEnv("CLOVER_PROFILE", "dev"));
   return `[Unit]
 Description=Clover daemon (clover-core)
+ConditionPathExists=${systemdPath(spec.bin)}
 
 [Service]
 Type=simple
@@ -188,6 +195,7 @@ export function renderAppSystemdUnit(spec: LoginSpec): string {
   if (spec.profile === "dev") env.push(systemdEnv("CLOVER_PROFILE", "dev"));
   return `[Unit]
 Description=Clover app
+ConditionPathExists=${systemdPath(spec.app.bin)}
 After=graphical-session.target
 PartOf=graphical-session.target
 
@@ -202,13 +210,15 @@ Restart=no
 /** The XDG autostart entry: starts the app's unit with the desktop session (§3.1: "On Linux the app
  *  … starts with the desktop session"). It names the unit, not the binary, so the app always runs in
  *  its own unit, the daemon's start of an app that is already running is a no-op, and no path needs
- *  Desktop Entry quoting. */
+ *  Exec quoting. `TryExec` names the app, so the session skips the entry once the app is gone. */
 export function renderXdgAutostart(spec: LoginSpec): string {
+  // A Desktop Entry string value: backslash escaped; a leading space would need \s (an absolute path has none).
+  const tryExec = spec.app ? `TryExec=${spec.app.bin.replace(/\\/g, "\\\\")}\n` : "";
   return `[Desktop Entry]
 Type=Application
 Name=${spec.profile === "dev" ? "Clover Dev" : "Clover"}
 Comment=Starts Clover with the desktop session
-Exec=systemctl --user start ${appUnitName(spec.profile)}
+${tryExec}Exec=systemctl --user start ${appUnitName(spec.profile)}
 NoDisplay=true
 X-GNOME-Autostart-enabled=true
 `;

@@ -1,7 +1,7 @@
 import { join, resolve } from "node:path";
 import { homedir } from "node:os";
 import { existsSync, readFileSync, mkdirSync } from "node:fs";
-import { resolveCloverHome, isDefaultCloverHome, OtherInstallHomeRefused, KeychainSecretStore, startDaemon, TOKEN_NAMES, loadSettings, CORE_VERSION, runWorkflowSubprocess, runAutomationWorker, AUTOMATION_WORKER_ARG, processSatisfiesRequirement, runRuntimeWorkflowWorker, RUNTIME_WORKFLOW_WORKER_ARG, runRuntimeStateProbe, runRuntimesProbe, keychainUnlocked, processStartSecondsViaSysctl, runEmbeddedProbe, runDevKeychainAdopt, DEV_KEYCHAIN_ADOPT_ARG, resolveCloverProfile, splitTag, sdkLocalMcpServers, installCloverProcessIdentity, loginEnable, loginDisable, loginRemove, loginStatus, liveLoginOsDeps, superviseLoop, startDaemonThroughOs, windowsUserSid, bunRunner, resolveEndpoint, endpointPresent, endpointAnswers, type LoginSpec, type DaemonRun, type DaemonStartResult } from "@waifucave/clover-core";
+import { resolveCloverHome, isDefaultCloverHome, OtherInstallHomeRefused, KeychainSecretStore, startDaemon, TOKEN_NAMES, loadSettings, CORE_VERSION, runWorkflowSubprocess, runAutomationWorker, AUTOMATION_WORKER_ARG, processSatisfiesRequirement, runRuntimeWorkflowWorker, RUNTIME_WORKFLOW_WORKER_ARG, runRuntimeStateProbe, runRuntimesProbe, keychainUnlocked, processStartSecondsViaSysctl, runEmbeddedProbe, runDevKeychainAdopt, DEV_KEYCHAIN_ADOPT_ARG, resolveCloverProfile, splitTag, sdkLocalMcpServers, installCloverProcessIdentity, loginEnable, loginDisable, loginRemove, loginStatus, liveLoginOsDeps, superviseLoop, startDaemonThroughOs, windowsUserSid, stopDaemonCleanly, stopThroughOs, bunRunner, resolveEndpoint, endpointPresent, endpointAnswers, type LoginSpec, type DaemonRun, type DaemonStartResult } from "@waifucave/clover-core";
 import type { CredentialRow, SecretStore, Settings } from "@waifucave/clover-core";
 import { METHODS, type ApprovalPolicy, type Task } from "@waifucave/clover-protocol";
 import { POLICY_ORDER } from "./tui/policy-order";
@@ -1476,7 +1476,31 @@ function currentLoginSpec(app?: string): LoginSpec {
   };
 }
 
-const AUTOSTART_USAGE = "usage: clover autostart enable|disable|remove|start|status [--json] [--app <path to the app>]";
+const AUTOSTART_USAGE = "usage: clover autostart enable|disable [--stop]|remove|start|status [--json] [--app <path to the app>]";
+
+/** Stop the running daemon for an uninstaller (`disable --stop`, `remove`): the pair's quit first, so
+ *  the daemon tells the app and exits 0 (and `supervise` ends), then the OS's own stop if it is still
+ *  there after 10 s. Until B's `pair.quit` is in, the clean request is SIGTERM to the lock holder on
+ *  macOS and Linux (the daemon's clean stop); on Windows it is `schtasks /End`. */
+async function stopRunningDaemon(spec: LoginSpec): Promise<string> {
+  const lockFile = join(spec.home, "run", spec.os === "win32" ? "core.pid" : "core.lock");
+  let pid = -1;
+  try { pid = Number(JSON.parse(readFileSync(lockFile, "utf8")).pid); } catch { /* no holder recorded */ }
+  const alive = () => { if (!(pid > 0)) return false; try { process.kill(pid, 0); return true; } catch { return false; } };
+  const r = await stopDaemonCleanly({
+    answers: () => endpointAnswers(socketPath()),
+    stillRunning: alive,
+    async requestQuit() {
+      if (spec.os === "win32" || !(pid > 0)) return false;
+      try { process.kill(pid, "SIGTERM"); return true; } catch { return false; }
+    },
+    sleep: (ms) => Bun.sleep(ms),
+    now: () => Date.now(),
+  });
+  if (r !== "timed-out") return r;
+  await stopThroughOs(spec, bunRunner);
+  return "stopped through the OS";
+}
 
 /** `clover autostart enable|disable|remove|start|status [--json] [--app <path>]`: login start on this OS. The
  *  definitions run `clover-core supervise` on the running binary (`process.execPath`); lane M's
@@ -1516,14 +1540,22 @@ async function runAutostartCommand(sub: string | undefined, rest: readonly strin
       if (!st.registered) process.exitCode = 1;
       break;
     }
-    case "disable":
+    case "disable": {
+      // Login start off. The running pair keeps running unless `--stop` (an uninstaller, which needs the
+      // daemon's files free); `remove` stops it too and takes everything away.
+      const stopped = rest.includes("--stop") ? await stopRunningDaemon(spec) : null;
       await loginDisable(spec, os);
-      console.log(`autostart disabled (${spec.profile}); Clover can still be started, and keeps running`);
+      console.log(stopped === null
+        ? `autostart disabled (${spec.profile}); Clover can still be started, and keeps running`
+        : `autostart disabled (${spec.profile}); the daemon: ${stopped}`);
       break;
-    case "remove":
+    }
+    case "remove": {
+      const stopped = await stopRunningDaemon(spec);
       await loginRemove(spec, os);
-      console.log(`autostart removed (${spec.profile})`);
+      console.log(`autostart removed (${spec.profile}); the daemon: ${stopped}`);
       break;
+    }
     case "status": {
       // "registered": the daemon's definition is installed, so it can be started (`autostart start`),
       // whether or not login start is on. An app enables only when it isn't: "disabled" is the user's

@@ -115,3 +115,15 @@ export function liveLoginOsDeps(run: Runner = bunRunner, taskXml: TaskXmlWriter 
     },
   };
 }
+
+/** The OS's own stop, when the clean one didn't finish: SIGTERM through launchd or systemd (which
+ *  `supervise` forwards, so the daemon still stops in order), or `schtasks /End` on Windows, which
+ *  ends the task's processes outright. */
+export async function stopThroughOs(spec: LoginSpec, run: Runner): Promise<boolean> {
+  if (spec.os === "darwin") {
+    const domain = await launchdDomain(run);
+    return (await run(["launchctl", "kill", "SIGTERM", `${domain}/${loginLabel(spec.profile)}`])).ok;
+  }
+  if (spec.os === "linux") return (await run(["systemctl", "--user", "stop", systemdUnitName(spec.profile)])).ok;
+  return (await run(["schtasks", "/End", "/TN", schtasksTaskName(spec.profile)])).ok;
+}

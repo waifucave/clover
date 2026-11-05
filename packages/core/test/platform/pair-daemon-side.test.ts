@@ -29,7 +29,7 @@ describe("the daemon's side of the pair, assembled", () => {
     expect(readFileSync(appTokenPath(s.runDir), "utf8")).toBe(side.appToken);
     expect(s.timers.map((t) => t.ms)).toEqual([2_000]); // the start-up grace
     s.timers[0]!.fn();
-    await Promise.resolve(); await Promise.resolve();
+    for (let i = 0; i < 100 && started.length === 0; i++) await Bun.sleep(5); // the start file is written first
     expect(started.map((j) => JSON.parse(j))).toEqual([{ by: "login", safeMode: false, at: 7 }]);
     side.dispose();
     expect(existsSync(appTokenPath(s.runDir))).toBe(false);

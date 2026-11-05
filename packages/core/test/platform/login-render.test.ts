@@ -40,6 +40,7 @@ describe("login renderers run supervise, crash-only", () => {
     expect(u).toContain('Environment="CLOVER_HOME=/home/x/.clover"');
     expect(u).toContain("WantedBy=default.target");
     expect(u).not.toContain("After=default.target"); // wanted by it; ordering after it would only delay
+    expect(u).toContain("ConditionPathExists=/opt/clover/clover-core"); // inert once a root removal took the binary
   });
 
   test("systemd quoting keeps a path with spaces, quotes, % and $ one literal argument", () => {
@@ -49,6 +50,7 @@ describe("login renderers run supervise, crash-only", () => {
     const u = renderSystemdUnit(base({ os: "linux", bin: "/opt/My Apps/clover-core", home: "/home/x/50% off/.clover" }));
     expect(u).toContain('ExecStart="/opt/My Apps/clover-core" supervise');
     expect(u).toContain('Environment="CLOVER_HOME=/home/x/50%% off/.clover"');
+    expect(u).toContain("ConditionPathExists=/opt/My Apps/clover-core");
   });
 
   test("the app's unit and XDG entry (Linux): own cgroup, no systemd restart, starts with the session", () => {
@@ -58,9 +60,11 @@ describe("login renderers run supervise, crash-only", () => {
     expect(u).toContain("Restart=no"); // the daemon restarts it
     expect(u).toContain("PartOf=graphical-session.target");
     expect(u).not.toContain("[Install]"); // started on demand, never enabled
+    expect(u).toContain("ConditionPathExists=/opt/Clover/clover");
     const x = renderXdgAutostart(spec);
     expect(x).toContain("Exec=systemctl --user start clover-app.service");
     expect(x).toContain("Type=Application");
+    expect(x).toContain("TryExec=/opt/Clover/clover\n"); // the session skips the entry once the app is gone
     expect(renderXdgAutostart(base({ os: "linux", profile: "dev" }))).toContain("clover-app-dev.service");
   });
 

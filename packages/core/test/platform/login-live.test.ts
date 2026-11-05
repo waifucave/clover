@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { liveLoginOsDeps, logonTriggerState, windowsUserSid, type Runner, type TaskXmlWriter } from "../../src/platform/login/live";
+import { liveLoginOsDeps, logonTriggerState, stopThroughOs, windowsUserSid, type Runner, type TaskXmlWriter } from "../../src/platform/login/live";
 import { startDaemonThroughOs } from "../../src/platform/login/start";
 import { loginUnitPath, parkedPlistPath, renderSchtasksXml, type LoginSpec } from "../../src/platform/login/render";
 import { appBundleOf, hasGraphicalSession, resolveAppLauncher } from "../../src/platform/pair/launch";
@@ -90,6 +90,20 @@ describe("live login commands (recorded, never run)", () => {
     expect(logonTriggerState(renderSchtasksXml(s, true).split("").join("\0"))).toBe("on");
     expect(logonTriggerState("<Task><Triggers><LogonTrigger><UserId>a</UserId></LogonTrigger></Triggers></Task>")).toBe("on");
     expect(logonTriggerState("<Task><Triggers /></Task>")).toBe("off");
+  });
+});
+
+describe("the OS's own stop, after the clean one", () => {
+  test("SIGTERM through launchd or systemd (supervise forwards it); schtasks /End on Windows", async () => {
+    const m = recorder();
+    await stopThroughOs(spec("darwin"), m.run);
+    expect(m.calls.at(-1)).toMatch(/^launchctl kill SIGTERM gui\/\d+\/com\.waifucave\.clover\.core$/);
+    const l = recorder();
+    await stopThroughOs(spec("linux"), l.run);
+    expect(l.calls).toEqual(["systemctl --user stop clover-core.service"]);
+    const w = recorder();
+    await stopThroughOs(spec("win32"), w.run);
+    expect(w.calls).toEqual(["schtasks /End /TN \\Clover\\clover-core"]);
   });
 });
 
