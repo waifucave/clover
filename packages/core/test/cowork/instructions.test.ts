@@ -12,6 +12,11 @@ import { ApprovalBroker } from "../../src/agent/approvals";
 import { SessionStore } from "../../src/sessions/store";
 import { SessionHub } from "../../src/sessions/hub";
 import { CoworkError, type CoworkErrorCode } from "../../src/cowork/types";
+
+// The Bun this fullsync measurement runs on: the pinned one (.bun-version) and its build. Each Bun bump re-runs it
+// and updates the revision (1.4.4's here; it was reviewed on 1.3.14, 0d9b296a).
+const PINNED_BUN = readFileSync(join(import.meta.dir, "..", "..", "..", "..", ".bun-version"), "utf8").trim();
+const PINNED_BUN_REVISION = "38afee6c8";
 const cleanups: Array<() => void> = [];
 afterEach(() => { for (const fn of cleanups.splice(0).reverse()) fn(); });
 const user = { kind: "local-user" as const, id: "user" };
@@ -124,7 +129,7 @@ native("actual Broker approval binds copied content and rechecks revision/grants
 
 native("reviewed fullsync completes for owned file and held APFS directory on pinned Bun", () => {
   const f = fixture();
-  expect(Bun.version).toBe("1.3.14"); expect(Bun.revision.startsWith("0d9b296a")).toBe(true);
+  expect(Bun.version).toBe(PINNED_BUN); expect(Bun.revision.startsWith(PINNED_BUN_REVISION)).toBe(true);
   const fsType = statfsSync(f.home).type;
   expect(fsType).toBe(0x1a);
   // initialize requests file F_FULLFSYNC and held-directory F_FULLFSYNC; update

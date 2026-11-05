@@ -20,6 +20,11 @@ import { startIpcServer } from "../../src/ipc/server";
 import { TokenAuthority } from "../../src/auth/tokens";
 import { FileSecretStore } from "../../src/auth/secret-store";
 
+// The Bun this fullsync measurement runs on: the pinned one (.bun-version) and its build. Each Bun bump re-runs it
+// and updates the revision (1.4.4's here; it was reviewed on 1.3.14, 0d9b296a).
+const PINNED_BUN = readFileSync(join(import.meta.dir, "..", "..", "..", "..", ".bun-version"), "utf8").trim();
+const PINNED_BUN_REVISION = "38afee6c8";
+
 // Actual reviewed Darwin file+directory flushes. Unsupported hosts are not success fixtures.
 const test = process.platform === "darwin" && process.arch === "arm64" ? bunTest : bunTest.skip;
 const cleanups: Array<() => void> = [];
@@ -350,7 +355,7 @@ function filesystemName(path: string): string | undefined {
 
 test("actual owned JSONL and held APFS-directory fullsync complete before delivery ACK", () => {
   const f = fixture(); f.pump().drain();
-  expect(Bun.version).toBe("1.3.14"); expect(Bun.revision.startsWith("0d9b296a")).toBe(true);
+  expect(Bun.version).toBe(PINNED_BUN); expect(Bun.revision.startsWith(PINNED_BUN_REVISION)).toBe(true);
   // APFS by NAME: `statfs` f_type is a vfs registration number that differs across macOS releases (26 on one
   // runner image, 25 on another), so the number alone failed on an APFS home.
   const fsType = statfsSync(f.home).type; expect(filesystemName(f.home)).toBe("apfs");
