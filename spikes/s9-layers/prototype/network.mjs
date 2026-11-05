@@ -52,10 +52,10 @@ async function fixtures(prefix,bind='127.0.0.1'){
   /** @type {any} */ let server;
   if(udpVectors.includes(name)){
    server=dgram.createSocket('udp4');server.on('message',(/** @type {any} */ data,/** @type {any} */ remote)=>rec.udp.push({bytes:data.length,address:remote.address,sourcePort:remote.port,magicCookie:data.length>=8?data.readUInt32BE(4).toString(16):null,stun:data.length>=20&&data.readUInt32BE(4)===0x2112a442,time:Date.now()}));
-   await new Promise(r=>server.bind(0,bind,()=>r(undefined)));
+   await new Promise((r,rej)=>{server.once('error',rej);server.bind(0,bind,()=>r(undefined));});
   }else if(tcpVectors.includes(name)){
    server=net.createServer(socket=>{const entry={sourcePort:socket.remotePort,address:socket.remoteAddress,bytes:0,connected:true,time:Date.now()};rec.tcp.push(entry);socket.on('data',b=>{entry.bytes+=b.length;});socket.on('error',()=>{});setTimeout(()=>socket.destroy(),1700);});
-   await new Promise(r=>server.listen(0,bind,()=>r(undefined)));
+   await new Promise((r,rej)=>{server.once('error',rej);server.listen(0,bind,()=>r(undefined));});
   }else{
    server=http.createServer((req,res)=>{rec.http.push({host:req.headers.host,url:req.url,method:req.method,headers:{purpose:req.headers['sec-purpose']||req.headers.purpose}});res.setHeader('Access-Control-Allow-Origin','*');res.setHeader('Access-Control-Allow-Headers','*');
     if(name==='redirect'){res.writeHead(302,{location:endpoints['redirect-target'].url});res.end();return;}
@@ -65,7 +65,7 @@ async function fixtures(prefix,bind='127.0.0.1'){
     res.end(name==='css'||name==='css-import'?'body{color:black}':name==='eventsource'?'data: fixture\n\n':'fixture');});
    server.on('connection',(/** @type {any} */ socket)=>{const entry={sourcePort:socket.remotePort,address:socket.remoteAddress,firstBytes:''};rec.tcp.push(entry);socket.once('data',(/** @type {Buffer} */ bytes)=>entry.firstBytes=bytes.subarray(0,5).toString('hex'));socket.on('error',()=>{});});
    server.on('upgrade',(/** @type {any} */ req,/** @type {any} */ socket)=>{rec.http.push({host:req.headers.host,url:req.url,method:'WS'});const accept=crypto.createHash('sha1').update(req.headers['sec-websocket-key']+'258EAFA5-E914-47DA-95CA-C5AB0DC85B11').digest('base64');socket.write('HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: '+accept+'\r\n\r\n');socket.on('error',()=>{});setTimeout(()=>socket.destroy(),300);});
-   await new Promise(r=>server.listen(0,bind,()=>r(undefined)));
+   await new Promise((r,rej)=>{server.once('error',rej);server.listen(0,bind,()=>r(undefined));});
   }
   const port=server.address().port;endpoints[name]={url:`http://${host}:${port}/${name}`,host,port,ice:name==='stun'?`stun:${host}:${port}`:name==='turn'?`turn:${host}:${port}?transport=tcp`:undefined,tcp:name==='remote-tcp-candidate'||name==='turn'?{port}:undefined};
   closers.push(()=>{server.closeAllConnections?.();server.close();});
