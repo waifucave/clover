@@ -1,23 +1,22 @@
 export const SCHEME = 'clover-plugin';
-export const SWITCHES = {
-  'site-per-process': '',
-  'disable-background-networking': '',
-  'dns-prefetch-disable': '',
-  'disable-features': 'PreconnectToSearch,Prerender2,SpeculationRulesPrefetch,SpeculationRulesPrerender,WebRtcHideLocalIpsWithMdns',
-  'force-webrtc-ip-handling-policy': 'disable_non_proxied_udp'
-};
-// The WebRTC switches are candidates, NOT a claim that data channels are disabled.
+/** @param {string} id */
 export function pluginHost(id) {
-  if (!/^[a-z][a-z0-9-]*(\/[a-z][a-z0-9-]*)?$/.test(id) || id.includes('--')) throw new Error('ambiguous plugin id');
-  return id.replace('/', '--');
+  const parts = id.split('/');
+  if (parts.length > 2 || parts.some(p => p.length < 2 || p.length > 40 || !/^[a-z][a-z0-9]*(-[a-z0-9]+)*$/.test(p))) throw new Error('invalid plugin id');
+  // Prefix before encoding: xn/child must never become an IDNA xn-- label.
+  return `p-${parts.join('--')}`;
 }
-export function decision(url, initiatorOrigin, allowedHost) {
+/** Exact origin registry; ports and schemes are part of fixture grants.
+ * @param {string} url @param {string|undefined} initiatorOrigin
+ * @param {Map<string,Set<string>>} registry */
+export function decision(url, initiatorOrigin, registry) {
   const target = new URL(url);
-  if (target.protocol === `${SCHEME}:`) return { cancel: false, reason: 'local fixture' };
-  if (!initiatorOrigin || !initiatorOrigin.startsWith(`${SCHEME}://`)) return { cancel: true, reason: 'missing or unknown initiator' };
-  return { cancel: !['http:', 'https:', 'ws:', 'wss:'].includes(target.protocol) || target.hostname !== allowedHost, reason: 'declared host' };
+  const grant = initiatorOrigin ? registry.get(initiatorOrigin) : undefined;
+  return {cancel: !grant?.has(target.origin), reason: grant ? 'exact origin grant' : 'unknown or opaque initiator'};
 }
-export function csp(allowed, enabled) {
-  if (!enabled) return "default-src 'self' * data: blob: 'unsafe-inline' 'unsafe-eval';";
-  return `default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' ${allowed}; img-src 'self' ${allowed}; font-src 'self' ${allowed}; connect-src 'self' ${allowed} ${allowed.replace('http:', 'ws:')}; worker-src 'self' blob:; frame-src 'self' clover-plugin:; form-action 'none'; object-src 'none'; base-uri 'none'`;
+/** @param {string[]} allowed @param {boolean} enabled @param {string[]} [frames] */
+export function csp(allowed, enabled, frames = ["'self'"]) {
+  if (!enabled) return "default-src 'self' * data: blob: 'unsafe-inline' 'unsafe-eval'; frame-ancestors clover-core://shell clover-plugin:;";
+  const network = allowed.join(' ');
+  return `default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' ${network}; img-src 'self' ${network}; font-src 'self' ${network}; connect-src 'self' ${network} ${network.replaceAll('http:', 'ws:')}; worker-src 'self' blob:; frame-src ${frames.join(' ')}; form-action 'none'; object-src 'none'; base-uri 'none'`;
 }

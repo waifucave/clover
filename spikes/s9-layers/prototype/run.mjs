@@ -12,8 +12,8 @@ mkdirSync('results', { recursive: true });
 for (const check of checks) for (const count of check === 'memory' ? [1, 5, 10, 20] : [3]) {
   const home = mkdtempSync(join(tmpdir(), 'clover-s9-'));
   console.log(`Clover S9 ${check}, ${count} layers: starting CI-only Electron`);
-  const child = spawn(executable, ['main.cjs', `--check=${check}`, `--layers=${count}`], { stdio: 'inherit', env: { ...process.env, HOME: home, USERPROFILE: home, XDG_CONFIG_HOME: home, CLOVER_HOME: home, CLOVER_SECRET_STORE: 'memory-only' } });
-  const timeout = setTimeout(() => child.kill('SIGKILL'), 180_000);
+  const child = spawn(executable, ['main.cjs', `--check=${check}`, `--layers=${count}`], { stdio: 'inherit', env: { ...process.env, HOME: home, USERPROFILE: home, XDG_CONFIG_HOME: home, CLOVER_HOME: home } });
+  const timeout = setTimeout(() => child.kill('SIGKILL'), check === 'network' ? 420_000 : 180_000);
   const code = await new Promise(resolve => child.once('exit', resolve));
   clearTimeout(timeout);
   if (code !== 0) process.exitCode = 1;

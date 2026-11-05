@@ -1,49 +1,51 @@
-// Executes in the plugin frame's MAIN world: no Node, no host bridge.
-export async function networkProbe(base, denied, udpPort) {
-  const violations = [];
-  document.addEventListener('securitypolicyviolation', e => violations.push({ directive: e.effectiveDirective, blockedURI: e.blockedURI }));
-  const outcomes = [];
-  const wait = ms => new Promise(r => setTimeout(r, ms));
-  const attempt = async (name, fn) => {
-    const start = violations.length;
-    try { outcomes.push({ name, result: await Promise.race([fn(), wait(1200).then(() => 'timeout')]), violations: violations.slice(start) }); }
-    catch (e) { outcomes.push({ name, error: String(e), violations: violations.slice(start) }); }
-    await wait(100);
-  };
-  const target = (host, name) => `${host}/${name}?case=${name}`;
-  for (const [label, host] of [['allowed', base], ['denied', denied]]) {
-    await attempt(`${label}-fetch`, () => fetch(target(host, `${label}-fetch`)).then(r => r.status));
-    await attempt(`${label}-xhr`, () => new Promise(resolve => { const x = new XMLHttpRequest(); x.open('GET', target(host, `${label}-xhr`)); x.onload = () => resolve(x.status); x.onerror = () => resolve('error'); x.send(); }));
-    await attempt(`${label}-image`, () => new Promise(resolve => { const el = new Image(); el.onload = () => resolve('load'); el.onerror = () => resolve('error'); el.src = target(host, `${label}-image`); document.body.append(el); }));
-    await attempt(`${label}-css`, () => new Promise(resolve => { const el = document.createElement('link'); el.rel = 'stylesheet'; el.onload = () => resolve('load'); el.onerror = () => resolve('error'); el.href = target(host, `${label}-css`); document.head.append(el); }));
-    await attempt(`${label}-font`, () => new FontFace('probe', `url(${target(host, `${label}-font`)})`).load().then(() => 'load'));
-    await attempt(`${label}-websocket`, () => new Promise(resolve => { const ws = new WebSocket(target(host.replace('http:', 'ws:'), `${label}-websocket`)); ws.onopen = () => { ws.close(); resolve('open'); }; ws.onerror = () => resolve('error'); }));
-    await attempt(`${label}-beacon`, async () => navigator.sendBeacon(target(host, `${label}-beacon`), 'fixture'));
-    for (const rel of ['dns-prefetch', 'preconnect', 'prefetch', 'prerender']) await attempt(`${label}-${rel}`, async () => { const el = document.createElement('link'); el.rel = rel; el.href = target(host, `${label}-${rel}`); document.head.append(el); await wait(400); return 'inserted'; });
-  }
-  await attempt('denied-script', () => new Promise(resolve => { const s = document.createElement('script'); s.src = denied + '/external.js'; s.onload=()=>resolve('load'); s.onerror=()=>resolve('error'); document.head.append(s); }));
-  await attempt('denied-css-import', async () => { const s=document.createElement('style');s.textContent=`@import url('${denied}/css-import'); body{background-image:url('${denied}/css-background')}`;document.head.append(s);await wait(300);return 'inserted'; });
-  await attempt('denied-eventsource', () => new Promise(resolve => { const es=new EventSource(denied+'/eventsource');es.onopen=()=>{es.close();resolve('open')};es.onerror=()=>{es.close();resolve('error')}; }));
-  await attempt('denied-fetch-keepalive', () => fetch(denied+'/keepalive',{method:'POST',body:'fixture',keepalive:true}).then(r=>r.status));
-  await attempt('denied-remote-worker', async () => {const w=new Worker(denied+'/remote-worker.js');w.terminate();return 'created';});
-  await attempt('denied-object', async () => {const o=document.createElement('object');o.data=denied+'/object';document.body.append(o);await wait(300);return 'inserted';});
-  await attempt('denied-media', async () => {const v=document.createElement('video');v.muted=true;v.preload='auto';v.src=denied+'/media';document.body.append(v);v.load();await wait(300);return 'inserted';});
-  await attempt('opaque-frame-fetch', async () => { const f=document.createElement('iframe');f.sandbox.add('allow-scripts');f.srcdoc=`<script>fetch(${JSON.stringify(denied+'/opaque-fetch')}).catch(()=>{})<\/script>`;document.body.append(f);await wait(300);return 'inserted'; });
-  await attempt('redirect', () => fetch(`${base}/redirect`).then(r => r.status));
-  await attempt('dedicated-worker', () => new Promise(resolve => { const w = new Worker('/worker.js'); w.onmessage = e => { resolve(e.data); w.terminate(); }; w.onerror = () => resolve('error'); }));
-  await attempt('blob-worker', () => new Promise(resolve => { const w = new Worker(URL.createObjectURL(new Blob([`fetch(${JSON.stringify(denied + '/blob-worker')}).then(()=>postMessage('sent')).catch(()=>postMessage('blocked'))`], {type:'text/javascript'}))); w.onmessage = e => { resolve(e.data); w.terminate(); }; w.onerror = () => resolve('error'); }));
-  await attempt('shared-worker', () => new Promise(resolve => { const w = new SharedWorker('/shared.js'); w.port.onmessage = e => { resolve(e.data); w.port.close(); }; w.onerror = () => resolve('error'); w.port.start(); }));
-  await attempt('service-worker', async () => { const reg = await navigator.serviceWorker.register('/sw.js'); await navigator.serviceWorker.ready; return { scope: reg.scope, registered: true }; });
-  await attempt('speculationrules', async () => { const s = document.createElement('script'); s.type = 'speculationrules'; s.textContent = JSON.stringify({prefetch:[{source:'list', urls:[denied + '/speculation-prefetch']}],prerender:[{source:'list',urls:[denied + '/speculation-prerender']}]}); document.head.append(s); await wait(600); return 'inserted'; });
-  await attempt('webrtc', async () => {
-    if (!globalThis.RTCPeerConnection) return { disabled: true };
-    const pc = new RTCPeerConnection({ iceServers: [{urls:`stun:127.0.0.1:${udpPort}`}] });
-    pc.createDataChannel('fixture'); await pc.setLocalDescription(await pc.createOffer()); await wait(800);
-    const result = { disabled: false, state: pc.iceGatheringState, sdp: !!pc.localDescription?.sdp }; pc.close(); return result;
-  });
-  await attempt('window-open', async () => { const w = window.open(denied + '/window-open'); return { returnedWindow: !!w }; });
-  await attempt('subframe-navigation', async () => { const f = document.createElement('iframe'); f.src = denied + '/subframe-navigation'; document.body.append(f); await wait(400); return 'inserted'; });
-  await attempt('form', async () => { const f = document.createElement('form'); f.action = denied + '/form'; f.target = '_blank'; document.body.append(f); f.submit(); return 'submitted'; });
-  await wait(700);
-  return { outcomes, violations, capabilities: { node: typeof globalThis.require, rtc: typeof globalThis.RTCPeerConnection, secure: isSecureContext, origin: location.origin } };
+/** Runs in a document or worker MAIN world. Every endpoint is a distinct name/port.
+ * @param {any} endpoints @param {boolean} [full] */
+export async function networkProbe(endpoints, full = true) {
+ const out = [], violations = [];
+ const wait = ms => new Promise(r=>setTimeout(r,ms));
+ globalThis.addEventListener('securitypolicyviolation',e=>violations.push({directive:e.effectiveDirective,blockedURI:e.blockedURI}));
+ const attempt=async(name,fn)=>{try{out.push({name,result:await Promise.race([fn(),wait(1400).then(()=>({timeout:true}))])});}catch(e){out.push({name,error:String(e)});}await wait(80);};
+ const rtc=async(url)=>{
+  if(typeof RTCPeerConnection==='undefined')return {supported:false};
+  const pc=new RTCPeerConnection({iceServers:[{urls:url,username:'fixture',credential:'fixture'}]});
+  const candidates=[];pc.onicecandidate=e=>{if(e.candidate)candidates.push(e.candidate.candidate);};
+  try{pc.createDataChannel('fixture');await pc.setLocalDescription(await pc.createOffer());await wait(900);return {supported:true,candidates,state:pc.iceGatheringState};}finally{pc.close();}
+ };
+ await attempt('stun',()=>rtc(endpoints.stun.ice));
+ await attempt('turn-tcp',()=>rtc(endpoints.turn.ice));
+ if(typeof document!=='undefined'){
+  for(const rel of ['dns-prefetch','preconnect','prefetch','prerender'])await attempt(rel,async()=>{const el=document.createElement('link');el.rel=rel;el.href=endpoints[rel].url;document.head.append(el);await wait(200);return 'inserted';});
+  await attempt('speculationrules',async()=>{const s=document.createElement('script');s.type='speculationrules';s.textContent=JSON.stringify({prefetch:[{source:'list',urls:[endpoints.speculation.url]}],prerender:[{source:'list',urls:[endpoints.prerender.url]}]});document.head.append(s);await wait(200);return 'inserted';});
+ }
+ await attempt('fetch',()=>fetch(endpoints.fetch.url).then(r=>r.status));
+ if(!full)return {outcomes:out,violations};
+ for(const name of ['own-fetch','other-plugin-fetch','wrong-port','keepalive'])await attempt(name,()=>fetch(endpoints[name].url,{keepalive:name==='keepalive'}).then(r=>r.status));
+ await attempt('xhr',()=>new Promise(r=>{const x=new XMLHttpRequest();x.open('GET',endpoints.xhr.url);x.onload=()=>r(x.status);x.onerror=()=>r('error');x.send();}));
+ for(const name of ['image','css','font','script','media','object'])await attempt(name,async()=>{
+  const url=endpoints[name].url;
+  if(name==='font')return new FontFace('probe',`url(${url})`).load().then(()=>true);
+  const el=document.createElement(({image:'img',css:'link',script:'script',media:'video',object:'object'})[name]);
+  if(name==='css'){el.rel='stylesheet';el.href=url;}else if(name==='object')el.data=url;else el.src=url;
+  if(name==='media'){el.muted=true;el.preload='auto';}document.body.append(el);await wait(150);return 'inserted';
+ });
+ await attempt('css-urls',async()=>{const s=document.createElement('style');s.textContent=`@import url('${endpoints['css-import'].url}');body{background-image:url('${endpoints.background.url}')}`;document.head.append(s);return 'inserted';});
+ await attempt('websocket',()=>new Promise(r=>{const ws=new WebSocket(endpoints.websocket.url.replace('http:','ws:'));ws.onopen=()=>{ws.close();r('open')};ws.onerror=()=>r('error');}));
+ await attempt('beacon',async()=>navigator.sendBeacon(endpoints.beacon.url,'fixture'));
+ await attempt('eventsource',()=>new Promise(r=>{const es=new EventSource(endpoints.eventsource.url);es.onopen=()=>{es.close();r('open')};es.onerror=()=>{es.close();r('error')};}));
+ await attempt('redirect',()=>fetch(endpoints.redirect.url).then(r=>r.status));
+ await attempt('webtransport',async()=>{if(typeof WebTransport==='undefined')return {supported:false};const wt=new WebTransport(endpoints.webtransport.url.replace('http:','https:'));wt.closed.catch(()=>{});try{return await Promise.race([wt.ready.then(()=>({ready:true})),wait(600).then(()=>({pending:true}))]);}finally{wt.close();}});
+ await attempt('fetchLater',async()=>{if(typeof globalThis.fetchLater!=='function')return {supported:false};globalThis.fetchLater(endpoints.fetchLater.url,{activateAfter:0});await wait(300);return {supported:true};});
+ for(const name of ['ping','download'])await attempt(name,async()=>{const a=document.createElement('a');a.href=name==='ping'?'#probe':endpoints.download.url;if(name==='ping')a.ping=endpoints.ping.url;else a.download='fixture.txt';a.textContent=name;document.body.append(a);a.click();await wait(200);return 'clicked';});
+ for(const path of ['worker','shared','blob'])await attempt(path,()=>new Promise(r=>{
+  const code=`fetch(${JSON.stringify(endpoints[path].url)}).then(()=>postMessage('sent')).catch(()=>postMessage('blocked'));`;
+  if(path==='shared'){const w=new SharedWorker('/shared.js');w.port.onmessage=e=>{r(e.data);w.port.close()};w.port.start();w.onerror=()=>r('error');}
+  else{const w=new Worker(path==='blob'?URL.createObjectURL(new Blob([code],{type:'text/javascript'})):'/worker.js');w.onmessage=e=>{r(e.data);w.terminate()};w.onerror=()=>r('error');}
+ }));
+ await attempt('service-worker',async()=>{try{await navigator.serviceWorker.register('/sw.js');return {registered:true};}catch(e){return {registered:false,error:String(e)};}});
+ for(const name of ['window-open','form','navigation'])await attempt(name,async()=>{
+  if(name==='window-open')return {opened:!!window.open(endpoints[name].url)};
+  if(name==='form'){const f=document.createElement('form');f.action=endpoints.form.url;f.target='_blank';document.body.append(f);f.submit();return 'submitted';}
+  const f=document.createElement('iframe');f.src=endpoints.navigation.url;document.body.append(f);return 'inserted';
+ });
+ await wait(300);return {outcomes:out,violations};
 }

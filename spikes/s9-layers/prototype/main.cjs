@@ -16,13 +16,11 @@ app.setPath('sessionData', join(process.env.CLOVER_HOME, 'sessionData'));
 app.setName('Clover S9');
 app.on('window-all-closed', () => {}); // Variants deliberately close their last window.
 app.commandLine.appendSwitch('site-per-process');
-app.commandLine.appendSwitch('disable-background-networking');
-app.commandLine.appendSwitch('dns-prefetch-disable');
-app.commandLine.appendSwitch('disable-features', 'PreconnectToSearch,Prerender2,SpeculationRulesPrefetch,SpeculationRulesPrerender,WebRtcHideLocalIpsWithMdns');
-app.commandLine.appendSwitch('force-webrtc-ip-handling-policy', 'disable_non_proxied_udp');
-protocol.registerSchemesAsPrivileged([{ scheme: 'clover-plugin', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, allowServiceWorkers: true } }]);
+// Fixture routing only; no process-wide network/security closures.
+app.commandLine.appendSwitch('host-resolver-rules','MAP *.s9.test 127.0.0.1');
+protocol.registerSchemesAsPrivileged(['clover-plugin','clover-core','clover-sealed'].map(scheme=>({scheme,privileges:{standard:true,secure:true,supportFetchAPI:true,corsEnabled:true}}))); // Service workers deliberately not granted.
 ipcMain.on('clover-s9-memory', (event, value) => {
-  if (event.senderFrame?.url.startsWith('clover-plugin://')) samples.set(event.senderFrame.osProcessId, { ...value, namespacePid:value.pid,pid:event.senderFrame.osProcessId, frameUrl: event.senderFrame.url, received: Date.now() });
+  if (/^clover-(plugin|core):/.test(event.senderFrame?.url||'')) samples.set(event.senderFrame.osProcessId, { ...value, namespacePid:value.pid,pid:event.senderFrame.osProcessId, frameUrl: event.senderFrame.url, received: Date.now() });
 });
 function save(name, data) {
   mkdirSync('results', { recursive: true });
@@ -30,24 +28,31 @@ function save(name, data) {
 }
 async function makeWindow(body, options = {}) {
   const ses = session.fromPartition(`clover-s9-${crypto.randomUUID()}`);
+  await ses.setProxy({mode:'direct'});
   ses.setPermissionRequestHandler((_wc, _permission, callback) => callback(false));
   ses.setPermissionCheckHandler(() => false);
   const requests = [], navigations = [], popups = [];
   const { csp, decision } = await import('./policy.mjs');
   const local = options.local || '';
-  ses.protocol.handle('clover-plugin', request => {
+  const mounts=new Set();
+  const mountUrl=host=>{const token=crypto.randomUUID();mounts.add(token);return `clover-plugin://${host}/?mount=${token}`};
+  body=body.replace(/clover-plugin:\/\/([a-z0-9-]+)\//g,(_m,host)=>mountUrl(host));
+  const serve = request => {
     const url = new URL(request.url);
+    const core=url.protocol==='clover-core:';
+    if(!core&&!url.pathname.endsWith('.js')&&!mounts.has(url.searchParams.get('mount')))return new Response('forbidden',{status:403});
     let content = body, mime = 'text/html';
-    if (url.hostname !== 'core') content = `<style>body{margin:0;background:#eee}input{width:75px}.menu{position:absolute;left:80px;top:5px;width:250px;height:40px;background:#ff00ff;z-index:99999}</style><input id="first"><input id="second"><div id="drag" draggable="true">Clover drag</div><div id="drop">Drop here</div><div class="menu">Plugin menu</div><script>window.events=[];for(const type of ['focusin','keydown','drop','dragenter','compositionend'])document.addEventListener(type,e=>events.push({type,key:e.key,text:e.dataTransfer?.getData('text/plain')}));document.addEventListener('dragstart',e=>e.dataTransfer.setData('text/plain','clover-fixture'));document.addEventListener('dragover',e=>e.preventDefault());document.addEventListener('drop',e=>e.preventDefault());</script>${url.hostname === 'p1' && check === 'process' ? '<iframe src="clover-plugin://p1--child/" width="50" height="50"></iframe><iframe src="clover-plugin://p2/" width="50" height="50"></iframe>' : ''}`;
+    if (!core) content = `<style>body{margin:0;background:#eee}input{width:75px}.menu{pointer-events:none;position:absolute;left:80px;top:100px;width:250px;height:40px;background:#ff00ff;z-index:99999}</style><input id="first"><input id="second"><div id="drag" draggable="true">Clover drag</div><div id="drop">Drop here</div><div class="menu">Plugin menu</div><script>window.events=[];for(const type of ['focusin','keydown','drop','dragenter','compositionend'])document.addEventListener(type,e=>events.push({type,key:e.key,text:e.dataTransfer?.getData('text/plain')}));document.addEventListener('dragstart',e=>e.dataTransfer.setData('text/plain','clover-fixture'));document.addEventListener('dragover',e=>e.preventDefault());document.addEventListener('drop',e=>e.preventDefault());</script>${url.hostname === 'p1' && check === 'process' ? `<iframe src="${mountUrl('p1--child')}" width="50" height="50"></iframe><iframe src="${mountUrl('p2')}" width="50" height="50"></iframe>` : ''}`;
     if (url.pathname.endsWith('.js')) {
       mime = 'text/javascript';
       const fetchCode = `fetch(${JSON.stringify(options.denied + '/worker-fetch')}).then(()=>postMessage('sent')).catch(()=>postMessage('blocked'));`;
       content = url.pathname === '/sw.js' ? `self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(fetch(${JSON.stringify(options.denied + '/service-worker-fetch')}).catch(()=>{}))});self.addEventListener('activate',e=>e.waitUntil(clients.claim()));` : url.pathname === '/shared.js' ? `onconnect=e=>{fetch(${JSON.stringify(options.denied + '/shared-worker-fetch')}).then(()=>e.ports[0].postMessage('sent')).catch(()=>e.ports[0].postMessage('blocked'))}` : fetchCode;
     }
-    return new Response(content, {headers:{'Content-Type':mime,'Content-Security-Policy': url.hostname === 'core' ? "default-src 'self' clover-plugin:; script-src 'unsafe-inline'; style-src 'unsafe-inline'" : csp(local, options.csp !== false), 'X-DNS-Prefetch-Control': 'off', 'Permissions-Policy': 'camera=(), microphone=(), geolocation=()' }});
-  });
+    return new Response(content, {headers:{'Content-Type':mime,'Content-Security-Policy': core ? "default-src 'self' clover-plugin:; script-src 'unsafe-inline'; style-src 'unsafe-inline'" : csp(local?[local]:[], options.csp !== false,url.host==='p1'?["'self'",'clover-plugin://p2','clover-plugin://p1--child']:["'self'"])+"; frame-ancestors clover-core://shell clover-plugin://p1", 'X-DNS-Prefetch-Control': 'off', 'Permissions-Policy': 'camera=(), microphone=(), geolocation=()' }});
+  };
+  ses.protocol.handle('clover-plugin',serve);ses.protocol.handle('clover-core',serve);ses.protocol.handle('clover-sealed',()=>new Response('forbidden',{status:403}));
   ses.webRequest.onBeforeRequest((details, callback) => {
-    const verdict = options.filter ? decision(details.url, details.initiatorOrigin, '127.0.0.1') : {cancel:false,reason:'filter off'};
+    const verdict = options.filter ? decision(details.url, details.initiatorOrigin, new Map()) : {cancel:false,reason:'filter off'};
     requests.push({ url: details.url, resourceType: details.resourceType, initiatorOrigin: details.initiatorOrigin, frameUrl: details.frame?.url, ...verdict });
     callback({cancel: verdict.cancel});
   });
@@ -55,7 +60,7 @@ async function makeWindow(body, options = {}) {
   windows.push(win);
   win.webContents.setWindowOpenHandler(details => {popups.push({url:details.url}); return {action:'deny'};});
   win.webContents.on('will-frame-navigate', event => { if (!event.url.startsWith('clover-plugin://')) {navigations.push({url:event.url,blocked:true});event.preventDefault();} });
-  await win.loadURL('clover-plugin://core/');
+  await win.loadURL('clover-core://shell/');
   await pause(1200);
   return {win,ses,requests,navigations,popups};
 }
@@ -68,7 +73,7 @@ async function processCheck() {
   for(const f of listing) {const origin = new URL(f.url).host; if (!groups.has(origin)) groups.set(origin, new Set()); groups.get(origin).add(f.osProcessId);}
   const pids = [...groups.values()].map(p => [...p]);
   const isolated = pids.every(p=>p.length === 1) && new Set(pids.flat()).size === groups.size;
-  return { verdict:isolated?'works':'does not', isolated, frames:listing, metrics, sameOriginP2Frames: listing.filter(f=>f.url==='clover-plugin://p2/').length, nodeExposure:await Promise.all(win.webContents.mainFrame.framesInSubtree.map(async f=>({url:f.url,require:await f.executeJavaScript('typeof require')}))) };
+  return { verdict:isolated?'works':'does not', isolated, frames:listing, metrics, sameOriginP2Frames: listing.filter(f=>new URL(f.url).host==='p2').length, nodeExposure:await Promise.all(win.webContents.mainFrame.framesInSubtree.map(async f=>({url:f.url,require:await f.executeJavaScript('typeof require')}))) };
 }
 async function memoryCheck() {
   const {win} = await makeWindow(shell(count));
@@ -108,38 +113,7 @@ async function crossingCheck() {
   } catch(e) {drag.push({error:String(e)});} finally {if(wc.debugger.isAttached())wc.debugger.detach();}
   return {verdict:focus.value==='a' && drag.some(e=>e.type==='drop')?'works with limits':'does not',focus,windowFocused:win.isFocused(),keyboard,tabSteps,shortcuts,drag,menus:{clippedScreenshot:'menu-clipped.png',hostScreenshot:'menu-host.png',note:'An iframe clips its own top layer; trusted root demonstrates overlay outside iframe.'},ime:'not checked: requires OS IME and real input; live gate',dragLimit:'CDP delivery only. Does not prove native drag initiation, file drops or OS clipboard. Live gate required.'};
 }
-async function networkCheck() {
-  const hits=[], connections=[], udpHits=[];
-  const server = http.createServer((req,res)=>{
-    hits.push({host:req.headers.host,url:req.url,method:req.method});
-    res.setHeader('Access-Control-Allow-Origin','*');res.setHeader('Access-Control-Allow-Headers','*');
-    if(req.url==='/redirect'){res.writeHead(302,{Location:`http://localhost:${/** @type {import("node:net").AddressInfo} */(server.address()).port}/redirect-target`});res.end();return;}
-    if(req.url.includes('css'))res.setHeader('Content-Type','text/css');
-    res.end(req.url.includes('css')?'body{color:black}':'fixture');
-  });
-  server.on('connection',socket=>{connections.push({time:Date.now()});socket.on('error',()=>{});});
-  server.on('upgrade',(req,socket)=>{hits.push({host:req.headers.host,url:req.url,method:'WS'});const accept=crypto.createHash('sha1').update(req.headers['sec-websocket-key']+'258EAFA5-E914-47DA-95CA-C5AB0DC85B11').digest('base64');socket.write('HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: '+accept+'\r\n\r\n');socket.on('error',()=>{});setTimeout(()=>socket.destroy(),200);});
-  await new Promise(r=>server.listen(0,'0.0.0.0',()=>r(undefined)));
-  const stun=udp.createSocket('udp4');stun.on('message',data=>udpHits.push({bytes:data.length,time:Date.now()}));await new Promise(r=>stun.bind(0,'127.0.0.1',()=>r(undefined)));
-  const port=/** @type {import("node:net").AddressInfo} */(server.address()).port, base=`http://127.0.0.1:${port}`,denied=`http://localhost:${port}`;
-  const {networkProbe}=await import('./probes.mjs');
-  const variants=[];
-  for(const mode of ['control','csp','filter','combined']){
-    console.log(`Clover S9 network: ${mode}`);
-    const start=hits.length,udpStart=udpHits.length,connectionStart=connections.length;
-    const ctx=await makeWindow(shell(1),{local:base,denied,csp:['csp','combined'].includes(mode),filter:['filter','combined'].includes(mode)});
-    await ctx.ses.netLog.startLogging(join(__dirname,'results',`netlog-${mode}.json`));
-    const result=/** @type {any} */(await ctx.win.webContents.mainFrame.frames[0].executeJavaScript(`(${networkProbe.toString()})(${JSON.stringify(base)},${JSON.stringify(denied)},${stun.address().port})`));
-    // Navigation last, because it destroys the probing document.
-    await ctx.win.webContents.mainFrame.frames[0].executeJavaScript(`location.href=${JSON.stringify(denied+'/navigation')}`).catch(()=>{});await pause(400);
-    await ctx.ses.netLog.stopLogging();
-    variants.push({mode,...result,requests:ctx.requests,navigations:ctx.navigations,popups:ctx.popups,hits:hits.slice(start),udp:udpHits.slice(udpStart),tcpConnections:connections.length-connectionStart});
-    ctx.win.destroy();
-  }
-  stun.close();server.closeAllConnections();server.close();
-  const combined=variants.find(v=>v.mode==='combined');
-  return { verdict:combined.outcomes.find(o=>o.name==='webrtc')?.result?.disabled===true && !combined.hits.some(h=>h.host.startsWith('localhost:')) ? 'works with limits':'does not', variants, limits:['Loopback HTTP fixtures; font/image decode failures are not policy evidence: use request/hit logs.','DNS cache and Chromium feature names require netlog inspection; absence of HTTP does not prove absence of DNS/TCP.','UDP fixture observes STUN; WebRTC API existence/SDP also reported.','External HTTPS, WSS, DNS wire capture and OS IMEs remain live gates.'] };
-}
+async function networkCheck(){return (await import('./network.mjs')).networkCheck(require('electron'));}
 app.whenReady().then(async()=>{
   const result={date:new Date().toISOString(),platform:process.platform,arch:process.arch,versions:process.versions,check,layers:count,commit:process.env.GITHUB_SHA};
   try {Object.assign(result,await ({process:processCheck,memory:memoryCheck,crossing:crossingCheck,network:networkCheck}[check])());save(`${check}${check==='memory'?'-'+count:''}`,result);console.log(`Clover S9 ${check}: ${result.verdict}`);for(const w of windows)if(!w.isDestroyed())w.destroy();app.exit(0);}
