@@ -113,8 +113,9 @@ describe("stageRuntimes (fake binaries, mkdtemp — no real winter build)", () =
     await expect(
       stageRuntimes({ out, resolveWinterPackage: () => ({ binPath: pkgBin, version: "9.9.9" }) }),
     ).rejects.toThrow(/mixed pair is not the pinned artifact/);
-    // A-M1: the binary's pin is its own, so the SDK's version is a mismatch too (unless the two happen to agree).
-    if (REQUIRED_WINTER_AGENT_SDK !== CODING_AGENT_BINARY_VERSION) {
+    // A-M1: the binary's pin is its own, so the SDK's version is a mismatch too (unless the two happen to agree;
+    // compared as strings, since the two pins are literal types that may differ).
+    if (String(REQUIRED_WINTER_AGENT_SDK) !== String(CODING_AGENT_BINARY_VERSION)) {
       await expect(
         stageRuntimes({ out, resolveWinterPackage: () => ({ binPath: pkgBin, version: REQUIRED_WINTER_AGENT_SDK }) }),
       ).rejects.toThrow(/mixed pair is not the pinned artifact/);

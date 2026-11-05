@@ -12,7 +12,7 @@
 // Prints one JSON line: rounds, leaked processes, live Workers left, and RSS readings (start, a quarter in,
 // halfway, the end, the peak) so the test can hold the daemon's memory to a plateau under a budget.
 import { METHODS } from "@waifucave/clover-protocol";
-import { mb, rss, startSoakDaemon } from "./soak-support";
+import { mb, memory, memoryReport, type MemoryReading, startSoakDaemon } from "./soak-support";
 
 const rounds = Number(process.env["SOAK_ROUNDS"] ?? "150");
 // A duration no other process on the machine runs, so `pgrep` finds exactly this soak's tools.
@@ -37,11 +37,11 @@ async function settle(ms: number): Promise<number[]> {
 }
 
 const out: Record<string, unknown> = { rounds };
-const samples: number[] = [];
+const samples: MemoryReading[] = [];
 let leaked = 0;
 let toolsSeen = 0;
 try {
-  const start = rss();
+  const start = memory();
   for (let i = 0; i < rounds; i++) {
     client.clearEvents();
     const { sessionId } = await client.call<{ sessionId: string }>(METHODS.sessionCreate, { scope: "soak", mode: "code", model: "winter-test/calls", cwd, approvalPolicy: "bypass" });
@@ -73,17 +73,26 @@ try {
       leaked += left.length;
       for (const pid of left) try { process.kill(pid, "SIGKILL"); } catch { /* gone */ }
     }
-    samples.push(rss());
-    if ((i + 1) % 10 === 0) console.error(`round ${i + 1}: rss=${mb(samples.at(-1)!)}MB leaked=${leaked} live=${daemon.embedded.live().length}`);
+    samples.push(memory());
+    if ((i + 1) % 10 === 0) {
+      const m = samples.at(-1)!;
+      console.error(`round ${i + 1}: ps-rss=${mb(m.psRss)}MB footprint=${m.footprint === null ? "n/a" : `${mb(m.footprint)}MB`} bun-rss=${mb(m.bunRss)}MB leaked=${leaked} live=${daemon.embedded.live().length}`);
+    }
   }
   await Bun.sleep(500);
-  const at = (fraction: number): number => samples[Math.max(0, Math.ceil(samples.length * fraction) - 1)] ?? start;
+  const at = (fraction: number): MemoryReading => samples[Math.max(0, Math.ceil(samples.length * fraction) - 1)] ?? start;
+  const peakOf = (field: "psRss" | "bunRss" | "footprint"): MemoryReading => [start, ...samples].reduce((a, b) => ((b[field] ?? 0) > (a[field] ?? 0) ? b : a));
   out["completedRounds"] = samples.length;
   out["roundsWithTools"] = toolsSeen;
   out["leakedProcesses"] = leaked;
   out["liveAfter"] = daemon.embedded.live().length;
-  out["rssMb"] = { start: mb(start), quarter: mb(at(0.25)), half: mb(at(0.5)), end: mb(at(1)), peak: mb(Math.max(start, ...samples)) };
-  out["secondHalfGrowthMb"] = mb(at(1) - at(0.5));
+  // Side by side and labelled (`soak-support.ts`): the budget and plateau below are `ps -o rss=`'s, the resident set.
+  // Each `peak*` entry is the reading where that field peaked.
+  out["memory"] = memoryReport({ start, quarter: at(0.25), half: at(0.5), end: at(1), peakPsRss: peakOf("psRss"), peakFootprint: peakOf("footprint"), peakBunRss: peakOf("bunRss") });
+  out["peakPsRssMb"] = mb(peakOf("psRss").psRss);
+  out["secondHalfGrowthMb"] = mb(at(1).psRss - at(0.5).psRss);
+  const fp = (r: MemoryReading): number | null => r.footprint;
+  out["secondHalfFootprintGrowthMb"] = fp(at(1)) === null || fp(at(0.5)) === null ? null : mb(fp(at(1))! - fp(at(0.5))!);
 } finally {
   await stop();
 }

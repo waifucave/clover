@@ -14,6 +14,9 @@
 //     tools (process groups of their own): interrupt and end racing, end alone, interrupt then end. Every tool
 //     process must be gone after each round, and the daemon's RSS must plateau under a budget:
 //     SOAK_RSS_BUDGET_MB (peak, default 1024) and SOAK_RSS_PLATEAU_MB (growth over the second half, default 96).
+//     The budgets read `ps -o rss=` (the resident set). Each soak prints it beside macOS's phys_footprint and Bun's
+//     `process.memoryUsage().rss`, labelled: from Bun 1.4.3 that one IS phys_footprint on macOS, not the resident
+//     set, so a reading taken through it before and after the upgrade would compare two measures.
 //   dispatch (`test/e2e/dispatch-spawn-e2e.test.ts`, SOAK_DISPATCH_RUNS times, default 20): Dispatch spawning,
 //     stopping and messaging children, each run a fresh process that must exit cleanly.
 //
@@ -57,13 +60,13 @@ test.skipIf(SOAK)("mid-turn: sessions torn down while their tools run, no crash,
   console.log(`worker mid-turn soak: exit ${r.code}${r.signal ? ` (${r.signal})` : ""}: ${last}`);
   if (r.code !== 0) console.log(crashLines(r.stderr));
   expect(r.code).toBe(0);
-  const result = JSON.parse(last) as { rounds: number; completedRounds: number; roundsWithTools: number; leakedProcesses: number; liveAfter: number; rssMb: { peak: number }; secondHalfGrowthMb: number };
+  const result = JSON.parse(last) as { rounds: number; completedRounds: number; roundsWithTools: number; leakedProcesses: number; liveAfter: number; peakPsRssMb: number; secondHalfGrowthMb: number };
   expect(result.completedRounds).toBe(result.rounds);
   // Vacuous if the tools were not running when the sessions were torn down.
   expect(result.roundsWithTools).toBe(result.rounds);
   expect(result.leakedProcesses).toBe(0);
   expect(result.liveAfter).toBe(0);
-  expect(result.rssMb.peak).toBeLessThanOrEqual(Number(process.env["SOAK_RSS_BUDGET_MB"] ?? "1024"));
+  expect(result.peakPsRssMb).toBeLessThanOrEqual(Number(process.env["SOAK_RSS_BUDGET_MB"] ?? "1024"));
   expect(result.secondHalfGrowthMb).toBeLessThanOrEqual(Number(process.env["SOAK_RSS_PLATEAU_MB"] ?? "96"));
 }, 8 * 60_000);
 

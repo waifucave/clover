@@ -8,7 +8,7 @@
 //      code session's Worker costs the daemon in resident memory.
 // Prints one JSON line: the rounds completed, the RSS readings, and the per-session estimate.
 import { METHODS } from "@waifucave/clover-protocol";
-import { mb, rss, startSoakDaemon } from "./soak-support";
+import { mb, memory, memoryReport, startSoakDaemon } from "./soak-support";
 
 const rounds = Number(process.env["SOAK_ROUNDS"] ?? "80");
 const concurrent = Number(process.env["SOAK_CONCURRENT"] ?? "8");
@@ -26,7 +26,7 @@ async function oneTurn(): Promise<string> {
 
 const out: Record<string, unknown> = { rounds, concurrent };
 try {
-  const start = rss();
+  const start = memory();
   // 1. churn: one Worker spawned and terminated per round.
   let completed = 0;
   for (let i = 0; i < rounds; i++) {
@@ -36,18 +36,19 @@ try {
   }
   out["churnRounds"] = completed;
   out["liveAfterChurn"] = daemon.embedded.live().length;
-  const afterChurn = rss();
+  const afterChurn = memory();
   // 2. concurrency: `concurrent` live code sessions at once.
   const ids: string[] = [];
   for (let i = 0; i < concurrent; i++) ids.push(await oneTurn());
-  const withLive = rss();
+  const withLive = memory();
   out["liveDuring"] = daemon.embedded.live().length;
   for (const sid of ids) await daemon.clover.get(sid)?.end();
   await Bun.sleep(500);
-  const afterEnd = rss();
-  out["rssMb"] = { start: mb(start), afterChurn: mb(afterChurn), withLive: mb(withLive), afterEnd: mb(afterEnd) };
-  out["perLiveCodeSessionMb"] = mb((withLive - afterChurn) / concurrent);
-  out["retainedPerChurnRoundMb"] = mb((afterChurn - start) / Math.max(1, completed));
+  const afterEnd = memory();
+  // The memory readings side by side (`soak-support.ts`'s MemoryReading); the estimates below are `ps -o rss=`'s.
+  out["memory"] = memoryReport({ start, afterChurn, withLive, afterEnd });
+  out["perLiveCodeSessionMb"] = mb((withLive.psRss - afterChurn.psRss) / concurrent);
+  out["retainedPerChurnRoundMb"] = mb((afterChurn.psRss - start.psRss) / Math.max(1, completed));
 } finally {
   await stop();
 }
