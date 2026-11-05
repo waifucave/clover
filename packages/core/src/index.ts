@@ -11,6 +11,7 @@ export {
   type LoginSpec, type LoginOsDeps, type LoginStatus, type LoginState,
   type SuperviseDeps, type SuperviseResult, type DaemonRun,
 } from "./platform/login";
+export { callerFloorVerdict, mayBeUser, type SandboxProbe, type FloorVerdict } from "./platform/sandbox-floor";
 export { resolveCloverProfile, keychainService, profileDisplayName, cliCommandName, type CloverProfile } from "./profile";
 export {
   LEGACY_LAUNCHD_LABEL, LEGACY_HOME_DIR, LEGACY_DEV_HOME_DIR, LEGACY_HOME_ENV, LEGACY_PROFILE_ENV,
