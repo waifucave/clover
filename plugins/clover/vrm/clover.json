@@ -1,0 +1,11 @@
+{
+  "manifest": 1,
+  "name": "VRM avatar",
+  "description": "Draws a bot's VRM avatar on its stage, breathing and blinking, its mouth moving with the bot's voice.",
+  "engines": { "clover": "^1.0.0" },
+  "capabilities": ["audio"],
+  "client": { "entry": "client/index.tsx" },
+  "contributes": {
+    "ui": [{ "spot": "avatar", "id": "vrm", "key": "vrm", "component": "VrmAvatar" }]
+  }
+}
