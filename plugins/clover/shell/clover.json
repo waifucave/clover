@@ -261,58 +261,7 @@
         "spot": "main",
         "id": "agent-tab",
         "key": "agent",
-        "component": "AgentTab",
-        "declares": {
-          "conversation": {
-            "shape": "single",
-            "props": {
-              "type": "object",
-              "properties": {
-                "bot": {
-                  "type": "object",
-                  "properties": {
-                    "id": {
-                      "type": "string"
-                    },
-                    "name": {
-                      "type": "string"
-                    }
-                  }
-                },
-                "session": {
-                  "type": "string"
-                }
-              }
-            },
-            "needs": [
-              "conversation.read"
-            ],
-            "doc": "The agent's transcript."
-          },
-          "composer": {
-            "shape": "single",
-            "props": {
-              "type": "object",
-              "properties": {
-                "bot": {
-                  "type": "object",
-                  "properties": {
-                    "id": {
-                      "type": "string"
-                    },
-                    "name": {
-                      "type": "string"
-                    }
-                  }
-                },
-                "session": {
-                  "type": "string"
-                }
-              }
-            },
-            "doc": "The agent's composer."
-          }
-        }
+        "component": "AgentTab"
       },
       {
         "spot": "panel",

@@ -631,6 +631,12 @@ importers:
 
   plugins/clover/shell:
     dependencies:
+      '@waifucave/clover-plugin-sdk':
+        specifier: workspace:*
+        version: link:../../../packages/plugin-sdk
+      '@waifucave/clover-protocol':
+        specifier: workspace:*
+        version: link:../../../packages/protocol
       lucide-react:
         specifier: 1.61.0
         version: 1.61.0(@types/react@19.3.0)(react@19.3.1)

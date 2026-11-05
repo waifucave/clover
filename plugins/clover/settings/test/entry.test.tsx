@@ -1,7 +1,7 @@
 // Settings on the runtime: Clover's own settings from the core and the plugin API, every change through them.
 import { afterEach, describe, expect, test } from "bun:test";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
-import { fakeApi, fakeCore, settle } from "../../shell/runtime/testkit";
+import { computerView, deviceView, fakeApi, fakeCore, pluginDetail, pluginSummary, settle } from "../../shell/runtime/testkit";
 import type { EntryComponent, PluginDetail, PluginSummary } from "../../shell/runtime/types";
 import { runtimeWith } from "../../shell/runtime/ui";
 import { okWords, SettingsEntry } from "../client/entry";
@@ -9,13 +9,13 @@ import { UiRuntimeProvider } from "../client/sdk";
 
 afterEach(cleanup);
 
-const summary = (id: string, name: string, extra: Partial<PluginSummary> = {}): PluginSummary => ({ id, name, version: "1.0.0", state: "running", enabled: true, source: "bundled", class: "code", adult: false, children: [], dev: false, ...extra });
+const summary = (id: string, name: string, extra: Partial<PluginSummary> = {}): PluginSummary => pluginSummary(id, name, extra);
 const PLUGINS = [
   summary("clover", "Clover"),
   summary("weather-routine", "Weather routine", { state: "found", enabled: false, source: "index" }),
   summary("story-mode", "Story mode", { state: "stopped", reason: "Stopped after three crashes in two minutes", source: "local" }),
 ];
-const detail = (p: PluginSummary, capabilities: string[], networkHosts: string[] = []): PluginDetail => ({ ...p, provenance: { by: "user-app", at: 0 }, capabilities, networkHosts, logTail: [] });
+const detail = (p: PluginSummary, capabilities: string[], networkHosts: string[] = []): PluginDetail => pluginDetail(p, { capabilities, networkHosts });
 
 async function mount(params: { section?: string } = {}, extra: { component?: EntryComponent } = {}) {
   const core = fakeCore({
@@ -25,7 +25,7 @@ async function mount(params: { section?: string } = {}, extra: { component?: Ent
     "plugin.logs": () => ({ lines: ["14:05 started", "14:06 TypeError: scene"] }),
     "plugin.ui": () => ({ plugins: [{ pluginId: "clover/base-theme", themes: [{ id: "base", file: "base.css" }], locales: [] }, { pluginId: "midnight", themes: [{ id: "night", file: "night.css" }], locales: [{ lang: "de", file: "de.json" }] }] }),
     "account.status": () => ({ signedIn: true, provider: "email", user: { id: "u1", name: "Sam" } }),
-    "ui.settings": () => ({ picks: [], lists: [], language: "en-US", globalTheme: { pluginId: "midnight", id: "night" } }),
+    "ui.settings": () => ({ picks: [], lists: [], language: "en-US", globalTheme: "midnight#night" }),
     "ui.set": () => ({ applied: true }),
     "computer.setLevel": () => ({ applied: false, card: "card-1" }),
     "device.revoke": () => ({ applied: false, card: "card-2" }),
@@ -36,8 +36,8 @@ async function mount(params: { section?: string } = {}, extra: { component?: Ent
     "device.pair.cancel": () => ({ ok: true }),
   });
   const api = fakeApi({
-    computers: { list: async () => [{ name: "Studio", device: "d1", os: "macos", level: "ask-risky", state: "online", link: "self", isMain: true, agents: [] }, { name: "Laptop", device: "d2", os: "macos", level: "ask", state: "online", link: "lan", isMain: false, agents: [] }] },
-    devices: { list: async () => [{ id: "d1", name: "Studio", kind: "computer", runsCore: true, online: true, isThis: true, isMain: true, addedAt: 0 }, { id: "d2", name: "Laptop", kind: "computer", runsCore: true, online: true, isThis: false, isMain: false, addedAt: 0 }, { id: "d3", name: "iPhone", kind: "phone", runsCore: false, online: true, isThis: false, isMain: false, addedAt: 0 }], watch: () => () => undefined },
+    computers: { list: async () => [computerView("Studio", { device: "d1", level: "ask-risky", link: "self", isMain: true }), computerView("Laptop", { device: "d2", level: "ask", link: "lan" })] },
+    devices: { list: async () => [deviceView("d1", "Studio", { kind: "desktop", runsCore: true, isThis: true, isMain: true }), deviceView("d2", "Laptop", { kind: "desktop", runsCore: true }), deviceView("d3", "iPhone", { kind: "phone", runsCore: false })], watch: () => () => undefined },
     bots: { list: async () => [{ id: "alpha", name: "Alpha", model: "m", userLayer: [], state: "idle", mainSession: "s" }], get: async () => { throw new Error("x"); }, watch: () => () => undefined },
   });
   const routes: unknown[] = [];
@@ -109,7 +109,7 @@ describe("settings on the runtime", () => {
     fireEvent.change(theme, { target: { value: "clover/base-theme#base" } });
     fireEvent.click(screen.getByRole("radio", { name: "Dark" }));
     await act(() => settle());
-    expect(core.calls.filter((c) => c.method === "ui.set").map((c) => c.params)).toEqual([{ patch: { globalTheme: { pluginId: "clover/base-theme", id: "base" } } }]);
+    expect(core.calls.filter((c) => c.method === "ui.set").map((c) => c.params)).toEqual([{ patch: { globalTheme: "clover/base-theme#base" } }]);
     expect(api.stored.get("appearance")).toEqual({ theme: "dark", textSize: "default" });
     expect(screen.getByText("English (United States)")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Change" }));

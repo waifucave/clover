@@ -1,261 +1,86 @@
-// What F's parts take from the app's plugin runtime and the core, in the shapes lane B declares them (B-M0 on
-// `lane/b-m0`: `packages/plugin-sdk/src/api/{ui-api,plugin-api}.ts`, `packages/plugin-sdk/src/catalogs/spots.ts` and
-// the views and methods in `packages/protocol/src/{sessions,plugins,computers,devices,app,approvals,usage}.ts`).
-//
-// Copied, not imported: B's #157 isn't merged, and no published package carries these yet. Only the parts of each
-// shape F's parts read are here. When B's packages land, this file becomes imports from them, and lane E's
-// `@waifucave/clover-plugin-sdk/ui` replaces `ui.ts` beside it.
+// What F's parts take from the app's plugin runtime and the core: lane B's declarations, imported (B-M0, #157):
+// `@waifucave/clover-plugin-sdk` for the UI API and the plugin API, `@waifucave/clover-protocol` for the views. Only
+// what B doesn't declare is F's here: `<Spot>`'s extra props, and the core methods the `clover` layer calls (some of
+// them provisional, for the lanes named to settle). Lane E's `@waifucave/clover-plugin-sdk/ui` replaces `ui.ts`
+// beside this file.
+import type * as Sdk from "@waifucave/clover-plugin-sdk";
+import type * as Proto from "@waifucave/clover-protocol";
 import type { ReactNode } from "react";
 
 // -------------------------------------------------------------------------------------------------
-// The UI API (ui-api.ts)
+// The UI API (B's ui-api.ts)
 // -------------------------------------------------------------------------------------------------
 
-export type TokenValue = string | number;
-export type Unsubscribe = () => void;
+export type TokenValue = Sdk.TokenValue;
+export type Unsubscribe = Sdk.Unsubscribe;
+export type EntryProps<P = Record<string, unknown>> = Sdk.EntryProps<P>;
+export type UiApi = Sdk.UiApi;
+export type CardButtonProps = Sdk.CardButtonProps;
+export type CardElementProps = Sdk.CardElementProps;
+export type CardFieldProps = Sdk.CardFieldProps;
+export type AppViewProps = Sdk.AppViewProps;
 
-/** Which entry a component is. */
-export interface EntryRef {
-  readonly pluginId: string;
-  readonly id: string;
-  readonly spot: string;
-  readonly key?: string;
-}
+/** Which entry a component is (`EntryProps["entry"]`). */
+export type EntryRef = Sdk.EntryProps["entry"];
 
-/** What every entry's component gets: its spot's props, the part's resolved tokens, and which entry it is. */
-export interface EntryProps<P = Record<string, unknown>> {
-  readonly props: P;
-  readonly tokens: Readonly<Record<string, TokenValue>>;
-  readonly entry: EntryRef;
-}
-
+/** A component, bound to React's types (B's `UiComponent` leaves the node type open). */
 export type EntryComponent<P = any> = (props: EntryProps<P>) => ReactNode;
 
-/** `<Spot>`'s props. B declares `key`, which React keeps for itself and never hands a component, so here it is
- *  `spotKey` (a question for B and E). `fallback` shows when nothing fills a single spot or a keyed cell: the declaring
- *  part's own rendering, such as a message kind no plugin restyles (also a question for B and E). */
-export interface SpotElementProps {
-  name: string;
+/** `<Spot>`'s props: B's `SpotElementProps`, with `key` as `spotKey` (React keeps `key` for itself and never hands it
+ *  to a component: asked of B, as E's runtime does), plus two the parts need (asked of E):
+ *  - `fallback`: what shows when nothing fills a single spot or a keyed cell, the declaring part's own rendering;
+ *  - `only`: one entry of a list spot, by `<plugin-id>#<entry-id>`, for a part that draws them one at a time. */
+export type SpotElementProps = Omit<Sdk.SpotElementProps, "key"> & {
   spotKey?: string;
-  props?: Record<string, unknown>;
   fallback?: ReactNode;
-  /** One entry of a list spot, by `<plugin-id>#<entry-id>`, for a part that lays its entries out one at a time
-   *  (Settings' added sections). Also a question for E. */
   only?: string;
-}
-
-/** The kinds of session (`SessionKind`, common.ts). */
-export type SessionKind = "bot" | "side-thread" | "agent" | "coding";
-
-/** Levels, lowest first (`LEVELS`, common.ts). */
-export const LEVELS = ["read-only", "ask", "ask-risky", "accept-edits", "automatic"] as const;
-export type Level = (typeof LEVELS)[number];
-
-/** A change the core either made, or turned into a sealed card that waits for the user (`ChangeResult`). */
-export type ChangeResult = { applied: true } | { applied: false; card: string };
+};
 
 // -------------------------------------------------------------------------------------------------
-// Views (protocol)
+// The views (B's protocol)
 // -------------------------------------------------------------------------------------------------
 
+type Infer<T extends { parse(v: unknown): unknown }> = ReturnType<T["parse"]>;
+
+export type SessionKind = Proto.SessionKind;
+export type Level = Proto.Level;
+export type ChangeResult = Proto.ChangeResult;
+export type BotView = Proto.BotView;
+export type BotState = BotView["state"];
+export type UserLayerField = BotView["userLayer"][number];
+export type UserLayerPatch = Proto.UserLayerPatch;
+export type SessionStatus = Proto.SessionStatus;
+export type SessionView = Proto.SessionView;
+export type ComputerView = Proto.ComputerView;
+export type DeviceView = Proto.DeviceView;
+export type AccountView = Proto.AccountView;
+export type PairingView = Infer<typeof Proto.PairingView>;
+export type CardMeta = Proto.CardMeta;
+export type FileStat = Proto.FileStat;
+export type PluginState = Proto.PluginState;
+export type PluginSummary = Proto.PluginSummary;
+export type PluginDetail = Proto.PluginDetail;
+export type IndexView = Infer<typeof Proto.IndexView>;
+export type IndexEntryView = Infer<typeof Proto.IndexEntryView>;
+export type ArchivedSessionView = Proto.ArchivedSessionView;
+export type ThemeRef = Infer<typeof Proto.ThemeRef>;
+export type UiSettings = Proto.UiSettings;
+
+/** A bot as a part names it. */
 export interface BotRef {
   id: string;
   name: string;
 }
 
-export type BotState = "idle" | "thinking" | "asleep" | "paused";
-export type UserLayerField = "name" | "instructions" | "model" | "effort" | "voice" | "avatar" | "theme" | "layout";
-
-export interface BotView {
-  id: string;
-  name: string;
-  portrait?: string;
-  model: string;
-  effort?: string;
-  voice?: { provider: string; voice: string; model?: string };
-  theme?: string;
-  /** The fields the user layer sets over the plugin's. */
-  userLayer: UserLayerField[];
-  state: BotState;
-  computer?: string;
-  mainSession: string;
-}
-
-/** A change to a bot's user layer: `null` clears a field (Reset), absent leaves it. */
-export interface UserLayerPatch {
-  name?: string | null;
-  instructions?: string | null;
-  model?: string | null;
-  effort?: string | null;
-  voice?: { provider: string; voice: string; model?: string } | null;
-  avatar?: { file: string; format: string; portrait?: string } | null;
-  theme?: string | null;
-  layout?: string | null;
-}
-
-export type SessionStatus = "starting" | "ready" | "prompting" | "cancelling" | "idle" | "stopped" | "failed";
-
-export interface SessionView {
-  id: string;
-  kind: SessionKind;
-  bot?: string;
-  parent?: string;
-  computer: string;
-  title?: string;
-  status: SessionStatus;
-  failure?: "sign-in" | "crashed" | "stalled" | "error";
-  startedAt: number;
-  updatedAt: number;
-  /** An agent's or coding session's backend (`agentBackends` id). */
-  backend?: string;
-  model?: string;
-  effort?: string;
-  /** Its root folder in the tree (`home/<Computer>/…`). */
-  root?: string;
-  needsYou?: { cards: number; questions: number };
-}
-
-export interface ComputerView {
-  name: string;
-  device: string;
-  os: "macos" | "windows" | "linux";
-  level: Level;
-  state: "online" | "offline" | "asleep";
-  /** How this computer reaches it: `self` is this one. */
-  link?: "self" | "lan" | "direct" | "relay";
-  isMain: boolean;
-  agents: string[];
-}
-
-export interface DeviceView {
-  id: string;
-  name: string;
-  kind: "computer" | "phone" | "web";
-  runsCore: boolean;
-  computer?: string;
-  online: boolean;
-  isThis: boolean;
-  isMain: boolean;
-  addedAt: number;
-}
-
-export interface AccountView {
-  signedIn: boolean;
-  provider?: "email" | "discord" | "google";
-  user?: { id: string; email?: string; name?: string };
-}
-
-/** A pairing without an account (`PairingView`, devices.ts): a code or QR, then the four words. */
-export interface PairingView {
-  pairingId: string;
-  code?: string;
-  qr?: string;
-  words?: string[];
-  expiresAt: number;
-}
-
-/** A pending card as a plugin hears it: never its text (`CardMeta`). */
-export interface CardMeta {
-  id: string;
-  kind: "tool" | "agent-permission" | "plugin-ok" | "change" | "confirm" | "elicitation";
-  computer: string;
-  session?: string;
-  bot?: string;
-  options: { id: string; kind: "approve" | "deny"; remember?: "always" }[];
-}
-
-export interface FileStat {
-  path: string;
-  type: "file" | "dir" | "symlink" | "other";
-  size: number;
-  modifiedAt: number;
-  executable: boolean;
-}
-
-export const PLUGIN_STATES = ["found", "refused", "invalid", "off", "waiting", "running", "stopped", "blocked"] as const;
-export type PluginState = (typeof PLUGIN_STATES)[number];
-
-export interface PluginSummary {
-  id: string;
-  parent?: string;
-  name: string;
-  version: string;
-  state: PluginState;
-  reason?: string;
-  waitingFor?: string[];
-  enabled: boolean;
-  source: "bundled" | "index" | "npm" | "local" | "wrapped" | "dev";
-  class: "data" | "web" | "code";
-  adult: boolean;
-  children: string[];
-  dev: boolean;
-}
-
-export interface PluginDetail extends PluginSummary {
-  provenance: { by: "user-app" | "user-terminal" | "bot" | "migration" | "found" | "bundled"; at: number; bot?: string };
-  capabilities: string[];
-  networkHosts: string[];
-  logTail: string[];
-}
-
-export interface IndexView {
-  url: string;
-  name?: string;
-  key: string;
-  official: boolean;
-  lastCheckedAt?: number;
-}
-
-export interface IndexEntryView {
-  id: string;
-  index: string;
-  name?: string;
-  description?: string;
-  versions: { version: string; hash: string }[];
-  installed?: string;
-  adult?: boolean;
-}
-
-/** A session from the app Clover replaces, in the archive view (`ArchivedSessionView`). */
-export interface ArchivedSessionView {
-  id: string;
-  title?: string;
-  mode: "code" | "chat" | "dispatch";
-  project?: string;
-  model?: string;
-  createdAt: number;
-  updatedAt: number;
-  messages: number;
-}
-
-export interface ThemeRef {
-  pluginId: string;
-  id: string;
-}
-
-/** The user's UI choices (`UiSettings`, app.ts): picks in single spots and keyed cells, list order and hidden
- *  entries, the themes and the language. `entry` is `<plugin-id>#<entry-id>`. */
-export interface UiSettings {
-  picks: { spot: string; key?: string; bot?: string; entry: string | null }[];
-  lists: { spot: string; bot?: string; order: string[]; hidden: string[] }[];
-  baseTheme?: ThemeRef;
-  globalTheme?: ThemeRef;
-  language?: string;
-}
-
 // -------------------------------------------------------------------------------------------------
-// The plugin API (plugin-api.ts), the members F's components use
+// The plugin API (B's plugin-api.ts)
 // -------------------------------------------------------------------------------------------------
 
-/** One entry of a point, its paths turned into asset URLs (`PointEntry`, plugin-api.ts). */
-export interface PointEntry<T = Record<string, unknown>> {
-  readonly pluginId: string;
-  readonly entryId: string;
-  readonly key?: string;
-  readonly value: T;
-}
+export type PluginApi = Sdk.PluginApi;
+export type PointEntry<T = Record<string, unknown>> = Sdk.PointEntry<T>;
+export type TerminalInputEvent = Sdk.TerminalInputEvent;
 
-/** An `avatar.packs` entry (points.ts): an avatar file with its format and portrait. */
+/** An `avatar.packs` entry (B's points.ts): an avatar file with its format and portrait. */
 export interface AvatarPackEntry {
   id: string;
   name?: string;
@@ -265,63 +90,11 @@ export interface AvatarPackEntry {
   license?: string;
 }
 
-export interface PluginApi {
-  readonly plugin: { readonly id: string; readonly computer: string };
-  t(key: string, params?: Record<string, string | number>): string;
-  readonly settings: {
-    get<T = unknown>(key: string, opts?: { bot?: string }): Promise<T | undefined>;
-    set(key: string, value: unknown, opts?: { bot?: string }): Promise<void>;
-    watch(key: string | null, listener: (key: string) => void): Unsubscribe;
-  };
-  readonly commands: { run<R = unknown>(name: string, args?: unknown): Promise<R> };
-  /** A declarer reads its point's entries (`avatar.packs` for the bot editor). */
-  readonly points: {
-    entries<T = Record<string, unknown>>(point: string): Promise<PointEntry<T>[]>;
-    watch<T = Record<string, unknown>>(point: string, listener: (entries: PointEntry<T>[]) => void): Unsubscribe;
-  };
-  readonly bots?: {
-    list(): Promise<BotView[]>;
-    get(bot: string): Promise<BotView>;
-    watch(listener: (bot: BotView) => void): Unsubscribe;
-  };
-  readonly conversation?: {
-    list?(filter?: { bot?: string; kinds?: SessionKind[] }): Promise<SessionView[]>;
-    get?(session: string): Promise<SessionView>;
-    history?(session: string, page: { before?: number; limit: number }): Promise<{ events: Record<string, unknown>[]; hasMore: boolean }>;
-    follow?(session: string, listener: (event: Record<string, unknown>) => void, opts?: { since?: number }): Unsubscribe;
-    answer?(session: string, callId: string, answers: Record<string, string>): Promise<void>;
-  };
-  readonly computers?: {
-    list?(): Promise<ComputerView[]>;
-    watch?(listener: (computer: ComputerView) => void): Unsubscribe;
-  };
-  readonly devices?: {
-    list(): Promise<DeviceView[]>;
-    watch(listener: (device: DeviceView) => void): Unsubscribe;
-  };
-  readonly approvals?: {
-    pending(): Promise<CardMeta[]>;
-    watch(listener: (cards: CardMeta[]) => void): Unsubscribe;
-  };
-  readonly files?: {
-    list(path: string): Promise<FileStat[]>;
-    readText(path: string): Promise<string>;
-    grep(pattern: string, opts: { cwd: string; limit?: number }): Promise<{ matches: { path: string; line: number; text: string }[]; truncated: boolean }>;
-    /** Changes under a folder (lane J's `filesWatch`, asked of B for `FilesApi`): the paths that changed, or a
-     *  resync when the watch lost track. */
-    watch?(path: string, listener: (e: { type: "changed"; paths: string[] } | { type: "resync" }) => void): Unsubscribe | Promise<Unsubscribe>;
-  };
-  readonly terminal?: {
-    open(opts: { computer: string; cwd?: string; session?: string; cols: number; rows: number }): Promise<{ terminalId: string }>;
-    write(terminalId: string, data: string, opts?: { paste?: boolean }): Promise<void>;
-    onData(terminalId: string, fn: (data: string, exited?: { code: number | null }) => void): Unsubscribe;
-    resize(terminalId: string, cols: number, rows: number): Promise<void>;
-    close(terminalId: string): Promise<void>;
-  };
-  readonly logs?: {
-    read(source: "core" | { plugin: string }, opts?: { lines?: number }): Promise<string[]>;
-  };
-}
+/** `files` with the watch lane J built (`filesWatch`, asked of B for `FilesApi`): the paths that changed under a
+ *  folder, or a resync when the watch lost track. */
+export type FilesWithWatch = NonNullable<PluginApi["files"]> & {
+  watch?(path: string, listener: (e: { type: "changed"; paths: string[] } | { type: "resync" }) => void): Unsubscribe | Promise<Unsubscribe>;
+};
 
 // -------------------------------------------------------------------------------------------------
 // The clover layer's core client

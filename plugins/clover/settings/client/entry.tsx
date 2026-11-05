@@ -10,6 +10,7 @@
 // settings until B says where they live.
 import { useEffect, useState } from "react";
 import type { CoreClient, PluginDetail, PluginSummary } from "../../shell/runtime/types";
+import { deviceKind, plain } from "../../shell/runtime/views";
 import { LanguageChooser } from "./LanguageChooser";
 import { Spot, useCore, usePluginApi, useSpotEntries } from "./sdk";
 import { SettingsModal } from "./SettingsModal";
@@ -100,7 +101,7 @@ async function load(core: CoreClient): Promise<Loaded> {
     if (d) details[p.id] = d.plugin;
   }));
   // The base theme is the plain one (spec, open question 14).
-  const name = (id: string) => (id === "clover/base-theme" ? "Plain" : (plugins.find((p) => p.id === id)?.name ?? id));
+  const name = (id: string) => (id === "clover/base-theme" ? "Plain" : plain(plugins.find((p) => p.id === id)?.name) || id);
   const themes = (pluginUi?.plugins ?? []).flatMap((p) => p.themes.map((t) => ({ id: `${p.pluginId}#${t.id}`, name: p.themes.length > 1 ? `${name(p.pluginId)}: ${t.id}` : name(p.pluginId) })));
   const langs = new Set<string>(["en-US"]);
   for (const p of pluginUi?.plugins ?? []) for (const l of p.locales) langs.add(l.lang);
@@ -109,7 +110,7 @@ async function load(core: CoreClient): Promise<Loaded> {
     details,
     ...(account?.user ? { account: account.user.name ?? account.user.email ?? "" } : {}),
     language: ui?.language ?? "en-US",
-    ...(ui?.globalTheme ? { globalTheme: `${ui.globalTheme.pluginId}#${ui.globalTheme.id}` } : {}),
+    ...(ui?.globalTheme ? { globalTheme: ui.globalTheme } : {}),
     themes,
     languages: [...langs].map(languageOf),
   };
@@ -145,7 +146,7 @@ export function SettingsEntry({ props }: { props: SettingsEntryProps }) {
     if (core) load(core).then((l) => live && setLoaded(l), () => undefined);
     api.computers?.list?.().then((c) => live && setComputers(c), () => undefined);
     api.devices?.list().then((d) => live && setDevices(d), () => undefined);
-    api.bots?.list().then((b) => live && setBots(b.map((x) => ({ id: x.id, name: x.name }))), () => undefined);
+    api.bots?.list().then((b) => live && setBots(b.map((x) => ({ id: x.id, name: plain(x.name) }))), () => undefined);
     void Promise.all([api.settings.get<SettingsValues["appearance"]>("appearance"), api.settings.get<SettingsValues["notifications"]>("notifications")]).then(
       ([appearance, notifications]) => live && setOwn({ ...(appearance ? { appearance } : {}), ...(notifications ? { notifications } : {}) }),
       () => undefined,
@@ -168,7 +169,7 @@ export function SettingsEntry({ props }: { props: SettingsEntryProps }) {
     notifications: own.notifications ?? { needsYou: true, agentDone: true, routineFailed: true, sounds: false },
     plugins: (loaded?.plugins ?? []).map((p) => ({
       id: p.id,
-      name: p.name,
+      name: plain(p.name),
       source: SOURCES[p.source],
       state: p.state,
       enabled: p.enabled,
@@ -185,7 +186,7 @@ export function SettingsEntry({ props }: { props: SettingsEntryProps }) {
       { id: "accept-edits", label: "Accept edits" },
       { id: "automatic", label: "Fully automatic" },
     ],
-    devices: devices.map((d) => ({ id: d.id, name: d.name, kind: d.kind, ...(d.isThis ? { here: true } : {}), ...(d.isMain ? { main: true } : {}) })),
+    devices: devices.map((d) => ({ id: d.id, name: d.name, kind: deviceKind(d), ...(d.isThis ? { here: true } : {}), ...(d.isMain ? { main: true } : {}) })),
     bots,
   };
 
@@ -200,8 +201,8 @@ export function SettingsEntry({ props }: { props: SettingsEntryProps }) {
       setOwn((o) => ({ ...o, notifications: next }));
       void api.settings.set("notifications", next);
     } else if (head === "theme" && typeof value === "string" && core) {
-      const [pluginId, id] = value.split("#");
-      if (pluginId && id) void core.call("ui.set", { patch: { globalTheme: { pluginId, id } } }).then(() => setRevision((r) => r + 1));
+      // A theme is `<plugin-id>#<theme-id>` (B's `ThemeRef`).
+      if (value.includes("#")) void core.call("ui.set", { patch: { globalTheme: value } }).then(() => setRevision((r) => r + 1));
     } else if (head === "plugins" && key && field === "enabled" && core) {
       void core.call("plugin.setEnabled", { id: key, enabled: value === true }).then(() => setRevision((r) => r + 1));
     }

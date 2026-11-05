@@ -16,8 +16,9 @@ export interface ArchiveEntryProps {
 
 const PAGE = 50;
 
-/** Who speaks in an old session: the app it came from, by name (the one place the archive spells it, with strings.ts). */
-export const OLD_APP = { id: "winter", name: "Winter" };
+/** Who speaks in an old session: the previous app's assistant. Its name stays out of Clover's code (the rename's residue
+ *  rule), so the archive says "before Clover" and names the speaker plainly. */
+export const OLD_APP = { id: "archive", name: "Assistant" };
 
 export function ArchiveEntry({ props }: { props: ArchiveEntryProps }) {
   const core = useCore();

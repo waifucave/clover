@@ -46,8 +46,9 @@ import * as shellClient from "../client/index";
 import { SPOT_DECLS } from "../runtime/catalog";
 import type { UiEntry } from "../runtime/resolve";
 import type {
-  BotView, CardMeta, ComputerView, CoreClient, CoreMethods, DeviceView, EntryComponent, PluginApi, PluginDetail, PluginSummary, PointEntry, SessionView,
+  BotView, CardMeta, ComputerView, CoreClient, CoreMethods, DeviceView, EntryComponent, PluginApi, PluginSummary, PointEntry, SessionView,
 } from "../runtime/types";
+import { card, computerView, deviceView, fakeApi, pluginDetail, pluginSummary } from "../runtime/testkit";
 import { runtimeWith, type UiRuntime } from "../runtime/ui";
 
 // -------------------------------------------------------------------------------------------------
@@ -171,22 +172,21 @@ export const SESSIONS: SessionView[] = [
 ];
 
 const COMPUTERS: ComputerView[] = [
-  { name: "Studio", device: "d1", os: "macos", level: "ask-risky", state: "online", link: "self", isMain: true, agents: ["agent-export"] },
-  { name: "Laptop", device: "d2", os: "macos", level: "ask", state: "online", link: "lan", isMain: false, agents: ["agent-lint"] },
-  { name: "Cloud computer", device: "d4", os: "linux", level: "automatic", state: "online", link: "relay", isMain: false, agents: [] },
+  computerView("Studio", { device: "dev_studio", level: "ask-risky", link: "self", isMain: true, agents: ["codex"] }),
+  computerView("Laptop", { device: "dev_laptop", level: "ask", link: "lan", agents: ["opencode"] }),
+  computerView("Cloud computer", { device: "dev_cloud", os: "linux", hasDisplay: false, level: "automatic", link: "relay" }),
 ];
 
 /** The devices, by the ids the conversation's fixtures use. */
 const DEVICE_IDS: Record<string, string> = { d1: "dev_studio", d2: "dev_laptop", d3: "dev_iphone" };
-const DEVICES: DeviceView[] = SETTINGS.devices.map((d, i) => ({ id: DEVICE_IDS[d.id] ?? d.id, name: d.name, kind: d.kind, runsCore: d.kind === "computer", online: true, isThis: d.here === true, isMain: d.main === true, addedAt: NOW - (i + 1) * 86_400_000 }));
+const DEVICES: DeviceView[] = SETTINGS.devices.map((d, i) =>
+  deviceView(DEVICE_IDS[d.id] ?? d.id, d.name, { kind: d.kind === "computer" ? "desktop" : d.kind === "web" ? "browser" : "phone", runsCore: d.kind === "computer", isThis: d.here === true, isMain: d.main === true, addedAt: NOW - (i + 1) * 86_400_000 }),
+);
 
 const SOURCE_OF: Record<string, PluginSummary["source"]> = { Bundled: "bundled", "From the plugin index": "index" };
-const dataPlugin = (id: string, name: string, source: PluginSummary["source"]): PluginSummary => ({ id, name, version: "1.0.0", state: "running", enabled: true, source, class: "data", adult: false, children: [], dev: false });
+const dataPlugin = (id: string, name: string, source: PluginSummary["source"]): PluginSummary => pluginSummary(id, name, { source, class: "data" });
 const PLUGINS: PluginSummary[] = [
-  ...SETTINGS.plugins.map((p) => ({
-    id: p.id, name: p.name, version: "1.0.0", state: p.state, enabled: p.enabled, ...(p.reason ? { reason: p.reason } : {}),
-    source: SOURCE_OF[p.source] ?? "local", class: "code" as const, adult: false, children: [], dev: false,
-  })),
+  ...SETTINGS.plugins.map((p) => pluginSummary(p.id, p.name, { state: p.state, enabled: p.enabled, ...(p.reason ? { reason: p.reason } : {}), source: SOURCE_OF[p.source] ?? "local" })),
   // The bot, the avatar packs and the theme the bot editor's screen shows.
   dataPlugin("alpha", "Alpha", "bundled"),
   dataPlugin("chibi-pack", "Chibi pack", "index"),
@@ -279,8 +279,7 @@ const coreHandlers: Handlers = {
   "plugin.get": ({ id }) => {
     const p = PLUGINS.find((x) => x.id === id);
     if (!p) throw new Error("not installed");
-    const detail: PluginDetail = { ...p, provenance: { by: "user-app", at: NOW }, ...(CAPABILITIES[id] ?? { capabilities: [], networkHosts: [] }), logTail: [] };
-    return { plugin: detail };
+    return { plugin: pluginDetail(p, { provenance: { by: "user-app", at: NOW }, ...(CAPABILITIES[id] ?? {}) }) };
   },
   "plugin.setEnabled": () => ({ applied: true }),
   "plugin.logs": () => ({ lines: LOG_LINES }),
@@ -294,7 +293,7 @@ const coreHandlers: Handlers = {
   "plugin.index.list": () => ({ indexes: INDEXES }),
   "plugin.index.search": ({ query }) => ({ entries: INDEX_ENTRIES.filter((e) => !query || `${e.id} ${e.name ?? ""} ${e.description ?? ""}`.toLowerCase().includes(query.toLowerCase())) }),
   "plugin.install": ({ source }) => ({ id: source.id, state: "found" }),
-  "ui.settings": () => ({ picks: [], lists: [], language: "en-US", globalTheme: { pluginId: "clover/base-theme", id: "base" } }),
+  "ui.settings": () => ({ picks: [], lists: [], language: "en-US", globalTheme: "clover/base-theme#base" }),
   "ui.set": () => ({ applied: true }),
   // A sensitive change comes back as a card the core raises (`raise` below adds it to the world's cards).
   "computer.setLevel": () => ({ applied: false, card: "card-level" }),
@@ -339,7 +338,7 @@ export function world(options: WorldOptions = {}): UiRuntime {
   const listeners = new Set<() => void>();
   const raise = (id: string) => {
     if (cards.some((c) => c.id === id)) return;
-    cards = [...cards, { id, kind: "change", computer: "Studio", options: [{ id: "approve", kind: "approve" }, { id: "deny", kind: "deny" }] }];
+    cards = [...cards, card(id, { issuedAt: NOW })];
     for (const l of listeners) l();
   };
   const sessions = SESSIONS.map((s) => (transcripts[s.id]?.running ? { ...s, status: "prompting" as const } : s));
@@ -379,12 +378,11 @@ export function world(options: WorldOptions = {}): UiRuntime {
     const points: Record<string, PointEntry[]> = {
       "avatar.packs": AVATARS.map((a) => ({ pluginId: a.id.split("#")[0]!, entryId: a.id.split("#")[1]!, value: { id: a.id.split("#")[1]!, name: a.name, file: a.file, format: a.format, ...(a.portraitUrl ? { portrait: a.portraitUrl } : {}) } })),
     };
+    const base = fakeApi({ pluginId, computer: "Studio" });
     return {
-      plugin: { id: pluginId, computer: "Studio" },
-      t: (key) => key,
+      ...base,
       settings: { get: () => later(undefined), set: () => later(undefined), watch: () => () => undefined },
-      commands: { run: () => fail("no commands in the gallery") },
-      points: { entries: <T,>(point: string) => later((points[point] ?? []) as PointEntry<T>[]), watch: () => () => undefined },
+      points: { ...base.points, entries: <T,>(point: string) => later((points[point] ?? []) as PointEntry<T>[]) },
       ...(has("bots.read") ? { bots: { list: () => later(BOTS), get: (id: string) => (BOTS.find((b) => b.id === id) ? later(BOTS.find((b) => b.id === id)!) : fail("no bot")), watch: () => () => undefined } } : {}),
       ...(has("conversation.read")
         ? {
@@ -417,6 +415,12 @@ export function world(options: WorldOptions = {}): UiRuntime {
               list: (path: string) => later((LISTING[path] ?? []).map((e) => ({ path: e.path, type: e.type, size: 1, modifiedAt: NOW, executable: false }))),
               readText: (path: string) => later(path === OPEN_FILE.path ? OPEN_FILE.text : ""),
               grep: () => later({ matches: [], truncated: false }),
+              stat: () => later(null),
+              readBytes: () => fail("the gallery reads text only"),
+              write: () => fail("the gallery's folder is read only"),
+              remove: () => fail("the gallery's folder is read only"),
+              move: () => fail("the gallery's folder is read only"),
+              glob: () => later({ paths: [], truncated: false }),
             },
           }
         : {}),
@@ -428,7 +432,7 @@ export function world(options: WorldOptions = {}): UiRuntime {
                 terminals.set(id, 0);
                 return later({ terminalId: id });
               },
-              write: () => later(undefined),
+              input: () => later(undefined),
               onData: (_id: string, fn: (data: string) => void) => {
                 // The PTY's first output: the feed the terminal's own stories show.
                 void later(undefined).then(() => fn(FEED.map((c) => c.text).join("")));
@@ -467,4 +471,5 @@ export function world(options: WorldOptions = {}): UiRuntime {
 }
 
 /** A card waiting in a session, as plugins hear of it. */
-export const waitingCard = (id: string, session?: string): CardMeta => ({ id, kind: "tool", computer: "Studio", ...(session ? { session } : {}), options: [{ id: "allow_once", kind: "approve" }, { id: "allow_always", kind: "approve", remember: "always" }, { id: "deny", kind: "deny" }] });
+export const waitingCard = (id: string, session?: string): CardMeta =>
+  card(id, { kind: "tool", issuedAt: NOW, ...(session ? { session } : {}), options: [{ id: "allow_once", kind: "approve" }, { id: "allow_always", kind: "approve", remember: "always" }, { id: "deny", kind: "deny" }] });

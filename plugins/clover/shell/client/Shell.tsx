@@ -17,6 +17,7 @@ import { belongsIn, PanelToggles, toggleView, VIEWS_BY_KIND } from "./PanelToggl
 import type { PanelView } from "./panel-types";
 import { Spot, useApprovals, usePluginApi, useSpotEntries } from "./sdk";
 import { S } from "./strings";
+import { plain } from "../runtime/views";
 import { Window } from "./Window";
 
 /** What `main` shows: B's `main` props (`route`, `params`). */
@@ -71,7 +72,7 @@ export function Shell({ props }: EntryProps<ShellProps>) {
   const shown = dialog ? under : route;
   const sessions = useLoad(() => api.conversation?.list?.() ?? Promise.resolve([] as SessionView[]), [api, tabKey(shown)]);
   const bot = shown?.route === "bot" ? bots?.find((b) => b.id === shown.params.bot) : undefined;
-  const botRef: BotRef | undefined = bot ? { id: bot.id, name: bot.name } : undefined;
+  const botRef: BotRef | undefined = bot ? { id: bot.id, name: plain(bot.name) } : undefined;
   const session = shown?.route === "agent" ? sessions?.find((s) => s.id === shown.params.session) : undefined;
   const kind: SessionKind | undefined = shown?.route === "bot" ? "bot" : shown?.route === "agent" ? (session?.kind ?? "agent") : undefined;
   const tabSession = bot?.mainSession ?? session?.id;
@@ -100,10 +101,10 @@ export function Shell({ props }: EntryProps<ShellProps>) {
   const appButtons = useSpotEntries("sidebar.app").entries;
   const title = (() => {
     if (!shown) return "";
-    if (shown.route === "bot") return bot?.name ?? "";
+    if (shown.route === "bot") return plain(bot?.name);
     if (shown.route === "agent") return session?.title ?? S.views.agent!;
     if (shown.route === "plugins") return S.plugins;
-    if (shown.route === "bot-editor") return S.editBot(bots?.find((b) => b.id === shown.params.bot)?.name ?? "");
+    if (shown.route === "bot-editor") return S.editBot(plain(bots?.find((b) => b.id === shown.params.bot)?.name));
     const app = appButtons.find((e) => e.fields?.opens === shown.route);
     return typeof app?.fields?.title === "string" ? app.fields.title : shown.route;
   })();

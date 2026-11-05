@@ -1,11 +1,12 @@
 // The terminal on the runtime: the `panel` entry keyed `terminal`, for coding sessions only (`when.session: "coding"`).
 // It opens a shell on the computer that holds the session's folder, in that folder, through the plugin API's
-// `terminal` (lane J's PTY; B's `TerminalApi`), shows each terminal's output, and sends what the user types. A paste
-// goes whole, marked as one (`paste: true`), so the core brackets it and asks before several lines run. Its tabs sit in
-// the panel's header row.
+// `terminal` (lane J's PTY; B's `TerminalApi`), shows each terminal's output, and hands each key press and paste to
+// `input` as the trusted event itself: the app's runtime derives the bytes, brackets a paste and asks before one of
+// several lines runs. Its tabs sit in the panel's header row.
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { TerminalPanel, TerminalTabs } from "./TerminalPanel";
+import type { TerminalInputEvent } from "../../shell/runtime/types";
 import { usePluginApi } from "./sdk";
 import type { TerminalChunk, TerminalTab } from "./types";
 
@@ -79,8 +80,7 @@ export function TerminalEntry({ props }: { props: TerminalEntryProps }) {
         tabs={tabs}
         active={active}
         chunks={chunks[active] ?? []}
-        onInput={(data) => void term?.write(active, data)}
-        onPaste={(text) => void term?.write(active, text, { paste: true })}
+        onEvent={(event) => void term?.input(active, event as unknown as TerminalInputEvent)}
       />
     </>
   );

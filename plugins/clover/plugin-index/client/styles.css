@@ -102,7 +102,7 @@
 }
 
 .cl-plugin-index__install {
-  background: var(--clover-color-accent);
+  background: var(--clover-color-accent-fill);
   color: var(--clover-color-accent-contrast);
 }
 

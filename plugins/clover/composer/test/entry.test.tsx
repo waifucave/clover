@@ -1,7 +1,7 @@
 // The composer on the runtime: sends, stops, model and level changes through the core.
 import { afterEach, describe, expect, test } from "bun:test";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { card, fakeApi, fakeApprovals, fakeCore, settle } from "../../shell/runtime/testkit";
+import { card, computerView, fakeApi, fakeApprovals, fakeCore, settle } from "../../shell/runtime/testkit";
 import type { BotView, ComputerView, EntryComponent, SessionView } from "../../shell/runtime/types";
 import { runtimeWith } from "../../shell/runtime/ui";
 import { ComposerEntry } from "../client/entry";
@@ -10,7 +10,7 @@ import { UiRuntimeProvider } from "../client/sdk";
 afterEach(cleanup);
 
 const ALPHA: BotView = { id: "alpha", name: "Alpha", model: "openai/gpt-6", effort: "medium", userLayer: [], state: "idle", computer: "Studio", mainSession: "s_alpha" };
-const STUDIO: ComputerView = { name: "Studio", device: "d1", os: "macos", level: "ask-risky", state: "online", link: "self", isMain: true, agents: [] };
+const STUDIO: ComputerView = computerView("Studio", { device: "d1", level: "ask-risky", link: "self", isMain: true });
 const session = (extra: Partial<SessionView>): SessionView => ({ id: "s_alpha", kind: "bot", bot: "alpha", computer: "Studio", status: "idle", startedAt: 0, updatedAt: 0, ...extra });
 
 async function mount(s: SessionView = session({}), opts: { level?: "applied" | "card"; entries?: Parameters<typeof runtimeWith>[0]["entries"]; component?: EntryComponent } = {}) {

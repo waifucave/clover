@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { manifestFindings } from "../../shell/runtime/manifest-check";
 
 const root = join(import.meta.dir, "..");
 const manifest = JSON.parse(readFileSync(join(root, "clover.json"), "utf8"));
@@ -52,5 +53,9 @@ describe("clover.json (spec §5.9, format 1)", () => {
         expect([name, typeof (decl as { props?: unknown }).props]).toEqual([name, "object"]);
       }
     }
+  });
+
+  test("lane B's validator finds nothing it would report, loaded as a bundled part of clover", () => {
+    expect(manifestFindings(root)).toEqual([]);
   });
 });

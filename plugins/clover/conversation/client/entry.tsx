@@ -15,6 +15,7 @@ import { useEffect, useMemo, useState, type ComponentType, type ReactNode } from
 import { ConversationView, DEFAULT_RENDERERS, type MessageRenderers } from "./ConversationView";
 import type { MessageSpotProps } from "./context";
 import { project, type CoreEvent } from "./project";
+import { plain } from "../../shell/runtime/views";
 import { Spot, useCore, usePluginApi } from "./sdk";
 import type { ConversationItem, QuestionAnswer, SharedTime } from "./types";
 
@@ -126,7 +127,7 @@ function useNames(api: ReturnType<typeof usePluginApi>): { names: Record<string,
     ]).then(([bots, sessions, devices]) => {
       if (!live) return;
       const out: Record<string, string> = {};
-      for (const b of bots) out[`bot:${b.id}`] = b.name;
+      for (const b of bots) out[`bot:${b.id}`] = plain(b.name);
       for (const s of sessions) out[`agent:${s.id}`] = s.backend ?? s.title ?? s.id;
       for (const d of devices) out[`device:${d.id}`] = d.name;
       const here = devices.find((d) => d.isThis);

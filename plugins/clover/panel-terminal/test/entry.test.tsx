@@ -24,7 +24,7 @@ describe("the terminal entry", () => {
           opens.push(o);
           return { terminalId: `t${++n}` };
         },
-        write: async (id, data, opts) => void writes.push([id, data, opts]),
+        input: async (id, event) => void writes.push([id, event.type, (event as unknown as KeyboardEvent).key ?? null]),
         onData: (id, fn) => {
           feeds.set(id, fn);
           return () => feeds.delete(id);
@@ -46,7 +46,8 @@ describe("the terminal entry", () => {
     expect(screen.getByRole("log").textContent).toContain("$ bun test");
     fireEvent.keyDown(screen.getByRole("log"), { key: "l" });
     fireEvent.paste(screen.getByRole("log"), { clipboardData: { getData: () => "echo a\necho b\n" } });
-    expect(writes).toEqual([["t1", "l", undefined], ["t1", "echo a\necho b\n", { paste: true }]]);
+    // Each goes as the event itself: the runtime derives the bytes from a trusted one.
+    expect(writes).toEqual([["t1", "keydown", "l"], ["t1", "paste", null]]);
     // Its tabs sit in the panel's header row.
     expect(header.querySelector('[role="tab"]')?.textContent).toBe("Laptop 1");
     fireEvent.click(header.querySelector('[aria-label="New terminal"]')!);

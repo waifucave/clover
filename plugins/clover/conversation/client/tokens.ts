@@ -9,6 +9,7 @@ export const CATALOG_TOKENS = [
   "bubble.user.background",
   "color.accent",
   "color.accent.contrast",
+  "color.accent.fill",
   "color.accent.soft",
   "color.accent.text",
   "color.attention.text",

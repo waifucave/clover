@@ -5,6 +5,7 @@
 // a card waits on it, and the field says so.
 import { useEffect, useState } from "react";
 import type { AvatarPackEntry, BotView, CoreClient, PointEntry } from "../../shell/runtime/types";
+import { plain } from "../../shell/runtime/views";
 import { BotEditor } from "./BotEditor";
 import { useApprovals, useCore, usePluginApi } from "./sdk";
 import type { AvatarChoice, BotEditorModel, BotField, BotPatch } from "./types";
@@ -34,7 +35,7 @@ const PLAIN_THEME_PLUGIN = "clover/base-theme";
 async function themesOf(core: CoreClient | undefined): Promise<{ id: string; name: string }[]> {
   if (!core) return [];
   const [ui, list] = await Promise.all([core.call("plugin.ui", {}).catch(() => undefined), core.call("plugin.list", {}).catch(() => undefined)]);
-  const name = (id: string) => (id === PLAIN_THEME_PLUGIN ? "Plain" : (list?.plugins.find((p) => p.id === id)?.name ?? id));
+  const name = (id: string) => (id === PLAIN_THEME_PLUGIN ? "Plain" : plain(list?.plugins.find((p) => p.id === id)?.name) || id);
   return (ui?.plugins ?? []).flatMap((p) => p.themes.map((t) => ({ id: `${p.pluginId}#${t.id}`, name: p.themes.length > 1 ? `${name(p.pluginId)}: ${t.id}` : name(p.pluginId) })));
 }
 
@@ -74,7 +75,7 @@ export function BotEditorEntry({ props }: { props: BotEditorEntryProps }) {
       }));
     void Promise.all([api.points.entries<AvatarPackEntry>("avatar.packs").catch(() => []), core?.call("plugin.list", {}).catch(() => undefined)]).then(([entries, list]) => {
       if (!live) return;
-      const names = Object.fromEntries((list?.plugins ?? []).map((p) => [p.id, p.name]));
+      const names = Object.fromEntries((list?.plugins ?? []).map((p) => [p.id, plain(p.name)]));
       setAvatars(toChoices(entries, names));
     });
     const stop = api.points.watch<AvatarPackEntry>("avatar.packs", (entries) => setAvatars(toChoices(entries, {})));
@@ -102,7 +103,7 @@ export function BotEditorEntry({ props }: { props: BotEditorEntryProps }) {
 
   return (
     <BotEditor
-      bot={{ id: bot.id, name: bot.name, ...(bot.portrait ? { portraitUrl: bot.portrait } : {}) }}
+      bot={{ id: bot.id, name: plain(bot.name), ...(bot.portrait ? { portraitUrl: bot.portrait } : {}) }}
       own={bot.userLayer}
       model={{ value: bot.model, ...(bot.effort ? { effort: bot.effort } : {}), models }}
       {...(bot.voice ? { voice: bot.voice } : {})}

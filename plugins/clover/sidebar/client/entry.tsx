@@ -8,6 +8,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import type { BotView, SessionView } from "../../shell/runtime/types";
 import { isCloverTree } from "../../shell/runtime/ui";
+import { plain } from "../../shell/runtime/views";
 import { Sidebar } from "./Sidebar";
 import { Spot, useCore, useSpotEntries, usePluginApi } from "./sdk";
 import type { AgentStatus, AppGlyph, BotStatus, SidebarApp, SidebarBot, SidebarProject, SidebarRoute, SidebarSide } from "./types";
@@ -125,7 +126,7 @@ export function SidebarEntry({ props }: { props: SidebarEntryProps }) {
     const agents = sessions.filter((s) => s.kind === "agent" && (s.parent === b.mainSession || s.bot === b.id));
     return {
       id: b.id,
-      name: b.name,
+      name: plain(b.name),
       ...(b.portrait ? { portraitUrl: b.portrait } : {}),
       state: botStatus(b, main),
       ...(main?.needsYou ? { needsYou: main.needsYou } : {}),

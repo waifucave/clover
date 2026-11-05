@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { fakeCore, settle } from "../../shell/runtime/testkit";
 import { runtimeWith } from "../../shell/runtime/ui";
+import { plain } from "../../shell/runtime/views";
 import { PluginIndexEntry, toResults } from "../client/entry";
 import { UiRuntimeProvider } from "../client/sdk";
 import { ENTRIES, INDEXES, NOW } from "../gallery/fixtures";
@@ -11,7 +12,7 @@ afterEach(cleanup);
 async function mount(params: { spot?: string; key?: string } = {}, installState: "found" | "running" = "found") {
   const core = fakeCore({
     "plugin.index.list": () => ({ indexes: INDEXES }),
-    "plugin.index.search": ({ query }) => ({ entries: ENTRIES.filter((e) => !query || e.id.includes(query) || (e.name ?? "").toLowerCase().includes(query.toLowerCase())) }),
+    "plugin.index.search": ({ query }) => ({ entries: ENTRIES.filter((e) => !query || e.id.includes(query) || plain(e.name).toLowerCase().includes(query.toLowerCase())) }),
     "plugin.install": ({ source }) => (source.id === "terminal-plus" ? Promise.reject(new Error("hash mismatch")) : { id: source.id, state: installState }),
   });
   const routes: unknown[] = [];

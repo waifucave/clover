@@ -1,7 +1,7 @@
 // The sidebar on the runtime: bots, coding projects and app buttons from the API, and routes to the shell.
 import { afterEach, describe, expect, test } from "bun:test";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
-import { fakeApi, fakeCore, settle } from "../../shell/runtime/testkit";
+import { computerView, fakeApi, fakeCore, settle } from "../../shell/runtime/testkit";
 import type { BotView, EntryComponent, SessionView } from "../../shell/runtime/types";
 import { runtimeWith } from "../../shell/runtime/ui";
 import { agentStatus, botStatus, SidebarEntry, toShellRoute, toSidebarRoute, type ShellRoute } from "../client/entry";
@@ -27,7 +27,7 @@ async function mount(route: ShellRoute = { route: "bot", params: { bot: "alpha" 
   const api = fakeApi({
     bots: { list: async () => BOTS, get: async (id) => BOTS.find((b) => b.id === id)!, watch: () => () => undefined },
     conversation: { list: async () => SESSIONS },
-    computers: { list: async () => [{ name: "Studio", device: "d1", os: "macos", level: "ask", state: "online", link: "self", isMain: true, agents: [] }] },
+    computers: { list: async () => [computerView("Studio", { device: "d1", level: "ask", link: "self", isMain: true })] },
   });
   const routes: ShellRoute[] = [];
   const runtime = runtimeWith({

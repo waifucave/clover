@@ -5,6 +5,7 @@
 // and `params.key` say what the user is looking for, and the first search is for the key.
 import { useEffect, useState } from "react";
 import type { CoreClient, IndexEntryView, IndexView } from "../../shell/runtime/types";
+import { plain } from "../../shell/runtime/views";
 import { PluginIndex } from "./PluginIndex";
 import { useCore } from "./sdk";
 import type { IndexResult, InstallState } from "./types";
@@ -31,8 +32,8 @@ export function toResults(entries: IndexEntryView[], indexes: IndexView[]): Inde
       index: e.index,
       indexName: index?.name ?? e.index,
       official: index?.official ?? false,
-      name: e.name ?? e.id,
-      ...(e.description ? { description: e.description } : {}),
+      name: plain(e.name) || e.id,
+      ...(e.description ? { description: plain(e.description) } : {}),
       ...(version ? { version } : {}),
       ...(e.installed ? { installed: e.installed } : {}),
       ...(e.adult ? { adult: true } : {}),

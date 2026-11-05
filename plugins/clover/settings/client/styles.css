@@ -325,7 +325,7 @@
 
 .cl-settings__switch[aria-checked="true"] {
   justify-content: flex-end;
-  background: var(--clover-color-accent);
+  background: var(--clover-color-accent-fill);
 }
 
 .cl-settings__knob {

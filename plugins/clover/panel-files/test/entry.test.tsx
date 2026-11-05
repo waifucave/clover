@@ -1,7 +1,7 @@
 // The files on the runtime: the session's folder and nothing outside it, through the plugin API's `files`.
 import { afterEach, describe, expect, test } from "bun:test";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
-import { fakeApi, settle } from "../../shell/runtime/testkit";
+import { fakeApi, fakeFiles, settle } from "../../shell/runtime/testkit";
 import type { FileStat, SessionView } from "../../shell/runtime/types";
 import { runtimeWith } from "../../shell/runtime/ui";
 import { FilesEntry, inside } from "../client/entry";
@@ -20,7 +20,7 @@ describe("the files entry", () => {
     let stopped = false;
     const api = fakeApi({
       conversation: { get: async () => CODE },
-      files: {
+      files: fakeFiles({
         list: async (path) => {
           listed.push(path);
           return (LISTING[path] ?? []).map((e) => stat(e.path, e.type));
@@ -31,7 +31,7 @@ describe("the files entry", () => {
           fire = fn;
           return () => void (stopped = true);
         },
-      },
+      }),
     });
     const { unmount } = render(
       <UiRuntimeProvider runtime={runtimeWith({ api: () => api })}>
@@ -67,7 +67,7 @@ describe("the files entry", () => {
     const read: string[] = [];
     const api = fakeApi({
       conversation: { get: async () => CODE },
-      files: {
+      files: fakeFiles({
         list: async (path) => {
           listed.push(path);
           // A listing that strays outside the folder is cut back to it.
@@ -78,7 +78,7 @@ describe("the files entry", () => {
           return path === OPEN_FILE.path ? OPEN_FILE.text : "# README";
         },
         grep: async () => ({ matches: [{ path: `${ROOT}/docs/clover-spec.md`, line: 12, text: "  the panel host" }, { path: "home/Studio/other/x.md", line: 1, text: "outside" }], truncated: false }),
-      },
+      }),
     });
     const header = document.createElement("div");
     document.body.append(header);

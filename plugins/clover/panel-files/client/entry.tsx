@@ -7,6 +7,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { FilesPanel, FilesTitle } from "./FilesPanel";
+import type { FilesWithWatch } from "../../shell/runtime/types";
 import { usePluginApi } from "./sdk";
 import type { FileEntry } from "./types";
 
@@ -26,7 +27,7 @@ export const inside = (root: string, path: string) => path === root || path.star
 
 export function FilesEntry({ props }: { props: FilesEntryProps }) {
   const api = usePluginApi();
-  const files = api.files;
+  const files = api.files as FilesWithWatch | undefined;
   const [where, setWhere] = useState<{ root: string; computer: string } | undefined>(undefined);
   const [listing, setListing] = useState<Record<string, FileEntry[]>>({});
   const [open, setOpen] = useState<{ path: string; text: string } | undefined>(undefined);

@@ -15,7 +15,8 @@
 import type { ReactNode } from "react";
 import { entryRef, resolveSpot, type Resolved, type SpotContext, type SpotDecl, type UiEntry } from "./resolve";
 import type {
-  CardMeta, CoreClient, EntryComponent, EntryRef, PluginApi, SessionKind, SpotElementProps, TokenValue, UiSettings, Unsubscribe,
+  AppViewProps, CardButtonProps, CardElementProps, CardFieldProps, CardMeta, CoreClient, EntryComponent, EntryRef, PluginApi, SessionKind, SpotElementProps, TokenValue, UiApi, UiSettings,
+  Unsubscribe,
 } from "./types";
 
 /** The parts of React this file uses. Structural, so a part with its own copy of React's types can pass its React. */
@@ -28,24 +29,20 @@ export interface ReactLike {
   useState<S>(initial: S): [S, (next: S | ((prev: S) => S)) => void];
 }
 
-/** Every sealed field a card may have, in B's order (`CARD_FIELD_NAMES`). */
-export const SEALED_FIELDS = ["title", "what", "command", "computer", "risk", "reason", "source", "host", "paths", "detail", "expires"] as const;
-export type SealedField = (typeof SEALED_FIELDS)[number];
+/** Every sealed field a card may have, in B's order (`CARD_FIELD_NAMES`; the stand-in keeps no runtime import). */
+export type SealedField = CardFieldProps["name"];
+export const SEALED_FIELDS: readonly SealedField[] = ["title", "what", "command", "computer", "risk", "reason", "source", "host", "paths", "detail", "expires"];
 
-export interface CardButtonProps {
-  option?: string;
-  look?: "label" | "check" | "cross" | "open";
-  size?: number;
-  className?: string;
-}
+export type { CardButtonProps };
+
 
 /** What draws sealed frames and MCP Apps pages: the core's own frames in the app, a mock in the gallery. */
 export interface SealedRenderers {
   Card(props: { id: string; children: ReactNode; className?: string }): ReactNode;
-  CardField(props: { name: SealedField; lines?: number; className?: string }): ReactNode;
+  CardField(props: CardFieldProps): ReactNode;
   CardApprove(props: CardButtonProps): ReactNode;
   CardDeny(props: CardButtonProps): ReactNode;
-  AppView(props: { call: { session: string; callId: string }; className?: string }): ReactNode;
+  AppView(props: AppViewProps): ReactNode;
 }
 
 /** What a host (the app's plugin runtime; here the gallery or a test) hands the parts. */
@@ -90,8 +87,8 @@ const fill = (text: string, params?: Record<string, string | number>) => (params
 
 export interface Ui {
   Spot(props: SpotElementProps): ReactNode;
-  Card: ((props: { id: string; children?: ReactNode; className?: string }) => ReactNode) & {
-    Field(props: { name: SealedField; lines?: number; className?: string }): ReactNode;
+  Card: ((props: CardElementProps) => ReactNode) & {
+    Field(props: CardFieldProps): ReactNode;
     Approve(props: CardButtonProps): ReactNode;
     Deny(props: CardButtonProps): ReactNode;
   };
@@ -176,12 +173,12 @@ export function uiFor(react: ReactLike): Ui {
 
   const unavailable = () => createElement("div", { "data-sealed-unavailable": "" }, "This approval card can only show in Clover's own window.");
 
-  function CardRoot(props: { id: string; children?: ReactNode; className?: string }): ReactNode {
+  function CardRoot(props: CardElementProps): ReactNode {
     const sealed = useRuntime()?.sealed;
-    return sealed ? sealed.Card({ ...props, children: props.children }) : unavailable();
+    return sealed ? sealed.Card({ ...props, children: props.children as ReactNode }) : unavailable();
   }
   const Card = Object.assign(CardRoot, {
-    Field: (props: { name: SealedField; lines?: number; className?: string }): ReactNode => useRuntime()?.sealed?.CardField(props) ?? null,
+    Field: (props: CardFieldProps): ReactNode => useRuntime()?.sealed?.CardField(props) ?? null,
     Approve: (props: CardButtonProps): ReactNode => useRuntime()?.sealed?.CardApprove(props) ?? null,
     Deny: (props: CardButtonProps): ReactNode => useRuntime()?.sealed?.CardDeny(props) ?? null,
   });
@@ -233,3 +230,7 @@ export function uiFor(react: ReactLike): Ui {
   built.set(react, ui);
   return ui;
 }
+
+/** The stand-in is lane B's `UiApi` (checked here), with `<Spot>` taking `spotKey` for B's `key` and the extras the
+ *  parts need (see `SpotElementProps`), plus `useCore`, `useEntry`, `useSpotEntries` and a provider for hosts. */
+export const asUiApi = (ui: Ui): Omit<UiApi, "Spot"> & { Spot(props: SpotElementProps): ReactNode } => ui;

@@ -3,7 +3,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import type { ReactNode } from "react";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { fakeApi, fakeCore, settle } from "../../shell/runtime/testkit";
+import { computerView, fakeApi, fakeCore, settle } from "../../shell/runtime/testkit";
 import type { SessionView } from "../../shell/runtime/types";
 import { runtimeWith } from "../../shell/runtime/ui";
 import { BotColumn, SessionColumn } from "../client/entry";
@@ -30,7 +30,7 @@ function mount(node: (navigate: (r: unknown) => void, open: (id: string) => void
   });
   const api = fakeApi({
     conversation: { get: async (id) => SESSIONS.find((x) => x.id === id)!, list: async () => SESSIONS },
-    computers: { list: async () => [{ name: "Studio", device: "d1", os: "macos", level: "ask-risky", state: "online", link: "self", isMain: true, agents: [] }] },
+    computers: { list: async () => [computerView("Studio", { device: "d1", level: "ask-risky", link: "self", isMain: true })] },
   });
   const routes: unknown[] = [];
   const opened: string[] = [];
