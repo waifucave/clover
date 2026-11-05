@@ -2,7 +2,7 @@
 // hand. Pair the host with a FakeApprovalBroker (or anything with `withdrawSession` and `cancelSession`) to see cards
 // withdrawn on an interrupt and cancelled on a stop.
 import { randomBytes } from "node:crypto";
-import type { SessionStatus, SessionView, TurnOrigin } from "@waifucave/clover-protocol";
+import { clampSentAt, type SessionStatus, type SessionView, type TurnOrigin } from "@waifucave/clover-protocol";
 import type { ApprovalBroker } from "../approval-broker";
 import { compareStamps, type Clock } from "../clock";
 import { ContractError, Listeners, type Unsubscribe } from "../common";
@@ -79,7 +79,7 @@ export class FakeSessionHost implements SessionHost {
     const s = this.#live(id);
     if (s.asleep) throw new ContractError("bot_asleep", "can't reach the computer running this bot; the draft is kept");
     if (s.view.kind === "side-thread") throw new ContractError("refused", "a side thread takes no messages from the user");
-    const full: UserInput = { from: "user", ...input };
+    const full: UserInput = { from: "user", ...input, sentAt: clampSentAt(input.sentAt, this.#clock.now()) };
     if (s.running && s.view.kind === "bot") {
       this.#record(s, { type: "input", input: full, disposition: "interrupted" });
       // Ahead of anything else waiting; among the user's own waiting messages, in send order.

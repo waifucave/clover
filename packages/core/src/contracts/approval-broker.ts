@@ -40,7 +40,7 @@ import {
   type ChangeSubject, type CloverRole, type DeviceKind, type Level, LEVELS, type SealedValue, type SignedCardAnswer,
   type CardContent, type TurnOrigin, answerTimeOk, callBindingInput, cardAnswerSigningInput, cardContentInput, cardHashInput, isUserTurn,
 } from "@waifucave/clover-protocol";
-import type { Unsubscribe } from "./common";
+import { fromBase64, type Unsubscribe } from "./common";
 import { mayAnswerCards, type DeviceRegistry } from "./device-registry";
 
 /** The kinds that are always cards and never offer "always" (rule 1). */
@@ -273,14 +273,6 @@ export function cardMetaOf(card: Card): CardMeta {
 /** What a verifier needs of the device registry. */
 /** The device registry, as the answer checks use it: the record and the answer key's signature check. */
 export type AnswerDevices = Pick<DeviceRegistry, "get" | "verifyAnswer">;
-
-function fromBase64(text: string): Uint8Array | null {
-  try {
-    return Uint8Array.from(atob(text), (c) => c.charCodeAt(0));
-  } catch {
-    return null;
-  }
-}
 
 /** Builds the verifier for device answers: the signing device may answer cards (`mayAnswerCards`), and its answer
  *  key's Ed25519 signature covers `cardAnswerSigningInput` with the option and children. The signature holds end to

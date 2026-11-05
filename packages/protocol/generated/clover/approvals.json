@@ -76,7 +76,8 @@
                     "routine",
                     "task-notification",
                     "agent",
-                    "plugin"
+                    "plugin",
+                    "peer"
                   ]
                 },
                 "issuedAt": {
@@ -469,7 +470,8 @@
                   "routine",
                   "task-notification",
                   "agent",
-                  "plugin"
+                  "plugin",
+                  "peer"
                 ]
               },
               "issuedAt": {
@@ -878,7 +880,8 @@
                     "routine",
                     "task-notification",
                     "agent",
-                    "plugin"
+                    "plugin",
+                    "peer"
                   ]
                 },
                 "issuedAt": {
@@ -1232,7 +1235,8 @@
                   "routine",
                   "task-notification",
                   "agent",
-                  "plugin"
+                  "plugin",
+                  "peer"
                 ]
               },
               "issuedAt": {
@@ -1612,7 +1616,8 @@
                   "routine",
                   "task-notification",
                   "agent",
-                  "plugin"
+                  "plugin",
+                  "peer"
                 ]
               },
               "issuedAt": {

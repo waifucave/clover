@@ -127,3 +127,12 @@ export function isInside(path: string, root: string): boolean {
   const r = normalizePosix(root);
   return p === r || p.startsWith(r === "/" ? "/" : `${r}/`);
 }
+
+/** Base64 to bytes; null for text that isn't base64. */
+export function fromBase64(text: string): Uint8Array | null {
+  try {
+    return Uint8Array.from(atob(text), (c) => c.charCodeAt(0));
+  } catch {
+    return null;
+  }
+}

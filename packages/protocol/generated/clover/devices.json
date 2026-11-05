@@ -1235,7 +1235,8 @@
                       "routine",
                       "task-notification",
                       "agent",
-                      "plugin"
+                      "plugin",
+                      "peer"
                     ]
                   },
                   "issuedAt": {
@@ -1590,7 +1591,7 @@
       }
     },
     "peer.session.send": {
-      "doc": "A user's message from another device, already stamped in shared time, for a bot that thinks here (§6.4).",
+      "doc": "A user's message from another device, for a bot that thinks here (§6.4). The receiver verifies the sending device's signature over the session, message id, message hash and send time; without a good one the turn it starts isn't the user's (review N3).",
       "owner": "D",
       "direction": "to-daemon",
       "roles": [
@@ -1669,6 +1670,11 @@
                 "type": "integer",
                 "minimum": 0,
                 "maximum": 9007199254740991
+              },
+              "signature": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256
               }
             },
             "required": [
@@ -1855,7 +1861,7 @@
       }
     },
     "sync.push": {
-      "doc": "Appends entries; a stale base is refused, as the inherited phone sync refuses one (`ipc/sync.ts`).",
+      "doc": "Appends entries; a stale base is refused, as the inherited phone sync refuses one (`ipc/sync.ts`). An entry that grants something (`PEER_STREAM_GRANTS`) waits for this computer's own card or a bound signed answer (review N7).",
       "owner": "H",
       "direction": "to-daemon",
       "roles": [

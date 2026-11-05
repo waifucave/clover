@@ -6,7 +6,8 @@ import {
   AREA_EVENTS, AREA_METHODS, CLOVER_AREAS, CLOVER_EVENTS, CLOVER_METHODS, CloverCoreEvent,
   PEER_CALL_ROLES, allowedEvents, allowedMethods, daemonRequestsTo, decodeCloverCoreEvent, peerCallVerdict, pluginMayCall,
 } from "../src/clover";
-import { CloverSessionEvent } from "../src/sessions";
+import { CloverSessionEvent, SENT_AT_WINDOW_MS, clampSentAt, userMessageHashInput, userMessageSigningInput } from "../src/sessions";
+import { Caller as CallerSchema } from "../src/common";
 import {
   AnyPluginId, Caller, ComputerName, LANES, LEVELS, TopPluginId, TreePath, isAnyPluginId, isPluginId, levelAbove,
   pluginIdFromSegment, pluginIdToSegment, topPluginIdOf,
@@ -379,5 +380,27 @@ describe("the browser's DevTools domains", () => {
     for (const url of ["https://a.example/", "http://127.0.0.1:8080/", "about:blank", "about:srcdoc", "data:text/html,hi", "blob:https://a.example/1"]) {
       expect([url, isBrowserUrlAllowed(url)]).toEqual([url, true]);
     }
+  });
+});
+
+describe("relayed messages and peer file calls (review N2, N3, N5)", () => {
+  test("a send time is clamped to the receive time plus or minus the window", () => {
+    const now = 1_781_270_000_000;
+    expect(clampSentAt(undefined, now)).toBe(now);
+    expect(clampSentAt(0, now)).toBe(now - SENT_AT_WINDOW_MS);
+    expect(clampSentAt(8.64e15, now)).toBe(now + SENT_AT_WINDOW_MS);
+    expect(clampSentAt(now - 1234, now)).toBe(now - 1234);
+  });
+
+  test("the user-message signing input is pinned, and the hash covers the words and attachments only", () => {
+    expect(userMessageSigningInput({ session: "s_alpha", clientMessageId: "m-1", hash: "ab", sentAt: 5 })).toBe("clover/user-message/1\ns_alpha\nm-1\nab\n5");
+    expect(userMessageHashInput({ text: "hi" })).toBe('{"files":[],"images":[],"text":"hi"}');
+  });
+
+  test("a peer caller is its own kind, and tree calls carry the peer's session, level and answer", () => {
+    expect(CallerSchema.safeParse({ kind: "peer", device: "desk0000000000000001", sessionId: "s_remote" }).success).toBe(true);
+    const write = CLOVER_METHODS.get("tree.write")!;
+    expect(write.params.safeParse({ path: "home/Studio/a.txt", data: { encoding: "utf8", text: "a" }, session: "s_remote", level: "ask" }).success).toBe(true);
+    expect(write.params.safeParse({ path: "home/Studio/a.txt", data: { encoding: "utf8", text: "a" }, level: "everything" }).success).toBe(false);
   });
 });

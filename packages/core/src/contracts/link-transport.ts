@@ -14,6 +14,10 @@
 //   streams of its own, so a screenshot never holds up the small messages behind it (§8.2).
 // * Payloads are structured-clone data; a handler's ContractError reaches the caller with its code.
 // * A revoked device's links are cut at once (§8.1); lane H wires DeviceRegistry's revocations to the transport.
+// * Sync over the link replicates; it never grants (review N7). A receiver never takes a plugin's OK, a computer's
+//   level, a saved rule or a raised routine level from a peer's stream (`PEER_STREAM_GRANTS`) without its own card
+//   answered here or a signed answer bound to that change (`verifySignedAnswer`): the entry waits as a request. The
+//   same holds for what a peer's `peer.call`, `tool.run` or `tree.*` asks for (`peerCallVerdict`, `peerTreeDecision`).
 import type { LinkView } from "@waifucave/clover-protocol";
 import type { Unsubscribe } from "./common";
 
