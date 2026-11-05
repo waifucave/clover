@@ -1,6 +1,6 @@
 # Clover status board
 
-Kept by the controller ([plan](clover-plan.md) §11). Last updated November 5, 2026. The contract is [the spec](clover-spec.md), now at revision 18.
+Kept by the controller ([plan](clover-plan.md) §11). Last updated November 5, 2026, late evening. The contract is [the spec](clover-spec.md), now at revision 18.
 
 ## Now
 
@@ -17,33 +17,44 @@ Kept by the controller ([plan](clover-plan.md) §11). Last updated November 5, 2
   | #153 | J-M0 | `027565946` | `j-m0` |
   | #155 | F-M1 | `4b70c6b66` | `f-m1` |
   | #159 | G-M1 | `e474e0a36` | `g-m1` |
+  | #163 | M: main green | `a91d29103` | |
+  | #157 | B-M0 | `9b5c130e2` | `b-m0` |
+  | #154 | E-M0 | `3d3cc3ba5` (merged locally: GitHub's merge API failed on the 115k-line diff) | `e-m0` |
+  | #151 | L-M0 | `04339a4fc` | `l-m0` |
   | clover-sdk #61 | A-M1 (SDK) | `0d47c5e4` | `v0.0.63` |
+  | clover-sdk #62 | A: npm publishing opt-in | | |
 
-* **SDK 0.0.63:** all eight `@waifucave/clover-*` packages are on GitHub Packages. npm publishing comes later, and lane A is making the SDK's npm release job opt-in.
-* **In flight:**
-  * **A (#158):** switching to 0.0.63 and merging main. Then merge, tag `a-m1`.
-  * **B (#157):** its last review round is pushed and being checked. Then merge, tag `b-m0`, then D's #161, tag `d-m1`.
-  * **L (#151):** decisions 92–94 written into its S7 report. Then merge, tag `l-m0`.
-  * **E (#154):** decision 94 written into its S9 report, with an upstream report drafted. Then its reviewer checks the WebRTC parts, then merge, tag `e-m0`.
-  * **The controller:** spec revision 18, the plan's updates and this board.
+* **SDK 0.0.63:** all eight `@waifucave/clover-*` packages are on GitHub Packages. npm publishing comes later, and is opt-in in clover-sdk since #62.
+* **Open PRs:**
+  * #158 A-M1
+  * #161 D-M1 (B-M0 has merged)
+  * #164 spec revision 18, the plan and this board
+  * #165 L-M1 (draft)
+  * #166 J-M1 (changes requested)
+  * #167 M: Bun 1.4.4
+  * #168 E-M1 (changes requested)
+  * #169 G-M2 (draft, changes requested)
+  * #174 M-M1, packaging (draft)
+  * #175 M: CI load
+* **CI capacity:** the org runs five macOS jobs at once, and each PR run asked for about eight. Lane M's #175 cuts macOS jobs per run to two or three, and lanes batch their pushes.
+* **Cross-lane asks** go out in the controller's relays, with rulings R1–R14 (below).
 
 ## Lanes
-
 | Lane | Milestone | Branch | PR | State |
 | :- | :- | :- | :- | :- |
-| A | M1, the embedded runtime | `lane/a-m1` | #158 (clover-sdk #61 merged, `v0.0.63`) | switching to 0.0.63, merging main, making the SDK's npm job opt-in |
-| B | M0, the spine's contracts | `lane/b-m0` | #157 | last review round pushed; reviewer checking |
-| C | M1, the daemon everywhere | `lane/c-m1` | | started (C-M0 merged) |
-| D | M1, a bot | `lane/d-m1` (on `b-m0`) | #161 | approved; adding Alpha's look lines after G, merging main and `b-m0` |
-| E | M0 S9 / M1, the shell's host | `lane/e-m0` / `lane/e-m1` | #154 | M0 done, reviewer's final check running; M1 started |
-| F | M2, the shell on the runtime | `lane/f-m2` | | started (F-M1 merged) |
-| G | M2, the surfaces and Live2D | `lane/g-m2` | | started (G-M1 merged) |
-| H | M1, identity and links | `lane/h-m1` | | started (H-M0 merged) |
-| I | M2, the relay, the web, the handshake service | `lane/i-m2` | | started; the handshake wire format first, for H |
-| J | M1, the tree (no mounts) | `lane/j-m1` | | started (J-M0 merged) |
-| K | M1, the Agent tool | `lane/k-m1` | | started (K-M0 merged) |
-| L | M0 S7 / M1, the Clover Browser | `lane/l-m0` / `lane/l-m1` | #151 | M0 done, merging main for the gate, then merge; M1 started |
-| M | M1, packages (and main green) | `lane/m-main-green`, `lane/m-m1` | | main's layout tests and Dependabot first, then Bun 1.4, then M1 |
+| A | M1, the embedded runtime | `lane/a-m1` | #158 | open: switching to SDK 0.0.63 and merging main |
+| B | M1, the registry | | | M0 merged (`b-m0`); M1 starts with the relays' contract asks |
+| C | M1, the daemon everywhere | `lane/c-m1` | | in progress |
+| D | M1, a bot | `lane/d-m1` | #161 | open, approved; it waited for B-M0, now merged |
+| E | M1, the shell's host | `lane/e-m1` | #168 | M0 merged (`e-m0`); M1 has changes requested |
+| F | M2, the shell on the runtime | `lane/f-m2` | | in progress |
+| G | M2, the surfaces and Live2D | `lane/g-m2` | #169 | draft, changes requested |
+| H | M1, identity and links | `lane/h-m1` | | in progress |
+| I | M2, the relay, the web, the handshake service | `lane/i-m2` | | in progress; the handshake wire format first, for H |
+| J | M1, the tree (no mounts) | `lane/j-m1` | #166 | changes requested |
+| K | M1, the Agent tool | `lane/k-m1` | | in progress |
+| L | M1, the Clover Browser | `lane/l-m1` | #165 | M0 merged (`l-m0`); M1 is a draft |
+| M | M1, packages | `lane/m-m1` | #174, #167, #175 | #163 merged (main green); packaging is a draft, Bun 1.4.4 and the CI load are open |
 
 ## Machines
 
@@ -121,6 +132,7 @@ How the work runs:
   * Filed: n0-computer/iroh#4657, and a comment on iroh-ffi#276.
   * The two Bun reports weren't filed: one is a duplicate, the other is fixed in Bun 1.4.4.
   * At the owner's choice, both posts say they were written and posted by an AI agent on the owner's behalf.
+* **November 5, Electron upstream reports:** the owner reads and posts them himself, because Electron's AI tool policy declines issues posted by agents. Lane L's four texts go to Electron as public issues. Lane E's WebRTC report goes privately to Chromium's security tracker, then to Electron as a private advisory; its reproduction is run once as written first (a lane can do that in CI on request).
 
 ## Controller rulings
 
@@ -161,18 +173,51 @@ How the work runs:
 * **November 5, item 94's stock measures** (E's final review, B3): follow S9. The PAC belt and the preload stub are both off. Plugin webContents get `Connection-Allowlist` plus Chromium's `disable_non_proxied_udp` WebRTC policy as defence in depth; in S9's runs they read zero on every vector with a positive control. The gap stays documented, because the TCP route and the sandboxed srcdoc are unproven.
 * **November 5, Bun 1.4:** lane M moves CI and the daemon to Bun 1.4.x. Reasons: H's timer finding (fixed in 1.4.4) and A's Worker-churn crash on 1.3.14 (A's review, S3). Run the full suites and A's soak first.
 
+Rulings R1–R14, from the controller's cross-lane relays (final unless the owner overrides them):
+
+* **R1, peer changes and the reviewer** (from J-M1). At the ask-for-risky-actions level, the holder runs its own reviewer on a peer's calls, as it does for local ones (C-M2's rewritten reviewer).
+  * Only the calls the reviewer judges risky need a card.
+  * The card goes to the user's devices, any desktop or phone (item 91), and the signed answer travels with the call.
+  * A blanket card for every peer edit is wrong. Lane B adjusts the contract in B-M1 if it says otherwise; J-M2 builds the card-on-the-caller path.
+  * In the spec: §9.1, "Approvals follow the files".
+* **R2, the app token file** (from E-M1). `<home>/run/app.token` is fine: minted at each daemon start, owner-only (0600, or the Windows owner ACL), inside the fenced set and never logged. It's a per-run capability token, not a user secret, so the key-file ruling isn't needed.
+* **R3, settings sections** (from G-M2):
+  * **Usage:** the usage plugin owns the content. Settings → Usage is a spot it fills, and F doesn't build its own.
+  * **Devices:** Settings → Devices is F's management page (pair, revoke, choose the main computer). The island's Devices tab is G's at-a-glance status, and its rows link to Settings → Devices.
+* **R4, the PTY** (`terminal.*`'s backend) is J-M2: a shell on any of the user's computers, behind the holder's fence, through the `terminal` capability (the `clover` tree only).
+* **R5, the Mochi2D size cap** (from G-M2). No Clover lane changes Mochi2D's code.
+  * Clover extracts the model archive itself, with a per-file and a total byte cap that counts real inflated bytes, never the declared sizes, and hands Mochi2D the extracted folder.
+  * An issue on `waifucave/Mochi2D` (our own org) describes the cap option, so its owner can add it.
+* **R6, the `tree` CI job** (from J-M1). Lane M moves the three-OS `tree` job from `spike-s6.yml` into `ci.yml`, keyed to `packages/core/src/{computers,tree}/**`.
+* **R7, who a plugin's API call acts for** (from L-M1). A call a plugin makes while it serves a tool call acts as the session that made the tool call.
+  * The core binds the session from the tool call's own context, which the plugin host carries.
+  * The core never trusts a caller the plugin supplies (no plugin-written `_meta` caller).
+  * B pins this in B-M1's contracts, and the plugin host carries it in B-M2. In the spec: §5.4, "The caller".
+* **R8, two panels showing browser tabs** (from L-M1). The panel the person used last gets the live view; any other shows the tab's last still frame, marked as paused.
+* **R9, the browser host's heartbeat restart into safe mode** (from L-M1). The app process's side is E's, and the daemon's side (the pair) is C's.
+* **R10, the person's own logged-in browser partition** (from L-M1). A bot or coding session uses its own partition. Driving the person's `user` partition needs an explicit card per session, and is never the default. In the spec: §12.1.
+* **R11, bot tabs' guards** (from E-M1's review). E guards only the app's own windows. L sets every bot tab's policy and exposes `isBrowserTab(webContents)` for E's code.
+* **R12, always-on-top surfaces** (from E-M1's review). In 1.111.1 only the `clover` tree may open always-on-top surfaces, and E-M3's overlap check counts Clover's own surfaces. In the spec: §5.5, §5.9 and §10.
+* **R13, private addresses in bot tabs** (from L-M1). Bot tabs refuse loopback, private (RFC 1918 and ULA), link-local and cloud metadata addresses by default.
+  * The check runs at connect time, after DNS, so rebinding can't get round it.
+  * Code sessions may reach loopback (local dev servers), never the metadata address.
+  * A per-bot setting to allow the LAN is L-M2.
+  * In the spec: §12.1.
+* **R14, the browser's proxy** (from L-M1). M1 stays direct. L-M2 adds a setting with three choices: off (direct); the system proxy, including the system's own PAC but never WPAD discovery; or an explicit http, https or socks proxy. In the spec: §12.1.
+
 ## Blockers
 
 * **S9, the WebRTC escape: decided** (item 94, "stock Electron, wait upstream"), so it is a documented known gap. In stock Electron 45 a plugin UI can send WebRTC connectivity checks with page-chosen text to an undeclared address, through a remote ICE candidate in a remote description, on all three OSes, with CSP, the request filter and `Connection-Allowlist` all on. The spec's old [D] "WebRTC is off in plugin origins" couldn't hold in stock Electron; revision 18 replaces it.
 * **S9, the renderer kill:** in frames created inside a restricted document, Chromium 156 kills the plugin's renderer. It's fail-closed, detected by a process-ID census, and accepted with decision 94.
 
 ## Questions for the owner
+1. **G, Alpha's assets (spec §14.2 item 26):** the real Live2D model, the portrait and their licence. The PRs ship placeholders made by code.
+2. **A-M2, the MCP OAuth client document (outward-facing):** Clover needs its own client document on a waifucave host instead of the previous app's, on `yanlinglabs.com`. Ask when A-M2 starts.
+3. **Next batch, from lane M's packaging:** a project email for the deb and rpm Maintainer field (`waifucave` for now), and whether the Homebrew cask's `zap` removes `~/.clover` (the bots, history and keys). The recommendation is no, and that's the current default.
+4. **Next batch:** whether user-facing strings may say "Live2D", a trademark. The interim choice is a neutral label such as "2D model", with "Live2D Cubism" only where it names the file format.
+5. **A live-gate addition:** `verify:runtime-state`'s negative leg on a Mac with SIP on, since CI's runners have SIP off.
 
-1. **Upstream posts, waiting for the owner's go-ahead:** lane L's Electron drafts (a comment on #55565 and three new issues) and lane E's WebRTC report (`docs/research/2026-11-05-electron-webrtc-remote-candidate-upstream-report.md` on `lane/e-m0`). Ask once E's reviewer has checked E's.
-2. **G, Alpha's assets (spec §14.2 item 26):** the real Live2D model, the portrait and their licence. The PRs ship placeholders made by code.
-3. **A-M2, the MCP OAuth client document (outward-facing):** Clover needs its own client document on a waifucave host instead of the previous app's, on `yanlinglabs.com`. Ask when A-M2 starts.
-
-Answered since: J's mounts (items 88 and 89); L's edit 1 and the patched Electron (items 92–94).
+Answered since: J's mounts (items 88 and 89); L's edit 1 and the patched Electron (items 92–94); the upstream posts (the owner posts them himself, above).
 
 ## Controller notes
 
@@ -206,9 +251,7 @@ Answered since: J's mounts (items 88 and 89); L's edit 1 and the patched Electro
 * For lane D, after G's #159 merged: add Alpha's icon, avatar, theme, layout and themes lines to `plugins/alpha/clover.json`, as listed in D's report.
 
 ## Next merges
-
-1. **L-M0, #151,** once main is merged in and the gate passes: tag `l-m0`.
-2. **A-M1, #158,** on SDK 0.0.63 with main merged: tag `a-m1`.
-3. **B-M0, #157,** after its reviewer's check: tag `b-m0`. Then **D-M1, #161:** tag `d-m1`.
-4. **E-M0, #154,** after its reviewer checks the WebRTC parts: tag `e-m0`.
-5. **The controller PR:** spec revision 18, the plan's §4 and §8, and this board.
+1. **#164, spec revision 18, the plan and this board,** once `gate` is green (#151 and #154 have merged).
+2. **D-M1, #161:** B-M0 has merged; then tag `d-m1`.
+3. **A-M1, #158,** on SDK 0.0.63 with main merged: tag `a-m1`.
+4. **The rest** as each passes its review: #167 and #175 (lane M), then the M1 and M2 milestone PRs.
