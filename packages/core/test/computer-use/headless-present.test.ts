@@ -10,7 +10,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { HeadlessShowParams, HeadlessTabRow } from "../../src/computer-use/browser/cef-link/cef-transport";
 import type { HeadlessViewer } from "../../src/computer-use/browser/cef-link/rpc";
-import { headlessRequirementFor, cloverAppRequirementFor } from "../../src/computer-use/browser/headless/engines";
+import { headlessRequirementFor, winterAppRequirementFor } from "../../src/computer-use/browser/headless/engines";
 import { HEADLESS_USER_HAS_TAB, headlessSessionUploadDir, HeadlessPool, type HeadlessPoolDeps } from "../../src/computer-use/browser/headless/pool";
 import { spawnEngineProcess } from "../../src/computer-use/browser/headless/winter-engine";
 import { TransportError } from "../../src/computer-use/browser/transport";
@@ -56,7 +56,7 @@ function rig(o: { mode?: string; presentStartMs?: number; drainMs?: number } = {
     memoryOf: () => 100 * 1024 * 1024,
     viewer: () => (app.up && app.feature ? view : undefined),
     viewerMissing: () => (!app.up ? "Clover isn't running — ask the user to open Clover" : !app.feature ? "this Clover's app can't show a headless tab — ask the user to update Clover" : undefined),
-    viewerRequirement: () => cloverAppRequirementFor("dev"),
+    viewerRequirement: () => winterAppRequirementFor("dev"),
     presentStartMs: o.presentStartMs ?? 2_000,
     drainMs: o.drainMs ?? 2_000,
     timeouts: { hello: 5_000, probe: 300 },
@@ -88,7 +88,7 @@ describe("the hand-off (waitForUser): the tab shown in Clover's panel, the perso
     const t = await r.pool.createTab({ sessionId: "s1", url: "https://accounts.example/" });
     await r.pool.present(t.tabKey, { sessionId: "s1" });
     const present = r.commands().find((c) => c.op === "headless.present")!;
-    expect(present.params).toMatchObject({ tabId: t.tabKey, control: true, scale: 1, viewerRequirement: cloverAppRequirementFor("dev") });
+    expect(present.params).toMatchObject({ tabId: t.tabKey, control: true, scale: 1, viewerRequirement: winterAppRequirementFor("dev") });
     expect(String(present.params.nonce)).toMatch(/^[0-9a-f]{16}$/);
     expect(r.panel.shown).toHaveLength(1);
     expect(r.panel.shown[0]).toMatchObject({

@@ -11,9 +11,13 @@
 //     new name is not the old one with `winter` swapped for `clover`: the npm scope, the identities
 //     (`com.winter.app` → `com.waifucave.clover`), the repo slugs.
 //   * `CLOVER_EXEMPT_PATHS` — files the content pass never rewrites and the path pass never moves.
+//   * `CLOVER_NEVER_PERMITTED` — the live Winter install's names (its Keychain services, its homes, its
+//     app), which the residue test refuses outside the files each one names BEFORE it looks at the
+//     allowlist, so no entry, however broad, can let one through.
 //
-// Adding an entry is a reviewed edit: the residue test fails on any `winter` no entry permits AND on
-// any entry that no longer matches anything.
+// Adding an entry is a reviewed edit: the residue test fails on any `winter` no entry permits, AND on
+// any entry — or any top-level alternative of an entry's regex — that no longer matches anything.
+// So each shape an entry permits is its own top-level alternative.
 import type { AllowlistEntry } from "./allowlist";
 
 /** Files and trees the Winter→Clover pass leaves byte for byte (paths too). A trailing `/` is a
@@ -101,7 +105,7 @@ export const CLOVER_ALLOWLIST: readonly AllowlistEntry[] = [
   },
   {
     id: "sdk-wire",
-    regex: /\bwinter_(?:provider(?:_state)?|mcp_server|site_icons|dialect_record|code)\b|\bwinter-agent\b(?!-)|\bwinter-t8-lane[a-z](?:-fixture-content)?\b|(?<![.\w])winter\.(?:openai-chat-completions|openai-responses|anthropic-messages|vertex-gemini|local-openai|google-generate-content|xai-oauth|codex-oauth|bedrock-converse|azure-openai)\b|(?<=["'`])winter-(?:agent|session|thread)(?=["'`])|\bwinter-test(?=[/"'`])|(?<=["'`])winter\.[a-z][a-z0-9-]*(?=["'`])|"winter"(?=[^\n]*(?:\b[Ll]eg|Leg))|"winter"(?<=(?:\b[Ll]eg|Leg)[^\n]*"winter")|"winter"(?=\s*\|\s*"(?:official|engine)"|\s*:\s*"engine"|\]\s*,\s*\[\w+,\s*"(?:official|engine)")|"winter"(?<="(?:official|engine)"\s*\|\s*"winter")|"winter"(?<=\bfamily:\s*"winter")|\bwinter\b(?<=\bassertVersionMatrix\(\{\s*winter)|"winter"(?<=(?:says|is now) "winter")|"winter"(?<=\b(?:peers|messaging)\b[^\n]*\["winter")|"winter"(?=`)(?<=`=== "winter")/g,
+    regex: /\bwinter_(?:provider(?:_state)?|mcp_server|site_icons|dialect_record|code)\b|\bwinter-agent\b(?!-)|\bwinter-t8-lane[a-z](?:-fixture-content)?\b|(?<![.\w])winter\.(?:openai-chat-completions|openai-responses|anthropic-messages|vertex-gemini|local-openai|google-generate-content|xai-oauth|codex-oauth|bedrock-converse|azure-openai)\b|(?<=["'`])winter-(?:agent|session|thread)(?=["'`])|\bwinter-test(?=[/"'`])|(?<=["'`])winter\.[a-z][a-z0-9-]*(?=["'`])|"winter"(?=[^\n]*(?:\b[Ll]eg(?:s|Of|ForNewSession|Now|Ref)?\b|Leg(?:s|Of)?\b))|"winter"(?<=(?:\b[Ll]eg(?:s|Of|ForNewSession|Now|Ref)?\b|Leg(?:s|Of)?\b)[^\n]*"winter")|"winter"(?=\s*\|\s*"(?:official|engine)"|\s*:\s*"engine"|\]\s*,\s*\[\w+,\s*"(?:official|engine)")|"winter"(?<="(?:official|engine)"\s*\|\s*"winter")|"winter"(?<=\bfamily:\s*"winter")|\bwinter\b(?<=\bassertVersionMatrix\(\{\s*winter)|"winter"(?<=(?:says|is now) "winter")|"winter"(?<=\b(?:peers|messaging)\b[^\n]*\["winter")|"winter"(?=`)(?<=`=== "winter")/g,
     why: "values the agent SDK and router put on the wire: message fields (`winter_provider`, `winter_mcp_server`), the runtime kind `winter-agent`, the router's transports and its `winter` leg (core's `SessionLeg` mirrors it), the test provider's `winter-test/…` models, the catalog's adapter ids (`winter.openai-responses`), the `winter_code` preset",
   },
   {
@@ -147,7 +151,7 @@ export const CLOVER_ALLOWLIST: readonly AllowlistEntry[] = [
   {
     id: "cu-helper-daemon-identities",
     regex: /\bwinter-core\b|\bcom\.winter\.core\.dev\b/g,
-    files: ["scripts/computer-helper-lib.ts"],
+    files: ["scripts/computer-helper-lib.ts", "scripts/cu-live/build.ts"],
     why: "the daemon identities the Winter Computer Use helper and its browser host accept (`HostIdentity.swift`, `HelperIdentity.swift`): Winter's, until opensky replaces them",
   },
   {
@@ -169,8 +173,8 @@ export const CLOVER_ALLOWLIST: readonly AllowlistEntry[] = [
   },
   {
     id: "sdk-literal-env",
-    regex: /\bWINTER_(?:TEST_PROVIDER|TEST_KEYCHAIN|TEST_READ_IMAGE|SDK_CAN_USE_TOOL_SHADOWED|CREDENTIAL_MISSING|COMPILED_BIN|CANARY_SECRET|RUNTIME_KIND|EMBEDDED_CRASH_FIXTURE|LIVE_[A-Z0-9_]+)\b/g,
-    why: "environment variables the agent SDK reads under these fixed names whatever the brand (its own test harness names)",
+    regex: /\bWINTER_TEST_PROVIDER\b|\bWINTER_TEST_KEYCHAIN\b|\bWINTER_SDK_CAN_USE_TOOL_SHADOWED\b|\bWINTER_CREDENTIAL_MISSING\b/g,
+    why: "names the agent SDK fixes whatever the brand: its test provider's and in-memory Keychain's variables, its `canUseTool` warning, and the local constant for its `WinterCredentialMissing` code",
   },
   {
     id: "other-installs",
@@ -213,10 +217,7 @@ export const CLOVER_ALLOWLIST: readonly AllowlistEntry[] = [
         `(?<=\\bAppProfile\\.)winterHome\\b`, // the retired app's own Swift property
         `WinterClient\\.swift|WinterClient(?<=Swift's (?:own )?\`?WinterClient)|WinterClient(?<=WinterKit's \`?WinterClient)|\`WinterClient\\.(?:route|request|listSessions)`,
         `\\bwinter-(?:fake-phone|probe|browser-host)\\b`, // WinterKit and WinterBrowserHost executables
-        `\\bcom\\.winter\\.(?:computeruse|headless|browserhost|browser|cowork|ant|helper|host-output|app\\.cefhelper)(?:[A-Za-z0-9_.-]*[A-Za-z0-9_])?`,
         `\\bWinter(?= Xcode build)`, // the retired app's own build
-        `\\bcom\\\\\\.winter\\\\\\.(?:computeruse|headless|browserhost|browser|cowork|ant|helper|host-output)\\b`, // the same, escaped in a regex literal
-        `\\bcom\\.winter\\.(?:core|app)\\.cutest\\b`, // the live suite's daemon and app, which the helper accepts
         `Winter (?:Computer Use|Headless)(?: (?:Dev|Test))?(?:\\.app)?`, // the helper apps
         `\\bWinter Helper\\b`, // Chromium's helper bundles inside the retired app and Winter Headless
         `Winter(?:\\\\u202E)? for (?:Chrome|Edge)|\\bwinter-for-chrome\\b`, // the extension's name and folder
@@ -227,12 +228,47 @@ export const CLOVER_ALLOWLIST: readonly AllowlistEntry[] = [
       ].join("|"),
       "g",
     ),
-    why: "names the kept Swift targets in `apple/` define: their paths, packages and types, the helper apps and bundle ids (Winter Computer Use, Winter Headless, WinterBrowserHost, Cowork), their build flags and environment",
+    why: "names the kept Swift targets in `apple/` define: their paths, packages and types, the helper apps (Winter Computer Use, Winter Headless, WinterBrowserHost, Cowork), their build flags and environment",
+  },
+  {
+    id: "winter-app-ids",
+    // File-scoped (C0 review S3): a Winter bundle id is permitted only where computer use, Cowork and the scripts that
+    // build, sign and check their helpers name one. `com.winter.core` (the live Keychain service) is never one of them.
+    regex: /\bcom\.winter\.(?:app|computeruse|headless|browserhost|browser|cowork|ant|helper|host-output)(?:[A-Za-z0-9_.-]*[A-Za-z0-9_])?|\bcom\\\.winter\\\.(?:computeruse|headless|browserhost)\b|\bcom\.winter\.core\.cutest\b|\bcom\.winter\.(?=`)|\bWINTER_OWN_BUNDLE_IDS\b|\bwinterApp(?:BundleId|Requirement)For\b|(?<=name: ")Winter(?=")|(?<=apps\.open\(')Winter(?=')|(?<=\[(?:TextEdit|Notes),)Winter(?=\])/g,
+    files: [
+      ".gitignore",
+      "packages/core/src/computer-use/**",
+      "packages/core/test/computer-use/**",
+      "packages/core/src/cowork/**",
+      "packages/core/test/cowork/**",
+      "packages/core/src/runtime-sdk/bundle-layout.ts",
+      "packages/core/src/runtime-sdk/host-output-loader.ts",
+      "scripts/browser-e2e/**",
+      "scripts/cu-live/**",
+      "scripts/computer-helper-lib.ts",
+      "scripts/computer-helper-lib.test.ts",
+      "scripts/cowork-native-*.ts",
+      "scripts/dev-cowork-native.ts",
+      "scripts/dev-headless.ts",
+      "scripts/dev-helper.ts",
+      "scripts/embed-*.sh",
+      "scripts/embed-*.test.ts",
+      "scripts/headless-helper-lib.ts",
+      "scripts/release-lib.ts",
+      "scripts/release.ts",
+      "scripts/release.test.ts",
+      "scripts/verify-computer-helper.ts",
+    ],
+    why: "the bundle ids Winter's app and the kept Swift helpers carry (`com.winter.app`, Winter Computer Use, Winter Headless, WinterBrowserHost and Winter for Chrome's host, the Cowork launcher, `ant`'s signing id, the live suite's `cutest` daemon), which computer use and Cowork keep until opensky, and the floor that keeps computer use off Winter's own apps (`WINTER_OWN_BUNDLE_IDS`)",
   },
   // ── Computer use (waits for opensky) and Cowork (paused) ──────────────────────────────────────
   {
     id: "computer-use-wire",
-    regex: /(?:(?<![.\w])|(?<=[\w)\]]\.)|(?<=\?\.))winter\b(?!-|\??\.(?:PreToolUse|PostToolUse))|\bwinter\.wake\.(?:event|alive)\b|\bwinter_itself\b|\bwinter-(?:wake-overlay|agent-overlay|engine)\b|__winterAgentOverlay/g,
+    // Narrowed (C0 review S3) to the shapes the reason below names, each its own alternative: the family and engine
+    // id as a literal (which is also the CDP world's name), a tab id, the test harnesses' fake for that family, the
+    // world in prose, the wake events and the overlay, the engine's module, the helper's refusal code, Winter for
+    // Chrome's log prefix, the family's display-name key, and the family id where test names and messages print it.
+    regex: /(?<=["'`])winter(?=\\?["'`])|\bwinter:(?=[\w\u2026$"'`])|\b(?:h|h2|w|blind)\.winter\b|\bwinter\b(?=\s*=\s*new FakeCdpTransport\b|\.(?:tabs|pages|withNativeDownloads)\b|,\s*chrome\b)|(?<=\bregister\()winter\b|\bwinter(?= world\b)|(?<=\bworld (?:other than|is named) )winter\b|\bwinter\.wake\.(?:event|alive)\b|\bwinter-(?:wake|agent)-overlay\b|__winterAgentOverlay|\bwinter-engine\b|\bwinter_itself\b|\[winter\]|\bwinter(?=: "Clover \(built-in\)")|\(winter\)|(?<=: )winter(?= (?:is the default|lists)\b)|(?<=engines are: )winter\b|(?<=\] )winter(?= winter:)/g,
     files: [
       "packages/core/src/computer-use/**",
       "packages/core/test/computer-use/**",
@@ -242,11 +278,11 @@ export const CLOVER_ALLOWLIST: readonly AllowlistEntry[] = [
       "scripts/cu-live/**",
       "scripts/build-page-runtime.ts",
     ],
-    why: "computer use's wire names, shared with the Winter Computer Use helper, Winter for Chrome and the page runtime: the built-in browser's family and engine id `winter` (and the fakes named after it), the CDP world `winter`, the wake events",
+    why: "computer use's wire names, shared with the Winter Computer Use helper, Winter for Chrome and the page runtime: the built-in browser's family and engine id `winter` (its tab ids, and the test harnesses' fake for it), the CDP world `winter`, the wake events and overlay, the helper's `winter_itself` refusal",
   },
   {
     id: "cowork-contract",
-    regex: /\/(?:workspace|run|opt)\/\.?winter(?:\/[A-Za-z0-9_.\-/]*)?|(?<=\/\.\.\/)\.winter(?=\/)|(?<=Application Support\/)Winter(?=\/Coordination)|\.winterworkspace|\bwinter-(?:data|environment|guest[a-z-]*|cowork[a-z0-9-]*|host-output[a-z0-9./-]*)|\bwinter_cowork_[a-z_]+|WINTER\.md(?<=(?:instructions|control|etc)\/WINTER\.md)|\/Applications\/Winter\.app\/Contents\/Helpers\/winter-cowork-\w+/g,
+    regex: /\/(?:workspace|run|opt)\/\.?winter(?:\/[A-Za-z0-9_.\-/]*)?|(?<=\/\.\.\/)\.winter(?=\/)|(?<=Application Support\/)Winter(?=\/Coordination)|\.winterworkspace|\bwinter-(?:data|environment|guest[a-z-]*|cowork[a-z0-9-]*|host-output[a-z0-9./-]*)|WINTER\.md(?<=(?:instructions|control|etc)\/WINTER\.md)/g,
     why: "Cowork (paused): the guest image's paths (`/workspace/.winter`, `/run/winter`, `/opt/winter`), its launcher, worker and native output module, which the kept Cowork targets and the SDK's guest define",
   },
   {
@@ -258,12 +294,12 @@ export const CLOVER_ALLOWLIST: readonly AllowlistEntry[] = [
   // ── Values already on the wire or on disk (the protocol is lane B's) ──────────────────────────
   {
     id: "wire-values",
-    regex: /\bwinter_(?:leg_unavailable|session_ended)\b|\bnot_supported_on_winter_leg\b|\bsession_predates_winter_leg\b|\bwinter-codex-oauth\b|\bwinter-legacy\b|"winter"(?<=PROJECTOR_PASSTHROUGH_CLIENT = "winter")|"winter"(?<=clientName: "winter")|"winter"(?<=ANTHROPIC_PROFILE_NAME = "winter")|credentials\/winter\.json|`"winter"`(?= today by coincidence)/g,
-    why: "values clients and stored sessions already carry: RPC error codes (WinterKit matches `session_predates_winter_leg`), the projector's `clientName`, the Codex plan-reading source, the legacy plugin marketplace, the Console profile's file",
+    regex: /\bwinter_(?:leg_unavailable|session_ended)\b|\bnot_supported_on_winter_leg\b|\bsession_predates_winter_leg\b|\bwinter-codex-oauth\b|\bwinter-legacy\b|"winter"(?<=PROJECTOR_PASSTHROUGH_CLIENT = "winter")|"winter"(?<=clientName: "winter")|"winter"(?<=ANTHROPIC_PROFILE_NAME = "winter")|`"winter"`(?= today by coincidence)/g,
+    why: "values clients and stored sessions already carry: RPC error codes (WinterKit matches `session_predates_winter_leg`), the projector's `clientName`, the Codex plan-reading source, the legacy plugin marketplace, the Console profile's name",
   },
   {
     id: "usage-source",
-    regex: /(?<=["'`])(?<!name: ["'`])winter(?=["'`:])|\bwinter:<provider>|winter:\$\{/g,
+    regex: /(?<=["'`])(?<!name: ["'`])winter(?=["'`:])|\bwinter:<provider>|winter:\$\{|(?<=\|)winter(?=\||:\[)/g,
     files: ["packages/core/src/usage/**", "packages/core/test/usage/**", "packages/protocol/src/methods.ts", "packages/protocol/test/methods.test.ts", "packages/cli/src/usage*.ts", "packages/cli/test/usage*.ts", "scripts/check-idle-wakeups.ts"],
     why: "usage's `winter` source (Winter's own sessions) and `winter:<provider>` plan covers: protocol enum values WinterKit decodes (`UsageSource.winter`) and rows in `usage.db`",
   },
@@ -280,13 +316,62 @@ export const CLOVER_ALLOWLIST: readonly AllowlistEntry[] = [
   // ── Live infrastructure and history ────────────────────────────────────────────────────────────
   {
     id: "live-infra",
-    regex: /\byanlinglabs\.com\/winter\/oauth-client\.json\b|\binfra\/winter-oauth-client\b|\byanlingLabs\/winter-runtime-sdk\b|\bwinter-oauth-client\b/g,
-    why: "live infrastructure: the OAuth client document MCP sign-in fetches (`yanlinglabs.com/winter/oauth-client.json`), and the archived router repo",
+    regex: /\byanlinglabs\.com\/winter\/oauth-client\.json\b|\binfra\/winter-oauth-client\b|\bwinter-oauth-client\b/g,
+    why: "live infrastructure: the OAuth client document MCP sign-in fetches (`yanlinglabs.com/winter/oauth-client.json`) and its folder",
   },
   {
     id: "norma-legacy",
-    regex: /\b(?:NORMA|Norma|norma)[-_.]?(?:WINTER|Winter|winter)\w*|\bWINTER_NORMA_\w+|\bWINTER_TO_NORMA\b|\bwinterToNorma\w*/g,
+    regex: /\b(?:NORMA|Norma|norma)[-_.]?(?:WINTER|Winter|winter)\w*/g,
     why: "Norma-era names that spell `winter` (Migration B's inputs, the Phase 9b explicit map's own keys)",
+  },
+];
+
+/** A name of the live Winter install that only the files it names may spell (`files`: exact paths). */
+export interface NeverPermitted {
+  id: string;
+  regex: RegExp;
+  files: readonly string[];
+  why: string;
+}
+
+/**
+ * C0 review S3: the live Winter install's names. The residue test checks these FIRST, in every file it scans, and
+ * fails on a match outside the files an entry names, whatever the allowlist permits there; it also fails on a named
+ * file that no longer spells the name (no stale names). Each named file says why it must: it refuses the name, warns
+ * about it, or is a fixture of the kept Swift helpers.
+ */
+export const CLOVER_NEVER_PERMITTED: readonly NeverPermitted[] = [
+  {
+    id: "winter-keychain",
+    // Exactly `com.winter.core` or `com.winter.core.dev` (plain, or escaped in a regex), not a longer test-only id.
+    regex: /\bcom\.winter\.core(?:\.dev)?(?![\w-]|\.\w)|\bcom\\\.winter\\\.core(?:\\\.dev)?(?![\w-]|\\\.\w)/g,
+    files: [
+      "CONTRIBUTING.md", // the rule never to touch it
+      "packages/core/src/other-installs.ts", // the one place that names it, so the guards refuse it
+      "packages/core/test/other-installs.test.ts", // pins that list
+      "scripts/computer-helper-lib.ts", // the daemon identities the kept Winter Computer Use helper accepts
+      "scripts/cu-live/build.ts", // says why the live suite's daemon never carries it
+    ],
+    why: "the live Winter install's Keychain service and Winter Dev's",
+  },
+  {
+    id: "winter-home",
+    regex: /(?:~|\$HOME|\$\{HOME\})\/\.winter|homedir\(\)\s*,\s*["'`]\.winter/g,
+    files: [
+      "CONTRIBUTING.md", // the rule never to touch it
+      "packages/core/src/runtime-sdk/brand.ts", // why every Clover session carries Clover's brand
+      "packages/core/src/runtime-sdk/sessions.ts", // what an SDK session function reads with no brand
+      "packages/core/test/runtime-sdk/brand.test.ts", // proves the runtime's default home is never under it
+    ],
+    why: "the live Winter install's home and Winter Dev's (`~/.winter`, `~/.winter-dev`)",
+  },
+  {
+    id: "winter-app",
+    regex: /\/Applications\/Winter\.app|["'`]\/Applications["'`]\s*,\s*["'`]Winter\.app/g,
+    files: [
+      "scripts/cu-live/headless.test.ts", // helper paths parsed from `ps` output, as the kept helpers report them
+    ],
+    why: "the live Winter app (`/Applications/Winter.app`), which a Clover script never opens, signs or replaces",
   },
 ];
 

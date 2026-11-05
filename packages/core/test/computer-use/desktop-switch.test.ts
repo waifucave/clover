@@ -267,7 +267,7 @@ describe("the desktop-switch prompt (policy)", () => {
 
   test("the floors hold first: Clover itself and the system's authentication surfaces are never visited", async () => {
     const w = policyWorld();
-    await expect(w.policy.askDesktopVisit(newRunGrants("s1"), { bundleId: "com.winter.app", name: "Clover" }, "r")).rejects.toThrow("Clover never controls itself");
+    await expect(w.policy.askDesktopVisit(newRunGrants("s1"), { bundleId: "com.winter.app", name: "Winter" }, "r")).rejects.toThrow("Clover never controls itself");
     await expect(w.policy.askDesktopVisit(newRunGrants("s1"), { bundleId: "com.apple.SecurityAgent", name: "SecurityAgent" }, "r")).rejects.toThrow("authentication surface");
     expect(cardsOf(w.events)).toEqual([]);
   });

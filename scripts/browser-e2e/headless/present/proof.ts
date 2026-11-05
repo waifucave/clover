@@ -900,7 +900,7 @@ try {
   }
   {
     const nonce = nonceHex();
-    const r = await command("headless.present", { tabId: "w-1", nonce, viewerRequirement: 'identifier "com.example.not-winter"', control: true, scale: 2 });
+    const r = await command("headless.present", { tabId: "w-1", nonce, viewerRequirement: 'identifier "com.example.not-the-viewer"', control: true, scale: 2 });
     const impostor = new ViewerProc(String(r.service), nonce);
     await Bun.sleep(1_500);
     const vs = await impostor.stats().catch(() => ({ event: "stats", frames: -1 } as ViewerEvent));

@@ -28,7 +28,7 @@ import { installedBrowser, systemAppResolver } from "./app-resolve";
 import { BrowserLink, type HeadlessLinkActions } from "./browser/cef-link/rpc";
 import { BrowserEngine } from "./browser/engine";
 import { BrowserBackendRegistry } from "./browser/registry";
-import { resolveCloverHeadless, cloverAppRequirementFor } from "./browser/headless/engines";
+import { resolveCloverHeadless, winterAppRequirementFor } from "./browser/headless/engines";
 import { HEADLESS_NAME, HeadlessPool, sweepHeadless, type HeadlessPoolDeps } from "./browser/headless/pool";
 import { processSatisfiesRequirement } from "./helper-verify";
 import { DiffBases } from "./diff-base";
@@ -391,7 +391,7 @@ export function createComputerUseRuntime(deps: ComputerUseRuntimeDeps): Computer
     // Clover's own app as its viewer.
     viewer: () => browserLink.headlessViewer(),
     viewerMissing: () => browserLink.headlessViewerMissing(),
-    viewerRequirement: () => cloverAppRequirementFor(deps.profile),
+    viewerRequirement: () => winterAppRequirementFor(deps.profile),
     ...(deps.inject?.headless?.presentStartMs === undefined ? {} : { presentStartMs: deps.inject.headless.presentStartMs }),
     metric: (m) => telemetry.primitive(m),
     log,

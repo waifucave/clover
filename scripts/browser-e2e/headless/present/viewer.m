@@ -90,7 +90,7 @@ static void Emit(NSDictionary *object) {
   if ((self = [super init])) {
     _device = MTLCreateSystemDefaultDevice();
     _queue = [_device newCommandQueue];
-    _work = dispatch_queue_create("winter.present.viewer", DISPATCH_QUEUE_SERIAL);
+    _work = dispatch_queue_create("clover.present.viewer", DISPATCH_QUEUE_SERIAL);
     _probe = [_device newBufferWithLength:4 options:MTLResourceStorageModeShared];
     _probeX = x;
     _probeY = y;

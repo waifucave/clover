@@ -348,7 +348,7 @@ describe("access classes through the policy", () => {
     expect(await kindOf(policyFor("dont-ask").authorize(run, FINDER, purposeFor("full", "extras.trash")))).toContain("no \"Always allow\" grant");
     expect(await kindOf(policyFor("dont-ask", { "com.apple.finder": { grant: "always" } }).authorize(run, FINDER, purposeFor("full", "extras.trash")))).toBe("ok");
     expect(await kindOf(policyFor("bypass").authorize(run, FINDER, purposeFor("full", "dict.delete")))).toBe("ok");
-    expect(await kindOf(policyFor("bypass").authorize(run, { bundleId: "com.winter.app", name: "Clover" }, purposeFor("view", "extras.x")))).toContain("Refused");
+    expect(await kindOf(policyFor("bypass").authorize(run, { bundleId: "com.winter.app", name: "Winter" }, purposeFor("view", "extras.x")))).toContain("Refused");
   });
 });
 
