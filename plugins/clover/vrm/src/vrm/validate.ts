@@ -6,8 +6,24 @@
 // self-contained (no `uri` on a buffer or image, so parsing never fetches); every view and accessor inside the
 // BIN chunk; a node forest; within the budgets; requiring only extensions three-vrm handles; PNG or JPEG images
 // within 4096 × 4096. It also reads the model's licence fields, which the renderer honours (open question 26).
+//
+// The budgets bound what the loader would ALLOCATE, not what the file holds, because this renderer runs in the
+// shell's own process and a bot may edit its own plugin folder: a 708-byte file can ask for gigabytes. So every
+// accessor counts by count × element size, a bufferView or not (one without is a zero-filled array of that
+// size); every primitive counts its widest attribute; morph targets count as the texture three.js packs them
+// into (vertices × targets × attributes, over every primitive); images count by pixels, once per texture that
+// uploads them; and `EXT_mesh_gpu_instancing` counts every instance's vertices.
 
-export type AssetRejection = "too-large" | "not-glb" | "malformed" | "not-vrm" | "unsupported-extension" | "external-reference" | "over-budget";
+export type AssetRejection =
+  | "too-large"
+  | "not-glb"
+  | "malformed"
+  | "not-vrm"
+  | "unsupported-extension"
+  | "external-reference"
+  | "over-budget"
+  /** A VRM 1.0 whose `licenseUrl` is not the VRM Public License 1.0: three-vrm refuses to load it. */
+  | "unaccepted-licence";
 
 export interface VrmMeta {
   readonly title: string;
@@ -35,13 +51,26 @@ export const VRM_BUDGETS = {
   nodeDepth: 64,
   meshes: 128,
   primitives: 512,
+  /** Over every primitive (one used twice counts twice), its widest attribute, instances included. */
   vertices: 1_000_000,
+  /** What the accessors decode to: count × element size, summed over every accessor. */
+  accessorBytes: 192 * 1024 * 1024,
   morphTargetsPerPrimitive: 128,
+  /** Vertices × targets × target attributes, summed over every primitive: the morph texture three.js builds. */
+  morphElements: 8_000_000,
   skins: 8,
   jointsPerSkin: 256,
   images: 48,
+  textures: 64,
   imageDimension: 4_096,
+  /** Width × height, summed over every image once per texture that uploads it (and at least once). */
+  imagePixels: 64 * 1024 * 1024,
+  /** `EXT_mesh_gpu_instancing`: instances over every node. */
+  instances: 256,
 } as const
+
+/** The one licence three-vrm 3.x loads a VRM 1.0 under (`VRMMetaLoaderPlugin.acceptLicenseUrls`). */
+export const VRM1_LICENCE_URL = "https://vrm.dev/licenses/1.0/"
 
 /** `extensionsRequired` must be a subset of these, or start with `VRMC_`. */
 export const SUPPORTED_REQUIRED_EXTENSIONS: ReadonlySet<string> = new Set([
@@ -60,12 +89,17 @@ export interface VrmStats {
   readonly meshes: number
   readonly primitives: number
   readonly vertices: number
+  readonly accessorBytes: number
   readonly maxMorphTargets: number
+  readonly morphElements: number
   readonly skins: number
   readonly maxJoints: number
   readonly images: number
+  readonly textures: number
   readonly maxImageWidth: number
   readonly maxImageHeight: number
+  readonly imagePixels: number
+  readonly instances: number
 }
 
 export type VrmValidation =
@@ -145,6 +179,10 @@ function check(bytes: Uint8Array): VrmValidation {
   const vrm1 = isObj(ext.VRMC_vrm) ? ext.VRMC_vrm : null
   const vrm0 = isObj(ext.VRM) ? ext.VRM : null
   if (vrm1 === null && vrm0 === null) reject("not-vrm", "This is a glTF model, but not a VRM.")
+  // Early, in words a person can act on: three-vrm would refuse the file later with its own message.
+  if (vrm1 !== null && isObj(vrm1.meta) && vrm1.meta.licenseUrl !== VRM1_LICENCE_URL) {
+    reject("unaccepted-licence", `A VRM 1.0 model must carry the VRM Public License 1.0 (${VRM1_LICENCE_URL}) as its licenseUrl; this one gives ${typeof vrm1.meta.licenseUrl === "string" ? JSON.stringify(vrm1.meta.licenseUrl.slice(0, 100)) : "none"}.`)
+  }
 
   for (const name of arr(gltf.extensionsRequired)) {
     if (typeof name !== "string") reject("malformed", "extensionsRequired holds a non-string.")
@@ -183,10 +221,16 @@ function check(bytes: Uint8Array): VrmValidation {
     return v === undefined ? reject("malformed", `${what} names a missing bufferView.`) : v
   }
 
+  let accessorBytes = 0
   const accessors = arr(gltf.accessors).map((a, i) => {
     const acc = obj(a, `accessor ${i}`)
     const count = uint(acc.count, `accessor ${i} count`)
     const elem = elementSize(acc.componentType, acc.type, `accessor ${i}`)
+    // What the loader allocates for it, whether or not a bufferView backs it.
+    accessorBytes += count * elem
+    if (accessorBytes > VRM_BUDGETS.accessorBytes) {
+      reject("over-budget", `The accessors decode to over ${VRM_BUDGETS.accessorBytes / 1024 / 1024} MiB (accessor ${i} alone asks for ${count} × ${elem} bytes).`)
+    }
     if (acc.bufferView !== undefined) {
       const v = viewAt(acc.bufferView, `accessor ${i}`)
       const offset = optUint(acc.byteOffset, `accessor ${i} byteOffset`)
@@ -247,21 +291,56 @@ function check(bytes: Uint8Array): VrmValidation {
   let primitives = 0
   let vertices = 0
   let maxMorphTargets = 0
-  meshes.forEach((m, i) => {
+  let morphElements = 0
+  const meshVertices = meshes.map((m, i) => {
+    let own = 0
     for (const p of arr(obj(m, `mesh ${i}`).primitives)) {
       const prim = obj(p, `mesh ${i} primitive`)
-      primitives++
-      const attrs = obj(prim.attributes, `mesh ${i} attributes`)
-      if (attrs.POSITION !== undefined) vertices += accessorAt(attrs.POSITION, `mesh ${i} POSITION`).count
-      const targets = arr(prim.targets).length
-      if (targets > maxMorphTargets) maxMorphTargets = targets
+      if (++primitives > VRM_BUDGETS.primitives) reject("over-budget", `Over ${VRM_BUDGETS.primitives} primitives.`)
+      // A primitive is as many vertices as its widest attribute: three.js sizes its buffers by each.
+      let count = 0
+      for (const [name, index] of Object.entries(obj(prim.attributes, `mesh ${i} attributes`))) {
+        count = Math.max(count, accessorAt(index, `mesh ${i} ${name}`).count)
+      }
+      if (prim.indices !== undefined) accessorAt(prim.indices, `mesh ${i} indices`)
+      own += count
+      // Morph targets: packed into one texture per geometry, the geometry's vertices by every target and
+      // every attribute the targets move.
+      const targets = arr(prim.targets)
+      if (targets.length > maxMorphTargets) maxMorphTargets = targets.length
+      if (targets.length > VRM_BUDGETS.morphTargetsPerPrimitive) {
+        reject("over-budget", `A primitive has ${targets.length} morph targets (limit ${VRM_BUDGETS.morphTargetsPerPrimitive}).`)
+      }
+      const moved = new Set<string>()
+      targets.forEach((t, k) => {
+        for (const [name, index] of Object.entries(obj(t, `mesh ${i} target ${k}`))) {
+          moved.add(name)
+          count = Math.max(count, accessorAt(index, `mesh ${i} target ${k} ${name}`).count)
+        }
+      })
+      morphElements += count * targets.length * Math.max(1, moved.size)
+      if (morphElements > VRM_BUDGETS.morphElements) {
+        reject("over-budget", `The morph targets come to over ${VRM_BUDGETS.morphElements} values (vertices × targets × attributes).`)
+      }
     }
+    vertices += own
+    if (vertices > VRM_BUDGETS.vertices) reject("over-budget", `Over ${VRM_BUDGETS.vertices} vertices.`)
+    return own
   })
-  if (primitives > VRM_BUDGETS.primitives) reject("over-budget", `${primitives} primitives (limit ${VRM_BUDGETS.primitives}).`)
-  if (vertices > VRM_BUDGETS.vertices) reject("over-budget", `${vertices} vertices (limit ${VRM_BUDGETS.vertices}).`)
-  if (maxMorphTargets > VRM_BUDGETS.morphTargetsPerPrimitive) {
-    reject("over-budget", `A primitive has ${maxMorphTargets} morph targets (limit ${VRM_BUDGETS.morphTargetsPerPrimitive}).`)
-  }
+
+  // ── instancing: every instance draws its mesh again ──
+  let instances = 0
+  nodes.forEach((n, i) => {
+    const node = obj(n, `node ${i}`)
+    const instancing = isObj(node.extensions) ? node.extensions.EXT_mesh_gpu_instancing : undefined
+    if (instancing === undefined) return
+    const count = Math.max(0, ...Object.entries(obj(obj(instancing, `node ${i} instancing`).attributes, `node ${i} instancing attributes`)).map(([name, index]) => accessorAt(index, `node ${i} instancing ${name}`).count))
+    instances += count
+    if (instances > VRM_BUDGETS.instances) reject("over-budget", `Over ${VRM_BUDGETS.instances} instances.`)
+    const mesh = node.mesh === undefined ? 0 : (meshVertices[uint(node.mesh, `node ${i} mesh`)] ?? reject("malformed", `node ${i} names a missing mesh.`))
+    vertices += Math.max(0, count - 1) * mesh
+    if (vertices > VRM_BUDGETS.vertices) reject("over-budget", `Over ${VRM_BUDGETS.vertices} vertices, its instances drawn.`)
+  })
 
   // ── skins ──
   const skins = arr(gltf.skins)
@@ -276,6 +355,21 @@ function check(bytes: Uint8Array): VrmValidation {
 
   // ── images: PNG or JPEG, header dimensions within budget ──
   if (images.length > VRM_BUDGETS.images) reject("over-budget", `${images.length} images (limit ${VRM_BUDGETS.images}).`)
+  const textures = arr(gltf.textures)
+  if (textures.length > VRM_BUDGETS.textures) reject("over-budget", `${textures.length} textures (limit ${VRM_BUDGETS.textures}).`)
+  // Each texture uploads its image again.
+  const uploads = new Array<number>(images.length).fill(0)
+  textures.forEach((t, i) => {
+    const texture = obj(t, `texture ${i}`)
+    const sources = [texture.source, ...Object.values(isObj(texture.extensions) ? texture.extensions : {}).map((e) => (isObj(e) ? e.source : undefined))]
+    for (const source of sources) {
+      if (source === undefined) continue
+      const index = uint(source, `texture ${i} source`)
+      if (index >= images.length) reject("malformed", `texture ${i} names a missing image.`)
+      uploads[index]!++
+    }
+  })
+  let imagePixels = 0
   let maxImageWidth = 0
   let maxImageHeight = 0
   images.forEach((im, i) => {
@@ -290,6 +384,8 @@ function check(bytes: Uint8Array): VrmValidation {
     }
     maxImageWidth = Math.max(maxImageWidth, dims.width)
     maxImageHeight = Math.max(maxImageHeight, dims.height)
+    imagePixels += dims.width * dims.height * Math.max(1, uploads[i]!)
+    if (imagePixels > VRM_BUDGETS.imagePixels) reject("over-budget", `The images come to over ${VRM_BUDGETS.imagePixels} pixels, each counted once per texture.`)
   })
 
   return {
@@ -302,12 +398,17 @@ function check(bytes: Uint8Array): VrmValidation {
       meshes: meshes.length,
       primitives,
       vertices,
+      accessorBytes,
       maxMorphTargets,
+      morphElements,
       skins: skins.length,
       maxJoints,
       images: images.length,
+      textures: textures.length,
       maxImageWidth,
       maxImageHeight,
+      imagePixels,
+      instances,
     },
   }
 }
@@ -361,10 +462,11 @@ function meta0(vrm: Json): VrmMeta {
   }
 }
 
-/** Untrusted text bound for the screen: control characters out, trimmed, at most 200 characters. */
+/** Untrusted text bound for the screen: control characters out, format characters (bidi overrides, zero-width
+ *  marks) out, trimmed, at most 200 characters. */
 function text(v: unknown): string | null {
   if (typeof v !== "string") return null
-  const s = v.replace(/\p{Cc}/gu, " ").trim().slice(0, 200)
+  const s = v.replace(/\p{Cc}/gu, " ").replace(/\p{Cf}/gu, "").trim().slice(0, 200)
   return s.length > 0 ? s : null
 }
 

@@ -371,8 +371,9 @@
   user-select: text;
 }
 
+/* The island's text, lighter: 4.5:1 or more on the field over the island's black and over an inner card. */
 .clv-other::placeholder {
-  color: var(--clover-island-faint, #FFFFFF59);
+  color: color-mix(in srgb, var(--clover-island-text, #FFFFFF) 60%, transparent);
 }
 
 .clv-card-actions {

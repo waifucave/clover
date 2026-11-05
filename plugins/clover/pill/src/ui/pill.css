@@ -153,7 +153,7 @@
 }
 
 .clp-input::placeholder {
-  color: var(--clover-pill-placeholder, #686868);
+  color: var(--clover-pill-placeholder, #7A7A7A);
   opacity: 1;
 }
 
@@ -684,8 +684,13 @@
   font-weight: 500;
 }
 
+/* Over a working child's plume the title sits on a scrim of the pill's black, so it reads over the plume's
+   hottest colours (`styles.test.ts` holds it to 4.5:1 over every child palette). */
 .clp-child[data-status="working"] .clp-child-title {
-  text-shadow: 0 0 3px #000000CC, 0 0 1px #000000CC;
+  flex: 0 1 auto;
+  padding: 1px 6px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--clover-pill-surface, #000000) 72%, transparent);
 }
 
 .clp-child-glyph {

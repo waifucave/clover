@@ -9,6 +9,9 @@ import { childLayout, entrance, stoppable, type ChildItem } from "../model/child
 import { childPalette, cssRgb, type PlumePalette } from "../model/plume";
 import { t } from "../strings";
 import { Glyph } from "./glyphs";
+
+/** How strongly a working child's plume shows under its title (whose scrim keeps the words readable over it). */
+export const CHILD_PLUME_OPACITY = 0.8;
 import { Plume, type FrameTimers, type ScheduledThrow } from "./Plume";
 
 export interface ChildrenProps {
@@ -51,7 +54,7 @@ export function Children({ items, width, slots = {}, entering = {}, animates = t
             title={child.title}
           >
             {child.status === "working" ? (
-              <div className="clp-child-plume" style={{ opacity: 0.8 }}>
+              <div className="clp-child-plume" style={{ opacity: CHILD_PLUME_OPACITY }}>
                 <Plume
                   width={layout.pillWidth}
                   height={44}

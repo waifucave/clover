@@ -35,4 +35,9 @@ describe("the manifest", () => {
     expect(check.problems).toEqual([]);
     expect(check.kind).toBe("code");
   });
+
+  test("asks for no capability: the avatar hears nothing, it is told what plays", async () => {
+    const manifest = (await import("../clover.json", { with: { type: "json" } })).default as { capabilities?: string[] };
+    expect(manifest.capabilities ?? []).toEqual([]);
+  });
 });

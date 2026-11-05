@@ -9,7 +9,18 @@ import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { VRMLoaderPlugin, VRMUtils, type VRM } from "@pixiv/three-vrm";
 import type { VisemeWeights } from "../lipsync/visemes";
 import type { Pose } from "../motion/idle";
-import { validateVrm, type VrmMeta } from "./validate";
+import { validateVrm, type AssetRejection, type VrmMeta } from "./validate";
+
+/** Why an avatar file could not be shown: a stable reason (worded through `t()` for the screen) and the check's
+ *  detail (for the log). */
+export class AvatarError extends Error {
+  constructor(
+    readonly reason: AssetRejection | "unreadable" | "closed",
+    readonly detail: string,
+  ) {
+    super(detail);
+  }
+}
 
 /** three-vrm clamps its step nowhere; a long frame would throw the hair. */
 export const SPRING_MAX_STEP = 0.05;
@@ -110,15 +121,20 @@ export class AvatarScene {
   /** Checks and parses the bytes; replaces any avatar already shown. Throws a sentence a person can read. */
   async load(bytes: ArrayBuffer): Promise<LoadedAvatar> {
     const check = validateVrm(new Uint8Array(bytes));
-    if (!check.ok) throw new Error(check.detail);
+    if (!check.ok) throw new AvatarError(check.reason, check.detail);
     const loader = new GLTFLoader();
     loader.register((parser) => new VRMLoaderPlugin(parser));
-    const gltf = await loader.parseAsync(bytes, "");
+    let gltf: Awaited<ReturnType<GLTFLoader["parseAsync"]>>;
+    try {
+      gltf = await loader.parseAsync(bytes, "");
+    } catch (error) {
+      throw new AvatarError("malformed", error instanceof Error ? error.message : String(error));
+    }
     const vrm = gltf.userData.vrm as VRM | undefined;
-    if (!vrm) throw new Error("The file has no VRM avatar in it.");
+    if (!vrm) throw new AvatarError("not-vrm", "The file has no VRM avatar in it.");
     if (this.disposed) {
       VRMUtils.deepDispose(vrm.scene);
-      throw new Error("The avatar was closed while it loaded.");
+      throw new AvatarError("closed", "The avatar was closed while it loaded.");
     }
     VRMUtils.rotateVRM0(vrm);
     VRMUtils.combineSkeletons(vrm.scene);

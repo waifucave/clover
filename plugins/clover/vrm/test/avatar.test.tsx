@@ -2,10 +2,11 @@ import { describe, expect, mock, test } from "bun:test";
 import { act, render, screen, waitFor } from "@testing-library/react";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { VrmAvatar, creditLine, type AvatarFrames } from "../src/ui/VrmAvatar";
+import { VrmAvatar, creditLine, fetchCapped, type AvatarFrames } from "../src/ui/VrmAvatar";
+import { AvatarError } from "../src/vrm/scene";
 import type { AvatarRenderer } from "../src/vrm/scene";
 import type { VrmMeta } from "../src/vrm/validate";
-import { bufferSource } from "../src/lipsync/sources";
+import { PushedSpeech, speechFrames } from "../src/lipsync/sources";
 import { vowel } from "../src/lipsync/synth";
 import type { Mesh } from "three";
 
@@ -35,7 +36,7 @@ function fakeRenderer() {
   return { calls, create };
 }
 
-function fakeFrames() {
+function fakeFrames(step = 16) {
   let now = 0;
   let seq = 0;
   const frames = new Map<number, (t: number) => void>();
@@ -56,7 +57,7 @@ function fakeFrames() {
       const end = now + ms;
       while (now < end) {
         act(() => {
-          now += 16;
+          now += step;
           for (const [id, fn] of [...frames]) {
             frames.delete(id);
             fn(now);
@@ -77,31 +78,77 @@ describe("the VRM avatar", () => {
     expect(container.querySelector(".clvr-portrait")!.getAttribute("src")).toBe("portrait.svg");
     await waitFor(() => expect(onReady).toHaveBeenCalledTimes(1));
     expect(container.querySelector("figure")!.getAttribute("data-state")).toBe("ready");
-    expect(screen.getByText(/Alpha \(placeholder model\) · by Clover contributors · Apache-2.0/)).toBeTruthy();
+    expect(screen.getByText(/Alpha \(placeholder model\) · by Clover contributors · VRM Public License 1.0/)).toBeTruthy();
     // Alive: a frame loop, drawing.
     expect(frames.pending).toBe(1);
     frames.run(100);
     expect(fake.calls.render).toBeGreaterThan(3);
   });
 
-  test("says what went wrong, with the portrait in its place", async () => {
-    const onError = mock((_: string) => {});
+  test("says what went wrong in words for a person, with the portrait in its place; the detail goes to the log", async () => {
+    const onError = mock((_: string, __?: string) => {});
     render(<VrmAvatar src={new TextEncoder().encode("not a model").buffer as ArrayBuffer} name="Alpha" portrait="p.svg" createRenderer={fakeRenderer().create} onError={onError} />);
     await waitFor(() => expect(onError).toHaveBeenCalledTimes(1));
     expect(screen.getByRole("alert").textContent).toContain("Alpha's avatar can't be shown");
-    expect(screen.getByRole("alert").textContent).toContain("Not a binary glTF");
+    expect(screen.getByRole("alert").textContent).toContain("The avatar file is not a VRM model.");
+    expect(onError.mock.calls[0]![1]).toContain("Not a binary glTF");
   });
 
   test("a file that can't be fetched is an error too", async () => {
-    const onError = mock((_: string) => {});
-    render(<VrmAvatar src="missing.vrm" name="Alpha" createRenderer={fakeRenderer().create} fetchBytes={() => Promise.reject(new Error("The avatar file could not be read (404)."))} onError={onError} />);
-    await waitFor(() => expect(onError).toHaveBeenCalledWith("The avatar file could not be read (404)."));
+    const onError = mock((_: string, __?: string) => {});
+    render(<VrmAvatar src="missing.vrm" name="Alpha" createRenderer={fakeRenderer().create} fetchBytes={() => Promise.reject(new Error("404"))} onError={onError} />);
+    await waitFor(() => expect(onError).toHaveBeenCalledWith("The avatar file could not be read.", "404"));
   });
 
   test("without WebGL it says so", async () => {
-    const onError = mock((_: string) => {});
+    const onError = mock((_: string, __?: string) => {});
     render(<VrmAvatar src={bytes()} name="Alpha" createRenderer={() => { throw new Error("no gl"); }} onError={onError} />);
-    await waitFor(() => expect(onError).toHaveBeenCalledWith("This computer can't draw the 3D avatar here."));
+    await waitFor(() => expect(onError).toHaveBeenCalledWith("This computer can't draw the 3D avatar here.", "no gl"));
+  });
+
+  test("animates only while seen: off screen or with the window hidden, no frame runs", async () => {
+    const observers: ((entries: { isIntersecting: boolean }[]) => void)[] = [];
+    const real = globalThis.IntersectionObserver;
+    globalThis.IntersectionObserver = class {
+      constructor(callback: (entries: { isIntersecting: boolean }[]) => void) {
+        observers.push(callback);
+      }
+      observe() {}
+      disconnect() {}
+    } as unknown as typeof IntersectionObserver;
+    let hidden = false;
+    const visibility = Object.getOwnPropertyDescriptor(Document.prototype, "visibilityState");
+    Object.defineProperty(document, "visibilityState", { configurable: true, get: () => (hidden ? "hidden" : "visible") });
+    try {
+      const fake = fakeRenderer();
+      const frames = fakeFrames();
+      const onReady = mock((_: VrmMeta) => {});
+      const { container } = render(<VrmAvatar src={bytes()} name="Alpha" createRenderer={fake.create} frames={frames.clock} onReady={onReady} />);
+      await waitFor(() => expect(onReady).toHaveBeenCalled());
+      const figure = container.querySelector("figure")!;
+      expect(frames.pending).toBe(1);
+      // Scrolled away.
+      act(() => observers.at(-1)!([{ isIntersecting: false }]));
+      expect(frames.pending).toBe(0);
+      expect(figure.getAttribute("data-running")).toBeNull();
+      act(() => observers.at(-1)!([{ isIntersecting: true }]));
+      expect(frames.pending).toBe(1);
+      // The window hidden, then shown.
+      hidden = true;
+      act(() => void document.dispatchEvent(new Event("visibilitychange")));
+      expect(frames.pending).toBe(0);
+      const drawn = fake.calls.render;
+      frames.run(200);
+      expect(fake.calls.render).toBe(drawn);
+      hidden = false;
+      act(() => void document.dispatchEvent(new Event("visibilitychange")));
+      expect(frames.pending).toBe(1);
+      expect(figure.getAttribute("data-running")).toBe("true");
+    } finally {
+      globalThis.IntersectionObserver = real;
+      delete (document as unknown as Record<string, unknown>).visibilityState;
+      if (visibility) Object.defineProperty(Document.prototype, "visibilityState", visibility);
+    }
   });
 
   test("a still draws once and runs no frames; paused, nothing runs", async () => {
@@ -118,22 +165,48 @@ describe("the VRM avatar", () => {
     expect(frames.pending).toBe(0);
   });
 
-  test("its mouth follows the speech", async () => {
-    let at = 0.05;
-    const speech = bufferSource(vowel("a", 0.5), 48000, () => at);
+  test("its mouth follows the speech the app pushes, on the audio clock, and closes when it stops", async () => {
+    let audio = 10;
+    const speech = new PushedSpeech(() => audio);
     const fake = fakeRenderer();
     const frames = fakeFrames();
     const onReady = mock((_: VrmMeta) => {});
     const view = render(<VrmAvatar src={bytes()} name="Alpha" createRenderer={fake.create} frames={frames.clock} speech={speech} onReady={onReady} />);
     await waitFor(() => expect(onReady).toHaveBeenCalled());
+    // Frames stamped for when they will be heard: half a second of "a" from 10.2 s on.
+    act(() => speech.push(speechFrames(vowel("a", 0.5), 48000, 10.2)));
+    frames.run(100);
+    // Not yet heard: the mouth stays shut.
+    expect(Math.max(...fake.calls.mouth)).toBeLessThan(0.02);
+    audio = 10.3;
     frames.run(200);
     expect(Math.max(...fake.calls.mouth)).toBeGreaterThan(0.15);
     // The clip ends: the mouth closes.
-    at = 3;
+    audio = 11;
     frames.run(400);
     expect(fake.calls.mouth.at(-1)!).toBeLessThan(0.02);
     view.unmount();
     expect(fake.calls.disposed).toBe(1);
+  });
+
+  test("draws at most 30 frames a second while quiet, and 60 while speech sounds", async () => {
+    let audio = 0;
+    const speech = new PushedSpeech(() => audio);
+    const fake = fakeRenderer();
+    const frames = fakeFrames(8);
+    const onReady = mock((_: VrmMeta) => {});
+    render(<VrmAvatar src={bytes()} name="Alpha" createRenderer={fake.create} frames={frames.clock} speech={speech} onReady={onReady} />);
+    await waitFor(() => expect(onReady).toHaveBeenCalled());
+    let before = fake.calls.render;
+    frames.run(1000);
+    expect(fake.calls.render - before).toBeLessThanOrEqual(31);
+    expect(fake.calls.render - before).toBeGreaterThanOrEqual(28);
+    act(() => speech.push(speechFrames(vowel("a", 2), 48000, 0)));
+    audio = 0.5;
+    before = fake.calls.render;
+    frames.run(1000);
+    expect(fake.calls.render - before).toBeGreaterThanOrEqual(55);
+    expect(fake.calls.render - before).toBeLessThanOrEqual(63);
   });
 
   test("credit: a licence that asks for it gets it, a model that doesn't, doesn't", () => {
@@ -142,5 +215,41 @@ describe("the VRM avatar", () => {
     expect(creditLine({ ...meta, creditRequired: false })).toBeNull();
     expect(creditLine({ ...meta, creditRequired: false }, "always")).toBe("Mika · by Ana · VRM Public License 1.0");
     expect(creditLine(meta, "never")).toBeNull();
+  });
+});
+
+describe("reading the avatar file", () => {
+  const stream = (chunks: number[], pulled: { count: number }) =>
+    new ReadableStream<Uint8Array>({
+      pull(controller) {
+        const next = chunks[pulled.count++];
+        if (next === undefined) controller.close();
+        else controller.enqueue(new Uint8Array(next));
+      },
+    });
+
+  test("refuses a Content-Length over the cap before reading a byte", async () => {
+    const pulled = { count: 0 };
+    const response = new Response(stream([10, 10], pulled), { headers: { "content-length": "4000" } });
+    const error = await fetchCapped("a.vrm", 1000, async () => response).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(AvatarError);
+    expect((error as AvatarError).reason).toBe("too-large");
+    expect(pulled.count).toBeLessThanOrEqual(1);
+  });
+
+  test("stops a body that runs past the cap, whatever its headers said", async () => {
+    const pulled = { count: 0 };
+    const response = new Response(stream([400, 400, 400, 400, 400, 400], pulled), { headers: { "content-length": "100" } });
+    const error = await fetchCapped("a.vrm", 1000, async () => response).catch((e: unknown) => e);
+    expect((error as AvatarError).reason).toBe("too-large");
+    expect(pulled.count).toBeLessThan(6);
+  });
+
+  test("reads a file within the cap, and calls a failed answer unreadable", async () => {
+    const pulled = { count: 0 };
+    const bytes = await fetchCapped("a.vrm", 1000, async () => new Response(stream([300, 300], pulled)));
+    expect(bytes.byteLength).toBe(600);
+    const error = await fetchCapped("a.vrm", 1000, async () => new Response("no", { status: 404 })).catch((e: unknown) => e);
+    expect((error as AvatarError).reason).toBe("unreadable");
   });
 });

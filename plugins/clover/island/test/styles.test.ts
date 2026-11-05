@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
-import { BASE_THEME, TOKENS, cssProperty, tokensFor } from "../../base-theme/src/index";
+import { BASE_THEME, TOKENS, contrast, cssProperty, tokensFor } from "../../base-theme/src/index";
 import { checkThemeCss } from "../../base-theme/src/css-check";
 import { checkManifest } from "../../base-theme/src/manifest-check";
 import { ISLAND_CSS } from "../src/ui/styles";
@@ -22,6 +22,18 @@ describe("the island's stylesheet", () => {
       expect(token, `${property} is not a catalog token`).toBeDefined();
       expect(fallback, `${property} has no fallback`).toBeDefined();
       expect(normalise(fallback!), property).toBe(normalise(String(light[token!])));
+    }
+  });
+
+  test("the answer field's placeholder reads at 4.5:1 or more, on the island's black and on an inner card", () => {
+    const share = /\.clv-other::placeholder \{\s*color: color-mix\(in srgb, var\(--clover-island-text, #FFFFFF\) (\d+)%, transparent\)/.exec(ISLAND_CSS);
+    expect(share).not.toBeNull();
+    const alpha = Math.round((Number(share![1]) / 100) * 255).toString(16).padStart(2, "0").toUpperCase();
+    const placeholder = `${String(light["island.text"])}${alpha}`;
+    for (const ground of [String(light["island.surface"]), String(light["island.card"])]) {
+      // The field's own fill over the ground, then the placeholder over both.
+      const fill = String(light["island.option"]);
+      expect(contrast(placeholder, fill, ground)).toBeGreaterThanOrEqual(4.5);
     }
   });
 

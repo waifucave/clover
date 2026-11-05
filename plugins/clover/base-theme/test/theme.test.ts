@@ -78,7 +78,13 @@ describe("contrast", () => {
     ["card.muted", "card.background", 4.5],
     ["card.approve.text", "card.approve.background", 4.5],
     ["card.deny.text", "card.deny.background", 4.5],
+    // The avatar's credit line sits on a plate of the surface colour, below the avatar (avatar.css).
     ["stage.text", "color.surface", 4.5],
+    // Placeholders are words, and the compact pill's is its only label.
+    ["color.text.placeholder", "color.surface", 4.5],
+    ["composer.placeholder", "composer.background", 4.5],
+    ["pill.placeholder", "pill.surface", 4.5],
+    ["pill.placeholder.typing", "pill.surface", 4.5],
     ["island.text", "island.surface", 7],
     ["island.muted", "island.surface", 4.5],
     ["island.attention", "island.surface", 4.5],
@@ -92,6 +98,14 @@ describe("contrast", () => {
       });
     }
   }
+
+  test("a selected row stands apart from a hovered one, and both from the canvas", () => {
+    for (const tokens of [light, dark]) {
+      expect(contrast(hex(tokens, "color.selected"), hex(tokens, "color.hover"))).toBeGreaterThanOrEqual(1.15);
+      expect(contrast(hex(tokens, "color.selected"), hex(tokens, "color.canvas"))).toBeGreaterThanOrEqual(1.2);
+      expect(contrast(hex(tokens, "color.hover"), hex(tokens, "color.canvas"))).toBeGreaterThanOrEqual(1.05);
+    }
+  });
 
   test("the content plane stands apart from the canvas in both appearances", () => {
     // brand.md §2: the difference IS the separation, the hairline is secondary.

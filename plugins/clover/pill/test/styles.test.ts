@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
-import { BASE_THEME, TOKENS, cssProperty, tokensFor } from "../../base-theme/src/index";
+import { BASE_THEME, TOKENS, contrast, cssProperty, tokensFor } from "../../base-theme/src/index";
+import { CHILD_PALETTES } from "../src/model/plume";
+import { CHILD_PLUME_OPACITY } from "../src/ui/Children";
 import { checkThemeCss } from "../../base-theme/src/css-check";
 import { checkManifest } from "../../base-theme/src/manifest-check";
 import { PILL_CSS } from "../src/ui/styles";
@@ -22,6 +24,18 @@ describe("the pill's stylesheet", () => {
       expect(token, `${property} is not a catalog token`).toBeDefined();
       expect(fallback, `${property} has no fallback`).toBeDefined();
       expect(normalise(fallback!), property).toBe(normalise(String(light[token!])));
+    }
+  });
+
+  test("a working child's title reads at 4.5:1 or more over its plume's hottest colour, every palette", () => {
+    const scrim = /\.clp-child\[data-status="working"\] \.clp-child-title \{[^}]*color-mix\(in srgb, var\(--clover-pill-surface, #000000\) (\d+)%, transparent\)/.exec(PILL_CSS);
+    expect(scrim).not.toBeNull();
+    const cover = Number(scrim![1]) / 100;
+    const hex = (v: number) => Math.round(v * 255).toString(16).padStart(2, "0");
+    for (const palette of CHILD_PALETTES) {
+      // The hottest stop, at the plume's opacity over the chip's black, then under the scrim's black.
+      const under = palette.hot.map((c) => c * CHILD_PLUME_OPACITY * (1 - cover));
+      expect(contrast(String(light["pill.text"]), `#${under.map(hex).join("")}`)).toBeGreaterThanOrEqual(4.5);
     }
   });
 

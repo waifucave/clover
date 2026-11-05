@@ -6,7 +6,7 @@ import { VRMLoaderPlugin, type VRM } from "@pixiv/three-vrm";
 import type { Mesh } from "three";
 import { FACE_TARGETS, PLACEHOLDER_NAME, makePlaceholderVrm } from "../src/placeholder/model";
 import { GltfBuilder, glbJson } from "../src/vrm/glb";
-import { VRM_BUDGETS, validateVrm } from "../src/vrm/validate";
+import { MAX_VRM_BYTES, VRM_BUDGETS, validateVrm } from "../src/vrm/validate";
 import { AvatarScene, clampStep, SPRING_MAX_STEP, type AvatarRenderer } from "../src/vrm/scene";
 import { idlePose } from "../src/motion/idle";
 import { SHUT } from "../src/lipsync/visemes";
@@ -72,7 +72,9 @@ describe("Alpha's placeholder model", () => {
       creditRequired: false,
       commercialUse: "allowed",
       redistribution: "allowed",
-      otherLicenceUrl: "https://www.apache.org/licenses/LICENSE-2.0",
+      // One licence story: the VRM Public License 1.0 in both fields.
+      licenceUrl: "https://vrm.dev/licenses/1.0/",
+      otherLicenceUrl: "https://vrm.dev/licenses/1.0/",
     });
     expect(check.stats.vertices).toBeLessThan(VRM_BUDGETS.vertices / 10);
     expect(check.stats.images).toBe(0);
@@ -144,6 +146,209 @@ describe("the structural check", () => {
     expect(!check.ok && check.reason).toBe("unsupported-extension");
   });
 });
+
+/** A PNG's first 33 bytes: the signature and its IHDR, which is all the check reads. */
+function pngHeader(width: number, height: number): Uint8Array {
+  const out = new Uint8Array(33);
+  out.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52]);
+  const v = new DataView(out.buffer);
+  v.setUint32(16, width);
+  v.setUint32(20, height);
+  out.set([8, 6, 0, 0, 0], 24);
+  return out;
+}
+
+/** A GLB by hand: its JSON, its BIN, and the header's claims (to lie with). */
+function glb(json: unknown, bin = new Uint8Array(0), claims: { version?: number; total?: number; jsonLength?: number } = {}): Uint8Array {
+  const text = new TextEncoder().encode(JSON.stringify(json));
+  const jsonLength = (text.length + 3) & ~3;
+  const binLength = (bin.length + 3) & ~3;
+  const total = 12 + 8 + jsonLength + (bin.length > 0 ? 8 + binLength : 0);
+  const out = new Uint8Array(total);
+  const v = new DataView(out.buffer);
+  v.setUint32(0, 0x46546c67, true);
+  v.setUint32(4, claims.version ?? 2, true);
+  v.setUint32(8, claims.total ?? total, true);
+  v.setUint32(12, claims.jsonLength ?? jsonLength, true);
+  v.setUint32(16, 0x4e4f534a, true);
+  out.set(text, 20);
+  out.fill(0x20, 20 + text.length, 20 + jsonLength);
+  if (bin.length > 0) {
+    v.setUint32(20 + jsonLength, binLength, true);
+    v.setUint32(24 + jsonLength, 0x004e4942, true);
+    out.set(bin, 28 + jsonLength);
+  }
+  return out;
+}
+
+describe("the structural check refuses, for every reason", () => {
+  const VRM1 = { specVersion: "1.0", meta: { name: "M", authors: ["A"], licenseUrl: "https://vrm.dev/licenses/1.0/" }, humanoid: { humanBones: {} } };
+  /** A VRM made with the builder, then `edit`ed: the budgets' cases. */
+  const vrm = (edit: (b: GltfBuilder) => void) => {
+    const b = new GltfBuilder("test");
+    b.json.extensions.VRMC_vrm = structuredClone(VRM1);
+    b.use("VRMC_vrm");
+    edit(b);
+    return b.toGlb();
+  };
+  /** An accessor with no bufferView: the loader makes a zero-filled array of count × element size. */
+  const empty = (b: GltfBuilder, type: string, count: number) => (b.json.accessors.push({ componentType: 5126, type, count }), b.json.accessors.length - 1);
+  const reason = (bytes: Uint8Array) => {
+    const check = validateVrm(bytes);
+    return check.ok ? "ok" : `${check.reason}: ${check.detail}`;
+  };
+
+  test("too-large: over the file cap, before anything is read", () => {
+    expect(reason(new Uint8Array(MAX_VRM_BYTES + 1))).toStartWith("too-large");
+  });
+
+  test("not-glb: not a binary glTF, or not version 2", () => {
+    expect(reason(new TextEncoder().encode("hello, world"))).toStartWith("not-glb");
+    expect(reason(glb({ asset: { version: "2.0" } }, undefined, { version: 1 }))).toStartWith("not-glb");
+  });
+
+  test("malformed: lengths that disagree, JSON that does not parse, views and accessors outside the file", () => {
+    expect(reason(glb({}, undefined, { total: 999 }))).toStartWith("malformed");
+    expect(reason(glb({}, undefined, { jsonLength: 4000 }))).toStartWith("malformed");
+    const broken = glb({ a: 1 });
+    broken[20] = 0x7b;
+    broken[21] = 0x7b;
+    expect(reason(broken)).toStartWith("malformed");
+    expect(reason(vrm((b) => (b.json.bufferViews.push({ buffer: 0, byteOffset: 0, byteLength: 64 }), b.view(new Uint8Array(4)))))).toStartWith("malformed");
+    expect(reason(vrm((b) => b.json.accessors.push({ bufferView: b.view(new Float32Array(3)), componentType: 5126, type: "VEC3", count: 2 })))).toStartWith("malformed");
+    expect(reason(vrm((b) => (b.node({}), (b.json.nodes[0]!.children = [0]))))).toStartWith("malformed");
+    expect(reason(vrm((b) => ((b.json as Record<string, unknown>).textures = [{ source: 3 }])))).toStartWith("malformed");
+  });
+
+  test("not-vrm: a glTF without a VRM extension", () => {
+    expect(reason(tinyGltf())).toStartWith("not-vrm");
+  });
+
+  test("unsupported-extension: a required extension it cannot draw, an image that is neither PNG nor JPEG", () => {
+    expect(reason(vrm((b) => (b.json.extensionsRequired = ["KHR_draco_mesh_compression"])))).toStartWith("unsupported-extension");
+    expect(reason(vrm((b) => ((b.json as Record<string, unknown>).images = [{ bufferView: b.view(new TextEncoder().encode("GIF89a........")), mimeType: "image/gif" }])))).toStartWith("unsupported-extension");
+  });
+
+  test("external-reference: a buffer or an image that points outside the file", () => {
+    expect(reason(vrm((b) => ((b.json as Record<string, unknown>).images = [{ uri: "https://example.com/x.png" }])))).toStartWith("external-reference");
+    const json = { asset: { version: "2.0" }, extensions: { VRMC_vrm: VRM1 }, buffers: [{ uri: "data:application/octet-stream;base64,AAAA", byteLength: 3 }] };
+    expect(reason(glb(json))).toStartWith("external-reference");
+  });
+
+  test("unaccepted-licence: a VRM 1.0 under any licence but the VRM Public License 1.0, in a sentence", () => {
+    const check = validateVrm(vrm((b) => ((b.json.extensions.VRMC_vrm as { meta: Record<string, unknown> }).meta.licenseUrl = "https://example.com/my-licence")));
+    expect(!check.ok && check.reason).toBe("unaccepted-licence");
+    expect(!check.ok && check.detail).toContain("https://vrm.dev/licenses/1.0/");
+    // Without the trailing slash three-vrm refuses it too.
+    expect(reason(vrm((b) => ((b.json.extensions.VRMC_vrm as { meta: Record<string, unknown> }).meta.licenseUrl = "https://vrm.dev/licenses/1.0")))).toStartWith("unaccepted-licence");
+  });
+
+  test("over-budget: the JSON, the node forest, meshes and primitives, skins and joints", () => {
+    expect(reason(glb({}, undefined, { jsonLength: VRM_BUDGETS.jsonBytes + 4 }))).toStartWith("over-budget");
+    expect(reason(vrm((b) => { for (let i = 0; i <= VRM_BUDGETS.nodes; i++) b.node({}); }))).toStartWith("over-budget");
+    expect(reason(vrm((b) => { let parent = b.node({}); for (let i = 0; i < VRM_BUDGETS.nodeDepth; i++) parent = b.node({}, parent); }))).toStartWith("over-budget");
+    const position = (b: GltfBuilder) => b.floats([0, 0, 0, 1, 0, 0, 0, 1, 0], "VEC3", { bounds: true });
+    expect(reason(vrm((b) => { const p = position(b); for (let i = 0; i <= VRM_BUDGETS.meshes; i++) b.mesh({ primitives: [{ attributes: { POSITION: p } }] }); }))).toStartWith("over-budget");
+    expect(reason(vrm((b) => { const p = position(b); b.mesh({ primitives: Array.from({ length: VRM_BUDGETS.primitives + 1 }, () => ({ attributes: { POSITION: p } })) }); }))).toStartWith("over-budget");
+    expect(reason(vrm((b) => ((b.json as Record<string, unknown>).skins = Array.from({ length: VRM_BUDGETS.skins + 1 }, () => ({ joints: [] })))))).toStartWith("over-budget");
+    expect(reason(vrm((b) => { const n = b.node({}); (b.json as Record<string, unknown>).skins = [{ joints: Array.from({ length: VRM_BUDGETS.jointsPerSkin + 1 }, () => n) }]; }))).toStartWith("over-budget");
+  });
+
+  test("over-budget: what the accessors decode to, a bufferView or not (the review's 708-byte, 3 GiB file)", () => {
+    const bomb = vrm((b) => {
+      const p = b.floats([0, 0, 0, 1, 0, 0, 0, 1, 0], "VEC3", { bounds: true });
+      b.mesh({ primitives: [{ attributes: { POSITION: p, NORMAL: empty(b, "VEC3", 2 ** 28) } }] });
+    });
+    expect(bomb.byteLength).toBeLessThan(2048);
+    expect(reason(bomb)).toStartWith("over-budget");
+    // Nobody uses it: it still decodes.
+    expect(reason(vrm((b) => empty(b, "MAT4", 4_000_000)))).toStartWith("over-budget");
+  });
+
+  test("over-budget: vertices count by a primitive's widest attribute, every time it is drawn", () => {
+    expect(reason(vrm((b) => {
+      const p = b.floats([0, 0, 0, 1, 0, 0, 0, 1, 0], "VEC3", { bounds: true });
+      b.mesh({ primitives: [{ attributes: { POSITION: p, TEXCOORD_0: empty(b, "VEC2", VRM_BUDGETS.vertices + 1) } }] });
+    }))).toStartWith("over-budget");
+    expect(reason(vrm((b) => {
+      const p = empty(b, "VEC3", 300_000);
+      b.mesh({ primitives: [1, 2, 3, 4].map(() => ({ attributes: { POSITION: p } })) });
+    }))).toStartWith("over-budget");
+  });
+
+  test("over-budget: morph targets, per primitive and over the whole model (the review's 512 × 128 file)", () => {
+    expect(reason(vrm((b) => {
+      const p = b.floats([0, 0, 0, 1, 0, 0, 0, 1, 0], "VEC3", { bounds: true });
+      b.mesh({ primitives: [{ attributes: { POSITION: p }, targets: Array.from({ length: VRM_BUDGETS.morphTargetsPerPrimitive + 1 }, () => ({ POSITION: p })) }] });
+    }))).toStartWith("over-budget");
+    const many = vrm((b) => {
+      const p = empty(b, "VEC3", 1_500);
+      const targets = Array.from({ length: VRM_BUDGETS.morphTargetsPerPrimitive }, () => ({ POSITION: p, NORMAL: p }));
+      b.mesh({ primitives: Array.from({ length: 64 }, () => ({ attributes: { POSITION: p }, targets })) });
+    });
+    expect(many.byteLength).toBeLessThan(1024 * 1024);
+    expect(reason(many)).toStartWith("over-budget");
+  });
+
+  test("over-budget: images by count, by size, by pixels over every texture that uploads them, and textures by count", () => {
+    const images = (b: GltfBuilder, sizes: [number, number][]) => ((b.json as Record<string, unknown>).images = sizes.map(([w, h]) => ({ bufferView: b.view(pngHeader(w, h)), mimeType: "image/png" })));
+    expect(reason(vrm((b) => images(b, Array.from({ length: VRM_BUDGETS.images + 1 }, () => [4, 4]))))).toStartWith("over-budget");
+    expect(reason(vrm((b) => images(b, [[VRM_BUDGETS.imageDimension + 1, 4]])))).toStartWith("over-budget");
+    expect(reason(vrm((b) => images(b, [[4096, 4096], [4096, 4096], [4096, 4096], [4096, 4096], [2048, 2048]])))).toStartWith("over-budget");
+    // One 2048² image, uploaded by twenty textures.
+    expect(reason(vrm((b) => {
+      images(b, [[2048, 2048]]);
+      (b.json as Record<string, unknown>).textures = Array.from({ length: 20 }, () => ({ source: 0 }));
+    }))).toStartWith("over-budget");
+    expect(reason(vrm((b) => {
+      images(b, [[4, 4]]);
+      (b.json as Record<string, unknown>).textures = Array.from({ length: VRM_BUDGETS.textures + 1 }, () => ({ source: 0 }));
+    }))).toStartWith("over-budget");
+  });
+
+  test("over-budget: EXT_mesh_gpu_instancing, by instances and by the vertices they draw", () => {
+    const instanced = (instances: number, vertices: number) =>
+      vrm((b) => {
+        const mesh = b.mesh({ primitives: [{ attributes: { POSITION: empty(b, "VEC3", vertices) } }] });
+        b.node({ mesh, extensions: { EXT_mesh_gpu_instancing: { attributes: { TRANSLATION: empty(b, "VEC3", instances) } } } });
+        b.use("EXT_mesh_gpu_instancing");
+      });
+    expect(reason(instanced(4, 1_000))).toBe("ok");
+    expect(reason(instanced(VRM_BUDGETS.instances + 1, 3))).toStartWith("over-budget");
+    expect(reason(instanced(200, 10_000))).toStartWith("over-budget");
+  });
+
+  test("passes a model within every budget, and reports what it measured", () => {
+    const check = validateVrm(vrm((b) => {
+      const p = b.floats([0, 0, 0, 1, 0, 0, 0, 1, 0], "VEC3", { bounds: true });
+      b.node({ mesh: b.mesh({ primitives: [{ attributes: { POSITION: p }, targets: [{ POSITION: p }] }] }) });
+      (b.json as Record<string, unknown>).images = [{ bufferView: b.view(pngHeader(512, 256)), mimeType: "image/png" }];
+      (b.json as Record<string, unknown>).textures = [{ source: 0 }, { source: 0 }];
+    }));
+    expect(check.ok).toBe(true);
+    if (!check.ok) return;
+    expect(check.stats.vertices).toBe(3);
+    expect(check.stats.accessorBytes).toBe(36);
+    expect(check.stats.morphElements).toBe(3);
+    expect(check.stats.imagePixels).toBe(512 * 256 * 2);
+  });
+
+  test("a title or an author loses the characters that could reorder or hide what the screen shows", () => {
+    const check = validateVrm(vrm((b) => {
+      const meta = (b.json.extensions.VRMC_vrm as { meta: Record<string, unknown> }).meta;
+      meta.name = "Al\u202Eahpla\u200B\u2066x\u2069";
+      meta.authors = ["Sam\u200F"];
+    }));
+    expect(check.ok && check.meta.title).toBe("Alahplax");
+    expect(check.ok && check.meta.author).toBe("Sam");
+  });
+});
+
+function tinyGltf(): Uint8Array {
+  const b = new GltfBuilder("test");
+  b.node({ mesh: b.mesh({ primitives: [{ attributes: { POSITION: b.floats([0, 0, 0, 1, 0, 0, 0, 1, 0], "VEC3", { bounds: true }) } }] }) });
+  return b.toGlb();
+}
 
 /** A renderer that only counts. */
 function fakeRenderer() {

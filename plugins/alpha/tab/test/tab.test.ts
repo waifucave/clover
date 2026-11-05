@@ -49,7 +49,10 @@ describe("Alpha's theme", () => {
     ["color.success", "color.surface", 4.5],
     ["bubble.user.text", "bubble.user.background", 7],
     ["composer.text", "composer.background", 7],
+    // The avatar's credit line sits on a plate of the surface colour, below the avatar.
     ["stage.text", "color.surface", 4.5],
+    ["color.text.placeholder", "color.surface", 4.5],
+    ["composer.placeholder", "composer.background", 4.5],
   ];
   for (const [appearance, tokens] of [["light", light], ["dark", dark]] as const) {
     for (const [fg, bg, floor] of floors) {
@@ -57,6 +60,14 @@ describe("Alpha's theme", () => {
         expect(contrast(hex(tokens, fg), hex(tokens, bg))).toBeGreaterThanOrEqual(floor);
       });
     }
+  }
+});
+
+test("a selected row stands apart from a hovered one, and both from the canvas", () => {
+  for (const tokens of [light, dark]) {
+    expect(contrast(hex(tokens, "color.selected"), hex(tokens, "color.hover"))).toBeGreaterThanOrEqual(1.15);
+    expect(contrast(hex(tokens, "color.selected"), hex(tokens, "color.canvas"))).toBeGreaterThanOrEqual(1.2);
+    expect(contrast(hex(tokens, "color.hover"), hex(tokens, "color.canvas"))).toBeGreaterThanOrEqual(1.05);
   }
 });
 

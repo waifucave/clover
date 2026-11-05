@@ -1,6 +1,8 @@
 /* The VRM avatar on a bot's stage. The canvas is see-through: the stage's own background (the theme's
-   `stage.*` tokens, or the bot's layout) shows behind the model. Every colour reads a token; the fallback
-   after it is the base theme's value (`styles.test.ts` keeps the two equal). */
+   `stage.*` tokens, or the bot's layout) shows behind the model. A credit line, when the model's licence asks
+   for one, sits in a band of its own below the avatar, never over it, on a plate of the surface colour (so
+   `stage.text` is read against `color.surface`, whatever the stage looks like). Every colour reads a token;
+   the fallback after it is the base theme's value (`styles.test.ts` keeps the two equal). */
 
 .clvr-avatar {
   position: relative;
@@ -10,8 +12,16 @@
   min-height: 160px;
   margin: 0;
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
   font-family: var(--clover-font-sans, system-ui, -apple-system, "Segoe UI Variable Text", "Segoe UI", "Noto Sans", Ubuntu, Cantarell, sans-serif);
   color: var(--clover-stage-text, #676674);
+}
+
+.clvr-view {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 .clvr-canvas {
@@ -65,12 +75,24 @@
 }
 
 .clvr-credit {
-  position: absolute;
-  left: 12px;
-  right: 12px;
-  bottom: 10px;
+  flex: none;
+  display: flex;
+  justify-content: center;
+  padding: 4px 12px 8px;
   font-size: var(--clover-font-size-caption, 11px);
   line-height: 1.35;
-  color: var(--clover-stage-text, #676674);
   pointer-events: none;
+}
+
+.clvr-credit-plate {
+  max-width: 100%;
+  box-sizing: border-box;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--clover-color-surface, #FFFFFF);
+  box-shadow: inset 0 0 0 1px var(--clover-color-hairline, #E4E4EA);
+  color: var(--clover-stage-text, #676674);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }

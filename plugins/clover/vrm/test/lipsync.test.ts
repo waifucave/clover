@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { FFT_SIZE, rmsOf, spectralCentroidOf } from "../src/lipsync/features";
 import { MouthSmoother, SHUT, SILENCE_RMS, VISEMES, visemeWeights, type VisemeWeights } from "../src/lipsync/visemes";
-import { LipSync, SpeechRing, analyserSource, bufferSource, ringSource, type AnalyserLike } from "../src/lipsync/sources";
+import { LipSync, PushedSpeech, SpeechRing, analyserSource, bufferSource, frameSource, ringSource, speechFrames, type AnalyserLike } from "../src/lipsync/sources";
 import { hiss, phrase, vowel } from "../src/lipsync/synth";
 
 const RATE = 48000;
@@ -133,5 +133,51 @@ describe("the samples' sources", () => {
     lips.use(null);
     for (let i = 0; i < 30; i++) lips.sample(1 / 60);
     expect(sum(lips.sample(1 / 60))).toBeLessThan(0.01);
+  });
+});
+
+describe("the speech feed", () => {
+  test("the app side stamps each hop with when it is heard", () => {
+    const frames = speechFrames(vowel("a", 0.1), RATE, 2.5);
+    expect(frames.length).toBe(Math.ceil((0.1 * RATE) / FFT_SIZE));
+    expect(frames[0]!.at).toBe(2.5);
+    expect(frames[1]!.at).toBeCloseTo(2.5 + FFT_SIZE / RATE, 9);
+    expect(frames[0]!.duration).toBeCloseTo(FFT_SIZE / RATE, 9);
+    expect(frames[5]!.rms).toBeGreaterThan(0.05);
+    expect(frames[5]!.centroid).toBeGreaterThan(0);
+  });
+
+  test("a ring reads the frame sounding at a time; before, between and after, silence", () => {
+    const ring = new SpeechRing(RATE, 0);
+    ring.push(speechFrames(vowel("i", 0.2), RATE, 1));
+    expect(ring.frameAt(0.99)).toBeNull();
+    expect(ring.frameAt(1.05)!.rms).toBeGreaterThan(0.05);
+    expect(ring.frameAt(1.3)).toBeNull();
+    // A frame that is not a number in every field is dropped, never drawn.
+    ring.push([{ at: 5, duration: 0.01, rms: Number.NaN, centroid: 900 }]);
+    expect(ring.frameAt(5.005)).toBeNull();
+  });
+
+  test("lip-sync reads the feed at the audio clock: the mouth opens on the vowel, bright for i, dark for a", () => {
+    let audio = 0;
+    const feed = new PushedSpeech(() => audio);
+    const ring = new SpeechRing(RATE, 0);
+    feed.subscribe((frames) => ring.push(frames));
+    feed.push(speechFrames(vowel("a", 0.3), RATE, 1));
+    feed.push(speechFrames(vowel("i", 0.3), RATE, 2));
+    const lips = new LipSync(frameSource(ring, () => audio));
+    const settle = () => {
+      let w = lips.sample(1 / 60);
+      for (let i = 0; i < 20; i++) w = lips.sample(1 / 60);
+      return w;
+    };
+    audio = 0.5;
+    expect(Object.values(settle()).every((v) => v < 0.01)).toBe(true);
+    audio = 1.15;
+    const a = settle();
+    audio = 2.15;
+    const i = settle();
+    expect(a.aa + a.oh).toBeGreaterThan(a.ih + a.ee);
+    expect(i.ih + i.ee).toBeGreaterThan(i.aa + i.oh);
   });
 });
