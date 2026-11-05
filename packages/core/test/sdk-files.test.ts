@@ -17,15 +17,15 @@ import {
   updateSdkGlobalConfig,
   updateSdkSettings,
 } from "../src/sdk-files";
-import { winterSessions } from "../src/runtime-sdk/sessions";
+import { cloverSessions } from "../src/runtime-sdk/sessions";
 
-const tmpHome = (): string => realpathSync(mkdtempSync(join(tmpdir(), "winter-sdkfiles-")));
+const tmpHome = (): string => realpathSync(mkdtempSync(join(tmpdir(), "clover-sdkfiles-")));
 
 describe("Contract C paths", () => {
   test("sdkHomeFor and the three file/dir helpers", () => {
     expect(sdkHomeFor("/h")).toBe("/h/sdk");
     expect(sdkSettingsPath("/h")).toBe("/h/sdk/settings.json");
-    expect(sdkGlobalConfigPath("/h")).toBe("/h/sdk/.winter.json");
+    expect(sdkGlobalConfigPath("/h")).toBe("/h/sdk/.clover.json");
     expect(sdkPluginsRoot("/h")).toBe("/h/sdk/plugins");
   });
 
@@ -110,7 +110,7 @@ describe("sdk-files: settings.json", () => {
   });
 });
 
-describe("sdk-files: .winter.json", () => {
+describe("sdk-files: .clover.json", () => {
   test("user and local MCP servers round-trip, other keys preserved", () => {
     const home = tmpHome();
     mkdirSync(sdkHomeFor(home), { recursive: true });
@@ -146,15 +146,15 @@ describe("the store home follows the linked router (storeHomeFor)", () => {
       setRunHomeSupportForTests(supported);
       expect(storeHomeFor("/h")).toBe(root);
       expect(storeProjectsDir("/h")).toBe(`${root}/projects`);
-      const cwd = realpathSync(mkdtempSync(join(tmpdir(), "winter-sdkfiles-cwd-")));
-      expect(memoryDirFor(cwd, { winterHome: "/h" })).toBe(`${root}/projects/${sanitizeProjectKey(cwd)}/memory`);
-      expect(assistantMemoryDirFor({ winterHome: "/h" })).toBe(`${root}/projects/_assistant/memory`);
-      expect(globalMemoryDirFor({ winterHome: "/h" })).toBe(`${root}/projects/_global/memory`);
+      const cwd = realpathSync(mkdtempSync(join(tmpdir(), "clover-sdkfiles-cwd-")));
+      expect(memoryDirFor(cwd, { cloverHome: "/h" })).toBe(`${root}/projects/${sanitizeProjectKey(cwd)}/memory`);
+      expect(assistantMemoryDirFor({ cloverHome: "/h" })).toBe(`${root}/projects/_assistant/memory`);
+      expect(globalMemoryDirFor({ cloverHome: "/h" })).toBe(`${root}/projects/_global/memory`);
       expect(userAgentsDir("/h")).toBe(`${root}/agents`);
       expect(userWorkflowsDir("/h")).toBe(`${root}/workflows`);
     });
 
-    test(`run homes ${supported ? "applied" : "not applied"}: winterSessions (hasTranscript's door) finds a transcript under ${root}/projects`, async () => {
+    test(`run homes ${supported ? "applied" : "not applied"}: cloverSessions (hasTranscript's door) finds a transcript under ${root}/projects`, async () => {
       setRunHomeSupportForTests(supported);
       const home = tmpHome();
       const store = new WinterCompatibilitySessionStore({ winterHome: supported ? sdkHomeFor(home) : home });
@@ -162,10 +162,10 @@ describe("the store home follows the linked router (storeHomeFor)", () => {
       await store.append({ projectKey: "p", sessionId }, [
         { type: "user", uuid: crypto.randomUUID(), parentUuid: null, sessionId, timestamp: new Date().toISOString(), message: { role: "user", content: "hi" } } as never,
       ]);
-      expect(await winterSessions(home).getSessionInfo(sessionId)).toBeDefined();
+      expect(await cloverSessions(home).getSessionInfo(sessionId)).toBeDefined();
       // …and the OTHER layout's store does not have it.
       setRunHomeSupportForTests(!supported);
-      await expect(winterSessions(home).getSessionInfo(sessionId)).rejects.toThrow();
+      await expect(cloverSessions(home).getSessionInfo(sessionId)).rejects.toThrow();
     });
   }
 });

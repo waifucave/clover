@@ -7,84 +7,84 @@
       "runtime": "winter-agent",
       "surface": "cli",
       "cell": "implemented",
-      "reason": "the Winter leg serves every mode (Task 17) — reachable from this surface"
+      "reason": "the Clover leg serves every mode (Task 17) — reachable from this surface"
     },
     {
       "mode": "code",
       "runtime": "claude-agent",
       "surface": "cli",
       "cell": "correctly-unavailable",
-      "reason": "the official claude runtime was retired (WS-23): no session is created on it, and a session recorded on it is adopted onto the Winter leg at its next resume (session-driver.ts's adoptLegacyRecord)"
+      "reason": "the official claude runtime was retired (WS-23): no session is created on it, and a session recorded on it is adopted onto the Clover leg at its next resume (session-driver.ts's adoptLegacyRecord)"
     },
     {
       "mode": "code",
       "runtime": "winter-agent",
       "surface": "mac",
       "cell": "implemented",
-      "reason": "the Winter leg serves every mode (Task 17) — reachable from this surface"
+      "reason": "the Clover leg serves every mode (Task 17) — reachable from this surface"
     },
     {
       "mode": "code",
       "runtime": "claude-agent",
       "surface": "mac",
       "cell": "correctly-unavailable",
-      "reason": "the official claude runtime was retired (WS-23): no session is created on it, and a session recorded on it is adopted onto the Winter leg at its next resume (session-driver.ts's adoptLegacyRecord)"
+      "reason": "the official claude runtime was retired (WS-23): no session is created on it, and a session recorded on it is adopted onto the Clover leg at its next resume (session-driver.ts's adoptLegacyRecord)"
     },
     {
       "mode": "code",
       "runtime": "winter-agent",
       "surface": "ios-remote",
       "cell": "implemented",
-      "reason": "the Winter leg serves every mode (Task 17) — reachable from this surface"
+      "reason": "the Clover leg serves every mode (Task 17) — reachable from this surface"
     },
     {
       "mode": "code",
       "runtime": "claude-agent",
       "surface": "ios-remote",
       "cell": "correctly-unavailable",
-      "reason": "the official claude runtime was retired (WS-23): no session is created on it, and a session recorded on it is adopted onto the Winter leg at its next resume (session-driver.ts's adoptLegacyRecord)"
+      "reason": "the official claude runtime was retired (WS-23): no session is created on it, and a session recorded on it is adopted onto the Clover leg at its next resume (session-driver.ts's adoptLegacyRecord)"
     },
     {
       "mode": "dispatch",
       "runtime": "winter-agent",
-      "surface": "cli",
-      "cell": "correctly-unavailable",
-      "reason": "the TUI/CLI is code-only (packages/cli/src/session-mode.ts) — dispatch sessions are apps/orb-only and cannot be created or attached from here"
-    },
-    {
-      "mode": "dispatch",
-      "runtime": "claude-agent",
       "surface": "cli",
       "cell": "correctly-unavailable",
       "reason": "the TUI/CLI is code-only (packages/cli/src/session-mode.ts) — dispatch sessions are apps/orb-only and cannot be created or attached from here"
     },
     {
       "mode": "dispatch",
+      "runtime": "claude-agent",
+      "surface": "cli",
+      "cell": "correctly-unavailable",
+      "reason": "the TUI/CLI is code-only (packages/cli/src/session-mode.ts) — dispatch sessions are apps/orb-only and cannot be created or attached from here"
+    },
+    {
+      "mode": "dispatch",
       "runtime": "winter-agent",
       "surface": "mac",
       "cell": "implemented",
-      "reason": "the Winter leg serves every mode (Task 17) — reachable from this surface"
+      "reason": "the Clover leg serves every mode (Task 17) — reachable from this surface"
     },
     {
       "mode": "dispatch",
       "runtime": "claude-agent",
       "surface": "mac",
       "cell": "correctly-unavailable",
-      "reason": "the official claude runtime was retired (WS-23): no session is created on it, and a session recorded on it is adopted onto the Winter leg at its next resume (session-driver.ts's adoptLegacyRecord)"
+      "reason": "the official claude runtime was retired (WS-23): no session is created on it, and a session recorded on it is adopted onto the Clover leg at its next resume (session-driver.ts's adoptLegacyRecord)"
     },
     {
       "mode": "dispatch",
       "runtime": "winter-agent",
       "surface": "ios-remote",
       "cell": "implemented",
-      "reason": "the Winter leg serves every mode (Task 17) — reachable from this surface"
+      "reason": "the Clover leg serves every mode (Task 17) — reachable from this surface"
     },
     {
       "mode": "dispatch",
       "runtime": "claude-agent",
       "surface": "ios-remote",
       "cell": "correctly-unavailable",
-      "reason": "the official claude runtime was retired (WS-23): no session is created on it, and a session recorded on it is adopted onto the Winter leg at its next resume (session-driver.ts's adoptLegacyRecord)"
+      "reason": "the official claude runtime was retired (WS-23): no session is created on it, and a session recorded on it is adopted onto the Clover leg at its next resume (session-driver.ts's adoptLegacyRecord)"
     },
     {
       "mode": "chat",
@@ -105,28 +105,28 @@
       "runtime": "winter-agent",
       "surface": "mac",
       "cell": "implemented",
-      "reason": "the Winter leg serves every mode (Task 17) — reachable from this surface; chat's own tool surface allows only 5 built-in(s) by design (runtime-sdk/mode-options.ts's toolsFor) — narrower by mode policy, not a runtime/surface gate"
+      "reason": "the Clover leg serves every mode (Task 17) — reachable from this surface; chat's own tool surface allows only 5 built-in(s) by design (runtime-sdk/mode-options.ts's toolsFor) — narrower by mode policy, not a runtime/surface gate"
     },
     {
       "mode": "chat",
       "runtime": "claude-agent",
       "surface": "mac",
       "cell": "correctly-unavailable",
-      "reason": "the official claude runtime was retired (WS-23): no session is created on it, and a session recorded on it is adopted onto the Winter leg at its next resume (session-driver.ts's adoptLegacyRecord)"
+      "reason": "the official claude runtime was retired (WS-23): no session is created on it, and a session recorded on it is adopted onto the Clover leg at its next resume (session-driver.ts's adoptLegacyRecord)"
     },
     {
       "mode": "chat",
       "runtime": "winter-agent",
       "surface": "ios-remote",
       "cell": "implemented",
-      "reason": "the Winter leg serves every mode (Task 17) — reachable from this surface; chat's own tool surface allows only 5 built-in(s) by design (runtime-sdk/mode-options.ts's toolsFor) — narrower by mode policy, not a runtime/surface gate"
+      "reason": "the Clover leg serves every mode (Task 17) — reachable from this surface; chat's own tool surface allows only 5 built-in(s) by design (runtime-sdk/mode-options.ts's toolsFor) — narrower by mode policy, not a runtime/surface gate"
     },
     {
       "mode": "chat",
       "runtime": "claude-agent",
       "surface": "ios-remote",
       "cell": "correctly-unavailable",
-      "reason": "the official claude runtime was retired (WS-23): no session is created on it, and a session recorded on it is adopted onto the Winter leg at its next resume (session-driver.ts's adoptLegacyRecord)"
+      "reason": "the official claude runtime was retired (WS-23): no session is created on it, and a session recorded on it is adopted onto the Clover leg at its next resume (session-driver.ts's adoptLegacyRecord)"
     }
   ]
 }

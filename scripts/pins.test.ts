@@ -1,11 +1,11 @@
 // Winter Phase 8d (P8d-16), P9a-8 — pin-consistency tripwire. `.github/workflows/ci.yml`'s
 // retired `winter-binary` job used to hardcode `ref: v0.0.4` (the pinned-tag checkout) AND
-// `name: winter-v0.0.4` (the uploaded artifact) as two separate literals — and
+// the uploaded artifact's name with the same version as two separate literals — and
 // `packages/core/package.json`'s own SDK version ranges are a THIRD place the same pin could
 // silently drift from `packages/core/src/runtime-sdk/versions.ts`'s `REQUIRED_*` constants (it
 // happened once already, in 8c's spine). This test is the tripwire for both directions.
 //
-// P9a-8: the uploaded/downloaded ARTIFACT is gone (winter's source is the installed npm platform
+// P9a-8: the uploaded/downloaded ARTIFACT is gone (the `winter` binary comes from the installed npm platform
 // package now) — that derivation test is DROPPED, never made conditional, since there is no
 // artifact name left anywhere to derive. The pinned-tag checkout REF still appears, but only
 // inside each job's dated FALLBACK block (test-core/test-cli/verify — P9a-8, removed at the
@@ -48,15 +48,15 @@ function lockedVersion(name: string): string {
   return m[1]!;
 }
 
-describe("CI takes winter from the installed platform package ONLY (P9a-8, since the 0.0.5 pin flip)", () => {
-  test("no literal 'ref: v<digits>' checkout of winter-agent-sdk, no FALLBACK block, no `versions` job remain", () => {
+describe("CI takes the `winter` binary from the installed platform package ONLY (P9a-8, since the 0.0.5 pin flip)", () => {
+  test("no literal 'ref: v<digits>' checkout of clover-sdk, no FALLBACK block, no `versions` job remain", () => {
     expect(CI_YML).not.toMatch(/ref:\s*v\d+\.\d+\.\d+/);
     expect(CI_YML).not.toContain("FALLBACK");
     expect(CI_YML).not.toContain("needs.versions");
     expect(CI_YML).not.toMatch(/^  versions:$/m);
   });
-  test("every job that needs winter fails loudly when the platform package did not install (never a silent skip)", () => {
-    const checks = CI_YML.match(/did not install — bun install is the ONLY winter source/g) ?? [];
+  test("every job that needs the `winter` binary fails loudly when the platform package did not install (never a silent skip)", () => {
+    const checks = CI_YML.match(/did not install — bun install is the ONLY winter source since/g) ?? [];
     expect(checks.length).toBe(3);
   });
 });

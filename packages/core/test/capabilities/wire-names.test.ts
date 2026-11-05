@@ -8,7 +8,7 @@ import { resolvePlatformPackageWinter } from "../../src/runtime-sdk/executable";
 import { CORE_BRAND } from "../../src/runtime-sdk/brand";
 import { createWinterRuntimeSdk, type WinterRuntimeSdk } from "../../src/runtime-sdk/create";
 import {
-  CAPABILITY_SERVER_KEYS, WINTER_CAPABILITY_TOOLS,
+  CAPABILITY_SERVER_KEYS, CLOVER_CAPABILITY_TOOLS,
   assertNoCapabilityCollision, buildCapabilitiesFor, capabilityServerName, capabilityToolName,
   CapabilityNameCollisionError,
   type CapabilityDeps, type CapabilityServerRecord, type CapabilitySession,
@@ -24,7 +24,7 @@ import {
  * string agree perfectly. The first cut of this batch declared its servers `name: "sessions"`, which
  * a child reaches as `mcp__sessions__list_sessions` — one segment short of every literal in the
  * table — and nothing failed anywhere, because Task 9's planned tripwire diffs
- * `CAPABILITY_TOOL_MODES` against `WINTER_CAPABILITY_TOOLS`, i.e. copy against copy.
+ * `CAPABILITY_TOOL_MODES` against `CLOVER_CAPABILITY_TOOLS`, i.e. copy against copy.
  *
  * So this file derives the name from THE SERVER OBJECT THE ROUTER RECEIVES, through the router's own
  * naming path, and asserts the derived name is the one the table carries. It fails on the old code
@@ -111,7 +111,7 @@ function wireNamesFromOptions(options: Pick<Options, "mcpServers">): string[] {
 }
 
 describe("P8b-35: the wire name a child sees is the name the table carries", () => {
-  test("every server/tool pair derives to exactly its WINTER_CAPABILITY_TOOLS key", () => {
+  test("every server/tool pair derives to exactly its CLOVER_CAPABILITY_TOOLS key", () => {
     const derived = new Set<string>();
     // Across ALL THREE MODES, because P8b-37 now filters each server's tools by the session's mode —
     // no single session sees every tool, and the table describes the union.
@@ -126,14 +126,14 @@ describe("P8b-35: the wire name a child sees is the name the table carries", () 
           // not on the server's name.
           const wire = `mcp__${server!.name}__${tool.name}`;
           expect(wire).toBe(capabilityToolName(key, tool.name));
-          expect(WINTER_CAPABILITY_TOOLS, `${wire} is not in the table`).toHaveProperty(wire);
+          expect(CLOVER_CAPABILITY_TOOLS, `${wire} is not in the table`).toHaveProperty(wire);
           derived.add(wire);
         }
       }
     }
     // And nothing in the table names a tool no session ever serves — a stale row would be a
     // `disallowedTools` entry that denies nothing, which is the same silent failure in reverse.
-    expect([...derived].sort()).toEqual(Object.keys(WINTER_CAPABILITY_TOOLS).sort());
+    expect([...derived].sort()).toEqual(Object.keys(CLOVER_CAPABILITY_TOOLS).sort());
   });
 
   test("N1: the same names come out of the `Options.mcpServers` path, walked as the SDK walks it", () => {
@@ -142,11 +142,11 @@ describe("P8b-35: the wire name a child sees is the name the table carries", () 
       // The record IS `Options.mcpServers` — spread, not re-keyed, which is the point of returning
       // a record at all. A driver that re-keyed it would show up right here.
       for (const wire of wireNamesFromOptions({ mcpServers: { ...serversFor(mode) } })) {
-        expect(WINTER_CAPABILITY_TOOLS, `${wire} is not in the table`).toHaveProperty(wire);
+        expect(CLOVER_CAPABILITY_TOOLS, `${wire} is not in the table`).toHaveProperty(wire);
         derived.add(wire);
       }
     }
-    expect([...derived].sort()).toEqual(Object.keys(WINTER_CAPABILITY_TOOLS).sort());
+    expect([...derived].sort()).toEqual(Object.keys(CLOVER_CAPABILITY_TOOLS).sort());
   });
 
   test("N1: every record KEY equals its config's own name — mis-keying is unrepresentable", () => {
@@ -158,13 +158,13 @@ describe("P8b-35: the wire name a child sees is the name the table carries", () 
   test("the server name carries the brand, and can never shadow the standing messaging server", () => {
     for (const key of CAPABILITY_SERVER_KEYS) {
       const name = capabilityServerName(key);
-      expect(name.startsWith("winter__")).toBe(true);
+      expect(name.startsWith("clover__")).toBe(true);
       // The one name the router REFUSES for a capability server (it would shadow the brand's own).
-      expect(name).not.toBe("winter");
+      expect(name).not.toBe("clover");
     }
   });
 
-  test("a `winter`-less server name would produce the WRONG wire name — the defect this pins", () => {
+  test("a `clover`-less server name would produce the WRONG wire name — the defect this pins", () => {
     // The shape of the regression, stated as an assertion rather than a comment: had the server
     // been declared with the bare key, the derived name would be one segment short of the table's.
     for (const key of CAPABILITY_SERVER_KEYS) {
@@ -176,31 +176,31 @@ describe("P8b-35: the wire name a child sees is the name the table carries", () 
 describe("N2: assertNoCapabilityCollision — the guard the router no longer runs for us", () => {
   test("a caller's server colliding with a daemon-owned name is REFUSED, naming it", () => {
     const owned = serversFor("code");
-    const plugin = { "winter__browser": { type: "sdk" as const, name: "winter__browser", instance: {} } };
+    const plugin = { "clover__browser": { type: "sdk" as const, name: "clover__browser", instance: {} } };
     expect(() => assertNoCapabilityCollision(plugin, owned)).toThrow(CapabilityNameCollisionError);
     try {
       assertNoCapabilityCollision(plugin, owned);
     } catch (err) {
-      expect((err as CapabilityNameCollisionError).server).toBe("winter__browser");
+      expect((err as CapabilityNameCollisionError).server).toBe("clover__browser");
       expect((err as { code?: string }).code).toBe("capability_name_collision");
     }
   });
 
-  test("fix-wave N-1: a configured server keyed exactly the BRAND NAME (`winter`) is refused — its tools would mint mcp__winter__<x> names Winter maps onto its own gate classes", () => {
+  test("fix-wave N-1: a configured server keyed exactly the BRAND NAME (`clover`) is refused — its tools would mint mcp__clover__<x> names Clover maps onto its own gate classes", () => {
     const owned = serversFor("code");
-    // `winter` + a tool named `web__web_fetch` → `mcp__winter__web__web_fetch`, the very string the
-    // bridge strips to Winter's `web_fetch` (NETWORK, silent under every policy incl. `plan`)
+    // `clover` + a tool named `web__web_fetch` → `mcp__clover__web__web_fetch`, the very string the
+    // bridge strips to Clover's `web_fetch` (NETWORK, silent under every policy incl. `plan`)
     expect(capabilityToolName("web", "web_fetch")).toBe(`mcp__${CORE_BRAND.mcpServerName}__web__web_fetch`);
     const spoof = { [CORE_BRAND.mcpServerName]: { type: "stdio" as const, command: "evil" } };
     expect(() => assertNoCapabilityCollision(spoof, owned)).toThrow(CapabilityNameCollisionError);
     try { assertNoCapabilityCollision(spoof, owned); } catch (err) {
-      expect((err as CapabilityNameCollisionError).server).toBe("winter");
+      expect((err as CapabilityNameCollisionError).server).toBe("clover");
       expect((err as Error).message).toContain("the host's own MCP namespace");
     }
     // refused with an EMPTY owned set too (the brand rule does not depend on which servers this
     // session carries), and a merely similar key is not
     expect(() => assertNoCapabilityCollision(spoof, [])).toThrow(CapabilityNameCollisionError);
-    expect(() => assertNoCapabilityCollision({ "winter-tools": {}, "normal": {} }, owned)).not.toThrow();
+    expect(() => assertNoCapabilityCollision({ "clover-tools": {}, "normal": {} }, owned)).not.toThrow();
   });
 
   test("non-colliding servers, an empty record and `undefined` all pass", () => {
@@ -211,8 +211,8 @@ describe("N2: assertNoCapabilityCollision — the guard the router no longer run
   });
 
   test("it accepts a bare name list as well as the record", () => {
-    expect(() => assertNoCapabilityCollision({ "winter__web": {} }, ["winter__web"])).toThrow(CapabilityNameCollisionError);
-    expect(() => assertNoCapabilityCollision({ "winter__web": {} }, ["winter__browser"])).not.toThrow();
+    expect(() => assertNoCapabilityCollision({ "clover__web": {} }, ["clover__web"])).toThrow(CapabilityNameCollisionError);
+    expect(() => assertNoCapabilityCollision({ "clover__web": {} }, ["clover__browser"])).not.toThrow();
   });
 });
 
@@ -243,14 +243,14 @@ describe("P8b-35: the REAL router accepts these servers and keys them by their o
   }
 
   test("createRuntimeSdk accepts all six (so every advertised inputSchema passed its validator)", async () => {
-    // `capabilityServerDescriptors` runs at CONSTRUCTION even on a Winter-only host: it calls every
+    // `capabilityServerDescriptors` runs at CONSTRUCTION even on a Clover-only host: it calls every
     // `instance.listTools()` and refuses any tool whose `inputSchema` is not a JSON-Schema object.
     // Constructing without a throw IS that proof.
     const built = Object.values(serversFor("code"));
     expect(built.length).toBe(CAPABILITY_SERVER_KEYS.length);
     for (const s of built) expect(isWinterMcpServerInstance(s.instance)).toBe(true);
     const h = await handle(built);
-    expect(h.sdk.brand.mcpServerName).toBe("winter");
+    expect(h.sdk.brand.mcpServerName).toBe("clover");
   });
 
   test("the router keys each capability by `server.name` — the input to the wire name", async () => {
@@ -264,7 +264,7 @@ describe("P8b-35: the REAL router accepts these servers and keys them by their o
 
   test("the unrefused probes leave no winter child behind", async () => {
     // Matched on the executable this handle ACTUALLY spawns. It is built with no executable option,
-    // so the SDK runs its own platform-package binary whatever `$WINTER_RUNTIME_EXECUTABLE` says —
+    // so the SDK runs its own platform-package binary whatever `$CLOVER_RUNTIME_EXECUTABLE` says —
     // measured: under a `dist/winter` build the children are still the package's `bin/winter`. `pgrep -f`
     // takes a regex (the package path carries `+` and `.`), so the path is escaped.
     const bin = resolvePlatformPackageWinter();

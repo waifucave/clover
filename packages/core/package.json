@@ -1,5 +1,5 @@
 {
-  "name": "@yanlinglabs/winter-core",
+  "name": "@waifucave/clover-core",
   "version": "0.124.0",
   "private": true,
   "license": "Apache-2.0",
@@ -12,7 +12,7 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@yanlinglabs/winter-protocol": "workspace:*",
+    "@waifucave/clover-protocol": "workspace:*",
     "@yanlinglabs/winter-agent-sdk": "0.0.55",
     "@yanlinglabs/winter-agent-runtime": "0.0.55",
     "@yanlinglabs/winter-provider-catalog": "0.0.55",

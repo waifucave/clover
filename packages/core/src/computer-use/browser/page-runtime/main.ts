@@ -23,7 +23,7 @@ type Any = Record<string, unknown>;
 
 (() => {
   const G = globalThis as unknown as Any;
-  if (G.__winterRuntime !== undefined) return;
+  if (G.__cloverRuntime !== undefined) return;
 
   // ── identity ────────────────────────────────────────────────────────────────────────────────────
   const rnd = new Uint32Array(2);
@@ -127,7 +127,7 @@ type Any = Record<string, unknown>;
 
   // Never part of the page as a reader sees it: scripts and styles — and Winter for Chrome's own overlay (the glow,
   // the agent cursor, the Stop button it injects into a driven tab).
-  const SKIP = new Set(["SCRIPT", "STYLE", "NOSCRIPT", "TEMPLATE", "HEAD", "META", "LINK", "TITLE", "SVG", "PATH", "BR", "HR", "WBR", "WINTER-AGENT-OVERLAY", WAKE_OVERLAY_TAG.toUpperCase()]);
+  const SKIP = new Set(["SCRIPT", "STYLE", "NOSCRIPT", "TEMPLATE", "HEAD", "META", "LINK", "TITLE", "SVG", "PATH", "BR", "HR", "WBR", "CLOVER-AGENT-OVERLAY", WAKE_OVERLAY_TAG.toUpperCase()]);
   const styleOf = (el: Element): CSSStyleDeclaration | undefined => { try { return getComputedStyle(el); } catch { return undefined; } };
   /** Hidden from a reader: not rendered, hidden by ARIA, or a hidden input. `contents` boxes are walked through. */
   const hidden = (el: Element, st: CSSStyleDeclaration | undefined): boolean => {
@@ -672,7 +672,7 @@ type Any = Record<string, unknown>;
         const shown = attrValue(el, a.name, a.value);
         if (shown !== undefined) open += ` ${a.name}="${escAttr(shown)}"`;
       }
-      // A field's live value (what the user or Winter typed), with the secure-field floor.
+      // A field's live value (what the user or Clover typed), with the secure-field floor.
       if ((el instanceof HTMLInputElement && !["checkbox", "radio", "file", "button", "submit", "reset", "image"].includes(el.type.toLowerCase())) && !el.hasAttribute("value")) {
         const live = el.type.toLowerCase() === "hidden" || isSecure(el) ? REDACTED : looksSecret(el.value) ? REDACTED : looksLikeUrl(el.value) ? redactUrl(el.value.trim()) : el.value;
         if (live.length > 0) open += ` value="${escAttr(live)}"`;
@@ -824,7 +824,7 @@ type Any = Record<string, unknown>;
   /** Winter for Chrome's own overlay (and anything in it) is never what a point hits, nor what covers an element. */
   const isOverlay = (el: Element): boolean => {
     for (let n: Node | null = el; n !== null; n = n.parentNode ?? (n instanceof ShadowRoot ? n.host : null)) {
-      if (n instanceof Element && (n.tagName === "WINTER-AGENT-OVERLAY" || n.tagName === WAKE_OVERLAY_TAG.toUpperCase())) return true;
+      if (n instanceof Element && (n.tagName === "CLOVER-AGENT-OVERLAY" || n.tagName === WAKE_OVERLAY_TAG.toUpperCase())) return true;
     }
     return false;
   };
@@ -1354,5 +1354,5 @@ type Any = Record<string, unknown>;
     }
   };
 
-  Object.defineProperty(G, "__winterRuntime", { value: Object.freeze({ id: RUNTIME_ID, call }), enumerable: false, configurable: false, writable: false });
+  Object.defineProperty(G, "__cloverRuntime", { value: Object.freeze({ id: RUNTIME_ID, call }), enumerable: false, configurable: false, writable: false });
 })();

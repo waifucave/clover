@@ -1,5 +1,5 @@
 {
-  "name": "@yanlinglabs/winter-plugin-sdk",
+  "name": "@waifucave/clover-plugin-sdk",
   "version": "0.124.0",
   "private": true,
   "license": "Apache-2.0",
@@ -11,6 +11,6 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@yanlinglabs/winter-protocol": "workspace:*"
+    "@waifucave/clover-protocol": "workspace:*"
   }
 }

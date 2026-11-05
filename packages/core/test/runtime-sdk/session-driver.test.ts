@@ -1,6 +1,6 @@
 import { HostCodeExecutionService } from "../../src/runtime-sdk/host-code-broker";
 // P8b Task 16 (fix round 1) — the DRIVER TABLE over real 8a records, a real session store and
-// hub, the real router (in-memory directory), and a FAKE `winter` peer (no child process).
+// hub, the real router (in-memory directory), and a FAKE `clover` peer (no child process).
 //
 // What only the table can prove:
 //   n7  two RPCs racing a resume after a restart open ONE child (no `await` before `drivers.set`);
@@ -21,7 +21,7 @@ import { toolsGatedNoneRow } from "../helpers/tools-refused-catalog-row";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Options, Query } from "@yanlinglabs/winter-agent-sdk";
-import * as winter from "@yanlinglabs/winter-agent-sdk";
+import * as clover from "@yanlinglabs/winter-agent-sdk";
 import { createInMemoryRuntimeDirectoryStore, createRuntimeSdk, RunHomeError } from "@yanlinglabs/winter-runtime-sdk";
 import { ApprovalBroker } from "../../src/agent/approvals";
 import { FakeProvider } from "../../src/agent/fake-provider";
@@ -34,11 +34,11 @@ import { FileSecretStore } from "../../src/auth/secret-store";
 import { CREDENTIAL_MATERIAL_NAMES, writeCredentialMaterial } from "../../src/auth/credential-material";
 import { CORE_BRAND } from "../../src/runtime-sdk/brand";
 import { createWinterRuntimeSdk, type WinterRuntimeSdk } from "../../src/runtime-sdk/create";
-import { coldResumeRunHomeFor, createWinterSessionDrivers, modeOf, refusalMayBeCredentialShaped, type WinterLegDeps } from "../../src/runtime-sdk/session-driver";
+import { coldResumeRunHomeFor, createCloverSessionDrivers, modeOf, refusalMayBeCredentialShaped, type CloverLegDeps } from "../../src/runtime-sdk/session-driver";
 import { updateSdkSettings } from "../../src/sdk-files";
 import { evictSessionsForCredential } from "../../src/runtime-sdk/credentials";
-import { unconsumedUserMessages } from "../../src/runtime-sdk/winter-session";
-import { WINTER_PEER_VERSIONS } from "../../src/runtime-sdk/versions";
+import { unconsumedUserMessages } from "../../src/runtime-sdk/clover-session";
+import { CLOVER_PEER_VERSIONS } from "../../src/runtime-sdk/versions";
 import { backfillNativeSessions, openRuntimeStateDb, ProjectionCheckpoints, RuntimeSessionRecords } from "../../src/runtime-state";
 import { SessionHub } from "../../src/sessions/hub";
 import { SessionStore } from "../../src/sessions/store";
@@ -97,12 +97,12 @@ class FakeQuery {
 
 const result = (): Frame => ({ type: "result", subtype: "success", is_error: false, permission_denials: [], result: "" });
 
-function table(overrides: Partial<WinterLegDeps> = {}, runtimeExtra: Record<string, unknown> = {}, wrapSdk?: (sdk: ReturnType<typeof createRuntimeSdk>) => ReturnType<typeof createRuntimeSdk>, opts: { legacyRouter?: boolean; runHomes?: Parameters<typeof recordedRunHomes>[1] } = {}) {
+function table(overrides: Partial<CloverLegDeps> = {}, runtimeExtra: Record<string, unknown> = {}, wrapSdk?: (sdk: ReturnType<typeof createRuntimeSdk>) => ReturnType<typeof createRuntimeSdk>, opts: { legacyRouter?: boolean; runHomes?: Parameters<typeof recordedRunHomes>[1] } = {}) {
   // `legacyRouter`: the PRE-run-home branch (router 0.0.11) the daemon still keeps behind its feature
   // detection — the support flag pinned false, a router without `requireRunHome`, and no run-home deps.
   // Dead once R.4 pins a run-home router for good; kept only for the tests of that branch.
   if (opts.legacyRouter === true) setRunHomeSupportForTests(false);
-  const home = mkdtempSync(join(tmpdir(), "winter-table-"));
+  const home = mkdtempSync(join(tmpdir(), "clover-table-"));
   const store = new SessionStore(home);
   const hub = new SessionHub(store);
   const rs = openRuntimeStateDb(home);
@@ -110,8 +110,8 @@ function table(overrides: Partial<WinterLegDeps> = {}, runtimeExtra: Record<stri
   const checkpoints = new ProjectionCheckpoints(rs);
   const queries: FakeQuery[] = [];
   const sdk = createRuntimeSdk({
-    peers: { winter: { ...winter, query: (({ prompt, options }: { prompt: AsyncIterable<string>; options: Options }) => { const q = new FakeQuery(prompt, options); queries.push(q); return q as unknown as Query; }) as unknown as typeof winter.query } },
-    peerVersions: WINTER_PEER_VERSIONS,
+    peers: { winter: { ...clover, query: (({ prompt, options }: { prompt: AsyncIterable<string>; options: Options }) => { const q = new FakeQuery(prompt, options); queries.push(q); return q as unknown as Query; }) as unknown as typeof clover.query } },
+    peerVersions: CLOVER_PEER_VERSIONS,
     keychain: { read: async () => undefined },
     brand: CORE_BRAND,
     directoryStore: createInMemoryRuntimeDirectoryStore(),
@@ -123,7 +123,7 @@ function table(overrides: Partial<WinterLegDeps> = {}, runtimeExtra: Record<stri
   const tracked: string[] = [];
   const runtime = {
     sdk: wrapSdk === undefined ? sdk : wrapSdk(sdk),
-    spawnHookFor: () => ({ pathToClaudeCodeExecutable: join(home, "winter-fake") }),
+    spawnHookFor: () => ({ pathToClaudeCodeExecutable: join(home, "clover-fake") }),
     trackQuery: (sid: string) => { tracked.push(sid); },
     untrack: () => {},
     // WS-19 (review Minor 2): a test may inject `selectRuntimeFor` to drive `decideRuntime`'s
@@ -137,7 +137,7 @@ function table(overrides: Partial<WinterLegDeps> = {}, runtimeExtra: Record<stri
   // that wants the pre-run-home path passes `runHome: undefined` AND pins `setRunHomeSupportForTests(false)`
   // (router 0.0.11); without the pin the driver refuses `run_home_required` (its guard).
   const runHomes = recordedRunHomes(home, opts.runHomes);
-  const drivers = createWinterSessionDrivers({
+  const drivers = createCloverSessionDrivers({
     home, settings: () => settings, runtime, records, checkpoints, store, hub,
     secrets: new FileSecretStore(join(home, "secrets.json")),
     buildSessionCapabilities: () => ({}),
@@ -156,16 +156,16 @@ function table(overrides: Partial<WinterLegDeps> = {}, runtimeExtra: Record<stri
   return { home, store, hub, records, drivers, queries, tracked, logs, runHomes, close, q: () => queries[queries.length - 1]! };
 }
 
-describe("createWinterSessionDrivers — the table", () => {
+describe("createCloverSessionDrivers — the table", () => {
   test("unchanged acknowledged storage paths leave a running Code incarnation and run home intact", async () => {
     const t = table(), auxiliary: string[] = []; let remove: (() => void) | undefined, repeatRemove: (() => void) | undefined;
     try {
       mkdirSync(join(t.home, "cowork"));
       const service = new HostCodeExecutionService(t.home, null);
-      const coordinationDir = mkdtempSync(join(tmpdir(), "winter-same-policy-coordination-")); auxiliary.push(coordinationDir);
+      const coordinationDir = mkdtempSync(join(tmpdir(), "clover-same-policy-coordination-")); auxiliary.push(coordinationDir);
       const options = { coordinationDir, coworkStorageActive: true };
       remove = await service.refreshForStorage(t.home, options);
-      const cwd = mkdtempSync(join(tmpdir(), "winter-same-policy-cwd-")); auxiliary.push(cwd);
+      const cwd = mkdtempSync(join(tmpdir(), "clover-same-policy-cwd-")); auxiliary.push(cwd);
       const session = await t.drivers.create(t.store.createSession("t", { mode: "code", model: "winter-test/echo", cwd }));
       await session.send("ongoing", "fixture"); await Bun.sleep(0);
       const query = t.q(), run = t.runHomes.built[0]!.dir;
@@ -182,11 +182,11 @@ describe("createWinterSessionDrivers — the table", () => {
     const t = table(), auxiliary: string[] = []; let remove: (() => void) | undefined, refreshRemove: (() => void) | undefined;
     try {
       mkdirSync(join(t.home, "cowork"));
-      const other = mkdtempSync(join(tmpdir(), "winter-new-participant-")); auxiliary.push(other);
-      const coordinationDir = mkdtempSync(join(tmpdir(), "winter-participant-coordination-")); auxiliary.push(coordinationDir);
+      const other = mkdtempSync(join(tmpdir(), "clover-new-participant-")); auxiliary.push(other);
+      const coordinationDir = mkdtempSync(join(tmpdir(), "clover-participant-coordination-")); auxiliary.push(coordinationDir);
       const options = { coordinationDir, participatingHomes: [other], coworkStorageActive: true };
       const service = new HostCodeExecutionService(t.home, null); remove = await service.refreshForStorage(t.home, options);
-      const cwd = mkdtempSync(join(tmpdir(), "winter-new-participant-cwd-")); auxiliary.push(cwd);
+      const cwd = mkdtempSync(join(tmpdir(), "clover-new-participant-cwd-")); auxiliary.push(cwd);
       const session = await t.drivers.create(t.store.createSession("t", { mode: "code", model: "winter-test/echo", cwd }));
       expect(t.q().options.sandbox?.filesystem?.denyRead).not.toContain(join(other, "cowork"));
       mkdirSync(join(other, "cowork"));
@@ -202,14 +202,14 @@ describe("createWinterSessionDrivers — the table", () => {
   test("storage activation refreshes an idle boundary/run home and replays queued Code work without daemon restart or native floor", async () => {
     const t = table(); let unregister: (() => void) | undefined;
     try {
-      const cwd = mkdtempSync(join(tmpdir(), "winter-code-policy-cwd-"));
+      const cwd = mkdtempSync(join(tmpdir(), "clover-code-policy-cwd-"));
       const sid = t.store.createSession("t", { mode: "code", model: "winter-test/echo", cwd });
       const session = await t.drivers.create(sid);
       await session.send("first", "fixture"); await Bun.sleep(0);
       const old = t.q(), backend = session.backendSessionId, oldRun = t.runHomes.built[0]!.dir;
       mkdirSync(join(t.home, "cowork"));
       const activation = new HostCodeExecutionService(t.home, null).refreshForStorage(t.home, {
-        coordinationDir: mkdtempSync(join(tmpdir(), "winter-code-policy-coordination-")), coworkStorageActive: true,
+        coordinationDir: mkdtempSync(join(tmpdir(), "clover-code-policy-coordination-")), coworkStorageActive: true,
       }, 1000);
       await Bun.sleep(0);
       expect(session.handoffPending).toBe(true);
@@ -231,7 +231,7 @@ describe("createWinterSessionDrivers — the table", () => {
   });
 
   for (const mode of ["chat", "dispatch"] as const) test(`reviewed live protection retains an ongoing ${mode} incarnation during activation`, async () => {
-    const t = table({}, { protectedEmbeddedPathsAvailable: () => true }), coordination = mkdtempSync(join(tmpdir(), "winter-reviewed-live-coordination-")); let unregister: (() => void) | undefined;
+    const t = table({}, { protectedEmbeddedPathsAvailable: () => true }), coordination = mkdtempSync(join(tmpdir(), "clover-reviewed-live-coordination-")); let unregister: (() => void) | undefined;
     try {
       const cwd = join(t.home, "fixture-source"); mkdirSync(cwd);
       const session = await t.drivers.create(t.store.createSession("t", { mode, model: "winter-test/echo", cwd }));
@@ -248,7 +248,7 @@ describe("createWinterSessionDrivers — the table", () => {
     } finally { unregister?.(); t.close(); rmSync(coordination, { recursive: true, force: true }); }
   });
 
-  test("create: the record (leg winter, backend uuid), one child, tracked; the driver is in the table", async () => {
+  test("create: the record (leg clover, backend uuid), one child, tracked; the driver is in the table", async () => {
     const t = table();
     try {
       const sid = t.store.createSession("t", { mode: "chat", model: "winter-test/echo" });
@@ -264,7 +264,7 @@ describe("createWinterSessionDrivers — the table", () => {
   });
 
   // Daemon settings surface (2026-09-17 plan, item 3): end-to-end through the REAL `optionsFor`
-  // path (not just `buildWinterOptions` in isolation, mode-matrix.test.ts's job) — a real
+  // path (not just `buildCloverOptions` in isolation, mode-matrix.test.ts's job) — a real
   // `<home>/agents/*.md` file, written to the driver table's own `home` BEFORE the session is
   // created, reaches the child's `Options.agents` verbatim.
   // R.1: `Options.agents` is the LEGACY branch's delivery (router 0.0.11); on a run-home build the router
@@ -317,7 +317,7 @@ describe("createWinterSessionDrivers — the table", () => {
     try {
       const sid = t.store.createSession("t", { mode: "chat", model: "winter-test/echo" });
       const session = await t.drivers.create(sid);
-      // Fire-and-forget (winter-session.ts's own doc comment) — poll rather than assume it landed
+      // Fire-and-forget (clover-session.ts's own doc comment) — poll rather than assume it landed
       // synchronously with `create()`'s own return.
       const deadline = Date.now() + 1000;
       while (observed.length === 0 && Date.now() < deadline) await new Promise((r) => setTimeout(r, 5));
@@ -425,7 +425,7 @@ describe("createWinterSessionDrivers — the table", () => {
     } finally { t.close(); }
   });
 
-  test("fix wave (review row 4): the REAL SessionTitler over the existing FakeProvider double titles a Winter-leg session once, on Winter's own provider layer (P8b-10)", async () => {
+  test("fix wave (review row 4): the REAL SessionTitler over the existing FakeProvider double titles a Clover-leg session once, on Clover's own provider layer (P8b-10)", async () => {
     const provider = new FakeProvider([[{ type: "text_delta", delta: "Greeting the daemon" }, { type: "done", stopReason: "end_turn" }]]);
     let titler!: SessionTitler;
     const t = table({ titler: { maybeTitle: (sid) => titler.maybeTitle(sid) } });
@@ -434,15 +434,15 @@ describe("createWinterSessionDrivers — the table", () => {
       const sid = t.store.createSession("t", { mode: "chat", model: "winter-test/echo" });
       const session = await t.drivers.create(sid);
       await session.send("hello there", "cli");
-      t.q().emit({ type: "assistant", message: { content: [{ type: "text", text: "hi from winter" }] } });
+      t.q().emit({ type: "assistant", message: { content: [{ type: "text", text: "hi from clover" }] } });
       t.q().emit(result());
       await Bun.sleep(30);
-      // ONE provider call, on Winter's provider layer, with the title instruction and the turn's pair
+      // ONE provider call, on Clover's provider layer, with the title instruction and the turn's pair
       expect(provider.requests).toHaveLength(1);
       expect(provider.requests[0]!.instructions).toBe(TITLE_INSTRUCTION);
       const content = JSON.stringify(provider.requests[0]!.input[0]);
       expect(content).toContain("hello there");
-      expect(content).toContain("hi from winter");
+      expect(content).toContain("hi from clover");
       expect(t.store.getTitle(sid)).toBe("Greeting the daemon");
       expect(t.store.read(sid).filter((e) => e.type === "session_titled")).toHaveLength(1);
       // a second completed turn never re-titles (the store's title guard)
@@ -454,48 +454,48 @@ describe("createWinterSessionDrivers — the table", () => {
     } finally { t.close(); }
   });
 
-  // R.1: on a run-home build the configured servers ride the run folder's generated `.winter.json` (the router
+  // R.1: on a run-home build the configured servers ride the run folder's generated `.clover.json` (the router
   // drops a daemon-owned name there, `reserved-name`); the legacy branch below is router 0.0.11's delivery.
   test("row 7 (run home): configured MCP servers ride the run folder, never Options.mcpServers; a daemon-owned name is dropped and reported", async () => {
     // the table's run-home builder is told the capability-server names, as daemon.ts's is
     const t = table({
-      buildSessionCapabilities: () => ({ "winter__browser": { type: "sdk", name: "winter__browser", instance: {} } }),
+      buildSessionCapabilities: () => ({ "clover__browser": { type: "sdk", name: "clover__browser", instance: {} } }),
       extraMcpServers: () => ({ never_read: { type: "stdio", command: "never" } }),
-    }, {}, undefined, { runHomes: { reservedMcpServerNames: ["winter__browser"] } });
+    }, {}, undefined, { runHomes: { reservedMcpServerNames: ["clover__browser"] } });
     try {
       mkdirSync(storeHomeFor(t.home), { recursive: true });
-      writeFileSync(join(storeHomeFor(t.home), ".winter.json"), JSON.stringify({ mcpServers: { fake: { type: "stdio", command: "bun", args: ["run", "fake.ts"] }, winter__browser: { type: "stdio", command: "evil" } } }));
-      const cwd = realpathSync(mkdtempSync(join(tmpdir(), "winter-row7-")));
+      writeFileSync(join(storeHomeFor(t.home), ".clover.json"), JSON.stringify({ mcpServers: { fake: { type: "stdio", command: "bun", args: ["run", "fake.ts"] }, clover__browser: { type: "stdio", command: "evil" } } }));
+      const cwd = realpathSync(mkdtempSync(join(tmpdir(), "clover-row7-")));
       const session = await t.drivers.create(t.store.createSession("t", { mode: "code", model: "winter-test/echo", cwd }));
-      expect(Object.keys(t.q().options.mcpServers ?? {})).toEqual(["winter__browser"]); // the capability server only
+      expect(Object.keys(t.q().options.mcpServers ?? {})).toEqual(["clover__browser"]); // the capability server only
       const runHome = t.runHomes.built[0]!;
-      const generated = JSON.parse(readFileSync(join(runHome.dir, ".winter.json"), "utf8")) as { mcpServers?: Record<string, unknown> };
+      const generated = JSON.parse(readFileSync(join(runHome.dir, ".clover.json"), "utf8")) as { mcpServers?: Record<string, unknown> };
       expect(Object.keys(generated.mcpServers ?? {}).sort()).toEqual(["fake"]);
-      expect(runHome.report.droppedMcpServers).toEqual([{ name: "winter__browser", reason: "reserved-name" }]);
+      expect(runHome.report.droppedMcpServers).toEqual([{ name: "clover__browser", reason: "reserved-name" }]);
       await session.end();
     } finally { t.close(); }
   });
 
   test("fix wave (review row 7, legacy branch): configured MCP servers ride the session's Options.mcpServers beside the capability servers; a daemon-owned name collides → a TYPED refusal naming it, no child", async () => {
     const t = table({
-      buildSessionCapabilities: () => ({ "winter__browser": { type: "sdk", name: "winter__browser", instance: {} } }),
+      buildSessionCapabilities: () => ({ "clover__browser": { type: "sdk", name: "clover__browser", instance: {} } }),
       extraMcpServers: (session) => ({ fake: { type: "stdio", command: "bun", args: ["run", "fake.ts", session.cwd] } }),
     }, {}, undefined, { legacyRouter: true });
     // A REAL directory: a session whose cwd does not exist is refused before any child
     // (`session_cwd_unavailable`), so a literal "/repo" would never reach the MCP merge under test.
-    const repo = realpathSync(mkdtempSync(join(tmpdir(), "winter-row7-legacy-")));
+    const repo = realpathSync(mkdtempSync(join(tmpdir(), "clover-row7-legacy-")));
     try {
       const sid = t.store.createSession("t", { mode: "code", model: "winter-test/echo", cwd: repo });
       const session = await t.drivers.create(sid);
       const servers = t.q().options.mcpServers as Record<string, unknown>;
-      expect(Object.keys(servers).sort()).toEqual(["fake", "winter__browser"]);
+      expect(Object.keys(servers).sort()).toEqual(["clover__browser", "fake"]);
       expect(servers.fake).toEqual({ type: "stdio", command: "bun", args: ["run", "fake.ts", repo] });
       await session.end();
     } finally { t.close(); }
     const spawnsBefore: number[] = [];
     const c = table({
-      buildSessionCapabilities: () => ({ "winter__browser": { type: "sdk", name: "winter__browser", instance: {} } }),
-      extraMcpServers: () => ({ "winter__browser": { type: "stdio", command: "evil" } }),
+      buildSessionCapabilities: () => ({ "clover__browser": { type: "sdk", name: "clover__browser", instance: {} } }),
+      extraMcpServers: () => ({ "clover__browser": { type: "stdio", command: "evil" } }),
     }, {}, undefined, { legacyRouter: true });
     try {
       spawnsBefore.push(c.queries.length);
@@ -503,7 +503,7 @@ describe("createWinterSessionDrivers — the table", () => {
       let refused: unknown;
       try { await c.drivers.create(sid); } catch (err) { refused = err; }
       expect((refused as { code?: string })?.code).toBe("winter_leg_unavailable");
-      expect(String((refused as Error).message)).toContain("winter__browser");
+      expect(String((refused as Error).message)).toContain("clover__browser");
       expect(c.queries.length).toBe(spawnsBefore[0]!);   // no child was spawned for a refused session
       expect(c.drivers.get(sid)).toBeUndefined();
     } finally { c.close(); rmSync(repo, { recursive: true, force: true }); }
@@ -580,7 +580,7 @@ describe("createWinterSessionDrivers — the table", () => {
 // ════════════════════════════════════════════════════════════════════════════════════════════════
 // WS-19 (W19-7, review Minor 2) — WHICH router refusals may be re-described as `no-credential`.
 //
-// `refusalForSelection` answers a credential-shaped refusal with Winter's own actionable sentence
+// `refusalForSelection` answers a credential-shaped refusal with Clover's own actionable sentence
 // (the provider and the three doors) instead of the router's "every candidate row was blocked,
 // deprecated, known-unservable, or …". Before Minor 2 it did that for ANY refusal whenever the
 // credential probe happened to find an empty slot — so a session refused because a RUNTIME is not
@@ -607,11 +607,11 @@ describe("refusalForSelection — only credential-shaped reasons are re-describe
   // `session.create` is remote-allowed, so the measured shapes ("the official runtime", "persisted
   // on claude-agent (…) (WS-00 §2, D13)", and `slot-unservable`'s enumeration of the user's own
   // configured providers) were reaching the phone. The REASON still travels — a client branches on
-  // `data.reason`, never on prose — but the words are Winter's.
+  // `data.reason`, never on prose — but the words are Clover's.
   const ROUTER_PHRASING = /\bruntime\b|winter-agent|claude-agent|WS-\d|D\d\d\b|\(D28\)/i;
 
   test("a Claude model refused for a NON-credential reason keeps its REASON, and never the router's words", async () => {
-    const detail = "this session is persisted on claude-agent (the official runtime) and the winter runtime cannot serve it (WS-00 §2, D13)";
+    const detail = "this session is persisted on claude-agent (the official runtime) and the clover runtime cannot serve it (WS-00 §2, D13)";
     const t = table({}, { selectRuntimeFor: refusalOf("runtime-unavailable", detail) });
     try {
       const sid = t.store.createSession("t", { mode: "chat", model: "anthropic/claude-sonnet-5" });
@@ -620,12 +620,12 @@ describe("refusalForSelection — only credential-shaped reasons are re-describe
       expect((caught as { code?: string })?.code).toBe("runtime_selection_refused");
       expect((caught as { reason?: string })?.reason).toBe("runtime-unavailable");
       // The machine-readable half survives; the prose does not.
-      expect((caught as Error)?.message).toBe("Winter can't start a session on anthropic/claude-sonnet-5 right now.");
+      expect((caught as Error)?.message).toBe("Clover can't start a session on anthropic/claude-sonnet-5 right now.");
       expect((caught as Error)?.message).not.toMatch(ROUTER_PHRASING);
       expect((caught as Error)?.message).not.toContain(detail);
-      // ...and it is not Winter's credential sentence either, which would send the user to a door
+      // ...and it is not Clover's credential sentence either, which would send the user to a door
       // that would not have helped.
-      expect((caught as Error)?.message).not.toContain("winter credentials set");
+      expect((caught as Error)?.message).not.toContain("clover credentials set");
     } finally { t.close(); }
   });
 
@@ -643,7 +643,7 @@ describe("refusalForSelection — only credential-shaped reasons are re-describe
       let caught: unknown;
       try { await t.drivers.create(sid); } catch (err) { caught = err; }
       const message = (caught as Error)?.message ?? "";
-      expect(message).toContain("run `winter credentials set openai`");
+      expect(message).toContain("run `clover credentials set openai`");
       for (const leaked of ["openrouter", "deepseek", "configured:", "candidate row"]) {
         expect(message).not.toContain(leaked);
       }
@@ -651,7 +651,7 @@ describe("refusalForSelection — only credential-shaped reasons are re-describe
     } finally { t.close(); }
   });
 
-  test("the SAME keyless home, refused `slot-unservable`, DOES get Winter's actionable sentence — W19-7's own case", async () => {
+  test("the SAME keyless home, refused `slot-unservable`, DOES get Clover's actionable sentence — W19-7's own case", async () => {
     const t = table({}, { selectRuntimeFor: refusalOf("slot-unservable", "every candidate row … (configured: none)") });
     try {
       // R.1: DeepSeek's live reasoning row (deepseek-reasoner left the catalog, V16).
@@ -659,7 +659,7 @@ describe("refusalForSelection — only credential-shaped reasons are re-describe
       let caught: unknown;
       try { await t.drivers.create(sid); } catch (err) { caught = err; }
       expect((caught as { reason?: string })?.reason).toBe("no-credential");
-      expect((caught as Error)?.message).toContain("winter credentials set deepseek");
+      expect((caught as Error)?.message).toContain("clover credentials set deepseek");
     } finally { t.close(); }
   });
 });
@@ -678,7 +678,7 @@ describe("WS-23 live-gate fix: Console sessions select on the Console bearer, an
   const ANTHROPIC_KEY = JSON.stringify({ kind: "api-key", key: "sk-ant-test" });
 
   async function realRouterTable(seed: (secrets: FileSecretStore) => Promise<void>) {
-    const secretsHome = mkdtempSync(join(tmpdir(), "winter-console-select-"));
+    const secretsHome = mkdtempSync(join(tmpdir(), "clover-console-select-"));
     const secrets = new FileSecretStore(join(secretsHome, "secrets.json"));
     await seed(secrets);
     const handle = await createWinterRuntimeSdk({ home: secretsHome, settings: () => null, secrets, capabilities: [] });
@@ -718,7 +718,7 @@ describe("WS-23 live-gate fix: Console sessions select on the Console bearer, an
       const refused = await createRefusal(t, "anthropic/claude-sonnet-5");
       expect(refused.code).toBe("runtime_selection_refused");
       expect(refused.reason).toBe("no-credential");
-      expect(refused.message).toContain("winter login --anthropic-key");
+      expect(refused.message).toContain("clover login --anthropic-key");
       expect(t.queries).toHaveLength(0);
     } finally { await close(); }
   });
@@ -729,7 +729,7 @@ describe("WS-23 live-gate fix: Console sessions select on the Console bearer, an
       const refused = await createRefusal(t, "console/claude-sonnet-5");
       expect(refused.code).toBe("runtime_selection_refused");
       expect(refused.reason).toBe("no-credential");
-      expect(refused.message).toContain("winter login --anthropic-console");
+      expect(refused.message).toContain("clover login --anthropic-console");
       // The live-gate report's exact wrong door — there is no key to add for the Console.
       expect(refused.message).not.toContain("console: add a credential");
       expect(t.queries).toHaveLength(0);
@@ -751,7 +751,7 @@ describe("WS-23 live-gate fix: Console sessions select on the Console bearer, an
       try { await session.send("after sign-out"); } catch (err) { caught = err; }
       expect((caught as { code?: string })?.code).toBe("runtime_selection_refused");
       expect((caught as { reason?: string })?.reason).toBe("no-credential");
-      expect((caught as Error).message).toContain("winter login --anthropic-console");
+      expect((caught as Error).message).toContain("clover login --anthropic-console");
       expect(t.q().pushed).not.toContain("after sign-out");
       await session.end();
     } finally { await close(); }
@@ -766,7 +766,7 @@ describe("WS-23 live-gate fix: Console sessions select on the Console bearer, an
 // — and never falls back to another directory.
 // ════════════════════════════════════════════════════════════════════════════════════════════════
 describe("a session whose working directory is gone refuses typed, before any child (session_cwd_unavailable)", () => {
-  const freshDir = (): string => realpathSync(mkdtempSync(join(tmpdir(), "winter-cwd-gone-")));
+  const freshDir = (): string => realpathSync(mkdtempSync(join(tmpdir(), "clover-cwd-gone-")));
 
   async function refusalOf(run: () => Promise<unknown>): Promise<{ code?: string; message: string }> {
     try { await run(); } catch (err) { return { code: (err as { code?: string }).code, message: (err as Error).message }; }
@@ -1016,7 +1016,7 @@ describe("open()'s replay passes the pre-turn credential gate (N2)", () => {
     // one of the four gated families, so `toolsRefusedFor` never fires for it. A stored credential
     // for groq means the send reaches a real child rather than stopping on a DIFFERENT refusal
     // (`no-credential`), which would make this test pass for the wrong reason.
-    const secrets = new FileSecretStore(join(mkdtempSync(join(tmpdir(), "winter-groq-secrets-")), "secrets.json"));
+    const secrets = new FileSecretStore(join(mkdtempSync(join(tmpdir(), "clover-groq-secrets-")), "secrets.json"));
     await writeCredentialMaterial(secrets, "groq:default", { kind: "api-key", key: "sk-groq-test-not-real" });
     const t = table({ secrets });
     try {
@@ -1292,7 +1292,7 @@ describe("open()'s replay passes the pre-turn credential gate (N2)", () => {
     let sid = "";
     const seen: string[][] = [];
     const drivers: { current?: ReturnType<typeof table>["drivers"] } = {};
-    const real = new FileSecretStore(join(mkdtempSync(join(tmpdir(), "winter-secrets-")), "secrets.json"));
+    const real = new FileSecretStore(join(mkdtempSync(join(tmpdir(), "clover-secrets-")), "secrets.json"));
     const note = (): void => { const s = drivers.current?.get(sid); if (s !== undefined) seen.push(s.mcpServerNames!().sort()); };
     const secrets = new Proxy(real, { get(target, prop, recv) {
       const v = Reflect.get(target, prop, recv);
@@ -1316,7 +1316,7 @@ describe("open()'s replay passes the pre-turn credential gate (N2)", () => {
 
   // Whole-branch review M1: an OFF-CATALOG `pins.research` used to be stated whenever a credential for
   // its provider happened to be stored — and the child advertises `WebFetch` only while its digest
-  // model resolves, so that one hand-edited settings line WITHDREW THE TOOL from every Winter session,
+  // model resolves, so that one hand-edited settings line WITHDREW THE TOOL from every Clover session,
   // chat included, where the base prompt still names it. Nothing logged, because the drop branch was
   // never taken.
   test("an off-catalog pins.research is DROPPED, not stated — WebFetch must not vanish for it (M1)", async () => {
@@ -1361,7 +1361,7 @@ describe("open()'s replay passes the pre-turn credential gate (N2)", () => {
   // `Options.web.search.authRef` names it AND its presence decides the tool surface itself, both fixed
   // at spawn, so a live child has to be replaced or a key added mid-session does nothing until the
   // idle reap.
-  test("an `exa` key change evicts every WINTER-leg session, whatever provider its record names", async () => {
+  test("an `exa` key change evicts every CLOVER-leg session, whatever provider its record names", async () => {
     const settings = { provider: { model: "openai/gpt-5.6-sol" }, runtimes: { winterLeg: { chat: true, dispatch: false, code: false }, winterIdleTimeoutSec: 10 } } as unknown as Settings;
     const t = table({ settings: () => settings });
     try {
@@ -1403,7 +1403,7 @@ describe("open()'s replay passes the pre-turn credential gate (N2)", () => {
   // stored material is not stated: a present-but-unusable `Options.advisor` makes every `advisor` call
   // fail, while the family default keeps the tool working. Falls back to the D30 default, logged.
   test("D3: a cross-provider advisor pin rides the child when its provider holds material; a KEYLESS one falls back to the D30 default", async () => {
-    const secrets = new FileSecretStore(join(mkdtempSync(join(tmpdir(), "winter-advisor-secrets-")), "secrets.json"));
+    const secrets = new FileSecretStore(join(mkdtempSync(join(tmpdir(), "clover-advisor-secrets-")), "secrets.json"));
     const settings = { runtimes: { advisorModel: "codex-oauth/gpt-5.6-sol", winterLeg: { chat: true, dispatch: false, code: false }, winterIdleTimeoutSec: 10 } } as unknown as Settings;
     const t = table({ settings: () => settings, secrets });
     try {
@@ -1427,7 +1427,7 @@ describe("open()'s replay passes the pre-turn credential gate (N2)", () => {
   // the one whose pin FELL BACK because that slot was empty (the new key is what it was waiting for).
   // A session whose advisor is not on that provider is left alone.
   test("minor d: a credential write for the advisor's provider evicts the children whose advisor pin names it", async () => {
-    const secrets = new FileSecretStore(join(mkdtempSync(join(tmpdir(), "winter-advisor-evict-")), "secrets.json"));
+    const secrets = new FileSecretStore(join(mkdtempSync(join(tmpdir(), "clover-advisor-evict-")), "secrets.json"));
     let pin = "codex-oauth/gpt-5.6-sol";
     const settings = () => ({ runtimes: { advisorModel: pin, winterLeg: { chat: true, dispatch: false, code: false }, winterIdleTimeoutSec: 10 } }) as unknown as Settings;
     const t = table({ settings, secrets });
@@ -1466,7 +1466,7 @@ describe("open()'s replay passes the pre-turn credential gate (N2)", () => {
   // Lane B (2026-09-22): the user's SAVED allow rules reach the child — read through the dep at every
   // incarnation (so a rule saved mid-session lands at the next one), translated onto `permissions.allow`.
   // R.1: the LEGACY branch's delivery. On a run-home build saved rules reach the child through the run
-  // folder's settings tiers and `Options.permissions.allow` carries only Winter's fixed rules — the APPLIED
+  // folder's settings tiers and `Options.permissions.allow` carries only Clover's fixed rules — the APPLIED
   // case of "the driver stops building run-home inputs" asserts both halves of that.
   test("saved allow rules ride a CODE child's Options.permissions.allow, read live per incarnation (legacy branch)", async () => {
     let saved: string[] = ["Bash(gh repo:*)"];
@@ -1567,8 +1567,8 @@ describe("open()'s replay passes the pre-turn credential gate (N2)", () => {
   });
 
   // WS-23: no live child runs on the official leg any more, but the filter is still the LEG — a session
-  // whose record says anything other than `winter` is not a child the key reached.
-  test("an `exa` change leaves a session not on the Winter leg alone", async () => {
+  // whose record says anything other than `clover` is not a child the key reached.
+  test("an `exa` change leaves a session not on the Clover leg alone", async () => {
     const t = table({});
     try {
       const acted = await evictSessionsForCredential({
@@ -1741,10 +1741,10 @@ describe("role efforts on the runtime leg (pins.dispatch, and provider.model's d
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 // WS-21 L3.3 (spec §3.1, Contract A): every incarnation awaits a run home — when the linked router
 // applies them. The router here is the published 0.0.11 (no `buildRunHome`), so the builder is a stub
-// injected through `WinterLegDeps.runHome`, and `sdk.query` is observed directly (0.0.11 strips
+// injected through `CloverLegDeps.runHome`, and `sdk.query` is observed directly (0.0.11 strips
 // `runtime` before the peer, as a run-home router applies it).
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
-describe("WS-21: run homes on the Winter leg (the router's real buildRunHome, recorded)", () => {
+describe("WS-21: run homes on the Clover leg (the router's real buildRunHome, recorded)", () => {
   // R.1: these used to stub the builder with hand-built `RunHome` objects; a real run-home router refuses
   // those (`run_home_foreign` — it points a child only at a folder `buildRunHome` built). Every case now
   // records the calls and delegates to the router's own builder (`test/helpers/run-homes.ts`), and a
@@ -1769,7 +1769,7 @@ describe("WS-21: run homes on the Winter leg (the router's real buildRunHome, re
     while (disposed().length < n && Date.now() < until) await Bun.sleep(5);
   };
 
-  // WS-21 (L2 O-1): the Winter child keys its transcript by realpath(cwd) while the router keys by the cwd
+  // WS-21 (L2 O-1): the Clover child keys its transcript by realpath(cwd) while the router keys by the cwd
   // it is given — a symlinked cwd (`/var/…` → `/private/var/…`) made a handoff's step 5 look for a
   // transcript under a key the child never wrote. The daemon hands BOTH the canonical path: RunHomeInput.cwd,
   // Options.cwd and the recorded transcript key / backend root.
@@ -1777,8 +1777,8 @@ describe("WS-21: run homes on the Winter leg (the router's real buildRunHome, re
     const spy = querySpy();
     const t = table({}, {}, spy.wrap);
     try {
-      const real = realpathSync(mkdtempSync(join(tmpdir(), "winter-o1-real-")));
-      const link = join(realpathSync(mkdtempSync(join(tmpdir(), "winter-o1-link-"))), "proj");
+      const real = realpathSync(mkdtempSync(join(tmpdir(), "clover-o1-real-")));
+      const link = join(realpathSync(mkdtempSync(join(tmpdir(), "clover-o1-link-"))), "proj");
       symlinkSync(real, link);
       const sid = t.store.createSession("t", { mode: "code", model: "winter-test/echo", cwd: link });
       await t.drivers.create(sid);
@@ -1803,21 +1803,21 @@ describe("WS-21: run homes on the Winter leg (the router's real buildRunHome, re
       expect(t.runHomes.inputs[0]!.cwd).toBe(spy.calls[0]!.options.cwd!); // the router refuses a run home for another cwd
       expect(existsSync(t.runHomes.built[0]!.dir)).toBe(true);           // a real folder under <home>/cache/runs
       // L3.4: the router applies the run home, so it — not the daemon — pins the home and the sources.
-      expect("WINTER_HOME" in (spy.calls[0]!.options.env ?? {})).toBe(false);
+      expect("CLOVER_HOME" in (spy.calls[0]!.options.env ?? {})).toBe(false);
       expect(spy.calls[0]!.options.settingSources).toEqual(["user"]);
       await session.end();
     } finally { t.close(); }
   });
 
   // The pre-run-home branch (router 0.0.11), still behind the daemon's feature detection until R.4.
-  test("a router without buildRunHome (no runHome dep; the legacy branch) builds nothing and keeps WINTER_HOME and settingSources: []", async () => {
+  test("a router without buildRunHome (no runHome dep; the legacy branch) builds nothing and keeps CLOVER_HOME and settingSources: []", async () => {
     const spy = querySpy();
     const t = table({}, {}, spy.wrap, { legacyRouter: true });
     try {
       const sid = t.store.createSession("t", { mode: "code", model: "winter-test/echo", approvalPolicy: "ask" });
       const session = await t.drivers.create(sid);
       expect("runtime" in spy.calls[0]!.options).toBe(false);
-      expect(spy.calls[0]!.options.env?.WINTER_HOME).toBe(t.home);
+      expect(spy.calls[0]!.options.env?.CLOVER_HOME).toBe(t.home);
       expect(spy.calls[0]!.options.settingSources).toEqual([]);
       expect(t.runHomes.built).toHaveLength(0);
       await session.end();
@@ -1871,7 +1871,7 @@ describe("WS-21: run homes on the Winter leg (the router's real buildRunHome, re
 
   test("an ended incarnation's run home is disposed once the router says safe (after the query drained or closed)", async () => {
     let ended = false;
-    // L2 fix round 1 (M6): the router reports a Winter run home `pending` while the child runs and `safe`
+    // L2 fix round 1 (M6): the router reports a Clover run home `pending` while the child runs and `safe`
     // once the query finished, was closed or failed — the stand-in answers the same way.
     const t = table({}, { runHomeOutcome: () => (ended ? "safe" : "pending") });
     try {
@@ -1917,7 +1917,7 @@ describe("WS-21: run homes on the Winter leg (the router's real buildRunHome, re
 // folder carries — the same planted world, with a real run-home router and on the legacy (0.0.11) branch.
 describe("WS-21: the driver stops building run-home inputs once a run home is applied", () => {
   // The inputs a daemon wires, and the files it reads them from (the user agent, the sdk allow rule).
-  const inputs: Partial<WinterLegDeps> = {
+  const inputs: Partial<CloverLegDeps> = {
     extraMcpServers: () => ({ user_srv: { type: "stdio", command: "node" } }),
     persistedAllowRules: () => ["Bash(git status)"],
   };
@@ -1968,12 +1968,12 @@ describe("WS-21: the driver stops building run-home inputs once a run home is ap
 // WS-21 round 3 (Important): both legs key a transcript by the canonical cwd now, but a 0.116 session
 // made in a symlinked cwd has its files under the RAW cwd's key. `resume()` moves them — before the leg
 // opens, synchronously (n7) — so the child finds its history; a collision moves nothing and is marked.
-describe("WS-21 round 3: the lazy canonical-cwd re-key at resume (Winter leg)", () => {
+describe("WS-21 round 3: the lazy canonical-cwd re-key at resume (Clover leg)", () => {
   const ENTRY = '{"type":"user","uuid":"u-old","message":{"role":"user","content":"before the upgrade"}}\n';
   async function oldLayoutSession() {
     const t = table();
-    const real = realpathSync(mkdtempSync(join(tmpdir(), "winter-rekey-real-")));
-    const link = join(realpathSync(mkdtempSync(join(tmpdir(), "winter-rekey-link-"))), "proj");
+    const real = realpathSync(mkdtempSync(join(tmpdir(), "clover-rekey-real-")));
+    const link = join(realpathSync(mkdtempSync(join(tmpdir(), "clover-rekey-link-"))), "proj");
     symlinkSync(real, link);
     const sid = t.store.createSession("t", { mode: "code", model: "winter-test/echo", cwd: link });
     const created = await t.drivers.create(sid);
@@ -2005,7 +2005,7 @@ describe("WS-21 round 3: the lazy canonical-cwd re-key at resume (Winter leg)", 
       expect(opts.cwd).toBe(real);
       expect(opts.resume).toBe(id);   // hasTranscript found it: a RESUME, not a fresh start
       // the child's own lookup — the SDK store at the key of the cwd it is handed — returns the history
-      const loaded = await new winter.WinterCompatibilitySessionStore({ winterHome: storeHomeFor(t.home) }).load({ projectKey: transcriptProjectKey(opts.cwd!), sessionId: id });
+      const loaded = await new clover.WinterCompatibilitySessionStore({ winterHome: storeHomeFor(t.home) }).load({ projectKey: transcriptProjectKey(opts.cwd!), sessionId: id });
       expect(loaded?.map((e) => e.uuid)).toEqual(["u-old"]);
       expect(again.logs.some((l) => l.includes("re-keyed") && l.includes(sid))).toBe(true);
       await resumed.end();
@@ -2044,7 +2044,7 @@ describe("WS-21 round 3: the lazy canonical-cwd re-key at resume (Winter leg)", 
     } finally { setRunHomeSupportForTests(undefined); }
   });
 
-  // Round 4, minor 3: the ROUTER's own cold resume (a message delivered to an exited Winter session) builds
+  // Round 4, minor 3: the ROUTER's own cold resume (a message delivered to an exited Clover session) builds
   // its run home through the daemon's `runHomeFor` — never through `resume()`. It canonicalizes the cwd and
   // runs the same lazy re-key, so that path finds the history too.
   test("round 4: the router's cold-resume runHomeFor canonicalizes the cwd and re-keys the transcript first", async () => {
@@ -2052,7 +2052,7 @@ describe("WS-21 round 3: the lazy canonical-cwd re-key at resume (Winter leg)", 
     try {
       const built: import("@yanlinglabs/winter-runtime-sdk").RunHomeInput[] = [];
       const facts: import("../../src/runtime-sdk/run-home-input").RunHomeSessionFacts[] = [];
-      const runHome: NonNullable<WinterLegDeps["runHome"]> = {
+      const runHome: NonNullable<CloverLegDeps["runHome"]> = {
         inputFor: (f) => { facts.push(f); return { home: t.home, mode: f.mode, dispatchChild: f.dispatchChild, leg: f.leg, cwd: f.cwd, trustedProjectRoot: null, gitRoot: null, mcpDisabled: [], reservedMcpServerNames: [], memoryDir: "/m" }; },
         build: async (input) => { built.push(input); return { runId: "cold-1", dir: "/h/cache/runs/cold-1", sdkHome: "/h/sdk", input, effectiveSettings: {}, report: { skippedLinks: [], externalUserLinks: [], droppedMcpServers: [], unconditionalRules: [], droppedImports: [], skippedAgents: [], droppedRules: [] }, dispose: async () => {} }; },
       };
@@ -2087,13 +2087,13 @@ describe("WS-21 round 3: the lazy canonical-cwd re-key at resume (Winter leg)", 
 });
 
 // ════════════════════════════════════════════════════════════════════════════════════════════════
-// WS-23 (ruling R2) — a record the retired official leg wrote is ADOPTED onto the Winter leg at its
-// next resume: its transcript re-keyed to the Winter cwd key, its runtime kind and selection
-// rewritten, then the child opens on the SAME transcript file (the Winter runtime reads claude's
+// WS-23 (ruling R2) — a record the retired official leg wrote is ADOPTED onto the Clover leg at its
+// next resume: its transcript re-keyed to the Clover cwd key, its runtime kind and selection
+// rewritten, then the child opens on the SAME transcript file (the Clover runtime reads claude's
 // entry shapes). A collision or an already-`repair-required` transcript refuses typed and moves
 // nothing, with the record still naming `claude-agent`, so every later resume refuses the same way.
 // ════════════════════════════════════════════════════════════════════════════════════════════════
-describe("WS-23: a legacy claude-agent record is adopted onto the Winter leg at resume", () => {
+describe("WS-23: a legacy claude-agent record is adopted onto the Clover leg at resume", () => {
   /** Two entries in the shape the `claude` binary writes (`message.model` on the assistant entry). */
   const claudeTranscript = (id: string, cwd: string): string => [
     { type: "user", uuid: "u-claude-1", parentUuid: null, sessionId: id, cwd, version: "2.1.250", timestamp: "2026-09-20T10:00:00.000Z", message: { role: "user", content: "remember the word PAPAYA" } },
@@ -2133,7 +2133,7 @@ describe("WS-23: a legacy claude-agent record is adopted onto the Winter leg at 
     return { sid, id, workdir, officialKey, projects };
   }
 
-  test("an api-key record resumes on the Winter leg and keeps its history: same transcript file, record rewritten", async () => {
+  test("an api-key record resumes on the Clover leg and keeps its history: same transcript file, record rewritten", async () => {
     const t = table();
     try {
       const { sid, id, workdir, officialKey, projects } = legacySession(t, { provider: "anthropic" });
@@ -2141,11 +2141,11 @@ describe("WS-23: a legacy claude-agent record is adopted onto the Winter leg at 
       const resumed = (await t.drivers.ensure(sid))!;
       const record = t.records.get(sid)!;
       expect(record.runtimeKind).toBe("winter-agent");
-      expect(record.selection).toMatchObject({ runtimeKind: "winter-agent", providerId: "anthropic", modelRef: "anthropic/claude-sonnet-5", family: "claude", authFamily: "api-key", sdkVersion: WINTER_PEER_VERSIONS.winterAgentSdk });
+      expect(record.selection).toMatchObject({ runtimeKind: "winter-agent", providerId: "anthropic", modelRef: "anthropic/claude-sonnet-5", family: "claude", authFamily: "api-key", sdkVersion: CLOVER_PEER_VERSIONS.winterAgentSdk });
       expect(record.selection.reason).toContain("WS-23");
       expect([record.providerId, record.modelRef, record.authRef]).toEqual(["anthropic", "anthropic/claude-sonnet-5", "keychain:anthropic:default"]);
-      // Fix round 1 (minor 7): the record-level versions are the Winter runtime's now, not 0.3.250.
-      expect([record.sdkVersion, record.engineVersion]).toEqual([WINTER_PEER_VERSIONS.winterAgentSdk, WINTER_PEER_VERSIONS.winterAgentSdk]);
+      // Fix round 1 (minor 7): the record-level versions are the Clover runtime's now, not 0.3.250.
+      expect([record.sdkVersion, record.engineVersion]).toEqual([CLOVER_PEER_VERSIONS.winterAgentSdk, CLOVER_PEER_VERSIONS.winterAgentSdk]);
       expect(record.transcriptHealth).toBe("clean");
       expect(t.drivers.legOf(sid)).toBe("winter");
       // The child RESUMES the same backend transcript — never a fresh one — in the same cwd.
@@ -2154,10 +2154,10 @@ describe("WS-23: a legacy claude-agent record is adopted onto the Winter leg at 
       expect(opts.cwd).toBe(workdir);
       // …and that transcript is exactly where the child looks, with claude's own entries in it.
       expect(transcriptProjectKey(opts.cwd!)).toBe(officialKey);
-      const loaded = await new winter.WinterCompatibilitySessionStore({ winterHome: storeHomeFor(t.home) }).load({ projectKey: officialKey, sessionId: id });
+      const loaded = await new clover.WinterCompatibilitySessionStore({ winterHome: storeHomeFor(t.home) }).load({ projectKey: officialKey, sessionId: id });
       expect(loaded?.map((e) => e.uuid)).toEqual(["u-claude-1", "a-claude-1"]);
       expect(readFileSync(join(projects, officialKey, `${id}.jsonl`), "utf8")).toContain("remember the word PAPAYA");
-      expect(t.logs.some((l) => l.includes("adopted onto the Winter leg") && l.includes(sid))).toBe(true);
+      expect(t.logs.some((l) => l.includes("adopted onto the Clover leg") && l.includes(sid))).toBe(true);
       await resumed.end();
     } finally { t.close(); }
   });
@@ -2172,7 +2172,7 @@ describe("WS-23: a legacy claude-agent record is adopted onto the Winter leg at 
       expect(record.selection).toMatchObject({ runtimeKind: "winter-agent", providerId: "console", modelRef: "console/claude-sonnet-5", authFamily: "console-profile" });
       // WS-23 (official-removal review, minor 3; claude-creds): the locator is REWRITTEN, not carried
       // over. The official leg recorded the api-key slot (`keychain:anthropic:default`) for this
-      // session; on the Winter leg a Console session names the ant broker's bearer slot, both in the
+      // session; on the Clover leg a Console session names the ant broker's bearer slot, both in the
       // durable record and on the child it spawns — never the user's own API key.
       expect(record.authRef).toBe("keychain:anthropic:console");
       expect(t.q().options.provider?.authRef).toMatchObject({ kind: "keychain", account: "anthropic:console" });
@@ -2181,17 +2181,17 @@ describe("WS-23: a legacy claude-agent record is adopted onto the Winter leg at 
     } finally { t.close(); }
   });
 
-  test("a cwd-less record (keyed by its first working directory on the official leg) moves to the Winter key and resumes there", async () => {
+  test("a cwd-less record (keyed by its first working directory on the official leg) moves to the Clover key and resumes there", async () => {
     const t = table();
     try {
       const { sid, id, officialKey, projects } = legacySession(t, { provider: "anthropic", cwdless: true });
-      const winterKey = transcriptProjectKey(realpathSync(t.home)); // the table's `tmpDirOf` is the home
-      expect(winterKey).not.toBe(officialKey);
+      const cloverKey = transcriptProjectKey(realpathSync(t.home)); // the table's `tmpDirOf` is the home
+      expect(cloverKey).not.toBe(officialKey);
       const resumed = (await t.drivers.ensure(sid))!;
       expect(existsSync(join(projects, officialKey, `${id}.jsonl`))).toBe(false);
-      expect(readFileSync(join(projects, winterKey, `${id}.jsonl`), "utf8")).toContain("remember the word PAPAYA");
+      expect(readFileSync(join(projects, cloverKey, `${id}.jsonl`), "utf8")).toContain("remember the word PAPAYA");
       const record = t.records.get(sid)!;
-      expect([record.runtimeKind, record.transcriptProjectKey]).toEqual(["winter-agent", winterKey]);
+      expect([record.runtimeKind, record.transcriptProjectKey]).toEqual(["winter-agent", cloverKey]);
       expect(t.q().options.resume).toBe(id);
       await resumed.end();
     } finally { t.close(); }
@@ -2201,17 +2201,17 @@ describe("WS-23: a legacy claude-agent record is adopted onto the Winter leg at 
     const t = table();
     try {
       const { sid, id, officialKey, projects } = legacySession(t, { provider: "anthropic", cwdless: true });
-      const winterKey = transcriptProjectKey(realpathSync(t.home));
-      mkdirSync(join(projects, winterKey), { recursive: true });
-      writeFileSync(join(projects, winterKey, `${id}.jsonl`), '{"type":"user","uuid":"u-other"}\n');
+      const cloverKey = transcriptProjectKey(realpathSync(t.home));
+      mkdirSync(join(projects, cloverKey), { recursive: true });
+      writeFileSync(join(projects, cloverKey, `${id}.jsonl`), '{"type":"user","uuid":"u-other"}\n');
       const first = await t.drivers.ensure(sid).then(() => undefined, (e: unknown) => e);
-      expect(first).toMatchObject({ name: "WinterLegRefusal", code: "legacy_session_migration_refused", reason: "transcript-collision" });
+      expect(first).toMatchObject({ name: "CloverLegRefusal", code: "legacy_session_migration_refused", reason: "transcript-collision" });
       // The refusal names the repair that exists (fix round 1, I1), not a doctor with nothing to offer.
       expect((first as Error).message).toContain(`--repair adopt-legacy-session --session ${sid}`);
       expect((first as Error).message).toContain("--keep recorded");
       expect(t.queries).toHaveLength(0);
       expect(readFileSync(join(projects, officialKey, `${id}.jsonl`), "utf8")).toContain("PAPAYA");
-      expect(readFileSync(join(projects, winterKey, `${id}.jsonl`), "utf8")).toContain("u-other");
+      expect(readFileSync(join(projects, cloverKey, `${id}.jsonl`), "utf8")).toContain("u-other");
       const record = t.records.get(sid)!;
       expect([record.runtimeKind, record.transcriptHealth, record.transcriptProjectKey]).toEqual(["claude-agent", "repair-required", officialKey]);
       // The record still names the old leg and is now marked: the next resume refuses the same way.
@@ -2233,7 +2233,7 @@ describe("WS-23: a legacy claude-agent record is adopted onto the Winter leg at 
     } finally { t.close(); }
   });
 
-  test("a claude.ai subscription (claude-oauth) record refuses typed — that credential never served the Winter runtime", async () => {
+  test("a claude.ai subscription (claude-oauth) record refuses typed — that credential never served the Clover runtime", async () => {
     const t = table();
     try {
       const { sid } = legacySession(t, { provider: "anthropic", authFamily: "claude-oauth" });
@@ -2244,7 +2244,7 @@ describe("WS-23: a legacy claude-agent record is adopted onto the Winter leg at 
     } finally { t.close(); }
   });
 
-  test("adoptLegacyRecord alone moves the record without opening a child; a Winter record comes back untouched", async () => {
+  test("adoptLegacyRecord alone moves the record without opening a child; a Clover record comes back untouched", async () => {
     const t = table();
     try {
       const { sid } = legacySession(t, { provider: "anthropic" });
@@ -2260,10 +2260,10 @@ describe("WS-23: a legacy claude-agent record is adopted onto the Winter leg at 
     const t = table();
     try {
       const { sid, id, officialKey, projects } = legacySession(t, { provider: "anthropic", cwdless: true });
-      const winterKey = transcriptProjectKey(realpathSync(t.home));
-      // The Winter key is a symbolic link: a transcript is never moved through one.
+      const cloverKey = transcriptProjectKey(realpathSync(t.home));
+      // The Clover key is a symbolic link: a transcript is never moved through one.
       const elsewhere = mkdtempSync(join(tmpdir(), "winter-legacy-link-"));
-      symlinkSync(elsewhere, join(projects, winterKey));
+      symlinkSync(elsewhere, join(projects, cloverKey));
       const refused = await t.drivers.ensure(sid).then(() => undefined, (e: unknown) => e);
       expect(refused).toMatchObject({ code: "legacy_session_migration_refused", reason: "transcript-move-refused" });
       expect((refused as Error).message).toContain("symbolic link");
@@ -2273,7 +2273,7 @@ describe("WS-23: a legacy claude-agent record is adopted onto the Winter leg at 
     } finally { t.close(); }
   });
 
-  // Fix round 1, I1: the refusal sends the user to `winter doctor`, so the doctor must NAME the blocked
+  // Fix round 1, I1: the refusal sends the user to `clover doctor`, so the doctor must NAME the blocked
   // session and its repair must leave the session resumable — both paths, end to end through the table.
   test("I1 — a repair-required legacy session: the doctor names it, the repair clears it, and it then resumes", async () => {
     const t = table();
@@ -2304,16 +2304,16 @@ describe("WS-23: a legacy claude-agent record is adopted onto the Winter leg at 
     const tmpDirOf = (): string => t.home;
     try {
       const { sid, id, officialKey, projects } = legacySession(t, { provider: "anthropic", cwdless: true });
-      const winterKey = transcriptProjectKey(realpathSync(t.home));
-      mkdirSync(join(projects, winterKey), { recursive: true });
-      writeFileSync(join(projects, winterKey, `${id}.jsonl`), '{"type":"user","uuid":"u-other"}\n');
+      const cloverKey = transcriptProjectKey(realpathSync(t.home));
+      mkdirSync(join(projects, cloverKey), { recursive: true });
+      writeFileSync(join(projects, cloverKey, `${id}.jsonl`), '{"type":"user","uuid":"u-other"}\n');
       expect(await t.drivers.ensure(sid).then(() => undefined, (e: unknown) => e)).toMatchObject({ reason: "transcript-collision" });
 
       const finding = (await diagnoseRuntimeState(t.home, { tmpDirOf })).find((f) => f.kind === "legacy-adoption-blocked");
       expect(finding?.winterSessionId).toBe(sid);
       expect(finding?.detail).toContain("BOTH");
       expect(finding?.detail).toContain(join(projects, officialKey, `${id}.jsonl`));
-      expect(finding?.detail).toContain(join(projects, winterKey, `${id}.jsonl`));
+      expect(finding?.detail).toContain(join(projects, cloverKey, `${id}.jsonl`));
 
       // Without a choice, nothing moves and nothing is cleared.
       const undecided = await repairRuntimeState(t.home, { kind: "adopt-legacy-session", winterSessionId: sid }, { store: t.store, tmpDirOf });
@@ -2321,17 +2321,17 @@ describe("WS-23: a legacy claude-agent record is adopted onto the Winter leg at 
       expect(undecided.detail).toContain("--keep");
       expect(t.records.get(sid)!.transcriptHealth).toBe("repair-required");
 
-      // Keep the recorded (claude-written) copy: the Winter-key copy goes to quarantine, never deleted.
+      // Keep the recorded (claude-written) copy: the Clover-key copy goes to quarantine, never deleted.
       const kept = await repairRuntimeState(t.home, { kind: "adopt-legacy-session", winterSessionId: sid, keep: "recorded" }, { store: t.store, tmpDirOf });
       expect(kept.applied).toBe(true);
       const quarantine = join(t.home, "cache", "quarantine");
       const [stamp] = readdirSync(quarantine);
-      expect(readFileSync(join(quarantine, stamp!, winterKey, `${id}.jsonl`), "utf8")).toContain("u-other");
+      expect(readFileSync(join(quarantine, stamp!, cloverKey, `${id}.jsonl`), "utf8")).toContain("u-other");
 
       const resumed = (await t.drivers.ensure(sid))!;
-      expect(readFileSync(join(projects, winterKey, `${id}.jsonl`), "utf8")).toContain("PAPAYA");
+      expect(readFileSync(join(projects, cloverKey, `${id}.jsonl`), "utf8")).toContain("PAPAYA");
       const record = t.records.get(sid)!;
-      expect([record.runtimeKind, record.transcriptProjectKey, record.transcriptHealth]).toEqual(["winter-agent", winterKey, "clean"]);
+      expect([record.runtimeKind, record.transcriptProjectKey, record.transcriptHealth]).toEqual(["winter-agent", cloverKey, "clean"]);
       expect(t.q().options.resume).toBe(id);
       await resumed.end();
     } finally { t.close(); }
@@ -2342,9 +2342,9 @@ describe("WS-23: a legacy claude-agent record is adopted onto the Winter leg at 
     const tmpDirOf = (): string => t.home;
     try {
       const { sid, id, projects } = legacySession(t, { provider: "anthropic", cwdless: true });
-      const winterKey = transcriptProjectKey(realpathSync(t.home));
+      const cloverKey = transcriptProjectKey(realpathSync(t.home));
       const elsewhere = mkdtempSync(join(tmpdir(), "winter-legacy-link-"));
-      symlinkSync(elsewhere, join(projects, winterKey));
+      symlinkSync(elsewhere, join(projects, cloverKey));
       expect(await t.drivers.ensure(sid).then(() => undefined, (e: unknown) => e)).toMatchObject({ reason: "transcript-move-refused" });
       expect((await diagnoseRuntimeState(t.home, { tmpDirOf })).some((f) => f.kind === "legacy-adoption-blocked" && f.winterSessionId === sid)).toBe(true);
 
@@ -2353,15 +2353,15 @@ describe("WS-23: a legacy claude-agent record is adopted onto the Winter leg at 
       const blocked = await repairRuntimeState(t.home, { kind: "adopt-legacy-session", winterSessionId: sid }, { store: t.store, tmpDirOf });
       expect(blocked.applied).toBe(false);
       expect(blocked.detail).toContain("symbolic link");
-      expect(blocked.detail).toContain(join(projects, winterKey));
+      expect(blocked.detail).toContain(join(projects, cloverKey));
       expect(t.records.get(sid)!.transcriptHealth).toBe("repair-required");
       expect(await t.drivers.ensure(sid).then(() => undefined, (e: unknown) => e)).toMatchObject({ reason: "repair-required" });
 
       // The user removes the link, as told: the repair now succeeds and the session resumes.
-      rmSync(join(projects, winterKey));
+      rmSync(join(projects, cloverKey));
       expect((await repairRuntimeState(t.home, { kind: "adopt-legacy-session", winterSessionId: sid }, { store: t.store, tmpDirOf })).applied).toBe(true);
       const resumed = (await t.drivers.ensure(sid))!;
-      expect(readFileSync(join(projects, winterKey, `${id}.jsonl`), "utf8")).toContain("PAPAYA");
+      expect(readFileSync(join(projects, cloverKey, `${id}.jsonl`), "utf8")).toContain("PAPAYA");
       expect(t.records.get(sid)!.runtimeKind).toBe("winter-agent");
       await resumed.end();
     } finally { t.close(); }
@@ -2370,23 +2370,23 @@ describe("WS-23: a legacy claude-agent record is adopted onto the Winter leg at 
   // Cowork (session door): adoption MUTATES — `adoptLegacyRecord` rewrites the record and `rekeyForCanonicalCwd`
   // MOVES the transcript — and both run before `modeOf`. A stored cowork row must be refused before either, or
   // a session nothing can run would still have its transcript relocated and its record rewritten as a
-  // Winter-leg Code session by a refused resume.
+  // Clover-leg Code session by a refused resume.
   test("a cowork row with an official-leg record is refused BEFORE adoption: record untouched, transcript not moved", async () => {
     const t = table();
     try {
       const { sid, workdir, officialKey, projects, id } = legacySession(t, { provider: "anthropic", cwdless: true });
       (t.store as unknown as { db: { run(sql: string, params: unknown[]): void } }).db.run("UPDATE sessions SET mode = ? WHERE session_id = ?", ["cowork", sid]);
       const before = structuredClone(t.records.get(sid)!);
-      const winterKey = transcriptProjectKey(realpathSync(t.home));
-      expect(winterKey).not.toBe(officialKey); // a cwd-less session's Winter key differs: adoption WOULD move the transcript
-      const refusal = { name: "WinterLegRefusal", code: "unsupported_topology", message: "Cowork unavailable" };
+      const cloverKey = transcriptProjectKey(realpathSync(t.home));
+      expect(cloverKey).not.toBe(officialKey); // a cwd-less session's Clover key differs: adoption WOULD move the transcript
+      const refusal = { name: "CloverLegRefusal", code: "unsupported_topology", message: "Cowork unavailable" };
       // `runTurn` reaches `resume()` directly (not through `ensure()`), so this pins `resume`'s own guard.
       await expect(t.drivers.runTurn(sid, "hello", "fixture")).rejects.toMatchObject(refusal);
       await expect(t.drivers.ensure(sid)).rejects.toMatchObject(refusal);
       expect(t.records.get(sid)).toEqual(before);                 // not adopted: still the claude-agent record, byte for byte
       expect(t.drivers.legOf(sid)).toBe("official");
       expect(existsSync(join(projects, officialKey, `${id}.jsonl`))).toBe(true); // not re-keyed
-      expect(existsSync(join(projects, winterKey))).toBe(false);
+      expect(existsSync(join(projects, cloverKey))).toBe(false);
       expect(t.queries).toHaveLength(0);
       expect(t.runHomes.built).toHaveLength(0);
       rmSync(workdir, { recursive: true, force: true });
@@ -2407,23 +2407,23 @@ describe("modeOf — the one place a stored mode string becomes a runnable mode"
   });
 
   test("cowork THROWS the typed refusal (it used to read as code); so does any string that is not a runnable mode", () => {
-    expect(() => modeOf("cowork")).toThrow(expect.objectContaining({ name: "WinterLegRefusal", code: "unsupported_topology", message: "Cowork unavailable" }));
+    expect(() => modeOf("cowork")).toThrow(expect.objectContaining({ name: "CloverLegRefusal", code: "unsupported_topology", message: "Cowork unavailable" }));
     for (const unknown of ["something-new", "", "Code", "CHAT", "plan"]) {
       // The stored value is never echoed in the message: it can be anything a hand-edited index holds.
       let thrown: unknown;
       try { modeOf(unknown); } catch (err) { thrown = err; }
-      expect(thrown).toMatchObject({ name: "WinterLegRefusal", code: "unsupported_topology", message: "This session's mode is not supported by this Winter" });
+      expect(thrown).toMatchObject({ name: "CloverLegRefusal", code: "unsupported_topology", message: "This session's mode is not supported by this Clover" });
       expect(String((thrown as Error).message)).not.toContain(unknown === "" ? "\u0000" : unknown);
     }
   });
 });
 
-describe("createWinterSessionDrivers — a stored cowork row is refused, never read as Code", () => {
+describe("createCloverSessionDrivers — a stored cowork row is refused, never read as Code", () => {
   const asCowork = (t: ReturnType<typeof table>, sid: string): string => {
     (t.store as unknown as { db: { run(sql: string, params: unknown[]): void } }).db.run("UPDATE sessions SET mode = ? WHERE session_id = ?", ["cowork", sid]);
     return sid;
   };
-  const refusal = { name: "WinterLegRefusal", code: "unsupported_topology", message: "Cowork unavailable" };
+  const refusal = { name: "CloverLegRefusal", code: "unsupported_topology", message: "Cowork unavailable" };
 
   test("create / ensure / runTurn on a record-less cowork row all refuse typed; nothing is recorded, built or spawned", async () => {
     const t = table();

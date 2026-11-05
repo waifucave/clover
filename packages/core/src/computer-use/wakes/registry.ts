@@ -14,7 +14,7 @@
 // The registry routes nothing itself: the service names the backend (a tab binding → the browser engine's backend,
 // anything else → the helper's), and the backends — lanes B and C — implement `WakeBackend` (`types.ts`).
 import { randomBytes } from "node:crypto";
-import { WAKE_LABEL_MAX, type NewSessionEvent } from "@yanlinglabs/winter-protocol";
+import { WAKE_LABEL_MAX, type NewSessionEvent } from "@waifucave/clover-protocol";
 import { computerUseEnabledFrom, computerUseWakesFrom, type Settings } from "../../settings";
 import { AutomationFailure } from "../errors";
 import type { HelperNotification } from "../protocol";
@@ -174,7 +174,7 @@ export class WakeRegistry {
 
   /** Arm one trigger. Throws an `AutomationFailure` with its one sentence, and arms nothing then. */
   async arm(input: WakeArmInput): Promise<ArmedWake> {
-    if (this.stopped || this.draining) throw new AutomationFailure("HelperUnavailable", "Winter is shutting down — no wake trigger can be armed now");
+    if (this.stopped || this.draining) throw new AutomationFailure("HelperUnavailable", "Clover is shutting down — no wake trigger can be armed now");
     if (!this.enabled()) throw new AutomationFailure("NotAllowed", "wake triggers are turned off in Settings → Computer Use — ask the user to do the step and tell you, or wait with waitFor() in this call");
     const mine = this.countFor(input.sessionId) + (this.arming.get(input.sessionId) ?? 0);
     if (mine >= WAKE_LIMITS.perSession) {
@@ -182,13 +182,13 @@ export class WakeRegistry {
     }
     const all = this.triggers.size + [...this.arming.values()].reduce((a, b) => a + b, 0);
     if (all >= WAKE_LIMITS.perDaemon) {
-      throw new AutomationFailure("TargetBusy", `Winter already has ${WAKE_LIMITS.perDaemon} wake triggers armed across its sessions — cancel one of this session's with wakes.cancel(id), or try again later`);
+      throw new AutomationFailure("TargetBusy", `Clover already has ${WAKE_LIMITS.perDaemon} wake triggers armed across its sessions — cancel one of this session's with wakes.cancel(id), or try again later`);
     }
     const backend = this.deps.backends()[input.backend];
     if (backend === undefined) {
       throw new AutomationFailure("NotAllowed", input.backend === "tab"
-        ? "this Winter cannot watch a browser tab for a wake trigger — ask the user to tell you when they are done"
-        : "this Winter cannot watch an app for a wake trigger — ask the user to tell you when they are done");
+        ? "this Clover cannot watch a browser tab for a wake trigger — ask the user to tell you when they are done"
+        : "this Clover cannot watch an app for a wake trigger — ask the user to tell you when they are done");
     }
     const timeoutMs = Math.min(WAKE_LIMITS.maxTimeoutMs, Math.max(1_000, Math.floor(input.timeoutMs)));
     const wakeId = this.mintId();
@@ -214,7 +214,7 @@ export class WakeRegistry {
     // Armed while the daemon began stopping, the setting turned off or the session went: given straight back.
     if (this.stopped || this.draining || !this.enabled() || this.deps.sessionState(input.sessionId) !== "live") {
       try { backend.disarm(wakeId); } catch { /* never throws by contract */ }
-      if (this.stopped || this.draining) throw new AutomationFailure("HelperUnavailable", "Winter is shutting down — the wake trigger was not kept");
+      if (this.stopped || this.draining) throw new AutomationFailure("HelperUnavailable", "Clover is shutting down — the wake trigger was not kept");
       if (!this.enabled()) throw new AutomationFailure("NotAllowed", "wake triggers were turned off — the trigger was not kept");
       throw new AutomationFailure("NotAllowed", "this session was archived or deleted — the wake trigger was not kept");
     }
@@ -309,7 +309,7 @@ export class WakeRegistry {
 
   /**
    * The boot sweep (spine §5), once the session drivers exist: what the last daemon left in `wakes.json`. A trigger
-   * still armed then ends `restart` and its session is woken once ("Winter restarted, so these waits ended") — and its
+   * still armed then ends `restart` and its session is woken once ("Clover restarted, so these waits ended") — and its
    * record says so at once (ended `restart`), so a boot whose wake never went out (a failed delivery, another stop)
    * leaves it for the NEXT boot to deliver as it is, never to end twice or to take for an expiry; one that had already
    * ended — but whose message never went out (a wake during the stop) — is delivered as what it was; one past its

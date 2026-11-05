@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { canonicalizeModelTag, facingNameOf, facingNameToTag, isModelTag, modelTagIsKnown, parseModelTag, splitTag, tagsForSlot, UNSTATED_TAG, WINTER_TEST_PREFIX, type ModelTag } from "../../src/runtime-sdk/model-tag";
+import { canonicalizeModelTag, facingNameOf, facingNameToTag, isModelTag, modelTagIsKnown, parseModelTag, splitTag, tagsForSlot, UNSTATED_TAG, CLOVER_TEST_PREFIX, type ModelTag } from "../../src/runtime-sdk/model-tag";
 
 /** A plain test literal known to be tag-shaped, asserted as `ModelTag` for `toBe`/`toEqual` against
  *  a branded return value — a type assertion only, never a runtime validation. */
@@ -50,7 +50,7 @@ describe("modelTagIsKnown", () => {
     expect(modelTagIsKnown("openai/my-finetune", { providers: { openai: { baseUrl: "" } } })).toBe(false);
   });
   test("winter-test/* and the unstated sentinel are accepted exactly as isModelTag accepts them", () => {
-    expect(modelTagIsKnown(`${WINTER_TEST_PREFIX}echo`)).toBe(true);
+    expect(modelTagIsKnown(`${CLOVER_TEST_PREFIX}echo`)).toBe(true);
     expect(modelTagIsKnown(UNSTATED_TAG)).toBe(true);
   });
   test("shape-invalid and unrecognized-provider tags are refused, same as isModelTag", () => {
@@ -88,7 +88,7 @@ describe("canonicalizeModelTag", () => {
   });
   test("sentinel and winter-test/* pass through unchanged, never treated as a facing name", () => {
     expect(canonicalizeModelTag(UNSTATED_TAG)).toBe(UNSTATED_TAG);
-    expect(canonicalizeModelTag(`${WINTER_TEST_PREFIX}echo`)).toBe(tag(`${WINTER_TEST_PREFIX}echo`));
+    expect(canonicalizeModelTag(`${CLOVER_TEST_PREFIX}echo`)).toBe(tag(`${CLOVER_TEST_PREFIX}echo`));
   });
   test("modelTagIsKnown agrees with canonicalizeModelTag's defined/undefined split", () => {
     expect(modelTagIsKnown("anthropic/sonnet")).toBe(true);

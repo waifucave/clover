@@ -6,7 +6,7 @@ import { probeEnv, runLines } from "./spawn-lines";
 // windows only, from its OWN `/usage` report: `agy -p "/usage" --output-format json --print-timeout 20s`. A print-mode
 // read-only slash command answers with a structured payload "without starting an agent turn, spending quota, or
 // leaving a conversation behind" (agy's changelog); seen live 2026-10-18: exit 0, `num_turns` 0, every `usage` count 0,
-// `conversation_id` "". Winter NEVER reads agy's sign-in or tokens — the CLI makes its own call, Winter reads its output.
+// `conversation_id` "". Clover NEVER reads agy's sign-in or tokens — the CLI makes its own call, Clover reads its output.
 //
 // Shape: `command.name` "usage", `command.data.groups[] {name, description, buckets[] {id, name, window ("weekly" |
 // "5h"), remaining_fraction (0…1), reset_time (ISO UTC)}}`. Groups seen: "Gemini Models" (gemini-weekly, gemini-5h)

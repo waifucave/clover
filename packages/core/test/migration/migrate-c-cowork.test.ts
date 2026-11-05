@@ -29,7 +29,7 @@ const WORKSPACE_DIR = "ws_fixture";
 /** A home in the old layout (real `skills/` content) plus a Cowork tree whose artifact names collide with
  * names other migration steps treat specially. `official` leaves phase 1 complete but phase 2 pending. */
 function oldLayoutHome(opts: { official?: boolean } = {}): string {
-  const home = tempDir("winter-migc-cowork-");
+  const home = tempDir("clover-migc-cowork-");
   write(join(home, "settings.json"), JSON.stringify({ schemaVersion: 3, permissions: { allow: ["Bash(git status)"] } }));
   write(join(home, "skills", "self", "deploy", "SKILL.md"), "---\nname: deploy\n---\n");
   write(join(home, "projects", "-key", "s.jsonl"), '{"type":"user","uuid":"u1"}\n');
@@ -209,7 +209,7 @@ describe("manifest-driven paths: a resumed or rolled-back run never moves Cowork
       { rekeyed: [{ sessionId: "s", backendId: "b", from: "-raw", to: "-evil/../../../innocent/../ws2", entries: [], outcome: "moved" as const }] },
     ]) expect(coworkManifestProblem({ ...m, ...bad } as MigrationCManifest)).toContain("Cowork storage");
     // A home whose directory is stored as COWORK (no `cowork` exists), so the spelling alone has to decide on any volume.
-    const upper = realpathSync(tempDir("winter-migc-upper-")); mkdirSync(join(upper, "COWORK", "workspaces", "w"), { recursive: true });
+    const upper = realpathSync(tempDir("clover-migc-upper-")); mkdirSync(join(upper, "COWORK", "workspaces", "w"), { recursive: true });
     expect(coworkManifestProblem({ ...base, home: upper, archiveDir: join(upper, "migration", "c-t"), moved: [{ from: "COWORK/workspaces/w/data.ext4", to: "sdk/x" }] })).toContain("Cowork storage");
     mkdirSync(join(home, "memory", "cowork"), { recursive: true }); mkdirSync(join(home, "coworker"), { recursive: true });
     // `..` that really stays outside Cowork is still allowed, by the lexical reading and by the kernel's
@@ -279,18 +279,18 @@ describe("manifest-driven paths: a resumed or rolled-back run never moves Cowork
 
 describe("migrate-project cannot rename or rewrite Cowork backing storage", () => {
   test("a project directory inside a registered Cowork root is refused at plan and at execution; nothing is renamed", () => {
-    const home = tempDir("winter-migp-home-"), coordination = tempDir("winter-migp-coord-");
+    const home = tempDir("clover-migp-home-"), coordination = tempDir("clover-migp-coord-");
     const project = join(home, "cowork", "workspaces", WORKSPACE_DIR, "shared", "outputs", "s1");
     write(join(project, LEGACY_INSTRUCTIONS_FILE), "# legacy instructions\n");
     unregister.push(registerHostStorageFences(home, { coordinationDir: coordination, coworkStorageActive: true }));
     const thrown = (fn: () => unknown): ProjectMigrationRefused => { try { fn(); } catch (error) { expect(error).toBeInstanceOf(ProjectMigrationRefused); return error as ProjectMigrationRefused; } throw new Error("expected a refusal"); };
-    expect(thrown(() => planProjectMigration(project, { winterHome: home })).code).toBe("control_storage");
+    expect(thrown(() => planProjectMigration(project, { cloverHome: home })).code).toBe("control_storage");
     // A plan prepared elsewhere and re-pointed at Cowork storage is rechecked at execution.
-    const elsewhere = tempDir("winter-migp-other-"); write(join(elsewhere, LEGACY_INSTRUCTIONS_FILE), "# other\n");
-    const plan = planProjectMigration(elsewhere, { winterHome: home });
-    const redirected = { ...plan, dir: project, steps: plan.steps.map(step => ({ ...step, from: join(project, LEGACY_INSTRUCTIONS_FILE), to: join(project, "WINTER.md") })) };
+    const elsewhere = tempDir("clover-migp-other-"); write(join(elsewhere, LEGACY_INSTRUCTIONS_FILE), "# other\n");
+    const plan = planProjectMigration(elsewhere, { cloverHome: home });
+    const redirected = { ...plan, dir: project, steps: plan.steps.map(step => ({ ...step, from: join(project, LEGACY_INSTRUCTIONS_FILE), to: join(project, "CLOVER.md") })) };
     expect(thrown(() => runProjectMigration(redirected)).code).toBe("control_storage");
     expect(existsSync(join(project, LEGACY_INSTRUCTIONS_FILE))).toBe(true);
-    expect(existsSync(join(project, "WINTER.md"))).toBe(false);
+    expect(existsSync(join(project, "CLOVER.md"))).toBe(false);
   });
 });

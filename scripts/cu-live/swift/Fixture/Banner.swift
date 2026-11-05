@@ -1,10 +1,10 @@
 import AppKit
 import Foundation
 
-// `--banner <json>`: the live run's own notices, in the result bundle (Winter CU Live Result, an agent app):
+// `--banner <json>`: the live run's own notices, in the result bundle (Clover CU Live Result, an agent app):
 //   countdown — after the idle gate: "… will take over the screen in N s — move the mouse or press a key to
 //               postpone"; the runner watches for input and closes it (postponed) or lets it run out (the run starts);
-//   running   — for the whole run: "Winter test running — don't touch the Mac (stops on any input)".
+//   running   — for the whole run: "Clover test running — don't touch the Mac (stops on any input)".
 // A floating, non-activating panel on every Space (over full screen too), never key, and left out of every screen
 // capture (sharingType .none) — the run's own screenshots never see it. It exits when the runner (`watchPid`) is
 // gone, or at `BannerModel.maxLifetime`, whichever comes first; the runner closes it normally.
@@ -34,9 +34,9 @@ struct BannerModel: Equatable {
     func text(remaining: Int) -> String {
         switch kind {
         case .countdown:
-            return "Winter's computer-use test will take over the screen in \(max(0, remaining)) s — move the mouse or press a key to postpone"
+            return "Clover's computer-use test will take over the screen in \(max(0, remaining)) s — move the mouse or press a key to postpone"
         case .running:
-            return "Winter test running — don't touch the Mac (stops on any input)"
+            return "Clover test running — don't touch the Mac (stops on any input)"
         }
     }
 

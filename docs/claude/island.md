@@ -1,5 +1,7 @@
 # The Winter island
 
+> **Reference: Winter's code.** This file describes Winter's code as it stood at the `winter-before-clover` tag, before the Clover rename (C0). Where it describes code that C0 renamed, read `winter-core` as `clover-core`, `WINTER_*` as `CLOVER_*` and `~/.winter` as `~/.clover`. For Clover itself, [the spec](../clover-spec.md) is the source of truth, then [the plan](../clover-plan.md).
+
 *Read this before touching `apple/Winter/Sources/Island/`, `packages/core/src/island/`, the hello's `capabilities`/`tty`, `island.pending`, or where an approval, question or desktop-switch prompt shows on the Mac.*
 
 A Dynamic-Island-style surface at the Mac's camera housing, in Winter.app. Phase 1: the slim strip, the cards born from the housing, the open island with its tab mechanism and **Needs you**. Phase 2 (below): the tabs — Sessions, Shelf, Usage and limits, Devices, Watches, Servers — and the strip's working count ("The tabs"); the computer-use pill and its mirror, and turn-result cards ("Computer use, results, Watches").

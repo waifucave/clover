@@ -9,10 +9,10 @@ import { isIP } from "node:net";
  * settings.json can only ever shrink the USER half, never this one).
  *
  * 2026-09-18 (user ruling, agent SDK 0.0.17): the floor is a HARD refusal now, on both runtime legs,
- * and no longer an approval card anywhere. Three enforcers consult this one list: a Winter child's
+ * and no longer an approval card anywhere. Three enforcers consult this one list: a Clover child's
  * own executors, through `Options.web.blockedDomains` (`runtime-sdk/mode-options.ts`); the host-side
  * `PreToolUse` floor hook, which is what makes it policy on the OFFICIAL leg, where nothing else in
- * Winter can reach claude's native web tools (`runtime-sdk/hooks.ts`); and the daemon's own
+ * Clover can reach claude's native web tools (`runtime-sdk/hooks.ts`); and the daemon's own
  * `Search` (cited urls) and `browser` (`navigate`/`open`), through `page-core.ts`. The pre-8c engine's `webFetchGate` — which earlier revisions of this comment named as
  * the consumer — was retired with the engine and no longer exists in any form.
  *
@@ -133,7 +133,7 @@ export function dangerousDomainMatch(host: string, entries: readonly string[]): 
  * caller (`permission-rules.ts`'s `WebFetch(domain:…)` matching) must keep answering exactly what it
  * always has. The runtime child's own `blockedDomains` matcher, though, documents "a leading `*.` or
  * `.` and a trailing `.` are ignored" for ENTRIES (agent SDK 0.0.17, `WebToolsConfig.blockedDomains`),
- * so a user who writes `added: ["*.evil.example"]` is honoured inside a Winter child and would NOT
+ * so a user who writes `added: ["*.evil.example"]` is honoured inside a Clover child and would NOT
  * have been honoured by a host-side check built on the bare matcher — a silent divergence on the leg
  * where the host-side check is the ONLY enforcement (the official one). Normalizing both sides here
  * closes it without touching the shared matcher.

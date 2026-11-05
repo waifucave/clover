@@ -5,7 +5,7 @@
 //
 //  1. It never prompts. The tool drives `ComputerUseService` over `PeripheralBroker`, whose approval
 //     cards come from `daemon.ts`'s `buildLeasePolicy` — NOT from the tool, and NOT from the engine.
-//     That producer is untouched by 8b, so a lease card raised by a Winter-leg screenshot is the
+//     That producer is untouched by 8b, so a lease card raised by a Clover-leg screenshot is the
 //     same card a code-mode screenshot raises today. Task 8's `canUseTool` bridge is the other,
 //     independent approval surface; nothing here duplicates either.
 //  2. It never builds its own `ComputerUseService`. The service holds the session's LEASE state, so
@@ -19,7 +19,7 @@
 //
 // The `screenshotMaxDim` setting is read through a getter for the same reason the service is: it is
 // hot (`settings.computerUse.screenshotMaxDim`), and a boot-snapshotted value would need a daemon
-// restart to take effect, which Winter's standing rule forbids. Note the registry door does NOT do
+// restart to take effect, which Clover's standing rule forbids. Note the registry door does NOT do
 // this today — `daemon.ts` passes the value by copy and re-registers the tool on a settings change
 // — so this is the same behaviour reached by the mechanism that actually works for a
 // construction-time capability set.
@@ -45,7 +45,7 @@ export function computerCapability(session: CapabilitySession, deps: ComputerCap
       // budget and has no meaning over MCP (the child is handed the tool list up front). Passing
       // `["dispatch"]` here would make the private registry refuse a dispatch call with "load its
       // schema via ToolSearch first" — the exact trap `server.ts` keeps `builtinDeferral` unset for.
-      // Today's per-mode deferral is recorded in `WINTER_CAPABILITY_TOOLS` for Task 9 instead.
+      // Today's per-mode deferral is recorded in `CLOVER_CAPABILITY_TOOLS` for Task 9 instead.
       // The GETTER is forwarded, not its value: `computerToolDefs` resolves it inside `run`, so a
       // `settings.computerUse.screenshotMaxDim` edit reaches the next call with no daemon restart
       // even though the capability object itself is built once at boot.

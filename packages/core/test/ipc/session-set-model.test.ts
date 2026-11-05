@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, ERR, SESSION_MODEL_MAX_CHARS, type WritableSocket } from "@yanlinglabs/winter-protocol";
+import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, ERR, SESSION_MODEL_MAX_CHARS, type WritableSocket } from "@waifucave/clover-protocol";
 import { startIpcServer } from "../../src/ipc/server";
 import { SessionStore } from "../../src/sessions/store";
 import { SessionHub } from "../../src/sessions/hub";
@@ -65,7 +65,7 @@ describe("session.setModel round-trip RPC (Chat Slice D task 1)", () => {
   afterEach(() => { stop?.(); stop = undefined; });
 
   async function boot(): Promise<{ store: SessionStore; socketPath: string; harnessToken: string; remoteToken: string }> {
-    const home = mkdtempSync(join(tmpdir(), "winter-set-model-rpc-"));
+    const home = mkdtempSync(join(tmpdir(), "clover-set-model-rpc-"));
     // WS-20 (review round 2, M4): `resolveModelSelection` now enforces real catalog MEMBERSHIP,
     // not just provider existence — a BYO `providers.codex-oauth.baseUrl` keeps this file's several
     // off-catalog/placeholder model ids (`codex-oauth/m1`, the length-boundary filler) passing
@@ -75,7 +75,7 @@ describe("session.setModel round-trip RPC (Chat Slice D task 1)", () => {
     const socketPath = join(home, "core.sock");
     const authority = new TokenAuthority(new FileSecretStore(join(home, "secrets.json")));
     const tokens = await authority.ensureTokens();
-    const server = startIpcServer({ socketPath, serverVersion: "test", tokens: authority, store, winterHome: home });
+    const server = startIpcServer({ socketPath, serverVersion: "test", tokens: authority, store, cloverHome: home });
     stop = () => { server.stop(); store.close(); };
     return { store, socketPath, harnessToken: tokens.harness, remoteToken: tokens.remote };
   }
@@ -350,7 +350,7 @@ describe("session.create validates model exactly like session.setModel (WS-20: t
   afterEach(() => { stop2?.(); stop2 = undefined; });
 
   async function boot2(): Promise<{ store: SessionStore; socketPath: string; harnessToken: string }> {
-    const home = mkdtempSync(join(tmpdir(), "winter-create-model-rpc-"));
+    const home = mkdtempSync(join(tmpdir(), "clover-create-model-rpc-"));
     // WS-20 (review round 2, M4): see `boot()`'s identical comment above — the BYO baseUrl keeps
     // this describe block's off-catalog-model controls meaning what they say.
     writeFileSync(join(home, "settings.json"), JSON.stringify({ schemaVersion: 3, provider: { model: "codex-oauth/gpt-5.6-sol" }, providers: { "codex-oauth": { baseUrl: "http://127.0.0.1:9/v1" } } }));
@@ -358,7 +358,7 @@ describe("session.create validates model exactly like session.setModel (WS-20: t
     const socketPath = join(home, "core.sock");
     const authority = new TokenAuthority(new FileSecretStore(join(home, "secrets.json")));
     const tokens = await authority.ensureTokens();
-    const server = startIpcServer({ socketPath, serverVersion: "test", tokens: authority, store, hub: new SessionHub(store), winterHome: home });
+    const server = startIpcServer({ socketPath, serverVersion: "test", tokens: authority, store, hub: new SessionHub(store), cloverHome: home });
     stop2 = () => { server.stop(); store.close(); };
     return { store, socketPath, harnessToken: tokens.harness };
   }
@@ -423,15 +423,15 @@ describe("session.create validates model exactly like session.setModel (WS-20: t
 
   // WS-20 (review round 2, M4): the regression this whole item exists to close — the SAME
   // off-catalog id as the control just above, but with NO `providers.codex-oauth.baseUrl`
-  // configured (a fresh server, no winterHome/settings at all) is now refused rather than passed
+  // configured (a fresh server, no cloverHome/settings at all) is now refused rather than passed
   // through: a typo on a real, catalog-backed provider is a real membership failure.
   test("M4: a typo model on a real provider, with NO BYO baseUrl, is refused INVALID_PARAMS", async () => {
-    const home = mkdtempSync(join(tmpdir(), "winter-create-model-rpc-notypo-"));
+    const home = mkdtempSync(join(tmpdir(), "clover-create-model-rpc-notypo-"));
     const store = new SessionStore(home);
     const socketPath = join(home, "core.sock");
     const authority = new TokenAuthority(new FileSecretStore(join(home, "secrets.json")));
     const tokens = await authority.ensureTokens();
-    // No `winterHome` — `liveSettingsFor` answers `undefined`, so there is no BYO baseUrl to consult.
+    // No `cloverHome` — `liveSettingsFor` answers `undefined`, so there is no BYO baseUrl to consult.
     const server = startIpcServer({ socketPath, serverVersion: "test", tokens: authority, store, hub: new SessionHub(store) });
     try {
       const c = await TestClient.connect(socketPath);

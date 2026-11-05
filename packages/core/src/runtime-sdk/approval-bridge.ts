@@ -1,6 +1,6 @@
 import { resolve, sep } from "node:path";
 import type { CanUseTool, PermissionResult, PermissionUpdate } from "@yanlinglabs/winter-agent-sdk";
-import type { ApprovalOption, NewSessionEvent } from "@yanlinglabs/winter-protocol";
+import type { ApprovalOption, NewSessionEvent } from "@waifucave/clover-protocol";
 import { ApprovalBroker, approvalCardSummary, approvalOptionsFor } from "../agent/approvals";
 import type { QuestionBroker } from "../agent/questions";
 import type { PermissionGate, SessionApprovalPolicy } from "../agent/gate";
@@ -17,7 +17,7 @@ import { projectScopeRootFor } from "./run-home-input";
 import { protectedPathsFor, protectedWriteDecision } from "./protected-paths";
 import { bashProtectedWriteHit } from "./hooks";
 import { privateAddressRefusal } from "../agent/tools/web";
-import { gateClassFor, gateToolNameFor, WINTER_OWN_TOOL_NAMES } from "./tool-names";
+import { gateClassFor, gateToolNameFor, CLOVER_OWN_TOOL_NAMES } from "./tool-names";
 import { controlPlaneTargetForCall, controlPlaneDenialMessage } from "./control-plane";
 import { homeFenceFor } from "./home-fence";
 import { outdirPath } from "../sessions/outdir";
@@ -32,12 +32,12 @@ import { connectorDenialMessage, connectorFactsFor, connectorVerdict, isConnecto
 export { NO_PARK_TIMEOUT_MS, type BridgeLogger } from "./bridge-common";
 
 /**
- * Everything a Winter permission request carries that Winter's `ApprovalBroker` has no field for.
+ * Everything a Clover permission request carries that Clover's `ApprovalBroker` has no field for.
  *
  * `WaitMeta` (`agent/approvals.ts`) holds only `{ toolName, summary, issuedAt, expiresAt, options }`
  * — the five things `approval.list` surfaces — and P8b-19 forbids changing it. So the bridge keeps
  * its OWN record per in-flight request, keyed the same way the broker is (`sessionId:callId`), and
- * carries the six Winter-side fields through: `toolUseID` (which IS the `callId`, so the card
+ * carries the six Clover-side fields through: `toolUseID` (which IS the `callId`, so the card
  * correlates with the projector's `tool_call`), `requestId`, `agentID`, `suggestions`,
  * `decisionReason` and `blockedPath`. Nothing here is persisted and nothing here is logged.
  */
@@ -45,14 +45,14 @@ export interface BridgedApprovalRequest {
   sessionId: string;
   /** `ctx.toolUseID` — also the `callId` on the emitted events and the broker key. */
   callId: string;
-  /** The name the MODEL called (Winter's spelling, e.g. `Bash`). */
+  /** The name the MODEL called (Clover's spelling, e.g. `Bash`). */
   toolName: string;
-  /** The name the gate classified (Winter's spelling, e.g. `bash`). */
+  /** The name the gate classified (Clover's spelling, e.g. `bash`). */
   gateToolName: string;
-  /** Winter's per-request id; distinct from `toolUseID` and re-minted on a policy re-evaluation. */
+  /** Clover's per-request id; distinct from `toolUseID` and re-minted on a policy re-evaluation. */
   requestId: string;
-  /** Set when the caller is a Winter sub-agent inside this same session's child. Never changes
-   *  routing — the card always surfaces on the OWNING Winter session (see `canUseToolFor`). */
+  /** Set when the caller is a Clover sub-agent inside this same session's child. Never changes
+   *  routing — the card always surfaces on the OWNING Clover session (see `canUseToolFor`). */
   agentID?: string;
   suggestions?: readonly PermissionUpdate[];
   decisionReason?: string;
@@ -64,7 +64,7 @@ export interface BridgedApprovalRequest {
 }
 
 export interface CanUseToolDeps {
-  /** The OWNING Winter session — every event the bridge emits lands here. */
+  /** The OWNING Clover session — every event the bridge emits lands here. */
   sessionId: string;
   /** Defaults to `"main"`, matching `daemon.ts`'s `buildLeasePolicy`, the other non-engine
    *  producer of these same two event variants. */
@@ -79,17 +79,17 @@ export interface CanUseToolDeps {
    *  (`sessions/turn-origins.ts`'s `runningTurnOrigin` over the log), `undefined` when none is known.
    *  Read per card, and only for a dispatch session or a dispatch child (`dispatchCardTimeoutMs`). */
   turnOrigin?: () => string | undefined;
-  /** WINTER_HOME. Used ONLY to recognise this session's own `$OUTDIR` as a blessed write target
-   *  (see `isBlessedOutputPath`); absent means every Winter escalation is escalated, the
+  /** CLOVER_HOME. Used ONLY to recognise this session's own `$OUTDIR` as a blessed write target
+   *  (see `isBlessedOutputPath`); absent means every Clover escalation is escalated, the
    *  conservative answer. */
   home?: string;
   /** The session's working directory, used to resolve a RELATIVE write target in the control-plane
    *  fence. An absent/empty cwd resolves relative paths against `/`, which is the conservative
-   *  reading (a relative target then cannot accidentally miss a real `.winter` parent). */
+   *  reading (a relative target then cannot accidentally miss a real `.clover` parent). */
   cwd?: string;
   /**
    * WS-21 (spec §4.3): whether this session's project is TRUSTED. An "Allow … in this project" option is
-   * offered ONLY when it is — the answer is saved to the project's `.winter/settings.local.json`, a tier
+   * offered ONLY when it is — the answer is saved to the project's `.clover/settings.local.json`, a tier
    * the runtimes read for a trusted project alone (`approval.respond` refuses it otherwise too). A live
    * getter: trusting a project mid-session reaches the next card. Absent: offered as before.
    */
@@ -113,7 +113,7 @@ export interface CanUseToolDeps {
   /**
    * P8c-14 (integration round 2): lane 2's `planBridgeFor(...)` (`runtime-sdk/plan-bridge.ts`),
    * consulted here BEFORE the generic gate/never-prompt logic whenever the incoming call is
-   * `ExitPlanMode` (Winter's own spelling — `tool-names.ts`'s `RUNTIME_HOST_TOOL_PAIRS` maps it to
+   * `ExitPlanMode` (Clover's own spelling — `tool-names.ts`'s `RUNTIME_HOST_TOOL_PAIRS` maps it to
    * `exit_plan_mode`, but the dispatch switch below sees the WIRE name).
    *
    * WIDENED (P8d, the deferred integration-review nit): this used to be typed as the Interfaces
@@ -159,9 +159,9 @@ export interface CanUseToolDeps {
   };
   /**
    * The capability server KEYS (`sessions`, `browser`, …) the session's CURRENT incarnation built, read per
-   * call. An `mcp__winter__<key>__<tool>` name is the daemon's own — stripped to its host name for the gate
+   * call. An `mcp__clover__<key>__<tool>` name is the daemon's own — stripped to its host name for the gate
    * and the card, and exempt from connector permissions — only while its key is here (`tool-names.ts`'s
-   * `hostToolNameFor` `liveKeys`, `isWinterCapabilityName`). A retired key or one not built this time is an
+   * `hostToolNameFor` `liveKeys`, `isCloverCapabilityName`). A retired key or one not built this time is an
    * ordinary MCP server's name. Absent (a test wiring): every key counts, as on replay.
    */
   capabilityKeys?: () => ReadonlySet<string> | undefined;
@@ -176,7 +176,7 @@ export interface CanUseToolDeps {
 
 /** The deny text a policy that never prompts hands back to the model. Copied VERBATIM from
  *  `engine.ts`'s `decision === "deny"` branch (the three mode-aware strings at `engine.ts:4359-4363`)
- *  so a Winter session's refusal reads identically to today's. */
+ *  so a Clover session's refusal reads identically to today's. */
 function deniedByPolicyMessage(policy: SessionApprovalPolicy): string {
   if (policy === "dont-ask") {
     return "Denied automatically — you're in dont-ask mode, which declines every action that needs approval. Switch to ask or auto to be prompted, or add an allow-rule for this.";
@@ -220,11 +220,11 @@ export function neverPromptsMessage(toolName: string, mode: string, policy: Sess
  * under `bypassPermissions` — and states that only an allow rule naming that exact host, or
  * `privateAddressPolicy: "allow"`, is consent. But it arrives at `canUseTool` with NOTHING a host can
  * branch on: no `matchedAskRule` (no rule matched) and no `blockedPath`, only a free-form
- * `decisionReason` this bridge deliberately logs and does not act on. Winter's gate, meanwhile,
+ * `decisionReason` this bridge deliberately logs and does not act on. Clover's gate, meanwhile,
  * classifies `web_fetch` as `NETWORK` and answers `allow` under every policy — the user's standing
  * "public web reads never nag" posture. Together those two correct behaviours ANSWERED THE SDK'S
  * MANDATORY ASK WITH A SILENT YES: the child reached `192.168.x.x`, `127.0.0.1` and `*.local` with no
- * card, no event and no record, on the Winter leg AND on the official leg, where claude's own
+ * card, no event and no record, on the Clover leg AND on the official leg, where claude's own
  * per-domain cards land on this same bridge.
  *
  * So the bridge asks the question itself, off the ONE classifier the daemon already owns
@@ -236,7 +236,7 @@ export function neverPromptsMessage(toolName: string, mode: string, policy: Sess
  * covered too.
  *
  * **THE LIMIT, STATED:** this is LEXICAL. A public NAME that RESOLVES into private space
- * (DNS rebinding) is not caught here. The Winter runtime's own executor re-checks after resolution,
+ * (DNS rebinding) is not caught here. The Clover runtime's own executor re-checks after resolution,
  * so that leg is covered one layer down; **on the official leg nothing checks it** — claude's design,
  * and not something this daemon can reach.
  */
@@ -258,10 +258,10 @@ export function privateAddressDeniedMessage(toolName: string, target: { host: st
 /**
  * Is `blockedPath` this session's OWN `$OUTDIR`, `<home>/outputs/<sessionId>`?
  *
- * Winter's protected-write check flags it only because it carries a `.winter` segment
- * (`permissions/protected.ts:154-194` matches `brand.homeDirName`), but Winter blessed that exact
+ * Clover's protected-write check flags it only because it carries a `.clover` segment
+ * (`permissions/protected.ts:154-194` matches `brand.homeDirName`), but Clover blessed that exact
  * directory as agent-writable for this session and folded it into the session's own write fence
- * (`sessions/outdir.ts`). The blessing is keyed by sessionId, never by the bare `~/.winter/outputs/`
+ * (`sessions/outdir.ts`). The blessing is keyed by sessionId, never by the bare `~/.clover/outputs/`
  * prefix, so one session can never reach another's — and that is preserved here by building the
  * prefix from `deps.sessionId`.
  *
@@ -288,8 +288,8 @@ export function reviewerCouldNotJudge(decisionReason: string | undefined): boole
   return typeof decisionReason === "string" && decisionReason.includes(REVIEWER_ESCALATION_REASON);
 }
 
-/** Splits a Winter/CC rule string (`Bash(git push:*)`, `Edit(/foo)`, bare `WebFetch`) back into the
- *  `PermissionRuleValue` halves Winter's `PermissionUpdate` wants. */
+/** Splits a Clover/CC rule string (`Bash(git push:*)`, `Edit(/foo)`, bare `WebFetch`) back into the
+ *  `PermissionRuleValue` halves Clover's `PermissionUpdate` wants. */
 function ruleValueFor(rule: string): { toolName: string; ruleContent?: string } {
   const open = rule.indexOf("(");
   if (open > 0 && rule.endsWith(")")) {
@@ -302,10 +302,10 @@ function ruleValueFor(rule: string): { toolName: string; ruleContent?: string } 
  * The `updatedPermissions` carried back to the child when a human picked a rule-bearing "always
  * allow" option.
  *
- * **`destination: "session"`, always.** The rule's durable home is Winter's rules store, written by
+ * **`destination: "session"`, always.** The rule's durable home is Clover's rules store, written by
  * the ONE existing writer — `approval.respond`'s `PermissionRules.append` (`ipc/server.ts`), which
  * already ran by the time the broker resolved. A settings-file destination here would make the
- * Winter child's own store a SECOND writer of the same decision, which P8b-19 forbids; `"session"`
+ * Clover child's own store a SECOND writer of the same decision, which P8b-19 forbids; `"session"`
  * tells the child "don't ask me again this session" and nothing more.
  */
 function updatedPermissionsFor(option: ApprovalOption | undefined): PermissionUpdate[] | undefined {
@@ -319,23 +319,23 @@ function updatedPermissionsFor(option: ApprovalOption | undefined): PermissionUp
 const MAX_SUGGESTED_OPTIONS = 4;
 
 /**
- * Winter's `suggestions: PermissionUpdate[]` → the `ApprovalOption[]` the phone renders.
+ * Clover's `suggestions: PermissionUpdate[]` → the `ApprovalOption[]` the phone renders.
  *
- * Winter map §4.2 (digest item 46): the bridge-provided suggestions are the PREFERRED source of a
+ * Clover map §4.2 (digest item 46): the bridge-provided suggestions are the PREFERRED source of a
  * card's rule choices, and a host "MUST NOT reconstruct a weaker summary from `toolName`". Only
  * `addRules` updates with `behavior: "allow"` become options — a `deny`/`ask` suggestion, a
  * `setMode`, or a directory update is never something a human "remembers" on an approval card, and
  * minting an option for one would let answering a card change the session's mode.
  *
- * `destination` picks the scope Winter's rules store will write: `projectSettings`/`localSettings`
- * → `"project"`, `userSettings` → `"global"`. `session`/`cliArg` have no durable Winter equivalent,
+ * `destination` picks the scope Clover's rules store will write: `projectSettings`/`localSettings`
+ * → `"project"`, `userSettings` → `"global"`. `session`/`cliArg` have no durable Clover equivalent,
  * so those suggestions are dropped rather than being silently persisted to disk.
  *
  * **Every minted rule is round-tripped through the rules store's own `parseRule` first.** Choosing
  * a rule-bearing option makes `approval.respond` save that literal string through
- * `agent/saved-answers.ts` (`sdk/settings.json`, or the trusted project's `.winter/settings.local.json`); a rule in a grammar Winter cannot parse would be written,
+ * `agent/saved-answers.ts` (`sdk/settings.json`, or the trusted project's `.clover/settings.local.json`); a rule in a grammar Clover cannot parse would be written,
  * warned about once, and thereafter ignored — inert litter in the user's rules file, offered under
- * a label promising it would silence future calls. Winter's rule vocabulary is Winter's (both are
+ * a label promising it would silence future calls. Clover's rule vocabulary is Clover's (both are
  * CC's), so this filter is a guard against drift, not a translation layer.
  */
 export function approvalOptionsFromSuggestions(suggestions: readonly PermissionUpdate[] | undefined): ApprovalOption[] | undefined {
@@ -369,13 +369,13 @@ export function approvalOptionsFromSuggestions(suggestions: readonly PermissionU
 }
 
 /**
- * **The `canUseTool` approval bridge** — a Winter child's permission requests over the daemon's
+ * **The `canUseTool` approval bridge** — a Clover child's permission requests over the daemon's
  * EXISTING `ApprovalBroker`, `approval_requested`/`approval_resolved` events and `approval.respond`
  * RPC. No new event variant, no new method (P8b-21).
  *
  * Order of business, per request:
  *  1. `AskUserQuestion` is routed to the question bridge FIRST — it is a question, not a
- *     permission, and Winter's own descriptor says so ("question prompting and permission are one
+ *     permission, and Clover's own descriptor says so ("question prompting and permission are one
  *     protocol"; it is never auto-approved by any mode).
  *  2. an already-aborted signal denies immediately, with no event and no broker entry.
  *  3. `PermissionGate.evaluate` decides, on the NORMALIZED tool name (`tool-names.ts`).
@@ -397,7 +397,7 @@ export function approvalOptionsFromSuggestions(suggestions: readonly PermissionU
  * **What this bridge deliberately does NOT reproduce** — every one of these is engine-resident
  * policy that becomes per-mode `Options` in Task 9, and each is listed with its disposition in the
  * task report: the in-project write/edit silencing under `ask`; `controlPlaneFileTarget` and the
- * `~/.winter` grant denylist; the out-of-root `dirGrant` card; the web class's and `browser`'s
+ * `~/.clover` grant denylist; the out-of-root `dirGrant` card; the web class's and `browser`'s
  * dangerous-domain floors (which move with the capability tools, P8b-12); bash's always-card
  * escalation args (P8b-31 re-asserted the sandbox-escape one here until C3 retired it for claude
  * parity — see (5b)); and the safety reviewer. It also performs no rules-store READ: a standing
@@ -443,7 +443,7 @@ function planRequestFor(
  * from the projector's `onToolResults`), so an approval card or a question still pending for it can
  * never be answered usefully. Agent SDK 0.0.17 abandoned the pending permission request inside the
  * child on an interrupt and never cancelled this callback, so the card stayed pending for ~24.8 days
- * (s_5d314c81045e seq 24-30). Since 0.0.20 the Winter runtime sends claude's `control_cancel_request`
+ * (s_5d314c81045e seq 24-30). Since 0.0.20 the Clover runtime sends claude's `control_cancel_request`
  * and the SDK aborts the callback's `signal` (what makes `onAbort` below fire, on both legs); this
  * door stays as the second one — it also closes a card whose child died without sending the cancel.
  *
@@ -613,15 +613,15 @@ export function canUseToolFor(deps: CanUseToolDeps): ApprovalBridge {
     // (2) THE CONTROL-PLANE FENCE (P8b-27b) — before the gate, under EVERY policy, `bypass`
     // included.
     //
-    // NOT because Winter's own deny rules are weak — the opposite. A matched stage-2 managed deny
+    // NOT because Clover's own deny rules are weak — the opposite. A matched stage-2 managed deny
     // returns `decision: "deny"` OUTRIGHT (`permissions/evaluator.ts:1350-1364` at `v0.0.3`) and
     // runs BEFORE the mode stage (`:1008`), so it binds under `bypassPermissions` too and **never
     // reaches `canUseTool`**. (An earlier revision of this comment claimed the reverse; it was
     // wrong, and the same wrong sentence was fixed in `control-plane.ts` first.)
     //
-    // This fence exists to cover what Winter's rules do NOT: it is Winter's own invariant, enforced
-    // in Winter's own vocabulary, on BOTH tool-name spellings, over every path-bearing field
-    // including `MultiEdit`'s nested `edits[]` — and it does not depend on Winter's rule grammar
+    // This fence exists to cover what Clover's rules do NOT: it is Clover's own invariant, enforced
+    // in Clover's own vocabulary, on BOTH tool-name spellings, over every path-bearing field
+    // including `MultiEdit`'s nested `edits[]` — and it does not depend on Clover's rule grammar
     // continuing to mean what it means today (the anchor semantics that made 16 of those 28 rules
     // inert are exactly the kind of thing that can move under an SDK bump). Two independent layers
     // over one invariant, which is the right number for a self-grant.
@@ -633,11 +633,11 @@ export function canUseToolFor(deps: CanUseToolDeps): ApprovalBridge {
       return { behavior: "deny", message: controlPlaneDenialMessage(toolName, fenced.path, fenced.home) };
     }
 
-    // (3) Winter's OWN four default tools are allowed silently in every mode (P8b-28). Checked
+    // (3) Clover's OWN four default tools are allowed silently in every mode (P8b-28). Checked
     // after the fence (they name no paths, so this is ordering hygiene, not a hole) and before the
-    // gate, because two of the four — `ReadNotifications`, `advisor` — have no Winter name at all
+    // gate, because two of the four — `ReadNotifications`, `advisor` — have no Clover name at all
     // and would otherwise fail closed to a card in code/dispatch and a deny in chat.
-    if (WINTER_OWN_TOOL_NAMES.has(toolName)) {
+    if (CLOVER_OWN_TOOL_NAMES.has(toolName)) {
       return { behavior: "allow", updatedInput: input };
     }
 
@@ -646,7 +646,7 @@ export function canUseToolFor(deps: CanUseToolDeps): ApprovalBridge {
       return { behavior: "deny", message: `${toolName} was not run — the turn was aborted before the approval could be raised.` };
     }
 
-    // (4b) P8c-14 (integration round 2): `ExitPlanMode` — Winter's OWN wire name (`tool-names.ts`'s
+    // (4b) P8c-14 (integration round 2): `ExitPlanMode` — Clover's OWN wire name (`tool-names.ts`'s
     // `RUNTIME_HOST_TOOL_PAIRS` maps it to `exit_plan_mode`, but `toolName` here is what the CHILD
     // called) — is answered through the plan bridge BEFORE the generic gate/never-prompt logic
     // below: a plan presentation is not a permission decision the mode-based never-prompt rule or
@@ -661,7 +661,7 @@ export function canUseToolFor(deps: CanUseToolDeps): ApprovalBridge {
     const policy = policyNow();
     // TWO names, deliberately (review F5). `gateToolName` is what the CARD and the EVENT say — the
     // display name. `classificationName` is what the GATE is asked about, which for a tool with an
-    // explicit gate class is a different Winter name entirely: `Monitor` displays as itself but is
+    // explicit gate class is a different Clover name entirely: `Monitor` displays as itself but is
     // classified as `bash`, because its command half uses the Bash permission family and a
     // display-derived `bash_output` would be a silent allow under every policy.
     const liveKeys = deps.capabilityKeys?.();
@@ -729,7 +729,7 @@ export function canUseToolFor(deps: CanUseToolDeps): ApprovalBridge {
     // The card's text is unchanged — an escape still reads `bash (UNSANDBOXED): …`. The user's saved
     // allow rules DO reach the child now, on both legs (`mode-options.ts`'s `persistedAllowRulesFor`),
     // so on both legs a matching `Bash(...)` rule allows an escape before it ever gets here, as claude
-    // does (the Winter leg since agent SDK 0.0.20, which retired RULING P3-J's mandatory interaction).
+    // does (the Clover leg since agent SDK 0.0.20, which retired RULING P3-J's mandatory interaction).
     const escape = classificationName === "bash" && typeof input === "object" && input !== null
       && (input as Record<string, unknown>).dangerouslyDisableSandbox === true;
     // Consumed on every escape that gets this far, whatever the verdict, so none lingers.
@@ -752,11 +752,11 @@ export function canUseToolFor(deps: CanUseToolDeps): ApprovalBridge {
       decision = "ask";
     }
 
-    // (5c) WINTER'S OWN ESCALATIONS must never be answered by a blanket allow — and must never be
+    // (5c) CLOVER'S OWN ESCALATIONS must never be answered by a blanket allow — and must never be
     // turned into a refusal either. Checked BEFORE the verdict is acted on; placing this after the
     // `allow` return would make it dead code, which is the failure mode it exists to prevent.
     //
-    // **`blockedPath` is Winter asking, not Winter refusing** (review F1 — the correction). Its one
+    // **`blockedPath` is Clover asking, not Clover refusing** (review F1 — the correction). Its one
     // producer in the pinned runtime is the protected-write standing exception
     // (`permissions/evaluator.ts:946-953`), whose message reads *"Denied: protected path write
     // requires approval (WS-07 §6.7)"* and which resolves to `mustPrompt` — i.e. *route this to the
@@ -767,10 +767,10 @@ export function canUseToolFor(deps: CanUseToolDeps): ApprovalBridge {
     //  - `blockedPath` / `matchedAskRule` → an `allow` becomes `"ask"`: a card in code and dispatch,
     //    the never-prompt deny in chat. A gate `deny` STAYS a deny — an escalation may never
     //    WIDEN a verdict, only narrow it.
-    //  - the ONE exception is `$OUTDIR`, `<home>/outputs/<sessionId>`: a path Winter's protected
-    //    check flags only because it contains a `.winter` segment, and which Winter has explicitly
+    //  - the ONE exception is `$OUTDIR`, `<home>/outputs/<sessionId>`: a path Clover's protected
+    //    check flags only because it contains a `.clover` segment, and which Clover has explicitly
     //    blessed as agent-writable for this session (`sessions/outdir.ts` — "a blessed,
-    //    agent-writable exception under `~/.winter`", folded into the session's own write fence).
+    //    agent-writable exception under `~/.clover`", folded into the session's own write fence).
     //    The host DOES have standing there, so the gate's verdict stands unescalated. Without this a
     //    dispatch session could not write its own deliverable at all.
     //  - the control plane is NOT reached by any of this: `controlPlaneTargetForCall` above already
@@ -780,7 +780,7 @@ export function canUseToolFor(deps: CanUseToolDeps): ApprovalBridge {
     // string attached to decisions of every kind, its vocabulary lives in the private runtime, and
     // treating its mere presence as a block would card or deny calls the child was happy with.
     if (ctx.decisionReason) {
-      log.info(`canUseTool: winter reason session=${deps.sessionId} tool=${toolName} code=${ctx.decisionReason.slice(0, 64)}`);
+      log.info(`canUseTool: clover reason session=${deps.sessionId} tool=${toolName} code=${ctx.decisionReason.slice(0, 64)}`);
     }
     // TWO flags, not one (review n2). The `$OUTDIR` blessing answers the PROTECTED-PATH signal and
     // nothing else; folding both signals into a single flag made a blessed path also suppress a
@@ -791,7 +791,7 @@ export function canUseToolFor(deps: CanUseToolDeps): ApprovalBridge {
       && !isBlessedOutputPath(deps, ctx.blockedPath);
     const askRuleEscalates = ctx.matchedAskRule !== undefined;
     if (decision === "allow" && (protectedPathEscalates || askRuleEscalates)) {
-      log.info(`canUseTool: escalate session=${deps.sessionId} tool=${toolName} reason=${protectedPathEscalates ? "winter-protected-path" : "winter-ask-rule"}`);
+      log.info(`canUseTool: escalate session=${deps.sessionId} tool=${toolName} reason=${protectedPathEscalates ? "clover-protected-path" : "clover-ask-rule"}`);
       decision = "ask";
     }
 
@@ -802,9 +802,9 @@ export function canUseToolFor(deps: CanUseToolDeps): ApprovalBridge {
     // sensitive-file check swallowed arrives here as a plain request). Checked on the INPUT itself, never
     // on `ctx.matchedAskRule`/`blockedPath`. Narrows only: a gate `deny` stays a deny; `dont-ask`, which
     // declines everything it would card, declines this too; chat reaches (6)'s typed deny, dispatch cards.
-    // Fix round 2: …and a Bash command writing under any `.winter/{skills,commands,rules,output-styles,
+    // Fix round 2: …and a Bash command writing under any `.clover/{skills,commands,rules,output-styles,
     // agents}` (the path-fence Bash hook's own detector) — a card for what the child's sandbox does not bind
-    // (R.3 I-4: its any-depth `<dir>/**/.winter/<kind>` fence covers the working directories themselves).
+    // (R.3 I-4: its any-depth `<dir>/**/.clover/<kind>` fence covers the working directories themselves).
     // WS-24: `deps.cwd` so a RELATIVE write through an existing link resolves at this layer too (the
     // detector's own doc). `deps.cwd` is fixed per incarnation, so after an `enter_worktree`/`session.setCwd`
     // it lags until the next spawn; the PreToolUse hook reads the live `input.cwd` and stays the primary
@@ -844,7 +844,7 @@ export function canUseToolFor(deps: CanUseToolDeps): ApprovalBridge {
     }
     // Every never-prompting context answers it with ONE fixed refusal rather than the generic
     // never-prompts line: chat (which the SDK's own `privateAddressPolicy: "deny"` already refuses one
-    // layer down on the Winter leg — this is the only floor on the OFFICIAL leg, where no `Options.web`
+    // layer down on the Clover leg — this is the only floor on the OFFICIAL leg, where no `Options.web`
     // is sent at all), and `dont-ask`, whose conversion at (5) above only ever saw a verdict that was
     // already `"ask"`. Dispatch and a dispatch child card it like code (user ruling 2026-10-17: the
     // dispatch family respects its policy; `webOptionsFor` sends them `"ask"`) — a child's card relayed
@@ -883,7 +883,7 @@ export function canUseToolFor(deps: CanUseToolDeps): ApprovalBridge {
     if (never) {
       log.info(`canUseTool: deny session=${deps.sessionId} tool=${toolName} policy=${policy} reason=never-prompts mode=${deps.mode} origin=${deps.origin ?? "none"}`);
       // Named as the MODEL called it: this message is a tool result the model reads, and naming a
-      // tool it did not call would be confusing. The EVENT surface uses the Winter name (P8b-25).
+      // tool it did not call would be confusing. The EVENT surface uses the Clover name (P8b-25).
       return { behavior: "deny", message: neverPromptsMessage(toolName, never, policy) };
     }
 
@@ -1000,14 +1000,14 @@ async function raiseCard(
   ctx: Parameters<CanUseTool>[2],
 ): Promise<PermissionResult> {
   const { sessionId } = deps;
-  // `callId` IS Winter's `toolUseID`: it is the id the projector stamps on this call's `tool_call`
+  // `callId` IS Clover's `toolUseID`: it is the id the projector stamps on this call's `tool_call`
   // event, so a client can line the card up with the tool row it belongs to — the same relationship
   // `call.callId` has in the engine. `requestId` is carried in the record instead; it is re-minted
-  // whenever Winter re-evaluates against a newer `policyVersion`, so it is the wrong key for a card
+  // whenever Clover re-evaluates against a newer `policyVersion`, so it is the wrong key for a card
   // a human may already be looking at.
   const callId = ctx.toolUseID;
 
-  // A second request for the SAME toolUseID (Winter re-asking after a policy-version bump) would
+  // A second request for the SAME toolUseID (Clover re-asking after a policy-version bump) would
   // otherwise orphan the first promise inside the broker's Map — `wait()` overwrites the entry,
   // and the overwritten `resolve` is never called and its timer never cleared. That is a leak, not
   // a fail-closed outcome, so the stale one is explicitly settled first.
@@ -1052,7 +1052,7 @@ async function raiseCard(
   // naming an EXACT host is standing consent for that host WHEREVER IT RESOLVES, and it turns the
   // private-address/DNS-rebinding check off for it permanently. No card wording asks for that, and
   // choosing it here would also save it as a standing rule (`approval.respond` via
-  // `agent/saved-answers.ts`: `sdk/settings.json` or the project's `.winter/settings.local.json`). Dropping it at card-construction time is
+  // `agent/saved-answers.ts`: `sdk/settings.json` or the project's `.clover/settings.local.json`). Dropping it at card-construction time is
   // the single place that closes both halves: the respond handler resolves an `optionId` against the
   // options THIS record stored (an unknown id persists nothing), and `updatedPermissionsFor` reads
   // the same list. `undefined` is the plain approve/deny card every non-`bash` tool already gets.

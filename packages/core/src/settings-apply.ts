@@ -1,5 +1,5 @@
 import type { Settings } from "./settings";
-import { memoryEnabledFrom, retiredRuntimeSettingKeys, winterLegDisabledKeys, winterOptionsFromSettings, computerUseEnabledFrom, lspEnabledFrom } from "./settings";
+import { memoryEnabledFrom, retiredRuntimeSettingKeys, winterLegDisabledKeys, cloverOptionsFromSettings, computerUseEnabledFrom, lspEnabledFrom } from "./settings";
 import { retentionFromSettings } from "./runtime-state/retention";
 import type { ToolRegistry } from "./agent/tools/registry";
 import type { ComputerUseService } from "./agent/computer-use";
@@ -45,7 +45,7 @@ export interface SettingsApplyDeps {
    *  file's own test helper) keeps compiling unchanged. */
   applyRuntimeMigrations?: (next: Settings) => void;
   /**
-   * P8b Task 15: the Winter runtime handle, for the ONE settings change it has to be told about.
+   * P8b Task 15: the Clover runtime handle, for the ONE settings change it has to be told about.
    *
    * STRUCTURALLY TYPED, AND EVERY HOP OPTIONAL, deliberately. The handle is Task 5's
    * (`runtime-sdk/create.ts`) and its `messaging` is Task 12's; neither exists in this lane, and
@@ -236,8 +236,8 @@ export function makeApply(deps: SettingsApplyDeps): (prev: Settings | null, next
     // that matters — so both sides go through the doors that answer for an absent block.
     const beforeRetention = retentionFromSettings(prev ?? undefined);
     const afterRetention = retentionFromSettings(next);
-    const before = winterOptionsFromSettings(prev);
-    const after = winterOptionsFromSettings(next);
+    const before = cloverOptionsFromSettings(prev);
+    const after = cloverOptionsFromSettings(next);
 
     if (beforeRetention.deliveriesMs !== afterRetention.deliveriesMs || beforeRetention.nameLeasesMs !== afterRetention.nameLeasesMs) {
       // OPTIONAL AT EVERY HOP: the handle is Task 5's and `messaging` is Task 12's, so on today's
@@ -260,13 +260,13 @@ export function makeApply(deps: SettingsApplyDeps): (prev: Settings | null, next
     // Task 17: the engine leg no longer exists. The keys are accepted for one release; a `false`
     // is reported here (and at boot) and never obeyed.
     const disabled = winterLegDisabledKeys(next);
-    if (disabled.length > 0) log(`runtimes.winterLeg.{${disabled.join(",")}} = false: the engine leg no longer exists; ignored (every session runs on the Winter leg)`);
+    if (disabled.length > 0) log(`runtimes.winterLeg.{${disabled.join(",")}} = false: the engine leg no longer exists; ignored (every session runs on the Clover leg)`);
     // WS-23: the retired official leg's keys are accepted and ignored. Boot reports the ones a home
     // carries; this reports a change of that set, once, so a hand-set key is never a silent no-op and
     // an unrelated settings edit never re-narrates one already reported.
     const retired = retiredRuntimeSettingKeys(next);
     if (retired.length > 0 && retired.join(",") !== retiredRuntimeSettingKeys(prev).join(",")) {
-      log(`${retired.join(", ")}: the official claude runtime was retired (every model runs on the Winter runtime); ignored`);
+      log(`${retired.join(", ")}: the official claude runtime was retired (every model runs on the Clover runtime); ignored`);
     }
     if (before.winterExecutable !== after.winterExecutable) log("runtimes.winterExecutable changed — it takes effect for new sessions");
     if (before.advisorModel !== after.advisorModel) log("runtimes.advisorModel changed — it takes effect for new sessions");

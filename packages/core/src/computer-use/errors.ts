@@ -19,7 +19,7 @@ export const AUTOMATION_ERROR_KINDS = [
   "HelperUnavailable",
   "PermissionMissing",
   "Cancelled",
-  /** A browser can't be reached (Phase 2): Winter.app for the built-in browser, Winter for Chrome for the user's. */
+  /** A browser can't be reached (Phase 2): Clover.app for the built-in browser, Winter for Chrome for the user's. */
   "BrowserUnavailable",
 ] as const;
 

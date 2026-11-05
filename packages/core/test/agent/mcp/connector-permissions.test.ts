@@ -3,7 +3,7 @@
 // own evaluation order modelled from the pinned runtime (see `childDecides`).
 import { describe, expect, test } from "bun:test";
 import type { CanUseTool, HookCallback, HookCallbackMatcher, PermissionResult } from "@yanlinglabs/winter-agent-sdk";
-import type { NewSessionEvent } from "@yanlinglabs/winter-protocol";
+import type { NewSessionEvent } from "@waifucave/clover-protocol";
 import { ApprovalBroker } from "../../../src/agent/approvals";
 import { QuestionBroker } from "../../../src/agent/questions";
 import { PermissionGate, type SessionApprovalPolicy } from "../../../src/agent/gate";
@@ -25,35 +25,35 @@ describe("the connector predicate", () => {
     expect(parseConnectorToolName("mcp__cf__workers_list")).toEqual({ server: "cf", tool: "workers_list" });
     expect(parseConnectorToolName("mcp__gh__create__issue")).toEqual({ server: "gh", tool: "create__issue" });
     expect(connectorCandidates("mcp__cf__prod__delete_worker")).toEqual([{ server: "cf", tool: "prod__delete_worker" }, { server: "cf__prod", tool: "delete_worker" }]);
-    // A `winter__x` server is NOT one of the daemon's capability servers (no such key): its tools are a
+    // A `clover__x` server is NOT one of the daemon's capability servers (no such key): its tools are a
     // user connector's (2026-10-01 review — the exemption is keyed on the KEY, never the bare prefix).
-    expect(connectorCandidates("mcp__winter__x__y")).toEqual([{ server: "winter__x", tool: "y" }]);
-    for (const name of ["mcp__winter__research__Search", "mcp__winter__external__battery", "mcp__winter__browser__browser", "mcp__winter__x", "mcp__winter__send_message", "plugin__battery__status", "Bash", "WebFetch", "Browser", "mcp__", "mcp__cf", "mcp__cf__", "mcp____x"]) {
+    expect(connectorCandidates("mcp__clover__x__y")).toEqual([{ server: "clover__x", tool: "y" }]);
+    for (const name of ["mcp__clover__research__Search", "mcp__clover__external__battery", "mcp__clover__browser__browser", "mcp__clover__x", "mcp__clover__send_message", "plugin__battery__status", "Bash", "WebFetch", "Browser", "mcp__", "mcp__cf", "mcp__cf__", "mcp____x"]) {
       expect(isConnectorToolName(name)).toBe(false);
     }
   });
 
-  test("on a LIVE call only the keys the incarnation built are Winter's: a retired or unbuilt key's spelling is a connector action", () => {
+  test("on a LIVE call only the keys the incarnation built are Clover's: a retired or unbuilt key's spelling is a connector action", () => {
     const live = new Set(["sessions", "browser", "external"]);
-    expect(isConnectorToolName("mcp__winter__browser__browser", live)).toBe(false);
-    expect(isConnectorToolName("mcp__winter__external__battery", live)).toBe(false);
+    expect(isConnectorToolName("mcp__clover__browser__browser", live)).toBe(false);
+    expect(isConnectorToolName("mcp__clover__external__battery", live)).toBe(false);
     // `research` is retired; `computer` was not built (computer use off).
-    expect(connectorCandidates("mcp__winter__research__Search", live)).toEqual([{ server: "winter__research", tool: "Search" }]);
-    expect(connectorCandidates("mcp__winter__computer__computer", live)).toEqual([{ server: "winter__computer", tool: "computer" }]);
-    // The standing `winter` server is never split off as a connector.
-    expect(isConnectorToolName("mcp__winter__send_message", live)).toBe(false);
+    expect(connectorCandidates("mcp__clover__research__Search", live)).toEqual([{ server: "clover__research", tool: "Search" }]);
+    expect(connectorCandidates("mcp__clover__computer__computer", live)).toEqual([{ server: "clover__computer", tool: "computer" }]);
+    // The standing `clover` server is never split off as a connector.
+    expect(isConnectorToolName("mcp__clover__send_message", live)).toBe(false);
   });
 });
 
-describe("a server wearing a retired or unbuilt capability name gets no Winter exemption on a live call (2026-10-01 review)", () => {
+describe("a server wearing a retired or unbuilt capability name gets no Clover exemption on a live call (2026-10-01 review)", () => {
   const live = new Set(["sessions", "browser"]);
   test("the hook and the bridge apply the user's connector setting to it, and the gate never sees a host name", async () => {
-    for (const name of ["mcp__winter__research__Search", "mcp__winter__computer__computer"]) {
+    for (const name of ["mcp__clover__research__Search", "mcp__clover__computer__computer"]) {
       const server = name.split("__").slice(1, 3).join("__");
       const session: Session = { label: "bypass", mode: "code", policy: "bypass" };
       const source = liveSource({ [server]: { "*": "deny" } });
       const built = sessionHooksFor({ sessionId: "s_1", roots: ["/tmp"], mode: "code", cwd: "/tmp", policy: () => "bypass", connectors: source, capabilityKeys: () => live });
-      const hook = (built.winter?.PreToolUse ?? []).filter((g: HookCallbackMatcher) => g.matcher === undefined)[1]!.hooks[0]!;
+      const hook = (built.clover?.PreToolUse ?? []).filter((g: HookCallbackMatcher) => g.matcher === undefined)[1]!.hooks[0]!;
       expect((await hookDecision(hook, name)).decision).toBe("deny");
       const bridge = canUseToolFor({
         sessionId: "s_1", mode: "code", cwd: "/tmp", policy: () => session.policy, approvals: new ApprovalBroker(), questions: new QuestionBroker(), gate: new PermissionGate(),
@@ -71,7 +71,7 @@ describe("a server wearing a retired or unbuilt capability name gets no Winter e
       sessionId: "s_1", mode: "chat", cwd: "/tmp", policy: () => "chat", approvals, questions: new QuestionBroker(), gate: new PermissionGate(),
       emit: (e) => { events.push(e); }, log: silent, now: () => 1_700_000_000_000, connectors: source, capabilityKeys: () => live,
     });
-    const pending = bridge("mcp__winter__research__Search", {}, ctx());
+    const pending = bridge("mcp__clover__research__Search", {}, ctx());
     const card = events.find((e) => e.type === "approval_requested") as { callId: string } | undefined;
     expect(card).toBeDefined();
     approvals.resolve("s_1", card!.callId, false, "test");
@@ -81,7 +81,7 @@ describe("a server wearing a retired or unbuilt capability name gets no Winter e
       sessionId: "s_1", mode: "chat", cwd: "/tmp", policy: () => "chat", approvals: new ApprovalBroker(), questions: new QuestionBroker(), gate: new PermissionGate(),
       emit: () => {}, log: silent, now: () => 1_700_000_000_000, connectors: source, capabilityKeys: () => live,
     });
-    expect(((await browser("mcp__winter__browser__browser", {}, ctx("tu2"))) as PermissionResult).behavior).toBe("allow");
+    expect(((await browser("mcp__clover__browser__browser", {}, ctx("tu2"))) as PermissionResult).behavior).toBe("allow");
   });
 });
 
@@ -175,7 +175,7 @@ function liveSource(table: ConnectorPermissionTable, readOnly: Record<string, bo
 
 function connectorHookOf(session: Session, source: ConnectorPermissionSource): HookCallback {
   const built = sessionHooksFor({ sessionId: "s_1", roots: ["/tmp"], mode: session.mode, cwd: "/tmp", policy: () => session.policy, connectors: source });
-  const unmatched = (built.winter?.PreToolUse ?? []).filter((g: HookCallbackMatcher) => g.matcher === undefined);
+  const unmatched = (built.clover?.PreToolUse ?? []).filter((g: HookCallbackMatcher) => g.matcher === undefined);
   // the plugin group, then the connector floor (no `home`: no path fence)
   expect(unmatched).toHaveLength(2);
   expect((unmatched[1] as { failClosed?: boolean }).failClosed).toBe(true);
@@ -208,7 +208,7 @@ const ctx = (id = "tu1"): Parameters<CanUseTool>[2] => ({ signal: new AbortContr
  * prompt stage = `canUseTool`), then a hook `allow`, then the mode stage (`bypassPermissions` allows; an
  * MCP call is never built-in read-only, so every other mode is "unresolved"), then allow rules, then
  * `dontAsk` → deny, then `canUseTool`. `plan`/`default`/`acceptEdits` reach `canUseTool` for an MCP call
- * (Winter never maps a policy to the runtime's `auto`).
+ * (Clover never maps a policy to the runtime's `auto`).
  */
 async function childDecides(session: Session, hook: HookCallback, bridge: ReturnType<typeof bridgeOf>, toolName: string, opts: { allowRule?: boolean; id?: string } = {}): Promise<Outcome> {
   const h = await hookDecision(hook, toolName);
@@ -279,8 +279,8 @@ describe("the floor holds where the bridge never looks", () => {
 
   test("a non-connector name gets no opinion from the floor", async () => {
     const session: Session = { label: "bypass", mode: "code", policy: "bypass" };
-    const hook = connectorHookOf(session, liveSource({ winter: { "*": "deny" }, cf: { "*": "deny" } }));
-    for (const name of ["Bash", "mcp__winter__research__Search", "mcp__winter__external__x"]) {
+    const hook = connectorHookOf(session, liveSource({ clover: { "*": "deny" }, cf: { "*": "deny" } }));
+    for (const name of ["Bash", "mcp__clover__research__Search", "mcp__clover__external__x"]) {
       expect((await hookDecision(hook, name)).decision).toBe("none");
     }
   });
@@ -373,7 +373,7 @@ describe("chat and dispatch card connector actions, and only those", () => {
     expect(card!.options).toBeUndefined();
     bridge.approvals.resolve("s_1", "c1", true, "user");
     expect(((await pending) as PermissionResult).behavior).toBe("allow");
-    for (const name of ["Bash", "mcp__winter__external__battery", "plugin__battery__status", "mcp__winter__computer__computer"]) {
+    for (const name of ["Bash", "mcp__clover__external__battery", "plugin__battery__status", "mcp__clover__computer__computer"]) {
       const before = bridge.events.length;
       const r = (await bridge.canUse(name, { command: "ls" }, ctx(`n-${name}`))) as PermissionResult;
       expect(r.behavior).toBe("deny");
@@ -553,7 +553,7 @@ describe("WS-27: the runtime states the call's server (winter_mcp_server / mcpSe
   test("a statement that does not fit the tool name, and a capability tool, fall back / stay excluded", () => {
     const source = liveSource({ cf: { list: "deny" } });
     expect(connectorFactsFor(source, "mcp__cf__list", undefined, { name: "other", configName: "other" })).toMatchObject({ server: "cf", setting: "deny" });
-    expect(connectorFactsFor(source, "mcp__winter__external__x", undefined, { name: "winter__external", configName: "winter__external" })).toBeUndefined();
+    expect(connectorFactsFor(source, "mcp__clover__external__x", undefined, { name: "clover__external", configName: "clover__external" })).toBeUndefined();
   });
 
   test("the hook floor reads winter_mcp_server: a subagent's renamed inline server (cf_2) takes its config name's deny, even under bypass", async () => {

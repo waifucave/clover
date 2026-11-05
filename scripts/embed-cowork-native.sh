@@ -9,7 +9,7 @@
 #   Winter.app/Contents/Helpers/WinterCowork/winter-cowork-launcher   Swift, no entitlements
 #   Winter.app/Contents/Helpers/WinterCowork/winter-cowork-worker     C + libkrun, exactly one entitlement: com.apple.security.hypervisor
 #
-# What this does, Release only (a Debug Winter.app embeds neither; the owner's dev flow signs a dev pair separately):
+# What this does, Release only (a Debug Clover.app embeds neither; the owner's dev flow signs a dev pair separately):
 #   1. Refuse an input that is not what ships: a missing file; a binary that contains a test hook (WINTER_COWORK_TEST_…, or a
 #      `cdhash H"` pin, which the launcher compiles in only under -DWINTER_COWORK_TEST_BUILD); a binary that links anything but platform dylibs (/usr/lib,
 #      /System/Library); a binary that names the builder's repository or home (the release name scan would reject it anyway); a
@@ -17,7 +17,7 @@
 #   2. ditto both into Contents/Helpers/WinterCowork (the old directory is removed first, so nothing lingers).
 #   3. Sign the WORKER first, then the LAUNCHER (nested code, each with its OWN identity — never `--deep`, which would give one the
 #      other's identifier): the app's identity, the hardened runtime, a secure timestamp, the stable identifier and a STATED designated
-#      requirement (identifier + Winter's team under Apple's anchor). The launcher compiles the worker's requirement and checks the
+#      requirement (identifier + Clover's team under Apple's anchor). The launcher compiles the worker's requirement and checks the
 #      executed worker image against it before resuming it, so the string stated here is the one the launcher enforces.
 #   4. Check the signatures took: recorded requirement == stated, identifier, hardened runtime, entitlements (worker: exactly the
 #      hypervisor key; launcher: none).

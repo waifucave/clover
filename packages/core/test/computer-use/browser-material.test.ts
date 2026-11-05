@@ -27,7 +27,7 @@ const PAGE: FakePage = {
       { id: 2, role: "combo box", name: "Language", value: "English", states: ["collapsed"] },
       // <div role="checkbox" aria-checked="false">Accept the terms</div>
       { id: 3, role: "check box", name: "Accept the terms", states: ["unchecked"] },
-      // a box whose press the page does not take where Winter presses
+      // a box whose press the page does not take where Clover presses
       { id: 4, role: "check box", name: "Mature content", states: ["unchecked"] },
       // <div class="checkbox-wrapper"> (no role) holding <input type="checkbox" style="opacity:0"> + its label
       { id: 5, role: "group", name: "Notify me" },
@@ -146,7 +146,7 @@ describe("A: an ARIA select (a combo box whose list is drawn elsewhere)", () => 
     expect(await p("state", { full: true, emit: false })).toContain('[2] combo box "Language" value="French"');
   });
 
-  test("no option matches: the list Winter opened is closed again and the refusal names the options", async () => {
+  test("no option matches: the list Clover opened is closed again and the refusal names the options", async () => {
     const { p, keys } = await opened();
     const e = await failure(p("setValue", { ref: 2, value: "Klingon" }));
     expect(e.message).toBe('[2]: no option "Klingon" — the options are: "English", "French", "German"');
@@ -277,7 +277,7 @@ describe("E: a page's own \"Select file\" button", () => {
   test("the click's file chooser is said, naming the file input to upload() into; the next state's header names it too", async () => {
     const { r, p } = await opened();
     await p("click", { target: 11 });
-    expect(r.text()).toContain("the click opened the page's file chooser — Winter held it, so nothing opened on screen; upload([16], paths) puts the files in (its file input)");
+    expect(r.text()).toContain("the click opened the page's file chooser — Clover held it, so nothing opened on screen; upload([16], paths) puts the files in (its file input)");
     expect(await p("state", { emit: false })).toContain("the page asked for a file — use upload([16], paths) on its file input");
   });
 });

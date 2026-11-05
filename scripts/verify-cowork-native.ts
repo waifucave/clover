@@ -1,6 +1,6 @@
 /**
  * `bun run verify:cowork-native` — the compiled-artifact gate for the Cowork native pair's packaging. It assembles a SCRATCH bundle (a temp directory shaped like
- * `Winter.app/Contents`), runs the real build-phase script `embed-cowork-native.sh` into it with an ad-hoc identity, and proves:
+ * `Clover.app/Contents`), runs the real build-phase script `embed-cowork-native.sh` into it with an ad-hoc identity, and proves:
  *
  *   1. the embed produced exactly the pair and the pin manifest, and `checkSignedNative` (identifier, hardened runtime, the stated designated requirement, the
  *      entitlements, platform dylibs only, no test hook) and `checkCoworkNativeBundle` (the manifest's CDHashes and pins against this checkout) accept it;
@@ -14,7 +14,7 @@
  *
  * With no arguments it builds the REAL launcher (swift build, scratch path) and uses a stand-in worker (a copy of /usr/bin/true) because this repository does not
  * build S4's libkrun archive; with the libkrun inputs it also builds the real worker. It never runs either binary, never signs with a real identity, never touches the
- * Keychain, the notary, /Applications or any running Winter, and removes its scratch directory. The Developer ID team, the secure timestamp and notarization are
+ * Keychain, the notary, /Applications or any running Clover, and removes its scratch directory. The Developer ID team, the secure timestamp and notarization are
  * checked by release.ts on the real bundle, not here.
  */
 import { appendFileSync, copyFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
@@ -30,7 +30,7 @@ export interface VerifyResult { failures: string[]; lines: string[] }
 function embed(inputs: { launcher: string; worker: string; entitlements?: string }, builtProducts: string, extraEnv: Record<string, string> = {}): { ok: boolean; output: string } {
   const result = spawnSync("bash", [join(REPO_ROOT, "scripts", "embed-cowork-native.sh")], {
     encoding: "utf8", timeout: 180_000,
-    env: { ...process.env, CONFIGURATION: "Release", BUILT_PRODUCTS_DIR: builtProducts, CONTENTS_FOLDER_PATH: "Winter.app/Contents", EXPANDED_CODE_SIGN_IDENTITY: "-", DEVELOPMENT_TEAM: COWORK_NATIVE_TEAM,
+    env: { ...process.env, CONFIGURATION: "Release", BUILT_PRODUCTS_DIR: builtProducts, CONTENTS_FOLDER_PATH: "Clover.app/Contents", EXPANDED_CODE_SIGN_IDENTITY: "-", DEVELOPMENT_TEAM: COWORK_NATIVE_TEAM,
       COWORK_LAUNCHER_BINARY: inputs.launcher, COWORK_WORKER_BINARY: inputs.worker, COWORK_WORKER_ENTITLEMENTS: inputs.entitlements ?? WORKER_ENTITLEMENTS, ...extraEnv },
   });
   return { ok: result.status === 0, output: `${result.stdout}${result.stderr}` };
@@ -53,7 +53,7 @@ function memberFailures(contents: string): string[] {
 function refusal(good: string, scratch: string, name: string, mutate: (contents: string) => void): { name: string; failures: string[] } {
   const copy = join(scratch, `mutant-${name.replace(/\W+/g, "-")}`);
   cpSync(good, copy, { recursive: true });
-  const contents = join(copy, "Winter.app", "Contents");
+  const contents = join(copy, "Clover.app", "Contents");
   mutate(contents);
   return { name, failures: [...memberFailures(contents), ...bundleFailures(contents)] };
 }
@@ -65,7 +65,7 @@ export function verifyCoworkNative(input: { launcher: string; worker: string; sc
     const good = join(scratch, "good");
     const embedded = embed(input, good);
     if (!embedded.ok) return { failures: [`the embed phase failed:\n${embedded.output.trim()}`], lines };
-    const contents = join(good, "Winter.app", "Contents");
+    const contents = join(good, "Clover.app", "Contents");
     failures.push(...memberFailures(contents), ...bundleFailures(contents));
     lines.push(failures.length === 0 ? "good bundle: both members and the pin manifest accepted" : "good bundle: REFUSED (see failures)");
     if (failures.length > 0) return { failures, lines };
@@ -75,7 +75,7 @@ export function verifyCoworkNative(input: { launcher: string; worker: string; sc
     const omitOut = join(scratch, "omit");
     cpSync(good, omitOut, { recursive: true }); // a stale pair from an earlier build is in the products directory
     const omitted = embed(input, omitOut, { COWORK_NATIVE: "omit" });
-    const omitContents = join(omitOut, "Winter.app", "Contents");
+    const omitContents = join(omitOut, "Clover.app", "Contents");
     const omitProblems = [...(omitted.ok ? [] : [`the omit run failed: ${omitted.output.trim()}`]), ...checkCoworkNativeOmitted(omitFacts(omitContents))];
     failures.push(...omitProblems);
     lines.push(omitProblems.length === 0 ? "omit: the stale pair and pins file were removed, the omit gate accepts the bundle" : "omit: REFUSED");
@@ -83,7 +83,7 @@ export function verifyCoworkNative(input: { launcher: string; worker: string; sc
     lines.push("refused: an omitted release whose bundle still holds the helpers and the pins file");
     const noInputOut = join(scratch, "no-input");
     const noInput = embed({ launcher: join(scratch, "absent-launcher"), worker: join(scratch, "absent-worker") }, noInputOut);
-    const noInputProblems = [...(noInput.ok ? [] : [`a build without inputs failed: ${noInput.output.trim()}`]), ...checkCoworkNativeOmitted(omitFacts(join(noInputOut, "Winter.app", "Contents")))];
+    const noInputProblems = [...(noInput.ok ? [] : [`a build without inputs failed: ${noInput.output.trim()}`]), ...checkCoworkNativeOmitted(omitFacts(join(noInputOut, "Clover.app", "Contents")))];
     failures.push(...noInputProblems);
     lines.push(noInputProblems.length === 0 ? "no inputs: the build succeeded and embedded nothing" : "no inputs: FAILED");
     const half = embed({ launcher: input.launcher, worker: join(scratch, "absent-worker") }, join(scratch, "half"));

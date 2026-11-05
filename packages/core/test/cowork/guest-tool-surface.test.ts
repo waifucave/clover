@@ -13,7 +13,7 @@ import {
 import { confinedToolVisibility } from "../../src/cowork/guest-runtime";
 import { CoworkError } from "../../src/cowork/types";
 import { COWORK_CAPABILITY_SERVERS, coworkGuestToolInputs, coworkToolsFor, type CoworkGuestToolInputs } from "../../src/runtime-sdk/mode-options";
-import type { ApprovalPolicy } from "@yanlinglabs/winter-protocol";
+import type { ApprovalPolicy } from "@waifucave/clover-protocol";
 
 const POLICIES: ApprovalPolicy[] = ["plan", "dont-ask", "ask", "accept-edits", "auto", "bypass"];
 const CLASSES = ["read", "write", "execute"];

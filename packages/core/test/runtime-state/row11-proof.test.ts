@@ -5,7 +5,7 @@
 // state lives in a DIFFERENT database, so deleting `sessions/index.db` and letting `SessionStore`
 // rebuild it must leave `runtime-state.db` BYTE-FOR-BYTE unchanged — every runtime session row,
 // every generation, every projection cursor, every directory entry and cursor — and every backend
-// uuid must still resolve to the same winter session afterwards.
+// uuid must still resolve to the same clover session afterwards.
 //
 // WHY THAT IS THE INTERESTING CLAIM. The index rebuild is a destructive operation on the product's
 // own store: it drops the table and re-derives it from disk, and re-derivation LOSES columns the log
@@ -88,7 +88,7 @@ describe("WS-17 row 11 — the session index is disposable, strong form", () => 
         const listedBefore = store.list().map((r) => r.sessionId).sort();
         expect(listedBefore.length).toBe(3);
 
-        // THE OPERATION: the index is thrown away, exactly as `winter doctor --repair rebuild-index`
+        // THE OPERATION: the index is thrown away, exactly as `clover doctor --repair rebuild-index`
         // does it, and the store rebuilds itself from the JSONL logs on construction.
         const indexPath = join(home, "sessions", "index.db");
         expect(existsSync(indexPath)).toBe(true);

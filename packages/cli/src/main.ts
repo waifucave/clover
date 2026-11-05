@@ -1,13 +1,13 @@
 import { join, resolve } from "node:path";
 import { homedir } from "node:os";
 import { existsSync, readFileSync } from "node:fs";
-import { resolveWinterHome, KeychainSecretStore, startDaemon, TOKEN_NAMES, loadSettings, CORE_VERSION, runWorkflowSubprocess, runAutomationWorker, AUTOMATION_WORKER_ARG, processSatisfiesRequirement, runRuntimeWorkflowWorker, RUNTIME_WORKFLOW_WORKER_ARG, runRuntimeStateProbe, runRuntimesProbe, keychainUnlocked, processStartSecondsViaSysctl, runEmbeddedProbe, runDevKeychainAdopt, DEV_KEYCHAIN_ADOPT_ARG, resolveWinterProfile, splitTag, sdkLocalMcpServers } from "@yanlinglabs/winter-core";
-import type { CredentialRow, SecretStore, Settings } from "@yanlinglabs/winter-core";
-import { METHODS, type ApprovalPolicy, type Task } from "@yanlinglabs/winter-protocol";
+import { resolveCloverHome, KeychainSecretStore, startDaemon, TOKEN_NAMES, loadSettings, CORE_VERSION, runWorkflowSubprocess, runAutomationWorker, AUTOMATION_WORKER_ARG, processSatisfiesRequirement, runRuntimeWorkflowWorker, RUNTIME_WORKFLOW_WORKER_ARG, runRuntimeStateProbe, runRuntimesProbe, keychainUnlocked, processStartSecondsViaSysctl, runEmbeddedProbe, runDevKeychainAdopt, DEV_KEYCHAIN_ADOPT_ARG, resolveCloverProfile, splitTag, sdkLocalMcpServers, installCloverProcessIdentity } from "@waifucave/clover-core";
+import type { CredentialRow, SecretStore, Settings } from "@waifucave/clover-core";
+import { METHODS, type ApprovalPolicy, type Task } from "@waifucave/clover-protocol";
 import { POLICY_ORDER } from "./tui/policy-order";
 import { policySwitchNotes } from "./tui/policy-switch-notes";
 import { toolHeadFor } from "./tui/format";
-import { WinterClient } from "./client";
+import { CloverClient } from "./client";
 import { checkCodeSession, filterCodeSessions, sessionModeMarker, sessionRuntimeMarker } from "./session-mode";
 import { applyEvent, isStalled, type WatchdogState } from "./watchdog";
 import { declineElicitationHeadless, HeadlessElicitationGate, type HeadlessCardEvent } from "./elicitation";
@@ -71,7 +71,7 @@ const AQUA = "\x1b[38;2;53;214;232m";
 /** WS-20: best-effort `splitTag` for DISPLAY only — the daemon-side producer of a `model`/`.id`
  *  string may not have migrated to the tag shape yet on an older/partially-migrated settings.json
  *  (L3.1 was schemas only), so this never throws: a non-tag-shaped value prints as-is rather than
- *  crashing a status/listing command. Never used on a WRITE path — `winter model <tag>` validates
+ *  crashing a status/listing command. Never used on a WRITE path — `clover model <tag>` validates
  *  the tag shape itself (`validateModelTag`) and refuses outright rather than tolerating a bare id. */
 function modelIdOf(m: string): string {
   try {
@@ -236,29 +236,29 @@ async function readLine(promptText: string): Promise<string | null> {
 
 async function getToken(): Promise<string> {
   const t = await new KeychainSecretStore().get(TOKEN_NAMES.harness);
-  if (!t) throw new Error("no harness token — is the daemon installed? run: winter daemon run");
+  if (!t) throw new Error("no harness token — is the daemon installed? run: clover daemon run");
   return t;
 }
 
 function socketPath(): string {
-  return join(resolveWinterHome(), "run", "core.sock");
+  return join(resolveCloverHome(), "run", "core.sock");
 }
 
 const AUTOLAUNCH_POLL_MS = 200;
 const AUTOLAUNCH_TIMEOUT_MS = 8000;
 
-// Lifecycle Task 5: the pure core behind "winter auto-launches Winter.app when the daemon is down."
+// Lifecycle Task 5: the pure core behind "clover auto-launches Clover.app when the daemon is down."
 // fs/exec/clock/env are all seams (deps) so the 3 outcomes are unit-testable with zero real process
 // launches — connect() below wires the real ones. Dev is unaffected: my bun daemon already has the
 // socket live → "already-up" before anything else runs; without it and without an installed app
 // bundle in the dev tree → "no-app", and the caller preserves today's getToken() dev-hint error.
 export async function ensureDaemonReachable(deps: {
   socketExists: () => boolean;
-  appBundlePresent: () => boolean; // `open -Ra "Winter"` / bundle-id lookup succeeds
-  launchApp: () => void; // `open -g -b com.winter.app` — comes up as the menu-bar agent, no window
+  appBundlePresent: () => boolean; // `open -Ra "Clover"` / bundle-id lookup succeeds
+  launchApp: () => void; // `open -g -b com.waifucave.clover` — comes up as the menu-bar agent, no window
   sleepMs: (ms: number) => Promise<void>;
   now: () => number;
-  noAutoLaunch: boolean; // WINTER_NO_AUTOLAUNCH — escape hatch for scripts/CI, always "no-app"
+  noAutoLaunch: boolean; // CLOVER_NO_AUTOLAUNCH — escape hatch for scripts/CI, always "no-app"
 }): Promise<"already-up" | "launched" | "no-app"> {
   if (deps.socketExists()) return "already-up";
   if (deps.noAutoLaunch || !deps.appBundlePresent()) return "no-app";
@@ -278,21 +278,21 @@ export async function ensureDaemonReachable(deps: {
     await deps.sleepMs(AUTOLAUNCH_POLL_MS);
   }
   if (deps.socketExists()) return "launched";
-  throw new Error("Winter isn't responding — open Winter.app manually, or run: winter daemon run");
+  throw new Error("Clover isn't responding — open Clover.app manually, or run: clover daemon run");
 }
 
 function appBundlePresent(): boolean {
   // Only a REAL install counts — never a Debug build. mdfind/`open -Ra` also match Xcode
   // DerivedData Debug builds (Spotlight-indexed), which would auto-launch a dev build and
   // break the "dev is unaffected" invariant. DerivedData is never under /Applications.
-  return existsSync("/Applications/Winter.app") || existsSync(join(homedir(), "Applications", "Winter.app"));
+  return existsSync("/Applications/Clover.app") || existsSync(join(homedir(), "Applications", "Clover.app"));
 }
 
 /**
  * WS-19 (fix round 4): the daemon door the credential verbs use WHEN ONE IS ALREADY LISTENING.
  *
- * Deliberately NOT `connect()` above: that one AUTO-LAUNCHES Winter.app when the socket is missing,
- * which is exactly wrong here — `winter login` has always worked with no daemon, and launching the
+ * Deliberately NOT `connect()` above: that one AUTO-LAUNCHES Clover.app when the socket is missing,
+ * which is exactly wrong here — `clover login` has always worked with no daemon, and launching the
  * user's menu-bar app because they typed a credential command would be a surprise, not a service.
  * So this probes the socket file first and answers `undefined` for every failure: no socket, no
  * harness token yet, a stale socket whose daemon is gone. The caller then writes the store itself
@@ -303,7 +303,7 @@ async function openCredentialDaemonDoor(): Promise<CredentialRpcDoor | undefined
   try {
     const token = await new KeychainSecretStore().get(TOKEN_NAMES.harness);
     if (!token) return undefined;
-    return await WinterClient.connect({ socketPath: socketPath(), token, clientName: "cli-credentials", onEvent: () => {} });
+    return await CloverClient.connect({ socketPath: socketPath(), token, clientName: "cli-credentials", onEvent: () => {} });
   } catch {
     // A stale socket file, a daemon mid-shutdown, a Keychain that will not answer — all the same
     // answer: there is no daemon to tell, so do it in-process.
@@ -312,36 +312,36 @@ async function openCredentialDaemonDoor(): Promise<CredentialRpcDoor | undefined
 }
 
 /**
- * WS-21: the daemon door `winter plugin`'s write verbs use when one is already listening — same
+ * WS-21: the daemon door `clover plugin`'s write verbs use when one is already listening — same
  * no-auto-launch posture as `openCredentialDaemonDoor` just above (a plugin install/enable/etc.
- * must not launch Winter.app as a side effect), but returns the FULL `WinterClient` rather than
- * `CredentialRpcDoor`'s narrow `request`/`close` shape: `WinterClient` already declares every
+ * must not launch Clover.app as a side effect), but returns the FULL `CloverClient` rather than
+ * `CredentialRpcDoor`'s narrow `request`/`close` shape: `CloverClient` already declares every
  * `PluginDoor` method (`client.ts`'s own `plugin*` methods), so it satisfies `plugin-cli.ts`'s
  * `PluginDoor` interface structurally, with no adapter shim.
  */
-async function openPluginDaemonDoor(): Promise<WinterClient | undefined> {
+async function openPluginDaemonDoor(): Promise<CloverClient | undefined> {
   if (!existsSync(socketPath())) return undefined;
   try {
     const token = await new KeychainSecretStore().get(TOKEN_NAMES.harness);
     if (!token) return undefined;
-    return await WinterClient.connect({ socketPath: socketPath(), token, clientName: "cli-plugin", onEvent: () => {} });
+    return await CloverClient.connect({ socketPath: socketPath(), token, clientName: "cli-plugin", onEvent: () => {} });
   } catch {
     return undefined;
   }
 }
 
-async function connect(name: string, onEvent: (e: any) => void = () => {}): Promise<WinterClient> {
+async function connect(name: string, onEvent: (e: any) => void = () => {}): Promise<CloverClient> {
   await ensureDaemonReachable({
     socketExists: () => existsSync(socketPath()),
     appBundlePresent,
-    launchApp: () => { Bun.spawnSync(["open", "-g", "-b", "com.winter.app"]); },
+    launchApp: () => { Bun.spawnSync(["open", "-g", "-b", "com.waifucave.clover"]); },
     sleepMs: (ms) => Bun.sleep(ms),
     now: () => Date.now(),
-    noAutoLaunch: !!process.env.WINTER_NO_AUTOLAUNCH,
+    noAutoLaunch: !!process.env.CLOVER_NO_AUTOLAUNCH,
   });
   // "no-app" falls through here unchanged: getToken() throws its existing dev-hint error below,
   // byte-identical to before this task (the daemon's actually-down error path is untouched).
-  return WinterClient.connect({ socketPath: socketPath(), token: await getToken(), clientName: name, onEvent });
+  return CloverClient.connect({ socketPath: socketPath(), token: await getToken(), clientName: name, onEvent });
 }
 
 /** Phase 4b Task 2: connect + call `plugin.revokeToken` + close, for
@@ -356,9 +356,9 @@ async function revokePluginTokenViaDaemon(pluginId: string): Promise<void> {
   }
 }
 
-// Canned prompt for `winter init`: surveys the project and writes/updates a WINTER.md at its root.
+// Canned prompt for `clover init`: surveys the project and writes/updates a CLOVER.md at its root.
 export const INIT_PROMPT =
-  "Survey this project to understand it: read the README, the package manifest (package.json/pyproject/Cargo.toml/etc.), and skim the directory structure and a few key source files. Then write a concise WINTER.md at the project root capturing: what this project is, how to build/test/run it, and the key conventions a new contributor should follow. If a WINTER.md already exists, read it and UPDATE it rather than clobbering. Keep it tight and factual.";
+  "Survey this project to understand it: read the README, the package manifest (package.json/pyproject/Cargo.toml/etc.), and skim the directory structure and a few key source files. Then write a concise CLOVER.md at the project root capturing: what this project is, how to build/test/run it, and the key conventions a new contributor should follow. If a CLOVER.md already exists, read it and UPDATE it rather than clobbering. Keep it tight and factual.";
 
 // T5 — the dim "how to resume" hint printed after the Ink TUI exits (every Ink chat exit, not just a
 // resumed one — mirrors CC's own "you can resume this conversation" chrome). Pure + exported so
@@ -367,7 +367,7 @@ export const INIT_PROMPT =
 // module's `import.meta.main`-gated CLI dispatch. Uses the same raw DIM/RESET escapes (task-block.ts)
 // this file already writes with elsewhere, rather than a fresh Chalk instance, for one convention.
 export function formatResumeHint(sessionId: string): string {
-  return `${DIM}\nResume this session with:\n  winter resume ${sessionId}\n${RESET}`;
+  return `${DIM}\nResume this session with:\n  clover resume ${sessionId}\n${RESET}`;
 }
 
 // Chat mode Slice B1 Task 4: the TTY question_asked handler's per-question headline. `header` is
@@ -406,23 +406,23 @@ export function invisibleKeyCharWarning(key: string): string | null {
 // the client, the pinned-block/event machinery, the raw control-key listener, and the stall
 // watchdog ONCE, then either runs a SINGLE turn and exits (chat:false — `-p`, `resume id text`,
 // `init`; byte-identical to before on the non-TTY path, incl. exit codes + the bg grace-kill) or
-// LOOPS (chat:true — bare `winter`, `resume <id>` with no text): after each turn it erases the block
+// LOOPS (chat:true — bare `clover`, `resume <id>` with no text): after each turn it erases the block
 // and shows the `› ` composer, sends the next line, and watches again. ctrl+C / ctrl+D (EOF) tears
 // down cleanly (timers cleared, terminal restored, client closed).
 async function runTurnSession(opts: { promptOverride?: string; forceAuto?: boolean; existingSessionId?: string; chat: boolean; printModel?: PrintModel }): Promise<void> {
   const { promptOverride, forceAuto = false, existingSessionId, chat, printModel } = opts;
 
   // Ink TUI cutover (Phase 3a Task 6): the new Ink renderer owns the interactive chat TTY unless the
-  // WINTER_LEGACY_CLI escape hatch is set. Everything else — one-shot `-p`, piped/non-TTY, the escape
+  // CLOVER_LEGACY_CLI escape hatch is set. Everything else — one-shot `-p`, piped/non-TTY, the escape
   // hatch — keeps the byte-identical legacy path below. Decided here (not just at the connect point)
   // because the legacy-only resize handler further down would otherwise paint the pinned block over
   // Ink's surface; `inkMode` gates it off. `bridge` is the connect-time `onEvent` sink that <App>
   // subscribes to (buffers attach-replay until the App mounts). Both are inert on the legacy path.
-  const inkMode = chat && !!process.stdout.isTTY && process.env.WINTER_LEGACY_CLI !== "1";
+  const inkMode = chat && !!process.stdout.isTTY && process.env.CLOVER_LEGACY_CLI !== "1";
   const bridge: EventBridge | null = inkMode ? makeEventBridge() : null;
 
   // -p teardown: mirrors Claude Code's headless grace-kill. Any bg tasks still running when the
-  // turn completes get a grace period (WINTER_BG_PRINT_WAIT_MS, default 5000ms; 0 = poll until none
+  // turn completes get a grace period (CLOVER_BG_PRINT_WAIT_MS, default 5000ms; 0 = poll until none
   // are running rather than racing a fixed timer) before we force-kill whatever remains. One-shot
   // (chat:false) only — chat mode leaves bg tasks running across turns and tears down via
   // teardownAndExit instead. Uses the enclosing closures (c/sessionId/wdTimer/spinnerTimer).
@@ -433,7 +433,7 @@ async function runTurnSession(opts: { promptOverride?: string; forceAuto?: boole
     clearInterval(spinnerTimer); // stop the status-line spinner/elapsed tick — the turn is over
     const running = (await c.bgList(sessionId)).filter((t) => t.status === "running");
     if (running.length) {
-      const waitMs = Number(process.env.WINTER_BG_PRINT_WAIT_MS ?? 5000);
+      const waitMs = Number(process.env.CLOVER_BG_PRINT_WAIT_MS ?? 5000);
       if (waitMs > 0) {
         await new Promise((r) => setTimeout(r, waitMs));
       } else {
@@ -471,10 +471,10 @@ async function runTurnSession(opts: { promptOverride?: string; forceAuto?: boole
     dim: (text) => `${DIM}${text}${RESET}`,
   });
   let sessionId = ""; // set below, before send() — turn_completed can only fire after that
-  // T5 resume replay: set ONLY on the Ink `winter resume <id>` route (see the `existingSessionId`
+  // T5 resume replay: set ONLY on the Ink `clover resume <id>` route (see the `existingSessionId`
   // branch below) — the seq `<App>`'s replay is expected to reach before it clears its "Resuming
   // conversation…" line. Left `undefined` on every other route (fresh session, legacy/
-  // WINTER_LEGACY_CLI chat resume, non-TTY, resumeOneShot) — mountTui/`<App>` treat that exactly like
+  // CLOVER_LEGACY_CLI chat resume, non-TTY, resumeOneShot) — mountTui/`<App>` treat that exactly like
   // today (no resuming line, ever).
   let resumeTargetSeq: number | undefined;
   // TUI renderer T5 (status chrome): the resume route's per-session model/effort overrides + the
@@ -483,7 +483,7 @@ async function runTurnSession(opts: { promptOverride?: string; forceAuto?: boole
   // which IS the daemon's resolution for an override-less session (engine.ts `meta.model || base`).
   let sessionModelOverride: string | undefined;
   let sessionEffortOverride: string | undefined;
-  let initialActivity: import("@yanlinglabs/winter-protocol").SessionActivity | undefined;
+  let initialActivity: import("@waifucave/clover-protocol").SessionActivity | undefined;
   const wd: WatchdogState = { turnRunning: false, toolsInFlight: 0, approvalsPending: 0, lastEventAt: Date.now() };
   let wdTimer: ReturnType<typeof setInterval> | undefined; // one session-long stall poll; cleared on teardown
   let exiting = false; // guard to ensure a single exit path wins (stall watchdog vs endHeadlessTurn vs ctrl+C)
@@ -758,7 +758,7 @@ async function runTurnSession(opts: { promptOverride?: string; forceAuto?: boole
       turnRunning = true;
       refreshBlock(); // show the status line immediately rather than waiting up to 120ms for the first tick
     } else if ((e.type === "wake_armed" || e.type === "wake_ended") && e.sessionId === sessionId && e.threadId === "main") {
-      // ComputerV2 wake triggers: Winter waits for the user (and stops waiting) — a note each, from the pair.
+      // ComputerV2 wake triggers: Clover waits for the user (and stops waiting) — a note each, from the pair.
       if (e.type === "wake_armed") {
         // The pair reaches an attached client twice (its session's fan-out and the global broadcast): said once.
         if (!wakeFacts.has(e.wakeId)) {
@@ -775,7 +775,7 @@ async function runTurnSession(opts: { promptOverride?: string; forceAuto?: boole
       }
     } else if (e.type === "user_message" && e.clientName === COMPUTER_WAKE_CLIENT_NAME && e.sessionId === sessionId && e.threadId === "main") {
       // The daemon's wake: never shown as the user's words (its text is the model's) — what happened, as a note.
-      emit(`${DIM}↻ ${wakeNews.length === 0 ? "a wake trigger ended — Winter continues" : `Winter continued: ${wakeNews.splice(0).join("; ")}`}${RESET}\n`);
+      emit(`${DIM}↻ ${wakeNews.length === 0 ? "a wake trigger ended — Clover continues" : `Clover continued: ${wakeNews.splice(0).join("; ")}`}${RESET}\n`);
     } else if (e.type === "assistant_message") {
       if (sa.action === "close_then_print_full") { emit("\n"); emit(`${AQUA}${e.text}${RESET}\n`); }
       else if (sa.action === "print_full") emit(`${AQUA}${e.text}${RESET}\n`);
@@ -983,7 +983,7 @@ async function runTurnSession(opts: { promptOverride?: string; forceAuto?: boole
         sessionId: string; scope: string; lastSeq: number; mode?: string;
         // T5 status chrome: the row's per-session model/effort overrides + derived activity
         // (SessionSummary fields the daemon already serves — methods.ts SessionListResult).
-        model?: string; effort?: string; activity?: import("@yanlinglabs/winter-protocol").SessionActivity;
+        model?: string; effort?: string; activity?: import("@waifucave/clover-protocol").SessionActivity;
       }>;
     };
     const check = checkCodeSession(sessions, existingSessionId);
@@ -997,7 +997,7 @@ async function runTurnSession(opts: { promptOverride?: string; forceAuto?: boole
     // 0 there replays the whole session so `<App>` can render the full transcript back (T5), with a
     // "Resuming conversation…" line shown until the replay catches up to `resumeTargetSeq` (the seq
     // this very attach() call returns — the daemon's current tip, regardless of the fromSeq it was
-    // asked to replay from). Every other route (legacy/WINTER_LEGACY_CLI chat resume, non-TTY,
+    // asked to replay from). Every other route (legacy/CLOVER_LEGACY_CLI chat resume, non-TTY,
     // resumeOneShot) keeps attaching from the tip — attaching from 0 there would replay every
     // historical turn_completed event on this session, tripping endHeadlessTurn immediately
     // (unchanged concern from before this task; inkMode is false on all of those routes anyway).
@@ -1017,7 +1017,7 @@ async function runTurnSession(opts: { promptOverride?: string; forceAuto?: boole
     sessionId = created.sessionId;
     if (!created.trusted) {
       const wantTrust = process.argv.includes("--trust")
-        || (process.stdout.isTTY && !process.argv.includes("--no-trust") && (await askYesNo(`Do you trust the files in ${cwd}? Winter may grant directory access declared there. [y/N] `)));
+        || (process.stdout.isTTY && !process.argv.includes("--no-trust") && (await askYesNo(`Do you trust the files in ${cwd}? Clover may grant directory access declared there. [y/N] `)));
       if (wantTrust) { await c.trustDir(cwd); console.log(`${DIM}trusted ${cwd}${RESET}`); }
     }
     await c.attach(sessionId);
@@ -1033,15 +1033,15 @@ async function runTurnSession(opts: { promptOverride?: string; forceAuto?: boole
   // dangling legacy timers/listener and exit cleanly, exactly as the legacy chat teardown does.
   if (inkMode) {
     const { mountTui } = await import("./tui/mount");
-    // Welcome-banner data. Version: the unified @yanlinglabs/winter-core CORE_VERSION (also correct for a
+    // Welcome-banner data. Version: the unified @waifucave/clover-core CORE_VERSION (also correct for a
     // compiled binary, which has no adjacent package.json to read). Model: the resolved provider
-    // model the daemon will use, read from settings.json (same source as `winter model`), best-effort
+    // model the daemon will use, read from settings.json (same source as `clover model`), best-effort
     // with an inert fallback so missing settings never blocks the interactive session.
     const version = CORE_VERSION;
     let model = "";
     let effort: string | undefined;
     try {
-      const s = loadSettings(join(resolveWinterHome(), "settings.json"));
+      const s = loadSettings(join(resolveCloverHome(), "settings.json"));
       model = s.provider.model;
       effort = s.provider.reasoningEffort; // T5 status chrome: the global effort half
     } catch { /* keep fallback */ }
@@ -1092,7 +1092,7 @@ async function runTurnSession(opts: { promptOverride?: string; forceAuto?: boole
   // Stall watchdog: one session-long poll. If the turn is running with nothing in flight (no tool
   // executing, no approval awaiting a human) and no event has landed for thresholdMs, assume the
   // turn is wedged and abort. Between turns (chat) wd.turnRunning is false, so it never false-fires.
-  const thresholdMs = Number(process.env.WINTER_TURN_STALL_MS ?? 180000);
+  const thresholdMs = Number(process.env.CLOVER_TURN_STALL_MS ?? 180000);
   wdTimer = setInterval(() => {
     if (isStalled(wd, Date.now(), thresholdMs)) {
       if (exiting) return;
@@ -1157,7 +1157,7 @@ async function runTurnSession(opts: { promptOverride?: string; forceAuto?: boole
 //    switch statement's existing handling, untouched.
 //
 // Finding 4: the two "chat" outcomes reachable with NO existing session (bare / --auto / --plan)
-// require `isTTY` — a script piping into bare `winter` must keep seeing the original usage output,
+// require `isTTY` — a script piping into bare `clover` must keep seeing the original usage output,
 // not silently open a chat loop it can't drive. (`resume <id>` chat entry is pre-existing,
 // unflagged behavior and isn't gated here — see the fix report.)
 export type CliRoute =
@@ -1187,31 +1187,31 @@ export function routeCliInvocation(argv: string[], isTTY: boolean): CliRoute {
 
 // Plan-immunity Task 2, fix round 1 (whole-branch review, Important): the first pass gated
 // send/watch/resume but left EIGHT more session-targeted verbs reaching chat/dispatch sessions
-// with no check at all — proven live against a real daemon (`winter steer <chatId> "..."` injected
-// a real user_message into a chat session's JSONL; `winter steer <dispatchId> "..."` started a real
-// dispatch turn from the terminal; `winter bg peek <chatId> <task>` read chat output into the
+// with no check at all — proven live against a real daemon (`clover steer <chatId> "..."` injected
+// a real user_message into a chat session's JSONL; `clover steer <dispatchId> "..."` started a real
+// dispatch turn from the terminal; `clover bg peek <chatId> <task>` read chat output into the
 // terminal). Each verb's logic is pulled out of its `case` block into its own small function here —
 // client + params in, a plain discriminated result out, no console.log/process.exit inside — so the
-// gate is directly unit-testable with a fake `WinterClient` (`test/cli-verb-gates.test.ts`, same
+// gate is directly unit-testable with a fake `CloverClient` (`test/cli-verb-gates.test.ts`, same
 // recorded-calls double as tui/commands.test.ts's own `makeClient`) instead of only reachable by
 // hand through a real CLI invocation. Every `case` block below stays a thin, obviously-correct
 // wrapper: resolve argv, call the route function, print/exit on the result exactly as before this
 // fix — the console output strings are byte-identical to what each case block printed previously.
-export async function runAddDirRoute(c: WinterClient, sessionId: string, path: string, persist: boolean): Promise<{ ok: true; roots: string[] } | { ok: false; message: string }> {
+export async function runAddDirRoute(c: CloverClient, sessionId: string, path: string, persist: boolean): Promise<{ ok: true; roots: string[] } | { ok: false; message: string }> {
   const { sessions } = (await c.listSessions()) as { sessions: Array<{ sessionId: string; mode?: string }> };
   const check = checkCodeSession(sessions, sessionId);
   if (!check.ok) return { ok: false, message: check.message };
   return { ok: true, roots: await c.addDir(sessionId, path, persist) };
 }
 
-export async function runCdRoute(c: WinterClient, sessionId: string, cwd: string): Promise<{ ok: true; cwd: string } | { ok: false; message: string }> {
+export async function runCdRoute(c: CloverClient, sessionId: string, cwd: string): Promise<{ ok: true; cwd: string } | { ok: false; message: string }> {
   const { sessions } = (await c.listSessions()) as { sessions: Array<{ sessionId: string; mode?: string }> };
   const check = checkCodeSession(sessions, sessionId);
   if (!check.ok) return { ok: false, message: check.message };
   return { ok: true, cwd: await c.setCwd(sessionId, cwd) };
 }
 
-export async function runSteerRoute(c: WinterClient, sessionId: string, text: string): Promise<{ ok: true; injected: boolean } | { ok: false; message: string }> {
+export async function runSteerRoute(c: CloverClient, sessionId: string, text: string): Promise<{ ok: true; injected: boolean } | { ok: false; message: string }> {
   const { sessions } = (await c.listSessions()) as { sessions: Array<{ sessionId: string; mode?: string }> };
   const check = checkCodeSession(sessions, sessionId);
   if (!check.ok) return { ok: false, message: check.message };
@@ -1219,7 +1219,7 @@ export async function runSteerRoute(c: WinterClient, sessionId: string, text: st
   return { ok: true, injected: r.injected };
 }
 
-export async function runInterruptRoute(c: WinterClient, sessionId: string): Promise<{ ok: true; wasRunning: boolean } | { ok: false; message: string }> {
+export async function runInterruptRoute(c: CloverClient, sessionId: string): Promise<{ ok: true; wasRunning: boolean } | { ok: false; message: string }> {
   const { sessions } = (await c.listSessions()) as { sessions: Array<{ sessionId: string; mode?: string }> };
   const check = checkCodeSession(sessions, sessionId);
   if (!check.ok) return { ok: false, message: check.message };
@@ -1227,7 +1227,7 @@ export async function runInterruptRoute(c: WinterClient, sessionId: string): Pro
   return { ok: true, wasRunning: r.wasRunning };
 }
 
-export async function runCompactRoute(c: WinterClient, sessionId: string): Promise<{ ok: true; compacted: boolean; uptoSeq: number; summaryChars: number; requested?: boolean } | { ok: false; message: string }> {
+export async function runCompactRoute(c: CloverClient, sessionId: string): Promise<{ ok: true; compacted: boolean; uptoSeq: number; summaryChars: number; requested?: boolean } | { ok: false; message: string }> {
   const { sessions } = (await c.listSessions()) as { sessions: Array<{ sessionId: string; mode?: string }> };
   const check = checkCodeSession(sessions, sessionId);
   if (!check.ok) return { ok: false, message: check.message };
@@ -1235,14 +1235,14 @@ export async function runCompactRoute(c: WinterClient, sessionId: string): Promi
   return { ok: true, ...r };
 }
 
-export async function runBgListRoute(c: WinterClient, sessionId: string): Promise<{ ok: true; tasks: Array<{ taskId: string; command: string; status: string; exitCode: number | null; startedAt: number }> } | { ok: false; message: string }> {
+export async function runBgListRoute(c: CloverClient, sessionId: string): Promise<{ ok: true; tasks: Array<{ taskId: string; command: string; status: string; exitCode: number | null; startedAt: number }> } | { ok: false; message: string }> {
   const { sessions } = (await c.listSessions()) as { sessions: Array<{ sessionId: string; mode?: string }> };
   const check = checkCodeSession(sessions, sessionId);
   if (!check.ok) return { ok: false, message: check.message };
   return { ok: true, tasks: await c.bgList(sessionId) };
 }
 
-export async function runBgPeekRoute(c: WinterClient, sessionId: string, taskId: string): Promise<{ ok: true; chunk: string; status: string; exitCode: number | null } | { ok: false; message: string }> {
+export async function runBgPeekRoute(c: CloverClient, sessionId: string, taskId: string): Promise<{ ok: true; chunk: string; status: string; exitCode: number | null } | { ok: false; message: string }> {
   const { sessions } = (await c.listSessions()) as { sessions: Array<{ sessionId: string; mode?: string }> };
   const check = checkCodeSession(sessions, sessionId);
   if (!check.ok) return { ok: false, message: check.message };
@@ -1250,7 +1250,7 @@ export async function runBgPeekRoute(c: WinterClient, sessionId: string, taskId:
   return { ok: true, ...r };
 }
 
-export async function runBgKillRoute(c: WinterClient, sessionId: string, taskId: string): Promise<{ ok: true } | { ok: false; message: string }> {
+export async function runBgKillRoute(c: CloverClient, sessionId: string, taskId: string): Promise<{ ok: true } | { ok: false; message: string }> {
   const { sessions } = (await c.listSessions()) as { sessions: Array<{ sessionId: string; mode?: string }> };
   const check = checkCodeSession(sessions, sessionId);
   if (!check.ok) return { ok: false, message: check.message };
@@ -1259,11 +1259,11 @@ export async function runBgKillRoute(c: WinterClient, sessionId: string, taskId:
 }
 
 /**
- * WS-19 (W19-11) — `winter credentials`'s decision, extracted from its `case` block exactly the way
+ * WS-19 (W19-11) — `clover credentials`'s decision, extracted from its `case` block exactly the way
  * the eight session verbs above were: store + args in, a plain discriminated result out, nothing
  * printed and nothing exited. That is what makes it testable on a `FileSecretStore` in a temp dir —
  * the `case` block's real `KeychainSecretStore` can never be used from a test (`keychainService()`
- * resolves the REAL `com.winter.core` service when no home is passed, and these tests must never
+ * resolves the REAL `com.waifucave.clover.core` service when no home is passed, and these tests must never
  * touch it).
  *
  * `readKey` is injected for the same reason: the real one is `readSecret`'s masked raw-mode TTY
@@ -1278,7 +1278,7 @@ export async function runBgKillRoute(c: WinterClient, sessionId: string, taskId:
  * WS-19 (fix round 4) — THE CLI's CREDENTIAL DOORS GO THROUGH THE DAEMON WHEN ONE IS LISTENING.
  *
  * Every credential verb here used to write the Keychain IN-PROCESS. That is still the right
- * fallback — `winter login` has always worked with no daemon, and a credential door whose first
+ * fallback — `clover login` has always worked with no daemon, and a credential door whose first
  * move is to reach the daemon is useless in exactly the state a user reaches for it — but it left
  * the daemon ignorant of the change. A live child's `Options.provider.authRef` is fixed at spawn, so
  * a key added from the terminal did not reach a session already running until the 900 s idle reap:
@@ -1297,10 +1297,10 @@ export async function runBgKillRoute(c: WinterClient, sessionId: string, taskId:
  * THE TOOL ROWS: `web-search` (the legacy Brave key) is read by NOTHING since the 2026-09-18 web-tools
  * ruling retired `web_search` — the row survives only so a stored key can be REMOVED, and
  * `credential.set` refuses it typed. **`exa` is the live one** and it is no longer read per call either
- * (2026-09-18, agent SDK 0.0.17): a Winter child's `Options.web.search.authRef` names it,
+ * (2026-09-18, agent SDK 0.0.17): a Clover child's `Options.web.search.authRef` names it,
  * and whether it exists decides chat's and dispatch's tool surface — so it goes through the daemon
- * exactly like a provider key, and `evictSessionsForCredential` replaces every Winter-leg child for
- * it. Both still fall back to an in-process write with no daemon, so `winter login --exa-key` keeps
+ * exactly like a provider key, and `evictSessionsForCredential` replaces every Clover-leg child for
+ * it. Both still fall back to an in-process write with no daemon, so `clover login --exa-key` keeps
  * working on a machine whose daemon is down; the printed note says which happened.
  */
 export interface CredentialRpcDoor {
@@ -1325,7 +1325,7 @@ export async function writeCredentialThroughDaemonOrLocally(
   secrets: SecretStore,
   openDaemon?: () => Promise<CredentialRpcDoor | undefined>,
 ): Promise<CredentialWriteResult> {
-  const { METHODS } = await import("@yanlinglabs/winter-protocol");
+  const { METHODS } = await import("@waifucave/clover-protocol");
   const door = openDaemon === undefined ? undefined : await openDaemon();
   if (door !== undefined) {
     try {
@@ -1345,7 +1345,7 @@ export async function writeCredentialThroughDaemonOrLocally(
       try { door.close(); } catch { /* already closed */ }
     }
   }
-  const { setCredential, removeCredential } = await import("@yanlinglabs/winter-core");
+  const { setCredential, removeCredential } = await import("@waifucave/clover-core");
   if (op.kind === "set") {
     const refusal = await setCredential(secrets, op.providerId, op.apiKey);
     return refusal === undefined
@@ -1361,7 +1361,7 @@ export async function writeCredentialThroughDaemonOrLocally(
 /**
  * B-1 (2026-09-19): tell a LIVE daemon that the Keychain moved under it.
  *
- * `winter login` (the ChatGPT/Codex OAuth flow) and bare `winter logout` write
+ * `clover login` (the ChatGPT/Codex OAuth flow) and bare `clover logout` write
  * `codex-oauth:default` IN-PROCESS — deliberately, and they always have: a login door whose first move
  * is to reach the daemon is useless in exactly the state a user reaches for it. They cannot go through
  * `credential.set`/`credential.remove` either, since that door takes an API-KEY string and this material
@@ -1385,7 +1385,7 @@ export async function notifyDaemonOfOutOfBandCredentialChange(
   const door = await openDaemon();
   if (door === undefined) return false;
   try {
-    const { METHODS } = await import("@yanlinglabs/winter-protocol");
+    const { METHODS } = await import("@waifucave/clover-protocol");
     await door.request(METHODS.credentialList, {});
     return true;
   } catch {
@@ -1417,11 +1417,11 @@ export async function runCredentialsRoute(
   readKey: () => Promise<string>,
   openDaemon?: () => Promise<CredentialRpcDoor | undefined>,
 ): Promise<CredentialsRouteResult> {
-  const { credentialRows, CredentialStoreUnavailable } = await import("@yanlinglabs/winter-core");
+  const { credentialRows, CredentialStoreUnavailable } = await import("@waifucave/clover-core");
   switch (verb ?? "list") {
     case "list":
       // READ-ONLY, so it stays in-process on purpose: it needs no daemon, it changes nothing, and
-      // `winter credentials` must answer on a machine whose daemon is down.
+      // `clover credentials` must answer on a machine whose daemon is down.
       try {
         return { ok: true, kind: "list", rows: await credentialRows(secrets, home) };
       } catch (err) {
@@ -1432,21 +1432,21 @@ export async function runCredentialsRoute(
         throw err;
       }
     case "set": {
-      if (!providerId) return { ok: false, message: "usage: winter credentials set <providerId>" };
+      if (!providerId) return { ok: false, message: "usage: clover credentials set <providerId>" };
       const written = await writeCredentialThroughDaemonOrLocally({ kind: "set", providerId, apiKey: await readKey() }, secrets, openDaemon);
       return written.ok ? { ok: true, kind: "set", providerId, via: written.via } : written;
     }
     case "remove": {
-      if (!providerId) return { ok: false, message: "usage: winter credentials remove <providerId>" };
+      if (!providerId) return { ok: false, message: "usage: clover credentials remove <providerId>" };
       const written = await writeCredentialThroughDaemonOrLocally({ kind: "remove", providerId }, secrets, openDaemon);
       return written.ok ? { ok: true, kind: "remove", providerId, removed: written.removed === true, via: written.via } : written;
     }
     default:
-      return { ok: false, message: "usage: winter credentials [list] | credentials set <providerId> | credentials remove <providerId>" };
+      return { ok: false, message: "usage: clover credentials [list] | credentials set <providerId> | credentials remove <providerId>" };
   }
 }
 
-/** WS-19 (W19-11): `winter logout --openai`, extracted for the same reason. Clears BOTH the material
+/** WS-19 (W19-11): `clover logout --openai`, extracted for the same reason. Clears BOTH the material
  *  record and the legacy raw record — the same pair the bare Codex sign-out clears for its own
  *  provider — so a rotated-away key is never left live under the old name. */
 export async function runLogoutOpenAiRoute(
@@ -1467,14 +1467,14 @@ export async function runLogoutOpenAiRoute(
 // executing the CLI — import.meta.main is true only when this file is the entry point.
 if (import.meta.main) {
   // WS-23: the RUNTIME's workflow worker (COMPILED path) — an embedded chat/dispatch session's Workflow
-  // tool spawns `<winter-core> __runtime-workflow-worker --bridge` under the seatbelt
+  // tool spawns `<clover-core> __runtime-workflow-worker --bridge` under the seatbelt
   // (`runtime-sdk/embedded.ts`'s `runtimeWorkflowWorkerCommand`). POSITIONAL, like the probes below
   // (review F-11), and checked FIRST: it is a different program from the daemon's own
   // `__workflow-worker` below, with a different bridge.
   if (process.argv[2] === RUNTIME_WORKFLOW_WORKER_ARG) {
     await runRuntimeWorkflowWorker();
   }
-  // Workflow worker subprocess (COMPILED path): the daemon self-spawns `<winter-core> __workflow-worker`
+  // Workflow worker subprocess (COMPILED path): the daemon self-spawns `<clover-core> __workflow-worker`
   // already wrapped in sandbox-exec; THIS process is the sandboxed worker. Route straight to the entry
   // and never fall through to daemon-connect / TUI. (In dev/test the runtime spawns the entry .ts
   // directly, so this branch is only exercised by the compiled binary.)
@@ -1483,9 +1483,9 @@ if (import.meta.main) {
     await new Promise(() => {});   // entry drives itself to process.exit(); block everything below
   }
   // ComputerV2 (2026-10-08): the per-session AUTOMATION worker (COMPILED path) — the daemon self-spawns
-  // `<winter-core> __automation-worker` inside the workflow seatbelt; THIS process is the sandboxed worker,
+  // `<clover-core> __automation-worker` inside the workflow seatbelt; THIS process is the sandboxed worker,
   // and it refuses (exit 77) before reading input outside a sandbox that denies it the Keychain. POSITIONAL,
-  // like the probes below, so `winter -p "__automation-worker"` stays a prompt.
+  // like the probes below, so `clover -p "__automation-worker"` stays a prompt.
   if (process.argv[2] === AUTOMATION_WORKER_ARG) {
     runAutomationWorker();
     await new Promise(() => {});   // the worker exits when the daemon closes its stdin
@@ -1493,17 +1493,17 @@ if (import.meta.main) {
 
   // Compiled-artifact probe (P8b-18): proves runtime-state.db is created/migrated INSIDE the
   // compiled binary with an injected FileSecretStore — never the Keychain, never a real home.
-  // Reached only by scripts/verify-runtime-state-compiled.ts. WINTER_HOME must be set to a temp dir
-  // by the caller; the probe refuses without it. Static, and importing from the `@yanlinglabs/winter-core`
+  // Reached only by scripts/verify-runtime-state-compiled.ts. CLOVER_HOME must be set to a temp dir
+  // by the caller; the probe refuses without it. Static, and importing from the `@waifucave/clover-core`
   // barrel exactly like `runWorkflowSubprocess` above — that is the import shape that survives
   // `bun build --compile` (a dynamic import keyed on a string does not resolve in $bunfs).
   //
   // POSITIONAL, not `argv.includes` (review F-11): `includes` matches the token anywhere, so
-  // `winter -p "__runtime-state-probe"` would boot the probe instead of running the prompt. `argv[2]`
+  // `clover -p "__runtime-state-probe"` would boot the probe instead of running the prompt. `argv[2]`
   // is the first user argument in BOTH the dev (`bun main.ts …`) and compiled ($bunfs) shapes —
   // the same index the CLI's own `process.argv.slice(2)` routing assumes below. The pre-existing
   // `__workflow-worker` branch above keeps its `includes` shape; it is not this batch's to change.
-  // 0.120.1: the compiled-binary `bun:ffi` probe, run by release.ts on the SIGNED winter-core. `bun:ffi`'s
+  // 0.120.1: the compiled-binary `bun:ffi` probe, run by release.ts on the SIGNED clover-core. `bun:ffi`'s
   // `dlopen` builds its call trampolines at run time in memory that is not MAP_JIT, which the hardened
   // runtime kills (SIGKILL, "Code Signature Invalid") unless the binary carries
   // `allow-unsigned-executable-memory` — 0.120.0 shipped without it and the daemon crash-looped at its
@@ -1532,7 +1532,7 @@ if (import.meta.main) {
     await runDevKeychainAdopt();
   }
   if (process.argv[2] === "__runtime-state-probe") {
-    const result = await runRuntimeStateProbe({ home: process.env.WINTER_HOME });
+    const result = await runRuntimeStateProbe({ home: process.env.CLOVER_HOME });
     process.stdout.write(`${JSON.stringify(result)}\n`);
     process.exit(result.ok ? 0 : 1);
   }
@@ -1540,24 +1540,24 @@ if (import.meta.main) {
   // same argv[2] shape and the same reasons as `__runtime-state-probe` above. Resolves both runtime
   // ladders from THIS binary's execPath (the bundle rung is `<dirname(execPath)>/runtimes/…`).
   //
-  // Whole-branch review Nit 3: `home` used to be `process.env.WINTER_HOME ?? ""` — an unset
-  // WINTER_HOME probed a RELATIVE empty-string home (inert: no rung under it ever resolves, but a
-  // silently wrong answer rather than the CLI's own normal default). `resolveWinterHome()` is the
-  // same "env var or else `~/.winter`" fallback every OTHER command here already uses, and it is
-  // PURE (`process.env.WINTER_HOME ?? join(homedir(), ".winter")`, `winter-dir.ts`) — no directory
-  // creation, no side effect (that's `bootstrapWinterDir`'s separate job) — so calling it here does
+  // Whole-branch review Nit 3: `home` used to be `process.env.CLOVER_HOME ?? ""` — an unset
+  // CLOVER_HOME probed a RELATIVE empty-string home (inert: no rung under it ever resolves, but a
+  // silently wrong answer rather than the CLI's own normal default). `resolveCloverHome()` is the
+  // same "env var or else `~/.clover`" fallback every OTHER command here already uses, and it is
+  // PURE (`process.env.CLOVER_HOME ?? join(homedir(), ".clover")`, `clover-dir.ts`) — no directory
+  // creation, no side effect (that's `bootstrapCloverDir`'s separate job) — so calling it here does
   // NOT touch the user's real home in a test: `scripts/verify-runtimes-compiled.ts` sets
-  // `WINTER_HOME` to a temp dir before spawning this route, so `resolveWinterHome()` returns that
-  // temp dir, never `~/.winter`, exactly as `__runtime-state-probe`'s own neighboring route already
+  // `CLOVER_HOME` to a temp dir before spawning this route, so `resolveCloverHome()` returns that
+  // temp dir, never `~/.clover`, exactly as `__runtime-state-probe`'s own neighboring route already
   // relies on for the identical reason.
   if (process.argv[2] === "__runtimes-probe") {
-    const result = await runRuntimesProbe({ execPath: process.execPath, home: resolveWinterHome(), env: process.env });
+    const result = await runRuntimesProbe({ execPath: process.execPath, home: resolveCloverHome(), env: process.env });
     process.stdout.write(`${JSON.stringify(result)}\n`);
     process.exit(result.ok ? 0 : 1);
   }
   // WS-23: the compiled-binary EMBEDDED probe (`scripts/verify-embedded-compiled.ts`) — one chat turn
-  // through a real daemon on a temp WINTER_HOME with a FileSecretStore, the session in a Bun Worker
-  // built from the second compile entrypoint. Same argv[2] shape and the same WINTER_HOME rule as
+  // through a real daemon on a temp CLOVER_HOME with a FileSecretStore, the session in a Bun Worker
+  // built from the second compile entrypoint. Same argv[2] shape and the same CLOVER_HOME rule as
   // `__runtime-state-probe` (it refuses without one; it never touches a real home or the Keychain).
   if (process.argv[2] === "__fd-receiver-probe") {
     const { runChannelReceiverProbe } = await import("./fd-receiver-probe");
@@ -1578,17 +1578,20 @@ if (import.meta.main) {
     process.exit(result.ok ? 0 : 1);
   }
   if (process.argv[2] === "__embedded-probe") {
-    const result = await runEmbeddedProbe({ home: process.env.WINTER_HOME });
+    const result = await runEmbeddedProbe({ home: process.env.CLOVER_HOME });
     process.stdout.write(`${JSON.stringify(result)}\n`);
     process.exit(result.ok ? 0 : 1);
   }
 
+  // C0 (review S1): every provider call this process makes presents as Clover — `User-Agent`, the Codex
+  // `originator` and the contact URL (core installs it when it loads; this makes the CLI's start explicit).
+  installCloverProcessIdentity();
   const argv = process.argv.slice(2);
   const isTTY = !!(process.stdin.isTTY && process.stdout.isTTY);
   const route = routeCliInvocation(argv, isTTY);
 
   if (argv[0] === "-p") {
-    // `--model <tag>` is parsed and checked BEFORE anything connects: `connect()` launches Winter.app when the
+    // `--model <tag>` is parsed and checked BEFORE anything connects: `connect()` launches Clover.app when the
     // daemon is down, and a bad flag must not do that. Without it the prompt is still `argv[3]`, exactly as before.
     const printArgs = parsePrintArgs(argv.slice(1));
     if (printArgs.kind === "usageError") { console.error(printArgs.message); process.exit(1); }
@@ -1598,7 +1601,7 @@ if (import.meta.main) {
     let printModel: PrintModel | undefined;
     if (printArgs.model !== undefined) {
       let settings: Settings | undefined;
-      try { settings = loadSettings(join(resolveWinterHome(), "settings.json")); } catch { /* no settings yet: the catalog alone decides */ }
+      try { settings = loadSettings(join(resolveCloverHome(), "settings.json")); } catch { /* no settings yet: the catalog alone decides */ }
       const checked = checkPrintModelOffline(printArgs.model, settings);
       if (!checked.ok) { console.error(checked.message); process.exit(1); }
       printModel = checked.model;
@@ -1607,7 +1610,7 @@ if (import.meta.main) {
     await runTurnSession({ chat: false, promptOverride: printArgs.prompt, ...(printModel !== undefined ? { printModel } : {}) });
   }
   if (route.kind === "chat" && route.existingSessionId === undefined) {
-    // bare `winter`, or `winter --auto`/`--plan` (Finding 3) → persistent chat mode on a fresh
+    // bare `clover`, or `clover --auto`/`--plan` (Finding 3) → persistent chat mode on a fresh
     // session (loops until ctrl+C/ctrl+D); Finding 4 — routeCliInvocation already gated this on
     // isTTY, so a non-TTY bare/--auto/--plan invocation falls through to the switch below instead.
     await runTurnSession({ chat: true });
@@ -1623,7 +1626,7 @@ if (import.meta.main) {
   case "-v": {
     // Handoff Task 2: thin dispatcher for routeCliInvocation's {kind:"version"} (the pure, tested
     // decision — both spellings land here because cmdKey is just argv[0] for non-daemon commands).
-    console.log(`winter ${CORE_VERSION}`);
+    console.log(`clover ${CORE_VERSION}`);
     process.exit(0);
   }
   case "daemon run": {
@@ -1638,13 +1641,19 @@ if (import.meta.main) {
     // Phase 9c Migration B: the boot hook inside `startDaemon` throws a typed `MigrationRefused`
     // (code `home_half_migrated`) BEFORE creating anything on disk when the home is mid-migration —
     // print the operator-facing message and exit cleanly rather than an uncaught-exception stack
-    // trace; the daemon never auto-resumes on its own (`winter migrate --resume`/`--rollback` is
+    // trace; the daemon never auto-resumes on its own (`clover migrate --resume`/`--rollback` is
     // the door).
     // 2026-09-17: tee this process's stdout/stderr into <home>/logs/daemon.log (rotating) BEFORE the
     // daemon boots, so the boot lines themselves are captured — the release app wires our stdio to
     // /dev/null, and the file is the only diagnostic that survives that.
-    const { installDaemonLogFile } = await import("@yanlinglabs/winter-core");
-    const daemonLog = installDaemonLogFile(resolveWinterHome());
+    const { installDaemonLogFile, otherInstallHome } = await import("@waifucave/clover-core");
+    // Before the log file or anything else touches the home: never another install's home (`other-installs.ts`).
+    const otherInstall = otherInstallHome(resolveCloverHome());
+    if (otherInstall !== undefined) {
+      console.error(`clover daemon run: refusing ${resolveCloverHome()}: it is ${otherInstall.what}, which Clover never touches — set CLOVER_HOME to a Clover home`);
+      process.exit(1);
+    }
+    const daemonLog = installDaemonLogFile(resolveCloverHome());
     console.error(`daemon log: ${daemonLog.path}`);
     let daemon: Awaited<ReturnType<typeof startDaemon>>;
     try {
@@ -1670,8 +1679,8 @@ if (import.meta.main) {
   }
   case "ping": {
     const c = await connect("cli-ping");
-    const profileTag = resolveWinterProfile() === "dev" ? " (dev)" : "";
-    console.log(`${AQUA}◍ winter-core is up${profileTag}${RESET} ${DIM}(${socketPath()})${RESET}`);
+    const profileTag = resolveCloverProfile() === "dev" ? " (dev)" : "";
+    console.log(`${AQUA}◍ clover-core is up${profileTag}${RESET} ${DIM}(${socketPath()})${RESET}`);
     c.close();
     break;
   }
@@ -1707,22 +1716,22 @@ if (import.meta.main) {
     // change (`providerIdOf` is a no-op fallback for the pre-migration shape); `s.provider.model`
     // may already be split by the daemon or may still be a full tag — `modelIdOf` handles both.
     const provider = s.provider ? `${providerIdOf(s.provider.id) ?? s.provider.id} (${modelIdOf(s.provider.model)})` : "(none configured)";
-    const profileTag = resolveWinterProfile() === "dev" ? " (dev)" : "";
-    console.log(`${AQUA}winter-core v${s.version}${profileTag}${RESET} ${DIM}up ${formatElapsed(s.uptimeMs)} · ${s.socketPath}${RESET}`);
+    const profileTag = resolveCloverProfile() === "dev" ? " (dev)" : "";
+    console.log(`${AQUA}clover-core v${s.version}${profileTag}${RESET} ${DIM}up ${formatElapsed(s.uptimeMs)} · ${s.socketPath}${RESET}`);
     console.log(`${DIM}provider: ${provider} · sessions: ${s.sessionsCount} · plugins: ${s.pluginsCount}${RESET}`);
     c.close();
     break;
   }
   case "doctor": {
-    // WS-16 §15's diagnostics/repair. IN-PROCESS against WINTER_HOME, deliberately NOT an RPC: a
+    // WS-16 §15's diagnostics/repair. IN-PROCESS against CLOVER_HOME, deliberately NOT an RPC: a
     // doctor whose first move is to reach the daemon is useless in exactly the state it exists for.
     // `runtime-state.db` is WAL, so the read-only half runs happily beside a live daemon; every
     // repair refuses while the lock is held, on the same probe `lock.ts` uses.
     const {
       diagnoseRuntimeState, repairRuntimeState, isDaemonLockHeld, DAEMON_RUNNING_REFUSAL, diagnoseRuntimes, loadSettings,
-      diagnoseMigration, formatMigrationDoctorLines, legacyHomeFor, legacyKeychainPresence, legacyKeychainServiceFor,
-    } = await import("@yanlinglabs/winter-core");
-    const home = resolveWinterHome();
+      diagnoseMigration, formatMigrationDoctorLines,
+    } = await import("@waifucave/clover-core");
+    const home = resolveCloverHome();
     const args = process.argv.slice(3);
     const flag = (name: string): string | undefined => {
       const i = args.indexOf(name);
@@ -1751,10 +1760,10 @@ if (import.meta.main) {
         return;
       }
       // WS-23: the `winter` executable only — the official `claude` ladder is gone with the leg.
-      if (report.winter.resolved) {
-        console.log(`  ${AQUA}winter:${RESET} ${report.winter.resolved.path} ${DIM}(${report.winter.resolved.source})${RESET}`);
+      if (report.clover.resolved) {
+        console.log(`  ${AQUA}clover:${RESET} ${report.clover.resolved.path} ${DIM}(${report.clover.resolved.source})${RESET}`);
       } else {
-        console.log(`  ${AQUA}winter:${RESET} ${DIM}${report.winter.error ?? "unresolved"}${RESET}`);
+        console.log(`  ${AQUA}clover:${RESET} ${DIM}${report.clover.error ?? "unresolved"}${RESET}`);
       }
       if (report.bundle?.versions) {
         const v = report.bundle.versions;
@@ -1771,16 +1780,10 @@ if (import.meta.main) {
     // posture as `printRuntimesSection` above — a Keychain read failure degrades to one honest
     // line rather than aborting the whole command.
     const printMigrationSection = async (): Promise<void> => {
-      const profile = resolveWinterProfile();
-      const legacyHome = legacyHomeFor(profile);
       try {
-        const report = await diagnoseMigration({
-          home,
-          legacyHome,
-          legacyKeychainService: legacyKeychainServiceFor(profile),
-          // WS-25 §7: presence without a decrypt — no consent dialog per legacy item.
-          legacyItemPresent: legacyKeychainPresence(profile),
-        });
+        // C0 (review S2): this home's own Migration B record only. No legacy home is looked at and no legacy
+        // Keychain item is probed: only an explicit `clover migrate --from` reads a legacy home.
+        const report = await diagnoseMigration({ home });
         for (const line of formatMigrationDoctorLines(report)) console.log(`${AQUA}${line}${RESET}`);
       } catch (err) {
         console.log(`${AQUA}migration:${RESET} ${DIM}unavailable (${err instanceof Error ? err.message : "unknown error"})${RESET}`);
@@ -1799,14 +1802,14 @@ if (import.meta.main) {
     // not". Never crashes the diagnostic tool on a read error, same posture as its siblings.
     const printAnthropicConsoleSection = async (): Promise<void> => {
       try {
-        const { anthropicConfigDirFor, ANTHROPIC_PROFILE_NAME } = await import("@yanlinglabs/winter-core");
+        const { anthropicConfigDirFor, ANTHROPIC_PROFILE_NAME } = await import("@waifucave/clover-core");
         const dir = anthropicConfigDirFor(home);
         const present = existsSync(join(dir, "credentials", `${ANTHROPIC_PROFILE_NAME}.json`));
         console.log(`${AQUA}anthropic console profile:${RESET} ${present ? "present" : "absent"} ${DIM}(config dir ${dir})${RESET}`);
         try {
-          const { daemonLogPathFor } = await import("@yanlinglabs/winter-core");
+          const { daemonLogPathFor } = await import("@waifucave/clover-core");
           const { statSync: st } = await import("node:fs");
-          const logPath = daemonLogPathFor(resolveWinterHome());
+          const logPath = daemonLogPathFor(resolveCloverHome());
           let size = "absent";
           try { size = `${Math.round(st(logPath).size / 1024)} KB`; } catch { /* not written yet */ }
           console.log(`${AQUA}daemon log:${RESET} ${logPath} ${DIM}(${size})${RESET}`);
@@ -1816,11 +1819,11 @@ if (import.meta.main) {
       }
     };
     // WS-19 (W19-11): ONE line — how many provider slots hold material, and which. A COUNT AND
-    // NAMES ONLY; never a value, never a fragment, never a length. In-process against WINTER_HOME
+    // NAMES ONLY; never a value, never a fragment, never a length. In-process against CLOVER_HOME
     // like every other section here, and equally unable to crash the diagnostic tool.
     const printCredentialsSection = async (): Promise<void> => {
       try {
-        const { KeychainSecretStore, credentialRows } = await import("@yanlinglabs/winter-core");
+        const { KeychainSecretStore, credentialRows } = await import("@waifucave/clover-core");
         const rows = await credentialRows(new KeychainSecretStore(), home);
         const present = rows.filter((r) => r.present);
         const names = present.map((r) => r.providerId).join(", ");
@@ -1864,7 +1867,7 @@ if (import.meta.main) {
       : undefined;
     if (!op) {
       console.error(
-        "usage: winter doctor | winter doctor --repair rebuild-index" +
+        "usage: clover doctor | clover doctor --repair rebuild-index" +
           " | --repair quarantine-tail --session <id> | --repair relink-backend --session <id> --backend <uuid>" +
           " | --repair detach-backend --session <id> | --repair restore-backup --backup <path>" +
           " | --repair adopt-legacy-session --session <id> [--keep recorded|canonical]",
@@ -1891,11 +1894,11 @@ if (import.meta.main) {
     break;
   }
   case "send": {
-    // usage: winter send <sessionId|new> <text...>
+    // usage: clover send <sessionId|new> <text...>
     const args = process.argv.slice(3);
     const target = args[0];
     const text = args.slice(1).join(" ");
-    if (!target || !text) { console.error("usage: winter send <sessionId|new> <text…>"); process.exit(1); }
+    if (!target || !text) { console.error("usage: clover send <sessionId|new> <text…>"); process.exit(1); }
     const c = await connect("cli-send");
     let sessionId: string;
     if (target === "new") {
@@ -1921,7 +1924,7 @@ if (import.meta.main) {
   case "add-dir": {
     const sessionId = process.argv[3];
     const path = process.argv[4];
-    if (!sessionId || !path) { console.error("usage: winter add-dir <sessionId> <path> [--persist]"); process.exit(1); }
+    if (!sessionId || !path) { console.error("usage: clover add-dir <sessionId> <path> [--persist]"); process.exit(1); }
     const c = await connect("cli-add-dir");
     const result = await runAddDirRoute(c, sessionId, path, process.argv.includes("--persist"));
     if (!result.ok) { console.error(result.message); c.close(); process.exit(1); }
@@ -1932,8 +1935,8 @@ if (import.meta.main) {
   case "trust": {
     const arg = process.argv[3];
     if (arg === "--list") {
-      // Protocol has no daemon.trustList method (kept minimal) — read ~/.winter/trust.json directly.
-      const trustPath = join(resolveWinterHome(), "trust.json");
+      // Protocol has no daemon.trustList method (kept minimal) — read ~/.clover/trust.json directly.
+      const trustPath = join(resolveCloverHome(), "trust.json");
       let dirs: string[] = [];
       if (existsSync(trustPath)) {
         try {
@@ -1953,7 +1956,7 @@ if (import.meta.main) {
       else for (const d of dirs) console.log(d);
     } else if (arg === "remove") {
       const path = process.argv[4];
-      if (!path) { console.error("usage: winter trust remove <path>"); process.exit(1); }
+      if (!path) { console.error("usage: clover trust remove <path>"); process.exit(1); }
       const c = await connect("cli-trust-remove");
       const removed = await c.trustRemove(resolve(path));
       console.log(removed ? `${AQUA}untrusted ${resolve(path)}${RESET}` : `${DIM}already untrusted: ${resolve(path)}${RESET}`);
@@ -1964,7 +1967,7 @@ if (import.meta.main) {
       console.log(`${AQUA}trusted ${resolve(arg)}${RESET}`);
       c.close();
     } else {
-      console.error("usage: winter trust <dir> | winter trust --list | winter trust list | winter trust remove <path>");
+      console.error("usage: clover trust <dir> | clover trust --list | clover trust list | clover trust remove <path>");
       process.exit(1);
     }
     break;
@@ -1972,7 +1975,7 @@ if (import.meta.main) {
   case "cd": {
     const sessionId = process.argv[3];
     const cwd = process.argv[4];
-    if (!sessionId || !cwd) { console.error("usage: winter cd <sessionId> <path>"); process.exit(1); }
+    if (!sessionId || !cwd) { console.error("usage: clover cd <sessionId> <path>"); process.exit(1); }
     const c = await connect("cli-cd");
     const result = await runCdRoute(c, sessionId, cwd);
     if (!result.ok) { console.error(result.message); c.close(); process.exit(1); }
@@ -1983,7 +1986,7 @@ if (import.meta.main) {
   case "steer": {
     const sessionId = process.argv[3];
     const text = process.argv.slice(4).join(" ");
-    if (!sessionId || !text) { console.error("usage: winter steer <sessionId> <text…>"); process.exit(1); }
+    if (!sessionId || !text) { console.error("usage: clover steer <sessionId> <text…>"); process.exit(1); }
     const c = await connect("cli-steer");
     const result = await runSteerRoute(c, sessionId, text);
     if (!result.ok) { console.error(result.message); c.close(); process.exit(1); }
@@ -1993,7 +1996,7 @@ if (import.meta.main) {
   }
   case "interrupt": {
     const sessionId = process.argv[3];
-    if (!sessionId) { console.error("usage: winter interrupt <sessionId>"); process.exit(1); }
+    if (!sessionId) { console.error("usage: clover interrupt <sessionId>"); process.exit(1); }
     const c = await connect("cli-interrupt");
     const result = await runInterruptRoute(c, sessionId);
     if (!result.ok) { console.error(result.message); c.close(); process.exit(1); }
@@ -2003,7 +2006,7 @@ if (import.meta.main) {
   }
   case "compact": {
     const sid = process.argv[3];
-    if (!sid) { console.error("usage: winter compact <sessionId>"); process.exit(1); }
+    if (!sid) { console.error("usage: clover compact <sessionId>"); process.exit(1); }
     const c = await connect("cli-compact");
     const result = await runCompactRoute(c, sid);
     if (!result.ok) { console.error(result.message); c.close(); process.exit(1); }
@@ -2029,17 +2032,17 @@ if (import.meta.main) {
     const sub = process.argv[3];
     const rest = process.argv.slice(4);
 
-    // Bare `winter mcp` / `winter mcp list` — the live-status listing, over a real daemon
+    // Bare `clover mcp` / `clover mcp list` — the live-status listing, over a real daemon
     // connection (autolaunch is fine here, same as every other read verb — `connect()`), PLUS the
     // LOCAL-scope entries (WS-21 spec §4.4): those are never a live in-daemon connection — folded
-    // into a run folder's `.winter.json` at spawn time by the router (§3.4.5), not started/tracked
-    // by `mcp.list`'s own `McpManager` — so this reads `sdk/.winter.json`'s `projects[cwd]` directly,
+    // into a run folder's `.clover.json` at spawn time by the router (§3.4.5), not started/tracked
+    // by `mcp.list`'s own `McpManager` — so this reads `sdk/.clover.json`'s `projects[cwd]` directly,
     // no daemon required, and shows the scope of every server either way ("list shows the scope of
     // each server", this task's own brief).
     if (sub === undefined || sub === "list") {
       const c = await connect("cli-mcp");
       const servers = await c.listMcp(process.cwd());
-      const local = sdkLocalMcpServers(resolveWinterHome(), process.cwd());
+      const local = sdkLocalMcpServers(resolveCloverHome(), process.cwd());
       if (!servers.length && Object.keys(local).length === 0) console.log("no MCP servers configured");
       for (const [name, entry] of Object.entries(local)) {
         console.log(`${AQUA}${name}${RESET}  ${DIM}(local, ${entry.type})${RESET}`);
@@ -2059,9 +2062,9 @@ if (import.meta.main) {
     // daemon or not (that file isn't daemon state). Deliberately `openCredentialDaemonDoor()`, never
     // `connect()`: these are write verbs, and `connect()` auto-launches the dist app on a dead
     // socket — exactly the "surprise, not a service" `openCredentialDaemonDoor`'s own doc warns
-    // against for `winter login`/`credentials`.
+    // against for `clover login`/`credentials`.
     if (sub === "add" || sub === "add-json" || sub === "remove" || sub === "rename" || sub === "get") {
-      const winterHome = resolveWinterHome();
+      const cloverHome = resolveCloverHome();
       const door = await openCredentialDaemonDoor();
       // `openCredentialDaemonDoor` is typed narrowly (`CredentialRpcDoor`: `request`/`close` only —
       // it exists for the credential verbs above), so its typed `mcpAdd`/`mcpRemove`/`mcpGet`
@@ -2076,7 +2079,7 @@ if (import.meta.main) {
         mcpRename: (name: string, newName: string, scope: "user" | "local" | "project" = "user", cwd?: string) => door.request(METHODS.mcpRename, { name, newName, scope, ...(cwd !== undefined ? { cwd } : {}) }),
         mcpGet: (name: string) => door.request(METHODS.mcpGet, { name, scope: "user" }),
       } : undefined;
-      const deps = { cwd: process.cwd(), winterHome, door: mcpDoor };
+      const deps = { cwd: process.cwd(), cloverHome, door: mcpDoor };
       if (sub === "add") {
         const outcome = await runMcpAddRoute(rest, deps);
         console.log(renderMcpAddOutcome(outcome));
@@ -2113,20 +2116,20 @@ if (import.meta.main) {
     }
 
     // WS-25 (MCP OAuth): `login` / `logout [--forget-client]` / `set-secret` — through the daemon when it is
-    // live (never `connect()`'s auto-launch: a sign-in must not launch Winter.app as a side effect), else
+    // live (never `connect()`'s auto-launch: a sign-in must not launch Clover.app as a side effect), else
     // the same doors in-process (`mcp-cli.ts`'s WS-25 section says why both, and why a secret comes in
     // only at the masked prompt).
     if (sub === "login" || sub === "logout" || sub === "set-secret") {
-      const winterHome = resolveWinterHome();
+      const cloverHome = resolveCloverHome();
       const door = await openCredentialDaemonDoor();
-      const { McpOAuthDoors, daemonMcpOAuthStore, keychainService, TrustStore, cliCommandName } = await import("@yanlinglabs/winter-core");
+      const { McpOAuthDoors, daemonMcpOAuthStore, keychainService, TrustStore, cliCommandName } = await import("@waifucave/clover-core");
       const deps: McpAuthDeps = {
         cwd: process.cwd(),
         ...(door !== undefined ? { door } : {}),
         local: () => new McpOAuthDoors({
-          home: winterHome,
-          store: () => daemonMcpOAuthStore(keychainService(resolveWinterProfile(), winterHome)),
-          trust: new TrustStore(join(winterHome, "trust.json")),
+          home: cloverHome,
+          store: () => daemonMcpOAuthStore(keychainService(resolveCloverProfile(), cloverHome)),
+          trust: new TrustStore(join(cloverHome, "trust.json")),
         }),
         openBrowser: (url) => { try { Bun.spawn(["open", url], { stdout: "ignore", stderr: "ignore" }); } catch { /* the URL is printed too */ } },
         confirm: (question) => (process.stdin.isTTY ? askYesNo(question) : Promise.resolve(false)),
@@ -2161,30 +2164,30 @@ if (import.meta.main) {
     // WS-26: `permissions` — the connector permissions (`mcp-cli.ts`'s section says how). Non-interactive,
     // through the daemon when it is live (never `connect()`'s auto-launch), else settings.json directly.
     if (sub === "permissions") {
-      const { cliCommandName } = await import("@yanlinglabs/winter-core");
+      const { cliCommandName } = await import("@waifucave/clover-core");
       const door = await openCredentialDaemonDoor();
-      const outcome = await runMcpPermissionsRoute(rest, { cwd: process.cwd(), winterHome: resolveWinterHome(), ...(door !== undefined ? { door } : {}) });
+      const outcome = await runMcpPermissionsRoute(rest, { cwd: process.cwd(), cloverHome: resolveCloverHome(), ...(door !== undefined ? { door } : {}) });
       if (outcome.ok) console.log(renderMcpPermissionsOutcome(outcome, cliCommandName()));
       else console.error(renderMcpPermissionsOutcome(outcome, cliCommandName()));
       door?.close();
       process.exit(outcome.ok ? 0 : 1);
     }
 
-    // Skipped, deliberately (see the report): `serve` (Winter has no "act as an MCP server" mode),
+    // Skipped, deliberately (see the report): `serve` (Clover has no "act as an MCP server" mode),
     // `add-from-claude-desktop` (an Ink dialog over Claude Desktop's OWN config format — not
-    // trivially mappable), `reset-project-choices` (Winter has no per-project approve/reject ledger
-    // for `.mcp.json` servers — `winter trust`'s directory-level TrustStore is the only gate).
-    console.error("usage: winter mcp [list] | get <name> | login <name> [--yes] [--confirm-issuer-change] | logout <name> [--forget-client] | set-secret <name> [--from-clipboard [--issuer <issuer>]] | add [-s local|user|project] [-t stdio|sse|http] [-e KEY=value...] [-H \"Name: value\"...] [--version-negotiation legacy|auto|<revision>] <name> <commandOrUrl> [-- args...] | add-json [-s local|user|project] <name> <json> | remove <name> [-s local|user|project] | rename <old> <new> [-s local|user|project] | permissions <server> [<tool> | '*'] [allow|ask|deny|default]");
+    // trivially mappable), `reset-project-choices` (Clover has no per-project approve/reject ledger
+    // for `.mcp.json` servers — `clover trust`'s directory-level TrustStore is the only gate).
+    console.error("usage: clover mcp [list] | get <name> | login <name> [--yes] [--confirm-issuer-change] | logout <name> [--forget-client] | set-secret <name> [--from-clipboard [--issuer <issuer>]] | add [-s local|user|project] [-t stdio|sse|http] [-e KEY=value...] [-H \"Name: value\"...] [--version-negotiation legacy|auto|<revision>] <name> <commandOrUrl> [-- args...] | add-json [-s local|user|project] <name> <json> | remove <name> [-s local|user|project] | rename <old> <new> [-s local|user|project] | permissions <server> [<tool> | '*'] [allow|ask|deny|default]");
     process.exit(1);
   }
   case "plugin": {
-    // WS-21 (spec §5.2): `winter plugin` mirrors `claude plugin` — install/uninstall/enable/
+    // WS-21 (spec §5.2): `clover plugin` mirrors `claude plugin` — install/uninstall/enable/
     // disable/update/list/marketplace{add,remove,list,update}, over Contract B. Goes through the
     // daemon when it's live (a real socket + a harness token — `openPluginDaemonDoor`, never
-    // `connect()`'s auto-launch: a plugin write must not launch Winter.app as a side effect,
+    // `connect()`'s auto-launch: a plugin write must not launch Clover.app as a side effect,
     // exactly the `openCredentialDaemonDoor` precedent), and the SDK adapter directly otherwise.
     const sub = process.argv[3];
-    const home = resolveWinterHome();
+    const home = resolveCloverHome();
     const rest = process.argv.slice(4);
 
     // `-s`/`--scope <user|project|local>`, may appear anywhere — same convention as mcp-cli.ts's
@@ -2204,10 +2207,10 @@ if (import.meta.main) {
       const mktSub = process.argv[4];
       const mktRest = process.argv.slice(5);
       const door = await openPluginDaemonDoor();
-      const deps = { cwd: process.cwd(), winterHome: home, door };
+      const deps = { cwd: process.cwd(), cloverHome: home, door };
       if (mktSub === "add") {
         const source = mktRest[0];
-        if (!source) { console.error("usage: winter plugin marketplace add <source>"); process.exit(1); }
+        if (!source) { console.error("usage: clover plugin marketplace add <source>"); process.exit(1); }
         const outcome = await runPluginMarketplaceAddRoute(deps, source);
         console.log(renderPluginMarketplaceAddOutcome(outcome));
         door?.close();
@@ -2215,7 +2218,7 @@ if (import.meta.main) {
       }
       if (mktSub === "remove") {
         const name = mktRest[0];
-        if (!name) { console.error("usage: winter plugin marketplace remove <name>"); process.exit(1); }
+        if (!name) { console.error("usage: clover plugin marketplace remove <name>"); process.exit(1); }
         const outcome = await runPluginMarketplaceRemoveRoute(deps, name);
         console.log(renderPluginMarketplaceRemoveOutcome(outcome));
         door?.close();
@@ -2233,14 +2236,14 @@ if (import.meta.main) {
         door?.close();
         process.exit(outcome.ok ? 0 : 1);
       }
-      console.error("usage: winter plugin marketplace add <source> | remove <name> | list | update [name]");
+      console.error("usage: clover plugin marketplace add <source> | remove <name> | list | update [name]");
       door?.close();
       process.exit(1);
     }
 
     if (sub === "list") {
       const door = await openPluginDaemonDoor();
-      const outcome = await runPluginListRoute({ cwd: process.cwd(), winterHome: home, door }, process.cwd());
+      const outcome = await runPluginListRoute({ cwd: process.cwd(), cloverHome: home, door }, process.cwd());
       console.log(renderPluginListOutcome(outcome));
       door?.close();
       process.exit(outcome.ok ? 0 : 1);
@@ -2249,9 +2252,9 @@ if (import.meta.main) {
     if (sub === "install") {
       const { positionals, scopeRaw } = extractScope(rest);
       const specOrPath = positionals[0];
-      if (!specOrPath) { console.error("usage: winter plugin install <plugin>[@<marketplace>] [--scope user|project|local]"); process.exit(1); }
+      if (!specOrPath) { console.error("usage: clover plugin install <plugin>[@<marketplace>] [--scope user|project|local]"); process.exit(1); }
       const door = await openPluginDaemonDoor();
-      const outcome = await runPluginInstallRoute({ cwd: process.cwd(), winterHome: home, door }, specOrPath, scopeRaw, process.cwd());
+      const outcome = await runPluginInstallRoute({ cwd: process.cwd(), cloverHome: home, door }, specOrPath, scopeRaw, process.cwd());
       console.log(renderPluginInstallOutcome(outcome));
       door?.close();
       process.exit(outcome.ok ? 0 : 1);
@@ -2260,9 +2263,9 @@ if (import.meta.main) {
     if (sub === "uninstall" || sub === "remove") {
       const { positionals, scopeRaw } = extractScope(rest);
       const spec = positionals[0];
-      if (!spec) { console.error(`usage: winter plugin ${sub} <plugin>[@<marketplace>] [--scope user|project|local]`); process.exit(1); }
+      if (!spec) { console.error(`usage: clover plugin ${sub} <plugin>[@<marketplace>] [--scope user|project|local]`); process.exit(1); }
       const door = await openPluginDaemonDoor();
-      const outcome = await runPluginUninstallRoute({ cwd: process.cwd(), winterHome: home, door }, spec, scopeRaw, process.cwd());
+      const outcome = await runPluginUninstallRoute({ cwd: process.cwd(), cloverHome: home, door }, spec, scopeRaw, process.cwd());
       console.log(renderPluginUninstallOutcome(outcome));
       // Phase 4b Task 2 (kept): best-effort revoke of the plugin's daemon-side token — a Tier-2
       // platform plugin's own, harmless no-op for a Tier-1/legacy one (the daemon just deletes a
@@ -2280,9 +2283,9 @@ if (import.meta.main) {
     if (sub === "enable" || sub === "disable") {
       const { positionals, scopeRaw } = extractScope(rest);
       const spec = positionals[0];
-      if (!spec) { console.error(`usage: winter plugin ${sub} <plugin>[@<marketplace>] [--scope user|project|local]`); process.exit(1); }
+      if (!spec) { console.error(`usage: clover plugin ${sub} <plugin>[@<marketplace>] [--scope user|project|local]`); process.exit(1); }
       const door = await openPluginDaemonDoor();
-      const outcome = await runPluginSetEnabledRoute({ cwd: process.cwd(), winterHome: home, door }, spec, scopeRaw, sub === "enable", process.cwd());
+      const outcome = await runPluginSetEnabledRoute({ cwd: process.cwd(), cloverHome: home, door }, spec, scopeRaw, sub === "enable", process.cwd());
       console.log(renderPluginSetEnabledOutcome(outcome));
       if (sub === "disable" && outcome.ok) {
         for (const id of pluginTokenIdsFor(outcome.spec)) {
@@ -2296,9 +2299,9 @@ if (import.meta.main) {
 
     if (sub === "update") {
       const spec = rest[0];
-      if (!spec) { console.error("usage: winter plugin update <plugin>[@<marketplace>]"); process.exit(1); }
+      if (!spec) { console.error("usage: clover plugin update <plugin>[@<marketplace>]"); process.exit(1); }
       const door = await openPluginDaemonDoor();
-      const outcome = await runPluginUpdateRoute({ cwd: process.cwd(), winterHome: home, door }, spec);
+      const outcome = await runPluginUpdateRoute({ cwd: process.cwd(), cloverHome: home, door }, spec);
       console.log(renderPluginUpdateOutcome(outcome));
       door?.close();
       process.exit(outcome.ok ? 0 : 1);
@@ -2306,7 +2309,7 @@ if (import.meta.main) {
 
     if (sub === "restart") {
       const name = process.argv[4];
-      if (!name) { console.error("usage: winter plugin restart <plugin>[@<marketplace>]"); process.exit(1); }
+      if (!name) { console.error("usage: clover plugin restart <plugin>[@<marketplace>]"); process.exit(1); }
       const c = await connect(`cli-plugin-restart-${name}`);
       try {
         await c.restartPlugin(name);
@@ -2320,7 +2323,7 @@ if (import.meta.main) {
       process.exit(0);
     }
 
-    console.error("usage: winter plugin list | install <plugin>[@<marketplace>] [-s user|project|local] | uninstall <plugin>[@<marketplace>] [-s ...] | enable <plugin>[@<marketplace>] [-s ...] | disable <plugin>[@<marketplace>] [-s ...] | update <plugin>[@<marketplace>] | marketplace add|remove|list|update | restart <name>");
+    console.error("usage: clover plugin list | install <plugin>[@<marketplace>] [-s user|project|local] | uninstall <plugin>[@<marketplace>] [-s ...] | enable <plugin>[@<marketplace>] [-s ...] | disable <plugin>[@<marketplace>] [-s ...] | update <plugin>[@<marketplace>] | marketplace add|remove|list|update | restart <name>");
     process.exit(1);
   }
   case "bg": {
@@ -2328,7 +2331,7 @@ if (import.meta.main) {
     const bgSessionId = process.argv[4];
     const bgTaskId = process.argv[5];
     if (!bgSessionId || (bgSub !== "list" && !bgTaskId)) {
-      console.error("usage: winter bg list <session> | bg peek <session> <taskId> | bg kill <session> <taskId>");
+      console.error("usage: clover bg list <session> | bg peek <session> <taskId> | bg kill <session> <taskId>");
       process.exit(1);
     }
     const c = await connect("cli-bg");
@@ -2347,7 +2350,7 @@ if (import.meta.main) {
       if (!result.ok) { console.error(result.message); c.close(); process.exit(1); }
       console.log(`${AQUA}killed ${bgTaskId}${RESET}`);
     } else {
-      console.error("usage: winter bg list <session> | bg peek <session> <taskId> | bg kill <session> <taskId>");
+      console.error("usage: clover bg list <session> | bg peek <session> <taskId> | bg kill <session> <taskId>");
       c.close();
       process.exit(1);
     }
@@ -2355,12 +2358,12 @@ if (import.meta.main) {
     break;
   }
   case "routines": {
-    // usage: winter routines [list] | routines create "<spec>" [--policy auto|plan] -- <prompt…>
+    // usage: clover routines [list] | routines create "<spec>" [--policy auto|plan] -- <prompt…>
     //        | routines delete <id> | routines enable <id> | routines disable <id>
     // Argument validation happens BEFORE connecting (mirrors `bg`'s fail-fast usage check just
     // above) — a bad invocation never opens a daemon socket at all.
-    const routinesUsage = 'usage: winter routines [list] | routines create "<spec>" [--policy auto|plan] -- <prompt…> | routines delete <id> | routines enable <id> | routines disable <id>';
-    const createUsage = 'usage: winter routines create "<spec>" [--policy auto|plan] -- <prompt…>';
+    const routinesUsage = 'usage: clover routines [list] | routines create "<spec>" [--policy auto|plan] -- <prompt…> | routines delete <id> | routines enable <id> | routines disable <id>';
+    const createUsage = 'usage: clover routines create "<spec>" [--policy auto|plan] -- <prompt…>';
     const routinesSub = process.argv[3];
 
     if (routinesSub === "create") {
@@ -2393,7 +2396,7 @@ if (import.meta.main) {
 
     if (routinesSub === "delete") {
       const id = process.argv[4];
-      if (!id) { console.error("usage: winter routines delete <id>"); process.exit(1); }
+      if (!id) { console.error("usage: clover routines delete <id>"); process.exit(1); }
       const c = await connect("cli-routines");
       const { removed } = await c.routinesDelete(id);
       if (!removed) {
@@ -2408,7 +2411,7 @@ if (import.meta.main) {
 
     if (routinesSub === "enable" || routinesSub === "disable") {
       const id = process.argv[4];
-      if (!id) { console.error(`usage: winter routines ${routinesSub} <id>`); process.exit(1); }
+      if (!id) { console.error(`usage: clover routines ${routinesSub} <id>`); process.exit(1); }
       const c = await connect("cli-routines");
       try {
         const { routine } = await c.routinesUpdate({ id, patch: { enabled: routinesSub === "enable" } });
@@ -2435,7 +2438,7 @@ if (import.meta.main) {
     process.exit(1);
   }
   case "memory": {
-    // usage: winter memory [list] [--project] | show <name> [--project] | rm <name> [--project]
+    // usage: clover memory [list] [--project] | show <name> [--project] | rm <name> [--project]
     // Argument validation (parseMemoryArgs) happens BEFORE connecting — mirrors `routines`' own
     // fail-fast usage check just above: a bad invocation never opens a daemon socket.
     const route = parseMemoryArgs(process.argv.slice(3), process.cwd());
@@ -2468,7 +2471,7 @@ if (import.meta.main) {
       let sessionRoute: CoworkSessionCliRoute;
       try { sessionRoute = parseCoworkSessionArgs(process.argv.slice(3)); }
       catch (error) { console.error(coworkErrorMessage(error)); console.error(COWORK_CLI_USAGE); process.exit(1); }
-      let client: WinterClient | undefined;
+      let client: CloverClient | undefined;
       try {
         client = await connect(`cli-${cmdKey}`);
         for (const line of await runCoworkSessionRoute(client, sessionRoute)) console.log(line);
@@ -2482,7 +2485,7 @@ if (import.meta.main) {
     if ("help" in route) { console.log(COWORK_CLI_USAGE); break; }
     // Use the existing local harness connection. Input resolution/help never opens a socket, and no
     // picker, grant resolution, provisioning or execution fallback is performed by the CLI.
-    let client: WinterClient | undefined;
+    let client: CloverClient | undefined;
     try {
       client = await connect(`cli-${cmdKey}`);
       const result = await runCoworkRoute(client, route);
@@ -2493,10 +2496,10 @@ if (import.meta.main) {
   }
   case "watch": {
     const sessionId = process.argv[3];
-    if (!sessionId) { console.error("usage: winter watch <sessionId>"); process.exit(1); }
+    if (!sessionId) { console.error("usage: clover watch <sessionId>"); process.exit(1); }
     const c = await connect("cli-watch", (e) => {
       // A ComputerV2 wake message's text is the MODEL's (its own note among it): never printed — a note instead.
-      if (e.type === "user_message" && e.clientName === COMPUTER_WAKE_CLIENT_NAME) console.log(`${DIM}↻ [${e.clientName}] a wake trigger ended — Winter continues${RESET}`);
+      if (e.type === "user_message" && e.clientName === COMPUTER_WAKE_CLIENT_NAME) console.log(`${DIM}↻ [${e.clientName}] a wake trigger ended — Clover continues${RESET}`);
       else if (e.type === "user_message") console.log(`${AQUA}❯${RESET} [${e.clientName}] ${e.text}`);
       else console.log(`${DIM}· ${e.type}${"clientName" in e ? ` (${e.clientName})` : ""}${RESET}`);
     });
@@ -2515,10 +2518,10 @@ if (import.meta.main) {
     // process.execPath = the bun binary in dev, the compiled `winter` binary in production.
     const binary = process.execPath;
     if (binary.endsWith("/bun")) {
-      console.error("daemon install requires the compiled winter binary (Task 16); in dev use: winter daemon run");
+      console.error("daemon install requires the compiled winter binary (Task 16); in dev use: clover daemon run");
       process.exit(1);
     }
-    await installDaemon(binary, resolveWinterHome());
+    await installDaemon(binary, resolveCloverHome());
     console.log(`${AQUA}installed launchd agent${RESET} — daemon starts at login and stays alive`);
     break;
   }
@@ -2534,7 +2537,7 @@ if (import.meta.main) {
     break;
   }
   case "login": {
-    const { KeychainSecretStore, CodexAuthStore, runLoginFlow, CODEX, writeOpenAiApiKey, EXA_API_KEY_SECRET, OPENAI_API_KEY_SECRET: OPENAI_API_KEY_SECRET_LOGIN, profileDisplayName } = await import("@yanlinglabs/winter-core");
+    const { KeychainSecretStore, CodexAuthStore, runLoginFlow, CODEX, writeOpenAiApiKey, EXA_API_KEY_SECRET, OPENAI_API_KEY_SECRET: OPENAI_API_KEY_SECRET_LOGIN, profileDisplayName } = await import("@waifucave/clover-core");
     console.log(`${AQUA}${profileDisplayName()} login${RESET}`);
     const secrets = new KeychainSecretStore();
     // Winter Phase 10a (O7, P10a-6): the Anthropic Console login door. Per the design amendment
@@ -2546,12 +2549,12 @@ if (import.meta.main) {
     // reached through the SAME `createConsoleProfileBroker` thin adapter the daemon uses (never a
     // second core-side spawn).
     if (process.argv.includes("--anthropic-console")) {
-      const { createConsoleProfileBroker, resolveAntExecutable } = await import("@yanlinglabs/winter-core");
-      const home = resolveWinterHome();
+      const { createConsoleProfileBroker, resolveAntExecutable } = await import("@waifucave/clover-core");
+      const home = resolveCloverHome();
       let settings: Settings | undefined;
       try { settings = loadSettings(join(home, "settings.json")); } catch { settings = undefined; }
       // Fix wave 3 (M-A): the `claude` executable requirement is GONE — the single login door is
-      // `ant auth login --profile winter`, which never touches `claude` at all (measured: `claude
+      // `ant auth login --profile clover`, which never touches `claude` at all (measured: `claude
       // auth login --console` does not even write the profile file). `createConsoleProfileBroker`'s
       // own `login()` refuses typed (`ant_executable_unavailable`, after the version-gate check) if
       // `ant` itself is unresolved — no separate, earlier CLI-side check is needed or wanted.
@@ -2600,9 +2603,9 @@ if (import.meta.main) {
           // own (see ConsoleProfileBroker.startWatcher), but only if one is actually running.
           console.error(`warning: could not refresh the native-provider bearer token yet (${refreshed.reason}) — a running daemon will notice this profile and retry automatically; otherwise this refreshes the next time a daemon with this profile starts`);
         }
-        // WS-23 live-gate fix: the bearer is the `console` provider's credential now, and Winter's own
+        // WS-23 live-gate fix: the bearer is the `console` provider's credential now, and Clover's own
         // jobs may run on it — this write never went through the daemon, so its internal-jobs view is
-        // told the same way `winter login` (ChatGPT) tells it (`notifyDaemonOfOutOfBandCredentialChange`).
+        // told the same way `clover login` (ChatGPT) tells it (`notifyDaemonOfOutOfBandCredentialChange`).
         await notifyDaemonOfOutOfBandCredentialChange(openCredentialDaemonDoor);
       } else {
         console.error(`sign-in failed: ${result.reason}`);
@@ -2636,7 +2639,7 @@ if (import.meta.main) {
       // ...'`) is untouched here and remains a follow-up — that message flows through
       // engine.ts into an `agent_error` SessionEvent PERSISTED to the session JSONL, and can become
       // a parent-model-visible tool_result via a dispatched child's errorMessage. Catching a bad key
-      // at `winter login` time is strictly better than fixing it after the fact, but does not make
+      // at `clover login` time is strictly better than fixing it after the fact, but does not make
       // the provider sink itself safe against a key that reaches it some other way.
       const invisibleWarning = invisibleKeyCharWarning(key);
       if (invisibleWarning) { console.error(invisibleWarning); process.exit(1); }
@@ -2647,7 +2650,7 @@ if (import.meta.main) {
       if (!wroteOpenAi.ok) { console.error(wroteOpenAi.message); process.exit(1); }
       if (wroteOpenAi.via === "daemon") await secrets.set(OPENAI_API_KEY_SECRET_LOGIN, "");
       else await writeOpenAiApiKey(secrets, key);   // in-process: the one call that does both halves
-      console.log(`${AQUA}API key stored in Keychain${RESET} — set provider type in ~/.winter/settings.json (openai-compatible); ${credentialEffectNote(wroteOpenAi.via)}`);
+      console.log(`${AQUA}API key stored in Keychain${RESET} — set provider type in ~/.clover/settings.json (openai-compatible); ${credentialEffectNote(wroteOpenAi.via)}`);
       break;
     }
     // DEPRECATED (2026-09-18, the web-tools ruling): the Brave-backed `web_search` retired, so there is
@@ -2658,15 +2661,15 @@ if (import.meta.main) {
     // one line, and it names the door out for a key already stored.
     if (process.argv.includes("--web-search-key")) {
       console.log(
-        `${AQUA}--web-search-key is retired${RESET} — Winter's Brave-backed web_search is gone; the ` +
+        `${AQUA}--web-search-key is retired${RESET} — Clover's Brave-backed web_search is gone; the ` +
         `runtime's own WebSearch and the Exa-backed Search have replaced it. Nothing needs a Brave key ` +
-        `any more.\n  A key you stored earlier can be removed with: winter credentials remove web-search\n` +
-        `  Search's own key (Exa) is set with: winter login --exa-key`,
+        `any more.\n  A key you stored earlier can be removed with: clover credentials remove web-search\n` +
+        `  Search's own key (Exa) is set with: clover login --exa-key`,
       );
       break;
     }
-    // B1-T5: Search's Exa API key — the one web-tool key Winter still uses (`Search`, Exa ANSWER mode),
-    // and the same item a Winter child resolves for its own `WebSearch` through
+    // B1-T5: Search's Exa API key — the one web-tool key Clover still uses (`Search`, Exa ANSWER mode),
+    // and the same item a Clover child resolves for its own `WebSearch` through
     // `Options.web.search.authRef`.
     if (process.argv.includes("--exa-key")) {
       const key = (await readSecret("Paste your Exa API key: ")).trim();
@@ -2703,12 +2706,12 @@ if (import.meta.main) {
     break;
   }
   // -----------------------------------------------------------------------------------------
-  // WS-19 (W19-11) — `winter credentials [list] | set <providerId> | remove <providerId>`.
+  // WS-19 (W19-11) — `clover credentials [list] | set <providerId> | remove <providerId>`.
   //
   // IN-PROCESS, like `login`/`logout`/`doctor` and for the same reason: the daemon may not be
   // running, and a credential door whose first move is to reach the daemon is useless in exactly
   // the state a user reaches for it. It calls the SAME library functions the daemon's own
-  // `credential.*` RPC handlers call (`@yanlinglabs/winter-core`'s `credentialRows`/
+  // `credential.*` RPC handlers call (`@waifucave/clover-core`'s `credentialRows`/
   // `setCredential`/`removeCredential`) — never a second implementation, so a rule added on one
   // door is on all three.
   //
@@ -2721,7 +2724,7 @@ if (import.meta.main) {
     const secrets = new KeychainSecretStore();
     const providerId = process.argv[4];
     const r = await runCredentialsRoute(
-      secrets, resolveWinterHome(), sub, providerId,
+      secrets, resolveCloverHome(), sub, providerId,
       // The masked raw-mode prompt — the ONLY door a value comes in through.
       async () => (await readSecret(`Paste the API key for ${providerId}: `)).trim(),
       openCredentialDaemonDoor,
@@ -2742,7 +2745,7 @@ if (import.meta.main) {
         console.log(`  ${row.providerId.padEnd(width)} ${AQUA}present${RESET} ${DIM}${row.kind ?? "?"} via ${row.door}${row.risk === "review-required" ? " [review-required]" : ""}${RESET}`);
       }
       if (present.length === 0) console.log(`  ${DIM}none stored${RESET}`);
-      console.log(`${DIM}  ${r.rows.length - present.length} more slot(s) are empty — \`winter credentials set <providerId>\` for any catalog provider.${RESET}`);
+      console.log(`${DIM}  ${r.rows.length - present.length} more slot(s) are empty — \`clover credentials set <providerId>\` for any catalog provider.${RESET}`);
       break;
     }
     if (r.kind === "set") {
@@ -2754,16 +2757,16 @@ if (import.meta.main) {
     break;
   }
   case "logout": {
-    const { KeychainSecretStore, CODEX_SECRET_NAMES, CREDENTIAL_MATERIAL_NAMES, clearCredentialMaterial, ANTHROPIC_CREDENTIAL_SECRET_NAME, OPENAI_API_KEY_SECRET } = await import("@yanlinglabs/winter-core");
+    const { KeychainSecretStore, CODEX_SECRET_NAMES, CREDENTIAL_MATERIAL_NAMES, clearCredentialMaterial, ANTHROPIC_CREDENTIAL_SECRET_NAME, OPENAI_API_KEY_SECRET } = await import("@waifucave/clover-core");
     const secrets = new KeychainSecretStore();
     // Winter Phase 10a (O7, P10a-6; fix wave 3 M-A corrected the door): `--anthropic-console` runs
-    // the SDK's own `ant auth logout --profile winter` (via the SAME broker adapter the daemon and
-    // `winter login --anthropic-console` use) and then clears the bearer material — distinct from
+    // the SDK's own `ant auth logout --profile clover` (via the SAME broker adapter the daemon and
+    // `clover login --anthropic-console` use) and then clears the bearer material — distinct from
     // `--anthropic` below, which only ever clears an api-key material and never touches the console
     // profile. The `claude` binary's own `auth logout` is never used for this door.
     if (process.argv.includes("--anthropic-console")) {
-      const { createConsoleProfileBroker, resolveAntExecutable } = await import("@yanlinglabs/winter-core");
-      const home = resolveWinterHome();
+      const { createConsoleProfileBroker, resolveAntExecutable } = await import("@waifucave/clover-core");
+      const home = resolveCloverHome();
       let settings: Settings | undefined;
       try { settings = loadSettings(join(home, "settings.json")); } catch { settings = undefined; }
       // Fix wave 3 (M-A): same ladder as the login door above, `claude` requirement dropped —
@@ -2794,8 +2797,8 @@ if (import.meta.main) {
       console.log(`anthropic API key cleared — ${credentialEffectNote(cleared.via)}`);
       break;
     }
-    // WS-19 (W19-11): `--openai` — the flag that was missing. `winter login --api-key` has stored
-    // an OpenAI key since Phase 1 and there was no way to clear it short of `winter credentials
+    // WS-19 (W19-11): `--openai` — the flag that was missing. `clover login --api-key` has stored
+    // an OpenAI key since Phase 1 and there was no way to clear it short of `clover credentials
     // remove openai` (which this file also now offers) or editing the Keychain by hand. Clears the
     // material record AND the legacy raw record, the same pair the bare Codex sign-out below clears
     // for its own provider.
@@ -2811,7 +2814,7 @@ if (import.meta.main) {
     for (const name of Object.values(CODEX_SECRET_NAMES)) {
       await secrets.delete(name);
     }
-    // Hotfix (credential material, P8b): the material record is what the spawned Winter child
+    // Hotfix (credential material, P8b): the material record is what the spawned Clover child
     // actually reads — blanking only the legacy five would leave a signed-out install still
     // holding a live codex-oauth:default record the child happily authenticates with.
     await clearCredentialMaterial(secrets, CREDENTIAL_MATERIAL_NAMES.codexOauth);
@@ -2822,8 +2825,8 @@ if (import.meta.main) {
     break;
   }
   case "provider": {
-    const { loadSettings, resolveWinterHome } = await import("@yanlinglabs/winter-core");
-    const s = loadSettings(join(resolveWinterHome(), "settings.json"));
+    const { loadSettings, resolveCloverHome } = await import("@waifucave/clover-core");
+    const s = loadSettings(join(resolveCloverHome(), "settings.json"));
     // WS-20: no `.type` read — the provider is the tag's own providerId; a not-yet-migrated
     // settings.json (a bare model, pre-L3.3) prints the raw value rather than reaching for the
     // field this command is retiring.
@@ -2837,8 +2840,8 @@ if (import.meta.main) {
     // "changing models must NOT require a daemon restart") is that a running daemon picks the
     // new value up on its NEXT turn via providers/manager.ts's live model resolver — no restart,
     // no RPC round-trip needed here at all.
-    const { loadSettings, saveSettings, resolveWinterHome, setProviderModel, setReasoningEffort, setAdvisorModel, parseModelTag } = await import("@yanlinglabs/winter-core");
-    const settingsPath = join(resolveWinterHome(), "settings.json");
+    const { loadSettings, saveSettings, resolveCloverHome, setProviderModel, setReasoningEffort, setAdvisorModel, parseModelTag } = await import("@waifucave/clover-core");
+    const settingsPath = join(resolveCloverHome(), "settings.json");
     const settings = loadSettings(settingsPath);
     const action = parseModelArgs(process.argv.slice(3));
 
@@ -2857,7 +2860,7 @@ if (import.meta.main) {
       // token, a stale socket) fall back to the stored tag alone — the historical no-daemon
       // posture this command has always had.
       try {
-        const { METHODS, SyncConfigModel } = await import("@yanlinglabs/winter-protocol");
+        const { METHODS, SyncConfigModel } = await import("@waifucave/clover-protocol");
         const door = await openCredentialDaemonDoor();
         if (door) {
           // Review nit: try/finally — a `request` throw (a dead-mid-call daemon, a malformed
@@ -2879,7 +2882,7 @@ if (import.meta.main) {
       } catch { /* no live daemon (or an older one) — the bare current tag printed above is the whole answer */ }
       // Winter Phase 8d (P8d-8, Task 4.3): the D30 advisor line — "auto" is the honest label for
       // an unset override (the router applies its own per-family default, never a slug this CLI
-      // invents), mirroring `winter model --advisor auto`'s own clearing spelling.
+      // invents), mirroring `clover model --advisor auto`'s own clearing spelling.
       console.log(`${DIM}advisor: ${settings.runtimes?.advisorModel ? modelDisplayWithHint(settings.runtimes.advisorModel) : "auto"}${RESET}`);
       process.exit(0);
     }
@@ -2894,7 +2897,7 @@ if (import.meta.main) {
       }
       const modelArg = action.kind === "setAdvisor" ? action.slug : null;
       // Review fix (Nit 4): when the daemon is live, the write goes through `settings.
-      // setAdvisorModel` (the SAME door.request pattern `winter model` (show) uses for
+      // setAdvisorModel` (the SAME door.request pattern `clover model` (show) uses for
       // sync.config) so the tag is validated against the pinned catalog before it lands on disk —
       // never a bare `saveSettings` racing the daemon's own settings-watcher. Falls back to the
       // direct file write ONLY when there is no live daemon to ask, same no-daemon posture this
@@ -2906,7 +2909,7 @@ if (import.meta.main) {
         let stored: string | null = null;
         let daemonError: string | undefined;
         try {
-          const { METHODS } = await import("@yanlinglabs/winter-protocol");
+          const { METHODS } = await import("@waifucave/clover-protocol");
           const raw = await door.request(METHODS.settingsSetAdvisorModel, { model: modelArg });
           stored = (raw as { model?: string | null } | undefined)?.model ?? null;
         } catch (err) {
@@ -2930,7 +2933,7 @@ if (import.meta.main) {
 
     let next = settings;
     if (action.kind === "setModel" || action.kind === "setModelAndEffort") {
-      // Design correction (after item 4): `winter model <tag>` writes the GLOBAL
+      // Design correction (after item 4): `clover model <tag>` writes the GLOBAL
       // settings.provider.model, but that no longer REFUSES a non-internal-provider tag — any
       // catalog provider may be the default model (a user whose default is Claude must be able to
       // boot). Only the shape/catalog checks (`validateModelTag`) still gate the write; a
@@ -2965,18 +2968,18 @@ if (import.meta.main) {
     // settings.outputStyle, live, on the session's next turn — same live-getter precedent as the
     // provider model).
     const { parseOutputStyleArgs } = await import("./output-style-cli");
-    const { resolveWinterHome, setOutputStyle, OutputStyleStore, TrustStore, sdkOutputStyle, updateSdkSettings } = await import("@yanlinglabs/winter-core");
+    const { resolveCloverHome, setOutputStyle, OutputStyleStore, TrustStore, sdkOutputStyle, updateSdkSettings } = await import("@waifucave/clover-core");
     const action = parseOutputStyleArgs(process.argv.slice(3));
-    const home = resolveWinterHome();
+    const home = resolveCloverHome();
 
     if (action.action === "help") {
-      console.log("Usage: winter output-style [name]\n  (no arg)  list available styles\n  <name>    set the active output style");
+      console.log("Usage: clover output-style [name]\n  (no arg)  list available styles\n  <name>    set the active output style");
       break;
     }
 
     // WS-21: `outputStyle` lives in `sdk/settings.json` (claude `Settings`) — read and written there
     // (`sdkOutputStyle`/`updateSdkSettings`; the write refuses to clobber an unparseable file).
-    const store = new OutputStyleStore({ winterHome: home, trust: new TrustStore(join(home, "trust.json")) });
+    const store = new OutputStyleStore({ cloverHome: home, trust: new TrustStore(join(home, "trust.json")) });
     const cwd = process.cwd();
     const current = sdkOutputStyle(home) ?? "default";
 
@@ -3000,22 +3003,22 @@ if (import.meta.main) {
   }
   case "workflow": {
     // CC-parity phase 3 (Workflows), Track C Task C3. `list`/`save` are file-direct (WorkflowStore,
-    // C1) — mirrors `case "output-style"` just above: reading/writing `.winter/workflows/*.js`
+    // C1) — mirrors `case "output-style"` just above: reading/writing `.clover/workflows/*.js`
     // never needs the daemon up, exactly like an output-style switch never needing a restart.
     // `run` is the one exception: workflows actually EXECUTE in the daemon (WorkflowRuntime,
-    // core/src/workflows/runtime.ts, C2), so it goes through WinterClient/connect() like every
+    // core/src/workflows/runtime.ts, C2), so it goes through CloverClient/connect() like every
     // other daemon-RPC case (`memory`, `routines`, …) instead of touching files directly.
     const { parseWorkflowArgs } = await import("./workflow-cli");
     const action = parseWorkflowArgs(process.argv.slice(3));
 
     if (action.action === "help") {
-      console.log("Usage: winter workflow [list] | run <name> [json-args] | save <name> [file]\n  (no arg)     list saved workflows (+ running runs, if a daemon is already up)\n  run <name>   run a saved workflow; json-args (a JSON string) seeds its `args` binding\n  save <name>  save a workflow script from <file> (or stdin, if omitted) to ~/.winter/workflows/<name>.js");
+      console.log("Usage: clover workflow [list] | run <name> [json-args] | save <name> [file]\n  (no arg)     list saved workflows (+ running runs, if a daemon is already up)\n  run <name>   run a saved workflow; json-args (a JSON string) seeds its `args` binding\n  save <name>  save a workflow script from <file> (or stdin, if omitted) to ~/.clover/workflows/<name>.js");
       break;
     }
 
-    const { WorkflowStore, TrustStore, userWorkflowsDir } = await import("@yanlinglabs/winter-core");
-    const home = resolveWinterHome();
-    const store = new WorkflowStore({ winterHome: home, trust: new TrustStore(join(home, "trust.json")) });
+    const { WorkflowStore, TrustStore, userWorkflowsDir } = await import("@waifucave/clover-core");
+    const home = resolveCloverHome();
+    const store = new WorkflowStore({ cloverHome: home, trust: new TrustStore(join(home, "trust.json")) });
     const cwd = process.cwd();
 
     if (action.action === "list") {
@@ -3025,7 +3028,7 @@ if (import.meta.main) {
 
       // Best-effort daemon augmentation, ONLY if a daemon is ALREADY up (a direct existsSync
       // check — never connect()'s own autolaunch: unlike `run`, a plain `list` must not have the
-      // side effect of spawning Winter.app). workflow.list is session-scoped server-side
+      // side effect of spawning Clover.app). workflow.list is session-scoped server-side
       // (WorkflowRegistry.list(sessionId) filters strictly to that session's own runs), so this
       // creates a session the same way `run` does below; wrapped in try/catch because the
       // file-direct saved list above already answered the primary ask — a down/flaked daemon must
@@ -3089,14 +3092,14 @@ if (import.meta.main) {
     break;
   }
   case "init": {
-    await runTurnSession({ promptOverride: INIT_PROMPT, forceAuto: true, chat: false }); // force auto: writes WINTER.md without approval prompts
+    await runTurnSession({ promptOverride: INIT_PROMPT, forceAuto: true, chat: false }); // force auto: writes CLOVER.md without approval prompts
     break;
   }
   case "resume": {
     const sid = process.argv[3];
     if (!sid) {
       // picker: list resumable sessions. Plan-immunity Task 2: this is a PICKER (same shape as the
-      // TUI's `/sessions` — its own inline comment is the same phrase), not the plain `winter
+      // TUI's `/sessions` — its own inline comment is the same phrase), not the plain `clover
       // sessions` inventory, so it HIDES non-code rows (`filterCodeSessions`) rather than marking
       // them — showing a row here that `resume <id>` would immediately refuse below is the
       // shown-but-broken shape this slice keeps closing. See session-mode.ts's file doc.
@@ -3128,13 +3131,13 @@ if (import.meta.main) {
     break;
   }
   case "provider-smoke": {
-    const { loadSettings, resolveWinterHome, createProvider, KeychainSecretStore } = await import("@yanlinglabs/winter-core");
-    const s = loadSettings(join(resolveWinterHome(), "settings.json"));
+    const { loadSettings, resolveCloverHome, createProvider, KeychainSecretStore } = await import("@waifucave/clover-core");
+    const s = loadSettings(join(resolveCloverHome(), "settings.json"));
     const active = await createProvider(s, new KeychainSecretStore());
     // Design correction (Lane 3, round 4): `createProvider` now answers `null` rather than
     // refusing, whenever `provider.model` names a provider outside the daemon's internal set
     // (codex-oauth/openai) — the same "inert, not a refusal" shape `internalProviderNote`
-    // (model-cli.ts) warns about for `winter model <tag>` itself.
+    // (model-cli.ts) warns about for `clover model <tag>` itself.
     if (!active) {
       let note: string | undefined;
       try { note = internalProviderNote(s.provider.model); } catch { /* not tag-shaped — fall through to the generic message */ }
@@ -3142,7 +3145,7 @@ if (import.meta.main) {
       process.exit(1);
     }
     const promptIdx = process.argv.indexOf("--prompt");
-    const prompt = promptIdx > 0 ? process.argv[promptIdx + 1]! : "Reply with exactly: winter provider smoke OK";
+    const prompt = promptIdx > 0 ? process.argv[promptIdx + 1]! : "Reply with exactly: clover provider smoke OK";
     console.log(`${DIM}provider=${active.provider.id} model=${active.model}${RESET}`);
     let text = "";
     for await (const e of active.provider.streamTurn({
@@ -3159,7 +3162,7 @@ if (import.meta.main) {
     // WS-16 §18 Migration B — the same real machinery the daemon's own boot hook runs (never a
     // second copy of it). `runMigrateCommand` is provable outside this argv switch (main.test.ts's
     // own header); this case is a thin wrapper over real deps.
-    const { KeychainSecretStore: To, LegacyKeychainSecretStore, resolveWinterHome: home, resolveWinterProfile: profileOf, isDaemonLockHeld } = await import("@yanlinglabs/winter-core");
+    const { KeychainSecretStore: To, LegacyKeychainSecretStore, resolveCloverHome: home, resolveCloverProfile: profileOf, isDaemonLockHeld } = await import("@waifucave/clover-core");
     const { runMigrateCommand } = await import("./commands/migrate");
     const profile = profileOf();
     const code = await runMigrateCommand({
@@ -3177,11 +3180,11 @@ if (import.meta.main) {
   }
   case "migrate-project": {
     const { runMigrateProjectCommand } = await import("./commands/migrate-project");
-    const { resolveWinterHome: winterHomeOf } = await import("@yanlinglabs/winter-core");
+    const { resolveCloverHome: cloverHomeOf } = await import("@waifucave/clover-core");
     const code = await runMigrateProjectCommand({
       argv: process.argv.slice(3),
       cwd: process.cwd(),
-      home: winterHomeOf(), // WS-21: the approved-rules record read for this project
+      home: cloverHomeOf(), // WS-21: the approved-rules record read for this project
 
       log: (l) => console.log(l),
       error: (l) => console.error(l),
@@ -3190,7 +3193,7 @@ if (import.meta.main) {
     process.exit(code);
   }
   default:
-    console.log(`winter ${CORE_VERSION} — commands:
+    console.log(`clover ${CORE_VERSION} — commands:
   daemon run | daemon install | daemon uninstall | daemon status
   ping | sessions | status | quota | send <sessionId|new> <text> | watch <sessionId> | add-dir <sessionId> <path> [--persist] | cd <sessionId> <path>
   steer <sessionId> <text> | interrupt <sessionId> | compact <sessionId>
@@ -3209,10 +3212,10 @@ if (import.meta.main) {
   logout [--anthropic] [--anthropic-console] [--openai]           (bare: signs out of ChatGPT/Codex)
   credentials [list] | credentials set <providerId> | credentials remove <providerId>   every provider's API key (masked prompt)
   provider | provider-smoke [--prompt <text>]
-  init                                            generate/update WINTER.md by surveying the project
+  init                                            generate/update CLOVER.md by surveying the project
   migrate [--from <legacyHome>] [--status|--resume|--rollback] [--yes]        Migration B: copy a legacy home into this one
   migrate --cowork-schema --rollback [--home <dir>] [--yes]  roll back unused Cowork tables to v7; keep the SDK layout
-  migrate-project [dir] [--yes]                   convert one project's legacy instructions file / project dir to WINTER.md/.winter
-  -p "<prompt>" [--auto|--plan] [--trust|--no-trust] [--model <providerId>/<modelId>]   headless agent turn (asks for tool approval unless --auto/--plan; --model picks this one session's model; \`winter model\` lists them)`);
+  migrate-project [dir] [--yes]                   convert one project's legacy instructions file / project dir to CLOVER.md/.clover
+  -p "<prompt>" [--auto|--plan] [--trust|--no-trust] [--model <providerId>/<modelId>]   headless agent turn (asks for tool approval unless --auto/--plan; --model picks this one session's model; \`clover model\` lists them)`);
   }
 }

@@ -22,7 +22,7 @@ function lookingThingsUp(exaKeyPresent: boolean): string[] {
     ]
     : [
       "You can search the web with WebSearch, and open any page with WebFetch — give WebFetch a URL and what you want to know from it, and you get an answer read off that page. Use them whenever a fact might have changed since you were trained, or the user asks about something current — do not guess and do not hedge about not knowing. Say where a fact came from.",
-      "(The user has not stored an Exa API key, so Winter's own Search tool — one call, a written answer with sources — is not available in this conversation. `winter login --exa-key` turns it on.)",
+      "(The user has not stored an Exa API key, so Clover's own Search tool — one call, a written answer with sources — is not available in this conversation. `clover login --exa-key` turns it on.)",
     ];
 }
 
@@ -32,11 +32,11 @@ function lookingThingsUp(exaKeyPresent: boolean): string[] {
  */
 export function chatSystemPrompt(opts: { exaKeyPresent?: boolean } = {}): string {
   return [
-    "You are Winter in Chat mode: a conversation, not an agent. You have no access to this machine — no files, no shell, no repository — and you never imply otherwise.",
+    "You are Clover in Chat mode: a conversation, not an agent. You have no access to this machine — no files, no shell, no repository — and you never imply otherwise.",
     "",
     "# What you are here for",
     "Thinking things through with the user: questions, explanations, drafting, planning, remembering.",
-    "You share the assistant memory that Winter builds across conversations — use what you know about the user, and do not re-ask what is already established.",
+    "You share the assistant memory that Clover builds across conversations — use what you know about the user, and do not re-ask what is already established.",
     "",
     "# Honesty about your reach",
     "If something needs the user's files, code, or terminal, say so plainly and point at the mode that can do it (Code for a project, Dispatch to coordinate work).",
@@ -63,6 +63,6 @@ export function chatSystemPrompt(opts: { exaKeyPresent?: boolean } = {}): string
 //
 // 2026-09-18 (the web-tools ruling): `CHAT_SYSTEM_PROMPT`, the constant this file exported until now,
 // became `chatSystemPrompt(...)` for the same class of reason — the prompt is built per session
-// (`runtime-sdk/system-prompt.ts`'s `winterSystemPromptFor`), and chat's search tool is decided per
+// (`runtime-sdk/system-prompt.ts`'s `cloverSystemPromptFor`), and chat's search tool is decided per
 // session too. A constant would have had to name BOTH tools and let the model find out which one it
 // actually has by calling the wrong one.

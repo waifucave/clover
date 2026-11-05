@@ -18,7 +18,7 @@ export interface McpServerStatus {
   transport?: "http" | "sse";
 }
 
-/** The versionNegotiation the SDK accepts, as Winter's configs spell it (agent/mcp/project-file.ts). */
+/** The versionNegotiation the SDK accepts, as Clover's configs spell it (agent/mcp/project-file.ts). */
 type VersionNegotiation = "legacy" | "auto" | { pin: string };
 
 /**
@@ -33,7 +33,7 @@ export type McpServerConfig =
 // WS-24 — A STATUS PROBE, NOT A SECOND COPY OF EVERY SERVER.
 //
 // What reads this manager (the WS-24 inventory): `mcp.list` (the status + tool names the Mac's MCP tab
-// and `winter mcp list` show), and `mcp.enable`/`mcp.disable`/`mcp.add`/`mcp.remove` (which re-probe or
+// and `clover mcp list` show), and `mcp.enable`/`mcp.disable`/`mcp.add`/`mcp.remove` (which re-probe or
 // drop one name). Nothing else. Each server is PROBED: connected, its `tools/list` read, and closed again
 // (`probe`) — no process or connection is kept (every session's child connects its own copy), and nothing
 // is registered anywhere. `status` is that probe's answer and `toolNames` its listing, from the same
@@ -123,11 +123,11 @@ export class McpManager {
 
   /**
    * The probe's WHOLE budget — the connect AND the `tools/list` together (fix round 1, I2):
-   * WINTER_MCP_START_TIMEOUT_MS (default 10 s). A server that hangs at either step is a `"failed"` probe
+   * CLOVER_MCP_START_TIMEOUT_MS (default 10 s). A server that hangs at either step is a `"failed"` probe
    * within it, never a stalled daemon boot or a hung `mcp.list` (the MCP client's own request timeout is 60 s).
    */
   private timeoutMs(): number {
-    const raw = Number(process.env.WINTER_MCP_START_TIMEOUT_MS ?? 10_000);
+    const raw = Number(process.env.CLOVER_MCP_START_TIMEOUT_MS ?? 10_000);
     return Number.isFinite(raw) && raw > 0 ? raw : 10_000;
   }
 
@@ -174,7 +174,7 @@ export class McpManager {
     } catch (e) {
       const code = e instanceof McpConnectError ? e.code : e instanceof Error ? e.name : "unknown";
       if (code === "needs_auth") {
-        this.deps.log?.(`mcp: ${opts?.label ?? "server"} '${name}'${opts?.context ?? ""} needs sign-in (winter mcp login ${name})`);
+        this.deps.log?.(`mcp: ${opts?.label ?? "server"} '${name}'${opts?.context ?? ""} needs sign-in (clover mcp login ${name})`);
         return { status: "needs-auth", toolNames: [] };
       }
       this.deps.log?.(`mcp: ${opts?.label ?? "server"} '${name}'${opts?.context ?? ""} failed to start (${code})`);
@@ -244,7 +244,7 @@ export class McpManager {
   }
 
   /**
-   * Trust-gated project `.winter/mcp.json` probe. Idempotent per canonicalized cwd (a "none" or
+   * Trust-gated project `.clover/mcp.json` probe. Idempotent per canonicalized cwd (a "none" or
    * "probed" record short-circuits future calls). SECURITY: an untrusted dir returns WITHOUT
    * recording anything — nothing is read/spawned, and a later `trust.trust(dir)` + another
    * `ensureProject` call will retry. Defensive: a missing/malformed file degrades to a recorded
@@ -268,7 +268,7 @@ export class McpManager {
   private async doEnsureProject(dir: string): Promise<void> {
     if (!projectScopeTrusted(dir, this.deps.trust)) return; // untrusted → not recorded (retry after trust)
 
-    // WS-21 (spec §4.4): the project file is `<project root>/.winter/mcp.json` (the repo-root `.mcp.json`
+    // WS-21 (spec §4.4): the project file is `<project root>/.clover/mcp.json` (the repo-root `.mcp.json`
     // is no longer read) — the root the run home's builder reads it at.
     // R.3 residual: the project scope's root (`projectScopeRootFor`: a linked worktree's own top).
     const read = readRawProjectMcpConfig(projectScopeRootFor(dir));
@@ -445,7 +445,7 @@ export class McpManager {
   }
 }
 
-/** A Winter config onto the SDK's process-transport config: copies only, never a shared object. */
+/** A Clover config onto the SDK's process-transport config: copies only, never a shared object. */
 function toSdkConfig(cfg: McpServerConfig): ConnectMcpServerOptions["config"] {
   const negotiation = cfg.versionNegotiation === undefined ? {} : { versionNegotiation: typeof cfg.versionNegotiation === "string" ? cfg.versionNegotiation : { pin: cfg.versionNegotiation.pin } };
   if (!("command" in cfg)) {

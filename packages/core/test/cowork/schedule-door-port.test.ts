@@ -9,7 +9,7 @@ import { CoworkSchedules } from "../../src/cowork/schedules";
 import { COWORK_SCHEDULE_DEFINITE_REFUSALS, COWORK_SCHEDULE_DOOR_TIMEOUT_MS, COWORK_SCHEDULE_SEND_DEFINITE_REFUSALS, createCoworkScheduleDoorPort } from "../../src/cowork/schedule-door-port";
 import type { CoworkScheduleDoor } from "../../src/cowork/schedule-door-port";
 import { CoworkError, type CoworkErrorCode } from "../../src/cowork/types";
-import type { CoworkScheduleDefinition } from "@yanlinglabs/winter-protocol";
+import type { CoworkScheduleDefinition } from "@waifucave/clover-protocol";
 
 const homes: string[] = [], handles: RuntimeStateDb[] = [];
 const caps = { toolClasses: ["read", "write"], hostServices: [], connectors: [], network: "internet" as const };
@@ -35,7 +35,7 @@ function fakeDoor(behavior: Behavior = {}) {
 }
 
 function fixture(door: CoworkScheduleDoor, target: "project" | "conversation" = "project", timeoutMs?: number) {
-  const home = mkdtempSync(join(tmpdir(), "winter-schedule-door-")); homes.push(home);
+  const home = mkdtempSync(join(tmpdir(), "clover-schedule-door-")); homes.push(home);
   const db = openRuntimeStateDb(home); handles.push(db); const records = new CoworkRepository(db);
   const made = records.create({ principalId: "fixture", requestId: "workspace" }, { ownership: "project", title: "Fixture", ceiling: caps, sources: [{ kind: "folder", label: "fixture", access: "read-write", detail: { grantRef: "fixture-grant", rootIdentity: "fixture-root" } }] });
   const grants = { folder: () => ({ rootIdentity: "fixture-root", writable: true, revoked: false }), repository: () => undefined };
@@ -119,7 +119,7 @@ test("a session id the host cannot acknowledge is refused before anything is sen
 
 test("without a port nothing changes: beginDispatch refuses unsupported_topology and the door is never touched", () => {
   const d = fakeDoor(), f = fixture(d.door);
-  const home = mkdtempSync(join(tmpdir(), "winter-schedule-door-")); homes.push(home);
+  const home = mkdtempSync(join(tmpdir(), "clover-schedule-door-")); homes.push(home);
   const db = openRuntimeStateDb(home); handles.push(db);
   const bare = new CoworkSchedules(new CoworkRepository(f.db as unknown as RuntimeStateDb), { folder: () => undefined, repository: () => undefined } as never);
   expect(() => bare.beginDispatch("occurrence", "token")).toThrow("unsupported_topology"); expect(d.calls).toEqual([]);

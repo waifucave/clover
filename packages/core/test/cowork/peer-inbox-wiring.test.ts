@@ -24,7 +24,7 @@ const cleanups: Array<() => void> = [];
 afterEach(() => { for (const cleanup of cleanups.splice(0).reverse()) { try { cleanup(); } catch { /* best effort */ } } });
 
 function world(existingHome?: string) {
-  const home = existingHome ?? mkdtempSync(join(tmpdir(), "winter-peer-wiring-"));
+  const home = existingHome ?? mkdtempSync(join(tmpdir(), "clover-peer-wiring-"));
   const db: RuntimeStateDb = openRuntimeStateDb(home), records = new CoworkRepository(db);
   cleanups.push(() => { db.close(); if (existingHome === undefined) rmSync(home, { recursive: true, force: true }); });
   const rows = new Map<string, SessionRow>(), drivers = new Map<string, FakeDriver>();

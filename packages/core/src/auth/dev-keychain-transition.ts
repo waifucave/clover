@@ -1,21 +1,21 @@
-// WS-27: the ONE-TIME move of the dev Keychain items from Homebrew `bun` to a Winter-signed `winter-core`.
+// WS-27: the ONE-TIME move of the dev Keychain items from Homebrew `bun` to a Clover-signed `clover-core`.
 //
 // WHY. A dev daemon run as `bun` creates its items as `bun`, so their partition list names bun's team
-// (`app-token-acl.ts`'s header): Winter Dev is asked once per pairing token. The cure is a dev daemon that is
-// a compiled `winter-core` signed by Winter's team (`scripts/dev-daemon.ts`). But its first read of every
+// (`app-token-acl.ts`'s header): Clover Dev is asked once per pairing token. The cure is a dev daemon that is
+// a compiled `clover-core` signed by Clover's team (`scripts/dev-daemon.ts`). But its first read of every
 // item `bun` created would prompt — a decrypt by a binary the item does not name, from another team.
 //
 // HOW. Only an item's creator decides its partition list, so the NEW binary must create every item; only the
 // OLD one can read and delete them silently. The two cooperate over a pipe:
 //   - the orchestrator (`runDevKeychainTransition`, run under `bun` — the old creator) lists the accounts
 //     attributes-only and reads each value;
-//   - the child (`winter-core __dev-keychain-adopt`, the new creator) writes the shadow `<account>.migrating`
+//   - the child (`clover-core __dev-keychain-adopt`, the new creator) writes the shadow `<account>.migrating`
 //     and reads it back; the orchestrator deletes the original; the child adds the original from its own
 //     shadow, self-only, reads it back and drops the shadow.
 // A value crosses only that pipe, once, in the `shadow` request; nothing is logged or written elsewhere.
 // Afterwards every item is the compiled binary's, self-only; the daemon's boot re-widens the two pairing
-// tokens for Winter Dev (the app-token marker's trusted set changed with the creator), now with a
-// partition list that names Winter's team.
+// tokens for Clover Dev (the app-token marker's trusted set changed with the creator), now with a
+// partition list that names Clover's team.
 //
 // CRASH SAFETY. Every shadow is the CHILD's, so the compiled binary can read it silently: an interrupted run
 // leaves either the pair (shadow + bun's original — re-run the transition: the `shadow` step is idempotent
@@ -38,10 +38,10 @@ import { spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { acquireLock } from "../lock";
-import { resolveWinterProfile, type WinterProfile } from "../profile";
+import { resolveCloverProfile, type CloverProfile } from "../profile";
 import { codeSigningFacts, realExecutable } from "./app-token-acl";
 import { acquireCredentialMigrationLock, credentialMigrationLockHolder, processStartSeconds } from "./credential-migration-lock";
-import { isDefaultWinterHome } from "../winter-dir";
+import { isDefaultCloverHome } from "../clover-dir";
 import { APP_TOKEN_SHADOW_SUFFIX } from "./app-token-acl";
 import { isCredentialAccount, putBack, readStoredValue, recoverCredentialShadows, REAL_CREDENTIAL_KEYCHAIN_OPS, sameBytes, writeCredentialAclMarker, type CredentialKeychain } from "./credential-acl";
 import { KeychainFfiError, keychainUnlocked, withKeychainUserInteractionDisabled, type KeychainAccess } from "./keychain-ffi";
@@ -49,7 +49,7 @@ import { KeychainFfiError, keychainUnlocked, withKeychainUserInteractionDisabled
 /** The compiled binary's route for the child side. */
 export const DEV_KEYCHAIN_ADOPT_ARG = "__dev-keychain-adopt";
 /** The only service either side will touch. */
-export const DEV_KEYCHAIN_SERVICE = "com.winter.core.dev";
+export const DEV_KEYCHAIN_SERVICE = "com.waifucave.clover.core.dev";
 
 export type AdoptRequest =
   | { op: "hello" }
@@ -64,11 +64,11 @@ export type AdoptRequest =
 export type AdoptResponse = { ok: true; service?: string; restored?: string[] } | { ok: false; reason: string; fatal?: true };
 
 /** Why this process must not take part, or `undefined`. Both sides check it. */
-export function devTransitionRefusal(input: { profile: WinterProfile; home: string; service: string; platform?: NodeJS.Platform }): string | undefined {
+export function devTransitionRefusal(input: { profile: CloverProfile; home: string; service: string; platform?: NodeJS.Platform }): string | undefined {
   if ((input.platform ?? process.platform) !== "darwin") return "the dev Keychain transition runs only on macOS";
-  if (input.profile !== "dev") return "the dev Keychain transition runs only on the dev profile (WINTER_PROFILE=dev)";
+  if (input.profile !== "dev") return "the dev Keychain transition runs only on the dev profile (CLOVER_PROFILE=dev)";
   if (input.service !== DEV_KEYCHAIN_SERVICE) return `the dev Keychain transition touches only ${DEV_KEYCHAIN_SERVICE}, not ${input.service}`;
-  if (!isDefaultWinterHome(input.home, "dev")) return `the dev Keychain transition runs only on the dev profile's default home (~/.winter-dev), not ${input.home}`;
+  if (!isDefaultCloverHome(input.home, "dev")) return `the dev Keychain transition runs only on the dev profile's default home (~/.clover-dev), not ${input.home}`;
   return undefined;
 }
 
@@ -158,7 +158,7 @@ export async function runDevKeychainTransition(kc: CredentialKeychain, send: (re
   if (hello.service !== kc.service) return stop("(child)", `the child uses ${hello.service ?? "no service"}, not ${kc.service}`);
   // The OLD creator's own recovery first: shadows a crashed bun-run migration left are bun's, which the child
   // cannot read. Restored (or, beside their original, dropped as stale), they are then adopted below.
-  const oldAccess = q(() => ops.createAccess("Winter credential", [null]));
+  const oldAccess = q(() => ops.createAccess("Clover credential", [null]));
   let restored: string[];
   try {
     restored = q(() => recoverCredentialShadows({ ...kc, log: (line) => log(line) }, oldAccess, { dropShadowsBesideOriginals: true, owns: isItem }));
@@ -273,12 +273,12 @@ export function adoptLockRefusal(home: string, parentPid: number): string | unde
 
 /** The child's process loop: NDJSON requests on stdin, one NDJSON response each on stdout. */
 export async function runDevKeychainAdopt(env: NodeJS.ProcessEnv = process.env): Promise<never> {
-  const profile = resolveWinterProfile(env);
-  const home = env.WINTER_HOME ?? "";
-  const service = profile === "dev" ? DEV_KEYCHAIN_SERVICE : "com.winter.core";
+  const profile = resolveCloverProfile(env);
+  const home = env.CLOVER_HOME ?? "";
+  const service = profile === "dev" ? DEV_KEYCHAIN_SERVICE : "com.waifucave.clover.core";
   const refusal = devTransitionRefusal({ profile, home, service });
   const fatal = (reason: string): never => {
-    process.stderr.write(`winter-core: ${DEV_KEYCHAIN_ADOPT_ARG} refused: ${reason}\n`);
+    process.stderr.write(`clover-core: ${DEV_KEYCHAIN_ADOPT_ARG} refused: ${reason}\n`);
     process.exit(2);
   };
   if (refusal !== undefined) fatal(refusal);
@@ -290,7 +290,7 @@ export async function runDevKeychainAdopt(env: NodeJS.ProcessEnv = process.env):
   const kc: CredentialKeychain = { keychain: null, service, log: (line) => process.stderr.write(`${line}\n`) };
   let access: KeychainAccess;
   try {
-    access = withKeychainUserInteractionDisabled(() => REAL_CREDENTIAL_KEYCHAIN_OPS.createAccess("Winter credential", [null]));
+    access = withKeychainUserInteractionDisabled(() => REAL_CREDENTIAL_KEYCHAIN_OPS.createAccess("Clover credential", [null]));
   } catch (err) {
     return fatal(`the access list could not be built (${describe(err)})`);
   }
@@ -376,10 +376,10 @@ export function spawnAdoptChild(command: { file: string; args: string[] }, env: 
 /**
  * The whole transition, as `scripts/dev-daemon.ts --transition` runs it: guards, the home's credential
  * migration lock (pid liveness: a daemon mid-boot refuses it too) and its boot lock (a running dev daemon
- * refuses it), the child, the run. `binary` is the signed compiled `winter-core`.
+ * refuses it), the child, the run. `binary` is the signed compiled `clover-core`.
  */
 export async function transitionDevKeychain(input: { binary: string; home: string; env: NodeJS.ProcessEnv; log: (line: string) => void }): Promise<DevTransitionOutcome> {
-  const refusal = devTransitionRefusal({ profile: resolveWinterProfile(input.env), home: input.home, service: DEV_KEYCHAIN_SERVICE });
+  const refusal = devTransitionRefusal({ profile: resolveCloverProfile(input.env), home: input.home, service: DEV_KEYCHAIN_SERVICE });
   if (refusal !== undefined) throw new Error(refusal);
   if (!keychainUnlocked(null)) throw new Error("the default keychain is locked — unlock it and run again");
   const migrationLock = acquireCredentialMigrationLock(input.home);

@@ -4,7 +4,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, ERR, type WritableSocket } from "@yanlinglabs/winter-protocol";
+import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, ERR, type WritableSocket } from "@waifucave/clover-protocol";
 import { startIpcServer, REMOTE_ALLOWED_METHODS } from "../../src/ipc/server";
 import { SessionStore } from "../../src/sessions/store";
 import { SessionHub } from "../../src/sessions/hub";
@@ -72,9 +72,9 @@ describe("usage.* over the socket", () => {
     const db = new UsageDb(join(home, "usage", "usage.db"));
     const usage = new UsageService({
       db, pricer: new UsagePricer(), tracking: () => ({ codex: true, claudeCode: true, antigravity: true, opencode: true }), codexExecutable: () => undefined, claudeExecutable: () => undefined,
-      winterCodexWindows: () => [], probeRoot: () => probeRootIn(home),
+      cloverCodexWindows: () => [], probeRoot: () => probeRootIn(home),
     });
-    const server = startIpcServer({ socketPath, serverVersion: "test", tokens: authority, store, hub, usage, winterHome: home });
+    const server = startIpcServer({ socketPath, serverVersion: "test", tokens: authority, store, hub, usage, cloverHome: home });
     stop = () => { server.stop(); store.close(); db.close(); };
     return { home, store, socketPath, tokens, usage };
   }
@@ -158,7 +158,7 @@ describe("on a real daemon", () => {
   let daemon: RunningDaemon | undefined;
   afterEach(async () => { await daemon?.stop(); daemon = undefined; });
 
-  test("Winter-side: the tracking switch reloads LIVE (no restart) — off: nothing read, nothing spawned; on again: ingested", async () => {
+  test("Clover-side: the tracking switch reloads LIVE (no restart) — off: nothing read, nothing spawned; on again: ingested", async () => {
     const home = tempDir("daemon");
     const codexHome = tempDir("codex");
     const at = Date.now() - 60_000;

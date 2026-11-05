@@ -1,5 +1,5 @@
 import { CATALOG_TAG_RENAMES, loadCatalog } from "@yanlinglabs/winter-provider-catalog";
-import { setWireModelTagCanonicalizer } from "@yanlinglabs/winter-protocol";
+import { setWireModelTagCanonicalizer } from "@waifucave/clover-protocol";
 
 /** WS-20: a model is ALWAYS a provider-qualified tag ("<providerId>/<modelId>") in code — the
  *  catalog row `key` already IS the tag. This module is the one place the tag shape and its
@@ -7,7 +7,7 @@ import { setWireModelTagCanonicalizer } from "@yanlinglabs/winter-protocol";
 export type ModelTag = string & { readonly __brand: "ModelTag" };
 
 /** Escape hatch: a test double id, never split as a tag, always passed through unchanged. */
-export const WINTER_TEST_PREFIX = "winter-test/";
+export const CLOVER_TEST_PREFIX = "winter-test/";
 
 /** The ONE sentinel for "no model recorded" (a session/record with nothing stamped yet). */
 export const UNSTATED_TAG = "unstated/unstated" as ModelTag;
@@ -25,10 +25,10 @@ export function splitTag(tag: string): { providerId: string; modelId: string } {
 const providerIds = (): Set<string> => new Set(loadCatalog().providers.map((p) => p.id));
 
 /** MODEL_TAG_RE && providerId is a PINNED catalog provider, OR s is the sentinel, OR s is a
- *  winter-test double (never validated against the catalog at all). */
+ *  clover-test double (never validated against the catalog at all). */
 export function isModelTag(s: string): s is ModelTag {
   if (s === UNSTATED_TAG) return true;
-  if (s.startsWith(WINTER_TEST_PREFIX)) return true;
+  if (s.startsWith(CLOVER_TEST_PREFIX)) return true;
   if (!MODEL_TAG_RE.test(s)) return false;
   return providerIds().has(s.slice(0, s.indexOf("/")));
 }
@@ -86,7 +86,7 @@ function rowForFacingName(providerId: string, facingName: string): ModelTag | un
  */
 export function canonicalizeModelTag(tag: string, settings?: { providers?: Record<string, { baseUrl?: string }> }): ModelTag | undefined {
   if (!isModelTag(tag)) return undefined;
-  if (tag === UNSTATED_TAG || tag.startsWith(WINTER_TEST_PREFIX)) return tag as ModelTag;
+  if (tag === UNSTATED_TAG || tag.startsWith(CLOVER_TEST_PREFIX)) return tag as ModelTag;
   const catalog = loadCatalog();
   if (catalog.models.some((m) => m.key === tag)) return tag as ModelTag;
   const { providerId, modelId } = splitTag(tag);
@@ -135,7 +135,7 @@ export function facingNameOf(tag: ModelTag): string | undefined {
 // ── WS-21 (spec §8 step 5): stored tags canonicalize ON READ ──────────────────────────────────────
 //
 // A catalog refresh can rename a row (DeepSeek's retired `deepseek-v4-flash` now lives at
-// `deepseek-flash`). Stored tags are NEVER rewritten — an older Winter's catalog has no row under the
+// `deepseek-flash`). Stored tags are NEVER rewritten — an older Clover's catalog has no row under the
 // new spelling, so a rewrite is a downgrade hazard (r2 I5) — they are resolved through this ONE
 // function at three parse layers: the live settings view (`liveSettingsView`), the runtime-state row
 // decoder (`records.ts` `fromRow`, `sessions/store.ts`'s `model` column) and the protocol request parse

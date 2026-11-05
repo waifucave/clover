@@ -9,15 +9,15 @@ import {
   sdkEnabledPlugins, sdkLocalMcpServers, sdkOutputStyle, sdkUserMcpServers, setSkillDenied, withoutMovedKeys,
 } from "../../src/settings";
 import { ProjectSettingsResolver } from "../../src/project-settings";
-import { persistedAllowRulesFor, winterGateRulesFromSdk, sdkAllowRulesFor } from "../../src/runtime-sdk/mode-options";
+import { persistedAllowRulesFor, cloverGateRulesFromSdk, sdkAllowRulesFor } from "../../src/runtime-sdk/mode-options";
 import { SettingsWatcher, namesWatchedFile, watchViaParentDir } from "../../src/settings-watcher";
 import { liveSdkSettings, readSdkSettingsDetailed, updateSdkSettings } from "../../src/sdk-files";
 import { sdkSettingsPath } from "../../src/agent/paths";
 import { startDaemon, type RunningDaemon } from "../../src/daemon";
 import { FileSecretStore } from "../../src/auth/secret-store";
-import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION } from "@yanlinglabs/winter-protocol";
+import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION } from "@waifucave/clover-protocol";
 
-const tmpHome = (): string => realpathSync(mkdtempSync(join(tmpdir(), "winter-sdk-split-")));
+const tmpHome = (): string => realpathSync(mkdtempSync(join(tmpdir(), "clover-sdk-split-")));
 const writeSdkSettings = (home: string, value: unknown): void => {
   mkdirSync(join(home, "sdk"), { recursive: true });
   writeFileSync(sdkSettingsPath(home), JSON.stringify(value));
@@ -53,7 +53,7 @@ describe("the moved keys (spec §4.1)", () => {
     expect(s.permissions?.allow).toEqual(["Bash(ls)"]);
   });
 
-  test("a stale permissions.allow in ~/.winter/settings.json is ignored: the only allow door is sdk/settings.json", () => {
+  test("a stale permissions.allow in ~/.clover/settings.json is ignored: the only allow door is sdk/settings.json", () => {
     const home = tmpHome();
     writeFileSync(join(home, "settings.json"), JSON.stringify({ schemaVersion: 3, provider: { model: "codex-oauth/gpt-5.6-sol" }, permissions: { allow: ["Bash(rm -rf /:*)"] } }));
     const live = withoutMovedKeys(loadSettings(join(home, "settings.json")));
@@ -88,10 +88,10 @@ describe("the moved keys (spec §4.1)", () => {
     expect(sdkEnabledPlugins(home)).toEqual({ "fmt@local": true, "old@local": false });
   });
 
-  test("sdkUserMcpServers / sdkLocalMcpServers read sdk/.winter.json, dropping a credential-shaped header", () => {
+  test("sdkUserMcpServers / sdkLocalMcpServers read sdk/.clover.json, dropping a credential-shaped header", () => {
     const home = tmpHome();
     mkdirSync(join(home, "sdk"), { recursive: true });
-    writeFileSync(join(home, "sdk", ".winter.json"), JSON.stringify({
+    writeFileSync(join(home, "sdk", ".clover.json"), JSON.stringify({
       mcpServers: {
         a: { command: "node" },
         h: { type: "http", url: "https://x.test/mcp", headers: { Authorization: "Bearer sk-NEVER", "X-Id": "1" } },
@@ -167,10 +167,10 @@ describe("live reads: an on-disk edit shows up; a torn edit keeps the last good 
     for (const f of ["settings.json", "settings.json.tmp", "settings.json.4242.a1b2c3.tmp", "settings.json~", null, undefined]) {
       expect({ f, hit: namesWatchedFile(f, "settings.json") }).toEqual({ f, hit: true });
     }
-    for (const f of ["settings.local.json", ".winter.json", "history.jsonl", "xsettings.json"]) {
+    for (const f of ["settings.local.json", ".clover.json", "history.jsonl", "xsettings.json"]) {
       expect({ f, hit: namesWatchedFile(f, "settings.json") }).toEqual({ f, hit: false });
     }
-    expect(namesWatchedFile(".winter.json.99.ff.tmp", ".winter.json")).toBe(true);
+    expect(namesWatchedFile(".clover.json.99.ff.tmp", ".clover.json")).toBe(true);
   });
 
   test("a half-written edit keeps the last good version (readers and watcher alike)", async () => {
@@ -185,17 +185,17 @@ describe("live reads: an on-disk edit shows up; a torn edit keeps the last good 
 });
 
 describe("the gate reads the user's claude-grammar rules back in its own grammar, never wider", () => {
-  test("winterGateRulesFromSdk inverts sdkAllowRulesFor", () => {
-    const winter = ["Bash(git status)", "Bash(npm test:*)", "Edit", "Computer", "Worktree", "WebFetch(domain:docs.test)"];
-    expect(winterGateRulesFromSdk(sdkAllowRulesFor(winter)).sort()).toEqual([...winter].sort());
+  test("cloverGateRulesFromSdk inverts sdkAllowRulesFor", () => {
+    const clover = ["Bash(git status)", "Bash(npm test:*)", "Edit", "Computer", "Worktree", "WebFetch(domain:docs.test)"];
+    expect(cloverGateRulesFromSdk(sdkAllowRulesFor(clover)).sort()).toEqual([...clover].sort());
   });
 
   test("one half of a pair is not enough — never wider than what was saved", () => {
-    expect(winterGateRulesFromSdk(["Edit"])).toEqual([]);            // claude Edit alone ≠ Winter Edit (edit + write)
-    expect(winterGateRulesFromSdk(["Write"])).toEqual([]);
-    expect(winterGateRulesFromSdk(["EnterWorktree"])).toEqual([]);
-    expect(winterGateRulesFromSdk(["Edit(//repo/**)"])).toEqual([]);  // a claude path rule is not Winter's directory grant
-    expect(winterGateRulesFromSdk(["mcp__srv__tool", "Read"])).toEqual([]); // the child applies these natively
+    expect(cloverGateRulesFromSdk(["Edit"])).toEqual([]);            // claude Edit alone ≠ Clover Edit (edit + write)
+    expect(cloverGateRulesFromSdk(["Write"])).toEqual([]);
+    expect(cloverGateRulesFromSdk(["EnterWorktree"])).toEqual([]);
+    expect(cloverGateRulesFromSdk(["Edit(//repo/**)"])).toEqual([]);  // a claude path rule is not Clover's directory grant
+    expect(cloverGateRulesFromSdk(["mcp__srv__tool", "Read"])).toEqual([]); // the child applies these natively
   });
 });
 
@@ -205,14 +205,14 @@ describe("the daemon ignores a stale copy of a moved key in settings.json", () =
   let daemon: RunningDaemon | undefined;
   afterEach(async () => { const d = daemon; daemon = undefined; await d?.stop(); });
 
-  test("a settings.json mcpServers entry is not a configured server; sdk/.winter.json's is", async () => {
+  test("a settings.json mcpServers entry is not a configured server; sdk/.clover.json's is", async () => {
     const home = tmpHome();
     writeFileSync(join(home, "settings.json"), JSON.stringify({
       schemaVersion: 3, provider: { model: "codex-oauth/gpt-5.6-sol" },
       mcpServers: { stale: { type: "http", url: "https://stale.test/mcp" } },
     }));
     mkdirSync(join(home, "sdk"), { recursive: true });
-    writeFileSync(join(home, "sdk", ".winter.json"), JSON.stringify({ mcpServers: { fresh: { type: "http", url: "https://fresh.test/mcp" } } }));
+    writeFileSync(join(home, "sdk", ".clover.json"), JSON.stringify({ mcpServers: { fresh: { type: "http", url: "https://fresh.test/mcp" } } }));
     daemon = await startDaemon({ home, secrets: new FileSecretStore(join(home, "test-secrets")), agentProvider: null, loginShellPath: false });
     const sock = await Bun.connect({
       unix: daemon.socketPath,

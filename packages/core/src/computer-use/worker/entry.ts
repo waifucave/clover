@@ -1,4 +1,4 @@
-// ComputerV2 (2026-10-08) — `winter-core __automation-worker`: the per-session sandboxed process that runs the
+// ComputerV2 (2026-10-08) — `clover-core __automation-worker`: the per-session sandboxed process that runs the
 // model's scripts. Sandboxed EXACTLY like `__workflow-worker`: the daemon wraps it in the same seatbelt profile
 // (`workflows/sandbox.ts` — no writes, no network, exec of itself only, a short mach-lookup list) and it refuses
 // to run, exit 77 before reading a byte of input, outside a sandbox that denies it the Keychain

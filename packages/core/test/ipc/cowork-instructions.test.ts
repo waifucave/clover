@@ -2,7 +2,7 @@ import { afterEach, expect, test } from "bun:test";
 import { mkdtempSync, rmSync, readFileSync, mkdirSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { COWORK_RPC, COWORK_REMOTE_METHODS, ERR, ConnWriter, LineDecoder, PROTOCOL_VERSION, encodeLine, type WritableSocket } from "@yanlinglabs/winter-protocol";
+import { COWORK_RPC, COWORK_REMOTE_METHODS, ERR, ConnWriter, LineDecoder, PROTOCOL_VERSION, encodeLine, type WritableSocket } from "@waifucave/clover-protocol";
 import { CoworkRepository } from "../../src/cowork/repository";
 import { CoworkWorkspaceService, type CoworkHostPorts } from "../../src/cowork/service";
 import { openRuntimeStateDb } from "../../src/runtime-state/db";
@@ -24,7 +24,7 @@ class Client {
  request(method: string, params: unknown) { const id = this.next++; return new Promise<any>((resolve, reject) => { const timer = setTimeout(() => { this.pending.delete(id); reject(new Error("fixture RPC timeout")); }, 5000); this.pending.set(id, r => { clearTimeout(timer); resolve(r); }); this.writer.enqueue(encodeLine({ jsonrpc: "2.0", id, method, params })); }); }
 }
 async function fixture() {
- const home = mkdtempSync(join(tmpdir(), "winter-instruction-rpc-")); cleanup.push(() => rmSync(home, { recursive: true, force: true }));
+ const home = mkdtempSync(join(tmpdir(), "clover-instruction-rpc-")); cleanup.push(() => rmSync(home, { recursive: true, force: true }));
  const db = openRuntimeStateDb(home), records = new CoworkRepository(db), store = new SessionStore(home), hub = new SessionHub(store); cleanup.push(() => { store.close(); db.close(); });
  const workspaceId = records.create({ principalId: "local", requestId: "create" }, { ownership: "project", title: "Fixture", sources: [{ kind: "folder", label: "fixture", access: "read-write", detail: { grantRef: "grant", rootIdentity: "root" } }], ceiling: { toolClasses: ["read", "write"], hostServices: [], connectors: [], network: "none" } }).workspaceId;
  const host: CoworkHostPorts = { principal: connection => connection.role === "remote" ? { kind: "paired-user", id: "paired", workspaceIds: new Set([workspaceId]), repositoryAuthorities: new Set() } : { kind: "local-user", id: "local" }, grants: { folder: () => undefined, repository: () => undefined }, selection: () => undefined, creationCeiling: () => undefined, requireProvisioning: () => { throw new CoworkError("unsupported_topology"); } };
@@ -52,7 +52,7 @@ native("real Unix RPC reads/updates content and enforces size/revision/digest/re
 });
 
 test("real daemon boots with unsupported symlinked runtime DB topology and gates guidance RPC", async () => {
- const parent = mkdtempSync(join(tmpdir(), "winter-instruction-boot-")), home = join(parent, "home"), elsewhere = join(parent, "db-backing");
+ const parent = mkdtempSync(join(tmpdir(), "clover-instruction-boot-")), home = join(parent, "home"), elsewhere = join(parent, "db-backing");
  cleanup.push(() => rmSync(parent, { recursive: true, force: true })); mkdirSync(home, { mode: 0o700 }); mkdirSync(elsewhere, { mode: 0o700 }); symlinkSync(elsewhere, join(home, "runtimes"));
  const daemon = await startDaemon({ home, secrets: new FileSecretStore(join(parent, "fixture-secrets.json")), agentProvider: null });
  try { const client = await Client.open(daemon.socketPath, daemon.tokens.harness, "harness"); const reply = await client.request("workspace.instructions.get", { workspaceId: "workspace-valid" }); expect(reply.error.data.code).toBe("unsupported_topology"); expect("unavailable" in daemon.runtimeState).toBe(false); }

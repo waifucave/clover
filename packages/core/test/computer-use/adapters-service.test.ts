@@ -8,7 +8,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { NewSessionEvent, SessionEvent } from "@yanlinglabs/winter-protocol";
+import type { NewSessionEvent, SessionEvent } from "@waifucave/clover-protocol";
 import { ApprovalBroker } from "../../src/agent/approvals";
 import type { SessionApprovalPolicy } from "../../src/agent/gate";
 import { AppAdapters } from "../../src/computer-use/adapters";
@@ -61,7 +61,7 @@ const services: ComputerV2Service[] = [];
 afterEach(() => { for (const s of services.splice(0)) s.stop(); });
 
 function world(opts: WorldOpts = {}) {
-  const home = mkdtempSync(join(tmpdir(), "winter-cu-adapters-"));
+  const home = mkdtempSync(join(tmpdir(), "clover-cu-adapters-"));
   const fake = new FakeHelper();
   fake.helperVersion = opts.helperVersion ?? "1.8.0";
   fake.apps.push({ name: "Finder", bundleId: "com.apple.finder", pid: 600, running: true });
@@ -233,9 +233,9 @@ describe("adapters: help()", () => {
 });
 
 describe("adapters: extras and dictionary commands", () => {
-  macOnly("an extra runs Winter's own AppleScript through target.applescript; its result is data (the session is fenced from then on)", async () => {
+  macOnly("an extra runs Clover's own AppleScript through target.applescript; its result is data (the session is fenced from then on)", async () => {
     const w = world();
-    const dir = mkdtempSync(join(tmpdir(), "winter-cu-adapters-files-"));
+    const dir = mkdtempSync(join(tmpdir(), "clover-cu-adapters-files-"));
     const file = join(dir, "a.txt");
     writeFileSync(file, "x");
     await w.run("const f = await apps.open('Finder')");
@@ -327,7 +327,7 @@ describe("adapters: extras and dictionary commands", () => {
 describe("adapters: access classes through a script", () => {
   macOnly("a click-only Finder: reveal and selection run, trash and every dictionary command are NotAllowed naming them", async () => {
     const w = world({ apps: { "com.apple.finder": { access: "click" } } });
-    const dir = mkdtempSync(join(tmpdir(), "winter-cu-adapters-click-"));
+    const dir = mkdtempSync(join(tmpdir(), "clover-cu-adapters-click-"));
     const file = join(dir, "b.txt");
     writeFileSync(file, "x");
     const ok = await w.run(`const f = await apps.open('Finder')\nawait f.extras.reveal(${JSON.stringify(file)})\nawait f.extras.selection()`);
@@ -431,7 +431,7 @@ print(JSON.stringify(await sf.extras.openURL("https://example.com/x")))`);
     const w = safariWorld({ bindWindowId: null });
     const r = await w.run('const sf = await apps.open("Safari")\nawait sf.extras.currentURL()');
     expect(r.isError).toBe(true);
-    expect(text(r)).toMatch(/NoWindow( \(line \d+\))?: Winter doesn't know which Safari window is bound/);
+    expect(text(r)).toMatch(/NoWindow( \(line \d+\))?: Clover doesn't know which Safari window is bound/);
     expect(w.scripts).toEqual([]);
   }, 30_000);
 });
@@ -439,7 +439,7 @@ print(JSON.stringify(await sf.extras.openURL("https://example.com/x")))`);
 describe("adapters: openWith hands back the opener's window as an App", () => {
   macOnly("Finder's openWith binds the opener's window and returns it as a handle the script can use", async () => {
     const w = world();
-    const dir = mkdtempSync(join(tmpdir(), "winter-cu-adapters-open-"));
+    const dir = mkdtempSync(join(tmpdir(), "clover-cu-adapters-open-"));
     const file = join(dir, "note.txt");
     writeFileSync(file, "x");
     w.fake.handlers["apps.defaultOpener"] = () => ({ bundleId: "com.apple.TextEdit", name: "TextEdit", path: "/System/Applications/TextEdit.app" });

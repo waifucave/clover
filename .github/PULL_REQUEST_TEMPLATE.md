@@ -4,7 +4,7 @@
 
 ## Why
 
-<!-- The reasoning. Winter's code carries heavy "why" comments on purpose — a reviewer six months
+<!-- The reasoning. Clover's code carries heavy "why" comments on purpose — a reviewer six months
      from now needs to know what would break if this were undone. Same energy here. -->
 
 Closes #
@@ -28,7 +28,7 @@ Closes #
 - [ ] No secrets, tokens, or personal paths in the diff or fixtures
 - [ ] If I added a setting, it hot-reloads — no daemon restart required
 - [ ] If I added a `SessionEvent` variant or RPC method, I walked the full checklist in
-      [CONTRIBUTING.md](https://github.com/yanlingLabs/winter/blob/main/CONTRIBUTING.md#changing-the-protocol), including the Swift side
+      [CONTRIBUTING.md](https://github.com/waifucave/clover/blob/main/CONTRIBUTING.md#changing-the-protocol), including the Swift side
 
 ## Screenshots
 

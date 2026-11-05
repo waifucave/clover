@@ -9,7 +9,7 @@ import { afterEach, describe, expect, test, spyOn } from "bun:test";
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, type WritableSocket } from "@yanlinglabs/winter-protocol";
+import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, type WritableSocket } from "@waifucave/clover-protocol";
 import { startIpcServer, REMOTE_ALLOWED_METHODS } from "../../src/ipc/server";
 import { SessionStore } from "../../src/sessions/store";
 import { FileSecretStore } from "../../src/auth/secret-store";
@@ -63,16 +63,16 @@ describe("mcp.enable / mcp.disable / mcp.list settings overlay", () => {
   let stop: (() => void) | undefined;
   afterEach(() => { stop?.(); stop = undefined; });
 
-  // WS-21: the user-scope servers live in `sdk/.winter.json`; a fixture's `mcpServers` is written
+  // WS-21: the user-scope servers live in `sdk/.clover.json`; a fixture's `mcpServers` is written
   // there (and `mcp.disabled`, which stayed, into `settings.json`).
   function writeUserServers(home: string, servers: unknown): void {
     if (servers === undefined) return;
     mkdirSync(join(home, "sdk"), { recursive: true });
-    writeFileSync(join(home, "sdk", ".winter.json"), JSON.stringify({ mcpServers: servers }, null, 2));
+    writeFileSync(join(home, "sdk", ".clover.json"), JSON.stringify({ mcpServers: servers }, null, 2));
   }
 
   async function boot(settingsOverride?: Record<string, unknown>, mcpOverride?: McpManager) {
-    const home = mkdtempSync(join(tmpdir(), "winter-mcp-enable-"));
+    const home = mkdtempSync(join(tmpdir(), "clover-mcp-enable-"));
     const base = { schemaVersion: 3 as const, provider: { model: "codex-oauth/gpt-5.6-sol" } };
     const { mcpServers, ...rest } = settingsOverride ?? {};
     saveSettings(join(home, "settings.json"), Settings.parse({ ...base, ...rest }));
@@ -86,7 +86,7 @@ describe("mcp.enable / mcp.disable / mcp.list settings overlay", () => {
     const secrets = new FileSecretStore(join(home, "secrets"));
     const authority = new TokenAuthority(secrets);
     const tokens = await authority.ensureTokens();
-    const server = startIpcServer({ socketPath, serverVersion: "test", tokens: authority, store, winterHome: home, secrets, mcp });
+    const server = startIpcServer({ socketPath, serverVersion: "test", tokens: authority, store, cloverHome: home, secrets, mcp });
     stop = () => { server.stop(); store.close(); };
     return { home, socketPath, harnessToken: tokens.harness };
   }
@@ -95,7 +95,7 @@ describe("mcp.enable / mcp.disable / mcp.list settings overlay", () => {
   // which would itself refuse a credential-shaped header (the write door, unchanged) — is the only
   // way this shape reaches disk at all. Otherwise identical wiring to `boot()` above.
   async function bootRaw(rawSettings: Record<string, unknown>) {
-    const home = mkdtempSync(join(tmpdir(), "winter-mcp-header-strip-"));
+    const home = mkdtempSync(join(tmpdir(), "clover-mcp-header-strip-"));
     const { mcpServers, ...rest } = rawSettings;
     writeFileSync(join(home, "settings.json"), JSON.stringify(rest, null, 2));
     writeUserServers(home, mcpServers);
@@ -106,7 +106,7 @@ describe("mcp.enable / mcp.disable / mcp.list settings overlay", () => {
     const secrets = new FileSecretStore(join(home, "secrets"));
     const authority = new TokenAuthority(secrets);
     const tokens = await authority.ensureTokens();
-    const server = startIpcServer({ socketPath, serverVersion: "test", tokens: authority, store, winterHome: home, secrets, mcp });
+    const server = startIpcServer({ socketPath, serverVersion: "test", tokens: authority, store, cloverHome: home, secrets, mcp });
     stop = () => { server.stop(); store.close(); };
     return { home, socketPath, harnessToken: tokens.harness };
   }
@@ -182,7 +182,7 @@ describe("mcp.enable / mcp.disable / mcp.list settings overlay", () => {
   // `mcp.list` must report a stripped-header reason on the row, and the header VALUE must appear
   // nowhere: not in the row, not anywhere else in the serialized RPC result, not in any captured
   // stderr line.
-  test("mcp.list reports strippedHeaders for a server whose credential-shaped header the sdk/.winter.json read door dropped — the header VALUE leaks nowhere", async () => {
+  test("mcp.list reports strippedHeaders for a server whose credential-shaped header the sdk/.clover.json read door dropped — the header VALUE leaks nowhere", async () => {
     const SENTINEL = "Bearer sk-SENTINEL-mcp-list-leak-check";
     const { socketPath, harnessToken } = await bootRaw({
       schemaVersion: 3, provider: { model: "codex-oauth/gpt-5.6-sol" },

@@ -4,15 +4,15 @@ import { approvedProjectRulesDir } from "./paths";
 
 /**
  * WS-21 (spec §4.3): RETIRED AS A STORE — READ-ONLY NOW. A card's "in this project" answer is saved to
- * the trusted project's `.winter/settings.local.json` (`agent/saved-answers.ts`), where both runtimes
+ * the trusted project's `.clover/settings.local.json` (`agent/saved-answers.ts`), where both runtimes
  * read it natively; nothing writes `<home>/permissions/projects.json` any more. What an older build
  * recorded is still READ — by the saved-rules reader on a build whose router does not apply run homes,
- * by `winter doctor` (which reports leftover entries) and by `winter migrate-project` (which moves them
- * into the project's `.winter/settings.local.json`). Migration C archives the directory.
+ * by `clover doctor` (which reports leftover entries) and by `clover migrate-project` (which moves them
+ * into the project's `.clover/settings.local.json`). Migration C archives the directory.
  *
  * **The daemon's own record of the rules a user approved "in this project"** (review I2, 2026-09-23).
  *
- * The card's "Allow … in this project" option has always written `<projectRoot>/.winter/
+ * The card's "Allow … in this project" option has always written `<projectRoot>/.clover/
  * permissions.local.json` (`PermissionRules.append`, scope `"project"`). That file lives INSIDE the
  * repository, so a cloned repository can ship one (`git add -f`) — which is why the saved-rules
  * reader (`mode-options.ts`'s `persistedAllowRulesFor`) applies it only to a TRUSTED project. But the
@@ -42,11 +42,11 @@ export class ApprovedProjectRules {
   /** The refusal last logged — so a standing condition is ONE log line, not one per spawn. */
   private refusal: string | undefined;
 
-  constructor(private readonly deps: { winterHome: string; log?: (line: string) => void }) {}
+  constructor(private readonly deps: { cloverHome: string; log?: (line: string) => void }) {}
 
   /** The file, `<home>/permissions/projects.json`. */
   file(): string {
-    return join(approvedProjectRulesDir(this.deps.winterHome), "projects.json");
+    return join(approvedProjectRulesDir(this.deps.cloverHome), "projects.json");
   }
 
   /** Every rule recorded for `projectRoot` (canonicalised), in the order they were approved. */
@@ -60,8 +60,8 @@ export class ApprovedProjectRules {
    * anything else: a link, a non-directory, or a directory that resolves elsewhere.
    */
   private checkDir(): boolean {
-    const dir = approvedProjectRulesDir(this.deps.winterHome);
-    const expected = join(realpathSync(this.deps.winterHome), "permissions");
+    const dir = approvedProjectRulesDir(this.deps.cloverHome);
+    const expected = join(realpathSync(this.deps.cloverHome), "permissions");
     let st: ReturnType<typeof lstatSync>;
     try { st = lstatSync(dir); } catch (err) {
       if ((err as NodeJS.ErrnoException).code === "ENOENT") return false;
@@ -120,7 +120,7 @@ export class ApprovedProjectRules {
     const reason = err instanceof Error ? err.message : String(err);
     if (this.refusal === reason) return;
     this.refusal = reason;
-    (this.deps.log ?? console.error)(`approved-project-rules: not using ${approvedProjectRulesDir(this.deps.winterHome)} — ${reason}; the rules an older build recorded there are not applied until it is the daemon's own directory again`);
+    (this.deps.log ?? console.error)(`approved-project-rules: not using ${approvedProjectRulesDir(this.deps.cloverHome)} — ${reason}; the rules an older build recorded there are not applied until it is the daemon's own directory again`);
   }
 }
 

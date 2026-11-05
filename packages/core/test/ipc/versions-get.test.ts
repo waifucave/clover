@@ -1,19 +1,19 @@
 // Daemon settings surface (2026-09-17 plan, item 3): `versions.get` — compile-time pins vs what is
-// actually installed/staged, reusing `diagnoseRuntimes` (the SAME resolver `winter doctor` calls)
+// actually installed/staged, reusing `diagnoseRuntimes` (the SAME resolver `clover doctor` calls)
 // rather than a second probe. Bare IPC server harness, same shape `settings-set-advisor-model.test.ts`
 // already uses.
 import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, type WritableSocket } from "@yanlinglabs/winter-protocol";
+import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, type WritableSocket } from "@waifucave/clover-protocol";
 import { startIpcServer, REMOTE_ALLOWED_METHODS } from "../../src/ipc/server";
 import { SessionStore } from "../../src/sessions/store";
 import { FileSecretStore } from "../../src/auth/secret-store";
 import { TokenAuthority } from "../../src/auth/tokens";
 import { Settings, saveSettings } from "../../src/settings";
 import { REQUIRED_WINTER_AGENT_SDK, REQUIRED_WINTER_RUNTIME_SDK } from "../../src/runtime-sdk/versions";
-import { VersionsGetResult } from "@yanlinglabs/winter-protocol";
+import { VersionsGetResult } from "@waifucave/clover-protocol";
 
 class TestClient {
   private decoder = new LineDecoder();
@@ -61,7 +61,7 @@ describe("versions.get", () => {
   afterEach(() => { stop?.(); stop = undefined; });
 
   async function boot() {
-    const home = mkdtempSync(join(tmpdir(), "winter-versions-get-"));
+    const home = mkdtempSync(join(tmpdir(), "clover-versions-get-"));
     const settingsPath = join(home, "settings.json");
     saveSettings(settingsPath, Settings.parse({ schemaVersion: 3, provider: { model: "codex-oauth/gpt-5.6-sol" } }));
     const store = new SessionStore(home);
@@ -69,7 +69,7 @@ describe("versions.get", () => {
     const secrets = new FileSecretStore(join(home, "secrets"));
     const authority = new TokenAuthority(secrets);
     const tokens = await authority.ensureTokens();
-    const server = startIpcServer({ socketPath, serverVersion: "test-core-version", tokens: authority, store, winterHome: home, secrets });
+    const server = startIpcServer({ socketPath, serverVersion: "test-core-version", tokens: authority, store, cloverHome: home, secrets });
     stop = () => { server.stop(); store.close(); };
     return { home, socketPath, harnessToken: tokens.harness };
   }
@@ -83,7 +83,7 @@ describe("versions.get", () => {
     const r = result.result;
     expect(r.ok).toBe(true);
     expect(r.core).toBe("test-core-version");
-    // WS-23: the Winter pins only — the retired official leg's `claudeAgentSdk` pin is gone.
+    // WS-23: the Clover pins only — the retired official leg's `claudeAgentSdk` pin is gone.
     expect(r.pins).toEqual({
       winterAgentSdk: REQUIRED_WINTER_AGENT_SDK,
       winterRuntimeSdk: REQUIRED_WINTER_RUNTIME_SDK,
@@ -119,8 +119,8 @@ describe("versions.get", () => {
     c.close();
   });
 
-  test("no winterHome configured still answers (home falls back, never throws)", async () => {
-    const home = mkdtempSync(join(tmpdir(), "winter-versions-get-nohome-"));
+  test("no cloverHome configured still answers (home falls back, never throws)", async () => {
+    const home = mkdtempSync(join(tmpdir(), "clover-versions-get-nohome-"));
     const store = new SessionStore(home);
     const socketPath = join(home, "core.sock");
     const secrets = new FileSecretStore(join(home, "secrets"));

@@ -118,11 +118,11 @@ func runProbeSelfTest() -> Int32 {
     check(Luma.stats(jpeg: Data()) == nil, "empty bytes give no stats")
 
     // --- the wire --------------------------------------------------------------------------------------------
-    let hello = parsed(String(decoding: ProbeProtocol.hello(home: "/Users/x/.winter-dev"), as: UTF8.self))
+    let hello = parsed(String(decoding: ProbeProtocol.hello(home: "/Users/x/.clover-dev"), as: UTF8.self))
     check(ProbeProtocol.hello(home: "/h").last == 0x0A, "requests end in a newline")
     check(hello?["method"] as? String == "hello" && hello?["id"] as? Int == 1, "hello is request 1")
     let helloParams = hello?["params"] as? [String: Any]
-    check(helloParams?["client"] as? String == "app" && helloParams?["protocol"] as? Int == 1 && helloParams?["home"] as? String == "/Users/x/.winter-dev", "hello params")
+    check(helloParams?["client"] as? String == "app" && helloParams?["protocol"] as? Int == 1 && helloParams?["home"] as? String == "/Users/x/.clover-dev", "hello params")
     let subscribe = parsed(String(decoding: ProbeProtocol.subscribe(session: "s_9", maxFps: 5, maxWidth: 320), as: UTF8.self))
     let subscribeParams = subscribe?["params"] as? [String: Any]
     check(subscribe?["method"] as? String == "view.subscribe", "subscribe method")
@@ -146,10 +146,10 @@ func runProbeSelfTest() -> Int32 {
 
     // --- output lines ----------------------------------------------------------------------------------------
     let bound = parsed(ProbeProtocol.eventLine(method: "view.bound", params: ["sessionId": "s", "targetId": "t1", "pid": 321, "windowId": 77,
-                                                                               "appName": "Winter CU Fixture", "bundleId": "dev.cu-live.fixture",
+                                                                               "appName": "Clover CU Fixture", "bundleId": "dev.cu-live.fixture",
                                                                                "windowSize": [640, 390]], t: 1000))
     check(bound?["ev"] as? String == "bound" && bound?["targetId"] as? String == "t1" && bound?["pid"] as? Int == 321
-          && bound?["windowId"] as? Int == 77 && bound?["appName"] as? String == "Winter CU Fixture" && bound?["t"] as? Int == 1000, "bound line")
+          && bound?["windowId"] as? Int == 77 && bound?["appName"] as? String == "Clover CU Fixture" && bound?["t"] as? Int == 1000, "bound line")
     let released = parsed(ProbeProtocol.eventLine(method: "view.released", params: ["targetId": "t1"], t: 1))
     check(released?["ev"] as? String == "released" && released?["targetId"] as? String == "t1", "released line")
     let cursor = parsed(ProbeProtocol.eventLine(method: "view.cursor", params: ["targetId": "t1", "kind": "click", "point": [1, 2]], t: 1))

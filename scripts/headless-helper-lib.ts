@@ -4,11 +4,11 @@
 //
 // Winter Headless is a background-only app the daemon SPAWNS (never through LaunchServices) and checks against its
 // stated requirement before sending it anything (`processSatisfiesRequirement`). It holds no grants and needs no
-// entitlements: hardened runtime, no entitlements at all. It carries Winter's ONE Chromium (the user's ruling): the CEF
+// entitlements: hardened runtime, no entitlements at all. It carries Clover's ONE Chromium (the user's ruling): the CEF
 // framework and the five "Winter Helper" bundles in its own Contents/Frameworks, signed inside-out by its build. Two
 // places it lives:
-//   - dist (Release): nested at Winter.app/Contents/Helpers/Winter Headless.app, where Winter.app's own CEF runs from
-//     its Chromium too — Winter.app's own Contents/Frameworks holds no second copy;
+//   - dist (Release): nested at Winter.app/Contents/Helpers/Winter Headless.app, where Clover.app's own CEF runs from
+//     its Chromium too — Clover.app's own Contents/Frameworks holds no second copy;
 //   - dev (`bun run dev:headless`): standing alone in dist/dev/.
 import { join } from "node:path";
 
@@ -18,10 +18,10 @@ export const HEADLESS = {
 } as const;
 export type HeadlessFlavor = keyof typeof HEADLESS;
 
-/** Where a Release Winter.app carries it. */
+/** Where a Release Clover.app carries it. */
 export const HEADLESS_EMBED_RELATIVE = join("Contents", "Helpers", `${HEADLESS.dist.name}.app`);
 
-/** identifier + Winter's team under Apple's anchor — the requirement the daemon checks the spawned process against. */
+/** identifier + Clover's team under Apple's anchor — the requirement the daemon checks the spawned process against. */
 export function headlessRequirement(identifier: string, teamId: string): string {
   return `identifier "${identifier}" and anchor apple generic and certificate leaf[subject.OU] = "${teamId}"`;
 }
@@ -106,7 +106,7 @@ export function checkSignedHeadless(flavor: HeadlessFlavor, teamId: string, vers
   if (plist.CFBundleName !== want.name) failures.push(`Info.plist CFBundleName is ${String(plist.CFBundleName)}, expected ${want.name}`);
   if (plist.LSBackgroundOnly !== true) failures.push("Info.plist LSBackgroundOnly is not true (it must have no Dock tile and no menu bar)");
   if (plist.CFBundleShortVersionString !== version) failures.push(`Info.plist CFBundleShortVersionString is ${String(plist.CFBundleShortVersionString)}, expected ${version}`);
-  if (!facts.hasFrameworks) failures.push("it has no Contents/Frameworks — Winter's one Chromium (the CEF framework and the five Winter Helper bundles) lives there");
+  if (!facts.hasFrameworks) failures.push("it has no Contents/Frameworks — Clover's one Chromium (the CEF framework and the five Winter Helper bundles) lives there");
   if (facts.nestedIdentifiers !== undefined) {
     for (const name of HEADLESS_NESTED_HELPERS) {
       const id = facts.nestedIdentifiers[name];

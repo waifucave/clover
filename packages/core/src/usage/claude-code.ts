@@ -14,8 +14,8 @@ import { probeEnv, runLines } from "./spawn-lines";
 //    never the cwd, never the project directory's name (the read state is keyed by a hash of the path).
 //  - PLAN: Claude Code's own `/usage` report (`claude -p "/usage" …`, which asks with Claude Code's own login), else
 //    the `cachedUsageUtilization` key of `~/.claude.json` (parsed in memory; nothing else of that file is kept).
-//  - NEVER Claude Code's Keychain item or token: Winter does not read, copy or use Claude Code's credentials
-//    (https://code.claude.com/docs/en/legal-and-compliance) — the CLI makes its own call, Winter reads its output.
+//  - NEVER Claude Code's Keychain item or token: Clover does not read, copy or use Claude Code's credentials
+//    (https://code.claude.com/docs/en/legal-and-compliance) — the CLI makes its own call, Clover reads its output.
 
 /** One transcript line → at most one record (PURE). Streamed messages repeat across lines: `dedupe` is the message id
  *  plus the request id, so the first copy wins. */

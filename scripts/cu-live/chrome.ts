@@ -22,7 +22,7 @@ import { PRELUDE, SENTINEL_MIN_PIXELS } from "./scenarios";
 export const CFT_BUNDLE = "com.google.chrome.for.testing";
 /** Its process (and window-owner) name. */
 export const CFT_PROCESS = "Google Chrome for Testing";
-/** Playwright's build of it (`$WINTER_TEST_CHROME_APP` overrides). */
+/** Playwright's build of it (`$CLOVER_TEST_CHROME_APP` overrides). */
 export const CFT_DEFAULT_APP = "Library/Caches/ms-playwright/chromium-1248/chrome-mac-arm64/Google Chrome for Testing.app";
 /** The page every material probe works in, and its title (the browser window's). */
 export const MATERIAL_PAGE = "material.html";
@@ -47,7 +47,7 @@ export interface ChromeNeed {
   /** Bring it to the front ONCE after launch, as the user would have (then their app is put back): a browser the user
    *  has used, against one launched in the background and never shown in front. */
   shownOnce?: boolean;
-  /** Bind it first (Winter switches the browser's accessibility on), THEN bring it to the front once as the user and
+  /** Bind it first (Clover switches the browser's accessibility on), THEN bring it to the front once as the user and
    *  put their app back: the second live run (2026-10-13) found the page's controls absent from the tree of a browser
    *  that never came to the front after the switch, and present in one that did (the full-screen row). */
   bindThenShow?: boolean;
@@ -542,8 +542,8 @@ step("end");`,
 
 /** The open panel (2026-10-14): the file a native Open panel is driven to, written by the runner in the run's temp dir;
  *  its path replaces this token in the rows' code. */
-export const PANEL_FILE_TOKEN = "__WINTER_PANEL_FILE__";
-export const PANEL_FILE_NAME = "winter-panel-probe.txt";
+export const PANEL_FILE_TOKEN = "__CLOVER_PANEL_FILE__";
+export const PANEL_FILE_NAME = "clover-panel-probe.txt";
 export function withPanelFile(code: string, path: string): string { return code.split(PANEL_FILE_TOKEN).join(path); }
 
 /** What both open-panel rows share: the panel opened from the page's "Select file", its file list, and the end (Return,

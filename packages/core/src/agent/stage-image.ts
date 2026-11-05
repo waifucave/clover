@@ -8,7 +8,7 @@
 //
 // That directory is HOSTILE. It is a sandbox writable root, so the session's agent can create
 // anything inside it (an `images` symlink pointing anywhere), and the sandboxed shell can also write
-// direct children of the per-user temp dir — so it can REPLACE `winter-session-<sid>` itself with a
+// direct children of the per-user temp dir — so it can REPLACE `clover-session-<sid>` itself with a
 // symlink, at any moment. The daemon is unsandboxed, so:
 //   - the session directory's own name is NEVER resolved: the root is `realpath(<its parent>)` joined
 //     with its basename, and every later step goes through that name, so a swap of the directory
@@ -28,7 +28,7 @@ import {
   IMAGE_DATA_INVALID, IMAGE_FILE_EXTENSIONS, IMAGE_FILE_MAX_BYTES, IMAGE_FILE_TOO_LARGE_MESSAGE, IMAGE_FILE_UNREADABLE, IMAGE_REFERENCE_INVALID, IMAGE_STAGE_FAILED, USER_MESSAGE_IMAGES_MAX, USER_MESSAGE_IMAGES_MAX_MESSAGE, type UserMessageImageRef, IMAGE_TOO_LARGE, IMAGE_TOO_LARGE_MESSAGE, IMAGE_TYPE_MISMATCH, IMAGE_TYPE_UNSUPPORTED,
   STAGE_IMAGE_B64_MAX_LENGTH, STAGE_IMAGE_MAX_BYTES, type STAGE_IMAGE_MEDIA_TYPES,
   FILE_REFERENCE_INVALID, FILE_UNREADABLE, USER_MESSAGE_FILES_MAX, USER_MESSAGE_FILES_MAX_MESSAGE, type UserMessageFileRef, type SessionEvent,
-} from "@yanlinglabs/winter-protocol";
+} from "@waifucave/clover-protocol";
 import { sandboxConfigFor } from "../runtime-sdk/mode-options";
 import { protectedReadDenial } from "../runtime-sdk/protected-paths";
 import { fileTokenNumbers, imageTokenNumbers } from "../sessions/model-text";
@@ -172,7 +172,7 @@ export function validateStagedImage(mediaType: StageImageMediaType, dataBase64: 
   return { bytes, ext: EXTENSION[sniffed] };
 }
 
-/** The session directory as the daemon names it: the parent (the OS or `$WINTER_TMPDIR` temp dir) is
+/** The session directory as the daemon names it: the parent (the OS or `$CLOVER_TMPDIR` temp dir) is
  *  resolved; the session directory's own name never is — see the module header. */
 function sessionRootOf(sessionDir: string): string {
   try { return join(realpathSync(dirname(sessionDir)), basename(sessionDir)); } catch {
@@ -254,7 +254,7 @@ const FD_CALLS: PruneFdCalls = { openDirAt, unlinkAt, closeFd };
  * NEVER throws (a stage is never refused over its cleanup) and never logs a path.
  *
  * The folder is HOSTILE (the module header): the daemon is unsandboxed and the session's agent can swap
- * `winter-session-<sid>` or `images/` for a symlink at any moment, which would aim a path `unlink` at a same-named file
+ * `clover-session-<sid>` or `images/` for a symlink at any moment, which would aim a path `unlink` at a same-named file
  * anywhere the user can write. So nothing is deleted by PATH: both folders are opened first as descriptors
  * (`openDirAt`, O_DIRECTORY|O_NOFOLLOW — the root from its already-resolved parent, `images` relative to the root),
  * `fstat`ed, and every delete is `unlinkAt(<images fd>, name)` — a swap after the open moves nothing it does. The
@@ -330,7 +330,7 @@ export function pruneStagedImages(
 /**
  * Stage one image for `sessionId` and return its realpath. Every input check runs first
  * (`validateStagedImage`); then the file is created safely (see the module header). The folder is
- * `sessionTmpDirPath(sessionId)` — `$WINTER_TMPDIR` or the OS temp dir, exactly `sessionTmpDir`'s.
+ * `sessionTmpDirPath(sessionId)` — `$CLOVER_TMPDIR` or the OS temp dir, exactly `sessionTmpDir`'s.
  * With `keep` (Dispatch only), the session's stale staged copies are let go of first (`pruneStagedImages`, which
  * never removes the highest-numbered one); the new file's number is taken before that, so numbers keep climbing and a
  * pruned name is never handed out again.
@@ -398,10 +398,10 @@ export function stageSessionImage(
 
 /** What `validateImageRefs` needs to know beyond the session. */
 export interface ImageRefContext {
-  /** The daemon's `<WINTER_HOME>`, which locates the paths the runtime's Read tool is itself denied
+  /** The daemon's `<CLOVER_HOME>`, which locates the paths the runtime's Read tool is itself denied
    *  (`readDeniedByRuntime`). Absent (a server built without one — most tests): that rule cannot be
    *  applied and is skipped. */
-  winterHome?: string | undefined;
+  cloverHome?: string | undefined;
 }
 
 /** `home` and, when it differs, its realpath — the spellings a path under it can arrive in. */
@@ -414,9 +414,9 @@ function homeSpellings(home: string): string[] {
 /**
  * Whether the runtime's own Read tool refuses `path` — the read-DENY set, reused from where it is defined
  * rather than listed again: the Bash sandbox's literal `denyRead` (`sandboxConfigFor`: `<home>/run`,
- * `<home>/runtimes`, `sdk/.winter.json`) and the path-fence hook's read row (`protectedReadDenial`: a run
- * folder's or a `claude-resume-*` staging root's generated `.winter.json` / `.claude.json` /
- * `.credentials.json` and their `backups/**`, and `sdk/.winter.json` again). Nothing else under the home is
+ * `<home>/runtimes`, `sdk/.clover.json`) and the path-fence hook's read row (`protectedReadDenial`: a run
+ * folder's or a `claude-resume-*` staging root's generated `.clover.json` / `.claude.json` /
+ * `.credentials.json` and their `backups/**`, and `sdk/.clover.json` again). Nothing else under the home is
  * refused: `<home>/outputs/<session>/…`, the agent's own outbox, is an ordinary place to drag an image from.
  * Compared case-folded, like the hook, and for every spelling of the home.
  */
@@ -462,7 +462,7 @@ function checkOriginalImage(ref: UserMessageImageRef, home: string | undefined):
   const unreadable = (): never => {
     throw new StageImageRefusal(
       IMAGE_FILE_UNREADABLE,
-      `[Image #${ref.n}] could not be read — it may have moved, or macOS may be keeping its folder from Winter (System Settings ▸ Privacy & Security ▸ Files & Folders)`,
+      `[Image #${ref.n}] could not be read — it may have moved, or macOS may be keeping its folder from Clover (System Settings ▸ Privacy & Security ▸ Files & Folders)`,
       false, ref.n,
     );
   };
@@ -477,7 +477,7 @@ function checkOriginalImage(ref: UserMessageImageRef, home: string | undefined):
       false, ref.n,
     );
   }
-  const denied = "is one of Winter's own run, runtime or configuration files, which sessions cannot read";
+  const denied = "is one of Clover's own run, runtime or configuration files, which sessions cannot read";
   if (home !== undefined && readDeniedByRuntime(spelled, home)) invalid(denied);
   let real: string;
   try { real = realpathSync(ref.path); } catch { return unreadable(); }
@@ -541,7 +541,7 @@ export function validateImageRefs(
   let stagedDirsChecked = false;
   for (const ref of images) {
     const staged = stagedDir !== undefined && dirname(ref.path) === stagedDir && NAME_RE.test(basename(ref.path));
-    if (!staged) { checkOriginalImage(ref, ctx.winterHome === "" ? undefined : ctx.winterHome); continue; }
+    if (!staged) { checkOriginalImage(ref, ctx.cloverHome === "" ? undefined : ctx.cloverHome); continue; }
     const notStaged = `[Image #${ref.n}] is not an image staged for this session`;
     if (!stagedDirsChecked) {
       try {
@@ -582,7 +582,7 @@ export function validateFileRefs(
   ctx: ImageRefContext = {},
 ): UserMessageFileRef[] | undefined {
   if (files === undefined || files.length === 0) return undefined;
-  const home = ctx.winterHome === "" ? undefined : ctx.winterHome;
+  const home = ctx.cloverHome === "" ? undefined : ctx.cloverHome;
   const refuse = (why: string, n?: number): never => { throw new StageImageRefusal(FILE_REFERENCE_INVALID, why, false, n); };
   if (files.length > USER_MESSAGE_FILES_MAX) refuse(USER_MESSAGE_FILES_MAX_MESSAGE);
   const inText = new Set(fileTokenNumbers(text));
@@ -592,7 +592,7 @@ export function validateFileRefs(
     seen.add(ref.n);
     if (!inText.has(ref.n)) refuse(`[File #${ref.n}] does not appear in the message`, ref.n);
   }
-  const denied = "is one of Winter's own run, runtime or configuration files, which sessions cannot read";
+  const denied = "is one of Clover's own run, runtime or configuration files, which sessions cannot read";
   for (const ref of files) {
     const invalid = (why: string): never => refuse(`[File #${ref.n}] ${why}`, ref.n);
     if (!isAbsolute(ref.path)) invalid("is not an absolute path");
@@ -604,7 +604,7 @@ export function validateFileRefs(
     try { real = realpathSync(ref.path); } catch {
       throw new StageImageRefusal(
         FILE_UNREADABLE,
-        `[File #${ref.n}] could not be found — it may have moved, or macOS may be keeping its folder from Winter (System Settings ▸ Privacy & Security ▸ Files & Folders)`,
+        `[File #${ref.n}] could not be found — it may have moved, or macOS may be keeping its folder from Clover (System Settings ▸ Privacy & Security ▸ Files & Folders)`,
         false, ref.n,
       );
     }

@@ -17,7 +17,7 @@ export class QuestionBroker {
     });
   }
 
-  /** Is this question still waiting for an answer? (The Winter island lists only what is.) */
+  /** Is this question still waiting for an answer? (The Clover island lists only what is.) */
   isPending(sessionId: string, callId: string): boolean {
     return this.pending.has(this.key(sessionId, callId));
   }

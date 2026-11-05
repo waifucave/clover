@@ -79,10 +79,10 @@ const MIGRATIONS: ReadonlyArray<{
   } },
   // Schema v2 (P8b-29): the memory-key manifest becomes PER ENTRY.
   //
-  // WHY THE SHAPE HAD TO CHANGE. `<home>/projects/<key>/` is not Winter's alone — it is also where
-  // the Winter SDK writes transcripts, and for the common "session opened at the repo root" case the
+  // WHY THE SHAPE HAD TO CHANGE. `<home>/projects/<key>/` is not Clover's alone — it is also where
+  // the Clover SDK writes transcripts, and for the common "session opened at the repo root" case the
   // transcript key and the compatibility memory key are the SAME string. So the destination of a
-  // §17 phase 5 relocation routinely EXISTS already on any home that has run a Winter session, and a
+  // §17 phase 5 relocation routinely EXISTS already on any home that has run a Clover session, and a
   // whole-directory rename could only refuse there — permanently, and for every other project in
   // that home along with it. Moving entry by entry into an existing directory is what makes the two
   // layouts share one key; a row per entry is what lets rollback put back exactly the entries THIS
@@ -111,7 +111,7 @@ const MIGRATIONS: ReadonlyArray<{
   //
   // `rekeyMemoryProjectKey(from, to)` re-keys every record sitting at `from` — the right answer when
   // the only producer is the backfill (which always files today's key), and the wrong one the moment
-  // something files a record AT the compatibility key, which is exactly what a Winter session does.
+  // something files a record AT the compatibility key, which is exactly what a Clover session does.
   // A half-moved project would then drag those records to the old key, and a rollback would file
   // them there permanently. So the migration records WHOSE records it derived each pair from, and
   // re-keys those ids and no others. Empty (`[]`) for a row carried up from v1/v2, which is what the
@@ -140,7 +140,7 @@ const MIGRATIONS: ReadonlyArray<{
             SELECT old_key, entry, new_key, status, planned_at, moved_at, record_ids FROM memory_key_manifest_v3`);
     db.run(`DROP TABLE memory_key_manifest_v3`);
   } },
-  // Schema v5 (Winter Phase 8c, P8c-6): a record whose Winter transcript was IMPORTED from an
+  // Schema v5 (Winter Phase 8c, P8c-6): a record whose Clover transcript was IMPORTED from an
   // engine-era log (`session.send`'s import door, `runtime-sdk/import-legacy.ts`) is marked so a
   // later reader (a doctor report, a "why did this session's history start mid-conversation"
   // question) can tell "converted" from "always native". Nullable and additive — every existing row
@@ -204,7 +204,7 @@ const MIGRATIONS: ReadonlyArray<{
   //     (`rebuildsParentTable`) and refuses to commit if `foreign_key_check` got worse.
   //  2. `run_root_quarantine`: the roots boot recovery quarantined (the router preserved a copy under
   //     `<home>/cache/quarantine/`). A listed root is kept on disk, never reconciled or swept again, and
-  //     reported by `winter doctor` — a quarantined root re-reconciled every boot would be copied again
+  //     reported by `clover doctor` — a quarantined root re-reconciled every boot would be copied again
   //     every boot.
   //
   // Idempotent under the rewound-`user_version` fixture shape v5's comment describes: a table whose
@@ -323,7 +323,7 @@ export function downgradeCoworkRuntimeStateToV7(home: string): { from: 8 | 9 | 1
 
 /**
  * Review I3 (controller ruling): step a v7 store back to v6 so an OLDER build (0.116.0 refuses a v7 store
- * as `newer-schema` and runs with its runtime spine offline) can open it — what `winter migrate --sdk-home
+ * as `newer-schema` and runs with its runtime spine offline) can open it — what `clover migrate --sdk-home
  * --rollback` runs before a downgrade. The inverse of migration v7, the same way: `run-folder` roots
  * cleared (the older CHECK has no such kind), `runtime_sessions` rebuilt under the v6 CHECK by SQLite's
  * 12-step procedure (keys off OUTSIDE the transaction, `foreign_key_check` no worse), the quarantine
@@ -432,7 +432,7 @@ export function openRuntimeStateDb(home: string, opts: { readonly?: boolean; cre
   //
   // BUT AN OLDER *SCHEMA* VERSION IS NOT THAT, and conflating the two was a real defect the moment
   // this constant moved off 1 (re-review NEW-1). Every 8a-era home is a HEALTHY v1 store until a
-  // newer daemon opens it read-write; refusing it here made `winter doctor` — run, typically, before
+  // newer daemon opens it read-write; refusing it here made `clover doctor` — run, typically, before
   // that first boot — call a healthy store corrupt and recommend restoring a backup that would
   // itself be v1, which is advice that loops. The floor is therefore "has this schema at all",
   // not "has the current version of it"; `schemaVersion()` reports the truth and the one reader

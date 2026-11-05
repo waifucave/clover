@@ -1,15 +1,15 @@
 #!/usr/bin/env bun
 // ComputerV2 Phase 2 — the browser engine END TO END against a real headless Chromium (opt-in):
 //
-//   WINTER_BROWSER_E2E=1 bun run e2e:browser
+//   CLOVER_BROWSER_E2E=1 bun run e2e:browser
 //
 // A test-only `PipeTransport` (`--remote-debugging-pipe`, enforcing the CDP allowlist and the world rules) stands in for
-// Winter.app's link; the REAL engine, page runtime, registry and diff bases drive it against the fixture pages served on
-// two local origins (so the payment iframe is an out-of-process iframe). The browser is `$WINTER_TEST_CHROME`, or a
+// Clover.app's link; the REAL engine, page runtime, registry and diff bases drive it against the fixture pages served on
+// two local origins (so the payment iframe is an out-of-process iframe). The browser is `$CLOVER_TEST_CHROME`, or a
 // Chrome for Testing build already on this Mac (Playwright's cache) — nothing is installed, the profile is a fresh temp
 // directory, `--use-mock-keychain` keeps it off the login Keychain, and nothing is downloaded.
 //
-//   WINTER_BROWSER_E2E=1 WINTER_HEADLESS_APP=<Winter Headless Dev.app> bun run e2e:browser -- --headless [--no-verify]
+//   CLOVER_BROWSER_E2E=1 CLOVER_HEADLESS_APP=<Winter Headless Dev.app> bun run e2e:browser -- --headless [--no-verify]
 //
 // Phase 4: the same suite through the PRODUCTION headless pool on Winter Headless (`bun run dev:headless` builds one):
 // every tab is `{ browser: "headless" }`, the pool spawns the helper over its pipes and checks it against its stated
@@ -38,8 +38,8 @@ import { wakeWatcher } from "../../packages/core/src/computer-use/browser/page-r
 import type { WakeArmed, WakeBackendEvent, WakeCondition } from "../../packages/core/src/computer-use/wakes/types";
 import { PipeTransport } from "./pipe-transport";
 
-if (process.env.WINTER_BROWSER_E2E !== "1") {
-  console.log("e2e:browser is opt-in: run with WINTER_BROWSER_E2E=1 (it launches a headless Chromium on a temp profile)");
+if (process.env.CLOVER_BROWSER_E2E !== "1") {
+  console.log("e2e:browser is opt-in: run with CLOVER_BROWSER_E2E=1 (it launches a headless Chromium on a temp profile)");
   process.exit(0);
 }
 if (process.argv.includes("--extension")) {
@@ -53,9 +53,9 @@ if (process.argv.includes("--extension")) {
   process.exit(await child.exited);
 }
 
-/** `$WINTER_TEST_CHROME`, else the newest Chrome for Testing in Playwright's cache. */
+/** `$CLOVER_TEST_CHROME`, else the newest Chrome for Testing in Playwright's cache. */
 function findChrome(): string | undefined {
-  const env = process.env.WINTER_TEST_CHROME;
+  const env = process.env.CLOVER_TEST_CHROME;
   if (env !== undefined && env.length > 0) return env;
   const cache = join(homedir(), "Library", "Caches", "ms-playwright");
   if (!existsSync(cache)) return undefined;
@@ -71,9 +71,9 @@ function findChrome(): string | undefined {
 
 /** `--headless`: the suite on Winter Headless through the production pool (no Chrome at all). */
 const HEADLESS = process.argv.includes("--headless");
-const headlessApp = process.env.WINTER_HEADLESS_APP;
+const headlessApp = process.env.CLOVER_HEADLESS_APP;
 if (HEADLESS && (headlessApp === undefined || !existsSync(headlessApp))) {
-  console.error("e2e:browser --headless: set WINTER_HEADLESS_APP to a built Winter Headless (bun run dev:headless → dist/dev/Winter Headless Dev.app)");
+  console.error("e2e:browser --headless: set CLOVER_HEADLESS_APP to a built Winter Headless (bun run dev:headless → dist/dev/Winter Headless Dev.app)");
   process.exit(1);
 }
 /** What every default `browsers.open` adds: the headless browser, in that mode. */
@@ -83,7 +83,7 @@ const DEFAULT_BROWSER: Record<string, unknown> = HEADLESS ? { browser: "headless
 const VIEW = HEADLESS ? { width: 1280, height: 800 } : { width: 1200, height: 800 };
 const chrome = HEADLESS ? "" : findChrome();
 if (chrome === undefined) {
-  console.error("no Chromium to drive: set WINTER_TEST_CHROME to a Chrome for Testing binary");
+  console.error("no Chromium to drive: set CLOVER_TEST_CHROME to a Chrome for Testing binary");
   process.exit(1);
 }
 
@@ -123,8 +123,8 @@ let listedDomains: string[] = [];
 const registry = new BrowserBackendRegistry();
 const transport = new PipeTransport("winter", "winter");
 const userBrowser = new PipeTransport("chrome", "chrome");
-const browserDownloads = mkdtempSync(join(tmpdir(), "winter-browser-e2e-downloads-"));
-const headlessHome = mkdtempSync(join(tmpdir(), "winter-browser-e2e-headless-"));
+const browserDownloads = mkdtempSync(join(tmpdir(), "clover-browser-e2e-downloads-"));
+const headlessHome = mkdtempSync(join(tmpdir(), "clover-browser-e2e-headless-"));
 const headlessPool = HEADLESS ? new HeadlessPool({
   home: headlessHome,
   enabled: () => true,
@@ -155,29 +155,29 @@ if (headlessPool !== undefined) {
 if (headlessPool !== undefined) {
   registry.register(headlessPool, { family: "headless", name: HEADLESS_NAME, instanceKey: "headless" });
 } else {
-  // WebMCP (Phase 4): Winter's own browsers always run with it on; here both test browsers do.
+  // WebMCP (Phase 4): Clover's own browsers always run with it on; here both test browsers do.
   await transport.launch(chrome, ["--enable-features=WebMCP"]);
-  // The built-in browser's stand-in can hold a tab watch-only (Winter.app's link feature `watchOnly`).
+  // The built-in browser's stand-in can hold a tab watch-only (Clover.app's link feature `watchOnly`).
   transport.watchOnlyHolds = true;
   registry.register(transport, { family: "winter", name: "Chromium (test)", instanceKey: "winter" });
   // Phase 3: a second Chromium playing a USER's browser (Winter for Chrome's backend: Fetch interception for downloads).
-  // A download Winter does not catch lands in a temp folder, never the user's Downloads folder.
+  // A download Clover does not catch lands in a temp folder, never the user's Downloads folder.
   userBrowser.features = new Set(["cdp3"]);
   await userBrowser.launch(chrome, ["--enable-features=WebMCP"]);
   await userBrowser.setDownloadDir(browserDownloads);
   registry.register(userBrowser, { family: "chrome", name: "Chrome for Testing", bundleId: "com.google.chrome.for.testing", instanceKey: "chrome-e2e" });
 }
-const cwd = mkdtempSync(join(tmpdir(), "winter-browser-e2e-cwd-"));
-const sessionTmp = join(mkdtempSync(join(tmpdir(), "winter-browser-e2e-tmp-")), "winter-session-e2e");
+const cwd = mkdtempSync(join(tmpdir(), "clover-browser-e2e-cwd-"));
+const sessionTmp = join(mkdtempSync(join(tmpdir(), "clover-browser-e2e-tmp-")), "clover-session-e2e");
 writeFileSync(join(cwd, "receipt.txt"), "a receipt");
 let tabSeq = 0;
 const engine = new BrowserEngine({
   registry,
-  mintWinterTab: () => `tab${++tabSeq}`,
-  winterTabs: () => ({ tabs: [] }),
+  mintCloverTab: () => `tab${++tabSeq}`,
+  cloverTabs: () => ({ tabs: [] }),
   sessionInfo: () => ({ cwd, title: "e2e" }),
   site: { dangerousDomainsAdded: () => listedDomains, savedAllowRules: () => [] },
-  home: mkdtempSync(join(tmpdir(), "winter-browser-e2e-home-")),
+  home: mkdtempSync(join(tmpdir(), "clover-browser-e2e-home-")),
   uploadRoots: () => ({ denyRead: [] }),
   downloadRoots: () => ({ tmpDir: sessionTmp, denyWrite: [], denyRead: [] }),
   ...(headlessPool === undefined ? {} : {
@@ -244,7 +244,7 @@ const P = (primitive: string, args: Record<string, unknown> = {}, sc = run1.s) =
 await check("browsers.open prints the full flattened state: frames, the OOPIF, open shadow DOM, redaction", async () => {
   tab = await engine.global(run1.s, "browsers.open", { url: `${BASE}/index.html`, ...DEFAULT_BROWSER }) as TabHandle;
   state = run1.text();
-  expect(state.includes(HEADLESS ? "opened a new tab in Winter's headless browser" : "opened a new tab in Winter's browser"), "the daemon line", state);
+  expect(state.includes(HEADLESS ? "opened a new tab in Clover's headless browser" : "opened a new tab in Clover's browser"), "the daemon line", state);
   expect(/Tab "Fixture Shop" — http:\/\/localhost:\d+\/index.html/.test(state), "the header", state);
   expect(/\[\d+\] heading "Your cart" \(level 1\)/.test(state), "the heading", state);
   expect(/\[\d+\] link "Next page" → localhost:\d+/.test(state), "a link with its host", state);
@@ -509,7 +509,7 @@ await check("console(): the page's console calls and its uncaught exception, as 
 });
 
 await check("network() and networkBody(id): the API call with its status; its JSON body with the secret redacted", async () => {
-  // What Winter saw since it bound the tab: the first load's call is there only if the tab was bound before the page
+  // What Clover saw since it bound the tab: the first load's call is there only if the tab was bound before the page
   // made it (a headless tab is bound while its first page still loads); a reload is seen whole — exactly one more.
   type Row = { id: string; url: string; status?: number; mime?: string };
   const before = (await R("network", { filter: "/api/items", emit: false }) as Row[]).length;
@@ -660,7 +660,7 @@ if (HEADLESS) await check("headless: a redirect onto the local network is cancel
 run4.end();
 
 // ── Phase 3: download() in a user's browser (Fetch interception) ─────────────────────────────────────
-// The downloads: a USER's browser's (Winter for Chrome's Fetch route). Winter's headless browser never downloads.
+// The downloads: a USER's browser's (Winter for Chrome's Fetch route). Clover's headless browser never downloads.
 if (!HEADLESS) {
 const run2 = scope("r2");
 let dtab!: TabHandle;
@@ -674,7 +674,7 @@ await check("download(link) in a user's browser: a temporary tab under Fetch int
   const got = await D("download", { target: refOf(s, /link "Price list"/) }) as { path: string; name: string; bytes: number; mime: string };
   expect(got.name === "prices.csv" && got.mime === "text/csv" && got.bytes === 17, "the file's facts", JSON.stringify(got));
   expect(readFileSync(got.path, "utf8") === "item,price\ntea,3\n", "the file's bytes", readFileSync(got.path, "utf8"));
-  expect(got.path.startsWith(sessionTmp) || got.path.includes("winter-session-e2e"), "in the session's temp folder", got.path);
+  expect(got.path.startsWith(sessionTmp) || got.path.includes("clover-session-e2e"), "in the session's temp folder", got.path);
   expect((await userBrowser.listTabs()).length === tabsBefore, "the temporary tab closed");
   await new Promise((r) => setTimeout(r, 500));
   expect(browserFolder().length === 0, "the browser saved nothing", browserFolder().join(", "));
@@ -703,13 +703,13 @@ await check("download(button) in the bound tab: armed, clicked, caught — the p
   expect(browserFolder().length === 0, "the browser saved nothing", browserFolder().join(", "));
 });
 
-await check("download(link to a PDF): the browser would show it — Winter saves it", async () => {
+await check("download(link to a PDF): the browser would show it — Clover saves it", async () => {
   const s = await D("state", { full: true, emit: false }) as string;
   const got = await D("download", { target: refOf(s, /link "Read the PDF"/) }) as { name: string; mime: string };
   expect(got.name === "doc.pdf" && got.mime === "application/pdf", "the PDF's facts", JSON.stringify(got));
 });
 
-await check("download(data: link): decoded by Winter, named by its download attribute", async () => {
+await check("download(data: link): decoded by Clover, named by its download attribute", async () => {
   const s = await D("state", { full: true, emit: false }) as string;
   const got = await D("download", { target: refOf(s, /link "Inline note"/) }) as { path: string; name: string };
   expect(got.name === "note.txt" && readFileSync(got.path, "utf8") === "hello data", "the decoded file", JSON.stringify(got));
@@ -735,7 +735,7 @@ run2.end();
 }
 
 // ── wake triggers: the debugger path through the REAL page runtime's watcher (the built-in browser's stand-in). The USER
-// acts on a CDP session of the test's own (`asUser`) — one the engine never sends on, so nothing of Winter's knows. ──
+// acts on a CDP session of the test's own (`asUser`) — one the engine never sends on, so nothing of Clover's knows. ──
 const wakes = new BrowserWakeBackend(engine);
 const wakeEvents: WakeBackendEvent[] = [];
 let wakeN = 0;
@@ -767,7 +767,7 @@ const wakeTab = async (sc: ReturnType<typeof scope>): Promise<{ t: TabHandle; ke
   return { t, key: t.id.slice(t.id.indexOf(":") + 1), state: await engine.primitive(sc.s, t.targetId, "state", { full: true, emit: false }) as string };
 };
 
-if (!HEADLESS) await check("wake: a click wake — its pill and ring on the page, never in the engine's state; Winter's own click is not the user's; the user's click fires it", async () => {
+if (!HEADLESS) await check("wake: a click wake — its pill and ring on the page, never in the engine's state; Clover's own click is not the user's; the user's click fires it", async () => {
   const sc = scope("rw1");
   const { t, key, state } = await wakeTab(sc);
   const submit = refOf(state, /button "Submit for review"/);
@@ -776,10 +776,10 @@ if (!HEADLESS) await check("wake: a click wake — its pill and ring on the page
   expect(await userReads(key, "document.querySelectorAll('winter-wake-overlay').length") === 1, "one <winter-wake-overlay> on the page");
   expect(await userReads(key, "document.querySelector('winter-wake-overlay').shadowRoot") === null, "its shadow root closed to the page");
   const full = await engine.primitive(sc.s, t.targetId, "state", { full: true, emit: false }) as string;
-  expect(!full.includes("Winter continues"), "the engine's own tree walk leaves the pill out", full);
+  expect(!full.includes("Clover continues"), "the engine's own tree walk leaves the pill out", full);
   await engine.primitive(sc.s, t.targetId, "click", { target: submit });
   await new Promise((r) => setTimeout(r, 1_200));
-  expect(!wakeEvents.some((e) => e.wakeId === id), "Winter's own click did not fire it", JSON.stringify(wakeEvents));
+  expect(!wakeEvents.some((e) => e.wakeId === id), "Clover's own click did not fire it", JSON.stringify(wakeEvents));
   await userClicks(key, "#submit");
   const e = await wakeEvent(id);
   expect(e.outcome === "fired" && e.detail === "clicked", "the user's click fired it", JSON.stringify(e));
@@ -927,14 +927,14 @@ if (!HEADLESS) await check("wake: a re-render that keeps the element finds it ag
   expect(l.outcome === "lost" && l.reason === "the element is gone", "the removed element is lost", JSON.stringify(l));
 });
 
-if (!HEADLESS) await check("wake: the page's own requestSubmit() just after WINTER typed never fires a submit wake", async () => {
+if (!HEADLESS) await check("wake: the page's own requestSubmit() just after CLOVER typed never fires a submit wake", async () => {
   const sc = scope("rw9");
   const { t, key, state } = await wakeTab(sc);
   const submitted = await armWake(t.targetId, { kind: "submitted", ref: String(refOf(state, /form "Autosave"/)) });
   await engine.primitive(sc.s, t.targetId, "type", { into: refOf(state, /text field "Notes"/), text: "my draft" });
   sc.end();
   engine.turnEnded("e2e");
-  // The page autosaves 700 ms after the last input (Winter's), past the 500 ms grace: still Winter's doing.
+  // The page autosaves 700 ms after the last input (Clover's), past the 500 ms grace: still Clover's doing.
   for (let i = 0; i < 40 && String(await userReads(key, "document.getElementById('autoStatus').textContent")) !== "Autosaved"; i++) await new Promise((r) => setTimeout(r, 100));
   expect(String(await userReads(key, "document.getElementById('autoStatus').textContent")) === "Autosaved", "the page did submit by itself");
   await noEvent(submitted.id, 1_000);
@@ -945,10 +945,10 @@ if (!HEADLESS) await check("wake: WATCH-ONLY — after the turn ends a waiting t
   const { t, key, state } = await wakeTab(sc);
   const driver = engine.wakeTarget("e2e", t.targetId).driver;
   const hold = await armWake(t.targetId, { kind: "titled", title: "Never shown" });
-  // While Winter works on it, a file chooser the page opens is the engine's (intercepted)…
+  // While Clover works on it, a file chooser the page opens is the engine's (intercepted)…
   await userClicks(key, "#file");
   for (let i = 0; i < 30 && driver.fileChooser === undefined; i++) await new Promise((r) => setTimeout(r, 100));
-  expect(driver.fileChooser !== undefined, "intercepted while Winter's run holds the tab");
+  expect(driver.fileChooser !== undefined, "intercepted while Clover's run holds the tab");
   driver.fileChooser = undefined;
   sc.end();
   engine.turnEnded("e2e");
@@ -958,7 +958,7 @@ if (!HEADLESS) await check("wake: WATCH-ONLY — after the turn ends a waiting t
   await userClicks(key, "#file");
   await new Promise((r) => setTimeout(r, 1_000));
   expect(driver.fileChooser === undefined, "the user's file chooser was not intercepted", JSON.stringify(driver.fileChooser));
-  // The user submits a form that asks confirm(): nothing of Winter's answers or dismisses that dialog while it is open
+  // The user submits a form that asks confirm(): nothing of Clover's answers or dismisses that dialog while it is open
   // (the page is paused on it: the wake's own report waits for it too), the user's answer stands, then the wake fires
   // and the tab is let go.
   const sub = await armWake(t.targetId, { kind: "submitted", ref: String(refOf(state, /form "Approval"/)) });
@@ -971,7 +971,7 @@ if (!HEADLESS) await check("wake: WATCH-ONLY — after the turn ends a waiting t
     await send("Input.dispatchMouseEvent", { type: "mousePressed", x, y, button: "left", clickCount: 1 });
     const released = send("Input.dispatchMouseEvent", { type: "mouseReleased", x, y, button: "left", clickCount: 1 }).catch(() => undefined);
     await new Promise((r2) => setTimeout(r2, 2_000));
-    expect(!transport.sent.slice(sentBefore).includes("Page.handleJavaScriptDialog"), "nothing of Winter's answered the dialog");
+    expect(!transport.sent.slice(sentBefore).includes("Page.handleJavaScriptDialog"), "nothing of Clover's answered the dialog");
     // Answerable only while it is still open: the wake path left it to the user.
     await send("Page.handleJavaScriptDialog", { accept: true });
     await released;
@@ -983,7 +983,7 @@ if (!HEADLESS) await check("wake: WATCH-ONLY — after the turn ends a waiting t
   expect(!driver.isAttached, "the wake let the tab go");
 });
 
-if (!HEADLESS) await check("wake: the user's submit raises a confirm() while the arming run still holds the tab — the tab never drops to watch-only under it (which would dismiss it in Winter's browser), the wait ends lost naming the dialog, and the dialog stays for its answer", async () => {
+if (!HEADLESS) await check("wake: the user's submit raises a confirm() while the arming run still holds the tab — the tab never drops to watch-only under it (which would dismiss it in Clover's browser), the wait ends lost naming the dialog, and the dialog stays for its answer", async () => {
   const sc = scope("rw13");
   const { t, key, state } = await wakeTab(sc);
   const driver = engine.wakeTarget("e2e", t.targetId).driver;
@@ -1005,7 +1005,7 @@ if (!HEADLESS) await check("wake: the user's submit raises a confirm() while the
     expect(e.outcome === "lost" && /opened a confirm dialog and is paused on it/.test(e.reason ?? ""), "the wait ended lost, naming the dialog", JSON.stringify(e));
     await new Promise((r2) => setTimeout(r2, 300));
     expect(!transport.attaches.slice(attachesBefore).some((a) => a.watchOnly), "never a watch-only hold while it was open", JSON.stringify(transport.attaches.slice(attachesBefore)));
-    expect(!transport.sent.slice(sentBefore).includes("Page.handleJavaScriptDialog"), "nothing of Winter's answered it");
+    expect(!transport.sent.slice(sentBefore).includes("Page.handleJavaScriptDialog"), "nothing of Clover's answered it");
     expect(driver.isAttached, "the tab stays held for the woken session");
     // Still open: the user's own answer is taken.
     await send("Page.handleJavaScriptDialog", { accept: true });
@@ -1048,7 +1048,7 @@ if (!HEADLESS) await check("wake: a watch armed again in a new world retires the
   const otherWorld = (name: string, sink: "queue" | "runtime", watchId: string): Promise<unknown> => transport.asUser(key, async (send) => {
     const tree = await send("Page.getFrameTree") as { frameTree: { frame: { id: string } } };
     const world = await send("Page.createIsolatedWorld", { frameId: tree.frameTree.frame.id, worldName: name }) as { executionContextId: number };
-    const spec = { watchId, kind: "titled", title: "Never shown", pill: "Winter continues when this page's title changes", expiresAt: Date.now() + 600_000, initial: "refuse" };
+    const spec = { watchId, kind: "titled", title: "Never shown", pill: "Clover continues when this page's title changes", expiresAt: Date.now() + 600_000, initial: "refuse" };
     return (await send("Runtime.evaluate", { contextId: world.executionContextId, expression: `(${src})(${JSON.stringify({ op: "arm", sink, spec })})`, returnByValue: true })).result;
   });
   const overlays = async (): Promise<{ hosts: number; leads: number }> => ({

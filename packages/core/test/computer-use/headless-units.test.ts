@@ -3,7 +3,7 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { headlessRequirementFor, resolveWinterHeadless, winterHeadlessAppPath } from "../../src/computer-use/browser/headless/engines";
+import { headlessRequirementFor, resolveCloverHeadless, cloverHeadlessAppPath } from "../../src/computer-use/browser/headless/engines";
 import { ipv6Bytes, isPrivateNetworkHost, isPrivateNetworkUrl, LOCAL_NAME_SUFFIXES } from "../../src/computer-use/browser/headless/private-network";
 import { shouldCloseAgentTab } from "../../src/computer-use/browser/lifecycle";
 import { headlessErrorToTransport } from "../../src/computer-use/browser/headless/winter-engine";
@@ -41,31 +41,31 @@ describe("the private-network rule (the user's ruling: this Mac allowed, the LAN
 describe("the engine ladder", () => {
   const exists = (paths: string[]) => (p: string): boolean => paths.includes(p);
 
-  test("an explicit $WINTER_HEADLESS_APP is authoritative: missing is the failure, never another copy", () => {
-    const env = { WINTER_HEADLESS_APP: "/tmp/H/Winter Headless Dev.app" };
-    expect(resolveWinterHeadless("dist", { env, execPath: "/Applications/Winter.app/Contents/MacOS/winter-core", exists: () => false }))
-      .toEqual({ missing: "Winter's headless browser is missing — reinstall Winter" });
-    const r = resolveWinterHeadless("dist", { env, exists: exists(["/tmp/H/Winter Headless Dev.app/Contents/MacOS/Winter Headless Dev"]) });
+  test("an explicit $CLOVER_HEADLESS_APP is authoritative: missing is the failure, never another copy", () => {
+    const env = { CLOVER_HEADLESS_APP: "/tmp/H/Winter Headless Dev.app" };
+    expect(resolveCloverHeadless("dist", { env, execPath: "/Applications/Clover.app/Contents/MacOS/clover-core", exists: () => false }))
+      .toEqual({ missing: "Clover's headless browser is missing — reinstall Clover" });
+    const r = resolveCloverHeadless("dist", { env, exists: exists(["/tmp/H/Winter Headless Dev.app/Contents/MacOS/Winter Headless Dev"]) });
     expect(r).toEqual({
       engine: "winter", app: "/tmp/H/Winter Headless Dev.app", executable: "/tmp/H/Winter Headless Dev.app/Contents/MacOS/Winter Headless Dev",
       requirement: headlessRequirementFor("dist", true),
     });
   });
 
-  test("dist: the helper next to the running winter-core, in Winter.app's Helpers", () => {
-    const execPath = "/Applications/Winter.app/Contents/MacOS/winter-core";
-    expect(winterHeadlessAppPath("dist", {}, execPath).path).toBe("/Applications/Winter.app/Contents/Helpers/Winter Headless.app");
-    const exe = "/Applications/Winter.app/Contents/Helpers/Winter Headless.app/Contents/MacOS/Winter Headless";
-    expect(resolveWinterHeadless("dist", { env: {}, execPath, exists: exists([exe]) })).toMatchObject({ engine: "winter", executable: exe, requirement: headlessRequirementFor("dist", false) });
+  test("dist: the helper next to the running clover-core, in Clover.app's Helpers", () => {
+    const execPath = "/Applications/Clover.app/Contents/MacOS/clover-core";
+    expect(cloverHeadlessAppPath("dist", {}, execPath).path).toBe("/Applications/Clover.app/Contents/Helpers/Winter Headless.app");
+    const exe = "/Applications/Clover.app/Contents/Helpers/Winter Headless.app/Contents/MacOS/Winter Headless";
+    expect(resolveCloverHeadless("dist", { env: {}, execPath, exists: exists([exe]) })).toMatchObject({ engine: "winter", executable: exe, requirement: headlessRequirementFor("dist", false) });
   });
 
   test("a dev daemon says how to build the dev helper; off its own home only the override counts", () => {
-    expect(resolveWinterHeadless("dev", { env: {}, exists: () => false })).toEqual({ missing: "Winter's headless browser is not built — run `bun run dev:headless`" });
-    expect(resolveWinterHeadless("dev", { env: {}, exists: () => true, overrideOnly: true })).toEqual({ missing: "Winter's headless browser is missing — reinstall Winter" });
-    expect(winterHeadlessAppPath("dev", {}).path.endsWith("/dist/dev/Winter Headless Dev.app")).toBe(true);
+    expect(resolveCloverHeadless("dev", { env: {}, exists: () => false })).toEqual({ missing: "Clover's headless browser is not built — run `bun run dev:headless`" });
+    expect(resolveCloverHeadless("dev", { env: {}, exists: () => true, overrideOnly: true })).toEqual({ missing: "Clover's headless browser is missing — reinstall Clover" });
+    expect(cloverHeadlessAppPath("dev", {}).path.endsWith("/dist/dev/Winter Headless Dev.app")).toBe(true);
   });
 
-  test("the requirement: the profile's identifier and Winter's team; an override may be either identity", () => {
+  test("the requirement: the profile's identifier and Clover's team; an override may be either identity", () => {
     expect(headlessRequirementFor("dist", false, "TEAM")).toBe('identifier "com.winter.headless" and anchor apple generic and certificate leaf[subject.OU] = "TEAM"');
     expect(headlessRequirementFor("dev", false, "TEAM")).toBe('identifier "com.winter.headless.dev" and anchor apple generic and certificate leaf[subject.OU] = "TEAM"');
     expect(headlessRequirementFor("dist", true, "TEAM")).toBe('(identifier "com.winter.headless" or identifier "com.winter.headless.dev") and anchor apple generic and certificate leaf[subject.OU] = "TEAM"');

@@ -1,5 +1,5 @@
 // WS-25 (daemon-oauth lane): a VERBATIM COPY of the agent SDK's fixture authorization server
-// (`winter-agent-sdk` packages/runtime/src/mcp-auth/test-fixture-as.ts at SDK main 6d77ee36 -- the WS-25
+// (`clover-sdk` packages/runtime/src/mcp-auth/test-fixture-as.ts at SDK main 6d77ee36 -- the WS-25
 // merge). The SDK does not ship its `src/` (`files: [dist, ...]`), so the daemon's tests carry their own
 // copy rather than reaching into the installed package. Re-sync it when the SDK's changes; never widen it
 // here -- a daemon test that needs more is a request to the SDK's fixture.
@@ -131,7 +131,7 @@ function isLoopbackIpRedirect(uri: string): boolean {
  *   - a REGISTERED client (DCR, pre-registered) matches EXACTLY -- port included -- so the tests that a
  *     sign-in binds and registers the same literal URI, and reuses a persisted port, prove something;
  *   - a CIMD document's PORTLESS loopback IP redirect (`http://127.0.0.1/callback`) matches that host and
- *     path on ANY port (RFC 8252 §7.3), which is exactly what Winter's global document relies on.
+ *     path on ANY port (RFC 8252 §7.3), which is exactly what Clover's global document relies on.
  */
 function redirectAllowed(requested: string, registered: readonly string[] | undefined, cimd: boolean): boolean {
   if (registered === undefined) return false;

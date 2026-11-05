@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { PanelOpenTabParams, PANEL_COMMAND_ARGS_MAX_JSON_BYTES } from "@yanlinglabs/winter-protocol";
+import { PanelOpenTabParams, PANEL_COMMAND_ARGS_MAX_JSON_BYTES } from "@waifucave/clover-protocol";
 import type { ToolDefinition, ToolRegistry } from "./registry";
 import type { PanelCommandAction, PanelCommandOutcome } from "../../panel/commands";
 import type { PanelTabState } from "../../panel/store";
@@ -531,7 +531,7 @@ function panelReach(deps: BrowserToolDeps, sessionId: string): PanelReach {
  * Spec §4 splits into two halves that read alike and behave differently. The first is the per-domain
  * approval mechanism the browser shares with `fetch` — a card, a remembered rule, a user decision —
  * which is adjudicated where a human can be asked (historically the engine's `browserGate`; on the
- * Winter leg the approval bridge). The second is this HARD-BLOCK, over the SAME list `Search` and the
+ * Clover leg the approval bridge). The second is this HARD-BLOCK, over the SAME list `Search` and the
  * child's own `WebFetch` floor use (`checkDangerousDomain` in page-core.ts, whose own doc carries the
  * full rationale, and spec §7's "the dangerous-domains list is shared").
  *
@@ -717,10 +717,10 @@ export function browserToolDefs(deps: BrowserToolDeps): ToolDefinition[] {
   return [{
     name: "browser",
     description:
-      "Drive the user's real browser — the tabs in Winter's side panel, in the user's own logged-in "
+      "Drive the user's real browser — the tabs in Clover's side panel, in the user's own logged-in "
       + "profile, visible to them live. Pick a verb:\n"
       + "• tabs — list this session's open tabs (tabId, url, title, which is active). Answered by "
-      + "Winter itself, so it works even when the Mac app is closed. Start here when you don't have a tabId.\n"
+      + "Clover itself, so it works even when the Mac app is closed. Start here when you don't have a tabId.\n"
       + "• open — mint a NEW tab on a url (http/https), IN ADDITION to the ones already open. Returns "
       + "its tabId. Works with the app closed; the tab appears in the user's strip. Use it for your "
       + "first tab, and after that only when you need the current page KEPT alongside the new one. "

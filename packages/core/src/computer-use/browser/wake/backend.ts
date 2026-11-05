@@ -7,16 +7,16 @@
 //    attached (role, name, the secure-field floor, a LOCATOR), then the extension injects the watcher into ITS OWN
 //    isolated world — no debugger — and injects it again into each new document of the tab. The tab is let go at once:
 //    no "is debugging this browser" bar while the user works.
-//  - THE DEBUGGER PATH (Winter's built-in browser; a Winter for Chrome older than 1.2.0; an element inside a child
+//  - THE DEBUGGER PATH (Clover's built-in browser; a Winter for Chrome older than 1.2.0; an element inside a child
 //    frame): the watcher runs in the frame's winter world and the backend LONG-POLLS it (`watchWait`, ≤ 20 s a round,
 //    acknowledged, so an answer lost on the way is sent again; each poll names the watches the backend keeps, so one
 //    whose disarm could not reach the page goes at the next), holding the tab (`wake:<id>`) for the trigger's life.
 //    That hold is WATCH-ONLY (`TabDriver`): while only wake holders hold a tab, it changes nothing the user sees or does
 //    — no file-chooser interception, no focus emulation, no emulated screen size, no agent overlay, and on the built-in
-//    browser none of Winter.app's native-UI holds (link feature `watchOnly`: the page's dialogs, permission prompts, file
+//    browser none of Clover.app's native-UI holds (link feature `watchOnly`: the page's dialogs, permission prompts, file
 //    choosers, downloads, context menus, keys and focus are the user's). A primitive on the tab takes the full hold back;
-//    the tab drops back after. A Winter.app without the feature never holds a built-in tab for a wake (refused, "update
-//    Winter"). A page dialog is never answered or dismissed by the wake path, and the poller polls around one; a
+//    the tab drops back after. A Clover.app without the feature never holds a built-in tab for a wake (refused, "update
+//    Clover"). A page dialog is never answered or dismissed by the wake path, and the poller polls around one; a
 //    dialog the user raised while the arming run still held the tab fully (the built-in browser holds it unseen, and the
 //    page — the wait's own report with it — is paused on it) is kept held, and each wait on the tab ends `lost` saying
 //    so, waking its session to read and answer it.
@@ -25,21 +25,21 @@
 // tab released, the built-in tab's hold let go) leave it armed — it keeps the tab's driver, never the binding. Only these
 // end it: a cancel (`disarm`), the tab closing or crashing (`lost`), a ref condition's document going away (`lost`,
 // unless the user's own press of that element or form came just before — then `fired`), and the backend's link dropping
-// (`lost`: "Winter for Chrome disconnected" / "Winter isn't running").
+// (`lost`: "Winter for Chrome disconnected" / "Clover isn't running").
 //
 // THE RULINGS (controller, 2026-10-12), each held by a test (`test/computer-use/browser-wake.test.ts`):
 //  - NO SCOPE AT ARM: `arm` has no run, so it can raise no card. A tab on a dangerous-domains host is `NotAllowed` unless
 //    the session already approved that host for the SESSION (a one-run approval does not count) or a saved
 //    `WebFetch(domain:…)` rule allows it.
 //  - A USER'S BROWSER needs the app allowed beyond one call (`persistentlyAllowed`), else the once-grant refusal.
-//  - WINTER'S OWN INPUT is every Input.* and Page.navigate/reload/navigateToHistoryEntry the tab's driver sends, and the
+//  - CLOVER'S OWN INPUT is every Input.* and Page.navigate/reload/navigateToHistoryEntry the tab's driver sends, and the
 //    whole act primitive the engine marks — from ANY session — with a 500 ms grace after it (`TabDriver.ownInputAt`);
 //    an extension also stamps what its debugger sends (`own`); and the helper's input to the browser APP
 //    (`BrowserEngineDeps.ownAppInputAt`, wired by the service). EVERY judgement of a trusted event or a transition goes
 //    through `own()`, which asks all three: a press, a fire, the trusted input that made a submit or a change the user's
 //    (`cause`), a URL change, a navigation's start, a state found true in a new document. What lands inside is never the
 //    user's: an input event is dropped, a state transition is not counted (it becomes the baseline).
-//  - A DOCUMENT WINTER'S OWN NAVIGATION LOADED sets the baseline of a page condition and never fires — decided when the
+//  - A DOCUMENT CLOVER'S OWN NAVIGATION LOADED sets the baseline of a page condition and never fires — decided when the
 //    navigation STARTS (the top frame's `Page.frameStartedLoading`), not at its commit, which can come long after.
 //  - ALREADY TRUE AT ARM: a state condition that holds when armed is refused `NotAllowed` with one daemon sentence.
 //  - Only a false→true transition after arming fires; input conditions need the user's trusted DOM events, and a submit
@@ -74,12 +74,12 @@ export const WAKE_RECOVER_MS = 20_000;
  *  within this long): the trigger is lost only if it stays closed. */
 export const WAKE_CLOSED_GRACE_MS = 2_000;
 
-export const WAKE_HEADLESS = "nobody can see a headless tab — the user can't act in it; open the page with browsers.open(url) in Winter's browser and wait there";
-export const WAKE_OLD_EXTENSION_NOTE = "this Winter for Chrome is older than 1.2.0, so Winter keeps the browser's debugger on the tab while it waits (its debugging bar shows) — update Winter for Chrome to wait without the debugging bar";
-export const WAKE_IN_FRAME_NOTE = "the element is inside a frame of the page, so Winter keeps the browser's debugger on the tab while it waits (its debugging bar shows)";
-/** A Winter.app without the link feature `watchOnly` would hold the tab with every native-UI hold on for the whole wait
+export const WAKE_HEADLESS = "nobody can see a headless tab — the user can't act in it; open the page with browsers.open(url) in Clover's browser and wait there";
+export const WAKE_OLD_EXTENSION_NOTE = "this Winter for Chrome is older than 1.2.0, so Clover keeps the browser's debugger on the tab while it waits (its debugging bar shows) — update Winter for Chrome to wait without the debugging bar";
+export const WAKE_IN_FRAME_NOTE = "the element is inside a frame of the page, so Clover keeps the browser's debugger on the tab while it waits (its debugging bar shows)";
+/** A Clover.app without the link feature `watchOnly` would hold the tab with every native-UI hold on for the whole wait
  *  (the user's dialogs unseen, their file chooser cancelled): never. */
-export const WAKE_UPDATE_WINTER = "this Winter's app can't wait on a built-in tab without taking it from the user — update Winter to wait on a built-in tab";
+export const WAKE_UPDATE_CLOVER = "this Clover's app can't wait on a built-in tab without taking it from the user — update Clover to wait on a built-in tab";
 
 const STATE_KINDS: ReadonlySet<string> = new Set(["appeared", "gone", "titled"]);
 const INPUT_KINDS: ReadonlySet<string> = new Set(["clicked", "submitted", "changed"]);
@@ -95,13 +95,13 @@ export function wakePill(kind: WatchKind, label: string, o: { anyForm?: boolean 
   const l = label.replace(/\s+/g, " ").trim();
   const it = l.length === 0 ? "the marked element" : quoted(l);
   switch (kind) {
-    case "clicked": return `Winter continues when you click ${it}`;
-    case "submitted": return o.anyForm === true ? "Winter continues when you submit a form on this page" : `Winter continues when you submit ${it}`;
-    case "changed": return `Winter continues when you change ${it}`;
-    case "gone": return l.length === 0 && o.anyForm === true ? "Winter continues when this page changes" : `Winter continues when ${it} goes away`;
-    case "titled": return "Winter continues when this page's title changes";
-    case "navigated": return "Winter continues when you go to another page";
-    default: return "Winter continues when this page changes";
+    case "clicked": return `Clover continues when you click ${it}`;
+    case "submitted": return o.anyForm === true ? "Clover continues when you submit a form on this page" : `Clover continues when you submit ${it}`;
+    case "changed": return `Clover continues when you change ${it}`;
+    case "gone": return l.length === 0 && o.anyForm === true ? "Clover continues when this page changes" : `Clover continues when ${it} goes away`;
+    case "titled": return "Clover continues when this page's title changes";
+    case "navigated": return "Clover continues when you go to another page";
+    default: return "Clover continues when this page changes";
   }
 }
 
@@ -151,7 +151,7 @@ interface Poller {
   running: boolean;
 }
 
-/** The debugger path's view of a tab's top-level navigations: when the last one started and whether Winter's own input
+/** The debugger path's view of a tab's top-level navigations: when the last one started and whether Clover's own input
  *  started it. */
 interface NavHook { off: () => void; startAt: number; own: boolean; commitAt: number }
 
@@ -182,7 +182,7 @@ export class BrowserWakeBackend implements WakeBackend {
   // ── arm ─────────────────────────────────────────────────────────────────────────────────────────────
 
   async arm(req: WakeArmRequest, onEvent: (e: WakeBackendEvent) => void): Promise<WakeArmed> {
-    if (this.stopped) throw new AutomationFailure("BrowserUnavailable", "Winter is shutting down");
+    if (this.stopped) throw new AutomationFailure("BrowserUnavailable", "Clover is shutting down");
     const t = this.engine.wakeTarget(req.sessionId, req.targetId);
     if (t.family === "headless") throw new AutomationFailure("NotAllowed", WAKE_HEADLESS);
     if (t.bundleId !== undefined && !this.engine.wakeAllowed(req.sessionId, t.bundleId)) {
@@ -190,9 +190,9 @@ export class BrowserWakeBackend implements WakeBackend {
     }
     const driver = t.driver;
     const transport = driver.transport;
-    // Winter's built-in browser can't be watched without a hold (its CDP needs one): only a watch-only hold, never one
-    // with Winter.app's native-UI holds on for the whole wait.
-    if (t.family === "winter" && transport.watchOnlyHolds !== true) throw new AutomationFailure("NotAllowed", WAKE_UPDATE_WINTER);
+    // Clover's built-in browser can't be watched without a hold (its CDP needs one): only a watch-only hold, never one
+    // with Clover.app's native-UI holds on for the whole wait.
+    if (t.family === "winter" && transport.watchOnlyHolds !== true) throw new AutomationFailure("NotAllowed", WAKE_UPDATE_CLOVER);
     const c = req.condition;
     const ref = "ref" in c && c.ref !== undefined ? parseRef(c.ref) : undefined;
     const holder = `wake:${req.wakeId}`;
@@ -375,7 +375,7 @@ export class BrowserWakeBackend implements WakeBackend {
 
   // ── what the watchers report ────────────────────────────────────────────────────────────────────────
 
-  /** Did Winter (any session) cause what landed at `at`: its input to the tab, its helper's input to the browser app,
+  /** Did Clover (any session) cause what landed at `at`: its input to the tab, its helper's input to the browser app,
    *  or (the extension's own stamp) its debugger's? Every judgement of a trusted event or a transition asks this. */
   private own(a: Armed, at: number, stamped?: boolean): boolean {
     if (stamped === true) return true;
@@ -386,7 +386,7 @@ export class BrowserWakeBackend implements WakeBackend {
   private onReport(a: Armed, e: { outcome: string; at: number; cause?: number; url?: string; key?: string; match?: boolean; title?: string; reason?: string; own?: boolean }): void {
     if (a.ended) return;
     const at = Number.isFinite(e.at) ? e.at : this.now();
-    // A submit's or a change's trusted input (on the submitter, in the form, in the field): Winter's own makes it Winter's.
+    // A submit's or a change's trusted input (on the submitter, in the form, in the field): Clover's own makes it Clover's.
     const ownCause = typeof e.cause === "number" && Number.isFinite(e.cause) && this.own(a, e.cause);
     switch (e.outcome) {
       case "pressed":
@@ -435,13 +435,13 @@ export class BrowserWakeBackend implements WakeBackend {
     return { shape: watchUrlShape(url), key: watchUrlKey(url), ...(want === undefined ? {} : { match: url.includes(want) }) };
   }
 
-  /** navigated: the tab's top-level address changed (a same-document change counts). `stamped`: Winter's own
+  /** navigated: the tab's top-level address changed (a same-document change counts). `stamped`: Clover's own
    *  navigation (the extension's stamp, or — debugger path — decided when it started). */
   private onUrl(a: Armed, u: { shape: string; key: string; match?: boolean }, at: number, stamped: boolean): void {
     if (a.ended || a.spec.kind !== "navigated") return;
     const want = this.wantUrl(a);
     if (this.own(a, at, stamped)) {
-      // Winter's own navigation: the new baseline.
+      // Clover's own navigation: the new baseline.
       a.baseKey = u.key;
       if (want !== undefined) a.urlMet = u.match === true;
       return;
@@ -480,7 +480,7 @@ export class BrowserWakeBackend implements WakeBackend {
   }
 
   private linkSentence(a: Armed): string {
-    return familyOfBackendId(a.target.backend) === "winter" || a.target.family === "winter" ? "Winter isn't running" : "Winter for Chrome disconnected";
+    return familyOfBackendId(a.target.backend) === "winter" || a.target.family === "winter" ? "Clover isn't running" : "Winter for Chrome disconnected";
   }
 
   /** The tab closed, crashed, or the user took it back. A "closed" that turns out to be the tab coming back under a
@@ -493,7 +493,7 @@ export class BrowserWakeBackend implements WakeBackend {
           setTimeout(() => { if (!a.ended && a.driver.gone !== undefined) this.lose(a, goneReason(a.driver.gone)); }, this.deps.closedGraceMs ?? WAKE_CLOSED_GRACE_MS);
           return;
         case "crashed": this.lose(a, "the tab crashed"); return;
-        case "detached_by_user": this.lose(a, "the user stopped Winter from controlling this tab"); return;
+        case "detached_by_user": this.lose(a, "the user stopped Clover from controlling this tab"); return;
         default: return; // stopped: the debugger path attaches again
       }
     };
@@ -522,7 +522,7 @@ export class BrowserWakeBackend implements WakeBackend {
       let stamped = false;
       const at = this.now();
       if (e.method === "Page.frameStartedLoading") {
-        // Who starts a navigation decides whose it is — its commit can come long after Winter's input ended.
+        // Who starts a navigation decides whose it is — its commit can come long after Clover's input ended.
         if (e.params.frameId === undefined || e.params.frameId !== driver.mainFrameId) return;
         hook.startAt = at;
         hook.own = driver.ownInputNow;
@@ -642,7 +642,7 @@ export class BrowserWakeBackend implements WakeBackend {
    * A watch's world went (a new document, or a detach) or the watch left it: attach again if need be and arm each watch
    * again in the frame's world now — a ref watch by its locator (another document: `lost`, or `fired` after the user's
    * press), a page watch with the new document as its baseline (a transition when the user or the page brought the
-   * document and the condition holds there; never when Winter's own navigation — or the helper's input — did).
+   * document and the condition holds there; never when Clover's own navigation — or the helper's input — did).
    */
   private async recover(p: Poller, wakes: Armed[]): Promise<void> {
     const d = p.driver;
@@ -692,14 +692,14 @@ export class BrowserWakeBackend implements WakeBackend {
   }
 }
 
-/** A wait ended because the page paused on a dialog only the woken session can see (Winter's browser holds it). */
+/** A wait ended because the page paused on a dialog only the woken session can see (Clover's browser holds it). */
 export function wakeDialogReason(type: string): string {
   const kind = ["alert", "confirm", "prompt", "beforeunload"].includes(type) ? type : "dialog";
-  return `the page opened ${kind === "alert" ? "an" : "a"} ${kind} dialog and is paused on it — the user may have acted already; Winter's browser keeps the dialog for you: read it with dialog() and answer it with answerDialog() as the user wants (ask them)`;
+  return `the page opened ${kind === "alert" ? "an" : "a"} ${kind} dialog and is paused on it — the user may have acted already; Clover's browser keeps the dialog for you: read it with dialog() and answer it with answerDialog() as the user wants (ask them)`;
 }
 
 function goneReason(reason: string): string {
-  return reason === "crashed" ? "the tab crashed" : reason === "detached_by_user" ? "the user stopped Winter from controlling this tab" : "the tab was closed";
+  return reason === "crashed" ? "the tab crashed" : reason === "detached_by_user" ? "the user stopped Clover from controlling this tab" : "the tab was closed";
 }
 
 /** A watch of the page itself (no element; `navigated` aside): the dangerous-domain floor keeps it from firing — and
@@ -741,7 +741,7 @@ function watchFailure(err: unknown, browserName: string): Error {
   if (err instanceof TransportError) {
     if (err.code === "not_allowed") {
       if (err.data.reason === "secure") return new AutomationFailure("Refused", SECURE_FIELD_SENTENCE);
-      return new AutomationFailure("Refused", `this page doesn't let Winter watch it (${err.message.slice(0, 160)})`);
+      return new AutomationFailure("Refused", `this page doesn't let Clover watch it (${err.message.slice(0, 160)})`);
     }
     if (err.code === "tab_gone") return new AutomationFailure("TargetLost", "the tab was closed — open it again with browsers.open() or bind another with browsers.tab()");
     if (err.code === "disconnected") return new AutomationFailure("BrowserUnavailable", `${browserName} can't be reached: Winter for Chrome is not connected — ask the user`, true);

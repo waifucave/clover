@@ -121,7 +121,7 @@ describe("dangerousDomainMatch", () => {
 // Whole-branch review N1 (2026-09-18): the floor's two matchers disagreed on URL-SHAPED user entries,
 // in the unsafe direction. `settings.permissions.dangerousDomains.added` is a bare `z.array(z.string())`
 // and the runtime child's own `blockedDomains` matcher URL-PARSES every entry, so `https://evil.example`
-// and `evil.example:8080` were honoured INSIDE a Winter child and by nothing host-side — not the
+// and `evil.example:8080` were honoured INSIDE a Clover child and by nothing host-side — not the
 // PreToolUse floor hook (the only enforcer on the official leg), not `Search`'s citation filter, not
 // `browser`. Both sides now reduce a url-shaped entry to its hostname.
 describe("normalizeDangerousDomain — url-shaped user entries (N1)", () => {

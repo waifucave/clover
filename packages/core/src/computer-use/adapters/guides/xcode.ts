@@ -1,5 +1,5 @@
-// The guide for Xcode (id `xcode@3`), shown with the app's extras block. Winter's own reviewed prose: every claim
-// is about an extra Winter implements or a behaviour the ComputerV2 description already states — checked against the
+// The guide for Xcode (id `xcode@3`), shown with the app's extras block. Clover's own reviewed prose: every claim
+// is about an extra Clover implements or a behaviour the ComputerV2 description already states — checked against the
 // app's dictionary and, at the live gate, the app itself. A content change bumps the rev. ≤ 2,000 bytes.
 export const XCODE_GUIDE = `Xcode's extras work without bringing Xcode forward, on the BOUND window's workspace unless you name another:
 - schemes() lists each open workspace with its schemes and active scheme; bound: true marks the bound window's;

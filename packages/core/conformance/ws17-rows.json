@@ -3,7 +3,7 @@
   "rows": [
     {
       "row": 1,
-      "title": "Real model-emitted `SendMessage` through the TS alias reaches `mcp__winter__send_message` with native args and returns the visible result (item 1)",
+      "title": "Real model-emitted `SendMessage` through the TS alias reaches `mcp__clover__send_message` with native args and returns the visible result (item 1)",
       "status": "proven",
       "citations": [
         {
@@ -48,22 +48,22 @@
       "title": "Two official sessions under the spool: isolated discovery, delivery, hold/refuse, idle wake, zero visibility into `~/.claude` (item 4)",
       "status": "retired",
       "citations": [],
-      "note": "RETIRED (WS-23) — the official `claude` runtime this row measured is no longer part of Winter: every model runs on the Winter runtime, so there is no official session to spool, message or resume. The row's measured history (8d + 9a) is in git, in `packages/core/test/runtime-sdk/official-leg.e2e.test.ts` as deleted at WS-23; PARTIAL — proven halves (8d + 9a): two official sessions, one spool — isolated discovery, delivery (SendMessage A->B), a planted ~/.claude byte-identical, HOLD (queued, delivered into B's next request body) and REFUSE (not_found, isError) match the spec on the real 0.3.250 binary; crash mid-turn -> resumable, next send = generation 2, matches WS-16 §14. The idle-wake half is a measured GAP, not proven: a genuinely `resumable` official session is refused `unavailable` exactly like an exited one, because router 0.0.3 exposes no cold-resume path (WS-15 §6.2) — carried to router 0.0.4."
+      "note": "RETIRED (WS-23) — the official `claude` runtime this row measured is no longer part of Clover: every model runs on the Clover runtime, so there is no official session to spool, message or resume. The row's measured history (8d + 9a) is in git, in `packages/core/test/runtime-sdk/official-leg.e2e.test.ts` as deleted at WS-23; PARTIAL — proven halves (8d + 9a): two official sessions, one spool — isolated discovery, delivery (SendMessage A->B), a planted ~/.claude byte-identical, HOLD (queued, delivered into B's next request body) and REFUSE (not_found, isError) match the spec on the real 0.3.250 binary; crash mid-turn -> resumable, next send = generation 2, matches WS-16 §14. The idle-wake half is a measured GAP, not proven: a genuinely `resumable` official session is refused `unavailable` exactly like an exited one, because router 0.0.3 exposes no cold-resume path (WS-15 §6.2) — carried to router 0.0.4."
     },
     {
       "row": 5,
       "title": "Official parent resume after restart restores completed children for native SendMessage resume (item 5)",
       "status": "retired",
       "citations": [],
-      "note": "RETIRED (WS-23) — the official `claude` runtime this row measured is no longer part of Winter: every model runs on the Winter runtime, so there is no official session to spool, message or resume. The row's measured history (8d + 9a) is in git, in `packages/core/test/runtime-sdk/official-leg.e2e.test.ts` as deleted at WS-23; PARTIAL — refusal branch only (8d): native SendMessage to a completed official child, across a directory restart, refuses `unavailable` (WS-15 §6.2 wording). Router 0.0.3 exposes no official cold-resume path, so the restore direction itself stays unmeasured — carried to router 0.0.4."
+      "note": "RETIRED (WS-23) — the official `claude` runtime this row measured is no longer part of Clover: every model runs on the Clover runtime, so there is no official session to spool, message or resume. The row's measured history (8d + 9a) is in git, in `packages/core/test/runtime-sdk/official-leg.e2e.test.ts` as deleted at WS-23; PARTIAL — refusal branch only (8d): native SendMessage to a completed official child, across a directory restart, refuses `unavailable` (WS-15 §6.2 wording). Router 0.0.3 exposes no official cold-resume path, so the restore direction itself stays unmeasured — carried to router 0.0.4."
     },
     {
       "row": 6,
-      "title": "Winter child identity + ResumeContext reconstructed after daemon restart (item 6)",
+      "title": "Clover child identity + ResumeContext reconstructed after daemon restart (item 6)",
       "status": "proven",
       "citations": [
         {
-          "repo": "winter",
+          "repo": "clover",
           "file": "packages/core/test/runtime-state/children-restart.test.ts",
           "contains": "WS-17 §8 row 6"
         }
@@ -86,7 +86,7 @@
     },
     {
       "row": 8,
-      "title": "Shared filesystem `SessionStore` + pinned dialect: Claude→Winter, Winter→Claude, and both round-trips at every advertised level (item 8)",
+      "title": "Shared filesystem `SessionStore` + pinned dialect: Claude→Clover, Clover→Claude, and both round-trips at every advertised level (item 8)",
       "status": "proven",
       "citations": [
         {
@@ -104,12 +104,12 @@
       "status": "partial",
       "citations": [
         {
-          "repo": "winter",
+          "repo": "clover",
           "file": "packages/core/capability-matrix.json",
           "contains": "packages/core/scripts/capability-matrix.ts"
         },
         {
-          "repo": "winter",
+          "repo": "clover",
           "file": "packages/core/test/capability-matrix.test.ts",
           "contains": "the drift tripwire for"
         }
@@ -153,7 +153,7 @@
     },
     {
       "row": 13,
-      "title": "No verbatim all-rights-reserved artifacts in the Winter distribution; ephemeral CI fetch only (item 13)",
+      "title": "No verbatim all-rights-reserved artifacts in the Clover distribution; ephemeral CI fetch only (item 13)",
       "status": "proven",
       "citations": [
         {
@@ -163,12 +163,12 @@
           "contains": "WS17-13"
         },
         {
-          "repo": "winter",
+          "repo": "clover",
           "file": "scripts/embed-runtimes.sh",
           "contains": "nothing under `runtimes/claude-official/` is staged"
         }
       ],
-      "note": "The router's proof is scoped to its own distribution (the pinned package, its bundle, or a vendored copy — never tracked). Separately, by the user's P9c-1 ruling: the Winter DISTRIBUTION (the `@yanlinglabs/winter-agent-sdk*` packages) carries no all-rights-reserved artifact. WS-23: the app no longer embeds Anthropic's `claude` binary at all — `scripts/embed-runtimes.sh` stages only `winter` and `ant` (MIT, re-signed), and nothing under `runtimes/claude-official/`."
+      "note": "The router's proof is scoped to its own distribution (the pinned package, its bundle, or a vendored copy — never tracked). Separately, by the user's P9c-1 ruling: the Clover DISTRIBUTION (the `@yanlinglabs/winter-agent-sdk*` packages) carries no all-rights-reserved artifact. WS-23: the app no longer embeds Anthropic's `claude` binary at all — `scripts/embed-runtimes.sh` stages only `winter` and `ant` (MIT, re-signed), and nothing under `runtimes/claude-official/`."
     },
     {
       "row": 14,
@@ -186,7 +186,7 @@
     },
     {
       "row": 15,
-      "title": "Canonical memory + the D18 temp layout `/private/tmp/winter-<uid>/<engine>-<uid>/<key>/<uuid>/{scratchpad,tasks}`; cross-engine temp continuity (Claude→Winter in-place adoption; Winter→Claude clone-copy at the barrier; round trip stabilizes in the claude engine dir); vendor temp roots reported honestly; supervised pre-cleanup reconciliation; default-spawn `mirror_error` handoff refusal; entire-adapter projection before any all-Winter-names claim; `$bunfs` extraction avoided or tested (item 15)",
+      "title": "Canonical memory + the D18 temp layout `/private/tmp/clover-<uid>/<engine>-<uid>/<key>/<uuid>/{scratchpad,tasks}`; cross-engine temp continuity (Claude→Clover in-place adoption; Clover→Claude clone-copy at the barrier; round trip stabilizes in the claude engine dir); vendor temp roots reported honestly; supervised pre-cleanup reconciliation; default-spawn `mirror_error` handoff refusal; entire-adapter projection before any all-Clover-names claim; `$bunfs` extraction avoided or tested (item 15)",
       "status": "proven",
       "citations": [
         {
@@ -204,22 +204,22 @@
       "status": "proven",
       "citations": [
         {
-          "repo": "winter",
+          "repo": "clover",
           "file": "scripts/release-lib.ts",
           "contains": "row16IdentityCheck"
         },
         {
-          "repo": "winter",
+          "repo": "clover",
           "file": "scripts/stage-runtimes.ts",
           "contains": "platform-package"
         },
         {
-          "repo": "winter",
+          "repo": "clover",
           "file": "packages/core/src/runtime-sdk/bundle-layout.ts",
           "contains": "winterSourceOf"
         }
       ],
-      "note": "PROVEN (9a): `@yanlinglabs/winter-agent-sdk-darwin-arm64@0.0.5` is on npm, built on a macOS arm64 runner from a path-neutral copy and published in lockstep with the wrapper, which pins the exact version as an optional dependency. The app's `stage-runtimes.ts` takes `winter` from the installed platform package (dual-hop resolution through the wrapper's own node_modules nesting; version-gated against REQUIRED_WINTER_AGENT_SDK). `release.ts`'s `row16IdentityCheck` requires the embedded pre-sign SHA-256 to equal the npm-shipped file's for a non-dry-run release (`--allow-checkout-winter` is the loud rehearsal escape); CI's verify job proves it without any SDK checkout."
+      "note": "PROVEN (9a): `@yanlinglabs/winter-agent-sdk-darwin-arm64@0.0.5` is on npm, built on a macOS arm64 runner from a path-neutral copy and published in lockstep with the wrapper, which pins the exact version as an optional dependency. The app's `stage-runtimes.ts` takes `clover` from the installed platform package (dual-hop resolution through the wrapper's own node_modules nesting; version-gated against REQUIRED_WINTER_AGENT_SDK). `release.ts`'s `row16IdentityCheck` requires the embedded pre-sign SHA-256 to equal the npm-shipped file's for a non-dry-run release (`--allow-checkout-winter` is the loud rehearsal escape); CI's verify job proves it without any SDK checkout."
     },
     {
       "row": 17,
@@ -241,7 +241,7 @@
       "status": "proven",
       "citations": [
         {
-          "repo": "winter",
+          "repo": "clover",
           "file": ".github/workflows/ci.yml",
           "contains": "verify (workflow, runtime-state, runtimes)"
         }

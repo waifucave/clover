@@ -1,4 +1,4 @@
-// Phase 8d Task 3.1 (P8d-8) — D30: the advisor's per-family DEFAULT model. A Winter session's
+// Phase 8d Task 3.1 (P8d-8) — D30: the advisor's per-family DEFAULT model. A Clover session's
 // advisor is configured per-session through `Options.advisor.model` (`mode-options.ts`/
 // `session-driver.ts`) — the spawned `winter` child resolves the reviewer's own PROVIDER itself (it
 // reads the Keychain itself), so the daemon only ever states the target MODEL, and `d30DefaultModel`
@@ -10,7 +10,7 @@
 import { loadCatalog } from "@yanlinglabs/winter-provider-catalog";
 import { facingNameToTag, splitTag, type ModelTag } from "./model-tag";
 
-/** Which of Winter's three D30-relevant families a catalog-recognised model belongs to. `"other"` is
+/** Which of Clover's three D30-relevant families a catalog-recognised model belongs to. `"other"` is
  *  every family the pinned catalog has that is neither the OpenAI ("gpt") nor the Claude ("claude")
  *  family — Gemini/Grok/DeepSeek/etc. — for which D30 states no default: the table's own third rung,
  *  "else the session's own model", is what such a family falls through to (`d30DefaultModel` answers

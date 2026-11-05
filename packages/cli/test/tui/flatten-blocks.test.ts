@@ -131,7 +131,7 @@ describe("flattenBlock — every line is ≤ columns visible columns", () => {
 
   test("interrupted block: exact wording", () => {
     const lines = flattenBlock({ kind: "interrupted" }, opts());
-    expect(stripAnsi(lines.join("\n"))).toContain("Interrupted · What should Winter do instead?");
+    expect(stripAnsi(lines.join("\n"))).toContain("Interrupted · What should Clover do instead?");
   });
 });
 

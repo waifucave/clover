@@ -21,12 +21,12 @@ describe("this test process runs inside its own temp root", () => {
     const root = perProcessTmp.root!;
     expect(tmpdir()).toBe(root);
     expect(process.env.TMPDIR).toBe(root);
-    expect(root.startsWith(`${perProcessTmp.realTmp}/winter-test-`)).toBe(true);
+    expect(root.startsWith(`${perProcessTmp.realTmp}/clover-test-`)).toBe(true);
     expect(existsSync(root)).toBe(true);
   });
 
   test("the preload's own throwaway dirs (xdg, claude-resume scan root, legacy home, git config) are inside it", () => {
-    for (const value of [process.env.XDG_CONFIG_HOME, process.env.WINTER_CLAUDE_RESUME_SCAN_ROOT, process.env.GIT_CONFIG_GLOBAL]) {
+    for (const value of [process.env.XDG_CONFIG_HOME, process.env.CLOVER_CLAUDE_RESUME_SCAN_ROOT, process.env.GIT_CONFIG_GLOBAL]) {
       expect(value?.startsWith(`${perProcessTmp.root}/`)).toBe(true);
     }
   });
@@ -40,7 +40,7 @@ describe("this test process runs inside its own temp root", () => {
 
 describe("removeTree", () => {
   test("removes a tree that holds a read-only directory (a fixture that chmod'ed it)", () => {
-    const root = mkdtempSync(join(tmpdir(), "winter-removetree-"));
+    const root = mkdtempSync(join(tmpdir(), "clover-removetree-"));
     const locked = join(root, "a", "locked");
     mkdirSync(locked, { recursive: true });
     writeFileSync(join(locked, "f"), "x");
@@ -50,7 +50,7 @@ describe("removeTree", () => {
   });
 
   test("never throws, whatever it is given", () => {
-    expect(() => removeTree(join(tmpdir(), "winter-removetree-does-not-exist"))).not.toThrow();
+    expect(() => removeTree(join(tmpdir(), "clover-removetree-does-not-exist"))).not.toThrow();
   });
 });
 
@@ -58,8 +58,8 @@ describe("a finished run leaves nothing behind in the temp folder it started wit
   async function runFixtureProcess(extraTestBody: string, signal?: "SIGTERM" | "SIGKILL"): Promise<{ outer: string; exitCode: number | null }> {
     // The nested process reads THIS process's already-narrowed tmpdir() as its "real" one, so everything it
     // makes lands in `outer`, which is itself inside this process's root.
-    const outer = mkdtempSync(join(tmpdir(), "winter-pptmp-outer-"));
-    const fixture = mkdtempSync(join(tmpdir(), "winter-pptmp-fixture-"));
+    const outer = mkdtempSync(join(tmpdir(), "clover-pptmp-outer-"));
+    const fixture = mkdtempSync(join(tmpdir(), "clover-pptmp-fixture-"));
     writeFileSync(join(fixture, "bunfig.toml"), `[test]\npreload = ["${join(import.meta.dir, "per-process-tmp.ts")}"]\n`);
     writeFileSync(join(fixture, "a.test.ts"), `
       import { test, expect } from "bun:test";
@@ -70,14 +70,14 @@ describe("a finished run leaves nothing behind in the temp folder it started wit
         for (let i = 0; i < 5; i++) writeFileSync(join(mkdtempSync(join(tmpdir(), "mess-")), "f"), "x");
         const ro = join(mkdtempSync(join(tmpdir(), "mess-ro-")), "locked");
         mkdirSync(ro); writeFileSync(join(ro, "f"), "x"); chmodSync(ro, 0o500);
-        expect(tmpdir()).toContain("winter-test-");
+        expect(tmpdir()).toContain("clover-test-");
         ${extraTestBody}
       });
     `);
     const child = Bun.spawn(["bun", "test"], { cwd: fixture, env: { ...process.env, TMPDIR: outer }, stdout: "pipe", stderr: "pipe" });
     if (signal !== undefined) {
       // Wait for the nested run to have made its root, then kill it the hard way.
-      await until("the nested run's temp root", () => readdirSync(outer).some((n) => n.startsWith("winter-test-")), 15_000);
+      await until("the nested run's temp root", () => readdirSync(outer).some((n) => n.startsWith("clover-test-")), 15_000);
       child.kill(signal);
     }
     const exitCode = await child.exited;

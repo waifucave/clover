@@ -14,12 +14,12 @@ const partial: EmbeddedProtectionCapability = { contractVersion: 1, capability: 
 const complete = { ...partial, coverage: { ...partial.coverage, contextReadChecksVersion: 1, sourceReaderFamilies: ["instructions-imports-memory", "rules", "output-styles", "settings-mcp", "skills", "agent-definitions", "plugin-components-manifests-installed", "commands", "workflow-source"] } };
 let root: string, home: string, coordination: string, remove: (() => void) | undefined;
 beforeEach(() => {
-  root = mkdtempSync(join(tmpdir(), "winter-embedded-protection-")); home = join(root, "home"); coordination = join(root, "coordination");
+  root = mkdtempSync(join(tmpdir(), "clover-embedded-protection-")); home = join(root, "home"); coordination = join(root, "coordination");
   mkdirSync(join(home, "cowork/workspaces/w/shared"), { recursive: true });
 });
 afterEach(() => { remove?.(); remove = undefined; rmSync(root, { recursive: true, force: true }); });
 const activate = () => { remove = registerHostStorageFences(home, { coordinationDir: coordination, coworkStorageActive: true }); };
-const options = () => ({ command: "winter-embedded", args: [], cwd: root, env: {} });
+const options = () => ({ command: "clover-embedded", args: [], cwd: root, env: {} });
 function worker(update: (policy: EmbeddedHostPathProtection) => Promise<number>) {
   let close!: (exit: { code: number; signal: null }) => void, kills = 0, terminates = 0;
   const exited = new Promise<{ code: number; signal: null }>(resolve => { close = resolve; });

@@ -1,7 +1,7 @@
 // ComputerV2 (2026-10-08) — the DAEMON's check that the process on the other end of the helper socket is
 // really "Winter Computer Use" (spine §2, pinned): take the `pid` the helper reports in `hello`, ask the kernel
 // for its code object (`SecCodeCopyGuestWithAttributes` with `kSecGuestAttributePid`) and check it DYNAMICALLY
-// against the helper's designated requirement (`SecCodeCheckValidity`) — identifier + Winter's team. Bun's
+// against the helper's designated requirement (`SecCodeCheckValidity`) — identifier + Clover's team. Bun's
 // sockets do not expose the fd, so the peer's audit token (`LOCAL_PEERTOKEN`) is not reachable here; the
 // helper's own check of the daemon (by audit token) is the load-bearing one, since it guards the TCC power.
 //

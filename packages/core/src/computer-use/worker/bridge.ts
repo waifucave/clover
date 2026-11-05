@@ -1,5 +1,5 @@
 // ComputerV2 (2026-10-08) — the NDJSON stdio bridge between the daemon and its sandboxed automation
-// worker (`winter-core __automation-worker`), one JSON object per line in each direction.
+// worker (`clover-core __automation-worker`), one JSON object per line in each direction.
 //
 // The worker never speaks to the helper, the network or the Keychain: every API function is ONE `call`
 // the daemon answers after its own policy, locks and routing (`computer-use/service.ts`). Everything the

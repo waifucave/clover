@@ -6,13 +6,13 @@
 //   - READS are an ALLOWLIST: the system (`/System`, `/usr/lib`, `/usr/share`, the dyld cache, the timezone
 //     data), a few devices, the running binary itself, and — in dev only, where Bun runs the entry from source —
 //     `packages/core` and the repo root's own config files. Everything else is denied: the user's home in general,
-//     `/etc`, the per-user temp dirs, and therefore `<WINTER_HOME>` and the files `Read`/`Glob`/the bash sandbox
+//     `/etc`, the per-user temp dirs, and therefore `<CLOVER_HOME>` and the files `Read`/`Glob`/the bash sandbox
 //     fence (`denyRead`). Those are ALSO denied explicitly, last (a later rule wins), in case a dev source root
 //     ever contains one. Metadata (`stat`, needed to resolve a path) stays allowed; directory LISTINGS do not.
 //   - NO writes, NO network, exec of itself only, no fork, the workflow worker's four mach services (never a
 //     Keychain service — `workflows/sandbox-guard.ts` refuses to run under any profile that allows one).
 //
-// Measured on both shapes (`bun entry.ts` and the compiled `winter-core`): Bun reads `/` itself at startup, and
+// Measured on both shapes (`bun entry.ts` and the compiled `clover-core`): Bun reads `/` itself at startup, and
 // nothing under `/Users` but the binary (compiled) or the source tree (dev).
 import { realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -29,11 +29,11 @@ const SYSTEM_READ_SUBPATHS = ["/System", "/usr/lib", "/usr/share", "/private/var
 const SYSTEM_READ_LITERALS = ["/", "/private/etc/localtime", "/dev/null", "/dev/urandom", "/dev/random", "/dev/zero"] as const;
 
 export interface AutomationSandboxInput {
-  /** The binary the worker runs as (`winter-core`, or `bun` in dev). */
+  /** The binary the worker runs as (`clover-core`, or `bun` in dev). */
   selfExecPath: string;
   /** Dev only: the repo root whose `packages/core` the worker's entry is loaded from. */
   devSourceRoot?: string;
-  /** Paths denied even if an allowed subpath would cover them — `<WINTER_HOME>` and the Read fence's set. */
+  /** Paths denied even if an allowed subpath would cover them — `<CLOVER_HOME>` and the Read fence's set. */
   denyRead?: readonly string[];
 }
 

@@ -1,4 +1,4 @@
-// Session door D4b: `winter workspace session create|list`, parsed strictly before any connection, through session.create
+// Session door D4b: `clover workspace session create|list`, parsed strictly before any connection, through session.create
 // {mode: "cowork"} and a session.list filtered by the row's workspace reference. Every production daemon refuses the create.
 import { expect, test } from "bun:test";
 import { COWORK_CLI_USAGE, parseCoworkSessionArgs, runCoworkSessionRoute } from "../src/cowork-cli";

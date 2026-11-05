@@ -1,4 +1,4 @@
-// Dispatch's children on the Winter leg (`agent/dispatch-children.ts`) — the spec is the engine-era
+// Dispatch's children on the Clover leg (`agent/dispatch-children.ts`) — the spec is the engine-era
 // `DispatchChildren` and its tests (deleted with `agent/engine.ts` in 497d2112), re-seated on today's
 // seams: a REAL SessionStore + SessionHub in a temp home, the creation transaction and the driver
 // table as recording fakes that behave like the real ones (a `send` appends the `user_message` and,
@@ -7,14 +7,14 @@ import { describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, realpathSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { SessionEvent } from "@yanlinglabs/winter-protocol";
+import type { SessionEvent } from "@waifucave/clover-protocol";
 import type { WinterMcpServerInstance } from "@yanlinglabs/winter-agent-sdk";
 import { SessionStore } from "../../src/sessions/store";
 import { SessionHub } from "../../src/sessions/hub";
 import {
   DispatchChildren, DISPATCH_CLIENT_NAME, DISPATCH_WAKE_CLIENT_NAME, RESTART_RESOLUTION_BY, childPolicyFor, type DispatchChildrenDeps,
 } from "../../src/agent/dispatch-children";
-import { WinterLegRefusal } from "../../src/runtime-sdk/session-driver";
+import { CloverLegRefusal } from "../../src/runtime-sdk/session-driver";
 import { ApprovalBroker } from "../../src/agent/approvals";
 import { QuestionBroker } from "../../src/agent/questions";
 import { PermissionGate, type SessionApprovalPolicy } from "../../src/agent/gate";
@@ -38,7 +38,7 @@ class FakeDriver {
     return { seq: ev.seq, queued: false };
   }
   /** Agent SDK 0.0.44's folding child: a steer while running is pushed now and its `turn_started` held
-   *  until the fold (`foldIn`) — the shape `WinterSession` + the projector produce. */
+   *  until the fold (`foldIn`) — the shape `CloverSession` + the projector produce. */
   foldsQueuedInput = false;
   async steer(text: string, clientName?: string): Promise<{ seq: number; injected: boolean }> {
     if (this.failNext) { const e = this.failNext; this.failNext = undefined; throw e; }
@@ -62,7 +62,7 @@ type ChildUpdate = Extract<SessionEvent, { type: "child_update" }>;
 
 function setup(opts: { models?: string[]; attached?: boolean; policy?: SessionApprovalPolicy } = {}) {
   // Canonical (macOS's tmpdir is a symlink): the spawn stores the canonical dir.
-  const home = realpathSync(mkdtempSync(join(tmpdir(), "winter-dispatch-children-")));
+  const home = realpathSync(mkdtempSync(join(tmpdir(), "clover-dispatch-children-")));
   const store = new SessionStore(home);
   const hub = new SessionHub(store);
   const drivers = new Map<string, FakeDriver>();
@@ -185,7 +185,7 @@ describe("session_spawn: the spawn", () => {
     await t.dc.spawn(t.dispatchId, { dir: link, prompt: "p" });
     expect(t.created[0]!.cwd).toBe(t.workDir);
     // The OS tmp dir itself is a symlinked spelling on macOS (/var → /private/var).
-    const viaTmp = mkdtempSync(join(tmpdir(), "winter-dc-tmp-"));
+    const viaTmp = mkdtempSync(join(tmpdir(), "clover-dc-tmp-"));
     await t.dc.spawn(t.dispatchId, { dir: viaTmp, prompt: "p" });
     expect(t.created[1]!.cwd).toBe(realpathSync(viaTmp));
     for (const dir of ["/nonexistent-x/..", "/tmp/..", "/"]) {
@@ -247,7 +247,7 @@ describe("session_spawn: the spawn", () => {
 
   test("a refused creation transaction is the tool's error, naming the typed code", async () => {
     const t = setup();
-    t.refuse(new WinterLegRefusal("winter_executable_unavailable", "no winter runtime executable resolves"));
+    t.refuse(new CloverLegRefusal("winter_executable_unavailable", "no winter runtime executable resolves"));
     const err = await t.dc.spawn(t.dispatchId, { dir: t.workDir, prompt: "p" }).then(() => undefined, (e: Error) => e);
     expect(err?.message).toBe("could not start the child session: no winter runtime executable resolves (winter_executable_unavailable)");
     expect(t.childUpdates()).toEqual([]);
@@ -379,7 +379,7 @@ describe("child_update progression and the relay", () => {
     const child = await t.spawnOne({ title: "Kid" });
     t.finish(child, { text: "done" });
     // The user types into the child's own window (a human clientName), starting a new turn.
-    await t.driverFor(child).send("now also bump the version", "winter-mac");
+    await t.driverFor(child).send("now also bump the version", "clover-mac");
     const approvals = new ApprovalBroker();
     const seen: number[] = [];
     const original = approvals.wait.bind(approvals);
@@ -415,7 +415,7 @@ describe("child_update progression and the relay", () => {
   });
 
   test("a card from an AUTOMATED turn of a dispatch child (Dispatch's prompt, a peer's message) stays bounded; an unknown origin too", async () => {
-    for (const [clientName, bounded] of [["dispatch", true], ["messaging", true], ["winter-mac", false], ["session", false]] as const) {
+    for (const [clientName, bounded] of [["dispatch", true], ["messaging", true], ["clover-mac", false], ["session", false]] as const) {
       const seen: number[] = [];
       const approvals = new ApprovalBroker();
       approvals.wait = (_sid, _cid, ms) => { seen.push(ms); return new Promise(() => {}); };
@@ -1000,7 +1000,7 @@ describe("which turns are followed, the bounded roster, shutdown and restart", (
     expect(resolutions[1]).toMatchObject({ answers: {} });
     const ups = log.filter((e): e is ChildUpdate => e.type === "child_update");
     expect(ups.at(-1)).toMatchObject({ childSessionId: busy, status: "error", title: "Long job" });
-    expect(ups.at(-1)!.resultSummary).toContain("Winter restarted while this session was working");
+    expect(ups.at(-1)!.resultSummary).toContain("Clover restarted while this session was working");
     expect(ups.filter((u) => u.childSessionId === done).map((u) => u.status)).toEqual(["running", "completed"]);
     expect(store2.childrenOf(t.dispatchId).map((r) => r.sessionId).sort()).toEqual([busy, done].sort());
     // A second boot closes nothing again.
@@ -1134,7 +1134,7 @@ describe("session_spawn: several spawns of one round at once", () => {
     // A refused creation beside another spawn: that call fails, nothing of it exists, the other stands.
     const u = setup();
     const first = u.dc.spawn(u.dispatchId, { dir: u.workDir, prompt: "one" });
-    u.refuse(new WinterLegRefusal("winter_executable_unavailable", "no winter binary"));
+    u.refuse(new CloverLegRefusal("winter_executable_unavailable", "no winter binary"));
     const second = u.dc.spawn(u.dispatchId, { dir: u.workDir, prompt: "two" });
     const settled = await Promise.allSettled([first, second]);
     expect(settled.map((s) => s.status)).toEqual(["fulfilled", "rejected"]);

@@ -2,7 +2,7 @@ import { afterAll, afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, ERR, type WritableSocket } from "@yanlinglabs/winter-protocol";
+import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, ERR, type WritableSocket } from "@waifucave/clover-protocol";
 import {
   buildSpawnablePlugins,
   createSupervisedInstance,
@@ -130,7 +130,7 @@ async function connectPlugin(inst: SupervisedInstance, socketPath: string, plugi
   return c;
 }
 
-const NO_PROVIDER_MESSAGE = "hardware features require Winter.app"; // pinned to hardware.ts's literal (verified against source, not re-derived)
+const NO_PROVIDER_MESSAGE = "hardware features require Clover.app"; // pinned to hardware.ts's literal (verified against source, not re-derived)
 
 describe("4c gate: hardware broker paths (spec §5, plan Task 6)", () => {
   // -----------------------------------------------------------------------------------------
@@ -150,7 +150,7 @@ describe("4c gate: hardware broker paths (spec §5, plan Task 6)", () => {
       async () => {
         const pluginName = "battery-limiter";
         const pluginId = pluginSpecFor(pluginName); // WS-24: live plugins are keyed by their spec
-        home = mkdtempSync(join(tmpdir(), "winter-gate4c-roundtrip-"));
+        home = mkdtempSync(join(tmpdir(), "clover-gate4c-roundtrip-"));
         installBatteryLimiter(home, pluginName);
         const settings = writeAndLoadSettings(home, pluginName, { hardwareConsent: true });
         const socketPath = join(home, "core.sock");
@@ -215,7 +215,7 @@ describe("4c gate: hardware broker paths (spec §5, plan Task 6)", () => {
     afterEach(() => { while (cleanups.length) cleanups.pop()!(); });
 
     async function bootScripted(pluginName: string, opts?: { hardwareConsent?: boolean }): Promise<{ inst: SupervisedInstance; home: string; socketPath: string }> {
-      const home = mkdtempSync(join(tmpdir(), "winter-gate4c-scripted-"));
+      const home = mkdtempSync(join(tmpdir(), "clover-gate4c-scripted-"));
       installBatteryLimiter(home, pluginName);
       writeAndLoadSettings(home, pluginName, opts);
       const socketPath = join(home, "core.sock");
@@ -264,14 +264,14 @@ describe("4c gate: hardware broker paths (spec §5, plan Task 6)", () => {
       // server.test.ts's seedBatteryPlugin({}) variant.
       const pluginName = "no-hw-permission-plugin";
       const pluginId = pluginSpecFor(pluginName); // WS-24: live plugins are keyed by their spec
-      const home = mkdtempSync(join(tmpdir(), "winter-gate4c-scripted-"));
+      const home = mkdtempSync(join(tmpdir(), "clover-gate4c-scripted-"));
       // WS-21: registers the plugin through Contract B (installed_plugins.json + sdk/settings.json)
       // the same way every other test in this file does (`installBatteryLimiter`), then overwrites
       // the COPIED manifest at its real install path to drop `permissions.hardware` — this test's
       // whole point is a manifest that lacks it, unlike battery-limiter's own fixture.
       const dir = installBatteryLimiter(home, pluginName);
       const { writeFileSync } = await import("node:fs");
-      writeFileSync(join(dir, "winter-plugin.json"), JSON.stringify({
+      writeFileSync(join(dir, "clover-plugin.json"), JSON.stringify({
         id: pluginName, tier: "capability", permissions: { exec: true }, // no permissions.hardware at all
       }));
       writeAndLoadSettings(home, pluginName, { hardwareConsent: true });
@@ -286,7 +286,7 @@ describe("4c gate: hardware broker paths (spec §5, plan Task 6)", () => {
       plugin.close();
     });
 
-    test("PATH 3: NO-PROVIDER (no provider connection registered) -> typed no_provider whose message conveys \"requires Winter.app\"", async () => {
+    test("PATH 3: NO-PROVIDER (no provider connection registered) -> typed no_provider whose message conveys \"requires Clover.app\"", async () => {
       const pluginName = "battery-limiter";
       const pluginId = pluginSpecFor(pluginName); // WS-24: live plugins are keyed by their spec
       const { inst, home, socketPath } = await bootScripted(pluginName, { hardwareConsent: true });
@@ -294,7 +294,7 @@ describe("4c gate: hardware broker paths (spec §5, plan Task 6)", () => {
 
       const res = await plugin.request(METHODS.hardwareRequest, { verb: "getChargeLimit" });
       expect(res.result).toEqual({ code: "no_provider", message: NO_PROVIDER_MESSAGE });
-      expect((res.result as { message: string }).message).toContain("Winter.app");
+      expect((res.result as { message: string }).message).toContain("Clover.app");
 
       const hwLine = readAuditLines(home).find((l) => l.kind === "hardware" && l.verb === "getChargeLimit");
       expect(hwLine).toMatchObject({
@@ -306,22 +306,22 @@ describe("4c gate: hardware broker paths (spec §5, plan Task 6)", () => {
       plugin.close();
     });
 
-    test("PATH 4: TIMEOUT (provider registered but never responds) -> typed timeout, using WINTER_HARDWARE_TIMEOUT_MS to stay fast", async () => {
+    test("PATH 4: TIMEOUT (provider registered but never responds) -> typed timeout, using CLOVER_HARDWARE_TIMEOUT_MS to stay fast", async () => {
       const pluginName = "battery-limiter";
       const pluginId = pluginSpecFor(pluginName); // WS-24: live plugins are keyed by their spec
-      const home = mkdtempSync(join(tmpdir(), "winter-gate4c-scripted-timeout-"));
+      const home = mkdtempSync(join(tmpdir(), "clover-gate4c-scripted-timeout-"));
       installBatteryLimiter(home, pluginName);
       writeAndLoadSettings(home, pluginName, { hardwareConsent: true });
       const socketPath = join(home, "core.sock");
 
-      // HardwareBroker reads WINTER_HARDWARE_TIMEOUT_MS synchronously at construction time (see
+      // HardwareBroker reads CLOVER_HARDWARE_TIMEOUT_MS synchronously at construction time (see
       // hardware.ts's constructor) — set it immediately before, and restore immediately after, the
       // ONE synchronous createSupervisedInstance call that constructs it, so no other concurrently-
       // running test in this process ever observes the override.
-      const orig = process.env.WINTER_HARDWARE_TIMEOUT_MS;
-      process.env.WINTER_HARDWARE_TIMEOUT_MS = "80";
+      const orig = process.env.CLOVER_HARDWARE_TIMEOUT_MS;
+      process.env.CLOVER_HARDWARE_TIMEOUT_MS = "80";
       const inst = await createSupervisedInstance({ home, socketPath, hardware: true });
-      if (orig === undefined) delete process.env.WINTER_HARDWARE_TIMEOUT_MS; else process.env.WINTER_HARDWARE_TIMEOUT_MS = orig;
+      if (orig === undefined) delete process.env.CLOVER_HARDWARE_TIMEOUT_MS; else process.env.CLOVER_HARDWARE_TIMEOUT_MS = orig;
       cleanups.push(() => { inst.supervisor.stopAll(); inst.server.stop(); inst.store.close(); });
 
       const tokens = await inst.authority.ensureTokens();

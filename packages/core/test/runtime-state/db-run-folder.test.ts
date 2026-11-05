@@ -1,6 +1,6 @@
 // WS-21 L3.6 (spec §3.8): schema v7 — `active_local_write_root_kind` accepts the router's `run-folder`,
 // and a `run_root_quarantine` table records the roots boot recovery quarantined (kept, never swept
-// again, reported by `winter doctor`).
+// again, reported by `clover doctor`).
 //
 // THE TRAP this file exists for: `runtime_sessions` is the PARENT of `runtime_generations`' foreign
 // key, and a CHECK constraint cannot be altered in place. A rename-the-old-table migration makes SQLite
@@ -15,7 +15,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { downgradeRuntimeStateToV6, openRuntimeStateDb, RUNTIME_STATE_SCHEMA_VERSION } from "../../src/runtime-state/db";
 
-const home = () => mkdtempSync(join(tmpdir(), "winter-rs-v7-"));
+const home = () => mkdtempSync(join(tmpdir(), "clover-rs-v7-"));
 const dbPath = (h: string) => join(h, "runtimes", "runtime-state.db");
 
 const SESSION_COLS = `winter_session_id, runtime_kind, provider_id, model_ref, backend_root, transcript_project_key, memory_project_key, temp_project_key,
@@ -117,7 +117,7 @@ describe("runtime-state schema v7 (WS-21)", () => {
 });
 
 // Review I3 (controller ruling): an older build (0.116.0) opens a v7 store as `newer-schema` and runs with
-// its runtime spine OFFLINE — so `winter migrate --sdk-home --rollback` steps the store back to v6.
+// its runtime spine OFFLINE — so `clover migrate --sdk-home --rollback` steps the store back to v6.
 describe("downgradeRuntimeStateToV6", () => {
   test("current unused schema → v6: run-folder kinds cleared, the v6 CHECK back, the quarantine table gone, rows and FKs intact", () => {
     const h = home();

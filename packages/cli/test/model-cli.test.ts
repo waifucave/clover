@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { REASONING_EFFORTS } from "@yanlinglabs/winter-core";
-import type { Settings } from "@yanlinglabs/winter-core";
+import { REASONING_EFFORTS } from "@waifucave/clover-core";
+import type { Settings } from "@waifucave/clover-core";
 import { parseModelArgs, validateEffort, validateModelTag, internalProviderNote, validateAdvisorSlug, renderModelListing, modelDisplayWithHint } from "../src/model-cli";
 
 describe("parseModelArgs", () => {
@@ -73,9 +73,9 @@ describe("validateModelTag", () => {
 
   // Review fix: `isModelTag` accepts both as ESCAPES (for validating a stored value that may
   // legitimately carry either), but neither is a real, user-settable model -- a user typing
-  // `winter model unstated/unstated` or `winter model winter-test/foo` must be refused, not
+  // `clover model unstated/unstated` or `clover model winter-test/foo` must be refused, not
   // silently "succeed" into a sentinel/test-double record.
-  test("WS-20: validateModelTag rejects the unstated sentinel and a winter-test double", () => {
+  test("WS-20: validateModelTag rejects the unstated sentinel and a clover-test double", () => {
     expect(validateModelTag("unstated/unstated")).toMatch(/provider-qualified tag/);
     expect(validateModelTag("winter-test/foo")).toMatch(/provider-qualified tag/);
   });
@@ -97,17 +97,17 @@ describe("validateModelTag", () => {
   });
 });
 
-// Design correction (after item 4): `winter model <tag>` no longer REFUSES a non-internal-provider
+// Design correction (after item 4): `clover model <tag>` no longer REFUSES a non-internal-provider
 // tag for settings.provider.model — any catalog provider may be the default model. The old
 // `validateInternalProviderModelTag` gate is GONE; `internalProviderNote` is its informational
 // replacement, printed to stderr alongside the write rather than blocking it.
 describe("internalProviderNote", () => {
-  test("undefined for any provider Winter's own jobs can run on — nothing to say", () => {
+  test("undefined for any provider Clover's own jobs can run on — nothing to say", () => {
     expect(internalProviderNote("codex-oauth/gpt-5.6-terra")).toBeUndefined();
     expect(internalProviderNote("openai/gpt-5.6")).toBeUndefined();
     // 2026-09-19: DeepSeek is eligible now, so choosing it says nothing — the jobs simply follow it.
     expect(internalProviderNote("deepseek/deepseek-flash")).toBeUndefined();
-    // WS-23 (claude-creds): every model runs on the Winter agent SDK, so an Anthropic API key serves
+    // WS-23 (claude-creds): every model runs on the Clover agent SDK, so an Anthropic API key serves
     // the jobs too — choosing a Claude model says nothing either.
     expect(internalProviderNote("anthropic/claude-opus-5")).toBeUndefined();
     // WS-23 live-gate fix: the Console's bearer slot is an inventory row the Anthropic adapter is
@@ -115,7 +115,7 @@ describe("internalProviderNote", () => {
     expect(internalProviderNote("console/claude-opus-5")).toBeUndefined();
   });
 
-  test("a heads-up for a provider Winter's own jobs cannot be driven over — never a refusal, never 'inert'", () => {
+  test("a heads-up for a provider Clover's own jobs cannot be driven over — never a refusal, never 'inert'", () => {
     // Bedrock stays outside the eligible set: its `aws` credential material is not one the daemon's
     // own jobs can drive.
     const note = internalProviderNote("bedrock/anthropic.claude-sonnet-4-5");
@@ -165,7 +165,7 @@ describe("validateAdvisorSlug", () => {
 });
 
 describe("renderModelListing", () => {
-  test("WS-20: `winter model` show output groups by provider with the facing name", () => {
+  test("WS-20: `clover model` show output groups by provider with the facing name", () => {
     const out = renderModelListing([
       { id: "codex-oauth/gpt-5.6-terra", providerId: "codex-oauth", displayName: "GPT-5.6 Terra", facingName: "terra", efforts: ["low"] },
       { id: "openai/gpt-5.6-terra", providerId: "openai", displayName: "GPT-5.6 Terra", facingName: "terra", efforts: ["low"] },

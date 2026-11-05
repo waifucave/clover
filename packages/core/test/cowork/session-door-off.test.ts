@@ -10,7 +10,7 @@ import { Database } from "bun:sqlite";
 import { mkdtempSync, readFileSync, readdirSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, relative, sep } from "node:path";
-import { ConnWriter, ERR, LineDecoder, METHODS, PROTOCOL_VERSION, encodeLine, type WritableSocket } from "@yanlinglabs/winter-protocol";
+import { ConnWriter, ERR, LineDecoder, METHODS, PROTOCOL_VERSION, encodeLine, type WritableSocket } from "@waifucave/clover-protocol";
 import { startDaemon, type RunningDaemon } from "../../src/daemon";
 import { FileSecretStore } from "../../src/auth/secret-store";
 import { TokenAuthority } from "../../src/auth/tokens";
@@ -69,7 +69,7 @@ afterEach(async () => {
   server?.stop(); server = undefined; store?.close(); store = undefined;
   homes.splice(0).forEach(home => rmSync(home, { recursive: true, force: true }));
 });
-const tempHome = (): string => { const home = mkdtempSync(join(tmpdir(), "winter-session-door-off-")); homes.push(home); return home; };
+const tempHome = (): string => { const home = mkdtempSync(join(tmpdir(), "clover-session-door-off-")); homes.push(home); return home; };
 
 /** A project workspace whose one folder source is `ready`, written straight into the runtime-state DB before any daemon
  *  opens it, so a refusal cannot come from a missing or unprepared source. Power stays `stopped`, no incarnation. */

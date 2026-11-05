@@ -14,7 +14,7 @@ concurrency:
 
 jobs:
   # The TypeScript workspaces. Split per package so a failure names the layer it came from.
-  # NOTE: the Swift side (WinterProtocol / WinterKit / the Winter app) is deliberately NOT built here —
+  # NOTE: the Swift side (WinterProtocol / WinterKit / the retired Mac app) is deliberately NOT built here —
   # it depends on ~480 MB of vendored artifacts (CEF, Monaco, iroh) that are fetched, not committed.
   # Those are covered by the local build; see CONTRIBUTING.md.
   test:
@@ -28,7 +28,7 @@ jobs:
             args: ""
           - package: plugin-sdk
             args: ""
-          # cli moved to its own `test-cli` job below (Winter Phase 8b fix wave 2): its WinterClient
+          # cli moved to its own `test-cli` job below (Winter Phase 8b fix wave 2): its CloverClient
           # round-trips create sessions, and every session is a spawned `winter` child now, so the
           # job needs the built binary exactly as `test-core` does.
     steps:
@@ -70,18 +70,18 @@ jobs:
         working-directory: extensions/winter-for-chrome
         run: bun test
 
-  # P9a-8: the `winter-binary` job (P8b-2: build winter from the pinned-tag SDK checkout, upload
-  # as an artifact, every consumer downloads it) is DELETED — winter's ONLY source is the installed
+  # P9a-8: the `winter-binary` job (P8b-2: build the `winter` binary from the pinned-tag SDK
+  # checkout, upload it as an artifact, every consumer downloads it) is DELETED — its ONLY source is the installed
   # npm platform package (`@yanlinglabs/winter-agent-sdk-darwin-arm64`, an optional dependency of
   # the wrapper that `bun install` resolves on darwin-arm64; published at v0.0.5). The 0.0.5 pin
   # flip removed the dated checkout+build fallback blocks and the `versions` job they consumed;
-  # each job that needs `winter` now FAILS LOUDLY if the package did not install.
+  # each job that needs the `winter` binary now FAILS LOUDLY if the package did not install.
 
   # core is split OUT of the matrix above rather than given `needs:` on it, so the other three
-  # entries stay independent of the winter build: a broken/slow SDK checkout must not hold up the
+  # entries stay independent of the `winter` binary's build: a broken/slow SDK checkout must not hold up the
   # protocol, plugin-sdk and cli suites (a matrix-level `needs` would gate all four).
   #
-  # WINTER_RUNTIME_REQUIRE_BINARY=1 is the point of the download: without it, every test that needs a
+  # CLOVER_RUNTIME_REQUIRE_BINARY=1 is the point of the download: without it, every test that needs a
   # real `winter` child SKIPS, and CI would go green by proving nothing.
   test-core:
     name: test · core
@@ -100,7 +100,7 @@ jobs:
       # P9a-8: `bun install` above must have brought the winter platform package (the same
       # dual-hop resolver the daemon's ladder uses); absent = a loud failure, never a fallback.
       - name: Check for the installed winter platform package (P9a-8)
-        id: winter-package
+        id: clover-package
         working-directory: packages/core
         run: |
           BIN=$(bun -e '
@@ -110,18 +110,18 @@ jobs:
           echo "bin=${BIN}" >> "$GITHUB_OUTPUT"
           if [ -n "$BIN" ]; then echo "present=true" >> "$GITHUB_OUTPUT"; else echo "::error::the winter platform package (@yanlinglabs/winter-agent-sdk-darwin-arm64 at REQUIRED_WINTER_AGENT_SDK) did not install — bun install is the ONLY winter source since the 0.0.5 pin flip (P9a-8)"; exit 1; fi
 
-      - name: Use the installed platform package's winter (P9a-8 — the strong row-16 path)
+      - name: Use the installed platform package's winter binary (P9a-8 — the strong row-16 path)
         run: |
           mkdir -p dist
-          cp "${{ steps.winter-package.outputs.bin }}" dist/winter
+          cp "${{ steps.clover-package.outputs.bin }}" dist/winter
           chmod +x dist/winter
 
       - name: Test
         working-directory: packages/core
         env:
-          WINTER_RUNTIME_EXECUTABLE: ${{ github.workspace }}/dist/winter
-          WINTER_RUNTIME_REQUIRE_BINARY: "1"
-          WINTER_CLAUDE_REQUIRE_RUNTIME: "1"
+          CLOVER_RUNTIME_EXECUTABLE: ${{ github.workspace }}/dist/winter
+          CLOVER_RUNTIME_REQUIRE_BINARY: "1"
+          CLOVER_CLAUDE_REQUIRE_RUNTIME: "1"
         # Bun 1.3.14 has an intermittent use-after-free ("Segmentation fault at address 0xA", exit 133)
         # that can crash ONE long `bun test` process (after ~7 min, ~70 Workers spawned and
         # terminated, ~1.4 GB RSS). The suite runs as 3 sequential native shards (`bun test
@@ -135,10 +135,10 @@ jobs:
   # cli's non-TUI tests (`test/*.ts` only — `test/tui/**` renders the Ink transcript through
   # ink-testing-library and has ~30 pre-existing failures on main; widen back to a bare `bun test`
   # the moment that suite is fixed). Split out of the matrix for the same reason core is: the
-  # WinterClient round-trips create sessions, every session is a spawned `winter` child (P8b-2: no
+  # CloverClient round-trips create sessions, every session is a spawned `winter` child (P8b-2: no
   # binary ⇒ a typed refusal, never a fallback), so the job downloads the built binary and REQUIRES
-  # it — without `WINTER_RUNTIME_REQUIRE_BINARY=1` those tests would skip and CI would go green by
-  # proving nothing. protocol and plugin-sdk stay independent of the winter build.
+  # it — without `CLOVER_RUNTIME_REQUIRE_BINARY=1` those tests would skip and CI would go green by
+  # proving nothing. protocol and plugin-sdk stay independent of the `winter` binary's build.
   test-cli:
     name: test · cli
     runs-on: macos-latest
@@ -154,7 +154,7 @@ jobs:
 
       # P9a-8: see test-core's identical block — the platform package must be installed.
       - name: Check for the installed winter platform package (P9a-8)
-        id: winter-package
+        id: clover-package
         working-directory: packages/core
         run: |
           BIN=$(bun -e '
@@ -164,19 +164,19 @@ jobs:
           echo "bin=${BIN}" >> "$GITHUB_OUTPUT"
           if [ -n "$BIN" ]; then echo "present=true" >> "$GITHUB_OUTPUT"; else echo "::error::the winter platform package (@yanlinglabs/winter-agent-sdk-darwin-arm64 at REQUIRED_WINTER_AGENT_SDK) did not install — bun install is the ONLY winter source since the 0.0.5 pin flip (P9a-8)"; exit 1; fi
 
-      - name: Use the installed platform package's winter (P9a-8 — the strong row-16 path)
+      - name: Use the installed platform package's winter binary (P9a-8 — the strong row-16 path)
         run: |
           mkdir -p dist
-          cp "${{ steps.winter-package.outputs.bin }}" dist/winter
+          cp "${{ steps.clover-package.outputs.bin }}" dist/winter
           chmod +x dist/winter
 
 
       - name: Test
         working-directory: packages/cli
         env:
-          WINTER_RUNTIME_EXECUTABLE: ${{ github.workspace }}/dist/winter
-          WINTER_RUNTIME_REQUIRE_BINARY: "1"
-          WINTER_CLAUDE_REQUIRE_RUNTIME: "1"
+          CLOVER_RUNTIME_EXECUTABLE: ${{ github.workspace }}/dist/winter
+          CLOVER_RUNTIME_REQUIRE_BINARY: "1"
+          CLOVER_CLAUDE_REQUIRE_RUNTIME: "1"
         run: bun test test/*.ts
 
   # P8b-9: `bun test` does not typecheck — bun strips types and runs. So `tsc` had been RED on `main`
@@ -284,13 +284,13 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       # Phase 8d (CI run 34683922033): WinterKit's daemon fixture is `/usr/bin/env bun -e …` and its
-      # inline daemon imports @yanlinglabs/winter-core, so this job needs bun on PATH AND the workspace installed —
+      # inline daemon imports @waifucave/clover-core, so this job needs bun on PATH AND the workspace installed —
       # without them ~17 WinterKit tests die with exit 127 before the JSON hello (green locally, red here).
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version-file: .bun-version
 
-      - name: Install dependencies (the WinterKit daemon fixture imports @yanlinglabs/winter-core)
+      - name: Install dependencies (the WinterKit daemon fixture imports @waifucave/clover-core)
         run: bun install --frozen-lockfile
 
       - name: WinterProtocol — swift test
@@ -303,10 +303,10 @@ jobs:
 
       # Winter Phase 8d (ruling P8d-22): thirteen Iroh-transport tests originally failed on `main`
       # with `IrohError ConnectionLost(LocallyClosed)` (P9a-11, Lane K: bisected to
-      # `ed6ebeca6c1fce...`, "Dispatch on the Winter leg" — `session.dispatch`'s default mode
+      # `ed6ebeca6c1fce...`, "Dispatch on the Clover leg" — `session.dispatch`'s default mode
       # needs a resolvable `winter` executable, which `bun install` alone now provisions via the
       # npm platform package). Lane J (2026-09) fixed 4 of the remaining 5 by having the affected
-      # tests settle a credential-less Winter-leg turn's real `turn_started`/`agent_error`/
+      # tests settle a credential-less Clover-leg turn's real `turn_started`/`agent_error`/
       # `turn_completed` tail before asserting exact frame counts, instead of racing it (see those
       # tests' own doc comments and `RealDaemon.waitForFirstLine`'s). The last one,
       # `FakePhoneConformanceTests`' streaming test, was rebuilt (2026-09-30) around a fake OpenAI
@@ -336,9 +336,11 @@ jobs:
   # The Cowork launcher (apple/Cowork/WinterCoworkLauncher) is its own Swift package and the `swift` job above never built it, so its tests ran only on a developer's machine.
   # Tests only, both configurations: the normal build, and the one with the compile-time test condition (it adds the tests that need the cdhash-pinned parent, which spawn the
   # package's own just-built launcher and FakeWorker as children of the test host: plain non-hypervisor processes, no VM, no libkrun, no sandbox call). Everything that signs
-  # signs ad-hoc (`codesign --sign -`) in a temp directory; nothing touches a Keychain or `~/.winter*`. No bun, no workspace install: the package imports nothing but the system.
+  # signs ad-hoc (`codesign --sign -`) in a temp directory; nothing touches a Keychain or `~/.clover*`. No bun, no workspace install: the package imports nothing but the system.
   swift-cowork-launcher:
     name: swift (WinterCoworkLauncher)
+    # Cowork is paused (spec §12): this runs on demand only (workflow_dispatch).
+    if: github.event_name == 'workflow_dispatch'
     runs-on: macos-latest
     permissions:
       contents: read
@@ -354,7 +356,7 @@ jobs:
         run: swift test --scratch-path "$RUNNER_TEMP/launcher-build-test" -Xswiftc -DWINTER_COWORK_TEST_BUILD
 
   # Winter Phase 8d (P8d-5): the compiled-binary proofs, on the macOS runner, after the pinned
-  # `winter` artifact is available — `verify:runtimes` needs it (via stageRuntimes' `winterPath`
+  # `winter` binary is available — `verify:runtimes` needs it (via stageRuntimes' `winterPath`
   # rung) exactly as `test-core`/`test-cli` do, and `verify:workflow`/`verify:runtime-state` are
   # cheap to run alongside it in the same job rather than three separate ones.
   verify:
@@ -370,11 +372,11 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
-      # P9a-8: `verify:runtimes` (below) resolves winter through its OWN ladder (the installed
+      # P9a-8: `verify:runtimes` (below) resolves the `winter` binary through its OWN ladder (the installed
       # platform package first — the strong row-16 path), so this job only makes SURE the platform
       # package installed (the 0.0.5 pin flip removed the dated checkout+build fallback).
       - name: Check for the installed winter platform package (P9a-8)
-        id: winter-package
+        id: clover-package
         working-directory: packages/core
         run: |
           BIN=$(bun -e '
@@ -401,9 +403,11 @@ jobs:
       # N2 S7B: the Cowork native pair's packaging gate. Builds the real launcher (swift build, scratch path), embeds it with a stand-in worker into a
       # scratch bundle (ad hoc), accepts it and proves seven refusals. Never runs either binary, never signs with a real identity.
       - name: verify:cowork-native
+        # Cowork is paused (spec §12): this runs on demand only (workflow_dispatch).
+        if: github.event_name == 'workflow_dispatch'
         run: bun run verify:cowork-native
 
-      # N2 S7B: the Cowork channel's receiver thread must start in the COMPILED daemon (a third compile:core entrypoint). Compiles winter-core and runs a temp copy's
+      # N2 S7B: the Cowork channel's receiver thread must start in the COMPILED daemon (a third compile:core entrypoint). Compiles clover-core and runs a temp copy's
       # probe on a socketpair; touches no home, Keychain, daemon or launcher.
       - name: verify:fd-receiver
         run: bun run verify:fd-receiver
@@ -425,6 +429,8 @@ jobs:
   # (success when the change is out of scope), so it can become a required check without ever being "skipped".
   libkrun-queue:
     name: libkrun patch queue
+    # Cowork is paused (spec §12): this runs on demand only (workflow_dispatch). Skipped, the job reports success.
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:

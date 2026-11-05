@@ -3,7 +3,7 @@
 // Changes only through the controller.
 //
 // A script arms a trigger on a bound target — `await tab.wakeWhen({ clicked: ref }, { note })` — and the turn ends. The
-// trigger outlives the script and the turn. When the USER does what it waits for (never Winter's own input), the daemon
+// trigger outlives the script and the turn. When the USER does what it waits for (never Clover's own input), the daemon
 // wakes the session with one daemon-written message (client name `computer-wake`), and the model resumes its work.
 // One-shot: an event ends the trigger. Pure types: imported by the daemon only, never by the sandboxed worker.
 
@@ -50,7 +50,7 @@ export interface WakeArmed {
   /** How the model gets the target back after the wake (its worker may have restarted): `browsers.tab("…")`,
    *  `apps.bind("com.apple.mail")`. Daemon-written, not screen text. */
   rebind: string;
-  /** A DAEMON-WRITTEN sentence about how this trigger waits, printed unfenced as a daemon line (e.g. "update Winter for
+  /** A DAEMON-WRITTEN sentence about how this trigger waits, printed unfenced as a daemon line (e.g. "update Clover for
    *  Chrome to wait without the debugging bar"). Never screen text. */
   note?: string;
 }
@@ -84,11 +84,11 @@ export interface WakeBackendEvent {
 /**
  * One backend per target kind: the browser engine for tab bindings, the helper for apps. Rules every backend keeps:
  *  - ONLY THE USER'S INPUT COUNTS: hardware input (apps) or a trusted DOM event (tabs) — never an event caused by any
- *    Winter session's own input to that target while it is being sent and for 500 ms after;
+ *    Clover session's own input to that target while it is being sent and for 500 ms after;
  *  - privacy: nothing the user typed, no coordinates, no screen text beyond `WakeArmed`'s labels and `detail`;
  *  - the floors: a secure field (or one inside a secure or payment frame) is never watched (`Refused`), a headless tab
  *    never (`NotAllowed`), a site behind the dangerous-domain floor never;
- *  - while armed, the user can SEE that Winter waits there (a ring and a pill on the page or around the element);
+ *  - while armed, the user can SEE that Clover waits there (a ring and a pill on the page or around the element);
  *  - `arm` throws an `AutomationFailure` (`StaleRef`, `NotAllowed`, `Refused`, `TargetLost`, `TargetBusy`,
  *    `BrowserUnavailable`, `HelperUnavailable`) with its one actionable sentence, and arms nothing then.
  */
@@ -109,10 +109,10 @@ export const WAKE_LIMITS = {
   defaultSettleMs: 1_500,
   /** Events within this long of each other, for one session, are delivered as ONE wake message. */
   coalesceMs: 1_000,
-  /** How long after Winter's own input to a target an event there is still taken as Winter's. */
+  /** How long after Clover's own input to a target an event there is still taken as Clover's. */
   ownInputGraceMs: 500,
 } as const;
 
 /** The `user_message` client name a wake turn carries (`sessions/turn-origins.ts`'s automated origins include it).
  *  Defined beside `DISPATCH_WAKE_CLIENT_NAME` in the protocol, which clients read; re-exported here. */
-export { COMPUTER_WAKE_CLIENT_NAME } from "@yanlinglabs/winter-protocol";
+export { COMPUTER_WAKE_CLIENT_NAME } from "@waifucave/clover-protocol";

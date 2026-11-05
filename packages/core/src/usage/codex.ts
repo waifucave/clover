@@ -215,7 +215,7 @@ export const CODEX_APP_SERVER_TIMEOUT_MS = 8_000;
 
 /**
  * Ask the user's `codex app-server` (stdio JSON-RPC, Codex's own protocol — no `jsonrpc` field): `initialize`, the
- * `initialized` notification, `account/rateLimits/read`, then shut down. Codex answers with its OWN login; Winter
+ * `initialized` notification, `account/rateLimits/read`, then shut down. Codex answers with its OWN login; Clover
  * reads no Codex credential. `undefined` on any failure (timeout — the process group is killed —, an error reply,
  * a malformed reply, no binary).
  */
@@ -224,7 +224,7 @@ export async function codexPlanFromAppServer(executable: string, opts: { timeout
   const outcome = await runLines(executable, {
     args: ["app-server"], timeoutMs: opts.timeoutMs ?? CODEX_APP_SERVER_TIMEOUT_MS, ...(opts.cwd === undefined ? {} : { cwd: opts.cwd }),
     env: opts.env ?? probeEnv(["CODEX_HOME"]),
-    onStart: (io) => io.send({ id: 1, method: "initialize", params: { clientInfo: { name: "winter", title: "Winter", version: opts.version ?? "0" }, capabilities: null } }),
+    onStart: (io) => io.send({ id: 1, method: "initialize", params: { clientInfo: { name: "clover", title: "Clover", version: opts.version ?? "0" }, capabilities: null } }),
     onLine: (line, io) => {
       let msg: Record<string, unknown>;
       // A line that is not JSON (a banner, a warning) is not the answer: only the replies to our ids are judged.

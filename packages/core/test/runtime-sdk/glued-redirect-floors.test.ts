@@ -1,12 +1,12 @@
 // A redirection GLUED to a wrapper's argument (`timeout x>FILE`, `nice -n5>FILE`, `time -p>FILE ls`) is still
 // a redirection to bash -- it writes FILE even when the duration is invalid or `timeout` is not installed. The
 // agent SDK's bypass write floor once let the wrapper's argument word swallow it (security review, agent SDK
-// 0.0.40). Winter's own static matchers are pinned here against the same shapes: the protected-path Bash
+// 0.0.40). Clover's own static matchers are pinned here against the same shapes: the protected-path Bash
 // fence (`bashProtectedWriteHit`, every policy) and the sandbox-escape floor (`escapeFloorHit`).
 import { describe, expect, test } from "bun:test";
 import { bashProtectedWriteHit, escapeFloorHit } from "../../src/runtime-sdk/hooks";
 
-const HOME = "/Users/someone/.winter";
+const HOME = "/Users/someone/.clover";
 
 /** The glued shapes, each writing `target`. */
 function gluedShapes(target: string): string[] {
@@ -30,15 +30,15 @@ function gluedShapes(target: string): string[] {
   ];
 }
 
-describe("glued redirections reach Winter's static write matchers", () => {
+describe("glued redirections reach Clover's static write matchers", () => {
   test("the protected-path Bash fence sees every glued redirect into a protected directory", () => {
-    for (const target of [".winter/rules/x.md", ".winter/skills/s/SKILL.md", ".winter/agents/a.md"]) {
+    for (const target of [".clover/rules/x.md", ".clover/skills/s/SKILL.md", ".clover/agents/a.md"]) {
       for (const cmd of gluedShapes(target)) expect({ cmd, hit: bashProtectedWriteHit(cmd) !== undefined }).toEqual({ cmd, hit: true });
     }
   });
 
   test("the sandbox-escape floor sees every glued redirect into a self-grant store", () => {
-    for (const target of [`${HOME}/sdk/settings.json`, `${HOME}/trust.json`, ".winter/settings.local.json", ".winter/mcp.json", `${HOME}/run/core.sock`]) {
+    for (const target of [`${HOME}/sdk/settings.json`, `${HOME}/trust.json`, ".clover/settings.local.json", ".clover/mcp.json", `${HOME}/run/core.sock`]) {
       for (const cmd of gluedShapes(target)) expect({ cmd, hit: escapeFloorHit(cmd, HOME, "/tmp/project") !== undefined }).toEqual({ cmd, hit: true });
     }
   });
@@ -54,7 +54,7 @@ describe("glued redirections reach Winter's static write matchers", () => {
   });
 
   test("the same wrappers reading (not writing) those paths stay unflagged by the protected fence", () => {
-    for (const cmd of ["timeout 5 cat .winter/rules/x.md", "nice -n5 ls .winter/skills", "time -p cat .winter/agents/a.md"]) {
+    for (const cmd of ["timeout 5 cat .clover/rules/x.md", "nice -n5 ls .clover/skills", "time -p cat .clover/agents/a.md"]) {
       expect({ cmd, hit: bashProtectedWriteHit(cmd) }).toEqual({ cmd, hit: undefined });
     }
   });

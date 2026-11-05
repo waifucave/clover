@@ -12,8 +12,8 @@ const WORKFLOWS_DIR = join(ROOT, ".github", "workflows");
 const WORKFLOW_NAME = "cowork-guest-image-build.yml";
 const WORKFLOW_PATH = `.github/workflows/${WORKFLOW_NAME}`;
 const TRIGGER_BRANCH = "cowork/guest-image-build-6";
-const REPOSITORY = "yanlingLabs/winter";
-const SDK_REPOSITORY = "yanlingLabs/winter-agent-sdk";
+const REPOSITORY = "waifucave/clover";
+const SDK_REPOSITORY = "waifucave/clover-sdk";
 const ARTIFACT_DIR = "scripts/cowork-guest-artifact";
 const ZERO_HEAD = "0".repeat(40);
 // The two actions, by the commit the repository's other workflows already use.
@@ -110,7 +110,7 @@ function reviewedLines(ctx: Context): Set<string> {
   const packages = (ctx.ci.hostPackages as string[]).join(" ");
   return new Set([
     "set -euo pipefail",
-    "image_work=$(mktemp -d \"$RUNNER_TEMP/winter-image.XXXXXXXX\")",
+    "image_work=$(mktemp -d \"$RUNNER_TEMP/clover-image.XXXXXXXX\")",
     "printf 'IMAGE_WORK=%s\\n' \"$image_work\" >> \"$GITHUB_ENV\"",
     "mkdir -m 700 \"$image_work/downloads\" \"$image_work/tools\" \"$image_work/kernel-downloads\"",
     `python3 -I -S -B ${S}/unpack_bun.py "$image_work/downloads/bun.zip" "$image_work/tools/bun"`,
@@ -123,8 +123,8 @@ function reviewedLines(ctx: Context): Set<string> {
     `sudo apt-get install -y --no-install-recommends ${packages}`,
     `dpkg-query -W ${packages} > "$IMAGE_WORK/host-packages.txt"`,
     "pnpm install --frozen-lockfile --ignore-scripts",
-    "kernel_work=\"$RUNNER_TEMP/winter-kernel-work\"",
-    "kernel_work_b=\"$RUNNER_TEMP/winter-kernel-work-b\"", "test \"$kernel_work\" != \"$kernel_work_b\"",
+    "kernel_work=\"$RUNNER_TEMP/clover-kernel-work\"",
+    "kernel_work_b=\"$RUNNER_TEMP/clover-kernel-work-b\"", "test \"$kernel_work\" != \"$kernel_work_b\"",
     `${NATIVE("$kernel_work")} --out "$IMAGE_WORK/kernel-1"`, "rm -rf \"$kernel_work\"", `${NATIVE("$kernel_work_b")} --out "$IMAGE_WORK/kernel-2"`, "rm -rf \"$kernel_work_b\"",
     `python3 -I -S -B ${S}/packages.py --out "$IMAGE_WORK/artifact"`,
     "image_status_1=0", "image_status_2=0", IMAGE(1), IMAGE(2),
@@ -309,9 +309,11 @@ describe("guest image build workflow gates", () => {
     for (const name of ["pull_request", "pull_request_target", "workflow_dispatch", "schedule", "workflow_run", "repository_dispatch", "release", "issue_comment"]) expect(Object.keys(doc.on ?? {})).not.toContain(name);
   });
 
-  test("the gate test itself is picked up by normal PR CI: the artifact tests run under cowork-guest-boot.yml and this file under test · core", () => {
+  // C0: Cowork is paused (spec §12), so cowork-guest-boot.yml runs on demand only; when it is dispatched it still runs
+  // the artifact tests, and this file still runs under test · core on every PR.
+  test("the gate test itself is picked up by CI: the artifact tests run under cowork-guest-boot.yml (on demand while Cowork is paused) and this file under test · core", () => {
     const boot = loadContext().others["cowork-guest-boot.yml"] ?? "";
-    expect(boot).toContain("'scripts/cowork-guest-artifact/**'");
+    expect(boot).toContain("workflow_dispatch:");
     expect(boot).toContain("discover -s scripts/cowork-guest-artifact -p 'test_*.py'");
     expect(boot).toContain("discover -s scripts/cowork-guest-artifact/kernel -p 'test_*.py'");
   });
@@ -367,7 +369,7 @@ const MUTATIONS: Array<[string, (text: string) => string, string]> = [
   ["a fourth checkout", sub("      - name: Fetch", `      - uses: actions/checkout@${ACTIONS["actions/checkout"]}\n        with:\n          persist-credentials: false\n      - name: Fetch`), "exactly three checkouts"],
   ["a checkout keeps credentials", sub(/persist-credentials: false/, "persist-credentials: true"), "every checkout must set persist-credentials: false"],
   ["the SDK checkout follows a branch", sub("ref: ${{ env.AGENT_SDK_HEAD }}", "ref: main"), "checkout 1 is not the reviewed origin"],
-  ["the builder checkout is the wrong repository", sub("repository: yanlingLabs/winter-agent-sdk\n          ref: ${{ env.BUILDER_HEAD }}", "repository: yanlingLabs/winter\n          ref: ${{ env.BUILDER_HEAD }}"), "checkout 2 is not the reviewed origin"],
+  ["the builder checkout is the wrong repository", sub("repository: waifucave/clover-sdk\n          ref: ${{ env.BUILDER_HEAD }}", "repository: waifucave/clover\n          ref: ${{ env.BUILDER_HEAD }}"), "checkout 2 is not the reviewed origin"],
   ["a checkout with an extra key", sub("          path: origins/sdk\n", "          path: origins/sdk\n          token: x\n"), "checkout has extra with: keys"],
   ["the first checkout is shallow", sub("fetch-depth: 0", "fetch-depth: 1"), "the first step must be the pushed-commit checkout with full history"],
   ["guard: drop the unarmed refusal", sub(`          test "$REVIEWED_HEAD" != "${ZERO_HEAD}"\n`, ""), "arming guard lacks the unarmed refusal"],

@@ -1,5 +1,5 @@
 // WS-27: the dev Keychain transition (`auth/dev-keychain-transition.ts`) — both sides in this process, over
-// a JSON round trip, against a THROWAWAY keychain FILE (never the login keychain, never `com.winter.core*`).
+// a JSON round trip, against a THROWAWAY keychain FILE (never the login keychain, never `com.waifucave.clover.core*`).
 // The "old creator can not read what the new one made" fact is simulated with fake ops where it matters;
 // the real cross-binary behaviour is the controller's live run.
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
@@ -59,7 +59,7 @@ function opsWith(failures: Failure[]): CredentialKeychainOps {
 
 /** The two sides: the orchestrator's keychain view and the child's handler, joined by a JSON round trip
  *  (what the pipe does). `sent` records every request, so a test can check no value crossed twice. */
-const CHILD_REQUIREMENT = 'identifier "com.winter.core.dev"';
+const CHILD_REQUIREMENT = 'identifier "com.waifucave.clover.core.dev"';
 
 function sides(opts: { old?: Failure[]; child?: Failure[]; childService?: string; channel?: (req: AdoptRequest) => AdoptResponse | undefined } = {}) {
   const home = mkdtempSync(join(dir, "home-"));
@@ -78,12 +78,12 @@ function sides(opts: { old?: Failure[]; child?: Failure[]; childService?: string
 }
 
 describe("who may take part", () => {
-  const dev = join(homedir(), ".winter-dev");
+  const dev = join(homedir(), ".clover-dev");
   test("only the dev profile, on its default home, on the dev service, on macOS", () => {
     expect(devTransitionRefusal({ profile: "dev", home: dev, service: DEV_KEYCHAIN_SERVICE, platform: "darwin" })).toBeUndefined();
     expect(devTransitionRefusal({ profile: "dist", home: dev, service: DEV_KEYCHAIN_SERVICE, platform: "darwin" })).toContain("dev profile");
-    expect(devTransitionRefusal({ profile: "dev", home: dev, service: "com.winter.core", platform: "darwin" })).toContain("com.winter.core");
-    expect(devTransitionRefusal({ profile: "dev", home: join(homedir(), ".winter"), service: DEV_KEYCHAIN_SERVICE, platform: "darwin" })).toContain("default home");
+    expect(devTransitionRefusal({ profile: "dev", home: dev, service: "com.waifucave.clover.core", platform: "darwin" })).toContain("com.waifucave.clover.core");
+    expect(devTransitionRefusal({ profile: "dev", home: join(homedir(), ".clover"), service: DEV_KEYCHAIN_SERVICE, platform: "darwin" })).toContain("default home");
     expect(devTransitionRefusal({ profile: "dev", home: "/tmp/x", service: DEV_KEYCHAIN_SERVICE, platform: "darwin" })).toContain("default home");
     expect(devTransitionRefusal({ profile: "dev", home: dev, service: DEV_KEYCHAIN_SERVICE, platform: "linux" })).toContain("macOS");
   });
@@ -92,7 +92,7 @@ describe("who may take part", () => {
     const script = join(mkdtempSync(join(tmpdir(), "ws27-adopt-")), "child.ts");
     writeFileSync(script, `import { runDevKeychainAdopt } from ${JSON.stringify(join(import.meta.dir, "../../src/auth/dev-keychain-transition.ts"))};\nawait runDevKeychainAdopt();\n`);
     const envBase = { PATH: process.env.PATH ?? "/usr/bin:/bin", HOME: process.env.HOME ?? "" };
-    for (const env of [{ ...envBase, WINTER_HOME: join(homedir(), ".winter-dev") }, { ...envBase, WINTER_PROFILE: "dev", WINTER_HOME: tmpdir() }]) {
+    for (const env of [{ ...envBase, CLOVER_HOME: join(homedir(), ".clover-dev") }, { ...envBase, CLOVER_PROFILE: "dev", CLOVER_HOME: tmpdir() }]) {
       const r = Bun.spawnSync([process.execPath, script], { env, stdin: new TextEncoder().encode('{"op":"hello"}\n'), stdout: "pipe", stderr: "pipe" });
       expect(r.exitCode).toBe(2);
       expect(r.stdout.toString()).toBe("");
@@ -108,7 +108,7 @@ describe.skipIf(!darwin)("the dev Keychain transition (throwaway keychain file)"
     const made = Bun.spawnSync(["security", "create-keychain", "-p", PASSWORD, kcPath]);
     if (made.exitCode !== 0) throw new Error(`create-keychain failed: ${made.stderr.toString()}`);
     kc = openKeychainFile(kcPath, PASSWORD);
-    access = createKeychainAccess("Winter credential", [null]);
+    access = createKeychainAccess("Clover credential", [null]);
   });
   afterAll(() => {
     try { access?.release(); } catch { /* released */ }
@@ -225,7 +225,7 @@ describe.skipIf(!darwin)("the dev Keychain transition (throwaway keychain file)"
       `import { createAdoptHandler, serveAdoptRequests } from ${JSON.stringify(join(src, "dev-keychain-transition.ts"))};`,
       `import { createKeychainAccess, openKeychainFile } from ${JSON.stringify(join(src, "keychain-ffi.ts"))};`,
       `const kc = openKeychainFile(process.env.KC_PATH!, process.env.KC_PASSWORD!);`,
-      `const access = createKeychainAccess("Winter credential", [null]);`,
+      `const access = createKeychainAccess("Clover credential", [null]);`,
       `await serveAdoptRequests(createAdoptHandler({ keychain: kc, service: process.env.KC_SERVICE! }, access, process.env.KC_HOME!, "identifier \\"child\\""), process.stdin, (l) => process.stdout.write(l));`,
       `setTimeout(() => process.exit(0), 50);`,
     ].join("\n"));

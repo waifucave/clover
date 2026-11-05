@@ -12,7 +12,7 @@
  */
 
 /** One hook, resolved to something directly spawnable — plugin id (for env/logging), the shell
- *  command from winter-plugin.json, the plugin's directory (cwd), and an optional per-hook
+ *  command from clover-plugin.json, the plugin's directory (cwd), and an optional per-hook
  *  timeout override (falls back to `DEFAULT_TIMEOUT_MS` below). */
 export interface HookSpec {
   pluginId: string;
@@ -112,9 +112,9 @@ export class HookRunner {
         cwd: spec.cwd,
         env: {
           ...process.env,
-          WINTER_SESSION_ID: payload.sessionId,
-          WINTER_PLUGIN_ID: spec.pluginId,
-          WINTER_HOOK_EVENT: payload.event,
+          CLOVER_SESSION_ID: payload.sessionId,
+          CLOVER_PLUGIN_ID: spec.pluginId,
+          CLOVER_HOOK_EVENT: payload.event,
         },
         stdin: "pipe",
         stdout: "pipe",

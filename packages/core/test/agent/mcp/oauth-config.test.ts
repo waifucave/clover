@@ -1,6 +1,6 @@
 // WS-25 (spec §2): the `oauth` block on every daemon-side MCP config surface — the user/local entries
-// (`settings.ts`, `validateMcpServerEntryForWrite`, the `sdk/.winter.json` read door), a project's
-// `.winter/mcp.json` entries (`ProjectMcpEntrySchema`) and the child's `Options.mcpServers`
+// (`settings.ts`, `validateMcpServerEntryForWrite`, the `sdk/.clover.json` read door), a project's
+// `.clover/mcp.json` entries (`ProjectMcpEntrySchema`) and the child's `Options.mcpServers`
 // (`configuredMcpServersFor`). Declared (zod strips an undeclared key) and validated with the runtime's
 // own `validateMcpOAuthConfig(oauth, url)`.
 import { describe, expect, test } from "bun:test";
@@ -33,7 +33,7 @@ describe("the oauth block on a daemon-side MCP config (WS-25)", () => {
   test("a clientSecretRef that NAMES an account or a service is refused (review C1: the account is derived)", () => {
     expect(() => validateMcpServerEntryForWrite({ type: "http", url: "https://api.example.test/mcp", oauth: { clientId: "x", clientSecretRef: { kind: "keychain", account: "openai:default" } } }))
       .toThrow(/clientSecretRef/);
-    expect(() => validateMcpServerEntryForWrite({ type: "http", url: "https://api.example.test/mcp", oauth: { clientId: "x", clientSecretRef: { kind: "keychain", service: "com.winter.core" } } }))
+    expect(() => validateMcpServerEntryForWrite({ type: "http", url: "https://api.example.test/mcp", oauth: { clientId: "x", clientSecretRef: { kind: "keychain", service: "com.waifucave.clover.core" } } }))
       .toThrow(/clientSecretRef/);
   });
 
@@ -45,10 +45,10 @@ describe("the oauth block on a daemon-side MCP config (WS-25)", () => {
     expect(() => validateMcpServerEntryForWrite({ type: "http", url, oauth: { authServerMetadataUrl: "http://127.0.0.1:9/.well-known/oauth-authorization-server" } })).toThrow(/authServerMetadataUrl/);
   });
 
-  test("the sdk/.winter.json read door keeps a valid block and skips an entry that carries a secret", () => {
-    const home = mkdtempSync(join(tmpdir(), "winter-mcp-oauth-cfg-"));
+  test("the sdk/.clover.json read door keeps a valid block and skips an entry that carries a secret", () => {
+    const home = mkdtempSync(join(tmpdir(), "clover-mcp-oauth-cfg-"));
     mkdirSync(join(home, "sdk"), { recursive: true });
-    writeFileSync(join(home, "sdk", ".winter.json"), JSON.stringify({
+    writeFileSync(join(home, "sdk", ".clover.json"), JSON.stringify({
       mcpServers: {
         gh: { type: "http", url: "https://api.example.test/mcp", oauth: PRE },
         bad: { type: "http", url: "https://api.example.test/other", oauth: { clientSecret: "nope" } },

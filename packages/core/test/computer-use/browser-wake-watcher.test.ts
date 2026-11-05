@@ -132,7 +132,7 @@ function makeEnv() {
 }
 
 const spec = (over: Partial<WatchSpec> = {}): WatchSpec => ({
-  watchId: "wk_000000000001", kind: "appeared", text: "Saved", pill: "Winter continues when this page changes",
+  watchId: "wk_000000000001", kind: "appeared", text: "Saved", pill: "Clover continues when this page changes",
   expiresAt: Date.now() + 3_600_000 * 24 * 365 * 10, initial: "refuse", ...over,
 });
 

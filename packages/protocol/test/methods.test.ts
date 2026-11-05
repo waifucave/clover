@@ -586,7 +586,7 @@ describe("per-session effort ingress shapes (provider-correctness T6)", () => {
   });
 
   test("SyncPushParams.meta.effort is bounded but NOT enumerated — the tier drop is a handler rule", () => {
-    // `ultra` is a Winter-level tier this ingress always DROPS (sync.push is chat-only fail-closed,
+    // `ultra` is a Clover-level tier this ingress always DROPS (sync.push is chat-only fail-closed,
     // and tiers are code-sessions-only). It parses here on purpose: the schema is a shape contract,
     // and enumerating levels in this package would be a second copy of a set it cannot see change.
     const base = { sessionId: "s1", baseSeq: 0, data: "", complete: true };
@@ -896,8 +896,8 @@ describe("hardware.request / hardware.respond (Phase 4c Task 1, spec §5)", () =
       code: "consent_denied", missing: "battery",
     });
 
-    expect(HardwareRequestResult.parse({ code: "no_provider", message: "hardware features require Winter.app" })).toEqual({
-      code: "no_provider", message: "hardware features require Winter.app",
+    expect(HardwareRequestResult.parse({ code: "no_provider", message: "hardware features require Clover.app" })).toEqual({
+      code: "no_provider", message: "hardware features require Clover.app",
     });
     expect(() => HardwareRequestResult.parse({ code: "no_provider" })).toThrow(); // message is required
 
@@ -1230,7 +1230,7 @@ describe("sync.config schema (provider-correctness T3)", () => {
     expect(() => SyncConfigResult.parse({ ...full, models: [{ ...row, id: "" }] })).toThrow();
   });
 
-  // provider-correctness T5 — `clientEfforts`: WINTER-LEVEL tiers, a SEPARATE field from
+  // provider-correctness T5 — `clientEfforts`: CLOVER-LEVEL tiers, a SEPARATE field from
   // `models[].efforts` and never merged into it. `models[].efforts` is exactly what the endpoint's
   // request validator accepts; a client tier is exactly what it does NOT (the daemon translates it
   // before building a request). Merging them would make the daemon advertise a value its own turn
@@ -1239,7 +1239,7 @@ describe("sync.config schema (provider-correctness T3)", () => {
     const { clientEfforts, ...noClientEfforts } = full;
     expect(() => SyncConfigResult.parse(noClientEfforts)).toThrow();
     // The same sentinel discipline as `models: []` / `defaultEffort: ""`: an explicit empty is a
-    // statement ("this daemon offers no Winter-level tiers"), which is what lets an older/newer
+    // statement ("this daemon offers no Clover-level tiers"), which is what lets an older/newer
     // pairing degrade to daemon-driven pickers instead of a client-side guess.
     expect(SyncConfigResult.parse({ ...full, clientEfforts: [] }).clientEfforts).toEqual([]);
   });
@@ -1317,7 +1317,7 @@ describe("sync.config schema (provider-correctness T3)", () => {
       "  • apple/WinterChatKit/Sources/WinterChatKit/SyncClient.swift  (struct SyncConfig — the phone's " +
       "local-chat bootstrap; its memberwise init takes NO default arguments on purpose, so every " +
       "construction site including both test doubles must be updated)\n" +
-      "  • apple/WinterKit/Sources/WinterKit/WinterClient+Methods.swift (struct SyncConfigSnapshot — the " +
+      "  • apple/WinterKit/Sources/WinterKit/CloverClient+Methods.swift (struct SyncConfigSnapshot — the " +
       "Mac pickers' projection; widen it only for a field a Mac caller genuinely needs)\n" +
       "…and, at the next kit tag, ../norma-ios's ScriptedSyncDaemon double.",
     ).toEqual([
@@ -1351,7 +1351,7 @@ describe("PanelTabSchema (diff-tabs Task 7 fix round 1 — the mirror-staleness 
 
 // fix-wave 2026-08-14, Item 1: `PanelOpenTabParams`'s `superRefine` gained a second issue —
 // `diffId` present with `kind !== "diff"` is now refused, closing the gap three shipped Swift
-// comments already claimed was closed (WinterClient+Methods.swift, ShellSessionHost.swift ×2).
+// comments already claimed was closed (CloverClient+Methods.swift, ShellSessionHost.swift ×2).
 describe("PanelOpenTabParams diffId/kind pairing (fix-wave 2026-08-14, Item 1)", () => {
   test('diffId present with kind "web" is refused; kind "diff" with no diffId still parses (the reverse is NOT required)', () => {
     const result = PanelOpenTabParams.safeParse({ sessionId: "s1", kind: "web", diffId: "a".repeat(8) });
@@ -1498,7 +1498,7 @@ describe("SettingsSetSkillDeniedParams.name (Minor 5d)", () => {
   });
 });
 
-// WS-21 (spec §4.4, §5.2): the MCP scopes and the `winter plugin` = `claude plugin` method schemas.
+// WS-21 (spec §4.4, §5.2): the MCP scopes and the `clover plugin` = `claude plugin` method schemas.
 describe("WS-21 method schemas", () => {
   test("mcp.add/remove/get gain scope (default local) and an optional cwd", async () => {
     const m = await import("../src/methods");

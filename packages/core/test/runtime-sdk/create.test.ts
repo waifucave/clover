@@ -17,7 +17,7 @@ import { buildCoreBrand, CORE_BRAND } from "../../src/runtime-sdk/brand";
 import { createWinterRuntimeSdk, SHUTDOWN_QUERY_GRACE_MS, type WinterRuntimeSdk, type WinterRuntimeSdkDeps } from "../../src/runtime-sdk/create";
 import { WinterExecutableUnavailable } from "../../src/runtime-sdk/executable";
 import { EmbeddedRuntimeUnavailable, type EmbeddedSessionHost } from "../../src/runtime-sdk/embedded";
-import { WINTER_PEER_VERSIONS } from "../../src/runtime-sdk/versions";
+import { CLOVER_PEER_VERSIONS } from "../../src/runtime-sdk/versions";
 import type { Settings } from "../../src/settings";
 import { registerHostStorageFences } from "../../src/runtime-sdk/host-storage-fence";
 import { HostCodeUnavailable, HostCodeExecutionService } from "../../src/runtime-sdk/host-code-broker";
@@ -37,13 +37,13 @@ beforeEach(() => {
   handles = [];
   // The env door is a real input to `spawnHookFor`; a developer machine that happens to export it
   // would otherwise make the "nothing resolves" case pass for the wrong reason.
-  envBefore = process.env.WINTER_RUNTIME_EXECUTABLE;
-  delete process.env.WINTER_RUNTIME_EXECUTABLE;
+  envBefore = process.env.CLOVER_RUNTIME_EXECUTABLE;
+  delete process.env.CLOVER_RUNTIME_EXECUTABLE;
 });
 afterEach(async () => {
   for (const h of handles) await h.dispose();
-  if (envBefore === undefined) delete process.env.WINTER_RUNTIME_EXECUTABLE;
-  else process.env.WINTER_RUNTIME_EXECUTABLE = envBefore;
+  if (envBefore === undefined) delete process.env.CLOVER_RUNTIME_EXECUTABLE;
+  else process.env.CLOVER_RUNTIME_EXECUTABLE = envBefore;
   rmSync(home, { recursive: true, force: true });
 });
 
@@ -57,7 +57,7 @@ function withRuntimes(runtimes: Omit<NonNullable<Settings["runtimes"]>, "handoff
 
 test("active retained storage preserves Code when no optional worker/bridge broker is installed",async()=>{
   mkdirSync(join(home,"cowork"));
-  const coordination=mkdtempSync(join(tmpdir(),"winter-create-floor-coordination-"));
+  const coordination=mkdtempSync(join(tmpdir(),"clover-create-floor-coordination-"));
   const unregister=registerHostStorageFences(home,{coordinationDir:coordination,coworkStorageActive:true});
   try {
     const handle=await createWinterRuntimeSdk(deps({codeExecution:new HostCodeExecutionService(home,null)}));handles.push(handle);
@@ -111,11 +111,11 @@ describe("createWinterRuntimeSdk — the options it hands the router", () => {
     expect(typeof handle.sdk.messaging.send).toBe("function");
     expect(handle.sdk.directory).toBeDefined();
     // Resolved through the injected peer's own `resolveBrand`, and it is OURS.
-    expect(handle.sdk.brand.mcpServerName).toBe("winter");
-    expect(handle.sdk.brand.homeDirName).toBe(".winter");
+    expect(handle.sdk.brand.mcpServerName).toBe("clover");
+    expect(handle.sdk.brand.homeDirName).toBe(".clover");
     // test-keychain-isolation fix: no longer the frozen `CORE_BRAND` singleton by identity — it is
     // built fresh from THIS call's own `deps.home` (`buildCoreBrand(undefined, home)`) so its
-    // `keychainService` can honour `WINTER_KEYCHAIN_SERVICE` for a non-default home (P9c-15's
+    // `keychainService` can honour `CLOVER_KEYCHAIN_SERVICE` for a non-default home (P9c-15's
     // guard), which a module-load-time singleton with no home in scope never could. Every other
     // field is unchanged from `CORE_BRAND`.
     expect(opts.brand).not.toBe(CORE_BRAND);
@@ -123,21 +123,21 @@ describe("createWinterRuntimeSdk — the options it hands the router", () => {
     expect(opts.brand!.presetName).toBe("winter_code");
   });
 
-  // WS-23: the official `claude` leg is retired — the router is handed the Winter peer alone, and none
+  // WS-23: the official `claude` leg is retired — the router is handed the Clover peer alone, and none
   // of the options that configured the other leg (its executable, its credential seam, its policy, its
   // capability-schema bridge, its advisor resolver, its handoff participants).
-  test("WS-23: the Winter peer alone — no claude peer, no official options, nothing for the other leg", async () => {
+  test("WS-23: the Clover peer alone — no claude peer, no official options, nothing for the other leg", async () => {
     const { opts } = await build();
     expect(Object.keys(opts.peers)).toEqual(["winter"]);
-    expect(opts.peerVersions).toEqual({ winterAgentSdk: WINTER_PEER_VERSIONS.winterAgentSdk });
+    expect(opts.peerVersions).toEqual({ winterAgentSdk: CLOVER_PEER_VERSIONS.winterAgentSdk });
     const loose = opts as unknown as Record<string, unknown>;
     for (const key of ["vendoredOfficialRuntime", "official", "toInputShape", "advisor", "keychain"]) expect(key in loose).toBe(false);
     expect(Object.keys(opts.handoff ?? {}).sort()).toEqual(["resolveEndpoint", "winterHome"]);
   });
 
-  test("WS-23: a Claude catalog model with an Anthropic key selects the Winter runtime, in Code mode too", async () => {
+  test("WS-23: a Claude catalog model with an Anthropic key selects the Clover runtime, in Code mode too", async () => {
     // A real key in this temp home's file store: before WS-23 this exact input routed Code mode to
-    // the official leg (D13-2). With the peer declared absent, the router's own rule sends it to Winter.
+    // the official leg (D13-2). With the peer declared absent, the router's own rule sends it to Clover.
     const secrets = new FileSecretStore(secretsDir);
     await writeCredentialMaterial(secrets, ANTHROPIC_CREDENTIAL_SECRET_NAME, { kind: "api-key", key: "sk-ant-test" });
     const { handle } = await build({ secrets });
@@ -148,7 +148,7 @@ describe("createWinterRuntimeSdk — the options it hands the router", () => {
     expect(decided.modelRef).toBe("anthropic/claude-sonnet-5");
   });
 
-  test("the Winter permission class is forwarded when declared — and only the Winter adapter's", async () => {
+  test("the Clover permission class is forwarded when declared — and only the Clover adapter's", async () => {
     const sessionPermissionClass = () => "unknown" as const;
     const { opts } = await build({ sessionPermissionClass });
     expect(opts.messaging?.messaging?.winter?.permissionClass).toBe(sessionPermissionClass);
@@ -160,7 +160,7 @@ describe("createWinterRuntimeSdk — the options it hands the router", () => {
     const { opts } = await build({ directoryStore: store });
     expect(opts.directoryStore).toBe(store);
     expect(opts.capabilities).toEqual([]);
-    // §1.6: the seams must resolve under the daemon's home, not `resolveWinterHome()`'s default.
+    // §1.6: the seams must resolve under the daemon's home, not `resolveCloverHome()`'s default.
     expect(opts.handoff?.winterHome).toBe(home);
     // No permission class declared ⇒ no messaging-policy block at all.
     expect(opts.messaging?.messaging).toBeUndefined();
@@ -251,13 +251,13 @@ describe("spawnHookFor — P8b-1's one topology site", () => {
     const { handle } = await build({ embedded });
     const captured = handle.spawnHookFor("chat") as { spawnClaudeCodeProcess: (o: unknown) => unknown };
     mkdirSync(join(home, "cowork"));
-    const coordination = mkdtempSync(join(tmpdir(), "winter-embedded-topology-coordination-"));
+    const coordination = mkdtempSync(join(tmpdir(), "clover-embedded-topology-coordination-"));
     const unregister = registerHostStorageFences(home, { coordinationDir: coordination, coworkStorageActive: true });
     try {
       for (const mode of ["chat", "dispatch"] as const) {
         expect(handle.spawnHookFor(mode)).toBeInstanceOf(EmbeddedRuntimeUnavailable);
       }
-      expect(() => captured.spawnClaudeCodeProcess({ command: "winter-embedded", args: [], cwd: home, env: {} })).toThrow("embedded-host-floor-unavailable");
+      expect(() => captured.spawnClaudeCodeProcess({ command: "clover-embedded", args: [], cwd: home, env: {} })).toThrow("embedded-host-floor-unavailable");
       expect(embedded.spawned).toHaveLength(0);
     } finally { unregister(); rmSync(coordination, { recursive: true, force: true }); }
   });
@@ -266,16 +266,16 @@ describe("spawnHookFor — P8b-1's one topology site", () => {
     const embedded = recordingEmbeddedHost();
     const { handle } = await build({ embedded });
     const hook = handle.spawnHookFor("dispatch") as { spawnClaudeCodeProcess: (o: unknown) => unknown };
-    expect(() => hook.spawnClaudeCodeProcess({ command: "winter-embedded", args: [], cwd: home, env: {}, requireHostFloor: true })).toThrow("embedded-host-floor-unavailable");
+    expect(() => hook.spawnClaudeCodeProcess({ command: "clover-embedded", args: [], cwd: home, env: {}, requireHostFloor: true })).toThrow("embedded-host-floor-unavailable");
     expect(embedded.spawned).toHaveLength(0);
   });
 
-  test("an explicit WINTER_RUNTIME_EXECUTABLE that is missing on disk ⇒ the typed refusal, never a throw and never a fallback", async () => {
+  test("an explicit CLOVER_RUNTIME_EXECUTABLE that is missing on disk ⇒ the typed refusal, never a throw and never a fallback", async () => {
     // P9a fix wave (M1 class): "nothing configured" is no longer a refusal in a tree where the
     // platform package is installed (the ladder's last rung finds it), so the deterministic refusal
     // is an explicit path that does not exist — P8b-2 says an explicit path never falls through.
     // WS-23: asked of CODE — the one mode that still resolves a binary.
-    process.env.WINTER_RUNTIME_EXECUTABLE = join(home, "missing-winter");
+    process.env.CLOVER_RUNTIME_EXECUTABLE = join(home, "missing-clover");
     const { handle } = await build();
     const hook = handle.spawnHookFor("code");
     expect(hook).toBeInstanceOf(WinterExecutableUnavailable);
@@ -284,10 +284,10 @@ describe("spawnHookFor — P8b-1's one topology site", () => {
     expect((hook as WinterExecutableUnavailable).tried.some((p) => p.startsWith(home))).toBe(true);
   });
 
-  test("WINTER_RUNTIME_EXECUTABLE naming an existing file ⇒ the spawn hook", async () => {
-    const bin = join(home, "winter-bin");
+  test("CLOVER_RUNTIME_EXECUTABLE naming an existing file ⇒ the spawn hook", async () => {
+    const bin = join(home, "clover-bin");
     writeFileSync(bin, "#!/bin/sh\n");
-    process.env.WINTER_RUNTIME_EXECUTABLE = bin;
+    process.env.CLOVER_RUNTIME_EXECUTABLE = bin;
     const { handle } = await build();
     expect(handle.spawnHookFor("code")).toEqual({ pathToClaudeCodeExecutable: bin });
     // Path (a): the SDK's own `defaultSpawn` stays in charge until the engine is published.
@@ -295,11 +295,11 @@ describe("spawnHookFor — P8b-1's one topology site", () => {
   });
 
   test("it RE-RESOLVES on every call: the setting is hot and wins over the env", async () => {
-    const envBin = join(home, "env-winter");
-    const settingBin = join(home, "setting-winter");
+    const envBin = join(home, "env-clover");
+    const settingBin = join(home, "setting-clover");
     writeFileSync(envBin, "#!/bin/sh\n");
     writeFileSync(settingBin, "#!/bin/sh\n");
-    process.env.WINTER_RUNTIME_EXECUTABLE = envBin;
+    process.env.CLOVER_RUNTIME_EXECUTABLE = envBin;
 
     const { handle } = await build();
     expect(handle.spawnHookFor("code")).toEqual({ pathToClaudeCodeExecutable: envBin });
@@ -311,17 +311,17 @@ describe("spawnHookFor — P8b-1's one topology site", () => {
 
   test("WS-23: chat and dispatch are EMBEDDED — the host's workerProcess, and no binary is resolved for them at all", async () => {
     // A binary that does not exist: were chat/dispatch still resolving the ladder, this would refuse.
-    process.env.WINTER_RUNTIME_EXECUTABLE = join(home, "missing-winter");
+    process.env.CLOVER_RUNTIME_EXECUTABLE = join(home, "missing-clover");
     const embedded = recordingEmbeddedHost();
     const { handle } = await build({ embedded });
     for (const mode of ["chat", "dispatch"] as const) {
       const hook = handle.spawnHookFor(mode);
       expect(hook).not.toBeInstanceOf(Error);
       const spawnHook = hook as { pathToClaudeCodeExecutable: string; spawnClaudeCodeProcess?: (o: unknown) => unknown };
-      expect(spawnHook.pathToClaudeCodeExecutable).toBe("winter-embedded");
+      expect(spawnHook.pathToClaudeCodeExecutable).toBe("clover-embedded");
       expect(typeof spawnHook.spawnClaudeCodeProcess).toBe("function");
       // The hook IS the host's spawn: what query() hands it goes straight to the embedded host.
-      const options = { command: "winter-embedded", args: ["--run", "--config-json", "{}"], cwd: home, env: {} };
+      const options = { command: "clover-embedded", args: ["--run", "--config-json", "{}"], cwd: home, env: {} };
       expect(() => spawnHook.spawnClaudeCodeProcess!(options)).toThrow("recordingEmbeddedHost spawns nothing");
     }
     expect(embedded.spawned).toHaveLength(2);
@@ -330,9 +330,9 @@ describe("spawnHookFor — P8b-1's one topology site", () => {
   });
 
   test("WS-23: chat and dispatch with NO embedded host refuse typed — never a fallback to the spawned binary", async () => {
-    const bin = join(home, "winter-bin");
+    const bin = join(home, "clover-bin");
     writeFileSync(bin, "#!/bin/sh\n");
-    process.env.WINTER_RUNTIME_EXECUTABLE = bin;
+    process.env.CLOVER_RUNTIME_EXECUTABLE = bin;
     const { handle } = await build();
     for (const mode of ["chat", "dispatch"] as const) {
       const hook = handle.spawnHookFor(mode);
@@ -374,7 +374,7 @@ describe("dispose — G-14: every Query ends BEFORE the router disposes", () => 
   });
 
   // G-14 is "awaits iterations with a bounded grace, ABORTS stragglers", and the abort is the half
-  // that cannot be delegated: Winter's `Query` has no `close()`, so a child that outlives this is
+  // that cannot be delegated: Clover's `Query` has no `close()`, so a child that outlives this is
   // unreachable for the rest of the process's life and then survives it.
   test("an end that never resolves is bounded, ABORTED, and logged — and the router still disposes", async () => {
     const lines: string[] = [];
@@ -488,7 +488,7 @@ describe("createWinterRuntimeSdk — run homes (WS-21)", () => {
     const runHomeFor = async () => { throw new Error("never called by these doors"); };
     const { handle } = await build({ runHomeFor });
     expect(handle.runHomeOutcome?.("an-unknown-run")).toBe("pending");
-    const root = mkdtempSync(join(tmpdir(), "winter-create-recover-"));
+    const root = mkdtempSync(join(tmpdir(), "clover-create-recover-"));
     const report = await handle.reconcileRootForRecovery?.(root);
     expect(report?.outcome).toBe("clean");
     expect(report?.transcripts).toEqual([]);

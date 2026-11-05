@@ -1,7 +1,7 @@
 // The Chromium family (Google Chrome and its channels, Microsoft Edge, Brave, Vivaldi, Opera, Arc, Chromium): a GUIDE
 // and no extras. Their dictionary names a window by the browser's own session number, not by the window-server id the
 // bind holds, and offers nothing else that matches one window exactly (bounds and titles are not identities) — so an
-// extra could not be sure to act in the BOUND window rather than one of the user's, and Winter offers none: it never
+// extra could not be sure to act in the BOUND window rather than one of the user's, and Clover offers none: it never
 // guesses which window to act in. Their dictionary commands (`.dict`) take only references the model writes itself;
 // `execute … javascript` is refused by the helper wherever it is sent.
 import { CHROMIUM_GUIDE, CHROMIUM_GUIDE_WITHOUT_EXTENSION } from "../guides/chromium";

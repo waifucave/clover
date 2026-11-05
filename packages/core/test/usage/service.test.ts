@@ -1,4 +1,4 @@
-// The usage service's own logic (`docs/claude/usage.md`): Winter's per-model turn capture (the projector's pure
+// The usage service's own logic (`docs/claude/usage.md`): Clover's per-model turn capture (the projector's pure
 // delta and the record), ranges and rollups, and the subscriptions tracker.
 import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
@@ -17,7 +17,7 @@ function service(now: () => number) {
   const db = new UsageDb(join(home, "usage", "usage.db"));
   const svc = new UsageService({
     db, pricer, tracking: () => ({ codex: false, claudeCode: false, antigravity: false, opencode: false }), codexExecutable: () => undefined, claudeExecutable: () => undefined,
-    winterCodexWindows: () => [], probeRoot: () => probeRootIn(home), now,
+    cloverCodexWindows: () => [], probeRoot: () => probeRootIn(home), now,
   });
   return { db, svc };
 }
@@ -84,7 +84,7 @@ describe("the projector hands each projected turn's per-model usage to onTurnUsa
   });
 });
 
-describe("Winter turns in the usage DB", () => {
+describe("Clover turns in the usage DB", () => {
   test("a runtime-priced row keeps its price; a subscription row gets the API twin's list-price estimate; replays never double", () => {
     const now = Date.UTC(2026, 9, 18, 12);
     const { db, svc } = service(() => now);
@@ -93,8 +93,8 @@ describe("Winter turns in the usage DB", () => {
       { model: "codex-oauth/gpt-6-sol", canonicalModel: "codex-oauth/gpt-6-sol", inputTokens: 1_000_000, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 },
       { model: "winter-test/echo", inputTokens: 5, outputTokens: 5, cacheReadTokens: 0, cacheWriteTokens: 0 },
     ];
-    svc.recordWinterTurn("sid-1", "code", "rs:b:0", rows);
-    svc.recordWinterTurn("sid-1", "code", "rs:b:0", rows);
+    svc.recordCloverTurn("sid-1", "code", "rs:b:0", rows);
+    svc.recordCloverTurn("sid-1", "code", "rs:b:0", rows);
     const r = db.db.query("SELECT model, provider, mode, cost_usd, cost_basis FROM usage_records ORDER BY id").all();
     const twin = loadCatalog().models.find((m) => m.key === "openai/gpt-6-sol")!.pricing!.value.inputPerMTokUsd;
     expect(r).toEqual([

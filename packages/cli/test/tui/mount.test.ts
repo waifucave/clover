@@ -251,12 +251,12 @@ describe("mountTui — the diffing writer under Ink (TUI renderer T4)", () => {
   }
 
   function withDiffEnv<T>(value: string | undefined, fn: () => T): T {
-    const prev = process.env.WINTER_TUI_DIFF;
-    if (value === undefined) delete process.env.WINTER_TUI_DIFF;
-    else process.env.WINTER_TUI_DIFF = value;
+    const prev = process.env.CLOVER_TUI_DIFF;
+    if (value === undefined) delete process.env.CLOVER_TUI_DIFF;
+    else process.env.CLOVER_TUI_DIFF = value;
     try { return fn(); } finally {
-      if (prev === undefined) delete process.env.WINTER_TUI_DIFF;
-      else process.env.WINTER_TUI_DIFF = prev;
+      if (prev === undefined) delete process.env.CLOVER_TUI_DIFF;
+      else process.env.CLOVER_TUI_DIFF = prev;
     }
   }
 
@@ -273,7 +273,7 @@ describe("mountTui — the diffing writer under Ink (TUI renderer T4)", () => {
     }));
   });
 
-  // Bugfix pass B1 (released 0.2.010: `winter` launches to a BLANK alt-screen until one ctrl+C).
+  // Bugfix pass B1 (released 0.2.010: `clover` launches to a BLANK alt-screen until one ctrl+C).
   // Mechanism (pty byte capture, b1-capture-before.txt): Ink paints the full first frame, then
   // ink's <App>.componentDidMount calls cliCursor.hide(this.props.stdout) — a bare "\x1b[?25l"
   // chunk through the diffing proxy ~1ms later. The writer treated that 6-byte escape as a FRAME:
@@ -328,7 +328,7 @@ describe("mountTui — the diffing writer under Ink (TUI renderer T4)", () => {
     }));
   });
 
-  test("THE KILL-SWITCH: WINTER_TUI_DIFF=0 bypasses the differ entirely — BSU/ESU write-through, byte-identical chunks", () => {
+  test("THE KILL-SWITCH: CLOVER_TUI_DIFF=0 bypasses the differ entirely — BSU/ESU write-through, byte-identical chunks", () => {
     withTty(() => withDiffEnv("0", () => {
       const m = mountWithFakes();
       const chunk = "\x1b[2K\x1b[G" + "a\nb\n";
@@ -409,7 +409,7 @@ describe("mount/main seam — resume hint prints after the LEAVE escape (Phase 3
       expect(order[order.length - 2]).toBe("LEAVE"); // the hint is the VERY NEXT thing after LEAVE
       const hint = order.at(-1)!;
       expect(hint).toContain("Resume this session with:");
-      expect(hint).toContain("winter resume s1");
+      expect(hint).toContain("clover resume s1");
     } finally {
       (process.stdout as unknown as { isTTY: boolean }).isTTY = prev;
     }

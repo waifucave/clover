@@ -1,5 +1,5 @@
 // ComputerV2 — the ONLY CDP the browser engine may send or subscribe to. Every transport refuses anything else before it
-// reaches a browser (`not_allowed`): Winter.app's link (a Swift copy, kept equal by a repo test) and the Winter for
+// reaches a browser (`not_allowed`): Clover.app's link (a Swift copy, kept equal by a repo test) and the Clover for
 // Chrome extension (which imports this file at build time). Nothing here reads cookies, storage, credentials, request
 // bodies or headers. A RESPONSE body crosses only when the model asks for one (`Network.getResponseBody`, cut at
 // CDP_RESPONSE_BODY_MAX_CHARS) or saves a download (`Fetch.takeResponseBodyAsStream` and `IO.read`). This file is DATA
@@ -24,7 +24,7 @@ export const CDP_ALLOWED_METHODS: readonly string[] = [
   "Network.getResponseBody",                                      // networkBody(): one response the model asks for, cut and redacted
   "Fetch.enable", "Fetch.disable",                                // download(): catch the file a page offers, in the background, with no save dialog
   "Fetch.continueRequest", "Fetch.failRequest",                   //   …let every other response through; stop the browser saving the caught one
-  "Fetch.takeResponseBodyAsStream", "IO.read", "IO.close",        //   …read the caught file's bytes into Winter's folder
+  "Fetch.takeResponseBodyAsStream", "IO.read", "IO.close",        //   …read the caught file's bytes into Clover's folder
   "Emulation.setDeviceMetricsOverride", "Emulation.clearDeviceMetricsOverride", // viewport(): test a page at a phone or tablet size
 ];
 
@@ -39,7 +39,7 @@ export const CDP_ALLOWED_EVENTS: readonly string[] = [
   "Runtime.consoleAPICalled", "Runtime.exceptionThrown", "Log.entryAdded",  // console()
   "Network.responseReceived",                                               // network(): status, type, MIME
   "Fetch.requestPaused",                                                    // download()
-  "Page.downloadWillBegin",                                                 // say that a click started a download Winter did not catch
+  "Page.downloadWillBegin",                                                 // say that a click started a download Clover did not catch
 ];
 
 /** The params EVERY Network event keeps whatever else it carries (idle detection needs nothing more). */
@@ -112,7 +112,7 @@ export const CDP_IO_READ_MAX = 1_048_576;
  *    reads `blob:<uuid>` handles: the rule keeps it to caught downloads);
  *  - `Emulation.setDeviceMetricsOverride` with keys other than `width`, `height` (integers 0–4096), `deviceScaleFactor`
  *    (0–4) and `mobile` (a boolean).
- * A transport may refuse more: Winter.app's link refuses `Fetch.*` and `IO.*` outright — the built-in browser saves
+ * A transport may refuse more: Clover.app's link refuses `Fetch.*` and `IO.*` outright — the built-in browser saves
  * downloads itself (`CdpTransport.armDownloads`).
  * Not on the list, by design: `Fetch.fulfillRequest` / `continueWithAuth` / `getResponseBody` (they could write a page
  * or answer an auth challenge), `Network.getRequestPostData`, every `*ExtraInfo` event (headers and cookies),

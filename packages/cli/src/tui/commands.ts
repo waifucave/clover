@@ -1,5 +1,5 @@
 // Phase 3d Task 1 — the pure in-chat slash-command registry + runners that back the 3d
-// autocomplete menu (later tasks). Pure module apart from each runner's own I/O (a WinterClient RPC,
+// autocomplete menu (later tasks). Pure module apart from each runner's own I/O (a CloverClient RPC,
 // or — for /model only — direct settings.json read/write, exactly like its main.ts route): no
 // React/Ink imports here, no Date.now/Math.random.
 //
@@ -8,25 +8,25 @@
 // 3d-task-1-brief.md reading list (packages/cli/src/main.ts).
 import { join } from "node:path";
 import {
-  OutputStyleStore, TrustStore, loadSettings, resolveWinterHome, saveSettings,
+  OutputStyleStore, TrustStore, loadSettings, resolveCloverHome, saveSettings,
   setOutputStyle, setProviderModel, setReasoningEffort, setAdvisorModel, parseModelTag,
   sdkOutputStyle, updateSdkSettings,
-} from "@yanlinglabs/winter-core";
-import type { Settings } from "@yanlinglabs/winter-core";
-import { METHODS, SyncConfigModel } from "@yanlinglabs/winter-protocol";
+} from "@waifucave/clover-core";
+import type { Settings } from "@waifucave/clover-core";
+import { METHODS, SyncConfigModel } from "@waifucave/clover-protocol";
 import { parseModelArgs, validateEffort, validateModelTag, validateAdvisorSlug, renderModelListing, modelDisplayWithHint } from "../model-cli";
 import { parseOutputStyleArgs } from "../output-style-cli";
 import { formatElapsed, formatTokens } from "../task-display";
 import { formatRoutineLine } from "../routines-cli";
 import { formatMemoryList } from "../memory-cli";
 import { filterCodeSessions } from "../session-mode";
-import type { WinterClient } from "../client";
+import type { CloverClient } from "../client";
 // Type-only (erased at compile time — this module stays free of any runtime React/Ink dependency,
 // per the file doc): the picker request shape lives beside the component that renders it.
 import type { ChoiceRequest } from "./choice-menu";
 
 export interface CommandCtx {
-  client: WinterClient;
+  client: CloverClient;
   sessionId: string;
   cwd: string;
   appendNote(text: string): void;
@@ -70,12 +70,12 @@ async function runHelp(ctx: CommandCtx): Promise<void> {
 }
 
 /** Mirrors main.ts `case "compact"` (~:1039): `client.compact(sessionId)`, then the same
- *  compacted/"nothing to compact yet" branch and wording (minus the `winter compact` exit-code
+ *  compacted/"nothing to compact yet" branch and wording (minus the `clover compact` exit-code
  *  path, which has no meaning inside a running chat). */
 async function runCompact(ctx: CommandCtx, argText = ""): Promise<void> {
   const instructions = argText.trim();
   const r = instructions.length > 0 ? await ctx.client.compact(ctx.sessionId, instructions) : await ctx.client.compact(ctx.sessionId);
-  // Winter leg: the session compacts as its next turn, and the transcript shows when it is done.
+  // Clover leg: the session compacts as its next turn, and the transcript shows when it is done.
   if (r.requested) { ctx.appendNote("compaction requested — it runs as the session's next turn"); return; }
   ctx.appendNote(r.compacted ? `compacted (through seq ${r.uptoSeq}, ${r.summaryChars} char summary)` : "nothing to compact yet");
 }
@@ -84,7 +84,7 @@ async function runCompact(ctx: CommandCtx, argText = ""): Promise<void> {
  *  and writes `settings.json` directly (spec: model switches must not require a daemon restart;
  *  the daemon's live model resolver in providers/manager.ts picks the new value up on its next
  *  turn). Reuses model-cli.ts's parseModelArgs/validateModelTag/validateEffort — the exact same
- *  pure parse/validate functions main.ts's route calls — and @yanlinglabs/winter-core's
+ *  pure parse/validate functions main.ts's route calls — and @waifucave/clover-core's
  *  loadSettings/saveSettings/setProviderModel/setReasoningEffort.
  *  No arg -> "show": WS-20 replaces the static CODEX_MODELS enumeration with a LIVE
  *  `sync.config` read over `ctx.client` (the session's own connection — always live in a real TUI
@@ -101,7 +101,7 @@ async function runModel(ctx: CommandCtx, argText: string): Promise<void> {
     return;
   }
 
-  const settingsPath = join(resolveWinterHome(), "settings.json");
+  const settingsPath = join(resolveCloverHome(), "settings.json");
   const settings = loadSettings(settingsPath);
 
   if (action.kind === "show") {
@@ -186,7 +186,7 @@ async function runModel(ctx: CommandCtx, argText: string): Promise<void> {
   let next = settings;
   if (action.kind === "setModel" || action.kind === "setModelAndEffort") {
     // Review fix (item 4): PER-SESSION /model accepts any pinned provider — catalog-membership
-    // only (`validateModelTag`), never the internal-provider gate `winter model <tag>` (the CLI
+    // only (`validateModelTag`), never the internal-provider gate `clover model <tag>` (the CLI
     // verb, main.ts) applies to its own GLOBAL settings.provider.model write.
     const err = validateModelTag(action.slug, settings);
     if (err) { ctx.appendNote(err); return; }
@@ -255,7 +255,7 @@ async function applySessionModel(ctx: CommandCtx, tag: string, confirmLossy: boo
 }
 
 async function applyModelPick(ctx: CommandCtx, slug: string): Promise<void> {
-  const settingsPath = join(resolveWinterHome(), "settings.json");
+  const settingsPath = join(resolveCloverHome(), "settings.json");
   const settings = loadSettings(settingsPath);
   // Review fix (item 4): same per-session posture as runModel's own setModel branch above —
   // catalog-membership only, any pinned provider.
@@ -271,10 +271,10 @@ async function applyModelPick(ctx: CommandCtx, slug: string): Promise<void> {
 /** Mirrors main.ts `case "output-style"` (~:1546): NO client/daemon RPC at all — same
  *  no-daemon-restart precedent as /model above (the daemon's live style resolver re-resolves
  *  settings.outputStyle on the session's next turn). Reuses output-style-cli.ts's
- *  parseOutputStyleArgs — the exact same pure parser main.ts's route calls — and @yanlinglabs/winter-core's
+ *  parseOutputStyleArgs — the exact same pure parser main.ts's route calls — and @waifucave/clover-core's
  *  loadSettings/saveSettings/setOutputStyle/OutputStyleStore, the same helpers. Uses `ctx.cwd`
  *  (not `process.cwd()`) for the store's trust-gated project lookup — same substitution as
- *  /skills and /mcp above, since a project's `.winter/output-styles/` is resolved relative to the
+ *  /skills and /mcp above, since a project's `.clover/output-styles/` is resolved relative to the
  *  session's tracked cwd, not the CLI process's own. No arg -> list (marks the active style);
  *  `--help`/`-h` -> usage note; a name -> sets it (validated via store.resolve, same
  *  unknown-name rejection as the route). */
@@ -287,9 +287,9 @@ async function runOutputStyle(ctx: CommandCtx, argText: string): Promise<void> {
     return;
   }
 
-  const home = resolveWinterHome();
+  const home = resolveCloverHome();
   // WS-21: `outputStyle` lives in `sdk/settings.json` (claude `Settings`).
-  const store = new OutputStyleStore({ winterHome: home, trust: new TrustStore(join(home, "trust.json")) });
+  const store = new OutputStyleStore({ cloverHome: home, trust: new TrustStore(join(home, "trust.json")) });
   const current = sdkOutputStyle(home) ?? "default";
 
   if (action.action === "list") {
@@ -322,8 +322,8 @@ async function runOutputStyle(ctx: CommandCtx, argText: string): Promise<void> {
  *  settings/store read at pick time, the same store.resolve validation and unknown-name note, the
  *  identical confirmation note). */
 function applyOutputStylePick(ctx: CommandCtx, name: string): void {
-  const home = resolveWinterHome();
-  const store = new OutputStyleStore({ winterHome: home, trust: new TrustStore(join(home, "trust.json")) });
+  const home = resolveCloverHome();
+  const store = new OutputStyleStore({ cloverHome: home, trust: new TrustStore(join(home, "trust.json")) });
   if (!store.resolve(name, ctx.cwd)) {
     ctx.appendNote(`Unknown output style: ${name}\nAvailable: ${store.list(ctx.cwd).map((s) => s.name).join(", ")}`);
     return;
@@ -338,7 +338,7 @@ async function runStatus(ctx: CommandCtx): Promise<void> {
   const s = await ctx.client.daemonStatus();
   const provider = s.provider ? `${s.provider.id} (${s.provider.model})` : "(none configured)";
   ctx.appendNote([
-    `winter-core v${s.version} up ${formatElapsed(s.uptimeMs)} · ${s.socketPath}`,
+    `clover-core v${s.version} up ${formatElapsed(s.uptimeMs)} · ${s.socketPath}`,
     `provider: ${provider} · sessions: ${s.sessionsCount} · plugins: ${s.pluginsCount}`,
   ].join("\n"));
 }
@@ -362,7 +362,7 @@ async function runQuota(ctx: CommandCtx): Promise<void> {
  *  Plan-immunity Task 2 (mode×surface matrix): the TUI is CODE-ONLY, and /sessions is the
  *  interactive resume PICKER — it feeds directly into resuming INTO this same TUI, which can only
  *  ever attach to a code session — so this HIDES chat/dispatch and future/unknown rows entirely
- *  (`filterCodeSessions`, session-mode.ts). Contrast `winter sessions` (main.ts), a plain inventory
+ *  (`filterCodeSessions`, session-mode.ts). Contrast `clover sessions` (main.ts), a plain inventory
  *  listing that MARKS non-code rows instead of hiding them — see that module's file doc for the
  *  full picker-vs-inventory distinction. */
 async function runSessions(ctx: CommandCtx): Promise<void> {
@@ -526,7 +526,7 @@ async function runMemory(ctx: CommandCtx): Promise<void> {
   ctx.appendNote(formatMemoryList(facts).join("\n"));
 }
 
-/** CC-parity phase 3 (Workflows) Track C Task C4: mirrors `winter workflow`'s CLI shape
+/** CC-parity phase 3 (Workflows) Track C Task C4: mirrors `clover workflow`'s CLI shape
  *  (workflow-cli.ts / main.ts `case "workflow"`, C3) inside the TUI. No sub-token -> list: saved
  *  workflows (`client.workflowList`'s `.saved` — the same `WorkflowStore` scan the CLI's
  *  file-direct `list` reads, C1) then running runs (`.running`) under a "running:" header — same
@@ -598,7 +598,7 @@ async function runWorkflows(ctx: CommandCtx, argText: string): Promise<void> {
  *  plan-immunity fix round), and that gate's vocabulary is NARROWER than activity participation —
  *  it would hide a future cowork row, which the participation predicate already reserves — so
  *  such a headless surface would need its gate reviewed when Cowork ships. T8 (dispatch's management verbs) and T9
- *  (`winter agents`) are the plan's own homes for that surface.
+ *  (`clover agents`) are the plan's own homes for that surface.
  *
  *  `off` is how the RPC's clearing half is reachable from the shell at all; no sub-token means the
  *  verb's own value, the overwhelmingly common case (`/bg`'s "a bare verb reads naturally as the
@@ -712,7 +712,7 @@ export function helpText(): string {
 }
 
 /** CC-parity phase 3 (Workflows) Track C Task C4: after a REGISTRY miss, `cmd` might name a SAVED
- *  workflow rather than an unknown built-in — e.g. `/triage`, after a `winter workflow save
+ *  workflow rather than an unknown built-in — e.g. `/triage`, after a `clover workflow save
  *  triage ...` (C3) or a Workflow-tool save (agent/tools/workflow.ts). `client.workflowRun`
  *  resolves `name` server-side via `WorkflowStore` IN THE SESSION'S OWN cwd (protocol/methods.ts's
  *  `WorkflowRunParams` doc comment) — same resolution chain `/workflows run <name>` above and the

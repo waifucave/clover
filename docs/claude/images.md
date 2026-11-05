@@ -1,5 +1,7 @@
 # Image and file attachments (Code and Dispatch)
 
+> **Reference: Winter's code.** This file describes Winter's code as it stood at the `winter-before-clover` tag, before the Clover rename (C0). Where it describes code that C0 renamed, read `winter-core` as `clover-core`, `WINTER_*` as `CLOVER_*` and `~/.winter` as `~/.clover`. For Clover itself, [the spec](../clover-spec.md) is the source of truth, then [the plan](../clover-plan.md).
+
 *Read this before touching image or file attachments, `session.stageImage`, `session.send`/`steer`'s `images`/`files`, the Mac composer's inline chips (the Dispatch pill's included), or the transcript's read-image thumbnails and file links. Paths are under `packages/core/src/` unless stated.*
 
 ## Contract

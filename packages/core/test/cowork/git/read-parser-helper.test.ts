@@ -9,14 +9,14 @@ import { DEFAULT_GIT_READ_LIMITS } from "../../../src/cowork/git/read-types";
 
 import { buildGitReadParserFixture, parserFixtureCommand } from "./read-parser-fixture";
 const command = (args: string[], cwd?: string) => parserFixtureCommand(root, args, cwd);
-const enabled = process.platform === "darwin" && !!process.env.WINTER_GIT_READ_NODE_FIXTURE;
+const enabled = process.platform === "darwin" && !!process.env.CLOVER_GIT_READ_NODE_FIXTURE;
 let root: string, config: GitReadParserConfiguration, parser: ConfinedGitReadParser;
 const fixture = test.skipIf(!enabled);
 const pkt = (text: string) => Buffer.from((Buffer.byteLength(text) + 4).toString(16).padStart(4, "0") + text);
 const advertisement = Buffer.concat([pkt("# service=git-upload-pack\n"), Buffer.from("0000"), pkt(`${"1".repeat(40)} HEAD\0multi_ack\n`), Buffer.from("0000")]);
 beforeAll(async () => {
   if (!enabled) return;
-  root = mkdtempSync(join(tmpdir(), "winter-git-parser-helper-"));
+  root = mkdtempSync(join(tmpdir(), "clover-git-parser-helper-"));
   ({ config, parser } = await buildGitReadParserFixture(root));
 }, 20_000);
 afterAll(() => { if (root) rmSync(root, { recursive: true, force: true }); });
@@ -65,22 +65,22 @@ fixture("confined runtime actually denies sibling fixture secrets, writes, fork 
   writeFileSync(secret, "fixture-not-a-real-secret", { mode: 0o600 });
   const source = `const fs=require("node:fs"), net=require("node:net"), cp=require("node:child_process"), crypto=require("node:crypto");
 process.stdout.write("WGH1\\n");let input=[];process.stdin.on("data",d=>input.push(d));process.stdin.on("end",()=>{
-let okay=!process.env.WINTER_GIT_PARSER_FAKE_SECRET && process.env.NODE_OPTIONS==="";
+let okay=!process.env.CLOVER_GIT_PARSER_FAKE_SECRET && process.env.NODE_OPTIONS==="";
 try{fs.readFileSync(${JSON.stringify(secret)});okay=false;}catch(e){okay=okay&&["EPERM","EACCES"].includes(e.code);}
 try{fs.writeFileSync(${JSON.stringify(write)},"bad");okay=false;}catch(e){okay=okay&&["EPERM","EACCES"].includes(e.code);}
 const child=cp.spawnSync("/usr/bin/true");okay=okay&&!!child.error&&["EPERM","EACCES"].includes(child.error.code);
 const socket=net.createConnection({host:"127.0.0.1",port:9});socket.on("connect",()=>process.exit(78));socket.on("error",e=>{okay=okay&&["EPERM","EACCES"].includes(e.code);const bytes=Buffer.concat(input).subarray(20);let receipt=Buffer.alloc(40);receipt.write("WGR1");receipt.writeUInt32BE(okay?0:2,4);crypto.createHash("sha256").update(bytes).digest().copy(receipt,8);process.stdout.write(receipt);});});`;
   writeFileSync(payload, source, { mode: 0o600 });
   const denied = await ConfinedGitReadParser.admit({ ...config, payload, payloadSha256: createHash("sha256").update(readFileSync(payload)).digest("hex") });
-  const before = process.env.WINTER_GIT_PARSER_FAKE_SECRET; process.env.WINTER_GIT_PARSER_FAKE_SECRET = "fixture-sentinel";
-  try { await denied.validate("advertisement", advertisement, { ...DEFAULT_GIT_READ_LIMITS }); } finally { if (before === undefined) delete process.env.WINTER_GIT_PARSER_FAKE_SECRET; else process.env.WINTER_GIT_PARSER_FAKE_SECRET = before; }
+  const before = process.env.CLOVER_GIT_PARSER_FAKE_SECRET; process.env.CLOVER_GIT_PARSER_FAKE_SECRET = "fixture-sentinel";
+  try { await denied.validate("advertisement", advertisement, { ...DEFAULT_GIT_READ_LIMITS }); } finally { if (before === undefined) delete process.env.CLOVER_GIT_PARSER_FAKE_SECRET; else process.env.CLOVER_GIT_PARSER_FAKE_SECRET = before; }
   expect(await Bun.file(write).exists()).toBe(false);
 });
 fixture("unsigned-executable-memory exception fails actual helper admission", async () => {
   const node = join(root, "weaker-node"), entitlements = join(root, "weaker-entitlements.plist"); copyFileSync(config.node, node); chmodSync(node, 0o700);
   writeFileSync(entitlements, '<?xml version="1.0"?><plist version="1.0"><dict><key>com.apple.security.cs.allow-unsigned-executable-memory</key><true/></dict></plist>');
-  expect((await command(["/usr/bin/codesign", "--force", "--sign", "-", "--options", "runtime", "--identifier", "com.winter.core.test-weaker-node", "--entitlements", entitlements, node])).code).toBe(0);
-  await expect(ConfinedGitReadParser.admit({ ...config, node, nodeRequirement: 'identifier "com.winter.core.test-weaker-node"' })).rejects.toMatchObject({ code: "integration_unavailable" });
+  expect((await command(["/usr/bin/codesign", "--force", "--sign", "-", "--options", "runtime", "--identifier", "com.waifucave.clover.core.test-weaker-node", "--entitlements", entitlements, node])).code).toBe(0);
+  await expect(ConfinedGitReadParser.admit({ ...config, node, nodeRequirement: 'identifier "com.waifucave.clover.core.test-weaker-node"' })).rejects.toMatchObject({ code: "integration_unavailable" });
 });
 
 fixture("profile and synchronous no-child spawn failures do not consume parser capacity", async () => {

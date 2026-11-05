@@ -3,8 +3,8 @@
 // jobs' quota — read from what the daemon already sees, nothing estimated.
 import { describe, expect, test } from "bun:test";
 import type { ProtocolSdkMessage } from "../../src/projector/types";
-import type { SessionEvent } from "@yanlinglabs/winter-protocol";
-import { IslandUsageResult } from "@yanlinglabs/winter-protocol";
+import type { SessionEvent } from "@waifucave/clover-protocol";
+import { IslandUsageResult } from "@waifucave/clover-protocol";
 import { IslandUsageRegistry, epochMs, ISLAND_USAGE_MAX_SESSIONS } from "../../src/island/usage";
 import { accept, makeProjector } from "../projector/harness";
 

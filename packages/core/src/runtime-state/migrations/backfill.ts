@@ -2,7 +2,7 @@
 // `RuntimeSessionRecord`, so the runtime spine has a complete picture of the past before anything
 // starts routing on it.
 //
-// WHAT A BACKFILLED RECORD DELIBERATELY DOES NOT CLAIM. A legacy session's history is a Winter
+// WHAT A BACKFILLED RECORD DELIBERATELY DOES NOT CLAIM. A legacy session's history is a Clover
 // `SessionEvent` JSONL and nothing else: there is no Claude-dialect compatibility transcript for it,
 // no backend session uuid that any file is named after, no recorded SDK or engine version, and no
 // selection anybody actually made. Every one of those absences is written down rather than

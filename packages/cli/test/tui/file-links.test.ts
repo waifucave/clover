@@ -5,7 +5,7 @@ import { join, relative } from "node:path";
 import { fileAtCell, transcriptFileAtCell } from "../../src/tui/file-links";
 
 test("clicks resolve existing relative, nested, absolute and home file paths only", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "winter-links-"));
+  const dir = await mkdtemp(join(tmpdir(), "clover-links-"));
   try {
     await mkdir(join(dir, "docs"));
     const file = join(dir, "docs", "Sushi_Story.pptx");

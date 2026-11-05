@@ -120,6 +120,12 @@ export const RENAME_ALLOWLIST: readonly AllowlistEntry[] = [
     why: "the on-disk checkout directory name — user-owned (it is also the Claude Code project key)",
   },
   {
+    id: "clover-docs",
+    regex: /norma|Norma|NORMA/g,
+    files: ["docs/clover-*.md", "docs/research/**"],
+    why: "the Clover spec and plan, and the research and spike reports behind them, name Norma's migrations, its home and the Norma v2 folder as history",
+  },
+  {
     id: "rename-tooling",
     regex: /norma|Norma|NORMA/g,
     files: ["scripts/rename/**", "packages/core/test/rename/**"],
