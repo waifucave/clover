@@ -212,17 +212,22 @@ export class BridgeEndpoint {
     const pid = (this.#opts.peerPid ?? peerPidOf)(socket.fd);
     const verdict = await this.#opts.tokens.accept(p.token, p.agentSessionId!, pid);
     if (!verdict.ok) refuse(verdict.reason);
-    if (s.closed) throw new RpcError(CLOVER_ERR.ROLE_REFUSED, "closed");
     const ok = verdict as { ok: true; sessionId: string; connection: number };
+    if (s.closed) {
+      // It went away while the check ran: give the token's one connection back.
+      this.#opts.tokens.release(ok.sessionId, ok.connection);
+      throw new RpcError(CLOVER_ERR.ROLE_REFUSED, "closed");
+    }
     s.sessionId = ok.sessionId;
     s.connection = ok.connection;
     if (s.helloTimer) clearTimeout(s.helloTimer);
-    const bot = this.#opts.handlers.sessionInfo(ok.sessionId)?.bot;
+    const info = this.#opts.handlers.sessionInfo(ok.sessionId);
+    const bot = info?.bot;
     return {
       ok: true,
       serverVersion: this.#opts.serverVersion,
       protocolVersion: CLOVER_PROTOCOL_VERSION,
-      caller: { kind: "session", sessionId: ok.sessionId, sessionKind: "agent", ...(bot === undefined ? {} : { bot }) },
+      caller: { kind: "session", sessionId: ok.sessionId, sessionKind: bot === undefined ? "coding" : "agent", ...(bot === undefined ? {} : { bot }) },
       device: this.#opts.device,
       features: [],
     };
