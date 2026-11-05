@@ -1,0 +1,40 @@
+# S2 Windows compatibility measurements
+
+Run from the repository root. These are disposable-VM experiments, **not a production fence**.
+Windows Server 2025 build 26100 is a surrogate; Windows 11 remains live gate 3.
+
+Install prerequisites in the named Windows VM (Git for Windows must already be installed):
+
+```sh
+python3 spikes/s2-windows-fence/remote.py windows spikes/s2-windows-fence/install-tools.ps1
+```
+
+Measure five token postures, seven operations each:
+
+```sh
+python3 spikes/s2-windows-fence/remote.py windows spikes/s2-windows-fence/check.ps1
+```
+
+On a disposable Windows runner with Git, Node and Bun at the paths in `check.ps1`:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File spikes/s2-windows-fence/check.ps1
+```
+
+The native source defaults to the sibling uploaded by `remote.py`; on a checkout it falls
+back to `native/sandbox/windows-probe.cs`. The transport accepts only the two named VMs
+and uses SSH, not additional cloud operations. Its payload is public source only.
+
+`privileges` removes privileges, but does **not** confine filesystem writes. `privileges-low`
+adds low integrity. `restricted` and `low` also use `WRITES_RESTRICTED` and the well-known
+Restricted Code SID. `appcontainer` has no capabilities. The fixture grants its directory
+to the two test identities and removes its AppContainer profile and files afterwards.
+Results are JSON lines interspersed with public command diagnostics. A zero script exit
+means measurements completed; the individual `exit` fields determine compatibility.
+
+The helper does not provision a private object namespace, job object, service/RPC policy,
+network enforcement, or a persistent escape floor. No caller may use it to run untrusted
+commands. Fixed native launch failures cannot establish that all designs fail.
+
+See [the report](../../docs/research/2026-11-05-s2-s8-fence-and-secrets.md) and
+[`results/windows-compatibility.txt`](results/windows-compatibility.txt).
