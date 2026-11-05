@@ -1,0 +1,12 @@
+{
+  "type": "pairing_changed",
+  "ts": 1781270000000,
+  "pairingId": "pair_1",
+  "step": "words",
+  "words": [
+    "maple",
+    "orbit",
+    "velvet",
+    "canyon"
+  ]
+}

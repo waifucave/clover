@@ -1,0 +1,368 @@
+{
+  "area": "core",
+  "owner": "C",
+  "methods": {
+    "protocol.hello": {
+      "doc": "The first call on every connection: the role, its token, and who the connection counts as (§3.1).",
+      "owner": "C",
+      "direction": "to-daemon",
+      "roles": [
+        "app",
+        "layer",
+        "cli",
+        "plugin-host",
+        "bridge",
+        "remote",
+        "web",
+        "peer"
+      ],
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "protocolVersion": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "app",
+              "layer",
+              "cli",
+              "plugin-host",
+              "bridge",
+              "remote",
+              "web",
+              "peer"
+            ]
+          },
+          "token": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          },
+          "clientName": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "pluginId": {
+            "type": "string",
+            "maxLength": 81,
+            "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+          },
+          "agentSessionId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9._:-]+$"
+          },
+          "hostProcess": {
+            "type": "string",
+            "enum": [
+              "clover",
+              "shared",
+              "own"
+            ]
+          },
+          "device": {
+            "type": "string",
+            "pattern": "^[a-z0-9]{16,64}$"
+          },
+          "features": {
+            "maxItems": 32,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            }
+          }
+        },
+        "required": [
+          "protocolVersion",
+          "role",
+          "token",
+          "clientName"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "const": true
+          },
+          "serverVersion": {
+            "type": "string"
+          },
+          "protocolVersion": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "caller": {
+            "oneOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "user"
+                  },
+                  "client": {
+                    "type": "string",
+                    "enum": [
+                      "app",
+                      "cli",
+                      "ios",
+                      "web"
+                    ]
+                  },
+                  "device": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9]{16,64}$"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "client"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "session"
+                  },
+                  "sessionId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128,
+                    "pattern": "^[A-Za-z0-9._:-]+$"
+                  },
+                  "sessionKind": {
+                    "type": "string",
+                    "enum": [
+                      "bot",
+                      "side-thread",
+                      "agent",
+                      "coding"
+                    ]
+                  },
+                  "bot": {
+                    "type": "string",
+                    "maxLength": 81,
+                    "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "sessionId",
+                  "sessionKind"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "plugin"
+                  },
+                  "pluginId": {
+                    "type": "string",
+                    "maxLength": 81,
+                    "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "pluginId"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "core"
+                  }
+                },
+                "required": [
+                  "kind"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "peer"
+                  },
+                  "device": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9]{16,64}$"
+                  },
+                  "sessionId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128,
+                    "pattern": "^[A-Za-z0-9._:-]+$"
+                  },
+                  "bot": {
+                    "type": "string",
+                    "maxLength": 81,
+                    "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "device"
+                ],
+                "additionalProperties": false
+              }
+            ]
+          },
+          "device": {
+            "type": "string",
+            "pattern": "^[a-z0-9]{16,64}$"
+          },
+          "features": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "ok",
+          "serverVersion",
+          "protocolVersion",
+          "caller",
+          "device",
+          "features"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "events.subscribe": {
+      "doc": "Receive the `core.event`s of these areas that this role may receive.",
+      "owner": "C",
+      "direction": "to-daemon",
+      "roles": [
+        "app",
+        "cli",
+        "layer",
+        "remote",
+        "web",
+        "peer"
+      ],
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "areas": {
+            "minItems": 1,
+            "maxItems": 9,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "plugins",
+                "approvals",
+                "sessions",
+                "devices",
+                "computers",
+                "agents",
+                "app",
+                "browser",
+                "usage"
+              ]
+            }
+          }
+        },
+        "required": [
+          "areas"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "events.unsubscribe": {
+      "doc": "Stop receiving these areas' events.",
+      "owner": "C",
+      "direction": "to-daemon",
+      "roles": [
+        "app",
+        "cli",
+        "layer",
+        "remote",
+        "web",
+        "peer"
+      ],
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "areas": {
+            "minItems": 1,
+            "maxItems": 9,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "plugins",
+                "approvals",
+                "sessions",
+                "devices",
+                "computers",
+                "agents",
+                "app",
+                "browser",
+                "usage"
+              ]
+            }
+          }
+        },
+        "required": [
+          "areas"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "events": {}
+}

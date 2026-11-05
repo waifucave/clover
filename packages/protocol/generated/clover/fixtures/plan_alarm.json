@@ -1,0 +1,14 @@
+{
+  "type": "plan_alarm",
+  "ts": 1781270000000,
+  "threshold": 90,
+  "reading": {
+    "source": "codex",
+    "computer": "Studio",
+    "plan": "pro",
+    "window": "5h",
+    "usedPercent": 91.5,
+    "resetsAt": 1781280000000,
+    "readAt": 1781270000000
+  }
+}
