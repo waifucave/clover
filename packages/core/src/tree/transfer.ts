@@ -349,6 +349,25 @@ async function placeInto(staging: string, real: string, label: string): Promise<
   await fsp.rename(staging, real);
 }
 
+/** The deepest folder above `real` that exists already: what a failure leaves in place. */
+async function existingAbove(real: string): Promise<string> {
+  let d = dirname(real);
+  while (!(await fsp.lstat(d).then(() => true, () => false))) {
+    const up = dirname(d);
+    if (up === d) break;
+    d = up;
+  }
+  return d;
+}
+
+/** After a failure: the hidden copy, and the folders made above it for it while they are still empty. */
+async function cleanUp(staging: string, made: string): Promise<void> {
+  await fsp.rm(staging, { recursive: true, force: true }).catch(() => {});
+  for (let d = dirname(staging); d !== made && inside(made, d); d = dirname(d)) {
+    if (!(await fsp.rmdir(d).then(() => true, () => false))) break;
+  }
+}
+
 /** A move or copy whose two ends are on this disk: two holders here (the conformance harness), or one. */
 export async function localTransfer(src: LocalHolder, dst: LocalHolder, p: ReceiveParams, as: Caller): Promise<TransferResult> {
   const change = transferChange(p.move, p.from, p.to);
@@ -363,6 +382,7 @@ export async function localTransfer(src: LocalHolder, dst: LocalHolder, p: Recei
   await dst.judge(dcall, change, p.move ? "move" : "edit");
   if (p.move && src !== dst) await src.judge(scall, change, "move");
   const entries = await walk(src, from.real, scall, p.move);
+  const kept = await existingAbove(to.real);
   await dst.makeParents(to, p.to);
   const staging = join(dirname(to.real), `.clover-receiving-${randomUUID()}`);
   let files = 0;
@@ -383,11 +403,10 @@ export async function localTransfer(src: LocalHolder, dst: LocalHolder, p: Recei
     }
     await placeInto(staging, to.real, p.to);
   } catch (e) {
-    await fsp.rm(staging, { recursive: true, force: true }).catch(() => {});
+    await cleanUp(staging, kept);
     throw e;
   }
-  const kept = p.move ? await removeSent(from.real, entries) : 0;
-  return { files, bytes, kept };
+  return { files, bytes, kept: p.move ? await removeSent(from.real, entries) : 0 };
 }
 
 // ---- serving both ends --------------------------------------------------------------------------------------------
@@ -414,12 +433,14 @@ export function serveTransfer(o: TransferOptions): { receiveHere: (p: ReceivePar
     const dst = await o.holder.realEntry(p.to, call, "write");
     if (dst.exists) throw new ContractError("conflict", `${p.to} already exists`);
     await o.holder.judge(call, transferChange(p.move, p.from, p.to), p.move ? "move" : "edit");
+    const above = await existingAbove(dst.real);
     await o.holder.makeParents(dst, p.to);
     const staging = join(dirname(dst.real), `.clover-receiving-${randomUUID()}`);
     let link: Link;
     try {
       link = await t.connect(src.device);
     } catch (e) {
+      await cleanUp(staging, above);
       throw offlineAs(src.computer, e);
     }
     const stream = link.openStream("tree.send", "files", {
@@ -431,7 +452,7 @@ export function serveTransfer(o: TransferOptions): { receiveHere: (p: ReceivePar
       got = await receive(stream, staging);
       await placeInto(staging, dst.real, p.to);
     } catch (e) {
-      await fsp.rm(staging, { recursive: true, force: true }).catch(() => {});
+      await cleanUp(staging, above);
       throw offlineAs(src.computer, e);
     }
     // In place: the source may let go of what it sent. A source that doesn't hear this keeps it (two copies, never none).

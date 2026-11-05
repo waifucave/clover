@@ -385,6 +385,15 @@ describe("moves between computers take the direct path (review S1)", () => {
     expect(await code(studio.node.tree.move("home/Studio/proj", "home/Laptop1/proj", { as: BOT }))).toBe("refused");
     expect(existsSync(join(studio.home, "proj", "a.txt"))).toBe(true);
     expect(existsSync(join(laptop.home, "proj"))).toBe(false);
+    // Refused at the source (Studio, judged at the call's stricter level) after Laptop1 made the folders for it:
+    // they go too.
+    await laptop.node.registry.setLevel("Laptop1", "automatic", { via: "terminal" });
+    await until(() => studio.node.registry.get("Laptop1")!.level === "automatic", 2000, "Laptop1's level to reach Studio");
+    await studio.node.registry.setLevel("Studio", "ask-risky");
+    expect(await code(laptop.node.tree.move("home/Studio/proj", "home/Laptop1/deep/er/proj", { as: BOT }))).toBe("refused");
+    expect(existsSync(join(laptop.home, "deep"))).toBe(false);
+    expect(existsSync(join(studio.home, "proj", "a.txt"))).toBe(true);
+    await studio.node.registry.setLevel("Studio", "automatic", { via: "terminal" });
     expect(readdirSync(laptop.home).some((n) => n.startsWith(".clover-receiving-"))).toBe(false);
     // At accept-edits a move is allowed whole: no answer for each file and none for the delete at the source.
     await laptop.node.registry.setLevel("Laptop1", "accept-edits", { via: "terminal" });
