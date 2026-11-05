@@ -4,7 +4,7 @@
 //
 //   GET    /v1/vapid                                   -> { publicKey }            for browsers to subscribe
 //   PUT    /v1/targets/self  ApnsTarget | WebPushTarget -> 204                     a phone or browser registers itself
-//   DELETE /v1/targets/:id                             -> 204
+//   DELETE /v1/targets/:id                             -> 204                     another device's: revokes it here
 //   GET    /v1/targets                                 -> { targets }
 //   POST   /v1/notify        { badge, urgent? }        -> { sent, removed, failed }
 //
@@ -16,7 +16,7 @@ import { errorResponse, json, readJsonObject } from "../../shared/http";
 import { APNS_TOKEN_RE } from "./apns";
 import type { Caller, PushDO, Target } from "./push-do";
 import type { Env } from "./env";
-import { allowedEndpoint, vapidPublicKey } from "./webpush";
+import { allowedEndpoint, usableSubscriptionKey, vapidPublicKey } from "./webpush";
 
 export { PushDO } from "./push-do";
 
@@ -72,7 +72,7 @@ async function authenticated(request: Request, env: Env, path: string[]): Promis
       if (id !== "self") return errorResponse(404, "not_found");
       const { success } = await env.API_RATE.limit({ key: identity.account });
       if (!success) return errorResponse(429, "rate_limited", {}, { "retry-after": "60" });
-      const target = parseTarget(await readJsonObject(request), env);
+      const target = await parseTarget(await readJsonObject(request), env);
       if (!target) return errorResponse(400, "bad_target");
       const result = await stub.putTarget(caller, identity.device, target);
       return result.ok ? new Response(null, { status: 204 }) : errorResponse(result.status, result.error);
@@ -92,8 +92,11 @@ async function authenticated(request: Request, env: Env, path: string[]): Promis
   }
 }
 
-/** A phone's APNs token, or a browser's Web Push subscription; anything else, or a push host not listed, is refused. */
-function parseTarget(body: Record<string, unknown> | null, env: Env): Target | null {
+/**
+ * A phone's APNs token, or a browser's Web Push subscription; anything else, a push host not listed, or a key
+ * that is not on P-256 (which would fail every notify) is refused.
+ */
+async function parseTarget(body: Record<string, unknown> | null, env: Env): Promise<Target | null> {
   if (!body) return null;
   if (body.kind === "apns") {
     const token = typeof body.token === "string" ? body.token.toLowerCase() : "";
@@ -105,14 +108,17 @@ function parseTarget(body: Record<string, unknown> | null, env: Env): Target | n
     const endpoint = typeof body.endpoint === "string" ? body.endpoint : "";
     const keys = (body.keys ?? {}) as Record<string, unknown>;
     if (!allowedEndpoint(endpoint, env.WEBPUSH_HOSTS)) return null;
+    let p256dh: Uint8Array;
+    let auth: Uint8Array;
     try {
-      const p256dh = fromB64u(String(keys.p256dh ?? ""));
-      const auth = fromB64u(String(keys.auth ?? ""));
-      if (p256dh.length !== 65 || p256dh[0] !== 0x04 || auth.length !== 16) return null;
-      return { kind: "webpush", endpoint, p256dh: b64u(p256dh), auth: b64u(auth) };
+      p256dh = fromB64u(String(keys.p256dh ?? ""));
+      auth = fromB64u(String(keys.auth ?? ""));
     } catch {
       return null;
     }
+    if (p256dh.length !== 65 || p256dh[0] !== 0x04 || auth.length !== 16) return null;
+    if (!(await usableSubscriptionKey(p256dh))) return null;
+    return { kind: "webpush", endpoint, p256dh: b64u(p256dh), auth: b64u(auth) };
   }
   return null;
 }

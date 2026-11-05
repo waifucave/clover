@@ -138,6 +138,8 @@ export function createPushFakes(config: { apnsKeyId: string; apnsTeamId: string;
       return reply(400, "PayloadEmpty");
     }
     if (token.startsWith("dead")) return reply(410, "Unregistered");
+    // A device token that gets no answer for a long time: the Worker must give up on it, not hang.
+    if (token.startsWith("51ee")) await new Promise((r) => setTimeout(r, 3_000));
     if (token.startsWith("bad0")) return reply(400, "BadDeviceToken");
     if (token.startsWith("e1e1") && !expiredOnce.has(token)) {
       expiredOnce.add(token);

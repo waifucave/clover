@@ -29,9 +29,12 @@ export default defineConfig({
           APNS_TOPIC: apns.apnsTopic,
           VAPID_SUBJECT: "mailto:push@waifucave.test",
           MAX_TARGETS: "5",
+          PUSH_TIMEOUT_MS: "500",
           TEST_SIGNING_KEYS: signingKeys,
           ...fakes.bindings,
         },
+        // No cf.json download for request.cf: the built-in fallback is enough here.
+        cf: false,
         outboundService: (request: Request) => fakes.outbound(request),
       },
     }),

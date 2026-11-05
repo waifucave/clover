@@ -40,6 +40,7 @@ async function settle() {
   for (let i = 0; i < 10; i++) await new Promise((r) => setTimeout(r, 0));
 }
 
+/** Response statuses in order; 0 is a network error, -1 a request that never answers, -2 "no account". */
 function setup(responses: number[] = [], stored?: number) {
   const clock = new FakeClock();
   const requests: { url: string; body: string; method: string }[] = [];
@@ -51,11 +52,18 @@ function setup(responses: number[] = [], stored?: number) {
       requests.push({ url, body: String(init.body), method: init.method ?? "GET" });
       const status = responses.shift() ?? 200;
       if (status === 0) throw new Error("network down");
+      if (status === -2) throw Object.assign(new Error("no waifucave account is signed in"), { code: "no_account" });
+      if (status === -1) {
+        return new Promise<Response>((_, reject) => {
+          init.signal?.addEventListener("abort", () => reject(init.signal?.reason ?? new Error("aborted")));
+        });
+      }
       return new Response(status === 200 ? '{"sent":1,"removed":0,"failed":0}' : "{}", { status });
     },
     store: { get: async () => saved, set: async (n) => void (saved = n) },
     clock,
     log: (level, message) => logs.push(`${level}: ${message}`),
+    requestTimeoutMs: 30,
   });
   return { clock, requests, notifier, logs, saved: () => saved };
 }
@@ -129,6 +137,31 @@ describe("waifucave push notifier", () => {
     await again.notifier.notify();
     await again.clock.advance(2_000);
     expect(again.requests[0]!.body).toBe('{"badge":6}');
+  });
+
+  test("abandons a push that never answers, and is not stuck: the retry goes out", async () => {
+    const t = setup([-1]);
+    await t.notifier.notify();
+    await t.clock.advance(2_000);
+    await new Promise((r) => setTimeout(r, 80)); // the request's own timeout runs on real time
+    await t.clock.advance(5_000);
+    expect(t.requests.map((r) => r.body)).toEqual(['{"badge":1}', '{"badge":1}']);
+  });
+
+  test("with no account signed in it neither sends nor retries, and says so once", async () => {
+    const t = setup([-2, -2]);
+    await t.notifier.notify();
+    await t.clock.advance(2_000);
+    await t.clock.advance(600_000);
+    expect(t.requests).toHaveLength(1);
+    await t.notifier.notify();
+    await t.clock.advance(2_000);
+    expect(t.requests).toHaveLength(2);
+    expect(t.logs.filter((l) => l.includes("no waifucave account"))).toHaveLength(1);
+    expect(t.saved()).toBe(2);
+    await t.notifier.notify();
+    await t.clock.advance(2_000);
+    expect(t.requests.at(-1)!.body).toBe('{"badge":3}');
   });
 
   test("stop cancels a pending push", async () => {

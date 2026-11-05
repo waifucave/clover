@@ -4,7 +4,7 @@
 
 import { b64u, concatBytes, fromB64u, utf8, type Bytes } from "../../shared/encoding";
 import { decodeRawPublicKey, importRawP256, signJwt } from "./es256";
-import type { SendOutcome } from "./apns";
+import { PUSH_TIMEOUT_MS, type SendOutcome } from "./apns";
 
 export interface VapidConfig {
   /** A contact for push services: "mailto:..." or an https URL. */
@@ -114,7 +114,7 @@ export async function sendWebPush(
   config: VapidConfig,
   subscription: WebPushSubscription,
   payload: Uint8Array,
-  options: { urgent: boolean; now: number; ttlSeconds: number },
+  options: { urgent: boolean; now: number; ttlSeconds: number; timeoutMs?: number },
 ): Promise<SendOutcome> {
   const audience = new URL(subscription.endpoint).origin;
   const body = await encryptPayload(payload, fromB64u(subscription.p256dh), fromB64u(subscription.auth));
@@ -129,9 +129,20 @@ export async function sendWebPush(
       topic: "clover-updates",
     },
     body,
+    signal: AbortSignal.timeout(options.timeoutMs ?? PUSH_TIMEOUT_MS),
   });
   if (response.status >= 200 && response.status < 300) return { ok: true };
   return { ok: false, gone: response.status === 404 || response.status === 410, status: response.status, reason: `http ${response.status}` };
+}
+
+/** Whether a subscription's key is a point on P-256 that ECDH accepts (checked once, when it registers). */
+export async function usableSubscriptionKey(p256dh: Uint8Array): Promise<boolean> {
+  try {
+    await crypto.subtle.importKey("raw", copy(p256dh), { name: "ECDH", namedCurve: "P-256" }, false, []);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export function vapidPublicKey(config: VapidConfig): string {

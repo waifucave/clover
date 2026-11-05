@@ -6,7 +6,7 @@
   "description": "waifucave push: content-free \"you have N updates\" pushes to the user's phones (APNs) and browsers (Web Push), for the clover/push notifier.",
   "type": "module",
   "scripts": {
-    "test": "CLOUDFLARE_CF_FETCH_ENABLED=false vitest run",
+    "test": "vitest run",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.node.json"
   },
   "devDependencies": {

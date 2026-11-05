@@ -32,6 +32,8 @@ export interface Env {
   WEBPUSH_HOSTS: string;
 
   MAX_TARGETS?: string;
+  /** How long one request to APNs or a Web Push service may take, in ms (10 s by default). */
+  PUSH_TIMEOUT_MS?: string;
 }
 
 export function apnsConfig(env: Env): ApnsConfig {
@@ -42,7 +44,12 @@ export function apnsConfig(env: Env): ApnsConfig {
     privateKey: env.APNS_PRIVATE_KEY,
     productionOrigin: env.APNS_PRODUCTION_ORIGIN,
     sandboxOrigin: env.APNS_SANDBOX_ORIGIN,
+    timeoutMs: pushTimeoutMs(env),
   };
+}
+
+export function pushTimeoutMs(env: Env): number {
+  return intVar(env.PUSH_TIMEOUT_MS, 10_000);
 }
 
 export function vapidConfig(env: Env): VapidConfig {

@@ -49,7 +49,10 @@ describe("targets", () => {
 
   it("refuses targets that are malformed or point at a host that is not a push service", async () => {
     const { token } = await device(uniqueAccount(), "phone");
+    // 65 bytes that start like an uncompressed P-256 key but are not a point on the curve.
+    const offCurve = btoa(String.fromCharCode(4, ...new Array(64).fill(7))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
     const bad = [
+      { kind: "webpush", endpoint: subscriptions.fcm.endpoint, keys: { p256dh: offCurve, auth: subscriptions.fcm.keys.auth } },
       { kind: "apns", token: "xyz", env: "production" },
       { kind: "apns", token: apnsToken(), env: "staging" },
       { kind: "webpush", endpoint: "https://evil.example/push", keys: subscriptions.fcm.keys },
@@ -70,6 +73,21 @@ describe("targets", () => {
     expect(over.status).toBe(409);
     expect((await call(devices[5]!.token, "DELETE", "/v1/targets/phone0")).status).toBe(204);
     expect((await call(devices[5]!.token, "PUT", "/v1/targets/self", { kind: "apns", token: apnsToken(), env: "sandbox" })).status).toBe(204);
+  });
+
+  it("a device another device removed is revoked here: it can neither register again nor notify", async () => {
+    const account = uniqueAccount();
+    const kept = await device(account, "kept-phone");
+    const lost = await device(account, "lost-phone");
+    expect((await call(lost.token, "PUT", "/v1/targets/self", { kind: "apns", token: apnsToken(), env: "production" })).status).toBe(204);
+    expect((await call(kept.token, "DELETE", "/v1/targets/lost-phone")).status).toBe(204);
+    expect((await call(lost.token, "PUT", "/v1/targets/self", { kind: "apns", token: apnsToken(), env: "production" })).status).toBe(403);
+    expect((await call(lost.token, "POST", "/v1/notify", { badge: 1 })).status).toBe(403);
+    expect((await call(lost.token, "GET", "/v1/targets")).status).toBe(403);
+    // A device removing its own target only stops receiving.
+    expect((await call(kept.token, "PUT", "/v1/targets/self", { kind: "apns", token: apnsToken(), env: "production" })).status).toBe(204);
+    expect((await call(kept.token, "DELETE", "/v1/targets/self")).status).toBe(204);
+    expect((await call(kept.token, "PUT", "/v1/targets/self", { kind: "apns", token: apnsToken(), env: "production" })).status).toBe(204);
   });
 });
 
@@ -115,7 +133,7 @@ describe("notify", () => {
     expect(JSON.stringify(entries)).not.toContain("Alpha");
   });
 
-  it("forgets targets their push service reports gone, and keeps the rest", async () => {
+  it("forgets targets their push service reports gone at once, and a 'bad token' only after three in a row", async () => {
     const account = uniqueAccount();
     const targets = [
       ["live", { kind: "apns", token: apnsToken(), env: "production" }],
@@ -128,9 +146,46 @@ describe("notify", () => {
       expect((await call(d.token, "PUT", "/v1/targets/self", body)).status).toBe(204);
     }
     const computer = await device(account, "main");
-    expect(await (await call(computer.token, "POST", "/v1/notify", { badge: 1 })).json()).toEqual({ sent: 1, removed: 3, failed: 0 });
-    const listed = (await (await call(computer.token, "GET", "/v1/targets")).json()) as { targets: { id: string }[] };
-    expect(listed.targets.map((t) => t.id)).toEqual(["live"]);
+    const ids = async () => ((await (await call(computer.token, "GET", "/v1/targets")).json()) as { targets: { id: string }[] }).targets.map((t) => t.id);
+    expect(await (await call(computer.token, "POST", "/v1/notify", { badge: 1 })).json()).toEqual({ sent: 1, removed: 2, failed: 1 });
+    expect(await ids()).toEqual(["live", "bad-token"]);
+    // A wrong topic or a sandbox mix-up at our end looks the same as a bad token: it takes three in a row.
+    expect(await (await call(computer.token, "POST", "/v1/notify", { badge: 2 })).json()).toEqual({ sent: 1, removed: 0, failed: 1 });
+    expect(await (await call(computer.token, "POST", "/v1/notify", { badge: 3 })).json()).toEqual({ sent: 1, removed: 1, failed: 0 });
+    expect(await ids()).toEqual(["live"]);
+  });
+
+  it("a phone that registers again starts its bad-token count over", async () => {
+    const account = uniqueAccount();
+    const phone = await device(account, "phone");
+    expect((await call(phone.token, "PUT", "/v1/targets/self", { kind: "apns", token: apnsToken("bad0"), env: "sandbox" })).status).toBe(204);
+    for (let i = 0; i < 2; i++) await call(phone.token, "POST", "/v1/notify", { badge: i + 1 });
+    expect((await call(phone.token, "PUT", "/v1/targets/self", { kind: "apns", token: apnsToken("bad0"), env: "production" })).status).toBe(204);
+    expect(await (await call(phone.token, "POST", "/v1/notify", { badge: 3 })).json()).toEqual({ sent: 0, removed: 0, failed: 1 });
+  });
+
+  it("gives up on a push service that does not answer, and still sends to the others", async () => {
+    const account = uniqueAccount();
+    const slow = await device(account, "slow-phone");
+    const fine = await device(account, "phone");
+    await call(slow.token, "PUT", "/v1/targets/self", { kind: "apns", token: apnsToken("51ee"), env: "production" });
+    await call(fine.token, "PUT", "/v1/targets/self", { kind: "apns", token: apnsToken(), env: "production" });
+    const started = Date.now();
+    expect(await (await call(fine.token, "POST", "/v1/notify", { badge: 1 })).json()).toEqual({ sent: 1, removed: 0, failed: 1 });
+    expect(Date.now() - started).toBeLessThan(2_500);
+  });
+
+  it("stamps provider tokens on a shared 40-minute boundary, so every Worker instance agrees", async () => {
+    const account = uniqueAccount();
+    const phone = await device(account, "phone");
+    const token = apnsToken();
+    await call(phone.token, "PUT", "/v1/targets/self", { kind: "apns", token, env: "production" });
+    const before = await logLength();
+    await call(phone.token, "POST", "/v1/notify", { badge: 1 });
+    const sent = (await since(before)).find((e) => e.token === token)!;
+    const claims = JSON.parse(atob(sent.providerToken!.split(".")[1]!.replace(/-/g, "+").replace(/_/g, "/"))) as { iat: number };
+    expect(claims.iat % 2400).toBe(0);
+    expect(Date.now() / 1000 - claims.iat).toBeLessThan(2400 + 5);
   });
 
   it("retries once with a fresh provider token when APNs says it expired", async () => {

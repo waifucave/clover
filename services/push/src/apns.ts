@@ -16,6 +16,8 @@ export interface ApnsConfig {
   privateKey: string;
   productionOrigin: string;
   sandboxOrigin: string;
+  /** How long one request may take; PUSH_TIMEOUT_MS when absent. */
+  timeoutMs?: number;
 }
 
 export interface ApnsTarget {
@@ -23,25 +25,37 @@ export interface ApnsTarget {
   env: "production" | "sandbox";
 }
 
-export type SendOutcome = { ok: true } | { ok: false; gone: boolean; status: number; reason: string };
+/**
+ * gone: the push service says the target no longer exists (APNs 410 Unregistered, Web Push 404/410): forget it.
+ * suspect: APNs calls the token bad or not for this app, which a wrong topic or a sandbox/production mix-up
+ * at our end also causes: forget the target only after several in a row.
+ */
+export type SendOutcome = { ok: true } | { ok: false; gone: boolean; suspect?: boolean; status: number; reason: string };
 
-// APNs wants a provider token refreshed at most every 20 minutes and at least every 60.
-const TOKEN_LIFETIME_MS = 40 * 60 * 1000;
-const GONE = new Set(["BadDeviceToken", "DeviceTokenNotForTopic", "Unregistered"]);
+/** How long one request to a push service may take. */
+export const PUSH_TIMEOUT_MS = 10_000;
 
-let cached: { cacheKey: string; token: string; mintedAt: number } | null = null;
+// APNs wants a provider token refreshed at most every 20 minutes and at least every 60. Every Worker instance
+// rounds iat down to the same 40-minute boundary, so the instances mint tokens with one iat between them.
+const TOKEN_PERIOD_S = 40 * 60;
+const SUSPECT = new Set(["BadDeviceToken", "DeviceTokenNotForTopic"]);
+
+let cached: { cacheKey: string; token: string; iat: number } | null = null;
 const keys = new Map<string, Promise<CryptoKey>>();
 
 async function providerToken(config: ApnsConfig, now: number, fresh: boolean): Promise<string> {
   const cacheKey = `${config.teamId}/${config.keyId}`;
-  if (!fresh && cached && cached.cacheKey === cacheKey && now - cached.mintedAt < TOKEN_LIFETIME_MS) return cached.token;
+  const nowS = Math.floor(now / 1000);
+  // After ExpiredProviderToken, mint one stamped now rather than at the boundary.
+  const iat = fresh ? nowS : nowS - (nowS % TOKEN_PERIOD_S);
+  if (!fresh && cached && cached.cacheKey === cacheKey && cached.iat === iat) return cached.token;
   let key = keys.get(config.privateKey);
   if (!key) {
     key = importPkcs8(config.privateKey);
     keys.set(config.privateKey, key);
   }
-  const token = await signJwt({ alg: "ES256", kid: config.keyId }, { iss: config.teamId, iat: Math.floor(now / 1000) }, await key);
-  cached = { cacheKey, token, mintedAt: now };
+  const token = await signJwt({ alg: "ES256", kid: config.keyId }, { iss: config.teamId, iat }, await key);
+  if (!fresh) cached = { cacheKey, token, iat };
   return token;
 }
 
@@ -78,10 +92,11 @@ export async function sendApns(config: ApnsConfig, target: ApnsTarget, badge: nu
         "content-type": "application/json",
       },
       body,
+      signal: AbortSignal.timeout(config.timeoutMs ?? PUSH_TIMEOUT_MS),
     });
     if (response.status === 200) return { ok: true };
     const reason = ((await response.json().catch(() => ({}))) as { reason?: string }).reason ?? `http ${response.status}`;
-    outcome = { ok: false, gone: response.status === 410 || GONE.has(reason), status: response.status, reason };
+    outcome = { ok: false, gone: response.status === 410, suspect: SUSPECT.has(reason), status: response.status, reason };
     // An expired provider token is retried once with a fresh one; nothing else is retried here.
     if (!(response.status === 403 && reason === "ExpiredProviderToken")) break;
   }

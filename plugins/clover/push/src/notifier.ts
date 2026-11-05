@@ -3,7 +3,8 @@
 // "a content-free waifucave push"). Whatever the core hands it (a bot's name, a message, a card) stays here.
 //
 // A burst of notifications becomes one push after a short wait; a push that fails for a passing reason is
-// tried again with backoff, carrying the newest count.
+// tried again with backoff, carrying the newest count. A request that never answers is abandoned, and with no
+// waifucave account signed in nothing is sent or retried until the next notification.
 
 export interface Clock {
   now(): number;
@@ -33,7 +34,10 @@ export interface Notification {
 export interface PushNotifierOptions {
   /** https://push.waifucave.com, or a local emulator's origin. */
   origin: string;
-  /** The core's keyed fetch: it adds this computer's waifucave account token. */
+  /**
+   * The core's keyed fetch: it adds this computer's waifucave account token. With no account signed in it
+   * rejects with an error whose `code` is "no_account".
+   */
   fetch: (url: string, init?: RequestInit) => Promise<Response>;
   store?: CountStore;
   clock?: Clock;
@@ -42,6 +46,8 @@ export interface PushNotifierOptions {
   retryMinMs?: number;
   retryMaxMs?: number;
   maxAttempts?: number;
+  /** How long one push request may take before it is abandoned and retried. */
+  requestTimeoutMs?: number;
 }
 
 const MAX_BADGE = 99_999;
@@ -52,7 +58,10 @@ export class PushNotifier {
   private readonly retryMinMs: number;
   private readonly retryMaxMs: number;
   private readonly maxAttempts: number;
+  private readonly requestTimeoutMs: number;
   private count = 0;
+  /** Whether "no account" has been logged since the last push that went through. */
+  private signedOut = false;
   private loaded: Promise<void> | null = null;
   private timer: unknown = null;
   private dueAt = 0;
@@ -68,6 +77,7 @@ export class PushNotifier {
     this.retryMinMs = options.retryMinMs ?? 5_000;
     this.retryMaxMs = options.retryMaxMs ?? 120_000;
     this.maxAttempts = options.maxAttempts ?? 5;
+    this.requestTimeoutMs = options.requestTimeoutMs ?? 15_000;
   }
 
   get unseen(): number {
@@ -138,18 +148,26 @@ export class PushNotifier {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ badge }),
+        signal: AbortSignal.timeout(this.requestTimeoutMs),
       });
       if (response.ok) {
         this.sentCount = badge;
         this.attempts = 0;
+        this.signedOut = false;
       } else if (response.status === 429 || response.status >= 500) {
         retry = true;
       } else {
         this.log("error", `push refused (${response.status}); not retried`);
       }
     } catch (err) {
-      retry = true;
-      this.log("warn", `push failed: ${err instanceof Error ? err.message : String(err)}`);
+      if (typeof err === "object" && err !== null && (err as { code?: unknown }).code === "no_account") {
+        // Nothing to wake: the count is kept, and the next notification after a sign-in sends it.
+        if (!this.signedOut) this.log("info", "no waifucave account is signed in; pushes wait until one is");
+        this.signedOut = true;
+      } else {
+        retry = true;
+        this.log("warn", `push failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
     } finally {
       this.sending = false;
     }
