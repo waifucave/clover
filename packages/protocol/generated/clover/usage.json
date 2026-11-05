@@ -1,0 +1,459 @@
+{
+  "area": "usage",
+  "owner": "D",
+  "methods": {
+    "usage.rows": {
+      "doc": "Usage rows from every computer, oldest first.",
+      "owner": "D",
+      "direction": "to-daemon",
+      "roles": [
+        "app",
+        "cli",
+        "layer",
+        "plugin-host"
+      ],
+      "capability": "usage.read",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "since": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "until": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "computer": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 63,
+            "pattern": "^[A-Za-z0-9]+(-[A-Za-z0-9]+)*$"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "clover",
+              "codex",
+              "claude-code",
+              "opencode",
+              "antigravity"
+            ]
+          },
+          "cursor": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10000
+          }
+        },
+        "required": [
+          "since"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "rows": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+                },
+                "computer": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 63,
+                  "pattern": "^[A-Za-z0-9]+(-[A-Za-z0-9]+)*$"
+                },
+                "source": {
+                  "type": "string",
+                  "enum": [
+                    "clover",
+                    "codex",
+                    "claude-code",
+                    "opencode",
+                    "antigravity"
+                  ]
+                },
+                "at": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "provider": {
+                  "type": "string",
+                  "maxLength": 128
+                },
+                "model": {
+                  "type": "string",
+                  "maxLength": 200
+                },
+                "bot": {
+                  "type": "string",
+                  "maxLength": 81,
+                  "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+                },
+                "session": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128,
+                  "pattern": "^[A-Za-z0-9._:-]+$"
+                },
+                "inputTokens": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "outputTokens": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "cacheReadTokens": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "cacheWriteTokens": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "costUsd": {
+                  "type": "number",
+                  "minimum": 0
+                }
+              },
+              "required": [
+                "id",
+                "computer",
+                "source",
+                "at",
+                "inputTokens",
+                "outputTokens"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "next": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          }
+        },
+        "required": [
+          "rows"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "usage.plans": {
+      "doc": "The latest plan reading of each of the user's apps on each computer.",
+      "owner": "D",
+      "direction": "to-daemon",
+      "roles": [
+        "app",
+        "cli",
+        "layer",
+        "plugin-host"
+      ],
+      "capability": "usage.read",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {}
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "readings": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "source": {
+                  "type": "string",
+                  "enum": [
+                    "clover",
+                    "codex",
+                    "claude-code",
+                    "opencode",
+                    "antigravity"
+                  ]
+                },
+                "computer": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 63,
+                  "pattern": "^[A-Za-z0-9]+(-[A-Za-z0-9]+)*$"
+                },
+                "plan": {
+                  "type": "string",
+                  "maxLength": 128
+                },
+                "window": {
+                  "type": "string",
+                  "maxLength": 32
+                },
+                "usedPercent": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1000
+                },
+                "resetsAt": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "readAt": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                }
+              },
+              "required": [
+                "source",
+                "computer",
+                "plan",
+                "window",
+                "usedPercent",
+                "readAt"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "readings"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "usage.summary": {
+      "doc": "Totals over a period, grouped, for the island's Usage tab and the usage views.",
+      "owner": "D",
+      "direction": "to-daemon",
+      "roles": [
+        "app",
+        "cli",
+        "remote",
+        "layer",
+        "plugin-host"
+      ],
+      "capability": "usage.read",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "to": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "groupBy": {
+            "type": "string",
+            "enum": [
+              "source",
+              "model",
+              "bot",
+              "computer",
+              "day"
+            ]
+          }
+        },
+        "required": [
+          "from",
+          "to",
+          "groupBy"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "groups": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "key": {
+                  "type": "string",
+                  "maxLength": 256
+                },
+                "inputTokens": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "outputTokens": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "costUsd": {
+                  "type": "number",
+                  "minimum": 0
+                }
+              },
+              "required": [
+                "key",
+                "inputTokens",
+                "outputTokens"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "groups"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "events": {
+    "usage_changed": {
+      "doc": "New usage rows arrived; views re-read from `since`.",
+      "owner": "D",
+      "scope": "core",
+      "roles": [
+        "app",
+        "cli",
+        "layer",
+        "plugin-host"
+      ],
+      "capability": "usage.read",
+      "schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "usage_changed"
+          },
+          "ts": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "since": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "type",
+          "ts",
+          "since"
+        ]
+      }
+    },
+    "plan_alarm": {
+      "doc": "A plan reading crossed an alarm the user set.",
+      "owner": "D",
+      "scope": "core",
+      "roles": [
+        "app",
+        "remote"
+      ],
+      "schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "plan_alarm"
+          },
+          "ts": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "reading": {
+            "type": "object",
+            "properties": {
+              "source": {
+                "type": "string",
+                "enum": [
+                  "clover",
+                  "codex",
+                  "claude-code",
+                  "opencode",
+                  "antigravity"
+                ]
+              },
+              "computer": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 63,
+                "pattern": "^[A-Za-z0-9]+(-[A-Za-z0-9]+)*$"
+              },
+              "plan": {
+                "type": "string",
+                "maxLength": 128
+              },
+              "window": {
+                "type": "string",
+                "maxLength": 32
+              },
+              "usedPercent": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1000
+              },
+              "resetsAt": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "readAt": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": [
+              "source",
+              "computer",
+              "plan",
+              "window",
+              "usedPercent",
+              "readAt"
+            ]
+          },
+          "threshold": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1000
+          }
+        },
+        "required": [
+          "type",
+          "ts",
+          "reading",
+          "threshold"
+        ]
+      }
+    }
+  }
+}

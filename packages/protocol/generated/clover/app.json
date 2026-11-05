@@ -1,0 +1,1240 @@
+{
+  "area": "app",
+  "owner": "E (with C, D, G, M)",
+  "methods": {
+    "pair.status": {
+      "doc": "What would stop if this computer quit, for Quit's question (§3.1).",
+      "owner": "C",
+      "direction": "to-daemon",
+      "roles": [
+        "app",
+        "cli"
+      ],
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {}
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "bots": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 81,
+              "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+            }
+          },
+          "routines": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "agents": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "canHandOver": {
+            "type": "boolean"
+          },
+          "safeMode": {
+            "type": "boolean"
+          },
+          "updateReady": {
+            "type": "string",
+            "maxLength": 64
+          }
+        },
+        "required": [
+          "bots",
+          "routines",
+          "agents",
+          "canHandOver",
+          "safeMode"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "pair.quit": {
+      "doc": "Quits the app and the daemon; with `handOver`, releases the lease first so another computer takes the bots.",
+      "owner": "C",
+      "direction": "to-daemon",
+      "roles": [
+        "app",
+        "cli"
+      ],
+      "userOnly": true,
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "handOver": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "handOver"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "pair.exiting": {
+      "doc": "The app says it is leaving on purpose, so the daemon doesn't restart it (§3.1).",
+      "owner": "C",
+      "direction": "to-daemon",
+      "roles": [
+        "app"
+      ],
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "reason": {
+            "type": "string",
+            "enum": [
+              "quit",
+              "update",
+              "restart"
+            ]
+          }
+        },
+        "required": [
+          "reason"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "app.show": {
+      "doc": "The daemon asks the app to open a window or a place in it (a sign-in page, a card from the CLI's `clover open`).",
+      "owner": "E",
+      "direction": "from-daemon",
+      "roles": [
+        "app"
+      ],
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "what": {
+            "oneOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "window"
+                  }
+                },
+                "required": [
+                  "kind"
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "bot"
+                  },
+                  "bot": {
+                    "type": "string",
+                    "maxLength": 81,
+                    "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "bot"
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "session"
+                  },
+                  "session": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128,
+                    "pattern": "^[A-Za-z0-9._:-]+$"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "session"
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "card"
+                  },
+                  "card": {
+                    "type": "string",
+                    "pattern": "^card_[A-Za-z0-9_-]{6,64}$"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "card"
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "settings"
+                  },
+                  "section": {
+                    "type": "string",
+                    "maxLength": 128
+                  }
+                },
+                "required": [
+                  "kind"
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "url"
+                  },
+                  "url": {
+                    "type": "string",
+                    "format": "uri"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "url"
+                ]
+              }
+            ]
+          }
+        },
+        "required": [
+          "what"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "app.quit": {
+      "doc": "The daemon tells the app it is stopping the pair (a Quit from the CLI, an update).",
+      "owner": "E",
+      "direction": "from-daemon",
+      "roles": [
+        "app"
+      ],
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "reason": {
+            "type": "string",
+            "enum": [
+              "quit",
+              "update"
+            ]
+          }
+        },
+        "required": [
+          "reason"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "layer.token": {
+      "doc": "A token for one plugin layer's connection (role `layer`), which the app's main process opens for it.",
+      "owner": "C",
+      "direction": "to-daemon",
+      "roles": [
+        "app"
+      ],
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "pluginId": {
+            "type": "string",
+            "maxLength": 81,
+            "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+          }
+        },
+        "required": [
+          "pluginId"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "token": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          }
+        },
+        "required": [
+          "token"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "ui.settings": {
+      "doc": "The user's UI choices, which the app's plugin runtime applies.",
+      "owner": "E",
+      "direction": "to-daemon",
+      "roles": [
+        "app"
+      ],
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {}
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "picks": {
+            "maxItems": 10000,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "spot": {
+                  "type": "string",
+                  "maxLength": 128
+                },
+                "key": {
+                  "type": "string",
+                  "maxLength": 256
+                },
+                "bot": {
+                  "type": "string",
+                  "maxLength": 81,
+                  "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+                },
+                "entry": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "minLength": 2,
+                      "maxLength": 300,
+                      "pattern": "^[a-z][a-z0-9/-]*(#[A-Za-z0-9._-]+)?$"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "spot",
+                "entry"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "lists": {
+            "maxItems": 1000,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "spot": {
+                  "type": "string",
+                  "maxLength": 128
+                },
+                "bot": {
+                  "type": "string",
+                  "maxLength": 81,
+                  "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+                },
+                "order": {
+                  "maxItems": 1000,
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 2,
+                    "maxLength": 300,
+                    "pattern": "^[a-z][a-z0-9/-]*(#[A-Za-z0-9._-]+)?$"
+                  }
+                },
+                "hidden": {
+                  "maxItems": 1000,
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 2,
+                    "maxLength": 300,
+                    "pattern": "^[a-z][a-z0-9/-]*(#[A-Za-z0-9._-]+)?$"
+                  }
+                }
+              },
+              "required": [
+                "spot",
+                "order",
+                "hidden"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "baseTheme": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 300,
+            "pattern": "^[a-z][a-z0-9/-]*#[A-Za-z0-9._-]+$"
+          },
+          "globalTheme": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 300,
+            "pattern": "^[a-z][a-z0-9/-]*#[A-Za-z0-9._-]+$"
+          },
+          "overrides": {
+            "type": "object",
+            "properties": {
+              "tokens": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {
+                  "type": "string",
+                  "maxLength": 1000
+                }
+              },
+              "css": {
+                "type": "string",
+                "maxLength": 200000
+              }
+            },
+            "additionalProperties": false
+          },
+          "language": {
+            "type": "string",
+            "maxLength": 35
+          },
+          "packs": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {
+              "type": "string",
+              "maxLength": 81,
+              "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+            }
+          }
+        },
+        "required": [
+          "picks",
+          "lists"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "ui.set": {
+      "doc": "Changes the user's UI choices; from a layer other than `clover`'s it becomes a card (§5.5).",
+      "owner": "E",
+      "direction": "to-daemon",
+      "roles": [
+        "app",
+        "layer"
+      ],
+      "userOnly": true,
+      "change": "core",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "patch": {
+            "type": "object",
+            "properties": {
+              "picks": {
+                "maxItems": 10000,
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "spot": {
+                      "type": "string",
+                      "maxLength": 128
+                    },
+                    "key": {
+                      "type": "string",
+                      "maxLength": 256
+                    },
+                    "bot": {
+                      "type": "string",
+                      "maxLength": 81,
+                      "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+                    },
+                    "entry": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "minLength": 2,
+                          "maxLength": 300,
+                          "pattern": "^[a-z][a-z0-9/-]*(#[A-Za-z0-9._-]+)?$"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "spot",
+                    "entry"
+                  ]
+                }
+              },
+              "lists": {
+                "maxItems": 1000,
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "spot": {
+                      "type": "string",
+                      "maxLength": 128
+                    },
+                    "bot": {
+                      "type": "string",
+                      "maxLength": 81,
+                      "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+                    },
+                    "order": {
+                      "maxItems": 1000,
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 2,
+                        "maxLength": 300,
+                        "pattern": "^[a-z][a-z0-9/-]*(#[A-Za-z0-9._-]+)?$"
+                      }
+                    },
+                    "hidden": {
+                      "maxItems": 1000,
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 2,
+                        "maxLength": 300,
+                        "pattern": "^[a-z][a-z0-9/-]*(#[A-Za-z0-9._-]+)?$"
+                      }
+                    }
+                  },
+                  "required": [
+                    "spot",
+                    "order",
+                    "hidden"
+                  ]
+                }
+              },
+              "baseTheme": {
+                "type": "string",
+                "minLength": 3,
+                "maxLength": 300,
+                "pattern": "^[a-z][a-z0-9/-]*#[A-Za-z0-9._-]+$"
+              },
+              "globalTheme": {
+                "type": "string",
+                "minLength": 3,
+                "maxLength": 300,
+                "pattern": "^[a-z][a-z0-9/-]*#[A-Za-z0-9._-]+$"
+              },
+              "overrides": {
+                "type": "object",
+                "properties": {
+                  "tokens": {
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "additionalProperties": {
+                      "type": "string",
+                      "maxLength": 1000
+                    }
+                  },
+                  "css": {
+                    "type": "string",
+                    "maxLength": 200000
+                  }
+                }
+              },
+              "language": {
+                "type": "string",
+                "maxLength": 35
+              },
+              "packs": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {
+                  "type": "string",
+                  "maxLength": 81,
+                  "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+                }
+              }
+            }
+          }
+        },
+        "required": [
+          "patch"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "applied": {
+                "type": "boolean",
+                "const": true
+              }
+            },
+            "required": [
+              "applied"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "applied": {
+                "type": "boolean",
+                "const": false
+              },
+              "card": {
+                "type": "string",
+                "pattern": "^card_[A-Za-z0-9_-]{6,64}$"
+              }
+            },
+            "required": [
+              "applied",
+              "card"
+            ],
+            "additionalProperties": false
+          }
+        ]
+      }
+    },
+    "voice.listen": {
+      "doc": "Push-to-talk audio for a bot's listening voice plugin, on the computer the user talks on (§6.6).",
+      "owner": "D",
+      "direction": "to-daemon",
+      "roles": [
+        "app"
+      ],
+      "userOnly": true,
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "bot": {
+            "type": "string",
+            "maxLength": 81,
+            "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+          },
+          "utterance": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "seq": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "audio": {
+            "type": "string",
+            "maxLength": 2000000
+          },
+          "format": {
+            "type": "string",
+            "enum": [
+              "pcm16-16k",
+              "opus"
+            ]
+          },
+          "final": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "bot",
+          "utterance",
+          "seq",
+          "audio",
+          "format",
+          "final"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string",
+            "maxLength": 100000
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "voice.play": {
+      "doc": "Speech for the app to play, which the avatar lip-syncs to (§6.6).",
+      "owner": "D",
+      "direction": "from-daemon",
+      "roles": [
+        "app"
+      ],
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "bot": {
+            "type": "string",
+            "maxLength": 81,
+            "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+          },
+          "session": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9._:-]+$"
+          },
+          "utterance": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "seq": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "audio": {
+            "type": "string",
+            "maxLength": 2000000
+          },
+          "format": {
+            "type": "string",
+            "enum": [
+              "pcm16-24k",
+              "mp3",
+              "opus"
+            ]
+          },
+          "final": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "bot",
+          "session",
+          "utterance",
+          "seq",
+          "audio",
+          "format",
+          "final"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "notify.send": {
+      "doc": "A plugin sends the user a notification through the `notifiers` (§10).",
+      "owner": "G",
+      "direction": "to-daemon",
+      "roles": [
+        "layer",
+        "plugin-host"
+      ],
+      "capability": "notify",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "en": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "en"
+                ],
+                "additionalProperties": {
+                  "type": "string"
+                }
+              }
+            ]
+          },
+          "body": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "en": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "en"
+                ],
+                "additionalProperties": {
+                  "type": "string"
+                }
+              }
+            ]
+          },
+          "session": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9._:-]+$"
+          }
+        },
+        "required": [
+          "title"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "app.notify": {
+      "doc": "A desktop notification, which the app shows for the bundled desktop notifier.",
+      "owner": "G",
+      "direction": "from-daemon",
+      "roles": [
+        "app"
+      ],
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 256
+          },
+          "body": {
+            "type": "string",
+            "maxLength": 4000
+          },
+          "session": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9._:-]+$"
+          }
+        },
+        "required": [
+          "id",
+          "title"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "update.status": {
+      "doc": "The app's and the daemon's version and the update waiting, if any.",
+      "owner": "M",
+      "direction": "to-daemon",
+      "roles": [
+        "app",
+        "cli"
+      ],
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {}
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "current": {
+            "type": "string",
+            "maxLength": 64
+          },
+          "available": {
+            "type": "string",
+            "maxLength": 64
+          },
+          "channel": {
+            "type": "string",
+            "maxLength": 32
+          },
+          "ready": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "current",
+          "channel",
+          "ready"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "update.apply": {
+      "doc": "Installs the update once the daemon is between turns and no agent runs (§3.1).",
+      "owner": "M",
+      "direction": "to-daemon",
+      "roles": [
+        "app",
+        "cli"
+      ],
+      "userOnly": true,
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {}
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "at": {
+            "type": "string",
+            "enum": [
+              "now",
+              "when-idle"
+            ]
+          }
+        },
+        "required": [
+          "at"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "events": {
+    "ui_settings_changed": {
+      "doc": "The user's UI choices changed, here or on another device.",
+      "owner": "E",
+      "scope": "core",
+      "roles": [
+        "app"
+      ],
+      "schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "ui_settings_changed"
+          },
+          "ts": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "settings": {
+            "type": "object",
+            "properties": {
+              "picks": {
+                "maxItems": 10000,
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "spot": {
+                      "type": "string",
+                      "maxLength": 128
+                    },
+                    "key": {
+                      "type": "string",
+                      "maxLength": 256
+                    },
+                    "bot": {
+                      "type": "string",
+                      "maxLength": 81,
+                      "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+                    },
+                    "entry": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "minLength": 2,
+                          "maxLength": 300,
+                          "pattern": "^[a-z][a-z0-9/-]*(#[A-Za-z0-9._-]+)?$"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "spot",
+                    "entry"
+                  ]
+                }
+              },
+              "lists": {
+                "maxItems": 1000,
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "spot": {
+                      "type": "string",
+                      "maxLength": 128
+                    },
+                    "bot": {
+                      "type": "string",
+                      "maxLength": 81,
+                      "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+                    },
+                    "order": {
+                      "maxItems": 1000,
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 2,
+                        "maxLength": 300,
+                        "pattern": "^[a-z][a-z0-9/-]*(#[A-Za-z0-9._-]+)?$"
+                      }
+                    },
+                    "hidden": {
+                      "maxItems": 1000,
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 2,
+                        "maxLength": 300,
+                        "pattern": "^[a-z][a-z0-9/-]*(#[A-Za-z0-9._-]+)?$"
+                      }
+                    }
+                  },
+                  "required": [
+                    "spot",
+                    "order",
+                    "hidden"
+                  ]
+                }
+              },
+              "baseTheme": {
+                "type": "string",
+                "minLength": 3,
+                "maxLength": 300,
+                "pattern": "^[a-z][a-z0-9/-]*#[A-Za-z0-9._-]+$"
+              },
+              "globalTheme": {
+                "type": "string",
+                "minLength": 3,
+                "maxLength": 300,
+                "pattern": "^[a-z][a-z0-9/-]*#[A-Za-z0-9._-]+$"
+              },
+              "overrides": {
+                "type": "object",
+                "properties": {
+                  "tokens": {
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "additionalProperties": {
+                      "type": "string",
+                      "maxLength": 1000
+                    }
+                  },
+                  "css": {
+                    "type": "string",
+                    "maxLength": 200000
+                  }
+                }
+              },
+              "language": {
+                "type": "string",
+                "maxLength": 35
+              },
+              "packs": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {
+                  "type": "string",
+                  "maxLength": 81,
+                  "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+                }
+              }
+            },
+            "required": [
+              "picks",
+              "lists"
+            ]
+          }
+        },
+        "required": [
+          "type",
+          "ts",
+          "settings"
+        ]
+      }
+    },
+    "update_available": {
+      "doc": "An update was found or is ready to install.",
+      "owner": "M",
+      "scope": "core",
+      "roles": [
+        "app",
+        "cli"
+      ],
+      "schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "update_available"
+          },
+          "ts": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "version": {
+            "type": "string",
+            "maxLength": 64
+          },
+          "ready": {
+            "type": "boolean"
+          },
+          "at": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "type",
+          "ts",
+          "version",
+          "ready"
+        ]
+      }
+    }
+  }
+}

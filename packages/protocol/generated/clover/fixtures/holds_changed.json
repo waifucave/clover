@@ -1,0 +1,20 @@
+{
+  "type": "holds_changed",
+  "ts": 1781270000000,
+  "computer": "Studio",
+  "holds": [
+    {
+      "id": "h_1",
+      "computer": "Studio",
+      "target": {
+        "kind": "window",
+        "app": "com.apple.Safari",
+        "window": "Checkout"
+      },
+      "session": "s_alpha",
+      "pluginId": "opensky",
+      "since": 1781269990000
+    }
+  ],
+  "userWorking": false
+}

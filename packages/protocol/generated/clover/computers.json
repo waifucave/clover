@@ -1,0 +1,2139 @@
+{
+  "area": "computers",
+  "owner": "J",
+  "methods": {
+    "computer.list": {
+      "doc": "Every computer: its folders' owner, OS, display, agents, level and state (§9.1).",
+      "owner": "J",
+      "direction": "to-daemon",
+      "roles": [
+        "app",
+        "cli",
+        "remote",
+        "layer",
+        "plugin-host"
+      ],
+      "capability": "computers.read",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {}
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "computers": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 63,
+                  "pattern": "^[A-Za-z0-9]+(-[A-Za-z0-9]+)*$"
+                },
+                "aliases": {
+                  "maxItems": 32,
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 63,
+                    "pattern": "^[A-Za-z0-9]+(-[A-Za-z0-9]+)*$"
+                  }
+                },
+                "device": {
+                  "type": "string",
+                  "pattern": "^[a-z0-9]{16,64}$"
+                },
+                "os": {
+                  "type": "string",
+                  "enum": [
+                    "macos",
+                    "windows",
+                    "linux"
+                  ]
+                },
+                "hasDisplay": {
+                  "type": "boolean"
+                },
+                "agents": {
+                  "maxItems": 64,
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "maxLength": 128
+                  }
+                },
+                "level": {
+                  "type": "string",
+                  "enum": [
+                    "read-only",
+                    "ask",
+                    "ask-risky",
+                    "accept-edits",
+                    "automatic"
+                  ]
+                },
+                "state": {
+                  "type": "string",
+                  "enum": [
+                    "online",
+                    "offline",
+                    "asleep"
+                  ]
+                },
+                "link": {
+                  "type": "string",
+                  "enum": [
+                    "self",
+                    "lan",
+                    "direct",
+                    "relay"
+                  ]
+                },
+                "isMain": {
+                  "type": "boolean"
+                },
+                "cloud": {
+                  "type": "object",
+                  "properties": {
+                    "plugin": {
+                      "type": "string",
+                      "maxLength": 81,
+                      "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+                    },
+                    "provider": {
+                      "type": "string",
+                      "maxLength": 128
+                    },
+                    "size": {
+                      "type": "string",
+                      "maxLength": 128
+                    },
+                    "region": {
+                      "type": "string",
+                      "maxLength": 128
+                    },
+                    "vm": {
+                      "type": "string",
+                      "enum": [
+                        "creating",
+                        "running",
+                        "resizing",
+                        "stopped",
+                        "deleting",
+                        "failed"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "plugin",
+                    "provider",
+                    "size",
+                    "region",
+                    "vm"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "name",
+                "aliases",
+                "device",
+                "os",
+                "hasDisplay",
+                "agents",
+                "level",
+                "state",
+                "isMain"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "computers"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "computer.get": {
+      "doc": "One computer, by name or alias.",
+      "owner": "J",
+      "direction": "to-daemon",
+      "roles": [
+        "app",
+        "cli",
+        "remote",
+        "layer",
+        "plugin-host"
+      ],
+      "capability": "computers.read",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 63,
+            "pattern": "^[A-Za-z0-9]+(-[A-Za-z0-9]+)*$"
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "computer": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 63,
+                "pattern": "^[A-Za-z0-9]+(-[A-Za-z0-9]+)*$"
+              },
+              "aliases": {
+                "maxItems": 32,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 63,
+                  "pattern": "^[A-Za-z0-9]+(-[A-Za-z0-9]+)*$"
+                }
+              },
+              "device": {
+                "type": "string",
+                "pattern": "^[a-z0-9]{16,64}$"
+              },
+              "os": {
+                "type": "string",
+                "enum": [
+                  "macos",
+                  "windows",
+                  "linux"
+                ]
+              },
+              "hasDisplay": {
+                "type": "boolean"
+              },
+              "agents": {
+                "maxItems": 64,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "maxLength": 128
+                }
+              },
+              "level": {
+                "type": "string",
+                "enum": [
+                  "read-only",
+                  "ask",
+                  "ask-risky",
+                  "accept-edits",
+                  "automatic"
+                ]
+              },
+              "state": {
+                "type": "string",
+                "enum": [
+                  "online",
+                  "offline",
+                  "asleep"
+                ]
+              },
+              "link": {
+                "type": "string",
+                "enum": [
+                  "self",
+                  "lan",
+                  "direct",
+                  "relay"
+                ]
+              },
+              "isMain": {
+                "type": "boolean"
+              },
+              "cloud": {
+                "type": "object",
+                "properties": {
+                  "plugin": {
+                    "type": "string",
+                    "maxLength": 81,
+                    "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+                  },
+                  "provider": {
+                    "type": "string",
+                    "maxLength": 128
+                  },
+                  "size": {
+                    "type": "string",
+                    "maxLength": 128
+                  },
+                  "region": {
+                    "type": "string",
+                    "maxLength": 128
+                  },
+                  "vm": {
+                    "type": "string",
+                    "enum": [
+                      "creating",
+                      "running",
+                      "resizing",
+                      "stopped",
+                      "deleting",
+                      "failed"
+                    ]
+                  }
+                },
+                "required": [
+                  "plugin",
+                  "provider",
+                  "size",
+                  "region",
+                  "vm"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "name",
+              "aliases",
+              "device",
+              "os",
+              "hasDisplay",
+              "agents",
+              "level",
+              "state",
+              "isMain"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "computer"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "computer.setLevel": {
+      "doc": "Changes a computer's approval level: a sealed card unless made in the user's own terminal (§5.5).",
+      "owner": "J",
+      "direction": "to-daemon",
+      "roles": [
+        "app",
+        "cli",
+        "remote"
+      ],
+      "userOnly": true,
+      "change": "sensitive",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 63,
+            "pattern": "^[A-Za-z0-9]+(-[A-Za-z0-9]+)*$"
+          },
+          "level": {
+            "type": "string",
+            "enum": [
+              "read-only",
+              "ask",
+              "ask-risky",
+              "accept-edits",
+              "automatic"
+            ]
+          }
+        },
+        "required": [
+          "name",
+          "level"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "applied": {
+                "type": "boolean",
+                "const": true
+              }
+            },
+            "required": [
+              "applied"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "applied": {
+                "type": "boolean",
+                "const": false
+              },
+              "card": {
+                "type": "string",
+                "pattern": "^card_[A-Za-z0-9_-]{6,64}$"
+              }
+            },
+            "required": [
+              "applied",
+              "card"
+            ],
+            "additionalProperties": false
+          }
+        ]
+      }
+    },
+    "computer.rename": {
+      "doc": "Renames a computer in the tree; the old name stays as an alias.",
+      "owner": "J",
+      "direction": "to-daemon",
+      "roles": [
+        "app",
+        "cli"
+      ],
+      "userOnly": true,
+      "change": "core",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 63,
+            "pattern": "^[A-Za-z0-9]+(-[A-Za-z0-9]+)*$"
+          },
+          "to": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 63,
+            "pattern": "^[A-Za-z0-9]+(-[A-Za-z0-9]+)*$"
+          }
+        },
+        "required": [
+          "name",
+          "to"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "applied": {
+                "type": "boolean",
+                "const": true
+              }
+            },
+            "required": [
+              "applied"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "applied": {
+                "type": "boolean",
+                "const": false
+              },
+              "card": {
+                "type": "string",
+                "pattern": "^card_[A-Za-z0-9_-]{6,64}$"
+              }
+            },
+            "required": [
+              "applied",
+              "card"
+            ],
+            "additionalProperties": false
+          }
+        ]
+      }
+    },
+    "hold.list": {
+      "doc": "A computer's holds and its user-working mark.",
+      "owner": "J",
+      "direction": "to-daemon",
+      "roles": [
+        "app",
+        "layer",
+        "plugin-host"
+      ],
+      "capability": "computers.control",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "computer": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 63,
+            "pattern": "^[A-Za-z0-9]+(-[A-Za-z0-9]+)*$"
+          }
+        },
+        "required": [
+          "computer"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "holds": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                },
+                "computer": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 63,
+                  "pattern": "^[A-Za-z0-9]+(-[A-Za-z0-9]+)*$"
+                },
+                "target": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "app"
+                        },
+                        "app": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 256
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "app"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "window"
+                        },
+                        "app": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 256
+                        },
+                        "window": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 512
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "app",
+                        "window"
+                      ],
+                      "additionalProperties": false
+                    }
+                  ]
+                },
+                "session": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128,
+                  "pattern": "^[A-Za-z0-9._:-]+$"
+                },
+                "pluginId": {
+                  "type": "string",
+                  "maxLength": 81,
+                  "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+                },
+                "since": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                }
+              },
+              "required": [
+                "id",
+                "computer",
+                "target",
+                "pluginId",
+                "since"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "userWorking": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "holds",
+          "userWorking"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "hold.take": {
+      "doc": "Takes a hold on an app or window, so two bots don't fight over it (§9.2).",
+      "owner": "J",
+      "direction": "to-daemon",
+      "roles": [
+        "plugin-host"
+      ],
+      "capability": "computers.control",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "computer": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 63,
+            "pattern": "^[A-Za-z0-9]+(-[A-Za-z0-9]+)*$"
+          },
+          "target": {
+            "oneOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "app"
+                  },
+                  "app": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 256
+                  }
+                },
+                "required": [
+                  "kind",
+                  "app"
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "window"
+                  },
+                  "app": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 256
+                  },
+                  "window": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 512
+                  }
+                },
+                "required": [
+                  "kind",
+                  "app",
+                  "window"
+                ]
+              }
+            ]
+          },
+          "session": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9._:-]+$"
+          }
+        },
+        "required": [
+          "computer",
+          "target"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "held": {
+                "type": "boolean",
+                "const": true
+              },
+              "hold": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  },
+                  "computer": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 63,
+                    "pattern": "^[A-Za-z0-9]+(-[A-Za-z0-9]+)*$"
+                  },
+                  "target": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "type": "string",
+                            "const": "app"
+                          },
+                          "app": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 256
+                          }
+                        },
+                        "required": [
+                          "kind",
+                          "app"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "type": "string",
+                            "const": "window"
+                          },
+                          "app": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 256
+                          },
+                          "window": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 512
+                          }
+                        },
+                        "required": [
+                          "kind",
+                          "app",
+                          "window"
+                        ],
+                        "additionalProperties": false
+                      }
+                    ]
+                  },
+                  "session": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128,
+                    "pattern": "^[A-Za-z0-9._:-]+$"
+                  },
+                  "pluginId": {
+                    "type": "string",
+                    "maxLength": 81,
+                    "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+                  },
+                  "since": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  }
+                },
+                "required": [
+                  "id",
+                  "computer",
+                  "target",
+                  "pluginId",
+                  "since"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "held",
+              "hold"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "held": {
+                "type": "boolean",
+                "const": false
+              },
+              "reason": {
+                "type": "string",
+                "enum": [
+                  "held-by-other",
+                  "user-working",
+                  "computer-offline"
+                ]
+              },
+              "by": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128,
+                "pattern": "^[A-Za-z0-9._:-]+$"
+              }
+            },
+            "required": [
+              "held",
+              "reason"
+            ],
+            "additionalProperties": false
+          }
+        ]
+      }
+    },
+    "hold.release": {
+      "doc": "Releases a hold.",
+      "owner": "J",
+      "direction": "to-daemon",
+      "roles": [
+        "plugin-host"
+      ],
+      "capability": "computers.control",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "userWorking.set": {
+      "doc": "Takes or releases the user-working mark; the core lifts it on the user's message or a card's answer.",
+      "owner": "J",
+      "direction": "to-daemon",
+      "roles": [
+        "plugin-host"
+      ],
+      "capability": "computers.control",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "computer": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 63,
+            "pattern": "^[A-Za-z0-9]+(-[A-Za-z0-9]+)*$"
+          },
+          "on": {
+            "type": "boolean"
+          },
+          "target": {
+            "oneOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "app"
+                  },
+                  "app": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 256
+                  }
+                },
+                "required": [
+                  "kind",
+                  "app"
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "window"
+                  },
+                  "app": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 256
+                  },
+                  "window": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 512
+                  }
+                },
+                "required": [
+                  "kind",
+                  "app",
+                  "window"
+                ]
+              }
+            ]
+          }
+        },
+        "required": [
+          "computer",
+          "on"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "action.setRunning": {
+      "doc": "Says a computer-use action is running, so no card click counts on that computer meanwhile (§5.5).",
+      "owner": "J",
+      "direction": "to-daemon",
+      "roles": [
+        "plugin-host"
+      ],
+      "capability": "computers.control",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "computer": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 63,
+            "pattern": "^[A-Za-z0-9]+(-[A-Za-z0-9]+)*$"
+          },
+          "running": {
+            "type": "boolean"
+          },
+          "session": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9._:-]+$"
+          }
+        },
+        "required": [
+          "computer",
+          "running"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "windows.clover": {
+      "doc": "Where Clover's own windows are, which a computer-use plugin must not act on (§5.5).",
+      "owner": "J",
+      "direction": "to-daemon",
+      "roles": [
+        "plugin-host"
+      ],
+      "capability": "computers.control",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "computer": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 63,
+            "pattern": "^[A-Za-z0-9]+(-[A-Za-z0-9]+)*$"
+          }
+        },
+        "required": [
+          "computer"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "windows": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "maxLength": 128
+                },
+                "x": {
+                  "type": "number"
+                },
+                "y": {
+                  "type": "number"
+                },
+                "width": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "height": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "display": {
+                  "type": "string",
+                  "maxLength": 128
+                }
+              },
+              "required": [
+                "id",
+                "x",
+                "y",
+                "width",
+                "height"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "windows"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "tree.stat": {
+      "doc": "A path's type, size and time; null when it doesn't exist.",
+      "owner": "J",
+      "direction": "to-daemon",
+      "roles": [
+        "peer",
+        "layer",
+        "plugin-host"
+      ],
+      "capability": "files",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096,
+            "pattern": "^(home|bots)(\\/|$)"
+          }
+        },
+        "required": [
+          "path"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "stat": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "path": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 4096,
+                    "pattern": "^(home|bots)(\\/|$)"
+                  },
+                  "type": {
+                    "type": "string",
+                    "enum": [
+                      "file",
+                      "dir",
+                      "symlink",
+                      "other"
+                    ]
+                  },
+                  "size": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "modifiedAt": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "executable": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "path",
+                  "type",
+                  "size",
+                  "modifiedAt",
+                  "executable"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "stat"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "tree.read": {
+      "doc": "Reads a file on the computer that holds it.",
+      "owner": "J",
+      "direction": "to-daemon",
+      "roles": [
+        "peer",
+        "layer",
+        "plugin-host"
+      ],
+      "capability": "files",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096,
+            "pattern": "^(home|bots)(\\/|$)"
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "length": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 16777216
+          },
+          "encoding": {
+            "type": "string",
+            "enum": [
+              "utf8",
+              "base64"
+            ]
+          }
+        },
+        "required": [
+          "path"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "encoding": {
+                "type": "string",
+                "const": "utf8"
+              },
+              "text": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "encoding",
+              "text"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "encoding": {
+                "type": "string",
+                "const": "base64"
+              },
+              "data": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "encoding",
+              "data"
+            ],
+            "additionalProperties": false
+          }
+        ]
+      }
+    },
+    "tree.write": {
+      "doc": "Writes a file on the computer that holds it, inside the fence.",
+      "owner": "J",
+      "direction": "to-daemon",
+      "roles": [
+        "peer",
+        "layer",
+        "plugin-host"
+      ],
+      "capability": "files",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096,
+            "pattern": "^(home|bots)(\\/|$)"
+          },
+          "data": {
+            "oneOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "encoding": {
+                    "type": "string",
+                    "const": "utf8"
+                  },
+                  "text": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "encoding",
+                  "text"
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "encoding": {
+                    "type": "string",
+                    "const": "base64"
+                  },
+                  "data": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "encoding",
+                  "data"
+                ]
+              }
+            ]
+          },
+          "createDirs": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "path",
+          "data"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "tree.list": {
+      "doc": "A folder's entries.",
+      "owner": "J",
+      "direction": "to-daemon",
+      "roles": [
+        "peer",
+        "layer",
+        "plugin-host"
+      ],
+      "capability": "files",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096,
+            "pattern": "^(home|bots)(\\/|$)"
+          }
+        },
+        "required": [
+          "path"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "entries": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096,
+                  "pattern": "^(home|bots)(\\/|$)"
+                },
+                "type": {
+                  "type": "string",
+                  "enum": [
+                    "file",
+                    "dir",
+                    "symlink",
+                    "other"
+                  ]
+                },
+                "size": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "modifiedAt": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "executable": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "path",
+                "type",
+                "size",
+                "modifiedAt",
+                "executable"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "entries"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "tree.remove": {
+      "doc": "Deletes a file or folder.",
+      "owner": "J",
+      "direction": "to-daemon",
+      "roles": [
+        "peer",
+        "layer",
+        "plugin-host"
+      ],
+      "capability": "files",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096,
+            "pattern": "^(home|bots)(\\/|$)"
+          },
+          "recursive": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "path"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "tree.move": {
+      "doc": "Moves within one computer; across computers the core copies, then deletes.",
+      "owner": "J",
+      "direction": "to-daemon",
+      "roles": [
+        "peer",
+        "layer",
+        "plugin-host"
+      ],
+      "capability": "files",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096,
+            "pattern": "^(home|bots)(\\/|$)"
+          },
+          "to": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096,
+            "pattern": "^(home|bots)(\\/|$)"
+          }
+        },
+        "required": [
+          "from",
+          "to"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "tree.glob": {
+      "doc": "Finds files on the computer that holds `cwd`; only the results travel (§9.1).",
+      "owner": "J",
+      "direction": "to-daemon",
+      "roles": [
+        "peer",
+        "layer",
+        "plugin-host"
+      ],
+      "capability": "files",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "pattern": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024
+          },
+          "cwd": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096,
+            "pattern": "^(home|bots)(\\/|$)"
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100000
+          }
+        },
+        "required": [
+          "pattern",
+          "cwd"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "paths": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096,
+              "pattern": "^(home|bots)(\\/|$)"
+            }
+          },
+          "truncated": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "paths",
+          "truncated"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "tree.grep": {
+      "doc": "Searches file contents on the computer that holds `cwd`.",
+      "owner": "J",
+      "direction": "to-daemon",
+      "roles": [
+        "peer",
+        "layer",
+        "plugin-host"
+      ],
+      "capability": "files",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "pattern": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          },
+          "cwd": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096,
+            "pattern": "^(home|bots)(\\/|$)"
+          },
+          "glob": {
+            "type": "string",
+            "maxLength": 1024
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100000
+          }
+        },
+        "required": [
+          "pattern",
+          "cwd"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "matches": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096,
+                  "pattern": "^(home|bots)(\\/|$)"
+                },
+                "line": {
+                  "type": "integer",
+                  "exclusiveMinimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "text": {
+                  "type": "string",
+                  "maxLength": 4000
+                }
+              },
+              "required": [
+                "path",
+                "line",
+                "text"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "truncated": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "matches",
+          "truncated"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "tool.run": {
+      "doc": "Runs a tool call (Bash, a local MCP server's tool) on the computer that holds its folder; output streams as `tool_output`.",
+      "owner": "J",
+      "direction": "to-daemon",
+      "roles": [
+        "peer"
+      ],
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "session": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9._:-]+$"
+          },
+          "callId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "epoch": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "tool": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "input": {},
+          "level": {
+            "type": "string",
+            "enum": [
+              "read-only",
+              "ask",
+              "ask-risky",
+              "accept-edits",
+              "automatic"
+            ]
+          }
+        },
+        "required": [
+          "session",
+          "callId",
+          "epoch",
+          "tool",
+          "input",
+          "level"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "output": {},
+          "isError": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "output",
+          "isError"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "tool.cancel": {
+      "doc": "Cancels a running call; if the link is down, the holding computer stops it when the link returns (§6.4).",
+      "owner": "J",
+      "direction": "to-daemon",
+      "roles": [
+        "peer"
+      ],
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "callId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        },
+        "required": [
+          "callId"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "events": {
+    "computer_changed": {
+      "doc": "A computer was added or changed state, level or name.",
+      "owner": "J",
+      "scope": "core",
+      "roles": [
+        "app",
+        "cli",
+        "remote",
+        "layer",
+        "plugin-host"
+      ],
+      "capability": "computers.read",
+      "schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "computer_changed"
+          },
+          "ts": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "computer": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 63,
+                "pattern": "^[A-Za-z0-9]+(-[A-Za-z0-9]+)*$"
+              },
+              "aliases": {
+                "maxItems": 32,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 63,
+                  "pattern": "^[A-Za-z0-9]+(-[A-Za-z0-9]+)*$"
+                }
+              },
+              "device": {
+                "type": "string",
+                "pattern": "^[a-z0-9]{16,64}$"
+              },
+              "os": {
+                "type": "string",
+                "enum": [
+                  "macos",
+                  "windows",
+                  "linux"
+                ]
+              },
+              "hasDisplay": {
+                "type": "boolean"
+              },
+              "agents": {
+                "maxItems": 64,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "maxLength": 128
+                }
+              },
+              "level": {
+                "type": "string",
+                "enum": [
+                  "read-only",
+                  "ask",
+                  "ask-risky",
+                  "accept-edits",
+                  "automatic"
+                ]
+              },
+              "state": {
+                "type": "string",
+                "enum": [
+                  "online",
+                  "offline",
+                  "asleep"
+                ]
+              },
+              "link": {
+                "type": "string",
+                "enum": [
+                  "self",
+                  "lan",
+                  "direct",
+                  "relay"
+                ]
+              },
+              "isMain": {
+                "type": "boolean"
+              },
+              "cloud": {
+                "type": "object",
+                "properties": {
+                  "plugin": {
+                    "type": "string",
+                    "maxLength": 81,
+                    "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+                  },
+                  "provider": {
+                    "type": "string",
+                    "maxLength": 128
+                  },
+                  "size": {
+                    "type": "string",
+                    "maxLength": 128
+                  },
+                  "region": {
+                    "type": "string",
+                    "maxLength": 128
+                  },
+                  "vm": {
+                    "type": "string",
+                    "enum": [
+                      "creating",
+                      "running",
+                      "resizing",
+                      "stopped",
+                      "deleting",
+                      "failed"
+                    ]
+                  }
+                },
+                "required": [
+                  "plugin",
+                  "provider",
+                  "size",
+                  "region",
+                  "vm"
+                ]
+              }
+            },
+            "required": [
+              "name",
+              "aliases",
+              "device",
+              "os",
+              "hasDisplay",
+              "agents",
+              "level",
+              "state",
+              "isMain"
+            ]
+          }
+        },
+        "required": [
+          "type",
+          "ts",
+          "computer"
+        ]
+      }
+    },
+    "computer_removed": {
+      "doc": "A computer left the tree.",
+      "owner": "J",
+      "scope": "core",
+      "roles": [
+        "app",
+        "cli",
+        "remote",
+        "layer",
+        "plugin-host"
+      ],
+      "capability": "computers.read",
+      "schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "computer_removed"
+          },
+          "ts": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 63,
+            "pattern": "^[A-Za-z0-9]+(-[A-Za-z0-9]+)*$"
+          }
+        },
+        "required": [
+          "type",
+          "ts",
+          "name"
+        ]
+      }
+    },
+    "holds_changed": {
+      "doc": "A computer's holds or user-working mark changed.",
+      "owner": "J",
+      "scope": "core",
+      "roles": [
+        "app",
+        "layer",
+        "plugin-host"
+      ],
+      "capability": "computers.control",
+      "schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "holds_changed"
+          },
+          "ts": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "computer": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 63,
+            "pattern": "^[A-Za-z0-9]+(-[A-Za-z0-9]+)*$"
+          },
+          "holds": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                },
+                "computer": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 63,
+                  "pattern": "^[A-Za-z0-9]+(-[A-Za-z0-9]+)*$"
+                },
+                "target": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "app"
+                        },
+                        "app": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 256
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "app"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "window"
+                        },
+                        "app": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 256
+                        },
+                        "window": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 512
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "app",
+                        "window"
+                      ]
+                    }
+                  ]
+                },
+                "session": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128,
+                  "pattern": "^[A-Za-z0-9._:-]+$"
+                },
+                "pluginId": {
+                  "type": "string",
+                  "maxLength": 81,
+                  "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+                },
+                "since": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                }
+              },
+              "required": [
+                "id",
+                "computer",
+                "target",
+                "pluginId",
+                "since"
+              ]
+            }
+          },
+          "userWorking": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "type",
+          "ts",
+          "computer",
+          "holds",
+          "userWorking"
+        ]
+      }
+    },
+    "action_running": {
+      "doc": "A computer-use action started or ended on a computer; the app counts no card click meanwhile.",
+      "owner": "J",
+      "scope": "core",
+      "roles": [
+        "app"
+      ],
+      "schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "action_running"
+          },
+          "ts": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "computer": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 63,
+            "pattern": "^[A-Za-z0-9]+(-[A-Za-z0-9]+)*$"
+          },
+          "running": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "type",
+          "ts",
+          "computer",
+          "running"
+        ]
+      }
+    },
+    "tool_output": {
+      "doc": "A running `tool.run` call's output, back to the computer running the session.",
+      "owner": "J",
+      "scope": "core",
+      "roles": [
+        "peer"
+      ],
+      "transient": true,
+      "schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "tool_output"
+          },
+          "ts": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "callId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "chunk": {
+            "type": "string",
+            "maxLength": 1000000
+          },
+          "stream": {
+            "type": "string",
+            "enum": [
+              "stdout",
+              "stderr"
+            ]
+          }
+        },
+        "required": [
+          "type",
+          "ts",
+          "callId",
+          "chunk",
+          "stream"
+        ]
+      }
+    }
+  }
+}
