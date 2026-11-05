@@ -226,7 +226,7 @@ export const CLOVER_ALLOWLIST: readonly AllowlistEntry[] = [
   },
   {
     id: "coding-agent-files",
-    regex: /(?<![.\w$/-])winter\b(?![-.])|(?<=\/)winter(?= \d)|\bruntimes\/winter(?![\w-])/g,
+    regex: /(?<![.\w$/-])winter\b(?![-.])|(?<=\/)winter(?= \d)|\bruntimes\/winter(?![\w-])|(?<=\$\{DEST\}\/)winter\b/g,
     files: [
       "packages/core/src/runtime-sdk/executable.ts",
       "packages/core/src/runtime-sdk/bundle-layout.ts",

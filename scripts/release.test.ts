@@ -191,14 +191,14 @@ describe("A2: clover-core and clover are signed with their bun entitlements, and
   });
 
   // The embedded `winter` runtime is a bun binary too (measured: `Bun v1.4.2` in the shipped
-  // `runtimes/clover`, flags=0x10000(runtime), no entitlements) — the same JIT-less posture. `ant` is
+  // runtime, flags=0x10000(runtime), no entitlements) — the same JIT-less posture. `ant` is
   // Go and needs nothing, so it stays at none.
   const embedScript = readFileSync(join(REPO_ROOT, "scripts", "embed-runtimes.sh"), "utf8");
-  test("embed-runtimes.sh re-signs clover (and only clover, not ant) with the same entitlements file", () => {
-    const cloverSign = embedScript.split("\n").find((l) => l.startsWith("codesign --force") && l.includes('"${CLOVER}"'));
+  test("embed-runtimes.sh re-signs the agent runtime (and only it, not ant) with the same entitlements file", () => {
+    const runtimeSign = embedScript.split("\n").find((l) => l.startsWith("codesign --force") && l.includes('"${RUNTIME}"'));
     const antSign = embedScript.split("\n").find((l) => l.startsWith("codesign --force") && l.includes('"${ANT}"'));
-    expect(cloverSign).toContain('--entitlements "${SCRIPT_DIR}/bun-jit.entitlements"');
-    expect(cloverSign).toContain("--identifier com.winter.runtime");
+    expect(runtimeSign).toContain('--entitlements "${SCRIPT_DIR}/bun-jit.entitlements"');
+    expect(runtimeSign).toContain("--identifier com.winter.runtime");
     expect(antSign).toBeDefined();
     expect(antSign).not.toContain("--entitlements");
   });
