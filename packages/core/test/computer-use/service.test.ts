@@ -385,13 +385,13 @@ describe("ComputerV2: the policy, through a script", () => {
     const w = world({ apps: { "com.apple.TextEdit": { access: "deny" }, "com.apple.Notes": { access: "click" } } });
     const r = await w.run([
       "try { await apps.open('TextEdit') } catch (e) { print('textedit', e.name) }",
-      "try { await apps.open('Clover') } catch (e) { print('winter', e.name) }",
+      "try { await apps.open('Winter') } catch (e) { print('self', e.name) }",
       "const notes = await apps.open('Notes')",
       "await notes.click(14)",
       "try { await notes.type('x') } catch (e) { print('type', e.name) }",
     ].join("\n"));
     expect(text(r)).toContain("textedit NotAllowed");
-    expect(text(r)).toContain("winter Refused");
+    expect(text(r)).toContain("self Refused");
     expect(text(r)).toContain("type NotAllowed");
     expect(w.fake.calls("target.act").map((a) => a.access)).toEqual(["click"]);
   }, 30_000);
@@ -872,16 +872,16 @@ describe("ComputerV2: screenshots, points and the vision gate", () => {
     w.fake.apps.find((a) => a.bundleId === "com.apple.TextEdit")!.running = true;
     const r = await w.run("await screen.screenshot()\nconst wins = await screen.windows({ emit: false })\nprint('[' + wins.map((x) => x.app).join(',') + ']')");
     const ex = w.fake.calls("screen.screenshot")[0]!.excludeBundleIds as string[];
-    expect(ex).not.toContain("com.winter.app"); // the user ruling: Clover's windows are shown (binding it stays refused)
+    expect(ex).not.toContain("com.winter.app"); // the user ruling: the app's own windows are shown (binding it stays refused)
     expect(ex).toContain("com.apple.Notes");
     expect(ex).toContain("com.1password.1password"); // a built-in Don't-allow exception
     expect(ex).toContain("com.apple.keychainaccess"); // a floor
     expect(ex).not.toContain("com.apple.TextEdit");
     // The switch is on: the running apps are not asked for (nothing without a row is denied).
     expect(w.fake.calls("apps.list")).toEqual([]);
-    // Running: Notes (Don't allow), TextEdit, Clover (shown), 1Password (default Don't allow), Keychain Access (an
-    // auth surface) — TextEdit and Clover are listed.
-    expect(text(r)).toContain("[TextEdit,Clover]");
+    // Running: Notes (Don't allow), TextEdit, the app itself (shown), 1Password (default Don't allow), Keychain Access
+    // (an auth surface) — TextEdit and the app are listed.
+    expect(text(r)).toContain("[TextEdit,Winter]");
   }, 30_000);
 
   macOnly("with Allow all apps OFF, a shot blacks out every RUNNING app without an allowing exception (asked fresh)", async () => {
@@ -891,10 +891,10 @@ describe("ComputerV2: screenshots, points and the vision gate", () => {
     expect(w.fake.calls("apps.list")).toHaveLength(1);
     const ex = w.fake.calls("screen.screenshot")[0]!.excludeBundleIds as string[];
     expect(ex).toContain("com.apple.TextEdit"); // running, no exception → deny
-    expect(ex).not.toContain("com.winter.app"); // running, no exception — but Clover is always shown
+    expect(ex).not.toContain("com.winter.app"); // running, no exception — but the app itself is always shown
     expect(ex).toContain("com.1password.1password");
     expect(ex).not.toContain("com.apple.Notes"); // an allowing exception (view)
-    expect(text(r)).toContain("[Notes,Clover]");
+    expect(text(r)).toContain("[Notes,Winter]");
   }, 30_000);
 });
 

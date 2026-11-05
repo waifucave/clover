@@ -167,7 +167,7 @@ export interface FakeFile {
   frame?: string;
 }
 
-interface Ctx { frameId: string; session?: string; winter: boolean; doc: number }
+interface Ctx { frameId: string; session?: string; ownWorld: boolean; doc: number }
 
 export class FakeTab {
   doc = 1;
@@ -711,13 +711,13 @@ export class FakeCdpTransport implements CdpTransport {
         if (params.worldName !== "winter" || params.grantUniveralAccess === true) throw new TransportError("not_allowed", "world rule");
         const frameId = String(params.frameId);
         const id = this.nextCtx++;
-        t.contexts.set(ctxKey(id), { frameId, ...(session === undefined ? {} : { session }), winter: true, doc: t.doc });
+        t.contexts.set(ctxKey(id), { frameId, ...(session === undefined ? {} : { session }), ownWorld: true, doc: t.doc });
         this.emit(t, "Runtime.executionContextCreated", { context: { id, uniqueId: `u-${id}`, name: "winter", origin: "", auxData: { frameId, isDefault: false, type: "isolated" } } }, session);
         return r({ executionContextId: id });
       }
       case "Runtime.evaluate": {
         const c = t.contexts.get(ctxKey(params.contextId));
-        if (c === undefined || !c.winter) throw new TransportError("not_allowed", "Runtime.evaluate outside the winter world");
+        if (c === undefined || !c.ownWorld) throw new TransportError("not_allowed", "Runtime.evaluate outside the winter world");
         return r({ result: { type: "string", value: `rt-${c.frameId}-${c.doc}` } });
       }
       case "DOM.getFrameOwner": {
@@ -727,7 +727,7 @@ export class FakeCdpTransport implements CdpTransport {
       }
       case "DOM.resolveNode": {
         const c = t.contexts.get(ctxKey(params.executionContextId));
-        if (c === undefined || !c.winter) throw new TransportError("not_allowed", "DOM.resolveNode outside the winter world");
+        if (c === undefined || !c.ownWorld) throw new TransportError("not_allowed", "DOM.resolveNode outside the winter world");
         const objectId = `obj:${c.frameId}:${String(params.backendNodeId)}`;
         t.cloverObjects.add(objectId);
         return r({ object: { type: "object", objectId } });
@@ -743,7 +743,7 @@ export class FakeCdpTransport implements CdpTransport {
           return r({ result: { type: "undefined" } });
         }
         const c = t.contexts.get(ctxKey(params.executionContextId));
-        if (c === undefined || !c.winter) throw new TransportError("not_allowed", "Runtime.callFunctionOn outside the winter world");
+        if (c === undefined || !c.ownWorld) throw new TransportError("not_allowed", "Runtime.callFunctionOn outside the winter world");
         if (c.doc !== t.doc && c.frameId === "top") throw new TransportError("cdp_error", "ctx gone", { cdpMessage: "Cannot find context with specified id" });
         frameId = c.frameId;
         const args = params.arguments as Array<{ value: unknown }>;

@@ -1106,11 +1106,13 @@ export interface MigrationDoctorReport {
    *  can print the SAME `mv <home> <home>.bak` advice the daemon boot skip line and the
    *  `clover migrate`/`planMigrationB` refusal itself print — advice and refusal must always agree. */
   home: string;
-  legacyHome: string;
+  /** C0 (review S2): absent when the caller named no legacy home — `clover doctor` names none, since only an
+   *  explicit `clover migrate --from` reads one. */
+  legacyHome?: string;
   legacyHomePresent: boolean;
   /** The Keychain service `legacyStore` reads from, for the row's own text — never used to
    *  construct a store here. */
-  legacyKeychainService: string;
+  legacyKeychainService?: string;
   /** How many of `MIGRATION_B_SECRET_NAMES` still answer non-null under `legacyKeychainService` —
    *  a count, never the names or values themselves. */
   legacyKeychainRemaining: number;
@@ -1127,25 +1129,27 @@ export interface MigrationDoctorReport {
 
 export async function diagnoseMigration(input: {
   home: string;
-  legacyHome: string;
-  legacyKeychainService: string;
+  /** C0 (review S2): optional. Without it only this home's own Migration B record is reported: no legacy home is
+   *  looked at and no legacy Keychain item is probed. */
+  legacyHome?: string;
+  legacyKeychainService?: string;
   /**
    * WS-25 §7: is `name` present under `legacyKeychainService`? A PRESENCE probe, never a read: the CLI
    * passes `legacyKeychainPresence(profile)` (`migration/legacy-keychain-store.ts`), which locates each item
    * without requesting its data. The earlier `legacyStore.get` DECRYPTED all fourteen legacy items to count
    * them — one macOS consent dialog per item for a binary that did not create them, for a number.
    */
-  legacyItemPresent: (name: string) => boolean | Promise<boolean>;
+  legacyItemPresent?: (name: string) => boolean | Promise<boolean>;
 }): Promise<MigrationDoctorReport> {
   const manifest = readMigrationManifest(input.home);
   const status: MigrationDoctorReport["status"] = manifest?.status === "complete" || manifest?.status === "in-progress" ? manifest.status : "absent";
-  const legacyHomePresent = existsSync(input.legacyHome);
+  const legacyHomePresent = input.legacyHome !== undefined && existsSync(input.legacyHome);
   // Skip the 14 presence probes when there is nothing to report anyway: a machine that never had a
   // legacy home and never ran Migration B has no legacy Keychain items to find, by construction —
   // `clover doctor` would otherwise touch the Keychain on every single run, forever, for a count that can
   // only ever come back zero. (Since WS-25 §7 a probe raises no dialog either: it never decrypts.)
   let legacyKeychainRemaining = 0;
-  if (legacyHomePresent || status !== "absent") {
+  if (input.legacyItemPresent !== undefined && input.legacyKeychainService !== undefined && (legacyHomePresent || status !== "absent")) {
     for (const name of MIGRATION_B_SECRET_NAMES) {
       if (await input.legacyItemPresent(name)) legacyKeychainRemaining++;
     }
@@ -1158,9 +1162,9 @@ export async function diagnoseMigration(input: {
     status,
     finishedAt: manifest?.finishedAt,
     home: input.home,
-    legacyHome: input.legacyHome,
+    ...(input.legacyHome !== undefined ? { legacyHome: input.legacyHome } : {}),
     legacyHomePresent,
-    legacyKeychainService: input.legacyKeychainService,
+    ...(input.legacyKeychainService !== undefined ? { legacyKeychainService: input.legacyKeychainService } : {}),
     homeNotPristineReason,
     legacyKeychainRemaining,
   };
@@ -1173,21 +1177,20 @@ export async function diagnoseMigration(input: {
 export function formatMigrationDoctorLines(report: MigrationDoctorReport): string[] {
   const lines: string[] = [];
   if (report.status === "complete") {
-    lines.push(`migration: complete${report.finishedAt ? ` ${report.finishedAt}` : ""} from ${report.legacyHome}`);
+    lines.push(`migration: complete${report.finishedAt ? ` ${report.finishedAt}` : ""}${report.legacyHome !== undefined ? ` from ${report.legacyHome}` : ""}`);
   } else if (report.status === "in-progress") {
     lines.push("migration: IN PROGRESS — run `clover migrate --resume` or `clover migrate --rollback`");
   } else {
     lines.push("migration: absent");
   }
   if (report.legacyHomePresent) {
-    lines.push(`legacy home present: ${report.legacyHome} (safe to remove after verifying Clover)`);
+    // C0 (review S2): the legacy home is the rollback source, kept as it is.
+    lines.push(`legacy home present: ${report.legacyHome} (kept as the rollback source)`);
   }
-  // Review M2: WHY it never auto-migrated, with a path forward. Fix wave C2: the SAME instruction
-  // the daemon boot skip line and the `clover migrate`/`planMigrationB` refusal itself print — advice
-  // and refusal must always agree (a `clover migrate --from` into a non-pristine home just hits that
-  // same refusal).
+  // Review M2: WHY nothing was migrated. C0 (review S2): no boot migrates, so the one way in is an explicit
+  // `clover migrate --from`, which needs a pristine home — the same rule its own refusal states.
   if (report.homeNotPristineReason) {
-    lines.push(`this home is not pristine (found ${report.homeNotPristineReason}) — legacy data at ${report.legacyHome} was never migrated; move ${report.home} aside, e.g. \`mv ${report.home} ${report.home}.bak\`, then restart to migrate`);
+    lines.push(`this home is not pristine (found ${report.homeNotPristineReason}) — legacy data at ${report.legacyHome} was never migrated; \`clover migrate --from ${report.legacyHome}\` migrates only into a pristine home`);
   }
   if (report.legacyKeychainRemaining > 0) {
     lines.push(`legacy keychain items remaining: ${report.legacyKeychainRemaining} under ${report.legacyKeychainService}`);

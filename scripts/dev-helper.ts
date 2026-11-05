@@ -48,6 +48,7 @@ import {
   helperRequirement, helperSignArgs, builtHelperPath, LSREGISTER, pidsRunning, readHelperVersion, syncHelperVersion, type HelperFlavor,
 } from "./computer-helper-lib";
 import { resolveDevSigningIdentity } from "./dev-daemon-lib";
+import { refuseHeldScript } from "./held-scripts";
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const APPLE_DIR = join(REPO_ROOT, "apple", "Winter");
@@ -233,4 +234,7 @@ function main(): void {
   }
 }
 
-if (import.meta.main) main();
+if (import.meta.main) {
+  refuseHeldScript("dev:helper"); // C0 review S6: until opensky (`held-scripts.ts`)
+  main();
+}

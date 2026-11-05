@@ -53,7 +53,7 @@ import { NO_PARK_TIMEOUT_MS } from "../runtime-sdk/bridge-common";
 import type { SessionMode } from "../runtime-sdk/create";
 import { computerUseAllowAllAppsFrom, computerUseAppsFrom, type ComputerUseAccess, type ComputerUseAppSetting, type Settings } from "../settings";
 import { AutomationFailure } from "./errors";
-import { CLOVER_OWN_BUNDLE_IDS } from "./protocol";
+import { WINTER_OWN_BUNDLE_IDS } from "./protocol";
 
 export const COMPUTER_V2_TOOL_NAME = "ComputerV2";
 
@@ -351,7 +351,7 @@ export class ComputerPolicy {
    *  and every app whose effective access is `deny` — never Clover's own windows (the user ruling: a whole-screen
    *  read is only for seeing; acting needs a bind, and binding Clover stays refused by `checkFloors`). */
   hiddenFromScreen(bundleId: string): boolean {
-    if (CLOVER_OWN_BUNDLE_IDS.includes(bundleId)) return false;
+    if (WINTER_OWN_BUNDLE_IDS.includes(bundleId)) return false;
     return AUTH_DIALOG_BUNDLE_IDS.has(bundleId) || this.accessFor(bundleId) === "deny";
   }
 
@@ -367,7 +367,7 @@ export class ComputerPolicy {
     const settings = this.deps.settings();
     const out = new Set<string>(AUTH_DIALOG_BUNDLE_IDS);
     const candidates = new Set<string>([...Object.keys(computerUseAppsFrom(settings)), ...Object.keys(DEFAULT_APP_EXCEPTIONS), ...running]);
-    for (const id of candidates) if (!CLOVER_OWN_BUNDLE_IDS.includes(id) && effectiveAppAccess(settings, id).access === "deny") out.add(id);
+    for (const id of candidates) if (!WINTER_OWN_BUNDLE_IDS.includes(id) && effectiveAppAccess(settings, id).access === "deny") out.add(id);
     return [...out];
   }
 
@@ -378,7 +378,7 @@ export class ComputerPolicy {
 
   /** The floors — the same under every policy and every setting. Throws `Refused`. */
   checkFloors(app: AppRef): void {
-    if (CLOVER_OWN_BUNDLE_IDS.includes(app.bundleId)) {
+    if (WINTER_OWN_BUNDLE_IDS.includes(app.bundleId)) {
       throw new AutomationFailure("Refused", "Clover never controls itself (Clover and Winter Computer Use are off limits)");
     }
     if (AUTH_DIALOG_BUNDLE_IDS.has(app.bundleId)) {

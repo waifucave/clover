@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, symlinkSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { OTHER_INSTALL_HOMES } from "../packages/core/src/other-installs";
 import { designatedRequirementOf, DEV_DAEMON_IDENTIFIER, devCompileCommand, devDaemonHome, devDaemonRequirement, resolveDevSigningIdentity, signedFacts } from "./dev-daemon-lib";
 
 const TEAM = "37N77U9RSZ";
@@ -41,6 +43,25 @@ describe("the dev daemon's build and home", () => {
     expect(devDaemonHome({}, "/Users/u")).toBe("/Users/u/.clover-dev");
     expect(devDaemonHome({ CLOVER_HOME: "/tmp/h" }, "/Users/u")).toBe("/tmp/h");
     expect(() => devDaemonHome({ CLOVER_HOME: "/Users/u/.clover/" }, "/Users/u")).toThrow("dist home");
+  });
+
+  // C0 review B1: never another install's home either (`other-installs.ts`, whose own test pins the list), by real
+  // path. A stand-in user home; the real one is never named.
+  test("home: never another install's home, nor anything inside one, nor a link to one", () => {
+    const user = mkdtempSync(join(tmpdir(), "clover-fake-user-"));
+    for (const { dir, what } of OTHER_INSTALL_HOMES) {
+      mkdirSync(join(user, dir));
+      expect(() => devDaemonHome({ CLOVER_HOME: join(user, dir) }, user)).toThrow(`that is ${what}, which Clover never touches`);
+      expect(() => devDaemonHome({ CLOVER_HOME: join(user, dir, "inner") }, user)).toThrow("which Clover never touches");
+    }
+    const first = OTHER_INSTALL_HOMES[0]!;
+    const link = join(mkdtempSync(join(tmpdir(), "clover-link-")), "dev-home");
+    symlinkSync(join(user, first.dir), link);
+    expect(() => devDaemonHome({ CLOVER_HOME: link }, user)).toThrow(first.what);
+    mkdirSync(join(user, ".clover"));
+    const distLink = join(mkdtempSync(join(tmpdir(), "clover-link-")), "dist");
+    symlinkSync(join(user, ".clover"), distLink);
+    expect(() => devDaemonHome({ CLOVER_HOME: distLink }, user)).toThrow("dist home");
   });
 
   test("the stated designated requirement: identifier + Clover's team under Apple's anchor, never a certificate's name; and how codesign prints it back", () => {

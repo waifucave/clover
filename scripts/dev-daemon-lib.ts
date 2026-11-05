@@ -1,6 +1,7 @@
 // WS-27: the pure halves of `scripts/dev-daemon.ts` (unit-tested in `dev-daemon.test.ts`).
 import { homedir } from "node:os";
-import { join, resolve } from "node:path";
+import { join, resolve, sep } from "node:path";
+import { otherInstallHome, realPathOf } from "../packages/core/src/other-installs";
 
 /** The dev daemon's code-signing identifier: stable, so its designated requirement (identifier + Clover's
  *  team certificate) survives every rebuild and the Keychain keeps trusting it. Distinct from the dist
@@ -60,10 +61,17 @@ export function resolveDevSigningIdentity(input: { identitiesOutput: string; tea
   return chosen;
 }
 
-/** The dev daemon's home: `$CLOVER_HOME`, else `~/.clover-dev`. Never the dist home. */
+/**
+ * The dev daemon's home: `$CLOVER_HOME`, else `~/.clover-dev`. Refused by real path (links followed): Clover's dist
+ * home `~/.clover`, and every other install's home (`other-installs.ts` names them), or anything inside one.
+ */
 export function devDaemonHome(env: NodeJS.ProcessEnv, home: string = homedir()): string {
   const chosen = resolve(env.CLOVER_HOME ?? join(home, ".clover-dev"));
-  if (chosen === resolve(join(home, ".clover"))) throw new Error(`refusing to run a dev daemon on ${chosen} — that is the dist home (the daily driver)`);
+  const real = realPathOf(chosen);
+  const dist = realPathOf(join(home, ".clover"));
+  if (real === dist || real.startsWith(dist + sep)) throw new Error(`refusing to run a dev daemon on ${chosen} — that is Clover's dist home, not the dev profile's`);
+  const other = otherInstallHome(chosen, home);
+  if (other !== undefined) throw new Error(`refusing to run a dev daemon on ${chosen} — that is ${other.what}, which Clover never touches`);
   return chosen;
 }
 

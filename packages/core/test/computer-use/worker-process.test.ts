@@ -100,7 +100,7 @@ describe("the sandboxed automation worker", () => {
         `const g = await import(${JSON.stringify(guard)})`,
         "print(JSON.stringify(g.keychainSandboxState()))",
         "const b = await import('bun')",
-        "try { const v = await b.secrets.get({ service: 'com.winter.core.test-isolated', name: 'cu-probe' }); print('VALUE', String(v)) } catch (e) { print('secrets failed') }",
+        "try { const v = await b.secrets.get({ service: 'com.waifucave.clover.core.test-isolated', name: 'cu-probe' }); print('VALUE', String(v)) } catch (e) { print('secrets failed') }",
       ].join("\n");
       expect(await w.run("r1", code, { ...noop, onPrint: (t) => prints.push(t) })).toEqual({ kind: "done" });
       expect(prints[0]).toBe('{"ok":true}'); // both Keychain mach services denied to THIS process

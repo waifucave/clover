@@ -208,7 +208,7 @@ describe("the user's restrictions and the floors — under every policy, bypass 
   test("Clover never controls itself; authentication surfaces are refused", async () => {
     const { policy } = setup({ policy: "bypass" });
     for (const id of ["com.winter.app", "com.winter.app.dev", "com.winter.computeruse", "com.winter.computeruse.dev"]) {
-      await failsWith(policy.authorize(newRunGrants("s1"), { bundleId: id, name: "Clover" }, { kind: "bind" }), "Refused");
+      await failsWith(policy.authorize(newRunGrants("s1"), { bundleId: id, name: "Winter" }, { kind: "bind" }), "Refused");
     }
     await failsWith(policy.authorize(newRunGrants("s1"), { bundleId: "com.apple.SecurityAgent", name: "SecurityAgent" }, { kind: "bind" }), "Refused");
     await failsWith(policy.authorize(newRunGrants("s1"), { bundleId: "com.apple.keychainaccess", name: "Keychain Access" }, { kind: "observe" }), "Refused");

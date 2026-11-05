@@ -7,6 +7,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { query, SDK_VERSION, type SdkMessage } from "@yanlinglabs/winter-agent-sdk";
+import { buildCoreBrand } from "../../src/runtime-sdk/brand";
 import { RUNTIME_VERSION } from "@yanlinglabs/winter-agent-runtime/version";
 import { spawn as spawnChild } from "node:child_process";
 import type { EmbeddedWorkerProcess } from "@yanlinglabs/winter-agent-runtime/embedded-host";
@@ -43,8 +44,12 @@ function temp(label: string): string {
   TEMP.push(d);
   return d;
 }
-function sessionEnv(): Record<string, string> {
-  return { PATH: process.env.PATH ?? "/usr/bin:/bin", CLOVER_HOME: temp("home"), CLOVER_DISABLE_GIT_INSTRUCTIONS: "1", CLOVER_KEYCHAIN_SERVICE: process.env.CLOVER_KEYCHAIN_SERVICE ?? "com.waifucave.clover.core.test-isolated" };
+/** A session's env and Clover's brand on one temp home. `query()` reads the env by the brand's names, so without the
+ *  brand it would read the SDK's own default names and home instead (C0 review S4). */
+function session(): { env: Record<string, string>; brand: ReturnType<typeof buildCoreBrand> } {
+  const home = temp("home");
+  const env = { PATH: process.env.PATH ?? "/usr/bin:/bin", CLOVER_HOME: home, CLOVER_DISABLE_GIT_INSTRUCTIONS: "1", CLOVER_KEYCHAIN_SERVICE: process.env.CLOVER_KEYCHAIN_SERVICE ?? "com.waifucave.clover.core.test-isolated" };
+  return { env, brand: buildCoreBrand(undefined, home) };
 }
 async function drain(gen: AsyncIterable<SdkMessage>): Promise<SdkMessage[]> {
   const out: SdkMessage[] = [];
@@ -138,7 +143,7 @@ describe("createEmbeddedSessionHost — workerProcess() over a real Worker", () 
           model: "winter-test/tooluse",
           sessionId,
           cwd: temp("cwd"),
-          env: sessionEnv(),
+          ...session(),
           spawnClaudeCodeProcess: (o) => {
             const p = host.spawn(o);
             pid = p.pid;
@@ -160,7 +165,7 @@ describe("createEmbeddedSessionHost — workerProcess() over a real Worker", () 
     const logged: string[] = [];
     const host = createEmbeddedSessionHost({ log: (l) => logged.push(l) });
     const sessionId = crypto.randomUUID();
-    const q = query({ prompt: "hang please", options: { model: "winter-test/hang", sessionId, cwd: temp("cwd"), env: sessionEnv(), spawnClaudeCodeProcess: (o) => host.spawn(o) } });
+    const q = query({ prompt: "hang please", options: { model: "winter-test/hang", sessionId, cwd: temp("cwd"), ...session(), spawnClaudeCodeProcess: (o) => host.spawn(o) } });
     const draining = drain(q).catch((e: unknown) => e);
     const t1 = Date.now();
     while (host.live().length === 0 && Date.now() - t1 < 5000) await Bun.sleep(20);
@@ -180,7 +185,7 @@ describe("createEmbeddedSessionHost — workerProcess() over a real Worker", () 
     const ids = [crypto.randomUUID(), crypto.randomUUID()];
     const seenLive: string[][] = [];
     const run = (id: string): Promise<SdkMessage[]> =>
-      drain(query({ prompt: "go", options: { model: "winter-test/tooluse", sessionId: id, cwd: temp("cwd"), env: sessionEnv(), spawnClaudeCodeProcess: (o) => { const p = host.spawn(o); seenLive.push(host.live()); return p; } } }));
+      drain(query({ prompt: "go", options: { model: "winter-test/tooluse", sessionId: id, cwd: temp("cwd"), ...session(), spawnClaudeCodeProcess: (o) => { const p = host.spawn(o); seenLive.push(host.live()); return p; } } }));
     const [a, b] = await Promise.all(ids.map(run));
     expect(resultOf(a!)?.result).toBe("tool round done");
     expect(resultOf(b!)?.result).toBe("tool round done");
@@ -195,15 +200,15 @@ describe("review round 1", () => {
     const host = createEmbeddedSessionHost({ onLifecycle: (e) => events.push(e) });
     const sessionId = crypto.randomUUID();
     const cwd = temp("cwd");
-    const env = sessionEnv();
+    const s = session();
     // Incarnation 1: a hanging turn, left running — the state a wrapper that threw early leaves behind.
-    const first = drain(query({ prompt: "hang please", options: { model: "winter-test/hang", sessionId, cwd, env, spawnClaudeCodeProcess: (o) => host.spawn(o) } })).catch((e: unknown) => e);
+    const first = drain(query({ prompt: "hang please", options: { model: "winter-test/hang", sessionId, cwd, ...s, spawnClaudeCodeProcess: (o) => host.spawn(o) } })).catch((e: unknown) => e);
     const t0 = Date.now();
     while (host.live().length === 0 && Date.now() - t0 < 5000) await Bun.sleep(20);
     await Bun.sleep(400);
     expect(host.live()).toEqual([sessionId]);
     // Incarnation 2, same backend session, while 1 is still running.
-    const second = await drain(query({ prompt: "again", options: { model: "winter-test/echo", sessionId, cwd, env, spawnClaudeCodeProcess: (o) => host.spawn(o) } }));
+    const second = await drain(query({ prompt: "again", options: { model: "winter-test/echo", sessionId, cwd, ...s, spawnClaudeCodeProcess: (o) => host.spawn(o) } }));
     expect(resultOf(second)?.subtype).toBe("success");
     await first;
     // The order the host saw, for this one session: start(1), exited(1), start(2), exited(2) — never

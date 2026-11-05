@@ -201,8 +201,12 @@ describe("clover rules — what renames and what the allowlist keeps", () => {
   });
 
   test("history and other products' names stay: Winter's phases, the helpers, the extension", () => {
-    const s = "Winter Phase 10a; com.winter.computeruse; com.winter.ant; Winter for Chrome; Winter Computer Use.app";
+    const s = "Winter Phase 10a; Winter for Chrome; Winter Computer Use.app";
     expect(cw(s).out).toBe(s);
+    // The helpers' bundle ids stay only in the files that build, sign and drive those helpers (C0 review S3).
+    const ids = "com.winter.computeruse; com.winter.ant";
+    expect(cw(ids, "packages/core/src/computer-use/protocol.ts").out).toBe(ids);
+    expect(cw(ids).out).toBe("com.clover.computeruse; com.clover.ant");
   });
 
   test("the SDK's session-door option keeps its name where it is the SDK's, and only there", () => {

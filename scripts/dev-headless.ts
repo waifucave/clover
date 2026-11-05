@@ -28,6 +28,7 @@ import {
   builtHeadlessPath, checkSignedHeadless, HEADLESS, HEADLESS_NESTED_HELPERS, headlessBuildArgs, headlessExecutable, headlessRequirement, headlessSignArgs, signedFacts,
 } from "./headless-helper-lib";
 import { readCanonical } from "./version-lib";
+import { refuseHeldScript } from "./held-scripts";
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const APPLE_DIR = join(REPO_ROOT, "apple", "Winter");
@@ -152,4 +153,7 @@ function main(): void {
   console.error(`dev:headless: ${target} — ${HEADLESS.dev.identifier}, team ${CLOVER_TEAM_ID}, designated => ${headlessRequirement(HEADLESS.dev.identifier, CLOVER_TEAM_ID)}, hardened runtime, no entitlements, self-contained`);
 }
 
-if (import.meta.main) main();
+if (import.meta.main) {
+  refuseHeldScript("dev:headless"); // C0 review S6: until opensky (`held-scripts.ts`)
+  main();
+}

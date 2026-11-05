@@ -290,9 +290,10 @@ describe("the pair is wired only where S7B says, and agrees with the Swift launc
     }
     expect(script).toContain(COWORK_NATIVE_TEAM);
     expect(swift).toContain(COWORK_NATIVE_TEAM);
-    // The dev launcher's identity is read by the launcher from its own signature; the lib and the Swift agree on it, and the shipped daemon is clover-core.
+    // The dev launcher's identity is read by the launcher from its own signature; the lib and the Swift agree on it.
+    // The kept Swift launcher (`apple/`, its names unchanged; Cowork is paused) names the shipped daemon winter-core.
     expect(swift).toContain(`"${COWORK_NATIVE.launcher.devIdentifier}"`);
-    expect(swift).toContain('"clover-core"');
+    expect(swift).toContain('"winter-core"');
     expect(script).toContain(`"${COWORK_TEST_HOOK_MARKER}"`);
     expect(script).toContain(COWORK_WORKER_ENTITLEMENT);
     expect(read("apple", "Cowork", "WinterCoworkLauncher", "Sources", "LauncherCore", "Launcher", "LauncherArguments.swift")).toContain(COWORK_TEST_BUILD_CONDITION);

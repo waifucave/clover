@@ -21,7 +21,7 @@ export interface GuestRuntimeLaunch {
   /** The admitted source, or null for an outputs-located conversation (D3b), which mounts none. */
   readonly source: Readonly<{ sourceId: string; locationId: string; revision: number; access: SourceAccess }> | null;
   readonly capabilities: GuestRuntimeCapabilities;
-  readonly runtime: Readonly<{ executionPosture: "confined-guest"; sessionId: string; model: string; cwd: string; cloverHome: string; storeHome: string; persistSession: true; permissionMode: CoworkGuestPermissionMode; tools: readonly string[]; allowedTools: readonly []; resume?: string }>;
+  readonly runtime: Readonly<{ executionPosture: "confined-guest"; sessionId: string; model: string; cwd: string; winterHome: string; storeHome: string; persistSession: true; permissionMode: CoworkGuestPermissionMode; tools: readonly string[]; allowedTools: readonly []; resume?: string }>;
 }
 export interface GuestRuntimeTermination {
   scope: Readonly<GuestRuntimeScope>; launchId: string; outcome: "confirmed-stopped" | "uncertain";
@@ -119,7 +119,7 @@ export class CoworkGuestRuntimeSupervisor {
       scope: Object.freeze({ ...epoch, homeId: this.deps.records.homeIdentity(), bootId, sessionId, backendSessionId: safeSegment(identity.backendSessionId), bindingRevision: binding.revision, policyRevision: policy.revision, instructionRevision: workspace.instructionRevision }),
       source: source === undefined ? null : Object.freeze({ sourceId: source.sourceId, locationId: source.locationId, revision: source.revision, access: source.access }), capabilities: capturedCapabilities,
       runtime: Object.freeze({ executionPosture: "confined-guest", sessionId: identity.backendSessionId, model: identity.model, cwd,
-        cloverHome: `/run/winter/conversations/${safeSegment(sessionId)}`, storeHome: store, persistSession: true,
+        winterHome: `/run/winter/conversations/${safeSegment(sessionId)}`, storeHome: store, persistSession: true,
         // The mode the guest RUNS (session door D3, encoding A): the guest's own config is built from the conversation
         // set, which carries plan or ask, so its runtime is plan or default whatever the binding's policy. The host
         // query states the same mode; the binding's real policy is applied by the host approval projection.

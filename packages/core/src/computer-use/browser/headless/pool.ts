@@ -110,7 +110,7 @@ export interface HeadlessPoolDeps {
   /** Presentation: Clover.app's panel as a viewer (the browser link's feature `headless`), or why there is none. */
   viewer?(): HeadlessViewer | undefined;
   viewerMissing?(): string | undefined;
-  /** The code requirement the viewer (Clover.app) must satisfy (`cloverAppRequirementFor`). */
+  /** The code requirement the viewer (Clover.app) must satisfy (`winterAppRequirementFor`). */
   viewerRequirement?(): string;
   presentStartMs?: number;
   drainMs?: number;

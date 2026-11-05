@@ -432,7 +432,7 @@ describe("session.send / session.steer — images (code-mode image input)", () =
     // are never image paths at all; they are reached through a `.png`-spelled symlink, which the RESOLVED check catches.
     const denied: Array<[string, string]> = [
       ["run", plant(home, "run/pic.png")],
-      ["runtimes", plant(home, "runtimes/bin/winter.png")],
+      ["runtimes", plant(home, "runtimes/bin/clover.png")],
       ["run folder backups", plant(home, "cache/runs/abc/backups/shot.png")],
       ["staging backups", plant(staging, "backups/shot.png")],
     ];
@@ -451,7 +451,7 @@ describe("session.send / session.steer — images (code-mode image input)", () =
     symlinkSync(join(home, "run", "pic.png"), join(dir, "into-run.png"));
     symlinkSync(join(home, "runtimes"), join(dir, "runtimes-dir"));
     denied.push(["symlink into run", join(dir, "into-run.png")]);
-    denied.push(["symlink through a dir into runtimes", join(dir, "runtimes-dir", "bin", "winter.png")]);
+    denied.push(["symlink through a dir into runtimes", join(dir, "runtimes-dir", "bin", "clover.png")]);
     denied.push(["run, spelled with ..", `${home}/outputs/../run/pic.png`]);
     denied.push(["run, upper-cased (a case-insensitive volume)", `${home}/RUN/pic.png`]);
     // …and the config files named directly are refused too (by extension — they are not image paths).

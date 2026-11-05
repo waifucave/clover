@@ -8,12 +8,13 @@ import { join } from "node:path";
 import { existsSync, mkdirSync, realpathSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import { bootstrapCloverDir, resolveCloverHome, isDefaultCloverHome } from "./clover-dir";
+import { assertNotOtherInstallHome } from "./other-installs";
+import { installCloverProcessIdentity } from "./runtime-sdk/process-identity";
 import { acquireLock, type Lock } from "./lock";
 import { keychainService, resolveCloverProfile } from "./profile";
-import { describeHomePristineness, legacyHomeFor, planMigrationB, runMigrationB, MigrationRefused } from "./migration/migrate-b";
+import { describeHomePristineness, planMigrationB, runMigrationB, MigrationRefused } from "./migration/migrate-b";
 import { inspectCoworkSource } from "./migration/cowork-exclusion";
 import { manifestFileState, manifestPath } from "./migration/manifest";
-import { LegacyKeychainSecretStore } from "./migration/legacy-keychain-store";
 import { TOKEN_NAMES, TokenAuthority } from "./auth/tokens";
 import { appTokenAclBootTrust, migrateAppTokenAcl, prepareAppTokenAccess, recoverAppTokenShadows, type AppTokenAccess, type AppTokenKeychain, type AppTokenTrust } from "./auth/app-token-acl";
 import { applicationPathsForBundleId, keychainUnlocked, withKeychainUserInteractionDisabled } from "./auth/keychain-ffi";
@@ -420,9 +421,9 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
    * ALL is what turns migration on for a caller that ALSO supplies its own `secrets`: without it, a
    * caller supplying `secrets` stays migration-inert no matter what exists on the real machine —
    * which is what keeps every pre-9c daemon-boot test (none of which passes this) off the
-   * developer's real legacy home and real legacy Keychain service. A true production caller (no
-   * `secrets` override at all) needs neither field: both default to the real profile-derived legacy
-   * home (`legacyHomeFor`) and a real `LegacyKeychainSecretStore`.
+   * developer's real legacy home and real legacy Keychain service. C0 (review S2): it is now the ONLY way
+   * the boot hook runs — a production caller never migrates — and it migrates only from the
+   * `legacyHome` and `legacySecrets` it names (no defaults).
    */
   migration?: {
     legacyHome?: string;
@@ -461,10 +462,20 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   /** Usage tracking TEST SEAM (`docs/claude/usage.md`): the Codex / Claude Code roots and executables. Absent: the env
    *  overrides (`CLOVER_USAGE_*`, which both test preloads point at nothing), else the user's real installs. */
   usage?: UsageInjection;
+  /** TEST ONLY: the user's home the other-install guard below measures against (default `homedir()`), so a test
+   *  proves the refusal on a stand-in home and never names the real one. */
+  userHomeForTests?: string;
 } = {}): Promise<RunningDaemon> {
   const startedAt = Date.now();
+  // C0 (review S1): the daemon's own provider calls (titles, the reviewer, the dreamer, the cleaner) present as
+  // Clover, not as the SDK's default (`runtime-sdk/process-identity.ts`; already installed when core loaded).
+  installCloverProcessIdentity();
   const home = opts.home ?? resolveCloverHome();
   const profile = resolveCloverProfile();
+
+  // Before anything reads or writes `home`: never another install's home (`other-installs.ts` names them), by real
+  // path, whatever `CLOVER_HOME` or `opts.home` says.
+  assertNotOtherInstallHome(home, opts.userHomeForTests);
 
   // ── Migration B boot hook (P9c, WS-16 §18) ──────────────────────────────────────────────────
   // Runs BEFORE `bootstrapCloverDir` creates a single directory and before the lock is taken: a
@@ -545,18 +556,12 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     Object.entries(bootPresence.byProvider).filter(([, v]) => v !== undefined).map(([k]) => k),
   );
 
-  let legacyHome: string | undefined;
-  let legacySecrets: SecretStore | undefined;
-  if (opts.migration) {
-    legacyHome = opts.migration.legacyHome ?? legacyHomeFor(profile);
-    legacySecrets = opts.migration.legacySecrets;
-  } else if (opts.secrets === undefined) {
-    // Real production boot only — see this option's own doc comment above for the test-isolation
-    // argument. `secrets` was just resolved to a REAL KeychainSecretStore two lines up in this
-    // branch, so `legacySecrets` below is its exact legacy-service counterpart.
-    legacyHome = legacyHomeFor(profile);
-    legacySecrets = new LegacyKeychainSecretStore(profile);
-  }
+  // C0 (review S2): a boot never looks for a legacy home. Spec §12 retires the legacy migrations, and the one
+  // door left is the operator's explicit `clover migrate --from <legacy home>`. Only a test's seam
+  // (`opts.migration`), naming its own throwaway legacy home and store, still drives the hook below — so a
+  // production boot never builds a legacy Keychain store, never reads a legacy home and writes no manifest.
+  const legacyHome = opts.migration?.legacyHome;
+  const legacySecrets = opts.migration?.legacySecrets;
   if (legacyHome !== undefined && legacySecrets !== undefined && existsSync(join(legacyHome, "settings.json"))) {
     // P9c-15: auto-migration fires ONLY when `home` resolves to the PROFILE'S OWN DEFAULT home
     // (`~/.clover` dist, `~/.clover-dev` dev) — regardless of how `home` got here (`opts.home`,
@@ -606,14 +611,9 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
         console.error(`migration: ${filesMoved} files, ${kcCopied + kcSkipped} keychain items (${kcCopied} copied, ${kcSkipped} skipped-existing), settings rekeyed ${rekeyed} — from ${legacyHome}`);
       } else {
         // A legacy home exists, but this home already has content of its own (not pristine) — never
-        // auto-migrate over it (P9c-10). One line so an operator isn't left wondering why the legacy
-        // home was never picked up. Review M2: names the actual offending entry, not just "not
-        // pristine" — the same reason `clover doctor`'s migration row surfaces. Fix wave C2: the
-        // advice is the SAME instruction the `clover migrate`/`planMigrationB` refusal itself prints
-        // (`mv <home> <home>.bak`, then restart) — advice and refusal must always agree, since
-        // `clover migrate --from <legacyHome>` into a non-pristine `home` would just hit that same
-        // refusal.
-        console.error(`migration: a legacy home was found at ${legacyHome}, but ${home} is not pristine (${check.reason}) — move it aside, e.g. \`mv ${home} ${home}.bak\`, then restart to migrate`);
+        // migrate over it (P9c-10). One line naming the offending entry (review M2). C0 (review S2): no
+        // advice to restart, since a boot never migrates outside a test's seam.
+        console.error(`migration: a legacy home was found at ${legacyHome}, but ${home} is not pristine (${check.reason}) — skipped`);
       }
     }
   }
