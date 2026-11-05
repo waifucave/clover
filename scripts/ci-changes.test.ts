@@ -32,7 +32,7 @@ describe("ci-changes", () => {
     expect(on(["services/forwarder/src/index.ts"])).toEqual(["workspaces", "typecheck"]);
   });
 
-  test("macOS: a core change takes two macOS jobs (its machine's, and the one for core, cli, scripts and verify); a lockfile change no Swift", () => {
+  test("macOS: a change takes at most three macOS jobs (its machine's, the one for core, cli, scripts and verify, and Swift)", () => {
     const jobs = (Bun.YAML.parse(readFileSync(join(import.meta.dir, "..", ".github", "workflows", "ci.yml"), "utf8")) as { jobs: Record<string, { if?: string; "runs-on"?: string; strategy?: { matrix?: { include?: Array<{ runner: string }> } } }> }).jobs;
     const macJobs = (changed: string[]): string[] => {
       const areas = areasFor(changed);
@@ -42,31 +42,31 @@ describe("ci-changes", () => {
         return wanted && mac ? [id] : [];
       });
     };
-    expect(macJobs(["packages/core/src/daemon.ts"])).toEqual(["machine", "macos"]);
-    expect(macJobs(["bun.lock"])).toEqual(["machine", "macos"]);
+    expect(macJobs(["packages/core/src/daemon.ts"])).toEqual(["machine", "macos", "swift"]);
+    expect(macJobs(["bun.lock"])).toEqual(["machine", "macos", "swift"]);
+    expect(macJobs(["packages/cli/src/main.ts"])).toEqual(["machine", "macos"]);
     expect(macJobs(["apple/WinterKit/Sources/WinterKit/Client.swift"])).toEqual(["macos", "swift"]);
     expect(macJobs(["plugins/clover/shell/src/a.tsx"])).toEqual(["machine"]);
     expect(macJobs(["docs/clover-plan.md"])).toEqual([]);
   });
 
-  test("the core: its own, the CLI's and the scripts' tests, the daemon, the compiled gates; not the Swift kits or the app", () => {
+  test("the core: its own, the CLI's and the scripts' tests, the daemon, the compiled gates and the Swift kits (WinterKit runs its daemon); not the app", () => {
     const core = on(["packages/core/src/daemon.ts"]);
-    expect(core).toEqual(["workspaces", "daemon", "typecheck", "core", "cli", "scripts", "verify"]);
-    expect(core).not.toContain("swift");
+    expect(core).toEqual(["workspaces", "daemon", "typecheck", "core", "cli", "scripts", "swift", "verify"]);
     expect(core).not.toContain("app");
   });
 
-  test("the Swift kits run only for apple/ and the protocol's generated fixtures", () => {
+  test("the Swift kits run for apple/, the protocol's generated fixtures and the core, and not for the rest of the protocol or the CLI", () => {
     expect(on(["apple/WinterKit/Sources/WinterKit/Client.swift"])).toEqual(["scripts", "swift"]);
     expect(on(["apple/WinterProtocol/Tests/WinterProtocolTests/Fixtures/x.json"])).toEqual(["scripts", "codegen", "swift"]);
     expect(on(["packages/protocol/generated/fixtures/x.json"])).toContain("swift");
     expect(on(["packages/protocol/src/methods.ts"])).not.toContain("swift");
+    expect(on(["packages/cli/src/main.ts"])).not.toContain("swift");
   });
 
-  test("CI itself runs every area, and so does no diff; the toolchain, the root manifest or a lockfile every area but Swift's", () => {
-    for (const f of [".github/workflows/ci.yml", "scripts/ci-changes.ts"]) expect(on([f])).toEqual(CI_AREA_NAMES);
+  test("CI itself, the toolchain, the root manifest or a lockfile run every area; so does no diff", () => {
+    for (const f of [".github/workflows/ci.yml", "scripts/ci-changes.ts", ".bun-version", "package.json", "bun.lock", "pnpm-lock.yaml"]) expect(on([f])).toEqual(CI_AREA_NAMES);
     expect(CI_AREA_NAMES.filter((a) => areasFor(undefined)[a])).toEqual(CI_AREA_NAMES);
-    for (const f of [".bun-version", "package.json", "bun.lock", "pnpm-lock.yaml"]) expect(on([f])).toEqual(CI_AREA_NAMES.filter((a) => a !== "swift"));
   });
 
   test("ci.yml has a job, or a matrix of them, behind every area, and the gate waits for them all", () => {

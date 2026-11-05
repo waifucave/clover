@@ -19,7 +19,8 @@ jobs:
   # job per machine. The typecheck, the lockfile check, the galleries, the protocol codegen and the extension run
   # once, on Linux. Only what needs macOS runs there, in as few jobs as it can (the org's plan runs five macOS jobs at
   # once): one job for core, cli, the scripts and the compiled-binary gates (which need the agent runtime's
-  # darwin-arm64 binary), and the Swift kits the iOS app links, only when apple/ or the protocol's Swift changes.
+  # darwin-arm64 binary), and the Swift kits the iOS app links, only when apple/, the protocol's Swift, the core (whose
+  # daemon WinterKit's tests start) or the toolchain changes.
   #
   # A pull request runs only the jobs whose inputs it changes (`changes`, scripts/ci-changes.ts); the names-and-layout
   # checks always run, and `gate` is the one check branch protection needs.
