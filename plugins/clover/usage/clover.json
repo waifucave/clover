@@ -7,8 +7,8 @@
   "client": { "entry": "client/index.tsx" },
   "contributes": {
     "ui": [
-      { "spot": "island.tab", "id": "usage", "component": "UsageTabEntry", "title": "Usage", "order": 800, "attention": "never" },
-      { "spot": "settings.section", "id": "usage", "component": "UsageSection", "title": "Usage", "order": 800 }
+      { "spot": "island.tab", "id": "tab", "component": "UsageTabEntry", "title": "Usage", "order": 800, "attention": "never" },
+      { "spot": "settings.section", "id": "settings", "component": "UsageSection", "title": "Usage", "order": 800 }
     ]
   }
 }

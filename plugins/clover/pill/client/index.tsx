@@ -1,6 +1,7 @@
 // The pill's client entry (spec §10): what the manifest's `ui` entry names, and its parts.
 
 export { DispatchPill, type DispatchPillProps } from "../src/ui/DispatchPill";
+export { PillApp, PillHostContext, type PillHost, type PillEntryProps, type TargetTurn } from "../src/ui/host";
 export { Shell, type ShellProps } from "../src/ui/Shell";
 export { Bar, Menu, Portrait, measureText, type BarProps, type BarMenu, type PillTarget } from "../src/ui/Bar";
 export { CardBody, SealedCardBody, QuestionCardBody, type CardBodyProps } from "../src/ui/Card";
@@ -30,3 +31,4 @@ export * from "../src/model/cards";
 export * from "../src/model/children";
 export * from "../src/model/preview";
 export * from "../src/model/plume";
+export * from "../src/model/targets";

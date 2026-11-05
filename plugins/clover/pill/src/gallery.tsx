@@ -10,7 +10,8 @@ import { turnPreview } from "./model/preview";
 import { springAt } from "./model/spring";
 import { t } from "./strings";
 import { AGENTS, ALPHA, APPROVAL, APPROVAL_ALWAYS, EXCHANGES, LINK, MANY_AGENTS, QUESTION, QUESTIONS, SEALED, TARGETS, THROWS } from "./fixtures";
-import { Bar, BarMenus, type BarMenu } from "./ui/Bar";
+import { Bar, BarMenus, type BarMenu, type PillTarget } from "./ui/Bar";
+import { pillTargets } from "./model/targets";
 import { CardBody } from "./ui/Card";
 import { Children } from "./ui/Children";
 import { Plume } from "./ui/Plume";
@@ -65,22 +66,34 @@ interface BarFrameProps {
   lines?: number;
   hovered?: boolean;
   size?: Size;
+  /** Who the menu lists; the bots alone when absent. */
+  targets?: readonly PillTarget[];
 }
 
+/** The bots, then three plugins' `pill.target` entries (sample data). */
+const WITH_PLUGIN_TARGETS: readonly PillTarget[] = pillTargets(
+  TARGETS.map((t) => ({ id: t.id, name: t.name, portrait: t.portrait, color: t.color })),
+  [
+    { pluginId: "agents", pluginName: "Agents", id: "codex", title: "Codex" },
+    { pluginId: "blender", pluginName: "Blender", id: "scene", title: "Scene" },
+    { pluginId: "home", pluginName: "Home", id: "lights", title: "Lights", order: 600 },
+  ],
+);
+
 /** The main pill showing its bar, at rest (or at `size` on its way). */
-function BarFrame({ presentation = "compact", draft = "", running = false, stopping = false, menu = null, verb, lines = 1, hovered = false, size }: BarFrameProps): ReactElement {
+function BarFrame({ presentation = "compact", draft = "", running = false, stopping = false, menu = null, verb, lines = 1, hovered = false, size, targets = TARGETS }: BarFrameProps): ReactElement {
   const target = mainSize(presentation, lines * 20 + 6);
   const look = barLook(presentation === "expanded", running, draft, false, `Message ${ALPHA.name}`, verb ?? `${ALPHA.name} is working`);
   return (
     <div className="clp-stack" style={hovered ? { transform: `scale(${1 + (PILL.compactWidth * (PILL.hoverScale - 1)) / target.width})` } : undefined}>
-      <BarMenus menu={menu} target={ALPHA} targets={TARGETS} width={(size ?? target).width} />
+      <BarMenus menu={menu} target={targets[0] ?? ALPHA} targets={targets} width={(size ?? target).width} />
       <Shell
         size={size ?? target}
         target={target}
         underlay={running ? <Plume width={PILL.compactWidth} height={PILL.pillHeight} still={{ at: PLUME_AT, throws: THROWS }} /> : undefined}
         underlayShown={look.working}
       >
-        <Bar presentation={presentation} target={ALPHA} targets={TARGETS} draft={draft} working={look.working} circle={look.circle} placeholder={look.placeholder} stopping={stopping} accessories={presentation === "expanded"} menu={menu} />
+        <Bar presentation={presentation} target={targets[0] ?? ALPHA} targets={targets} draft={draft} working={look.working} circle={look.circle} placeholder={look.placeholder} stopping={stopping} accessories={presentation === "expanded"} menu={menu} />
       </Shell>
     </div>
   );
@@ -185,7 +198,8 @@ export const PILL_STORIES: Story[] = [
   { id: "pill/typing", title: "Typing: the pill widens, ↗ and ⋯ float at the field's end, the circle sends", width: W, height: 120, render: () => <Desk width={W} height={120}><BarFrame presentation="expanded" draft={NOTES} /></Desk> },
   { id: "pill/typing-long", title: "Typing several lines: the pill grows with them and ↗ ⋯ give way", width: W, height: 190, render: () => <Desk width={W} height={190}><BarFrame presentation="expanded" draft={LONG} lines={4} /></Desk> },
   { id: "pill/typing-more-menu", title: "Typing, with ⋯ open", width: W, height: 220, render: () => <Desk width={W} height={220}><BarFrame presentation="expanded" draft="Check the tray fix" menu="more" /></Desk> },
-  { id: "pill/targets-menu", title: "Choosing who to message: every bot is a target (pill.target)", width: W, height: 240, render: () => <Desk width={W} height={240}><BarFrame presentation="expanded" menu="targets" /></Desk> },
+  { id: "pill/targets-menu", title: "Choosing who to message: every bot is a target", width: W, height: 240, render: () => <Desk width={W} height={240}><BarFrame presentation="expanded" menu="targets" /></Desk> },
+  { id: "pill/targets-menu-plugins", title: "Choosing who to message: the bots, then the plugins' pill.target entries under a hairline", width: W, height: 360, render: () => <Desk width={W} height={360}><BarFrame presentation="expanded" menu="targets" targets={WITH_PLUGIN_TARGETS} /></Desk> },
   { id: "pill/working", title: "Working: the plume, each tool thrown out of the nozzle, the stop circle", width: W, height: 120, render: () => <Desk width={W} height={120}><BarFrame running /></Desk> },
   { id: "pill/working-stopping", title: "Working, stop pressed and not yet confirmed", width: W, height: 120, render: () => <Desk width={W} height={120}><BarFrame running stopping /></Desk> },
   { id: "pill/typing-over-work", title: "Typing over a running turn: the circle stays a stop, Enter steers", width: W, height: 120, render: () => <Desk width={W} height={120}><BarFrame presentation="expanded" running verb="Reading the release notes…" /></Desk> },
