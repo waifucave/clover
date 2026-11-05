@@ -24,11 +24,12 @@ import { daemonEndpoint, type DaemonClient } from "./protocol/client";
 import { appShortcut } from "./shortcuts";
 import { AppTray } from "./tray";
 import { readUiPlugins, type UiPluginExtras } from "./ui/model";
-import { MenuGate, checkRegions, inRegions, surfaceMayFloat, surfacePlacement, surfaceSize, type MenuItem, type Rect } from "./ui/brokers";
+import { MenuGate, checkRegions, inRegions, mayOpen, surfaceBounds, surfaceMayFloat, surfacePlacement, surfaceSize, type MenuItem, type Rect } from "./ui/brokers";
+import type { OpenTarget, SurfaceEnvironment } from "@waifucave/clover-plugin-sdk/ui/bridge";
 import { guardContents, hardenSession, installIpc, installUiSession, registerSchemes, startCensus } from "./ui/electron";
 import { LayerError, UiRuntime } from "./ui/runtime";
 import type { Os } from "./ui/spots";
-import { mainWindowPlan, surfaceWindowPlan, TITLE_BAR_HEIGHT, webPreferences, windowsHasAcrylic } from "./window";
+import { linuxSession, mainWindowPlan, surfaceWindowPlan, TITLE_BAR_HEIGHT, webPreferences, windowsHasAcrylic } from "./window";
 
 const identity = appIdentity(resolveAppProfile(process.env));
 const args = parseLaunchArgs(process.argv, process.env);
@@ -49,6 +50,10 @@ if (headless) {
 }
 // Every plugin origin in a process of its own (S9).
 app.commandLine.appendSwitch("site-per-process");
+// No proxy at all, from the first request: every session's own direct proxy comes too late for what Chromium does as it
+// starts (the UI test's net log caught a `wpad` lookup on Windows).
+app.commandLine.appendSwitch("no-proxy-server");
+const session_ = linuxSession(process.env);
 registerSchemes();
 
 function log(line: string): void {
@@ -113,6 +118,8 @@ async function ready(): Promise<void> {
       if (name === "restart-safe-mode") void restart(true);
     },
     surface: (id, request) => steerSurface(id, request),
+    surfaceEnvironment: (id) => surfaceEnvironment(id),
+    open: (pluginId, target) => openFor(pluginId, target),
     menu: (id, items, point) => popupMenu(id, items, point),
   }, log);
   startCensus(runtime);
@@ -120,6 +127,7 @@ async function ready(): Promise<void> {
   nativeTheme.on("updated", syncAppearance);
   if (process.platform === "win32") systemPreferences.on("accent-color-changed", syncAppearance);
 
+  for (const e of ["display-metrics-changed", "display-added", "display-removed"] as const) screen.on(e as "display-added", () => tellSurfaces());
   pair = makePair();
   setMenu();
   if (!headless) {
@@ -216,15 +224,24 @@ function stateChanged(s: PairState): void {
 }
 
 /** The daemon asks the app to open a window or a place in it (§3.1, lane B's `app.show`), checked against its schema. */
-async function show(what: { kind: string; url?: string; section?: string }): Promise<{ ok: true }> {
+async function show(what: { kind: string; url?: string; section?: string; item?: string; bot?: string }): Promise<{ ok: true }> {
   if (what.kind === "url" && typeof what.url === "string") {
     const url = new URL(what.url);
     if (url.protocol === "https:" || url.protocol === "http:") await shell.openExternal(url.toString());
     return { ok: true };
   }
   const win = await openMainWindow();
-  if (win !== undefined && what.kind === "settings") runtime.command(win.id, "open-settings");
+  if (win === undefined) return { ok: true };
+  if (what.kind === "settings") runtime.command(win.id, "open-settings", { ...(what.section !== undefined ? { section: what.section } : {}), ...(what.item !== undefined ? { item: what.item } : {}) });
+  if (what.kind === "bot" && what.bot !== undefined) runtime.command(win.id, "open-bot", { bot: what.bot });
   return { ok: true };
+}
+
+/** A part asks to open a place in the main window (the island's Usage and Devices tabs open Settings there). */
+async function openFor(pluginId: string, target: OpenTarget): Promise<void> {
+  if (!mayOpen(pluginId)) throw new LayerError("only the app's own parts open places in its window");
+  log(`open: ${target.kind}${target.kind === "settings" && target.section !== undefined ? ` ${target.section}` : ""} for ${pluginId}`);
+  await show(target);
 }
 
 /** Quit (§3.1): says what would stop, offers Hand over and quit, then stops both halves. */
@@ -362,16 +379,18 @@ function syncSurfaces(): void {
     if (surfaces.has(w.id)) continue;
     // Only the clover tree's surfaces float above everything, on every Space (the review's ruling for 1.111.1).
     const floats = surfaceMayFloat(w.pluginId);
+    const wayland = session_ === "wayland";
     const win = new BrowserWindow(surfaceWindowPlan({
       surface: { ...w.window, alwaysOnTop: floats && w.window.alwaysOnTop === true },
       title: `${identity.productName} ${w.id}`,
       webPreferences: webPreferences({ preload: join(here, "preload.cjs"), partition: UI_PARTITION, headless, offscreen: false }),
+      wayland,
     }));
     watchWindow(win);
     // `skipTransformProcessType`: without it Electron hides the Dock icon while the window shows, which fights
     // `syncActivation`.
     if (process.platform === "darwin" && floats) win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true, skipTransformProcessType: true });
-    if (floats && w.window.alwaysOnTop === true) win.setAlwaysOnTop(true, process.platform === "darwin" ? "status" : "floating");
+    if (floats && !wayland && w.window.alwaysOnTop === true) win.setAlwaysOnTop(true, process.platform === "darwin" ? "status" : "floating");
     const placement = w.window.placement?.[os];
     const s: Surface = { win, ref: w.ref, pluginId: w.pluginId, regions: [], ...(placement !== undefined ? { placement } : {}) };
     surfaces.set(w.id, s);
@@ -396,18 +415,43 @@ function steerSurface(windowId: number, request: Record<string, unknown>): void 
   const entry = [...surfaces].find(([, s]) => !s.win.isDestroyed() && s.win.id === windowId);
   if (entry === undefined) return;
   const [id, s] = entry;
-  if (request.width !== undefined || request.height !== undefined) {
+  const trusted = surfaceMayFloat(s.pluginId);
+  const wayland = session_ === "wayland";
+  // A whole place on the screen, kept on its display (on Wayland the compositor may ignore where).
+  const display = screen.getPrimaryDisplay();
+  const bounds = request.bounds === undefined ? undefined : surfaceBounds(request.bounds, display, trusted);
+  if (bounds !== undefined) {
+    s.win.setBounds(bounds);
+  } else if (request.width !== undefined || request.height !== undefined) {
     const [w, h] = s.win.getSize();
     const size = surfaceSize(request, { width: w!, height: h! }, { trusted: surfaceMayFloat(s.pluginId), workArea: screen.getPrimaryDisplay().workArea });
     place(id, s, [size.width, size.height]);
   }
-  if (request.regions !== undefined) {
+  // On Wayland a surface is a normal window: it takes every click inside it.
+  if (request.regions !== undefined && !wayland) {
     const [w, h] = s.win.getSize();
     s.regions = checkRegions(request.regions, { width: w!, height: h! });
   }
   if (request.visible === true && !headless) s.win.showInactive();
   if (request.visible === false) s.win.hide();
   clickThrough(s);
+}
+
+/** A surface window's environment: the OS, the display server, its display (the primary one, where surfaces sit), and
+ *  the camera housing, which the native add-on reads (E-M2; null until then). */
+function surfaceEnvironment(windowId: number): SurfaceEnvironment | undefined {
+  if (![...surfaces.values()].some((s) => !s.win.isDestroyed() && s.win.id === windowId)) return undefined;
+  const d = screen.getPrimaryDisplay();
+  return { os, ...(session_ !== undefined ? { session: session_ } : {}), display: { bounds: d.bounds, workArea: d.workArea, notch: null } };
+}
+
+/** The displays changed: each surface's part hears its environment as it is now. */
+function tellSurfaces(): void {
+  for (const s of surfaces.values()) {
+    if (s.win.isDestroyed()) continue;
+    const environment = surfaceEnvironment(s.win.id);
+    if (environment !== undefined) runtime.surfaceMessage(s.win.id, { type: "surface-environment", environment });
+  }
 }
 
 /** Clicks pass through the surface outside its regions: while it shows with regions, the cursor's place decides. */

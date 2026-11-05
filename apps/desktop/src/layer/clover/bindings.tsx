@@ -4,7 +4,7 @@
 //
 // What the core doesn't hand layers yet (the plugin API's bots, conversations, sessions, settings: lanes B, D, F)
 // draws empty: the default shell renders whole, with Alpha's tab, an empty conversation and a live composer.
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Spot, SpotHints, useLayerMessage, useMountContext, type EntryProps } from "@waifucave/clover-plugin-sdk/ui";
 import { BotTab as FBotTab, Window as FWindow } from "@clover-child/shell";
 import { Sidebar as FSidebar, type SidebarBot, type SidebarRoute } from "@clover-child/sidebar";
@@ -32,7 +32,9 @@ export function Window(_: Props<Record<string, never>>) {
   const first = bots[0]?.id ?? "alpha";
   const [route, setRoute] = useState<SidebarRoute>({ kind: "bot", botId: first });
   const [open, setOpen] = useState<string[]>([]);
-  const [settings, setSettings] = useState(false);
+  // Settings open, at a section and an item when a place asked for one (the island's Devices tab opens it at a device).
+  const [settings, setSettingsAt] = useState<false | { section?: string; item?: string }>(false);
+  const setSettings = useCallback((open: boolean) => setSettingsAt(open ? {} : false), []);
   const bot: BotRef = useMemo(() => {
     const id = route.kind === "bot" ? route.botId : first;
     return bots.find((b) => b.id === id) ?? { id, name: id.charAt(0).toUpperCase() + id.slice(1) };
@@ -43,7 +45,12 @@ export function Window(_: Props<Record<string, never>>) {
     else setRoute(r);
   }, []);
   useLayerMessage((m) => {
-    if (m.type === "command" && m.name === "open-settings") setSettings(true);
+    if (m.type !== "command") return;
+    if (m.name === "open-settings") setSettingsAt({ ...(m.args?.section !== undefined ? { section: m.args.section } : {}), ...(m.args?.item !== undefined ? { item: m.args.item } : {}) });
+    if (m.name === "open-bot" && m.args?.bot !== undefined) {
+      setSettingsAt(false);
+      setRoute({ kind: "bot", botId: m.args.bot });
+    }
   });
   const toggle = useCallback((id: string) => setOpen((o) => (o.includes(id) ? o.filter((x) => x !== id) : [...o, id].slice(-2))), []);
   const views = open.map((id) => ({ id, title: id === "session" ? "Session" : id.charAt(0).toUpperCase() + id.slice(1), content: <Spot name="panel" spotKey={id} props={{ app: id, session }} /> }));
@@ -54,7 +61,7 @@ export function Window(_: Props<Record<string, never>>) {
         title={bot.name}
         toggles={<PanelToggles kind="bot" open={open} onToggle={toggle} />}
         panel={views.length > 0 ? <PanelHost kind="bot" views={views} onClose={(id) => setOpen((o) => o.filter((x) => x !== id))} /> : undefined}
-        dialog={settings ? <Spot name="main" spotKey="settings" props={{ route: "settings", params: {}, onClose: () => setSettings(false) }} /> : undefined}
+        dialog={settings !== false ? <Spot name="main" spotKey="settings" props={{ route: "settings", params: settings, onClose: () => setSettings(false) }} /> : undefined}
         onCloseDialog={() => setSettings(false)}
         translucent={ctx.material !== "none"}
       >
@@ -135,8 +142,16 @@ const VALUES: SettingsValues = {
 };
 
 /** `main` keyed `settings`: shown as the window's dialog. */
-export function SettingsModal({ props }: Props<{ onClose?: () => void }>) {
-  const [section, setSection] = useState<SettingsSection>("appearance");
+const SECTIONS: readonly SettingsSection[] = ["account", "devices", "appearance", "notifications", "plugins", "levels", "bots", "usage"];
+
+/** `main` keyed `settings`: F's settings, opened at the section a place asked for (`params.section`). The item
+ *  (`params.item`, a device) waits for F's settings to take one (asked of F). */
+export function SettingsModal({ props }: Props<{ onClose?: () => void; params?: { section?: string; item?: string } }>) {
+  const asked = props.params?.section;
+  const [section, setSection] = useState<SettingsSection>(SECTIONS.includes(asked as SettingsSection) ? (asked as SettingsSection) : "appearance");
+  useEffect(() => {
+    if (SECTIONS.includes(asked as SettingsSection)) setSection(asked as SettingsSection);
+  }, [asked]);
   const [values, setValues] = useState(VALUES);
   const change = (path: string, value: unknown): void => {
     const [group, key] = path.split(".");

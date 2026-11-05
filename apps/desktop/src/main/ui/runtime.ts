@@ -705,8 +705,16 @@ export class UiRuntime {
   }
 
   /** Sends an app command (a shortcut, a menu item) to every document of a window. */
-  command(windowId: number, name: string): void {
-    for (const m of this.mounts.values()) if (m.windowId === windowId && m.frame !== undefined) this.post(m.id, { type: "command", name });
+  command(windowId: number, name: string, args?: Readonly<Record<string, string>>): void {
+    for (const m of this.mounts.values()) if (m.windowId === windowId && m.frame !== undefined) this.post(m.id, { type: "command", name, ...(args !== undefined ? { args } : {}) });
+  }
+
+  /** A message to the part a surface window's root placed (the one `surfaceOf` lets steer it). */
+  surfaceMessage(windowId: number, message: LayerMessage): void {
+    for (const m of this.mounts.values()) {
+      const parent = m.parent === undefined ? undefined : this.mounts.get(m.parent);
+      if (m.windowId === windowId && m.kind === "frame" && m.frame !== undefined && parent?.kind === "root" && parent.surfaceRef !== undefined) this.post(m.id, message);
+    }
   }
 
   /** Tells a window's documents the focus came back after the core's own overlay. */

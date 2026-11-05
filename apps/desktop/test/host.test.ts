@@ -9,7 +9,7 @@ import { CORE_CSP, IMPORT_MAP, connectionAllowlist, layerCsp, layerDocument, lay
 import { appShortcut } from "../src/main/shortcuts";
 import { mediaType, pluginFile } from "../src/main/ui/files";
 import { trayMenu } from "../src/main/tray-menu";
-import { mainWindowPlan, webPreferences, windowsHasAcrylic } from "../src/main/window";
+import { linuxSession, mainWindowPlan, surfaceWindowPlan, webPreferences, windowsHasAcrylic } from "../src/main/window";
 
 describe("documents and headers (S9, decision 94)", () => {
   test("a layer document: its import map is the one script CSP allows inline, by hash", () => {
@@ -138,5 +138,22 @@ describe("the app's shortcuts", () => {
     expect(appShortcut(key("w", { meta: true, shift: true }), "darwin")).toBeUndefined();
     expect(appShortcut(key("q", { meta: true, alt: true }), "darwin")).toBeUndefined();
     expect(appShortcut({ ...key("q", { meta: true }), type: "keyUp" }, "darwin")).toBeUndefined();
+  });
+});
+
+describe("surface windows", () => {
+  const prefs = webPreferences({ preload: "/p.cjs", partition: "persist:ui", headless: true, offscreen: false });
+  test("an overlay is frameless, unfocused and out of the task switcher; on Wayland every surface is a normal window", () => {
+    const overlay = surfaceWindowPlan({ surface: { type: "overlay", alwaysOnTop: true, transparent: true }, title: "Clover island", webPreferences: prefs });
+    expect(overlay).toMatchObject({ show: false, frame: false, focusable: false, skipTaskbar: true, transparent: true, alwaysOnTop: true });
+    const wayland = surfaceWindowPlan({ surface: { type: "overlay", alwaysOnTop: true, transparent: true }, title: "Clover island", webPreferences: prefs, wayland: true });
+    expect(wayland).toMatchObject({ show: false, frame: true, focusable: true, skipTaskbar: false, transparent: false, alwaysOnTop: false });
+  });
+
+  test("Linux's display server, as Electron runs on it", () => {
+    expect(linuxSession({ WAYLAND_DISPLAY: "wayland-0" }, "linux")).toBe("wayland");
+    expect(linuxSession({ XDG_SESSION_TYPE: "wayland" }, "linux")).toBe("wayland");
+    expect(linuxSession({ DISPLAY: ":99" }, "linux")).toBe("x11");
+    expect(linuxSession({ WAYLAND_DISPLAY: "wayland-0" }, "darwin")).toBeUndefined();
   });
 });

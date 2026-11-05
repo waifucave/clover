@@ -149,10 +149,13 @@ describe.if(enabled)("the app in Electron (UI test: CI, or locally with a backgr
   }, 120_000);
 
   test("a third-party part renders in a layer of its own, in its own process, themed by its tab; surfaces and menus go through the core", () => {
-    const r = smoke(electron(), [root], "fixture", { CLOVER_SMOKE_LAYERS: "1", CLOVER_SMOKE_WAIT_TEXT: "Menu:", CLOVER_TEST_MENU_PICK: "second", CLOVER_SMOKE_INPUT: "1" });
+    // Both menus answered: the composer's (in the main window) and the surface's (in its own window).
+    const r = smoke(electron(), [root], "fixture", { CLOVER_SMOKE_LAYERS: "1", CLOVER_SMOKE_WAIT_TEXT: "Picked: second|Menu: second", CLOVER_TEST_MENU_PICK: "second", CLOVER_SMOKE_INPUT: "1" });
     const shell = expectShell(r);
     const part = r.facts!.frames.find((x) => x.origin === "clover-plugin://fixture-composer");
-    expect(part, r.output).toMatchObject({ bridge: "object", node: false, text: "Send" });
+    expect(part, r.output).toMatchObject({ bridge: "object", node: false });
+    expect(part!.text).toContain("Send");
+    expect(part!.text).toContain("Picked: second");
     expect(part!.osPid).not.toBe(shell.osPid);
     // It sits in Alpha's tab, so it wears Alpha's theme; the shell around the tabs wears the base theme.
     const alpha = JSON.parse(readFileSync(join(REPO, "plugins", "alpha", "tab", "theme.json"), "utf8")) as { tokens: Record<string, string>; dark?: { tokens: Record<string, string> } };
@@ -186,8 +189,9 @@ describe.if(enabled)("the app in Electron (UI test: CI, or locally with a backgr
     const texts = (r.facts!.surfaces as { frames: Frame[] }[]).flatMap((x) => x.frames.map((f) => f.text));
     expect(texts, r.output).toContain(`probe: ${guarded}`);
     expect(texts, r.output).toContain(`probe: ${control}`);
-    // The control's lookup, and the resolver's IPv6 check it sets off (a UDP connect that sends nothing), are all.
-    const activity = expectQuiet(r, { lookups: [control], sockets: [IPV6_REACHABILITY_PROBE] });
+    // The control's lookup is all: its DNS server (Chromium's own resolver, as on Windows, asks it on port 53) and the
+    // resolver's IPv6 check it sets off (a UDP connect that sends nothing).
+    const activity = expectQuiet(r, { lookups: [control], sockets: [IPV6_REACHABILITY_PROBE], ports: [53] });
     // The positive control reached the resolver, so the probe sees a lookup when one happens; the guarded one didn't.
     expect(activity.lookups, JSON.stringify(activity.lookups)).toContain(control);
     expect(activity.lookups).not.toContain(guarded);

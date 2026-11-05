@@ -104,7 +104,27 @@ export interface SurfaceWindow {
 }
 
 /** A surface window (`app.surface` with `window`): an overlay floats over everything without taking the focus. */
-export function surfaceWindowPlan(input: { surface: SurfaceWindow; webPreferences: BrowserWindowConstructorOptions["webPreferences"]; title: string }): BrowserWindowConstructorOptions {
+/** A surface's window: the overlay its entry asks for (frameless, never focused, out of the task switcher), or a normal
+ *  window. On Wayland it is always a normal framed window the user places: no window there may place itself, float
+ *  above the others or pass clicks through. */
+export function surfaceWindowPlan(input: { surface: SurfaceWindow; webPreferences: BrowserWindowConstructorOptions["webPreferences"]; title: string; wayland?: boolean }): BrowserWindowConstructorOptions {
+  if (input.wayland === true) {
+    return {
+      width: 480,
+      height: 320,
+      title: input.title,
+      show: false,
+      paintWhenInitiallyHidden: true,
+      frame: true,
+      transparent: false,
+      alwaysOnTop: false,
+      focusable: true,
+      skipTaskbar: false,
+      resizable: true,
+      fullscreenable: false,
+      webPreferences: input.webPreferences,
+    };
+  }
   const overlay = input.surface.type === "overlay";
   return {
     width: 480,
@@ -123,4 +143,10 @@ export function surfaceWindowPlan(input: { surface: SurfaceWindow; webPreference
     fullscreenable: false,
     webPreferences: input.webPreferences,
   };
+}
+
+/** Linux's display server, as Electron runs on it (Ozone picks Wayland when the session offers it). */
+export function linuxSession(env: NodeJS.ProcessEnv, platform: NodeJS.Platform = process.platform): "wayland" | "x11" | undefined {
+  if (platform !== "linux") return undefined;
+  return (env.WAYLAND_DISPLAY ?? "") !== "" || env.XDG_SESSION_TYPE === "wayland" ? "wayland" : "x11";
 }

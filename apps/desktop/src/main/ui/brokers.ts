@@ -10,6 +10,7 @@
 //   plugin may hand it out and hands back a single-use token for the drag's data; the part it's dropped on claims it,
 //   and gets it only if its own plugin may hold it, within a minute, once.
 // Sealed card frames are outside both (E-M3).
+import type { OpenTarget } from "@waifucave/clover-plugin-sdk/ui/bridge";
 
 export interface MenuItem {
   id?: string;
@@ -213,4 +214,46 @@ export class MenuGate {
   forget(windowId: number): void {
     this.lastInput.delete(windowId);
   }
+}
+
+function text(v: unknown, max: number): string | undefined {
+  return typeof v === "string" && v.length > 0 && v.length <= max ? v : undefined;
+}
+
+/** A place a part may ask the app to open, checked. */
+export function openTarget(v: unknown): OpenTarget | undefined {
+  if (v === null || typeof v !== "object") return undefined;
+  const t = v as Record<string, unknown>;
+  if (t.kind === "settings") {
+    const section = text(t.section, 64);
+    const item = text(t.item, 256);
+    if (t.section !== undefined && (section === undefined || !/^[a-z][a-z0-9.-]*$/.test(section))) return undefined;
+    if (t.item !== undefined && item === undefined) return undefined;
+    return { kind: "settings", ...(section !== undefined ? { section } : {}), ...(item !== undefined ? { item } : {}) };
+  }
+  if (t.kind === "bot") {
+    const bot = text(t.bot, 81);
+    return bot !== undefined && /^[a-z][a-z0-9/-]*$/.test(bot) ? { kind: "bot", bot } : undefined;
+  }
+  return undefined;
+}
+
+
+/** Who may ask the app to open a place: in 1.111.1, the `clover` tree's parts only (the island's Usage and Devices
+ *  tabs); a third party's would bring the main window up over whatever the person is doing. */
+export function mayOpen(pluginId: string): boolean {
+  return pluginId.split("/")[0] === "clover";
+}
+
+/** Where a surface asked to be, kept on its display: inside the display's bounds for the `clover` tree, inside the work
+ *  area and `THIRD_PARTY_SURFACE_MAX` for anyone else. */
+export function surfaceBounds(asked: unknown, display: { bounds: Rect; workArea: Rect }, trusted: boolean): Rect | undefined {
+  if (asked === null || typeof asked !== "object") return undefined;
+  const { x, y, width, height } = asked as Record<string, unknown>;
+  if (![x, y, width, height].every((n) => typeof n === "number" && Number.isFinite(n))) return undefined;
+  const area = trusted ? display.bounds : display.workArea;
+  const size = surfaceSize({ width, height }, { width: 40, height: 24 }, { trusted, workArea: { width: area.width, height: area.height } });
+  const cx = Math.round(Math.min(Math.max(area.x, x as number), area.x + area.width - size.width));
+  const cy = Math.round(Math.min(Math.max(area.y, y as number), area.y + area.height - size.height));
+  return { x: cx, y: cy, ...size };
 }

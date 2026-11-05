@@ -104,8 +104,11 @@ export type LayerMessage =
   | { type: "child-size"; child: string; height: number }
   /** The window got the focus back after the core's own overlay: restore the element that had it (S9). */
   | { type: "focus-returned" }
-  /** An app command from the window's shortcuts or menus (open settings, a new chat…). */
-  | { type: "command"; name: string }
+  /** An app command from the window's shortcuts or menus (open settings, a new chat…), with its arguments
+   *  (`open-settings`: `section`, `item`). */
+  | { type: "command"; name: string; args?: Readonly<Record<string, string>> }
+  /** A surface window's display changed (resolution, arrangement, the menu bar): its environment as it is now. */
+  | { type: "surface-environment"; environment: SurfaceEnvironment }
   /** The core asks where a child frame is in this document's viewport (the menu broker); answered by `rectReply`. */
   | { type: "rect-query"; id: string; child: string };
 
@@ -119,14 +122,41 @@ export interface MenuItem {
   submenu?: MenuItem[];
 }
 
-/** What a surface window (the island, the pill) asks of the core: to show, its size, and where it takes clicks
- *  (elsewhere clicks pass through to whatever is under it). */
+export interface Rect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/** What a surface window (the island, the pill) asks of the core: to show or hide, its size or its whole place on
+ *  the screen, and where it takes clicks (elsewhere clicks pass through to whatever is under it). `bounds` is in screen
+ *  CSS pixels and wins over `width` and `height`; the core keeps it on the surface's display (a plugin outside the
+ *  `clover` tree, inside the work area and 800 × 600). With neither, the core places the window by its surface (the
+ *  island at the top centre, the pill at the bottom centre). */
 export interface SurfaceRequest {
   visible?: boolean;
   width?: number;
   height?: number;
-  regions?: readonly { x: number; y: number; width: number; height: number }[];
+  bounds?: Rect;
+  /** In the window's own space. */
+  regions?: readonly Rect[];
 }
+
+/** Where a surface window lives, as its part reads it (lane G's `SurfaceEnvironment`): the OS, on Linux the display
+ *  server, and its display, in screen CSS pixels. `notch` is the camera housing in the display's own coordinates,
+ *  null on a display without one (and until the native add-on reads it, E-M2). On Wayland a surface is a normal framed
+ *  window the user places, never an overlay. */
+export interface SurfaceEnvironment {
+  os: "macos" | "windows" | "linux";
+  session?: "wayland" | "x11";
+  display: { bounds: Rect; workArea: Rect; notch: Rect | null };
+}
+
+/** A place in the app the core opens on a part's request (the island's Usage and Devices tabs open Settings there). */
+export type OpenTarget =
+  | { kind: "settings"; section?: string; item?: string }
+  | { kind: "bot"; bot: string };
 
 /** Data a part offers for a drag to another part, through the core (the drag broker). */
 export interface DragOffer {
@@ -172,6 +202,10 @@ export interface LayerBridge {
   menu(mount: string, items: readonly MenuItem[], x: number, y: number): Promise<string | null>;
   /** This document's surface window (only the document a surface window's root placed). */
   surface(request: SurfaceRequest): void;
+  /** This document's surface window's environment (only the document a surface window's root placed). */
+  surfaceEnvironment(): Promise<SurfaceEnvironment | undefined>;
+  /** Opens a place in the main window for the part `mount` (the `clover` tree's parts only, in 1.111.1). */
+  open(mount: string, target: OpenTarget): Promise<void>;
   /** Offers data for a drag from the part `mount`: a token to put in the drag's `DRAG_GRANT_TYPE`. */
   dragOffer(mount: string, offer: DragOffer): Promise<{ token: string } | { error: string }>;
   /** Claims a dropped grant for the part `mount`. */

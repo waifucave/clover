@@ -32,6 +32,7 @@ export function FixtureComposer({ props }) {
     children: [
       jsx("textarea", { "aria-label": `Message ${props.bot ? props.bot.name : ""}`, value, onChange: (e) => setValue(e.target.value) }),
       jsx("button", { type: "submit", children: "Send" }),
+      jsx("output", { children: picked === "" ? "" : `Picked: ${picked}` }),
     ],
   });
 }

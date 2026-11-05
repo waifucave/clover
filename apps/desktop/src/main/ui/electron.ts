@@ -5,9 +5,9 @@ import { readFileSync } from "node:fs";
 import { join, normalize } from "node:path";
 import { randomBytes } from "node:crypto";
 import { app, ipcMain, protocol, webFrameMain, BrowserWindow, type IpcMainEvent, type IpcMainInvokeEvent, type Session, type WebContents, type WebFrameMain } from "electron";
-import type { LayerMessage } from "@waifucave/clover-plugin-sdk/ui/bridge";
+import type { LayerMessage, OpenTarget, SurfaceEnvironment } from "@waifucave/clover-plugin-sdk/ui/bridge";
 import { CORE_CSP, CORE_SCHEME, LAYER_SCHEME, SEALED_SCHEME, commonHeaders, layerDocument, layerHeaders } from "./documents";
-import { checkMenu, menuPoint, type MenuItem, type Rect } from "./brokers";
+import { checkMenu, menuPoint, openTarget, type MenuItem, type Rect } from "./brokers";
 import { isInside, mediaType, pluginFile } from "./files";
 import { LayerError, type FrameRef, type UiRuntime } from "./runtime";
 
@@ -21,11 +21,18 @@ export function registerSchemes(): void {
 }
 
 /** Every session the app has, the default one included (S9, and the E-M0 review's S2): no permission, an explicit
- *  proxy (no WPAD lookups), no spellchecker (whose dictionary download no request filter sees). */
+ *  proxy (no WPAD lookups), no spellchecker. On Windows and Linux Chromium's spellchecker loads a dictionary for the
+ *  app's language as soon as the session exists, downloading it from Google's CDN, which no request filter sees and
+ *  turning it off doesn't stop (the UI test's net log caught it on Linux): so the session gets no languages at all,
+ *  first thing, and a download URL on loopback in case one starts anyway. Call it right after the session is made. */
 export async function hardenSession(ses: Session, log: (line: string) => void): Promise<void> {
+  if (process.platform !== "darwin") {
+    ses.setSpellCheckerLanguages([]);
+    ses.setSpellCheckerDictionaryDownloadURL("http://127.0.0.1:9/");
+  }
+  ses.setSpellCheckerEnabled(false);
   ses.setPermissionRequestHandler((_wc, _permission, callback) => callback(false));
   ses.setPermissionCheckHandler(() => false);
-  ses.setSpellCheckerEnabled(false);
   ses.on("spellcheck-dictionary-download-begin", (_e, lang) => log(`session: the spellchecker began a dictionary download (${lang}); it should be off`));
   ses.on("will-download", (e) => e.preventDefault());
   await ses.setProxy({ mode: "direct" });
@@ -187,8 +194,12 @@ export interface IpcHooks {
   frameMetrics(windowId: number, m: { top: number; start: number; end: number }): void;
   /** A command from the root (restart normally, open the plugin manager…). */
   rootCommand(windowId: number, name: string): void;
-  /** A surface window's own request: show or hide, its size, where it takes clicks. */
+  /** A surface window's own request: show or hide, its size or place, where it takes clicks. */
   surface(windowId: number, request: Record<string, unknown>): void;
+  /** A surface window's environment: the OS, the display server, its display. */
+  surfaceEnvironment(windowId: number): SurfaceEnvironment | undefined;
+  /** Opens a place in the main window for a part of the plugin `pluginId`. */
+  open(pluginId: string, target: OpenTarget): Promise<void>;
   /** Shows a checked menu at a point in the window; the id picked, or null. */
   menu(windowId: number, items: MenuItem[], point: { x: number; y: number }): Promise<string | null>;
 }
@@ -267,6 +278,18 @@ export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: stri
     const id = runtime.surfaceOf(sender(event).frame);
     if (id !== undefined) hooks.surface(id, a);
   });
+  handle("clover:surface-environment", (event) => {
+    const id = runtime.surfaceOf(sender(event).frame);
+    return id === undefined ? undefined : hooks.surfaceEnvironment(id);
+  });
+  handle("clover:open", (event, a) => {
+    const mount = str(a.mount, 32);
+    if (mount === undefined) throw new LayerError("bad request");
+    const pluginId = runtime.partOf(sender(event).frame, mount);
+    const target = openTarget(a.target);
+    if (target === undefined) throw new LayerError("not a place the app opens");
+    return hooks.open(pluginId, target);
+  });
   // The menu broker: where the asking frame sits, from each document above it, then the menu at that point.
   const rects = new Map<string, { from: string; resolve: (r: Rect | undefined) => void }>();
   on("clover:rect-reply", (event, a) => {
@@ -333,7 +356,7 @@ export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: stri
   });
 
   return () => {
-    for (const c of ["clover:describe", "clover:resolve", "clover:reload", "clover:wake", "clover:menu", "clover:drag-offer", "clover:drag-claim"]) ipcMain.removeHandler(c);
+    for (const c of ["clover:describe", "clover:resolve", "clover:reload", "clover:wake", "clover:menu", "clover:drag-offer", "clover:drag-claim", "clover:surface-environment", "clover:open"]) ipcMain.removeHandler(c);
     for (const c of ["clover:props", "clover:callback", "clover:size", "clover:release", "clover:sleep", "clover:surface", "clover:rect-reply", "clover:frame-metrics", "clover:root-command"]) ipcMain.removeAllListeners(c);
   };
 }

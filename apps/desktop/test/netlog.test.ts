@@ -33,6 +33,7 @@ test("reads a whole log, and one left unterminated", () => {
     expect(a.requests).toEqual(["https://example.com/x"]);
     expect(offMachine(a)).toEqual({ lookups: ["probe.example"], sockets: [IPV6_REACHABILITY_PROBE, "93.184.216.34:443"], requests: ["https://example.com/x"] });
     expect(offMachine(a, { lookups: ["probe.example"], sockets: [IPV6_REACHABILITY_PROBE] }).lookups).toEqual([]);
+    expect(offMachine(a, { ports: [443] }).sockets).toEqual([]);
   }
 });
 

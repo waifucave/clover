@@ -17,7 +17,7 @@ import type { PluginApi, Unsubscribe } from "../api/plugin-api";
 import type {
   AppViewProps, CardButtonProps, CardComponents, CardElementProps, CardFieldProps, EntryProps, SpotElementProps, UiApi, UiComponent,
 } from "../api/ui-api";
-import { CALLBACK_KEY, type DragOffer, type LayerBridge, type LayerMessage, type MenuItem, type MountContext, type MountInfo, type SpotItem, type SpotView, type SurfaceRequest } from "./bridge";
+import { CALLBACK_KEY, type DragOffer, type LayerBridge, type LayerMessage, type MenuItem, type MountContext, type MountInfo, type OpenTarget, type SpotItem, type SpotView, type SurfaceEnvironment, type SurfaceRequest } from "./bridge";
 
 export * from "./bridge";
 export type { AppViewProps, CardButtonProps, CardElementProps, CardFieldProps, EntryProps, SpeechFeed, SpeechFrame, UiApi, UiComponent, UiNode } from "../api/ui-api";
@@ -539,6 +539,34 @@ export function useMenu(): (items: readonly MenuItem[], at: { x: number; y: numb
  *  a surface window's root placed steers it. Not in lane B's declarations yet. */
 export function useSurface(): (request: SurfaceRequest) => void {
   return useCallback((request: SurfaceRequest) => rt().bridge.surface(request), []);
+}
+
+/** Where this part's surface window lives (the OS, the display server, the display and its camera housing), kept
+ *  current as the display changes; undefined outside a surface window, and until the core answers. Not in lane B's
+ *  declarations yet. */
+export function useSurfaceEnvironment(): SurfaceEnvironment | undefined {
+  const [env, setEnv] = useState<SurfaceEnvironment | undefined>(undefined);
+  useEffect(() => {
+    let live = true;
+    void rt().bridge.surfaceEnvironment().then((e) => {
+      if (live && e !== undefined) setEnv(e);
+    }, () => undefined);
+    const off = onLayerMessage((m) => {
+      if (m.type === "surface-environment") setEnv(m.environment);
+    });
+    return () => {
+      live = false;
+      off();
+    };
+  }, []);
+  return env;
+}
+
+/** Opens a place in the main window (Settings at a section and an item, a bot's tab): for the `clover` tree's parts,
+ *  such as the island's Usage and Devices tabs. Not in lane B's declarations yet. */
+export function useOpen(): (target: OpenTarget) => Promise<void> {
+  const part = usePart();
+  return useCallback((target: OpenTarget) => rt().bridge.open(part.mount, target), [part.mount]);
 }
 
 /** Drags between parts through the core (the drag broker): `offer` returns a token for the drag's

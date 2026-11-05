@@ -50,6 +50,10 @@ function fakeBridge(views: Record<string, SpotView>) {
       return "copy";
     },
     surface: (request) => calls.push({ op: "surface", args: [request] }),
+    surfaceEnvironment: async () => ({ os: "macos", display: { bounds: { x: 0, y: 0, width: 1512, height: 982 }, workArea: { x: 0, y: 37, width: 1512, height: 945 }, notch: null } }),
+    open: async (mount, target) => {
+      calls.push({ op: "open", args: [mount, target] });
+    },
     dragOffer: async (mount, offer) => {
       calls.push({ op: "dragOffer", args: [mount, offer] });
       return { token: "g1" };
@@ -88,7 +92,7 @@ const observers = new Set<{ cb: (e: { isIntersecting: boolean }[]) => void; els:
 function setNear(near: boolean) {
   for (const o of observers) if (o.els.size > 0) o.cb([{ isIntersecting: near }]);
 }
-const hooks: { menu?: () => Promise<string | null>; offer?: () => Promise<string | undefined>; claim?: () => Promise<unknown> } = {};
+const hooks: { menu?: () => Promise<string | null>; offer?: () => Promise<string | undefined>; claim?: () => Promise<unknown>; open?: () => Promise<void>; env?: unknown } = {};
 
 describe("the UI API in a layer", () => {
   let fake: ReturnType<typeof fakeBridge>;
@@ -110,6 +114,9 @@ describe("the UI API in a layer", () => {
       const tokens = ui.useTokens();
       const menu = ui.useMenu();
       const drag = ui.useDrag();
+      const open = ui.useOpen();
+      hooks.env = ui.useSurfaceEnvironment();
+      hooks.open = () => open({ kind: "settings", section: "devices", item: "laptop" });
       hooks.menu = () => menu([{ id: "copy", label: "Copy" }], { x: 3, y: 4 });
       hooks.offer = () => drag.offer({ type: "text/plain", data: "a row" });
       hooks.claim = () => drag.claim("g1");
@@ -173,6 +180,14 @@ describe("the UI API in a layer", () => {
     expect(await hooks.offer!()).toBe("g1");
     expect(await hooks.claim!()).toEqual({ type: "text/plain", data: "dropped" });
     expect(fake.calls.find((c) => c.op === "dragOffer")!.args).toEqual(["m2", { type: "text/plain", data: "a row" }]);
+  });
+
+  test("a part opens Settings at a section and an item; a surface's part reads its environment, kept current", async () => {
+    await hooks.open!();
+    expect(fake.calls.find((c) => c.op === "open")!.args).toEqual(["m2", { kind: "settings", section: "devices", item: "laptop" }]);
+    expect(hooks.env).toMatchObject({ os: "macos", display: { workArea: { y: 37 }, notch: null } });
+    await act(async () => fake.emit({ type: "surface-environment", environment: { os: "linux", session: "wayland", display: { bounds: { x: 0, y: 0, width: 800, height: 600 }, workArea: { x: 0, y: 0, width: 800, height: 600 }, notch: null } } }));
+    expect(hooks.env).toMatchObject({ os: "linux", session: "wayland" });
   });
 
   test("a frame away from the screen a while sleeps, keeping its place, and wakes with a fresh URL when it comes near", async () => {

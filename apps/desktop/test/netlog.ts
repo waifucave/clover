@@ -71,10 +71,11 @@ export function readNetLog(path: string): NetActivity {
 export const IPV6_REACHABILITY_PROBE = "[2001:4860:4860::8888]:443";
 
 /** What a run sent off the machine, beyond loopback and what it is allowed (the probe's control and its effects). */
-export function offMachine(activity: NetActivity, allowed: { lookups?: readonly string[]; sockets?: readonly string[] } = {}): { lookups: string[]; sockets: string[]; requests: string[] } {
+export function offMachine(activity: NetActivity, allowed: { lookups?: readonly string[]; sockets?: readonly string[]; ports?: readonly number[] } = {}): { lookups: string[]; sockets: string[]; requests: string[] } {
+  const port = (s: string) => Number(s.slice(s.lastIndexOf(":") + 1));
   return {
     lookups: activity.lookups.filter((h) => !isLoopback(h) && !(allowed.lookups ?? []).includes(h)),
-    sockets: activity.sockets.filter((s) => !isLoopback(s) && !(allowed.sockets ?? []).includes(s)),
+    sockets: activity.sockets.filter((s) => !isLoopback(s) && !(allowed.sockets ?? []).includes(s) && !(allowed.ports ?? []).includes(port(s))),
     requests: activity.requests,
   };
 }

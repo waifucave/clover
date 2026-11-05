@@ -1,7 +1,7 @@
 // The host's brokers (S9 §3): menus as data placed by the core, drags as grants between parts, and where a surface
 // window sits and takes clicks.
 import { describe, expect, test } from "bun:test";
-import { MENU_INPUT_WINDOW_MS, MenuGate, THIRD_PARTY_SURFACE_MAX, checkDragOffer, checkMenu, checkRegions, inRegions, mayClaim, menuPoint, surfaceMayFloat, surfacePlacement, surfaceSize, MENU_LIMITS } from "../src/main/ui/brokers";
+import { MENU_INPUT_WINDOW_MS, MenuGate, THIRD_PARTY_SURFACE_MAX, mayOpen, openTarget, surfaceBounds, checkDragOffer, checkMenu, checkRegions, inRegions, mayClaim, menuPoint, surfaceMayFloat, surfacePlacement, surfaceSize, MENU_LIMITS } from "../src/main/ui/brokers";
 
 describe("the menu broker", () => {
   test("a menu is data: items with ids and plain labels, separators, checkboxes and submenus", () => {
@@ -100,5 +100,25 @@ describe("surfaces outside the clover tree", () => {
     expect(surfaceSize({ width: 5000, height: 5000 }, { width: 100, height: 100 }, { trusted: false, workArea })).toEqual(THIRD_PARTY_SURFACE_MAX);
     expect(surfaceSize({ width: 1, height: "x" }, { width: 100, height: 70 }, { trusted: false, workArea })).toEqual({ width: 40, height: 70 });
     expect(surfaceSize({ height: 120 }, { width: 360, height: 40 }, { trusted: false, workArea: { width: 300, height: 100 } })).toEqual({ width: 300, height: 100 });
+  });
+});
+
+describe("lane G's surface host: a whole place on the screen, and places the app opens", () => {
+  const display = { bounds: { x: 0, y: 0, width: 1512, height: 982 }, workArea: { x: 0, y: 37, width: 1512, height: 945 } };
+  test("a surface's bounds stay on its display; a third party's in the work area and its smaller box", () => {
+    expect(surfaceBounds({ x: 556, y: 0, width: 400, height: 80 }, display, true)).toEqual({ x: 556, y: 0, width: 400, height: 80 });
+    expect(surfaceBounds({ x: 1400, y: -50, width: 400, height: 80 }, display, true)).toEqual({ x: 1112, y: 0, width: 400, height: 80 });
+    expect(surfaceBounds({ x: 556, y: 0, width: 4000, height: 80 }, display, false)).toEqual({ x: 556, y: 37, width: 800, height: 80 });
+    expect(surfaceBounds({ x: 0, y: 0, width: "w", height: 1 }, display, true)).toBeUndefined();
+  });
+
+  test("Settings at a section and an item, or a bot's tab; nothing else, and only for the clover tree", () => {
+    expect(openTarget({ kind: "settings", section: "devices", item: "laptop" })).toEqual({ kind: "settings", section: "devices", item: "laptop" });
+    expect(openTarget({ kind: "settings" })).toEqual({ kind: "settings" });
+    expect(openTarget({ kind: "settings", section: "Devices!" })).toBeUndefined();
+    expect(openTarget({ kind: "bot", bot: "alpha" })).toEqual({ kind: "bot", bot: "alpha" });
+    expect(openTarget({ kind: "url", url: "https://example.com" })).toBeUndefined();
+    expect(mayOpen("clover/island")).toBe(true);
+    expect(mayOpen("fixture-surface")).toBe(false);
   });
 });

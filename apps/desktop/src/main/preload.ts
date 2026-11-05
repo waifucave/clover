@@ -35,6 +35,8 @@ if (isRoot || isLayer) {
     rectReply: (id, rect) => ipcRenderer.send("clover:rect-reply", { id, rect }),
     menu: (mount, items, x, y) => ipcRenderer.invoke("clover:menu", { mount, items, x, y }),
     surface: (request) => ipcRenderer.send("clover:surface", request),
+    surfaceEnvironment: () => ipcRenderer.invoke("clover:surface-environment", {}),
+    open: (mount, target) => ipcRenderer.invoke("clover:open", { mount, target }),
     dragOffer: (mount, offer) => ipcRenderer.invoke("clover:drag-offer", { mount, offer }),
     dragClaim: (mount, token) => ipcRenderer.invoke("clover:drag-claim", { mount, token }),
     onMessage: (listener) => {
