@@ -17,6 +17,8 @@
 // | a status change                          | none: it reaches clients as `session_changed`                  |
 // | the runtime's own event                  | itself, when it is a `SessionEvent` or a Clover session event  |
 // |                                          | the host doesn't project itself (`HOST_EVENT_TYPES`)           |
+// | an ACP agent's record (lane K's driver)  | the inherited event it reads as (`ACP_RECORDS`), so an agent's |
+// |                                          | live tab reads like a code session's (item 90)                 |
 //
 // Runtime events of other types are the runtime's private bookkeeping (`turn_usage`, which the usage counter reads)
 // and never leave the daemon. For any reader but the user's own app and devices (a plugin's `conversation.read`, a
@@ -39,6 +41,37 @@ export const HOST_EVENT_TYPES: ReadonlySet<string> = new Set([
   "user_message", "turn_started", "turn_completed", "bot_message", "agent_message", "agent_finished", "routine_result",
   "note", "plugin_message",
 ]);
+
+/** How lane K's ACP driver's records read on the wire (item 90's live tab): its text as the assistant's message, a
+ *  tool call as a tool call, a call's end as its result. Thoughts and usage stay in the daemon. */
+export function acpRecordEvent(event: { type: string; [key: string]: unknown }): { type: string; [key: string]: unknown } | undefined {
+  const s = (k: string) => (typeof event[k] === "string" ? (event[k] as string) : undefined);
+  switch (event.type) {
+    case "agent_text":
+      return s("text") === undefined ? undefined : { type: "assistant_message", text: s("text") };
+    case "agent_tool_call": {
+      const id = s("id");
+      const name = s("title") || s("kind");
+      if (!id || !name) return undefined;
+      let argsJson = "{}";
+      try {
+        argsJson = JSON.stringify(event["rawInput"] ?? {}) ?? "{}";
+      } catch {
+        // A raw input that doesn't serialize shows as none.
+      }
+      return { type: "tool_call", callId: id, name, argsJson };
+    }
+    case "agent_tool_call_update": {
+      const id = s("id");
+      const status = s("status");
+      if (!id || (status !== "completed" && status !== "failed")) return undefined;
+      const output = status === "completed" ? "" : event["refused"] === true ? "Refused." : "Failed.";
+      return { type: "tool_result", callId: id, output, isError: status === "failed" };
+    }
+    default:
+      return undefined;
+  }
+}
 
 /** The parts of a card only the user's own app and devices read, by event type. */
 const SEALED_FIELDS: Readonly<Record<string, readonly string[]>> = {
@@ -130,7 +163,8 @@ export function projectRecord(record: SessionRecord, opts: ProjectOptions): Wire
     case "status":
       return undefined;
     case "driver": {
-      const event = record.event;
+      const acp = opts.kind === "agent" || opts.kind === "coding" ? acpRecordEvent(record.event) : undefined;
+      const event = acp ?? record.event;
       if (!WIRE_EVENT_TYPES.has(event.type) || HOST_EVENT_TYPES.has(event.type)) return undefined;
       const out: WireEvent = { ...structuredClone(event), ...envelope, ...(typeof event.threadId === "string" ? {} : { threadId }) };
       if (opts.sealed) for (const field of SEALED_FIELDS[event.type] ?? []) delete out[field];

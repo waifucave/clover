@@ -39,11 +39,27 @@
 //   its turn has the turn ended for it after the same grace.
 // * **Streaming never reaches the log.** A runtime event of one of the inherited transient types (`assistant_delta`,
 //   `thinking_delta` …, `TRANSIENT_EVENT_TYPES`) is handed to `onTransient` listeners and never recorded, as today.
+// * **A gate decides when turns start** (`mayStart`): the bot service closes it for a bot's conversation while this
+//   computer doesn't run its bots (§6.4, the lease) and for bots and side threads while the pause switch is on (§9.2).
+//   What arrives meanwhile is recorded and waits; `resume` starts it once the gate opens.
+// * **Compaction** (§6.3): `compact` asks a driver that can (`CompactingDriver`) to compact while the session is idle.
+//   A cache-timed one (`cache`, compaction.ts decides when) is dropped by the user's message or interrupt and tried
+//   again later, since the cache is still warm; a forced one (`full`, or the user's `session.compact`) finishes first,
+//   and what arrives meanwhile waits. A compaction the runtime forces inside a turn when the context fills (its
+//   `compaction` events, `full`) finishes first too: the user's message waits for its end before it interrupts.
+// * **Calls that never ended are recorded so.** Each turn's start names the computer running it (`on`). A restart
+//   records each tool call of a turn this computer was running with an interrupted result, and ends the turn. A turn
+//   another computer started and never ended (a log synced from the computer that ran the bot before) is left as it is
+//   until this computer may start that session's turns itself (a takeover): then each such call gets a result saying it
+//   may have run on that computer, and the turn ends (`catchUp`, §6.4 "Fencing the old main"). Neither runs a call
+//   again.
+// * **Every session's caller names its bot** (`callerOf`): a side thread and a background agent carry their bot,
+//   from their own meta or their parent's.
 import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import {
   clampSentAt, pluginIdToSegment, TRANSIENT_EVENT_TYPES,
-  type SessionFailure, type SessionKind, type SessionStatus, type SessionView, type TurnOrigin,
+  type Caller, type SessionFailure, type SessionKind, type SessionStatus, type SessionView, type TurnOrigin,
 } from "@waifucave/clover-protocol";
 import type { ApprovalBroker } from "../contracts/approval-broker";
 import { compareStamps, type Clock } from "../contracts/clock";
@@ -65,6 +81,39 @@ export const CLIENT_IDS_KEPT = 1_000;
 export const PUMP_RETRY_MS = 5_000;
 /** The meta format this host writes; a newer one stops the start. */
 export const SESSION_META_VERSION = 1;
+/** How far back from a log's end `catchUp` looks for the turn the computer before it never ended. */
+export const CATCH_UP_SCAN_MAX = 20_000;
+
+/** Why a session compacts (§6.3): `cache`, just before the cached prompt expires (compaction.ts); `full`, because the
+ *  context window is full; `user`, the user's `session.compact`. */
+export type CompactReason = "cache" | "full" | "user";
+/** What a compaction came to. `dropped`: a cache-timed one the user's message or interrupt stopped; `skipped`: one not
+ *  run, since a turn ran or something waited; `unsupported`: the driver can't compact (an ACP agent compacts itself). */
+export type CompactOutcome = "compacted" | "dropped" | "failed" | "skipped" | "unsupported";
+
+/** A driver that compacts its conversation on the host's word (lane A's embedded runtime). It summarizes the
+ *  conversation so far, rebuilds the system prompt's harness blocks (§6.1: the MCP block and the bot's instructions
+ *  change only at a compaction), and stops early when `signal` aborts, answering `compacted: false`. While a turn runs it
+ *  may compact on its own when the context fills; it says so with `compaction` events (`{ type: "compaction", phase:
+ *  "started" | "ended", reason: "full" }`) through `TurnControl.record`. */
+export interface CompactingDriver extends SessionDriver {
+  compact(req: { reason: CompactReason; signal: AbortSignal }): Promise<{ compacted: boolean }>;
+}
+
+export function canCompact(driver: SessionDriver): driver is CompactingDriver {
+  return typeof (driver as Partial<CompactingDriver>).compact === "function";
+}
+
+/** Records only the core writes (`recordCore`): a driver's event of one of these types is dropped, so a runtime or
+ *  an agent can't grant its own session anything (grants.ts). */
+export const CORE_ONLY_EVENT_TYPES: ReadonlySet<string> = new Set(["session_grant"]);
+
+/** The result a tool call gets when a restart or a takeover finds it with none (§3.1, §6.4). */
+export function interruptedCallOutput(ranOn?: string): string {
+  return ranOn === undefined
+    ? "Interrupted: Clover stopped while this call ran. It was not run again; check its effects before you retry it."
+    : `Interrupted: this call may have run on ${ranOn}, which stopped answering while it ran. It was not run again here; its real outcome is posted once ${ranOn} is reachable.`;
+}
 
 /** Who a session is, kept beside its log. */
 export interface SessionMeta {
@@ -99,6 +148,12 @@ export interface DurableSessionHostOptions {
   approvals?: Pick<ApprovalBroker, "withdrawSession" | "cancelSession"> & Partial<Pick<ApprovalBroker, "pending" | "watch">>;
   /** The lease epoch every record carries once lane H's lease exists (§6.4). */
   epoch?: () => number | undefined;
+  /** Whether a session may start a turn or a compaction now; inputs wait while it says no, until `resume` (the lease
+   *  and the pause switch, through the bot service). Open when left out. */
+  mayStart?: (view: SessionView) => boolean;
+  /** This computer's name: each turn's start names it, so a turn another computer left open is told from one a
+   *  restart here cut off. */
+  computer?: string;
   warn?: (message: string) => void;
 }
 
@@ -163,6 +218,16 @@ interface Hosted {
   cards: number;
   /** A turn's start the disk refused, to be tried again. */
   retry?: ReturnType<Clock["setTimeout"]>;
+  /** A compaction `compact` started while the session was idle. */
+  compacting?: { reason: CompactReason; abort: AbortController; done: Promise<CompactOutcome> };
+  /** Compactions asked for while a turn ran (`full`, `user`): they run when it ends, before what waits. */
+  deferredCompact: { reason: CompactReason; resolve: (outcome: CompactOutcome) => void }[];
+  /** The runtime is compacting inside the running turn because the context filled (its `compaction` events). */
+  turnCompaction: boolean;
+  /** The user's message arrived during that compaction: the step is interrupted when it ends. */
+  interruptAfterCompaction: boolean;
+  /** A turn another computer started and the log never ended: caught up before this computer starts one. */
+  foreignTurn?: { on: string };
 }
 
 const isEnded = (status: SessionStatus) => status === "stopped" || status === "failed";
@@ -182,7 +247,7 @@ function enqueue(queue: QueueItem[], item: QueueItem, aheadOfOthers: boolean): v
 
 /** The `turn_started` record names the input it started by its seq, so a replay takes that one out of line, even when
  *  a record before it was lost. (Lane D's addition to the contract's record; a request to lane B.) */
-type TurnStartedBody = Extract<SessionRecordBody, { type: "turn_started" }> & { inputSeq: number };
+type TurnStartedBody = Extract<SessionRecordBody, { type: "turn_started" }> & { inputSeq: number; on?: string };
 
 function rememberClientId(map: Hosted["clientIds"], id: string, entry: { seq: number; disposition: Disposition }): void {
   map.delete(id);
@@ -206,6 +271,10 @@ function trackQuestion(questions: Set<string>, event: { type: string; [key: stri
 /** What replaying a log rebuilds. */
 class Replay {
   running = false;
+  /** The computer running the running turn, as its start says. */
+  runningOn: string | undefined;
+  /** The running turn's tool calls with no result yet. */
+  readonly openCalls = new Map<string, string>();
   queue: QueueItem[] = [];
   pending: QueueItem[] = [];
   status: SessionStatus = "ready";
@@ -244,10 +313,13 @@ class Replay {
         }
         this.pending = [];
         this.running = true;
+        this.runningOn = typeof (r as Partial<TurnStartedBody>).on === "string" ? (r as Partial<TurnStartedBody>).on : undefined;
+        this.openCalls.clear();
         break;
       }
       case "turn_ended":
         this.running = false;
+        this.openCalls.clear();
         break;
       case "status":
         this.status = r.status;
@@ -260,9 +332,18 @@ class Replay {
         break;
       case "driver":
         trackQuestion(this.questions, r.event);
+        if (this.running) trackCall(this.openCalls, r.event);
         break;
     }
   }
+}
+
+/** Keeps a turn's tool calls that have no result yet (the runtime's `tool_call` and `tool_result` events). */
+function trackCall(open: Map<string, string>, event: { type: string; [key: string]: unknown }): void {
+  const callId = event["callId"];
+  if (typeof callId !== "string" || callId === "") return;
+  if (event.type === "tool_call") open.set(callId, typeof event["name"] === "string" ? event["name"] : "");
+  else if (event.type === "tool_result") open.delete(callId);
 }
 
 function readMeta(path: string): SessionMeta | undefined {
@@ -283,6 +364,8 @@ export class DurableSessionHost implements SessionHost {
   readonly #clock: Clock;
   readonly #approvals: DurableSessionHostOptions["approvals"];
   readonly #epoch: (() => number | undefined) | undefined;
+  readonly #mayStart: ((view: SessionView) => boolean) | undefined;
+  readonly #computer: string | undefined;
   readonly #warn: (message: string) => void;
   readonly #sessions = new Map<string, Hosted>();
   readonly #watchers = new Listeners<SessionView>();
@@ -294,6 +377,8 @@ export class DurableSessionHost implements SessionHost {
     this.#clock = opts.clock;
     this.#approvals = opts.approvals;
     this.#epoch = opts.epoch;
+    this.#mayStart = opts.mayStart;
+    this.#computer = opts.computer;
     this.#warn = opts.warn ?? (() => {});
     this.#restore();
     this.#offApprovals = opts.approvals?.watch?.(() => this.#recountCards());
@@ -372,10 +457,14 @@ export class DurableSessionHost implements SessionHost {
       const record = this.#record(s, { type: "input", input: full, disposition: "interrupted" });
       rememberClientId(s.clientIds, full.clientMessageId, { seq: record.seq, disposition: "interrupted" });
       enqueue(s.queue, { seq: record.seq, input: full }, true);
-      await this.#interruptStep(s);
+      // A compaction the context forced finishes first (§6.3); the step is interrupted as it ends.
+      if (s.turnCompaction) s.interruptAfterCompaction = true;
+      else await this.#interruptStep(s);
       this.#pump(s);
       return { disposition: "interrupted", seq: record.seq };
     }
+    // The user's message drops a cache-timed compaction, which is tried again later (§6.3).
+    if (s.compacting?.reason === "cache") s.compacting.abort.abort("the user's message");
     return this.#accept(s, full);
   }
 
@@ -390,6 +479,7 @@ export class DurableSessionHost implements SessionHost {
 
   async interrupt(id: string): Promise<void> {
     const s = this.#live(id);
+    if (s.compacting !== undefined && s.compacting.reason !== "full") s.compacting.abort.abort("interrupted");
     if (s.running) await this.#interruptStep(s);
   }
 
@@ -399,6 +489,7 @@ export class DurableSessionHost implements SessionHost {
     s.stopping = true;
     s.queue = [];
     s.pending = [];
+    s.compacting?.abort.abort(reason);
     const running = s.running;
     running?.abort.abort(reason);
     this.#approvals?.cancelSession(id);
@@ -441,6 +532,7 @@ export class DurableSessionHost implements SessionHost {
     const s = this.#sessions.get(id);
     if (!s?.driver || s.stopping) return;
     s.releasing = true;
+    s.compacting?.abort.abort("released");
     try {
       const running = s.running;
       if (running) {
@@ -520,9 +612,140 @@ export class DurableSessionHost implements SessionHost {
     return this.#logOf(s).length;
   }
 
+  /** Starts what waits in every session the gate (`mayStart`) now lets through: call it when the gate opens. */
+  resume(): void {
+    for (const s of this.#sessions.values()) this.#pump(s);
+  }
+
+  /** Who a session is when it calls something (§5.4 "The caller"): a side thread and a background agent carry their
+   *  bot, from their own meta or else their parent's. */
+  callerOf(id: string): Extract<Caller, { kind: "session" }> {
+    const s = this.#sessions.get(id);
+    if (!s) throw new ContractError("not_found", `no session ${id}`);
+    const bot = s.meta.bot ?? (s.meta.parent === undefined ? undefined : this.#sessions.get(s.meta.parent)?.meta.bot);
+    return { kind: "session", sessionId: id, sessionKind: s.meta.kind, ...(bot === undefined ? {} : { bot }) };
+  }
+
+  /** What started the session's running turn, if one runs. */
+  turnOrigin(id: string): TurnOrigin | undefined {
+    return this.#sessions.get(id)?.running?.origin;
+  }
+
+  /** Whether the session is compacting now: between turns (`compact`) or inside one (the runtime's own). */
+  isCompacting(id: string): boolean {
+    const s = this.#sessions.get(id);
+    return s !== undefined && (s.compacting !== undefined || s.turnCompaction);
+  }
+
+  /** Compacts the session (§6.3). While it is idle, the driver compacts now and what arrives meanwhile waits; a
+   *  cache-timed one gives way to the user's message or interrupt (`dropped`). While a turn runs, a cache-timed one is
+   *  `skipped` (the turn refreshes the cache), and a forced one runs as the turn ends, before what waits. */
+  async compact(id: string, reason: CompactReason): Promise<CompactOutcome> {
+    const s = this.#live(id);
+    const driver = s.driver;
+    if (!driver || !canCompact(driver)) return "unsupported";
+    if (s.compacting) return s.compacting.done;
+    if (s.running || s.releasing || !this.#gateOpen(s)) {
+      if (reason === "cache") return "skipped";
+      return new Promise((resolve) => s.deferredCompact.push({ reason, resolve }));
+    }
+    // Something already waits for a turn: it runs first, and refreshes the cache as it does.
+    if (reason === "cache" && s.queue.length > 0) return "skipped";
+    return this.#runCompaction(s, driver, reason);
+  }
+
+  /** After this computer took a session over (§6.4 "Fencing the old main"): the turn another computer started and its
+   *  log never ended is ended `interrupted`, and each of its tool calls with no result gets one saying the call may
+   *  have run on that computer. Nothing is run again. The host does this itself before it starts the session's next
+   *  turn here; the bot service calls it as the lease arrives, so clients see it at once. How many calls it marked. */
+  catchUp(id: string): number {
+    const s = this.#sessions.get(id);
+    if (!s) throw new ContractError("not_found", `no session ${id}`);
+    return this.#catchUp(s);
+  }
+
   // -----------------------------------------------------------------------------------------------
   // Routing
   // -----------------------------------------------------------------------------------------------
+
+  #gateOpen(s: Hosted): boolean {
+    return this.#mayStart === undefined || this.#mayStart(this.#viewOf(s));
+  }
+
+  #catchUp(s: Hosted): number {
+    const foreign = s.foreignTurn;
+    if (foreign === undefined || s.running || isEnded(s.view.status)) return 0;
+    const log = this.#logOf(s);
+    const tail = log.read(Math.max(0, log.length - CATCH_UP_SCAN_MAX), log.length);
+    let start = -1;
+    for (let i = tail.length - 1; i >= 0; i--) {
+      if (tail[i]!.type === "turn_ended") break;
+      if (tail[i]!.type === "turn_started") {
+        start = i;
+        break;
+      }
+    }
+    const open = new Map<string, string>();
+    if (start >= 0) for (const r of tail.slice(start + 1)) if (r.type === "driver") trackCall(open, r.event);
+    for (const callId of open.keys()) {
+      if (!this.#tryRecord(s, { type: "driver", event: { type: "tool_result", callId, output: interruptedCallOutput(foreign.on), isError: true } })) return 0;
+    }
+    if (!this.#tryRecord(s, { type: "turn_ended", end: { reason: "interrupted" } })) return 0;
+    delete s.foreignTurn;
+    return open.size;
+  }
+
+  /** Whether what arrives now waits behind a compaction: always behind a forced one, and behind a cache-timed one
+   *  unless the user's message is dropping it. */
+  #compactionHolds(s: Hosted): boolean {
+    return s.compacting !== undefined && !(s.compacting.reason === "cache" && s.compacting.abort.signal.aborted);
+  }
+
+  #runCompaction(s: Hosted, driver: CompactingDriver, reason: CompactReason): Promise<CompactOutcome> {
+    const abort = new AbortController();
+    let settle!: (outcome: CompactOutcome) => void;
+    const done = new Promise<CompactOutcome>((resolve) => {
+      settle = resolve;
+    });
+    s.compacting = { reason, abort, done };
+    this.#tryRecord(s, { type: "driver", event: { type: "compaction", phase: "started", reason } });
+    this.#setStatus(s, "prompting");
+    void Promise.resolve()
+      .then(() => driver.compact({ reason, signal: abort.signal }))
+      .then(
+        (r): CompactOutcome => (r.compacted ? "compacted" : abort.signal.aborted ? "dropped" : "failed"),
+        (err: unknown): CompactOutcome => {
+          if (abort.signal.aborted) return "dropped";
+          this.#warn(`session ${s.meta.id}: compacting failed: ${errorText(err)}`);
+          return "failed";
+        },
+      )
+      .then((outcome) => {
+        if (s.compacting?.abort !== abort) return settle(outcome);
+        delete s.compacting;
+        this.#tryRecord(s, { type: "driver", event: { type: "compaction", phase: "ended", reason, outcome } });
+        if (!s.stopping && !isEnded(s.view.status)) {
+          if (!s.releasing) this.#setStatus(s, "idle");
+          this.#pump(s);
+        }
+        settle(outcome);
+      })
+      .catch((err: unknown) => this.#warn(`session ${s.meta.id}: ending a compaction failed: ${errorText(err)}`));
+    return done;
+  }
+
+  /** The runtime's own compaction inside a turn (§6.3): while it runs, the user's message waits to interrupt. */
+  #trackTurnCompaction(s: Hosted, event: { type: string; [key: string]: unknown }): void {
+    if (event.type !== "compaction") return;
+    if (event["phase"] === "started" && event["reason"] === "full") s.turnCompaction = true;
+    else if (event["phase"] === "ended" && s.turnCompaction) {
+      s.turnCompaction = false;
+      if (s.interruptAfterCompaction) {
+        s.interruptAfterCompaction = false;
+        void this.#interruptStep(s);
+      }
+    }
+  }
 
   #live(id: string): Hosted {
     const s = this.#sessions.get(id);
@@ -533,7 +756,7 @@ export class DurableSessionHost implements SessionHost {
 
   #accept(s: Hosted, input: TurnInput): { disposition: Disposition; seq: number } {
     if (!s.running) {
-      const startsNow = s.driver !== undefined && !s.releasing && s.queue.length === 0;
+      const startsNow = s.driver !== undefined && !s.releasing && s.queue.length === 0 && this.#gateOpen(s) && !this.#compactionHolds(s);
       const disposition: Disposition = startsNow ? "turn" : "queued";
       const record = this.#record(s, { type: "input", input, disposition });
       if (input.from === "user") rememberClientId(s.clientIds, input.clientMessageId, { seq: record.seq, disposition });
@@ -586,11 +809,28 @@ export class DurableSessionHost implements SessionHost {
   /** Starts the next queued turn when none runs and a driver is attached. */
   #pump(s: Hosted): void {
     const driver = s.driver;
-    if (s.running || !driver || s.releasing || s.stopping || s.queue.length === 0 || isEnded(s.view.status)) return;
+    if (s.running || !driver || s.releasing || s.stopping || isEnded(s.view.status) || s.compacting !== undefined) return;
+    if (!this.#gateOpen(s)) return;
+    // A turn another computer left open is ended before this computer starts one (a takeover).
+    if (s.foreignTurn !== undefined) {
+      this.#catchUp(s);
+      if (s.foreignTurn !== undefined) return;
+    }
+    // A compaction asked for while the last turn ran goes before what waits (a driver reattached since that can't
+    // compact answers `unsupported`).
+    for (let deferred = s.deferredCompact.shift(); deferred !== undefined; deferred = s.deferredCompact.shift()) {
+      if (!canCompact(driver)) {
+        deferred.resolve("unsupported");
+        continue;
+      }
+      void this.#runCompaction(s, driver, deferred.reason).then(deferred.resolve);
+      return;
+    }
+    if (s.queue.length === 0) return;
     const { seq: inputSeq, input } = s.queue[0]!;
     const origin = originOf(input);
     // The turn's start is recorded before anything changes: if the disk refuses it, the input stays first in line.
-    const started: TurnStartedBody = { type: "turn_started", origin, inputSeq };
+    const started: TurnStartedBody = { type: "turn_started", origin, inputSeq, ...(this.#computer === undefined ? {} : { on: this.#computer }) };
     if (!this.#tryRecord(s, started)) {
       if (s.retry === undefined && s.log?.broken === undefined) {
         s.retry = this.#clock.setTimeout(() => {
@@ -601,6 +841,8 @@ export class DurableSessionHost implements SessionHost {
       return;
     }
     s.queue.shift();
+    s.turnCompaction = false;
+    s.interruptAfterCompaction = false;
     const running: Running = { origin, abort: new AbortController(), folds: new FoldChannel() };
     s.running = running;
     const pending = driver.canFold ? s.pending : [];
@@ -613,7 +855,11 @@ export class DurableSessionHost implements SessionHost {
       onFold: (fn) => running.folds.subscribe(fn),
       record: (event) => {
         if (TRANSIENT_EVENT_TYPES.has(event.type as never)) s.transient.emit(structuredClone(event));
-        else this.#tryRecord(s, { type: "driver", event: structuredClone(event) });
+        else if (CORE_ONLY_EVENT_TYPES.has(event.type)) this.#warn(`session ${s.meta.id}: its driver's ${event.type} event was dropped; only the core records those`);
+        else {
+          this.#tryRecord(s, { type: "driver", event: structuredClone(event) });
+          if (s.running === running) this.#trackTurnCompaction(s, event);
+        }
       },
     };
     void Promise.resolve()
@@ -632,6 +878,8 @@ export class DurableSessionHost implements SessionHost {
     // Recorded first; if the disk refuses it, the turn has still ended, and a restart records it interrupted.
     this.#tryRecord(s, { type: "turn_ended", end });
     delete s.running;
+    s.turnCompaction = false;
+    s.interruptAfterCompaction = false;
     const waits = (i: QueueItem) => i.input.from === "note" || (i.input.from === "routine" && s.meta.kind === "bot");
     s.pending.unshift(...unclaimed.filter(waits));
     for (const item of unclaimed.filter((i) => !waits(i))) enqueue(s.queue, item, false);
@@ -654,9 +902,9 @@ export class DurableSessionHost implements SessionHost {
       return;
     }
     this.#setStatus(s, "idle");
-    if (s.queue.length > 0) {
+    if (s.queue.length > 0 || s.deferredCompact.length > 0) {
       this.#pump(s);
-      return;
+      if (s.queue.length > 0 || s.running || s.compacting) return;
     }
     if (s.meta.kind === "agent" && end.reason !== "interrupted") this.#notifyParent(s, stopReasonOf(end), end);
   }
@@ -698,6 +946,9 @@ export class DurableSessionHost implements SessionHost {
       clientIds: new Map(),
       questions: new Set(),
       cards: 0,
+      deferredCompact: [],
+      turnCompaction: false,
+      interruptAfterCompaction: false,
     };
   }
 
@@ -750,8 +1001,15 @@ export class DurableSessionHost implements SessionHost {
     for (const [k, v] of replay.clientIds) s.clientIds.set(k, v);
     for (const q of replay.questions) s.questions.add(q);
     this.#sessions.set(meta.id, s);
-    // A turn the daemon was running when it stopped is recorded interrupted (§3.1).
-    if (replay.running) this.#tryRecord(s, { type: "turn_ended", end: { reason: "interrupted" } });
+    // A turn the daemon was running when it stopped is recorded interrupted, with each of its calls that has no
+    // result (§3.1).
+    if (replay.running && replay.runningOn !== undefined && this.#computer !== undefined && replay.runningOn !== this.#computer) {
+      // Another computer's turn, synced here: it may still be running there, and is caught up only on a takeover.
+      s.foreignTurn = { on: replay.runningOn };
+    } else if (replay.running) {
+      for (const callId of replay.openCalls.keys()) this.#tryRecord(s, { type: "driver", event: { type: "tool_result", callId, output: interruptedCallOutput(), isError: true } });
+      this.#tryRecord(s, { type: "turn_ended", end: { reason: "interrupted" } });
+    }
     if (s.view.status === "prompting" || s.view.status === "cancelling" || s.view.status === "starting") this.#setStatus(s, "idle");
     // Ended before its meta said so (a crash between the two writes, or an older home): the next start skips its log.
     if (isEnded(s.view.status) && meta.ended === undefined) this.#markEnded(s);
