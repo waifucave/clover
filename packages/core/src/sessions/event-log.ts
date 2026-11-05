@@ -14,7 +14,8 @@
 //   after it was loaded, so a new session never writes after an old log's lines.
 // * **A failed flush makes the log read-only** for the rest of the process: what the drive holds is unknown then, and
 //   the next start's load is the one that can tell.
-// * **No record is larger than `MAX_RECORD_BYTES`**: the host cuts long fields before recording (`shrinkRecord`).
+// * **No record is larger than `MAX_RECORD_BYTES`**: the host refuses a larger input to its sender, and cuts a larger
+//   runtime event's long fields before recording (`shrinkRecord`).
 // * **Loading repairs, and cuts only the tail.** A last line with no newline is a write that never finished, and is
 //   dropped. A bad line (one that doesn't parse, breaks the `seq` order, or is longer than any record can be) followed
 //   by good lines whose `seq` goes on is a lost record: the log keeps loading, and the file is rewritten once with a
@@ -30,8 +31,9 @@ import { dirname } from "node:path";
 import type { SessionRecord } from "../contracts/session-host";
 import { syncDir, syncFile } from "./durable-io";
 
-/** The largest line a log holds, its newline included. */
-export const MAX_RECORD_BYTES = 4 * 1024 * 1024;
+/** The largest line a log holds, its newline included: room for the longest message the protocol takes (1,000,000
+ *  UTF-16 units, at most 6 bytes each as JSON). A larger input is refused to its sender; a larger runtime event is cut. */
+export const MAX_RECORD_BYTES = 8 * 1024 * 1024;
 /** What a lost record reads back as: a runtime event no reader projects or counts. */
 export const LOST_EVENT_TYPE = "record_lost";
 
@@ -160,9 +162,13 @@ export class SessionLogFile {
     try {
       size = fstatSync(fd).size;
       let pos = 0;
+      // One read buffer, made again only while part of an unfinished line still points into it.
+      let chunk = Buffer.allocUnsafe(Math.min(CHUNK_BYTES, size));
+      let held = false;
       while (pos < size) {
-        const chunk = Buffer.allocUnsafe(Math.min(CHUNK_BYTES, size - pos));
-        const n = readSync(fd, chunk, 0, chunk.length, pos);
+        if (held) chunk = Buffer.allocUnsafe(Math.min(CHUNK_BYTES, size - pos));
+        held = false;
+        const n = readSync(fd, chunk, 0, Math.min(chunk.length, size - pos), pos);
         if (n <= 0) break;
         let start = 0;
         for (;;) {
@@ -173,8 +179,10 @@ export class SessionLogFile {
         }
         if (start < n) {
           // Part of a line that goes on in the next chunk; past the cap it is kept no more, only counted.
-          if (partBytes + (n - start) <= MAX_RECORD_BYTES) parts.push(chunk.subarray(start, n));
-          else parts = [];
+          if (partBytes + (n - start) <= MAX_RECORD_BYTES) {
+            parts.push(chunk.subarray(start, n));
+            held = true;
+          } else parts = [];
           partBytes += n - start;
         }
         pos += n;

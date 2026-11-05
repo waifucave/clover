@@ -14,7 +14,8 @@
 //   the start rather than be skipped; a log whose meta was lost is picked up again by `open`, never written over.
 // * **A record is written before the state it changes.** If the disk refuses a record, the session is as it was: an
 //   input that couldn't be recorded is an error to its sender, and a turn that couldn't be recorded as started stays
-//   queued and is tried again shortly. A record too large for the log has its long fields cut (`shrinkRecord`).
+//   queued and is tried again shortly. An input too large for the log is refused to its sender; any other record
+//   too large has its long fields cut (`shrinkRecord`).
 // * **A restart interrupts.** A turn that was running when the daemon stopped is recorded `interrupted` (§3.1 "A
 //   daemon restart … records running calls as interrupted"); what was queued behind it runs once the session's driver
 //   is back.
@@ -45,7 +46,7 @@ import {
   type SessionFailure, type SessionKind, type SessionStatus, type SessionView, type TurnOrigin,
 } from "@waifucave/clover-protocol";
 import type { ApprovalBroker } from "../contracts/approval-broker";
-import type { Clock } from "../contracts/clock";
+import { compareStamps, type Clock } from "../contracts/clock";
 import { ContractError, Listeners, type Unsubscribe } from "../contracts/common";
 import {
   originOf,
@@ -53,7 +54,7 @@ import {
   type SessionRecordBody, type SessionSpec, type TurnControl, type TurnEnd, type TurnInput, type UserInput,
 } from "../contracts/session-host";
 import { readJson, writeJsonAtomic } from "./atomic-file";
-import { RecordTooLargeError, SessionLogFile, shrinkRecord } from "./event-log";
+import { MAX_RECORD_BYTES, RecordTooLargeError, SessionLogFile, shrinkRecord } from "./event-log";
 import { mintSessionId, sessionLogPath, sessionMetaPath, transcriptsDir } from "./ids";
 
 /** After the user's interrupt, how long a driver that said it stopped has to end its turn before the host ends it. */
@@ -101,28 +102,34 @@ export interface DurableSessionHostOptions {
   warn?: (message: string) => void;
 }
 
+/** An input waiting for a turn, or to be folded into one, with the seq of the record that brought it. */
+interface QueueItem {
+  seq: number;
+  input: TurnInput;
+}
+
 /** What folds into a running turn, held until the driver first subscribes. */
 class FoldChannel {
   readonly #listeners = new Listeners<TurnInput>();
-  #held: TurnInput[] | undefined = [];
+  #held: QueueItem[] | undefined = [];
 
   subscribe(fn: (input: TurnInput) => void): Unsubscribe {
     const off = this.#listeners.add(fn);
     const held = this.#held;
     if (held !== undefined) {
       this.#held = undefined;
-      for (const input of held) fn(structuredClone(input));
+      for (const item of held) fn(structuredClone(item.input));
     }
     return off;
   }
 
-  emit(input: TurnInput): void {
-    if (this.#held !== undefined) this.#held.push(structuredClone(input));
-    else this.#listeners.emit(structuredClone(input));
+  emit(item: QueueItem): void {
+    if (this.#held !== undefined) this.#held.push(structuredClone(item));
+    else this.#listeners.emit(structuredClone(item.input));
   }
 
   /** What no subscriber ever took. */
-  unclaimed(): TurnInput[] {
+  unclaimed(): QueueItem[] {
     return this.#held ?? [];
   }
 }
@@ -142,9 +149,9 @@ interface Hosted {
   subscribers: Listeners<SessionRecord>;
   transient: Listeners<{ type: string; [key: string]: unknown }>;
   /** Inputs waiting for a turn of their own, in the order they will run. */
-  queue: TurnInput[];
+  queue: QueueItem[];
   /** Notes and posted routine results that arrived while no turn ran: folded into the next turn as it starts. */
-  pending: TurnInput[];
+  pending: QueueItem[];
   running?: Running;
   /** `stop` has begun: nothing starts, and the turn it ends is recorded without anything else following. */
   stopping: boolean;
@@ -160,11 +167,22 @@ interface Hosted {
 
 const isEnded = (status: SessionStatus) => status === "stopped" || status === "failed";
 
-/** The user's message goes ahead of everything waiting except earlier user messages, so they keep send order. */
-function insertUserInput(queue: TurnInput[], input: TurnInput): void {
-  const at = queue.findIndex((q) => q.from !== "user");
-  queue.splice(at < 0 ? queue.length : at, 0, input);
+/** Puts an input in line. The user's waiting messages keep send order on the shared clock, ties by device (§6.4,
+ *  `compareStamps`), whatever order they arrived in; one that interrupted goes ahead of everything else waiting. */
+function enqueue(queue: QueueItem[], item: QueueItem, aheadOfOthers: boolean): void {
+  const input = item.input;
+  if (input.from !== "user") {
+    queue.push(item);
+    return;
+  }
+  const stamp = { t: input.sentAt, device: input.device };
+  const at = queue.findIndex((q) => (q.input.from === "user" ? compareStamps(stamp, { t: q.input.sentAt, device: q.input.device }) < 0 : aheadOfOthers));
+  queue.splice(at < 0 ? queue.length : at, 0, item);
 }
+
+/** The `turn_started` record names the input it started by its seq, so a replay takes that one out of line, even when
+ *  a record before it was lost. (Lane D's addition to the contract's record; a request to lane B.) */
+type TurnStartedBody = Extract<SessionRecordBody, { type: "turn_started" }> & { inputSeq: number };
 
 function rememberClientId(map: Hosted["clientIds"], id: string, entry: { seq: number; disposition: Disposition }): void {
   map.delete(id);
@@ -188,8 +206,8 @@ function trackQuestion(questions: Set<string>, event: { type: string; [key: stri
 /** What replaying a log rebuilds. */
 class Replay {
   running = false;
-  queue: TurnInput[] = [];
-  pending: TurnInput[] = [];
+  queue: QueueItem[] = [];
+  pending: QueueItem[] = [];
   status: SessionStatus = "ready";
   failure: SessionFailure | undefined;
   updatedAt: number | undefined;
@@ -203,24 +221,31 @@ class Replay {
         switch (r.disposition) {
           case "turn":
           case "queued":
-            this.queue.push(r.input);
+            enqueue(this.queue, { seq: r.seq, input: r.input }, false);
             break;
           case "interrupted":
-            insertUserInput(this.queue, r.input);
+            enqueue(this.queue, { seq: r.seq, input: r.input }, true);
             break;
           case "note":
             // While a turn ran, a note folded into it (or, for a driver that can't fold, was only recorded).
-            if (!this.running) this.pending.push(r.input);
+            if (!this.running) this.pending.push({ seq: r.seq, input: r.input });
             break;
           case "folded":
             break;
         }
         break;
-      case "turn_started":
-        this.queue.shift();
+      case "turn_started": {
+        // By the seq it names: an input whose record was lost is no longer in line, and nothing else is taken for it.
+        const inputSeq = (r as Partial<TurnStartedBody>).inputSeq;
+        if (typeof inputSeq !== "number") this.queue.shift();
+        else {
+          const at = this.queue.findIndex((q) => q.seq === inputSeq);
+          if (at >= 0) this.queue.splice(at, 1);
+        }
         this.pending = [];
         this.running = true;
         break;
+      }
       case "turn_ended":
         this.running = false;
         break;
@@ -344,7 +369,7 @@ export class DurableSessionHost implements SessionHost {
     if (s.running && s.meta.kind === "bot") {
       const record = this.#record(s, { type: "input", input: full, disposition: "interrupted" });
       rememberClientId(s.clientIds, full.clientMessageId, { seq: record.seq, disposition: "interrupted" });
-      insertUserInput(s.queue, full);
+      enqueue(s.queue, { seq: record.seq, input: full }, true);
       await this.#interruptStep(s);
       this.#pump(s);
       return { disposition: "interrupted", seq: record.seq };
@@ -510,18 +535,18 @@ export class DurableSessionHost implements SessionHost {
       const disposition: Disposition = startsNow ? "turn" : "queued";
       const record = this.#record(s, { type: "input", input, disposition });
       if (input.from === "user") rememberClientId(s.clientIds, input.clientMessageId, { seq: record.seq, disposition });
-      s.queue.push(input);
+      enqueue(s.queue, { seq: record.seq, input }, false);
       this.#pump(s);
       return { disposition, seq: record.seq };
     }
     if (input.from !== "user" && s.driver?.canFold) {
       const record = this.#record(s, { type: "input", input, disposition: "folded" });
-      s.running.folds.emit(input);
+      s.running.folds.emit({ seq: record.seq, input });
       return { disposition: "folded", seq: record.seq };
     }
     const record = this.#record(s, { type: "input", input, disposition: "queued" });
     if (input.from === "user") rememberClientId(s.clientIds, input.clientMessageId, { seq: record.seq, disposition: "queued" });
-    s.queue.push(input);
+    enqueue(s.queue, { seq: record.seq, input }, false);
     return { disposition: "queued", seq: record.seq };
   }
 
@@ -531,11 +556,11 @@ export class DurableSessionHost implements SessionHost {
     if (running && s.driver?.canFold) {
       const disposition: Disposition = input.from === "note" ? "note" : "folded";
       const record = this.#record(s, { type: "input", input, disposition });
-      running.folds.emit(input);
+      running.folds.emit({ seq: record.seq, input });
       return { disposition, seq: record.seq };
     }
     const record = this.#record(s, { type: "input", input, disposition: "note" });
-    if (!running) s.pending.push(input);
+    if (!running) s.pending.push({ seq: record.seq, input });
     return { disposition: "note", seq: record.seq };
   }
 
@@ -560,10 +585,11 @@ export class DurableSessionHost implements SessionHost {
   #pump(s: Hosted): void {
     const driver = s.driver;
     if (s.running || !driver || s.releasing || s.stopping || s.queue.length === 0 || isEnded(s.view.status)) return;
-    const input = s.queue[0]!;
+    const { seq: inputSeq, input } = s.queue[0]!;
     const origin = originOf(input);
     // The turn's start is recorded before anything changes: if the disk refuses it, the input stays first in line.
-    if (!this.#tryRecord(s, { type: "turn_started", origin })) {
+    const started: TurnStartedBody = { type: "turn_started", origin, inputSeq };
+    if (!this.#tryRecord(s, started)) {
       if (s.retry === undefined && s.log?.broken === undefined) {
         s.retry = this.#clock.setTimeout(() => {
           delete s.retry;
@@ -604,8 +630,9 @@ export class DurableSessionHost implements SessionHost {
     // Recorded first; if the disk refuses it, the turn has still ended, and a restart records it interrupted.
     this.#tryRecord(s, { type: "turn_ended", end });
     delete s.running;
-    s.pending.unshift(...unclaimed.filter((i) => i.from === "note" || (i.from === "routine" && s.meta.kind === "bot")));
-    s.queue.push(...unclaimed.filter((i) => !(i.from === "note" || (i.from === "routine" && s.meta.kind === "bot"))));
+    const waits = (i: QueueItem) => i.input.from === "note" || (i.input.from === "routine" && s.meta.kind === "bot");
+    s.pending.unshift(...unclaimed.filter(waits));
+    for (const item of unclaimed.filter((i) => !waits(i))) enqueue(s.queue, item, false);
     if (s.stopping || isEnded(s.view.status)) return;
     if (s.releasing) {
       this.#setStatus(s, "idle");
@@ -743,6 +770,8 @@ export class DurableSessionHost implements SessionHost {
       log.append(record, durable);
     } catch (err) {
       if (!(err instanceof RecordTooLargeError)) throw err;
+      // A message is refused back to its sender: cut in the log, its turn would run on text the log doesn't hold.
+      if (body.type === "input") throw new ContractError("invalid", `the message is ${err.bytes} bytes as recorded, over the ${MAX_RECORD_BYTES} a conversation's log holds`);
       record = shrinkRecord(record, err.bytes) ?? record;
       this.#warn(`session ${s.meta.id}: a ${body.type} record of ${err.bytes} bytes had its long fields cut to fit the log`);
       log.append(record, durable);

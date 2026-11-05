@@ -1,17 +1,18 @@
-// DurableSessionHost (../durable-host.ts): first the SessionHost contract's own scenarios, run against B's fake and the
-// durable host alike, so the two route the same way; then what only a host with a log on disk does: survive a restart,
+// DurableSessionHost (../durable-host.ts): first the SessionHost contract's own conformance suite (lane B's), run against
+// the durable host as against B's fake, so the two route the same way; then what only a host with a log on disk does: survive a restart,
 // repair a torn log, remember resends, hand notes and routine results to the next turn, count what needs the user.
 import { afterEach, describe, expect, test } from "bun:test";
 import { appendFileSync, chmodSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { ApprovalDecision } from "../../contracts/approval-broker";
 import { isContractError } from "../../contracts/common";
 import { FakeApprovalBroker } from "../../contracts/fakes/approval-broker";
 import { advanceAndSettle, FakeClock, flush } from "../../contracts/fakes/clock";
-import { FakeSessionDriver, FakeSessionHost } from "../../contracts/fakes/session-host";
-import type { DeliveredInput, SessionHost, SessionRecord, UserInput } from "../../contracts/session-host";
+import { runSessionHostConformance, type SessionHostHarness } from "../../contracts/conformance/session-host";
+import { FakeSessionDriver } from "../../contracts/fakes/session-host";
+import type { DeliveredInput, SessionRecord, UserInput } from "../../contracts/session-host";
 import { DurableSessionHost, INTERRUPT_GRACE_MS, PUMP_RETRY_MS } from "../durable-host";
+import { MAX_RECORD_BYTES } from "../event-log";
 import { sessionLogPath, sessionMetaPath } from "../ids";
 
 const homes: string[] = [];
@@ -28,213 +29,24 @@ const user = (text: string, sentAt = 1, id = `m-${text}`): Omit<UserInput, "from
 const fromBot: DeliveredInput = { from: "bot", bot: "pack/luna", session: "s_luna", text: "The deploy finished." };
 const inputs = (records: SessionRecord[]) => records.filter((r) => r.type === "input").map((r) => (r.type === "input" ? [r.input.from, r.disposition] : []));
 
-type AnyHost = SessionHost & { setAsleep(id: string, asleep: boolean): void };
-type MakeHost = (deps: { clock: FakeClock; approvals: FakeApprovalBroker; epoch: () => number }) => AnyHost;
-
-const HOSTS: [string, MakeHost][] = [
-  ["the fake", (deps) => new FakeSessionHost(deps)],
-  ["the durable host", (deps) => new DurableSessionHost({ home: tempHome(), ...deps })],
-];
-
-describe.each(HOSTS)("the SessionHost contract: %s", (_name, make) => {
-  function setup() {
-    const clock = new FakeClock();
-    const approvals = new FakeApprovalBroker({ clock });
-    let epoch = 3;
-    const host = make({ clock, approvals, epoch: () => epoch });
-    const botDriver = new FakeSessionDriver({ canFold: true });
-    host.open({ id: "s_alpha", kind: "bot", bot: "alpha", computer: "Studio" }, botDriver);
-    return { clock, approvals, host, botDriver, setEpoch: (e: number) => (epoch = e) };
-  }
-
-  function openAgent(host: AnyHost) {
-    const driver = new FakeSessionDriver({ canFold: false });
-    host.open({ id: "s_agent", kind: "agent", bot: "alpha", parent: "s_alpha", computer: "Desktop1", backend: "claude-code", root: "home/Desktop1/project1" }, driver);
-    return driver;
-  }
-
-  test("the user's message starts a turn in an idle bot", async () => {
-    const { host, botDriver } = setup();
-    expect(host.get("s_alpha")?.status).toBe("ready");
-    expect(await host.sendUser("s_alpha", user("hi"))).toMatchObject({ disposition: "turn" });
-    await flush();
-    expect(botDriver.turns).toMatchObject([{ input: { from: "user", text: "hi" }, origin: "user" }]);
-    expect(host.get("s_alpha")?.status).toBe("prompting");
-    botDriver.end({ text: "Hello!" });
-    await flush();
-    expect(host.get("s_alpha")?.status).toBe("idle");
-  });
-
-  test("the user's message interrupts a running step: the turn ends, its cards are withdrawn, a new step starts", async () => {
-    const { host, botDriver, approvals } = setup();
-    await host.deliver("s_alpha", fromBot);
-    await flush();
-    const card: Promise<ApprovalDecision> = approvals.request({ kind: "tool", session: "s_alpha", origin: "bot", computers: ["Studio"], effect: "delete", fields: {} });
-    await flush();
-    expect(approvals.cards()).toHaveLength(1);
-    expect(await host.sendUser("s_alpha", user("stop, wrong folder"))).toMatchObject({ disposition: "interrupted" });
-    await flush();
-    expect(botDriver.interrupts).toBe(1);
-    expect(await card).toMatchObject({ allowed: false, by: "withdrawn" });
-    expect(botDriver.turns.map((t) => [t.input.from, t.origin])).toEqual([["bot", "bot"], ["user", "user"]]);
-    expect(host.history("s_alpha").filter((r) => r.type === "turn_ended")).toMatchObject([{ end: { reason: "interrupted" } }]);
-  });
-
-  test("two quick messages from the user keep their order", async () => {
-    const { host, botDriver } = setup();
-    await host.deliver("s_alpha", fromBot);
-    await flush();
-    const first = host.sendUser("s_alpha", user("one"));
-    const second = host.sendUser("s_alpha", user("two"));
-    expect([(await first).disposition, (await second).disposition]).toEqual(["interrupted", "interrupted"]);
-    await flush();
-    botDriver.end();
-    await flush();
-    expect(botDriver.turns.map((t) => (t.input.from === "user" ? t.input.text : t.input.from))).toEqual(["bot", "one", "two"]);
-  });
-
-  test("messages from bots, agents and routines fold into a running bot turn after its next tool call", async () => {
-    const { host, botDriver } = setup();
-    await host.sendUser("s_alpha", user("deploy it"));
-    await flush();
-    expect(await host.deliver("s_alpha", fromBot)).toMatchObject({ disposition: "folded" });
-    expect(await host.deliver("s_alpha", { from: "routine", routine: "r_1", name: "Morning", sideThread: "s_side", text: "3 issues" })).toMatchObject({ disposition: "folded" });
-    expect(botDriver.turns[0]!.folded.map((i) => i.from)).toEqual(["bot", "routine"]);
-    expect(botDriver.interrupts).toBe(0);
-  });
-
-  test("an idle session starts a turn for a delivered message, with that message's origin", async () => {
-    const { host, botDriver } = setup();
-    expect(await host.deliver("s_alpha", { from: "plugin", pluginId: "weather", text: "Rain after 4" })).toMatchObject({ disposition: "turn" });
-    await flush();
-    expect(botDriver.turns[0]!.origin).toBe("plugin");
-  });
-
-  test("a note never starts a turn", async () => {
-    const { host, botDriver } = setup();
-    expect(await host.deliver("s_alpha", { from: "note", label: "Forecast", text: "Rain", by: { kind: "plugin", pluginId: "weather" } })).toMatchObject({ disposition: "note" });
-    await flush();
-    expect(botDriver.turns).toEqual([]);
-  });
-
-  test("an agent can't fold: the user's and the bot's messages queue as its next prompts, without interrupting", async () => {
-    const { host } = setup();
-    const agent = openAgent(host);
-    await host.deliver("s_agent", { from: "bot", bot: "alpha", session: "s_alpha", text: "Fix the login bug" });
-    await flush();
-    expect(await host.sendUser("s_agent", user("also update the docs"))).toMatchObject({ disposition: "queued" });
-    expect(await host.deliver("s_agent", { from: "bot", bot: "alpha", session: "s_alpha", text: "and run the tests" })).toMatchObject({ disposition: "queued" });
-    expect(agent.interrupts).toBe(0);
-    agent.end();
-    await flush();
-    expect(agent.turns.map((t) => (t.input.from === "user" || t.input.from === "bot" ? t.input.text : ""))).toEqual(["Fix the login bug", "also update the docs"]);
-    agent.end();
-    await flush();
-    expect(agent.turns).toHaveLength(3);
-  });
-
-  test("when an agent's turn ends with nothing queued, its bot gets the task notification with the final text unchanged", async () => {
-    const { host, botDriver } = setup();
-    const agent = openAgent(host);
-    await host.deliver("s_agent", { from: "bot", bot: "alpha", session: "s_alpha", text: "Fix it" });
-    await flush();
-    agent.end({ text: "Fixed the login bug; PR #12.", usage: { inputTokens: 100, outputTokens: 20 } });
-    await flush();
-    expect(botDriver.turns[0]).toMatchObject({
-      origin: "task-notification",
-      input: { from: "task-notification", agent: "s_agent", backend: "claude-code", stopReason: "end_turn", text: "Fixed the login bug; PR #12.", transcript: "bots/alpha/agents/s_agent/acp.ndjson", usage: { inputTokens: 100, outputTokens: 20 } },
-    });
-  });
-
-  test("a stopped agent's cards are cancelled, and its bot hears it stopped; a busy bot folds the notification in", async () => {
-    const { host, botDriver, approvals } = setup();
-    const agent = openAgent(host);
-    await host.sendUser("s_alpha", user("start the deploy"));
-    await host.deliver("s_agent", { from: "bot", bot: "alpha", session: "s_alpha", text: "Deploy" });
-    await flush();
-    const card = approvals.request({ kind: "agent-permission", session: "s_agent", origin: "agent", computers: ["Desktop1"], effect: "execute", fields: {} });
-    await flush();
-    await host.stop("s_agent");
-    await flush();
-    expect(await card).toMatchObject({ by: "cancelled" });
-    expect(agent.stopped).toBe(true);
-    expect(host.get("s_agent")?.status).toBe("stopped");
-    expect(botDriver.turns[0]!.folded).toMatchObject([{ from: "task-notification", stopReason: "stopped" }]);
-    expect(isContractError(await host.sendUser("s_agent", user("hello?")).catch((e: unknown) => e), "closed")).toBe(true);
-  });
-
-  test("an agent that fails tells its bot why", async () => {
-    const { host, botDriver } = setup();
-    const agent = openAgent(host);
-    await host.deliver("s_agent", { from: "bot", bot: "alpha", session: "s_alpha", text: "Go" });
-    await flush();
-    agent.end({ reason: "failed", failure: "sign-in", text: "sign in to Claude Code yourself" });
-    await flush();
-    expect(host.get("s_agent")).toMatchObject({ status: "failed", failure: "sign-in" });
-    expect(botDriver.turns[0]!.input).toMatchObject({ from: "task-notification", stopReason: "sign-in" });
-  });
-
-  test("the user's interrupt of the bot never touches its agents or side threads", async () => {
-    const { host, botDriver } = setup();
-    const agent = openAgent(host);
-    const side = new FakeSessionDriver();
-    host.open({ id: "s_side", kind: "side-thread", bot: "alpha", parent: "s_alpha", computer: "Studio", routine: "r_1" }, side);
-    await host.deliver("s_agent", { from: "bot", bot: "alpha", session: "s_alpha", text: "work" });
-    await host.deliver("s_side", { from: "routine", routine: "r_1", name: "Nightly", sideThread: "s_side", text: "run" });
-    await host.sendUser("s_alpha", user("hi"));
-    await flush();
-    await host.sendUser("s_alpha", user("hi again"));
-    await flush();
-    expect(botDriver.interrupts).toBe(1);
-    expect(agent.interrupts).toBe(0);
-    expect(side.interrupts).toBe(0);
-    expect(side.turns).toHaveLength(1);
-    expect(isContractError(await host.sendUser("s_side", user("x")).catch((e: unknown) => e), "refused")).toBe(true);
-  });
-
-  test("with no connection to the computer running the bot, the user's message isn't sent", async () => {
-    const { host } = setup();
-    host.setAsleep("s_alpha", true);
-    expect(isContractError(await host.sendUser("s_alpha", user("hi")).catch((e: unknown) => e), "bot_asleep")).toBe(true);
-  });
-
-  test("a late message goes after the output already produced, keeping its send time; records carry the lease epoch", async () => {
-    const { clock, host, botDriver, setEpoch } = setup();
-    await host.sendUser("s_alpha", user("first", clock.now()));
-    await flush();
-    botDriver.emit({ type: "assistant_message", text: "an answer" });
-    clock.advance(5000);
-    botDriver.end();
-    await flush();
-    setEpoch(4);
-    await host.sendUser("s_alpha", user("sent earlier", clock.now() - 10_000));
-    const log = host.history("s_alpha");
-    const late = log.at(-3)!;
-    expect(late).toMatchObject({ type: "input", input: { text: "sent earlier", sentAt: clock.now() - 10_000 }, epoch: 4 });
-    expect(log.findIndex((r) => r.type === "driver")).toBeLessThan(log.indexOf(late));
-    expect(log.map((r) => r.seq)).toEqual(log.map((_, i) => i));
-    expect(log[0]!.epoch).toBe(3);
-  });
-
-  test("history pages, subscribers hear records live, watchers hear views", async () => {
-    const { host } = setup();
-    const live: SessionRecord[] = [];
-    host.subscribe("s_alpha", (r) => live.push(r));
-    const views: string[] = [];
-    host.watch((v) => views.push(`${v.id}:${v.status}`));
-    await host.sendUser("s_alpha", user("hi"));
-    await flush();
-    expect(live.map((r) => r.type)).toEqual(["input", "turn_started", "status"]);
-    expect(host.history("s_alpha", { afterSeq: 0, limit: 2 }).map((r) => r.seq)).toEqual([1, 2]);
-    expect(views).toEqual(["s_alpha:prompting"]);
-    expect(inputs(host.history("s_alpha"))).toEqual([["user", "turn"]]);
-    expect(host.list({ kind: "bot" }).map((v) => v.id)).toEqual(["s_alpha"]);
-  });
+// Lane B's conformance suite (review S15): the contract's own cases, the same ones its fake passes. The durable host
+// also returns each input record's `seq` (`session.send`'s result); the harness leaves it out, as the contract does.
+runSessionHostConformance((opts): SessionHostHarness => {
+  const host = new DurableSessionHost({ home: tempHome(), ...opts });
+  return {
+    open: (spec, driver) => host.open(spec, driver),
+    list: (filter) => host.list(filter),
+    get: (id) => host.get(id),
+    sendUser: async (id, input) => ({ disposition: (await host.sendUser(id, input)).disposition }),
+    deliver: async (id, input) => ({ disposition: (await host.deliver(id, input)).disposition }),
+    interrupt: (id) => host.interrupt(id),
+    stop: (id, reason) => host.stop(id, reason),
+    history: (id, o) => host.history(id, o),
+    subscribe: (id, fn) => host.subscribe(id, fn),
+    watch: (fn) => host.watch(fn),
+    setAsleep: (id, asleep) => host.setAsleep(id, asleep),
+  };
 });
-
-// -------------------------------------------------------------------------------------------------
-// What only the durable host does
-// -------------------------------------------------------------------------------------------------
 
 function thrown(fn: () => unknown): unknown {
   try {
@@ -245,7 +57,6 @@ function thrown(fn: () => unknown): unknown {
   return undefined;
 }
 
-/** A driver whose interrupt says it stopped but never ends the turn. */
 function stuckDriver(): FakeSessionDriver {
   const d = new FakeSessionDriver();
   d.interrupt = async () => {
@@ -641,6 +452,50 @@ describe("DurableSessionHost when things go wrong", () => {
     expect(host.isAttached("b_alpha")).toBe(false);
     expect(warnings.join("\n")).toContain("didn't interrupt within");
     expect(warnings.join("\n")).toContain("didn't stop within");
+  });
+
+  test("a queued input whose record was lost doesn't take a later one with it: replay goes by the started input's seq", async () => {
+    const { home, clock, host } = durable();
+    const d1 = new FakeSessionDriver({ canFold: false });
+    host.open({ id: "a_1", kind: "agent", computer: "Studio" }, d1);
+    for (const t of ["A", "B", "C"]) await host.sendUser("a_1", user(t));
+    await flush();
+    d1.end({ text: "did A" });
+    await flush(); // B runs now, C waits
+    const started = host.history("a_1").filter((r) => r.type === "turn_started");
+    const bSeq = host.history("a_1").find((r) => r.type === "input" && r.input.from === "user" && r.input.text === "B")!.seq;
+    expect(started.at(-1)).toMatchObject({ inputSeq: bSeq });
+    // The daemon dies, and B's input line is damaged.
+    const path = sessionLogPath(home, undefined, "a_1");
+    const lines = readFileSync(path, "utf8").split("\n");
+    const at = lines.findIndex((l) => l.includes('"text":"B"'));
+    lines[at] = lines[at]!.replace('"text":"B"', '"text":"B\u0000"');
+    writeFileSync(path, lines.join("\n"));
+    const again = durable(home, clock);
+    const d2 = new FakeSessionDriver({ canFold: false });
+    again.host.open({ id: "a_1", kind: "agent", computer: "Studio" }, d2);
+    await flush();
+    expect(d2.turns.map((t) => t.input.from === "user" && t.input.text)).toEqual(["C"]);
+  });
+
+  test("an input too large for the log is refused to its sender; the longest message the protocol takes fits whole", async () => {
+    const { home, clock, host } = durable();
+    const d = open(host);
+    // A plugin's message over the cap: refused, nothing recorded, no turn.
+    const before = host.length("b_alpha");
+    await expect(host.deliver("b_alpha", { from: "plugin", pluginId: "weather", text: "x".repeat(MAX_RECORD_BYTES) })).rejects.toThrow("over the");
+    expect(host.length("b_alpha")).toBe(before);
+    // 1,000,000 control characters: 6 MB as JSON, the worst a user's message can be.
+    const text = "\u0001".repeat(1_000_000);
+    expect(await host.sendUser("b_alpha", { ...user("big"), text })).toMatchObject({ disposition: "turn" });
+    await flush();
+    expect(d.turns[0]?.input.from === "user" && d.turns[0].input.text.length).toBe(1_000_000);
+    d.end();
+    await flush();
+    await host.close();
+    const again = durable(home, clock);
+    const logged = again.host.history("b_alpha").find((r) => r.type === "input");
+    expect(logged?.type === "input" && logged.input.from === "user" && logged.input.text).toBe(text);
   });
 
   test("an ended session's log is read only when asked for", async () => {
