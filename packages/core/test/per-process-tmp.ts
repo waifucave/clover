@@ -40,6 +40,10 @@
 //
 // A NESTED test process (a test that runs `bun test`, or a daemon that loads this preload) reads the
 // ALREADY-narrowed `tmpdir()` as its real one, so its root lands inside the parent's and is swept with it.
+//
+// Every preload imports this module first, so it also carries the one-line warning a run on a Bun other than
+// `.bun-version`'s prints (./bun-pin-warning.ts).
+import "./bun-pin-warning";
 import { spawn } from "node:child_process";
 import { chmodSync, existsSync, lstatSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";

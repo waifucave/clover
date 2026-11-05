@@ -127,6 +127,7 @@ import { buildCoworkNative } from "./build-cowork-native";
 import { COWORK_NATIVE, COWORK_NATIVE_EMBED_RELATIVE, checkCoworkNativeBundle, checkCoworkNativeOmitted, checkSignedNative, coworkNativeReleasePlan, coworkRequirement, readCoworkBundleFacts } from "./cowork-native-lib";
 import { createHash } from "node:crypto";
 import { refuseHeldScript } from "./held-scripts";
+import { bunPinProblem } from "./bun-pin";
 
 // C0 review S6: until C7 (`held-scripts.ts`), before this script reads an argument or touches anything.
 refuseHeldScript("release");
@@ -260,8 +261,8 @@ const pre = preflight({
     // were built with 1.3.14: bun:ffi's executable-memory need and a stdin EPIPE differ between those two; the
     // pin is now 1.4.x, which has the stricter EPIPE behaviour and needs no unsigned executable memory).
     bunVersion: () => {
-      const pinned = readFileSync(join(ROOT, ".bun-version"), "utf8").trim();
-      return Bun.version === pinned ? null : `this bun is ${Bun.version} but .bun-version pins ${pinned} — release with the pinned Bun (CI tests that one)`;
+      const pin = bunPinProblem(ROOT);
+      return pin === null ? null : `${pin} — release with the pinned Bun (CI tests that one): scripts/pinned-bun run scripts/release.ts`;
     },
     // `bun test` strips types and runs, so a type error ships unless something compiles it: 0.121.0
     // and 0.122.0 went out with `clover mcp permissions` calling a name its branch never imported (a
