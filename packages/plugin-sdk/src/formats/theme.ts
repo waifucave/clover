@@ -99,9 +99,10 @@ export function cardTokensChanged(before: ThemeTokens, after: ThemeTokens): bool
  *  given lowest first (base theme, global theme, the bot's theme, the dressing plugins from the outermost part in,
  *  the user's overrides). An accent token whose winning value is `"system"` (the catalog's own, `follows`, counts)
  *  takes `systemAccent`, the OS accent as the engine last read it, or with none the value beneath it in the stack, the
- *  theme's accent; a filled button with a text label (`SYSTEM_LABEL_FILLS`) takes it darkened until white text reads
- *  on it (`fillForWhiteLabel`). An ink whose winning value is `"auto"` is then resolved against its accent
- *  (`resolveAutoInk`): a label ink falls back to `LABEL_INK`, a glyph ink to its theme's dark ink. */
+ *  theme's accent. A filled control (`SYSTEM_LABEL_FILLS`) takes its source darkened until white text reads on it
+ *  (`fillForWhiteLabel`): `color.accent.fill` from `color.accent` as resolved, `card.approve.background` from the OS.
+ *  An ink whose winning value is `"auto"` is then resolved against its accent (`resolveAutoInk`): a label ink falls
+ *  back to `LABEL_INK`, a glyph ink to its theme's dark ink, and black where that misses its floor too. */
 export function resolveTokens(appearance: Appearance, layers: readonly TokenLayer[], opts: { systemAccent?: string } = {}): Record<string, TokenValue> {
   const out: Record<string, TokenValue> = {};
   for (const t of TOKENS) out[t.name] = appearance === "dark" && t.dark !== undefined ? t.dark : t.default;
@@ -122,9 +123,12 @@ export function resolveTokens(appearance: Appearance, layers: readonly TokenLaye
     }
   }
   const live = opts.systemAccent !== undefined && isTokenValue("color", opts.systemAccent) ? opts.systemAccent : undefined;
-  for (const name of followsOs) {
-    if (live !== undefined) out[name] = live;
+  // The OS accent first, then the fills that darken another token as resolved (`color.accent.fill` from `color.accent`).
+  const ordered = [...followsOs].sort((a, b) => Number(SYSTEM_LABEL_FILLS[a]?.from !== undefined) - Number(SYSTEM_LABEL_FILLS[b]?.from !== undefined));
+  for (const name of ordered) {
     const fill = SYSTEM_LABEL_FILLS[name];
+    if (fill?.from !== undefined) out[name] = out[fill.from]!;
+    else if (live !== undefined) out[name] = live;
     const filled = fill === undefined ? undefined : fillForWhiteLabel(String(out[name]), String(out[fill.background]));
     if (filled !== undefined) out[name] = filled;
   }
