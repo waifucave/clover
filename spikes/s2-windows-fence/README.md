@@ -107,7 +107,17 @@ and the controls now resolve that profile by SID after the first launch, create 
 Startup folder as provisioning would, and deny the principal's, the real user's and the common
 Startup folders. A deny on the whole profile is **destructive**: Windows loads a temporary profile
 (`C:\Users\TEMP`) and changes the principal's ProfileList entry, so re-provision afterwards.
-Results: `final-startup-probe.txt`, `final-windows-candidate-v3.txt`, `review-controls-v6.txt`. `handle-probe.cs` deliberately
+Results: `final-startup-probe.txt`, `final-windows-candidate-v3.txt`, `review-controls-v6.txt`.
+
+Measure a credential-broker hop from the fence: requests over a named pipe to an endpoint in the
+real user's context, which replies with a public fixture string (no credential, store or key):
+
+```sh
+python3 spikes/s2-windows-fence/remote.py windows spikes/s2-windows-fence/broker-hop.ps1
+```
+
+A pipe whose access list names the sandbox user is reachable from the fence; the same endpoint
+without that entry admits its owner and refuses the fence. See `results/final-broker-hop.txt`. `handle-probe.cs` deliberately
 passes inheritable canary handles to the first broker hop, bypassing Node's own filtering, then
 tests the actual sandbox child. Only public fixture contents are used.
 
