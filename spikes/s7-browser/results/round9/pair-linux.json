@@ -1,0 +1,321 @@
+{
+  "meta": {
+    "state": "done",
+    "platform": "linux",
+    "arch": "x64",
+    "osRelease": "7.0.0-1017-azure",
+    "seconds": 35,
+    "names": {
+      "suffix": "3ef33d64",
+      "label": "com.waifucave.clover.s7.core.3ef33d64",
+      "coreUnit": "clover-s7-core-3ef33d64.service",
+      "appUnit": "clover-s7-app-3ef33d64.service",
+      "coreTask": "\\Clover S7\\core-3ef33d64",
+      "appTask": "\\Clover S7\\app-3ef33d64",
+      "socket": "/tmp/clover-s7-pair-LuZZf9/run/core.sock",
+      "lockFile": "/tmp/clover-s7-pair-LuZZf9/run/core.lock",
+      "pidFile": "/tmp/clover-s7-pair-LuZZf9/run/core.pid",
+      "bootsFile": "/tmp/clover-s7-pair-LuZZf9/run/boots.jsonl",
+      "appStartFile": "/tmp/clover-s7-pair-LuZZf9/run/app-start.json",
+      "appLog": "/tmp/clover-s7-pair-LuZZf9/run/app.jsonl",
+      "configFile": "/tmp/clover-s7-pair-LuZZf9/pair.json",
+      "logsDir": "/tmp/clover-s7-pair-LuZZf9/logs"
+    },
+    "windowsAppStart": "task",
+    "windowsSupervise": false
+  },
+  "steps": [
+    {
+      "step": "login start",
+      "install": [
+        {
+          "ok": true,
+          "how": "systemctl --user daemon-reload",
+          "code": 0,
+          "out": ""
+        },
+        {
+          "ok": true,
+          "how": "systemctl --user set-environment DISPLAY=:99",
+          "code": 0,
+          "out": ""
+        },
+        {
+          "ok": true,
+          "how": "systemctl --user enable --now clover-s7-core-3ef33d64.service",
+          "code": 0,
+          "out": "Created symlink /home/runner/.config/systemd/user/default.target.wants/clover-s7-core-3ef33d64.service → /home/runner/.config/systemd/user/clover-s7-core-3ef33d64.service."
+        }
+      ],
+      "daemonUpMs": 113,
+      "daemonUp": true,
+      "appConnectedMs": 2511,
+      "appStartedBy": "daemon",
+      "appStart": {
+        "at": 1793853312845,
+        "safeMode": false,
+        "reason": "daemon start",
+        "ok": true,
+        "how": "systemctl --user start clover-s7-app-3ef33d64.service",
+        "out": ""
+      },
+      "daemonParent": 971,
+      "registeredForLogin": {
+        "ok": true,
+        "how": "systemctl --user is-enabled clover-s7-core-3ef33d64.service",
+        "code": 0,
+        "out": "enabled"
+      }
+    },
+    {
+      "step": "second daemon on the same home",
+      "exitCode": 0,
+      "ms": 25,
+      "said": "2026-11-05T04:35:13.179Z [core 2336] another daemon holds this home (flock: held by another process); exiting",
+      "firstStillServing": true
+    },
+    {
+      "step": "app crash",
+      "killed": 2285,
+      "kill": {
+        "ok": true,
+        "how": "kill -9 2285",
+        "code": 0,
+        "out": ""
+      },
+      "restartedMs": 1220,
+      "newPid": 2350,
+      "startedBy": "daemon",
+      "safeMode": false,
+      "how": "systemctl --user start clover-s7-app-3ef33d64.service",
+      "eventsSinceKill": [
+        "start",
+        "tray",
+        "connected"
+      ]
+    },
+    {
+      "step": "app crash loop → safe mode",
+      "rounds": [
+        {
+          "killed": 2350,
+          "restartedMs": 2225,
+          "safeMode": false,
+          "crashesInDaemon": 2
+        },
+        {
+          "killed": 2411,
+          "restartedMs": 4144,
+          "safeMode": true,
+          "crashesInDaemon": 3
+        }
+      ],
+      "thirdRestartInSafeMode": true
+    },
+    {
+      "step": "daemon crash, restarted by the OS alone",
+      "killed": 2274,
+      "kill": {
+        "ok": true,
+        "how": "kill -9 2274",
+        "code": 0,
+        "out": ""
+      },
+      "daemonBackMs": 1208,
+      "newDaemonPid": 2534,
+      "appSurvived": true,
+      "appPidAfter": 2469,
+      "samePid": true,
+      "appStartedTheDaemon": false,
+      "appEvents": [
+        "5ms daemon-lost",
+        "1511ms connected",
+        "1511ms reconnected"
+      ],
+      "unit": {
+        "ok": true,
+        "how": "systemctl --user show clover-s7-core-3ef33d64.service -p ActiveState,SubState,MainPID,NRestarts,Result,ExecMainStatus",
+        "code": 0,
+        "out": "MainPID=2534\nResult=success\nNRestarts=1\nExecMainStatus=0\nActiveState=active\nSubState=running"
+      }
+    },
+    {
+      "step": "daemon crash, the app helps after 3 s",
+      "killed": 2534,
+      "kill": {
+        "ok": true,
+        "how": "kill -9 2534",
+        "code": 0,
+        "out": ""
+      },
+      "daemonBackMs": 1205,
+      "newDaemonPid": 2544,
+      "appSurvived": true,
+      "appPidAfter": 2469,
+      "samePid": true,
+      "appStartedTheDaemon": false,
+      "appEvents": [
+        "1ms daemon-lost",
+        "1506ms connected",
+        "1506ms reconnected"
+      ],
+      "unit": {
+        "ok": true,
+        "how": "systemctl --user show clover-s7-core-3ef33d64.service -p ActiveState,SubState,MainPID,NRestarts,Result,ExecMainStatus",
+        "code": 0,
+        "out": "MainPID=2544\nResult=success\nNRestarts=2\nExecMainStatus=0\nActiveState=active\nSubState=running"
+      }
+    },
+    {
+      "step": "tray Quit stops both, and they stay down",
+      "forwarded": {
+        "forwarded": true
+      },
+      "bothDownMs": 402,
+      "restartedWithin12s": false,
+      "appEvents": [
+        "quit",
+        "quit-acked"
+      ],
+      "unit": {
+        "ok": true,
+        "how": "systemctl --user show clover-s7-core-3ef33d64.service -p ActiveState,SubState,MainPID,NRestarts,Result,ExecMainStatus",
+        "code": 0,
+        "out": "MainPID=0\nResult=success\nNRestarts=2\nExecMainStatus=0\nActiveState=inactive\nSubState=dead"
+      }
+    },
+    {
+      "step": "a user starts the app → it starts the daemon",
+      "start": {
+        "ok": true,
+        "how": "spawn detached (as from a launcher)",
+        "code": 0,
+        "out": "2561"
+      },
+      "bothUpMs": 512,
+      "startedBy": "user",
+      "appStartedTheDaemon": [
+        {
+          "ok": true,
+          "how": "systemctl --user start clover-s7-core-3ef33d64.service",
+          "out": ""
+        }
+      ],
+      "appEvents": [
+        "start",
+        "tray",
+        "start-daemon",
+        "connected"
+      ]
+    },
+    {
+      "step": "the daemon side's Quit stops both",
+      "bothDownMs": 401,
+      "restartedWithin8s": false
+    },
+    {
+      "step": "uninstall",
+      "results": [
+        {
+          "ok": true,
+          "how": "systemctl --user disable --now clover-s7-core-3ef33d64.service",
+          "code": 0,
+          "out": "Removed \"/home/runner/.config/systemd/user/default.target.wants/clover-s7-core-3ef33d64.service\"."
+        },
+        {
+          "ok": true,
+          "how": "systemctl --user stop clover-s7-app-3ef33d64.service",
+          "code": 0,
+          "out": ""
+        },
+        {
+          "ok": true,
+          "how": "systemctl --user daemon-reload",
+          "code": 0,
+          "out": ""
+        },
+        {
+          "ok": true,
+          "how": "systemctl --user reset-failed",
+          "code": 0,
+          "out": ""
+        }
+      ]
+    }
+  ],
+  "assertions": [
+    {
+      "name": "the login item starts the daemon, and the daemon the app",
+      "ok": true,
+      "detail": "{\"daemonUpMs\":113,\"appConnectedMs\":2511}"
+    },
+    {
+      "name": "a second daemon is refused and exits 0",
+      "ok": true,
+      "detail": "{\"exitCode\":0,\"firstStillServing\":true}"
+    },
+    {
+      "name": "a crashed app is back within 6 s",
+      "ok": true,
+      "detail": "{\"restartedMs\":1220}"
+    },
+    {
+      "name": "the start after the third crash in two minutes is in safe mode",
+      "ok": true,
+      "detail": "{\"rounds\":[{\"killed\":2350,\"restartedMs\":2225,\"safeMode\":false,\"crashesInDaemon\":2},{\"killed\":2411,\"restartedMs\":4144,\"safeMode\":true,\"crashesInDaemon\":3}]}"
+    },
+    {
+      "name": "a crashed daemon is back within 5 s without the app's help",
+      "ok": true,
+      "detail": "{\"daemonBackMs\":1208}"
+    },
+    {
+      "name": "a crashed daemon is back within 10 s, and the app lives on",
+      "ok": true,
+      "detail": "{\"daemonBackMs\":1205,\"samePid\":true}"
+    },
+    {
+      "name": "the tray's Quit stops both, and nothing restarts them",
+      "ok": true,
+      "detail": "{\"bothDownMs\":402,\"restarted\":false}"
+    },
+    {
+      "name": "a user's start of the app brings up both within 10 s",
+      "ok": true,
+      "detail": "{\"bothUpMs\":512}"
+    },
+    {
+      "name": "the daemon side's Quit stops both, and nothing restarts them",
+      "ok": true,
+      "detail": "{\"bothDownMs\":401,\"restarted\":false}"
+    }
+  ],
+  "daemonLog": [
+    "2026-11-05T04:35:10.831Z [core 2274] up (lock: flock, ppid 971)",
+    "2026-11-05T04:35:10.834Z [core 2274] listening on /tmp/clover-s7-pair-LuZZf9/run/core.sock",
+    "2026-11-05T04:35:12.845Z [core 2274] started the app (daemon start): systemctl --user start clover-s7-app-3ef33d64.service → ok",
+    "2026-11-05T04:35:13.086Z [core 2274] app 2285 connected (started by daemon)",
+    "2026-11-05T04:35:13.179Z [core 2336] another daemon holds this home (flock: held by another process); exiting",
+    "2026-11-05T04:35:13.188Z [core 2274] app 2285 went away without saying so: restart in 1000 ms",
+    "2026-11-05T04:35:14.199Z [core 2274] started the app (crash): systemctl --user start clover-s7-app-3ef33d64.service → ok",
+    "2026-11-05T04:35:14.321Z [core 2274] app 2350 connected (started by daemon)",
+    "2026-11-05T04:35:14.409Z [core 2274] app 2350 went away without saying so: restart in 2000 ms",
+    "2026-11-05T04:35:16.419Z [core 2274] started the app (crash): systemctl --user start clover-s7-app-3ef33d64.service → ok",
+    "2026-11-05T04:35:16.543Z [core 2274] app 2411 connected (started by daemon)",
+    "2026-11-05T04:35:16.635Z [core 2274] app 2411 went away without saying so: restart in 4000 ms in safe mode",
+    "2026-11-05T04:35:20.649Z [core 2274] started the app (crash, safe mode): systemctl --user start clover-s7-app-3ef33d64.service → ok",
+    "2026-11-05T04:35:20.763Z [core 2274] app 2469 connected (started by daemon, safe mode)",
+    "2026-11-05T04:35:21.853Z [core 2534] up (lock: flock, ppid 971)",
+    "2026-11-05T04:35:21.855Z [core 2534] listening on /tmp/clover-s7-pair-LuZZf9/run/core.sock",
+    "2026-11-05T04:35:22.286Z [core 2534] app 2469 connected (started by daemon, safe mode)",
+    "2026-11-05T04:35:23.353Z [core 2544] up (lock: flock, ppid 971)",
+    "2026-11-05T04:35:23.356Z [core 2544] listening on /tmp/clover-s7-pair-LuZZf9/run/core.sock",
+    "2026-11-05T04:35:23.799Z [core 2544] app 2469 connected (started by daemon, safe mode)",
+    "2026-11-05T04:35:23.810Z [core 2544] exiting 0: the app's Quit (tray)",
+    "2026-11-05T04:35:36.410Z [core 2600] up (lock: flock, ppid 971)",
+    "2026-11-05T04:35:36.413Z [core 2600] listening on /tmp/clover-s7-pair-LuZZf9/run/core.sock",
+    "2026-11-05T04:35:36.691Z [core 2600] app 2561 connected (started by user)",
+    "2026-11-05T04:35:36.756Z [core 2600] exiting 0: the daemon side's Quit",
+    ""
+  ]
+}

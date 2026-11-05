@@ -80,7 +80,10 @@ results/         every round's JSON from CI, with summary.md (bun src/summarize.
                  X11 a click at the 1x1 host's pixel landed on the host, and at a scale factor of 2 on Windows a
                  host tab without the CDP override laid out at 0x0 and drew nothing
   round9/        the X11 host with an empty window shape (setShape([])), the scale-factor-2 runs asserting the
-                 design (the override), captures scaled to 1280x800, and tab capture's own error on Wayland
+                 design (the override), captures scaled to 1280x800, and tab capture's own error on Wayland. The
+                 shaped host drew and took no click, but the click landed on the window below's corner, a resize
+                 handle; on Windows at 2x the 4x31 host's content was 0 wide, and its tabs drew nothing
+  round10/       the click well inside the window below (not resizable), and a 32x32 host on Windows
 ```
 
 The report quotes round two for the Electron tables (rounds three, five and eight re-ran them and agreed), and later

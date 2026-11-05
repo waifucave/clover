@@ -752,6 +752,7 @@ async function shapedHostCheck(host: TabHost, below: InstanceType<typeof import(
   let control: Tab | undefined;
   try {
     t = await host.create({ place: "tinyWindow", partition: "persist:bot-shaped", throttling: false, path: "/pages/probe.html?scenario=anim&sse=0" });
+    t.win!.setPosition(x, y);
     t.win!.setShape([]);
     t.win!.moveTop();
     await sleep(1500);
@@ -799,7 +800,9 @@ export async function hostCheck(host: TabHost, server: SpikeServer, log: Log): P
   let below: InstanceType<typeof BrowserWindow> | undefined;
   let tab: Tab | undefined;
   try {
-    below = new BrowserWindow({ x: 0, y: 0, width: 420, height: 320, show: false, frame: false, title: "S7 below", webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false } });
+    // not resizable: on Linux a frameless window's edges are resize handles, which take a click before the page does
+    // (round nine's click at the window's corner pixel reached neither page)
+    below = new BrowserWindow({ x: 0, y: 0, width: 420, height: 320, show: false, frame: false, resizable: false, title: "S7 below", webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false } });
     await below.loadURL(`${server.origin}/pages/probe.html?scenario=static&sse=0&tab=below`);
     below.show();
     below.focus();
@@ -807,10 +810,13 @@ export async function hostCheck(host: TabHost, server: SpikeServer, log: Log): P
     // the host is shown after the window below, so it stacks above it
     tab = await host.create({ place: "tinyWindow", partition: "persist:bot-hostcheck", throttling: false, path: "/pages/probe.html?scenario=static&sse=0" });
     const hw = tab.win!;
-    const hb = hw.getBounds();
-    below.setBounds({ x: hb.x, y: hb.y, width: 420, height: 320 });
+    const h0 = hw.getBounds();
+    below.setBounds({ x: h0.x, y: h0.y, width: 420, height: 320 });
+    // round ten: the host 100 px inside the window below, so the click lands well inside that window's page
+    hw.setPosition(h0.x + 100, h0.y + 100);
     hw.moveTop();
     await sleep(800);
+    const hb = hw.getBounds();
     result.hostBounds = `${hb.x},${hb.y} ${hb.width}x${hb.height}`;
     const bb = below.getBounds();
     result.belowBounds = `${bb.x},${bb.y} ${bb.width}x${bb.height}`;

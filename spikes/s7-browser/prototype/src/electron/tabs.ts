@@ -8,7 +8,7 @@
 //                    where an app can neither hide nor place a shown window)
 //   tinyWindow       a view of 1280x800 in a shown 1x1 window, click-through, not focusable, not in the taskbar, and
 //                    at opacity 0 on macOS and Windows (round four); a tool window on Windows (out of Alt-Tab) and
-//                    out of Mission Control on macOS (round eight)
+//                    out of Mission Control on macOS (round eight); 32x32 on Windows (round ten)
 //   sharedTinyWindow the same host, one window for many tabs (round eight: does every view in it draw?)
 //   shown            a view in the visible browser view's window, laid out at that view's size
 //   osr              an offscreen-rendering BrowserWindow (frames arrive as 'paint' events; can't be shown as a view)
@@ -107,9 +107,13 @@ function invisibleWindow(title: string): BaseWindow {
   return w;
 }
 
+// Round ten: on Windows the host is 32x32 at opacity 0. A 1x1 request became a 4x31 tool window there, and at a
+// scale factor of 2 its content area was 0 wide: its tabs laid out at 0x0 or, held at 1280x800, drew no frames.
+const TINY = process.platform === "win32" ? 32 : 1;
+
 function tinyWindow(title: string): BaseWindow {
   const w = new BaseWindow({
-    show: false, x: 0, y: 0, width: 1, height: 1, useContentSize: true, frame: false, focusable: false,
+    show: false, x: 0, y: 0, width: TINY, height: TINY, useContentSize: true, frame: false, focusable: false,
     skipTaskbar: true, hasShadow: false, resizable: false, minimizable: false, maximizable: false, title,
     ...(process.platform === "win32" ? { type: "toolbar" } : {}),
   });
