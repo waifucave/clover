@@ -6,7 +6,9 @@ name: Spike S6 · folder-tree mounts
 # A push whose head commit message says [s6-skip-speed] skips the hour-long Linux and Windows
 # speed suites (for pushes that change nothing they measure); [s6-skip-<suite>] or
 # [s6-skip-<os>-<suite>] skips one suite, [s6-skip-macos] and [s6-skip-macfuse] the macOS jobs,
-# and [s6-skip-nfs-speed] or [s6-skip-nfs-plain] all or the plain half of the NFS speed step.
+# and [s6-skip-nfs-speed] or [s6-skip-nfs-plain] all or the plain half of the NFS speed step;
+# [s6-nfs-quick] runs a shorter NFS speed matrix, and [s6-win-tsc-probe] makes the Windows
+# speed-tsc suite run ci/windows-tsc.ps1 instead of its speed matrix.
 on:
   push:
     branches: [lane/j-m0]
@@ -105,6 +107,8 @@ jobs:
 
       - name: Run ${{ matrix.suite }}
         if: env.S6_RUN == 'true'
+        env:
+          S6_WIN_TSC_PROBE: ${{ contains(github.event.head_commit.message, '[s6-win-tsc-probe]') }}
         run: |
           exe=""; tree="$RUNNER_TEMP/s6/tree"
           if [ "$RUNNER_OS" = Windows ]; then exe=.exe; tree="T:"; fi
@@ -124,9 +128,14 @@ jobs:
               bun "$S6/bench/speed.ts" "${common[@]}" --policies cached,plain --rtts 0,20,80 --timeout 600 \
                 --workloads git-status --out "$res/${{ matrix.os }}-speed-git.json" ;;
             speed-tsc)
-              # tsc on its own, after WinFsp's names kept their case (the earlier runs upper-cased them)
-              bun "$S6/bench/speed.ts" "${common[@]}" --policies cached,plain --rtts 0,20,80 --timeout 600 --local 0 \
-                --workloads tsc-protocol,tsc-core --out "$res/${{ matrix.os }}-speed-tsc.json" ;;
+              if [ "$S6_WIN_TSC_PROBE" = true ] && [ "$RUNNER_OS" = Windows ]; then
+                # why tsc in the tree doesn't see the types it finds on the holder's disk
+                pwsh -File "$S6/ci/windows-tsc.ps1" -Helper "$helper" -Export "$RUNNER_TEMP/s6/export" -Serve "$S6/server/serve.ts"
+              else
+                # tsc on its own, after WinFsp's names kept their case (the earlier runs upper-cased them)
+                bun "$S6/bench/speed.ts" "${common[@]}" --policies cached,plain --rtts 0,20,80 --timeout 600 --local 0 \
+                  --workloads tsc-protocol,tsc-core --out "$res/${{ matrix.os }}-speed-tsc.json"
+              fi ;;
             git-owner)
               # git across the mount when the holder's user has another uid (see speed.ts --owner)
               bun "$S6/bench/speed.ts" "${common[@]}" --policies cached --rtts 0,20,80 --local 0 --timeout 900 \
@@ -203,11 +212,22 @@ jobs:
         env:
           S6_SKIP_NFS_PLAIN: ${{ contains(github.event.head_commit.message, '[s6-skip-nfs-plain]') }}
           S6_SKIP_NFS_SPEED: ${{ contains(github.event.head_commit.message, '[s6-skip-nfs-speed]') }}
+          S6_NFS_QUICK: ${{ contains(github.event.head_commit.message, '[s6-nfs-quick]') }}
         run: |
           [ "$S6_SKIP_NFS_SPEED" = true ] && { echo "skipped by the commit message"; exit 0; }
           res="$RUNNER_TEMP/s6/results"
           common=(--root "$RUNNER_TEMP/s6/export" --tree "$RUNNER_TEMP/s6/nfs-tree" --helper none \
             --nfs-helper "$RUNNER_TEMP/s6/clover-nfs" --copy-src "$GITHUB_WORKSPACE/packages/protocol" --rtts 0,20,80 --timeout 600)
+          if [ "$S6_NFS_QUICK" = true ]; then
+            # a shorter matrix: the workloads that tell, the plain run only where it was slowest
+            bun spikes/s6-mounts/bench/speed.ts "${common[@]}" --policies cached --nfs-ac noac --rtts 0,20 \
+              --workloads git-status,tsc-core,read-256M,copy-in --out "$res/macos-speed-nfs-noac.json"
+            bun spikes/s6-mounts/bench/speed.ts "${common[@]}" --policies cached --nfs-ac noac --rtts 80 --local 0 \
+              --workloads git-status,tsc-protocol,read-256M --out "$res/macos-speed-nfs-noac-80.json"
+            bun spikes/s6-mounts/bench/speed.ts "${common[@]}" --policies plain --rtts 20 --local 0 \
+              --workloads git-status,read-256M --out "$res/macos-speed-nfs.json"
+            exit 0
+          fi
           bun spikes/s6-mounts/bench/speed.ts "${common[@]}" --policies cached --nfs-ac noac --out "$res/macos-speed-nfs-noac.json"
           if [ "$S6_SKIP_NFS_PLAIN" != true ]; then
             bun spikes/s6-mounts/bench/speed.ts "${common[@]}" --policies plain --local 0 --out "$res/macos-speed-nfs.json"

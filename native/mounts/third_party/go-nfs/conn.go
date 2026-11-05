@@ -1,5 +1,6 @@
 // Modified for Clover's spike S6 (native/mounts/third_party/README.md): a computer that is offline
-// answers NFS3ERR_IO, whatever status the handler chose (offlineAsIO).
+// answers NFS3ERR_IO, whatever status the handler chose (offlineAsIO); and the requests of one
+// connection are handled concurrently (serve, readRequestHeader).
 package nfs
 
 import (
@@ -51,6 +52,12 @@ func (c *conn) serve(ctx context.Context) {
 	c.writeSerializer = make(chan []byte, 1)
 	go c.serializeWrites(connCtx)
 
+	// Clover: a kernel client sends all of a mount's calls over one connection. Upstream handled
+	// them one after another, so a read waiting on the far computer held up every lookup behind
+	// it. Each request now runs on its own goroutine, at most maxInflight at a time; replies go
+	// out through writeSerializer as before, each whole, in the order they finish.
+	const maxInflight = 64
+	sem := make(chan struct{}, maxInflight)
 	bio := bufio.NewReader(c.Conn)
 	for {
 		w, err := c.readRequestHeader(connCtx, bio)
@@ -62,20 +69,27 @@ func (c *conn) serve(ctx context.Context) {
 			}
 			return
 		}
-		Log.Tracef("request: %v", w.req)
-		err = c.handle(connCtx, w)
-		respErr := w.finish(connCtx)
-		if err != nil {
-			Log.Errorf("error handling req: %v", err)
-			// failure to handle at a level needing to close the connection.
-			c.Close()
+		select {
+		case sem <- struct{}{}:
+		case <-connCtx.Done():
 			return
 		}
-		if respErr != nil {
-			Log.Errorf("error sending response: %v", respErr)
-			c.Close()
-			return
-		}
+		go func(w *response) {
+			defer func() { <-sem }()
+			Log.Tracef("request: %v", w.req)
+			err := c.handle(connCtx, w)
+			respErr := w.finish(connCtx)
+			if err != nil {
+				Log.Errorf("error handling req: %v", err)
+				// failure to handle at a level needing to close the connection.
+				c.Close()
+				return
+			}
+			if respErr != nil {
+				Log.Errorf("error sending response: %v", respErr)
+				c.Close()
+			}
+		}(w)
 	}
 }
 
@@ -298,7 +312,13 @@ func (c *conn) readRequestHeader(ctx context.Context, reader *bufio.Reader) (w *
 		return nil, ErrInputInvalid
 	}
 
-	r := io.LimitedReader{R: reader, N: int64(reqLen)}
+	// Clover: read the whole record first, so the next request can be read while this one is
+	// handled (serve).
+	body := make([]byte, reqLen)
+	if _, err := io.ReadFull(reader, body); err != nil {
+		return nil, err
+	}
+	r := io.LimitedReader{R: bytes.NewReader(body), N: int64(reqLen)}
 
 	xid, err := xdr.ReadUint32(&r)
 	if err != nil {
