@@ -1,5 +1,6 @@
 import { COWORK_METHODS, CoworkSessionCreate, CoworkSessionRef } from "./cowork";
 import { z } from "zod";
+import { utf16 } from "./strings";
 // `SessionActivity` is defined in ./events (not here, where its first consumer `SessionListResult`
 // lives): the `session_activity` EVENT variant needs the same enum, and events.ts cannot import
 // from this file — methods.ts already imports from events.ts, so the reverse edge would be a module
@@ -40,11 +41,11 @@ export const HelloParams = z.object({
   pluginId: z.string().min(1).optional(),
   /** What this CLIENT can do that the daemon should know (the mirror of `HelloResult.features`): e.g.
    *  `CLIENT_CAPABILITY_ISLAND`. Unknown names are ignored; an older daemon strips the key. */
-  capabilities: z.array(z.string().min(1).max(CLIENT_CAPABILITY_MAX_LENGTH)).max(CLIENT_CAPABILITIES_MAX).optional(),
+  capabilities: z.array(utf16(CLIENT_CAPABILITY_MAX_LENGTH, 1)).max(CLIENT_CAPABILITIES_MAX).optional(),
   /** The controlling terminal of a terminal client (the CLI/TUI), as its device path (`/dev/ttys004`) — so a
    *  local surface can tell whether that exact terminal window or tab is in front (`island.pending`'s
    *  `hosts`). Absent for a client with no terminal. Never used for anything but that. */
-  tty: z.string().max(CLIENT_TTY_MAX_LENGTH).regex(/^\/dev\/[A-Za-z0-9._-]+$/).optional(),
+  tty: utf16(CLIENT_TTY_MAX_LENGTH).regex(/^\/dev\/[A-Za-z0-9._-]+$/).optional(),
 });
 export const HelloResult = z.object({
   ok: z.literal(true),
@@ -123,7 +124,7 @@ export function canonicalWireModelTag(tag: string): string {
  *  is the daemon's check (core's `isModelTag`/`ModelTagSchemaCore`), not this package's. WS-21: every
  *  field built on it (`session.create`/`setModel`, the model-role and advisor setters, `sync.push`
  *  meta, …) canonicalizes a renamed tag at parse (`canonicalWireModelTag`). */
-export const ModelTagSchema = z.string().min(3).max(SESSION_MODEL_MAX_CHARS).regex(/^[a-z0-9][a-z0-9.-]*\/\S+$/, "model must be a provider-qualified tag '<providerId>/<modelId>'")
+export const ModelTagSchema = utf16(SESSION_MODEL_MAX_CHARS, 3).regex(/^[a-z0-9][a-z0-9.-]*\/\S+$/, "model must be a provider-qualified tag '<providerId>/<modelId>'")
   .transform((tag) => canonicalWireModelTag(tag));
 
 /** provider-correctness T4: the same unbounded-field hazard `SESSION_MODEL_MAX_CHARS` documents,
@@ -198,7 +199,7 @@ export const SessionCreateParams = z.object({
   // immediately after create resolves at the GLOBAL effort, silently. Index-only metadata like
   // `model` — it does not ride `session_created` and resets to absent on a full index rebuild.
   // Bounded — see SESSION_EFFORT_MAX_CHARS.
-  effort: z.string().min(1).max(SESSION_EFFORT_MAX_CHARS).optional(),
+  effort: utf16(SESSION_EFFORT_MAX_CHARS, 1).optional(),
   // Cowork session door (D1 spine): the conversation's workspace binding — present exactly when `mode` is "cowork".
   // NOT a schema refinement on purpose: while no session door exists the daemon answers a `mode: "cowork"` request
   // with its typed `unsupported_topology` refusal whether or not a binding is present (every client today sends
@@ -534,7 +535,7 @@ export const ISLAND_CHANGED_NOTIFICATION = "island.changed";
 /** The island client says it SHOWS these cards (their `callId` / `elicitationId`) — sent after each `island.pending`
  *  it applies. The desktop-switch prompt waits ~2 s for it before asking the Computer Use helper as well (a Clover.app
  *  that is connected but hung shows nothing). HARNESS role only. */
-export const IslandShownParams = z.object({ ids: z.array(z.string().min(1).max(256)).max(256) });
+export const IslandShownParams = z.object({ ids: z.array(utf16(256, 1)).max(256) });
 export const IslandShownResult = z.object({ ok: z.literal(true) });
 
 /** The Clover island's ACTIVITY (phase 2, `docs/claude/island.md`): what the Mac's island shows besides the cards
@@ -558,9 +559,9 @@ export const IslandComputerUseItemSchema = z.object({
   /** A script runs right now (false between two scripts of the same turn). */
   running: z.boolean(),
   /** The latest script's `title`, when it sent one. */
-  title: z.string().max(80).optional(),
+  title: utf16(80).optional(),
   /** The apps and sites the latest script opens, as names. */
-  apps: z.array(z.string().max(40)).max(3),
+  apps: z.array(utf16(40)).max(3),
   session: IslandActivitySessionFacts,
   hosts: z.array(IslandHostSchema),
 });
@@ -569,7 +570,7 @@ export const IslandResultItemSchema = z.object({
   id: z.string().min(1),
   sessionId: z.string().min(1),
   /** The turn's last assistant text, on one line, cut short. */
-  summary: z.string().max(240),
+  summary: utf16(240),
   /** Epoch ms of the turn's end. */
   at: z.number().int().nonnegative(),
   session: IslandActivitySessionFacts,
@@ -652,11 +653,11 @@ export const UsageSeriesParams = z.object({
   sources: z.array(UsageSourceSchema).max(4).optional(),
 });
 export const UsageSubscriptionInput = z.object({
-  id: z.string().min(1).max(64).optional(),
-  name: z.string().trim().min(1).max(80),
-  provider: z.string().trim().min(1).max(40),
+  id: utf16(64, 1).optional(),
+  name: z.string().trim().pipe(utf16(80, 1)),
+  provider: z.string().trim().pipe(utf16(40, 1)),
   price: z.number().finite().min(0).max(100_000),
-  currency: z.string().trim().min(3).max(3).transform((c) => c.toUpperCase()),
+  currency: z.string().trim().pipe(utf16(3, 3)).transform((c) => c.toUpperCase()),
   cadence: z.enum(["monthly", "yearly"]),
   renewalDay: z.number().int().min(1).max(31),
   renewalMonth: z.number().int().min(1).max(12).optional(),
@@ -667,7 +668,7 @@ export const UsageSubscriptionsSetParams = z.object({ subscription: UsageSubscri
 export const UsageSetTrackingParams = z.object({
   codex: z.boolean().optional(), claudeCode: z.boolean().optional(), antigravity: z.boolean().optional(), opencode: z.boolean().optional(),
 });
-export const UsageSubscriptionsRemoveParams = z.object({ id: z.string().min(1).max(64) });
+export const UsageSubscriptionsRemoveParams = z.object({ id: utf16(64, 1) });
 /** The user's one-shot plan alarms: a plan, one of its windows by its STABLE key (the plan reading's `windowKey` — its
  *  kind and scope), a whole-percent threshold. A fired alarm is deleted. `set` answers the alarm (one already set for the
  *  same window and threshold is answered instead) and the whole list; `list` and `remove` the list. */
@@ -675,13 +676,13 @@ export const UsageAlarmProviderSchema = z.enum(["codex", "claude-code", "antigra
 export const UsageAlarmsListParams = z.object({});
 export const UsageAlarmsSetParams = z.object({
   provider: UsageAlarmProviderSchema,
-  windowKey: z.string().trim().min(1).max(120),
+  windowKey: z.string().trim().pipe(utf16(120, 1)),
   thresholdPercent: z.number().int().min(1).max(100),
 });
-export const UsageAlarmsRemoveParams = z.object({ id: z.string().min(1).max(64) });
+export const UsageAlarmsRemoveParams = z.object({ id: utf16(64, 1) });
 /** A fired alarm's notice was acknowledged — dismissed, opened, or shown its full time: the daemon forgets it (until
  *  then `island.activity` lists it, across restarts). */
-export const UsageAlarmsAckParams = z.object({ id: z.string().min(1).max(64) });
+export const UsageAlarmsAckParams = z.object({ id: utf16(64, 1) });
 export const UsageAlarmSchema = z.object({
   id: z.string(),
   provider: UsageAlarmProviderSchema,
@@ -794,41 +795,41 @@ export const ComputerUseStatusResult = z.object({
  *    ceiling on held tabs. */
 export const BROWSER_LINK_FEATURES = ["headless", "watchOnly"] as const;
 export const BrowserLinkAttachParams = z.object({
-  protocol: z.number().int(), appVersion: z.string().max(64), pid: z.number().int(),
-  features: z.array(z.string().min(1).max(64)).max(16).optional(),
+  protocol: z.number().int(), appVersion: utf16(64), pid: z.number().int(),
+  features: z.array(utf16(64, 1)).max(16).optional(),
 });
 export const BrowserLinkAttachResult = z.object({ linkId: z.string(), protocol: z.number().int(), features: z.array(z.string()).optional() });
 export const BrowserLinkResultParams = z.union([
   z.object({ linkId: z.string().min(1), cmdId: z.string().min(1), ok: z.literal(true), result: z.unknown() }),
   z.object({
     linkId: z.string().min(1), cmdId: z.string().min(1), ok: z.literal(false),
-    error: z.object({ code: z.string().max(64), message: z.string().max(4_096), data: z.record(z.string(), z.unknown()).optional() }),
+    error: z.object({ code: utf16(64), message: utf16(4_096), data: z.record(z.string(), z.unknown()).optional() }),
   }),
 ]);
 export const BROWSER_LINK_EVENTS_MAX = 256;
 export const BrowserLinkEventsParams = z.object({
   linkId: z.string().min(1),
   events: z.array(z.object({
-    tabId: z.string().min(1).max(256), method: z.string().min(1).max(128), params: z.record(z.string(), z.unknown()),
-    cdpSessionId: z.string().min(1).max(256).optional(),
+    tabId: utf16(256, 1), method: utf16(128, 1), params: z.record(z.string(), z.unknown()),
+    cdpSessionId: utf16(256, 1).optional(),
   })).max(BROWSER_LINK_EVENTS_MAX),
 });
-export const BrowserLinkTabGoneParams = z.object({ linkId: z.string().min(1), tabId: z.string().min(1).max(256), reason: z.enum(["closed", "crashed", "stopped"]) });
+export const BrowserLinkTabGoneParams = z.object({ linkId: z.string().min(1), tabId: utf16(256, 1), reason: z.enum(["closed", "crashed", "stopped"]) });
 /** Protocol 2 (ComputerV2 Phase 3): one download a held tab's own handler reported — saved for an armed tab (into the
  *  daemon's staging folder) or refused for an unarmed one (`TransportDownload`). */
 export const BrowserLinkDownloadParams = z.object({
   linkId: z.string().min(1),
-  tabId: z.string().min(1).max(256),
+  tabId: utf16(256, 1),
   download: z.object({
-    id: z.string().min(1).max(128),
+    id: utf16(128, 1),
     state: z.enum(["started", "progress", "done", "failed", "refused"]),
-    name: z.string().max(1_024),
-    url: z.string().max(8_192).optional(),
-    path: z.string().max(4_096).optional(),
+    name: utf16(1_024),
+    url: utf16(8_192).optional(),
+    path: utf16(4_096).optional(),
     bytes: z.number().int().min(0),
     totalBytes: z.number().int().min(0).optional(),
-    mime: z.string().max(256).optional(),
-    error: z.string().max(1_024).optional(),
+    mime: utf16(256).optional(),
+    error: utf16(1_024).optional(),
   }),
 });
 export const BrowserLinkAckResult = z.object({});
@@ -841,8 +842,8 @@ export const BrowserLinkAckResult = z.object({});
 export const BrowserLinkHeadlessAction = z.enum(["list", "watch", "takeOver", "handBack", "done", "stopWaiting", "close"]);
 export const BrowserLinkHeadlessParams = z.object({
   linkId: z.string().min(1),
-  sessionId: z.string().min(1).max(128),
-  tabId: z.string().min(1).max(256).optional(),
+  sessionId: utf16(128, 1),
+  tabId: utf16(256, 1).optional(),
   action: BrowserLinkHeadlessAction,
 });
 export const BrowserLinkHeadlessTab = z.object({ tabId: z.string(), url: z.string(), title: z.string(), presented: z.boolean(), control: z.boolean() });
@@ -875,8 +876,8 @@ export const ComputerUseAppsListResult = z.object({ apps: z.array(ComputerUseApp
  *  default's removal is remembered, so the master switch decides the app again); setting an access on a removed
  *  default restores an exception. `grant: null` removes "Always allow". A row left with nothing is deleted. */
 export const ComputerUseAppsSetParams = z.object({
-  bundleId: z.string().min(1).max(255),
-  name: z.string().min(1).max(200).optional(),
+  bundleId: utf16(255, 1),
+  name: utf16(200, 1).optional(),
   access: ComputerUseAccessSchema.nullable().optional(),
   grant: z.literal("always").nullable().optional(),
 });
@@ -1059,7 +1060,7 @@ export const SessionMirrorResult = z.object({ ok: z.literal(true), mirror: z.boo
 export const SessionCompactParams = z.object({
   sessionId: z.string().min(1),
   /** What the summary should focus on — `/compact <instructions>`. */
-  instructions: z.string().max(4_000).optional(),
+  instructions: utf16(4_000).optional(),
 });
 export const SessionCompactResult = z.object({
   ok: z.literal(true),
@@ -1306,8 +1307,8 @@ export const McpToolsResult = z.object({ ok: z.literal(true), servers: z.array(M
  * yet; `clover` (the daemon's own capability namespace) is refused.
  */
 export const McpSetToolPermissionParams = z.object({
-  server: z.string().min(1).max(256).regex(/^\S+$/, "a server name has no whitespace"),
-  tool: z.string().min(1).max(256).regex(/^\S+$/, "a tool name has no whitespace"),
+  server: utf16(256, 1).regex(/^\S+$/, "a server name has no whitespace"),
+  tool: utf16(256, 1).regex(/^\S+$/, "a tool name has no whitespace"),
   permission: McpToolPermissionChoiceSchema,
   resetTools: z.boolean().optional(),
 });
@@ -1812,7 +1813,7 @@ export const SessionSetModelResult = z.object({});
 // checks membership at set time against the session's own model's list (ipc/server.ts, reading
 // core's `effortsForModel`, the SAME list `sync.config` advertises to the phone). A zod enum here
 // would be a second, drift-prone copy of a set the protocol package cannot see change.
-export const SessionSetEffortParams = z.object({ sessionId: z.string().min(1), effort: z.string().min(1).max(SESSION_EFFORT_MAX_CHARS).nullable() });
+export const SessionSetEffortParams = z.object({ sessionId: z.string().min(1), effort: utf16(SESSION_EFFORT_MAX_CHARS, 1).nullable() });
 export const SessionSetEffortResult = z.object({});
 
 // session-activity-hygiene T3 (spec §1): the WRITE half of the session lifecycle — `session.list`'s
@@ -2941,7 +2942,7 @@ export const CredentialListResult = z.object({ providers: z.array(CredentialRow)
  *  a wire sanity bound; the daemon applies the same limit (plus the printable-ASCII rule) itself and
  *  answers `credential_value_invalid` for a value that reaches it another way (the CLI's own
  *  in-process path). */
-export const CredentialSetParams = z.object({ providerId: z.string().min(1), apiKey: z.string().min(1).max(4096) });
+export const CredentialSetParams = z.object({ providerId: z.string().min(1), apiKey: utf16(4096, 1) });
 export const CredentialSetResult = z.object({ ok: z.literal(true) });
 
 export const CredentialRemoveParams = z.object({ providerId: z.string().min(1) });
@@ -3120,12 +3121,12 @@ export const SYNC_MAX_CHUNK_B64 = 384 * 1024;
 export const SyncPushParams = z.object({
   sessionId: z.string().min(1),
   baseSeq: z.number().int().nonnegative(),
-  data: z.string().max(SYNC_MAX_CHUNK_B64), // base64 of a raw JSONL chunk; may split mid-line
+  data: utf16(SYNC_MAX_CHUNK_B64), // base64 of a raw JSONL chunk; may split mid-line
   complete: z.boolean(),
   meta: z.object({
     // Bounded at the wire, not just clamped internally — see SESSION_TITLE_MAX_CHARS for why an
     // unbounded title on an UNPAGED heads/list response is a persistent connection killer.
-    title: z.string().max(SESSION_TITLE_MAX_CHARS).optional(),
+    title: utf16(SESSION_TITLE_MAX_CHARS).optional(),
     model: ModelTagSchema.optional(),
     // provider-correctness T6. Bounded by the SAME constant `session.setEffort`'s param uses, and
     // NOT enumerated here for the same reason that one isn't: which levels a model accepts is
@@ -3147,7 +3148,7 @@ export const SyncPushParams = z.object({
     //
     // Deliberately NOT extended to `title`/`model` beside it: neither has a clear affordance in any
     // UI, so giving them a null state would be inventing a capability nothing asks for.
-    effort: z.string().min(1).max(SESSION_EFFORT_MAX_CHARS).nullable().optional(),
+    effort: utf16(SESSION_EFFORT_MAX_CHARS, 1).nullable().optional(),
     forkedFrom: SessionForkRef.optional(),
   }).optional(),
 });
@@ -3347,8 +3348,8 @@ export type SyncMemoryResult = z.infer<typeof SyncMemoryResult>;
 export const PanelTabSchema = z.object({
   tabId: z.string().min(1),
   kind: PanelTabKind,
-  url: z.string().max(PANEL_URL_MAX_LENGTH).optional(),
-  title: z.string().max(PANEL_TITLE_MAX_LENGTH).optional(),
+  url: utf16(PANEL_URL_MAX_LENGTH).optional(),
+  title: utf16(PANEL_TITLE_MAX_LENGTH).optional(),
   // diff-tabs Task 7 (fix round 1): restores the doc comment above's "mirrors PanelTabState
   // (core/src/panel/store.ts) field-for-field" promise to truth. Task 7 added `diffId` to
   // `PanelTabState`/`PanelTab` (the daemon's own fold, and the actual bytes `panel.list` serializes
@@ -3442,8 +3443,8 @@ export const PanelListResult = z.object({
 export const PanelOpenTabParams = z.object({
   sessionId: z.string().min(1),
   kind: PanelTabKind,
-  url: z.string().max(PANEL_URL_MAX_LENGTH).optional(),
-  title: z.string().max(PANEL_TITLE_MAX_LENGTH).optional(),
+  url: utf16(PANEL_URL_MAX_LENGTH).optional(),
+  title: utf16(PANEL_TITLE_MAX_LENGTH).optional(),
   /** Set only when kind === "diff"; mirrors `PanelTabOpenedEvent.diffId` (events.ts) verbatim. */
   diffId: z.string().regex(DIFF_ID_SHAPE).optional(),
 }).superRefine((p, ctx) => {
@@ -3494,10 +3495,10 @@ export const PanelActivateTabResult = z.object({ ok: z.literal(true) });
 export const PanelReportNavigationParams = z.object({
   sessionId: z.string().min(1),
   tabId: z.string().min(1),
-  url: z.string().min(1).max(PANEL_URL_MAX_LENGTH).refine(isPersistablePanelWebUrl, {
+  url: utf16(PANEL_URL_MAX_LENGTH, 1).refine(isPersistablePanelWebUrl, {
     message: "a reported navigation's url must be http or https",
   }),
-  title: z.string().max(PANEL_TITLE_MAX_LENGTH),
+  title: utf16(PANEL_TITLE_MAX_LENGTH),
 });
 export const PanelReportNavigationResult = z.object({ ok: z.literal(true) });
 
@@ -3543,10 +3544,10 @@ export const PanelCommandResultParams = z.object({
   ok: z.boolean(),
   /** The verb's textual answer — extracted DOM text for `read`, a failure reason when `ok` is
    *  false, a short confirmation otherwise. Capped at `PANEL_COMMAND_RESULT_MAX_LENGTH`. */
-  result: z.string().max(PANEL_COMMAND_RESULT_MAX_LENGTH).optional(),
+  result: utf16(PANEL_COMMAND_RESULT_MAX_LENGTH).optional(),
   /** `screenshot`'s PNG, base64, no data-URL prefix. The only large payload this method carries;
    *  capped at `PANEL_COMMAND_IMAGE_B64_MAX_LENGTH`. */
-  imageBase64: z.string().max(PANEL_COMMAND_IMAGE_B64_MAX_LENGTH).optional(),
+  imageBase64: utf16(PANEL_COMMAND_IMAGE_B64_MAX_LENGTH).optional(),
 });
 export const PanelCommandResultResult = z.object({ ok: z.literal(true) });
 export type PanelCommandResultParams = z.infer<typeof PanelCommandResultParams>;

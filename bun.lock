@@ -78,6 +78,7 @@
       "version": "0.124.0",
       "dependencies": {
         "@waifucave/clover-protocol": "workspace:*",
+        "zod": "^4.0.0",
       },
     },
     "packages/protocol": {
