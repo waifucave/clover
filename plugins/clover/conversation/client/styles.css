@@ -1,0 +1,1122 @@
+/* The conversation view. Every colour, face and type size is a theme token (`--clover-*`, listed in
+   tokens.ts): the theme stack decides what the view looks like, this file only how it is laid out.
+
+   Sealed approval frames sit inside this view, and the core counts a click on one only while the
+   frame and everything around it is unfaded, unfiltered and untransformed (spec §5.5). So opacity,
+   filters and transforms appear here only on leaf decorations that never hold a frame (the caret,
+   the breathing status text, icons); test/styles.test.ts holds that line. */
+
+.cl-conv {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background: var(--clover-color-surface);
+  color: var(--clover-color-text);
+  font-family: var(--clover-font-body);
+  font-size: var(--clover-text-body);
+  line-height: var(--clover-line-body);
+}
+
+.cl-conv button {
+  font: inherit;
+}
+
+.cl-conv :focus-visible {
+  outline: 2px solid var(--clover-color-focus);
+  outline-offset: 2px;
+}
+
+.cl-conv__viewport {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.cl-conv__viewport:focus-visible {
+  outline-offset: -2px;
+}
+
+.cl-conv__column {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 24px 24px 16px;
+}
+
+.cl-conv__footer {
+  flex: 0 0 auto;
+  display: flex;
+  justify-content: center;
+}
+
+.cl-conv__jump {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 6px 0 8px;
+  padding: 5px 12px;
+  border: 1px solid var(--clover-color-hairline-raised);
+  border-radius: var(--clover-radius-pill);
+  background: var(--clover-color-control);
+  color: var(--clover-color-text);
+  font-size: var(--clover-text-small);
+  box-shadow: 0 2px 10px var(--clover-color-shadow);
+  cursor: pointer;
+}
+
+.cl-conv__empty {
+  margin: 48px auto;
+  color: var(--clover-color-text-muted);
+  font-size: var(--clover-text-small);
+  text-align: center;
+}
+
+.cl-conv__earlier,
+.cl-conv-link-button,
+.cl-conv-fold__toggle {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--clover-color-link);
+  font-size: var(--clover-text-small);
+  cursor: pointer;
+}
+
+.cl-conv__earlier {
+  align-self: center;
+}
+
+.cl-conv__earlier:hover,
+.cl-conv-link-button:hover,
+.cl-conv-fold__toggle:hover {
+  text-decoration: underline;
+}
+
+.cl-conv__extra:empty {
+  display: none;
+}
+
+.cl-conv__extra {
+  margin-top: 6px;
+}
+
+.cl-conv-icon {
+  flex: none;
+  display: inline-block;
+  vertical-align: middle;
+}
+
+/* Day dividers and divider notes (a compaction). */
+
+.cl-conv-day,
+.cl-conv-divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 6px 0;
+  color: var(--clover-color-text-muted);
+  font-size: var(--clover-text-caption);
+}
+
+.cl-conv-day::before,
+.cl-conv-day::after,
+.cl-conv-divider::before,
+.cl-conv-divider::after {
+  content: "";
+  flex: 1;
+  border-top: 1px solid var(--clover-color-hairline);
+}
+
+.cl-conv-day__label {
+  font-weight: 600;
+}
+
+/* The user's message. */
+
+.cl-conv-user {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+}
+
+.cl-conv-user__bubble {
+  box-sizing: border-box;
+  max-width: min(80%, 560px);
+  padding: 9px 14px;
+  border-radius: var(--clover-radius-bubble);
+  background: var(--clover-color-bubble);
+  color: var(--clover-color-text);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.cl-conv-user__images {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+  max-width: 80%;
+}
+
+.cl-conv-user__thumb {
+  display: block;
+  max-width: 180px;
+  max-height: 140px;
+  border: 1px solid var(--clover-color-hairline);
+  border-radius: var(--clover-radius-card);
+  object-fit: cover;
+}
+
+.cl-conv-user__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0 2px;
+  padding: 0 7px;
+  border-radius: var(--clover-radius-control);
+  background: var(--clover-color-control);
+  color: var(--clover-color-text);
+  font-size: var(--clover-text-small);
+  vertical-align: baseline;
+}
+
+.cl-conv-user__meta {
+  display: flex;
+  gap: 6px;
+  padding: 0 4px;
+  color: var(--clover-color-text-muted);
+  font-size: var(--clover-text-caption);
+  visibility: hidden;
+}
+
+.cl-conv-user:hover .cl-conv-user__meta,
+.cl-conv-user__meta[data-always] {
+  visibility: visible;
+}
+
+/* The bot's message, and Markdown wherever it shows. */
+
+.cl-conv-bot__interrupted {
+  margin-top: 6px;
+  color: var(--clover-color-text-muted);
+  font-size: var(--clover-text-caption);
+}
+
+.cl-conv-bot__actions {
+  display: flex;
+  gap: 4px;
+  margin: 4px 0 0 -6px;
+}
+
+.cl-conv-bot__actions .cl-conv-copy__label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.cl-conv-copy {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 6px;
+  border: none;
+  border-radius: var(--clover-radius-control);
+  background: transparent;
+  color: var(--clover-color-text-muted);
+  font-size: var(--clover-text-caption);
+  cursor: pointer;
+}
+
+.cl-conv-copy:hover {
+  background: var(--clover-color-hover);
+  color: var(--clover-color-text);
+}
+
+.cl-conv-md {
+  overflow-wrap: anywhere;
+}
+
+.cl-conv-md > :first-child {
+  margin-top: 0;
+}
+
+.cl-conv-md > :last-child {
+  margin-bottom: 0;
+}
+
+.cl-conv-md p,
+.cl-conv-md ul,
+.cl-conv-md ol,
+.cl-conv-md blockquote,
+.cl-conv-md .cl-conv-md__table {
+  margin: 0 0 10px;
+}
+
+.cl-conv-md h1,
+.cl-conv-md h2,
+.cl-conv-md h3,
+.cl-conv-md h4 {
+  margin: 18px 0 8px;
+  font-family: var(--clover-font-display);
+  line-height: 1.3;
+}
+
+.cl-conv-md h1 {
+  font-size: 1.35em;
+}
+
+.cl-conv-md h2 {
+  font-size: 1.2em;
+}
+
+.cl-conv-md h3,
+.cl-conv-md h4 {
+  font-size: 1.05em;
+}
+
+.cl-conv-md ul,
+.cl-conv-md ol {
+  padding-left: 22px;
+}
+
+.cl-conv-md li + li {
+  margin-top: 4px;
+}
+
+.cl-conv-md blockquote {
+  padding-left: 12px;
+  border-left: 3px solid var(--clover-color-hairline-raised);
+  color: var(--clover-color-text-secondary);
+}
+
+.cl-conv-md hr {
+  margin: 14px 0;
+  border: none;
+  border-top: 1px solid var(--clover-color-hairline);
+}
+
+.cl-conv-md a,
+.cl-conv-md__link,
+.cl-conv-md__image-link {
+  color: var(--clover-color-link);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.cl-conv-md code {
+  padding: 1px 5px;
+  border-radius: 5px;
+  background: var(--clover-color-control);
+  font-family: var(--clover-font-mono);
+  font-size: var(--clover-text-code);
+}
+
+.cl-conv-md pre code {
+  padding: 0;
+  border-radius: 0;
+  background: none;
+}
+
+.cl-conv-md table {
+  border-collapse: collapse;
+}
+
+.cl-conv-md th,
+.cl-conv-md td {
+  padding: 6px 10px;
+  border: 1px solid var(--clover-color-hairline);
+  text-align: left;
+}
+
+.cl-conv-md th {
+  background: var(--clover-color-raised);
+  font-weight: 600;
+}
+
+.cl-conv-md__table {
+  overflow-x: auto;
+}
+
+.cl-conv-code {
+  margin: 0 0 10px;
+  overflow: hidden;
+  border: 1px solid var(--clover-color-hairline-raised);
+  border-radius: var(--clover-radius-card);
+  background: var(--clover-color-raised);
+}
+
+.cl-conv-code__bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 3px 6px 3px 12px;
+  border-bottom: 1px solid var(--clover-color-hairline-raised);
+  color: var(--clover-color-text-muted);
+  font-size: var(--clover-text-caption);
+}
+
+.cl-conv-code__pre {
+  margin: 0;
+  padding: 12px;
+  overflow-x: auto;
+  font-family: var(--clover-font-mono);
+  font-size: var(--clover-text-code);
+  line-height: 1.5;
+}
+
+/* The streaming caret: a leaf after the last block. */
+.cl-conv-bot[data-streaming] .cl-conv-md > :last-child::after,
+.cl-conv-bot[data-streaming] .cl-conv-md[data-empty]::after {
+  content: "";
+  display: inline-block;
+  width: 7px;
+  height: 1em;
+  margin-left: 2px;
+  border-radius: 1px;
+  background: currentColor;
+  vertical-align: text-bottom;
+  animation: cl-conv-caret 1s steps(1) infinite;
+}
+
+@keyframes cl-conv-caret {
+  50% {
+    opacity: 0;
+  }
+}
+
+/* Thinking rows, and the turn's own status line. */
+
+.cl-conv-thinking__toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 2px 6px;
+  margin-left: -6px;
+  border: none;
+  border-radius: var(--clover-radius-control);
+  background: none;
+  color: var(--clover-color-text-muted);
+  font-size: var(--clover-text-small);
+  text-align: left;
+  cursor: pointer;
+}
+
+.cl-conv-thinking__toggle:hover:not(:disabled) {
+  background: var(--clover-color-hover);
+  color: var(--clover-color-text-secondary);
+}
+
+.cl-conv-thinking__toggle:disabled {
+  cursor: default;
+}
+
+.cl-conv-thinking__label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cl-conv-thinking__body {
+  margin: 6px 0 2px 8px;
+  padding-left: 12px;
+  border-left: 2px solid var(--clover-color-hairline);
+  color: var(--clover-color-text-secondary);
+  font-size: var(--clover-text-small);
+  white-space: pre-wrap;
+}
+
+.cl-conv-thinking__truncated {
+  margin-top: 6px;
+  color: var(--clover-color-text-muted);
+  font-size: var(--clover-text-caption);
+}
+
+.cl-conv-thinking[data-running] .cl-conv-thinking__glyph,
+.cl-conv-thinking[data-running] .cl-conv-thinking__label,
+.cl-conv-working__glyph,
+.cl-conv-working__text {
+  animation: cl-conv-breathe 2s ease-in-out infinite;
+}
+
+@keyframes cl-conv-breathe {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+
+.cl-conv-working {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--clover-color-text-muted);
+  font-size: var(--clover-text-small);
+}
+
+.cl-conv-thinking__toggle .cl-conv-icon,
+.cl-conv-tools__summary .cl-conv-icon:last-child {
+  transition: transform 0.15s ease;
+}
+
+.cl-conv-thinking[data-open] .cl-conv-thinking__toggle .cl-conv-icon,
+.cl-conv-tools[data-open] .cl-conv-tools__summary .cl-conv-icon:last-child {
+  transform: rotate(90deg);
+}
+
+/* Tool runs. */
+
+.cl-conv-tools {
+  color: var(--clover-color-text-secondary);
+  font-size: var(--clover-text-small);
+}
+
+.cl-conv-tools__summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 3px 6px;
+  margin-left: -6px;
+  border: none;
+  border-radius: var(--clover-radius-control);
+  background: none;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.cl-conv-tools__summary:hover {
+  background: var(--clover-color-hover);
+  color: var(--clover-color-text);
+}
+
+.cl-conv-tools__sentence {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cl-conv-tools__computer,
+.cl-conv-call__computer {
+  color: var(--clover-color-text-muted);
+  white-space: nowrap;
+}
+
+.cl-conv-tools__reviewing {
+  padding: 0 7px;
+  border: 1px solid currentColor;
+  border-radius: var(--clover-radius-pill);
+  color: var(--clover-color-warning);
+  font-size: var(--clover-text-caption);
+  white-space: nowrap;
+}
+
+.cl-conv-tools__failure {
+  margin: 2px 0 0 22px;
+  color: var(--clover-color-text);
+  font-family: var(--clover-font-mono);
+  font-size: var(--clover-text-caption);
+  overflow-wrap: anywhere;
+}
+
+.cl-conv-tools__diffs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 4px 0 0 22px;
+}
+
+.cl-conv-tools__calls {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 6px 0 0 7px;
+  padding: 2px 0 2px 14px;
+  border-left: 2px solid var(--clover-color-hairline);
+  list-style: none;
+}
+
+.cl-conv-call__head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.cl-conv-call__name {
+  flex: none;
+  color: var(--clover-color-text);
+  font-weight: 500;
+}
+
+.cl-conv-call__detail,
+.cl-conv-call__path {
+  min-width: 0;
+  overflow: hidden;
+  font-family: var(--clover-font-mono);
+  font-size: var(--clover-text-caption);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cl-conv-call__path {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--clover-color-link);
+  text-align: left;
+  cursor: pointer;
+}
+
+.cl-conv-call__custom {
+  margin-top: 6px;
+}
+
+.cl-conv-output {
+  margin-top: 6px;
+  overflow: hidden;
+  border: 1px solid var(--clover-color-hairline-raised);
+  border-radius: var(--clover-radius-control);
+  background: var(--clover-color-raised);
+}
+
+.cl-conv-output[data-error] {
+  border-color: var(--clover-color-danger);
+}
+
+.cl-conv-output__text {
+  max-height: 320px;
+  margin: 0;
+  padding: 8px 10px;
+  overflow: auto;
+  color: var(--clover-color-text);
+  font-family: var(--clover-font-mono);
+  font-size: var(--clover-text-caption);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.cl-conv-output__more {
+  padding: 4px 10px;
+  border-top: 1px solid var(--clover-color-hairline-raised);
+  color: var(--clover-color-text-muted);
+  font-size: var(--clover-text-caption);
+}
+
+.cl-conv-diff {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  padding: 2px 8px;
+  border: none;
+  border-radius: var(--clover-radius-control);
+  background: var(--clover-color-control);
+  color: var(--clover-color-text);
+  font-family: var(--clover-font-mono);
+  font-size: var(--clover-text-caption);
+}
+
+.cl-conv-tools__diffs .cl-conv-diff {
+  margin-top: 0;
+}
+
+button.cl-conv-diff {
+  cursor: pointer;
+}
+
+button.cl-conv-diff:hover {
+  background: var(--clover-color-hover);
+}
+
+.cl-conv-diff__added {
+  color: var(--clover-color-diff-added);
+}
+
+.cl-conv-diff__removed {
+  color: var(--clover-color-diff-removed);
+}
+
+.cl-conv-sites {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cl-conv-sites__link {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 9px;
+  border-radius: var(--clover-radius-pill);
+  background: var(--clover-color-control);
+  color: var(--clover-color-text);
+  font-size: var(--clover-text-caption);
+  text-decoration: none;
+}
+
+.cl-conv-sites__icon {
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+}
+
+.cl-conv-app {
+  display: block;
+  margin-top: 8px;
+}
+
+.cl-conv-status {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  color: var(--clover-color-text-muted);
+}
+
+.cl-conv-status[data-status="running"] {
+  color: var(--clover-color-text);
+}
+
+.cl-conv-status[data-status="waiting"] {
+  color: var(--clover-color-warning);
+}
+
+.cl-conv-status[data-status="failed"] {
+  color: var(--clover-color-danger);
+}
+
+/* Approval cards: this view's layout around the core's sealed frames. */
+
+.cl-conv-approval__card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 16px;
+  border: 1px solid var(--clover-color-hairline-raised);
+  border-radius: var(--clover-radius-card);
+  background: var(--clover-color-raised);
+}
+
+.cl-conv-approval__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--clover-color-text);
+  font-weight: 600;
+}
+
+.cl-conv-approval__title,
+.cl-conv-approval__command,
+.cl-conv-approval__reason {
+  display: block;
+  min-width: 0;
+}
+
+.cl-conv-approval__head .cl-conv-approval__title {
+  flex: 1 1 auto;
+}
+
+.cl-conv-approval__facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+}
+
+.cl-conv-approval__buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.cl-conv-approval__button {
+  display: block;
+  min-width: 96px;
+  min-height: 32px;
+}
+
+.cl-conv-approval__deadline {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  color: var(--clover-color-text-muted);
+  font-size: var(--clover-text-caption);
+}
+
+.cl-conv-approval__resolved {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  color: var(--clover-color-text-secondary);
+  font-size: var(--clover-text-small);
+}
+
+.cl-conv-approval__outcome {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--clover-color-text);
+  font-weight: 500;
+}
+
+.cl-conv-approval[data-state="denied"] .cl-conv-approval__outcome .cl-conv-icon,
+.cl-conv-approval[data-state="expired"] .cl-conv-approval__outcome .cl-conv-icon {
+  color: var(--clover-color-danger);
+}
+
+.cl-conv-approval__resolved-title {
+  display: block;
+  min-width: 0;
+}
+
+/* Question cards. */
+
+.cl-conv-question {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid var(--clover-color-hairline-raised);
+  border-radius: var(--clover-radius-card);
+  background: var(--clover-color-raised);
+}
+
+.cl-conv-question:not([data-state="pending"]) {
+  gap: 8px;
+  padding: 10px 14px;
+  background: transparent;
+}
+
+.cl-conv-question__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--clover-color-text-muted);
+  font-size: var(--clover-text-small);
+  font-weight: 500;
+}
+
+.cl-conv-question__field {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: none;
+}
+
+.cl-conv-question__legend {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 8px;
+  padding: 0;
+  color: var(--clover-color-text);
+  font-weight: 600;
+}
+
+.cl-conv-question__chip {
+  padding: 1px 8px;
+  border-radius: var(--clover-radius-pill);
+  background: var(--clover-color-control);
+  color: var(--clover-color-text-secondary);
+  font-size: var(--clover-text-caption);
+  font-weight: 600;
+}
+
+.cl-conv-question__body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+}
+
+.cl-conv-question__body[data-preview] {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+
+.cl-conv-question__choices {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.cl-conv-question__option {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--clover-color-hairline-raised);
+  border-radius: var(--clover-radius-control);
+  background: var(--clover-color-surface);
+  cursor: pointer;
+}
+
+.cl-conv-question__option:hover {
+  background: var(--clover-color-hover);
+}
+
+.cl-conv-question__option[data-selected] {
+  border-color: var(--clover-color-accent);
+  background: var(--clover-color-selected);
+}
+
+.cl-conv-question__option input {
+  margin: 3px 0 0;
+  accent-color: var(--clover-color-accent);
+}
+
+.cl-conv-question__option-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.cl-conv-question__option-label {
+  color: var(--clover-color-text);
+  font-weight: 500;
+}
+
+.cl-conv-question__option-description {
+  color: var(--clover-color-text-muted);
+  font-size: var(--clover-text-small);
+}
+
+.cl-conv-question__other {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 2px;
+}
+
+.cl-conv-question__other-label {
+  color: var(--clover-color-text-muted);
+  font-size: var(--clover-text-caption);
+}
+
+.cl-conv-question__input {
+  padding: 7px 10px;
+  border: 1px solid var(--clover-color-hairline-raised);
+  border-radius: var(--clover-radius-control);
+  background: var(--clover-color-surface);
+  color: var(--clover-color-text);
+  font: inherit;
+}
+
+.cl-conv-question__input::placeholder {
+  color: var(--clover-color-text-placeholder);
+}
+
+.cl-conv-question__preview {
+  margin: 0;
+  overflow: hidden;
+  border: 1px solid var(--clover-color-hairline-raised);
+  border-radius: var(--clover-radius-control);
+  background: var(--clover-color-surface);
+}
+
+.cl-conv-question__preview figcaption {
+  padding: 4px 10px;
+  border-bottom: 1px solid var(--clover-color-hairline-raised);
+  color: var(--clover-color-text-muted);
+  font-size: var(--clover-text-caption);
+}
+
+.cl-conv-question__preview pre {
+  margin: 0;
+  padding: 8px 10px;
+  color: var(--clover-color-text);
+  font-family: var(--clover-font-mono);
+  font-size: var(--clover-text-caption);
+  white-space: pre-wrap;
+}
+
+.cl-conv-question__footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+.cl-conv-question__deadline {
+  margin-right: auto;
+  color: var(--clover-color-text-muted);
+  font-size: var(--clover-text-caption);
+}
+
+.cl-conv-question__send {
+  padding: 7px 14px;
+  border: none;
+  border-radius: var(--clover-radius-pill);
+  background: var(--clover-color-strong);
+  color: var(--clover-color-on-strong);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.cl-conv-question__send:disabled {
+  background: var(--clover-color-control);
+  color: var(--clover-color-text-muted);
+  cursor: default;
+}
+
+.cl-conv-question__answers {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+}
+
+.cl-conv-question__answer dt {
+  color: var(--clover-color-text-muted);
+  font-size: var(--clover-text-small);
+}
+
+.cl-conv-question__answer dd {
+  margin: 0;
+  color: var(--clover-color-text);
+  font-weight: 500;
+}
+
+.cl-conv-question__closed {
+  color: var(--clover-color-text-muted);
+  font-size: var(--clover-text-small);
+}
+
+/* Routine results, task notifications and agent reports: events with a header. */
+
+.cl-conv-event {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 2px 0 2px 12px;
+  border-left: 2px solid var(--clover-color-accent);
+}
+
+.cl-conv-event[data-kind="agent-report"] {
+  border-left-color: var(--clover-color-hairline-raised);
+}
+
+.cl-conv-event[data-status="failed"],
+.cl-conv-event[data-status="stalled"] {
+  border-left-color: var(--clover-color-danger);
+}
+
+.cl-conv-event__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  color: var(--clover-color-text-secondary);
+  font-size: var(--clover-text-small);
+}
+
+.cl-conv-event__title,
+.cl-conv-event__head .cl-conv-link-button.cl-conv-event__title {
+  color: var(--clover-color-text);
+  font-size: var(--clover-text-small);
+  font-weight: 600;
+}
+
+.cl-conv-event__facts,
+.cl-conv-event__sub {
+  color: var(--clover-color-text-muted);
+}
+
+.cl-conv-event__sub {
+  font-size: var(--clover-text-caption);
+}
+
+.cl-conv-event__badge {
+  padding: 0 7px;
+  border: 1px solid currentColor;
+  border-radius: var(--clover-radius-pill);
+  color: var(--clover-color-danger);
+  font-size: var(--clover-text-caption);
+}
+
+.cl-conv-event__command {
+  align-self: flex-start;
+  padding: 2px 6px;
+  border-radius: 5px;
+  background: var(--clover-color-control);
+  font-family: var(--clover-font-mono);
+  font-size: var(--clover-text-caption);
+}
+
+.cl-conv-event__actions {
+  display: flex;
+  gap: 14px;
+}
+
+.cl-conv-fold__body {
+  max-height: 15em;
+  overflow: hidden;
+}
+
+.cl-conv-fold[data-open] .cl-conv-fold__body {
+  max-height: none;
+}
+
+.cl-conv-fold__toggle {
+  margin-top: 4px;
+}
+
+/* Notes. */
+
+.cl-conv-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  color: var(--clover-color-text-muted);
+  font-size: var(--clover-text-small);
+}
+
+.cl-conv-note .cl-conv-icon {
+  margin-top: 2px;
+}
+
+.cl-conv-note[data-tone="warning"] .cl-conv-icon {
+  color: var(--clover-color-warning);
+}
+
+.cl-conv-note[data-tone="error"] {
+  color: var(--clover-color-text);
+}
+
+.cl-conv-note[data-tone="error"] .cl-conv-icon {
+  color: var(--clover-color-danger);
+}
+
+.cl-conv-note__source {
+  color: var(--clover-color-text-secondary);
+  font-weight: 500;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cl-conv *,
+  .cl-conv *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}

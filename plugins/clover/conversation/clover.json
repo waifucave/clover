@@ -1,0 +1,8 @@
+{
+  "manifest": 1,
+  "name": "Conversation",
+  "description": "The conversation view: a bot's one continuous conversation, with every message kind, streaming and thinking titles.",
+  "engines": { "clover": "^1.0.0" },
+  "client": { "entry": "client/index.tsx" },
+  "capabilities": ["conversation.read", "approvals"]
+}
