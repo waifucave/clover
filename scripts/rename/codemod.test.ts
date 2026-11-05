@@ -1,7 +1,8 @@
 // Winter Phase 9b — the codemod's rule corpus (P9b-1/P9b-8). Pure functions only; no git.
 import { describe, expect, test } from "bun:test";
-import { entryAppliesTo, globToRegex, isExemptPath, planMoves, renamePath, rewriteText, scaffoldPresent } from "./codemod";
+import { CLOVER_RULES, entryAppliesTo, globToRegex, isExemptPath, pathStays, planMoves, renamePath, rewriteText, scaffoldPresent } from "./codemod";
 import { EXPLICIT_TOKEN_MAP, RENAME_ALLOWLIST } from "./allowlist";
+import { CLOVER_ALLOWLIST } from "./clover";
 
 const rw = (s: string, path = "packages/core/src/x.ts") => rewriteText(s, path);
 
@@ -160,5 +161,86 @@ describe("allowlist hygiene", () => {
   test("ids unique", () => {
     const ids = RENAME_ALLOWLIST.map((e) => e.id);
     expect(new Set(ids).size).toBe(ids.length);
+  });
+});
+
+// ── Clover C0: Winter→Clover (`--rules clover`, the default) ──────────────────────────────────
+describe("clover rules — what renames and what the allowlist keeps", () => {
+  const cw = (s: string, path = "packages/core/src/x.ts") => rewriteText(s, path, CLOVER_RULES);
+
+  test("the generic pass: three cases, identifiers, env, homes, binaries", () => {
+    expect(cw("winter Winter WINTER resolveWinterHome WINTER_HOME ~/.winter-dev winter-core").out)
+      .toBe("clover Clover CLOVER resolveCloverHome CLOVER_HOME ~/.clover-dev clover-core");
+  });
+
+  test("our four npm packages move to the waifucave scope; the SDK's packages stay", () => {
+    expect(cw('import { a } from "@yanlinglabs/winter-core"; import { b } from "@yanlinglabs/winter-agent-sdk";').out)
+      .toBe('import { a } from "@waifucave/clover-core"; import { b } from "@yanlinglabs/winter-agent-sdk";');
+    expect(cw('"@yanlinglabs/winter-protocol" "@yanlinglabs/winter-cli" "@yanlinglabs/winter-plugin-sdk"').out)
+      .toBe('"@waifucave/clover-protocol" "@waifucave/clover-cli" "@waifucave/clover-plugin-sdk"');
+    expect(cw('"@yanlinglabs/winter-runtime-sdk": "0.0.16"').out).toBe('"@yanlinglabs/winter-runtime-sdk": "0.0.16"');
+  });
+
+  test("identities and repo slugs take Clover's own names, not a swapped word", () => {
+    expect(cw("com.winter.app com.winter.app.dev com.winter.core com.winter.core.dev").out)
+      .toBe("com.waifucave.clover com.waifucave.clover.dev com.waifucave.clover.core com.waifucave.clover.core.dev");
+    expect(cw("github.com/yanlingLabs/winter github.com/yanlingLabs/winter-ios yanlingLabs/winter-agent-sdk").out)
+      .toBe("github.com/waifucave/clover github.com/waifucave/clover-ios waifucave/clover-sdk");
+    expect(cw("yanlingLabs/winter-runtime-sdk").out).toBe("yanlingLabs/winter-runtime-sdk"); // archived, stays
+  });
+
+  test("the SDK's API, fields and fixed env names stay", () => {
+    const s = "import { WINTER_BRAND, resolveWinterHome as sdkResolveHome } from x; peers.winter; handoff: { winterHome: home }; WINTER_TEST_PROVIDER";
+    expect(cw(s).out).toBe(s);
+    expect(cw("const winterHome = home; f({ home: winterHome })").out).toBe("const cloverHome = home; f({ home: cloverHome })");
+  });
+
+  test("Winter's coding agent and its binary keep their names", () => {
+    expect(cw("Winter's coding agent: the `winter` binary, `bun run build:winter`, dist/winter").out)
+      .toBe("Winter's coding agent: the `winter` binary, `bun run build:winter`, dist/winter");
+  });
+
+  test("history and other products' names stay: Winter's phases, the helpers, the extension", () => {
+    const s = "Winter Phase 10a; com.winter.computeruse; com.winter.ant; Winter for Chrome; Winter Computer Use.app";
+    expect(cw(s).out).toBe(s);
+  });
+
+  test("the SDK's session-door option keeps its name where it is the SDK's, and only there", () => {
+    const s = "({ ...opts, winterHome: storeHome, brand: CORE_BRAND })";
+    expect(cw(s, "packages/core/src/runtime-sdk/sessions.ts").out).toBe(s);
+    expect(cw(s).out).toBe("({ ...opts, cloverHome: storeHome, brand: CORE_BRAND })");
+  });
+
+  test("exempt paths are left byte for byte, and stay where they are", () => {
+    for (const p of ["apple/WinterKit/Sources/WinterKit/X.swift", "docs/research/2026-11-03-x.md", "releases/winter/appcast.xml", "docs/claude/testing.md"]) {
+      expect(cw("WINTER_HOME winter", p).out).toBe("WINTER_HOME winter");
+      expect(isExemptPath(p, CLOVER_RULES)).toBe(true);
+      expect(pathStays(p, CLOVER_RULES)).toBe(true);
+    }
+  });
+
+  test("paths: moved case-preservingly, except the kept ones", () => {
+    expect(renamePath("packages/core/src/winter-dir.ts", CLOVER_RULES)).toBe("packages/core/src/clover-dir.ts");
+    expect(pathStays("scripts/build-winter.ts", CLOVER_RULES)).toBe(true);
+    expect(planMoves(["scripts/build-winter.ts", "packages/core/test/winter-dir.test.ts", "apple/Winter/x.swift"], CLOVER_RULES))
+      .toEqual([{ from: "packages/core/test/winter-dir.test.ts", to: "packages/core/test/clover-dir.test.ts", kind: "file" }]);
+  });
+
+  test("a doubled name is reported", () => {
+    expect(cw("clover-winter").doubleWinter.length).toBeGreaterThan(0);
+  });
+
+  test("idempotent: a second pass over the output changes nothing", () => {
+    const once = cw("WINTER_HOME winterHome com.winter.app @yanlinglabs/winter-core").out;
+    expect(cw(once).out).toBe(once);
+  });
+
+  test("allowlist hygiene: ids unique, every entry has a reason, file globs are well formed", () => {
+    const ids = CLOVER_ALLOWLIST.map((e) => e.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    for (const e of CLOVER_ALLOWLIST) {
+      expect(e.why.length).toBeGreaterThan(20);
+      expect(e.regex.flags).toContain("g");
+    }
   });
 });
