@@ -3,9 +3,10 @@ name: Spike S7 (the Clover Browser)
 # Lane L's M0: every check that launches Electron or a browser runs here, never on a developer's Mac.
 # spikes/s7-browser/README.md says what each job answers.
 
-# A push whose head commit's message says [cft only] runs the unit and Chrome for Testing jobs alone (only the head
-# commit is read). Every runner exits 1 when an assertion about the report's conclusions fails (round eight), so a
-# green run means those held. M1 retargets the push trigger when this becomes the browser suite.
+# A push whose head commit's message says [cft only] runs the unit and Chrome for Testing jobs alone, and one that says
+# [viewport only] the unit and viewport jobs alone (only the head commit is read). Every runner exits 1 when an
+# assertion about the report's conclusions fails (round eight), so a green run means those held. M1 retargets the push
+# trigger when this becomes the browser suite.
 on:
   push:
     branches: [lane/l-m0]
@@ -16,8 +17,8 @@ on:
   workflow_dispatch:
 
 concurrency:
-  # a [cft only] push gets a group of its own, so it doesn't cancel a full run still going
-  group: spike-s7-${{ github.ref }}${{ contains(github.event.head_commit.message, '[cft only]') && '-cft' || '' }}
+  # a [cft only] or [viewport only] push gets a group of its own, so it doesn't cancel a full run still going
+  group: spike-s7-${{ github.ref }}${{ contains(github.event.head_commit.message, '[cft only]') && '-cft' || '' }}${{ contains(github.event.head_commit.message, '[viewport only]') && '-viewport' || '' }}
   cancel-in-progress: true
 
 permissions:
@@ -66,7 +67,7 @@ jobs:
 
   electron:
     name: electron · ${{ matrix.label }}
-    if: ${{ !contains(github.event.head_commit.message, '[cft only]') }}
+    if: ${{ !contains(github.event.head_commit.message, '[cft only]') && !contains(github.event.head_commit.message, '[viewport only]') }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
     strategy:
@@ -137,7 +138,7 @@ jobs:
 
   wayland:
     name: electron · linux-wayland (headless Weston)
-    if: ${{ !contains(github.event.head_commit.message, '[cft only]') }}
+    if: ${{ !contains(github.event.head_commit.message, '[cft only]') && !contains(github.event.head_commit.message, '[viewport only]') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
@@ -166,7 +167,7 @@ jobs:
 
   ozone-headless:
     name: "electron · ${{ matrix.label }} (no display, as on a server)"
-    if: ${{ !contains(github.event.head_commit.message, '[cft only]') }}
+    if: ${{ !contains(github.event.head_commit.message, '[cft only]') && !contains(github.event.head_commit.message, '[viewport only]') }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     strategy:
@@ -195,6 +196,70 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: s7-electron-${{ matrix.label }}
+          path: spikes/s7-browser/prototype/out/results/
+          if-no-files-found: warn
+
+  # Round twelve: Winter's model in Electron. Bot tabs drawn offscreen (never-shown OSR windows: GPU shared textures where
+  # this machine gives them, CPU bitmaps where not), one shown through a viewport page that draws its frames and sends
+  # input back, against a native view; then JavaScript dialogs answered over CDP, apart (a native box may stay up).
+  viewport:
+    name: electron · viewport · ${{ matrix.label }}
+    if: ${{ !contains(github.event.head_commit.message, '[cft only]') }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: macos-latest, label: macos }
+          - { os: windows-latest, label: windows }
+          - { os: ubuntu-24.04, label: linux-x11 }
+          - { os: ubuntu-24.04, label: linux-wayland }
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: .bun-version
+      - run: bun install --frozen-lockfile
+      - run: node node_modules/electron/install.js
+      - run: bun run build
+      - name: Linux — a display server, the window tools and the AppArmor profile
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -qq
+          if [ "${{ matrix.label }}" = "linux-wayland" ]; then sudo apt-get install -y -qq weston >/dev/null; else sudo apt-get install -y -qq xvfb xdotool x11-utils >/dev/null; fi
+          scripts/ci/apparmor.sh clover-s7-electron "$(node -p "require('electron')")"
+      - name: Offscreen tabs, and one shown through the viewport
+        timeout-minutes: 20
+        run: |
+          mkdir -p "$RESULTS"
+          out="$RESULTS/electron-viewport-${{ matrix.label }}.json"
+          case "${{ matrix.label }}" in
+            linux-x11) xvfb-run -a -s "-screen 0 1920x1080x24" bun scripts/probe.ts --checks=osr,viewport --out="$out" --label=viewport-${{ matrix.label }} -- --ozone-platform=x11 ;;
+            linux-wayland) scripts/ci/weston.sh bun scripts/probe.ts --checks=osr,viewport --out="$out" --label=viewport-${{ matrix.label }} -- --ozone-platform=wayland ;;
+            *) bun scripts/probe.ts --checks=osr,viewport --out="$out" --label=viewport-${{ matrix.label }} ;;
+          esac
+      - name: JavaScript dialogs answered over CDP, offscreen and in the host window
+        if: success() || failure()
+        timeout-minutes: 8
+        run: |
+          out="$RESULTS/electron-viewport-${{ matrix.label }}-dialogs.json"
+          case "${{ matrix.label }}" in
+            linux-x11) xvfb-run -a -s "-screen 0 1920x1080x24" bun scripts/probe.ts --checks=dialogs --out="$out" --label=dialogs-${{ matrix.label }} -- --ozone-platform=x11 ;;
+            linux-wayland) scripts/ci/weston.sh bun scripts/probe.ts --checks=dialogs --out="$out" --label=dialogs-${{ matrix.label }} -- --ozone-platform=wayland ;;
+            *) bun scripts/probe.ts --checks=dialogs --out="$out" --label=dialogs-${{ matrix.label }} ;;
+          esac
+      - name: Windows — the viewport again on WARP (Direct3D 11 in software), where shared textures may come
+        if: runner.os == 'Windows' && (success() || failure())
+        timeout-minutes: 20
+        run: bun scripts/probe.ts --checks=osr,viewport --out="$RESULTS/electron-viewport-windows-warp.json" --label=viewport-windows-warp -- --use-angle=d3d11-warp --ignore-gpu-blocklist
+      - if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: s7-viewport-${{ matrix.label }}
           path: spikes/s7-browser/prototype/out/results/
           if-no-files-found: warn
 
@@ -228,6 +293,7 @@ jobs:
 
   cft:
     name: chrome for testing · ${{ matrix.label }}
+    if: ${{ !contains(github.event.head_commit.message, '[viewport only]') }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 25
     strategy:
@@ -281,7 +347,7 @@ jobs:
 
   pair:
     name: the pair · ${{ matrix.label }}
-    if: ${{ !contains(github.event.head_commit.message, '[cft only]') }}
+    if: ${{ !contains(github.event.head_commit.message, '[cft only]') && !contains(github.event.head_commit.message, '[viewport only]') }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     strategy:
@@ -341,7 +407,7 @@ jobs:
 
   summary:
     name: summary
-    needs: [unit, unit-lock, electron, wayland, ozone-headless, long, cft, pair]
+    needs: [unit, unit-lock, electron, viewport, wayland, ozone-headless, long, cft, pair]
     if: always()
     runs-on: ubuntu-24.04
     timeout-minutes: 10

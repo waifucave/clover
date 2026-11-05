@@ -11,10 +11,11 @@
 //                    out of Mission Control on macOS (round eight); 32x32 on Windows (round ten)
 //   sharedTinyWindow the same host, one window for many tabs (round eight: does every view in it draw?)
 //   shown            a view in the visible browser view's window, laid out at that view's size
-//   osr              an offscreen-rendering BrowserWindow (frames arrive as 'paint' events; can't be shown as a view)
+//   osr              an offscreen-rendering BrowserWindow, never shown (frames arrive as 'paint' events: CPU bitmaps, or
+//                    GPU shared textures with `osrTexture`; round twelve shows them through a viewport, Winter's model)
 //   osrView          an offscreen-rendering WebContentsView in no window
 // Headless tabs are laid out at the agent's 1280x800; a shown tab at the window's 1000x700.
-import { app, BaseWindow, BrowserWindow, nativeImage, screen, WebContentsView, type NativeImage, type WebContents } from "electron";
+import { app, BaseWindow, BrowserWindow, nativeImage, screen, WebContentsView, type BrowserWindowConstructorOptions, type NativeImage, type OffscreenSharedTexture, type Rectangle, type WebContents } from "electron";
 import { ageMs, decodeMarker, rgbaReader, type Marker } from "../shared/marker.ts";
 import { errorText, sleep, waitFor, withTimeout } from "../shared/stats.ts";
 
@@ -38,6 +39,23 @@ export function placeAvailable(p: Place): boolean {
   return true;
 }
 
+/** One OSR paint event: a bitmap (`image`, the whole frame; `dirty` changed), or a GPU texture the receiver must release. */
+export interface PaintEvent {
+  at: number;
+  dirty: Rectangle;
+  image: NativeImage;
+  texture?: OffscreenSharedTexture;
+}
+
+export interface DirtyEntry { at: number; x: number; y: number; w: number; h: number; widget: string; size: string }
+
+/**
+ * Round twelve: what an OSR window needs to be laid out at the agent's 1280x800 on this OS. Windows sizes a new window
+ * to fit the screen's work area (round eleven's OSR tabs were 1024x720 on the runner's 1024x768 display); the OSR check
+ * finds what undoes that and sets it here for every OSR tab after it.
+ */
+export const osrWindowFix: { name: string; opts: Partial<BrowserWindowConstructorOptions>; after?: (w: BrowserWindow) => void } = { name: "default", opts: {} };
+
 export interface Tab {
   id: string;
   place: Place;
@@ -56,6 +74,15 @@ export interface Tab {
   /** OSR: paint events and the newest frame. */
   paints: number;
   lastPaint?: { at: number; image: NativeImage };
+  /** OSR: shared textures asked for, and what came: frame and popup textures, bitmaps, empty paints. */
+  osrTexture: boolean;
+  textures: number;
+  popupTextures: number;
+  emptyPaints: number;
+  /** OSR: each paint's changed rectangle (a texture's capture update rect), newest last. */
+  dirtyLog: DirtyEntry[];
+  /** OSR: a viewport taking the frames (it releases each texture); without one, textures are released at once. */
+  sink?: (p: PaintEvent) => void;
   debuggerOn: boolean;
   /** Frames delivered to a running frame pump. */
   pumpFrames: number;
@@ -71,6 +98,8 @@ export interface CreateOptions {
   path: string;
   /** OSR frame rate. */
   fps?: number;
+  /** OSR: ask for GPU shared textures (`offscreen.useSharedTexture`). */
+  osrTexture?: boolean;
   /** A shown host window (tiny, invisible) kept above other windows: always on top at the highest level. */
   onTop?: boolean;
 }
@@ -212,10 +241,12 @@ export class TabHost {
       nodeIntegration: false,
       backgroundThrottling: o.throttling,
     };
-    const base = { id, place: o.place, partition: o.partition, throttling: o.throttling, loads: 0, navigations: 0, gone: [], paints: 0, debuggerOn: false, pumpFrames: 0, pumping: false, fitted: false };
+    const base = { id, place: o.place, partition: o.partition, throttling: o.throttling, loads: 0, navigations: 0, gone: [], paints: 0, debuggerOn: false, pumpFrames: 0, pumping: false, fitted: false, osrTexture: o.osrTexture === true, textures: 0, popupTextures: 0, emptyPaints: 0, dirtyLog: [] };
     let tab: Tab;
     if (o.place === "osr") {
-      const win = new BrowserWindow({ show: false, width: AGENT_W, height: AGENT_H, useContentSize: true, webPreferences: { ...webPreferences, offscreen: true } });
+      const offscreen = o.osrTexture === true ? { useSharedTexture: true, deviceScaleFactor: 1 } : { deviceScaleFactor: 1 };
+      const win = new BrowserWindow({ show: false, width: AGENT_W, height: AGENT_H, useContentSize: true, ...osrWindowFix.opts, webPreferences: { ...webPreferences, offscreen } });
+      osrWindowFix.after?.(win);
       tab = this.track({ ...base, wc: win.webContents, win });
       this.paints(tab, o.fps ?? 30);
     } else if (o.place === "osrView") {
@@ -246,11 +277,34 @@ export class TabHost {
     return tab;
   }
 
+  /** Wrap a window the browser made (a page's window.open, made offscreen by the open handler) as an OSR tab. */
+  adopt(win: BrowserWindow, partition: string, fps: number, texture: boolean): Tab {
+    const id = `t${nextId++}`;
+    const tab = this.track({ id, place: "osr", partition, throttling: false, loads: 0, navigations: 0, gone: [], paints: 0, debuggerOn: false, pumpFrames: 0, pumping: false, fitted: false, osrTexture: texture, textures: 0, popupTextures: 0, emptyPaints: 0, dirtyLog: [], wc: win.webContents, win });
+    this.paints(tab, fps);
+    return tab;
+  }
+
   private paints(tab: Tab, fps: number): void {
     tab.wc.setFrameRate(fps);
-    tab.wc.on("paint", (_e, _dirty, image) => {
+    tab.wc.on("paint", (e, dirty, image) => {
+      const at = Date.now();
+      const texture = e.texture;
       tab.paints++;
-      tab.lastPaint = { at: Date.now(), image };
+      if (texture !== undefined) {
+        if (texture.textureInfo.widgetType === "popup") tab.popupTextures++;
+        else tab.textures++;
+      } else if (image.isEmpty()) {
+        tab.emptyPaints++;
+      } else {
+        tab.lastPaint = { at, image };
+      }
+      const u = texture?.textureInfo.metadata?.captureUpdateRect ?? dirty;
+      const size = texture !== undefined ? `${texture.textureInfo.codedSize.width}x${texture.textureInfo.codedSize.height}` : (() => { const s = image.getSize(); return `${s.width}x${s.height}`; })();
+      tab.dirtyLog.push({ at, x: u.x, y: u.y, w: u.width, h: u.height, widget: texture?.textureInfo.widgetType ?? (image.isEmpty() ? "empty" : "bitmap"), size });
+      if (tab.dirtyLog.length > 300) tab.dirtyLog.shift();
+      if (tab.sink !== undefined) tab.sink({ at, dirty, image, texture });
+      else texture?.release();
     });
   }
 

@@ -75,6 +75,38 @@ function electron(name: string, j: J): string {
       out.push(`**X11, the host with an empty window shape:** ${JSON.stringify(sh.xwininfo)}; rAF ${f1(sh.rates?.rafHz, 0)} Hz (${sh.rates?.visibility ?? "–"}), capturePage ${sh.capture?.ok ?? "–"}/${sh.capture?.tries ?? "–"} in ${ms(sh.capture?.ms)} ms (${sh.capture?.size ?? "–"}); click-through ${JSON.stringify(sh.clickThrough ?? "–")}; with throttling on: ${f1(sh.controlRates?.intervalHz)} Hz / rAF ${f1(sh.controlRates?.rafHz, 0)} (${sh.controlRates?.visibility ?? "–"})${sh.error ? `; error ${sh.error}` : ""}`, "");
     }
   }
+  if (c.osr) {
+    const o = c.osr;
+    out.push(`**Round twelve, offscreen bot tabs** (never-shown OSR windows; GPU ${JSON.stringify(m.gpu?.gpu_compositing ?? "–")})`, "");
+    out.push(`Size: ${(o.sizes ?? []).map((r: J) => `${r.variant}: window ${r.windowSize}, page ${r.layout}${r.error ? ` (${r.error})` : ""}`).join("; ")} → **${o.sizeFix}**.`, "");
+    out.push(`Shared textures: ${f1(o.texture?.textures, 0)} textures, ${f1(o.texture?.bitmaps, 0)} bitmaps, ${f1(o.texture?.empties, 0)} empty paints in 3 s → **${o.texture?.works ? "they come here" : "none here (CPU bitmaps)"}**${o.texture?.info ? ` — ${JSON.stringify({ pixelFormat: o.texture.info.pixelFormat, codedSize: o.texture.info.codedSize, handle: o.texture.info.handle })}` : ""}${o.texture?.error ? `; error ${o.texture.error}` : ""}`, "");
+    out.push(table(["config", "visibility", "rAF Hz", "paints/s", "textures/s", "all CPU %", "renderer %", "GPU %", "browser %", "error"],
+      (o.rates ?? []).map((r: J) => [r.config, r.rates?.visibility ?? "–", f1(r.rates?.rafHz), f1(r.paintsPerSec), f1(r.texturesPerSec), f1(r.cpuTotal), f1(r.rendererPct), f1(r.cpuByType?.GPU), f1(r.cpuByType?.Browser), r.error ?? ""])));
+    out.push("");
+    out.push(table(["pictures of", "method", "ok", "ms", "stale ms", "size", "errors"], (o.captures ?? []).map((r: J) => [r.config, r.method, `${r.ok}/${r.tries}`, ms(r.ms), ms(r.staleMs), r.size, (r.errors ?? []).join("; ")])));
+    out.push("");
+    out.push(table(["cost", "MiB a tab", "CPU % a tab", "kind", "error"], (o.cost ?? []).map((r: J) => [r.config, f1(r.perTabMiB), f1(r.perTabCpuPct, 2), r.step?.memKind ?? "–", r.error ?? ""])));
+    out.push("", `Windows on screen: ${Object.entries(o.windows ?? {}).map(([k, w]) => `${k}: ${(w as J).windows !== undefined ? `${(w as J).windows.length} ${JSON.stringify((w as J).windows)}` : (w as J).error}`).join("; ")}${o.error ? `; error ${o.error}` : ""}`, "");
+  }
+  if (c.viewport) {
+    const v = c.viewport;
+    out.push(`**Round twelve, the viewport** (mode **${v.mode}**: ${v.modeWhy})`, "");
+    out.push(`Shows: ${(v.shows ?? []).map((x: J) => `#${x.cycle} first frame ${f1(x.firstFrameMs, 0)} ms, at the viewport's size ${f1(x.reflowMs, 0)} ms (${x.layout ?? "–"}, frame ${x.frame ?? "–"}), hidden again ${f1(x.hideMs, 0)} ms`).join("; ")}`, "");
+    out.push(table(["oracle", "same document", "timers", "SSE socket", "form", "layout", "detail"], (v.oracle ?? []).map((r: J) => [r.when, f1(r.sameDocument), f1(r.ticksAdvanced), f1(r.sseKept), f1(r.formKept), r.layout, r.detail])));
+    out.push("");
+    out.push(table(["through the viewport", "ok", "ms", "detail"], (v.steps ?? []).map((r: J) => [r.name, r.ok ? "yes" : "**no**", f1(r.ms, 0), String(r.detail).slice(0, 500).replace(/\|/g, "\\|")])));
+    out.push("");
+    out.push(table(["input → frame", "trials", "ms p50 / p95", "parts (p50)"], Object.entries(v.latency ?? {}).map(([k, x]) => [k, f1((x as J).trials, 0), ms((x as J).ms), Object.entries((x as J).parts ?? {}).map(([pk, pv]) => `${pk} ${f1((pv as J).p50, 0)}`).join("; ")])));
+    out.push("");
+    out.push(table(["frames", "numbers"], Object.entries(v.fps ?? {}).map(([k, x]) => [k, Object.entries(x as J).map(([fk, fv]) => `${fk} ${f1(fv)}`).join(", ")])));
+    out.push("", `Windows on screen: ${Object.entries(v.windows ?? {}).map(([k, w]) => `${k}: ${(w as J).windows !== undefined ? `${(w as J).windows.length} ${JSON.stringify((w as J).windows)}` : (w as J).error}`).join("; ")}`, "");
+    out.push(`Viewer: ${JSON.stringify({ frames: v.viewer?.frames, textures: v.viewer?.textures, bitmaps: v.viewer?.bitmaps, popups: v.viewer?.popups, draw: v.viewer?.drawMsSummary, errors: v.viewer?.errors })}; counters ${JSON.stringify(v.counters)}${v.error ? `; error ${v.error}` : ""}`, "");
+  }
+  if (c.dialogs) {
+    out.push("**Round twelve, JavaScript dialogs answered over CDP**", "");
+    out.push(table(["tab", "dialog", "CDP event", "browser handler", "windows during", "windows after", "page", "error"], (c.dialogs as J[]).map((r) => [r.place, r.kind, f1(r.cdpEvent), f1(r.hasBrowserHandler), JSON.stringify(r.windowsDuring?.windows ?? r.windowsDuring?.error ?? "–"), JSON.stringify(r.windowsAfter?.windows ?? r.windowsAfter?.error ?? "–"), r.page, r.error ?? ""])));
+    out.push("");
+  }
   if (Array.isArray(j.assertions) && j.assertions.length) out.push(`**Assertions:** ${j.assertions.map((x: J) => `${x.ok ? "PASS" : "**FAIL**"} ${x.name}`).join("; ")}`, "");
   if (c.stream) {
     out.push("**Q6 streamed view** (10 s at the viewer; latency p50 / p95 ms)", "");

@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 // Build the spike's pieces into out/ (launches nothing):
 //   out/pages/       the probe, viewer and streamer pages (browser bundles + HTML)
-//   out/electron/    the S7 Electron probe's main process (CommonJS)
+//   out/electron/    the S7 Electron probe's main process (CommonJS), and the viewport's preload (round twelve)
 //   out/pair/app/    the pair's Electron app (main.cjs + package.json)
 //   out/pair/clover-core-s7[.exe]   the pair's daemon, compiled (only with --daemon)
 import { copyFileSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
@@ -21,7 +21,7 @@ async function bundle(opts: Parameters<typeof Bun.build>[0], what: string): Prom
 
 mkdirSync(join(out, "pages"), { recursive: true });
 await bundle({
-  entrypoints: ["probe", "viewer", "streamer"].map((p) => join(ROOT, "src", "pages", `${p}.ts`)),
+  entrypoints: ["probe", "viewer", "streamer", "vp-page"].map((p) => join(ROOT, "src", "pages", `${p}.ts`)),
   outdir: join(out, "pages"),
   target: "browser",
   format: "iife",
@@ -31,6 +31,8 @@ for (const f of readdirSync(join(ROOT, "src", "pages"))) if (f.endsWith(".html")
 
 const external = ["electron", "bufferutil", "utf-8-validate"];
 await bundle({ entrypoints: [join(ROOT, "src", "electron", "main.ts")], outdir: join(out, "electron"), naming: "main.cjs", target: "node", format: "cjs", external }, "electron probe");
+// a sandboxed preload: one file, `electron` left to the preload's own require
+await bundle({ entrypoints: [join(ROOT, "src", "pages", "vp-preload.ts")], outdir: join(out, "electron"), naming: "vp-preload.cjs", target: "node", format: "cjs", external: ["electron"] }, "viewport preload");
 
 mkdirSync(join(out, "pair", "app"), { recursive: true });
 await bundle({ entrypoints: [join(ROOT, "src", "pair", "app-main.ts")], outdir: join(out, "pair", "app"), naming: "main.cjs", target: "node", format: "cjs", external }, "pair app");

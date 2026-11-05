@@ -1,6 +1,7 @@
 // The S7 Electron probe: runs the chosen checks in this OS's Electron and writes one JSON result.
 //   electron out/electron/main.cjs --checks=move,throttle,capture,cost,stream,wake,shared,hostcheck[,long] --out=<file>
 //                                   --label=<name>
+//   round twelve, Winter's model: --checks=osr,viewport (offscreen tabs, one shown through a viewport), --checks=dialogs
 // CI only: it opens windows. Every run gets its own temporary userData folder. It exits 1 when an assertion about
 // what the report concludes fails (round eight), after writing everything it measured.
 import { app, screen } from "electron";
@@ -9,6 +10,7 @@ import { tmpdir, release, cpus, totalmem } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { captureCheck, costCheck, hostCheck, longCheck, moveCheck, sharedHostCheck, throttleCheck, wakeCheck, type CaptureRow, type HostInvariants, type MoveResult, type SharedResult, type ThrottleRow, type WakeResult } from "./checks.ts";
 import { Link, streamCheck } from "./stream.ts";
+import { dialogCheck, osrCheck, viewportCheck } from "./viewport.ts";
 import { placeAvailable, TabHost } from "./tabs.ts";
 import { startServer } from "../shared/server.ts";
 import { errorText, rounded } from "../shared/stats.ts";
@@ -177,6 +179,9 @@ async function main(): Promise<void> {
   await run("shared", () => sharedHostCheck(host, log));
   await run("hostcheck", () => hostCheck(host, server, log));
   await run("long", () => longCheck(host, log));
+  await run("osr", () => osrCheck(host, log));
+  await run("viewport", () => viewportCheck(host, server, ROOT, log));
+  await run("dialogs", () => dialogCheck(host, ROOT, server, log));
   assertions = assertAll();
   for (const x of assertions) log(`${x.ok ? "PASS" : "FAIL"} ${x.name}: ${x.detail.slice(0, 300)}`);
   write("done");
@@ -193,5 +198,8 @@ main()
     try { rmSync(userData, { recursive: true, force: true }); } catch { /* best effort */ }
     const failed = assertions.filter((x) => !x.ok).length + (errors.length > 0 ? 1 : 0);
     if (failed > 0) log(`${failed} assertion(s) or error(s): exit 1`);
+    // round twelve: a page's dialog can leave a native message box up, inside a nested run loop that keeps app.exit
+    // from finishing; the results are written by now, so leave hard if a clean exit hasn't happened in 5 s
+    setTimeout(() => process.exit(failed > 0 ? 1 : 0), 5000);
     app.exit(failed > 0 ? 1 : 0);
   });

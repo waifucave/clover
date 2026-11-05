@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>S7 popup</title>
+<style>
+  html, body { margin: 0; background: #e8f0e8; font: 14px system-ui, sans-serif; }
+  #pbtn { position: fixed; left: 20px; top: 20px; width: 160px; height: 40px; }
+</style>
+</head>
+<body>
+<button id="pbtn">Sign in</button>
+<script>
+  // A sign-in window: it says hello to its opener, and posts again when its button is clicked.
+  window.__pop = { clicks: 0, hasOpener: window.opener !== null, loadedAt: Date.now() };
+  function post(m) { try { if (window.opener) window.opener.postMessage("popup:" + m, "*"); } catch (e) { window.__pop.error = String(e); } }
+  post("hello");
+  document.getElementById("pbtn").addEventListener("click", function () { window.__pop.clicks++; post("click"); });
+</script>
+</body>
+</html>

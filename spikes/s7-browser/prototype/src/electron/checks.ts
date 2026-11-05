@@ -462,7 +462,7 @@ export interface CostResult {
   error?: string;
 }
 
-async function costStep(tabs: number, settleMs = 3000, windowMs = 4000): Promise<CostStep> {
+export async function costStep(tabs: number, settleMs = 3000, windowMs = 4000): Promise<CostStep> {
   await sleep(settleMs);
   const mem = memTotals(sample(true));
   const a = sample();
