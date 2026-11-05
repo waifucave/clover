@@ -1,10 +1,15 @@
 // Pins the ComputerRegistry contract through FakeComputerRegistry: names and aliases, levels, holds, the user-working
 // mark, the action-running signal and Clover's windows.
 import { describe, expect, test } from "bun:test";
+import { createHash } from "node:crypto";
+import { callBindingInput, cardHashInput, type Card, type Level } from "@waifucave/clover-protocol";
+import type { CardRecord } from "../approval-broker";
 import { isContractError } from "../common";
-import { holdsOverlap, type ComputerChange } from "../computer-registry";
+import { holdsOverlap, levelRaiseCall, type ComputerChange } from "../computer-registry";
 import { FakeClock } from "../fakes/clock";
 import { FakeComputerRegistry } from "../fakes/computer-registry";
+
+const sha256 = (text: string) => createHash("sha256").update(text).digest("hex");
 
 const err = (fn: () => unknown) => {
   try {
@@ -39,13 +44,35 @@ describe("FakeComputerRegistry", () => {
     expect(isContractError(err(() => reg.add({ name: "Laptop1", device: "x000000000000000" })), "conflict")).toBe(true);
   });
 
-  test("raising a level takes the user's card; lowering doesn't", async () => {
+  test("a raise takes the approved card binding this computer and level, once; lowering takes nothing", async () => {
     const reg = setup();
-    expect(isContractError(await reg.setLevel("Studio", "automatic").catch((e: unknown) => e), "refused")).toBe(true);
-    await reg.setLevel("Studio", "automatic", "card_raise01");
+    const refused = async (p: Promise<unknown>) => isContractError(await p.catch((e: unknown) => e), "refused");
+    const record = (name: string, level: Level, over: Partial<CardRecord> = {}): CardRecord => {
+      const { method, params } = levelRaiseCall(name, level);
+      const unhashed = {
+        id: `card_${name.toLowerCase()}${level.replace(/-/g, "")}`.padEnd(29, "0").slice(0, 29), kind: "change" as const, change: "computer-level" as const,
+        computer: name, origin: "user" as const, issuedAt: 1, expiresAt: null, fields: {},
+        options: [{ id: "approve", kind: "approve" as const, label: "Raise" }, { id: "deny", kind: "deny" as const, label: "Keep" }],
+        binds: { computer: name, method, params: sha256(callBindingInput(method, params)) },
+      };
+      return { card: { ...unhashed, hash: sha256(cardHashInput(unhashed as never)) } as Card, outcome: "approved", optionId: "approve", ...over };
+    };
+    expect(await refused(reg.setLevel("Studio", "automatic"))).toBe(true);
+    // A card for another computer, another level, or a denied one is no proof.
+    expect(await refused(reg.setLevel("Studio", "automatic", { via: "card", record: record("Laptop1", "automatic") }))).toBe(true);
+    expect(await refused(reg.setLevel("Studio", "automatic", { via: "card", record: record("Studio", "accept-edits") }))).toBe(true);
+    expect(await refused(reg.setLevel("Studio", "automatic", { via: "card", record: record("Studio", "automatic", { outcome: "denied", optionId: "deny" }) }))).toBe(true);
+    // A signed answer needs a device registry to check it, which this fake wasn't given.
+    expect(await refused(reg.setLevel("Studio", "automatic", { via: "signed", answer: { card: record("Studio", "automatic").card, option: "approve", device: "phone0000000000000", at: 1, signature: "AAAA" } }))).toBe(true);
+    const good = record("Studio", "automatic");
+    await reg.setLevel("Studio", "automatic", { via: "card", record: good });
     expect(reg.self().level).toBe("automatic");
     await reg.setLevel("Studio", "read-only");
     expect(reg.self().level).toBe("read-only");
+    // The same card never raises twice.
+    expect(await refused(reg.setLevel("Studio", "automatic", { via: "card", record: good }))).toBe(true);
+    await reg.setLevel("Studio", "ask", { via: "terminal" });
+    expect(reg.self().level).toBe("ask");
   });
 
   test("holds: an app hold and a window hold of it conflict across sessions; two windows don't", () => {

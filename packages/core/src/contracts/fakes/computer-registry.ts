@@ -1,12 +1,19 @@
 // FakeComputerRegistry: computers in memory, with the hold, mark and window rules. `setOnline` stands for a computer
 // sleeping or coming back.
+import { createHash } from "node:crypto";
 import {
-  COMPUTER_NAME_RE, DEFAULT_LEVEL, levelAbove,
+  COMPUTER_NAME_RE, DEFAULT_LEVEL, callBindingInput, levelAbove,
   type CloverWindow, type ComputerView, type HoldView, type Level,
 } from "@waifucave/clover-protocol";
+import { type AnswerDevices, type AnswerLedger, verifySignedAnswer } from "../approval-broker";
+import { MemoryAnswerLedger } from "./approval-broker";
 import type { Clock } from "../clock";
 import { ContractError, Listeners, type Unsubscribe } from "../common";
-import { holdsOverlap, type ComputerChange, type ComputerRegistry, type HoldRequest } from "../computer-registry";
+import {
+  holdsOverlap, levelRaiseCall, type ComputerChange, type ComputerRegistry, type HoldRequest, type LevelRaiseProof,
+} from "../computer-registry";
+
+const sha256 = (text: string) => createHash("sha256").update(text).digest("hex");
 
 export type FakeComputerInput = Partial<ComputerView> & Pick<ComputerView, "name" | "device">;
 
@@ -21,8 +28,14 @@ export class FakeComputerRegistry implements ComputerRegistry {
   readonly #listeners = new Listeners<ComputerChange>();
   #holdSeq = 0;
 
-  constructor(opts: { clock: Pick<Clock, "now">; self: FakeComputerInput; others?: FakeComputerInput[] }) {
+  readonly #devices: AnswerDevices | undefined;
+  readonly #ledger: AnswerLedger;
+
+  /** `devices` checks signed answers from elsewhere; `ledger` records the card ids used (a fresh one by default). */
+  constructor(opts: { clock: Pick<Clock, "now">; self: FakeComputerInput; others?: FakeComputerInput[]; devices?: AnswerDevices; ledger?: AnswerLedger }) {
     this.#clock = opts.clock;
+    this.#devices = opts.devices;
+    this.#ledger = opts.ledger ?? new MemoryAnswerLedger();
     this.#self = opts.self.name;
     for (const c of [opts.self, ...(opts.others ?? [])]) this.add(c, c === opts.self);
   }
@@ -68,9 +81,12 @@ export class FakeComputerRegistry implements ComputerRegistry {
     return c ? structuredClone(c) : undefined;
   }
 
-  async setLevel(name: string, level: Level, card?: string): Promise<void> {
+  async setLevel(name: string, level: Level, proof?: LevelRaiseProof): Promise<void> {
     const c = this.#must(name);
-    if (levelAbove(level, c.level) && card === undefined) throw new ContractError("refused", "raising a computer's level takes the user's sealed card");
+    if (levelAbove(level, c.level)) {
+      const why = await this.#checkRaise(c.name, level, proof);
+      if (why !== null) throw new ContractError("refused", `raising a computer's level takes the user's answer: ${why}`);
+    }
     c.level = level;
     this.#listeners.emit({ type: "computer", computer: structuredClone(c) });
   }
@@ -196,6 +212,22 @@ export class FakeComputerRegistry implements ComputerRegistry {
     if (direct) return direct;
     for (const c of this.#computers.values()) if (c.aliases.includes(nameOrAlias)) return c;
     return undefined;
+  }
+
+  async #checkRaise(name: string, level: Level, proof: LevelRaiseProof | undefined): Promise<string | null> {
+    if (!proof) return "no proof";
+    if (proof.via === "terminal") return null;
+    const { method, params } = levelRaiseCall(name, level);
+    if (proof.via === "signed") {
+      if (!this.#devices) return "no device registry to check a signed answer";
+      const verdict = await verifySignedAnswer(proof.answer, { self: name, method, params, now: this.#clock.now(), sha256, devices: this.#devices, ledger: this.#ledger });
+      return verdict === "ok" ? null : verdict;
+    }
+    const { card, outcome, optionId } = proof.record;
+    if (outcome !== "approved" || card.options.find((o) => o.id === optionId)?.kind !== "approve") return "the card wasn't approved";
+    const b = card.binds;
+    if (card.change !== "computer-level" || !b || b.computer !== name || b.method !== method || b.params !== sha256(callBindingInput(method, params))) return "the card is for another change";
+    return this.#ledger.claim(card.id) ? null : "the card was used already";
   }
 
   #must(nameOrAlias: string): ComputerView {
