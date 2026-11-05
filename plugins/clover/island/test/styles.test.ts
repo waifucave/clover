@@ -14,7 +14,7 @@ const normalise = (value: string) => value.replace(/\s+/g, " ").trim().toLowerCa
 
 describe("the island's stylesheet", () => {
   test("reads only catalog tokens, each with the base theme's value as its fallback", () => {
-    const uses = [...ISLAND_CSS.matchAll(/var\((--[a-z0-9-]+)\s*(?:,\s*([^;]*?))?\)\s*[;,\n]/g)];
+    const uses = [...ISLAND_CSS.matchAll(/var\((--[a-z0-9-]+)\s*(?:,\s*((?:[^()]|\([^()]*\))*?))?\)/g)];
     expect(uses.length).toBeGreaterThan(20);
     for (const [, property, fallback] of uses) {
       if (LOCAL.has(property!)) continue;

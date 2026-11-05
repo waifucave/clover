@@ -1,7 +1,7 @@
 // The island in every state, for the lane's gallery (rendered to PNGs in CI, never on a desk). Each story
 // draws still frames of the pure animations, so a picture is the same on every run.
 
-import type { CSSProperties, ReactElement, ReactNode } from "react";
+import { useLayoutEffect, useRef, useState, type CSSProperties, type ReactElement, type ReactNode } from "react";
 import { emptyDraft } from "./model/cards";
 import { cardGeometry, ISLAND, islandRect, stripRect, topInset, waitingRect, type ScreenShape } from "./model/geometry";
 import { FLUID } from "./model/fluid";
@@ -56,15 +56,35 @@ function Desktop({ shape, width, height, dark = false, children }: { shape: Scre
   );
 }
 
-function card(geometryHeight: number, content: ReactNode, options: { seconds?: number; hovered?: boolean; shape?: ScreenShape } = {}) {
-  const shape = options.shape ?? NOTCH;
-  const g = cardGeometry(shape, { width: ISLAND.cardWidth, height: geometryHeight }, { rounded: true });
-  return { g, el: <LiquidCard geometry={g} seconds={options.seconds} hovered={options.hovered}>{content}</LiquidCard> };
+type CardGeometry = ReturnType<typeof cardGeometry>;
+
+interface MeasuredCardProps {
+  content: ReactNode;
+  seconds?: number;
+  hovered?: boolean;
+  shape?: ScreenShape;
+  /** Drawn after the card, placed from its geometry (the waiting pill). */
+  after?: (g: CardGeometry) => ReactNode;
 }
 
-const APPROVAL_H = 116;
-const LINK_H = 132;
-const QUESTION_H = 248;
+/** A card on top, its height measured from its own content as the island measures it. */
+function MeasuredCard({ content, seconds, hovered, shape = NOTCH, after }: MeasuredCardProps): ReactElement {
+  const ref = useRef<HTMLDivElement | null>(null);
+  const [height, setHeight] = useState(132);
+  useLayoutEffect(() => {
+    const h = Math.ceil(ref.current?.getBoundingClientRect().height ?? 0);
+    if (h > 0 && h + 2 * ISLAND.cardPadding !== height) setHeight(h + 2 * ISLAND.cardPadding);
+  });
+  const g = cardGeometry(shape, { width: ISLAND.cardWidth, height }, { rounded: true });
+  return (
+    <>
+      <LiquidCard geometry={g} seconds={seconds} hovered={hovered}>
+        <div ref={ref}>{content}</div>
+      </LiquidCard>
+      {after?.(g)}
+    </>
+  );
+}
 
 function filmstrip(times: number[], frame: (t: number) => ReactNode, width: number, height: number): ReactElement {
   return (
@@ -120,60 +140,62 @@ export const ISLAND_STORIES: Story[] = [
     title: "Card on top: an approval (sealed parts)",
     width: W,
     height: 200,
-    render: () => <Desktop shape={NOTCH} width={W} height={200}><Strip shape={NOTCH} counts={{ waiting: 1, working: 1 }} />{card(APPROVAL_H, <SealedCardContent card={APPROVAL} />).el}</Desktop>,
+    render: () => <Desktop shape={NOTCH} width={W} height={200}><Strip shape={NOTCH} counts={{ waiting: 1, working: 1 }} /><MeasuredCard content={<SealedCardContent card={APPROVAL} />} /></Desktop>,
   },
   {
     id: "island/card-approval-hovered",
     title: "Card on top: hovered, ✓ under the pointer",
     width: W,
     height: 200,
-    render: () => <Desktop shape={NOTCH} width={W} height={200}><Strip shape={NOTCH} counts={{ waiting: 1, working: 1 }} />{card(APPROVAL_H, <SealedCardContent card={APPROVAL} hover="accept" />, { hovered: true }).el}</Desktop>,
+    render: () => <Desktop shape={NOTCH} width={W} height={200}><Strip shape={NOTCH} counts={{ waiting: 1, working: 1 }} /><MeasuredCard content={<SealedCardContent card={APPROVAL} hover="accept" />} hovered /></Desktop>,
   },
   {
     id: "island/card-link",
     title: "Card on top: a link request",
     width: W,
     height: 210,
-    render: () => <Desktop shape={NOTCH} width={W} height={210}><Strip shape={NOTCH} counts={{ waiting: 1, working: 0 }} />{card(LINK_H, <SealedCardContent card={LINK} />).el}</Desktop>,
+    render: () => <Desktop shape={NOTCH} width={W} height={210}><Strip shape={NOTCH} counts={{ waiting: 1, working: 0 }} /><MeasuredCard content={<SealedCardContent card={LINK} />} /></Desktop>,
   },
   {
     id: "island/card-question",
     title: "Card on top: a question, an option under the pointer",
     width: W,
     height: 330,
-    render: () => <Desktop shape={NOTCH} width={W} height={330}><Strip shape={NOTCH} counts={{ waiting: 1, working: 0 }} />{card(QUESTION_H, <QuestionCardContent card={QUESTION} draft={emptyDraft()} hoverOption={1} />).el}</Desktop>,
+    render: () => <Desktop shape={NOTCH} width={W} height={330}><Strip shape={NOTCH} counts={{ waiting: 1, working: 0 }} /><MeasuredCard content={<QuestionCardContent card={QUESTION} draft={emptyDraft()} hoverOption={1} />} /></Desktop>,
   },
   {
     id: "island/card-questions-multi",
     title: "Card on top: several questions, multiple choice, answered",
     width: W,
     height: 330,
-    render: () => <Desktop shape={NOTCH} width={W} height={330}><Strip shape={NOTCH} counts={{ waiting: 1, working: 0 }} />{card(QUESTION_H, <QuestionCardContent card={QUESTIONS_2} draft={{ visible: 0, selections: { 0: [0, 2] }, others: {} }} hoverAccept />).el}</Desktop>,
+    render: () => <Desktop shape={NOTCH} width={W} height={330}><Strip shape={NOTCH} counts={{ waiting: 1, working: 0 }} /><MeasuredCard content={<QuestionCardContent card={QUESTIONS_2} draft={{ visible: 0, selections: { 0: [0, 2] }, others: {} }} hoverAccept />} /></Desktop>,
   },
   {
     id: "island/card-waiting",
     title: "A hovered card holds; the newcomer waits below",
     width: W,
     height: 250,
-    render: () => {
-      const { g, el } = card(APPROVAL_H, <SealedCardContent card={APPROVAL} />, { hovered: true });
-      return (
-        <Desktop shape={NOTCH} width={W} height={250}>
-          <Strip shape={NOTCH} counts={{ waiting: 2, working: 0 }} />
-          {el}
-          <div className="clv-card-panel" style={{ width: g.panelSize.width, height: g.panelSize.height + 48, left: `calc(50% - ${g.panelSize.width / 2}px)` }}>
-            <WaitingPill card={APPROVAL_2} rect={waitingRect(g)} />
-          </div>
-        </Desktop>
-      );
-    },
+    render: () => (
+      <Desktop shape={NOTCH} width={W} height={250}>
+        <Strip shape={NOTCH} counts={{ waiting: 2, working: 0 }} />
+        <MeasuredCard
+          content={<SealedCardContent card={APPROVAL} />}
+          hovered
+          after={(g) => (
+            <div className="clv-card-panel" style={{ width: g.panelSize.width, height: g.panelSize.height + 48, left: `calc(50% - ${g.panelSize.width / 2}px)` }}>
+              <WaitingPill card={APPROVAL_2} rect={waitingRect(g)} />
+            </div>
+          )}
+        />
+      </Desktop>
+    ),
   },
   {
     id: "island/card-no-housing",
     title: "Card on top: a screen with no housing",
     width: W,
     height: 190,
-    render: () => <Desktop shape={NO_NOTCH} width={W} height={190}><Strip shape={NO_NOTCH} counts={{ waiting: 1, working: 0 }} />{card(APPROVAL_H, <SealedCardContent card={APPROVAL} />, { shape: NO_NOTCH }).el}</Desktop>,
+    render: () => <Desktop shape={NO_NOTCH} width={W} height={190}><Strip shape={NO_NOTCH} counts={{ waiting: 1, working: 0 }} /><MeasuredCard content={<SealedCardContent card={APPROVAL} />} shape={NO_NOTCH} /></Desktop>,
   },
   {
     id: "island/card-birth",
@@ -183,7 +205,7 @@ export const ISLAND_STORIES: Story[] = [
     render: () =>
       filmstrip(
         [0.06, 0.14, 0.22, 0.3, 0.38, 0.46, 0.58, 0.78, FLUID.settle],
-        (t) => <Desktop shape={NOTCH} width={460} height={200}>{card(APPROVAL_H, <SealedCardContent card={APPROVAL} />, { seconds: t }).el}</Desktop>,
+        (t) => <Desktop shape={NOTCH} width={460} height={200}><MeasuredCard content={<SealedCardContent card={APPROVAL} />} seconds={t} /></Desktop>,
         460,
         200,
       ),

@@ -226,3 +226,14 @@ describe("rows", () => {
     expect(container.textContent).toContain("Paired 3 days ago");
   });
 });
+
+describe("a tab's scrolling list", () => {
+  test("fades an edge only where more of the list lies beyond it", async () => {
+    const { scrollEdges } = await import("../src/ui/OpenIsland");
+    expect(scrollEdges(0, 120, 120)).toEqual({ top: false, bottom: false });
+    expect(scrollEdges(0, 120, 300)).toEqual({ top: false, bottom: true });
+    expect(scrollEdges(90, 120, 300)).toEqual({ top: true, bottom: true });
+    expect(scrollEdges(180, 120, 300)).toEqual({ top: true, bottom: false });
+    expect(scrollEdges(179.7, 120, 300)).toEqual({ top: true, bottom: false });
+  });
+});

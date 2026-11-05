@@ -530,6 +530,25 @@
   overflow: hidden;
 }
 
+/* Where more of a list lies beyond an edge, the edge fades into the island's black. */
+.clv-edge {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 22px;
+  pointer-events: none;
+}
+
+.clv-edge[data-edge="top"] {
+  top: 0;
+  background: linear-gradient(to top, #00000000, var(--island-surface, #000000));
+}
+
+.clv-edge[data-edge="bottom"] {
+  bottom: 0;
+  background: linear-gradient(to bottom, #00000000, var(--island-surface, #000000));
+}
+
 /* Needs you. */
 
 .clv-needs {

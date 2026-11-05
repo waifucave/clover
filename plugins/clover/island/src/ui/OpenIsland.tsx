@@ -7,7 +7,7 @@
 // The body clips with rounded corners and `overflow: hidden`, never a clip-path or a mask, and the morph's
 // blur and fade are inline only while it moves: Needs you places sealed approval parts in here.
 
-import type { CSSProperties, MouseEvent, ReactElement, ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type MouseEvent, type ReactElement, type ReactNode } from "react";
 import type { IslandCard, QuestionDraft } from "../model/cards";
 import { emptyDraft, isSealed } from "../model/cards";
 import { ISLAND, islandRect, topInset, type Rect, type ScreenShape, type Size } from "../model/geometry";
@@ -188,8 +188,44 @@ export function TabDots({ tabs, onSelect }: { tabs: TabState; onSelect?: (id: st
 }
 
 /** A tab's body: scrolling inside the island's fixed size, or laid out flat and cut (the gallery). */
+/**
+ * A tab's body inside the open island's fixed size: it scrolls, and its top and bottom edges fade softly
+ * where more of the list lies beyond them (Winter's `IslandScrollEdges`), judged on scroll and on a change of
+ * size, never on a timer. The fades are overlays drawn only while there is more: no mask on the list, which
+ * would hide the sealed parts inside it.
+ */
 export function TabScroll({ scrolls = true, children }: { scrolls?: boolean; children: ReactNode }): ReactElement {
-  return <div className={scrolls ? "clv-tab-scroll" : "clv-tab-flat"}>{children}</div>;
+  const ref = useRef<HTMLDivElement | null>(null);
+  const [edges, setEdges] = useState({ top: false, bottom: false });
+  const judge = useCallback(() => {
+    const el = ref.current;
+    if (!el) return;
+    const next = scrollEdges(el.scrollTop, el.clientHeight, el.scrollHeight);
+    setEdges((e) => (e.top === next.top && e.bottom === next.bottom ? e : next));
+  }, []);
+  useLayoutEffect(judge);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(judge);
+    observer.observe(el);
+    if (el.firstElementChild) observer.observe(el.firstElementChild);
+    return () => observer.disconnect();
+  }, [judge]);
+  return (
+    <>
+      <div ref={ref} className={scrolls ? "clv-tab-scroll" : "clv-tab-flat"} onScroll={judge}>
+        {children}
+      </div>
+      {edges.top ? <div className="clv-edge" data-edge="top" aria-hidden="true" /> : null}
+      {edges.bottom ? <div className="clv-edge" data-edge="bottom" aria-hidden="true" /> : null}
+    </>
+  );
+}
+
+/** Where a scrolled list has more beyond its edges (half a pixel's grace). */
+export function scrollEdges(scrollTop: number, clientHeight: number, scrollHeight: number): { top: boolean; bottom: boolean } {
+  return { top: scrollTop > 0.5, bottom: scrollTop + clientHeight < scrollHeight - 0.5 };
 }
 
 export function EmptyTab({ line }: { line: string }): ReactElement {
