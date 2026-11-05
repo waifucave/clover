@@ -11,10 +11,10 @@ import {
   serializeRuntimeAddress,
   delivered,
   queued,
-} from "@yanlinglabs/winter-agent-sdk/messaging";
-import type { DeliveryOutcome, GlobalAgentMessage, ListedRuntimeObject, PermissionClassLabel } from "@yanlinglabs/winter-agent-sdk/messaging";
-import type { Query, SessionMessagingFacet } from "@yanlinglabs/winter-agent-sdk";
-import * as clover from "@yanlinglabs/winter-agent-sdk";
+} from "@waifucave/clover-agent-sdk/messaging";
+import type { DeliveryOutcome, GlobalAgentMessage, ListedRuntimeObject, PermissionClassLabel } from "@waifucave/clover-agent-sdk/messaging";
+import type { Query, SessionMessagingFacet } from "@waifucave/clover-agent-sdk";
+import * as clover from "@waifucave/clover-agent-sdk";
 import { createInMemoryRuntimeDirectoryStore, createSessionHost } from "../../src/runtime-sdk/host";
 import type { RuntimeDirectoryStore, SessionHost, SerializedRuntimeAddress } from "../../src/runtime-sdk/host";
 import { CORE_BRAND } from "../../src/runtime-sdk/brand";

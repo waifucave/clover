@@ -88,11 +88,11 @@ const SWIFT_MODULES =
   "Winter(?:Kit|Protocol|ChatKit|SessionKit|SessionClient|BrowserHost(?:Core)?|ComputerUse(?:Shell)?|CUCore|CUFixture|Cowork[A-Za-z]*|Helper|OfficeHelper|Headless[A-Za-z]*|Present[A-Za-z]*|CEF[A-Za-z]*|CodeIdentity|HostOutput|AppTests|KitTests|ProtocolTests|ChatKitTests|SessionKitTests|Tests)";
 
 export const CLOVER_ALLOWLIST: readonly AllowlistEntry[] = [
-  // ── The agent SDK (lane A renames and republishes it, after the owner's go-ahead) ──────────────
+  // ── The agent SDK: renamed to `@waifucave/clover-*` in A-M1; what is left is Winter's own ──────────
   {
     id: "sdk-packages",
-    regex: /@yanlinglabs\\?[/+]winter-(?!(?:protocol|core|cli|plugin-sdk)(?![a-z0-9-]))[a-z0-9-]+(?:@[0-9][0-9a-z.+-]*)?|(?<=["'])winter-agent-sdk(?=["'])|\bwinter-agent-sdk-darwin-[a-z0-9]+\b/g,
-    why: "the agent SDK's npm packages (`@yanlinglabs/winter-agent-sdk` and its siblings) and Winter for Chrome's package: renaming them here would break installs; lane A renames and republishes the SDK",
+    regex: /@yanlinglabs\\?[/+]winter-(?:agent-sdk(?:-darwin-[a-z0-9]+)?|runtime-sdk|for-chrome)(?![a-z0-9-])(?:@[0-9][0-9a-z.+-]*)?|(?<=["'])winter-agent-sdk(?=["'])|\bwinter-agent-sdk-darwin-[a-z0-9]+\b/g,
+    why: "Winter's own npm packages, which stay Winter's: the coding agent binary core installs (`@yanlinglabs/winter-agent-sdk-darwin-arm64`, lane K's) and its old wrapper's name, the archived router, and Winter for Chrome's package; the SDK itself is `@waifucave/clover-*` since A-M1",
   },
   {
     id: "sdk-package-names",
@@ -103,7 +103,7 @@ export const CLOVER_ALLOWLIST: readonly AllowlistEntry[] = [
   },
   {
     id: "sdk-api",
-    regex: /\b(?:WINTER_BRAND|WINTER_DEFAULT_TOOL_DEFINITIONS|WINTER_MCP_CLIENT_METADATA_URL|WINTER_TEST_NAMESPACE|WinterMcpServerInstance|isWinterMcpServerInstance|WinterModelDescriptor|WinterProviderDescriptor|WinterProviderResolutionError|WinterRpcError|WinterRpcTimeoutError|WinterCompatibilitySessionStore|AttachedWinterSession|attachWinterSession|winterAdapter|WinterCredentialMissing|WinterStoreLeaseError|WinterStoreError|WinterCatalog|winterSessionId|parentWinterSessionId|DEFAULT_ANTHROPIC_CONSOLE_PROFILE|setWinterIdentity|activeWinterIdentity|winterUserAgent)\b|resolveWinterHome(?= as sdkResolve)|\bwinter\b(?<=\bpeers\??\.winter)|\bwinter\b(?<=\bpeers:\s*\{\s*winter)|\bwinter\b(?<=\bmessaging\??\.winter)|\bwinter\b(?<=\bmessaging:\s*\{\s*winter)|\bwinterHome\b(?<=\bWinterCompatibilitySessionStore\(\{\s*winterHome)|\bwinterHome\b(?<=\bhandoff\??\.winterHome)|\bwinterHome\b(?=\s*:)(?<=\bhandoff:\s*\{(?:[^}]*[,\n])?\s*winterHome)|\bwinterHome\b(?<=\bSeamContext\.winterHome)|\bwinterHome\b(?<="resolveEndpoint", "winterHome)/g,
+    regex: /\b(?:WINTER_BRAND|WINTER_DEFAULT_IDENTITY|WINTER_DEFAULT_TOOL_DEFINITIONS|WINTER_MCP_CLIENT_METADATA_URL|WINTER_TEST_NAMESPACE|WinterMcpServerInstance|isWinterMcpServerInstance|WinterModelDescriptor|WinterProviderDescriptor|WinterProviderResolutionError|WinterRpcError|WinterRpcTimeoutError|WinterCompatibilitySessionStore|AttachedWinterSession|attachWinterSession|winterAdapter|WinterCredentialMissing|WinterStoreLeaseError|WinterStoreError|WinterCatalog|winterSessionId|parentWinterSessionId|DEFAULT_ANTHROPIC_CONSOLE_PROFILE|setWinterIdentity|activeWinterIdentity|winterUserAgent)\b|resolveWinterHome(?= as sdkResolve)|\bwinter\b(?<=\bpeers\??\.winter)|\bwinter\b(?<=\bpeers:\s*\{\s*winter)|\bwinter\b(?<=\bmessaging\??\.winter)|\bwinter\b(?<=\bmessaging:\s*\{\s*winter)|\bwinterHome\b(?<=\bWinterCompatibilitySessionStore\(\{\s*winterHome)|\bwinterHome\b(?<=\bhandoff\??\.winterHome)|\bwinterHome\b(?=\s*:)(?<=\bhandoff:\s*\{(?:[^}]*[,\n])?\s*winterHome)|\bwinterHome\b(?<=\bSeamContext\.winterHome)|\bwinterHome\b(?<="resolveEndpoint", "winterHome)/g,
     why: "the agent SDK's and router's own API: exported names, the router's `peers.winter` and `messaging.winter`, its `winterHome` and `winterSessionId` fields (the product session id, also the `runtime-state.db` column)",
   },
   {

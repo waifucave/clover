@@ -20,9 +20,9 @@
 // persists selections itself, `create.ts`'s `selectRuntimeFor`), and capability servers merged into
 // every query (each session carries its own `mcpServers`). `sdk` stays a parameter so a test can hand
 // in a fake SDK and see exactly what the host passes it.
-import * as cloverSdk from "@yanlinglabs/winter-agent-sdk";
-import type { BrandProfile, Options, Query } from "@yanlinglabs/winter-agent-sdk";
-import type { ContinuityEndpoint, MessageOrigin } from "@yanlinglabs/winter-provider-runtime";
+import * as cloverSdk from "@waifucave/clover-agent-sdk";
+import type { BrandProfile, Options, Query } from "@waifucave/clover-agent-sdk";
+import type { ContinuityEndpoint, MessageOrigin } from "@waifucave/clover-provider-runtime";
 
 import { RuntimeSdkDisposedError, RuntimeSdkError } from "./errors";
 import type { SeamContext, SeamContextWithDirectory } from "./seams/context";

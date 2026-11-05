@@ -11,7 +11,7 @@
 // the shared `claudeFamily` fixture spreads its providers across several models (row 17's own point) —
 // a single model with all four keeps every test in this file about ONE row set.
 import { describe, expect, test } from "bun:test";
-import type { ModelFamilyListing } from "@yanlinglabs/winter-agent-sdk";
+import type { ModelFamilyListing } from "@waifucave/clover-agent-sdk";
 
 import { isSelectionRefusal } from "../../../../src/runtime-sdk/host/selection/runtime-selection";
 import type { RuntimeSelection, SelectionAlternative, SelectionInput, SelectionRefusal } from "../../../../src/runtime-sdk/host/selection/runtime-selection";

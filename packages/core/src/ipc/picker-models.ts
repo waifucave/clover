@@ -1,4 +1,4 @@
-import { loadCatalog } from "@yanlinglabs/winter-provider-catalog";
+import { loadCatalog } from "@waifucave/clover-provider-catalog";
 import type { CredentialPresence } from "../runtime-sdk/host";
 import type { SyncConfigModel } from "@waifucave/clover-protocol";
 import { facingNameOf, type ModelTag } from "../runtime-sdk/model-tag";

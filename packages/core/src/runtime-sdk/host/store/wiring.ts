@@ -31,7 +31,7 @@
 // has no logging of any kind (WS-05 §13, the global constraint).
 import { randomUUID } from "node:crypto";
 
-import type { BrandProfile, SessionKey, SessionStore, SessionStoreEntry, SessionSummaryEntry } from "@yanlinglabs/winter-agent-sdk";
+import type { BrandProfile, SessionKey, SessionStore, SessionStoreEntry, SessionSummaryEntry } from "@waifucave/clover-agent-sdk";
 
 import { RuntimeSdkError } from "../errors";
 import type { HostSdk } from "../session-host";
@@ -426,7 +426,7 @@ export function createSharedSessionStore(input: SharedSessionStoreInput): Shared
   const policy: MirrorPolicy = { ...DEFAULT_MIRROR_POLICY, ...input.policy };
   const now = input.now ?? (() => new Date());
   const identity: SharedStoreIdentity = {
-    packageName: "@yanlinglabs/winter-agent-sdk",
+    packageName: "@waifucave/clover-agent-sdk",
     packageVersion: readPeerVersion(input.sdk),
     instanceId: randomUUID(),
     winterHome: input.winterHome,

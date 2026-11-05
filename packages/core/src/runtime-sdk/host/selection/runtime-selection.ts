@@ -39,14 +39,14 @@
 //     time, independent of the parent's runtime; the child's selection is persisted with the child
 //     record and resume/SendMessage follow the CHILD's record (WS-13c §8), never the parent's current
 //     runtime.
-import type { CredentialRef, ModelFamilyListing } from "@yanlinglabs/winter-agent-sdk";
+import type { CredentialRef, ModelFamilyListing } from "@waifucave/clover-agent-sdk";
 
 import { RuntimeSdkError } from "../errors";
 
 /**
  * The two runtimes, spelled exactly as the Winter runtime's own messaging layer spells them
  * (`packages/runtime/src/messaging/adapter.ts`, which Task 0 moves to
- * `@yanlinglabs/winter-agent-sdk/messaging`).
+ * `@waifucave/clover-agent-sdk/messaging`).
  *
  * ONE DECLARATION, and this is it while Task 0 is in flight: when the messaging subpath lands, this
  * line becomes a re-export of the SDK's own `RuntimeKind` (see `src/seams/messaging-contract.ts`,

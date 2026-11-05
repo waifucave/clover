@@ -36,7 +36,7 @@
 // EVERY DECISION CARRIES A RULE ID. `RuntimeSelection.reason` is prefixed with the id of the rule that
 // fired (`SELECTION_RULES`), so a host rendering "why is this session on that runtime" and a test
 // asserting which branch was taken read the same token instead of substring-matching prose.
-import type { CredentialRef, ModelFamilyListing } from "@yanlinglabs/winter-agent-sdk";
+import type { CredentialRef, ModelFamilyListing } from "@waifucave/clover-agent-sdk";
 
 import type {
   CredentialPresence,

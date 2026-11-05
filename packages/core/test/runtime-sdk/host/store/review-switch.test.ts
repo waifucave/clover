@@ -28,9 +28,9 @@ import { randomUUID } from "node:crypto";
 import { appendFileSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { describe, expect, test } from "bun:test";
-import type { ContinuityEndpoint, MessageOrigin } from "@yanlinglabs/winter-provider-runtime";
-import { endpointFromOrigin } from "@yanlinglabs/winter-provider-runtime";
-import type { SessionKey, SessionStoreEntry } from "@yanlinglabs/winter-agent-sdk";
+import type { ContinuityEndpoint, MessageOrigin } from "@waifucave/clover-provider-runtime";
+import { endpointFromOrigin } from "@waifucave/clover-provider-runtime";
+import type { SessionKey, SessionStoreEntry } from "@waifucave/clover-agent-sdk";
 
 import { createSwitchReviewer, providerStateSidecarPath, type SwitchReviewerDeps, type SwitchReviewerHandle } from "../../../../src/runtime-sdk/host/store/index";
 import type { RuntimeSelection } from "../../../../src/runtime-sdk/host/selection/runtime-selection";

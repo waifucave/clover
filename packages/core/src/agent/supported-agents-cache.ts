@@ -5,7 +5,7 @@
 // "what agent types exist" needs an answer even when nothing is live RIGHT NOW, so this is a single
 // slot holding the MOST RECENT successful answer from ANY session, never a per-session map (a
 // per-session map would serve nothing the moment every session ends, which defeats the whole point).
-import type { AgentInfo } from "@yanlinglabs/winter-agent-sdk";
+import type { AgentInfo } from "@waifucave/clover-agent-sdk";
 
 export interface SupportedAgentsSnapshot {
   agents: AgentInfo[];

@@ -19,7 +19,7 @@ import { describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { query as cloverQuery } from "@yanlinglabs/winter-agent-sdk";
+import { query as cloverQuery } from "@waifucave/clover-agent-sdk";
 import { CORE_BRAND } from "../../src/runtime-sdk/brand";
 import { escapeRulePath } from "../../src/runtime-sdk/host";
 import { fsRootAnchored } from "../../src/runtime-sdk/mode-options";

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { buildChildAddress, buildSessionAddress, serializeRuntimeAddress } from "@yanlinglabs/winter-agent-sdk/messaging";
+import { buildChildAddress, buildSessionAddress, serializeRuntimeAddress } from "@waifucave/clover-agent-sdk/messaging";
 import { createInMemoryRuntimeDirectoryStore } from "../../src/runtime-sdk/host";
 import type {
   DeliveryRecord, GlobalAgentMessage, HeldMessageRecord, IdleSubscriptionRecord, NameLeaseRecord,

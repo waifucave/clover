@@ -16,9 +16,9 @@ import type { RuntimeDirectoryEntry, RuntimeDirectoryStore } from "../../../../s
 import type { DeliveryOutcome, GlobalAgentMessage, ListedRuntimeObject, PermissionClassLabel, RuntimeAddress, RuntimeKind } from "../../../../src/runtime-sdk/host/seams/messaging-contract";
 import type { RuntimeSelection } from "../../../../src/runtime-sdk/host/selection/runtime-selection";
 import type { AttachedWinterSession, LiveSessionStatus } from "../../../../src/runtime-sdk/host/messaging/index";
-import { WINTER_BRAND, type SdkMessage, type SessionMessagingFacet } from "@yanlinglabs/winter-agent-sdk";
-import type { MessagingIdleNoticePayload, MessagingNotificationsPage } from "@yanlinglabs/winter-agent-sdk";
-import type { NotificationRecord } from "@yanlinglabs/winter-agent-sdk/messaging";
+import { WINTER_BRAND, type SdkMessage, type SessionMessagingFacet } from "@waifucave/clover-agent-sdk";
+import type { MessagingIdleNoticePayload, MessagingNotificationsPage } from "@waifucave/clover-agent-sdk";
+import type { NotificationRecord } from "@waifucave/clover-agent-sdk/messaging";
 
 export const selection = (over: Partial<RuntimeSelection> = {}): RuntimeSelection => ({
   runtimeKind: "winter-agent",

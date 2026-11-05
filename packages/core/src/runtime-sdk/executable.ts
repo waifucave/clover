@@ -22,7 +22,7 @@
 // every publish, re-triggering the one-time consent dialog — CLAUDE.md's third trap).
 //
 // P9a fix wave, C1: the platform package arrives as an OPTIONAL DEPENDENCY OF THE WRAPPER
-// (`@yanlinglabs/winter-agent-sdk`), not as a dependency of `packages/core` itself. Bun's isolated
+// (`@waifucave/clover-agent-sdk`), not as a dependency of `packages/core` itself. Bun's isolated
 // linker nests such a package under the WRAPPER's own store entry
 // (`node_modules/.bun/@yanlinglabs+winter-agent-sdk@<ver>/node_modules/@yanlinglabs/<platform-pkg>`)
 // and links it only into the wrapper's own `node_modules` — never hoisted to `packages/core`'s own
@@ -37,10 +37,13 @@ import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { bundleRuntimePath } from "./bundle-layout";
-import { REQUIRED_WINTER_AGENT_SDK } from "./versions";
+import { CODING_AGENT_BINARY_VERSION } from "./versions";
 
 export type WinterExecutableSource = "setting" | "env" | "bundle" | "home" | "platform-package";
 
+// A-M1: the binary is the last published build, on its own pin (`CODING_AGENT_BINARY_VERSION`). Its old
+// wrapper (`@yanlinglabs/winter-agent-sdk`) is no longer installed, so the first hop below misses and
+// the platform package resolves as core's own optional dependency.
 const CLOVER_WRAPPER_PACKAGE = "@yanlinglabs/winter-agent-sdk";
 const CLOVER_PLATFORM_PACKAGE = "@yanlinglabs/winter-agent-sdk-darwin-arm64";
 
@@ -57,7 +60,7 @@ const CLOVER_PLATFORM_PACKAGE = "@yanlinglabs/winter-agent-sdk-darwin-arm64";
  * Returns `undefined` when the optional dependency was not installed at all through either hop (a
  * non-darwin/non-arm64 host, or simply no `bun install` yet) — a legitimate skip, never a throw;
  * the caller decides what an absent rung means. A platform package whose OWN version disagrees
- * with this build's pin (`REQUIRED_WINTER_AGENT_SDK`) THROWS instead (P9a fix wave, M2) — a mixed
+ * with the binary's pin (`CODING_AGENT_BINARY_VERSION`) THROWS instead (P9a fix wave, M2) — a mixed
  * pair is not the pinned artifact (WS-02 §6); staying silent about it would let a session run
  * against an unpinned binary.
  */
@@ -78,9 +81,9 @@ export function resolvePlatformPackageWinter(fromUrl: string = import.meta.url):
     }
   }
   const version = (JSON.parse(readFileSync(packageJsonPath, "utf8")) as { version: string }).version;
-  if (version !== REQUIRED_WINTER_AGENT_SDK) {
+  if (version !== CODING_AGENT_BINARY_VERSION) {
     throw new Error(
-      `the installed platform package is winter ${version} but this build is pinned to ${REQUIRED_WINTER_AGENT_SDK} — a mixed pair is not the pinned artifact (WS-02 §6)`,
+      `the installed platform package is winter ${version} but this build is pinned to ${CODING_AGENT_BINARY_VERSION} — a mixed pair is not the pinned artifact (WS-02 §6)`,
     );
   }
   const binPath = join(dirname(packageJsonPath), "bin", "winter");
@@ -176,7 +179,7 @@ export function winterBinaryVersion(path: string, deps: VersionProbeDeps = {}): 
 
 export function explicitRuntimeVersionNote(path: string, deps: VersionProbeDeps = {}): string | undefined {
   const reported = winterBinaryVersion(path, deps);
-  return reported === undefined || reported === REQUIRED_WINTER_AGENT_SDK
+  return reported === undefined || reported === CODING_AGENT_BINARY_VERSION
     ? undefined
-    : `code sessions run ${path}, which reports winter ${reported}, but this daemon is pinned to ${REQUIRED_WINTER_AGENT_SDK} — rebuild it (bun run build:winter) or unset runtimes.winterExecutable / $CLOVER_RUNTIME_EXECUTABLE`;
+    : `code sessions run ${path}, which reports winter ${reported}, but this daemon is pinned to ${CODING_AGENT_BINARY_VERSION} — rebuild it (bun run build:winter) or unset runtimes.winterExecutable / $CLOVER_RUNTIME_EXECUTABLE`;
 }

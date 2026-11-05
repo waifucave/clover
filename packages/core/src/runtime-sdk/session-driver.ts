@@ -34,11 +34,11 @@ import type { ConnectorPermissionSource } from "../agent/mcp/connector-permissio
 import { randomUUID } from "node:crypto";
 import { statSync } from "node:fs";
 import { join } from "node:path";
-import { classifyPermissionMode } from "@yanlinglabs/winter-agent-sdk/messaging";
-import type { PermissionClassLabel } from "@yanlinglabs/winter-agent-sdk/messaging";
-import type { EffortLevel, McpServerConfig, Options, PermissionResult, ProviderConnectionConfig } from "@yanlinglabs/winter-agent-sdk";
-import { transcriptProjectKey } from "@yanlinglabs/winter-agent-sdk";
-import { loadCatalog } from "@yanlinglabs/winter-provider-catalog";
+import { classifyPermissionMode } from "@waifucave/clover-agent-sdk/messaging";
+import type { PermissionClassLabel } from "@waifucave/clover-agent-sdk/messaging";
+import type { EffortLevel, McpServerConfig, Options, PermissionResult, ProviderConnectionConfig } from "@waifucave/clover-agent-sdk";
+import { transcriptProjectKey } from "@waifucave/clover-agent-sdk";
+import { loadCatalog } from "@waifucave/clover-provider-catalog";
 import { isSelectionRefusal, type RuntimeDirectoryEntry, type RuntimeSelection, type SelectionAlternative } from "./host";
 import type { SecretStore } from "../auth/secret-store";
 import type { ApprovalBroker } from "../agent/approvals";
@@ -94,7 +94,7 @@ function mergedAgentDefinitions(
   home: string,
   cwd: string,
   projectAgentDefinitions: ((cwd: string) => LoadedAgentDefinitions) | undefined,
-): Record<string, import("@yanlinglabs/winter-agent-sdk").AgentDefinition> {
+): Record<string, import("@waifucave/clover-agent-sdk").AgentDefinition> {
   const project = projectAgentDefinitions?.(cwd) ?? { definitions: {}, sources: [], rejected: [] };
   return mergeAgentDefinitionTiers(loadUserAgentDefinitions(home), project).optionsMap;
 }
@@ -107,7 +107,7 @@ import { RunHomeError, type RunHome, type RunHomeErrorCode, type RunHomeFor, typ
 import { projectScopeTrusted, projectScopeRootFor, type RunHomeSessionFacts } from "./run-home-input";
 import { readCloverTasks } from "./tasks-reader";
 import { keychainService } from "../profile";
-import type { McpOAuthStore } from "@yanlinglabs/winter-agent-runtime/mcp-auth";
+import type { McpOAuthStore } from "@waifucave/clover-agent-runtime/mcp-auth";
 import { createHostCredentialBroker, sessionCredentialAllowlist, type ProviderRefresher } from "./host-credentials";
 import { SESSION_REPLACED } from "./session-replaced";
 import { COWORK_SESSION_UNSUPPORTED_CODE, isUnrunnableStoredMode, runnableModeOf, unrunnableModeMessage, type DrivableSessionMode } from "../sessions/session-mode";
@@ -392,7 +392,7 @@ export interface CloverLegDeps {
    * double that doesn't care; never awaited or retried by this file — a rejection (a torn/aborted
    * child before the call resolves) is swallowed at the call site, never surfaced here.
    */
-  onSupportedAgents?: (sessionId: string, agents: import("@yanlinglabs/winter-agent-sdk").AgentInfo[]) => void;
+  onSupportedAgents?: (sessionId: string, agents: import("@waifucave/clover-agent-sdk").AgentInfo[]) => void;
   /** The island's Usage tab: a session's `rate_limit_event` report (the projector's `onRateLimit`). */
   onRateLimit?: (sessionId: string, info: Record<string, unknown>) => void;
   /** The usage DB (`docs/claude/usage.md`): each model's share of a projected turn (the projector's `onTurnUsage`). */

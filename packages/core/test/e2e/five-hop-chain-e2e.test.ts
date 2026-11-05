@@ -58,8 +58,8 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { classifySwitch, type ContinuityEndpoint } from "@yanlinglabs/winter-provider-runtime";
-import { openaiChatFake, openaiResponsesFake, startFake, type FakeServer } from "@yanlinglabs/winter-provider-conformance/fakes";
+import { classifySwitch, type ContinuityEndpoint } from "@waifucave/clover-provider-runtime";
+import { openaiChatFake, openaiResponsesFake, startFake, type FakeServer } from "@waifucave/clover-provider-conformance/fakes";
 import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, type WritableSocket, type SessionEvent } from "@waifucave/clover-protocol";
 import { FileSecretStore } from "../../src/auth/secret-store";
 import { CREDENTIAL_MATERIAL_NAMES, writeCredentialMaterial } from "../../src/auth/credential-material";
@@ -68,7 +68,7 @@ import { ANTHROPIC_CREDENTIAL_SECRET_NAME } from "../../src/runtime-sdk/keychain
 import { daemonResolveEndpoint } from "../../src/providers/registry";
 import { describeWithWinterBinary } from "../helpers/winter-binary";
 import { carriesReasoning, opaqueLeaks, outOfOrder } from "../helpers/carriage";
-import type { anthropicFake as AnthropicFakeModule } from "@yanlinglabs/winter-provider-conformance";
+import type { anthropicFake as AnthropicFakeModule } from "@waifucave/clover-provider-conformance";
 
 type AnthropicTurnScript = Parameters<typeof AnthropicFakeModule.anthropicTurnResponse>[0];
 
@@ -214,7 +214,7 @@ describeWithWinterBinary("A-5 part 2: the chain's LAST hop (gpt -> claude) is si
         scenarios: {}, unknownModel: async () => openaiResponsesFake.responsesStream({ text: ["hello from gpt"] }),
       });
       openaiFakeRef = openaiFake;
-      const { startFake, anthropicFake } = await import("@yanlinglabs/winter-provider-conformance");
+      const { startFake, anthropicFake } = await import("@waifucave/clover-provider-conformance");
       const anthropicFakeServer = await startFake({
         routes: [{
           path: "*",
@@ -401,7 +401,7 @@ describeWithWinterBinary("A-5 part 3: claude -> deepseek -> GLM -> gpt -> claude
           reasoningItems: [{ index: 0, encrypted: GPT_ENCRYPTED, summaryText: GPT_SUMMARY }],
         }),
       });
-      const { startFake: startAnthropic, anthropicFake } = await import("@yanlinglabs/winter-provider-conformance");
+      const { startFake: startAnthropic, anthropicFake } = await import("@waifucave/clover-provider-conformance");
       anthropicFakeServer = await startAnthropic({
         routes: [{
           path: "*",

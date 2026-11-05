@@ -4,7 +4,7 @@
 // is a pure function of settings/env/paths.
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { createInMemoryRuntimeDirectoryStore, type SessionHost, type SessionHostOptions } from "../../src/runtime-sdk/host";
-import { buildSessionAddress, serializeRuntimeAddress } from "@yanlinglabs/winter-agent-sdk/messaging";
+import { buildSessionAddress, serializeRuntimeAddress } from "@waifucave/clover-agent-sdk/messaging";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";

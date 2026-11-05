@@ -6,7 +6,7 @@ import { appendFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "n
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { describe, expect, test } from "bun:test";
-import type { SessionKey } from "@yanlinglabs/winter-agent-sdk";
+import type { SessionKey } from "@waifucave/clover-agent-sdk";
 
 import { providerStateSidecarPath, readProviderStateSidecar } from "../../../../src/runtime-sdk/host/store/index";
 

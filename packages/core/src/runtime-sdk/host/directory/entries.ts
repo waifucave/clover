@@ -13,9 +13,9 @@
 //   * `owningSessionIdOf` — WS-10 §10.3's owning-parent fence, spelled once.
 //   * `mergeAdapterOwnedFields` — the one field-level merge rule this package has, and it exists
 //     because two lanes write the same row (see that function's own note).
-import type { PermissionMode } from "@yanlinglabs/winter-agent-sdk";
-import { buildSessionAddress, serializeRuntimeAddress } from "@yanlinglabs/winter-agent-sdk/messaging";
-import type { ChildLike, ChildLikeStatus } from "@yanlinglabs/winter-agent-sdk/messaging";
+import type { PermissionMode } from "@waifucave/clover-agent-sdk";
+import { buildSessionAddress, serializeRuntimeAddress } from "@waifucave/clover-agent-sdk/messaging";
+import type { ChildLike, ChildLikeStatus } from "@waifucave/clover-agent-sdk/messaging";
 
 import type { RuntimeDirectoryEntry } from "../seams/directory-store";
 import type { DeliveryOutcome, GlobalAgentMessage, ListedRuntimeObject, RuntimeAddress, SerializedRuntimeAddress } from "../seams/messaging-contract";

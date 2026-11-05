@@ -16,7 +16,7 @@ import { expect, test } from "bun:test";
 import { existsSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { query, type CanUseTool } from "@yanlinglabs/winter-agent-sdk";
+import { query, type CanUseTool } from "@waifucave/clover-agent-sdk";
 import { CORE_BRAND } from "../../src/runtime-sdk/brand";
 import type { CredentialPresence } from "../../src/runtime-sdk/host";
 import { buildCloverOptions } from "../../src/runtime-sdk/mode-options";

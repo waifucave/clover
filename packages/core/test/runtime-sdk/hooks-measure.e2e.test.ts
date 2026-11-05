@@ -1,7 +1,7 @@
 // P8c-7 MEASUREMENT (Lane 3, Task 3.1) — does a real, spawned `winter` child fire a
 // `PreToolUse`/`PostToolUse` `Options.hooks` callback back through the wrapper's stdio bridge, and
 // does a `PreToolUse` `deny` actually block the call? 8b's completion report named this unmeasured:
-// the wrapper (`@yanlinglabs/winter-agent-sdk`'s `index.js`) demonstrably CONVERTS `Options.hooks`
+// the wrapper (`@waifucave/clover-agent-sdk`'s `index.js`) demonstrably CONVERTS `Options.hooks`
 // (real, in-process `HookCallback` functions) into a metadata-only `RuntimeHooksConfig` for the wire
 // (`buildRuntimeHooksConfig`) and registers a `"hook"` control-request handler
 // (`controlRequestHandlers.set("hook", makeHookHandler(...))`) keyed by a synthesized `hookId` — but
@@ -24,7 +24,7 @@ import { expect, test } from "bun:test";
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { query, type HookCallback, type HookInput, type Options } from "@yanlinglabs/winter-agent-sdk";
+import { query, type HookCallback, type HookInput, type Options } from "@waifucave/clover-agent-sdk";
 import { CORE_BRAND } from "../../src/runtime-sdk/brand";
 import { createHostPromptQueue } from "../../src/runtime-sdk/prompt-queue";
 import { describeWithWinterBinary } from "../helpers/winter-binary";
@@ -90,7 +90,7 @@ async function driveWithHooks(bin: string, hooks: Options["hooks"]): Promise<{
  */
 function installedWrapperCarriesFailClosed(): boolean {
   try {
-    const entry = Bun.resolveSync("@yanlinglabs/winter-agent-sdk", import.meta.dir);
+    const entry = Bun.resolveSync("@waifucave/clover-agent-sdk", import.meta.dir);
     return ["query.js", "query.ts"].some((name) => {
       const file = join(dirname(entry), name);
       return existsSync(file) && readFileSync(file, "utf8").includes("failClosed");

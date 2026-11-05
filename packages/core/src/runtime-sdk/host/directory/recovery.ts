@@ -26,7 +26,7 @@
 // happens; recovery's job is to make sure the mail is still there and counted.
 import type { RuntimeDirectoryRecovery, RuntimeDirectoryRecoveryStep } from "../seams/directory";
 import type { RuntimeDirectoryEntry, RuntimeDirectoryStore } from "../seams/directory-store";
-import { deliveryUncertain } from "@yanlinglabs/winter-agent-sdk/messaging";
+import { deliveryUncertain } from "@waifucave/clover-agent-sdk/messaging";
 import { isLiveStatus, parentAddressOf } from "./entries";
 
 export interface RuntimeDirectoryRecoveryHooks {

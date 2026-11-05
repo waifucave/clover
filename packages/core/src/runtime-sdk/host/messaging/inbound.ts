@@ -21,8 +21,8 @@
 // runs on the SESSION path only. Steering a running child or resuming a terminal one is "delivered
 // inside the owning parent session" (WS-10 §10.3) — the child already runs under the parent's
 // permission mode, and there is no second receiver to have a policy.
-import { buildDefaultHoldEntry, buildExplicitHoldEntry, createMailbox, held as heldOutcome, refused as refusedOutcome, resolveInboundDecision, ACCEPTED_QUEUE_CAP, DEFAULT_HOLD_EXPIRY_MS, HELD_INBOX_CAP } from "@yanlinglabs/winter-agent-sdk/messaging";
-import type { CrossSessionInbound, HeldEntry, Mailbox, PermissionClassLabel } from "@yanlinglabs/winter-agent-sdk/messaging";
+import { buildDefaultHoldEntry, buildExplicitHoldEntry, createMailbox, held as heldOutcome, refused as refusedOutcome, resolveInboundDecision, ACCEPTED_QUEUE_CAP, DEFAULT_HOLD_EXPIRY_MS, HELD_INBOX_CAP } from "@waifucave/clover-agent-sdk/messaging";
+import type { CrossSessionInbound, HeldEntry, Mailbox, PermissionClassLabel } from "@waifucave/clover-agent-sdk/messaging";
 
 import type { HeldMessageRecord, RuntimeDirectoryEntry, RuntimeDirectoryStore } from "../seams/directory-store";
 import type { DeliveryOutcome, GlobalAgentMessage, SerializedRuntimeAddress } from "../seams/messaging-contract";

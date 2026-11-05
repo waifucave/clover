@@ -22,11 +22,11 @@ import { describe, expect, test } from "bun:test";
 import { createRuntimeMessaging } from "../../../../src/runtime-sdk/host/messaging/index";
 // THE HANDLERS ARE THE SDK'S (R-8-1): one declaration for both hosts. The router supplies the PORT —
 // its own `GlobalMessagingHandle`, which satisfies `MessagingToolPort` structurally (ruling P-3).
-import { createMessagingToolHandlers } from "@yanlinglabs/winter-agent-sdk/tools";
+import { createMessagingToolHandlers } from "@waifucave/clover-agent-sdk/tools";
 import type { GlobalMessagingOptions } from "../../../../src/runtime-sdk/host/messaging/index";
 import { childAddress, childEntry, createBed, createFakeFacet, envelope, sessionAddress, sessionEntry, winterHandle, winterWriterHandle, declaredClasses } from "./support";
 import { credentials, listing, NOW, VERSIONS } from "../selection/fixtures";
-import type { SdkMessage } from "@yanlinglabs/winter-agent-sdk";
+import type { SdkMessage } from "@waifucave/clover-agent-sdk";
 
 function bedWith(options: GlobalMessagingOptions = {}, messages?: SdkMessage[]) {
   const bed = createBed(messages === undefined ? {} : { messages });

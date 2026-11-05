@@ -50,9 +50,9 @@ import {
   queued,
   refused,
   serializeRuntimeAddress,
-} from "@yanlinglabs/winter-agent-sdk/messaging";
-import type { DeliveryOutcome, GlobalAgentMessage, ListedRuntimeObject, PermissionClassLabel, RuntimeAddress } from "@yanlinglabs/winter-agent-sdk/messaging";
-import type { Query, SessionMessagingFacet } from "@yanlinglabs/winter-agent-sdk";
+} from "@waifucave/clover-agent-sdk/messaging";
+import type { DeliveryOutcome, GlobalAgentMessage, ListedRuntimeObject, PermissionClassLabel, RuntimeAddress } from "@waifucave/clover-agent-sdk/messaging";
+import type { Query, SessionMessagingFacet } from "@waifucave/clover-agent-sdk";
 import type {
   AttachedWinterSession,
   RuntimeDirectoryEntry,

@@ -26,14 +26,14 @@
 // Winter Phase 10b (D1 fix round 3, item 1a): the SAME address derivation `messaging.ts`'s attach door
 // uses — a materialized directory row must land at the address a real incarnation would later
 // overwrite, never a second one.
-import { buildSessionAddress, serializeRuntimeAddress } from "@yanlinglabs/winter-agent-sdk/messaging";
-import type { SessionKey } from "@yanlinglabs/winter-agent-sdk";
+import { buildSessionAddress, serializeRuntimeAddress } from "@waifucave/clover-agent-sdk/messaging";
+import type { SessionKey } from "@waifucave/clover-agent-sdk";
 import type { RuntimeSelection, SelectionAlternative, SerializedRuntimeAddress } from "./host";
-// Winter Phase 10b (D1-6, W18-20): `SwitchReview` is `@yanlinglabs/winter-provider-runtime`'s own
+// Winter Phase 10b (D1-6, W18-20): `SwitchReview` is `@waifucave/clover-provider-runtime`'s own
 // type — the router's `reviewSwitch` declares it by importing it from THAT package too (its own
 // top-level barrel never re-exports it), so this is the one place the daemon can name the type
 // without a structural `any`.
-import type { SwitchReview } from "@yanlinglabs/winter-provider-runtime";
+import type { SwitchReview } from "@waifucave/clover-provider-runtime";
 import type { WinterRuntimeSdk, SessionMode } from "./create";
 import { RuntimeSessionRecords, type RuntimeSessionRecord } from "../runtime-state/records";
 import type { Settings } from "../settings";

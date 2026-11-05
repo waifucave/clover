@@ -11,9 +11,9 @@
 // receipt are SQLite rows, and the reconciliation is a write into the same file recovery walks.
 import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
-import { buildSessionAddress, serializeRuntimeAddress } from "@yanlinglabs/winter-agent-sdk/messaging";
-import type { GlobalAgentMessage } from "@yanlinglabs/winter-agent-sdk/messaging";
-import * as clover from "@yanlinglabs/winter-agent-sdk";
+import { buildSessionAddress, serializeRuntimeAddress } from "@waifucave/clover-agent-sdk/messaging";
+import type { GlobalAgentMessage } from "@waifucave/clover-agent-sdk/messaging";
+import * as clover from "@waifucave/clover-agent-sdk";
 import { createSessionHost } from "../../src/runtime-sdk/host";
 import type { RuntimeDirectoryEntry, SerializedRuntimeAddress } from "../../src/runtime-sdk/host";
 import { openRuntimeStateDb } from "../../src/runtime-state/db";

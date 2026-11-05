@@ -3,7 +3,7 @@ import { describe, expect, test } from "bun:test";
 import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
-import type { SessionStoreEntry } from "@yanlinglabs/winter-agent-sdk";
+import type { SessionStoreEntry } from "@waifucave/clover-agent-sdk";
 
 import {
   canonicalTranscriptPath,
@@ -16,7 +16,7 @@ import {
   isJournalKey,
 } from "../../../../src/runtime-sdk/host/store/index";
 import { sidecarPathFor, withStoreBed } from "./support";
-import { WINTER_BRAND } from "@yanlinglabs/winter-agent-sdk";
+import { WINTER_BRAND } from "@waifucave/clover-agent-sdk";
 
 /** Writes a transcript into a local-write root the way the official runtime's wrapper does. */
 function writeLocal(root: string, key: { projectKey: string; sessionId: string; subpath?: string }, entries: SessionStoreEntry[]): string {

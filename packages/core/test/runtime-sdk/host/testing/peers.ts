@@ -1,6 +1,6 @@
 // FAKE PEERS — the one place this package casts to a module-namespace type.
 //
-// `HostSdk` is `typeof import("@yanlinglabs/winter-agent-sdk")`: a 231-export module
+// `HostSdk` is `typeof import("@waifucave/clover-agent-sdk")`: a 231-export module
 // namespace. Nothing a test can build satisfies that structurally, and nothing should have to — a
 // test of the DOOR needs `query` and a version identity, not two hundred re-exports. So the cast
 // lives here, ONCE, with this explanation, and every lane's test gets a typed fake instead.
@@ -9,8 +9,8 @@
 // `options` VALUES it was handed (by reference — `test/spine/query-passthrough.test.ts` asserts
 // identity, not deep equality) and yields exactly the messages it was scripted with, so "the stream
 // passes through verbatim" is checkable rather than assumed.
-import { InvalidBrandError, resolveBrand, transcriptProjectKey } from "@yanlinglabs/winter-agent-sdk";
-import type { AccountInfo, AgentInfo, EffortLevel, ModelFamilyListing, ModelInfo, Options, PermissionMode, Query, RewindFilesResult, SdkMessage } from "@yanlinglabs/winter-agent-sdk";
+import { InvalidBrandError, resolveBrand, transcriptProjectKey } from "@waifucave/clover-agent-sdk";
+import type { AccountInfo, AgentInfo, EffortLevel, ModelFamilyListing, ModelInfo, Options, PermissionMode, Query, RewindFilesResult, SdkMessage } from "@waifucave/clover-agent-sdk";
 
 import type { HostSdk } from "../../../../src/runtime-sdk/host/session-host";
 

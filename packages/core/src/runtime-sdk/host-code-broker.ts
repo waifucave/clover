@@ -1,7 +1,7 @@
 import { hostToolNameFor } from "./tool-names";
 import { canonicalHostJson } from "./host-code-json";
 import { CORE_BRAND } from "./brand";
-import * as sdk from "@yanlinglabs/winter-agent-sdk";
+import * as sdk from "@waifucave/clover-agent-sdk";
 import type {
   Options,
   SpawnClaudeCodeProcess,
@@ -9,7 +9,7 @@ import type {
   PermissionResult,
   HookCallback,
   HookJSONOutput,
-} from "@yanlinglabs/winter-agent-sdk";
+} from "@waifucave/clover-agent-sdk";
 import type { NewSessionEvent } from "@waifucave/clover-protocol";
 import { randomUUID, createHash } from "node:crypto";
 import { lstatSync, realpathSync } from "node:fs";
@@ -166,7 +166,7 @@ export function installedHostCodeAdapter(): HostCodeSdkAdapter | undefined {
   // The server-side runtime package is large; it is loaded here, on the first capability probe, not at daemon start. A daemon that
   // never runs an owned-bridge Code session (every production daemon today) never pays for it.
   const client = sdk as unknown as Record<string, unknown>,
-    server = require("@yanlinglabs/winter-agent-runtime") as Record<string, unknown>;
+    server = require("@waifucave/clover-agent-runtime") as Record<string, unknown>;
   if (
     client.MANDATORY_FLOOR_CONTRACT_VERSION !== 1 ||
     client.HOST_CODE_PROCESS_BROKER_VERSION !== 1 ||

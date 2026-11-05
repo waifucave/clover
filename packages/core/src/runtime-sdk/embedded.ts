@@ -1,5 +1,5 @@
 import { embeddedHostPathProtection, embeddedFileProtectionSupported, embeddedContextProtectionSupported, type EmbeddedHostPathProtection, type EmbeddedProtectionCapability } from "./embedded-path-protection";
-import * as embeddedHostApi from "@yanlinglabs/winter-agent-runtime/embedded-host";
+import * as embeddedHostApi from "@waifucave/clover-agent-runtime/embedded-host";
 import { hostStorageFloorDescriptor, registerHostStoragePolicyConsumer } from "./host-storage-fence";
 // WS-23 (ruling R1): CHAT AND DISPATCH RUN THE CLOVER RUNTIME EMBEDDED — one Bun Worker per session,
 // inside `clover-core`. A-M1 (spec §3.3): CODE SESSIONS DO TOO. No session spawns the `winter` binary
@@ -35,10 +35,10 @@ import { hostStorageFloorDescriptor, registerHostStoragePolicyConsumer } from ".
 // `CloverSession.open()` resumes only after the previous incarnation's iteration ends, and that
 // ordering is the only thing keeping two engines off one transcript.
 import { fileURLToPath } from "node:url";
-import { SDK_VERSION, type SpawnedRuntimeProcess, type SpawnRuntimeOptions } from "@yanlinglabs/winter-agent-sdk";
-import { EMBEDDED_KILL_GRACE_MS, spawnEmbeddedWorker, type EmbeddedWorkerProcess, type EmbeddedWorkflowWorkerCommand, type SpawnEmbeddedWorkerOptions } from "@yanlinglabs/winter-agent-runtime/embedded-host";
-import { RUNTIME_VERSION } from "@yanlinglabs/winter-agent-runtime/version";
-import { WORKFLOW_WORKER_BRIDGE_FLAG } from "@yanlinglabs/winter-agent-runtime/workflow-worker";
+import { SDK_VERSION, type SpawnedRuntimeProcess, type SpawnRuntimeOptions } from "@waifucave/clover-agent-sdk";
+import { EMBEDDED_KILL_GRACE_MS, spawnEmbeddedWorker, type EmbeddedWorkerProcess, type EmbeddedWorkflowWorkerCommand, type SpawnEmbeddedWorkerOptions } from "@waifucave/clover-agent-runtime/embedded-host";
+import { RUNTIME_VERSION } from "@waifucave/clover-agent-runtime/version";
+import { WORKFLOW_WORKER_BRIDGE_FLAG } from "@waifucave/clover-agent-runtime/workflow-worker";
 import { REQUIRED_WINTER_AGENT_SDK } from "./versions";
 import type { RunnableSessionMode } from "../sessions/session-mode";
 
@@ -107,7 +107,7 @@ export class EmbeddedRuntimeUnavailable extends Error {
 }
 
 export interface EmbeddedVersions {
-  /** `@yanlinglabs/winter-agent-runtime`'s own `RUNTIME_VERSION` — what the Worker will run. */
+  /** `@waifucave/clover-agent-runtime`'s own `RUNTIME_VERSION` — what the Worker will run. */
   runtime: string;
   /** The wrapper's `SDK_VERSION` — what speaks to it on the daemon's side of the frame stream. */
   sdk: string;

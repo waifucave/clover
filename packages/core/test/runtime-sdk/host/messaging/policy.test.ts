@@ -6,7 +6,7 @@
 // §13's own word — rather than a silent drop.
 import { describe, expect, test } from "bun:test";
 
-import { ACCEPTED_QUEUE_CAP, DEFAULT_HOLD_EXPIRY_MS, HELD_INBOX_CAP } from "@yanlinglabs/winter-agent-sdk/messaging";
+import { ACCEPTED_QUEUE_CAP, DEFAULT_HOLD_EXPIRY_MS, HELD_INBOX_CAP } from "@waifucave/clover-agent-sdk/messaging";
 import { createRuntimeMessaging, renderAttributedTurn } from "../../../../src/runtime-sdk/host/messaging/index";
 import type { GlobalMessagingOptions } from "../../../../src/runtime-sdk/host/messaging/index";
 import { createBed, createFakeFacet, envelope, sessionAddress, sessionEntry, winterHandle, winterWriterHandle } from "./support";

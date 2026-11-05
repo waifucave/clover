@@ -13,7 +13,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 
-import { WinterCompatibilitySessionStore, type SessionKey, type SessionStoreEntry } from "@yanlinglabs/winter-agent-sdk";
+import { WinterCompatibilitySessionStore, type SessionKey, type SessionStoreEntry } from "@waifucave/clover-agent-sdk";
 
 import { createSessionHost, type HostSdk } from "../../../../src/runtime-sdk/host/index";
 import type { SeamContextWithDirectory } from "../../../../src/runtime-sdk/host/seams/context";

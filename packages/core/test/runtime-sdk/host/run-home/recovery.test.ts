@@ -5,8 +5,8 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, readdirSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
-import { WinterCompatibilitySessionStore, type SessionKey, type SessionStoreEntry } from "@yanlinglabs/winter-agent-sdk";
-import { toClaudeReady } from "@yanlinglabs/winter-provider-runtime";
+import { WinterCompatibilitySessionStore, type SessionKey, type SessionStoreEntry } from "@waifucave/clover-agent-sdk";
+import { toClaudeReady } from "@waifucave/clover-provider-runtime";
 
 import { createSessionHost, type HostSdk } from "../../../../src/runtime-sdk/host/index";
 import { defaultEndpointResolver } from "../../../../src/runtime-sdk/host/default-endpoint-resolver";

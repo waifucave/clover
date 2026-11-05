@@ -13,7 +13,7 @@
 // resume is a new `query({ resume })` on the persisted runtime." So a handle is, minimally, a way to
 // push text — plus, on the Winter branch, the per-session messaging facet, which is the only door
 // into a spawned session's CHILDREN.
-import type { SessionMessagingFacet } from "@yanlinglabs/winter-agent-sdk";
+import type { SessionMessagingFacet } from "@waifucave/clover-agent-sdk";
 
 import type { ListedRuntimeObject, SerializedRuntimeAddress } from "../seams/messaging-contract";
 

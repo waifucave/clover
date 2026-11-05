@@ -26,7 +26,7 @@ import { expect, test } from "bun:test";
 import { mkdtempSync, readFileSync, rmSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { query, transcriptProjectKey } from "@yanlinglabs/winter-agent-sdk";
+import { query, transcriptProjectKey } from "@waifucave/clover-agent-sdk";
 import { CORE_BRAND } from "../../src/runtime-sdk/brand";
 import type { SessionEvent } from "@waifucave/clover-protocol";
 import { importEngineEraSession } from "../../src/runtime-sdk/import-legacy";
@@ -117,7 +117,7 @@ describeWithWinterBinary("engine-era import — the REAL winter binary resumes t
 
       // (b) the on-disk transcript now holds the imported turn FIRST, then the new one, correctly
       // chain-linked — read back through the real compat store, never a fake.
-      const { WinterCompatibilitySessionStore } = await import("@yanlinglabs/winter-agent-sdk");
+      const { WinterCompatibilitySessionStore } = await import("@waifucave/clover-agent-sdk");
       const compat = new WinterCompatibilitySessionStore({ winterHome: storeHomeFor(home) }); // the store the import wrote
       const projectKey = transcriptProjectKey(cwd);
       const entries = (await compat.load({ projectKey, sessionId: backendSessionId })) ?? [];

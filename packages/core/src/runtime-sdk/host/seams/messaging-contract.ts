@@ -2,7 +2,7 @@
 //
 // D19b moved the messaging contract, the resolution rules, the inbound policy, the mailbox, the idle
 // subscriptions and the router core OUT of the private Winter runtime and INTO the SDK package as the
-// subpath `@yanlinglabs/winter-agent-sdk/messaging` (R-7b-4, Phase 7b Task 0). On the day the spine
+// subpath `@waifucave/clover-agent-sdk/messaging` (R-7b-4, Phase 7b Task 0). On the day the spine
 // was written that subpath did not exist, so this file carried the same declarations copied VERBATIM
 // from the module Task 0 moved, with its header naming the flip and who makes it. Task 0 has landed
 // (SDK `v0.0.2`, `packages/sdk/src/messaging/`), so this is that flip.
@@ -20,7 +20,7 @@
 //
 // NO LOGIC IS RE-EXPORTED FROM HERE, deliberately, and that is unchanged from the copy: not
 // `serializeRuntimeAddress`, not the outcome constructors, not the caps. A lane imports every
-// FUNCTION straight from `@yanlinglabs/winter-agent-sdk/messaging`, so there is exactly one import
+// FUNCTION straight from `@waifucave/clover-agent-sdk/messaging`, so there is exactly one import
 // site for "the rules" and this file stays what its name says — the seam's type surface.
 import type { RuntimeKind } from "../selection/runtime-selection";
 
@@ -41,7 +41,7 @@ export type {
   GlobalAgentMessage,
   /** WS-10 §15's runtime adapter contract. Lane B implements two of these. */
   RuntimeMessagingAdapter,
-} from "@yanlinglabs/winter-agent-sdk/messaging";
+} from "@waifucave/clover-agent-sdk/messaging";
 
 /**
  * WS-10 §11's opaque serialization: `session:<winterSessionId>` / `agent:<parent>:<childId>`.

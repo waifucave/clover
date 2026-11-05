@@ -9,7 +9,7 @@ import { HostCodeExecutionService } from "../../src/runtime-sdk/host-code-broker
 //       and `ensure` undefined, never a throw (the IPC layer then refuses typed, fix wave F2);
 //   R1  the store's own log is what a resume re-pushes (`unconsumed` over `store.read`).
 import { describe, expect, test } from "bun:test";
-import { transcriptProjectKey } from "@yanlinglabs/winter-agent-sdk";
+import { transcriptProjectKey } from "@waifucave/clover-agent-sdk";
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync, existsSync } from "node:fs";
 import { diagnoseRuntimeState, repairRuntimeState } from "../../src/runtime-state/doctor";
 import { storeHomeFor, storeProjectsDir } from "../../src/agent/paths";
@@ -20,8 +20,8 @@ import { recordedRunHomes } from "../helpers/run-homes";
 import { toolsGatedNoneRow } from "../helpers/tools-refused-catalog-row";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Options, Query } from "@yanlinglabs/winter-agent-sdk";
-import * as clover from "@yanlinglabs/winter-agent-sdk";
+import type { Options, Query } from "@waifucave/clover-agent-sdk";
+import * as clover from "@waifucave/clover-agent-sdk";
 import { createInMemoryRuntimeDirectoryStore, createSessionHost, RunHomeError } from "../../src/runtime-sdk/host";
 import { ApprovalBroker } from "../../src/agent/approvals";
 import { FakeProvider } from "../../src/agent/fake-provider";
@@ -1141,7 +1141,7 @@ describe("open()'s replay passes the pre-turn credential gate (N2)", () => {
         expect(JSON.parse((own as { material: string }).material).key).toBe(key);
         expect(await options.onCredentialResolve!({ ref: { kind: "keychain", account: "harness-token" } }, { signal })).toEqual({ ok: false, reason: "not_allowed" });
         // The configured MCP server's sign-in is answerable (signed out here: no store wired).
-        const { mcpOAuthTokenAccount } = await import("@yanlinglabs/winter-agent-runtime/mcp-auth");
+        const { mcpOAuthTokenAccount } = await import("@waifucave/clover-agent-runtime/mcp-auth");
         expect(await options.onCredentialResolve!({ ref: { kind: "keychain", account: mcpOAuthTokenAccount("https://mcp.linear.example/mcp") } }, { signal })).toEqual({ ok: false, reason: "not_found" });
         // The plugin's server can refresh its sign-in (it is in the fold); a server under another name cannot.
         const pluginAccount = mcpOAuthTokenAccount("https://plugin.example/mcp");

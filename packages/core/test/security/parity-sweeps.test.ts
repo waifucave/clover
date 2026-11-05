@@ -24,7 +24,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test
 import { existsSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { openaiResponsesFake } from "@yanlinglabs/winter-provider-conformance/fakes";
+import { openaiResponsesFake } from "@waifucave/clover-provider-conformance/fakes";
 import {
   LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, type WritableSocket, type SessionEvent,
 } from "@waifucave/clover-protocol";
@@ -38,8 +38,8 @@ import { startDaemon, type RunningDaemon } from "../../src/daemon";
 import { ANTHROPIC_CREDENTIAL_SECRET_NAME } from "../../src/runtime-sdk/keychain";
 import { describeWithWinterBinary } from "../helpers/winter-binary";
 import { opaqueLeaks } from "../helpers/carriage";
-import { DECORATION_CHAR_BUDGET, MAX_DECORATION_CHARS } from "@yanlinglabs/winter-provider-runtime";
-import type { anthropicFake as AnthropicFakeModule } from "@yanlinglabs/winter-provider-conformance";
+import { DECORATION_CHAR_BUDGET, MAX_DECORATION_CHARS } from "@waifucave/clover-provider-runtime";
+import type { anthropicFake as AnthropicFakeModule } from "@waifucave/clover-provider-conformance";
 
 type AnthropicTurnScript = Parameters<typeof AnthropicFakeModule.anthropicTurnResponse>[0];
 
@@ -237,7 +237,7 @@ describeWithWinterBinary("A-8 part B: real captures (Claude -> GPT on the Clover
         scenarios: {}, unknownModel: async () => openaiResponsesFake.responsesStream({ text: ["hello from gpt, after the handoff"] }),
       });
       openaiFakeRef = openaiFake;
-      const { startFake, anthropicFake } = await import("@yanlinglabs/winter-provider-conformance");
+      const { startFake, anthropicFake } = await import("@waifucave/clover-provider-conformance");
       const anthropicFakeServer = await startFake({
         routes: [{
           path: "*",

@@ -3,7 +3,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { WinterCompatibilitySessionStore } from "@yanlinglabs/winter-agent-sdk";
+import { WinterCompatibilitySessionStore } from "@waifucave/clover-agent-sdk";
 import { sdkGlobalConfigPath, sdkHomeFor, sdkPluginsRoot, sdkSettingsPath, SDK_PERSISTENT_ENTRIES, storeHomeFor, storeProjectsDir } from "../src/agent/paths";
 import { assistantMemoryDirFor, globalMemoryDirFor, memoryDirFor, sanitizeProjectKey } from "../src/agent/memory-dir";
 import { userAgentsDir } from "../src/agent/agent-definitions";

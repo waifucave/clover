@@ -6,8 +6,8 @@
 // runtime, and `reviewSwitch` rode beside them. With the official runtime retired nothing moves
 // ownership any more; the review is what a host still calls, so it is the whole seam now. Hosts reach
 // it where they always did: `runtimeSdkInternals(sdk).barrier.reviewSwitch`.
-import type { SessionKey } from "@yanlinglabs/winter-agent-sdk";
-import type { SwitchReview } from "@yanlinglabs/winter-provider-runtime";
+import type { SessionKey } from "@waifucave/clover-agent-sdk";
+import type { SwitchReview } from "@waifucave/clover-provider-runtime";
 
 import type { RuntimeSelection } from "../selection/runtime-selection";
 

@@ -8,7 +8,7 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, realpathSync, symlinkSync } from "node:fs";
 import { join } from "node:path";
-import { WINTER_BRAND, WinterCompatibilitySessionStore, resolveBrand, type SessionStore } from "@yanlinglabs/winter-agent-sdk";
+import { WINTER_BRAND, WinterCompatibilitySessionStore, resolveBrand, type SessionStore } from "@waifucave/clover-agent-sdk";
 
 import { buildRunHome, createSessionHost, protectedPathRules, RunHomeError, type HostSdk, type RunHome, type SessionHostOptions } from "../../../../src/runtime-sdk/host/index";
 import { createFakeWinterPeer } from "../testing/index";

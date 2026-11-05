@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { isWinterMcpServerInstance, type McpSdkServerConfigWithInstance, type Options, type WinterMcpServerInstance } from "@yanlinglabs/winter-agent-sdk";
+import { isWinterMcpServerInstance, type McpSdkServerConfigWithInstance, type Options, type WinterMcpServerInstance } from "@waifucave/clover-agent-sdk";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";

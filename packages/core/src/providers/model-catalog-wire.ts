@@ -25,8 +25,8 @@
  * `permittedProviders()` and fail this file's own drift-tripwire test (`models-catalog.test.ts`). A
  * consumer that DOES need to hide a row reads the new `sessionUsable` field, on its own copy of it.
  */
-import { loadCatalog } from "@yanlinglabs/winter-provider-catalog";
-import type { CapabilityEvidence, ModelPricing } from "@yanlinglabs/winter-provider-catalog";
+import { loadCatalog } from "@waifucave/clover-provider-catalog";
+import type { CapabilityEvidence, ModelPricing } from "@waifucave/clover-provider-catalog";
 import type { CredentialPresence } from "../runtime-sdk/host";
 import { permittedProviders } from "../settings";
 import { credentialInventory, credentialPresentProbe } from "../runtime-sdk/keychain";

@@ -32,7 +32,7 @@ import { afterAll, beforeAll, describe, expect, spyOn, test } from "bun:test";
 import { mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { openaiChatFake, startFake, type FakeServer } from "@yanlinglabs/winter-provider-conformance/fakes";
+import { openaiChatFake, startFake, type FakeServer } from "@waifucave/clover-provider-conformance/fakes";
 import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, type WritableSocket, type SessionEvent } from "@waifucave/clover-protocol";
 import { FileSecretStore } from "../../src/auth/secret-store";
 import { readCredentialMaterial } from "../../src/auth/credential-material";
@@ -40,7 +40,7 @@ import { credentialRefFor } from "../../src/runtime-sdk/keychain";
 import { keychainService } from "../../src/profile";
 import { startDaemon, type RunningDaemon } from "../../src/daemon";
 import { describeWithWinterBinary } from "../helpers/winter-binary";
-import { spawnEmbeddedWorker, type SpawnEmbeddedWorkerOptions } from "@yanlinglabs/winter-agent-runtime/embedded-host";
+import { spawnEmbeddedWorker, type SpawnEmbeddedWorkerOptions } from "@waifucave/clover-agent-runtime/embedded-host";
 
 const SENTINEL = "WS19-SENTINEL-e2e-6d41af9c";
 const DEEPSEEK_MODEL = "deepseek/deepseek-v4-pro"; // R.1: DeepSeek's live row (deepseek-reasoner left the catalog, V16)

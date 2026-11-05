@@ -8,7 +8,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import type { CredentialRef } from "@yanlinglabs/winter-agent-sdk";
+import type { CredentialRef } from "@waifucave/clover-agent-sdk";
 
 import type { KeychainSeam } from "../../../../src/runtime-sdk/host/seams/keychain";
 

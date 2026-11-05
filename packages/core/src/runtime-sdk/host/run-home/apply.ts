@@ -17,7 +17,7 @@
 //   * store — the child's durable paths must be the store the router reconciles and hands off through.
 import { existsSync, realpathSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { envName, type BrandProfile, type Options } from "@yanlinglabs/winter-agent-sdk";
+import { envName, type BrandProfile, type Options } from "@waifucave/clover-agent-sdk";
 
 import { isRouterBuiltRunHome } from "./build";
 import { RunHomeError } from "./errors";

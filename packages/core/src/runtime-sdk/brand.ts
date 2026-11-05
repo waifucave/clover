@@ -38,7 +38,9 @@
 //    that name (`mode-options.ts`); it changes with the SDK.
 //  - `processLabel: "winter"` — the label of the `winter` binary the router spawns (Winter's coding
 //    agent); lane K names that binary.
-import { WINTER_BRAND, type BrandProfile } from "@yanlinglabs/winter-agent-sdk";
+import { WINTER_BRAND, type BrandProfile } from "@waifucave/clover-agent-sdk";
+import { installBrandIdentity } from "@waifucave/clover-provider-runtime";
+import { CORE_VERSION } from "../version";
 import { keychainService } from "../profile";
 import type { CloverProfile } from "../profile";
 
@@ -73,6 +75,9 @@ export function buildCoreBrand(profile?: CloverProfile, home?: string): BrandPro
     pluginManifestDir: ".clover-plugin",
     // `resolveBrand` parses this with `new URL` and requires `https:` (and no control bytes).
     contactUrl: "https://github.com/waifucave/clover",
+    // A-M1 (SDK 0.0.63): Clover's own release, so its identity reads `clover-core/<release>`, never the
+    // SDK's version after Clover's name.
+    productVersion: CORE_VERSION,
   };
 }
 
@@ -85,3 +90,15 @@ export function buildCoreBrand(profile?: CloverProfile, home?: string): BrandPro
  * app's own spawn — sets it in the environment it starts the process with.
  */
 export const CORE_BRAND: BrandProfile = Object.freeze(buildCoreBrand());
+
+/**
+ * A-M1: installs Clover's identity for THIS process, from CORE_BRAND, through the SDK's one
+ * brand-to-identity mapping (`installBrandIdentity`): originator `clover`, `User-Agent:
+ * clover-core/<release>`, Clover's contact on every vendor identity header. A session's own runtime
+ * installs the same identity from the same brand for its run; this covers the provider calls the
+ * process makes outside any session (titles, the bash reviewer, sign-ins). Returns the disposer.
+ * The daemon installs it for its lifetime (`startDaemon`); the CLI calls it at its own start.
+ */
+export function installCoreIdentity(brand: BrandProfile = CORE_BRAND): () => void {
+  return installBrandIdentity(brand);
+}

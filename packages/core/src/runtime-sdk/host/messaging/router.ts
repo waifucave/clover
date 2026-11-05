@@ -10,7 +10,7 @@
 // WHAT THE CORE BRINGS, and is therefore NOT re-implemented here: WS-10 §12's id allocation and retry
 // short-circuit, §11's resolution order (rules 1–6), the self-target refusal, the size bound and the
 // rapid-repeat loop guard, §14's sender- and target-side eligibility, the steer-vs-resume split, and
-// the throw classifier. Every one of those is `@yanlinglabs/winter-agent-sdk/messaging`'s, shared
+// the throw classifier. Every one of those is `@waifucave/clover-agent-sdk/messaging`'s, shared
 // verbatim with the Winter runtime's own router, which is the whole point of R-7b-4.
 //
 // WHAT THIS MODULE ADDS, in the order WS-15 §6.2 puts it:
@@ -48,8 +48,8 @@ import {
   DEFAULT_HOLD_EXPIRY_MS,
   DEFAULT_MESSAGE_TTL_MS,
   NOTIFY_IDLE_EXPIRY_MS,
-} from "@yanlinglabs/winter-agent-sdk/messaging";
-import type { MessagingRouterSeam, MessagingRuntimeDeps, NotificationRecord, RuntimeMessagingAdapter, SendMessageResult } from "@yanlinglabs/winter-agent-sdk/messaging";
+} from "@waifucave/clover-agent-sdk/messaging";
+import type { MessagingRouterSeam, MessagingRuntimeDeps, NotificationRecord, RuntimeMessagingAdapter, SendMessageResult } from "@waifucave/clover-agent-sdk/messaging";
 
 import type { DirectorySnapshot, RuntimeDirectoryHandle } from "../directory/directory";
 import { owningSessionIdOf } from "../directory/entries";

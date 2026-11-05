@@ -22,8 +22,8 @@
 //   anything unprovable                            → quarantined (that transcript's file is copied out)
 import { cpSync, existsSync, lstatSync, mkdirSync } from "node:fs";
 import { basename, dirname, join, relative } from "node:path";
-import type { SessionKey, SessionStoreEntry } from "@yanlinglabs/winter-agent-sdk";
-import { toClaudeReady, type ContinuityEndpoint, type MessageOrigin } from "@yanlinglabs/winter-provider-runtime";
+import type { SessionKey, SessionStoreEntry } from "@waifucave/clover-agent-sdk";
+import { toClaudeReady, type ContinuityEndpoint, type MessageOrigin } from "@waifucave/clover-provider-runtime";
 
 import { carryBackSessionArtifacts, repairTranscriptMetadata, type ArtifactCarryReport, type MetadataRepairReport } from "./artifacts";
 import { RunHomeError } from "./errors";

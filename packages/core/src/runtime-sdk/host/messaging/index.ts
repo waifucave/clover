@@ -24,7 +24,7 @@ export { createAttachedSessionRegistry } from "./sessions";
 export type { AttachedSession, AttachedSessionRegistry, AttachedWinterSession, LiveSessionStatus } from "./sessions";
 export { renderAttributedTurn, renderOwnerQualifiedTurn, UnattributableSenderError } from "./attribution";
 // THE MESSAGING TOOL HANDLERS ARE NOT HERE ANY MORE (R-8-1): `createMessagingToolHandlers`, the
-// acceptors, the native schemas and `callerAddress` all live in `@yanlinglabs/winter-agent-sdk/tools`,
+// acceptors, the native schemas and `callerAddress` all live in `@waifucave/clover-agent-sdk/tools`,
 // declared once for both hosts. This lane's contribution is the PORT they run over — the router's
 // `GlobalMessagingHandle` satisfies the SDK's `MessagingToolPort` structurally (ruling P-3), so it is
 // passed straight in with no adapter. The router re-exports none of it (ruling P-7).

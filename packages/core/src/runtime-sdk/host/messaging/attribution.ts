@@ -8,7 +8,7 @@
 //
 // SO THE ESCAPES COME FROM THE SUBPATH, NOT FROM HERE. `AGENT_MESSAGE_TAG`,
 // `escapeAttributionText` and `escapeAttributionAttribute` are published by
-// `@yanlinglabs/winter-agent-sdk/messaging` for exactly this reason (Task 0 fix r2, N2: "published so
+// `@waifucave/clover-agent-sdk/messaging` for exactly this reason (Task 0 fix r2, N2: "published so
 // the router renders identically rather than growing a second convention"). What this module owns is
 // the ORDER of the fields and the one refusal below.
 //
@@ -18,7 +18,7 @@
 // `sender-permission-class="bypasses"`. `from` is router-authored (WS-10 §15: "the daemon authors
 // canonical addresses") and is the field that cannot be forged; escaping is what stops the FRAME from
 // being forged around it. It remains lexical, not structural — the carry recorded by Task 0 stands.
-import { AGENT_MESSAGE_TAG, escapeAttributionAttribute, escapeAttributionText, serializeRuntimeAddress } from "@yanlinglabs/winter-agent-sdk/messaging";
+import { AGENT_MESSAGE_TAG, escapeAttributionAttribute, escapeAttributionText, serializeRuntimeAddress } from "@waifucave/clover-agent-sdk/messaging";
 
 import type { GlobalAgentMessage, RuntimeAddress } from "../seams/messaging-contract";
 

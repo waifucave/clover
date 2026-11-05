@@ -7,11 +7,11 @@
 // `{prompt:true, lossClass:"warned-lossy"}` instead of `lossless-portable` — `endpointFromOrigin`
 // alone reports `readableState:"none"` for every model, breaking R-10b-2/W18-21 on exactly the row
 // they protect. This file drives the SAME five rows with NO `resolveEndpoint` override at all,
-// against REAL rows from the compiled catalog (`@yanlinglabs/winter-provider-catalog`'s
+// against REAL rows from the compiled catalog (`@waifucave/clover-provider-catalog`'s
 // `loadCatalog()` — the same data `defaultEndpointResolver()` builds its registry from).
 //
 // THE CATALOG ROWS USED, measured directly (see the fix commit's report for the full survey).
-// RE-MEASURED at `@yanlinglabs/winter-provider-catalog` 0.0.22 (router 0.0.12's floor): the upstream
+// RE-MEASURED at `@waifucave/clover-provider-catalog` 0.0.22 (router 0.0.12's floor): the upstream
 // catalog renamed `deepseek/deepseek-reasoner` to `deepseek/deepseek-flash` (and added a sibling
 // `deepseek/deepseek-v4-pro`) — both still declare the identical `readableState: "full-exposed"` this
 // row is chosen for, so the row reference moved but the fact being tested did not.
@@ -35,8 +35,8 @@ import { randomUUID } from "node:crypto";
 import { appendFileSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { describe, expect, test } from "bun:test";
-import type { SessionKey, SessionStoreEntry } from "@yanlinglabs/winter-agent-sdk";
-import { SYSTEM_AND_TOOLS_ALLOWANCE_TOKENS } from "@yanlinglabs/winter-provider-runtime";
+import type { SessionKey, SessionStoreEntry } from "@waifucave/clover-agent-sdk";
+import { SYSTEM_AND_TOOLS_ALLOWANCE_TOKENS } from "@waifucave/clover-provider-runtime";
 
 import { createSwitchReviewer, providerStateSidecarPath, type SwitchReviewerDeps, type SwitchReviewerHandle } from "../../../../src/runtime-sdk/host/store/index";
 import type { RuntimeSelection } from "../../../../src/runtime-sdk/host/selection/runtime-selection";

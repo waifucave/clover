@@ -5,7 +5,7 @@
 //
 // NOT the daemon's own workflow worker (`workflows/subprocess-entry.ts`, argv `__workflow-worker`):
 // the runtime's worker speaks the runtime's bridge (`workflowWorkerMain`, R5-15), a different program.
-import { workflowWorkerMain } from "@yanlinglabs/winter-agent-runtime/workflow-worker";
+import { workflowWorkerMain } from "@waifucave/clover-agent-runtime/workflow-worker";
 import { refuseUnlessKeychainSandboxed } from "../workflows/sandbox-guard";
 
 /** Run the runtime's workflow worker on this process's stdio, then exit with its code. */

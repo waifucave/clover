@@ -16,7 +16,7 @@ import { describe, expect, test } from "bun:test";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { SessionKey } from "@yanlinglabs/winter-agent-sdk";
+import type { SessionKey } from "@waifucave/clover-agent-sdk";
 import type { RuntimeDirectoryEntry, RuntimeSelection, SelectionAlternative } from "../../src/runtime-sdk/host";
 import { modeOf, modelLabelFor, planAndApplySwitch, renderNoCredentialHint, type HandoffDeps, type SwitchReviewer } from "../../src/runtime-sdk/handoff";
 import { openRuntimeStateDb, RuntimeSessionRecords } from "../../src/runtime-state";

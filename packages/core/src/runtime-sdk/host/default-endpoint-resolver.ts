@@ -1,7 +1,7 @@
 // WS-18 W18-20 — P10b-6 fix round 1, CRITICAL: THE DEFAULT ENDPOINT RESOLVER MUST BE CATALOG-BACKED.
 //
 // `computeSwitchReview` (`store/handoff-barrier.ts`) and the official leg's Claude-ready wrap
-// (`door.ts`) both fall back to `endpointFromOrigin` — `@yanlinglabs/winter-provider-runtime`'s
+// (`door.ts`) both fall back to `endpointFromOrigin` — `@waifucave/clover-provider-runtime`'s
 // REGISTRY-FREE fallback — whenever a host injects no `resolveEndpoint`. Measured: that fallback
 // reports `readableState: "none"` for EVERY model, with no continuation or domain evidence at all, so
 // a real DeepSeek→GLM switch with a `{material:"exposed",complete:true}` sidecar record — the exact
@@ -9,7 +9,7 @@
 // resolver. That is a silent misclassification in the direction that matters most: it PROMPTS where
 // the ruling says it must not.
 //
-// THE FIX: build a real registry from the CATALOG data compiled into `@yanlinglabs/winter-provider-
+// THE FIX: build a real registry from the CATALOG data compiled into `@waifucave/clover-provider-
 // catalog`'s `loadCatalog()` — no network, no credentials, no adapter ever invoked — and resolve
 // through `createEndpointResolver`, provider-runtime's OWN domain/readable-state derivation
 // (`continuity/domains.ts`'s header: "one derivation, in the registry"). This module reimplements
@@ -27,9 +27,9 @@
 // A HOST'S OWN `deps.resolveEndpoint` ALWAYS WINS (both call sites check it first) — a production
 // registry (live discovery, custom/disabled providers, real credentials) is what the daemon injects;
 // this module is the floor under an uninjected default, not a replacement for one.
-import { loadCatalog } from "@yanlinglabs/winter-provider-catalog";
-import { createEndpointResolver, createRegistry, endpointFromOrigin, WinterProviderResolutionError } from "@yanlinglabs/winter-provider-runtime";
-import type { ContinuityEndpoint, MessageOrigin, ProviderAdapter, ProviderRegistry } from "@yanlinglabs/winter-provider-runtime";
+import { loadCatalog } from "@waifucave/clover-provider-catalog";
+import { createEndpointResolver, createRegistry, endpointFromOrigin, WinterProviderResolutionError } from "@waifucave/clover-provider-runtime";
+import type { ContinuityEndpoint, MessageOrigin, ProviderAdapter, ProviderRegistry } from "@waifucave/clover-provider-runtime";
 
 /**
  * A `ProviderAdapter` that satisfies `ProviderRegistry.resolve()`'s presence check and nothing else.

@@ -18,8 +18,8 @@
 // operations only": it resolves no names, applies no inbound policy, allocates no message id, and
 // invents no directory row. Every one of those belongs to the router above it, once, for both
 // runtimes.
-import type { Options } from "@yanlinglabs/winter-agent-sdk";
-import { delivered, deliveryUncertain, notFound, refused, resumedAndDelivered, queued, serializeRuntimeAddress, unavailable } from "@yanlinglabs/winter-agent-sdk/messaging";
+import type { Options } from "@waifucave/clover-agent-sdk";
+import { delivered, deliveryUncertain, notFound, refused, resumedAndDelivered, queued, serializeRuntimeAddress, unavailable } from "@waifucave/clover-agent-sdk/messaging";
 
 import type { HostSdk } from "../session-host";
 import { entryToListedRuntimeObject, owningSessionIdOf, parentAddressOf, sessionAddressOf } from "../directory/entries";

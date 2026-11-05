@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { explicitRuntimeVersionNote, resolvePlatformPackageWinter, resolveWinterExecutable, WinterExecutableUnavailable, winterBinaryVersion } from "../../src/runtime-sdk/executable";
 import { bundleRuntimePath } from "../../src/runtime-sdk/bundle-layout";
-import { REQUIRED_WINTER_AGENT_SDK } from "../../src/runtime-sdk/versions";
+import { CODING_AGENT_BINARY_VERSION } from "../../src/runtime-sdk/versions";
 
 const exists = (set: string[]) => (p: string) => set.includes(p);
 const base = { env: {}, execPath: "/bundle/Contents/MacOS/clover-core", home: "/tmp/h" };
@@ -133,12 +133,12 @@ describe("resolvePlatformPackageWinter (P9a-9, fix wave C1/M2)", () => {
    * optional dependency of the WRAPPER, nested under the wrapper's OWN store entry —
    * `<root>/node_modules/.bun/@yanlinglabs+winter-agent-sdk@<ver>/node_modules/@yanlinglabs/{clover-sdk,winter-agent-sdk-darwin-arm64}`
    * — with only the wrapper itself (never the platform package) linked at the top-level
-   * `<root>/node_modules/@yanlinglabs/winter-agent-sdk`. A single-hop `createRequire` rooted at the
+   * `<root>/node_modules/@waifucave/clover-agent-sdk`. A single-hop `createRequire` rooted at the
    * probe module walks straight past the platform package here; only the dual hop reaches it.
    */
   function nestedFixture(opts: { wrapperVersion?: string; platformVersion?: string; binPresent?: boolean } = {}): string {
-    const wrapperVersion = opts.wrapperVersion ?? REQUIRED_WINTER_AGENT_SDK;
-    const platformVersion = opts.platformVersion ?? REQUIRED_WINTER_AGENT_SDK;
+    const wrapperVersion = opts.wrapperVersion ?? CODING_AGENT_BINARY_VERSION;
+    const platformVersion = opts.platformVersion ?? CODING_AGENT_BINARY_VERSION;
     const binPresent = opts.binPresent ?? true;
     const root = mkdtempSync(join(tmpdir(), "clover-p9a-nested-"));
     cleanups.push(() => rmSync(root, { recursive: true, force: true }));
@@ -147,7 +147,7 @@ describe("resolvePlatformPackageWinter (P9a-9, fix wave C1/M2)", () => {
     const platformDir = join(storeScope, "winter-agent-sdk-darwin-arm64");
     mkdirSync(join(platformDir, "bin"), { recursive: true });
     mkdirSync(wrapperDir, { recursive: true });
-    writeFileSync(join(wrapperDir, "package.json"), JSON.stringify({ name: "@yanlinglabs/winter-agent-sdk", version: wrapperVersion }));
+    writeFileSync(join(wrapperDir, "package.json"), JSON.stringify({ name: "@waifucave/clover-agent-sdk", version: wrapperVersion }));
     writeFileSync(join(platformDir, "package.json"), JSON.stringify({ name: "@yanlinglabs/winter-agent-sdk-darwin-arm64", version: platformVersion }));
     if (binPresent) writeFileSync(join(platformDir, "bin", "winter"), "#!/bin/sh\necho fixture\n", { mode: 0o755 });
     // The top-level node_modules/@yanlinglabs/ holds ONLY the wrapper (bun's real isolated-linker
@@ -166,7 +166,7 @@ describe("resolvePlatformPackageWinter (P9a-9, fix wave C1/M2)", () => {
    *  ./<tarball> --optional` run directly IN packages/core) — the platform package sits at the
    *  top level of `node_modules`, no wrapper store entry involved at all. */
   function directFixture(opts: { platformVersion?: string; binPresent?: boolean } = {}): string {
-    const platformVersion = opts.platformVersion ?? REQUIRED_WINTER_AGENT_SDK;
+    const platformVersion = opts.platformVersion ?? CODING_AGENT_BINARY_VERSION;
     const binPresent = opts.binPresent ?? true;
     const root = mkdtempSync(join(tmpdir(), "clover-p9a-direct-"));
     cleanups.push(() => rmSync(root, { recursive: true, force: true }));
@@ -202,10 +202,10 @@ describe("resolvePlatformPackageWinter (P9a-9, fix wave C1/M2)", () => {
     expect(resolvePlatformPackageWinter(fromUrl)).toBeUndefined();
   });
 
-  test("M2: a nested platform package whose version disagrees with REQUIRED_WINTER_AGENT_SDK throws, naming both versions", () => {
+  test("M2: a nested platform package whose version disagrees with CODING_AGENT_BINARY_VERSION throws, naming both versions", () => {
     const fromUrl = nestedFixture({ platformVersion: "9.9.9" });
     expect(() => resolvePlatformPackageWinter(fromUrl)).toThrow(
-      new RegExp(`winter 9\\.9\\.9 but this build is pinned to ${REQUIRED_WINTER_AGENT_SDK.replace(/\./g, "\\.")}`),
+      new RegExp(`winter 9\\.9\\.9 but this build is pinned to ${CODING_AGENT_BINARY_VERSION.replace(/\./g, "\\.")}`),
     );
   });
 
@@ -221,7 +221,7 @@ describe("resolvePlatformPackageWinter (P9a-9, fix wave C1/M2)", () => {
     if (!r.ok) {
       expect(r.error).toBeInstanceOf(WinterExecutableUnavailable);
       expect(r.error.code).toBe("winter_executable_unavailable");
-      expect(r.error.message).toMatch(new RegExp(`winter 1\\.2\\.3 but this build is pinned to ${REQUIRED_WINTER_AGENT_SDK.replace(/\./g, "\\.")}`));
+      expect(r.error.message).toMatch(new RegExp(`winter 1\\.2\\.3 but this build is pinned to ${CODING_AGENT_BINARY_VERSION.replace(/\./g, "\\.")}`));
     }
   });
 
@@ -245,13 +245,13 @@ describe("winterBinaryVersion: what a configured binary reports — the spawn ho
 
 describe("explicitRuntimeVersionNote", () => {
   test("a configured runtime reporting the pinned version says nothing", () => {
-    expect(explicitRuntimeVersionNote("/x/clover-a", { runVersion: () => REQUIRED_WINTER_AGENT_SDK, statKey: () => "1:1" })).toBeUndefined();
+    expect(explicitRuntimeVersionNote("/x/clover-a", { runVersion: () => CODING_AGENT_BINARY_VERSION, statKey: () => "1:1" })).toBeUndefined();
   });
   test("a stale configured runtime is named, with both versions and the fix", () => {
     const note = explicitRuntimeVersionNote("/x/clover-b", { runVersion: () => "0.0.1", statKey: () => "1:1" });
     expect(note).toContain("/x/clover-b");
     expect(note).toContain("winter 0.0.1");
-    expect(note).toContain(`pinned to ${REQUIRED_WINTER_AGENT_SDK}`);
+    expect(note).toContain(`pinned to ${CODING_AGENT_BINARY_VERSION}`);
     expect(note).toContain("bun run build:winter");
   });
   test("a binary that can't be asked says nothing (the spawn itself reports a broken binary)", () => {
@@ -265,7 +265,7 @@ describe("explicitRuntimeVersionNote", () => {
     explicitRuntimeVersionNote("/x/clover-d", deps);
     expect(calls).toBe(1);
     stat = "2:2";
-    expect(explicitRuntimeVersionNote("/x/clover-d", { ...deps, runVersion: () => { calls++; return REQUIRED_WINTER_AGENT_SDK; } })).toBeUndefined();
+    expect(explicitRuntimeVersionNote("/x/clover-d", { ...deps, runVersion: () => { calls++; return CODING_AGENT_BINARY_VERSION; } })).toBeUndefined();
     expect(calls).toBe(2);
   });
 });

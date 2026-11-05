@@ -94,8 +94,8 @@
 // second wait is already aborted and its iteration will close its own books, but the session is
 // `resumable` from the moment `end()` returns — the next `open()` awaits that iteration before it
 // spawns (finding 3), and no push can reach the closed queue in between.
-import type { AgentInfo, McpServerConfig, Options, Query } from "@yanlinglabs/winter-agent-sdk";
-import { canonicalMcpServerUrl } from "@yanlinglabs/winter-agent-runtime/mcp-auth";
+import type { AgentInfo, McpServerConfig, Options, Query } from "@waifucave/clover-agent-sdk";
+import { canonicalMcpServerUrl } from "@waifucave/clover-agent-runtime/mcp-auth";
 import type { NewSessionEvent, SessionEvent, UserMessageFileRef, UserMessageImageRef } from "@waifucave/clover-protocol";
 import { modelTextOf } from "../sessions/model-text";
 import { MAIN_THREAD, ProjectorRefusedError, classifyThrown, type ProjectedBatch, type Projector, type ProtocolSdkMessage } from "../projector";

@@ -15,7 +15,7 @@ import { describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { CanUseTool } from "@yanlinglabs/winter-agent-sdk";
+import type { CanUseTool } from "@waifucave/clover-agent-sdk";
 import type { RuntimeSelection } from "../../src/runtime-sdk/host";
 import { ApprovalBroker } from "../../src/agent/approvals";
 import { PermissionGate } from "../../src/agent/gate";

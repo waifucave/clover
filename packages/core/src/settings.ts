@@ -3,7 +3,7 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { advanceAuthorityRevision } from "./authority-revision";
 import { z } from "zod";
-import { loadCatalog } from "@yanlinglabs/winter-provider-catalog";
+import { loadCatalog } from "@waifucave/clover-provider-catalog";
 import { ensureGlobalGitignore, CLOVER_PERSONAL_IGNORES } from "./global-gitignore";
 import { consoleProfileCredentialFile } from "./runtime-sdk/anthropic-paths";
 import { canonicalModelTag, facingNameToTag, isModelTag, splitTag, UNSTATED_TAG, CLOVER_TEST_PREFIX, type ModelTag } from "./runtime-sdk/model-tag";
@@ -230,7 +230,7 @@ export const DEFAULT_WINTER_IDLE_TIMEOUT_SEC = 900;
 
 /** Daemon settings surface batch 3 (item 3b): the three `settings.mcpServers` entry shapes,
  *  mirroring the agent SDK's own `Options.mcpServers` process-transport union field-for-field
- *  (`McpStdioServerConfig`/`McpHttpServerConfig`/`McpSSEServerConfig`, `@yanlinglabs/winter-agent-sdk`)
+ *  (`McpStdioServerConfig`/`McpHttpServerConfig`/`McpSSEServerConfig`, `@waifucave/clover-agent-sdk`)
  *  rather than inventing a fourth shape — an `McpSdkServerConfig` (in-process, carries a live JS
  *  instance) has no settings-file representation and is deliberately NOT one of these three.
  *  `enabled` is NOT one of the mirrored SDK fields — see `mcp.disabled` below for why Clover's own

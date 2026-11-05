@@ -36,7 +36,7 @@ import { copyFileSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSy
 import { dirname, isAbsolute, join, normalize, relative, sep } from "node:path";
 import { tmpdir } from "node:os";
 import { randomBytes } from "node:crypto";
-import { transcriptProjectKey } from "@yanlinglabs/winter-agent-sdk";
+import { transcriptProjectKey } from "@waifucave/clover-agent-sdk";
 import { SDK_COMPAT_LINKS, SDK_PERSISTENT_ENTRIES, canonicalCwd, sdkHomeFor } from "../agent/paths";
 import { downgradeRuntimeStateToV6, openRuntimeStateDb } from "../runtime-state/db";
 import { RuntimeLeases, type LeaseProbe } from "../runtime-state/leases";

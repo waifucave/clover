@@ -1,7 +1,7 @@
 import { test, expect } from "bun:test";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { CanUseTool, PermissionMode } from "@yanlinglabs/winter-agent-sdk";
+import type { CanUseTool, PermissionMode } from "@waifucave/clover-agent-sdk";
 import type { CredentialPresence } from "../../src/runtime-sdk/host";
 import { RESUME_STAGING_PREFIX, isResumeStagingRoot, resumeStagingRoot } from "../../src/runtime-sdk/host";
 import type { NewSessionEvent } from "@waifucave/clover-protocol";
@@ -10,7 +10,7 @@ import { keychainService } from "../../src/profile";
 import { ApprovalBroker } from "../../src/agent/approvals";
 import { QuestionBroker } from "../../src/agent/questions";
 import { PermissionGate, type SessionApprovalPolicy } from "../../src/agent/gate";
-import { classifyPermissionMode } from "@yanlinglabs/winter-agent-sdk/messaging";
+import { classifyPermissionMode } from "@waifucave/clover-agent-sdk/messaging";
 import { DISPATCH_CHILD_APPROVAL_TIMEOUT_MS, canUseToolFor, neverPromptsMessage, type BridgeLogger } from "../../src/runtime-sdk/approval-bridge";
 import { REVIEWER_ESCALATION_REASON, noteReviewerCleared, takeReviewerCleared } from "../../src/runtime-sdk/bridge-common";
 import {
@@ -579,15 +579,15 @@ test("the per-mode capability exposure table is pinned (the 2026-10-01 tool-surf
   // (The built-in half of chat's and dispatch's list is the fail-closed test below.)
   const capabilityHalf = (mode: (typeof MODES)[number]): string[] => disallowedToolsFor(mode, CLOVER_LEG_WITH_EXA).filter((name) => !KNOWN_RUNTIME_BUILTINS.includes(name));
   expect(disallowedToolsFor("code", CLOVER_LEG_WITH_EXA)).toEqual(["ListSessions", "SpawnSession"]);
-  // C0: and the standing twin of each native the mode withholds, by name (`STANDING_TWINS`): ListAgents here.
+  // A-M1: a withheld native's standing twin (`mcp__clover__list_agents`) is the SDK's to hide: ToolSearch spells
+  // the twins from the session's brand since SDK 0.0.63, so the daemon no longer names them (C0's workaround).
   expect(capabilityHalf("dispatch")).toEqual([
-    "mcp__clover__list_agents", "mcp__clover__lsp__lsp", "mcp__clover__office__docs", "mcp__clover__office__sheets", "mcp__clover__office__slides",
+    "mcp__clover__lsp__lsp", "mcp__clover__office__docs", "mcp__clover__office__sheets", "mcp__clover__office__slides",
   ]);
   // ComputerV2 (2026-10-08) is code + dispatch, never chat (R14).
   expect(capabilityHalf("chat")).toEqual([
     "Computer", "ComputerV2", "ListSessions", "SpawnSession",
-    "mcp__clover__list_agents", "mcp__clover__lsp__lsp", "mcp__clover__office__docs", "mcp__clover__office__sheets", "mcp__clover__office__slides",
-    "mcp__clover__send_message",
+    "mcp__clover__lsp__lsp", "mcp__clover__office__docs", "mcp__clover__office__sheets", "mcp__clover__office__slides",
   ]);
   // Code keeps every built-in, so the key never moves its list.
   expect(disallowedToolsFor("code", CLOVER_LEG_NO_EXA)).toEqual(disallowedToolsFor("code", CLOVER_LEG_WITH_EXA));

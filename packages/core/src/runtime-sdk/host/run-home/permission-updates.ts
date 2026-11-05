@@ -10,7 +10,7 @@
 //
 // One function, both legs: the official bridge runs it over the broker's answer, and the Winter leg
 // wraps the host's `canUseTool` with it. Logged once per process, names only (never a rule's content).
-import type { PermissionResult } from "@yanlinglabs/winter-agent-sdk";
+import type { PermissionResult } from "@waifucave/clover-agent-sdk";
 
 let warned = false;
 

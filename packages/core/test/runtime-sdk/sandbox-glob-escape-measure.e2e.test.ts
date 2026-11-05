@@ -16,9 +16,9 @@ import { expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { query as cloverQuery } from "@yanlinglabs/winter-agent-sdk";
+import { query as cloverQuery } from "@waifucave/clover-agent-sdk";
 import { CORE_BRAND } from "../../src/runtime-sdk/brand";
-import { anthropicFake, startFake } from "@yanlinglabs/winter-provider-conformance";
+import { anthropicFake, startFake } from "@waifucave/clover-provider-conformance";
 import { childSandboxConfigFor, sandboxConfigFor } from "../../src/runtime-sdk/mode-options";
 import { describeWithWinterBinary } from "../helpers/winter-binary";
 

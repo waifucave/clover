@@ -36,7 +36,7 @@ export type ClassifyCode = "auth" | "rate_limit" | "server" | "network" | "bad_r
 export interface ClassifyInput {
   code: ClassifyCode;
   /** The provider's own structured error code, verbatim — `ProviderEvent.error.providerCode`
-   *  (`providers/types.ts`). Real values confirmed by reading `@yanlinglabs/winter-provider-runtime`'s
+   *  (`providers/types.ts`). Real values confirmed by reading `@waifucave/clover-provider-runtime`'s
    *  own `normalizeHttpError`/`toSdkAssistantMessageError` (pinned 0.0.16, `dist/index-5dggdw6g.js`):
    *  `BILLING_CODES` = `insufficient_quota`, `billing_hard_limit_reached`, `billing_not_active`,
    *  `credit_balance_too_low`, `usage_limit_reached`, `usage_limit_exceeded`; `MODEL_NOT_FOUND_CODES`

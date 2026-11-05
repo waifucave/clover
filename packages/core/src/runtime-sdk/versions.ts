@@ -1,9 +1,21 @@
-import { SDK_VERSION } from "@yanlinglabs/winter-agent-sdk";
+import { SDK_VERSION } from "@waifucave/clover-agent-sdk";
 
 /** The exact peer versions this daemon was written against (P8b-3). The ^ ranges in package.json
  *  are what INSTALLS; these are what the tests PROVE installed. Bump together with the pins. */
-export const REQUIRED_WINTER_AGENT_SDK = "0.0.55";
-/** Bumped to 0.0.55 (2026-10-20): AskUserQuestion takes free-text questions — `options` may be left out (the user
+export const REQUIRED_WINTER_AGENT_SDK = "0.0.63";
+/**
+ * THE CODING AGENT BINARY, on its own pin since A-M1. Code sessions run embedded and no session spawns
+ * it any more; it is lane K's (the coding agent that becomes an ACP agent, spec §9.3), and the tests that
+ * measure the binary itself run it. It stays the last published build of
+ * `@yanlinglabs/winter-agent-sdk-darwin-arm64`, at this version (core's own optional dependency), until K
+ * builds its own.
+ */
+export const CODING_AGENT_BINARY_VERSION = "0.0.55";
+/** Bumped to 0.0.63 (2026-11-05, A-M1): the SDK is `@waifucave/clover-*` (the repository moved to the
+ *  `waifucave` owner); the model adapter interface on the keyed fetch, the catalog row schema and the
+ *  conformance kit on them; ToolSearch spells the standing twins from the session's brand (so the daemon's
+ *  own twin workaround is gone); a brand's `productVersion` and `installBrandIdentity`.
+ *  Earlier: bumped to 0.0.55 (2026-10-20): AskUserQuestion takes free-text questions — `options` may be left out (the user
  *  types the answer), a menu question keeps 2–4 options plus the always-there typed answer, and an optional
  *  `placeholder` hints the box; the daemon's question bridge and every card match it (they land together). Also: a
  *  write root on a case-sensitive volume refuses a command while a letter-case variant of it exists next to it.
@@ -105,14 +117,14 @@ export const REQUIRED_WINTER_AGENT_SDK = "0.0.55";
  *  orphaned process groups reaped (`processGroups()` on `EmbeddedWorkerProcess`); a subagent's forwarded
  *  system frames (hook notices, model switches, compaction, stop) carry `parent_tool_use_id`, so they file
  *  on the child's thread instead of re-keying the main turn; the bash reviewer's model call is actually
- *  aborted when the hook runner's timeout fires its `signal`; and `@yanlinglabs/winter-agent-runtime` exports
+ *  aborted when the hook runner's timeout fires its `signal`; and `@waifucave/clover-agent-runtime` exports
  *  its MCP client from a public `./mcp-client` subpath. See 0.0.28's own CHANGELOG for the rest of the
  *  WS-24 list (async hooks, `mcp_server_name`/`mcp_tool_name` on hook inputs, per-provider feature-rejected
  *  persistence, a subagent's own inline MCP servers, …), most of which this daemon does not yet consume.
  *  Before that, bumped to 0.0.27 (2026-09-26, WS-23; 0.0.25 and 0.0.26 were tagged but their release CI stopped at the
  *  test step, so neither was published): every model on the Clover SDK (xAI Responses, MCP v2, hooks, the
  *  Anthropic hardening + caching, per-message effort, mid-conversation tool changes, the reasoning-state
- *  sidecar, and the embedded runtime `@yanlinglabs/winter-agent-runtime`).
+ *  sidecar, and the embedded runtime `@waifucave/clover-agent-runtime`).
  *  Before that, bumped to 0.0.24 (2026-09-25; 0.0.23 was published the same day but never pinned here): 0.0.23's
  *  first-party provider/model catalog refresh — 213 providers, 1000
  *  models, 22 families (China-region and plan/dialect twins as separate providers, GPT-6 Sol/Luna,
@@ -195,7 +207,7 @@ export const CLOVER_PEER_VERSIONS: { winterAgentSdk: string } = {
 };
 
 /**
- * Winter Phase 10a fix wave (F2 corrected design, M-A): the `@yanlinglabs/winter-agent-sdk` floor
+ * Winter Phase 10a fix wave (F2 corrected design, M-A): the `@waifucave/clover-agent-sdk` floor
  * the console login/logout doors need. Below this floor (measured against the installed 0.0.7) the
  * SDK's `startAnthropicConsoleBrokerLogin`/`logoutAnthropicConsole` spawn `claude auth login
  * --console`/`claude auth logout` — which was measured NOT to write the profile file at all (it

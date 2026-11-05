@@ -9,8 +9,8 @@
 import { closeSync, openSync, readSync } from "node:fs";
 import { join } from "node:path";
 
-import type { SessionKey } from "@yanlinglabs/winter-agent-sdk";
-import type { ProviderStateRecord } from "@yanlinglabs/winter-provider-runtime";
+import type { SessionKey } from "@waifucave/clover-agent-sdk";
+import type { ProviderStateRecord } from "@waifucave/clover-provider-runtime";
 
 /** The provider-state sidecar's suffix (WS-05 §13). */
 export const PROVIDER_STATE_SUFFIX = ".provider-state.jsonl";

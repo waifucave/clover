@@ -13,7 +13,7 @@
 //
 // WS-23: the official leg's two fields (`peers.claude`, `vendoredOfficialRuntime`) went with it, and
 // the keychain seam — which only the official leg's spawn-time credential fetch read — is optional.
-import type { BrandProfile } from "@yanlinglabs/winter-agent-sdk";
+import type { BrandProfile } from "@waifucave/clover-agent-sdk";
 
 import type { HostSdk } from "../session-host";
 import type { RuntimeDirectory } from "./directory";

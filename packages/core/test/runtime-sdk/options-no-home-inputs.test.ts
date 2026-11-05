@@ -8,7 +8,7 @@ import { beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { CanUseTool } from "@yanlinglabs/winter-agent-sdk";
+import type { CanUseTool } from "@waifucave/clover-agent-sdk";
 import { RUN_HOME_DECIDED_OPTIONS } from "../../src/runtime-sdk/mode-options";
 import type { RuntimeSelection } from "../../src/runtime-sdk/host";
 import { ContextAssembler } from "../../src/agent/context";

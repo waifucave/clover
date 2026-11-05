@@ -6,11 +6,11 @@
 // second turn.
 import { describe, expect, test } from "bun:test";
 
-import { MAX_GLOBAL_MESSAGE_SIZE, MAX_HOP_COUNT, RAPID_REPEAT_WINDOW_MS, NOTIFY_IDLE_EXPIRY_MS } from "@yanlinglabs/winter-agent-sdk/messaging";
+import { MAX_GLOBAL_MESSAGE_SIZE, MAX_HOP_COUNT, RAPID_REPEAT_WINDOW_MS, NOTIFY_IDLE_EXPIRY_MS } from "@waifucave/clover-agent-sdk/messaging";
 import { createRuntimeMessaging } from "../../../../src/runtime-sdk/host/messaging/index";
 // THE HANDLERS ARE THE SDK'S (R-8-1): one declaration for both hosts. The router supplies the PORT —
 // its own `GlobalMessagingHandle`, which satisfies `MessagingToolPort` structurally (ruling P-3).
-import { createMessagingToolHandlers } from "@yanlinglabs/winter-agent-sdk/tools";
+import { createMessagingToolHandlers } from "@waifucave/clover-agent-sdk/tools";
 import type { GlobalMessagingOptions } from "../../../../src/runtime-sdk/host/messaging/index";
 import { childEntry, createBed, createFakeFacet, envelope, sessionAddress, sessionEntry, winterHandle, winterWriterHandle, declaredClasses } from "./support";
 

@@ -93,7 +93,7 @@ describe("child-parser contract (clover-sdk coerceMaterial)", () => {
   test("tripwire (hotfix review r1, m2): the installed clover-sdk is the version the coerceMaterial mirror above was copied from — re-diff it on a bump", () => {
     // the coerceMaterial mirror above was copied from this version — re-diff it on a bump
     const req = createRequire(import.meta.url);
-    const pkgPath = req.resolve("@yanlinglabs/winter-agent-sdk/package.json");
+    const pkgPath = req.resolve("@waifucave/clover-agent-sdk/package.json");
     const pkg = require(pkgPath) as { version: string };
     // 0.0.9 → 0.0.10 → 0.0.11 → 0.0.12 (Winter Phase 10b, D1-5/D1-9 pins; re-diffed for fix rounds
     // 1 and 3): at 0.0.12 the re-diff was a `git diff 4f76696 HEAD --

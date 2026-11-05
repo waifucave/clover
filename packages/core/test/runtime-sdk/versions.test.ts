@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { SDK_VERSION } from "@yanlinglabs/winter-agent-sdk";
-import * as clover from "@yanlinglabs/winter-agent-sdk";
+import { SDK_VERSION } from "@waifucave/clover-agent-sdk";
+import * as clover from "@waifucave/clover-agent-sdk";
 import { CLOVER_PEER_VERSIONS, installedWinterRuntimeSdkVersion, REQUIRED_WINTER_AGENT_SDK, REQUIRED_WINTER_RUNTIME_SDK } from "../../src/runtime-sdk/versions";
 
 describe("peer versions", () => {

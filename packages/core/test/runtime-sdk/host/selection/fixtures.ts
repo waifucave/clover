@@ -11,7 +11,7 @@
 // NOTHING HERE IS A CREDENTIAL. `CredentialPresence` carries ref KINDS and auth families, never
 // material; there is no keychain, no environment read and no file in this file.
 import type { CredentialPresence, ProviderAuthView } from "../../../../src/runtime-sdk/host/selection/runtime-selection";
-import type { ModelFamilyListing } from "@yanlinglabs/winter-agent-sdk";
+import type { ModelFamilyListing } from "@waifucave/clover-agent-sdk";
 
 type Family = ModelFamilyListing["families"][number];
 type Row = Family["models"][number]["rows"][number];

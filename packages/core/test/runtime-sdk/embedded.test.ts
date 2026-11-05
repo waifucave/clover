@@ -6,11 +6,11 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { query, SDK_VERSION, type SdkMessage } from "@yanlinglabs/winter-agent-sdk";
+import { query, SDK_VERSION, type SdkMessage } from "@waifucave/clover-agent-sdk";
 import { buildCoreBrand } from "../../src/runtime-sdk/brand";
-import { RUNTIME_VERSION } from "@yanlinglabs/winter-agent-runtime/version";
+import { RUNTIME_VERSION } from "@waifucave/clover-agent-runtime/version";
 import { spawn as spawnChild } from "node:child_process";
-import type { EmbeddedWorkerProcess } from "@yanlinglabs/winter-agent-runtime/embedded-host";
+import type { EmbeddedWorkerProcess } from "@waifucave/clover-agent-runtime/embedded-host";
 import {
   COMPILED_EMBEDDED_WORKER_ENTRY,
   createEmbeddedSessionHost,

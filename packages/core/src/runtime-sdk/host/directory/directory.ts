@@ -16,8 +16,8 @@
 //   3. IT NEVER OPENS THE HOST'S DATABASE (R-7b-2). Everything durable goes through
 //      `RuntimeDirectoryStore`; the in-memory default is the test store and the answer for a host
 //      with no durable state.
-import { parseRuntimeAddress, resolveTarget, serializeRuntimeAddress, validateToField } from "@yanlinglabs/winter-agent-sdk/messaging";
-import type { ChildLike } from "@yanlinglabs/winter-agent-sdk/messaging";
+import { parseRuntimeAddress, resolveTarget, serializeRuntimeAddress, validateToField } from "@waifucave/clover-agent-sdk/messaging";
+import type { ChildLike } from "@waifucave/clover-agent-sdk/messaging";
 
 import type { SeamContext } from "../seams/context";
 import type { DirectoryResolution, DirectoryResolutionContext, RuntimeDirectory, RuntimeDirectoryRecovery } from "../seams/directory";

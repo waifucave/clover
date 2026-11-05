@@ -3,7 +3,7 @@ import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { WinterCompatibilitySessionStore, type SessionKey, type SessionStoreEntry } from "@yanlinglabs/winter-agent-sdk";
+import { WinterCompatibilitySessionStore, type SessionKey, type SessionStoreEntry } from "@waifucave/clover-agent-sdk";
 
 import {
   assertOneSharedStore,
@@ -45,7 +45,7 @@ describe("the shared store (WS-05 §6)", () => {
 
   test("the identity records the version BOTH branches are therefore on", async () => {
     await withStoreBed(async (bed) => {
-      expect(bed.shared.identity.packageName).toBe("@yanlinglabs/winter-agent-sdk");
+      expect(bed.shared.identity.packageName).toBe("@waifucave/clover-agent-sdk");
       expect(bed.shared.identity.packageVersion).toBe("0.0.21"); // R.4 (0.0.12): the fake winter peer's default (src/testing/peers.ts)
       expect(bed.shared.identity.winterHome).toBe(bed.home);
       expect(bed.shared.canonical).toBeInstanceOf(WinterCompatibilitySessionStore);

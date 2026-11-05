@@ -30,7 +30,7 @@
 import { constants, copyFileSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, type Stats } from "node:fs";
 import { dirname, join, relative, sep } from "node:path";
 import { isDeepStrictEqual } from "node:util";
-import type { SessionKey, SessionStoreEntry } from "@yanlinglabs/winter-agent-sdk";
+import type { SessionKey, SessionStoreEntry } from "@waifucave/clover-agent-sdk";
 
 import { scanLocalWriteRoot, type LocalTranscript } from "../store/reconcile";
 import type { SharedSessionStore } from "../store/wiring";

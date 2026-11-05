@@ -25,7 +25,7 @@
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { basename, join } from "node:path";
 
-import type { SessionKey, SessionStoreEntry } from "@yanlinglabs/winter-agent-sdk";
+import type { SessionKey, SessionStoreEntry } from "@waifucave/clover-agent-sdk";
 
 import { RuntimeSdkError } from "../errors";
 import type { SharedSessionStore } from "./wiring";

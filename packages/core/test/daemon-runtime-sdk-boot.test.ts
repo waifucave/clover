@@ -8,14 +8,16 @@
 //
 // No child process is spawned anywhere here — no `sdk.query()`, no real `winter` binary.
 import { afterEach, describe, expect, test } from "bun:test";
-import { buildSessionAddress, serializeRuntimeAddress } from "@yanlinglabs/winter-agent-sdk/messaging";
-import { isWinterMcpServerInstance, type Query, type WinterMcpServerInstance } from "@yanlinglabs/winter-agent-sdk";
+import { buildSessionAddress, serializeRuntimeAddress } from "@waifucave/clover-agent-sdk/messaging";
+import { isWinterMcpServerInstance, type Query, type WinterMcpServerInstance } from "@waifucave/clover-agent-sdk";
 import type { CapabilitySession } from "../src/capabilities";
 import type { RuntimeDirectoryEntry } from "../src/runtime-sdk/host";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { FileSecretStore } from "../src/auth/secret-store";
 import { startDaemon, type RunningDaemon } from "../src/daemon";
+import { activeWinterIdentity, winterUserAgent, WINTER_DEFAULT_IDENTITY } from "@waifucave/clover-provider-runtime";
+import { CORE_VERSION } from "../src/version";
 import { RuntimeStateUnavailableError, type RuntimeStateWiring } from "../src/runtime-state";
 import { withTempHome } from "./runtime-state/support";
 
@@ -95,6 +97,16 @@ describe("daemon boot — the Clover handle", () => {
         if (before === undefined) delete process.env.CLOVER_RUNTIME_EXECUTABLE;
         else process.env.CLOVER_RUNTIME_EXECUTABLE = before;
       }
+    });
+  });
+
+  test("A-M1: a running daemon presents Clover's identity (CORE_BRAND), and its stop gives the SDK's default back", async () => {
+    await withTempHome(async (home) => {
+      const d = await boot(home);
+      expect(activeWinterIdentity()).toMatchObject({ product: "clover-core", codexOriginator: "clover" });
+      expect(winterUserAgent()).toBe(`clover-core/${CORE_VERSION}`);
+      await d.stop();
+      expect(activeWinterIdentity()).toEqual({ ...WINTER_DEFAULT_IDENTITY });
     });
   });
 

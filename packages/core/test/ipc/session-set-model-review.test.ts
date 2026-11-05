@@ -41,8 +41,8 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { classifySwitch, sameFamily } from "@yanlinglabs/winter-provider-runtime";
-import { openaiChatFake, openaiResponsesFake, startFake } from "@yanlinglabs/winter-provider-conformance/fakes";
+import { classifySwitch, sameFamily } from "@waifucave/clover-provider-runtime";
+import { openaiChatFake, openaiResponsesFake, startFake } from "@waifucave/clover-provider-conformance/fakes";
 import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, type WritableSocket, type SessionEvent } from "@waifucave/clover-protocol";
 import { FileSecretStore } from "../../src/auth/secret-store";
 import { CREDENTIAL_MATERIAL_NAMES, writeCredentialMaterial } from "../../src/auth/credential-material";
@@ -52,7 +52,7 @@ import { renderNoCredentialHint } from "../../src/runtime-sdk/handoff";
 import { daemonResolveEndpoint } from "../../src/providers/registry";
 import { describeWithWinterBinary } from "../helpers/winter-binary";
 import { carriesReasoning, opaqueLeaks, outOfOrder } from "../helpers/carriage";
-import type { anthropicFake as AnthropicFakeModule } from "@yanlinglabs/winter-provider-conformance";
+import type { anthropicFake as AnthropicFakeModule } from "@waifucave/clover-provider-conformance";
 
 type AnthropicTurnScript = Parameters<typeof AnthropicFakeModule.anthropicTurnResponse>[0];
 
@@ -199,7 +199,7 @@ describeWithWinterBinary("A-7a: Sonnet -> Opus (both on the Clover runtime) neve
 
   beforeAll(async () => {
     home = realpathSync(mkdtempSync(join(tmpdir(), "review-a7a-sonnet-")));
-    const { startFake, anthropicFake } = await import("@yanlinglabs/winter-provider-conformance");
+    const { startFake, anthropicFake } = await import("@waifucave/clover-provider-conformance");
     const fakeServer = await startFake({
       routes: [{
         path: "*",
@@ -361,7 +361,7 @@ describeWithWinterBinary("A-7: a zero-turn session that switches families does n
       scenarios: {}, unknownModel: async () => openaiResponsesFake.responsesStream({ text: ["hi"] }),
     });
     openaiFakeRef = openaiFake;
-    const { startFake, anthropicFake } = await import("@yanlinglabs/winter-provider-conformance");
+    const { startFake, anthropicFake } = await import("@waifucave/clover-provider-conformance");
     const fakeServer = await startFake({
       routes: [{
         path: "*",

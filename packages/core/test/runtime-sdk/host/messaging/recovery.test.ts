@@ -5,7 +5,7 @@
 import { describe, expect, test } from "bun:test";
 
 import { createRuntimeDirectory } from "../../../../src/runtime-sdk/host/messaging/index";
-import { NOTIFY_IDLE_EXPIRY_MS } from "@yanlinglabs/winter-agent-sdk/messaging";
+import { NOTIFY_IDLE_EXPIRY_MS } from "@waifucave/clover-agent-sdk/messaging";
 import { childEntry, createBed, envelope, sessionAddress, sessionEntry } from "./support";
 
 describe("WS-15 §6.4: restart recovery", () => {

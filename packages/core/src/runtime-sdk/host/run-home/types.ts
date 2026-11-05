@@ -22,7 +22,7 @@
 // to the Winter SDK's own profile). Claude's names — `CLAUDE.md`, `.claude.json`, `file-history`,
 // `CLAUDE_CODE_*` — are the official runtime's own and stay fixed (WS-01 §5).
 import { join, isAbsolute } from "node:path";
-import { WINTER_BRAND, type BrandProfile } from "@yanlinglabs/winter-agent-sdk";
+import { WINTER_BRAND, type BrandProfile } from "@waifucave/clover-agent-sdk";
 
 
 /** The session modes a run home is built for (spec §3.2's columns). */

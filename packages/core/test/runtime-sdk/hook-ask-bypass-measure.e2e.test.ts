@@ -11,7 +11,7 @@ import { expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { query, type CanUseTool, type HookCallback } from "@yanlinglabs/winter-agent-sdk";
+import { query, type CanUseTool, type HookCallback } from "@waifucave/clover-agent-sdk";
 import { CORE_BRAND } from "../../src/runtime-sdk/brand";
 import { createHostPromptQueue } from "../../src/runtime-sdk/prompt-queue";
 import { describeWithWinterBinary } from "../helpers/winter-binary";

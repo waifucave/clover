@@ -37,7 +37,7 @@ import { execFile } from "node:child_process";
 import { lstatSync, realpathSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, resolve, sep } from "node:path";
-import { envName } from "@yanlinglabs/winter-agent-sdk";
+import { envName } from "@waifucave/clover-agent-sdk";
 
 import { ALL_AUTH_VARIABLES, isExecutionIndirectionVariable, NEVER_INJECTED_AUTH_VARIABLES, OFFICIAL_RUNTIME_VARIABLES, TRAFFIC_OPT_OUT_VARIABLE_NAMES } from "./env-refusals";
 import type { RunHomeBuildContext } from "./build";

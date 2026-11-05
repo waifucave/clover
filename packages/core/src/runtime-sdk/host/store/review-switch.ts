@@ -16,8 +16,8 @@
 // A SESSION NOT IN THE RUNTIME DIRECTORY IS A TYPED THROW, never an empty review: "no record" is not
 // "nothing to lose". The message keeps the barrier's own wording ("it is not in the runtime
 // directory"), which a host matches on to materialize the row and ask once more.
-import type { SessionKey, SessionStoreEntry } from "@yanlinglabs/winter-agent-sdk";
-import { reviewModelSwitch, type ContinuityEndpoint, type MessageOrigin, type ProviderStateRecord, type SwitchReview } from "@yanlinglabs/winter-provider-runtime";
+import type { SessionKey, SessionStoreEntry } from "@waifucave/clover-agent-sdk";
+import { reviewModelSwitch, type ContinuityEndpoint, type MessageOrigin, type ProviderStateRecord, type SwitchReview } from "@waifucave/clover-provider-runtime";
 
 import { catalogKnowsModel, defaultEndpointResolver } from "../default-endpoint-resolver";
 import { RuntimeSdkError } from "../errors";

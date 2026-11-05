@@ -26,11 +26,11 @@
 // it (the peer import and its version guard, the executable ladder, the credential seam, the advisor
 // resolver, the capability-schema bridge, the handoff participants) is gone.
 
-import * as clover from "@yanlinglabs/winter-agent-sdk";
-import type { SpawnClaudeCodeProcess } from "@yanlinglabs/winter-agent-sdk";
+import * as clover from "@waifucave/clover-agent-sdk";
+import type { SpawnClaudeCodeProcess } from "@waifucave/clover-agent-sdk";
 import { createSessionHost, isSelectionRefusal, selectionVersionsFrom, selectRuntime, SelectionRefusedError } from "./host";
 import type { RuntimeDirectoryEntry, RuntimeDirectoryOptions, RuntimeDirectoryStore, RuntimeSelection, SelectionInput, SelectionRefusal, SessionHost, SessionHostOptions } from "./host";
-import type { PermissionClassLabel } from "@yanlinglabs/winter-agent-sdk/messaging";
+import type { PermissionClassLabel } from "@waifucave/clover-agent-sdk/messaging";
 import type { SecretStore } from "../auth/secret-store";
 import { retentionFromSettings } from "../runtime-state/retention";
 import type { Settings } from "../settings";

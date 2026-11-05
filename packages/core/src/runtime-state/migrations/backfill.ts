@@ -19,9 +19,9 @@
 // — because a plausible-looking lie here is worse than a gap: 8b's `reviewPersistedSelection`
 // refuses records that misdescribe themselves, and a `transcriptHealth: "clean"` on a transcript
 // that does not exist would send a resume hunting for a file forever.
-import { transcriptProjectKey } from "@yanlinglabs/winter-agent-sdk";
+import { transcriptProjectKey } from "@waifucave/clover-agent-sdk";
 import type { RuntimeSelection } from "../../runtime-sdk/host";
-import { loadCatalog } from "@yanlinglabs/winter-provider-catalog";
+import { loadCatalog } from "@waifucave/clover-provider-catalog";
 import { join } from "node:path";
 import { repoRootFor, sanitizeProjectKey } from "../../agent/memory-dir";
 import { canonicalCwd, storeProjectsDir } from "../../agent/paths";

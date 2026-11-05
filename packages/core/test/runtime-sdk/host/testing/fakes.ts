@@ -1,4 +1,4 @@
-// `@yanlinglabs/winter-provider-conformance/fakes`, wired into `bun test`.
+// `@waifucave/clover-provider-conformance/fakes`, wired into `bun test`.
 //
 // EVERY FAKE BINDS `127.0.0.1:0` AND CLOSES IN A `finally`. That is this phase's hermeticity rule and
 // the fakes' own design (`startFake` binds port 0 on the loopback host; `withFake` closes with an
@@ -8,13 +8,13 @@
 // A runtime is driven in tests against one of these fakes — never a real endpoint. (WS-23: the
 // official SDK's capture environment, `officialCaptureEnv`, went with the official runtime.)
 //
-// BUN ONLY, and openly: `@yanlinglabs/winter-provider-conformance` declares `engines.bun` alone
+// BUN ONLY, and openly: `@waifucave/clover-provider-conformance` declares `engines.bun` alone
 // because its fakes use `Bun.serve`. Calling one of the four functions below under Node (or under Bun
 // without the package installed) fails at the CALL, with that package's own error — no different from
 // before.
 //
 // LAZY, since 0.0.3 (P8c-13), AT THE VALUE LEVEL: a top-level `import … from
-// "@yanlinglabs/winter-provider-conformance/fakes"` would make importing THIS FILE at runtime throw
+// "@waifucave/clover-provider-conformance/fakes"` would make importing THIS FILE at runtime throw
 // `ERR_MODULE_NOT_FOUND` the moment anything evaluates it, whether or not the caller ever reaches for
 // one of the four functions below. `loadFakesModule` moves that resolution to the moment one of them
 // is CALLED (a dynamic `import()`, cached so every caller in one process shares the same module),
@@ -29,16 +29,16 @@
 // from the barrel — a `.d.ts` binds its own top-level type-only imports as part of being loaded at
 // all, not lazily per export. So this file stays reachable only from `./index.ts`, the INTERNAL,
 // unpublished barrel `bun test` uses by relative path.
-import type { FakeRoute, FakeServer, RecordedRequest, StartFakeOptions } from "@yanlinglabs/winter-provider-conformance/fakes";
+import type { FakeRoute, FakeServer, RecordedRequest, StartFakeOptions } from "@waifucave/clover-provider-conformance/fakes";
 
 export type { FakeRoute, FakeServer, RecordedRequest, StartFakeOptions };
 
-type FakesEntry = typeof import("@yanlinglabs/winter-provider-conformance/fakes");
+type FakesEntry = typeof import("@waifucave/clover-provider-conformance/fakes");
 
 let fakesModule: Promise<FakesEntry> | undefined;
 
 function loadFakesModule(): Promise<FakesEntry> {
-  fakesModule ??= import("@yanlinglabs/winter-provider-conformance/fakes");
+  fakesModule ??= import("@waifucave/clover-provider-conformance/fakes");
   return fakesModule;
 }
 

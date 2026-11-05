@@ -1,7 +1,7 @@
 // THE DISPATCHING ADAPTER: one `RuntimeMessagingAdapter` for the shared router core, which fans out
 // to the per-runtime adapters — and, on the way, is where WS-15 §6.2's pipeline actually happens.
 //
-// The core (`@yanlinglabs/winter-agent-sdk/messaging`) is written against ONE adapter, because in the
+// The core (`@waifucave/clover-agent-sdk/messaging`) is written against ONE adapter, because in the
 // Winter runtime there is one. The router has two, and the choice between them is not the core's to
 // make: "runtime kind and backend IDs live in the directory record" (WS-10 §11), so the adapter is
 // picked by the resolved ENTRY's own declared `runtimeKind`. That single line is also what makes
@@ -20,8 +20,8 @@
 //     receipt is exactly WS-10 §12's crash window, and WS-15 §6.4 step 5 reconciles those as
 //     `delivery_uncertain` — which is why the claim is written first and the receipt separately, and
 //     why nothing here ever writes both in one step.
-import { deliveryUncertain, notFound, serializeRuntimeAddress, unavailable } from "@yanlinglabs/winter-agent-sdk/messaging";
-import type { RuntimeMessagingAdapter } from "@yanlinglabs/winter-agent-sdk/messaging";
+import { deliveryUncertain, notFound, serializeRuntimeAddress, unavailable } from "@waifucave/clover-agent-sdk/messaging";
+import type { RuntimeMessagingAdapter } from "@waifucave/clover-agent-sdk/messaging";
 
 import type { DirectorySnapshot } from "../directory/directory";
 import type { RuntimeDirectoryEntry, RuntimeDirectoryStore } from "../seams/directory-store";

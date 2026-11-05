@@ -14,8 +14,8 @@ import { describe, expect, test } from "bun:test";
 import { createRuntimeMessaging } from "../../../../src/runtime-sdk/host/messaging/index";
 // THE HANDLERS ARE THE SDK'S (R-8-1): one declaration for both hosts. The router supplies the PORT —
 // its own `GlobalMessagingHandle`, which satisfies `MessagingToolPort` structurally (ruling P-3).
-import { createMessagingToolHandlers } from "@yanlinglabs/winter-agent-sdk/tools";
-import { toolUseIdFromExtra, VENDOR_TOOL_USE_ID_META_KEY } from "@yanlinglabs/winter-agent-sdk/tools";
+import { createMessagingToolHandlers } from "@waifucave/clover-agent-sdk/tools";
+import { toolUseIdFromExtra, VENDOR_TOOL_USE_ID_META_KEY } from "@waifucave/clover-agent-sdk/tools";
 import { childEntry, createBed, createFakeFacet, declaredClasses, sessionEntry, winterHandle, winterWriterHandle } from "./support";
 
 function bedWith() {
@@ -31,7 +31,7 @@ const parse = (result: { text: string }): Record<string, unknown> => JSON.parse(
 // THE ACCEPTOR PLANTS ARE GONE, AND THAT IS THE POINT (R-8-1, carry 3). They asserted the router's own
 // copy of WS-10 §10.1/§10.2's model-facing contract — the four native fields, `to`'s rules, the
 // `summary` cap, `ListAgents`' two reserved fields — against `src/native-args.ts`, which no longer
-// exists. The contract is declared once in `@yanlinglabs/winter-agent-sdk/tools` and tested there, at
+// exists. The contract is declared once in `@waifucave/clover-agent-sdk/tools` and tested there, at
 // the source, for both hosts. What remains HERE is the only half that is the router's: what happens
 // when those accepted arguments meet Lane B's real router over Lane B's real directory.
 //
@@ -225,7 +225,7 @@ describe("item 15 — the per-call tool-use id from the vendor's `extra`", () =>
   // THE READER'S OWN PLANT WENT WITH THE READER (R-8-1, carry 3). Six defensive cases over
   // `toolUseIdFromExtra` — undefined, null, `{}`, a null `_meta`, a non-string value, an empty string —
   // asserted the SDK's function from the consumer side, which is the same duplication the acceptor
-  // plants were deleted for. `@yanlinglabs/winter-agent-sdk/tools` tests it at the source. What stays
+  // plants were deleted for. `@waifucave/clover-agent-sdk/tools` tests it at the source. What stays
   // here is the only half that is the router's: that the id it reads becomes THIS session's retry key
   // against Lane B's real router, which the two plants below drive end to end.
 

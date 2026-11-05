@@ -8,7 +8,7 @@ import { expect, test } from "bun:test";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { query } from "@yanlinglabs/winter-agent-sdk";
+import { query } from "@waifucave/clover-agent-sdk";
 import { CORE_BRAND } from "../../src/runtime-sdk/brand";
 import { readStoredDiff } from "../../src/diffs/store";
 import { takeFileDiff } from "../../src/runtime-sdk/diff-attach";

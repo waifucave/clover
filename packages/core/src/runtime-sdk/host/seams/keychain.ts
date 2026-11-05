@@ -13,7 +13,7 @@
 //      environment and drops it. Nothing in this package caches it, logs it, or writes it anywhere;
 //      WS-14 §6 says the spawn proxy "never retains staged credentials", and a seam that returned a
 //      long-lived handle would make that promise impossible to keep.
-import type { CredentialRef } from "@yanlinglabs/winter-agent-sdk";
+import type { CredentialRef } from "@waifucave/clover-agent-sdk";
 
 export interface KeychainSeam {
   /**

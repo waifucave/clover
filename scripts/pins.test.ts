@@ -32,6 +32,13 @@ const BUN_LOCK = parseBunLock(readFileSync(join(REPO_ROOT, "bun.lock"), "utf8"))
  *  range that installs" vs. "the pin, as the exact version the code is written against"
  *  (`versions.ts`'s own doc: "The ^ ranges in package.json are what INSTALLS; these are what the
  *  tests PROVE installed"). */
+/** The version of a package core resolves through a `link:` (its own manifest, wherever the link points). */
+function linkedVersion(name: string): string {
+  const { createRequire } = require("node:module") as typeof import("node:module");
+  const manifest = createRequire(join(import.meta.dir, "../packages/core/package.json")).resolve(`${name}/package.json`);
+  return (JSON.parse(readFileSync(manifest, "utf8")) as { version: string }).version;
+}
+
 function bareVersion(range: string): string {
   return range.replace(/^[\^~]/, "");
 }
@@ -39,7 +46,7 @@ function bareVersion(range: string): string {
 /** `bun.lock`'s own `packages` entries are `"<name>": ["<name>@<version>", ...]` — the RESOLVED
  *  version bun actually installed, as opposed to package.json's own (possibly ranged) pin. The
  *  version always starts with a digit, which is what lets this regex not be fooled by the `@` in
- *  a scoped package name like `@yanlinglabs/winter-agent-sdk@0.0.4`. */
+ *  a scoped package name like `@waifucave/clover-agent-sdk@0.0.4`. */
 function lockedVersion(name: string): string {
   const entry = BUN_LOCK.packages?.[name];
   if (entry === undefined) throw new Error(`pins.test: bun.lock has no "packages" entry for ${JSON.stringify(name)}`);
@@ -63,9 +70,11 @@ describe("CI takes the `winter` binary from the installed platform package ONLY 
 
 describe("packages/core/package.json's SDK pins agree with versions.ts's REQUIRED_* (P8d-16)", () => {
   test("winter-agent-sdk", () => {
-    const range = CORE_PACKAGE_JSON.dependencies?.["@yanlinglabs/winter-agent-sdk"];
+    const range = CORE_PACKAGE_JSON.dependencies?.["@waifucave/clover-agent-sdk"];
     expect(range).toBeDefined();
-    expect(bareVersion(range!)).toBe(REQUIRED_WINTER_AGENT_SDK);
+    // A-M1: until `@waifucave/clover-*` is published the SDK is a local link (`bun link` in a clover-sdk
+    // checkout); the version the pin names is then the linked package's own.
+    expect(range!.startsWith("link:") ? linkedVersion("@waifucave/clover-agent-sdk") : bareVersion(range!)).toBe(REQUIRED_WINTER_AGENT_SDK);
   });
 
   // A-M1 (spec §3.3): the router is archived, and what the daemon still needs of it lives in core
@@ -91,7 +100,9 @@ describe("packages/core/package.json's SDK pins agree with versions.ts's REQUIRE
 // refuse a genuinely-fine install or, worse, silently accept a DIFFERENT version than the one the
 // daemon is actually written against.
 describe("REQUIRED_WINTER_AGENT_SDK matches the wrapper's ACTUALLY RESOLVED version in bun.lock (P9a-8)", () => {
-  test("bun.lock's @yanlinglabs/winter-agent-sdk resolves to exactly REQUIRED_WINTER_AGENT_SDK", () => {
-    expect(lockedVersion("@yanlinglabs/winter-agent-sdk")).toBe(REQUIRED_WINTER_AGENT_SDK);
+  test("bun.lock's @waifucave/clover-agent-sdk resolves to exactly REQUIRED_WINTER_AGENT_SDK", () => {
+    const entry = (BUN_LOCK.packages?.["@waifucave/clover-agent-sdk"] as unknown[] | undefined)?.[0];
+    // A-M1: a `link:` entry carries no version; the linked package's own manifest does.
+    expect(typeof entry === "string" && entry.includes("@link:") ? linkedVersion("@waifucave/clover-agent-sdk") : lockedVersion("@waifucave/clover-agent-sdk")).toBe(REQUIRED_WINTER_AGENT_SDK);
   });
 });
