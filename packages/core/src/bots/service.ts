@@ -192,7 +192,7 @@ export class BotService {
   async start(): Promise<void> {
     if (this.#started) return;
     this.#started = true;
-    this.#ranHere = this.#o.gate.runsBots();
+    this.#ranHere = this.#o.gate.main.runsHere();
     this.#lastRunner = this.#runner();
     this.#offs.push(this.#o.host.watch((view) => this.#onSession(view)));
     this.#offs.push(this.#o.registry.watch(() => void this.#queueSync()));
@@ -420,7 +420,9 @@ export class BotService {
   /** The lease moved, lapsed or came back. */
   async #onRunnerChanged(): Promise<void> {
     const host = this.#o.host;
-    const runsNow = this.#o.gate.runsBots();
+    // Whether this computer holds the lease and may act, whatever a hand-back under way holds back: a lease event
+    // during a hand-back (a renewal) must not cut the running turn short.
+    const runsNow = this.#o.gate.main.runsHere();
     const runner = this.#runner();
     const before = this.#lastRunner;
     if (runner !== before) for (const live of this.#bots.values()) if (host.get(live.mainSession)) host.update(live.mainSession, { computer: runner });

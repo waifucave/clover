@@ -155,7 +155,10 @@ describe("the main computer (§6.4, the lease faked until H-M2)", () => {
     await flush();
     expect(laptop.gate.handingBack).toBe(true);
     await laptop.host.deliver("b_alpha", { from: "bot", bot: "luna", session: "b_luna", text: "one more" });
+    // The lease renews meanwhile: the running turn goes on.
+    await leases.Laptop.renew();
     await flush();
+    await laptop.bots.settled();
     expect(handedBack).toBe(false);
     expect(d.interrupts).toBe(0);
     d.end();
