@@ -13,7 +13,7 @@ const LEAVES: string[] = [".cl-window-icon", ".cl-window__bar"];
 /** Out of the flow, inside the window:
  *  - the title bar, over the conversation's top: a pending card always scrolls fully below it (the
  *    conversation's `scroll-margin-top`, and its sticky pending cards);
- *  - the dialog layer, which the frame never shows while a card waits in the shown session. */
+ *  - the dialog layer, which the frame never shows while any card it will draw waits. */
 const POSITIONED: string[] = [".cl-window__bar", ".cl-window__dialog"];
 
 describe("the shell stylesheet", () => {
@@ -66,9 +66,27 @@ describe("the frame's material and its bar", () => {
     expect(decl(".cl-window__bar", "background")).toBe("var(--clover-plugin-clover-bar-tint)");
     expect(decl(".cl-window__bar", "backdrop-filter")).toContain("var(--clover-plugin-clover-bar-blur)");
     expect(decl(".cl-window__bar", "height")).toBe("var(--clover-plugin-clover-bar-height)");
-    expect(decl(".cl-bot-tab__conversation", "--cl-inset-top")).toBe("var(--clover-plugin-clover-bar-height)");
+    // Only in main: a bot tab in the panel (an agent opened from a bot's column) has no bar over it.
+    expect(decl(".cl-window__content > .cl-bot-tab > .cl-bot-tab__conversation", "--cl-inset-top")).toBe("var(--clover-plugin-clover-bar-height)");
+    expect(decl(".cl-bot-tab__conversation", "--cl-inset-top")).toBeUndefined();
     // Anything else in main starts below the bar.
     expect(decl(".cl-window__content", "padding-top")).toBe("var(--clover-plugin-clover-bar-height)");
     expect(decl(".cl-window__content:has(> .cl-bot-tab)", "padding-top")).toBe("0");
+    // Nothing the bar holds paints below its rule (review round 3).
+    expect(decl(".cl-window__bar", "overflow")).toBe("hidden");
+  });
+
+  test("the dialog layer never drags the window, and its dialog starts below the bar (review round 3)", () => {
+    expect(decl(".cl-window__dialog", "-webkit-app-region")).toBe("no-drag");
+    expect(decl(".cl-window__dialog", "padding")).toMatch(/^calc\(var\(--clover-plugin-clover-bar-height\) \+ /);
+  });
+
+  test("with the session column showing, the bot tab's column and composer move toward main's middle, as far as it leaves room", () => {
+    expect(decl('.cl-window[data-side="open"] .cl-window__content', "--cl-axis-shift")).toBe("clamp(0px, 100cqi - 293px - 768px - 2 * var(--clover-space-xl), 293px)");
+    expect(decl(".cl-window__side", "width")).toBe("293px");
+    expect(decl(".cl-bot-tab__composer", "padding-left")).toBe("var(--cl-axis-shift, 0px)");
+    // Where the column gives way, so does the shift.
+    const narrow = parseCss(css).find((r) => r.prelude === '.cl-window[data-side="open"] .cl-window__content' && r.context.some((c) => c.includes("max-width: 720px")));
+    expect(narrow?.declarations).toEqual([{ property: "--cl-axis-shift", value: "0px" }]);
   });
 });

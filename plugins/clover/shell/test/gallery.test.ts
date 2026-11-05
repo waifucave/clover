@@ -2,6 +2,7 @@
 // builds it, but in development mode so React's warnings show), then run under happy-dom. Every
 // story must mount, none may fail, and nothing may log an error.
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { fireEvent, within } from "@testing-library/dom";
 import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -86,8 +87,8 @@ describe("the gallery", () => {
   });
 
   test("every whole-window screen holds the sidebar, the toggles, the conversation and the composer", () => {
-    expect(screenStories.length).toBe(24);
-    expect(screenStories.filter((s) => s.width === 1512 && s.height === 950)).toHaveLength(2);
+    expect(screenStories.length).toBe(29);
+    expect(screenStories.filter((s) => s.width === 1512 && s.height === 950)).toHaveLength(3);
     for (const story of screenStories) {
       const frame = root!.querySelector(`[data-story="${story.id}"]`);
       expect(frame?.querySelector(".cl-window .cl-sidebar")).toBeTruthy();
@@ -118,6 +119,49 @@ describe("the gallery", () => {
     expect((approval.querySelector(".cl-composer__pill") as HTMLButtonElement).disabled).toBe(true);
     // The code side folds the session's work into one summary line.
     expect(frame("code").querySelector(".cl-conv-tools__sentence")?.textContent).toBe("Ran a command, made 2 edits, and 3 more");
+    // The Files panel is the session's folder, named in its header with the computer that holds it.
+    expect(frame("files").querySelector(".cl-panel__head .cl-files-title")?.getAttribute("aria-label")).toBe("Files in clover, on Studio");
+  });
+
+  test("a bot's tab never shows the terminal, the changes or the files; a code session has them all (the owner's scope ruling)", () => {
+    const toggles = (story: Element) => [...story.querySelectorAll(".cl-window__toggles .cl-panel-toggle")].map((b) => b.getAttribute("aria-label"));
+    for (const story of screenStories) {
+      const frame = root!.querySelector(`[data-story="${story.id}"]`)!;
+      const bot = frame.querySelector('.cl-panel-toggles[data-kind="bot"]') !== null;
+      if (bot) {
+        expect([story.id, toggles(frame)]).toEqual([story.id, ["Details", "Browser", "More panels"]]);
+        expect([story.id, frame.querySelector(".cl-term, .cl-diff, .cl-files")]).toEqual([story.id, null]);
+        // The slim column, if open, has nothing about a folder.
+        expect([story.id, frame.querySelector('.cl-session[data-kind="code"]')]).toEqual([story.id, null]);
+      } else {
+        expect([story.id, toggles(frame)]).toEqual([story.id, ["Session", "Terminal", "Changes", "Browser", "Files", "More panels"]]);
+      }
+    }
+    const bots = screenStories.filter((s) => root!.querySelector(`[data-story="${s.id}"] .cl-panel-toggles[data-kind="bot"]`));
+    expect(bots.length).toBe(12);
+  });
+
+  test("a bot's slim column shows its agents, and one opens in the panel with its own composer and model picker", () => {
+    const column = root!.querySelector('[data-story="screen/bot-column-1440"] .cl-window__side .cl-session[data-kind="bot"]')!;
+    expect(column.textContent).toContain("Fix the CSV export's dates");
+    expect(column.textContent).not.toContain("Where it runs");
+    const agent = root!.querySelector('[data-story="screen/bot-agent-1440"]')!;
+    const panel = agent.querySelector('.cl-panel[data-kind="bot"] .cl-panel__view[data-view="agent"]')!;
+    expect(panel.querySelector(".cl-conv")).toBeTruthy();
+    expect(panel.querySelector(".cl-composer")).toBeTruthy();
+    expect(panel.querySelector(".cl-composer__pill")).toBeTruthy();
+    // No column of its own, and no code-side panel beside it.
+    expect(panel.querySelector(".cl-session, .cl-panel-toggles")).toBeNull();
+    expect(agent.querySelectorAll(".cl-panel__view")).toHaveLength(1);
+  });
+
+  test("the card-under-bar screen has a waiting card with more of the transcript after it", () => {
+    const frame = root!.querySelector('[data-story="screen/card-under-bar-1512"]')!;
+    const units = [...frame.querySelectorAll(".cl-window__content .cl-conv__unit")];
+    const pending = units.findIndex((u) => u.hasAttribute("data-pending"));
+    expect(pending).toBeGreaterThan(0);
+    expect(units.length - pending).toBeGreaterThan(3);
+    expect(frame.querySelectorAll("[data-sealed-button]").length).toBe(3);
   });
 
   test("every catalog token a part names is in lane B's catalog; the rest are part-local requests", () => {
@@ -135,9 +179,9 @@ describe("the gallery", () => {
     expect(missing).toEqual([]);
   });
 
-  test("no part's source holds a raw hidden character (bidi controls, zero-width ones): escapes only", () => {
+  test("no part's source holds a raw hidden character (bidi controls, zero-width ones, tags, variation selectors): escapes only", () => {
     const parts = join(import.meta.dir, "../..");
-    const hidden = /[\u00AD\u061C\u115F\u1160\u180E\u200B-\u200F\u202A-\u202E\u2060-\u2064\u2066-\u2069\u3164\uFEFF\uFFA0]/u;
+    const hidden = /[\u00AD\u061C\u115F\u1160\u180E\u200B-\u200F\u202A-\u202E\u2060-\u2064\u2066-\u2069\u3164\uFE00-\uFE0F\uFEFF\uFFA0\u{E0000}-\u{E007F}\u{E0100}-\u{E01EF}]/u;
     const offenders: string[] = [];
     const walk = (dir: string) => {
       for (const name of readdirSync(dir)) {
@@ -149,5 +193,30 @@ describe("the gallery", () => {
     };
     walk(parts);
     expect(offenders).toEqual([]);
+  });
+});
+
+// Last, since they change two screens' state: the real Settings, in the window, raising its cards.
+describe("cards raised from Settings close Settings (review round 3, C)", () => {
+  const note = "Answer the waiting card first, then open it again.";
+
+  test("asking for a level change", async () => {
+    const frame = root!.querySelector('[data-story="screen/settings-1024"]') as HTMLElement;
+    expect(frame.querySelector(".cl-window__dialog .cl-settings")).toBeTruthy();
+    // The gallery's own React renders on its own schedule: wait for each step to land.
+    fireEvent.click(within(frame).getByRole("button", { name: "Levels" }));
+    await until(() => within(frame).queryByRole("combobox", { name: "Studio's level" }) !== null, 2000);
+    fireEvent.change(within(frame).getByRole("combobox", { name: "Studio's level" }), { target: { value: "automatic" } });
+    await until(() => frame.querySelector(".cl-window__note")?.textContent === note, 2000);
+    expect(frame.querySelector(".cl-window__dialog")).toBeNull();
+  });
+
+  test("asking to remove a device", async () => {
+    const frame = root!.querySelector('[data-story="screen/settings-1440"]') as HTMLElement;
+    fireEvent.click(within(frame).getByRole("button", { name: "Devices" }));
+    await until(() => within(frame).queryByRole("button", { name: "Remove Laptop" }) !== null, 2000);
+    fireEvent.click(within(frame).getByRole("button", { name: "Remove Laptop" }));
+    await until(() => frame.querySelector(".cl-window__note")?.textContent === note, 2000);
+    expect(frame.querySelector(".cl-window__dialog")).toBeNull();
   });
 });

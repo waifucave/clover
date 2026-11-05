@@ -99,6 +99,34 @@ describe("no dialog over a waiting card (spec §5.5, review blocker)", () => {
   });
 });
 
+/** A host whose dialog raises a sealed card from inside itself, as Settings does for a level change or
+ *  removing a device. `cardPending` counts every card the window will draw, that one included. (The
+ *  gallery test does the same with the real Settings.) */
+function RaisingHost() {
+  const [open, setOpen] = useState(true);
+  const [card, setCard] = useState(false);
+  return frame({
+    cardPending: card,
+    dialog: open ? (
+      <div role="dialog" aria-label="Settings">
+        <button type="button" onClick={() => setCard(true)}>
+          Remove Laptop
+        </button>
+      </div>
+    ) : undefined,
+    onCloseDialog: () => setOpen(false),
+  });
+}
+
+describe("a card raised from a dialog (review round 3, C)", () => {
+  test("closes the dialog that raised it, and the bar says why", () => {
+    render(<RaisingHost />);
+    fireEvent.click(screen.getByRole("button", { name: "Remove Laptop" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.getByRole("status").textContent).toBe("Answer the waiting card first, then open it again.");
+  });
+});
+
 describe("the dialog layer's keyboard (review minor)", () => {
   test("focus moves in, Tab stays inside, Escape closes, and the focus goes back to the opener", () => {
     render(<Host cardPending={false} />);

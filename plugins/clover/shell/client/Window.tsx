@@ -4,11 +4,17 @@
 // right-hand panel when one is open, and a layer for dialogs. What fills the spots comes in as nodes.
 //
 // Sealed cards (§5.5) count a click only while nothing covers them:
-// - **Dialogs.** While a card is pending in the shown session, no dialog opens, and one already open closes
-//   (the same rule as the composer's menus). The bar says why.
+// - **Dialogs.** While any card this window will draw is waiting, no dialog opens, and one already open
+//   closes (the same rule as the composer's menus). That includes a card raised from the dialog itself:
+//   asking Settings for a level change or to remove a device closes Settings, and the card shows where
+//   the window draws it. The bar says why.
 // - **The title bar.** It is translucent, and the conversation scrolls under it. The bot tab tells the
 //   conversation how tall the bar is (`--cl-inset-top`), so its content starts below the bar and a card it
 //   brings into view stops below it.
+//
+// While the session column shows, the frame also tells the bot tab how far right to move its reading
+// column and composer (`--cl-axis-shift`): toward the main column's middle, as far as the column leaves
+// room.
 import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { IconChevronDown } from "./icons";
 import { S } from "./strings";
@@ -24,14 +30,16 @@ export interface WindowProps {
   toggles?: ReactNode;
   /** The `main` spot: the bot tab (conversation and composer), a settings page, or an app. */
   children: ReactNode;
-  /** The session column beside the conversation (where it runs, context, outputs, changes). */
+  /** The column beside the conversation: a code session's (where it runs, context, outputs, changes) or a
+   *  bot's slim one (agents and tasks, context, outputs). */
   side?: ReactNode;
   /** The `panel` spot, when a panel is open. */
   panel?: ReactNode;
   /** A dialog over the window: settings, the language chooser. */
   dialog?: ReactNode;
-  /** A card (approval or question) waits in the shown session: no dialog opens while it does, and an open
-   *  one closes through `onCloseDialog`. */
+  /** Any card (an approval or a question) this window will draw is waiting: the shown session's, an agent's
+   *  in the panel, or one raised from a dialog (Settings asking for a level change or to remove a device).
+   *  No dialog opens while one does, and an open one closes through `onCloseDialog`. */
   cardPending?: boolean;
   /** Closes the dialog: on Escape, and when a card arrives or is already waiting. */
   onCloseDialog?: () => void;
@@ -139,8 +147,9 @@ export function Window({ sidebar, title, onTitleMenu, toggles, children, side, p
   );
 }
 
-/** The bot tab's own layout inside `main`: the conversation over the composer. The conversation runs up
- *  under the title bar; `--cl-inset-top` tells it how far down its content starts. */
+/** A bot tab's or a session's own layout: the conversation over the composer. In `main`, the conversation
+ *  runs up under the title bar (`--cl-inset-top` tells it how far down its content starts) and both follow
+ *  the axis shift. In the panel (an agent opened from a bot's slim column), neither applies. */
 export function BotTab({ conversation, composer }: { conversation: ReactNode; composer: ReactNode }) {
   return (
     <div className="cl-bot-tab">

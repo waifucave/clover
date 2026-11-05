@@ -58,7 +58,8 @@
 }
 
 /* The title bar: translucent, the transcript scrolling under it blurred. It holds the title and the
-   panel toggles only, never a card; the window drags by it. */
+   panel toggles only, never a card; the window drags by it. Nothing it holds paints below its rule, even
+   with a theme's larger type (overflow). */
 .cl-window__bar {
   position: absolute;
   top: 0;
@@ -72,6 +73,7 @@
   height: var(--clover-plugin-clover-bar-height);
   padding: 0 var(--clover-space-s) 0 14px;
   border-bottom: 1px solid var(--clover-color-hairline-raised);
+  overflow: hidden;
   background: var(--clover-plugin-clover-bar-tint);
   backdrop-filter: blur(var(--clover-plugin-clover-bar-blur)) saturate(1.6);
   -webkit-app-region: drag;
@@ -163,10 +165,22 @@ button.cl-window__title:hover {
   overflow-y: auto;
 }
 
-/* A narrow window keeps the conversation readable: the session column gives way first. */
+/* With the session column showing, the bot tab's reading column and composer move right, toward the main
+   column's middle (where they sit without it), but only as far as keeps the 768 px composer 24 px clear
+   of the column: the shift is the room left over, 0 to the column's 293 px (100cqi is the main column). */
+.cl-window[data-side="open"] .cl-window__content {
+  --cl-axis-shift: clamp(0px, 100cqi - 293px - 768px - 2 * var(--clover-space-xl), 293px);
+}
+
+/* A narrow window keeps the conversation readable: the session column gives way first, and the shift
+   with it. */
 @container (max-width: 720px) {
   .cl-window__side {
     display: none;
+  }
+
+  .cl-window[data-side="open"] .cl-window__content {
+    --cl-axis-shift: 0px;
   }
 }
 
@@ -179,17 +193,21 @@ button.cl-window__title:hover {
   background: var(--clover-color-surface);
 }
 
-/* Dialogs cover the window, but never a card: the frame opens none while a card waits in the shown
-   session and closes any that is open when one arrives (`cardPending`). The layer stays inside the window. */
+/* Dialogs cover the window, but never a card: the frame opens none while a card this window will draw
+   waits and closes any that is open when one arrives (`cardPending`). The layer stays inside the window.
+   It never drags the window (the bar's and sidebar's drag areas would otherwise take clicks through it),
+   and the dialog starts below the title bar's height, clear of the window's own controls. */
 .cl-window__dialog {
   position: absolute;
   inset: 0;
   z-index: 2;
+  box-sizing: border-box;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: var(--clover-space-xl);
+  padding: calc(var(--clover-plugin-clover-bar-height) + var(--clover-space-s)) var(--clover-space-xl) var(--clover-space-xl);
   background: var(--clover-plugin-clover-scrim);
+  -webkit-app-region: no-drag;
 }
 
 .cl-window__dialog:focus {
@@ -204,15 +222,21 @@ button.cl-window__title:hover {
 }
 
 .cl-bot-tab__conversation {
-  --cl-inset-top: var(--clover-plugin-clover-bar-height);
   display: flex;
   flex: 1 1 auto;
   flex-direction: column;
   min-height: 0;
 }
 
+/* In main, the conversation runs up under the bar. A bot tab in the panel has no bar over it. */
+.cl-window__content > .cl-bot-tab > .cl-bot-tab__conversation {
+  --cl-inset-top: var(--clover-plugin-clover-bar-height);
+}
+
 .cl-bot-tab__composer {
+  box-sizing: border-box;
   flex: none;
+  padding-left: var(--cl-axis-shift, 0px);
 }
 
 .cl-window-icon {
