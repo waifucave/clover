@@ -6,11 +6,15 @@ import { COLOR_LITERAL, frameUnsafeRules, parseCss, positionedRules } from "./cs
 
 const css = readFileSync(join(import.meta.dir, "../client/styles.css"), "utf8");
 
-/** Leaves that may move or fade: they never hold a sealed frame. */
-const LEAVES: string[] = [".cl-shell-icon"];
+/** Leaves that may move or fade: they never hold a sealed frame. The title bar blurs what scrolls under
+ *  it, and holds only the title and the panel toggles. */
+const LEAVES: string[] = [".cl-window-icon", ".cl-window__bar"];
 
-/** The dialog layer, which covers the window on purpose (a card under a dialog is covered) and stays inside it. */
-const POSITIONED: string[] = [".cl-window__dialog"];
+/** Out of the flow, inside the window:
+ *  - the title bar, over the conversation's top: a pending card always scrolls fully below it (the
+ *    conversation's `scroll-margin-top`, and its sticky pending cards);
+ *  - the dialog layer, which the frame never shows while a card waits in the shown session. */
+const POSITIONED: string[] = [".cl-window__bar", ".cl-window__dialog"];
 
 describe("the shell stylesheet", () => {
   test("uses exactly the tokens tokens.ts names", () => {
@@ -39,5 +43,32 @@ describe("the shell stylesheet", () => {
 
   test("animations stop for reduced motion", () => {
     expect(css).toContain("@media (prefers-reduced-motion: reduce)");
+  });
+});
+
+describe("the frame's material and its bar", () => {
+  const rules = parseCss(css);
+  const decl = (selector: string, property: string) =>
+    rules.find((r) => r.prelude === selector && r.context.length === 0)?.declarations.find((d) => d.property === property)?.value;
+
+  test("the window root paints nothing; the main column and the panel paint the surface", () => {
+    expect(decl(".cl-window", "background")).toBe("transparent");
+    expect(decl(".cl-window__main", "background")).toBe("var(--clover-color-surface)");
+    expect(decl(".cl-window__panel", "background")).toBe("var(--clover-color-surface)");
+  });
+
+  test("the sidebar is a tint over the window's material, and a solid colour without one", () => {
+    expect(decl(".cl-window__sidebar", "background")).toBe("var(--clover-plugin-clover-sidebar-solid)");
+    expect(decl(".cl-window[data-translucent] .cl-window__sidebar", "background")).toBe("var(--clover-plugin-clover-sidebar-tint)");
+  });
+
+  test("the bar is translucent and blurs what passes under it; the bot tab tells the conversation its height", () => {
+    expect(decl(".cl-window__bar", "background")).toBe("var(--clover-plugin-clover-bar-tint)");
+    expect(decl(".cl-window__bar", "backdrop-filter")).toContain("var(--clover-plugin-clover-bar-blur)");
+    expect(decl(".cl-window__bar", "height")).toBe("var(--clover-plugin-clover-bar-height)");
+    expect(decl(".cl-bot-tab__conversation", "--cl-inset-top")).toBe("var(--clover-plugin-clover-bar-height)");
+    // Anything else in main starts below the bar.
+    expect(decl(".cl-window__content", "padding-top")).toBe("var(--clover-plugin-clover-bar-height)");
+    expect(decl(".cl-window__content:has(> .cl-bot-tab)", "padding-top")).toBe("0");
   });
 });

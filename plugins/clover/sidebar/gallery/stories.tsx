@@ -1,5 +1,5 @@
 // Every sidebar state the gallery shows.
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { Sidebar } from "../client/Sidebar";
 import type { SidebarProps, SidebarRoute, SidebarSide } from "../client/types";
 import { ACCOUNT, APPS, BOTS, BUNDLED_APPS, PROJECTS } from "./fixtures";
@@ -20,7 +20,7 @@ export function SidebarDemo(props: Partial<SidebarProps> & { start?: SidebarRout
       onNew={noop}
       onSearch={noop}
       onOutputs={noop}
-      onCustomize={noop}
+      onPlugins={noop}
       onMore={noop}
       onNewSession={noop}
       onCloseAgent={noop}
@@ -37,50 +37,53 @@ export function SidebarDemo(props: Partial<SidebarProps> & { start?: SidebarRout
 
 const TALL = 760;
 
+/** The solid colour the window frame paints behind a sidebar where there's no material. */
+const Framed = ({ children }: { children: ReactNode }) => <div className="story-sidebar">{children}</div>;
+
 export const stories: Story[] = [
   {
     id: "sidebar/bots",
     title: "The bots side",
-    notes: "The switch, New, Search, Outputs, Customize and More; each bot with what it's doing and what needs you; Alpha's background agents as live tabs, each state before its title, Close on the finished one.",
-    width: 264,
+    notes: "The switch, New, Search, Outputs, Plugins and More; each bot with what it's doing and what needs you; Alpha's background agents as live tabs, each state before its title, Close on the finished one.",
+    width: 247,
     height: TALL,
-    render: () => <SidebarDemo />,
+    render: () => <Framed><SidebarDemo /></Framed>,
   },
   {
     id: "sidebar/code",
     title: "The code side",
     notes: "Sessions by project folder, each with its branch and changed files; a project folds; + starts a session in it; an empty project says so.",
-    width: 264,
+    width: 247,
     height: TALL,
-    render: () => <SidebarDemo side="code" start={{ kind: "agent", agentId: "session-panels" }} initialFoldedProjects={[]} />,
+    render: () => <Framed><SidebarDemo side="code" start={{ kind: "agent", agentId: "session-panels" }} initialFoldedProjects={[]} /></Framed>,
   },
   {
     id: "sidebar/banners",
     title: "Safe mode, paused, and the main computer unreachable",
-    width: 264,
+    width: 247,
     height: TALL,
-    render: () => <SidebarDemo safeMode paused onResume={noop} onOpenPluginManager={noop} link={{ state: "unreachable", main: "Studio" }} />,
+    render: () => <Framed><SidebarDemo safeMode paused onResume={noop} onOpenPluginManager={noop} link={{ state: "unreachable", main: "Studio" }} /></Framed>,
   },
   {
     id: "sidebar/takeover",
     title: "This computer runs the bots while the main one is off",
-    width: 264,
+    width: 247,
     height: TALL,
-    render: () => <SidebarDemo link={{ state: "takeover", main: "Studio", here: "Laptop" }} apps={APPS} />,
+    render: () => <Framed><SidebarDemo link={{ state: "takeover", main: "Studio", here: "Laptop" }} apps={APPS} /></Framed>,
   },
   {
     id: "sidebar/collapsed",
     title: "The rail",
-    notes: "Collapsed, every row keeps its accessible name; banners stay as marks; the code side keeps its projects.",
-    width: 56,
+    notes: "Collapsed, every row keeps its accessible name; banners stay as marks; the code side keeps its projects. It stays 80 px wide, the room the window's controls take.",
+    width: 80,
     height: TALL,
-    render: () => <SidebarDemo collapsed paused onResume={noop} link={{ state: "offline" }} />,
+    render: () => <Framed><SidebarDemo collapsed paused onResume={noop} link={{ state: "offline" }} /></Framed>,
   },
   {
     id: "sidebar/collapsed-code",
     title: "The rail, code side",
-    width: 56,
+    width: 80,
     height: TALL,
-    render: () => <SidebarDemo collapsed side="code" />,
+    render: () => <Framed><SidebarDemo collapsed side="code" /></Framed>,
   },
 ];

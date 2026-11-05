@@ -41,7 +41,7 @@ export const PROJECTS: SidebarProject[] = [
       { id: "session-icons", title: "Card icons at every size", branch: "icons", changes: 2, status: "failed" },
     ],
   },
-  { id: "keycaps", name: "keycaps", path: "home/Studio/projects/keycaps", sessions: [] },
+  { id: "garden", name: "garden-planner", path: "home/Studio/projects/garden-planner", sessions: [] },
 ];
 
 /** The apps we ship, plus one a third-party plugin adds (Discord Waifus, spec §11). */

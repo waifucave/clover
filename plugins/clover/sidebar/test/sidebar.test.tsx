@@ -1,8 +1,9 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { Sidebar } from "../client/Sidebar";
 import type { SidebarProps } from "../client/types";
-import { BotTab, Window } from "../client/Window";
 import { ACCOUNT, APPS, BOTS, PROJECTS } from "../gallery/fixtures";
 
 afterEach(cleanup);
@@ -15,7 +16,7 @@ function setup(props: Partial<SidebarProps> = {}) {
     onNew: mock(() => undefined),
     onSearch: mock(() => undefined),
     onOutputs: mock(() => undefined),
-    onCustomize: mock(() => undefined),
+    onPlugins: mock(() => undefined),
     onMore: mock(() => undefined),
     onNewSession: mock((_p: string) => undefined),
     onCloseAgent: mock((_id: string) => undefined),
@@ -37,7 +38,7 @@ describe("the switch and the actions", () => {
       ["New chat", h.onNew],
       ["Search", h.onSearch],
       ["Outputs", h.onOutputs],
-      ["Customize", h.onCustomize],
+      ["Plugins", h.onPlugins],
       ["More", h.onMore],
     ] as const) {
       fireEvent.click(screen.getByRole("button", { name }));
@@ -98,7 +99,7 @@ describe("the code side", () => {
     expect(within(row).getByLabelText("On lane/f-m1, 14 files changed").textContent).toBe("14");
     fireEvent.click(screen.getByRole("button", { name: "New session in clover" }));
     expect(h.onNewSession).toHaveBeenCalledWith("clover");
-    expect(screen.getByText("No sessions yet")).toBeTruthy();
+    expect(screen.getByText("No sessions here yet")).toBeTruthy();
   });
 
   test("a project folds and unfolds", () => {
@@ -140,24 +141,34 @@ describe("banners and the rail", () => {
   });
 });
 
-describe("the window", () => {
-  test("holds the sidebar, the title bar with its toggles, the main view, the session column, the panel and a dialog", () => {
-    render(
-      <Window
-        sidebar={<div>sidebar</div>}
-        title="The panels as plugins"
-        onTitleMenu={() => undefined}
-        toggles={<button type="button">Terminal</button>}
-        side={<div>session</div>}
-        panel={<div>panel</div>}
-        dialog={<div role="dialog">settings</div>}
-      >
-        <BotTab conversation={<div>conversation</div>} composer={<div>composer</div>} />
-      </Window>,
-    );
-    expect(screen.getByRole("button", { name: "The panels as plugins: options" })).toBeTruthy();
-    expect(within(screen.getByRole("toolbar", { name: "Panels" })).getByRole("button", { name: "Terminal" })).toBeTruthy();
-    for (const text of ["sidebar", "conversation", "composer", "session", "panel"]) expect(screen.getByText(text)).toBeTruthy();
-    expect(screen.getByRole("dialog").textContent).toBe("settings");
+describe("the room for the window's controls, and ids", () => {
+  test("the first row leaves the window's controls their room, and the window drags by it", () => {
+    const { container } = setup({ onToggleCollapsed: () => undefined });
+    const top = container.querySelector<HTMLElement>(".cl-sidebar__top")!;
+    expect(top.firstElementChild?.className).toBe("cl-sidebar__controls");
+    expect(top.firstElementChild?.getAttribute("aria-hidden")).toBe("true");
+    expect(screen.getByRole("button", { name: "Hide the sidebar" }).parentElement).toBe(top);
+  });
+
+  test("a project's list gets an id from React, so a project id with a space never breaks aria-controls", () => {
+    const projects = [{ id: "my project", name: "my project", path: "home/Studio/my project", sessions: [{ id: "s1", title: "One", status: "idle" as const }] }];
+    setup({ side: "code", projects });
+    const toggle = screen.getByRole("button", { name: "Fold my project" });
+    const controls = toggle.getAttribute("aria-controls")!;
+    expect(controls).not.toContain(" ");
+    expect(document.getElementById(controls)?.textContent).toContain("One");
+  });
+
+  test("unread and running never share a mark, nor needs-you and stalled", () => {
+    const { container } = setup();
+    expect(container.querySelector(".cl-sidebar__unread")).toBeTruthy();
+    expect(container.querySelector('.cl-sidebar__dot[data-status="running"]')).toBeTruthy();
+    expect(container.querySelector('.cl-sidebar__dot[data-status="stalled"]')).toBeTruthy();
+    const css = readFileSync(join(import.meta.dir, "../client/styles.css"), "utf8");
+    const rule = (sel: string) => css.slice(css.indexOf(sel), css.indexOf("}", css.indexOf(sel)));
+    expect(rule(".cl-sidebar__unread {")).toContain("--clover-plugin-clover-unread");
+    expect(rule('.cl-sidebar__dot[data-status="running"]')).toContain("--clover-color-accent");
+    expect(rule('.cl-sidebar__dot[data-status="stalled"]')).toContain("--clover-color-danger");
+    expect(rule('.cl-sidebar__dot[data-status="needs-you"]')).toContain("--clover-color-attention");
   });
 });

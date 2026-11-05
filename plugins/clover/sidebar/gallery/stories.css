@@ -1,0 +1,7 @@
+/* Gallery-only: the sidebar paints no background of its own (the window frame puts its material behind
+   it), so a sidebar story sits on the solid fallback the frame would paint. */
+.story-sidebar {
+  display: flex;
+  height: 100%;
+  background: var(--clover-plugin-clover-sidebar-solid);
+}

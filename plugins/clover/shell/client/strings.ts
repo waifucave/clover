@@ -1,65 +1,6 @@
-// Every string the shell shows, in one place, for the move to `clover.` keys (plan, F-M3).
-import type { AgentStatus, BotStatus } from "./types";
-
-const n = (count: number, one: string, many: string) => (count === 1 ? one : many.replace("#", String(count)));
-
+// Every string the window frame shows, in one place, for the move to `clover.` keys (plan, F-M3).
 export const S = {
-  app: "Clover",
-  nav: "Clover",
-  sides: "Show",
-  sideBots: "Bots",
-  sideCode: "Code",
-  new: "New",
-  newChat: "New chat",
-  newSessionIn: (project: string) => `New session in ${project}`,
-  search: "Search",
-  outputs: "Outputs",
-  customize: "Customize",
-  more: "More",
-  bots: "Bots",
-  projects: "Projects",
-  apps: "Apps",
-  settings: "Settings",
-  account: (name: string) => `Account: ${name}`,
-  collapse: "Hide the sidebar",
-  expand: "Show the sidebar",
-  fold: (name: string) => `Fold ${name}`,
-  unfold: (name: string) => `Unfold ${name}`,
-  close: (title: string) => `Close ${title}`,
-  agentsOf: (bot: string) => `${bot}'s agents`,
-  needsYou: (count: number) => n(count, "1 thing needs you", "# things need you"),
-  unread: "New messages",
-  branch: (branch: string, changes: number | undefined) =>
-    changes === undefined ? `On ${branch}` : `On ${branch}, ${n(changes, "1 file changed", "# files changed")}`,
-  noSessions: "No sessions yet",
-  botStatus: {
-    idle: "",
-    thinking: "Thinking",
-    working: "Working",
-    "needs-you": "Needs you",
-    asleep: "Asleep",
-    paused: "Paused",
-  } satisfies Record<BotStatus, string>,
-  agentStatus: {
-    running: "Running",
-    "needs-you": "Needs you",
-    completed: "Done",
-    failed: "Failed",
-    stopped: "Stopped",
-    stalled: "Stalled",
-    idle: "",
-  } satisfies Record<AgentStatus | "idle", string>,
-  safeMode: "Safe mode: only Clover's own plugins are running.",
-  safeModeShort: "Safe mode",
-  pluginManager: "Open the plugin manager",
-  paused: "Every bot and routine is paused.",
-  pausedShort: "Paused",
-  resume: "Resume",
-  unreachable: (main: string) => `Can't reach your main computer, ${main}. Your bots wait for it.`,
-  takeover: (main: string, here: string) => `${main} is offline, so ${here} runs your bots until it's back.`,
-  offline: "Offline: other devices can't be reached.",
-  linkShort: "Link to your computers",
-  // The window.
   sessionMenu: (title: string) => `${title}: options`,
   panelToggles: "Panels",
+  dialogHeld: "Answer the waiting card first, then open it again.",
 };

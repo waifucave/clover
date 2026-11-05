@@ -126,10 +126,10 @@ export interface SidebarProps {
   /** New: a chat with a bot on the bots side, a coding session on the code side. */
   onNew?: () => void;
   onSearch?: () => void;
-  /** Files and artifacts the bots made. */
+  /** The files the bots made. */
   onOutputs?: () => void;
   /** Plugins and themes. */
-  onCustomize?: () => void;
+  onPlugins?: () => void;
   onMore?: () => void;
   /** A new session in one project. */
   onNewSession?: (projectId: string) => void;
@@ -142,7 +142,8 @@ export interface SidebarProps {
   onResume?: () => void;
   safeMode?: boolean;
   onOpenPluginManager?: () => void;
-  /** The narrow rail: icons with accessible names, banners as marks. */
+  /** The narrow rail: icons with accessible names, banners as marks. It stays wide enough for the
+   *  window's controls (`--cl-window-controls`, 80 px by default). */
   collapsed?: boolean;
   onToggleCollapsed?: () => void;
   /** The `sidebar.bot` spot: a plugin draws a bot's row its own way. */

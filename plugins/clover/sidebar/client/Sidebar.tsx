@@ -1,12 +1,15 @@
-// The sidebar, laid out the way a desktop agent app's is: a switch between the bots and the code at the
-// top, then New, Search, Outputs, Customize and More, then the bots (with their live agents and what
-// needs the user) or the coding sessions grouped by project folder, and the account with the settings
-// gear at the bottom. Banners for safe mode, the pause switch and the link to the main computer sit
-// under the actions. Collapsed, it is a rail of icons, each with its accessible name.
-import { useState, type ReactNode } from "react";
+// The sidebar (the `sidebar` spot, spec §5.5), laid out the way a desktop agent app's is: room for the
+// window's controls at the top, a switch between the bots and the code, then New, Search, Outputs, Plugins
+// and More, then the bots (with their live agents and what needs the user) or the coding sessions grouped
+// by project folder, banners for safe mode, the pause switch and the link to the main computer, and the
+// account with the settings gear at the bottom. Collapsed, it is a rail of icons, each with its
+// accessible name. It paints no background of its own: the window frame puts the sidebar's material
+// (or its solid colour) behind it.
+import { useId, useState, type ReactNode } from "react";
 import {
   CloverMark,
   IconArchive,
+  IconArrow,
   IconBots,
   IconBranch,
   IconChart,
@@ -14,7 +17,6 @@ import {
   IconChevronRight,
   IconClose,
   IconCode,
-  IconCustomize,
   IconFolder,
   IconGear,
   IconGlobe,
@@ -23,7 +25,9 @@ import {
   IconMore,
   IconOutputs,
   IconPause,
+  IconPlugins,
   IconPlus,
+  IconPlusSmall,
   IconSearch,
   IconShield,
   IconSidebar,
@@ -48,14 +52,16 @@ export function sameRoute(a: SidebarRoute, b: SidebarRoute): boolean {
   }
 }
 
-/** The line under a bot's name: what it is doing, else nothing. */
+/** The words after a bot's name: what it is doing, else nothing. */
 export function botStatusLine(bot: SidebarBot): string {
   if (bot.state === "idle") return bot.activity ?? "";
   return S.botStatus[bot.state];
 }
 
+const SAFE_ASSET = /^(blob:|data:image\/|clover-asset:)/i;
+
 function Portrait({ bot }: { bot: SidebarBot }) {
-  const url = bot.portraitUrl && /^(blob:|data:image\/|clover-asset:)/i.test(bot.portraitUrl) ? bot.portraitUrl : undefined;
+  const url = bot.portraitUrl && SAFE_ASSET.test(bot.portraitUrl) ? bot.portraitUrl : undefined;
   return (
     <span className="cl-sidebar__portrait" data-status={bot.state} aria-hidden="true">
       {url ? <img src={url} alt="" /> : <span className="cl-sidebar__initial">{bot.name.slice(0, 1).toUpperCase()}</span>}
@@ -72,7 +78,7 @@ function Count({ count, label }: { count: number | undefined; label: (n: number)
   );
 }
 
-/** A status dot that says what a live tab is doing; its text sits beside it, never cut. */
+/** What a live tab is doing, in words beside its dot; never cut. */
 function State({ status }: { status: AgentStatus | "idle" }) {
   const text = S.agentStatus[status];
   if (!text) return null;
@@ -121,15 +127,15 @@ function BotRow({ bot, props }: { bot: SidebarBot; props: SidebarProps }) {
       onClick={() => props.onNavigate(target)}
     >
       <Portrait bot={bot} />
-      <span className="cl-sidebar__names">
-        <span className="cl-sidebar__title">{bot.name}</span>
-        {line && (
-          <span className="cl-sidebar__line" data-status={bot.state}>
-            {line}
-          </span>
-        )}
-      </span>
-      {bot.unread && <span className="cl-sidebar__unread" aria-label={S.unread} title={S.unread} />}
+      <span className="cl-sidebar__title cl-sidebar__name">{bot.name}</span>
+      {line ? (
+        <span className="cl-sidebar__line" data-status={bot.state}>
+          {line}
+        </span>
+      ) : (
+        <span className="cl-sidebar__fill" />
+      )}
+      {bot.unread && <span className="cl-sidebar__unread" role="img" aria-label={S.unread} title={S.unread} />}
       <Count count={needsYouCount(bot.needsYou)} label={S.needsYou} />
     </button>
   );
@@ -168,8 +174,8 @@ function SessionRow({ session, props }: { session: SidebarSession; props: Sideba
           </span>
         )}
         <Count count={needsYouCount(session.needsYou)} label={S.needsYou} />
-        {(session.status === "running" || session.status === "needs-you") && (
-          <span className="cl-sidebar__dot" data-status={session.status} role="img" aria-label={S.agentStatus[session.status]} />
+        {session.status !== "idle" && session.status !== "completed" && session.status !== "stopped" && (
+          <span className="cl-sidebar__dot" data-status={session.status} role="img" aria-label={S.agentStatus[session.status]} title={S.agentStatus[session.status]} />
         )}
       </button>
       {finished && props.onCloseAgent && (
@@ -182,7 +188,8 @@ function SessionRow({ session, props }: { session: SidebarSession; props: Sideba
 }
 
 function ProjectGroup({ project, folded, onFold, props }: { project: SidebarProject; folded: boolean; onFold: () => void; props: SidebarProps }) {
-  const listId = `cl-sidebar-project-${project.id}`;
+  // An id from React, never from the project's own id: a space or a quote in it would break `aria-controls`.
+  const listId = useId();
   return (
     <li className="cl-sidebar__project" data-folded={folded || undefined}>
       <div className="cl-sidebar__project-head">
@@ -200,7 +207,7 @@ function ProjectGroup({ project, folded, onFold, props }: { project: SidebarProj
         </button>
         {props.onNewSession && (
           <button type="button" className="cl-sidebar__icon-button" aria-label={S.newSessionIn(project.name)} title={S.newSessionIn(project.name)} onClick={() => props.onNewSession?.(project.id)}>
-            <IconPlus />
+            <IconPlusSmall />
           </button>
         )}
       </div>
@@ -212,14 +219,16 @@ function ProjectGroup({ project, folded, onFold, props }: { project: SidebarProj
             ))}
           </ul>
         ) : (
-          <div className="cl-sidebar__empty">{S.noSessions}</div>
+          <div className="cl-sidebar__empty" id={listId}>
+            {S.noSessions}
+          </div>
         ))}
     </li>
   );
 }
 
 function AppIcon({ app }: { app: SidebarApp }) {
-  if (app.icon && "url" in app.icon && /^(blob:|data:image\/|clover-asset:)/i.test(app.icon.url)) return <img className="cl-sidebar__app-icon" src={app.icon.url} alt="" />;
+  if (app.icon && "url" in app.icon && SAFE_ASSET.test(app.icon.url)) return <img className="cl-sidebar__app-icon" src={app.icon.url} alt="" />;
   const glyph = app.icon && "glyph" in app.icon ? app.icon.glyph : "grid";
   return glyph === "globe" ? <IconGlobe /> : glyph === "archive" ? <IconArchive /> : glyph === "chart" ? <IconChart /> : <IconGrid />;
 }
@@ -285,26 +294,32 @@ export function Sidebar(props: SidebarProps) {
       </li>
     ) : null;
 
+  const toggle = props.onToggleCollapsed && (
+    <button
+      type="button"
+      className="cl-sidebar__icon-button cl-sidebar__toggle"
+      aria-label={collapsed ? S.expand : S.collapse}
+      title={collapsed ? S.expand : S.collapse}
+      aria-expanded={!collapsed}
+      onClick={props.onToggleCollapsed}
+    >
+      <IconSidebar />
+    </button>
+  );
+
   return (
     <nav className="cl-sidebar" aria-label={S.nav} data-collapsed={collapsed || undefined} data-side={side}>
+      {/* The window's own controls (the traffic lights on macOS) draw over this row's start. */}
       <div className="cl-sidebar__top">
-        {props.onToggleCollapsed && (
-          <button
-            type="button"
-            className="cl-sidebar__icon-button"
-            aria-label={collapsed ? S.expand : S.collapse}
-            title={collapsed ? S.expand : S.collapse}
-            aria-expanded={!collapsed}
-            onClick={props.onToggleCollapsed}
-          >
-            <IconSidebar />
-          </button>
+        <span className="cl-sidebar__controls" aria-hidden="true" />
+        {!collapsed && toggle}
+        {!collapsed && (
+          <span className="cl-sidebar__brand" title={S.app}>
+            <CloverMark size={16} />
+          </span>
         )}
-        <span className="cl-sidebar__brand" aria-hidden={collapsed || undefined}>
-          <CloverMark size={18} />
-          {!collapsed && <span>{S.app}</span>}
-        </span>
       </div>
+      {collapsed && toggle && <div className="cl-sidebar__rail-toggle">{toggle}</div>}
 
       <div className="cl-sidebar__switch" role="radiogroup" aria-label={S.sides}>
         {(["bots", "code"] as const).map((key) => (
@@ -324,39 +339,12 @@ export function Sidebar(props: SidebarProps) {
       </div>
 
       <ul className="cl-sidebar__actions">
-        {action("new", <IconPlus />, side === "bots" ? S.newChat : S.new, props.onNew)}
+        {action("new", <IconPlus />, side === "bots" ? S.newChat : S.newSession, props.onNew)}
         {action("search", <IconSearch />, S.search, props.onSearch)}
         {action("outputs", <IconOutputs />, S.outputs, props.onOutputs)}
-        {action("customize", <IconCustomize />, S.customize, props.onCustomize)}
+        {action("plugins", <IconPlugins />, S.plugins, props.onPlugins)}
         {action("more", <IconMore />, S.more, props.onMore)}
       </ul>
-
-      {list.length > 0 &&
-        (collapsed ? (
-          <ul className="cl-sidebar__marks">
-            {list.map((b) => (
-              <li key={b.key}>
-                <button type="button" className="cl-sidebar__mark" data-tone={b.tone} aria-label={b.text} title={b.text} onClick={b.action?.onClick}>
-                  {b.icon}
-                </button>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <div className="cl-sidebar__banners">
-            {list.map((b) => (
-              <div key={b.key} className="cl-sidebar__banner" data-tone={b.tone} role="status">
-                {b.icon}
-                <span className="cl-sidebar__banner-text">{b.text}</span>
-                {b.action && (
-                  <button type="button" className="cl-sidebar__banner-action" onClick={b.action.onClick}>
-                    {b.action.label}
-                  </button>
-                )}
-              </div>
-            ))}
-          </div>
-        ))}
 
       <div className="cl-sidebar__scroll">
         {side === "bots" ? (
@@ -406,7 +394,7 @@ export function Sidebar(props: SidebarProps) {
                 ))}
               </ul>
             ) : (
-              <ul className="cl-sidebar__list">
+              <ul className="cl-sidebar__list cl-sidebar__projects">
                 {(props.projects ?? []).map((project) => (
                   <ProjectGroup key={project.id} project={project} folded={folded.has(project.id)} onFold={() => fold(project.id)} props={props} />
                 ))}
@@ -417,6 +405,7 @@ export function Sidebar(props: SidebarProps) {
 
         {props.apps && props.apps.length > 0 && (
           <section className="cl-sidebar__section" aria-label={S.apps}>
+            {!collapsed && <h2 className="cl-sidebar__heading">{S.apps}</h2>}
             <ul className="cl-sidebar__list">
               {props.apps.map((app) => {
                 const target: SidebarRoute = { kind: "app", appId: app.id };
@@ -442,6 +431,34 @@ export function Sidebar(props: SidebarProps) {
         )}
       </div>
 
+      {list.length > 0 &&
+        (collapsed ? (
+          <ul className="cl-sidebar__marks">
+            {list.map((b) => (
+              <li key={b.key}>
+                <button type="button" className="cl-sidebar__mark" data-tone={b.tone} aria-label={b.text} title={b.text} onClick={b.action?.onClick}>
+                  {b.icon}
+                </button>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <div className="cl-sidebar__banners">
+            {list.map((b) => (
+              <div key={b.key} className="cl-sidebar__banner" data-tone={b.tone} role="status">
+                {b.icon}
+                <span className="cl-sidebar__banner-text">{b.text}</span>
+                {b.action && (
+                  <button type="button" className="cl-sidebar__banner-action" onClick={b.action.onClick}>
+                    {b.action.label}
+                    <IconArrow />
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        ))}
+
       <div className="cl-sidebar__footer">
         <button
           type="button"
@@ -456,7 +473,8 @@ export function Sidebar(props: SidebarProps) {
           {!collapsed && (
             <span className="cl-sidebar__account-names">
               <span className="cl-sidebar__title">{props.account.name}</span>
-              {props.account.detail && <span className="cl-sidebar__account-detail">{props.account.detail}</span>}
+              {props.account.detail && <span className="cl-sidebar__account-detail">· {props.account.detail}</span>}
+              <IconChevronDown />
             </span>
           )}
         </button>

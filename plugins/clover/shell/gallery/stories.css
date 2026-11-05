@@ -1,6 +1,0 @@
-/* Gallery-only: what the example plugin in a story draws. */
-.story-mood__line {
-  margin: -4px 0 4px 45px;
-  color: var(--clover-color-text-muted);
-  font-size: 11px;
-}

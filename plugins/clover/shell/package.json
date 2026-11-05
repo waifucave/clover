@@ -3,13 +3,14 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "Clover's default shell: the sidebar now, the whole window in M2, as a UI plugin.",
+  "description": "Clover's default shell: the window frame, its title bar and the layout of the sidebar, main and panel spots, as a UI plugin.",
   "scripts": {
     "test": "bun test",
     "typecheck": "tsc --noEmit -p .",
     "gallery": "bun gallery/build.ts"
   },
   "dependencies": {
+    "lucide-react": "1.61.0",
     "react": "19.3.1",
     "react-dom": "19.3.1"
   },

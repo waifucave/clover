@@ -1,8 +1,10 @@
-/* The shell: the window frame and the sidebar. Every colour, face and size is a theme token from lane
-   B's catalog (`--clover-*`, listed in tokens.ts). Calm and dense: hairlines rather than shadows,
-   muted text for everything that isn't a name. */
+/* The window frame. Every colour, face and size is a theme token from lane B's catalog (`--clover-*`,
+   listed in tokens.ts), or the clover plugin's own (`--clover-plugin-clover-*`). Sizes follow the
+   reference app's (as measured for lane G's base theme): a 45 px title bar, toggles 28 px square and 32
+   apart, a panel taking three fifths beside the conversation's two.
 
-/* ------------------------------------------------------------------ the window */
+   The window root paints nothing, so the window's material shows through the sidebar (a tint over it, or
+   a solid colour where there is no material); the main column and the panel paint the surface. */
 
 .cl-window {
   position: relative;
@@ -13,7 +15,7 @@
   height: 100%;
   min-height: 0;
   overflow: hidden;
-  background: var(--clover-color-surface);
+  background: transparent;
   color: var(--clover-color-text);
   font-family: var(--clover-font-sans);
   font-size: var(--clover-font-size-body);
@@ -21,7 +23,7 @@
 }
 
 .cl-window[data-panel="open"] {
-  grid-template-columns: auto minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-columns: auto minmax(360px, 2fr) minmax(0, 3fr);
 }
 
 .cl-window button {
@@ -36,24 +38,47 @@
 .cl-window__sidebar {
   display: flex;
   min-height: 0;
-  border-right: 1px solid var(--clover-color-hairline);
+  border-right: 1px solid var(--clover-color-hairline-raised);
+  background: var(--clover-plugin-clover-sidebar-solid);
 }
 
+.cl-window[data-translucent] .cl-window__sidebar {
+  background: var(--clover-plugin-clover-sidebar-tint);
+}
+
+/* The main column: the bar floats over its top, and the body fills it all, under the bar. */
 .cl-window__main {
+  position: relative;
   display: flex;
   flex-direction: column;
   min-width: 0;
   min-height: 0;
+  background: var(--clover-color-surface);
+  container-type: inline-size;
 }
 
+/* The title bar: translucent, the transcript scrolling under it blurred. It holds the title and the
+   panel toggles only, never a card; the window drags by it. */
 .cl-window__bar {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  z-index: 1;
+  box-sizing: border-box;
   display: flex;
-  flex: none;
   align-items: center;
   gap: var(--clover-space-s);
-  height: 48px;
-  padding: 0 var(--clover-space-m) 0 var(--clover-space-l);
-  border-bottom: 1px solid var(--clover-color-hairline);
+  height: var(--clover-plugin-clover-bar-height);
+  padding: 0 var(--clover-space-s) 0 14px;
+  border-bottom: 1px solid var(--clover-color-hairline-raised);
+  background: var(--clover-plugin-clover-bar-tint);
+  backdrop-filter: blur(var(--clover-plugin-clover-bar-blur)) saturate(1.6);
+  -webkit-app-region: drag;
+}
+
+.cl-window__bar button {
+  -webkit-app-region: no-drag;
 }
 
 .cl-window__title {
@@ -62,13 +87,14 @@
   gap: 6px;
   min-width: 0;
   margin: 0;
-  padding: 4px 6px;
+  padding: 4px 7px;
   border: none;
   border-radius: var(--clover-radius-medium);
   background: transparent;
   color: var(--clover-color-text);
-  font-size: var(--clover-font-size-body);
+  font-size: var(--clover-font-size-control);
   font-weight: var(--clover-font-weight-regular);
+  line-height: var(--clover-font-line-tight);
   cursor: default;
 }
 
@@ -87,15 +113,22 @@ button.cl-window__title:hover {
   white-space: nowrap;
 }
 
-.cl-window__spacer {
+/* Why a dialog didn't open: a card waits. Empty otherwise, but always there, so it is announced. */
+.cl-window__note {
   flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--clover-color-attention-text);
+  font-size: var(--clover-font-size-label);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .cl-window__toggles {
   display: flex;
   flex: none;
   align-items: center;
-  gap: 2px;
+  gap: 4px;
 }
 
 .cl-window__body {
@@ -104,20 +137,37 @@ button.cl-window__title:hover {
   min-height: 0;
 }
 
+/* Main content starts below the bar, except the bot tab's conversation, which runs up under it and keeps
+   its own content below it with `--cl-inset-top`. */
 .cl-window__content {
+  box-sizing: border-box;
   display: flex;
   flex: 1 1 auto;
   flex-direction: column;
   min-width: 0;
   min-height: 0;
+  padding-top: var(--clover-plugin-clover-bar-height);
 }
 
+.cl-window__content:has(> .cl-bot-tab) {
+  padding-top: 0;
+}
+
+/* The session column scrolls under the bar too: its cards start 12 px below it. */
 .cl-window__side {
+  box-sizing: border-box;
   flex: none;
-  width: 320px;
+  width: 293px;
   min-height: 0;
+  padding: calc(var(--clover-plugin-clover-bar-height) + var(--clover-space-m)) var(--clover-space-s) var(--clover-space-m);
   overflow-y: auto;
-  border-left: 1px solid var(--clover-color-hairline);
+}
+
+/* A narrow window keeps the conversation readable: the session column gives way first. */
+@container (max-width: 720px) {
+  .cl-window__side {
+    display: none;
+  }
 }
 
 .cl-window__panel {
@@ -125,19 +175,25 @@ button.cl-window__title:hover {
   flex-direction: column;
   min-width: 0;
   min-height: 0;
-  border-left: 1px solid var(--clover-color-hairline);
+  border-left: 1px solid var(--clover-color-hairline-raised);
+  background: var(--clover-color-surface);
 }
 
-/* Dialogs cover the whole window, the conversation and its cards included: a card under a dialog is
-   covered, so its buttons count no clicks until the dialog closes. The layer stays inside the window. */
+/* Dialogs cover the window, but never a card: the frame opens none while a card waits in the shown
+   session and closes any that is open when one arrives (`cardPending`). The layer stays inside the window. */
 .cl-window__dialog {
   position: absolute;
   inset: 0;
+  z-index: 2;
   display: flex;
   align-items: center;
   justify-content: center;
   padding: var(--clover-space-xl);
-  background: var(--clover-clover-scrim);
+  background: var(--clover-plugin-clover-scrim);
+}
+
+.cl-window__dialog:focus {
+  outline: none;
 }
 
 .cl-bot-tab {
@@ -148,6 +204,7 @@ button.cl-window__title:hover {
 }
 
 .cl-bot-tab__conversation {
+  --cl-inset-top: var(--clover-plugin-clover-bar-height);
   display: flex;
   flex: 1 1 auto;
   flex-direction: column;
@@ -156,531 +213,14 @@ button.cl-window__title:hover {
 
 .cl-bot-tab__composer {
   flex: none;
-  padding-top: var(--clover-space-s);
 }
 
-/* ------------------------------------------------------------------ the sidebar */
-
-.cl-sidebar {
-  box-sizing: border-box;
-  display: flex;
-  flex-direction: column;
-  gap: var(--clover-space-xs);
-  width: 264px;
-  height: 100%;
-  min-height: 0;
-  padding: var(--clover-space-s);
-  background: var(--clover-color-canvas);
-  color: var(--clover-color-text);
-  font-family: var(--clover-font-sans);
-  font-size: var(--clover-font-size-body);
-}
-
-.cl-sidebar[data-collapsed] {
-  width: 56px;
-  align-items: center;
-}
-
-.cl-sidebar button {
-  font: inherit;
-}
-
-.cl-sidebar :focus-visible {
-  outline: 2px solid var(--clover-color-focus);
-  outline-offset: -2px;
-}
-
-/* No specificity, so each list's own class sets its margins (the nested tabs' indent, say). */
-:where(.cl-sidebar) ul {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.cl-sidebar__top {
-  display: flex;
-  align-items: center;
-  gap: var(--clover-space-s);
-  min-height: 32px;
-  padding: 0 var(--clover-space-xs);
-}
-
-.cl-sidebar[data-collapsed] .cl-sidebar__top {
-  flex-direction: column;
-  padding: 0;
-}
-
-.cl-sidebar__brand {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--clover-color-text);
-  font-family: var(--clover-font-display);
-  font-size: var(--clover-font-size-large);
-}
-
-.cl-shell-mark {
-  color: var(--clover-color-accent);
-}
-
-.cl-sidebar__switch {
-  display: flex;
-  gap: 2px;
-  padding: 2px;
-  border-radius: var(--clover-radius-medium);
-  background: var(--clover-color-control);
-}
-
-.cl-sidebar[data-collapsed] .cl-sidebar__switch {
-  flex-direction: column;
-}
-
-.cl-sidebar__switch-option {
-  display: inline-flex;
-  flex: 1 1 0;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  min-height: 30px;
-  padding: 0 var(--clover-space-s);
-  border: none;
-  border-radius: var(--clover-radius-small);
-  background: transparent;
-  color: var(--clover-color-text-muted);
-  cursor: pointer;
-}
-
-.cl-sidebar__switch-option[aria-checked="true"] {
-  background: var(--clover-color-surface);
-  color: var(--clover-color-text);
-}
-
-.cl-sidebar__actions {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  padding-top: var(--clover-space-xs);
-}
-
-.cl-sidebar__row {
-  box-sizing: border-box;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-  min-height: 32px;
-  padding: 4px var(--clover-space-s);
-  border: none;
-  border-radius: var(--clover-radius-medium);
-  background: transparent;
-  color: var(--clover-color-text);
-  text-align: left;
-  cursor: pointer;
-}
-
-.cl-sidebar__row:hover {
-  background: var(--clover-color-hover);
-}
-
-.cl-sidebar__row[aria-current="page"] {
-  background: var(--clover-color-selected);
-}
-
-.cl-sidebar[data-collapsed] .cl-sidebar__row {
-  justify-content: center;
-  width: 40px;
-  padding: 4px;
-}
-
-.cl-sidebar__action {
-  color: var(--clover-color-text-secondary);
-}
-
-.cl-sidebar__title {
-  min-width: 0;
-  flex: 1 1 auto;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.cl-sidebar__icon-button {
-  display: inline-flex;
-  flex: none;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  padding: 0;
-  border: none;
-  border-radius: var(--clover-radius-medium);
-  background: transparent;
-  color: var(--clover-color-text-muted);
-  cursor: pointer;
-}
-
-.cl-sidebar__icon-button:hover {
-  background: var(--clover-color-hover);
-  color: var(--clover-color-text);
-}
-
-/* Banners: safe mode, the pause switch, the link to the main computer. */
-.cl-sidebar__banners {
-  display: flex;
-  flex-direction: column;
-  gap: var(--clover-space-xs);
-  padding-top: var(--clover-space-xs);
-}
-
-.cl-sidebar__banner {
-  display: grid;
-  grid-template-columns: 16px 1fr;
-  gap: 2px var(--clover-space-s);
-  padding: var(--clover-space-s);
-  border: 1px solid var(--clover-color-hairline-raised);
-  border-radius: var(--clover-radius-medium);
-  background: var(--clover-color-raised);
-  color: var(--clover-color-text-secondary);
-  font-size: var(--clover-font-size-control);
-  line-height: var(--clover-font-line-tight);
-}
-
-.cl-sidebar__banner[data-tone="attention"] > .cl-shell-icon {
-  color: var(--clover-color-attention-text);
-}
-
-.cl-sidebar__banner-action {
-  grid-column: 2;
-  justify-self: start;
-  padding: 2px 0;
-  border: none;
-  background: transparent;
-  color: var(--clover-color-accent-text);
-  font-size: var(--clover-font-size-control);
-  cursor: pointer;
-}
-
-.cl-sidebar__marks {
-  display: flex;
-  flex-direction: column;
-  gap: var(--clover-space-xs);
-}
-
-.cl-sidebar__mark {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  padding: 0;
-  border: 1px solid var(--clover-color-hairline-raised);
-  border-radius: var(--clover-radius-medium);
-  background: var(--clover-color-raised);
-  color: var(--clover-color-text-secondary);
-  cursor: pointer;
-}
-
-.cl-sidebar__mark[data-tone="attention"] {
-  color: var(--clover-color-attention-text);
-}
-
-/* The bots, or the projects: the part that scrolls. */
-.cl-sidebar__scroll {
-  display: flex;
-  flex: 1 1 auto;
-  flex-direction: column;
-  gap: var(--clover-space-m);
-  min-height: 0;
-  margin: var(--clover-space-s) calc(-1 * var(--clover-space-s)) 0;
-  padding: 0 var(--clover-space-s);
-  overflow-y: auto;
-}
-
-.cl-sidebar__section {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.cl-sidebar__heading {
-  margin: 0;
-  padding: var(--clover-space-xs) var(--clover-space-s);
-  color: var(--clover-color-text-muted);
-  font-size: var(--clover-font-size-control);
-  font-weight: var(--clover-font-weight-medium);
-}
-
-.cl-sidebar__list {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-}
-
-.cl-sidebar__portrait {
-  display: inline-flex;
-  flex: none;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  overflow: hidden;
-  border-radius: var(--clover-radius-round);
-  background: var(--clover-color-accent-soft);
-  color: var(--clover-color-accent-text);
-  font-size: var(--clover-font-size-control);
-}
-
-.cl-sidebar__portrait img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.cl-sidebar__names {
-  display: flex;
-  flex: 1 1 auto;
-  flex-direction: column;
-  min-width: 0;
-  line-height: var(--clover-font-line-tight);
-}
-
-.cl-sidebar__line {
-  overflow: hidden;
-  color: var(--clover-color-text-muted);
-  font-size: var(--clover-font-size-caption);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.cl-sidebar__line[data-status="needs-you"] {
-  color: var(--clover-color-attention-text);
-}
-
-.cl-sidebar__count {
-  flex: none;
-  min-width: 18px;
-  padding: 0 5px;
-  border-radius: var(--clover-radius-round);
-  background: var(--clover-color-accent);
-  color: var(--clover-color-accent-contrast);
-  font-size: var(--clover-font-size-caption);
-  line-height: 18px;
-  text-align: center;
-}
-
-.cl-sidebar__unread {
-  flex: none;
-  width: 7px;
-  height: 7px;
-  border-radius: var(--clover-radius-round);
-  background: var(--clover-color-accent);
-}
-
-/* Live tabs nest under their bot or project, along a guide line. */
-.cl-sidebar__agents,
-.cl-sidebar__sessions {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  margin: 1px 0 var(--clover-space-xs) 22px;
-  padding-left: var(--clover-space-s);
-  border-left: 1px solid var(--clover-color-hairline-raised);
-}
-
-.cl-sidebar__agent {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-}
-
-/* The row takes what Close leaves it. */
-.cl-sidebar__agent > .cl-sidebar__row {
-  flex: 1 1 auto;
-  width: auto;
-  min-width: 0;
-}
-
-.cl-sidebar__row--nested {
-  min-height: 30px;
-  color: var(--clover-color-text-secondary);
-  font-size: var(--clover-font-size-control);
-}
-
-.cl-sidebar__dot {
-  flex: none;
-  width: 7px;
-  height: 7px;
-  border-radius: var(--clover-radius-round);
-  background: var(--clover-color-text-placeholder);
-}
-
-.cl-sidebar__dot[data-status="running"] {
-  background: var(--clover-color-accent);
-}
-
-.cl-sidebar__dot[data-status="needs-you"],
-.cl-sidebar__dot[data-status="stalled"] {
-  background: var(--clover-color-attention);
-}
-
-.cl-sidebar__dot[data-status="failed"] {
-  background: var(--clover-color-danger);
-}
-
-.cl-sidebar__dot[data-status="completed"] {
-  background: var(--clover-color-success);
-}
-
-/* A live tab's state comes first and never shrinks; its title takes what is left. */
-.cl-sidebar__state {
-  flex: none;
-  color: var(--clover-color-text-muted);
-  font-size: var(--clover-font-size-caption);
-}
-
-.cl-sidebar__state[data-status="needs-you"],
-.cl-sidebar__state[data-status="stalled"] {
-  color: var(--clover-color-attention-text);
-}
-
-.cl-sidebar__state[data-status="failed"] {
-  color: var(--clover-color-danger);
-}
-
-/* Close on a finished tab: always there, so the keyboard reaches it (review item 8). */
-.cl-sidebar__close {
-  display: inline-flex;
-  flex: none;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 24px;
-  padding: 0;
-  border: none;
-  border-radius: var(--clover-radius-small);
-  background: transparent;
-  color: var(--clover-color-text-muted);
-  cursor: pointer;
-}
-
-.cl-sidebar__close:hover {
-  background: var(--clover-color-hover);
-  color: var(--clover-color-text);
-}
-
-/* Projects. */
-.cl-sidebar__project-head {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-}
-
-.cl-sidebar__project-toggle {
-  display: inline-flex;
-  flex: 1 1 auto;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-  min-height: 30px;
-  padding: 0 var(--clover-space-s);
-  border: none;
-  border-radius: var(--clover-radius-medium);
-  background: transparent;
-  color: var(--clover-color-text-secondary);
-  font-size: var(--clover-font-size-control);
-  font-weight: var(--clover-font-weight-medium);
-  cursor: pointer;
-}
-
-.cl-sidebar__project-toggle:hover {
-  background: var(--clover-color-hover);
-}
-
-.cl-sidebar__project-name {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.cl-sidebar__branch {
-  display: inline-flex;
-  flex: none;
-  align-items: center;
-  gap: 2px;
-  color: var(--clover-color-text-muted);
-  font-size: var(--clover-font-size-caption);
-}
-
-.cl-sidebar__empty {
-  margin-left: 30px;
-  padding: 4px 0;
-  color: var(--clover-color-text-muted);
-  font-size: var(--clover-font-size-control);
-}
-
-.cl-sidebar__app-icon {
-  width: 16px;
-  height: 16px;
-}
-
-/* The account and the settings gear, at the bottom. */
-.cl-sidebar__footer {
-  display: flex;
-  flex: none;
-  align-items: center;
-  gap: var(--clover-space-xs);
-  padding-top: var(--clover-space-s);
-  border-top: 1px solid var(--clover-color-hairline);
-}
-
-.cl-sidebar[data-collapsed] .cl-sidebar__footer {
-  flex-direction: column;
-}
-
-.cl-sidebar__account {
-  flex: 1 1 auto;
-  min-width: 0;
-}
-
-.cl-sidebar__avatar {
-  display: inline-flex;
-  flex: none;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 24px;
-  border-radius: var(--clover-radius-round);
-  background: var(--clover-color-control);
-  color: var(--clover-color-text-secondary);
-  font-size: var(--clover-font-size-caption);
-}
-
-.cl-sidebar__account-names {
-  display: flex;
-  min-width: 0;
-  align-items: baseline;
-  gap: 6px;
-}
-
-.cl-sidebar__account-detail {
-  flex: none;
-  color: var(--clover-color-text-muted);
-  font-size: var(--clover-font-size-caption);
-}
-
-.cl-sidebar__count--corner {
-  margin-left: -10px;
-  align-self: flex-start;
-}
-
-.cl-shell-icon {
+.cl-window-icon {
   flex: none;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .cl-window *,
-  .cl-sidebar * {
+  .cl-window * {
     transition: none;
   }
 }

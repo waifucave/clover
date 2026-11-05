@@ -1,7 +1,7 @@
 {
   "manifest": 1,
   "name": "Shell",
-  "description": "The default shell: the window frame, and the sidebar with the bots and their live agents, or the coding sessions by project.",
+  "description": "The default shell: the window frame, with a translucent title bar over the conversation, the sidebar on the window's material, and the main, panel and dialog layers.",
   "engines": {
     "clover": "^1.0.0"
   },
@@ -12,9 +12,6 @@
     ]
   },
   "capabilities": [
-    "bots.read",
-    "computers.read",
-    "conversation.read",
     "approvals"
   ],
   "contributes": {
@@ -40,20 +37,6 @@
             "props": {}
           },
           "status": {
-            "shape": "list",
-            "props": {}
-          }
-        }
-      },
-      {
-        "spot": "sidebar",
-        "component": "Sidebar",
-        "declares": {
-          "sidebar.bot": {
-            "shape": "keyed",
-            "props": {}
-          },
-          "sidebar.app": {
             "shape": "list",
             "props": {}
           }

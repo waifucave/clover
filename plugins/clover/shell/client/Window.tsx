@@ -1,8 +1,15 @@
-// The window: the sidebar, the main column (a title bar with the open tab's name and the panel
-// toggles, then the bot's or session's view, with the session column beside it when it's open), the
-// right-hand panel when one is open, and a layer for dialogs over all of it. It holds the shell's
-// spots: `sidebar`, `main`, `panel` (spec §5.5); what fills them comes in as nodes.
-import type { ReactNode } from "react";
+// The window frame (it fills `app.root` and holds the shell's spots `sidebar`, `main` and `panel`, spec
+// §5.5): the sidebar on the window's material, the main column (a translucent title bar with the open tab's
+// name and the panel toggles, over the bot's or session's view, with the session column beside it), the
+// right-hand panel when one is open, and a layer for dialogs. What fills the spots comes in as nodes.
+//
+// Sealed cards (§5.5) count a click only while nothing covers them:
+// - **Dialogs.** While a card is pending in the shown session, no dialog opens, and one already open closes
+//   (the same rule as the composer's menus). The bar says why.
+// - **The title bar.** It is translucent, and the conversation scrolls under it. The bot tab tells the
+//   conversation how tall the bar is (`--cl-inset-top`), so its content starts below the bar and a card it
+//   brings into view stops below it.
+import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { IconChevronDown } from "./icons";
 import { S } from "./strings";
 
@@ -15,19 +22,90 @@ export interface WindowProps {
   onTitleMenu?: () => void;
   /** The panel toggles, at the title bar's end. */
   toggles?: ReactNode;
-  /** The `main` spot: the conversation and the composer, or a settings page, or an app. */
+  /** The `main` spot: the bot tab (conversation and composer), a settings page, or an app. */
   children: ReactNode;
-  /** The session column beside the conversation (environment, context, outputs, changes). */
+  /** The session column beside the conversation (where it runs, context, outputs, changes). */
   side?: ReactNode;
   /** The `panel` spot, when a panel is open. */
   panel?: ReactNode;
   /** A dialog over the window: settings, the language chooser. */
   dialog?: ReactNode;
+  /** A card (approval or question) waits in the shown session: no dialog opens while it does, and an open
+   *  one closes through `onCloseDialog`. */
+  cardPending?: boolean;
+  /** Closes the dialog: on Escape, and when a card arrives or is already waiting. */
+  onCloseDialog?: () => void;
+  /** The window has a system material behind it (sidebar vibrancy on macOS, acrylic on Windows 11; lane E):
+   *  the sidebar lets it through. Without one (Linux), the sidebar is a solid colour. */
+  translucent?: boolean;
 }
 
-export function Window({ sidebar, title, onTitleMenu, toggles, children, side, panel, dialog }: WindowProps) {
+const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+/** The dialog layer: it takes the focus in, keeps Tab inside, closes on Escape, and gives the focus back
+ *  to whatever had it when the dialog opened. */
+function DialogLayer({ children, onClose }: { children: ReactNode; onClose?: () => void }) {
+  const layer = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const el = layer.current;
+    if (el && !el.contains(document.activeElement)) {
+      const first = el.querySelector<HTMLElement>("[autofocus]") ?? el.querySelector<HTMLElement>(FOCUSABLE) ?? el;
+      first.focus();
+    }
+    return () => {
+      if (opener && opener.isConnected) opener.focus();
+    };
+  }, []);
+  const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+    // The dialog handled it itself (an inner menu closing, say).
+    if (e.defaultPrevented) return;
+    if (e.key === "Escape" && onClose) {
+      e.preventDefault();
+      onClose();
+      return;
+    }
+    if (e.key !== "Tab") return;
+    const items = [...(layer.current?.querySelectorAll<HTMLElement>(FOCUSABLE) ?? [])];
+    const first = items[0];
+    const last = items[items.length - 1];
+    if (!first || !last) {
+      e.preventDefault();
+      return;
+    }
+    if (e.shiftKey && document.activeElement === first) {
+      e.preventDefault();
+      last.focus();
+    } else if (!e.shiftKey && document.activeElement === last) {
+      e.preventDefault();
+      first.focus();
+    }
+  };
   return (
-    <div className="cl-window" data-panel={panel ? "open" : undefined} data-side={side ? "open" : undefined}>
+    <div className="cl-window__dialog" ref={layer} tabIndex={-1} onKeyDown={onKeyDown}>
+      {children}
+    </div>
+  );
+}
+
+export function Window({ sidebar, title, onTitleMenu, toggles, children, side, panel, dialog, cardPending = false, onCloseDialog, translucent = false }: WindowProps) {
+  // A dialog asked for while a card waits stays shut, and one open when a card arrives closes; either way
+  // the bar says so until the card is answered.
+  const [held, setHeld] = useState(false);
+  const wantsDialog = dialog !== undefined && dialog !== null && dialog !== false;
+  useEffect(() => {
+    if (cardPending && wantsDialog) {
+      setHeld(true);
+      onCloseDialog?.();
+    }
+  }, [cardPending, wantsDialog, onCloseDialog]);
+  useEffect(() => {
+    if (!cardPending) setHeld(false);
+  }, [cardPending]);
+  const showDialog = wantsDialog && !cardPending;
+
+  return (
+    <div className="cl-window" data-panel={panel ? "open" : undefined} data-side={side ? "open" : undefined} data-translucent={translucent || undefined}>
       <div className="cl-window__sidebar">{sidebar}</div>
       <section className="cl-window__main" aria-label={title}>
         <header className="cl-window__bar">
@@ -41,7 +119,9 @@ export function Window({ sidebar, title, onTitleMenu, toggles, children, side, p
               <span className="cl-window__title-text">{title}</span>
             </h1>
           )}
-          <span className="cl-window__spacer" />
+          <span className="cl-window__note" role="status">
+            {cardPending && held ? S.dialogHeld : ""}
+          </span>
           {toggles && (
             <div className="cl-window__toggles" role="toolbar" aria-label={S.panelToggles}>
               {toggles}
@@ -54,12 +134,13 @@ export function Window({ sidebar, title, onTitleMenu, toggles, children, side, p
         </div>
       </section>
       {panel && <aside className="cl-window__panel">{panel}</aside>}
-      {dialog && <div className="cl-window__dialog">{dialog}</div>}
+      {showDialog && <DialogLayer onClose={onCloseDialog}>{dialog}</DialogLayer>}
     </div>
   );
 }
 
-/** The bot tab's own layout inside `main`: the conversation over the composer. */
+/** The bot tab's own layout inside `main`: the conversation over the composer. The conversation runs up
+ *  under the title bar; `--cl-inset-top` tells it how far down its content starts. */
 export function BotTab({ conversation, composer }: { conversation: ReactNode; composer: ReactNode }) {
   return (
     <div className="cl-bot-tab">
