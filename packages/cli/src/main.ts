@@ -257,14 +257,14 @@ const AUTOLAUNCH_TIMEOUT_MS = 8000;
 export async function ensureDaemonReachable(deps: {
   endpointUp: () => boolean | Promise<boolean>;
   /** Start the daemon through the OS; "not-installed" when this profile has no daemon unit. */
-  startDaemon: () => Promise<DaemonStartResult>;
+  startThroughOs: () => Promise<DaemonStartResult>;
   sleepMs: (ms: number) => Promise<void>;
   now: () => number;
   noAutoLaunch: boolean; // CLOVER_NO_AUTOLAUNCH — escape hatch for scripts/CI, always "no-app"
 }): Promise<"already-up" | "launched" | "no-app"> {
   if (await deps.endpointUp()) return "already-up";
   if (deps.noAutoLaunch) return "no-app";
-  if ((await deps.startDaemon()) === "not-installed") return "no-app";
+  if ((await deps.startThroughOs()) === "not-installed") return "no-app";
   const deadline = deps.now() + AUTOLAUNCH_TIMEOUT_MS;
   while (deps.now() < deadline) {
     // A real scheduler handoff before each check: the endpoint is created by a separate OS process
@@ -326,7 +326,7 @@ async function connect(name: string, onEvent: (e: any) => void = () => {}): Prom
     endpointUp: () => endpointPresent(socketPath()),
     // The login unit serves the profile's default home; a CLI on any other home (a test's temp home)
     // never starts it.
-    startDaemon: async () => {
+    startThroughOs: async () => {
       const spec = currentLoginSpec();
       return isDefaultCloverHome(spec.home, spec.profile) ? startDaemonThroughOs(spec, bunRunner) : "not-installed";
     },
@@ -1615,7 +1615,7 @@ async function runSupervise(): Promise<void> {
   process.on("SIGTERM", stopAll);
   process.on("SIGINT", stopAll);
   const result = await superviseLoop({
-    startDaemon(): DaemonRun {
+    spawnDaemon(): DaemonRun {
       const child = Bun.spawn([bin, "daemon", "run"], { stdin: "inherit", stdout: "inherit", stderr: "inherit" });
       const kill = () => { try { child.kill(); } catch { /* already gone */ } };
       stopChild = kill;

@@ -17,7 +17,7 @@ export interface DaemonRun {
 
 export interface SuperviseDeps {
   /** Start one daemon process (`<bin> daemon run`). */
-  startDaemon(): DaemonRun;
+  spawnDaemon(): DaemonRun;
   /** Sleep for the back-off, cancellable; resolves true normally, false if the loop should stop. */
   wait(ms: number): Promise<boolean>;
   /** Whether the loop should keep going (false after a stop signal). */
@@ -56,7 +56,7 @@ export async function superviseLoop(deps: SuperviseDeps): Promise<SuperviseResul
   let starts = 0, crashes = 0;
   while (deps.shouldContinue()) {
     starts++;
-    const run = deps.startDaemon();
+    const run = deps.spawnDaemon();
     const code = await run.exited;
     if (isClean(code)) { log("daemon exited cleanly; not restarting until next login"); return { starts, crashes, ended: "clean-exit" }; }
     crashes++;

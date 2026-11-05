@@ -9,7 +9,7 @@ describe("supervise loop", () => {
   test("a clean daemon exit ends the loop without a restart", async () => {
     let started = 0;
     const deps: SuperviseDeps = {
-      startDaemon() { started++; return run(0); },
+      spawnDaemon() { started++; return run(0); },
       async wait() { return true; },
       shouldContinue: () => true,
       log: () => {},
@@ -24,7 +24,7 @@ describe("supervise loop", () => {
     let i = 0;
     const waits: number[] = [];
     const deps: SuperviseDeps = {
-      startDaemon() { return run(codes[i++] ?? 0); },
+      spawnDaemon() { return run(codes[i++] ?? 0); },
       async wait(ms) { waits.push(ms); return true; },
       shouldContinue: () => true,
       log: () => {},
@@ -39,7 +39,7 @@ describe("supervise loop", () => {
   test("a stop request ends the loop even amid crashes", async () => {
     let alive = true;
     const deps: SuperviseDeps = {
-      startDaemon() { return run(1); },
+      spawnDaemon() { return run(1); },
       async wait() { return true; },
       shouldContinue: () => alive,
       log: () => {},
@@ -59,7 +59,7 @@ describe("supervise loop", () => {
     const codes = [1, 1, 1, 1, 0];
     const waits: number[] = [];
     const deps: SuperviseDeps = {
-      startDaemon() { t += gaps[i] ?? 0; return run(codes[i++] ?? 0); },
+      spawnDaemon() { t += gaps[i] ?? 0; return run(codes[i++] ?? 0); },
       async wait(ms) { waits.push(ms); return true; },
       shouldContinue: () => true,
       log: () => {},
