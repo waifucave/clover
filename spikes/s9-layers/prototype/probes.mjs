@@ -10,7 +10,7 @@ export async function networkProbe(endpoints, full = true) {
   if(typeof RTCPeerConnection==='undefined')return {supported:false};
   const pc=new RTCPeerConnection({iceServers:[{urls:url,username:'fixture',credential:'fixture'}]});
   /** @type {string[]} */ const candidates=[];pc.onicecandidate=e=>{if(e.candidate)candidates.push(e.candidate.candidate);};
-  try{pc.createDataChannel('fixture');await pc.setLocalDescription(await pc.createOffer());await wait(900);return {supported:true,candidates,state:pc.iceGatheringState};}finally{pc.close();}
+  try{pc.createDataChannel('fixture');await pc.setLocalDescription(await pc.createOffer());await wait(900);return {supported:true,candidates,state:pc.iceGatheringState};}catch(e){return {supported:true,candidates,error:String(e),state:pc.iceGatheringState};}finally{pc.close();}
  };
  await attempt('stun',()=>rtc(endpoints.stun.ice));
  await attempt('turn-tcp',()=>rtc(endpoints.turn.ice));
