@@ -1,0 +1,202 @@
+== D:\a\_temp/s6/export\clover
+readdir D:\a\_temp\s6\export\clover\node_modules\@types 1 entries
+-- D:\a\_temp\s6\export\clover\node_modules\@types\bun dirent dir/link/file: false true false
+  lstat {"dir":false,"link":true,"nlink":1,"size":49,"mode":"120666"}
+  readlink "..\\.bun\\@types+bun@1.3.14\\node_modules\\@types\\bun"
+  stat {"dir":true,"file":false}
+  realpath "D:\\a\\_temp\\s6\\export\\clover\\node_modules\\.bun\\@types+bun@1.3.14\\node_modules\\@types\\bun"
+  realpath.native "D:\\a\\_temp\\s6\\export\\clover\\node_modules\\.bun\\@types+bun@1.3.14\\node_modules\\@types\\bun"
+  list ["index.d.ts","LICENSE","package.json","README.md"]
+readdir D:\a\_temp\s6\export\clover\node_modules 5 entries
+-- D:\a\_temp\s6\export\clover\node_modules\.bun dirent dir/link/file: true false false
+  lstat {"dir":true,"link":false,"nlink":1,"size":0,"mode":"40666"}
+  stat {"dir":true,"file":false}
+  realpath "D:\\a\\_temp\\s6\\export\\clover\\node_modules\\.bun"
+  realpath.native "D:\\a\\_temp\\s6\\export\\clover\\node_modules\\.bun"
+  list ["@alcalzone+ansi-tokenize@0.1.3","@modelcontextprotocol+client@2.1.0","@modelcontextprotocol+core@2.1.0","@resvg+resvg-js-win32-x64-msvc@2.6.2","@resvg+resvg-js@2.6.2","@types+bun@1.3.14"]
+-- D:\a\_temp\s6\export\clover\node_modules\typescript dirent dir/link/file: false true false
+  lstat {"dir":false,"link":true,"nlink":1,"size":45,"mode":"120666"}
+  readlink ".bun\\typescript@5.9.3\\node_modules\\typescript"
+  stat {"dir":true,"file":false}
+  realpath "D:\\a\\_temp\\s6\\export\\clover\\node_modules\\.bun\\typescript@5.9.3\\node_modules\\typescript"
+  realpath.native "D:\\a\\_temp\\s6\\export\\clover\\node_modules\\.bun\\typescript@5.9.3\\node_modules\\typescript"
+  list ["bin","lib","LICENSE.txt","package.json","README.md","SECURITY.md"]
+@types/bun/package.json "{ \"name\": \"@types/bun\", \"version\": \"1.3.14\", \"description\": \"TypeScript definitions for bun\", \"homepage\": \"https://github.com/DefinitelyTyped/DefinitelyTyped/tr"
+@types/bun/index.d.ts "/// <reference types=\"bun-types\" /> "
+resolve bun-types from @types/bun ERR MODULE_NOT_FOUND Cannot find module 'bun-types/package.json'
+Require stack:
+- D:\a\_temp\s6\tsc-probe.js
+resolve @types/node from bun-types ERR MODULE_NOT_FOUND Cannot find module '@types/node/package.json'
+Require stack:
+- D:\a\_temp\s6\tsc-probe.js
+tsc --listFilesOnly: 340 files, bun-types 28, @types/node 82
+trace: ======== Resolving type reference directive 'bun', containing file 'D:/a/_temp/s6/export/clover/packages/protocol/__inferred type names__.ts', root directory 'D:/a/_temp/s6/export/clover/packages/protocol/node_modules/@types,D:/a/_temp/s6/export/clover/packages/node_modules/@types,D:/a/_temp/s6/export/clover/node_modules/@types,D:/a/_temp/s6/export/node_modules/@types,D:/a/_temp/s6/node_modules/@types,D:/a/_temp/node_modules/@types,D:/a/node_modules/@types,D:/node_modules/@types'. ========
+trace: Resolving real path for 'D:/a/_temp/s6/export/clover/node_modules/@types/bun', result 'D:/a/_temp/s6/export/clover/node_modules/.bun/@types+bun@1.3.14/node_modules/@types/bun'.
+trace: Resolving real path for 'D:/a/_temp/s6/export/clover/node_modules/@types/bun/index.d.ts', result 'D:/a/_temp/s6/export/clover/node_modules/.bun/@types+bun@1.3.14/node_modules/@types/bun/index.d.ts'.
+trace: ======== Type reference directive 'bun' was successfully resolved to 'D:/a/_temp/s6/export/clover/node_modules/.bun/@types+bun@1.3.14/node_modules/@types/bun/index.d.ts' with Package ID '@types/bun/index.d.ts@1.3.14', primary: true. ========
+trace: ======== Resolving type reference directive 'bun-types', containing file 'D:/a/_temp/s6/export/clover/node_modules/.bun/@types+bun@1.3.14/node_modules/@types/bun/index.d.ts', root directory 'D:/a/_temp/s6/export/clover/packages/protocol/node_modules/@types,D:/a/_temp/s6/export/clover/packages/node_modules/@types,D:/a/_temp/s6/export/clover/node_modules/@types,D:/a/_temp/s6/export/node_modules/@types,D:/a/_temp/s6/node_modules/@types,D:/a/_temp/node_modules/@types,D:/a/node_modules/@types,D:/node_modules/@types'. ========
+trace: Resolving real path for 'D:/a/_temp/s6/export/clover/node_modules/.bun/@types+bun@1.3.14/node_modules/bun-types/index.d.ts', result 'D:/a/_temp/s6/export/clover/node_modules/.bun/bun-types@1.3.14/node_modules/bun-types/index.d.ts'.
+trace: ======== Type reference directive 'bun-types' was successfully resolved to 'D:/a/_temp/s6/export/clover/node_modules/.bun/bun-types@1.3.14/node_modules/bun-types/index.d.ts' with Package ID 'bun-types/index.d.ts@1.3.14', primary: false. ========
+trace: ======== Resolving type reference directive 'node', containing file 'D:/a/_temp/s6/export/clover/node_modules/.bun/undici-types@7.24.6/node_modules/undici-types/formdata.d.ts', root directory 'D:/a/_temp/s6/export/clover/packages/protocol/node_modules/@types,D:/a/_temp/s6/export/clover/packages/node_modules/@types,D:/a/_temp/s6/export/clover/node_modules/@types,D:/a/_temp/s6/export/node_modules/@types,D:/a/_temp/s6/node_modules/@types,D:/a/_temp/node_modules/@types,D:/a/node_modules/@types,D:/node_modules/@types'. ========
+trace: Resolving real path for 'D:/a/_temp/s6/export/clover/node_modules/.bun/node_modules/@types/node', result 'D:/a/_temp/s6/export/clover/node_modules/.bun/@types+node@25.9.3/node_modules/@types/node'.
+trace: Resolving real path for 'D:/a/_temp/s6/export/clover/node_modules/.bun/node_modules/@types/node/index.d.ts', result 'D:/a/_temp/s6/export/clover/node_modules/.bun/@types+node@25.9.3/node_modules/@types/node/index.d.ts'.
+trace: ======== Type reference directive 'node' was successfully resolved to 'D:/a/_temp/s6/export/clover/node_modules/.bun/@types+node@25.9.3/node_modules/@types/node/index.d.ts' with Package ID '@types/node/index.d.ts@25.9.3', primary: false. ========
+trace: Resolving real path for 'D:/a/_temp/s6/export/clover/node_modules/.bun/@types+node@25.9.3/node_modules/undici-types/index.d.ts', result 'D:/a/_temp/s6/export/clover/node_modules/.bun/undici-types@7.24.6/node_modules/undici-types/index.d.ts'.
+trace: ======== Resolving type reference directive 'node', containing file 'D:/a/_temp/s6/export/clover/node_modules/.bun/undici-types@7.24.6/node_modules/undici-types/fetch.d.ts'. ========
+trace: Resolution for type reference directive 'node' was found in cache from location 'D:/a/_temp/s6/export/clover/node_modules/.bun/undici-types@7.24.6/node_modules/undici-types'.
+trace: ======== Type reference directive 'node' was successfully resolved to 'D:/a/_temp/s6/export/clover/node_modules/.bun/@types+node@25.9.3/node_modules/@types/node/index.d.ts' with Package ID '@types/node/index.d.ts@25.9.3', primary: false. ========
+trace: ======== Resolving type reference directive 'node', containing file 'D:/a/_temp/s6/export/clover/node_modules/.bun/undici-types@7.24.6/node_modules/undici-types/cookies.d.ts'. ========
+trace: Resolution for type reference directive 'node' was found in cache from location 'D:/a/_temp/s6/export/clover/node_modules/.bun/undici-types@7.24.6/node_modules/undici-types'.
+trace: ======== Type reference directive 'node' was successfully resolved to 'D:/a/_temp/s6/export/clover/node_modules/.bun/@types+node@25.9.3/node_modules/@types/node/index.d.ts' with Package ID '@types/node/index.d.ts@25.9.3', primary: false. ========
+trace: ======== Resolving type reference directive 'node', containing file 'D:/a/_temp/s6/export/clover/node_modules/.bun/undici-types@7.24.6/node_modules/undici-types/websocket.d.ts'. ========
+trace: Resolution for type reference directive 'node' was found in cache from location 'D:/a/_temp/s6/export/clover/node_modules/.bun/undici-types@7.24.6/node_modules/undici-types'.
+tsc -p packages/protocol: exit 0; 
+
+#### tree on T: (DefineDosDevice), as the speed runs mount it: --mountpoint T:
+repo visible: True
+== T:\home\Desktop1\clover
+readdir T:\home\Desktop1\clover\node_modules\@types 1 entries
+-- T:\home\Desktop1\clover\node_modules\@types\bun dirent dir/link/file: false true false
+  lstat {"dir":false,"link":true,"nlink":1,"size":49,"mode":"120666"}
+  readlink "..\\.bun\\@types+bun@1.3.14\\node_modules\\@types\\bun"
+  stat {"dir":true,"file":false}
+  realpath "T:\\home\\Desktop1\\clover\\node_modules\\.bun\\@types+bun@1.3.14\\node_modules\\@types\\bun"
+  realpath.native ERR UNKNOWN UNKNOWN: unknown error, realpath 'T:\home\Desktop1\clover\node_modules\@types\bun'
+  list ["LICENSE","README.md","index.d.ts","package.json"]
+readdir T:\home\Desktop1\clover\node_modules 5 entries
+-- T:\home\Desktop1\clover\node_modules\.bun dirent dir/link/file: true false false
+  lstat {"dir":true,"link":false,"nlink":1,"size":0,"mode":"40666"}
+  stat {"dir":true,"file":false}
+  realpath "T:\\home\\Desktop1\\clover\\node_modules\\.bun"
+  realpath.native ERR UNKNOWN UNKNOWN: unknown error, realpath 'T:\home\Desktop1\clover\node_modules\.bun'
+  list ["@alcalzone+ansi-tokenize@0.1.3","@modelcontextprotocol+client@2.1.0","@modelcontextprotocol+core@2.1.0","@resvg+resvg-js-win32-x64-msvc@2.6.2","@resvg+resvg-js@2.6.2","@types+bun@1.3.14"]
+-- T:\home\Desktop1\clover\node_modules\typescript dirent dir/link/file: false true false
+  lstat {"dir":false,"link":true,"nlink":1,"size":45,"mode":"120666"}
+  readlink ".bun\\typescript@5.9.3\\node_modules\\typescript"
+  stat {"dir":true,"file":false}
+  realpath "T:\\home\\Desktop1\\clover\\node_modules\\.bun\\typescript@5.9.3\\node_modules\\typescript"
+  realpath.native ERR UNKNOWN UNKNOWN: unknown error, realpath 'T:\home\Desktop1\clover\node_modules\typescript'
+  list ["LICENSE.txt","README.md","SECURITY.md","ThirdPartyNoticeText.txt","bin","lib"]
+@types/bun/package.json "{ \"name\": \"@types/bun\", \"version\": \"1.3.14\", \"description\": \"TypeScript definitions for bun\", \"homepage\": \"https://github.com/DefinitelyTyped/DefinitelyTyped/tr"
+@types/bun/index.d.ts "/// <reference types=\"bun-types\" /> "
+resolve bun-types from @types/bun ERR MODULE_NOT_FOUND Cannot find module 'bun-types/package.json'
+Require stack:
+- D:\a\_temp\s6\tsc-probe.js
+resolve @types/node from bun-types ERR MODULE_NOT_FOUND Cannot find module '@types/node/package.json'
+Require stack:
+- D:\a\_temp\s6\tsc-probe.js
+tsc --listFilesOnly: 187 files, bun-types 0, @types/node 0
+trace: ======== Resolving type reference directive 'bun', containing file 'T:/home/Desktop1/clover/packages/protocol/__inferred type names__.ts', root directory 'T:/home/Desktop1/clover/packages/protocol/node_modules/@types,T:/home/Desktop1/clover/packages/node_modules/@types,T:/home/Desktop1/clover/node_modules/@types,T:/home/Desktop1/node_modules/@types,T:/home/node_modules/@types,T:/node_modules/@types'. ========
+trace: Resolving real path for 'T:/home/Desktop1/clover/node_modules/@types/bun', result 'T:/home/Desktop1/clover/node_modules/@types/bun'.
+trace: Resolving real path for 'T:/home/Desktop1/clover/node_modules/@types/bun/index.d.ts', result 'T:/home/Desktop1/clover/node_modules/@types/bun/index.d.ts'.
+trace: ======== Type reference directive 'bun' was successfully resolved to 'T:/home/Desktop1/clover/node_modules/@types/bun/index.d.ts' with Package ID '@types/bun/index.d.ts@1.3.14', primary: true. ========
+trace: ======== Resolving type reference directive 'bun-types', containing file 'T:/home/Desktop1/clover/node_modules/@types/bun/index.d.ts', root directory 'T:/home/Desktop1/clover/packages/protocol/node_modules/@types,T:/home/Desktop1/clover/packages/node_modules/@types,T:/home/Desktop1/clover/node_modules/@types,T:/home/Desktop1/node_modules/@types,T:/home/node_modules/@types,T:/node_modules/@types'. ========
+trace: ======== Type reference directive 'bun-types' was not resolved. ========
+tsc -p packages/protocol: exit 2; packages/core/src/agent/dangerous-domains.ts(1,22): error TS2307: Cannot find module 'node:net' or its corresponding type declarations. / packages/core/src/agent/tools/web.ts(24,32): error TS2307: Cannot find module 'node:stream' or its corresponding type declarations. / packages/core/src/agent/tools/web.ts(25,87): error TS2307: Cannot find module 'node:zlib' or its corresponding type declarations.
+helper: 04:05:22.000456 [Desktop1] online (service dc8d8bd6 on win32)
+helper: 04:05:22.019658 mounting T: (policy cached)
+helper: The service clover-mount has been started.
+
+#### tree on T: as a network volume (\\clover\tree): --mountpoint T:
+repo visible: True
+== T:\home\Desktop1\clover
+readdir T:\home\Desktop1\clover\node_modules\@types 1 entries
+-- T:\home\Desktop1\clover\node_modules\@types\bun dirent dir/link/file: false true false
+  lstat {"dir":false,"link":true,"nlink":1,"size":49,"mode":"120666"}
+  readlink "..\\.bun\\@types+bun@1.3.14\\node_modules\\@types\\bun"
+  stat {"dir":true,"file":false}
+  realpath "T:\\home\\Desktop1\\clover\\node_modules\\.bun\\@types+bun@1.3.14\\node_modules\\@types\\bun"
+  realpath.native "\\\\clover\\tree\\home\\Desktop1\\clover\\node_modules\\.bun\\@types+bun@1.3.14\\node_modules\\@types\\bun"
+  list ["LICENSE","README.md","index.d.ts","package.json"]
+readdir T:\home\Desktop1\clover\node_modules 5 entries
+-- T:\home\Desktop1\clover\node_modules\.bun dirent dir/link/file: true false false
+  lstat {"dir":true,"link":false,"nlink":1,"size":0,"mode":"40666"}
+  stat {"dir":true,"file":false}
+  realpath "T:\\home\\Desktop1\\clover\\node_modules\\.bun"
+  realpath.native "\\\\clover\\tree\\home\\Desktop1\\clover\\node_modules\\.bun"
+  list ["@alcalzone+ansi-tokenize@0.1.3","@modelcontextprotocol+client@2.1.0","@modelcontextprotocol+core@2.1.0","@resvg+resvg-js-win32-x64-msvc@2.6.2","@resvg+resvg-js@2.6.2","@types+bun@1.3.14"]
+-- T:\home\Desktop1\clover\node_modules\typescript dirent dir/link/file: false true false
+  lstat {"dir":false,"link":true,"nlink":1,"size":45,"mode":"120666"}
+  readlink ".bun\\typescript@5.9.3\\node_modules\\typescript"
+  stat {"dir":true,"file":false}
+  realpath "T:\\home\\Desktop1\\clover\\node_modules\\.bun\\typescript@5.9.3\\node_modules\\typescript"
+  realpath.native "\\\\clover\\tree\\home\\Desktop1\\clover\\node_modules\\.bun\\typescript@5.9.3\\node_modules\\typescript"
+  list ["LICENSE.txt","README.md","SECURITY.md","ThirdPartyNoticeText.txt","bin","lib"]
+@types/bun/package.json "{ \"name\": \"@types/bun\", \"version\": \"1.3.14\", \"description\": \"TypeScript definitions for bun\", \"homepage\": \"https://github.com/DefinitelyTyped/DefinitelyTyped/tr"
+@types/bun/index.d.ts "/// <reference types=\"bun-types\" /> "
+resolve bun-types from @types/bun ERR MODULE_NOT_FOUND Cannot find module 'bun-types/package.json'
+Require stack:
+- D:\a\_temp\s6\tsc-probe.js
+resolve @types/node from bun-types ERR MODULE_NOT_FOUND Cannot find module '@types/node/package.json'
+Require stack:
+- D:\a\_temp\s6\tsc-probe.js
+tsc --listFilesOnly: 340 files, bun-types 28, @types/node 82
+trace: ======== Resolving type reference directive 'bun', containing file 'T:/home/Desktop1/clover/packages/protocol/__inferred type names__.ts', root directory 'T:/home/Desktop1/clover/packages/protocol/node_modules/@types,T:/home/Desktop1/clover/packages/node_modules/@types,T:/home/Desktop1/clover/node_modules/@types,T:/home/Desktop1/node_modules/@types,T:/home/node_modules/@types,T:/node_modules/@types'. ========
+trace: Resolving real path for 'T:/home/Desktop1/clover/node_modules/@types/bun', result '//clover/tree/home/Desktop1/clover/node_modules/.bun/@types+bun@1.3.14/node_modules/@types/bun'.
+trace: Resolving real path for 'T:/home/Desktop1/clover/node_modules/@types/bun/index.d.ts', result '//clover/tree/home/Desktop1/clover/node_modules/.bun/@types+bun@1.3.14/node_modules/@types/bun/index.d.ts'.
+trace: ======== Type reference directive 'bun' was successfully resolved to '//clover/tree/home/Desktop1/clover/node_modules/.bun/@types+bun@1.3.14/node_modules/@types/bun/index.d.ts' with Package ID '@types/bun/index.d.ts@1.3.14', primary: true. ========
+trace: ======== Resolving type reference directive 'bun-types', containing file '//clover/tree/home/Desktop1/clover/node_modules/.bun/@types+bun@1.3.14/node_modules/@types/bun/index.d.ts', root directory 'T:/home/Desktop1/clover/packages/protocol/node_modules/@types,T:/home/Desktop1/clover/packages/node_modules/@types,T:/home/Desktop1/clover/node_modules/@types,T:/home/Desktop1/node_modules/@types,T:/home/node_modules/@types,T:/node_modules/@types'. ========
+trace: Resolving real path for '//clover/tree/home/Desktop1/clover/node_modules/.bun/@types+bun@1.3.14/node_modules/bun-types/index.d.ts', result '//clover/tree/home/Desktop1/clover/node_modules/.bun/bun-types@1.3.14/node_modules/bun-types/index.d.ts'.
+trace: ======== Type reference directive 'bun-types' was successfully resolved to '//clover/tree/home/Desktop1/clover/node_modules/.bun/bun-types@1.3.14/node_modules/bun-types/index.d.ts' with Package ID 'bun-types/index.d.ts@1.3.14', primary: false. ========
+trace: ======== Resolving type reference directive 'node', containing file '//clover/tree/home/Desktop1/clover/node_modules/.bun/undici-types@7.24.6/node_modules/undici-types/formdata.d.ts', root directory 'T:/home/Desktop1/clover/packages/protocol/node_modules/@types,T:/home/Desktop1/clover/packages/node_modules/@types,T:/home/Desktop1/clover/node_modules/@types,T:/home/Desktop1/node_modules/@types,T:/home/node_modules/@types,T:/node_modules/@types'. ========
+trace: Resolving real path for '//clover/tree/home/Desktop1/clover/node_modules/.bun/node_modules/@types/node', result '//clover/tree/home/Desktop1/clover/node_modules/.bun/@types+node@25.9.3/node_modules/@types/node'.
+trace: Resolving real path for '//clover/tree/home/Desktop1/clover/node_modules/.bun/node_modules/@types/node/index.d.ts', result '//clover/tree/home/Desktop1/clover/node_modules/.bun/@types+node@25.9.3/node_modules/@types/node/index.d.ts'.
+trace: ======== Type reference directive 'node' was successfully resolved to '//clover/tree/home/Desktop1/clover/node_modules/.bun/@types+node@25.9.3/node_modules/@types/node/index.d.ts' with Package ID '@types/node/index.d.ts@25.9.3', primary: false. ========
+trace: Resolving real path for '//clover/tree/home/Desktop1/clover/node_modules/.bun/@types+node@25.9.3/node_modules/undici-types/index.d.ts', result '//clover/tree/home/Desktop1/clover/node_modules/.bun/undici-types@7.24.6/node_modules/undici-types/index.d.ts'.
+trace: ======== Resolving type reference directive 'node', containing file '//clover/tree/home/Desktop1/clover/node_modules/.bun/undici-types@7.24.6/node_modules/undici-types/fetch.d.ts'. ========
+trace: Resolution for type reference directive 'node' was found in cache from location '//clover/tree/home/Desktop1/clover/node_modules/.bun/undici-types@7.24.6/node_modules/undici-types'.
+trace: ======== Type reference directive 'node' was successfully resolved to '//clover/tree/home/Desktop1/clover/node_modules/.bun/@types+node@25.9.3/node_modules/@types/node/index.d.ts' with Package ID '@types/node/index.d.ts@25.9.3', primary: false. ========
+trace: ======== Resolving type reference directive 'node', containing file '//clover/tree/home/Desktop1/clover/node_modules/.bun/undici-types@7.24.6/node_modules/undici-types/cookies.d.ts'. ========
+trace: Resolution for type reference directive 'node' was found in cache from location '//clover/tree/home/Desktop1/clover/node_modules/.bun/undici-types@7.24.6/node_modules/undici-types'.
+trace: ======== Type reference directive 'node' was successfully resolved to '//clover/tree/home/Desktop1/clover/node_modules/.bun/@types+node@25.9.3/node_modules/@types/node/index.d.ts' with Package ID '@types/node/index.d.ts@25.9.3', primary: false. ========
+trace: ======== Resolving type reference directive 'node', containing file '//clover/tree/home/Desktop1/clover/node_modules/.bun/undici-types@7.24.6/node_modules/undici-types/websocket.d.ts'. ========
+trace: Resolution for type reference directive 'node' was found in cache from location '//clover/tree/home/Desktop1/clover/node_modules/.bun/undici-types@7.24.6/node_modules/undici-types'.
+tsc -p packages/protocol: exit 0; 
+helper: 04:05:27.268049 [Desktop1] online (service dc8d8bd6 on win32)
+helper: 04:05:27.287320 mounting T: (policy cached)
+helper: The service clover-mount has been started.
+
+#### real folder, the other computer mounted on it (--single): --mountpoint C:\s6tsc\home\Desktop1
+repo visible: True
+== C:\s6tsc\home\Desktop1\clover
+readdir C:\s6tsc\home\Desktop1\clover\node_modules\@types 1 entries
+-- C:\s6tsc\home\Desktop1\clover\node_modules\@types\bun dirent dir/link/file: false true false
+  lstat {"dir":false,"link":true,"nlink":1,"size":49,"mode":"120666"}
+  readlink "..\\.bun\\@types+bun@1.3.14\\node_modules\\@types\\bun"
+  stat {"dir":true,"file":false}
+  realpath "C:\\s6tsc\\home\\Desktop1\\clover\\node_modules\\.bun\\@types+bun@1.3.14\\node_modules\\@types\\bun"
+  realpath.native ERR UNKNOWN UNKNOWN: unknown error, realpath 'C:\s6tsc\home\Desktop1\clover\node_modules\@types\bun'
+  list ["LICENSE","README.md","index.d.ts","package.json"]
+readdir C:\s6tsc\home\Desktop1\clover\node_modules 5 entries
+-- C:\s6tsc\home\Desktop1\clover\node_modules\.bun dirent dir/link/file: true false false
+  lstat {"dir":true,"link":false,"nlink":1,"size":0,"mode":"40666"}
+  stat {"dir":true,"file":false}
+  realpath "C:\\s6tsc\\home\\Desktop1\\clover\\node_modules\\.bun"
+  realpath.native ERR UNKNOWN UNKNOWN: unknown error, realpath 'C:\s6tsc\home\Desktop1\clover\node_modules\.bun'
+  list ["@alcalzone+ansi-tokenize@0.1.3","@modelcontextprotocol+client@2.1.0","@modelcontextprotocol+core@2.1.0","@resvg+resvg-js-win32-x64-msvc@2.6.2","@resvg+resvg-js@2.6.2","@types+bun@1.3.14"]
+-- C:\s6tsc\home\Desktop1\clover\node_modules\typescript dirent dir/link/file: false true false
+  lstat {"dir":false,"link":true,"nlink":1,"size":45,"mode":"120666"}
+  readlink ".bun\\typescript@5.9.3\\node_modules\\typescript"
+  stat {"dir":true,"file":false}
+  realpath "C:\\s6tsc\\home\\Desktop1\\clover\\node_modules\\.bun\\typescript@5.9.3\\node_modules\\typescript"
+  realpath.native ERR UNKNOWN UNKNOWN: unknown error, realpath 'C:\s6tsc\home\Desktop1\clover\node_modules\typescript'
+  list ["LICENSE.txt","README.md","SECURITY.md","ThirdPartyNoticeText.txt","bin","lib"]
+@types/bun/package.json "{ \"name\": \"@types/bun\", \"version\": \"1.3.14\", \"description\": \"TypeScript definitions for bun\", \"homepage\": \"https://github.com/DefinitelyTyped/DefinitelyTyped/tr"
+@types/bun/index.d.ts "/// <reference types=\"bun-types\" /> "
+resolve bun-types from @types/bun ERR MODULE_NOT_FOUND Cannot find module 'bun-types/package.json'
+Require stack:
+- D:\a\_temp\s6\tsc-probe.js
+resolve @types/node from bun-types ERR MODULE_NOT_FOUND Cannot find module '@types/node/package.json'
+Require stack:
+- D:\a\_temp\s6\tsc-probe.js
+tsc --listFilesOnly: 187 files, bun-types 0, @types/node 0
+trace: ======== Resolving type reference directive 'bun', containing file 'C:/s6tsc/home/Desktop1/clover/packages/protocol/__inferred type names__.ts', root directory 'C:/s6tsc/home/Desktop1/clover/packages/protocol/node_modules/@types,C:/s6tsc/home/Desktop1/clover/packages/node_modules/@types,C:/s6tsc/home/Desktop1/clover/node_modules/@types,C:/s6tsc/home/Desktop1/node_modules/@types,C:/s6tsc/home/node_modules/@types,C:/s6tsc/node_modules/@types,C:/node_modules/@types'. ========
+trace: Resolving real path for 'C:/s6tsc/home/Desktop1/clover/node_modules/@types/bun', result 'C:/s6tsc/home/Desktop1/clover/node_modules/@types/bun'.
+trace: Resolving real path for 'C:/s6tsc/home/Desktop1/clover/node_modules/@types/bun/index.d.ts', result 'C:/s6tsc/home/Desktop1/clover/node_modules/@types/bun/index.d.ts'.
+trace: ======== Type reference directive 'bun' was successfully resolved to 'C:/s6tsc/home/Desktop1/clover/node_modules/@types/bun/index.d.ts' with Package ID '@types/bun/index.d.ts@1.3.14', primary: true. ========
+trace: ======== Resolving type reference directive 'bun-types', containing file 'C:/s6tsc/home/Desktop1/clover/node_modules/@types/bun/index.d.ts', root directory 'C:/s6tsc/home/Desktop1/clover/packages/protocol/node_modules/@types,C:/s6tsc/home/Desktop1/clover/packages/node_modules/@types,C:/s6tsc/home/Desktop1/clover/node_modules/@types,C:/s6tsc/home/Desktop1/node_modules/@types,C:/s6tsc/home/node_modules/@types,C:/s6tsc/node_modules/@types,C:/node_modules/@types'. ========
+trace: ======== Type reference directive 'bun-types' was not resolved. ========
+tsc -p packages/protocol: exit 2; packages/core/src/agent/dangerous-domains.ts(1,22): error TS2307: Cannot find module 'node:net' or its corresponding type declarations. / packages/core/src/agent/tools/web.ts(24,32): error TS2307: Cannot find module 'node:stream' or its corresponding type declarations. / packages/core/src/agent/tools/web.ts(25,87): error TS2307: Cannot find module 'node:zlib' or its corresponding type declarations.
+helper: 04:05:35.866023 [Desktop1] online (service dc8d8bd6 on win32)
+helper: 04:05:35.880335 mounting C:\s6tsc\home\Desktop1 (policy cached)
+helper: The service clover-mount has been started.

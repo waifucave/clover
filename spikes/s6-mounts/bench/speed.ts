@@ -3,7 +3,10 @@
 //
 //   bun bench/speed.ts --root <export> --tree <mountpoint> --helper <clover-mount> --out <json>
 //        [--policies cached,plain] [--rtts 0,20,80] [--workloads a,b] [--local 1] [--timeout 600]
-//        [--copy-src <local dir to upload>] [--owner uid:gid]
+//        [--copy-src <local dir to upload>] [--owner uid:gid] [--volume-prefix \server\share]
+//
+// --volume-prefix (Windows) mounts the tree as a network volume, which Windows' final-path calls
+// (and so Node's realpath) understand; see ci/windows-tsc.ps1.
 //
 // --owner makes the mount report another owner for every file (Linux), as a holder whose user
 // has another uid would (a Mac's 501, a Linux box's 1000; Git for Windows always records 0).
@@ -32,6 +35,7 @@ const RW = path.join(HERE, "rw.ts");
 const COPY_SRC = path.resolve(args["copy-src"] ?? path.join(ROOT, "clover", "packages", "protocol"));
 const SCRATCH = path.resolve(args.scratch ?? path.join(path.dirname(ROOT), "scratch"));
 const OWNER = args.owner;
+const HELPER_ARGS = [...(OWNER ? ["--owner", OWNER] : []), ...(args["volume-prefix"] ? ["--volume-prefix", args["volume-prefix"]] : [])];
 fs.mkdirSync(SCRATCH, { recursive: true });
 
 interface Workload { name: string; cmd: (base: string, tag: string) => string[]; cwd?: (base: string) => string; cleanup?: (tag: string) => void; optional?: boolean }
@@ -107,7 +111,7 @@ async function main() {
             const r = await run(["git", "status", "--porcelain"], { cwd: path.join(ROOT, "clover"), timeoutMs: 120000 });
             if (!r.ok) log(`the holder's own git status failed: ${r.stderr.trim()}`);
           }
-          await rig.mount(policy, OWNER ? ["--owner", OWNER] : []);
+          await rig.mount(policy, HELPER_ARGS);
           const base = rig.remotePath();
           await rig.resetServiceStats();
           const cold = await once(w, base);

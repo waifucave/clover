@@ -8,7 +8,8 @@ name: Spike S6 · folder-tree mounts
 # [s6-skip-<os>-<suite>] skips one suite, [s6-skip-macos] and [s6-skip-macfuse] the macOS jobs,
 # and [s6-skip-nfs-speed] or [s6-skip-nfs-plain] all or the plain half of the NFS speed step;
 # [s6-nfs-quick] runs a shorter NFS speed matrix, and [s6-win-tsc-probe] makes the Windows
-# speed-tsc suite run ci/windows-tsc.ps1 instead of its speed matrix.
+# speed-tsc suite run ci/windows-tsc.ps1 instead of its speed matrix ([s6-win-netvol]: tsc's
+# speed on the tree mounted as a network volume).
 on:
   push:
     branches: [lane/j-m0]
@@ -109,6 +110,7 @@ jobs:
         if: env.S6_RUN == 'true'
         env:
           S6_WIN_TSC_PROBE: ${{ contains(github.event.head_commit.message, '[s6-win-tsc-probe]') }}
+          S6_WIN_NETVOL: ${{ contains(github.event.head_commit.message, '[s6-win-netvol]') }}
         run: |
           exe=""; tree="$RUNNER_TEMP/s6/tree"
           if [ "$RUNNER_OS" = Windows ]; then exe=.exe; tree="T:"; fi
@@ -131,6 +133,10 @@ jobs:
               if [ "$S6_WIN_TSC_PROBE" = true ] && [ "$RUNNER_OS" = Windows ]; then
                 # why tsc in the tree doesn't see the types it finds on the holder's disk
                 pwsh -File "$S6/ci/windows-tsc.ps1" -Helper "$helper" -Export "$RUNNER_TEMP/s6/export" -Serve "$S6/server/serve.ts"
+              elif [ "$S6_WIN_NETVOL" = true ] && [ "$RUNNER_OS" = Windows ]; then
+                # the tree as a network volume, where realpath works and tsc finds its types
+                bun "$S6/bench/speed.ts" "${common[@]}" --policies cached --rtts 0,20 --timeout 600 --local 0 --volume-prefix '\clover\tree' \
+                  --workloads tsc-protocol,tsc-core --out "$res/${{ matrix.os }}-netvol-speed-tsc.json"
               else
                 # tsc on its own, after WinFsp's names kept their case (the earlier runs upper-cased them)
                 bun "$S6/bench/speed.ts" "${common[@]}" --policies cached,plain --rtts 0,20,80 --timeout 600 --local 0 \
