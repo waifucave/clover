@@ -1,0 +1,110 @@
+// Contract: SecretStore (spec §3.1, §3.3 "Logins stay in the core", §5.1 "Secrets stay out of the folder", §8.1, §8.5
+// "Credentials", §9.1 "The secret store"). Owner: lane C.
+//
+// Where secrets live: on macOS, Keychain items that trust the daemon's binary alone; on Windows and Linux, one
+// encrypted file whose key is in the OS store (Credential Manager or DPAPI, the Secret Service). The headless case
+// with no unlocked keyring is unsettled (spike S8 reports a conflict with "secrets never on disk"), so the contract
+// has a `locked` state instead of any plaintext fallback: a locked store answers `locked` and the daemon runs on
+// without saved credentials until lane C's answer lands.
+//
+// What the contract promises everyone else:
+// * A value leaves the store only through `get`, wrapped in a `Secret`, which prints and serializes as `[secret]`,
+//   so a stray log line or error carries no value. Nothing else the store returns or emits carries a value.
+// * Each owner reads only its own items: the core enforces a plugin's `${secret:<name>}` and `secrets.get(name)`
+//   against `owner` (§5.1), and adapters get access tokens by reference with a generation number (§3.3).
+// * Account-wide items sync end-to-end encrypted (§8.5); the device's own key never leaves the device (§8.1).
+// * Every write gives the item a new generation, so a caller holding generation n asks for one newer after a 401.
+
+export type SecretOwner =
+  /** The core's own items: sign-ins, API keys, the bridge's per-session tokens. */
+  | { kind: "core" }
+  /** A plugin's own secrets (its settings of type `secret`, its `auth` sign-ins, wrapped `env` and `headers`). */
+  | { kind: "plugin"; pluginId: string }
+  /** This device's own items, never synced: its Ed25519 key, its link keys. */
+  | { kind: "device" };
+
+export interface SecretRef {
+  owner: SecretOwner;
+  /** `[A-Za-z0-9._:-]`, 1–128 characters: `anthropic:default`, `codex-oauth:default`, a plugin's `FISH_KEY`. */
+  name: string;
+}
+
+export const SECRET_NAME_RE = /^[A-Za-z0-9._:-]{1,128}$/;
+
+/** What the store says about an item: never its value. */
+export interface SecretMeta {
+  ref: SecretRef;
+  /** Rises with each write; adapters hold it to ask for a newer token after a 401 (§3.3). */
+  generation: number;
+  updatedAt: number;
+  /** Account-wide and synced to the user's other devices (§8.5). Device items are never synced. */
+  synced: boolean;
+}
+
+export type SecretBackend =
+  /** macOS: Keychain items whose ACL trusts the daemon's binary alone (§9.1). */
+  | "keychain"
+  /** Windows and Linux: one encrypted file, its key in the OS store (§9.1, item 59). */
+  | "encrypted-file"
+  /** Tests and fakes; and a locked store's explicit in-memory unlock, if lane C keeps one (S8). */
+  | "memory";
+
+export interface SecretStoreStatus {
+  backend: SecretBackend;
+  state: "unlocked" | "locked";
+  /** Why it is locked, for Settings: "no unlocked keyring", "the key store refused this logon". Never a value. */
+  reason?: string;
+}
+
+export type SecretChange = { meta: SecretMeta; deleted: boolean } | { status: SecretStoreStatus };
+
+/** A secret's value in a wrapper that never prints it. `reveal()` is the one way out, at the point of use. */
+export class Secret {
+  readonly #value: string;
+  constructor(value: string) {
+    this.#value = value;
+  }
+  reveal(): string {
+    return this.#value;
+  }
+  get length(): number {
+    return this.#value.length;
+  }
+  toString(): string {
+    return "[secret]";
+  }
+  toJSON(): string {
+    return "[secret]";
+  }
+  [Symbol.for("nodejs.util.inspect.custom")](): string {
+    return "[secret]";
+  }
+}
+
+export interface SecretValue {
+  value: Secret;
+  generation: number;
+}
+
+export interface SecretStore {
+  status(): SecretStoreStatus;
+  /** The item, or null when there is none. Rejects with `locked` while the store is locked. */
+  get(ref: SecretRef): Promise<SecretValue | null>;
+  /** Writes an item and returns its new generation. `synced` defaults to true for core and plugin items and is
+   *  always false for device items. Rejects with `locked`, or `invalid` for a bad name. */
+  set(ref: SecretRef, value: string | Secret, opts?: { synced?: boolean }): Promise<SecretMeta>;
+  /** Whether there was an item to delete. */
+  delete(ref: SecretRef): Promise<boolean>;
+  /** One owner's items, or every item, by name; works while locked when the backend can list without unlocking. */
+  list(owner?: SecretOwner): Promise<SecretMeta[]>;
+  /** Changes, without values: a write, a delete, the store locking or unlocking. */
+  watch(fn: (change: SecretChange) => void): () => void;
+}
+
+export function secretOwnerKey(owner: SecretOwner): string {
+  return owner.kind === "plugin" ? `plugin:${owner.pluginId}` : owner.kind;
+}
+
+export function secretRefKey(ref: SecretRef): string {
+  return `${secretOwnerKey(ref.owner)}/${ref.name}`;
+}
