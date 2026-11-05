@@ -13,7 +13,7 @@ permissions:
 
 concurrency:
   group: spike-s6-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false # a new push waits; the speed runs are long
 
 jobs:
   unix-like:
