@@ -10,7 +10,10 @@
 //     safe mode, which the app reads from `pair.status` (§5.8);
 //   - a side that leaves on purpose says so first: the app's `pair.exiting{quit|update}` and the
 //     daemon's `app.quit{reason}` stop the pair (exit 0, so the crash-only login unit leaves it down);
-//     `pair.exiting{restart}` is the app restarting itself, which is not a crash, and leaves safe mode.
+//     `pair.exiting{restart}` is the app restarting itself, which is not a crash, and leaves safe mode;
+//   - the app that asked for `pair.quit` exits once it has the answer, so `app.quit` goes only to the
+//     other app connections, and only to those whose hello listed the `app.quit` feature (agreed with
+//     lane E, E-M1 #168). An app that can't be told is waited for, then the daemon stops anyway.
 // An app that the OS refused to start, or that never connected within `connectTimeoutMs`, counts as a
 // crash, so a broken start backs off rather than looping. A start the OS can't make yet (Linux before
 // the graphical session is up) is retried every `notReadyRetryMs` and is not a crash.
@@ -28,8 +31,8 @@ export interface DaemonPairDeps {
   /** Start the app through the OS (Launch Services, the app's unit, the app's task), never as the
    *  daemon's child. */
   startApp(why: AppStartWhy): Promise<AppStartOutcome>;
-  /** Send `app.quit{reason}` to every connected app. Best-effort. */
-  tellAppQuit(reason: PairStopReason): void;
+  /** Send `app.quit{reason}` to these app connections. Best-effort. */
+  tellAppQuit(reason: PairStopReason, connIds: readonly string[]): void;
   /** Stop the daemon on purpose (exit 0). Called once. */
   stopDaemon(why: string): void;
   log?(line: string): void;
@@ -91,7 +94,7 @@ export interface DaemonPairStatus {
   readonly stopping: PairStopReason | null;
 }
 
-interface AppConn { leaving?: AppExitReason }
+interface AppConn { leaving?: AppExitReason; canQuit: boolean }
 
 export class DaemonPair {
   private readonly apps = new Map<string, AppConn>();
@@ -114,13 +117,14 @@ export class DaemonPair {
     if (this.o.desktop) this.schedule("boot", this.o.graceMs);
   }
 
-  /** A connection said hello as `app`. */
-  appConnected(connId: string): void {
-    this.apps.set(connId, {});
+  /** A connection said hello as `app`, with the features its hello listed (`app.quit`, `app.show`,
+   *  `layers`). */
+  appConnected(connId: string, features: readonly string[] = ["app.quit"]): void {
+    this.apps.set(connId, { canQuit: features.includes("app.quit") });
     this.cancelPending();
     this.cancelWatchdog();
     // An app that connects while the pair is stopping is told to go too.
-    if (this.stopping) this.deps.tellAppQuit(this.stopping.reason);
+    if (this.stopping) this.tell(this.stopping.reason, [connId]);
   }
 
   /** `pair.exiting{reason}` from an app connection: it is leaving on purpose. */
@@ -150,9 +154,12 @@ export class DaemonPair {
     this.crashed("went away without pair.exiting");
   }
 
-  /** Stop the pair: `pair.quit` (from the app or the CLI), the CLI's quit, an update, or SIGTERM. Tells
-   *  the app to quit, waits up to `quitTimeoutMs` for it to go, then stops the daemon. */
-  quit(reason: PairStopReason): void {
+  /** Stop the pair: `pair.quit` (from the app or the CLI), an update, or SIGTERM. Tells the apps to
+   *  quit (not `requester`, an app that asked and is leaving with the answer), waits up to
+   *  `quitTimeoutMs` for them to go, then stops the daemon. */
+  quit(reason: PairStopReason, requester?: string): void {
+    const app = requester === undefined ? undefined : this.apps.get(requester);
+    if (app) app.leaving = reason;
     this.beginStop(reason, true);
   }
 
@@ -214,7 +221,7 @@ export class DaemonPair {
     this.cancelWatchdog();
     this.stopping = { reason, cancel: null };
     if (this.apps.size === 0) { this.finishStop(`${reason}, no app connected`); return; }
-    if (tellApp) this.deps.tellAppQuit(reason);
+    if (tellApp) this.tell(reason, [...this.apps.keys()].filter((id) => this.apps.get(id)!.leaving === undefined));
     this.stopping.cancel = this.deps.after(this.o.quitTimeoutMs, () => this.finishStop(`${reason}, the app did not go within ${this.o.quitTimeoutMs} ms`));
   }
 
@@ -224,6 +231,12 @@ export class DaemonPair {
     this.stopping?.cancel?.();
     this.log(`stopping the daemon: ${why}`);
     this.deps.stopDaemon(why);
+  }
+
+  /** `app.quit` to those of `connIds` whose hello said they handle it. */
+  private tell(reason: PairStopReason, connIds: readonly string[]): void {
+    const to = connIds.filter((id) => this.apps.get(id)?.canQuit === true);
+    if (to.length > 0) this.deps.tellAppQuit(reason, to);
   }
 
   private cancelPending(): void { this.pending?.cancel(); this.pending = null; }

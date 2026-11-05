@@ -14,7 +14,8 @@ import type { CloverProfile } from "../../profile";
 import type { Runner } from "../login/live";
 import { appTaskName, appUnitName, systemdUserDir } from "../login/render";
 import type { DaemonPlatform } from "../transport";
-import type { AppStartOutcome } from "./policy";
+import type { AppStartOutcome, AppStartWhy } from "./policy";
+import { writeAppStart, type RunFileDeps } from "./run-files";
 
 // macOS and Linux paths are POSIX whatever OS renders them (a test on Windows, say).
 const join = posix.join;
@@ -80,5 +81,20 @@ export async function resolveAppLauncher(input: AppLauncherInput, run: Runner): 
   return {
     how: `schtasks /Run /TN ${task}`,
     async start() { return (await run(["schtasks", "/Run", "/TN", task])).ok ? "started" : "failed"; },
+  };
+}
+
+/** The pair policy's `startApp`: write `<run>/app-start.json` (who started the app, and whether in
+ *  safe mode), then start the app through the OS. The boot start is "login" (the daemon came up at
+ *  login, or the CLI started it); a restart is "daemon". A start file that can't be written doesn't
+ *  stop the start: the app then takes it as the user's, and `pair.status` still says safe mode. */
+export function appStarter(
+  launcher: AppLauncher, runDir: string,
+  deps: RunFileDeps & { now(): number; safeMode(): boolean },
+): (why: AppStartWhy) => Promise<AppStartOutcome> {
+  return async (why) => {
+    try { await writeAppStart(runDir, { by: why === "boot" ? "login" : "daemon", safeMode: deps.safeMode(), at: deps.now() }, deps); }
+    catch { /* see above */ }
+    return launcher.start();
   };
 }

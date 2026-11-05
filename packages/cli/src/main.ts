@@ -1476,14 +1476,17 @@ function currentLoginSpec(app?: string): LoginSpec {
   };
 }
 
-const AUTOSTART_USAGE = "usage: clover autostart enable|disable|remove|status [--app <path to the app>]";
+const AUTOSTART_USAGE = "usage: clover autostart enable|disable|remove|start|status [--json] [--app <path to the app>]";
 
-/** `clover autostart enable|disable|remove|status [--app <path>]`: login start on this OS. The
+/** `clover autostart enable|disable|remove|start|status [--json] [--app <path>]`: login start on this OS. The
  *  definitions run `clover-core supervise` on the running binary (`process.execPath`); lane M's
  *  installer invokes the installed binary, and passes the app's path with `--app` so the daemon can
  *  start the app (spec §3.1). `disable` turns off only the login trigger: the running pair keeps
  *  running and either side can still start the other. `remove` is for an uninstaller. */
 async function runAutostartCommand(sub: string | undefined, rest: readonly string[] = []): Promise<void> {
+  // `start` is `clover daemon start` under the name the app calls (E-M1): through the OS, never as
+  // the caller's child.
+  if (sub === "start") { await runDaemonStart(); return; }
   const appAt = rest.indexOf("--app");
   const app = appAt >= 0 ? rest[appAt + 1] : undefined;
   if (appAt >= 0 && !app) { console.error(AUTOSTART_USAGE); process.exitCode = 1; return; }
@@ -1522,8 +1525,16 @@ async function runAutostartCommand(sub: string | undefined, rest: readonly strin
       console.log(`autostart removed (${spec.profile})`);
       break;
     case "status": {
+      // "registered": the daemon's definition is installed, so it can be started (`autostart start`),
+      // whether or not login start is on. An app enables only when it isn't: "disabled" is the user's
+      // choice and stays.
       const st = await loginStatus(spec, os);
-      console.log(`autostart: ${st.state}${st.unitPath ? ` (${st.unitPath})` : ""}${st.registered ? " [registered]" : ""}`);
+      const installed = st.state !== "not-installed";
+      if (rest.includes("--json")) {
+        console.log(JSON.stringify({ state: st.state, registered: installed, loginStart: st.state === "enabled", running: await endpointAnswers(socketPath()), label: st.label, ...(st.unitPath ? { unit: st.unitPath } : {}) }));
+      } else {
+        console.log(`autostart: ${st.state}${st.unitPath ? ` (${st.unitPath})` : ""}${installed ? " [registered]" : ""}`);
+      }
       break;
     }
     default:
@@ -1762,12 +1773,13 @@ if (import.meta.main) {
     process.exit(0);
   }
   case "autostart": {
-    // `clover-core autostart enable|disable|remove|status` — login start on this OS (spec §3.1).
-    // (`login` is already the account/provider sign-in command.) Lane M's installer calls this; it
-    // writes the launchd agent, systemd user unit or Task Scheduler task that runs
-    // `clover-core supervise`, and with `--app` the app's own unit, task or XDG entry.
+    // `clover-core autostart enable|disable|remove|start|status` — login start on this OS (spec §3.1).
+    // Lane M's install hooks run `enable` and `disable`, the app runs `status --json` and `start`;
+    // `enable` writes the launchd agent, systemd user unit or Task Scheduler task that runs
+    // `clover-core supervise`, and with `--app` the app's own unit, task or XDG entry. The exit code
+    // is the command's (the app and the installers read it).
     await runAutostartCommand(sub, process.argv.slice(4));
-    process.exit(0);
+    process.exit(process.exitCode ?? 0);
     break;
   }
   case "supervise": {

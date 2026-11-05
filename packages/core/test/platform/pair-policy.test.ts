@@ -8,12 +8,13 @@ function harness(opts: Partial<DaemonPairOptions> = {}, outcome: () => AppStartO
   const timers = new Map<number, { at: number; fn: () => void }>();
   const starts: Array<{ at: number; why: AppStartWhy; safeMode: boolean }> = [];
   const told: PairStopReason[] = [];
+  const toldTo: string[][] = [];
   const stops: string[] = [];
   const pair: DaemonPair = new DaemonPair({
     now: () => now,
     after(ms, fn) { const id = ++seq; timers.set(id, { at: now + ms, fn }); return () => { timers.delete(id); }; },
     async startApp(why) { starts.push({ at: now, why, safeMode: pair.status().safeMode }); return outcome(); },
-    tellAppQuit(reason) { told.push(reason); },
+    tellAppQuit(reason, ids) { told.push(reason); toldTo.push([...ids]); },
     stopDaemon(why) { stops.push(why); },
   }, { desktop: true, ...opts });
   async function advance(ms: number): Promise<void> {
@@ -28,7 +29,7 @@ function harness(opts: Partial<DaemonPairOptions> = {}, outcome: () => AppStartO
     }
     now = end;
   }
-  return { pair, starts, told, stops, advance, pending: () => timers.size, now: () => now };
+  return { pair, starts, told, toldTo, stops, advance, pending: () => timers.size, now: () => now };
 }
 
 describe("appRestartPlan (S7 §5)", () => {
@@ -232,6 +233,35 @@ describe("DaemonPair", () => {
     expect(h.pair.status().crashesInWindow).toBe(1);
     await h.advance(1_000);
     expect(h.starts).toHaveLength(2);
+  });
+
+  test("the app that asked for pair.quit gets its answer and no app.quit back (E-M1)", () => {
+    const h = harness();
+    h.pair.appConnected("app");
+    h.pair.quit("quit", "app");
+    expect(h.told).toEqual([]);
+    expect(h.stops).toHaveLength(0);
+    h.pair.appDisconnected("app");
+    expect(h.stops).toEqual(["the app went (quit)"]);
+  });
+
+  test("pair.quit from the CLI tells the app", () => {
+    const h = harness();
+    h.pair.appConnected("app");
+    h.pair.quit("quit", "cli-conn"); // not an app connection
+    expect(h.toldTo).toEqual([["app"]]);
+  });
+
+  test("app.quit goes only to apps whose hello listed it; one that can't be told is waited for", async () => {
+    const h = harness({ quitTimeoutMs: 3_000 });
+    h.pair.appConnected("old", ["app.show"]);
+    h.pair.appConnected("new", ["app.show", "app.quit", "layers"]);
+    h.pair.quit("update");
+    expect(h.toldTo).toEqual([["new"]]);
+    h.pair.appDisconnected("new");
+    expect(h.stops).toHaveLength(0); // "old" is still there
+    await h.advance(3_000);
+    expect(h.stops).toHaveLength(1);
   });
 
   test("dispose cancels every timer", async () => {
