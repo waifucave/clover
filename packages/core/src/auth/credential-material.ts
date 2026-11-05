@@ -8,9 +8,9 @@ export { CODEX_SECRET_NAMES };
 
 /**
  * Hotfix (post-8b, 2026-09-11): the spawned `winter` child resolves a `CredentialRef { kind:
- * "keychain" }` by reading Winter's Keychain ITSELF (`Bun.secrets.get`) and requires the stored
- * value to be JSON-encoded `CredentialMaterial` — `winter-agent-sdk` v0.0.4
- * `packages/runtime/src/provider/keychain-store.ts`'s `coerceMaterial`. Winter used to store RAW
+ * "keychain" }` by reading Clover's Keychain ITSELF (`Bun.secrets.get`) and requires the stored
+ * value to be JSON-encoded `CredentialMaterial` — `clover-sdk` v0.0.4
+ * `packages/runtime/src/provider/keychain-store.ts`'s `coerceMaterial`. Clover used to store RAW
  * token/key strings under the inventory's secret names, which the child's `JSON.parse` rejects
  * outright ("... is not valid JSON credential material"). This module is the SINGLE source of
  * truth for the JSON material records the child actually reads, plus the one-way migration off the
@@ -37,8 +37,8 @@ export type BearerMaterial = { kind: "bearer"; token: string; expiresAt?: number
 export type CredentialMaterial = ApiKeyMaterial | OauthMaterial | BearerMaterial;
 
 /**
- * The Keychain item names `WINTER_CREDENTIAL_INVENTORY` (`runtime-sdk/keychain.ts`) points the
- * Winter child at — `<providerId>:<accountId>` per the SDK's own convention, one fixed `default`
+ * The Keychain item names `CLOVER_CREDENTIAL_INVENTORY` (`runtime-sdk/keychain.ts`) points the
+ * Clover child at — `<providerId>:<accountId>` per the SDK's own convention, one fixed `default`
  * account per provider today (no multi-account support yet).
  */
 export const CREDENTIAL_MATERIAL_NAMES = { openai: "openai:default", codexOauth: "codex-oauth:default" } as const;
@@ -55,9 +55,9 @@ function describeError(err: unknown): string {
 }
 
 /** The material `kind`s the child's `coerceMaterial` recognizes. `aws`/`gcp-*` are in the child's
- *  own set but have no arm below — Winter never writes or reads them, so they fall through to
+ *  own set but have no arm below — Clover never writes or reads them, so they fall through to
  *  `undefined` (malformed) exactly like an unrecognized kind, matching the child's own refusal for
- *  a shape it does not expect from Winter's inventory. `bearer` DOES have an arm (see `BearerMaterial`
+ *  a shape it does not expect from Clover's inventory. `bearer` DOES have an arm (see `BearerMaterial`
  *  above) even though no inventory row writes one today, so the seam can extract it correctly the
  *  day one does. */
 const MATERIAL_KINDS = new Set(["api-key", "bearer", "oauth", "aws", "gcp-service-account", "gcp-access-token"]);
@@ -87,14 +87,14 @@ function coerceMaterial(value: unknown): CredentialMaterial | undefined {
         ? { kind: "bearer", token: v.token, ...(typeof v.expiresAt === "number" ? { expiresAt: v.expiresAt } : {}) }
         : undefined;
     default:
-      return undefined; // aws / gcp — Winter never writes or reads these
+      return undefined; // aws / gcp — Clover never writes or reads these
   }
 }
 
 /**
  * `JSON.parse` + the structural check above. Blank/missing (`store.get` returns `null`/`""` — the
- * empty string is what `winter logout`/`clearCredentialMaterial` write, and it must read as "no
- * credential" here exactly like everywhere else in Winter) → `null`, no warning. Malformed (bad
+ * empty string is what `clover logout`/`clearCredentialMaterial` write, and it must read as "no
+ * credential" here exactly like everywhere else in Clover) → `null`, no warning. Malformed (bad
  * JSON, or JSON that doesn't coerce) → `null` + ONE `console.warn` naming the record NAME only —
  * never the stored value.
  */
@@ -116,7 +116,7 @@ export async function readCredentialMaterial(store: SecretStore, name: string): 
   return material;
 }
 
-/** `JSON.stringify`, with any `undefined`-valued field dropped first (defensive — Winter's own
+/** `JSON.stringify`, with any `undefined`-valued field dropped first (defensive — Clover's own
  *  callers already build these via conditional spreads, but a stray `{ ...t, refreshToken:
  *  undefined }` must never round-trip as the literal string `"undefined"` inside the JSON). */
 export async function writeCredentialMaterial(store: SecretStore, name: string, material: CredentialMaterial): Promise<void> {
@@ -222,7 +222,7 @@ async function migrateCodexOauth(store: SecretStore): Promise<"migrated" | "pres
 /**
  * Boot-time, idempotent, one-way: for each provider, if the material record is ABSENT and the
  * legacy raw record(s) are present, write the material record from them. If the material record is
- * PRESENT it is NEVER overwritten. Legacy records are left in place (blanked only by `winter
+ * PRESENT it is NEVER overwritten. Legacy records are left in place (blanked only by `clover
  * logout`). Never logs a value; the report carries status words only. Never throws.
  */
 export async function migrateLegacyCredentialMaterial(store: SecretStore): Promise<CredentialMigrationReport> {
@@ -236,11 +236,11 @@ export async function migrateLegacyCredentialMaterial(store: SecretStore): Promi
  * `providers/codex-oauth.ts` (which existed only to house `CodexOAuthProvider`, superseded by
  * `providers/runtime-provider.ts`'s `createCodexOauthRuntimeProvider` — see that module's own
  * header for the ruling). `CodexAuthStore` itself was never part of that ruling: it is the ONLY
- * writer of the `codex-oauth:default` credential material (`winter login`'s OAuth callback,
+ * writer of the `codex-oauth:default` credential material (`clover login`'s OAuth callback,
  * `packages/cli/src/main.ts`) and is unrelated to which `Provider` implementation later reads it.
  *
  * Facade over the `codex-oauth:default` JSON credential material record (post-8b hotfix): the
- * spawned Winter child resolves its `CredentialRef` by reading this SAME record directly off the
+ * spawned Clover child resolves its `CredentialRef` by reading this SAME record directly off the
  * Keychain and `JSON.parse`-ing it, so `save`/`load` here and the child's own reads/writes (its
  * 401-refresh writes the merged material back to the exact ref it was handed) share ONE token set.
  * `save` no longer touches the five legacy `CODEX_SECRET_NAMES` — those are migration-source/logout

@@ -172,7 +172,7 @@ describe("daemon wiring — the store opens and recovery runs before the socket 
 
       const parked = (await directory.load()).find((e) => e.address === serializeRuntimeAddress(buildSessionAddress("be_prev")));
       // F3: no `backendSessionId` survives, so no delivery can cold-resume a session this daemon
-      // never attached. A Winter session is resumed by its DRIVER, from the 8a record — which keeps
+      // never attached. A Clover session is resumed by its DRIVER, from the 8a record — which keeps
       // its own copy and is untouched here.
       expect(parked?.backendSessionId).toBeUndefined();
       expect(parked?.status).toBe("unavailable");
@@ -226,7 +226,7 @@ describe("daemon wiring — the store opens and recovery runs before the socket 
 });
 
 describe("daemon wiring — the runtime store is not readable by the model", () => {
-  test("Task 17: on the Winter leg the runtimes/ directory is denied to the child's read tools AND to bash reads (the engine's read-tool denial, carried)", async () => {
+  test("Task 17: on the Clover leg the runtimes/ directory is denied to the child's read tools AND to bash reads (the engine's read-tool denial, carried)", async () => {
     await withTempHome(async (home, dirs) => {
       const { controlPlaneDenyRules, sandboxConfigFor } = await import("../../src/runtime-sdk/mode-options");
       const deny = controlPlaneDenyRules(home);
@@ -243,7 +243,7 @@ describe("daemon wiring — the runtime store is not readable by the model", () 
       const deny = controlPlaneDenyRules(home);
       // `//`-anchored (filesystem-root), never a bare single `/` (inert for an SDK-seeded rule —
       // see `fsRootAnchored`'s own comment), and the pattern itself is rooted at the SYSTEM temp
-      // dir, never under `home` — a resume payload never lands under `~/.winter*`. Built from the
+      // dir, never under `home` — a resume payload never lands under `~/.clover*`. Built from the
       // router's own `RESUME_STAGING_PREFIX`, not a hand-typed duplicate (D1-3).
       const wantSuffix = `/${join(tmpdir(), `${RESUME_STAGING_PREFIX}*`, "**")}`;
       for (const tool of ["Edit", "Write", "MultiEdit", "NotebookEdit"]) {
@@ -251,7 +251,7 @@ describe("daemon wiring — the runtime store is not readable by the model", () 
       }
       for (const tool of ["Read", "Glob", "Grep"]) {
         expect(deny).not.toContain(`${tool}(${wantSuffix})`);
-        for (const f of [".claude.json", ".credentials.json", ".winter.json", "backups/**"]) expect(deny).toContain(`${tool}(/${join(tmpdir(), `${RESUME_STAGING_PREFIX}*`)}/${f})`);
+        for (const f of [".claude.json", ".credentials.json", ".clover.json", "backups/**"]) expect(deny).toContain(`${tool}(/${join(tmpdir(), `${RESUME_STAGING_PREFIX}*`)}/${f})`);
       }
     });
   });
@@ -322,11 +322,11 @@ describe("daemon wiring — Major 1: the claude-resume-* staging sweep's root is
     return path;
   }
 
-  test("an explicit recovery.claudeResumeScanRoot dep wins over WINTER_CLAUDE_RESUME_SCAN_ROOT — only the named root is swept", async () => {
+  test("an explicit recovery.claudeResumeScanRoot dep wins over CLOVER_CLAUDE_RESUME_SCAN_ROOT — only the named root is swept", async () => {
     await withTempHome(async (home) => {
-      // `withTempHome` already points WINTER_CLAUDE_RESUME_SCAN_ROOT at its own subdir — this test's
+      // `withTempHome` already points CLOVER_CLAUDE_RESUME_SCAN_ROOT at its own subdir — this test's
       // whole point is that an explicit dep must be used INSTEAD of that env value.
-      const envRoot = process.env.WINTER_CLAUDE_RESUME_SCAN_ROOT!;
+      const envRoot = process.env.CLOVER_CLAUDE_RESUME_SCAN_ROOT!;
       const depRoot = join(home, "explicit-dep-root");
       const depStale = plantStaleResumeDir(depRoot, "claude-resume-11111111-2222-4333-8444-555555555555");
       const envStale = plantStaleResumeDir(envRoot, "claude-resume-22222222-3333-4444-8555-666666666666");
@@ -347,9 +347,9 @@ describe("daemon wiring — Major 1: the claude-resume-* staging sweep's root is
     });
   });
 
-  test("with no dep, WINTER_CLAUDE_RESUME_SCAN_ROOT is read — never the real machine tmpdir", async () => {
+  test("with no dep, CLOVER_CLAUDE_RESUME_SCAN_ROOT is read — never the real machine tmpdir", async () => {
     await withTempHome(async (home) => {
-      const envRoot = process.env.WINTER_CLAUDE_RESUME_SCAN_ROOT!;
+      const envRoot = process.env.CLOVER_CLAUDE_RESUME_SCAN_ROOT!;
       const unnamedRoot = join(home, "never-named-root");
       const envStale = plantStaleResumeDir(envRoot, "claude-resume-33333333-4444-4555-8666-777777777777");
       const unnamedStale = plantStaleResumeDir(unnamedRoot, "claude-resume-44444444-5555-4666-8777-888888888888");
@@ -499,7 +499,7 @@ describe("daemon wiring — the memory-key migration runs behind its flag", () =
   /** What the daemon's own MEMDIR resolution answers for a cwd, wired exactly as `daemon.ts` wires
    *  it — the whole point of P8b-17 is that this follows the migration. */
   const liveMemDir = (home: string, rt: RuntimeStateWiring, cwd: string): string =>
-    memoryDirFor(cwd, { winterHome: home, relocatedKey: (k) => rt.relocatedMemoryKey(k) });
+    memoryDirFor(cwd, { cloverHome: home, relocatedKey: (k) => rt.relocatedMemoryKey(k) });
 
   test("booting with the flag ON relocates the tree, re-keys the record, and the live path follows it", async () => {
     await withTempHome(async (home) => {

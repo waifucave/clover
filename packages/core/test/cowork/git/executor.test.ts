@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { IsolatedGitExecutor, resolveGitExecutable } from "../../../src/cowork/git/executor";
 
 test("Git cancellation terminates owned helper processes holding output pipes", async () => {
-  const root = realpathSync(mkdtempSync(join(tmpdir(), "winter-git-tree-")));
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "clover-git-tree-")));
   // A fixed fixture executable ignores Git argv, like a Git pack helper keeping its pipe.
   // Its child is in the executor's private process group; no external PID is signalled.
   const executable = join(root, "fixture-git");
@@ -22,7 +22,7 @@ test("Git cancellation terminates owned helper processes holding output pipes", 
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 test("Git termination also bounds waiting for pipes held by an escaped fixture descendant", async () => {
-  const root = realpathSync(mkdtempSync(join(tmpdir(), "winter-git-escaped-"))), executable = join(root, "fixture-git");
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "clover-git-escaped-"))), executable = join(root, "fixture-git");
   writeFileSync(executable, `#!${process.execPath}\nimport { spawn } from 'node:child_process';\nimport { writeFileSync } from 'node:fs';\nconst child = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 5000)'], { detached: true, stdio: ['ignore', 'inherit', 'inherit'] });\nwriteFileSync('escaped-pid', String(child.pid));\nsetInterval(() => {}, 5000);\n`, { mode: 0o700 });
   try {
     const began = Date.now();

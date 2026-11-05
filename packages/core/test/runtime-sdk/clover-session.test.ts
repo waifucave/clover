@@ -7,15 +7,15 @@
 // machine and the push/hold/resume discipline (P8b-5/24/32/38), not the fold.
 import { describe, expect, test } from "bun:test";
 import { WinterRpcError, type Options, type Query } from "@yanlinglabs/winter-agent-sdk";
-import type { NewSessionEvent, SessionEvent } from "@yanlinglabs/winter-protocol";
+import type { NewSessionEvent, SessionEvent } from "@waifucave/clover-protocol";
 import { SHUTDOWN_QUERY_GRACE_MS, type WinterRuntimeSdk } from "../../src/runtime-sdk/create";
 import { createProjector, type Projector } from "../../src/projector";
 import { createHostPromptQueue } from "../../src/runtime-sdk/prompt-queue";
 import {
-  WINTER_SESSION_END_GRACE_MS, startWinterSession, unconsumedUserMessages, withRuntimeVersion, type WinterIncarnation, type WinterSession, type WinterSessionDeps, type WinterTimers,
-} from "../../src/runtime-sdk/winter-session";
+  CLOVER_SESSION_END_GRACE_MS, startCloverSession, unconsumedUserMessages, withRuntimeVersion, type CloverIncarnation, type CloverSession, type CloverSessionDeps, type CloverTimers,
+} from "../../src/runtime-sdk/clover-session";
 import { PROJECTOR_PASSTHROUGH_CLIENT } from "../../src/projector/index";
-import type { WinterSessionAttachment } from "../../src/runtime-sdk/messaging";
+import type { CloverSessionAttachment } from "../../src/runtime-sdk/messaging";
 import { FakeCheckpoints } from "../projector/harness";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -128,12 +128,12 @@ class FoldingFakeQuery extends FakeQuery {
 // ── the harness ──────────────────────────────────────────────────────────────────────────────────
 
 interface Harness {
-  session: WinterSession;
+  session: CloverSession;
   queries: FakeQuery[];
-  incarnations: WinterIncarnation[];
+  incarnations: CloverIncarnation[];
   events: SessionEvent[];
   broadcasts: SessionEvent[];
-  attachments: Array<{ session: WinterSessionAttachment; detached: number; refreshed: number }>;
+  attachments: Array<{ session: CloverSessionAttachment; detached: number; refreshed: number }>;
   tracked: Array<{ abort: AbortController }>;
   untracked: number;
   records: { generation: number; state: string; transitions: string[]; ended: Array<{ generation: number; reason: string }> };
@@ -148,11 +148,11 @@ interface Harness {
   types(): string[];
 }
 
-function harness(overrides: Partial<Omit<WinterSessionDeps, "idleTimeoutMs">> & { idleTimeoutMs?: number; transcript?: boolean; runtimeVersion?: string | null } = {}): Harness {
+function harness(overrides: Partial<Omit<CloverSessionDeps, "idleTimeoutMs">> & { idleTimeoutMs?: number; transcript?: boolean; runtimeVersion?: string | null } = {}): Harness {
   // The harness knobs are NOT driver deps — they must not be spread over the thunks below.
   const { idleTimeoutMs: idleMs, transcript, runtimeVersion, ...over } = overrides;
   const queries: FakeQuery[] = [];
-  const incarnations: WinterIncarnation[] = [];
+  const incarnations: CloverIncarnation[] = [];
   const events: SessionEvent[] = [];
   const broadcasts: SessionEvent[] = [];
   const attachments: Harness["attachments"] = [];
@@ -160,12 +160,12 @@ function harness(overrides: Partial<Omit<WinterSessionDeps, "idleTimeoutMs">> & 
   const checkpoints = new FakeCheckpoints();
   let seq = 0;
   const armed: Array<{ ms: number; fn: () => void }> = [];
-  const fakeTimers: WinterTimers = {
+  const fakeTimers: CloverTimers = {
     set(fn, ms) { const entry = { ms, fn }; armed.push(entry); return entry; },
     clear(handle) { const i = armed.indexOf(handle as { ms: number; fn: () => void }); if (i >= 0) armed.splice(i, 1); },
   };
   const h: Harness = {
-    session: undefined as unknown as WinterSession,
+    session: undefined as unknown as CloverSession,
     queries, incarnations, events, broadcasts, attachments, tracked, untracked: 0,
     records: { generation: 0, state: "ready", transitions: [], ended: [] },
     checkpoints,
@@ -181,7 +181,7 @@ function harness(overrides: Partial<Omit<WinterSessionDeps, "idleTimeoutMs">> & 
     untrack: () => { h.untracked++; },
   } as unknown as WinterRuntimeSdk;
   const idle = idleMs ?? 60_000;
-  h.session = startWinterSession({
+  h.session = startCloverSession({
     sessionId: "s_x", backendSessionId: "be-x", mode: "chat", runtime,
     options: (inc) => { incarnations.push({ ...inc, generation: h.records.generation + 1 }); return withRuntimeVersion({ abortController: inc.abort, cwd: "/repo", model: "winter-test/echo", ...(inc.resume ? { resume: "be-x" } : { sessionId: "be-x" }) }, runtimeVersion === null ? undefined : (runtimeVersion ?? "0.0.44")); },
     projector: (inc): Projector => createProjector({ sessionId: "s_x", mode: "chat", generation: inc.generation, winterSessionId: "s_x", nextSeq: () => seq + 1, checkpoint: checkpoints, now: () => new Date().toISOString(), log: {} }),
@@ -189,11 +189,11 @@ function harness(overrides: Partial<Omit<WinterSessionDeps, "idleTimeoutMs">> & 
     append: (e: NewSessionEvent) => { const stamped = { ...e, seq: ++seq, ts: Date.now() } as SessionEvent; events.push(stamped); return stamped; },
     broadcast: (e) => { broadcasts.push({ ...e, seq, ts: Date.now() } as SessionEvent); },
     messaging: {
-      attach: ((_runtime: unknown, session: WinterSessionAttachment) => {
+      attach: ((_runtime: unknown, session: CloverSessionAttachment) => {
         const rec = { session, detached: 0, refreshed: 0 };
         attachments.push(rec);
         return { address: `winter-agent:session:${session.backendSessionId}`, ready: Promise.resolve(), refresh: () => { rec.refreshed++; }, detach: () => { rec.detached++; } };
-      }) as unknown as NonNullable<WinterSessionDeps["messaging"]>["attach"],
+      }) as unknown as NonNullable<CloverSessionDeps["messaging"]>["attach"],
     },
     records: {
       bumpGeneration: () => ({ generation: ++h.records.generation }),
@@ -286,7 +286,7 @@ describe("shutdown never leaves a child: an end mid-open, and a spawn refused wh
   });
 
   test("a spawn refusal (the driver table's beginShutdown) refuses the open BEFORE any child spawns", async () => {
-    const h = harness({ spawnRefusal: () => Object.assign(new Error("Winter is shutting down"), { code: "daemon_shutting_down" }) });
+    const h = harness({ spawnRefusal: () => Object.assign(new Error("Clover is shutting down"), { code: "daemon_shutting_down" }) });
     await expect(h.session.open()).rejects.toThrow("shutting down");
     expect(h.queries).toHaveLength(0);
     expect(h.tracked).toHaveLength(0);
@@ -302,7 +302,7 @@ describe("FAIL CLOSED (2026-10-01 review): a child that offers a built-in its `O
   test("an init inside the allowed list (plus capability plain names and MCP tools) runs as ever", async () => {
     const h = withTools();
     await h.session.open();
-    h.q().emit(init(h.q().options, [...ALLOWED, "Browser", "mcp__winter__send_message"]));
+    h.q().emit(init(h.q().options, [...ALLOWED, "Browser", "mcp__clover__send_message"]));
     await h.settled();
     expect(seen(h, "agent_error")).toEqual([]);
     expect(h.session.state).toBe("live");
@@ -365,7 +365,7 @@ describe("FAIL CLOSED (2026-10-01 review): a child that offers a built-in its `O
   });
 });
 
-describe("startWinterSession — one incarnation", () => {
+describe("startCloverSession — one incarnation", () => {
   test("open() spawns through runtime.sdk.query with the host queue as the prompt, a FRESH sessionId, and is tracked", async () => {
     const h = harness();
     expect(h.session.state).toBe("resumable");
@@ -385,9 +385,9 @@ describe("startWinterSession — one incarnation", () => {
   test("system/init records the facts and attaches messaging with the backend id and generation", async () => {
     const h = harness();
     await h.session.open();
-    h.q().emit(init(h.q().options, ["AskUserQuestion", "SendMessage", "mcp__winter__browser__browser"]));
+    h.q().emit(init(h.q().options, ["AskUserQuestion", "SendMessage", "mcp__clover__browser__browser"]));
     await h.settled();
-    expect(h.session.init).toEqual({ sessionId: "be-x", model: "winter-test/echo", tools: ["AskUserQuestion", "SendMessage", "mcp__winter__browser__browser"] });
+    expect(h.session.init).toEqual({ sessionId: "be-x", model: "winter-test/echo", tools: ["AskUserQuestion", "SendMessage", "mcp__clover__browser__browser"] });
     expect(h.attachments).toHaveLength(1);
     expect(h.attachments[0]!.session).toMatchObject({ sessionId: "s_x", backendSessionId: "be-x", mode: "chat", generation: 1 });
     expect(h.attachments[0]!.session.query).toBe(h.q() as unknown as Query);
@@ -808,7 +808,7 @@ describe("startWinterSession — one incarnation", () => {
   });
 
   test("fix wave (review F10), through the REAL persisted roster with fake timers: deltas re-arm the stall window, so a child streaming past ten windows is never stopped", async () => {
-    const home = mkdtempSync(join(tmpdir(), "winter-stall-"));
+    const home = mkdtempSync(join(tmpdir(), "clover-stall-"));
     const rs = openRuntimeStateDb(home);
     let next = 1;
     const pending = new Map<number, { fn: () => void; ms: number }>();
@@ -849,7 +849,7 @@ describe("startWinterSession — one incarnation", () => {
   });
 
   test("nested child progress keeps its waiting ancestors alive but not an unrelated child", async () => {
-    const home = mkdtempSync(join(tmpdir(), "winter-nested-stall-"));
+    const home = mkdtempSync(join(tmpdir(), "clover-nested-stall-"));
     const rs = openRuntimeStateDb(home);
     let next = 1, now = 0;
     const pending = new Map<number, { fn: () => void; at: number }>();
@@ -1029,7 +1029,7 @@ describe("WS-23 review r1: the idle clock during a compaction (M-4), and the han
   });
 });
 
-describe("startWinterSession — end(), the idle timer, the shutdown budget", () => {
+describe("startCloverSession — end(), the idle timer, the shutdown budget", () => {
   test("end() closes the queue; an idle child exits; `done` resolves; the session is `resumable` and untracked", async () => {
     const h = harness();
     await h.session.open();
@@ -1062,7 +1062,7 @@ describe("startWinterSession — end(), the idle timer, the shutdown budget", ()
   });
 
   test("the pre-abort budget fits twice inside dispose()'s grace (P8b-32)", () => {
-    expect(WINTER_SESSION_END_GRACE_MS * 2).toBeLessThan(SHUTDOWN_QUERY_GRACE_MS);
+    expect(CLOVER_SESSION_END_GRACE_MS * 2).toBeLessThan(SHUTDOWN_QUERY_GRACE_MS);
   });
 
   test("the idle timer (a fake clock) is armed at init and after every result, cleared by a push, and ends the session when it fires", async () => {
@@ -1153,7 +1153,7 @@ describe("startWinterSession — end(), the idle timer, the shutdown budget", ()
   });
 });
 
-describe("startWinterSession — resume", () => {
+describe("startCloverSession — resume", () => {
   test("a send from `resumable` opens a NEW query with options.resume = backendSessionId, a bumped generation, and re-attaches", async () => {
     const h = harness();
     await h.session.open();
@@ -1374,9 +1374,9 @@ describe("startWinterSession — resume", () => {
 // pushed the text with each placeholder replaced by its path — live, held, steered, handed off and
 // replayed on resume alike — and the projector's echo window matches the pushed text, so no
 // pass-through `user_message` ever doubles the bubble.
-describe("startWinterSession — code-mode image placeholders (only the model sees the paths)", () => {
-  const IMG = [{ n: 1, path: "/tmp/winter-session-s_x/images/image_1.png" }];
-  const IMG2 = [{ n: 1, path: "/tmp/winter-session-s_x/images/image_2.png" }];
+describe("startCloverSession — code-mode image placeholders (only the model sees the paths)", () => {
+  const IMG = [{ n: 1, path: "/tmp/clover-session-s_x/images/image_1.png" }];
+  const IMG2 = [{ n: 1, path: "/tmp/clover-session-s_x/images/image_2.png" }];
   const userMessages = (h: Harness) => h.events.filter((e) => e.type === "user_message") as Array<Extract<SessionEvent, { type: "user_message" }>>;
 
   test("a live send: the log keeps the placeholder and images, the child gets the path, an echo of it is dropped", async () => {
@@ -1386,10 +1386,10 @@ describe("startWinterSession — code-mode image placeholders (only the model se
     await h.settled();
     await h.session.send("look at [Image #1] please", "cli", IMG);
     await h.settled();
-    expect(h.q().pushed).toEqual(["look at /tmp/winter-session-s_x/images/image_1.png please"]);
+    expect(h.q().pushed).toEqual(["look at /tmp/clover-session-s_x/images/image_1.png please"]);
     expect(userMessages(h)).toMatchObject([{ text: "look at [Image #1] please", clientName: "cli", images: IMG }]);
     // A child that echoes its input back is recognised by the pushed (path) text — no second bubble.
-    h.q().emit({ type: "user", message: { role: "user", content: [{ type: "text", text: "look at /tmp/winter-session-s_x/images/image_1.png please" }] } });
+    h.q().emit({ type: "user", message: { role: "user", content: [{ type: "text", text: "look at /tmp/clover-session-s_x/images/image_1.png please" }] } });
     h.q().emit(result());
     await h.settled();
     expect(userMessages(h)).toHaveLength(1);
@@ -1412,10 +1412,10 @@ describe("startWinterSession — code-mode image placeholders (only the model se
     await h.settled();
     await h.session.send("first", "cli");
     await expect(h.session.send("then [Image #1]", "cli", IMG)).resolves.toMatchObject({ queued: true });
-    expect(h.session.pendingSends).toEqual(["then /tmp/winter-session-s_x/images/image_1.png"]);
+    expect(h.session.pendingSends).toEqual(["then /tmp/clover-session-s_x/images/image_1.png"]);
     h.q().emit(result());
     await h.settled();
-    expect(h.q().pushed).toEqual(["first", "then /tmp/winter-session-s_x/images/image_1.png"]);
+    expect(h.q().pushed).toEqual(["first", "then /tmp/clover-session-s_x/images/image_1.png"]);
     expect(userMessages(h).map((m) => m.text)).toEqual(["first", "then [Image #1]"]);
   });
 
@@ -1427,7 +1427,7 @@ describe("startWinterSession — code-mode image placeholders (only the model se
     await h.session.send("running", "cli");
     await expect(h.session.steer("also [Image #1]", "orb", IMG)).resolves.toMatchObject({ injected: true });
     await h.settled();
-    expect(h.q().pushed).toEqual(["running", "also /tmp/winter-session-s_x/images/image_1.png"]);
+    expect(h.q().pushed).toEqual(["running", "also /tmp/clover-session-s_x/images/image_1.png"]);
     expect(userMessages(h)[1]).toMatchObject({ text: "also [Image #1]", clientName: "orb", images: IMG });
   });
 
@@ -1444,8 +1444,8 @@ describe("startWinterSession — code-mode image placeholders (only the model se
     expect(h.q().pushed).toEqual([]);
     expect(userMessages(h).map((m) => m.text)).toEqual(["see [Image #1]", "and [Image #1] too"]);
     expect(unconsumedUserMessages(h.events)).toEqual([
-      "see /tmp/winter-session-s_x/images/image_1.png",
-      "and /tmp/winter-session-s_x/images/image_2.png too",
+      "see /tmp/clover-session-s_x/images/image_1.png",
+      "and /tmp/clover-session-s_x/images/image_2.png too",
     ]);
     await h.session.end();
     finish!();
@@ -1453,8 +1453,8 @@ describe("startWinterSession — code-mode image placeholders (only the model se
     h.transcriptExists = true;
     await h.session.open();
     await h.settled();
-    expect(h.q().pushed).toEqual(["see /tmp/winter-session-s_x/images/image_1.png"]);
-    expect(h.session.pendingSends).toEqual(["and /tmp/winter-session-s_x/images/image_2.png too"]);
+    expect(h.q().pushed).toEqual(["see /tmp/clover-session-s_x/images/image_1.png"]);
+    expect(h.session.pendingSends).toEqual(["and /tmp/clover-session-s_x/images/image_2.png too"]);
   });
 
   test("unconsumedUserMessages substitutes only the placeholders `images` names", () => {
@@ -1551,10 +1551,10 @@ describe("a mid-turn push FOLDED into the running turn (agent SDK 0.0.44)", () =
     await h.session.open();
     h.q().emit(init(h.q().options));
     await h.session.send("A", "orb");
-    const images = [{ n: 1, path: "/tmp/winter-session-s_x/images/image_1.png" }];
+    const images = [{ n: 1, path: "/tmp/clover-session-s_x/images/image_1.png" }];
     const files = [{ n: 1, path: "/Users/me/Notes/plan.md" }];
     expect((await h.session.steer("look at [Image #1] with [File #1]", "orb", images, files)).injected).toBe(true);
-    expect(h.q().pushed).toEqual(["A", "look at /tmp/winter-session-s_x/images/image_1.png with /Users/me/Notes/plan.md"]);
+    expect(h.q().pushed).toEqual(["A", "look at /tmp/clover-session-s_x/images/image_1.png with /Users/me/Notes/plan.md"]);
     fq(h).emitFold(1);
     await h.settled();
     const steered = h.events.filter((e) => e.type === "user_message")[1] as Extract<SessionEvent, { type: "user_message" }>;

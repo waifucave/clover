@@ -477,6 +477,6 @@ test("anti-wiring: no src file imports the slot, it has no barrel export and the
   const own = readFileSync(module, "utf8");
   expect(own).not.toMatch(/implements\s+CoworkGuestOwnerEvidencePort|:\s*CoworkGuestOwnerEvidencePort\s*=\s*\{|class\s+\w+[^{]*CoworkGuestOwnerEvidencePort/);
   expect(Object.keys(ownerModule).sort()).toEqual(["COWORK_GUEST_OWNER_READER_LIMITS", "CoworkGuestContextOwners", "captureCoworkGuestOwner"]);
-  expect(own).not.toMatch(/from "@yanlinglabs\/winter-(agent|runtime)-sdk/);
+  expect(own).not.toMatch(/from "@yanlinglabs\/clover-(agent|runtime)-sdk/);
   expect(own).not.toMatch(/\bhomeIdentity\(\)/);
 });

@@ -3,13 +3,13 @@
 // screen's words. The note is never shown on the user's screen, and the phone renders a `user_message` as a bubble —
 // so both phone paths (`session.history` and the live/replay stream, through `phoneViewOf`) replace the text with ONE
 // daemon line built from the event FACTS: the `wake_armed`/`wake_ended` pair already on the session's log, e.g.
-// "Winter continued: a wake trigger ended (you clicked “Submit” in Chrome)".
+// "Clover continued: a wake trigger ended (you clicked “Submit” in Chrome)".
 //
 // Which triggers a message reports is read off the lines the daemon itself starts with `- wk_<12 hex> ` (the model's
 // note and every label are one line each, never at a line's start). The facts come from the LOG, never from what one
 // connection happened to stream (a replay may start after the `wake_armed`), and only from events BEFORE the message —
 // so a message re-read from a history page is the same bytes it was live.
-import type { SessionEvent } from "@yanlinglabs/winter-protocol";
+import type { SessionEvent } from "@waifucave/clover-protocol";
 
 const WAKE_LINE = /^- (wk_[0-9a-f]{12}) /gm;
 
@@ -20,9 +20,9 @@ interface ArmedFacts { condition: string; targetLabel: string; elementLabel?: st
 function endedWords(w: ArmedFacts, reason: string): string {
   const t = w.targetLabel || "the app";
   const el = w.elementLabel;
-  if (reason === "lost") return `${t} went away while Winter waited`;
+  if (reason === "lost") return `${t} went away while Clover waited`;
   if (reason === "expired") return `the wait in ${t} ran out`;
-  if (reason === "restart") return `Winter restarted while it waited in ${t}`;
+  if (reason === "restart") return `Clover restarted while it waited in ${t}`;
   switch (w.condition) {
     case "clicked": return `you clicked ${el ?? "it"} in ${t}`;
     case "submitted": return `you submitted ${el ?? "a form"} in ${t}`;
@@ -55,6 +55,6 @@ export function computerWakePhoneLine(text: string, seq: number, log: readonly S
     const r = ended.get(id);
     return a === undefined || r === undefined ? [] : [endedWords(a, r)];
   });
-  const head = ids.length > 1 ? `Winter continued: ${ids.length} wake triggers ended` : "Winter continued: a wake trigger ended";
+  const head = ids.length > 1 ? `Clover continued: ${ids.length} wake triggers ended` : "Clover continued: a wake trigger ended";
   return facts.length === 0 ? head : `${head} (${facts.join("; ")})`;
 }

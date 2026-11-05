@@ -2,7 +2,7 @@
 // block is printed once per session per bundle id; the set is forgotten when the model can no longer see it — a
 // COMPACTION of the main thread (the `DiffBases.observe` rule), a reset or worker restart (`clearSession`), the
 // session's end — so the next bind, or the next primitive touching the app, prints it again.
-import type { SessionEvent } from "@yanlinglabs/winter-protocol";
+import type { SessionEvent } from "@waifucave/clover-protocol";
 
 export class AdapterDelivery {
   private readonly delivered = new Map<string, Set<string>>();

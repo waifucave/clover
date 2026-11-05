@@ -1,4 +1,4 @@
-// The ONE validated-add/validated-remove door `winter mcp add/remove` writes through, on EITHER
+// The ONE validated-add/validated-remove door `clover mcp add/remove` writes through, on EITHER
 // scope. Two call sites share every function here:
 //   - USER scope (`settings.mcpServers`): `ipc/server.ts`'s `mcp.add`/`mcp.remove` RPC handlers
 //     (daemon live) AND `packages/cli/src/mcp-cli.ts`'s no-daemon fallback (direct settings.json
@@ -20,7 +20,7 @@
 // a write on top of it would silently DROP every sibling entry it can't parse (an http/sse one, or
 // even a stdio one with an extra field) the moment ANY one of them doesn't fit — see
 // `readRawProjectMcpConfig`'s own doc for the exact failure this avoids. This file only owns the ONE
-// thing specific to an ADD: the name rules (shape + Winter's reserved capability namespace) and
+// thing specific to an ADD: the name rules (shape + Clover's reserved capability namespace) and
 // "refuse a silent overwrite" (mirrors claude's own `addMcpConfig`, `services/mcp/config.ts` in the
 // reference clone — it throws "already exists in <scope> config" rather than replace).
 import type { Settings, McpServerSettingsEntry } from "../../settings";
@@ -42,16 +42,16 @@ const NAME_PATTERN = /^[A-Za-z0-9_-]+$/;
 
 /**
  * Validates an MCP server NAME before either scope's add ever touches a file — shape (claude's own
- * rule) PLUS Winter's own reserved-namespace refusal (`reservedMcpServerNames`), which claude has no
+ * rule) PLUS Clover's own reserved-namespace refusal (`reservedMcpServerNames`), which claude has no
  * equivalent of: it owns no daemon MCP servers to collide with. `assertNoCapabilityCollision`
  * (`capabilities/index.ts`) already refuses a colliding name, but only at SESSION SPAWN — every
- * session created after the bad write, not the write itself. Checking it here means `winter mcp add
- * winter__browser` is refused typed, on the spot, instead of silently breaking every session from
+ * session created after the bad write, not the write itself. Checking it here means `clover mcp add
+ * clover__browser` is refused typed, on the spot, instead of silently breaking every session from
  * then on. Returns an error message, or `undefined` when the name is fine to write.
  */
 export function validateMcpServerName(name: string): string | undefined {
   if (!NAME_PATTERN.test(name)) return `invalid MCP server name "${name}" — names can only contain letters, numbers, hyphens, and underscores`;
-  if (reservedMcpServerNames().has(name)) return `cannot add MCP server "${name}": this name is reserved for a Winter-owned capability server`;
+  if (reservedMcpServerNames().has(name)) return `cannot add MCP server "${name}": this name is reserved for a Clover-owned capability server`;
   return undefined;
 }
 
@@ -59,7 +59,7 @@ export function validateMcpServerName(name: string): string | undefined {
  * THE user-scope add door. Throws (never a typed result union — the two callers each have their
  * own error-reporting convention, an `RpcFailure` vs. a CLI stderr line, so a plain `Error` is the
  * one shape both can adapt) on a bad name or a name already present in `settings.mcpServers` — never
- * a silent overwrite (`winter mcp remove <name>` first, same as claude). Does NOT call
+ * a silent overwrite (`clover mcp remove <name>` first, same as claude). Does NOT call
  * `saveSettings` itself: the caller does, so it can catch THAT door's own validation error (the
  * credential-shaped-header refusal on an http/sse entry, `refuseCredentialShapedHeaders`) and report
  * it as what it is, separately from a name-rule refusal.
@@ -68,7 +68,7 @@ export function addUserMcpServer(settings: Settings, name: string, entry: McpSer
   const nameErr = validateMcpServerName(name);
   if (nameErr) throw new Error(nameErr);
   if (settings.mcpServers?.[name]) {
-    throw new Error(`MCP server "${name}" already exists in user config — remove it first ("winter mcp remove ${name}") or edit settings.json directly`);
+    throw new Error(`MCP server "${name}" already exists in user config — remove it first ("clover mcp remove ${name}") or edit settings.json directly`);
   }
   return setMcpServerEntry(settings, name, entry);
 }
@@ -110,18 +110,18 @@ export function removeProjectMcpServer(servers: Record<string, unknown>, name: s
   return { servers: rest, removed: true };
 }
 
-// ── WS-21: the user scope lives in `sdk/.winter.json` (claude's `.claude.json` shape) ─────────────
+// ── WS-21: the user scope lives in `sdk/.clover.json` (claude's `.claude.json` shape) ─────────────
 //
 // `mcpServers` moved out of `settings.json` (spec §4.1). These are the daemon's user-scope doors
 // now; the `Settings`-shaped pair above stays only for a caller that has not moved yet (the CLI's
-// no-daemon fallback, lane L4). Same rules: the name is validated first (claude's shape + Winter's
+// no-daemon fallback, lane L4). Same rules: the name is validated first (claude's shape + Clover's
 // reserved capability namespace), a present name is never silently overwritten, and the entry is
 // validated with the SAME schema — including the credential-shaped-header REFUSAL — that guarded
 // `settings.mcpServers`, before anything is written. Every other key of the file is preserved.
 
 const isRecord = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === "object" && !Array.isArray(v);
 
-/** Add one USER-scope server to `sdk/.winter.json` `mcpServers`. Throws a plain `Error` (bad name,
+/** Add one USER-scope server to `sdk/.clover.json` `mcpServers`. Throws a plain `Error` (bad name,
  *  already present, invalid or credential-shaped entry) or `SdkFileUnreadable`; writes nothing then. */
 export function addSdkUserMcpServer(home: string, name: string, entry: unknown): McpServerSettingsEntry {
   const nameErr = validateMcpServerName(name);
@@ -130,14 +130,14 @@ export function addSdkUserMcpServer(home: string, name: string, entry: unknown):
   updateSdkGlobalConfig(home, (config) => {
     const servers = isRecord(config.mcpServers) ? config.mcpServers : {};
     if (Object.hasOwn(servers, name)) {
-      throw new Error(`MCP server "${name}" already exists in user config — remove it first ("winter mcp remove ${name} --scope user") or edit sdk/.winter.json directly`);
+      throw new Error(`MCP server "${name}" already exists in user config — remove it first ("clover mcp remove ${name} --scope user") or edit sdk/.clover.json directly`);
     }
     return { ...config, mcpServers: { ...servers, [name]: valid } };
   });
   return valid;
 }
 
-/** Remove one USER-scope server from `sdk/.winter.json`. Idempotent: `false` when it was not there
+/** Remove one USER-scope server from `sdk/.clover.json`. Idempotent: `false` when it was not there
  *  (and then the file is not rewritten at all). */
 export function removeSdkUserMcpServer(home: string, name: string): boolean {
   const present = (config: SdkGlobalConfigFile): boolean => isRecord(config.mcpServers) && Object.hasOwn(config.mcpServers, name);
@@ -156,9 +156,9 @@ export function removeSdkUserMcpServer(home: string, name: string): boolean {
 
 // ── WS-21 (spec §4.4): claude's three MCP scopes ────────────────────────────────────────────────────
 //
-//   local    (claude's default)  `sdk/.winter.json` → `projects[<canonical project root>].mcpServers`
-//   user                         `sdk/.winter.json` → `mcpServers`
-//   project                      `<project root>/.winter/mcp.json` (claude's `.mcp.json` format)
+//   local    (claude's default)  `sdk/.clover.json` → `projects[<canonical project root>].mcpServers`
+//   user                         `sdk/.clover.json` → `mcpServers`
+//   project                      `<project root>/.clover/mcp.json` (claude's `.mcp.json` format)
 //
 // `root` is the CANONICAL project root (`repoRootFor(cwd)`) — the key the run home's builder folds the
 // local servers from and the directory it reads the project file in. The same validation as ever runs
@@ -200,7 +200,7 @@ export function addMcpServerInScope(t: McpScopeTarget, name: string, entry: unkn
       const project = isRecord(projects[root]) ? projects[root]! : {};
       const servers = isRecord(project.mcpServers) ? project.mcpServers : {};
       if (Object.hasOwn(servers, name)) {
-        throw new Error(`MCP server "${name}" already exists in local config for ${root} — remove it first ("winter mcp remove ${name} --scope local")`);
+        throw new Error(`MCP server "${name}" already exists in local config for ${root} — remove it first ("clover mcp remove ${name} --scope local")`);
       }
       return { ...config, projects: { ...projects, [root]: { ...project, mcpServers: { ...servers, [name]: valid } } } };
     });
@@ -212,7 +212,7 @@ export function addMcpServerInScope(t: McpScopeTarget, name: string, entry: unkn
   if (read.kind === "malformed") throw new Error(`${projectMcpConfigPath(root)} is not a readable MCP config — it was left untouched`);
   const current = read.kind === "ok" ? read : { raw: {}, servers: {} };
   if (Object.hasOwn(current.servers, name)) {
-    throw new Error(`MCP server "${name}" already exists in this project's .winter/mcp.json — remove it first or edit the file directly`);
+    throw new Error(`MCP server "${name}" already exists in this project's .clover/mcp.json — remove it first or edit the file directly`);
   }
   writeRawProjectMcpConfig(root, current.raw, { ...current.servers, [name]: entry });
   return parsed.data;
@@ -250,7 +250,7 @@ export function removeMcpServerInScope(t: McpScopeTarget, name: string): boolean
 
 // ── WS-27: rename within a scope, and the connector settings a remove or a rename leaves behind ─────
 //
-// `settings.json`'s `mcp.toolPermissions` and `mcp.disabled` are Winter's own and keyed by server NAME across
+// `settings.json`'s `mcp.toolPermissions` and `mcp.disabled` are Clover's own and keyed by server NAME across
 // every scope, so a remove or a rename cannot simply take the name's settings with it: another scope, a
 // plugin, a subagent definition or a LIVE session (whose child keeps the servers it was spawned with until it
 // restarts, while the table is read live) may still use the name. So a remove clears the row only once
@@ -295,7 +295,7 @@ function rawServersInScope(t: McpScopeTarget): Record<string, unknown> {
 export function renameMcpServerInScope(t: McpScopeTarget, from: string, to: string): { type: "stdio" | "http" | "sse" } {
   const nameErr = validateMcpServerName(to);
   if (nameErr) throw new McpRenameRefusal("mcp_invalid_name", nameErr);
-  const where = t.scope === "project" ? "this project's .winter/mcp.json" : t.scope === "local" ? `local config for ${projectRootOf(t)}` : "user config";
+  const where = t.scope === "project" ? "this project's .clover/mcp.json" : t.scope === "local" ? `local config for ${projectRootOf(t)}` : "user config";
   const moveIn = (servers: Record<string, unknown>): Record<string, unknown> => {
     if (!Object.hasOwn(servers, from)) throw new McpRenameRefusal("mcp_server_not_found", `no MCP server named "${from}" in ${where}`);
     if (Object.hasOwn(servers, to)) throw new McpRenameRefusal("mcp_server_exists", `MCP server "${to}" already exists in ${where} — pick another name, or remove that one first`);
@@ -405,8 +405,8 @@ function readJson(path: string): unknown {
 
 /**
  * The rules matching `matches` (for `server`), each as `"<file>: <rule>"`, from: `sdk/settings.json`
- * (`permissions.allow/ask/deny`) unless `sdk: false`; every trusted project's own `.winter/settings.json`,
- * `.winter/settings.local.json` and `.winter/permissions.local.json`; and the read-only approved-rules record
+ * (`permissions.allow/ask/deny`) unless `sdk: false`; every trusted project's own `.clover/settings.json`,
+ * `.clover/settings.local.json` and `.clover/permissions.local.json`; and the read-only approved-rules record
  * `<home>/permissions/projects.json`. Read only — nothing here writes.
  */
 function rulesIn(home: string, server: string, ctx: McpNameContext, matches: (rule: string, server: string) => boolean, opts: { sdk: boolean }, protective?: string[]): string[] {
@@ -434,7 +434,7 @@ function rulesIn(home: string, server: string, ctx: McpNameContext, matches: (ru
   }
   for (const root of trustedProjectRoots({ cwd: ctx.cwd, trust: ctx.trust, allTrusted: true })) {
     for (const f of ["settings.json", "settings.local.json", "permissions.local.json"]) {
-      const file = join(root, ".winter", f);
+      const file = join(root, ".clover", f);
       const json = readJson(file);
       if (f === "permissions.local.json") collect(file, json);
       else collectPermissions(file, isRecord(json) ? json.permissions : undefined);
@@ -513,7 +513,7 @@ export function removeMcpServerForgettingPermissions(t: McpScopeTarget, name: st
     saveSettings(path, next);
     return { removed, permissionsCleared: true, rulesNotFollowed, settings: next };
   } catch (err) {
-    return { removed, permissionsCleared: false, rulesNotFollowed, permissionsNote: `the server was removed, but its connector permissions could not be cleared (${err instanceof Error ? err.message : "unknown"}) — clear them with winter mcp permissions ${name} '*' default` };
+    return { removed, permissionsCleared: false, rulesNotFollowed, permissionsNote: `the server was removed, but its connector permissions could not be cleared (${err instanceof Error ? err.message : "unknown"}) — clear them with clover mcp permissions ${name} '*' default` };
   }
 }
 
@@ -546,7 +546,7 @@ export function renameMcpServerCarryingSettings(t: McpScopeTarget, from: string,
   const nameErr = validateMcpServerName(to);
   if (nameErr) throw new McpRenameRefusal("mcp_invalid_name", nameErr);
   const scopeServers = rawServersInScope(t);
-  const where = t.scope === "project" ? "this project's .winter/mcp.json" : t.scope === "local" ? "local config" : "user config";
+  const where = t.scope === "project" ? "this project's .clover/mcp.json" : t.scope === "local" ? "local config" : "user config";
   if (!Object.hasOwn(scopeServers, from)) throw new McpRenameRefusal("mcp_server_not_found", `no MCP server named "${from}" in ${where}`);
   if (Object.hasOwn(scopeServers, to)) throw new McpRenameRefusal("mcp_server_exists", `MCP server "${to}" already exists in ${where} — pick another name, or remove that one first`);
   if (nameInUse(t.home, to, ctx)) {
@@ -555,10 +555,10 @@ export function renameMcpServerCarryingSettings(t: McpScopeTarget, from: string,
   const path = join(t.home, "settings.json");
   const before = settingsIfPresent(path);
   if (before !== undefined && Object.hasOwn(before.mcp?.toolPermissions ?? {}, to)) {
-    throw new McpRenameRefusal("mcp_rename_target_has_permissions", `"${to}" already has connector permissions stored — clear them first (winter mcp permissions ${to} '*' default)`);
+    throw new McpRenameRefusal("mcp_rename_target_has_permissions", `"${to}" already has connector permissions stored — clear them first (clover mcp permissions ${to} '*' default)`);
   }
   // …or leftover RULES literally naming it (`mcp__<to>`, `mcp__<to>__…`), in `sdk/settings.json` or in files
-  // Winter does not edit: the renamed server would silently take them over.
+  // Clover does not edit: the renamed server would silently take them over.
   const leftover = rulesLiterallyNaming(t.home, to, ctx);
   if (leftover.length > 0) {
     throw new McpRenameRefusal("mcp_rename_target_has_permissions", `rules already name "${to}" (${leftover.join("; ")}) — remove them first, or pick another name`);

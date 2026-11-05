@@ -7,7 +7,7 @@ import { describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { SessionEvent } from "@yanlinglabs/winter-protocol";
+import type { SessionEvent } from "@waifucave/clover-protocol";
 import { ApprovalBroker } from "../../src/agent/approvals";
 import { QuestionBroker } from "../../src/agent/questions";
 import { goAheadFor, createComputerUseRuntime } from "../../src/computer-use/wiring";
@@ -26,19 +26,19 @@ const resolved = (o: { by: string; answers?: Record<string, string>; childSessio
 describe("goAheadFor: what counts as the user's go-ahead", () => {
   test("a human message, or a human's non-empty answer to a question card; never one unanswered or automated", () => {
     const msg = (clientName?: string): SessionEvent => ({ type: "user_message", seq: 1, ts: 0, sessionId: "s1", threadId: "main", text: "go", ...(clientName === undefined ? {} : { clientName }) } as unknown as SessionEvent);
-    expect(goAheadFor(msg("winter-mac"))).toBe("s1");
+    expect(goAheadFor(msg("clover-mac"))).toBe("s1");
     expect(goAheadFor(msg("messaging"))).toBeUndefined();
-    expect(goAheadFor(resolved({ by: "winter-mac" }))).toBe("s1");
+    expect(goAheadFor(resolved({ by: "clover-mac" }))).toBe("s1");
     expect(goAheadFor(resolved({ by: "phone" }))).toBe("s1");
     for (const by of ["timeout", "aborted", "superseded", "dispatch", "messaging", "routine", "workflow"]) expect(goAheadFor(resolved({ by }))).toBeUndefined();
-    expect(goAheadFor(resolved({ by: "winter-mac", answers: {} }))).toBeUndefined();
+    expect(goAheadFor(resolved({ by: "clover-mac", answers: {} }))).toBeUndefined();
     // A Dispatch child's question relayed to its coordinator: the child is the session lifted.
-    expect(goAheadFor(resolved({ by: "winter-mac", childSessionId: "s_child" }))).toBe("s_child");
+    expect(goAheadFor(resolved({ by: "clover-mac", childSessionId: "s_child" }))).toBe("s_child");
   });
 });
 
 function runtime() {
-  const home = mkdtempSync(join(tmpdir(), "winter-go-ahead-"));
+  const home = mkdtempSync(join(tmpdir(), "clover-go-ahead-"));
   const store = new SessionStore(home);
   const hub = new SessionHub(store);
   const fake = new FakeHelper();
@@ -80,7 +80,7 @@ describe("the go-ahead through a question card, end to end", () => {
       // Answered on the card (the Mac): `ask_user.respond` is exactly `QuestionBroker.respond` with the client's name.
       const pending = ask("q1", QUESTION, { signal: new AbortController().signal });
       await Bun.sleep(10);
-      expect(questions.respond(w.sessionId, "q1", { "Go ahead in Notes?": "Go ahead" }, "winter-mac")).toEqual({ ok: true, alreadyResolved: false });
+      expect(questions.respond(w.sessionId, "q1", { "Go ahead in Notes?": "Go ahead" }, "clover-mac")).toEqual({ ok: true, alreadyResolved: false });
       await pending;
       await Bun.sleep(30);
       expect(w.fake.calls("work.lift")).toEqual([{ pids: [501], reason: "message" }]);

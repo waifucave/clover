@@ -18,7 +18,7 @@ function rig(opts: { version?: string; allowed?: boolean; target?: AppWakeTarget
   fake.helperVersion = opts.version ?? HELPER_WATCH_VERSION;
   let backend: AppWakeBackend | undefined;
   const helper = new HelperClient({
-    home: mkdtempSync(join(tmpdir(), "winter-wake-app-")), profile: "dev", launchAllowed: true,
+    home: mkdtempSync(join(tmpdir(), "clover-wake-app-")), profile: "dev", launchAllowed: true,
     transport: fake.transport, launcher: fake.launcher, verifier: fake.verifier, connectTimeoutMs: 500,
     // Wired the way `wiring.ts` wires it: beside the service's own handlers.
     onNotification: (n) => backend?.handleNotification(n),
@@ -97,7 +97,7 @@ describe("AppWakeBackend: arming", () => {
     const r = rig({ version: "1.16.0" });
     await bound(r);
     const f = await refusal(r.backend.arm(req({ kind: "clicked", ref: "12" }), r.onEvent));
-    expect(f).toEqual({ kind: "HelperUnavailable", message: "Winter Computer Use 1.16.0 is too old to wait on an app (it needs 1.17.0 or later) — update Winter" });
+    expect(f).toEqual({ kind: "HelperUnavailable", message: "Winter Computer Use 1.16.0 is too old to wait on an app (it needs 1.17.0 or later) — update Clover" });
     expect(r.fake.calls("watch.arm")).toEqual([]);
   });
 
@@ -108,12 +108,12 @@ describe("AppWakeBackend: arming", () => {
       [new FakeHelperError("not_allowed", "“Saved” is already shown…", { reason: "already_met" }), { kind: "appeared", text: "Saved" },
         { kind: "NotAllowed", message: "“Saved” is already shown in Notes — nothing to wait for; check state()" }],
       [new FakeHelperError("refused", "the Window Title “Secret” said this", { reason: "secure_field" }), { kind: "changed", ref: "3", settleMs: 1500 },
-        { kind: "Refused", message: "that is a password or payment field — Winter never watches one; ask the user to tell you when they are done" }],
+        { kind: "Refused", message: "that is a password or payment field — Clover never watches one; ask the user to tell you when they are done" }],
       [new FakeHelperError("stale_ref", "[3] is gone", { ref: 3 }), { kind: "clicked", ref: "3" }, { kind: "StaleRef", message: "[3] is gone — call state()" }],
       [new FakeHelperError("unsupported", "no AX in “Secret Doc”", { reason: "no_accessibility" }), { kind: "titled", title: "x" },
-        { kind: "NotAllowed", message: "Notes's window exposes no accessibility here, so Winter can't watch it — ask the user to show the window once on its desktop, then bind it again" }],
+        { kind: "NotAllowed", message: "Notes's window exposes no accessibility here, so Clover can't watch it — ask the user to show the window once on its desktop, then bind it again" }],
       [new FakeHelperError("unsupported", "unknown method watch.arm"), { kind: "titled", title: "x" },
-        { kind: "HelperUnavailable", message: "Winter Computer Use is too old to wait on an app (it needs 1.17.0 or later) — update Winter" }],
+        { kind: "HelperUnavailable", message: "Winter Computer Use is too old to wait on an app (it needs 1.17.0 or later) — update Clover" }],
       [new FakeHelperError("unsupported", "the automation engine is gone", { reason: "engine_gone" }), { kind: "titled", title: "x" },
         { kind: "HelperUnavailable", message: "Winter Computer Use could not arm the trigger (it may be quitting) — try again" }],
       [new FakeHelperError("target_lost", "gone", { reason: "window_closed" }), { kind: "titled", title: "x" },
@@ -150,7 +150,7 @@ describe("AppWakeBackend: arming", () => {
     for (const bundleId of ["com.google.Chrome", "com.microsoft.edgemac", "com.brave.Browser", "company.thebrowser.Browser"]) {
       const r = rig({ target: { bundleId, name: "Browser", pid: 9 } });
       const f = await refusal(r.backend.arm(req({ kind: "titled", title: "Done" }), r.onEvent));
-      expect(f).toEqual({ kind: "NotAllowed", message: "Browser is a browser Winter drives tab by tab — wait on the tab instead: bind it with browsers.tab(…) and call tab.wakeWhen(…)" });
+      expect(f).toEqual({ kind: "NotAllowed", message: "Browser is a browser Clover drives tab by tab — wait on the tab instead: bind it with browsers.tab(…) and call tab.wakeWhen(…)" });
       expect(r.fake.calls("watch.arm")).toEqual([]);
     }
     const safari = rig({ target: { bundleId: "com.apple.Safari", name: "Safari", pid: 9 }, allowed: true });

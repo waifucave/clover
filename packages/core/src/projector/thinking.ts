@@ -1,6 +1,6 @@
 import {
   THINKING_ID_MAX_LENGTH, THINKING_TEXT_MAX_LENGTH, type ThinkingKind,
-} from "@yanlinglabs/winter-protocol";
+} from "@waifucave/clover-protocol";
 import { threadIdOf } from "./conversation";
 import { ActivityTitleTracker, clipTitle, collapse, decideTitle, scanHeadings, sliceUnits, type Placed } from "./thinking-title";
 import type { ProjectedEvent, ProtocolSdkMessage } from "./types";
@@ -10,7 +10,7 @@ export { gerundOf, sliceUnits } from "./thinking-title";
 /**
  * ── THE THINKING PILL (2026-10-05) ──────────────────────────────────────────────────────────────
  *
- * The agent SDK reports every reasoning block of every provider family on ONE Winter-only frame,
+ * The agent SDK reports every reasoning block of every provider family on ONE Clover-only frame,
  * `system/reasoning_progress` (`start` → `delta`* → `end`, one `block_id` per block), so the daemon
  * needs no provider dialect. This module turns those frames into:
  *

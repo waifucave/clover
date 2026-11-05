@@ -6,7 +6,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, type WritableSocket } from "@yanlinglabs/winter-protocol";
+import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, type WritableSocket } from "@waifucave/clover-protocol";
 import { startIpcServer } from "../../src/ipc/server";
 import { SessionStore } from "../../src/sessions/store";
 import { FileSecretStore } from "../../src/auth/secret-store";
@@ -59,7 +59,7 @@ describe("settings.setAdvisorModel (WS-20 cross-lane)", () => {
   afterEach(() => { stop?.(); stop = undefined; });
 
   async function boot() {
-    const home = mkdtempSync(join(tmpdir(), "winter-set-advisor-model-"));
+    const home = mkdtempSync(join(tmpdir(), "clover-set-advisor-model-"));
     const settingsPath = join(home, "settings.json");
     saveSettings(settingsPath, Settings.parse({ schemaVersion: 3, provider: { model: "codex-oauth/gpt-5.6-sol" } }));
     const store = new SessionStore(home);
@@ -67,7 +67,7 @@ describe("settings.setAdvisorModel (WS-20 cross-lane)", () => {
     const secrets = new FileSecretStore(join(home, "secrets"));
     const authority = new TokenAuthority(secrets);
     const tokens = await authority.ensureTokens();
-    const server = startIpcServer({ socketPath, serverVersion: "test", tokens: authority, store, winterHome: home, secrets });
+    const server = startIpcServer({ socketPath, serverVersion: "test", tokens: authority, store, cloverHome: home, secrets });
     stop = () => { server.stop(); store.close(); };
     return { home, settingsPath, socketPath, harnessToken: tokens.harness };
   }

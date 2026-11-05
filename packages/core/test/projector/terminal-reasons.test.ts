@@ -4,7 +4,7 @@
 // errors, a `hook_notice` for the hook stop -- never a bare `turn_completed(end_turn)` that looks like
 // a finished answer. The frames below are the exact shapes `packages/runtime/src/engine.ts` writes.
 import { describe, expect, test } from "bun:test";
-import type { SessionEvent } from "@yanlinglabs/winter-protocol";
+import type { SessionEvent } from "@waifucave/clover-protocol";
 import { AGENT_ERROR_DETAIL_MAX, CLASS_MESSAGE } from "../../src/projector/errors";
 import { accept, assistantText, beginTurn, init, makeProjector, result } from "./harness";
 

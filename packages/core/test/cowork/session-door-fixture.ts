@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { ApprovalPolicy } from "@yanlinglabs/winter-protocol";
+import type { ApprovalPolicy } from "@waifucave/clover-protocol";
 import { CoworkAuthority } from "../../src/cowork/authority";
 import { CoworkRepository } from "../../src/cowork/repository";
 import type { CoworkGuestConversationContext, CoworkProviderRoute, CoworkProviderRouteScope } from "../../src/cowork/session-ports";
@@ -39,7 +39,7 @@ export interface DoorFixture {
 }
 
 export function doorFixture(opts: { policy?: ApprovalPolicy; toolClasses?: string[]; access?: SourceAccess; relativeCwd?: string; sessions?: readonly string[]; network?: "none" | "internet"; location?: "source" | "outputs"; ack?: boolean } = {}): DoorFixture {
-  const home = mkdtempSync(join(tmpdir(), "winter-door-d3-"));
+  const home = mkdtempSync(join(tmpdir(), "clover-door-d3-"));
   const db = openRuntimeStateDb(home), records = new CoworkRepository(db), access = opts.access ?? "read-write";
   const created = records.create({ principalId: "fixture", requestId: "create" }, { ownership: "project", title: "fixture", defaultPolicy: opts.policy ?? "ask",
     ceiling: { toolClasses: opts.toolClasses ?? ["read", "write", "execute"], hostServices: [], connectors: [], network: opts.network ?? "none" },

@@ -131,17 +131,17 @@ describe("Cowork host storage fences", () => {
     finally { restore(); stopOther(); }
   });
   test("migrate-project refuses backing trees and revalidates a preview whose directory becomes a link", () => {
-    expect(() => planProjectMigration(workspace, { winterHome: home })).toThrow("migrate-project cannot");
-    expect(() => planProjectMigration(join(root, "alias"), { winterHome: home })).not.toThrow();
+    expect(() => planProjectMigration(workspace, { cloverHome: home })).toThrow("migrate-project cannot");
+    expect(() => planProjectMigration(join(root, "alias"), { cloverHome: home })).not.toThrow();
     const project = join(root, "project"); mkdirSync(project); writeFileSync(join(project, LEGACY_INSTRUCTIONS_FILE), "fixture");
-    const plan = planProjectMigration(project, { winterHome: home });
+    const plan = planProjectMigration(project, { cloverHome: home });
     rmSync(project, { recursive: true }); symlinkSync(workspace, project);
     expect(() => runProjectMigration(plan)).toThrow("migrate-project cannot");
   });
   test("migrate-project refuses a hard-linked volume masquerading as an instructions file", () => {
     const project = join(root, "project"); mkdirSync(project);
     linkSync(join(workspace, "data.ext4"), join(project, LEGACY_INSTRUCTIONS_FILE));
-    const plan = planProjectMigration(project, { winterHome: home });
+    const plan = planProjectMigration(project, { cloverHome: home });
     expect(() => runProjectMigration(plan)).toThrow("migrate-project cannot");
     expect(Bun.file(join(workspace, "data.ext4")).size).toBe("fixture disk".length);
   });
@@ -149,7 +149,7 @@ describe("Cowork host storage fences", () => {
 
 test("disabled and unregistered Cowork preserve ordinary Code scans and escapes at HOME", () => {
   const root=realpathSync(mkdtempSync(join(tmpdir(),"winter-cowork-disabled-")));
-  const userHome=join(root,"user-home"), home=join(userHome,".winter"), coordination=join(root,"coordination");
+  const userHome=join(root,"user-home"), home=join(userHome,".clover"), coordination=join(root,"coordination");
   mkdirSync(home,{recursive:true}); mkdirSync(coordination);
   writeFileSync(join(home,"trust.json"),"{}"); linkSync(join(home,"trust.json"),join(root,"trust-alias.json"));
   try {

@@ -146,7 +146,7 @@ describe("screenshot({ within | fullPage })", () => {
     const p = (primitive: string, args: Record<string, unknown> = {}) => h.engine.primitive(r.scope, t.targetId, primitive, args);
     const full = await failure(p("screenshot", { fullPage: true }));
     expect((full as AutomationFailure).kind).toBe("NotAllowed");
-    expect(full.message).toBe("screenshot({ fullPage }) lays the page out again, which can move what the user sees — on the user's own tab Winter takes only what is in view: screenshot(), or text() for the whole page");
+    expect(full.message).toBe("screenshot({ fullPage }) lays the page out again, which can move what the user sees — on the user's own tab Clover takes only what is in view: screenshot(), or text() for the whole page");
     expect(h.chrome.sent.some((x) => x.method === "Page.captureScreenshot" && x.params.captureBeyondViewport === true)).toBe(false);
     // In view: shot where it is — and the page was asked to scroll nothing.
     await p("screenshot", { within: 2, emit: false });
@@ -155,10 +155,10 @@ describe("screenshot({ within | fullPage })", () => {
     const farRef = (await p("find", { query: { name: "Far below" }, emit: false }) as Array<{ ref: number }>)[0]!.ref;
     const far = await failure(p("screenshot", { within: farRef, emit: false }));
     expect((far as AutomationFailure).kind).toBe("NotAllowed");
-    expect(far.message).toBe("that element is not wholly in view, and Winter doesn't scroll the user's own tab for a picture — scroll() it into view first, or take screenshot()");
+    expect(far.message).toBe("that element is not wholly in view, and Clover doesn't scroll the user's own tab for a picture — scroll() it into view first, or take screenshot()");
     expect(h.chrome.ops.filter((o) => o.tabKey === "77" && (o.op === "point" || o.op === "frameOffset") && o.arg?.scroll === true)).toEqual([]);
     r.end();
-    // A tab Winter opened (its own) still gets both: the element brought into view, the whole page laid out.
+    // A tab Clover opened (its own) still gets both: the element brought into view, the whole page laid out.
     const { h: h2, p: p2 } = await opened();
     await p2("screenshot", { within: 2, emit: false });
     expect(h2.winter.ops.some((o) => o.op === "point" && o.arg?.scroll === true)).toBe(true);

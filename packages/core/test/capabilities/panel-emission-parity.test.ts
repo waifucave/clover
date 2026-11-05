@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { WinterMcpServerInstance } from "@yanlinglabs/winter-agent-sdk";
-import type { NewSessionEvent } from "@yanlinglabs/winter-protocol";
+import type { NewSessionEvent } from "@waifucave/clover-protocol";
 import { ToolRegistry, type ToolContext } from "../../src/agent/tools/registry";
 import { registerBrowserTool } from "../../src/agent/tools/browser";
 import { registerDocsTool } from "../../src/agent/tools/docs";
@@ -19,7 +19,7 @@ import { officeCapability } from "../../src/capabilities/office";
  *
  * ⚠️ IF THE TWO SEQUENCES EVER DIFFER, THE CAPABILITY IS WRONG, NOT THIS TEST. The failure this
  * guards against is the quiet one: every unit test green, and panel tabs simply stop opening on the
- * Winter leg because the capability was handed its own `mintPanelTab`/`PanelCommandRegistry` instead
+ * Clover leg because the capability was handed its own `mintPanelTab`/`PanelCommandRegistry` instead
  * of the daemon's.
  *
  * THE EMITTERS ARE REAL, not doubles. `mintPanelTab` is the one code path that mints a tab (two
@@ -177,7 +177,7 @@ describe("P8b-20: docs emits the identical panel sequence on both doors", () => 
 
     expect(registryOut.isError).toBe(false);
     expect(capabilityOut.isError).toBe(false);
-    // Office mints no tab — `panel_command` only (Winter map §3.1).
+    // Office mints no tab — `panel_command` only (Clover map §3.1).
     expect(viaRegistryRec.events.map((e) => e.type)).toEqual(["panel_command"]);
     expect(normalize(viaCapabilityRec.events)).toEqual(normalize(viaRegistryRec.events));
     expect(capabilityOut.content).toEqual([{ type: "text", text: registryOut.output }]);

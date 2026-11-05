@@ -13,13 +13,13 @@ import { afterAll, expect, test } from "bun:test";
 import { existsSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { SessionEvent } from "@yanlinglabs/winter-protocol";
+import type { SessionEvent } from "@waifucave/clover-protocol";
 import { ApprovalBroker } from "../../src/agent/approvals";
 import { PermissionGate } from "../../src/agent/gate";
 import { QuestionBroker } from "../../src/agent/questions";
 import { FileSecretStore } from "../../src/auth/secret-store";
 import { createWinterRuntimeSdk } from "../../src/runtime-sdk/create";
-import { createWinterSessionDrivers } from "../../src/runtime-sdk/session-driver";
+import { createCloverSessionDrivers } from "../../src/runtime-sdk/session-driver";
 import { openRuntimeStateDb, ProjectionCheckpoints, RuntimeSessionRecords } from "../../src/runtime-state";
 import { SessionHub } from "../../src/sessions/hub";
 import { SessionStore } from "../../src/sessions/store";
@@ -34,8 +34,8 @@ describeWithWinterBinary("item 10 probe: MCP image content through a capability 
   afterAll(async () => { for (const c of cleanups.reverse()) await c(); });
 
   test("a text+image callTool result: what the child forwards (tool_result output; the child's transcript)", async () => {
-    const home = realpathSync(mkdtempSync(join(tmpdir(), "winter-image-probe-")));
-    const cwd = realpathSync(mkdtempSync(join(tmpdir(), "winter-image-cwd-")));
+    const home = realpathSync(mkdtempSync(join(tmpdir(), "clover-image-probe-")));
+    const cwd = realpathSync(mkdtempSync(join(tmpdir(), "clover-image-cwd-")));
     const store = new SessionStore(home);
     const hub = new SessionHub(store);
     const rs = openRuntimeStateDb(home);
@@ -51,7 +51,7 @@ describeWithWinterBinary("item 10 probe: MCP image content through a capability 
       runHomeFor: async (ctx) => runHomes.deps.build(runHomes.deps.inputFor({ mode: ctx.mode, dispatchChild: false, leg: ctx.leg, cwd: ctx.cwd })),
     });
     const calls: Array<{ name: string; args: unknown }> = [];
-    const drivers = createWinterSessionDrivers({
+    const drivers = createCloverSessionDrivers({
       home, settings: () => settings, runtime, records, checkpoints, store, hub, secrets,
       runHome: runHomes.deps,
       // THE PROBE SERVER: named as the double expects; its one tool answers text + image. A capability

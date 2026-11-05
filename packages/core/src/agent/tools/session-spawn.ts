@@ -14,7 +14,7 @@ export type SessionSpawner = (
  *  `run()` calls the daemon's spawner (`agent/dispatch-children.ts`'s `DispatchChildren.spawn`,
  *  wired through the `sessions` capability server, `capabilities/sessions.ts`) when one is given.
  *  The engine-era bridge that intercepted the call before the registry ran went with the engine; on
- *  the Winter leg the capability server's `callTool` IS the door. Without a spawner (a door nobody
+ *  the Clover leg the capability server's `callTool` IS the door. Without a spawner (a door nobody
  *  wired, a test) the call answers the fixed "only available in the dispatch session" line — a
  *  plain-string return, which `registry.ts`'s `execute()` wraps as `{output, isError:false}`.
  *

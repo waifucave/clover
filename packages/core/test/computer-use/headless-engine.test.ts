@@ -1,4 +1,4 @@
-// ComputerV2 Phase 4 — the `headless` family threaded through the browser engine, over a FAKE headless backend: Winter's
+// ComputerV2 Phase 4 — the `headless` family threaded through the browser engine, over a FAKE headless backend: Clover's
 // own (no per-app card, `plan` observe-only), the private-network rule, the headless tab lifecycle (closed at the turn's
 // end unless handoff(), keep() refused, closed and disposed when the runtime ends), the engine option, the budget read
 // as TargetBusy, and the listing.
@@ -25,12 +25,12 @@ function withHeadless(o: Parameters<typeof harness>[0] = {}) {
 }
 
 describe("the headless row", () => {
-  test("listed second, after Winter's own browser; a disconnected one gives the pool's reason", () => {
+  test("listed second, after Clover's own browser; a disconnected one gives the pool's reason", () => {
     const h = withHeadless();
     expect(h.engine.listRows().map((r) => r.id).slice(0, 2)).toEqual(["winter", "headless"]);
-    expect(h.engine.listRows()[1]).toEqual({ id: "headless", name: "Winter (headless)", isDefault: false, connected: true });
+    expect(h.engine.listRows()[1]).toEqual({ id: "headless", name: "Clover (headless)", isDefault: false, connected: true });
     h.headless.connected = false;
-    expect(h.engine.listRows()[1]).toEqual({ id: "headless", name: "Winter (headless)", isDefault: false, connected: false, reason: "turned off in Settings" });
+    expect(h.engine.listRows()[1]).toEqual({ id: "headless", name: "Clover (headless)", isDefault: false, connected: false, reason: "turned off in Settings" });
   });
 
   test("not listed at all where no pool is registered", () => {
@@ -38,14 +38,14 @@ describe("the headless row", () => {
   });
 });
 
-describe("Winter's own browser: no card, plan observe-only", () => {
+describe("Clover's own browser: no card, plan observe-only", () => {
   test("open under ask raises no per-app card; the daemon line says nobody sees it; every primitive is metered as headless", async () => {
     const h = withHeadless({ policy: "ask" });
     const r = h.run();
     const tab = await h.engine.global(r.scope, "browsers.open", { url: "https://a.example/", browser: "headless" }) as TabHandle;
     expect(h.cards).toEqual([]);
     expect(tab.browser).toBe("headless");
-    expect(r.text()).toContain("opened a new tab in Winter's headless browser (nobody sees it)");
+    expect(r.text()).toContain("opened a new tab in Clover's headless browser (nobody sees it)");
     expect(h.headless.tabs.get(keyOf(tab))?.agent).toBe(true);
     await h.engine.primitive(r.scope, tab.targetId, "state", { emit: false });
     expect(r.metric.headlessEngine).toBe("winter");
@@ -67,8 +67,8 @@ describe("Winter's own browser: no card, plan observe-only", () => {
   test("the user-browser-only calls name the headless browser", async () => {
     const h = withHeadless();
     const r = h.run();
-    expect((await failure(h.engine.global(r.scope, "browsers.windows", { browser: "headless" }))).message).toBe("Winter's headless browser has no windows — name a user's browser (browsers.list())");
-    expect((await failure(h.engine.global(r.scope, "browsers.history", { browser: "headless" }))).message).toBe("Winter's headless browser keeps no history or bookmarks");
+    expect((await failure(h.engine.global(r.scope, "browsers.windows", { browser: "headless" }))).message).toBe("Clover's headless browser has no windows — name a user's browser (browsers.list())");
+    expect((await failure(h.engine.global(r.scope, "browsers.history", { browser: "headless" }))).message).toBe("Clover's headless browser keeps no history or bookmarks");
     expect((await failure(h.engine.global(r.scope, "browsers.tab", { tab: { active: true }, browser: "headless" }))).message).toMatch(/is for a user's browser — bind a headless tab by its id/);
     r.end();
   });
@@ -125,7 +125,7 @@ describe("the local network (refused; this Mac allowed)", () => {
     expect(e.message).toBe(HEADLESS_LAN_REFUSAL);
     const landed = await failure(h.engine.global(r.scope, "browsers.open", { url: "https://pub.example/", browser: "headless" }));
     expect((landed as AutomationFailure).kind).toBe("NotAllowed");
-    expect(landed.message).toMatch(/^Winter's headless browser doesn't open pages on the local network .*This tab is on one — only .* work on it until it navigates away$/);
+    expect(landed.message).toMatch(/^Clover's headless browser doesn't open pages on the local network .*This tab is on one — only .* work on it until it navigates away$/);
     r.end();
   });
 });
@@ -138,7 +138,7 @@ describe("the tab lifecycle (closed at the turn's end, never handed over)", () =
     const keep = await failure(h.engine.primitive(r.scope, tab.targetId, "keep", {}));
     expect((keep as AutomationFailure).kind).toBe("NotAllowed");
     expect(keep.message).toBe(HEADLESS_KEEP);
-    expect((await failure(h.engine.primitive(r.scope, tab.targetId, "download", { target: { url: "https://a.example/f.zip" } }))).message).toMatch(/^Winter's headless browser doesn't download files/);
+    expect((await failure(h.engine.primitive(r.scope, tab.targetId, "download", { target: { url: "https://a.example/f.zip" } }))).message).toMatch(/^Clover's headless browser doesn't download files/);
     expect((await failure(h.engine.primitive(r.scope, tab.targetId, "mute", { on: false }))).message).toBe("a headless tab never plays sound");
     await h.engine.primitive(r.scope, tab.targetId, "mute", {});
     r.end();
@@ -203,7 +203,7 @@ describe("the tab lifecycle (closed at the turn's end, never handed over)", () =
     h.headless.goneTab(keyOf(tab), "crashed");
     const e = await failure(h.engine.primitive(r.scope, tab.targetId, "state", {}));
     expect((e as AutomationFailure).kind).toBe("TargetLost");
-    expect(e.message).toBe("Winter's headless browser stopped (or this tab's page crashed) — open the page again with browsers.open()");
+    expect(e.message).toBe("Clover's headless browser stopped (or this tab's page crashed) — open the page again with browsers.open()");
     r.end();
   });
 });
@@ -223,7 +223,7 @@ describe("listing and binding", () => {
 });
 
 describe("the engine option and the budget", () => {
-  test("engine is for the headless browser, and only Winter's own is offered", async () => {
+  test("engine is for the headless browser, and only Clover's own is offered", async () => {
     const h = withHeadless();
     const r = h.run();
     expect((await failure(h.engine.global(r.scope, "browsers.open", { url: "https://a.example/", browser: "chrome", engine: "winter" }))).message).toBe('{ engine } is for { browser: "headless" }');
@@ -251,7 +251,7 @@ describe("the engine option and the budget", () => {
   });
 });
 
-describe("waitForUser() on a headless tab (lane H3): shown in Winter's panel, the same live page", () => {
+describe("waitForUser() on a headless tab (lane H3): shown in Clover's panel, the same live page", () => {
   function handoff(o: { answer?: (summary: string) => string | false | undefined; missing?: string } = {}) {
     const handedBack: string[] = [];
     const over: string[] = [];
@@ -269,7 +269,7 @@ describe("waitForUser() on a headless tab (lane H3): shown in Winter's panel, th
   test("Show me the tab → shown in the panel; Done → control handed back BEFORE the agent takes the tab again; its state printed", async () => {
     const answers: string[] = [];
     let handedBackBeforeAttach: boolean | undefined;
-    const { h, handedBack } = handoff({ answer: (s) => { answers.push(s); return s.startsWith("Winter's headless browser — ") ? "handoff_show" : "handoff_done"; } });
+    const { h, handedBack } = handoff({ answer: (s) => { answers.push(s); return s.startsWith("Clover's headless browser — ") ? "handoff_show" : "handoff_done"; } });
     const r = h.run();
     const tab = await h.engine.global(r.scope, "browsers.open", { url: "https://accounts.example/login", browser: "headless" }) as TabHandle;
     const key = keyOf(tab);
@@ -279,18 +279,18 @@ describe("waitForUser() on a headless tab (lane H3): shown in Winter's panel, th
     expect(out).toEqual({ done: true });
     // Only "Show me the tab": nothing of a headless tab can be done anywhere else.
     expect(h.cards.map((c) => c.options?.map((x) => x.id))).toEqual([["handoff_show"], ["handoff_done"]]);
-    expect(answers[0]).toBe("Winter's headless browser — accounts.example: sign in. Winter waits while you do it.");
+    expect(answers[0]).toBe("Clover's headless browser — accounts.example: sign in. Clover waits while you do it.");
     expect(h.headless.presented).toEqual([`${key}@s1`]);
     expect(handedBack).toEqual([key]);
     expect(handedBackBeforeAttach).toBe(true);
     const text = r.text();
-    expect(text).toContain("showed the headless tab to the user in Winter's panel");
+    expect(text).toContain("showed the headless tab to the user in Clover's panel");
     expect(text).toContain("the user finished on accounts.example");
     r.end();
   });
 
   test("Done from the panel itself answers the wait", async () => {
-    const { h, handedBack } = handoff({ answer: (s) => (s.startsWith("Winter's headless browser — ") ? "handoff_show" : undefined) });
+    const { h, handedBack } = handoff({ answer: (s) => (s.startsWith("Clover's headless browser — ") ? "handoff_show" : undefined) });
     const r = h.run();
     const tab = await h.engine.global(r.scope, "browsers.open", { url: "https://a.example/", browser: "headless" }) as TabHandle;
     const waiting = h.engine.primitive(r.scope, tab.targetId, "waitForUser", { reason: "sign in" });
@@ -302,7 +302,7 @@ describe("waitForUser() on a headless tab (lane H3): shown in Winter's panel, th
   });
 
   test("Stop waiting: { done: false }, the tab stays with the person (the pool is told), nothing handed back", async () => {
-    const { h, handedBack, over } = handoff({ answer: (s) => (s.startsWith("Winter's headless browser — ") ? "handoff_show" : false) });
+    const { h, handedBack, over } = handoff({ answer: (s) => (s.startsWith("Clover's headless browser — ") ? "handoff_show" : false) });
     const r = h.run();
     const tab = await h.engine.global(r.scope, "browsers.open", { url: "https://a.example/", browser: "headless" }) as TabHandle;
     expect(await h.engine.primitive(r.scope, tab.targetId, "waitForUser", { reason: "sign in" })).toEqual({ done: false });
@@ -313,7 +313,7 @@ describe("waitForUser() on a headless tab (lane H3): shown in Winter's panel, th
   });
 
   test("a wait the script cancels (Esc, an interrupt, its timeout) leaves the tab the person's, with Hand back — never a Done that answers nothing", async () => {
-    const { h, handedBack, over } = handoff({ answer: (s) => (s.startsWith("Winter's headless browser — ") ? "handoff_show" : undefined) });
+    const { h, handedBack, over } = handoff({ answer: (s) => (s.startsWith("Clover's headless browser — ") ? "handoff_show" : undefined) });
     const r = h.run();
     const tab = await h.engine.global(r.scope, "browsers.open", { url: "https://a.example/", browser: "headless" }) as TabHandle;
     const waiting = h.engine.primitive(r.scope, tab.targetId, "waitForUser", { reason: "sign in" });
@@ -326,13 +326,13 @@ describe("waitForUser() on a headless tab (lane H3): shown in Winter's panel, th
     r.end();
   });
 
-  test("Winter's panel can't show it (the app gone or too old): BrowserUnavailable with why, before any card", async () => {
-    const { h } = handoff({ missing: "Winter isn't running — ask the user to open Winter", answer: () => "handoff_show" });
+  test("Clover's panel can't show it (the app gone or too old): BrowserUnavailable with why, before any card", async () => {
+    const { h } = handoff({ missing: "Clover isn't running — ask the user to open Clover", answer: () => "handoff_show" });
     const r = h.run();
     const tab = await h.engine.global(r.scope, "browsers.open", { url: "https://a.example/", browser: "headless" }) as TabHandle;
     const e = await failure(h.engine.primitive(r.scope, tab.targetId, "waitForUser", { reason: "sign in" }));
     expect((e as AutomationFailure).kind).toBe("BrowserUnavailable");
-    expect(e.message).toBe("waitForUser() shows a headless tab in Winter's panel, and Winter isn't running — ask the user to open Winter");
+    expect(e.message).toBe("waitForUser() shows a headless tab in Clover's panel, and Clover isn't running — ask the user to open Clover");
     expect(h.cards).toEqual([]);
     r.end();
   });
@@ -342,15 +342,15 @@ describe("waitForUser() on a headless tab (lane H3): shown in Winter's panel, th
     const r = h.run();
     const tab = await h.engine.global(r.scope, "browsers.open", { url: "https://a.example/", browser: "headless" }) as TabHandle;
     const send = h.headless.send.bind(h.headless);
-    h.headless.send = async (k, m, p, o) => { if (m === "Runtime.callFunctionOn" || m === "Runtime.evaluate") throw new TransportError("capacity", "the user has this tab in Winter's panel — it is theirs until they hand it back; work in another tab meanwhile", { userHasTab: true }); return send(k, m, p, o); };
+    h.headless.send = async (k, m, p, o) => { if (m === "Runtime.callFunctionOn" || m === "Runtime.evaluate") throw new TransportError("capacity", "the user has this tab in Clover's panel — it is theirs until they hand it back; work in another tab meanwhile", { userHasTab: true }); return send(k, m, p, o); };
     const e = await failure(h.engine.primitive(r.scope, tab.targetId, "text", {}));
     expect((e as AutomationFailure).kind).toBe("TargetBusy");
-    expect(e.message).toBe("the user has this tab in Winter's panel — it is theirs until they hand it back; work in another tab meanwhile");
+    expect(e.message).toBe("the user has this tab in Clover's panel — it is theirs until they hand it back; work in another tab meanwhile");
     r.end();
   });
 });
 
-describe("the panel's size (lane H3): a tab shown in Winter's panel is laid out in it while the user looks", () => {
+describe("the panel's size (lane H3): a tab shown in Clover's panel is laid out in it while the user looks", () => {
   test("a Point of a screenshot from before a size change is refused, refs keep working, and the next primitive says so once", async () => {
     let view: { epoch: number; width: number; height: number; watched: boolean } | undefined;
     const h = withHeadless({ engineDeps: { headlessView: () => view } });
@@ -360,7 +360,7 @@ describe("the panel's size (lane H3): a tab shown in Winter's panel is laid out 
     const p = (primitive: string, args: Record<string, unknown> = {}) => h.engine.primitive(r.scope, tab.targetId, primitive, args);
     await p("screenshot", { emit: false });
     await p("click", { target: [5, 5] });
-    // The user watches in Winter's panel: the page is laid out in its size.
+    // The user watches in Clover's panel: the page is laid out in its size.
     view = { epoch: 1, width: 704, height: 900, watched: true };
     const e = await failure(p("click", { target: [5, 5] }));
     expect((e as AutomationFailure).kind).toBe("NotAllowed");
@@ -385,7 +385,7 @@ describe("what the person does in a headless tab they hold is theirs (lane H3)",
   const stopped = (h: ReturnType<typeof withHeadless>, key: string): void => {
     for (const l of [...(h.headless as unknown as { gone: Set<(k: string, r: string) => void> }).gone]) l(key, "stopped");
   };
-  const userHasTab = (): never => { throw new TransportError("capacity", "the user has this tab in Winter's panel — it is theirs until they hand it back; work in another tab meanwhile", { userHasTab: true }); };
+  const userHasTab = (): never => { throw new TransportError("capacity", "the user has this tab in Clover's panel — it is theirs until they hand it back; work in another tab meanwhile", { userHasTab: true }); };
 
   test("what the page logs and loads while the person holds the tab never reaches console() or network(); the agent is told once", async () => {
     let held = false;
@@ -397,7 +397,7 @@ describe("what the person does in a headless tab they hold is theirs (lane H3)",
     const p = (primitive: string, args: Record<string, unknown> = {}) => h.engine.primitive(r.scope, tab.targetId, primitive, args);
     h.headless.pageEvent(key, "Runtime.consoleAPICalled", { type: "log", timestamp: Date.now(), args: [str("from the agent's time")] });
     h.headless.pageEvent(key, "Network.requestWillBeSent", { requestId: "a1", request: { url: "https://a.example/api", method: "GET" }, type: "Fetch", timestamp: 1 });
-    // The person holds it in Winter's panel: the page is followed, its console and network are theirs.
+    // The person holds it in Clover's panel: the page is followed, its console and network are theirs.
     held = true;
     holds = { count: 1, since: Date.now() };
     h.headless.pageEvent(key, "Runtime.consoleAPICalled", { type: "log", timestamp: Date.now(), args: [str("from the person's time")] });
@@ -450,7 +450,7 @@ describe("what the person does in a headless tab they hold is theirs (lane H3)",
     const h = withHeadless({
       policy: "ask", dangerousAdded: ["evil.example"],
       answer: (summary) => {
-        if (summary.startsWith("Winter's headless browser — ")) return "handoff_show";
+        if (summary.startsWith("Clover's headless browser — ")) return "handoff_show";
         if (summary.startsWith("Waiting for you")) { h.headless.navigateTo(key, "https://evil.example/"); return "handoff_done"; }
         return false;
       },
@@ -493,7 +493,7 @@ describe("the control lease (lane H3): nothing of a tab the person holds is the 
     for (let round = 0; round < 3; round++) {
       for (const [primitive, args] of READS) {
         const e = await failure(p(primitive, args));
-        expect({ primitive, kind: (e as AutomationFailure).kind, message: e.message }).toEqual({ primitive, kind: "TargetBusy", message: "the user has this tab in Winter's panel — it is theirs until they hand it back; work in another tab meanwhile" });
+        expect({ primitive, kind: (e as AutomationFailure).kind, message: e.message }).toEqual({ primitive, kind: "TargetBusy", message: "the user has this tab in Clover's panel — it is theirs until they hand it back; work in another tab meanwhile" });
       }
     }
     expect(h.headless.sent.length).toBe(sentBefore);
@@ -546,14 +546,14 @@ describe("the control lease (lane H3): nothing of a tab the person holds is the 
     stopped(h, key);
     const attach = h.headless.attach.bind(h.headless);
     h.headless.attach = async (k, a) => {
-      if (state.held) throw new TransportError("capacity", "the user has this tab in Winter's panel — it is theirs until they hand it back; work in another tab meanwhile", { userHasTab: true });
+      if (state.held) throw new TransportError("capacity", "the user has this tab in Clover's panel — it is theirs until they hand it back; work in another tab meanwhile", { userHasTab: true });
       return attach(k, a);
     };
   };
-  const BUSY = "the user has this tab in Winter's panel — it is theirs until they hand it back; work in another tab meanwhile";
+  const BUSY = "the user has this tab in Clover's panel — it is theirs until they hand it back; work in another tab meanwhile";
 
   test("Drill B: waitForUser on a tab the person already holds gives its card, shows the SAME view, and Done takes the tab back", async () => {
-    const { h, state } = heldRig((summary) => (summary.startsWith("Winter's headless browser — ") ? "handoff_show" : summary.startsWith("Waiting for you") ? "handoff_done" : false));
+    const { h, state } = heldRig((summary) => (summary.startsWith("Clover's headless browser — ") ? "handoff_show" : summary.startsWith("Waiting for you") ? "handoff_done" : false));
     const opener = h.run();
     const tab = await h.engine.global(opener.scope, "browsers.open", { url: "https://accounts.example/", browser: "headless" }) as TabHandle;
     opener.end();
@@ -566,8 +566,8 @@ describe("the control lease (lane H3): nothing of a tab the person holds is the 
     }
     expect(await h.engine.primitive(r.scope, tab.targetId, "waitForUser", { reason: "the agent waits on a tab you already hold" })).toEqual({ done: true });
     expect(h.cards.map((c) => c.summary)).toEqual([
-      "Winter's headless browser — accounts.example: the agent waits on a tab you already hold. Winter waits while you do it.",
-      "Waiting for you on accounts.example in Winter's headless browser — press Done when you have finished.",
+      "Clover's headless browser — accounts.example: the agent waits on a tab you already hold. Clover waits while you do it.",
+      "Waiting for you on accounts.example in Clover's headless browser — press Done when you have finished.",
     ]);
     // The pool's present (which reuses the person's view) was asked once; Done handed the tab back, then the agent read it.
     expect(h.headless.presented).toEqual([`${keyOf(tab)}@${r.scope.sessionId}`]);
@@ -578,7 +578,7 @@ describe("the control lease (lane H3): nothing of a tab the person holds is the 
   });
 
   test("Drill B: Stop waiting on a tab the person already holds gives {done:false}; it stays theirs and every other primitive stays TargetBusy", async () => {
-    const { h, state } = heldRig((summary) => (summary.startsWith("Winter's headless browser — ") ? "handoff_show" : false));
+    const { h, state } = heldRig((summary) => (summary.startsWith("Clover's headless browser — ") ? "handoff_show" : false));
     const opener = h.run();
     const tab = await h.engine.global(opener.scope, "browsers.open", { url: "https://accounts.example/", browser: "headless" }) as TabHandle;
     opener.end();

@@ -1,7 +1,7 @@
 // ComputerV2: the per-app policy (`computer-use/policy.ts`) — the matrix, the per-app card and its options, the
 // grants, the user's restrictions under every policy, the floors, the rung-4 foreground card.
 import { describe, expect, test } from "bun:test";
-import type { NewSessionEvent } from "@yanlinglabs/winter-protocol";
+import type { NewSessionEvent } from "@waifucave/clover-protocol";
 import { ApprovalBroker } from "../../src/agent/approvals";
 import type { SessionApprovalPolicy } from "../../src/agent/gate";
 import { AutomationFailure } from "../../src/computer-use/errors";
@@ -88,7 +88,7 @@ describe("the policy matrix", () => {
       const c = cards(events);
       expect(c).toHaveLength(1);
       // The summary names the bundle id — a look-alike app cannot borrow a trusted name (the ruling).
-      expect(c[0]).toMatchObject({ toolName: "ComputerV2", summary: "Allow Winter to use Notes (com.apple.Notes)?", threadId: "main" });
+      expect(c[0]).toMatchObject({ toolName: "ComputerV2", summary: "Allow Clover to use Notes (com.apple.Notes)?", threadId: "main" });
       expect(c[0]!.options).toEqual([...APP_CARD_OPTIONS]);
       expect(c[0]!.options!.every((o) => o.rule === undefined)).toBe(true);
       expect(c[0]!.callId).toMatch(/^cu_[0-9a-f]{12}$/);
@@ -205,7 +205,7 @@ describe("the user's restrictions and the floors — under every policy, bypass 
     await policy.authorize(newRunGrants("s1"), pm, { kind: "bind" });
   });
 
-  test("Winter never controls itself; authentication surfaces are refused", async () => {
+  test("Clover never controls itself; authentication surfaces are refused", async () => {
     const { policy } = setup({ policy: "bypass" });
     for (const id of ["com.winter.app", "com.winter.app.dev", "com.winter.computeruse", "com.winter.computeruse.dev"]) {
       await failsWith(policy.authorize(newRunGrants("s1"), { bundleId: id, name: "Winter" }, { kind: "bind" }), "Refused");
@@ -214,7 +214,7 @@ describe("the user's restrictions and the floors — under every policy, bypass 
     await failsWith(policy.authorize(newRunGrants("s1"), { bundleId: "com.apple.keychainaccess", name: "Keychain Access" }, { kind: "observe" }), "Refused");
   });
 
-  test("whole-screen shots black out every Don't-allow app and the auth surfaces — never Winter's own windows (the ruling)", () => {
+  test("whole-screen shots black out every Don't-allow app and the auth surfaces — never Clover's own windows (the ruling)", () => {
     const { policy } = setup({ apps: { "com.apple.Notes": { access: "deny" }, "com.winter.app": { access: "deny" } } });
     const ex = policy.excludedFromScreen(["com.winter.app.dev", "com.winter.computeruse"]);
     expect(ex).toContain("com.apple.Notes");
@@ -326,7 +326,7 @@ describe("rung 4 — the foreground", () => {
     const { policy, events } = setup({ answer: (callId, b) => b.resolve("s1", callId, true, "orb", "once") });
     expect(await policy.allowForeground(newRunGrants("s1"), NOTES)).toBe(true);
     const c = cards(events)[0]!;
-    expect(c.summary).toBe("Winter needs to bring Notes (com.apple.Notes) to the front and use your mouse for a moment");
+    expect(c.summary).toBe("Clover needs to bring Notes (com.apple.Notes) to the front and use your mouse for a moment");
     expect(c.options).toEqual([{ id: "once", label: "Allow once" }]);
   });
 

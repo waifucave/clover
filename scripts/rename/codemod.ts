@@ -1,27 +1,30 @@
 #!/usr/bin/env bun
-// Winter Phase 9b — the Norma→Winter codemod (P9b-1). The ONLY tool that performs the mechanical
-// mass rename; fix lanes do semantic work afterwards.
+// The rename codemod. Two rule sets, chosen with `--rules`:
+//   * `clover` (the default) — Clover C0, Winter→Clover (`clover.ts`; spec §2, plan §7).
+//   * `winter` — Winter Phase 9b, Norma→Winter (`allowlist.ts`, P9b-1), kept as the record of that
+//     rename and for its tests.
+// The ONLY tool that performs a mechanical mass rename; semantic work comes after it.
 //
-//   bun scripts/rename/codemod.ts [--root <repo>] [--apply] [--content-only|--paths-only]
-//                                  [--report <md>] [--json <json>]
+//   bun scripts/rename/codemod.ts [--rules clover|winter] [--root <repo>] [--apply]
+//                                  [--content-only|--paths-only] [--report <md>] [--json <json>]
 //
 // Universe: `git ls-files -z` of the root (tracked files only; symlinks skipped). Binaries (by
 // extension or a NUL byte in the first 8 KiB) get PATH renames only. The content pass, per file:
-//   1. protect every allowlisted literal with a placeholder (`allowlist.ts` RENAME_ALLOWLIST),
-//   2. apply the explicit whole-token map (EXPLICIT_TOKEN_MAP — host/runtime vocabulary, SDK-export
-//      collisions, the two string values),
-//   3. the generic case-preserving replace `norma→winter` / `Norma→Winter` / `NORMA→WINTER`, never
-//      when followed by `l`/`L` (normal*, abnormal) or `tiv` (normative),
+//   1. protect every allowlisted literal with a placeholder (the rule set's allowlist),
+//   2. apply the rule set's explicit whole-token map,
+//   3. the generic case-preserving replace (`winter→clover` / `Winter→Clover` / `WINTER→CLOVER`, or
+//      for the Norma rules `norma→winter` and so on, never before `l`/`L` or `tiv`),
 //   4. restore the placeholders.
-// The path pass renames every path component by the generic rule with `git mv` (directories
+// The path pass renames path components by the generic rule with `git mv` (directories
 // shallowest-first, so ignored/untracked contents travel with their directory; then files),
-// asserting the destination does not exist.
+// asserting the destination does not exist. Under the Clover rules an exempt path is never moved,
+// nor is one the rule set keeps (`CLOVER_KEEP_PATHS`).
 //
-// Gates (computed BEFORE anything is written in --apply): every surviving `norma` match must be
-// permitted by an allowlist entry (or sit in an EXEMPT path); no `winter[-_]?winter` /
-// `WinterWinter` may exist in rewritten CONTENT outside scripts/rename/ nor in any planned
-// destination PATH; no destination may already exist; the top-level `norma/` scaffold must already
-// be deleted (P9b-2). A second run over the output reports zero changes (idempotent).
+// Gates (computed BEFORE anything is written in --apply): every surviving old name must be
+// permitted by an allowlist entry (or sit in an exempt path); no doubled new name (`clover-clover`,
+// `WinterWinter`, …) may exist in rewritten content outside scripts/rename/ nor in any planned
+// destination path; no destination may already exist; for the Norma rules, the top-level `norma/`
+// scaffold must already be deleted (P9b-2). A second run over the output reports zero changes.
 import { existsSync, lstatSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import {
@@ -33,13 +36,72 @@ import {
   TRAP_LOOKAHEAD,
   type AllowlistEntry,
 } from "./allowlist";
+import { CLOVER_ALLOWLIST, CLOVER_EXEMPT_PATHS, CLOVER_EXPLICIT_TOKEN_MAP, CLOVER_KEEP_PATHS, DOUBLE_CLOVER } from "./clover";
 
 // ---------------------------------------------------------------------------------------------
 // Rules
 // ---------------------------------------------------------------------------------------------
 
-const GENERIC = new RegExp(`(norma|Norma|NORMA)${TRAP_LOOKAHEAD}`, "g");
-const CASE_MAP: Record<string, string> = { norma: "winter", Norma: "Winter", NORMA: "WINTER" };
+/** One rename: its generic rule, its data, and how its path pass behaves. */
+export interface RenameRules {
+  id: "winter" | "clover";
+  /** The old name, as the report and the residue scan spell it. */
+  from: string;
+  to: string;
+  /** Matches the old name in its three cases, honouring any trap lookahead (global). */
+  generic: RegExp;
+  caseMap: Readonly<Record<string, string>>;
+  /** Every surviving old name, for the residue report (global). */
+  survivors: RegExp;
+  /** A survivor that is not the brand at all (Norma's `normal*`, `abnormal`, `normative`). */
+  isTrap(textAfter: string): boolean;
+  allowlist: readonly AllowlistEntry[];
+  explicit: readonly (readonly [from: string, to: string])[];
+  exempt: readonly string[];
+  /** True when an exempt path still moves (Phase 9b); false when it stays put (Clover). */
+  exemptPathsMove: boolean;
+  keepPaths: readonly RegExp[];
+  doubleName: RegExp;
+  /** Phase 9b's refusal while the top-level `norma/` scaffold is tracked. */
+  checkScaffold: boolean;
+}
+
+/** Winter Phase 9b: Norma→Winter. */
+export const WINTER_RULES: RenameRules = {
+  id: "winter",
+  from: "norma",
+  to: "winter",
+  generic: new RegExp(`(norma|Norma|NORMA)${TRAP_LOOKAHEAD}`, "g"),
+  caseMap: { norma: "winter", Norma: "Winter", NORMA: "WINTER" },
+  survivors: /norma|Norma|NORMA/g,
+  isTrap: (after) => /^[lL]/.test(after) || after.startsWith("tiv"),
+  allowlist: RENAME_ALLOWLIST,
+  explicit: EXPLICIT_TOKEN_MAP,
+  exempt: EXEMPT_PATHS,
+  exemptPathsMove: true,
+  keepPaths: [],
+  doubleName: DOUBLE_WINTER,
+  checkScaffold: true,
+};
+
+/** Clover C0: Winter→Clover. */
+export const CLOVER_RULES: RenameRules = {
+  id: "clover",
+  from: "winter",
+  to: "clover",
+  generic: /(winter|Winter|WINTER)/g,
+  caseMap: { winter: "clover", Winter: "Clover", WINTER: "CLOVER" },
+  survivors: /winter/gi,
+  isTrap: () => false,
+  allowlist: CLOVER_ALLOWLIST,
+  explicit: CLOVER_EXPLICIT_TOKEN_MAP,
+  exempt: CLOVER_EXEMPT_PATHS,
+  exemptPathsMove: false,
+  keepPaths: CLOVER_KEEP_PATHS,
+  doubleName: DOUBLE_CLOVER,
+  checkScaffold: false,
+};
+
 const PH_OPEN = "";
 const PH_CLOSE = "";
 
@@ -75,8 +137,8 @@ export function entryAppliesTo(entry: AllowlistEntry, relPath: string): boolean 
   return entry.files.some((g) => globToRegex(g).test(relPath));
 }
 
-export function isExemptPath(relPath: string): boolean {
-  return EXEMPT_PATHS.some((p) => (p.endsWith("/") ? relPath.startsWith(p) : relPath === p));
+export function isExemptPath(relPath: string, rules: RenameRules = WINTER_RULES): boolean {
+  return rules.exempt.some((p) => (p.endsWith("/") ? relPath.startsWith(p) : p.includes("*") ? globToRegex(p).test(relPath) : relPath === p));
 }
 
 export function isBinaryPath(relPath: string): boolean {
@@ -104,24 +166,31 @@ export interface RewriteResult {
   doubleWinter: { line: number; match: string; context: string }[];
 }
 
-function lineCol(text: string, index: number): { line: number; col: number; context: string } {
-  let line = 1;
-  let last = 0;
-  for (let i = 0; i < index; i++) {
-    if (text.charCodeAt(i) === 10) {
-      line++;
-      last = i + 1;
-    }
+/** Line starts of `text`, for `lineCol` (one pass per file instead of one per match). */
+function lineStarts(text: string): number[] {
+  const starts = [0];
+  for (let i = text.indexOf("\n"); i >= 0; i = text.indexOf("\n", i + 1)) starts.push(i + 1);
+  return starts;
+}
+
+function lineCol(text: string, index: number, starts: number[] = lineStarts(text)): { line: number; col: number; context: string } {
+  let lo = 0;
+  let hi = starts.length - 1;
+  while (lo < hi) {
+    const mid = (lo + hi + 1) >> 1;
+    if ((starts[mid] ?? 0) <= index) lo = mid;
+    else hi = mid - 1;
   }
+  const last = starts[lo] ?? 0;
   const end = text.indexOf("\n", index);
   const context = text.slice(last, end < 0 ? undefined : end).trim().slice(0, 160);
-  return { line, col: index - last + 1, context };
+  return { line: lo + 1, col: index - last + 1, context };
 }
 
 /** The content pass for one file. Pure; the caller decides whether to write. */
-export function rewriteText(text: string, relPath: string): RewriteResult {
-  const exempt = isExemptPath(relPath);
-  const applicable = RENAME_ALLOWLIST.filter((e) => entryAppliesTo(e, relPath));
+export function rewriteText(text: string, relPath: string, rules: RenameRules = WINTER_RULES): RewriteResult {
+  const exempt = isExemptPath(relPath, rules);
+  const applicable = rules.allowlist.filter((e) => entryAppliesTo(e, relPath));
   let out = text;
   let explicit = 0;
   let generic = 0;
@@ -138,7 +207,7 @@ export function rewriteText(text: string, relPath: string): RewriteResult {
       });
     }
     // 2. explicit map (longest keys first so a shorter key never eats a longer one)
-    const ordered = [...EXPLICIT_TOKEN_MAP].sort((a, b) => b[0].length - a[0].length);
+    const ordered = [...rules.explicit].sort((a, b) => b[0].length - a[0].length);
     for (const [from, to] of ordered) {
       out = out.replace(explicitTokenRegex(from), () => {
         explicit++;
@@ -146,15 +215,15 @@ export function rewriteText(text: string, relPath: string): RewriteResult {
       });
     }
     // 3. generic
-    out = out.replace(GENERIC, (m) => {
+    out = out.replace(new RegExp(rules.generic.source, "g"), (m) => {
       generic++;
-      return CASE_MAP[m] ?? m;
+      return rules.caseMap[m] ?? m;
     });
     // 4. restore
     out = out.replace(new RegExp(`${PH_OPEN}(\\d+)${PH_CLOSE}`, "g"), (_m, n) => stash[Number(n)] ?? "");
   }
 
-  // residue: every surviving norma, and what permits it
+  // residue: every surviving old name, and what permits it
   const residue: Residue[] = [];
   const permittedRanges: { start: number; end: number; id: string }[] = [];
   for (const entry of applicable) {
@@ -166,24 +235,25 @@ export function rewriteText(text: string, relPath: string): RewriteResult {
       if (m[0].length === 0) re.lastIndex++;
     }
   }
-  const survivors = /norma|Norma|NORMA/g;
+  const survivors = new RegExp(rules.survivors.source, rules.survivors.flags.includes("g") ? rules.survivors.flags : `${rules.survivors.flags}g`);
+  const starts = lineStarts(out);
   let s: RegExpExecArray | null;
   while ((s = survivors.exec(out)) !== null) {
     const idx = s.index;
     // trap tokens are not brand residue
-    const after = out.slice(idx + 5, idx + 8);
-    if (/^[lL]/.test(after) || after.startsWith("tiv")) continue;
+    const after = out.slice(idx + s[0].length, idx + s[0].length + 3);
+    if (rules.isTrap(after)) continue;
     const hit = permittedRanges.find((r) => idx >= r.start && idx < r.end);
-    const { line, col, context } = lineCol(out, idx);
+    const { line, col, context } = lineCol(out, idx, starts);
     residue.push({ line, col, match: s[0], context, permittedBy: hit ? hit.id : exempt ? "EXEMPT" : "UNPERMITTED" });
   }
 
   const doubleWinter: RewriteResult["doubleWinter"] = [];
   if (!relPath.startsWith("scripts/rename/")) {
-    const dw = new RegExp(DOUBLE_WINTER.source, "g");
+    const dw = new RegExp(rules.doubleName.source, "g");
     let d: RegExpExecArray | null;
     while ((d = dw.exec(out)) !== null) {
-      const { line, context } = lineCol(out, d.index);
+      const { line, context } = lineCol(out, d.index, starts);
       doubleWinter.push({ line, match: d[0], context });
     }
   }
@@ -192,12 +262,19 @@ export function rewriteText(text: string, relPath: string): RewriteResult {
 }
 
 /** One path component by the generic rule (explicit-map tokens are never path components). */
-export function renameComponent(component: string): string {
-  return component.replace(GENERIC, (m) => CASE_MAP[m] ?? m);
+export function renameComponent(component: string, rules: RenameRules = WINTER_RULES): string {
+  return component.replace(new RegExp(rules.generic.source, "g"), (m) => rules.caseMap[m] ?? m);
 }
 
-export function renamePath(relPath: string): string {
-  return relPath.split("/").map(renameComponent).join("/");
+export function renamePath(relPath: string, rules: RenameRules = WINTER_RULES): string {
+  return relPath.split("/").map((c) => renameComponent(c, rules)).join("/");
+}
+
+/** A tracked path the path pass leaves where it is: exempt under rules whose exempt paths stay put,
+ *  or one the rule set keeps by name. */
+export function pathStays(relPath: string, rules: RenameRules = WINTER_RULES): boolean {
+  if (!rules.exemptPathsMove && isExemptPath(relPath, rules)) return true;
+  return rules.keepPaths.some((re) => re.test(relPath));
 }
 
 /** P9b-2: the Phase-0 `norma/` scaffold is DELETED, never renamed — a paths run refuses while it is tracked. */
@@ -210,9 +287,9 @@ export function scaffoldPresent(paths: string[]): boolean {
  * carries its subtree, tracked or not), re-deriving names after every move; then files whose
  * basename changes. Pure — returns the ordered moves.
  */
-export function planMoves(paths: string[]): { from: string; to: string; kind: "dir" | "file" }[] {
+export function planMoves(paths: string[], rules: RenameRules = WINTER_RULES): { from: string; to: string; kind: "dir" | "file" }[] {
   const moves: { from: string; to: string; kind: "dir" | "file" }[] = [];
-  let current = [...paths];
+  let current = paths.filter((p) => !pathStays(p, rules));
   // directories
   for (;;) {
     const dirs = new Set<string>();
@@ -223,19 +300,19 @@ export function planMoves(paths: string[]): { from: string; to: string; kind: "d
     const candidates = [...dirs]
       .filter((d) => {
         const last = d.slice(d.lastIndexOf("/") + 1);
-        return renameComponent(last) !== last;
+        return renameComponent(last, rules) !== last;
       })
       .sort((a, b) => a.split("/").length - b.split("/").length || a.localeCompare(b));
     if (candidates.length === 0) break;
     const from = candidates[0]!;
-    const to = `${from.slice(0, from.lastIndexOf("/") + 1)}${renameComponent(from.slice(from.lastIndexOf("/") + 1))}`;
+    const to = `${from.slice(0, from.lastIndexOf("/") + 1)}${renameComponent(from.slice(from.lastIndexOf("/") + 1), rules)}`;
     moves.push({ from, to, kind: "dir" });
     current = current.map((p) => (p === from || p.startsWith(from + "/") ? to + p.slice(from.length) : p));
   }
   // files
   for (const p of current.sort()) {
     const base = p.slice(p.lastIndexOf("/") + 1);
-    const nb = renameComponent(base);
+    const nb = renameComponent(base, rules);
     if (nb !== base) moves.push({ from: p, to: `${p.slice(0, p.lastIndexOf("/") + 1)}${nb}`, kind: "file" });
   }
   return moves;
@@ -255,7 +332,11 @@ function trackedFiles(root: string): string[] {
   return git(root, ["ls-files", "-z"]).split("\0").filter((p) => p.length > 0);
 }
 
-function looksBinary(buf: Uint8Array): boolean {
+/** Source files that may legitimately hold a NUL byte (a test string): text whatever the sniff says. */
+const SOURCE_EXTENSIONS: ReadonlySet<string> = new Set(["ts", "tsx", "mts", "cts", "js", "mjs", "cjs", "json", "md"]);
+
+function looksBinary(buf: Uint8Array, relPath = ""): boolean {
+  if (SOURCE_EXTENSIONS.has(relPath.slice(relPath.lastIndexOf(".") + 1).toLowerCase())) return false;
   const n = Math.min(buf.length, 8192);
   for (let i = 0; i < n; i++) if (buf[i] === 0) return true;
   return false;
@@ -283,6 +364,9 @@ if (import.meta.main) {
   const reportPath = opt("--report");
   const jsonPath = opt("--json");
   if (contentOnly && pathsOnly) throw new Error("--content-only and --paths-only are exclusive");
+  const rulesName = opt("--rules") ?? "clover";
+  if (rulesName !== "clover" && rulesName !== "winter") throw new Error(`--rules must be clover or winter, not ${rulesName}`);
+  const rules = rulesName === "clover" ? CLOVER_RULES : WINTER_RULES;
 
   const files = trackedFiles(root);
   const stats: FileStat[] = [];
@@ -304,7 +388,7 @@ if (import.meta.main) {
         continue;
       }
       const buf = readFileSync(abs);
-      if (looksBinary(buf)) {
+      if (looksBinary(buf, rel)) {
         stats.push({ path: rel, kind: "binary", explicit: 0, generic: 0, protectedCount: 0, changed: false });
         continue;
       }
@@ -315,7 +399,7 @@ if (import.meta.main) {
         stats.push({ path: rel, kind: "undecodable", explicit: 0, generic: 0, protectedCount: 0, changed: false });
         continue;
       }
-      const r = rewriteText(text, rel);
+      const r = rewriteText(text, rel, rules);
       stats.push({ path: rel, kind: "text", explicit: r.explicit, generic: r.generic, protectedCount: r.protectedCount, changed: r.changed });
       for (const x of r.residue) residue.push({ ...x, path: rel });
       for (const d of r.doubleWinter) doubleWinter.push({ ...d, path: rel });
@@ -323,18 +407,18 @@ if (import.meta.main) {
     }
   }
 
-  const moves = contentOnly ? [] : planMoves(files);
+  const moves = contentOnly ? [] : planMoves(files, rules);
 
   // Gates — evaluated before anything is written.
   const unpermitted = residue.filter((r) => r.permittedBy === "UNPERMITTED");
   const gateFailures: string[] = [];
   if (unpermitted.length > 0) gateFailures.push(`${unpermitted.length} UNPERMITTED residue match(es)`);
-  if (doubleWinter.length > 0) gateFailures.push(`${doubleWinter.length} double-winter match(es)`);
+  if (doubleWinter.length > 0) gateFailures.push(`${doubleWinter.length} doubled-name match(es)`);
   for (const m of moves) {
     if (existsSync(join(root, m.to))) gateFailures.push(`move destination exists: ${m.to}`);
-    if (new RegExp(DOUBLE_WINTER.source).test(m.to)) gateFailures.push(`double-winter in a destination path: ${m.to}`);
+    if (new RegExp(rules.doubleName.source).test(m.to)) gateFailures.push(`doubled name in a destination path: ${m.to}`);
   }
-  if (!contentOnly && scaffoldPresent(files)) gateFailures.push("the top-level `norma/` scaffold is still tracked — `git rm -r norma` first (P9b-2); the tool never renames it");
+  if (rules.checkScaffold && !contentOnly && scaffoldPresent(files)) gateFailures.push("the top-level `norma/` scaffold is still tracked — `git rm -r norma` first (P9b-2); the tool never renames it");
 
   // Report
   const changedFiles = stats.filter((s) => s.changed);
@@ -357,7 +441,7 @@ if (import.meta.main) {
   const byEntry = new Map<string, number>();
   for (const r of residue) byEntry.set(r.permittedBy, (byEntry.get(r.permittedBy) ?? 0) + 1);
   const md: string[] = [];
-  md.push(`# Norma→Winter codemod report — ${apply ? "APPLY" : "DRY-RUN"} (${new Date().toISOString()})`);
+  md.push(`# ${rules.from}→${rules.to} codemod report — ${apply ? "APPLY" : "DRY-RUN"} (${new Date().toISOString()})`);
   md.push("");
   md.push(`root: \`${root}\`  mode: ${contentOnly ? "content-only" : pathsOnly ? "paths-only" : "content+paths"}`);
   md.push("");
@@ -375,7 +459,7 @@ if (import.meta.main) {
     md.push("");
   }
   if (doubleWinter.length > 0) {
-    md.push("## Double-winter");
+    md.push("## Doubled names");
     for (const d of doubleWinter) md.push(`- ${d.path}:${d.line} \`${d.match}\` — \`${d.context}\``);
     md.push("");
   }

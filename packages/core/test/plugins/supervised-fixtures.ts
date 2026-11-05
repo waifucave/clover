@@ -48,7 +48,7 @@ const PLUGIN_SDK_ENTRY = join(import.meta.dir, "../../../plugin-sdk/src/index.ts
 const EXAMPLE_MARKETPLACE_PREFIX = "example-mkt-";
 
 /** Copies an `examples/<name>` reference plugin into its own one-plugin directory marketplace under
- *  `<winterHome>/`, rewrites its `@yanlinglabs/winter-plugin-sdk` import to an absolute path (a bare
+ *  `<cloverHome>/`, rewrites its `@waifucave/clover-plugin-sdk` import to an absolute path (a bare
  *  copy has no `node_modules` of its own — see the module doc comment), and registers it directly in
  *  Contract B's `sdk/plugins/installed_plugins.json` + `enabledPlugins` (WS-21: `PluginStore` now
  *  reads the installed+enabled set from there, never a `<home>/plugins` scan — see
@@ -56,9 +56,9 @@ const EXAMPLE_MARKETPLACE_PREFIX = "example-mkt-";
  *  Shared by `installSampleEcho`/`installBatteryLimiter` below — identical rewrite+registration,
  *  different source tree. Synchronous (plain `node:fs`, not the async adapter) so every existing
  *  call site in this fixture module and its callers stays synchronous too. */
-function installExample(srcDir: string, winterHome: string, pluginId: string): string {
+function installExample(srcDir: string, cloverHome: string, pluginId: string): string {
   const marketplaceName = `${EXAMPLE_MARKETPLACE_PREFIX}${pluginId}`;
-  const dest = join(winterHome, marketplaceName);
+  const dest = join(cloverHome, marketplaceName);
   cpSync(srcDir, dest, { recursive: true });
   mkdirSync(join(dest, ".claude-plugin"), { recursive: true });
   writeFileSync(join(dest, ".claude-plugin", "marketplace.json"), JSON.stringify({
@@ -66,12 +66,12 @@ function installExample(srcDir: string, winterHome: string, pluginId: string): s
   }));
   const indexPath = join(dest, "index.ts");
   const rewritten = readFileSync(indexPath, "utf8").replace(
-    'from "@yanlinglabs/winter-plugin-sdk"',
+    'from "@waifucave/clover-plugin-sdk"',
     `from ${JSON.stringify(PLUGIN_SDK_ENTRY)}`,
   );
   writeFileSync(indexPath, rewritten);
 
-  const pluginsRoot = sdkPluginsRoot(winterHome);
+  const pluginsRoot = sdkPluginsRoot(cloverHome);
   mkdirSync(pluginsRoot, { recursive: true });
   const knownMarketplacesPath = join(pluginsRoot, "known_marketplaces.json");
   const knownMarketplaces = existsSync(knownMarketplacesPath) ? JSON.parse(readFileSync(knownMarketplacesPath, "utf8")) : {};
@@ -95,17 +95,17 @@ export function pluginSpecFor(pluginId: string): string {
   return `${pluginId}@${EXAMPLE_MARKETPLACE_PREFIX}${pluginId}`;
 }
 
-/** Copies `examples/sample-echo` into its own directory marketplace under `winterHome` and
+/** Copies `examples/sample-echo` into its own directory marketplace under `cloverHome` and
  *  registers it (see `installExample`'s own doc). Returns the installed directory. */
-export function installSampleEcho(winterHome: string, pluginId: string): string {
-  return installExample(EXAMPLES_DIR, winterHome, pluginId);
+export function installSampleEcho(cloverHome: string, pluginId: string): string {
+  return installExample(EXAMPLES_DIR, cloverHome, pluginId);
 }
 
 /** Phase 4c Task 5: same install-and-rewrite as `installSampleEcho`, for
  *  `examples/battery-limiter` — the `ctx.hardware()` reference plugin. Used by
  *  `battery-limiter-e2e.test.ts`'s real-child-process hardware round-trip. */
-export function installBatteryLimiter(winterHome: string, pluginId: string): string {
-  return installExample(BATTERY_LIMITER_DIR, winterHome, pluginId);
+export function installBatteryLimiter(cloverHome: string, pluginId: string): string {
+  return installExample(BATTERY_LIMITER_DIR, cloverHome, pluginId);
 }
 
 /** `ps -p <pid>` liveness probe — a REAL process check (not `process.kill(pid, 0)`), matching the
@@ -187,8 +187,8 @@ export function writeAndLoadSettings(home: string, pluginId: string, opts?: { ha
  *  never a `<home>/plugins/<name>` convention — see `agent/plugins.ts`'s own doc). */
 export function buildSpawnablePlugins(home: string, settings: Settings): EligiblePlugin[] {
   const pluginStore = new PluginStore({
-    winterHome: home, consents: settings.plugins?.consents,
-    log: (m) => { if (process.env.WINTER_TEST_DEBUG) console.error(`[plugins] ${m}`); },
+    cloverHome: home, consents: settings.plugins?.consents,
+    log: (m) => { if (process.env.CLOVER_TEST_DEBUG) console.error(`[plugins] ${m}`); },
   });
   return pluginStore.list()
     .filter(pluginSpawnEligible)
@@ -249,12 +249,12 @@ export async function createSupervisedInstance(params: {
   plugins?: boolean;
   /** Phase 4d-ii Task 4, opt-in and purely additive (independent of `plugins`/`hardware` above,
    *  though every current caller that wants this also wants `plugins: true` for `plugins.list`
-   *  enrichment). Forwards `winterHome: home` into `startIpcServer` so the plugin-lifecycle RPCs
-   *  (plugins.install/plugin.enable/disable/remove/setConsent, ipc/server.ts) have a winterHome to
+   *  enrichment). Forwards `cloverHome: home` into `startIpcServer` so the plugin-lifecycle RPCs
+   *  (plugins.install/plugin.enable/disable/remove/setConsent, ipc/server.ts) have a cloverHome to
    *  read+write settings.json/the plugins dir against — server.test.ts's own `bootLifecycleServer`
    *  wires the SAME option directly; this lets `gate-4d-ii.test.ts` get it through the shared
    *  supervised-fixtures boot path instead of hand-rolling its own IpcServer wiring a second time. */
-  wireWinterHome?: boolean;
+  wireCloverHome?: boolean;
 }): Promise<SupervisedInstance> {
   const { home, socketPath, supervisorSettings, spawn, signalPid } = params;
   const store = new SessionStore(home);
@@ -270,7 +270,7 @@ export async function createSupervisedInstance(params: {
     spawn,
     signalPid,
     settings: { registrationTimeoutMs: 60_000, killGraceMs: 1_500, ...supervisorSettings },
-    onLog: (m) => { if (process.env.WINTER_TEST_DEBUG) console.error(`[supervisor] ${m}`); },
+    onLog: (m) => { if (process.env.CLOVER_TEST_DEBUG) console.error(`[supervisor] ${m}`); },
     onCircuitOpen: (id) => registry.unregisterByPrefix(`plugin__${id}__`),
   });
 
@@ -288,29 +288,29 @@ export async function createSupervisedInstance(params: {
     hardwareBroker = new HardwareBroker({ audit, pushToProvider: (e) => providerLink!.push(e) });
     const settings = loadSettings(join(home, "settings.json"));
     plugins = new PluginStore({
-      winterHome: home, consents: settings.plugins?.consents,
-      log: (m) => { if (process.env.WINTER_TEST_DEBUG) console.error(`[plugins] ${m}`); },
+      cloverHome: home, consents: settings.plugins?.consents,
+      log: (m) => { if (process.env.CLOVER_TEST_DEBUG) console.error(`[plugins] ${m}`); },
     });
   } else if (params.plugins) {
     const settings = loadSettings(join(home, "settings.json"));
     plugins = new PluginStore({
-      winterHome: home, consents: settings.plugins?.consents,
-      log: (m) => { if (process.env.WINTER_TEST_DEBUG) console.error(`[plugins] ${m}`); },
+      cloverHome: home, consents: settings.plugins?.consents,
+      log: (m) => { if (process.env.CLOVER_TEST_DEBUG) console.error(`[plugins] ${m}`); },
     });
   }
 
   // The socket must already be listening before startAll() spawns a child — the child connects to
-  // WINTER_SOCKET immediately on startup.
+  // CLOVER_SOCKET immediately on startup.
   const server = startIpcServer({
     socketPath, serverVersion: "test", tokens: authority, store, registry, supervisor, contrib,
     providerLink, hardware: hardwareBroker, peripheral, plugins,
-    winterHome: params.wireWinterHome ? home : undefined,
+    cloverHome: params.wireCloverHome ? home : undefined,
   });
 
   return { store, authority, registry, contrib, supervisor, server, providerLink, hardware: hardwareBroker, peripheral, plugins };
 }
 
-/** The Task 6 convenience wrapper: installs sample-echo into a fresh tmp `winterHome`, writes/loads
+/** The Task 6 convenience wrapper: installs sample-echo into a fresh tmp `cloverHome`, writes/loads
  *  real consent-complete settings, boots one `SupervisedInstance`, and immediately `startAll`s the
  *  single eligible plugin. Matches `supervised-e2e.test.ts`'s original `bootSupervisedServer`
  *  shape exactly (same fields, same behavior with default options) plus two additive knobs the
@@ -334,7 +334,7 @@ export async function bootSupervisedServer(pluginId: string, opts?: {
   spec: string;
   stop: () => void;
 }> {
-  const home = mkdtempSync(join(tmpdir(), "winter-plugin-supervised-"));
+  const home = mkdtempSync(join(tmpdir(), "clover-plugin-supervised-"));
   installSampleEcho(home, pluginId);
   const settings = writeAndLoadSettings(home, pluginId);
   const socketPath = join(home, "core.sock");

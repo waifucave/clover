@@ -4,7 +4,7 @@ import { z } from "zod";
 // lives): the `session_activity` EVENT variant needs the same enum, and events.ts cannot import
 // from this file — methods.ts already imports from events.ts, so the reverse edge would be a module
 // cycle whose `z.enum(...)` const would be in the TDZ at events.ts's evaluation. Re-exported by the
-// package index either way, so `@yanlinglabs/winter-protocol` consumers see no difference.
+// package index either way, so `@waifucave/clover-protocol` consumers see no difference.
 import { NDJSON_MAX_LINE_BYTES } from "./ndjson";
 import { SessionEvent, SessionModeSchema, UserMessageImageRef, UserMessageFileRef, SessionActivity, TaskSchema, PeripheralClassSchema, HolderSchema, ApprovalOption, PanelTabKind, PANEL_URL_MAX_LENGTH, PANEL_TITLE_MAX_LENGTH, DIFF_ID_SHAPE } from "./events";
 
@@ -23,7 +23,7 @@ export type ApprovalPolicy = z.infer<typeof ApprovalPolicy>;
 export const CLIENT_CAPABILITY_MAX_LENGTH = 64;
 export const CLIENT_CAPABILITIES_MAX = 32;
 export const CLIENT_TTY_MAX_LENGTH = 64;
-/** The Winter island (the Mac app's surface at the camera housing, `docs/claude/island.md`): this client shows
+/** The Clover island (the Mac app's surface at the camera housing, `docs/claude/island.md`): this client shows
  *  every pending approval, question and request across sessions, the desktop-switch prompt included. While one is
  *  connected the daemon does not ask the Winter Computer Use helper to show its own desktop-switch panel. */
 export const CLIENT_CAPABILITY_ISLAND = "island";
@@ -192,7 +192,7 @@ export const SessionCreateParams = z.object({
   model: ModelTagSchema.optional(),
   // provider-correctness T6: the effort half of `model` just above, stamped at creation time and
   // validated by the SAME rules `session.setEffort` applies (model-aware membership against
-  // `effortsForModel`, plus the code-sessions-only gate for a Winter-level tier). Added rather than
+  // `effortsForModel`, plus the code-sessions-only gate for a Clover-level tier). Added rather than
   // left to a create-then-setEffort pair because the phone's New Chat flow sets model AND effort at
   // create time on a latency-critical path: two round-trips leave a window in which a turn fired
   // immediately after create resolves at the GLOBAL effort, silently. Index-only metadata like
@@ -227,7 +227,7 @@ export const SessionListResult = z.object({
     // it does not name, so the TS client (packages/cli/src/client.ts `validated()`) silently dropped
     // a field the daemon was already putting on the socket, while Swift's `WinterClient.listSessions()`
     // (which reads raw JSON, not a schema) has been consuming `s["cwd"]` all along. This declaration
-    // closes that asymmetry; `winter agents`' cwd column is its first schema-validating consumer.
+    // closes that asymmetry; `clover agents`' cwd column is its first schema-validating consumer.
     //
     // Optional and index-only, on `origin`'s exact terms: absent means "no recorded cwd" — a session
     // created without one, or one whose index was rebuilt (cwd does NOT ride the event log, so a full
@@ -260,7 +260,7 @@ export const SessionListResult = z.object({
     // client must be able to read it. Absent means "this session uses the global default", never
     // "no effort" (an unset effort omits the provider's `reasoning` block entirely; `"none"` is a
     // distinct, real, measured level — see REASONING_EFFORTS in core's settings.ts).
-    // provider-correctness T5: the value may ALSO be a Winter-level tier from
+    // provider-correctness T5: the value may ALSO be a Clover-level tier from
     // `sync.config.clientEfforts` (e.g. "ultra") — the user's SELECTION is stored and reported
     // verbatim, never rewritten to its wire translation. A picker matching this against the
     // chosen model's `efforts` array alone will miss; match against BOTH lists.
@@ -344,9 +344,9 @@ export const SessionListResult = z.object({
       working: z.boolean(),
     }).optional(),
     // Winter Phase 8c (P8c-14/Task 4.2): which runtime leg the session's RECORD names — "winter-agent"
-    // (the Winter leg, resumed by a spawned `winter` child) or "claude-agent" (a record the retired
+    // (the Clover leg, resumed by a spawned `winter` child) or "claude-agent" (a record the retired
     // official `claude` leg wrote; WS-23 keeps the value (ruling R4), and such a session is moved onto
-    // the Winter leg at its next resume). Derived from `opts.winter.legOf(sessionId)` at list time, never stored
+    // the Clover leg at its next resume). Derived from `opts.clover.legOf(sessionId)` at list time, never stored
     // on the row itself (the durable fact lives in the runtime-state record, WS-16 §4's
     // `RuntimeSessionRecord.runtimeKind`). Absent means one of three honest things, never a lie: no
     // runtime spine on this daemon, an engine-era session with no leg at all, or a session with no
@@ -363,7 +363,7 @@ export const SessionListResult = z.object({
     // NOT the same absence as `runtimeKind`'s (a daemon can know the leg from `legOf` while this
     // daemon build predates threading the record through to `session.list` at all).
     providerId: z.string().min(1).optional(),
-    // ComputerV2 wake triggers (2026-10-12): how many triggers the session's model has ARMED now (`wakeWhen` — Winter
+    // ComputerV2 wake triggers (2026-10-12): how many triggers the session's model has ARMED now (`wakeWhen` — Clover
     // waits for the user to click, submit, …) — the session list's "waiting for you" mark. Absent when none (or on an
     // older daemon); kept live by the `wake_armed`/`wake_ended` pair, which every harness receives.
     wakesArmed: z.number().int().positive().optional(),
@@ -402,8 +402,8 @@ export const SessionHistoryResult = z.object({
  *      regular file of at most `IMAGE_FILE_MAX_BYTES`, whose MAGIC BYTES are an image type the runtime
  *      Read tool can prepare (png/jpeg/gif/webp/heic/tiff/bmp) AND whose path, as spelled, ends in one of
  *      `IMAGE_FILE_EXTENSIONS` (Read opens an image by extension alone), and that the Read tool itself may read
- *      (not under `<home>/run` or `<home>/runtimes`, and not a runtime's generated config — `sdk/.winter.json`,
- *      a run folder's or staging root's `.winter.json`/`.claude.json`/`.credentials.json` and `backups/**`;
+ *      (not under `<home>/run` or `<home>/runtimes`, and not a runtime's generated config — `sdk/.clover.json`,
+ *      a run folder's or staging root's `.clover.json`/`.claude.json`/`.credentials.json` and `backups/**`;
  *      the rest of the home, `outputs/` included, is fine). It is never copied or downscaled; the
  *      runtime's Read tool prepares it for the model. A path with a control or direction-changing
  *      character, or leading/trailing whitespace (Read trims it), is refused. A file the daemon cannot
@@ -494,7 +494,7 @@ export const ElicitationUrlParams = z.object({
 export const ElicitationUrlResult = z.object({ url: z.string().min(1) });
 export const ELICITATION_NOT_ACTIVE = "elicitation_not_active";
 
-/** The Winter island (`docs/claude/island.md`): every approval, question and URL-mode elicitation still pending
+/** The Clover island (`docs/claude/island.md`): every approval, question and URL-mode elicitation still pending
  *  in ANY session, for the Mac app's "Needs you" surface. HARNESS role only (never remote, never a plugin): the
  *  phone has its own per-session `approval.list`. Pending-ness is the brokers' (an answered, timed-out or cancelled
  *  card is never listed); the payload is the request event itself, as the session's log holds it. A Dispatch child's
@@ -532,12 +532,12 @@ export const IslandPendingResult = z.object({ items: z.array(IslandPendingItemSc
  *  happened in one burst): the island's working count then re-lists `session.list`. */
 export const ISLAND_CHANGED_NOTIFICATION = "island.changed";
 /** The island client says it SHOWS these cards (their `callId` / `elicitationId`) — sent after each `island.pending`
- *  it applies. The desktop-switch prompt waits ~2 s for it before asking the Computer Use helper as well (a Winter.app
+ *  it applies. The desktop-switch prompt waits ~2 s for it before asking the Computer Use helper as well (a Clover.app
  *  that is connected but hung shows nothing). HARNESS role only. */
 export const IslandShownParams = z.object({ ids: z.array(z.string().min(1).max(256)).max(256) });
 export const IslandShownResult = z.object({ ok: z.literal(true) });
 
-/** The Winter island's ACTIVITY (phase 2, `docs/claude/island.md`): what the Mac's island shows besides the cards
+/** The Clover island's ACTIVITY (phase 2, `docs/claude/island.md`): what the Mac's island shows besides the cards
  *  that wait for an answer, across every session — the sessions driving ComputerV2 now (`computerUse`), the turns
  *  that just ended with their session idle (`results`, the last assistant text cut short), and every armed
  *  ComputerV2 wake trigger (`watches`; disarm through `computerUse.wakes.cancel`). HARNESS role only, never remote.
@@ -615,7 +615,7 @@ export const IslandActivityResult = z.object({
 export const ISLAND_ACTIVITY_CHANGED_NOTIFICATION = "island.activityChanged";
 
 /** The island's Sessions tab (`docs/claude/island.md`): who is attached to each session right now, for every session
- *  with at least one attachment — where a click on a row moves the user's view (a Winter window, or the EXACT terminal
+ *  with at least one attachment — where a click on a row moves the user's view (a Clover window, or the EXACT terminal
  *  through its `tty`). `session.list` carries no hosts. HARNESS role only (never remote, never a plugin). */
 export const IslandHostsParams = z.object({});
 export const IslandHostsResult = z.object({
@@ -635,9 +635,9 @@ export const IslandUsageWindowSchema = z.object({
   provider: z.string().optional(),
 });
 /** Usage and cost tracking (`docs/claude/usage.md`) — HARNESS role only, local clients; never remote, never plugins.
- *  `range`: last hour, 24 h, 7 days, 30 days, all time. `sources`: Winter's own sessions, the user's Codex CLI/app,
+ *  `range`: last hour, 24 h, 7 days, 30 days, all time. `sources`: Clover's own sessions, the user's Codex CLI/app,
  *  the user's Claude Code and OpenCode (default all four). Costs are USD; `costBasis` says whether a figure is the
- *  runtime's own list price, Winter's list-price estimate (a subscription's tokens, another app's usage), the other
+ *  runtime's own list price, Clover's list-price estimate (a subscription's tokens, another app's usage), the other
  *  app's own figure (`reported`, OpenCode) or unknown. */
 export const UsageRangeSchema = z.enum(["1h", "24h", "7d", "30d", "all"]);
 export const UsageSourceSchema = z.enum(["winter", "codex", "claude-code", "opencode"]);
@@ -692,7 +692,7 @@ export const UsageAlarmSchema = z.object({
 });
 
 /** The island's Usage tab: what the daemon already knows about usage and limits, nothing estimated. `windows` — the
- *  latest report per provider and window kind (each tagged with its `provider`) since the daemon started; `subscription` — Winter's background jobs' subscription
+ *  latest report per provider and window kind (each tagged with its `provider`) since the daemon started; `subscription` — Clover's background jobs' subscription
  *  quota snapshot (the codex-oauth ledger); `background` — those jobs' backoff and token counts since start (the same
  *  numbers as `quota.state`); `session` — one session's token counts summed from its `turn_completed` events since
  *  the daemon started, its last measured context size, and its model's context window when the catalog knows it.
@@ -738,7 +738,7 @@ export const ComputerUseStatusResult = z.object({
   legacyComputer: z.boolean(),
   mirror: z.boolean(),
   privateEventPath: z.boolean(),
-  /** Phase 4: Winter's headless browser is offered (`computerUse.headless.enabled`, default true). */
+  /** Phase 4: Clover's headless browser is offered (`computerUse.headless.enabled`, default true). */
   headlessEnabled: z.boolean(),
   /** Phase 4: sites' own agent tools (WebMCP) are discovered and callable (`computerUse.webmcp`, default true). */
   webmcp: z.boolean(),
@@ -751,19 +751,19 @@ export const ComputerUseStatusResult = z.object({
     version: z.string().optional(),
     permissions: ComputerUsePermissionsSchema.optional(),
     /** The running helper speaks another helper protocol (apple/ComputerUse/PROTOCOL.md): nothing works until
-     *  Winter is updated. `message` is the sentence to show ("… is too old for this Winter … — update Winter"). */
+     *  Clover is updated. `message` is the sentence to show ("… is too old for this Clover … — update Clover"). */
     protocolMismatch: z.object({
       helperProtocol: z.number().int().optional(),
       helperVersion: z.string().optional(),
-      winterProtocol: z.number().int(),
+      cloverProtocol: z.number().int(),
       message: z.string(),
     }).optional(),
   }),
-  /** ComputerV2 Phase 2: the browsers ComputerV2 can drive — Winter's built-in browser ("winter") and every user's
+  /** ComputerV2 Phase 2: the browsers ComputerV2 can drive — Clover's built-in browser ("winter") and every user's
    *  browser that is connected (Winter for Chrome) or installed; `reason` says why one is not connected. */
   browsers: z.array(z.object({ id: z.string(), name: z.string(), connected: z.boolean(), reason: z.string().optional() })).optional(),
 });
-/** ComputerV2 Phase 2 — Winter.app's BROWSER LINK: the dedicated connection (clientName "browser-link") over which the
+/** ComputerV2 Phase 2 — Clover.app's BROWSER LINK: the dedicated connection (clientName "browser-link") over which the
  *  daemon drives the built-in browser's tabs (CDP, the allowlisted subset) with no window open. HARNESS ROLE ONLY —
  *  never in `REMOTE_ALLOWED_METHODS` or the plugin list, and refused for any other role. The connection never attaches
  *  to a session and nothing on it is a `SessionEvent`. The protocol number is `BROWSER_LINK_PROTOCOL`
@@ -777,7 +777,7 @@ export const ComputerUseStatusResult = z.object({
  *
  *  FEATURES (the protocol stays 2): what each side can do beyond it, named at attach — the app in its params, the daemon
  *  in its answer; a side never uses a feature the other did not name.
- *  - `headless` (ComputerV2 Phase 4, lane H3): the app can show a tab of Winter's HEADLESS browser in its panel — the
+ *  - `headless` (ComputerV2 Phase 4, lane H3): the app can show a tab of Clover's HEADLESS browser in its panel — the
  *    live page, drawn from Winter Headless's own GPU frames (the page never leaves the helper; nothing reloads) — and the
  *    daemon can ask it to. Daemon → app ops on `browserLink.command`: `headless.show {sessionId, tabId, service, nonce,
  *    producerRequirement, control, purpose, url, title, uploadDir}` (connect to that presentation and show it; `purpose`
@@ -832,7 +832,7 @@ export const BrowserLinkDownloadParams = z.object({
   }),
 });
 export const BrowserLinkAckResult = z.object({});
-/** Feature `headless` — the person, in Winter's panel, acting on one of a session's HEADLESS tabs:
+/** Feature `headless` — the person, in Clover's panel, acting on one of a session's HEADLESS tabs:
  *  `list` (the session's headless tabs, fresh; no `tabId`), `watch` (show it, watch-only: the agent keeps working and
  *  the person sees it live), `takeOver` (the person takes control: the agent's work in flight on that tab finishes
  *  first, then every agent command on it is `TargetBusy` until it is handed back), `handBack` (control back to the
@@ -1041,7 +1041,7 @@ export const SessionInterruptResult = z.object({ ok: z.literal(true), wasRunning
 
 /** ComputerV2 Phase 1b (the phone mirror): the paired phone asks to watch, or stops watching, the live mirror of
  *  the session it is attached to. The daemon is only the GATE — the frames never pass through it, nor through the
- *  session log, history or the remote event stream: Winter.app's Gateway relays Winter.app's own mirror of the
+ *  session log, history or the remote event stream: Clover.app's Gateway relays Clover.app's own mirror of the
  *  session (its one helper view subscription, which the watch holds open with pictures while it lasts — a viewer in
  *  its own right, ref-counted beside the Mac's windows) straight to the phone over its own wire kind. A
  *  `watch: true` needs the caller attached to `sessionId` (the remote mode gate applies too); `mirror` reports
@@ -1050,7 +1050,7 @@ export const SessionInterruptResult = z.object({ ok: z.literal(true), wasRunning
 export const SessionMirrorParams = z.object({ sessionId: z.string(), watch: z.boolean() });
 export const SessionMirrorResult = z.object({ ok: z.literal(true), mirror: z.boolean() });
 
-/** 2026-10-07: on the Winter leg `session.compact` asks the SESSION to compact -- it sends `/compact
+/** 2026-10-07: on the Clover leg `session.compact` asks the SESSION to compact -- it sends `/compact
  *  [instructions]` through the session's own driver (queued behind a running turn, resuming an idle
  *  session), which the runtime runs as its built-in command. It returns at once with `requested: true`
  *  and the `user_message`'s `seq`; the compaction lands in the log as a `continuity_warning`
@@ -1075,7 +1075,7 @@ export const SessionCompactResult = z.object({
  *  validates every `skills.list` response through `SkillsListResult.safeParse` and throws on
  *  failure, and `z.array()` fails the whole array on one bad element. Phase 5c T1's always-present
  *  `writing-skills` builtin did exactly that (`source:"builtin"` wasn't in this enum), breaking
- *  `winter skills` on every invocation until the 5c T3 review fix admitted it here. */
+ *  `clover skills` on every invocation until the 5c T3 review fix admitted it here. */
 export const SkillMetaSchema = z.object({
   name: z.string(),
   description: z.string(),
@@ -1085,7 +1085,7 @@ export const SkillMetaSchema = z.object({
   // (never false) otherwise.
   claudeFormat: z.boolean().optional(),
   // Phase 5c Task 3: mirrors SkillStore's `author?` (agent/skills.ts) — set for a self-authored
-  // skill (T1 stamps `author: winter` in the frontmatter, T3's list()/load() parse it back out),
+  // skill (T1 stamps `author: clover` in the frontmatter, T3's list()/load() parse it back out),
   // undefined for every other source. Additive/optional: an older server that never sends it still
   // parses.
   author: z.string().optional(),
@@ -1134,7 +1134,7 @@ export const SkillsReadParams = z.object({ name: z.string().min(1), cwd: z.strin
 /** Mirrors `MemoryReadResult`'s `{fact}` pattern: `SkillMetaSchema` plus the full body. */
 export const SkillsReadResult = z.object({ skill: SkillMetaSchema.extend({ body: z.string() }) });
 
-/** No `cwd`/scope: `writeSelf` always targets `~/.winter/skills/self`, independent of caller cwd. */
+/** No `cwd`/scope: `writeSelf` always targets `~/.clover/skills/self`, independent of caller cwd. */
 export const SkillsWriteParams = z.object({
   name: z.string().min(1),
   description: z.string().min(1),
@@ -1154,7 +1154,7 @@ export const SkillsDeleteResult = z.object({});
  * Mirrors `settings.setModelRole`'s own handler shape (load → pure transform → save); the transform
  * itself (`setSkillDenied`, core/src/settings.ts) can never fail on ITS OWN input (no tag/catalog
  * validation the way a model role needs), so this door has no failure mode of its own beyond a
- * missing `winterHome`.
+ * missing `cloverHome`.
  */
 // Minor 5d (fix wave, pre-merge review): `name` used to be a bare `z.string().min(1)` — a value
 // containing `)` or whitespace reaches `settings.ts`'s `skillDenyRule` (`Skill(${skillName})`)
@@ -1236,9 +1236,9 @@ export const McpListResult = z.object({ ok: z.literal(true), servers: z.array(Mc
 
 /**
  * Daemon settings surface batch 3 (item 3a): the enable/disable door for a CONFIGURED MCP server,
- * by name — LOCAL role only. Winter spelling: `settings.mcp.disabled` (a flat, name-keyed list),
+ * by name — LOCAL role only. Clover spelling: `settings.mcp.disabled` (a flat, name-keyed list),
  * chosen over claude's own settings-level `disabledMcpjsonServers`/`deniedMcpServers` shape because
- * Winter's `settings.mcpServers` is itself a name-keyed record (unlike claude's array-of-servers
+ * Clover's `settings.mcpServers` is itself a name-keyed record (unlike claude's array-of-servers
  * `.mcp.json`) — a name list is the one spelling that can name a server regardless of which tier
  * configured it, without needing a per-entry `enabled` flag on every transport-shape variant of
  * `mcpServers` (see that schema's own doc for why `enabled` was deliberately NOT mirrored from the
@@ -1303,7 +1303,7 @@ export const McpToolsResult = z.object({ ok: z.literal(true), servers: z.array(M
  * (`tool: "*"`); `"default"` clears it. `resetTools` (all-actions only) also clears every per-action value
  * of the server, so "all actions → Always deny" means every action. Written atomically to `settings.json`
  * and read live: the next call of a live session sees it, with no respawn. A server need not be configured
- * yet; `winter` (the daemon's own capability namespace) is refused.
+ * yet; `clover` (the daemon's own capability namespace) is refused.
  */
 export const McpSetToolPermissionParams = z.object({
   server: z.string().min(1).max(256).regex(/^\S+$/, "a server name has no whitespace"),
@@ -1314,11 +1314,11 @@ export const McpSetToolPermissionParams = z.object({
 export const McpSetToolPermissionResult = z.object({ ok: z.literal(true), server: z.string(), tool: z.string(), permission: McpToolPermissionChoiceSchema });
 
 /**
- * `winter mcp add`/`add-json` (CLI parity with `claude mcp add`) — all three of claude's scopes since
+ * `clover mcp add`/`add-json` (CLI parity with `claude mcp add`) — all three of claude's scopes since
  * WS-21 (`McpScopeSchema` below). `entry` hand-mirrors `settings.ts`'s `McpServerSettingsEntry`
  * discriminated union field-for-field — protocol never imports from core (same cross-package
  * literal-mirroring precedent as this file's other core-shaped params) — so the REAL enforcement
- * (including the credential-shaped-header refusal on an http/sse entry written to `sdk/.winter.json`)
+ * (including the credential-shaped-header refusal on an http/sse entry written to `sdk/.clover.json`)
  * still happens once, on the daemon side; this schema only bounds the wire shape. LOCAL role only
  * (never added to `REMOTE_ALLOWED_METHODS`), same posture as `mcp.enable`/`mcp.disable`.
  */
@@ -1327,7 +1327,7 @@ export const McpSetToolPermissionResult = z.object({ ok: z.literal(true), server
  * (`agent/mcp/project-file.ts`, the agent SDK's `McpVersionNegotiation`): `"legacy"` (the 2025
  * `initialize` handshake), `"auto"` (probe `server/discover`, then fall back) or `{ pin }` (exactly that
  * revision). It must be declared here because zod strips an undeclared key: without it a server added
- * through `mcp.add` (or `winter mcp add-json`, which validates against this schema) silently lost the
+ * through `mcp.add` (or `clover mcp add-json`, which validates against this schema) silently lost the
  * choice the settings file and `runtime-sdk/external-mcp.ts` both carry. Nothing here interprets it.
  */
 export const McpVersionNegotiationSchema = z.union([
@@ -1356,12 +1356,12 @@ export const McpAddEntrySchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("sse"), url: z.string().url(), headers: z.record(z.string(), z.string()).optional(), versionNegotiation: McpVersionNegotiationSchema.optional(), oauth: McpOAuthConfigSchema.optional() }),
 ]);
 /**
- * WS-21 (spec §4.4, `winter mcp add` = `claude mcp add`): the three MCP scopes, claude's names and
+ * WS-21 (spec §4.4, `clover mcp add` = `claude mcp add`): the three MCP scopes, claude's names and
  * claude's default.
  *
- *   local    (the DEFAULT, as in claude)  `sdk/.winter.json` → `projects[<abs project root>].mcpServers`
- *   user                                  `sdk/.winter.json` → `mcpServers`
- *   project                               `<project root>/.winter/mcp.json` (claude's `.mcp.json` format;
+ *   local    (the DEFAULT, as in claude)  `sdk/.clover.json` → `projects[<abs project root>].mcpServers`
+ *   user                                  `sdk/.clover.json` → `mcpServers`
+ *   project                               `<project root>/.clover/mcp.json` (claude's `.mcp.json` format;
  *                                         loaded only when the project is trusted)
  *
  * `local` and `project` name a project, so they need `cwd` (the daemon resolves its project root); a
@@ -1399,7 +1399,7 @@ export const McpRemoveParams = z.object({
 export const McpRemoveResult = z.object({ ok: z.literal(true), name: z.string(), removed: z.boolean(), scope: McpScopeSchema.optional(), permissionsCleared: z.boolean().optional(), rulesNotFollowed: z.array(z.string()).optional(), nameStillInUse: z.boolean().optional(), permissionsNote: z.string().optional() });
 
 /**
- * WS-27 — `winter mcp rename <old> <new>`: rename a server WITHIN one scope, its entry unchanged. Refused typed
+ * WS-27 — `clover mcp rename <old> <new>`: rename a server WITHIN one scope, its entry unchanged. Refused typed
  * (nothing written) when the new name is invalid (`mcp_invalid_name`), the scope does not define the old one
  * (`mcp_server_not_found`), the scope already defines the new one (`mcp_server_exists`), anything else uses
  * the new name — another scope, a plugin, a subagent definition, a live session (`mcp_server_name_in_use`) —
@@ -1427,8 +1427,8 @@ export const McpRenameResult = z.object({
 });
 
 /**
- * `winter mcp get <name>` in one of the three scopes (WS-21, `McpScopeSchema`). Read-only — LOCAL role
- * only, but never refuses on a missing `winterHome` the way the write doors do (a read degrades to
+ * `clover mcp get <name>` in one of the three scopes (WS-21, `McpScopeSchema`). Read-only — LOCAL role
+ * only, but never refuses on a missing `cloverHome` the way the write doors do (a read degrades to
  * `found: false` instead, same "typed absence, never a crash" posture `mcp.list` already has).
  * Carries the full configured shape `mcp.list` deliberately does NOT (that RPC is a live-status
  * listing, not a config reader) — `strippedHeaders` mirrors `McpServerStatusSchema`'s own field,
@@ -1545,7 +1545,7 @@ export const McpSetClientSecretResult = z.object({ ok: z.literal(true), issuer: 
 
 /**
  * Daemon settings surface (2026-09-17 plan, item 2): `capabilities.list` — the daemon's OWN
- * in-process `winter__<key>` capability servers (`capabilities/names.ts`'s `CAPABILITY_SERVER_KEYS`
+ * in-process `clover__<key>` capability servers (`capabilities/names.ts`'s `CAPABILITY_SERVER_KEYS`
  * — sessions/computer/browser/office/research/web/lsp/external), read-only, LOCAL role only (never
  * added to `REMOTE_ALLOWED_METHODS`). Deliberately NOT a widening of `mcp.list`/its `source` enum:
  * these are daemon-owned MCP servers built per-session (`capabilities/index.ts`'s
@@ -1554,13 +1554,13 @@ export const McpSetClientSecretResult = z.object({ ok: z.literal(true), issuer: 
  */
 export const CapabilitiesListParams = z.object({});
 
-/** One capability tool's static facts (`capabilities/names.ts`'s `WINTER_CAPABILITY_TOOLS`,
+/** One capability tool's static facts (`capabilities/names.ts`'s `CLOVER_CAPABILITY_TOOLS`,
  *  mirrored exactly) plus its LIVE per-mode exposure — whether the child actually gets this tool in
  *  each mode TODAY, derived by calling `runtime-sdk/mode-options.ts`'s `disallowedToolsFor` (never
  *  re-implemented here), the same table `session-driver.ts` passes every real session's
  *  `Options.disallowedTools`. */
 export const CapabilityToolInfoSchema = z.object({
-  /** The tool's MCP identity: `mcp__winter__<key>__<tool>` (`capabilityToolName`) — what a saved rule or
+  /** The tool's MCP identity: `mcp__clover__<key>__<tool>` (`capabilityToolName`) — what a saved rule or
    *  an old transcript names. The name the model SEES is `plainName` when there is one. */
   name: z.string(),
   /** The ordinary name the child advertises the tool under (`SpawnSession`, `Computer`, `Browser`, … —
@@ -1590,7 +1590,7 @@ export const CapabilityServerInfoSchema = z.object({
    *  check (a missing Exa/Brave key surfaces as a per-call failure, not a listing-time gate). */
   enabled: z.boolean(),
   /** `[]` for `external` — its tool set is per-plugin and dynamic, with no corresponding static row
-   *  in `WINTER_CAPABILITY_TOOLS` (mode scoping for it lives on each `ExternalToolSource.modes`
+   *  in `CLOVER_CAPABILITY_TOOLS` (mode scoping for it lives on each `ExternalToolSource.modes`
    *  instead, `capabilities/server.ts`'s documented default). */
   tools: z.array(CapabilityToolInfoSchema),
 });
@@ -1602,7 +1602,7 @@ export const CapabilitiesListResult = z.object({ ok: z.literal(true), capabiliti
  * Both halves side by side, so a pin≠installed mismatch is a normal response the app renders, never
  * an error: `pins` are the compile-time peer versions this daemon build was written against
  * (`runtime-sdk/versions.ts`'s `REQUIRED_*` constants); `installed`/`bundle` are what is actually
- * resolvable/staged RIGHT NOW, reusing the SAME resolvers `winter doctor` calls
+ * resolvable/staged RIGHT NOW, reusing the SAME resolvers `clover doctor` calls
  * (`runtime-sdk/runtimes-doctor.ts`'s `diagnoseRuntimes`) rather than a second probe. Every
  * `installed`/`bundle` field is independently optional — a miss is reported as absent, never a
  * thrown error (that IS the diagnostic; see each field's own doc below for why it can be missing).
@@ -1668,8 +1668,8 @@ export const VersionsGetResult = z.object({
  * offers" without conflating them:
  *
  *  - `definitions`: the daemon's OWN parse of `<home>/agents/*.md` MERGED with a trusted project's
- *    `<cwd>/.winter/agents/*.md` (`agent-definitions.ts`'s `mergeAgentDefinitionTiers`), the SAME
- *    merged map passed as `Options.agents` (`mode-options.ts`'s `buildWinterOptions`). Batch 3 (item 1): EVERY definition from BOTH tiers is reported, tagged `tier`, with a
+ *    `<cwd>/.clover/agents/*.md` (`agent-definitions.ts`'s `mergeAgentDefinitionTiers`), the SAME
+ *    merged map passed as `Options.agents` (`mode-options.ts`'s `buildCloverOptions`). Batch 3 (item 1): EVERY definition from BOTH tiers is reported, tagged `tier`, with a
  *    losing USER-tier row (same name as a project row) flagged `shadowed` rather than silently
  *    dropped — the project tier always
  *    wins the actual `Options.agents` slot (the SDK's own precedence), but the panel can still show
@@ -1678,14 +1678,14 @@ export const VersionsGetResult = z.object({
  *  - `rejected`: every `.md` file this daemon could read but whose frontmatter failed validation
  *    (missing/invalid `name`, missing `description`), each with ITS OWN reason and ITS OWN `tier` —
  *    never silently dropped.
- *  - `builtins`: the built-in agent TYPES (`Explore`, `Plan`, …) as reported by the last LIVE Winter
+ *  - `builtins`: the built-in agent TYPES (`Explore`, `Plan`, …) as reported by the last LIVE Clover
  *    session that answered `Query.supportedAgents()` (`session-driver.ts`'s
- *    `WinterLegDeps.onSupportedAgents`, cached daemon-wide in `agent/supported-agents-cache.ts`) —
- *    `null` when no session has EVER answered it (a fresh boot with no Winter-leg session opened
+ *    `CloverLegDeps.onSupportedAgents`, cached daemon-wide in `agent/supported-agents-cache.ts`) —
+ *    `null` when no session has EVER answered it (a fresh boot with no Clover-leg session opened
  *    yet), never an invented list.
  */
 export const AgentsListParams = z.object({
-  /** Batch 3 (item 1): which project's `.winter/agents` to consult, trust-gated exactly like
+  /** Batch 3 (item 1): which project's `.clover/agents` to consult, trust-gated exactly like
    *  `skills.list`'s own `cwd`. Absent — same as an untrusted cwd — reports the user tier alone. */
   cwd: z.string().optional(),
 });
@@ -1696,7 +1696,7 @@ export const AgentDefinitionInfoSchema = z.object({
   name: z.string(),
   description: z.string(),
   /** Verbatim from frontmatter — never split at a tag boundary (the runtime's own model-selection
-   *  vocabulary, not Winter's provider-qualified session tags). */
+   *  vocabulary, not Clover's provider-qualified session tags). */
   model: z.string().optional(),
   /** Absolute path to the `.md` file this definition came from — diagnostic only. */
   path: z.string(),
@@ -1762,7 +1762,7 @@ export const SessionSetPolicyParams = z.object({ sessionId: z.string().min(1), p
 export const SessionSetPolicyResult = z.object({
   ok: z.literal(true),
   /** 2026-09-22/23 (lane B): set only when the change crossed the BYPASS boundary on a live
-   *  Winter-leg child, which is REPLACED (resumably) rather than told — `"now"` when it was idle,
+   *  Clover-leg child, which is REPLACED (resumably) rather than told — `"now"` when it was idle,
    *  `"at-idle"` when a turn was running and the replacement waits for its end. */
   replaced: z.enum(["now", "at-idle"]).optional(),
   /** Set when a running turn could not leave bypass at once (review M4): it keeps bypassing approvals
@@ -1791,14 +1791,14 @@ export const SessionSetModelParams = z.object({
   // Winter Phase 10b (D1-6, W18-20/W18-21): the pre-flight review runs on every provider/model change
   // that crosses families (gpt -> deepseek, claude -> gpt). It is a no-op for a same-family change
   // (Sonnet <-> Opus, Terra <-> Luna): the router skips the review entirely for those, and there is
-  // nothing to confirm. WS-23: every model runs on the Winter runtime, so no switch crosses runtimes.
+  // nothing to confirm. WS-23: every model runs on the Clover runtime, so no switch crosses runtimes.
   confirmLossy: z.boolean().optional(),
 });
 export const SessionSetModelResult = z.object({});
 
 // provider-correctness T4 (spec Component 4): per-session reasoning effort. Its OWN method rather
 // than a second argument on `session.setModel` — the user's call, verbatim: "effort and model are
-// two different things, just like the CLI", where `winter model <slug>` and `winter model --effort
+// two different things, just like the CLI", where `clover model <slug>` and `clover model --effort
 // <level>` are separate controls over separate axes. Everything else mirrors `session.setModel`
 // above: mode-agnostic (there is no "fixed effort" concept for any mode, unlike session.setPolicy's
 // chat rule), `effort: null` CLEARS the override so the next resolution falls back to the global
@@ -1817,7 +1817,7 @@ export const SessionSetEffortResult = z.object({});
 
 // session-activity-hygiene T3 (spec §1): the WRITE half of the session lifecycle — `session.list`'s
 // derived `activity` (T2) is the read half. ONE method behind every surface that moves a session's
-// state: the TUI's `/background` and `/archive`, dispatch's management verbs (T8), the `winter
+// state: the TUI's `/background` and `/archive`, dispatch's management verbs (T8), the `clover
 // agents` TUI (T9), and the phone (which is why it joins the remote allowlist — 19 → 20).
 //
 // The VALUE NAMES A TARGET STATE, not a flag, and only the two STORED states are settable —
@@ -2004,7 +2004,7 @@ export const EngineActivityResult = z.object({
 export const QuotaStateParams = z.object({});
 /** The FLAT merge of `QuotaManager.state()` ({kind:"ok"} | {kind:"limited", resumeAt}) and
  *  `.usage()` ({inputTokens, outputTokens}) — matches WinterKit's `quotaState()` wrapper
- *  field-for-field (apple/WinterKit/Sources/WinterKit/WinterClient+Methods.swift). */
+ *  field-for-field (apple/WinterKit/Sources/WinterKit/CloverClient+Methods.swift). */
 export const QuotaStateResult = z.object({
   kind: z.enum(["ok", "limited"]),
   resumeAt: z.number().int().nonnegative().optional(),
@@ -2118,7 +2118,7 @@ export const PluginRevokeTokenParams = z.object({ pluginId: z.string().min(1) })
 export const PluginRevokeTokenResult = z.object({ ok: z.literal(true) });
 
 /** Final-review Fix 1: the manual-restart rider (`PluginSupervisor.restart`, plugins/supervisor.ts
- *  — existed and was tested but had no caller) exposed over the wire so `winter plugin restart
+ *  — existed and was tested but had no caller) exposed over the wire so `clover plugin restart
  *  <id>` can recover a plugin stuck "circuit-open" (nothing else ever clears that state short of
  *  a daemon restart). Same role precedent as `plugins.list` — harness OR admin, NOT one of the six
  *  plugin-role verbs (a plugin can never restart itself or another plugin). WS-24: `pluginId` is the
@@ -2129,9 +2129,9 @@ export const PluginRestartResult = z.object({ ok: z.literal(true) });
 
 // ---------------------------------------------------------------------------------------------
 // Hardware helper (Phase 4c Task 1, spec §5): plugin (or harness, dev/testing) → core →
-// Winter.app's XPC helper. `hardware.request` is PLUGIN-CALLABLE (ipc/server.ts's
+// Clover.app's XPC helper. `hardware.request` is PLUGIN-CALLABLE (ipc/server.ts's
 // PLUGIN_ALLOWED_METHODS gains it, growing the plugin-role allowlist to seven verbs);
-// `hardware.respond` is NOT — only the active provider connection (Winter.app) may answer a
+// `hardware.respond` is NOT — only the active provider connection (Clover.app) may answer a
 // `hardware_requested` push (events.ts), same precedent as `peripheral.respond` above. The
 // core-side broker (Task 2) owns unknown-verb/consent/no-provider/timeout error shaping; this
 // task only pins the wire shapes.
@@ -2146,8 +2146,8 @@ export const HardwareRequestParams = z.object({
  *  Success carries `resultJson`; failures are typed by `code`: `unknown_verb`
  *  (`verbClass(verb) === null`, core's peripheral/hardware.ts), `consent_denied` (a plugin-role
  *  caller's manifest permissions/consent record didn't cover the verb's class — `missing` names
- *  which permission/consent class was absent), `no_provider` (Winter.app isn't connected —
- *  `message` is the user-facing "hardware features require Winter.app" string), `timeout` (the
+ *  which permission/consent class was absent), `no_provider` (Clover.app isn't connected —
+ *  `message` is the user-facing "hardware features require Clover.app" string), `timeout` (the
  *  provider never answered within the broker's timeoutMs), and `provider_error` (the provider's
  *  own `hardware.respond` carried an `error` string, passed through verbatim as `message`). */
 export const HardwareRequestResult = z.union([
@@ -2200,7 +2200,7 @@ export const TileActionResult = PluginPushResult;
 // daemon (no restart required), instead of the CLI-only, file-based, restart-to-apply flow that
 // predates this task. Mirrors the CLI's own plugin-cli.ts flow (missingConsents/
 // buildConsentBlock/applyFreshPluginConsent/setPluginEnabled/grantPluginConsents/
-// removePluginFromSettings/removePluginDir, all @yanlinglabs/winter-core's plugins/lifecycle.ts) but wire-
+// removePluginFromSettings/removePluginDir, all @waifucave/clover-core's plugins/lifecycle.ts) but wire-
 // shaped as typed result unions that never throw for an expected outcome — same precedent as
 // `HardwareRequestResult`/`PluginPushResult` above. NOT plugin-role verbs: a plugin can never
 // install/enable/disable/remove/consent itself or another plugin — ipc/server.ts's
@@ -2236,7 +2236,7 @@ export const PluginSetConsentResult = z.union([
 ]);
 
 // ════════════════════════════════════════════════════════════════════════════════════════════════
-// WS-21 (spec §5.2): `winter plugin` = `claude plugin`. Params and results mirror the agent SDK's
+// WS-21 (spec §5.2): `clover plugin` = `claude plugin`. Params and results mirror the agent SDK's
 // plugin-management API (Contract B, `packages/sdk/src/plugins/manage.ts`: `PluginScope`,
 // `InstalledPlugin`, `PluginListing`, `MarketplaceInfo`) field for field — protocol never imports the
 // SDK, same literal-mirroring precedent as the rest of this file. A plugin is named by its claude
@@ -2250,7 +2250,7 @@ export const PluginSetConsentResult = z.union([
 // ════════════════════════════════════════════════════════════════════════════════════════════════
 
 /** claude's plugin scopes: which settings tier carries `enabledPlugins` (`user` = `sdk/settings.json`,
- *  `project` = `.winter/settings.json`, `local` = `.winter/settings.local.json`). */
+ *  `project` = `.clover/settings.json`, `local` = `.clover/settings.local.json`). */
 export const PluginScopeSchema = z.enum(["user", "project", "local"]);
 export type PluginScope = z.infer<typeof PluginScopeSchema>;
 
@@ -2261,9 +2261,9 @@ export const InstalledPluginSchema = z.object({
   installPath: z.string(),
   scope: PluginScopeSchema,
 });
-/** WS-21 fix round 1 (I1): `plugin.list`'s per-entry `extras` — winter-plugin.json's own fields,
+/** WS-21 fix round 1 (I1): `plugin.list`'s per-entry `extras` — clover-plugin.json's own fields,
  *  the Mac app's consent UI (lane L5) needs over RPC (it has no filesystem access to read the
- *  manifest itself). Absent when the plugin has no winter-plugin.json. This is a wire-shape
+ *  manifest itself). Absent when the plugin has no clover-plugin.json. This is a wire-shape
  *  ADDITION scoped to `plugin.list`'s own result — `PluginListingSchema` is not reused anywhere
  *  else (core/src/ipc/server.ts is its one producer). */
 export const PluginListingExtrasSchema = z.object({
@@ -2282,13 +2282,13 @@ export const PluginListingExtrasSchema = z.object({
    *  `stale_disclosure` when it no longer matches what it recomputes at consent time. */
   fingerprint: z.string(),
   /** WS-24: present only for a row that declares an `entry` at PROJECT or LOCAL scope — says, in plain
-   *  words, that Winter does not start that background process for such an install: the Tier-2 entry is
+   *  words, that Clover does not start that background process for such an install: the Tier-2 entry is
    *  one daemon-wide process (tiles, shortcuts, hardware), with no session or project to scope it to, so
    *  only a user-scope install runs it. A consent UI shows it beside the disclosure. */
   entryNote: z.string().optional(),
 });
 /** WS-21 fix round 2: `plugin.list`'s `hooks` — TOP-LEVEL (a sibling of `extras`, not nested in it),
- *  because a claude-format plugin with no `winter-plugin.json` at all still carries hooks (they're
+ *  because a claude-format plugin with no `clover-plugin.json` at all still carries hooks (they're
  *  claude-native content, read from `hooks/hooks.json` and/or the claude manifest's own inline
  *  `hooks` field — `plugins/plugin-hooks.ts`'s own header has the full ruling). `[]` means the
  *  daemon successfully checked and this plugin declares NONE — including when both sources are
@@ -2497,7 +2497,7 @@ export const MemoryAuditResult = z.object({ lines: z.array(MemoryAuditLineSchema
 /** BYOK T1 (design doc `2026-07-16-byok-provider-setup-design.md` §1): the in-app "bring your own
  *  OpenAI API key" path — a scoped, purpose-specific RPC (deliberately NOT a generic secret-write
  *  verb). `type` is a literal (openai-compatible only, v1) — switching back to codex-oauth stays
- *  CLI-only (`winter login`), same "out of scope" carve-out as the design doc. `model` defaults to
+ *  CLI-only (`clover login`), same "out of scope" carve-out as the design doc. `model` defaults to
  *  "gpt-4o" server-side when omitted (ipc/server.ts's handler), mirroring `ProviderSettings`'s own
  *  required (non-optional) `model` field for openai-compatible. Provider-TYPE changes need a
  *  daemon restart to take effect (providers/manager.ts fixes `providerType` at boot) — this RPC
@@ -2520,8 +2520,8 @@ export const ProviderConfigureResult = z.object({ ok: z.literal(true) });
 // `runtimes.advisorModel` straight into settings.json (`AppModel.writeAdvisorModelToSettings`).
 // Under WS-20 that write must go through the daemon so the tag is validated against the pinned
 // catalog before it ever lands on disk — `setAdvisorModel` (settings.ts) is the SAME transform
-// `winter model --advisor <slug|auto>` already uses; this is the RPC door onto it. LOCAL-ROLE
-// ONLY: never added to `REMOTE_ALLOWED_METHODS` — a phone has no Winter-leg advisor to configure.
+// `clover model --advisor <slug|auto>` already uses; this is the RPC door onto it. LOCAL-ROLE
+// ONLY: never added to `REMOTE_ALLOWED_METHODS` — a phone has no Clover-leg advisor to configure.
 export const SettingsSetAdvisorModelParams = z.object({
   /** `null` clears the override (falls back to the D30 per-family default); a non-null value must
    *  already be a provider-qualified tag — the shape check happens HERE, at the door; provider
@@ -2542,7 +2542,7 @@ export const SettingsSetAdvisorModelResult = z.object({
  * `SettingsSetAdvisorModelParams`/`settings.setAdvisorModel` above on purpose — this is the ONE
  * door for all nine roles the Mac app's Roles pane needs, and the handler DELEGATES to
  * `setAdvisorModel` for this one rather than duplicating its transform; the older, single-role RPC
- * stays (existing callers, e.g. `winter model --advisor`, are unaffected).
+ * stays (existing callers, e.g. `clover model --advisor`, are unaffected).
  */
 export const ModelRole = z.enum([
   "pins.dispatch", "pins.dream", "pins.cleaner", "pins.research", "pins.researchFallback",
@@ -2580,7 +2580,7 @@ export const ModelRoleInfoSchema = z.object({
    *  when it has one, is `models.catalog`'s `defaultEffort` for the same tag.
    *
    *  Stored per role in `settings.roleEfforts.<role>`, with ONE exception: `provider.model` keeps its
-   *  established home, the sibling `settings.provider.reasoningEffort` (what `winter model --effort`
+   *  established home, the sibling `settings.provider.reasoningEffort` (what `clover model --effort`
    *  writes). This field reads whichever of the two owns the role, so a client never needs to know
    *  which. */
   effort: z.string().nullable(),
@@ -2612,10 +2612,10 @@ export const ModelRoleInfoSchema = z.object({
    *  change — today's vocabulary: `rate-limited`, `usage-limit`, `out-of-credits`,
    *  `credential-rejected`, `no-credential`, `model-unavailable`, `provider-unavailable`, `other`, plus
    *  the two STRUCTURAL reasons an internal-jobs role can carry (2026-09-19): `provider-unsupported`
-   *  (the role's explicit tag names a provider Winter's own background jobs cannot run on — `detail`
-   *  names the provider's display name, e.g. "Anthropic can't be used for Winter's own jobs yet") and
+   *  (the role's explicit tag names a provider Clover's own background jobs cannot run on — `detail`
+   *  names the provider's display name, e.g. "Anthropic can't be used for Clover's own jobs yet") and
    *  `no-internal-credential` (no provider those jobs can use has a credential stored — `detail` names
-   *  the logins that would enable it) and `no-default-model` (one IS stored, but Winter will not choose a
+   *  the logins that would enable it) and `no-default-model` (one IS stored, but Clover will not choose a
    *  model on that provider — `detail` says to pick one and names the provider; the fix is a pin, not a
    *  credential, which is why it is not `no-credential`). Those two are DERIVED on every read rather than recorded
    *  (`packages/core/src/providers/internal-role-problems.ts`), so they clear themselves the moment the
@@ -2671,7 +2671,7 @@ export const SettingsSetModelRoleParams = z.object({
    *  `session.setEffort`'s posture: the value must be one the model's catalog row offers (its
    *  vocabulary, plus `"none"` whenever that vocabulary is non-empty); a real catalog row with no
    *  vocabulary refuses ANY effort; a model with no catalog row at all (`winter-test/*`) is not
-   *  checked. A Winter-level tier (`"ultra"`) is refused on every role today — see core's
+   *  checked. A Clover-level tier (`"ultra"`) is refused on every role today — see core's
    *  `roleAcceptsClientEffort`. Changing the model with `effort` absent keeps a stored effort even
    *  if the new model does not offer it; the post-write `roles` echo shows it beside the new
    *  `efforts`. */
@@ -2732,7 +2732,7 @@ export const ModelCatalogProviderSchema = z.object({
   credentialSlotId: z.string().nullable(),
   /** WHICH DOOR credentials this provider — the flow a UI offers when it is not ready.
    *  `"keychain"`: a key pasted into `credentialSlotId` (Settings → Providers). `"console-profile"`:
-   *  `winter login --anthropic-console` (or the app's Sign in) — the broker fills the slot from that
+   *  `clover login --anthropic-console` (or the app's Sign in) — the broker fills the slot from that
    *  login, so there is no key to paste even though `credentialSlotId` names one. `"none"`:
    *  catalog-eligible but this daemon stores no credential for it. Readiness is `credentialPresent`
    *  below, never this field. */
@@ -2802,7 +2802,7 @@ export const ModelCatalogModelSchema = z.object({
    *    - `[…]`   — the levels the endpoint accepts for this row.
    *
    *  `"none"` is deliberately NOT prepended, unlike `sync.config`'s `models[].efforts`: the catalog
-   *  excludes `"none"` on purpose (it is Winter's own "unset", not a vendor tier), and that prepend
+   *  excludes `"none"` on purpose (it is Clover's own "unset", not a vendor tier), and that prepend
    *  is a PICKER convention of that one surface. This field carries what the catalog declares. A
    *  client building a selection control adds `"none"` itself whenever this array is non-empty —
    *  which is exactly what the daemon's own effort gates accept (`session.setEffort`,
@@ -2814,7 +2814,7 @@ export const ModelCatalogModelSchema = z.object({
    *  This is the value the daemon falls back to when an IMPLICIT effort is not in the row's
    *  vocabulary (core's `implicitEffortFor`), so a UI showing "provider default" can name it. */
   defaultEffort: z.string().nullable(),
-  /** WS-24 (pickers lane, fix round 1): whether a REAL Winter turn on this row can carry tools —
+  /** WS-24 (pickers lane, fix round 1): whether a REAL Clover turn on this row can carry tools —
    *  DERIVED (never the catalog's bare `toolCalling` verbatim): only four adapter families
    *  (anthropic, google, vertex, bedrock) actually refuse a turn's tools for a non-`"native"` row;
    *  every OpenAI-shaped family (Responses, chat-completions, and everything built on either) sends
@@ -2829,7 +2829,7 @@ export const ModelCatalogModelSchema = z.object({
   sessionUsable: z.boolean(),
   /** Code-mode image input (2026-09-29): whether this row ACCEPTS an image — the catalog row's own
    *  `inputModalities` contains `"image"`, verbatim catalog evidence, never inferred from a family
-   *  or a name. A row the catalog does not know takes images (`winter-default`/`unknown` rows list
+   *  or a name. A row the catalog does not know takes images (`clover-default`/`unknown` rows list
    *  text only) reports `false`. The same rule `session.stageImage` refuses on
    *  (`image_input_unsupported`), so a picker can never offer what the daemon then refuses. */
   supportsImages: z.boolean(),
@@ -2951,7 +2951,7 @@ export const CredentialRemoveResult = z.object({ ok: z.literal(true), removed: z
 // ---------------------------------------------------------------------------------------------
 // Workflows (CC-parity phase 3, Track C Task C2): the RPC surface over `WorkflowRuntime` (live
 // runs, core/src/workflows/runtime.ts, A3+/B2) + `WorkflowStore` (saved, trust-gated
-// `.winter/workflows/*.js` scripts, C1) — mirrors the routines.*/memory.* blocks above (harness AND
+// `.clover/workflows/*.js` scripts, C1) — mirrors the routines.*/memory.* blocks above (harness AND
 // admin role, no additional role check at the wire-schema layer; ipc/server.ts enforces it).
 // LOCAL-ONLY IN V1 (Global Constraints): these four verbs are deliberately NOT added to
 // PLUGIN_ALLOWED_METHODS or REMOTE_ALLOWED_METHODS (ipc/server.ts) — a plugin or remote (iPhone
@@ -3045,7 +3045,7 @@ export const SyncHeadsResult = z.object({
      *  Unvalidated on the way OUT, deliberately: this reports the daemon's own column, which every
      *  ingress into it (`session.setEffort`, `session.create`, `sync.push`) has already checked.
      *  Absent means "no override" — the session resolves at the global default. It may be a
-     *  Winter-level TIER only in theory: `sync.heads` lists CHAT sessions exclusively and every
+     *  Clover-level TIER only in theory: `sync.heads` lists CHAT sessions exclusively and every
      *  ingress refuses a tier for chat, so a reader that treats it as a wire effort is safe today —
      *  but `SessionSummary.effort`'s rule (match against BOTH lists) is the one to follow. */
     effort: z.string().optional(),
@@ -3114,7 +3114,7 @@ export const SYNC_MAX_CHUNK_B64 = 384 * 1024;
  *  only symptom is "the answers are different on the Mac". Its ingress validation is model-aware
  *  (`effortsForModel`, packages/core/src/ipc/sync.ts) exactly as `session.setEffort`'s is, and it
  *  drops-and-logs rather than failing the push, exactly as `model` does. One rule is stricter here
- *  than at `session.setEffort`: a Winter-level TIER (`sync.config.clientEfforts`, e.g. `"ultra"`) is
+ *  than at `session.setEffort`: a Clover-level TIER (`sync.config.clientEfforts`, e.g. `"ultra"`) is
  *  ALWAYS dropped on this ingress, because a tier is code-sessions-only and this surface is
  *  chat-only fail-closed — no session reachable through it may ever hold one. */
 export const SyncPushParams = z.object({
@@ -3286,7 +3286,7 @@ export const SyncConfigResult = z.object({
    *  configured no effort" and send none itself — never as a level to put on the wire, and never as
    *  a reason to pick one. */
   defaultEffort: z.string(),
-  /** WINTER-LEVEL effort tiers this daemon offers — selectable in Winter, **never sent upstream**,
+  /** CLOVER-LEVEL effort tiers this daemon offers — selectable in Clover, **never sent upstream**,
    *  and offered on CODE sessions only (`session.setEffort` refuses them for chat/dispatch).
    *  `["ultra"]` on a current daemon (`CLIENT_EFFORTS`, packages/core/src/settings.ts).
    *
@@ -3299,7 +3299,7 @@ export const SyncConfigResult = z.object({
    *  — `ultra` was offered by a phone-side mock while a global enum on the backend rejected it — so
    *  re-merging the two lists would reintroduce it through the fix.
    *
-   *  `[]` is a real answer and the only correct degrade: "this daemon offers no Winter-level tiers".
+   *  `[]` is a real answer and the only correct degrade: "this daemon offers no Clover-level tiers".
    *  A client renders exactly what it is told (wire levels from `models[].efforts`, tiers from
    *  here) and invents neither, so an older daemon meeting a newer client simply shows no tiers
    *  rather than offering one the daemon would refuse. */
@@ -3581,7 +3581,7 @@ export const METHODS = {
   approvalList: "approval.list",
   elicitationRespond: "elicitation.respond",
   elicitationUrl: "elicitation.url",
-  // The Winter island (Mac app): every pending card across sessions. HARNESS role only.
+  // The Clover island (Mac app): every pending card across sessions. HARNESS role only.
   islandPending: "island.pending",
   islandShown: "island.shown",
   islandActivity: "island.activity",
@@ -3606,7 +3606,7 @@ export const METHODS = {
   computerUseAppsSet: "computerUse.apps.set",
   computerUseSetSettings: "computerUse.setSettings",
   computerUseWakesCancel: "computerUse.wakes.cancel",
-  // ComputerV2 Phase 2: Winter.app's browser link. HARNESS role only.
+  // ComputerV2 Phase 2: Clover.app's browser link. HARNESS role only.
   browserLinkAttach: "browserLink.attach",
   browserLinkResult: "browserLink.result",
   browserLinkEvents: "browserLink.events",
@@ -3685,7 +3685,7 @@ export const METHODS = {
   pluginEnable: "plugin.enable",
   pluginDisable: "plugin.disable",
   pluginSetConsent: "plugin.setConsent",
-  // WS-21 (spec §5.2, Contract B): `winter plugin` = `claude plugin`. `plugin.enable`/`plugin.disable`
+  // WS-21 (spec §5.2, Contract B): `clover plugin` = `claude plugin`. `plugin.enable`/`plugin.disable`
   // keep their keys above; their WS-21 params are `PluginEnableScopedParams`/`PluginDisableScopedParams`.
   pluginInstall: "plugin.install",
   pluginUninstall: "plugin.uninstall",

@@ -6,8 +6,8 @@ import { describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync, truncateSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
-import { IMAGE_FILE_MAX_BYTES, STAGE_IMAGE_MAX_BYTES } from "@yanlinglabs/winter-protocol";
-import { imageDimensions } from "@yanlinglabs/winter-core";
+import { IMAGE_FILE_MAX_BYTES, STAGE_IMAGE_MAX_BYTES } from "@waifucave/clover-protocol";
+import { imageDimensions } from "@waifucave/clover-core";
 import {
   DraftImages, IMAGE_FILE_TOO_LARGE_MESSAGE, IMAGE_INPUT_UNSUPPORTED_MESSAGE, IMAGE_TOO_LARGE_MESSAGE, inspectImageFile, imagePathFromPaste, imageToken,
   prepareDraftImage, referencedImageNumbers, stageDraftImages, substituteImageTokens, type DraftImage,
@@ -198,7 +198,7 @@ describe("prepareDraftImage — clipboard DATA stays raw unless it cannot fit on
 
 describe("inspectImageFile — the check a pasted / dragged file passes before it is attached as its own path", () => {
   const withDir = (run: (dir: string) => void) => {
-    const dir = mkdtempSync(join(tmpdir(), "winter-inspect-"));
+    const dir = mkdtempSync(join(tmpdir(), "clover-inspect-"));
     try { run(dir); } finally { rmSync(dir, { recursive: true, force: true }); }
   };
 

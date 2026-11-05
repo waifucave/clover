@@ -52,7 +52,7 @@ describe("browsers.list / open / tabs / tab", () => {
     const h = harness({ installed: ["com.brave.Browser.beta", "com.operasoftware.OperaGX", "com.vivaldi.Vivaldi.snapshot"] });
     const r = h.run();
     const rows = await h.engine.global(r.scope, "browsers.list", {}) as Array<{ id: string; name: string; reason?: string }>;
-    expect(rows.map((x) => [x.id, x.name])).toEqual([["winter", "Winter (built-in)"], ["chrome", "Google Chrome"], ["brave", "Brave Beta"], ["vivaldi", "Vivaldi Snapshot"], ["opera", "Opera GX"]]);
+    expect(rows.map((x) => [x.id, x.name])).toEqual([["winter", "Clover (built-in)"], ["chrome", "Google Chrome"], ["brave", "Brave Beta"], ["vivaldi", "Vivaldi Snapshot"], ["opera", "Opera GX"]]);
     expect(rows.find((x) => x.id === "opera")?.reason).toBe("Winter for Chrome is not installed in Opera GX — ask the user");
   });
 
@@ -75,7 +75,7 @@ describe("browsers.list / open / tabs / tab", () => {
     expect(handle.targetId).toMatch(/^bt_[0-9a-f]{12}$/);
     expect(h.panel.get("s1")).toEqual([{ tabId: "w1", url: SHOP.url }]);
     const text = r.text();
-    expect(text).toContain("opened a new tab in Winter's browser\n");
+    expect(text).toContain("opened a new tab in Clover's browser\n");
     expect(text).toContain('Tab "Checkout — Shop" — https://shop.example.com/cart');
     expect(text).toContain('[2] heading "Your cart" (level 2)');
     expect(text).toContain('[3] link "Continue shopping" → shop.example.com');
@@ -157,8 +157,8 @@ describe("browsers.list / open / tabs / tab", () => {
       expect((e as AutomationFailure).kind).toBe("NotAllowed");
     }
     expect(h.panel.get("s1")).toBeUndefined();
-    // Winter's start page for about:blank is a data: URL in the app; the model reads about:blank.
-    h.winter.pages["about:blank"] = { url: "data:text/html,<p>Winter</p>", title: "", nodes: [] };
+    // Clover's start page for about:blank is a data: URL in the app; the model reads about:blank.
+    h.winter.pages["about:blank"] = { url: "data:text/html,<p>Clover</p>", title: "", nodes: [] };
     const t = await h.engine.global(r.scope, "browsers.open", { url: "about:blank" }) as TabHandle;
     expect(h.panel.get("s1")).toEqual([{ tabId: "w1" }]);
     expect(await h.engine.primitive(r.scope, t.targetId, "url", {})).toBe("about:blank");
@@ -187,7 +187,7 @@ describe("browsers.list / open / tabs / tab", () => {
     const r = h.run();
     const handle = await h.engine.global(r.scope, "browsers.open", { url: "https://example.com/", browser: "chrome" }) as TabHandle;
     expect(handle.id).toMatch(/^chrome:\d+$/);
-    expect(h.cards.map((c) => c.summary)).toEqual(["Allow Winter to use Google Chrome (com.google.Chrome)?"]);
+    expect(h.cards.map((c) => c.summary)).toEqual(["Allow Clover to use Google Chrome (com.google.Chrome)?"]);
     expect(r.text()).toContain("opened a new tab in Google Chrome (in the background)");
   });
 
@@ -216,10 +216,10 @@ describe("browsers.list / open / tabs / tab", () => {
     const e = await failure(h.engine.global(h.run().scope, "browsers.open", { url: "https://example.com/", browser: "netscape" }));
     expect(e).toBeInstanceOf(TypeError);
     expect(e.message).toContain("winter, chrome");
-    h.winterReg.unregister();
+    h.cloverReg.unregister();
     const e2 = await failure(h.engine.global(h.run().scope, "browsers.open", { url: "https://example.com/" }));
     expect((e2 as AutomationFailure).kind).toBe("BrowserUnavailable");
-    expect(e2.message).toContain("Winter isn't running");
+    expect(e2.message).toContain("Clover isn't running");
   });
 
   test("tabs: winter lists the session's own strip (yours marks agent tabs); the list is fenced", async () => {
@@ -272,7 +272,7 @@ describe("browsers.list / open / tabs / tab", () => {
     yes.chrome.addTab({ url: "https://u.example/", title: "U", nodes: [] }, { tabKey: "5" });
     const rows = await yes.engine.global(yes.run().scope, "browsers.tabs", { browser: "chrome" }) as Array<{ id: string }>;
     expect(rows.map((x) => x.id)).toEqual(["chrome:5"]);
-    expect(yes.cards.map((c) => c.summary)).toEqual(["Allow Winter to use Google Chrome (com.google.Chrome)?"]);
+    expect(yes.cards.map((c) => c.summary)).toEqual(["Allow Clover to use Google Chrome (com.google.Chrome)?"]);
     const no = harness({ policy: "ask", answer: () => false });
     const e = await failure(no.engine.global(no.run().scope, "browsers.tabs", { browser: "chrome" }));
     expect((e as AutomationFailure).kind).toBe("NotAllowed");
@@ -393,7 +393,7 @@ describe("the secure-field floor and input", () => {
     const t = await h.engine.global(r.scope, "browsers.open", { url: SHOP.url }) as TabHandle;
     const e = await failure(h.engine.primitive(r.scope, t.targetId, "type", { text: "hunter2", into: 5 }));
     expect((e as AutomationFailure).kind).toBe("Refused");
-    expect(e.message).toBe("that is a password or payment field — Winter never reads or types into one; ask the user to fill it in");
+    expect(e.message).toBe("that is a password or payment field — Clover never reads or types into one; ask the user to fill it in");
     const e2 = await failure(h.engine.primitive(r.scope, t.targetId, "setValue", { ref: 5, value: "x" }));
     expect((e2 as AutomationFailure).kind).toBe("Refused");
     expect(h.winter.sent.some((s) => s.method === "Input.dispatchKeyEvent")).toBe(false);
@@ -562,7 +562,7 @@ describe("dialogs", () => {
     expect(h.chrome.sent.some((x) => x.tabKey === "9" && x.method === "Page.handleJavaScriptDialog")).toBe(false);
   });
 
-  test("goto, back, forward and reload never navigate the user's own tab in their browser (Winter's built-in strip is exempt)", async () => {
+  test("goto, back, forward and reload never navigate the user's own tab in their browser (Clover's built-in strip is exempt)", async () => {
     const h = harness();
     h.chrome.addTab({ url: "https://u.example/", title: "U", nodes: [] }, { tabKey: "9" });
     const r = h.run();
@@ -575,7 +575,7 @@ describe("dialogs", () => {
     expect(h.chrome.sent.some((x) => x.tabKey === "9" && /^Page\.(navigate|reload|navigateToHistoryEntry|getNavigationHistory)$/.test(x.method))).toBe(false);
     // In-page acts on it stay allowed.
     await h.engine.primitive(r.scope, u.targetId, "state", {});
-    // The tab Winter opened in the same browser navigates; so does the user's tab in Winter's own strip.
+    // The tab Clover opened in the same browser navigates; so does the user's tab in Clover's own strip.
     const mine = await h.engine.global(r.scope, "browsers.open", { url: "https://a.example/", browser: "chrome" }) as TabHandle;
     await h.engine.primitive(r.scope, mine.targetId, "goto", { url: "https://b.example/" });
     h.panel.set("s1", [{ tabId: "user-tab", url: "https://w.example/" }]);
@@ -619,7 +619,7 @@ describe("the dangerous-domain floor", () => {
     const h = harness({ policy: "ask", dangerousAdded: ["evil.example"], answer: () => "once" });
     const r = h.run();
     await h.engine.global(r.scope, "browsers.open", { url: LISTED });
-    expect(h.cards.map((c) => c.summary)).toEqual(["Allow Winter to use evil.example in Winter's browser? It is on the dangerous-domains list."]);
+    expect(h.cards.map((c) => c.summary)).toEqual(["Allow Clover to use evil.example in Clover's browser? It is on the dangerous-domains list."]);
     expect([...r.sites]).toEqual(["evil.example"]);
   });
 
@@ -633,7 +633,7 @@ describe("the dangerous-domain floor", () => {
   test("ask (dispatch): a site card, like code's", async () => {
     const h = harness({ policy: "ask", facts: { mode: "dispatch" }, dangerousAdded: ["evil.example"], answer: () => "once" });
     await h.engine.global(h.run().scope, "browsers.open", { url: LISTED });
-    expect(h.cards.map((c) => c.summary)).toEqual(["Allow Winter to use evil.example in Winter's browser? It is on the dangerous-domains list."]);
+    expect(h.cards.map((c) => c.summary)).toEqual(["Allow Clover to use evil.example in Clover's browser? It is on the dangerous-domains list."]);
   });
 
   test("a standing WebFetch(domain:…) rule counts as approval under ask", async () => {
@@ -742,7 +742,7 @@ describe("lifecycle", () => {
     // A kept tab is the user's now: close() refuses it.
     const refused = await failure(h.engine.primitive(r.scope, kept.targetId, "close", {}));
     expect((refused as AutomationFailure).kind).toBe("NotAllowed");
-    expect(refused.message).toBe("that tab is the user's now — Winter never closes it");
+    expect(refused.message).toBe("that tab is the user's now — Clover never closes it");
     // …and tabs() no longer calls it yours (the handed-off one still is).
     const rows = await h.engine.global(r.scope, "browsers.tabs", { browser: "chrome", emit: false }) as Array<{ id: string; yours: boolean }>;
     expect(rows.find((x) => x.id === kept.id)?.yours).toBe(false);
@@ -815,7 +815,7 @@ describe("lifecycle", () => {
     late.addTab({ url: "https://busy.example/", title: "B", nodes: [] }, { tabKey: "2", sessionId: "s-busy", agent: true });
     late.addTab({ url: "https://mine.example/", title: "M", nodes: [] }, { tabKey: "3" });
     const engine = new BrowserEngine({
-      registry, mintWinterTab: () => "x", winterTabs: () => ({ tabs: [] }), sessionInfo: () => ({}), home: "/nonexistent",
+      registry, mintCloverTab: () => "x", cloverTabs: () => ({ tabs: [] }), sessionInfo: () => ({}), home: "/nonexistent",
       turnRunning: (sid) => sid === "s-busy",
     });
     registry.register(late, { family: "chrome", name: "Google Chrome", bundleId: "com.google.Chrome", instanceKey: "chrome-1" });
@@ -844,7 +844,7 @@ describe("lifecycle", () => {
       if (died || method !== "Runtime.callFunctionOn" || op !== "waitChange") return;
       died = true;
       h.chrome.goneTab(key, "crashed");
-      throw new TransportError("tab_gone", "Winter's headless browser stopped");
+      throw new TransportError("tab_gone", "Clover's headless browser stopped");
     };
     const e = await failure(h.engine.primitive(r.scope, t.targetId, "waitFor", { cond: { text: "never shows" }, timeoutMs: 2_000 }));
     expect(died).toBe(true);
@@ -861,7 +861,7 @@ describe("lifecycle", () => {
     h.chrome.goneTab(t.id.split(":")[1]!, "detached_by_user");
     const e = await failure(h.engine.primitive(r.scope, t.targetId, "state", {}));
     expect((e as AutomationFailure).kind).toBe("TargetLost");
-    expect(e.message).toContain("the user stopped Winter from controlling this tab");
+    expect(e.message).toContain("the user stopped Clover from controlling this tab");
   });
 
   test("Allow once: a user browser bound on it is released when the run ends", async () => {
@@ -880,7 +880,7 @@ describe("lifecycle", () => {
     const r = h.run();
     const t = await h.engine.global(r.scope, "browsers.open", { url: "https://a.example/" }) as TabHandle;
     await h.engine.primitive(r.scope, t.targetId, "close", {});
-    expect(h.closedWinter).toEqual([{ sessionId: "s1", tabId: "w1" }]);
+    expect(h.closedClover).toEqual([{ sessionId: "s1", tabId: "w1" }]);
     const e = await failure(h.engine.primitive(r.scope, t.targetId, "state", {}));
     expect((e as AutomationFailure).kind).toBe("TargetLost");
   });

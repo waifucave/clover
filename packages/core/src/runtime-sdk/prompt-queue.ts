@@ -1,14 +1,14 @@
 /**
- * **The host-owned prompt queue** — the `AsyncIterable<string>` every Winter session is opened with
- * (G-15 / P8b-6), and the ONLY way a host pushes a later user turn onto the Winter leg.
+ * **The host-owned prompt queue** — the `AsyncIterable<string>` every Clover session is opened with
+ * (G-15 / P8b-6), and the ONLY way a host pushes a later user turn onto the Clover leg.
  *
  * Surface map §2.5 is the whole rationale. A `string` prompt sends one `user` frame then
  * `end_input`, so such a session is **unreachable by messaging** for the rest of its life. An
  * `AsyncIterable<string>` prompt sends each item as a `user` frame *as it arrives* and closes input
  * only when the iterable itself completes — so "the host pushes later user turns by writing into
  * its own `AsyncIterable<string>`… That is the mechanism, and the SDK provides no helper for it on
- * the Winter leg" (the router ships `createOfficialInputStream()` for the OFFICIAL leg only). This
- * module is Winter's.
+ * the Clover leg" (the router ships `createOfficialInputStream()` for the OFFICIAL leg only). This
+ * module is Clover's.
  *
  * Closing the queue is also how a session ENDS cleanly (§2.5 way 1): `close()` → the iterable
  * completes → `end_input` → the child finishes its last turn and EOFs stdout.

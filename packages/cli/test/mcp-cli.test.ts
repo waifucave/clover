@@ -2,12 +2,12 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { readSdkGlobalConfig } from "@yanlinglabs/winter-core";
+import { readSdkGlobalConfig } from "@waifucave/clover-core";
 import {
   parseMcpAddArgs, parseMcpAddJsonArgs, parseMcpRemoveArgs, parseMcpGetArgs,
   ensureMcpScope, ensureMcpTransport, parseMcpHeaders, parseMcpEnv, looksLikeMcpUrl,
   buildMcpEntry, parseMcpVersionNegotiation, runMcpAddRoute, runMcpAddJsonRoute, runMcpRemoveRoute, runMcpRenameRoute, renderMcpRenameOutcome, runMcpGetRoute,
-  renderMcpAddOutcome, renderMcpRemoveOutcome, renderMcpGetOutcome, winterMcpConfigPath,
+  renderMcpAddOutcome, renderMcpRemoveOutcome, renderMcpGetOutcome, cloverMcpConfigPath,
   type McpDoor, type McpRouteDeps,
 } from "../src/mcp-cli";
 
@@ -130,7 +130,7 @@ describe("buildMcpEntry", () => {
     if (r.kind !== "ok") throw new Error("expected ok");
     expect(buildMcpEntry(r.parsed, "http")).toEqual({ kind: "ok", entry: { type: "http", url: "https://mcp.sentry.dev/mcp", headers: { Authorization: "Bearer x" } } });
   });
-  // WS-24: a Winter-only flag for the server's protocol-era choice (the entry's `versionNegotiation`).
+  // WS-24: a Clover-only flag for the server's protocol-era choice (the entry's `versionNegotiation`).
   test("--version-negotiation: legacy/auto are the named modes, anything else pins that revision, empty is refused", () => {
     expect(parseMcpVersionNegotiation(undefined)).toEqual({ kind: "ok" });
     expect(parseMcpVersionNegotiation("legacy")).toEqual({ kind: "ok", value: "legacy" });
@@ -149,27 +149,27 @@ describe("buildMcpEntry", () => {
   });
 });
 
-describe("route functions (no daemon — direct sdk/.winter.json / .winter/mcp.json writes)", () => {
+describe("route functions (no daemon — direct sdk/.clover.json / .clover/mcp.json writes)", () => {
   let dir: string;
-  let winterHome: string;
+  let cloverHome: string;
   let cwd: string;
   beforeEach(() => {
-    dir = mkdtempSync(join(tmpdir(), "winter-mcp-cli-"));
-    winterHome = join(dir, "home");
+    dir = mkdtempSync(join(tmpdir(), "clover-mcp-cli-"));
+    cloverHome = join(dir, "home");
     cwd = join(dir, "project");
-    mkdirSync(winterHome, { recursive: true });
+    mkdirSync(cloverHome, { recursive: true });
     mkdirSync(cwd, { recursive: true });
     cwd = realpathSync(cwd); // local/project scope resolve the REAL path (macOS /tmp is a symlink)
-    writeFileSync(join(winterHome, "settings.json"), JSON.stringify({ schemaVersion: 3, provider: { model: "codex-oauth/gpt-5.6-sol" } }, null, 2));
+    writeFileSync(join(cloverHome, "settings.json"), JSON.stringify({ schemaVersion: 3, provider: { model: "codex-oauth/gpt-5.6-sol" } }, null, 2));
   });
   afterEach(() => rmSync(dir, { recursive: true, force: true }));
 
-  function deps(): McpRouteDeps { return { cwd, winterHome }; }
+  function deps(): McpRouteDeps { return { cwd, cloverHome }; }
 
-  test("add (local scope, default) writes sdk/.winter.json projects[cwd].mcpServers", async () => {
+  test("add (local scope, default) writes sdk/.clover.json projects[cwd].mcpServers", async () => {
     const outcome = await runMcpAddRoute(["my-server", "npx", "my-mcp"], deps());
     expect(outcome).toEqual({ ok: true, scope: "local", name: "my-server", transport: "stdio", root: cwd });
-    const config = readSdkGlobalConfig(winterHome);
+    const config = readSdkGlobalConfig(cloverHome);
     expect(config.projects?.[cwd]?.mcpServers?.["my-server"]).toEqual({ type: "stdio", command: "npx", args: ["my-mcp"] });
   });
 
@@ -178,37 +178,37 @@ describe("route functions (no daemon — direct sdk/.winter.json / .winter/mcp.j
   // rule the daemon's own run-home builder uses, so a CLI write and a daemon read of the same
   // project can never land under two different keys. This is the one behavior a bare realpath
   // could never give: called from a SUBDIRECTORY of a real repo, the key is the repo ROOT.
-  test("add (local scope) from a subdirectory of a real git repo keys sdk/.winter.json by the REPO ROOT, not the subdirectory", async () => {
+  test("add (local scope) from a subdirectory of a real git repo keys sdk/.clover.json by the REPO ROOT, not the subdirectory", async () => {
     const repoRoot = realpathSync(cwd);
     if (Bun.spawnSync(["git", "init", "-q", repoRoot]).exitCode !== 0) throw new Error("git init failed — is git on PATH?");
     const sub = join(repoRoot, "packages", "app");
     mkdirSync(sub, { recursive: true });
 
-    const outcome = await runMcpAddRoute(["my-server", "npx", "my-mcp"], { cwd: sub, winterHome });
+    const outcome = await runMcpAddRoute(["my-server", "npx", "my-mcp"], { cwd: sub, cloverHome });
     expect(outcome).toEqual({ ok: true, scope: "local", name: "my-server", transport: "stdio", root: repoRoot });
-    const config = readSdkGlobalConfig(winterHome);
+    const config = readSdkGlobalConfig(cloverHome);
     expect(config.projects?.[repoRoot]?.mcpServers?.["my-server"]).toEqual({ type: "stdio", command: "npx", args: ["my-mcp"] });
     expect(config.projects?.[sub]).toBeUndefined(); // never keyed by the subdirectory itself
   });
 
   // WS-24: both project-scope write paths rebuilt the entry field by field and dropped the key.
-  test("add / add-json --scope project keep versionNegotiation in .winter/mcp.json", async () => {
+  test("add / add-json --scope project keep versionNegotiation in .clover/mcp.json", async () => {
     expect((await runMcpAddRoute(["-s", "project", "--version-negotiation", "legacy", "a", "npx", "pkg"], deps())).ok).toBe(true);
     expect((await runMcpAddJsonRoute(["-s", "project", "b", JSON.stringify({ command: "npx", versionNegotiation: { pin: "2026-07-28" } })], deps())).ok).toBe(true);
-    const servers = JSON.parse(readFileSync(winterMcpConfigPath(cwd), "utf8")).mcpServers;
+    const servers = JSON.parse(readFileSync(cloverMcpConfigPath(cwd), "utf8")).mcpServers;
     expect(servers.a).toEqual({ command: "npx", args: ["pkg"], versionNegotiation: "legacy" });
     expect(servers.b).toEqual({ command: "npx", versionNegotiation: { pin: "2026-07-28" } });
   });
 
-  test("add --scope user writes sdk/.winter.json's top-level mcpServers, reports via:local", async () => {
+  test("add --scope user writes sdk/.clover.json's top-level mcpServers, reports via:local", async () => {
     const outcome = await runMcpAddRoute(["-s", "user", "my-server", "npx", "my-mcp"], deps());
     expect(outcome).toEqual({ ok: true, scope: "user", name: "my-server", transport: "stdio", via: "local" });
-    const config = readSdkGlobalConfig(winterHome);
+    const config = readSdkGlobalConfig(cloverHome);
     expect(config.mcpServers?.["my-server"]).toEqual({ type: "stdio", command: "npx", args: ["my-mcp"] });
   });
 
   test("add refuses a reserved name, writing nothing", async () => {
-    const outcome = await runMcpAddRoute(["-s", "user", "winter__browser", "npx"], deps());
+    const outcome = await runMcpAddRoute(["-s", "user", "clover__browser", "npx"], deps());
     expect(outcome.ok).toBe(false);
     if (outcome.ok) throw new Error("expected refusal");
     expect(outcome.message).toMatch(/reserved/);
@@ -235,10 +235,10 @@ describe("route functions (no daemon — direct sdk/.winter.json / .winter/mcp.j
     expect(outcome.message).toMatch(/only writes a stdio entry/);
   });
 
-  test("add --scope project writes <cwd>/.winter/mcp.json (NOT .mcp.json) and reports trust status", async () => {
+  test("add --scope project writes <cwd>/.clover/mcp.json (NOT .mcp.json) and reports trust status", async () => {
     const outcome = await runMcpAddRoute(["-s", "project", "my-server", "npx", "my-mcp"], deps());
     expect(outcome).toEqual({ ok: true, scope: "project", name: "my-server", transport: "stdio", cwd, trusted: false });
-    const raw = JSON.parse(readFileSync(winterMcpConfigPath(cwd), "utf8"));
+    const raw = JSON.parse(readFileSync(cloverMcpConfigPath(cwd), "utf8"));
     expect(raw.mcpServers).toEqual({ "my-server": { command: "npx", args: ["my-mcp"] } });
   });
 
@@ -252,26 +252,26 @@ describe("route functions (no daemon — direct sdk/.winter.json / .winter/mcp.j
         stdioWithType: { type: "stdio", command: "npx", args: ["existing-pkg"] },
       },
     };
-    mkdirSync(join(cwd, ".winter"), { recursive: true });
-    writeFileSync(winterMcpConfigPath(cwd), JSON.stringify(existing, null, 2));
+    mkdirSync(join(cwd, ".clover"), { recursive: true });
+    writeFileSync(cloverMcpConfigPath(cwd), JSON.stringify(existing, null, 2));
 
     const outcome = await runMcpAddRoute(["-s", "project", "new-one", "npx", "new-pkg"], deps());
     expect(outcome).toEqual({ ok: true, scope: "project", name: "new-one", transport: "stdio", cwd, trusted: false });
 
-    const after = JSON.parse(readFileSync(winterMcpConfigPath(cwd), "utf8"));
+    const after = JSON.parse(readFileSync(cloverMcpConfigPath(cwd), "utf8"));
     expect(after.mcpServers.httpEntry).toEqual(existing.mcpServers.httpEntry);
     expect(after.mcpServers.stdioWithType).toEqual(existing.mcpServers.stdioWithType);
     expect(after.mcpServers["new-one"]).toEqual({ command: "npx", args: ["new-pkg"] });
   });
 
-  test("add --scope project refuses to write over a malformed .winter/mcp.json rather than replace it", async () => {
-    mkdirSync(join(cwd, ".winter"), { recursive: true });
-    writeFileSync(winterMcpConfigPath(cwd), "{ not json");
+  test("add --scope project refuses to write over a malformed .clover/mcp.json rather than replace it", async () => {
+    mkdirSync(join(cwd, ".clover"), { recursive: true });
+    writeFileSync(cloverMcpConfigPath(cwd), "{ not json");
     const outcome = await runMcpAddRoute(["-s", "project", "my-server", "npx"], deps());
     expect(outcome.ok).toBe(false);
     if (outcome.ok) throw new Error("expected refusal");
     expect(outcome.message).toMatch(/not valid JSON/);
-    expect(readFileSync(winterMcpConfigPath(cwd), "utf8")).toBe("{ not json");
+    expect(readFileSync(cloverMcpConfigPath(cwd), "utf8")).toBe("{ not json");
   });
 
   test("add-json validates JSON shape before writing, and writes on success (local scope, default)", async () => {
@@ -286,7 +286,7 @@ describe("route functions (no daemon — direct sdk/.winter.json / .winter/mcp.j
   test("add-json defaults a type-less JSON object with a `command` to stdio (matching claude's own .mcp.json convention)", async () => {
     const outcome = await runMcpAddJsonRoute(["-s", "user", "typeless", JSON.stringify({ command: "npx", args: ["pkg"] })], deps());
     expect(outcome).toEqual({ ok: true, scope: "user", name: "typeless", transport: "stdio", via: "local" });
-    const config = readSdkGlobalConfig(winterHome);
+    const config = readSdkGlobalConfig(cloverHome);
     expect(config.mcpServers?.typeless).toEqual({ type: "stdio", command: "npx", args: ["pkg"] });
   });
 
@@ -356,9 +356,9 @@ describe("route functions (no daemon — direct sdk/.winter.json / .winter/mcp.j
     expect(outcome).toEqual({ ok: false, message: 'No MCP server found with name: "never-added"' });
   });
 
-  test("remove with no scope surfaces a malformed project .winter/mcp.json's parse error, rather than reporting the name as absent", async () => {
-    mkdirSync(join(cwd, ".winter"), { recursive: true });
-    writeFileSync(winterMcpConfigPath(cwd), "{ not json");
+  test("remove with no scope surfaces a malformed project .clover/mcp.json's parse error, rather than reporting the name as absent", async () => {
+    mkdirSync(join(cwd, ".clover"), { recursive: true });
+    writeFileSync(cloverMcpConfigPath(cwd), "{ not json");
     const outcome = await runMcpRemoveRoute(["anything"], deps());
     expect(outcome.ok).toBe(false);
     if (outcome.ok) throw new Error("expected refusal");
@@ -366,10 +366,10 @@ describe("route functions (no daemon — direct sdk/.winter.json / .winter/mcp.j
     expect((outcome as { message: string }).message).toMatch(/not valid JSON/);
   });
 
-  test("remove with an EXPLICIT -s user still works normally even when the project's .winter/mcp.json is malformed (the malformed-file refusal is scoped to the ambient lookup only)", async () => {
+  test("remove with an EXPLICIT -s user still works normally even when the project's .clover/mcp.json is malformed (the malformed-file refusal is scoped to the ambient lookup only)", async () => {
     await runMcpAddRoute(["-s", "user", "my-server", "npx"], deps());
-    mkdirSync(join(cwd, ".winter"), { recursive: true });
-    writeFileSync(winterMcpConfigPath(cwd), "{ not json");
+    mkdirSync(join(cwd, ".clover"), { recursive: true });
+    writeFileSync(cloverMcpConfigPath(cwd), "{ not json");
     const outcome = await runMcpRemoveRoute(["my-server", "-s", "user"], deps());
     expect(outcome).toEqual({ ok: true, scope: "user", name: "my-server", removed: true });
   });
@@ -394,9 +394,9 @@ describe("route functions (no daemon — direct sdk/.winter.json / .winter/mcp.j
     expect(outcome).toEqual({ ok: true, found: true, name: "my-server", scope: "user", transport: "stdio", command: "npx", args: ["arg"], env: undefined });
   });
 
-  test("get (no daemon) reports strippedHeaders for a hand-edited sdk/.winter.json entry with a credential-shaped header, same as the RPC path", async () => {
-    mkdirSync(join(winterHome, "sdk"), { recursive: true });
-    writeFileSync(join(winterHome, "sdk", ".winter.json"), JSON.stringify({
+  test("get (no daemon) reports strippedHeaders for a hand-edited sdk/.clover.json entry with a credential-shaped header, same as the RPC path", async () => {
+    mkdirSync(join(cloverHome, "sdk"), { recursive: true });
+    writeFileSync(join(cloverHome, "sdk", ".clover.json"), JSON.stringify({
       mcpServers: { remote: { type: "http", url: "https://example.com/mcp", headers: { Authorization: "Bearer sk-secret", "X-Request-Id": "abc" } } },
     }));
     const outcome = await runMcpGetRoute(["remote"], deps());
@@ -418,15 +418,15 @@ describe("route functions (no daemon — direct sdk/.winter.json / .winter/mcp.j
   });
 
   test("get on a project-scope http entry reports its real transport (not always 'stdio')", async () => {
-    mkdirSync(join(cwd, ".winter"), { recursive: true });
-    writeFileSync(winterMcpConfigPath(cwd), JSON.stringify({ mcpServers: { remote: { type: "http", url: "https://example.com/mcp" } } }));
+    mkdirSync(join(cwd, ".clover"), { recursive: true });
+    writeFileSync(cloverMcpConfigPath(cwd), JSON.stringify({ mcpServers: { remote: { type: "http", url: "https://example.com/mcp" } } }));
     const outcome = await runMcpGetRoute(["remote"], deps());
     expect(outcome).toEqual({ ok: true, found: true, name: "remote", scope: "project", transport: "http", url: "https://example.com/mcp", headers: undefined, cwd });
   });
 
   test("get on a project-scope entry that fails every recognized shape reports found:true with `unrecognized` set, and does not break a sibling lookup", async () => {
-    mkdirSync(join(cwd, ".winter"), { recursive: true });
-    writeFileSync(winterMcpConfigPath(cwd), JSON.stringify({
+    mkdirSync(join(cwd, ".clover"), { recursive: true });
+    writeFileSync(cloverMcpConfigPath(cwd), JSON.stringify({
       mcpServers: { broken: { type: "stdio" }, sibling: { command: "npx" } },
     }));
     const brokenOutcome = await runMcpGetRoute(["broken"], deps());
@@ -446,7 +446,7 @@ describe("route functions with a live door (daemon path — user scope only, see
       mcpRemove: async (name) => ({ ok: true, name, removed: true }),
       mcpGet: async (name) => ({ ok: true, name, found: false }),
     };
-    const outcome = await runMcpAddRoute(["-s", "user", "my-server", "npx"], { cwd: "/tmp", winterHome: "/tmp/home", door });
+    const outcome = await runMcpAddRoute(["-s", "user", "my-server", "npx"], { cwd: "/tmp", cloverHome: "/tmp/home", door });
     expect(outcome).toEqual({ ok: true, scope: "user", name: "my-server", transport: "stdio", via: "daemon", started: true });
     expect(calls).toEqual([["add", "my-server", { type: "stdio", command: "npx" }]]);
   });
@@ -457,15 +457,15 @@ describe("route functions with a live door (daemon path — user scope only, see
       mcpRemove: async (name) => ({ ok: true, name, removed: false }),
       mcpGet: async (name) => ({ ok: true, name, found: false }),
     };
-    const outcome = await runMcpAddRoute(["-s", "user", "my-server", "npx"], { cwd: "/tmp", winterHome: "/tmp/home", door });
+    const outcome = await runMcpAddRoute(["-s", "user", "my-server", "npx"], { cwd: "/tmp", cloverHome: "/tmp/home", door });
     expect(outcome).toEqual({ ok: false, message: "already exists in user config" });
   });
 
   test("add --scope local (default) never touches the door, even when one is live", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "winter-mcp-cli-door-local-"));
-    const winterHome = join(dir, "home");
+    const dir = mkdtempSync(join(tmpdir(), "clover-mcp-cli-door-local-"));
+    const cloverHome = join(dir, "home");
     let cwd = join(dir, "project");
-    mkdirSync(winterHome, { recursive: true });
+    mkdirSync(cloverHome, { recursive: true });
     mkdirSync(cwd, { recursive: true });
     cwd = realpathSync(cwd);
     const calls: unknown[] = [];
@@ -474,7 +474,7 @@ describe("route functions with a live door (daemon path — user scope only, see
       mcpRemove: async (name) => ({ ok: true, name, removed: true }),
       mcpGet: async (name) => ({ ok: true, name, found: false }),
     };
-    const outcome = await runMcpAddRoute(["my-server", "npx"], { cwd, winterHome, door });
+    const outcome = await runMcpAddRoute(["my-server", "npx"], { cwd, cloverHome, door });
     expect(outcome).toEqual({ ok: true, scope: "local", name: "my-server", transport: "stdio", root: cwd });
     expect(calls).toEqual([]); // the door was never called for local scope
     rmSync(dir, { recursive: true, force: true });
@@ -488,58 +488,58 @@ describe("rendering", () => {
   });
   test("add outcome text (local scope)", () => {
     expect(renderMcpAddOutcome({ ok: true, scope: "local", name: "x", transport: "stdio", root: "/p" }))
-      .toMatch(/Added stdio MCP server "x" to local config \(sdk\/\.winter\.json, \/p\)/);
+      .toMatch(/Added stdio MCP server "x" to local config \(sdk\/\.clover\.json, \/p\)/);
   });
   test("add outcome text (project, untrusted)", () => {
     expect(renderMcpAddOutcome({ ok: true, scope: "project", name: "x", transport: "stdio", cwd: "/p", trusted: false }))
-      .toMatch(/not yet loaded.*winter trust \/p/);
+      .toMatch(/not yet loaded.*clover trust \/p/);
   });
   test("remove multi-scope text lists all scopes it's in", () => {
     const text = renderMcpRemoveOutcome({ ok: false, multi: true, name: "x", scopes: ["local", "user", "project"] });
-    expect(text).toContain('winter mcp remove "x" -s local');
-    expect(text).toContain('winter mcp remove "x" -s user');
-    expect(text).toContain('winter mcp remove "x" -s project');
+    expect(text).toContain('clover mcp remove "x" -s local');
+    expect(text).toContain('clover mcp remove "x" -s user');
+    expect(text).toContain('clover mcp remove "x" -s project');
   });
   test("get not-found text", () => {
     expect(renderMcpGetOutcome({ ok: true, found: false, name: "x" })).toBe('No MCP server found with name: "x"');
   });
 });
 
-// R.3 residual (controller ruling): `winter mcp add --scope project` writes at the cwd's own git top (a linked
+// R.3 residual (controller ruling): `clover mcp add --scope project` writes at the cwd's own git top (a linked
 // worktree's own top, as claude's `--scope project` does and the run home reads), and its trust note is keyed
 // on the REPOSITORY (a worktree of a trusted repo is trusted).
 describe("R.3 residual: mcp --scope project from a linked worktree of a trusted repo", () => {
-  test("add writes the worktree's .winter/mcp.json and reports it trusted; get and remove find it there", async () => {
-    const main = realpathSync(mkdtempSync(join(tmpdir(), "winter-mcp-cli-r3p-main-")));
+  test("add writes the worktree's .clover/mcp.json and reports it trusted; get and remove find it there", async () => {
+    const main = realpathSync(mkdtempSync(join(tmpdir(), "clover-mcp-cli-r3p-main-")));
     const git = (args: string[]) => expect(Bun.spawnSync(["git", "-C", main, ...args], { stdout: "ignore", stderr: "ignore" }).exitCode).toBe(0);
     git(["init", "-q"]);
     git(["-c", "user.email=t@t.test", "-c", "user.name=t", "commit", "--allow-empty", "-q", "-m", "i"]);
-    const wt = join(realpathSync(mkdtempSync(join(tmpdir(), "winter-mcp-cli-r3p-wt-"))), "wt");
+    const wt = join(realpathSync(mkdtempSync(join(tmpdir(), "clover-mcp-cli-r3p-wt-"))), "wt");
     git(["worktree", "add", "-q", "-b", `r3p-${Math.random().toString(16).slice(2)}`, wt]);
-    const winterHome = realpathSync(mkdtempSync(join(tmpdir(), "winter-mcp-cli-r3p-home-")));
-    writeFileSync(join(winterHome, "trust.json"), JSON.stringify({ version: 1, trustedDirs: [main] }));
-    const deps: McpRouteDeps = { cwd: realpathSync(wt), winterHome };
+    const cloverHome = realpathSync(mkdtempSync(join(tmpdir(), "clover-mcp-cli-r3p-home-")));
+    writeFileSync(join(cloverHome, "trust.json"), JSON.stringify({ version: 1, trustedDirs: [main] }));
+    const deps: McpRouteDeps = { cwd: realpathSync(wt), cloverHome };
     const outcome = await runMcpAddRoute(["-s", "project", "wtsrv", "node", "srv.js"], deps);
     expect(outcome).toEqual({ ok: true, scope: "project", name: "wtsrv", transport: "stdio", cwd: realpathSync(wt), trusted: true });
-    expect(Object.keys(JSON.parse(readFileSync(join(wt, ".winter", "mcp.json"), "utf8")).mcpServers)).toEqual(["wtsrv"]);
+    expect(Object.keys(JSON.parse(readFileSync(join(wt, ".clover", "mcp.json"), "utf8")).mcpServers)).toEqual(["wtsrv"]);
     expect(await runMcpGetRoute(["wtsrv"], deps)).toMatchObject({ ok: true, found: true, scope: "project", cwd: realpathSync(wt) });
     expect(await runMcpRemoveRoute(["-s", "project", "wtsrv"], deps)).toMatchObject({ ok: true, scope: "project", removed: true, cwd: realpathSync(wt) });
     // from the MAIN checkout: its own file, trusted as before
-    const fromMain = await runMcpAddRoute(["-s", "project", "mainsrv", "node", "m.js"], { cwd: main, winterHome });
+    const fromMain = await runMcpAddRoute(["-s", "project", "mainsrv", "node", "m.js"], { cwd: main, cloverHome });
     expect(fromMain).toEqual({ ok: true, scope: "project", name: "mainsrv", transport: "stdio", cwd: main, trusted: true });
-    expect(Object.keys(JSON.parse(readFileSync(join(main, ".winter", "mcp.json"), "utf8")).mcpServers)).toEqual(["mainsrv"]);
+    expect(Object.keys(JSON.parse(readFileSync(join(main, ".clover", "mcp.json"), "utf8")).mcpServers)).toEqual(["mainsrv"]);
   });
 });
 
 describe("WS-27: remove and rename carry the connector settings", () => {
   function setup(servers: Record<string, unknown>, settings: Record<string, unknown>) {
-    const winterHome = realpathSync(mkdtempSync(join(tmpdir(), "winter-mcp-cli-ws27-home-")));
-    const cwd = realpathSync(mkdtempSync(join(tmpdir(), "winter-mcp-cli-ws27-cwd-")));
-    mkdirSync(join(winterHome, "sdk"), { recursive: true });
-    writeFileSync(join(winterHome, "sdk", ".winter.json"), JSON.stringify(servers));
-    writeFileSync(join(winterHome, "settings.json"), JSON.stringify({ schemaVersion: 3, provider: { model: "codex-oauth/gpt-5.6-sol" }, ...settings }));
-    const perms = () => JSON.parse(readFileSync(join(winterHome, "settings.json"), "utf8")).mcp?.toolPermissions;
-    return { deps: { cwd, winterHome }, winterHome, cwd, perms };
+    const cloverHome = realpathSync(mkdtempSync(join(tmpdir(), "clover-mcp-cli-ws27-home-")));
+    const cwd = realpathSync(mkdtempSync(join(tmpdir(), "clover-mcp-cli-ws27-cwd-")));
+    mkdirSync(join(cloverHome, "sdk"), { recursive: true });
+    writeFileSync(join(cloverHome, "sdk", ".clover.json"), JSON.stringify(servers));
+    writeFileSync(join(cloverHome, "settings.json"), JSON.stringify({ schemaVersion: 3, provider: { model: "codex-oauth/gpt-5.6-sol" }, ...settings }));
+    const perms = () => JSON.parse(readFileSync(join(cloverHome, "settings.json"), "utf8")).mcp?.toolPermissions;
+    return { deps: { cwd, cloverHome }, cloverHome, cwd, perms };
   }
 
   test("remove with no daemon clears the permissions of a name nothing else defines", async () => {
@@ -552,7 +552,7 @@ describe("WS-27: remove and rename carry the connector settings", () => {
 
   test("remove at local scope keeps the permissions while the user scope still defines the name", async () => {
     const f = setup({}, { mcp: { toolPermissions: { cf: { list: "ask" } } } });
-    writeFileSync(join(f.winterHome, "sdk", ".winter.json"), JSON.stringify({ mcpServers: { cf: { type: "stdio", command: "cf" } }, projects: { [f.cwd]: { mcpServers: { cf: { type: "stdio", command: "cf-local" } } } } }));
+    writeFileSync(join(f.cloverHome, "sdk", ".clover.json"), JSON.stringify({ mcpServers: { cf: { type: "stdio", command: "cf" } }, projects: { [f.cwd]: { mcpServers: { cf: { type: "stdio", command: "cf-local" } } } } }));
     const outcome = await runMcpRemoveRoute(["cf", "-s", "local"], f.deps);
     expect(outcome).toMatchObject({ ok: true, scope: "local", removed: true });
     expect("permissionsCleared" in outcome).toBe(false);
@@ -563,7 +563,7 @@ describe("WS-27: remove and rename carry the connector settings", () => {
     const f = setup({ mcpServers: { cf: { type: "stdio", command: "cf" } } }, { mcp: { toolPermissions: { cf: { "*": "ask" } } } });
     const outcome = await runMcpRenameRoute(["cf", "cloudflare"], f.deps);
     expect(outcome).toEqual({ ok: true, scope: "user", name: "cf", newName: "cloudflare", carried: true, keptOld: false, rulesNotFollowed: [], via: "local" });
-    expect(JSON.parse(readFileSync(join(f.winterHome, "sdk", ".winter.json"), "utf8")).mcpServers).toEqual({ cloudflare: { type: "stdio", command: "cf" } });
+    expect(JSON.parse(readFileSync(join(f.cloverHome, "sdk", ".clover.json"), "utf8")).mcpServers).toEqual({ cloudflare: { type: "stdio", command: "cf" } });
     expect(f.perms()).toEqual({ cloudflare: { "*": "ask" } });
     expect(renderMcpRenameOutcome(outcome)).toContain('Renamed MCP server "cf" to "cloudflare"');
   });
@@ -572,7 +572,7 @@ describe("WS-27: remove and rename carry the connector settings", () => {
     const f = setup({ mcpServers: { cf: { type: "stdio", command: "cf" }, gh: { type: "stdio", command: "gh" } } }, {});
     expect(await runMcpRenameRoute(["cf", "gh", "-s", "user"], f.deps)).toMatchObject({ ok: false, code: "mcp_server_exists" });
     expect(await runMcpRenameRoute(["nope", "x"], f.deps)).toMatchObject({ ok: false, code: "mcp_server_not_found" });
-    expect(await runMcpRenameRoute(["cf"], f.deps)).toMatchObject({ ok: false, message: expect.stringContaining("usage: winter mcp rename") });
+    expect(await runMcpRenameRoute(["cf"], f.deps)).toMatchObject({ ok: false, message: expect.stringContaining("usage: clover mcp rename") });
     const calls: unknown[] = [];
     const door: McpDoor = {
       mcpAdd: async () => { throw new Error("unused"); },
@@ -589,25 +589,25 @@ describe("WS-27: remove and rename carry the connector settings", () => {
 
 describe("WS-27 review 6: with a live daemon, remove goes through mcp.remove for every scope", () => {
   test("local and project removes call the door with scope and cwd, and report its permissionsCleared", async () => {
-    const winterHome = realpathSync(mkdtempSync(join(tmpdir(), "winter-mcp-cli-r6-home-")));
-    const cwd = realpathSync(mkdtempSync(join(tmpdir(), "winter-mcp-cli-r6-cwd-")));
+    const cloverHome = realpathSync(mkdtempSync(join(tmpdir(), "clover-mcp-cli-r6-home-")));
+    const cwd = realpathSync(mkdtempSync(join(tmpdir(), "clover-mcp-cli-r6-cwd-")));
     const calls: unknown[] = [];
     const door: McpDoor = {
       mcpAdd: async () => { throw new Error("unused"); },
       mcpRemove: async (name, scope, c) => { calls.push([name, scope, c]); return { ok: true, name, removed: true, permissionsCleared: true }; },
       mcpGet: async (name) => ({ ok: true, name, found: false }),
     };
-    expect(await runMcpRemoveRoute(["x", "-s", "local"], { cwd, winterHome, door })).toEqual({ ok: true, scope: "local", name: "x", removed: true, permissionsCleared: true, root: cwd });
-    mkdirSync(join(cwd, ".winter"), { recursive: true });
-    writeFileSync(join(cwd, ".winter", "mcp.json"), JSON.stringify({ mcpServers: { x: { command: "x" } } }));
-    expect(await runMcpRemoveRoute(["x", "-s", "project"], { cwd, winterHome, door })).toMatchObject({ ok: true, scope: "project", removed: true });
+    expect(await runMcpRemoveRoute(["x", "-s", "local"], { cwd, cloverHome, door })).toEqual({ ok: true, scope: "local", name: "x", removed: true, permissionsCleared: true, root: cwd });
+    mkdirSync(join(cwd, ".clover"), { recursive: true });
+    writeFileSync(join(cwd, ".clover", "mcp.json"), JSON.stringify({ mcpServers: { x: { command: "x" } } }));
+    expect(await runMcpRemoveRoute(["x", "-s", "project"], { cwd, cloverHome, door })).toMatchObject({ ok: true, scope: "project", removed: true });
     expect(calls).toEqual([["x", "local", cwd], ["x", "project", cwd]]);
   });
 
   test("rename lists the rules that still name the old server, and says they were not rewritten", () => {
-    const text = renderMcpRenameOutcome({ ok: true, scope: "user", name: "cf", newName: "cfx", carried: true, keptOld: false, rulesNotFollowed: ["/p/.winter/settings.json: mcp__cf__list"], via: "daemon" });
-    expect(text).toContain('These rules could still name "cf" — Winter never rewrites a rule');
-    expect(text).toContain("/p/.winter/settings.json: mcp__cf__list");
+    const text = renderMcpRenameOutcome({ ok: true, scope: "user", name: "cf", newName: "cfx", carried: true, keptOld: false, rulesNotFollowed: ["/p/.clover/settings.json: mcp__cf__list"], via: "daemon" });
+    expect(text).toContain('These rules could still name "cf" — Clover never rewrites a rule');
+    expect(text).toContain("/p/.clover/settings.json: mcp__cf__list");
   });
 });
 
@@ -640,19 +640,19 @@ describe("WS-27 wording: deny/ask rules on a rename, and rules that still apply 
   });
 
   test("both facts come through the in-process doors", async () => {
-    const winterHome = realpathSync(mkdtempSync(join(tmpdir(), "winter-mcp-cli-wording-")));
-    const cwd = realpathSync(mkdtempSync(join(tmpdir(), "winter-mcp-cli-wording-cwd-")));
-    mkdirSync(join(winterHome, "sdk"), { recursive: true });
+    const cloverHome = realpathSync(mkdtempSync(join(tmpdir(), "clover-mcp-cli-wording-")));
+    const cwd = realpathSync(mkdtempSync(join(tmpdir(), "clover-mcp-cli-wording-cwd-")));
+    mkdirSync(join(cloverHome, "sdk"), { recursive: true });
     const config = { mcpServers: { cf: { type: "stdio", command: "cf" }, gh: { type: "stdio", command: "gh" } }, projects: { [cwd]: { mcpServers: { cf: { type: "stdio", command: "cf-local" } } } } };
-    writeFileSync(join(winterHome, "sdk", ".winter.json"), JSON.stringify(config));
-    const sdk = join(winterHome, "sdk", "settings.json");
+    writeFileSync(join(cloverHome, "sdk", ".clover.json"), JSON.stringify(config));
+    const sdk = join(cloverHome, "sdk", "settings.json");
     writeFileSync(sdk, JSON.stringify({ permissions: { allow: ["mcp__gh__list"], deny: ["mcp__gh__drop"], ask: ["mcp__gh__push"], } }));
-    const renamed = await runMcpRenameRoute(["gh", "github", "-s", "user"], { cwd, winterHome });
+    const renamed = await runMcpRenameRoute(["gh", "github", "-s", "user"], { cwd, cloverHome });
     expect(renamed).toMatchObject({ ok: true });
     expect((renamed as { protectiveRulesNotFollowed?: string[] }).protectiveRulesNotFollowed?.sort()).toEqual([`${sdk}: mcp__gh__drop`, `${sdk}: mcp__gh__push`].sort());
     // `cf` is also defined in the local scope: removing the user one leaves a server of that name.
     writeFileSync(sdk, JSON.stringify({ permissions: { deny: ["mcp__cf__drop"] } }));
-    const removed = await runMcpRemoveRoute(["cf", "-s", "user"], { cwd, winterHome });
+    const removed = await runMcpRemoveRoute(["cf", "-s", "user"], { cwd, cloverHome });
     expect(removed).toMatchObject({ ok: true, removed: true, nameStillInUse: true, rulesNotFollowed: [`${sdk}: mcp__cf__drop`] });
   });
 });

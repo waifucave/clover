@@ -5,8 +5,8 @@
 // SESSION and handed to that session's own `Options.mcpServers`, not to the handle-wide
 // construction-time `capabilities` list — see `server.ts`'s header for the measurement behind that
 // (there is no per-call session identity on `callTool`, so the identity has to be a closure).
-export { capabilityToolName, capabilityServerName, capabilityAdvertisedName, WINTER_CAPABILITY_TOOLS, CAPABILITY_SERVER_KEYS, RETIRED_CAPABILITY_SERVER_KEYS, reservedMcpServerNames } from "./names";
-export type { CapabilityServerKey, CapabilityToolFacts, WinterCapabilityToolName, SessionMode } from "./names";
+export { capabilityToolName, capabilityServerName, capabilityAdvertisedName, CLOVER_CAPABILITY_TOOLS, CAPABILITY_SERVER_KEYS, RETIRED_CAPABILITY_SERVER_KEYS, reservedMcpServerNames } from "./names";
+export type { CapabilityServerKey, CapabilityToolFacts, CloverCapabilityToolName, SessionMode } from "./names";
 export type { CapabilitySession, CapabilityServerSpec } from "./server";
 export { capabilityServer } from "./server";
 export { sessionsCapability, type SessionsCapabilityDeps } from "./sessions";
@@ -125,7 +125,7 @@ export function buildCapabilitiesFor(
  * `assertNoCapabilityCollision` inside the router only runs when the HANDLE carries capabilities,
  * and P8b-36 moved the host's to each session's own `Options.mcpServers` with the handle's list empty.
  * So the router no longer refuses a same-named server appearing beside a capability — and a
- * settings- or plugin-contributed MCP server called `winter__browser` merged into the same record
+ * settings- or plugin-contributed MCP server called `clover__browser` merged into the same record
  * would silently shadow the daemon-owned one, or be shadowed by it, depending on spread order.
  * Either way the model would be handed a `browser` that is not the host's, under the host's name.
  *
@@ -135,7 +135,7 @@ export function buildCapabilitiesFor(
  */
 export class CapabilityNameCollisionError extends Error {
   readonly code = "capability_name_collision" as const;
-  /** The colliding server name — a daemon-owned `winter__<key>` name, or the brand name itself. */
+  /** The colliding server name — a daemon-owned `clover__<key>` name, or the brand name itself. */
   readonly server: string;
   constructor(server: string, reason: "owned" | "brand" = "owned") {
     super(
@@ -158,7 +158,7 @@ export function assertNoCapabilityCollision(
 ): void {
   if (mcpServers === undefined) return;
   // Fix-wave re-review N-1: the BRAND NAME is refused too. A configured server keyed exactly
-  // `winter` (`CORE_BRAND.mcpServerName`) registers its tools as `mcp__winter__<tool>`; a tool it
+  // `clover` (`CORE_BRAND.mcpServerName`) registers its tools as `mcp__clover__<tool>`; a tool it
   // names `web__web_fetch` or `lsp__lsp` is then the identical string `tool-names.ts`'s
   // `hostToolNameFor` strips to the host's OWN `web_fetch`/`lsp` — the host's gate class (NETWORK /
   // READ_ONLY, silent under every policy including `plan`) and the host's name on the card and the

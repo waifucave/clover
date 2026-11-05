@@ -5,16 +5,16 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   ProjectMigrationRefused,
-  WINTER_INSTRUCTIONS_FILE,
-  WINTER_PROJECT_DIR,
+  CLOVER_INSTRUCTIONS_FILE,
+  CLOVER_PROJECT_DIR,
   planProjectMigration,
   runProjectMigration,
 } from "../../src/migration/project-files";
-import { LEGACY_INSTRUCTIONS_FILE, LEGACY_PROJECT_DIR, LEGACY_WINTER_EXECUTABLE_ENV } from "../../src/legacy-names";
+import { LEGACY_INSTRUCTIONS_FILE, LEGACY_PROJECT_DIR, LEGACY_CLOVER_EXECUTABLE_ENV } from "../../src/legacy-names";
 
 const dirs: string[] = [];
 function tempDir(): string {
-  const d = mkdtempSync(join(tmpdir(), "winter-migrate-project-"));
+  const d = mkdtempSync(join(tmpdir(), "clover-migrate-project-"));
   dirs.push(d);
   return d;
 }
@@ -33,30 +33,30 @@ describe("planProjectMigration / runProjectMigration — a plain (non-git) direc
     const dir = tempDir();
     writeFileSync(join(dir, LEGACY_INSTRUCTIONS_FILE), "# hello\nsome prose\n");
     mkdirSync(join(dir, LEGACY_PROJECT_DIR), { recursive: true });
-    writeFileSync(join(dir, LEGACY_PROJECT_DIR, "settings.json"), JSON.stringify({ runtimes: { winterExecutable: `$${LEGACY_WINTER_EXECUTABLE_ENV}` } }));
+    writeFileSync(join(dir, LEGACY_PROJECT_DIR, "settings.json"), JSON.stringify({ runtimes: { winterExecutable: `$${LEGACY_CLOVER_EXECUTABLE_ENV}` } }));
 
     const plan = planProjectMigration(dir);
     expect(plan.gitTracked).toBe(false);
     expect(plan.steps).toHaveLength(2);
     expect(plan.steps.every((s) => s.method === "rename")).toBe(true);
-    expect(plan.settingsChanges).toEqual([{ path: "runtimes.winterExecutable", from: `$${LEGACY_WINTER_EXECUTABLE_ENV}`, to: "$WINTER_RUNTIME_EXECUTABLE" }]);
+    expect(plan.settingsChanges).toEqual([{ path: "runtimes.winterExecutable", from: `$${LEGACY_CLOVER_EXECUTABLE_ENV}`, to: "$CLOVER_RUNTIME_EXECUTABLE" }]);
 
     runProjectMigration(plan);
 
     expect(existsSync(join(dir, LEGACY_INSTRUCTIONS_FILE))).toBe(false);
-    expect(existsSync(join(dir, WINTER_INSTRUCTIONS_FILE))).toBe(true);
-    expect(readFileSync(join(dir, WINTER_INSTRUCTIONS_FILE), "utf8")).toBe("# hello\nsome prose\n"); // content untouched
+    expect(existsSync(join(dir, CLOVER_INSTRUCTIONS_FILE))).toBe(true);
+    expect(readFileSync(join(dir, CLOVER_INSTRUCTIONS_FILE), "utf8")).toBe("# hello\nsome prose\n"); // content untouched
 
     expect(existsSync(join(dir, LEGACY_PROJECT_DIR))).toBe(false);
-    expect(existsSync(join(dir, WINTER_PROJECT_DIR))).toBe(true);
-    const settings = JSON.parse(readFileSync(join(dir, WINTER_PROJECT_DIR, "settings.json"), "utf8"));
-    expect(settings.runtimes.winterExecutable).toBe("$WINTER_RUNTIME_EXECUTABLE");
+    expect(existsSync(join(dir, CLOVER_PROJECT_DIR))).toBe(true);
+    const settings = JSON.parse(readFileSync(join(dir, CLOVER_PROJECT_DIR, "settings.json"), "utf8"));
+    expect(settings.runtimes.winterExecutable).toBe("$CLOVER_RUNTIME_EXECUTABLE");
   });
 
   test("planProjectMigration refuses when both old and new instructions files exist, naming both", () => {
     const dir = tempDir();
     writeFileSync(join(dir, LEGACY_INSTRUCTIONS_FILE), "old");
-    writeFileSync(join(dir, WINTER_INSTRUCTIONS_FILE), "new");
+    writeFileSync(join(dir, CLOVER_INSTRUCTIONS_FILE), "new");
     let caught: unknown;
     try {
       planProjectMigration(dir);
@@ -66,13 +66,13 @@ describe("planProjectMigration / runProjectMigration — a plain (non-git) direc
     expect(caught).toBeInstanceOf(ProjectMigrationRefused);
     expect((caught as ProjectMigrationRefused).code).toBe("both_exist");
     expect((caught as ProjectMigrationRefused).message).toContain(LEGACY_INSTRUCTIONS_FILE);
-    expect((caught as ProjectMigrationRefused).message).toContain(WINTER_INSTRUCTIONS_FILE);
+    expect((caught as ProjectMigrationRefused).message).toContain(CLOVER_INSTRUCTIONS_FILE);
   });
 
   test("planProjectMigration refuses when both old and new project dirs exist, naming both", () => {
     const dir = tempDir();
     mkdirSync(join(dir, LEGACY_PROJECT_DIR));
-    mkdirSync(join(dir, WINTER_PROJECT_DIR));
+    mkdirSync(join(dir, CLOVER_PROJECT_DIR));
     let caught: unknown;
     try {
       planProjectMigration(dir);
@@ -82,7 +82,7 @@ describe("planProjectMigration / runProjectMigration — a plain (non-git) direc
     expect(caught).toBeInstanceOf(ProjectMigrationRefused);
     expect((caught as ProjectMigrationRefused).code).toBe("both_exist");
     expect((caught as ProjectMigrationRefused).message).toContain(LEGACY_PROJECT_DIR);
-    expect((caught as ProjectMigrationRefused).message).toContain(WINTER_PROJECT_DIR);
+    expect((caught as ProjectMigrationRefused).message).toContain(CLOVER_PROJECT_DIR);
   });
 
   test("runProjectMigration refuses on an empty plan (nothing to migrate)", () => {
@@ -114,7 +114,7 @@ describe("planProjectMigration / runProjectMigration — inside a git work tree 
     expect(plan.steps[0]?.method).toBe("git-mv");
 
     runProjectMigration(plan);
-    expect(existsSync(join(dir, WINTER_INSTRUCTIONS_FILE))).toBe(true);
+    expect(existsSync(join(dir, CLOVER_INSTRUCTIONS_FILE))).toBe(true);
     const status = execFileSync("git", ["status", "--porcelain"], { cwd: dir }).toString();
     expect(status).toContain("R  "); // a staged rename, not an add+delete pair
   });
@@ -128,6 +128,6 @@ describe("planProjectMigration / runProjectMigration — inside a git work tree 
     expect(plan.gitTracked).toBe(true);
     expect(plan.steps[0]?.method).toBe("rename");
     runProjectMigration(plan);
-    expect(existsSync(join(dir, WINTER_INSTRUCTIONS_FILE))).toBe(true);
+    expect(existsSync(join(dir, CLOVER_INSTRUCTIONS_FILE))).toBe(true);
   });
 });

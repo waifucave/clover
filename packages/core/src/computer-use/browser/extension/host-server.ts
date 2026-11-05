@@ -7,19 +7,19 @@
 //  1. `host.hello` (the host's own request, first): protocol → the caller's origin in this profile's allowlist → the
 //     browser app a known Chromium family → the host's code signature, checked BY THE PID IT REPORTS against the host's
 //     stated designated requirement → computer use on. Any refusal is answered and the connection closed.
-//     What the pid check is, exactly: a check that the process the connection SAYS it is runs Winter's signed host — it
-//     catches a host binary that is not Winter's (another build, a stale copy). It is not proof against a process of the
+//     What the pid check is, exactly: a check that the process the connection SAYS it is runs Clover's signed host — it
+//     catches a host binary that is not Clover's (another build, a stale copy). It is not proof against a process of the
 //     same user: such a process can name the real host's pid (Bun's sockets give the daemon no peer pid of its own), or
 //     open this 0600 socket itself. Same-user code is OUT of the threat model here — as it is for the helper's socket
 //     and for the daemon's own: a process running as the user can already reach everything the user can. The other
 //     direction, the host's audit-token check of THIS daemon, is what keeps the host (and so the extension's debugger)
-//     from talking to anything but Winter's signed daemon — against code that is not the user's own.
+//     from talking to anything but Clover's signed daemon — against code that is not the user's own.
 //  2. `hello` (the extension's, relayed): the extension protocol, then registration under its `instanceId`, so a service
 //     worker restart (a new connection, the same instance) gets its BackendId back.
 //  3. Everything after is the transport's.
 import { chmodSync, rmSync } from "node:fs";
-import { ConnWriter, encodeLine, LineDecoder } from "@yanlinglabs/winter-protocol";
-import type { WinterProfile } from "../../../profile";
+import { ConnWriter, encodeLine, LineDecoder } from "@waifucave/clover-protocol";
+import type { CloverProfile } from "../../../profile";
 import { processSatisfiesRequirement } from "../../helper-verify";
 import type { BackendRegistry, BrowserFamily } from "../transport";
 import { ExtensionTransport, type ExtensionTimeouts } from "./extension-transport";
@@ -34,7 +34,7 @@ export type BrowserHostVerifier = (pid: number, requirement: string) => boolean;
 
 export interface BrowserHostServerOptions {
   socketPath: string;
-  profile: WinterProfile;
+  profile: CloverProfile;
   daemonVersion: string;
   /** The engine's backends, read at each extension hello. Undefined while this daemon has no browser engine: the hello
    *  is then refused (`unavailable`) and the extension says so. */
@@ -238,7 +238,7 @@ export class BrowserHostServer {
   private hostHello(conn: Conn, params: unknown): HostHelloResult {
     if (!isRecord(params)) throw new Refusal(RPC_INVALID_PARAMS, "host.hello needs params", { code: "protocol_mismatch", expected: BROWSER_HOST_PROTOCOL });
     if (params.protocol !== BROWSER_HOST_PROTOCOL) {
-      throw new Refusal(RPC_ERROR, `this Winter speaks browser-host protocol ${BROWSER_HOST_PROTOCOL}`, { code: "protocol_mismatch", expected: BROWSER_HOST_PROTOCOL });
+      throw new Refusal(RPC_ERROR, `this Clover speaks browser-host protocol ${BROWSER_HOST_PROTOCOL}`, { code: "protocol_mismatch", expected: BROWSER_HOST_PROTOCOL });
     }
     const { origin, browserBundleId, hostPid, browserPid } = params;
     const extensionId = typeof origin === "string" ? extensionIdFromOrigin(origin) : undefined;
@@ -250,9 +250,9 @@ export class BrowserHostServer {
       throw new Refusal(RPC_ERROR, "Winter for Chrome works in Chrome, Edge, Brave, Vivaldi, Opera, Arc and Chromium only", { code: "not_allowed", reason: "browser" });
     }
     if (typeof hostPid !== "number" || !Number.isInteger(hostPid) || hostPid <= 0 || !this.verifyHost(hostPid, this.hostRequirement)) {
-      throw new Refusal(RPC_ERROR, "the native host is not Winter's", { code: "not_allowed", reason: "signature" });
+      throw new Refusal(RPC_ERROR, "the native host is not Clover's", { code: "not_allowed", reason: "signature" });
     }
-    if (!this.opts.enabled()) throw new Refusal(RPC_ERROR, "Computer Use is turned off in Winter's settings", { code: "disabled" });
+    if (!this.opts.enabled()) throw new Refusal(RPC_ERROR, "Computer Use is turned off in Clover's settings", { code: "disabled" });
     conn.host = { app: { family: app.family, name: app.name }, bundleId: browserBundleId, extensionId, hostPid, browserPid: typeof browserPid === "number" ? browserPid : 0 };
     this.log(`connection ${conn.n}: host verified (${app.name}, pid ${hostPid})`);
     return { protocol: BROWSER_HOST_PROTOCOL, daemonVersion: this.opts.daemonVersion };
@@ -269,15 +269,15 @@ export class BrowserHostServer {
       const older = params.protocol < EXTENSION_PROTOCOL;
       const reason = older
         ? `Winter for Chrome in ${host.app.name} is too old — ask the user to update Winter for Chrome`
-        : `Winter for Chrome in ${host.app.name} is newer than this Winter — ask the user to update Winter`;
+        : `Winter for Chrome in ${host.app.name} is newer than this Clover — ask the user to update Clover`;
       registry?.noteUnavailable({ family: host.app.family, name: host.app.name, bundleId: host.bundleId, reason });
-      throw new Refusal(RPC_ERROR, older ? "update Winter for Chrome" : "update Winter", { code: "protocol_mismatch", expected: EXTENSION_PROTOCOL });
+      throw new Refusal(RPC_ERROR, older ? "update Winter for Chrome" : "update Clover", { code: "protocol_mismatch", expected: EXTENSION_PROTOCOL });
     }
     const instanceId = params.instanceId;
     if (typeof instanceId !== "string" || !INSTANCE_ID.test(instanceId)) {
       throw new Refusal(RPC_INVALID_PARAMS, "hello's instanceId must be a UUID", { code: "invalid_params" });
     }
-    if (registry === undefined) throw new Refusal(RPC_ERROR, "this Winter cannot drive browser tabs yet", { code: "unavailable" });
+    if (registry === undefined) throw new Refusal(RPC_ERROR, "this Clover cannot drive browser tabs yet", { code: "unavailable" });
 
     // A connection says hello once; a second hello (the extension re-sent it) re-registers cleanly.
     if (conn.transport !== undefined) this.retire(conn, "Winter for Chrome said hello again");

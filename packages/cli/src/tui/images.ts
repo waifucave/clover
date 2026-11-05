@@ -26,9 +26,9 @@ import { isAbsolute, join } from "node:path";
 import {
   IMAGE_ATTACH_MAX_LONG_EDGE, IMAGE_FILE_MAX_BYTES, IMAGE_FILE_TOO_LARGE_MESSAGE, IMAGE_INPUT_UNSUPPORTED_MESSAGE, IMAGE_TOO_LARGE_MESSAGE,
   STAGE_IMAGE_MAX_BYTES, USER_MESSAGE_IMAGES_MAX, USER_MESSAGE_IMAGES_MAX_MESSAGE,
-} from "@yanlinglabs/winter-protocol";
-import { IMAGE_SNIFF_BYTES, imageDimensions, imageTokenNumbers, sniffImageMediaType, substituteImageTokens } from "@yanlinglabs/winter-core";
-import type { UserMessageImageRef } from "@yanlinglabs/winter-protocol";
+} from "@waifucave/clover-protocol";
+import { IMAGE_SNIFF_BYTES, imageDimensions, imageTokenNumbers, sniffImageMediaType, substituteImageTokens } from "@waifucave/clover-core";
+import type { UserMessageImageRef } from "@waifucave/clover-protocol";
 
 // Shown when an image cannot be attached: DATA over what one request line carries even after the
 // downscale (`image_too_large`), or a FILE over the runtime Read tool's 64 MiB — the daemon's refusals
@@ -259,7 +259,7 @@ export async function prepareDraftImage(bytes: Uint8Array): Promise<Extract<Draf
   const longEdge = dims === undefined ? undefined : Math.max(dims.width, dims.height);
   const needsResize = longEdge === undefined || longEdge > IMAGE_ATTACH_MAX_LONG_EDGE;
 
-  const dir = mkdtempSync(join(tmpdir(), "winter-attach-"));
+  const dir = mkdtempSync(join(tmpdir(), "clover-attach-"));
   try {
     const source = join(dir, `source.${EXT_FOR[mediaType]}`);
     writeFileSync(source, bytes, { mode: 0o600 });
@@ -319,7 +319,7 @@ export async function readClipboardImage(): Promise<ClipboardImage> {
     const path = furl.stdout.trim();
     return IMAGE_EXT.test(path) && isRegularFile(path) ? { kind: "file", path } : null;
   }
-  const dir = mkdtempSync(join(tmpdir(), "winter-clipboard-"));
+  const dir = mkdtempSync(join(tmpdir(), "clover-clipboard-"));
   try {
     const png = join(dir, "clipboard.png");
     if ((await run("/usr/bin/osascript", [...WRITE_FLAVOUR("«class PNGf»"), png])).ok && existsSync(png)) {

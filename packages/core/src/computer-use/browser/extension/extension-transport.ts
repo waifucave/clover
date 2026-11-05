@@ -192,7 +192,7 @@ export class ExtensionTransport implements CdpTransport {
   }
 
   async send<T = unknown>(tabKey: string, method: string, params: Record<string, unknown> = {}, opts: { cdpSessionId?: string; timeoutMs?: number } = {}): Promise<T> {
-    if (!ALLOWED_METHODS.has(method)) throw new TransportError("not_allowed", `${method} is not in Winter's CDP allowlist`, { method });
+    if (!ALLOWED_METHODS.has(method)) throw new TransportError("not_allowed", `${method} is not in Clover's CDP allowlist`, { method });
     const timeout = opts.timeoutMs ?? (method === "Page.captureScreenshot" ? this.timeouts.screenshot : this.timeouts.cdp);
     const r = await this.request("cdp.send", { tabKey, method, params, ...(opts.cdpSessionId === undefined ? {} : { cdpSessionId: opts.cdpSessionId }) }, timeout);
     if (!isRecord(r) || !("result" in r)) throw malformed("cdp.send");
@@ -201,7 +201,7 @@ export class ExtensionTransport implements CdpTransport {
 
   async subscribe(tabKey: string, events: readonly string[]): Promise<void> {
     const outside = events.filter((e) => !ALLOWED_EVENTS.has(e));
-    if (outside.length > 0) throw new TransportError("not_allowed", `not in Winter's CDP allowlist: ${outside.join(", ")}`, { events: outside });
+    if (outside.length > 0) throw new TransportError("not_allowed", `not in Clover's CDP allowlist: ${outside.join(", ")}`, { events: outside });
     await this.request("cdp.subscribe", { tabKey, events: [...events] }, this.timeouts.command);
     this.subscriptions.set(tabKey, new Set(events));
   }

@@ -2,19 +2,19 @@ import { loadCatalog } from "@yanlinglabs/winter-provider-catalog";
 import type { WinterModelDescriptor } from "@yanlinglabs/winter-provider-catalog";
 import type { ModelFamilyListing, ProviderSelection } from "@yanlinglabs/winter-agent-sdk";
 import { credentialRefFor } from "./keychain";
-import { splitTag, WINTER_TEST_PREFIX, UNSTATED_TAG, type ModelTag } from "./model-tag";
+import { splitTag, CLOVER_TEST_PREFIX, UNSTATED_TAG, type ModelTag } from "./model-tag";
 
-/** The `winter-test/<name>` namespace (Winter map §11.6): selection is BY NAME through
+/** The `winter-test/<name>` namespace (Clover map §11.6): selection is BY NAME through
  *  `model: "winter-test/<name>"` plus the env var `WINTER_TEST_PROVIDER`, precisely because a
  *  spawned or compiled child shares no module state with the test process. It is not a catalog
  *  provider and must never be resolved against one. */
-export const WINTER_TEST_MODEL_PREFIX = WINTER_TEST_PREFIX;
+export const CLOVER_TEST_MODEL_PREFIX = CLOVER_TEST_PREFIX;
 
-/** The test-provider NAME a `winter-test/<name>` model selects, or `undefined`. `buildWinterOptions`
+/** The test-provider NAME a `winter-test/<name>` model selects, or `undefined`. `buildCloverOptions`
  *  puts it in the child's `WINTER_TEST_PROVIDER`; nothing else in the daemon reads it. */
 export function testProviderNameFor(model: string | undefined): string | undefined {
-  if (!model?.startsWith(WINTER_TEST_MODEL_PREFIX)) return undefined;
-  const name = model.slice(WINTER_TEST_MODEL_PREFIX.length);
+  if (!model?.startsWith(CLOVER_TEST_MODEL_PREFIX)) return undefined;
+  const name = model.slice(CLOVER_TEST_MODEL_PREFIX.length);
   return name || undefined;
 }
 
@@ -55,7 +55,7 @@ const TOOLS_GATED_ADAPTER_IDS: ReadonlySet<string> = new Set([
 ]);
 
 /**
- * WS-24 (pickers lane, fix round 1): whether a REAL Winter turn that asks for tools on this row
+ * WS-24 (pickers lane, fix round 1): whether a REAL Clover turn that asks for tools on this row
  * would actually be refused — the question a session or role picker needs answered, which is
  * narrower than "the catalog's `toolCalling` says `\"none\"`".
  *
@@ -72,7 +72,7 @@ const TOOLS_GATED_ADAPTER_IDS: ReadonlySet<string> = new Set([
  *
  * TRUE exactly when:
  *
- *   1. the row's value is not `"native"` (an `"emulated"` row is refused here too — Winter disables
+ *   1. the row's value is not `"native"` (an `"emulated"` row is refused here too — Clover disables
  *      emulated tool use for agent modes by policy, WS-13 §8.1, and none of the four gated adapters
  *      distinguishes `"emulated"` from `"none"` at this check; both throw identically), AND EITHER
  *   2a. the row's PROVIDER resolves to one of the four adapters that actually gate on it, OR
@@ -99,7 +99,7 @@ export function toolsRefusedFor(row: WinterModelDescriptor): boolean {
  * `capabilities.list` reports the EFFECTIVE `deferred` modes through it.
  */
 export function toolSearchSupportedBy(tag: string | undefined): boolean {
-  if (tag === undefined || tag.startsWith(WINTER_TEST_MODEL_PREFIX)) return true;
+  if (tag === undefined || tag.startsWith(CLOVER_TEST_MODEL_PREFIX)) return true;
   const row = rowForTag(tag);
   return row === undefined || row.toolCalling.value === "native";
 }
@@ -108,7 +108,7 @@ export function toolSearchSupportedBy(tag: string | undefined): boolean {
  * Code-mode image input (2026-09-29): whether this catalog row ACCEPTS an image — its own
  * `inputModalities` evidence contains `"image"`, verbatim. The ONE rule behind `models.catalog`'s and
  * `sync.config`'s `supportsImages` and `session.stageImage`'s `image_input_unsupported` refusal, so a
- * picker can never offer what the daemon then refuses. A `winter-default`/`unknown` row lists text
+ * picker can never offer what the daemon then refuses. A `clover-default`/`unknown` row lists text
  * only and so refuses images — deliberately: the catalog has no evidence the model reads them.
  */
 export function imagesAcceptedBy(row: WinterModelDescriptor | undefined): boolean {
@@ -129,7 +129,7 @@ export function imagesAcceptedBy(row: WinterModelDescriptor | undefined): boolea
  * could invent.
  */
 export function providerFor(tag: ModelTag | string, home?: string): ProviderSelection | undefined {
-  if (tag.startsWith(WINTER_TEST_PREFIX) || tag === UNSTATED_TAG) return undefined;
+  if (tag.startsWith(CLOVER_TEST_PREFIX) || tag === UNSTATED_TAG) return undefined;
   const { providerId } = splitTag(tag);
   const ref = credentialRefFor(providerId, home);
   return ref ? { providerId, authRef: ref } : { providerId };
@@ -140,14 +140,14 @@ export function providerFor(tag: ModelTag | string, home?: string): ProviderSele
  * `SelectionInput` from, with exactly the fields `select-runtime.ts`'s `candidatesFor`/
  * `resolveSlot` read (`row.key/providerId/status/servable`, `family.slots[].name/canonicalModelId`).
  *
- * `servable` IS ALWAYS `"unknown"` HERE, DELIBERATELY (never `"present"`/`"absent"`) — Winter has no
+ * `servable` IS ALWAYS `"unknown"` HERE, DELIBERATELY (never `"present"`/`"absent"`) — Clover has no
  * independent per-provider reachability probe, and the doc on `ModelRowServable` is explicit that
  * `"unknown"` is the honest answer for a row nobody has probed. The REAL admission gate is
  * `candidatesFor`'s OWN separate `providerAuthView`/credential check, which this listing does not
  * duplicate — a row with no configured credential is excluded there regardless of what this
  * function reports for `servable`.
  *
- * `active` is always `undefined` — Winter does not (yet) persist a per-session "active family" the
+ * `active` is always `undefined` — Clover does not (yet) persist a per-session "active family" the
  * way `Query.listModelFamilies()` does; the D25 reserved-slot names and the "unique name across
  * every family" fallback (`resolveSlot`'s own next two rungs) still work with no active set.
  *
@@ -251,7 +251,7 @@ export function internalEffortNoEscalationFor(tag: string, wanted: string): stri
  * vocabulary can never report a different answer for the same model. The array is the row's OWN
  * order, verbatim and freshly copied — no `"none"` is prepended here: that prepend is a PICKER
  * convention (`effortsForModel`'s own doc: the catalog deliberately excludes `"none"` because it is
- * Winter's unset, not a catalog tier), and this function carries catalog truth, not a menu.
+ * Clover's unset, not a catalog tier), and this function carries catalog truth, not a menu.
  */
 export function effortVocabularyOf(row: WinterModelDescriptor | undefined): string[] | null {
   if (row === undefined) return null;

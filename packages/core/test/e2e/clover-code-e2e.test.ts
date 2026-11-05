@@ -1,4 +1,4 @@
-// P8b Task 17 Step 2 — CODE ON THE WINTER LEG, end to end, on the BUILT binary.
+// P8b Task 17 Step 2 — CODE ON THE CLOVER LEG, end to end, on the BUILT binary.
 //
 // A real `startDaemon` in a temp home with `winterLeg: { code: true }`, a real NDJSON client, the
 // real `winter` child. Every model is a `winter-test/<double>`; nothing reaches the network.
@@ -7,23 +7,23 @@
 //       allows; the `tool_result` follows (the double's unregistered tool → its own fallback text)
 //   (b) the same call under `plan` → the plan-mode deny, no card, no mutation
 //   (c) the per-session `computer` capability reaches the daemon's ComputerUseService (a spy) and is
-//       code-only (WINTER_CAPABILITY_TOOLS: computer ∈ code, ∉ chat)
-//   (d) P8b-27(c): a control-plane self-grant is DENIED — a Write to `<cwd>/.winter/settings.json`
+//       code-only (CLOVER_CAPABILITY_TOOLS: computer ∈ code, ∉ chat)
+//   (d) P8b-27(c): a control-plane self-grant is DENIED — a Write to `<cwd>/.clover/settings.json`
 //       (the host fence) and a Bash redirect to a path outside the session's write roots (the
 //       sandbox). This case is the gate for `winterLeg.code`.
 //   (m) fix wave (review row 3 / F11): file-based memory EXISTS on this leg — a Write by the child
 //       into the session's MEMDIR `<home>/projects/<key>/memory/` lands (the SDK 0.0.4 carve-out
-//       `isMemoryCarveOut` + Winter's fence, which never covered the MEMDIR), with no card under
+//       `isMemoryCarveOut` + Clover's fence, which never covered the MEMDIR), with no card under
 //       `auto`. Chat cannot host this case: chat disallows `Write` by design (no fs surface; its
 //       `_assistant` bucket is Dreaming's to write), so a CODE session is the only real child write.
 import { afterAll, afterEach, beforeAll, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync, type Stats } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
-import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, type WritableSocket, type SessionEvent } from "@yanlinglabs/winter-protocol";
+import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, type WritableSocket, type SessionEvent } from "@waifucave/clover-protocol";
 import { FileSecretStore } from "../../src/auth/secret-store";
 import { computerCapability } from "../../src/capabilities";
-import { WINTER_CAPABILITY_TOOLS } from "../../src/capabilities/names";
+import { CLOVER_CAPABILITY_TOOLS } from "../../src/capabilities/names";
 import { startDaemon, type RunningDaemon } from "../../src/daemon";
 import type { RuntimeStateWiring } from "../../src/runtime-state";
 import { controlPlaneDenialMessage } from "../../src/runtime-sdk/control-plane";
@@ -83,7 +83,7 @@ class TestClient {
   close(): void { try { this.socket.end(); } catch { /* closed */ } }
 }
 
-const REAL_HOMES = [join(homedir(), ".winter"), join(homedir(), ".winter-dev")];
+const REAL_HOMES = [join(homedir(), ".clover"), join(homedir(), ".clover-dev")];
 const MCP_FIXTURE = join(import.meta.dir, "../agent/mcp/fake-mcp-server.ts");
 function walkHome(dir: string, describe: (rel: string, st: Stats) => string): string {
   if (!existsSync(dir)) return `${dir}: absent`;
@@ -108,17 +108,17 @@ const projectsSignature = (home: string): string => walkHome(join(home, "project
 /** THIS file's surviving children only: a `winter` process whose command line names this file's own home (its
  *  `--config-json` carries the daemon's sandbox paths under it) — never a stray from another run, which would
  *  fail every file's check at once. */
-const winterSurvivors = (bin: string, home: string): string[] =>
+const cloverSurvivors = (bin: string, home: string): string[] =>
   Bun.spawnSync(["ps", "-axww", "-o", "pid=,command="]).stdout.toString().split("\n").map((l) => l.trim()).filter((l) => l.replace(/^\d+\s+/, "").startsWith(bin) && l.includes(home));
 /** `pgrep -f` takes a REGEX. The npm platform binary's path carries `+` and `.`
  *  (`…/@yanlinglabs+winter-agent-sdk-darwin-arm64@0.0.35/…`), so an unescaped path matched nothing and
- *  every child scan came back empty whenever `$WINTER_RUNTIME_EXECUTABLE` was unset. */
+ *  every child scan came back empty whenever `$CLOVER_RUNTIME_EXECUTABLE` was unset. */
 const pgrepLiteral = (path: string): string => path.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-const winterChildren = (bin: string): string[] =>
+const cloverChildren = (bin: string): string[] =>
   Bun.spawnSync(["pgrep", "-P", String(process.pid), "-f", pgrepLiteral(bin)]).stdout.toString().trim().split("\n").filter(Boolean);
 const types = (events: SessionEvent[]): string[] => events.map((e) => e.type);
 
-describeWithWinterBinary("code on the Winter leg — the built binary through a real daemon", (bin) => {
+describeWithWinterBinary("code on the Clover leg — the built binary through a real daemon", (bin) => {
   let home: string;
   let daemon: RunningDaemon | undefined;
   let rt: RuntimeStateWiring;
@@ -136,9 +136,9 @@ describeWithWinterBinary("code on the Winter leg — the built binary through a 
     // fix wave (review row 7): a configured user MCP server — the repo's fake stdio server — must
     // reach the child (case (n)). The daemon's own McpManager probes a copy at boot (WS-24: connects,
     // lists, closes); the child spawns its own from the forwarded config. WS-21: the user scope is
-    // `sdk/.winter.json` (claude's `.claude.json` shape).
+    // `sdk/.clover.json` (claude's `.claude.json` shape).
     mkdirSync(join(home, "sdk"), { recursive: true });
-    writeFileSync(join(home, "sdk", ".winter.json"), JSON.stringify({ mcpServers: { fake: { command: "bun", args: ["run", MCP_FIXTURE] } } }, null, 2));
+    writeFileSync(join(home, "sdk", ".clover.json"), JSON.stringify({ mcpServers: { fake: { command: "bun", args: ["run", MCP_FIXTURE] } } }, null, 2));
   };
 
   async function createCode(model: string, cwd: string, policy = "ask"): Promise<string> {
@@ -150,12 +150,12 @@ describeWithWinterBinary("code on the Winter leg — the built binary through a 
 
   beforeAll(async () => {
     for (const h of REAL_HOMES) { signaturesBefore.set(h, homeSignature(h)); projectsBefore.set(h, projectsSignature(h)); }
-    // Fix-wave re-review N-2: the home gets a `.winter` LEAF segment, so a child's write under it is
+    // Fix-wave re-review N-2: the home gets a `.clover` LEAF segment, so a child's write under it is
     // protected-unless-carved-out on BOTH halves of the SDK's rule — the stage-2 baseline deny
-    // `//<winterHome>/projects/**` (+ `memoryCarveOutSkip`) AND the §6.7 protected-directory half
-    // (`isInsideProtectedDirectory`, keyed on a `.winter` segment) — which is how a real
-    // `~/.winter` / `~/.winter-dev` home is shaped. Case (m)'s MEMDIR write now exercises both.
-    home = join(realpathSync(mkdtempSync(join(tmpdir(), "winter-code-e2e-"))), ".winter");
+    // `//<cloverHome>/projects/**` (+ `memoryCarveOutSkip`) AND the §6.7 protected-directory half
+    // (`isInsideProtectedDirectory`, keyed on a `.clover` segment) — which is how a real
+    // `~/.clover` / `~/.clover-dev` home is shaped. Case (m)'s MEMDIR write now exercises both.
+    home = join(realpathSync(mkdtempSync(join(tmpdir(), "clover-code-e2e-"))), ".clover");
     mkdirSync(home, { recursive: true });
     writeSettings();
     daemon = await startDaemon({ home, secrets: new FileSecretStore(join(home, "test-secrets")), agentProvider: null });
@@ -163,7 +163,7 @@ describeWithWinterBinary("code on the Winter leg — the built binary through a 
     rt = daemon.runtimeState;
     client = await TestClient.connect(daemon.socketPath);
     await client.hello(daemon.tokens.harness, "e2e");
-    expect(daemon.winter.legForNewSession("code")).toBe("winter");
+    expect(daemon.clover.legForNewSession("code")).toBe("winter");
   });
 
   afterAll(async () => {
@@ -171,12 +171,12 @@ describeWithWinterBinary("code on the Winter leg — the built binary through a 
     const stopping = daemon?.stop();
     daemon = undefined;
     await stopping;
-    for (const pid of winterChildren(bin)) { try { process.kill(Number(pid), "SIGKILL"); } catch { /* gone */ } }
+    for (const pid of cloverChildren(bin)) { try { process.kill(Number(pid), "SIGKILL"); } catch { /* gone */ } }
     rmSync(join(home, ".."), { recursive: true, force: true });
   });
 
   test("(a) tooluse under `ask` → approval_requested with the phone's fields; approval.respond allows; the tool_result follows", async () => {
-    const cwd = realpathSync(mkdtempSync(join(tmpdir(), "winter-code-cwd-")));
+    const cwd = realpathSync(mkdtempSync(join(tmpdir(), "clover-code-cwd-")));
     const sid = await createCode("tooluse", cwd, "ask");
     expect(sessionLegOf(rt.records.get(sid))).toBe("winter");
     await client.call(METHODS.sessionSend, { sessionId: sid, text: "use the tool" });
@@ -204,7 +204,7 @@ describeWithWinterBinary("code on the Winter leg — the built binary through a 
   }, 40_000);
 
   test("(b) the same call under `plan` → the plan-mode deny, no card, no mutation", async () => {
-    const cwd = realpathSync(mkdtempSync(join(tmpdir(), "winter-code-plan-")));
+    const cwd = realpathSync(mkdtempSync(join(tmpdir(), "clover-code-plan-")));
     const sid = await createCode("tooluse", cwd, "plan");
     const evCount = client.events.length;
     await client.call(METHODS.sessionSend, { sessionId: sid, text: "use the tool" });
@@ -212,7 +212,7 @@ describeWithWinterBinary("code on the Winter leg — the built binary through a 
     await Bun.sleep(50);
     const res = daemon!.sessions.read(sid).find((e) => e.type === "tool_result") as { isError: boolean; output: string };
     expect(res.isError).toBe(true);
-    // Winter's `plan` mode denies the mutation; whether the message is Winter's own or the bridge's,
+    // Clover's `plan` mode denies the mutation; whether the message is Clover's own or the bridge's,
     // it must READ as plan mode and NO card was raised
     expect(res.output.toLowerCase()).toContain("plan");
     expect(daemon!.sessions.read(sid).filter((e) => e.type === "approval_requested")).toEqual([]);
@@ -221,17 +221,17 @@ describeWithWinterBinary("code on the Winter leg — the built binary through a 
   }, 40_000);
 
   test("(c) the per-session computer capability reaches the daemon's ComputerUseService (spy) and is code-only", async () => {
-    // WINTER_CAPABILITY_TOOLS: computer is a code/dispatch tool, never chat.
-    const modes = WINTER_CAPABILITY_TOOLS["mcp__winter__computer__computer"].modes as readonly string[];
+    // CLOVER_CAPABILITY_TOOLS: computer is a code/dispatch tool, never chat.
+    const modes = CLOVER_CAPABILITY_TOOLS["mcp__clover__computer__computer"].modes as readonly string[];
     expect(modes).toContain("code");
     expect(modes).not.toContain("chat");
     // the daemon's own builder includes a computer server for a code session (computerUse.enabled: true) —
     // since ComputerV2 (2026-10-08) `computer_v2`, never beside the legacy `computer` (built only with
     // `computerUse.legacyComputer`; the spy below still drives the legacy capability directly)
-    const cwd = realpathSync(mkdtempSync(join(tmpdir(), "winter-code-cap-")));
+    const cwd = realpathSync(mkdtempSync(join(tmpdir(), "clover-code-cap-")));
     const record = daemon!.buildSessionCapabilities({ sessionId: "s_probe", mode: "code", cwd, roots: [cwd], tmpDir: cwd });
-    expect(Object.keys(record)).toContain("winter__computer_v2");
-    expect(Object.keys(record)).not.toContain("winter__computer");
+    expect(Object.keys(record)).toContain("clover__computer_v2");
+    expect(Object.keys(record)).not.toContain("clover__computer");
     expect(disallowedToolsFor("chat", {})).toContain("ComputerV2");
     expect(disallowedToolsFor("code", {})).not.toContain("ComputerV2");
     // the server is built for every mode (P8b-36); the MODE scoping is `disallowedTools` (P8b-12),
@@ -250,22 +250,22 @@ describeWithWinterBinary("code on the Winter leg — the built binary through a 
   }, 40_000);
 
   test("(d) P8b-27(c): a control-plane self-grant is DENIED — the host fence on a Write, the sandbox on a Bash redirect", async () => {
-    // (d1) the HOST FENCE (P8b-27b): a Write to a `.winter/settings.json` never reaches the child's
+    // (d1) the HOST FENCE (P8b-27b): a Write to a `.clover/settings.json` never reaches the child's
     // filesystem. `p5checkpoint` reads then writes the path in the prompt's last line.
-    const cwd = realpathSync(mkdtempSync(join(tmpdir(), "winter-code-grant-")));
-    mkdirSync(join(cwd, ".winter"), { recursive: true });
-    const rules = join(cwd, ".winter", "settings.json");
+    const cwd = realpathSync(mkdtempSync(join(tmpdir(), "clover-code-grant-")));
+    mkdirSync(join(cwd, ".clover"), { recursive: true });
+    const rules = join(cwd, ".clover", "settings.json");
     writeFileSync(rules, JSON.stringify({ before: true }));   // exists so the double's Read succeeds
     const sid = await createCode("p5checkpoint", cwd, "auto");
     await client.call(METHODS.sessionSend, { sessionId: sid, text: `write to this exact path:\n${rules}` });
-    // Since fix wave F1 (`auto` → Winter `default`) the double's THIRD step — a Bash redirect into
-    // `<cwd>/.winter/` — reaches the bridge carrying Winter's protected-home `blockedPath` (any
-    // `.winter` segment, `permissions/protected.ts`), which the bridge escalates to a CARD in code
-    // (Task 9 F1: "Winter asking, not refusing"). Before F1 Winter's own classifier answered it.
+    // Since fix wave F1 (`auto` → Clover `default`) the double's THIRD step — a Bash redirect into
+    // `<cwd>/.clover/` — reaches the bridge carrying Clover's protected-home `blockedPath` (any
+    // `.clover` segment, `permissions/protected.ts`), which the bridge escalates to a CARD in code
+    // (Task 9 F1: "Clover asking, not refusing"). Before F1 Clover's own classifier answered it.
     // The card is incidental to this case (the Write denial is the subject): deny it so the turn
     // completes. Recorded in the fix-wave report as a cross-leg divergence — the engine let a bash
-    // write into `.winter/` run silently under `auto` (only the three control-plane filenames were
-    // fenced); the Winter leg cards it.
+    // write into `.clover/` run silently under `auto` (only the three control-plane filenames were
+    // fenced); the Clover leg cards it.
     const first = await client.waitFor((e) => e.sessionId === sid && (e.type === "turn_completed" || e.type === "approval_requested"));
     if (first.type === "approval_requested") {
       const card = first as { callId: string; toolName: string };
@@ -278,7 +278,7 @@ describeWithWinterBinary("code on the Winter leg — the built binary through a 
     const writeRes = daemon!.sessions.read(sid).find((e) => e.type === "tool_result" && (e as { callId: string }).callId === "p5-ckpt-write") as { isError: boolean; output: string } | undefined;
     expect(writeRes).toBeDefined();
     expect(writeRes!.isError).toBe(true);
-    // MEASURED: Winter's stage-2 deny rule (P8b-27a, `Write(//**/.winter/settings.json)`) fires
+    // MEASURED: Clover's stage-2 deny rule (P8b-27a, `Write(//**/.clover/settings.json)`) fires
     // BEFORE `canUseTool`, so the bridge's own fence (P8b-27b) is the second layer behind it —
     // either denial text is the invariant holding
     expect(writeRes!.output === controlPlaneDenialMessage("Write", rules) || /Denied by permission rule/.test(writeRes!.output)).toBe(true);
@@ -287,7 +287,7 @@ describeWithWinterBinary("code on the Winter leg — the built binary through a 
     // (d2) the SANDBOX: the double's Bash step (`printf ... > <path>.bash`) writes OUTSIDE the
     // session's write roots. The sandbox must deny it (the write never lands). This is the layer
     // P8b-27(c) can only prove against the real binary — the gate for `winterLeg.code`.
-    const outside = realpathSync(mkdtempSync(join(tmpdir(), "winter-code-outside-"))); // NOT a root of `sid`
+    const outside = realpathSync(mkdtempSync(join(tmpdir(), "clover-code-outside-"))); // NOT a root of `sid`
     const target = join(outside, "grant");   // the double appends ".bash"
     const sid2 = await createCode("p5checkpoint", cwd, "auto");
     writeFileSync(join(cwd, "seed.txt"), "seed");   // the double reads/writes this in-root file first
@@ -302,11 +302,11 @@ describeWithWinterBinary("code on the Winter leg — the built binary through a 
     rmSync(outside, { recursive: true, force: true });
   }, 60_000);
 
-  test("(m) file-based memory on the Winter leg: the child's Write into the store home's `projects/<key>/memory/` (sdk/projects) LANDS, no card under `auto` (the 0.0.4 carve-out)", async () => {
-    const cwd = realpathSync(mkdtempSync(join(tmpdir(), "winter-code-memdir-")));
+  test("(m) file-based memory on the Clover leg: the child's Write into the store home's `projects/<key>/memory/` (sdk/projects) LANDS, no card under `auto` (the 0.0.4 carve-out)", async () => {
+    const cwd = realpathSync(mkdtempSync(join(tmpdir(), "clover-code-memdir-")));
     // The SAME derivation the daemon files this cwd under (`memoryKeyOf` → `memoryProjectKeyFor`;
     // no `memory.directory` override, no relocation in this home). WS-21: the store home (`sdk/`).
-    const memdir = memoryDirFor(cwd, { winterHome: home });
+    const memdir = memoryDirFor(cwd, { cloverHome: home });
     expect(memdir.startsWith(storeProjectsDir(home) + "/")).toBe(true);
     expect(memdir.endsWith("/memory")).toBe(true);
     mkdirSync(memdir, { recursive: true });
@@ -321,7 +321,7 @@ describeWithWinterBinary("code on the Winter leg — the built binary through a 
     expect(writeRes).toBeDefined();
     expect(writeRes!.isError, `memory write refused: ${writeRes!.output}`).toBe(false);
     // THE proof: the child's Write reached the MEMDIR — the SDK's protected-home check carved it
-    // out, Winter's deny rules never named it, and the gate's `auto` verdict let it through silently.
+    // out, Clover's deny rules never named it, and the gate's `auto` verdict let it through silently.
     expect(readFileSync(note, "utf8")).toBe("AFTER\n");
     expect(log.filter((e) => e.type === "approval_requested")).toEqual([]);
     expect(client.events.filter((e) => e.type === "approval_requested" && e.sessionId === sid)).toEqual([]);
@@ -329,11 +329,11 @@ describeWithWinterBinary("code on the Winter leg — the built binary through a 
     rmSync(cwd, { recursive: true, force: true });
   }, 60_000);
 
-  test("(n) a configured user MCP server (sdk/.winter.json) reaches the child: THE CHILD spawns the forwarded stdio server", async () => {
-    const cwd = realpathSync(mkdtempSync(join(tmpdir(), "winter-code-mcp-")));
-    const before = new Set(winterChildren(bin));
+  test("(n) a configured user MCP server (sdk/.clover.json) reaches the child: THE CHILD spawns the forwarded stdio server", async () => {
+    const cwd = realpathSync(mkdtempSync(join(tmpdir(), "clover-code-mcp-")));
+    const before = new Set(cloverChildren(bin));
     const sid = await createCode("echo", cwd, "auto");
-    const driver = daemon!.winter.get(sid)!;
+    const driver = daemon!.clover.get(sid)!;
     const t0 = Date.now();
     while (driver.init === undefined && Date.now() - t0 < 15_000) await Bun.sleep(20);
     expect(driver.init).toBeDefined();
@@ -346,15 +346,15 @@ describeWithWinterBinary("code on the Winter leg — the built binary through a 
     // are advertised for exactly that), so the observable fact is the SPAWN: a `bun run
     // fake-mcp-server.ts` whose PARENT is this session's winter child (the daemon's own McpManager
     // probe copy has the test process as its parent, so the parent pid is what tells them apart).
-    const winterPid = winterChildren(bin).find((p) => !before.has(p));
-    expect(winterPid).toBeDefined();
+    const cloverPid = cloverChildren(bin).find((p) => !before.has(p));
+    expect(cloverPid).toBeDefined();
     // The home-scoped survivor scan is not vacuous: it DOES see this file's live child (its command line
     // names this home), so the zero-survivor check at the end means something — while a home it never
     // spawned under sees nothing.
-    expect(winterSurvivors(bin, home).some((l) => l.startsWith(`${winterPid} `))).toBe(true);
-    expect(winterSurvivors(bin, join(home, "not-this-home")).some((l) => l.startsWith(`${winterPid} `))).toBe(false);
+    expect(cloverSurvivors(bin, home).some((l) => l.startsWith(`${cloverPid} `))).toBe(true);
+    expect(cloverSurvivors(bin, join(home, "not-this-home")).some((l) => l.startsWith(`${cloverPid} `))).toBe(false);
     const spawnedByChild = (): string[] =>
-      Bun.spawnSync(["pgrep", "-P", winterPid!, "-f", "fake-mcp-server"]).stdout.toString().trim().split("\n").filter(Boolean);
+      Bun.spawnSync(["pgrep", "-P", cloverPid!, "-f", "fake-mcp-server"]).stdout.toString().trim().split("\n").filter(Boolean);
     const t1 = Date.now();
     while (spawnedByChild().length === 0 && Date.now() - t1 < 10_000) await Bun.sleep(50);
     expect(spawnedByChild().length).toBeGreaterThanOrEqual(1);
@@ -372,7 +372,7 @@ describeWithWinterBinary("code on the Winter leg — the built binary through a 
       expect(projectsSignature(h)).toBe(projectsBefore.get(h)!);
     }
     const t0 = Date.now();
-    while (winterSurvivors(bin, home).length > 0 && Date.now() - t0 < 3000) await Bun.sleep(50);
-    expect(winterSurvivors(bin, home).map((l) => l.slice(0, 120))).toEqual([]);
+    while (cloverSurvivors(bin, home).length > 0 && Date.now() - t0 < 3000) await Bun.sleep(50);
+    expect(cloverSurvivors(bin, home).map((l) => l.slice(0, 120))).toEqual([]);
   });
 });

@@ -159,7 +159,7 @@ describe("classifyDispatchAgentError — coarse AgentErrorCode only, no status/p
     });
 
     test("recordDispatchOutcome passes the event's message through", () => {
-      const reg = new RoleHealthRegistry(mkdtempSync(join(tmpdir(), "winter-role-health-")));
+      const reg = new RoleHealthRegistry(mkdtempSync(join(tmpdir(), "clover-role-health-")));
       const c = frame("bad_request", "invalid_request_error", CREDIT);
       recordDispatchOutcome({ type: "agent_error", sessionId: "s_1", threadId: "main", message: c.message, code: c.code } as never, "anthropic/claude-sonnet-5-5", reg);
       expect(reg.problemFor("pins.dispatch", "anthropic/claude-sonnet-5-5")).toMatchObject({ reason: "other", detail: CREDIT });
@@ -183,7 +183,7 @@ describe("classifyDispatchAgentError — coarse AgentErrorCode only, no status/p
 
 describe("RoleHealthRegistry", () => {
   function tmpHome(): string {
-    return mkdtempSync(join(tmpdir(), "winter-role-health-"));
+    return mkdtempSync(join(tmpdir(), "clover-role-health-"));
   }
 
   test("failure -> visible via problemFor; success -> cleared", () => {
@@ -269,40 +269,40 @@ describe("recordDispatchOutcome — daemon.ts's hub-observer logic, factored out
     ({ type: "turn_completed" as const, seq: 2, sessionId: "s_x", ts: 0, threadId: "main", stopReason, inputTokens: 0, outputTokens: 0 });
 
   test("a provider-attributable agent_error records pins.dispatch under the given tag", () => {
-    const reg = new RoleHealthRegistry(mkdtempSync(join(tmpdir(), "winter-dispatch-rh-")));
+    const reg = new RoleHealthRegistry(mkdtempSync(join(tmpdir(), "clover-dispatch-rh-")));
     recordDispatchOutcome(errorEvent("rate_limit"), "codex-oauth/gpt-5.6-terra", reg);
     expect(reg.problemFor("pins.dispatch", "codex-oauth/gpt-5.6-terra")?.reason).toBe("rate-limited");
   });
 
   test("a non-provider agent_error code (e.g. max_turns) records nothing", () => {
-    const reg = new RoleHealthRegistry(mkdtempSync(join(tmpdir(), "winter-dispatch-rh-")));
+    const reg = new RoleHealthRegistry(mkdtempSync(join(tmpdir(), "clover-dispatch-rh-")));
     recordDispatchOutcome(errorEvent("max_turns"), "codex-oauth/gpt-5.6-terra", reg);
     expect(reg.problemFor("pins.dispatch", "codex-oauth/gpt-5.6-terra")).toBeNull();
   });
 
   test("turn_completed(end_turn) clears a previously recorded note", () => {
-    const reg = new RoleHealthRegistry(mkdtempSync(join(tmpdir(), "winter-dispatch-rh-")));
+    const reg = new RoleHealthRegistry(mkdtempSync(join(tmpdir(), "clover-dispatch-rh-")));
     reg.recordFailure("pins.dispatch", "codex-oauth/gpt-5.6-terra", { reason: "other", detail: "x" });
     recordDispatchOutcome(turnCompleted("end_turn"), "codex-oauth/gpt-5.6-terra", reg);
     expect(reg.problemFor("pins.dispatch", "codex-oauth/gpt-5.6-terra")).toBeNull();
   });
 
   test("turn_completed(aborted) is neither a success nor a failure — the note survives", () => {
-    const reg = new RoleHealthRegistry(mkdtempSync(join(tmpdir(), "winter-dispatch-rh-")));
+    const reg = new RoleHealthRegistry(mkdtempSync(join(tmpdir(), "clover-dispatch-rh-")));
     reg.recordFailure("pins.dispatch", "codex-oauth/gpt-5.6-terra", { reason: "other", detail: "x" });
     recordDispatchOutcome(turnCompleted("aborted"), "codex-oauth/gpt-5.6-terra", reg);
     expect(reg.problemFor("pins.dispatch", "codex-oauth/gpt-5.6-terra")).not.toBeNull();
   });
 
   test("turn_completed(error) is not itself a success — the agent_error just before it already recorded the failure", () => {
-    const reg = new RoleHealthRegistry(mkdtempSync(join(tmpdir(), "winter-dispatch-rh-")));
+    const reg = new RoleHealthRegistry(mkdtempSync(join(tmpdir(), "clover-dispatch-rh-")));
     recordDispatchOutcome(errorEvent("server"), "codex-oauth/gpt-5.6-terra", reg);
     recordDispatchOutcome(turnCompleted("error"), "codex-oauth/gpt-5.6-terra", reg);
     expect(reg.problemFor("pins.dispatch", "codex-oauth/gpt-5.6-terra")?.reason).toBe("provider-unavailable");
   });
 
   test("an unrelated event type is a no-op", () => {
-    const reg = new RoleHealthRegistry(mkdtempSync(join(tmpdir(), "winter-dispatch-rh-")));
+    const reg = new RoleHealthRegistry(mkdtempSync(join(tmpdir(), "clover-dispatch-rh-")));
     recordDispatchOutcome({ type: "session_titled", seq: 1, sessionId: "s_x", ts: 0, threadId: "main", title: "x" } as any, "codex-oauth/gpt-5.6-terra", reg);
     expect(reg.problemFor("pins.dispatch", "codex-oauth/gpt-5.6-terra")).toBeNull();
   });
@@ -313,7 +313,7 @@ describe("withProblem", () => {
     const info = { model: "openai/gpt-5.4" as string | null, explicit: true };
     expect(withProblem(info, "pins.dream", undefined)).toMatchObject({ ...info, problem: null });
 
-    const reg = new RoleHealthRegistry(mkdtempSync(join(tmpdir(), "winter-role-health-")));
+    const reg = new RoleHealthRegistry(mkdtempSync(join(tmpdir(), "clover-role-health-")));
     reg.recordFailure("pins.dream", "openai/gpt-5.4", { reason: "other", detail: "x" });
     expect(withProblem(info, "pins.dream", reg).problem).toMatchObject({ reason: "other", model: "openai/gpt-5.4" });
   });

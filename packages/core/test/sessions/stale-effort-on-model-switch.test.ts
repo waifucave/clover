@@ -13,7 +13,7 @@ const NO_VOCABULARY = "zai/glm-5";
 const WITH_LEVELS = "codex-oauth/gpt-5.6-terra";
 
 const stale = (effort: string, model: string, mode: string | undefined) => effortRefusalFor(effort, model, mode) !== undefined;
-const fresh = () => new SessionStore(mkdtempSync(join(tmpdir(), "winter-stale-effort-")), { effortStaleFor: stale });
+const fresh = () => new SessionStore(mkdtempSync(join(tmpdir(), "clover-stale-effort-")), { effortStaleFor: stale });
 
 describe("effortRefusalFor — the one selection rule", () => {
   test("a catalog row with no vocabulary takes no wire level at all, 'none' included", () => {
@@ -62,7 +62,7 @@ describe("SessionStore.setModel clears an effort the destination model cannot ta
     store.setModel(sid, null);
     expect(store.meta(sid).effort).toBe("high");
     store.close();
-    const plain = new SessionStore(mkdtempSync(join(tmpdir(), "winter-stale-effort-")));
+    const plain = new SessionStore(mkdtempSync(join(tmpdir(), "clover-stale-effort-")));
     const sid2 = plain.createSession("global", { cwd: "/tmp/p", approvalPolicy: "ask" });
     plain.setEffort(sid2, "high");
     plain.setModel(sid2, NO_VOCABULARY);
@@ -70,7 +70,7 @@ describe("SessionStore.setModel clears an effort the destination model cannot ta
     plain.close();
   });
   test("a throwing rule clears nothing and never fails the model write", () => {
-    const store = new SessionStore(mkdtempSync(join(tmpdir(), "winter-stale-effort-")), { effortStaleFor: () => { throw new Error("boom"); } });
+    const store = new SessionStore(mkdtempSync(join(tmpdir(), "clover-stale-effort-")), { effortStaleFor: () => { throw new Error("boom"); } });
     const sid = store.createSession("global", { cwd: "/tmp/p", approvalPolicy: "ask" });
     store.setEffort(sid, "high");
     store.setModel(sid, NO_VOCABULARY);

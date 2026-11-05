@@ -126,12 +126,12 @@ const signatures: SignatureVerifier = async (app, core, addon) => {
   await verify(core, team);
   await verify(addon, `(${team}) and identifier "com.winter.host-output"`);
   // Last: seal-check the manifest/image tree pinned before verification.
-  await verify(app, `(${team}) and (identifier "com.winter.app" or identifier "com.winter.app.dev")`);
+  await verify(app, `(${team}) and (identifier "com.waifucave.clover" or identifier "com.waifucave.clover.dev")`);
   return true;
 };
 async function load(corePath: string, verify: SignatureVerifier, loadAddon: (fd: number) => Addon, retainMapping: boolean): Promise<HostCodeOutputTransportFactory> {
   const core = await realpath(corePath), resources = dirname(core), contents = dirname(resources), app = dirname(contents);
-  if (basename(core) !== "winter-core" || basename(resources) !== "Resources" || basename(contents) !== "Contents" || !app.endsWith(".app")) {
+  if (basename(core) !== "clover-core" || basename(resources) !== "Resources" || basename(contents) !== "Contents" || !app.endsWith(".app")) {
     throw new HostOutputUnavailable("bundle-layout");
   }
   const root = join(resources, HOST_OUTPUT_BUNDLE_SUBPATH), path = join(root, ARTIFACT), record = join(root, "manifest.json");
@@ -211,7 +211,7 @@ function lazy(resolve: () => Promise<HostCodeOutputTransportFactory>, log?: (lin
 export function loadBundledHostOutputFactory(log: (line: string) => void = line => console.error(line)): HostCodeOutputTransportFactory | undefined {
   if (bundled) return bundled;
   const core = process.execPath, resources = dirname(core), contents = dirname(resources), app = dirname(contents);
-  if (process.platform !== "darwin" || process.arch !== "arm64" || basename(core) !== "winter-core" ||
+  if (process.platform !== "darwin" || process.arch !== "arm64" || basename(core) !== "clover-core" ||
       basename(resources) !== "Resources" || basename(contents) !== "Contents" || !app.endsWith(".app")) return undefined;
   return bundled = lazy(() => load(core, signatures, nativeAddon, true), log);
 }

@@ -1,6 +1,6 @@
 // The reviewing pill: the daemon's index of which thread each live tool call is on (`sessions/call-threads.ts`).
 import { describe, expect, test } from "bun:test";
-import type { SessionEvent } from "@yanlinglabs/winter-protocol";
+import type { SessionEvent } from "@waifucave/clover-protocol";
 import { CallThreads } from "../../src/sessions/call-threads";
 
 const call = (sessionId: string, callId: string, threadId: string) =>

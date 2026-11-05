@@ -212,7 +212,7 @@ export interface CoworkPeerInboxOptions {
   limits?: Partial<PeerInboxLimits>;
 }
 
-const DIGEST_VERSION = "winter.cowork.peer-send.v1";
+const DIGEST_VERSION = "clover.cowork.peer-send.v1";
 /** The digest covers (recipient, text) only. When the SDK's optional `summary` and `notifyWhenIdle` fields are
  * wired through (agent/session-messaging.ts carries both), they are part of the message and MUST be added to
  * the payload and to this digest under a new version, or a retry that changes them would be silently deduped. */

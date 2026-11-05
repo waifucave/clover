@@ -230,7 +230,7 @@ describe("the chrome group: scenarios", () => {
 
   test("Floor F in French: refusals pass; an act that went through, or remote debugging on, fails", async () => {
     const inspect = byName("chrome://inspect");
-    const refusal = "throw Refused: Winter never turns on or approves remote debugging in a browser — it would give any app on this Mac full control of the browser and its sign-ins. Ask the user to do it if they really want it.";
+    const refusal = "throw Refused: Clover never turns on or approves remote debugging in a browser — it would give any app on this Mac full control of the browser and its sign-ins. Ask the user to do it if they really want it.";
     /** The browser in French on chrome://inspect once the address is typed: its page's elements under its web area. */
     const inspectBrowser = (acts: (what: string, into?: unknown) => string | void) => {
       const fake = fakeApp([{ ref: 11, role: "text field", name: "Barre d'adresse et de recherche" }], (what, _a, b) => acts(what, what === "key" ? (b as { into?: unknown } | undefined)?.into : _a));
@@ -264,7 +264,7 @@ describe("the chrome group: scenarios", () => {
 });
 
 describe("the chrome group: the open panel (2026-10-14)", () => {
-  const PATH = `/private/var/folders/x/T/winter-cu-live-1/panel/${PANEL_FILE_NAME}`;
+  const PATH = `/private/var/folders/x/T/clover-cu-live-1/panel/${PANEL_FILE_NAME}`;
   const panel = () => [
     { ref: 5, role: "button", name: "Select file" },
     { ref: 20, role: "sheet", name: "open" },

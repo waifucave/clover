@@ -12,16 +12,16 @@
 //   * the Write's still carries the hooks lane's `fileDiff` (the PostToolUse producer runs inside the
 //     call, before the runtime sends that call's frame).
 // (2) PARALLEL reads, one round: three calls of a user MCP server's tool listed `readOnlyHint: true`
-//     (the stdio fake, `WINTER_FAKE_SLOW_TOOL`), taking 1500 / 300 / 800 ms.
+//     (the stdio fake, `CLOVER_FAKE_SLOW_TOOL`), taking 1500 / 300 / 800 ms.
 //   * they overlap (the round takes about the slowest, not the sum);
 //   * their `tool_result`s land in COMPLETION order, staggered, one per callId;
 //   * the model still gets the three results in CALL order.
-// Needs a 0.0.40+ binary: WINTER_RUNTIME_EXECUTABLE (else the installed platform package, else skipped).
+// Needs a 0.0.40+ binary: CLOVER_RUNTIME_EXECUTABLE (else the installed platform package, else skipped).
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, type WritableSocket, type SessionEvent } from "@yanlinglabs/winter-protocol";
+import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, type WritableSocket, type SessionEvent } from "@waifucave/clover-protocol";
 import { FileSecretStore } from "../../src/auth/secret-store";
 import { startDaemon, type RunningDaemon } from "../../src/daemon";
 import { describeWithWinterBinary } from "../helpers/winter-binary";
@@ -83,22 +83,22 @@ describeWithWinterBinary("tool results are projected as each call of a batch fin
   let home: string;
   let daemon: RunningDaemon | undefined;
   let client: TestClient;
-  /** The fake MCP server's `<label>.started` / `<label>.done` files (`WINTER_FAKE_MARKER_DIR`). */
+  /** The fake MCP server's `<label>.started` / `<label>.done` files (`CLOVER_FAKE_MARKER_DIR`). */
   let markers: string;
 
   beforeAll(async () => {
-    home = realpathSync(mkdtempSync(join(tmpdir(), "winter-per-call-e2e-")));
+    home = realpathSync(mkdtempSync(join(tmpdir(), "clover-per-call-e2e-")));
     writeFileSync(join(home, "settings.json"), JSON.stringify({
       schemaVersion: 3,
       provider: { model: "winter-test/calls" },
       runtimes: { winterExecutable: bin, winterIdleTimeoutSec: 10 },
     }, null, 2));
-    // A user-scope stdio MCP server whose `wait` tool is listed read-only (claude's format, `sdk/.winter.json`).
+    // A user-scope stdio MCP server whose `wait` tool is listed read-only (claude's format, `sdk/.clover.json`).
     mkdirSync(join(home, "sdk"), { recursive: true });
     markers = join(home, "markers");
     mkdirSync(markers);
-    writeFileSync(join(home, "sdk", ".winter.json"), JSON.stringify({
-      mcpServers: { slow: { command: process.execPath, args: [join(import.meta.dir, "..", "agent", "mcp", "fake-mcp-server.ts")], env: { WINTER_FAKE_SLOW_TOOL: "1", WINTER_FAKE_MARKER_DIR: markers } } },
+    writeFileSync(join(home, "sdk", ".clover.json"), JSON.stringify({
+      mcpServers: { slow: { command: process.execPath, args: [join(import.meta.dir, "..", "agent", "mcp", "fake-mcp-server.ts")], env: { CLOVER_FAKE_SLOW_TOOL: "1", CLOVER_FAKE_MARKER_DIR: markers } } },
     }, null, 2));
     daemon = await startDaemon({ home, secrets: new FileSecretStore(join(home, "test-secrets")), agentProvider: null });
     if ("unavailable" in daemon.runtimeState) throw daemon.runtimeState.unavailable;
@@ -116,7 +116,7 @@ describeWithWinterBinary("tool results are projected as each call of a batch fin
 
   test("a Write and a sleeping Bash in ONE round: two tool_results, one per call, the Write's before the Bash had finished, still carrying its fileDiff", async () => {
     const d = daemon!;
-    const cwd = realpathSync(mkdtempSync(join(tmpdir(), "winter-per-call-e2e-cwd-")));
+    const cwd = realpathSync(mkdtempSync(join(tmpdir(), "clover-per-call-e2e-cwd-")));
     const target = join(cwd, "quick.txt");
     // The Bash writes a marker only AFTER its sleep: the Write's result arriving while the marker is still
     // absent proves it arrived before the Bash finished -- causal, not a millisecond gap.
@@ -179,7 +179,7 @@ describeWithWinterBinary("tool results are projected as each call of a batch fin
 
   test("three read-only MCP calls in ONE round run at once: staggered tool_results in completion order, one per call, the model's results in call order", async () => {
     const d = daemon!;
-    const cwd = realpathSync(mkdtempSync(join(tmpdir(), "winter-per-call-e2e-cwd-")));
+    const cwd = realpathSync(mkdtempSync(join(tmpdir(), "clover-per-call-e2e-cwd-")));
     const { sessionId } = await client.call<{ sessionId: string }>(METHODS.sessionCreate, {
       scope: "e2e", mode: "code", model: "winter-test/calls", cwd, approvalPolicy: "auto",
     });

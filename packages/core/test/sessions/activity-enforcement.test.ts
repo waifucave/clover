@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, type WritableSocket } from "@yanlinglabs/winter-protocol";
+import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, type WritableSocket } from "@waifucave/clover-protocol";
 import { startIpcServer } from "../../src/ipc/server";
 import { SessionStore } from "../../src/sessions/store";
 import { SessionHub } from "../../src/sessions/hub";
@@ -39,7 +39,7 @@ describe("harness kinds (session-activity-hygiene T5)", () => {
   // that client's detach kills a running turn.
   test("every terminal-kind client the repo actually ships classifies as 'terminal'", () => {
     // packages/cli/src/main.ts:613 — `connect(chat ? "cli-chat" : "cli-p")`
-    expect(harnessKindOf("cli-p", "harness")).toBe("terminal");   // winter -p (one-shot)
+    expect(harnessKindOf("cli-p", "harness")).toBe("terminal");   // clover -p (one-shot)
     expect(harnessKindOf("cli-chat", "harness")).toBe("terminal"); // the interactive Ink TUI
     // …and the other 22 literals, all `cli-`-prefixed (main.ts `connect("cli-…")`)
     expect(harnessKindOf("cli-resume", "harness")).toBe("terminal");
@@ -261,7 +261,7 @@ describe("last-detach enforcement (session-activity-hygiene T5)", () => {
 
   // -------------------------------------------------------------------------------------------
   // The protection an app detach installs is FOR THAT TURN — not for "until somebody looks at it".
-  // `winter watch` attaches (main.ts:1578) and is terminal-kind (`cli-watch`), so without this a
+  // `clover watch` attaches (main.ts:1578) and is terminal-kind (`cli-watch`), so without this a
   // read-only peek at an unattended turn, followed by ctrl-C, destroys it.
   // -------------------------------------------------------------------------------------------
 
@@ -270,7 +270,7 @@ describe("last-detach enforcement (session-activity-hygiene T5)", () => {
     h.attach("s1");
     h.running.add("s1");
     h.detach("s1", "orb");            // the app leaves mid-turn: the turn is protected
-    h.attach("s1");                   // `winter watch` peeks...
+    h.attach("s1");                   // `clover watch` peeks...
     h.detach("s1", "cli-watch");      // ...and ctrl-C
     expect(h.aborted).toEqual([]);
     // …and the session goes back to announcing itself as background, unattended.
@@ -619,7 +619,7 @@ describe("wired into the IPC server (session-activity-hygiene T5)", () => {
   afterEach(() => { stop?.(); stop = undefined; });
 
   async function boot() {
-    const home = mkdtempSync(join(tmpdir(), "winter-activity-enforce-"));
+    const home = mkdtempSync(join(tmpdir(), "clover-activity-enforce-"));
     const store = new SessionStore(home);
     const hub = new SessionHub(store);
     const socketPath = join(home, "core.sock");

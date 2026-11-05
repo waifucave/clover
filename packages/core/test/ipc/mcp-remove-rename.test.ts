@@ -5,7 +5,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, McpRenameResult, type WritableSocket } from "@yanlinglabs/winter-protocol";
+import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, McpRenameResult, type WritableSocket } from "@waifucave/clover-protocol";
 import { createMemoryMcpOAuthStore, encodeMcpOAuthTokenRecord, mcpOAuthTokenAccount } from "@yanlinglabs/winter-agent-runtime/mcp-auth";
 import { startIpcServer, REMOTE_ALLOWED_METHODS } from "../../src/ipc/server";
 import { SessionStore } from "../../src/sessions/store";
@@ -61,10 +61,10 @@ describe("mcp.remove / mcp.rename and the connector settings", () => {
   afterEach(() => { stop?.(); stop = undefined; });
 
   async function boot(config: Record<string, unknown>, settings: Record<string, unknown> = {}, live: string[] = []) {
-    const home = realpathSync(mkdtempSync(join(tmpdir(), "winter-mcp-rename-")));
+    const home = realpathSync(mkdtempSync(join(tmpdir(), "clover-mcp-rename-")));
     saveSettings(join(home, "settings.json"), Settings.parse({ schemaVersion: 3, provider: { model: "codex-oauth/gpt-5.6-sol" }, ...settings }));
     mkdirSync(join(home, "sdk"), { recursive: true });
-    writeFileSync(join(home, "sdk", ".winter.json"), JSON.stringify(config));
+    writeFileSync(join(home, "sdk", ".clover.json"), JSON.stringify(config));
     const trust = new TrustStore(join(home, "trust.json"));
     const probed: string[] = [];
     const mcp = new McpManager({ trust, stdioCwd: home, connect: async (o) => { probed.push(o.name); return { serverName: o.name, listTools: async () => [], close: async () => {} } as never; } });
@@ -75,7 +75,7 @@ describe("mcp.remove / mcp.rename and the connector settings", () => {
     const tokens = await authority.ensureTokens();
     const oauth = createMemoryMcpOAuthStore();
     const saved: unknown[] = [];
-    const server = startIpcServer({ socketPath, serverVersion: "test", tokens: authority, store, winterHome: home, secrets, mcp, trust, mcpOAuth: { store: oauth }, winter: { list: () => [{ mcpServerNames: () => live }] } as never, onConnectorPermissionsSaved: (next) => { saved.push(next.mcp?.toolPermissions); } });
+    const server = startIpcServer({ socketPath, serverVersion: "test", tokens: authority, store, cloverHome: home, secrets, mcp, trust, mcpOAuth: { store: oauth }, clover: { list: () => [{ mcpServerNames: () => live }] } as never, onConnectorPermissionsSaved: (next) => { saved.push(next.mcp?.toolPermissions); } });
     stop = () => { server.stop(); store.close(); };
     const c = await TestClient.connect(socketPath);
     await c.hello(tokens.harness, "cli");
@@ -83,7 +83,7 @@ describe("mcp.remove / mcp.rename and the connector settings", () => {
   }
   const settingsOf = (home: string): Record<string, any> => JSON.parse(readFileSync(join(home, "settings.json"), "utf8"));
   const configOf = (home: string): Record<string, any> => {
-    const path = join(home, "sdk", ".winter.json");
+    const path = join(home, "sdk", ".clover.json");
     return existsSync(path) ? JSON.parse(readFileSync(path, "utf8")) : {};
   };
 
@@ -97,7 +97,7 @@ describe("mcp.remove / mcp.rename and the connector settings", () => {
   });
 
   test("remove keeps the permissions while another scope still defines the name", async () => {
-    const project = realpathSync(mkdtempSync(join(tmpdir(), "winter-mcp-rename-proj-")));
+    const project = realpathSync(mkdtempSync(join(tmpdir(), "clover-mcp-rename-proj-")));
     const { home, c } = await boot({ mcpServers: { cf: { type: "stdio", command: "cf" } }, projects: { [project]: { mcpServers: { cf: { type: "stdio", command: "cf-local" } } } } }, { mcp: { toolPermissions: { cf: { "*": "deny" } } } });
     const r = await c.request(METHODS.mcpRemove, { name: "cf", scope: "user" });
     expect(r.result).toMatchObject({ removed: true, permissionsCleared: false });
@@ -105,10 +105,10 @@ describe("mcp.remove / mcp.rename and the connector settings", () => {
     c.close();
   });
 
-  test("remove keeps the permissions while a trusted project's .winter/mcp.json defines the name", async () => {
-    const project = realpathSync(mkdtempSync(join(tmpdir(), "winter-mcp-rename-proj-")));
-    mkdirSync(join(project, ".winter"), { recursive: true });
-    writeFileSync(join(project, ".winter", "mcp.json"), JSON.stringify({ mcpServers: { cf: { type: "stdio", command: "cf-p" } } }));
+  test("remove keeps the permissions while a trusted project's .clover/mcp.json defines the name", async () => {
+    const project = realpathSync(mkdtempSync(join(tmpdir(), "clover-mcp-rename-proj-")));
+    mkdirSync(join(project, ".clover"), { recursive: true });
+    writeFileSync(join(project, ".clover", "mcp.json"), JSON.stringify({ mcpServers: { cf: { type: "stdio", command: "cf-p" } } }));
     const { home, c, trust } = await boot({ mcpServers: { cf: { type: "stdio", command: "cf" } } }, { mcp: { toolPermissions: { cf: { "*": "ask" } } } });
     trust.trust(project);
     expect((await c.request(METHODS.mcpRemove, { name: "cf", scope: "user" })).result).toMatchObject({ permissionsCleared: false });
@@ -147,18 +147,18 @@ describe("mcp.remove / mcp.rename and the connector settings", () => {
   test("refused typed, writing nothing: a taken name, a missing name, an invalid name, a target with stored values", async () => {
     const config = { mcpServers: { cf: { type: "stdio", command: "cf" }, gh: { type: "stdio", command: "gh" } } };
     const { home, c } = await boot(config, { mcp: { toolPermissions: { cf: { "*": "deny" }, stale: { x: "ask" } } } });
-    const before = readFileSync(join(home, "sdk", ".winter.json"), "utf8");
+    const before = readFileSync(join(home, "sdk", ".clover.json"), "utf8");
     expect((await c.request(METHODS.mcpRename, { name: "cf", newName: "gh", scope: "user" })).error?.data?.code).toBe("mcp_server_exists");
     expect((await c.request(METHODS.mcpRename, { name: "nope", newName: "x", scope: "user" })).error?.data?.code).toBe("mcp_server_not_found");
     expect((await c.request(METHODS.mcpRename, { name: "cf", newName: "bad name", scope: "user" })).error?.data?.code).toBe("mcp_invalid_name");
     expect((await c.request(METHODS.mcpRename, { name: "cf", newName: "stale", scope: "user" })).error?.data?.code).toBe("mcp_rename_target_has_permissions");
-    expect(readFileSync(join(home, "sdk", ".winter.json"), "utf8")).toBe(before);
+    expect(readFileSync(join(home, "sdk", ".clover.json"), "utf8")).toBe(before);
     expect(settingsOf(home).mcp.toolPermissions).toEqual({ cf: { "*": "deny" }, stale: { x: "ask" } });
     c.close();
   });
 
   test("rename in the local scope keeps the old name's permissions while the user scope still defines it", async () => {
-    const project = realpathSync(mkdtempSync(join(tmpdir(), "winter-mcp-rename-proj-")));
+    const project = realpathSync(mkdtempSync(join(tmpdir(), "clover-mcp-rename-proj-")));
     const { home, c } = await boot({ mcpServers: { cf: { type: "stdio", command: "cf" } }, projects: { [project]: { mcpServers: { cf: { type: "stdio", command: "cf-local" } } } } }, { mcp: { toolPermissions: { cf: { "*": "deny" } } } });
     const r = await c.request(METHODS.mcpRename, { name: "cf", newName: "cf_local", scope: "local", cwd: project });
     expect(r.result).toMatchObject({ carried: true, keptOld: true });
@@ -188,20 +188,20 @@ describe("mcp.remove / mcp.rename and the connector settings", () => {
   });
 
   test("review 3: rename into a name another scope defines, or a live session uses, is refused and writes nothing", async () => {
-    const project = realpathSync(mkdtempSync(join(tmpdir(), "winter-mcp-rename-proj-")));
+    const project = realpathSync(mkdtempSync(join(tmpdir(), "clover-mcp-rename-proj-")));
     const { home, c } = await boot({ mcpServers: { cf: { type: "stdio", command: "cf" } }, projects: { [project]: { mcpServers: { taken: { type: "stdio", command: "t" } } } } }, { mcp: { toolPermissions: { cf: { "*": "deny" } } } }, ["busy"]);
-    const before = readFileSync(join(home, "sdk", ".winter.json"), "utf8");
+    const before = readFileSync(join(home, "sdk", ".clover.json"), "utf8");
     expect((await c.request(METHODS.mcpRename, { name: "cf", newName: "taken", scope: "user" })).error?.data?.code).toBe("mcp_server_name_in_use");
     expect((await c.request(METHODS.mcpRename, { name: "cf", newName: "busy", scope: "user" })).error?.data?.code).toBe("mcp_server_name_in_use");
-    expect(readFileSync(join(home, "sdk", ".winter.json"), "utf8")).toBe(before);
+    expect(readFileSync(join(home, "sdk", ".clover.json"), "utf8")).toBe(before);
     expect(settingsOf(home).mcp.toolPermissions).toEqual({ cf: { "*": "deny" } });
     c.close();
   });
 
   test("round 3: rename NEVER rewrites a rule — it lists every rule that could name the old server, in every file", async () => {
-    const project = realpathSync(mkdtempSync(join(tmpdir(), "winter-mcp-rename-proj-")));
-    mkdirSync(join(project, ".winter"), { recursive: true });
-    writeFileSync(join(project, ".winter", "settings.json"), JSON.stringify({ permissions: { allow: ["mcp__cf__list", "Bash(ls)"] } }));
+    const project = realpathSync(mkdtempSync(join(tmpdir(), "clover-mcp-rename-proj-")));
+    mkdirSync(join(project, ".clover"), { recursive: true });
+    writeFileSync(join(project, ".clover", "settings.json"), JSON.stringify({ permissions: { allow: ["mcp__cf__list", "Bash(ls)"] } }));
     const { home, c, trust } = await boot({ mcpServers: { cf: { type: "stdio", command: "cf" } } });
     trust.trust(project);
     const sdk = join(home, "sdk", "settings.json");
@@ -214,12 +214,12 @@ describe("mcp.remove / mcp.rename and the connector settings", () => {
     expect("rulesCarried" in r.result).toBe(false);
     // Nothing rewritten, anywhere.
     expect(JSON.parse(readFileSync(sdk, "utf8"))).toEqual(sdkRules);
-    expect(JSON.parse(readFileSync(join(project, ".winter", "settings.json"), "utf8")).permissions.allow).toEqual(["mcp__cf__list", "Bash(ls)"]);
+    expect(JSON.parse(readFileSync(join(project, ".clover", "settings.json"), "utf8")).permissions.allow).toEqual(["mcp__cf__list", "Bash(ls)"]);
     // Every rule that COULD name `cf` is listed: literal ones (every `__` split) and globs whose server part can
     // match (`mcp__cf__*`, `mcp__c*`) — never `mcp__cfx__a`, `Read` or `Bash(...)`.
     expect(r.result.rulesNotFollowed.sort()).toEqual([
       `${sdk}: mcp__cf__list`, `${sdk}: mcp__cf__*`, `${sdk}: mcp__c*`, `${sdk}: mcp__cf`, `${sdk}: mcp__cf__admin__delete(*)`,
-      `${join(project, ".winter", "settings.json")}: mcp__cf__list`,
+      `${join(project, ".clover", "settings.json")}: mcp__cf__list`,
       `${join(home, "permissions", "projects.json")}: mcp__cf__write`,
     ].sort());
     c.close();
@@ -239,7 +239,7 @@ describe("mcp.remove / mcp.rename and the connector settings", () => {
   });
 
   test("round 2 N2: rename refuses a target that rules already name — sdk/settings.json, a trusted project, the approved record", async () => {
-    const project = realpathSync(mkdtempSync(join(tmpdir(), "winter-mcp-rename-proj-")));
+    const project = realpathSync(mkdtempSync(join(tmpdir(), "clover-mcp-rename-proj-")));
     const { home, c, trust } = await boot({ mcpServers: { cf: { type: "stdio", command: "cf" } } });
     const sdk = join(home, "sdk", "settings.json");
     const code = async () => (await c.request(METHODS.mcpRename, { name: "cf", newName: "neo", scope: "user" })).error?.data?.code;
@@ -247,10 +247,10 @@ describe("mcp.remove / mcp.rename and the connector settings", () => {
     expect(await code()).toBe("mcp_rename_target_has_permissions");
     writeFileSync(sdk, JSON.stringify({}));
     trust.trust(project);
-    mkdirSync(join(project, ".winter"), { recursive: true });
-    writeFileSync(join(project, ".winter", "settings.json"), JSON.stringify({ permissions: { deny: ["mcp__neo"] } }));
+    mkdirSync(join(project, ".clover"), { recursive: true });
+    writeFileSync(join(project, ".clover", "settings.json"), JSON.stringify({ permissions: { deny: ["mcp__neo"] } }));
     expect(await code()).toBe("mcp_rename_target_has_permissions");
-    writeFileSync(join(project, ".winter", "settings.json"), JSON.stringify({}));
+    writeFileSync(join(project, ".clover", "settings.json"), JSON.stringify({}));
     mkdirSync(join(home, "permissions"), { recursive: true });
     writeFileSync(join(home, "permissions", "projects.json"), JSON.stringify({ version: 1, projects: { [project]: ["mcp__neo__y"] } }));
     expect(await code()).toBe("mcp_rename_target_has_permissions");

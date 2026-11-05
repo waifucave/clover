@@ -41,11 +41,11 @@ export const REQUIRED_WINTER_AGENT_SDK = "0.0.55";
  *  Opus 4.7/4.8; a 400 refusing `reasoning.summary` (an unverified OpenAI org) is retried once without it (memoised
  *  1 h); no summary is requested at effort "none".
  *  Earlier: bumped to 0.0.47 (2026-10-05, the thinking pill): every provider family's reasoning streams live to the host as the
- *  Winter-only `system/reasoning_progress` frame (start → delta* → end per block, `kind` summary/update/exposed/hidden,
+ *  Clover-only `system/reasoning_progress` frame (start → delta* → end per block, `kind` summary/update/exposed/hidden,
  *  the last kind wins), which the projector turns into `thinking_delta`/`thinking_block` (`projector/thinking.ts`);
  *  Claude 5.x rows request `display: "updates"`, whose progress-update blocks title the pill.
  *  Earlier: bumped to 0.0.46 (2026-10-05; 0.0.45 was tagged but never published): a spawned runtime stops when its host dies, even
- *  mid-turn -- it watches its parent (`WINTER_HOST_PID`, passed by the wrapper's spawn) and, once the host is gone, kills
+ *  mid-turn -- it watches its parent (`CLOVER_HOST_PID`, passed by the wrapper's spawn) and, once the host is gone, kills
  *  every process group it started and exits, so a crashed daemon no longer leaves a session running unsupervised.
  *  Earlier: bumped to 0.0.44 (2026-10-04, user ruling "lets fold the message into the running turn"): host input sent while a
  *  turn runs is FOLDED into that turn just before its next request (after the next tool round), with
@@ -68,7 +68,7 @@ export const REQUIRED_WINTER_AGENT_SDK = "0.0.55";
  *  Earlier: bumped to 0.0.39 (2026-10-02): `Options.hostMessaging` — a session's `SendMessage` hands the daemon whatever
  *  it cannot resolve in-process (`host_message_send`), and `ListAgents` lists the sessions the daemon names
  *  (`host_message_list`), in both topologies; before it, SendMessage from any session reached no other
- *  Winter session (`agent/session-messaging.ts` answers both).
+ *  Clover session (`agent/session-messaging.ts` answers both).
  *  Earlier: bumped to 0.0.38 (2026-10-02; 0.0.37 was tagged but never published): the tool-surface rework — claude's `tools` option (chat's and dispatch's allowed
  *  lists), plain-named in-process tools (`toolNames`: `Browser`, `Computer`, `SpawnSession`, …), `deferTools` and the
  *  persisted deferred-tools announcement, `Search` (Exa answer mode) as a runtime built-in, `legacyToolNames`,
@@ -100,7 +100,7 @@ export const REQUIRED_WINTER_AGENT_SDK = "0.0.55";
  *  Earlier: bumped to 0.0.29 (2026-09-27, security): 0.0.28 plus the compiled `winter` runtime built with
  *  `--no-compile-autoload-bunfig --no-compile-autoload-dotenv`, so a code-session child started in a
  *  user's repository no longer reads that repository's `bunfig.toml` (a `preload` would have run as
- *  Winter) or `.env`. Winter's own `compile`/`compile:core` carry the same two flags.
+ *  Clover) or `.env`. Clover's own `compile`/`compile:core` carry the same two flags.
  *  Earlier: bumped to 0.0.28 (2026-09-27, WS-24 follow-ups): the published SDK the WS-24 daemon lanes already
  *  feature-detected against a dev build — a Worker that closes without running its own teardown has its
  *  orphaned process groups reaped (`processGroups()` on `EmbeddedWorkerProcess`); a subagent's forwarded
@@ -111,7 +111,7 @@ export const REQUIRED_WINTER_AGENT_SDK = "0.0.55";
  *  WS-24 list (async hooks, `mcp_server_name`/`mcp_tool_name` on hook inputs, per-provider feature-rejected
  *  persistence, a subagent's own inline MCP servers, …), most of which this daemon does not yet consume.
  *  Before that, bumped to 0.0.27 (2026-09-26, WS-23; 0.0.25 and 0.0.26 were tagged but their release CI stopped at the
- *  test step, so neither was published): every model on the Winter SDK (xAI Responses, MCP v2, hooks, the
+ *  test step, so neither was published): every model on the Clover SDK (xAI Responses, MCP v2, hooks, the
  *  Anthropic hardening + caching, per-message effort, mid-conversation tool changes, the reasoning-state
  *  sidecar, and the embedded runtime `@yanlinglabs/winter-agent-runtime`).
  *  Before that, bumped to 0.0.24 (2026-09-25; 0.0.23 was published the same day but never pinned here): 0.0.23's
@@ -119,11 +119,11 @@ export const REQUIRED_WINTER_AGENT_SDK = "0.0.55";
  *  models, 22 families (China-region and plan/dialect twins as separate providers, GPT-6 Sol/Luna,
  *  Opus 5.5, Xiaomi MiMo, Tencent TokenHub, the Meta Model API, …); the `gpt` family's sol/luna slots
  *  move to GPT-6 and the `claude` opus slot (+ `opus` alias) to Opus 5.5 — plus 0.0.24's audit fixes and
- *  the Winter-leg Anthropic adapter fix (effort via `output_config.effort` + adaptive thinking on Claude 4.5+,
+ *  the Clover-leg Anthropic adapter fix (effort via `output_config.effort` + adaptive thinking on Claude 4.5+,
  *  per-row thinking/tool_choice rewrites, the block-binding opt-in on Opus 5.5 / Fable 5.1, and dotted
  *  Claude ids sent as their dashed wire id). */
-/** Bumped to 0.0.22 (R.4, WS-21 publish, 2026-09-24): the shared `~/.winter/sdk` default home and
- *  `$WINTER_STORE_HOME`, plugins in claude's own format (`hooks.json`, directory marketplaces,
+/** Bumped to 0.0.22 (R.4, WS-21 publish, 2026-09-24): the shared `~/.clover/sdk` default home and
+ *  `$CLOVER_STORE_HOME`, plugins in claude's own format (`hooks.json`, directory marketplaces,
  *  `resolvesWithinPluginRoot`), an MCP tool list rebuilt per request with claude's up-to-2s
  *  first-turn connect wait and an unoffered-tool refusal, recursive subagent scope, and (SDK round 24)
  *  `mapChatMessages` merging consecutive same-role assistant entries so chat-completions-shaped
@@ -137,7 +137,7 @@ export const REQUIRED_WINTER_AGENT_SDK = "0.0.55";
  *  null gitRoot continues above the trusted root, and a project output style never redefines a user's
  *  or a built-in style. No API change.
  *  Earlier: bumped to 0.0.15 (WS-24, 2026-09-27): run-home repository-tier hardening -- a repository-shipped
- *  (git-tracked, symlinked or submodule) `.winter/settings.local.json` is filtered as the project tier,
+ *  (git-tracked, symlinked or submodule) `.clover/settings.local.json` is filtered as the project tier,
  *  so it can't raise the permission mode; repository tiers can't set the effort/thinking keys or the
  *  output style, and a project output style never redefines a user or built-in one; repository files
  *  (settings, rules, instructions, output styles, agents) are read without following swapped links.
@@ -151,11 +151,11 @@ export const REQUIRED_WINTER_AGENT_SDK = "0.0.55";
  *  failed on a timing-dependent control (a test asserting claude's own scheduler behaviour, not a
  *  containment failure) and was never published; 0.0.13 loosens that control only and republishes
  *  the same behavioural content — this pin skips 0.0.12 straight to it.
- *  Bumped to 0.0.11 (lane B, 2026-09-23): the router no longer names `<cwd>/.winter` as a local plugin
+ *  Bumped to 0.0.11 (lane B, 2026-09-23): the router no longer names `<cwd>/.clover` as a local plugin
  *  on the official leg — measured by its own tests, a cloned repository's `hooks/hooks.json` ran on a
  *  Code session's first prompt through it, with no trust decision anywhere — and gained
  *  `OptionsTemplatePolicy.plugins`, through which the daemon hands the SAME skills-only plugin views the
- *  Winter leg gets. A router below this still names the project dir itself, so this pin is also the
+ *  Clover leg gets. A router below this still names the project dir itself, so this pin is also the
  *  floor.
  *
  *  0.0.10 (the official leg's LIVE permission-mode change): the router's `OfficialQuery`
@@ -178,7 +178,7 @@ export const REQUIRED_WINTER_RUNTIME_SDK = "0.0.16";
  * (the router)'s own declared version, or `undefined` when it cannot be resolved — a compiled
  * `$bunfs` binary, per `readResolvedManifestVersion`'s own doc (it walks up from the resolved entry
  * file to find a `package.json`, which does not exist inside the bundle), never a throw. This is
- * NOT `WINTER_PEER_VERSIONS.winterAgentSdk` (the WRAPPER's own `SDK_VERSION`, re-exported by that
+ * NOT `CLOVER_PEER_VERSIONS.winterAgentSdk` (the WRAPPER's own `SDK_VERSION`, re-exported by that
  * package) — it is the ROUTER package's own manifest, the second installed peer `versions.get`
  * reports.
  */
@@ -192,8 +192,8 @@ export function installedWinterRuntimeSdkVersion(): string | undefined {
 
 /** Host-declared peer versions (router 0.0.2 consults these FIRST — the only answer that works
  *  inside a compiled $bunfs binary, where createRequire cannot resolve a manifest). P8b-4. WS-23: the
- *  Winter peer is the only one. */
-export const WINTER_PEER_VERSIONS: { winterAgentSdk: string } = {
+ *  Clover peer is the only one. */
+export const CLOVER_PEER_VERSIONS: { winterAgentSdk: string } = {
   winterAgentSdk: SDK_VERSION,
 };
 
@@ -203,7 +203,7 @@ export const WINTER_PEER_VERSIONS: { winterAgentSdk: string } = {
  * SDK's `startAnthropicConsoleBrokerLogin`/`logoutAnthropicConsole` spawn `claude auth login
  * --console`/`claude auth logout` — which was measured NOT to write the profile file at all (it
  * mints a Console API key into `CLAUDE_CONFIG_DIR` instead) — rather than the single intended door,
- * `ant auth login --profile winter`. Compared against the COMPILE-TIME PIN
+ * `ant auth login --profile clover`. Compared against the COMPILE-TIME PIN
  * (`REQUIRED_WINTER_AGENT_SDK`, above), never a runtime probe of the installed package (F1: that
  * probe always answers `undefined` inside a compiled `$bunfs` binary), so the refusal flips off
  * automatically the moment a pin bump actually raises `REQUIRED_WINTER_AGENT_SDK` to this floor or

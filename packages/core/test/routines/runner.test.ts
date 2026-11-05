@@ -4,16 +4,16 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { SessionStore } from "../../src/sessions/store";
 import { SessionHub } from "../../src/sessions/hub";
-import { makeDaemonRoutineRunner, type WinterTurnRunner } from "../../src/routines/runner";
+import { makeDaemonRoutineRunner, type CloverTurnRunner } from "../../src/routines/runner";
 import { classifyResult } from "../../src/projector/errors";
 
 function makeHome(): string {
-  return mkdtempSync(join(tmpdir(), "winter-routine-runner-"));
+  return mkdtempSync(join(tmpdir(), "clover-routine-runner-"));
 }
 
 /** The driver table's headless door, faked over the real hub: the driver appends the `user_message`
  *  itself (P8b-39) and then the scripted "turn" writes what a child would have. */
-const winterOver = (hub: SessionHub, turn: (sessionId: string) => Promise<void>): WinterTurnRunner => ({
+const cloverOver = (hub: SessionHub, turn: (sessionId: string) => Promise<void>): CloverTurnRunner => ({
   async runTurn(sessionId, text, clientName) {
     hub.append(sessionId, { type: "user_message", sessionId, threadId: "main", text, clientName });
     await turn(sessionId);
@@ -27,17 +27,17 @@ describe("makeDaemonRoutineRunner — runHeadless", () => {
     const seen: Array<{ sessionId: string; text: string; clientName: string }> = [];
     const runner = makeDaemonRoutineRunner({
       store, hub,
-      winter: {
+      clover: {
         async runTurn(sessionId, text, clientName) {
           seen.push({ sessionId, text, clientName });
           hub.append(sessionId, { type: "user_message", sessionId, threadId: "main", text, clientName });
-          hub.append(sessionId, { type: "assistant_message", sessionId, threadId: "main", text: "done on winter" });
+          hub.append(sessionId, { type: "assistant_message", sessionId, threadId: "main", text: "done on clover" });
           hub.append(sessionId, { type: "turn_completed", sessionId, threadId: "main", stopReason: "end_turn", inputTokens: 1, outputTokens: 1 });
         },
       },
     });
     const result = await runner.runHeadless({ prompt: "check inbox", policy: "auto", cwd: "/tmp/proj", origin: "routine/r9" });
-    expect(result).toMatchObject({ ok: true, resultText: "done on winter" });
+    expect(result).toMatchObject({ ok: true, resultText: "done on clover" });
     expect(seen).toHaveLength(1);
     expect(seen[0]).toMatchObject({ text: "check inbox", clientName: "routine" });
     const log = store.read(seen[0]!.sessionId);
@@ -60,7 +60,7 @@ describe("makeDaemonRoutineRunner — runHeadless", () => {
     const hub = new SessionHub(store);
     let sawSessionId: string | undefined;
     let sawPrompt: string | undefined;
-    const winter = winterOver(hub, async (sessionId) => {
+    const clover = cloverOver(hub, async (sessionId) => {
         sawSessionId = sessionId;
         const events = store.read(sessionId);
         const userMsg = events.find((e) => e.type === "user_message");
@@ -68,7 +68,7 @@ describe("makeDaemonRoutineRunner — runHeadless", () => {
         hub.append(sessionId, { type: "assistant_message", sessionId, threadId: "main", text: "3 unread emails" });
         hub.append(sessionId, { type: "turn_completed", sessionId, threadId: "main", stopReason: "end_turn", inputTokens: 10, outputTokens: 5 });
     });
-    const runner = makeDaemonRoutineRunner({ store, hub, winter });
+    const runner = makeDaemonRoutineRunner({ store, hub, clover });
 
     const result = await runner.runHeadless({ prompt: "check inbox", policy: "auto", cwd: "/tmp/proj", origin: "routine/r1" });
 
@@ -99,11 +99,11 @@ describe("makeDaemonRoutineRunner — runHeadless", () => {
   test("quota error: an agent_error whose message starts with HTTP 429 maps to quotaLimited", async () => {
     const store = new SessionStore(makeHome());
     const hub = new SessionHub(store);
-    const winter = winterOver(hub, async (sessionId) => {
+    const clover = cloverOver(hub, async (sessionId) => {
         hub.append(sessionId, { type: "agent_error", sessionId, threadId: "main", message: "HTTP 429 — rate limited" });
         hub.append(sessionId, { type: "turn_completed", sessionId, threadId: "main", stopReason: "error", inputTokens: 0, outputTokens: 0 });
     });
-    const runner = makeDaemonRoutineRunner({ store, hub, winter });
+    const runner = makeDaemonRoutineRunner({ store, hub, clover });
 
     const result = await runner.runHeadless({ prompt: "x", policy: "auto", cwd: "/tmp", origin: "routine/r2" });
     expect(result.ok).toBe(false);
@@ -118,11 +118,11 @@ describe("makeDaemonRoutineRunner — runHeadless", () => {
   test("quota error via structured code: agent_error.code === \"rate_limit\" maps to quotaLimited even with a message that does NOT start with HTTP 429", async () => {
     const store = new SessionStore(makeHome());
     const hub = new SessionHub(store);
-    const winter = winterOver(hub, async (sessionId) => {
+    const clover = cloverOver(hub, async (sessionId) => {
         hub.append(sessionId, { type: "agent_error", sessionId, threadId: "main", message: "rate limited, try later", code: "rate_limit" });
         hub.append(sessionId, { type: "turn_completed", sessionId, threadId: "main", stopReason: "error", inputTokens: 0, outputTokens: 0 });
     });
-    const runner = makeDaemonRoutineRunner({ store, hub, winter });
+    const runner = makeDaemonRoutineRunner({ store, hub, clover });
 
     const result = await runner.runHeadless({ prompt: "x", policy: "auto", cwd: "/tmp", origin: "routine/r5" });
     expect(result.ok).toBe(false);
@@ -133,11 +133,11 @@ describe("makeDaemonRoutineRunner — runHeadless", () => {
   test("a non-rate_limit code (e.g. \"auth\") is NOT quotaLimited, even if the message happens to start with HTTP 429", async () => {
     const store = new SessionStore(makeHome());
     const hub = new SessionHub(store);
-    const winter = winterOver(hub, async (sessionId) => {
+    const clover = cloverOver(hub, async (sessionId) => {
         hub.append(sessionId, { type: "agent_error", sessionId, threadId: "main", message: "HTTP 429 — actually an auth error", code: "auth" });
         hub.append(sessionId, { type: "turn_completed", sessionId, threadId: "main", stopReason: "error", inputTokens: 0, outputTokens: 0 });
     });
-    const runner = makeDaemonRoutineRunner({ store, hub, winter });
+    const runner = makeDaemonRoutineRunner({ store, hub, clover });
 
     const result = await runner.runHeadless({ prompt: "x", policy: "auto", cwd: "/tmp", origin: "routine/r6" });
     expect(result.ok).toBe(false);
@@ -155,11 +155,11 @@ describe("makeDaemonRoutineRunner — runHeadless", () => {
       } as never);
       const store = new SessionStore(makeHome());
       const hub = new SessionHub(store);
-      const winter = winterOver(hub, async (sessionId) => {
+      const clover = cloverOver(hub, async (sessionId) => {
         hub.append(sessionId, { type: "agent_error", sessionId, threadId: "main", message: classified.message, code: classified.code });
         hub.append(sessionId, { type: "turn_completed", sessionId, threadId: "main", stopReason: "error", inputTokens: 0, outputTokens: 0 });
       });
-      const result = await makeDaemonRoutineRunner({ store, hub, winter }).runHeadless({ prompt: "x", policy: "auto", cwd: "/tmp", origin: "routine/r7" });
+      const result = await makeDaemonRoutineRunner({ store, hub, clover }).runHeadless({ prompt: "x", policy: "auto", cwd: "/tmp", origin: "routine/r7" });
       expect(result.ok).toBe(false);
       expect(result.quotaLimited).toBe(quota ? true : undefined);
       expect(result.error).toBe(classified.message);
@@ -169,11 +169,11 @@ describe("makeDaemonRoutineRunner — runHeadless", () => {
   test("non-quota error: an agent_error NOT starting with HTTP 429 is a plain error (not quotaLimited)", async () => {
     const store = new SessionStore(makeHome());
     const hub = new SessionHub(store);
-    const winter = winterOver(hub, async (sessionId) => {
+    const clover = cloverOver(hub, async (sessionId) => {
         hub.append(sessionId, { type: "agent_error", sessionId, threadId: "main", message: "tool crashed" });
         hub.append(sessionId, { type: "turn_completed", sessionId, threadId: "main", stopReason: "error", inputTokens: 0, outputTokens: 0 });
     });
-    const runner = makeDaemonRoutineRunner({ store, hub, winter });
+    const runner = makeDaemonRoutineRunner({ store, hub, clover });
 
     const result = await runner.runHeadless({ prompt: "x", policy: "auto", cwd: "/tmp", origin: "routine/r3" });
     expect(result.ok).toBe(false);
@@ -181,11 +181,11 @@ describe("makeDaemonRoutineRunner — runHeadless", () => {
     expect(result.error).toBe("tool crashed");
   });
 
-  test("winter.runTurn throwing surfaces as a plain error result, never rejects", async () => {
+  test("clover.runTurn throwing surfaces as a plain error result, never rejects", async () => {
     const store = new SessionStore(makeHome());
     const hub = new SessionHub(store);
-    const winter = winterOver(hub, async () => { throw new Error("runtime exploded"); });
-    const runner = makeDaemonRoutineRunner({ store, hub, winter });
+    const clover = cloverOver(hub, async () => { throw new Error("runtime exploded"); });
+    const runner = makeDaemonRoutineRunner({ store, hub, clover });
 
     const result = await runner.runHeadless({ prompt: "x", policy: "auto", cwd: "/tmp", origin: "routine/r4" });
     expect(result.ok).toBe(false);

@@ -1,6 +1,6 @@
-// ComputerV2 Phase 4 — the STANDALONE proof of `embed-headless-helper.sh` (the body of project.yml's "Embed Winter
+// ComputerV2 Phase 4 — the STANDALONE proof of `embed-headless-helper.sh` (the body of project.yml's "Embed Clover
 // Headless" postCompileScript), run the way Xcode runs it: BUILT_PRODUCTS_DIR=<mkdtemp>,
-// CONTENTS_FOLDER_PATH=Winter.app/Contents, CONFIGURATION=Release, EXPANDED_CODE_SIGN_IDENTITY=- (ad-hoc: this proves the
+// CONTENTS_FOLDER_PATH=Clover.app/Contents, CONFIGURATION=Release, EXPANDED_CODE_SIGN_IDENTITY=- (ad-hoc: this proves the
 // build phase; release.ts checks the Developer ID team, the timestamp and that the stated requirement is satisfied on
 // the real artifact).
 import { afterEach, describe, expect, test } from "bun:test";
@@ -73,7 +73,7 @@ function embed(dir: string, configuration = "Release") {
       ...process.env,
       CONFIGURATION: configuration,
       BUILT_PRODUCTS_DIR: dir,
-      CONTENTS_FOLDER_PATH: "Winter.app/Contents",
+      CONTENTS_FOLDER_PATH: "Clover.app/Contents",
       EXPANDED_CODE_SIGN_IDENTITY: "-",
       DEVELOPMENT_TEAM: "37N77U9RSZ",
     },
@@ -81,11 +81,11 @@ function embed(dir: string, configuration = "Release") {
 }
 
 describe("embed-headless-helper.sh (the 'Embed Winter Headless' postCompileScript, standalone)", () => {
-  test("Release: copies the helper — Winter's one Chromium inside it — into Contents/Helpers and signs it with the stated requirement, the hardened runtime and no entitlements", () => {
+  test("Release: copies the helper — Clover's one Chromium inside it — into Contents/Helpers and signs it with the stated requirement, the hardened runtime and no entitlements", () => {
     const dir = builtProducts();
     const r = embed(dir);
     if (r.status !== 0) throw new Error(`exit ${r.status}:\n${r.stderr}\n${r.stdout}`);
-    const dest = join(dir, "Winter.app", HEADLESS_EMBED_RELATIVE);
+    const dest = join(dir, "Clover.app", HEADLESS_EMBED_RELATIVE);
     expect(existsSync(join(dest, "Contents", "MacOS", HEADLESS.dist.name))).toBe(true);
     expect(existsSync(join(dest, "Contents", "Frameworks", "Winter Helper (Renderer).app"))).toBe(true);
     const dr = spawnSync("codesign", ["-d", "-r-", dest], { encoding: "utf8" });
@@ -94,14 +94,14 @@ describe("embed-headless-helper.sh (the 'Embed Winter Headless' postCompileScrip
     expect(dvv).toMatch(/^Identifier=com\.winter\.headless$/m);
     expect(dvv).toMatch(/^CodeDirectory .*flags=0x[0-9a-f]+\([^)]*runtime/m);
     expect(spawnSync("codesign", ["-d", "--entitlements", "-", "--xml", dest], { encoding: "utf8" }).stdout).not.toContain("<key>");
-    expect(r.stdout).toContain("embedded Winter Headless (com.winter.headless, hardened runtime, no entitlements, stated requirement, Winter's one Chromium inside)");
+    expect(r.stdout).toContain("embedded Winter Headless (com.winter.headless, hardened runtime, no entitlements, stated requirement, Clover's one Chromium inside)");
   });
 
-  test("Debug: Winter Dev nests its own configuration's helper the same way (Winter Dev runs its CEF from it)", () => {
+  test("Debug: Clover Dev nests its own configuration's helper the same way (Clover Dev runs its CEF from it)", () => {
     const dir = builtProducts({ name: "Winter Headless Dev", bundleId: "com.winter.headless.xcode-debug" });
     const r = embed(dir, "Debug");
     if (r.status !== 0) throw new Error(`exit ${r.status}:\n${r.stderr}\n${r.stdout}`);
-    const dest = join(dir, "Winter.app", "Contents", "Helpers", "Winter Headless Dev.app");
+    const dest = join(dir, "Clover.app", "Contents", "Helpers", "Winter Headless Dev.app");
     expect(existsSync(join(dest, "Contents", "Frameworks", "Chromium Embedded Framework.framework", "Chromium Embedded Framework"))).toBe(true);
     const dr = spawnSync("codesign", ["-d", "-r-", dest], { encoding: "utf8" });
     expect(`${dr.stdout}${dr.stderr}`).toContain(`designated => ${headlessRequirement("com.winter.headless.xcode-debug", "37N77U9RSZ")}`);
@@ -111,21 +111,21 @@ describe("embed-headless-helper.sh (the 'Embed Winter Headless' postCompileScrip
 
   test("refuses another identity, a helper that is not background-only, and one without its Chromium", () => {
     for (const [o, message] of [
-      [{ bundleId: HEADLESS.dev.identifier }, "a Release Winter.app embeds only its own configuration's helper"],
+      [{ bundleId: HEADLESS.dev.identifier }, "a Release Clover.app embeds only its own configuration's helper"],
       [{ backgroundOnly: false }, "is not LSBackgroundOnly"],
-      [{ chromium: false }, "does not carry Winter's Chromium in its Contents/Frameworks"],
+      [{ chromium: false }, "does not carry Clover's Chromium in its Contents/Frameworks"],
     ] as const) {
       const dir = builtProducts(o);
       const r = embed(dir);
       expect(r.status).toBe(1);
       expect(r.stderr).toContain(message);
-      expect(existsSync(join(dir, "Winter.app", HEADLESS_EMBED_RELATIVE))).toBe(false);
+      expect(existsSync(join(dir, "Clover.app", HEADLESS_EMBED_RELATIVE))).toBe(false);
     }
   });
 
-  test("an older build's Chromium in Winter.app's own Contents/Frameworks is removed (one copy, in the helper)", () => {
+  test("an older build's Chromium in Clover.app's own Contents/Frameworks is removed (one copy, in the helper)", () => {
     const dir = builtProducts();
-    const old = join(dir, "Winter.app", "Contents", "Frameworks");
+    const old = join(dir, "Clover.app", "Contents", "Frameworks");
     for (const name of ["Chromium Embedded Framework.framework", ...CHROMIUM_HELPERS.map((h) => `${h}.app`)]) mkdirSync(join(old, name, "x"), { recursive: true });
     mkdirSync(join(old, "Sparkle.framework"), { recursive: true });
     expect(embed(dir).status).toBe(0);
@@ -135,7 +135,7 @@ describe("embed-headless-helper.sh (the 'Embed Winter Headless' postCompileScrip
   test("a re-embed replaces the old copy rather than merging into it", () => {
     const dir = builtProducts();
     expect(embed(dir).status).toBe(0);
-    const stray = join(dir, "Winter.app", HEADLESS_EMBED_RELATIVE, "Contents", "Resources", "stale.txt");
+    const stray = join(dir, "Clover.app", HEADLESS_EMBED_RELATIVE, "Contents", "Resources", "stale.txt");
     mkdirSync(join(stray, ".."), { recursive: true });
     writeFileSync(stray, "left over");
     expect(embed(dir).status).toBe(0);
@@ -163,7 +163,7 @@ describe("headless-helper-lib", () => {
     expect(checkSignedHeadless("dist", "TEAM", "1.2.3", { ...good, entitlementsXml: "<key>com.apple.security.get-task-allow</key><true/>" }))
       .toEqual(["carries entitlements (com.apple.security.get-task-allow); it must carry none"]);
     expect(checkSignedHeadless("dist", "TEAM", "1.2.3", { ...good, hasFrameworks: false }))
-      .toEqual(["it has no Contents/Frameworks — Winter's one Chromium (the CEF framework and the five Winter Helper bundles) lives there"]);
+      .toEqual(["it has no Contents/Frameworks — Clover's one Chromium (the CEF framework and the five Winter Helper bundles) lives there"]);
     expect(checkSignedHeadless("dist", "TEAM", "1.2.3", { ...good, infoPlist: { ...good.infoPlist, LSBackgroundOnly: false } }))
       .toEqual(["Info.plist LSBackgroundOnly is not true (it must have no Dock tile and no menu bar)"]);
     expect(checkSignedHeadless("dist", "TEAM", "1.2.4", good)).toEqual(["Info.plist CFBundleShortVersionString is 1.2.3, expected 1.2.4"]);

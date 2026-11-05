@@ -9,7 +9,7 @@ import type { CoworkNativeEnvironment } from "../../src/cowork/native-wiring";
 import { CoworkNativeSimulatedCrash } from "../../src/cowork/native/host";
 import { cleanupHarnesses, createHarness, IMAGE_DIGEST, type Harness } from "./native/harness";
 
-// The daemon wiring over a temp WINTER_HOME and the throwaway test secret store; the launcher is the S1 fake (no process, no VM, no socket).
+// The daemon wiring over a temp CLOVER_HOME and the throwaway test secret store; the launcher is the S1 fake (no process, no VM, no socket).
 let daemon: RunningDaemon | undefined;
 afterEach(async () => { try { await daemon?.stop(); } catch { /* already stopped */ } daemon = undefined; cleanupHarnesses(); });
 

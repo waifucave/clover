@@ -1,6 +1,6 @@
 /**
  * WS-19 — the credential INVENTORY as a manageable surface: list / set / remove, one library used
- * by every door (the RPC handlers in `ipc/server.ts`, `winter credentials` in the CLI, and through
+ * by every door (the RPC handlers in `ipc/server.ts`, `clover credentials` in the CLI, and through
  * the RPC the Mac app and the phone).
  *
  * THE ONE RULE THIS FILE EXISTS TO KEEP: names and booleans cross this boundary, never values.
@@ -15,7 +15,7 @@
  * and by `sync.config`), and they appear here only because the user manages them the same way.
  */
 import { loadCatalog } from "@yanlinglabs/winter-provider-catalog";
-import type { CredentialRow as CredentialRowSchema } from "@yanlinglabs/winter-protocol";
+import type { CredentialRow as CredentialRowSchema } from "@waifucave/clover-protocol";
 import type { z } from "zod";
 import type { SecretStore } from "../auth/secret-store";
 import type { Settings } from "../settings";
@@ -82,7 +82,7 @@ const CODEX_SECRET_MATERIAL_NAME = "codex-oauth:default";
 /**
  * Is an Exa API key stored? (2026-09-18, agent SDK 0.0.17.)
  *
- * Two consumers ask it and pull in opposite directions: the Winter leg's tool exposure withholds
+ * Two consumers ask it and pull in opposite directions: the Clover leg's tool exposure withholds
  * `WebSearch` from chat/dispatch when a key exists (the daemon's `Search` covers it) and NAMES that
  * key on `Options.web.search.authRef` when it does, and `capabilities.list` reports the same answer so
  * a client's exposure view agrees with what a real session would get. ONE owner, so the two can never
@@ -104,8 +104,8 @@ export async function exaKeyPresent(store: SecretStore | undefined): Promise<boo
  * A-1) must be STABLE, so `kind` is the kind this SLOT holds, never the kind of whatever happens
  * to be stored in it right now (an empty slot keeps its kind).
  *
- * Two slots are not api-key doors: `codex-oauth:default` is Winter's own OAuth material, reached
- * only through `winter login`; `anthropic:console` is the console broker's bearer, reached only
+ * Two slots are not api-key doors: `codex-oauth:default` is Clover's own OAuth material, reached
+ * only through `clover login`; `anthropic:console` is the console broker's bearer, reached only
  * through `provider.login` / `provider.logout`. Everything else in the inventory is an api-key slot
  * this RPC can write.
  */
@@ -249,7 +249,7 @@ function setTargetFor(providerId: string): WriteTarget | CredentialRefusal {
   if (tool?.retired === true) {
     return {
       code: "credential_kind_unsupported",
-      message: `${tool.displayName.replace(" (retired)", "")} is no longer used by any Winter tool — its key cannot be set. An existing one can still be removed with \`winter credentials remove ${providerId}\`.`,
+      message: `${tool.displayName.replace(" (retired)", "")} is no longer used by any Clover tool — its key cannot be set. An existing one can still be removed with \`clover credentials remove ${providerId}\`.`,
       door: "credential.set",
     };
   }
@@ -258,7 +258,7 @@ function setTargetFor(providerId: string): WriteTarget | CredentialRefusal {
   if (providerId === "codex-oauth") {
     return {
       code: "credential_kind_unsupported",
-      message: "codex-oauth signs in with ChatGPT rather than an API key — run `winter login`",
+      message: "codex-oauth signs in with ChatGPT rather than an API key — run `clover login`",
       door: "cli-oauth",
     };
   }
@@ -283,8 +283,8 @@ function consoleDoorRefusal(direction: "set" | "remove"): CredentialRefusal {
   return {
     code: "credential_kind_unsupported",
     message: direction === "set"
-      ? "Anthropic Console signs in through the Console login rather than an API key — run `winter login --anthropic-console`, or use Sign in in the Mac app's Providers settings"
-      : "Anthropic Console signs out through its own door — run `winter logout --anthropic-console`, or use Sign out in the Mac app's Providers settings",
+      ? "Anthropic Console signs in through the Console login rather than an API key — run `clover login --anthropic-console`, or use Sign in in the Mac app's Providers settings"
+      : "Anthropic Console signs out through its own door — run `clover logout --anthropic-console`, or use Sign out in the Mac app's Providers settings",
     door: "provider.login",
   };
 }
@@ -348,9 +348,9 @@ export async function setCredential(store: SecretStore, providerId: string, apiK
  *
  * REMOVE IS OFFERED INDEPENDENTLY OF `manageable` (A-3): `codex-oauth` cannot be SET through this
  * door but it can be cleared through it, and clearing it means every Codex name — the material
- * record AND the five legacy raw records `winter logout` has always blanked, or a pre-material
+ * record AND the five legacy raw records `clover logout` has always blanked, or a pre-material
  * install would stay signed in through the fallback path. `anthropic` clears `anthropic:default`
- * only; the console arm's own sign-out (`provider.logout` / `winter logout --anthropic-console`) is
+ * only; the console arm's own sign-out (`provider.logout` / `clover logout --anthropic-console`) is
  * the only way to clear `anthropic:console`, because that door also has an `ant` profile on disk to
  * remove, which no secret-store delete can do — so `console` itself is a typed refusal here, naming
  * that door (`consoleDoorRefusal`).
@@ -398,23 +398,23 @@ export interface CredentialEvictionDeps {
   /** The durable record's provider for one session, or `undefined` when there is no record. */
   providerOf(sessionId: string): string | undefined;
   /**
-   * Which LEG one session's live child runs on (`WinterSessionDrivers.legOf`), or `undefined` when
+   * Which LEG one session's live child runs on (`CloverSessionDrivers.legOf`), or `undefined` when
    * there is no live driver.
    *
    * Needed for a TOOL key rather than a provider credential: the Exa key is not in any session's
    * durable record, so `providerOf` cannot answer "is this session affected". The leg can — the key
-   * reaches a child only through the WINTER leg's `Options.web.search.authRef`. (WS-23: every live
-   * child is a Winter one now; a legacy `official` record has no live child until it is adopted.)
+   * reaches a child only through the CLOVER leg's `Options.web.search.authRef`. (WS-23: every live
+   * child is a Clover one now; a legacy `official` record has no live child until it is adopted.)
    */
   legOf?(sessionId: string): "engine" | "winter" | "official" | undefined;
   /**
    * Whole-branch review (minor d): the provider a live child's cross-provider ADVISOR pin names
-   * (`WinterSessionDrivers.advisorProviderOf`). The advisor's `authRef` is fixed at spawn like the
+   * (`CloverSessionDrivers.advisorProviderOf`). The advisor's `authRef` is fixed at spawn like the
    * session's own, and a pin that fell back because that provider's slot was empty is waiting for
    * exactly this key — so a write for that provider replaces the child too.
    */
   advisorProviderOf?(sessionId: string): string | undefined;
-  /** End the child resumably and forget the driver — `WinterSessionDrivers.evict`, which never throws. */
+  /** End the child resumably and forget the driver — `CloverSessionDrivers.evict`, which never throws. */
   evict(sessionId: string): Promise<void>;
   log?: (line: string) => void;
 }
@@ -441,7 +441,7 @@ export interface CredentialEvictionDeps {
  *
  * WHICH SESSIONS: exactly those whose durable record names this provider, plus those whose live child's
  * cross-provider ADVISOR pin names it (`advisorProviderOf`, whole-branch review minor d) — EXCEPT for
- * the `exa` tool row, which is every WINTER-leg session (see below).
+ * the `exa` tool row, which is every CLOVER-leg session (see below).
  *
  * **THE `exa` ROW IS NOT LIKE THE OTHERS** (2026-09-18, agent SDK 0.0.17). It used to evict nothing,
  * correctly: the daemon's own `Search` reads that key per call, so a live child's `Options`
@@ -449,7 +449,7 @@ export interface CredentialEvictionDeps {
  * stale child, whether an Exa key exists decides the TOOL SURFACE itself (`disallowedToolsFor`
  * withholds `WebSearch` from chat/dispatch when the daemon's `Search` can work). Both are fixed at
  * spawn, so adding or removing the key changed nothing for a live session: chat would keep a `Search`
- * that 401s and no `WebSearch` to fall back on. Every Winter-leg child is therefore replaced,
+ * that 401s and no `WebSearch` to fall back on. Every Clover-leg child is therefore replaced,
  * resumably, exactly as a provider credential's are.
  *
  * `web-search` (the legacy Brave key) still evicts nothing — no child's `Options` names it.
@@ -522,11 +522,11 @@ export function credentialDisplayNameFor(providerId: string): string {
  * Mac right now still has two of them. Never names an SDK or a runtime (R-10b-4).
  *
  * THE DOORS ARE NAMED NEUTRALLY, not from the Mac's point of view: this sentence is remote-allowed
- * and reaches the iPhone, where "from Winter on your iPhone" is advice to use the app the reader is
+ * and reaches the iPhone, where "from Clover on your iPhone" is advice to use the app the reader is
  * already holding. Each surface is named as itself.
  *
  * NO MACHINE TOKEN IN THE PROSE (whole-branch review nit): the first round led with a literal
- * `no-credential: ` so a client had something to key on. It does not need one — `WinterLegRefusal`
+ * `no-credential: ` so a client had something to key on. It does not need one — `CloverLegRefusal`
  * carries a `reason` that `ipc/server.ts` forwards as `error.data.reason`, which is the field a
  * client branches on. A token in the copy is only ever read by a person, and it means nothing to one.
  */
@@ -534,13 +534,13 @@ export function missingCredentialDetail(providerId: string): string {
   // The Console is signed in, never keyed: `credential.set console` is a typed refusal
   // (`consoleDoorRefusal`), so naming it here would send the user to a door that says no.
   if (providerId === CONSOLE_PROVIDER_ID) {
-    return `${credentialDisplayNameFor(providerId)} is not signed in — sign in from the Mac app's Providers settings, or run \`winter login --anthropic-console\``;
+    return `${credentialDisplayNameFor(providerId)} is not signed in — sign in from the Mac app's Providers settings, or run \`clover login --anthropic-console\``;
   }
-  return `${credentialDisplayNameFor(providerId)} has no stored credential — add one from the Mac app, the iPhone app, or run \`winter credentials set ${providerId}\``;
+  return `${credentialDisplayNameFor(providerId)} has no stored credential — add one from the Mac app, the iPhone app, or run \`clover credentials set ${providerId}\``;
 }
 
 /**
- * W19-7's gate: does this provider need a credential Winter does not have?
+ * W19-7's gate: does this provider need a credential Clover does not have?
  *
  * TRUE for a provider whose auth family is a bare API KEY (`PROVIDER_AUTH_FAMILY`, itself derived)
  * and whose slot is empty — and for `console` with an empty bearer slot (the WS-23 live-gate fix: its
@@ -548,7 +548,7 @@ export function missingCredentialDetail(providerId: string): string {
  * turn, with the sign-in door in `missingCredentialDetail`, not reach the child with nothing to send).
  * Everything else is false, and each exclusion is load-bearing: a `local-none` provider (Ollama,
  * LM Studio, a local gateway) has no row in that map at all and must never be refused for lacking a
- * key it does not want; `codex-oauth` is `"custom"` and signs in its own way; a provider Winter has no
+ * key it does not want; `codex-oauth` is `"custom"` and signs in its own way; a provider Clover has no
  * inventory row for is the child's question, not ours.
  */
 export function apiKeyProviderIsUnauthenticated(providerId: string, present: boolean): boolean {

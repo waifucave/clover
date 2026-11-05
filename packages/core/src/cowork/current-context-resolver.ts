@@ -127,7 +127,7 @@ export function normalizeCoworkInstructionReadResult(value: unknown, request: Co
   const source = request.scopes.source, allowed = new Map<string, { rank: number; tier: CoworkInstructionTier }>();
   let dir = source.root, order = 0;
   for (;;) {
-    for (const name of ["WINTER.md", ".winter/WINTER.md", "WINTER.local.md"]) allowed.set(posix.join(dir, name), { rank: ++order, tier: name === "WINTER.local.md" ? "local" : "project" });
+    for (const name of ["WINTER.md", ".clover/WINTER.md", "CLOVER.local.md"]) allowed.set(posix.join(dir, name), { rank: ++order, tier: name === "CLOVER.local.md" ? "local" : "project" });
     if (dir === source.cwd) break;
     const suffix = source.cwd.slice(dir.length + 1).split("/")[0];
     if (!suffix || !within(source.cwd, source.root)) return fail();

@@ -1,4 +1,4 @@
-import type { SessionEvent } from "@yanlinglabs/winter-protocol";
+import type { SessionEvent } from "@waifucave/clover-protocol";
 import type { Provider, TurnInputItem } from "../providers/types";
 import { hasOpenPanelTabs } from "../panel/store";
 import type { Settings } from "../settings";
@@ -64,11 +64,11 @@ export const CLEANER_RETRY_BACKOFF_MS = 30 * 60 * 1000; // 30 min
  *  independently overridable via `settings.pins.cleaner` — see `CleanerDeps.settings` below. */
 export const CLEANER_EFFORT = "low";
 
-/** The judge's one-line reason is model-authored text that lands verbatim in `~/.winter/cleaner.jsonl`.
+/** The judge's one-line reason is model-authored text that lands verbatim in `~/.clover/cleaner.jsonl`.
  *  Bounded here so a runaway answer cannot write an unbounded line into the audit log. */
 export const CLEANER_REASON_MAX_CHARS = 200;
 
-/** The tools whose successful use means "Winter wrote to this user's disk from this session" — the
+/** The tools whose successful use means "Clover wrote to this user's disk from this session" — the
  *  file-write rail. The registered tool names exactly (`registerFsWriteTools`/`registerNotebookTools`
  *  in agent/tools/), never a guessed shape. */
 export const CLEANER_WRITE_TOOLS: ReadonlySet<string> = new Set(["write", "edit", "notebook_edit"]);
@@ -141,7 +141,7 @@ export interface CleanerDeps {
   turnRunning: (sessionId: string) => boolean;
   /** `AgentEngine.hasBackgroundWork` — work that OUTLIVES a turn. */
   bgWork: (sessionId: string) => boolean;
-  /** `<home>/cleaner.jsonl` — the SAME winterHome the store was constructed with (daemon.ts's
+  /** `<home>/cleaner.jsonl` — the SAME cloverHome the store was constructed with (daemon.ts's
    *  `dirs.home`), passed explicitly so a test can point it anywhere (the `ReaperDeps.home`
    *  precedent). */
   home: string;
@@ -439,7 +439,7 @@ export class SessionCleaner {
         else if (ev.type === "error") {
           sawProviderError = true;
           // B-1: a credential the provider REJECTED (or one it says is missing) is the other symptom of a
-          // stale snapshot — `winter logout` leaves the daemon believing codex is still signed in. Ask for
+          // stale snapshot — `clover logout` leaves the daemon believing codex is still signed in. Ask for
           // a rate-limited re-probe so the next cycle is right; never blocking, never per call.
           if (ev.code === "auth") this.deps.refreshCredentials?.();
           this.deps.roleHealth?.recordFailure("pins.cleaner", effectiveTag, classifyProviderFailure({ ...ev, subscriptionQuota: cleanerQuota?.subscriptionQuota() }));
@@ -493,7 +493,7 @@ export class SessionCleaner {
 /** Spec §3's no-LLM auto-junk shape: exactly one user message and NO assistant output whatsoever.
  *
  *  "Assistant output" counts `tool_call` as well as `assistant_message` on purpose — a session where
- *  Winter ran tools but never got as far as prose did work, and is not a hung no-reply. Counting it
+ *  Clover ran tools but never got as far as prose did work, and is not a hung no-reply. Counting it
  *  can only ever spare a session, which is the direction a no-LLM delete path must err in. */
 export function isHungNoReply(events: SessionEvent[]): boolean {
   let userMessages = 0;
@@ -504,7 +504,7 @@ export function isHungNoReply(events: SessionEvent[]): boolean {
   return userMessages === 1;
 }
 
-/** The file-write rail: did Winter write to disk from this session?
+/** The file-write rail: did Clover write to disk from this session?
  *
  *  A write-tool `tool_call` rails UNLESS its paired `tool_result` explicitly reports `isError`.
  *  That asymmetry is deliberate: a denied/blocked/failed write genuinely wrote nothing and must not
@@ -560,7 +560,7 @@ export function renderTranscript(events: SessionEvent[], maxChars = CLEANER_TRAN
   const lines: string[] = [];
   for (const e of events) {
     if (e.type === "user_message") lines.push(`[user] ${e.text}`);
-    else if (e.type === "assistant_message") lines.push(`[winter] ${e.text}`);
+    else if (e.type === "assistant_message") lines.push(`[clover] ${e.text}`);
     else if (e.type === "tool_call") lines.push(`[tool] ${e.name}`);
   }
   const full = lines.join("\n");

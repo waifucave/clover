@@ -2,11 +2,11 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { COWORK_RPC, type CoworkMethod } from "@yanlinglabs/winter-protocol";
-import { startDaemon, FileSecretStore, type RunningDaemon } from "@yanlinglabs/winter-core";
+import { COWORK_RPC, type CoworkMethod } from "@waifucave/clover-protocol";
+import { startDaemon, FileSecretStore, type RunningDaemon } from "@waifucave/clover-core";
 import { CoworkRepository } from "../../core/src/cowork/repository";
 import { runtimeStateOnline } from "../../core/src/runtime-state/wiring";
-import { WinterClient } from "../src/client";
+import { CloverClient } from "../src/client";
 import { COWORK_CLI_USAGE, parseCoworkArgs, runCoworkRoute, formatCoworkResult, coworkErrorMessage, type CoworkCliRoute } from "../src/cowork-cli";
 
 const ceiling = { toolClasses: ["read"], hostServices: [], connectors: [], network: "none" as const };
@@ -20,7 +20,7 @@ function route(surface: "workspace" | "project", args: string[]): CoworkCliRoute
 const mutate = ["--revision", "3", "--request-id", "request-fixture"];
 
 describe("Cowork CLI stays out of the top-level help while Cowork is unavailable", () => {
-  test("`winter --help` does not advertise workspace|project; the commands themselves are still routed (and refuse)", () => {
+  test("`clover --help` does not advertise workspace|project; the commands themselves are still routed (and refuse)", () => {
     const main = readFileSync(join(import.meta.dir, "..", "src", "main.ts"), "utf8");
     expect(main).not.toContain("Cowork workspace metadata administration");
     expect(main).toMatch(/case "workspace":/);
@@ -82,7 +82,7 @@ describe("Cowork CLI result and retry/refusal output", () => {
     const complete = formatCoworkResult(parsed, full).join("\n"), limited = formatCoworkResult(parsed, summary).join("\n");
     expect(complete).toContain('Tool classes: ["read"]'); expect(complete).toContain("Details: complete");
     expect(limited).toContain("22 source(s)"); expect(limited).toContain("Capability details omitted"); expect(limited).toContain('"toolClasses":256');
-    expect(limited).toContain("winter workspace policy get workspace-fixture --revision 2"); expect(limited).not.toContain("Tool classes: []");
+    expect(limited).toContain("clover workspace policy get workspace-fixture --revision 2"); expect(limited).not.toContain("Tool classes: []");
     expect(limited).toContain("Automatic publication default: disabled"); expect(limited).not.toContain("blocked");
     const asJson = JSON.parse(formatCoworkResult({ ...parsed, json: true }, summary)[0]!);
     expect(asJson.detailState).toBe("summary"); expect(asJson.policy).toBeUndefined(); expect(asJson).toEqual(summary);
@@ -108,7 +108,7 @@ describe("Cowork CLI result and retry/refusal output", () => {
     expect(page).toContain("toolClasses: read"); expect(page).toContain("Next cursor: opaque-policy");
     const receipt = COWORK_RPC["workspace.setPublicationPolicy"].result.parse({ operationId: "operation-fixture", workspaceId: "workspace-fixture", revision: 3, value: { detailState: "summary", detailReason: "response_limit", policySummary, detailMethod: "workspace.policy.get" } });
     const lines = formatCoworkResult(route("workspace", ["policy", "set-publication", "workspace-fixture", "--publication", "manual", ...mutate]), receipt).join("\n");
-    expect(lines).toContain("Policy details: summary"); expect(lines).toContain("Capability details omitted"); expect(lines).toContain("winter workspace operation get workspace-fixture operation-fixture"); expect(lines).not.toContain("ready");
+    expect(lines).toContain("Policy details: summary"); expect(lines).toContain("Capability details omitted"); expect(lines).toContain("clover workspace operation get workspace-fixture operation-fixture"); expect(lines).not.toContain("ready");
   });
   test("typed errors separate blocked provisioning, stale pages, revision conflicts and refused authority", () => {
     const err = (code: string, currentRevision?: number) => Object.assign(new Error("Cowork request refused"), { rpc: { data: { code, currentRevision } } });
@@ -127,20 +127,20 @@ describe("Cowork CLI result and retry/refusal output", () => {
   });
 });
 
-let daemon: RunningDaemon | undefined; const homes: string[] = [], clients: WinterClient[] = [];
+let daemon: RunningDaemon | undefined; const homes: string[] = [], clients: CloverClient[] = [];
 afterEach(async () => { clients.splice(0).forEach(client => client.close()); if (daemon) { await daemon.stop(); daemon = undefined; } homes.splice(0).forEach(home => rmSync(home, { recursive: true, force: true })); });
 async function boot() {
   const home = mkdtempSync(join(tmpdir(), "winter-cowork-cli-")); homes.push(home);
   daemon = await startDaemon({ home, secrets: new FileSecretStore(join(home, "secrets")), agentProvider: null });
   const records = new CoworkRepository(runtimeStateOnline(daemon.runtimeState)!.db);
-  const client = await WinterClient.connect({ socketPath: daemon.socketPath, token: daemon.tokens.harness, clientName: "cowork-cli-fixture", onEvent: () => {} }); clients.push(client);
+  const client = await CloverClient.connect({ socketPath: daemon.socketPath, token: daemon.tokens.harness, clientName: "cowork-cli-fixture", onEvent: () => {} }); clients.push(client);
   return { records, client };
 }
 describe("typed Cowork CLI against a private daemon with disabled production provisioning", () => {
   test("actual command help and invalid arguments exit before connection, home creation or autolaunch", async () => {
     const home = mkdtempSync(join(tmpdir(), "winter-cowork-help-")); homes.push(home);
     for (const [args, expected, output] of [[["workspace", "--help"], 0, "Creation is unavailable"], [["project", "update", "project-fixture"], 1, "Invalid arguments"], [["workspace", "create"], 1, "creation is unavailable"]] as const) {
-      const child = Bun.spawn([process.execPath, join(import.meta.dir, "../src/main.ts"), ...args], { env: { ...process.env, WINTER_HOME: home, WINTER_NO_AUTOLAUNCH: "1" }, stdin: "ignore", stdout: "pipe", stderr: "pipe" });
+      const child = Bun.spawn([process.execPath, join(import.meta.dir, "../src/main.ts"), ...args], { env: { ...process.env, CLOVER_HOME: home, CLOVER_NO_AUTOLAUNCH: "1" }, stdin: "ignore", stdout: "pipe", stderr: "pipe" });
       const [stdout, stderr, code] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited]);
       expect(code).toBe(expected); expect(stdout + stderr).toContain(output); expect(readdirSync(home)).toEqual([]);
     }
@@ -170,7 +170,7 @@ describe("typed Cowork CLI against a private daemon with disabled production pro
     // The typed client validates on both sides of its request boundary; no malformed caller
     // authority is sent, and a server response cannot silently supply an empty summary grant.
     await expect(client.cowork("workspace.get", { workspaceId, grantRef: "forged" } as never)).rejects.toThrow();
-    const fake = Object.create(WinterClient.prototype) as WinterClient;
+    const fake = Object.create(CloverClient.prototype) as CloverClient;
     Object.assign(fake, { request: async () => ({ ...summary, policy: { ceiling: {} } }) });
     await expect(fake.cowork("workspace.get", { workspaceId })).rejects.toThrow("invalid result from server");
   });

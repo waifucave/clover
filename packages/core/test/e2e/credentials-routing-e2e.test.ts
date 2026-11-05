@@ -7,7 +7,7 @@
 //
 // This is the proof that the structural finding recorded in `five-hop-chain-e2e.test.ts`'s and
 // `session-set-model-review.test.ts`'s headers is CLOSED. Their account was exactly right at the
-// time: `WINTER_CREDENTIAL_INVENTORY` had four rows, so `providerSelectionFor` could never name
+// time: `CLOVER_CREDENTIAL_INVENTORY` had four rows, so `providerSelectionFor` could never name
 // `deepseek`/`zai`/`openrouter`, and `optionsFor` built a `connection` for `providerId === "openai"`
 // alone, so even a hand-injected inventory row left the real child refusing "no credential is
 // configured for provider deepseek". W19-1 derives the inventory from the catalog (so those
@@ -16,13 +16,13 @@
 // file is the measurement.
 //
 // ISOLATION: a mkdtemp home, a `FileSecretStore` under it, loopback fakes on 127.0.0.1, and
-// `WS19-SENTINEL-…` dummy values. No Keychain, no `com.winter.core*`, no network.
+// `WS19-SENTINEL-…` dummy values. No Keychain, no `com.waifucave.clover.core*`, no network.
 //
 // WS-25 §7 (prompt-free credentials) turned this file's recorded LIMITATION into its proof. The child is
 // host-brokered now (`Options.onCredentialResolve`, `runtime-sdk/host-credentials.ts`): it builds no
 // Keychain store and asks the daemon for every `{ kind: "keychain" }` credential over its control channel.
 // The sentinel lives ONLY in the test's `FileSecretStore`; the child's own Keychain service (the preload's
-// throwaway `com.winter.core.test-isolated`) holds nothing. So a request reaching the fake with
+// throwaway `com.waifucave.clover.core.test-isolated`) holds nothing. So a request reaching the fake with
 // `Bearer <sentinel>` is the zero-prompt proof read the other way: the value can only have come from the
 // daemon, over the frame — the child never read a Keychain item, which is what raised the prompt. The same
 // sentinel is then hunted in every other sink: the child's argv and environment, the Options, every file
@@ -33,7 +33,7 @@ import { mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync,
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { openaiChatFake, startFake, type FakeServer } from "@yanlinglabs/winter-provider-conformance/fakes";
-import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, type WritableSocket, type SessionEvent } from "@yanlinglabs/winter-protocol";
+import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, type WritableSocket, type SessionEvent } from "@waifucave/clover-protocol";
 import { FileSecretStore } from "../../src/auth/secret-store";
 import { readCredentialMaterial } from "../../src/auth/credential-material";
 import { credentialRefFor } from "../../src/runtime-sdk/keychain";
@@ -191,7 +191,7 @@ describeWithWinterBinary("WS-19 end to end: a stored credential routes a real se
     try {
       // NAMING an uncredentialled provider is refused by the ROUTER at create, and always was —
       // `selectRuntimeFor` answers `slot-unservable` for a model no candidate row can serve, long
-      // before Winter's own gate is consulted. W19-7 only re-describes that refusal actionably
+      // before Clover's own gate is consulted. W19-7 only re-describes that refusal actionably
       // (`refusalForSelection`). The DEFAULT path — a session that names no model — is a different
       // story and is covered in its own test below: it must CREATE fine and refuse at the first turn.
       await client.call(METHODS.sessionCreate, { scope: "e2e", mode: "code", model: DEEPSEEK_MODEL, cwd: cwd0 });
@@ -204,7 +204,7 @@ describeWithWinterBinary("WS-19 end to end: a stored credential routes a real se
     // The prose carries no machine token any more — `data.reason` above is what a client branches
     // on. What the sentence owes the USER is the provider and a door.
     expect(caught?.rpc?.message).not.toContain("no-credential:");
-    expect(caught?.rpc?.message).toContain("winter credentials set deepseek");
+    expect(caught?.rpc?.message).toContain("clover credentials set deepseek");
     // Never reached the provider at all: a typed refusal, not a 401.
     expect(authHeaders.length).toBe(0);
     rmSync(cwd0, { recursive: true, force: true });
@@ -258,7 +258,7 @@ describeWithWinterBinary("WS-19 end to end: a stored credential routes a real se
     expect(authHeaders).toEqual([`Bearer ${SENTINEL}`]);
     // …and nowhere in the child's argv (`--config-json` included) or environment.
     expect(childCommandLine).toContain("--config-json");
-    expect(childCommandLine).toContain("WINTER_HOME="); // the environment really was captured
+    expect(childCommandLine).toContain("CLOVER_HOME="); // the environment really was captured
     // The zero-prompt switch, as the child received it: with `hostCredentials` set the runtime builds no
     // Keychain store at all (SDK `production-wiring.ts`), which the key above arriving from a store the
     // Keychain never held already proves behaviourally.
@@ -293,7 +293,7 @@ describeWithWinterBinary("WS-19 end to end: a stored credential routes a real se
     const liveSessionId = sessions.sessions[0]!.sessionId;
     expect(rt.records.get(liveSessionId)?.providerId).toBe("deepseek");
     // The premise: a LIVE driver, spawned before the credential changed.
-    expect(daemon!.winter!.get(liveSessionId)).toBeDefined();
+    expect(daemon!.clover!.get(liveSessionId)).toBeDefined();
     const generationBefore = rt.records.get(liveSessionId)!.generation;
     const requestsBefore = fake!.requests.filter((r) => r.path.endsWith("/chat/completions")).length;
 
@@ -303,7 +303,7 @@ describeWithWinterBinary("WS-19 end to end: a stored credential routes a real se
 
     // The child is GONE from the driver table — ended resumably, not killed: the session is still
     // listed and its record is intact.
-    expect(daemon!.winter!.get(liveSessionId)).toBeUndefined();
+    expect(daemon!.clover!.get(liveSessionId)).toBeUndefined();
     const stillListed = await client.call<{ sessions: Array<{ sessionId: string }> }>(METHODS.sessionList, {});
     expect(stillListed.sessions.some((r) => r.sessionId === liveSessionId)).toBe(true);
 
@@ -438,7 +438,7 @@ describeWithWinterBinary("WS-19 end to end: a stored credential routes a real se
     } catch (err) { turnRefusal = err as RpcErrorLike; }
     expect(turnRefusal?.rpc?.data?.code).toBe("runtime_selection_refused");
     expect(turnRefusal?.rpc?.data?.reason).toBe("no-credential");
-    expect(turnRefusal?.rpc?.message).toContain("winter credentials set deepseek");
+    expect(turnRefusal?.rpc?.message).toContain("clover credentials set deepseek");
     // The gate runs before `open()` AND before the append, so the refusal left the session's log
     // exactly as it was — no orphan `user_message`, no `turn_started`.
     const afterRefusal = await client.call<{ sessions: Array<{ sessionId: string; lastSeq?: number }> }>(METHODS.sessionList, {});
@@ -446,7 +446,7 @@ describeWithWinterBinary("WS-19 end to end: a stored credential routes a real se
     expect(afterRefusal.sessions.length).toBe(after.sessions.length);
 
     // A NEW session on the same provider refuses too — at CREATE, and that half is the ROUTER's, not
-    // Winter's gate: `selectRuntimeFor` answers `slot-unservable` for a model no candidate row can
+    // Clover's gate: `selectRuntimeFor` answers `slot-unservable` for a model no candidate row can
     // serve, and W19-7 only re-describes it actionably (`refusalForSelection`).
     const cwd = realpathSync(mkdtempSync(join(tmpdir(), "ws19-route-cwd2-")));
     let caught: RpcErrorLike | undefined;
@@ -464,7 +464,7 @@ describeWithWinterBinary("WS-19 end to end: a stored credential routes a real se
 // D1 fix round 4, ITEM 6 — A SAME-LEG SWITCH THAT CHANGES PROVIDER REACHES THE CHILD.
 //
 // This closes CONCERN 1 of Lane P's own report, which this file's B-1 block made newly reachable: a
-// live Winter child's `Options.provider`/`connection` is FIXED AT SPAWN (`session-driver.ts`'s
+// live Clover child's `Options.provider`/`connection` is FIXED AT SPAWN (`session-driver.ts`'s
 // `optionsFor`, once per incarnation). A same-leg model change that also moves PROVIDER is answered
 // `same-runtime`, the store write lands, and `Query.setModel` tells the child its new model — but
 // the child keeps posting to the OLD endpoint with the OLD credential, silently, until an idle reap
@@ -543,9 +543,9 @@ describeWithWinterBinary("WS-19 + D1 item 6: a same-leg PROVIDER change routes t
     expect(zaiChats.length).toBe(0);
     // `winterIdleTimeoutSec: 600` above keeps the child alive, so an idle reap can never be the
     // thing that replaces it — only the switch can.
-    expect(daemon!.winter.get(sessionId)).toBeDefined();
+    expect(daemon!.clover.get(sessionId)).toBeDefined();
 
-    // Same LEG (both Winter), different PROVIDER. `confirmLossy: true` so the assertion does not
+    // Same LEG (both Clover), different PROVIDER. `confirmLossy: true` so the assertion does not
     // depend on whether this particular pair prompts — the claim under test is where the NEXT turn
     // goes, not whether the move asked first.
     await client.call(METHODS.sessionSetModel, { sessionId, model: ZAI_MODEL, confirmLossy: true });
@@ -553,9 +553,9 @@ describeWithWinterBinary("WS-19 + D1 item 6: a same-leg PROVIDER change routes t
     const rt = daemon!.runtimeState;
     if ("unavailable" in rt) throw rt.unavailable;
     expect(rt.records.get(sessionId)?.providerId).toBe("zai");
-    expect(daemon!.winter.legOf(sessionId)).toBe("winter"); // never a runtime move
+    expect(daemon!.clover.legOf(sessionId)).toBe("winter"); // never a runtime move
     // The child is GONE — replaced, not killed: the next send resumes from the transcript.
-    expect(daemon!.winter.get(sessionId)).toBeUndefined();
+    expect(daemon!.clover.get(sessionId)).toBeUndefined();
 
     const deepseekBefore = deepseekChats.length;
     since = client.events.length;
@@ -586,12 +586,12 @@ describeWithWinterBinary("WS-19 + D1 item 6: a same-leg PROVIDER change routes t
 //   2. IT REFUSED ON A NAME NOBODY CHOSE. `providerSelectionFor` answers `inInventory[0]` for a bare
 //      model id that several inventory providers serve and none is credentialled — a name, not a
 //      decision. So a home configured for Codex OAuth, asking for the default `gpt-5.6-sol`, was
-//      told to run `winter credentials set openai`: a provider the user never chose, through a door
+//      told to run `clover credentials set openai`: a provider the user never chose, through a door
 //      that would not have helped.
 //
 // Both halves broke five real-daemon WinterKit gateway tests, whose harness dispatches and sends on
 // exactly such a home. The rule that actually matters is unchanged and is asserted in the suite
-// above (B-1/B-3): no TURN runs against a provider Winter HAS decided on and holds no credential for.
+// above (B-1/B-3): no TURN runs against a provider Clover HAS decided on and holds no credential for.
 // ════════════════════════════════════════════════════════════════════════════════════════════════
 describeWithWinterBinary("W19-7: a credential-less, Codex-configured home creates, dispatches AND sends", (winterBin) => {
   let home: string;
@@ -600,7 +600,7 @@ describeWithWinterBinary("W19-7: a credential-less, Codex-configured home create
 
   beforeAll(async () => {
     home = realpathSync(mkdtempSync(join(tmpdir(), "ws19-turn-gate-")));
-    // What `bootstrapWinterDir` + `loadSettings` leave a FRESH home looking like: the Codex OAuth
+    // What `bootstrapCloverDir` + `loadSettings` leave a FRESH home looking like: the Codex OAuth
     // default provider and its default model, and nothing stored anywhere.
     writeFileSync(join(home, "settings.json"), JSON.stringify({
       schemaVersion: 3,
@@ -632,7 +632,7 @@ describeWithWinterBinary("W19-7: a credential-less, Codex-configured home create
     expect(dispatched.created).toBe(true);
 
     // And the turn itself: `gpt-5.6-sol` is served by SIX inventory providers, none credentialled,
-    // so Winter has decided nothing and says nothing. The send lands; whatever the child then makes
+    // so Clover has decided nothing and says nothing. The send lands; whatever the child then makes
     // of an unauthenticated provider is the child's own typed error to report, exactly as before
     // WS-19 existed.
     const sent = await client.call<{ seq: number }>(METHODS.sessionSend, { sessionId, text: "this send must not be refused" });

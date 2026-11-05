@@ -6,12 +6,12 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, ERR, type WritableSocket } from "@yanlinglabs/winter-protocol";
+import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, ERR, type WritableSocket } from "@waifucave/clover-protocol";
 import { startIpcServer } from "../../src/ipc/server";
 import { SessionStore } from "../../src/sessions/store";
 import { FileSecretStore } from "../../src/auth/secret-store";
 import { TokenAuthority } from "../../src/auth/tokens";
-import type { WinterSessionDrivers } from "../../src/runtime-sdk/session-driver";
+import type { CloverSessionDrivers } from "../../src/runtime-sdk/session-driver";
 
 class TestClient {
   private decoder = new LineDecoder();
@@ -49,7 +49,7 @@ class TestClient {
 
 /** A driver table that knows NO record for anything — the production shape for a phone-minted id
  *  (every record-bearing session takes the live/resume paths before this door is asked). */
-function recordlessTable(legOf: (sid: string) => "winter" | "engine" | undefined): WinterSessionDrivers {
+function recordlessTable(legOf: (sid: string) => "winter" | "engine" | undefined): CloverSessionDrivers {
   const never = (): never => { throw new Error("not reached: a record-less session never opens a child"); };
   return {
     legForNewSession: () => "winter",
@@ -65,17 +65,17 @@ function recordlessTable(legOf: (sid: string) => "winter" | "engine" | undefined
   };
 }
 
-describe("fix wave F2: a session with no runtime record refuses typed on the Winter leg", () => {
+describe("fix wave F2: a session with no runtime record refuses typed on the Clover leg", () => {
   let stop: (() => void) | undefined;
   afterEach(() => { stop?.(); stop = undefined; });
 
-  async function boot(winter: WinterSessionDrivers) {
-    const home = mkdtempSync(join(tmpdir(), "winter-unrecorded-"));
+  async function boot(clover: CloverSessionDrivers) {
+    const home = mkdtempSync(join(tmpdir(), "clover-unrecorded-"));
     const store = new SessionStore(home);
     const authority = new TokenAuthority(new FileSecretStore(join(home, "secrets.json")));
     const tokens = await authority.ensureTokens();
     const socketPath = join(home, "core.sock");
-    const server = startIpcServer({ socketPath, serverVersion: "test", tokens: authority, store, winter });
+    const server = startIpcServer({ socketPath, serverVersion: "test", tokens: authority, store, clover });
     stop = () => { server.stop(); store.close(); };
     const c = await TestClient.connect(socketPath);
     await c.hello(tokens.harness, "mac");
@@ -120,7 +120,7 @@ describe("fix wave F2: a session with no runtime record refuses typed on the Win
   });
 
   test("a server built WITHOUT the driver table is untouched: the message lands in the log as before", async () => {
-    const home = mkdtempSync(join(tmpdir(), "winter-unrecorded-bare-"));
+    const home = mkdtempSync(join(tmpdir(), "clover-unrecorded-bare-"));
     const store = new SessionStore(home);
     const authority = new TokenAuthority(new FileSecretStore(join(home, "secrets.json")));
     const tokens = await authority.ensureTokens();

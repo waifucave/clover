@@ -26,7 +26,7 @@ import {
 
 const roots: string[] = [];
 function freshHome(): string {
-  const root = mkdtempSync(join(tmpdir(), "winter-console-broker-"));
+  const root = mkdtempSync(join(tmpdir(), "clover-console-broker-"));
   roots.push(root);
   return root;
 }
@@ -161,7 +161,7 @@ function fakeSdk(overrides: Partial<AnthropicConsoleSdk> = {}) {
 // version-gate describe block below, which still needs explicit stubs to simulate a pin BELOW
 // (`0.0.8`) and ABOVE the floor.
 describe("createConsoleProfileBroker — login", () => {
-  // Fix wave (F2 corrected design): the single login door is `ant auth login --profile winter`.
+  // Fix wave (F2 corrected design): the single login door is `ant auth login --profile clover`.
   test("refuses ant_executable_unavailable WITHOUT ever calling the sdk, once the version gate is satisfied", async () => {
     const home = freshHome();
     const { sdk, calls } = fakeSdk();
@@ -175,7 +175,7 @@ describe("createConsoleProfileBroker — login", () => {
   // Winter Phase 10a fix wave (M4): `official-session.ts`'s `open()` only ensures
   // `anthropicConfigDirFor(home)` for a session actually launched on the console arm — which (per
   // C1-interim) the pinned router refuses before that point is ever reached — so `login()` itself
-  // must harden the directory, or the very first `winter login --anthropic-console` could hand
+  // must harden the directory, or the very first `clover login --anthropic-console` could hand
   // `ant auth login` a config dir that does not exist yet.
   test("login() creates AND hardens anthropicConfigDirFor(home) to 0700 before spawning", async () => {
     const home = freshHome();
@@ -748,7 +748,7 @@ describe("createConsoleProfileBroker — startWatcher / stopWatcher (F2)", () =>
       sdk, watchDirFn: watch.watchDirFn, setTimeoutFn: timers.setTimeoutFn, clearTimeoutFn: timers.clearTimeoutFn,
     });
     broker.startWatcher();
-    exists = true; // e.g. `ant auth login --profile winter`, run by a totally separate process
+    exists = true; // e.g. `ant auth login --profile clover`, run by a totally separate process
     watch.trigger();
     await timers.fireByDelay(500); // the debounce window elapses
     expect(calls.length).toBe(0); // fix wave 3 (M-B): not yet — the CONFIRM check hasn't fired
@@ -837,7 +837,7 @@ describe("createConsoleProfileBroker — startWatcher / stopWatcher (F2)", () =>
     broker.startWatcher(); // captures watcherKnownExists = true; no false transition
     expect(timers.pendingDelays()).toContain(60_000); // the watcher's own poll, now also pending
 
-    exists = false; // e.g. `winter logout --anthropic-console`, run by a totally separate process
+    exists = false; // e.g. `clover logout --anthropic-console`, run by a totally separate process
     watch.trigger();
     await timers.fireByDelay(500);
     expect(await readCredentialMaterial(secrets, ANTHROPIC_CONSOLE_CREDENTIAL_SECRET_NAME)).not.toBeNull(); // fix wave 3 (M-B): not yet — awaiting confirm
@@ -997,7 +997,7 @@ describe("createConsoleProfileBroker — M-B: the api-key slot survives a full c
     expect(await readCredentialMaterial(secrets, ANTHROPIC_CONSOLE_CREDENTIAL_SECRET_NAME)).toEqual({ kind: "bearer", token: "bearer-tok" });
     expect(await readCredentialMaterial(secrets, ANTHROPIC_CREDENTIAL_SECRET_NAME)).toEqual(apiKeyMaterial);
 
-    // The watcher notices an EXTERNAL disappearance (e.g. `winter logout --anthropic-console` run
+    // The watcher notices an EXTERNAL disappearance (e.g. `clover logout --anthropic-console` run
     // from a separate process) — confirm-delayed, same as every other watcher test in this file.
     exists = false;
     watch.trigger();

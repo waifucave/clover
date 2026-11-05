@@ -11,7 +11,7 @@ import { openRuntimeStateDb, RUNTIME_STATE_SCHEMA_VERSION, type RuntimeStateDb }
 const homes: string[] = [], dbs: RuntimeStateDb[] = [];
 afterEach(() => { dbs.splice(0).forEach(db => db.close()); homes.splice(0).forEach(home => rmSync(home, { recursive: true, force: true })); });
 function fixture(port = true, checkpoint?: (phase: string) => void) {
-  const home = mkdtempSync(join(tmpdir(), "winter-filesystem-journal-")); homes.push(home);
+  const home = mkdtempSync(join(tmpdir(), "clover-filesystem-journal-")); homes.push(home);
   const db = openRuntimeStateDb(home); dbs.push(db); const records = new CoworkRepository(db); records.homeIdentity();
   const { workspaceId } = records.create({ principalId: "fixture", requestId: "create" }, { ownership: "project", title: "fixture", sources: [{ kind: "folder", label: "fixture", access: "read-only", detail: { grantRef: "fixture", rootIdentity: "fixture" } }], ceiling: { toolClasses: [], hostServices: [], connectors: [], network: "none" } });
   const request: CoworkVolumeRequest = { workspaceId, proof: {}, owner: { controllerInstanceId: "controller", workerInstanceId: "worker", incarnationId: "boot", leaseEpoch: 1, runtimeImageDigest: "b".repeat(64) } };

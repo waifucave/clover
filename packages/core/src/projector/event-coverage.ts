@@ -1,7 +1,7 @@
-import type { SessionEvent } from "@yanlinglabs/winter-protocol";
+import type { SessionEvent } from "@waifucave/clover-protocol";
 
 /**
- * ── WHY THIS FILE EXISTS (Winter 8b, C-5 / ruling P8b-9) ────────────────────────────────────────
+ * ── WHY THIS FILE EXISTS (Clover 8b, C-5 / ruling P8b-9) ────────────────────────────────────────
  *
  * CLAUDE.md's protocol-change checklist step 4 is a COMPILE-TIME trap: a `satisfies
  * Record<SessionEvent["type"], boolean>` clause that stops `tsc` on `packages/core` the moment a
@@ -57,7 +57,7 @@ import type { SessionEvent } from "@yanlinglabs/winter-protocol";
  *    same "main-/session-scoped, never a child-thread event" bucket as session_created/checkpoint
  *    above, not a reachability accident.
  *
- * MOVED VERBATIM from `agent/subagent-transcript.ts` by Winter 8b Task 10 (C-5) — values and
+ * MOVED VERBATIM from `agent/subagent-transcript.ts` by Clover 8b Task 10 (C-5) — values and
  * comments unchanged; only its home moved, so the compile trap outlives the engine.
  */
 export const SUBAGENT_TRANSCRIPT_INCLUDE = {
@@ -166,7 +166,7 @@ export const SUBAGENT_TRANSCRIPT_INCLUDE = {
  *
  * `true` = some branch of `projector/` returns this variant from `accept()` (whether the caller
  * then persists it or, for a transient, hands it to the hub to broadcast). `false` = the projector
- * never produces it — either because it has a live non-projector producer that the Winter leg does
+ * never produces it — either because it has a live non-projector producer that the Clover leg does
  * not disturb (every `panel_*` comes from a capability tool via `panel/open-tab.ts`; the four
  * `workflow_*` from `daemon.ts`; `bg_task_*` from `agent/bg-registry.ts`; `child_update` from
  * `agent/dispatch-children.ts`; `session_created`/`harness_*`/`session_activity` from
@@ -270,7 +270,7 @@ export const PROJECTED_EVENT_COVERAGE = {
   // Opaque `encrypted_content` / `itemJson`; the session JSONL is its only sink and the projector
   // has no branch that can emit it. Never flip this to `true`.
   reasoning_item: false,
-  // Live non-projector producers, untouched by the Winter leg (Winter map §3, "27 with non-engine
+  // Live non-projector producers, untouched by the Clover leg (Clover map §3, "27 with non-engine
   // producers that keep working untouched").
   workspace_sources_changed: false, workspace_policy_changed: false, workspace_operation_changed: false, workspace_metadata_changed: false, workspace_instructions_changed: false,
   session_created: false,
@@ -304,7 +304,7 @@ export const PROJECTED_EVENT_COVERAGE = {
   // plugin_tile_updated/shortcut_invoke/tile_action above.
   provider_login_progress: false,
   provider_login_finished: false,
-  // ---- engine-only PRODUCT events whose fate follows the tool that raised them (Winter map §3's
+  // ---- engine-only PRODUCT events whose fate follows the tool that raised them (Clover map §3's
   // fourth bucket — "the one a plan forgets", because nothing in the type system notices their
   // producer vanishing). None of them is projected from a wire message; each needs its successor
   // named when the engine retires (Task 17), and that is tracked there, not here. ----
@@ -315,9 +315,9 @@ export const PROJECTED_EVENT_COVERAGE = {
   // The reviewing pill (2026-10-08): a DAEMON producer, not the projector — `runtime-sdk/hooks.ts`'s bash reviewer
   // hook, broadcast through the hub as a transient (`daemon.ts` resolves the call's thread).
   tool_review_progress: false,
-  // Winter Phase 8c (P8c-11 / Task 2.4): the Winter-leg half of this event's fate is now named —
+  // Winter Phase 8c (P8c-11 / Task 2.4): the Clover-leg half of this event's fate is now named —
   // `runtime-sdk/sinks.ts`'s `push_notification` sink, observing the projected `tool_call` for
-  // Winter's `PushNotification` (never a projector branch of its own, same reasoning as the
+  // Clover's `PushNotification` (never a projector branch of its own, same reasoning as the
   // approval/question/plan bridges above: this is a SINK, not the projector). The
   // `agent/dispatch-children.ts` half (`notifyUnattended`: a dispatch child needs input or finished
   // while nobody is attached to the coordinator) is unrelated — a daemon producer, not the projector.

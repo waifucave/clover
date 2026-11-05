@@ -3,7 +3,7 @@
 // session with SendMessage and stops its turn with TaskStop; the tool name keeps stripping for old
 // transcripts — `CAPABILITY_TOOLS_BY_KEY` — but no server serves it.)
 //
-// Both are `modes: ["dispatch"]` today and stay that way (`WINTER_CAPABILITY_TOOLS`), and since
+// Both are `modes: ["dispatch"]` today and stay that way (`CLOVER_CAPABILITY_TOOLS`), and since
 // P8b-36 made the session — and therefore its mode — part of the server, that is ENFORCED HERE
 // rather than delegated: `capabilityServer` filters the defs by the session's mode (P8b-37), so a
 // chat or code session's `sessions` server advertises nothing and serves nothing. Task 9's per-mode
@@ -17,7 +17,7 @@
 // transaction, sends it the prompt, returns at once, and then follows the child: its `child_update`s
 // and relayed approval/question cards land on the dispatch session's log, and its result wakes the
 // coordinator with a `<child_update>`. On the engine this was a BRIDGE in `engine.ts` that ran before
-// the registry; the capability server's `callTool` is the door on the Winter leg. A server built
+// the registry; the capability server's `callTool` is the door on the Clover leg. A server built
 // without `spawn` (a test) answers the def's fixed "only available in the dispatch session" line.
 import type { McpSdkServerConfigWithInstance } from "@yanlinglabs/winter-agent-sdk";
 import { listSessionsToolDefs, type ListSessionsDeps } from "../agent/tools/list-sessions";

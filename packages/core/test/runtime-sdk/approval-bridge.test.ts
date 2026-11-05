@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, existsSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { CanUseTool, PermissionResult, PermissionUpdate } from "@yanlinglabs/winter-agent-sdk";
-import { ApprovalRequestedEvent, ApprovalResolvedEvent, type NewSessionEvent } from "@yanlinglabs/winter-protocol";
+import { ApprovalRequestedEvent, ApprovalResolvedEvent, type NewSessionEvent } from "@waifucave/clover-protocol";
 import { ApprovalBroker, approvalCardSummary, approvalOptionsFor } from "../../src/agent/approvals";
 import { QuestionBroker } from "../../src/agent/questions";
 import { PermissionGate, type SessionApprovalPolicy } from "../../src/agent/gate";
@@ -129,7 +129,7 @@ test("title/displayName/description never shadow the composed summary — the hu
   await pending;
 });
 
-test("Winter's suggestions become the card's rule options, session-scoped on the way back", async () => {
+test("Clover's suggestions become the card's rule options, session-scoped on the way back", async () => {
   const suggestions: PermissionUpdate[] = [
     { type: "addRules", rules: [{ toolName: "Bash", ruleContent: "git status:*" }], behavior: "allow", destination: "projectSettings" },
     { type: "addRules", rules: [{ toolName: "Bash", ruleContent: "git status:*" }], behavior: "deny", destination: "userSettings" },
@@ -144,10 +144,10 @@ test("Winter's suggestions become the card's rule options, session-scoped on the
   // answer must not be able to change the session's mode or write a deny rule.
   expect(approvalOptionsFromSuggestions([{ type: "setMode", mode: "plan", destination: "session" }])).toBeUndefined();
   expect(approvalOptionsFromSuggestions(undefined)).toBeUndefined();
-  // A rule Winter's own grammar cannot parse is never offered — choosing it would append inert
+  // A rule Clover's own grammar cannot parse is never offered — choosing it would append inert
   // litter to the user's rules file under a label promising it silences future calls.
   expect(approvalOptionsFromSuggestions([
-    { type: "addRules", rules: [{ toolName: "NotARealWinterRuleTool", ruleContent: "x" }], behavior: "allow", destination: "projectSettings" },
+    { type: "addRules", rules: [{ toolName: "NotARealCloverRuleTool", ruleContent: "x" }], behavior: "allow", destination: "projectSettings" },
   ])).toBeUndefined();
 });
 
@@ -175,7 +175,7 @@ test("resolving through the broker settles the pending canUseTool promise", asyn
   expect(ApprovalResolvedEvent.parse({ ...h.events[1], seq: 2, ts: FIXED_NOW })).toBeTruthy();
 });
 
-test("a rule-bearing option returns session-scoped updatedPermissions (Winter is never a second writer)", async () => {
+test("a rule-bearing option returns session-scoped updatedPermissions (Clover is never a second writer)", async () => {
   const h = harness();
   const pending = h.canUse("Bash", { command: "git push origin main" }, requestCtx());
   h.approvals.resolve(SESSION, "tu1", true, "phone", "allow_project");
@@ -193,8 +193,8 @@ test("a rule-bearing option returns session-scoped updatedPermissions (Winter is
 });
 
 test("the option the card offers is a rule the EXISTING rules store accepts and honours", () => {
-  const root = mkdtempSync(join(tmpdir(), "winter-rules-"));
-  const home = mkdtempSync(join(tmpdir(), "winter-home-"));
+  const root = mkdtempSync(join(tmpdir(), "clover-rules-"));
+  const home = mkdtempSync(join(tmpdir(), "clover-home-"));
   try {
     const h = harness();
     const input = { command: "git push origin main" };
@@ -206,8 +206,8 @@ test("the option the card offers is a rule the EXISTING rules store accepts and 
     // The bridge itself writes NOTHING — `ipc/server.ts`'s `approval.respond` handler is the one
     // writer, and it is what runs this append. Proven here by appending the bridge's own rule
     // string through the real store and watching a matching call become allowed.
-    const rules = new PermissionRules({ globalAllow: () => [], winterHome: home });
-    expect(existsSync(join(root, ".winter"))).toBe(false);
+    const rules = new PermissionRules({ globalAllow: () => [], cloverHome: home });
+    expect(existsSync(join(root, ".clover"))).toBe(false);
     expect(rules.decision({ name: "bash", argsJson: JSON.stringify(input) }, root)).toBeNull();
     rules.append(option.rule!, option.scope!, root);
     expect(rules.decision({ name: "bash", argsJson: JSON.stringify(input) }, root)).toBe("allow");
@@ -344,7 +344,7 @@ test("a rejecting broker denies AND withdraws — no card is ever left uncloseab
 });
 
 // -------------------------------------------------------------------------------------------
-// C2 (2026-09-22): a card the CHILD has abandoned is withdrawn. On the Winter leg an interrupt
+// C2 (2026-09-22): a card the CHILD has abandoned is withdrawn. On the Clover leg an interrupt
 // abandons a pending permission request inside the child without aborting this callback's signal
 // (agent SDK 0.0.17 has no `control_cancel_request`), so the only fact that says so is the child's
 // own `[interrupted]` tool_result — the projector hands its call id to `withdrawPending`.
@@ -418,17 +418,17 @@ test("withdrawPending also closes a pending PLAN card: plan_resolved{approved:fa
 });
 
 // -------------------------------------------------------------------------------------------
-// Winter's own escalations (review F1 — the CORRECTED semantics).
+// Clover's own escalations (review F1 — the CORRECTED semantics).
 //
-// `blockedPath` is Winter ASKING, not Winter refusing: its one producer is the protected-write
+// `blockedPath` is Clover ASKING, not Clover refusing: its one producer is the protected-write
 // standing exception (`permissions/evaluator.ts:946-953`), whose message reads "Denied: protected
 // path write requires approval (WS-07 §6.7)" and which resolves to `mustPrompt`. Treating it as an
 // unconditional deny meant a session could never edit `package.json`, a lockfile, anything under
 // `.git/`, or write to `$OUTDIR` — even with a human sitting in front of the card.
 // -------------------------------------------------------------------------------------------
 
-test("a Winter-protected path is a CARD in code, never an unconditional refusal", async () => {
-  // `package.json` is in Winter's `PROTECTED_FILE_BASENAMES` (`permissions/protected.ts:154-194`).
+test("a Clover-protected path is a CARD in code, never an unconditional refusal", async () => {
+  // `package.json` is in Clover's `PROTECTED_FILE_BASENAMES` (`permissions/protected.ts:154-194`).
   for (const policy of ["ask", "auto", "accept-edits"] as SessionApprovalPolicy[]) {
     const h = harness({ policy, cwd: "/repo" });
     const p = h.canUse("Edit", { file_path: "/repo/package.json" }, requestCtx({ blockedPath: "/repo/package.json" }));
@@ -439,7 +439,7 @@ test("a Winter-protected path is a CARD in code, never an unconditional refusal"
   }
 });
 
-test("a Winter-protected path is a CARD in dispatch too (user ruling 2026-10-17) and the P8b-7 typed deny in a stale chat row", async () => {
+test("a Clover-protected path is a CARD in dispatch too (user ruling 2026-10-17) and the P8b-7 typed deny in a stale chat row", async () => {
   const d = harness({ mode: "dispatch", policy: "auto", cwd: "/repo" });
   const p = d.canUse("Edit", { file_path: "/repo/package.json" }, requestCtx({ blockedPath: "/repo/package.json" }));
   expect(d.events.map((e) => e.type)).toEqual(["approval_requested"]);
@@ -454,10 +454,10 @@ test("a Winter-protected path is a CARD in dispatch too (user ruling 2026-10-17)
 });
 
 test("$OUTDIR is BLESSED — the gate's verdict stands, unescalated", async () => {
-  // Winter flags `<home>/outputs/<sid>` only because it carries a `.winter` segment, but Winter
+  // Clover flags `<home>/outputs/<sid>` only because it carries a `.clover` segment, but Clover
   // explicitly blessed it as agent-writable for THIS session (`sessions/outdir.ts`). Without the
   // carve-out a dispatch session could not write its own deliverable at all.
-  const home = "/tmp/winter-home";
+  const home = "/tmp/clover-home";
   const out = `${home}/outputs/${SESSION}/report.md`;
   for (const mode of ["code", "dispatch", "chat"] as const) {
     const h = harness({ mode, policy: "auto", home, cwd: "/repo" });
@@ -466,7 +466,7 @@ test("$OUTDIR is BLESSED — the gate's verdict stands, unescalated", async () =
     expect(h.events).toEqual([]);
   }
   // …and ANOTHER session's outputs directory is not blessed for this one (the blessing is keyed by
-  // sessionId, never by the bare `~/.winter/outputs/` prefix): it escalates — a card in dispatch.
+  // sessionId, never by the bare `~/.clover/outputs/` prefix): it escalates — a card in dispatch.
   const other = harness({ mode: "dispatch", policy: "auto", home, cwd: "/repo" });
   const foreign = `${home}/outputs/sess-2/report.md`;
   const fp = other.canUse("Write", { file_path: foreign }, requestCtx({ blockedPath: foreign }));
@@ -518,7 +518,7 @@ test("decisionReason alone changes nothing — it is informational (logged, neve
 test("the control plane is refused independently, BEFORE any escalation can soften it", async () => {
   // A protected-path signal on the rules store must not turn the hard deny into a card.
   const h = harness({ policy: "bypass", cwd: "/repo" });
-  const target = "/repo/.winter/permissions.local.json";
+  const target = "/repo/.clover/permissions.local.json";
   const res = (await h.canUse("Edit", { file_path: target }, requestCtx({ blockedPath: target })))!;
   expect(res.behavior).toBe("deny");
   expect((res as { message: string }).message).toContain("the permission rules store can only be changed");
@@ -526,7 +526,7 @@ test("the control plane is refused independently, BEFORE any escalation can soft
 });
 
 test("whole-branch review: the write-tool fence covers what the Bash sandbox's denyWrite covers — under bypass, both spellings, MultiEdit too", async () => {
-  const home = mkdtempSync(join(tmpdir(), "winter-bridge-home-fence-"));
+  const home = mkdtempSync(join(tmpdir(), "clover-bridge-home-fence-"));
   try {
     const h = harness({ policy: "bypass", cwd: "/repo", home });
     const denied = [
@@ -538,7 +538,7 @@ test("whole-branch review: the write-tool fence covers what the Bash sandbox's d
       join(home, "agents", "a.md"),
       join(home, "trust.json"),
       join(home, "RUNTIMES", "x"),                 // case-folded, as the volume is
-      "/some/project/.winter/agents/helper.md",
+      "/some/project/.clover/agents/helper.md",
     ];
     for (const target of denied) {
       const res = (await h.canUse("Write", { file_path: target, content: "x" }, requestCtx()))!;
@@ -546,7 +546,7 @@ test("whole-branch review: the write-tool fence covers what the Bash sandbox's d
     }
     const via = (await h.canUse("MultiEdit", { file_path: "/repo/ok.ts", edits: [{ file_path: join(home, "permissions", "projects.json") }] }, requestCtx()))!;
     expect(via.behavior).toBe("deny");
-    expect((via as { message: string }).message).toContain("Winter's own state");
+    expect((via as { message: string }).message).toContain("Clover's own state");
     // …while the deliberately agent-writable places under the home stay writable: $OUTDIR and the MEMDIR
     for (const ok of [join(home, "outputs", "sess-1", "report.md"), join(home, "projects", "k", "memory", "m.md")]) {
       expect({ ok, behavior: (await h.canUse("Write", { file_path: ok, content: "x" }, requestCtx()))!.behavior }).toEqual({ ok, behavior: "allow" });
@@ -623,7 +623,7 @@ test("a pending approval survives 10s of fake time with no deny, and is armed at
 const ESCAPE = { command: "curl https://example.com -o /tmp/x", dangerouslyDisableSandbox: true };
 
 test("dispatch/ask: Bash outside the sandbox raises a card on the dispatch log — and an Allow runs it, once", async () => {
-  const h = harness({ mode: "dispatch", policy: "ask", turnOrigin: () => "winter-mac" });
+  const h = harness({ mode: "dispatch", policy: "ask", turnOrigin: () => "clover-mac" });
   const pending = h.canUse("Bash", ESCAPE, requestCtx({
     // The SDK's own suggestion is dropped: a dispatch card offers no rule to remember.
     suggestions: [{ type: "addRules", behavior: "allow", destination: "userSettings", rules: [{ toolName: "Bash", ruleContent: "curl:*" }] }] as PermissionUpdate[],
@@ -649,7 +649,7 @@ test("dispatch/ask: Bash outside the sandbox raises a card on the dispatch log �
 });
 
 test("dispatch/ask: a Deny on the card is the user's refusal — interrupt, user_reject, the engine's text", async () => {
-  const h = harness({ mode: "dispatch", policy: "ask", turnOrigin: () => "winter-mac" });
+  const h = harness({ mode: "dispatch", policy: "ask", turnOrigin: () => "clover-mac" });
   const pending = h.canUse("Bash", ESCAPE, requestCtx());
   expect(h.events.map((e) => e.type)).toEqual(["approval_requested"]);
   h.approvals.resolve(SESSION, "tu1", false, "orb");
@@ -682,7 +682,7 @@ test("dispatch: a card from a turn the DAEMON started is bounded at 10 minutes; 
     expect({ origin, ms: seenFor(origin) }).toEqual({ origin, ms: DISPATCH_CHILD_APPROVAL_TIMEOUT_MS });
   }
   // The pill, a window, the phone, a steer — a person is there.
-  for (const origin of ["winter-mac", "session", "steer"]) {
+  for (const origin of ["clover-mac", "session", "steer"]) {
     expect({ origin, ms: seenFor(origin) }).toEqual({ origin, ms: NO_PARK_TIMEOUT_MS });
   }
   // The same rule as a relayed child's, and nothing else is bounded.
@@ -764,7 +764,7 @@ test("dispatch's OWN AskUserQuestion: bounded at 10 minutes in a daemon-started 
     expect(h.events.map((e) => e.type)).toEqual(["question_asked", "question_resolved"]);
     expect(h.events[1]).toMatchObject({ answers: {}, by: "timeout" });
   }
-  const human = run("winter-mac", false);
+  const human = run("clover-mac", false);
   expect(human.seen).toEqual([NO_PARK_TIMEOUT_MS]);
   human.h.questions.respond(SESSION, "tu1", { Which: "A" }, "orb");
   await human.pending;
@@ -836,9 +836,9 @@ const MATRIX: { mode: "code" | "dispatch" | "chat"; policy: SessionApprovalPolic
   { mode: "dispatch", policy: "bypass", tool: "Bash", want: "allow", note: "as code" },
 
   // CHAT — the coerced internal "chat" policy is allow-or-deny and never reaches the divergence
-  { mode: "chat", policy: "chat", tool: "mcp__winter__research__Search", want: "allow", note: "capability tool normalizes to NETWORK `Search`" },
-  { mode: "chat", policy: "chat", tool: "mcp__winter__research__ReadPage", want: "allow", note: "normalizes to NETWORK `ReadPage`" },
-  { mode: "chat", policy: "chat", tool: "mcp__winter__browser__browser", want: "allow", note: "normalizes to NETWORK `browser`" },
+  { mode: "chat", policy: "chat", tool: "mcp__clover__research__Search", want: "allow", note: "capability tool normalizes to NETWORK `Search`" },
+  { mode: "chat", policy: "chat", tool: "mcp__clover__research__ReadPage", want: "allow", note: "normalizes to NETWORK `ReadPage`" },
+  { mode: "chat", policy: "chat", tool: "mcp__clover__browser__browser", want: "allow", note: "normalizes to NETWORK `browser`" },
   { mode: "chat", policy: "chat", tool: "Bash", want: "deny", note: "chat runs nothing mutating" },
   { mode: "chat", policy: "chat", tool: "TotallyUnknownTool", want: "deny", note: "chat denies, never asks" },
   // a session created before the create-time coercion keeps `auto` on its row — the stale-row case
@@ -847,7 +847,7 @@ const MATRIX: { mode: "code" | "dispatch" | "chat"; policy: SessionApprovalPolic
   // one exception to "never prompts"; nothing else moves (the full connector matrix, with the stored
   // permissions and the read-only default, is `agent/mcp/connector-permissions.test.ts`'s).
   { mode: "chat", policy: "chat", tool: "mcp__github__create_issue", want: "ask", note: "WS-26: a connector action cards in chat" },
-  { mode: "chat", policy: "chat", tool: "mcp__winter__external__battery", want: "deny", note: "a plugin's extras-tier tool is not a connector" },
+  { mode: "chat", policy: "chat", tool: "mcp__clover__external__battery", want: "deny", note: "a plugin's extras-tier tool is not a connector" },
   { mode: "dispatch", policy: "ask", tool: "mcp__github__create_issue", want: "ask", note: "WS-26: a connector action cards in dispatch" },
 ];
 
@@ -937,7 +937,7 @@ test("the policy is re-read per call, so session.setPolicy takes effect immediat
 // Tool-name normalization — the reason every row above works at all.
 // -------------------------------------------------------------------------------------------
 
-test("gateToolNameFor maps Winter names onto the names gate.ts classifies", () => {
+test("gateToolNameFor maps Clover names onto the names gate.ts classifies", () => {
   expect(gateToolNameFor("Bash")).toBe("bash");
   expect(gateToolNameFor("Read")).toBe("read");
   expect(gateToolNameFor("Write")).toBe("write");
@@ -946,16 +946,16 @@ test("gateToolNameFor maps Winter names onto the names gate.ts classifies", () =
   expect(gateToolNameFor("Agent")).toBe("spawn_agent");
   expect(gateToolNameFor("CronCreate")).toBe("schedule");
   // capability tools: the bare tool name, which is how all five servers' tools are already classified
-  expect(gateToolNameFor("mcp__winter__research__Search")).toBe("Search");
-  expect(gateToolNameFor("mcp__winter__office__docs")).toBe("docs");
-  expect(gateToolNameFor("mcp__winter__sessions__manage_session")).toBe("manage_session");
+  expect(gateToolNameFor("mcp__clover__research__Search")).toBe("Search");
+  expect(gateToolNameFor("mcp__clover__office__docs")).toBe("docs");
+  expect(gateToolNameFor("mcp__clover__sessions__manage_session")).toBe("manage_session");
   // a third-party MCP server keeps its prefix, so `isExternalToolName` still classifies it
   expect(gateToolNameFor("mcp__github__create_issue")).toBe("mcp__github__create_issue");
   expect(gateToolNameFor("plugin__battery__status")).toBe("plugin__battery__status");
   // anything unknown passes through and therefore fails closed
   expect(gateToolNameFor("SomeFutureTool")).toBe("SomeFutureTool");
   // a malformed capability name is never silently widened
-  expect(gateToolNameFor("mcp__winter__broken")).toBe("mcp__winter__broken");
+  expect(gateToolNameFor("mcp__clover__broken")).toBe("mcp__clover__broken");
 });
 
 // -------------------------------------------------------------------------------------------
@@ -1021,13 +1021,13 @@ test("ExitPlanMode with no planBridge configured falls through unchanged (exit_p
 // wires both legs' bridges through `bridgeProjectTrustedFor`.
 test("R.3 I-1: in a linked worktree of a TRUSTED repo the card offers \"in this project\"; an untrusted repo's worktree does not", () => {
   const git = (args: string[], cwd: string) => expect(Bun.spawnSync(["git", "-C", cwd, ...args], { stdout: "ignore", stderr: "ignore" }).exitCode).toBe(0);
-  const repo = realpathSync(mkdtempSync(join(tmpdir(), "winter-bridge-i1-repo-")));
+  const repo = realpathSync(mkdtempSync(join(tmpdir(), "clover-bridge-i1-repo-")));
   git(["init", "-q"], repo);
   git(["-c", "user.email=t@t.test", "-c", "user.name=t", "commit", "--allow-empty", "-q", "-m", "i"], repo);
-  const wt = join(realpathSync(mkdtempSync(join(tmpdir(), "winter-bridge-i1-wt-"))), "wt");
+  const wt = join(realpathSync(mkdtempSync(join(tmpdir(), "clover-bridge-i1-wt-"))), "wt");
   git(["worktree", "add", "-q", "-b", `i1-${Math.random().toString(16).slice(2)}`, wt], repo);
   for (const trusted of [true, false]) {
-    const trust = new TrustStore(join(realpathSync(mkdtempSync(join(tmpdir(), "winter-bridge-i1-t-"))), "trust.json"));
+    const trust = new TrustStore(join(realpathSync(mkdtempSync(join(tmpdir(), "clover-bridge-i1-t-"))), "trust.json"));
     if (trusted) trust.trust(repo);
     const h = harness({ cwd: wt, projectTrusted: bridgeProjectTrustedFor((d) => trust.isTrusted(d), wt) });
     void h.canUse("Bash", { command: "git push origin main" }, requestCtx());

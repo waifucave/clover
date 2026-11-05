@@ -1,5 +1,5 @@
 // Phase 8d Task 3.1 (P8d-8) — unit coverage for `advisor-reviewer.ts`'s D30 default table, the one
-// piece of that file the Winter leg uses (`session-driver.ts` states `Options.advisor.model` from it
+// piece of that file the Clover leg uses (`session-driver.ts` states `Options.advisor.model` from it
 // when `runtimes.advisorModel` is unset). WS-23: the official leg's `advisorReviewerFor` resolver and
 // its tests are gone with the leg.
 import { describe, expect, test } from "bun:test";

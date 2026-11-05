@@ -7,13 +7,13 @@ import { embeddedContextProtectionSupported, embeddedFileProtectionSupported } f
 import { registerHostStorageFences } from "../../src/runtime-sdk/host-storage-fence";
 
 test("an SDK WITHOUT the capability (injected as null): actual Core embedded host refuses active protection without asking an older SDK worker to interpret flags", () => {
-  const root = realpathSync(mkdtempSync(join(tmpdir(), "winter-embedded-protected-"))), home = join(root, "home");
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "clover-embedded-protected-"))), home = join(root, "home");
   mkdirSync(join(home, "cowork"), { recursive: true });
   const unregister = registerHostStorageFences(home, { coordinationDir: join(root, "coordination"), coworkStorageActive: true });
   let called = 0;
   const host = createEmbeddedSessionHost({ home, hostPathProtectionCapability: null, spawnWorker: () => { called++; throw new Error("older SDK ignores flags"); } });
   try {
-    expect(() => host.spawn({ command: "winter-embedded", args: [], cwd: root, env: {} })).toThrow(EmbeddedRuntimeUnavailable);
+    expect(() => host.spawn({ command: "clover-embedded", args: [], cwd: root, env: {} })).toThrow(EmbeddedRuntimeUnavailable);
     expect(called).toBe(0);
   } finally { unregister(); void host.shutdown(); }
 });
@@ -21,7 +21,7 @@ test("an SDK WITHOUT the capability (injected as null): actual Core embedded hos
 test("actual Core embedded host independently refuses requireHostFloor and native-floor command options", () => {
   let called = 0;
   const host = createEmbeddedSessionHost({ hostPathProtectionCapability: null, spawnWorker: () => { called++; throw new Error("older SDK ignores flags"); } });
-  for (const options of [{ requireHostFloor: true, command: "winter-embedded" }, { command: "/usr/bin/sandbox-exec" }]) {
+  for (const options of [{ requireHostFloor: true, command: "clover-embedded" }, { command: "/usr/bin/sandbox-exec" }]) {
     expect(() => host.spawn({ ...options, args: [], cwd: "/", env: {} } as never)).toThrow(EmbeddedRuntimeUnavailable);
   }
   expect(called).toBe(0);
@@ -29,14 +29,14 @@ test("actual Core embedded host independently refuses requireHostFloor and nativ
 });
 
 test("an SDK WITHOUT the capability: actual use-point recheck refuses storage enabled by host preparation before the worker is constructed", () => {
-  const root = realpathSync(mkdtempSync(join(tmpdir(), "winter-embedded-preparation-"))), home = join(root, "home");
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "clover-embedded-preparation-"))), home = join(root, "home");
   mkdirSync(join(home, "cowork"), { recursive: true });
   let called = 0, unregister: (() => void) | undefined;
   const host = createEmbeddedSessionHost({ home, hostPathProtectionCapability: null,
     workflowWorkerCommand: () => { unregister = registerHostStorageFences(home, { coordinationDir: join(root, "coordination"), coworkStorageActive: true }); return { file: process.execPath, args: [] }; },
     spawnWorker: () => { called++; throw new Error("older SDK ignores flags"); },
   });
-  try { expect(() => host.spawn({ command: "winter-embedded", args: [], cwd: root, env: {} })).toThrow(EmbeddedRuntimeUnavailable); expect(called).toBe(0); }
+  try { expect(() => host.spawn({ command: "clover-embedded", args: [], cwd: root, env: {} })).toThrow(EmbeddedRuntimeUnavailable); expect(called).toBe(0); }
   finally { unregister?.(); void host.shutdown(); }
 });
 
@@ -48,7 +48,7 @@ test("the installed SDK (0.0.54+) offers the complete host-code protection contr
 });
 
 test("an SDK WITH the capability: the host spawns under active protection with the path policy and holds the engine until the Worker acknowledges it", () => {
-  const root = realpathSync(mkdtempSync(join(tmpdir(), "winter-embedded-capable-"))), home = join(root, "home");
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "clover-embedded-capable-"))), home = join(root, "home");
   mkdirSync(join(home, "cowork"), { recursive: true });
   const unregister = registerHostStorageFences(home, { coordinationDir: join(root, "coordination"), coworkStorageActive: true });
   const prepared: Array<{ hostCodeProtection?: { revision: number; denyReadPaths: readonly string[] }; startAfter?: Promise<unknown> }> = [];
@@ -56,7 +56,7 @@ test("an SDK WITH the capability: the host spawns under active protection with t
   const host = createEmbeddedSessionHost({ home, spawnWorker: options => { prepared.push(options as never); throw new Error("stop after the spawn options were prepared"); } });
   try {
     expect(host.supportsProtectedPaths?.()).toBe(true);
-    expect(() => host.spawn({ command: "winter-embedded", args: [], cwd: root, env: {} })).toThrow("stop after the spawn options were prepared"); // not EmbeddedRuntimeUnavailable: the floor admits it
+    expect(() => host.spawn({ command: "clover-embedded", args: [], cwd: root, env: {} })).toThrow("stop after the spawn options were prepared"); // not EmbeddedRuntimeUnavailable: the floor admits it
     expect(prepared).toHaveLength(1);
     expect(prepared[0]!.hostCodeProtection?.denyReadPaths.length).toBeGreaterThan(0);
     expect(prepared[0]!.startAfter).toBeDefined(); // the engine start waits for the Worker's own acknowledgment

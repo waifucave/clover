@@ -101,7 +101,7 @@ export class CoworkGitHubReadTransport {
       const url = `https://github.com/${grant.owner}/${grant.name}.git/${advertise ? "info/refs?service=git-upload-pack" : "git-upload-pack"}`;
       const auth = Buffer.from(`x-access-token:${token}`).toString("base64");
       const response = upstream = await bounded(this.http(url, { method: advertise ? "GET" : "POST", redirect: "manual", credentials: "omit", signal: controller.signal,
-        headers: { authorization: `Basic ${auth}`, accept: contentType, "accept-encoding": "identity", "user-agent": "Winter-Cowork-Git/1", ...(advertise ? {} : { "content-type": "application/x-git-upload-pack-request" }) },
+        headers: { authorization: `Basic ${auth}`, accept: contentType, "accept-encoding": "identity", "user-agent": "Clover-Cowork-Git/1", ...(advertise ? {} : { "content-type": "application/x-git-upload-pack-request" }) },
         ...(advertise ? {} : { body: request.body! as BodyInit }) }));
       if (response.status !== 200 || response.redirected || (response.url && response.url !== url)
         || response.headers.get("content-type")?.split(";")[0]?.trim() !== contentType

@@ -9,7 +9,7 @@ import { expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, type WritableSocket } from "@yanlinglabs/winter-protocol";
+import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, type WritableSocket } from "@waifucave/clover-protocol";
 import { FileSecretStore } from "../../src/auth/secret-store";
 import { startDaemon } from "../../src/daemon";
 import { describeWithWinterBinary } from "../helpers/winter-binary";
@@ -56,7 +56,7 @@ function survivors(home: string): number[] {
 }
 
 async function bootOn(bin: string) {
-  const home = realpathSync(mkdtempSync(join(tmpdir(), "winter-spawn-stop-")));
+  const home = realpathSync(mkdtempSync(join(tmpdir(), "clover-spawn-stop-")));
   const cwd = join(home, "work");
   mkdirSync(cwd);
   writeFileSync(join(home, "settings.json"), JSON.stringify({
@@ -76,7 +76,7 @@ describeWithWinterBinary("a child spawned while the daemon stops does not outliv
       const { home, cwd, daemon, client } = await bootOn(bin);
       const dispatchId = ((await client.request(METHODS.sessionDispatch, {})).result as { sessionId: string }).sessionId;
       const servers = daemon.buildSessionCapabilities({ sessionId: dispatchId, mode: "dispatch", cwd: home, roots: [home] });
-      const sessions = servers["winter__sessions"]!.instance as { callTool(name: string, args: Record<string, unknown>): Promise<unknown> };
+      const sessions = servers["clover__sessions"]!.instance as { callTool(name: string, args: Record<string, unknown>): Promise<unknown> };
       const spawning = sessions.callTool("session_spawn", { dir: cwd, prompt: "wait forever", model: "winter-test/hang", title: "Racer" }).catch(() => undefined);
       if (offsetMs > 0) await Bun.sleep(offsetMs);
       await daemon.stop();

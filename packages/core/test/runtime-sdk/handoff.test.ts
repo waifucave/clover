@@ -7,7 +7,7 @@
 // of this file (the handoff barrier's plan/execute, the deferred execution, `confirmInit`, the
 // zero-turn re-selection, the `crossRuntime` fence) went with the code it tested. What stays is the
 // pre-flight review and the same-runtime record patch, plus the two WS-23 additions: a record the
-// retired leg wrote is adopted onto the Winter leg first, and `crossRuntime` is inert.
+// retired leg wrote is adopted onto the Clover leg first, and `crossRuntime` is inert.
 //
 // Fix wave (M1): `planAndApplySwitch` reads the REAL pinned catalog (`rowForTag`, never faked) for
 // its own bail-out #4 — so every case below that means to REACH the fake selector uses a real catalog
@@ -20,11 +20,11 @@ import type { RuntimeDirectoryEntry, RuntimeSelection, SelectionAlternative, Ses
 import { modeOf, modelLabelFor, planAndApplySwitch, renderNoCredentialHint, type HandoffDeps, type SwitchReviewer } from "../../src/runtime-sdk/handoff";
 import { openRuntimeStateDb, RuntimeSessionRecords } from "../../src/runtime-state";
 import type { WinterRuntimeSdk } from "../../src/runtime-sdk/create";
-import { WinterLegRefusal, type LegSession, type WinterSessionDrivers } from "../../src/runtime-sdk/session-driver";
+import { CloverLegRefusal, type LegSession, type CloverSessionDrivers } from "../../src/runtime-sdk/session-driver";
 import type { Settings } from "../../src/settings";
 
 async function withRs<T>(fn: (rs: ReturnType<typeof openRuntimeStateDb>, records: RuntimeSessionRecords) => Promise<T> | T): Promise<T> {
-  const home = mkdtempSync(join(tmpdir(), "winter-handoff-"));
+  const home = mkdtempSync(join(tmpdir(), "clover-handoff-"));
   const rs = openRuntimeStateDb(home);
   try {
     return await fn(rs, new RuntimeSessionRecords(rs));
@@ -101,7 +101,7 @@ function freshOnlySelector(forModel: (model: string | undefined) => RuntimeSelec
   };
 }
 
-function fakeWinter(opts: { live?: LegSession; adoptLegacyRecord?: WinterSessionDrivers["adoptLegacyRecord"] }): WinterSessionDrivers {
+function fakeClover(opts: { live?: LegSession; adoptLegacyRecord?: CloverSessionDrivers["adoptLegacyRecord"] }): CloverSessionDrivers {
   const never = (): never => { throw new Error("not reached by this test"); };
   return {
     legForNewSession: () => "winter", legOf: never, assertAvailable: () => {},
@@ -114,7 +114,7 @@ function fakeWinter(opts: { live?: LegSession; adoptLegacyRecord?: WinterSession
 function deps(overrides: Partial<HandoffDeps>): HandoffDeps {
   return {
     runtime: fakeRuntime({ selectRuntimeFor: freshOnlySelector(() => SELECTION("winter-agent")) }),
-    winter: fakeWinter({}),
+    clover: fakeClover({}),
     records: {} as RuntimeSessionRecords,
     store: { meta: () => ({ mode: "code", cwd: "/x" }) },
     settings: () => null,
@@ -152,7 +152,7 @@ describe("planAndApplySwitch", () => {
         "s1", "anthropic/claude-sonnet-5", false,
       );
       // Fix round 4 (item 5): the ROUTER's own detail never reaches the user.
-      expect(out).toEqual({ kind: "refused", code: "runtime_selection_refused", detail: "Winter can't switch to anthropic/claude-sonnet-5 right now." });
+      expect(out).toEqual({ kind: "refused", code: "runtime_selection_refused", detail: "Clover can't switch to anthropic/claude-sonnet-5 right now." });
     });
   });
 
@@ -166,7 +166,7 @@ describe("planAndApplySwitch", () => {
         deps({ records, log: (l) => logs.push(l), runtime: fakeRuntime({ selectRuntimeFor: freshOnlySelector(() => SELECTION("claude-agent")) }) }),
         "s1", "anthropic/claude-sonnet-5", true,
       );
-      expect(out).toEqual({ kind: "refused", code: "runtime_selection_refused", detail: "Winter can't switch to anthropic/claude-sonnet-5 right now." });
+      expect(out).toEqual({ kind: "refused", code: "runtime_selection_refused", detail: "Clover can't switch to anthropic/claude-sonnet-5 right now." });
       expect(records.get("s1")!.runtimeKind).toBe("winter-agent");
       expect(records.get("s1")!.selection.runtimeKind).toBe("winter-agent");
       expect(logs.some((l) => l.includes("claude-agent"))).toBe(true);
@@ -187,7 +187,7 @@ describe("planAndApplySwitch", () => {
     });
   });
 
-  test("M1: a CATALOG-KNOWN Claude model does NOT bail out — the selector runs and the Winter selection rides out", async () => {
+  test("M1: a CATALOG-KNOWN Claude model does NOT bail out — the selector runs and the Clover selection rides out", async () => {
     await withRs(async (_rs, records) => {
       seedRecord(records, "s1");
       let selectorCalled = false;
@@ -227,7 +227,7 @@ describe("WS-23: runtimes.handoff.crossRuntime is inert", () => {
   }
 });
 
-// WS-23 (ruling R2): a session the retired official leg created is adopted onto the Winter leg
+// WS-23 (ruling R2): a session the retired official leg created is adopted onto the Clover leg
 // BEFORE the switch is decided — the same step its next resume takes — or the switch is refused with
 // the adoption's own typed refusal and nothing written.
 describe("WS-23: a legacy claude-agent record is adopted before the switch", () => {
@@ -235,7 +235,7 @@ describe("WS-23: a legacy claude-agent record is adopted before the switch", () 
     await withRs(async (_rs, records) => {
       seedRecord(records, "s1", "claude-agent");
       const adopted: string[] = [];
-      const adopt: WinterSessionDrivers["adoptLegacyRecord"] = (sessionId) => {
+      const adopt: CloverSessionDrivers["adoptLegacyRecord"] = (sessionId) => {
         adopted.push(sessionId);
         const current = records.get(sessionId)!;
         records.patch(sessionId, current.state, { runtimeKind: "winter-agent", selection: { ...current.selection, runtimeKind: "winter-agent" } });
@@ -245,7 +245,7 @@ describe("WS-23: a legacy claude-agent record is adopted before the switch", () 
       const out = await planAndApplySwitch(
         deps({
           records,
-          winter: fakeWinter({ adoptLegacyRecord: adopt }),
+          clover: fakeClover({ adoptLegacyRecord: adopt }),
           runtime: fakeRuntime({ selectRuntimeFor: freshOnlySelector(() => decided) }),
           barrier: fakeReviewer({ prompt: false }),
         }),
@@ -267,12 +267,12 @@ describe("WS-23: a legacy claude-agent record is adopted before the switch", () 
       const out = await planAndApplySwitch(
         deps({
           records,
-          winter: fakeWinter({ adoptLegacyRecord: () => { throw new WinterLegRefusal("legacy_session_migration_refused", "cannot move to Winter's runtime: collision", "transcript-collision"); } }),
+          clover: fakeClover({ adoptLegacyRecord: () => { throw new CloverLegRefusal("legacy_session_migration_refused", "cannot move to Clover's runtime: collision", "transcript-collision"); } }),
           runtime: fakeRuntime({ selectRuntimeFor: async () => { selectorCalled = true; return SELECTION("winter-agent"); } }),
         }),
         "s1", "openai/gpt-5.6-sol", false,
       );
-      expect(out).toEqual({ kind: "refused", code: "legacy_session_migration_refused", detail: "cannot move to Winter's runtime: collision", reason: "transcript-collision" });
+      expect(out).toEqual({ kind: "refused", code: "legacy_session_migration_refused", detail: "cannot move to Clover's runtime: collision", reason: "transcript-collision" });
       expect(selectorCalled).toBe(false);
       expect(records.get("s1")!.runtimeKind).toBe("claude-agent");
     });
@@ -282,7 +282,7 @@ describe("WS-23: a legacy claude-agent record is adopted before the switch", () 
     await withRs(async (_rs, records) => {
       seedRecord(records, "s1", "claude-agent");
       await expect(planAndApplySwitch(
-        deps({ records, winter: fakeWinter({ adoptLegacyRecord: () => { throw new Error("boom"); } }) }),
+        deps({ records, clover: fakeClover({ adoptLegacyRecord: () => { throw new Error("boom"); } }) }),
         "s1", "openai/gpt-5.6-sol", false,
       )).rejects.toThrow("boom");
     });
@@ -507,7 +507,7 @@ describe("planAndApplySwitch: a throwing reviewSwitch fails safe as a prompt, ne
       expect(caught).toBeUndefined(); // never a rejection
       expect(out).toEqual({
         kind: "confirmation_required",
-        warnings: ["Winter couldn't check whether this conversation fits deepseek/deepseek-v4-pro, or holds anything it can't read. The conversation carries over as it is; if it is too large, the current model will summarize its older part first."],
+        warnings: ["Clover couldn't check whether this conversation fits deepseek/deepseek-v4-pro, or holds anything it can't read. The conversation carries over as it is; if it is too large, the current model will summarize its older part first."],
         portable: [],
       });
       // Logged ONCE, naming the error CLASS only — never `.message` (which could carry payload
@@ -516,8 +516,8 @@ describe("planAndApplySwitch: a throwing reviewSwitch fails safe as a prompt, ne
       expect(logs[0]).toContain("SidecarReadError");
       expect(logs[0]).not.toContain("ECONNRESET");
       // Never names an SDK or runtime (R-10b-4).
-      expect(logs[0]).not.toMatch(/\bSDK\b|Claude Agent|Winter Agent/i);
-      expect((out as { warnings: string[] }).warnings[0]).not.toMatch(/\bSDK\b|\bruntime\b|Claude Agent|Winter Agent/i);
+      expect(logs[0]).not.toMatch(/\bSDK\b|Claude Agent|Clover Agent/i);
+      expect((out as { warnings: string[] }).warnings[0]).not.toMatch(/\bSDK\b|\bruntime\b|Claude Agent|Clover Agent/i);
     });
   });
 
@@ -575,9 +575,9 @@ describe("modelLabelFor", () => {
 // Winter Phase 10b (D1-7, W18-3): the no-credential hint — built FROM the router's own
 // `alternatives`, never a hardcoded provider list.
 describe("renderNoCredentialHint", () => {
-  const NEVER_NAMES_SDK_OR_RUNTIME = /\bSDK\b|runtime|Claude Agent|Winter Agent/i;
+  const NEVER_NAMES_SDK_OR_RUNTIME = /\bSDK\b|runtime|Claude Agent|Clover Agent/i;
 
-  test("every alternative is listed, with winter login --anthropic-key, winter login --anthropic-console and the Providers settings", () => {
+  test("every alternative is listed, with clover login --anthropic-key, clover login --anthropic-console and the Providers settings", () => {
     const alternatives: SelectionAlternative[] = [
       { providerId: "anthropic", authKind: "api-key", label: "Anthropic API key" },
       { providerId: "anthropic", authKind: "console-profile", label: "Anthropic Console login" },
@@ -586,8 +586,8 @@ describe("renderNoCredentialHint", () => {
       { providerId: "vertex", authKind: "cloud-credential-chain", label: "Google Vertex AI" },
     ];
     const hint = renderNoCredentialHint(alternatives);
-    expect(hint).toContain("winter login --anthropic-key");
-    expect(hint).toContain("winter login --anthropic-console");
+    expect(hint).toContain("clover login --anthropic-key");
+    expect(hint).toContain("clover login --anthropic-console");
     expect(hint).toContain("Providers settings");
     for (const label of ["Anthropic API key", "Anthropic Console login", "OpenRouter", "Amazon Bedrock", "Google Vertex AI"]) expect(hint).toContain(label);
   });
@@ -602,11 +602,11 @@ describe("renderNoCredentialHint", () => {
       { providerId: "openrouter", authKind: "api-key", label: "OpenRouter" },
     ];
     const hint = renderNoCredentialHint(alternatives);
-    expect(hint).toContain("Anthropic Console login: run `winter login --anthropic-console`");
-    expect(hint.split("winter login --anthropic-console").length - 1).toBe(1);
+    expect(hint).toContain("Anthropic Console login: run `clover login --anthropic-console`");
+    expect(hint.split("clover login --anthropic-console").length - 1).toBe(1);
     expect(hint).not.toContain("console: add a credential");
     expect(hint).toContain("OpenRouter: add a credential from the app's Providers settings");
-    expect(renderNoCredentialHint([{ providerId: "console", authKind: "console-profile", label: "console" }])).toBe("add one of these to use this model — Anthropic Console login: run `winter login --anthropic-console`");
+    expect(renderNoCredentialHint([{ providerId: "console", authKind: "console-profile", label: "console" }])).toBe("add one of these to use this model — Anthropic Console login: run `clover login --anthropic-console`");
   });
 
   // WS-23: the claude.ai subscription door is never rendered — the only runtime that could have used
@@ -621,7 +621,7 @@ describe("renderNoCredentialHint", () => {
     expect(hint).toContain("Anthropic API key");
   });
 
-  test("never matches /\\bSDK\\b|runtime|Claude Agent|Winter Agent/i, with every door present", () => {
+  test("never matches /\\bSDK\\b|runtime|Claude Agent|Clover Agent/i, with every door present", () => {
     const alternatives: SelectionAlternative[] = [
       { providerId: "anthropic", authKind: "api-key", label: "Anthropic API key" },
       { providerId: "anthropic", authKind: "console-profile", label: "Anthropic Console login" },
@@ -666,9 +666,9 @@ describe("planAndApplySwitch: the no-credential refusal carries the hint", () =>
       // refusal text that tells the user what to actually do, and the sweep below pins that it
       // never names an SDK or a runtime.
       expect(detail).not.toContain("no door can serve claude-opus-5");
-      expect(detail).toContain("winter login --anthropic-key");
-      expect(detail).toContain("winter login --anthropic-console");
-      expect(detail).not.toMatch(/\bSDK\b|runtime|Claude Agent|Winter Agent/i);
+      expect(detail).toContain("clover login --anthropic-key");
+      expect(detail).toContain("clover login --anthropic-console");
+      expect(detail).not.toMatch(/\bSDK\b|runtime|Claude Agent|Clover Agent/i);
     });
   });
 
@@ -687,7 +687,7 @@ describe("planAndApplySwitch: the no-credential refusal carries the hint", () =>
         }),
         "s1", "anthropic/claude-opus-5", false,
       );
-      expect(out).toEqual({ kind: "refused", code: "runtime_selection_refused", detail: "Winter can't switch to anthropic/claude-opus-5 right now." });
+      expect(out).toEqual({ kind: "refused", code: "runtime_selection_refused", detail: "Clover can't switch to anthropic/claude-opus-5 right now." });
       // Logged as a CATEGORY, never as text — the router's own words leave no trace anywhere a user
       // or a log reader could reconstruct them from.
       expect(logLines).toHaveLength(1);
@@ -701,12 +701,12 @@ describe("planAndApplySwitch: the no-credential refusal carries the hint", () =>
 // ════════════════════════════════════════════════════════════════════════════════════════════════
 // Fix round 4, ITEM 6 — a switch that changes PROVIDER replaces the child.
 //
-// A live Winter child's `Options.provider`/`connection` is fixed at spawn. A model change is told to
+// A live Clover child's `Options.provider`/`connection` is fixed at spawn. A model change is told to
 // it hot (`Query.setModel`); a PROVIDER change cannot be, so the child keeps posting to the old
 // endpoint until something else replaces it.
 // ════════════════════════════════════════════════════════════════════════════════════════════════
 describe("item 6: a same-leg PROVIDER change replaces the live child", () => {
-  const winterSelection = (providerId: string, modelRef: string): RuntimeSelection => ({
+  const cloverSelection = (providerId: string, modelRef: string): RuntimeSelection => ({
     runtimeKind: "winter-agent", providerId, modelRef, family: "f", authFamily: "api-key",
     sdkVersion: "0.0.4", reason: "test", decidedAt: new Date().toISOString(),
   });
@@ -725,12 +725,12 @@ describe("item 6: a same-leg PROVIDER change replaces the live child", () => {
     await withRs(async (_rs, records) => {
       seedRecord(records, "s1"); // seeded providerId "p"
       const evicted: string[] = [];
-      const winter = fakeWinter({ live: idleLive(false, async () => {}) });
+      const clover = fakeClover({ live: idleLive(false, async () => {}) });
       const out = await planAndApplySwitch(
         deps({
           records,
-          winter: { ...winter, evict: async (id: string) => { evicted.push(id); } },
-          runtime: fakeRuntime({ selectRuntimeFor: freshOnlySelector(() => winterSelection("deepseek", "deepseek/deepseek-v4-pro")) }),
+          clover: { ...clover, evict: async (id: string) => { evicted.push(id); } },
+          runtime: fakeRuntime({ selectRuntimeFor: freshOnlySelector(() => cloverSelection("deepseek", "deepseek/deepseek-v4-pro")) }),
           barrier: { reviewSwitch: async () => ({ prompt: false }) },
         }),
         "s1", "deepseek/deepseek-v4-pro", false,
@@ -747,12 +747,12 @@ describe("item 6: a same-leg PROVIDER change replaces the live child", () => {
     await withRs(async (_rs, records) => {
       seedRecord(records, "s1"); // seeded providerId "p"
       const evicted: string[] = [];
-      const winter = fakeWinter({ live: idleLive(false, async () => {}) });
+      const clover = fakeClover({ live: idleLive(false, async () => {}) });
       const out = await planAndApplySwitch(
         deps({
           records,
-          winter: { ...winter, evict: async (id: string) => { evicted.push(id); } },
-          runtime: fakeRuntime({ selectRuntimeFor: freshOnlySelector(() => winterSelection("p", "p/other-model")) }),
+          clover: { ...clover, evict: async (id: string) => { evicted.push(id); } },
+          runtime: fakeRuntime({ selectRuntimeFor: freshOnlySelector(() => cloverSelection("p", "p/other-model")) }),
           barrier: { reviewSwitch: async () => ({ prompt: false }) },
         }),
         "s1", "deepseek/deepseek-v4-pro", false,
@@ -778,13 +778,13 @@ describe("item 6: a same-leg PROVIDER change replaces the live child", () => {
     await withRs(async (_rs, records) => {
       seedRecord(records, "s1"); // seeded providerId "p"
       const calls: string[] = [];
-      const winter = fakeWinter({ live: compactingLive(false, async () => {}, calls) });
+      const clover = fakeClover({ live: compactingLive(false, async () => {}, calls) });
       const run = (confirm: boolean) =>
         planAndApplySwitch(
           deps({
             records,
-            winter: { ...winter, evict: async () => { calls.push("evict"); } },
-            runtime: fakeRuntime({ selectRuntimeFor: freshOnlySelector(() => winterSelection("deepseek", "deepseek/deepseek-v4-pro")) }),
+            clover: { ...clover, evict: async () => { calls.push("evict"); } },
+            runtime: fakeRuntime({ selectRuntimeFor: freshOnlySelector(() => cloverSelection("deepseek", "deepseek/deepseek-v4-pro")) }),
             barrier: { reviewSwitch: async () => tooBig },
           }),
           "s1", "deepseek/deepseek-v4-pro", confirm,
@@ -803,9 +803,9 @@ describe("item 6: a same-leg PROVIDER change replaces the live child", () => {
       seedRecord(records, "s1");
       const seenOpts: unknown[] = [];
       const live: LegSession = { ...compactingLive(false, async () => {}, []), compact: async (opts?: unknown) => { seenOpts.push(opts); return { retainedCount: 2 }; } };
-      const winter = fakeWinter({ live });
+      const clover = fakeClover({ live });
       await planAndApplySwitch(
-        deps({ records, winter: { ...winter, evict: async () => {} }, runtime: fakeRuntime({ selectRuntimeFor: freshOnlySelector(() => winterSelection("deepseek", "deepseek/deepseek-v4-pro")) }), barrier: { reviewSwitch: async () => tooBig } }),
+        deps({ records, clover: { ...clover, evict: async () => {} }, runtime: fakeRuntime({ selectRuntimeFor: freshOnlySelector(() => cloverSelection("deepseek", "deepseek/deepseek-v4-pro")) }), barrier: { reviewSwitch: async () => tooBig } }),
         "s1", "deepseek/deepseek-v4-pro", true,
       );
       await Bun.sleep(20);
@@ -818,9 +818,9 @@ describe("item 6: a same-leg PROVIDER change replaces the live child", () => {
       seedRecord(records, "s1");
       const calls: string[] = [];
       const fits = { prompt: false, fits: true, estimatedTokens: 20_000, window: 128_000 };
-      const winter = fakeWinter({ live: compactingLive(false, async () => {}, calls) });
+      const clover = fakeClover({ live: compactingLive(false, async () => {}, calls) });
       await planAndApplySwitch(
-        deps({ records, winter: { ...winter, evict: async () => { calls.push("evict"); } }, runtime: fakeRuntime({ selectRuntimeFor: freshOnlySelector(() => winterSelection("deepseek", "deepseek/deepseek-v4-pro")) }), barrier: { reviewSwitch: async () => fits } }),
+        deps({ records, clover: { ...clover, evict: async () => { calls.push("evict"); } }, runtime: fakeRuntime({ selectRuntimeFor: freshOnlySelector(() => cloverSelection("deepseek", "deepseek/deepseek-v4-pro")) }), barrier: { reviewSwitch: async () => fits } }),
         "s1", "deepseek/deepseek-v4-pro", false,
       );
       expect(calls).toEqual(["evict"]);
@@ -829,9 +829,9 @@ describe("item 6: a same-leg PROVIDER change replaces the live child", () => {
       seedRecord(records, "s1");
       const calls: string[] = [];
       const logs: string[] = [];
-      const failing = fakeWinter({ live: compactingLive(false, async () => {}, calls, async () => { throw Object.assign(new Error("nothing to compact"), { name: "WinterRpcError" }); }) });
+      const failing = fakeClover({ live: compactingLive(false, async () => {}, calls, async () => { throw Object.assign(new Error("nothing to compact"), { name: "WinterRpcError" }); }) });
       const out = await planAndApplySwitch(
-        deps({ records, log: (line: string) => logs.push(line), winter: { ...failing, evict: async () => { calls.push("evict"); } }, runtime: fakeRuntime({ selectRuntimeFor: freshOnlySelector(() => winterSelection("deepseek", "deepseek/deepseek-v4-pro")) }), barrier: { reviewSwitch: async () => tooBig } }),
+        deps({ records, log: (line: string) => logs.push(line), clover: { ...failing, evict: async () => { calls.push("evict"); } }, runtime: fakeRuntime({ selectRuntimeFor: freshOnlySelector(() => cloverSelection("deepseek", "deepseek/deepseek-v4-pro")) }), barrier: { reviewSwitch: async () => tooBig } }),
         "s1", "deepseek/deepseek-v4-pro", true,
       );
       expect(out.kind).toBe("same-runtime");
@@ -847,9 +847,9 @@ describe("item 6: a same-leg PROVIDER change replaces the live child", () => {
       const calls: string[] = [];
       let resolveIdle: (() => void) | undefined;
       const idlePromise = new Promise<void>((resolve) => { resolveIdle = resolve; });
-      const winter = fakeWinter({ live: compactingLive(true, () => idlePromise, calls) });
+      const clover = fakeClover({ live: compactingLive(true, () => idlePromise, calls) });
       await planAndApplySwitch(
-        deps({ records, winter: { ...winter, evict: async () => { calls.push("evict"); } }, runtime: fakeRuntime({ selectRuntimeFor: freshOnlySelector(() => winterSelection("deepseek", "deepseek/deepseek-v4-pro")) }), barrier: { reviewSwitch: async () => tooBig } }),
+        deps({ records, clover: { ...clover, evict: async () => { calls.push("evict"); } }, runtime: fakeRuntime({ selectRuntimeFor: freshOnlySelector(() => cloverSelection("deepseek", "deepseek/deepseek-v4-pro")) }), barrier: { reviewSwitch: async () => tooBig } }),
         "s1", "deepseek/deepseek-v4-pro", true,
       );
       expect(calls).toEqual([]);
@@ -875,9 +875,9 @@ describe("item 6: a same-leg PROVIDER change replaces the live child", () => {
         get handoffPending() { return pending; },
         beginHandoff: async (work: () => Promise<void>) => { pending = true; await work(); pending = false; return { heldTurns: 1 }; },
       };
-      const winter = fakeWinter({ live });
+      const clover = fakeClover({ live });
       await planAndApplySwitch(
-        deps({ records, winter: { ...winter, evict: async () => { calls.push("evict"); }, ensure: async () => { calls.push("ensure"); return undefined; } }, runtime: fakeRuntime({ selectRuntimeFor: freshOnlySelector(() => winterSelection("deepseek", "deepseek/deepseek-v4-pro")) }), barrier: { reviewSwitch: async () => tooBig } }),
+        deps({ records, clover: { ...clover, evict: async () => { calls.push("evict"); }, ensure: async () => { calls.push("ensure"); return undefined; } }, runtime: fakeRuntime({ selectRuntimeFor: freshOnlySelector(() => cloverSelection("deepseek", "deepseek/deepseek-v4-pro")) }), barrier: { reviewSwitch: async () => tooBig } }),
         "s1", "deepseek/deepseek-v4-pro", true,
       );
       expect(live.handoffPending).toBe(true);   // synchronously: server.ts reads it right after the switch returns
@@ -896,12 +896,12 @@ describe("item 6: a same-leg PROVIDER change replaces the live child", () => {
       const evicted: string[] = [];
       let resolveIdle: (() => void) | undefined;
       const idlePromise = new Promise<void>((resolve) => { resolveIdle = resolve; });
-      const winter = fakeWinter({ live: idleLive(true, () => idlePromise) });
+      const clover = fakeClover({ live: idleLive(true, () => idlePromise) });
       const out = await planAndApplySwitch(
         deps({
           records,
-          winter: { ...winter, evict: async (id: string) => { evicted.push(id); } },
-          runtime: fakeRuntime({ selectRuntimeFor: freshOnlySelector(() => winterSelection("deepseek", "deepseek/deepseek-v4-pro")) }),
+          clover: { ...clover, evict: async (id: string) => { evicted.push(id); } },
+          runtime: fakeRuntime({ selectRuntimeFor: freshOnlySelector(() => cloverSelection("deepseek", "deepseek/deepseek-v4-pro")) }),
           barrier: { reviewSwitch: async () => ({ prompt: false }) },
         }),
         "s1", "deepseek/deepseek-v4-pro", false,
@@ -923,7 +923,7 @@ describe("item 6: a same-leg PROVIDER change replaces the live child", () => {
     await withRs(async (_rs, records) => {
       seedRecord(records, "s1"); // seeded providerId "p"
       const evicted: string[] = [];
-      const winter = fakeWinter({ live: idleLive(false, async () => {}) });
+      const clover = fakeClover({ live: idleLive(false, async () => {}) });
       const failingRecords = Object.assign(Object.create(Object.getPrototypeOf(records) as object), records, {
         get: (id: string) => records.get(id),
         patch: () => { throw new Error("RuntimeSessionStateMismatchError"); },
@@ -931,8 +931,8 @@ describe("item 6: a same-leg PROVIDER change replaces the live child", () => {
       const out = await planAndApplySwitch(
         deps({
           records: failingRecords,
-          winter: { ...winter, evict: async (id: string) => { evicted.push(id); } },
-          runtime: fakeRuntime({ selectRuntimeFor: freshOnlySelector(() => winterSelection("deepseek", "deepseek/deepseek-v4-pro")) }),
+          clover: { ...clover, evict: async (id: string) => { evicted.push(id); } },
+          runtime: fakeRuntime({ selectRuntimeFor: freshOnlySelector(() => cloverSelection("deepseek", "deepseek/deepseek-v4-pro")) }),
           barrier: { reviewSwitch: async () => ({ prompt: false }) },
         }),
         "s1", "deepseek/deepseek-v4-pro", false,
@@ -948,12 +948,12 @@ describe("item 6: a same-leg PROVIDER change replaces the live child", () => {
     await withRs(async (_rs, records) => {
       seedRecord(records, "s1");
       const evicted: string[] = [];
-      const winter = fakeWinter({});
+      const clover = fakeClover({});
       const out = await planAndApplySwitch(
         deps({
           records,
-          winter: { ...winter, evict: async (id: string) => { evicted.push(id); } },
-          runtime: fakeRuntime({ selectRuntimeFor: freshOnlySelector(() => winterSelection("deepseek", "deepseek/deepseek-v4-pro")) }),
+          clover: { ...clover, evict: async (id: string) => { evicted.push(id); } },
+          runtime: fakeRuntime({ selectRuntimeFor: freshOnlySelector(() => cloverSelection("deepseek", "deepseek/deepseek-v4-pro")) }),
           barrier: { reviewSwitch: async () => ({ prompt: false }) },
         }),
         "s1", "deepseek/deepseek-v4-pro", false,
@@ -987,14 +987,14 @@ describe("planAndApplySwitch — a stored cowork session", () => {
 
   test("an unrecognised stored mode (a newer daemon's, a hand-edited index) is refused too — never decided as Code", async () => {
     const out = await planAndApplySwitch(coworkDeps({ store: { meta: () => ({ mode: "something-new", cwd: "/x" }) } }), "s_odd", "anthropic/claude-sonnet-5", false);
-    expect(out).toEqual({ kind: "refused", code: "unsupported_topology", detail: "This session's mode is not supported by this Winter" });
+    expect(out).toEqual({ kind: "refused", code: "unsupported_topology", detail: "This session's mode is not supported by this Clover" });
   });
 
   test("modeOf: absent/null is code, a runnable string is itself, cowork and any other string THROW (never read as code)", () => {
     expect([modeOf(undefined), modeOf(null)]).toEqual(["code", "code"]);
     for (const mode of ["code", "dispatch", "chat"] as const) expect(modeOf(mode)).toBe(mode);
     expect(() => modeOf("cowork")).toThrow("Cowork unavailable");
-    for (const unknown of ["something-new", "", "Code"]) expect(() => modeOf(unknown)).toThrow("This session's mode is not supported by this Winter");
+    for (const unknown of ["something-new", "", "Code"]) expect(() => modeOf(unknown)).toThrow("This session's mode is not supported by this Clover");
   });
 
   test("every runnable mode still reaches its decision, and an unknown session is left to the caller's own error", async () => {

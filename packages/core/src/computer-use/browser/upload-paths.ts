@@ -1,7 +1,7 @@
 import { assertDaemonPathAccess } from "../../runtime-sdk/daemon-path-fence";
 // ComputerV2 Phase 2 — `tab.upload(ref, paths)`: which files a script may hand a page's file input. Each path is
 // resolved (`realpath`) and must be a regular file — not a symlink (`lstat`) — inside the session's working directory
-// (its stored cwd) or its temp directory, never under the Winter home and never on the sandbox's read-deny list. At
+// (its stored cwd) or its temp directory, never under the Clover home and never on the sandbox's read-deny list. At
 // most 10 files and 50 MiB together.
 //
 // What the browser gets is a private COPY (`stageUploads`): each checked file is opened without following a link and
@@ -23,7 +23,7 @@ export interface UploadRoots {
   cwd: string | null | undefined;
   /** The session's temp directory (`sessionTmpDir`). */
   tmpDir?: string;
-  /** The Winter home: never uploaded from. */
+  /** The Clover home: never uploaded from. */
   home: string;
   /** The sandbox's read-deny list for the session (`sandboxConfigFor(home, cwd).filesystem.denyRead`). */
   denyRead: readonly string[];
@@ -41,6 +41,11 @@ export const SHELL_STARTUP_NAMES: readonly string[] = [
 export const PROTECTED_FOLDER_NAMES: readonly string[] = [".ssh", "LaunchAgents", "LaunchDaemons", ".winter", ".winter-dev", ".claude"];
 export const PROTECTED_CONFIG_NAMES: readonly string[] = [".claude.json", ".winter.json"];
 export const SECRET_LIBRARY_FOLDERS: readonly string[] = ["Keychains", "Cookies"];
+/** Clover's own names for the same folders and file — its homes, and the SDK's global config under Clover's brand
+ *  (`sdk/.clover.json`) — refused on top of the helper's lists while both installs share the machine. The helper's
+ *  lists above stay equal to its Swift ones. */
+export const CLOVER_PROTECTED_FOLDER_NAMES: readonly string[] = [".clover", ".clover-dev"];
+export const CLOVER_PROTECTED_CONFIG_NAMES: readonly string[] = [".clover.json"];
 
 const lowerSet = (xs: readonly string[]): Set<string> => new Set(xs.map((x) => x.toLowerCase()));
 
@@ -51,8 +56,8 @@ export function isSecretPath(path: string, userHome: string): boolean {
   const p = path.toLowerCase();
   const names = p.split(sep).filter((s) => s.length > 0);
   const last = names.at(-1);
-  if (last !== undefined && (lowerSet(SHELL_STARTUP_NAMES).has(last) || lowerSet(PROTECTED_CONFIG_NAMES).has(last))) return true;
-  if (names.some((n) => lowerSet(PROTECTED_FOLDER_NAMES).has(n))) return true;
+  if (last !== undefined && (lowerSet(SHELL_STARTUP_NAMES).has(last) || lowerSet(PROTECTED_CONFIG_NAMES).has(last) || lowerSet(CLOVER_PROTECTED_CONFIG_NAMES).has(last))) return true;
+  if (names.some((n) => lowerSet(PROTECTED_FOLDER_NAMES).has(n) || lowerSet(CLOVER_PROTECTED_FOLDER_NAMES).has(n))) return true;
   if (p.includes("/.config/fish/")) return true;
   const h = userHome.toLowerCase();
   if (!inside(p, h) || p === h) return false;
@@ -96,7 +101,7 @@ export function checkUploadFiles(input: unknown, roots: UploadRoots): CheckedUpl
     const path = real(given);
     if (path === undefined) throw new AutomationFailure("NotAllowed", `${shown}: no such file`);
     try { assertDaemonPathAccess(roots.home, path, "/"); } catch {
-      throw new AutomationFailure("NotAllowed", "Protected Winter storage cannot be uploaded");
+      throw new AutomationFailure("NotAllowed", "Protected Clover storage cannot be uploaded");
     }
     const st = statSync(path);
     if (!st.isFile()) throw new AutomationFailure("NotAllowed", `${shown} is not a regular file`);
@@ -105,7 +110,7 @@ export function checkUploadFiles(input: unknown, roots: UploadRoots): CheckedUpl
     if (st.nlink > 1) throw new AutomationFailure("NotAllowed", `${shown} has another hard link to it, so where it really lives can't be told — it can't be uploaded`);
     // The floors first, wherever the file is: a protected file is refused plainly — never with the copy advice below,
     // which would be a recipe for taking it out (the review of the open panel, MED-3).
-    if (inside(path, home)) throw new AutomationFailure("NotAllowed", `${shown} is inside Winter's own home — it can't be uploaded`);
+    if (inside(path, home)) throw new AutomationFailure("NotAllowed", `${shown} is inside Clover's own home — it can't be uploaded`);
     if (denied.some((d) => inside(path, d))) throw new AutomationFailure("NotAllowed", `${shown} is on the sandbox's read-deny list — it can't be uploaded`);
     const secret = isSecretPath(path, real(roots.userHome ?? homedir()) ?? (roots.userHome ?? homedir()));
     if (!allowedRoots.some((r) => inside(path, r))) {

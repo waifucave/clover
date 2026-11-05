@@ -8,7 +8,7 @@ import type { CapabilitySession } from "../../src/capabilities/server";
 
 /**
  * The `computer` capability server (P8b Task 6), over the SAME fake `ComputerUseService`
- * `test/agent/computer-tool.test.ts` uses — no real peripheral broker, no leases, no Winter.app.
+ * `test/agent/computer-tool.test.ts` uses — no real peripheral broker, no leases, no Clover.app.
  */
 
 function fakeCu(result: CuActResult): { calls: Array<{ sid: string; cls: string; payload: string }>; service: ComputerUseService } {
@@ -28,7 +28,7 @@ describe("computerCapability: the server shape", () => {
   test("is an `sdk` server named `computer` with a callable instance", () => {
     const server = computerCapability(session(), { computerUse: () => undefined });
     expect(server.type).toBe("sdk");
-    expect(server.name).toBe("winter__computer");
+    expect(server.name).toBe("clover__computer");
     expect(isWinterMcpServerInstance(server.instance)).toBe(true);
   });
 
@@ -67,7 +67,7 @@ describe("computerCapability: callTool", () => {
 
     expect(viaRegistry.isError).toBe(false);
     expect(viaCapability.isError).toBe(false);
-    // Before 2026-10-07 the image went nowhere on the Winter leg: only the text came back.
+    // Before 2026-10-07 the image went nowhere on the Clover leg: only the text came back.
     expect(viaCapability.content).toEqual([{ type: "text", text: viaRegistry.output }, { type: "image", data: "ABC", mimeType: "image/png" }]);
     expect(viaRegistry.output).toContain("The image is attached to this result.");
     expect(capCu.calls[0]!.cls).toBe("screenshot");

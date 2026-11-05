@@ -30,7 +30,7 @@ function sessionOptions(): Options {
     provider: { providerId: "deepseek", authRef: { kind: "keychain", account: "deepseek:default", service: SERVICE } },
     advisor: { model: "openai/gpt-6-astra", authRef: { kind: "keychain", account: "openai:default", service: SERVICE } },
     web: { search: { authRef: { kind: "keychain", account: "exa-api-key", service: SERVICE } }, fetch: { privateAddressPolicy: "ask" }, blockedDomains: [] },
-    mcpServers: { winter__browser: { type: "sdk", name: "winter__browser" } as never },
+    mcpServers: { clover__browser: { type: "sdk", name: "clover__browser" } as never },
   } as unknown as Options;
 }
 
@@ -82,7 +82,7 @@ describe("credential_resolve", () => {
       expect(await resolve({ ref: { kind: "keychain", account } }, { signal })).toEqual({ ok: false, reason: "not_allowed" });
     }
     // An allowed account under ANOTHER Keychain service is not read either.
-    expect(await resolve({ ref: { kind: "keychain", account: "deepseek:default", service: "com.winter.core" } }, { signal })).toEqual({ ok: false, reason: "not_allowed" });
+    expect(await resolve({ ref: { kind: "keychain", account: "deepseek:default", service: "com.waifucave.clover.core" } }, { signal })).toEqual({ ok: false, reason: "not_allowed" });
     expect(reads).toBe(0);
   });
 

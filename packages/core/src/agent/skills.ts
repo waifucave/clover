@@ -8,7 +8,7 @@ import { linkedRouterSupportsRunHome } from "../runtime-sdk/run-home-support";
 import { homedir } from "node:os";
 
 /**
- * WS-21 (spec §3.4.2): the trusted project's `.winter/skills` dirs from `cwd` up to the project root
+ * WS-21 (spec §3.4.2): the trusted project's `.clover/skills` dirs from `cwd` up to the project root
  * (`projectScopeRootFor`, R.3 residual: a linked worktree's own top), NEAREST first, never above `$HOME` — the walk the router's run-home builder makes,
  * so `skills.list` names the same winners the run folder links.
  */
@@ -21,7 +21,7 @@ function projectSkillDirsNearestFirst(cwd: string): string[] {
   try { home = realpathSync(homedir()); } catch { home = homedir(); }
   const out: string[] = [];
   for (let i = 0; i < 64; i++) {
-    out.push(join(dir, ".winter", "skills"));
+    out.push(join(dir, ".clover", "skills"));
     if (dir === root || dir === home) break;
     const parent = dirname(dir);
     if (parent === dir || !(dir + sep).startsWith(root + sep)) break;
@@ -31,7 +31,7 @@ function projectSkillDirsNearestFirst(cwd: string): string[] {
 }
 import { skillDenyRule } from "../settings";
 
-// Phase 5c Task 3: `author?` mirrors T1's `author: winter` frontmatter stamp (writeSelf below) back
+// Phase 5c Task 3: `author?` mirrors T1's `author: clover` frontmatter stamp (writeSelf below) back
 // out through list()/load() — additive on every interface (undefined for any skill written before
 // this parse existed, or one that never carried the field, e.g. a project/user/plugin/builtin
 // skill nobody stamped).
@@ -102,12 +102,12 @@ function capBytes(s: string, maxBytes: number): string {
 
 /**
  * Spec §8 (Phase 4): skills from claude-format plugins are written for Claude Code's tool names.
- * The mapping is CONTEXT for the agent — Winter's permission gate, not the plugin tier, contains
+ * The mapping is CONTEXT for the agent — Clover's permission gate, not the plugin tier, contains
  * what the skill convinces the agent to do. Prepended AFTER capBytes so it can never truncate.
  */
 function compatPreamble(skillDir: string): string {
   return [
-    "[compat] This skill was written for Claude Code. You are running under Winter — the equivalent tools are:",
+    "[compat] This skill was written for Claude Code. You are running under Clover — the equivalent tools are:",
     "- TodoWrite / TaskCreate / TaskUpdate → `task_create` / `task_update` / `task_list`",
     "- AskUserQuestion → `ask_user`",
     "- Task (subagent dispatch) → `spawn_agent`",
@@ -154,7 +154,7 @@ const SDK_PLUGIN_NAME_PATTERN = /^\.?[a-z0-9][a-z0-9-]{0,63}$/;
 
 /**
  * Human names for the tiers the agent runtime cannot load yet — the subject of `sessionNote`.
- * `builtin` is the Winter-shipped tier (`packages/core/skills`).
+ * `builtin` is the Clover-shipped tier (`packages/core/skills`).
  */
 const UNDELIVERABLE_TIER_LABEL: Readonly<Record<Exclude<SkillMeta["source"], "plugin">, string>> = {
   project: "Project",
@@ -165,10 +165,10 @@ const UNDELIVERABLE_TIER_LABEL: Readonly<Record<Exclude<SkillMeta["source"], "pl
 
 /**
  * Discovers SKILL.md skills from four sources, in precedence order (first occurrence of a name wins):
- *  - project: `<cwd>/.winter/skills/*`   — TRUST-GATED (only when `trust.isTrusted(cwd)`)
+ *  - project: `<cwd>/.clover/skills/*`   — TRUST-GATED (only when `trust.isTrusted(cwd)`)
  *  - user:    `<store home>/skills/*`      — always (excludes the reserved `self/` subdir)
  *  - self:    `<store home>/skills/self/*` — always; written by `writeSelf`/`deleteSelf` below
- *    (the store home is `storeHomeFor(winterHome)`: `~/.winter/sdk` on a run-home build, WS-21)
+ *    (the store home is `storeHomeFor(cloverHome)`: `~/.clover/sdk` on a run-home build, WS-21)
  *  (WS-21, L4 request 2: the old `<home>/plugins/<plugin>/skills` tier is gone — a plugin's skills are
  *   claude-native content the runtimes load themselves, and `skills.list`'s plugin half comes from the
  *   plugin manager, lane L4's `plugins/plugin-skills.ts`)
@@ -177,12 +177,12 @@ const UNDELIVERABLE_TIER_LABEL: Readonly<Record<Exclude<SkillMeta["source"], "pl
  * Defensive throughout: malformed/missing/permission-denied skills are skipped, never thrown.
  */
 export class SkillStore {
-  private readonly winterHome: string;
+  private readonly cloverHome: string;
   private readonly trust: TrustStore;
   private readonly bodyBytes: number;
 
-  constructor(deps: { winterHome: string; trust: TrustStore; caps?: { bodyBytes?: number } }) {
-    this.winterHome = deps.winterHome;
+  constructor(deps: { cloverHome: string; trust: TrustStore; caps?: { bodyBytes?: number } }) {
+    this.cloverHome = deps.cloverHome;
     this.trust = deps.trust;
     this.bodyBytes = deps.caps?.bodyBytes ?? 32768;
   }
@@ -201,7 +201,7 @@ export class SkillStore {
     // WS-21: user and self skills live in the store home (`storeHomeFor`: `<home>/sdk/skills` on a
     // run-home build, `<home>/skills` before it).
     const userAndSelf = (): void => {
-      all.push(...scanRoot(join(storeHomeFor(this.winterHome), "skills"), "user", USER_ROOT_EXCLUDE));
+      all.push(...scanRoot(join(storeHomeFor(this.cloverHome), "skills"), "user", USER_ROOT_EXCLUDE));
       all.push(...scanRoot(this.selfRoot(), "self"));
     };
 
@@ -209,7 +209,7 @@ export class SkillStore {
       userAndSelf();
       if (trustedProject) for (const dir of projectSkillDirsNearestFirst(cwd)) all.push(...scanRoot(dir, "project"));
     } else {
-      if (trustedProject) all.push(...scanRoot(join(cwd, ".winter", "skills"), "project"));
+      if (trustedProject) all.push(...scanRoot(join(cwd, ".clover", "skills"), "project"));
       userAndSelf();
     }
 
@@ -252,7 +252,7 @@ export class SkillStore {
    *
    * WS-21: on a build whose router applies run homes, the run folder carries exactly the tiers the router
    * stages (`run-home/items.ts`): the user tier (`sdk/skills`), the self tier (`sdk/skills/self`) and a
-   * TRUSTED project's `.winter/skills` (`skills.list` lists a project skill only for a trusted project) —
+   * TRUSTED project's `.clover/skills` (`skills.list` lists a project skill only for a trusted project) —
    * those load in Code sessions. The BUILTIN tier (`packages/core/skills/`, shipped with the daemon) is
    * staged by nobody: the router does not link it and neither runtime ships it, so it does not load, and
    * says so (R.1 ruling 3; staging builtins into run homes is a follow-up — pre-WS-21 they did not load in
@@ -279,15 +279,15 @@ export class SkillStore {
     return { loadsInSessions: false, sessionNote: `${UNDELIVERABLE_TIER_LABEL[meta.source]} skills can't be loaded by a session on this build — its runtimes have no door for them.` };
   }
 
-  /** Root of the self-authored scope: `~/.winter/skills/self` — the same path `discover` scans as source "self". */
+  /** Root of the self-authored scope: `~/.clover/skills/self` — the same path `discover` scans as source "self". */
   private selfRoot(): string {
-    return join(storeHomeFor(this.winterHome), "skills", "self");
+    return join(storeHomeFor(this.cloverHome), "skills", "self");
   }
 
   /**
    * Writes (or overwrites) a self-authored skill at `self/<name>/SKILL.md`. Overwrite-is-edit: an
    * existing dir is written in place, no merge. The frontmatter (`name`, `description`,
-   * `author: winter`) is stamped by the STORE and written FIRST; `body` is concatenated verbatim
+   * `author: clover`) is stamped by the STORE and written FIRST; `body` is concatenated verbatim
    * AFTER that block's closing fence — so a body containing frontmatter-looking text (an
    * author-spoof attempt) can never override the stamp: `parseSkill` stops at the FIRST closing
    * fence it finds, which is always this one, never something embedded later in the body.
@@ -304,7 +304,7 @@ export class SkillStore {
     const dir = join(this.selfRoot(), input.name);
     try {
       mkdirSync(dir, { recursive: true });
-      const content = `---\nname: ${input.name}\ndescription: ${description}\nauthor: winter\n---\n\n${input.body}`;
+      const content = `---\nname: ${input.name}\ndescription: ${description}\nauthor: clover\n---\n\n${input.body}`;
       writeFileSync(join(dir, "SKILL.md"), content, "utf8");
       return { ok: true, value: undefined };
     } catch (err) {

@@ -11,16 +11,16 @@ import { addMarketplace, installPlugin, listPlugins, setPluginEnabled, type Plug
 const tmp = (p: string): string => realpathSync(mkdtempSync(join(tmpdir(), p)));
 
 async function homeWithProjectAndUserInstall(): Promise<{ withCwd: PluginManagerOptions; noCwd: PluginManagerOptions }> {
-  const winterHome = tmp("winter-pm-list-home-");
-  const project = tmp("winter-pm-list-project-");
-  const mkt = tmp("winter-pm-list-mkt-");
+  const cloverHome = tmp("clover-pm-list-home-");
+  const project = tmp("clover-pm-list-project-");
+  const mkt = tmp("clover-pm-list-mkt-");
   mkdirSync(join(mkt, ".claude-plugin"), { recursive: true });
   writeFileSync(join(mkt, ".claude-plugin", "marketplace.json"), JSON.stringify({ name: "m", owner: { name: "test" }, plugins: [{ name: "p", source: "." }] }));
-  const pluginsRoot = join(winterHome, "sdk", "plugins");
-  const userSettings = join(winterHome, "sdk", "settings.json");
+  const pluginsRoot = join(cloverHome, "sdk", "plugins");
+  const userSettings = join(cloverHome, "sdk", "settings.json");
   const withCwd: PluginManagerOptions = {
     pluginsRoot,
-    settingsPathFor: (scope: PluginScope) => (scope === "user" ? userSettings : join(project, ".winter", scope === "local" ? "settings.local.json" : "settings.json")),
+    settingsPathFor: (scope: PluginScope) => (scope === "user" ? userSettings : join(project, ".clover", scope === "local" ? "settings.local.json" : "settings.json")),
   };
   const noCwd: PluginManagerOptions = {
     pluginsRoot,

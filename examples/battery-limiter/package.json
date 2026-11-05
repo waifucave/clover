@@ -3,6 +3,6 @@
   "private": true,
   "type": "module",
   "dependencies": {
-    "@yanlinglabs/winter-plugin-sdk": "workspace:*"
+    "@waifucave/clover-plugin-sdk": "workspace:*"
   }
 }

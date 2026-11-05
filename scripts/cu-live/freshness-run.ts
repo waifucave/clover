@@ -33,7 +33,7 @@ export interface FreshDeps {
   returnUser(): Promise<void>;
   /** One ComputerV2 turn (setup, not asserted): its output and `report()` facts. */
   turn(code: string): Promise<{ output: string; isError: boolean; facts: Record<string, unknown> }>;
-  /** `winter-core-live __helper-freshness`: the sampler's stdout lines. */
+  /** `clover-core-live __helper-freshness`: the sampler's stdout lines. */
   sample(params: FreshSamplerParams): Promise<string[]>;
   monitor(): readonly MonitorSample[];
   baseline: FocusBaseline;

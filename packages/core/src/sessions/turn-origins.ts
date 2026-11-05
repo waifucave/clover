@@ -1,7 +1,7 @@
 // Which `user_message` started which turn — and so WHO started a session's running turn.
 //
 // A session's log carries the host's main-thread `user_message`s and the projector's `turn_started`s,
-// but not which message each turn answers. `WinterSession` pushes in exactly two shapes:
+// but not which message each turn answers. `CloverSession` pushes in exactly two shapes:
 //   - DIRECT: the message is appended and its turn begun at once (`send` on an idle child, `steer`, a
 //     delivery) — its `turn_started` is the very next main-thread event after it;
 //   - QUEUED: the message is appended while a turn runs and begun later, one per `result`, oldest first
@@ -19,7 +19,7 @@
 // its continuation lands, and a daemon-held `send` queued earlier keeps its own place. From then on the
 // running turn's origin reads as the folded message's: a peer's message folded into a human turn makes
 // it automated, the user's steer folded into Dispatch's turn makes it human.
-import { COMPUTER_WAKE_CLIENT_NAME, type SessionEvent } from "@yanlinglabs/winter-protocol";
+import { COMPUTER_WAKE_CLIENT_NAME, type SessionEvent } from "@waifucave/clover-protocol";
 
 /** The projector's own pass-through `user_message` (it echoes the child's view; never a host push). */
 const PROJECTOR_PASSTHROUGH_CLIENT = "winter";

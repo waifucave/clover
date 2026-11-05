@@ -1,10 +1,10 @@
 /**
  * ComputerV2 — the compiled-artifact gate for the Winter Computer Use helper: `bun run verify:computer-helper`.
  * Never under `bun test` (it builds and runs real signed binaries). Needs no TCC grant, shows no UI, never
- * touches `~/.winter*`, and launches nothing through LaunchServices: every helper it runs is its own child, on
+ * touches `~/.clover*`, and launches nothing through LaunchServices: every helper it runs is its own child, on
  * a temp home (the test flavor's LaunchServices record, which running it creates, is removed at the end).
  *
- *  1. The dev helper `bun run dev:helper` left in `dist/dev/` is what TCC and the daemon need: Winter's team,
+ *  1. The dev helper `bun run dev:helper` left in `dist/dev/` is what TCC and the daemon need: Clover's team,
  *     identifier com.winter.computeruse.dev, the hardened runtime, EXACTLY the stated designated requirement,
  *     the Apple Events entitlement only, an LSUIElement Info.plist at the helper's own version
  *     (apple/ComputerUse/VERSION), and no test hooks compiled in.
@@ -17,13 +17,13 @@
  *     checks the pid `hello` names against the helper's stated requirement (`codesign --verify -R=… <pid>`,
  *     the check the daemon makes over Security.framework) — then `status`, an engine method, an unknown
  *     method, and the three refusals (protocol, home, a first request that is not hello), each answered and
- *     closed; then Winter.app's leg (the same bun, also accepted as a fake Winter.app): hello client:"app",
+ *     closed; then Clover.app's leg (the same bun, also accepted as a fake Clover.app): hello client:"app",
  *     status and view.subscribe/unsubscribe allowed, every other method not_allowed, the daemon refused view.*,
  *     and — on a second test helper whose app requirement bun does not meet — a false client:"app" refused and
  *     closed. Finally the idle quit: once no script runs and nothing is bound it exits on its own — with the
  *     daemon's connection still open (that connection is not work) — closing it and removing its socket.
  *  4. winter-browser-host, nested in both bundles: in step 1 and 3's checks its own signature (com.winter.browserhost.dev
- *     / .test, Winter's team, hardened runtime, EXACTLY its stated requirement, no entitlements, test hooks only in the
+ *     / .test, Clover's team, hardened runtime, EXACTLY its stated requirement, no entitlements, test hooks only in the
  *     test flavor). Then the test host, run from inside the test helper the way Chrome runs it (argv[1] = the caller's
  *     origin, native messaging on stdin/stdout), against a temp home: a caller that is not Winter for Chrome → exit 1 and
  *     nothing written; no daemon → `host.status unavailable`; this bun as a fake daemon on `<home>/run/browser.sock` →
@@ -39,7 +39,7 @@ import { createConnection, type Socket } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { WINTER_TEAM_ID } from "../packages/core/src/auth/app-token-acl";
+import { CLOVER_TEAM_ID } from "../packages/core/src/auth/app-token-acl";
 import { HELPER_PROTOCOL } from "../packages/core/src/computer-use/protocol";
 import { EXTENSION_IDS } from "../packages/core/src/computer-use/browser/extension/extension-ids";
 import { BROWSER_HOST_PROTOCOL, EXTENSION_PROTOCOL } from "../packages/core/src/computer-use/browser/extension/protocol";
@@ -134,7 +134,7 @@ interface Launched { child: ChildProcess; stderr: string[]; exited: Promise<numb
 
 function launch(executable: string, env: Record<string, string>): Launched {
   const clean = { ...process.env };
-  for (const k of Object.keys(clean)) if (k.startsWith("WINTER_")) delete clean[k];
+  for (const k of Object.keys(clean)) if (k.startsWith("CLOVER_")) delete clean[k];
   const child = spawn(executable, [], { env: { ...clean, ...env }, stdio: ["ignore", "ignore", "pipe"] });
   const stderr: string[] = [];
   child.stderr?.setEncoding("utf8");
@@ -244,7 +244,7 @@ async function verifyBrowserHost(testApp: string, fakeDaemon: string, homes: str
   homes.push(home);
   mkdirSync(join(home, "run"), { recursive: true, mode: 0o700 });
   const clean = { ...process.env };
-  for (const k of Object.keys(clean)) if (k.startsWith("WINTER_")) delete clean[k];
+  for (const k of Object.keys(clean)) if (k.startsWith("CLOVER_")) delete clean[k];
   const env = (requirement: string) => ({ ...clean, WINTER_BROWSER_HOST_HOME: home, WINTER_CU_TEST_DAEMON_REQUIREMENT: requirement });
 
   const refused = spawnSync(exe, ["chrome-extension://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/"], { env: env(fakeDaemon), input: "", timeout: 10_000 });
@@ -270,10 +270,10 @@ async function verifyBrowserHost(testApp: string, fakeDaemon: string, homes: str
       check(hello?.id === "h1" && p.protocol === BROWSER_HOST_PROTOCOL && p.client === "browser-host" && p.origin === origin && p.hostPid === host.child.pid
         && p.hostVersion === version && p.browserPid === process.pid && typeof p.browserBundleId === "string",
         "the daemon appears within the retry: host.hello {protocol, client, hostVersion, hostPid, origin, browserBundleId, browserPid} first", JSON.stringify(hello));
-      const hostDr = helperRequirement(BROWSER_HOST.test.identifier, WINTER_TEAM_ID);
+      const hostDr = helperRequirement(BROWSER_HOST.test.identifier, CLOVER_TEAM_ID);
       check(processSatisfiesRequirement(Number(p.hostPid), hostDr), "the daemon's own check: the pid host.hello names satisfies the host's stated requirement (Security.framework by pid)");
       check(run("codesign", ["--verify", `-R=${hostDr}`, String(p.hostPid)]).status === 0, "…and codesign agrees on the running process");
-      check(!processSatisfiesRequirement(Number(p.hostPid), helperRequirement(HELPER.test.identifier, WINTER_TEAM_ID)), "…and the check discriminates: the host is not the helper");
+      check(!processSatisfiesRequirement(Number(p.hostPid), helperRequirement(HELPER.test.identifier, CLOVER_TEAM_ID)), "…and the check discriminates: the host is not the helper");
       daemon.write({ id: "h1", result: { protocol: BROWSER_HOST_PROTOCOL, daemonVersion: "verify" } });
       check(await host.pipe.next(status("connected")) !== undefined, "host.hello answered → host.status {daemon: \"connected\"} to the extension");
       host.pipe.send({ id: "e1", method: "hello", params: { protocol: EXTENSION_PROTOCOL, extensionVersion: "1.0.0", instanceId: "00000000-0000-4000-8000-000000000001" } });
@@ -314,7 +314,7 @@ async function main(): Promise<void> {
   if (process.platform !== "darwin") throw new Error("the helper is macOS-only");
   const devFlag = process.argv.indexOf("--dev-helper");
   const devHelperApp = devFlag >= 0 && process.argv[devFlag + 1] !== undefined ? process.argv[devFlag + 1]! : DEV_HELPER_APP;
-  // The helper's OWN version (apple/ComputerUse/VERSION), not Winter's.
+  // The helper's OWN version (apple/ComputerUse/VERSION), not Clover's.
   const version = readHelperVersion();
   const homes: string[] = [];
   const launched: Launched[] = [];
@@ -325,7 +325,7 @@ async function main(): Promise<void> {
       check(false, "the dev helper exists", "run `bun run dev:helper` first");
     } else {
       const failures = inspectHelper(devHelperApp, "dev");
-      check(failures.length === 0, `signed for TCC: team ${WINTER_TEAM_ID}, ${HELPER.dev.identifier}, hardened runtime, the stated designated requirement, the Apple Events entitlement only, LSUIElement, version ${version}, no test hooks; winter-browser-host inside as ${BROWSER_HOST.dev.identifier}, its stated requirement, no entitlements, no test hooks`, failures.join("; "));
+      check(failures.length === 0, `signed for TCC: team ${CLOVER_TEAM_ID}, ${HELPER.dev.identifier}, hardened runtime, the stated designated requirement, the Apple Events entitlement only, LSUIElement, version ${version}, no test hooks; winter-browser-host inside as ${BROWSER_HOST.dev.identifier}, its stated requirement, no entitlements, no test hooks`, failures.join("; "));
 
       // ── 2. that binary refuses a peer that is not the dev daemon ──────────────────────────────────────
       console.error("verify:computer-helper: 2. the dev binary's real peer check, on a temp home");
@@ -339,7 +339,7 @@ async function main(): Promise<void> {
         check(mode(join(home, "run")) === 0o700, "run/ is 0700", `mode ${mode(join(home, "run"))?.toString(8)}`);
         const impostor = await LineClient.connect(socketPath);
         impostor.send({ id: 1, method: "hello", params: { protocol: HELPER_PROTOCOL, client: "daemon", home } });
-        check(await impostor.closedSilently(), "a peer that is not com.winter.core.dev is closed with no response at all");
+        check(await impostor.closedSilently(), "a peer that is not com.waifucave.clover.core.dev is closed with no response at all");
         impostor.close();
         check(await waitFor(() => dev.stderr.some((l) => l.includes("refused")), 3000), "the helper logged the refusal", dev.stderr.slice(-3).join(" | "));
       }
@@ -372,7 +372,7 @@ async function main(): Promise<void> {
     const helper = launch(helperExecutable(testApp, "test"), {
       WINTER_CU_HOME: home,
       WINTER_CU_TEST_DAEMON_REQUIREMENT: fakeDaemon,
-      // The same bun plays Winter.app too: a peer may claim any client its code satisfies.
+      // The same bun plays Clover.app too: a peer may claim any client its code satisfies.
       WINTER_CU_TEST_APP_REQUIREMENT: fakeDaemon,
       WINTER_CU_TEST_IDLE_SECONDS: "3",
     });
@@ -385,10 +385,10 @@ async function main(): Promise<void> {
     const result = typeof hello === "object" ? hello.result : undefined;
     check(result?.protocol === HELPER_PROTOCOL && result?.helperVersion === version && result?.pid === helper.child.pid,
       `hello → {protocol: ${HELPER_PROTOCOL}, helperVersion: ${version}, pid: ${helper.child.pid}} (the helper accepted bun's code)`, JSON.stringify(hello));
-    const helperDr = helperRequirement(HELPER.test.identifier, WINTER_TEAM_ID);
+    const helperDr = helperRequirement(HELPER.test.identifier, CLOVER_TEAM_ID);
     const mutual = run("codesign", ["--verify", `-R=${helperDr}`, String(result?.pid ?? -1)]);
     check(mutual.status === 0, "mutual auth: the pid hello names satisfies the helper's stated designated requirement", mutual.stderr.trim());
-    const wrong = run("codesign", ["--verify", `-R=${helperRequirement(HELPER.dev.identifier, WINTER_TEAM_ID)}`, String(result?.pid ?? -1)]);
+    const wrong = run("codesign", ["--verify", `-R=${helperRequirement(HELPER.dev.identifier, CLOVER_TEAM_ID)}`, String(result?.pid ?? -1)]);
     check(wrong.status !== 0, "…and that check discriminates (the dev helper's requirement does not match it)");
 
     const status = await daemon.request(2, "status");
@@ -403,17 +403,17 @@ async function main(): Promise<void> {
     const active = await daemon.request(5, "script.active", { sessionId: "s_verify", active: true });
     check(typeof active === "object" && JSON.stringify(active.result) === "{}", "script.active → {}", JSON.stringify(active));
 
-    // ── 3b. Winter.app as the second client (the in-window mirror's view stream) ──
+    // ── 3b. Clover.app as the second client (the in-window mirror's view stream) ──
     const app = await LineClient.connect(socketPath);
     const appHello = await app.request(1, "hello", { protocol: HELPER_PROTOCOL, client: "app", home });
-    check(typeof appHello === "object" && appHello.result?.pid === helper.child.pid, "Winter.app (fake identity): hello client:\"app\" → {protocol, helperVersion, pid}", JSON.stringify(appHello));
+    check(typeof appHello === "object" && appHello.result?.pid === helper.child.pid, "Clover.app (fake identity): hello client:\"app\" → {protocol, helperVersion, pid}", JSON.stringify(appHello));
     const appStatus = await app.request(2, "status");
-    check(typeof appStatus === "object" && appStatus.result?.helperVersion === version, "Winter.app may read status", JSON.stringify(appStatus));
+    check(typeof appStatus === "object" && appStatus.result?.helperVersion === version, "Clover.app may read status", JSON.stringify(appStatus));
     const subscribed = await app.request(3, "view.subscribe", { sessionId: "s_verify", frames: true, maxFps: 5, maxWidth: 360 });
     check(typeof subscribed === "object" && JSON.stringify(subscribed.result) === JSON.stringify({ targets: [] }), "view.subscribe → {targets: []} (nothing bound)", JSON.stringify(subscribed));
     for (const [n, method] of ["apps.list", "target.bind", "script.active", "session.ended"].entries()) {
       const refused = await app.request(10 + n, method, { sessionId: "s_verify" });
-      check(typeof refused === "object" && refused.error?.data?.code === "not_allowed", `Winter.app may not call ${method} → not_allowed`, JSON.stringify(refused));
+      check(typeof refused === "object" && refused.error?.data?.code === "not_allowed", `Clover.app may not call ${method} → not_allowed`, JSON.stringify(refused));
     }
     const unsubscribed = await app.request(20, "view.unsubscribe", { sessionId: "s_verify" });
     check(typeof unsubscribed === "object" && JSON.stringify(unsubscribed.result) === "{}", "view.unsubscribe → {}", JSON.stringify(unsubscribed));
@@ -438,7 +438,7 @@ async function main(): Promise<void> {
       client.close();
     }
 
-    // A helper whose app requirement this bun does not satisfy: claiming to be Winter.app is refused, closed.
+    // A helper whose app requirement this bun does not satisfy: claiming to be Clover.app is refused, closed.
     {
       const home2 = tempHome();
       homes.push(home2);
@@ -453,7 +453,7 @@ async function main(): Promise<void> {
         const claimant = await LineClient.connect(socket2);
         const reply = await claimant.request(1, "hello", { protocol: HELPER_PROTOCOL, client: "app", home: home2 });
         check(typeof reply === "object" && reply.error?.data?.code === "not_allowed" && (await claimant.next()) === "eof",
-          "a peer that is not Winter.app saying client:\"app\" → not_allowed, then closed", JSON.stringify(reply));
+          "a peer that is not Clover.app saying client:\"app\" → not_allowed, then closed", JSON.stringify(reply));
         claimant.close();
       }
       await stop(strict);

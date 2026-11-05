@@ -33,7 +33,7 @@ afterEach(async () => {
 });
 
 function tempHomeWithProviderModel(model: string): string {
-  const home = mkdtempSync(join(tmpdir(), "winter-internal-provider-boot-"));
+  const home = mkdtempSync(join(tmpdir(), "clover-internal-provider-boot-"));
   writeFileSync(join(home, "settings.json"), JSON.stringify({ schemaVersion: 3, provider: { model } }, null, 2));
   return home;
 }
@@ -57,7 +57,7 @@ async function boot(home: string, credentials: Array<[string, string]> = []): Pr
   return { lines: cap.lines };
 }
 
-describe("daemon boot — Winter's own jobs vs settings.provider.model", () => {
+describe("daemon boot — Clover's own jobs vs settings.provider.model", () => {
   test("a DeepSeek primary with a DeepSeek key: the jobs run, and the gate (registry, plugins, THE SETTINGS WATCHER) is built", async () => {
     const home = tempHomeWithProviderModel("deepseek/deepseek-v4-flash");
     const { lines } = await boot(home, [["deepseek:default", "sk-deepseek-test"]]);
@@ -109,7 +109,7 @@ describe("daemon boot — Winter's own jobs vs settings.provider.model", () => {
     expect(daemon!.registry).not.toBeNull();
     const summary = lines.filter((l) => l.startsWith("internal-provider:"));
     expect(summary.length).toBe(1);
-    expect(summary[0]).toContain("no provider Winter's own jobs can run on holds a credential");
+    expect(summary[0]).toContain("no provider Clover's own jobs can run on holds a credential");
     expect(summary[0]).toContain("ChatGPT");
     expect(summary[0]).toContain("credentials set");
     // NEVER the two capabilities the old line invented: `pins.research` is the child's WebFetch digest

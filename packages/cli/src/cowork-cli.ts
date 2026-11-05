@@ -1,26 +1,26 @@
-import { COWORK_RPC, COWORK_INSTRUCTION_MAX_BYTES, CoworkSessionCreate, type CoworkMethod, type CoworkParams, type CoworkResult, type CoworkWorkspace, type CoworkWorkspacePolicy } from "@yanlinglabs/winter-protocol";
+import { COWORK_RPC, COWORK_INSTRUCTION_MAX_BYTES, CoworkSessionCreate, type CoworkMethod, type CoworkParams, type CoworkResult, type CoworkWorkspace, type CoworkWorkspacePolicy } from "@waifucave/clover-protocol";
 import { constants, openSync, closeSync, fstatSync, statSync, readSync } from "node:fs";
 import { resolve } from "node:path";
-import type { WinterClient } from "./client";
+import type { CloverClient } from "./client";
 
 export const COWORK_CLI_USAGE = `usage:
-  winter workspace|project [list] [--limit N] [--cursor TOKEN] [--json]
-  winter workspace|project get <id> [--json]
-  winter workspace|project update <id> --title TEXT --revision N --request-id ID [--json]
-  winter workspace source list <workspaceId> [--limit N] [--cursor TOKEN] [--revision N] [--json]
-  winter workspace source get <workspaceId> <sourceId> [--json]
-  winter workspace source remove|revoke <workspaceId> <sourceId> --revision N --request-id ID [--json]
-  winter workspace source add-folder|add-repository <workspaceId> --selection-id ID --revision N --request-id ID [--json]
-  winter workspace policy get <workspaceId> [--limit N] [--cursor TOKEN] [--revision N] [--json]
-  winter workspace|project policy set-default <id> --policy POLICY --revision N --request-id ID [--json]
-  winter workspace policy set-publication <workspaceId> --publication manual|github-only-feature-branches --revision N --request-id ID [--json]
-  winter workspace policy set-ceiling <workspaceId> --ceiling-json JSON --revision N --request-id ID [--json]
-  winter workspace schedule list <workspaceId> [--limit N] [--cursor TOKEN] [--json]
-  winter workspace schedule create <workspaceId> --definition-json JSON --request-id ID [--json]
-  winter workspace schedule status|cancel <workspaceId> <scheduleId> [--revision N] [--json]
-  winter workspace instructions get|provenance <workspaceId> [--json]
-  winter workspace instructions update <workspaceId> --instruction-revision N --digest SHA256 (--content TEXT | --stdin | --content-file FILE) --request-id ID [--allow-empty] [--json]
-  winter workspace operation get <workspaceId> <operationId> [--json]
+  clover workspace|project [list] [--limit N] [--cursor TOKEN] [--json]
+  clover workspace|project get <id> [--json]
+  clover workspace|project update <id> --title TEXT --revision N --request-id ID [--json]
+  clover workspace source list <workspaceId> [--limit N] [--cursor TOKEN] [--revision N] [--json]
+  clover workspace source get <workspaceId> <sourceId> [--json]
+  clover workspace source remove|revoke <workspaceId> <sourceId> --revision N --request-id ID [--json]
+  clover workspace source add-folder|add-repository <workspaceId> --selection-id ID --revision N --request-id ID [--json]
+  clover workspace policy get <workspaceId> [--limit N] [--cursor TOKEN] [--revision N] [--json]
+  clover workspace|project policy set-default <id> --policy POLICY --revision N --request-id ID [--json]
+  clover workspace policy set-publication <workspaceId> --publication manual|github-only-feature-branches --revision N --request-id ID [--json]
+  clover workspace policy set-ceiling <workspaceId> --ceiling-json JSON --revision N --request-id ID [--json]
+  clover workspace schedule list <workspaceId> [--limit N] [--cursor TOKEN] [--json]
+  clover workspace schedule create <workspaceId> --definition-json JSON --request-id ID [--json]
+  clover workspace schedule status|cancel <workspaceId> <scheduleId> [--revision N] [--json]
+  clover workspace instructions get|provenance <workspaceId> [--json]
+  clover workspace instructions update <workspaceId> --instruction-revision N --digest SHA256 (--content TEXT | --stdin | --content-file FILE) --request-id ID [--allow-empty] [--json]
+  clover workspace operation get <workspaceId> <operationId> [--json]
 
 Creation is unavailable. Source provisioning is gated by the daemon; add commands
 accept an existing opaque host selection ID. This CLI does not issue selections.
@@ -196,13 +196,13 @@ export async function resolveCoworkArgs(surface: "workspace" | "project", args: 
     if (input.terminal ?? (input.stdin === undefined && process.stdin.isTTY === true)) (input.hint ?? ((line: string) => console.error(line)))("Reading shared guidance from stdin; end with Ctrl-D.");
     bytes = await guidanceStdin(input.stdin ?? process.stdin);
   } else bytes = guidanceFile(String(flags["--content-file"]));
-  // A failed producer (`false | winter ... --stdin`) must not blank the guidance; a deliberate clear says so.
+  // A failed producer (`false | clover ... --stdin`) must not blank the guidance; a deliberate clear says so.
   if (bytes.byteLength === 0 && flags["--allow-empty"] !== true) throw new Error("Shared guidance input is empty; pass --allow-empty to clear the guidance deliberately");
   const params = COWORK_RPC["workspace.instructions.update"].params.parse({ ...route.params, content: guidanceText(bytes) });
   return { ...route, params };
 }
 
-export async function runCoworkRoute(client: Pick<WinterClient, "cowork">, route: CoworkCliRoute): Promise<CoworkCliResult> {
+export async function runCoworkRoute(client: Pick<CloverClient, "cowork">, route: CoworkCliRoute): Promise<CoworkCliResult> {
   return client.cowork(route.method, route.params);
 }
 
@@ -214,7 +214,7 @@ function workspaceLines(value: CoworkWorkspace): string[] {
   const lines = [`${value.workspaceId} · ${value.ownership} ${value.ownerId} · ${visible(value.title)}`, `State: ${value.state}; power: ${value.power}; configuration revision: ${value.configRevision}`, `Automatic publication default: ${value.automaticPublication ? "enabled" : "disabled"}`];
   if (value.detailState === "summary") {
     lines.push(`Details: summary (${value.detailReason}); ${value.sourceCount} source(s)`, `Default policy: ${value.policySummary.defaultPolicy}; publication: ${value.policySummary.publication}; network: ${value.policySummary.network}`,
-      `Capability details omitted; counts: ${JSON.stringify(value.policySummary.capabilityCounts)}`, `Read details: winter workspace source list ${value.workspaceId}; winter workspace policy get ${value.workspaceId} --revision ${value.policySummary.revision}`);
+      `Capability details omitted; counts: ${JSON.stringify(value.policySummary.capabilityCounts)}`, `Read details: clover workspace source list ${value.workspaceId}; clover workspace policy get ${value.workspaceId} --revision ${value.policySummary.revision}`);
   } else lines.push("Details: complete", ...policyLines(value.policy), ...value.sources.map(source => `Source ${source.sourceId}: ${visible(source.label)} · ${source.state} · ${source.desired} · ${source.access}`));
   return lines;
 }
@@ -236,9 +236,9 @@ export function formatCoworkResult(route: CoworkCliRoute, result: CoworkCliResul
   if ("ownership" in result) return workspaceLines(result);
   if ("operationId" in result) {
     if ("value" in result) {
-      const lines = [`Operation ${result.operationId} recorded at configuration revision ${result.revision}; guest effects are not confirmed`, `Check: winter workspace operation get ${result.workspaceId} ${result.operationId}`], value = result.value;
+      const lines = [`Operation ${result.operationId} recorded at configuration revision ${result.revision}; guest effects are not confirmed`, `Check: clover workspace operation get ${result.workspaceId} ${result.operationId}`], value = result.value;
       if ("digest" in value) lines.push(`Shared guidance revision ${value.instructionRevision}; SHA-256 ${value.digest}; ${value.refreshState}`);
-      else if ("detailState" in value && value.detailState === "summary") lines.push(`Policy details: summary (${value.detailReason}); publication: ${value.policySummary.publication}; network: ${value.policySummary.network}`, `Capability details omitted; counts: ${JSON.stringify(value.policySummary.capabilityCounts)}`, `Read: winter workspace policy get ${result.workspaceId} --revision ${value.policySummary.revision}`);
+      else if ("detailState" in value && value.detailState === "summary") lines.push(`Policy details: summary (${value.detailReason}); publication: ${value.policySummary.publication}; network: ${value.policySummary.network}`, `Capability details omitted; counts: ${JSON.stringify(value.policySummary.capabilityCounts)}`, `Read: clover workspace policy get ${result.workspaceId} --revision ${value.policySummary.revision}`);
       else if ("ceiling" in value) lines.push(...policyLines(value));
       else if ("sourceId" in value) lines.push(`Source ${value.sourceId}: ${value.state} · ${value.desired}`);
       else if ("title" in value) lines.push(`Title: ${visible(value.title)}`);
@@ -252,7 +252,7 @@ export function formatCoworkResult(route: CoworkCliRoute, result: CoworkCliResul
   throw new Error("Unsupported Cowork result");
 }
 
-/** Session door D4b: `winter workspace session create|list`. Not a Cowork RPC: `session.create {mode: "cowork"}` and a
+/** Session door D4b: `clover workspace session create|list`. Not a Cowork RPC: `session.create {mode: "cowork"}` and a
  *  `session.list` filtered by the row's workspace reference. Strict like the rest: no default request id or scope guess. */
 export type CoworkSessionCliRoute =
   | { kind: "session-create"; scope: string; workspaceId: string; requestId: string; location: { kind: "source"; sourceId: string; relativeCwd?: string }; json: boolean }
@@ -274,7 +274,7 @@ export function parseCoworkSessionArgs(args: string[]): CoworkSessionCliRoute {
   if (!checked.success) throw new Error(`Invalid arguments: ${checked.error.issues.map(issue => `${issue.path.join(".") || "request"}: ${issue.message}`).join("; ")}`);
   return { kind: "session-create", scope: "global", workspaceId, requestId, location, json };
 }
-export async function runCoworkSessionRoute(client: Pick<WinterClient, "createCoworkSession" | "listSessions">, route: CoworkSessionCliRoute): Promise<string[]> {
+export async function runCoworkSessionRoute(client: Pick<CloverClient, "createCoworkSession" | "listSessions">, route: CoworkSessionCliRoute): Promise<string[]> {
   if (route.kind === "session-create") {
     const created = await client.createCoworkSession(route.scope, { workspaceId: route.workspaceId, requestId: route.requestId, location: route.location });
     return route.json ? [JSON.stringify({ sessionId: created.sessionId }, null, 2)] : [`Cowork conversation ${created.sessionId} in ${route.workspaceId}`];

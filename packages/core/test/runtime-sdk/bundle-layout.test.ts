@@ -25,9 +25,9 @@ const goodAnt: AntVersionsJson = { schema: 1, tag: "v1.32.0", checksums: { antPr
 
 describe("bundle-layout (P8d-1; WS-23 split the record)", () => {
   test("the bundle rung is dirname(execPath) + the layout entry", () => {
-    expect(bundleRuntimePath("/Applications/Winter.app/Contents/Resources/winter-core", "winter")).toBe("/Applications/Winter.app/Contents/Resources/runtimes/winter");
-    expect(bundleRuntimePath("/x/Resources/winter-core", "versions")).toBe("/x/Resources/runtimes/VERSIONS.json");
-    expect(bundleRuntimePath("/x/Resources/winter-core", "antVersions")).toBe("/x/Resources/runtimes/ant/VERSIONS.json");
+    expect(bundleRuntimePath("/Applications/Clover.app/Contents/Resources/clover-core", "winter")).toBe("/Applications/Clover.app/Contents/Resources/runtimes/winter");
+    expect(bundleRuntimePath("/x/Resources/clover-core", "versions")).toBe("/x/Resources/runtimes/VERSIONS.json");
+    expect(bundleRuntimePath("/x/Resources/clover-core", "antVersions")).toBe("/x/Resources/runtimes/ant/VERSIONS.json");
     expect(RUNTIME_BUNDLE_LAYOUT.root).toBe("runtimes");
   });
   // WS-23: the official leg's `claude-official/` subtree is gone from the layout.
@@ -67,10 +67,10 @@ describe("bundle-layout (P8d-1; WS-23 split the record)", () => {
 
   // Winter Phase 10a (P10a-4/L4): the `ant` bundle-layout entry + path helper.
   test("antExecutablePath is dirname(execPath)/runtimes/ant/ant, same shape as bundleRuntimePath(execPath, 'ant')", () => {
-    expect(antExecutablePath("/Applications/Winter.app/Contents/Resources/winter-core")).toBe(
-      "/Applications/Winter.app/Contents/Resources/runtimes/ant/ant",
+    expect(antExecutablePath("/Applications/Clover.app/Contents/Resources/clover-core")).toBe(
+      "/Applications/Clover.app/Contents/Resources/runtimes/ant/ant",
     );
-    expect(antExecutablePath("/x/Resources/winter-core")).toBe(bundleRuntimePath("/x/Resources/winter-core", "ant"));
+    expect(antExecutablePath("/x/Resources/clover-core")).toBe(bundleRuntimePath("/x/Resources/clover-core", "ant"));
     expect(RUNTIME_BUNDLE_LAYOUT.ant).toBe("runtimes/ant/ant");
   });
 
@@ -90,16 +90,16 @@ describe("bundle-layout (P8d-1; WS-23 split the record)", () => {
 // Winter Phase 10a (P10a-4/L4): resolveAntExecutable's ladder. `ant` is OPTIONAL — a total miss is
 // `undefined`, never a typed refusal (unlike resolveWinterExecutable).
 describe("resolveAntExecutable (P10a-4 ladder)", () => {
-  const base = { env: {}, execPath: "/bundle/Contents/MacOS/winter-core" };
+  const base = { env: {}, execPath: "/bundle/Contents/MacOS/clover-core" };
   const BUNDLE_ANT = antExecutablePath(base.execPath);
 
   test("setting wins over everything, trusted as given (no existence check)", () => {
-    const r = resolveAntExecutable({ ...base, setting: "/s/ant", env: { WINTER_ANT_EXECUTABLE: "/e/ant" }, isExecutableFile: () => true, which: () => "/usr/local/bin/ant" });
+    const r = resolveAntExecutable({ ...base, setting: "/s/ant", env: { CLOVER_ANT_EXECUTABLE: "/e/ant" }, isExecutableFile: () => true, which: () => "/usr/local/bin/ant" });
     expect(r).toEqual({ path: "/s/ant", source: "setting" });
   });
 
   test("env beats the bundle rung and the PATH lookup", () => {
-    const r = resolveAntExecutable({ ...base, env: { WINTER_ANT_EXECUTABLE: "/e/ant" }, isExecutableFile: () => true, which: () => "/usr/local/bin/ant" });
+    const r = resolveAntExecutable({ ...base, env: { CLOVER_ANT_EXECUTABLE: "/e/ant" }, isExecutableFile: () => true, which: () => "/usr/local/bin/ant" });
     expect(r).toEqual({ path: "/e/ant", source: "env" });
   });
 
@@ -129,14 +129,14 @@ describe("resolveAntExecutable (P10a-4 ladder)", () => {
   });
 
   test("a whitespace-only setting or env value is treated as UNSET, not as a configured path", () => {
-    const r = resolveAntExecutable({ ...base, setting: "   ", env: { WINTER_ANT_EXECUTABLE: "\t\n" }, isExecutableFile: (p) => p === BUNDLE_ANT, which: () => null });
+    const r = resolveAntExecutable({ ...base, setting: "   ", env: { CLOVER_ANT_EXECUTABLE: "\t\n" }, isExecutableFile: (p) => p === BUNDLE_ANT, which: () => null });
     expect(r).toEqual({ path: BUNDLE_ANT, source: "bundle" });
   });
 
   test("the real (non-injected) filesystem check: an actual mkdtemp'd executable file resolves via the bundle rung", () => {
-    const root = mkdtempSync(join(tmpdir(), "winter-ant-bundle-"));
+    const root = mkdtempSync(join(tmpdir(), "clover-ant-bundle-"));
     try {
-      const execPath = join(root, "Contents", "Resources", "winter-core");
+      const execPath = join(root, "Contents", "Resources", "clover-core");
       const antPath = antExecutablePath(execPath);
       mkdirSync(join(root, "Contents", "Resources", "runtimes", "ant"), { recursive: true });
       writeFileSync(antPath, "#!/bin/sh\necho fixture-ant\n");
@@ -149,9 +149,9 @@ describe("resolveAntExecutable (P10a-4 ladder)", () => {
   });
 
   test("the real (non-injected) filesystem check: an mkdtemp'd file that exists but is NOT chmod executable is treated as absent", () => {
-    const root = mkdtempSync(join(tmpdir(), "winter-ant-bundle-"));
+    const root = mkdtempSync(join(tmpdir(), "clover-ant-bundle-"));
     try {
-      const execPath = join(root, "Contents", "Resources", "winter-core");
+      const execPath = join(root, "Contents", "Resources", "clover-core");
       const antPath = antExecutablePath(execPath);
       mkdirSync(join(root, "Contents", "Resources", "runtimes", "ant"), { recursive: true });
       writeFileSync(antPath, "#!/bin/sh\necho fixture-ant\n");

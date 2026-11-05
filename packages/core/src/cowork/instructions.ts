@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { closeSync, fstatSync, readSync, realpathSync, writeSync } from "node:fs";
 import { join } from "node:path";
-import { CoworkInstructionUpdate, COWORK_INSTRUCTION_MAX_BYTES } from "@yanlinglabs/winter-protocol";
+import { CoworkInstructionUpdate, COWORK_INSTRUCTION_MAX_BYTES } from "@waifucave/clover-protocol";
 import { AT_FDCWD, FdError, createFileAt, mkdirAt, openDirAt, unlinkAt } from "../computer-use/browser/fd-fs";
 import { ApprovalBroker } from "../agent/approvals";
 import type { EventInput } from "../sessions/store";

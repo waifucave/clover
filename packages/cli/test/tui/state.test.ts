@@ -595,7 +595,7 @@ describe("state.ts — user messages", () => {
     s = reduce(s, { type: "wake_ended", threadId: "main", wakeId: "wk_000000000001", reason: "fired", at: 2, woken: true }, T0);
     expect(s.committed.length).toBe(1); // said with the wake message
     s = reduce(s, { type: "user_message", threadId: "main", text: "<computer-wake>\n…\n</computer-wake>", clientName: "computer-wake" }, T0);
-    expect(s.committed.at(-1)).toEqual({ kind: "note", text: "↻ Winter continued: you clicked “Submit for review” in Chrome — Dashboard" });
+    expect(s.committed.at(-1)).toEqual({ kind: "note", text: "↻ Clover continued: you clicked “Submit for review” in Chrome — Dashboard" });
     expect(s.committed.some((b) => b.kind === "user")).toBe(false);
     expect(s.wakeNews).toBeUndefined();
     // An ending that wakes nobody is said at once.
@@ -617,7 +617,7 @@ describe("state.ts — user messages", () => {
     s = reduce(s, { type: "wake_ended", threadId: "main", wakeId: "wk_00000000000b", reason: "fired", at: 3, woken: true }, T0);
     s = reduce(s, { type: "user_message", threadId: "main", text: "<computer-wake>\n…\n</computer-wake>", clientName: "computer-wake" }, T0);
     const note = s.committed.at(-1) as { kind: string; text: string };
-    expect(note).toEqual({ kind: "note", text: "↻ Winter continued: you clicked “Submit” in Chrome — Dashboard" });
+    expect(note).toEqual({ kind: "note", text: "↻ Clover continued: you clicked “Submit” in Chrome — Dashboard" });
     expect(note.text).not.toContain("Sent");
     expect(note.text).not.toContain("ran out");
     // An expiry the model DID ask about (woken: true) is the wake's news, not a "stopped" note.
@@ -674,8 +674,8 @@ describe("state.ts — note one-liners match main.ts's wording (bg-task/worktree
   // app's native alert / the daemon's headless osascript fallback, neither of which the CLI does.
   test("notification_requested", () => {
     let s = initialState();
-    s = reduce(s, { type: "notification_requested", threadId: "main", title: "Winter", message: "migration finished" }, T0);
-    expect(s.committed.at(-1)).toEqual({ kind: "note", text: "notification: Winter: migration finished" });
+    s = reduce(s, { type: "notification_requested", threadId: "main", title: "Clover", message: "migration finished" }, T0);
+    expect(s.committed.at(-1)).toEqual({ kind: "note", text: "notification: Clover: migration finished" });
   });
 
   // WS-23: a hook's notice (a blocked prompt's reason) is one dim note line, multi-line text joined.
@@ -708,13 +708,13 @@ describe("state.ts — note one-liners match main.ts's wording (bg-task/worktree
     let s = initialState();
     const holder = { kind: "session", id: "s1" };
     s = reduce(s, { type: "lease_granted", threadId: "main", leaseId: "l1", class: "screenshot", holder, expiresAt: 0, tokenHash: "h" }, T0);
-    expect(s.committed.at(-1)).toEqual({ kind: "note", text: "⌘ Winter acquired screen capture control" });
+    expect(s.committed.at(-1)).toEqual({ kind: "note", text: "⌘ Clover acquired screen capture control" });
     s = reduce(s, { type: "lease_granted", threadId: "main", leaseId: "l2", class: "input-drive", holder, expiresAt: 0, tokenHash: "h" }, T0);
-    expect(s.committed.at(-1)).toEqual({ kind: "note", text: "⌘ Winter acquired mouse/keyboard control" });
+    expect(s.committed.at(-1)).toEqual({ kind: "note", text: "⌘ Clover acquired mouse/keyboard control" });
     s = reduce(s, { type: "lease_lost", threadId: "main", leaseId: "l1", class: "screenshot", holder, reason: "released" }, T0);
-    expect(s.committed.at(-1)).toEqual({ kind: "note", text: "⌘ Winter released screen capture control (released)" });
+    expect(s.committed.at(-1)).toEqual({ kind: "note", text: "⌘ Clover released screen capture control (released)" });
     s = reduce(s, { type: "lease_lost", threadId: "main", leaseId: "l2", class: "ax-read", holder, reason: "provider-gone" }, T0);
-    expect(s.committed.at(-1)).toEqual({ kind: "note", text: "⌘ Winter released accessibility control (provider-gone)" });
+    expect(s.committed.at(-1)).toEqual({ kind: "note", text: "⌘ Clover released accessibility control (provider-gone)" });
   });
 
   test("local_note (Phase 3d T2 — App-internal only, never a real wire event): commits a note block", () => {
@@ -782,7 +782,7 @@ describe("state.ts — child transcript accumulation (child-transcript-view T2)"
 
   // task-5 (live stall hint): the roster's pre-kill "Stalled" verdict is only honest if the two
   // legitimate-silence signals reach `updateSubagents`. In the TUI that routing is this reducer's
-  // job (unlike `winter -p`'s main.ts, which already feeds it every event) — a child's tool_result
+  // job (unlike `clover -p`'s main.ts, which already feeds it every event) — a child's tool_result
   // and approval events previously stopped at childBlocks/`pending` and never touched the row, so
   // a child mid-`bash` would have been mislabelled the moment the threshold elapsed.
   test("a child's tool_result and approval events reach the roster row's in-flight counters", () => {

@@ -1,5 +1,5 @@
 // ComputerV2 WAKE TRIGGERS ON APPS, end to end with the REAL app backend: a real daemon and a real `winter` binary, the
-// production wiring (`AppWakeBackend` over the helper connection — no wake backend injected), and a FAKE Winter Computer
+// production wiring (`AppWakeBackend` over the helper connection — no wake backend injected), and a FAKE Clover Computer
 // Use helper that speaks the 1.17.0 wire (`watch.arm`, `watch.cancel`, the `watchEvent` notification).
 //
 //   arm → the helper's watchEvent → the session is woken · the helper quits → `lost` "Winter Computer Use quit", woken ·
@@ -8,7 +8,7 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, type WritableSocket, type SessionEvent } from "@yanlinglabs/winter-protocol";
+import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, type WritableSocket, type SessionEvent } from "@waifucave/clover-protocol";
 import { FileSecretStore } from "../../src/auth/secret-store";
 import { HELPER_GONE_REASON } from "../../src/computer-use/wakes/app-backend";
 import { startDaemon, type RunningDaemon } from "../../src/daemon";
@@ -104,8 +104,8 @@ run("ComputerV2 wake triggers on apps through a real daemon (the real AppWakeBac
   };
 
   beforeAll(async () => {
-    home = realpathSync(mkdtempSync(join(tmpdir(), "winter-wake-app-e2e-")));
-    cwd = realpathSync(mkdtempSync(join(tmpdir(), "winter-wake-app-e2e-cwd-")));
+    home = realpathSync(mkdtempSync(join(tmpdir(), "clover-wake-app-e2e-")));
+    cwd = realpathSync(mkdtempSync(join(tmpdir(), "clover-wake-app-e2e-cwd-")));
     writeFileSync(join(home, "settings.json"), JSON.stringify({
       schemaVersion: 3,
       provider: { model: "winter-test/calls" },
@@ -190,7 +190,7 @@ run("ComputerV2 wake triggers on apps through a real daemon (the real AppWakeBac
     expect(old.watches.has(armed.wakeId)).toBe(false);
     await boot();
     const wake = await until(() => wakeMessages(log(sid))[0], 60_000, "the restart wake");
-    expect(wake.text).toContain("Winter restarted, so this wait ended — arm it again with wakeWhen() if you still need it.");
+    expect(wake.text).toContain("Clover restarted, so this wait ended — arm it again with wakeWhen() if you still need it.");
     expect(wake.text).toContain(`- ${armed.wakeId} (armed at`);
     expect(wake.text).toContain("Your note: file the receipt");
     // Quiet at the stop: the restart is the ONE ending, and its wake the one message.

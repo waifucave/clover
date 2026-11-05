@@ -13,7 +13,7 @@ const homes: string[] = [], dbs: RuntimeStateDb[] = [];
 afterEach(() => { for (const db of dbs.splice(0)) db.close(); for (const home of homes.splice(0)) rmSync(home, { recursive: true, force: true }); });
 const account: GitHubReadRepository = { repositoryId: "repo-one", authorityRef: "github-one", authorityRevision: 1, owner: "fixture", name: "repo", credentialRef: "host-only-slot", readable: true, revoked: false };
 function setup() {
-  const home = mkdtempSync(join(tmpdir(), "winter-git-read-authority-")); homes.push(home); const db = openRuntimeStateDb(home); dbs.push(db);
+  const home = mkdtempSync(join(tmpdir(), "clover-git-read-authority-")); homes.push(home); const db = openRuntimeStateDb(home); dbs.push(db);
   const records = new CoworkRepository(db), made = records.create({ principalId: "host", requestId: "create" }, { ownership: "project", title: "Fixture", sources: [{ kind: "githubRepository", label: "Repository", access: "read-write", detail: { repositoryId: account.repositoryId, authorityRef: account.authorityRef, initialRef: "main" } }], ceiling: { toolClasses: ["read"], hostServices: ["git.read"], connectors: [], network: "internet" } });
   const source = made.value.sources[0]!, epoch = records.beginIncarnation(made.workspaceId, "boot", 1);
   const caller: GitReadCaller = { workspaceId: made.workspaceId, incarnationId: epoch.incarnationId, leaseEpoch: epoch.leaseEpoch };

@@ -1,4 +1,4 @@
-import type { NewSessionEvent } from "@yanlinglabs/winter-protocol";
+import type { NewSessionEvent } from "@waifucave/clover-protocol";
 import type { BridgeLogger } from "./bridge-common";
 import type { RuntimeStateDb } from "../runtime-state/db";
 
@@ -8,33 +8,33 @@ import type { RuntimeStateDb } from "../runtime-state/db";
  * relied on from the child's own tool execution: "the child's own effects are not relied upon (a
  * child dies at idle)".
  *
- * ── `push_notification` (Winter's `PushNotification`) ───────────────────────────────────────────
+ * ── `push_notification` (Clover's `PushNotification`) ───────────────────────────────────────────
  *
  * Mirrors the retired engine's `ctx.notify` bridge (`agent/engine.ts`'s `runTurn`, pre-8b) exactly:
  * emit `notification_requested` unconditionally, then fire the headless macOS fallback ONLY when
- * nobody is attached right now. Winter's OWN `PushNotification` executor
- * (`winter-agent-sdk/packages/runtime/src/tools/impl/push-notification.ts`) has an injectable
+ * nobody is attached right now. Clover's OWN `PushNotification` executor
+ * (`clover-sdk/packages/runtime/src/tools/impl/push-notification.ts`) has an injectable
  * `configurePushNotifier` seam, but that seam lives INSIDE the spawned child process — the
  * daemon cannot reach into a separate OS process to call it, so it is dead wiring from this side
  * regardless of what a future SDK does with it; the daemon's own path is this sink, driven off the
  * ordinary wire `tool_use`/`tool_result` the projector already turns into `tool_call`/`tool_result`
  * (`PushNotification` earns no special projector branch — see `event-coverage.ts`).
  *
- * Winter's args carry no `title` at all (`{message, status:"proactive"}`, unlike the retired
+ * Clover's args carry no `title` at all (`{message, status:"proactive"}`, unlike the retired
  * engine's own `{message, title?}`) — `NOTIFICATION_DEFAULT_TITLE` below is therefore not a
  * fallback for an omitted field, it is the ONLY title this leg can ever produce.
  *
- * ── `schedule` (Winter's `CronCreate`/`CronDelete`/`CronList`) ──────────────────────────────────
+ * ── `schedule` (Clover's `CronCreate`/`CronDelete`/`CronList`) ──────────────────────────────────
  *
- * All three Winter tool names collapse onto the host's ONE `schedule` name (`tool-names.ts`'s
+ * All three Clover tool names collapse onto the host's ONE `schedule` name (`tool-names.ts`'s
  * `RUNTIME_HOST_TOOL_PAIRS`, "one tool, one gate decision") — which means the PROJECTED `tool_call`
  * this sink sees has already lost which of the three it was. The three input shapes are disjoint
  * by construction (create needs `cron`+`prompt`; delete needs only `id`; list needs neither), so
  * this sink disambiguates by ARGS SHAPE rather than by tool name — the only information left once
  * the rename has happened.
  *
- * Winter's `CronCreate`/`CronDelete` fully execute inside the child (an in-memory Map, or a
- * `<projectDir>/.winter/scheduled_tasks.json` file when `durable:true` — see the SDK's `cron.ts`),
+ * Clover's `CronCreate`/`CronDelete` fully execute inside the child (an in-memory Map, or a
+ * `<projectDir>/.clover/scheduled_tasks.json` file when `durable:true` — see the SDK's `cron.ts`),
  * but NOTHING ever turns a stored job into a running prompt at the right wall-clock moment except
  * the daemon's own `routines/scheduler.ts` — and per P8c-11 that is the only mechanism this daemon may
  * rely on, since "a child dies at idle" makes the child's own store inert the moment nobody is
@@ -77,7 +77,7 @@ import type { RuntimeStateDb } from "../runtime-state/db";
  * generation must never collide with the same id minted fresh in a later one.
  */
 
-const NOTIFICATION_DEFAULT_TITLE = "Winter";
+const NOTIFICATION_DEFAULT_TITLE = "Clover";
 
 export interface ProjectedToolCall {
   sessionId: string;
@@ -234,7 +234,7 @@ function parseCronDeleteArgs(argsJson: string): { id: string } | undefined {
   }
 }
 
-/** Winter's `CronCreate` result — pinned shape per `cron.ts`'s T8 note 1: `{id, humanSchedule,
+/** Clover's `CronCreate` result — pinned shape per `cron.ts`'s T8 note 1: `{id, humanSchedule,
  *  recurring, durable?}`, `durable` omitted when false. Only `id` is read here. */
 function parseCronCreateResultId(output: string): string | undefined {
   try {
@@ -271,9 +271,9 @@ export function sinksFor(deps: SinksDeps): Sinks {
   }
   /** `sessionId:callId` of a create call → its parsed args, awaiting the matching tool_result. */
   const pendingCreates = new Map<string, PendingCronCreate>();
-  /** Winter's minted job id → the mirrored `RoutineStore` id, so a later `CronDelete` (which
+  /** Clover's minted job id → the mirrored `RoutineStore` id, so a later `CronDelete` (which
    *  addresses the CHILD's id, never the host's) can resolve the row to remove. Not scoped per
-   *  session: Winter mints these with `randomUUID()`, which is unique enough on its own, and a
+   *  session: Clover mints these with `randomUUID()`, which is unique enough on its own, and a
    *  `CronDelete` carries no session-scoping information beyond the id it was handed. */
   // carry: never pruned — an entry only leaves via a matching CronDelete. Bounded by the number of
   // routines ever mirrored in this daemon process's lifetime, not by session count or time; fine
@@ -301,20 +301,20 @@ export function sinksFor(deps: SinksDeps): Sinks {
     }
   }
 
-  function commitCronCreate(sessionId: string, args: PendingCronCreate, winterJobId: string): void {
+  function commitCronCreate(sessionId: string, args: PendingCronCreate, cloverJobId: string): void {
     let created: { id: string };
     try {
       created = deps.routines.create({ spec: args.cron, prompt: args.prompt, cwd: deps.cwdFor?.(sessionId) });
     } catch (err) {
-      // A spec the daemon's own parser rejects (grammar drift from Winter's `validateCronExpression`,
+      // A spec the daemon's own parser rejects (grammar drift from Clover's `validateCronExpression`,
       // however unlikely) or an invalid policy default — logged, never mirrored, never thrown:
       // the child's own CronCreate already succeeded and answered the model, so a mirror failure
       // here must not surface as a tool error the model never actually got.
-      log?.error(`schedule sink: RoutineStore.create failed for winter job ${winterJobId} session=${sessionId}: ${(err as Error).message}`);
+      log?.error(`schedule sink: RoutineStore.create failed for clover job ${cloverJobId} session=${sessionId}: ${(err as Error).message}`);
       return;
     }
-    runtimeToHostRoutineId.set(winterJobId, created.id);
-    log?.info(`schedule sink: mirrored CronCreate winterJob=${winterJobId} → routine=${created.id} session=${sessionId}`);
+    runtimeToHostRoutineId.set(cloverJobId, created.id);
+    log?.info(`schedule sink: mirrored CronCreate cloverJob=${cloverJobId} → routine=${created.id} session=${sessionId}`);
   }
 
   return {
@@ -357,7 +357,7 @@ export function sinksFor(deps: SinksDeps): Sinks {
         }
         runtimeToHostRoutineId.delete(del.id);
         deps.routines.delete(hostId);
-        log?.info(`schedule sink: mirrored CronDelete winterJob=${del.id} → deleted routine=${hostId} session=${event.sessionId}`);
+        log?.info(`schedule sink: mirrored CronDelete cloverJob=${del.id} → deleted routine=${hostId} session=${event.sessionId}`);
         return;
       }
 
@@ -375,12 +375,12 @@ export function sinksFor(deps: SinksDeps): Sinks {
         log?.info(`schedule sink: CronCreate errored on the child — not mirrored session=${event.sessionId} call=${event.callId}`);
         return;
       }
-      const winterJobId = parseCronCreateResultId(event.output);
-      if (winterJobId === undefined) {
+      const cloverJobId = parseCronCreateResultId(event.output);
+      if (cloverJobId === undefined) {
         log?.error(`schedule sink: CronCreate result had no id — not mirrored session=${event.sessionId} call=${event.callId}`);
         return;
       }
-      commitCronCreate(event.sessionId, pending, winterJobId);
+      commitCronCreate(event.sessionId, pending, cloverJobId);
     },
   };
 }

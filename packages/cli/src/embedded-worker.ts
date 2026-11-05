@@ -6,10 +6,10 @@
 // resolves against the binary's `$bunfs` root, not the cwd (measured) — so the name and the
 // location of this file ARE the contract. `test/compile-core.test.ts` pins both.
 //
-// Why a PRE-BUILT bundle and not `@yanlinglabs/winter-core/embedded-worker` directly: Bun 1.3's
+// Why a PRE-BUILT bundle and not `@waifucave/clover-core/embedded-worker` directly: Bun 1.3's
 // multi-entrypoint `bun build` decides once, for the whole graph, which modules to wrap in lazy
-// `__esm` initialisers — and `src/main.ts` dynamically `import()`s `@yanlinglabs/winter-core` and
-// `@yanlinglabs/winter-protocol`, which wraps them and everything they reach (zod included). A module
+// `__esm` initialisers — and `src/main.ts` dynamically `import()`s `@waifucave/clover-core` and
+// `@waifucave/clover-protocol`, which wraps them and everything they reach (zod included). A module
 // shared with THIS entry stays wrapped here too, but an unwrapped importer that exists only in this
 // entry's graph (the runtime's `@modelcontextprotocol/*`) never gets the `init_*()` call, so the Worker
 // died at load with `TypeError: undefined is not a constructor (evaluating 'new ZodLazy(…)')` and

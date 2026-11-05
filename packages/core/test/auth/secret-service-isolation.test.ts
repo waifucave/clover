@@ -1,9 +1,9 @@
 // The Keychain service a process's default secret store uses (`auth/secret-store.ts`'s DEFAULT_SECRET_SERVICE),
 // resolved in a FRESH process per environment — names only: nothing here reads or writes the Keychain.
 //
-// The isolation fix (2026-10-09): a process run on an explicit, non-default WINTER_HOME honours
-// WINTER_KEYCHAIN_SERVICE, so a hand-started experiment daemon never probes the user's real
-// `com.winter.core[.dev]` items (it used to, raising a consent prompt per item another binary created).
+// The isolation fix (2026-10-09): a process run on an explicit, non-default CLOVER_HOME honours
+// CLOVER_KEYCHAIN_SERVICE, so a hand-started experiment daemon never probes the user's real
+// `com.waifucave.clover.core[.dev]` items (it used to, raising a consent prompt per item another binary created).
 import { describe, expect, test } from "bun:test";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
@@ -20,21 +20,21 @@ function serviceUnder(env: Record<string, string | undefined>): string {
 }
 
 describe("the default secret store's Keychain service", () => {
-  const temp = join(tmpdir(), "winter-isolation-probe-home");
+  const temp = join(tmpdir(), "clover-isolation-probe-home");
 
-  test("an explicit custom WINTER_HOME honours WINTER_KEYCHAIN_SERVICE — dist and dev profile alike", () => {
-    expect(serviceUnder({ WINTER_HOME: temp, WINTER_KEYCHAIN_SERVICE: "com.winter.core.test-iso" })).toBe("com.winter.core.test-iso");
-    expect(serviceUnder({ WINTER_HOME: temp, WINTER_PROFILE: "dev", WINTER_KEYCHAIN_SERVICE: "com.winter.core.test-iso" })).toBe("com.winter.core.test-iso");
+  test("an explicit custom CLOVER_HOME honours CLOVER_KEYCHAIN_SERVICE — dist and dev profile alike", () => {
+    expect(serviceUnder({ CLOVER_HOME: temp, CLOVER_KEYCHAIN_SERVICE: "com.waifucave.clover.core.test-iso" })).toBe("com.waifucave.clover.core.test-iso");
+    expect(serviceUnder({ CLOVER_HOME: temp, CLOVER_PROFILE: "dev", CLOVER_KEYCHAIN_SERVICE: "com.waifucave.clover.core.test-iso" })).toBe("com.waifucave.clover.core.test-iso");
   });
 
   test("no override, or no explicit home: the profile's own service (unchanged)", () => {
-    expect(serviceUnder({ WINTER_HOME: temp })).toBe("com.winter.core");
-    expect(serviceUnder({ WINTER_KEYCHAIN_SERVICE: "com.winter.core.test-iso" })).toBe("com.winter.core");
-    expect(serviceUnder({ WINTER_PROFILE: "dev", WINTER_KEYCHAIN_SERVICE: "com.winter.core.test-iso" })).toBe("com.winter.core.dev");
+    expect(serviceUnder({ CLOVER_HOME: temp })).toBe("com.waifucave.clover.core");
+    expect(serviceUnder({ CLOVER_KEYCHAIN_SERVICE: "com.waifucave.clover.core.test-iso" })).toBe("com.waifucave.clover.core");
+    expect(serviceUnder({ CLOVER_PROFILE: "dev", CLOVER_KEYCHAIN_SERVICE: "com.waifucave.clover.core.test-iso" })).toBe("com.waifucave.clover.core.dev");
   });
 
   test("the profile's DEFAULT home is never redirected by the env var", () => {
-    expect(serviceUnder({ WINTER_HOME: join(homedir(), ".winter-dev"), WINTER_PROFILE: "dev", WINTER_KEYCHAIN_SERVICE: "com.winter.core.test-iso" })).toBe("com.winter.core.dev");
-    expect(serviceUnder({ WINTER_HOME: join(homedir(), ".winter"), WINTER_KEYCHAIN_SERVICE: "com.winter.core.test-iso" })).toBe("com.winter.core");
+    expect(serviceUnder({ CLOVER_HOME: join(homedir(), ".clover-dev"), CLOVER_PROFILE: "dev", CLOVER_KEYCHAIN_SERVICE: "com.waifucave.clover.core.test-iso" })).toBe("com.waifucave.clover.core.dev");
+    expect(serviceUnder({ CLOVER_HOME: join(homedir(), ".clover"), CLOVER_KEYCHAIN_SERVICE: "com.waifucave.clover.core.test-iso" })).toBe("com.waifucave.clover.core");
   });
 });

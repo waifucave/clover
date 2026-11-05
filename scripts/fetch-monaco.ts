@@ -2,7 +2,7 @@
  * Vendors Monaco (the code editor VS Code is built on) into apple/Winter/vendor/monaco/
  * (gitignored -- ~13MB uncompressed) the way scripts/fetch-cef.ts vendors CEF: pinned,
  * hash-verified, extracted, stamped for idempotency. Run once after cloning, or whenever
- * MONACO_VERSION below is deliberately bumped. apple/Winter/project.yml's Winter target carries
+ * MONACO_VERSION below is deliberately bumped. apple/Winter/project.yml's Clover target carries
  * a preBuildScripts check that fails the Xcode build loudly, naming this exact command, if the
  * vendored tree is missing.
  *
@@ -27,7 +27,7 @@
  * --- Artifact choice: min/vs only, not esm/dev/min-maps ---
  * The published package contains several build shapes (esm/, dev/, min/, min-maps/). Only
  * min/vs/ is vendored here: the minified AMD build that runs from static files via vs/loader.js
- * -- what the CEF-hosted local page loads (the `winter-editor://` custom scheme), no bundler in
+ * -- what the CEF-hosted local page loads (the `clover-editor://` custom scheme), no bundler in
  * between. package/LICENSE travels
  * with it for the same reason CEF's LICENSE.txt does: a licence obligation, not a convenience
  * (see the "Embed Monaco editor assets" phase in project.yml).
@@ -136,7 +136,7 @@ if (FORCE) {
 // Download, verify, extract, place. Everything transient lives under one temp dir that is
 // always removed on the way out, success or failure (mirrors scripts/fetch-cef.ts).
 // ---------------------------------------------------------------------------
-const tmp = mkdtempSync(join(tmpdir(), "winter-monaco-"));
+const tmp = mkdtempSync(join(tmpdir(), "clover-monaco-"));
 // fail() calls process.exit(), which does NOT unwind the stack -- the `finally` below never
 // runs on that path (same trap fetch-cef.ts documents). Every fail() called from inside this
 // try must go through here first, or a failure leaks a temp dir with a partial download.
@@ -205,7 +205,7 @@ try {
   }
   if (!existsSync(licenseSrc)) {
     failTmp(
-      `extracted package is missing "LICENSE" -- Winter.app is required to ship this notice.\n` +
+      `extracted package is missing "LICENSE" -- Clover.app is required to ship this notice.\n` +
         `Do not work around this by dropping the copy.`,
     );
   }

@@ -6,7 +6,7 @@ import {
   LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, ERR, SessionEvent,
   PANEL_URL_MAX_LENGTH, PANEL_TITLE_MAX_LENGTH,
   PANEL_COMMAND_ARGS_MAX_JSON_BYTES, PANEL_COMMAND_RESULT_MAX_LENGTH, type WritableSocket,
-} from "@yanlinglabs/winter-protocol";
+} from "@waifucave/clover-protocol";
 import { startIpcServer, REMOTE_ALLOWED_METHODS } from "../../src/ipc/server";
 import { PanelCommandRegistry } from "../../src/panel/commands";
 import { SessionStore } from "../../src/sessions/store";
@@ -80,7 +80,7 @@ describe("panel RPC methods (panel-shell T6)", () => {
   async function boot(): Promise<{
     store: SessionStore; socketPath: string; harnessToken: string; remoteToken: string;
   }> {
-    const home = mkdtempSync(join(tmpdir(), "winter-panel-methods-rpc-"));
+    const home = mkdtempSync(join(tmpdir(), "clover-panel-methods-rpc-"));
     const store = new SessionStore(home);
     const hub = new SessionHub(store);
     const socketPath = join(home, "core.sock");
@@ -655,7 +655,7 @@ describe("panel.commandResult (B2 T2)", () => {
     store: SessionStore; hub: SessionHub; registry: PanelCommandRegistry; logs: string[];
     socketPath: string; harnessToken: string; remoteToken: string;
   }> {
-    const home = mkdtempSync(join(tmpdir(), "winter-panel-cmdresult-"));
+    const home = mkdtempSync(join(tmpdir(), "clover-panel-cmdresult-"));
     const store = new SessionStore(home);
     const hub = new SessionHub(store);
     const logs: string[] = [];
@@ -765,7 +765,7 @@ describe("panel.commandResult (B2 T2)", () => {
   });
 
   test("a server built WITHOUT a registry refuses every result rather than throwing", async () => {
-    const home = mkdtempSync(join(tmpdir(), "winter-panel-noreg-"));
+    const home = mkdtempSync(join(tmpdir(), "clover-panel-noreg-"));
     const store = new SessionStore(home);
     const hub = new SessionHub(store);
     const socketPath = join(home, "core.sock");
@@ -814,14 +814,14 @@ describe("panel.commandResult (B2 T2)", () => {
     hub.attach({ clientName: "spy", deliver: (e) => { seen.push(e); return true; } }, sessionId, 0);
 
     const { commandId } = registry.dispatch({
-      sessionId, action: "type", tabId: "t1", args: { selector: "#q", text: "winter" }, deadlineMs: 5000,
+      sessionId, action: "type", tabId: "t1", args: { selector: "#q", text: "clover" }, deadlineMs: 5000,
     });
 
     const live = seen.find((e) => e.type === "panel_command");
     expect(live).toBeTruthy();
     expect(live.commandId).toBe(commandId);
     expect(live.action).toBe("type");
-    expect(live.args).toEqual({ selector: "#q", text: "winter" });
+    expect(live.args).toEqual({ selector: "#q", text: "clover" });
     expect(store.read(sessionId).some((e) => e.type === "panel_command")).toBe(false);
     c.close();
   });

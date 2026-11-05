@@ -48,7 +48,7 @@ describe("browsers.history()", () => {
     const r = h.run();
     const pending = h.engine.global(r.scope, "browsers.history", { browser: "chrome" });
     await new Promise((res) => setTimeout(res, 10));
-    expect(h.cards.map((c) => c.summary)).toEqual(["Allow Winter to use Google Chrome (com.google.Chrome)?"]);
+    expect(h.cards.map((c) => c.summary)).toEqual(["Allow Clover to use Google Chrome (com.google.Chrome)?"]);
     r.end();
     await pending.catch(() => undefined);
   });

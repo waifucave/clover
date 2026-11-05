@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { basename, join } from "node:path";
-import { ApprovalPolicy } from "@yanlinglabs/winter-protocol";
+import { ApprovalPolicy } from "@waifucave/clover-protocol";
 import { PermissionGate } from "../../src/agent/gate";
 import { connectorVerdict, type ConnectorPermission } from "../../src/agent/mcp/connector-permissions";
 import * as hostPolicy from "../../src/cowork/host-policy";
@@ -213,7 +213,7 @@ test("fail-closed shape: plan x Bash is a distinct verdict that is not \"allow\"
   for (const tool of TOOLS.filter(name => name !== "Read")) for (const path of PATHS) expect(decide({ policy: "plan", tool, path }).verdict).not.toBe("allow");
 });
 
-test("outputs and `.winter` scratch (the conversation's OWN folders): read everywhere, write exactly like an admitted root - plan Deny included", () => {
+test("outputs and `.clover` scratch (the conversation's OWN folders): read everywhere, write exactly like an admitted root - plan Deny included", () => {
   for (const policy of POLICIES) for (const alreadyAuthorized of [false, true]) {
     for (const path of ["outputs", "scratch"] as const) {
       expect(decide({ policy, tool: "Read", path, alreadyAuthorized })).toMatchObject({ verdict: "allow", reason: "policy_table" });
@@ -359,7 +359,7 @@ test("wired behind the refusal: only the transition module, the instruction owne
   expect(readFileSync(join(packages, "core", "src", "index.ts"), "utf8")).not.toMatch(/host-policy|policy-transition|from "\.\/cowork/);
   const own = readFileSync(module, "utf8");
   expect([...own.matchAll(/^import (type )?[^;]*from "([^"]+)"/gm)].map(match => `${match[1] ? "type " : ""}${match[2]}`).sort())
-    .toEqual(["type ../agent/mcp/connector-permissions", "type ./types", "type @yanlinglabs/winter-protocol"]);
+    .toEqual(["type ../agent/mcp/connector-permissions", "type ./types", "type @waifucave/clover-protocol"]);
   expect(own).not.toMatch(/^import (?!type )/m);
   expect(Object.keys(hostPolicy).sort()).toEqual(["COWORK_APPROVAL_POLICIES", "COWORK_GUEST_TOOL_CLASSES", "COWORK_PATH_CLASSES", "coworkConnectorVerdict", "coworkHostDecision", "isCoworkApprovalPolicy"]);
   // No clock, no I/O, no environment: the module is a table and two functions.

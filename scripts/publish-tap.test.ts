@@ -23,7 +23,7 @@ afterAll(() => {
   for (const d of temps.splice(0)) rmSync(d, { recursive: true, force: true });
 });
 function tempFile(content: string): string {
-  const dir = mkdtempSync(join(tmpdir(), "winter-publish-tap-test-"));
+  const dir = mkdtempSync(join(tmpdir(), "clover-publish-tap-test-"));
   temps.push(dir);
   const path = join(dir, "cask.rb");
   writeFileSync(path, content);
@@ -34,8 +34,8 @@ describe("tapPlan", () => {
   test("names both cask paths, keyed off the given version", () => {
     const plan = tapPlan("0.111.0");
     expect(plan).toHaveLength(2);
-    expect(plan[0]!.repoPath).toBe("Casks/winter.rb");
-    expect(plan[0]!.localPath).toContain("out/release/0.111.0/winter.rb");
+    expect(plan[0]!.repoPath).toBe("Casks/clover.rb");
+    expect(plan[0]!.localPath).toContain("out/release/0.111.0/clover.rb");
     expect(plan[1]!.repoPath).toBe("Casks/norma.rb");
     expect(plan[1]!.localPath).toContain("packaging/norma-deprecated.rb");
   });
@@ -47,7 +47,7 @@ describe("tapPlan", () => {
 
 describe("commitMessageFor", () => {
   test("ends with the Claude-Session trailer", () => {
-    expect(commitMessageFor("Casks/winter.rb")).toMatch(/Claude-Session: https:\/\/claude\.ai\/code\/session_/);
+    expect(commitMessageFor("Casks/clover.rb")).toMatch(/Claude-Session: https:\/\/claude\.ai\/code\/session_/);
   });
   test("names the exact file being published", () => {
     expect(commitMessageFor("Casks/norma.rb")).toContain("Casks/norma.rb");
@@ -56,16 +56,16 @@ describe("commitMessageFor", () => {
 
 describe("putArgsFor", () => {
   test("base64-encodes the content and targets the right repo/path", () => {
-    const args = putArgsFor("Casks/winter.rb", "cask \"winter\" do\nend\n", undefined);
+    const args = putArgsFor("Casks/clover.rb", "cask \"clover\" do\nend\n", undefined);
     expect(args).toEqual([
       "api",
       "-X",
       "PUT",
-      `repos/${TAP_REPO}/contents/Casks/winter.rb`,
+      `repos/${TAP_REPO}/contents/Casks/clover.rb`,
       "-f",
-      `message=${commitMessageFor("Casks/winter.rb")}`,
+      `message=${commitMessageFor("Casks/clover.rb")}`,
       "-f",
-      `content=${Buffer.from("cask \"winter\" do\nend\n", "utf8").toString("base64")}`,
+      `content=${Buffer.from("cask \"clover\" do\nend\n", "utf8").toString("base64")}`,
     ]);
   });
 
@@ -84,7 +84,7 @@ describe("putArgsFor", () => {
 describe("currentSha", () => {
   test("returns the sha when gh succeeds with a nonempty value", () => {
     const runner: GhRunner = () => "deadbeef\n";
-    expect(currentSha(runner, "Casks/winter.rb")).toBe("deadbeef");
+    expect(currentSha(runner, "Casks/clover.rb")).toBe("deadbeef");
   });
 
   test("returns undefined when gh throws (404 — the cask does not exist yet)", () => {
@@ -96,7 +96,7 @@ describe("currentSha", () => {
 
   test("treats an empty jq result the same as absent, rather than an empty-string sha", () => {
     const runner: GhRunner = () => "";
-    expect(currentSha(runner, "Casks/winter.rb")).toBeUndefined();
+    expect(currentSha(runner, "Casks/clover.rb")).toBeUndefined();
   });
 
   test("queries the exact repo/path this release publishes to", () => {
@@ -105,25 +105,25 @@ describe("currentSha", () => {
       calls.push(args);
       return "sha1\n";
     };
-    currentSha(runner, "Casks/winter.rb");
-    expect(calls).toEqual([["api", `repos/${TAP_REPO}/contents/Casks/winter.rb`, "--jq", ".sha"]]);
+    currentSha(runner, "Casks/clover.rb");
+    expect(calls).toEqual([["api", `repos/${TAP_REPO}/contents/Casks/clover.rb`, "--jq", ".sha"]]);
   });
 });
 
 describe("publishFile", () => {
   test("fetches the current sha, then PUTs with it included (updating an existing cask)", () => {
-    const localPath = tempFile("cask \"winter\" do\nend\n");
+    const localPath = tempFile("cask \"clover\" do\nend\n");
     const calls: string[][] = [];
     const runner: GhRunner = (args) => {
       calls.push(args);
       if (args[0] === "api" && args.length === 4) return "existing-sha\n"; // the sha lookup
       return ""; // the PUT itself
     };
-    publishFile(runner, { repoPath: "Casks/winter.rb", localPath });
+    publishFile(runner, { repoPath: "Casks/clover.rb", localPath });
 
     expect(calls).toHaveLength(2);
-    expect(calls[0]).toEqual(["api", `repos/${TAP_REPO}/contents/Casks/winter.rb`, "--jq", ".sha"]);
-    expect(calls[1]).toEqual(putArgsFor("Casks/winter.rb", "cask \"winter\" do\nend\n", "existing-sha"));
+    expect(calls[0]).toEqual(["api", `repos/${TAP_REPO}/contents/Casks/clover.rb`, "--jq", ".sha"]);
+    expect(calls[1]).toEqual(putArgsFor("Casks/clover.rb", "cask \"clover\" do\nend\n", "existing-sha"));
   });
 
   test("omits sha on a brand-new cask (the sha lookup 404s)", () => {
@@ -177,10 +177,10 @@ describe("findUnfilledTemplateSlot", () => {
 
 describe("renderDryRunEntry — fix wave M3 (whole-branch review, Major)", () => {
   test("prints the full content when there is no unfilled slot", () => {
-    const localPath = tempFile('cask "winter" do\nend\n');
-    const entry = renderDryRunEntry({ repoPath: "Casks/winter.rb", localPath });
-    expect(entry).toContain("Casks/winter.rb");
-    expect(entry).toContain('cask "winter" do');
+    const localPath = tempFile('cask "clover" do\nend\n');
+    const entry = renderDryRunEntry({ repoPath: "Casks/clover.rb", localPath });
+    expect(entry).toContain("Casks/clover.rb");
+    expect(entry).toContain('cask "clover" do');
     expect(entry).not.toContain("REFUSED");
   });
 
@@ -194,7 +194,7 @@ describe("renderDryRunEntry — fix wave M3 (whole-branch review, Major)", () =>
   });
 
   test("prints the 'missing on disk' note when the file does not exist yet — never a false refusal", () => {
-    const entry = renderDryRunEntry({ repoPath: "Casks/winter.rb", localPath: join(tmpdir(), "winter-publish-tap-test-does-not-exist", "winter.rb") });
+    const entry = renderDryRunEntry({ repoPath: "Casks/clover.rb", localPath: join(tmpdir(), "clover-publish-tap-test-does-not-exist", "clover.rb") });
     expect(entry).toContain("missing on disk");
     expect(entry).not.toContain("REFUSED");
   });

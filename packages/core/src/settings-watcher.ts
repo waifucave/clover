@@ -163,7 +163,7 @@ export function namesWatchedFile(filename: string | Buffer | null | undefined, n
 
 /**
  * WS-21: a `watch` seam for a file that may not exist yet and is replaced by atomic rename (both are
- * true of `sdk/settings.json` and `sdk/.winter.json`): watch its PARENT directory and fire on events
+ * true of `sdk/settings.json` and `sdk/.clover.json`): watch its PARENT directory and fire on events
  * naming the file or a temp spelling of it (`namesWatchedFile`). A file watch would fail on a missing
  * file and, on some platforms, go deaf after the first rename replaces the inode it holds.
  */

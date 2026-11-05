@@ -1,4 +1,4 @@
-// A minimal NDJSON JSON-RPC client for the live suite's daemon (the same wire every Winter client speaks): hello as a
+// A minimal NDJSON JSON-RPC client for the live suite's daemon (the same wire every Clover client speaks): hello as a
 // local harness, calls, and every pushed session event kept in order so a scenario can wait for its own.
 import { ConnWriter, encodeLine, LineDecoder, METHODS, PROTOCOL_VERSION, type SessionEvent, type WritableSocket } from "../../packages/protocol/src/index";
 

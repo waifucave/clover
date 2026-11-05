@@ -12,9 +12,9 @@ import { McpOAuthDoors } from "../../../src/agent/mcp/oauth-doors";
 const URL_ = "https://mcp.example.test/mcp";
 
 function homeWith(servers: Record<string, unknown>): string {
-  const home = realpathSync(mkdtempSync(join(tmpdir(), "winter-oauth-doors-")));
+  const home = realpathSync(mkdtempSync(join(tmpdir(), "clover-oauth-doors-")));
   mkdirSync(join(home, "sdk"), { recursive: true });
-  writeFileSync(join(home, "sdk", ".winter.json"), JSON.stringify({ mcpServers: servers }));
+  writeFileSync(join(home, "sdk", ".clover.json"), JSON.stringify({ mcpServers: servers }));
   return home;
 }
 

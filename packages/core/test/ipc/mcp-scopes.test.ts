@@ -1,12 +1,12 @@
-// WS-21 L3.5 (spec §4.4): `winter mcp add` = `claude mcp add` — three scopes, claude's default:
-//   local    `sdk/.winter.json` → `projects[<canonical project root>].mcpServers`   (the default)
-//   user     `sdk/.winter.json` → `mcpServers`
-//   project  `<project root>/.winter/mcp.json`                                     (the repo-root `.mcp.json` is never read)
+// WS-21 L3.5 (spec §4.4): `clover mcp add` = `claude mcp add` — three scopes, claude's default:
+//   local    `sdk/.clover.json` → `projects[<canonical project root>].mcpServers`   (the default)
+//   user     `sdk/.clover.json` → `mcpServers`
+//   project  `<project root>/.clover/mcp.json`                                     (the repo-root `.mcp.json` is never read)
 import { afterEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, type WritableSocket } from "@yanlinglabs/winter-protocol";
+import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, type WritableSocket } from "@waifucave/clover-protocol";
 import { startIpcServer } from "../../src/ipc/server";
 import { SessionStore } from "../../src/sessions/store";
 import { FileSecretStore } from "../../src/auth/secret-store";
@@ -56,8 +56,8 @@ describe("mcp.add / remove / get over the three scopes", () => {
   afterEach(() => { stop?.(); stop = undefined; });
 
   async function boot() {
-    const home = tmp("winter-mcpscope-home-");
-    const project = tmp("winter-mcpscope-proj-");
+    const home = tmp("clover-mcpscope-home-");
+    const project = tmp("clover-mcpscope-proj-");
     saveSettings(join(home, "settings.json"), Settings.parse({ schemaVersion: 3, provider: { model: "codex-oauth/gpt-5.6-sol" } }));
     const trust = new TrustStore(join(home, "trust.json"));
     const mcp = new McpManager({ trust });
@@ -65,16 +65,16 @@ describe("mcp.add / remove / get over the three scopes", () => {
     const socketPath = join(home, "core.sock");
     const authority = new TokenAuthority(new FileSecretStore(join(home, "secrets")));
     const tokens = await authority.ensureTokens();
-    const server = startIpcServer({ socketPath, serverVersion: "test", tokens: authority, store, winterHome: home, secrets: new FileSecretStore(join(home, "s2")), mcp });
+    const server = startIpcServer({ socketPath, serverVersion: "test", tokens: authority, store, cloverHome: home, secrets: new FileSecretStore(join(home, "s2")), mcp });
     const c = await TestClient.connect(socketPath);
     await c.request(METHODS.hello, { protocolVersion: PROTOCOL_VERSION, role: "harness", token: tokens.harness, clientName: "cli" });
     stop = () => { c.close(); server.stop(); store.close(); };
-    const config = (): Record<string, any> => { const p = join(home, "sdk", ".winter.json"); return existsSync(p) ? JSON.parse(readFileSync(p, "utf8")) : {}; };
+    const config = (): Record<string, any> => { const p = join(home, "sdk", ".clover.json"); return existsSync(p) ? JSON.parse(readFileSync(p, "utf8")) : {}; };
     return { home, project, c, config };
   }
   const stdio: { type: "stdio"; command: string; args: string[] } = { type: "stdio", command: "node", args: ["srv.js"] };
 
-  test("mcp.add defaults to LOCAL: sdk/.winter.json projects[<root>].mcpServers", async () => {
+  test("mcp.add defaults to LOCAL: sdk/.clover.json projects[<root>].mcpServers", async () => {
     const { home, project, c, config } = await boot();
     const add = await c.request(METHODS.mcpAdd, { name: "loc", entry: stdio, cwd: project });
     expect(add.result).toEqual({ ok: true, name: "loc", transport: "stdio", started: false, scope: "local" });
@@ -95,11 +95,11 @@ describe("mcp.add / remove / get over the three scopes", () => {
     }
   });
 
-  test("scope project writes <root>/.winter/mcp.json (claude's .mcp.json format) and never the repo root's .mcp.json", async () => {
+  test("scope project writes <root>/.clover/mcp.json (claude's .mcp.json format) and never the repo root's .mcp.json", async () => {
     const { project, c } = await boot();
     const add = await c.request(METHODS.mcpAdd, { name: "team", entry: stdio, scope: "project", cwd: project });
     expect(add.result.scope).toBe("project");
-    expect(JSON.parse(readFileSync(join(project, ".winter", "mcp.json"), "utf8"))).toEqual({ mcpServers: { team: stdio } });
+    expect(JSON.parse(readFileSync(join(project, ".clover", "mcp.json"), "utf8"))).toEqual({ mcpServers: { team: stdio } });
     expect(existsSync(join(project, ".mcp.json"))).toBe(false);
     expect((await c.request(METHODS.mcpGet, { name: "team", scope: "project", cwd: project })).result.found).toBe(true);
     expect((await c.request(METHODS.mcpRemove, { name: "team", scope: "project", cwd: project })).result.removed).toBe(true);
@@ -126,7 +126,7 @@ describe("mcp.add / remove / get over the three scopes", () => {
     expect((await c.request(METHODS.mcpAdd, { name: "legacy", entry: legacy, scope: "project", cwd: project })).result.ok).toBe(true);
     expect(config().projects[project].mcpServers.pinned.versionNegotiation).toEqual({ pin: "2026-07-28" });
     expect(config().mcpServers.auto.versionNegotiation).toBe("auto");
-    expect(JSON.parse(readFileSync(join(project, ".winter", "mcp.json"), "utf8")).mcpServers.legacy.versionNegotiation).toBe("legacy");
+    expect(JSON.parse(readFileSync(join(project, ".clover", "mcp.json"), "utf8")).mcpServers.legacy.versionNegotiation).toBe("legacy");
     // …and mcp.get echoes it back, in every scope.
     expect((await c.request(METHODS.mcpGet, { name: "pinned", scope: "local", cwd: project })).result.versionNegotiation).toEqual({ pin: "2026-07-28" });
     expect((await c.request(METHODS.mcpGet, { name: "auto", scope: "user" })).result.versionNegotiation).toBe("auto");
@@ -161,20 +161,20 @@ describe("mcp.add / remove / get over the three scopes", () => {
 describe("configuredMcpServersFor (WS-21 scopes)", () => {
   const cmd = (command: string) => ({ type: "stdio" as const, command });
 
-  test("a repo-root .mcp.json is ignored; <root>/.winter/mcp.json is read (trusted only)", () => {
-    const project = tmp("winter-mcpscope-cfg-");
+  test("a repo-root .mcp.json is ignored; <root>/.clover/mcp.json is read (trusted only)", () => {
+    const project = tmp("clover-mcpscope-cfg-");
     writeFileSync(join(project, ".mcp.json"), JSON.stringify({ mcpServers: { legacy: { command: "old" } } }));
-    mkdirSync(join(project, ".winter"), { recursive: true });
-    writeFileSync(join(project, ".winter", "mcp.json"), JSON.stringify({ mcpServers: { team: { command: "new" } } }));
+    mkdirSync(join(project, ".clover"), { recursive: true });
+    writeFileSync(join(project, ".clover", "mcp.json"), JSON.stringify({ mcpServers: { team: { command: "new" } } }));
     const trusted = configuredMcpServersFor({ settings: null, cwd: project, trusted: () => true });
     expect(Object.keys(trusted)).toEqual(["team"]);
     expect(configuredMcpServersFor({ settings: null, cwd: project, trusted: () => false })).toEqual({});
   });
 
   test("precedence: local > project > user; mcp.disabled withholds from every tier", () => {
-    const project = tmp("winter-mcpscope-prec-");
-    mkdirSync(join(project, ".winter"), { recursive: true });
-    writeFileSync(join(project, ".winter", "mcp.json"), JSON.stringify({ mcpServers: { a: { command: "project-a" }, b: { command: "project-b" } } }));
+    const project = tmp("clover-mcpscope-prec-");
+    mkdirSync(join(project, ".clover"), { recursive: true });
+    writeFileSync(join(project, ".clover", "mcp.json"), JSON.stringify({ mcpServers: { a: { command: "project-a" }, b: { command: "project-b" } } }));
     const out = configuredMcpServersFor({
       settings: { mcp: { disabled: ["gone"] } } as never,
       userMcpServers: { a: cmd("user-a"), b: cmd("user-b"), c: cmd("user-c"), gone: cmd("user-gone") },
@@ -194,13 +194,13 @@ describe("configuredMcpServersFor (WS-21 scopes)", () => {
 // to be written under a key the run home never reads.
 describe("review I5: localScopeKeyFor", () => {
   function repoWithWorktree(): { main: string; wt: string } {
-    const main = tmp("winter-i5-main-");
+    const main = tmp("clover-i5-main-");
     const git = (...args: string[]) => expect(Bun.spawnSync(["git", "-C", main, ...args]).exitCode).toBe(0);
     git("init", "-q");
     writeFileSync(join(main, "f"), "x");
     git("add", "f");
     git("commit", "-q", "-m", "init");
-    const wt = join(tmp("winter-i5-wtparent-"), "wt");
+    const wt = join(tmp("clover-i5-wtparent-"), "wt");
     git("worktree", "add", "-q", "-b", "side", wt);
     return { main, wt: realpathSync(wt) };
   }
@@ -216,19 +216,19 @@ describe("review I5: localScopeKeyFor", () => {
   });
 
   test("outside a repository: the realpathed cwd (the router's fallback)", () => {
-    const dir = tmp("winter-i5-norepo-");
+    const dir = tmp("clover-i5-norepo-");
     expect(localScopeKeyFor(dir)).toBe(dir);
   });
 
   test("mcp.add local from a worktree writes under that key; the child reading it is configuredMcpServersFor's local tier", async () => {
     const { wt } = repoWithWorktree();
-    const home = tmp("winter-i5-home-");
+    const home = tmp("clover-i5-home-");
     saveSettings(join(home, "settings.json"), Settings.parse({ schemaVersion: 3, provider: { model: "codex-oauth/gpt-5.6-sol" } }));
     const store = new SessionStore(home);
     const socketPath = join(home, "core.sock");
     const authority = new TokenAuthority(new FileSecretStore(join(home, "secrets")));
     const tokens = await authority.ensureTokens();
-    const server = startIpcServer({ socketPath, serverVersion: "test", tokens: authority, store, winterHome: home, secrets: new FileSecretStore(join(home, "s2")), mcp: new McpManager({ trust: new TrustStore(join(home, "trust.json")) }) });
+    const server = startIpcServer({ socketPath, serverVersion: "test", tokens: authority, store, cloverHome: home, secrets: new FileSecretStore(join(home, "s2")), mcp: new McpManager({ trust: new TrustStore(join(home, "trust.json")) }) });
     try {
       const c = await TestClient.connect(socketPath);
       await c.request(METHODS.hello, { protocolVersion: PROTOCOL_VERSION, role: "harness", token: tokens.harness, clientName: "cli" });
@@ -249,13 +249,13 @@ describe("R.3 residual: MCP project scope from a linked worktree of a trusted re
   afterEach(() => { stop?.(); stop = undefined; });
 
   function bed() {
-    const main = tmp("winter-r3p-main-");
+    const main = tmp("clover-r3p-main-");
     const git = (...args: string[]) => expect(Bun.spawnSync(["git", "-C", main, ...args], { stdout: "ignore", stderr: "ignore" }).exitCode).toBe(0);
     git("init", "-q");
     git("-c", "user.email=t@t.test", "-c", "user.name=t", "commit", "--allow-empty", "-q", "-m", "i");
-    const wt = join(tmp("winter-r3p-wtparent-"), "wt");
+    const wt = join(tmp("clover-r3p-wtparent-"), "wt");
     git("worktree", "add", "-q", "-b", `r3p-${Math.random().toString(16).slice(2)}`, wt);
-    const home = tmp("winter-r3p-home-");
+    const home = tmp("clover-r3p-home-");
     mkdirSync(join(home, "sdk"), { recursive: true });
     saveSettings(join(home, "settings.json"), Settings.parse({ schemaVersion: 3, provider: { model: "codex-oauth/gpt-5.6-sol" } }));
     const trust = new TrustStore(join(home, "trust.json"));
@@ -267,28 +267,28 @@ describe("R.3 residual: MCP project scope from a linked worktree of a trusted re
     const socketPath = join(home, "core.sock");
     const authority = new TokenAuthority(new FileSecretStore(join(home, "secrets")));
     const tokens = await authority.ensureTokens();
-    const server = startIpcServer({ socketPath, serverVersion: "test", tokens: authority, store, winterHome: home, secrets: new FileSecretStore(join(home, "s2")), trust, mcp: new McpManager({ trust }) });
+    const server = startIpcServer({ socketPath, serverVersion: "test", tokens: authority, store, cloverHome: home, secrets: new FileSecretStore(join(home, "s2")), trust, mcp: new McpManager({ trust }) });
     const c = await TestClient.connect(socketPath);
     await c.request(METHODS.hello, { protocolVersion: PROTOCOL_VERSION, role: "harness", token: tokens.harness, clientName: "cli" });
     stop = () => { c.close(); server.stop(); store.close(); };
     return c;
   }
-  /** Every MCP server name a BUILT run home for `cwd` hands its child (`<run>/.winter.json`). */
+  /** Every MCP server name a BUILT run home for `cwd` hands its child (`<run>/.clover.json`). */
   async function runHomeServers(home: string, trust: TrustStore, cwd: string): Promise<string[]> {
     const rh = await buildRunHome(runHomeInputFor({ home, trust, settings: () => null, reservedMcpServerNames: [] }, { mode: "code", dispatchChild: false, leg: "winter", cwd }));
     try {
-      const config = JSON.parse(readFileSync(join(rh.dir, ".winter.json"), "utf8")) as { mcpServers?: Record<string, unknown>; projects?: Record<string, { mcpServers?: Record<string, unknown> }> };
+      const config = JSON.parse(readFileSync(join(rh.dir, ".clover.json"), "utf8")) as { mcpServers?: Record<string, unknown>; projects?: Record<string, { mcpServers?: Record<string, unknown> }> };
       return [...new Set([...Object.keys(config.mcpServers ?? {}), ...Object.values(config.projects ?? {}).flatMap((p) => Object.keys(p.mcpServers ?? {}))])].sort();
     } finally { await rh.dispose(); }
   }
   const stdio = { type: "stdio" as const, command: "node", args: ["srv.js"] };
 
-  test("mcp.add --scope project writes the WORKTREE's .winter/mcp.json, and the worktree's built run home lists the server", async () => {
+  test("mcp.add --scope project writes the WORKTREE's .clover/mcp.json, and the worktree's built run home lists the server", async () => {
     const b = bed();
     const c = await serve(b.home, b.trust);
     expect((await c.request(METHODS.mcpAdd, { name: "wtsrv", entry: stdio, scope: "project", cwd: b.wt })).result?.ok).toBe(true);
-    expect(Object.keys(JSON.parse(readFileSync(join(b.wt, ".winter", "mcp.json"), "utf8")).mcpServers)).toEqual(["wtsrv"]);
-    expect(existsSync(join(b.main, ".winter", "mcp.json"))).toBe(false);
+    expect(Object.keys(JSON.parse(readFileSync(join(b.wt, ".clover", "mcp.json"), "utf8")).mcpServers)).toEqual(["wtsrv"]);
+    expect(existsSync(join(b.main, ".clover", "mcp.json"))).toBe(false);
     expect((await c.request(METHODS.mcpGet, { name: "wtsrv", scope: "project", cwd: b.wt })).result.found).toBe(true);
     expect(await runHomeServers(b.home, b.trust, b.wt)).toContain("wtsrv");
     // the daemon's own reader of the project tier (a session with no run home) reads the same file
@@ -296,12 +296,12 @@ describe("R.3 residual: MCP project scope from a linked worktree of a trusted re
     expect((await c.request(METHODS.mcpRemove, { name: "wtsrv", scope: "project", cwd: b.wt })).result.removed).toBe(true);
   });
 
-  test("from the MAIN checkout nothing changes: its own .winter/mcp.json, its own run home", async () => {
+  test("from the MAIN checkout nothing changes: its own .clover/mcp.json, its own run home", async () => {
     const b = bed();
     const c = await serve(b.home, b.trust);
     expect((await c.request(METHODS.mcpAdd, { name: "mainsrv", entry: stdio, scope: "project", cwd: b.main })).result?.ok).toBe(true);
-    expect(Object.keys(JSON.parse(readFileSync(join(b.main, ".winter", "mcp.json"), "utf8")).mcpServers)).toEqual(["mainsrv"]);
-    expect(existsSync(join(b.wt, ".winter", "mcp.json"))).toBe(false);
+    expect(Object.keys(JSON.parse(readFileSync(join(b.main, ".clover", "mcp.json"), "utf8")).mcpServers)).toEqual(["mainsrv"]);
+    expect(existsSync(join(b.wt, ".clover", "mcp.json"))).toBe(false);
     expect(await runHomeServers(b.home, b.trust, b.main)).toContain("mainsrv");
     expect(await runHomeServers(b.home, b.trust, b.wt)).not.toContain("mainsrv");
     expect(Object.keys(configuredMcpServersFor({ settings: null, cwd: b.main, trusted: (d) => b.trust.isTrusted(d) }))).toEqual(["mainsrv"]);

@@ -1,7 +1,7 @@
-// WS-25 (MCP OAuth): `winter mcp login|logout|set-secret` — `mcp-cli.ts`'s routes, with a scripted daemon
+// WS-25 (MCP OAuth): `clover mcp login|logout|set-secret` — `mcp-cli.ts`'s routes, with a scripted daemon
 // door and fake in-process doors (no socket, no Keychain, no browser, no network).
 import { describe, expect, test } from "bun:test";
-import { METHODS } from "@yanlinglabs/winter-protocol";
+import { METHODS } from "@waifucave/clover-protocol";
 import { runMcpLoginRoute, runMcpLogoutRoute, runMcpSetSecretRoute, renderMcpAuthOutcome, mcpAuthNote, type McpAuthDeps, type McpAuthLocalDoors, type McpAuthRpcDoor } from "../src/mcp-cli";
 
 function rpcError(message: string, data: Record<string, unknown>): Error {
@@ -42,7 +42,7 @@ function deps(over: Partial<McpAuthDeps> = {}): McpAuthDeps & { printed: string[
   return out as never;
 }
 
-describe("winter mcp login (WS-25)", () => {
+describe("clover mcp login (WS-25)", () => {
   test("through the daemon: login with the cwd, show the issuer, open the browser, poll to done", async () => {
     let polls = 0;
     const door = scriptedDoor((method) => {
@@ -121,7 +121,7 @@ describe("winter mcp login (WS-25)", () => {
   });
 });
 
-describe("winter mcp logout (WS-25)", () => {
+describe("clover mcp logout (WS-25)", () => {
   test("--forget-client reaches the wire; an unknown option is a usage error", async () => {
     const door = scriptedDoor(() => ({ ok: true }));
     expect(await runMcpLogoutRoute(["linear", "--forget-client"], deps({ door }))).toEqual({ ok: true, kind: "logout", name: "linear", via: "daemon" });
@@ -135,7 +135,7 @@ describe("winter mcp logout (WS-25)", () => {
   });
 });
 
-describe("winter mcp set-secret (WS-25, fix round 1: confirm the issuer BEFORE the secret)", () => {
+describe("clover mcp set-secret (WS-25, fix round 1: confirm the issuer BEFORE the secret)", () => {
   const SECRET = "the-client-secret-VALUE";
   const ISSUER = "https://github.com/login/oauth";
 
@@ -211,10 +211,10 @@ describe("winter mcp set-secret (WS-25, fix round 1: confirm the issuer BEFORE t
   });
 });
 
-describe("winter mcp list's auth note (WS-25)", () => {
+describe("clover mcp list's auth note (WS-25)", () => {
   test("signed-in / needs sign-in with the issuer origin; none and absent print nothing", () => {
     expect(mcpAuthNote({ auth: "signed-in", oauthIssuerOrigin: "https://as" })).toBe("signed in at https://as");
-    expect(mcpAuthNote({ auth: "needs-auth" })).toBe("needs sign-in (winter mcp login)");
+    expect(mcpAuthNote({ auth: "needs-auth" })).toBe("needs sign-in (clover mcp login)");
     expect(mcpAuthNote({ auth: "none" })).toBe("");
     expect(mcpAuthNote({})).toBe("");
   });
@@ -257,12 +257,12 @@ describe("the non-interactive doors (an agent's `!` shell): set-secret --from-cl
     expect(door.calls.map((c) => c.method)).toEqual([METHODS.mcpClientSecretIssuer]);
   });
 
-  test("the re-run hint names the command actually used (winter-dev on the dev profile)", async () => {
-    const d = deps({ door: secretDoor(), clipboard: fakeClipboard(SECRET), ...noAsk, commandName: "winter-dev" });
+  test("the re-run hint names the command actually used (clover-dev on the dev profile)", async () => {
+    const d = deps({ door: secretDoor(), clipboard: fakeClipboard(SECRET), ...noAsk, commandName: "clover-dev" });
     const outcome = await runMcpSetSecretRoute(["gh", "--from-clipboard"], d);
-    expect((outcome as { message: string }).message).toContain(`re-run: winter-dev mcp set-secret gh --from-clipboard --issuer ${ISSUER}`);
+    expect((outcome as { message: string }).message).toContain(`re-run: clover-dev mcp set-secret gh --from-clipboard --issuer ${ISSUER}`);
     const plain = await runMcpSetSecretRoute(["gh", "--from-clipboard"], deps({ door: secretDoor(), clipboard: fakeClipboard(SECRET), ...noAsk }));
-    expect((plain as { message: string }).message).toContain("re-run: winter mcp set-secret gh");
+    expect((plain as { message: string }).message).toContain("re-run: clover mcp set-secret gh");
   });
 
   test("a --issuer that is not the discovered one is refused before the clipboard is touched", async () => {

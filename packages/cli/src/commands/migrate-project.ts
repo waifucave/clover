@@ -1,4 +1,4 @@
-// `winter migrate-project [dir]` (P9c Task M step 9) — thin wrapper over
+// `clover migrate-project [dir]` (P9c Task M step 9) — thin wrapper over
 // `planProjectMigration`/`runProjectMigration`; same "provable outside main.ts's argv switch"
 // precedent as `migrate.ts`'s own header.
 import {
@@ -6,14 +6,14 @@ import {
   planProjectMigration,
   runProjectMigration,
   type ProjectMigrationPlan,
-} from "@yanlinglabs/winter-core";
+} from "@waifucave/clover-core";
 
 export interface MigrateProjectCommandDeps {
-  /** `process.argv.slice(3)` — everything after `winter migrate-project`. */
+  /** `process.argv.slice(3)` — everything after `clover migrate-project`. */
   argv: string[];
   cwd: string;
-  /** WS-21: the Winter home whose old approved-rules record ("Allow … in this project" answers) is folded
-   *  into the project's `.winter/settings.local.json`. Absent: that step is not planned. */
+  /** WS-21: the Clover home whose old approved-rules record ("Allow … in this project" answers) is folded
+   *  into the project's `.clover/settings.local.json`. Absent: that step is not planned. */
   home?: string;
   log: (line: string) => void;
   error: (line: string) => void;
@@ -42,21 +42,21 @@ export async function runMigrateProjectCommand(deps: MigrateProjectCommandDeps):
 
   let plan: ProjectMigrationPlan;
   try {
-    plan = planProjectMigration(dir, deps.home === undefined ? {} : { winterHome: deps.home });
+    plan = planProjectMigration(dir, deps.home === undefined ? {} : { cloverHome: deps.home });
   } catch (err) {
     if (err instanceof ProjectMigrationRefused) {
-      deps.error(`winter migrate-project: ${err.message}`);
+      deps.error(`clover migrate-project: ${err.message}`);
       return 1;
     }
     throw err;
   }
 
   if (plan.steps.length === 0) {
-    deps.log(`winter migrate-project: nothing to migrate in ${dir}`);
+    deps.log(`clover migrate-project: nothing to migrate in ${dir}`);
     return 0;
   }
 
-  deps.log(`winter migrate-project: plan for ${dir}`);
+  deps.log(`clover migrate-project: plan for ${dir}`);
   printPlan(plan, deps.log);
 
   if (!yes && !(await deps.confirm("Apply this plan? [y/N] "))) {
@@ -66,14 +66,14 @@ export async function runMigrateProjectCommand(deps: MigrateProjectCommandDeps):
 
   try {
     const { skippedRules } = runProjectMigration(plan);
-    if (skippedRules.length > 0) deps.log(`winter migrate-project: ${skippedRules.length} saved rule(s) have no claude spelling that is not wider, and were left out: ${skippedRules.join(", ")}`);
+    if (skippedRules.length > 0) deps.log(`clover migrate-project: ${skippedRules.length} saved rule(s) have no claude spelling that is not wider, and were left out: ${skippedRules.join(", ")}`);
   } catch (err) {
     if (err instanceof ProjectMigrationRefused) {
-      deps.error(`winter migrate-project: ${err.message}`);
+      deps.error(`clover migrate-project: ${err.message}`);
       return 1;
     }
     throw err;
   }
-  deps.log(`winter migrate-project: done`);
+  deps.log(`clover migrate-project: done`);
   return 0;
 }

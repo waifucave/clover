@@ -6,7 +6,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, type WritableSocket } from "@yanlinglabs/winter-protocol";
+import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, type WritableSocket } from "@waifucave/clover-protocol";
 import { startIpcServer, REMOTE_ALLOWED_METHODS } from "../../src/ipc/server";
 import { SessionStore } from "../../src/sessions/store";
 import { FileSecretStore } from "../../src/auth/secret-store";
@@ -62,19 +62,19 @@ describe("settings.setSkillDenied + skills.list denial overlay", () => {
   afterEach(() => { stop?.(); stop = undefined; });
 
   async function boot() {
-    const home = mkdtempSync(join(tmpdir(), "winter-skill-denied-"));
+    const home = mkdtempSync(join(tmpdir(), "clover-skill-denied-"));
     saveSettings(join(home, "settings.json"), Settings.parse({ schemaVersion: 3, provider: { model: "codex-oauth/gpt-5.6-sol" } }));
     // WS-21: the user tier lives in the store home (`storeHomeFor`: `<home>/sdk` on a run-home build).
     mkdirSync(join(storeHomeFor(home), "skills", "my-skill"), { recursive: true });
     writeFileSync(join(storeHomeFor(home), "skills", "my-skill", "SKILL.md"), "---\nname: my-skill\ndescription: a test skill\n---\n\nBody.");
     const trust = new TrustStore(join(home, "trust.json"));
-    const skills = new SkillStore({ winterHome: home, trust });
+    const skills = new SkillStore({ cloverHome: home, trust });
     const store = new SessionStore(home);
     const socketPath = join(home, "core.sock");
     const secrets = new FileSecretStore(join(home, "secrets"));
     const authority = new TokenAuthority(secrets);
     const tokens = await authority.ensureTokens();
-    const server = startIpcServer({ socketPath, serverVersion: "test", tokens: authority, store, winterHome: home, secrets, skills });
+    const server = startIpcServer({ socketPath, serverVersion: "test", tokens: authority, store, cloverHome: home, secrets, skills });
     stop = () => { server.stop(); store.close(); };
     return { home, socketPath, harnessToken: tokens.harness };
   }
@@ -150,7 +150,7 @@ describe("settings.setSkillDenied + skills.list denial overlay", () => {
   // pure transform.
   // WS-21: the RPC no longer writes settings.json at all, so a v2-shaped file is simply left alone.
   test("succeeds against a v2-shaped settings.json on disk (BLOCKER), which it leaves untouched", async () => {
-    const home = mkdtempSync(join(tmpdir(), "winter-skill-denied-v2-"));
+    const home = mkdtempSync(join(tmpdir(), "clover-skill-denied-v2-"));
     writeFileSync(join(home, "settings.json"), JSON.stringify({
       schemaVersion: 2,
       provider: { type: "codex-oauth", model: "codex-oauth/gpt-5.6-sol" },
@@ -158,13 +158,13 @@ describe("settings.setSkillDenied + skills.list denial overlay", () => {
     mkdirSync(join(home, "skills", "my-skill"), { recursive: true });
     writeFileSync(join(home, "skills", "my-skill", "SKILL.md"), "---\nname: my-skill\ndescription: a test skill\n---\n\nBody.");
     const trust = new TrustStore(join(home, "trust.json"));
-    const skills = new SkillStore({ winterHome: home, trust });
+    const skills = new SkillStore({ cloverHome: home, trust });
     const store = new SessionStore(home);
     const socketPath = join(home, "core.sock");
     const secrets = new FileSecretStore(join(home, "secrets"));
     const authority = new TokenAuthority(secrets);
     const tokens = await authority.ensureTokens();
-    const server = startIpcServer({ socketPath, serverVersion: "test", tokens: authority, store, winterHome: home, secrets, skills });
+    const server = startIpcServer({ socketPath, serverVersion: "test", tokens: authority, store, cloverHome: home, secrets, skills });
     stop = () => { server.stop(); store.close(); };
 
     const c = await TestClient.connect(socketPath);

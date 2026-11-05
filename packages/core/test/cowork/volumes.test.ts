@@ -15,7 +15,7 @@ const capacities = { data: RAW_VOLUME_MIN_BYTES, environment: RAW_VOLUME_MIN_BYT
 const proof = {}, stopProof = {};
 const authority: CoworkVolumeAuthority = { authorize: (_action, input) => input.proof === proof, verifyStopped: (_input, stop) => stop.proof === stopProof };
 function fixture(backup?: CoworkVolumeBackup, checkpoint?: (phase: string) => void) {
-  const home = mkdtempSync(join(tmpdir(), "winter-raw-volumes-")); homes.push(home);
+  const home = mkdtempSync(join(tmpdir(), "clover-raw-volumes-")); homes.push(home);
   const db = openRuntimeStateDb(home); databases.push(db);
   const repository = new CoworkRepository(db); repository.homeIdentity();
   const made = repository.create({ principalId: "fixture-user", requestId: "create" }, { ownership: "project", title: "Fixture", sources: [{ kind: "folder", label: "Fixture", access: "read-write", detail: { grantRef: "fixture-grant", rootIdentity: "fixture-root" } }], ceiling: { toolClasses: [], hostServices: [], connectors: [], network: "none" } });
@@ -126,7 +126,7 @@ test("backup path replacement during exclusion refuses; recorded old inode remai
   expect(statSync(`${f.image()}-saved`).size).toBe(0); expect(readFileSync(f.image()).toString()).toBe("injected replacement");
 });
 test("current schema upgrades an old host-only v7 home; empty downgrade preserves native state and populated volumes refuse", () => {
-  const emptyHome = mkdtempSync(join(tmpdir(), "winter-volume-schema-")); homes.push(emptyHome);
+  const emptyHome = mkdtempSync(join(tmpdir(), "clover-volume-schema-")); homes.push(emptyHome);
   let db = openRuntimeStateDb(emptyHome); db.close();
   expect(downgradeCoworkRuntimeStateToV7(emptyHome)).toEqual({ from: RUNTIME_STATE_SCHEMA_VERSION, to: 7 });
   db = openRuntimeStateDb(emptyHome); expect(db.schemaVersion()).toBe(RUNTIME_STATE_SCHEMA_VERSION); expect(db.db.query("SELECT count(*) AS n FROM cowork_volumes").get()).toEqual({ n: 0 }); db.close();
@@ -164,7 +164,7 @@ test("v8 authority upgrades without reidentifying a workspace, and a genuinely e
   const upgraded = openRuntimeStateDb(f.home); databases.push(upgraded);
   expect(upgraded.schemaVersion()).toBe(RUNTIME_STATE_SCHEMA_VERSION); expect(new CoworkRepository(upgraded).homeIdentity()).toBe(homeId);
   expect(new CoworkRepository(upgraded).get(f.request.workspaceId).workspaceId).toBe(f.request.workspaceId);
-  const emptyHome = mkdtempSync(join(tmpdir(), "winter-v8-volume-rollback-")); homes.push(emptyHome);
+  const emptyHome = mkdtempSync(join(tmpdir(), "clover-v8-volume-rollback-")); homes.push(emptyHome);
   const empty = openRuntimeStateDb(emptyHome); empty.db.run("DROP TABLE cowork_volumes"); empty.db.run("DROP TABLE cowork_volume_directories"); empty.db.run("PRAGMA user_version=8"); empty.close();
   expect(downgradeCoworkRuntimeStateToV7(emptyHome)).toEqual({ from: 8, to: 7 });
 });

@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { NewSessionEvent, PANEL_COMMAND_ACTIONS, PanelCommandResultParams } from "@yanlinglabs/winter-protocol";
+import type { NewSessionEvent, PANEL_COMMAND_ACTIONS, PanelCommandResultParams } from "@waifucave/clover-protocol";
 
 // ================================================================================================
 // B2 Task 2 — the pending-command registry: the daemon's half of the `panel_command` /

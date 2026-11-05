@@ -4,7 +4,7 @@
 //  - the agent SDK's plugin API (`manage.ts`, through `plugins/plugin-manager.ts`) and its write discipline (F15) —
 //    install from a directory marketplace, enable/disable writes `enabledPlugins`, list shows the
 //    installed set;
-//  - the narrowed manifest (`agent/plugin-manifest.ts`) parses winter-plugin.json's EXTRAS ONLY
+//  - the narrowed manifest (`agent/plugin-manifest.ts`) parses clover-plugin.json's EXTRAS ONLY
 //    (tier, permissions, contributes.{tools,shortcuts,tile,provider}, entry) and warns once, never
 //    throws, when a manifest still carries the OLD SDK-level keys (skills, mcpServers, agents, hooks)
 //    that now live in claude's own plugin layout;
@@ -42,7 +42,7 @@ function writeMarketplace(dir: string, plugins: Array<{ name: string; source: st
 }
 
 beforeEach(() => {
-  home = mkdtempSync(join(tmpdir(), "winter-ws21-plugins-"));
+  home = mkdtempSync(join(tmpdir(), "clover-ws21-plugins-"));
   pluginsRoot = join(home, "sdk", "plugins");
   userSettingsPath = join(home, "sdk", "settings.json");
   marketplaceDir = join(home, "local-marketplace");
@@ -115,8 +115,8 @@ describe("installPluginFromDirectory: 'install means addMarketplace + installPlu
 
 describe("the narrowed manifest: extras only, old SDK-level keys ignored with one warning", () => {
   test("a manifest with only extras parses with no warning", () => {
-    const dir = mkdtempSync(join(tmpdir(), "winter-plugin-manifest-"));
-    writeFileSync(join(dir, "winter-plugin.json"), JSON.stringify({
+    const dir = mkdtempSync(join(tmpdir(), "clover-plugin-manifest-"));
+    writeFileSync(join(dir, "clover-plugin.json"), JSON.stringify({
       id: "p", tier: "platform", permissions: { exec: true },
       contributes: { tools: true, tile: true }, entry: { command: "bun", args: ["index.ts"] },
     }));
@@ -129,8 +129,8 @@ describe("the narrowed manifest: extras only, old SDK-level keys ignored with on
   });
 
   test("a manifest carrying old SDK-level keys (skills, mcpServers, agents, hooks) still parses its extras, with exactly one warning naming the ignored keys", () => {
-    const dir = mkdtempSync(join(tmpdir(), "winter-plugin-manifest-"));
-    writeFileSync(join(dir, "winter-plugin.json"), JSON.stringify({
+    const dir = mkdtempSync(join(tmpdir(), "clover-plugin-manifest-"));
+    writeFileSync(join(dir, "clover-plugin.json"), JSON.stringify({
       id: "p", tier: "capability",
       contributes: {
         tools: true,
@@ -158,15 +158,15 @@ describe("the narrowed manifest: extras only, old SDK-level keys ignored with on
 });
 
 describe("PluginStore (sync): list shows extras for an installed, enabled plugin", () => {
-  test("list() reports the extras winter-plugin.json declares", async () => {
-    writeFileSync(join(marketplaceDir, "plugins", "p", "winter-plugin.json"), JSON.stringify({
+  test("list() reports the extras clover-plugin.json declares", async () => {
+    writeFileSync(join(marketplaceDir, "plugins", "p", "clover-plugin.json"), JSON.stringify({
       id: "p", tier: "platform", permissions: { exec: true, hardware: ["battery"] },
       contributes: { tools: true, tile: true }, entry: { command: "bun", args: ["index.ts"] },
     }));
     await addMarketplace(options, marketplaceDir);
     await installPlugin(options, "p@m", "user");
 
-    const store = new PluginStore({ winterHome: home });
+    const store = new PluginStore({ cloverHome: home });
     const [info] = store.list();
     expect(info?.name).toBe("p");
     expect(info?.tier).toBe("platform");
@@ -180,7 +180,7 @@ describe("PluginStore (sync): list shows extras for an installed, enabled plugin
     await installPlugin(options, "p@m", "user");
     await setPluginEnabled(options, "p@m", "user", false);
 
-    const store = new PluginStore({ winterHome: home });
+    const store = new PluginStore({ cloverHome: home });
     const [info] = store.list();
     expect(info?.disabled).toBe(true);
     expect(info?.mcpEnabled).toBe(false);

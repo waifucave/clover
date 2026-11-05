@@ -1,5 +1,5 @@
 // Daemon settings surface (2026-09-17 plan, item 3): the daemon's own `<home>/agents/*.md` parser
-// (agent-definitions.ts) — a reimplementation of the winter-agent-sdk runtime's internal
+// (agent-definitions.ts) — a reimplementation of the clover-sdk runtime's internal
 // (unexported) frontmatter parser, since the official leg has no way to see the directory itself.
 import { describe, expect, test } from "bun:test";
 import { mkdtempSync, mkdirSync, writeFileSync, symlinkSync } from "node:fs";
@@ -11,7 +11,7 @@ import {
 import { storeHomeFor } from "../../src/agent/paths";
 
 function tmpHome(): string {
-  return mkdtempSync(join(tmpdir(), "winter-agent-defs-"));
+  return mkdtempSync(join(tmpdir(), "clover-agent-defs-"));
 }
 
 function writeAgentFile(home: string, filename: string, content: string): void {
@@ -21,7 +21,7 @@ function writeAgentFile(home: string, filename: string, content: string): void {
 }
 
 function writeProjectAgentFile(cwd: string, filename: string, content: string): void {
-  const dir = join(cwd, ".winter", "agents");
+  const dir = join(cwd, ".clover", "agents");
   mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, filename), content);
 }
@@ -138,7 +138,7 @@ describe("parseAgentDefinitionFile", () => {
   // optional field, a VALID `permissionMode` is exactly as dangerous as an invalid one (the pinned
   // runtime honours a definition's own mode over the session's whenever the session's is
   // `default`/`dontAsk`/`plan`, and self-sets `allowDangerouslySkipPermissions` for `bypassPermissions`
-  // specifically), and both `<home>/agents` and a trusted project's `.winter/agents` are plain files a
+  // specifically), and both `<home>/agents` and a trusted project's `.clover/agents` are plain files a
   // session under `ask`/`auto`/`accept-edits` can write for itself.
   test("permissionMode is stripped even when the value is a real PermissionMode (security, finding 2b)", () => {
     for (const mode of ["bypassPermissions", "acceptEdits", "plan", "dontAsk", "auto", "default"]) {
@@ -214,7 +214,7 @@ describe("loadUserAgentDefinitions", () => {
 });
 
 describe("loadProjectAgentDefinitions", () => {
-  test("a missing .winter/agents directory yields zero definitions, never an error", () => {
+  test("a missing .clover/agents directory yields zero definitions, never an error", () => {
     const cwd = tmpHome();
     const { definitions, rejected } = loadProjectAgentDefinitions(cwd);
     expect(definitions).toEqual({});
@@ -229,22 +229,22 @@ describe("loadProjectAgentDefinitions", () => {
     expect(definitions["project-reviewer"]!.description).toBe("reviews from the project");
   });
 
-  test("a symlinked .winter is refused — treated as no project agents at all", () => {
+  test("a symlinked .clover is refused — treated as no project agents at all", () => {
     const real = tmpHome();
-    const decoy = mkdtempSync(join(tmpdir(), "winter-agent-defs-decoy-"));
+    const decoy = mkdtempSync(join(tmpdir(), "clover-agent-defs-decoy-"));
     writeProjectAgentFile(decoy, "sneaky.md", agentMd("sneaky"));
-    symlinkSync(join(decoy, ".winter"), join(real, ".winter"));
+    symlinkSync(join(decoy, ".clover"), join(real, ".clover"));
     const { definitions, rejected } = loadProjectAgentDefinitions(real);
     expect(definitions).toEqual({});
     expect(rejected).toEqual([]);
   });
 
-  test("a symlinked .winter/agents directory is refused the same way", () => {
+  test("a symlinked .clover/agents directory is refused the same way", () => {
     const cwd = tmpHome();
-    const decoyAgents = mkdtempSync(join(tmpdir(), "winter-agent-defs-decoy-agents-"));
+    const decoyAgents = mkdtempSync(join(tmpdir(), "clover-agent-defs-decoy-agents-"));
     writeFileSync(join(decoyAgents, "sneaky.md"), agentMd("sneaky"));
-    mkdirSync(join(cwd, ".winter"), { recursive: true });
-    symlinkSync(decoyAgents, join(cwd, ".winter", "agents"));
+    mkdirSync(join(cwd, ".clover"), { recursive: true });
+    symlinkSync(decoyAgents, join(cwd, ".clover", "agents"));
     const { definitions } = loadProjectAgentDefinitions(cwd);
     expect(definitions).toEqual({});
   });
@@ -253,8 +253,8 @@ describe("loadProjectAgentDefinitions", () => {
     const cwd = tmpHome();
     const outside = tmpHome();
     writeFileSync(join(outside, "planted.md"), agentMd("planted"));
-    mkdirSync(join(cwd, ".winter", "agents"), { recursive: true });
-    symlinkSync(join(outside, "planted.md"), join(cwd, ".winter", "agents", "planted.md"));
+    mkdirSync(join(cwd, ".clover", "agents"), { recursive: true });
+    symlinkSync(join(outside, "planted.md"), join(cwd, ".clover", "agents", "planted.md"));
     const { definitions, rejected } = loadProjectAgentDefinitions(cwd);
     expect(definitions).toEqual({});
     expect(rejected).toEqual([]); // skipped silently, same as any other unreadable entry — never a rejection

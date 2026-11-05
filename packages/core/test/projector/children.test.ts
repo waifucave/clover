@@ -68,7 +68,7 @@ describe("projector/children: a spawned subagent's thread", () => {
     expect(out[1]).toMatchObject({ agentType: "general-purpose" });
   });
 
-  test("`Agent`, `Task` and the projected Winter name all count as spawning tools", () => {
+  test("`Agent`, `Task` and the projected Clover name all count as spawning tools", () => {
     expect(isSpawnTool("Agent")).toBe(true);
     expect(isSpawnTool("Task")).toBe(true);
     expect(isSpawnTool("spawn_agent")).toBe(true);

@@ -1,13 +1,13 @@
 // WS-25 (MCP OAuth, security review M4): is the Client ID Metadata Document an authorization server fetches
-// for Winter the one this repository says it is?
+// for Clover the one this repository says it is?
 //
 //   bun run scripts/check-cimd-live.ts
 //
 // The agent SDK's `WINTER_MCP_CLIENT_METADATA_URL` names https://yanlinglabs.com/winter/oauth-client.json as
-// Winter's OAuth client_id; an authorization server that supports CIMD reads the redirect URIs Winter may use
+// Clover's OAuth client_id; an authorization server that supports CIMD reads the redirect URIs Clover may use
 // from THAT document. It is served by the Cloudflare Worker in `infra/winter-oauth-client/`, from the committed
 // `src/oauth-client.json`. A drift between the two -- a stale deploy, a hand edit on the zone, a hijacked route
-// -- would change where an authorization server lets Winter's sign-ins land, so this compares them: the live
+// -- would change where an authorization server lets Clover's sign-ins land, so this compares them: the live
 // document must DEEP-EQUAL the committed one, and its `client_id` must be the URL it is served from (the CIMD
 // rule an authorization server checks too).
 //

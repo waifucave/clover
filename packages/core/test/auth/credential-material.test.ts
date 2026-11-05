@@ -20,12 +20,12 @@ import { OPENAI_API_KEY_SECRET } from "../../src/providers/manager";
 import { createHostCredentialBroker, sessionCredentialAllowlist } from "../../src/runtime-sdk/host-credentials";
 
 function store(): FileSecretStore {
-  return new FileSecretStore(mkdtempSync(join(tmpdir(), "winter-cred-material-")));
+  return new FileSecretStore(mkdtempSync(join(tmpdir(), "clover-cred-material-")));
 }
 
 // -------------------------------------------------------------------------------------------
-// mirror of winter-agent-sdk v0.0.4 keychain-store.ts coerceMaterial — the child's parser; not
-// exported. Copied here (api-key + oauth arms only, the only two Winter ever writes) so this test
+// mirror of clover-sdk v0.0.4 keychain-store.ts coerceMaterial — the child's parser; not
+// exported. Copied here (api-key + oauth arms only, the only two Clover ever writes) so this test
 // verifies the ACTUAL contract the spawned child enforces, independent of our own module's
 // internal validation, which could drift from the child's without anyone noticing.
 // -------------------------------------------------------------------------------------------
@@ -49,14 +49,14 @@ function coerceMaterial(value: unknown): CredentialMaterial | undefined {
           }
         : undefined;
     // (bearer / aws / gcp arms omitted here — no test below exercises a bearer round-trip through
-    // this file's own coerceMaterial mirror yet, even though Winter's console-broker DOES write
+    // this file's own coerceMaterial mirror yet, even though Clover's console-broker DOES write
     // "bearer" material as of Winter Phase 10a; see the tripwire test's own comment above)
     default:
       return undefined;
   }
 }
 
-/** Mirror of winter-agent-sdk v0.0.32 keychain-store.ts `parseStoredCredentialMaterial` (not exported):
+/** Mirror of clover-sdk v0.0.32 keychain-store.ts `parseStoredCredentialMaterial` (not exported):
  *  the child's parse of a credential string the HOST answered over `credential_resolve`. */
 function parseStoredMaterialMirror(raw: string): CredentialMaterial {
   let parsed: unknown;
@@ -70,7 +70,7 @@ function parseStoredMaterialMirror(raw: string): CredentialMaterial {
   return material;
 }
 
-describe("child-parser contract (winter-agent-sdk coerceMaterial)", () => {
+describe("child-parser contract (clover-sdk coerceMaterial)", () => {
   test("WS-25 §7: what the daemon's credential_resolve answers for a stored oauth record parses on the child (refresh token withheld), and an api key too", async () => {
     const s = store();
     await new CodexAuthStore(s).save({
@@ -90,7 +90,7 @@ describe("child-parser contract (winter-agent-sdk coerceMaterial)", () => {
     expect(() => parseStoredMaterialMirror("{not json")).toThrow("malformed");
   });
 
-  test("tripwire (hotfix review r1, m2): the installed winter-agent-sdk is the version the coerceMaterial mirror above was copied from — re-diff it on a bump", () => {
+  test("tripwire (hotfix review r1, m2): the installed clover-sdk is the version the coerceMaterial mirror above was copied from — re-diff it on a bump", () => {
     // the coerceMaterial mirror above was copied from this version — re-diff it on a bump
     const req = createRequire(import.meta.url);
     const pkgPath = req.resolve("@yanlinglabs/winter-agent-sdk/package.json");
@@ -103,7 +103,7 @@ describe("child-parser contract (winter-agent-sdk coerceMaterial)", () => {
     // line-by-line account stands unchanged and nothing in the mirror needed to move.
     //
     // this mirror WAS re-diffed at 0.0.11, line by line, against a local sibling checkout of the
-    // `winter-agent-sdk` repo (branch main, commit 4f76696, `package.json` version 0.0.11) —
+    // `clover-sdk` repo (branch main, commit 4f76696, `package.json` version 0.0.11) —
     // `packages/runtime/src/provider/keychain-store.ts`'s own `coerceMaterial` (its
     // `MATERIAL_KINDS` at line 124, the function at lines 134-171).
     // Confirmed semantically identical to this file's mirror (lines 32-56) for every arm the mirror
@@ -114,7 +114,7 @@ describe("child-parser contract (winter-agent-sdk coerceMaterial)", () => {
     // P10a-4 comment there names the exact same host-brokered-Console-refresh reason this repo's
     // `credential-material.ts` doc gives for the same field). The only divergence is the SDK's
     // `aws`/`gcp-service-account`/`gcp-access-token` arms, which this mirror deliberately omits
-    // (falls through to `default: undefined`, matching the child's own refusal for a kind Winter
+    // (falls through to `default: undefined`, matching the child's own refusal for a kind Clover
     // never sends) — an intentional narrowing already documented above, not a drift. Re-diff again
     // on the next bump.
     //
@@ -149,7 +149,7 @@ describe("child-parser contract (winter-agent-sdk coerceMaterial)", () => {
     // published): `git diff v0.0.17 v0.0.20 -- packages/runtime/src/provider/keychain-store.ts` came
     // back EMPTY (0 lines); the mirror stands unchanged.
     //
-    // 0.0.20 → 0.0.22 (WS-21, the shared ~/.winter/sdk home; 0.0.21 was tagged but its release CI
+    // 0.0.20 → 0.0.22 (WS-21, the shared ~/.clover/sdk home; 0.0.21 was tagged but its release CI
     // failed on pre-existing, unrelated defects and was never published): `git diff v0.0.20 v0.0.22
     // -- packages/runtime/src/provider/keychain-store.ts` came back EMPTY (0 lines); the mirror
     // stands unchanged.

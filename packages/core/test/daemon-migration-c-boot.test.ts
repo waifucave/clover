@@ -28,7 +28,7 @@ afterEach(async () => {
   setRunHomeSupportForTests(undefined);
 });
 
-const parentDir = (): string => realpathSync(mkdtempSync(join(tmpdir(), "winter-migc-boot-")));
+const parentDir = (): string => realpathSync(mkdtempSync(join(tmpdir(), "clover-migc-boot-")));
 
 function seedOldLayout(home: string): void {
   mkdirSync(join(home, "projects", "-Users-x-app", "memory"), { recursive: true });
@@ -52,7 +52,7 @@ describe("Migration C at boot (run-home router)", () => {
   test("the default home in the old layout migrates: phase 1 at boot, phase 2 at the late site, then boots", async () => {
     setRunHomeSupportForTests(true);
     const parent = parentDir();
-    const home = join(parent, ".winter");
+    const home = join(parent, ".clover");
     seedOldLayout(home);
     daemon = await boot(home, parent);
     expect(lstatSync(join(home, "projects")).isSymbolicLink()).toBe(true);
@@ -68,7 +68,7 @@ describe("Migration C at boot (run-home router)", () => {
   test("a preflight refusal on the default home refuses BOOT, typed, and moves nothing", async () => {
     setRunHomeSupportForTests(true);
     const parent = parentDir();
-    const home = join(parent, ".winter");
+    const home = join(parent, ".clover");
     seedOldLayout(home);
     mkdirSync(join(home, "sdk", "projects"), { recursive: true });
     writeFileSync(join(home, "sdk", "projects", "stray.jsonl"), "x"); // sdk/ already has content
@@ -88,7 +88,7 @@ describe("Migration C at boot (run-home router)", () => {
     let caught: unknown;
     try { daemon = await boot(home, parent); } catch (err) { caught = err; }
     expect((caught as MigrationCRefused).code).toBe("sdk_home_migration_required");
-    expect((caught as Error).message).toContain("winter migrate --sdk-home --home");
+    expect((caught as Error).message).toContain("clover migrate --sdk-home --home");
     expect(lstatSync(join(home, "projects")).isSymbolicLink()).toBe(false);
   });
 
@@ -128,19 +128,19 @@ describe("Migration C at boot (run-home router)", () => {
     expect((readSdkSettings(home) as Record<string, any>).permissions.allow).toEqual(["Bash(ls)"]);
   });
 
-  test("the dev profile's default home (~/.winter-dev, by homedirOverride) migrates the same way", async () => {
+  test("the dev profile's default home (~/.clover-dev, by homedirOverride) migrates the same way", async () => {
     setRunHomeSupportForTests(true);
-    const prior = process.env.WINTER_PROFILE;
-    process.env.WINTER_PROFILE = "dev";
+    const prior = process.env.CLOVER_PROFILE;
+    process.env.CLOVER_PROFILE = "dev";
     try {
       const parent = parentDir();
-      const home = join(parent, ".winter-dev");
+      const home = join(parent, ".clover-dev");
       seedOldLayout(home);
       daemon = await boot(home, parent);
       expect(lstatSync(join(home, "projects")).isSymbolicLink()).toBe(true);
       expect(migrationCState(home)).toMatchObject({ kind: "parsed", manifest: { status: "complete" } });
     } finally {
-      if (prior === undefined) delete process.env.WINTER_PROFILE; else process.env.WINTER_PROFILE = prior;
+      if (prior === undefined) delete process.env.CLOVER_PROFILE; else process.env.CLOVER_PROFILE = prior;
     }
   });
 
@@ -148,7 +148,7 @@ describe("Migration C at boot (run-home router)", () => {
   test("a home left phase1-complete whose phase 2 cannot finish refuses BOOT (no socket, no session), and says why", async () => {
     setRunHomeSupportForTests(true);
     const parent = parentDir();
-    const home = join(parent, ".winter");
+    const home = join(parent, ".clover");
     seedOldLayout(home);
     mkdirSync(join(home, "runtimes", "claude-config", "projects", "-Users-x-app"), { recursive: true });
     writeFileSync(join(home, "runtimes", "claude-config", "projects", "-Users-x-app", "s-official.jsonl"), '{"type":"user"}\n');
@@ -226,14 +226,14 @@ describe("Migration C at boot (run-home router)", () => {
 
   for (const spool of [true, false]) test(`round 4: a crashed official resume's staging root is reconciled BEFORE the re-key — its tail reaches the canonical transcript, no orphan (${spool ? "phase 2 at the late site" : "no spool: phase 2 must still wait for the sweep"})`, async () => {
     setRunHomeSupportForTests(true);
-    const scanBefore = process.env.WINTER_CLAUDE_RESUME_SCAN_ROOT;
-    const scan = realpathSync(mkdtempSync(join(tmpdir(), "winter-r4-scan-")));
-    process.env.WINTER_CLAUDE_RESUME_SCAN_ROOT = scan;
+    const scanBefore = process.env.CLOVER_CLAUDE_RESUME_SCAN_ROOT;
+    const scan = realpathSync(mkdtempSync(join(tmpdir(), "clover-r4-scan-")));
+    process.env.CLOVER_CLAUDE_RESUME_SCAN_ROOT = scan;
     try {
       const parent = parentDir();
-      const home = join(parent, ".winter");
+      const home = join(parent, ".clover");
       seedOldLayout(home);
-      const real = realpathSync(mkdtempSync(join(tmpdir(), "winter-r4-real-")));
+      const real = realpathSync(mkdtempSync(join(tmpdir(), "clover-r4-real-")));
       const link = join(parent, "proj-link");
       symlinkSync(real, link);
       const rawKey = transcriptProjectKey(link);
@@ -261,7 +261,7 @@ describe("Migration C at boot (run-home router)", () => {
         transcript_health, compatibility_level, conformance_corpus_version, version_provenance, created_at, updated_at, state, selection_json)
         VALUES (?, 'claude-agent', ?, 'anthropic', 'anthropic/claude-x', ?, ?, ?, ?, 'clean', 'agent-state', 'c1', 'recorded', 't', 't', 'idle', ?)`,
         [sid, B, join(home, "projects", rawKey), rawKey, rawKey, rawKey, JSON.stringify({ runtimeKind: "claude-agent", providerId: "anthropic", modelRef: "anthropic/claude-x", family: "claude", authFamily: "api-key", reason: "r", decidedAt: "t" })]);
-      rs.db.run("INSERT INTO directory_entries (address, entry_json, updated_at) VALUES (?, ?, 't')", [`winter://session/${sid}`, JSON.stringify({ objectKind: "session", configDir: staging })]);
+      rs.db.run("INSERT INTO directory_entries (address, entry_json, updated_at) VALUES (?, ?, 't')", [`clover://session/${sid}`, JSON.stringify({ objectKind: "session", configDir: staging })]);
       rs.close();
       daemon = await startDaemon({
         home, secrets: new FileSecretStore(join(parent, "secrets")), agentProvider: null,
@@ -273,14 +273,14 @@ describe("Migration C at boot (run-home router)", () => {
       expect(existsSync(join(home, "sdk", "projects", rawKey, `${B}.jsonl`))).toBe(false);   // no orphan
       expect(existsSync(staging)).toBe(false);
     } finally {
-      if (scanBefore === undefined) delete process.env.WINTER_CLAUDE_RESUME_SCAN_ROOT; else process.env.WINTER_CLAUDE_RESUME_SCAN_ROOT = scanBefore;
+      if (scanBefore === undefined) delete process.env.CLOVER_CLAUDE_RESUME_SCAN_ROOT; else process.env.CLOVER_CLAUDE_RESUME_SCAN_ROOT = scanBefore;
     }
   });
 
   test("router 0.0.11 (no run homes): the old layout is left exactly as it is", async () => {
     setRunHomeSupportForTests(false);
     const parent = parentDir();
-    const home = join(parent, ".winter");
+    const home = join(parent, ".clover");
     seedOldLayout(home);
     daemon = await boot(home, parent);
     expect(lstatSync(join(home, "projects")).isSymbolicLink()).toBe(false);

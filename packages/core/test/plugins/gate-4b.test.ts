@@ -137,7 +137,7 @@ describe("4b gate: circuit breaker (5 real crashes)", () => {
     async () => {
       const pluginName = "sample-echo";
       const pluginId = pluginSpecFor(pluginName); // WS-24: live plugins are keyed by their spec
-      const home = mkdtempSync(join(tmpdir(), "winter-gate-4b-circuit-"));
+      const home = mkdtempSync(join(tmpdir(), "clover-gate-4b-circuit-"));
       installSampleEcho(home, pluginName);
       const settings = writeAndLoadSettings(home, pluginName);
       const socketPath = join(home, "core.sock");
@@ -211,7 +211,7 @@ describe("4b gate: orphan reclaim across a simulated core restart", () => {
     async () => {
       const pluginName = "sample-echo";
       const pluginId = pluginSpecFor(pluginName); // WS-24: live plugins are keyed by their spec
-      const home = mkdtempSync(join(tmpdir(), "winter-gate-4b-reclaim-"));
+      const home = mkdtempSync(join(tmpdir(), "clover-gate-4b-reclaim-"));
       installSampleEcho(home, pluginName);
       const settings = writeAndLoadSettings(home, pluginName);
       const socketPath = join(home, "core.sock");
@@ -300,7 +300,7 @@ describe("4b gate: orphan reclaim across a simulated core restart", () => {
     async () => {
       const pluginName = "sample-echo-dead";
       const pluginId = pluginSpecFor(pluginName); // WS-24: live plugins are keyed by their spec
-      const home = mkdtempSync(join(tmpdir(), "winter-gate-4b-reclaim-dead-"));
+      const home = mkdtempSync(join(tmpdir(), "clover-gate-4b-reclaim-dead-"));
       const dir = installSampleEcho(home, pluginName);
       const settings = writeAndLoadSettings(home, pluginName);
       const socketPath = join(home, "core.sock");
@@ -315,8 +315,8 @@ describe("4b gate: orphan reclaim across a simulated core restart", () => {
         cwd: dir,
         env: {
           ...process.env,
-          WINTER_SOCKET: join(home, "unused.sock"), WINTER_PLUGIN_TOKEN: "unused",
-          WINTER_PLUGIN_ID: pluginId, WINTER_PLUGIN_DIR: dir,
+          CLOVER_SOCKET: join(home, "unused.sock"), CLOVER_PLUGIN_TOKEN: "unused",
+          CLOVER_PLUGIN_ID: pluginId, CLOVER_PLUGIN_DIR: dir,
         },
         stdout: "ignore", stderr: "ignore", stdin: "ignore",
       });

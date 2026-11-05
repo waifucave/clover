@@ -1,10 +1,10 @@
 // Daemon settings surface (2026-09-17 plan, item 3): the daemon becomes the SINGLE SOURCE for
-// `<home>/agents/*.md` subagent definitions. Agent SDK 0.0.16's Winter runtime already parses this
-// exact directory itself (`packages/runtime/src/subagents/definitions.ts` in the winter-agent-sdk
+// `<home>/agents/*.md` subagent definitions. Agent SDK 0.0.16's Clover runtime already parses this
+// exact directory itself (`packages/runtime/src/subagents/definitions.ts` in the clover-sdk
 // repo — NOT exported from the published `@yanlinglabs/winter-agent-sdk` package, so it cannot be
-// imported here). So the daemon reads and parses the directory ITSELF (mirroring the Winter runtime's
+// imported here). So the daemon reads and parses the directory ITSELF (mirroring the Clover runtime's
 // own field-for-field rules, verbatim where they're stated) and passes the result as
-// `Options.agents` — see `runtime-sdk/mode-options.ts`'s `buildWinterOptions`. (Until WS-23 the same
+// `Options.agents` — see `runtime-sdk/mode-options.ts`'s `buildCloverOptions`. (Until WS-23 the same
 // map also reached the retired official `claude` leg.)
 //
 // This is a REIMPLEMENTATION, not a copy — the source lives in a sibling repository this package
@@ -15,7 +15,7 @@
 // Daemon settings surface batch 3 (item 1, PRECEDENCE FIX): batch 2 shipped ONLY the user tier
 // (`<home>/agents/*.md`) wired straight onto `Options.agents` — the SDK's PROGRAMMATIC tier, the
 // HIGHEST precedence there is. That inverted the SDK's own ordering: a trusted project's own
-// `.winter/agents/*.md` (the project's filesystem tier) used to win over a same-named user agent,
+// `.clover/agents/*.md` (the project's filesystem tier) used to win over a same-named user agent,
 // and under batch 2 it silently lost instead. `loadProjectAgentDefinitions` below adds the project
 // tier (TRUST-GATED, never looser than `ProjectSettingsResolver`'s own gate — see its own doc for
 // why the extra lstat symlink guards exist here and not in `SkillStore`: an agent definition's
@@ -100,7 +100,7 @@ function toEffortValue(raw: string): NonNullable<AgentDefinition["effort"]> {
   return trimmed as NonNullable<AgentDefinition["effort"]>;
 }
 
-/** A name may not start with `-` (collides with a flag-like spelling) or contain `:` (a Winter/
+/** A name may not start with `-` (collides with a flag-like spelling) or contain `:` (a Clover/
  *  claude reserved separator elsewhere in tool-identity grammar) — the SAME rule the SDK's own
  *  filesystem loader enforces, verbatim. */
 function isValidAgentName(name: string): boolean {
@@ -116,7 +116,7 @@ function isValidAgentName(name: string): boolean {
  *
  * `model` is carried through VERBATIM (never split at a tag boundary) — a frontmatter agent file's
  * `model:` line names whatever model string the runtime SDK itself accepts for `AgentDefinition.model`,
- * which is not the same vocabulary as Winter's own provider-qualified session tags.
+ * which is not the same vocabulary as Clover's own provider-qualified session tags.
  */
 export function parseAgentDefinitionFile(raw: string, path: string): ParsedAgentDefinitionResult {
   const { attrs, body } = parseFrontmatter(raw);
@@ -138,7 +138,7 @@ export function parseAgentDefinitionFile(raw: string, path: string): ParsedAgent
   const isolation = attrs["isolation"];
   // HIGH (fix wave, pre-merge review, finding 2b): `permissionMode` is DROPPED, never carried
   // through to the parsed `AgentDefinition` — a definition file is a plain `.md` under
-  // `<home>/agents` or a trusted project's `<cwd>/.winter/agents`, and BOTH are writable by an
+  // `<home>/agents` or a trusted project's `<cwd>/.clover/agents`, and BOTH are writable by an
   // ordinary session under `ask`/`auto`/`accept-edits` (there is no write fence on either directory
   // before this fix — see `mode-options.ts`'s `controlPlaneDenyRules`, extended in the same fix, for
   // that half). The pinned runtime honours a definition's OWN `permissionMode` over the session's
@@ -180,7 +180,7 @@ export interface LoadedAgentDefinitions {
 /** lstat-based (never follows a final symlink) directory check — see this module's own header for
  *  why the project tier gets this rigor: an agent definition's `permissionMode`/`tools` fields are
  *  themselves a permission grant, the same class of surface `ProjectSettingsResolver` guards this
- *  way for `.winter/settings*.json`. */
+ *  way for `.clover/settings*.json`. */
 function isRealDir(path: string): boolean {
   try { return lstatSync(path).isDirectory(); } catch { return false; }
 }
@@ -192,7 +192,7 @@ function isRealFile(path: string): boolean {
 }
 
 /**
- * Scans one `agents/` directory (either `<home>/agents` or a project's `<cwd>/.winter/agents`),
+ * Scans one `agents/` directory (either `<home>/agents` or a project's `<cwd>/.clover/agents`),
  * returning every valid definition (keyed by its frontmatter `name`) plus every rejected file with
  * its reason. Defensive throughout: a missing directory yields zero definitions and zero rejections
  * (never an error); an unreadable individual file, or one that is itself a symlink, is skipped
@@ -203,7 +203,7 @@ function isRealFile(path: string): boolean {
  * files reach the next session hot, no restart") is satisfied by construction: the daemon never has
  * a stale snapshot to invalidate. The directory is small (hand-authored `.md` files), so a fresh
  * `readdirSync` + parse per call is the "cheaper correct" choice here, the same call `mode-options.ts`'s
- * `buildWinterOptions` makes at every session incarnation.
+ * `buildCloverOptions` makes at every session incarnation.
  *
  * Returns BOTH `definitions` (a plain `Record<string, AgentDefinition>` — exactly the shape
  * `Options.agents` wants, `mode-options.ts`'s only consumer today) and `sources` (the same data,
@@ -250,28 +250,28 @@ export function userAgentsDir(home: string): string {
  *  no trust gate here, mirroring `SkillStore`'s own user-tier treatment). */
 export function loadUserAgentDefinitions(home: string): LoadedAgentDefinitions {
   // WS-21: user agents live in the store home (`storeHomeFor`) — the same directory this build's
-  // Winter child scans itself.
+  // Clover child scans itself.
   return scanAgentDefinitionsDir(userAgentsDir(home));
 }
 
 /**
- * The PROJECT tier: a TRUSTED project's `<cwd>/.winter/agents/*.md`. Trust is the CALLER's decision
+ * The PROJECT tier: a TRUSTED project's `<cwd>/.clover/agents/*.md`. Trust is the CALLER's decision
  * — this function takes no `TrustStore` and makes no I/O-independent judgment about it; callers
  * gate the call itself (mirrors `configuredMcpServersFor`'s own `trusted: (dir) => boolean` shape,
  * `runtime-sdk/external-mcp.ts`), so a caller that never calls this for an untrusted `cwd` gets the
  * exact same "nothing from this project" result an explicit empty scan would.
  *
- * Symlink refusal mirrors `project-settings.ts`'s own precedent for `.winter`-rooted control-plane
- * surfaces (see this module's header): `<cwd>/.winter` and `<cwd>/.winter/agents` must each be a
+ * Symlink refusal mirrors `project-settings.ts`'s own precedent for `.clover`-rooted control-plane
+ * surfaces (see this module's header): `<cwd>/.clover` and `<cwd>/.clover/agents` must each be a
  * REAL directory (lstat, never resolved through a symlink) or this project's agents are treated as
- * absent — a symlinked `.winter` (or a symlinked `agents` subdirectory) pointing at agent-writable
+ * absent — a symlinked `.clover` (or a symlinked `agents` subdirectory) pointing at agent-writable
  * space elsewhere must never be able to plant a definition that grants itself
  * `permissionMode: bypassPermissions` under a trusted project's name.
  */
 export function loadProjectAgentDefinitions(cwd: string): LoadedAgentDefinitions {
-  const dotWinter = join(cwd, ".winter");
-  if (!isRealDir(dotWinter)) return { definitions: {}, sources: [], rejected: [] };
-  const agentsDir = join(dotWinter, "agents");
+  const dotClover = join(cwd, ".clover");
+  if (!isRealDir(dotClover)) return { definitions: {}, sources: [], rejected: [] };
+  const agentsDir = join(dotClover, "agents");
   if (!isRealDir(agentsDir)) return { definitions: {}, sources: [], rejected: [] };
   return scanAgentDefinitionsDir(agentsDir);
 }
@@ -295,8 +295,8 @@ export interface AgentDefinitionTierRejection extends AgentDefinitionRejection {
 
 /**
  * Restores the SDK's OWN precedence — project wins over user, by name — over the two independently
- * loaded tiers. `optionsMap` is exactly what `Options.agents` should receive on the Winter leg
- * (`mode-options.ts`'s `buildWinterOptions`): project entries first, user entries added only for
+ * loaded tiers. `optionsMap` is exactly what `Options.agents` should receive on the Clover leg
+ * (`mode-options.ts`'s `buildCloverOptions`): project entries first, user entries added only for
  * names the project tier did not already define. `sources`/`rejected` report EVERY entry from BOTH
  * tiers (`agents.list`'s consumer) — project rows first, then every user row (flagged `shadowed`
  * when a same-named project row won), so a losing user definition is visible, not silently merged

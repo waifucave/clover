@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { COWORK_REMOTE_METHODS, COWORK_RPC, ConnWriter, LineDecoder, PROTOCOL_VERSION, encodeLine, type WritableSocket } from "@yanlinglabs/winter-protocol";
+import { COWORK_REMOTE_METHODS, COWORK_RPC, ConnWriter, LineDecoder, PROTOCOL_VERSION, encodeLine, type WritableSocket } from "@waifucave/clover-protocol";
 import { SessionStore } from "../../src/sessions/store";
 import { startDaemon, type RunningDaemon } from "../../src/daemon";
 import { FileSecretStore } from "../../src/auth/secret-store";

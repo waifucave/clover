@@ -30,7 +30,7 @@ export function referenceProblems(source: string, bound: number, named: { worksp
   const problems: string[] = [];
   const cut = (re: RegExp): boolean => { const hit = re.test(code); code = code.replace(re, " "); return hit; };
   // The frame's tab CHARACTER, set before the `tell` (not a tab of anything).
-  cut(/\bset wintertab to tab\b/g);
+  cut(/\bset clovertab to tab\b/g);
   // Variables set from the bound window: `w` (the window) and `ct` (its current tab).
   const wFromBound = new RegExp(`\\bset w to window id ${bound}\\b`).test(code);
   // Finder's proof that its selection is the bound window's (`selectionIsBound`): its frontmost window's id compared

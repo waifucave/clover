@@ -2,7 +2,7 @@
  * RESTORE of a `.winterworkspace` bundle into the workspace it was exported from.
  *
  * What this is. An in-place REPLACEMENT of a stopped workspace's two VM images by an earlier, verified generation, after an
- * explicit confirmation. It is not an import into a different Winter home and not the `workspace.restore` un-archive
+ * explicit confirmation. It is not an import into a different Clover home and not the `workspace.restore` un-archive
  * operation the docs also list. `exports.validateImport` only passes for the same home, an existing workspace and identical
  * volume ids and filesystem UUIDs, so a bundle cannot reconstruct a workspace or move one: "Distinguish relocation/ownership
  * transfer from making a second clone: copied IDs must not permit two owners to attach the same workspace"

@@ -4,7 +4,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { NewSessionEvent } from "@yanlinglabs/winter-protocol";
+import type { NewSessionEvent } from "@waifucave/clover-protocol";
 import { ApprovalBroker } from "../../src/agent/approvals";
 import type { SessionApprovalPolicy } from "../../src/agent/gate";
 import type { AppResolver } from "../../src/computer-use/app-resolve";
@@ -36,7 +36,7 @@ interface WorldOpts {
 }
 
 function world(opts: WorldOpts = {}) {
-  const home = mkdtempSync(join(tmpdir(), "winter-cu-review-"));
+  const home = mkdtempSync(join(tmpdir(), "clover-cu-review-"));
   const fake = new FakeHelper();
   const approvals = new ApprovalBroker();
   const events: NewSessionEvent[] = [];
@@ -132,7 +132,7 @@ describe("C2: nothing is bound or launched before policy has the bundle id", () 
       const w = world({ policy, resolver, answer: (c, b) => b.resolve(c.sessionId, c.callId, false, "orb") });
       const r = await w.run("try { await apps.open('/x/Evil.app') } catch (e) { print(e.name) }");
       expect(text(r)).toContain("NotAllowed");
-      expect(cards(w.events).map((c) => c.summary)).toEqual(["Allow Winter to use Evil (com.evil.app)?"]);
+      expect(cards(w.events).map((c) => c.summary)).toEqual(["Allow Clover to use Evil (com.evil.app)?"]);
       expect(w.fake.calls("target.bind")).toEqual([]);
     }
   }, 30_000);
@@ -155,7 +155,7 @@ describe("C2: nothing is bound or launched before policy has the bundle id", () 
     const w = world({ policy: "ask", resolver, answer: (c, b) => b.resolve(c.sessionId, c.callId, true, "orb") });
     w.fake.handlers["target.bind"] = () => ({ targetId: "tX", app: { name: "Other", bundleId: "com.other.app", pid: 9 }, window: { id: 1, title: "w", frame: [0, 0, 1, 1] } });
     const r = await w.run("try { await apps.open('com.example.tool') } catch (e) { print(e.name, e.message) }");
-    expect(cards(w.events).map((c) => c.summary)).toEqual(["Allow Winter to use Tool (com.example.tool)?"]);
+    expect(cards(w.events).map((c) => c.summary)).toEqual(["Allow Clover to use Tool (com.example.tool)?"]);
     expect(w.fake.calls("target.bind").map((b) => b.app)).toEqual(["com.example.tool"]);
     expect(text(r)).toContain("Refused");
     expect(w.fake.calls("target.release")).toContainEqual({ targetId: "tX" });
@@ -275,12 +275,12 @@ describe("the minors", () => {
 describe("the helper client's single flight and abort", () => {
   test("status() joins a connect in flight (one hello), and an aborted request never connects", async () => {
     const fake = new FakeHelper();
-    const c = new HelperClient({ home: mkdtempSync(join(tmpdir(), "winter-cu-sf-")), profile: "dev", launchAllowed: true, transport: fake.transport, launcher: fake.launcher, verifier: fake.verifier });
+    const c = new HelperClient({ home: mkdtempSync(join(tmpdir(), "clover-cu-sf-")), profile: "dev", launchAllowed: true, transport: fake.transport, launcher: fake.launcher, verifier: fake.verifier });
     await Promise.all([c.ensure(), c.status()]);
     expect(fake.calls("hello")).toHaveLength(1);
     const other = new FakeHelper();
     other.running = false;
-    const c2 = new HelperClient({ home: mkdtempSync(join(tmpdir(), "winter-cu-sf-")), profile: "dev", launchAllowed: true, transport: other.transport, launcher: other.launcher, verifier: other.verifier });
+    const c2 = new HelperClient({ home: mkdtempSync(join(tmpdir(), "clover-cu-sf-")), profile: "dev", launchAllowed: true, transport: other.transport, launcher: other.launcher, verifier: other.verifier });
     const ac = new AbortController();
     ac.abort();
     await expect(c2.request("apps.list", {}, { signal: ac.signal })).rejects.toMatchObject({ code: "cancelled" });
@@ -291,7 +291,7 @@ describe("the helper client's single flight and abort", () => {
 
 describe("attended (the rung-4 card): a Mac harness on the session itself", () => {
   test("the phone does not count, a Dispatch coordinator never does, a window or a terminal does", () => {
-    const home = mkdtempSync(join(tmpdir(), "winter-cu-attended-"));
+    const home = mkdtempSync(join(tmpdir(), "clover-cu-attended-"));
     const store = new SessionStore(home);
     const hub = new SessionHub(store);
     const code = store.createSession("t", { cwd: home, mode: "code" });
@@ -313,7 +313,7 @@ describe("attended (the rung-4 card): a Mac harness on the session itself", () =
 
 describe("a stored cowork mode on a Dispatch-origin turn", () => {
   test("is refused by computer-use policy (NotAllowed), never read as Code or Dispatch", () => {
-    const home = mkdtempSync(join(tmpdir(), "winter-cu-cowork-mode-"));
+    const home = mkdtempSync(join(tmpdir(), "clover-cu-cowork-mode-"));
     const store = new SessionStore(home);
     const hub = new SessionHub(store);
     const sid = store.createSession("t", { cwd: home, mode: "code" });
@@ -331,7 +331,7 @@ describe("a stored cowork mode on a Dispatch-origin turn", () => {
 });
 
 describe("the ToolSearch hook — narrow by construction", () => {
-  const groupFor = (deps: Parameters<typeof sessionHooksFor>[0]) => (sessionHooksFor(deps).winter?.PreToolUse ?? []).find((m) => m.matcher === "ToolSearch");
+  const groupFor = (deps: Parameters<typeof sessionHooksFor>[0]) => (sessionHooksFor(deps).clover?.PreToolUse ?? []).find((m) => m.matcher === "ToolSearch");
   const invoke = async (deps: Parameters<typeof sessionHooksFor>[0], toolName: string) =>
     await groupFor(deps)!.hooks[0]!({ hook_event_name: "PreToolUse", tool_name: toolName, tool_input: { query: "select:Browser" } } as never, "toolu_1", { signal: new AbortController().signal });
   const base = { sessionId: "s1", roots: ["/tmp"] };

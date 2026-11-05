@@ -23,7 +23,7 @@ const services: ComputerV2Service[] = [];
 afterEach(() => { for (const s of services.splice(0)) s.stop(); });
 
 function world(o: { policy?: SessionFacts["policy"] } = {}) {
-  const home = mkdtempSync(join(tmpdir(), "winter-read-svc-"));
+  const home = mkdtempSync(join(tmpdir(), "clover-read-svc-"));
   const fake = new FakeHelper();
   const settings = { computerUse: { apps: {} } } as unknown as Settings;
   const facts: SessionFacts = { policy: o.policy ?? "bypass", mode: "code" };
@@ -49,7 +49,7 @@ function world(o: { policy?: SessionFacts["policy"] } = {}) {
   });
   const engine = new BrowserEngine({
     registry: new BrowserBackendRegistry(), sessionInfo: () => ({ cwd: home, title: "t" }), home,
-    mintWinterTab: () => "w1", winterTabs: () => ({ tabs: [] }), httpReader: reader,
+    mintCloverTab: () => "w1", cloverTabs: () => ({ tabs: [] }), httpReader: reader,
   });
   svc = new ComputerV2Service({ helper, policy, settings: () => settings, browsers: engine, audit: (l) => audits.push(l) });
   services.push(svc);

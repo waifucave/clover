@@ -13,7 +13,7 @@ import { SettingsWatcher } from "../../src/settings-watcher";
 
 const roots: string[] = [], stores: SessionStore[] = [];
 afterEach(() => { for (const store of stores.splice(0)) store.close(); for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
-function home() { const root = realpathSync(mkdtempSync(join(tmpdir(), "winter-host-authority-epochs-"))); roots.push(root); return root; }
+function home() { const root = realpathSync(mkdtempSync(join(tmpdir(), "clover-host-authority-epochs-"))); roots.push(root); return root; }
 function deferred() { let resolve!: () => void; const promise = new Promise<void>(r => resolve = r); return { promise, resolve }; }
 async function revokeAndRestore(getEpoch: () => unknown, change: () => void) {
   const started = deferred(), finish = deferred();

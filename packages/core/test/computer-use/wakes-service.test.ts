@@ -7,7 +7,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { NewSessionEvent } from "@yanlinglabs/winter-protocol";
+import type { NewSessionEvent } from "@waifucave/clover-protocol";
 import { ApprovalBroker } from "../../src/agent/approvals";
 import type { SessionApprovalPolicy } from "../../src/agent/gate";
 import { HelperClient } from "../../src/computer-use/helper-client";
@@ -29,7 +29,7 @@ afterEach(() => {
 });
 
 function world(opts: { policy?: SessionApprovalPolicy; answer?: string; idleMs?: number; settings?: Settings } = {}) {
-  const home = mkdtempSync(join(tmpdir(), "winter-wakes-svc-"));
+  const home = mkdtempSync(join(tmpdir(), "clover-wakes-svc-"));
   homes.push(home);
   const fake = new FakeHelper();
   const approvals = new ApprovalBroker();
@@ -168,7 +168,7 @@ print(String(wake), typeof wake.cancel, wake.id.startsWith("wk_"))`);
     const r = await w.run("const notes = await apps.open('Notes', { emit: false })\nawait notes.wakeWhen({ title: 'Done' })");
     const out = text(r);
     expect(out.indexOf("update Winter for Chrome to wait without the debugging bar\n")).toBeGreaterThan(out.indexOf("Armed wk_"));
-    expect(out).not.toMatch(/<screen-data id="[0-9a-f]+">update Winter/);
+    expect(out).not.toMatch(/<screen-data id="[0-9a-f]+">update Clover/);
   }, 30_000);
 
   macOnly("appTarget answers the app behind a target id (lane C's door)", async () => {

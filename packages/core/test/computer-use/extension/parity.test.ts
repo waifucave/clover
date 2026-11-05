@@ -1,10 +1,10 @@
 // Winter for Chrome's facts, defined once per language and held together here: the two protocol numbers (daemon, host,
-// extension, PROTOCOL.md), the extension-id allowlists (daemon, host, Winter.app's manifest writer, and the id the dev
+// extension, PROTOCOL.md), the extension-id allowlists (daemon, host, Clover.app's manifest writer, and the id the dev
 // key derives), the native-host names, the host's codesign identities, and the browsers' manifest directories.
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { WINTER_TEAM_ID } from "../../../src/auth/app-token-acl";
+import { CLOVER_TEAM_ID } from "../../../src/auth/app-token-acl";
 import { BROWSER_HOST_IDENTIFIER, EXTENSION_IDS, extensionIdFromKey, NATIVE_HOST_NAME } from "../../../src/computer-use/browser/extension/extension-ids";
 import { BROWSER_FAMILIES } from "../../../src/computer-use/browser/families";
 import { NATIVE_MESSAGING_BROWSER_DIRS } from "../../../src/computer-use/browser/extension/manifest";
@@ -54,7 +54,7 @@ describe("the extension ids", () => {
     expect(swiftStrings(hostSwift("ExtensionIds.swift"), "dev")).toEqual([derived]);
   });
 
-  test("dist: the store ids, the same in the daemon, the host and Winter.app's manifest writer, and never the dev id", () => {
+  test("dist: the store ids, the same in the daemon, the host and Clover.app's manifest writer, and never the dev id", () => {
     const app = read("apple", "Winter", "Sources", "BrowserExtension", "BrowserHostManifest.swift");
     expect(swiftStrings(hostSwift("ExtensionIds.swift"), "dist")).toEqual([...EXTENSION_IDS.dist]);
     expect(swiftStrings(app, "storeExtensionIds")).toEqual([...EXTENSION_IDS.dist]);
@@ -72,7 +72,7 @@ describe("the extension ids", () => {
 });
 
 describe("names and identities", () => {
-  test("the native-host names: daemon, host, extension builds and Winter.app's writer", async () => {
+  test("the native-host names: daemon, host, extension builds and Clover.app's writer", async () => {
     const identity = hostSwift("HostIdentity.swift");
     const ext = await import(join(REPO, ...EXT, "src", "manifest.ts")) as { HOST_NAME: { dev: string; store: string; edge: string } };
     expect(swiftString(identity, "distNativeHostName")).toBe(NATIVE_HOST_NAME.dist);
@@ -91,10 +91,10 @@ describe("names and identities", () => {
     expect(swiftString(identity, "testHostIdentifier")).toBe(lib.BROWSER_HOST.test!.identifier);
     expect(swiftString(identity, "distDaemonIdentifier")).toBe(lib.DAEMON_IDENTIFIER.dist);
     expect(swiftString(identity, "devDaemonIdentifier")).toBe(lib.DAEMON_IDENTIFIER.dev);
-    expect(swiftString(identity, "teamID")).toBe(WINTER_TEAM_ID);
+    expect(swiftString(identity, "teamID")).toBe(CLOVER_TEAM_ID);
   });
 
-  test("the browsers' manifest directories: the daemon-side writer and Winter.app's", () => {
+  test("the browsers' manifest directories: the daemon-side writer and Clover.app's", () => {
     const app = read("apple", "Winter", "Sources", "BrowserExtension", "BrowserHostManifest.swift");
     expect(swiftStrings(app, "browserDirectories")).toEqual([...NATIVE_MESSAGING_BROWSER_DIRS]);
   });

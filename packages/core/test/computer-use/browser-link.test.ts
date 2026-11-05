@@ -1,4 +1,4 @@
-// Winter.app's BROWSER LINK, daemon side (`computer-use/browser/cef-link/`): the `browserLink.*` RPCs with a fake app
+// Clover.app's BROWSER LINK, daemon side (`computer-use/browser/cef-link/`): the `browserLink.*` RPCs with a fake app
 // connection — attach (protocol, replacement), commands and their results (late ones dropped, timeouts, the size cap),
 // events (only allowlisted ones), tabs gone, the link closing — and the same through a REAL IPC server: harness role
 // only, the close hook, and `computerUse.status`'s browsers.
@@ -6,7 +6,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { ConnWriter, ERR, LineDecoder, METHODS, PROTOCOL_VERSION, encodeLine, type WritableSocket } from "@yanlinglabs/winter-protocol";
+import { ConnWriter, ERR, LineDecoder, METHODS, PROTOCOL_VERSION, encodeLine, type WritableSocket } from "@waifucave/clover-protocol";
 import { ApprovalBroker } from "../../src/agent/approvals";
 import { FileSecretStore } from "../../src/auth/secret-store";
 import { TokenAuthority } from "../../src/auth/tokens";
@@ -45,7 +45,7 @@ describe("the browser link (daemon side)", () => {
     try { a.call(METHODS.browserLinkAttach, { protocol: BROWSER_LINK_PROTOCOL + 1, appVersion: "9.9.9", pid: 1 }); } catch (e) { err = e; }
     expect(err).toBeInstanceOf(BrowserLinkRpcError);
     expect((err as BrowserLinkRpcError).data).toMatchObject({ code: "protocol_mismatch", expected: BROWSER_LINK_PROTOCOL });
-    expect(registry.list()).toEqual([{ id: "winter", family: "winter", name: "Winter (built-in)", connected: false, reason: "Winter's app is newer than its daemon — ask the user to update Winter" }]);
+    expect(registry.list()).toEqual([{ id: "winter", family: "winter", name: "Clover (built-in)", connected: false, reason: "Clover's app is newer than its daemon — ask the user to update Clover" }]);
     // An app from before Phase 3 (protocol 1) is told to update too.
     let older: unknown;
     try { a.call(METHODS.browserLinkAttach, { protocol: 1, appVersion: "0.124.0", pid: 41 }); } catch (e) { older = e; }
@@ -53,7 +53,7 @@ describe("the browser link (daemon side)", () => {
     const res = a.call(METHODS.browserLinkAttach, { protocol: BROWSER_LINK_PROTOCOL, appVersion: "0.124.0", pid: 42 });
     expect(res).toMatchObject({ protocol: 2 });
     expect(String(res.linkId)).toMatch(/^bl_[0-9a-f]{12}$/);
-    expect(registry.list()).toEqual([{ id: "winter", family: "winter", name: "Winter (built-in)", connected: true }]);
+    expect(registry.list()).toEqual([{ id: "winter", family: "winter", name: "Clover (built-in)", connected: true }]);
     expect(link.connected).toBe(true);
   });
 
@@ -61,12 +61,12 @@ describe("the browser link (daemon side)", () => {
     const registry = new BrowserBackendRegistry();
     const link = new BrowserLink({ registry });
     expect(link.headlessViewer()).toBeUndefined();
-    expect(link.headlessViewerMissing()).toBe("Winter isn't running — ask the user to open Winter");
+    expect(link.headlessViewerMissing()).toBe("Clover isn't running — ask the user to open Clover");
     const old = app(link);
     const plain = old.call(METHODS.browserLinkAttach, { protocol: BROWSER_LINK_PROTOCOL, appVersion: "0.124.0", pid: 1 });
     expect(plain.features).toEqual(["headless", "watchOnly"]);
     expect(link.headlessViewer()).toBeUndefined();
-    expect(link.headlessViewerMissing()).toBe("this Winter's app can't show a headless tab — ask the user to update Winter");
+    expect(link.headlessViewerMissing()).toBe("this Clover's app can't show a headless tab — ask the user to update Clover");
     const a = app(link);
     const { linkId } = a.call(METHODS.browserLinkAttach, { protocol: BROWSER_LINK_PROTOCOL, appVersion: "0.125.0", pid: 2, features: ["headless", "teleport"] }) as { linkId: string };
     const viewer = link.headlessViewer()!;
@@ -182,14 +182,14 @@ describe("the browser link (daemon side)", () => {
     const a = app(link);
     const { linkId } = a.call(METHODS.browserLinkAttach, { protocol: BROWSER_LINK_PROTOCOL, appVersion: "x", pid: 1 }) as { linkId: string };
     const t = registry.get("winter")!;
-    const CEILING = "Winter's built-in browser already holds 24 tabs for automation — release one first";
+    const CEILING = "Clover's built-in browser already holds 24 tabs for automation — release one first";
     for (const start of [() => t.attach("tab-25", { sessionId: "s1" }), () => t.createTab({ sessionId: "s1", url: "https://a.example/", tabKey: "tab-26" })]) {
       const p = start();
       expect(a.last().params.op).toBe("tab.ensure");
       a.call(METHODS.browserLinkResult, { linkId, cmdId: a.last().params.cmdId, ok: false, error: { code: "not_allowed", message: CEILING } });
       const e = await p.then(() => undefined, (x: unknown) => x);
       expect(e).toMatchObject({ code: "not_allowed", data: { holdCeiling: true } });
-      const m = transportFailure(e, "Winter's browser") as AutomationFailure;
+      const m = transportFailure(e, "Clover's browser") as AutomationFailure;
       expect(m.kind).toBe("TargetBusy");
       expect(m.message).toBe("too many built-in browser tabs are in use right now — close some with tab.close()");
     }
@@ -249,7 +249,7 @@ describe("the browser link (daemon side)", () => {
     expect(a.call(METHODS.browserLinkResult, { linkId: first.linkId, cmdId: cmd, ok: true, result: {} })).toEqual({});
   });
 
-  test("the link's connection closing: in-flight commands fail disconnected and the built-in browser reads Winter isn't running", async () => {
+  test("the link's connection closing: in-flight commands fail disconnected and the built-in browser reads Clover isn't running", async () => {
     const registry = new BrowserBackendRegistry();
     const link = new BrowserLink({ registry });
     const a = app(link);
@@ -259,7 +259,7 @@ describe("the browser link (daemon side)", () => {
     expect(link.connected).toBe(true);
     link.connectionClosed(a.conn);
     expect(await pending).toMatchObject({ code: "disconnected" });
-    expect(registry.list()).toEqual([{ id: "winter", family: "winter", name: "Winter (built-in)", connected: false, reason: "Winter isn't running" }]);
+    expect(registry.list()).toEqual([{ id: "winter", family: "winter", name: "Clover (built-in)", connected: false, reason: "Clover isn't running" }]);
   });
 
   test("protocol 2: present, mute, the download arm and a started download are their ops; download reports reach the engine", async () => {
@@ -360,7 +360,7 @@ describe("browserLink.* through the IPC server", () => {
   afterEach(() => { stop?.(); stop = undefined; });
 
   async function boot() {
-    const home = mkdtempSync(join(tmpdir(), "winter-browser-link-"));
+    const home = mkdtempSync(join(tmpdir(), "clover-browser-link-"));
     const settingsPath = join(home, "settings.json");
     writeFileSync(settingsPath, JSON.stringify({ schemaVersion: 3, provider: { model: "codex-oauth/gpt-5.6-sol" } }));
     const live: Settings | null = loadSettings(settingsPath);
@@ -370,7 +370,7 @@ describe("browserLink.* through the IPC server", () => {
     fake.running = false;
     const runtime = createComputerUseRuntime({
       home, profile: "dev", settings: () => live, settingsPath, approvals: new ApprovalBroker(), hub, store, launchAllowed: true,
-      inject: { transport: fake.transport, launcher: fake.launcher, verifier: fake.verifier, browserInstalled: () => false, headless: { resolve: () => ({ missing: "Winter's headless browser is missing — reinstall Winter" }) } },
+      inject: { transport: fake.transport, launcher: fake.launcher, verifier: fake.verifier, browserInstalled: () => false, headless: { resolve: () => ({ missing: "Clover's headless browser is missing — reinstall Clover" }) } },
     });
     const socketPath = join(home, "core.sock");
     const authority = new TokenAuthority(new FileSecretStore(join(home, "secrets.json")));
@@ -384,11 +384,11 @@ describe("browserLink.* through the IPC server", () => {
     for (const m of LINK_METHODS) expect(REMOTE_ALLOWED_METHODS.has(m)).toBe(false);
   });
 
-  test("the app attaches on its own connection, answers a command, and the link closing marks Winter's browser down", async () => {
+  test("the app attaches on its own connection, answers a command, and the link closing marks Clover's browser down", async () => {
     const { socketPath, tokens, runtime } = await boot();
     const before = await (async () => { const c = await TestClient.connect(socketPath); await c.hello(tokens.harness, "mac"); const r = await c.request(METHODS.computerUseStatus, {}); c.close(); return r; })();
-    expect(before.result.browsers).toEqual([{ id: "winter", name: "Winter (built-in)", connected: false, reason: "Winter isn't running" },
-      { id: "headless", name: "Winter (headless)", connected: false, reason: "Winter's headless browser is missing — reinstall Winter" }]);
+    expect(before.result.browsers).toEqual([{ id: "winter", name: "Clover (built-in)", connected: false, reason: "Clover isn't running" },
+      { id: "headless", name: "Clover (headless)", connected: false, reason: "Clover's headless browser is missing — reinstall Clover" }]);
     const appConn = await TestClient.connect(socketPath);
     expect((await appConn.hello(tokens.harness, "browser-link")).error).toBeUndefined();
     const att = await appConn.request(METHODS.browserLinkAttach, { protocol: BROWSER_LINK_PROTOCOL, appVersion: "0.124.0", pid: 7 });
@@ -406,7 +406,7 @@ describe("browserLink.* through the IPC server", () => {
     appConn.close();
     expect(await pending).toMatchObject({ code: "disconnected" });
     await until(() => runtime.browserLink.connected === false);
-    expect(runtime.browsers.listRows()[0]).toMatchObject({ id: "winter", connected: false, reason: "Winter isn't running" });
+    expect(runtime.browsers.listRows()[0]).toMatchObject({ id: "winter", connected: false, reason: "Clover isn't running" });
   });
 
   test("a remote client is refused every link method; a bad attach is INVALID_PARAMS with the code", async () => {

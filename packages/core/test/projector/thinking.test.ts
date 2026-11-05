@@ -3,7 +3,7 @@
 // `thinking_delta` per start/delta and ONE persisted `thinking_block` per block — with the pill's title
 // derived by the daemon. Synthetic frames in the pinned shape (agent SDK 0.0.47).
 import { describe, expect, test } from "bun:test";
-import { THINKING_TEXT_MAX_LENGTH, THINKING_TITLE_MAX_LENGTH, type SessionEvent } from "@yanlinglabs/winter-protocol";
+import { THINKING_TEXT_MAX_LENGTH, THINKING_TITLE_MAX_LENGTH, type SessionEvent } from "@waifucave/clover-protocol";
 import { MAIN_THREAD, deriveThinkingTitle, summarize } from "../../src/projector";
 import { sliceUnits } from "../../src/projector/thinking";
 import type { ProtocolSdkMessage } from "../../src/projector/types";

@@ -2,8 +2,8 @@ import { afterEach, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { COWORK_RPC, ConnWriter, LineDecoder, PROTOCOL_VERSION, encodeLine, type CoworkWatchFrame, type WritableSocket } from "@yanlinglabs/winter-protocol";
-import { WinterClient } from "../../../cli/src/client";
+import { COWORK_RPC, ConnWriter, LineDecoder, PROTOCOL_VERSION, encodeLine, type CoworkWatchFrame, type WritableSocket } from "@waifucave/clover-protocol";
+import { CloverClient } from "../../../cli/src/client";
 import { startDaemon, type RunningDaemon } from "../../src/daemon";
 import { FileSecretStore } from "../../src/auth/secret-store";
 import { CoworkInstructions } from "../../src/cowork/instructions";
@@ -12,10 +12,10 @@ import { runtimeStateOnline } from "../../src/runtime-state/wiring";
 import type { CoworkHostPorts } from "../../src/cowork/service";
 import { CoworkError } from "../../src/cowork/types";
 let daemon: RunningDaemon | undefined;
-const homes: string[] = [], clients: WinterClient[] = [], sockets: Array<{ end(): void }> = [];
+const homes: string[] = [], clients: CloverClient[] = [], sockets: Array<{ end(): void }> = [];
 afterEach(async () => { clients.splice(0).forEach(c => c.close()); sockets.splice(0).forEach(c => c.end()); if (daemon) { await daemon.stop(); daemon = undefined; } homes.splice(0).forEach(h => rmSync(h, { recursive: true, force: true })); });
 async function boot(count = 1) {
-  const home = mkdtempSync(join(tmpdir(), "winter-watch-rpc-")); homes.push(home);
+  const home = mkdtempSync(join(tmpdir(), "clover-watch-rpc-")); homes.push(home);
   const ports: CoworkHostPorts = {
     principal: connection => connection.role === "harness" || connection.role === "admin" ? { kind: "local-user", id: "fixture" } : { kind: "paired-user", id: "paired", workspaceIds: new Set(), repositoryAuthorities: new Set() },
     grants: { folder: () => undefined, repository: () => undefined }, selection: () => undefined, creationCeiling: () => undefined,
@@ -31,7 +31,7 @@ async function boot(count = 1) {
 }
 async function connect(home: string) {
   const frames: CoworkWatchFrame[] = [], events: unknown[] = [];
-  const client = await WinterClient.connect({ socketPath: join(home, "run/core.sock"), token: daemon!.tokens.harness, clientName: "watch-fixture", onEvent: e => events.push(e), onWorkspaceWatch: frame => frames.push(frame) });
+  const client = await CloverClient.connect({ socketPath: join(home, "run/core.sock"), token: daemon!.tokens.harness, clientName: "watch-fixture", onEvent: e => events.push(e), onWorkspaceWatch: frame => frames.push(frame) });
   clients.push(client); return { client, frames, events };
 }
 async function until(predicate: () => boolean) {
@@ -163,7 +163,7 @@ test("consumer never installs renewal when detach or disconnect wins before watc
   }
 });
 test("W6: malformed local watch frames surface a sanitized consumer error", async () => {
-  const home = mkdtempSync(join(tmpdir(), "winter-watch-decoder-")); homes.push(home);
+  const home = mkdtempSync(join(tmpdir(), "clover-watch-decoder-")); homes.push(home);
   const path = join(home, "decoder.sock"), errors: Array<[string, unknown]> = [];
   const server = Bun.listen<{ decoder: LineDecoder }>({ unix: path, socket: {
     open(socket) { socket.data = { decoder: new LineDecoder() }; },
@@ -174,7 +174,7 @@ test("W6: malformed local watch frames surface a sanitized consumer error", asyn
     } },
   } });
   try {
-    const client = await WinterClient.connect({ socketPath: path, token: "fixture-only", clientName: "decoder", onEvent: () => {}, onWorkspaceWatchError: (id, error) => errors.push([id, error]) }); clients.push(client);
+    const client = await CloverClient.connect({ socketPath: path, token: "fixture-only", clientName: "decoder", onEvent: () => {}, onWorkspaceWatchError: (id, error) => errors.push([id, error]) }); clients.push(client);
     await until(() => errors.length === 1);
     expect(errors[0]![0]).toBe("watch_fixture"); expect((errors[0]![1] as Error).message).toBe("invalid workspace watch frame");
     client.close();
@@ -182,7 +182,7 @@ test("W6: malformed local watch frames surface a sanitized consumer error", asyn
 });
 test("W6: automatic renewal has at most two bounded retries, then succeeds on the existing Unix lease", async () => {
   const f = await boot(), errors: unknown[] = [];
-  const client = await WinterClient.connect({ socketPath: join(f.home, "run/core.sock"), token: daemon!.tokens.harness, clientName: "retry", onEvent: () => {}, onWorkspaceWatchError: (_id, error) => errors.push(error) }); clients.push(client);
+  const client = await CloverClient.connect({ socketPath: join(f.home, "run/core.sock"), token: daemon!.tokens.harness, clientName: "retry", onEvent: () => {}, onWorkspaceWatchError: (_id, error) => errors.push(error) }); clients.push(client);
   const originalRequest = client.request.bind(client); let attempts = 0;
   client.request = async (method, params) => {
     if (method === "workspace.watch.renew" && ++attempts <= 2) throw new Error("fixture transient transport failure");
@@ -218,7 +218,7 @@ test("W6: authority refusal never retries even if a malformed response claims re
 });
 test("W1b: live Unix hints arrive during2s of50ms writes instead of waiting for quiet", async () => {
   const f = await boot(), observed: Array<{ at: number; frame: CoworkWatchFrame }> = [];
-  const client = await WinterClient.connect({ socketPath: join(f.home, "run/core.sock"), token: daemon!.tokens.harness, clientName: "steady-writer", onEvent: () => {}, onWorkspaceWatch: frame => observed.push({ at: performance.now(), frame }) }); clients.push(client);
+  const client = await CloverClient.connect({ socketPath: join(f.home, "run/core.sock"), token: daemon!.tokens.harness, clientName: "steady-writer", onEvent: () => {}, onWorkspaceWatch: frame => observed.push({ at: performance.now(), frame }) }); clients.push(client);
   const lease = await client.watchWorkspaces(f.ids); await until(() => observed.some(value => value.frame.phase === "snapshot"));
   const start = performance.now();
   for (let index = 0; index < 40; index++) {
