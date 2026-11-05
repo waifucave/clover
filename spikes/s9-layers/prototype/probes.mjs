@@ -1,14 +1,15 @@
 /** Runs in a document or worker MAIN world. Every endpoint is a distinct name/port.
  * @param {any} endpoints @param {boolean} [full] */
 export async function networkProbe(endpoints, full = true) {
- const out = [], violations = [];
- const wait = ms => new Promise(r=>setTimeout(r,ms));
+ /** @type {any[]} */ const out = [];
+/** @type {any[]} */ const violations=[];
+ const wait = (/** @type {any} */ ms)=> new Promise(r=>setTimeout(r,ms));
  globalThis.addEventListener('securitypolicyviolation',e=>violations.push({directive:e.effectiveDirective,blockedURI:e.blockedURI}));
- const attempt=async(name,fn)=>{try{out.push({name,result:await Promise.race([fn(),wait(1400).then(()=>({timeout:true}))])});}catch(e){out.push({name,error:String(e)});}await wait(80);};
- const rtc=async(url)=>{
+ const attempt=async(/** @type {any} */ name,/** @type {any} */ fn)=>{try{out.push({name,result:await Promise.race([fn(),wait(1400).then(()=>({timeout:true}))])});}catch(e){out.push({name,error:String(e)});}await wait(80);};
+ const rtc=async(/** @type {any} */ url)=>{
   if(typeof RTCPeerConnection==='undefined')return {supported:false};
   const pc=new RTCPeerConnection({iceServers:[{urls:url,username:'fixture',credential:'fixture'}]});
-  const candidates=[];pc.onicecandidate=e=>{if(e.candidate)candidates.push(e.candidate.candidate);};
+  /** @type {string[]} */ const candidates=[];pc.onicecandidate=e=>{if(e.candidate)candidates.push(e.candidate.candidate);};
   try{pc.createDataChannel('fixture');await pc.setLocalDescription(await pc.createOffer());await wait(900);return {supported:true,candidates,state:pc.iceGatheringState};}finally{pc.close();}
  };
  await attempt('stun',()=>rtc(endpoints.stun.ice));
@@ -24,7 +25,7 @@ export async function networkProbe(endpoints, full = true) {
  for(const name of ['image','css','font','script','media','object'])await attempt(name,async()=>{
   const url=endpoints[name].url;
   if(name==='font')return new FontFace('probe',`url(${url})`).load().then(()=>true);
-  const el=document.createElement(({image:'img',css:'link',script:'script',media:'video',object:'object'})[name]);
+  /** @type {any} */ const el=document.createElement(({image:'img',css:'link',script:'script',media:'video',object:'object'})[name]||'div');
   if(name==='css'){el.rel='stylesheet';el.href=url;}else if(name==='object')el.data=url;else el.src=url;
   if(name==='media'){el.muted=true;el.preload='auto';}document.body.append(el);await wait(150);return 'inserted';
  });
@@ -34,7 +35,8 @@ export async function networkProbe(endpoints, full = true) {
  await attempt('eventsource',()=>new Promise(r=>{const es=new EventSource(endpoints.eventsource.url);es.onopen=()=>{es.close();r('open')};es.onerror=()=>{es.close();r('error')};}));
  await attempt('redirect',()=>fetch(endpoints.redirect.url).then(r=>r.status));
  await attempt('webtransport',async()=>{if(typeof WebTransport==='undefined')return {supported:false};const wt=new WebTransport(endpoints.webtransport.url.replace('http:','https:'));wt.closed.catch(()=>{});try{return await Promise.race([wt.ready.then(()=>({ready:true})),wait(600).then(()=>({pending:true}))]);}finally{wt.close();}});
- await attempt('fetchLater',async()=>{if(typeof globalThis.fetchLater!=='function')return {supported:false};globalThis.fetchLater(endpoints.fetchLater.url,{activateAfter:0});await wait(300);return {supported:true};});
+ await attempt('fetchLater',async()=>{if(typeof /** @type {any} */ (globalThis).fetchLater!=='function')return {supported:false};
+/** @type {any} */ (globalThis).fetchLater(endpoints.fetchLater.url,{activateAfter:0});await wait(300);return {supported:true};});
  for(const name of ['ping','download'])await attempt(name,async()=>{const a=document.createElement('a');a.href=name==='ping'?'#probe':endpoints.download.url;if(name==='ping')a.ping=endpoints.ping.url;else a.download='fixture.txt';a.textContent=name;document.body.append(a);a.click();await wait(200);return 'clicked';});
  for(const path of ['worker','shared','blob'])await attempt(path,()=>new Promise(r=>{
   const code=`fetch(${JSON.stringify(endpoints[path].url)}).then(()=>postMessage('sent')).catch(()=>postMessage('blocked'));`;
