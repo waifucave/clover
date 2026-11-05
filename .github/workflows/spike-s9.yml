@@ -1,0 +1,44 @@
+name: Clover S9 layers
+on:
+  push:
+    branches: [lane/e-m0]
+    paths: ['spikes/s9-layers/**', '.github/workflows/spike-s9.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  layers:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, windows-2025, ubuntu-24.04]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 12
+    defaults:
+      run:
+        working-directory: spikes/s9-layers/prototype
+        shell: bash
+    env:
+      CLOVER_S9_CI: '1'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: Install isolated spike dependencies (no root workspace)
+        run: npm ci --ignore-scripts --workspaces=false
+      - name: Download pinned Electron binary (CI only)
+        run: node node_modules/electron/install.js
+      - name: Typecheck and non-launching unit tests
+        run: npm run typecheck && npm test
+      - name: Run all four checks on Linux
+        if: runner.os == 'Linux'
+        run: xvfb-run -a npm run all
+      - name: Run all four checks on macOS and Windows
+        if: runner.os != 'Linux'
+        run: npm run all
+      - name: Upload measurements even on failure
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: clover-s9-${{ matrix.os }}
+          path: spikes/s9-layers/prototype/results/
+          retention-days: 14
+          if-no-files-found: error

@@ -1,0 +1,20 @@
+{
+  "name": "clover-s9-layers",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "node --test policy.test.mjs",
+    "process": "node run.mjs process",
+    "memory": "node run.mjs memory",
+    "crossing": "node run.mjs crossing",
+    "network": "node run.mjs network",
+    "all": "node run.mjs all"
+  },
+  "devDependencies": {
+    "electron": "45.2.3",
+    "typescript": "5.9.3",
+    "@types/node": "24.10.0"
+  }
+}
