@@ -2,7 +2,7 @@
 // Source: https://www.eff.org/files/2016/09/08/eff_short_wordlist_1.txt, from the EFF dice-generated passphrases
 // project (https://www.eff.org/dice). License: Creative Commons Attribution 3.0 Unported (CC BY 3.0), Electronic
 // Frontier Foundation. The dice-roll index column is dropped; the words keep the source order, which is sorted.
-// The same list Winter's phone pairing renders its words from, so the two show the same words for the same digits.
+// The same list the inherited phone pairing renders its words from, so both show the same words for the same digits.
 export const EFF_SHORT_WORDLIST: readonly string[] = [
   "acid", "acorn", "acre", "acts", "afar", "affix", "aged", "agent", "agile", "aging", "agony", "ahead", "aide",
   "aids", "aim", "ajar", "alarm", "alias", "alibi", "alien", "alike", "alive", "aloe", "aloft", "aloha", "alone",

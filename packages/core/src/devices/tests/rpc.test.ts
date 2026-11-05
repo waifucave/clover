@@ -32,7 +32,7 @@ afterEach(async () => {
 
 const terminal: Caller = { kind: "user", client: "cli" };
 const app: Caller = { kind: "user", client: "app" };
-const bot: Caller = { kind: "session", sessionId: "ses_abcdef12", sessionKind: "chat" };
+const bot: Caller = { kind: "session", sessionId: "ses_abcdef12", sessionKind: "bot" };
 
 async function computer(net: MemoryNetwork, name: string) {
   const store = new MemorySecretStore();

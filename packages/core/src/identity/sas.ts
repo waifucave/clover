@@ -1,5 +1,5 @@
-// The pairing ceremony's crypto (spec §8.1: "a code or QR, plus the inherited 4-word check"). Winter's phone pairing
-// did the same with its own domains (WinterProtocol's Pairing.swift); Clover's are its own, so no value from one can
+// The pairing ceremony's crypto (spec §8.1: "a code or QR, plus the inherited 4-word check"). The inherited phone
+// pairing did the same under its own domains; Clover's domains are its own, so no value from one can
 // stand for the other.
 //
 // * The transcript binds everything the two devices agree on: the pairing, both link keys, both device records, both
@@ -7,7 +7,7 @@
 // * Each side proves it holds the pairing secret with an HMAC over the transcript, under its own domain, so the
 //   joiner's proof can't be reflected back as the host's.
 // * The four words are a third HMAC, under its own domain: the first 5 bytes, big-endian, read as four base-1296
-//   digits into the EFF short wordlist (as Winter did). A device in the middle would have to make both legs' words
+//   digits into the EFF short wordlist (as the inherited pairing did). A device in the middle would have to make both legs' words
 //   match without the secret, which a 40-bit check makes impractical in the minutes a pairing lives.
 // * The pair secret S the handshake service's boxes are sealed with (services/handshake/PROTOCOL.md, "Boxes") and the
 //   pair id are derived from the pairing secret and the transcript; neither ever reaches the service.
