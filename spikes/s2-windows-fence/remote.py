@@ -4,6 +4,7 @@ import argparse
 import base64
 import json
 import gzip
+import os
 from pathlib import Path
 import shlex
 import subprocess
@@ -14,16 +15,17 @@ parser.add_argument('os', choices=['windows', 'linux'])
 parser.add_argument('script', type=Path)
 parser.add_argument('script_args', nargs='*')
 args = parser.parse_args()
+# Direct SSH can be closed from some networks; IAP TCP forwarding is the same SSH session.
+IAP = ['--tunnel-through-iap'] if os.environ.get('CLOVER_SPIKE_IAP') == '1' else []
 data = base64.b64encode(args.script.read_bytes()).decode()
 if args.os == 'windows':
     files={'probe.ps1':args.script.read_text()}
     if args.script.name=='scheduled-store.ps1': files['windows-store.ps1']=args.script.with_name('windows-store.ps1').read_text()
     if 'windows-probe.cs' in files['probe.ps1']:
         files['windows-probe.cs']=(Path(__file__).resolve().parents[2] / 'native/sandbox/windows-probe.cs').read_text()
-    if 'session0-bno.cs' in files['probe.ps1']:
-        files['session0-bno.cs']=(Path(__file__).resolve().parents[2] / 'native/sandbox/session0-bno.cs').read_text()
-    if 'handle-probe.cs' in files['probe.ps1']:
-        files['handle-probe.cs']=(Path(__file__).resolve().parents[2] / 'native/sandbox/handle-probe.cs').read_text()
+    for native in sorted((Path(__file__).resolve().parents[2] / 'native/sandbox').glob('*.cs')):
+        if native.name in files['probe.ps1']:
+            files[native.name]=native.read_text()
     files.update({p.name:p.read_text() for p in args.script.parent.glob('*.mjs')})
     compressed = base64.b64encode(gzip.compress(json.dumps(files).encode())).decode()
     payload = None
@@ -32,7 +34,7 @@ if args.os == 'windows':
         chunk=compressed[i:i+3500]
         transfer="[IO.File]::AppendAllText((Join-Path $env:TEMP '"+chunkfile+"'),'"+chunk+"')"
         print('Uploading public source chunk '+str(i//3500+1),flush=True)
-        r=subprocess.run(['gcloud','compute','ssh','clover-c-win','--zone=europe-west1-b','--quiet',
+        r=subprocess.run(['gcloud','compute','ssh','clover-c-win','--zone=europe-west1-b','--quiet',*IAP,
             '--command=powershell -NoProfile -NonInteractive -Command "'+transfer+'"'],timeout=60)
         if r.returncode: raise SystemExit(r.returncode)
     program = ("$ErrorActionPreference='Stop'; $global:ProgressPreference='SilentlyContinue'; "
@@ -64,7 +66,7 @@ else:
 vm = 'clover-c-win' if args.os == 'windows' else 'clover-c-linux'
 print('Running ' + args.script.name + ' on ' + vm, flush=True)
 try:
-    result = subprocess.run(['gcloud', 'compute', 'ssh', vm, '--zone=europe-west1-b', '--quiet', '--command=' + command], input=payload, text=True, timeout=420)
+    result = subprocess.run(['gcloud', 'compute', 'ssh', vm, '--zone=europe-west1-b', '--quiet', *IAP, '--command=' + command], input=payload, text=True, timeout=420)
 except subprocess.TimeoutExpired:
     print('Remote probe exceeded 420 seconds; no verdict collected', flush=True)
     raise SystemExit(124)

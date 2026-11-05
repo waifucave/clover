@@ -11,7 +11,7 @@ fs.writeFileSync(comChild,`const fs=require('fs'),cp=require('child_process');co
 
 fs.writeFileSync(worker,String.raw`
 const fs=require('fs'),p=require('path'),cp=require('child_process'),net=require('net');
-const [route,actor,work,control,clsid,suffix,port]=process.argv.slice(2);
+const [route,actor,work,control,clsid,suffix,port,startupTarget,hostStartupTarget]=process.argv.slice(2);
 const ps=process.env.SystemRoot+'/System32/WindowsPowerShell/v1.0/powershell.exe';
 const marker=p.join(work,'receipt-'+route+'-'+actor+'.json'),task='com.waifucave.clover.review.'+suffix,svc='clover_review_'+suffix;
 function run(exe,args){return cp.spawnSync(exe,args,{encoding:'utf8',timeout:10000,windowsHide:true,stdio:['ignore','pipe','pipe']})}
@@ -31,8 +31,8 @@ if(route==='scheduler-cli'){
  r=run(ps,['-NoProfile','-Command',"$ErrorActionPreference='Stop';try {$r=Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{CommandLine='"+child.replaceAll("'","''")+"'};@{return_value=$r.ReturnValue;child_pid=$r.ProcessId}|ConvertTo-Json -Compress;if($r.ReturnValue -ne 0){exit 3}}catch{@{hresult=$_.Exception.HResult}|ConvertTo-Json -Compress;exit 4}"]);
 }else if(route==='runas'){
  r=run('runas.exe',['/savecred','/user:Administrator','cmd.exe /c exit 0']);extra.no_saved_credential_fixture=true;
-}else if(route==='startup-user'||route==='startup-common'){
- const dir=route==='startup-user'?p.join(process.env.APPDATA,'Microsoft/Windows/Start Menu/Programs/Startup'):p.join(process.env.ProgramData,'Microsoft/Windows/Start Menu/Programs/Startup');
+}else if(route==='startup-user'||route==='startup-host'||route==='startup-common'){
+ const dir=route==='startup-user'?startupTarget:route==='startup-host'?hostStartupTarget:p.join(process.env.ProgramData,'Microsoft/Windows/Start Menu/Programs/Startup');
  const f=p.join(dir,'clover-review-'+suffix+'.cmd');try{fs.writeFileSync(f,'@exit /b 0');fs.unlinkSync(f);r={status:0}}catch(e){r={status:3};extra.error_code=e.code}
 }else if(route==='shell-application'||route==='shell-application-local'){
  const args=[p.join(work,'com-child.cjs'),marker,p.join(control,'secrets.enc')].map(s=>'"'+s+'"').join(' ');
@@ -45,24 +45,47 @@ await new Promise(resolve=>setTimeout(resolve,route==='wmi'||route==='shell-appl
 console.log(JSON.stringify({route,actor,exit:r?.status??null,timeout:r?.error?.code==='ETIMEDOUT',detail:parse(r?.stdout),marker_observed:fs.existsSync(marker),...extra}));
 }main().catch(e=>{console.log(JSON.stringify({route,actor,harness_error:e.code??e.name}));process.exitCode=1});
 `);
-const config={filesystem:{allowRead:[work,bin],allowWrite:[work],denyRead:[control],denyWrite:[control]},network:{allowedDomains:[],deniedDomains:[]},windows:{srtWin:{path:'C:/clover-tools/srt/node_modules/@anthropic-ai/sandbox-runtime/vendor/srt-win/x64/srt-win.exe'},sandboxUser:'clover-spike-sandbox',sublayerGuid:'784c4230-1105-4bda-8808-83582c000001'}};
+const sandboxUser='clover-spike-sandbox';
+const psOut=c=>(spawnSync('powershell.exe',['-NoProfile','-NonInteractive','-Command',c],{encoding:'utf8'}).stdout||'').trim();
+const principalSid=psOut(`(New-Object Security.Principal.NTAccount('${sandboxUser}')).Translate([Security.Principal.SecurityIdentifier]).Value`);
+const profileOf=sid=>psOut(`(Get-ItemProperty 'HKLM:\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\ProfileList\\${sid}' -ErrorAction SilentlyContinue).ProfileImagePath`)||null;
+const startupUnder=home=>path.join(home,'AppData/Roaming/Microsoft/Windows/Start Menu/Programs/Startup');
+const hostStartup=path.join(process.env.APPDATA,'Microsoft/Windows/Start Menu/Programs/Startup');
+const commonStartup=path.join(process.env.ProgramData,'Microsoft/Windows/Start Menu/Programs/Startup');
+const configFor=deny=>({filesystem:{allowRead:[work,bin],allowWrite:[work],denyRead:[control],denyWrite:[control,...deny]},network:{allowedDomains:[],deniedDomains:[]},windows:{srtWin:{path:'C:/clover-tools/srt/node_modules/@anthropic-ai/sandbox-runtime/vendor/srt-win/x64/srt-win.exe'},sandboxUser,sublayerGuid:'784c4230-1105-4bda-8808-83582c000001'}});
+let config=configFor([]),startupTarget=null;
 const server=net.createServer(s=>{s.on('error',()=>{});s.end('public')});await new Promise(r=>server.listen(0,'127.0.0.1',r));
 const port=String(server.address().port);const q=s=>"'"+s.replaceAll("'","''")+"'";
 async function launch(argv,env=process.env){return await new Promise(resolve=>{const c=spawn(argv[0],argv.slice(1),{env,cwd:work,windowsHide:true,stdio:['ignore','pipe','pipe']});let out='',err='';c.stdout.on('data',b=>out+=b);c.stderr.on('data',b=>err+=b);c.stdout.on('error',()=>{});c.stderr.on('error',()=>{});const t=setTimeout(()=>c.kill(),20000);c.on('close',exit=>{clearTimeout(t);resolve({exit,out,err})});c.on('error',()=>{clearTimeout(t);resolve({exit:-1,out,err:'spawn error'})})})}
 function result(r){for(const line of r.out.trim().split(/\r?\n/).reverse()){try{return JSON.parse(line)}catch{}}return {launcher_exit:r.exit,diagnostic:r.err.slice(0,500)}}
-async function route(test,actor){const args=[worker,test,actor,work,control,clsid,suffix,port];if(actor==='unfenced')return result(await launch([node,...args]));const command='& '+[node,...args].map(q).join(' ');const {argv,env}=await SandboxManager.wrapWithSandboxArgv(command,'powershell',undefined,undefined,work);return result(await launch(argv,env));}
+async function route(test,actor){const args=[worker,test,actor,work,control,clsid,suffix,port,startupTarget,hostStartup];if(actor==='unfenced')return result(await launch([node,...args]));const command='& '+[node,...args].map(q).join(' ');const {argv,env}=await SandboxManager.wrapWithSandboxArgv(command,'powershell',undefined,undefined,work);return result(await launch(argv,env));}
+// The first launch creates a fresh principal's profile; its Startup folder is then resolved by
+// SID. Nothing is granted inside the principal's profile by the administrator.
+{
+ await SandboxManager.initialize(config);
+ const {argv,env}=await SandboxManager.wrapWithSandboxArgv('& '+[node,'-e','console.log(process.env.USERPROFILE)'].map(q).join(' '),'powershell',undefined,undefined,work);
+ const warm=await launch(argv,env);await SandboxManager.reset();
+ const principalProfile=profileOf(principalSid);startupTarget=principalProfile&&startupUnder(principalProfile);
+ // Provisioning (elevated, here the administrator) creates the missing Startup folder so the
+ // deny can be stamped; nothing is granted inside the principal's profile.
+ if(startupTarget&&!fs.existsSync(startupTarget)){fs.mkdirSync(startupTarget,{recursive:true});console.log(JSON.stringify({test:'principal-startup-created-by-provisioning'}))}
+ console.log(JSON.stringify({test:'principal-profile',principal_profile:principalProfile,temporary_profile:!principalProfile||warm.out.trim().split(/\r?\n/).pop().trim()!==principalProfile}));
+}
+// The real user's own Startup folder exists on a desktop logon; materialize it if absent.
+const createdHostStartup=!fs.existsSync(hostStartup);if(createdHostStartup)fs.mkdirSync(hostStartup,{recursive:true});
 console.log(JSON.stringify({test:'admin-parent-context',host_local_admin:process.env.CLOVER_HOST_ADMIN==='True',session0_alias:true}));
 const paired=[];
 try{
+ const startupDeny=[startupTarget,hostStartup,commonStartup].filter(p=>p&&fs.existsSync(p));
+ config=configFor(startupDeny);
  await SandboxManager.initialize(config);
- const userProfile=path.join('C:/Users','clover-spike-sandbox');
- const starts=[path.join(process.env.APPDATA,'Microsoft/Windows/Start Menu/Programs/Startup'),path.join(userProfile,'AppData/Roaming/Microsoft/Windows/Start Menu/Programs/Startup')];
- for(const d of starts)fs.mkdirSync(d,{recursive:true});
- console.log(JSON.stringify({test:'startup-fixture-prerequisites',host_directory_exists:fs.existsSync(starts[0]),sandbox_directory_exists:fs.existsSync(starts[1])}));
+ console.log(JSON.stringify({test:'startup-fixture-prerequisites',principal_startup:startupTarget,principal_startup_exists:!!startupTarget&&fs.existsSync(startupTarget),host_startup_created_here:createdHostStartup,denied_paths:startupDeny}));
 
- for(const test of ['scheduler-cli','scheduler-com','services','wmi','runas','startup-user','startup-common','shell-application','shell-application-local','network','metadata-network']){
+ for(const test of ['scheduler-cli','scheduler-com','services','wmi','runas','startup-user','startup-host','startup-common','shell-application','shell-application-local','network','metadata-network']){
   const unfenced=await route(test,'unfenced');const fenced=await route(test,'fenced');
   let classification=unfenced.exit===0?(fenced.exit!==0?'fence_or_principal_denial':'operation_accepted'):'control_failed_not_attributable';
+  // A missing folder is a fixture error, never a fence denial.
+  if(fenced.error_code==='ENOENT'||unfenced.error_code==='ENOENT')classification='fixture_missing_not_a_denial';
   if(test==='observable-com' && unfenced.exit===0 && fenced.exit===0)classification=fenced.detail?.protected_read_allowed?'fenced_com_read_breach':'observable_fenced_com';
   const receipts={};
   if(test.startsWith('shell-application')){
@@ -93,4 +116,4 @@ try{
  const initial=late.slice(0,-5);
  console.log(JSON.stringify({test:'com-after-floor-release',initial_observed:fs.existsSync(initial),initial:fs.existsSync(initial)?JSON.parse(fs.readFileSync(initial)):null,observed:fs.existsSync(late),receipt:fs.existsSync(late)?JSON.parse(fs.readFileSync(late)):null}));
 }catch(e){console.log(JSON.stringify({test:'review-harness-error',code:e.code??e.name,diagnostic:String(e.message).slice(0,900)}))}
-finally{await SandboxManager.reset();server.close();}
+finally{await SandboxManager.reset();server.close();if(createdHostStartup)try{fs.rmdirSync(hostStartup)}catch{}}

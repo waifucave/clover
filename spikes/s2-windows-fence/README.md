@@ -24,6 +24,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File spikes/s2-windows-fence/chec
 The native source defaults to the sibling uploaded by `remote.py`; on a checkout it falls
 back to `native/sandbox/windows-probe.cs`. The transport accepts only the two named VMs
 and uses SSH, not additional cloud operations. Its payload is public source only.
+Where direct SSH to the VMs is closed from the operator's network, set `CLOVER_SPIKE_IAP=1`: the
+same SSH session then runs through IAP TCP forwarding (no other cloud operation).
 
 `privileges` removes privileges, but does **not** confine filesystem writes. `privileges-low`
 adds low integrity. `restricted` and `low` also use `WRITES_RESTRICTED` and the well-known
@@ -55,7 +57,9 @@ python3 spikes/s2-windows-fence/remote.py windows spikes/s2-windows-fence/setup-
 python3 spikes/s2-windows-fence/remote.py windows spikes/s2-windows-fence/install-vcrt.ps1
 ```
 
-Provision only the test principal, its WFP policy and no user-profile read grant:
+Provision a fresh test principal, its WFP policy and no user-profile read grant. It first removes
+an earlier principal's profile by SID and any leftover `C:\Users\clover-spike-sandbox*` folder,
+because a leftover folder moves the next profile to `<name>.<COMPUTERNAME>`:
 
 ```sh
 python3 spikes/s2-windows-fence/remote.py windows spikes/s2-windows-fence/provision-candidate.ps1
@@ -86,9 +90,24 @@ COM child receipts and deliberate inherited/duplicated public-canary handles:
 python3 spikes/s2-windows-fence/remote.py windows spikes/s2-windows-fence/review-routes.ps1
 ```
 
-The tests record both outcomes. A failed unfenced control is not counted as a fence denial.
-The user-Startup write was accepted after its directory was materialized; the original
-missing-directory denial must not be used as security evidence. `handle-probe.cs` deliberately
+The tests record both outcomes. A failed unfenced control is not counted as a fence denial,
+and a missing folder (ENOENT) is a fixture error, never a denial: only EPERM/EACCES count.
+
+Find the principal's real Startup folder and compare the deny options (baseline, a deny on the
+three Startup folders, a deny on the principal's whole profile), each with an admin control:
+
+```sh
+python3 spikes/s2-windows-fence/remote.py windows spikes/s2-windows-fence/startup-probe.ps1
+```
+
+The launcher's child token restricts writes to `[sandbox user, Everyone, RESTRICTED]`, so the
+principal can write its own profile; the earlier accepted Startup write landed there, in a
+profile redirected to `<name>.<COMPUTERNAME>` that the old fixture never targeted. The candidate
+and the controls now resolve that profile by SID after the first launch, create its missing
+Startup folder as provisioning would, and deny the principal's, the real user's and the common
+Startup folders. A deny on the whole profile is **destructive**: Windows loads a temporary profile
+(`C:\Users\TEMP`) and changes the principal's ProfileList entry, so re-provision afterwards.
+Results: `final-startup-probe.txt`, `final-windows-candidate-v3.txt`, `review-controls-v6.txt`. `handle-probe.cs` deliberately
 passes inheritable canary handles to the first broker hop, bypassing Node's own filtering, then
 tests the actual sandbox child. Only public fixture contents are used.
 

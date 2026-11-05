@@ -1,0 +1,15 @@
+Uploading public source chunk 1
+Uploading public source chunk 2
+Uploading public source chunk 3
+Uploading public source chunk 4
+Running startup-probe.ps1 on clover-c-win
+Startup and profile writes: real profile by SID, baseline versus Startup deny versus profile deny, admin control
+directory_status=0xC0000035 alias_status=0x00000000
+{"phase":"paths","principal_profile":"C:\\Users\\<sandbox-profile-redirected>","principal_profile_redirected":true,"leftover_named_folder":true,"targets":["allowed-work","principal-startup","principal-profile","principal-roaming","principal-temp","leftover-named-folder-startup","host-startup","common-startup","fixture-outside"]}
+{"phase":"control","actor":"unfenced","env":{"USERPROFILE":"C:\\Users\\<test-user>","APPDATA":"C:\\Users\\<test-user>\\AppData\\Roaming"},"writes":{"allowed-work":true,"principal-startup":true,"principal-profile":true,"principal-roaming":true,"principal-temp":true,"leftover-named-folder-startup":true,"host-startup":true,"common-startup":true,"fixture-outside":true},"tools":{"node":true,"bash":true,"powershell":true}}
+{"phase":"baseline-work-only","actor":"fenced","env":{"USERPROFILE":"C:\\Users\\<sandbox-profile-redirected>","APPDATA":"C:\\Users\\<sandbox-profile-redirected>\\AppData\\Roaming"},"writes":{"allowed-work":true,"principal-startup":true,"principal-profile":true,"principal-roaming":true,"principal-temp":true,"leftover-named-folder-startup":"EPERM","host-startup":"EPERM","common-startup":"EPERM","fixture-outside":"EPERM"},"tools":{"node":true,"bash":true,"powershell":true}}
+{"phase":"baseline-work-only-after-reset","profile_list_unchanged":true}
+{"phase":"startup-deny","actor":"fenced","env":{"USERPROFILE":"C:\\Users\\<sandbox-profile-redirected>","APPDATA":"C:\\Users\\<sandbox-profile-redirected>\\AppData\\Roaming"},"writes":{"allowed-work":true,"principal-startup":"EPERM","principal-profile":true,"principal-roaming":true,"principal-temp":true,"leftover-named-folder-startup":"EPERM","host-startup":"EPERM","common-startup":"EPERM","fixture-outside":"EPERM"},"tools":{"node":true,"bash":true,"powershell":true}}
+{"phase":"startup-deny-after-reset","profile_list_unchanged":true}
+{"phase":"principal-profile-deny","actor":"fenced","env":{"USERPROFILE":"C:\\Users\\TEMP","APPDATA":"C:\\Users\\TEMP\\AppData\\Roaming"},"writes":{"allowed-work":true,"principal-startup":"EPERM","principal-profile":"EPERM","principal-roaming":"EPERM","principal-temp":"EPERM","leftover-named-folder-startup":"EPERM","host-startup":"EPERM","common-startup":"EPERM","fixture-outside":"EPERM"},"tools":{"node":true,"bash":true,"powershell":true}}
+{"phase":"principal-profile-deny-after-reset","profile_list_unchanged":false}

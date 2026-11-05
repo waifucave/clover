@@ -2,7 +2,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import net from 'node:net';
-import {spawn} from 'node:child_process';
+import {spawn,spawnSync} from 'node:child_process';
 import {pathToFileURL} from 'node:url';
 const {SandboxManager}=await import(pathToFileURL('C:/clover-tools/srt/node_modules/@anthropic-ai/sandbox-runtime/dist/index.js'));
 const root=fs.mkdtempSync('C:/clover-tools/clover-candidate-');
@@ -14,8 +14,11 @@ const script=path.join(work,'worker.cjs');
 // All destinations are public fixtures or local services on the disposable VM.
 const worker=String.raw`
 const fs=require('fs'),p=require('path'),cp=require('child_process'),net=require('net');
-const [test,work,control,outside,port]=process.argv.slice(2);
+const [test,work,control,outside,port,hostStartup]=process.argv.slice(2);
 const denied=fn=>{try{fn();return false}catch{return true}};
+// A missing folder (ENOENT) is not a fence denial: only access errors count.
+let code=null;
+const refused=fn=>{try{fn();return false}catch(e){code=e.code||null;return e.code==='EPERM'||e.code==='EACCES'}};
 const node='C:/clover-tools/node/node.exe',bun='C:/clover-tools/bun/bun.exe';
 const ps=process.env.SystemRoot+'/System32/WindowsPowerShell/v1.0/powershell.exe';
 const bash='C:/Program Files/Git/bin/bash.exe';
@@ -57,35 +60,73 @@ async function main(){
   ok=r.status!==0;break;}
  case 'delayed-probe':await new Promise(r=>setTimeout(r,2300));fs.writeFileSync(p.join(work,'com-floor-result'),JSON.stringify({protected_read_allowed:!denied(()=>fs.readFileSync(p.join(control,'secrets.enc')))}));ok=true;break;
  case 'runas':ok=run('runas.exe',['/savecred','/user:Administrator','cmd.exe /c exit 0']).status!==0;break;
- case 'startup-user':case 'startup-common':
-  const dir=test==='startup-user'?p.join(process.env.APPDATA,'Microsoft/Windows/Start Menu/Programs/Startup'):p.join(process.env.ProgramData,'Microsoft/Windows/Start Menu/Programs/Startup');
-  ok=denied(()=>fs.writeFileSync(p.join(dir,'clover-spike.cmd'),'@exit /b 0'));break;
+ case 'startup-user':case 'startup-host':case 'startup-common':{
+  // startup-user is the principal's own Startup folder, from its own APPDATA.
+  const dir=test==='startup-user'?p.join(process.env.APPDATA,'Microsoft/Windows/Start Menu/Programs/Startup'):test==='startup-host'?hostStartup:p.join(process.env.ProgramData,'Microsoft/Windows/Start Menu/Programs/Startup');
+  const f=p.join(dir,'clover-spike.cmd');ok=refused(()=>{fs.writeFileSync(f,'@exit /b 0');fs.unlinkSync(f)});break;}
+ case 'principal-scratch-write':{
+  // Declared scratch root: the launcher's restricting SIDs include the sandbox user, so its own
+  // profile stays writable. Passing means the write lands there, as the report states.
+  const f=p.join(process.env.USERPROFILE,'clover-spike-scratch.txt');try{fs.writeFileSync(f,'public');fs.unlinkSync(f);ok=true}catch{ok=false}break;}
  case 'job-child':
   const child=cp.spawn(node,['-e',"setTimeout(()=>require('fs').writeFileSync(process.argv[1],'public orphan marker'),2500)",p.join(work,'orphan')],{detached:true,stdio:'ignore',windowsHide:true});child.unref();ok=true;break;
  }
- console.log(JSON.stringify({worker_test:test,pass:ok}));process.exitCode=ok?0:10;
+ console.log(JSON.stringify({worker_test:test,pass:ok,...(code?{code}:{})}));process.exitCode=ok?0:10;
 }
 main().catch(()=>{console.log(JSON.stringify({worker_test:test,pass:false,error:'worker-exception'}));process.exitCode=11});
 `;
 fs.writeFileSync(script,worker);
-const config={filesystem:{allowWrite:[work],allowRead:[work],denyRead:[path.join(control,'run'),path.join(control,'secrets.enc'),path.join(control,'plaintext.key')],denyWrite:[control]},network:{allowedDomains:[],deniedDomains:[]},windows:{srtWin:{path:'C:/clover-tools/srt/node_modules/@anthropic-ai/sandbox-runtime/vendor/srt-win/x64/srt-win.exe'},sandboxUser:'clover-spike-sandbox',sublayerGuid:'784c4230-1105-4bda-8808-83582c000001'}};
+const sandboxUser='clover-spike-sandbox';
+const ps=c=>(spawnSync('powershell.exe',['-NoProfile','-NonInteractive','-Command',c],{encoding:'utf8'}).stdout||'').trim();
+const principalSid=ps(`(New-Object Security.Principal.NTAccount('${sandboxUser}')).Translate([Security.Principal.SecurityIdentifier]).Value`);
+const profileOf=sid=>ps(`(Get-ItemProperty 'HKLM:\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\ProfileList\\${sid}' -ErrorAction SilentlyContinue).ProfileImagePath`)||null;
+const startupUnder=home=>path.join(home,'AppData/Roaming/Microsoft/Windows/Start Menu/Programs/Startup');
+const hostStartup=path.join(process.env.APPDATA,'Microsoft/Windows/Start Menu/Programs/Startup');
+const commonStartup=path.join(process.env.ProgramData,'Microsoft/Windows/Start Menu/Programs/Startup');
+// The fence denies all three Startup folders. The principal's is resolved by SID once its first
+// launch has created the profile, never from the account name: a leftover C:\Users\<name> folder
+// moves the profile to <name>.<COMPUTERNAME>. A deny on the principal's profile root is not
+// usable: Windows then loads a temporary profile and changes the ProfileList entry (startup-probe).
+const configFor=deny=>({filesystem:{allowWrite:[work],allowRead:[work],denyRead:[path.join(control,'run'),path.join(control,'secrets.enc'),path.join(control,'plaintext.key')],denyWrite:[control,...deny]},network:{allowedDomains:[],deniedDomains:[]},windows:{srtWin:{path:'C:/clover-tools/srt/node_modules/@anthropic-ai/sandbox-runtime/vendor/srt-win/x64/srt-win.exe'},sandboxUser,sublayerGuid:'784c4230-1105-4bda-8808-83582c000001'}});
 const server=net.createServer(s=>s.end('public local listener'));
 await new Promise(r=>server.listen(0,'127.0.0.1',r));const port=server.address().port;
+const q=s=>"'"+s.replaceAll("'","''")+"'";
+async function wrappedRun(cmd,timeout=18000){
+ const {argv,env}=await SandboxManager.wrapWithSandboxArgv(cmd,'powershell',undefined,undefined,work);
+ return await new Promise(resolve=>{const c=spawn(argv[0],argv.slice(1),{env,cwd:work,shell:false,windowsHide:true});let out='',err='';c.stdout.on('data',b=>out+=b);c.stderr.on('data',b=>err+=b);const t=setTimeout(()=>c.kill(),timeout);c.on('close',code=>{clearTimeout(t);resolve({code,out,err})});c.on('error',()=>resolve({code:-1,out,err:'spawn-error'}))});
+}
 async function execute(test,posture='ordinary'){
- const q=s=>"'"+s.replaceAll("'","''")+"'";
- const cmd="& 'C:/clover-tools/node/node.exe' "+[script,test,work,control,outside,String(port)].map(q).join(' ');
+ const cmd="& 'C:/clover-tools/node/node.exe' "+[script,test,work,control,outside,String(port),hostStartup].map(q).join(' ');
  const start=performance.now();
  try{
   // Approved escapes are evaluated with the same mandatory candidate floor. Only
   // ordinary write allowance is widened; no unprotected host-shell fallback.
-  const {argv,env}=await SandboxManager.wrapWithSandboxArgv(cmd,'powershell',undefined,undefined,work);
-  const r=await new Promise(resolve=>{const c=spawn(argv[0],argv.slice(1),{env,cwd:work,shell:false,windowsHide:true});let out='',err='';c.stdout.on('data',b=>out+=b);c.stderr.on('data',b=>err+=b);const t=setTimeout(()=>c.kill(),18000);c.on('close',code=>{clearTimeout(t);resolve({code,out,err})});c.on('error',()=>resolve({code:-1,out,err:'spawn-error'}))});
+  const r=await wrappedRun(cmd);
   console.log(JSON.stringify({test,posture,exit:r.code,elapsed_ms:Math.round(performance.now()-start),worker:r.out.trim(),diagnostic:r.err.slice(0,450)}));
  }catch(e){console.log(JSON.stringify({test,posture,launch_error:e.code??e.name,diagnostic:String(e.message).slice(0,450)}))}
 }
+// The real user's own Startup folder exists on a desktop logon; materialize it if this SSH
+// session never created it, and remove it afterwards only if it was created here and is empty.
+const createdHostStartup=!fs.existsSync(hostStartup);if(createdHostStartup)fs.mkdirSync(hostStartup,{recursive:true});
 try{
+ // A fresh principal has no profile and therefore no Startup folder until its first launch.
+ await SandboxManager.initialize(configFor([]));
+ const warm=await wrappedRun("& 'C:/clover-tools/node/node.exe' -e "+q("console.log(process.env.USERPROFILE)"));
+ const fencedProfile=(warm.out.trim().split(/\r?\n/).filter(Boolean).pop()||'').trim()||null;
+ await SandboxManager.reset();
+ const principalProfile=profileOf(principalSid);
+ const temporaryProfile=!principalProfile||fencedProfile!==principalProfile;
+ // A fresh profile made by a non-interactive logon has no Startup folder, and a deny cannot be
+ // stamped on a missing path. Provisioning (elevated, here the administrator) creates it first.
+ const principalStartup=principalProfile&&startupUnder(principalProfile);
+ const principalStartupCreated=!!principalStartup&&!fs.existsSync(principalStartup);
+ if(principalStartupCreated)fs.mkdirSync(principalStartup,{recursive:true});
+ const startupDeny=[principalStartup,hostStartup,commonStartup].filter(p=>p&&fs.existsSync(p));
+ console.log(JSON.stringify({test:'fence-paths',principal_profile:principalProfile,fenced_userprofile:fencedProfile,temporary_profile:temporaryProfile,principal_startup_created_by_provisioning:principalStartupCreated,startup_deny:startupDeny}));
+ if(temporaryProfile)throw Object.assign(new Error('the principal is not running on its own profile'),{code:'TEMPORARY_PROFILE'});
+ const config=configFor(startupDeny);
  await SandboxManager.initialize(config);
- const tests=['allowed-write','ordinary-read','settings-write','run-read','secret-read','key-read','outside-write','junction-read','hardlink-read','case-dot-read','powershell-pipeline','bash-pipeline','git','ssh','node','bun','build','loopback-network','metadata-network','scheduler-cli','scheduler-com','services','wmi','com-server','com-outofproc','runas','startup-user','startup-common','job-child'];
+ const tests=['allowed-write','ordinary-read','settings-write','run-read','secret-read','key-read','outside-write','junction-read','hardlink-read','case-dot-read','powershell-pipeline','bash-pipeline','git','ssh','node','bun','build','loopback-network','metadata-network','scheduler-cli','scheduler-com','services','wmi','com-server','com-outofproc','runas','startup-user','startup-host','startup-common','principal-scratch-write','job-child'];
  for(const test of tests)await execute(test);
  await new Promise(r=>setTimeout(r,3300));console.log(JSON.stringify({test:'job-cleanup',pass:!fs.existsSync(path.join(work,'orphan'))}));
  const comResult=path.join(work,'com-floor-result');console.log(JSON.stringify({test:'com-outofproc-observation',observed:fs.existsSync(comResult),...(fs.existsSync(comResult)?JSON.parse(fs.readFileSync(comResult)):{} )}));
@@ -94,4 +135,4 @@ try{
  for(const test of ['outside-write-approved','settings-write','run-read','secret-read','key-read','loopback-network','metadata-network'])await execute(test,'approved-escape');
  await execute('ancestor-rename');
 }catch(e){console.log(JSON.stringify({test:'candidate-initialize',launch_error:e.code??e.name,diagnostic:String(e.message).slice(0,900)}))}
-finally{await SandboxManager.reset();server.close();fs.rmSync(root,{force:true,recursive:true});fs.rmSync(root+'-moved',{force:true,recursive:true});}
+finally{await SandboxManager.reset();server.close();if(createdHostStartup)try{fs.rmdirSync(hostStartup)}catch{}fs.rmSync(root,{force:true,recursive:true});fs.rmSync(root+'-moved',{force:true,recursive:true});}

@@ -20,8 +20,14 @@ def normalize(text):
         text=text.replace(home,'<host-home>')
         home_name=re.escape(Path.home().name)
         text=re.sub(rf'(?<=[/\\]){home_name}(?=[/\\\'"\s]|$)','<test-user>',text)
-    text=re.sub(r'C:(\\+)Users(\\+)[^\\\s"\']+',
+    # The sandbox principal's profile is redirected to <name>.<COMPUTERNAME> when a folder of
+    # its name is left over; keep that visible, and keep it distinct from the real user's home.
+    text=re.sub(r'C:(\\+)Users\1clover-spike-sandbox\.[^\\\s"\']+',
+        lambda m:'C:'+m[1]+'Users'+m[1]+'<sandbox-profile-redirected>',text)
+    # Shared folders (a temporary profile, Public, Default) are not user names.
+    text=re.sub(r'C:(\\+)Users(\\+)(?!(?:TEMP|Public|Default|clover-spike-sandbox|<[a-z-]+>)(?=[\\"\'\s]|$))[^\\\s"\']+',
         lambda m:'C:'+m[1]+'Users'+m[2]+'<test-user>',text)
+    text=text.replace('<real-user>','<test-user>')
     return '\n'.join(line.rstrip() for line in text.splitlines()).rstrip()+'\n'
 
 if __name__=='__main__':
