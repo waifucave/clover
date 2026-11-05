@@ -15,7 +15,7 @@ import { CLOVER_ROLES, PLUGIN_ROLES, REMOTE_ROLES, USER_ROLES, type CloverRole }
 import { METHODS, SessionEvent } from "../src/index";
 import { CARD_ANSWER_SKEW_MS, answerTimeOk, canonicalJson, cardAnswerSigningInput, cardHashInput } from "../src/approvals";
 import { buildCloverArtifacts } from "../scripts/clover-artifacts";
-import { isCdpMethodAllowed } from "../src/browser";
+import { isBrowserUrlAllowed, isCdpMethodAllowed } from "../src/browser";
 
 const methods = [...CLOVER_METHODS.values()];
 const events = [...CLOVER_EVENTS.values()];
@@ -329,5 +329,15 @@ describe("the browser's DevTools domains", () => {
     expect(isCdpMethodAllowed("Browser.close")).toBe(false);
     expect(isCdpMethodAllowed("Storage.getCookies")).toBe(false);
     expect(isCdpMethodAllowed("Unknown.thing")).toBe(false);
+  });
+
+  test("a partition loads no local file, browser page or Clover scheme (review S17)", () => {
+    for (const url of ["file:///etc/passwd", "File:///x", "filesystem:https://a.example/temporary/x", "chrome://settings", "chrome-untrusted://x/",
+      "devtools://devtools/x", "view-source:https://a.example", "clover-plugin://luna/a.js", "clover-asset://x", "about:settings", "", "nope"]) {
+      expect([url, isBrowserUrlAllowed(url)]).toEqual([url, false]);
+    }
+    for (const url of ["https://a.example/", "http://127.0.0.1:8080/", "about:blank", "about:srcdoc", "data:text/html,hi", "blob:https://a.example/1"]) {
+      expect([url, isBrowserUrlAllowed(url)]).toEqual([url, true]);
+    }
   });
 });

@@ -11,16 +11,20 @@
 //   resting tab goes back to headless before the next command reaches it.
 // * DevTools calls pass the allow list (`isCdpMethodAllowed`): no `Target`, `Browser` or `Storage`, and no path
 //   outside the bot's scratch folder in a call's parameters.
+// * A partition loads nothing `isBrowserUrlAllowed` refuses (`file:`, `chrome:`, `devtools:`, `view-source:`, the
+//   app's and core's own `clover…` schemes), however the request starts: `open` and `navigate` refuse it at once
+//   (`refused`), and the partition's session blocks it from a link, a redirect, a frame or DevTools' `Page.navigate`,
+//   which fails as a blocked load (review S17). The check lives in the session, not in reading DevTools parameters.
 // * A Point from a screenshot taken at another size is refused (`refused`), as is an agent's command on a tab the user
 //   holds (`held`, the inherited browser tool's control lease). The user's own commands are never refused for a hold.
 // * A host that stopped drawing gives an error, never a stale picture (S7 "What M1 should start with" item 4).
 import {
-  AGENT_VIEWPORT, isCdpMethodAllowed,
+  AGENT_VIEWPORT, isBrowserUrlAllowed, isCdpMethodAllowed,
   type Caller, type Screenshot, type TabOwner, type TabView, type Viewport,
 } from "@waifucave/clover-protocol";
 import type { Unsubscribe } from "./common";
 
-export { AGENT_VIEWPORT, isCdpMethodAllowed };
+export { AGENT_VIEWPORT, isBrowserUrlAllowed, isCdpMethodAllowed };
 
 export type BrowserChange = { type: "changed"; tab: TabView } | { type: "closed"; id: string; by: "user" | "page" | "crash" | "api" };
 

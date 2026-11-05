@@ -29,6 +29,33 @@ export function isCdpMethodAllowed(method: string): boolean {
   return (CDP_ALLOWED_DOMAINS as readonly string[]).includes(domain) && !(CDP_DENIED_DOMAINS as readonly string[]).includes(domain);
 }
 
+/** Schemes no browser partition loads, for any request or navigation however it starts: `browser.open` or
+ *  `browser.navigate`, a page's link or redirect, a frame, or `Page.navigate` through DevTools (review S17). Lane L
+ *  enforces them in each partition's own session (Electron's session handlers, the headless shell's request
+ *  interception), never by reading DevTools parameters. `file:` would read what the fence keeps from Bash, a headless
+ *  computer's key file included. */
+export const BROWSER_REFUSED_SCHEMES = [
+  "file:", "filesystem:", "chrome:", "chrome-extension:", "chrome-untrusted:", "devtools:", "view-source:",
+] as const;
+/** The app's and core's own schemes all start with `clover` (plugin assets, layers' origins, sealed frames), so no
+ *  scheme with this prefix serves a browser partition (§12.1). */
+export const CLOVER_SCHEME_PREFIX = "clover";
+
+/** Whether a browser partition may load a URL: not a refused scheme, not one of Clover's own, and of `about:` only
+ *  `about:blank` and `about:srcdoc` (the others are the browser's own pages). */
+export function isBrowserUrlAllowed(url: string): boolean {
+  let u: URL;
+  try {
+    u = new URL(url);
+  } catch {
+    return false;
+  }
+  const scheme = u.protocol.toLowerCase();
+  if ((BROWSER_REFUSED_SCHEMES as readonly string[]).includes(scheme) || scheme.startsWith(CLOVER_SCHEME_PREFIX)) return false;
+  if (scheme === "about:") return u.href === "about:blank" || u.href === "about:srcdoc";
+  return true;
+}
+
 /** A bot's tabs live in its own partition, the user's in another; never per site (§12.1). */
 export const TabOwner = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("bot"), bot: BotId }),

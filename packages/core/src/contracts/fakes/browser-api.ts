@@ -1,6 +1,10 @@
 // FakeBrowser: tabs as records, with the places, holds, viewport and allow-list rules, and DevTools answers a test
 // scripts. Nothing renders: a screenshot is a 1-pixel PNG at the tab's size, unless the test made its host stall.
-import { AGENT_VIEWPORT, isCdpMethodAllowed, type Caller, type Screenshot, type TabOwner, type TabView, type Viewport } from "@waifucave/clover-protocol";
+// Each partition's session refuses the schemes `isBrowserUrlAllowed` refuses, wherever a load starts: the API, a page
+// (`pageNavigates`, a link or a redirect), or DevTools' `Page.navigate`.
+import {
+  AGENT_VIEWPORT, isBrowserUrlAllowed, isCdpMethodAllowed, type Caller, type Screenshot, type TabOwner, type TabView, type Viewport,
+} from "@waifucave/clover-protocol";
 import type { Clock, TimerHandle } from "../clock";
 import { ContractError, isInside, Listeners, normalizePosix, type Unsubscribe } from "../common";
 import { CDP_PATH_PARAMS, mayActOnHeldTab, sameViewport, type BrowserApi, type BrowserChange, type CdpOptions } from "../browser-api";
@@ -44,6 +48,16 @@ export class FakeBrowser implements BrowserApi {
     this.#tabs.get(id)?.events.emit({ method, params: structuredClone(params) });
   }
 
+  /** The page itself goes somewhere (a link, a redirect, a frame): the partition's session decides, as for any load.
+   *  Returns whether it loaded. */
+  pageNavigates(id: string, url: string): boolean {
+    const t = this.#must(id);
+    if (!this.#sessionAllows(url)) return false;
+    t.view = { ...t.view, url };
+    this.#changed(t);
+    return true;
+  }
+
   /** The tab's host window stopped drawing (or drew again). */
   setStalled(id: string, stalled: boolean): void {
     const t = this.#must(id);
@@ -59,6 +73,7 @@ export class FakeBrowser implements BrowserApi {
   }
 
   async open(req: { owner: TabOwner; url?: string; show?: { view: string; viewport: Viewport } }, _as: Caller): Promise<TabView> {
+    if (req.url !== undefined && !this.#sessionAllows(req.url)) throw new ContractError("refused", "a browser tab doesn't load that kind of URL");
     const id = `tab_${++this.#seq}`;
     const view: TabView = {
       id, computer: this.computer, owner: structuredClone(req.owner),
@@ -84,6 +99,7 @@ export class FakeBrowser implements BrowserApi {
   async navigate(id: string, url: string, as: Caller): Promise<TabView> {
     const t = this.#must(id);
     this.#mayAct(t, as);
+    if (!this.#sessionAllows(url)) throw new ContractError("refused", "a browser tab doesn't load that kind of URL");
     this.#wake(t);
     t.view = { ...t.view, url };
     this.#touch(t);
@@ -138,6 +154,10 @@ export class FakeBrowser implements BrowserApi {
       }
     }
     this.#touch(t);
+    // The session, not this method, refuses the load: DevTools' navigation fails as a blocked load does in Chromium.
+    if (method === "Page.navigate" && typeof params?.url === "string" && !this.#sessionAllows(params.url)) {
+      return { frameId: t.view.id, errorText: "net::ERR_BLOCKED_BY_CLIENT" };
+    }
     const fn = this.#cdp.get(method);
     return structuredClone(fn ? await fn(params, structuredClone(t.view)) : {});
   }
@@ -154,6 +174,11 @@ export class FakeBrowser implements BrowserApi {
 
   watch(fn: (change: BrowserChange) => void): Unsubscribe {
     return this.#listeners.add(fn);
+  }
+
+  /** Every partition's session: the one check for every load, whoever starts it. */
+  #sessionAllows(url: string): boolean {
+    return isBrowserUrlAllowed(url);
   }
 
   #must(id: string): Tab {

@@ -38,6 +38,27 @@ describe("FakeBrowser", () => {
     expect(await browser.hide(tab.id)).toMatchObject({ place: "headless", viewport: AGENT_VIEWPORT, url: "https://a.example" });
   });
 
+  test("no partition loads a local file, the browser's own pages or Clover's schemes, however the load starts (review S17)", async () => {
+    const { browser } = setup();
+    const refused = [
+      "file:///Users/me/.clover/secrets.key", "FILE:///etc/passwd", "chrome://settings", "devtools://devtools/bundled/x.html",
+      "view-source:https://example.com", "chrome-extension://abc/x.html", "clover-plugin://luna/x.js", "clover://app", "about:settings", "not a url",
+    ];
+    for (const url of refused) {
+      expect([url, isContractError(await rejection(browser.open({ owner: { kind: "bot", bot: "alpha" }, url }, PLUGIN)), "refused")]).toEqual([url, true]);
+    }
+    const tab = await browser.open({ owner: { kind: "bot", bot: "alpha" }, url: "https://example.com" }, PLUGIN);
+    for (const url of refused) expect(isContractError(await rejection(browser.navigate(tab.id, url, BOT)), "refused")).toBe(true);
+    // The page's own links and redirects, and DevTools' navigation, meet the same session.
+    expect(browser.pageNavigates(tab.id, "file:///etc/passwd")).toBe(false);
+    expect(browser.pageNavigates(tab.id, "https://example.org/next")).toBe(true);
+    expect(await browser.cdp(tab.id, "Page.navigate", { url: "file:///Users/me/.clover/secrets.key" }, BOT)).toMatchObject({ errorText: "net::ERR_BLOCKED_BY_CLIENT" });
+    expect(browser.tabs()[0]!.url).toBe("https://example.org/next");
+    for (const url of ["https://example.com", "http://localhost:3000/", "about:blank", "data:text/plain,hi"]) {
+      expect((await browser.navigate(tab.id, url, BOT)).url).toBe(url);
+    }
+  });
+
   test("DevTools calls pass the allow list", async () => {
     const { browser } = setup();
     const tab = await browser.open({ owner: { kind: "bot", bot: "alpha" } }, PLUGIN);
