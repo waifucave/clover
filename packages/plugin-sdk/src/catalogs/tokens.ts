@@ -16,15 +16,17 @@
 //
 // Every value, a catalog token's or a plugin's own, passes `isSafeTokenValue` before it reaches CSS.
 //
-// The OS accent colour (the owner's ask: controls follow it, as Claude's desktop app does). An accent token
-// (`ACCENT_TOKENS`) may take the value `"system"`. Lane E's theme engine resolves it from the OS:
-// `systemPreferences.getAccentColor()` on macOS and Windows (`systemAccentFromOs`), re-read live when the OS accent
-// changes (the OS's change notification), and on Linux, or with no reading, the fixed fallback: the token's catalog
-// default for the appearance, whose pairing with its on-accent token G's contrast floors cover. Text and glyphs drawn
-// on an accent take its on-accent token, which for a live value is derived: black or white, whichever passes 4.5:1
-// against the resolved accent (`onAccentFor`), so a yellow accent never gets white text. Sealed card parts take the
-// resolved values like any token (`card.approve.background` is an accent token too, and resolves on its own, so
-// `card.*` still never derives from a token outside it). `resolveTokens` (formats/theme.ts) does all of this.
+// The OS accent colour (the owner's ask, as refined by lane G's review): controls follow it, as Claude's desktop app
+// does. An accent token (`SYSTEM_ACCENT_TOKENS`) may be `"system"`. Lane E's theme engine reads the OS accent
+// (`systemPreferences.getAccentColor()` on macOS and Windows, `systemAccentFromOs`), again whenever the OS says it
+// changed; with no reading (Linux) the token keeps the theme's accent, the value the theme stack gives without
+// `"system"`, which is fixed and which G's contrast floors cover. An ink on an accent (`AUTO_INKS`) may be `"auto"`,
+// which the core resolves in the current appearance against the accent as painted, any alpha flattened onto the
+// control's background: white when white reaches the ink's floor, otherwise the theme's dark ink. The floor is 3:1
+// for glyph-only controls (✓, ↑, ✕; WCAG 1.4.11) and 4.5:1 for controls with text labels, so the OSes' default
+// blues get white glyphs, as both OSes and Claude draw them, and a yellow accent never gets white. Sealed frames take
+// the resolved values like any token, and since no plugin changed anything, a new OS accent needs no new OK.
+// `resolveTokens` (formats/theme.ts) does all of this.
 
 export const TOKEN_TYPES = ["color", "dimension", "fontFamily", "fontWeight", "number", "duration", "easing", "shadow", "paint"] as const;
 /** `paint` is a CSS background: a colour or a gradient. */
@@ -67,7 +69,9 @@ export const TOKENS: readonly TokenInfo[] = [
   t("color.accent", "color", "#C2387A", "#FF7AB6", "The brand accent: primary actions, focus, the send button."),
   t("color.accent.text", "color", "#B12F6E", "#FF8CC1", "The accent carrying text, at 4.5:1 or more on the content plane."),
   t("color.accent.soft", "color", "#FBEAF2", "#3A2130", "A wash of the accent: a chosen chip, a highlighted mention."),
-  t("color.accent.contrast", "color", "#FFFFFF", "#2A0F1C", "Text and glyphs on an accent fill."),
+  t("color.accent.contrast", "color", "#FFFFFF", "#2A0F1C", "Text labels on an accent fill, at 4.5:1 or more (`auto` resolves it)."),
+  t("color.accent.glyph", "color", "#FFFFFF", "#2A0F1C", "Glyphs on an accent fill (✓, ↑, ✕), at 3:1 or more (`auto` resolves it)."),
+  t("color.accent.ink", "color", "#1C1B22", "#2A0F1C", "The theme's dark ink on an accent, where white falls short."),
   t("color.attention", "color", "#E09A00", "#FFC747", "Needs you: a waiting card, a question for the user."),
   t("color.attention.text", "color", "#8A5A00", "#FFD27A", "Attention carrying text."),
   t("color.danger", "color", "#C2302E", "#FF6B70", "Errors and actions that destroy something."),
@@ -96,7 +100,8 @@ export const TOKENS: readonly TokenInfo[] = [
   t("card.radius", "dimension", "20px", undefined, "The card's corner."),
   t("card.padding", "dimension", "16px", undefined, "The card's inset."),
   t("card.approve.background", "color", "#C2387A", "#FF7AB6", "The approve button."),
-  t("card.approve.text", "color", "#FFFFFF", "#2A0F1C", "The approve button's label."),
+  t("card.approve.text", "color", "#FFFFFF", "#2A0F1C", "The approve button's label and glyph (`auto` resolves it at 4.5:1)."),
+  t("card.approve.ink", "color", "#1C1B22", "#2A0F1C", "The card's dark ink on the approve button, where white falls short."),
   t("card.deny.background", "color", "#E6E6EC", "#34343C", "The deny button."),
   t("card.deny.text", "color", "#1C1B22", "#F4F3F8", "The deny button's label."),
   t("card.button.radius", "dimension", "10px", undefined, "The approve and deny buttons' corner."),
@@ -285,7 +290,7 @@ export function isTokenValue(type: TokenType, value: TokenValue): boolean {
   if (typeof value === "number") return type === "number" || (type === "fontWeight" && value >= 1 && value <= 1000);
   const v = value.trim();
   switch (type) {
-    case "color": return v.toLowerCase() !== SYSTEM_ACCENT && COLOR.test(v);
+    case "color": return v.toLowerCase() !== SYSTEM_ACCENT && v.toLowerCase() !== AUTO_INK && COLOR.test(v);
     case "dimension": return DIMENSION.test(v);
     case "number": return NUMBER.test(v);
     case "fontFamily": return FAMILY.test(value);
@@ -303,9 +308,10 @@ export function isAnyTokenValue(value: unknown): value is TokenValue {
 }
 
 /** Whether a value may be set for a token by name: the catalog token's own type, or any type for a plugin's own;
- *  `"system"` only for an accent token. */
+ *  `"system"` only for an accent token, `"auto"` only for an ink on one. */
 export function isValueForToken(name: string, value: unknown): value is TokenValue {
-  if (value === SYSTEM_ACCENT) return Object.hasOwn(ACCENT_TOKENS, name);
+  if (value === SYSTEM_ACCENT) return SYSTEM_ACCENT_TOKENS.includes(name);
+  if (value === AUTO_INK) return Object.hasOwn(AUTO_INKS, name);
   const type = TOKENS.find((t) => t.name === name)?.type;
   if (type === undefined) return isAnyTokenValue(value);
   return (typeof value === "string" || typeof value === "number") && isTokenValue(type, value);
@@ -313,11 +319,29 @@ export function isValueForToken(name: string, value: unknown): value is TokenVal
 
 /** The value an accent token takes to follow the OS accent colour. */
 export const SYSTEM_ACCENT = "system";
+/** The value an ink on an accent takes to be resolved by the core. */
+export const AUTO_INK = "auto";
 
-/** The accent tokens, which may be `"system"`, each with the token that draws text and glyphs on it. */
-export const ACCENT_TOKENS: Readonly<Record<string, string>> = {
-  "color.accent": "color.accent.contrast",
-  "card.approve.background": "card.approve.text",
+/** The tokens that may be `"system"`. */
+export const SYSTEM_ACCENT_TOKENS: readonly string[] = ["color.accent", "card.approve.background"];
+
+export interface AutoInk {
+  /** The accent it is drawn on. */
+  readonly accent: string;
+  /** What the control sits on, which an accent with alpha is flattened onto. */
+  readonly background: string;
+  /** The theme's dark ink, used where white falls short. */
+  readonly darkInk: string;
+  /** 3 for glyph-only controls (WCAG 1.4.11), 4.5 for text labels. */
+  readonly floor: 3 | 4.5;
+}
+
+/** The inks that may be `"auto"`. A sealed card's approve button holds a label or a glyph, so its ink takes the
+ *  text floor; `card.*` resolves from `card.*` alone. */
+export const AUTO_INKS: Readonly<Record<string, AutoInk>> = {
+  "color.accent.contrast": { accent: "color.accent", background: "color.surface", darkInk: "color.accent.ink", floor: 4.5 },
+  "color.accent.glyph": { accent: "color.accent", background: "color.surface", darkInk: "color.accent.ink", floor: 3 },
+  "card.approve.text": { accent: "card.approve.background", background: "card.background", darkInk: "card.approve.ink", floor: 4.5 },
 };
 
 /** Electron's `systemPreferences.getAccentColor()` (`RRGGBBAA`) as a token value (`#RRGGBB`), or undefined when it
@@ -327,19 +351,33 @@ export function systemAccentFromOs(raw: string): string | undefined {
   return m ? `#${m[1]!.toUpperCase()}` : undefined;
 }
 
-/** A `#rgb`, `#rgba`, `#rrggbb` or `#rrggbbaa` colour's WCAG relative luminance, ignoring alpha; undefined otherwise. */
-function luminance(color: string): number | undefined {
+/** A `#rgb`, `#rgba`, `#rrggbb` or `#rrggbbaa` colour as `[r, g, b, a]`, channels 0–1; undefined otherwise. */
+export function parseHexColor(color: string): [number, number, number, number] | undefined {
   let hex = /^#([0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})$/i.exec(color.trim())?.[1];
   if (hex === undefined) return undefined;
   if (hex.length <= 4) hex = [...hex].map((c) => c + c).join("");
-  const channel = (i: number) => {
-    const c = Number.parseInt(hex!.slice(i, i + 2), 16) / 255;
-    return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
-  };
-  return 0.2126 * channel(0) + 0.7152 * channel(2) + 0.0722 * channel(4);
+  const ch = (i: number) => Number.parseInt(hex!.slice(i, i + 2), 16) / 255;
+  return [ch(0), ch(2), ch(4), hex.length === 8 ? ch(6) : 1];
 }
 
-/** The WCAG contrast ratio of two hex colours, from 1 to 21; undefined when either isn't hex. */
+const toHex = (rgb: readonly number[]) => `#${rgb.map((c) => Math.round(c * 255).toString(16).padStart(2, "0")).join("").toUpperCase()}`;
+
+/** A colour as painted over another: alpha flattened (both hex). The background's own alpha is dropped. */
+export function flattenColor(color: string, background: string): string | undefined {
+  const c = parseHexColor(color);
+  const b = parseHexColor(background);
+  if (c === undefined || b === undefined) return undefined;
+  return toHex([0, 1, 2].map((i) => c[i]! * c[3] + b[i]! * (1 - c[3])));
+}
+
+function luminance(color: string): number | undefined {
+  const c = parseHexColor(color);
+  if (c === undefined) return undefined;
+  const lin = (v: number) => (v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4);
+  return 0.2126 * lin(c[0]) + 0.7152 * lin(c[1]) + 0.0722 * lin(c[2]);
+}
+
+/** The WCAG contrast ratio of two hex colours (alpha ignored), from 1 to 21; undefined when either isn't hex. */
 export function contrastRatio(a: string, b: string): number | undefined {
   const la = luminance(a);
   const lb = luminance(b);
@@ -347,13 +385,12 @@ export function contrastRatio(a: string, b: string): number | undefined {
   return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
 }
 
-/** Text and glyphs on an accent: black or white, whichever passes 4.5:1 against it (one always does), the higher
- *  when both do; undefined for a value that isn't hex. */
-export function onAccentFor(accent: string): "#000000" | "#FFFFFF" | undefined {
-  const black = contrastRatio(accent, "#000000");
-  const white = contrastRatio(accent, "#FFFFFF");
-  if (black === undefined || white === undefined) return undefined;
-  return black >= white ? "#000000" : "#FFFFFF";
+/** An `auto` ink: white when white reaches `floor` against the accent as painted (its alpha flattened onto
+ *  `background`), otherwise `darkInk`; undefined when the accent or background isn't hex. */
+export function resolveAutoInk(accent: string, opts: { background: string; darkInk: string; floor: number }): string | undefined {
+  const painted = flattenColor(accent, opts.background);
+  if (painted === undefined) return undefined;
+  return contrastRatio("#FFFFFF", painted)! >= opts.floor ? "#FFFFFF" : opts.darkInk;
 }
 
 /** The text a value takes in CSS. */

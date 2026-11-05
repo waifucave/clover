@@ -2268,7 +2268,21 @@
       "type": "color",
       "default": "#FFFFFF",
       "dark": "#2A0F1C",
-      "doc": "Text and glyphs on an accent fill."
+      "doc": "Text labels on an accent fill, at 4.5:1 or more (`auto` resolves it)."
+    },
+    {
+      "name": "color.accent.glyph",
+      "type": "color",
+      "default": "#FFFFFF",
+      "dark": "#2A0F1C",
+      "doc": "Glyphs on an accent fill (✓, ↑, ✕), at 3:1 or more (`auto` resolves it)."
+    },
+    {
+      "name": "color.accent.ink",
+      "type": "color",
+      "default": "#1C1B22",
+      "dark": "#2A0F1C",
+      "doc": "The theme's dark ink on an accent, where white falls short."
     },
     {
       "name": "color.attention",
@@ -2446,7 +2460,14 @@
       "type": "color",
       "default": "#FFFFFF",
       "dark": "#2A0F1C",
-      "doc": "The approve button's label."
+      "doc": "The approve button's label and glyph (`auto` resolves it at 4.5:1)."
+    },
+    {
+      "name": "card.approve.ink",
+      "type": "color",
+      "default": "#1C1B22",
+      "dark": "#2A0F1C",
+      "doc": "The card's dark ink on the approve button, where white falls short."
     },
     {
       "name": "card.deny.background",

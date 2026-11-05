@@ -4,7 +4,7 @@ import { createHash } from "node:crypto";
 import {
   IndexSchema, LayoutSchema, LocaleSchema, RevocationsSchema, ThemeSchema, compareVersions, isRevoked, isTreeHashExcluded,
   layoutPaths, layoutSpots, localeFallbacks, parseRange, parseSignatureFile, parseVersion, placeholdersOf, satisfies,
-  ACCENT_TOKENS, SYSTEM_ACCENT, TOKENS, contrastRatio, isValueForToken, onAccentFor, systemAccentFromOs, validateTree,
+  AUTO_INK, AUTO_INKS, SYSTEM_ACCENT, TOKENS, contrastRatio, flattenColor, isValueForToken, systemAccentFromOs, validateTree,
   cardTokensChanged, cssFunctionName, cssUnescape, cssUrlArgumentsAreDynamic, isCssUrlFunction, isDroppedCssFunction, resolveCssUrl, resolveTokens, setsCardTokens, sha256Hex,
   themeTokensFor, treeHash, treeHashInput, treePathProblem,
 } from "../src/index";
@@ -44,46 +44,51 @@ describe("appearance and the fallback order", () => {
     expect(dark["color.canvas"]).toBe("#212126");
   });
 
-  test("an accent may follow the OS: system resolves live, its on-accent text passes 4.5:1, and the fallback is fixed", async () => {
-    const theme = { tokens: { "color.accent": SYSTEM_ACCENT, "card.approve.background": SYSTEM_ACCENT } };
-    // A yellow accent never gets white text; a deep one gets white.
-    const yellow = resolveTokens("light", [theme], { systemAccent: "#FFD60A" });
-    expect([yellow["color.accent"], yellow["color.accent.contrast"]]).toEqual(["#FFD60A", "#000000"]);
-    const purple = resolveTokens("dark", [theme], { systemAccent: systemAccentFromOs("5e2ca5ff")! });
-    expect([purple["color.accent"], purple["color.accent.contrast"]]).toEqual(["#5E2CA5", "#FFFFFF"]);
-    // Sealed card parts take the resolved values like any token.
-    expect([yellow["card.approve.background"], yellow["card.approve.text"]]).toEqual(["#FFD60A", "#000000"]);
-    // Whatever the OS says, the derived text passes 4.5:1.
+  test("an accent may follow the OS; auto inks are white when white reaches 3:1 for glyphs or 4.5:1 for text, else the dark ink", async () => {
+    const theme = {
+      tokens: { "color.accent": SYSTEM_ACCENT, "color.accent.glyph": AUTO_INK, "color.accent.contrast": AUTO_INK, "card.approve.background": SYSTEM_ACCENT, "card.approve.text": AUTO_INK },
+    };
+    const ink = (v: Record<string, unknown>) => [v["color.accent"], v["color.accent.glyph"], v["color.accent.contrast"], v["card.approve.background"], v["card.approve.text"]];
+    const INK = "#1C1B22";
+    // The OSes' default blues get white glyphs, as both OSes and Claude draw them; text takes white only at 4.5:1.
+    expect(ink(resolveTokens("light", [theme], { systemAccent: systemAccentFromOs("007affff") }))).toEqual(["#007AFF", "#FFFFFF", INK, "#007AFF", INK]);
+    expect(ink(resolveTokens("light", [theme], { systemAccent: "#0078D4" }))).toEqual(["#0078D4", "#FFFFFF", "#FFFFFF", "#0078D4", "#FFFFFF"]);
+    // A yellow accent never gets white; graphite gets white glyphs and dark text.
+    expect(ink(resolveTokens("light", [theme], { systemAccent: "#FFC600" }))).toEqual(["#FFC600", INK, INK, "#FFC600", INK]);
+    expect(ink(resolveTokens("light", [theme], { systemAccent: "#8C8C8C" }))).toEqual(["#8C8C8C", "#FFFFFF", INK, "#8C8C8C", INK]);
+    // In the current appearance, with the theme's own dark ink.
+    const dark = resolveTokens("dark", [theme], { systemAccent: "#FFC600" });
+    expect([dark["color.accent.glyph"], dark["card.approve.text"]]).toEqual(["#2A0F1C", "#2A0F1C"]);
+    // An accent with alpha is judged as painted on the control's background.
+    expect(flattenColor("#007AFF80", "#FFFFFF")).toBe("#7FBCFF");
+    expect(resolveTokens("light", [{ tokens: { "color.accent": "#007AFF80", "color.accent.glyph": AUTO_INK } }])["color.accent.glyph"]).toBe(INK);
+    // Whatever the OS says, white is drawn only where it reaches the floor.
     for (let i = 0; i < 4096; i += 7) {
       const accent = `#${(i * 4099 % 0x1000000).toString(16).padStart(6, "0").toUpperCase()}`;
       const v = resolveTokens("light", [theme], { systemAccent: accent });
-      expect([accent, contrastRatio(accent, String(v["color.accent.contrast"]))! >= 4.5]).toEqual([accent, true]);
+      if (v["color.accent.glyph"] === "#FFFFFF") expect([accent, contrastRatio("#FFFFFF", accent)! >= 3]).toEqual([accent, true]);
+      if (v["color.accent.contrast"] === "#FFFFFF") expect([accent, contrastRatio("#FFFFFF", accent)! >= 4.5]).toEqual([accent, true]);
     }
-    // No reading (Linux), or a value that isn't a colour: the fixed fallback, the catalog's pairing.
-    const def = (name: string, dark: boolean) => { const t = TOKENS.find((x) => x.name === name)!; return dark && t.dark !== undefined ? t.dark : t.default; };
-    for (const appearance of ["light", "dark"] as const) {
-      for (const opts of [{}, { systemAccent: "not a colour" }]) {
-        const v = resolveTokens(appearance, [theme], opts);
-        for (const [accent, on] of Object.entries(ACCENT_TOKENS)) {
-          expect([v[accent], v[on]]).toEqual([def(accent, appearance === "dark"), def(on, appearance === "dark")]);
-          // G's floors cover the fallback: its pairing passes 4.5:1.
-          expect(contrastRatio(String(v[accent]), String(v[on]))!).toBeGreaterThanOrEqual(4.5);
-        }
-      }
-    }
-    // A fixed accent stays as the theme set it; the OS is read only for "system".
-    expect(resolveTokens("light", [{ tokens: { "color.accent": "#123456" } }], { systemAccent: "#FFD60A" })["color.accent"]).toBe("#123456");
-    // Only accent tokens take "system".
+    // No reading (Linux): the theme's accent, the value beneath "system", which G's floors cover.
+    const lunaAccent = { tokens: { "color.accent": "#5E2CA5" } };
+    expect(resolveTokens("light", [lunaAccent, theme])["color.accent"]).toBe("#5E2CA5");
+    expect(resolveTokens("light", [theme])["color.accent"]).toBe(TOKENS.find((t) => t.name === "color.accent")!.default);
+    expect(resolveTokens("light", [theme], { systemAccent: "not a colour" })["color.accent"]).toBe(TOKENS.find((t) => t.name === "color.accent")!.default);
+    expect(resolveTokens("light", [lunaAccent, theme])["color.accent.glyph"]).toBe("#FFFFFF");
+    // A layer above that sets the accent wins over "system"; the OS is read only for "system".
+    expect(resolveTokens("light", [theme, { tokens: { "color.accent": "#123456" } }], { systemAccent: "#FFC600" })["color.accent"]).toBe("#123456");
+    // Only accent tokens take "system", only inks on them take "auto".
     expect(isValueForToken("color.accent", SYSTEM_ACCENT)).toBe(true);
     expect(isValueForToken("color.text", SYSTEM_ACCENT)).toBe(false);
+    expect(isValueForToken("color.accent.glyph", AUTO_INK)).toBe(true);
+    expect(isValueForToken("color.text", AUTO_INK)).toBe(false);
     expect(isValueForToken("plugin.luna.glow", SYSTEM_ACCENT)).toBe(false);
-    expect(onAccentFor("rgb(0 0 0)")).toBeUndefined();
-    expect(systemAccentFromOs("0a84ffff")).toBe("#0A84FF");
+    expect(Object.values(AUTO_INKS).map((i) => i.floor)).toEqual([4.5, 3, 4.5]);
     expect(systemAccentFromOs("blue")).toBeUndefined();
     // A theme file may say so.
     const files = new Map([
       ["clover.json", JSON.stringify({ manifest: 1, id: "luna", name: "Luna", contributes: { themes: [{ id: "luna", file: "t.json" }] } })],
-      ["t.json", JSON.stringify({ theme: 1, name: "Luna", tokens: { "color.accent": "system", "color.text": "system" } })],
+      ["t.json", JSON.stringify({ theme: 1, name: "Luna", tokens: { "color.accent": "system", "color.accent.glyph": "auto", "color.text": "system" } })],
     ]);
     const r = await validateTree({ readText: (p) => files.get(p), exists: (p) => files.has(p), listDirs: () => [] }, { folderName: "luna" });
     expect(r.issues.map((i) => `${i.code}:${i.path}`)).toEqual(["token_value:/tokens/color.text"]);

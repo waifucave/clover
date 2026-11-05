@@ -26,7 +26,9 @@
 // them waits for its own OK while the rest of the change applies at once. Until the user OKs it, the core passes the
 // layer's last OK'd values as `heldCard`, and `resolveTokens` takes that layer's `card.*` values from there.
 import { z } from "zod";
-import { ACCENT_TOKENS, CARD_TOKENS, SYSTEM_ACCENT, TOKENS, isTokenValue, isValueForToken, onAccentFor, type TokenValue } from "../catalogs/tokens";
+import {
+  AUTO_INK, AUTO_INKS, CARD_TOKENS, SYSTEM_ACCENT, TOKENS, isTokenValue, isValueForToken, resolveAutoInk, type TokenValue,
+} from "../catalogs/tokens";
 import { Path, Text } from "../manifest/fields";
 
 /** A token's value: a string, or a plain number for `number` and `fontWeight` tokens. The catalog
@@ -94,36 +96,34 @@ export function cardTokensChanged(before: ThemeTokens, after: ThemeTokens): bool
 
 /** One part's token values in one appearance: the catalog's defaults, then each layer's values over them, `layers`
  *  given lowest first (base theme, global theme, the bot's theme, the dressing plugins from the outermost part in,
- *  the user's overrides). An accent token left at `"system"` takes `systemAccent`, the OS accent as the engine last
- *  read it, and its on-accent token is derived from it (`onAccentFor`); with no reading (Linux), both take their
- *  fixed fallback, the catalog defaults for the appearance. */
+ *  the user's overrides). An accent token whose winning value is `"system"` takes `systemAccent`, the OS accent as
+ *  the engine last read it, or with none the value beneath it in the stack, the theme's accent. An ink whose winning
+ *  value is `"auto"` is then resolved against its accent (`resolveAutoInk`). */
 export function resolveTokens(appearance: Appearance, layers: readonly TokenLayer[], opts: { systemAccent?: string } = {}): Record<string, TokenValue> {
   const out: Record<string, TokenValue> = {};
   for (const t of TOKENS) out[t.name] = appearance === "dark" && t.dark !== undefined ? t.dark : t.default;
+  const followsOs = new Set<string>();
+  const auto = new Set<string>();
   for (const layer of layers) {
     const values = themeTokensFor(layer, appearance) ?? {};
     if (layer.heldCard !== undefined) {
       for (const name of Object.keys(values)) if (isCardToken(name)) delete values[name];
       for (const [name, v] of Object.entries(themeTokensFor(layer.heldCard, appearance) ?? {})) if (isCardToken(name)) values[name] = v;
     }
-    Object.assign(out, values);
-  }
-  const live = opts.systemAccent !== undefined && isTokenValue("color", opts.systemAccent) ? opts.systemAccent : undefined;
-  for (const [accent, on] of Object.entries(ACCENT_TOKENS)) {
-    if (out[accent] !== SYSTEM_ACCENT) continue;
-    const derived = live === undefined ? undefined : onAccentFor(live);
-    if (live !== undefined && derived !== undefined) {
-      out[accent] = live;
-      out[on] = derived;
-    } else {
-      out[accent] = catalogDefault(accent, appearance);
-      out[on] = catalogDefault(on, appearance);
+    for (const [name, v] of Object.entries(values)) {
+      followsOs.delete(name);
+      auto.delete(name);
+      if (v === SYSTEM_ACCENT) followsOs.add(name);
+      else if (v === AUTO_INK) auto.add(name);
+      else out[name] = v;
     }
   }
+  const live = opts.systemAccent !== undefined && isTokenValue("color", opts.systemAccent) ? opts.systemAccent : undefined;
+  if (live !== undefined) for (const name of followsOs) out[name] = live;
+  for (const name of auto) {
+    const ink = AUTO_INKS[name]!;
+    const resolved = resolveAutoInk(String(out[ink.accent]), { background: String(out[ink.background]), darkInk: String(out[ink.darkInk]), floor: ink.floor });
+    if (resolved !== undefined) out[name] = resolved;
+  }
   return out;
-}
-
-function catalogDefault(name: string, appearance: Appearance): TokenValue {
-  const t = TOKENS.find((x) => x.name === name)!;
-  return appearance === "dark" && t.dark !== undefined ? t.dark : t.default;
 }
