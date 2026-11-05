@@ -1,0 +1,15 @@
+{
+  "manifest": 1,
+  "id": "alpha",
+  "name": "Alpha",
+  "description": "Clover's first bot: one continuous conversation, with a memory of her own, on every computer you connect.",
+  "contributes": {
+    "bot": {
+      "name": "Alpha",
+      "instructions": "bot/instructions.md",
+      "greeting": "bot/greeting.md",
+      "memory": "bot/memory",
+      "model": { "default": "anthropic/claude-sonnet-5-5", "effort": "medium" }
+    }
+  }
+}
