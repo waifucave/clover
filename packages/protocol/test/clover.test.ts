@@ -14,7 +14,7 @@ import {
 import { CLOVER_ROLES, CloverHelloParams, PLUGIN_ROLES, REMOTE_ROLES, USER_ROLES, helloVersionServed, type CloverRole } from "../src/roles";
 import { CLOVER_ERR, CLOVER_PROTOCOL_MIN_VERSION, CLOVER_PROTOCOL_VERSION, HOST_PROCESSES } from "../src/common";
 import { METHODS, SessionEvent } from "../src/index";
-import { CARD_ANSWER_SKEW_MS, answerTimeOk, canonicalJson, cardAnswerSigningInput, cardHashInput } from "../src/approvals";
+import { CARD_ANSWER_SKEW_MS, SealedValue, answerTimeOk, canonicalJson, cardAnswerSigningInput, cardContentInput, cardHashInput } from "../src/approvals";
 import { buildCloverArtifacts } from "../scripts/clover-artifacts";
 import { isBrowserUrlAllowed, isCdpMethodAllowed } from "../src/browser";
 
@@ -348,6 +348,14 @@ describe("cards", () => {
     expect(byName.emoji!.canonical.startsWith('{"e":"😀","z":')).toBe(true);
     expect(byName.numbers!.canonical).toContain('"big":1e+21');
     expect(byName["line-separators"]!.canonical).toBe('{"s":"a\u2028b\u2029c"}');
+    expect(byName["lone-surrogate"]!.canonical).toBe('{"s":"a\uFFFDb","\uFFFD":1}');
+    // Sealed text refuses one outright.
+    expect(SealedValue.safeParse({ type: "text", text: "a\ud800b" }).success).toBe(false);
+    expect(SealedValue.safeParse({ type: "text", text: "a😀b" }).success).toBe(true);
+    // A card's content leaves out where and when it was shown, and nothing else (N1).
+    const c = file.card.card as never as Parameters<typeof cardContentInput>[0] & { id: string; issuedAt: number };
+    expect(cardContentInput({ ...c, id: "card_other", issuedAt: 1 } as never)).toBe(cardContentInput(c));
+    expect(cardContentInput({ ...c, fields: { title: { type: "text", text: "Show the weather" } } })).not.toBe(cardContentInput(c));
     for (const v of file.vectors) expect([v.name, canonicalJson(v.input)]).toEqual([v.name, v.canonical]);
     expect(cardHashInput(file.card.card as never)).toBe(file.card.hashInput);
   });

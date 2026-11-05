@@ -1,5 +1,5 @@
 {
-  "doc": "canonicalJson is RFC 8785 (JCS): keys sorted by UTF-16 code units, strings and numbers as ECMAScript serializes them, no whitespace. A card's hash is SHA-256 over cardHashInput(card), lowercase hex.",
+  "doc": "canonicalJson is RFC 8785 (JCS): keys sorted by UTF-16 code units, strings and numbers as ECMAScript serializes them, no whitespace, with any lone surrogate first replaced by U+FFFD. A card's hash is SHA-256 over cardHashInput(card), lowercase hex. The lone-surrogate vector's input holds escapes a Swift string can't: decoded with U+FFFD in their place, it must give the same canonical text.",
   "vectors": [
     {
       "name": "nulls",
@@ -52,6 +52,15 @@
       },
       "canonical": "{\"e\":\"😀\",\"z\":\"👩‍👩‍👧\",\"😀\":1}",
       "sha256": "5e2f5bf0014ba58b965fe87d20bee61eddaebeb88177f53d8d7d8a72001c9904"
+    },
+    {
+      "name": "lone-surrogate",
+      "input": {
+        "s": "a\ud800b",
+        "\udc00": 1
+      },
+      "canonical": "{\"s\":\"a�b\",\"�\":1}",
+      "sha256": "f8e88b64323d701de4a00f358b0df5b0f5a8455c48d20b8f90fd5d0087ed63c0"
     },
     {
       "name": "control",

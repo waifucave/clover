@@ -32,6 +32,16 @@ export const LinkView = z.object({
 });
 export type LinkView = z.infer<typeof LinkView>;
 
+/** Who may answer another computer's card with a signature (the owner's decision on review N1): a phone, with its own
+ *  key, or any desktop, with a key its app holds apart from the core's link key, so plugin code can't sign with it
+ *  where the OS allows: a Keychain item limited to the signed app on macOS, a TPM- or Windows Hello-backed key on
+ *  Windows. Where the OS can't keep it from plugin code (Linux, and Windows without either), the owner accepted the
+ *  risk: "any desktop may answer; a compromised plugin on a Windows or Linux computer could approve actions on other
+ *  computers". Servers, cloud computers and browsers never sign. `none` names a key the OS can't keep apart. */
+export const ANSWER_KEY_HOLDERS = ["secure-enclave", "keystore", "app-keychain", "tpm", "hello", "none"] as const;
+export const AnswerKeyHolder = z.enum(ANSWER_KEY_HOLDERS);
+export type AnswerKeyHolder = z.infer<typeof AnswerKeyHolder>;
+
 export const DeviceView = z.object({
   id: DeviceId,
   name: utf16(63, 1),
@@ -48,6 +58,8 @@ export const DeviceView = z.object({
   isMain: z.boolean(),
   addedAt: Timestamp,
   lastSeenAt: Timestamp.optional(),
+  /** How its app's answer key is held, for a device that may answer cards; absent for one that can't. */
+  answers: z.object({ held: AnswerKeyHolder }).optional(),
 });
 export type DeviceView = z.infer<typeof DeviceView>;
 

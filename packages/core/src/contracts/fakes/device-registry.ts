@@ -4,7 +4,7 @@ import type { DeviceKind, Os } from "@waifucave/clover-protocol";
 import type { Clock } from "../clock";
 import { ContractError, Listeners, type Unsubscribe } from "../common";
 import {
-  deviceIdFor,
+  answerKeyOf, deviceIdFor,
   type DeviceChange, type DeviceRecord, type DeviceRegistry, type PairingProof,
 } from "../device-registry";
 
@@ -95,6 +95,18 @@ export class FakeDeviceRegistry implements DeviceRegistry {
     if (!/^.{1,63}$/u.test(name)) throw new ContractError("invalid", "a device name is 1–63 characters");
     d.name = name;
     this.#listeners.emit({ type: "changed", device: { ...d } });
+  }
+
+  async verifyAnswer(id: string, data: Uint8Array, signature: Uint8Array): Promise<boolean> {
+    const d = this.#devices.get(id);
+    const key = d === undefined ? undefined : answerKeyOf(d);
+    if (key === undefined) return false;
+    try {
+      const k = await crypto.subtle.importKey("raw", unb64(key), { name: "Ed25519" }, false, ["verify"]);
+      return await crypto.subtle.verify({ name: "Ed25519" }, k, signature as Uint8Array<ArrayBuffer>, data as Uint8Array<ArrayBuffer>);
+    } catch {
+      return false;
+    }
   }
 
   async verify(id: string, data: Uint8Array, signature: Uint8Array): Promise<boolean> {

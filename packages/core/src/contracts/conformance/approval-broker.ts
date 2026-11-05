@@ -11,6 +11,7 @@ import {
 } from "@waifucave/clover-protocol";
 import {
   ACTION_EFFECTS, DECISION_RANK, acpOutcomeFor, cardMetaOf, deviceProofVerifier, levelDecision, strictestLevel, verifySignedAnswer,
+  type CallCardRenderer,
   type AgentPermissionOption, type AnswerOrigin, type ApprovalDecision, type ApprovalEvent, type ApprovalRequest,
 } from "../approval-broker";
 import { type FakeApprovalBroker, MemoryAnswerLedger } from "../fakes/approval-broker";
@@ -255,9 +256,9 @@ export function runApprovalBrokerConformance(make: ApprovalBrokerFactory): void 
       expect(await broker.answer(card.id, { optionId: "approve", hash: card.hash, proof: FRAME }, APP)).toBe("bad-origin");
       expect(await broker.answer(card.id, { optionId: "approve", hash: card.hash, proof: viaFrame(broker, card) }, { role: "remote", device: phone })).toBe("bad-origin");
       expect(await broker.answer(card.id, { optionId: "approve", hash: card.hash, proof: viaFrame(broker, card) }, { role: "plugin-host" })).toBe("bad-origin");
-      // A device's answer counts only from that device, in time, and the fake's verifier refuses by default.
-      expect(await broker.answer(card.id, { optionId: "approve", hash: card.hash, proof: device }, APP)).toBe("bad-origin");
-      expect(await broker.answer(card.id, { optionId: "approve", hash: card.hash, proof: device }, { role: "remote", device: "laptop000000000000" })).toBe("bad-origin");
+      // A device's answer may arrive by any computer (N4), but only in time, and the fake's verifier refuses by default.
+      expect(await broker.answer(card.id, { optionId: "approve", hash: card.hash, proof: device }, APP)).toBe("bad-proof");
+      expect(await broker.answer(card.id, { optionId: "approve", hash: card.hash, proof: device }, { role: "remote", device: "laptop000000000000" })).toBe("bad-proof");
       expect(await broker.answer(card.id, { optionId: "approve", hash: card.hash, proof: { ...device, at: 0 } }, { role: "remote", device: phone })).toBe("bad-time");
       expect(await broker.answer(card.id, { optionId: "approve", hash: card.hash, proof: device }, { role: "remote", device: phone })).toBe("bad-proof");
       expect(await broker.answer(card.id, { optionId: "deny", hash: card.hash, proof: viaFrame(broker, card) }, APP)).toBe("accepted");
@@ -326,7 +327,8 @@ export function runApprovalBrokerConformance(make: ApprovalBrokerFactory): void 
       expect(await broker.answer(one.card.id, { optionId: "approve", hash: one.card.hash, proof: await proof(phone, one.card, "deny") }, from(phone))).toBe("bad-proof");
       // The web companion answers no card, even with a good signature.
       expect(await broker.answer(one.card.id, { optionId: "approve", hash: one.card.hash, proof: await proof(web, one.card, "approve") }, from(web))).toBe("bad-proof");
-      expect(await broker.answer(one.card.id, { optionId: "approve", hash: one.card.hash, proof: await proof(phone, one.card, "approve") }, from(phone))).toBe("accepted");
+      // A phone's answer relayed by another computer holds end to end (review N4).
+      expect(await broker.answer(one.card.id, { optionId: "approve", hash: one.card.hash, proof: await proof(phone, one.card, "approve") }, { role: "peer", device: "laptop000000000000" })).toBe("accepted");
       expect(await one.decision).toMatchObject({ allowed: true, by: "card" });
 
       // A plugin OK's checked children are signed: a signature without them doesn't cover an answer with them.
@@ -340,6 +342,31 @@ export function runApprovalBrokerConformance(make: ApprovalBrokerFactory): void 
       const two = await carded(broker, bash());
       await registry.revoke(phone.id);
       expect(await broker.answer(two.card.id, { optionId: "approve", hash: two.card.hash, proof: await proof(phone, two.card, "approve") }, from(phone))).toBe("bad-proof");
+    });
+
+    test("a phone or a desktop's app-held key answers; a server, a desktop's link key or a browser never does (N1)", async () => {
+      const clock = new FakeClock();
+      const { registry } = await FakeDeviceRegistry.create({ clock, name: "Studio" });
+      const server = await makeFakeDevice();
+      const laptop = await makeFakeDevice();
+      const laptopApp = await makeFakeDevice();
+      const bare = await makeFakeDevice();
+      await registry.add({ id: server.id, name: "Box", kind: "server", runsCore: true, publicKey: server.publicKey }, { via: "account", account: "acct_1" });
+      await registry.add({ id: laptop.id, name: "Laptop", kind: "desktop", runsCore: true, publicKey: laptop.publicKey, answerKey: { publicKey: laptopApp.publicKey, held: "app-keychain" } }, { via: "account", account: "acct_1" });
+      await registry.add({ id: bare.id, name: "Old", kind: "desktop", runsCore: true, publicKey: bare.publicKey }, { via: "account", account: "acct_1" });
+      const broker = make({ clock, verify: deviceProofVerifier(registry) });
+      const at = clock.now();
+      const answer = async (card: Card, device: string, key: typeof server) => broker.answer(card.id, {
+        optionId: "approve", hash: card.hash,
+        proof: { via: "device", device, at, signature: toBase64(await key.sign(new TextEncoder().encode(cardAnswerSigningInput({ id: card.id, hash: card.hash, option: "approve", at })))) },
+      }, { role: "peer", device });
+      const one = await carded(broker, bash());
+      // A computer that isn't a desktop signs with the core's key, which plugin code may reach: never.
+      expect(await answer(one.card, server.id, server)).toBe("bad-proof");
+      // A desktop's link key isn't its answer key; a desktop with no answer key answers nothing.
+      expect(await answer(one.card, laptop.id, laptop)).toBe("bad-proof");
+      expect(await answer(one.card, bare.id, bare)).toBe("bad-proof");
+      expect(await answer(one.card, laptop.id, laptopApp)).toBe("accepted");
     });
 
     test("a signed answer counts as proof only for the call its card binds, on this computer, once", async () => {
@@ -361,8 +388,12 @@ export function runApprovalBrokerConformance(make: ApprovalBrokerFactory): void 
         return { card, option, device: who.id, at, signature: toBase64(await who.sign(new TextEncoder().encode(cardAnswerSigningInput({ id: card.id, hash: card.hash, option, at })))), ...over };
       };
       const ledger = new MemoryAnswerLedger();
+      // The receiver's own card for the call, from its built-in tables.
+      const render: CallCardRenderer = (call) => call.method === "computer.setLevel"
+        ? { kind: "change", change: "computer-level", fields: {}, options: unhashed.options, binds: { computer: call.computer, method: call.method, params: sha256(callBindingInput(call.method, call.params)) } }
+        : undefined;
       const check = (method = "computer.setLevel", p: unknown = params, self = "Studio") =>
-        ({ self, method, params: p, now: clock.now(), sha256, devices: registry, ledger });
+        ({ self, method, params: p, now: clock.now(), sha256, devices: registry, ledger, render });
       const good = await signed(phone);
       expect(await verifySignedAnswer(good, check("computer.rename"))).toBe("unbound");
       expect(await verifySignedAnswer(good, check(undefined, { ...params, level: "ask" }))).toBe("unbound");
@@ -372,6 +403,13 @@ export function runApprovalBrokerConformance(make: ApprovalBrokerFactory): void 
       expect(await verifySignedAnswer(await signed(web), check())).toBe("bad-device");
       expect(await verifySignedAnswer({ ...good, at: 0 }, check())).toBe("bad-time");
       expect(await verifySignedAnswer({ ...good, signature: (await signed(phone, "deny")).signature }, check())).toBe("bad-signature");
+      // A card whose text says something else can't bind this call, however well it is signed (N1).
+      const lie = { ...unhashed, id: "card_00112233445566778899aabc", fields: { title: { type: "text" as const, text: "Show the weather" } } };
+      const lieCard = { ...lie, hash: sha256(cardHashInput(lie as never)) } as Card;
+      const lieAt = clock.now();
+      const lied: SignedCardAnswer = { card: lieCard, option: "approve", device: phone.id, at: lieAt, signature: toBase64(await phone.sign(new TextEncoder().encode(cardAnswerSigningInput({ id: lieCard.id, hash: lieCard.hash, option: "approve", at: lieAt })))) };
+      expect(await verifySignedAnswer(lied, check())).toBe("mismatch");
+      expect(await verifySignedAnswer(good, { ...check(), render: () => undefined })).toBe("mismatch");
       expect(await verifySignedAnswer(good, check())).toBe("ok");
       expect(await verifySignedAnswer(good, check())).toBe("used");
     });

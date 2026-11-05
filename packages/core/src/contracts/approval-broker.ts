@@ -27,17 +27,21 @@
 // 7. The user's interrupt withdraws the step's cards; a cancelled or stopped session's cards resolve cancelled, as ACP
 //    requires of a client (S5 §8). The first answer wins; a later one is told so.
 //    An answer counts only as it arrived (`answer`'s `from`): a sealed-frame proof only from the app's main process
-//    (role `app`), naming the channel minted for this card (`frameChannel`); a device's signature only from the device
-//    the link authenticated, never a `browser` device, with its time inside `answerTimeOk`'s bounds, over the option
-//    and the children checked (`clover/card-answer/2`).
+//    (role `app`), naming the channel minted for this card (`frameChannel`). A device's signature counts relayed by
+//    any computer (review N4), from a device that may answer cards (a phone, or a desktop with its app's answer key:
+//    `mayAnswerCards`, the owner's decision on N1), with its time inside `answerTimeOk`'s bounds, over the option and
+//    the children checked (`clover/card-answer/2`).
+//    The owner's decision, recorded here: any desktop may answer; a compromised plugin on a Windows or Linux computer
+//    could approve actions on other computers.
 // 8. An agent never gets an "always": `acpOutcomeFor` picks `allow_once` or `reject_once`, and a card's "always" is
 //    saved as Clover's own rule instead (S5 edit 5).
 import {
   type Card, type CardAnswerProof, type CardFieldName, type CardKind, type CardMeta, type CardOption, type CardOutcome,
   type ChangeSubject, type CloverRole, type DeviceKind, type Level, LEVELS, type SealedValue, type SignedCardAnswer,
-  type TurnOrigin, answerTimeOk, callBindingInput, cardAnswerSigningInput, cardHashInput, isUserTurn,
+  type CardContent, type TurnOrigin, answerTimeOk, callBindingInput, cardAnswerSigningInput, cardContentInput, cardHashInput, isUserTurn,
 } from "@waifucave/clover-protocol";
 import type { Unsubscribe } from "./common";
+import { mayAnswerCards, type DeviceRegistry } from "./device-registry";
 
 /** The kinds that are always cards and never offer "always" (rule 1). */
 export const ALWAYS_CARD_KINDS: readonly CardKind[] = ["change", "confirm", "plugin-ok", "elicitation"];
@@ -267,10 +271,8 @@ export function cardMetaOf(card: Card): CardMeta {
 }
 
 /** What a verifier needs of the device registry. */
-export interface AnswerDevices {
-  verify(device: string, data: Uint8Array, signature: Uint8Array): Promise<boolean>;
-  get(device: string): { kind: DeviceKind; revokedAt?: number } | undefined;
-}
+/** The device registry, as the answer checks use it: the record and the answer key's signature check. */
+export type AnswerDevices = Pick<DeviceRegistry, "get" | "verifyAnswer">;
 
 function fromBase64(text: string): Uint8Array | null {
   try {
@@ -280,19 +282,19 @@ function fromBase64(text: string): Uint8Array | null {
   }
 }
 
-/** Builds the verifier for device answers: the signing device must be the one the link authenticated, paired, not a
- *  `browser` device, and its Ed25519 signature must cover `cardAnswerSigningInput` with the option and children. A
- *  sealed-frame proof never reaches it (the broker checks those), so it refuses one. */
+/** Builds the verifier for device answers: the signing device may answer cards (`mayAnswerCards`), and its answer
+ *  key's Ed25519 signature covers `cardAnswerSigningInput` with the option and children. The signature holds end to
+ *  end, so any computer may relay it (review N4); a sealed-frame proof never reaches this (the broker checks those). */
 export function deviceProofVerifier(devices: AnswerDevices): ProofVerifier {
-  return async (card, answer, from) => {
+  return async (card, answer) => {
     const proof = answer.proof;
-    if (proof.via !== "device" || from.device !== proof.device) return false;
+    if (proof.via !== "device") return false;
     const device = devices.get(proof.device);
-    if (!device || device.kind === "browser" || device.revokedAt !== undefined) return false;
+    if (!device || !mayAnswerCards(device)) return false;
     const signature = fromBase64(proof.signature);
     if (!signature) return false;
     const input = cardAnswerSigningInput({ id: card.id, hash: card.hash, option: answer.optionId, at: proof.at, children: answer.children ?? [] });
-    return devices.verify(proof.device, new TextEncoder().encode(input), signature);
+    return devices.verifyAnswer(proof.device, new TextEncoder().encode(input), signature);
   };
 }
 
@@ -302,27 +304,35 @@ export interface AnswerLedger {
   claim(cardId: string): boolean;
 }
 
-export type SignedAnswerVerdict = "ok" | "bad-hash" | "unbound" | "not-approve" | "bad-device" | "bad-time" | "bad-signature" | "used";
+export type SignedAnswerVerdict = "ok" | "bad-hash" | "unbound" | "mismatch" | "not-approve" | "bad-device" | "bad-time" | "bad-signature" | "used";
 
-/** How a receiver takes a signed answer as proof for a call (`peer.call`, `tool.run`) or a raise (`setLevel`): it
- *  recomputes the card's hash, checks the card binds exactly this computer, method and params, that the option is an
- *  approve option, that the device is paired and not a browser, the time, and the signature, and then claims the card
- *  id in its ledger, so the same answer never counts twice. */
+/** The receiver's own card for a call (review N1, part 2): what its built-in tables say for this method and params,
+ *  binding exactly this call; undefined when it shows no card for that call, which then takes no signed answer. */
+export type CallCardRenderer = (call: { computer: string; method: string; params: unknown }) => CardContent | undefined;
+
+/** How a receiver takes a signed answer as proof for a call (`peer.call`, `tool.run`, a peer's `tree.*` write) or a
+ *  raise (`setLevel`): it recomputes the card's hash; checks the card binds exactly this computer, method and params;
+ *  rebuilds its own card for that call (`render`) and refuses one that says anything else (`mismatch`), so a card
+ *  that reads "Show the weather" can't bind a level raise; then checks the option is an approve option, that the
+ *  device may answer cards (`mayAnswerCards`), the time, and the answer key's signature, and claims the card id in its
+ *  ledger, so the same answer never counts twice. A receiver on another version of the tables shows its own card. */
 export async function verifySignedAnswer(
   s: SignedCardAnswer,
-  c: { self: string; method: string; params: unknown; now: number; sha256(text: string): string; devices: AnswerDevices; ledger: AnswerLedger },
+  c: { self: string; method: string; params: unknown; now: number; sha256(text: string): string; devices: AnswerDevices; ledger: AnswerLedger; render: CallCardRenderer },
 ): Promise<SignedAnswerVerdict> {
   const { card } = s;
   if (c.sha256(cardHashInput(card)) !== card.hash) return "bad-hash";
   const b = card.binds;
   if (!b || b.computer !== c.self || b.method !== c.method || b.params !== c.sha256(callBindingInput(c.method, c.params))) return "unbound";
+  const mine = c.render({ computer: c.self, method: c.method, params: c.params });
+  if (mine === undefined || cardContentInput(mine) !== cardContentInput(card)) return "mismatch";
   if (card.options.find((o) => o.id === s.option)?.kind !== "approve") return "not-approve";
   if ((s.children ?? []).some((id) => !card.children?.some((x) => x.id === id))) return "not-approve";
   const device = c.devices.get(s.device);
-  if (!device || device.kind === "browser" || device.revokedAt !== undefined) return "bad-device";
+  if (!device || !mayAnswerCards(device)) return "bad-device";
   if (!answerTimeOk(card, s.at, c.now)) return "bad-time";
   const signature = fromBase64(s.signature);
   const input = cardAnswerSigningInput({ id: card.id, hash: card.hash, option: s.option, at: s.at, children: s.children ?? [] });
-  if (!signature || !(await c.devices.verify(s.device, new TextEncoder().encode(input), signature))) return "bad-signature";
+  if (!signature || !(await c.devices.verifyAnswer(s.device, new TextEncoder().encode(input), signature))) return "bad-signature";
   return c.ledger.claim(card.id) ? "ok" : "used";
 }

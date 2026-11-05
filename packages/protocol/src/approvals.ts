@@ -67,11 +67,15 @@ export type CardFieldName = z.infer<typeof CardFieldName>;
  *  Wherever a sealed field is drawn (the app's frames, the iOS app), control characters and bidirectional marks show
  *  as visible escapes (`\u202E`), and a field too long for its space is never cut silently: it says so and offers the
  *  rest, so what the user approves is what runs. */
+/** Sealed text holds no lone surrogate (review N6): Swift's strings can't, so the iOS app would hash another card. A
+ *  card's hash maps any that slips through to U+FFFD anyway (`canonicalJson`). */
+const sealed = (max: number) => utf16(max).refine((s) => s.isWellFormed(), { message: "a lone surrogate" });
+
 export const SealedValue = z.discriminatedUnion("type", [
-  z.object({ type: z.literal("text"), text: utf16(4000) }),
-  z.object({ type: z.literal("code"), code: utf16(64_000), language: utf16(32).optional() }),
-  z.object({ type: z.literal("list"), items: z.array(utf16(4000)).max(200) }),
-  z.object({ type: z.literal("rows"), rows: z.array(z.object({ label: utf16(200), value: utf16(4000) })).max(100) }),
+  z.object({ type: z.literal("text"), text: sealed(4000) }),
+  z.object({ type: z.literal("code"), code: sealed(64_000), language: utf16(32).optional() }),
+  z.object({ type: z.literal("list"), items: z.array(sealed(4000)).max(200) }),
+  z.object({ type: z.literal("rows"), rows: z.array(z.object({ label: sealed(200), value: sealed(4000) })).max(100) }),
 ]);
 export type SealedValue = z.infer<typeof SealedValue>;
 
@@ -107,14 +111,14 @@ export const CardMeta = z.object({
 });
 export type CardMeta = z.infer<typeof CardMeta>;
 
-/** The whole card, for the app's main process and the native iOS app only. `hash` is SHA-256 over
- *  `cardHashInput(card)`; a signed answer covers it. */
 /** The one call a card approves, when it approves a call: the computer that runs it, the method, and SHA-256 over the
  *  canonical JSON of `{ method, params }` (`callBindingInput`). A receiver takes a signed answer as proof only for the
  *  call its card binds (§8.5: a raise travels only with its signed answer). */
 export const CallBinding = z.object({ computer: ComputerName, method: utf16(128, 1), params: Sha256Hex });
 export type CallBinding = z.infer<typeof CallBinding>;
 
+/** The whole card, for the app's main process and the native iOS app only. `hash` is SHA-256 over
+ *  `cardHashInput(card)`; a signed answer covers it. */
 export const Card = CardMeta.extend({
   hash: Sha256Hex,
   change: ChangeSubject.optional(),
@@ -153,17 +157,27 @@ export type CardOutcome = z.infer<typeof CardOutcome>;
 
 /** Canonical JSON: keys sorted at every depth, no spaces. The input to a card's hash. */
 export function canonicalJson(value: unknown): string {
+  // A lone surrogate becomes U+FFFD first, so every language hashes the same string (review N6).
+  if (typeof value === "string") return JSON.stringify(value.toWellFormed());
   if (value === null || typeof value !== "object") return JSON.stringify(value);
   if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
   const obj = value as Record<string, unknown>;
   const keys = Object.keys(obj).filter((k) => obj[k] !== undefined).sort();
-  return `{${keys.map((k) => `${JSON.stringify(k)}:${canonicalJson(obj[k])}`).join(",")}}`;
+  return `{${keys.map((k) => `${JSON.stringify(k.toWellFormed())}:${canonicalJson(obj[k])}`).join(",")}}`;
 }
 
 /** What a card's `hash` covers: everything but the hash itself. */
 export function cardHashInput(card: Omit<Card, "hash"> | Card): string {
   const { hash: _hash, ...rest } = card as Card;
   return canonicalJson(rest);
+}
+
+/** What a card says, apart from where and when it was shown: its kind, the change or call it approves, its sealed
+ *  fields and its options (review N1). A receiver that takes a signed answer as proof rebuilds its own card for the
+ *  call from its built-in tables and compares this, so a card whose text says one thing can't bind another call. */
+export type CardContent = Pick<Card, "kind" | "fields" | "options"> & Partial<Pick<Card, "change" | "binds" | "children">>;
+export function cardContentInput(card: CardContent): string {
+  return canonicalJson({ kind: card.kind, change: card.change, binds: card.binds, fields: card.fields, options: card.options, children: card.children?.map(({ id, label }) => ({ id, label })) });
 }
 
 /** What a paired device signs to answer a card: the card's id and hash, the option, the time, and the children it

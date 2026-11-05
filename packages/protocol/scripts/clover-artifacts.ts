@@ -56,6 +56,8 @@ function cardHashVectors() {
     ["non-ascii", { text: "héllo — ✓", 日本: "語", Ä: "ö" }],
     ["line-separators", { s: "a\u2028b\u2029c" }],
     ["emoji", { e: "😀", "😀": 1, z: "👩‍👩‍👧" }],
+    // A lone surrogate hashes as U+FFFD, as Swift's strings hold it (review N6).
+    ["lone-surrogate", { s: "a\ud800b", "\udc00": 1 }],
     ["control", { c: "\u0000\u001f\t\n\r\"\\" }],
     ["numbers", { max: 9007199254740991, ts: 1781270000000, neg: -1, half: 0.5, big: 1e21, small: 1e-7, zero: 0 }],
     ["nested-order", { b: { y: [3, { q: 1, p: 2 }], x: true }, a: false, A: "upper first" }],
@@ -68,7 +70,7 @@ function cardHashVectors() {
   const cardInput = cardHashInput(card as never);
   const cardHash = sha256(cardInput);
   return {
-    doc: "canonicalJson is RFC 8785 (JCS): keys sorted by UTF-16 code units, strings and numbers as ECMAScript serializes them, no whitespace. A card's hash is SHA-256 over cardHashInput(card), lowercase hex.",
+    doc: "canonicalJson is RFC 8785 (JCS): keys sorted by UTF-16 code units, strings and numbers as ECMAScript serializes them, no whitespace, with any lone surrogate first replaced by U+FFFD. A card's hash is SHA-256 over cardHashInput(card), lowercase hex. The lone-surrogate vector's input holds escapes a Swift string can't: decoded with U+FFFD in their place, it must give the same canonical text.",
     vectors: inputs.map(([name, input]) => ({ name, input, canonical: canonicalJson(input), sha256: sha256(canonicalJson(input)) })),
     card: { card, hashInput: cardInput, hash: cardHash },
     signing: {
