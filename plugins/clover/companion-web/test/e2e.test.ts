@@ -4,6 +4,8 @@
 // here for the run, in memory. The only network is 127.0.0.1.
 
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { cleanup } from "node-datachannel";
 import { RTCPeerConnection } from "node-datachannel/polyfill";
 
@@ -21,19 +23,42 @@ const rtc: RtcEnvironment = {
   iceServers: [],
 };
 
+/**
+ * Lane B's own FakeDeviceRegistry (packages/core/src/contracts/fakes), which checks an added device's id against its
+ * key and refuses a second add, wrapped to keep what this plugin added. Core doesn't export its contracts, so the fake
+ * is found through the core package's own entry.
+ */
+const contractsDir = join(dirname(fileURLToPath(import.meta.resolve("@waifucave/clover-core"))), "contracts");
+const fakes = (await import(join(contractsDir, "fakes/device-registry.ts"))) as {
+  FakeDeviceRegistry: { create(opts: { clock: { now(): number }; name?: string }): Promise<{ registry: BRegistry }> };
+};
+
+interface BRegistry {
+  add(device: DeviceInput, proof: PairingProof): Promise<{ addedBy: string; kind: string }>;
+  revoke(id: string): Promise<void>;
+  watch(fn: (change: DeviceChange) => void): () => void;
+  list(): { id: string; kind: string; addedBy: string }[];
+}
+
 class FakeRegistry {
   readonly added: { device: DeviceInput; proof: PairingProof }[] = [];
-  private readonly watchers = new Set<(change: DeviceChange) => void>();
+  private constructor(private readonly inner: BRegistry) {}
+  static async create(): Promise<FakeRegistry> {
+    return new FakeRegistry((await fakes.FakeDeviceRegistry.create({ clock: { now: () => Date.now() }, name: "Studio" })).registry);
+  }
   async add(device: DeviceInput, proof: PairingProof): Promise<unknown> {
+    const record = await this.inner.add(device, proof);
     this.added.push({ device, proof });
-    return device;
+    return record;
   }
   watch(fn: (change: DeviceChange) => void): () => void {
-    this.watchers.add(fn);
-    return () => this.watchers.delete(fn);
+    return this.inner.watch(fn);
   }
-  revoke(id: string): void {
-    for (const fn of this.watchers) fn({ type: "revoked", id });
+  revoke(id: string): Promise<void> {
+    return this.inner.revoke(id);
+  }
+  list() {
+    return this.inner.list();
   }
 }
 
@@ -57,8 +82,8 @@ interface Computer {
   shown: string[][];
 }
 
-function computer(options: { confirm?: boolean; store?: MemoryPairStore; registry?: FakeRegistry } = {}): Computer {
-  const registry = options.registry ?? new FakeRegistry();
+async function computer(options: { confirm?: boolean; store?: MemoryPairStore; registry?: FakeRegistry } = {}): Promise<Computer> {
+  const registry = options.registry ?? (await FakeRegistry.create());
   const store = options.store ?? new MemoryPairStore();
   const links: RtcLink[] = [];
   const shown: string[][] = [];
@@ -114,7 +139,7 @@ async function pairUp(c: Computer, b = browser()): Promise<{ record: PairRecord;
 
 describe.skipIf(!ready)("the web companion", () => {
   test("a browser pairs once: both ends show the same four words, and the computer registers it", async () => {
-    const c = computer();
+    const c = await computer();
     await c.host.start();
     const { record, words } = await pairUp(c);
     expect(words).toHaveLength(4);
@@ -123,12 +148,14 @@ describe.skipIf(!ready)("the web companion", () => {
     expect(c.registry.added).toHaveLength(1);
     expect(c.registry.added[0]!.device).toMatchObject({ id: record.device, name: "Test browser", kind: "browser", runsCore: false });
     expect(c.registry.added[0]!.proof).toEqual({ via: "code", card: "card-1" });
+    // B's registry took it: the id matches the key, and it was added by code.
+    expect(c.registry.list().find((d) => d.id === record.device)).toMatchObject({ kind: "browser", addedBy: "code" });
     expect((await c.store.list()).map((p) => p.pair)).toEqual([record.pair]);
     c.host.stop();
   }, 30_000);
 
   test("then connects over WebRTC: requests, notifications and streams both ways", async () => {
-    const c = computer();
+    const c = await computer();
     await c.host.start();
     const { record, b } = await pairUp(c);
     const connection = await b.connect(record);
@@ -160,7 +187,7 @@ describe.skipIf(!ready)("the web companion", () => {
   }, 30_000);
 
   test("a refusal on the computer refuses the browser; nothing is kept", async () => {
-    const c = computer({ confirm: false });
+    const c = await computer({ confirm: false });
     await c.host.start();
     const err = await pairUp(c).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(PairingError);
@@ -171,7 +198,7 @@ describe.skipIf(!ready)("the web companion", () => {
   }, 30_000);
 
   test("an invite works once; a wrong code is refused", async () => {
-    const c = computer();
+    const c = await computer();
     await c.host.start();
     const first = await invite(c);
     await browser().pair(first, { onWords: () => undefined });
@@ -190,11 +217,11 @@ describe.skipIf(!ready)("the web companion", () => {
 
   test("a restarted computer answers the browsers it already paired", async () => {
     const store = new MemoryPairStore();
-    const first = computer({ store });
+    const first = await computer({ store });
     await first.host.start();
     const { record, b } = await pairUp(first);
     first.host.stop();
-    const second = computer({ store });
+    const second = await computer({ store });
     await second.host.start();
     const connection = await b.connect(record);
     expect(await connection.link.request<unknown>("bot.list", {})).toMatchObject({ bots: [{ id: "alpha" }] });
@@ -203,12 +230,12 @@ describe.skipIf(!ready)("the web companion", () => {
   }, 30_000);
 
   test("revoking the browser ends its pairing on both ends; forgetting on the page ends it on the computer", async () => {
-    const c = computer();
+    const c = await computer();
     await c.host.start();
     const { record, b } = await pairUp(c);
     const connection = await b.connect(record);
     const closed = new Promise((resolve) => connection.link.onClose(resolve));
-    c.registry.revoke(record.device);
+    await c.registry.revoke(record.device);
     await closed;
     for (let i = 0; i < 100 && (await c.store.list()).length > 0; i++) await Bun.sleep(10);
     expect(await c.store.list()).toEqual([]);
@@ -221,5 +248,25 @@ describe.skipIf(!ready)("the web companion", () => {
     expect(await other.b.paired()).toEqual([]);
     connection.close();
     c.host.stop();
+  }, 30_000);
+
+  test("the host half fills the companions entry: the pairing screen's link, through lane B's confirm card", async () => {
+    const host = await import("../host/index");
+    const registry = await FakeRegistry.create();
+    await host.start({
+      plugin: { id: "clover/companion-web", namespace: "clover", version: "0.0.0", computer: "Studio" } as never,
+      settings: { get: async <T>(key: string) => (key === "handshakeOrigin" ? harness.url : "https://clover.test") as T, watch: () => () => {}, set: async () => {} },
+      confirm: async () => true,
+      registry,
+      adoptLink: () => undefined,
+      pairs: new MemoryPairStore(),
+    });
+    const { url, qr } = await host.companion.pairing({ code: "161803", expiresAt: Date.now() + 60_000 });
+    expect(qr).toBe(url);
+    const read = readInvite(new URL(url).hash)!;
+    expect(url.startsWith("https://clover.test/#pair=")).toBe(true);
+    expect(read).toMatchObject({ code: "161803", name: "Studio", handshake: harness.url });
+    host.stop();
+    await expect(host.companion.pairing({ code: "1", expiresAt: Date.now() + 1000 })).rejects.toThrow("not running");
   }, 30_000);
 });

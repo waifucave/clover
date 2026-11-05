@@ -96,7 +96,7 @@ describe("the host half", () => {
           return json({ url: "wss://r/v1/rooms?ticket=t", expiresAt: Date.now() + 86_400_000 });
         },
       },
-      settings: { get: async <T>() => "https://r.example" as T, watch: () => () => {} },
+      settings: { get: async <T>() => "https://r.example" as T, watch: () => () => {}, set: async () => {} },
       device: { id: "laptop" },
     });
     expect(await relay.endpoints()).toEqual({ endpoints: [{ kind: "websocket", url: "wss://r/v1/rooms?ticket=t" }] });

@@ -1,10 +1,11 @@
-// The slices of lane B's contracts (packages/core/src/contracts on lane/b-m0: DeviceRegistry, LinkTransport) and
-// plugin API this plugin is written against, until the spine merges to main. Names and shapes follow lane B's; each
-// gap is listed in the I-M2 PR for lanes B and H.
+// The slices of lane B's contracts (packages/core/src/contracts: DeviceRegistry, LinkTransport) this plugin is written
+// against. Core doesn't export its contracts to plugins, so the shapes are restated here; the end-to-end test runs them
+// against lane B's own FakeDeviceRegistry. Each gap is listed in the I-M2 PR for lanes B and H.
 
 import type { RtcLink } from "@waifucave/clover-service-web/protocol";
 
-export type DeviceKind = "desktop" | "laptop" | "server" | "phone" | "tablet" | "browser";
+/** Lane B's DeviceKind (@waifucave/clover-protocol). */
+export type DeviceKind = "desktop" | "server" | "cloud" | "phone" | "browser";
 
 /** Lane B's DeviceRecord, as far as this plugin fills it. */
 export interface DeviceInput {

@@ -215,6 +215,7 @@ export class RtcLink {
   private readonly streamHandlers = new Map<string, (stream: LinkStream, meta: unknown) => void>();
   private readonly closers = new Set<(reason: string) => void>();
   private closed = false;
+  private readonly since = Date.now();
 
   constructor(options: RtcLinkOptions) {
     this.peer = options.peer;
@@ -230,6 +231,11 @@ export class RtcLink {
 
   get open(): boolean {
     return !this.closed && this.control.readyState === "open";
+  }
+
+  /** Lane B's `LinkView`. A WebRTC link here is always direct: no TURN relay is configured. */
+  view(): { peer: string; up: boolean; path: "direct"; since: number } {
+    return { peer: this.peer, up: this.open, path: "direct", since: this.since };
   }
 
   /** A data channel the other end opened: a stream's. Called by whoever set up the connection (ondatachannel). */

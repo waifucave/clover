@@ -30,13 +30,18 @@ export async function start(api: HostApi): Promise<void> {
     client: new HandshakeClient({ origin: handshake }),
     webOrigin: web,
     ...(handshake !== DEFAULT_HANDSHAKE ? { inviteHandshake: handshake } : {}),
-    computerName: api.computer.name,
+    computerName: api.plugin.computer,
     rtc: nodeRtc,
     store: api.pairs,
-    registry: api.devices,
-    confirm: api.confirmPairing,
+    registry: api.registry,
+    // Lane B's sealed card from this plugin: the person compares the words the browser shows with these.
+    confirm: async ({ browser, words }) => ({
+      confirmed: await api.confirm(`${browser} wants to pair with this computer. Does it show these four words: ${words.join(" ")}? Confirm only if they match.`),
+      card: `companion-web:${words.join("-")}`,
+    }),
     adopt: api.adoptLink,
-    log: (level, message) => api.log[level](message),
+    // A host half's console goes to its plugin's log (lane B: there is no log call).
+    log: (level, message) => console[level](message),
   });
   await host.start();
 }

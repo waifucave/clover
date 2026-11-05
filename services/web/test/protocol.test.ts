@@ -149,6 +149,7 @@ describe("the link over data channels", () => {
       throw new LinkError("refused", "not from the web");
     });
     expect(await page.request<unknown>("echo", { a: 1 })).toEqual({ a: 1 });
+    expect(page.view()).toMatchObject({ peer: "computer", up: true, path: "direct" });
     expect(await page.request<unknown>("echo", { b: 2 }, { priority: "tokens" })).toEqual({ b: 2 });
     await expect(page.request("refuse", {})).rejects.toMatchObject({ code: "refused", message: "not from the web" });
     await expect(page.request("missing", {})).rejects.toMatchObject({ code: "not_found" });
