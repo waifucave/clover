@@ -338,3 +338,45 @@ func TestServiceRestart(t *testing.T) {
 	}
 	_ = io.EOF
 }
+
+// A handler that waits on the link, as Linux's inval_inode waits for a write in flight on the
+// same file, must not stall it: events run off the reader goroutine. Before that rule, the
+// reader blocked in the handler, the reply never arrived, and the watchdog called the computer
+// offline after 1.5 s (seen in CI as "write error: Host is down" in the middle of git status).
+func TestBlockedEventHandlerDoesNotStallTheLink(t *testing.T) {
+	root := t.TempDir()
+	os.WriteFile(filepath.Join(root, "f.txt"), []byte("one"), 0o644)
+	svc := startService(t, root, freePort(t))
+	defer svc.kill()
+	pol, _ := PolicyByName("cached")
+	f := newFS(t, "127.0.0.1:"+strconv.Itoa(svc.port), pol)
+	entered := make(chan struct{}, 1)
+	release := make(chan struct{})
+	f.Invalidate = func(string) {
+		select {
+		case entered <- struct{}{}:
+		default:
+		}
+		<-release
+	}
+	defer close(release)
+	if _, e := f.Stat("f.txt"); e != wire.OK {
+		t.Fatal(e)
+	}
+	time.Sleep(300 * time.Millisecond) // let the watch settle
+	os.WriteFile(filepath.Join(root, "f.txt"), []byte("three"), 0o644)
+	select {
+	case <-entered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("no event arrived")
+	}
+	// The handler is still blocked. A request must still get its answer, well inside the bound.
+	t0 := time.Now()
+	a, e := f.Stat("f.txt")
+	if e != wire.OK || a.Size != 5 {
+		t.Fatalf("stat while a handler is blocked: size %d, %v after %v", a.Size, e, time.Since(t0))
+	}
+	if d := time.Since(t0); d > 500*time.Millisecond {
+		t.Fatalf("stat took %v", d)
+	}
+}

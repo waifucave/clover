@@ -13,7 +13,8 @@ import (
 //	nocache  every lookup and stat goes to the computer that holds the files
 //	plain    1 s attribute/entry caching, like a stock FUSE file system (sshfs, libfuse defaults)
 //	cached   cache until the holder says something changed (EVENT), plus a breadth-first
-//	         prefetch of a directory's subtree the first time it is listed
+//	         prefetch of a directory's subtree the first time a lookup or a listing misses in
+//	         it (never the home folder itself)
 type Policy struct {
 	Name      string
 	TTL       time.Duration // client cache lifetime; 0 = none; <0 = until invalidated
@@ -60,6 +61,12 @@ type FS struct {
 	mu    sync.Mutex
 	attrs map[string]attrEnt
 	dirs  map[string]dirEnt
+	// Prefetch bookkeeping: each directory's subtree is fetched in bulk once (the first time a
+	// lookup or a listing misses in it); later misses there, after events, go one by one, so a
+	// busy folder (.git) is never refetched whole. Lookups wait for a bulk fetch in flight
+	// above them instead of crossing the link on their own.
+	prefetched map[string]bool
+	inflight   map[string]chan struct{}
 
 	// Adapter hooks: tell the kernel to forget a path, or everything.
 	Invalidate    func(path string)
@@ -69,11 +76,16 @@ type FS struct {
 }
 
 func NewFS(c *Client, pol Policy) *FS {
-	f := &FS{C: c, Pol: pol, attrs: map[string]attrEnt{}, dirs: map[string]dirEnt{}}
+	f := &FS{C: c, Pol: pol, attrs: map[string]attrEnt{}, dirs: map[string]dirEnt{}, prefetched: map[string]bool{}, inflight: map[string]chan struct{}{}}
 	c.OnEvent = f.onEvent
 	prev := c.OnReconnect
 	c.OnReconnect = func(w Welcome, changed bool) {
-		f.dropAll()
+		f.mu.Lock()
+		f.attrs = map[string]attrEnt{}
+		f.dirs = map[string]dirEnt{}
+		f.prefetched = map[string]bool{}
+		f.mu.Unlock()
+		c.QueueEvent(wire.EventResync, "") // the kernel's caches, off the dialler and the reader
 		if pol.Watch {
 			go f.C.Do(wire.OpWatch, func(w *wire.Writer) { w.U8(1) })
 		}
@@ -184,6 +196,7 @@ func (f *FS) dropAll() {
 	f.mu.Lock()
 	f.attrs = map[string]attrEnt{}
 	f.dirs = map[string]dirEnt{}
+	f.prefetched = map[string]bool{}
 	f.mu.Unlock()
 	if f.InvalidateAll != nil {
 		f.InvalidateAll()
@@ -202,37 +215,89 @@ func (f *FS) onEvent(typ uint8, p string) {
 }
 
 // Stat answers lstat for p.
+// cachedStat answers p from the cache; ok is false on a miss. f.mu must be held.
+func (f *FS) cachedStat(p string) (a wire.Attr, e wire.Errno, ok bool) {
+	if c, hit := f.attrs[p]; hit && live(c.expires) {
+		if c.neg {
+			return a, wire.ENOENT, true
+		}
+		return c.attr, wire.OK, true
+	}
+	// A complete, live listing of the parent that lacks the name is a negative answer.
+	if p != "" {
+		dir, name := Parent(p)
+		if d, hit := f.dirs[dir]; hit && live(d.expires) {
+			for _, n := range d.names {
+				if n == name {
+					return a, 0, false
+				}
+			}
+			return a, wire.ENOENT, true
+		}
+	}
+	return a, 0, false
+}
+
+// prefetchFor makes sure a bulk fetch covering p has run: it waits for one in flight above p,
+// or starts one for p's directory if that directory was never fetched in bulk. The home folder
+// itself is never fetched whole (a home's first 20,000 entries are mostly ~/Library). It
+// reports whether it waited or fetched, so the caller looks in the cache again.
+func (f *FS) prefetchFor(p string, self bool) bool {
+	if f.Pol.Prefetch == 0 || f.Pol.TTL == 0 {
+		return false
+	}
+	f.mu.Lock()
+	d := p
+	if !self {
+		d, _ = Parent(p)
+	}
+	for a := d; ; {
+		if ch, ok := f.inflight[a]; ok {
+			f.mu.Unlock()
+			<-ch
+			return true
+		}
+		if a == "" {
+			break
+		}
+		a, _ = Parent(a)
+	}
+	if d == "" || f.prefetched[d] {
+		f.mu.Unlock()
+		return false
+	}
+	f.prefetched[d] = true
+	ch := make(chan struct{})
+	f.inflight[d] = ch
+	f.mu.Unlock()
+	_, _ = f.tree(d)
+	f.mu.Lock()
+	delete(f.inflight, d)
+	f.mu.Unlock()
+	close(ch)
+	return true
+}
+
 func (f *FS) Stat(p string) (wire.Attr, wire.Errno) {
 	if f.Pol.TTL != 0 {
 		f.mu.Lock()
-		if e, ok := f.attrs[p]; ok && live(e.expires) {
-			f.Hits++
-			f.mu.Unlock()
-			if e.neg {
-				return wire.Attr{}, wire.ENOENT
-			}
-			return e.attr, wire.OK
-		}
-		// A complete, live listing of the parent that lacks the name is a negative answer.
-		if p != "" {
-			dir, name := Parent(p)
-			if d, ok := f.dirs[dir]; ok && live(d.expires) {
-				found := false
-				for _, n := range d.names {
-					if n == name {
-						found = true
-						break
-					}
-				}
-				if !found {
-					f.Hits++
-					f.mu.Unlock()
-					return wire.Attr{}, wire.ENOENT
-				}
-			}
-		}
-		f.Misses++
+		a, e, ok := f.cachedStat(p)
 		f.mu.Unlock()
+		if !ok && f.prefetchFor(p, false) {
+			f.mu.Lock()
+			a, e, ok = f.cachedStat(p)
+			f.mu.Unlock()
+		}
+		f.mu.Lock()
+		if ok {
+			f.Hits++
+		} else {
+			f.Misses++
+		}
+		f.mu.Unlock()
+		if ok {
+			return a, e
+		}
 	}
 	var a wire.Attr
 	r, e := f.C.Do(wire.OpStat, func(w *wire.Writer) { w.Str(p) })
@@ -252,32 +317,42 @@ func (f *FS) Stat(p string) (wire.Attr, wire.Errno) {
 	return a, wire.OK
 }
 
+// cachedList answers a listing of p from the cache. f.mu must be held.
+func (f *FS) cachedList(p string) ([]DirEntry, bool) {
+	d, ok := f.dirs[p]
+	if !ok || !live(d.expires) {
+		return nil, false
+	}
+	out := make([]DirEntry, 0, len(d.names))
+	for _, n := range d.names {
+		e, ok := f.attrs[Join(p, n)]
+		if !ok || e.neg {
+			return nil, false
+		}
+		out = append(out, DirEntry{Name: n, Attr: e.attr})
+	}
+	return out, true
+}
+
 // List answers a directory listing with attributes (readdirplus).
 func (f *FS) List(p string) ([]DirEntry, wire.Errno) {
 	if f.Pol.TTL != 0 {
 		f.mu.Lock()
-		if d, ok := f.dirs[p]; ok && live(d.expires) {
-			out := make([]DirEntry, 0, len(d.names))
-			complete := true
-			for _, n := range d.names {
-				e, ok := f.attrs[Join(p, n)]
-				if !ok || e.neg {
-					complete = false
-					break
-				}
-				out = append(out, DirEntry{Name: n, Attr: e.attr})
-			}
-			if complete {
-				f.Hits++
-				f.mu.Unlock()
-				return out, wire.OK
-			}
+		if out, ok := f.cachedList(p); ok {
+			f.Hits++
+			f.mu.Unlock()
+			return out, wire.OK
 		}
 		f.Misses++
 		f.mu.Unlock()
-	}
-	if f.Pol.Prefetch > 0 {
-		return f.tree(p)
+		if f.prefetchFor(p, true) {
+			f.mu.Lock()
+			out, ok := f.cachedList(p)
+			f.mu.Unlock()
+			if ok {
+				return out, wire.OK
+			}
+		}
 	}
 	r, e := f.C.Do(wire.OpList, func(w *wire.Writer) { w.Str(p) })
 	if e != wire.OK {

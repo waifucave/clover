@@ -44,6 +44,7 @@ type Tree struct {
 	mu   sync.Mutex
 	home *fs.Inode
 	tops map[*remote.FS]*fs.Inode // each computer's top inode, created once
+	sem  chan struct{}            // bounds recheck's stats
 }
 
 // Mount mounts the tree at dir and returns the server; Wait() blocks until unmount.
@@ -53,6 +54,7 @@ func Mount(dir string, t *Tree, debug bool) (*fuse.Server, error) {
 		t.uid, t.gid = t.Owner[0], t.Owner[1]
 	}
 	t.tops = map[*remote.FS]*fs.Inode{}
+	t.sem = make(chan struct{}, 16)
 	for i, c := range t.Computers {
 		c.index = uint64(i)
 		if c.FS != nil {
@@ -63,6 +65,9 @@ func Mount(dir string, t *Tree, debug bool) (*fuse.Server, error) {
 	}
 	ttl := t.Policy.KernelTTL
 	neg := ttl
+	if neg > time.Second {
+		neg = time.Second // see invalidateAll: the kernel's misses can't be enumerated later
+	}
 	opts := &fs.Options{
 		EntryTimeout:    &ttl,
 		AttrTimeout:     &ttl,
@@ -97,6 +102,7 @@ func (t *Tree) top(f *remote.FS) *fs.Inode {
 }
 
 // invalidate tells the kernel to forget p on computer f, after the holder reported a change.
+// It runs on the client's event goroutine, never on the link's reader (see remote.Client).
 func (t *Tree) invalidate(f *remote.FS, p string) {
 	top := t.top(f)
 	if top == nil {
@@ -114,28 +120,62 @@ func (t *Tree) invalidate(f *remote.FS, p string) {
 	}
 	if node != nil && node != top {
 		node.NotifyContent(0, 0)
+		if node.IsDir() {
+			t.recheck(f, parent, name, node, p)
+			return
+		}
 	}
 	if name != "" {
 		parent.NotifyEntry(name)
 	}
 }
 
+// recheck drops a directory's entry only once the holder says the directory is gone or the name
+// now holds something else. A directory that still exists may be a process's working
+// directory, and dropping its entry makes getcwd() fail there (git: "unable to get current
+// working directory"). The checks run in the background, a few at a time.
+func (t *Tree) recheck(f *remote.FS, parent *fs.Inode, name string, node *fs.Inode, p string) {
+	var c *Computer
+	for _, cc := range t.Computers {
+		if cc.FS == f {
+			c = cc
+		}
+	}
+	go func() {
+		t.sem <- struct{}{}
+		defer func() { <-t.sem }()
+		a, e := f.Stat(p)
+		if e == wire.ENOENT || (e == wire.OK && (a.Type != wire.TypeDir || (c != nil && stable(c, &a).Ino != node.StableAttr().Ino))) {
+			parent.NotifyEntry(name)
+		}
+	}()
+}
+
+// invalidateAll runs after a reconnect or a resync: every inode's attributes and pages go,
+// files' entries go, and directories' entries go only if recheck finds them changed. Names the
+// kernel remembers as missing expire by themselves (the negative timeout stays short; the
+// helper answers repeated misses from its own cache without crossing the link).
 func (t *Tree) invalidateAll(f *remote.FS) {
 	top := t.top(f)
 	if top == nil {
 		return
 	}
-	var walk func(n *fs.Inode, depth int)
-	walk = func(n *fs.Inode, depth int) {
+	var walk func(n *fs.Inode, dir string, depth int)
+	walk = func(n *fs.Inode, dir string, depth int) {
 		for name, ch := range n.Children() {
+			p := remote.Join(dir, name)
 			if depth < 64 {
-				walk(ch, depth+1)
+				walk(ch, p, depth+1)
 			}
 			ch.NotifyContent(0, 0)
-			n.NotifyEntry(name)
+			if ch.IsDir() {
+				t.recheck(f, n, name, ch, p)
+			} else {
+				n.NotifyEntry(name)
+			}
 		}
 	}
-	walk(top, 0)
+	walk(top, "", 0)
 	top.NotifyContent(0, 0)
 }
 

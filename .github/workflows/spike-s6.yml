@@ -4,7 +4,8 @@ name: Spike S6 · folder-tree mounts
 # disk at 0/20/80 ms of added round trip, and failing fast when the computer drops.
 # Runs on pushes to the lane branch only; results land as artifacts and in the job summaries.
 # A push whose head commit message says [s6-skip-speed] skips the hour-long Linux and Windows
-# speed suites (for pushes that change nothing they measure).
+# speed suites (for pushes that change nothing they measure); [s6-skip-<suite>] skips one suite,
+# [s6-skip-macos] and [s6-skip-macfuse] the macOS jobs.
 on:
   push:
     branches: [lane/j-m0]
@@ -35,7 +36,7 @@ jobs:
     env:
       S6: ${{ github.workspace }}/spikes/s6-mounts
       CGO_ENABLED: "0" # cgofuse loads WinFsp's DLL itself on Windows; go-fuse is pure Go
-      S6_RUN: ${{ !(startsWith(matrix.suite, 'speed-') && contains(github.event.head_commit.message, '[s6-skip-speed]')) }}
+      S6_RUN: ${{ !(contains(github.event.head_commit.message, format('[s6-skip-{0}]', matrix.suite)) || (startsWith(matrix.suite, 'speed-') && contains(github.event.head_commit.message, '[s6-skip-speed]'))) }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
@@ -135,6 +136,7 @@ jobs:
 
   macos:
     name: macos · ${{ matrix.runner }} · FSKit module + NFS loopback
+    if: ${{ !contains(github.event.head_commit.message, '[s6-skip-macos]') }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 170
     strategy:
@@ -202,6 +204,7 @@ jobs:
     # AMFI runs it, and this disposable runner adds it to FSKit's enabled list by hand (what the
     # System Settings switch writes). 5.4.0 predates macFUSE's short-read mitigation; 5.5.0 has it.
     name: macos · ${{ matrix.runner }} · macFUSE ${{ matrix.macfuse }} FSKit backend
+    if: ${{ !contains(github.event.head_commit.message, '[s6-skip-macfuse]') }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 170
     strategy:

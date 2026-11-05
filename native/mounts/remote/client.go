@@ -88,10 +88,17 @@ type Client struct {
 	lastRecv atomic.Int64 // unix nanos of the last inbound frame on cur
 	online   atomic.Bool
 
-	// Hooks, set before Start. They run on the client's own goroutines.
+	// Hooks, set before Start. They run on the client's own goroutines, never on the reader:
+	// OnEvent typically tells the kernel to drop a cache, and the kernel can wait for a reply
+	// that only the reader can deliver (Linux's inval_inode waits on the page locks of a write
+	// in flight on the same file), which would stall the link until the watchdog called it dead.
 	OnEvent     func(typ uint8, path string)
 	OnReconnect func(w Welcome, instanceChanged bool) // after every reconnect (caches are stale)
 	OnOffline   func(reason string)
+
+	events     chan event
+	evOverflow atomic.Bool
+	done       chan struct{}
 
 	lastInstance string
 
@@ -103,14 +110,51 @@ type Client struct {
 	Reconnects atomic.Int64
 }
 
+type event struct {
+	typ  uint8
+	path string
+}
+
 func New(cfg Config) *Client {
 	cfg.defaults()
-	return &Client{cfg: cfg, pending: make(map[uint32]*call)}
+	return &Client{cfg: cfg, pending: make(map[uint32]*call), events: make(chan event, 4096), done: make(chan struct{})}
+}
+
+// QueueEvent hands an event to the event goroutine. A full queue turns into one resync.
+func (c *Client) QueueEvent(typ uint8, path string) {
+	select {
+	case c.events <- event{typ, path}:
+	default:
+		c.evOverflow.Store(true)
+	}
+}
+
+func (c *Client) eventLoop() {
+	tick := time.NewTicker(100 * time.Millisecond)
+	defer tick.Stop()
+	for {
+		select {
+		case <-c.done:
+			return
+		case e := <-c.events:
+			if c.OnEvent != nil {
+				c.OnEvent(e.typ, e.path)
+			}
+		case <-tick.C:
+		}
+		if c.evOverflow.Swap(false) && c.OnEvent != nil {
+			for len(c.events) > 0 {
+				<-c.events
+			}
+			c.OnEvent(wire.EventResync, "")
+		}
+	}
 }
 
 // Start dials once synchronously, so a mount of a reachable computer starts online, then keeps
 // redialling in the background whenever the link is down.
 func (c *Client) Start() {
+	go c.eventLoop()
 	if err := c.dial(); err != nil {
 		c.cfg.Logf("[%s] offline at start: %v", c.cfg.Name, err)
 		c.redialLater()
@@ -131,6 +175,9 @@ func (c *Client) Welcome() Welcome {
 
 func (c *Client) Close() {
 	c.mu.Lock()
+	if !c.closed {
+		close(c.done)
+	}
 	c.closed = true
 	cur := c.cur
 	c.mu.Unlock()
@@ -311,8 +358,8 @@ func (c *Client) reader(l *link, br *bufio.Reader) {
 		case wire.KindEvent:
 			typ := r.U8()
 			p := r.Str()
-			if c.OnEvent != nil && r.Err() == nil {
-				c.OnEvent(typ, p)
+			if r.Err() == nil {
+				c.QueueEvent(typ, p) // never block the reader (see OnEvent)
 			}
 		case wire.KindPing:
 			c.enqueue(l, wire.NewWriter(wire.KindPong, id).Frame())
