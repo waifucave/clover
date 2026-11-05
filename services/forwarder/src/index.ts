@@ -9,7 +9,8 @@
 // is counted against the routine's rate and the account's, read (up to the cap) and handed to the Durable
 // Object, which seals and holds it. Nothing here logs a payload, a key or a token.
 
-import { bearerToken, verifyAccountToken } from "../../shared/account-token";
+import { bearerToken } from "../../shared/account-token";
+import { verifyAccountTokenFrom } from "../../shared/jwks";
 import { b64u, fromB64u } from "../../shared/encoding";
 import { errorResponse, json, readBodyCapped, readJsonObject, TooLarge } from "../../shared/http";
 import { encodeRequestRecord, ROUTINE_ID_RE } from "../../../plugins/clover/forwarder/src/wire/envelope";
@@ -129,7 +130,7 @@ async function api(request: Request, env: Env, url: URL, path: string[]): Promis
 
   const token = bearerToken(request);
   const identity = token
-    ? await verifyAccountToken(token, { jwks: env.ACCOUNT_JWKS, issuer: env.ACCOUNT_ISSUER, audience: env.HOOKS_AUDIENCE })
+    ? await verifyAccountTokenFrom(token, env, env.HOOKS_AUDIENCE)
     : null;
   if (!identity) return errorResponse(401, "unauthorized");
   const { success } = await env.API_RATE.limit({ key: identity.account });

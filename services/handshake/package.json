@@ -1,0 +1,23 @@
+{
+  "name": "@waifucave/clover-service-handshake",
+  "version": "0.0.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "description": "handshake.waifucave.com: introduces devices to each other (addresses, dial-now, WebRTC signalling, all sealed between the devices) and holds the main computer's lease, with or without an account. client/ is its client library.",
+  "type": "module",
+  "exports": {
+    "./client": "./client/index.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.node.json"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-plugin": "1.4.8",
+    "@cloudflare/workers-types": "5.20261023.1",
+    "@types/node": "26.6.5",
+    "typescript": "5.9.3",
+    "vitest": "4.1.12",
+    "wrangler": "4.153.0"
+  }
+}

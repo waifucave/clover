@@ -1,13 +1,13 @@
 // waifucave push against the local fakes of APNs and Web Push: registering phones and browsers, a
 // content-free notify fanned out to each, dead targets removed, and the limits.
 
-import { env } from "cloudflare:workers";
+import { env, exports } from "cloudflare:workers";
 import { runInDurableObject } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
 
 import { b64u, sha256, utf8 } from "../../shared/encoding";
 import { REVOCATION_KEEP_MS, type PushDO } from "../src/push-do";
-import { apnsToken, call, clearOfMinuteBoundary, device, fakeLog, subscriptions, uniqueAccount } from "./helpers";
+import { apnsToken, call, clearOfMinuteBoundary, device, fakeLog, ORIGIN, subscriptions, uniqueAccount } from "./helpers";
 import type { FakeLogEntry } from "./fake-log";
 
 async function since(before: number): Promise<FakeLogEntry[]> {
@@ -283,5 +283,20 @@ describe("notify", () => {
     const other = await device(uniqueAccount(), "computer");
     expect(await (await call(other.token, "POST", "/v1/notify", { badge: 1 })).json()).toEqual({ sent: 0, removed: 0, failed: 0 });
     expect(((await (await call(other.token, "GET", "/v1/targets")).json()) as { targets: unknown[] }).targets).toEqual([]);
+  });
+});
+
+describe("the web companion's origin", () => {
+  it("gets CORS on preflights and answers; other origins don't", async () => {
+    const preflight = await exports.default.fetch(
+      new Request(`${ORIGIN}/v1/targets/self`, { method: "OPTIONS", headers: { origin: "http://127.0.0.1:8790", "access-control-request-method": "PUT" } }),
+    );
+    expect(preflight.status).toBe(204);
+    expect(preflight.headers.get("access-control-allow-origin")).toBe("http://127.0.0.1:8790");
+    expect(preflight.headers.get("access-control-allow-methods")).toContain("PUT");
+    const answer = await exports.default.fetch(new Request(`${ORIGIN}/v1/vapid`, { headers: { origin: "http://127.0.0.1:8790" } }));
+    expect(answer.headers.get("access-control-allow-origin")).toBe("http://127.0.0.1:8790");
+    const other = await exports.default.fetch(new Request(`${ORIGIN}/v1/vapid`, { headers: { origin: "https://elsewhere.test" } }));
+    expect(other.headers.get("access-control-allow-origin")).toBeNull();
   });
 });

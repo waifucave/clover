@@ -23,6 +23,7 @@
     "APNS_PRODUCTION_ORIGIN": "https://api.push.apple.com",
     "APNS_SANDBOX_ORIGIN": "https://api.sandbox.push.apple.com",
     "VAPID_SUBJECT": "mailto:push@waifucave.invalid",
+    "WEB_ORIGINS": "http://127.0.0.1:8790",
     "VAPID_PUBLIC_KEY": "",
     "WEBPUSH_HOSTS": "fcm.googleapis.com,updates.push.services.mozilla.com,web.push.apple.com,*.notify.windows.com",
     "MAX_TARGETS": "20"
@@ -53,6 +54,7 @@
         "APNS_PRODUCTION_ORIGIN": "https://api.push.apple.com",
         "APNS_SANDBOX_ORIGIN": "https://api.sandbox.push.apple.com",
         "VAPID_SUBJECT": "mailto:push@waifucave.com",
+        "WEB_ORIGINS": "https://clover.waifucave.com",
         "VAPID_PUBLIC_KEY": "",
         "WEBPUSH_HOSTS": "fcm.googleapis.com,updates.push.services.mozilla.com,web.push.apple.com,*.notify.windows.com",
         "MAX_TARGETS": "20"

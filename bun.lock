@@ -367,6 +367,18 @@
         "wrangler": "4.153.0",
       },
     },
+    "services/handshake": {
+      "name": "@waifucave/clover-service-handshake",
+      "version": "0.0.0",
+      "devDependencies": {
+        "@cloudflare/vitest-plugin": "1.4.8",
+        "@cloudflare/workers-types": "5.20261023.1",
+        "@types/node": "26.6.5",
+        "typescript": "5.9.3",
+        "vitest": "4.1.12",
+        "wrangler": "4.153.0",
+      },
+    },
     "services/hello": {
       "name": "@waifucave/clover-service-hello",
       "version": "0.0.0",
@@ -819,6 +831,8 @@
     "@waifucave/clover-protocol": ["@waifucave/clover-protocol@workspace:packages/protocol"],
 
     "@waifucave/clover-service-forwarder": ["@waifucave/clover-service-forwarder@workspace:services/forwarder"],
+
+    "@waifucave/clover-service-handshake": ["@waifucave/clover-service-handshake@workspace:services/handshake"],
 
     "@waifucave/clover-service-hello": ["@waifucave/clover-service-hello@workspace:services/hello"],
 

@@ -145,7 +145,7 @@ Service → client (text, JSON):
 | `{"t":"record","from","kind","gen","expiresAt","box"}` | the peer published a record |
 | `{"t":"message","id","from","kind","at","expiresAt","box"}` | a message for this member (delivered: not kept) |
 | `{"t":"presence","online":bool}` | the peer's socket opened or closed |
-| `{"t":"bye","reason":"replaced"\|"ended"\|"stale"}` | then the close |
+| `{"t":"bye","reason":"replaced"\|"ended"\|"stale"\|"reauth"}` | then the close |
 
 - **Client → service:** only `"ping"`, answered `"pong"` by the runtime without waking the service. Send one every 30 s. Mutations always go over HTTPS, signed.
 - **Close codes:**
@@ -156,6 +156,7 @@ Service → client (text, JSON):
   | 4003 | ended or revoked |
   | 4008 | protocol |
   | 4009 | stale: no ping for 90 s |
+  | 4010 | reauth: an account socket's 24 hours are up; open a new one with a fresh token |
 
 - **Presence** means the member has an open socket that pinged within 90 s. Treat it as a hint: a `dial` waits 30 s in the queue anyway.
 
@@ -187,7 +188,7 @@ The lease decides which computer is the main one (spec §6.4). For account-less 
 
   | `op` | Succeeds when | Then |
   | :- | :- | :- |
-  | `acquire` | no holder, the lease expired, or the caller already holds it | the caller holds it; `epoch` rises by one if the holder changed |
+  | `acquire` | no holder, the lease expired, or the caller already holds it | the caller holds it; `epoch` rises by one unless the caller already held a live lease |
   | `renew` | the caller holds it and `epoch` matches | `expiresAt` moves on |
   | `release` | the caller holds it and `epoch` matches | no holder (the next acquire raises `epoch`) |
   | `takeover` | always: the user chose this computer (§6.4) | the caller holds it, and `epoch` rises by one |
@@ -207,7 +208,7 @@ The same records, messages, socket and lease, for the devices of one account. Th
 | Request | Body / answer |
 | :- | :- |
 | `PUT /v1/accounts/self/records/<kind>/<to device>` | `{"gen","ttl","box"}` → 204 / 409 `stale` |
-| `GET /v1/accounts/self` | `{"online":["<device id>"],"records":[…addressed to the caller…],"lease":…}` |
+| `GET /v1/accounts/self` | `{"online":["<device id>"],"records":[…addressed to the caller…],"lease":…}`; `online` lists the account's other devices with a live socket |
 | `POST /v1/accounts/self/messages` | `{"to","kind","ttl","box"}` → 202 `{"id","delivered"}` |
 | `POST /v1/accounts/self/inbox` | `{"messages":[…]}` |
 | `POST /v1/accounts/self/lease` | as for groups → 200 `{"lease"}` / 409 `held` |
@@ -215,13 +216,15 @@ The same records, messages, socket and lease, for the devices of one account. Th
 | `POST /v1/accounts/self/tickets` | `{"url","expiresAt"}`, then the socket |
 
 - **Account frames:**
-  - The hello is `{"t":"hello","v":1,"scope":"account","online":[…],"lease":…}`.
+  - The hello is `{"t":"hello","v":1,"scope":"account","online":[…],"lease":…}`, `online` again without the caller.
   - `record` and `message` frames carry `from` as a device id.
   - `presence` frames carry the device: `{"t":"presence","device","online"}`.
   - `lease` frames as for groups.
 - **The token:** `Authorization: Bearer <account token>`.
   - ES256 or EdDSA, checked against the account service's JWKS, as the forwarder and push check it.
   - Claims: `iss`, `aud`, `sub` (the account), `dev` (the device), `iat` and `exp`, lasting at most 24 hours.
+- **An account socket** lasts up to 24 hours, then closes with 4010 (checked whenever the service next writes to it); revoking the device closes it at once.
+- **A device may keep 64 records** (one per recipient and kind), and the account holds at most 512 queued messages over all its devices; the oldest go first.
 - **A revoked device** is refused here for 24 hours and 10 minutes (the longest a token lasts, plus skew).
   - Its records, queued messages and socket go at once, and so does its lease.
   - This service keeps nothing else about it.
@@ -268,7 +271,7 @@ Plaintexts are UTF-8 JSON. Unknown fields are ignored, and `at` (ms) lets the re
 
 - **Registration** (`POST /v1/pairs`, `POST /v1/groups`, `POST …/members`) is limited hardest: 10 a minute per client address.
   - IPv6 addresses are grouped by /64. IPv4 counts per address, with room for carrier-grade NAT.
-- **Everything else:** 120 requests a minute per member and scope (per device in the account channel).
+- **Everything else:** 120 requests a minute per member and scope (per device in the account channel), and signed requests 600 a minute per client address, counted before membership is known.
 - **Each limit counts per Cloudflare location.**
 - **Sizes:**
   - bodies up to 16 KiB, and boxes up to their kind's size

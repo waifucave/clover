@@ -23,7 +23,7 @@ import {
   worker,
 } from "./helpers";
 
-const config = () => ({ jwks: env.ACCOUNT_JWKS, issuer: env.ACCOUNT_ISSUER, audience: env.HOOKS_AUDIENCE });
+const config = () => ({ jwks: env.ACCOUNT_JWKS ?? "", issuer: env.ACCOUNT_ISSUER, audience: env.HOOKS_AUDIENCE });
 const now = () => Math.floor(Date.now() / 1000);
 
 describe("account tokens", () => {

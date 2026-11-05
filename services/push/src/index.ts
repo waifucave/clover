@@ -11,9 +11,11 @@
 //
 // All but /v1/vapid take the device's waifucave account token.
 
-import { bearerToken, verifyAccountToken } from "../../shared/account-token";
+import { bearerToken } from "../../shared/account-token";
+import { verifyAccountTokenFrom } from "../../shared/jwks";
 import { b64u, fromB64u, sha256, utf8 } from "../../shared/encoding";
 import { errorResponse, json, readJsonObject } from "../../shared/http";
+import { originsFrom, preflight, withCors } from "../../shared/web";
 import { APNS_TOKEN_RE } from "./apns";
 import type { Caller, PushDO, Target } from "./push-do";
 import type { Env } from "./env";
@@ -25,22 +27,29 @@ const TARGET_ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
-    try {
-      const url = new URL(request.url);
-      const path = url.pathname.split("/").slice(1);
-      if (path[0] !== "v1") return errorResponse(404, "not_found");
-      if (request.method === "GET" && path.length === 2 && path[1] === "vapid") {
-        return json({ publicKey: vapidPublicKey({ subject: env.VAPID_SUBJECT, publicKey: env.VAPID_PUBLIC_KEY, privateKey: "" }) }, 200, {
-          "cache-control": "public, max-age=3600",
-        });
-      }
-      return await authenticated(request, env, path.slice(1));
-    } catch (err) {
-      console.error(`push: unhandled ${err instanceof Error ? err.name : "error"}`);
-      return errorResponse(500, "internal");
-    }
+    // The web companion registers its browser's Web Push subscription from its own origin (CORS for it alone).
+    const origins = originsFrom(env.WEB_ORIGINS);
+    if (request.method === "OPTIONS") return preflight(request, origins, "GET, PUT, POST, DELETE");
+    return withCors(await serve(request, env), request, origins);
   },
 } satisfies ExportedHandler<Env>;
+
+async function serve(request: Request, env: Env): Promise<Response> {
+  try {
+    const url = new URL(request.url);
+    const path = url.pathname.split("/").slice(1);
+    if (path[0] !== "v1") return errorResponse(404, "not_found");
+    if (request.method === "GET" && path.length === 2 && path[1] === "vapid") {
+      return json({ publicKey: vapidPublicKey({ subject: env.VAPID_SUBJECT, publicKey: env.VAPID_PUBLIC_KEY, privateKey: "" }) }, 200, {
+        "cache-control": "public, max-age=3600",
+      });
+    }
+    return await authenticated(request, env, path.slice(1));
+  } catch (err) {
+    console.error(`push: unhandled ${err instanceof Error ? err.name : "error"}`);
+    return errorResponse(500, "internal");
+  }
+}
 
 async function accountObject(env: Env, account: string): Promise<DurableObjectStub<PushDO>> {
   return env.PUSH.getByName(b64u(await sha256(utf8(`push-account|${account}`))));
@@ -49,7 +58,7 @@ async function accountObject(env: Env, account: string): Promise<DurableObjectSt
 async function authenticated(request: Request, env: Env, path: string[]): Promise<Response> {
   const token = bearerToken(request);
   const identity = token
-    ? await verifyAccountToken(token, { jwks: env.ACCOUNT_JWKS, issuer: env.ACCOUNT_ISSUER, audience: env.PUSH_AUDIENCE })
+    ? await verifyAccountTokenFrom(token, env, env.PUSH_AUDIENCE)
     : null;
   if (!identity) return errorResponse(401, "unauthorized");
   const caller: Caller = { owner: b64u(await sha256(utf8(`owner|${identity.account}`))), device: identity.device };

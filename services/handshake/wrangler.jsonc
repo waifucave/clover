@@ -1,0 +1,62 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  // handshake.waifucave.com: the waifucave handshake (PROTOCOL.md). Pairs, groups and accounts each get a Durable
+  // Object that keeps their current state only: members, the latest sealed records, briefly queued sealed messages,
+  // and the lease.
+  //
+  // The top level is the local profile that the tests and `wrangler dev` use; env.production is what the first
+  // deploy at the live gates would use. Nothing here has been deployed. TICKET_SECRET is never in this file: it comes
+  // from `wrangler secret put` (production) or the test harness (local).
+  //
+  // Observability stays off: nothing here should keep request lines, and the service learns as little as it can.
+  "name": "clover-handshake-local",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-01",
+  "workers_dev": false,
+  "send_metrics": false,
+  "observability": { "enabled": false },
+  "vars": {
+    "ACCOUNT_ISSUER": "https://accounts.waifucave.invalid",
+    "ACCOUNT_JWKS": "{\"keys\":[]}",
+    "HANDSHAKE_AUDIENCE": "handshake.waifucave.com",
+    "HANDSHAKE_ORIGIN": "https://handshake.waifucave.invalid",
+    "WEB_ORIGINS": "http://127.0.0.1:8790"
+  },
+  "durable_objects": {
+    "bindings": [{ "name": "HANDSHAKE", "class_name": "HandshakeDO" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["HandshakeDO"] }],
+  // Each limit counts per Cloudflare location, not globally.
+  "ratelimits": [
+    // Pair and group registrations per client address (IPv6 by /64): the hardest limit.
+    { "name": "REGISTER_RATE", "namespace_id": "73001", "simple": { "limit": 10, "period": 60 } },
+    // Calls per member (or device) and scope.
+    { "name": "API_RATE", "namespace_id": "73002", "simple": { "limit": 120, "period": 60 } },
+    // Signed calls per client address, before membership is known; room for carrier-grade NAT.
+    { "name": "ADDRESS_RATE", "namespace_id": "73003", "simple": { "limit": 600, "period": 60 } }
+  ],
+  "env": {
+    "production": {
+      "name": "clover-handshake",
+      "workers_dev": false,
+      "observability": { "enabled": false },
+      "routes": [{ "pattern": "handshake.waifucave.com", "custom_domain": true }],
+      "vars": {
+        // Set at the live gates from lane H's account service: its issuer and its keys' URL.
+        "ACCOUNT_ISSUER": "https://waifucave.com/auth",
+        "ACCOUNT_JWKS_URL": "https://waifucave.com/auth/.well-known/jwks.json",
+        "HANDSHAKE_AUDIENCE": "handshake.waifucave.com",
+        "HANDSHAKE_ORIGIN": "https://handshake.waifucave.com",
+        "WEB_ORIGINS": "https://clover.waifucave.com"
+      },
+      "durable_objects": {
+        "bindings": [{ "name": "HANDSHAKE", "class_name": "HandshakeDO" }]
+      },
+      "ratelimits": [
+        { "name": "REGISTER_RATE", "namespace_id": "73101", "simple": { "limit": 10, "period": 60 } },
+        { "name": "API_RATE", "namespace_id": "73102", "simple": { "limit": 120, "period": 60 } },
+        { "name": "ADDRESS_RATE", "namespace_id": "73103", "simple": { "limit": 600, "period": 60 } }
+      ]
+    }
+  }
+}
