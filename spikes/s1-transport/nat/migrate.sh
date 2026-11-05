@@ -54,6 +54,11 @@ new_address() {
   ns s1m1 ip addr del 198.19.0.1/24 dev m1
 }
 
+# The OS's network-change event, as clover-core would get it: the client calls network_changed().
+signal_change() {
+  touch "$TRIGGER"
+}
+
 # scenario <name> <transport> <duration s> <grace s> <steps...>, each step "<at s>:<function>"
 scenario() {
   local NAME=$1 TR=$2 DUR=$3 GRACE=$4
@@ -64,8 +69,9 @@ scenario() {
   ip netns exec s1m2 "$BIN" serve --transport "$TR" --bind 198.19.0.2:47000 --info-file "$TMP/info.json" >"$TMP/server.log" 2>&1 &
   local SERVER=$!
   for _ in $(seq 100); do [ -s "$TMP/info.json" ] && break; sleep 0.1; done
+  TRIGGER="$TMP/network-changed"
   ip netns exec s1m1 "$BIN" ping --info-file "$TMP/info.json" --connect 198.19.0.2:47000 --duration-s "$DUR" --grace-s "$GRACE" \
-    --label "$NAME" >"$TMP/client.log" 2>&1 &
+    --rebind-trigger "$TRIGGER" --label "$NAME" >"$TMP/client.log" 2>&1 &
   local CLIENT=$!
   local t=0
   for step in "$@"; do
@@ -81,15 +87,21 @@ scenario() {
   line="$(grep '^S1RESULT ' "$TMP/client.log" | sed 's/^S1RESULT //')"
   [ -z "$line" ] && line="$(jq -cn --arg e "$(tail -c 400 "$TMP/client.log")" --arg t "$TR" --arg n "$NAME" '{check:"ping",ok:false,transport:$t,label:$n,error:$e}')"
   echo "$line" >>"$OUT"
-  echo "$line" | jq -r '"\(.transport) \(.label): survived=\(.survived) received \(.received)/\(.sent), longest gap \(.maxGapMs) ms at \(.maxGapAtS) s \(if .error then "error: \(.error)" else "" end)"'
+  echo "$line" | jq -r '"\(.transport) \(.label): recovered=\(.recovered) received \(.received)/\(.sent), last reply at \(.lastReplyAtS) s, longest gap \(.maxGapMs) ms at \(.maxGapAtS) s \(if .error then "error: \(.error)" else "" end)"'
   rm -rf "$TMP"
 }
 
 for TR in "${TRANSPORTS[@]}"; do
-  scenario address-change "$TR" 8 5 3:new_address
-  scenario switch-with-2s-outage "$TR" 10 8 3:blackout 5:new_address 5:link_ok
+  # A new address with nobody telling the stack (long grace: does it heal by itself?), then with
+  # the network-change call clover-core would make.
+  scenario address-change "$TR" 8 25 3:new_address
+  scenario address-change+signal "$TR" 8 5 3:new_address 3:signal_change
+  # Wi-Fi to mobile: two seconds with no network, then a new address.
+  scenario switch-2s-outage+signal "$TR" 10 8 3:blackout 5:new_address 5:link_ok 5:signal_change
   scenario blackout-5s "$TR" 12 10 3:blackout 8:link_ok
-  scenario blackout-20s "$TR" 28 12 3:blackout 23:link_ok
+  scenario blackout-20s "$TR" 28 20 3:blackout 23:link_ok
+  # Sleep and wake: the wake event is a network-change call too.
+  scenario blackout-20s+signal "$TR" 28 12 3:blackout 23:link_ok 23:signal_change
   scenario blackout-40s "$TR" 48 12 3:blackout 43:link_ok
 done
 echo "results in $OUT"

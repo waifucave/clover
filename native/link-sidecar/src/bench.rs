@@ -305,17 +305,21 @@ pub async fn serve(a: &Args) -> Result<()> {
 /// `ping`: one 64-byte echo every `--interval-ms` for `--duration-s` on one connection, sent
 /// without waiting for replies, while nat/migrate.sh changes the client's address or blacks the
 /// link out. Records when replies arrive, so the longest gap shows how long the link was gone,
-/// and whether the connection survived at all.
+/// and whether replies came back at all. With `--rebind-trigger <file>`, the client calls
+/// `network_changed()` (quinn: rebind to a new socket; iroh: `network_change()`) as soon as that
+/// file appears, the way clover-core would on the OS's network-change event.
 pub async fn ping(a: &Args) -> Result<()> {
+    use std::sync::atomic::AtomicU64;
     let info: Value = serde_json::from_str(&std::fs::read_to_string(a.get_or("info-file", "server.json"))?)?;
     let kind: Kind = info["transport"].as_str().unwrap_or("quinn").parse()?;
     let label = a.get_or("label", "");
     let interval = Duration::from_millis(a.num("interval-ms", 50));
     let duration = Duration::from_secs(a.num("duration-s", 12));
     let grace = Duration::from_secs(a.num("grace-s", 10));
+    let trigger = a.get("rebind-trigger");
     let res: Result<Value> = async {
         let target: SocketAddr = a.get("connect").context("--connect ip:port")?.parse()?;
-        let ep = Endpoint::bind(kind, UdpSocket::bind("0.0.0.0:0")?, Cc::Cubic).await?;
+        let ep = Arc::new(Endpoint::bind(kind, UdpSocket::bind("0.0.0.0:0")?, Cc::Cubic).await?);
         let conn = tokio::time::timeout(
             Duration::from_secs(15),
             ep.connect(info["identity"].as_str().unwrap_or_default(), &[target]),
@@ -326,21 +330,41 @@ pub async fn ping(a: &Args) -> Result<()> {
         let (mut send, mut recv) = conn.open_bi(10).await?;
         send.write_all(b"E").await?;
         let start = Instant::now();
-        let writer = tokio::spawn(async move {
-            let mut seq = 0u64;
-            let mut tick = tokio::time::interval(interval);
-            while start.elapsed() < duration {
-                tick.tick().await;
-                let mut frame = [0u8; FRAME];
-                frame[..8].copy_from_slice(&seq.to_be_bytes());
-                frame[8..16].copy_from_slice(&(start.elapsed().as_micros() as u64).to_be_bytes());
-                if send.write_all(&frame).await.is_err() {
-                    return (seq, send);
+        let rebind_at = Arc::new(std::sync::Mutex::new(None::<(f64, Option<String>)>));
+        if let Some(path) = trigger.clone() {
+            let ep = ep.clone();
+            let rebind_at = rebind_at.clone();
+            tokio::spawn(async move {
+                while start.elapsed() < duration + grace {
+                    if std::path::Path::new(&path).exists() {
+                        let at = start.elapsed().as_secs_f64();
+                        let err = ep.network_changed().await.err().map(|e| format!("{e:#}"));
+                        *rebind_at.lock().unwrap() = Some((at, err));
+                        return;
+                    }
+                    tokio::time::sleep(Duration::from_millis(20)).await;
                 }
-                seq += 1;
-            }
-            (seq, send)
-        });
+            });
+        }
+        let sent = Arc::new(AtomicU64::new(0));
+        let writer = {
+            let sent = sent.clone();
+            tokio::spawn(async move {
+                let mut tick = tokio::time::interval(interval);
+                while start.elapsed() < duration {
+                    tick.tick().await;
+                    let seq = sent.load(Ordering::Relaxed);
+                    let mut frame = [0u8; FRAME];
+                    frame[..8].copy_from_slice(&seq.to_be_bytes());
+                    frame[8..16].copy_from_slice(&(start.elapsed().as_micros() as u64).to_be_bytes());
+                    if send.write_all(&frame).await.is_err() {
+                        return send;
+                    }
+                    sent.store(seq + 1, Ordering::Relaxed);
+                }
+                send
+            })
+        };
         let mut arrivals: Vec<(f64, f64)> = Vec::new(); // (arrival s, rtt ms)
         let mut read_error = None;
         let deadline = duration + grace;
@@ -355,11 +379,8 @@ pub async fn ping(a: &Args) -> Result<()> {
                     let sent_us = u64::from_be_bytes(back[8..16].try_into().unwrap());
                     let now_s = start.elapsed().as_secs_f64();
                     arrivals.push((now_s, now_s * 1000.0 - sent_us as f64 / 1000.0));
-                    if writer.is_finished() && arrivals.len() as u64 >= u64::from_be_bytes(back[..8].try_into().unwrap()) + 1 {
-                        // every frame the writer sent has come back
-                        let (sent, _) = writer.await?;
-                        let received = arrivals.len() as u64;
-                        return Ok(ping_json(kind, &label, sent, received, &arrivals, None, path_before, conn.path_json()));
+                    if writer.is_finished() && arrivals.len() as u64 >= sent.load(Ordering::Relaxed) {
+                        break; // every frame the writer sent has come back
                     }
                 }
                 Ok(Err(e)) => {
@@ -369,13 +390,15 @@ pub async fn ping(a: &Args) -> Result<()> {
                 Err(_) => break,
             }
         }
-        let sent = if writer.is_finished() {
-            writer.await.map(|(s, _)| s).unwrap_or(0)
-        } else {
-            writer.abort();
-            0
-        };
-        Ok(ping_json(kind, &label, sent, arrivals.len() as u64, &arrivals, read_error, path_before, conn.path_json()))
+        let end_s = start.elapsed().as_secs_f64();
+        writer.abort();
+        let rebind = rebind_at.lock().unwrap().clone();
+        let mut body = ping_json(kind, &label, sent.load(Ordering::Relaxed), &arrivals, end_s, read_error);
+        body["rebindAtS"] = json!(rebind.as_ref().map(|r| (r.0 * 100.0).round() / 100.0));
+        body["rebindError"] = json!(rebind.and_then(|r| r.1));
+        body["pathBefore"] = path_before;
+        body["pathAfter"] = conn.path_json();
+        Ok(body)
     }
     .await;
     match res {
@@ -385,8 +408,11 @@ pub async fn ping(a: &Args) -> Result<()> {
     Ok(())
 }
 
-#[allow(clippy::too_many_arguments)]
-fn ping_json(kind: Kind, label: &str, sent: u64, received: u64, arrivals: &[(f64, f64)], error: Option<String>, before: Value, after: Value) -> Value {
+fn ping_json(kind: Kind, label: &str, sent: u64, arrivals: &[(f64, f64)], end_s: f64, error: Option<String>) -> Value {
+    let received = arrivals.len() as u64;
+    let recovered = error.is_none() && sent > 0 && received == sent;
+    // The longest wait between replies, counting the silence after the last one if replies
+    // stopped before the end.
     let mut max_gap = 0.0f64;
     let mut gap_at = 0.0f64;
     for w in arrivals.windows(2) {
@@ -396,20 +422,25 @@ fn ping_json(kind: Kind, label: &str, sent: u64, received: u64, arrivals: &[(f64
             gap_at = w[0].0;
         }
     }
+    let last = arrivals.last().map(|x| x.0).unwrap_or(0.0);
+    if !recovered && (end_s - last) * 1000.0 > max_gap {
+        max_gap = (end_s - last) * 1000.0;
+        gap_at = last;
+    }
     let rtts: Vec<f64> = arrivals.iter().map(|x| x.1).collect();
     json!({
-        "ok": error.is_none() && sent > 0 && received == sent,
+        "ok": recovered,
         "transport": kind.name(),
         "label": label,
         "sent": sent,
         "received": received,
-        "survived": error.is_none(),
+        "recovered": recovered,
+        "connectionLost": error.is_some(),
+        "lastReplyAtS": (last * 100.0).round() / 100.0,
         "maxGapMs": (max_gap * 10.0).round() / 10.0,
         "maxGapAtS": (gap_at * 100.0).round() / 100.0,
         "rtt": summary(&rtts),
         "error": error,
-        "pathBefore": before,
-        "pathAfter": after,
     })
 }
 

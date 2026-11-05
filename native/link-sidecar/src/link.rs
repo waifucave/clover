@@ -184,6 +184,9 @@ impl Endpoint {
                 ));
                 server_config.transport_config(quinn_transport(cc)?);
                 let runtime = quinn::default_runtime().ok_or_else(|| anyhow!("no async runtime"))?;
+                // tokio needs the socket non-blocking; a blocking one stalls quinn's driver in
+                // recv until some packet arrives.
+                socket.set_nonblocking(true)?;
                 let ep = quinn::Endpoint::new(quinn::EndpointConfig::default(), Some(server_config), socket, runtime)?;
                 Ok(Endpoint::Quinn { ep, cert_sha256, cc })
             }
@@ -281,6 +284,20 @@ impl Endpoint {
                 }
             },
         }
+    }
+
+    /// What clover-core would call when the OS reports a network change: quinn moves to a fresh
+    /// socket (active migration), iroh re-checks its interfaces and paths.
+    pub async fn network_changed(&self) -> Result<()> {
+        match self {
+            Endpoint::Quinn { ep, .. } => {
+                let socket = UdpSocket::bind("0.0.0.0:0")?;
+                socket.set_nonblocking(true)?;
+                ep.rebind(socket)?
+            }
+            Endpoint::Iroh { ep } => ep.network_change().await,
+        }
+        Ok(())
     }
 
     pub async fn close(&self) {
