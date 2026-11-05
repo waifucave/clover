@@ -1,6 +1,6 @@
 // Fakes for the parts' tests and the gallery: a core client that answers from a table and records each call, and a
 // plugin API built from the members a test gives. No React here, so every part can use it with its own React.
-import type { BotView, CardMeta, ComputerView, CoreClient, CoreMethods, DeviceView, FilesWithWatch, PluginApi, PluginDetail, PluginSummary, PointEntry, SessionView, Unsubscribe } from "./types";
+import type { BotView, CardMeta, ComputerView, CoreClient, CoreMethods, DeviceView, FilesWithWatch, PluginApi, PluginDetail, PluginSummary, PointEntry, SessionView, UiPluginView, Unsubscribe } from "./types";
 
 export type CoreHandlers = { [M in keyof CoreMethods]?: (params: CoreMethods[M]["params"]) => CoreMethods[M]["result"] | Promise<CoreMethods[M]["result"]> };
 
@@ -91,6 +91,10 @@ export const pluginDetail = (summary: PluginSummary, extra: Partial<PluginDetail
   ({ ...summary, manifest: {}, provenance: { by: "user-app", at: 0 }, capabilities: [], networkHosts: [], helperPermissions: [], issues: [], logTail: [], pinned: false, ...extra }) as PluginDetail;
 
 /** The pending cards a runtime hands its parts, settable by a test. */
+/** A running plugin's UI as `plugin.ui` lists it: its themes and string tables, the rest left plain. */
+export const uiPluginView = (pluginId: string, themes: { id: string; file: string }[] = [], locales: { lang: string; file: string }[] = []): UiPluginView =>
+  ({ pluginId, treeHash: "sha256-test", layer: pluginId.split("/")[0]!, assetBase: `clover-asset://${pluginId}/`, ui: [], themes, locales, bots: "all" });
+
 export function fakeApprovals(initial: CardMeta[] = []) {
   let cards = initial;
   const listeners = new Set<() => void>();

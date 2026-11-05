@@ -13,7 +13,10 @@ async function mount(params: { spot?: string; key?: string } = {}, installState:
   const core = fakeCore({
     "plugin.index.list": () => ({ indexes: INDEXES }),
     "plugin.index.search": ({ query }) => ({ entries: ENTRIES.filter((e) => !query || e.id.includes(query) || plain(e.name).toLowerCase().includes(query.toLowerCase())) }),
-    "plugin.install": ({ source }) => (source.id === "terminal-plus" ? Promise.reject(new Error("hash mismatch")) : { id: source.id, state: installState }),
+    "plugin.install": ({ source }) => {
+      const id = source.from === "index" ? source.id : "local";
+      return id === "terminal-plus" ? Promise.reject(new Error("hash mismatch")) : { id, state: installState };
+    },
   });
   const routes: unknown[] = [];
   render(

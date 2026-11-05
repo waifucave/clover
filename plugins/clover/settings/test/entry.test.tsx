@@ -1,7 +1,7 @@
 // Settings on the runtime: Clover's own settings from the core and the plugin API, every change through them.
 import { afterEach, describe, expect, test } from "bun:test";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
-import { computerView, deviceView, fakeApi, fakeCore, pluginDetail, pluginSummary, settle } from "../../shell/runtime/testkit";
+import { computerView, deviceView, fakeApi, fakeCore, pluginDetail, pluginSummary, settle, uiPluginView } from "../../shell/runtime/testkit";
 import type { EntryComponent, PluginDetail, PluginSummary } from "../../shell/runtime/types";
 import { runtimeWith } from "../../shell/runtime/ui";
 import { okWords, SettingsEntry } from "../client/entry";
@@ -23,7 +23,7 @@ async function mount(params: { section?: string } = {}, extra: { component?: Ent
     "plugin.get": ({ id }) => ({ plugin: detail(PLUGINS.find((p) => p.id === id)!, id === "weather-routine" ? ["notify", "network:api.weather.example"] : ["conversation.read", "call:clover"], id === "weather-routine" ? ["api.weather.example"] : []) }),
     "plugin.setEnabled": () => ({ applied: true }),
     "plugin.logs": () => ({ lines: ["14:05 started", "14:06 TypeError: scene"] }),
-    "plugin.ui": () => ({ plugins: [{ pluginId: "clover/base-theme", themes: [{ id: "base", file: "base.css" }], locales: [] }, { pluginId: "midnight", themes: [{ id: "night", file: "night.css" }], locales: [{ lang: "de", file: "de.json" }] }] }),
+    "plugin.ui": () => ({ plugins: [uiPluginView("clover/base-theme", [{ id: "base", file: "base.css" }], []), uiPluginView("midnight", [{ id: "night", file: "night.css" }], [{ lang: "de", file: "de.json" }])] }),
     "account.status": () => ({ signedIn: true, provider: "email", user: { id: "u1", name: "Sam" } }),
     "ui.settings": () => ({ picks: [], lists: [], language: "en-US", globalTheme: "midnight#night" }),
     "ui.set": () => ({ applied: true }),
@@ -126,7 +126,7 @@ describe("settings on the runtime", () => {
     await act(() => settle());
     expect(screen.getByText("KQ7-M2P")).toBeTruthy();
     // The other device joins: this side hears the words.
-    act(() => core.emit("pairing_joined", { pairingId: "p1", words: ["amber", "river", "lantern", "moss"] }));
+    act(() => core.emit("pairing_changed", { pairingId: "p1", step: "words", words: ["amber", "river", "lantern", "moss"] }));
     fireEvent.click(screen.getByRole("button", { name: "They match" }));
     await act(() => settle());
     expect(screen.getByRole("button", { name: "Waiting for your OK" })).toBeTruthy();
@@ -142,6 +142,35 @@ describe("settings on the runtime", () => {
       ["device.pair.join", { code: "ZZ9" }],
     ]);
     expect(screen.getByRole("status").textContent).toContain("amber · river · lantern · moss");
+  });
+
+  test("pairing follows lane H's pairing_changed: a card waits, then the device is added, or it ends with why", async () => {
+    const { core } = await mount({ section: "devices" });
+    const begin = async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Show a code" }));
+      await act(() => settle());
+    };
+    await begin();
+    act(() => core.emit("pairing_changed", { pairingId: "other", step: "words", words: ["a", "b", "c", "d"] }));
+    expect(screen.queryByText("a · b · c · d")).toBeNull();
+    act(() => core.emit("pairing_changed", { pairingId: "p1", step: "words", words: ["amber", "river", "lantern", "moss"] }));
+    act(() => core.emit("pairing_changed", { pairingId: "p1", step: "card" }));
+    expect(screen.getByRole("button", { name: "Waiting for your OK" })).toBeTruthy();
+    act(() => core.emit("pairing_changed", { pairingId: "p1", step: "done" }));
+    expect(screen.queryByRole("status")).toBeNull();
+
+    await begin();
+    act(() => core.emit("pairing_changed", { pairingId: "p1", step: "expired" }));
+    expect(screen.getByRole("status").textContent).toContain("The code expired.");
+    fireEvent.click(screen.getByRole("button", { name: "OK" }));
+    expect(screen.queryByRole("status")).toBeNull();
+
+    await begin();
+    act(() => core.emit("pairing_changed", { pairingId: "p1", step: "failed", reason: { en: "the other device left" } }));
+    expect(screen.getByRole("status").textContent).toContain("The pairing didn't finish: the other device left");
+    fireEvent.click(screen.getByRole("button", { name: "OK" }));
+    // An ended pairing has nothing to cancel.
+    expect(core.calls.filter((c) => c.method === "device.pair.cancel")).toEqual([]);
   });
 
   test("the account and the bots, each opening in the bot editor", async () => {

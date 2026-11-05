@@ -100,7 +100,9 @@ function Pairing({ props }: { props: SettingsModalProps }) {
         </>
       ) : (
         <div className="cl-settings__pair" role="status">
-          {p.words ? (
+          {p.ended !== undefined ? (
+            <p className="cl-settings__note">{p.ended}</p>
+          ) : p.words ? (
             <>
               <p className="cl-settings__note">{S.pairWords}</p>
               <p className="cl-settings__pair-words">{p.words.join(" · ")}</p>
@@ -114,13 +116,13 @@ function Pairing({ props }: { props: SettingsModalProps }) {
             )
           )}
           <div className="cl-settings__control">
-            {p.words && props.onPairConfirm && (
+            {p.ended === undefined && p.words && props.onPairConfirm && (
               <button type="button" className="cl-settings__button" disabled={p.confirming} onClick={props.onPairConfirm}>
                 {p.confirming ? S.pairConfirming : S.pairConfirm}
               </button>
             )}
             <button type="button" className="cl-settings__button" onClick={props.onPairCancel}>
-              {S.pairCancel}
+              {p.ended !== undefined ? S.pairClose : S.pairCancel}
             </button>
           </div>
         </div>

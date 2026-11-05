@@ -112,6 +112,8 @@ export interface SettingsPairing {
   words?: string[];
   /** Asked for: its card waits. */
   confirming?: boolean;
+  /** It ended without a device: why, in words. */
+  ended?: string;
 }
 
 export interface Language {

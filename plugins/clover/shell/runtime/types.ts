@@ -55,6 +55,9 @@ export type ComputerView = Proto.ComputerView;
 export type DeviceView = Proto.DeviceView;
 export type AccountView = Proto.AccountView;
 export type PairingView = Infer<typeof Proto.PairingView>;
+export type UiPluginView = Infer<typeof Proto.UiPluginView>;
+/** Lane H's `pairing_changed`: a pairing moved on (waiting, words, card, done, failed, expired). */
+export type PairingChanged = Infer<typeof Proto.PairingChangedEvent>;
 export type CardMeta = Proto.CardMeta;
 export type FileStat = Proto.FileStat;
 export type PluginState = Proto.PluginState;
@@ -103,32 +106,40 @@ export type FilesWithWatch = NonNullable<PluginApi["files"]> & {
 /** The core methods F's parts call, by name, with their params and results. Only the `clover` layer calls them
  *  directly (its role is the app's, §5.5): a change to the core's settings applies at once, and a sensitive one comes
  *  back as a card. How a component reaches this client is a question for B and E (`useCore` here). */
+/** A method as lane B's protocol defines it: what a caller passes, and what comes back. */
+type FromB<S extends { params: { _zod: { input: unknown } }; result: { _zod: { output: unknown } } }> = {
+  params: S["params"]["_zod"]["input"];
+  result: S["result"]["_zod"]["output"];
+};
+
+/** The core methods the parts call: B's, then the provisional ones B's protocol has no call for yet. */
 export interface CoreMethods {
-  "bot.setUserLayer": { params: { id: string; patch: UserLayerPatch }; result: ChangeResult };
-  "session.send": { params: { id: string; message: { text: string; clientMessageId: string; sentAt?: number } }; result: { seq: number } };
-  "session.interrupt": { params: { id: string }; result: { ok: true } };
-  "session.stop": { params: { id: string }; result: { ok: true } };
-  "session.setModel": { params: { id: string; model: string; effort?: string }; result: { ok: true } };
-  "computer.setLevel": { params: { name: string; level: Level }; result: ChangeResult };
-  "device.revoke": { params: { id: string }; result: ChangeResult };
-  "device.pair.begin": { params: Record<string, never>; result: PairingView };
-  "device.pair.join": { params: { code: string }; result: PairingView };
-  "device.pair.confirm": { params: { pairingId: string; words: string[] }; result: ChangeResult };
-  "device.pair.cancel": { params: { pairingId: string }; result: { ok: true } };
-  "main.set": { params: { device: string }; result: ChangeResult };
-  "account.status": { params: Record<string, never>; result: AccountView };
-  "plugin.list": { params: Record<string, never>; result: { plugins: PluginSummary[] } };
-  /** Every running plugin's UI: its themes and string tables, for Settings' theme and language pickers. */
-  "plugin.ui": { params: Record<string, never>; result: { plugins: { pluginId: string; themes: { id: string; file: string }[]; locales: { lang: string; file: string }[] }[] } };
-  "plugin.get": { params: { id: string }; result: { plugin: PluginDetail } };
-  "plugin.setEnabled": { params: { id: string; enabled: boolean }; result: ChangeResult };
-  "plugin.restart": { params: { id: string }; result: { ok: true } };
-  "plugin.logs": { params: { id: string; lines?: number }; result: { lines: string[] } };
-  "plugin.install": { params: { source: { from: "index"; id: string; version?: string; index?: string } }; result: { id: string; state: PluginState } };
-  "plugin.index.list": { params: Record<string, never>; result: { indexes: IndexView[] } };
-  "plugin.index.search": { params: { query?: string; limit?: number }; result: { entries: IndexEntryView[] } };
-  "ui.settings": { params: Record<string, never>; result: UiSettings };
-  "ui.set": { params: { patch: Partial<UiSettings> }; result: ChangeResult };
+  "bot.setUserLayer": FromB<typeof Proto.SESSIONS_METHODS.botSetUserLayer>;
+  "session.send": FromB<typeof Proto.SESSIONS_METHODS.sessionSend>;
+  "session.interrupt": FromB<typeof Proto.SESSIONS_METHODS.sessionInterrupt>;
+  "session.stop": FromB<typeof Proto.SESSIONS_METHODS.sessionStop>;
+  "session.setModel": FromB<typeof Proto.SESSIONS_METHODS.sessionSetModel>;
+  "computer.setLevel": FromB<typeof Proto.COMPUTERS_METHODS.computerSetLevel>;
+  "device.revoke": FromB<typeof Proto.DEVICES_METHODS.deviceRevoke>;
+  "device.pair.begin": FromB<typeof Proto.DEVICES_METHODS.devicePairBegin>;
+  "device.pair.join": FromB<typeof Proto.DEVICES_METHODS.devicePairJoin>;
+  "device.pair.confirm": FromB<typeof Proto.DEVICES_METHODS.devicePairConfirm>;
+  "device.pair.cancel": FromB<typeof Proto.DEVICES_METHODS.devicePairCancel>;
+  "main.set": FromB<typeof Proto.DEVICES_METHODS.mainSet>;
+  "account.status": FromB<typeof Proto.DEVICES_METHODS.accountStatus>;
+  "plugin.list": FromB<typeof Proto.PLUGINS_METHODS.pluginList>;
+  "plugin.ui": FromB<typeof Proto.PLUGINS_METHODS.pluginUi>;
+  "plugin.get": FromB<typeof Proto.PLUGINS_METHODS.pluginGet>;
+  "plugin.setEnabled": FromB<typeof Proto.PLUGINS_METHODS.pluginSetEnabled>;
+  "plugin.restart": FromB<typeof Proto.PLUGINS_METHODS.pluginRestart>;
+  "plugin.logs": FromB<typeof Proto.PLUGINS_METHODS.pluginLogs>;
+  "plugin.install": FromB<typeof Proto.PLUGINS_METHODS.pluginInstall>;
+  "plugin.index.list": FromB<typeof Proto.PLUGINS_METHODS.pluginIndexList>;
+  "plugin.index.search": FromB<typeof Proto.PLUGINS_METHODS.pluginIndexSearch>;
+  "ui.settings": FromB<typeof Proto.APP_METHODS.uiSettings>;
+  "ui.set": FromB<typeof Proto.APP_METHODS.uiSet>;
+  "archive.list": FromB<typeof Proto.SESSIONS_METHODS.archiveList>;
+  "archive.history": FromB<typeof Proto.SESSIONS_METHODS.archiveHistory>;
   // Provisional: what a session's column shows that B's API has no call for yet. The owners named settle them.
   /** A coding session's changes against their base, and the pull requests they became (lane D). */
   "session.changes": { params: { id: string }; result: { label: string; added: number; removed: number; files: number; prs: { id: string; title: string; repo: string; number: number; state: "open" | "draft" | "merged" }[] } | null };
@@ -144,8 +155,6 @@ export interface CoreMethods {
   "session.connectors": { params: { id: string }; result: { total: number; needSignIn: number } };
   /** The inherited model catalog; its Clover shape is lane A's and B's to settle. */
   "models.catalog": { params: Record<string, never>; result: { models: { id: string; label?: string; name?: string; provider?: string }[] } };
-  "archive.list": { params: { query?: string; before?: number; limit?: number }; result: { sessions: ArchivedSessionView[]; more: boolean } };
-  "archive.history": { params: { id: string; cursor?: string; limit?: number }; result: { events: unknown[]; cursor?: string } };
 }
 
 export type CoreMethod = keyof CoreMethods;

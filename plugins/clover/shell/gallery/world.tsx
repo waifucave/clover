@@ -48,7 +48,7 @@ import type { UiEntry } from "../runtime/resolve";
 import type {
   BotView, CardMeta, ComputerView, CoreClient, CoreMethods, DeviceView, EntryComponent, PluginApi, PluginSummary, PointEntry, SessionView,
 } from "../runtime/types";
-import { card, computerView, deviceView, fakeApi, pluginDetail, pluginSummary } from "../runtime/testkit";
+import { card, computerView, deviceView, fakeApi, pluginDetail, pluginSummary, uiPluginView } from "../runtime/testkit";
 import { runtimeWith, type UiRuntime } from "../runtime/ui";
 
 // -------------------------------------------------------------------------------------------------
@@ -285,14 +285,14 @@ const coreHandlers: Handlers = {
   "plugin.logs": () => ({ lines: LOG_LINES }),
   "plugin.ui": () => ({
     plugins: [
-      { pluginId: "clover/base-theme", themes: [{ id: "base", file: "theme.css" }], locales: [] },
-      { pluginId: "alpha", themes: [{ id: "alpha-tab", file: "tab.css" }], locales: [{ lang: "ja", file: "ja.json" }] },
-      { pluginId: "midnight", themes: [{ id: "midnight", file: "midnight.css" }], locales: [{ lang: "de", file: "de.json" }, { lang: "fr", file: "fr.json" }] },
+      uiPluginView("clover/base-theme", [{ id: "base", file: "theme.css" }], []),
+      uiPluginView("alpha", [{ id: "alpha-tab", file: "tab.css" }], [{ lang: "ja", file: "ja.json" }]),
+      uiPluginView("midnight", [{ id: "midnight", file: "midnight.css" }], [{ lang: "de", file: "de.json" }, { lang: "fr", file: "fr.json" }]),
     ],
   }),
   "plugin.index.list": () => ({ indexes: INDEXES }),
   "plugin.index.search": ({ query }) => ({ entries: INDEX_ENTRIES.filter((e) => !query || `${e.id} ${e.name ?? ""} ${e.description ?? ""}`.toLowerCase().includes(query.toLowerCase())) }),
-  "plugin.install": ({ source }) => ({ id: source.id, state: "found" }),
+  "plugin.install": ({ source }) => ({ id: source.from === "index" ? source.id : "local", state: "found" }),
   "ui.settings": () => ({ picks: [], lists: [], language: "en-US", globalTheme: "clover/base-theme#base" }),
   "ui.set": () => ({ applied: true }),
   // A sensitive change comes back as a card the core raises (`raise` below adds it to the world's cards).

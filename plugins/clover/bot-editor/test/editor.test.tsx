@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
-import { card, fakeApi, fakeApprovals, fakeCore, settle } from "../../shell/runtime/testkit";
+import { card, fakeApi, fakeApprovals, fakeCore, settle, uiPluginView } from "../../shell/runtime/testkit";
 import type { BotView } from "../../shell/runtime/types";
 import { runtimeWith } from "../../shell/runtime/ui";
 import { BotEditor } from "../client/BotEditor";
@@ -18,7 +18,7 @@ async function mount(view: BotView = ALPHA_VIEW, setUserLayer: () => { applied: 
   const core = fakeCore({
     "bot.setUserLayer": setUserLayer,
     "models.catalog": () => ({ models: [{ id: "openai/gpt-6", label: "GPT-6", provider: "OpenAI", efforts: ["low", "medium"] }, { id: "xai/grok-5", label: "Grok 5" }] as never }),
-    "plugin.ui": () => ({ plugins: [{ pluginId: "clover/base-theme", themes: [{ id: "base", file: "base.css" }], locales: [] }, { pluginId: "alpha", themes: [{ id: "alpha-tab", file: "tab.css" }], locales: [] }] }),
+    "plugin.ui": () => ({ plugins: [uiPluginView("clover/base-theme", [{ id: "base", file: "base.css" }], []), uiPluginView("alpha", [{ id: "alpha-tab", file: "tab.css" }], [])] }),
     "plugin.list": () => ({ plugins: [{ id: "chibi-pack", name: "Chibi pack" } as never, { id: "alpha", name: "Alpha" } as never] }),
   });
   const api = fakeApi({
