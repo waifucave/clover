@@ -52,6 +52,24 @@ describe("supervise loop", () => {
     expect(r.starts).toBe(1);
   });
 
+  test("crashes older than two minutes no longer raise the back-off", async () => {
+    let t = 0;
+    const gaps = [0, 1_000, 300_000, 1_000];
+    let i = 0;
+    const codes = [1, 1, 1, 1, 0];
+    const waits: number[] = [];
+    const deps: SuperviseDeps = {
+      startDaemon() { t += gaps[i] ?? 0; return run(codes[i++] ?? 0); },
+      async wait(ms) { waits.push(ms); return true; },
+      shouldContinue: () => true,
+      log: () => {},
+      now: () => t,
+    };
+    await superviseLoop(deps);
+    // two quick crashes, then one five minutes later starts over at 0.5 s
+    expect(waits).toEqual([500, 1000, 500, 1000]);
+  });
+
   test("back-off grows from 0.5 s and caps at 30 s", () => {
     expect(backoffMs(1)).toBe(500);
     expect(backoffMs(2)).toBe(1000);

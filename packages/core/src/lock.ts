@@ -1,7 +1,8 @@
 import { closeSync, existsSync, ftruncateSync, openSync, readFileSync, unlinkSync, writeFileSync, writeSync } from "node:fs";
-import { createConnection } from "node:net";
 import { dirname, join } from "node:path";
-import { isPipe } from "./platform/transport";
+import { endpointAnswers, isPipe } from "./platform/transport";
+
+export { endpointAnswers };
 
 // One daemon per home, under an OS lock held for the daemon's whole life (spec §3.1; measured in
 // spike S7 §5 on all three OSes). The kernel drops the lock the instant the daemon exits or is
@@ -172,18 +173,6 @@ function pidFileBackend(): LockBackend {
 function backendFor(platform: NodeJS.Platform, kind: "os" | "pidfile"): LockBackend {
   if (kind === "pidfile") return pidFileBackend();
   return (platform === "win32" ? windowsBackend() : posixBackend(platform)) ?? pidFileBackend();
-}
-
-/** Whether a daemon answers on an endpoint (a Unix socket or a Windows named pipe). */
-export function endpointAnswers(path: string, timeoutMs = 300): Promise<boolean> {
-  if (!isPipe(path) && !existsSync(path)) return Promise.resolve(false);
-  return new Promise((resolve) => {
-    const socket = createConnection(path);
-    const done = (ok: boolean) => { clearTimeout(timer); socket.destroy(); resolve(ok); };
-    const timer = setTimeout(() => done(false), timeoutMs);
-    socket.once("connect", () => done(true));
-    socket.once("error", () => done(false));
-  });
 }
 
 export interface Lock { release(): void }

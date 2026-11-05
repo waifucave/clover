@@ -3,6 +3,8 @@
 // the lock (lock.ts), never a half-open socket. Pure: the daemon and every client resolve the same
 // endpoint from the home's run directory, and tests resolve it for another OS by passing `platform`.
 import { createHash } from "node:crypto";
+import { existsSync } from "node:fs";
+import { createConnection } from "node:net";
 import { join } from "node:path";
 
 export type DaemonPlatform = "darwin" | "linux" | "win32";
@@ -49,4 +51,23 @@ export function resolveEndpoint(runDir: string, platform: DaemonPlatform = curre
  *  reclaims it when the last handle closes), so the daemon's socket-file cleanup skips it. */
 export function isPipe(path: string): boolean {
   return path.startsWith(WINDOWS_PIPE_PREFIX);
+}
+
+/** Whether a daemon answers on an endpoint (a Unix socket or a Windows named pipe): a connect that
+ *  succeeds within `timeoutMs`. */
+export function endpointAnswers(path: string, timeoutMs = 300): Promise<boolean> {
+  if (!isPipe(path) && !existsSync(path)) return Promise.resolve(false);
+  return new Promise((resolve) => {
+    const socket = createConnection(path);
+    const done = (ok: boolean) => { clearTimeout(timer); socket.destroy(); resolve(ok); };
+    const timer = setTimeout(() => done(false), timeoutMs);
+    socket.once("connect", () => done(true));
+    socket.once("error", () => done(false));
+  });
+}
+
+/** A cheap "is a daemon there" for clients deciding whether to connect at all: the socket file on
+ *  macOS/Linux (as before; no connection is made), a dial on Windows, where a pipe has no file. */
+export function endpointPresent(path: string): Promise<boolean> {
+  return isPipe(path) ? endpointAnswers(path) : Promise.resolve(existsSync(path));
 }

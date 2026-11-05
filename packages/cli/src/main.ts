@@ -1,7 +1,7 @@
 import { join, resolve } from "node:path";
 import { homedir } from "node:os";
 import { existsSync, readFileSync, mkdirSync } from "node:fs";
-import { resolveCloverHome, OtherInstallHomeRefused, KeychainSecretStore, startDaemon, TOKEN_NAMES, loadSettings, CORE_VERSION, runWorkflowSubprocess, runAutomationWorker, AUTOMATION_WORKER_ARG, processSatisfiesRequirement, runRuntimeWorkflowWorker, RUNTIME_WORKFLOW_WORKER_ARG, runRuntimeStateProbe, runRuntimesProbe, keychainUnlocked, processStartSecondsViaSysctl, runEmbeddedProbe, runDevKeychainAdopt, DEV_KEYCHAIN_ADOPT_ARG, resolveCloverProfile, splitTag, sdkLocalMcpServers, installCloverProcessIdentity, loginEnable, loginDisable, loginStatus, liveLoginOsDeps, superviseLoop, type LoginSpec, type DaemonRun } from "@waifucave/clover-core";
+import { resolveCloverHome, isDefaultCloverHome, OtherInstallHomeRefused, KeychainSecretStore, startDaemon, TOKEN_NAMES, loadSettings, CORE_VERSION, runWorkflowSubprocess, runAutomationWorker, AUTOMATION_WORKER_ARG, processSatisfiesRequirement, runRuntimeWorkflowWorker, RUNTIME_WORKFLOW_WORKER_ARG, runRuntimeStateProbe, runRuntimesProbe, keychainUnlocked, processStartSecondsViaSysctl, runEmbeddedProbe, runDevKeychainAdopt, DEV_KEYCHAIN_ADOPT_ARG, resolveCloverProfile, splitTag, sdkLocalMcpServers, installCloverProcessIdentity, loginEnable, loginDisable, loginRemove, loginStatus, liveLoginOsDeps, superviseLoop, startDaemonThroughOs, bunRunner, resolveEndpoint, endpointPresent, endpointAnswers, type LoginSpec, type DaemonRun, type DaemonStartResult } from "@waifucave/clover-core";
 import type { CredentialRow, SecretStore, Settings } from "@waifucave/clover-core";
 import { METHODS, type ApprovalPolicy, type Task } from "@waifucave/clover-protocol";
 import { POLICY_ORDER } from "./tui/policy-order";
@@ -240,58 +240,49 @@ async function getToken(): Promise<string> {
   return t;
 }
 
+/** The daemon's endpoint: `<home>/run/core.sock`, or the home's named pipe on Windows. */
 function socketPath(): string {
-  return join(resolveCloverHome(), "run", "core.sock");
+  return resolveEndpoint(join(resolveCloverHome(), "run")).path;
 }
 
 const AUTOLAUNCH_POLL_MS = 200;
 const AUTOLAUNCH_TIMEOUT_MS = 8000;
 
-// Lifecycle Task 5: the pure core behind "clover auto-launches Clover.app when the daemon is down."
-// fs/exec/clock/env are all seams (deps) so the 3 outcomes are unit-testable with zero real process
-// launches — connect() below wires the real ones. Dev is unaffected: my bun daemon already has the
-// socket live → "already-up" before anything else runs; without it and without an installed app
-// bundle in the dev tree → "no-app", and the caller preserves today's getToken() dev-hint error.
+// Lifecycle Task 5, C-M1: the pure core behind "clover starts the daemon when it is down". The CLI
+// starts the daemon through the OS (`startDaemonThroughOs`: launchctl, systemctl --user, schtasks), and
+// on a desktop the daemon starts the app itself (the pair, spec §3.1). The OS, the clock and the env
+// are seams, so the outcomes are unit-testable with no real process launches — connect() below wires
+// the real ones. Dev is unaffected: a running dev daemon answers → "already-up"; with none and no
+// login unit installed for this profile → "no-app", and the caller keeps getToken()'s dev hint.
 export async function ensureDaemonReachable(deps: {
-  socketExists: () => boolean;
-  appBundlePresent: () => boolean; // `open -Ra "Clover"` / bundle-id lookup succeeds
-  launchApp: () => void; // `open -g -b com.waifucave.clover` — comes up as the menu-bar agent, no window
+  endpointUp: () => boolean | Promise<boolean>;
+  /** Start the daemon through the OS; "not-installed" when this profile has no daemon unit. */
+  startDaemon: () => Promise<DaemonStartResult>;
   sleepMs: (ms: number) => Promise<void>;
   now: () => number;
   noAutoLaunch: boolean; // CLOVER_NO_AUTOLAUNCH — escape hatch for scripts/CI, always "no-app"
 }): Promise<"already-up" | "launched" | "no-app"> {
-  if (deps.socketExists()) return "already-up";
-  if (deps.noAutoLaunch || !deps.appBundlePresent()) return "no-app";
-  deps.launchApp();
+  if (await deps.endpointUp()) return "already-up";
+  if (deps.noAutoLaunch) return "no-app";
+  if ((await deps.startDaemon()) === "not-installed") return "no-app";
   const deadline = deps.now() + AUTOLAUNCH_TIMEOUT_MS;
   while (deps.now() < deadline) {
-    // A real scheduler handoff before each check: the socket is created by a separate OS process
-    // (the app finishing its launch), not by anything on our own microtask chain. Production's
-    // sleepMs (Bun.sleep) already yields for real, but relying on that alone starves this check
-    // when a poll cycle's delay resolves synchronously (e.g. an instantly-resolving test stub) —
-    // a chain of already-resolved-promise awaits never lets a pending macrotask (here, the daemon
-    // actually coming up) run. Confirmed empirically: without this line, the second unit test
-    // below (socket appears via a mocked setTimeout) times out and throws instead of returning
-    // "launched", even though nothing else about the loop's logic changes.
+    // A real scheduler handoff before each check: the endpoint is created by a separate OS process
+    // (the daemon the OS just started), not by anything on our own microtask chain. Without it a
+    // poll cycle whose delay resolves synchronously (an instantly-resolving test stub) never lets a
+    // pending macrotask (here, the daemon coming up) run.
     await new Promise<void>((resolve) => setTimeout(resolve, 0));
-    if (deps.socketExists()) return "launched";
+    if (await deps.endpointUp()) return "launched";
     await deps.sleepMs(AUTOLAUNCH_POLL_MS);
   }
-  if (deps.socketExists()) return "launched";
-  throw new Error("Clover isn't responding — open Clover.app manually, or run: clover daemon run");
-}
-
-function appBundlePresent(): boolean {
-  // Only a REAL install counts — never a Debug build. mdfind/`open -Ra` also match Xcode
-  // DerivedData Debug builds (Spotlight-indexed), which would auto-launch a dev build and
-  // break the "dev is unaffected" invariant. DerivedData is never under /Applications.
-  return existsSync("/Applications/Clover.app") || existsSync(join(homedir(), "Applications", "Clover.app"));
+  if (await deps.endpointUp()) return "launched";
+  throw new Error("Clover isn't responding — start Clover, or run: clover daemon run");
 }
 
 /**
  * WS-19 (fix round 4): the daemon door the credential verbs use WHEN ONE IS ALREADY LISTENING.
  *
- * Deliberately NOT `connect()` above: that one AUTO-LAUNCHES Clover.app when the socket is missing,
+ * Deliberately NOT `connect()` above: that one STARTS the daemon (and with it Clover.app) when the endpoint is missing,
  * which is exactly wrong here — `clover login` has always worked with no daemon, and launching the
  * user's menu-bar app because they typed a credential command would be a surprise, not a service.
  * So this probes the socket file first and answers `undefined` for every failure: no socket, no
@@ -299,7 +290,7 @@ function appBundlePresent(): boolean {
  * and says so.
  */
 async function openCredentialDaemonDoor(): Promise<CredentialRpcDoor | undefined> {
-  if (!existsSync(socketPath())) return undefined;
+  if (!(await endpointPresent(socketPath()))) return undefined;
   try {
     const token = await new KeychainSecretStore().get(TOKEN_NAMES.harness);
     if (!token) return undefined;
@@ -320,7 +311,7 @@ async function openCredentialDaemonDoor(): Promise<CredentialRpcDoor | undefined
  * `PluginDoor` interface structurally, with no adapter shim.
  */
 async function openPluginDaemonDoor(): Promise<CloverClient | undefined> {
-  if (!existsSync(socketPath())) return undefined;
+  if (!(await endpointPresent(socketPath()))) return undefined;
   try {
     const token = await new KeychainSecretStore().get(TOKEN_NAMES.harness);
     if (!token) return undefined;
@@ -332,9 +323,13 @@ async function openPluginDaemonDoor(): Promise<CloverClient | undefined> {
 
 async function connect(name: string, onEvent: (e: any) => void = () => {}): Promise<CloverClient> {
   await ensureDaemonReachable({
-    socketExists: () => existsSync(socketPath()),
-    appBundlePresent,
-    launchApp: () => { Bun.spawnSync(["open", "-g", "-b", "com.waifucave.clover"]); },
+    endpointUp: () => endpointPresent(socketPath()),
+    // The login unit serves the profile's default home; a CLI on any other home (a test's temp home)
+    // never starts it.
+    startDaemon: async () => {
+      const spec = currentLoginSpec();
+      return isDefaultCloverHome(spec.home, spec.profile) ? startDaemonThroughOs(spec, bunRunner) : "not-installed";
+    },
     sleepMs: (ms) => Bun.sleep(ms),
     now: () => Date.now(),
     noAutoLaunch: !!process.env.CLOVER_NO_AUTOLAUNCH,
@@ -1471,15 +1466,41 @@ function currentDaemonPlatform(): "darwin" | "linux" | "win32" {
   return process.platform === "win32" ? "win32" : process.platform === "darwin" ? "darwin" : "linux";
 }
 
-/** `clover autostart enable|disable|status`: login start on this OS. The unit runs `clover-core
- *  supervise` on the running binary (`process.execPath`); lane M's installer passes the installed
- *  path by invoking the installed binary. */
-async function runAutostartCommand(sub: string | undefined): Promise<void> {
+/** This computer's login spec for the running binary and the current home and profile. `app` is the
+ *  app's executable (macOS: its bundle), which the installer passes with `--app`. */
+function currentLoginSpec(app?: string): LoginSpec {
   const home = resolveCloverHome();
-  const profile = resolveCloverProfile();
-  const logsDir = join(home, "logs");
-  mkdirSync(logsDir, { recursive: true });
-  const spec: LoginSpec = { os: currentDaemonPlatform(), bin: process.execPath, home, logsDir, profile };
+  const os = currentDaemonPlatform();
+  const winUser = os === "win32" && process.env.USERNAME
+    ? (process.env.USERDOMAIN ? `${process.env.USERDOMAIN}\\${process.env.USERNAME}` : process.env.USERNAME)
+    : undefined;
+  return {
+    os, bin: process.execPath, home, logsDir: join(home, "logs"), profile: resolveCloverProfile(),
+    ...(winUser ? { winUser } : {}),
+    ...(app ? { app: { bin: resolve(app) } } : {}),
+  };
+}
+
+const AUTOSTART_USAGE = "usage: clover autostart enable|disable|remove|status [--app <path to the app>]";
+
+/** `clover autostart enable|disable|remove|status [--app <path>]`: login start on this OS. The
+ *  definitions run `clover-core supervise` on the running binary (`process.execPath`); lane M's
+ *  installer invokes the installed binary, and passes the app's path with `--app` so the daemon can
+ *  start the app (spec §3.1). `disable` turns off only the login trigger: the running pair keeps
+ *  running and either side can still start the other. `remove` is for an uninstaller. */
+async function runAutostartCommand(sub: string | undefined, rest: readonly string[] = []): Promise<void> {
+  const appAt = rest.indexOf("--app");
+  const app = appAt >= 0 ? rest[appAt + 1] : undefined;
+  if (appAt >= 0 && !app) { console.error(AUTOSTART_USAGE); process.exitCode = 1; return; }
+  const spec = currentLoginSpec(app);
+  // One login unit per profile, serving the profile's default home: a unit for another home would
+  // take over the profile's label.
+  if (sub !== "status" && sub !== undefined && !isDefaultCloverHome(spec.home, spec.profile)) {
+    console.error(`autostart serves the ${spec.profile} profile's default home; CLOVER_HOME is ${spec.home}`);
+    process.exitCode = 1;
+    return;
+  }
+  mkdirSync(spec.logsDir, { recursive: true });
   const os = liveLoginOsDeps();
   switch (sub ?? "status") {
     case "enable": {
@@ -1496,7 +1517,11 @@ async function runAutostartCommand(sub: string | undefined): Promise<void> {
     }
     case "disable":
       await loginDisable(spec, os);
-      console.log(`autostart disabled (${spec.profile})`);
+      console.log(`autostart disabled (${spec.profile}); Clover can still be started, and keeps running`);
+      break;
+    case "remove":
+      await loginRemove(spec, os);
+      console.log(`autostart removed (${spec.profile})`);
       break;
     case "status": {
       const st = await loginStatus(spec, os);
@@ -1504,9 +1529,35 @@ async function runAutostartCommand(sub: string | undefined): Promise<void> {
       break;
     }
     default:
-      console.error("usage: clover autostart enable|disable|status");
+      console.error(AUTOSTART_USAGE);
       process.exitCode = 1;
   }
+}
+
+/** `clover daemon start`: start the daemon through the OS (never as this process's child) and wait
+ *  until it answers. The app's side runs this when no daemon answers (spec §3.1). */
+async function runDaemonStart(): Promise<void> {
+  const path = socketPath();
+  if (await endpointAnswers(path)) { console.log("clover-core is already running"); return; }
+  const spec = currentLoginSpec();
+  if (!isDefaultCloverHome(spec.home, spec.profile)) {
+    console.error(`the login unit serves the ${spec.profile} profile's default home; for CLOVER_HOME ${spec.home} run: clover daemon run`);
+    process.exitCode = 1;
+    return;
+  }
+  const r = await startDaemonThroughOs(spec, bunRunner);
+  if (r === "not-installed") {
+    console.error("clover-core has no login unit for this profile; run: clover autostart enable (or, in dev: clover daemon run)");
+    process.exitCode = 1;
+    return;
+  }
+  const deadline = Date.now() + AUTOLAUNCH_TIMEOUT_MS;
+  while (Date.now() < deadline) {
+    if (await endpointAnswers(path)) { console.log("clover-core started"); return; }
+    await Bun.sleep(AUTOLAUNCH_POLL_MS);
+  }
+  console.error(r === "failed" ? "the OS refused to start clover-core" : "clover-core did not answer in time");
+  process.exitCode = 1;
 }
 
 /** `clover-core supervise`: start the daemon and restart it after a crash; a clean stop ends the loop. */
@@ -1713,11 +1764,11 @@ if (import.meta.main) {
     process.exit(0);
   }
   case "autostart": {
-    // `clover-core autostart enable|disable|status` — login start on this OS (spec §3.1). (`login`
-    // is already the account/provider sign-in command.) Lane M's installer calls this; it
-    // writes/removes the launchd agent, systemd user unit or Task Scheduler task that runs
-    // `clover-core supervise`.
-    await runAutostartCommand(sub);
+    // `clover-core autostart enable|disable|remove|status` — login start on this OS (spec §3.1).
+    // (`login` is already the account/provider sign-in command.) Lane M's installer calls this; it
+    // writes the launchd agent, systemd user unit or Task Scheduler task that runs
+    // `clover-core supervise`, and with `--app` the app's own unit, task or XDG entry.
+    await runAutostartCommand(sub, process.argv.slice(4));
     process.exit(0);
     break;
   }
@@ -2621,6 +2672,10 @@ if (import.meta.main) {
     await runAutostartCommand("status");
     break;
   }
+  case "daemon start": {
+    await runDaemonStart();
+    break;
+  }
   case "login": {
     const { KeychainSecretStore, CodexAuthStore, runLoginFlow, CODEX, writeOpenAiApiKey, EXA_API_KEY_SECRET, OPENAI_API_KEY_SECRET: OPENAI_API_KEY_SECRET_LOGIN, profileDisplayName } = await import("@waifucave/clover-core");
     console.log(`${AQUA}${profileDisplayName()} login${RESET}`);
@@ -3118,7 +3173,7 @@ if (import.meta.main) {
       // creates a session the same way `run` does below; wrapped in try/catch because the
       // file-direct saved list above already answered the primary ask — a down/flaked daemon must
       // never turn a successful `list` into a failed one.
-      if (existsSync(socketPath())) {
+      if (await endpointPresent(socketPath())) {
         try {
           const c = await connect("cli-workflow-list");
           try {
@@ -3279,7 +3334,7 @@ if (import.meta.main) {
   }
   default:
     console.log(`clover ${CORE_VERSION} — commands:
-  daemon run | autostart enable|disable|status (daemon install|uninstall|status are aliases) | supervise
+  daemon run | daemon start | autostart enable|disable|remove|status [--app <path>] (daemon install|uninstall|status are aliases) | supervise
   ping | sessions | status | quota | send <sessionId|new> <text> | watch <sessionId> | add-dir <sessionId> <path> [--persist] | cd <sessionId> <path>
   steer <sessionId> <text> | interrupt <sessionId> | compact <sessionId>
   doctor [--repair <op> [--session <id>] [--backend <uuid>] [--backup <path>]]   runtime-state diagnostics and repair (runs without a daemon)

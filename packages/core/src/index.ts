@@ -2,15 +2,20 @@
 export { installCloverProcessIdentity } from "./runtime-sdk/process-identity";
 export { startDaemon, CORE_VERSION, type RunningDaemon } from "./daemon";
 export { bootstrapCloverDir, resolveCloverHome, isDefaultCloverHome } from "./clover-dir";
-export { resolveEndpoint, homePipeId, isPipe, WINDOWS_PIPE_PREFIX, type DaemonPlatform, type Endpoint } from "./platform/transport";
+export { resolveEndpoint, homePipeId, isPipe, endpointPresent, WINDOWS_PIPE_PREFIX, type DaemonPlatform, type Endpoint } from "./platform/transport";
 export {
-  loginEnable, loginDisable, loginStatus, readUnit, liveLoginOsDeps,
+  loginEnable, loginDisable, loginRemove, loginStatus, readUnit, liveLoginOsDeps, bunRunner, startDaemonThroughOs,
   renderLaunchdPlist, renderSystemdUnit, renderSchtasksXml, loginLabel, loginUnitPath,
   systemdUnitName, schtasksTaskName, SUPERVISE_ARGS,
   superviseLoop, backoffMs,
-  type LoginSpec, type LoginOsDeps, type LoginStatus, type LoginState,
+  type LoginSpec, type LoginOsDeps, type LoginStatus, type LoginState, type Runner, type DaemonStartResult,
   type SuperviseDeps, type SuperviseResult, type DaemonRun,
 } from "./platform/login";
+export {
+  DaemonPair, appRestartPlan, resolveAppLauncher, PAIR_DEFAULTS,
+  type DaemonPairDeps, type DaemonPairOptions, type DaemonPairStatus, type AppLauncher, type AppStartOutcome,
+  type AppExitReason, type PairStopReason,
+} from "./platform/pair";
 export { callerFloorVerdict, mayBeUser, type SandboxProbe, type FloorVerdict } from "./platform/sandbox-floor";
 export { acquireLock, AlreadyRunningError, LockHeldNoDaemonError, LockFailedError, classifyLockFailure, endpointAnswers, type Lock, type AcquireLockOptions } from "./lock";
 export { resolveCloverProfile, keychainService, profileDisplayName, cliCommandName, type CloverProfile } from "./profile";
