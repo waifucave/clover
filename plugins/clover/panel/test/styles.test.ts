@@ -9,8 +9,8 @@ const css = readFileSync(join(import.meta.dir, "../client/styles.css"), "utf8");
 /** Leaves that may move or fade: they never hold a sealed frame. */
 const LEAVES: string[] = [".cl-panel-icon"];
 
-/** The switch's knob, inside its switch. */
-const POSITIONED: string[] = [".cl-session__switch-knob"];
+/** Nothing in the panel leaves the flow. */
+const POSITIONED: string[] = [];
 
 describe("the panel stylesheet", () => {
   test("uses exactly the tokens tokens.ts names", () => {

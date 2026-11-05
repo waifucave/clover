@@ -24,7 +24,9 @@ export interface PanelView {
   header?: ReactNode;
   /** Buttons at the header's end, before expand and close. */
   actions?: ReactNode;
-  content: ReactNode;
+  /** What the plugin keyed for this panel draws. Absent: no installed plugin fills the key, and the host
+   *  says so in its place. */
+  content?: ReactNode;
 }
 
 export interface PanelHostProps {
@@ -33,6 +35,8 @@ export interface PanelHostProps {
   onClose: (id: string) => void;
   /** Make one view fill the panel. */
   onExpand?: (id: string) => void;
+  /** Look for a plugin that fills an empty panel (the plugin manager). */
+  onFindPlugin?: (id: string) => void;
 }
 
 export type SessionAgentStatus = "running" | "needs-you" | "completed" | "failed" | "stopped" | "stalled";
@@ -47,11 +51,12 @@ export interface SessionViewProps {
     computer: string;
     /** It is this computer. */
     here: boolean;
+    /** That computer's level (spec §9.1): what its bots may do without asking. A change is always a sealed
+     *  card (§5.5), so a pick shows as asked for until the card is answered. */
+    level?: { label: string; requested?: string; onChange?: () => void };
     /** The folders it may work in, as tree paths. */
     folders: { name: string; path: string }[];
     branch?: string;
-    /** Reach this session from the phone and the web (spec §6.4). */
-    remote?: { on: boolean; onToggle: (on: boolean) => void };
     /** Keep this setup for new sessions in the same project. */
     onSave?: () => void;
   };
@@ -59,7 +64,8 @@ export interface SessionViewProps {
   context?: { used: number; detail?: string };
   connectors?: { total: number; needSignIn: number; onOpen?: () => void };
   outputs?: {
-    items: { id: string; name: string; kind: "artifact" | "file" | "image" }[];
+    /** A page (HTML or Markdown the bot made to be read), a file, or an image. */
+    items: { id: string; name: string; kind: "page" | "file" | "image" }[];
     onOpen: (id: string) => void;
     /** More than these. */
     more?: number;

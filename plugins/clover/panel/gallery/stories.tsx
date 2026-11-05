@@ -41,10 +41,25 @@ export const panelStories: Story[] = [
     ),
   },
   {
+    id: "panel/empty",
+    title: "A panel no plugin fills yet",
+    notes: "The host's own placeholder: the browser panel's plugin (lane L's) isn't in this build.",
+    width: 640,
+    height: 360,
+    render: () => <PanelHost views={[{ id: "browser", title: "Browser" }]} onClose={() => undefined} onFindPlugin={() => undefined} />,
+  },
+  {
+    id: "panel/session-level-asked",
+    title: "A level change asked for",
+    notes: "The pill's pick is a request: the old level stands, with the asked-for one beside it, until the sealed card is answered.",
+    width: 340,
+    render: () => <SessionView environment={{ ...SESSION.environment!, level: { label: "Ask before risky", requested: "Automatic" } }} />,
+  },
+  {
     id: "panel/session",
     title: "The session column",
-    notes: "Agents and tasks, the environment with the phone switch, context use, connectors, outputs, and changes with the create-PR button and the PRs.",
-    width: 340,
+    notes: "Agents and tasks, where it runs (the computer and its level, the folders, the branch), context use, connectors, outputs, and changes with the create-PR button and the PRs.",
+    width: 293,
     render: () => <SessionView {...SESSION} />,
   },
   {
@@ -52,6 +67,6 @@ export const panelStories: Story[] = [
     title: "A session with only its environment",
     notes: "Every part of the column is optional; a session that made nothing shows only where it runs.",
     width: 340,
-    render: () => <SessionView environment={{ ...SESSION.environment!, remote: undefined, onSave: undefined }} />,
+    render: () => <SessionView environment={{ ...SESSION.environment!, onSave: undefined }} />,
   },
 ];

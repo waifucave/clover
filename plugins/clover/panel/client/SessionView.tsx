@@ -1,20 +1,20 @@
-// The session column: what the session runs on and what it has made, in quiet folding sections —
-// its agents and tasks, the environment (the computer, the folders, the branch, and the switch that
-// lets the phone reach it), how much context it uses, its connectors, its outputs, and its changes
-// with the pull requests they became.
+// The session column: what the session runs on and what it has made, in quiet folding cards: its agents
+// and tasks, where it runs (the computer and that computer's level, the folders, the branch), how much
+// context it uses, its connectors, its outputs, and its changes with the pull requests they became.
+// Every device already sees every bot live (spec §6.4), so nothing here switches a device on.
 import { useState, type ReactNode } from "react";
 import {
   IconAgent,
-  IconArtifact,
   IconBranch,
   IconChevronDown,
   IconChevronRight,
   IconComputer,
-  IconDiff,
+  IconDiffRow,
   IconFile,
-  IconFolder,
+  IconFolderRow,
   IconImage,
-  IconPhone,
+  IconLevel,
+  IconPage,
   IconPullRequest,
 } from "./icons";
 import { S } from "./strings";
@@ -90,9 +90,26 @@ export function SessionView(props: SessionViewProps) {
                 </button>
               )}
             </li>
+            {environment.level && (
+              <li className="cl-session__row cl-session__row--static" data-requested={environment.level.requested ? "" : undefined}>
+                <IconLevel />
+                <span className="cl-session__name">{S.level(environment.level.label)}</span>
+                {environment.level.requested ? (
+                  <span className="cl-session__meta cl-session__requested" title={S.levelRequestedTitle(environment.level.requested)}>
+                    {S.levelRequested(environment.level.requested)}
+                  </span>
+                ) : (
+                  environment.level.onChange && (
+                    <button type="button" className="cl-session__link" title={S.changeLevelTitle(environment.here ? S.here : environment.computer)} onClick={environment.level.onChange}>
+                      {S.changeLevel}
+                    </button>
+                  )
+                )}
+              </li>
+            )}
             {environment.folders.map((f) => (
               <li key={f.path} className="cl-session__row cl-session__row--static" title={f.path}>
-                <IconFolder />
+                <IconFolderRow />
                 <span className="cl-session__name">{f.name}</span>
               </li>
             ))}
@@ -100,24 +117,6 @@ export function SessionView(props: SessionViewProps) {
               <li className="cl-session__row cl-session__row--static">
                 <IconBranch />
                 <span className="cl-session__name">{environment.branch}</span>
-              </li>
-            )}
-            {environment.remote && (
-              <li className="cl-session__row cl-session__row--static">
-                <IconPhone />
-                <span className="cl-session__name" id="cl-session-remote">
-                  {S.remote}
-                </span>
-                <button
-                  type="button"
-                  role="switch"
-                  className="cl-session__switch"
-                  aria-checked={environment.remote.on}
-                  aria-labelledby="cl-session-remote"
-                  onClick={() => environment.remote?.onToggle(!environment.remote.on)}
-                >
-                  <span className="cl-session__switch-knob" />
-                </button>
               </li>
             )}
           </ul>
@@ -159,7 +158,7 @@ export function SessionView(props: SessionViewProps) {
             {outputs.items.map((o) => (
               <li key={o.id}>
                 <button type="button" className="cl-session__row" onClick={() => outputs.onOpen(o.id)} title={o.name}>
-                  {o.kind === "artifact" ? <IconArtifact /> : o.kind === "image" ? <IconImage /> : <IconFile />}
+                  {o.kind === "page" ? <IconPage /> : o.kind === "image" ? <IconImage /> : <IconFile />}
                   <span className="cl-session__name">{o.name}</span>
                   <span className="cl-session__meta">{S.outputKind[o.kind]}</span>
                 </button>
@@ -178,7 +177,7 @@ export function SessionView(props: SessionViewProps) {
         <Section title={S.changes}>
           <div className="cl-session__changes">
             <button type="button" className="cl-session__row cl-session__diffstat" onClick={changes.onOpenDiff} aria-label={`${changes.label}: ${S.diffStatLabel(changes.files, changes.added, changes.removed)}`}>
-              <IconDiff />
+              <IconDiffRow />
               <span className="cl-session__name">{changes.label}</span>
               <span className="cl-session__added">+{changes.added}</span>
               <span className="cl-session__removed">−{changes.removed}</span>

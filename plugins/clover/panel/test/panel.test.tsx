@@ -31,6 +31,14 @@ describe("the toggles", () => {
 });
 
 describe("the host", () => {
+  test("a panel no installed plugin fills shows the host's placeholder, which says so", () => {
+    const onFindPlugin = mock((_id: string) => undefined);
+    render(<PanelHost views={[{ id: "browser", title: "Browser" }]} onClose={() => undefined} onFindPlugin={onFindPlugin} />);
+    expect(screen.getByText("No plugin shows the browser here yet")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Find a plugin" }));
+    expect(onFindPlugin).toHaveBeenCalledWith("browser");
+  });
+
   test("holds two views one above the other, each with expand and close; a view can bring its own header", () => {
     const onClose = mock((_id: string) => undefined);
     const onExpand = mock((_id: string) => undefined);
@@ -57,15 +65,29 @@ describe("the host", () => {
 });
 
 describe("the session column", () => {
-  test("shows where the session runs, and its phone switch reaches the host", () => {
-    const onToggle = mock((_on: boolean) => undefined);
-    render(<SessionView {...SESSION} environment={{ ...SESSION.environment!, remote: { on: false, onToggle } }} />);
+  test("shows where the session runs: the computer, its level, the folders and the branch; no phone switch", () => {
+    const onChange = mock(() => undefined);
+    render(<SessionView {...SESSION} environment={{ ...SESSION.environment!, level: { label: "Ask before risky", onChange } }} />);
     expect(screen.getByText("This computer")).toBeTruthy();
+    expect(screen.getByText("Level: Ask before risky")).toBeTruthy();
     expect(screen.getByText("lane/f-m1", { selector: ".cl-session__row--static .cl-session__name" })).toBeTruthy();
-    const remote = screen.getByRole("switch", { name: "Reach it from your phone" });
-    expect(remote.getAttribute("aria-checked")).toBe("false");
-    fireEvent.click(remote);
-    expect(onToggle).toHaveBeenCalledWith(true);
+    fireEvent.click(screen.getByRole("button", { name: "Change" }));
+    expect(onChange).toHaveBeenCalledTimes(1);
+    // Every device already sees every bot (spec §6.4): nothing here switches one on.
+    expect(screen.queryByRole("switch")).toBeNull();
+  });
+
+  test("a level change asked for shows as asked, the old level standing until its card is answered", () => {
+    render(<SessionView {...SESSION} environment={{ ...SESSION.environment!, level: { label: "Ask before risky", requested: "Automatic", onChange: () => undefined } }} />);
+    expect(screen.getByText("Level: Ask before risky")).toBeTruthy();
+    expect(screen.getByText("Automatic asked for")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Change" })).toBeNull();
+  });
+
+  test("outputs are named in Clover's own kinds", () => {
+    render(<SessionView {...SESSION} />);
+    expect(screen.getAllByText("Page").length).toBe(2);
+    expect(screen.queryByText("Artifact")).toBeNull();
   });
 
   test("context use is a meter; connectors say how many need signing in again", () => {

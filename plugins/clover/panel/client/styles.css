@@ -1,23 +1,26 @@
-/* The panel: its toggles, the host and the session column. Every colour, face and size is a theme
-   token from lane B's catalog (`--clover-*`, listed in tokens.ts). */
+/* The panel: its toggles, the host and the session column. Every colour, face and size is a theme token
+   from lane B's catalog (`--clover-*`, listed in tokens.ts), or the clover plugin's own
+   (`--clover-plugin-clover-*`). Sizes follow the reference app's (as measured for lane G's base theme):
+   toggles 28 px square and 32 apart, panel headers as tall as the title bar, session cards with 32 px
+   headings and 34 px rows. */
 
 .cl-panel-toggles {
   display: flex;
   align-items: center;
-  gap: 2px;
+  gap: 4px;
 }
 
 .cl-panel-toggle {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 30px;
-  height: 30px;
+  width: 28px;
+  height: 28px;
   padding: 0;
   border: none;
   border-radius: var(--clover-radius-medium);
   background: transparent;
-  color: var(--clover-color-text-muted);
+  color: var(--clover-color-text-secondary);
   cursor: pointer;
 }
 
@@ -27,7 +30,7 @@
 }
 
 .cl-panel-toggle[aria-pressed="true"] {
-  background: var(--clover-color-selected);
+  background: var(--clover-color-control);
   color: var(--clover-color-text);
 }
 
@@ -48,7 +51,7 @@
   background: var(--clover-color-surface);
   color: var(--clover-color-text);
   font-family: var(--clover-font-sans);
-  font-size: var(--clover-font-size-body);
+  font-size: var(--clover-font-size-control);
 }
 
 .cl-panel button {
@@ -67,13 +70,14 @@
 }
 
 .cl-panel__head {
+  box-sizing: border-box;
   display: flex;
   flex: none;
   align-items: center;
-  gap: 2px;
-  height: 48px;
-  padding: 0 var(--clover-space-s) 0 var(--clover-space-m);
-  border-bottom: 1px solid var(--clover-color-hairline);
+  gap: 4px;
+  height: var(--clover-plugin-clover-bar-height);
+  padding: 0 var(--clover-space-s) 0 21px;
+  border-bottom: 1px solid var(--clover-color-hairline-raised);
 }
 
 .cl-panel__head-main {
@@ -87,7 +91,7 @@
   margin: 0;
   overflow: hidden;
   color: var(--clover-color-text-secondary);
-  font-size: var(--clover-font-size-body);
+  font-size: var(--clover-font-size-label);
   font-weight: var(--clover-font-weight-regular);
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -97,7 +101,7 @@
   display: flex;
   flex: none;
   align-items: center;
-  gap: 2px;
+  gap: 4px;
 }
 
 .cl-panel__icon-button {
@@ -111,7 +115,7 @@
   border: none;
   border-radius: var(--clover-radius-medium);
   background: transparent;
-  color: var(--clover-color-text-muted);
+  color: var(--clover-color-text-secondary);
   cursor: pointer;
 }
 
@@ -128,15 +132,52 @@
   overflow: hidden;
 }
 
-/* The session column: quiet cards of rows. */
+/* A panel no installed plugin fills: the host says so, centred. */
+.cl-panel__empty {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--clover-space-xs);
+  padding: var(--clover-space-xl);
+  color: var(--clover-color-text-muted);
+  text-align: center;
+}
+
+.cl-panel__empty-title {
+  margin: var(--clover-space-s) 0 0;
+  color: var(--clover-color-text);
+  font-size: var(--clover-font-size-control);
+}
+
+.cl-panel__empty-detail {
+  max-width: 340px;
+  margin: 0;
+  font-size: var(--clover-font-size-label);
+  line-height: var(--clover-font-line-body);
+}
+
+.cl-panel__empty-action {
+  margin-top: var(--clover-space-s);
+  padding: 5px 12px;
+  border: none;
+  border-radius: var(--clover-radius-small);
+  background: var(--clover-color-selected);
+  color: var(--clover-color-text);
+  font-size: var(--clover-font-size-label);
+  cursor: pointer;
+}
+
+/* The session column: cards on the surface, each a 32 px heading and 34 px rows, 10 px apart. */
 .cl-session {
   display: flex;
   flex-direction: column;
-  gap: var(--clover-space-s);
-  padding: var(--clover-space-m);
+  gap: 10px;
   color: var(--clover-color-text);
   font-family: var(--clover-font-sans);
   font-size: var(--clover-font-size-control);
+  line-height: var(--clover-font-line-tight);
 }
 
 .cl-session button {
@@ -150,18 +191,20 @@
 }
 
 .cl-session__section {
-  padding: var(--clover-space-s) var(--clover-space-m);
+  padding: var(--clover-space-s);
   border: 1px solid var(--clover-color-hairline);
   border-radius: var(--clover-radius-large);
-  background: var(--clover-color-raised);
+  background: var(--clover-color-surface);
 }
 
 .cl-session__heading {
   display: flex;
   align-items: center;
   gap: var(--clover-space-s);
+  min-height: 32px;
   margin: 0;
-  font-size: var(--clover-font-size-control);
+  padding: 0 11px;
+  font-size: var(--clover-font-size-label);
   font-weight: var(--clover-font-weight-regular);
 }
 
@@ -172,7 +215,8 @@
   padding: 2px 0;
   border: none;
   background: transparent;
-  color: var(--clover-color-text-secondary);
+  color: var(--clover-color-text);
+  font-size: var(--clover-font-size-label);
   cursor: pointer;
 }
 
@@ -185,28 +229,25 @@
   align-items: center;
   margin-left: auto;
   color: var(--clover-color-text-muted);
-}
-
-.cl-session__content {
-  padding-top: var(--clover-space-xs);
+  font-size: var(--clover-font-size-label);
 }
 
 .cl-session__list {
   display: flex;
   flex-direction: column;
-  gap: 1px;
+  gap: 2px;
 }
 
 .cl-session__row {
   box-sizing: border-box;
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 11px;
   width: 100%;
-  min-height: 30px;
-  padding: 2px 4px;
+  min-height: 32px;
+  padding: 0 11px;
   border: none;
-  border-radius: var(--clover-radius-small);
+  border-radius: var(--clover-radius-medium);
   background: transparent;
   color: var(--clover-color-text);
   text-align: left;
@@ -236,11 +277,20 @@ button.cl-session__row:hover {
 .cl-session__meta {
   flex: none;
   color: var(--clover-color-text-muted);
-  font-size: var(--clover-font-size-caption);
+  font-size: var(--clover-font-size-label);
 }
 
-.cl-session__meta[data-status="needs-you"],
-.cl-session__meta[data-status="stalled"] {
+.cl-session__meta[data-status="needs-you"] {
+  color: var(--clover-color-attention-text);
+}
+
+.cl-session__meta[data-status="stalled"],
+.cl-session__meta[data-status="failed"] {
+  color: var(--clover-color-danger);
+}
+
+/* A level change asked for: the old level stands beside it until the card is answered. */
+.cl-session__requested {
   color: var(--clover-color-attention-text);
 }
 
@@ -250,6 +300,7 @@ button.cl-session__row:hover {
   border: none;
   background: transparent;
   color: var(--clover-color-text-muted);
+  font-size: var(--clover-font-size-label);
   text-decoration: underline;
   text-underline-offset: 2px;
   cursor: pointer;
@@ -257,37 +308,7 @@ button.cl-session__row:hover {
 
 .cl-session__link[data-attention] {
   color: var(--clover-color-attention-text);
-}
-
-.cl-session__switch {
-  position: relative;
-  flex: none;
-  width: 34px;
-  height: 20px;
-  padding: 0;
-  border: none;
-  border-radius: var(--clover-radius-round);
-  background: var(--clover-color-hairline-raised);
-  cursor: pointer;
-}
-
-.cl-session__switch[aria-checked="true"] {
-  background: var(--clover-color-accent);
-}
-
-.cl-session__switch-knob {
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 16px;
-  height: 16px;
-  border-radius: var(--clover-radius-round);
-  background: var(--clover-color-surface);
-}
-
-.cl-session__switch[aria-checked="true"] .cl-session__switch-knob {
-  background: var(--clover-color-accent-contrast);
-  left: 16px;
+  text-decoration: none;
 }
 
 .cl-session__context {
@@ -298,7 +319,7 @@ button.cl-session__row:hover {
 
 .cl-session__bar {
   display: inline-block;
-  width: 36px;
+  width: 24px;
   height: 6px;
   overflow: hidden;
   border-radius: var(--clover-radius-round);
@@ -313,12 +334,15 @@ button.cl-session__row:hover {
 
 .cl-session__note {
   margin: 0;
+  padding: var(--clover-space-xs) 11px;
   color: var(--clover-color-text-muted);
+  font-size: var(--clover-font-size-label);
+  line-height: var(--clover-font-line-body);
 }
 
 .cl-session__more {
-  margin-top: var(--clover-space-xs);
-  padding: 2px 4px;
+  margin-top: 2px;
+  padding: 6px 11px;
   border: none;
   background: transparent;
   color: var(--clover-color-text-muted);
@@ -328,7 +352,7 @@ button.cl-session__row:hover {
 .cl-session__changes {
   display: flex;
   align-items: center;
-  gap: var(--clover-space-s);
+  gap: var(--clover-space-xs);
 }
 
 .cl-session__diffstat {
@@ -339,23 +363,21 @@ button.cl-session__row:hover {
 .cl-session__added {
   flex: none;
   color: var(--clover-color-diff-added);
-  font-family: var(--clover-font-mono);
-  font-size: var(--clover-font-size-caption);
+  font-size: var(--clover-font-size-label);
 }
 
 .cl-session__removed {
   flex: none;
   color: var(--clover-color-diff-removed);
-  font-family: var(--clover-font-mono);
-  font-size: var(--clover-font-size-caption);
+  font-size: var(--clover-font-size-label);
 }
 
 .cl-session__button {
   flex: none;
-  padding: 4px 10px;
-  border: 1px solid var(--clover-color-hairline-raised);
-  border-radius: var(--clover-radius-medium);
-  background: var(--clover-color-control);
+  padding: 5px 10px;
+  border: none;
+  border-radius: var(--clover-radius-small);
+  background: var(--clover-color-selected);
   color: var(--clover-color-text);
   cursor: pointer;
 }
@@ -366,12 +388,14 @@ button.cl-session__row:hover {
 
 .cl-session__pr {
   align-items: flex-start;
+  padding-top: 6px;
+  padding-bottom: 6px;
 }
 
 .cl-session__pr-icon {
   display: inline-flex;
-  padding-top: 2px;
-  color: var(--clover-color-accent-text);
+  padding-top: 1px;
+  color: var(--clover-plugin-clover-branch);
 }
 
 .cl-session__pr-icon[data-state="merged"] {
@@ -382,8 +406,8 @@ button.cl-session__row:hover {
   display: flex;
   flex: 1 1 auto;
   flex-direction: column;
+  gap: 2px;
   min-width: 0;
-  line-height: var(--clover-font-line-tight);
 }
 
 .cl-panel-icon {

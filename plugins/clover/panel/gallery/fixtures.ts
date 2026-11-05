@@ -12,20 +12,20 @@ export const SESSION: SessionViewProps = {
   environment: {
     computer: "Studio",
     here: true,
+    level: { label: "Ask before risky", onChange: noop },
     folders: [
       { name: "clover · ~/projects", path: "home/Studio/projects/clover" },
-      { name: "keycaps", path: "home/Studio/projects/keycaps" },
+      { name: "garden-planner", path: "home/Studio/projects/garden-planner" },
     ],
     branch: "lane/f-m1",
-    remote: { on: true, onToggle: noop },
     onSave: noop,
   },
   context: { used: 0.14, detail: "28,000 of 200,000 tokens. Older turns are summarized near the limit." },
   connectors: { total: 7, needSignIn: 2, onOpen: noop },
   outputs: {
     items: [
-      { id: "o1", name: "Panel layout review", kind: "artifact" },
-      { id: "o2", name: "Gallery screens, light and dark", kind: "artifact" },
+      { id: "o1", name: "Panel layout review", kind: "page" },
+      { id: "o2", name: "Gallery screens, light and dark", kind: "page" },
       { id: "o3", name: "window-1440.png", kind: "image" },
       { id: "o4", name: "spots-for-lane-b.md", kind: "file" },
     ],
