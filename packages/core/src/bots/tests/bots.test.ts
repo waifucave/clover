@@ -357,6 +357,25 @@ describe("a bot's state and its sessions", () => {
     await again.shutdown();
   });
 
+  test("a run a crash cut off says it was interrupted when the bot loads again, and ends", async () => {
+    const home = tempDir();
+    const clock = new FakeClock();
+    const first = await boot({ home, clock, plugins: await alphaInputs() });
+    void first.bots.runSideThread("alpha", { routine: "r_digest", name: "Digest", text: "Summarise the feeds." });
+    await flush();
+    const side = first.drivers.made.at(-1)!;
+    expect(first.host.get(side.ctx.sessionId)?.status).toBe("prompting");
+    // The daemon dies here, mid-run: no shutdown.
+
+    const again = await boot({ home, clock, plugins: await alphaInputs() });
+    expect(again.host.get(side.ctx.sessionId)?.status).toBe("stopped");
+    const main = projectRecords(again.host.history("b_alpha"), { kind: "bot" });
+    expect(main.at(-1)).toMatchObject({ type: "routine_result", routine: "r_digest", name: "Digest", sideThread: side.ctx.sessionId, text: "The run was interrupted." });
+    expect(again.drivers.made.map((m) => m.ctx.kind)).toEqual(["bot"]);
+    expect(again.warnings).toEqual([]);
+    await again.shutdown();
+  });
+
   test("a failed run says so in the conversation", async () => {
     const b = await boot({ home: tempDir(), plugins: await alphaInputs() });
     const run = b.bots.runSideThread("alpha", { routine: "r_x", name: "Deploy check", text: "Check the deploy." });

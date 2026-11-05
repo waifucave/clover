@@ -8,7 +8,8 @@
 //   after a restart too. A new conversation opens with the bot's greeting, once.
 // * **Side threads** (§6.4, §7): a routine's run gets a session of its own under the bot, with the same instructions
 //   and memory, on the computer that holds the routine; its short result posts into the main conversation and the
-//   side thread ends. The routine engine that decides when runs happen is M3's; `runSideThread` is its door.
+//   side thread ends. A run a crash cut off says it was interrupted when its bot loads again, and ends. The routine
+//   engine that decides when runs happen is M3's; `runSideThread` is its door.
 // * **The user layer** (user-layer.ts) wins field by field over the plugin; model and effort apply at the next turn,
 //   instructions at the next compaction (§5.6, §6.3), since drivers read the bot through `current()`.
 // * **The model**: the user layer's, else the plugin's default when the user has a key for it, else the user's
@@ -274,11 +275,11 @@ export class BotService {
     for (const [id, bot] of found) {
       const live = this.#bots.get(id);
       if (live) this.#update(live, bot);
-      else this.#add(bot);
+      else await this.#add(bot);
     }
   }
 
-  #add(bot: PluginBot): void {
+  async #add(bot: PluginBot): Promise<void> {
     const live: Live = { plugin: bot, mainSession: mainSessionIdFor(bot.id) };
     this.#seed(bot);
     const host = this.#o.host;
@@ -297,7 +298,26 @@ export class BotService {
     if (isNew && bot.greeting !== undefined) {
       host.recordCore(live.mainSession, { type: "assistant_message", threadId: live.mainSession, text: bot.greeting, greeting: true });
     }
+    await this.#endCutOffRuns(live);
     this.#emitBot(live);
+  }
+
+  /** Side threads a crash cut off: restored dormant with their run interrupted, and nothing left to finish them. Each
+   *  posts that it was interrupted, as a run cut off by a shutdown does, and ends. Whether it runs again is the routine
+   *  engine's missed-run rule (M3). */
+  async #endCutOffRuns(live: Live): Promise<void> {
+    const host = this.#o.host;
+    for (const s of host.list({ bot: live.plugin.id, kind: "side-thread" })) {
+      if (host.isAttached(s.id) || s.status === "stopped" || s.status === "failed") continue;
+      try {
+        if (s.routine !== undefined) {
+          await host.deliver(live.mainSession, { from: "routine", routine: s.routine, name: s.title ?? s.routine, sideThread: s.id, text: sideThreadResult({ reason: "interrupted" }) });
+        }
+        await host.stop(s.id, "the daemon restarted");
+      } catch (err) {
+        this.#warn(`the side thread ${s.id} wasn't ended: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
   }
 
   #update(live: Live, bot: PluginBot): void {
