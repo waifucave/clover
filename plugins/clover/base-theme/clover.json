@@ -1,0 +1,8 @@
+{
+  "manifest": 1,
+  "name": "Clover base theme",
+  "description": "The look every bot tab starts from, and the whole app's until you pick a theme of your own.",
+  "contributes": {
+    "themes": [{ "id": "clover", "file": "theme.json" }]
+  }
+}
