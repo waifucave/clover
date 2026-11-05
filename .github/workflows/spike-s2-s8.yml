@@ -1,0 +1,65 @@
+name: S2 S8 focused experiments
+on:
+  pull_request:
+    paths:
+      - spikes/s2-windows-fence/**
+      - spikes/s8-secrets/**
+      - native/sandbox/**
+      - .github/workflows/spike-s2-s8.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  linux-focused:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install isolated probe dependencies
+        run: |
+          echo 'Installing focused probe dependencies'
+          sudo apt-get update -qq
+          sudo apt-get install -y bubblewrap xdg-dbus-proxy dbus-daemon python3-dbus python3-gi python3-cryptography gnome-keyring libsecret-tools gcc git
+      - name: Filesystem, network and IPC fixture
+        run: python3 spikes/s8-secrets/linux-fence.py
+      - name: Record method-body filtering counterexample
+        run: python3 spikes/s8-secrets/proxy-probe.py --bwrap
+      - name: Private Secret Service and authenticated encryption
+        run: python3 spikes/s8-secrets/linux-store.py
+  macos-agent-sandboxes:
+    runs-on: macos-15
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.21.1'
+      - name: Install sandbox-only packages
+        run: npm install --prefix spikes/s8-secrets/.deps --ignore-scripts --no-audit --no-fund @anthropic-ai/sandbox-runtime@0.0.81 @openai/codex@0.166.0
+      - name: Standalone Anthropic runtime
+        run: python3 spikes/s8-secrets/srt-probe.py
+      - name: Codex sandbox only
+        run: PATH="$PWD/spikes/s8-secrets/.deps/node_modules/.bin:$PATH" python3 spikes/s8-secrets/codex-probe.py
+  windows-measurements:
+    runs-on: windows-2025
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Node and Bun fixtures
+        shell: powershell
+        run: |
+          Write-Output 'Installing fixture tools'
+          & spikes/s2-windows-fence/install-tools.ps1
+      - name: Measure launch compatibility, not fence admission
+        shell: powershell
+        run: |
+          & spikes/s2-windows-fence/check.ps1 | Tee-Object -FilePath windows-measurements.txt
+          $rows = Get-Content windows-measurements.txt | Where-Object { $_.StartsWith('{') } | ForEach-Object { $_ | ConvertFrom-Json }
+          $compatible = @($rows | Where-Object { $_.mode -eq 'privileges' -and $_.exit -eq 0 })
+          if ($rows.Count -ne 35 -or $compatible.Count -ne 7) { throw 'Compatibility measurements incomplete or privilege-only baseline failed' }
+          Write-Warning 'Privilege-only compatibility is not Windows security-floor parity. Inspect all mode results.'
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: windows-launch-measurements
+          path: windows-measurements.txt
