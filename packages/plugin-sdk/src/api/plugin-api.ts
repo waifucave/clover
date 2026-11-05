@@ -252,8 +252,10 @@ export type KeyedFetchErrorCode = (typeof KEYED_FETCH_ERROR_CODES)[number];
  *    (`unknown_auth`);
  *  * only `https://` URLs on a `waifucave.com` host in the plugin's `network:` capabilities (`mayUseWaifucaveAuth`);
  *    any other URL fails `refused`;
- *  * each request gets a token minted for its host alone (`aud` is exactly the request's host), good for minutes,
- *    never the account's own credential; a redirect to another host drops it (rule 3);
+ *  * each request gets a token minted for its host alone, never the account's own credential; a redirect to another
+ *    host drops it (rule 3). The core mints it from the account session, which never syncs between computers; its
+ *    claims are `iss`, `aud` (exactly the request's host), `sub` (the account), `dev` (this computer), `iat`, `exp` and
+ *    `jti`; it lives at most 5 minutes and is cached per host (the core's `mintedTokenSource`);
  *  * plugin code never reads it: it exists only in the request the core sends;
  *  * after a 401 the core mints a newer one and retries once (rule 5);
  *  * with no account signed in, the fetch fails `no_account` at once, and the plugin waits for the account rather than

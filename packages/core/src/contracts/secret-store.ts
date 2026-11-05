@@ -144,10 +144,47 @@ export interface KeyedToken {
 
 /** Where one `auth` entry's key or token comes from, in the shape of lane A's `KeyedTokenSource` (clover-sdk): the
  *  current one, or after a 401 one newer than the generation that was refused. Lane A's reference fetch takes the
- *  value as a string; the core's adapter calls `reveal()` only where it sets the header. */
+ *  value as a string; the core's adapter calls `reveal()` only where it sets the header. `audience` is the request's
+ *  host (review S5): a stored key or sign-in ignores it, and the waifucave account token is minted for exactly that
+ *  host (`mintedTokenSource`). */
 export interface KeyedTokenSource {
-  current(): Promise<KeyedToken | null>;
-  newer(generation: number): Promise<KeyedToken | null>;
+  current(audience: string): Promise<KeyedToken | null>;
+  newer(generation: number, audience: string): Promise<KeyedToken | null>;
+}
+
+/** The longest an account token lives (lane H mints it: `iss`, `aud` the exact host, `sub`, `dev`, `iat`, `exp`, `jti`). */
+export const ACCOUNT_TOKEN_MAX_MS = 5 * 60_000;
+/** A cached token is minted afresh this long before it expires. */
+export const ACCOUNT_TOKEN_RENEW_BEFORE_MS = 30_000;
+
+/** The waifucave account token's source: one token per audience, minted in the core from the account session (which
+ *  never syncs), cached per host until shortly before it expires, and minted afresh after a 401. `mint` returns the
+ *  token and its expiry; the source refuses one that would live past `ACCOUNT_TOKEN_MAX_MS`. */
+export function mintedTokenSource(
+  mint: (audience: string) => Promise<{ value: Secret; expiresAt: number } | null>,
+  clock: { now(): number },
+): KeyedTokenSource {
+  const cache = new Map<string, { token: KeyedToken; expiresAt: number }>();
+  let generation = 0;
+  const fresh = async (audience: string): Promise<KeyedToken | null> => {
+    const minted = await mint(audience);
+    if (!minted || minted.expiresAt - clock.now() > ACCOUNT_TOKEN_MAX_MS) return null;
+    const token = { value: minted.value, generation: ++generation };
+    cache.set(audience, { token, expiresAt: minted.expiresAt });
+    return token;
+  };
+  return {
+    async current(audience) {
+      const hit = cache.get(audience);
+      if (hit && clock.now() < hit.expiresAt - ACCOUNT_TOKEN_RENEW_BEFORE_MS) return hit.token;
+      return fresh(audience);
+    },
+    async newer(refused, audience) {
+      const hit = cache.get(audience);
+      if (hit && hit.token.generation > refused && clock.now() < hit.expiresAt - ACCOUNT_TOKEN_RENEW_BEFORE_MS) return hit.token;
+      return fresh(audience);
+    },
+  };
 }
 
 /** The token source for one stored item. `refresh`, the refresher's door (§8.5), is asked for a newer token after a
@@ -158,7 +195,7 @@ export function secretTokenSource(store: Pick<SecretStore, "get">, ref: SecretRe
     return v === null ? null : { value: v.value, generation: v.generation };
   };
   return {
-    current: read,
+    current: () => read(),
     async newer(generation) {
       let t = await read();
       if ((t === null || t.generation <= generation) && refresh) {

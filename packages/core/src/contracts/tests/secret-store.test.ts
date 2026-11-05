@@ -4,7 +4,10 @@ import { describe, expect, test } from "bun:test";
 import { isContractError } from "../common";
 import { FakeClock } from "../fakes/clock";
 import { MemorySecretStore } from "../fakes/secret-store";
-import { Secret, encryptedFileStatus, secretKeySourceFor, secretTokenSource, type KeyStoreProbe, type SecretChange, type SecretRef } from "../secret-store";
+import {
+  ACCOUNT_TOKEN_MAX_MS, ACCOUNT_TOKEN_RENEW_BEFORE_MS, Secret, encryptedFileStatus, mintedTokenSource, secretKeySourceFor,
+  secretTokenSource, type KeyStoreProbe, type SecretChange, type SecretRef,
+} from "../secret-store";
 
 // Built at run time, so no secret-looking literal sits in a fixture.
 const VALUE = ["sk", "test", Math.random().toString(36).slice(2)].join("-");
@@ -85,22 +88,48 @@ describe("MemorySecretStore", () => {
       refreshed.push(g);
       await store.set(ref, `${VALUE}-${g + 1}`);
     });
-    expect(await source.current()).toBeNull();
+    expect(await source.current("api.example.com")).toBeNull();
     await store.set(ref, VALUE);
-    const first = await source.current();
+    const first = await source.current("api.example.com");
     expect(first?.generation).toBe(1);
     expect(String(first?.value)).toBe("[secret]");
     // The refused generation is the stored one: the refresher writes a newer one.
-    const next = await source.newer(1);
+    const next = await source.newer(1, "api.example.com");
     expect(next?.generation).toBe(2);
     expect(next?.value.reveal()).toBe(`${VALUE}-2`);
     expect(refreshed).toEqual([1]);
     // Someone already wrote a newer one: no refresh needed.
     await store.set(ref, `${VALUE}-3`);
-    expect((await source.newer(2))?.generation).toBe(3);
+    expect((await source.newer(2, "api.example.com"))?.generation).toBe(3);
     expect(refreshed).toEqual([1]);
     // An API key has no refresher: a 401 is the answer.
-    expect(await secretTokenSource(store, ref).newer(3)).toBeNull();
+    expect(await secretTokenSource(store, ref).newer(3, "api.example.com")).toBeNull();
+  });
+
+  test("the account token is minted per audience, cached per host, at most 5 minutes, and minted afresh after a 401", async () => {
+    const clock = new FakeClock();
+    const minted: string[] = [];
+    const source = mintedTokenSource(async (aud) => {
+      minted.push(aud);
+      return { value: new Secret(`${VALUE}:${aud}:${minted.length}`), expiresAt: clock.now() + ACCOUNT_TOKEN_MAX_MS };
+    }, clock);
+    const hooks = await source.current("hooks.waifucave.com");
+    const push = await source.current("push.waifucave.com");
+    expect(hooks?.value.reveal()).toContain(":hooks.waifucave.com:");
+    expect(push?.value.reveal()).toContain(":push.waifucave.com:");
+    expect((await source.current("hooks.waifucave.com"))?.generation).toBe(hooks?.generation);
+    expect(minted).toEqual(["hooks.waifucave.com", "push.waifucave.com"]);
+    // Shortly before it expires, a new one is minted.
+    clock.advance(ACCOUNT_TOKEN_MAX_MS - ACCOUNT_TOKEN_RENEW_BEFORE_MS);
+    expect((await source.current("hooks.waifucave.com"))!.generation).toBeGreaterThan(hooks!.generation);
+    // After a 401, a newer one for that host alone.
+    const before = minted.length;
+    const again = await source.newer((await source.current("push.waifucave.com"))!.generation, "push.waifucave.com");
+    expect(minted.length).toBe(before + 2);
+    expect(again?.value.reveal()).toContain(":push.waifucave.com:");
+    // A token that would live too long is refused.
+    const greedy = mintedTokenSource(async () => ({ value: new Secret(VALUE), expiresAt: clock.now() + ACCOUNT_TOKEN_MAX_MS + 1 }), clock);
+    expect(await greedy.current("hooks.waifucave.com")).toBeNull();
   });
 
   test("a headless computer never waits locked: systemd-creds where it works, else a key file labelled plaintext", () => {
