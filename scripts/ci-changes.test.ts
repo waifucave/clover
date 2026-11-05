@@ -32,6 +32,23 @@ describe("ci-changes", () => {
     expect(on(["services/forwarder/src/index.ts"])).toEqual(["workspaces", "typecheck"]);
   });
 
+  test("macOS: a core change takes two macOS jobs (its machine's, and the one for core, cli, scripts and verify); a lockfile change no Swift", () => {
+    const jobs = (Bun.YAML.parse(readFileSync(join(import.meta.dir, "..", ".github", "workflows", "ci.yml"), "utf8")) as { jobs: Record<string, { if?: string; "runs-on"?: string; strategy?: { matrix?: { include?: Array<{ runner: string }> } } }> }).jobs;
+    const macJobs = (changed: string[]): string[] => {
+      const areas = areasFor(changed);
+      return Object.entries(jobs).flatMap(([id, j]) => {
+        const wanted = [...(j.if ?? "").matchAll(/needs\.changes\.outputs\.(\w+) == 'true'/g)].some((m) => areas[m[1] as CiArea]);
+        const mac = j["runs-on"] === "macos-latest" || (j.strategy?.matrix?.include ?? []).some((r) => r.runner.startsWith("macos"));
+        return wanted && mac ? [id] : [];
+      });
+    };
+    expect(macJobs(["packages/core/src/daemon.ts"])).toEqual(["machine", "macos"]);
+    expect(macJobs(["bun.lock"])).toEqual(["machine", "macos"]);
+    expect(macJobs(["apple/WinterKit/Sources/WinterKit/Client.swift"])).toEqual(["macos", "swift"]);
+    expect(macJobs(["plugins/clover/shell/src/a.tsx"])).toEqual(["machine"]);
+    expect(macJobs(["docs/clover-plan.md"])).toEqual([]);
+  });
+
   test("the core: its own, the CLI's and the scripts' tests, the daemon, the compiled gates; not the Swift kits or the app", () => {
     const core = on(["packages/core/src/daemon.ts"]);
     expect(core).toEqual(["workspaces", "daemon", "typecheck", "core", "cli", "scripts", "verify"]);
@@ -46,15 +63,17 @@ describe("ci-changes", () => {
     expect(on(["packages/protocol/src/methods.ts"])).not.toContain("swift");
   });
 
-  test("CI itself, the toolchain, the root manifest or a lockfile run every area; so does no diff", () => {
-    for (const f of [".github/workflows/ci.yml", ".bun-version", "package.json", "bun.lock", "pnpm-lock.yaml"]) expect(on([f])).toEqual(CI_AREA_NAMES);
+  test("CI itself runs every area, and so does no diff; the toolchain, the root manifest or a lockfile every area but Swift's", () => {
+    for (const f of [".github/workflows/ci.yml", "scripts/ci-changes.ts"]) expect(on([f])).toEqual(CI_AREA_NAMES);
     expect(CI_AREA_NAMES.filter((a) => areasFor(undefined)[a])).toEqual(CI_AREA_NAMES);
+    for (const f of [".bun-version", "package.json", "bun.lock", "pnpm-lock.yaml"]) expect(on([f])).toEqual(CI_AREA_NAMES.filter((a) => a !== "swift"));
   });
 
   test("ci.yml has a job, or a matrix of them, behind every area, and the gate waits for them all", () => {
     const jobs = (Bun.YAML.parse(readFileSync(join(import.meta.dir, "..", ".github", "workflows", "ci.yml"), "utf8")) as { jobs: Record<string, { if?: string; needs?: string | string[] }> }).jobs;
-    const gated = Object.entries(jobs).flatMap(([id, j]) => (/needs\.changes\.outputs\.(\w+) == 'true'/.exec(j.if ?? "")?.[1] !== undefined ? [[id, /needs\.changes\.outputs\.(\w+)/.exec(j.if!)![1]!] as const] : []));
-    expect([...new Set(gated.map(([, a]) => a))].sort()).toEqual([...CI_AREA_NAMES].sort());
+    // A job may serve several areas (`… == 'true' || … == 'true'`), each step taking its own.
+    const gated = Object.values(jobs).flatMap((j) => [...(j.if ?? "").matchAll(/needs\.changes\.outputs\.(\w+) == 'true'/g)].map((m) => m[1]!));
+    expect([...new Set(gated)].sort()).toEqual([...CI_AREA_NAMES].sort());
     const gateNeeds = jobs.gate?.needs;
     const all = Object.keys(jobs).filter((id) => id !== "gate" && jobs[id]!.if !== "github.event_name == 'workflow_dispatch'");
     expect([...(Array.isArray(gateNeeds) ? gateNeeds : [])].sort()).toEqual(all.sort());
