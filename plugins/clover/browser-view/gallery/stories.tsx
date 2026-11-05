@@ -79,6 +79,18 @@ export const browserStories: Story[] = [
     ),
   },
   {
+    id: "browser-view/paused",
+    title: "The live view in another panel",
+    notes: "Another panel the person used since has the live view (R8). This one holds the tab's last picture, marked paused on a line above the frame; clicking the picture brings the live view back.",
+    width: 720,
+    height: 420,
+    render: () => (
+      <div className="story-browser cl-browser-panel">
+        <BrowserChrome tab={TABS[0]} onBack={noop} onReload={noop} onNavigate={noop} paused={{ onResume: noop }} />
+      </div>
+    ),
+  },
+  {
     id: "browser-view/annotating",
     title: "Marking up the page",
     notes: "The box tool is on: the user draws on the page for the bot. The strip sits below the page, never over it. The panel does not mount it until the browser API can send marks.",

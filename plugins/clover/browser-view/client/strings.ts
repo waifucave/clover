@@ -16,6 +16,9 @@ export const S = {
   /** A tab the user holds in the view: the bot's commands on it wait. */
   held: "You are using this tab. The bot waits until you let go.",
   noTab: "No tab open",
+  /** The live view went to another panel the person used since (R8). */
+  paused: "Paused: the live page is in another panel. Click the picture to bring it here.",
+  resume: "Show the live page here",
   /** What went wrong, in a sentence a person can use; the browser's own reason follows when it gave one. */
   failed: {
     tabs: "Couldn't load the tabs.",

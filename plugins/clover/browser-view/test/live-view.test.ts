@@ -117,4 +117,20 @@ describe("LiveView", () => {
     await view.settled();
     expect(errors).toEqual(["no such tab"]);
   });
+
+  test("claim shows the wanted tab again at once, after another panel took the view (R8); with nothing wanted, nothing", async () => {
+    const { view, log } = make();
+    view.claim();
+    await view.settled();
+    expect(log).toEqual([]);
+    view.set({ id: "a", size: { width: 400, height: 300 } });
+    await view.settled();
+    view.claim();
+    await view.settled();
+    expect(log).toEqual(["show a browser 400x300", "shown a", "show a browser 400x300", "shown a"]);
+    view.dispose();
+    view.claim();
+    await view.settled();
+    expect(log.filter((l) => l.startsWith("show ")).length).toBe(2);
+  });
 });

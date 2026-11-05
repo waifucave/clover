@@ -26,7 +26,8 @@ export interface FakeBrowser extends BrowserApi {
   history: Record<string, { currentIndex: number; entries: { id: number; url: string }[] }>;
 }
 
-const sameOwner = (a: TabOwner, b: TabOwner) => a.kind === b.kind && (a.kind === "user" || (b.kind === "bot" && a.bot === b.bot));
+const sameOwner = (a: TabOwner, b: TabOwner): boolean =>
+  a.kind === "bot" ? b.kind === "bot" && a.bot === b.bot : a.kind === "session" ? b.kind === "session" && a.session === b.session : b.kind === "user";
 
 export function fakeBrowser(initial: TabView[] = [], opts: { shows?: boolean } = {}): FakeBrowser {
   const shows = opts.shows ?? true;
@@ -108,6 +109,12 @@ export function fakeBrowser(initial: TabView[] = [], opts: { shows?: boolean } =
         return h as R;
       }
       return {} as R;
+    },
+    async screenshot(id, opts) {
+      record("screenshot", [id, opts]);
+      find(id);
+      // A 1×1 JPEG: enough for an <img> to have something to show.
+      return { format: "jpeg", data: "/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAMCAgICAgMCAgIDAwMDBAYEBAQEBAgGBgUGCQgKCgkICQkKDA8MCgsOCwkJDRENDg8QEBEQCgwSExIQEw8QEBD/yQALCAABAAEBAREA/8wABgAQEAX/2gAIAQEAAD8A0s8g/9k=", width: 1280, height: 800, takenAt: Date.now() };
     },
     watch(listener) {
       record("watch", []);

@@ -225,6 +225,52 @@
   overflow-wrap: anywhere;
 }
 
+/* The live view is in another panel (R8): a line above the frame says so. */
+.cl-browser__paused {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 0;
+  padding: 0 var(--clover-space-m) var(--clover-space-s);
+  color: var(--clover-color-text-secondary);
+  font-size: var(--clover-font-size-label);
+}
+
+.cl-browser__paused .cl-browser-icon {
+  margin-top: 1px;
+}
+
+.cl-browser__paused-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* The paused tab's last picture, filling the frame; using it brings the live view back. */
+.cl-browser__still {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  justify-content: center;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: var(--clover-color-surface);
+  cursor: pointer;
+}
+
+.cl-browser__still:focus-visible {
+  outline: 2px solid var(--clover-color-focus);
+  outline-offset: -2px;
+}
+
+.cl-browser__still-picture {
+  display: block;
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
 /* The frame the browser's live view fills. */
 .cl-browser__frame {
   position: relative;

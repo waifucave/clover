@@ -94,7 +94,7 @@ export class FakeBrowser implements BrowserApi {
   async tabs(filter: { owner?: TabOwner; computer?: string } = {}): Promise<TabView[]> {
     this.record("tabs", [filter]);
     return this.tabsList
-      .filter((t) => filter.owner === undefined || (t.owner.kind === filter.owner.kind && (t.owner.kind === "user" || t.owner.bot === (filter.owner as { bot: string }).bot)))
+      .filter((t) => filter.owner === undefined || JSON.stringify(t.owner) === JSON.stringify(filter.owner))
       .filter((t) => filter.computer === undefined || t.computer === filter.computer)
       .map((t) => ({ ...t }));
   }

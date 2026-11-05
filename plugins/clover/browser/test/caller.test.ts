@@ -1,10 +1,13 @@
 // Who is calling, read off `params._meta["clover/caller"]`, and whose tabs that means: a bot's session uses the bot's,
-// a session without a bot the person's, and nobody else's tab is ever reached.
+// a session without a bot its own (R10), and nobody else's tab is ever reached.
 
 import { describe, expect, test } from "bun:test";
 
 import { actingFor, callerFromRequest, CALLER_META_KEY, isBotId } from "../src/caller";
 import { ALPHA, alphaCaller, codingCaller, harness, LUNA, tabView, USER } from "./fakes";
+import type { TabOwner } from "../src/types";
+
+const CODING: TabOwner = { kind: "session", session: "s-code" };
 
 describe("reading the caller", () => {
   test("from params._meta, shaped like the protocol's Caller", () => {
@@ -34,9 +37,11 @@ describe("reading the caller", () => {
 });
 
 describe("whose tabs", () => {
-  test("a bot's session uses the bot's; a session without a bot, the person's", () => {
+  test("a bot's session uses the bot's; a session without a bot, its own (R10)", () => {
     expect(actingFor(alphaCaller)).toEqual({ owner: ALPHA, key: "session:s-alpha" });
-    expect(actingFor(codingCaller)).toEqual({ owner: USER, key: "session:s-code" });
+    expect(actingFor(codingCaller)).toEqual({ owner: CODING, key: "session:s-code" });
+    expect(actingFor({ kind: "peer", device: "a1b2c3d4e5f6a7b8", sessionId: "s7" })).toEqual({ owner: { kind: "session", session: "s7" }, key: "session:s7" });
+    expect("refused" in actingFor({ kind: "peer", device: "a1b2c3d4e5f6a7b8" })).toBe(true);
     expect(actingFor({ kind: "peer", device: "a1b2c3d4e5f6a7b8", sessionId: "s2", bot: "luna" })).toEqual({ owner: LUNA, key: "session:s2" });
     expect(actingFor({ kind: "user", client: "cli" })).toEqual({ owner: USER, key: "user" });
   });
@@ -47,26 +52,27 @@ describe("whose tabs", () => {
     expect("refused" in actingFor({ kind: "core" })).toBe(true);
   });
 
-  test("open passes the caller's owner: { kind: bot, bot } for a bot, { kind: user } for a coding session", async () => {
+  test("open passes the caller's owner: { kind: bot, bot } for a bot, { kind: session } for a coding session (R10)", async () => {
     const h = await harness();
     await h.call({ verb: "open", url: "https://example.com" }, alphaCaller);
     await h.call({ verb: "open", url: "https://example.com" }, codingCaller);
     const opens = h.browser.calls.filter((c) => c.name === "open").map((c) => c.args[0]);
     expect(opens).toEqual([
       { owner: { kind: "bot", bot: "alpha" }, url: "https://example.com/", computer: "Studio" },
-      { owner: { kind: "user" }, url: "https://example.com/", computer: "Studio" },
+      { owner: { kind: "session", session: "s-code" }, url: "https://example.com/", computer: "Studio" },
     ]);
   });
 
   test("tabs lists only the caller's own tabs, asking the API with the owner filter", async () => {
-    const h = await harness([tabView("a1", ALPHA), tabView("l1", LUNA), tabView("u1", USER)]);
+    const h = await harness([tabView("a1", ALPHA), tabView("l1", LUNA), tabView("u1", USER), tabView("c1", CODING)]);
     const alpha = await h.text({ verb: "tabs" }, alphaCaller);
     expect(alpha).toContain("a1:");
     expect(alpha).not.toContain("l1");
     expect(alpha).not.toContain("u1");
     expect(h.browser.calls.find((c) => c.name === "tabs")!.args[0]).toEqual({ owner: ALPHA, computer: "Studio" });
     const coding = await h.text({ verb: "tabs" }, codingCaller);
-    expect(coding).toContain("u1:");
+    expect(coding).toContain("c1:");
+    expect(coding).not.toContain("u1");
     expect(coding).not.toContain("a1");
   });
 

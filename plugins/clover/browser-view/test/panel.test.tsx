@@ -56,9 +56,16 @@ describe("whose tabs", () => {
     expect(screen.getAllByRole("tab").map((t) => t.textContent)).toEqual(["Docs preview", "Plugin index"]);
   });
 
-  test("a code session, which names no bot, lists the user's tabs", async () => {
-    const api = fakeBrowser([A, tabView("u", { title: "My page", owner: { kind: "user" } })]);
+  test("a code session, which names no bot, lists its own tabs, never the person's (R10)", async () => {
+    const api = fakeBrowser([A, tabView("u", { title: "My page", owner: { kind: "user" } }), tabView("c", { title: "Its page", owner: { kind: "session", session: "s1" } })]);
     await mount(api, { app: "browser", session: "s1" });
+    expect(api.of("tabs")).toEqual([[{ owner: { kind: "session", session: "s1" } }]]);
+    expect(screen.getAllByRole("tab").map((t) => t.textContent)).toEqual(["Its page"]);
+  });
+
+  test("a panel that names neither a bot nor a session lists the person's own tabs", async () => {
+    const api = fakeBrowser([A, tabView("u", { title: "My page", owner: { kind: "user" } })]);
+    await mount(api, { app: "browser" });
     expect(api.of("tabs")).toEqual([[{ owner: { kind: "user" } }]]);
     expect(screen.getAllByRole("tab").map((t) => t.textContent)).toEqual(["My page"]);
   });
@@ -212,6 +219,38 @@ describe("the live view", () => {
     expect(frame().textContent).toBe("");
   });
 
+  test("when another panel takes the live view, the frame holds the tab's last picture, marked paused; using it brings the view back (R8)", async () => {
+    const api = fakeBrowser([A]);
+    await mount(api);
+    await resize(400, 300);
+    await flush();
+    expect(screen.queryByRole("status")).toBeNull();
+    // Another panel showed its own tab in the view, so the browser put this one back.
+    await act(async () => api.emit({ ...api.all.find((t) => t.id === "a")!, place: "headless" }));
+    await flush();
+    expect(screen.getByRole("status").textContent).toContain("Paused");
+    expect(api.of("screenshot")).toEqual([["a", { format: "jpeg", quality: 70 }]]);
+    const still = button("Show the live page here");
+    expect(frame().contains(still)).toBe(true);
+    expect((still.querySelector("img") as HTMLImageElement).src).toStartWith("data:image/jpeg;base64,");
+    expect(screen.getByRole("status").compareDocumentPosition(frame()) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    await act(async () => fireEvent.click(still));
+    await flush();
+    expect(api.of("show").at(-1)).toEqual(["a", "browser", { width: 400, height: 300 }]);
+    expect(screen.queryByRole("status")).toBeNull();
+    expect(frame().textContent).toBe("");
+  });
+
+  test("a tab that was never live here is not paused: the frame says what goes there", async () => {
+    const api = fakeBrowser([A], { shows: false });
+    await mount(api);
+    await resize(400, 300);
+    await flush();
+    expect(screen.queryByRole("status")).toBeNull();
+    expect(frame().textContent).toContain("The live page shows here");
+    expect(api.of("screenshot")).toEqual([]);
+  });
+
   test("with no tab the frame says so, and nothing is shown", async () => {
     const api = fakeBrowser([]);
     await mount(api);
@@ -254,12 +293,12 @@ describe("tabs", () => {
     expect(api.of("show").at(-1)).toEqual(["t1", "browser", { width: 400, height: 300 }]);
   });
 
-  test("a code session's new tab is the user's", async () => {
+  test("a code session's new tab is its own (R10)", async () => {
     const api = fakeBrowser([]);
     await mount(api, { app: "browser", session: "s1" });
     await act(async () => fireEvent.click(button("New tab")));
     await flush();
-    expect(api.of("open")).toEqual([[{ owner: { kind: "user" }, show: true }]]);
+    expect(api.of("open")).toEqual([[{ owner: { kind: "session", session: "s1" }, show: true }]]);
   });
 
   test("closing the tab shown hands the view to its neighbour; closing the last says there is none", async () => {

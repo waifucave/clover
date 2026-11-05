@@ -2,10 +2,10 @@
 // `BrowserApi`, which needs the `browser` capability) and draws the tab row, the toolbar and the frame the browser's
 // live view fills (the parts are `BrowserTabs` and `BrowserChrome`; this container holds the state and the calls).
 //
-// Whose tabs. A bot's tab shows that bot's tabs and a code session the user's (spec §12.1: a bot's tabs live in its
-// own partition, the user's in another). Lane B's `panel` spot hands `{ app, session? }`, which does not say which;
-// this panel reads `bot` from its props (a request to lanes B and F: the host passes the bot's id in a bot's tab) and
-// takes the user's tabs when there is none.
+// Whose tabs. A bot's tab shows that bot's tabs, a coding session's panel that session's own (ruling R10: a session
+// without a bot has a partition of its own; the person's is never a session's by default), and a panel of neither the
+// person's own tabs (spec §12.1: never per site). Lane B's `panel` spot hands `{ app, session? }`; this panel also
+// reads `bot` from its props (a request to lanes B and F: the host passes the bot's id in a bot's tab).
 //
 // The live view. Bot tabs are drawn offscreen, and the person sees one through the browser's live view: a native view
 // the browser draws above the page's DOM at this frame's place, laid out at the frame's size (§12.1, spike S7). While
@@ -13,6 +13,10 @@
 // the panel's key, which lane E's runtime maps to where the frame is on screen. Switching tabs hides the old one and
 // shows the new one, a resize shows it again at the new size once it settles, and unmounting hides it. Nothing is
 // ever drawn over the frame.
+//
+// Two panels (ruling R8). The panel the person used last has the live view. When another panel takes it, this one's
+// tab leaves the view, and the frame holds the tab's last picture, marked as paused. Using the picture brings the live
+// view back here.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BrowserChrome } from "./BrowserChrome";
 import { BrowserTabs } from "./BrowserTabs";
@@ -28,7 +32,8 @@ export const VIEW = "browser";
 /** The most the browser lays a view out at, either way (lane B's `Viewport`). */
 const MAX_SIDE = 16_384;
 
-const sameOwner = (a: TabOwner, b: TabOwner) => a.kind === b.kind && (a.kind === "user" || (b.kind === "bot" && a.bot === b.bot));
+const sameOwner = (a: TabOwner, b: TabOwner): boolean =>
+  a.kind === "bot" ? b.kind === "bot" && a.bot === b.bot : a.kind === "session" ? b.kind === "session" && a.session === b.session : b.kind === "user";
 
 /** The list with `tab` in it: replaced where it is, or added at the end. */
 const upsert = (list: TabView[], tab: TabView): TabView[] => (list.some((t) => t.id === tab.id) ? list.map((t) => (t.id === tab.id ? tab : t)) : [...list, tab]);
@@ -42,7 +47,8 @@ function describe(lead: string, error: unknown): string {
 export function BrowserPanel({ props }: BrowserEntryProps) {
   const api = usePluginApi()?.browser;
   const bot = props?.bot;
-  const owner = useMemo<TabOwner>(() => (bot ? { kind: "bot", bot } : { kind: "user" }), [bot]);
+  const session = props?.session;
+  const owner = useMemo<TabOwner>(() => (bot ? { kind: "bot", bot } : session ? { kind: "session", session } : { kind: "user" }), [bot, session]);
 
   const [tabs, setTabs] = useState<TabView[]>([]);
   const [picked, setPicked] = useState<string | undefined>(undefined);
@@ -50,6 +56,9 @@ export function BrowserPanel({ props }: BrowserEntryProps) {
   const [steps, setSteps] = useState<Steps>({});
   const [frame, setFrame] = useState<HTMLDivElement | null>(null);
   const [size, setSize] = useState<Viewport | null>(null);
+  // The tab this panel last had in the view, and its last picture once another panel took the view (R8).
+  const [liveHere, setLiveHere] = useState<string | null>(null);
+  const [still, setStill] = useState<{ id: string; picture: string } | null>(null);
 
   // Tabs this panel closed: a late report about one never brings it back.
   const closed = useRef(new Set<string>());
@@ -123,11 +132,27 @@ export function BrowserPanel({ props }: BrowserEntryProps) {
     [refresh],
   );
 
-  useLiveView(api, VIEW, active && size ? { id: active.id, size } : null, {
+  const live = useLiveView(api, VIEW, active && size ? { id: active.id, size } : null, {
     onError: (e) => fail(S.failed.show, e),
     // What the browser says about a tab after it moved it. A tab this panel no longer lists stays gone.
-    onTab: (tab) => setTabs((cur) => (cur.some((t) => t.id === tab.id) ? upsert(cur, tab) : cur)),
+    onTab: (tab) => {
+      if (tab.place === "shown") setLiveHere(tab.id);
+      setTabs((cur) => (cur.some((t) => t.id === tab.id) ? upsert(cur, tab) : cur));
+    },
   });
+
+  // Paused: this panel had the tab in the view, and it has left (another panel took the live view, R8).
+  const paused = active !== undefined && size !== null && liveHere === active.id && active.place !== "shown";
+  const pausedId = paused ? active.id : undefined;
+  useEffect(() => {
+    if (!api || pausedId === undefined) return;
+    let stale = false;
+    api.screenshot(pausedId, { format: "jpeg", quality: 70 }).then(
+      (shot) => { if (!stale) setStill({ id: pausedId, picture: `data:image/${shot.format};base64,${shot.data}` }); },
+      () => { if (!stale) setStill(null); },
+    );
+    return () => { stale = true; };
+  }, [api, pausedId]);
 
   // Back and forward from the page's own history. Asked again when the page or its loading changes.
   const activeId = active?.id;
@@ -224,6 +249,7 @@ export function BrowserPanel({ props }: BrowserEntryProps) {
       <BrowserChrome
         tab={current}
         live={active?.place === "shown"}
+        paused={paused ? { picture: still?.id === active.id ? still.picture : undefined, onResume: live.claim } : undefined}
         error={error ?? (api ? null : S.unavailable)}
         frameRef={setFrame}
         onBack={steps.back !== undefined ? () => devtools(S.failed.history, "Page.navigateToHistoryEntry", { entryId: steps.back }) : undefined}

@@ -5,8 +5,9 @@
 // `AppTabPort` it hands over.
 //
 // What the core decides, before anything reaches the app:
-// * who may touch a tab: a bot's session only its bot's tabs, a session without a bot only the user's, the user and
-//   plugins acting on their own any tab;
+// * who may touch a tab: a bot's session only its bot's tabs, a session without a bot only its own, the person's
+//   only with their OK for that session (ruling R10: a card per session, never the default), the person and plugins
+//   acting on their own any tab;
 // * while the person holds a tab in the view, an agent's commands on it are refused (the control lease, §12.1), except
 //   looking at it (`tabs`, `screenshot`);
 // * the DevTools allow list, the URL rule, and a point from a picture taken at another size;
@@ -18,12 +19,41 @@ import {
 } from "./contract";
 import { BrowserError, checkCdpMethod, checkPoint, checkViewport, partitionFor, sameOwner } from "./policy";
 
-/** Who is calling. The transport decides it (lane B's caller check): a layer acting for the person is `user`, a tool
- *  call from a session is `agent`, a plugin's own code is `plugin`. */
+/** Who is calling. The transport decides it (lane B's caller check): a layer acting for the person is `user`, a
+ *  session's call is `agent`, and so is a plugin's call made while it serves a session's tool call (ruling R7: the core
+ *  binds that session from the tool call's own context, never from anything the plugin says), and a plugin's own
+ *  code is `plugin`. */
 export type BrowserCaller =
   | { kind: "user" }
   | { kind: "agent"; bot?: string; session?: string }
   | { kind: "plugin"; pluginId: string };
+
+/** The protocol's `Caller` (lane B's `common.ts`), as far as the browser reads it. */
+export type ProtocolCaller =
+  | { kind: "user" }
+  | { kind: "session"; sessionId: string; bot?: string }
+  | { kind: "plugin"; pluginId: string }
+  | { kind: "core" }
+  | { kind: "peer"; device: string; sessionId?: string; bot?: string };
+
+/** The browser's caller for a protocol caller, for lane B's transport. Pass the session a plugin is serving a tool
+ *  call for, when it is (R7); the plugin's own id is then never the caller. Another computer's session (`peer`) is
+ *  held to the same rules as one of the same bot here; the core itself acts as a plugin would. */
+export function browserCallerOf(caller: ProtocolCaller, servingToolCallOf?: Extract<ProtocolCaller, { kind: "session" | "peer" }>): BrowserCaller {
+  const c = servingToolCallOf ?? caller;
+  switch (c.kind) {
+    case "user":
+      return { kind: "user" };
+    case "session":
+      return { kind: "agent", ...(c.bot !== undefined ? { bot: c.bot } : {}), session: c.sessionId };
+    case "peer":
+      return { kind: "agent", ...(c.bot !== undefined ? { bot: c.bot } : {}), ...(c.sessionId !== undefined ? { session: c.sessionId } : {}) };
+    case "plugin":
+      return { kind: "plugin", pluginId: c.pluginId };
+    case "core":
+      return { kind: "plugin", pluginId: "core" };
+  }
+}
 
 /** The app's side of the browser, as lane E's transport hands it to the core. */
 export interface AppTabPort {
@@ -59,6 +89,8 @@ const NO_APP = "the Clover app isn't running on this computer, so neither is its
 
 export class BrowserService {
   private readonly entries = new Map<string, Entry>();
+  /** Sessions the person said may use their own browser (a card per session, R10). */
+  private readonly personOk = new Set<string>();
   private readonly now: () => number;
   private readonly newId: () => string;
 
@@ -81,7 +113,10 @@ export class BrowserService {
 
   async open(caller: BrowserCaller, args: { owner: TabOwner; url?: string; show?: boolean; computer?: string }): Promise<TabView> {
     this.checkComputer(args.computer);
-    if (!this.mayTouch(caller, args.owner)) throw this.notYours(caller);
+    if (!this.mayTouch(caller, args.owner)) {
+      if (args.owner.kind === "user" && caller.kind === "agent" && caller.session !== undefined) throw needsOk();
+      throw this.notYours(caller);
+    }
     const partition = partitionFor(args.owner);
     if (args.url !== undefined) this.checkUrl(args.url);
     const app = this.app();
@@ -120,6 +155,13 @@ export class BrowserService {
     await this.command(id, { kind: "place", place: "headless", viewport: AGENT_VIEWPORT });
     // Whoever held it in the view lets go when it leaves the view.
     return this.update(entry.view.id, { place: "headless", viewport: { ...AGENT_VIEWPORT }, heldByUser: false });
+  }
+
+  /** The person's answer on the card asking whether this session may use their own browser, with their sign-ins
+   *  (R10). The card itself is the approvals' (lanes B and C); a session that ends should be let go of here. */
+  allowPersonsBrowser(session: string, allowed: boolean): void {
+    if (allowed) this.personOk.add(session);
+    else this.personOk.delete(session);
   }
 
   /** `browser.hold`, from the app only: the person took the tab in the view, or gave it back. */
@@ -260,14 +302,18 @@ export class BrowserService {
     return entry;
   }
 
+  /** A bot's session: its bot's tabs. A session without a bot: its own. The person's tabs: only a session they said
+   *  yes to (R10). The person and plugins' own code: any. */
   private mayTouch(caller: BrowserCaller, owner: TabOwner): boolean {
     if (caller.kind !== "agent") return true;
-    return caller.bot !== undefined ? owner.kind === "bot" && owner.bot === caller.bot : owner.kind === "user";
+    if (owner.kind === "user") return caller.session !== undefined && this.personOk.has(caller.session);
+    if (caller.bot !== undefined) return owner.kind === "bot" && owner.bot === caller.bot;
+    return owner.kind === "session" && caller.session !== undefined && owner.session === caller.session;
   }
 
   private notYours(caller: BrowserCaller): BrowserError {
-    const whose = caller.kind === "agent" && caller.bot !== undefined ? `${caller.bot}'s` : "the user's";
-    return new BrowserError("not_yours", `a session can open tabs only as ${whose}`);
+    const whose = caller.kind === "agent" && caller.bot !== undefined ? `${caller.bot}'s` : "its own";
+    return new BrowserError("not_yours", `a session opens tabs only as ${whose}`);
   }
 
   private checkUrl(url: string): void {
@@ -308,6 +354,10 @@ export class BrowserService {
       // Listeners never break the browser.
     }
   }
+}
+
+function needsOk(): BrowserError {
+  return new BrowserError("needs_ok", "the person's own browser holds their sign-ins: a session uses it only after they say yes for that session; use your own tabs, or ask them");
 }
 
 function noTab(id: string): BrowserError {

@@ -2,9 +2,9 @@
 // (`packages/core/src/agent/tools/browser.ts`), whose verbs went to the Mac app's panel; here each one is the API's
 // own call or a few DevTools calls on the tab, all in the allowed domains (Page, Runtime, Input).
 //
-// The core lets this plugin touch any tab (its calls reach the core as the plugin, not as the session), so the tool
-// keeps each session to its owner's tabs itself: a bot's session sees and drives only that bot's tabs, a session with
-// no bot only the person's. A tab of anyone else's is answered exactly as a tab that doesn't exist.
+// The core holds each session to its own tabs (ruling R7: this plugin's calls act as the session it serves), and the
+// tool checks again itself: a bot's session sees and drives only that bot's tabs, a session with no bot only its own
+// (R10). A tab of anyone else's is answered exactly as a tab that doesn't exist.
 //
 // Every refusal and every API error comes back as a tool error in plain words (`ToolResult.isError`); nothing throws.
 import { actingFor, type Acting } from "./caller";
@@ -60,7 +60,9 @@ const ok = (text: string): ToolResult => ({ content: [{ type: "text", text }] })
 const failure = (text: string): ToolResult => ({ content: [{ type: "text", text }], isError: true });
 
 function sameOwner(a: TabOwner, b: TabOwner): boolean {
-  return a.kind === b.kind && (a.kind === "user" || a.bot === (b as { bot: string }).bot);
+  if (a.kind === "bot") return b.kind === "bot" && a.bot === b.bot;
+  if (a.kind === "session") return b.kind === "session" && a.session === b.session;
+  return b.kind === "user";
 }
 
 function defaultSleep(ms: number, signal?: AbortSignal): Promise<void> {

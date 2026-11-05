@@ -5,8 +5,11 @@
 // Owner decisions since the pin (items 92–94): bot tabs are drawn offscreen and shown through a viewport, so
 // `headless` means "offscreen, drawing for a bot"; while a screen reader is on, new bot tabs start as real views in a
 // hidden host window instead (the hybrid).
-/** A bot's tabs live in its own partition, the user's in another; never per site (§12.1). */
-export type TabOwner = { kind: "bot"; bot: string } | { kind: "user" };
+import { createHash } from "node:crypto";
+
+/** A bot's tabs live in its own partition, the user's in another; never per site (§12.1). A session without a bot has
+ *  a partition of its own (ruling R10). `session` is proposed to lane B, not in its pin yet. */
+export type TabOwner = { kind: "bot"; bot: string } | { kind: "session"; session: string } | { kind: "user" };
 
 /** Where a tab is: `headless` (drawing for a bot at 1280×800), `shown` (in a browser view at the view's size) or
  *  `resting` (not drawing, until a bot's next command). */
@@ -108,6 +111,10 @@ export function isBrowserUrlAllowed(url: string): boolean {
  *  same name (`packages/core/src/browser/policy.ts`). */
 export function partitionFor(owner: TabOwner): string {
   if (owner.kind === "user") return "persist:user";
+  if (owner.kind === "session") {
+    if (!/^[A-Za-z0-9._:-]{1,128}$/.test(owner.session)) throw new Error("that is not a session's id");
+    return `persist:session-${createHash("sha256").update(owner.session).digest("hex").slice(0, 32)}`;
+  }
   if (!/^[a-z][a-z0-9]*(-[a-z0-9]+)*(\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$/.test(owner.bot) || owner.bot.length > 81) {
     throw new Error(`"${owner.bot}" is not a bot's id`);
   }

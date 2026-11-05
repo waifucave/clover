@@ -1,7 +1,7 @@
 // The browser view's line icons: Lucide's (ISC, `LICENSES/lucide-react.txt`), pinned at lucide-react 1.61.0. In bars
 // they are 18 px at stroke 1.75, in rows 16 px at stroke 2 (a 1.3 px line either way, as the reference app's).
 // Decorative: the button or row beside each carries the label.
-import { ArrowLeft, ArrowRight, CircleAlert, Globe, Hand, LoaderCircle, MousePointer2, Pencil, Plus, RotateCw, Square, Type, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, CircleAlert, Globe, Hand, LoaderCircle, MousePointer2, Pause, Pencil, Plus, RotateCw, Square, Type, X } from "lucide-react";
 
 const bar = { size: 18, strokeWidth: 1.75 } as const;
 const row = { size: 16, strokeWidth: 2 } as const;
@@ -22,6 +22,7 @@ export const IconStop = () => <X {...bar} {...common} />;
 export const IconGlobe = () => <Globe {...row} {...common} />;
 export const IconClose = () => <X size={14} strokeWidth={2} {...common} />;
 export const IconAlert = () => <CircleAlert {...row} {...common} />;
+export const IconPause = () => <Pause {...row} {...common} />;
 export const IconHeld = () => <Hand size={14} strokeWidth={2} {...common} />;
 /** A tab's globe while its page loads; the stylesheet turns it. */
 export const IconLoading = () => <LoaderCircle {...row} {...common} data-spin="" />;

@@ -19,7 +19,7 @@ describe("the contract mirrors", () => {
     for (const m of ["Page.reload", "Target.getTargets", "Runtime.evaluate", "Tracing.start", "Browser.close"]) {
       expect(appContract.isCdpMethodAllowed(m)).toBe(coreContract.isCdpMethodAllowed(m));
     }
-    for (const owner of [{ kind: "user" }, { kind: "bot", bot: "alpha" }, { kind: "bot", bot: "pack/luna" }] as const) {
+    for (const owner of [{ kind: "user" }, { kind: "bot", bot: "alpha" }, { kind: "bot", bot: "pack/luna" }, { kind: "session", session: "sess_1" }, { kind: "session", session: "a:b.c-d" }] as const) {
       expect(appContract.partitionFor(owner)).toBe(corePartitionFor(owner));
     }
   });

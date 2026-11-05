@@ -15,6 +15,7 @@ const SENTENCES: Record<string, string> = {
   stalled: "The tab has stopped drawing, so there's no fresh picture of it. Try again in a moment, or reload it.",
   no_tab: "That tab isn't open any more. Use tabs to see the tabs you have.",
   not_yours: "That tab belongs to someone else; you can use only your own tabs.",
+  needs_ok: "The person's own browser holds their sign-ins, so a session uses it only after they say yes for that session. Use your own tabs, or ask them.",
   url_refused: "The browser doesn't open that address: only web pages (http and https) and about:blank.",
   no_app: "The Clover app isn't running on this computer, so its browser isn't either. It starts again by itself; try again shortly.",
   bad_owner: "The browser didn't accept whose tab this is.",

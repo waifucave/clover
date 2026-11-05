@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
-  AGENT_VIEWPORT, BrowserError, BrowserService, isBrowserUrlAllowed, partitionFor,
+  AGENT_VIEWPORT, BrowserError, BrowserService, browserCallerOf, isBrowserUrlAllowed, partitionFor,
   type AppTabCommand, type AppTabPort, type BrowserEvent, type TabOwner, type TabPlace, type TabView,
 } from "../../src/browser";
 
@@ -69,6 +69,11 @@ describe("partitions", () => {
     expect(partitionFor(alpha)).toBe("persist:bot-alpha");
     expect(partitionFor({ kind: "bot", bot: "pack/luna" })).toBe("persist:bot-pack--luna");
     expect(partitionFor(user)).toBe("persist:user");
+    // A session without a bot: its own, named by a hash of its id (no id ever spells a folder name).
+    const own = partitionFor({ kind: "session", session: "sess_1" });
+    expect(own).toMatch(/^persist:session-[0-9a-f]{32}$/);
+    expect(partitionFor({ kind: "session", session: "sess_2" })).not.toBe(own);
+    expect(() => partitionFor({ kind: "session", session: "../x y" })).toThrow(BrowserError);
     expect(() => partitionFor({ kind: "bot", bot: "../evil" })).toThrow(BrowserError);
     expect(() => partitionFor({ kind: "bot", bot: "A" })).toThrow(BrowserError);
   });
@@ -101,12 +106,46 @@ describe("opening and owning tabs", () => {
     expect(service.tabs(person).map((t) => t.id)).toEqual([tab.id]);
   });
 
-  test("a session without a bot uses the user's tabs", async () => {
+  test("a session without a bot uses tabs of its own, never another session's (R10)", async () => {
     const { service } = setup();
-    const coding = { kind: "agent" } as const;
+    const coding = { kind: "agent", session: "sess_code" } as const;
+    const other = { kind: "agent", session: "sess_other" } as const;
+    const mine = { kind: "session", session: "sess_code" } as const;
     expect(await code(service.open(coding, { owner: alpha }))).toBe("not_yours");
-    const tab = await service.open(coding, { owner: user });
-    expect(tab.partition).toBe("persist:user");
+    expect(await code(service.open(coding, { owner: { kind: "session", session: "sess_other" } }))).toBe("not_yours");
+    const tab = await service.open(coding, { owner: mine });
+    expect(tab.partition).toBe(partitionFor(mine));
+    expect(service.tabs(other)).toEqual([]);
+    expect(await code(service.navigate(other, tab.id, "https://a.example/"))).toBe("no_tab");
+    // A session with neither a bot nor an id has no tabs at all.
+    expect(await code(service.open({ kind: "agent" }, { owner: mine }))).toBe("not_yours");
+  });
+
+  test("the person's own browser only with their OK, for that session alone, until they take it back (R10)", async () => {
+    const { service } = setup();
+    const theirs = await service.open(person, { owner: user });
+    const coding = { kind: "agent", session: "sess_code" } as const;
+    const bots = { kind: "agent", bot: "alpha", session: "sess_alpha" } as const;
+    expect(await code(service.open(coding, { owner: user }))).toBe("needs_ok");
+    expect(await code(service.open(bots, { owner: user }))).toBe("needs_ok");
+    expect(service.tabs(coding)).toEqual([]);
+    expect(await code(service.navigate(coding, theirs.id, "https://a.example/"))).toBe("no_tab");
+    service.allowPersonsBrowser("sess_code", true);
+    expect(service.tabs(coding).map((t) => t.id)).toEqual([theirs.id]);
+    expect(await code(service.navigate(coding, theirs.id, "https://a.example/"))).toBeUndefined();
+    expect(await code(service.open(bots, { owner: user }))).toBe("needs_ok");
+    service.allowPersonsBrowser("sess_code", false);
+    expect(service.tabs(coding)).toEqual([]);
+  });
+
+  test("a plugin's call while it serves a tool call is that session's, never the plugin's (R7)", () => {
+    const plugin = { kind: "plugin", pluginId: "clover/browser" } as const;
+    expect(browserCallerOf(plugin)).toEqual({ kind: "plugin", pluginId: "clover/browser" });
+    expect(browserCallerOf(plugin, { kind: "session", sessionId: "s1", bot: "alpha" })).toEqual({ kind: "agent", bot: "alpha", session: "s1" });
+    expect(browserCallerOf(plugin, { kind: "session", sessionId: "s2" })).toEqual({ kind: "agent", session: "s2" });
+    expect(browserCallerOf({ kind: "peer", device: "d1", sessionId: "s3", bot: "luna" })).toEqual({ kind: "agent", bot: "luna", session: "s3" });
+    expect(browserCallerOf({ kind: "user" })).toEqual({ kind: "user" });
+    expect(browserCallerOf({ kind: "core" })).toEqual({ kind: "plugin", pluginId: "core" });
   });
 
   test("refused URLs never reach the app, at open or navigate", async () => {

@@ -3,16 +3,17 @@
 //
 // The live view is a native view the browser draws above all of the page's DOM, at the frame's place on screen, so
 // nothing of this panel ever sits over the frame: the failure notice is a line above it, the annotate tools a strip
-// below it, and nothing here is positioned out of the flow. Inside the frame there is only the placeholder, and
-// only while the browser's view is not on screen (no tab, or the tab not shown yet).
+// below it, and nothing here is positioned out of the flow. Inside the frame there is only the placeholder, or the
+// paused tab's last picture, and only while the browser's view is not on screen (no tab, the tab not shown yet, or
+// the live view in another panel; the paused mark is a line above the frame).
 import { useEffect, useId, useState, type ReactNode } from "react";
-import { IconAlert, IconBack, IconBox, IconForward, IconGlobe, IconPen, IconPointer, IconReload, IconStop, IconText } from "./icons";
+import { IconAlert, IconBack, IconBox, IconForward, IconGlobe, IconPause, IconPen, IconPointer, IconReload, IconStop, IconText } from "./icons";
 import { S } from "./strings";
 import type { AnnotateTool, BrowserChromeProps } from "./types";
 
 const TOOL_ICONS: Record<AnnotateTool, () => ReactNode> = { pointer: IconPointer, pen: IconPen, box: IconBox, text: IconText };
 
-export function BrowserChrome({ tab, live, onBack, onForward, onReload, onNavigate, error, frameRef, annotate }: BrowserChromeProps) {
+export function BrowserChrome({ tab, live, onBack, onForward, onReload, onNavigate, error, paused, frameRef, annotate }: BrowserChromeProps) {
   const errorId = useId();
   // What the user is typing, while they are: it belongs to one tab, and the bar follows the page whenever there is
   // none. A page that loads or redirects under the user's typing does not take it away.
@@ -71,9 +72,20 @@ export function BrowserChrome({ tab, live, onBack, onForward, onReload, onNaviga
             <span className="cl-browser__error-text">{error}</span>
           </p>
         )}
+        {paused && !live && (
+          <p className="cl-browser__paused" role="status">
+            <IconPause />
+            <span className="cl-browser__paused-text">{S.paused}</span>
+          </p>
+        )}
       </div>
       <div ref={frameRef} className="cl-browser__frame" aria-label={tab ? S.view(tab.title) : S.noTab} aria-busy={tab?.loading || undefined} role="region">
-        {!live && (
+        {paused && !live && (
+          <button type="button" className="cl-browser__still" aria-label={S.resume} title={S.resume} onClick={paused.onResume}>
+            {paused.picture !== undefined && <img className="cl-browser__still-picture" src={paused.picture} alt="" />}
+          </button>
+        )}
+        {!paused && !live && (
           <div className="cl-browser__placeholder">
             <IconGlobe />
             <p className="cl-browser__placeholder-title">{tab ? S.placeholderTitle : S.noTab}</p>

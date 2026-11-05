@@ -10,7 +10,7 @@ import type { Ref } from "react";
 // ---- Lane B's contract (mirrored) -----------------------------------------------------------------------------
 
 /** A bot's tabs live in its own partition, the user's in another. */
-export type TabOwner = { kind: "bot"; bot: string } | { kind: "user" };
+export type TabOwner = { kind: "bot"; bot: string } | { kind: "session"; session: string } | { kind: "user" };
 
 /** `headless` in the host window at the agent's 1280x800, `shown` in a browser view at the view's size, `resting` in
  *  the never-shown window until a bot's next command. */
@@ -37,8 +37,18 @@ export interface TabView {
 
 export type Unsubscribe = () => void;
 
-/** The `browser` member of the plugin API (the plugin needs the `browser` capability). The calls the view does not
- *  make (`screenshot`, `onCdpEvent`) are left out of this copy. */
+/** A picture of a tab (lane B's `Screenshot`). */
+export interface Screenshot {
+  format: "png" | "jpeg" | "webp";
+  /** Base64. */
+  data: string;
+  width: number;
+  height: number;
+  takenAt: number;
+}
+
+/** The `browser` member of the plugin API (the plugin needs the `browser` capability). The call the view does not
+ *  make (`onCdpEvent`) is left out of this copy. */
 export interface BrowserApi {
   tabs(filter?: { owner?: TabOwner; computer?: string }): Promise<TabView[]>;
   open(opts: { owner: TabOwner; url?: string; show?: boolean; computer?: string }): Promise<TabView>;
@@ -47,6 +57,7 @@ export interface BrowserApi {
   show(tab: string, view: string, viewport: Viewport): Promise<TabView>;
   hide(tab: string): Promise<TabView>;
   cdp<R = unknown>(tab: string, method: string, params?: Record<string, unknown>, opts?: { viewport?: Viewport }): Promise<R>;
+  screenshot(tab: string, opts?: { format?: "png" | "jpeg" | "webp"; quality?: number }): Promise<Screenshot>;
   watch(listener: (tab: TabView) => void): Unsubscribe;
 }
 
@@ -61,8 +72,9 @@ export interface PluginApi {
  *  in a bot's tab so the view shows that bot's tabs (a request to lanes B and F; see the container's comment). */
 export interface BrowserSpotProps {
   app?: string;
+  /** A coding session's panel shows that session's own tabs (R10), unless `bot` says whose. */
   session?: string;
-  /** Present in a bot's tab: whose tabs these are. Absent in a code session, which shows the user's tabs. */
+  /** Present in a bot's tab: whose tabs these are. */
   bot?: string;
 }
 
@@ -109,6 +121,9 @@ export interface BrowserChromeProps {
   onNavigate?: (input: string) => void | boolean | Promise<void | boolean>;
   /** A failure to say in plain words, attached to the bar. */
   error?: string | null;
+  /** The live view went to another panel the person used since (ruling R8): the frame holds the tab's last picture,
+   *  and using it brings the live view back here. */
+  paused?: { picture?: string; onResume: () => void };
   /** The frame the browser's live view fills; the container measures it. */
   frameRef?: Ref<HTMLDivElement>;
   /** Mark up the page for the bot: point, draw, box or write on it. Not mounted until the API can send marks. */

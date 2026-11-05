@@ -10,7 +10,8 @@
 //   * a resize of the frame waits for it to settle (`debounceMs`, 100 by default) and then shows the tab again at
 //     the new size, which moves it without a reload;
 //   * no tab wanted, or a frame with no size (a hidden panel), hides what is shown;
-//   * calls go out one after another, so a `hide` is never overtaken by an earlier `show`.
+//   * calls go out one after another, so a `hide` is never overtaken by an earlier `show`;
+//   * `claim` shows the wanted tab again, when the person uses this panel after another took the live view (R8).
 import { useEffect, useRef } from "react";
 import type { BrowserApi, TabView, Viewport } from "./types";
 
@@ -79,6 +80,14 @@ export class LiveView {
     }, this.debounceMs);
   }
 
+  /** The person used this panel again after another panel took the live view (ruling R8): the tab it wants goes back
+   *  in its view at once. */
+  claim(): void {
+    if (this.disposed || this.shown === null) return;
+    this.clearTimer();
+    this.show(this.shown);
+  }
+
   /** The panel is going away: whatever is shown goes back, and nothing more is sent. */
   dispose(): void {
     if (this.disposed) return;
@@ -128,7 +137,7 @@ export function useLiveView(
   target: LiveTarget | null,
   handlers: LiveViewHandlers,
   debounceMs: number = DEBOUNCE_MS,
-): void {
+): { claim: () => void } {
   const live = useRef<LiveView | null>(null);
   const handlersRef = useRef(handlers);
   handlersRef.current = handlers;
@@ -156,4 +165,6 @@ export function useLiveView(
   useEffect(() => {
     live.current?.set(id === undefined || width === undefined || height === undefined ? null : { id, size: { width, height } });
   }, [api, view, debounceMs, id, width, height]);
+
+  return { claim: () => live.current?.claim() };
 }

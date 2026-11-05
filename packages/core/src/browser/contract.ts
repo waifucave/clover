@@ -7,8 +7,10 @@
 // `headless` means "offscreen, drawing at the bots' rate" rather than "in a host window"; while a screen reader is on,
 // new bot tabs start as real views in a hidden host window instead (the hybrid). Neither changes a name here.
 
-/** A bot's tabs live in its own partition, the user's in another; never per site (§12.1). */
-export type TabOwner = { kind: "bot"; bot: string } | { kind: "user" };
+/** A bot's tabs live in its own partition, the user's in another; never per site (§12.1). A session without a bot (a
+ *  coding session) has a partition of its own too (ruling R10: the person's is never a session's by default).
+ *  `session` is not in lane B's pin yet: proposed to B. */
+export type TabOwner = { kind: "bot"; bot: string } | { kind: "session"; session: string } | { kind: "user" };
 
 /** Where a tab is: `headless` (drawing for a bot at 1280×800), `shown` (in a browser view at the view's size) or
  *  `resting` (not drawing, until a bot's next command). */

@@ -1,6 +1,6 @@
 ## The Browser tool
 
-`Browser` drives the Clover Browser: real web pages in tabs of your own, drawn out of sight at 1280×800. A bot's tabs are its own, with its own sign-ins; a session with no bot uses the person's tabs. The person can watch any of them live in the browser view.
+`Browser` drives the Clover Browser: real web pages in tabs of your own, drawn out of sight at 1280×800. A bot's tabs are its own, with its own sign-ins; a session with no bot has tabs of its own too. The person's own browser, with their sign-ins, is theirs: a session uses it only after they say yes for that session. The person can watch any of them live in the browser view.
 
 **A good loop:** `open` a tab once, then `navigate` it as you go (don't pile up tabs). After each step, look before you act: `read` for the page's text and its interactive elements, or `screenshot` for a picture. Act with `click`, `type`, `key`, `select` and `scroll`, then look again. `wait` for text, a selector or the load when a page is slow.
 
