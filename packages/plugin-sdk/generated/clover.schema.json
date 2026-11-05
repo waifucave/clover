@@ -651,7 +651,7 @@
               "maxItems": 1000,
               "type": "array",
               "items": {
-                "$ref": "#/$defs/__schema53"
+                "$ref": "#/$defs/__schema54"
               }
             }
           ]
@@ -1654,6 +1654,21 @@
                 "$ref": "#/$defs/__schema17"
               },
               "additionalProperties": {}
+            },
+            "session": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/__schema53"
+                },
+                {
+                  "minItems": 1,
+                  "maxItems": 4,
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/__schema53"
+                  }
+                }
+              ]
             }
           },
           "additionalProperties": {}
@@ -1746,6 +1761,15 @@
       "maxLength": 128
     },
     "__schema53": {
+      "type": "string",
+      "enum": [
+        "bot",
+        "side-thread",
+        "agent",
+        "coding"
+      ]
+    },
+    "__schema54": {
       "type": "object",
       "propertyNames": {
         "type": "string"

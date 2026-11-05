@@ -21,7 +21,13 @@
 // * The user can message a bot only while connected to the computer running it (§6.4): otherwise `bot_asleep`.
 // * Messages keep send order on the shared clock; one whose stamp falls before output the model already produced is
 //   placed after that output, keeping its real send time (§6.4 "Late arrivals"). The user's messages waiting together
-//   run in `(sentAt, device)` order (`compareStamps`), whatever order they arrived in from their devices.
+//   run in `(sentAt, device)` order (`compareStamps`), whatever order they arrived in from their devices. The host
+//   clamps every `sentAt` to its receive time plus or minus `SENT_AT_WINDOW_MS` (`clampSentAt`, review N5) before it
+//   orders or records the message, so a skewed or hostile stamp can't jump the queue or backdate the transcript.
+// * A user's message another computer relays (`peer.session.send`) is the user's turn only with the sending device's
+//   good signature (`verifyUserMessage`, review N3): over the session, the message id, the message's hash and its
+//   own `sentAt`, by a device that may answer cards, its `sentAt` inside the window. Otherwise it still reaches the
+//   session, but its turn's origin is `peer`, never `user`: its cards expire and nothing it asks counts as the user's.
 //
 // The log records are the host's own vocabulary. Lane D projects them onto the wire: the user's `input` is the
 // inherited `user_message` with `UserMessageStamp`, from a bot `bot_message`, from an agent `agent_message`, a task
@@ -29,8 +35,12 @@
 // map to `turn_started` and `turn_completed`; `driver` records are the runtime's own events (tool calls, text,
 // thinking). A session's view carries its needs-you counts (`SessionView.needsYou`): its pending cards and its
 // unanswered questions.
-import type { SessionFailure, SessionKind, SessionStatus, SessionView, TurnOrigin } from "@waifucave/clover-protocol";
-import type { Unsubscribe } from "./common";
+import {
+  SENT_AT_WINDOW_MS, type SessionFailure, type SessionKind, type SessionStatus, type SessionView, type TurnOrigin, type UserMessageInput,
+  userMessageHashInput, userMessageSigningInput,
+} from "@waifucave/clover-protocol";
+import { fromBase64, type Unsubscribe } from "./common";
+import { mayAnswerCards, type DeviceRegistry } from "./device-registry";
 
 export type AgentStopReason = "end_turn" | "refusal" | "cancelled" | "stopped" | "stalled" | "sign-in" | "crashed" | "error";
 
@@ -44,6 +54,9 @@ export type UserInput = {
   images?: { n: number; path: string }[];
   /** Other attachments, as folder-tree paths (§8.5). */
   files?: { n: number; path: string }[];
+  /** Set when another computer relayed it (`peer.session.send`): the relaying computer's device, and whether the
+   *  sending device's signature held (`verifyUserMessage`). Unsigned, its turn's origin is `peer` (review N3). */
+  relayed?: { by: string; signed: boolean };
 };
 
 export type DeliveredInput =
@@ -64,7 +77,7 @@ export type Disposition = "turn" | "interrupted" | "folded" | "queued" | "note";
 export function originOf(input: TurnInput): TurnOrigin {
   switch (input.from) {
     case "user":
-      return "user";
+      return input.relayed && !input.relayed.signed ? "peer" : "user";
     case "bot":
       return "bot";
     case "agent":
@@ -77,6 +90,24 @@ export function originOf(input: TurnInput): TurnOrigin {
     case "note":
       return "plugin";
   }
+}
+
+/** How the computer running a bot checks a relayed user message (review N3): the sending device may answer cards, the
+ *  message carries its own `sentAt` within `SENT_AT_WINDOW_MS` of `now`, and the device's answer key signed
+ *  `userMessageSigningInput` over this session, the message id, the message's hash and that `sentAt`. */
+export async function verifyUserMessage(
+  m: { session: string; device: string; message: Pick<UserMessageInput, "text" | "images" | "files" | "clientMessageId" | "sentAt" | "signature"> },
+  c: { now: number; sha256(text: string): string; devices: Pick<DeviceRegistry, "get" | "verifyAnswer"> },
+): Promise<boolean> {
+  const { message } = m;
+  if (message.signature === undefined || message.sentAt === undefined) return false;
+  if (Math.abs(message.sentAt - c.now) > SENT_AT_WINDOW_MS) return false;
+  const device = c.devices.get(m.device);
+  if (!device || !mayAnswerCards(device)) return false;
+  const signature = fromBase64(message.signature);
+  if (!signature) return false;
+  const input = userMessageSigningInput({ session: m.session, clientMessageId: message.clientMessageId, hash: c.sha256(userMessageHashInput(message)), sentAt: message.sentAt });
+  return c.devices.verifyAnswer(m.device, new TextEncoder().encode(input), signature);
 }
 
 export interface SessionSpec {
@@ -144,6 +175,7 @@ export interface SessionHost {
   open(spec: SessionSpec, driver: SessionDriver): SessionView;
   list(filter?: { bot?: string; kind?: SessionKind; parent?: string }): SessionView[];
   get(id: string): SessionView | undefined;
+  /** The user's message. Its `sentAt` is clamped to the host's clock plus or minus `SENT_AT_WINDOW_MS` first (N5). */
   sendUser(id: string, input: Omit<UserInput, "from">): Promise<{ disposition: Disposition }>;
   deliver(id: string, input: DeliveredInput): Promise<{ disposition: Disposition }>;
   /** The user's interrupt of this session's current step. */

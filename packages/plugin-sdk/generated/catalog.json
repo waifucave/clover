@@ -69,6 +69,12 @@
       "warns": false
     },
     {
+      "name": "terminal",
+      "lets": "Open terminals on your computers and pass them the user's own key presses and pastes: a paste of several lines asks first",
+      "ok": "runs commands on your computers",
+      "warns": true
+    },
+    {
       "name": "usage.read",
       "lets": "Read usage rows and plan readings",
       "ok": "sees your usage and plan readings",
@@ -797,7 +803,10 @@
       "shape": "keyed",
       "declaredBy": "shell",
       "inBotTab": false,
-      "doc": "The panel host, keyed by panel: each panel (session, terminal, diff, files, browser) is a plugin of its own, and replaceable.",
+      "context": [
+        "session"
+      ],
+      "doc": "The panel host, keyed by panel: each panel (session, terminal, diff, files, browser) is a plugin of its own, and replaceable. A panel for some sessions only says so with `when.session` (the code-only panels: `\"coding\"`); a key no plugin fills shows the host's placeholder.",
       "fields": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -837,6 +846,9 @@
         "type": "object",
         "properties": {
           "app": {
+            "type": "string"
+          },
+          "session": {
             "type": "string"
           }
         },
@@ -907,9 +919,9 @@
     {
       "name": "settings.section",
       "shape": "list",
-      "declaredBy": "shell",
+      "declaredBy": "settings",
       "inBotTab": false,
-      "doc": "A section of the settings screen.",
+      "doc": "A section of the settings screen, which the settings part (`main` key `settings`) declares.",
       "fields": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -2148,299 +2160,375 @@
     {
       "name": "color.canvas",
       "type": "color",
-      "default": "#F6F6F8",
-      "dark": "#212126",
+      "default": "#F5F5F5",
+      "dark": "#202020",
       "doc": "The base plane: the sidebar and the app's background."
     },
     {
       "name": "color.surface",
       "type": "color",
       "default": "#FFFFFF",
-      "dark": "#18181C",
+      "dark": "#191919",
       "doc": "The content plane: the conversation and settings pages."
     },
     {
       "name": "color.raised",
       "type": "color",
-      "default": "#F3F3F6",
-      "dark": "#232329",
+      "default": "#F7F7F7",
+      "dark": "#242424",
       "doc": "One step above the content: tool output, inner cards, code blocks."
     },
     {
       "name": "color.control",
       "type": "color",
-      "default": "#EDEDF1",
-      "dark": "#2D2D34",
+      "default": "#F0F0F0",
+      "dark": "#2A2A2A",
       "doc": "Small controls: chips, toggle tracks, icon circles."
     },
     {
       "name": "color.float",
       "type": "color",
       "default": "#FFFFFF",
-      "dark": "#2B2B31",
+      "dark": "#1F1F1F",
       "doc": "Anything floating above content: menus, popovers, palettes."
     },
     {
       "name": "color.hairline",
       "type": "color",
-      "default": "#E4E4EA",
-      "dark": "#303037",
+      "default": "#E8E8E8",
+      "dark": "#2B2B2B",
       "doc": "Dividers and rims on the canvas and the content plane."
     },
     {
       "name": "color.hairline.raised",
       "type": "color",
-      "default": "#D6D6DE",
-      "dark": "#3B3B44",
+      "default": "#DCDCDC",
+      "dark": "#373737",
       "doc": "The same rule drawn on raised and control surfaces."
     },
     {
       "name": "color.hover",
       "type": "color",
-      "default": "#EFEFF3",
-      "dark": "#2A2A30",
+      "default": "#EFEFEF",
+      "dark": "#2A2A2A",
       "doc": "A row's fill under the pointer."
     },
     {
       "name": "color.selected",
       "type": "color",
-      "default": "#E7E7EE",
-      "dark": "#34343C",
+      "default": "#DFDFDF",
+      "dark": "#3D3D3D",
       "doc": "A selected row's fill. Navigation stays neutral: never the accent."
+    },
+    {
+      "name": "sidebar.tint",
+      "type": "color",
+      "default": "#F5F5F5B3",
+      "dark": "#202020B3",
+      "doc": "The sidebar over the window's material."
+    },
+    {
+      "name": "sidebar.solid",
+      "type": "color",
+      "default": "#F5F5F5",
+      "dark": "#202020",
+      "doc": "The sidebar where the window has no material (Linux)."
+    },
+    {
+      "name": "titlebar.tint",
+      "type": "color",
+      "default": "#FFFFFFC7",
+      "dark": "#191919C7",
+      "doc": "The title bar over what scrolls under it."
+    },
+    {
+      "name": "titlebar.blur",
+      "type": "dimension",
+      "default": "16px",
+      "doc": "The title bar's backdrop blur."
+    },
+    {
+      "name": "titlebar.height",
+      "type": "dimension",
+      "default": "45px",
+      "doc": "The title bar's height, its rule included."
     },
     {
       "name": "color.text",
       "type": "color",
-      "default": "#1C1B22",
-      "dark": "#F4F3F8",
+      "default": "#1F1F1F",
+      "dark": "#F2F2F2",
       "doc": "Body text."
     },
     {
       "name": "color.text.secondary",
       "type": "color",
-      "default": "#3B3A45",
-      "dark": "#DCDBE3",
+      "default": "#3A3A3A",
+      "dark": "#D0D0D0",
       "doc": "Sidebar and secondary text."
     },
     {
       "name": "color.text.muted",
       "type": "color",
-      "default": "#676674",
-      "dark": "#9B9AA8",
+      "default": "#6B6B6B",
+      "dark": "#9E9E9E",
       "doc": "Quiet meta: timestamps, labels, trailing words."
     },
     {
       "name": "color.text.placeholder",
       "type": "color",
-      "default": "#9C9BA6",
-      "dark": "#66656F",
+      "default": "#6D6D6D",
+      "dark": "#9A9A9A",
       "doc": "A field's placeholder."
     },
     {
       "name": "color.text.inverse",
       "type": "color",
       "default": "#FFFFFF",
-      "dark": "#18181C",
+      "dark": "#191919",
       "doc": "Text on a text-coloured fill."
     },
     {
       "name": "color.accent",
       "type": "color",
-      "default": "#C2387A",
-      "dark": "#FF7AB6",
-      "doc": "The brand accent: primary actions, focus, the send button."
+      "default": "#2F6FDF",
+      "dark": "#4180E3",
+      "follows": "system",
+      "doc": "The accent: controls, primary actions, the send button. It follows the OS accent."
     },
     {
       "name": "color.accent.text",
       "type": "color",
-      "default": "#B12F6E",
-      "dark": "#FF8CC1",
+      "default": "#1F5FCC",
+      "dark": "#A7C4E6",
       "doc": "The accent carrying text, at 4.5:1 or more on the content plane."
     },
     {
       "name": "color.accent.soft",
       "type": "color",
-      "default": "#FBEAF2",
-      "dark": "#3A2130",
+      "default": "#E8F0FC",
+      "dark": "#1F2633",
       "doc": "A wash of the accent: a chosen chip, a highlighted mention."
     },
     {
       "name": "color.accent.contrast",
       "type": "color",
       "default": "#FFFFFF",
-      "dark": "#2A0F1C",
+      "follows": "auto",
       "doc": "Text labels on an accent fill, at 4.5:1 or more (`auto` resolves it)."
     },
     {
       "name": "color.accent.glyph",
       "type": "color",
       "default": "#FFFFFF",
-      "dark": "#2A0F1C",
+      "follows": "auto",
       "doc": "Glyphs on an accent fill (✓, ↑, ✕), at 3:1 or more (`auto` resolves it)."
     },
     {
       "name": "color.accent.ink",
       "type": "color",
-      "default": "#1C1B22",
-      "dark": "#2A0F1C",
-      "doc": "The theme's dark ink on an accent, where white falls short."
+      "default": "#111111",
+      "doc": "The theme's dark ink for glyphs on an accent, where white falls short of 3:1."
     },
     {
       "name": "color.attention",
       "type": "color",
-      "default": "#E09A00",
-      "dark": "#FFC747",
+      "default": "#C27C00",
+      "dark": "#ECD575",
       "doc": "Needs you: a waiting card, a question for the user."
     },
     {
       "name": "color.attention.text",
       "type": "color",
       "default": "#8A5A00",
-      "dark": "#FFD27A",
+      "dark": "#ECD575",
       "doc": "Attention carrying text."
     },
     {
       "name": "color.danger",
       "type": "color",
-      "default": "#C2302E",
-      "dark": "#FF6B70",
+      "default": "#C93C3C",
+      "dark": "#D7706A",
       "doc": "Errors and actions that destroy something."
     },
     {
       "name": "color.success",
       "type": "color",
       "default": "#1E7F47",
-      "dark": "#4CC38A",
+      "dark": "#8CC283",
       "doc": "Done, connected, running."
     },
     {
       "name": "color.diff.added",
       "type": "color",
-      "default": "#1E7F47",
-      "dark": "#4CC38A",
+      "default": "#1A7F37",
+      "dark": "#8CC283",
       "doc": "Lines a diff adds."
     },
     {
       "name": "color.diff.removed",
       "type": "color",
-      "default": "#C2302E",
-      "dark": "#FF6B70",
+      "default": "#C2364F",
+      "dark": "#DA6F80",
       "doc": "Lines a diff removes."
+    },
+    {
+      "name": "color.diff.added.soft",
+      "type": "color",
+      "default": "#1A7F371A",
+      "dark": "#8CC28324",
+      "doc": "The tint behind a line a diff adds."
+    },
+    {
+      "name": "color.diff.removed.soft",
+      "type": "color",
+      "default": "#C2364F17",
+      "dark": "#DA6F8024",
+      "doc": "The tint behind a line a diff removes."
+    },
+    {
+      "name": "color.branch",
+      "type": "color",
+      "default": "#6F52C4",
+      "dark": "#B19EDE",
+      "doc": "A session's branch badge."
+    },
+    {
+      "name": "color.unread",
+      "type": "color",
+      "default": "#8A8A8A",
+      "dark": "#848484",
+      "doc": "The unread dot: a neutral grey."
+    },
+    {
+      "name": "color.brand",
+      "type": "color",
+      "default": "#C2387A",
+      "dark": "#FF7AB6",
+      "doc": "Clover's mark: the one place the brand pink shows, since the accent follows the OS."
+    },
+    {
+      "name": "color.scrim",
+      "type": "color",
+      "default": "#00000033",
+      "dark": "#00000080",
+      "doc": "Behind a dialog."
     },
     {
       "name": "color.focus",
       "type": "color",
-      "default": "#C2387A",
-      "dark": "#FF7AB6",
+      "default": "#2F6FDF",
+      "dark": "#4180E3",
+      "follows": "system",
       "doc": "The keyboard focus ring."
     },
     {
       "name": "bubble.user.background",
       "type": "color",
-      "default": "#FBE8F1",
-      "dark": "#3A2433",
+      "default": "#F0F0F0",
+      "dark": "#2A2A2A",
       "doc": "The user's own message."
     },
     {
       "name": "bubble.user.text",
       "type": "color",
-      "default": "#1C1B22",
-      "dark": "#F4F3F8",
+      "default": "#1F1F1F",
+      "dark": "#F2F2F2",
       "doc": "Text in the user's message."
     },
     {
       "name": "bubble.bot.background",
       "type": "color",
       "default": "#FFFFFF00",
-      "dark": "#18181C00",
+      "dark": "#19191900",
       "doc": "The bot's message. Clear by default: replies sit on the content plane."
     },
     {
       "name": "bubble.bot.rim",
       "type": "color",
       "default": "#FFFFFF00",
-      "dark": "#18181C00",
+      "dark": "#19191900",
       "doc": "The bot's message rim."
     },
     {
       "name": "bubble.bot.text",
       "type": "color",
-      "default": "#1C1B22",
-      "dark": "#F4F3F8",
+      "default": "#1F1F1F",
+      "dark": "#F2F2F2",
       "doc": "Text in the bot's message."
     },
     {
       "name": "bubble.radius",
       "type": "dimension",
-      "default": "18px",
+      "default": "16px",
       "doc": "A message bubble's corner."
     },
     {
       "name": "composer.background",
       "type": "color",
       "default": "#FFFFFF",
-      "dark": "#2E2E35",
+      "dark": "#303030",
       "doc": "The composer's face."
     },
     {
       "name": "composer.rim",
       "type": "color",
-      "default": "#E1E1E7",
-      "dark": "#3E3E47",
+      "default": "#D9D9D9",
+      "dark": "#3F3F3F",
       "doc": "The composer's hairline."
     },
     {
       "name": "composer.text",
       "type": "color",
-      "default": "#1C1B22",
-      "dark": "#F4F3F8",
+      "default": "#1F1F1F",
+      "dark": "#F2F2F2",
       "doc": "What the user types."
     },
     {
       "name": "composer.placeholder",
       "type": "color",
-      "default": "#9C9BA6",
-      "dark": "#77767F",
+      "default": "#737373",
+      "dark": "#9A9A9A",
       "doc": "The composer's placeholder."
     },
     {
       "name": "composer.radius",
       "type": "dimension",
-      "default": "24px",
+      "default": "12px",
       "doc": "The composer's corner."
     },
     {
       "name": "card.background",
       "type": "color",
-      "default": "#F3F3F6",
-      "dark": "#232329",
+      "default": "#FFFFFF",
+      "dark": "#202020",
       "doc": "An approval card's face."
     },
     {
       "name": "card.text",
       "type": "color",
-      "default": "#1C1B22",
-      "dark": "#F4F3F8",
+      "default": "#1F1F1F",
+      "dark": "#F2F2F2",
       "doc": "What the card asks."
     },
     {
       "name": "card.muted",
       "type": "color",
-      "default": "#676674",
-      "dark": "#9B9AA8",
+      "default": "#6B6B6B",
+      "dark": "#9E9E9E",
       "doc": "The card's meta: the computer, the tool."
     },
     {
       "name": "card.rim",
       "type": "color",
-      "default": "#D6D6DE",
-      "dark": "#3B3B44",
+      "default": "#D9D9D9",
+      "dark": "#3F3F3F",
       "doc": "The card's rim."
     },
     {
       "name": "card.radius",
       "type": "dimension",
-      "default": "20px",
+      "default": "12px",
       "doc": "The card's corner."
     },
     {
@@ -2452,36 +2540,30 @@
     {
       "name": "card.approve.background",
       "type": "color",
-      "default": "#C2387A",
-      "dark": "#FF7AB6",
+      "default": "#2F6FDF",
+      "dark": "#3570D8",
+      "follows": "system",
       "doc": "The approve button."
     },
     {
       "name": "card.approve.text",
       "type": "color",
       "default": "#FFFFFF",
-      "dark": "#2A0F1C",
+      "follows": "auto",
       "doc": "The approve button's label and glyph (`auto` resolves it at 4.5:1)."
-    },
-    {
-      "name": "card.approve.ink",
-      "type": "color",
-      "default": "#1C1B22",
-      "dark": "#2A0F1C",
-      "doc": "The card's dark ink on the approve button, where white falls short."
     },
     {
       "name": "card.deny.background",
       "type": "color",
-      "default": "#E6E6EC",
-      "dark": "#34343C",
+      "default": "#EDEDED",
+      "dark": "#3B3B3B",
       "doc": "The deny button."
     },
     {
       "name": "card.deny.text",
       "type": "color",
-      "default": "#1C1B22",
-      "dark": "#F4F3F8",
+      "default": "#1F1F1F",
+      "dark": "#F2F2F2",
       "doc": "The deny button's label."
     },
     {
@@ -2523,7 +2605,7 @@
     {
       "name": "font.display",
       "type": "fontFamily",
-      "default": "ui-serif, \"New York\", \"Iowan Old Style\", \"Noto Serif\", Georgia, serif",
+      "default": "system-ui, -apple-system, \"Segoe UI Variable Text\", \"Segoe UI\", \"Noto Sans\", Ubuntu, Cantarell, sans-serif",
       "doc": "Bot names, greetings and the wordmark."
     },
     {
@@ -2535,25 +2617,25 @@
     {
       "name": "font.size.caption",
       "type": "dimension",
-      "default": "11px",
+      "default": "12px",
       "doc": "Small meta."
     },
     {
       "name": "font.size.label",
       "type": "dimension",
-      "default": "12px",
+      "default": "13px",
       "doc": "Labels."
     },
     {
       "name": "font.size.control",
       "type": "dimension",
-      "default": "13px",
+      "default": "14px",
       "doc": "Sidebar rows and controls."
     },
     {
       "name": "font.size.body",
       "type": "dimension",
-      "default": "14px",
+      "default": "15px",
       "doc": "Body text and typing."
     },
     {
@@ -2613,7 +2695,7 @@
     {
       "name": "font.line.body",
       "type": "number",
-      "default": 1.62,
+      "default": 1.4,
       "doc": "Body line height."
     },
     {
@@ -2621,6 +2703,12 @@
       "type": "number",
       "default": 1.25,
       "doc": "Line height for one-line labels and headings."
+    },
+    {
+      "name": "font.line.code",
+      "type": "number",
+      "default": 1.4,
+      "doc": "Line height for code and tool output."
     },
     {
       "name": "radius.small",
@@ -2631,13 +2719,13 @@
     {
       "name": "radius.medium",
       "type": "dimension",
-      "default": "10px",
+      "default": "8px",
       "doc": "Medium corners: buttons, fields."
     },
     {
       "name": "radius.large",
       "type": "dimension",
-      "default": "16px",
+      "default": "12px",
       "doc": "Large corners: panels, inner cards."
     },
     {
@@ -2777,13 +2865,15 @@
     {
       "name": "island.accept",
       "type": "color",
-      "default": "#0A85FF",
+      "default": "#4180E3",
+      "follows": "system",
       "doc": "The ✓ circle."
     },
     {
       "name": "island.accept.text",
       "type": "color",
       "default": "#FFFFFF",
+      "follows": "auto",
       "doc": "The ✓ glyph."
     },
     {
@@ -2801,7 +2891,7 @@
     {
       "name": "island.working",
       "type": "color",
-      "default": "#FF7AB6",
+      "default": "#4180E3",
       "doc": "The working bolt."
     },
     {
@@ -2873,7 +2963,7 @@
     {
       "name": "pill.placeholder",
       "type": "color",
-      "default": "#686868",
+      "default": "#7A7A7A",
       "doc": "The compact pill's placeholder."
     },
     {
@@ -2909,8 +2999,16 @@
     {
       "name": "pill.accept",
       "type": "color",
-      "default": "#0A85FF",
+      "default": "#4180E3",
+      "follows": "system",
       "doc": "The ✓ circle on a pill card."
+    },
+    {
+      "name": "pill.accept.text",
+      "type": "color",
+      "default": "#FFFFFF",
+      "follows": "auto",
+      "doc": "The ✓ glyph on a pill card."
     },
     {
       "name": "pill.success",
@@ -2977,8 +3075,8 @@
     {
       "name": "stage.glow",
       "type": "color",
-      "default": "#C2387A1F",
-      "dark": "#FF7AB61F",
+      "default": "#2F6FDF1F",
+      "dark": "#4180E31F",
       "doc": "The light behind the avatar."
     },
     {
@@ -2998,15 +3096,15 @@
     {
       "name": "avatar.light.fill",
       "type": "color",
-      "default": "#FFF1F8",
-      "dark": "#B9A8FF",
+      "default": "#F2F6FF",
+      "dark": "#C9D8F2",
       "doc": "The avatar's fill light."
     },
     {
       "name": "avatar.light.rim",
       "type": "color",
       "default": "#FFFFFF",
-      "dark": "#FF9CC9",
+      "dark": "#DCE6F7",
       "doc": "The avatar's rim light."
     },
     {
@@ -3272,6 +3370,26 @@
     "browser.watch": {
       "capability": "browser",
       "where": "both"
+    },
+    "terminal.open": {
+      "capability": "terminal",
+      "where": "ui"
+    },
+    "terminal.write": {
+      "capability": "terminal",
+      "where": "ui"
+    },
+    "terminal.onData": {
+      "capability": "terminal",
+      "where": "ui"
+    },
+    "terminal.resize": {
+      "capability": "terminal",
+      "where": "ui"
+    },
+    "terminal.close": {
+      "capability": "terminal",
+      "where": "ui"
     },
     "usage.rows": {
       "capability": "usage.read",

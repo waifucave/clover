@@ -1,10 +1,14 @@
-// FakeTree: one in-memory file system per computer, joined into the folder tree, with each computer's fence and an
-// on/off switch. It never touches the real disk.
-import { pluginIdFromSegment, pluginIdToSegment, type Caller, type FileStat } from "@waifucave/clover-protocol";
+// FakeTree: one in-memory file system per computer, joined into the folder tree, with each computer's fence, level
+// and an on/off switch. It never touches the real disk. A peer's change is judged as the computer holding the files
+// would judge it (review N2), with signed answers checked by `verifySignedAnswer`.
+import { createHash } from "node:crypto";
+import { DEFAULT_LEVEL, pluginIdFromSegment, pluginIdToSegment, type Caller, type FileStat, type Level } from "@waifucave/clover-protocol";
+import { type AnswerDevices, type AnswerLedger, type CallCardRenderer, verifySignedAnswer } from "../approval-broker";
 import type { Clock } from "../clock";
 import { ContractError, isInside, normalizePosix } from "../common";
 import type { Fence, FenceOp } from "../fence";
-import { splitTreePath, type Tree, type TreeCallOptions, type TreeData, type TreeLocation } from "../tree";
+import { MemoryAnswerLedger } from "./approval-broker";
+import { peerTreeDecision, splitTreePath, treeCallBinding, type Tree, type TreeCallOptions, type TreeChange, type TreeData, type TreeLocation } from "../tree";
 
 interface Node {
   type: "file" | "dir";
@@ -21,7 +25,12 @@ export interface FakeTreeComputer {
   online?: boolean;
   aliases?: string[];
   fence?: Pick<Fence, "check">;
+  /** The computer's approval level, which a peer's change is judged at (`DEFAULT_LEVEL` when unset). */
+  level?: Level;
 }
+
+const sha256 = (text: string) => createHash("sha256").update(text).digest("hex");
+const NO_DEVICES: AnswerDevices = { get: () => undefined, verifyAnswer: async () => false };
 
 const enc = new TextEncoder();
 const dec = new TextDecoder();
@@ -34,10 +43,24 @@ export class FakeTree implements Tree {
   readonly #computers = new Map<string, FakeTreeComputer>();
   readonly #fs = new Map<string, Map<string, Node>>();
   readonly #botComputer: (bot: string) => string | undefined;
+  readonly #devices: AnswerDevices;
+  readonly #ledger: AnswerLedger;
+  readonly #render: CallCardRenderer;
 
-  constructor(opts: { clock: Pick<Clock, "now">; computers: Record<string, FakeTreeComputer>; botComputer: (bot: string) => string | undefined }) {
+  /** `devices`, `ledger` and `render` check a peer's signed answers (none counts by default). */
+  constructor(opts: {
+    clock: Pick<Clock, "now">;
+    computers: Record<string, FakeTreeComputer>;
+    botComputer: (bot: string) => string | undefined;
+    devices?: AnswerDevices;
+    ledger?: AnswerLedger;
+    render?: CallCardRenderer;
+  }) {
     this.#clock = opts.clock;
     this.#botComputer = opts.botComputer;
+    this.#devices = opts.devices ?? NO_DEVICES;
+    this.#ledger = opts.ledger ?? new MemoryAnswerLedger();
+    this.#render = opts.render ?? (() => undefined);
     for (const [name, c] of Object.entries(opts.computers)) this.addComputer(name, c);
   }
 
@@ -55,6 +78,12 @@ export class FakeTree implements Tree {
   setOnline(name: string, online: boolean): void {
     const c = this.#computers.get(name);
     if (c) c.online = online;
+  }
+
+  /** Sets a computer's level (the ComputerRegistry's job in the real core). */
+  setLevel(name: string, level: Level): void {
+    const c = this.#computers.get(name);
+    if (c) c.level = level;
   }
 
   resolve(path: string): TreeLocation {
@@ -100,6 +129,7 @@ export class FakeTree implements Tree {
 
   async write(path: string, data: TreeData, opts: TreeCallOptions & { executable?: boolean }): Promise<void> {
     const loc = this.#reach(path, { op: "write", path: "" }, opts);
+    await this.#peerJudged([loc.computer], treeCallBinding("tree.write", { path, data }), "edit", opts);
     const fs = this.#fs.get(loc.computer)!;
     const existing = fs.get(loc.path);
     if (existing?.type === "dir") throw new ContractError("invalid", `${path} is a folder`);
@@ -123,6 +153,7 @@ export class FakeTree implements Tree {
 
   async remove(path: string, opts: TreeCallOptions & { recursive?: boolean }): Promise<void> {
     const loc = this.#reach(path, { op: "delete", path: "" }, opts);
+    await this.#peerJudged([loc.computer], treeCallBinding("tree.remove", opts.recursive === undefined ? { path } : { path, recursive: opts.recursive }), "delete", opts);
     const fs = this.#fs.get(loc.computer)!;
     const node = fs.get(loc.path);
     if (!node) throw new ContractError("not_found", `${path} doesn't exist`);
@@ -141,6 +172,7 @@ export class FakeTree implements Tree {
       this.#fenced(src.computer, { op: "delete", path: src.path }, opts.as);
       this.#fenced(dst.computer, { op: "write", path: dst.path }, opts.as);
     }
+    await this.#peerJudged([...new Set([src.computer, dst.computer])], treeCallBinding("tree.move", { from, to }), "move", opts);
     const sfs = this.#fs.get(src.computer)!;
     const dfs = this.#fs.get(dst.computer)!;
     if (!sfs.get(src.path)) throw new ContractError("not_found", `${from} doesn't exist`);
@@ -201,6 +233,24 @@ export class FakeTree implements Tree {
     if (!this.#computers.get(computer)?.online) throw new ContractError("computer_offline", `${computer} is offline`, { computer });
   }
 
+  /** A peer's change, judged at the strictest of the holders' levels and the call's (review N2); the first computer
+   *  is the one the call came to, which a signed answer binds. */
+  async #peerJudged(computers: string[], change: TreeChange, effect: "edit" | "delete" | "move", opts: TreeCallOptions): Promise<void> {
+    if (opts.as.kind !== "peer") return;
+    if (opts.level === undefined) throw new ContractError("invalid", "a peer's change says its level");
+    const levels = computers.map((c) => this.#computers.get(c)?.level ?? DEFAULT_LEVEL);
+    const decision = peerTreeDecision(levels, opts.level, effect);
+    if (decision === "allow") return;
+    if (decision === "refuse") throw new ContractError("refused", `${computers.join(" and ")} doesn't let another computer change files at its level`);
+    if (!opts.answer) throw new ContractError("refused", "this change needs the user's answer, signed and bound to it");
+    const verdict = await verifySignedAnswer(opts.answer, {
+      self: computers[0]!, method: change.method, params: change.params, now: this.#clock.now(), sha256,
+      devices: this.#devices, ledger: this.#ledger, render: this.#render,
+    });
+    if (verdict !== "ok") throw new ContractError("refused", `the answer doesn't hold for this change (${verdict})`);
+  }
+
+  /** Every caller but the user on this computer and the core is fenced: a peer always (review N2). */
   #fenced(computer: string, op: FenceOp, as: Caller | undefined): void {
     if (as === undefined) throw new ContractError("invalid", "a tree call says whom it is for (`as`)");
     if (as.kind === "user" || as.kind === "core") return;

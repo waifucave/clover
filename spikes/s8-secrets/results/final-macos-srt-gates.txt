@@ -1,0 +1,9 @@
+{"backend": "srt", "test": "allowed-write", "pass": false, "exit": 1, "host_unchanged": true, "diagnostic": "Error: listen EINVAL: invalid argument <isolated-home>/srt-mux-84861-0.sock\n"}
+{"backend": "srt", "test": "secret-read", "pass": false, "exit": 1, "host_unchanged": true, "diagnostic": "Error: listen EINVAL: invalid argument <isolated-home>/srt-mux-84932-0.sock\n"}
+{"backend": "srt", "test": "key-read", "pass": false, "exit": 1, "host_unchanged": true, "diagnostic": "Error: listen EINVAL: invalid argument <isolated-home>/srt-mux-84993-0.sock\n"}
+{"backend": "srt", "test": "run-read", "pass": false, "exit": 1, "host_unchanged": true, "diagnostic": "Error: listen EINVAL: invalid argument <isolated-home>/srt-mux-85034-0.sock\n"}
+{"backend": "srt", "test": "alias-read", "pass": false, "exit": 1, "host_unchanged": true, "diagnostic": "Error: listen EINVAL: invalid argument <isolated-home>/srt-mux-85065-0.sock\n"}
+{"backend": "srt", "test": "link-create", "pass": false, "exit": 1, "host_unchanged": true, "diagnostic": "Error: listen EINVAL: invalid argument <isolated-home>/srt-mux-85106-0.sock\n"}
+{"backend": "srt", "test": "settings-write", "pass": false, "exit": 1, "host_unchanged": true, "diagnostic": "Error: listen EINVAL: invalid argument <isolated-home>/srt-mux-85199-0.sock\n"}
+{"backend": "srt", "test": "policy-write", "pass": false, "exit": 1, "host_unchanged": true, "diagnostic": "Error: listen EINVAL: invalid argument <isolated-home>/srt-mux-85260-0.sock\n"}
+{"backend": "srt", "test": "nested-retry", "pass": false, "exit": 1, "host_unchanged": true, "diagnostic": "Error: listen EINVAL: invalid argument <isolated-home>/srt-mux-85335-0.sock\n"}

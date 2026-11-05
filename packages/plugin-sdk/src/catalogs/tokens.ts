@@ -16,17 +16,25 @@
 //
 // Every value, a catalog token's or a plugin's own, passes `isSafeTokenValue` before it reaches CSS.
 //
-// The OS accent colour (the owner's ask, as refined by lane G's review): controls follow it, as Claude's desktop app
-// does. An accent token (`SYSTEM_ACCENT_TOKENS`) may be `"system"`. Lane E's theme engine reads the OS accent
+// The OS accent colour (the owner's ask, as refined by lanes G and F): controls follow it, as the reference desktop
+// app does. An accent token (`SYSTEM_ACCENT_TOKENS`: the accent, the focus ring, the approve button, the island's and
+// the pill's ✓ circles) may be `"system"`, and is by default (`follows`). Lane E's theme engine reads the OS accent
 // (`systemPreferences.getAccentColor()` on macOS and Windows, `systemAccentFromOs`), again whenever the OS says it
 // changed; with no reading (Linux) the token keeps the theme's accent, the value the theme stack gives without
-// `"system"`, which is fixed and which G's contrast floors cover. An ink on an accent (`AUTO_INKS`) may be `"auto"`,
-// which the core resolves in the current appearance against the accent as painted, any alpha flattened onto the
-// control's background: white when white reaches the ink's floor, otherwise the theme's dark ink. The floor is 3:1
-// for glyph-only controls (✓, ↑, ✕; WCAG 1.4.11) and 4.5:1 for controls with text labels, so the OSes' default
-// blues get white glyphs, as both OSes and Claude draw them, and a yellow accent never gets white. Sealed frames take
-// the resolved values like any token, and since no plugin changed anything, a new OS accent needs no new OK.
-// `resolveTokens` (formats/theme.ts) does all of this.
+// `"system"`, which is fixed and which G's contrast floors cover.
+// * A filled accent button with a text label (`SYSTEM_LABEL_FILLS`: the approve button) is the accent darkened in its
+//   own hue until white text reaches 4.5:1 on it (`fillForWhiteLabel`), so its label is always white, as the
+//   reference app draws it.
+// * An ink on an accent (`AUTO_INKS`) may be `"auto"`, and is by default, which the core resolves in the current
+//   appearance against the accent as painted, any alpha flattened onto the control's background. A label ink (4.5:1)
+//   is white when white reaches 4.5:1, otherwise black (`LABEL_INK`). A glyph ink on a glyph-only control (✓, ↑, ✕;
+//   WCAG 1.4.11) is white at 3:1 or more, otherwise the theme's dark ink (`color.accent.ink`, `#111111` by default),
+//   so the OSes' default blues get white glyphs and a yellow accent never gets white.
+// Sealed frames take the resolved values like any token, and since no plugin changed anything, a new OS accent needs
+// no new OK. `resolveTokens` (formats/theme.ts) does all of this.
+//
+// The frame's variables (`FRAME_VARIABLES`) are set by the shell and lane E's window, never by a theme: the room the
+// title bar and the window's own controls take, for what sits under them.
 
 export const TOKEN_TYPES = ["color", "dimension", "fontFamily", "fontWeight", "number", "duration", "easing", "shadow", "paint"] as const;
 /** `paint` is a CSS background: a colour or a gradient. */
@@ -42,68 +50,83 @@ export interface TokenInfo {
   readonly default: TokenValue;
   /** The dark appearance's default, where it differs. */
   readonly dark?: TokenValue;
+  /** The catalog's own value is `"system"` (it follows the OS accent) or `"auto"` (an ink resolved against its
+   *  accent); `default` and `dark` are then what it takes where there is nothing to follow. */
+  readonly follows?: typeof SYSTEM_ACCENT | typeof AUTO_INK;
   readonly doc: string;
 }
 
-const t = (name: string, type: TokenType, def: TokenValue, dark: TokenValue | undefined, doc: string): TokenInfo =>
-  dark === undefined ? { name, type, default: def, doc } : { name, type, default: def, dark, doc };
+const t = (name: string, type: TokenType, def: TokenValue, dark: TokenValue | undefined, doc: string, follows?: "system" | "auto"): TokenInfo => ({
+  name, type, default: def, ...(dark === undefined ? {} : { dark }), ...(follows === undefined ? {} : { follows }), doc,
+});
 
 export const TOKENS: readonly TokenInfo[] = [
   // Planes.
-  t("color.canvas", "color", "#F6F6F8", "#212126", "The base plane: the sidebar and the app's background."),
-  t("color.surface", "color", "#FFFFFF", "#18181C", "The content plane: the conversation and settings pages."),
-  t("color.raised", "color", "#F3F3F6", "#232329", "One step above the content: tool output, inner cards, code blocks."),
-  t("color.control", "color", "#EDEDF1", "#2D2D34", "Small controls: chips, toggle tracks, icon circles."),
-  t("color.float", "color", "#FFFFFF", "#2B2B31", "Anything floating above content: menus, popovers, palettes."),
-  t("color.hairline", "color", "#E4E4EA", "#303037", "Dividers and rims on the canvas and the content plane."),
-  t("color.hairline.raised", "color", "#D6D6DE", "#3B3B44", "The same rule drawn on raised and control surfaces."),
-  t("color.hover", "color", "#EFEFF3", "#2A2A30", "A row's fill under the pointer."),
-  t("color.selected", "color", "#E7E7EE", "#34343C", "A selected row's fill. Navigation stays neutral: never the accent."),
+  t("color.canvas", "color", "#F5F5F5", "#202020", "The base plane: the sidebar and the app's background."),
+  t("color.surface", "color", "#FFFFFF", "#191919", "The content plane: the conversation and settings pages."),
+  t("color.raised", "color", "#F7F7F7", "#242424", "One step above the content: tool output, inner cards, code blocks."),
+  t("color.control", "color", "#F0F0F0", "#2A2A2A", "Small controls: chips, toggle tracks, icon circles."),
+  t("color.float", "color", "#FFFFFF", "#1F1F1F", "Anything floating above content: menus, popovers, palettes."),
+  t("color.hairline", "color", "#E8E8E8", "#2B2B2B", "Dividers and rims on the canvas and the content plane."),
+  t("color.hairline.raised", "color", "#DCDCDC", "#373737", "The same rule drawn on raised and control surfaces."),
+  t("color.hover", "color", "#EFEFEF", "#2A2A2A", "A row's fill under the pointer."),
+  t("color.selected", "color", "#DFDFDF", "#3D3D3D", "A selected row's fill. Navigation stays neutral: never the accent."),
+  // The window's chrome over its material (macOS vibrancy, Windows 11 acrylic; lane E sets the material).
+  t("sidebar.tint", "color", "#F5F5F5B3", "#202020B3", "The sidebar over the window's material."),
+  t("sidebar.solid", "color", "#F5F5F5", "#202020", "The sidebar where the window has no material (Linux)."),
+  t("titlebar.tint", "color", "#FFFFFFC7", "#191919C7", "The title bar over what scrolls under it."),
+  t("titlebar.blur", "dimension", "16px", undefined, "The title bar's backdrop blur."),
+  t("titlebar.height", "dimension", "45px", undefined, "The title bar's height, its rule included."),
   // Text.
-  t("color.text", "color", "#1C1B22", "#F4F3F8", "Body text."),
-  t("color.text.secondary", "color", "#3B3A45", "#DCDBE3", "Sidebar and secondary text."),
-  t("color.text.muted", "color", "#676674", "#9B9AA8", "Quiet meta: timestamps, labels, trailing words."),
-  t("color.text.placeholder", "color", "#9C9BA6", "#66656F", "A field's placeholder."),
-  t("color.text.inverse", "color", "#FFFFFF", "#18181C", "Text on a text-coloured fill."),
+  t("color.text", "color", "#1F1F1F", "#F2F2F2", "Body text."),
+  t("color.text.secondary", "color", "#3A3A3A", "#D0D0D0", "Sidebar and secondary text."),
+  t("color.text.muted", "color", "#6B6B6B", "#9E9E9E", "Quiet meta: timestamps, labels, trailing words."),
+  t("color.text.placeholder", "color", "#6D6D6D", "#9A9A9A", "A field's placeholder."),
+  t("color.text.inverse", "color", "#FFFFFF", "#191919", "Text on a text-coloured fill."),
   // Accent and meaning.
-  t("color.accent", "color", "#C2387A", "#FF7AB6", "The brand accent: primary actions, focus, the send button."),
-  t("color.accent.text", "color", "#B12F6E", "#FF8CC1", "The accent carrying text, at 4.5:1 or more on the content plane."),
-  t("color.accent.soft", "color", "#FBEAF2", "#3A2130", "A wash of the accent: a chosen chip, a highlighted mention."),
-  t("color.accent.contrast", "color", "#FFFFFF", "#2A0F1C", "Text labels on an accent fill, at 4.5:1 or more (`auto` resolves it)."),
-  t("color.accent.glyph", "color", "#FFFFFF", "#2A0F1C", "Glyphs on an accent fill (✓, ↑, ✕), at 3:1 or more (`auto` resolves it)."),
-  t("color.accent.ink", "color", "#1C1B22", "#2A0F1C", "The theme's dark ink on an accent, where white falls short."),
-  t("color.attention", "color", "#E09A00", "#FFC747", "Needs you: a waiting card, a question for the user."),
-  t("color.attention.text", "color", "#8A5A00", "#FFD27A", "Attention carrying text."),
-  t("color.danger", "color", "#C2302E", "#FF6B70", "Errors and actions that destroy something."),
-  t("color.success", "color", "#1E7F47", "#4CC38A", "Done, connected, running."),
-  t("color.diff.added", "color", "#1E7F47", "#4CC38A", "Lines a diff adds."),
-  t("color.diff.removed", "color", "#C2302E", "#FF6B70", "Lines a diff removes."),
-  t("color.focus", "color", "#C2387A", "#FF7AB6", "The keyboard focus ring."),
+  t("color.accent", "color", "#2F6FDF", "#4180E3", "The accent: controls, primary actions, the send button. It follows the OS accent.", "system"),
+  t("color.accent.text", "color", "#1F5FCC", "#A7C4E6", "The accent carrying text, at 4.5:1 or more on the content plane."),
+  t("color.accent.soft", "color", "#E8F0FC", "#1F2633", "A wash of the accent: a chosen chip, a highlighted mention."),
+  t("color.accent.contrast", "color", "#FFFFFF", undefined, "Text labels on an accent fill, at 4.5:1 or more (`auto` resolves it).", "auto"),
+  t("color.accent.glyph", "color", "#FFFFFF", undefined, "Glyphs on an accent fill (✓, ↑, ✕), at 3:1 or more (`auto` resolves it).", "auto"),
+  t("color.accent.ink", "color", "#111111", undefined, "The theme's dark ink for glyphs on an accent, where white falls short of 3:1."),
+  t("color.attention", "color", "#C27C00", "#ECD575", "Needs you: a waiting card, a question for the user."),
+  t("color.attention.text", "color", "#8A5A00", "#ECD575", "Attention carrying text."),
+  t("color.danger", "color", "#C93C3C", "#D7706A", "Errors and actions that destroy something."),
+  t("color.success", "color", "#1E7F47", "#8CC283", "Done, connected, running."),
+  t("color.diff.added", "color", "#1A7F37", "#8CC283", "Lines a diff adds."),
+  t("color.diff.removed", "color", "#C2364F", "#DA6F80", "Lines a diff removes."),
+  t("color.diff.added.soft", "color", "#1A7F371A", "#8CC28324", "The tint behind a line a diff adds."),
+  t("color.diff.removed.soft", "color", "#C2364F17", "#DA6F8024", "The tint behind a line a diff removes."),
+  t("color.branch", "color", "#6F52C4", "#B19EDE", "A session's branch badge."),
+  t("color.unread", "color", "#8A8A8A", "#848484", "The unread dot: a neutral grey."),
+  t("color.brand", "color", "#C2387A", "#FF7AB6", "Clover's mark: the one place the brand pink shows, since the accent follows the OS."),
+  t("color.scrim", "color", "#00000033", "#00000080", "Behind a dialog."),
+  t("color.focus", "color", "#2F6FDF", "#4180E3", "The keyboard focus ring.", "system"),
   // Messages.
-  t("bubble.user.background", "color", "#FBE8F1", "#3A2433", "The user's own message."),
-  t("bubble.user.text", "color", "#1C1B22", "#F4F3F8", "Text in the user's message."),
-  t("bubble.bot.background", "color", "#FFFFFF00", "#18181C00", "The bot's message. Clear by default: replies sit on the content plane."),
-  t("bubble.bot.rim", "color", "#FFFFFF00", "#18181C00", "The bot's message rim."),
-  t("bubble.bot.text", "color", "#1C1B22", "#F4F3F8", "Text in the bot's message."),
-  t("bubble.radius", "dimension", "18px", undefined, "A message bubble's corner."),
+  t("bubble.user.background", "color", "#F0F0F0", "#2A2A2A", "The user's own message."),
+  t("bubble.user.text", "color", "#1F1F1F", "#F2F2F2", "Text in the user's message."),
+  t("bubble.bot.background", "color", "#FFFFFF00", "#19191900", "The bot's message. Clear by default: replies sit on the content plane."),
+  t("bubble.bot.rim", "color", "#FFFFFF00", "#19191900", "The bot's message rim."),
+  t("bubble.bot.text", "color", "#1F1F1F", "#F2F2F2", "Text in the bot's message."),
+  t("bubble.radius", "dimension", "16px", undefined, "A message bubble's corner."),
   // The composer.
-  t("composer.background", "color", "#FFFFFF", "#2E2E35", "The composer's face."),
-  t("composer.rim", "color", "#E1E1E7", "#3E3E47", "The composer's hairline."),
-  t("composer.text", "color", "#1C1B22", "#F4F3F8", "What the user types."),
-  t("composer.placeholder", "color", "#9C9BA6", "#77767F", "The composer's placeholder."),
-  t("composer.radius", "dimension", "24px", undefined, "The composer's corner."),
+  t("composer.background", "color", "#FFFFFF", "#303030", "The composer's face."),
+  t("composer.rim", "color", "#D9D9D9", "#3F3F3F", "The composer's hairline."),
+  t("composer.text", "color", "#1F1F1F", "#F2F2F2", "What the user types."),
+  t("composer.placeholder", "color", "#737373", "#9A9A9A", "The composer's placeholder."),
+  t("composer.radius", "dimension", "12px", undefined, "The composer's corner."),
   // Sealed approval cards: the only tokens their frames take.
-  t("card.background", "color", "#F3F3F6", "#232329", "An approval card's face."),
-  t("card.text", "color", "#1C1B22", "#F4F3F8", "What the card asks."),
-  t("card.muted", "color", "#676674", "#9B9AA8", "The card's meta: the computer, the tool."),
-  t("card.rim", "color", "#D6D6DE", "#3B3B44", "The card's rim."),
-  t("card.radius", "dimension", "20px", undefined, "The card's corner."),
+  t("card.background", "color", "#FFFFFF", "#202020", "An approval card's face."),
+  t("card.text", "color", "#1F1F1F", "#F2F2F2", "What the card asks."),
+  t("card.muted", "color", "#6B6B6B", "#9E9E9E", "The card's meta: the computer, the tool."),
+  t("card.rim", "color", "#D9D9D9", "#3F3F3F", "The card's rim."),
+  t("card.radius", "dimension", "12px", undefined, "The card's corner."),
   t("card.padding", "dimension", "16px", undefined, "The card's inset."),
-  t("card.approve.background", "color", "#C2387A", "#FF7AB6", "The approve button."),
-  t("card.approve.text", "color", "#FFFFFF", "#2A0F1C", "The approve button's label and glyph (`auto` resolves it at 4.5:1)."),
-  t("card.approve.ink", "color", "#1C1B22", "#2A0F1C", "The card's dark ink on the approve button, where white falls short."),
-  t("card.deny.background", "color", "#E6E6EC", "#34343C", "The deny button."),
-  t("card.deny.text", "color", "#1C1B22", "#F4F3F8", "The deny button's label."),
+  t("card.approve.background", "color", "#2F6FDF", "#3570D8", "The approve button.", "system"),
+  t("card.approve.text", "color", "#FFFFFF", undefined, "The approve button's label and glyph (`auto` resolves it at 4.5:1).", "auto"),
+  t("card.deny.background", "color", "#EDEDED", "#3B3B3B", "The deny button."),
+  t("card.deny.text", "color", "#1F1F1F", "#F2F2F2", "The deny button's label."),
   t("card.button.radius", "dimension", "10px", undefined, "The approve and deny buttons' corner."),
   t("card.font.family", "fontFamily", "system-ui, -apple-system, \"Segoe UI Variable Text\", \"Segoe UI\", \"Noto Sans\", Ubuntu, Cantarell, sans-serif", undefined, "The card's face."),
   t("card.font.size", "dimension", "14px", undefined, "The card's text size."),
@@ -111,12 +134,12 @@ export const TOKENS: readonly TokenInfo[] = [
   t("font.sans", "fontFamily", "system-ui, -apple-system, \"Segoe UI Variable Text\", \"Segoe UI\", \"Noto Sans\", Ubuntu, Cantarell, sans-serif", undefined, "The interface and body face: each OS's own."),
   t("font.serif", "fontFamily", "ui-serif, \"New York\", \"Iowan Old Style\", \"Noto Serif\", Georgia, serif", undefined, "The serif accent."),
   t("font.mono", "fontFamily", "ui-monospace, \"SF Mono\", \"Cascadia Mono\", \"JetBrains Mono\", \"DejaVu Sans Mono\", Menlo, Consolas, monospace", undefined, "Code, paths and ids."),
-  t("font.display", "fontFamily", "ui-serif, \"New York\", \"Iowan Old Style\", \"Noto Serif\", Georgia, serif", undefined, "Bot names, greetings and the wordmark."),
+  t("font.display", "fontFamily", "system-ui, -apple-system, \"Segoe UI Variable Text\", \"Segoe UI\", \"Noto Sans\", Ubuntu, Cantarell, sans-serif", undefined, "Bot names, greetings and the wordmark."),
   t("font.size.tiny", "dimension", "10px", undefined, "Timestamps and micro-labels."),
-  t("font.size.caption", "dimension", "11px", undefined, "Small meta."),
-  t("font.size.label", "dimension", "12px", undefined, "Labels."),
-  t("font.size.control", "dimension", "13px", undefined, "Sidebar rows and controls."),
-  t("font.size.body", "dimension", "14px", undefined, "Body text and typing."),
+  t("font.size.caption", "dimension", "12px", undefined, "Small meta."),
+  t("font.size.label", "dimension", "13px", undefined, "Labels."),
+  t("font.size.control", "dimension", "14px", undefined, "Sidebar rows and controls."),
+  t("font.size.body", "dimension", "15px", undefined, "Body text and typing."),
   t("font.size.code", "dimension", "13px", undefined, "Code, commands and paths in running text."),
   t("font.size.large", "dimension", "15px", undefined, "Large controls."),
   t("font.size.heading", "dimension", "16px", undefined, "Headings in a pane."),
@@ -126,12 +149,13 @@ export const TOKENS: readonly TokenInfo[] = [
   t("font.weight.medium", "fontWeight", 500, undefined, "Medium."),
   t("font.weight.semibold", "fontWeight", 600, undefined, "Semibold."),
   t("font.weight.bold", "fontWeight", 700, undefined, "Bold."),
-  t("font.line.body", "number", 1.62, undefined, "Body line height."),
+  t("font.line.body", "number", 1.4, undefined, "Body line height."),
   t("font.line.tight", "number", 1.25, undefined, "Line height for one-line labels and headings."),
+  t("font.line.code", "number", 1.4, undefined, "Line height for code and tool output."),
   // Shape and space.
   t("radius.small", "dimension", "6px", undefined, "Small corners: chips, rows."),
-  t("radius.medium", "dimension", "10px", undefined, "Medium corners: buttons, fields."),
-  t("radius.large", "dimension", "16px", undefined, "Large corners: panels, inner cards."),
+  t("radius.medium", "dimension", "8px", undefined, "Medium corners: buttons, fields."),
+  t("radius.large", "dimension", "12px", undefined, "Large corners: panels, inner cards."),
   t("radius.huge", "dimension", "24px", undefined, "The largest corners: sheets, the stage."),
   t("radius.round", "dimension", "999px", undefined, "A capsule's end."),
   t("space.xs", "dimension", "4px", undefined, "4 on the grid."),
@@ -157,11 +181,11 @@ export const TOKENS: readonly TokenInfo[] = [
   t("island.muted", "color", "#8B8B8B", undefined, "The island's quiet words."),
   t("island.faint", "color", "#FFFFFF59", undefined, "The island's faintest words: positions, hints."),
   t("island.attention", "color", "#FFC747", undefined, "Waiting for you: the hand and its count."),
-  t("island.accept", "color", "#0A85FF", undefined, "The ✓ circle."),
-  t("island.accept.text", "color", "#FFFFFF", undefined, "The ✓ glyph."),
+  t("island.accept", "color", "#4180E3", undefined, "The ✓ circle.", "system"),
+  t("island.accept.text", "color", "#FFFFFF", undefined, "The ✓ glyph.", "auto"),
   t("island.refuse", "color", "#FFFFFF", undefined, "The ✕ circle."),
   t("island.refuse.text", "color", "#000000", undefined, "The ✕ glyph."),
-  t("island.working", "color", "#FF7AB6", undefined, "The working bolt."),
+  t("island.working", "color", "#4180E3", undefined, "The working bolt."),
   t("island.success", "color", "#4CC38A", undefined, "A status that is well: running, connected."),
   t("island.danger", "color", "#FF6B70", undefined, "A status that is not: an error, a force quit."),
   t("island.option", "color", "#FFFFFF1F", undefined, "An option row's fill."),
@@ -173,13 +197,14 @@ export const TOKENS: readonly TokenInfo[] = [
   t("pill.rim", "color", "#FFFFFF17", undefined, "The pill's hairline rim."),
   t("pill.text", "color", "#FFFFFF", undefined, "What the user types into the pill."),
   t("pill.muted", "color", "#8B8B8B", undefined, "The pill's quiet words."),
-  t("pill.placeholder", "color", "#686868", undefined, "The compact pill's placeholder."),
+  t("pill.placeholder", "color", "#7A7A7A", undefined, "The compact pill's placeholder."),
   t("pill.placeholder.typing", "color", "#FFFFFF80", undefined, "The typing pill's placeholder."),
   t("pill.send", "color", "#FFFFFF", undefined, "The send and stop circle."),
   t("pill.send.glyph", "color", "#000000", undefined, "The send and stop glyph."),
   t("pill.accessory", "color", "#FFFFFF1F", undefined, "The ↗ and ⋯ circles."),
   t("pill.attention", "color", "#FFC747", undefined, "A card's kind glyph; a child that needs you."),
-  t("pill.accept", "color", "#0A85FF", undefined, "The ✓ circle on a pill card."),
+  t("pill.accept", "color", "#4180E3", undefined, "The ✓ circle on a pill card.", "system"),
+  t("pill.accept.text", "color", "#FFFFFF", undefined, "The ✓ glyph on a pill card.", "auto"),
   t("pill.success", "color", "#4CC38A", undefined, "A child agent that finished."),
   t("pill.danger", "color", "#FF6B70", undefined, "A child agent that failed."),
   t("pill.option", "color", "#FFFFFF14", undefined, "A question option's fill on a pill card."),
@@ -191,19 +216,19 @@ export const TOKENS: readonly TokenInfo[] = [
   // The bot's stage and its avatar.
   t("stage.background", "paint", "linear-gradient(180deg, #FFFFFF 0%, #F4F2F8 100%)", "linear-gradient(180deg, #1D1D23 0%, #151519 100%)", "The stage behind the avatar."),
   t("stage.floor", "color", "#1C1B221F", "#0000008C", "The soft pool of shadow under the avatar."),
-  t("stage.glow", "color", "#C2387A1F", "#FF7AB61F", "The light behind the avatar."),
+  t("stage.glow", "color", "#2F6FDF1F", "#4180E31F", "The light behind the avatar."),
   t("stage.text", "color", "#676674", "#9B9AA8", "Credits and notes on the stage."),
   t("avatar.light.key", "color", "#FFFFFF", "#F2EEFF", "The avatar's key light."),
-  t("avatar.light.fill", "color", "#FFF1F8", "#B9A8FF", "The avatar's fill light."),
-  t("avatar.light.rim", "color", "#FFFFFF", "#FF9CC9", "The avatar's rim light."),
+  t("avatar.light.fill", "color", "#F2F6FF", "#C9D8F2", "The avatar's fill light."),
+  t("avatar.light.rim", "color", "#FFFFFF", "#DCE6F7", "The avatar's rim light."),
   t("avatar.exposure", "number", 1, 0.95, "The avatar's exposure: 1 is neutral."),
 ];
 
 export const TOKEN_NAMES: ReadonlySet<string> = new Set(TOKENS.map((x) => x.name));
 /** The tokens sealed frames take (§5.5). */
 export const CARD_TOKENS: readonly TokenInfo[] = TOKENS.filter((x) => x.name.startsWith("card."));
-/** The catalog's first segments (`color`, `card`, …); `plugin` is never one of them. */
-export const TOKEN_GROUPS: ReadonlySet<string> = new Set(TOKENS.map((x) => x.name.split(".")[0]!));
+/** The catalog's first segments (`color`, `card`, …, and `frame` for the frame's variables); `plugin` is never one. */
+export const TOKEN_GROUPS: ReadonlySet<string> = new Set([...TOKENS.map((x) => x.name.split(".")[0]!), "frame"]);
 /** The group a plugin's own tokens live under: `plugin.<top-level id>.<name>`. */
 export const PLUGIN_TOKEN_GROUP = "plugin";
 
@@ -308,8 +333,9 @@ export function isAnyTokenValue(value: unknown): value is TokenValue {
 }
 
 /** Whether a value may be set for a token by name: the catalog token's own type, or any type for a plugin's own;
- *  `"system"` only for an accent token, `"auto"` only for an ink on one. */
+ *  `"system"` only for an accent token, `"auto"` only for an ink on one; never a frame variable. */
 export function isValueForToken(name: string, value: unknown): value is TokenValue {
+  if (name.startsWith("frame.")) return false;
   if (value === SYSTEM_ACCENT) return SYSTEM_ACCENT_TOKENS.includes(name);
   if (value === AUTO_INK) return Object.hasOwn(AUTO_INKS, name);
   const type = TOKENS.find((t) => t.name === name)?.type;
@@ -323,26 +349,44 @@ export const SYSTEM_ACCENT = "system";
 export const AUTO_INK = "auto";
 
 /** The tokens that may be `"system"`. */
-export const SYSTEM_ACCENT_TOKENS: readonly string[] = ["color.accent", "card.approve.background"];
+export const SYSTEM_ACCENT_TOKENS: readonly string[] = ["color.accent", "color.focus", "card.approve.background", "island.accept", "pill.accept"];
+
+/** Filled accent buttons with a text label: `"system"` there is the accent darkened in its own hue until white text
+ *  reaches 4.5:1 (`fillForWhiteLabel`), so the label is always white. With the background it sits on. */
+export const SYSTEM_LABEL_FILLS: Readonly<Record<string, { background: string }>> = {
+  "card.approve.background": { background: "card.background" },
+};
+
+/** What a label ink is where white falls short of 4.5:1. */
+export const LABEL_INK = "#000000";
 
 export interface AutoInk {
   /** The accent it is drawn on. */
   readonly accent: string;
   /** What the control sits on, which an accent with alpha is flattened onto. */
   readonly background: string;
-  /** The theme's dark ink, used where white falls short. */
-  readonly darkInk: string;
   /** 3 for glyph-only controls (WCAG 1.4.11), 4.5 for text labels. */
   readonly floor: 3 | 4.5;
+  /** A glyph ink's dark ink where white falls short, a token; a label ink takes `LABEL_INK`. */
+  readonly darkInk?: string;
 }
 
 /** The inks that may be `"auto"`. A sealed card's approve button holds a label or a glyph, so its ink takes the
  *  text floor; `card.*` resolves from `card.*` alone. */
 export const AUTO_INKS: Readonly<Record<string, AutoInk>> = {
-  "color.accent.contrast": { accent: "color.accent", background: "color.surface", darkInk: "color.accent.ink", floor: 4.5 },
-  "color.accent.glyph": { accent: "color.accent", background: "color.surface", darkInk: "color.accent.ink", floor: 3 },
-  "card.approve.text": { accent: "card.approve.background", background: "card.background", darkInk: "card.approve.ink", floor: 4.5 },
+  "color.accent.contrast": { accent: "color.accent", background: "color.surface", floor: 4.5 },
+  "color.accent.glyph": { accent: "color.accent", background: "color.surface", floor: 3, darkInk: "color.accent.ink" },
+  "card.approve.text": { accent: "card.approve.background", background: "card.background", floor: 4.5 },
+  "island.accept.text": { accent: "island.accept", background: "island.surface", floor: 3, darkInk: "color.accent.ink" },
+  "pill.accept.text": { accent: "pill.accept", background: "pill.surface", floor: 3, darkInk: "color.accent.ink" },
 };
+
+/** Variables the frame sets for what sits inside it (lane F's request), never a theme: CSS custom properties named as
+ *  tokens are (`--clover-frame-inset-top`), each a CSS length. */
+export const FRAME_VARIABLES: readonly { readonly name: string; readonly doc: string }[] = [
+  { name: "frame.inset.top", doc: "The title bar's height: what `main`'s content keeps clear of at its top." },
+  { name: "frame.window.controls", doc: "The room the window's own controls take at the title bar's start (80px on macOS by default; lane E sets it from `titlebar-area-x`)." },
+];
 
 /** Electron's `systemPreferences.getAccentColor()` (`RRGGBBAA`) as a token value (`#RRGGBB`), or undefined when it
  *  isn't one. */
@@ -391,6 +435,46 @@ export function resolveAutoInk(accent: string, opts: { background: string; darkI
   const painted = flattenColor(accent, opts.background);
   if (painted === undefined) return undefined;
   return contrastRatio("#FFFFFF", painted)! >= opts.floor ? "#FFFFFF" : opts.darkInk;
+}
+
+function toHsl([r, g, b]: readonly number[]): [number, number, number] {
+  const max = Math.max(r!, g!, b!);
+  const min = Math.min(r!, g!, b!);
+  const l = (max + min) / 2;
+  if (max === min) return [0, 0, l];
+  const d = max - min;
+  const s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+  const h = max === r ? (g! - b!) / d + (g! < b! ? 6 : 0) : max === g ? (b! - r!) / d + 2 : (r! - g!) / d + 4;
+  return [h / 6, s, l];
+}
+
+function fromHsl(h: number, s: number, l: number): number[] {
+  if (s === 0) return [l, l, l];
+  const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+  const p = 2 * l - q;
+  const hue = (t: number) => {
+    const u = t < 0 ? t + 1 : t > 1 ? t - 1 : t;
+    if (u < 1 / 6) return p + (q - p) * 6 * u;
+    if (u < 1 / 2) return q;
+    if (u < 2 / 3) return p + (q - p) * (2 / 3 - u) * 6;
+    return p;
+  };
+  return [hue(h + 1 / 3), hue(h), hue(h - 1 / 3)];
+}
+
+/** A filled button's colour for a white text label: the accent as painted on `background`, darkened in its own hue
+ *  (its HSL lightness lowered, hue and saturation kept) until white reaches 4.5:1 on it; unchanged where it already
+ *  does. Undefined when either isn't hex. */
+export function fillForWhiteLabel(accent: string, background: string): string | undefined {
+  const painted = flattenColor(accent, background);
+  if (painted === undefined) return undefined;
+  if (contrastRatio("#FFFFFF", painted)! >= 4.5) return painted;
+  const [h, s, l] = toHsl(parseHexColor(painted)!);
+  for (let step = Math.floor(l * 1000); step >= 0; step--) {
+    const candidate = toHex(fromHsl(h, s, step / 1000));
+    if (contrastRatio("#FFFFFF", candidate)! >= 4.5) return candidate;
+  }
+  return "#000000";
 }
 
 /** The text a value takes in CSS. */

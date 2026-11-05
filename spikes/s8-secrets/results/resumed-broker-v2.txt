@@ -1,0 +1,15 @@
+Running broker-probe.py on clover-c-linux
+{"test": "broker-search-clover-hidden", "pass": true}
+{"test": "broker-search-results-filtered", "pass": true}
+{"test": "broker-direct-clover-denied", "pass": true}
+{"test": "broker-mixed-bulk-denied", "pass": true}
+{"test": "broker-collection-items-filtered", "pass": true}
+{"test": "broker-no-host-org.freedesktop.systemd1", "pass": true}
+{"test": "broker-no-host-org.freedesktop.portal.Desktop", "pass": true}
+{"test": "broker-no-host-org.gnome.Terminal", "pass": true}
+{"test": "broker-gh-credential-lookup", "pass": true}
+{"test": "broker-docker-credential-lookup", "pass": true}
+{"test": "broker-git-credential-lookup", "pass": true}
+{"test": "broker-git-credential-fill", "pass": true}
+{"test": "broker-fenced-clover-lookup-denied", "pass": true}
+{"test": "broker-scope", "real_secret_service": true, "git_credential_plumbing": true, "gh_and_docker": "local store-lookup fixtures; no account login or daemon socket"}

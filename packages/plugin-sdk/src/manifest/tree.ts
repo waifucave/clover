@@ -154,7 +154,7 @@ async function checkFiles(reader: PluginFolderReader, base: string, m: Manifest,
   if (c.bot) {
     for (const k of ["instructions", "greeting", "memory"] as const) await must(c.bot[k], ["contributes", "bot", k], "contribution");
     if (c.bot.avatar && (await must(c.bot.avatar.file, ["contributes", "bot", "avatar", "file"], "contribution")) && c.bot.avatar.format === "live2d") {
-      await checkLive2d(reader, base, c.bot.avatar.file, file, f);
+      await checkLive2d(reader, base, c.bot.avatar.file, f);
     }
     if (c.bot.layout && (await must(c.bot.layout, ["contributes", "bot", "layout"], "contribution"))) {
       await checkLayout(reader, base, c.bot.layout, file, isBot, f);
@@ -225,7 +225,7 @@ async function checkTheme(reader: PluginFolderReader, base: string, path: string
 
 /** A Live2D avatar's `model3.json` names files beside it (`live2dReferences`); each must exist and stay inside the
  *  folder. A `.zip` is checked when the core unpacks it. */
-async function checkLive2d(reader: PluginFolderReader, base: string, path: string, manifestFile: string, f: TreeFindings): Promise<void> {
+async function checkLive2d(reader: PluginFolderReader, base: string, path: string, f: TreeFindings): Promise<void> {
   if (!path.toLowerCase().endsWith(".model3.json")) return;
   const full = `${base}${path.startsWith("./") ? path.slice(2) : path}`;
   const value = await readFormat(reader, base, path, full, f);
@@ -241,7 +241,6 @@ async function checkLive2d(reader: PluginFolderReader, base: string, path: strin
     if (problem) f.error(full, "contribution", "path_escape", [], `"${ref}" has ${problem}`);
     else if (!(await reader.exists(`${dir}${ref}`))) f.error(full, "contribution", "file_missing", [], `"${ref}" doesn't exist`);
   }
-  void manifestFile;
 }
 
 async function checkLayout(reader: PluginFolderReader, base: string, path: string, file: string, isBot: boolean, f: TreeFindings): Promise<void> {

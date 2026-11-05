@@ -111,7 +111,7 @@ export class FakeApprovalBroker implements ApprovalBroker {
     if (a.proof.via === "sealed-frame") {
       if (from.role !== "app" || p.channel === undefined || a.proof.frame !== p.channel) return "bad-origin";
     } else {
-      if (from.device !== a.proof.device) return "bad-origin";
+      // A device's signature holds end to end, so any computer may relay it (review N4).
       if (!answerTimeOk(p.card, a.proof.at, this.#clock.now())) return "bad-time";
       if (!(await this.#verify(p.card, a, from))) return "bad-proof";
     }

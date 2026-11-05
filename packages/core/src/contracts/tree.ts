@@ -11,14 +11,25 @@
 //   never climbs out of its area: an empty, `.` or `..` segment, a backslash or a NUL makes it `invalid`, so
 //   `home/Studio/../../etc/passwd` and `bots/alpha/../settings` resolve nowhere (review S9).
 // * Every call says whom it is for (`as`, required): only the core's own code passes `{ kind: "core" }`, which the
-//   fence doesn't judge; the user's own actions never ask it either.
+//   fence doesn't judge; the user's own actions on this computer never ask it either.
 // * Calls made for a bot, an agent or a plugin (`as` is not the user) are judged by the fence of the computer that
 //   holds the files (§9.1 "Approvals follow the files"); a refused path answers `fenced`. Approval levels are the
 //   ApprovalBroker's, before the call: `computersFor` lists the computers an action touches.
-// * `move` works across computers (`mv home/Desktop1/project1 home/Studio/`); both must be on.
+// * Another computer's call (`peer`, review N2) is the main path: the owner decided there are no OS mounts, so the
+//   holder's daemon serves its files to the others over the link (`tree.*` with the `peer` role). The receiver stamps
+//   `as` itself, `{ kind: "peer", device, sessionId }` from the link and the call's `session`, so a peer is never the
+//   user or the core, and its calls are always fenced. A peer's write, remove or move is also judged at the stricter of
+//   the holder's level and the call's `level` (`peerTreeDecision`): allowed runs; a refusal or read-only answers
+//   `refused`; one the level would ask about needs `answer`, the user's signed answer bound to this call
+//   (`treeCallBinding`), checked by `verifySignedAnswer` with the holder's own card for it, or it answers `refused`.
+//   A peer's change without `level` is `invalid`. Reads, lists, glob and grep are fenced but never asked about.
+// * `move` works across computers (`mv home/Desktop1/project1 home/Studio/`); both must be on, and a peer's move is
+//   judged at the strictest of both computers' levels and its own.
 // * Glob and grep run where the files are and send back only results.
-// * Mounts (spike S6: FSKit, FUSE, WinFsp) serve other programs through the same calls; nothing here depends on them.
-import type { Caller, FileStat, TreePath } from "@waifucave/clover-protocol";
+// * Tree paths are taken literally: `%2e%2e` is a file name, not `..`. No layer that puts tree paths in a URL (a
+//   `clover-tree:` link, an editor tab) may decode them back into segments.
+import type { Caller, FileStat, Level, SignedCardAnswer, TreePath } from "@waifucave/clover-protocol";
+import { levelDecision, strictestLevel } from "./approval-broker";
 
 export type { TreePath };
 
@@ -34,9 +45,35 @@ export interface TreeLocation {
 export type TreeData = { encoding: "utf8"; text: string } | { encoding: "base64"; data: string };
 
 export interface TreeCallOptions {
-  /** Who the call is for: a bot's, an agent's or a plugin's call is fenced. Required, so nothing is unfenced by
-   *  default. */
+  /** Who the call is for: a bot's, an agent's, a plugin's or a peer's call is fenced. Required, so nothing is
+   *  unfenced by default. */
   as: Caller;
+  /** A peer's call only: the calling computer's level for it (§9.1), the stricter of the computers it touches. */
+  level?: Level;
+  /** A peer's call only: the user's signed answer bound to this call, where the stricter level asks. */
+  answer?: SignedCardAnswer;
+}
+
+/** A change a peer's card binds: the wire method and its params without `session`, `level` and `answer`. */
+export type TreeChange =
+  | { method: "tree.write"; params: { path: string; data: TreeData; createDirs?: boolean } }
+  | { method: "tree.remove"; params: { path: string; recursive?: boolean } }
+  | { method: "tree.move"; params: { from: string; to: string } };
+
+/** What a signed answer for a peer's tree change binds (review N2): the method and its params as the caller sent
+ *  them, with no `session`, `level` or `answer` (an answer can't bind itself). Keys left out stay out. */
+export function treeCallBinding(method: TreeChange["method"], params: Record<string, unknown>): TreeChange {
+  const { session: _s, level: _l, answer: _a, ...rest } = params;
+  return { method, params: rest } as TreeChange;
+}
+
+/** How the holder judges a peer's tree change (review N2): at the stricter of its own levels (both computers' for a
+ *  move) and the call's, the way `tool.run` is. `allow` runs, `refuse` answers `refused`, `answer` needs a bound
+ *  signed answer. The safety reviewer never runs for a peer: what it would review needs the user's answer. */
+export function peerTreeDecision(levels: readonly Level[], callLevel: Level, effect: "edit" | "delete" | "move"): "allow" | "refuse" | "answer" {
+  const level = strictestLevel([...levels, callLevel])!;
+  const d = levelDecision(level, effect);
+  return d === "allow" ? "allow" : d === "deny" ? "refuse" : "answer";
 }
 
 export interface Tree {

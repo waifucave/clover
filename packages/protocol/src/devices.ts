@@ -32,6 +32,16 @@ export const LinkView = z.object({
 });
 export type LinkView = z.infer<typeof LinkView>;
 
+/** Who may answer another computer's card with a signature (the owner's decision on review N1): a phone, with its own
+ *  key, or any desktop, with a key its app holds apart from the core's link key, so plugin code can't sign with it
+ *  where the OS allows: a Keychain item limited to the signed app on macOS, a TPM- or Windows Hello-backed key on
+ *  Windows. Where the OS can't keep it from plugin code (Linux, and Windows without either), the owner accepted the
+ *  risk: "any desktop may answer; a compromised plugin on a Windows or Linux computer could approve actions on other
+ *  computers". Servers, cloud computers and browsers never sign. `none` names a key the OS can't keep apart. */
+export const ANSWER_KEY_HOLDERS = ["secure-enclave", "keystore", "app-keychain", "tpm", "hello", "none"] as const;
+export const AnswerKeyHolder = z.enum(ANSWER_KEY_HOLDERS);
+export type AnswerKeyHolder = z.infer<typeof AnswerKeyHolder>;
+
 export const DeviceView = z.object({
   id: DeviceId,
   name: utf16(63, 1),
@@ -48,6 +58,8 @@ export const DeviceView = z.object({
   isMain: z.boolean(),
   addedAt: Timestamp,
   lastSeenAt: Timestamp.optional(),
+  /** How its app's answer key is held, for a device that may answer cards; absent for one that can't. */
+  answers: z.object({ held: AnswerKeyHolder }).optional(),
 });
 export type DeviceView = z.infer<typeof DeviceView>;
 
@@ -92,8 +104,16 @@ export const PairingView = z.object({
 });
 
 /** An append-only stream two devices replicate (§8.5): `transcript:<session>`, `memory:<bot>`, `plugins`,
- *  `credentials`, `settings`, `routines`, `usage`. Lane H settles the streams and their payloads at H-M3. */
+ *  `credentials`, `settings`, `routines`, `usage`. Lane H settles the streams and their payloads at H-M3.
+ *  The rule H-M3 keeps (review N7): a receiver never takes a grant from a peer's stream (`PEER_STREAM_GRANTS`: a
+ *  plugin's OK, a computer's level, a saved rule, a raised routine level) without its own card answered here or a
+ *  signed answer bound to that change (`verifySignedAnswer`). Such an entry is kept as a request that waits for that
+ *  answer; it never takes effect from the stream alone. */
 export const SyncStream = utf16(256, 1).regex(/^[a-z][a-z-]*(:[A-Za-z0-9._:/-]+)?$/);
+/** What a peer's sync entry can never grant by itself (review N7). */
+export const PEER_STREAM_GRANTS = ["plugin-ok", "computer-level", "saved-rule", "routine-level-raise"] as const;
+export type PeerStreamGrant = (typeof PEER_STREAM_GRANTS)[number];
+
 export const SyncEntry = z.object({
   seq: z.number().int().nonnegative(),
   epoch: z.number().int().nonnegative(),
@@ -211,9 +231,17 @@ export const DEVICES_METHODS = {
   }),
   peerSessionDeliver: defineMethod({
     name: "peer.session.send", owner: "D", roles: ["peer"],
-    params: z.object({ id: SessionId, message: UserMessageInput, device: DeviceId, sentAt: Timestamp }),
+    params: z.object({
+      id: SessionId,
+      /** The message as its device sent it, with its `signature` when the device has an answer key. */
+      message: UserMessageInput,
+      /** The device the user sent it from, whose signature the receiver checks (`message.signature`). */
+      device: DeviceId,
+      /** The relaying computer's stamp, in shared time; the receiver clamps it to its own clock (`clampSentAt`). */
+      sentAt: Timestamp,
+    }),
     result: z.object({ seq: z.number().int().nonnegative() }),
-    doc: "A user's message from another device, already stamped in shared time, for a bot that thinks here (§6.4).",
+    doc: "A user's message from another device, for a bot that thinks here (§6.4). The receiver verifies the sending device's signature over the session, message id, message hash and send time; without a good one the turn it starts isn't the user's (review N3).",
   }),
   syncHeads: defineMethod({
     name: "sync.heads", owner: "H", roles: ["peer"],
@@ -231,7 +259,7 @@ export const DEVICES_METHODS = {
     name: "sync.push", owner: "H", roles: ["peer"],
     params: z.object({ stream: SyncStream, base: z.number().int().min(-1), entries: z.array(SyncEntry).max(10_000) }),
     result: z.union([z.object({ ok: z.literal(true), head: z.number().int() }), z.object({ ok: z.literal(false), reason: z.enum(["stale_base", "not_writer", "refused"]) })]),
-    doc: "Appends entries; a stale base is refused, as the inherited phone sync refuses one (`ipc/sync.ts`).",
+    doc: "Appends entries; a stale base is refused, as the inherited phone sync refuses one (`ipc/sync.ts`). An entry that grants something (`PEER_STREAM_GRANTS`) waits for this computer's own card or a bound signed answer (review N7).",
   }),
 } as const;
 

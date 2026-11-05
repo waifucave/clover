@@ -1,0 +1,5 @@
+Running fedora-proxy.sh on clover-c-linux
+Testing the private-bus proxy on Fedora; the kernel and SELinux host remain Ubuntu
+Fedora release 45 (Forty Five)
+xdg-dbus-proxy 0.1.9
+{"clover_item_argument_forwarded": true, "private_bus": true, "public_fixture_only": true, "test": "xdg-dbus-proxy-body-filter", "unrelated_interface_denied": true, "verdict": "method/path filter does not filter item paths in message bodies"}

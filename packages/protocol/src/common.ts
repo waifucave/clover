@@ -175,12 +175,17 @@ export const Caller = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("session"), sessionId: SessionId, sessionKind: SessionKind, bot: BotId.optional() }),
   z.object({ kind: z.literal("plugin"), pluginId: AnyPluginId }),
   z.object({ kind: z.literal("core") }),
+  /** Another computer over the link (§8.2), for one of its sessions: never the user, always fenced, and its writes
+   *  judged at the stricter of this computer's level and the call's (review N2). */
+  z.object({ kind: z.literal("peer"), device: DeviceId, sessionId: SessionId.optional(), bot: BotId.optional() }),
 ]);
 export type Caller = z.infer<typeof Caller>;
 
 /** What started a turn. A card or question from a turn the user's own message did not start is denied after 10
  *  minutes unanswered; one from a turn the user started waits (§5.5, §9.1, the inherited `isHumanTurnOrigin`). */
-export const TurnOrigin = z.enum(["user", "bot", "routine", "task-notification", "agent", "plugin"]);
+/** `peer`: a user's message another computer relayed without the sending device's good signature (review N3). It
+ *  reaches the session as the user's words, but its turn is not the user's. */
+export const TurnOrigin = z.enum(["user", "bot", "routine", "task-notification", "agent", "plugin", "peer"]);
 export type TurnOrigin = z.infer<typeof TurnOrigin>;
 export function isUserTurn(origin: TurnOrigin): boolean {
   return origin === "user";

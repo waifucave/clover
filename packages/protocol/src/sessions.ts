@@ -12,6 +12,7 @@ import {
   AnyPluginId, BotId, ChangeResult, ComputerName, Cursor, DeviceId, Empty, Ok, SessionId, SessionKind, Text,
   Timestamp, TreePath,
 } from "./common";
+import { canonicalJson } from "./approvals";
 import { coreEvent, defineEvent, defineMethod } from "./rpc";
 
 // -------------------------------------------------------------------------------------------------
@@ -120,10 +121,38 @@ export const UserMessageInput = z.object({
   clientMessageId: utf16(128, 1),
   /** When the client sent it, on the shared clock (§6.4): with the device, it orders the user's messages, so one sent
    *  earlier from a slower device goes first (`(sentAt, device)`). A client with no synced clock leaves it out, and the
-   *  daemon stamps the time it received the message (lane D's request). */
+   *  daemon stamps the time it received the message (lane D's request). The daemon that receives it clamps it to its
+   *  receive time plus or minus `SENT_AT_WINDOW_MS` (`clampSentAt`, review N5), so no stamp jumps the queue or
+   *  backdates the transcript beyond that. */
   sentAt: Timestamp.optional(),
+  /** The sending device's signature over `userMessageSigningInput`, with the key it answers cards with (a phone's own
+   *  key, a desktop app's answer key; a browser has none), base64. It travels with the message when another computer
+   *  relays it (`peer.session.send`); the computer running the bot verifies it, and a relayed message without a good
+   *  one, or signed with no `sentAt`, still arrives but its turn isn't the user's (review N3). */
+  signature: utf16(256, 1).optional(),
 });
 export type UserMessageInput = z.infer<typeof UserMessageInput>;
+
+/** How far a message's `sentAt` may sit from the receiving daemon's clock, either way (review N5). */
+export const SENT_AT_WINDOW_MS = 2 * 60 * 1000;
+
+/** A message's send time as the receiver orders it: the client's stamp, clamped to `receivedAt` plus or minus
+ *  `SENT_AT_WINDOW_MS`; the receive time when there is none. A stamp outside the window is moved to its edge. */
+export function clampSentAt(sentAt: number | undefined, receivedAt: number): number {
+  if (sentAt === undefined || !Number.isFinite(sentAt)) return receivedAt;
+  return Math.min(Math.max(sentAt, receivedAt - SENT_AT_WINDOW_MS), receivedAt + SENT_AT_WINDOW_MS);
+}
+
+/** What a user message's hash covers: its text and attachments, canonical (the hash is sha256 of this, hex). */
+export function userMessageHashInput(m: Pick<UserMessageInput, "text" | "images" | "files">): string {
+  return canonicalJson({ text: m.text, images: m.images ?? [], files: m.files ?? [] });
+}
+
+/** What the sending device signs for a message another computer may relay (review N3): the session, the client's
+ *  message id, the message's hash and its send time, one per line. */
+export function userMessageSigningInput(a: { session: string; clientMessageId: string; hash: string; sentAt: number }): string {
+  return `clover/user-message/1\n${a.session}\n${a.clientMessageId}\n${a.hash}\n${a.sentAt}`;
+}
 
 /** A routine, as the synced list keeps it (§8.5): any device can show it, even while its computer is off. */
 export const RoutineView = z.object({

@@ -1,0 +1,13 @@
+Clover review TPM inventory
+systemd 259 (259.9-0ubuntu0.1)
+yes
++firmware
++driver
++system
++subsystem
++libraries
+  +libtss2-esys.so.0
+  +libtss2-rc.so.0
+  +libtss2-mu.so.0
+tpm0_character_device=yes
+tpmrm0_character_device=yes

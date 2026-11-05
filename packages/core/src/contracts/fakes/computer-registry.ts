@@ -5,7 +5,7 @@ import {
   COMPUTER_NAME_RE, DEFAULT_LEVEL, callBindingInput, levelAbove,
   type CloverWindow, type ComputerView, type HoldView, type Level,
 } from "@waifucave/clover-protocol";
-import { type AnswerDevices, type AnswerLedger, verifySignedAnswer } from "../approval-broker";
+import { type AnswerDevices, type AnswerLedger, type CallCardRenderer, verifySignedAnswer } from "../approval-broker";
 import { MemoryAnswerLedger } from "./approval-broker";
 import type { Clock } from "../clock";
 import { ContractError, Listeners, type Unsubscribe } from "../common";
@@ -30,11 +30,14 @@ export class FakeComputerRegistry implements ComputerRegistry {
 
   readonly #devices: AnswerDevices | undefined;
   readonly #ledger: AnswerLedger;
+  /** This computer's own card for a call, which a signed answer's card must match (review N1). */
+  readonly #render: CallCardRenderer;
 
   /** `devices` checks signed answers from elsewhere; `ledger` records the card ids used (a fresh one by default). */
-  constructor(opts: { clock: Pick<Clock, "now">; self: FakeComputerInput; others?: FakeComputerInput[]; devices?: AnswerDevices; ledger?: AnswerLedger }) {
+  constructor(opts: { clock: Pick<Clock, "now">; self: FakeComputerInput; others?: FakeComputerInput[]; devices?: AnswerDevices; ledger?: AnswerLedger; render?: CallCardRenderer }) {
     this.#clock = opts.clock;
     this.#devices = opts.devices;
+    this.#render = opts.render ?? (() => undefined);
     this.#ledger = opts.ledger ?? new MemoryAnswerLedger();
     this.#self = opts.self.name;
     for (const c of [opts.self, ...(opts.others ?? [])]) this.add(c, c === opts.self);
@@ -220,7 +223,7 @@ export class FakeComputerRegistry implements ComputerRegistry {
     const { method, params } = levelRaiseCall(name, level);
     if (proof.via === "signed") {
       if (!this.#devices) return "no device registry to check a signed answer";
-      const verdict = await verifySignedAnswer(proof.answer, { self: name, method, params, now: this.#clock.now(), sha256, devices: this.#devices, ledger: this.#ledger });
+      const verdict = await verifySignedAnswer(proof.answer, { self: name, method, params, now: this.#clock.now(), sha256, devices: this.#devices, ledger: this.#ledger, render: this.#render });
       return verdict === "ok" ? null : verdict;
     }
     const { card, outcome, optionId } = proof.record;

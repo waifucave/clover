@@ -27,6 +27,8 @@ export const CAPABILITIES: readonly CapabilityInfo[] = [
   { name: "approvals", lets: "Hear which cards are pending, never their text, and place their sealed frames", ok: "restyles approval cards", warns: true },
   { name: "files", lets: "Read and write files through the folder tree, inside the fence", ok: "reads and writes files on your computers", warns: false },
   { name: "browser", lets: "Drive the Clover Browser through its API", ok: "drives the Clover Browser", warns: false },
+  /** Not in §5.4's table: lane F's request for the terminal panel. */
+  { name: "terminal", lets: "Open terminals on your computers and pass them the user's own key presses and pastes: a paste of several lines asks first", ok: "runs commands on your computers", warns: true },
   { name: "usage.read", lets: "Read usage rows and plan readings", ok: "sees your usage and plan readings", warns: false },
   { name: "logs.read", lets: "Read Clover's logs and every plugin's", ok: "reads Clover's logs", warns: false },
   { name: "notify", lets: "Send the user a notification through the notifiers", ok: "sends you notifications", warns: false },

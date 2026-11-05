@@ -6,7 +6,8 @@ import {
   AREA_EVENTS, AREA_METHODS, CLOVER_AREAS, CLOVER_EVENTS, CLOVER_METHODS, CloverCoreEvent,
   PEER_CALL_ROLES, allowedEvents, allowedMethods, daemonRequestsTo, decodeCloverCoreEvent, peerCallVerdict, pluginMayCall,
 } from "../src/clover";
-import { CloverSessionEvent } from "../src/sessions";
+import { CloverSessionEvent, SENT_AT_WINDOW_MS, clampSentAt, userMessageHashInput, userMessageSigningInput } from "../src/sessions";
+import { Caller as CallerSchema } from "../src/common";
 import {
   AnyPluginId, Caller, ComputerName, LANES, LEVELS, TopPluginId, TreePath, isAnyPluginId, isPluginId, levelAbove,
   pluginIdFromSegment, pluginIdToSegment, topPluginIdOf,
@@ -14,7 +15,7 @@ import {
 import { CLOVER_ROLES, CloverHelloParams, PLUGIN_ROLES, REMOTE_ROLES, USER_ROLES, helloVersionServed, type CloverRole } from "../src/roles";
 import { CLOVER_ERR, CLOVER_PROTOCOL_MIN_VERSION, CLOVER_PROTOCOL_VERSION, HOST_PROCESSES } from "../src/common";
 import { METHODS, SessionEvent } from "../src/index";
-import { CARD_ANSWER_SKEW_MS, answerTimeOk, canonicalJson, cardAnswerSigningInput, cardHashInput } from "../src/approvals";
+import { CARD_ANSWER_SKEW_MS, SealedValue, answerTimeOk, canonicalJson, cardAnswerSigningInput, cardContentInput, cardHashInput } from "../src/approvals";
 import { buildCloverArtifacts } from "../scripts/clover-artifacts";
 import { isBrowserUrlAllowed, isCdpMethodAllowed } from "../src/browser";
 
@@ -348,6 +349,14 @@ describe("cards", () => {
     expect(byName.emoji!.canonical.startsWith('{"e":"😀","z":')).toBe(true);
     expect(byName.numbers!.canonical).toContain('"big":1e+21');
     expect(byName["line-separators"]!.canonical).toBe('{"s":"a\u2028b\u2029c"}');
+    expect(byName["lone-surrogate"]!.canonical).toBe('{"s":"a\uFFFDb","\uFFFD":1}');
+    // Sealed text refuses one outright.
+    expect(SealedValue.safeParse({ type: "text", text: "a\ud800b" }).success).toBe(false);
+    expect(SealedValue.safeParse({ type: "text", text: "a😀b" }).success).toBe(true);
+    // A card's content leaves out where and when it was shown, and nothing else (N1).
+    const c = file.card.card as never as Parameters<typeof cardContentInput>[0] & { id: string; issuedAt: number };
+    expect(cardContentInput({ ...c, id: "card_other", issuedAt: 1 } as never)).toBe(cardContentInput(c));
+    expect(cardContentInput({ ...c, fields: { title: { type: "text", text: "Show the weather" } } })).not.toBe(cardContentInput(c));
     for (const v of file.vectors) expect([v.name, canonicalJson(v.input)]).toEqual([v.name, v.canonical]);
     expect(cardHashInput(file.card.card as never)).toBe(file.card.hashInput);
   });
@@ -371,5 +380,27 @@ describe("the browser's DevTools domains", () => {
     for (const url of ["https://a.example/", "http://127.0.0.1:8080/", "about:blank", "about:srcdoc", "data:text/html,hi", "blob:https://a.example/1"]) {
       expect([url, isBrowserUrlAllowed(url)]).toEqual([url, true]);
     }
+  });
+});
+
+describe("relayed messages and peer file calls (review N2, N3, N5)", () => {
+  test("a send time is clamped to the receive time plus or minus the window", () => {
+    const now = 1_781_270_000_000;
+    expect(clampSentAt(undefined, now)).toBe(now);
+    expect(clampSentAt(0, now)).toBe(now - SENT_AT_WINDOW_MS);
+    expect(clampSentAt(8.64e15, now)).toBe(now + SENT_AT_WINDOW_MS);
+    expect(clampSentAt(now - 1234, now)).toBe(now - 1234);
+  });
+
+  test("the user-message signing input is pinned, and the hash covers the words and attachments only", () => {
+    expect(userMessageSigningInput({ session: "s_alpha", clientMessageId: "m-1", hash: "ab", sentAt: 5 })).toBe("clover/user-message/1\ns_alpha\nm-1\nab\n5");
+    expect(userMessageHashInput({ text: "hi" })).toBe('{"files":[],"images":[],"text":"hi"}');
+  });
+
+  test("a peer caller is its own kind, and tree calls carry the peer's session, level and answer", () => {
+    expect(CallerSchema.safeParse({ kind: "peer", device: "desk0000000000000001", sessionId: "s_remote" }).success).toBe(true);
+    const write = CLOVER_METHODS.get("tree.write")!;
+    expect(write.params.safeParse({ path: "home/Studio/a.txt", data: { encoding: "utf8", text: "a" }, session: "s_remote", level: "ask" }).success).toBe(true);
+    expect(write.params.safeParse({ path: "home/Studio/a.txt", data: { encoding: "utf8", text: "a" }, level: "everything" }).success).toBe(false);
   });
 });

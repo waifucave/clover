@@ -5,7 +5,7 @@
 import type {
   ApprovalsApi, AudioApi, BotsApi, BrowserApi, CommandsApi, ComputersApi, ConversationApi, DevicesApi, FilesApi, HostApi, KeysApi,
   LogsApi, MemoryApi, NetApi, NotifyApi, PluginApi, PointsApi, RoutinesApi, SecretsApi, SettingsApi, SyncedStore,
-  UiSendApi, UsageApi,
+  TerminalApi, UiSendApi, UsageApi,
 } from "../api/plugin-api";
 import type { HostProcess } from "@waifucave/clover-protocol";
 
@@ -19,7 +19,7 @@ export type ApiCallPath =
   | `storage.synced.${FnKeys<SyncedStore>}` | `net.${FnKeys<NetApi>}` | `secrets.${FnKeys<SecretsApi>}` | `keys.${FnKeys<KeysApi>}`
   | `settings.${FnKeys<SettingsApi>}` | `conversation.${FnKeys<ConversationApi>}` | `memory.${FnKeys<MemoryApi>}`
   | `bots.${FnKeys<BotsApi>}` | `routines.${FnKeys<RoutinesApi>}` | `computers.${FnKeys<ComputersApi>}` | `devices.${FnKeys<DevicesApi>}`
-  | `approvals.${FnKeys<ApprovalsApi>}` | `files.${FnKeys<FilesApi>}` | `browser.${FnKeys<BrowserApi>}`
+  | `approvals.${FnKeys<ApprovalsApi>}` | `files.${FnKeys<FilesApi>}` | `browser.${FnKeys<BrowserApi>}` | `terminal.${FnKeys<TerminalApi>}`
   | `usage.${FnKeys<UsageApi>}` | `logs.${FnKeys<LogsApi>}` | `notify.${FnKeys<NotifyApi>}` | `audio.${FnKeys<AudioApi>}`;
 
 export interface ApiCallInfo {
@@ -67,6 +67,10 @@ export const API_CALLS = {
   "browser.tabs": both("browser"), "browser.open": both("browser"), "browser.close": both("browser"), "browser.navigate": both("browser"),
   "browser.show": both("browser"), "browser.hide": both("browser"), "browser.screenshot": both("browser"), "browser.cdp": both("browser"),
   "browser.onCdpEvent": both("browser"), "browser.watch": both("browser"),
+  /** Components only: what reaches a terminal is the user's own key presses and pastes. */
+  "terminal.open": { capability: "terminal", where: "ui" }, "terminal.write": { capability: "terminal", where: "ui" },
+  "terminal.onData": { capability: "terminal", where: "ui" }, "terminal.resize": { capability: "terminal", where: "ui" },
+  "terminal.close": { capability: "terminal", where: "ui" },
   "usage.rows": both("usage.read"), "usage.plans": both("usage.read"), "usage.summary": both("usage.read"), "usage.watch": both("usage.read"),
   "logs.read": both("logs.read"), "logs.follow": both("logs.read"),
   "notify.send": both("notify"),

@@ -1,0 +1,14 @@
+Running linux-fence.py on clover-c-linux
+Running isolated bubblewrap probes
+{"test": "allowed-write", "exit": 0, "elapsed_ms": 24.6, "diagnostic": ""}
+{"test": "ordinary-read", "exit": 0, "elapsed_ms": 21.37, "diagnostic": ""}
+{"test": "settings-write-denied", "exit": 0, "elapsed_ms": 21.66, "diagnostic": ""}
+{"test": "run-host-content-hidden", "exit": 0, "elapsed_ms": 21.13, "diagnostic": ""}
+{"test": "secrets-host-content-hidden", "exit": 0, "elapsed_ms": 14.78, "diagnostic": ""}
+{"test": "ancestor-rename-denied", "exit": 0, "elapsed_ms": 20.04, "diagnostic": ""}
+{"test": "host-session-bus-hidden", "exit": 0, "elapsed_ms": 16.11, "diagnostic": ""}
+{"test": "systemd-run-denied", "exit": 0, "elapsed_ms": 22.7, "diagnostic": ""}
+{"test": "network-denied", "exit": 0, "elapsed_ms": 59.03, "diagnostic": ""}
+{"test": "pipeline-subshell", "exit": 0, "elapsed_ms": 19.0, "diagnostic": ""}
+{"test": "git", "exit": 0, "elapsed_ms": 18.37, "diagnostic": ""}
+{"test": "build", "exit": 0, "elapsed_ms": 150.58, "diagnostic": ""}

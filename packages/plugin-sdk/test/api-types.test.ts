@@ -9,7 +9,10 @@ import {
   type PluginApi, type RelayHandler, type StreamHandler, type UiApi, type WebhookIngressHandler,
 } from "../src/index";
 import { createHash } from "node:crypto";
-import { DEFAULT_KEY_PLACEMENT, isSealedLookAllowed, keyHeaderFor, stripEchoedKey, validateManifest } from "../src/index";
+import {
+  DEFAULT_KEY_PLACEMENT, DEFAULT_KEYED_IDLE_TIMEOUT_MS, MAX_KEYED_IDLE_TIMEOUT_MS, MIN_KEYED_IDLE_TIMEOUT_MS, clampKeyedIdleTimeoutMs,
+  isSealedLookAllowed, keyHeaderFor, keyPlacementsFor, stripEchoedKey, validateManifest,
+} from "../src/index";
 
 // A host half: handlers named by the manifest, a `host` MCP server, and the lifecycle.
 const draw: Handler<{ count: number }, { cards: string[] }> = async (args, ctx) => {
@@ -164,6 +167,17 @@ describe("the declarations", () => {
     expect(auth({ header: "authorization", scheme: "Bearer" }).ok).toBe(true);
     expect(auth({ header: "x-echo" }).ok).toBe(false);
     expect(auth({ header: "x-api-key", scheme: "Bearer" }).ok).toBe(false);
+    // The core checks the placements when it builds the fetch, so an off-list one never reaches a request.
+    expect([...keyPlacementsFor([{ name: "api_key" }, { name: "goog", placement: { header: "x-goog-api-key" } }])]).toEqual([
+      ["api_key", { header: "authorization", scheme: "Bearer" }], ["goog", { header: "x-goog-api-key" }],
+    ]);
+    expect(() => keyPlacementsFor([{ name: "api_key", placement: { header: "x-echo" } as never }])).toThrow(/api_key/);
+    expect(() => keyPlacementsFor([{ name: "api_key", placement: { header: "authorization", scheme: "Bearer x" } }])).toThrow();
+  });
+
+  test("a request's own idle limit is held to 1 s - 30 min, five minutes when it names none (lane A's interface v1)", () => {
+    expect([DEFAULT_KEYED_IDLE_TIMEOUT_MS, MIN_KEYED_IDLE_TIMEOUT_MS, MAX_KEYED_IDLE_TIMEOUT_MS]).toEqual([300_000, 1_000, 1_800_000]);
+    expect([undefined, Number.NaN, "60000", 1, 1_000, 59_999.6, 3_600_000].map(clampKeyedIdleTimeoutMs)).toEqual([300_000, 300_000, 300_000, 1_000, 1_000, 60_000, 1_800_000]);
   });
 
   test("a routine's key reaches an ingress only as its hash; the long poll fits the 10-minute cap", async () => {

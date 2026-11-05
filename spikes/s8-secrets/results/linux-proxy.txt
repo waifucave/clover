@@ -1,0 +1,3 @@
+Running proxy-probe.py on clover-c-linux
+{"clover_item_argument_forwarded": true, "private_bus": true, "public_fixture_only": true, "test": "xdg-dbus-proxy-body-filter", "unrelated_interface_denied": true, "verdict": "method/path filter does not filter item paths in message bodies"}
+{"test": "bubblewrap-plus-proxy", "exit": 0, "item_argument_forwarded": true, "diagnostic": ""}
