@@ -310,6 +310,37 @@ describe("DurableSessionHost on disk", () => {
     expect(d1.turns).toHaveLength(1);
   });
 
+  test("a failed turn doesn't end a bot's conversation: it is recorded, what waits runs, and it reopens after a restart", async () => {
+    const { home, clock, host } = durable();
+    // A driver that can't fold, so the bot's message waits for a turn of its own.
+    const d1 = new FakeSessionDriver({ canFold: false });
+    host.open({ id: "b_alpha", kind: "bot", bot: "alpha", computer: "Studio" }, d1);
+    await host.sendUser("b_alpha", user("hi"));
+    await flush();
+    expect(await host.deliver("b_alpha", fromBot)).toMatchObject({ disposition: "queued" });
+    d1.end({ reason: "failed", failure: "sign-in", text: "sign in to Anthropic again" });
+    await flush();
+    // The bot's message waiting behind the failed turn runs next; the conversation is open throughout.
+    expect(d1.turns.map((t) => t.input.from)).toEqual(["user", "bot"]);
+    expect(host.get("b_alpha")).toMatchObject({ status: "prompting" });
+    expect(host.get("b_alpha")?.failure).toBeUndefined();
+    d1.end();
+    await flush();
+    expect(host.history("b_alpha").filter((r) => r.type === "turn_ended").map((r) => (r.type === "turn_ended" ? r.end.reason : ""))).toEqual(["failed", "end_turn"]);
+    expect(await host.sendUser("b_alpha", user("still there?"))).toMatchObject({ disposition: "turn" });
+    await flush();
+    d1.end({ reason: "failed", failure: "error" });
+    await flush();
+    expect(host.get("b_alpha")?.status).toBe("idle");
+    await host.close();
+
+    const again = new DurableSessionHost({ home, clock });
+    expect(again.get("b_alpha")?.status).toBe("idle");
+    const d2 = new FakeSessionDriver();
+    again.open({ id: "b_alpha", kind: "bot", bot: "alpha", computer: "Studio" }, d2);
+    expect(await again.sendUser("b_alpha", user("and now?"))).toMatchObject({ disposition: "turn" });
+  });
+
   test("a torn last line is dropped; a corrupt line ends the log there, with the file copied aside first", async () => {
     const { home, clock, host } = durable();
     const d = new FakeSessionDriver();

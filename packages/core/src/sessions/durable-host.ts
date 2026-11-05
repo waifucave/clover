@@ -13,6 +13,8 @@
 // * **A restart interrupts.** A turn that was running when the daemon stopped is recorded `interrupted` (§3.1 "A
 //   daemon restart … records running calls as interrupted"); what was queued behind it runs once the session's driver
 //   is back.
+// * **A bot's conversation never fails.** The contract ends a session whose turn fails, which is right for an agent's
+//   backend; a bot's one conversation (§6.3) records the failed turn, with why, and goes on to the next input.
 // * **Notes reach the model.** A note never starts a turn (§5.4 `conversation.post`), but the bot should still see it:
 //   one that arrives while a turn runs folds into that turn after its next tool call, and one that arrives while the
 //   session is idle waits and is folded into the next turn as it starts, before the driver's first model call.
@@ -539,6 +541,12 @@ export class DurableSessionHost implements SessionHost {
     if (s.stopping || isEnded(s.view.status)) return;
     if (s.releasing) {
       this.#setStatus(s, "idle");
+      return;
+    }
+    if (end.reason === "failed" && s.meta.kind === "bot") {
+      // A bot's one conversation never ends (§6.3): the failed turn is recorded with why, and what waits runs next.
+      this.#setStatus(s, "idle");
+      this.#pump(s);
       return;
     }
     if (end.reason === "failed") {

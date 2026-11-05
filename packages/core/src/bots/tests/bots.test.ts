@@ -109,6 +109,26 @@ describe("Alpha", () => {
     expect(existsSync(sessionLogPath(home, "alpha", "b_alpha"))).toBe(true);
     await second.shutdown();
   });
+
+  test("a turn that fails doesn't end Alpha's conversation, now or after a restart", async () => {
+    const home = tempDir();
+    const clock = new FakeClock();
+    const first = await boot({ home, clock, plugins: await alphaInputs() });
+    await first.host.sendUser("b_alpha", user("hi"));
+    await flush();
+    first.drivers.for("b_alpha").end({ reason: "failed", failure: "sign-in", text: "sign in to Anthropic again" });
+    await flush();
+    expect(first.bots.get("alpha")?.state).toBe("idle");
+    const turnEnds = projectRecords(first.host.history("b_alpha"), { kind: "bot" }).filter((e) => e.type === "turn_completed");
+    expect(turnEnds).toMatchObject([{ stopReason: "error" }]);
+    await first.shutdown();
+
+    const second = await boot({ home, clock, plugins: await alphaInputs() });
+    expect(second.bots.list().map((v) => v.id)).toEqual(["alpha"]);
+    expect(second.warnings).toEqual([]);
+    expect(await second.host.sendUser("b_alpha", user("signed in now"))).toMatchObject({ disposition: "turn" });
+    await second.shutdown();
+  });
 });
 
 describe("bots from plugins", () => {
