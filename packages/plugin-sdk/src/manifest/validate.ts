@@ -62,6 +62,9 @@ export interface ManifestReport {
   addons: boolean;
   adult: boolean;
   bot: boolean;
+  /** It places sealed frames (the `approvals` capability), so it styles approval cards (§5.5); a theme or `style` file
+   *  that sets `card.*` tokens does too, which `validateTree` adds (`TreeReport.restylesCards`). */
+  restylesCards: boolean;
   issues: ValidationIssue[];
 }
 
@@ -279,7 +282,7 @@ function checkDeclares(f: Findings, topId: string | undefined, declares: unknown
 export function refusedReport(issues: ValidationIssue[], id?: string, namespace?: string): ManifestReport {
   return {
     ok: false, id, namespace, manifest: undefined, class: "data", contributions: [], declares: [], networkHosts: [], dynamicHosts: false,
-    helperPermissions: [], capabilities: [], toolNames: [], settings: [], fetchesCode: [], addons: false, adult: false, bot: false, issues,
+    helperPermissions: [], capabilities: [], toolNames: [], settings: [], fetchesCode: [], addons: false, adult: false, bot: false, restylesCards: false, issues,
   };
 }
 
@@ -480,6 +483,7 @@ export function validateManifest(input: unknown, opts: ValidateOptions = {}): Ma
     addons: top.addons !== undefined,
     adult: top.adult === true,
     bot: kept.bot !== undefined,
+    restylesCards: capabilities.includes("approvals"),
     issues: f.list,
   };
 }
@@ -824,7 +828,10 @@ function urlFields(m: Manifest): string[] {
 
 /** The OK's text for a plugin, in English (§5.1, §5.6); the app shows it from the built-in tables in the user's
  *  language. One card covers a plugin and its children. */
-export function describeOk(report: ManifestReport, opts: { os?: "macos" | "windows" | "linux"; source?: "index" | "other" } = {}): string[] {
+export function describeOk(
+  report: ManifestReport,
+  opts: { os?: "macos" | "windows" | "linux"; source?: "index" | "other"; /** The tree's flag (`TreeReport.restylesCards`). */ restylesCards?: boolean } = {},
+): string[] {
   const lines: string[] = [];
   const what = report.class === "code" ? "runs code on your computers" : report.class === "web" ? "shows web pages" : "is data only: files, no code";
   lines.push(`${report.id ?? "This plugin"} ${what}.`);
@@ -835,6 +842,7 @@ export function describeOk(report: ManifestReport, opts: { os?: "macos" | "windo
     const text = capabilityOkText(cap);
     if (text) lines.push(`It ${text}.`);
   }
+  if (opts.restylesCards && !report.capabilities.includes("approvals")) lines.push(`It ${capabilityOkText("approvals")}.`);
   if (report.networkHosts.length > 0) {
     lines.push(`Its components reach only ${report.networkHosts.join(", ")}${report.class === "code" ? "; its host code can reach any host" : ""}.`);
   } else if (report.class === "code") lines.push("Its components reach no host; its host code can reach any host.");

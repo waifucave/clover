@@ -302,6 +302,15 @@ describe("the OK's text", () => {
     expect(lines).toContain("It fetches code when it runs: npx tarot-mcp.");
     expect(lines).toContain("It loads add-ons of its own, which Clover doesn't check.");
     expect(lines).toContain("Not reviewed: it isn't from the official index.");
+    expect(lines.filter((l) => l === "It restyles approval cards.")).toHaveLength(1);
+    expect(r.restylesCards).toBe(true);
+  });
+
+  test("a tree whose theme sets card.* tokens restyles approval cards too (review S7)", () => {
+    const r = validateManifest(min());
+    expect(r.restylesCards).toBe(false);
+    expect(describeOk(r)).not.toContain("It restyles approval cards.");
+    expect(describeOk(r, { restylesCards: true })).toContain("It restyles approval cards.");
   });
 });
 

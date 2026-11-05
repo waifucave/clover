@@ -16,6 +16,16 @@
 //   list's order, keeps the id (§5.1 "Entry ids"). Commands are unique within their namespace (§5.4).
 // * Change events come in dependency order: when something stops, the entries that depended on it change before the
 //   plugin that declared their point does; when something starts, the declarer comes first (§5.4).
+// * A well-known name's point is recorded with the catalog's declaration (the plugin SDK's `catalogPointDecl`),
+//   whatever its declarer wrote, so its `keep` and `needs` hold (review S2): `conversation.message` keeps `approval`.
+// * A point declared `private` takes entries only from its declarer's own tree; another plugin's entry is refused.
+// * Only one enabled plugin may use a namespace (§6.7): a later one, by the synced list's order, stays off and says
+//   whose it is.
+// * The OK is bound to the tree the card showed (review S7): `approve` refuses with `changed` when the folder's tree
+//   hash is no longer the one passed, and the app shows a new card. After its OK, a folder change that hits a trigger
+//   or changes what runs (§5.6 "When the app asks again") waits for a new OK; another data edit applies at once,
+//   except a change to card styling (§5.5), which applies to everything but approval cards: they keep the styling of
+//   the tree last OK'd (`okHash`) until the user OKs it.
 import type { PluginProvenance, PluginState, PluginSummary, ValidationIssue } from "@waifucave/clover-protocol";
 import type { Unsubscribe } from "./common";
 import type { CoreEntries, Manifest, PointDecl } from "./sdk-types";
@@ -23,6 +33,10 @@ import type { CoreEntries, Manifest, PointDecl } from "./sdk-types";
 export interface PluginRecord extends PluginSummary {
   /** The folder on this computer. */
   folder: string;
+  /** The tree hash the user last OK'd (an install through the app is its OK); `treeHash` is the folder now. */
+  okHash?: string;
+  /** A change to its card styling waits for its OK: approval cards keep the styling of `okHash`. */
+  cardStylingHeld?: boolean;
   /** As validated: refused contributions and entries left out; undefined when the plugin itself is refused. */
   manifest: Manifest | undefined;
   capabilities: readonly string[];
@@ -57,8 +71,13 @@ export interface RegisteredPoint {
   spot: boolean;
   /** It exists now: its declaring entry is active. */
   active: boolean;
+  /** The catalog's declaration for a well-known name (review S2), whatever the declarer wrote; the declarer's for any
+   *  other point. */
   decl?: PointDecl;
 }
+
+/** `changed`: the folder is no longer the tree the card showed, so nothing was approved (review S7). */
+export type ApproveResult = "approved" | "changed";
 
 export type RegistryChange =
   | { type: "plugin"; id: string; state: PluginState }
@@ -74,8 +93,9 @@ export interface PluginRegistry {
   points(): RegisteredPoint[];
   /** The user's switch (§5.1). */
   setEnabled(id: string, enabled: boolean): Promise<void>;
-  /** The user's OK for a found plugin: one card covers a plugin and its children, with a checkbox each (§5.1). */
-  approve(id: string, children?: Readonly<Record<string, boolean>>): Promise<void>;
+  /** The user's OK for a found plugin, or for a change waiting for one: one card covers a plugin and its children, with
+   *  a checkbox each (§5.1). `treeHash` is the tree the card showed; `selection` the children's checkboxes. */
+  approve(id: string, treeHash: string, selection?: Readonly<Record<string, boolean>>): Promise<ApproveResult>;
   /** The user refused it; it stays off until its folder changes. */
   refuse(id: string): Promise<void>;
   watch(fn: (change: RegistryChange) => void): Unsubscribe;

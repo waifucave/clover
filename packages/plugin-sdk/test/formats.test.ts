@@ -4,7 +4,7 @@ import { createHash } from "node:crypto";
 import {
   IndexSchema, LayoutSchema, LocaleSchema, RevocationsSchema, ThemeSchema, compareVersions, isRevoked, isTreeHashExcluded,
   layoutPaths, layoutSpots, localeFallbacks, parseRange, parseSignatureFile, parseVersion, placeholdersOf, satisfies,
-  cssFunctionName, cssUnescape, isCssUrlFunction, isDroppedCssFunction, resolveCssUrl, resolveTokens, sha256Hex,
+  cardTokensChanged, cssFunctionName, cssUnescape, isCssUrlFunction, isDroppedCssFunction, resolveCssUrl, resolveTokens, setsCardTokens, sha256Hex,
   themeTokensFor, treeHash, treeHashInput, treePathProblem,
 } from "../src/index";
 
@@ -41,6 +41,22 @@ describe("appearance and the fallback order", () => {
     const dark = resolveTokens("dark", [base, bot, user]);
     expect(dark["color.accent"]).toBe("#FF7AB6");
     expect(dark["color.canvas"]).toBe("#212126");
+  });
+
+  test("a change to card styling waits for its OK: cards keep the values last OK'd, the rest applies (review S7)", () => {
+    const okd = { tokens: { "color.accent": "#111111", "card.approve.background": "#00AA00" } };
+    const now = { tokens: { "color.accent": "#222222", "card.approve.background": "#AA0000", "card.deny.background": "#00AA00" } };
+    expect(setsCardTokens(okd)).toBe(true);
+    expect(setsCardTokens({ tokens: { "color.accent": "#111111" } })).toBe(false);
+    expect(setsCardTokens({ tokens: {}, dark: { tokens: { "card.background": "#000000" } } })).toBe(true);
+    expect(cardTokensChanged(okd, now)).toBe(true);
+    expect(cardTokensChanged(okd, { tokens: { ...okd.tokens, "color.accent": "#333333" } })).toBe(false);
+    const held = resolveTokens("light", [{ ...now, heldCard: okd }]);
+    expect(held["color.accent"]).toBe("#222222");
+    expect(held["card.approve.background"]).toBe("#00AA00");
+    const fresh = resolveTokens("light", []);
+    expect(held["card.deny.background"]).toBe(fresh["card.deny.background"]);
+    expect(resolveTokens("light", [now])["card.approve.background"]).toBe("#AA0000");
   });
 });
 

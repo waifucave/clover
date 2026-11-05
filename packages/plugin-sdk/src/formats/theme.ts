@@ -21,8 +21,12 @@
 //   1. the catalog's default for that appearance (`dark` where it has one, else `default`).
 // A plugin's own tokens (`plugin.<id>.…`) have no catalog default: unset, its CSS's `var()` fallback applies.
 // `resolveTokens` computes one part's values from its layers.
+//
+// Card styling (§5.5, review S7): the `card.*` values a layer hands sealed frames are card styling, so a later change to
+// them waits for its own OK while the rest of the change applies at once. Until the user OKs it, the core passes the
+// layer's last OK'd values as `heldCard`, and `resolveTokens` takes that layer's `card.*` values from there.
 import { z } from "zod";
-import { TOKENS, isSafeTokenValue, type TokenValue } from "../catalogs/tokens";
+import { CARD_TOKENS, TOKENS, isSafeTokenValue, type TokenValue } from "../catalogs/tokens";
 import { Path, Text } from "../manifest/fields";
 
 /** A token's value: a string, or a plain number for `number` and `fontWeight` tokens. The catalog
@@ -63,12 +67,42 @@ export function themeTokensFor(theme: Pick<Theme, "appearance" | "tokens" | "dar
   return merged;
 }
 
+type ThemeTokens = Pick<Theme, "appearance" | "tokens" | "dark">;
+
+/** One layer of `resolveTokens`. `heldCard` is the layer as last OK'd, set while a change to its card styling waits
+ *  for its OK: its `card.*` values come from there, everything else from the layer as it is now. */
+export type TokenLayer = ThemeTokens & { heldCard?: ThemeTokens };
+
+const isCardToken = (name: string) => name.startsWith("card.");
+
+/** Whether a theme sets any `card.*` token, in either appearance: card styling (§5.5). */
+export function setsCardTokens(theme: ThemeTokens): boolean {
+  return [...Object.keys(theme.tokens), ...Object.keys(theme.dark?.tokens ?? {})].some(isCardToken);
+}
+
+/** Whether two versions of a theme hand sealed frames different values: a change that waits for its own OK. */
+export function cardTokensChanged(before: ThemeTokens, after: ThemeTokens): boolean {
+  for (const appearance of ["light", "dark"] as const) {
+    const a = themeTokensFor(before, appearance) ?? {};
+    const b = themeTokensFor(after, appearance) ?? {};
+    for (const t of CARD_TOKENS) if (a[t.name] !== b[t.name]) return true;
+  }
+  return false;
+}
+
 /** One part's token values in one appearance: the catalog's defaults, then each layer's values over them, `layers`
  *  given lowest first (base theme, global theme, the bot's theme, the dressing plugins from the outermost part in,
  *  the user's overrides). */
-export function resolveTokens(appearance: Appearance, layers: readonly Pick<Theme, "appearance" | "tokens" | "dark">[]): Record<string, TokenValue> {
+export function resolveTokens(appearance: Appearance, layers: readonly TokenLayer[]): Record<string, TokenValue> {
   const out: Record<string, TokenValue> = {};
   for (const t of TOKENS) out[t.name] = appearance === "dark" && t.dark !== undefined ? t.dark : t.default;
-  for (const layer of layers) Object.assign(out, themeTokensFor(layer, appearance) ?? {});
+  for (const layer of layers) {
+    const values = themeTokensFor(layer, appearance) ?? {};
+    if (layer.heldCard !== undefined) {
+      for (const name of Object.keys(values)) if (isCardToken(name)) delete values[name];
+      for (const [name, v] of Object.entries(themeTokensFor(layer.heldCard, appearance) ?? {})) if (isCardToken(name)) values[name] = v;
+    }
+    Object.assign(out, values);
+  }
   return out;
 }

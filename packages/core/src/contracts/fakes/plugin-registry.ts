@@ -1,11 +1,14 @@
-// FakePluginRegistry: plugins given as validated manifests (no folders, no hashing, no validation), with the
-// registry's rules for states, children, waiting points, unique entry ids and change order. `put` and `remove` stand
-// for a folder appearing, changing or going away; `setStopped` is what the plugin host reports after crashes.
+// FakePluginRegistry: plugins given as validated manifests (no folders, no validation), with the registry's rules for
+// states, children, waiting points, unique entry ids and namespaces, private points, the OK bound to a tree hash, and
+// change order. `put` and `remove` stand for a folder appearing, changing or going away; `setStopped` is what the
+// plugin host reports after crashes. The catalog's declarations come in as `catalog` (the plugin SDK's
+// `catalogPointDecl`), since the contracts don't import the SDK at run time.
+import { createHash } from "node:crypto";
 import type { PluginClass, PluginProvenance, PluginSource, PluginState, ValidationIssue } from "@waifucave/clover-protocol";
 import { Listeners, type Unsubscribe } from "../common";
 import {
   CORE_SPOTS, UNIQUE_ENTRY_FIELD,
-  type Contribution, type PluginRecord, type PluginRegistry, type RegisteredPoint, type RegistryChange,
+  type ApproveResult, type Contribution, type PluginRecord, type PluginRegistry, type RegisteredPoint, type RegistryChange,
 } from "../plugin-registry";
 import type { CoreEntries, Manifest, PointDecl } from "../sdk-types";
 
@@ -27,15 +30,33 @@ export interface FakePluginInput {
   class?: PluginClass;
   provenance?: PluginProvenance;
   dev?: boolean;
+  /** `sha256:<hex>`; default a hash of the manifest, so a changed manifest is a changed tree. */
+  treeHash?: string;
+  /** For a folder that changed after its OK, what the change is (§5.6): `asks-again` (the default) hits a trigger or
+   *  changes what runs, so it waits for a new OK; `applies` is another data edit; `card-styling` changes only how it
+   *  styles approval cards, which wait for their own OK while the rest applies. */
+  change?: "asks-again" | "applies" | "card-styling";
+}
+
+export interface FakePluginRegistryOptions {
+  /** The catalog's declaration of a well-known name, or undefined for any other: the plugin SDK's `catalogPointDecl`. */
+  catalog: (name: string) => PointDecl | undefined;
+  plugins?: FakePluginInput[];
+  adultConfirmed?: boolean;
 }
 
 interface Held {
   input: FakePluginInput;
+  hash: string;
   enabled: boolean;
   approved: boolean;
   refused: boolean;
+  okHash?: string;
+  cardHeld: boolean;
   stopped?: string;
 }
+
+const manifestHash = (m: Manifest) => `sha256:${createHash("sha256").update(JSON.stringify(m)).digest("hex")}`;
 
 interface Snapshot {
   records: Map<string, PluginRecord>;
@@ -54,10 +75,12 @@ const parentOf = (id: string): string | undefined => (id.includes("/") ? id.slic
 export class FakePluginRegistry implements PluginRegistry {
   readonly #plugins = new Map<string, Held>();
   readonly #listeners = new Listeners<RegistryChange>();
+  readonly #catalog: (name: string) => PointDecl | undefined;
   #adultConfirmed: boolean;
   #snap: Snapshot = { records: new Map(), entries: new Map(), points: [] };
 
-  constructor(opts: { plugins?: FakePluginInput[]; adultConfirmed?: boolean } = {}) {
+  constructor(opts: FakePluginRegistryOptions) {
+    this.#catalog = opts.catalog;
     this.#adultConfirmed = opts.adultConfirmed ?? false;
     for (const p of opts.plugins ?? []) this.#hold(p);
     this.#snap = this.#compute();
@@ -87,15 +110,19 @@ export class FakePluginRegistry implements PluginRegistry {
     this.#update();
   }
 
-  async approve(id: string, children: Readonly<Record<string, boolean>> = {}): Promise<void> {
+  async approve(id: string, treeHash: string, selection: Readonly<Record<string, boolean>> = {}): Promise<ApproveResult> {
     const held = this.#mustGet(id);
+    if (held.hash !== treeHash) return "changed";
     held.approved = true;
     held.refused = false;
-    for (const [child, on] of Object.entries(children)) {
+    held.okHash = treeHash;
+    held.cardHeld = false;
+    for (const [child, on] of Object.entries(selection)) {
       const c = this.#plugins.get(child);
       if (c && parentOf(child) === id) c.enabled = on;
     }
     this.#update();
+    return "approved";
   }
 
   async refuse(id: string): Promise<void> {
@@ -133,14 +160,39 @@ export class FakePluginRegistry implements PluginRegistry {
     this.#update();
   }
 
+  /** A folder appears or changes. New: OK'd unless `approved: false` (an install through the app is its OK). Changed
+   *  after its OK: by `change` (§5.6). A refused plugin is asked about again once its tree changes. */
   #hold(input: FakePluginInput): void {
     const parent = parentOf(input.id);
     const defaultEnabled = parent === undefined ? true : (input.manifest.enabledByDefault ?? true);
+    const hash = input.treeHash ?? manifestHash(input.manifest);
+    const prev = this.#plugins.get(input.id);
+    let approved: boolean;
+    let okHash: string | undefined;
+    let cardHeld = false;
+    if (input.approved !== undefined) {
+      approved = input.approved;
+      okHash = approved ? hash : prev?.okHash;
+    } else if (prev === undefined) {
+      approved = true;
+      okHash = hash;
+    } else if (prev.hash === hash) {
+      ({ approved, okHash, cardHeld } = prev);
+    } else {
+      const change = input.change ?? "asks-again";
+      okHash = prev.okHash;
+      if (!prev.approved || prev.refused || change === "asks-again") approved = false;
+      else if (change === "card-styling") [approved, cardHeld] = [true, true];
+      else [approved, okHash, cardHeld] = [true, hash, prev.cardHeld];
+    }
     this.#plugins.set(input.id, {
       input: structuredClone(input),
-      enabled: input.enabled ?? defaultEnabled,
-      approved: input.approved ?? true,
-      refused: false,
+      hash,
+      enabled: input.enabled ?? prev?.enabled ?? defaultEnabled,
+      approved,
+      refused: prev !== undefined && prev.refused && prev.hash === hash,
+      ...(okHash === undefined ? {} : { okHash }),
+      cardHeld,
     });
   }
 
@@ -184,8 +236,11 @@ export class FakePluginRegistry implements PluginRegistry {
   #compute(): Snapshot {
     const ids = [...this.#plugins.keys()];
     const topOf = (id: string) => this.#plugins.get(parentOf(id) ?? id);
-    // Who is on, before points: approved, valid, not blocked, refused, stopped or off, and its parent on too.
+    // Who is on, before points: approved, valid, not blocked, refused, stopped or off, its parent on too, and its
+    // namespace not taken by a plugin earlier in the synced list (§6.7).
     const offReason = new Map<string, { state: PluginState; reason?: string }>();
+    const namespaces = new Map<string, string>();
+    const namespaceOf = (id: string) => topOf(id)?.input.manifest.namespace ?? (parentOf(id) ?? id);
     for (const id of ids) {
       const held = this.#plugins.get(id)!;
       const top = topOf(id);
@@ -200,6 +255,10 @@ export class FakePluginRegistry implements PluginRegistry {
       else if (!held.enabled) offReason.set(id, { state: "off" });
       else if (parentOff) offReason.set(id, { state: "off", reason: "its parent is off" });
       else if (adult && !this.#adultConfirmed) offReason.set(id, { state: "off", reason: "may contain adult content: off until you confirm you are 18 or older" });
+      else if (parentId === undefined && namespaces.has(namespaceOf(id))) {
+        offReason.set(id, { state: "off", reason: `the namespace \`${namespaceOf(id)}\` is \`${namespaces.get(namespaceOf(id))}\`'s` });
+      }
+      if (parentId === undefined && !offReason.has(id)) namespaces.set(namespaceOf(id), id);
     }
     const on = ids.filter((id) => !offReason.has(id));
 
@@ -242,18 +301,25 @@ export class FakePluginRegistry implements PluginRegistry {
       }
       return c.point.includes(".") ? c.point : undefined;
     };
+    const treeOf = (id: string) => parentOf(id) ?? id;
     for (const c of all) if (c.state !== "refused" && needsPoint(c) === undefined) c.state = "active";
     for (;;) {
-      const declared = new Set(declarations(all.filter((c) => c.state === "active")).map((d) => d.name));
+      const declared = new Map<string, { decl: PointDecl; pluginId: string }>();
+      for (const d of declarations(all.filter((c) => c.state === "active"))) if (!declared.has(d.name)) declared.set(d.name, d);
       let grew = false;
       for (const c of all) {
         if (c.state !== "waiting") continue;
         const need = needsPoint(c);
-        if (need !== undefined && declared.has(need)) {
-          c.state = "active";
-          delete c.reason;
-          grew = true;
+        const point = need === undefined ? undefined : declared.get(need);
+        if (point === undefined) continue;
+        if (point.decl.private === true && treeOf(point.pluginId) !== treeOf(c.pluginId)) {
+          c.state = "refused";
+          c.reason = `\`${need}\` is private to \`${treeOf(point.pluginId)}\``;
+          continue;
         }
+        c.state = "active";
+        delete c.reason;
+        grew = true;
       }
       if (!grew) break;
     }
@@ -262,14 +328,16 @@ export class FakePluginRegistry implements PluginRegistry {
     const points: RegisteredPoint[] = [];
     const firstDeclarer = new Map<string, string>();
     for (const d of declarations(all.filter((c) => c.state === "active"))) {
-      const spot = d.decl.props !== undefined;
+      // A well-known name is recorded with the catalog's declaration, whatever the declarer wrote (review S2).
+      const decl = this.#catalog(d.name) ?? d.decl;
+      const spot = decl.props !== undefined;
       const prior = firstDeclarer.get(d.name);
       if (prior === undefined) firstDeclarer.set(d.name, d.pluginId);
       points.push({
-        name: d.name, shape: d.decl.shape, declaredBy: { pluginId: d.pluginId, ref: d.ref }, spot,
+        name: d.name, shape: decl.shape, declaredBy: { pluginId: d.pluginId, ref: d.ref }, spot,
         // A point other than a UI spot has one active declarer; a second one waits until the user picks (§5.4).
         active: spot || prior === undefined || prior === d.pluginId,
-        decl: structuredClone(d.decl),
+        decl: structuredClone(decl),
       });
     }
 
@@ -308,6 +376,9 @@ export class FakePluginRegistry implements PluginRegistry {
         enabled: held.enabled,
         source: held.input.source ?? top.input.source ?? "local",
         class: held.input.class ?? (hasCode ? "code" : "data"),
+        treeHash: top.hash,
+        ...(top.okHash === undefined ? {} : { okHash: top.okHash }),
+        ...(top.cardHeld ? { cardStylingHeld: true } : {}),
         namespace: top.input.manifest.namespace ?? (parentOf(id) ?? id),
         scope: m.scope ?? "both",
         adult: top.input.manifest.adult === true,

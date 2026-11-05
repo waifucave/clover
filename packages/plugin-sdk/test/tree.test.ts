@@ -51,6 +51,23 @@ describe("a bot plugin with a child", () => {
     expect(r.children.map((c) => [c.folder, c.ok, c.report.id, c.report.class])).toEqual([["tarot-panel", true, "luna/tarot-panel", "code"]]);
   });
 
+  test("a theme that sets card.* tokens, or a plugin with approvals, restyles approval cards (review S7)", async () => {
+    const r = await validateTree(folder(LUNA), { folderName: "luna" });
+    expect(r.restylesCards).toBe(true);
+    expect(r.top.restylesCards).toBe(false);
+    const plain = { ...LUNA, "tab/theme.json": { ...THEME, tokens: { "color.accent": "#7a5cff" } } };
+    expect((await validateTree(folder(plain), { folderName: "luna" })).restylesCards).toBe(false);
+    const placer = {
+      ...plain,
+      "plugins/tarot-panel/clover.json": {
+        manifest: 1, name: "Tarot panel", engines: { clover: "^1.0.0" }, client: { entry: "client/index.tsx" }, capabilities: ["approvals"],
+        contributes: { ui: [{ spot: "panel", key: "tarot", component: "TarotPanel" }] },
+      },
+    };
+    const p = await validateTree(folder(placer), { folderName: "luna" });
+    expect([p.restylesCards, p.children[0]!.report.restylesCards]).toEqual([true, true]);
+  });
+
   test("a missing referenced file refuses what names it", async () => {
     const files = { ...LUNA } as Record<string, unknown>;
     delete files["bot/instructions.md"];
