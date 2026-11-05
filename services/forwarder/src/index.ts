@@ -3,12 +3,14 @@
 //   /<tag>/<routine>   a webhook from a service (GitHub, Sentry, ...), with the routine's key
 //   /v1/...            the forwarder plugin's API, with the computer's account token (see wire/protocol.ts)
 //
-// The Worker checks what it can without state (the path, the tag's MAC, the rate, the size), hashes the
-// presented key, and hands the request to the account's Durable Object, which seals and holds it. Nothing
-// here logs a payload, a key or a token.
+// The Worker checks what it can without state (the path, the tag's MAC), then the presented key: against a
+// short-lived cache of keys this instance has seen check out, or else with a small call to the account's
+// Durable Object, limited per sender address, before any body is read. Only a request with the routine's key
+// is counted against the routine's rate and the account's, read (up to the cap) and handed to the Durable
+// Object, which seals and holds it. Nothing here logs a payload, a key or a token.
 
 import { bearerToken, verifyAccountToken } from "../../shared/account-token";
-import { fromB64u } from "../../shared/encoding";
+import { b64u, fromB64u } from "../../shared/encoding";
 import { errorResponse, json, readBodyCapped, readJsonObject, TooLarge } from "../../shared/http";
 import { encodeRequestRecord, ROUTINE_ID_RE } from "../../../plugins/clover/forwarder/src/wire/envelope";
 import {
@@ -21,7 +23,7 @@ import {
 } from "../../../plugins/clover/forwarder/src/wire/protocol";
 import type { Caller, ForwarderDO, Refusal } from "./forwarder-do";
 import { limitsFrom, type Env } from "./env";
-import { accountTag, isValidTag, mintTicket, ownerHash, readTicket, TAG_RE } from "./identity";
+import { accountObject, accountTag, mintTicket, ownerHash, readTag, readTicket, TAG_RE, tagKeysFrom } from "./identity";
 import { forwardedHeaders, forwardedQuery, presentedKey, REFUSED_METHODS } from "./ingress";
 
 export { ForwarderDO } from "./forwarder-do";
@@ -53,14 +55,52 @@ function refusal(result: Refusal): Response {
 
 // ---- webhooks ----
 
+/**
+ * Keys this Worker instance has seen check out lately, by "<object>/<routine>": a sender's next webhook skips
+ * the check call. A stale entry only lets a body be read; the Durable Object checks the key again.
+ */
+const verified = new Map<string, { keyHash: string; allowGet: boolean; until: number }>();
+const VERIFIED_TTL_MS = 5 * 60_000;
+const VERIFIED_MAX = 1000;
+
+function remember(cacheKey: string, entry: { keyHash: string; allowGet: boolean }): void {
+  verified.delete(cacheKey);
+  verified.set(cacheKey, { ...entry, until: Date.now() + VERIFIED_TTL_MS });
+  while (verified.size > VERIFIED_MAX) verified.delete(verified.keys().next().value!);
+}
+
+const rateLimited = () => errorResponse(429, "rate_limited", {}, { "retry-after": "60" });
+
 async function webhook(request: Request, env: Env, url: URL, tag: string, routineId: string): Promise<Response> {
   if (REFUSED_METHODS.has(request.method)) return errorResponse(405, "method_not_allowed", {}, { allow: "GET, POST, PUT, PATCH, DELETE" });
-  if (!(await isValidTag(env.TAG_SECRET, tag))) return errorResponse(404, "not_found");
-  const { success } = await env.HOOK_RATE.limit({ key: tag });
-  if (!success) return errorResponse(429, "rate_limited", {}, { "retry-after": "60" });
-
+  const named = await readTag(tagKeysFrom(env.TAG_KEYS), tag);
+  if (!named) return errorResponse(404, "not_found");
   const key = presentedKey(request, url);
   if (key === null) return errorResponse(401, "unauthorized");
+  const keyHash = await hookKeyHash(key);
+  const keyHashText = b64u(keyHash);
+  const stub = env.FORWARDER.getByName(named.object);
+
+  // The key, before anything is counted against the routine or read: a sender without it spends only the
+  // check limit of its own address.
+  const cacheKey = `${named.object}/${routineId}`;
+  let known = verified.get(cacheKey);
+  if (!known || known.keyHash !== keyHashText || known.until < Date.now()) {
+    const sender = request.headers.get("cf-connecting-ip") ?? "unknown";
+    if (!(await env.CHECK_RATE.limit({ key: `${named.object}|${sender}` })).success) return rateLimited();
+    const check = await stub.checkKey(routineId, keyHash);
+    if (!check.ok) {
+      verified.delete(cacheKey);
+      return errorResponse(401, "unauthorized");
+    }
+    remember(cacheKey, { keyHash: keyHashText, allowGet: check.allowGet });
+    known = verified.get(cacheKey)!;
+  }
+  // Link previewers and mail scanners fetch pasted links: GET counts only for routines that ask for it.
+  if (request.method === "GET" && !known.allowGet) return errorResponse(405, "method_not_allowed", {}, { allow: "POST, PUT, PATCH, DELETE" });
+  if (!(await env.HOOK_RATE.limit({ key: cacheKey })).success) return rateLimited();
+  if (!(await env.TAG_RATE.limit({ key: named.object })).success) return rateLimited();
+
   const limits = limitsFrom(env);
   let body: Uint8Array;
   try {
@@ -74,9 +114,11 @@ async function webhook(request: Request, env: Env, url: URL, tag: string, routin
   const ip = request.headers.get("cf-connecting-ip") ?? undefined;
   const record = encodeRequestRecord({ method: request.method, query: forwardedQuery(url), headers, body, ...(ip ? { ip } : {}) });
 
-  const stub = env.FORWARDER.getByName(tag);
-  const result = await stub.receive({ routineId, keyHash: await hookKeyHash(key), record, receivedAt: Date.now() });
-  if (!result.ok) return errorResponse(result.status, result.error);
+  const result = await stub.receive({ routineId, keyHash, method: request.method, record, receivedAt: Date.now() });
+  if (!result.ok) {
+    if (result.status === 401 || result.status === 405) verified.delete(cacheKey);
+    return errorResponse(result.status, result.error);
+  }
   return json({ id: result.id }, 202);
 }
 
@@ -93,9 +135,10 @@ async function api(request: Request, env: Env, url: URL, path: string[]): Promis
   const { success } = await env.API_RATE.limit({ key: identity.account });
   if (!success) return errorResponse(429, "rate_limited", {}, { "retry-after": "60" });
 
-  const tag = await accountTag(env.TAG_SECRET, identity.account);
+  const object = await accountObject(env.ACCOUNT_ID_KEY, identity.account);
+  const tag = await accountTag(tagKeysFrom(env.TAG_KEYS), env.ACCOUNT_ID_KEY, identity.account);
   const caller: Caller = { owner: await ownerHash(identity.account), device: identity.device };
-  const stub: DurableObjectStub<ForwarderDO> = env.FORWARDER.getByName(tag);
+  const stub: DurableObjectStub<ForwarderDO> = env.FORWARDER.getByName(object);
   const route = `${request.method} ${path[0] ?? ""}${path.length > 1 ? "/:id" : ""}`;
   const id = path[1] ?? "";
   if (path.length > 2) return errorResponse(404, "not_found");
@@ -137,7 +180,7 @@ async function api(request: Request, env: Env, url: URL, path: string[]): Promis
         return errorResponse(400, "bad_request");
       }
       if (keyHash.length !== 32) return errorResponse(400, "bad_request");
-      const result = await stub.putRoutine(caller, id, { keyHash, takeover: body.takeover === true });
+      const result = await stub.putRoutine(caller, id, { keyHash, takeover: body.takeover === true, allowGet: body.allowGet === true });
       if (!result.ok) return refusal(result);
       const out: RoutineRegistered = { routine: id, device: result.device, url: `${env.HOOKS_ORIGIN}/${tag}/${id}` };
       return json(out);
@@ -153,7 +196,13 @@ async function api(request: Request, env: Env, url: URL, path: string[]): Promis
     }
     case "POST tickets": {
       const limits = limitsFrom(env);
-      const { ticket, claims } = await mintTicket(env.TICKET_SECRET, { tag, device: identity.device, now: Date.now(), ttlMs: limits.ticketTtlMs });
+      const { ticket, claims } = await mintTicket(env.TICKET_SECRET, {
+        object,
+        device: identity.device,
+        now: Date.now(),
+        ttlMs: limits.ticketTtlMs,
+        authExpiresAt: identity.expiresAt * 1000,
+      });
       const ws = env.HOOKS_ORIGIN.replace(/^http/, "ws");
       const out: Ticket = { ticket, url: `${ws}/v1/connect?ticket=${ticket}`, expiresAt: claims.expiresAt };
       return json(out);
@@ -176,5 +225,6 @@ async function connect(request: Request, env: Env, url: URL): Promise<Response> 
   headers.set("x-clover-device", claims.device);
   headers.set("x-clover-nonce", claims.nonce);
   headers.set("x-clover-ticket-expires", String(claims.expiresAt));
-  return env.FORWARDER.getByName(claims.tag).fetch(new Request("https://forwarder.internal/connect", { method: "GET", headers }));
+  headers.set("x-clover-auth-expires", String(claims.authExpiresAt));
+  return env.FORWARDER.getByName(claims.object).fetch(new Request("https://forwarder.internal/connect", { method: "GET", headers }));
 }

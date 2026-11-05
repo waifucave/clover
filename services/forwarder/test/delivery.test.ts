@@ -9,10 +9,10 @@ import { b64u, fromUtf8 } from "../../../plugins/clover/forwarder/src/wire/bytes
 import { decodeRequestRecord, openEnvelope, readEnvelopeHeader } from "../../../plugins/clover/forwarder/src/wire/envelope";
 import { decodeWebhookFrame } from "../../../plugins/clover/forwarder/src/wire/protocol";
 import type { ForwarderDO } from "../src/forwarder-do";
-import { openSocket, postHook, registerComputer, registeredRoutine, uniqueAccount, worker } from "./helpers";
+import { objectOf, openSocket, postHook, registerComputer, registeredRoutine, uniqueAccount, worker } from "./helpers";
 
 function heldCount(tag: string): Promise<number> {
-  const stub = env.FORWARDER.getByName(tag);
+  const stub = env.FORWARDER.getByName(objectOf(tag));
   return runInDurableObject(stub, (_instance: ForwarderDO, state) => state.storage.sql.exec<{ n: number }>("SELECT COUNT(*) AS n FROM held").one().n);
 }
 
@@ -73,7 +73,7 @@ describe("delivery", () => {
     const { key, url } = await registeredRoutine(laptop, "secrets");
     const marker = "plaintext-marker-7f3a9c";
     expect((await postHook(url, key, marker)).status).toBe(202);
-    const stub = env.FORWARDER.getByName(laptop.tag);
+    const stub = env.FORWARDER.getByName(objectOf(laptop.tag));
     const stored = await runInDurableObject(stub, (_i: ForwarderDO, state) => {
       const rows = state.storage.sql.exec<{ env: ArrayBuffer }>("SELECT env FROM held").toArray();
       return rows.map((row) => new Uint8Array(row.env));

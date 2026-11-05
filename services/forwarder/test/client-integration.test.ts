@@ -7,9 +7,10 @@ import { evictDurableObject, runInDurableObject } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
 
 import { ForwarderClient, type Delivery, type WebSocketLike } from "../../../plugins/clover/forwarder/src/client";
+import { memoryKeys, type ForwarderKeys } from "../../../plugins/clover/forwarder/src/keys";
 import { fromUtf8 } from "../../../plugins/clover/forwarder/src/wire/bytes";
 import type { ForwarderDO } from "../src/forwarder-do";
-import { accountToken, ORIGIN, postHook, routineKey, uniqueAccount } from "./helpers";
+import { accountToken, objectOf, ORIGIN, postHook, routineKey, uniqueAccount } from "./helpers";
 
 type Listener = (event: { data?: unknown; code?: number }) => void;
 
@@ -63,7 +64,7 @@ class UpgradedSocket implements WebSocketLike {
   }
 }
 
-function computer(account: string, device: string, secret: { value: string | null }) {
+function computer(account: string, device: string, keys: Promise<ForwarderKeys> = memoryKeys()) {
   const deliveries: Delivery[] = [];
   let token: Promise<string> | null = null;
   const client = new ForwarderClient({
@@ -75,12 +76,8 @@ function computer(account: string, device: string, secret: { value: string | nul
       headers.set("authorization", `Bearer ${await token}`);
       return exports.default.fetch(new Request(url, { ...init, headers }));
     },
-    secret: {
-      get: async () => secret.value,
-      set: async (value) => {
-        secret.value = value;
-      },
-    },
+    // The core's key store, in memory.
+    keys: { publicKey: async () => (await keys).publicKey(), open: async (input) => (await keys).open(input) },
     connect: (url) => new UpgradedSocket(url),
     onDelivery: (d) => deliveries.push(d),
     pingIntervalMs: 50,
@@ -98,18 +95,17 @@ async function until(predicate: () => boolean, what: string, ms = 5_000): Promis
 }
 
 async function heldFor(tag: string): Promise<number> {
-  return runInDurableObject(env.FORWARDER.getByName(tag), (_i: ForwarderDO, state) =>
+  return runInDurableObject(env.FORWARDER.getByName(objectOf(tag)), (_i: ForwarderDO, state) =>
     state.storage.sql.exec<{ n: number }>("SELECT COUNT(*) AS n FROM held").one().n,
   );
 }
 
 describe("the forwarder plugin's client, against the Worker", () => {
   it("registers, connects, takes a webhook and acknowledges it", async () => {
-    const secret = { value: null as string | null };
-    const { client, deliveries } = computer(uniqueAccount(), "laptop", secret);
+    const { client, deliveries } = computer(uniqueAccount(), "laptop");
     await client.start();
     await until(() => client.state === "open", "the connection");
-    expect(secret.value).not.toBeNull();
+    expect(client.tag).not.toBeNull();
     const key = routineKey();
     const { url } = await client.registerRoutine("on-push", key);
 
@@ -127,7 +123,7 @@ describe("the forwarder plugin's client, against the Worker", () => {
   });
 
   it("keeps the socket alive on the free auto-response", async () => {
-    const { client } = computer(uniqueAccount(), "pc", { value: null });
+    const { client } = computer(uniqueAccount(), "pc");
     await client.start();
     await until(() => client.state === "open", "the connection");
     await new Promise((r) => setTimeout(r, 400)); // several pings at 50 ms, each answered
@@ -137,8 +133,8 @@ describe("the forwarder plugin's client, against the Worker", () => {
 
   it("holds webhooks while the computer is stopped and hands them over when it starts again", async () => {
     const account = uniqueAccount();
-    const secret = { value: null as string | null };
-    const first = computer(account, "desktop", secret);
+    const keys = memoryKeys();
+    const first = computer(account, "desktop", keys);
     await first.client.start();
     await until(() => first.client.state === "open", "the connection");
     const key = routineKey();
@@ -149,7 +145,7 @@ describe("the forwarder plugin's client, against the Worker", () => {
     for (const body of ["one", "two"]) expect((await postHook(url, key, body)).status).toBe(202);
     expect(await heldFor(tag)).toBe(2);
 
-    const again = computer(account, "desktop", secret); // same computer, same key, after a restart
+    const again = computer(account, "desktop", keys); // same computer, same key, after a restart
     await again.client.start();
     await until(() => again.deliveries.length === 2, "the held webhooks");
     expect(again.deliveries.map((d) => fromUtf8(d.request.body))).toEqual(["one", "two"]);
@@ -160,12 +156,12 @@ describe("the forwarder plugin's client, against the Worker", () => {
   });
 
   it("is reached through a hibernated socket after the object is evicted", async () => {
-    const { client, deliveries } = computer(uniqueAccount(), "pc", { value: null });
+    const { client, deliveries } = computer(uniqueAccount(), "pc");
     await client.start();
     await until(() => client.state === "open", "the connection");
     const key = routineKey();
     const { url } = await client.registerRoutine("woken", key);
-    await evictDurableObject(env.FORWARDER.getByName(client.tag!));
+    await evictDurableObject(env.FORWARDER.getByName(objectOf(client.tag!)));
     expect((await postHook(url, key, "after eviction")).status).toBe(202);
     await until(() => deliveries.length === 1, "the delivery after eviction");
     expect(fromUtf8(deliveries[0]!.request.body)).toBe("after eviction");

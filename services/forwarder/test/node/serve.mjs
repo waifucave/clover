@@ -1,11 +1,12 @@
 // Runs the forwarder Worker on wrangler's local runtime (workerd), for the forwarder plugin's end-to-end test
 // (plugins/clover/forwarder/test/e2e.test.ts), which talks to it over real sockets from Bun.
 //
-// Input:  FORWARDER_E2E (environment, JSON): { jwks, issuer, tagSecret, ticketSecret }, all made by the test
-//         in memory for this run. Nothing is written to disk but wrangler's own local state folder.
+// Input:  FORWARDER_E2E (environment, JSON): { jwks, issuer, tagKeys, accountIdKey, ticketSecret }, all made
+//         by the test in memory for this run. Nothing is written to disk but wrangler's own local state folder.
 // Output: one JSON line {"url": "..."} once listening, then one {"ok":...} line per command.
-// Stdin:  JSON commands, one per line: {"op":"evict","tag":"...","webSockets":"hibernate"|"close"}.
-//         When stdin closes, the server stops.
+// Stdin:  JSON commands, one per line: {"op":"evict","tag":"...","webSockets":"hibernate"|"close"}, where tag
+//         is an account's tag (its Durable Object is named by the id inside it). When stdin closes, the
+//         server stops.
 
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
@@ -19,8 +20,13 @@ function worker(origin) {
   return {
     configPath: "./wrangler.jsonc",
     vars: { ACCOUNT_JWKS: config.jwks, ACCOUNT_ISSUER: config.issuer, HOOKS_ORIGIN: origin },
-    secrets: { TAG_SECRET: config.tagSecret, TICKET_SECRET: config.ticketSecret },
+    secrets: { TAG_KEYS: config.tagKeys, ACCOUNT_ID_KEY: config.accountIdKey, TICKET_SECRET: config.ticketSecret },
   };
+}
+
+/** The Durable Object a tag names: the 11-byte account id after the tag's version byte (identity.ts). */
+function objectOfTag(tag) {
+  return Buffer.from(tag, "base64url").subarray(1, 12).toString("base64url");
 }
 
 const server = createTestHarness({ root, workers: [worker("http://127.0.0.1")] });
@@ -36,7 +42,7 @@ for await (const line of lines) {
   try {
     const command = JSON.parse(line);
     if (command.op === "evict") {
-      await server.getWorker().evictDurableObject("ForwarderDO", { name: command.tag, webSockets: command.webSockets ?? "hibernate" });
+      await server.getWorker().evictDurableObject("ForwarderDO", { name: objectOfTag(command.tag), webSockets: command.webSockets ?? "hibernate" });
       process.stdout.write(`${JSON.stringify({ ok: true })}\n`);
     } else {
       process.stdout.write(`${JSON.stringify({ ok: false, error: "unknown op" })}\n`);

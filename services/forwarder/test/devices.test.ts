@@ -11,17 +11,7 @@ import { decodeWebhookFrame, type DeviceInfo, type RoutineInfo } from "../../../
 import type { ForwarderDO } from "../src/forwarder-do";
 import { limitsFrom } from "../src/env";
 import { ownerHash } from "../src/identity";
-import {
-  accountToken,
-  apiCall,
-  openSocket,
-  postHook,
-  registerComputer,
-  registeredRoutine,
-  registerRoutine,
-  routineKey,
-  uniqueAccount,
-} from "./helpers";
+import { accountToken, apiCall, objectOf, openSocket, postHook, registerComputer, registeredRoutine, registerRoutine, routineKey, uniqueAccount } from "./helpers";
 
 const limits = limitsFrom(env);
 
@@ -77,7 +67,7 @@ describe("computers", () => {
     expect(await again.json()).toEqual({ error: "revoked" });
     const routines = (await (await apiCall(desktop.token, "GET", "/v1/routines")).json()) as { routines: RoutineInfo[] };
     expect(routines.routines).toEqual([]);
-    const held = await runInDurableObject(env.FORWARDER.getByName(desktop.tag), (_i: ForwarderDO, state) =>
+    const held = await runInDurableObject(env.FORWARDER.getByName(objectOf(desktop.tag)), (_i: ForwarderDO, state) =>
       state.storage.sql.exec<{ n: number }>("SELECT COUNT(*) AS n FROM held").one().n,
     );
     expect(held).toBe(0);
@@ -85,7 +75,7 @@ describe("computers", () => {
 
   it("an account's object refuses calls made for another account", async () => {
     const pc = await registerComputer(uniqueAccount(), "pc");
-    const result = await runInDurableObject(env.FORWARDER.getByName(pc.tag), async (instance: ForwarderDO) =>
+    const result = await runInDurableObject(env.FORWARDER.getByName(objectOf(pc.tag)), async (instance: ForwarderDO) =>
       instance.listRoutines({ owner: await ownerHash("someone-else"), device: "pc" }),
     );
     expect(result).toMatchObject({ ok: false, status: 403, error: "wrong_account" });
@@ -107,7 +97,7 @@ describe("computers", () => {
 });
 
 describe("routines", () => {
-  it("lists, re-keys and deletes a routine; a deleted routine's webhooks go with it", async () => {
+  it("lists, re-keys and deletes a routine; its held webhooks stay for the routine's next registration", async () => {
     const pc = await registerComputer(uniqueAccount(), "pc");
     const first = await registeredRoutine(pc, "rekeyed");
     expect((await postHook(first.url, first.key, "x")).status).toBe(202);
@@ -116,11 +106,16 @@ describe("routines", () => {
     expect((await postHook(first.url, first.key, "old key")).status).toBe(401);
     expect((await postHook(first.url, newKey, "new key")).status).toBe(202);
     let list = (await (await apiCall(pc.token, "GET", "/v1/routines")).json()) as { routines: RoutineInfo[] };
-    expect(list.routines).toEqual([{ id: "rekeyed", device: "pc", held: 2 }]);
+    expect(list.routines).toEqual([{ id: "rekeyed", device: "pc", held: 2, allowGet: false }]);
     expect((await apiCall(pc.token, "DELETE", "/v1/routines/rekeyed")).status).toBe(204);
     list = (await (await apiCall(pc.token, "GET", "/v1/routines")).json()) as { routines: RoutineInfo[] };
     expect(list.routines).toEqual([]);
     expect((await postHook(first.url, newKey, "gone")).status).toBe(401);
+    expect((await apiCall(pc.token, "DELETE", "/v1/routines/rekeyed")).status).toBe(204); // already gone: done
+    const held = await runInDurableObject(env.FORWARDER.getByName(objectOf(pc.tag)), (_i: ForwarderDO, state) =>
+      state.storage.sql.exec<{ n: number }>("SELECT COUNT(*) AS n FROM held WHERE routine = 'rekeyed'").one().n,
+    );
+    expect(held).toBe(2);
   });
 
   it("a second computer cannot take a routine without takeover; with it, the held webhooks follow", async () => {

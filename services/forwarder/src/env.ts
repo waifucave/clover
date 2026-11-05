@@ -3,8 +3,12 @@ import type { ForwarderDO } from "./forwarder-do";
 
 export interface Env {
   FORWARDER: DurableObjectNamespace<ForwarderDO>;
-  /** Webhooks per account tag (edge, before any Durable Object). */
+  /** Webhooks per routine, counted once its key has checked out. */
   HOOK_RATE: RateLimit;
+  /** Webhooks per account, a higher ceiling over all its routines. */
+  TAG_RATE: RateLimit;
+  /** Keys checked against the Durable Object (none cached yet), per sender address and account. */
+  CHECK_RATE: RateLimit;
   /** Device API calls per account. */
   API_RATE: RateLimit;
 
@@ -16,8 +20,13 @@ export interface Env {
   /** Where webhook URLs point, e.g. https://hooks.waifucave.com */
   HOOKS_ORIGIN: string;
 
-  /** Secrets (base64url, at least 32 bytes): the account-tag key and the connection-ticket key. */
-  TAG_SECRET: string;
+  /**
+   * Secrets (identity.ts): TAG_KEYS, numbered keys that MAC the tags in webhook URLs, JSON {"1": "<base64url>"}
+   * (rotatable); ACCOUNT_ID_KEY, which names each account's Durable Object (never rotated); TICKET_SECRET, which
+   * MACs connection tickets (rotatable at any time). Each key is at least 32 random bytes, unpadded base64url.
+   */
+  TAG_KEYS: string;
+  ACCOUNT_ID_KEY: string;
   TICKET_SECRET: string;
 
   HOLD_DAYS?: string;

@@ -3,12 +3,17 @@
 
 import { env, exports } from "cloudflare:workers";
 
-import { b64u, utf8 } from "../../shared/encoding";
+import { b64u, fromB64u, utf8 } from "../../shared/encoding";
 import { keyId, type DeviceKey } from "../../../plugins/clover/forwarder/src/wire/envelope";
 import { generateX25519 } from "../../../plugins/clover/forwarder/src/wire/hpke";
 import { hookKeyHash, type DeviceRegistered, type RoutineRegistered, type Ticket } from "../../../plugins/clover/forwarder/src/wire/protocol";
 
 export const ORIGIN = "https://hooks.test";
+
+/** The name of the Durable Object an account's tag points at: the 11-byte id after its version byte. */
+export function objectOf(tag: string): string {
+  return b64u(fromB64u(tag).subarray(1, 12));
+}
 
 interface SigningKeys {
   es256: JsonWebKey & { kid: string };
@@ -27,6 +32,7 @@ export interface TokenOptions {
   exp?: number;
   kid?: string;
   extra?: Record<string, unknown>;
+  header?: Record<string, unknown>;
 }
 
 /** An account token as lane H's account service would issue it, signed with the test keys. */
@@ -34,7 +40,7 @@ export async function accountToken(options: TokenOptions): Promise<string> {
   const now = Math.floor(Date.now() / 1000);
   const alg = options.alg ?? "ES256";
   const jwk = alg === "ES256" ? signingKeys.es256 : signingKeys.ed25519;
-  const header = { alg, kid: options.kid ?? jwk.kid, typ: "JWT" };
+  const header = { alg, kid: options.kid ?? jwk.kid, typ: "JWT", ...options.header };
   const claims = {
     iss: options.iss ?? env.ACCOUNT_ISSUER,
     aud: options.aud ?? env.HOOKS_AUDIENCE,

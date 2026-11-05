@@ -7,10 +7,12 @@
 
 import { ForwarderClient } from "../src/client";
 import { WebhookIngress } from "../src/ingress";
+import { coreKeys } from "../src/keys";
 import type { HostApi } from "./api";
 
 export const DEFAULT_ORIGIN = "https://hooks.waifucave.com";
-const KEY_SECRET = "forwarder-key";
+/** The name of this computer's forwarder key in the core's key store. */
+const KEY_NAME = "forwarder";
 
 let client: ForwarderClient | null = null;
 let current: WebhookIngress | null = null;
@@ -22,10 +24,7 @@ export async function start(api: HostApi): Promise<void> {
   client = new ForwarderClient({
     origin,
     fetch: (url, init) => api.net.fetch(url, init, { auth: "waifucave" }),
-    secret: {
-      get: async () => (await api.secrets.get(KEY_SECRET)) ?? null,
-      set: (value) => api.secrets.set(KEY_SECRET, value),
-    },
+    keys: coreKeys(api.keys, KEY_NAME),
     ...(api.computer?.name ? { deviceName: api.computer.name } : {}),
     onDelivery: (delivery) => ingressRef?.accept(delivery),
     log: (level, message) => api.log[level](`forwarder: ${message}`),

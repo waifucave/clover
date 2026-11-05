@@ -82,11 +82,27 @@ export class FakeService {
   encKey: Uint8Array | null = null;
   revoked = false;
   ticketFailures = 0;
-  routines = new Map<string, { keyHash: string; device: string }>();
+  /** The next routine registrations are answered "device_not_registered", as if the service forgot the key. */
+  forgotDevice = 0;
+  /** Every request fails as the core's keyed fetch does with no account signed in. */
+  noAccount = false;
+  /** Requests never answer (until aborted through their signal). */
+  hang = false;
+  /** Where tickets point; by default the service's own wss origin. */
+  ticketUrl: (n: number) => string = (n) => `wss://hooks.test/v1/connect?ticket=t${n}`;
+  routines = new Map<string, { keyHash: string; device: string; allowGet: boolean }>();
+  /** Drops the service would report for a routine in GET /v1/routines (once). */
+  routineDrops = new Map<string, { count: number; reason: string; at: number }>();
   private tickets = 0;
   private seq = 1_000;
 
   readonly fetch = async (url: string, init: RequestInit = {}): Promise<Response> => {
+    if (this.noAccount) throw Object.assign(new Error("no waifucave account is signed in"), { code: "no_account" });
+    if (this.hang) {
+      return new Promise<Response>((_, reject) => {
+        init.signal?.addEventListener("abort", () => reject(init.signal?.reason ?? new Error("aborted")));
+      });
+    }
     const { pathname } = new URL(url);
     const method = init.method ?? "GET";
     const body = typeof init.body === "string" ? (JSON.parse(init.body) as Record<string, unknown>) : null;
@@ -103,21 +119,32 @@ export class FakeService {
         return json({ error: "unavailable" }, 503);
       }
       this.tickets += 1;
-      return json({ ticket: `t${this.tickets}`, url: `wss://hooks.test/v1/connect?ticket=t${this.tickets}`, expiresAt: 0 });
+      return json({ ticket: `t${this.tickets}`, url: this.ticketUrl(this.tickets), expiresAt: 0 });
     }
     const routine = /^\/v1\/routines\/([^/]+)$/.exec(pathname)?.[1];
     if (method === "PUT" && routine) {
+      if (this.forgotDevice > 0) {
+        this.forgotDevice -= 1;
+        return json({ error: "device_not_registered" }, 409);
+      }
       const held = this.routines.get(routine);
       if (held && held.device !== "pc" && body?.takeover !== true) return json({ error: "held_elsewhere", device: held.device }, 409);
-      this.routines.set(routine, { keyHash: String(body?.keyHash), device: "pc" });
+      this.routines.set(routine, { keyHash: String(body?.keyHash), device: "pc", allowGet: body?.allowGet === true });
       return json({ routine, device: "pc", url: `https://hooks.test/${"T".repeat(24)}/${routine}` });
     }
     if (method === "DELETE" && routine) {
+      const held = this.routines.get(routine);
+      if (held && held.device !== "pc") return json({ error: "held_elsewhere", device: held.device }, 409);
       this.routines.delete(routine);
       return new Response(null, { status: 204 });
     }
     if (method === "GET" && pathname === "/v1/routines") {
-      return json({ routines: [...this.routines].map(([id, r]) => ({ id, device: r.device, held: 0 })) });
+      const routines = [...this.routines].map(([id, r]) => {
+        const dropped = this.routineDrops.get(id);
+        return { id, device: r.device, held: 0, allowGet: r.allowGet, ...(dropped ? { dropped } : {}) };
+      });
+      this.routineDrops.clear();
+      return json({ routines });
     }
     return json({ error: "not_found" }, 404);
   };

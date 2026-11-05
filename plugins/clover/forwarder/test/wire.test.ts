@@ -9,6 +9,8 @@ import {
   encodeRequestRecord,
   keyId,
   openEnvelope,
+  isSealedFor,
+  localOpener,
   readEnvelopeHeader,
   sealEnvelope,
   type DeviceKey,
@@ -98,6 +100,39 @@ async function deviceKey(): Promise<DeviceKey> {
 }
 
 describe("the sealed envelope", () => {
+  test("leaves out a recipient nothing can be sealed to when asked, and still seals for the others", async () => {
+    const good = await deviceKey();
+    const zero = new Uint8Array(32);
+    const bad = { kid: await keyId(zero), publicKey: zero };
+    const recipients = [bad, { kid: good.kid, publicKey: good.publicKey }];
+    const input = { routineId: "r", receivedAt: 1, recipients, plaintext: utf8("x") };
+    // The runtime's X25519 or this code's all-zero check refuses it, depending on the runtime.
+    await expect(sealEnvelope(input)).rejects.toThrow();
+    const skipped: Uint8Array[] = [];
+    const envelope = await sealEnvelope({ ...input, onRecipientError: (recipient) => void skipped.push(recipient.kid) });
+    expect(skipped.map(b64u)).toEqual([b64u(bad.kid)]);
+    expect(readEnvelopeHeader(envelope).kids.map(b64u)).toEqual([b64u(good.kid)]);
+    expect(isSealedFor(envelope, good.kid)).toBe(true);
+    expect(isSealedFor(envelope, bad.kid)).toBe(false);
+    expect(fromUtf8((await openEnvelope(envelope, localOpener(good))).plaintext)).toBe("x");
+    await expect(sealEnvelope({ ...input, recipients: [bad], onRecipientError: () => {} })).rejects.toThrow("no recipient");
+  });
+
+  test("opens through an opener that holds the key elsewhere, which sees only the wrapped content key", async () => {
+    const key = await deviceKey();
+    const envelope = await sealEnvelope({ routineId: "r", receivedAt: 1, recipients: [{ kid: key.kid, publicKey: key.publicKey }], plaintext: utf8("held by the core") });
+    const seen: number[] = [];
+    const opener = {
+      kid: key.kid,
+      open: async (input: { enc: Uint8Array; info: Uint8Array; aad: Uint8Array; ciphertext: Uint8Array }) => {
+        seen.push(input.ciphertext.length);
+        return localOpener(key).open(input);
+      },
+    };
+    expect(fromUtf8((await openEnvelope(envelope, opener)).plaintext)).toBe("held by the core");
+    expect(seen).toEqual([48]);
+  });
+
   test("opens for each recipient and carries its clear header", async () => {
     const laptop = await deviceKey();
     const desktop = await deviceKey();

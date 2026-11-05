@@ -5,14 +5,17 @@
 // It needs services/forwarder's dependencies installed (npm install there); without them it is skipped.
 
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { existsSync } from "node:fs";
+import { existsSync, rmdirSync } from "node:fs";
 import { join } from "node:path";
 
 import { ForwarderClient, type Delivery } from "../src/client";
+import { memoryKeys, type ForwarderKeys } from "../src/keys";
 import { b64u, fromUtf8, utf8 } from "../src/wire/bytes";
 
 const serviceDir = join(import.meta.dir, "../../../../services/forwarder");
 const ready = existsSync(join(serviceDir, "node_modules/wrangler/package.json"));
+const stateDir = join(serviceDir, ".wrangler");
+const stateDirExisted = existsSync(stateDir);
 const node = Bun.which("node");
 
 interface Harness {
@@ -33,7 +36,7 @@ async function startHarness(jwks: string): Promise<Harness> {
       ...process.env,
       CLOUDFLARE_CF_FETCH_ENABLED: "false",
       WRANGLER_SEND_METRICS: "false",
-      FORWARDER_E2E: JSON.stringify({ jwks, issuer, tagSecret: secret(), ticketSecret: secret() }),
+      FORWARDER_E2E: JSON.stringify({ jwks, issuer, tagKeys: JSON.stringify({ "1": secret() }), accountIdKey: secret(), ticketSecret: secret() }),
     },
     stdin: "pipe",
     stdout: "pipe",
@@ -79,7 +82,7 @@ async function token(account: string, device: string): Promise<string> {
   return `${header}.${claims}.${b64u(new Uint8Array(signature))}`;
 }
 
-function computer(account: string, device: string, secret: { value: string | null }) {
+function computer(account: string, device: string, keys: Promise<ForwarderKeys>) {
   const deliveries: Delivery[] = [];
   const client = new ForwarderClient({
     origin: harness.url,
@@ -88,7 +91,8 @@ function computer(account: string, device: string, secret: { value: string | nul
       headers.set("authorization", `Bearer ${await token(account, device)}`);
       return fetch(url, { ...init, headers });
     },
-    secret: { get: async () => secret.value, set: async (v) => void (secret.value = v) },
+    // The core's key store, in memory: the same promise for one computer across its restarts.
+    keys: { publicKey: async () => (await keys).publicKey(), open: async (input) => (await keys).open(input) },
     onDelivery: (d) => deliveries.push(d),
     pingIntervalMs: 100,
     pongTimeoutMs: 2_000,
@@ -104,7 +108,7 @@ async function until(predicate: () => boolean, what: string, ms = 10_000): Promi
   }
 }
 
-function hook(url: string, key: string, body: string): Promise<Response> {
+function hook(url: string, key: string, body: string | Uint8Array<ArrayBuffer>): Promise<Response> {
   return fetch(url, { method: "POST", headers: { authorization: `Bearer ${key}`, "content-type": "text/plain" }, body });
 }
 
@@ -120,10 +124,20 @@ describe.skipIf(!ready || !node)("end to end against wrangler's local runtime", 
 
   afterAll(async () => {
     await harness?.stop();
+    // wrangler leaves an empty .wrangler/tmp behind; remove what this run made, only if it is empty.
+    if (!stateDirExisted) {
+      for (const dir of [join(stateDir, "tmp"), stateDir]) {
+        try {
+          rmdirSync(dir);
+        } catch {
+          // Not empty, or already gone.
+        }
+      }
+    }
   });
 
   test("a webhook posted to the Worker reaches the computer's socket, opened, and is deleted once taken", async () => {
-    const { client, deliveries } = computer("e2e-account-1", "laptop", { value: null });
+    const { client, deliveries } = computer("e2e-account-1", "laptop", memoryKeys());
     await client.start();
     await until(() => client.state === "open", "the connection");
     const routineKey = key();
@@ -136,13 +150,13 @@ describe.skipIf(!ready || !node)("end to end against wrangler's local runtime", 
     await Bun.sleep(300); // several keep-alives at 100 ms, each answered by the auto-response
     expect(client.state).toBe("open");
     const routines = await client.listRoutines();
-    expect(routines).toEqual([{ id: "on-push", device: "laptop", held: 0 }]);
+    expect(routines).toEqual([{ id: "on-push", device: "laptop", held: 0, allowGet: false }]);
     await client.stop();
   }, 30_000);
 
   test("holds webhooks while the computer is away, and hands them over when it reconnects", async () => {
-    const secret = { value: null as string | null };
-    const first = computer("e2e-account-2", "desktop", secret);
+    const keys = memoryKeys();
+    const first = computer("e2e-account-2", "desktop", keys);
     await first.client.start();
     await until(() => first.client.state === "open", "the connection");
     const routineKey = key();
@@ -150,18 +164,18 @@ describe.skipIf(!ready || !node)("end to end against wrangler's local runtime", 
     await first.client.stop();
     for (const body of ["one", "two", "three"]) expect((await hook(url, routineKey, body)).status).toBe(202);
 
-    const again = computer("e2e-account-2", "desktop", secret);
+    const again = computer("e2e-account-2", "desktop", keys);
     await again.client.start();
     await until(() => again.deliveries.length === 3, "the held webhooks");
     expect(again.deliveries.map((d) => fromUtf8(d.request.body))).toEqual(["one", "two", "three"]);
     for (const d of again.deliveries) d.ack();
     await Bun.sleep(200);
-    expect(await again.client.listRoutines()).toEqual([{ id: "nightly", device: "desktop", held: 0 }]);
+    expect(await again.client.listRoutines()).toEqual([{ id: "nightly", device: "desktop", held: 0, allowGet: false }]);
     await again.client.stop();
   }, 30_000);
 
   test("delivers through a socket that stayed open while the Durable Object was evicted", async () => {
-    const { client, deliveries } = computer("e2e-account-3", "pc", { value: null });
+    const { client, deliveries } = computer("e2e-account-3", "pc", memoryKeys());
     await client.start();
     await until(() => client.state === "open", "the connection");
     const routineKey = key();
@@ -175,7 +189,7 @@ describe.skipIf(!ready || !node)("end to end against wrangler's local runtime", 
   }, 30_000);
 
   test("reconnects after eviction closes its socket, and the webhook waits for it", async () => {
-    const { client, deliveries } = computer("e2e-account-4", "pc", { value: null });
+    const { client, deliveries } = computer("e2e-account-4", "pc", memoryKeys());
     await client.start();
     await until(() => client.state === "open", "the connection");
     const routineKey = key();
@@ -186,4 +200,27 @@ describe.skipIf(!ready || !node)("end to end against wrangler's local runtime", 
     expect(fromUtf8(deliveries[0]!.request.body)).toBe("while reconnecting");
     await client.stop();
   }, 30_000);
+
+  test("a webhook at the production cap (1 MiB) reaches the computer, with two computers on the account", async () => {
+    const laptop = computer("e2e-account-5", "laptop", memoryKeys());
+    const desktop = computer("e2e-account-5", "desktop", memoryKeys());
+    await laptop.client.start();
+    await desktop.client.start();
+    await until(() => laptop.client.state === "open" && desktop.client.state === "open", "both connections");
+    const routineKey = key();
+    const { url } = await laptop.client.registerRoutine("big", routineKey);
+    const body = crypto.getRandomValues(new Uint8Array(64 * 1024));
+    const mib = new Uint8Array(1024 * 1024);
+    for (let i = 0; i < 16; i++) mib.set(body, i * body.length);
+    expect((await hook(url, routineKey, mib)).status).toBe(202);
+    await until(() => laptop.deliveries.length === 1, "the 1 MiB delivery", 20_000);
+    expect(laptop.deliveries[0]!.request.body.length).toBe(mib.length);
+    expect(b64u(laptop.deliveries[0]!.request.body.subarray(0, 64))).toBe(b64u(mib.subarray(0, 64)));
+    expect(desktop.deliveries).toHaveLength(0);
+    laptop.deliveries[0]!.ack();
+    const over = new Uint8Array(1024 * 1024 + 1);
+    expect((await hook(url, routineKey, over)).status).toBe(413);
+    await laptop.client.stop();
+    await desktop.client.stop();
+  }, 60_000);
 });

@@ -6,7 +6,10 @@
   //
   // The top level is the local profile that the tests and `wrangler dev` use; env.production is what the
   // first deploy at the live gates would use. Nothing here has been deployed. Secrets are never in this file:
-  // TAG_SECRET and TICKET_SECRET come from `wrangler secret put` (production) or the test harness (local).
+  // TAG_KEYS, ACCOUNT_ID_KEY and TICKET_SECRET come from `wrangler secret put` (production) or the test
+  // harness (local); src/identity.ts says what each one does and which may be rotated.
+  //
+  // Observability stays off: webhook URLs may carry a routine's key as ?key=, and Workers Logs would keep it.
   "name": "clover-forwarder-local",
   "main": "src/index.ts",
   "compatibility_date": "2026-10-01",
@@ -30,11 +33,16 @@
     "bindings": [{ "name": "FORWARDER", "class_name": "ForwarderDO" }]
   },
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["ForwarderDO"] }],
+  // Each limit counts per Cloudflare location, not globally.
   "ratelimits": [
-    // Webhooks per account tag, checked at the edge before any Durable Object is reached.
+    // Webhooks per routine, counted only once the key has checked out.
     { "name": "HOOK_RATE", "namespace_id": "71001", "simple": { "limit": 120, "period": 60 } },
     // Device API calls (register, tickets, routines) per account.
-    { "name": "API_RATE", "namespace_id": "71002", "simple": { "limit": 120, "period": 60 } }
+    { "name": "API_RATE", "namespace_id": "71002", "simple": { "limit": 120, "period": 60 } },
+    // Webhooks per account, over all its routines.
+    { "name": "TAG_RATE", "namespace_id": "71003", "simple": { "limit": 600, "period": 60 } },
+    // Key checks against the account's Durable Object (no cached success), per sender address and account.
+    { "name": "CHECK_RATE", "namespace_id": "71004", "simple": { "limit": 30, "period": 60 } }
   ],
   "env": {
     "production": {
@@ -61,7 +69,9 @@
       },
       "ratelimits": [
         { "name": "HOOK_RATE", "namespace_id": "71101", "simple": { "limit": 120, "period": 60 } },
-        { "name": "API_RATE", "namespace_id": "71102", "simple": { "limit": 120, "period": 60 } }
+        { "name": "API_RATE", "namespace_id": "71102", "simple": { "limit": 120, "period": 60 } },
+        { "name": "TAG_RATE", "namespace_id": "71103", "simple": { "limit": 600, "period": 60 } },
+        { "name": "CHECK_RATE", "namespace_id": "71104", "simple": { "limit": 30, "period": 60 } }
       ]
     }
   }

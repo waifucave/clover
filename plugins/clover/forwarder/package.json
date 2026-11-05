@@ -9,6 +9,7 @@
     ".": "./host/index.ts",
     "./client": "./src/client.ts",
     "./ingress": "./src/ingress.ts",
+    "./keys": "./src/keys.ts",
     "./wire/*": "./src/wire/*.ts"
   },
   "scripts": {

@@ -4,14 +4,14 @@ import { env } from "cloudflare:workers";
 import { runInDurableObject } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
 
-import { fromUtf8 } from "../../../plugins/clover/forwarder/src/wire/bytes";
+import { b64u, fromUtf8 } from "../../../plugins/clover/forwarder/src/wire/bytes";
 import { decodeRequestRecord, openEnvelope } from "../../../plugins/clover/forwarder/src/wire/envelope";
-import { decodeWebhookFrame } from "../../../plugins/clover/forwarder/src/wire/protocol";
+import { decodeWebhookFrame, hookKeyHash } from "../../../plugins/clover/forwarder/src/wire/protocol";
 import type { ForwarderDO } from "../src/forwarder-do";
-import { openSocket, postHook, registerComputer, registeredRoutine, routineKey, uniqueAccount } from "./helpers";
+import { apiCall, objectOf, openSocket, postHook, registerComputer, registeredRoutine, routineKey, uniqueAccount } from "./helpers";
 
 async function heldCount(tag: string): Promise<number> {
-  return runInDurableObject(env.FORWARDER.getByName(tag), (_i: ForwarderDO, state) =>
+  return runInDurableObject(env.FORWARDER.getByName(objectOf(tag)), (_i: ForwarderDO, state) =>
     state.storage.sql.exec<{ n: number }>("SELECT COUNT(*) AS n FROM held").one().n,
   );
 }
@@ -36,14 +36,19 @@ describe("webhook ingress", () => {
     expect(await heldCount(pc.tag)).toBe(0);
   });
 
-  it("refuses methods that carry no webhook", async () => {
+  it("refuses methods that carry no webhook, and GET unless the routine asked for it", async () => {
     const pc = await registerComputer(uniqueAccount(), "pc");
     const { key, url } = await registeredRoutine(pc, "methods");
     for (const method of ["OPTIONS", "TRACE"]) {
       expect((await postHook(url, key, null, { method })).status).toBe(405);
     }
-    expect((await postHook(url, key, null, { method: "GET" })).status).toBe(202);
+    // A link previewer or mail scanner fetching a pasted ?key= URL must not fire the routine.
+    expect((await postHook(url, key, null, { method: "GET", keyIn: "query" })).status).toBe(405);
     expect((await postHook(url, key, "x", { method: "PUT" })).status).toBe(202);
+    const optedIn = routineKey();
+    const response = await apiCall(pc.token, "PUT", "/v1/routines/polled", { keyHash: b64u(await hookKeyHash(optedIn)), allowGet: true });
+    const { url: polled } = (await response.json()) as { url: string };
+    expect((await postHook(polled, optedIn, null, { method: "GET", keyIn: "query" })).status).toBe(202);
   });
 
   it("refuses a body over the limit, declared or streamed", async () => {

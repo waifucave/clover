@@ -1,6 +1,6 @@
 // The forwarder's tests run inside workerd (wrangler's local runtime) through @cloudflare/vitest-plugin.
 // Every key here is made fresh for the run, in memory: the test account service's signing keys and the
-// Worker's two secrets. Nothing is written to disk, and the Worker's outbound requests are refused.
+// Worker's secrets. Nothing is written to disk, and the Worker's outbound requests are refused.
 
 import { generateKeyPairSync, randomBytes } from "node:crypto";
 
@@ -33,7 +33,9 @@ export default defineConfig({
           ACCOUNT_ISSUER: "https://accounts.test",
           ACCOUNT_JWKS: jwks,
           HOOKS_ORIGIN: "https://hooks.test",
-          TAG_SECRET: secret(),
+          // Two tag key versions, so the tests can check a rotation: new tags use version 2.
+          TAG_KEYS: JSON.stringify({ "1": secret(), "2": secret() }),
+          ACCOUNT_ID_KEY: secret(),
           TICKET_SECRET: secret(),
           // Small caps, so the tests can reach them.
           MAX_HELD: "8",
@@ -45,6 +47,8 @@ export default defineConfig({
           WINDOW_FRAMES: "3",
           TEST_SIGNING_KEYS: signingKeys,
         },
+        // No cf.json download for request.cf: the built-in fallback is enough here.
+        cf: false,
         // The forwarder makes no outbound requests; any attempt fails loudly instead of reaching a network.
         outboundService: (request: Request) =>
           new Response(`outbound request refused in tests: ${new URL(request.url).host}`, { status: 599 }),

@@ -6,7 +6,7 @@
   "description": "hooks.waifucave.com: takes routines' webhooks, encrypts them to the user's computers and holds them in the user's Durable Object until the routine's computer takes them.",
   "type": "module",
   "scripts": {
-    "test": "CLOUDFLARE_CF_FETCH_ENABLED=false vitest run",
+    "test": "vitest run",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.node.json"
   },
   "devDependencies": {

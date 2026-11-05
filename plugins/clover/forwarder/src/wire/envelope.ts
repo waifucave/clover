@@ -48,6 +48,27 @@ export interface DeviceKey extends X25519KeyPair {
   kid: Bytes;
 }
 
+/** One HPKE base-mode, single-shot open (DHKEM(X25519, HKDF-SHA256), HKDF-SHA256, AES-256-GCM). */
+export interface HpkeOpenInput {
+  enc: Uint8Array;
+  info: Uint8Array;
+  aad: Uint8Array;
+  ciphertext: Uint8Array;
+}
+
+/**
+ * Opens envelopes for one computer without holding its private key: `open` is the core's keys.open (the
+ * forwarder plugin never sees the key), or localOpener's for tests and for code that does hold one.
+ */
+export interface EnvelopeOpener {
+  kid: Uint8Array;
+  open(input: HpkeOpenInput): Promise<Uint8Array>;
+}
+
+export function localOpener(key: DeviceKey): EnvelopeOpener {
+  return { kid: key.kid, open: (input) => openBase(AEAD_AES_256_GCM, key, input.enc, input.info, input.aad, input.ciphertext) };
+}
+
 export interface EnvelopeHeader {
   version: number;
   routineId: string;
@@ -68,12 +89,18 @@ function prefixBytes(routineId: string, receivedAt: number, pid: Uint8Array): By
   return concat(Uint8Array.of(ENVELOPE_VERSION, id.length), id, u64(receivedAt), pid);
 }
 
+/**
+ * Seals a request to every recipient. With `onRecipientError`, a recipient whose key cannot be sealed to (a
+ * small-order point, say) is left out and reported, and the others still get the envelope; without it, any
+ * failure throws. It throws when no recipient is left.
+ */
 export async function sealEnvelope(input: {
   routineId: string;
   receivedAt: number;
   recipients: readonly EnvelopeRecipient[];
   plaintext: Uint8Array;
   pid?: Uint8Array;
+  onRecipientError?: (recipient: EnvelopeRecipient, error: unknown) => void;
 }): Promise<Bytes> {
   const { recipients } = input;
   if (recipients.length < 1 || recipients.length > MAX_RECIPIENTS) throw new RangeError("envelope: 1..32 recipients");
@@ -81,12 +108,22 @@ export async function sealEnvelope(input: {
   const prefix = prefixBytes(input.routineId, input.receivedAt, pid);
   const info = concat(INFO_LABEL, prefix);
   const contentKey = randomBytes(32);
-  const parts: Uint8Array[] = [prefix, Uint8Array.of(recipients.length)];
+  const sealed: Uint8Array[] = [];
   for (const recipient of recipients) {
     if (recipient.kid.length !== KID_BYTES) throw new TypeError("envelope: kid must be 8 bytes");
-    const { enc, ciphertext } = await sealBase(AEAD_AES_256_GCM, recipient.publicKey, info, recipient.kid, contentKey);
-    parts.push(recipient.kid, enc, ciphertext);
+    try {
+      const { enc, ciphertext } = await sealBase(AEAD_AES_256_GCM, recipient.publicKey, info, recipient.kid, contentKey);
+      sealed.push(recipient.kid, enc, ciphertext);
+    } catch (err) {
+      if (!input.onRecipientError) throw err;
+      input.onRecipientError(recipient, err);
+    }
   }
+  if (sealed.length === 0) {
+    contentKey.fill(0);
+    throw new RangeError("envelope: no recipient could be sealed to");
+  }
+  const parts: Uint8Array[] = [prefix, Uint8Array.of(sealed.length / 3), ...sealed];
   const nonce = randomBytes(NONCE_BYTES);
   parts.push(nonce);
   const aad = concat(...parts);
@@ -141,13 +178,23 @@ export function readEnvelopeHeader(envelope: Uint8Array): EnvelopeHeader {
   return { version, routineId, receivedAt, pid, kids };
 }
 
-/** Opens an envelope with this computer's key. Throws when it is not for this key or does not authenticate. */
-export async function openEnvelope(envelope: Uint8Array, key: DeviceKey): Promise<{ header: EnvelopeHeader; plaintext: Bytes }> {
+/** Whether the envelope names `kid` among its recipients. */
+export function isSealedFor(envelope: Uint8Array, kid: Uint8Array): boolean {
+  return parse(envelope).recipients.some((r) => r.kid.every((b, i) => b === kid[i]));
+}
+
+/**
+ * Opens an envelope with this computer's key, or with an opener that holds it elsewhere (the core). Throws
+ * when it is not for this key or does not authenticate.
+ */
+export async function openEnvelope(envelope: Uint8Array, key: DeviceKey | EnvelopeOpener): Promise<{ header: EnvelopeHeader; plaintext: Bytes }> {
+  const opener = "privateKey" in key ? localOpener(key) : key;
   const parsed = parse(envelope);
-  const mine = parsed.recipients.find((r) => r.kid.every((b, i) => b === key.kid[i]));
+  const mine = parsed.recipients.find((r) => r.kid.every((b, i) => b === opener.kid[i]));
   if (!mine) throw new Error("envelope: not sealed for this key");
   const info = concat(INFO_LABEL, envelope.subarray(0, parsed.prefixEnd));
-  const contentKey = await openBase(AEAD_AES_256_GCM, key, mine.enc, info, mine.kid, mine.wrapped);
+  const contentKey = own(await opener.open({ enc: mine.enc, info, aad: mine.kid, ciphertext: mine.wrapped }));
+  if (contentKey.length !== 32) throw new Error("envelope: bad content key");
   try {
     const aad = envelope.subarray(0, parsed.aadEnd);
     const nonce = envelope.subarray(parsed.aadEnd - NONCE_BYTES, parsed.aadEnd);

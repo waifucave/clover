@@ -10,13 +10,13 @@ import { decodeRequestRecord, openEnvelope, readEnvelopeHeader } from "../../../
 import { decodeWebhookFrame } from "../../../plugins/clover/forwarder/src/wire/protocol";
 import type { ForwarderDO } from "../src/forwarder-do";
 import { limitsFrom } from "../src/env";
-import { openSocket, postHook, registerComputer, registeredRoutine, uniqueAccount, type Socket } from "./helpers";
+import { objectOf, openSocket, postHook, registerComputer, registeredRoutine, type Socket, uniqueAccount } from "./helpers";
 
 const limits = limitsFrom(env);
 const DAY = 24 * 3600 * 1000;
 
 function stub(tag: string) {
-  return env.FORWARDER.getByName(tag);
+  return env.FORWARDER.getByName(objectOf(tag));
 }
 
 async function held(tag: string): Promise<{ seq: number; received: number; size: number }[]> {
@@ -91,11 +91,12 @@ describe("expiry", () => {
     const { key, url } = await registeredRoutine(pc, "aged");
     for (let i = 0; i < 3; i++) await postHook(url, key, `x${i}`);
     const now = Date.now();
-    // Age two of them: one past the week, one a little under the week (within the gap), one fresh.
+    // Age two of them: one past the week, one a little under the week (within the gap), one fresh. Sequence
+    // numbers follow the clock in microseconds, and expiry reads them (on the primary key).
     await runInDurableObject(stub(pc.tag), (_i: ForwarderDO, state) => {
       const rows = state.storage.sql.exec<{ seq: number }>("SELECT seq FROM held ORDER BY seq").toArray();
-      state.storage.sql.exec("UPDATE held SET received = ? WHERE seq = ?", now - 8 * DAY, rows[0]!.seq);
-      state.storage.sql.exec("UPDATE held SET received = ? WHERE seq = ?", now - limits.holdMs + limits.expiryGapMs / 2, rows[1]!.seq);
+      state.storage.sql.exec("UPDATE held SET seq = ? WHERE seq = ?", (now - 8 * DAY) * 1000, rows[0]!.seq);
+      state.storage.sql.exec("UPDATE held SET seq = ? WHERE seq = ?", (now - limits.holdMs + limits.expiryGapMs / 2) * 1000, rows[1]!.seq);
     });
     expect(await runDurableObjectAlarm(stub(pc.tag))).toBe(true);
     const rows = await held(pc.tag);
@@ -111,7 +112,7 @@ describe("expiry", () => {
     const { key, url } = await registeredRoutine(pc, "drained");
     await postHook(url, key, "x");
     await runInDurableObject(stub(pc.tag), (_i: ForwarderDO, state) => {
-      state.storage.sql.exec("UPDATE held SET received = ?", Date.now() - 8 * DAY);
+      state.storage.sql.exec("UPDATE held SET seq = ?", (Date.now() - 8 * DAY) * 1000);
     });
     expect(await runDurableObjectAlarm(stub(pc.tag))).toBe(true);
     expect((await held(pc.tag)).length).toBe(0);
@@ -182,6 +183,20 @@ describe("the cost of holding", () => {
     socket = await openSocket(pc);
     await deliverAndAck(socket, 1);
     expect(await read()).toEqual({ rows: 2 + 2 + 1, alarms: 0 });
+    socket.close();
+  });
+
+  it("a webhook held across an expiry alarm writes nothing more: the alarm moves once, for the whole account", async () => {
+    const pc = await registerComputer(uniqueAccount(), "pc");
+    const { key, url } = await registeredRoutine(pc, "waiting");
+    expect((await postHook(url, key, "held while away")).status).toBe(202); // its insert, and the account's alarm
+    const read = await meterWrites(pc.tag);
+    expect(await runDurableObjectAlarm(stub(pc.tag))).toBe(true);
+    expect(await read()).toEqual({ rows: 0, alarms: 1 });
+    // Taken when the computer comes back: the connection's ticket row, and the webhook's delete.
+    const socket = await openSocket(pc);
+    await deliverAndAck(socket, 1);
+    expect(await read()).toEqual({ rows: 2, alarms: 1 });
     socket.close();
   });
 });

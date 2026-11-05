@@ -10,17 +10,30 @@
 //   * expiry is one alarm, set only when none is pending and moved at most once an hour, so a week of
 //     waiting adds at most a few alarm writes for the whole account, not per payload;
 //   * stored bytes are billed per GB-month, a rounding error for webhook payloads.
-// A connection costs two rows of its own (its ticket's nonce, kept until the ticket has expired, in a
-// WITHOUT ROWID table so no index row is written beside it, and that row's delete), however many payloads it carries.
+// Around that, flat per event rather than per hour held:
+//   * a drop (cap, expiry, unreadable) writes one row more, the routine's drop count, and one more when the
+//     routine's computer is told;
+//   * a connection costs two rows of its own (its ticket's nonce, kept until the ticket has expired, in a
+//     WITHOUT ROWID table so no index row is written beside it, and that row's delete);
+//   * a webhook whose key no Worker instance has checked lately costs one more request (checkKey), no write.
 // So the hold ends only on the policy's limits: until the routine's computer takes it, for at most HOLD_DAYS,
-// with the account capped at MAX_HELD payloads and MAX_HELD_BYTES bytes, oldest dropped first.
+// with the account capped at MAX_HELD payloads and MAX_HELD_BYTES bytes; past a cap, the oldest webhook of
+// the routine holding the most is dropped first, so one noisy routine cannot push out the others.
+//
+// Which computer holds a routine decides who may delete it and its webhooks: a DELETE or a nack from another
+// computer is refused (held_elsewhere) or ignored. An ack is honoured from any of the account's computers,
+// since the one that acks has run the webhook. When the holder deletes a routine, its held webhooks stay
+// until they expire, so a routine moving to another computer (spec §7) keeps them whichever arrives first,
+// the old computer's DELETE or the new one's registration.
 
 import { DurableObject } from "cloudflare:workers";
 
 import { b64u, equalBytes, fromB64u, own, randomBytes, type Bytes } from "../../../plugins/clover/forwarder/src/wire/bytes";
 import { keyId, sealEnvelope, ROUTINE_ID_RE } from "../../../plugins/clover/forwarder/src/wire/envelope";
+import { encap } from "../../../plugins/clover/forwarder/src/wire/hpke";
 import {
   CLOSE_PROTOCOL,
+  CLOSE_REAUTH,
   CLOSE_REPLACED,
   CLOSE_REVOKED,
   CLOSE_STALE,
@@ -30,6 +43,8 @@ import {
   PING,
   PONG,
   type DeviceInfo,
+  type DropReason,
+  type DropReport,
   type RoutineInfo,
   type ServiceFrame,
 } from "../../../plugins/clover/forwarder/src/wire/protocol";
@@ -42,9 +57,11 @@ export interface Caller {
   device: string;
 }
 
-export type Refusal = { ok: false; status: 401 | 403 | 404 | 409 | 413 | 503; error: string; device?: string };
+export type Refusal = { ok: false; status: 400 | 401 | 403 | 404 | 405 | 409 | 413 | 503; error: string; device?: string };
 
 export type ReceiveResult = { ok: true; id: string; seq: number; delivered: boolean } | Refusal;
+
+export type KeyCheck = { ok: true; allowGet: boolean } | { ok: false };
 
 /** Kept with each hibernatable socket (serializeAttachment), so it survives the object being evicted. */
 interface SocketState {
@@ -53,6 +70,8 @@ interface SocketState {
   sentUpTo: number;
   connectedAt: number;
   lastSeen: number;
+  /** When the account token the connection was opened with expires (ms): the connection ends there. */
+  authExpires: number;
 }
 
 interface HeldRow extends Record<string, SqlStorageValue> {
@@ -61,10 +80,19 @@ interface HeldRow extends Record<string, SqlStorageValue> {
   env: ArrayBuffer;
 }
 
+interface RoutineRow extends Record<string, SqlStorageValue> {
+  key_hash: ArrayBuffer;
+  device: string;
+  allow_get: number;
+}
+
 const SOCKET_TAG = (device: string) => `d:${device}`;
 
 /** A used ticket's nonce is kept this long past the ticket's expiry, in case this object's clock runs ahead of the Worker's. */
 const TICKET_SLACK_MS = 60_000;
+
+/** Sequence numbers count microseconds, so a cutoff time in ms becomes a sequence number this way. */
+const SEQ_PER_MS = 1000;
 
 export class ForwarderDO extends DurableObject<Env> {
   private readonly sql: SqlStorage;
@@ -89,13 +117,16 @@ export class ForwarderDO extends DurableObject<Env> {
     this.sql.exec("CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v TEXT NOT NULL)");
     const schema = this.sql.exec<{ v: string }>("SELECT v FROM meta WHERE k = 'schema'").toArray()[0];
     if (schema) return;
+    // WITHOUT ROWID wherever the key is text, so a row write is one row, with no index row beside it.
     this.sql.exec(`
-      CREATE TABLE devices (id TEXT PRIMARY KEY, kid BLOB NOT NULL, pub BLOB NOT NULL, name TEXT, added INTEGER NOT NULL);
-      CREATE TABLE revoked (id TEXT PRIMARY KEY, at INTEGER NOT NULL);
-      CREATE TABLE routines (id TEXT PRIMARY KEY, key_hash BLOB NOT NULL, device TEXT NOT NULL, registered INTEGER NOT NULL);
+      CREATE TABLE devices (id TEXT PRIMARY KEY, kid BLOB NOT NULL, pub BLOB NOT NULL, name TEXT, added INTEGER NOT NULL) WITHOUT ROWID;
+      CREATE TABLE revoked (id TEXT PRIMARY KEY, at INTEGER NOT NULL) WITHOUT ROWID;
+      CREATE TABLE routines (id TEXT PRIMARY KEY, key_hash BLOB NOT NULL, device TEXT NOT NULL, allow_get INTEGER NOT NULL,
+                             registered INTEGER NOT NULL) WITHOUT ROWID;
       CREATE TABLE held (seq INTEGER PRIMARY KEY, routine TEXT NOT NULL, pid BLOB NOT NULL,
                          received INTEGER NOT NULL, size INTEGER NOT NULL, env BLOB NOT NULL);
       CREATE TABLE tickets (nonce TEXT PRIMARY KEY, expires INTEGER NOT NULL) WITHOUT ROWID;
+      CREATE TABLE drops (routine TEXT PRIMARY KEY, count INTEGER NOT NULL, reason TEXT NOT NULL, at INTEGER NOT NULL) WITHOUT ROWID;
       INSERT INTO meta (k, v) VALUES ('schema', '1');
     `);
   }
@@ -124,8 +155,12 @@ export class ForwarderDO extends DurableObject<Env> {
     return this.sql.exec("SELECT 1 AS x FROM revoked WHERE id = ?", id).toArray().length > 0;
   }
 
-  private routineRow(id: string): { key_hash: ArrayBuffer; device: string } | undefined {
-    return this.sql.exec<{ key_hash: ArrayBuffer; device: string }>("SELECT key_hash, device FROM routines WHERE id = ?", id).toArray()[0];
+  private routineRow(id: string): RoutineRow | undefined {
+    return this.sql.exec<RoutineRow>("SELECT key_hash, device, allow_get FROM routines WHERE id = ?", id).toArray()[0];
+  }
+
+  private heldFor(routine: string): number {
+    return this.sql.exec<{ n: number }>("SELECT COUNT(*) AS n FROM held WHERE routine = ?", routine).one().n;
   }
 
   /** Common checks for a device API call: the right account, and a computer that has not been revoked. */
@@ -138,7 +173,13 @@ export class ForwarderDO extends DurableObject<Env> {
   // ---- device API ----
 
   async putDevice(caller: Caller, input: { encKey: Uint8Array; name: string | null }): Promise<{ ok: true; kid: string } | Refusal> {
-    if (input.encKey.length !== 32) return { ok: false, status: 409, error: "bad_key" };
+    if (input.encKey.length !== 32) return { ok: false, status: 400, error: "bad_key" };
+    // A key nothing can be sealed to (a small-order point) would fail every webhook for the account: refuse it here.
+    try {
+      await encap(input.encKey);
+    } catch {
+      return { ok: false, status: 400, error: "bad_key" };
+    }
     const kid = await keyId(input.encKey);
     // Synchronous from here on: nothing can interleave between the checks and the write.
     const refused = this.refuse(caller);
@@ -174,16 +215,21 @@ export class ForwarderDO extends DurableObject<Env> {
   }
 
   /**
-   * Revokes a computer (spec §8.1: revoking cuts its links at once). Its key stops being a recipient, its
-   * socket closes, and its routines go with it: their files lived on it, so nothing else can run them.
+   * Revokes a computer that registered here (spec §8.1: revoking cuts its links at once). Its key stops being
+   * a recipient, its socket closes, and its routines go with it: their files lived on it. An id that never
+   * registered is refused, so the revoked list cannot grow without bound.
    */
   async revokeDevice(caller: Caller, deviceId: string): Promise<{ ok: true } | Refusal> {
     const refused = this.refuse(caller);
     if (refused) return refused;
     if (!DEVICE_ID_RE.test(deviceId)) return { ok: false, status: 404, error: "unknown_device" };
+    if (!this.deviceRow(deviceId)) {
+      return this.isRevoked(deviceId) ? { ok: true } : { ok: false, status: 404, error: "unknown_device" };
+    }
     this.sql.exec("INSERT OR IGNORE INTO revoked (id, at) VALUES (?, ?)", deviceId, Date.now());
     this.sql.exec("DELETE FROM devices WHERE id = ?", deviceId);
-    this.dropWhere("routine IN (SELECT id FROM routines WHERE device = ?)", deviceId);
+    this.dropWhere("routine IN (SELECT id FROM routines WHERE device = ?)", null, deviceId);
+    this.sql.exec("DELETE FROM drops WHERE routine IN (SELECT id FROM routines WHERE device = ?)", deviceId);
     this.sql.exec("DELETE FROM routines WHERE device = ?", deviceId);
     for (const ws of this.ctx.getWebSockets(SOCKET_TAG(deviceId))) this.closeSocket(ws, CLOSE_REVOKED, "revoked");
     return { ok: true };
@@ -192,85 +238,144 @@ export class ForwarderDO extends DurableObject<Env> {
   async putRoutine(
     caller: Caller,
     routineId: string,
-    input: { keyHash: Uint8Array; takeover: boolean },
+    input: { keyHash: Uint8Array; takeover: boolean; allowGet: boolean },
   ): Promise<{ ok: true; device: string } | Refusal> {
     const refused = this.refuse(caller);
     if (refused) return refused;
-    if (!ROUTINE_ID_RE.test(routineId) || input.keyHash.length !== 32) return { ok: false, status: 409, error: "bad_routine" };
+    if (!ROUTINE_ID_RE.test(routineId) || input.keyHash.length !== 32) return { ok: false, status: 400, error: "bad_routine" };
     if (!this.deviceRow(caller.device)) return { ok: false, status: 409, error: "device_not_registered" };
     const existing = this.routineRow(routineId);
     const keyHash = own(input.keyHash).buffer;
+    const allowGet = input.allowGet ? 1 : 0;
     if (!existing) {
       const count = this.sql.exec<{ n: number }>("SELECT COUNT(*) AS n FROM routines").one().n;
       if (count >= this.limits.maxRoutines) return { ok: false, status: 409, error: "too_many_routines" };
-      this.sql.exec("INSERT INTO routines (id, key_hash, device, registered) VALUES (?, ?, ?, ?)", routineId, keyHash, caller.device, Date.now());
+      this.sql.exec(
+        "INSERT INTO routines (id, key_hash, device, allow_get, registered) VALUES (?, ?, ?, ?, ?)",
+        routineId,
+        keyHash,
+        caller.device,
+        allowGet,
+        Date.now(),
+      );
+      // Webhooks kept from an earlier holder (a move whose DELETE came first) are this computer's now.
+      if (this.heldFor(routineId) > 0) this.resendTo(caller.device);
       return { ok: true, device: caller.device };
     }
-    const sameKey = equalBytes(new Uint8Array(existing.key_hash), input.keyHash);
     if (existing.device === caller.device) {
-      if (!sameKey) this.sql.exec("UPDATE routines SET key_hash = ? WHERE id = ?", keyHash, routineId);
+      if (!equalBytes(new Uint8Array(existing.key_hash), input.keyHash) || existing.allow_get !== allowGet) {
+        this.sql.exec("UPDATE routines SET key_hash = ?, allow_get = ? WHERE id = ?", keyHash, allowGet, routineId);
+      }
       return { ok: true, device: caller.device };
     }
     // Held by another computer. Moving a routine file re-registers it from its new computer with takeover
     // (spec §7); without it, a second copy must not steal the routine's webhooks.
     if (!input.takeover) return { ok: false, status: 409, error: "held_elsewhere", device: existing.device };
-    this.sql.exec("UPDATE routines SET device = ?, key_hash = ?, registered = ? WHERE id = ?", caller.device, keyHash, Date.now(), routineId);
-    // Its held payloads follow it: start the new computer's socket over so they are sent there too.
-    for (const ws of this.ctx.getWebSockets(SOCKET_TAG(caller.device))) {
-      const state = ws.deserializeAttachment() as SocketState | null;
-      if (!state) continue;
-      state.sentUpTo = 0;
-      ws.serializeAttachment(state);
-      this.pump(ws, state);
-    }
+    this.sql.exec(
+      "UPDATE routines SET device = ?, key_hash = ?, allow_get = ?, registered = ? WHERE id = ?",
+      caller.device,
+      keyHash,
+      allowGet,
+      Date.now(),
+      routineId,
+    );
+    this.resendTo(caller.device);
     return { ok: true, device: caller.device };
   }
 
+  /**
+   * Deletes a routine this computer holds. Its held webhooks stay until they expire, for whichever computer
+   * registers the routine next; a computer that does not hold it is told where it is held instead.
+   */
   async deleteRoutine(caller: Caller, routineId: string): Promise<{ ok: true } | Refusal> {
     const refused = this.refuse(caller);
     if (refused) return refused;
-    this.dropWhere("routine = ?", routineId);
+    const existing = this.routineRow(routineId);
+    if (!existing) return { ok: true };
+    if (existing.device !== caller.device) return { ok: false, status: 409, error: "held_elsewhere", device: existing.device };
     this.sql.exec("DELETE FROM routines WHERE id = ?", routineId);
+    this.sql.exec("DELETE FROM drops WHERE routine = ?", routineId);
     return { ok: true };
   }
 
+  /** The account's routines; drops on the caller's own routines are reported here once, then forgotten. */
   async listRoutines(caller: Caller): Promise<{ ok: true; routines: RoutineInfo[] } | Refusal> {
     const refused = this.refuse(caller);
     if (refused) return refused;
-    const routines = this.sql
-      .exec<{ id: string; device: string; held: number }>(
-        `SELECT r.id AS id, r.device AS device, COUNT(h.seq) AS held
-         FROM routines r LEFT JOIN held h ON h.routine = r.id GROUP BY r.id ORDER BY r.id`,
+    const rows = this.sql
+      .exec<{ id: string; device: string; allow_get: number; held: number; count: number | null; reason: string | null; at: number | null }>(
+        `SELECT r.id AS id, r.device AS device, r.allow_get AS allow_get,
+                (SELECT COUNT(*) FROM held h WHERE h.routine = r.id) AS held,
+                d.count AS count, d.reason AS reason, d.at AS at
+         FROM routines r LEFT JOIN drops d ON d.routine = r.id ORDER BY r.id`,
       )
       .toArray();
+    let told = false;
+    const routines = rows.map((row) => {
+      const info: RoutineInfo = { id: row.id, device: row.device, held: row.held, allowGet: row.allow_get === 1 };
+      if (row.count !== null && row.reason !== null && row.at !== null) {
+        info.dropped = { count: row.count, reason: row.reason as DropReason, at: row.at };
+        if (row.device === caller.device) told = true;
+      }
+      return info;
+    });
+    if (told) this.sql.exec("DELETE FROM drops WHERE routine IN (SELECT id FROM routines WHERE device = ?)", caller.device);
     return { ok: true, routines };
   }
 
   // ---- webhooks ----
 
   /**
-   * A webhook for one of this account's routines. The Worker has already checked the path, the size and the
-   * rate, and hashed the key the sender presented; the key itself never reaches this object.
+   * Whether `keyHash` is the routine's key, for the Worker to check before it reads a body. Reads only; the
+   * Worker caches a success, and receive() checks again anyway.
    */
-  async receive(input: { routineId: string; keyHash: Uint8Array; record: Uint8Array; receivedAt: number }): Promise<ReceiveResult> {
+  async checkKey(routineId: string, keyHash: Uint8Array): Promise<KeyCheck> {
+    const routine = this.routineRow(routineId);
+    if (!routine || !equalBytes(new Uint8Array(routine.key_hash), keyHash)) return { ok: false };
+    return { ok: true, allowGet: routine.allow_get === 1 };
+  }
+
+  /**
+   * A webhook for one of this account's routines. The Worker has already checked the path, the key (or a
+   * recent check of it), the size and the rate, and hashed the key; the key itself never reaches this object.
+   */
+  async receive(input: { routineId: string; keyHash: Uint8Array; method: string; record: Uint8Array; receivedAt: number }): Promise<ReceiveResult> {
     const routine = this.routineRow(input.routineId);
     if (!routine || !equalBytes(new Uint8Array(routine.key_hash), input.keyHash)) return { ok: false, status: 401, error: "unauthorized" };
+    if (input.method === "GET" && routine.allow_get !== 1) return { ok: false, status: 405, error: "method_not_allowed" };
     const recipients = this.sql
       .exec<{ kid: ArrayBuffer; pub: ArrayBuffer }>("SELECT kid, pub FROM devices ORDER BY added")
       .toArray()
       .map((row) => ({ kid: new Uint8Array(row.kid), publicKey: new Uint8Array(row.pub) }));
     if (recipients.length === 0) return { ok: false, status: 503, error: "no_devices" };
 
-    // Sealed on arrival: from here on the request exists only as ciphertext.
+    // Sealed on arrival: from here on the request exists only as ciphertext. A computer whose key cannot be
+    // sealed to is left out, and the others still get the webhook.
     const pid = randomBytes(16);
-    const envelope = await sealEnvelope({ routineId: input.routineId, receivedAt: input.receivedAt, recipients, plaintext: input.record, pid });
+    let skipped = 0;
+    let envelope: Bytes;
+    try {
+      envelope = await sealEnvelope({
+        routineId: input.routineId,
+        receivedAt: input.receivedAt,
+        recipients,
+        plaintext: input.record,
+        pid,
+        onRecipientError: () => {
+          skipped += 1;
+        },
+      });
+    } catch {
+      return { ok: false, status: 503, error: "no_devices" };
+    }
+    if (skipped > 0) console.warn(`forwarder: ${skipped} computer key(s) could not be sealed to`);
 
     // Other events may have run during the await; check again, then write without awaiting anything.
     const still = this.routineRow(input.routineId);
     if (!still || !equalBytes(new Uint8Array(still.key_hash), input.keyHash)) return { ok: false, status: 401, error: "unauthorized" };
     if (envelope.length > this.limits.maxHeldBytes) return { ok: false, status: 413, error: "too_large" };
     const now = Date.now();
-    this.dropWhere("received <= ?", now - this.limits.holdMs);
+    this.dropExpired(now);
     this.makeRoom(envelope.length);
     const seq = this.nextSeq(now);
     this.sql.exec(
@@ -298,12 +403,13 @@ export class ForwarderDO extends DurableObject<Env> {
    * Sequence numbers only ever grow, across evictions too: they start from the clock in microseconds, and an
    * object is evicted only after seconds idle, so a woken object's first number is far above its last one.
    * Acknowledgements also carry the payload id, so even a reused number could not delete another payload.
+   * Because they follow the clock, expiry finds old webhooks by sequence number, on the primary key.
    */
   private nextSeq(now: number): number {
     if (this.lastSeq === 0) {
       this.lastSeq = this.sql.exec<{ m: number | null }>("SELECT MAX(seq) AS m FROM held").one().m ?? 0;
     }
-    this.lastSeq = Math.max(now * 1000, this.lastSeq + 1);
+    this.lastSeq = Math.max(now * SEQ_PER_MS, this.lastSeq + 1);
     return this.lastSeq;
   }
 
@@ -315,26 +421,73 @@ export class ForwarderDO extends DurableObject<Env> {
     return this.totals;
   }
 
-  /** Drops the oldest held payloads until one of `size` bytes fits under the account's caps. */
+  /**
+   * Drops held payloads until one of `size` bytes fits under the account's caps, each time the oldest of the
+   * routine holding the most (by count, or by bytes when bytes are the cap reached).
+   */
   private makeRoom(size: number): void {
     const totals = this.loadTotals();
-    while (totals.count > 0 && (totals.count + 1 > this.limits.maxHeld || totals.bytes + size > this.limits.maxHeldBytes)) {
+    for (;;) {
+      const overCount = totals.count + 1 > this.limits.maxHeld;
+      const overBytes = totals.bytes + size > this.limits.maxHeldBytes;
+      if (totals.count === 0 || (!overCount && !overBytes)) return;
+      const largest = this.sql
+        .exec<{ routine: string }>(
+          `SELECT routine FROM held GROUP BY routine ORDER BY ${overCount ? "COUNT(*)" : "SUM(size)"} DESC, MIN(seq) ASC LIMIT 1`,
+        )
+        .one().routine;
       const before = totals.count;
-      this.dropWhere("seq = (SELECT MIN(seq) FROM held)");
-      if (totals.count === before) break;
+      this.dropWhere("seq = (SELECT MIN(seq) FROM held WHERE routine = ?)", "cap", largest);
+      if (totals.count === before) return;
     }
   }
 
-  /** Deletes held payloads matching `where`, keeping the cached totals right. */
-  private dropWhere(where: string, ...bindings: unknown[]): number {
-    const rows = this.sql.exec<{ size: number }>(`DELETE FROM held WHERE ${where} RETURNING size`, ...bindings).toArray();
+  private dropExpired(now: number): void {
+    this.dropWhere("seq <= ?", "expired", (now - this.limits.holdMs) * SEQ_PER_MS);
+  }
+
+  /**
+   * Deletes held payloads matching `where`, keeping the cached totals right. With a reason, the drops are
+   * counted for each routine that still exists, to be reported to its computer once.
+   */
+  private dropWhere(where: string, reason: DropReason | null, ...bindings: unknown[]): number {
+    const rows = this.sql.exec<{ routine: string; size: number }>(`DELETE FROM held WHERE ${where} RETURNING routine, size`, ...bindings).toArray();
     if (this.totals) {
       for (const row of rows) {
         this.totals.count -= 1;
         this.totals.bytes -= row.size;
       }
     }
+    if (reason && rows.length > 0) {
+      const counts = new Map<string, number>();
+      for (const row of rows) counts.set(row.routine, (counts.get(row.routine) ?? 0) + 1);
+      const now = Date.now();
+      for (const [routine, count] of counts) {
+        if (!this.routineRow(routine)) continue;
+        this.sql.exec(
+          `INSERT INTO drops (routine, count, reason, at) VALUES (?, ?, ?, ?)
+           ON CONFLICT(routine) DO UPDATE SET count = count + excluded.count, reason = excluded.reason, at = excluded.at`,
+          routine,
+          count,
+          reason,
+          now,
+        );
+      }
+    }
     return rows.length;
+  }
+
+  /** Drops on a computer's routines, for its hello: forgotten here once taken. */
+  private takeDrops(device: string): DropReport[] {
+    const reports = this.sql
+      .exec<{ routine: string; count: number; reason: string; at: number }>(
+        "SELECT d.routine AS routine, d.count AS count, d.reason AS reason, d.at AS at FROM drops d JOIN routines r ON r.id = d.routine WHERE r.device = ?",
+        device,
+      )
+      .toArray()
+      .map((row) => ({ routine: row.routine, count: row.count, reason: row.reason as DropReason, at: row.at }));
+    if (reports.length > 0) this.sql.exec("DELETE FROM drops WHERE routine IN (SELECT id FROM routines WHERE device = ?)", device);
+    return reports;
   }
 
   // ---- expiry ----
@@ -343,9 +496,9 @@ export class ForwarderDO extends DurableObject<Env> {
   private async ensureAlarm(): Promise<void> {
     if (this.alarmAt === undefined) this.alarmAt = await this.ctx.storage.getAlarm();
     if (this.alarmAt !== null) return;
-    const oldest = this.sql.exec<{ r: number | null }>("SELECT MIN(received) AS r FROM held").one().r;
+    const oldest = this.sql.exec<{ s: number | null }>("SELECT MIN(seq) AS s FROM held").one().s;
     if (oldest === null) return;
-    const at = Math.max(oldest + this.limits.holdMs - this.limits.expiryGapMs, Date.now() + this.limits.expiryGapMs);
+    const at = Math.max(Math.floor(oldest / SEQ_PER_MS) + this.limits.holdMs - this.limits.expiryGapMs, Date.now() + this.limits.expiryGapMs);
     await this.ctx.storage.setAlarm(at);
     this.alarmAt = at;
   }
@@ -356,7 +509,7 @@ export class ForwarderDO extends DurableObject<Env> {
    */
   override async alarm(): Promise<void> {
     this.alarmAt = null;
-    this.dropWhere("received <= ?", Date.now() + this.limits.expiryGapMs - this.limits.holdMs);
+    this.dropWhere("seq <= ?", "expired", (Date.now() + this.limits.expiryGapMs - this.limits.holdMs) * SEQ_PER_MS);
     await this.ensureAlarm();
   }
 
@@ -369,10 +522,12 @@ export class ForwarderDO extends DurableObject<Env> {
     const device = request.headers.get("x-clover-device") ?? "";
     const nonce = request.headers.get("x-clover-nonce") ?? "";
     const expires = Number(request.headers.get("x-clover-ticket-expires"));
-    if (!nonce || !Number.isSafeInteger(expires)) return new Response("bad ticket", { status: 400 });
+    const authExpires = Number(request.headers.get("x-clover-auth-expires"));
+    if (!nonce || !Number.isSafeInteger(expires) || !Number.isSafeInteger(authExpires)) return new Response("bad ticket", { status: 400 });
     if (!this.deviceRow(device) || this.isRevoked(device)) return new Response("unknown device", { status: 403 });
-    // A ticket opens one connection, ever: its nonce is kept until the ticket can no longer be presented.
     const now = Date.now();
+    if (authExpires <= now) return new Response("token expired", { status: 401 });
+    // A ticket opens one connection, ever: its nonce is kept until the ticket can no longer be presented.
     this.sql.exec("DELETE FROM tickets WHERE expires <= ?", now - TICKET_SLACK_MS);
     if (this.sql.exec("SELECT 1 AS x FROM tickets WHERE nonce = ?", nonce).toArray().length > 0) {
       return new Response("ticket already used", { status: 409 });
@@ -385,13 +540,14 @@ export class ForwarderDO extends DurableObject<Env> {
     const client = pair[0];
     const server = pair[1];
     this.ctx.acceptWebSocket(server, [SOCKET_TAG(device)]);
-    const state: SocketState = { device, sentUpTo: 0, connectedAt: now, lastSeen: now };
+    const state: SocketState = { device, sentUpTo: 0, connectedAt: now, lastSeen: now, authExpires };
     server.serializeAttachment(state);
-    this.dropWhere("received <= ?", now - this.limits.holdMs);
+    this.dropExpired(now);
     const pending = this.sql
       .exec<{ n: number }>("SELECT COUNT(*) AS n FROM held h JOIN routines r ON r.id = h.routine WHERE r.device = ?", device)
       .one().n;
-    const hello: ServiceFrame = { t: "hello", v: 1, device, pending };
+    const dropped = this.takeDrops(device);
+    const hello: ServiceFrame = { t: "hello", v: 1, device, pending, ...(dropped.length > 0 ? { dropped } : {}) };
     server.send(JSON.stringify(hello));
     this.pump(server, state);
     return new Response(null, { status: 101, webSocket: client });
@@ -400,6 +556,7 @@ export class ForwarderDO extends DurableObject<Env> {
   override async webSocketMessage(ws: WebSocket, message: string | ArrayBuffer): Promise<void> {
     const state = ws.deserializeAttachment() as SocketState | null;
     if (!state) return this.closeSocket(ws, CLOSE_PROTOCOL, "no state");
+    if (this.authExpired(ws, state)) return;
     if (typeof message !== "string" || message.length > 16 * 1024) return this.closeSocket(ws, CLOSE_PROTOCOL, "bad frame");
     if (message === PING) {
       ws.send(PONG);
@@ -411,9 +568,21 @@ export class ForwarderDO extends DurableObject<Env> {
     } catch {
       return this.closeSocket(ws, CLOSE_PROTOCOL, "bad frame");
     }
-    const refs = parseAcks(frame);
-    if (!refs) return this.closeSocket(ws, CLOSE_PROTOCOL, "bad frame");
-    for (const [seq, pid] of refs) this.dropWhere("seq = ? AND pid = ?", seq, pid.buffer);
+    const parsed = parseAcks(frame);
+    if (!parsed) return this.closeSocket(ws, CLOSE_PROTOCOL, "bad frame");
+    for (const [seq, pid] of parsed.refs) {
+      if (parsed.kind === "ack") this.dropWhere("seq = ? AND pid = ?", null, seq, pid.buffer);
+      else {
+        // Only the routine's own computer may refuse its webhooks.
+        this.dropWhere(
+          "seq = ? AND pid = ? AND routine IN (SELECT id FROM routines WHERE device = ?)",
+          parsed.unreadable ? "unreadable" : null,
+          seq,
+          pid.buffer,
+          state.device,
+        );
+      }
+    }
     state.lastSeen = Date.now();
     ws.serializeAttachment(state);
     this.pump(ws, state);
@@ -429,9 +598,31 @@ export class ForwarderDO extends DurableObject<Env> {
     return this.ctx.getWebSockets(SOCKET_TAG(device)).filter((ws) => ws.readyState === WebSocket.OPEN);
   }
 
-  private closeSocket(ws: WebSocket, code: number, reason: "replaced" | "revoked" | "stale" | string): void {
+  /** Starts a computer's sockets over from the oldest webhook it holds (a routine it has just taken on). */
+  private resendTo(device: string): void {
+    for (const ws of this.openSockets(device)) {
+      const state = ws.deserializeAttachment() as SocketState | null;
+      if (!state) continue;
+      state.sentUpTo = 0;
+      ws.serializeAttachment(state);
+      this.pump(ws, state);
+    }
+  }
+
+  /**
+   * A connection outlives nothing it was opened with: once the account token behind it has expired, the next
+   * event on it closes it (no timer, so no cost), and the computer connects again with a fresh token, which
+   * the account service will not issue to a revoked device.
+   */
+  private authExpired(ws: WebSocket, state: SocketState): boolean {
+    if (typeof state.authExpires === "number" && state.authExpires > Date.now()) return false;
+    this.closeSocket(ws, CLOSE_REAUTH, "reauth");
+    return true;
+  }
+
+  private closeSocket(ws: WebSocket, code: number, reason: "replaced" | "revoked" | "stale" | "reauth" | string): void {
     try {
-      if (reason === "replaced" || reason === "revoked" || reason === "stale") {
+      if (reason === "replaced" || reason === "revoked" || reason === "stale" || reason === "reauth") {
         const bye: ServiceFrame = { t: "bye", reason };
         ws.send(JSON.stringify(bye));
       }
@@ -447,6 +638,7 @@ export class ForwarderDO extends DurableObject<Env> {
    */
   private pump(ws: WebSocket, state: SocketState): boolean {
     if (ws.readyState !== WebSocket.OPEN) return false;
+    if (this.authExpired(ws, state)) return false;
     const now = Date.now();
     const lastPing = this.ctx.getWebSocketAutoResponseTimestamp(ws)?.getTime() ?? 0;
     if (now - Math.max(lastPing, state.lastSeen, state.connectedAt) > this.limits.staleMs) {
@@ -488,11 +680,11 @@ export class ForwarderDO extends DurableObject<Env> {
   }
 }
 
-function parseAcks(frame: unknown): [number, Bytes][] | null {
+function parseAcks(frame: unknown): { kind: "ack" | "nack"; unreadable: boolean; refs: [number, Bytes][] } | null {
   if (frame === null || typeof frame !== "object") return null;
-  const { t, a } = frame as { t?: unknown; a?: unknown };
+  const { t, a, reason } = frame as { t?: unknown; a?: unknown; reason?: unknown };
   if ((t !== "ack" && t !== "nack") || !Array.isArray(a) || a.length > MAX_ACKS_PER_FRAME) return null;
-  const out: [number, Bytes][] = [];
+  const refs: [number, Bytes][] = [];
   for (const ref of a) {
     if (!Array.isArray(ref) || ref.length !== 2) return null;
     const [seq, pid] = ref as [unknown, unknown];
@@ -500,10 +692,10 @@ function parseAcks(frame: unknown): [number, Bytes][] | null {
     try {
       const bytes = fromB64u(pid);
       if (bytes.length !== 16) return null;
-      out.push([seq, bytes]);
+      refs.push([seq, bytes]);
     } catch {
       return null;
     }
   }
-  return out;
+  return { kind: t, unreadable: t === "nack" && reason === "unreadable", refs };
 }
