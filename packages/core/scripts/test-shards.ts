@@ -1,8 +1,10 @@
 // Runs `bun test` (from packages/core) as N sequential native shards: `bun test --shard=K/N`.
 //
-// Why: Bun 1.3.14 has an intermittent use-after-free that can crash ONE long `bun test` process
+// Why: Bun 1.3.14 had an intermittent Worker use-after-free that could crash ONE long `bun test` process
 // (after ~7 min, ~70 Workers spawned and terminated, ~1.4 GB RSS; "Segmentation fault at address 0xA",
-// exit 133). Smaller processes lower the odds. Every shard is a fresh `bun test` in this directory, so
+// exit 133), and smaller processes lowered the odds. Bun 1.4.4 (the pin since M1) hands a terminated
+// Worker's memory back and ran A-M1's soaks without a crash; the shards stay, since a smaller process is
+// cheaper to re-run and keeps a crash to one shard. Every shard is a fresh `bun test` in this directory, so
 // it loads the same bunfig preload (per-process temp root, throwaway Keychain service) and env.
 //
 //   bun scripts/test-shards.ts [N]    run shards 1..N (default 3); every shard runs even if one fails
