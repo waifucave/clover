@@ -4,10 +4,17 @@ The checks behind [the S6 report](../../docs/research/2026-11-05-s6-mounts.md): 
 computer's folder with FUSE (Linux), WinFsp (Windows) and FSKit (macOS); speed across the
 mount against local disk; failing fast when the computer drops.
 
+**Evidence only.** The owner decided on November 5 that Clover mounts no other computer's
+folders into any file system (the report's edit 1). Everything here is the record of why, not
+code to build on. Two pieces carry into M1 as rules, not as code: the holder's fence in
+`server/serve.ts` (paths resolved where they land, names folded for case and Unicode form) and
+the link's liveness in `native/remote/client.go`.
+
 | Path | What |
 | :- | :- |
 | `server/serve.ts` | the file service: the daemon's half on the computer that holds the files (Bun) |
-| `server/wire.ts` | the wire protocol in TypeScript ([PROTOCOL.md](../../native/mounts/PROTOCOL.md)) |
+| `server/wire.ts` | the wire protocol in TypeScript ([PROTOCOL.md](native/PROTOCOL.md)) |
+| `native/` | the mount helper in Go (FUSE, WinFsp, NFS loopback) and the FSKit module in Swift; [its README](native/README.md) |
 | `link/proxy.ts` | the fake link: a TCP relay with an added round trip, blackhole and reset, and a bandwidth cap with jitter and a bounded buffer |
 | `bench/speed.ts` | question 3: `git status`, `tsc`, 256 MiB reads and writes, folder copies, cold and warm, at 0/20/80 ms |
 | `bench/failfast.ts` | question 4: faults injected while a read, write, `git status` or `tsc` is in flight, and a live but slow link |
@@ -27,14 +34,14 @@ workspace. Everything runs as plain Bun scripts.
 ## One command per check
 
 Linux (FUSE; needs `fuse3`) and Windows (WinFsp 2.1 installed). Build the helper first:
-`cd native/mounts && CGO_ENABLED=0 go build -o /tmp/s6/clover-mount ./cmd/clover-mount`
+`cd spikes/s6-mounts/native && CGO_ENABLED=0 go build -o /tmp/s6/clover-mount ./cmd/clover-mount`
 (`clover-mount.exe` on Windows), then `bash spikes/s6-mounts/ci/prepare.sh /tmp/s6/export`.
 On Windows pass `--tree T:`, and to `speed.ts` also `--volume-prefix '\clover\tree'`, without which
 `tsc` finds no types (see the report).
 
 ```sh
 # protocol-level checks, any OS, no mount (also the fail-fast core):
-cd native/mounts && CLOVER_S6_SERVE=$PWD/../../spikes/s6-mounts/server/serve.ts go test ./... -v
+cd spikes/s6-mounts/native && CLOVER_S6_SERVE=$PWD/../server/serve.ts go test ./... -v
 
 # question 1 + 2: mount, read, write, and what a reader sees when files change behind the mount
 bun spikes/s6-mounts/bench/coherence.ts --root /tmp/s6/export --tree /tmp/s6/tree --helper /tmp/s6/clover-mount --out /tmp/s6/results/coherence.json
@@ -68,14 +75,15 @@ and `CLOVER_MACFUSE_BACKEND=fskit`), on disposable runners only. At live gate 2 
 in a terminal:
 
 ```sh
-CLOVER_TEAM_ID=<team id> native/mounts/macos/gate.sh
+CLOVER_TEAM_ID=<team id> spikes/s6-mounts/native/macos/gate.sh
 ```
 
 which signs the module, asks for the one click in System Settings, then runs the coherence
 check with the short-read guard on and off, the speed matrix and the fail-fast scenarios on the
 FSKit volume, then the NFS loopback checks (asking whether a dead helper or a 2 Mbit/s link made
 macOS show a dialog), optionally sleep and wake with a read in flight, and removes the app, its
-registrations and its enabled-list entry again, whichever step fails.
+registrations and its enabled-list entry again, whichever step fails. With no mounts in Clover,
+live gate 2 no longer needs it; it stays as the record of how the gate was to run.
 
 The CI workflow is `.github/workflows/spike-s6.yml`; every push to `lane/j-m0` runs it. Tags in
 the commit message, such as `[s6-skip-speed]` or `[s6-skip-macos]`, skip the suites a push

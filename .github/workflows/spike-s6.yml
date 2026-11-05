@@ -2,7 +2,10 @@ name: Spike S6 · folder-tree mounts
 
 # Lane J, M0: mounting another computer's folder (FUSE, WinFsp, FSKit), its speed against local
 # disk at 0/20/80 ms of added round trip, and failing fast when the computer drops.
+# Evidence only: the owner decided on November 5 that Clover mounts nothing (the report's edit 1).
 # Runs on pushes to the lane branch only; results land as artifacts and in the job summaries.
+# [s6-protocol-only] runs only the protocol job: the Go tests against the real file service
+# (the holder's fence among them) on Linux, Windows and macOS, with no mount.
 # A push whose head commit message says [s6-skip-speed] skips the hour-long Linux and Windows
 # speed suites (for pushes that change nothing they measure); [s6-skip-<suite>] or
 # [s6-skip-<os>-<suite>] skips one suite, [s6-skip-macos] and [s6-skip-macfuse] the macOS jobs,
@@ -23,9 +26,45 @@ permissions:
   contents: read
 
 jobs:
+  protocol:
+    # The wire protocol and the holder's rules against the real file service, no mount: the fence
+    # (links, case and Unicode form, Windows' trailing dots and 8.3 names), liveness, events.
+    name: protocol · ${{ matrix.runner }}
+    if: ${{ github.ref == 'refs/heads/lane/j-m0' && !contains(github.event.head_commit.message, '[s6-skip-protocol]') }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-26.04, windows-2025, macos-26]
+    defaults:
+      run:
+        shell: bash
+    env:
+      CGO_ENABLED: "0"
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: spikes/s6-mounts/native/go.mod
+          cache-dependency-path: spikes/s6-mounts/native/go.sum
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: .bun-version
+      - name: vet, build, and the protocol tests against the real file service
+        working-directory: spikes/s6-mounts/native
+        run: |
+          go vet ./...
+          go build ./...
+          CLOVER_S6_SERVE="$GITHUB_WORKSPACE/spikes/s6-mounts/server/serve.ts" go test ./remote ./wire -count=1 -v 2>&1 | tee "$RUNNER_TEMP/protocol-tests.txt"
+          test "${PIPESTATUS[0]}" = 0
+          { echo "### protocol tests on ${{ matrix.runner }}"; echo; echo '```'; grep -E '^(--- |ok|FAIL)|remote_test.go:[0-9]+: (case-sensitive|\.clover answers|no 8\.3)' "$RUNNER_TEMP/protocol-tests.txt"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+
   unix-like:
     name: ${{ matrix.os }} · ${{ matrix.suite }}
-    if: github.ref == 'refs/heads/lane/j-m0'
+    if: ${{ github.ref == 'refs/heads/lane/j-m0' && !contains(github.event.head_commit.message, '[s6-protocol-only]') }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 170
     strategy:
@@ -55,8 +94,8 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
-          go-version-file: native/mounts/go.mod
-          cache-dependency-path: native/mounts/go.sum
+          go-version-file: spikes/s6-mounts/native/go.mod
+          cache-dependency-path: spikes/s6-mounts/native/go.sum
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version-file: .bun-version
@@ -88,7 +127,7 @@ jobs:
 
       - name: Build the mount helper
         if: env.S6_RUN == 'true'
-        working-directory: native/mounts
+        working-directory: spikes/s6-mounts/native
         run: |
           mkdir -p "$RUNNER_TEMP/s6"
           exe=""; if [ "$RUNNER_OS" = Windows ]; then exe=.exe; fi
@@ -97,7 +136,7 @@ jobs:
           ls -l "$RUNNER_TEMP/s6"
       - name: Protocol tests against the real file service
         if: env.S6_RUN == 'true' && matrix.suite == 'failfast'
-        working-directory: native/mounts
+        working-directory: spikes/s6-mounts/native
         run: CLOVER_S6_SERVE="$S6/server/serve.ts" go test ./... github.com/willscott/go-nfs/helpers -count=1 -v
 
       - name: Prepare the other computer's home
@@ -181,7 +220,7 @@ jobs:
 
   macos:
     name: macos · ${{ matrix.runner }} · FSKit module + NFS loopback
-    if: ${{ github.ref == 'refs/heads/lane/j-m0' && !contains(github.event.head_commit.message, '[s6-skip-macos]') }}
+    if: ${{ github.ref == 'refs/heads/lane/j-m0' && !contains(github.event.head_commit.message, '[s6-skip-macos]') && !contains(github.event.head_commit.message, '[s6-protocol-only]') }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 170
     strategy:
@@ -194,13 +233,13 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
-          go-version-file: native/mounts/go.mod
-          cache-dependency-path: native/mounts/go.sum
+          go-version-file: spikes/s6-mounts/native/go.mod
+          cache-dependency-path: spikes/s6-mounts/native/go.sum
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version-file: .bun-version
       - name: Protocol tests against the real file service (no mount)
-        working-directory: native/mounts
+        working-directory: spikes/s6-mounts/native
         env:
           CGO_ENABLED: "0"
         run: CLOVER_S6_SERVE="$GITHUB_WORKSPACE/spikes/s6-mounts/server/serve.ts" go test ./... github.com/willscott/go-nfs/helpers -count=1 -v
@@ -215,7 +254,7 @@ jobs:
       - name: Build the FSKit module and try to turn it on without System Settings
         run: |
           mkdir -p "$RUNNER_TEMP/s6/results"
-          bash native/mounts/macos/ci-probe.sh "$RUNNER_TEMP/s6/results"
+          bash spikes/s6-mounts/native/macos/ci-probe.sh "$RUNNER_TEMP/s6/results"
           {
             echo "### FSKit on ${{ matrix.runner }}"; echo; echo '```'
             cat "$RUNNER_TEMP/s6/results/probe.txt" | tail -80
@@ -226,7 +265,7 @@ jobs:
           node-version: 24
       - name: NFS loopback (the alternative to FSKit) — build, prepare
         run: |
-          (cd native/mounts && CGO_ENABLED=0 go build -o "$RUNNER_TEMP/s6/clover-nfs" ./cmd/clover-nfs)
+          (cd spikes/s6-mounts/native && CGO_ENABLED=0 go build -o "$RUNNER_TEMP/s6/clover-nfs" ./cmd/clover-nfs)
           git config --global --add safe.directory '*'
           bash spikes/s6-mounts/ci/prepare.sh "$RUNNER_TEMP/s6/export"
       - name: NFS loopback — coherence and fail-fast
@@ -322,7 +361,7 @@ jobs:
     # AMFI runs it, and this disposable runner adds it to FSKit's enabled list by hand (what the
     # System Settings switch writes). 5.4.0 predates macFUSE's short-read mitigation; 5.5.0 has it.
     name: macos · ${{ matrix.runner }} · macFUSE ${{ matrix.macfuse }} FSKit backend
-    if: ${{ github.ref == 'refs/heads/lane/j-m0' && !contains(github.event.head_commit.message, '[s6-skip-macfuse]') }}
+    if: ${{ github.ref == 'refs/heads/lane/j-m0' && !contains(github.event.head_commit.message, '[s6-skip-macfuse]') && !contains(github.event.head_commit.message, '[s6-protocol-only]') }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 170
     strategy:
@@ -336,8 +375,8 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
-          go-version-file: native/mounts/go.mod
-          cache-dependency-path: native/mounts/go.sum
+          go-version-file: spikes/s6-mounts/native/go.mod
+          cache-dependency-path: spikes/s6-mounts/native/go.sum
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version-file: .bun-version
@@ -347,7 +386,7 @@ jobs:
       - name: Install macFUSE ${{ matrix.macfuse }} and turn its FSKit module on
         run: bash spikes/s6-mounts/ci/macfuse.sh "${{ matrix.macfuse }}" "$RUNNER_TEMP/s6/results"
       - name: Build the helper against macFUSE's libfuse
-        working-directory: native/mounts
+        working-directory: spikes/s6-mounts/native
         env:
           CGO_ENABLED: "1"
         run: go build -o "$RUNNER_TEMP/s6/clover-mount" ./cmd/clover-mount

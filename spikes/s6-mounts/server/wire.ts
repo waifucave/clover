@@ -1,4 +1,4 @@
-// clover-tree wire protocol v1 — the TypeScript side (native/mounts/PROTOCOL.md).
+// clover-tree wire protocol v1 — the TypeScript side (spikes/s6-mounts/native/PROTOCOL.md).
 
 export const VERSION = 1;
 export const MAX_FRAME = 16 * 1024 * 1024;
