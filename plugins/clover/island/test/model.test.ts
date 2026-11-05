@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { guestTabs, isReservedTab } from "../src/model/tabs";
 import {
   cardGeometry,
   islandRect,
@@ -487,5 +488,25 @@ describe("sealed buttons (lane B: one per option)", () => {
       { approve: false, look: "cross" },
       { approve: true, look: "check" },
     ]);
+  });
+});
+
+describe("guest tabs (the review's spoofing fix)", () => {
+  test("Needs you's id and title are reserved; another plugin's tab is named for its plugin, keyed by it, and never raises attention", () => {
+    const tabs = guestTabs([
+      { id: "NEEDS-YOU", title: "Mail" },
+      { id: "a", title: "Ｎｅｅｄｓ　you" },
+      { id: "devices", title: "Devices", pluginId: "clover", attention: "badge" as const },
+      { id: "servers", title: "Servers", pluginId: "homelab", pluginName: "Homelab", attention: "expand" as const },
+      { id: "servers", title: "Servers", pluginId: "other" },
+      { id: "devices", title: "Devices", pluginId: "clover" },
+    ]);
+    expect(tabs.map((t) => [t.id, t.title, t.attention])).toEqual([
+      ["devices", "Devices", "badge"],
+      ["homelab#servers", "Servers · Homelab", "never"],
+      ["other#servers", "Servers · other", "never"],
+    ]);
+    expect(isReservedTab({ id: "x", title: "needs you" })).toBe(true);
+    expect(isReservedTab({ id: "x", title: "Needs you now" })).toBe(false);
   });
 });

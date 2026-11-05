@@ -6,11 +6,14 @@ type Entry = string | { one?: string; other: string };
 const EN: Record<string, Entry> = {
   "clover.notifications.aBot": "A bot",
   "clover.notifications.fallbackTitle": "Clover",
-  "clover.notifications.message": { one: "Sent you a message", other: "Sent you {count} messages" },
-  "clover.notifications.card": { one: "Needs your OK", other: "Needs your OK on {count} things" },
-  "clover.notifications.question": { one: "Has a question for you", other: "Has {count} questions for you" },
-  "clover.notifications.routine": { one: "A routine finished", other: "{count} routines finished" },
-  "clover.notifications.agent": { one: "An agent finished", other: "{count} agents finished" },
+  "clover.notifications.aPlugin": "A plugin",
+  "clover.notifications.fromPlugin": "{plugin}: {title}",
+  "clover.notifications.message": "Sent you a message",
+  "clover.notifications.card": "Needs your OK",
+  "clover.notifications.question": "Has a question for you",
+  "clover.notifications.routine": "A routine finished",
+  "clover.notifications.agent": "An agent finished",
+  "clover.notifications.unseen": { one: "1 unseen", other: "{count} unseen" },
 };
 
 export function t(key: string, vars: Record<string, string | number> = {}): string {

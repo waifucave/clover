@@ -10,6 +10,8 @@ export const EN: Readonly<Record<string, Entry>> = {
   "clover.island.needsYouCount": { one: "1 thing needs you.", other: "{count} things need you." },
   "clover.island.workingCount": { one: "1 bot working.", other: "{count} bots working." },
   "clover.island.needsYou": "Needs you",
+  "clover.island.pluginTab": "{title} · {plugin}",
+  "clover.island.aPlugin": "a plugin",
   "clover.island.question": "Question",
   "clover.island.questionFrom": "Question · {name}",
   "clover.island.asks": "{name} asks",

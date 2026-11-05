@@ -1,10 +1,12 @@
 // Desktop notifications (clover/notifications, spec §10): a `notifiers` entry that runs on each computer (`runsOn:
 // "each"`) and shows the OS's own notification when something happens the user hasn't seen. The core never hands a
 // notifier a message's, a card's or a question's text (lane B's `NotifierUpdate`), so the words are what happened and
-// who: "Alpha sent you a message", "Alpha needs your OK". Only a plugin's `notify.send` carries a title and a body.
+// who: "Alpha · Sent you a message", "Alpha · Needs your OK". Only a plugin's `notify.send` carries a title and a body,
+// and its banner names the plugin first, so no plugin can speak as a bot ("Home: Alpha needs your OK" says who sent it).
 //
-// One notification per bot and kind, replaced as more arrive ("Alpha sent you 3 messages"), so a busy bot never
-// stacks a column of banners; the user catching up (`clear`) takes every one of them away. Nothing shows while the
+// One notification per bot and kind, replaced as more arrive, so a busy bot never stacks a column of banners; how many
+// things wait is the core's own count (`unseen`), never one this notifier keeps (the core coalesces updates, so a
+// notifier sees gaps); the user catching up (`clear`) takes every one of them away. Nothing shows while the
 // app says the user is already looking (the island and the app show it there). The OS draws the banner and decides
 // its sound; this plugin only asks the local app to show it, through `DesktopNotifications` (lane E's app, a port
 // until its API exists).
@@ -20,6 +22,9 @@ export interface NotifierUpdate {
   session?: string;
   at: number;
   notification?: { title: string; body?: string };
+  /** Who sent a `notification`: the plugin whose `notify.send` asked for it (a field asked of lane B), or `clover` for
+   *  the core's own notices. */
+  sender?: { pluginId: string; pluginName?: string };
 }
 
 /** One banner, as the local app's OS notification takes it. */
@@ -60,26 +65,28 @@ function cut(text: string, max: number): string {
 }
 
 /** The banner's words for an update. Pure. */
-export function noticeWords(update: NotifierUpdate, name: string | undefined, count: number): { title: string; body?: string } {
+export function noticeWords(update: NotifierUpdate, name: string | undefined): { title: string; body?: string } {
+  const waiting = update.unseen > 1 ? t("clover.notifications.unseen", { count: update.unseen }) : null;
+  const withWaiting = (body: string | undefined) => (waiting ? (body ? `${body} · ${waiting}` : waiting) : body);
   if (update.kind === "notification") {
     const n = update.notification;
-    if (n) return { title: cut(n.title, MAX_TITLE) || t("clover.notifications.fallbackTitle"), body: n.body ? cut(n.body, MAX_BODY) : undefined };
-    return { title: t("clover.notifications.fallbackTitle") };
+    const own = n ? cut(n.title, MAX_TITLE) : "";
+    const body = n?.body ? cut(n.body, MAX_BODY) : undefined;
+    // A plugin's words come under its name; the core's own notices (sender `clover`) under Clover's.
+    const sender = update.sender;
+    if (sender && sender.pluginId === "clover") return { title: own || t("clover.notifications.fallbackTitle"), body: withWaiting(body) };
+    const from = sender ? (sender.pluginName ?? sender.pluginId) : t("clover.notifications.aPlugin");
+    return { title: own ? t("clover.notifications.fromPlugin", { plugin: cut(from, 40), title: own }) : cut(from, 40), body: withWaiting(body) };
   }
   const who = name ?? t("clover.notifications.aBot");
-  const vars = { name: who, count };
-  switch (update.kind) {
-    case "message":
-      return { title: who, body: t("clover.notifications.message", vars) };
-    case "card":
-      return { title: who, body: t("clover.notifications.card", vars) };
-    case "question":
-      return { title: who, body: t("clover.notifications.question", vars) };
-    case "routine-result":
-      return { title: who, body: t("clover.notifications.routine", vars) };
-    case "agent-finished":
-      return { title: who, body: t("clover.notifications.agent", vars) };
-  }
+  const kind = {
+    message: "clover.notifications.message",
+    card: "clover.notifications.card",
+    question: "clover.notifications.question",
+    "routine-result": "clover.notifications.routine",
+    "agent-finished": "clover.notifications.agent",
+  }[update.kind];
+  return { title: who, body: withWaiting(t(kind)) };
 }
 
 /** Which banner an update replaces: one per bot and kind; each plugin notification its own. */
@@ -89,8 +96,7 @@ export function noticeId(update: NotifierUpdate): string {
 }
 
 export class DesktopNotifier {
-  /** Since the user last caught up: how many of each banner, and which ids show. */
-  private readonly counts = new Map<string, number>();
+  /** Since the user last caught up: which banners show. */
   private readonly shown = new Set<string>();
   private lastSeq = -1;
 
@@ -101,12 +107,10 @@ export class DesktopNotifier {
     if (update.seq <= this.lastSeq) return;
     this.lastSeq = update.seq;
     const id = noticeId(update);
-    const count = (this.counts.get(id) ?? 0) + 1;
-    this.counts.set(id, count);
     try {
       if (await this.options.desktop.showing?.({ bot: update.bot, session: update.session, kind: update.kind })) return;
       const name = update.bot ? ((await this.options.botName?.(update.bot)) ?? update.bot) : undefined;
-      const words = noticeWords(update, name, count);
+      const words = noticeWords(update, name);
       await this.options.desktop.show({
         id,
         ...words,
@@ -120,11 +124,10 @@ export class DesktopNotifier {
     }
   }
 
-  /** The `clear` handler: the user caught up, so every banner goes and the counts start again. */
+  /** The `clear` handler: the user caught up, so every banner goes. */
   async clear(): Promise<void> {
     const ids = [...this.shown];
     this.shown.clear();
-    this.counts.clear();
     for (const id of ids) {
       try {
         await this.options.desktop.close(id);

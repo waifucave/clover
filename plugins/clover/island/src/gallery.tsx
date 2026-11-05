@@ -1,7 +1,7 @@
 // The island in every state, for the lane's gallery (rendered to PNGs in CI, never on a desk). Each story
 // draws still frames of the pure animations, so a picture is the same on every run.
 
-import { useLayoutEffect, useRef, useState, type CSSProperties, type ReactElement, type ReactNode } from "react";
+import { useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactElement, type ReactNode } from "react";
 import { emptyDraft } from "./model/cards";
 import { cardGeometry, ISLAND, islandRect, stripRect, topInset, waitingRect, type ScreenShape } from "./model/geometry";
 import { FLUID } from "./model/fluid";
@@ -16,8 +16,8 @@ import { SealedKitContext } from "./ui/sealed";
 import { Strip } from "./ui/Strip";
 import { WaitingPill } from "./ui/WaitingPill";
 import { DevicesList } from "./ui/DevicesTab";
-import { IslandSurface } from "./ui/IslandSurface";
-import { islandPlacement, type SurfaceEnvironment } from "./model/placement";
+import { IslandSurface, type SurfaceHostApi } from "./ui/IslandSurface";
+import { islandPlacement, type SurfaceEnvironment, type SurfaceWindowSpec } from "./model/placement";
 import type { DeviceView } from "./model/devices";
 import type { IslandCard } from "./model/cards";
 
@@ -128,14 +128,20 @@ export const SAMPLE_DEVICES: DeviceView[] = [
 /** The island's desktop for another plugin's tab stories (the usage plugin's): wallpaper, menu bar and housing. */
 export const IslandDesktop = Desktop;
 
-/** A screen's top-centre crop for the surface stories: wallpaper, what the OS draws along the top, the overlay
- *  window's bounds dashed BENEATH everything (never over a sealed part), and the island in its window. */
+/** A screen's top-centre crop for the surface stories: wallpaper, what the OS draws along the top, and the island's
+ *  overlay window where the surface asks for it, outlined (dashed, a few pixels out and BENEATH everything, never over a
+ *  sealed part): only what the island draws, never the whole frame. */
 function Screen({ env, width, height, cards, working = 0 }: { env: SurfaceEnvironment; width: number; height: number; cards: IslandCard[]; working?: number }): ReactElement {
   const placement = islandPlacement(env);
   const { bounds } = env.display;
   const band = placement.shape.menuBarHeight;
-  const offset = Math.round(width / 2 - (placement.window.bounds.x - bounds.x) - placement.window.bounds.width / 2);
-  const left = placement.window.bounds.x - bounds.x + offset;
+  const [spec, setSpec] = useState<SurfaceWindowSpec | null>(null);
+  const host = useMemo<SurfaceHostApi>(() => ({ setWindow: setSpec, setInteractiveRegions: () => {} }), []);
+  // The crop's left edge on the display: the frame centred in the crop.
+  const crop = placement.window.bounds.x - bounds.x + placement.window.bounds.width / 2 - width / 2;
+  const win = spec?.bounds ?? placement.window.bounds;
+  const left = Math.round(win.x - bounds.x - crop);
+  const top = win.y - bounds.y;
   const wallpaper = env.os === "windows" ? "linear-gradient(160deg, #1B4F8A 0%, #6FA3D9 100%)" : env.os === "linux" ? "linear-gradient(160deg, #3C2F5C 0%, #C46A4A 100%)" : "linear-gradient(180deg, #8CA8D1 0%, #DBD4E6 100%)";
   const barColour = env.os === "linux" ? "#000000E6" : "#FFFFFF59";
   return (
@@ -145,9 +151,9 @@ function Screen({ env, width, height, cards, working = 0 }: { env: SurfaceEnviro
         {placement.shape.housing ? (
           <div style={{ position: "absolute", top: 0, left: `calc(50% - ${placement.shape.housing.width / 2}px)`, width: placement.shape.housing.width, height: placement.shape.housing.height, background: "#000", borderRadius: "0 0 9px 9px" }} />
         ) : null}
-        <div style={{ position: "absolute", left, top: 0, width: placement.window.bounds.width, height: Math.min(placement.window.bounds.height, height) - 1, boxSizing: "border-box", border: "1px dashed #FFFFFFB3", borderTop: 0 }} />
-        <div style={{ position: "absolute", left, top: 0, width: placement.window.bounds.width, height: placement.window.bounds.height }}>
-          <IslandSurface environment={env} cards={cards} working={working} reducedMotion />
+        {spec?.visible ? <div style={{ position: "absolute", left: left - 4, top, width: win.width + 8, height: win.height + 4, boxSizing: "border-box", border: "1px dashed #FFFFFFD9", borderTop: 0 }} /> : null}
+        <div style={{ position: "absolute", left, top }}>
+          <IslandSurface environment={env} cards={cards} working={working} host={host} reducedMotion />
         </div>
       </div>
     </SealedKitContext.Provider>
@@ -349,7 +355,7 @@ export const ISLAND_STORIES: Story[] = [
   },
   {
     id: "island/surface-macos-housing",
-    title: "The surface on a Mac with a camera housing: the overlay (dashed) hangs from the housing",
+    title: "The surface on a Mac with a camera housing: its window (dashed) is only the strip and the card, never the whole frame",
     width: 760,
     height: 240,
     sealed: { visible: 5 },

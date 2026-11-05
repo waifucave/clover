@@ -27,6 +27,12 @@ export interface PillTargetEntry {
 
 export type TargetRef = { kind: "bot"; bot: string } | { kind: "plugin"; pluginId: string; entry: string };
 
+/** A name as a reader takes it: compatibility forms folded, spaces collapsed, case ignored. */
+export function sameName(a: string, b: string): boolean {
+  const fold = (s: string) => s.normalize("NFKC").replace(/\s+/g, " ").trim().toLocaleLowerCase();
+  return fold(a) === fold(b);
+}
+
 /** One row of the pill's target menu. */
 export interface ResolvedTarget {
   /** `bot:<id>` or `plugin:<plugin>#<entry>`: one namespace, so a bot and an entry never collide. */
@@ -37,6 +43,9 @@ export interface ResolvedTarget {
   color?: string;
   /** Muted words after the name: the plugin a target comes from. */
   detail?: string;
+  /** What the compact pill calls it: a plugin's target carries its plugin's name ("Lights · Home"), so an entry can
+   *  never read as a bot. */
+  label?: string;
 }
 
 export function targetId(ref: TargetRef): string {
@@ -44,17 +53,19 @@ export function targetId(ref: TargetRef): string {
 }
 
 /** Bots first, in the order the user keeps them; then the plugins' targets in the spot's order (`order`, then the
- *  plugin id, then the title). */
+ *  plugin id, then the title). An entry titled as one of the bots is left out: "Message Alpha" means the bot. */
 export function pillTargets(bots: readonly PillBot[], entries: readonly PillTargetEntry[]): ResolvedTarget[] {
   const fromBots = bots.map((b): ResolvedTarget => {
     const ref: TargetRef = { kind: "bot", bot: b.id };
     return { id: targetId(ref), ref, name: b.name, portrait: b.portrait, color: b.color };
   });
-  const fromPlugins = [...entries]
+  const fromPlugins = entries
+    .filter((e) => !bots.some((b) => sameName(b.name, e.title) || sameName(b.id, e.title)))
     .sort((a, b) => (a.order ?? 500) - (b.order ?? 500) || a.pluginId.localeCompare(b.pluginId) || a.title.localeCompare(b.title))
     .map((e): ResolvedTarget => {
       const ref: TargetRef = { kind: "plugin", pluginId: e.pluginId, entry: e.id };
-      return { id: targetId(ref), ref, name: e.title, portrait: e.icon, detail: e.pluginName ?? e.pluginId };
+      const plugin = e.pluginName ?? e.pluginId;
+      return { id: targetId(ref), ref, name: e.title, portrait: e.icon, detail: plugin, label: `${e.title} · ${plugin}` };
     });
   return [...fromBots, ...fromPlugins];
 }

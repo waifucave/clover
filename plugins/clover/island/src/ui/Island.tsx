@@ -30,7 +30,7 @@ import { cardGeometry, ISLAND, islandRect, showsWings, stripAction, stripRect, t
 import { FLUID, fluidSeconds } from "../model/fluid";
 import { beginClosing, beginOpening, MORPH, morphSeconds, type MorphClock } from "../model/morph";
 import { IslandQueue } from "../model/queue";
-import { NEEDS_YOU, select, selectedTab, tabState, type IslandTab } from "../model/tabs";
+import { NEEDS_YOU, guestTabs, select, selectedTab, tabState, type GuestTab, type IslandTab } from "../model/tabs";
 import { t } from "../strings";
 import { QuestionCardContent, SealedCardContent } from "./CardContent";
 import { LiquidCard } from "./Liquid";
@@ -40,8 +40,8 @@ import { useIslandStyles } from "./styles";
 import { WaitingPill } from "./WaitingPill";
 import type { Rect, ScreenShape } from "../model/geometry";
 
-/** A tab beside Needs you: an `island.tab` entry, in M2. */
-export interface IslandTabEntry extends IslandTab {
+/** A tab beside Needs you: an `island.tab` entry (`guestTabs` decides how it shows). */
+export interface IslandTabEntry extends GuestTab {
   render: () => ReactNode;
 }
 
@@ -76,8 +76,9 @@ export interface IslandProps {
   onAnswerQuestion?: (card: QuestionCard, answers: Record<string, string>) => Promise<boolean> | boolean | void;
   onOpenChange?: (open: boolean) => void;
   /** The parts that take clicks, x from the island's centre: the strip, the open island, the card on top and the
-   *  newcomer under it. An overlay passes every other click through to what lies below (the surface host). */
-  onRegions?: (regions: readonly Rect[]) => void;
+   *  newcomer under it; and what is drawn, which adds a card on its way back into the strip. An overlay passes every
+   *  other click through to what lies below, and its window covers no more than what is drawn (the surface host). */
+  onRegions?: (regions: readonly Rect[], drawn: readonly Rect[]) => void;
   /** Open for good, with no strip and no floating cards: the island as a normal window (Wayland), where every card
    *  waits in Needs you. */
   alwaysOpen?: boolean;
@@ -105,7 +106,8 @@ export function Island(props: IslandProps): ReactElement {
   const [stripHovered, setStripHovered] = useState(false);
   const [waitingHovered, setWaitingHovered] = useState(false);
 
-  const extraTabs = props.tabs ?? NO_TABS;
+  const given = props.tabs ?? NO_TABS;
+  const extraTabs = useMemo(() => guestTabs(given), [given]);
   // Keyed by what the tabs are, not by the array: a parent passing a fresh array each render changes nothing.
   const tabKey = extraTabs.map(({ id, title }) => `${id}\u0000${title}`).join("\u0001");
   const tabList = useMemo(() => [NEEDS_YOU, ...extraTabs.map(({ id, title }) => ({ id, title }))], [tabKey]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -309,10 +311,16 @@ export function Island(props: IslandProps): ReactElement {
       regions.push({ ...pill, x: left + pill.x });
     }
   }
-  const regionKey = regions.map((r) => `${Math.round(r.x)},${Math.round(r.y)},${Math.round(r.width)},${Math.round(r.height)}`).join(";");
+  const drawn: Rect[] = [...regions];
+  if (returning && back) {
+    const g = cardGeometry(shape, { width: ISLAND.cardWidth, height: back.height }, { rounded: true });
+    drawn.push({ ...g.card, x: -g.panelSize.width / 2 + g.card.x });
+  }
+  const keyOf = (list: readonly Rect[]) => list.map((r) => `${Math.round(r.x)},${Math.round(r.y)},${Math.round(r.width)},${Math.round(r.height)}`).join(";");
+  const regionKey = `${keyOf(regions)}|${keyOf(drawn)}`;
   const onRegions = props.onRegions;
   useEffect(() => {
-    onRegions?.(regions);
+    onRegions?.(regions, drawn);
   }, [regionKey, onRegions]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (

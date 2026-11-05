@@ -16,8 +16,12 @@ export interface PillHost {
   targets?: readonly PillTargetEntry[];
   /** The last target picked on this device; the layer's storage when absent. */
   memory?: TargetMemory;
-  /** Sends the user's text: to a bot, the user's message (the composer's rule, §5.5); to a plugin's target, its
-   *  handler. */
+  /**
+   * The host's user-send callback (§5.5's rule for a send that counts as the user's): the pill calls it synchronously,
+   * inside the key press or click that sent, and the host counts it only while that frame's transient user activation
+   * from the hardware is there, refusing any other. The pill has no `conversation.post`, whose turns are the plugin's,
+   * never the user's. To a bot, the user's message; to a plugin's target, its handler (B's shape, asked).
+   */
   send(target: TargetRef, text: string): void | Promise<void>;
   /** The turn the pill shows for a target. */
   turn?(target: TargetRef): TargetTurn;

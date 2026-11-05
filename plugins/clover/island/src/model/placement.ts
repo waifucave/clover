@@ -44,6 +44,8 @@ export interface SurfaceWindowSpec {
   clickThrough: boolean;
   /** Shown in the task switcher and the taskbar: a normal window is, an overlay isn't. */
   inTaskSwitcher: boolean;
+  /** An overlay with nothing drawn is hidden, so it covers nothing at all. */
+  visible: boolean;
 }
 
 export interface IslandPlacement {
@@ -53,8 +55,10 @@ export interface IslandPlacement {
   window: SurfaceWindowSpec;
 }
 
-/** The overlay's room: the open island, or the tallest resting card with the newcomer waiting under it, plus the
- *  shadows' margins. Cards taller than this scroll their sealed fields inside their own frames. */
+/** The overlay's frame: the room the island may draw in, the open island or the tallest resting card with the newcomer
+ *  waiting under it, plus the shadows' margins. The window itself is only ever the part of it the island draws
+ *  (`overlayWindow`), so it never lies over anything it doesn't draw on, a sealed card's buttons in Clover's own windows
+ *  included (E-M3's overlap check counts Clover's surfaces, R12). Cards taller than this scroll inside their frames. */
 export const OVERLAY = {
   width: ISLAND.islandWidth + 2 * LIQUID.margin,
   /** Below the top band. */
@@ -119,6 +123,7 @@ export function islandPlacement(env: SurfaceEnvironment): IslandPlacement {
         frame: true,
         clickThrough: false,
         inTaskSwitcher: true,
+        visible: true,
       },
     };
   }
@@ -137,6 +142,7 @@ export function islandPlacement(env: SurfaceEnvironment): IslandPlacement {
       frame: false,
       clickThrough: true,
       inTaskSwitcher: false,
+      visible: true,
     },
   };
 }
@@ -145,4 +151,27 @@ export function islandPlacement(env: SurfaceEnvironment): IslandPlacement {
 export function toWindowRect(rect: Rect, placement: IslandPlacement): Rect {
   const centre = placement.window.bounds.width / 2;
   return { x: Math.round(centre + rect.x), y: Math.round(rect.y), width: Math.round(rect.width), height: Math.round(rect.height) };
+}
+
+/** A rect in the island's space (x from its centre) as one in the overlay frame's space. */
+export function toFrameRect(rect: Rect, frame: Rect): Rect {
+  return { x: frame.width / 2 + rect.x, y: rect.y, width: rect.width, height: rect.height };
+}
+
+/** The overlay's window for what the island draws now: the smallest rect around it, inside the frame, in screen
+ *  pixels; hidden when nothing is drawn. `offset` is where that window lies in the frame. */
+export function overlayWindow(placement: IslandPlacement, drawn: readonly Rect[]): { spec: SurfaceWindowSpec; offset: { x: number; y: number } } {
+  const frame = placement.window.bounds;
+  const rects = drawn.map((r) => toFrameRect(r, frame)).filter((r) => r.width > 0 && r.height > 0);
+  if (rects.length === 0) {
+    return { spec: { ...placement.window, bounds: { x: Math.round(frame.x + frame.width / 2), y: frame.y, width: 0, height: 0 }, visible: false }, offset: { x: frame.width / 2, y: 0 } };
+  }
+  const left = Math.max(0, Math.floor(Math.min(...rects.map((r) => r.x))));
+  const top = Math.max(0, Math.floor(Math.min(...rects.map((r) => r.y))));
+  const right = Math.min(frame.width, Math.ceil(Math.max(...rects.map((r) => r.x + r.width))));
+  const bottom = Math.min(frame.height, Math.ceil(Math.max(...rects.map((r) => r.y + r.height))));
+  return {
+    spec: { ...placement.window, bounds: { x: frame.x + left, y: frame.y + top, width: Math.max(0, right - left), height: Math.max(0, bottom - top) }, visible: true },
+    offset: { x: left, y: top },
+  };
 }

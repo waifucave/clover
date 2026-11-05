@@ -2,9 +2,16 @@
   "manifest": 1,
   "name": "Dispatch pill",
   "description": "A pill at the bottom of the screen for messaging a bot from anywhere: it grows as you type, shows the bot at work, and turns into its questions and approvals. Plugins add other targets to it.",
-  "engines": { "clover": "^1.0.0" },
-  "capabilities": ["approvals", "bots.read", "conversation.post"],
-  "client": { "entry": "client/index.tsx" },
+  "engines": {
+    "clover": "^1.0.0"
+  },
+  "capabilities": [
+    "approvals",
+    "bots.read"
+  ],
+  "client": {
+    "entry": "client/index.tsx"
+  },
   "contributes": {
     "ui": [
       {
@@ -16,7 +23,11 @@
           "type": "overlay",
           "alwaysOnTop": true,
           "transparent": true,
-          "placement": { "macos": "bottom-center", "windows": "bottom-center", "linux": "bottom-center" }
+          "placement": {
+            "macos": "bottom-center",
+            "windows": "bottom-center",
+            "linux": "bottom-center"
+          }
         }
       }
     ]

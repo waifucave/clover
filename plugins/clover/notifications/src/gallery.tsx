@@ -14,14 +14,16 @@ export interface NotificationStory {
 }
 
 const at = 1_781_270_000_000;
-const SAMPLES: { update: NotifierUpdate; name?: string; count: number }[] = [
-  { update: { seq: 1, kind: "message", unseen: 1, bot: "alpha", at }, name: "Alpha", count: 1 },
-  { update: { seq: 2, kind: "message", unseen: 3, bot: "alpha", at }, name: "Alpha", count: 3 },
-  { update: { seq: 3, kind: "card", unseen: 4, bot: "scout", at }, name: "Scout", count: 1 },
-  { update: { seq: 4, kind: "question", unseen: 5, bot: "luna", at }, name: "Luna", count: 2 },
-  { update: { seq: 5, kind: "routine-result", unseen: 6, bot: "alpha", at }, name: "Alpha", count: 1 },
-  { update: { seq: 6, kind: "agent-finished", unseen: 7, bot: "scout", at }, name: "Scout", count: 1 },
-  { update: { seq: 7, kind: "notification", unseen: 8, at, notification: { title: "Render finished", body: "scene.blend, 240 frames, 12 min" } }, count: 1 },
+const SAMPLES: { update: NotifierUpdate; name?: string }[] = [
+  { update: { seq: 1, kind: "message", unseen: 1, bot: "alpha", at }, name: "Alpha" },
+  { update: { seq: 2, kind: "message", unseen: 3, bot: "alpha", at }, name: "Alpha" },
+  { update: { seq: 3, kind: "card", unseen: 4, bot: "scout", at }, name: "Scout" },
+  { update: { seq: 4, kind: "question", unseen: 5, bot: "luna", at }, name: "Luna" },
+  { update: { seq: 5, kind: "routine-result", unseen: 6, bot: "alpha", at }, name: "Alpha" },
+  { update: { seq: 6, kind: "agent-finished", unseen: 7, bot: "scout", at }, name: "Scout" },
+  { update: { seq: 7, kind: "notification", unseen: 1, at, notification: { title: "Render finished", body: "scene.blend, 240 frames, 12 min" }, sender: { pluginId: "blender", pluginName: "Blender" } } },
+  // A plugin trying to speak as a bot: its name comes first.
+  { update: { seq: 8, kind: "notification", unseen: 1, at, notification: { title: "Alpha needs your OK" }, sender: { pluginId: "home", pluginName: "Home" } } },
 ];
 
 type Os = "macos" | "windows" | "linux";
@@ -65,8 +67,8 @@ function Column({ os }: { os: Os }): ReactElement {
   const backdrop = os === "macos" ? "linear-gradient(180deg, #8CA8D1 0%, #DBD4E6 100%)" : os === "windows" ? "linear-gradient(160deg, #1B4F8A 0%, #6FA3D9 100%)" : "linear-gradient(160deg, #3C2F5C 0%, #C46A4A 100%)";
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 10, padding: 16, background: backdrop, alignItems: "center", height: "100%", boxSizing: "border-box" }}>
-      {SAMPLES.map(({ update, name, count }) => {
-        const words = noticeWords(update, name, count);
+      {SAMPLES.map(({ update, name }) => {
+        const words = noticeWords(update, name);
         return <Banner key={update.seq} os={os} title={words.title} body={words.body} />;
       })}
     </div>
@@ -74,7 +76,7 @@ function Column({ os }: { os: Os }): ReactElement {
 }
 
 export const NOTIFICATION_STORIES: NotificationStory[] = [
-  { id: "notifications/macos", title: "Desktop notifications, sketched on macOS: each kind, a busy bot's count, a plugin's own", width: 400, height: 560, render: () => <Column os="macos" /> },
-  { id: "notifications/windows", title: "Desktop notifications, sketched on Windows", width: 400, height: 580, render: () => <Column os="windows" /> },
-  { id: "notifications/linux", title: "Desktop notifications, sketched on GNOME", width: 400, height: 560, render: () => <Column os="linux" /> },
+  { id: "notifications/macos", title: "Desktop notifications, sketched on macOS: each kind, the core's unseen count, a plugin's own under its name", width: 400, height: 640, render: () => <Column os="macos" /> },
+  { id: "notifications/windows", title: "Desktop notifications, sketched on Windows", width: 400, height: 660, render: () => <Column os="windows" /> },
+  { id: "notifications/linux", title: "Desktop notifications, sketched on GNOME", width: 400, height: 640, render: () => <Column os="linux" /> },
 ];

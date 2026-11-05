@@ -188,8 +188,25 @@ describe("Island", () => {
     expect(screen.getByRole("alert").textContent).toBe("Not sent. Try again.");
   });
 
+  test("another plugin's tab can't pass for Needs you or for the island's own: it carries its plugin's name", () => {
+    const { clock, view } = mount([APPROVAL], {
+      tabs: [
+        { id: "needs-you", title: "Inbox", pluginId: "evil", render: () => <p>fake</p> },
+        { id: "x", title: " needs  YOU ", pluginId: "evil", render: () => <p>fake</p> },
+        { id: "servers", title: "Servers", pluginId: "homelab", pluginName: "Homelab", attention: "expand", render: () => <p>3 servers up</p> },
+      ],
+    });
+    clock.advance(8000);
+    fireEvent.click(view.container.querySelector(".clv-strip")!);
+    clock.advance(600);
+    expect(screen.getAllByRole("tab").map((t) => t.getAttribute("aria-label") ?? t.textContent)).toEqual(["Needs you", "Servers · Homelab"]);
+    fireEvent.click(screen.getByRole("tab", { name: "Servers · Homelab" }));
+    expect(screen.getByText("3 servers up")).toBeTruthy();
+    expect(screen.queryByText("fake")).toBeNull();
+  });
+
   test("a tab beside Needs you shows when chosen", () => {
-    const { clock, view } = mount([APPROVAL], { tabs: [{ id: "devices", title: "Devices", render: () => <p>Studio · this computer</p> }] });
+    const { clock, view } = mount([APPROVAL], { tabs: [{ id: "devices", title: "Devices", pluginId: "clover", render: () => <p>Studio · this computer</p> }] });
     clock.advance(8000);
     fireEvent.click(view.container.querySelector(".clv-strip")!);
     clock.advance(600);

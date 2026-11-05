@@ -3,7 +3,7 @@
 export { DispatchPill, type DispatchPillProps } from "../src/ui/DispatchPill";
 export { PillApp, PillHostContext, type PillHost, type PillEntryProps, type TargetTurn } from "../src/ui/host";
 export { Shell, type ShellProps } from "../src/ui/Shell";
-export { Bar, Menu, Portrait, measureText, type BarProps, type BarMenu, type PillTarget } from "../src/ui/Bar";
+export { Bar, Menu, Portrait, measureText, targetLabel, type BarProps, type BarMenu, type PillTarget } from "../src/ui/Bar";
 export { CardBody, SealedCardBody, QuestionCardBody, type CardBodyProps } from "../src/ui/Card";
 export { Preview, type PreviewProps } from "../src/ui/Preview";
 export { Children, type ChildrenProps } from "../src/ui/Children";

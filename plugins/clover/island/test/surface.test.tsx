@@ -1,7 +1,7 @@
 import { describe, expect, mock, test } from "bun:test";
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { ISLAND, LIQUID, islandRect, stripRect, topInset } from "../src/model/geometry";
-import { housingOf, islandMode, islandPlacement, OVERLAY, ISLAND_WINDOW, toWindowRect, type SurfaceEnvironment } from "../src/model/placement";
+import { housingOf, islandMode, islandPlacement, overlayWindow, OVERLAY, ISLAND_WINDOW, toWindowRect, type SurfaceEnvironment } from "../src/model/placement";
 import { deviceGroups, deviceRows, devicesSummary, orderDevices, seenAgo, type DeviceView } from "../src/model/devices";
 import { IslandSurface, type SurfaceHostApi } from "../src/ui/IslandSurface";
 import { DevicesList, DevicesTab, type DevicesSource } from "../src/ui/DevicesTab";
@@ -66,6 +66,7 @@ describe("where the island hangs (decision 82: the same top-centre island on eve
       frame: false,
       clickThrough: true,
       inTaskSwitcher: false,
+      visible: true,
     });
     expect(OVERLAY.width).toBe(ISLAND.islandWidth + 2 * LIQUID.margin);
   });
@@ -99,6 +100,7 @@ describe("where the island hangs (decision 82: the same top-centre island on eve
       frame: true,
       clickThrough: false,
       inTaskSwitcher: true,
+      visible: true,
     });
   });
 
@@ -121,44 +123,64 @@ function fakeHost() {
 const withKit = (ui: React.ReactElement) => <SealedKitContext.Provider value={mockSealedKit(SEALED)}>{ui}</SealedKitContext.Provider>;
 
 describe("IslandSurface", () => {
-  test("asks for its window once, and again only when the display changes", () => {
-    const { host, windows } = fakeHost();
-    const view = render(withKit(<IslandSurface environment={MAC_NOTCH} cards={[]} host={host} reducedMotion />));
-    view.rerender(withKit(<IslandSurface environment={{ ...MAC_NOTCH }} cards={[]} host={host} reducedMotion />));
-    expect(windows).toEqual([islandPlacement(MAC_NOTCH).window]);
-    view.rerender(withKit(<IslandSurface environment={MAC_EXTERNAL} cards={[]} host={host} reducedMotion />));
-    expect(windows).toEqual([islandPlacement(MAC_NOTCH).window, islandPlacement(MAC_EXTERNAL).window]);
-  });
+  /** The strip with its glow, in the island's space: what an overlay draws while nothing is open or waiting. */
+  const stripDrawn = (shape: ReturnType<typeof islandPlacement>["shape"]) => {
+    const r = stripRect(shape, true)!;
+    return { x: r.x - ISLAND.stripGlowMargin, y: r.y, width: r.width + 2 * ISLAND.stripGlowMargin, height: r.height + ISLAND.stripGlowMargin };
+  };
 
-  test("an overlay takes clicks only on the strip, then on the card when one arrives", () => {
-    const { host, regions } = fakeHost();
+  test("an overlay's window is only what the island draws: the strip alone, then with the card; never the whole frame", () => {
+    const { host, windows, regions } = fakeHost();
     const p = islandPlacement(MAC_NOTCH);
     const view = render(withKit(<IslandSurface environment={MAC_NOTCH} cards={[]} working={1} host={host} reducedMotion />));
-    const strip = stripRect(p.shape, true)!;
-    const first = regions.at(-1)!;
-    expect(first).toHaveLength(1);
-    expect(first[0]!.x).toBe(Math.round(p.window.bounds.width / 2 + strip.x - ISLAND.stripGlowMargin));
-    expect(first[0]!.width).toBe(Math.round(strip.width + 2 * ISLAND.stripGlowMargin));
+    const strip = overlayWindow(p, [stripDrawn(p.shape)]).spec;
+    expect(windows).toEqual([strip]);
+    expect(strip.bounds.width).toBeLessThan(p.window.bounds.width * 0.6);
+    expect(strip.bounds.height).toBeLessThan(80);
+    // The strip takes every click in its window.
+    expect(regions.at(-1)).toEqual([{ x: 0, y: 0, width: strip.bounds.width, height: strip.bounds.height }]);
     view.rerender(withKit(<IslandSurface environment={MAC_NOTCH} cards={[APPROVAL]} working={1} host={host} reducedMotion />));
-    const withCard = regions.at(-1)!;
-    expect(withCard).toHaveLength(2);
-    // The card hangs below the top band, inside the overlay.
-    const card = withCard[1]!;
-    expect(card.y).toBeGreaterThanOrEqual(topInset(p.shape));
-    expect(card.x).toBeGreaterThanOrEqual(0);
-    expect(card.x + card.width).toBeLessThanOrEqual(p.window.bounds.width);
+    const withCard = windows.at(-1) as typeof strip;
+    expect(withCard.bounds.height).toBeGreaterThan(strip.bounds.height + 60);
+    expect(withCard.bounds.width).toBe(ISLAND.cardWidth);
+    const [stripRegion, card] = regions.at(-1)!;
+    expect(stripRegion!.y).toBe(0);
+    expect(card!.y).toBeGreaterThanOrEqual(topInset(p.shape));
+    expect(card!.x).toBe(0);
+    expect(card!.width).toBe(withCard.bounds.width);
+    expect(card!.y + card!.height).toBe(withCard.bounds.height);
   });
 
-  test("open, it takes clicks on the whole open island", () => {
-    const { host, regions } = fakeHost();
+  test("asks again only when the window changes, and when the display does", () => {
+    const { host, windows } = fakeHost();
+    const view = render(withKit(<IslandSurface environment={MAC_NOTCH} cards={[]} working={1} host={host} reducedMotion />));
+    view.rerender(withKit(<IslandSurface environment={{ ...MAC_NOTCH }} cards={[]} working={1} host={host} reducedMotion />));
+    expect(windows).toHaveLength(1);
+    view.rerender(withKit(<IslandSurface environment={MAC_EXTERNAL} cards={[]} working={1} host={host} reducedMotion />));
+    expect(windows).toHaveLength(2);
+    expect((windows[1] as { bounds: { x: number } }).bounds.x).toBeGreaterThan(1512);
+  });
+
+  test("drawing nothing, the overlay is hidden: a screen with no housing while nothing waits or works", () => {
+    const { host, windows } = fakeHost();
+    render(withKit(<IslandSurface environment={WINDOWS} cards={[]} working={0} host={host} reducedMotion />));
+    expect(windows.at(-1)).toMatchObject({ visible: false, bounds: { width: 0, height: 0 } });
+  });
+
+  test("open, the window is the open island and takes clicks all over it", () => {
+    const { host, windows, regions } = fakeHost();
     const p = islandPlacement(MAC_NOTCH);
     const { container } = render(withKit(<IslandSurface environment={MAC_NOTCH} cards={[]} working={1} host={host} reducedMotion />));
     act(() => {
       fireEvent.click(container.querySelector(".clv-strip [data-part]") ?? container.querySelector(".clv-strip")!);
     });
-    const open = regions.at(-1)!;
+    const open = windows.at(-1) as { bounds: { x: number; y: number; width: number; height: number } };
     const rect = islandRect(p.shape);
-    expect(open).toContainEqual({ x: Math.round(p.window.bounds.width / 2 + rect.x), y: Math.round(rect.y), width: Math.round(rect.width), height: Math.round(rect.height) });
+    expect(open.bounds).toEqual({ x: p.window.bounds.x + p.window.bounds.width / 2 + rect.x, y: 0, width: rect.width, height: rect.height });
+    expect(regions.at(-1)).toContainEqual({ x: 0, y: 0, width: rect.width, height: rect.height });
+    // The content follows: the frame inside the window is moved by the window's offset.
+    const frame = container.querySelector(".clv-surface-frame") as HTMLElement;
+    expect(frame.style.left).toBe(`${-(p.window.bounds.width / 2 + rect.x)}px`);
   });
 
   test("on Wayland: no strip and no floating card; the island stays open on Needs you, and the window takes every click", () => {
@@ -169,7 +191,6 @@ describe("IslandSurface", () => {
     expect(container.querySelector(".clv-island")?.getAttribute("data-open")).toBe("true");
     expect(container.querySelector(".clv-card-shell")).toBeNull();
     expect(regions.at(-1)).toEqual([{ x: 0, y: 0, width: ISLAND_WINDOW.width, height: ISLAND_WINDOW.height }]);
-    // Esc closes an overlay's open island; a window has nothing to close to.
     act(() => {
       fireEvent.keyDown(window, { key: "Escape" });
     });
@@ -291,7 +312,7 @@ describe("the entries the manifest names", () => {
     );
     await act(async () => {});
     expect(container.querySelector(".clv-surface")?.getAttribute("data-mode")).toBe("top");
-    expect(windows).toHaveLength(1);
+    expect(windows.length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText("Studio")).toBeTruthy();
   });
 });

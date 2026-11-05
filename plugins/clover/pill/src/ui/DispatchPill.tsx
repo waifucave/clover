@@ -15,7 +15,7 @@ import { CHILD_PALETTES, type PlumeThrow } from "../model/plume";
 import { turnPreview, type Exchange } from "../model/preview";
 import { restingSpring, retarget, settled, stepSpring, type SizeSpring } from "../model/spring";
 import { t } from "../strings";
-import { Bar, BarMenus, type BarMenu, type PillTarget } from "./Bar";
+import { Bar, BarMenus, targetLabel, type BarMenu, type PillTarget } from "./Bar";
 import { CardBody } from "./Card";
 import { Children } from "./Children";
 import { BROWSER_FRAMES, Plume, type FrameTimers } from "./Plume";
@@ -349,7 +349,7 @@ export function DispatchPill(props: DispatchPillProps): ReactElement {
 
   // What the bar shows, and what the shape holds now.
   const drawn = swap.current.shown;
-  const look = barLook(presentation === "expanded", running, draft, card !== null, t("clover.pill.placeholder", { name: target.name }), verb ?? t("clover.pill.working", { name: target.name }));
+  const look = barLook(presentation === "expanded", running, draft, card !== null, t("clover.pill.placeholder", { name: targetLabel(target) }), verb ?? t("clover.pill.working", { name: targetLabel(target) }));
   const now = timers.now();
   const fade = swap.current.fadeStart === null ? 1 : Math.max(0, 1 - (now - swap.current.fadeStart) / (FADE_OUT * 1000));
   // Only a swap's new content is revealed as the shape arrives; the same content resizing stays as it is.

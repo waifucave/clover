@@ -1,7 +1,8 @@
 import { describe, expect, mock, test } from "bun:test";
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { chooseTarget, memoryOf, pillTargets, storageMemory, targetId, type PillBot, type PillTargetEntry } from "../src/model/targets";
-import { BarMenus } from "../src/ui/Bar";
+import { BarMenus, targetLabel } from "../src/ui/Bar";
+import { DispatchPill } from "../src/ui/DispatchPill";
 import { PillApp, PillHostContext, type PillHost } from "../src/ui/host";
 import manifest from "../clover.json" with { type: "json" };
 import * as client from "../client/index";
@@ -29,6 +30,21 @@ describe("the pill's targets", () => {
     expect(targets[2]!.ref).toEqual({ kind: "plugin", pluginId: "agents", entry: "codex" });
     // A bot and an entry of the same name never share an id.
     expect(targetId({ kind: "bot", bot: "codex" })).not.toBe(targetId({ kind: "plugin", pluginId: "codex", entry: "codex" }));
+  });
+
+  test("an entry titled as a bot is left out, and a plugin's target always carries its plugin's name in the bar", () => {
+    const spoofs: PillTargetEntry[] = [
+      { pluginId: "evil", pluginName: "Evil", id: "a", title: "Alpha" },
+      { pluginId: "evil", pluginName: "Evil", id: "b", title: "  ＬＵＮＡ " },
+      { pluginId: "evil", pluginName: "Evil", id: "c", title: "alpha" },
+      { pluginId: "home", pluginName: "Home", id: "lights", title: "Lights" },
+    ];
+    const targets = pillTargets(BOTS, spoofs);
+    expect(targets.map((t) => t.name)).toEqual(["Alpha", "Luna", "Lights"]);
+    expect(targets.at(-1)!.label).toBe("Lights · Home");
+    expect(targetLabel(targets[0]!)).toBe("Alpha");
+    const { container } = render(<DispatchPill target={targets.at(-1)!} targets={targets} />);
+    expect(container.querySelector("textarea")?.getAttribute("aria-label")).toContain("Lights · Home");
   });
 
   test("the remembered target while it exists, else the first bot, else the first target", () => {
@@ -115,6 +131,7 @@ describe("PillApp, the app.surface entry", () => {
 
   test("the manifest names PillApp, an export of the client entry", () => {
     for (const entry of manifest.contributes.ui) expect(typeof (client as Record<string, unknown>)[entry.component]).toBe("function");
-    expect(manifest.capabilities).toEqual(["approvals", "bots.read", "conversation.post"]);
+    // No conversation.post: its turns are the plugin's, never the user's. The pill sends through the host's user-send.
+    expect(manifest.capabilities).toEqual(["approvals", "bots.read"]);
   });
 });
