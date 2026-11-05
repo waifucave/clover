@@ -9,6 +9,7 @@ const NAMES = [
   'webkitRTCRtpSender', 'webkitRTCRtpReceiver', 'webkitRTCRtpTransceiver',
 ];
 const g = /** @type {any} */ (globalThis);
+try { g.__cloverStubRan = true; } catch (_) { /* ignore */ }
 for (const name of NAMES) {
   try { delete g[name]; } catch (_) { /* ignore */ }
   try { Object.defineProperty(g, name, { value: undefined, configurable: true, writable: false }); } catch (_) { /* ignore */ }

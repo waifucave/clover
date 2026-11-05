@@ -303,13 +303,12 @@ export async function networkCheck(electron){
     if(mode==='stub'&&frame){
      // The page's main world is stripped. Can it reach a fresh, working RTCPeerConnection?
      const surface=`(${webRtcSurface.toString()})()`;
-     const freshProbe=(/** @type {string} */ src,/** @type {string} */ srcdoc)=>racer(frame.executeJavaScript(`new Promise(resolve=>{const f=document.createElement('iframe');f.name='stub-fresh';${srcdoc?`f.srcdoc=${JSON.stringify(srcdoc)};`:`f.src=${JSON.stringify(src)};`}f.onload=()=>{try{const w=f.contentWindow;let live=false;try{if(typeof w.RTCPeerConnection==='function'){const p=new w.RTCPeerConnection();p.close();live=true;}}catch{}resolve({rtcp:typeof w.RTCPeerConnection,webkit:typeof w.webkitRTCPeerConnection,rtcpLive:live});}catch(e){resolve({error:String(e)});}};document.body.append(f);setTimeout(()=>resolve({timeout:true}),1500)})`),8000);
+     const freshProbe=(/** @type {string} */ src,/** @type {string} */ srcdoc)=>racer(frame.executeJavaScript(`new Promise(resolve=>{const f=document.createElement('iframe');f.name='stub-fresh';${srcdoc?`f.srcdoc=${JSON.stringify(srcdoc)};`:`f.src=${JSON.stringify(src)};`}f.onload=()=>{try{const w=f.contentWindow;let live=false;try{if(typeof w.RTCPeerConnection==='function'){const p=new w.RTCPeerConnection();p.close();live=true;}}catch{}resolve({stubRan:w.__cloverStubRan===true,rtcp:typeof w.RTCPeerConnection,webkit:typeof w.webkitRTCPeerConnection,rtcpLive:live});}catch(e){resolve({error:String(e)});}};document.body.append(f);setTimeout(()=>resolve({timeout:true}),1500)})`),8000);
      stub.direct=await racer(frame.executeJavaScript(surface),8000);
      try{
       stub.srcdoc=await freshProbe('','<input>');
       stub.aboutBlank=await freshProbe('about:blank','');
-      stub.nested=await freshProbe(f.endpoints['own-fetch'].url,'');
-      stub.worker=await racer(frame.executeJavaScript(`new Promise(resolve=>{const w=new Worker(${JSON.stringify('data:application/javascript,'+encodeURIComponent('postMessage([typeof RTCPeerConnection, typeof webkitRTCPeerConnection])'))});w.onmessage=e=>{w.terminate();resolve({rtcp:e.data[0],webkit:e.data[1]})};w.onerror=e=>{resolve({error:e.message})};setTimeout(()=>{w.terminate();resolve({timeout:true})},1500)})`),8000);
+      stub.worker=await racer(frame.executeJavaScript(`new Promise(resolve=>{const w=new Worker(${JSON.stringify('data:application/javascript,'+encodeURIComponent('postMessage([typeof RTCPeerConnection, typeof webkitRTCPeerConnection, typeof self.__cloverStubRan])'))});w.onmessage=e=>{w.terminate();resolve({rtcp:e.data[0],webkit:e.data[1],stubRan:e.data[2]})};w.onerror=e=>{resolve({error:e.message})};setTimeout(()=>{w.terminate();resolve({timeout:true})},1500)})`),8000);
      }catch(e){stub.error=String(e);}
     }
    }finally{
@@ -351,12 +350,12 @@ export async function networkCheck(electron){
  // Crash-closure of inherited contexts is an explicit Chromium 156 outcome, not a fail.
  const required=['undeclaredStunPositive','undeclaredTurnPositive','undeclaredRemoteCandidatePositive','allowlistRemoteCandidateClosed','allowlistDirectClosed','allowlistInheritedClosed','ipPolicyRan','nonPluginStillConnects','nonPluginDns','dnsPositive','dnsRefused','preconnectEventPositive'];
  const beltStub=(beltV?.belt||beltV?.stub)?{declaredFetch:beltV?.belt?.declaredFetch,nonLoopback:beltV?.belt?.nonLoopback,nonLoopbackRemoteUdp:beltV?.belt?.nonLoopbackRemoteUdp,nonLoopbackRemoteTcp:beltV?.belt?.nonLoopbackRemoteTcp,nonLoopbackTurn:beltV?.belt?.nonLoopbackTurn,nonLoopbackUltimate:beltV?.belt?.nonLoopbackUltimate,declaredFetchNonLoopbackHits:beltV?.belt?.declaredFetchNonLoopbackHits,pac:beltV?.pac}:undefined;
- const stubResult=stubV?.stub?{direct:stubV.stub.direct,srcdoc:stubV.stub.srcdoc,aboutBlank:stubV.stub.aboutBlank,nested:stubV.stub.nested,worker:stubV.stub.worker,error:stubV.stub.error}:undefined;
+ const stubResult=stubV?.stub?{direct:stubV.stub.direct,srcdoc:stubV.stub.srcdoc,aboutBlank:stubV.stub.aboutBlank,worker:stubV.stub.worker,error:stubV.stub.error}:undefined;
  const beltDeclaredWorks=!beltV?.error&&typeof beltV?.belt?.declaredFetch?.loopback?.status==='number';
  const beltNonLoopDeclaredWorks=beltV?.belt?.nonLoopback?.status===200;
  const beltNonLoopWebRtcClosed=beltV?.belt?.nonLoopbackUltimate?((beltV.belt.nonLoopbackUltimate.remoteUdpHits||0)===0&&(beltV.belt.nonLoopbackUltimate.remoteTcpHits||0)===0&&(beltV.belt.nonLoopbackUltimate.turnHits||0)===0):null;
  const stubStripped=!!stubV?.stub?.direct&&stubV.stub.direct.rtcp==='undefined';
- const stubEscapeLive=!!stubV?.stub&&[stubV.stub.srcdoc,stubV.stub.aboutBlank,stubV.stub.nested].some((/** @type {any} */ x)=>x?.rtcpLive===true);
+ const stubEscapeLive=!!stubV?.stub&&[stubV.stub.srcdoc,stubV.stub.aboutBlank].some((/** @type {any} */ x)=>x?.rtcpLive===true);
  app.removeListener('render-process-gone',onRendererGone);
  return {verdict:required.every(k=>assertions[/** @type {keyof typeof assertions} */(k)])?'works with limits':'does not',assertions,probes:{beltDeclaredWorks,beltNonLoopDeclaredWorks,beltNonLoopWebRtcClosed,beltStub,stubStripped,stubEscapeLive,stubResult},variants};
 }

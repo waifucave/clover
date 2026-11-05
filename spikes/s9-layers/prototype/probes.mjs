@@ -69,7 +69,7 @@ export async function networkProbe(endpoints, full = true) {
  * @returns {any} */
 export function webRtcSurface(){
  const g=/** @type {any} */ (globalThis);
- const surface={rtcp:typeof g.RTCPeerConnection,webkitRtcp:typeof g.webkitRTCPeerConnection,dataChannel:typeof g.RTCDataChannel,iceTransport:typeof g.RTCIceTransport,rtpSender:typeof g.RTCRtpSender,rtpReceiver:typeof g.RTCRtpReceiver};
+ const surface={stubRan:g.__cloverStubRan===true,rtcp:typeof g.RTCPeerConnection,webkitRtcp:typeof g.webkitRTCPeerConnection,dataChannel:typeof g.RTCDataChannel,iceTransport:typeof g.RTCIceTransport,rtpSender:typeof g.RTCRtpSender,rtpReceiver:typeof g.RTCRtpReceiver};
  let rtcpLive=false;
  try{if(typeof g.RTCPeerConnection==='function'){const pc=new g.RTCPeerConnection();pc.createDataChannel('x');rtcpLive=true;pc.close();}}catch{ /* not live */ }
  return {...surface,rtcpLive};
