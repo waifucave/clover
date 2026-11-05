@@ -8,6 +8,7 @@ import { join } from "node:path";
 import { existsSync, mkdirSync, realpathSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import { bootstrapCloverDir, resolveCloverHome, isDefaultCloverHome } from "./clover-dir";
+import { assertNotOtherInstallHome } from "./other-installs";
 import { acquireLock, type Lock } from "./lock";
 import { keychainService, resolveCloverProfile } from "./profile";
 import { describeHomePristineness, legacyHomeFor, planMigrationB, runMigrationB, MigrationRefused } from "./migration/migrate-b";
@@ -461,10 +462,17 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   /** Usage tracking TEST SEAM (`docs/claude/usage.md`): the Codex / Claude Code roots and executables. Absent: the env
    *  overrides (`CLOVER_USAGE_*`, which both test preloads point at nothing), else the user's real installs. */
   usage?: UsageInjection;
+  /** TEST ONLY: the user's home the other-install guard below measures against (default `homedir()`), so a test
+   *  proves the refusal on a stand-in home and never names the real one. */
+  userHomeForTests?: string;
 } = {}): Promise<RunningDaemon> {
   const startedAt = Date.now();
   const home = opts.home ?? resolveCloverHome();
   const profile = resolveCloverProfile();
+
+  // Before anything reads or writes `home`: never another install's home (`other-installs.ts` names them), by real
+  // path, whatever `CLOVER_HOME` or `opts.home` says.
+  assertNotOtherInstallHome(home, opts.userHomeForTests);
 
   // ── Migration B boot hook (P9c, WS-16 §18) ──────────────────────────────────────────────────
   // Runs BEFORE `bootstrapCloverDir` creates a single directory and before the lock is taken: a

@@ -172,6 +172,12 @@ export const CLOVER_ALLOWLIST: readonly AllowlistEntry[] = [
     regex: /\bWINTER_(?:TEST_PROVIDER|TEST_KEYCHAIN|TEST_READ_IMAGE|SDK_CAN_USE_TOOL_SHADOWED|CREDENTIAL_MISSING|COMPILED_BIN|CANARY_SECRET|RUNTIME_KIND|EMBEDDED_CRASH_FIXTURE|LIVE_[A-Z0-9_]+)\b/g,
     why: "environment variables the agent SDK reads under these fixed names whatever the brand (its own test harness names)",
   },
+  {
+    id: "other-installs",
+    regex: /(?:winter|Winter|WINTER)/g,
+    files: ["packages/core/src/other-installs.ts", "packages/core/test/other-installs.test.ts"],
+    why: "the one module that names the other installs sharing this machine (the live Winter install and Winter Dev) so every guard refuses their homes, and its test",
+  },
   // ── Winter's coding agent, its binary and its build (lane K names them) ───────────────────────
   {
     id: "coding-agent",
