@@ -12,7 +12,14 @@ def normalize(text):
         lambda m:'<local-toolchain>/'+m[0].rsplit('/',1)[-1],text)
     text=re.sub(r'[^\s"\']*google-cloud-sdk[^\s"\'\)\]]*',
         lambda m:'<gcloud-install>/'+m[0].rsplit('/',1)[-1],text)
-    text=text.replace(str(Path.home()),'<host-home>').replace(Path.home().name,'<test-user>')
+    # Scrub path-shaped home references only. Never replace the bare home-folder
+    # name as a substring: short names such as "runner" also appear as ordinary
+    # words in tool diagnostics ("connecting runner pipe-in", "spawn runner").
+    home=str(Path.home())
+    if home:
+        text=text.replace(home,'<host-home>')
+        home_name=re.escape(Path.home().name)
+        text=re.sub(rf'(?<=[/\\]){home_name}(?=[/\\\'"\s]|$)','<test-user>',text)
     text=re.sub(r'C:(\\+)Users(\\+)[^\\\s"\']+',
         lambda m:'C:'+m[1]+'Users'+m[2]+'<test-user>',text)
     return '\n'.join(line.rstrip() for line in text.splitlines()).rstrip()+'\n'
