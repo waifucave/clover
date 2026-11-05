@@ -498,10 +498,10 @@ func TestQueuedAnswersAreNotTimedOut(t *testing.T) {
 }
 
 // The holder's fence holds when a folder the mount knows is swapped for a link to .clover
-// (review S2): a link in the middle of a path answers ELOOP, so a stat, a read, an open for
-// writing, a create and a listing through it all fail and nothing in the fence changes. Links
-// that leave the export answer EACCES instead of a target the reading computer would resolve
-// against its own disk (review S9); a relative link inside the export passes as it is.
+// (review S2): the path resolves into the fence, so a stat, a read, an open for writing, a
+// create and a listing through it all fail and nothing in the fence changes. Links that leave
+// the export answer EACCES instead of a target the reading computer would resolve against its
+// own disk (review S9); a relative link inside the export passes as it is.
 func TestFenceHoldsThroughLinks(t *testing.T) {
 	root := t.TempDir()
 	elsewhere := t.TempDir()
@@ -557,6 +557,45 @@ func TestFenceHoldsThroughLinks(t *testing.T) {
 	}
 	if tgt, e := f.Readlink("rel-in"); e != wire.OK || tgt != "d2/x" {
 		t.Fatalf("a relative link inside the export: %q, %v", tgt, e)
+	}
+}
+
+// Paths through links that stay inside the export work. WinFsp hands the file service whole
+// paths through Bun's node_modules links; a first version of the S2 fix refused any link before
+// the last component (ELOOP) and broke tsc on the Windows tree. The link itself still stats as a
+// link, and a file created through it lands in the real folder.
+func TestPathsThroughLinksInsideTheExport(t *testing.T) {
+	root := t.TempDir()
+	real := filepath.Join(root, "node_modules", ".bun", "pkg@1", "node_modules", "pkg")
+	os.MkdirAll(real, 0o755)
+	os.WriteFile(filepath.Join(real, "index.js"), []byte("ok"), 0o644)
+	if err := os.Symlink(filepath.Join(".bun", "pkg@1", "node_modules", "pkg"), filepath.Join(root, "node_modules", "pkg")); err != nil {
+		t.Skipf("no symlinks here: %v", err)
+	}
+	svc := startService(t, root, freePort(t))
+	defer svc.kill()
+	pol, _ := PolicyByName("nocache")
+	f := newFS(t, "127.0.0.1:"+strconv.Itoa(svc.port), pol)
+	if a, e := f.Stat("node_modules/pkg/index.js"); e != wire.OK || a.Size != 2 {
+		t.Fatalf("stat through the link: %v (size %d)", e, a.Size)
+	}
+	if b, e := f.Read("node_modules/pkg/index.js", nil, 0, 10); e != wire.OK || string(b) != "ok" {
+		t.Fatalf("read through the link: %q %v", b, e)
+	}
+	if ents, e := f.List("node_modules/pkg"); e != wire.OK || len(ents) != 1 {
+		t.Fatalf("list through the link: %d entries, %v", len(ents), e)
+	}
+	if a, e := f.Stat("node_modules/pkg"); e != wire.OK || a.Type != wire.TypeSymlink {
+		t.Fatalf("the link itself: type %d, %v", a.Type, e)
+	}
+	h, _, e := f.Open("node_modules/pkg/new.js", wire.OWronly|wire.OCreat, 0o644)
+	if e != wire.OK {
+		t.Fatalf("create through the link: %v", e)
+	}
+	f.Write(h, 0, []byte("new"))
+	f.Release(h)
+	if b, err := os.ReadFile(filepath.Join(real, "new.js")); err != nil || string(b) != "new" {
+		t.Fatalf("the created file: %q %v", b, err)
 	}
 }
 

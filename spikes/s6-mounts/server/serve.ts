@@ -68,39 +68,45 @@ function resolve(rel: string): string {
   return parts.length ? path.join(ROOT, ...parts) : ROOT;
 }
 /**
- * A request's path, checked against the disk: no component before the last may be a link. A
- * kernel that mounts the tree follows links itself (READLINK, then a lookup of the target), so a
- * link in the middle of a request's path means a folder it knew was swapped for a link since,
- * the way a fenced folder (.clover) would be reached under another name (review S2). Answers
- * ELOOP, as openat2's RESOLVE_NO_SYMLINKS does. With noFollow the last component may not be a
- * link either: for the calls that would follow it (open, list, setattr). The walk and the call
- * after it can still race a swap on the holder; M1 opens with openat2(RESOLVE_BENEATH |
- * RESOLVE_NO_SYMLINKS) on Linux, O_NOFOLLOW_ANY on macOS and reparse-point checks on Windows.
+ * A request's path on this disk, resolved the way the kernel here would resolve it, links
+ * included, and checked where it really lands: inside the export and outside the fence (review
+ * S2). A folder the mount knew, swapped for a link to .clover, resolves into the fence and answers
+ * EACCES; the links Bun and pnpm put in node_modules resolve inside the export and pass. Links
+ * can't simply be refused: WinFsp hands the service whole paths through them (a first version
+ * that answered ELOOP for a link before the last component broke tsc on the Windows tree).
+ * With follow = false the last component is taken as it is (stat, readlink, unlink and rename
+ * act on a link itself), and only the folders above it are resolved. The resolution and the call
+ * after it can still race a swap on the holder; M1 opens with openat2(RESOLVE_BENEATH) on Linux,
+ * O_NOFOLLOW_ANY after its own walk on macOS, and checks reparse points on Windows.
  */
-async function resolveSafe(rel: string, noFollow = false): Promise<string> {
-  const abs = resolve(rel);
-  const parts = rel === "" ? [] : rel.split("/");
-  let cur = ROOT;
-  for (let i = 0; i < parts.length; i++) {
-    cur = path.join(cur, parts[i]!);
-    if (i === parts.length - 1 && !noFollow) break;
-    let st: fs.Stats;
-    try { st = await fs.promises.lstat(cur); } catch (e: any) { return fail(errFromCode(e.code)); }
-    if (st.isSymbolicLink()) fail(Err.ELOOP, `a link in the path: ${parts.slice(0, i + 1).join("/")}`);
-    if (i < parts.length - 1 && !st.isDirectory()) fail(Err.ENOTDIR);
+async function resolveSafe(rel: string, follow = true): Promise<string> {
+  resolve(rel); // the request's own name: no NUL, no "..", not fenced
+  if (rel === "") return REAL_ROOT;
+  const parts = rel.split("/");
+  const parent = await fs.promises.realpath(path.join(REAL_ROOT, ...parts.slice(0, -1))).catch((e) => fail(errFromCode(e.code)));
+  landsOk(parent, rel);
+  const lexical = path.join(parent, parts[parts.length - 1]!);
+  landsOk(lexical, rel);
+  if (!follow) return lexical;
+  let real: string;
+  try { real = await fs.promises.realpath(lexical); }
+  catch (e: any) {
+    if (e.code !== "ENOENT") return fail(errFromCode(e.code));
+    // Nothing there yet (a create), or a link to nothing: never create through a link.
+    const st = await fs.promises.lstat(lexical).catch(() => null);
+    if (st?.isSymbolicLink()) fail(Err.EACCES, `a link to nothing: ${rel}`);
+    real = lexical;
   }
-  return abs;
+  landsOk(real, rel);
+  return real;
 }
-/** For anything that writes: no link on the way, and the parent's real path inside the export and outside the fence. */
-async function resolveForWrite(rel: string): Promise<string> {
-  const abs = await resolveSafe(rel);
-  if (rel === "") return abs;
-  const parent = await fs.promises.realpath(path.dirname(abs)).catch((e) => fail(errFromCode(e.code)));
-  const prel = relOfReal(parent);
-  if (prel === null) fail(Err.EACCES, `escapes the export: ${rel}`);
-  if (prel !== "" && fenced(prel)) fail(Err.EACCES, `fenced through a link: ${rel}`);
-  return abs;
+function landsOk(real: string, rel: string) {
+  const r = relOfReal(real);
+  if (r === null) fail(Err.EACCES, `resolves outside the export: ${rel}`);
+  if (r !== "" && fenced(r)) fail(Err.EACCES, `resolves into the fence: ${rel}`);
 }
+/** For anything that creates, removes or renames a name: the folders above it resolved and checked, the name itself as it is. */
+const resolveForWrite = (rel: string) => resolveSafe(rel, false);
 /** After an open: what was opened must not be fenced, whatever happened to the path meanwhile. */
 async function checkOpened(abs: string, fd: number) {
   const real = await fs.promises.realpath(abs).catch(() => null);
@@ -133,8 +139,9 @@ function linkTarget(abs: string, target: string): string {
   for (const root of [ROOT, REAL_ROOT]) {
     const rel = path.relative(root, t);
     if (rel === "" || (!rel.startsWith("..") && !path.isAbsolute(rel))) {
-      const fromDir = path.relative(root, path.dirname(abs));
-      const r = path.relative(path.join(root, fromDir), path.join(root, rel)) || ".";
+      // abs comes from resolveSafe, so it lies under REAL_ROOT
+      const fromDir = path.relative(REAL_ROOT, path.dirname(abs));
+      const r = path.relative(path.join(REAL_ROOT, fromDir), path.join(REAL_ROOT, rel)) || ".";
       count("READLINK_rewritten");
       return r.split(path.sep).join("/");
     }
@@ -167,7 +174,9 @@ async function listDir(rel: string): Promise<Array<[string, Attr]>> {
   const abs = await resolveSafe(rel, true);
   let names: string[];
   try { names = await fs.promises.readdir(abs); } catch (e: any) { return fail(errFromCode(e.code)); }
-  names = names.filter((n) => !fenced(join(rel, n)));
+  // fenced by the request's name or by where the folder really is (a link to the export's root)
+  const realRel = relOfReal(abs) ?? "";
+  names = names.filter((n) => !fenced(join(rel, n)) && !fenced(join(realRel, n)));
   const out: Array<[string, Attr]> = [];
   for (let i = 0; i < names.length; i += 128) {
     const batch = names.slice(i, i + 128);
@@ -183,13 +192,14 @@ function fsCall<T>(f: (cb: (e: NodeJS.ErrnoException | null, v: T) => void) => v
 }
 /** Read-only descriptors for stateless READs (handle 0), dropped when idle or changed. */
 const readFds = new Map<string, { fd: number; used: number; users: number }>();
-async function readFd(abs: string): Promise<{ fd: number; release: () => void }> {
-  let e = readFds.get(abs);
+/** key is the request's own path (what writes and change events drop); real is what gets opened. */
+async function readFd(key: string, real: string): Promise<{ fd: number; release: () => void }> {
+  let e = readFds.get(key);
   if (!e) {
-    const fd = await fsCall<number>((cb) => fs.open(abs, "r", cb));
-    const raced = readFds.get(abs);
-    if (raced) fs.close(fd, () => {}); else readFds.set(abs, { fd, used: Date.now(), users: 0 });
-    e = readFds.get(abs)!;
+    const fd = await fsCall<number>((cb) => fs.open(real, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW, cb));
+    const raced = readFds.get(key);
+    if (raced) fs.close(fd, () => {}); else readFds.set(key, { fd, used: Date.now(), users: 0 });
+    e = readFds.get(key)!;
   }
   e.used = Date.now();
   e.users++;
@@ -298,7 +308,7 @@ function onFrame(c: Conn, body: Uint8Array) {
     switch (op) {
       case Op.STAT: {
         const rel = r.str();
-        return ok().attr(await lstatAttr(await resolveSafe(rel)));
+        return ok().attr(await lstatAttr(await resolveSafe(rel, false)));
       }
       case Op.LIST: {
         const rel = r.str();
@@ -340,8 +350,7 @@ function onFrame(c: Conn, body: Uint8Array) {
           const h = c.handles.get(handle) ?? fail(Err.ESTALE);
           fd = h.fd;
         } else {
-          const abs = await resolveSafe(rel, true);
-          ({ fd, release } = await readFd(abs));
+          ({ fd, release } = await readFd(resolve(rel), await resolveSafe(rel, true)));
         }
         try {
           const buf = new Uint8Array(len);
@@ -354,15 +363,14 @@ function onFrame(c: Conn, body: Uint8Array) {
         const rel = r.str();
         const flags = r.u32();
         const mode = r.u32();
-        const abs = (flags & 3) !== 0 || flags & 0x40 ? await resolveForWrite(rel) : await resolveSafe(rel);
-        // O_NOFOLLOW: the kernel that mounts the tree follows links itself, so the last component
-        // is never meant to be one; a link there now was swapped in.
+        const abs = await resolveSafe(rel, true);
+        // O_NOFOLLOW: abs is the real path, so a link there now was swapped in since.
         const fd = await fsCall<number>((cb) => fs.open(abs, openFlags(flags) | fs.constants.O_NOFOLLOW, mode || 0o644, cb));
         await checkOpened(abs, fd);
         const st = await fsCall<fs.BigIntStats>((cb) => fs.fstat(fd, { bigint: true }, cb as any));
         const h = nextHandle++;
         c.handles.set(h, { fd, path: rel });
-        if (flags & 0x200) dropReadFd(abs);
+        if (flags & 0x200) dropReadFd(resolve(rel));
         return ok().u64(h).attr(toAttr(st));
       }
       case Op.WRITE: {
@@ -403,15 +411,14 @@ function onFrame(c: Conn, body: Uint8Array) {
         const size = r.u64();
         const atimeNs = r.i64();
         const mtimeNs = r.i64();
-        const abs = await resolveForWrite(rel);
-        if (handle === 0n) await resolveSafe(rel, true); // chmod, truncate and utimes follow a last-component link
+        const abs = await resolveSafe(rel, true); // chmod, truncate and utimes follow a last-component link
         const h = handle !== 0n ? c.handles.get(handle) : undefined;
         try {
           if (mask & 1) await fs.promises.chmod(abs, mode & 0o7777);
           if (mask & 2) {
             if (h) await fsCall<void>((cb) => fs.ftruncate(h.fd, Number(size), cb as any));
             else await fs.promises.truncate(abs, Number(size));
-            dropReadFd(abs);
+            dropReadFd(resolve(rel));
           }
           if (mask & 12) {
             const st = await fs.promises.lstat(abs, { bigint: true });
@@ -430,9 +437,10 @@ function onFrame(c: Conn, body: Uint8Array) {
         return ok().attr(await lstatAttr(abs));
       }
       case Op.UNLINK: {
-        const abs = await resolveForWrite(r.str());
+        const rel = r.str();
+        const abs = await resolveForWrite(rel);
         await fs.promises.unlink(abs).catch((e) => fail(errFromCode(e.code)));
-        dropReadFd(abs);
+        dropReadFd(resolve(rel));
         return ok();
       }
       case Op.RMDIR: {
@@ -441,13 +449,14 @@ function onFrame(c: Conn, body: Uint8Array) {
         return ok();
       }
       case Op.RENAME: {
-        const from = await resolveForWrite(r.str());
-        const to = await resolveForWrite(r.str());
+        const fromRel = r.str(), toRel = r.str();
+        const from = await resolveForWrite(fromRel);
+        const to = await resolveForWrite(toRel);
         const flags = r.u32();
         if (flags & 2) fail(Err.ENOTSUP, "exchange");
         if (flags & 1 && (await fs.promises.lstat(to).then(() => true, () => false))) fail(Err.EEXIST);
         await fs.promises.rename(from, to).catch((e) => fail(errFromCode(e.code)));
-        dropReadFd(from); dropReadFd(to);
+        dropReadFd(resolve(fromRel)); dropReadFd(resolve(toRel));
         return ok();
       }
       case Op.SYMLINK: {
@@ -457,7 +466,7 @@ function onFrame(c: Conn, body: Uint8Array) {
         return ok().attr(await lstatAttr(abs));
       }
       case Op.READLINK: {
-        const abs = await resolveSafe(r.str());
+        const abs = await resolveSafe(r.str(), false);
         const t = await fs.promises.readlink(abs).catch((e) => fail(errFromCode(e.code)));
         return ok().str(linkTarget(abs, t));
       }
@@ -469,7 +478,7 @@ function onFrame(c: Conn, body: Uint8Array) {
       case Op.LINK: {
         const fromRel = r.str();
         const from = await resolveForWrite(fromRel);
-        await resolveSafe(fromRel, true); // macOS's link() follows a last-component link
+        await resolveSafe(fromRel, true); // macOS's link() follows a last-component link: check where it lands
         const to = await resolveForWrite(r.str());
         await fs.promises.link(from, to).catch((e) => fail(errFromCode(e.code)));
         return ok().attr(await lstatAttr(to));
