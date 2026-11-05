@@ -102,8 +102,10 @@ function checkBuilt(outDir: string, arch: LinuxArch, formats: readonly LinuxForm
   const files = existsSync(outDir) ? readdirSync(outDir) : [];
   const problems: string[] = [];
   for (const format of formats) {
-    const suffix = format === "deb" ? `_${names.deb}.deb` : format === "rpm" ? `.${names.rpm}.rpm` : `-${names.appImage}.AppImage`;
-    const file = files.find((f) => f.endsWith(suffix));
+    // The AppImage's name carries the architecture as electron-builder spells it (x64) or as AppImage does (x86_64).
+    const suffixes = format === "deb" ? [`_${names.deb}.deb`] : format === "rpm" ? [`.${names.rpm}.rpm`] : [`-${arch}.AppImage`, `-${names.appImage}.AppImage`];
+    const suffix = suffixes.join(" or ");
+    const file = files.find((f) => suffixes.some((x) => f.endsWith(x)));
     if (file === undefined) { problems.push(`${format} (${arch}): no *${suffix} in ${outDir}`); continue; }
     const path = join(outDir, file);
     console.log(`build-packages: ${file} (${(statSync(path).size / 1_048_576).toFixed(1)} MB)`);
