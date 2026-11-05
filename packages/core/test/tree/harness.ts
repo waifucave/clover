@@ -17,6 +17,7 @@ import { MemoryAnswerLedger } from "../../src/contracts/fakes/approval-broker";
 import type { FakeTree, FakeTreeComputer } from "../../src/contracts/fakes/tree";
 import type { TreeHarness } from "../../src/contracts/conformance/tree";
 import { LocalHolder } from "../../src/tree/holder";
+import { localTransfer } from "../../src/tree/transfer";
 import { hostOs } from "../../src/tree/names";
 import { CoreTree, type TreeComputer } from "../../src/tree/tree";
 
@@ -48,6 +49,11 @@ export function realTreeHarness(opts: ConstructorParameters<typeof FakeTree>[0])
     directory,
     holder: (name) => holders.get(name)!,
     botComputer: opts.botComputer,
+    // Both ends on this disk: the direct path between two holders here.
+    transfer: ({ from, to, move, source, destination, call, answers }) => localTransfer(holders.get(source)!, holders.get(destination)!, {
+      from, to, move, level: call.level ?? DEFAULT_LEVEL,
+      ...(answers.destination ? { answer: answers.destination } : {}), ...(answers.source ? { sourceAnswer: answers.source } : {}),
+    }, call.as),
   });
 
   const addComputer = (name: string, c: FakeTreeComputer): void => {
@@ -67,7 +73,13 @@ export function realTreeHarness(opts: ConstructorParameters<typeof FakeTree>[0])
       runsBot: (bot) => opts.botComputer(bot) === name,
       level: () => computers.get(name)!.level,
       answers,
-      ...(fence ? { fence: { check: (op) => fence.check(op.op === "move" ? { ...op, path: fromDisk(op.path), to: fromDisk(op.to) } : { ...op, path: fromDisk(op.path) }) } satisfies Pick<Fence, "check"> } : {}),
+      ...(fence ? {
+        fence: {
+          check: (op) => fence.check(op.op === "move" ? { ...op, path: fromDisk(op.path), to: fromDisk(op.to) } : { ...op, path: fromDisk(op.path) }),
+          // The folded check (review B1) compares the fenced set on this disk.
+          fencedSet: () => (typeof (fence as Partial<Fence>).fencedSet === "function" ? (fence as Fence).fencedSet().map((i) => ({ ...i, path: toDisk(i.path) })) : []),
+        } satisfies Pick<Fence, "check" | "fencedSet">,
+      } : {}),
     }));
   };
   for (const [name, c] of Object.entries(opts.computers)) addComputer(name, c);

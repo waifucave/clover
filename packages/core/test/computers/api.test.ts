@@ -19,21 +19,25 @@ import { Cluster, until } from "../tree/cluster-support";
 let cluster: Cluster;
 afterEach(() => cluster?.close());
 const PLUGIN = { pluginId: "opensky", caller: { kind: "plugin" as const, pluginId: "opensky" } };
+/** opensky called within a session: the router's context names it. */
+const inSession = (sessionId: string) => ({ pluginId: "opensky", caller: { kind: "session" as const, sessionId, sessionKind: "bot" as const, bot: "alpha" } });
 const rejection = async (p: Promise<unknown>) => p.then(() => undefined, (e: unknown) => e);
 
 describe("computers.* for plugins", () => {
   test("the registry, and holds kept for opensky: a refused hold is an answer", async () => {
     cluster = new Cluster();
-    const studio = cluster.add("Studio");
-    cluster.add("Laptop1");
+    const studio = await cluster.add("Studio");
+    await cluster.add("Laptop1");
     await cluster.join();
     const api = computersApiRoutes(studio.node.registry);
     expect(((await api["computers.list"]!([], PLUGIN)) as { name: string }[]).map((c) => c.name)).toEqual(["Studio", "Laptop1"]);
-    const first = (await api["computers.takeHold"]!(["Studio", { kind: "app", app: "Figma" }, { session: "s_a" }], PLUGIN)) as { held: true; hold: { id: string } };
+    const first = (await api["computers.takeHold"]!(["Studio", { kind: "app", app: "Figma" }], inSession("s_a"))) as { held: true; hold: { id: string; session?: string } };
     expect(first.held).toBe(true);
-    expect(await api["computers.takeHold"]!(["Studio", { kind: "window", app: "Figma", window: "Main" }, { session: "s_b" }], PLUGIN)).toEqual({ held: false, reason: "held-by-other", by: "s_a" });
+    expect(first.hold.session).toBe("s_a");
+    // The session is the router's, never one the plugin names (review minor 3).
+    expect(await api["computers.takeHold"]!(["Studio", { kind: "window", app: "Figma", window: "Main" }, { session: "s_a" }], inSession("s_b"))).toEqual({ held: false, reason: "held-by-other", by: "s_a" });
     await api["computers.setUserWorking"]!(["Studio", true, { kind: "app", app: "Mail" }], PLUGIN);
-    expect(await api["computers.takeHold"]!(["Studio", { kind: "app", app: "Mail" }, { session: "s_b" }], PLUGIN)).toEqual({ held: false, reason: "user-working" });
+    expect(await api["computers.takeHold"]!(["Studio", { kind: "app", app: "Mail" }], inSession("s_b"))).toEqual({ held: false, reason: "user-working" });
     // Only the user's message or a card answer lifts the mark.
     expect(isContractError(await rejection(api["computers.setUserWorking"]!(["Studio", false], PLUGIN)), "refused")).toBe(true);
     expect(await api["computers.holds"]!(["Studio"], PLUGIN)).toMatchObject({ userWorking: true });
@@ -48,8 +52,8 @@ describe("computers.* for plugins", () => {
 describe("files.* for plugins: the Files panel's data", () => {
   test("list, read and watch under a folder of another computer, fenced as the plugin", async () => {
     cluster = new Cluster();
-    const studio = cluster.add("Studio");
-    const laptop = cluster.add("Laptop1");
+    const studio = await cluster.add("Studio");
+    const laptop = await cluster.add("Laptop1");
     await cluster.join();
     mkdirSync(join(laptop.home, "proj", "src"), { recursive: true });
     writeFileSync(join(laptop.home, "proj", "src", "a.ts"), "export const a = 1;\n");
@@ -78,8 +82,8 @@ describe("the device list", () => {
     const stranger = await makeFakeDevice();
     cluster = new Cluster();
     const ids = { Studio: studioKey.id, Laptop1: laptopKey.id, Stranger: stranger.id };
-    const studio = cluster.add("Studio", { deviceIds: ids, devices: (n) => (n === "Studio" ? studioDevices : laptopDevices) });
-    const laptop = cluster.add("Laptop1", { deviceIds: ids, devices: (n) => (n === "Studio" ? studioDevices : laptopDevices) });
+    const studio = await cluster.add("Studio", { deviceIds: ids, devices: (n) => (n === "Studio" ? studioDevices : laptopDevices) });
+    const laptop = await cluster.add("Laptop1", { deviceIds: ids, devices: (n) => (n === "Studio" ? studioDevices : laptopDevices) });
     // On the list but not yet linked: there, and offline.
     expect(studio.node.registry.get("Laptop1")).toMatchObject({ state: "offline" });
     await cluster.join();
@@ -106,8 +110,8 @@ describe("a peer's command at a level that asks", () => {
     const render: CallCardRenderer = (call) => (call.method === "tool.run" ? { kind: "tool", fields: { title: { type: "text", text: `Run on ${call.computer}` } }, options, binds: binds(call.computer, call.method, call.params) } : undefined);
     const ledger = new MemoryAnswerLedger();
     cluster = new Cluster();
-    const studio = cluster.add("Studio");
-    const laptop = cluster.add("Laptop1", { answers: (n) => (n === "Laptop1" ? { devices, ledger, render } : undefined) });
+    const studio = await cluster.add("Studio");
+    const laptop = await cluster.add("Laptop1", { answers: (n) => (n === "Laptop1" ? { devices, ledger, render } : undefined) });
     await cluster.join();
     const input = { command: "touch made", cwd: "home/Laptop1" };
     const sign = async (bound: unknown): Promise<SignedCardAnswer> => {

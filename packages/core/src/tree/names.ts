@@ -1,12 +1,15 @@
-// Names in the folder tree, as each OS's disk compares them (spec §9.1; spike S6 edit 5 and its review round 2).
+// Names in the folder tree, as each OS's disk compares them (spec §9.1; spike S6 edit 5 and its review round 2; J-M1
+// review B1).
 //
-// A holder resolves every tree path on its own disk and asks its fence about the real path it lands on. Most of the
-// canonical form comes from the disk itself (realpath gives the stored case on macOS and long names on Windows), but
-// a name that doesn't exist yet, or a link's own name, has no real path to ask for. Those compare folded: APFS and
-// NTFS ignore case by default and APFS ignores Unicode normalisation, so a fold that only matched names as typed let
-// `.CLOVER` reach `.clover` on a Mac (S6, review round 2). The fold applies on every OS: on a case-sensitive disk it
-// also matches `.CLOVER`, a different folder there, which costs nothing, and it covers ext4's case-folding folders and
-// FAT or NTFS volumes mounted on Linux.
+// A holder resolves every tree path on its own disk and asks its fence about the real path it lands on. realpath
+// gives the canonical form of what exists (the stored case on macOS, long names on Windows), but a name that doesn't
+// exist yet has none: `.clover/LEVELS/computer.json` is typed, not stored. APFS and NTFS ignore case by default and
+// APFS ignores Unicode normalisation, so on those disks that name *is* `.clover/levels/computer.json` once made. The
+// fence's own compare is exact, so the holder asks it twice: once as is, and once with both sides folded (`foldPath`
+// on the path and on every fenced item), and refuses what either refuses. The fold runs on every OS: on a
+// case-sensitive disk `.clover/LEVELS` is another folder, which the fold refuses at no cost, and it covers ext4's
+// case-folding folders and FAT or NTFS volumes mounted on Linux. Links' own names and 8.3 short names are handled where
+// the holder reads them (`holder.ts`).
 import type { Os } from "@waifucave/clover-protocol";
 import { ContractError } from "../contracts/common";
 
@@ -20,6 +23,12 @@ export function hostOs(platform: NodeJS.Platform = process.platform): Os {
 export function foldName(name: string, os: Os): string {
   const s = name.normalize("NFC").toUpperCase().toLowerCase().normalize("NFC");
   return os === "windows" ? s.replace(/[. ]+$/, "") : s;
+}
+
+/** A whole path folded, segment by segment, with `/` between: what the holder compares fenced items by. A Windows
+ *  path's `\` becomes `/` first, so `C:\Users\me` and the fence's `C:/Users/me` meet. */
+export function foldPath(path: string, os: Os): string {
+  return path.replace(/\\/g, "/").split("/").map((seg) => (seg === "" ? seg : foldName(seg, os))).join("/");
 }
 
 /** Whether two names may be the same entry on that OS's disk. */

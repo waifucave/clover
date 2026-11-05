@@ -11,8 +11,9 @@
 //   on macOS and long names on Windows. The last name keeps its own form only for calls that act on a link itself
 //   (stat, remove, move); its canonical spelling is still the disk's (a link's listed name; a short 8.3 name that the
 //   disk answers to but doesn't list is refused).
-// * A name that can't be made canonical (it doesn't exist yet) is compared folded (`names.ts`), and names a disk would
-//   read as something else (`NUL`, `a:b`, `a.` on Windows) are refused.
+// * The fence is asked twice: as is, and with the path and every fenced item folded (`names.ts`, review B1), so a name
+//   that doesn't exist yet can't reach a fenced item in another case. Names a disk would read as something else
+//   (`NUL`, `a:b`, `a.` on Windows) are refused.
 // * Files are opened with `O_NOFOLLOW` on their real path, and what was opened is checked again: its device and inode
 //   must be what the real path names after the open, and that path must still land inside the area and outside the
 //   fence. A folder swapped for a link mid-call therefore can't lead into the fence. (Bun has no `openat`, so the walk
@@ -31,9 +32,9 @@ import {
 import { type AnswerDevices, type AnswerLedger, type CallCardRenderer, verifySignedAnswer } from "../contracts/approval-broker";
 import type { Clock } from "../contracts/clock";
 import { ContractError, type Unsubscribe } from "../contracts/common";
-import type { Fence, FenceOp } from "../contracts/fence";
+import { judge as fenceJudge, type Fence, type FenceOp, type FenceVerdict } from "../contracts/fence";
 import { peerTreeDecision, splitTreePath, treeCallBinding, type TreeChange, type TreeData } from "../contracts/tree";
-import { checkSegment, foldName, hostOs, mayBeShortName } from "./names";
+import { checkSegment, foldName, foldPath, hostOs, mayBeShortName } from "./names";
 import { FolderWatches, type TreeWatchEvent } from "./watch";
 
 /** Who a call is for, and what a peer's change carries (review N2). */
@@ -84,7 +85,7 @@ export interface LocalHolderOptions {
   runsBot?: (bot: string) => boolean;
   os?: Os;
   /** This computer's fence. Calls for the user and the core never ask it. */
-  fence?: Pick<Fence, "check">;
+  fence?: Pick<Fence, "check" | "fencedSet">;
   /** This computer's level, which a peer's change is judged at. */
   level?: () => Level;
   /** What checks a peer's signed answer: the paired devices, this computer's ledger of used card ids, and its own
@@ -163,8 +164,45 @@ export class LocalHolder implements Holder {
   }
 
   async watch(path: string, call: HolderCall, fn: (e: TreeWatchEvent) => void): Promise<Unsubscribe> {
+    this.#caller(call);
+    const r = await this.#resolve(path, { follow: true });
+    // A project's folder, never a whole home or a bot's whole folder (review minor 2): a recursive watch of those
+    // costs the disk everything.
+    if (r.real === r.root) throw new ContractError("invalid", `${path} is a whole area of the tree; watch a folder in it`);
     const real = await this.realFolder(path, call);
-    return this.watches.subscribe(real, this.#treePath(path), (child) => this.#mayRead(child, call), fn);
+    const watcher = call.as.kind === "peer" ? `peer:${call.as.device}` : "local";
+    return this.watches.subscribe(real, this.#treePath(path), (child) => this.#mayRead(child, call), fn, watcher);
+  }
+
+  /** An entry's real path for the direct path (`transfer.ts`): resolved, inside its area and through the fence for
+   *  `op`, as a write, a read or a delete would be. */
+  async realEntry(path: string, call: HolderCall, op: "read" | "write" | "delete"): Promise<{ real: string; root: string; exists: boolean; dir: boolean }> {
+    this.#caller(call);
+    const r = await this.#resolve(path, { follow: false, create: op === "write" });
+    if (r.real === r.root && op !== "read") throw new ContractError("invalid", `${path} is a whole area of the tree`);
+    this.#fenced({ op, path: r.real }, call);
+    return { real: r.real, root: r.root, exists: r.exists, dir: r.st?.isDirectory() ?? false };
+  }
+
+  /** Makes the folders above an entry `realEntry` gave for a write, safely (inside its area, never through a link). */
+  async makeParents(entry: { real: string; root: string }, path: string): Promise<void> {
+    await this.#mkdirs(entry.root, dirname(entry.real), path);
+  }
+
+  /** Whether `call` may see (and so take) a real path here: the fence's read-denied items are hidden. */
+  visible(real: string, call: HolderCall): boolean {
+    return this.#mayRead(real, call);
+  }
+
+  /** Whether `call` may change a real path here (a move's source, entry by entry). */
+  changeable(real: string, call: HolderCall): boolean {
+    if (call.as.kind === "user" || call.as.kind === "core") return true;
+    return this.#check({ op: "delete", path: real }).allowed;
+  }
+
+  /** Judges a whole operation once, with one binding (the direct path's move or copy; review S1). */
+  async judge(call: HolderCall, change: TreeChange, effect: "edit" | "delete" | "move"): Promise<void> {
+    await this.#judge(call, change, effect);
   }
 
   /** The real path a tree path names here, without touching the disk (for bookkeeping and `Tree.resolve`). */
@@ -211,14 +249,16 @@ export class LocalHolder implements Holder {
   async write(path: string, data: TreeData, call: HolderCall & { executable?: boolean }): Promise<void> {
     this.#caller(call);
     const bytes = data.encoding === "utf8" ? new TextEncoder().encode(data.text) : Buffer.from(data.data, "base64");
-    if (bytes.length > TREE_IO_MAX * 4) throw new ContractError("invalid", `${path}: a write carries at most ${TREE_IO_MAX * 4} bytes`);
+    if (bytes.length > TREE_IO_MAX) throw new ContractError("invalid", `${path}: a write carries at most ${TREE_IO_MAX} bytes`);
     const r = await this.#resolve(path, { follow: true, create: true });
     this.#fenced({ op: "write", path: r.real }, call);
     await this.#judge(call, treeCallBinding("tree.write", { path, data }), "edit");
     if (r.st?.isDirectory()) throw new ContractError("invalid", `${path} is a folder`);
     await this.#mkdirs(r.root, dirname(r.real), path);
-    const fh = await this.#openChecked(r, FS.O_WRONLY | FS.O_CREAT | FS.O_TRUNC, call, "write", path);
+    // Truncated only once the open file is checked (a hard link to a fenced item is refused untouched).
+    const fh = await this.#openChecked(r, FS.O_WRONLY | FS.O_CREAT, call, "write", path);
     try {
+      await fh.truncate(0);
       let off = 0;
       while (off < bytes.length) off += (await fh.write(bytes, off, bytes.length - off)).bytesWritten;
       // On the holder's disk before the call answers (S6 review S5: a write that returned wasn't always there).
@@ -551,6 +591,11 @@ export class LocalHolder implements Holder {
     }
     try {
       const opened = await fh.stat({ bigint: true });
+      // A file with another name (a hard link) may be a fenced item under that name, and no path tells which: anyone
+      // the fence judges is refused it (review S4).
+      if (opened.isFile() && opened.nlink > 1n && call.as.kind !== "user" && call.as.kind !== "core") {
+        throw new ContractError("refused", `${path} has other names (hard links); open it by its own name outside the tree`);
+      }
       const real = await fsp.realpath(r.real);
       this.#landsInside(real, r.root, path);
       this.#fenced({ op, path: real }, call);
@@ -615,15 +660,30 @@ export class LocalHolder implements Holder {
   #fenced(op: FenceOp, call: HolderCall): void {
     const as = call.as;
     if (as.kind === "user" || as.kind === "core") return;
-    const verdict = this.#o.fence?.check(op);
-    if (verdict && !verdict.allowed) {
+    const verdict = this.#check(op);
+    if (!verdict.allowed) {
       throw new ContractError("fenced", `the fence keeps bots out of ${verdict.path}`, { computer: this.#o.name(), reason: verdict.reason });
     }
   }
 
   #mayRead(real: string, call: HolderCall): boolean {
     if (call.as.kind === "user" || call.as.kind === "core") return true;
-    return this.#o.fence?.check({ op: "read", path: real }).allowed ?? true;
+    return this.#check({ op: "read", path: real }).allowed;
+  }
+
+  /** The fence's verdict, as is and folded (review B1): refused when either refuses. */
+  #check(op: FenceOp): FenceVerdict {
+    const fence = this.#o.fence;
+    if (!fence) return { allowed: true };
+    const plain = fence.check(op);
+    if (!plain.allowed) return plain;
+    const fold = (p: string) => foldPath(p, this.os);
+    const set = fence.fencedSet().map((item) => ({ ...item, path: fold(item.path) }));
+    const folded = fenceJudge(set, op.op === "move" ? { ...op, path: fold(op.path), to: fold(op.to) } : { ...op, path: fold(op.path) });
+    if (folded.allowed) return folded;
+    // Name the item as the fence does, not folded.
+    const item = fence.fencedSet().find((i) => fold(i.path) === folded.path);
+    return { ...folded, path: item?.path ?? folded.path };
   }
 
   /** A peer's change: allowed, refused, or let through by the user's signed answer bound to exactly it (N2). */
@@ -639,11 +699,6 @@ export class LocalHolder implements Holder {
       self, method: change.method, params: change.params, now: this.#o.clock.now(), sha256, ...this.#answers,
     });
     if (verdict !== "ok") throw new ContractError("refused", `the answer doesn't hold for this change (${verdict})`);
-  }
-
-  /** Judges a peer's change without making it (a move across computers asks both holders before it copies). */
-  async judgeOnly(call: HolderCall, change: TreeChange, effect: "edit" | "delete" | "move"): Promise<void> {
-    await this.#judge(call, change, effect);
   }
 
   #treePath(path: string): string {

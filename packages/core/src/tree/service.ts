@@ -6,8 +6,12 @@
 // Methods served (`peer` role). Those marked * are lane J's additions, requested of lane B for the protocol:
 //   tree.stat, tree.read, tree.write (+ `executable`*), tree.list, tree.remove, tree.move, tree.glob,
 //   tree.grep (+ `ignoreCase`*), tree.mkdir*, tree.readlink*, tree.symlink*, tree.watch*, tree.unwatch*,
-//   tool.run, tool.cancel
-// Notifications sent: `tree.changed`* (a watch's changes), `tool_output` (a running call's output).
+//   tool.run, tool.cancel (+ `session`*)
+// Notifications sent: `tree.changed`* (a watch's changes), `tool_output` (a running call's output, + `session`*).
+//
+// Bulk calls (reads, writes, glob, grep) run at most `BULK_PER_DEVICE` at once per calling computer, with a short
+// queue behind them, so one computer's burst can't fill this one's memory (review minor 5); one write carries at most
+// `TREE_IO_MAX`. A running call is known by its device, session and call id (minor 7).
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import {
@@ -21,7 +25,7 @@ import {
 import type { Clock } from "../contracts/clock";
 import { ContractError, type Unsubscribe } from "../contracts/common";
 import type { LinkTransport } from "../contracts/link-transport";
-import type { HolderCall, LocalHolder } from "./holder";
+import { TREE_IO_MAX, type HolderCall, type LocalHolder } from "./holder";
 import type { TreeChangedNotice } from "./remote";
 
 const M = COMPUTERS_METHODS;
@@ -43,8 +47,15 @@ export const TREE_PEER_PARAMS = {
   "tree.watch": z.object({ ...Via, path: TreePath }),
   "tree.unwatch": z.object({ watchId: z.string().min(1).max(128) }),
   "tool.run": M.toolRun.params,
-  "tool.cancel": M.toolCancel.params,
+  "tool.cancel": M.toolCancel.params.extend({ session: SessionId.optional() }),
 } as const;
+
+/** Bulk calls one computer runs here at once, and how many more may wait. */
+export const BULK_PER_DEVICE = 4;
+const BULK_QUEUE = 32;
+const BULK_METHODS = new Set(["tree.read", "tree.write", "tree.glob", "tree.grep"]);
+/** The longest base64 text one write may carry. */
+const WRITE_BASE64_MAX = Math.ceil(TREE_IO_MAX / 3) * 4;
 
 /** One tool call to run here: Bash, in a folder of this computer's tree. */
 export interface ToolRunContext {
@@ -82,8 +93,8 @@ export interface TreeServiceOptions {
   transport: LinkTransport;
   holder: LocalHolder;
   clock: Pick<Clock, "now">;
-  /** Whether `device` may call at all: a paired computer, not revoked. Every caller when left out (tests). */
-  mayCall?: (device: string) => boolean;
+  /** Whether `device` may call at all: a paired computer, not revoked. */
+  mayCall: (device: string) => boolean;
   /** This computer's level, which a peer's tool call is judged at. */
   level?: () => Level;
   answers?: { devices: AnswerDevices; ledger: AnswerLedger; render: CallCardRenderer };
@@ -92,13 +103,46 @@ export interface TreeServiceOptions {
 
 interface Running {
   device: string;
+  session: string;
+  callId: string;
   abort: AbortController;
+}
+
+/** Per-device slots for bulk calls. */
+export class BulkSlots {
+  readonly #running = new Map<string, number>();
+  readonly #waiting = new Map<string, (() => void)[]>();
+
+  async run<T>(device: string, fn: () => Promise<T>): Promise<T> {
+    if ((this.#running.get(device) ?? 0) >= BULK_PER_DEVICE) {
+      const q = this.#waiting.get(device) ?? [];
+      if (q.length >= BULK_QUEUE) throw new ContractError("refused", "too many file calls from your computer at once; try again shortly");
+      await new Promise<void>((resolve) => {
+        q.push(resolve);
+        this.#waiting.set(device, q);
+      });
+    } else {
+      this.#running.set(device, (this.#running.get(device) ?? 0) + 1);
+    }
+    try {
+      return await fn();
+    } finally {
+      const next = this.#waiting.get(device)?.shift();
+      if (next) next(); // the slot passes on
+      else {
+        const n = (this.#running.get(device) ?? 1) - 1;
+        if (n <= 0) this.#running.delete(device);
+        else this.#running.set(device, n);
+      }
+    }
+  }
 }
 
 export class TreeService {
   readonly #o: TreeServiceOptions;
   readonly #off: Unsubscribe[] = [];
   readonly #running = new Map<string, Running>();
+  readonly #bulk = new BulkSlots();
   /** Watches served, by id, with the device that holds each. */
   readonly #watches = new Map<string, { device: string; stop: Unsubscribe }>();
   #watchSeq = 0;
@@ -108,13 +152,14 @@ export class TreeService {
     const t = opts.transport;
     const serve = <K extends keyof typeof TREE_PEER_PARAMS>(method: K, fn: (p: z.infer<(typeof TREE_PEER_PARAMS)[K]>, call: HolderCall, from: string) => unknown) => {
       this.#off.push(t.handle(method, async (raw, from) => {
-        if (opts.mayCall && !opts.mayCall(from)) throw new ContractError("refused", "this computer isn't paired with yours");
+        if (!opts.mayCall(from)) throw new ContractError("refused", "this computer isn't paired with yours");
         const parsed = TREE_PEER_PARAMS[method].safeParse(raw);
         if (!parsed.success) throw new ContractError("invalid", `${method}: ${parsed.error.issues[0]?.message ?? "bad params"}`);
         const p = parsed.data as { session?: string; level?: Level; answer?: z.infer<typeof SignedCardAnswer> };
         // The receiver stamps who the call is for (review N2): a peer, for the session it names, never the user.
         const as: Caller = { kind: "peer", device: from, ...(p.session === undefined ? {} : { sessionId: p.session }) };
         const call: HolderCall = { as, ...(p.level === undefined ? {} : { level: p.level }), ...(p.answer === undefined ? {} : { answer: p.answer }) };
+        if (BULK_METHODS.has(method)) return this.#bulk.run(from, async () => fn(parsed.data as never, call, from));
         return fn(parsed.data as never, call, from);
       }));
     };
@@ -125,6 +170,9 @@ export class TreeService {
       ...(p.offset === undefined ? {} : { offset: p.offset }), ...(p.length === undefined ? {} : { length: p.length }),
     }));
     serve("tree.write", async (p, call) => {
+      if (p.data.encoding === "base64" ? p.data.data.length > WRITE_BASE64_MAX : p.data.text.length > TREE_IO_MAX) {
+        throw new ContractError("invalid", `${p.path}: a write carries at most ${TREE_IO_MAX} bytes`);
+      }
       await h.write(p.path, p.data, { ...call, ...(p.executable === undefined ? {} : { executable: p.executable }) });
       return { ok: true };
     });
@@ -170,8 +218,12 @@ export class TreeService {
     });
     serve("tool.run", (p, call, from) => this.#run(p, call, from));
     serve("tool.cancel", (p, _call, from) => {
-      const r = this.#running.get(`${from}\n${p.callId}`);
-      r?.abort.abort();
+      // By device, session and call id; a cancel that names no session reaches the call only when it is the one.
+      if (p.session !== undefined) this.#running.get(runKey(from, p.session, p.callId))?.abort.abort();
+      else {
+        const mine = [...this.#running.values()].filter((r) => r.device === from && r.callId === p.callId);
+        if (mine.length === 1) mine[0]!.abort.abort();
+      }
       return { ok: true };
     });
     // A link that goes down takes its watches with it; the caller subscribes again when it comes back.
@@ -206,10 +258,10 @@ export class TreeService {
     // Where it runs: a folder of this computer's tree, fenced as the peer.
     const cwd = await this.#o.holder.realFolder(input.data.cwd, call);
     await this.#judge(p, call);
-    const key = `${from}\n${p.callId}`;
+    const key = runKey(from, p.session, p.callId);
     if (this.#running.has(key)) throw new ContractError("conflict", `the call ${p.callId} is already running`);
     const abort = new AbortController();
-    this.#running.set(key, { device: from, abort });
+    this.#running.set(key, { device: from, session: p.session, callId: p.callId, abort });
     const t = this.#o.transport;
     let link: Awaited<ReturnType<LinkTransport["connect"]>> | null = null;
     t.connect(from).then((l) => (link = l), () => {});
@@ -217,7 +269,7 @@ export class TreeService {
       return await tools.run(p.tool, input.data, {
         as: call.as, session: p.session, callId: p.callId, cwd, treeCwd: input.data.cwd, signal: abort.signal,
         output: (chunk, stream) => {
-          const send = (l: NonNullable<typeof link>) => l.notify("tool_output", { callId: p.callId, chunk, stream }, { priority: "tokens" });
+          const send = (l: NonNullable<typeof link>) => l.notify("tool_output", { session: p.session, callId: p.callId, chunk, stream }, { priority: "tokens" });
           if (link) send(link);
           else void t.connect(from).then((l) => { link = l; send(l); }, () => {});
         },
@@ -241,6 +293,11 @@ export class TreeService {
     });
     if (verdict !== "ok") throw new ContractError("refused", `the answer doesn't hold for this command (${verdict})`);
   }
+}
+
+/** A running call's key: the calling device, its session and the call id (review minor 7). */
+export function runKey(device: string, session: string, callId: string): string {
+  return `${device}\n${session}\n${callId}`;
 }
 
 /** What a signed answer for a peer's tool call binds: the tool and its input, nothing about the session or level. */

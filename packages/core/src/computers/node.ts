@@ -2,6 +2,7 @@
 // this computer's holder and the service that serves it to the others, the tree that routes every call to the
 // computer holding its files, and the tool layer the runtime calls. The daemon builds one of these once it has a
 // link (lane H's `LinkTransport`); tests build several on the fake link, each on its own temp home.
+import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import type { Os } from "@waifucave/clover-protocol";
 import type { AnswerDevices, AnswerLedger, CallCardRenderer } from "../contracts/approval-broker";
@@ -14,6 +15,7 @@ import { LocalHolder, type Holder } from "../tree/holder";
 import { hostOs } from "../tree/names";
 import { RemoteHolder } from "../tree/remote";
 import { ensureTreeRoot } from "../tree/root";
+import { serveTransfer, transfer } from "../tree/transfer";
 import { TreeService, type ToolExecutor } from "../tree/service";
 import { TreeTools } from "../tree/tools";
 import { CoreTree } from "../tree/tree";
@@ -31,13 +33,16 @@ export interface ComputerNodeOptions {
   home: string;
   /** The Clover home: the bots' folders (`bots/`) and this computer's own entry (`levels/computer.json`). */
   cloverHome: string;
-  fence?: Pick<Fence, "check">;
-  /** The paired devices (lane H); without it a hello introduces its computer (tests). */
-  devices?: DeviceRegistry;
+  fence?: Pick<Fence, "check" | "fencedSet">;
+  /** The paired devices (lane H): the computers in the tree and the only devices served (review minor 1). */
+  devices: DeviceRegistry;
   /** What checks a signed answer here: the paired devices, the ledger of card ids used, this computer's own cards. */
   answers?: { devices: AnswerDevices; ledger: AnswerLedger; render: CallCardRenderer };
   /** The bots this computer runs (lane D). */
   bots?: () => string[];
+  /** Which computer runs a bot, from lane D's registry (review S2). Left out, the computers' hellos say, and a bot
+   *  two computers claim is refused. */
+  botPlacement?: (bot: string) => string | undefined;
   /** Bash here, for this computer's own calls and the others' `tool.run` (lanes A and C). */
   executor?: ToolExecutor;
   store?: SelfStateStore;
@@ -59,8 +64,27 @@ export interface ComputerNode {
   close(): void;
 }
 
+/** The fenced items that are folders (lane C's layout names files and folders alike). */
+const FENCED_FOLDER_KINDS = new Set(["settings", "levels", "saved-rules", "connector-permissions", "trust", "user-layers", "plugin-oks", "plugin-data", "run-folder"]);
+
+/** Makes Clover's fenced folders under its home if they aren't there yet, and the folders that hold its fenced files,
+ *  so a name in another case finds them on disk (review B1: the folded fence is the guard; this is the second). */
+export function makeFencedFolders(cloverHome: string, fence: Pick<Fence, "fencedSet">): void {
+  const norm = (p: string) => p.replace(/\\/g, "/").replace(/\/+$/, "");
+  const home = norm(cloverHome);
+  for (const item of fence.fencedSet()) {
+    const p = norm(item.path);
+    if (!p.startsWith(`${home}/`)) continue;
+    const rest = p.slice(home.length + 1).split("/");
+    const folder = FENCED_FOLDER_KINDS.has(item.kind) ? rest : rest.slice(0, -1);
+    if (folder.length === 0) continue;
+    mkdirSync(join(cloverHome, ...folder), { recursive: true, mode: 0o700 });
+  }
+}
+
 export function startComputerNode(o: ComputerNodeOptions): ComputerNode {
   const os = o.self.os ?? hostOs();
+  if (o.fence) makeFencedFolders(o.cloverHome, o.fence);
   const registry = new CoreComputerRegistry({
     clock: o.clock,
     self: { name: o.self.name, device: o.self.device, os, hasDisplay: o.self.hasDisplay ?? true, agents: o.self.agents ?? [] },
@@ -70,8 +94,8 @@ export function startComputerNode(o: ComputerNodeOptions): ComputerNode {
   const botsRoot = join(o.cloverHome, "bots");
   const bots = o.bots ?? (() => []);
   const peers = new ComputerPeers({
-    registry, transport: o.transport, roots: () => ({ home: o.home, botsRoot, os, bots: bots() }),
-    ...(o.devices ? { devices: o.devices } : {}), ...(o.log ? { log: o.log } : {}),
+    registry, transport: o.transport, roots: () => ({ home: o.home, botsRoot, os, bots: bots() }), devices: o.devices,
+    ...(o.botPlacement ? { placement: o.botPlacement } : {}), ...(o.log ? { log: o.log } : {}),
   });
   const holder = new LocalHolder({
     clock: o.clock,
@@ -86,15 +110,13 @@ export function startComputerNode(o: ComputerNodeOptions): ComputerNode {
     ...(o.fence ? { fence: o.fence } : {}),
     ...(o.answers ? { answers: o.answers } : {}),
   });
-  const mayCall = o.devices
-    ? (device: string) => {
-      const d = o.devices!.get(device);
-      return d !== undefined && d.revokedAt === undefined && d.runsCore;
-    }
-    : undefined;
+  const mayCall = (device: string) => {
+    const d = o.devices.get(device);
+    return d !== undefined && d.revokedAt === undefined && d.runsCore;
+  };
   const service = new TreeService({
-    transport: o.transport, holder, clock: o.clock, level: () => registry.self().level,
-    ...(mayCall ? { mayCall } : {}), ...(o.answers ? { answers: o.answers } : {}), ...(o.executor ? { tools: o.executor } : {}),
+    transport: o.transport, holder, clock: o.clock, level: () => registry.self().level, mayCall,
+    ...(o.answers ? { answers: o.answers } : {}), ...(o.executor ? { tools: o.executor } : {}),
   });
   const remotes = new Map<string, RemoteHolder>();
   const holderFor = (name: string): Holder => {
@@ -110,7 +132,27 @@ export function startComputerNode(o: ComputerNodeOptions): ComputerNode {
     return r;
   };
   const directory = peers.directory();
-  const tree = new CoreTree({ directory, holder: holderFor, botComputer: (bot) => peers.botComputer(bot) });
+  const where = (name: string) => {
+    const c = registry.get(name);
+    if (!c) throw new ContractError("not_found", `no computer ${name}`);
+    return { computer: c.name, device: c.name === registry.self().name ? null : c.device };
+  };
+  // The direct path (edit J8, review S1): this computer as the destination or the source of a move between computers.
+  const xfer = serveTransfer({ transport: o.transport, holder, mayCall, deviceFor: (path) => where(tree.resolve(path).computer) });
+  const tree: CoreTree = new CoreTree({
+    directory, holder: holderFor, botComputer: (bot) => peers.botComputer(bot),
+    transfer: ({ from, to, move, destination, call, answers }) => {
+      const session = call.as.kind === "session" || call.as.kind === "peer" ? call.as.sessionId : undefined;
+      return transfer({
+        transport: o.transport, destination: where(destination), receiveHere: xfer.receiveHere, as: call.as,
+        params: {
+          from, to, move, level: call.level ?? registry.self().level,
+          ...(session === undefined ? {} : { session }),
+          ...(answers.destination ? { answer: answers.destination } : {}), ...(answers.source ? { sourceAnswer: answers.source } : {}),
+        },
+      });
+    },
+  });
   const tools = new TreeTools({
     tree, directory, transport: o.transport,
     deviceOf: (name) => registry.get(name)?.device,
@@ -139,6 +181,7 @@ export function startComputerNode(o: ComputerNodeOptions): ComputerNode {
     close: () => {
       offRoot();
       tools.close();
+      xfer.close();
       service.close();
       for (const r of remotes.values()) r.close();
       holder.watches.close();
