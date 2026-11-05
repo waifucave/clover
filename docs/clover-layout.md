@@ -11,6 +11,7 @@ plugins/clover/          Clover's own plugin: its clover.json, and one folder pe
 plugins/clover/<child>   a child of it, such as shell, composer, pill or forwarder
 plugins/alpha/           Alpha, a top-level plugin of its own, with its children inside
 services/<service>       Cloudflare Workers and the web companion
+services/shared          source the Workers share; not a package (each Worker's tsconfig includes it)
 native/<area>            per-OS helpers in their own languages: sandbox, input, mounts, link-sidecar
 apple/                   WinterKit and WinterProtocol for the iOS app; ComputerUse and apple/Winter for reference only, not built
 extensions/              Winter for Chrome, until opensky
@@ -24,7 +25,8 @@ docs/                    the spec, the plan, these conventions, and research rep
 
 * One workspace list, in the root `package.json` (`workspaces`) and mirrored in `pnpm-workspace.yaml`:
   * `packages/*`, `apps/*`, `services/*`, `native/*`, `spikes/*`, `examples/*`;
-  * `plugins/*` for a top-level plugin's own package, and `plugins/*/*` for its children's.
+  * `plugins/*` for a top-level plugin's own package, and `plugins/*/*` for its children's;
+  * `plugins/*/*/gallery` for a child's gallery when it is a package of its own (the base theme's).
   * A folder is a workspace package when one of these globs matches it and it holds a `package.json`. A deeper folder is not one; ask the controller for a glob if a lane needs it.
 * One lockfile: `bun.lock` at the root, with `pnpm-lock.yaml` beside it for pnpm. A package keeps no lockfile of its own (no `package-lock.json`).
 * Bun is the runtime and the package manager (`.bun-version` pins it).
@@ -56,18 +58,19 @@ docs/                    the spec, the plan, these conventions, and research rep
 
 ## A plugin
 
-* A top-level plugin is a folder under `plugins/` with a `clover.json` (spec §5.9): `"manifest": 1`, an `id` equal to the folder name, and a `name`.
+* A top-level plugin is a folder under `plugins/` with a `clover.json` (spec §5.9): `"manifest": 1`, an `id` equal to the folder name, and a `name`. A folder whose manifest an open pull request adds is named in the layout test's `MANIFEST_AWAITS` until it lands.
 * A child is a folder inside it with its own `clover.json`, with no `id`: it takes its parent's id and namespace.
 * A plugin's code (its host entry, its client entry, its tests) is a workspace package in the same folder, named as above.
 
 ## A gallery
 
-* A package with a gallery (a plugin's parts, the base theme) has a `gallery` script. It builds the gallery and renders every story to PNG files, light and dark, under `$CLOVER_GALLERY_OUT/<the package's folder name>/`, with a renderer it brings itself (Playwright, as a devDependency, installing its own Chromium).
+* A package with a gallery (a plugin's parts, the base theme) has a `gallery` script. It builds the gallery and renders every story to PNG files, light and dark, under `$CLOVER_GALLERY_OUT/<the part's folder name>/`, with a renderer it brings itself (Playwright, as a devDependency, installing its own Chromium). It runs in CI only, and refuses elsewhere: it downloads and runs a browser. `plugins/clover/shell/gallery/ci.ts` and `plugins/clover/base-theme/gallery/ci.ts` are the two there are.
 * CI's `gallery` job runs every package's `gallery` script on Linux and keeps the PNGs as one artifact for review. A lane keeps no workflow of its own: `.github/workflows/` is CI's (lane M), and the layout test refuses a `lane-*.yml` there.
 
 ## A service
 
 * A Cloudflare Worker: `wrangler.jsonc` (or `wrangler.json`, `wrangler.toml`) beside `src/`, with `main`, `compatibility_date` and its bindings.
+* Code two Workers share lives in `services/shared/`, which is not a package and has no `package.json`: each Worker's `tsconfig.json` includes it and its bundle imports it by relative path.
 * Its tests run it locally: `@waifucave/clover-test-harness/workers` starts the Worker in Miniflare on `127.0.0.1` from its own wrangler config, with in-memory storage. Nothing is deployed until the live gates (plan §8, §10). `services/hello` is the example.
 
 ## A native area

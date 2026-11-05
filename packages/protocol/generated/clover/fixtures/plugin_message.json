@@ -1,0 +1,14 @@
+{
+  "type": "plugin_message",
+  "seq": 17,
+  "sessionId": "s_alpha",
+  "ts": 1781270005000,
+  "from": {
+    "kind": "plugin",
+    "pluginId": "blender"
+  },
+  "text": "Render the next frame.",
+  "app": {
+    "callId": "call_7"
+  }
+}

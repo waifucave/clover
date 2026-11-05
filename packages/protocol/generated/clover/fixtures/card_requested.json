@@ -1,0 +1,55 @@
+{
+  "type": "card_requested",
+  "ts": 1781270000000,
+  "card": {
+    "id": "card_0a1b2c3d",
+    "kind": "tool",
+    "computer": "Studio",
+    "session": "s_alpha",
+    "bot": "alpha",
+    "origin": "routine",
+    "issuedAt": 1781270000000,
+    "expiresAt": 1781270600000,
+    "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "fields": {
+      "title": {
+        "type": "text",
+        "text": "Run a command?"
+      },
+      "command": {
+        "type": "code",
+        "code": "rm -rf build/",
+        "language": "sh"
+      },
+      "computer": {
+        "type": "text",
+        "text": "Studio"
+      },
+      "risk": {
+        "type": "text",
+        "text": "Deletes a folder"
+      }
+    },
+    "options": [
+      {
+        "id": "allow_once",
+        "kind": "approve",
+        "label": "Allow"
+      },
+      {
+        "id": "allow_always",
+        "kind": "approve",
+        "label": {
+          "en": "Always allow",
+          "fr": "Toujours autoriser"
+        },
+        "remember": "always"
+      },
+      {
+        "id": "deny",
+        "kind": "deny",
+        "label": "Deny"
+      }
+    ]
+  }
+}

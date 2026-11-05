@@ -1,0 +1,297 @@
+{
+  "meta": {
+    "state": "done",
+    "platform": "darwin",
+    "arch": "arm64",
+    "osRelease": "25.6.0",
+    "seconds": 38,
+    "names": {
+      "suffix": "54005726",
+      "label": "com.waifucave.clover.s7.core.54005726",
+      "coreUnit": "clover-s7-core-54005726.service",
+      "appUnit": "clover-s7-app-54005726.service",
+      "coreTask": "\\Clover S7\\core-54005726",
+      "appTask": "\\Clover S7\\app-54005726",
+      "socket": "/var/folders/n6/hn37q6pj7sj_9dmqqc2113800000gn/T/clover-s7-pair-q5MuP1/run/core.sock",
+      "lockFile": "/var/folders/n6/hn37q6pj7sj_9dmqqc2113800000gn/T/clover-s7-pair-q5MuP1/run/core.lock",
+      "pidFile": "/var/folders/n6/hn37q6pj7sj_9dmqqc2113800000gn/T/clover-s7-pair-q5MuP1/run/core.pid",
+      "bootsFile": "/var/folders/n6/hn37q6pj7sj_9dmqqc2113800000gn/T/clover-s7-pair-q5MuP1/run/boots.jsonl",
+      "appStartFile": "/var/folders/n6/hn37q6pj7sj_9dmqqc2113800000gn/T/clover-s7-pair-q5MuP1/run/app-start.json",
+      "appLog": "/var/folders/n6/hn37q6pj7sj_9dmqqc2113800000gn/T/clover-s7-pair-q5MuP1/run/app.jsonl",
+      "configFile": "/var/folders/n6/hn37q6pj7sj_9dmqqc2113800000gn/T/clover-s7-pair-q5MuP1/pair.json",
+      "logsDir": "/var/folders/n6/hn37q6pj7sj_9dmqqc2113800000gn/T/clover-s7-pair-q5MuP1/logs"
+    },
+    "windowsAppStart": "task",
+    "windowsSupervise": false
+  },
+  "steps": [
+    {
+      "step": "login start",
+      "install": [
+        {
+          "ok": true,
+          "how": "plutil -lint /Users/runner/Library/LaunchAgents/com.waifucave.clover.s7.core.54005726.plist",
+          "code": 0,
+          "out": "/Users/runner/Library/LaunchAgents/com.waifucave.clover.s7.core.54005726.plist: OK"
+        },
+        {
+          "ok": true,
+          "how": "launchctl bootstrap gui/501 /Users/runner/Library/LaunchAgents/com.waifucave.clover.s7.core.54005726.plist",
+          "code": 0,
+          "out": ""
+        }
+      ],
+      "daemonUpMs": 124,
+      "daemonUp": true,
+      "appConnectedMs": 4313,
+      "appStartedBy": "daemon",
+      "appStart": {
+        "at": 1793859166882,
+        "safeMode": false,
+        "reason": "daemon start",
+        "ok": true,
+        "how": "open -n -g -a /Users/runner/work/clover/clover/spikes/s7-browser/prototype/node_modules/electron/dist/Electron.app --args /Users/runner/work/clover/clover/spikes/s7-browser/prototype/out/pair/app --home=/var/folders/n6/hn37q6pj7sj_9dmqqc2113800000gn/T/clover-s7-pair-q5MuP1",
+        "out": ""
+      },
+      "daemonParent": 1,
+      "registeredForLogin": {
+        "ok": true,
+        "how": "launchctl print gui/501/com.waifucave.clover.s7.core.54005726",
+        "code": 0,
+        "out": "gui/501/com.waifucave.clover.s7.core.54005726 = {\n\tactive count = 1\n\tpath = /Users/runner/Library/LaunchAgents/com.waifucave.clover.s7.core.54005726.plist\n\ttype = LaunchAgent\n\tstate = running\n\n\tprogram = /Users/runner/work/clover/clover/spikes/s7-browser/prototype/out/pair/clover-core-s7\n\targuments = {\n\t\t/Users/runner/work/clover/clover/spikes/s7-browser/prototype/out/pair/clover-core-s7\n\t\tdaemon\n\t\t--home=/var/folders/n6/hn37q6pj7sj_9dmqqc2113800000gn/T/clover-s7-pair-q5MuP1\n\t}\n\n\tstdout path = /var/folders/n6/hn37q6pj7sj_9dmqqc2113800000gn/T/clover-s7-pair-q5MuP1/logs/daemon.out.log\n\tstderr pa"
+      }
+    },
+    {
+      "step": "second daemon on the same home",
+      "exitCode": 0,
+      "ms": 106,
+      "said": "2026-11-05T06:12:48.728Z [core 1426] another daemon holds this home (flock: held by another process) and answers on its socket; exiting",
+      "firstStillServing": true
+    },
+    {
+      "step": "app crash",
+      "killed": 1415,
+      "kill": {
+        "ok": true,
+        "how": "kill -9 1415",
+        "code": 0,
+        "out": ""
+      },
+      "restartedMs": 1741,
+      "newPid": 1431,
+      "startedBy": "daemon",
+      "safeMode": false,
+      "how": "open -n -g -a /Users/runner/work/clover/clover/spikes/s7-browser/prototype/node_modules/electron/dist/Electron.app --args /Users/runner/work/clover/clover/spikes/s7-browser/prototype/out/pair/app --home=/var/folders/n6/hn37q6pj7sj_9dmqqc2113800000gn/T/clover-s7-pair-q5MuP1",
+      "eventsSinceKill": [
+        "start",
+        "tray",
+        "connected"
+      ]
+    },
+    {
+      "step": "app crash loop → safe mode",
+      "rounds": [
+        {
+          "killed": 1431,
+          "restartedMs": 2614,
+          "safeMode": false,
+          "crashesInDaemon": 2
+        },
+        {
+          "killed": 1440,
+          "restartedMs": 4680,
+          "safeMode": true,
+          "crashesInDaemon": 3
+        }
+      ],
+      "thirdRestartInSafeMode": true
+    },
+    {
+      "step": "daemon crash, restarted by the OS alone",
+      "killed": 1361,
+      "kill": {
+        "ok": true,
+        "how": "kill -9 1361",
+        "code": 0,
+        "out": ""
+      },
+      "daemonBackMs": 422,
+      "newDaemonPid": 1513,
+      "appSurvived": true,
+      "appPidAfter": 1509,
+      "samePid": true,
+      "appStartedTheDaemon": false,
+      "appEvents": [
+        "5ms daemon-lost",
+        "515ms connected",
+        "516ms reconnected"
+      ],
+      "unit": {
+        "ok": true,
+        "how": "launchctl print gui/501/com.waifucave.clover.s7.core.54005726",
+        "code": 0,
+        "out": "gui/501/com.waifucave.clover.s7.core.54005726 = {\n\tactive count = 1\n\tpath = /Users/runner/Library/LaunchAgents/com.waifucave.clover.s7.core.54005726.plist\n\ttype = LaunchAgent\n\tstate = running\n\n\tprogram = /Users/runner/work/clover/clover/spikes/s7-browser/prototype/out/pair/clover-core-s7\n\targuments = {\n\t\t/Users/runner/work/clover/clover/spikes/s7-browser/prototype/out/pair/clover-core-s7\n\t\tdaemon\n\t\t--home=/var/folders/n6/hn37q6pj7sj_9dmqqc2113800000gn/T/clover-s7-pair-q5MuP1\n\t}\n\n\tstdout path = /var/folders/n6/hn37q6pj7sj_9dmqqc2113800000gn/T/clover-s7-pair-q5MuP1/logs/daemon.out.log\n\tstderr pa"
+      }
+    },
+    {
+      "step": "daemon crash, the app helps after 3 s",
+      "killed": 1513,
+      "kill": {
+        "ok": true,
+        "how": "kill -9 1513",
+        "code": 0,
+        "out": ""
+      },
+      "daemonBackMs": 1210,
+      "newDaemonPid": 1516,
+      "appSurvived": true,
+      "appPidAfter": 1509,
+      "samePid": true,
+      "appStartedTheDaemon": false,
+      "appEvents": [
+        "2ms daemon-lost",
+        "1512ms connected",
+        "1513ms reconnected"
+      ],
+      "unit": {
+        "ok": true,
+        "how": "launchctl print gui/501/com.waifucave.clover.s7.core.54005726",
+        "code": 0,
+        "out": "gui/501/com.waifucave.clover.s7.core.54005726 = {\n\tactive count = 1\n\tpath = /Users/runner/Library/LaunchAgents/com.waifucave.clover.s7.core.54005726.plist\n\ttype = LaunchAgent\n\tstate = running\n\n\tprogram = /Users/runner/work/clover/clover/spikes/s7-browser/prototype/out/pair/clover-core-s7\n\targuments = {\n\t\t/Users/runner/work/clover/clover/spikes/s7-browser/prototype/out/pair/clover-core-s7\n\t\tdaemon\n\t\t--home=/var/folders/n6/hn37q6pj7sj_9dmqqc2113800000gn/T/clover-s7-pair-q5MuP1\n\t}\n\n\tstdout path = /var/folders/n6/hn37q6pj7sj_9dmqqc2113800000gn/T/clover-s7-pair-q5MuP1/logs/daemon.out.log\n\tstderr pa"
+      }
+    },
+    {
+      "step": "tray Quit stops both, and they stay down",
+      "forwarded": {
+        "forwarded": true
+      },
+      "bothDownMs": 367,
+      "restartedWithin12s": false,
+      "appEvents": [
+        "quit",
+        "quit-acked"
+      ],
+      "unit": {
+        "ok": true,
+        "how": "launchctl print gui/501/com.waifucave.clover.s7.core.54005726",
+        "code": 0,
+        "out": "gui/501/com.waifucave.clover.s7.core.54005726 = {\n\tactive count = 0\n\tpath = /Users/runner/Library/LaunchAgents/com.waifucave.clover.s7.core.54005726.plist\n\ttype = LaunchAgent\n\tstate = not running\n\n\tprogram = /Users/runner/work/clover/clover/spikes/s7-browser/prototype/out/pair/clover-core-s7\n\targuments = {\n\t\t/Users/runner/work/clover/clover/spikes/s7-browser/prototype/out/pair/clover-core-s7\n\t\tdaemon\n\t\t--home=/var/folders/n6/hn37q6pj7sj_9dmqqc2113800000gn/T/clover-s7-pair-q5MuP1\n\t}\n\n\tstdout path = /var/folders/n6/hn37q6pj7sj_9dmqqc2113800000gn/T/clover-s7-pair-q5MuP1/logs/daemon.out.log\n\tstder"
+      }
+    },
+    {
+      "step": "a user starts the app → it starts the daemon",
+      "start": {
+        "ok": true,
+        "how": "open -n -g -a /Users/runner/work/clover/clover/spikes/s7-browser/prototype/node_modules/electron/dist/Electron.app --args /Users/runner/work/clover/clover/spikes/s7-browser/prototype/out/pair/app --home=/var/folders/n6/hn37q6pj7sj_9dmqqc2113800000gn/T/clover-s7-pair-q5MuP1",
+        "code": 0,
+        "out": ""
+      },
+      "bothUpMs": 902,
+      "startedBy": "user",
+      "appStartedTheDaemon": [
+        {
+          "ok": true,
+          "how": "launchctl kickstart gui/501/com.waifucave.clover.s7.core.54005726",
+          "out": ""
+        }
+      ],
+      "appEvents": [
+        "start",
+        "tray",
+        "start-daemon",
+        "connected"
+      ]
+    },
+    {
+      "step": "the daemon side's Quit stops both",
+      "bothDownMs": 307,
+      "restartedWithin8s": false
+    },
+    {
+      "step": "uninstall",
+      "results": [
+        {
+          "ok": true,
+          "how": "launchctl bootout gui/501/com.waifucave.clover.s7.core.54005726",
+          "code": 0,
+          "out": ""
+        }
+      ]
+    }
+  ],
+  "assertions": [
+    {
+      "name": "the login item starts the daemon, and the daemon the app",
+      "ok": true,
+      "detail": "{\"daemonUpMs\":124,\"appConnectedMs\":4313}"
+    },
+    {
+      "name": "a second daemon is refused and exits 0",
+      "ok": true,
+      "detail": "{\"exitCode\":0,\"firstStillServing\":true}"
+    },
+    {
+      "name": "a crashed app is back within 6 s",
+      "ok": true,
+      "detail": "{\"restartedMs\":1741}"
+    },
+    {
+      "name": "the start after the third crash in two minutes is in safe mode",
+      "ok": true,
+      "detail": "{\"rounds\":[{\"killed\":1431,\"restartedMs\":2614,\"safeMode\":false,\"crashesInDaemon\":2},{\"killed\":1440,\"restartedMs\":4680,\"safeMode\":true,\"crashesInDaemon\":3}]}"
+    },
+    {
+      "name": "a crashed daemon is back within 5 s without the app's help",
+      "ok": true,
+      "detail": "{\"daemonBackMs\":422}"
+    },
+    {
+      "name": "a crashed daemon is back within 10 s, and the app lives on",
+      "ok": true,
+      "detail": "{\"daemonBackMs\":1210,\"samePid\":true}"
+    },
+    {
+      "name": "the tray's Quit stops both, and nothing restarts them",
+      "ok": true,
+      "detail": "{\"bothDownMs\":367,\"restarted\":false}"
+    },
+    {
+      "name": "a user's start of the app brings up both within 10 s",
+      "ok": true,
+      "detail": "{\"bothUpMs\":902}"
+    },
+    {
+      "name": "the daemon side's Quit stops both, and nothing restarts them",
+      "ok": true,
+      "detail": "{\"bothDownMs\":307,\"restarted\":false}"
+    }
+  ],
+  "daemonLog": [
+    "2026-11-05T06:12:44.203Z [core 1361] up (lock: flock, ppid 1)",
+    "2026-11-05T06:12:44.208Z [core 1361] listening on /var/folders/n6/hn37q6pj7sj_9dmqqc2113800000gn/T/clover-s7-pair-q5MuP1/run/core.sock",
+    "2026-11-05T06:12:46.882Z [core 1361] started the app (daemon start): open -n -g -a /Users/runner/work/clover/clover/spikes/s7-browser/prototype/node_modules/electron/dist/Electron.app --args /Users/runner/work/clover/clover/spikes/s7-browser/prototype/out/pair/app --home=/var/folders/n6/hn37q6pj7sj_9dmqqc2113800000gn/T/clover-s7-pair-q5MuP1 → ok",
+    "2026-11-05T06:12:48.231Z [core 1361] app 1415 connected (started by daemon)",
+    "2026-11-05T06:12:48.728Z [core 1426] another daemon holds this home (flock: held by another process) and answers on its socket; exiting",
+    "2026-11-05T06:12:48.867Z [core 1361] app 1415 went away without saying so: restart in 1000 ms",
+    "2026-11-05T06:12:49.956Z [core 1361] started the app (crash): open -n -g -a /Users/runner/work/clover/clover/spikes/s7-browser/prototype/node_modules/electron/dist/Electron.app --args /Users/runner/work/clover/clover/spikes/s7-browser/prototype/out/pair/app --home=/var/folders/n6/hn37q6pj7sj_9dmqqc2113800000gn/T/clover-s7-pair-q5MuP1 → ok",
+    "2026-11-05T06:12:50.570Z [core 1361] app 1431 connected (started by daemon)",
+    "2026-11-05T06:12:50.653Z [core 1361] app 1431 went away without saying so: restart in 2000 ms",
+    "2026-11-05T06:12:52.739Z [core 1361] started the app (crash): open -n -g -a /Users/runner/work/clover/clover/spikes/s7-browser/prototype/node_modules/electron/dist/Electron.app --args /Users/runner/work/clover/clover/spikes/s7-browser/prototype/out/pair/app --home=/var/folders/n6/hn37q6pj7sj_9dmqqc2113800000gn/T/clover-s7-pair-q5MuP1 → ok",
+    "2026-11-05T06:12:53.207Z [core 1361] app 1440 connected (started by daemon)",
+    "2026-11-05T06:12:53.309Z [core 1361] app 1440 went away without saying so: restart in 4000 ms in safe mode",
+    "2026-11-05T06:12:57.421Z [core 1361] started the app (crash, safe mode): open -n -g -a /Users/runner/work/clover/clover/spikes/s7-browser/prototype/node_modules/electron/dist/Electron.app --args /Users/runner/work/clover/clover/spikes/s7-browser/prototype/out/pair/app --home=/var/folders/n6/hn37q6pj7sj_9dmqqc2113800000gn/T/clover-s7-pair-q5MuP1 → ok",
+    "2026-11-05T06:12:57.935Z [core 1361] app 1509 connected (started by daemon, safe mode)",
+    "2026-11-05T06:12:58.262Z [core 1513] up (lock: flock, ppid 1)",
+    "2026-11-05T06:12:58.268Z [core 1513] listening on /var/folders/n6/hn37q6pj7sj_9dmqqc2113800000gn/T/clover-s7-pair-q5MuP1/run/core.sock",
+    "2026-11-05T06:12:58.513Z [core 1513] app 1509 connected (started by daemon, safe mode)",
+    "2026-11-05T06:12:59.665Z [core 1516] up (lock: flock, ppid 1)",
+    "2026-11-05T06:12:59.677Z [core 1516] listening on /var/folders/n6/hn37q6pj7sj_9dmqqc2113800000gn/T/clover-s7-pair-q5MuP1/run/core.sock",
+    "2026-11-05T06:13:00.099Z [core 1516] app 1509 connected (started by daemon, safe mode)",
+    "2026-11-05T06:13:00.147Z [core 1516] exiting 0: the app's Quit (tray)",
+    "2026-11-05T06:13:13.440Z [core 1685] up (lock: flock, ppid 1)",
+    "2026-11-05T06:13:13.451Z [core 1685] listening on /var/folders/n6/hn37q6pj7sj_9dmqqc2113800000gn/T/clover-s7-pair-q5MuP1/run/core.sock",
+    "2026-11-05T06:13:13.477Z [core 1685] app 1642 connected (started by user)",
+    "2026-11-05T06:13:13.554Z [core 1685] exiting 0: the daemon side's Quit",
+    ""
+  ]
+}
