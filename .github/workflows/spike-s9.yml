@@ -3,8 +3,6 @@ on:
   push:
     branches: [main, lane/e-m0, lane/e-m1]
     paths: ['spikes/s9-layers/**', '.github/workflows/spike-s9.yml']
-  pull_request:
-    paths: ['spikes/s9-layers/**', '.github/workflows/spike-s9.yml']
   workflow_dispatch:
 permissions:
   contents: read

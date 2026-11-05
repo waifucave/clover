@@ -50,7 +50,7 @@ async function makeWindow(/** @type {any} */ body, /** @type {any} */ options = 
       const fetchCode = `fetch(${JSON.stringify(options.denied + '/worker-fetch')}).then(()=>postMessage('sent')).catch(()=>postMessage('blocked'));`;
       content = url.pathname === '/sw.js' ? `self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(fetch(${JSON.stringify(options.denied + '/service-worker-fetch')}).catch(()=>{}))});self.addEventListener('activate',e=>e.waitUntil(clients.claim()));` : url.pathname === '/shared.js' ? `onconnect=e=>{fetch(${JSON.stringify(options.denied + '/shared-worker-fetch')}).then(()=>e.ports[0].postMessage('sent')).catch(()=>e.ports[0].postMessage('blocked'))}` : fetchCode;
     }
-    return new Response(content, {headers:{'Content-Type':mime,'Content-Security-Policy': core ? "default-src 'self' clover-plugin:; script-src 'unsafe-inline'; style-src 'unsafe-inline'; frame-ancestors 'none'" : csp(local?[local]:[], options.csp !== false,url.host==='p1'?["'self'",'clover-plugin://p2','clover-plugin://p1--child']:["'self'"])+"; frame-ancestors clover-core://shell clover-plugin://p1", 'X-DNS-Prefetch-Control': 'off', 'Permissions-Policy': 'camera=(), microphone=(), geolocation=()' }});
+    return new Response(content, {headers:{'Content-Type':mime,'Content-Security-Policy': core ? "default-src 'self'; frame-src clover-plugin://p1 clover-plugin://p2 clover-plugin://p3 clover-plugin://p4 clover-plugin://p5 clover-plugin://p6 clover-plugin://p7 clover-plugin://p8 clover-plugin://p9 clover-plugin://p10 clover-plugin://p11 clover-plugin://p12 clover-plugin://p13 clover-plugin://p14 clover-plugin://p15 clover-plugin://p16 clover-plugin://p17 clover-plugin://p18 clover-plugin://p19 clover-plugin://p20; script-src 'unsafe-inline'; style-src 'unsafe-inline'; frame-ancestors 'none'" : csp(local?[local]:[], options.csp !== false,url.host==='p1'?["'self'",'clover-plugin://p2','clover-plugin://p1--child']:["'self'"])+"; frame-ancestors clover-core://shell clover-plugin://p1", 'X-DNS-Prefetch-Control': 'off', 'Permissions-Policy': 'camera=(), microphone=(), geolocation=()' }});
   };
   ses.protocol.handle('clover-plugin',serve);ses.protocol.handle('clover-core',serve);ses.protocol.handle('clover-sealed',()=>new Response('forbidden',{status:403}));
   ses.webRequest.onBeforeRequest((details, callback) => {
@@ -69,13 +69,22 @@ async function makeWindow(/** @type {any} */ body, /** @type {any} */ options = 
 function shell(/** @type {any} */ n) { return `<style>body{margin:0}iframe{width:180px;height:180px;border:0}#overlay{position:absolute;left:80px;top:5px;width:250px;height:40px;background:#00ff00}</style><button id="start">Host</button><br>${Array.from({length:n},(_,i)=>`<iframe src="clover-plugin://p${i+1}/"></iframe>`).join('')}`; }
 function frames(/** @type {any} */ win) {return win.webContents.mainFrame.framesInSubtree.map((/** @type {any} */ f)=> ({url:f.url,processId:f.processId,osProcessId:f.osProcessId,routingId:f.routingId}));}
 async function processCheck() {
-  const {win} = await makeWindow(shell(3));
+  const {win,ses} = await makeWindow(shell(3));
   const listing = frames(win), metrics = app.getAppMetrics();
   const groups = new Map();
   for(const f of listing) {const origin = new URL(f.url).host; if (!groups.has(origin)) groups.set(origin, new Set()); groups.get(origin).add(f.osProcessId);}
   const pids = [...groups.values()].map(p => [...p]);
   const isolated = pids.every(p=>p.length === 1) && new Set(pids.flat()).size === groups.size;
-  return { verdict:isolated?'works':'does not', isolated, frames:listing, metrics, sameOriginP2Frames: listing.filter((/** @type {any} */ f)=>new URL(f.url).host==='p2').length, nodeExposure:await Promise.all(win.webContents.mainFrame.framesInSubtree.map(async f=>({url:f.url,require:await f.executeJavaScript('typeof require')}))) };
+  const separate=new BrowserWindow({show:false,webPreferences:{session:ses,sandbox:true,contextIsolation:true,nodeIntegration:false}});windows.push(separate);await separate.loadURL('clover-core://shell/');await pause(350);
+  const separateFrames=frames(separate);
+  win.webContents.setWindowOpenHandler(()=>({action:'allow',overrideBrowserWindowOptions:{show:false}}));
+  /** @type {import('electron').BrowserWindow|null} */ let related=null;
+  win.webContents.once('did-create-window',child=>{related=child;windows.push(child)});
+  await win.webContents.executeJavaScript("window.open('clover-core://shell/','clover-related-island')");await pause(700);
+  const relatedFrames=related?frames(related):[];
+  const multiwindow={independent:separateFrames,related:relatedFrames,original:listing};
+
+  return {multiwindow, verdict:isolated?'works':'does not', isolated, frames:listing, metrics, sameOriginP2Frames: listing.filter((/** @type {any} */ f)=>new URL(f.url).host==='p2').length, nodeExposure:await Promise.all(win.webContents.mainFrame.framesInSubtree.map(async f=>({url:f.url,require:await f.executeJavaScript('typeof require')}))) };
 }
 async function memoryCheck() {
   const {win} = await makeWindow(shell(count));

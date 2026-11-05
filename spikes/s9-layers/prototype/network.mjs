@@ -102,7 +102,8 @@ export async function networkCheck(electron){
   await pause(250);
   const frame=mode==='non-plugin'?win.webContents.mainFrame:win.webContents.mainFrame.frames.find((/** @type {any} */ x)=>x.url===p1url);
   const invoke=(/** @type {any} */ fr,/** @type {any} */ ep,/** @type {any} */ full)=>fr.executeJavaScript(`(${networkProbe.toString()})(${JSON.stringify(ep)},${full})`);
-  const main=await invoke(frame,f.endpoints,mode!=='non-plugin');
+  const main=await Promise.race([invoke(frame,f.endpoints,mode!=='non-plugin'),pause(16000).then(()=>({error:'document probe deadline'}))]);
+  /** @type {any[]} */ const trustAttempts=[];
   let second=null;
   if(mode!=='non-plugin'){
    const p2=win.webContents.mainFrame.frames.find((/** @type {any} */ x)=>x.url===p2url);
@@ -111,23 +112,23 @@ export async function networkCheck(electron){
    for(const kind of ['nested','srcdoc','opaque-srcdoc','about-blank']){
     const cf=await fixtures(`${mode}-${kind}`);contexts.push({kind,fixture:cf,result:null});
     await frame.executeJavaScript(`(()=>{const f=document.createElement('iframe');f.name=${JSON.stringify(kind)};${kind==='nested'?`f.src=${JSON.stringify(nestedurl)}`:kind==='about-blank'?`f.src='about:blank'`:`f.srcdoc='<input>';${kind==='opaque-srcdoc'?"f.sandbox='allow-scripts'":''}`}document.body.append(f)})()`);
-    await pause(180);const child=frame.frames.find((/** @type {any} */ x)=>x.name===kind);contexts[contexts.length-1].result=await invoke(child,cf.endpoints,false);
+    await pause(180);const child=frame.frames.find((/** @type {any} */ x)=>x.name===kind);contexts[contexts.length-1].result=await Promise.race([invoke(child,cf.endpoints,false),pause(6000).then(()=>({error:'inherited probe deadline'}))]);
    }
    const wf=await fixtures(`${mode}-worker`);contexts.push({kind:'worker',fixture:wf,result:null});
    // A separate worker script response receives the same header and CSP.
    // Pass endpoints in the message so this context has its own names and ports.
    // Replace handler above's endpoint-only script using a data parameter in worker message.
-   contexts[contexts.length-1].result=await frame.executeJavaScript(`new Promise(resolve=>{const w=new Worker('/context-worker.js');w.onmessage=e=>{w.terminate();resolve(e.data)};w.onerror=e=>resolve({error:e.message});w.postMessage(${JSON.stringify(wf.endpoints)})})`);
+   contexts[contexts.length-1].result=await frame.executeJavaScript(`new Promise(resolve=>{const w=new Worker('/context-worker.js');w.onmessage=e=>{w.terminate();resolve(e.data)};w.onerror=e=>resolve({error:e.message});w.postMessage(${JSON.stringify(wf.endpoints)});setTimeout(()=>{w.terminate();resolve({error:'worker deadline'})},6000)})`);
    const attempts=[];
-   for(const target of ['clover-plugin://p2/','clover-core://shell/','clover-sealed://cards/']){
-    attempts.push(await frame.executeJavaScript(`new Promise(resolve=>{const f=document.createElement('iframe');f.src=${JSON.stringify(target)};f.onload=()=>resolve({target:${JSON.stringify(target)},loaded:true});f.onerror=()=>resolve({target:${JSON.stringify(target)},error:true});document.body.append(f);setTimeout(()=>resolve({target:${JSON.stringify(target)},settled:true}),150)})`));
+   for(const target of ['clover-plugin://p2/',p2url,'clover-core://shell/',`clover-core://shell/?mount=${rootToken}`,'clover-sealed://cards/']){
+    trustAttempts.push(await frame.executeJavaScript(`new Promise(resolve=>{const f=document.createElement('iframe');f.src=${JSON.stringify(target)};f.onload=()=>resolve({target:${JSON.stringify(target)},loaded:true});f.onerror=()=>resolve({target:${JSON.stringify(target)},error:true});document.body.append(f);setTimeout(()=>resolve({target:${JSON.stringify(target)},settled:true}),150)})`));
    }
    await frame.executeJavaScript(`(()=>{try{top.location=${JSON.stringify(f.endpoints['top-location'].url)}}catch(e){window.topError=String(e)}})()`);
   }
   await pause(350);await ses.netLog.stopLogging();
   const log=extractNetlog(JSON.parse(readFileSync(logPath,'utf8')));
   const inherited=contexts.map(c=>({kind:c.kind,result:c.result,records:c.fixture.records}));
-  variants.push({mode,header:header?'Connection-Allowlist on documents and worker scripts':null,ipPolicy:win.webContents.getWebRTCIPHandlingPolicy(),main,second,records:f.records,requests,preconnect,popups,navigations,downloads,mountAttempts,contexts:inherited,netlog:log});
+  variants.push({mode,header:header?'Connection-Allowlist on documents and worker scripts':null,ipPolicy:win.webContents.getWebRTCIPHandlingPolicy(),main,second,records:f.records,requests,preconnect,popups,navigations,downloads,mountAttempts,trustAttempts,contexts:inherited,netlog:log});
   win.destroy();f.close();contexts.forEach(c=>c.fixture.close());
  }
  const a=variants.find(v=>v.mode==='allowlist'),control=variants.find(v=>v.mode==='combined'),non=variants.find(v=>v.mode==='non-plugin');
