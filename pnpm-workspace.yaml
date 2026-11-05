@@ -3,6 +3,7 @@ packages:
   - "apps/*"
   - "plugins/*"
   - "plugins/*/*"
+  - "plugins/*/*/gallery"
   - "services/*"
   - "native/*"
   - "spikes/*"
