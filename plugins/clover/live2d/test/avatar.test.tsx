@@ -21,6 +21,8 @@ function fakeView() {
   const log: string[] = [];
   const params = new Map<string, number>();
   const effects = new Map<string, boolean>();
+  type Mix = "add" | "replace" | "max" | ((live: number, current: number, id: string) => number);
+  const live: { source: { next(dt: number): number } | null; mix?: Mix } = { source: null };
   let options: unknown;
   let loaded: string[] = [];
   const create: ViewFactory = (_canvas, o) => {
@@ -32,6 +34,13 @@ function fakeView() {
         return {
           setParameter: (id, v) => (params.set(id, v), true),
           setEffect: (name, on) => void effects.set(name, on),
+          runtime: {
+            setLiveLipSync: (source, mix) => {
+              live.source = source;
+              live.mix = mix;
+              return true;
+            },
+          },
         };
       },
       advance: (s) => void log.push(`advance ${s.toFixed(3)}`),
@@ -40,7 +49,12 @@ function fakeView() {
     };
     return view;
   };
-  return { create, log, params, effects, options: () => options, loaded: () => loaded };
+  /** What Mochi2D would write to a lip-sync parameter this frame, whatever a motion left in it. */
+  const lipSync = (id: string, fromMotion = 0.9) => {
+    const value = live.source?.next(1 / 60) ?? 0;
+    return typeof live.mix === "function" ? live.mix(value, fromMotion, id) : value;
+  };
+  return { create, log, params, effects, live, lipSync, options: () => options, loaded: () => loaded };
 }
 
 function manualFrames() {
@@ -79,8 +93,10 @@ describe("Live2dAvatar", () => {
     expect(VIEW_OPTIONS).toMatchObject({ autoStart: false, look: "off", zoom: false, pan: false, textureBudget: 256, background: "transparent" });
     expect(v.effects.get("look")).toBe(false);
     expect(v.effects.get("breath")).toBe(true);
-    // The first picture, mouth shut.
-    expect(v.params.get("ParamMouthOpenY")).toBe(0);
+    // The first picture, mouth shut, whatever a motion would open it to: the mouth goes through the live input.
+    expect(v.live.source).not.toBeNull();
+    expect(v.lipSync("ParamMouthOpenY", 0.9)).toBe(0);
+    expect(v.params.has("ParamMouthOpenY")).toBe(false);
     expect(v.log).toContain("advance 0.000");
   });
 
@@ -117,7 +133,7 @@ describe("Live2dAvatar", () => {
       f.step(1000 / 60);
     }
     expect(draws() - speaking).toBeGreaterThanOrEqual(28);
-    expect(v.params.get("ParamMouthOpenY")!).toBeGreaterThan(0.5);
+    expect(v.lipSync("ParamMouthOpenY", 0)).toBeGreaterThan(0.5);
     // Bright: wide, less the rounding `ou` always carries.
     expect(v.params.get("ParamMouthForm")!).toBeGreaterThan(0.7);
   });
@@ -131,11 +147,12 @@ describe("Live2dAvatar", () => {
     view.rerender(<Live2dAvatar src={`${URL_BASE}alpha.model3.json`} name="Alpha" fetcher={serve} createView={v.create} frames={f.frames} still={{ visemes: { aa: 0.7 }, blink: 1 }} />);
     await settle();
     expect(v.params.get("ParamEyeLOpen")).toBe(0);
-    expect(v.params.get("ParamMouthOpenY")).toBeCloseTo(0.7);
+    expect(v.lipSync("ParamMouthOpenY")).toBeCloseTo(0.7);
     expect(v.effects.get("eyeBlink")).toBe(false);
     expect(v.effects.get("breath")).toBe(false);
     view.unmount();
     expect(v.log.at(-1)).toBe("dispose");
+    expect(v.live.source).toBeNull();
   });
 
   test("with reduced motion it neither breathes nor idles", async () => {
@@ -155,7 +172,7 @@ describe("no microphone, no sound of its own", () => {
       .filter((f) => /\.(ts|tsx)$/.test(String(f)))
       .map((f) => readFileSync(join(dir, String(f)), "utf8"))
       .join("\n");
-    for (const call of ["startLiveLipSync", "startMotionSync", "setMotionSyncInput", ".speak(", "getUserMedia", "AudioContext"]) expect(sources).not.toContain(call);
+    for (const call of ["startLiveLipSync", "startMotionSync", "setMotionSyncInput", "recordAudio", "playMotionSound", ".speak(", "getUserMedia", "AudioContext"]) expect(sources).not.toContain(call);
   });
 
   test("Mochi2D never opens an archive: Clover extracts it with its own caps (R5)", () => {

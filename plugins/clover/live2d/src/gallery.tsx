@@ -1,4 +1,4 @@
-// The Live2D avatar in every state, for lane G's gallery (rendered to PNGs in CI with software WebGL, never on a desk):
+// The 2D model avatar (the Live2D Cubism format) in every state, for lane G's gallery (rendered to PNGs in CI with software WebGL, never on a desk):
 // Alpha's code-made placeholder drawn by Mochi2D at rest, with each mouth shape, blinking and speaking a synthetic
 // phrase as the speech feed reads it, then loading and refused. Every frame is a still, the same on every run.
 
@@ -6,6 +6,7 @@ import type { ReactElement, ReactNode } from "react";
 import { ALPHA_PORTRAIT, Stage, phraseFrames } from "@waifucave/clover-plugin-vrm/gallery";
 import type { VisemeWeights } from "@waifucave/clover-plugin-vrm/lipsync";
 import { Live2dAvatar, type AvatarStill } from "./ui/Live2dAvatar";
+import { archiveBombCheck, bombCheckProblems } from "./bomb";
 
 export interface Live2dStory {
   id: string;
@@ -20,13 +21,13 @@ export interface Live2dStory {
 /** Where the gallery serves Alpha's Live2D placeholder (the same path it has in the repo). */
 export const ALPHA_LIVE2D = "plugins/alpha/assets/live2d/alpha.model3.json";
 
-/** Resolves once every Live2D avatar in the frame has drawn (or failed), and one more frame has passed. */
+/** Resolves once every 2D model avatar in the frame has drawn (or failed), and one more frame has passed. */
 export async function live2dSettled(timeoutMs = 25_000): Promise<void> {
   const started = performance.now();
   for (;;) {
     const figures = [...document.querySelectorAll(".clvl-avatar")];
     if (figures.length > 0 && figures.every((f) => f.getAttribute("data-state") !== "loading")) break;
-    if (performance.now() - started > timeoutMs) throw new Error("a Live2D avatar never finished loading");
+    if (performance.now() - started > timeoutMs) throw new Error("a 2D model avatar never finished loading");
     await new Promise((resolve) => setTimeout(resolve, 50));
   }
   await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
@@ -36,7 +37,7 @@ export async function live2dSettled(timeoutMs = 25_000): Promise<void> {
 async function drawn(): Promise<void> {
   await live2dSettled();
   const failed = [...document.querySelectorAll('.clvl-avatar[data-state="error"]')];
-  if (failed.length > 0) throw new Error(`a Live2D avatar was refused: ${failed[0]!.textContent ?? ""}`);
+  if (failed.length > 0) throw new Error(`a 2D model avatar was refused: ${failed[0]!.textContent ?? ""}`);
 }
 
 function Avatar({ still }: { still: AvatarStill }): ReactElement {
@@ -78,10 +79,27 @@ async function oversizedTexture(url: string): Promise<Response> {
   return new Response(bytes);
 }
 
+/** The archive-bomb check in the gallery's own Chromium (the engine the app's layers run): the numbers on the page, and
+ *  the story fails when the cap tripped too late. */
+async function bombInChromium(): Promise<void> {
+  const check = await archiveBombCheck();
+  const el = document.querySelector("[data-bomb]");
+  const kib = (n: number) => `${(n / 1024).toFixed(0)} KiB`;
+  if (el) {
+    el.textContent = [
+      `A deflate stream of ${kib(check.compressed)} that inflates to ${kib(check.inflatesTo)}, against a ${kib(check.cap)} cap:`,
+      check.refused ? `refused after ${kib(check.writtenBeforeRefusal)} of it was pushed, in ${check.ms} ms` : `not refused (${check.detail})`,
+      `largest push: ${check.largestWrite} bytes; engine: ${navigator.userAgent.match(/(HeadlessChrome|Chrome)\/[\d.]+/)?.[0] ?? navigator.userAgent}`,
+    ].join("\n");
+  }
+  const problems = bombCheckProblems(check);
+  if (problems.length > 0) throw new Error(`the archive cap tripped too late in this engine: ${problems.join("; ")}`);
+}
+
 export const LIVE2D_STORIES: Live2dStory[] = [
   {
     id: "live2d/alpha-placeholder",
-    title: "Alpha as Live2D (decision 87): the code-made placeholder, drawn by Mochi2D on the base stage",
+    title: "Alpha as a 2D model (decision 87; the Live2D Cubism format): the code-made placeholder, drawn by Mochi2D on the base stage",
     width: 400,
     height: 480,
     theme: "base-light",
@@ -153,6 +171,19 @@ export const LIVE2D_STORIES: Live2dStory[] = [
         <Live2dAvatar src="never.model3.json" name="Alpha" portrait={ALPHA_PORTRAIT} fetcher={() => new Promise(() => {})} />
       </Stage>
     ),
+  },
+  {
+    id: "live2d/archive-bomb",
+    title: "An archive bomb in Chromium: the 2D model's archive is inflated 1 KiB at a time and cut off at its cap (R5)",
+    width: 560,
+    height: 120,
+    theme: "base-light",
+    render: () => (
+      <pre data-bomb="" style={{ margin: 0, boxSizing: "border-box", width: "100%", height: "100%", padding: 16, whiteSpace: "pre-wrap", font: "12px ui-monospace, Menlo, monospace", color: "var(--clover-color-text, #1F1F1F)", background: "var(--clover-color-surface, #FFFFFF)" }}>
+        Checking…
+      </pre>
+    ),
+    ready: bombInChromium,
   },
   {
     id: "live2d/refused",

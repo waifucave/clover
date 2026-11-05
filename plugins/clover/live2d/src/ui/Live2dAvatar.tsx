@@ -13,7 +13,7 @@ import { LipSync, SHUT, SpeechRing, frameSource, type SpeechFeed, type VisemeWei
 import { mouthPlan, type MouthPlan } from "../mouth";
 import { urlSource, zipSource, readCapped } from "../sources";
 import { t } from "../strings";
-import { LIVE2D_BUDGETS, Live2dRefusal, validateLive2d, type Live2dModel } from "../validate";
+import { LIVE2D_BUDGETS, Live2dRefusal, insideFolder, validateLive2d, type Live2dModel } from "../validate";
 import { useLive2dStyles } from "./styles";
 
 export interface AvatarFrames {
@@ -41,6 +41,8 @@ export interface Live2dView {
 export interface Live2dShownModel {
   setParameter(id: string, value: number): boolean;
   setEffect(name: string, on: boolean): void;
+  /** Mochi2D's runtime: the live lip-sync input, which motions and expressions can't override with `replace`. */
+  runtime: { setLiveLipSync(source: { next(dt: number): number } | null, mix?: "add" | "replace" | "max" | ((live: number, current: number, id: string) => number)): boolean };
 }
 
 export type ViewFactory = (canvas: HTMLCanvasElement, options: ViewOptions) => Live2dView;
@@ -109,10 +111,10 @@ function describe(error: unknown): { message: string; detail: string } {
 function motionSyncOf(model: Live2dModel): MotionSyncSetting | null {
   const path = model.settings.motionSync;
   if (!path) return null;
-  const folder = model.settingsPath.split("/").slice(0, -1);
-  const full = [...folder, path].join("/");
-  const bytes = model.files.get(full);
-  if (!bytes) return null;
+  // Resolved as the check resolved it, so `a/../b.motionsync3.json` finds the file the check read.
+  const full = insideFolder(model.settingsPath, path);
+  const bytes = full ? model.files.get(full) : undefined;
+  if (!full || !bytes) return null;
   try {
     const file = parseMotionSync(bytes, full);
     return file.settings.find((s) => s.usable) ?? null;
@@ -129,6 +131,8 @@ export function Live2dAvatar(props: Live2dAvatarProps): ReactElement {
   const view = useRef<Live2dView | null>(null);
   const shown = useRef<Live2dShownModel | null>(null);
   const plan = useRef<MouthPlan | null>(null);
+  /** The mouth's values this frame, by parameter: what the live lip-sync input writes over motions and expressions. */
+  const mouth = useRef<{ open: number; values: Map<string, number> }>({ open: 0, values: new Map() });
   const [status, setStatus] = useState<Status>({ state: "loading" });
   const [visible, setVisible] = useState(true);
   const latest = useRef(props);
@@ -176,6 +180,10 @@ export function Live2dAvatar(props: Live2dAvatarProps): ReactElement {
       shown.current = m;
       const lipSyncIds = model.settings.groups.find((g) => g.target === "Parameter" && g.name === "LipSync")?.ids ?? [];
       plan.current = mouthPlan(model.parameterIds, lipSyncIds, motionSyncOf(model));
+      // The lip-sync parameters take the speech through Mochi2D's live input, mixed by `replace` per parameter: a motion
+      // or an expression that moves the mouth never overrides what the bot is saying. The other mouth parameters (the
+      // form, a motion-sync setting's own) are set as base values.
+      m.runtime.setLiveLipSync({ next: () => mouth.current.open }, (live, _current, id) => mouth.current.values.get(id) ?? live);
       setStatus({ state: "ready", model });
       latest.current.onReady?.(model);
     })().catch((error: unknown) => {
@@ -186,6 +194,7 @@ export function Live2dAvatar(props: Live2dAvatarProps): ReactElement {
     });
     return () => {
       cancelled = true;
+      shown.current?.runtime.setLiveLipSync(null);
       view.current?.dispose();
       view.current = null;
       shown.current = null;
@@ -230,7 +239,13 @@ export function Live2dAvatar(props: Live2dAvatarProps): ReactElement {
     const m = shown.current;
     const p = plan.current;
     if (!m || !p || !view.current) return;
-    for (const [id, value] of p.values(weights)) m.setParameter(id, value);
+    const values = p.values(weights);
+    const live = new Map<string, number>();
+    for (const [id, value] of values) {
+      if (p.lipSync.has(id)) live.set(id, value);
+      else m.setParameter(id, value);
+    }
+    mouth.current = { open: Math.max(0, ...live.values()), values: live };
     view.current.advance(dt);
   };
 

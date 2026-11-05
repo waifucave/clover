@@ -8,6 +8,7 @@ import { PLACEHOLDER_DIR } from "../scripts/make-placeholder";
 import { insideFolder, LIVE2D_BUDGETS, Live2dRefusal, pngSize, validateLive2d } from "../src/validate";
 import { memorySource, readCapped, urlSource, zipDeclared, zipSource } from "../src/sources";
 import { inflateCapped, openZip, settingsIn } from "../src/zip";
+import { archiveBombCheck, bombCheckProblems } from "../src/bomb";
 import { motionSyncValues, mouthPlan, openAndForm } from "../src/mouth";
 import { SHUT } from "@waifucave/clover-plugin-vrm/lipsync";
 
@@ -215,6 +216,14 @@ describe("the avatar check (the VRM renderer's caps, for Live2D)", () => {
     expect((await refusal(validateLive2d(memorySource(withFiles({ "alpha.model3.json": m, "idle.motion3.json": motion })), "alpha.model3.json"))).detail).toBe("5000 motion curves, over 4000");
   });
 
+  test("a motion's own Meta never wins: the larger of the points it declares and the values it holds", async () => {
+    const s = settings();
+    s.FileReferences.Motions = { Idle: [{ File: "liar.motion3.json" }, { File: "liar.motion3.json" }] };
+    const liar = { Version: 3, Meta: { Duration: 1, CurveCount: 1, TotalPointCount: 1 }, Curves: [{ Target: "Parameter", Id: "ParamMouthOpenY", Segments: new Array(40).fill(0) }] };
+    const r = await refusal(validateLive2d(memorySource(withFiles({ "alpha.model3.json": s, "liar.motion3.json": liar })), "alpha.model3.json", { ...LIVE2D_BUDGETS, motionPoints: 50 }));
+    expect(r.detail).toBe("80 motion points, over 50");
+  });
+
   test("a motion's sound is dropped and never read: the avatar plays no audio of its own", async () => {
     const s = settings();
     s.FileReferences.Motions = { Idle: [{ File: "idle.motion3.json", Sound: "hello.wav" }] };
@@ -254,6 +263,13 @@ describe("the avatar check (the VRM renderer's caps, for Live2D)", () => {
     // Under the cap, all of it; a capped stream never holds more than the cap.
     expect((await liar.read("big.bin", big.length)).length).toBe(big.length);
     expect((await refusal(inflateCapped(new Uint8Array(deflateRawSync(big)), 1000, "x"))).code).toBe("too-large");
+  });
+
+  test("an archive bomb is cut off a slice or two in: the compressed data goes in 1 KiB at a time (the review's blocker)", async () => {
+    const check = await archiveBombCheck();
+    expect(bombCheckProblems(check)).toEqual([]);
+    expect(check.compressed).toBeGreaterThan(16 * 1024);
+    expect(check.writtenBeforeRefusal).toBeLessThanOrEqual(8 * 1024);
   });
 
   test("an archive entry that fails its checksum, is encrypted, or uses another compression is refused", async () => {

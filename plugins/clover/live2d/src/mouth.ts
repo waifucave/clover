@@ -60,17 +60,21 @@ export interface MouthPlan {
   values(w: VisemeWeights): Map<string, number>;
   /** Every parameter it may write: set back to their defaults when the speech stops. */
   readonly parameters: readonly string[];
+  /** Those the model's lip sync drives (its `LipSync` group, else `ParamMouthOpenY`): written through the live input. */
+  readonly lipSync: ReadonlySet<string>;
 }
 
 export function mouthPlan(parameterIds: readonly string[], lipSyncIds: readonly string[], setting: MotionSyncSetting | null): MouthPlan {
   const has = new Set(parameterIds);
-  if (setting && setting.parameters.every((p) => has.has(p.id))) {
-    return { parameters: setting.parameters.map((p) => p.id), values: (w) => motionSyncValues(setting, w) };
-  }
   const open = (lipSyncIds.length > 0 ? lipSyncIds : [MOUTH_OPEN]).filter((id) => has.has(id));
+  const lipSync = new Set(open);
+  if (setting && setting.parameters.every((p) => has.has(p.id))) {
+    return { parameters: setting.parameters.map((p) => p.id), lipSync, values: (w) => motionSyncValues(setting, w) };
+  }
   const form = has.has(MOUTH_FORM) ? MOUTH_FORM : null;
   return {
     parameters: form ? [...open, form] : open,
+    lipSync,
     values: (w) => {
       const { open: o, form: f } = openAndForm(w);
       const values = new Map<string, number>(open.map((id) => [id, o]));

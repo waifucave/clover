@@ -15,7 +15,8 @@
   },
   "dependencies": {
     "@waifucave/clover-plugin-vrm": "workspace:*",
-    "@waifucave/mochi2d": "0.13.0"
+    "@waifucave/mochi2d": "0.13.0",
+    "fflate": "0.8.3"
   },
   "peerDependencies": {
     "react": "^19.3.0",

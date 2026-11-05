@@ -255,7 +255,10 @@ export async function validateLive2d(source: Live2dSource, settingsPath: string,
     const file = json(await read(ref(entry.file, `motion ${i}`), budgets.jsonBytes, `motion ${i}`), `motion ${i}`, "motion");
     const curves = Array.isArray(file.Curves) ? file.Curves.length : 0;
     motionCurves += Math.max(curves, count(meta(file).CurveCount));
-    motionPoints += count(meta(file).TotalPointCount) || (Array.isArray(file.Curves) ? file.Curves.reduce((s: number, c: { Segments?: unknown[] }) => s + (Array.isArray(c?.Segments) ? c.Segments.length : 0), 0) : 0);
+    // The file's own Meta never wins on its own: the larger of what it says and what it holds (the review's probe: a
+    // motion declaring 1 point while holding 1.5 million values).
+    const held = Array.isArray(file.Curves) ? file.Curves.reduce((s: number, c: { Segments?: unknown[] }) => s + (Array.isArray(c?.Segments) ? c.Segments.length : 0), 0) : 0;
+    motionPoints += Math.max(count(meta(file).TotalPointCount), held);
   }
   if (motionCurves > budgets.motionCurves) throw new Live2dRefusal("budget", `${motionCurves} motion curves, over ${budgets.motionCurves}`);
   if (motionPoints > budgets.motionPoints) throw new Live2dRefusal("budget", `${motionPoints} motion points, over ${budgets.motionPoints}`);

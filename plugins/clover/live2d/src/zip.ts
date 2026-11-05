@@ -1,6 +1,6 @@
 // A Live2D model's `.zip`, extracted by Clover itself (the controller's ruling R5): Mochi2D's archive reader has no size
-// cap, so it never sees the archive. Each entry is inflated as a stream and counted as it comes, and the moment the real
-// inflated bytes pass the file's cap (or what is left of the model's) the stream is cancelled; a size the archive
+// cap, so it never sees the archive. Each entry is inflated 1 KiB of compressed data at a time and counted as it comes,
+// and the first push whose real inflated bytes pass the file's cap (or what is left of the model's) is the last; a size the archive
 // declares is only an early refusal, never trusted. Every entry is checked against its CRC-32. Mochi2D gets the
 // extracted files, in memory, as it gets a folder's.
 //
@@ -8,7 +8,8 @@
 // UTF-8 when flagged or valid, else the first of Shift_JIS, GB18030, EUC-KR and Big5 that decodes every name (Live2D
 // models often come from tools that write a local code page), else Windows-1252.
 
-import { crc32 } from "./crc32";
+import { Inflate } from "fflate";
+import { CRC32_START, crc32, crc32Final, crc32Update } from "./crc32";
 import { Live2dRefusal } from "./validate";
 
 export interface ZipEntry {
@@ -102,38 +103,73 @@ export function zipEntries(bytes: Uint8Array, maxEntries = 4096): ZipEntry[] {
   return out;
 }
 
-/** Inflates `data`, never past `cap` real bytes: the stream is cancelled the moment it passes. */
-export async function inflateCapped(data: Uint8Array, cap: number, what: string): Promise<Uint8Array> {
-  const stream = new DecompressionStream("deflate-raw");
-  const writer = stream.writable.getWriter();
-  // Not awaited before reading: the stream hands its output back as it goes.
-  writer.write(data as Uint8Array<ArrayBuffer>).catch(() => {});
-  writer.close().catch(() => {});
-  const reader = stream.readable.getReader();
+/** Compressed bytes per push: deflate inflates at most about 1032 times, so one push yields at most about 1 MiB. */
+export const INFLATE_SLICE = 1024;
+/** Pushes between turns of the event loop, so a long entry never holds the page. */
+const PUSHES_PER_TURN = 64;
+
+export interface Inflated {
+  bytes: Uint8Array;
+  /** The CRC-32 of `bytes`, worked out chunk by chunk as they came. */
+  crc: number;
+}
+
+const nextTurn = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
+
+/**
+ * Inflates `data`, never past `cap` real bytes, the same way in every engine. A platform `DecompressionStream` can't
+ * do this: Chromium inflates a written chunk whole before its reader sees any of it (the review's probe: 1 GiB from a
+ * 1 MiB archive cost 1.6 GiB of renderer memory before a cap could trip), and Bun queues every slice's output however
+ * the writes are paced. So fflate's streaming inflater takes the compressed bytes `slice` at a time, synchronously:
+ * each push hands back what it inflated, counted at once, and the first push that passes the cap is the last. At most
+ * one slice's output (about 1 MiB) lies past the cap. The CRC-32 is kept as the chunks arrive.
+ */
+export async function inflateCapped(data: Uint8Array, cap: number, what: string, options: { slice?: number; onPush?: (bytes: number) => void } = {}): Promise<Inflated> {
+  const slice = Math.max(1, options.slice ?? INFLATE_SLICE);
   const chunks: Uint8Array[] = [];
   let total = 0;
-  try {
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      total += value.byteLength;
-      if (total > cap) {
-        await reader.cancel().catch(() => {});
-        throw new Live2dRefusal("too-large", `${what} inflates past ${cap} bytes`);
-      }
-      chunks.push(value);
+  let crc = CRC32_START;
+  let over = false;
+  let ended = false;
+  const inflater = new Inflate((chunk, final) => {
+    if (final) ended = true;
+    if (over || chunk.length === 0) return;
+    total += chunk.length;
+    if (total > cap) {
+      over = true;
+      return;
     }
-  } catch (error) {
-    if (error instanceof Live2dRefusal) throw error;
-    throw damaged(`${what} does not inflate`);
+    const copy = chunk.slice();
+    crc = crc32Update(crc, copy);
+    chunks.push(copy);
+  });
+  let pushes = 0;
+  for (let at = 0; at < data.length; at += slice) {
+    const piece = data.subarray(at, Math.min(data.length, at + slice));
+    options.onPush?.(piece.length);
+    try {
+      inflater.push(piece, at + slice >= data.length);
+    } catch {
+      throw damaged(`${what} does not inflate`);
+    }
+    if (over) throw new Live2dRefusal("too-large", `${what} inflates past ${cap} bytes`);
+    if (++pushes % PUSHES_PER_TURN === 0) await nextTurn();
   }
+  if (data.length === 0) {
+    try {
+      inflater.push(new Uint8Array(0), true);
+    } catch {
+      throw damaged(`${what} does not inflate`);
+    }
+  }
+  if (!ended) throw damaged(`${what} ends early`);
   const out = new Uint8Array(total);
   let at = 0;
   for (const chunk of chunks) {
     out.set(chunk, at);
     at += chunk.byteLength;
   }
-  return out;
+  return { bytes: out, crc: crc32Final(crc) };
 }
 
 export interface ZipArchive {
@@ -160,14 +196,15 @@ export function openZip(bytes: Uint8Array, maxEntries?: number): ZipArchive {
       const start = local + 30 + view.getUint16(local + 26, true) + view.getUint16(local + 28, true);
       if (start + e.compressedSize > bytes.length) throw damaged(`${name} lies past the archive's end`);
       const data = bytes.subarray(start, start + e.compressedSize);
-      let out: Uint8Array;
+      let out: Inflated;
       if (e.method === 0) {
         if (data.byteLength > cap) throw new Live2dRefusal("too-large", `${name} is over ${cap} bytes`);
-        out = data.slice();
+        const bytes = data.slice();
+        out = { bytes, crc: crc32(bytes) };
       } else if (e.method === 8) out = await inflateCapped(data, cap, name);
       else throw damaged(`${name} uses a compression this app does not read (${e.method})`);
-      if (crc32(out) !== e.crc) throw damaged(`${name} fails its checksum`);
-      return out;
+      if (out.crc !== e.crc) throw damaged(`${name} fails its checksum`);
+      return out.bytes;
     },
   };
 }
