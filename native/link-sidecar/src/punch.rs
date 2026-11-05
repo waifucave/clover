@@ -153,6 +153,9 @@ async fn attempt(a: &Args, kind: Kind, name: &str, strategy: &str) -> Result<Val
     });
 
     let first = tokio::time::timeout(timeout, rx.recv()).await;
+    // Time it before joining the punch thread, which may still be in its 100 ms sleep.
+    let connect_ms = ms(t_ready.elapsed());
+    let total_ms = ms(t0.elapsed());
     connected.store(true, Ordering::Relaxed);
     if let Some(t) = punch_task {
         punches_sent = t.join().unwrap_or(0);
@@ -181,8 +184,8 @@ async fn attempt(a: &Args, kind: Kind, name: &str, strategy: &str) -> Result<Val
             return Ok(body);
         }
     };
-    body["connectMs"] = json!(ms(t_ready.elapsed()));
-    body["totalMs"] = json!(ms(t0.elapsed()));
+    body["connectMs"] = json!(connect_ms);
+    body["totalMs"] = json!(total_ms);
     body["how"] = json!(how);
     body["pathAtConnect"] = conn.path_json();
 

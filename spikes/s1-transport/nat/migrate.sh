@@ -32,6 +32,8 @@ setup() {
   ip link add m1 type veth peer name m2
   ip link set m1 netns s1m1
   ip link set m2 netns s1m2
+  # Without promote_secondaries, deleting the primary address also deletes .3 in new_address().
+  ns s1m1 sysctl -qw net.ipv4.conf.all.promote_secondaries=1 net.ipv4.conf.m1.promote_secondaries=1
   ns s1m1 ip addr add 198.19.0.1/24 dev m1
   ns s1m2 ip addr add 198.19.0.2/24 dev m2
   ns s1m1 ip link set m1 up
@@ -52,6 +54,7 @@ blackout() {
 new_address() {
   ns s1m1 ip addr add 198.19.0.3/24 dev m1
   ns s1m1 ip addr del 198.19.0.1/24 dev m1
+  ns s1m1 ip -brief addr show dev m1 >&2
 }
 
 # The OS's network-change event, as clover-core would get it: the client calls network_changed().
