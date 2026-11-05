@@ -4,6 +4,7 @@ import { describe, expect, test } from "bun:test";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import * as contracts from "../index";
+import * as conformance from "../conformance/index";
 import * as fakes from "../fakes/index";
 
 const root = join(import.meta.dir, "..");
@@ -11,6 +12,7 @@ const sources = [
   ...readdirSync(root).filter((f) => f.endsWith(".ts")).map((f) => join(root, f)),
   ...readdirSync(join(root, "fakes")).filter((f) => f.endsWith(".ts")).map((f) => join(root, "fakes", f)),
 ];
+const suites = readdirSync(join(root, "conformance")).filter((f) => f.endsWith(".ts")).map((f) => join(root, "conformance", f));
 const specifiers = (file: string) => [...readFileSync(file, "utf8").matchAll(/^\s*(?:import|export)[^;]*?from\s+"([^"]+)"/gms)].map((m) => m[1]!);
 
 describe("the contracts' layout", () => {
@@ -23,6 +25,26 @@ describe("the contracts' layout", () => {
         expect({ file: file.slice(root.length + 1), spec, ok }).toEqual({ file: file.slice(root.length + 1), spec, ok: true });
       }
     }
+  });
+
+  test("the conformance suites import only bun:test, the protocol, node:crypto, the contracts and their fakes", () => {
+    for (const file of suites) {
+      for (const spec of specifiers(file)) {
+        const ok = ["bun:test", "@waifucave/clover-protocol", "node:crypto"].includes(spec) || ((spec.startsWith("./") || spec.startsWith("../")) && !spec.includes("plugin-sdk"));
+        expect({ file: file.slice(root.length + 1), spec, ok }).toEqual({ file: file.slice(root.length + 1), spec, ok: true });
+      }
+    }
+  });
+
+  test("every contract has its conformance suite, and the contracts' index doesn't load bun:test", () => {
+    const runners = Object.keys(conformance).filter((k) => /^run[A-Za-z]+Conformance$/.test(k));
+    expect(runners.sort()).toEqual([
+      "runAgentBackendConformance", "runApprovalBrokerConformance", "runBrowserApiConformance", "runComputerRegistryConformance",
+      "runDeviceRegistryConformance", "runFenceConformance", "runLeaseConformance", "runLinkTransportConformance",
+      "runPluginHostConformance", "runPluginRegistryConformance", "runSecretStoreConformance", "runSessionHostConformance",
+      "runTreeConformance",
+    ]);
+    expect(readFileSync(join(root, "index.ts"), "utf8")).not.toContain("conformance");
   });
 
   test("the plugin SDK is reached only through sdk-types.ts, as types", () => {

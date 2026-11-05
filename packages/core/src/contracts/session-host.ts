@@ -20,7 +20,8 @@
 // * A session that stops has its pending cards cancelled; one the user interrupts has them withdrawn.
 // * The user can message a bot only while connected to the computer running it (§6.4): otherwise `bot_asleep`.
 // * Messages keep send order on the shared clock; one whose stamp falls before output the model already produced is
-//   placed after that output, keeping its real send time (§6.4 "Late arrivals").
+//   placed after that output, keeping its real send time (§6.4 "Late arrivals"). The user's messages waiting together
+//   run in `(sentAt, device)` order (`compareStamps`), whatever order they arrived in from their devices.
 //
 // The log records are the host's own vocabulary. Lane D projects them onto the wire: the user's `input` is the
 // inherited `user_message` with `UserMessageStamp`, from a bot `bot_message`, from an agent `agent_message`, a task

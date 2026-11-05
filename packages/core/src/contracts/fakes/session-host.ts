@@ -4,7 +4,7 @@
 import { randomBytes } from "node:crypto";
 import type { SessionStatus, SessionView, TurnOrigin } from "@waifucave/clover-protocol";
 import type { ApprovalBroker } from "../approval-broker";
-import type { Clock } from "../clock";
+import { compareStamps, type Clock } from "../clock";
 import { ContractError, Listeners, type Unsubscribe } from "../common";
 import {
   originOf,
@@ -82,14 +82,21 @@ export class FakeSessionHost implements SessionHost {
     const full: UserInput = { from: "user", ...input };
     if (s.running && s.view.kind === "bot") {
       this.#record(s, { type: "input", input: full, disposition: "interrupted" });
-      // Ahead of anything else waiting, after user messages that interrupted before it, so they keep send order.
-      const at = s.queue.findIndex((q) => q.from !== "user");
-      s.queue.splice(at < 0 ? s.queue.length : at, 0, full);
+      // Ahead of anything else waiting; among the user's own waiting messages, in send order.
+      this.#enqueueUser(s, full, true);
       await this.#interruptStep(s);
       this.#pump(s);
       return { disposition: "interrupted" };
     }
     return this.#accept(s, full);
+  }
+
+  /** The user's waiting messages keep send order on the shared clock, ties by device (§6.4), whatever order they
+   *  arrived in: a message sent earlier from a slower device goes before one sent later. */
+  #enqueueUser(s: Hosted, input: UserInput, aheadOfOthers: boolean): void {
+    const stamp = (u: UserInput) => ({ t: u.sentAt, device: u.device });
+    const at = s.queue.findIndex((q) => (q.from === "user" ? compareStamps(stamp(input), stamp(q)) < 0 : aheadOfOthers));
+    s.queue.splice(at < 0 ? s.queue.length : at, 0, input);
   }
 
   async deliver(id: string, input: DeliveredInput): Promise<{ disposition: Disposition }> {
@@ -160,7 +167,8 @@ export class FakeSessionHost implements SessionHost {
       return { disposition: "folded" };
     }
     this.#record(s, { type: "input", input, disposition: "queued" });
-    s.queue.push(input);
+    if (input.from === "user") this.#enqueueUser(s, input, false);
+    else s.queue.push(input);
     return { disposition: "queued" };
   }
 
