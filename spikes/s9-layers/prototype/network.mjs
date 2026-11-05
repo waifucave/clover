@@ -127,13 +127,16 @@ export async function networkCheck(electron){
   }
   await pause(350);await ses.netLog.stopLogging();
   const log=extractNetlog(JSON.parse(readFileSync(logPath,'utf8')));
-  const inherited=contexts.map(c=>({kind:c.kind,result:c.result,records:c.fixture.records}));
+  const inherited=contexts.map(c=>({kind:c.kind,result:c.result,records:c.fixture.records,dnsEvents:log.speculative.filter((/** @type {any} */ e)=>JSON.stringify(e.params).includes(c.fixture.records['dns-prefetch'].host))}));
   variants.push({mode,header:header?'Connection-Allowlist on documents and worker scripts':null,ipPolicy:win.webContents.getWebRTCIPHandlingPolicy(),main,second,records:f.records,requests,preconnect,popups,navigations,downloads,mountAttempts,trustAttempts,contexts:inherited,netlog:log});
   win.destroy();f.close();contexts.forEach(c=>c.fixture.close());
  }
- const a=variants.find(v=>v.mode==='allowlist'),control=variants.find(v=>v.mode==='combined'),non=variants.find(v=>v.mode==='non-plugin');
+ const a=variants.find(v=>v.mode==='allowlist'),control=variants.find(v=>v.mode==='combined'),plain=variants.find(v=>v.mode==='control'),non=variants.find(v=>v.mode==='non-plugin');
  const candidates=(/** @type {any} */ v)=>(v?.outcomes||[]).filter((/** @type {any} */ o)=>['stun','turn-tcp'].includes(o.name)).flatMap((/** @type {any} */ o)=>o.result?.candidates||[]);
- const directClosed=a.records.stun.udp.length===0&&a.records.turn.tcp.length===0&&candidates(a.main).length===0;
- const inheritedClosed=a.contexts.every((/** @type {any} */ c)=>c.records.stun.udp.length===0&&c.records.turn.tcp.length===0&&candidates(c.result).length===0);
- return {verdict:directClosed&&inheritedClosed?'works with limits':'does not',assertions:{undeclaredStunPositive:control.records.stun.udp.some((/** @type {any} */ p)=>p.stun),undeclaredTurnPositive:control.records.turn.tcp.length>0,allowlistDirectClosed:directClosed,allowlistInheritedClosed:inheritedClosed,nonPluginStillConnects:non.records.stun.udp.length>0&&non.records.turn.tcp.length>0},variants};
+ const tested=(/** @type {any} */ v)=>['stun','turn-tcp'].every(name=>(v?.outcomes||[]).some((/** @type {any} */ o)=>o.name===name&&o.result?.supported===true&&Array.isArray(o.result.candidates)));
+ const dns=(/** @type {any} */ v,/** @type {string} */ host)=>v.netlog.speculative.filter((/** @type {any} */ e)=>JSON.stringify(e.params).includes(host));
+ const directClosed=tested(a.main)&&a.records.stun.udp.length===0&&a.records.turn.tcp.length===0&&candidates(a.main).length===0;
+ const inheritedClosed=a.contexts.every((/** @type {any} */ c)=>c.result?.outcomes && !c.result.error && c.records.stun.udp.length===0&&c.records.turn.tcp.length===0&&candidates(c.result).length===0);
+ const assertions={undeclaredStunPositive:control.records.stun.udp.some((/** @type {any} */ p)=>p.stun),undeclaredTurnPositive:control.records.turn.tcp.length>0,allowlistDirectClosed:directClosed,allowlistInheritedClosed:inheritedClosed,nonPluginStillConnects:non.records.stun.udp.length>0&&non.records.turn.tcp.length>0,dnsPositive:dns(plain,plain.records['dns-prefetch'].host).length>0,dnsRefused:dns(a,a.records['dns-prefetch'].host).length===0,preconnectEventPositive:plain.preconnect.some((/** @type {any} */ e)=>e.url.includes(plain.records.preconnect.host))};
+ return {verdict:Object.values(assertions).every(Boolean)?'works with limits':'does not',assertions,variants};
 }
