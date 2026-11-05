@@ -6,11 +6,13 @@
 // Steps: install the login item and start it as a login would → the daemon starts the app → a second daemon on the
 // same home is refused by the lock → the app crashes (and again, three times in two minutes: safe mode) → the daemon
 // crashes → the tray's Quit stops both, and they stay down → a user starts the app, which starts the daemon → the
-// daemon side's Quit stops both → uninstall.
-import { spawnSync } from "node:child_process";
+// daemon side's Quit stops both → the lock held by another process with no daemon answering: the daemon exits 1, and
+// comes up once the lock is free (round twelve) → uninstall.
+import { spawn, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { release, tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
+import { takeLock } from "./lock.ts";
 import { pairNames, type PairConfig } from "./names.ts";
 import { dial } from "./ndjson.ts";
 import { alive, installAndStart, killHard, registration, startApp, uninstall, unitState, type OsResult } from "./oslaunch.ts";
@@ -230,6 +232,44 @@ async function main(): Promise<void> {
     for (let i = 0; i < 8; i++) { await sleep(1000); if ((await status()) !== undefined) { restarted = true; break; } }
     return { bothDownMs: down.v ? down.ms : undefined, restartedWithin8s: restarted };
   });
+
+  // Round twelve (the re-check's gap): the lock held by a process that is not a daemon — a virus scanner opening the
+  // file at login, say — and nothing answering on the socket. The daemon must exit non-zero, so its login item
+  // starts it again, and come up once the lock is free.
+  await step("a held lock, no daemon answering", async () => {
+    const held = await takeLock(n.lockFile);
+    if ("busy" in held) return { error: `the runner could not take the lock: ${held.detail}` };
+    const t0 = Date.now();
+    let r: ReturnType<typeof spawnSync>;
+    try {
+      r = spawnSync(cfg.daemonBin, ["daemon", `--home=${home}`], { encoding: "utf8", timeout: 30_000, windowsHide: true });
+    } finally {
+      held.release();
+    }
+    const exitMs = Date.now() - t0;
+    const said = `${String(r.stdout ?? "")}${String(r.stderr ?? "")}`;
+    // the lock is free now: the next start comes up, and is then quit (both halves)
+    const child = spawn(cfg.daemonBin, ["daemon", `--home=${home}`], { detached: true, stdio: "ignore", windowsHide: true });
+    child.unref();
+    const up = await until(status, 15_000);
+    let stopped: boolean | undefined;
+    if (up.v !== undefined) {
+      const dpid = up.v.daemon.pid;
+      const c = await dial(n.socket);
+      await c?.request("hello", { role: "test", pid: process.pid });
+      await c?.request("test.quitDaemon", {});
+      c?.close();
+      stopped = (await until(async () => (!alive(dpid) && (await status()) === undefined ? true : undefined), 15_000)).v === true;
+    } else if (child.pid !== undefined) {
+      killHard(child.pid, false);
+    }
+    return {
+      exitCode: r.status, signal: r.signal, exitMs,
+      saidNoAnswer: said.includes("no daemon answers"), saidStayedHeld: said.includes("stayed held"),
+      said: said.trim().split("\n").slice(-2).join(" | ").slice(-400),
+      nextStartUpMs: up.v !== undefined ? up.ms : undefined, nextStartStopped: stopped,
+    };
+  });
 }
 
 interface Assertion { name: string; ok: boolean; detail: string }
@@ -260,6 +300,10 @@ function assertAll(): Assertion[] {
   add("a user's start of the app brings up both within 10 s", typeof user?.bothUpMs === "number" && user.bothUpMs < 10_000, { bothUpMs: user?.bothUpMs });
   const quit = st("the daemon side's Quit stops both");
   add("the daemon side's Quit stops both, and nothing restarts them", typeof quit?.bothDownMs === "number" && quit?.restartedWithin8s === false, { bothDownMs: quit?.bothDownMs, restarted: quit?.restartedWithin8s });
+  const held = st("a held lock, no daemon answering");
+  add("with its lock held by another process and no daemon answering, the daemon exits 1 within 15 s, and comes up once the lock is free",
+    held?.exitCode === 1 && typeof held?.exitMs === "number" && held.exitMs < 15_000 && held?.saidStayedHeld === true && typeof held?.nextStartUpMs === "number",
+    { exitCode: held?.exitCode, exitMs: held?.exitMs, saidStayedHeld: held?.saidStayedHeld, nextStartUpMs: held?.nextStartUpMs, error: held?.error });
   return a;
 }
 

@@ -100,6 +100,10 @@ export interface CreateOptions {
   fps?: number;
   /** OSR: ask for GPU shared textures (`offscreen.useSharedTexture`). */
   osrTexture?: boolean;
+  /** OSR: the output's device scale factor (`offscreen.deviceScaleFactor`, 1 unless set). */
+  osrScale?: number;
+  /** More web preferences (round twelve: `disableDialogs`). */
+  prefs?: Record<string, unknown>;
   /** A shown host window (tiny, invisible) kept above other windows: always on top at the highest level. */
   onTop?: boolean;
 }
@@ -240,11 +244,12 @@ export class TabHost {
       contextIsolation: true,
       nodeIntegration: false,
       backgroundThrottling: o.throttling,
+      ...(o.prefs ?? {}),
     };
     const base = { id, place: o.place, partition: o.partition, throttling: o.throttling, loads: 0, navigations: 0, gone: [], paints: 0, debuggerOn: false, pumpFrames: 0, pumping: false, fitted: false, osrTexture: o.osrTexture === true, textures: 0, popupTextures: 0, emptyPaints: 0, dirtyLog: [] };
     let tab: Tab;
     if (o.place === "osr") {
-      const offscreen = o.osrTexture === true ? { useSharedTexture: true, deviceScaleFactor: 1 } : { deviceScaleFactor: 1 };
+      const offscreen = o.osrTexture === true ? { useSharedTexture: true, deviceScaleFactor: o.osrScale ?? 1 } : { deviceScaleFactor: o.osrScale ?? 1 };
       const win = new BrowserWindow({ show: false, width: AGENT_W, height: AGENT_H, useContentSize: true, ...osrWindowFix.opts, webPreferences: { ...webPreferences, offscreen } });
       osrWindowFix.after?.(win);
       tab = this.track({ ...base, wc: win.webContents, win });

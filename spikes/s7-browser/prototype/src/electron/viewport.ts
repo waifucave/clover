@@ -59,6 +59,8 @@ export interface OsrResult {
   captures: OsrCaptureRow[];
   cost: OsrCostRow[];
   windows: Record<string, WindowListing>;
+  /** An OSR tab made with `offscreen.deviceScaleFactor: 2`: the frame and picture sizes, the page's layout. */
+  scale2?: Record<string, unknown>;
   error?: string;
 }
 
@@ -92,7 +94,19 @@ async function measure(host: TabHost, t: Tab, seconds: number): Promise<Omit<Osr
 /** Which shared-texture result this machine gives, decided once per run (the viewport check reads it). */
 export let textureWorks: boolean | undefined;
 
-export async function osrCheck(host: TabHost, log: Log): Promise<OsrResult> {
+/**
+ * Whether to ask for shared textures at all. Round twelve's first run: on the Linux runners (no GPU compositing), the
+ * first offscreen window made with `useSharedTexture` hung Electron's main process for good (no log line, no timer
+ * after it, until the step's timeout). So they are asked for only where Chromium composites on the GPU.
+ */
+function gpuCompositing(): string {
+  return String((app.getGPUFeatureStatus() as unknown as Record<string, string>).gpu_compositing ?? "unknown");
+}
+export function mayAskForTextures(): boolean {
+  return gpuCompositing().startsWith("enabled") || process.env.S7_TRY_TEXTURES === "1";
+}
+
+export async function osrCheck(host: TabHost, log: Log, progress: (r: OsrResult) => void = () => undefined): Promise<OsrResult> {
   const result: OsrResult = { sizes: [], sizeFix: "default", texture: { textures: 0, popups: 0, bitmaps: 0, empties: 0, paints: 0, works: false }, rates: [], captures: [], cost: [], windows: {} };
   try {
     // a. the size an OSR tab gets (Windows fits a new window to the screen's work area)
@@ -130,7 +144,11 @@ export async function osrCheck(host: TabHost, log: Log): Promise<OsrResult> {
     result.sizeFix = chosen === undefined ? "none gave 1280x800" : fix.name;
 
     // b. do shared textures come here? (Electron drops a frame the capturer gave in CPU memory: no paint at all)
-    {
+    if (!mayAskForTextures()) {
+      result.texture.error = `not asked for: GPU compositing is "${gpuCompositing()}" here (asking hung the main process on the Linux runners)`;
+      textureWorks = false;
+      log(`  osr shared textures: ${result.texture.error}`);
+    } else {
       let t: Tab | undefined;
       try {
         t = await host.create({ place: "osr", osrTexture: true, partition: "bot-osr-texture", throttling: false, path: "/pages/probe.html?scenario=anim&sse=0", fps: 30 });
@@ -150,7 +168,25 @@ export async function osrCheck(host: TabHost, log: Log): Promise<OsrResult> {
         if (t !== undefined) await host.close(t);
       }
       textureWorks = result.texture.works;
+      progress(result);
       log(`  osr shared textures: ${result.texture.textures} textures, ${result.texture.bitmaps} bitmaps, ${result.texture.empties} empty paints in 3 s → ${result.texture.works ? "textures work here" : "no textures here: the CPU bitmap path"}${result.texture.info ? ` (${JSON.stringify(result.texture.info).slice(0, 200)})` : ""}`);
+    }
+
+    // b2. a tab made at a device scale factor of 2 (crisp on a 2x display; the scale can't change after creation)
+    {
+      let t: Tab | undefined;
+      try {
+        t = await host.create({ place: "osr", osrTexture: result.texture.works, osrScale: 2, partition: "bot-osr-scale2", throttling: false, path: "/pages/probe.html?scenario=static&sse=0", fps: 30 });
+        await sleep(1500);
+        const s = await host.snapshot(t);
+        const pic = await host.capture(t, "capturePage", s.innerWidth, 4000);
+        result.scale2 = { layout: `${s.innerWidth}x${s.innerHeight}@${s.dpr}`, frame: t.dirtyLog.at(-1)?.size ?? "-", capturePage: pic.ok ? `${pic.width}x${pic.height} in ${pic.ms} ms` : pic.error };
+      } catch (e) {
+        result.scale2 = { error: errorText(e) };
+      } finally {
+        if (t !== undefined) await host.close(t);
+      }
+      log(`  osr at a scale factor of 2: ${JSON.stringify(result.scale2)}`);
     }
 
     // c. do they draw at their own rate with no window, and what does it cost?
@@ -175,6 +211,7 @@ export async function osrCheck(host: TabHost, log: Log): Promise<OsrResult> {
         if (c.painting === false) t.wc.stopPainting();
         await sleep(1500);
         Object.assign(row, await measure(host, t, 4));
+        progress(result);
         log(`  osr ${c.config}: rAF ${row.rates?.rafHz.toFixed(1)} Hz (${row.rates?.visibility}), paints ${row.paintsPerSec?.toFixed(1)}/s (textures ${row.texturesPerSec?.toFixed(1)}/s), CPU ${row.cpuTotal?.toFixed(1)}% (renderer ${row.rendererPct?.toFixed(1)}, GPU ${(row.cpuByType?.GPU ?? 0).toFixed(1)}, browser ${(row.cpuByType?.Browser ?? 0).toFixed(1)})`);
       } catch (e) {
         row.error = errorText(e);
@@ -257,6 +294,7 @@ export async function osrCheck(host: TabHost, log: Log): Promise<OsrResult> {
         for (const t of tabs) await host.close(t);
       }
     }
+    progress(result);
     for (const [k, w] of Object.entries(result.windows)) log(`  osr windows on screen, ${k}: ${w.windows !== undefined ? `${w.windows.length} ${JSON.stringify(w.windows)}` : w.error} (${w.tool})`);
   } catch (e) {
     result.error = errorText(e);
@@ -662,7 +700,8 @@ interface R { x: number; y: number; w: number; h: number; cx: number; cy: number
 
 const modKey = process.platform === "darwin" ? "meta" : "control";
 
-export async function viewportCheck(host: TabHost, server: SpikeServer, root: string, log: Log): Promise<ViewportResult> {
+export async function viewportCheck(host: TabHost, server: SpikeServer, root: string, log: Log, progress: (r: ViewportResult) => void = () => undefined): Promise<ViewportResult> {
+  if (textureWorks === undefined && !mayAskForTextures()) textureWorks = false;
   if (textureWorks === undefined) {
     // the osr check didn't run: find out here
     const t = await host.create({ place: "osr", osrTexture: true, partition: "bot-vp-texture", throttling: false, path: "/pages/probe.html?scenario=anim&sse=0", fps: 30 });
@@ -672,7 +711,7 @@ export async function viewportCheck(host: TabHost, server: SpikeServer, root: st
   }
   const forced = process.env.S7_VIEWPORT_MODE;
   const mode: Mode = forced === "bitmap" ? "bitmap" : forced === "texture" ? "texture" : textureWorks ? "texture" : "bitmap";
-  const result: ViewportResult = { mode, modeWhy: forced !== undefined ? `forced by S7_VIEWPORT_MODE=${forced}` : textureWorks ? "shared textures come on this machine" : "no shared textures on this machine (no GPU compositing): CPU bitmaps", shows: [], oracle: [], steps: [], latency: {}, fps: {}, windows: {} };
+  const result: ViewportResult = { mode, modeWhy: forced !== undefined ? `forced by S7_VIEWPORT_MODE=${forced}` : textureWorks ? "shared textures come on this machine" : `no shared textures on this machine (GPU compositing "${gpuCompositing()}"): CPU bitmaps`, shows: [], oracle: [], steps: [], latency: {}, fps: {}, windows: {} };
   const vp = new Viewport(host, server.origin, root);
   let tab: Tab | undefined;
   let native: { win: BaseWindow; view: WebContentsView } | undefined;
@@ -701,6 +740,7 @@ export async function viewportCheck(host: TabHost, server: SpikeServer, root: st
       r = { name, ok: false, ms: Date.now() - t0, detail: `error: ${errorText(e)}` };
     }
     result.steps.push(r);
+    progress(result);
     log(`  viewport ${r.ok ? "ok  " : "FAIL"} ${name} (${r.ms} ms): ${r.detail.slice(0, 400)}`);
   };
   try {
@@ -900,14 +940,29 @@ export async function viewportCheck(host: TabHost, server: SpikeServer, root: st
       await vclick(r.cx, r.cy);
       await waitFor(() => child, 4000);
       if (child === undefined) return { ok: false, detail: { opened: (await state()).popup, why: "no did-create-window" } };
+      const openerDirty0 = t.dirtyLog.length;
       const childTab = host.adopt(child, "persist:bot-vp", 30, mode === "texture");
-      const info = { offscreen: child.webContents.isOffscreen(), visible: child.isVisible(), size: child.getSize().join("x") };
+      const cwc = child.webContents;
+      const info: Record<string, unknown> = { offscreen: cwc.isOffscreen(), visible: child.isVisible(), size: child.getSize().join("x"), painting: cwc.isPainting(), frameRate: cwc.getFrameRate() };
       await waitFor(async () => ((await state()).popup.messages.includes("popup:hello") ? true : undefined), 3000);
       await sleep(800);
       const paints = childTab.paints;
+      // round twelve, first run: macOS's offscreen window.open child painted nothing. Did its frames go to the opener?
+      // Does a repaint or a restarted capturer bring them? Does input reach it?
+      info.openerFramesOfTheChildSize = t.dirtyLog.slice(openerDirty0).filter((d) => d.size === info.size).length;
+      cwc.invalidate();
+      cwc.stopPainting();
+      cwc.startPainting();
+      await sleep(800);
+      info.paintsAfterRepaint = childTab.paints - paints;
+      info.pageState = await withTimeout(cwc.executeJavaScript("JSON.stringify(window.__pop)", true), 3000, "child state").catch((e: unknown) => `no answer: ${errorText(e)}`);
+      const m0 = (await state()).popup.messages.length;
+      cwc.sendInputEvent({ type: "mouseDown", x: 100, y: 40, button: "left", clickCount: 1 });
+      cwc.sendInputEvent({ type: "mouseUp", x: 100, y: 40, button: "left", clickCount: 1 });
+      info.directClick = (await waitFor(async () => ((await state()).popup.messages.length > m0 ? true : undefined), 2000)) === true;
       result.windows["the page's window open (offscreen)"] = await visibleWindows();
       let clicked = false;
-      if (paints > 0 || info.offscreen) {
+      if (childTab.paints > 0) {
         const seq0 = vp.seq;
         vp.attach(childTab, 60);
         await waitFor(() => (vp.ackLog.some((a) => a.seq > seq0 && a.size === `${vp.size.w}x${vp.size.h}`) ? true : undefined), 3000);
@@ -919,7 +974,7 @@ export async function viewportCheck(host: TabHost, server: SpikeServer, root: st
       }
       const st = await state();
       await host.close(childTab);
-      return { ok: info.offscreen && st.popup.messages.includes("popup:hello") && clicked, detail: { ...info, paints, openerMessages: st.popup.messages, clickedInViewport: clicked } };
+      return { ok: info.offscreen === true && st.popup.messages.includes("popup:hello") && clicked, detail: { ...info, paints, openerMessages: st.popup.messages, clickedInViewport: clicked } };
     });
     await step("resize: the page reflows to the viewport, no reload", async () => {
       const want = async (w: number, h: number, ms: number): Promise<number | undefined> => {
@@ -927,6 +982,8 @@ export async function viewportCheck(host: TabHost, server: SpikeServer, root: st
         const ok = await waitFor(async () => ((await state()).innerWidth === w && vp.ackedSize === `${w}x${h}` ? true : undefined), ms, 20);
         return ok === true ? Date.now() - t0 : undefined;
       };
+      // the window may have been fitted to a small screen (macOS's runner: 1000x645): back to where it was
+      const [ow, oh] = vp.win.getContentSize() as [number, number];
       vp.win.setContentSize(800, 560);
       const one = await want(800, 560, 4000);
       // three changes 40 ms apart: does painting keep up, or stall as CEF's did?
@@ -934,8 +991,8 @@ export async function viewportCheck(host: TabHost, server: SpikeServer, root: st
       vp.win.setContentSize(760, 520); await sleep(40);
       vp.win.setContentSize(820, 580);
       const quick = await want(820, 580, 4000);
-      vp.win.setContentSize(VP_W, VP_H);
-      const back = await want(VP_W, VP_H, 4000);
+      vp.win.setContentSize(ow, oh);
+      const back = await want(ow, oh, 4000);
       const st = await state();
       return { ok: one !== undefined && quick !== undefined && back !== undefined && st.token === s0.token && t.loads === loads0, detail: { oneMs: one, quickThreeMs: quick, backMs: back, resizes: st.resizes.slice(-6), applied: vp.resizes.slice(-6), token: st.token === s0.token ? "same" : "changed" } };
     });
@@ -1073,6 +1130,7 @@ export async function viewportCheck(host: TabHost, server: SpikeServer, root: st
     const s3 = await state();
     oracle("shown again", s2, s3, sBefore.field);
     result.shows[1]!.hideMs = await hide();
+    await sleep(1500);
     const s4 = await state();
     oracle("hidden at the end", s3, s4, sBefore.field);
     const viewer = await vp.stats();
@@ -1162,6 +1220,8 @@ export interface DialogRow {
   windowsBefore?: string[];
   windowsDuring?: WindowListing;
   windowsAfter?: WindowListing;
+  /** The tab's own window (offscreen: never shown; host: the 1x1 host) as Electron sees it after the dialog. */
+  tabWindowVisibleAfter?: boolean;
   page: string;
   error?: string;
 }
@@ -1174,14 +1234,16 @@ export interface DialogRow {
 export async function dialogCheck(host: TabHost, root: string, server: SpikeServer, log: Log): Promise<DialogRow[]> {
   const rows: DialogRow[] = [];
   const vp = new Viewport(host, server.origin, root);
-  const places: Array<{ name: string; place: "osr" | "tinyWindow" }> = [
+  const places: Array<{ name: string; place: "osr" | "tinyWindow"; prefs?: Record<string, unknown> }> = [
     { name: "offscreen tab", place: "osr" },
     { name: "host window tab", place: "tinyWindow" },
+    // Electron's only switch: dialogs answered at once (alert OK, confirm false, prompt null). Does CDP still see them?
+    { name: "offscreen tab, disableDialogs", place: "osr", prefs: { disableDialogs: true } },
   ];
   for (const p of places) {
     let t: Tab | undefined;
     try {
-      t = await host.create({ place: p.place, partition: `bot-dialog-${p.place}`, throttling: false, path: "/pages/vp-page.html?sse=0", fps: 10 });
+      t = await host.create({ place: p.place, partition: `bot-dialog-${rows.length}`, throttling: false, path: "/pages/vp-page.html?sse=0", fps: 10, prefs: p.prefs });
       await vp.cdp(t, "Runtime.enable");
       for (const kind of ["alert", "confirm", "prompt"]) {
         const row: DialogRow = { place: p.name, kind, cdpEvent: false, page: "" };
@@ -1199,6 +1261,7 @@ export async function dialogCheck(host: TabHost, root: string, server: SpikeServ
           }
           await sleep(1000);
           row.windowsAfter = await visibleWindows();
+          row.tabWindowVisibleAfter = t.win !== undefined && !t.win.isDestroyed() ? t.win.isVisible() : undefined;
           row.page = await host.exec<string[]>(t, "window.__vp.state().dialogs", 4000).then((d) => d.join(" | ")).catch((e: unknown) => `page not answering: ${errorText(e)}`);
         } catch (e) {
           row.error = errorText(e);

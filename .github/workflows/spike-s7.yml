@@ -238,9 +238,9 @@ jobs:
           mkdir -p "$RESULTS"
           out="$RESULTS/electron-viewport-${{ matrix.label }}.json"
           case "${{ matrix.label }}" in
-            linux-x11) xvfb-run -a -s "-screen 0 1920x1080x24" bun scripts/probe.ts --checks=osr,viewport --out="$out" --label=viewport-${{ matrix.label }} -- --ozone-platform=x11 ;;
-            linux-wayland) scripts/ci/weston.sh bun scripts/probe.ts --checks=osr,viewport --out="$out" --label=viewport-${{ matrix.label }} -- --ozone-platform=wayland ;;
-            *) bun scripts/probe.ts --checks=osr,viewport --out="$out" --label=viewport-${{ matrix.label }} ;;
+            linux-x11) xvfb-run -a -s "-screen 0 1920x1080x24" bun scripts/probe.ts --checks=osr,viewport --budget-min=17 --out="$out" --label=viewport-${{ matrix.label }} -- --ozone-platform=x11 ;;
+            linux-wayland) scripts/ci/weston.sh bun scripts/probe.ts --checks=osr,viewport --budget-min=17 --out="$out" --label=viewport-${{ matrix.label }} -- --ozone-platform=wayland ;;
+            *) bun scripts/probe.ts --checks=osr,viewport --budget-min=17 --out="$out" --label=viewport-${{ matrix.label }} ;;
           esac
       - name: JavaScript dialogs answered over CDP, offscreen and in the host window
         if: success() || failure()
@@ -248,14 +248,20 @@ jobs:
         run: |
           out="$RESULTS/electron-viewport-${{ matrix.label }}-dialogs.json"
           case "${{ matrix.label }}" in
-            linux-x11) xvfb-run -a -s "-screen 0 1920x1080x24" bun scripts/probe.ts --checks=dialogs --out="$out" --label=dialogs-${{ matrix.label }} -- --ozone-platform=x11 ;;
-            linux-wayland) scripts/ci/weston.sh bun scripts/probe.ts --checks=dialogs --out="$out" --label=dialogs-${{ matrix.label }} -- --ozone-platform=wayland ;;
-            *) bun scripts/probe.ts --checks=dialogs --out="$out" --label=dialogs-${{ matrix.label }} ;;
+            linux-x11) xvfb-run -a -s "-screen 0 1920x1080x24" bun scripts/probe.ts --checks=dialogs --budget-min=6 --out="$out" --label=dialogs-${{ matrix.label }} -- --ozone-platform=x11 ;;
+            linux-wayland) scripts/ci/weston.sh bun scripts/probe.ts --checks=dialogs --budget-min=6 --out="$out" --label=dialogs-${{ matrix.label }} -- --ozone-platform=wayland ;;
+            *) bun scripts/probe.ts --checks=dialogs --budget-min=6 --out="$out" --label=dialogs-${{ matrix.label }} ;;
           esac
+      - name: macOS — the viewport again with CPU bitmaps instead of shared textures (the cost of each road on one machine)
+        if: runner.os == 'macOS' && (success() || failure())
+        timeout-minutes: 20
+        env:
+          S7_VIEWPORT_MODE: bitmap
+        run: bun scripts/probe.ts --checks=viewport --budget-min=17 --out="$RESULTS/electron-viewport-macos-bitmap.json" --label=viewport-macos-bitmap
       - name: Windows — the viewport again on WARP (Direct3D 11 in software), where shared textures may come
         if: runner.os == 'Windows' && (success() || failure())
         timeout-minutes: 20
-        run: bun scripts/probe.ts --checks=osr,viewport --out="$RESULTS/electron-viewport-windows-warp.json" --label=viewport-windows-warp -- --use-angle=d3d11-warp --ignore-gpu-blocklist
+        run: bun scripts/probe.ts --checks=osr,viewport --budget-min=17 --out="$RESULTS/electron-viewport-windows-warp.json" --label=viewport-windows-warp -- --use-angle=d3d11-warp --ignore-gpu-blocklist
       - if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:

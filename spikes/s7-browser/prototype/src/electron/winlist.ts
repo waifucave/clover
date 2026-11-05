@@ -87,6 +87,7 @@ export async function visibleWindows(pid = process.pid): Promise<WindowListing> 
       const windows: string[] = [];
       for (const id of ids) {
         const info = await run("xwininfo", ["-id", id]).catch((e: unknown) => `xwininfo failed: ${errorText(e)}`);
+        if (info.includes("(the root window)")) continue; // xdotool's search can return the root window itself
         const pick = (re: RegExp): string => re.exec(info)?.[1]?.trim() ?? "?";
         windows.push(`${id} ${pick(/Width:\s*(\d+)/)}x${pick(/Height:\s*(\d+)/)}+${pick(/Absolute upper-left X:\s*(-?\d+)/)}+${pick(/Absolute upper-left Y:\s*(-?\d+)/)} ${pick(/Map State:\s*(\S+)/)} ${pick(/xwininfo: Window id: \S+ (.*)/)}`);
       }

@@ -17,8 +17,9 @@ export interface HeldLock { kind: string; release(): void }
  * Only "another process holds it" is busy: EWOULDBLOCK from flock (35 on macOS, 11 on Linux) or a sharing violation
  * (32) from CreateFileW. Everything else is an error, so the daemon exits non-zero and is started again.
  * bun:ffi has no call that keeps errno or the last error, so they are read by a second FFI call straight after the
- * failing one. A misread can only turn "busy" into an error (a non-zero exit, and a retry), and a "busy" that no
- * daemon answers on the socket is treated as an error too (daemon.ts). Lane C should read them inside one native call.
+ * failing one. A misread could go either way, and both are harmless: an error read as "busy" meets the socket check
+ * (a "busy" that no daemon answers on the socket ends in a non-zero exit too, daemon.ts), and a "busy" read as an
+ * error exits non-zero and is retried. Lane C should read them inside one native call.
  */
 export function classifyLockFailure(platform: NodeJS.Platform, code: number): "busy" | "error" {
   if (platform === "win32") return code === 32 ? "busy" : "error";

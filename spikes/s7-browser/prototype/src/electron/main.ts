@@ -179,8 +179,9 @@ async function main(): Promise<void> {
   await run("shared", () => sharedHostCheck(host, log));
   await run("hostcheck", () => hostCheck(host, server, log));
   await run("long", () => longCheck(host, log));
-  await run("osr", () => osrCheck(host, log));
-  await run("viewport", () => viewportCheck(host, server, ROOT, log));
+  // round twelve: these write what they have so far as they go, so a run cut short keeps it
+  await run("osr", () => osrCheck(host, log, (r) => { results.osr = r; write("running"); }));
+  await run("viewport", () => viewportCheck(host, server, ROOT, log, (r) => { results.viewport = r; write("running"); }));
   await run("dialogs", () => dialogCheck(host, ROOT, server, log));
   assertions = assertAll();
   for (const x of assertions) log(`${x.ok ? "PASS" : "FAIL"} ${x.name}: ${x.detail.slice(0, 300)}`);
