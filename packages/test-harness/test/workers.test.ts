@@ -3,7 +3,7 @@ import { describe, expect, test } from "bun:test";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { miniflareOptions, readWranglerConfig, startWithRetry, startWorker, type StartableRuntime } from "../src/workers";
+import { disposeRuntime, miniflareOptions, readWranglerConfig, startWithRetry, startWorker, type StartableRuntime } from "../src/workers";
 
 const fixture = join(import.meta.dir, "fixtures", "worker");
 
@@ -71,6 +71,20 @@ describe("startWithRetry", () => {
     }, { timeoutMs: 50 });
     expect(started.url).toBe(url);
   }, 10_000);
+});
+
+describe("disposeRuntime", () => {
+  const failing = (err: object) => ({ dispose: () => Promise.reject(Object.assign(new Error("dispose failed"), err)) });
+
+  test("a runtime already gone (Windows: Bun's kill of an exited child throws EBADF) is disposed", async () => {
+    await expect(disposeRuntime(failing({ syscall: "kill", code: "EBADF" }))).resolves.toBeUndefined();
+    await expect(disposeRuntime(failing({ syscall: "kill", code: "ESRCH" }))).resolves.toBeUndefined();
+  });
+
+  test("any other failure is the caller's", async () => {
+    await expect(disposeRuntime(failing({ syscall: "kill", code: "EPERM" }))).rejects.toThrow("dispose failed");
+    await expect(disposeRuntime(failing({ syscall: "unlink", code: "EBADF" }))).rejects.toThrow("dispose failed");
+  });
 });
 
 describe("readWranglerConfig", () => {

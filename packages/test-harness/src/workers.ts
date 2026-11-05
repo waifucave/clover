@@ -125,13 +125,28 @@ export async function startWithRetry<T extends StartableRuntime>(create: () => T
     } catch (err) {
       failures.push(`attempt ${attempt}: ${err instanceof Error ? err.message : String(err)}`);
       const stop = deadline(5_000, "dispose timed out");
-      await Promise.race([runtime.dispose(), stop.promise]).catch(() => {});
+      await Promise.race([disposeRuntime(runtime), stop.promise]).catch(() => {});
       stop.clear();
     } finally {
       wait.clear();
     }
   }
   throw new Error(`the Worker did not start (${failures.join("; ")})`);
+}
+
+/**
+ * Disposes a runtime whose process may already be gone. On Windows, Bun's `kill` of an exited child throws EBADF
+ * (seen in CI, inside Miniflare's dispose) where Node's returns false; the runtime is gone either way, so that one
+ * error is not the caller's. Any other error is.
+ */
+export async function disposeRuntime(runtime: Pick<StartableRuntime, "dispose">): Promise<void> {
+  try {
+    await runtime.dispose();
+  } catch (err) {
+    const e = err as { code?: unknown; syscall?: unknown };
+    if (e.syscall === "kill" && (e.code === "EBADF" || e.code === "ESRCH")) return;
+    throw err;
+  }
 }
 
 /** Runs the Worker in `dir` (its wrangler config's `main` and bindings). `bindings` add or override variables. */
@@ -145,6 +160,6 @@ export async function startWorker(opts: { dir: string; bindings?: Record<string,
     url,
     miniflare,
     fetch: (path, init) => fetch(new URL(path, url), init),
-    dispose: () => miniflare.dispose(),
+    dispose: () => disposeRuntime(miniflare),
   };
 }
