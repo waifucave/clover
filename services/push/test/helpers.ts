@@ -51,6 +51,15 @@ export function apnsToken(prefix = "a1"): string {
   return prefix + [...random].map((b) => b.toString(16).padStart(2, "0")).join("") + "00";
 }
 
+/**
+ * Rate-limit windows are aligned to the wall clock's minutes (miniflare, like Cloudflare): a test that counts
+ * toward a limit starts its burst well clear of the next minute, so the window cannot reset half-way.
+ */
+export async function clearOfMinuteBoundary(needMs = 12_000): Promise<void> {
+  const left = 60_000 - (Date.now() % 60_000);
+  if (left < needMs) await new Promise((r) => setTimeout(r, left + 50));
+}
+
 export async function fakeLog(): Promise<FakeLogEntry[]> {
   return (await (await fetch("https://fake.test/__log")).json()) as FakeLogEntry[];
 }

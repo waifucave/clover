@@ -1,8 +1,9 @@
 // An account's push targets: its phones' APNs device tokens and its browsers' Web Push subscriptions. A notify
 // fans a count out to each; a target the push service reports gone is removed, and one APNs calls a bad token
 // is removed only after several such answers in a row (a wrong topic at our end would answer the same).
-// Revoking a device here (DELETE another device's target) keeps it from registering again or notifying,
-// even while the token it already holds is still valid.
+// Revoking a device (DELETE /v1/devices/:id, what the account service's revocation calls) keeps it from
+// registering or notifying with a token it already holds, for 24 hours and 10 minutes: past that, every
+// token issued before the revocation has expired. Removing a target only stops pushes to it.
 
 import { DurableObject } from "cloudflare:workers";
 
@@ -40,8 +41,8 @@ export type Refusal = { ok: false; status: 403 | 409; error: string };
 const TTL_SECONDS = 24 * 3600;
 /** Bad-token answers in a row before a phone's target is forgotten. */
 const SUSPECT_LIMIT = 3;
-/** Revoked device ids kept per account; the oldest go first past this. */
-const MAX_REVOKED = 1000;
+/** How long a revocation is kept: the longest account-token lifetime (24 h), plus clock skew and margin. */
+export const REVOCATION_KEEP_MS = 24 * 3600 * 1000 + 10 * 60 * 1000;
 
 export class PushDO extends DurableObject<Env> {
   private readonly sql: SqlStorage;
@@ -52,6 +53,7 @@ export class PushDO extends DurableObject<Env> {
     this.sql = ctx.storage.sql;
     this.sql.exec("CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v TEXT NOT NULL)");
     if (!this.sql.exec("SELECT 1 AS x FROM meta WHERE k = 'schema'").toArray().length) {
+      // Frozen at the first deploy: any later change needs a new schema version and a step that migrates to it.
       this.sql.exec(`
         CREATE TABLE targets (id TEXT PRIMARY KEY, kind TEXT NOT NULL, data TEXT NOT NULL, added INTEGER NOT NULL,
                               failures INTEGER NOT NULL DEFAULT 0) WITHOUT ROWID;
@@ -74,7 +76,7 @@ export class PushDO extends DurableObject<Env> {
 
   private refuse(caller: Caller): Refusal | null {
     if (!this.ownerMatches(caller.owner)) return { ok: false, status: 403, error: "wrong_account" };
-    if (this.sql.exec("SELECT 1 AS x FROM revoked WHERE id = ?", caller.device).toArray().length > 0) {
+    if (this.sql.exec("SELECT 1 AS x FROM revoked WHERE id = ? AND at > ?", caller.device, Date.now() - REVOCATION_KEEP_MS).toArray().length > 0) {
       return { ok: false, status: 403, error: "revoked" };
     }
     return null;
@@ -101,21 +103,26 @@ export class PushDO extends DurableObject<Env> {
     return { ok: true };
   }
 
-  /**
-   * Removes a target. A device removing its own target just stops receiving; removing another device's
-   * target revokes that device here (spec §8.1), so it cannot register again or notify with the token it holds.
-   */
+  /** Removes a target: its device stops receiving pushes, and may register again. */
   async deleteTarget(caller: Caller, id: string): Promise<{ ok: true } | Refusal> {
     const refused = this.refuse(caller);
     if (refused) return refused;
     this.sql.exec("DELETE FROM targets WHERE id = ?", id);
-    if (id !== caller.device) {
-      this.sql.exec("INSERT OR IGNORE INTO revoked (id, at) VALUES (?, ?)", id, Date.now());
-      const count = this.sql.exec<{ n: number }>("SELECT COUNT(*) AS n FROM revoked").one().n;
-      if (count > MAX_REVOKED) {
-        this.sql.exec("DELETE FROM revoked WHERE id IN (SELECT id FROM revoked ORDER BY at LIMIT ?)", count - MAX_REVOKED);
-      }
-    }
+    return { ok: true };
+  }
+
+  /**
+   * Revokes a device (spec §8.1), whether or not it has a target: it loses its target and cannot register or
+   * notify again with a token it holds. Revocations older than every token they guard against are pruned
+   * here, so the list stays bounded by age.
+   */
+  async revokeDevice(caller: Caller, id: string): Promise<{ ok: true } | Refusal> {
+    const refused = this.refuse(caller);
+    if (refused) return refused;
+    const now = Date.now();
+    this.sql.exec("DELETE FROM revoked WHERE at <= ?", now - REVOCATION_KEEP_MS);
+    this.sql.exec("INSERT INTO revoked (id, at) VALUES (?, ?) ON CONFLICT(id) DO UPDATE SET at = excluded.at", id, now);
+    this.sql.exec("DELETE FROM targets WHERE id = ?", id);
     return { ok: true };
   }
 

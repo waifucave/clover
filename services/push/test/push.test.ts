@@ -2,9 +2,12 @@
 // content-free notify fanned out to each, dead targets removed, and the limits.
 
 import { env } from "cloudflare:workers";
+import { runInDurableObject } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
 
-import { apnsToken, call, device, fakeLog, subscriptions, uniqueAccount } from "./helpers";
+import { b64u, sha256, utf8 } from "../../shared/encoding";
+import { REVOCATION_KEEP_MS, type PushDO } from "../src/push-do";
+import { apnsToken, call, clearOfMinuteBoundary, device, fakeLog, subscriptions, uniqueAccount } from "./helpers";
 import type { FakeLogEntry } from "./fake-log";
 
 async function since(before: number): Promise<FakeLogEntry[]> {
@@ -73,21 +76,67 @@ describe("targets", () => {
     expect(over.status).toBe(409);
     expect((await call(devices[5]!.token, "DELETE", "/v1/targets/phone0")).status).toBe(204);
     expect((await call(devices[5]!.token, "PUT", "/v1/targets/self", { kind: "apns", token: apnsToken(), env: "sandbox" })).status).toBe(204);
+    // Removing phone0's target did not revoke phone0: it can register again once there is room.
+    expect((await call(devices[1]!.token, "DELETE", "/v1/targets/self")).status).toBe(204);
+    expect((await call(devices[0]!.token, "PUT", "/v1/targets/self", { kind: "apns", token: apnsToken(), env: "sandbox" })).status).toBe(204);
   });
 
-  it("a device another device removed is revoked here: it can neither register again nor notify", async () => {
+  it("removing another device's target only stops pushes to it: that device can register again", async () => {
+    const account = uniqueAccount();
+    const phone = await device(account, "phone");
+    const browser = await device(account, "browser");
+    expect((await call(browser.token, "PUT", "/v1/targets/self", { kind: "webpush", ...subscriptions.fcm })).status).toBe(204);
+    expect((await call(phone.token, "DELETE", "/v1/targets/browser")).status).toBe(204);
+    expect(((await (await call(phone.token, "GET", "/v1/targets")).json()) as { targets: unknown[] }).targets).toEqual([]);
+    expect((await call(browser.token, "PUT", "/v1/targets/self", { kind: "webpush", ...subscriptions.fcm })).status).toBe(204);
+  });
+
+  it("revoking a device (what the account service calls) takes its target, and it can neither register nor notify", async () => {
     const account = uniqueAccount();
     const kept = await device(account, "kept-phone");
     const lost = await device(account, "lost-phone");
     expect((await call(lost.token, "PUT", "/v1/targets/self", { kind: "apns", token: apnsToken(), env: "production" })).status).toBe(204);
-    expect((await call(kept.token, "DELETE", "/v1/targets/lost-phone")).status).toBe(204);
+    expect((await call(kept.token, "DELETE", "/v1/devices/lost-phone")).status).toBe(204);
+    expect(((await (await call(kept.token, "GET", "/v1/targets")).json()) as { targets: unknown[] }).targets).toEqual([]);
     expect((await call(lost.token, "PUT", "/v1/targets/self", { kind: "apns", token: apnsToken(), env: "production" })).status).toBe(403);
     expect((await call(lost.token, "POST", "/v1/notify", { badge: 1 })).status).toBe(403);
     expect((await call(lost.token, "GET", "/v1/targets")).status).toBe(403);
-    // A device removing its own target only stops receiving.
-    expect((await call(kept.token, "PUT", "/v1/targets/self", { kind: "apns", token: apnsToken(), env: "production" })).status).toBe(204);
-    expect((await call(kept.token, "DELETE", "/v1/targets/self")).status).toBe(204);
-    expect((await call(kept.token, "PUT", "/v1/targets/self", { kind: "apns", token: apnsToken(), env: "production" })).status).toBe(204);
+    // Any id: a device revoked before it ever registered stays out too.
+    expect((await call(kept.token, "DELETE", "/v1/devices/never-seen")).status).toBe(204);
+    const never = await device(account, "never-seen");
+    expect((await call(never.token, "PUT", "/v1/targets/self", { kind: "apns", token: apnsToken(), env: "production" })).status).toBe(403);
+  });
+
+  it("prunes revocations by age, once every token issued before them has expired, not by count", async () => {
+    const account = uniqueAccount();
+    const admin = await device(account, "admin-phone");
+    const object = env.PUSH.getByName(b64u(await sha256(utf8(`push-account|${account}`))));
+    expect((await call(admin.token, "GET", "/v1/targets")).status).toBe(200); // the object now belongs to the account
+    const now = Date.now();
+    await runInDurableObject(object, (_i: PushDO, state) => {
+      state.storage.sql.exec("INSERT INTO revoked (id, at) VALUES ('long-ago', ?), ('lately', ?)", now - REVOCATION_KEEP_MS - 1, now - 3600_000);
+    });
+    const back = await device(account, "long-ago");
+    expect((await call(back.token, "PUT", "/v1/targets/self", { kind: "apns", token: apnsToken(), env: "sandbox" })).status).toBe(204);
+    const recent = await device(account, "lately");
+    expect((await call(recent.token, "PUT", "/v1/targets/self", { kind: "apns", token: apnsToken(), env: "sandbox" })).status).toBe(403);
+    expect((await call(admin.token, "DELETE", "/v1/devices/fresh")).status).toBe(204);
+    const left = await runInDurableObject(object, (_i: PushDO, state) =>
+      state.storage.sql.exec<{ id: string }>("SELECT id FROM revoked ORDER BY id").toArray().map((row) => row.id),
+    );
+    expect(left).toEqual(["fresh", "lately"]);
+  });
+
+  it("rate-limits listing, removing targets and revoking, per account", async () => {
+    const account = uniqueAccount();
+    const phone = await device(account, "phone");
+    await clearOfMinuteBoundary();
+    const statuses: number[] = [];
+    for (let i = 0; i < 30; i++) statuses.push((await call(phone.token, "GET", "/v1/targets")).status);
+    for (let i = 0; i < 20; i++) statuses.push((await call(phone.token, "DELETE", `/v1/targets/gone-${i}`)).status);
+    for (let i = 0; i < 11; i++) statuses.push((await call(phone.token, "DELETE", `/v1/devices/gone-${i}`)).status);
+    expect(statuses.slice(0, 60).every((s) => s === 200 || s === 204)).toBe(true);
+    expect(statuses[60]).toBe(429);
   });
 });
 
@@ -222,6 +271,7 @@ describe("notify", () => {
 
   it("rate-limits an account's notifies", async () => {
     const { token } = await device(uniqueAccount(), "computer");
+    await clearOfMinuteBoundary();
     const statuses: number[] = [];
     for (let i = 0; i < 65; i++) statuses.push((await call(token, "POST", "/v1/notify", { badge: i })).status);
     expect(statuses.filter((s) => s === 429).length).toBeGreaterThan(0);

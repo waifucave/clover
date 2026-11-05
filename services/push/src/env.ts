@@ -7,7 +7,7 @@ export interface Env {
   PUSH: DurableObjectNamespace<PushDO>;
   /** Notify calls per account. */
   NOTIFY_RATE: RateLimit;
-  /** Target registrations per account. */
+  /** Target registrations, removals and listings, and revocations, per account. */
   API_RATE: RateLimit;
 
   ACCOUNT_ISSUER: string;

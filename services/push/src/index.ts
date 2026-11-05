@@ -4,8 +4,9 @@
 //
 //   GET    /v1/vapid                                   -> { publicKey }            for browsers to subscribe
 //   PUT    /v1/targets/self  ApnsTarget | WebPushTarget -> 204                     a phone or browser registers itself
-//   DELETE /v1/targets/:id                             -> 204                     another device's: revokes it here
+//   DELETE /v1/targets/:id                             -> 204                     stops pushes to that target
 //   GET    /v1/targets                                 -> { targets }
+//   DELETE /v1/devices/:id                             -> 204                     revokes a device (any id, 24 h 10 min)
 //   POST   /v1/notify        { badge, urgent? }        -> { sent, removed, failed }
 //
 // All but /v1/vapid take the device's waifucave account token.
@@ -80,12 +81,20 @@ async function authenticated(request: Request, env: Env, path: string[]): Promis
     case "DELETE targets/:id": {
       const target = id === "self" ? identity.device : id;
       if (!TARGET_ID_RE.test(target)) return errorResponse(404, "not_found");
+      if (!(await env.API_RATE.limit({ key: identity.account })).success) return errorResponse(429, "rate_limited", {}, { "retry-after": "60" });
       const result = await stub.deleteTarget(caller, target);
       return result.ok ? new Response(null, { status: 204 }) : errorResponse(result.status, result.error);
     }
     case "GET targets": {
+      if (!(await env.API_RATE.limit({ key: identity.account })).success) return errorResponse(429, "rate_limited", {}, { "retry-after": "60" });
       const result = await stub.listTargets(caller);
       return result.ok ? json({ targets: result.targets }) : errorResponse(result.status, result.error);
+    }
+    case "DELETE devices/:id": {
+      if (!TARGET_ID_RE.test(id)) return errorResponse(404, "not_found");
+      if (!(await env.API_RATE.limit({ key: identity.account })).success) return errorResponse(429, "rate_limited", {}, { "retry-after": "60" });
+      const result = await stub.revokeDevice(caller, id);
+      return result.ok ? new Response(null, { status: 204 }) : errorResponse(result.status, result.error);
     }
     default:
       return errorResponse(404, "not_found");
