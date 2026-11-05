@@ -192,9 +192,10 @@
   color: var(--clover-island-muted, #8B8B8B);
 }
 
-/* What wraps a sealed card: no box of its own, only where the card's tokens are read. */
+/* What wraps a sealed card: a plain box, where the card's tokens are read (never `display: contents`, which
+   has no box for a measure). */
 .clv-card-frame {
-  display: contents;
+  display: block;
 }
 
 .clv-risk {

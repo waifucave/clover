@@ -74,8 +74,8 @@ for (const story of stories) {
       () =>
         new Promise((resolve) => {
           const parts = [...document.querySelectorAll("[data-sealed]")];
-          if (parts.length === 0) return resolve({ checked: 0, covered: [] });
-          if (!("isVisible" in IntersectionObserverEntry.prototype)) return resolve({ checked: 0, covered: [], unsupported: true });
+          if (parts.length === 0) return resolve({ checked: 0, covered: [], cut: [] });
+          if (!("isVisible" in IntersectionObserverEntry.prototype)) return resolve({ checked: 0, covered: [], cut: [], unsupported: true });
           const atRest = (el) => {
             for (let n = el; n && n !== document.documentElement; n = n.parentElement) {
               const cs = getComputedStyle(n);
@@ -96,21 +96,27 @@ for (const story of stories) {
             observer.disconnect();
             let checked = 0;
             const covered = [];
+            const cut = [];
             for (const p of parts) {
               const e = seen.get(p);
               const box = p.getBoundingClientRect();
+              // A ✓ or ✕ at rest must show whole, unless a list that scrolls cuts it at its edge (Needs you): a
+              // card cut by its own shape would never take the click.
+              const button = p.getAttribute("data-sealed") !== "field";
+              if (button && atRest(p) && e && e.intersectionRatio < 0.999 && !p.closest("[data-scrolls]")) cut.push(`${p.getAttribute("data-sealed")}${p.getAttribute("data-option") ? `:${p.getAttribute("data-option")}` : ""}`);
               // Held to it: a part at rest that shows whole (a click counts only on a whole button; a list cut at its
               // edge shows the rest of a card after a scroll).
               if (!atRest(p) || !e || !e.isIntersecting || e.intersectionRatio < 0.999 || box.width === 0 || box.height === 0) continue;
               checked++;
               if (!e.isVisible) covered.push(`${p.getAttribute("data-sealed")}${p.getAttribute("data-field") ? `:${p.getAttribute("data-field")}` : ""}${p.getAttribute("data-option") ? `:${p.getAttribute("data-option")}` : ""}`);
             }
-            resolve({ checked, covered });
+            resolve({ checked, covered, cut });
           }, 700);
         }),
     );
     if (sealed.unsupported) report.notes = [...(report.notes ?? []), `${story.id}: IntersectionObserver v2 is unavailable here`];
     if (sealed.covered.length) errors.push(`sealed parts covered or hidden at rest (IntersectionObserver v2): ${sealed.covered.join(", ")}`);
+    if (sealed.cut?.length) errors.push(`sealed buttons cut at rest by something other than a scrolling list: ${sealed.cut.join(", ")}`);
     const file = `${story.id.replaceAll("/", "__")}.png`;
     await page.locator("[data-frame]").first().screenshot({ path: join(out, "png", file), animations: "disabled", omitBackground: false });
     report.stories.push({ ...story, file, ms: Date.now() - started, errors, sealedChecked: sealed.checked });

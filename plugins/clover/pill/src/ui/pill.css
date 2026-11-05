@@ -329,9 +329,10 @@
 
 /* A card: the pill grown into an ask. */
 
-/* What wraps a sealed card: no box of its own, only where the card's tokens are read. */
+/* What wraps a sealed card: a plain box, where the card's tokens are read and the pill measures the card's
+   height (never `display: contents`, which has no box to measure). */
 .clp-card-frame {
-  display: contents;
+  display: block;
 }
 
 .clp-card {

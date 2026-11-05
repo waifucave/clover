@@ -214,7 +214,7 @@ export function TabScroll({ scrolls = true, children }: { scrolls?: boolean; chi
   }, [judge]);
   return (
     <>
-      <div ref={ref} className={scrolls ? "clv-tab-scroll" : "clv-tab-flat"} data-more-above={edges.top || undefined} onScroll={judge}>
+      <div ref={ref} className={scrolls ? "clv-tab-scroll" : "clv-tab-flat"} data-scrolls="" data-more-above={edges.top || undefined} onScroll={judge}>
         {children}
       </div>
       <div className="clv-more" aria-hidden="true" data-more-below={edges.bottom || undefined}>

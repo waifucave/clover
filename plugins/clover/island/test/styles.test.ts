@@ -37,6 +37,11 @@ describe("the island's stylesheet", () => {
     }
   });
 
+  test("the box a sealed card sits in is a real box, so its height can be measured", () => {
+    expect(ISLAND_CSS).toMatch(/\.clv-card-frame \{\s*display: block;/);
+    expect(ISLAND_CSS).not.toMatch(/\.clv-card-frame \{[^}]*display: contents/);
+  });
+
   test("puts nothing on an element that could hide a sealed frame", () => {
     // The component CSS is held to the theme rules too: anything that hides would hide a card part. What it
     // positions is checked on the rendered surfaces instead (`sealed.test.tsx`).

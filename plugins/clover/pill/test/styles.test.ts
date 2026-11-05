@@ -39,6 +39,11 @@ describe("the pill's stylesheet", () => {
     }
   });
 
+  test("the box a sealed card sits in is a real box, so its height can be measured", () => {
+    expect(PILL_CSS).toMatch(/\.clp-card-frame \{\s*display: block;/);
+    expect(PILL_CSS).not.toMatch(/\.clp-card-frame \{[^}]*display: contents/);
+  });
+
   test("puts nothing on an element that could hide a sealed frame", () => {
     expect(checkThemeCss(PILL_CSS, { component: true })).toEqual([]);
   });
