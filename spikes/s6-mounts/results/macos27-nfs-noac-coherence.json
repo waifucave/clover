@@ -8,9 +8,13 @@
     "cpus": 3,
     "cpu": "Apple M1 (Virtual)",
     "memGB": 7,
-    "bun": "1.3.14"
+    "bun": "1.3.14",
+    "commit": "147f346c9c621585e2d7596eb51348d64e2ae075",
+    "run": "42004174774",
+    "runAttempt": "1",
+    "job": "macos"
   },
-  "started": "2026-11-05T04:30:41.397Z",
+  "started": "2026-11-05T09:53:22.230Z",
   "results": [
     {
       "label": "nfs cached, noac",
@@ -20,10 +24,9 @@
       },
       "statOnlyShrunkRead": {
         "ok": true,
-        "length": 200,
+        "length": 46,
         "bytes": {
-          "B": 46,
-          "·": 154
+          "B": 46
         },
         "head": [
           66,
@@ -36,17 +39,17 @@
           66
         ],
         "tail": [
-          0,
-          0,
-          0,
-          0,
-          0,
-          0,
-          0,
-          0
+          66,
+          66,
+          66,
+          66,
+          66,
+          66,
+          66,
+          66
         ]
       },
-      "statOnlyShrinkVerdict": "WRONG: 46 'B' then 154 bytes the holder never sent",
+      "statOnlyShrinkVerdict": "correct: 46 'B'",
       "statOnlyGrownRead": {
         "ok": true,
         "length": 46,
@@ -134,7 +137,7 @@
         ]
       },
       "shrinkVerdict": "old version: 200 'A' (stale, but bytes the holder sent)",
-      "sizeFreshAfterMs": 28,
+      "sizeFreshAfterMs": 30,
       "grownRead": {
         "ok": true,
         "length": 46,
@@ -163,11 +166,16 @@
         ]
       },
       "growVerdict": "stale: 46 bytes {\"C\":46}",
-      "grownFreshAfterMs": 59,
+      "grownFreshAfterMs": 61,
       "missingFirst": "ENOENT",
-      "newNameVisibleAfterMs": 54,
-      "deletedGoneAfterMs": 58
+      "newNameVisibleAfterMs": 30,
+      "deletedGoneAfterMs": 57
     }
   ],
-  "finished": "2026-11-05T04:30:42.446Z"
+  "finished": "2026-11-05T09:53:23.294Z",
+  "nfs": {
+    "ac": "noac",
+    "timeo": 110,
+    "dumbtimer": true
+  }
 }

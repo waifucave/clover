@@ -8,9 +8,13 @@
     "cpus": 4,
     "cpu": "AMD EPYC 7763 64-Core Processor                ",
     "memGB": 16,
-    "bun": "1.3.14"
+    "bun": "1.3.14",
+    "commit": "147f346c9c621585e2d7596eb51348d64e2ae075",
+    "run": "42004174774",
+    "runAttempt": "1",
+    "job": "unix-like"
   },
-  "started": "2026-11-05T02:02:16.513Z",
+  "started": "2026-11-05T09:41:30.690Z",
   "results": [
     {
       "label": "plain",
@@ -133,7 +137,7 @@
         ]
       },
       "shrinkVerdict": "correct: 46 'B'",
-      "sizeFreshAfterMs": 1017,
+      "sizeFreshAfterMs": 1001,
       "grownRead": {
         "ok": true,
         "length": 300,
@@ -162,10 +166,10 @@
         ]
       },
       "growVerdict": "correct: 300 'C'",
-      "grownFreshAfterMs": 2,
+      "grownFreshAfterMs": 3,
       "missingFirst": "ENOENT",
-      "newNameVisibleAfterMs": 1015,
-      "deletedGoneAfterMs": 1003
+      "newNameVisibleAfterMs": 1031,
+      "deletedGoneAfterMs": 1016
     },
     {
       "label": "cached",
@@ -288,7 +292,7 @@
         ]
       },
       "shrinkVerdict": "correct: 46 'B'",
-      "sizeFreshAfterMs": 43,
+      "sizeFreshAfterMs": 38,
       "grownRead": {
         "ok": true,
         "length": 300,
@@ -317,14 +321,14 @@
         ]
       },
       "growVerdict": "correct: 300 'C'",
-      "grownFreshAfterMs": 1,
+      "grownFreshAfterMs": 2,
       "missingFirst": "ENOENT",
-      "newNameVisibleAfterMs": 43,
-      "deletedGoneAfterMs": 42
+      "newNameVisibleAfterMs": 35,
+      "deletedGoneAfterMs": 33
     }
   ],
   "selfLink": {
     "error": "ENOENT: ENOENT: no such file or directory, scandir 'T:\\home\\Runner'"
   },
-  "finished": "2026-11-05T02:02:21.595Z"
+  "finished": "2026-11-05T09:41:35.828Z"
 }

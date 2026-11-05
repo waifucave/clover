@@ -230,7 +230,7 @@ export class Rig {
     n.mountedAs = "user";
     // What the kernel made of the options (acregmin/acregmax and the rest), for the result files.
     const m = await run(["nfsstat", "-m"], { timeoutMs: 10000 });
-    n.mountArgs = (m.stdout || m.stderr).trim().slice(0, 1500);
+    n.mountArgs = redactExport((m.stdout || m.stderr).trim().slice(0, 1500));
   }
 
   /** What the daemon does after its helper died: take the dead mount away so it can remount. */
@@ -339,6 +339,11 @@ export function machine() {
     // Provenance: which commit and CI run produced the file.
     commit: process.env.GITHUB_SHA, run: process.env.GITHUB_RUN_ID, runAttempt: process.env.GITHUB_RUN_ATTEMPT, job: process.env.GITHUB_JOB,
   };
+}
+
+/** The one-time export path is the helper's MOUNT capability: result files never carry it. */
+export function redactExport(text: string): string {
+  return text.replace(/\/[A-Za-z0-9_-]{22}\b/g, "/<one-time export path>");
 }
 
 /** What a result file records about the NFS mount. */

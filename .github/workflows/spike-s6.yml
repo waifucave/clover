@@ -247,7 +247,7 @@ jobs:
             --out "$res/macos-nfs-slowlink-128k-failfast.json" || echo "slow link (128 KiB) failed"
           # what the NFS client said about the server meanwhile ("not responding" is what raises the dialog)
           log show --last 90m --style compact --predicate 'eventMessage CONTAINS[c] "nfs server" OR eventMessage CONTAINS[c] "not responding" OR eventMessage CONTAINS[c] "jukebox"' \
-            2>&1 | tail -300 > "$res/macos-nfs-kernel-log.txt" || true
+            2>&1 | tail -300 | sed -E 's#/[A-Za-z0-9_-]{22}([^A-Za-z0-9_-]|$)#/<one-time export path>\1#g' > "$res/macos-nfs-kernel-log.txt" || true
           grep -c . "$res/macos-nfs-kernel-log.txt" || true
       - name: NFS loopback — what macOS writes into the other computer's folders (review S6)
         run: |

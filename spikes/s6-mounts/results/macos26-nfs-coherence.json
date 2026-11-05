@@ -8,9 +8,13 @@
     "cpus": 3,
     "cpu": "Apple M1 (Virtual)",
     "memGB": 7,
-    "bun": "1.3.14"
+    "bun": "1.3.14",
+    "commit": "147f346c9c621585e2d7596eb51348d64e2ae075",
+    "run": "42004174774",
+    "runAttempt": "1",
+    "job": "macos"
   },
-  "started": "2026-11-05T04:23:40.869Z",
+  "started": "2026-11-05T09:59:47.391Z",
   "results": [
     {
       "label": "nfs plain",
@@ -134,7 +138,7 @@
         ]
       },
       "shrinkVerdict": "old version: 200 'A' (stale, but bytes the holder sent)",
-      "sizeFreshAfterMs": 1928,
+      "sizeFreshAfterMs": 1160,
       "grownRead": {
         "ok": true,
         "length": 46,
@@ -163,11 +167,15 @@
         ]
       },
       "growVerdict": "stale: 46 bytes {\"C\":46}",
-      "grownFreshAfterMs": 1002,
+      "grownFreshAfterMs": 1000,
       "missingFirst": "ENOENT",
-      "newNameVisibleAfterMs": 1978,
-      "deletedGoneAfterMs": 1013
+      "newNameVisibleAfterMs": 2005,
+      "deletedGoneAfterMs": 1992
     }
   ],
-  "finished": "2026-11-05T04:23:47.721Z"
+  "finished": "2026-11-05T09:59:54.598Z",
+  "nfs": {
+    "timeo": 110,
+    "dumbtimer": true
+  }
 }

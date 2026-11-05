@@ -3,34 +3,38 @@
   "question": "failfast",
   "machine": {
     "os": "linux",
-    "release": "7.0.0-1014-aws",
+    "release": "7.0.0-1019-azure",
     "arch": "x64",
     "cpus": 4,
-    "cpu": "Intel(R) Xeon(R) 6975P-C",
-    "memGB": 15,
-    "bun": "1.3.14"
+    "cpu": "AMD EPYC 7763 64-Core Processor",
+    "memGB": 16,
+    "bun": "1.3.14",
+    "commit": "147f346c9c621585e2d7596eb51348d64e2ae075",
+    "run": "42004174774",
+    "runAttempt": "1",
+    "job": "unix-like"
   },
   "rttMs": 20,
   "policy": "plain",
-  "started": "2026-11-05T01:44:32.696Z",
+  "started": "2026-11-05T09:40:48.952Z",
   "results": [
     {
       "scenario": "read+blackhole",
       "op": "read 1 GiB",
       "fault": "link goes silent (no FIN, no RST)",
-      "failMs": 1518,
+      "failMs": 1503,
       "exitCode": 1,
       "sawError": "EHOSTDOWN: EHOSTDOWN: host is down, read",
-      "progressBytes": 5111808,
+      "progressBytes": 4849664,
       "whileDown": {
         "ok": false,
-        "ms": 0.12669499999999978,
+        "ms": 0.23715300000000283,
         "code": "EHOSTDOWN",
         "message": "EHOSTDOWN: host is down, statx '/home/runner/work/_temp/s6/tree/home/Desktop1/clover/package.json'"
       },
       "whileDownAgain": {
         "ok": false,
-        "ms": 0.19620199999999954,
+        "ms": 0.29459000000000124,
         "code": "EHOSTDOWN",
         "message": "EHOSTDOWN: host is down, scandir '/home/runner/work/_temp/s6/tree/home/Desktop1'"
       },
@@ -39,209 +43,13 @@
       "helperAlive": true,
       "homeListing": {
         "ok": true,
-        "ms": 0.1778340000000007
+        "ms": 0.2859840000000027
       },
-      "recoverMs": 141,
-      "restoreCallMs": 1,
-      "afterRecovery": {
-        "ok": true,
-        "ms": 21.513920000000002
-      },
-      "stuckAfter": [],
-      "helperStats": {
-        "cacheHits": 0,
-        "cacheMiss": 10,
-        "drops": 1,
-        "fastFails": 7,
-        "online": true,
-        "prefetches": 0,
-        "reconnects": 1,
-        "requests": 53,
-        "timeouts": 0
-      },
-      "helperLog": "01:44:36.359284 [Desktop1] online (service 9caf6ef6 on linux)\n01:44:36.359372 mounting /home/runner/work/_temp/s6/tree (policy plain)\n01:44:38.485392 [Desktop1] offline: silent for 1.522s (2 requests failed)\n01:44:38.607043 [Desktop1] link back (service 9caf6ef6, restarted: false)",
-      "unmountMs": 6,
-      "mountGone": true
-    },
-    {
-      "scenario": "read+reset",
-      "op": "read 1 GiB",
-      "fault": "link reset (connections closed)",
-      "failMs": 2,
-      "exitCode": 1,
-      "sawError": "EIO: EIO: i/o error, read",
-      "progressBytes": 5111808,
-      "whileDown": {
-        "ok": false,
-        "ms": 0.21903300000000137,
-        "code": "EHOSTDOWN",
-        "message": "EHOSTDOWN: host is down, statx '/home/runner/work/_temp/s6/tree/home/Desktop1/clover/package.json'"
-      },
-      "whileDownAgain": {
-        "ok": false,
-        "ms": 0.6069490000000002,
-        "code": "EHOSTDOWN",
-        "message": "EHOSTDOWN: host is down, scandir '/home/runner/work/_temp/s6/tree/home/Desktop1'"
-      },
-      "stuckProcesses": [],
-      "systemUninterruptible": [],
-      "helperAlive": true,
-      "homeListing": {
-        "ok": true,
-        "ms": 0.21637800000000063
-      },
-      "recoverMs": 135,
+      "recoverMs": 118,
       "restoreCallMs": 0,
       "afterRecovery": {
         "ok": true,
-        "ms": 20.95784
-      },
-      "stuckAfter": [],
-      "helperStats": {
-        "cacheHits": 1,
-        "cacheMiss": 8,
-        "drops": 1,
-        "fastFails": 6,
-        "online": true,
-        "prefetches": 0,
-        "reconnects": 1,
-        "requests": 52,
-        "timeouts": 0
-      },
-      "helperLog": "01:44:38.607043 [Desktop1] link back (service 9caf6ef6, restarted: false)\n01:44:38.729862 unmounted\n01:44:38.757319 [Desktop1] online (service 9caf6ef6 on linux)\n01:44:38.757383 mounting /home/runner/work/_temp/s6/tree (policy plain)\n01:44:39.369748 [Desktop1] offline: read: EOF (2 requests failed)\n01:44:39.491131 [Desktop1] link back (service 9caf6ef6, restarted: false)",
-      "unmountMs": 7,
-      "mountGone": true
-    },
-    {
-      "scenario": "read+kill",
-      "op": "read 1 GiB",
-      "fault": "file service killed (SIGKILL)",
-      "failMs": 5,
-      "exitCode": 1,
-      "sawError": "EIO: EIO: i/o error, read",
-      "progressBytes": 5111808,
-      "whileDown": {
-        "ok": false,
-        "ms": 0.12055100000000074,
-        "code": "EHOSTDOWN",
-        "message": "EHOSTDOWN: host is down, statx '/home/runner/work/_temp/s6/tree/home/Desktop1/clover/package.json'"
-      },
-      "whileDownAgain": {
-        "ok": false,
-        "ms": 0.15495600000000032,
-        "code": "EHOSTDOWN",
-        "message": "EHOSTDOWN: host is down, scandir '/home/runner/work/_temp/s6/tree/home/Desktop1'"
-      },
-      "stuckProcesses": [],
-      "systemUninterruptible": [],
-      "helperAlive": true,
-      "homeListing": {
-        "ok": true,
-        "ms": 0.16026899999999955
-      },
-      "recoverMs": 99,
-      "restoreCallMs": 51,
-      "afterRecovery": {
-        "ok": true,
-        "ms": 21.789738999999997
-      },
-      "stuckAfter": [],
-      "helperStats": {
-        "cacheHits": 1,
-        "cacheMiss": 7,
-        "drops": 1,
-        "fastFails": 5,
-        "online": true,
-        "prefetches": 0,
-        "reconnects": 1,
-        "requests": 51,
-        "timeouts": 0
-      },
-      "helperLog": "01:44:39.491131 [Desktop1] link back (service 9caf6ef6, restarted: false)\n01:44:39.613717 unmounted\n01:44:39.641290 [Desktop1] online (service 9caf6ef6 on linux)\n01:44:39.641349 mounting /home/runner/work/_temp/s6/tree (policy plain)\n01:44:40.253998 [Desktop1] offline: read: EOF (2 requests failed)\n01:44:40.376529 [Desktop1] link back (service 9b4ce7bb, restarted: true)",
-      "unmountMs": 5,
-      "mountGone": true
-    },
-    {
-      "scenario": "read+freeze",
-      "op": "read 1 GiB",
-      "fault": "file service frozen (SIGSTOP; its TCP stays up)",
-      "failMs": 1515,
-      "exitCode": 1,
-      "sawError": "EHOSTDOWN: EHOSTDOWN: host is down, read",
-      "progressBytes": 5373952,
-      "whileDown": {
-        "ok": false,
-        "ms": 0.17982200000000148,
-        "code": "EHOSTDOWN",
-        "message": "EHOSTDOWN: host is down, statx '/home/runner/work/_temp/s6/tree/home/Desktop1/clover/package.json'"
-      },
-      "whileDownAgain": {
-        "ok": false,
-        "ms": 0.1709549999999993,
-        "code": "EHOSTDOWN",
-        "message": "EHOSTDOWN: host is down, scandir '/home/runner/work/_temp/s6/tree/home/Desktop1'"
-      },
-      "stuckProcesses": [],
-      "systemUninterruptible": [],
-      "helperAlive": true,
-      "homeListing": {
-        "ok": true,
-        "ms": 0.16903499999999916
-      },
-      "recoverMs": 138,
-      "restoreCallMs": 1,
-      "afterRecovery": {
-        "ok": true,
-        "ms": 21.272342000000002
-      },
-      "stuckAfter": [],
-      "helperStats": {
-        "cacheHits": 0,
-        "cacheMiss": 10,
-        "drops": 1,
-        "fastFails": 7,
-        "online": true,
-        "prefetches": 0,
-        "reconnects": 1,
-        "requests": 55,
-        "timeouts": 0
-      },
-      "helperLog": "01:44:40.376529 [Desktop1] link back (service 9b4ce7bb, restarted: true)\n01:44:40.499904 unmounted\n01:44:40.525912 [Desktop1] online (service 9b4ce7bb on linux)\n01:44:40.525988 mounting /home/runner/work/_temp/s6/tree (policy plain)\n01:44:42.651990 [Desktop1] offline: silent for 1.503s (2 requests failed)\n01:44:42.773293 [Desktop1] link back (service 9b4ce7bb, restarted: false)",
-      "unmountMs": 6,
-      "mountGone": true
-    },
-    {
-      "scenario": "write+blackhole",
-      "op": "write 1 GiB",
-      "fault": "link goes silent (no FIN, no RST)",
-      "failMs": 1518,
-      "exitCode": 1,
-      "sawError": "EHOSTDOWN: EHOSTDOWN: host is down, write",
-      "progressBytes": 17825792,
-      "whileDown": {
-        "ok": false,
-        "ms": 0.1760230000000007,
-        "code": "EHOSTDOWN",
-        "message": "EHOSTDOWN: host is down, statx '/home/runner/work/_temp/s6/tree/home/Desktop1/clover/package.json'"
-      },
-      "whileDownAgain": {
-        "ok": false,
-        "ms": 0.1558080000000004,
-        "code": "EHOSTDOWN",
-        "message": "EHOSTDOWN: host is down, scandir '/home/runner/work/_temp/s6/tree/home/Desktop1'"
-      },
-      "stuckProcesses": [],
-      "systemUninterruptible": [],
-      "helperAlive": true,
-      "homeListing": {
-        "ok": true,
-        "ms": 0.23657400000000095
-      },
-      "recoverMs": 140,
-      "restoreCallMs": 0,
-      "afterRecovery": {
-        "ok": true,
-        "ms": 21.216139
+        "ms": 21.987457
       },
       "stuckAfter": [],
       "helperStats": {
@@ -252,30 +60,30 @@
         "online": true,
         "prefetches": 0,
         "reconnects": 1,
-        "requests": 30,
+        "requests": 50,
         "timeouts": 0
       },
-      "helperLog": "01:44:42.773293 [Desktop1] link back (service 9b4ce7bb, restarted: false)\n01:44:42.885023 unmounted\n01:44:42.912849 [Desktop1] online (service 9b4ce7bb on linux)\n01:44:42.912915 mounting /home/runner/work/_temp/s6/tree (policy plain)\n01:44:45.038532 [Desktop1] offline: silent for 1.524s (1 requests failed)\n01:44:45.160043 [Desktop1] link back (service 9b4ce7bb, restarted: false)",
+      "helperLog": "09:40:51.719556 [Desktop1] online (service 770f76ce on linux)\n09:40:51.719659 mounting /home/runner/work/_temp/s6/tree (policy plain)\n09:40:53.845795 [Desktop1] offline: silent for 1.513s (2 requests failed)\n09:40:53.968304 [Desktop1] link back (service 770f76ce, restarted: false)",
       "unmountMs": 6,
       "mountGone": true
     },
     {
-      "scenario": "write+kill",
-      "op": "write 1 GiB",
-      "fault": "file service killed (SIGKILL)",
-      "failMs": 5,
+      "scenario": "read+reset",
+      "op": "read 1 GiB",
+      "fault": "link reset (connections closed)",
+      "failMs": 4,
       "exitCode": 1,
-      "sawError": "EHOSTDOWN: EHOSTDOWN: host is down, write",
-      "progressBytes": 17825792,
+      "sawError": "EIO: EIO: i/o error, read",
+      "progressBytes": 4849664,
       "whileDown": {
         "ok": false,
-        "ms": 0.10587400000000002,
+        "ms": 0.18285099999999943,
         "code": "EHOSTDOWN",
         "message": "EHOSTDOWN: host is down, statx '/home/runner/work/_temp/s6/tree/home/Desktop1/clover/package.json'"
       },
       "whileDownAgain": {
         "ok": false,
-        "ms": 0.2063890000000015,
+        "ms": 0.2879860000000001,
         "code": "EHOSTDOWN",
         "message": "EHOSTDOWN: host is down, scandir '/home/runner/work/_temp/s6/tree/home/Desktop1'"
       },
@@ -284,27 +92,223 @@
       "helperAlive": true,
       "homeListing": {
         "ok": true,
-        "ms": 1.0873750000000015
+        "ms": 0.28539200000000164
       },
-      "recoverMs": 97,
-      "restoreCallMs": 51,
+      "recoverMs": 120,
+      "restoreCallMs": 0,
       "afterRecovery": {
         "ok": true,
-        "ms": 21.722781999999995
+        "ms": 22.004683
       },
       "stuckAfter": [],
       "helperStats": {
         "cacheHits": 1,
         "cacheMiss": 7,
         "drops": 1,
-        "fastFails": 4,
+        "fastFails": 5,
+        "online": true,
+        "prefetches": 0,
+        "reconnects": 1,
+        "requests": 49,
+        "timeouts": 0
+      },
+      "helperLog": "09:40:53.968304 [Desktop1] link back (service 770f76ce, restarted: false)\n09:40:54.109785 unmounted\n09:40:54.138772 [Desktop1] online (service 770f76ce on linux)\n09:40:54.138913 mounting /home/runner/work/_temp/s6/tree (policy plain)\n09:40:54.759132 [Desktop1] offline: read: EOF (2 requests failed)\n09:40:54.880834 [Desktop1] link back (service 770f76ce, restarted: false)",
+      "unmountMs": 6,
+      "mountGone": true
+    },
+    {
+      "scenario": "read+kill",
+      "op": "read 1 GiB",
+      "fault": "file service killed (SIGKILL)",
+      "failMs": 7,
+      "exitCode": 1,
+      "sawError": "EIO: EIO: i/o error, read",
+      "progressBytes": 4849664,
+      "whileDown": {
+        "ok": false,
+        "ms": 0.20521299999999876,
+        "code": "EHOSTDOWN",
+        "message": "EHOSTDOWN: host is down, statx '/home/runner/work/_temp/s6/tree/home/Desktop1/clover/package.json'"
+      },
+      "whileDownAgain": {
+        "ok": false,
+        "ms": 0.29232499999999995,
+        "code": "EHOSTDOWN",
+        "message": "EHOSTDOWN: host is down, scandir '/home/runner/work/_temp/s6/tree/home/Desktop1'"
+      },
+      "stuckProcesses": [],
+      "systemUninterruptible": [],
+      "helperAlive": true,
+      "homeListing": {
+        "ok": true,
+        "ms": 0.3397529999999982
+      },
+      "recoverMs": 260,
+      "restoreCallMs": 51,
+      "afterRecovery": {
+        "ok": true,
+        "ms": 22.691443999999997
+      },
+      "stuckAfter": [],
+      "helperStats": {
+        "cacheHits": 1,
+        "cacheMiss": 10,
+        "drops": 1,
+        "fastFails": 8,
+        "online": true,
+        "prefetches": 0,
+        "reconnects": 1,
+        "requests": 52,
+        "timeouts": 0
+      },
+      "helperLog": "09:40:54.880834 [Desktop1] link back (service 770f76ce, restarted: false)\n09:40:55.017877 unmounted\n09:40:55.047451 [Desktop1] online (service 770f76ce on linux)\n09:40:55.047645 mounting /home/runner/work/_temp/s6/tree (policy plain)\n09:40:55.562256 [Desktop1] offline: read: EOF (2 requests failed)\n09:40:55.885669 [Desktop1] link back (service 532c1272, restarted: true)",
+      "unmountMs": 6,
+      "mountGone": true
+    },
+    {
+      "scenario": "read+freeze",
+      "op": "read 1 GiB",
+      "fault": "file service frozen (SIGSTOP; its TCP stays up)",
+      "failMs": 1506,
+      "exitCode": 1,
+      "sawError": "EHOSTDOWN: EHOSTDOWN: host is down, read",
+      "progressBytes": 5111808,
+      "whileDown": {
+        "ok": false,
+        "ms": 0.2514289999999999,
+        "code": "EHOSTDOWN",
+        "message": "EHOSTDOWN: host is down, statx '/home/runner/work/_temp/s6/tree/home/Desktop1/clover/package.json'"
+      },
+      "whileDownAgain": {
+        "ok": false,
+        "ms": 0.31139200000000145,
+        "code": "EHOSTDOWN",
+        "message": "EHOSTDOWN: host is down, scandir '/home/runner/work/_temp/s6/tree/home/Desktop1'"
+      },
+      "stuckProcesses": [],
+      "systemUninterruptible": [],
+      "helperAlive": true,
+      "homeListing": {
+        "ok": true,
+        "ms": 0.30047099999999993
+      },
+      "recoverMs": 111,
+      "restoreCallMs": 0,
+      "afterRecovery": {
+        "ok": true,
+        "ms": 21.840901000000002
+      },
+      "stuckAfter": [],
+      "helperStats": {
+        "cacheHits": 0,
+        "cacheMiss": 9,
+        "drops": 1,
+        "fastFails": 6,
+        "online": true,
+        "prefetches": 0,
+        "reconnects": 1,
+        "requests": 52,
+        "timeouts": 0
+      },
+      "helperLog": "09:40:55.885669 [Desktop1] link back (service 532c1272, restarted: true)\n09:40:56.016259 unmounted\n09:40:56.043257 [Desktop1] online (service 532c1272 on linux)\n09:40:56.043372 mounting /home/runner/work/_temp/s6/tree (policy plain)\n09:40:58.168761 [Desktop1] offline: silent for 1.503s (2 requests failed)\n09:40:58.290903 [Desktop1] link back (service 532c1272, restarted: false)",
+      "unmountMs": 8,
+      "mountGone": true
+    },
+    {
+      "scenario": "write+blackhole",
+      "op": "write 1 GiB",
+      "fault": "link goes silent (no FIN, no RST)",
+      "failMs": 1505,
+      "exitCode": 1,
+      "sawError": "EHOSTDOWN: EHOSTDOWN: host is down, write",
+      "progressBytes": 16777216,
+      "whileDown": {
+        "ok": false,
+        "ms": 0.2276549999999986,
+        "code": "EHOSTDOWN",
+        "message": "EHOSTDOWN: host is down, statx '/home/runner/work/_temp/s6/tree/home/Desktop1/clover/package.json'"
+      },
+      "whileDownAgain": {
+        "ok": false,
+        "ms": 0.280934000000002,
+        "code": "EHOSTDOWN",
+        "message": "EHOSTDOWN: host is down, scandir '/home/runner/work/_temp/s6/tree/home/Desktop1'"
+      },
+      "stuckProcesses": [],
+      "systemUninterruptible": [],
+      "helperAlive": true,
+      "homeListing": {
+        "ok": true,
+        "ms": 0.2793039999999998
+      },
+      "recoverMs": 110,
+      "restoreCallMs": 1,
+      "afterRecovery": {
+        "ok": true,
+        "ms": 22.728600999999998
+      },
+      "stuckAfter": [],
+      "helperStats": {
+        "cacheHits": 0,
+        "cacheMiss": 8,
+        "drops": 1,
+        "fastFails": 5,
         "online": true,
         "prefetches": 0,
         "reconnects": 1,
         "requests": 28,
         "timeouts": 0
       },
-      "helperLog": "01:44:45.160043 [Desktop1] link back (service 9b4ce7bb, restarted: false)\n01:44:45.280626 unmounted\n01:44:45.310188 [Desktop1] online (service 9b4ce7bb on linux)\n01:44:45.310278 mounting /home/runner/work/_temp/s6/tree (policy plain)\n01:44:45.930953 [Desktop1] offline: read: EOF (1 requests failed)\n01:44:46.054053 [Desktop1] link back (service 7d40e160, restarted: true)",
+      "helperLog": "09:40:58.290903 [Desktop1] link back (service 532c1272, restarted: false)\n09:40:58.423411 unmounted\n09:40:58.456816 [Desktop1] online (service 532c1272 on linux)\n09:40:58.456927 mounting /home/runner/work/_temp/s6/tree (policy plain)\n09:41:00.583032 [Desktop1] offline: silent for 1.518s (1 requests failed)\n09:41:00.705556 [Desktop1] link back (service 532c1272, restarted: false)",
+      "unmountMs": 5,
+      "mountGone": true
+    },
+    {
+      "scenario": "write+kill",
+      "op": "write 1 GiB",
+      "fault": "file service killed (SIGKILL)",
+      "failMs": 8,
+      "exitCode": 1,
+      "sawError": "EHOSTDOWN: EHOSTDOWN: host is down, write",
+      "progressBytes": 16777216,
+      "whileDown": {
+        "ok": false,
+        "ms": 0.1819299999999977,
+        "code": "EHOSTDOWN",
+        "message": "EHOSTDOWN: host is down, statx '/home/runner/work/_temp/s6/tree/home/Desktop1/clover/package.json'"
+      },
+      "whileDownAgain": {
+        "ok": false,
+        "ms": 0.2821169999999995,
+        "code": "EHOSTDOWN",
+        "message": "EHOSTDOWN: host is down, scandir '/home/runner/work/_temp/s6/tree/home/Desktop1'"
+      },
+      "stuckProcesses": [],
+      "systemUninterruptible": [],
+      "helperAlive": true,
+      "homeListing": {
+        "ok": true,
+        "ms": 0.2718769999999999
+      },
+      "recoverMs": 262,
+      "restoreCallMs": 51,
+      "afterRecovery": {
+        "ok": true,
+        "ms": 22.697314000000002
+      },
+      "stuckAfter": [],
+      "helperStats": {
+        "cacheHits": 0,
+        "cacheMiss": 11,
+        "drops": 1,
+        "fastFails": 8,
+        "online": true,
+        "prefetches": 0,
+        "reconnects": 1,
+        "requests": 31,
+        "timeouts": 0
+      },
+      "helperLog": "09:41:00.705556 [Desktop1] link back (service 532c1272, restarted: false)\n09:41:00.832293 unmounted\n09:41:00.861826 [Desktop1] online (service 532c1272 on linux)\n09:41:00.861918 mounting /home/runner/work/_temp/s6/tree (policy plain)\n09:41:01.488894 [Desktop1] offline: read: EOF (1 requests failed)\n09:41:01.812399 [Desktop1] link back (service 694ae35e, restarted: true)",
       "unmountMs": 6,
       "mountGone": true
     },
@@ -312,18 +316,18 @@
       "scenario": "git+blackhole",
       "op": "git status (cold)",
       "fault": "link goes silent (no FIN, no RST)",
-      "failMs": 1548,
+      "failMs": 1527,
       "exitCode": 128,
       "sawError": "fatal: .git/index: index file open failed: Host is down",
       "whileDown": {
         "ok": false,
-        "ms": 0.18247700000000044,
+        "ms": 0.3034370000000024,
         "code": "EHOSTDOWN",
         "message": "EHOSTDOWN: host is down, statx '/home/runner/work/_temp/s6/tree/home/Desktop1/clover/package.json'"
       },
       "whileDownAgain": {
         "ok": false,
-        "ms": 0.23594300000000068,
+        "ms": 0.312697,
         "code": "EHOSTDOWN",
         "message": "EHOSTDOWN: host is down, scandir '/home/runner/work/_temp/s6/tree/home/Desktop1'"
       },
@@ -332,46 +336,46 @@
       "helperAlive": true,
       "homeListing": {
         "ok": true,
-        "ms": 0.28232300000000166
+        "ms": 0.305651000000001
       },
-      "recoverMs": 141,
+      "recoverMs": 120,
       "restoreCallMs": 1,
       "afterRecovery": {
         "ok": true,
-        "ms": 21.178023
+        "ms": 21.899653000000004
       },
       "stuckAfter": [],
       "helperStats": {
         "cacheHits": 9,
         "cacheMiss": 23,
         "drops": 1,
-        "fastFails": 11,
+        "fastFails": 9,
         "online": true,
         "prefetches": 0,
         "reconnects": 1,
-        "requests": 31,
+        "requests": 29,
         "timeouts": 0
       },
-      "helperLog": "01:44:46.054053 [Desktop1] link back (service 7d40e160, restarted: true)\n01:44:46.174236 unmounted\n01:44:46.203173 [Desktop1] online (service 7d40e160 on linux)\n01:44:46.203259 mounting /home/runner/work/_temp/s6/tree (policy plain)\n01:44:48.204194 [Desktop1] offline: silent for 1.552s (1 requests failed)\n01:44:48.325636 [Desktop1] link back (service 7d40e160, restarted: false)",
-      "unmountMs": 4,
+      "helperLog": "09:41:01.812399 [Desktop1] link back (service 694ae35e, restarted: true)\n09:41:01.944276 unmounted\n09:41:01.975400 [Desktop1] online (service 694ae35e on linux)\n09:41:01.975559 mounting /home/runner/work/_temp/s6/tree (policy plain)\n09:41:03.851173 [Desktop1] offline: silent for 1.525s (1 requests failed)\n09:41:03.973182 [Desktop1] link back (service 694ae35e, restarted: false)",
+      "unmountMs": 6,
       "mountGone": true
     },
     {
       "scenario": "tsc+blackhole",
       "op": "tsc packages/protocol (cold)",
       "fault": "link goes silent (no FIN, no RST)",
-      "failMs": 1557,
+      "failMs": 1532,
       "exitCode": 1,
       "sawError": "node:internal/modules/cjs/loader:1568",
       "whileDown": {
         "ok": false,
-        "ms": 0.136552,
+        "ms": 0.17564899999999994,
         "code": "EHOSTDOWN",
         "message": "EHOSTDOWN: host is down, statx '/home/runner/work/_temp/s6/tree/home/Desktop1/clover/package.json'"
       },
       "whileDownAgain": {
         "ok": false,
-        "ms": 0.16319700000000026,
+        "ms": 0.3329000000000004,
         "code": "EHOSTDOWN",
         "message": "EHOSTDOWN: host is down, scandir '/home/runner/work/_temp/s6/tree/home/Desktop1'"
       },
@@ -380,28 +384,28 @@
       "helperAlive": true,
       "homeListing": {
         "ok": true,
-        "ms": 0.17454599999999942
+        "ms": 0.34319099999999914
       },
-      "recoverMs": 141,
+      "recoverMs": 117,
       "restoreCallMs": 0,
       "afterRecovery": {
         "ok": true,
-        "ms": 21.257506999999997
+        "ms": 21.343313
       },
       "stuckAfter": [],
       "helperStats": {
         "cacheHits": 2,
-        "cacheMiss": 24,
+        "cacheMiss": 23,
         "drops": 1,
-        "fastFails": 9,
+        "fastFails": 8,
         "online": true,
         "prefetches": 0,
         "reconnects": 1,
-        "requests": 28,
+        "requests": 27,
         "timeouts": 0
       },
-      "helperLog": "01:44:48.325636 [Desktop1] link back (service 7d40e160, restarted: false)\n01:44:48.440618 unmounted\n01:44:48.466471 [Desktop1] online (service 7d40e160 on linux)\n01:44:48.466539 mounting /home/runner/work/_temp/s6/tree (policy plain)\n01:44:50.466999 [Desktop1] offline: silent for 1.56s (1 requests failed)\n01:44:50.588287 [Desktop1] link back (service 7d40e160, restarted: false)",
-      "unmountMs": 5,
+      "helperLog": "09:41:03.973182 [Desktop1] link back (service 694ae35e, restarted: false)\n09:41:04.114356 unmounted\n09:41:04.143651 [Desktop1] online (service 694ae35e on linux)\n09:41:04.143772 mounting /home/runner/work/_temp/s6/tree (policy plain)\n09:41:06.144486 [Desktop1] offline: silent for 1.523s (1 requests failed)\n09:41:06.266430 [Desktop1] link back (service 694ae35e, restarted: false)",
+      "unmountMs": 6,
       "mountGone": true
     },
     {
@@ -410,19 +414,19 @@
       "fault": "link goes silent (no FIN, no RST)",
       "firstCall": {
         "ok": false,
-        "ms": 1453.313567,
+        "ms": 1417.9727090000001,
         "code": "EHOSTDOWN",
         "message": "EHOSTDOWN: host is down, statx '/home/runner/work/_temp/s6/tree/home/Desktop1/clover/README.md'"
       },
       "laterCall": {
         "ok": false,
-        "ms": 0.24296099999999932,
+        "ms": 0.2663170000000008,
         "code": "EHOSTDOWN",
         "message": "EHOSTDOWN: host is down, statx '/home/runner/work/_temp/s6/tree/home/Desktop1/clover/LICENSE'"
       },
       "laterCallCached": {
         "ok": false,
-        "ms": 0.30860299999999974,
+        "ms": 0.147787000000001,
         "code": "EHOSTDOWN",
         "message": "EHOSTDOWN: host is down, statx '/home/runner/work/_temp/s6/tree/home/Desktop1/clover/package.json'"
       },
@@ -431,9 +435,9 @@
       "helperAlive": true,
       "homeListing": {
         "ok": true,
-        "ms": 0.3150680000000001
+        "ms": 0.3316499999999998
       },
-      "recoverMs": 56
+      "recoverMs": 64
     },
     {
       "scenario": "offline-at-start",
@@ -441,17 +445,17 @@
       "fault": "file service not running",
       "listHome": {
         "ok": true,
-        "ms": 0.1987009999999998
+        "ms": 0.34712799999999966
       },
       "listComputer": {
         "ok": false,
-        "ms": 0.17983199999999933,
+        "ms": 0.329696000000002,
         "code": "EHOSTDOWN",
         "message": "EHOSTDOWN: host is down, scandir '/home/runner/work/_temp/s6/tree/home/Desktop1'"
       },
       "statFile": {
         "ok": false,
-        "ms": 0.09663499999999914,
+        "ms": 0.1541080000000008,
         "code": "EHOSTDOWN",
         "message": "EHOSTDOWN: host is down, statx '/home/runner/work/_temp/s6/tree/home/Desktop1/clover/package.json'"
       },
@@ -460,31 +464,43 @@
       "helperAlive": true,
       "homeListing": {
         "ok": true,
-        "ms": 0.16417900000000074
+        "ms": 0.3150490000000019
       },
-      "recoverMs": 60
+      "recoverMs": 228
     },
     {
       "scenario": "read+helper-crash",
       "op": "read 1 GiB",
       "fault": "mount helper killed (SIGKILL)",
-      "failMs": 3,
+      "failMs": 4,
       "sawError": "EIO: EIO: i/o error, read",
       "deadMount": {
         "ok": true,
-        "ms": 0.02154600000000073
+        "ms": 0.029143999999998726
       },
       "stuckProcesses": [],
       "systemUninterruptible": [],
       "detach": true,
-      "remountMs": 133,
+      "remountMs": 152,
       "afterRemount": {
         "ok": true,
-        "ms": 62.770576000000005
+        "ms": 63.805998
       },
       "stuckAfter": [],
       "mountGone": true
+    },
+    {
+      "scenario": "slow-link",
+      "op": "write then read 8 MiB",
+      "fault": "2000 kbit/s each way, +0–20 ms jitter, 256 KiB buffer",
+      "writeMs": 34166,
+      "writeOk": true,
+      "readMs": 34220,
+      "readOk": true,
+      "falseOffline": 0,
+      "requestTimeouts": 0,
+      "stuckProcesses": []
     }
   ],
-  "finished": "2026-11-05T01:44:55.691Z"
+  "finished": "2026-11-05T09:42:20.309Z"
 }

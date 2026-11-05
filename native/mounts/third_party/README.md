@@ -17,7 +17,7 @@ ours (`cachinghandler_clover_test.go`):
   computer held up every lookup behind it. With writes concurrent too, macOS's client let a
   writer run on for 18–29 s after the far computer dropped before it reported the error
   (`results/macos2?-nfs-failfast-concurrent-writes.json`). A queue of their own, with the loop
-  reading on, was tried for review S5 and did the same (25–29 s), so a lookup can still wait
+  reading on, was tried for review S5 and did the same (18–29 s), so a lookup can still wait
   behind one write. Third, every NFS procedure served is counted, with the time spent on it
   (`Calls`, `CallNanos`; clover-nfs's status endpoint reports them per workload).
 * `helpers/cachinghandler.go`: `FromHandle` walked every live handle on every call to keep the

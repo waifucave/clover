@@ -63,7 +63,7 @@ func (c *conn) serve(ctx context.Context) {
 	// WRITE and COMMIT still run in line, as upstream ran everything, so a lookup can wait behind
 	// one write. With writes concurrent, macOS's client let a writer run on for 18-29 s after the
 	// far computer dropped before it reported the error. A queue of their own, with the loop
-	// reading on (review S5), did the same: 25-29 s, because the loop then takes every write the
+	// reading on (review S5), did the same: 18-29 s, because the loop then takes every write the
 	// client sends and the client never feels the far computer slow down. In line, the writer
 	// meets the drop within the link's bound.
 	const maxInflight = 64

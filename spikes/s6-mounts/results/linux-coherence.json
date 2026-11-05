@@ -3,14 +3,18 @@
   "question": "coherence",
   "machine": {
     "os": "linux",
-    "release": "7.0.0-1014-aws",
+    "release": "7.0.0-1019-azure",
     "arch": "x64",
     "cpus": 4,
-    "cpu": "Intel(R) Xeon(R) 6975P-C",
-    "memGB": 15,
-    "bun": "1.3.14"
+    "cpu": "AMD EPYC 7763 64-Core Processor",
+    "memGB": 16,
+    "bun": "1.3.14",
+    "commit": "147f346c9c621585e2d7596eb51348d64e2ae075",
+    "run": "42004174774",
+    "runAttempt": "1",
+    "job": "unix-like"
   },
-  "started": "2026-11-05T01:44:22.048Z",
+  "started": "2026-11-05T09:40:38.254Z",
   "results": [
     {
       "label": "plain",
@@ -165,7 +169,7 @@
       "grownFreshAfterMs": 1010,
       "missingFirst": "ENOENT",
       "newNameVisibleAfterMs": 1009,
-      "deletedGoneAfterMs": 1012
+      "deletedGoneAfterMs": 1009
     },
     {
       "label": "cached",
@@ -327,5 +331,5 @@
     "target": "/home/runner/work/_temp/s6",
     "entries": 4
   },
-  "finished": "2026-11-05T01:44:27.685Z"
+  "finished": "2026-11-05T09:40:43.924Z"
 }

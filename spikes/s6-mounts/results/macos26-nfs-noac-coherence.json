@@ -8,9 +8,13 @@
     "cpus": 3,
     "cpu": "Apple M1 (Virtual)",
     "memGB": 7,
-    "bun": "1.3.14"
+    "bun": "1.3.14",
+    "commit": "147f346c9c621585e2d7596eb51348d64e2ae075",
+    "run": "42004174774",
+    "runAttempt": "1",
+    "job": "macos"
   },
-  "started": "2026-11-05T04:23:47.752Z",
+  "started": "2026-11-05T10:00:02.686Z",
   "results": [
     {
       "label": "nfs cached, noac",
@@ -163,11 +167,16 @@
         ]
       },
       "growVerdict": "stale: 46 bytes {\"C\":46}",
-      "grownFreshAfterMs": 62,
+      "grownFreshAfterMs": 59,
       "missingFirst": "ENOENT",
-      "newNameVisibleAfterMs": 27,
-      "deletedGoneAfterMs": 55
+      "newNameVisibleAfterMs": 56,
+      "deletedGoneAfterMs": 29
     }
   ],
-  "finished": "2026-11-05T04:23:48.850Z"
+  "finished": "2026-11-05T10:00:03.768Z",
+  "nfs": {
+    "ac": "noac",
+    "timeo": 110,
+    "dumbtimer": true
+  }
 }

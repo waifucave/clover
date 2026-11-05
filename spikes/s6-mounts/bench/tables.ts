@@ -83,6 +83,12 @@ for (const f of files.filter((f) => f.includes("failfast"))) {
   console.log("| scenario | in-flight op fails after | what the program saw | a new op while away | stuck processes | works again after |");
   console.log("| :- | -: | :- | :- | -: | -: |");
   for (const r of d.results) {
+    if (r.scenario === "slow-link") {
+      const why = (err?: string) => { try { const e = JSON.parse(String(err)); return e.message ?? e.code ?? String(err); } catch { return String(err ?? ""); } };
+      const one = (ok: boolean, ms: number, err?: string) => (ok ? `ok in ${fmt(ms)}` : `**failed** after ${fmt(ms)}: ${why(err).replace(/\|/g, "/").slice(0, 70)}`);
+      console.log(`| slow link (${r.fault}) | write: ${one(r.writeOk, r.writeMs, r.writeError)}; read: ${one(r.readOk, r.readMs, r.readError)} | false offline: ${r.falseOffline ?? "–"}, request timeouts: ${r.requestTimeouts ?? "–"} | – | ${r.stuckProcesses?.length ?? 0} | – |`);
+      continue;
+    }
     const hung = r.killedBySigkill ? "**hung**, SIGKILL freed it" : r.freedByDetachMs > 0 ? `**hung**, umount -f freed it after ${r.freedByDetachMs} ms` : "**hung**, still stuck";
     const fail = r.hung ? hung : r.failMs !== undefined ? `${r.failMs} ms` : r.firstCall ? `${Math.round(r.firstCall.ms)} ms (first call)` : "–";
     const saw = String(r.sawError ?? r.firstCall?.code ?? r.listComputer?.code ?? r.error ?? "").replace(/\|/g, "/").replace(/\s+/g, " ").slice(0, 80);
@@ -90,9 +96,28 @@ for (const f of files.filter((f) => f.includes("failfast"))) {
     const down = p ? (p.ok ? `ok in ${Math.round(p.ms)} ms` : `${p.code} in ${p.ms < 1 ? "<1" : Math.round(p.ms)} ms`) : "–";
     const stuck = (r.stuckProcesses?.length ?? 0) + (r.stuckAfter?.length ?? 0);
     const back = r.recoverMs ?? r.remountMs;
-    console.log(`| ${r.scenario} | ${fail} | ${saw} | ${down} | ${stuck} | ${back !== undefined ? `${back} ms` : "–"} |`);
+    const detach = r.detachAtDeathMs !== undefined ? ` (the daemon's force-unmount at the helper's death took ${r.detachAtDeathMs} ms)` : "";
+    console.log(`| ${r.scenario} | ${fail}${detach} | ${saw} | ${down} | ${stuck} | ${back !== undefined ? `${back} ms` : "–"} |`);
   }
-  if (d.nfs) console.log(`\nNFS mounted as: ${d.nfs.mountedAs}${d.nfs.userMountError ? ` (as the user: ${d.nfs.userMountError})` : ""}`);
+  if (d.nfs) {
+    const n = d.nfs;
+    const opts = [n.ac, n.timeo !== undefined ? `timeo=${n.timeo}` : "", n.rsize ? `rsize=${n.rsize}` : "", n.readahead ? `readahead=${n.readahead}` : ""].filter(Boolean).join(", ");
+    console.log(`\nNFS mounted as: ${n.mountedAs}${n.userMountError ? ` (as the user: ${n.userMountError})` : ""}${opts ? `; ${opts}` : ""}${n.treeRootMode ? `; tree root ${n.treeRootMode}` : ""}`);
+  }
+}
+
+// ---- macOS volume checks (bench/volume.ts) ------------------------------------------------------
+for (const f of files.filter((f) => f.includes("volume"))) {
+  const d = load(f);
+  console.log(`\n#### volume: ${f.replace(".json", "")} (${d.machine.os} ${d.machine.release})\n`);
+  console.log("| mount | the holder's folder after xattr -w, cp -p and ditto | xattr -w | mdutil -s | tmutil isexcluded |");
+  console.log("| :- | :- | :- | :- | :- |");
+  const cell = (v: unknown) => String(v ?? "–").replace(/\s+/g, " ").replace(/\|/g, "/").slice(0, 90);
+  for (const r of d.runs) {
+    const seen = r.mountError ? `mount failed: ${cell(r.mountError)}` : (r.holderSees ?? []).join(", ");
+    console.log(`| ${r.label} | ${seen} | ${cell(r.xattrWrite) || "ok"} | ${cell(r.mdutil)} | ${cell(r.tmutilIsExcluded)} |`);
+  }
+  console.log(`\nDSDontWriteNetworkStores: ${cell(d.dsDontWriteNetworkStores)}`);
 }
 
 // ---- coherence --------------------------------------------------------------------------------

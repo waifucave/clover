@@ -13,7 +13,7 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { Rig, log, machine, nfsFromArgs, parseArgs, run, summary, writeJson } from "./lib";
+import { Rig, log, machine, nfsFromArgs, parseArgs, redactExport, run, summary, writeJson } from "./lib";
 
 const args = parseArgs(process.argv.slice(2));
 const ROOT = path.resolve(args.root!);
@@ -34,7 +34,7 @@ async function once(label: string, extra?: string) {
   rig.nfs!.extra = extra;
   try { await rig.mount("cached"); } catch (e) { r.mountError = String(e).slice(0, 400); return; }
   try {
-    r.mountLine = (await run(["/sbin/mount"], { timeoutMs: 5000 })).stdout.split("\n").find((l) => l.includes(` on ${rig.nfs!.mountpoint} `));
+    r.mountLine = redactExport((await run(["/sbin/mount"], { timeoutMs: 5000 })).stdout.split("\n").find((l) => l.includes(` on ${rig.nfs!.mountpoint} `)) ?? "");
     const dir = `vol-${label}`;
     const inMount = rig.remotePath(dir);
     fs.mkdirSync(inMount);
