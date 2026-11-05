@@ -398,6 +398,7 @@ export const CLOVER_NEVER_PERMITTED: readonly NeverPermitted[] = [
       "packages/core/src/runtime-sdk/brand.ts", // why every Clover session carries Clover's brand
       "packages/core/src/runtime-sdk/sessions.ts", // what an SDK session function reads with no brand
       "packages/core/test/runtime-sdk/brand.test.ts", // proves the runtime's default home is never under it
+      "spikes/office-lok-gate/README.md", // says the spike never touches it
     ],
     why: "the live Winter install's home and Winter Dev's (`~/.winter`, `~/.winter-dev`)",
   },
@@ -406,6 +407,7 @@ export const CLOVER_NEVER_PERMITTED: readonly NeverPermitted[] = [
     regex: /\/Applications\/Winter\.app|["'`]\/Applications["'`]\s*,\s*["'`]Winter\.app/g,
     files: [
       "scripts/cu-live/headless.test.ts", // helper paths parsed from `ps` output, as the kept helpers report them
+      "packages/core/test/cowork/native/vectors/envelopes.json", // the paused Cowork launcher's wire vectors, shared with its kept Swift code
     ],
     why: "the live Winter app (`/Applications/Winter.app`), which a Clover script never opens, signs or replaces",
   },
