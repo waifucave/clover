@@ -27,6 +27,9 @@ import {
   runMigrationB,
   type MigrationManifest,
   type SecretStore,
+  LEGACY_IMPORTS_OFF,
+  legacyImportOn,
+  type LegacyImport,
 } from "@waifucave/clover-core";
 import type { CloverProfile } from "@waifucave/clover-core";
 
@@ -47,6 +50,15 @@ export interface MigrateCommandDeps {
   /** WS-21 review I8: whether this build's router applies run homes (`linkedRouterSupportsRunHome`, the
    *  boot hook's own condition). Injectable for tests; absent reads the linked router. */
   routerSupportsRunHome?: () => boolean;
+  /** M-M0: which legacy imports this run may perform. Absent: the code's own switches
+   *  (`migration/legacy-imports.ts`, all off), so `--resume` and a fresh Migration B refuse. A test passes
+   *  `{ home: true }` together with its own throwaway legacy home and stores. */
+  legacyImports?: Partial<Record<LegacyImport, boolean>>;
+}
+
+/** Whether this run may import from a legacy home (Migration B and its resume). */
+function homeImportOn(deps: MigrateCommandDeps): boolean {
+  return deps.legacyImports?.home ?? legacyImportOn("home");
 }
 
 function statusLine(name: string, statuses: readonly string[]): string {
@@ -219,6 +231,10 @@ export async function runMigrateCommand(deps: MigrateCommandDeps): Promise<numbe
   }
 
   if (deps.argv.includes("--resume")) {
+    if (!homeImportOn(deps)) {
+      deps.error(`clover migrate --resume: ${LEGACY_IMPORTS_OFF}; \`clover migrate --rollback\` still removes what an earlier run copied`);
+      return 1;
+    }
     if (!yes && !(await deps.confirm("Resume the in-progress migration? [y/N] "))) {
       deps.log("aborted");
       return 1;
@@ -258,6 +274,11 @@ export async function runMigrateCommand(deps: MigrateCommandDeps): Promise<numbe
   const legacyHome = deps.argv[fromIdx + 1];
   if (!legacyHome) {
     deps.error("clover migrate: --from requires a path");
+    return 1;
+  }
+  // M-M0: and only while `migration/legacy-imports.ts` turns the home import on (off until a later lane).
+  if (!homeImportOn(deps)) {
+    deps.error(`clover migrate: ${LEGACY_IMPORTS_OFF}`);
     return 1;
   }
   if (!existsSync(join(legacyHome, "settings.json"))) {

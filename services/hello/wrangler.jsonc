@@ -1,0 +1,11 @@
+// The layout's example Worker (docs/clover-layout.md). Never deployed: it exists so `services/*` is real and
+// the harness's emulator (packages/test-harness, `startWorker`) has a service of the repo's own to run.
+{
+  "name": "clover-hello",
+  "main": "src/index.ts",
+  // At most the date the emulator's workerd supports (miniflare 4.20260730).
+  "compatibility_date": "2026-07-01",
+  "vars": { "GREETING": "hello" },
+  "durable_objects": { "bindings": [{ "name": "COUNTER", "class_name": "Counter" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Counter"] }]
+}

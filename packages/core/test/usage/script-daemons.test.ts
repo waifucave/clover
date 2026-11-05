@@ -46,6 +46,8 @@ const NO_DAEMON_OF_ITS_OWN: Record<string, string> = {
   "scripts/dev-daemon-lib.ts": "the dev daemon's helpers (paths, signing, the transition)",
   "scripts/dev-daemon.test.ts": "tests the dev daemon's helpers; boots none",
   "scripts/cu-live/build.ts": "compiles and signs clover-core-live; runs it never",
+  "scripts/build-daemon.ts": "compiles clover-core for each target; runs only the host binary's `--version` (prints and exits, no daemon)",
+  "scripts/build-daemon.test.ts": "tests the daemon build's helpers; compiles and boots none",
   "scripts/verify-automation-worker-compiled.ts": "runs only the `__automation-worker` route (a worker, no daemon)",
   "scripts/verify-workflow-compiled.ts": "runs only the `__workflow-worker` route (a worker, no daemon)",
   "scripts/verify-fd-receiver-compiled.ts": "runs only the `__fd-receiver-probe`, `__host-code-adapter-probe` and `__host-env-lazy-probe` routes of the compiled binary (no daemon)",

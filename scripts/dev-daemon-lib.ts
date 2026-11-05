@@ -3,6 +3,79 @@ import { homedir } from "node:os";
 import { join, resolve, sep } from "node:path";
 import { otherInstallHome, realPathOf } from "../packages/core/src/other-installs";
 
+export type DevOs = "macos" | "linux" | "windows";
+
+export function devOs(platform: NodeJS.Platform = process.platform): DevOs {
+  return platform === "darwin" ? "macos" : platform === "win32" ? "windows" : "linux";
+}
+
+/** This script's own leading flags; everything from the first other argument (or after a `--`) goes to the binary. */
+export type DevDaemonFlag = "--no-build" | "--transition" | "--cli" | "--dry-run";
+const DEV_DAEMON_FLAGS: readonly string[] = ["--no-build", "--transition", "--cli", "--dry-run"];
+
+export interface DevDaemonPlan {
+  os: DevOs;
+  /** The dev home (`devDaemonHome`). */
+  home: string;
+  /** The dev binary, relative to the repo root, with `/`. */
+  binary: string;
+  /** The build, or undefined with `--no-build`: `compile:core` redirected to `tmp` (relative to `packages/cli`),
+   *  then, on macOS only, signed (the Keychain's partition lists need Clover's team; Linux and Windows have none). */
+  build: { command: string; tmp: string; sign: boolean } | undefined;
+  /** `--transition`: the one-time Keychain hand-over, macOS only. */
+  transition: boolean;
+  /** What the binary runs: `daemon run` unless told otherwise. */
+  args: string[];
+  /** Set for the binary on top of the caller's environment (the runtime executables are resolved at run time). */
+  env: { CLOVER_HOME: string; CLOVER_PROFILE: "dev" };
+  dryRun: boolean;
+}
+
+/**
+ * What `bun run dev:daemon <argv>` will do, decided before anything is built, signed or started (`--dry-run`
+ * prints it and stops). Throws on a refused home or a flag this OS cannot honor.
+ */
+export function devDaemonPlan(input: { argv: readonly string[]; env: NodeJS.ProcessEnv; platform: NodeJS.Platform; userHome?: string; compileCoreScript: string; pid: number }): DevDaemonPlan {
+  const flags = new Set<DevDaemonFlag>();
+  let i = 0;
+  for (; i < input.argv.length && DEV_DAEMON_FLAGS.includes(input.argv[i]!); i++) flags.add(input.argv[i] as DevDaemonFlag);
+  if (input.argv[i] === "--") i++;
+  const passthrough = input.argv.slice(i);
+  const os = devOs(input.platform);
+  if (flags.has("--transition") && passthrough.length > 0) throw new Error("--transition takes no other arguments");
+  if (flags.has("--transition") && os !== "macos") throw new Error("--transition is macOS-only: it moves the dev Keychain items from bun to the signed binary, and on Linux and Windows the dev binary is not signed, so its items are already its own");
+  const home = devDaemonHome(input.env, input.userHome);
+  const binary = os === "windows" ? "dist/dev/clover-core.exe" : "dist/dev/clover-core";
+  // The temp output sits beside the binary, so the rename into place is atomic; on Windows it keeps the .exe.
+  const tmp = os === "windows" ? `../../dist/dev/clover-core.${input.pid}.tmp.exe` : `../../dist/dev/clover-core.${input.pid}.tmp`;
+  return {
+    os,
+    home,
+    binary,
+    build: flags.has("--no-build") ? undefined : { command: devCompileCommand(input.compileCoreScript, tmp), tmp, sign: os === "macos" },
+    transition: flags.has("--transition"),
+    args: passthrough.length > 0 || flags.has("--cli") ? passthrough : ["daemon", "run"],
+    env: { CLOVER_HOME: home, CLOVER_PROFILE: "dev" },
+    dryRun: flags.has("--dry-run"),
+  };
+}
+
+/** `--dry-run`'s report. */
+export function describeDevDaemonPlan(plan: DevDaemonPlan): string[] {
+  const lines = [`dev:daemon: the plan on ${plan.os} (dry run: nothing is built, signed or started)`, `  home     ${plan.home}`];
+  if (plan.build === undefined) lines.push(`  build    none (--no-build): ${plan.binary} as it is`);
+  else {
+    lines.push(`  build    (in packages/cli) ${plan.build.command}`);
+    lines.push(plan.build.sign
+      ? `  sign     codesign as ${DEV_DAEMON_IDENTIFIER} with Clover's team, then the __keychain-ffi-probe, then rename to ${plan.binary}`
+      : `  sign     none (the dev binary is unsigned on ${plan.os}); rename to ${plan.binary}`);
+  }
+  if (plan.transition) lines.push(`  then     the one-time dev Keychain transition, and exit`);
+  else lines.push(`  run      ${plan.binary} ${plan.args.join(" ")}`.trimEnd());
+  lines.push(`  env      CLOVER_HOME=${plan.env.CLOVER_HOME} CLOVER_PROFILE=${plan.env.CLOVER_PROFILE}, and CLOVER_RUNTIME_EXECUTABLE / CLOVER_ANT_EXECUTABLE when found`);
+  return lines;
+}
+
 /** The dev daemon's code-signing identifier: stable, so its designated requirement (identifier + Clover's
  *  team certificate) survives every rebuild and the Keychain keeps trusting it. Distinct from the dist
  *  binary's (`clover-core`), which is signed in the app bundle. */

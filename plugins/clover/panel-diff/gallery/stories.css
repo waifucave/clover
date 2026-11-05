@@ -1,0 +1,12 @@
+.story-diff {
+  display: flex;
+  flex-direction: column;
+}
+
+.story-diff__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--clover-color-hairline);
+}

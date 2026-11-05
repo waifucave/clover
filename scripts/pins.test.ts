@@ -56,8 +56,13 @@ describe("CI takes the `winter` binary from the installed platform package ONLY 
     expect(CI_YML).not.toMatch(/^  versions:$/m);
   });
   test("every job that needs the `winter` binary fails loudly when the platform package did not install (never a silent skip)", () => {
-    const checks = CI_YML.match(/did not install — bun install is the ONLY winter source since/g) ?? [];
-    expect(checks.length).toBe(3);
+    const jobs = (Bun.YAML.parse(CI_YML) as { jobs: Record<string, { steps?: { run?: string }[] }> }).jobs;
+    const LOUD = "did not install — bun install is the ONLY winter source since";
+    // A job needs the binary when it copies it to dist/winter or runs the gate that stages it.
+    const needing = Object.keys(jobs).filter((id) => ["dist/winter", "verify:runtimes"].some((s) => JSON.stringify(jobs[id]).includes(s))).sort();
+    expect(needing).toEqual(["test-cli", "test-core", "test-scripts", "verify"]);
+    for (const id of needing) expect([id, (jobs[id]!.steps ?? []).some((s) => s.run?.includes(LOUD) === true)]).toEqual([id, true]);
+    expect((CI_YML.match(new RegExp(LOUD, "g")) ?? []).length).toBe(needing.length);
   });
 });
 

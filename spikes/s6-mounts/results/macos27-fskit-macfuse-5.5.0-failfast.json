@@ -1,0 +1,500 @@
+{
+  "spike": "S6",
+  "question": "failfast",
+  "machine": {
+    "os": "darwin",
+    "release": "27.0.0",
+    "arch": "arm64",
+    "cpus": 3,
+    "cpu": "Apple M1 (Virtual)",
+    "memGB": 7,
+    "bun": "1.3.14"
+  },
+  "rttMs": 20,
+  "policy": "plain",
+  "started": "2026-11-05T01:40:15.998Z",
+  "results": [
+    {
+      "scenario": "read+blackhole",
+      "op": "read 1 GiB",
+      "fault": "link goes silent (no FIN, no RST)",
+      "failMs": 1622,
+      "exitCode": 1,
+      "sawError": "EHOSTUNREACH: EHOSTUNREACH: host is unreachable, read",
+      "progressBytes": 84934656,
+      "whileDown": {
+        "ok": false,
+        "ms": 1.7818749999999994,
+        "code": "EHOSTUNREACH",
+        "message": "EHOSTUNREACH: host is unreachable, stat '/Users/runner/work/_temp/s6/tree/home/Desktop1/clover/package.json'"
+      },
+      "whileDownAgain": {
+        "ok": false,
+        "ms": 2.443333000000001,
+        "code": "EHOSTUNREACH",
+        "message": "EHOSTUNREACH: host is unreachable, scandir '/Users/runner/work/_temp/s6/tree/home/Desktop1'"
+      },
+      "stuckProcesses": [],
+      "systemUninterruptible": [],
+      "helperAlive": true,
+      "homeListing": {
+        "ok": true,
+        "ms": 1.9733339999999995
+      },
+      "recoverMs": 107,
+      "restoreCallMs": 0,
+      "afterRecovery": {
+        "ok": true,
+        "ms": 38.284375
+      },
+      "stuckAfter": [],
+      "helperStats": {
+        "cacheHits": 9,
+        "cacheMiss": 8,
+        "drops": 1,
+        "fastFails": 28,
+        "online": true,
+        "prefetches": 0,
+        "reconnects": 1,
+        "requests": 158,
+        "timeouts": 0
+      },
+      "helperLog": "01:40:17.496478 [Desktop1] online (service 4653891f on darwin)\n01:40:17.497739 mounting /Users/runner/work/_temp/s6/tree (policy plain)\n01:40:20.127607 [Desktop1] offline: silent for 1.591s (26 requests failed)\n01:40:20.282075 [Desktop1] link back (service 4653891f, restarted: false)",
+      "unmountMs": 117,
+      "mountGone": true
+    },
+    {
+      "scenario": "read+reset",
+      "op": "read 1 GiB",
+      "fault": "link reset (connections closed)",
+      "failMs": 20,
+      "exitCode": 1,
+      "sawError": "EHOSTUNREACH: EHOSTUNREACH: host is unreachable, read",
+      "progressBytes": 110100480,
+      "whileDown": {
+        "ok": false,
+        "ms": 24.982166999999997,
+        "code": "EHOSTUNREACH",
+        "message": "EHOSTUNREACH: host is unreachable, stat '/Users/runner/work/_temp/s6/tree/home/Desktop1/clover/package.json'"
+      },
+      "whileDownAgain": {
+        "ok": false,
+        "ms": 1.5652919999999995,
+        "code": "EHOSTUNREACH",
+        "message": "EHOSTUNREACH: host is unreachable, scandir '/Users/runner/work/_temp/s6/tree/home/Desktop1'"
+      },
+      "stuckProcesses": [],
+      "systemUninterruptible": [
+        "sharedfilelistd:U"
+      ],
+      "helperAlive": true,
+      "homeListing": {
+        "ok": true,
+        "ms": 1.8684159999999999
+      },
+      "recoverMs": 107,
+      "restoreCallMs": 0,
+      "afterRecovery": {
+        "ok": true,
+        "ms": 37.137833
+      },
+      "stuckAfter": [],
+      "helperStats": {
+        "cacheHits": 10,
+        "cacheMiss": 8,
+        "drops": 1,
+        "fastFails": 15,
+        "online": true,
+        "prefetches": 0,
+        "reconnects": 1,
+        "requests": 168,
+        "timeouts": 0
+      },
+      "helperLog": "01:40:20.282075 [Desktop1] link back (service 4653891f, restarted: false)\n01:40:20.553799 unmounted\n01:40:20.624409 [Desktop1] online (service 4653891f on darwin)\n01:40:20.624587 mounting /Users/runner/work/_temp/s6/tree (policy plain)\n01:40:21.518773 [Desktop1] offline: read: EOF (24 requests failed)\n01:40:21.644865 [Desktop1] link back (service 4653891f, restarted: false)",
+      "unmountMs": 51,
+      "mountGone": true
+    },
+    {
+      "scenario": "read+kill",
+      "op": "read 1 GiB",
+      "fault": "file service killed (SIGKILL)",
+      "failMs": 16,
+      "exitCode": 1,
+      "sawError": "EHOSTUNREACH: EHOSTUNREACH: host is unreachable, read",
+      "progressBytes": 135266304,
+      "whileDown": {
+        "ok": false,
+        "ms": 1.1018749999999997,
+        "code": "EHOSTUNREACH",
+        "message": "EHOSTUNREACH: host is unreachable, stat '/Users/runner/work/_temp/s6/tree/home/Desktop1/clover/package.json'"
+      },
+      "whileDownAgain": {
+        "ok": false,
+        "ms": 1.8487910000000003,
+        "code": "EHOSTUNREACH",
+        "message": "EHOSTUNREACH: host is unreachable, scandir '/Users/runner/work/_temp/s6/tree/home/Desktop1'"
+      },
+      "stuckProcesses": [],
+      "systemUninterruptible": [
+        "sharedfilelistd:U"
+      ],
+      "helperAlive": true,
+      "homeListing": {
+        "ok": true,
+        "ms": 1.9244160000000008
+      },
+      "recoverMs": 257,
+      "restoreCallMs": 62,
+      "afterRecovery": {
+        "ok": true,
+        "ms": 30.926916
+      },
+      "stuckAfter": [],
+      "helperStats": {
+        "cacheHits": 11,
+        "cacheMiss": 11,
+        "drops": 1,
+        "fastFails": 30,
+        "online": true,
+        "prefetches": 0,
+        "reconnects": 1,
+        "requests": 208,
+        "timeouts": 0
+      },
+      "helperLog": "01:40:21.644865 [Desktop1] link back (service 4653891f, restarted: false)\n01:40:21.864655 unmounted\n01:40:21.927243 [Desktop1] online (service 4653891f on darwin)\n01:40:21.927440 mounting /Users/runner/work/_temp/s6/tree (policy plain)\n01:40:22.779144 [Desktop1] offline: read: EOF (24 requests failed)\n01:40:23.118824 [Desktop1] link back (service f5db3f02, restarted: true)",
+      "unmountMs": 48,
+      "mountGone": true
+    },
+    {
+      "scenario": "read+freeze",
+      "op": "read 1 GiB",
+      "fault": "file service frozen (SIGSTOP; its TCP stays up)",
+      "failMs": 1670,
+      "exitCode": 1,
+      "sawError": "EHOSTUNREACH: EHOSTUNREACH: host is unreachable, read",
+      "progressBytes": 135266304,
+      "whileDown": {
+        "ok": false,
+        "ms": 1.7815830000000012,
+        "code": "EHOSTUNREACH",
+        "message": "EHOSTUNREACH: host is unreachable, stat '/Users/runner/work/_temp/s6/tree/home/Desktop1/clover/package.json'"
+      },
+      "whileDownAgain": {
+        "ok": false,
+        "ms": 2.211207999999999,
+        "code": "EHOSTUNREACH",
+        "message": "EHOSTUNREACH: host is unreachable, scandir '/Users/runner/work/_temp/s6/tree/home/Desktop1'"
+      },
+      "stuckProcesses": [],
+      "systemUninterruptible": [],
+      "helperAlive": true,
+      "homeListing": {
+        "ok": true,
+        "ms": 2.082541000000001
+      },
+      "recoverMs": 169,
+      "restoreCallMs": 0,
+      "afterRecovery": {
+        "ok": true,
+        "ms": 37.533666000000004
+      },
+      "stuckAfter": [],
+      "helperStats": {
+        "cacheHits": 11,
+        "cacheMiss": 9,
+        "drops": 1,
+        "fastFails": 5,
+        "online": true,
+        "prefetches": 0,
+        "reconnects": 1,
+        "requests": 185,
+        "timeouts": 0
+      },
+      "helperLog": "01:40:23.118824 [Desktop1] link back (service f5db3f02, restarted: true)\n01:40:23.334424 unmounted\n01:40:23.420158 [Desktop1] online (service f5db3f02 on darwin)\n01:40:23.421200 mounting /Users/runner/work/_temp/s6/tree (policy plain)\n01:40:25.924222 [Desktop1] offline: silent for 1.622s (27 requests failed)\n01:40:26.135263 [Desktop1] link back (service f5db3f02, restarted: false)",
+      "unmountMs": 20,
+      "mountGone": true
+    },
+    {
+      "scenario": "write+blackhole",
+      "op": "write 1 GiB",
+      "fault": "link goes silent (no FIN, no RST)",
+      "note": "the operation finished before the fault; size it up",
+      "failMs": 2,
+      "exitCode": 1,
+      "sawError": "ENOSYS: ENOSYS: function not implemented, open '/Users/runner/work/_temp/s6/tree/home/Desktop1/ff-write.bin'",
+      "progressBytes": 0,
+      "whileDown": {
+        "ok": false,
+        "ms": 1348.92325,
+        "code": "EHOSTUNREACH",
+        "message": "EHOSTUNREACH: host is unreachable, stat '/Users/runner/work/_temp/s6/tree/home/Desktop1/clover/package.json'"
+      },
+      "whileDownAgain": {
+        "ok": false,
+        "ms": 2.3845419999999997,
+        "code": "EHOSTUNREACH",
+        "message": "EHOSTUNREACH: host is unreachable, scandir '/Users/runner/work/_temp/s6/tree/home/Desktop1'"
+      },
+      "stuckProcesses": [],
+      "systemUninterruptible": [],
+      "helperAlive": true,
+      "homeListing": {
+        "ok": true,
+        "ms": 2.097208
+      },
+      "recoverMs": 168,
+      "restoreCallMs": 1,
+      "afterRecovery": {
+        "ok": true,
+        "ms": 25.888792000000002
+      },
+      "stuckAfter": [],
+      "helperStats": {
+        "cacheHits": 2,
+        "cacheMiss": 9,
+        "drops": 1,
+        "fastFails": 4,
+        "online": true,
+        "prefetches": 0,
+        "reconnects": 1,
+        "requests": 34,
+        "timeouts": 0
+      },
+      "helperLog": "01:40:26.135263 [Desktop1] link back (service f5db3f02, restarted: false)\n01:40:26.370483 unmounted\n01:40:26.421868 [Desktop1] online (service f5db3f02 on darwin)\n01:40:26.422112 mounting /Users/runner/work/_temp/s6/tree (policy plain)\n01:40:28.674698 [Desktop1] offline: silent for 1.595s (3 requests failed)\n01:40:28.798669 [Desktop1] link back (service f5db3f02, restarted: false)",
+      "unmountMs": 19,
+      "mountGone": true
+    },
+    {
+      "scenario": "write+kill",
+      "op": "write 1 GiB",
+      "fault": "file service killed (SIGKILL)",
+      "note": "the operation finished before the fault; size it up",
+      "failMs": 15,
+      "exitCode": 1,
+      "sawError": "ENOSYS: ENOSYS: function not implemented, open '/Users/runner/work/_temp/s6/tree/home/Desktop1/ff-write.bin'",
+      "progressBytes": 0,
+      "whileDown": {
+        "ok": false,
+        "ms": 2.0722500000000004,
+        "code": "EHOSTUNREACH",
+        "message": "EHOSTUNREACH: host is unreachable, stat '/Users/runner/work/_temp/s6/tree/home/Desktop1/clover/package.json'"
+      },
+      "whileDownAgain": {
+        "ok": false,
+        "ms": 2.4663749999999993,
+        "code": "EHOSTUNREACH",
+        "message": "EHOSTUNREACH: host is unreachable, scandir '/Users/runner/work/_temp/s6/tree/home/Desktop1'"
+      },
+      "stuckProcesses": [],
+      "systemUninterruptible": [],
+      "helperAlive": true,
+      "homeListing": {
+        "ok": true,
+        "ms": 2.015332999999999
+      },
+      "recoverMs": 299,
+      "restoreCallMs": 64,
+      "afterRecovery": {
+        "ok": true,
+        "ms": 35.22725
+      },
+      "stuckAfter": [],
+      "helperStats": {
+        "cacheHits": 2,
+        "cacheMiss": 11,
+        "drops": 1,
+        "fastFails": 7,
+        "online": true,
+        "prefetches": 0,
+        "reconnects": 1,
+        "requests": 34,
+        "timeouts": 0
+      },
+      "helperLog": "01:40:28.798669 [Desktop1] link back (service f5db3f02, restarted: false)\n01:40:28.973424 unmounted\n01:40:29.024120 [Desktop1] online (service f5db3f02 on darwin)\n01:40:29.024268 mounting /Users/runner/work/_temp/s6/tree (policy plain)\n01:40:29.941950 [Desktop1] offline: read: EOF (0 requests failed)\n01:40:30.274685 [Desktop1] link back (service 3656ad21, restarted: true)",
+      "unmountMs": 16,
+      "mountGone": true
+    },
+    {
+      "scenario": "git+blackhole",
+      "op": "git status (cold)",
+      "fault": "link goes silent (no FIN, no RST)",
+      "failMs": 1605,
+      "exitCode": 128,
+      "sawError": "fatal: unable to get current working directory: No route to host",
+      "whileDown": {
+        "ok": false,
+        "ms": 2.220333,
+        "code": "EHOSTUNREACH",
+        "message": "EHOSTUNREACH: host is unreachable, stat '/Users/runner/work/_temp/s6/tree/home/Desktop1/clover/package.json'"
+      },
+      "whileDownAgain": {
+        "ok": false,
+        "ms": 2.1767909999999997,
+        "code": "EHOSTUNREACH",
+        "message": "EHOSTUNREACH: host is unreachable, scandir '/Users/runner/work/_temp/s6/tree/home/Desktop1'"
+      },
+      "stuckProcesses": [],
+      "systemUninterruptible": [],
+      "helperAlive": true,
+      "homeListing": {
+        "ok": true,
+        "ms": 1.88075
+      },
+      "recoverMs": 70,
+      "restoreCallMs": 0,
+      "afterRecovery": {
+        "ok": true,
+        "ms": 35.372749999999996
+      },
+      "stuckAfter": [],
+      "helperStats": {
+        "cacheHits": 2,
+        "cacheMiss": 19,
+        "drops": 1,
+        "fastFails": 5,
+        "online": true,
+        "prefetches": 0,
+        "reconnects": 1,
+        "requests": 42,
+        "timeouts": 0
+      },
+      "helperLog": "01:40:30.274685 [Desktop1] link back (service 3656ad21, restarted: true)\n01:40:30.495447 unmounted\n01:40:30.554550 [Desktop1] online (service 3656ad21 on darwin)\n01:40:30.554707 mounting /Users/runner/work/_temp/s6/tree (policy plain)\n01:40:32.813650 [Desktop1] offline: silent for 1.59s (4 requests failed)\n01:40:32.945578 [Desktop1] link back (service 3656ad21, restarted: false)",
+      "unmountMs": 15,
+      "mountGone": true
+    },
+    {
+      "scenario": "tsc+blackhole",
+      "op": "tsc packages/protocol (cold)",
+      "fault": "link goes silent (no FIN, no RST)",
+      "failMs": 1639,
+      "exitCode": 1,
+      "sawError": "node:internal/modules/cjs/loader:1568",
+      "whileDown": {
+        "ok": false,
+        "ms": 1.750959,
+        "code": "EHOSTUNREACH",
+        "message": "EHOSTUNREACH: host is unreachable, stat '/Users/runner/work/_temp/s6/tree/home/Desktop1/clover/package.json'"
+      },
+      "whileDownAgain": {
+        "ok": false,
+        "ms": 1.911707999999999,
+        "code": "EHOSTUNREACH",
+        "message": "EHOSTUNREACH: host is unreachable, scandir '/Users/runner/work/_temp/s6/tree/home/Desktop1'"
+      },
+      "stuckProcesses": [],
+      "systemUninterruptible": [],
+      "helperAlive": true,
+      "homeListing": {
+        "ok": true,
+        "ms": 1.8789999999999996
+      },
+      "recoverMs": 76,
+      "restoreCallMs": 1,
+      "afterRecovery": {
+        "ok": true,
+        "ms": 31.890042
+      },
+      "stuckAfter": [],
+      "helperStats": {
+        "cacheHits": 2,
+        "cacheMiss": 17,
+        "drops": 1,
+        "fastFails": 9,
+        "online": true,
+        "prefetches": 0,
+        "reconnects": 1,
+        "requests": 40,
+        "timeouts": 0
+      },
+      "helperLog": "01:40:32.945578 [Desktop1] link back (service 3656ad21, restarted: false)\n01:40:33.080300 unmounted\n01:40:33.137709 [Desktop1] online (service 3656ad21 on darwin)\n01:40:33.137856 mounting /Users/runner/work/_temp/s6/tree (policy plain)\n01:40:35.517384 [Desktop1] offline: silent for 1.603s (2 requests failed)\n01:40:35.660249 [Desktop1] link back (service 3656ad21, restarted: false)",
+      "unmountMs": 15,
+      "mountGone": true
+    },
+    {
+      "scenario": "idle+blackhole",
+      "op": "stat after the drop",
+      "fault": "link goes silent (no FIN, no RST)",
+      "firstCall": {
+        "ok": false,
+        "ms": 1413.464,
+        "code": "EHOSTUNREACH",
+        "message": "EHOSTUNREACH: host is unreachable, stat '/Users/runner/work/_temp/s6/tree/home/Desktop1/clover/README.md'"
+      },
+      "laterCall": {
+        "ok": false,
+        "ms": 3.0026670000000024,
+        "code": "EHOSTUNREACH",
+        "message": "EHOSTUNREACH: host is unreachable, stat '/Users/runner/work/_temp/s6/tree/home/Desktop1/clover/LICENSE'"
+      },
+      "laterCallCached": {
+        "ok": true,
+        "ms": 1.1913330000000002
+      },
+      "stuckProcesses": [],
+      "systemUninterruptible": [],
+      "helperAlive": true,
+      "homeListing": {
+        "ok": true,
+        "ms": 2.073125
+      },
+      "recoverMs": 15
+    },
+    {
+      "scenario": "offline-at-start",
+      "op": "list an offline computer",
+      "fault": "file service not running",
+      "listHome": {
+        "ok": true,
+        "ms": 46.201959
+      },
+      "listComputer": {
+        "ok": false,
+        "ms": 2.5700840000000014,
+        "code": "EHOSTUNREACH",
+        "message": "EHOSTUNREACH: host is unreachable, scandir '/Users/runner/work/_temp/s6/tree/home/Desktop1'"
+      },
+      "statFile": {
+        "ok": false,
+        "ms": 1.0685410000000006,
+        "code": "EHOSTUNREACH",
+        "message": "EHOSTUNREACH: host is unreachable, stat '/Users/runner/work/_temp/s6/tree/home/Desktop1/clover/package.json'"
+      },
+      "stuckProcesses": [],
+      "systemUninterruptible": [
+        "sharedfilelistd:U",
+        "AMPLibraryAgent:U",
+        "com.apple.BKAgentService:U"
+      ],
+      "helperAlive": true,
+      "homeListing": {
+        "ok": true,
+        "ms": 1.7775000000000007
+      },
+      "recoverMs": 346
+    },
+    {
+      "scenario": "read+helper-crash",
+      "op": "read 1 GiB",
+      "fault": "mount helper killed (SIGKILL)",
+      "failMs": 157,
+      "sawError": "ENXIO: ENXIO: no such device or address, read",
+      "deadMount": {
+        "ok": true,
+        "ms": 0.6769160000000021
+      },
+      "stuckProcesses": [],
+      "systemUninterruptible": [
+        "sharedfilelistd:U"
+      ],
+      "detach": true,
+      "remountMs": 427,
+      "afterRemount": {
+        "ok": true,
+        "ms": 111.015167
+      },
+      "stuckAfter": [],
+      "mountGone": true
+    }
+  ],
+  "finished": "2026-11-05T01:40:42.647Z"
+}

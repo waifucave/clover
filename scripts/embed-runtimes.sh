@@ -67,10 +67,10 @@ if [ -n "${CLOVER_STAGE_RUNTIME_PATH:-}" ]; then
 fi
 ( cd "${REPO_ROOT}" && bun run runtimes:stage "${STAGE_ARGS[@]}" )
 
-CLOVER="${DEST}/clover"
+RUNTIME="${DEST}/winter"
 
-if [ ! -f "${CLOVER}" ] || [ ! -f "${DEST}/VERSIONS.json" ]; then
-  echo "error: runtimes:stage reported success but ${CLOVER} / ${DEST}/VERSIONS.json are missing" >&2
+if [ ! -f "${RUNTIME}" ] || [ ! -f "${DEST}/VERSIONS.json" ]; then
+  echo "error: runtimes:stage reported success but ${RUNTIME} / ${DEST}/VERSIONS.json are missing" >&2
   exit 1
 fi
 
@@ -79,18 +79,18 @@ fi
 # bun (JavaScriptCore) binary; under the hardened runtime without allow-jit it runs JIT-less (no
 # SharedArrayBuffer, ~5x slower). The entitlement is not part of the designated requirement (identifier + team), so the
 # Keychain ACL keyed on com.winter.runtime is unaffected. `ant` (Go, Step 5) needs none.
-codesign --force --sign "${EXPANDED_CODE_SIGN_IDENTITY}" --identifier com.winter.runtime --options runtime --timestamp --entitlements "${SCRIPT_DIR}/bun-jit.entitlements" "${CLOVER}"
+codesign --force --sign "${EXPANDED_CODE_SIGN_IDENTITY}" --identifier com.winter.runtime --options runtime --timestamp --entitlements "${SCRIPT_DIR}/bun-jit.entitlements" "${RUNTIME}"
 
-CLOVER_DVV="$(codesign -dvv "${CLOVER}" 2>&1 || true)"
-if ! echo "${CLOVER_DVV}" | grep -q "^Identifier=com.winter.runtime$"; then
+RUNTIME_DVV="$(codesign -dvv "${RUNTIME}" 2>&1 || true)"
+if ! echo "${RUNTIME_DVV}" | grep -q "^Identifier=com.winter.runtime$"; then
   echo "error: winter re-sign did not land the stable identifier com.winter.runtime:" >&2
-  echo "${CLOVER_DVV}" >&2
+  echo "${RUNTIME_DVV}" >&2
   exit 1
 fi
-CLOVER_ENTS="$(codesign -d --entitlements - --xml "${CLOVER}" 2>/dev/null || true)"
-if ! echo "${CLOVER_ENTS}" | grep -q "com.apple.security.cs.allow-jit"; then
+RUNTIME_ENTS="$(codesign -d --entitlements - --xml "${RUNTIME}" 2>/dev/null || true)"
+if ! echo "${RUNTIME_ENTS}" | grep -q "com.apple.security.cs.allow-jit"; then
   echo "error: winter re-sign did not land the allow-jit entitlement (scripts/bun-jit.entitlements):" >&2
-  echo "${CLOVER_ENTS}" >&2
+  echo "${RUNTIME_ENTS}" >&2
   exit 1
 fi
 

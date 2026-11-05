@@ -1,0 +1,28 @@
+# The NFS helper's log of the stat-then-shrink case (CLOVER_S6_NFS_DEBUG=1), macOS 27.0.1.
+# so.txt: 200 bytes when stat'ed through the mount, then rewritten to 46 on the holder, then read.
+# The first READ comes back short and the patched go-nfs answers EIO; the client retries with
+# the new size and gets 46 bytes, yet the program's read still returned 200 (46 + 154 zeros).
+
+## kernel attribute cache actimeo=1, helper policy plain
+2026/11/05 02:41:22 STAT so.txt size=200
+2026/11/05 02:41:22 STAT so.txt size=200
+2026/11/05 02:41:22 STAT so.txt size=200
+2026/11/05 02:41:22 STAT so.txt size=200
+2026/11/05 02:41:22 READ so.txt off=0 want=200 got=46
+2026/11/05 02:41:22 STAT so.txt size=46
+2026/11/05 02:41:22 READ so.txt off=0 want=46 got=46
+2026/11/05 02:41:22 STAT so.txt size=46
+
+## kernel attribute cache off (noac), helper policy cached
+2026/11/05 02:41:29 STAT so.txt size=200
+2026/11/05 02:41:29 STAT so.txt size=200
+2026/11/05 02:41:29 STAT so.txt size=200
+2026/11/05 02:41:29 STAT so.txt size=200
+2026/11/05 02:41:29 STAT so.txt size=200
+2026/11/05 02:41:29 STAT so.txt size=200
+2026/11/05 02:41:29 STAT so.txt size=200
+2026/11/05 02:41:29 STAT so.txt size=200
+2026/11/05 02:41:29 READ so.txt off=0 want=200 got=46
+2026/11/05 02:41:29 STAT so.txt size=46
+2026/11/05 02:41:29 READ so.txt off=0 want=46 got=46
+2026/11/05 02:41:29 STAT so.txt size=46

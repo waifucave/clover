@@ -261,6 +261,7 @@ export { LegacyKeychainSecretStore, legacyKeychainPresence, legacyKeychainServic
 export {
   assertNotOtherInstallHome, otherInstallHome, OtherInstallHomeRefused, OTHER_INSTALL_HOMES, OTHER_INSTALL_KEYCHAIN_SERVICES, realPathOf,
 } from "./other-installs";
+export { LEGACY_IMPORTS, LEGACY_IMPORTS_OFF, legacyImportOn, type LegacyImport } from "./migration/legacy-imports";
 export { DEAD_LEGACY_TOP_LEVEL_FILES, findDeadLegacyFiles, describeDeadLegacyFiles, type DeadLegacyFile } from "./migration/dead-legacy-files";
 export { rekeySettings, type RekeyChange, type RekeyResult } from "./migration/rekey-settings";
 // WS-21 (spec §8): Migration C and the settings split — the CLI's `clover migrate --sdk-home` and

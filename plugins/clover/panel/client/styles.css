@@ -1,0 +1,427 @@
+/* The panel: its toggles, the host and the session column. Every colour, face and size is a theme token
+   from lane B's catalog (`--clover-*`, listed in tokens.ts), or the clover plugin's own
+   (`--clover-plugin-clover-*`). Sizes follow the reference app's (as measured for lane G's base theme):
+   toggles 28 px square and 32 apart, panel headers as tall as the title bar, session cards with 32 px
+   headings and 34 px rows. */
+
+.cl-panel-toggles {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.cl-panel-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: var(--clover-radius-medium);
+  background: transparent;
+  color: var(--clover-color-text-secondary);
+  cursor: pointer;
+}
+
+.cl-panel-toggle:hover {
+  background: var(--clover-color-hover);
+  color: var(--clover-color-text);
+}
+
+.cl-panel-toggle[aria-pressed="true"] {
+  background: var(--clover-color-control);
+  color: var(--clover-color-text);
+}
+
+.cl-panel-toggle:focus-visible,
+.cl-panel :focus-visible,
+.cl-session :focus-visible {
+  outline: 2px solid var(--clover-color-focus);
+  outline-offset: -2px;
+}
+
+/* The host: one view, or two one above the other. */
+.cl-panel {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background: var(--clover-color-surface);
+  color: var(--clover-color-text);
+  font-family: var(--clover-font-sans);
+  font-size: var(--clover-font-size-control);
+}
+
+.cl-panel button {
+  font: inherit;
+}
+
+.cl-panel__view {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.cl-panel__view + .cl-panel__view {
+  border-top: 1px solid var(--clover-color-hairline-raised);
+}
+
+.cl-panel__head {
+  box-sizing: border-box;
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  height: var(--clover-plugin-clover-bar-height);
+  padding: 0 var(--clover-space-s) 0 21px;
+  border-bottom: 1px solid var(--clover-color-hairline-raised);
+}
+
+.cl-panel__head-main {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  min-width: 0;
+}
+
+.cl-panel__title {
+  margin: 0;
+  overflow: hidden;
+  color: var(--clover-color-text-secondary);
+  font-size: var(--clover-font-size-label);
+  font-weight: var(--clover-font-weight-regular);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cl-panel__actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+}
+
+.cl-panel__icon-button {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: var(--clover-radius-medium);
+  background: transparent;
+  color: var(--clover-color-text-secondary);
+  cursor: pointer;
+}
+
+.cl-panel__icon-button:hover {
+  background: var(--clover-color-hover);
+  color: var(--clover-color-text);
+}
+
+.cl-panel__body {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* A panel no installed plugin fills: the host says so, centred. */
+.cl-panel__empty {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--clover-space-xs);
+  padding: var(--clover-space-xl);
+  color: var(--clover-color-text-muted);
+  text-align: center;
+}
+
+.cl-panel__empty-title {
+  margin: var(--clover-space-s) 0 0;
+  color: var(--clover-color-text);
+  font-size: var(--clover-font-size-control);
+}
+
+.cl-panel__empty-detail {
+  max-width: 340px;
+  margin: 0;
+  font-size: var(--clover-font-size-label);
+  line-height: var(--clover-font-line-body);
+}
+
+.cl-panel__empty-action {
+  margin-top: var(--clover-space-s);
+  padding: 5px 12px;
+  border: none;
+  border-radius: var(--clover-radius-small);
+  background: var(--clover-color-selected);
+  color: var(--clover-color-text);
+  font-size: var(--clover-font-size-label);
+  cursor: pointer;
+}
+
+/* The session column: cards on the surface, each a 32 px heading and 34 px rows, 10 px apart. */
+.cl-session {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  color: var(--clover-color-text);
+  font-family: var(--clover-font-sans);
+  font-size: var(--clover-font-size-control);
+  line-height: var(--clover-font-line-tight);
+}
+
+.cl-session button {
+  font: inherit;
+}
+
+.cl-session ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cl-session__section {
+  padding: var(--clover-space-s);
+  border: 1px solid var(--clover-color-hairline);
+  border-radius: var(--clover-radius-large);
+  background: var(--clover-color-surface);
+}
+
+.cl-session__heading {
+  display: flex;
+  align-items: center;
+  gap: var(--clover-space-s);
+  min-height: 32px;
+  margin: 0;
+  padding: 0 11px;
+  font-size: var(--clover-font-size-label);
+  font-weight: var(--clover-font-weight-regular);
+}
+
+.cl-session__toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 0;
+  border: none;
+  background: transparent;
+  color: var(--clover-color-text);
+  font-size: var(--clover-font-size-label);
+  cursor: pointer;
+}
+
+.cl-session__toggle:disabled {
+  cursor: default;
+}
+
+.cl-session__summary {
+  display: inline-flex;
+  align-items: center;
+  margin-left: auto;
+  color: var(--clover-color-text-muted);
+  font-size: var(--clover-font-size-label);
+}
+
+.cl-session__list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.cl-session__row {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  width: 100%;
+  min-height: 32px;
+  padding: 0 11px;
+  border: none;
+  border-radius: var(--clover-radius-medium);
+  background: transparent;
+  color: var(--clover-color-text);
+  text-align: left;
+  cursor: pointer;
+}
+
+button.cl-session__row:hover {
+  background: var(--clover-color-hover);
+}
+
+/* The agent open in the panel now. */
+button.cl-session__row[aria-current="true"] {
+  background: var(--clover-color-selected);
+}
+
+.cl-session__row--static {
+  cursor: default;
+}
+
+.cl-session__row > .cl-panel-icon {
+  color: var(--clover-color-text-muted);
+}
+
+.cl-session__name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cl-session__meta {
+  flex: none;
+  color: var(--clover-color-text-muted);
+  font-size: var(--clover-font-size-label);
+}
+
+.cl-session__meta[data-status="needs-you"] {
+  color: var(--clover-color-attention-text);
+}
+
+.cl-session__meta[data-status="stalled"],
+.cl-session__meta[data-status="failed"] {
+  color: var(--clover-color-danger);
+}
+
+/* A level change asked for: the old level stands beside it until the card is answered. */
+.cl-session__requested {
+  color: var(--clover-color-attention-text);
+}
+
+.cl-session__link {
+  flex: none;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--clover-color-text-muted);
+  font-size: var(--clover-font-size-label);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.cl-session__link[data-attention] {
+  color: var(--clover-color-attention-text);
+  text-decoration: none;
+}
+
+.cl-session__context {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--clover-space-s);
+}
+
+.cl-session__bar {
+  display: inline-block;
+  width: 24px;
+  height: 6px;
+  overflow: hidden;
+  border-radius: var(--clover-radius-round);
+  background: var(--clover-color-control);
+}
+
+.cl-session__bar-fill {
+  display: block;
+  height: 100%;
+  background: var(--clover-color-accent);
+}
+
+.cl-session__note {
+  margin: 0;
+  padding: var(--clover-space-xs) 11px;
+  color: var(--clover-color-text-muted);
+  font-size: var(--clover-font-size-label);
+  line-height: var(--clover-font-line-body);
+}
+
+.cl-session__more {
+  margin-top: 2px;
+  padding: 6px 11px;
+  border: none;
+  background: transparent;
+  color: var(--clover-color-text-muted);
+  cursor: pointer;
+}
+
+.cl-session__changes {
+  display: flex;
+  align-items: center;
+  gap: var(--clover-space-xs);
+}
+
+.cl-session__diffstat {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.cl-session__added {
+  flex: none;
+  color: var(--clover-color-diff-added);
+  font-size: var(--clover-font-size-label);
+}
+
+.cl-session__removed {
+  flex: none;
+  color: var(--clover-color-diff-removed);
+  font-size: var(--clover-font-size-label);
+}
+
+.cl-session__button {
+  flex: none;
+  padding: 5px 10px;
+  border: none;
+  border-radius: var(--clover-radius-small);
+  background: var(--clover-color-selected);
+  color: var(--clover-color-text);
+  cursor: pointer;
+}
+
+.cl-session__button:hover {
+  background: var(--clover-color-hover);
+}
+
+.cl-session__pr {
+  align-items: flex-start;
+  padding-top: 6px;
+  padding-bottom: 6px;
+}
+
+.cl-session__pr-icon {
+  display: inline-flex;
+  padding-top: 1px;
+  color: var(--clover-plugin-clover-branch);
+}
+
+.cl-session__pr-icon[data-state="merged"] {
+  color: var(--clover-color-text-muted);
+}
+
+.cl-session__pr-text {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.cl-panel-icon {
+  flex: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cl-panel *,
+  .cl-session * {
+    transition: none;
+  }
+}

@@ -1,0 +1,4 @@
+Timestamp               Ty Process[PID:TID]
+2026-11-05 09:52:20.867 E  diskarbitrationd[124:4a54] [com.apple.DiskArbitration.diskarbitrationd:default] <private> not responding.
+2026-11-05 09:55:02.281 Df kernel[0:152] (nfs) nfs server 127.0.0.1:/<one-time export path>: dead
+2026-11-05 09:56:19.236 Df log[13179:9cf6] [com.apple.log:] log run noninteractively, parent: 6898 (bash), args: 'log' 'show' '--last' '90m' '--style' 'compact' '--predicate' 'eventMessage CONTAINS[c] "nfs server" OR eventMessage CONTAINS[c] "not responding" OR eventMessage CONTAINS[c] "jukebox"'

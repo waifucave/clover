@@ -1,0 +1,122 @@
+{
+  "spike": "S6",
+  "question": "speed",
+  "machine": {
+    "os": "darwin",
+    "release": "25.6.0",
+    "arch": "arm64",
+    "cpus": 3,
+    "cpu": "Apple M1 (Virtual)",
+    "memGB": 7,
+    "bun": "1.3.14",
+    "commit": "147f346c9c621585e2d7596eb51348d64e2ae075",
+    "run": "42004174774",
+    "runAttempt": "1",
+    "job": "macos"
+  },
+  "started": "2026-11-05T10:05:31.451Z",
+  "rows": [
+    {
+      "workload": "write-256M",
+      "where": "mount",
+      "policy": "cached, noac",
+      "rttMs": 80,
+      "phase": "cold",
+      "requests": 527,
+      "ops": {
+        "STAT": 270,
+        "OPEN": 1,
+        "EVENTS": 1,
+        "WRITE": 256,
+        "WRITE_bytes": 268435456
+      },
+      "helper": {
+        "drops": 0,
+        "fastFails": 0,
+        "mounted": true,
+        "mountsRefused": 0,
+        "nfsCalls": {
+          "Access": 3,
+          "Create": 1,
+          "FSInfo": 1,
+          "FSStat": 5,
+          "GetAttr": 60,
+          "Lookup": 12,
+          "Null": 1,
+          "PathConf": 1,
+          "Write": 256
+        },
+        "nfsNanos": {
+          "Access": 69000,
+          "Create": 193359750,
+          "FSInfo": 75667,
+          "FSStat": 408668,
+          "GetAttr": 266369293,
+          "Lookup": 946334248,
+          "Null": 26917,
+          "PathConf": 48917,
+          "Write": 45344828487
+        },
+        "online": true,
+        "reconnects": 0,
+        "requests": 530,
+        "timeouts": 0
+      },
+      "nfsCalls": {
+        "Create": 1,
+        "FSStat": 3,
+        "GetAttr": 45,
+        "Lookup": 12,
+        "Write": 256
+      },
+      "nfsCallsTotal": 317,
+      "nfsHelperMs": 46662,
+      "ms": 46070,
+      "ok": true,
+      "code": 0,
+      "timedOut": false
+    },
+    {
+      "workload": "write-256M",
+      "where": "mount",
+      "policy": "cached, noac",
+      "rttMs": 80,
+      "phase": "warm",
+      "requests": 519,
+      "ops": {
+        "STAT": 261,
+        "OPEN": 1,
+        "EVENTS": 2,
+        "WRITE": 256,
+        "WRITE_bytes": 268435456,
+        "CLOSE": 1
+      },
+      "nfsCalls": {
+        "Create": 1,
+        "FSStat": 2,
+        "GetAttr": 26,
+        "Lookup": 3,
+        "Write": 256
+      },
+      "nfsCallsTotal": 288,
+      "nfsHelperMs": 45931,
+      "ms": 45928,
+      "ok": true,
+      "code": 0,
+      "timedOut": false
+    }
+  ],
+  "nfs": {
+    "mountedAs": "user",
+    "ac": "noac",
+    "timeo": 110,
+    "deadtimeout": 5,
+    "dumbtimer": true,
+    "rsize": 1048576,
+    "readahead": 16,
+    "treeRootMode": "700",
+    "exportPathKind": "one-time token",
+    "mountArgs": "/Users/runner/work/_temp/s6/nfs-tree from 127.0.0.1:/<one-time export path>\n  -- Original mount options:\n     General mount flags: 0x100000 nobrowse\n     NFS parameters: vers=3,tcp,port=49757,mountport=49757,soft,intr,noresvport,nolocks,rsize=1048576,wsize=1048576,readahead=16,dumbtimer,timeo=110,retrans=2,acregmin=0,acregmax=0,acdirmin=0,acdirmax=0,acrootdirmin=0,acrootdirmax=0,deadtimeout=5\n     File system locations:\n       /<one-time export path> @ 127.0.0.1 (127.0.0.1)\n  -- Current mount parameters:\n     General mount flags: 0x4100018 nodev,nosuid,nobrowse,multilabel\n     NFS parameters: vers=3,tcp,port=49757,mountport=49757,nomntudp,soft,intr,noresvport,negnamecache,callumnt,nolocks,quota,rsize=1048576,wsize=1048576,readahead=16,dsize=8192,rdirplus,dumbtimer,timeo=110,retrans=2,maxgroups=16,acregmin=0,acregmax=0,acdirmin=0,acdirmax=0,acrootdirmin=0,acrootdirmax=0,deadtimeout=5,nomutejukebox,nonfc,sec=none,accesscache=3\n     File system locations:\n       /<one-time export path> @ 127.0.0.1 (127.0.0.1)\n     Status flags: 0x0"
+  },
+  "finished": "2026-11-05T10:07:04.091Z"
+}
