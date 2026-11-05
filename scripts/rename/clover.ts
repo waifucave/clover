@@ -199,6 +199,12 @@ export const CLOVER_ALLOWLIST: readonly AllowlistEntry[] = [
     files: ["packages/core/src/other-installs.ts", "packages/core/test/other-installs.test.ts"],
     why: "the one module that names the other installs sharing this machine (the live Winter install and Winter Dev) so every guard refuses their homes, and its test",
   },
+  {
+    id: "held-scripts",
+    regex: /(?:winter|Winter|WINTER)/g,
+    files: ["scripts/held-scripts.ts"],
+    why: "the list of scripts that refuse to run here until opensky or C7 (C0 review S6) says which of Winter's apps, helpers and identities each would build, register or publish",
+  },
   // ── Winter's coding agent, its binary and its build (lane K names them) ───────────────────────
   {
     id: "coding-agent",

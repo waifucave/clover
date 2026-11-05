@@ -25,6 +25,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { ROOT, readCanonical } from "./version-lib";
+import { refuseHeldScript } from "./held-scripts";
 
 export const TAP_REPO = "waifucave/homebrew-clover";
 
@@ -152,6 +153,7 @@ export function renderDryRunEntry(file: TapFile): string {
 }
 
 if (import.meta.main) {
+  refuseHeldScript("tap:publish"); // C0 review S6: until C7 (`held-scripts.ts`)
   const argv = process.argv.slice(2);
   const dryRun = argv.includes("--dry-run");
   const publish = argv.includes("--publish");
