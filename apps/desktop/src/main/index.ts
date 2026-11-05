@@ -292,6 +292,10 @@ async function openMainWindow(): Promise<BrowserWindow | undefined> {
     syncActivation();
   });
   win.on("hide", syncActivation);
+  // Windows ends the session (logoff, shutdown): let the app go without asking.
+  win.on("session-end", () => {
+    shuttingDown = true;
+  });
   win.on("focus", () => runtime.focusReturned(id));
   win.webContents.on("before-input-event", (event, input) => shortcut(event, input, win));
   win.once("ready-to-show", () => {
@@ -374,11 +378,12 @@ async function smoke(): Promise<void> {
     conversation: !!document.querySelector(".cl-bot-tab__conversation *"),
     composer: !!document.querySelector(".cl-bot-tab__composer textarea, .cl-bot-tab__composer [contenteditable], .cl-bot-tab__composer iframe"),
     frames: document.querySelectorAll("iframe").length,
+    rendered: !!document.getElementById("clover-root")?.firstElementChild,
     accent: getComputedStyle(document.documentElement).getPropertyValue("--clover-color-accent").trim(),
     insetTop: getComputedStyle(document.documentElement).getPropertyValue("--clover-frame-inset-top").trim(),
     text: (document.body.innerText || "").slice(0, 200),
   }))()`;
-  type Probe = { origin: string; node: boolean; bridge: string; shell: boolean; sidebar: boolean; conversation: boolean; composer: boolean; frames: number; accent: string; insetTop: string; text: string };
+  type Probe = { origin: string; node: boolean; bridge: string; shell: boolean; sidebar: boolean; conversation: boolean; composer: boolean; frames: number; rendered: boolean; accent: string; insetTop: string; text: string };
   let frames: (Probe & { url: string; osPid: number })[] = [];
   while (Date.now() < deadline) {
     frames = [];
@@ -391,8 +396,10 @@ async function smoke(): Promise<void> {
     }
     const shell = frames.find((f) => f.origin === "clover-plugin://clover");
     const wanted = Number(process.env.CLOVER_SMOKE_LAYERS ?? "0");
-    const others = new Set(frames.filter((f) => f.origin.startsWith("clover-plugin://") && f.origin !== "clover-plugin://clover").map((f) => f.origin));
-    if (shell?.shell && shell.composer && others.size >= wanted) break;
+    const layers = frames.filter((f) => f.origin.startsWith("clover-plugin://"));
+    const others = new Set(layers.filter((f) => f.origin !== "clover-plugin://clover").map((f) => f.origin));
+    // Every layer's part has drawn, and as many other layers as the run expects are there.
+    if (shell?.shell && shell.composer && others.size >= wanted && layers.every((f) => f.rendered)) break;
     await new Promise((r) => setTimeout(r, 250));
   }
   const metrics = app.getAppMetrics();
