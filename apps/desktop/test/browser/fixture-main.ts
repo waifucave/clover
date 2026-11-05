@@ -118,11 +118,21 @@ async function main(): Promise<void> {
   });
 
   await step("a hidden tab draws: its rAF runs and its picture is fresh, 1280×800", async () => {
+    // Its first picture (a slow runner's first frames take seconds), then its rate once it runs.
+    const t0 = Date.now();
+    const first = await until(async () => {
+      try {
+        return (await host.command(tab.id, { kind: "screenshot", format: "png" })) as { data: string };
+      } catch {
+        return undefined;
+      }
+    }, 12_000);
+    const firstPictureMs = Date.now() - t0;
     const raf = await evalIn(host, tab.id, RAF_PER_SECOND);
     const shot = (await host.command(tab.id, { kind: "screenshot", format: "png" })) as { data: string; width: number; height: number; contentAgeMs?: number };
     const px = pngSize(shot.data);
     // It runs at all; the rate (10 asked) is recorded, as a slow runner gives less (linux-arm64: 2).
-    return { ok: Number(raf) >= 2 && px.w === 1280 && px.h === 800 && (shot.contentAgeMs ?? 0) < 1000, detail: { rafPerSecond: raf, png: px, contentAgeMs: shot.contentAgeMs } };
+    return { ok: first !== undefined && Number(raf) >= 2 && px.w === 1280 && px.h === 800 && (shot.contentAgeMs ?? 0) < 1000, detail: { firstPictureMs, rafPerSecond: raf, png: px, contentAgeMs: shot.contentAgeMs } };
   });
 
   await step("a JPEG picture comes from the newest frame", async () => {
@@ -179,6 +189,10 @@ async function main(): Promise<void> {
     }, 10_000);
     if (viewport === undefined) return { ok: false, detail: { children: appWindow.contentView.children.map((v) => (v as Electron.WebContentsView).webContents?.getURL() ?? "?") } };
     const vp = viewport;
+    // The person's keys reach the focused window's focused view, as the OS would send them (S7 §7.3 did the same).
+    if (process.platform === "darwin") app.focus({ steal: true });
+    appWindow.focus();
+    vp.webContents.focus();
     // The tab's frames on its canvas: the viewport's own picture shows the page (text and a field), not one colour.
     const colours = await until(async () => {
       const img = await vp.webContents.capturePage();
