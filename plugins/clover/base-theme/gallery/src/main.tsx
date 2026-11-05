@@ -8,6 +8,7 @@ import { PILL_STORIES } from "../../../pill/src/gallery";
 import { VRM_STORIES } from "../../../vrm/src/gallery";
 import { USAGE_STORIES } from "../../../usage/src/gallery";
 import { NOTIFICATION_STORIES } from "../../../notifications/src/gallery";
+import { LIVE2D_STORIES } from "../../../live2d/src/gallery";
 import { ALPHA_LAYER, ALPHA_STORIES } from "./alpha";
 import { Specimen } from "./specimen";
 import { BASE_LAYER, scopedCss, themeStyle, type ThemeLayer } from "./themes";
@@ -40,7 +41,7 @@ const THEME_STORIES: GalleryStory[] = [
   { id: "theme/base-dark", title: "Base theme, dark", width: 1000, height: 470, theme: "base-dark", render: () => <Specimen title="Clover, dark" /> },
 ];
 
-export const STORIES: GalleryStory[] = [...THEME_STORIES, ...ISLAND_STORIES, ...USAGE_STORIES, ...PILL_STORIES, ...NOTIFICATION_STORIES, ...VRM_STORIES, ...ALPHA_STORIES];
+export const STORIES: GalleryStory[] = [...THEME_STORIES, ...ISLAND_STORIES, ...USAGE_STORIES, ...PILL_STORIES, ...NOTIFICATION_STORIES, ...VRM_STORIES, ...LIVE2D_STORIES, ...ALPHA_STORIES];
 
 declare global {
   interface Window {

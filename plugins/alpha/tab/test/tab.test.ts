@@ -124,7 +124,7 @@ describe("Alpha's layout", () => {
 
 describe("what Alpha's manifest names (spec §5.9's example)", () => {
   test("the theme, the layout and the avatar are where it says", () => {
-    for (const path of ["tab/theme.json", "tab/layout.json", "assets/alpha.vrm"]) expect(existsSync(join(ALPHA, path)), path).toBe(true);
+    for (const path of ["tab/theme.json", "tab/layout.json", "assets/alpha.vrm", "assets/live2d/alpha.model3.json", "assets/live2d/alpha.moc3", "assets/live2d/alpha.png"]) expect(existsSync(join(ALPHA, path)), path).toBe(true);
     // The portrait is an SVG until a real one exists; the spec's example says portrait.webp.
     expect(existsSync(join(ALPHA, "assets/portrait.svg"))).toBe(true);
     expect(dirname(join(ALPHA, "tab", "theme.json"))).toBe(TAB);

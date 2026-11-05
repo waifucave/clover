@@ -6,7 +6,8 @@
   "type": "module",
   "exports": {
     ".": "./client/index.tsx",
-    "./gallery": "./src/gallery.tsx"
+    "./gallery": "./src/gallery.tsx",
+    "./lipsync": "./src/lipsync/index.ts"
   },
   "scripts": {
     "test": "bun test",
