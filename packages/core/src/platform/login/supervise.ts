@@ -37,9 +37,10 @@ export interface SuperviseResult {
   readonly ended: "clean-exit" | "stopped";
 }
 
-/** Back-off after the nth consecutive crash: 1s, 2s, 4s… capped at 30s. */
+/** Back-off after the nth consecutive crash: 0.5 s, 1 s, 2 s, 4 s… capped at 30 s (S7 §5 measured the
+ *  supervised daemon back in 0.6 s, then 1.2 s). */
 export function backoffMs(consecutiveCrashes: number): number {
-  return Math.min(30_000, 1_000 * 2 ** Math.max(0, consecutiveCrashes - 1));
+  return Math.min(30_000, 500 * 2 ** Math.max(0, consecutiveCrashes - 1));
 }
 
 /** Run the supervise loop. Returns when the daemon exits cleanly or a stop is requested. */

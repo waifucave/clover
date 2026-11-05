@@ -12,6 +12,7 @@ export {
   type SuperviseDeps, type SuperviseResult, type DaemonRun,
 } from "./platform/login";
 export { callerFloorVerdict, mayBeUser, type SandboxProbe, type FloorVerdict } from "./platform/sandbox-floor";
+export { acquireLock, AlreadyRunningError, LockHeldNoDaemonError, LockFailedError, classifyLockFailure, endpointAnswers, type Lock, type AcquireLockOptions } from "./lock";
 export { resolveCloverProfile, keychainService, profileDisplayName, cliCommandName, type CloverProfile } from "./profile";
 export {
   LEGACY_LAUNCHD_LABEL, LEGACY_HOME_DIR, LEGACY_DEV_HOME_DIR, LEGACY_HOME_ENV, LEGACY_PROFILE_ENV,

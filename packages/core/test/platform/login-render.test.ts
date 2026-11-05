@@ -15,7 +15,7 @@ describe("login renderers run supervise, crash-only", () => {
     expect(x).toContain("<string>supervise</string>");
     expect(x).not.toContain("<string>run</string>");
     expect(x).toContain("<key>SuccessfulExit</key><false/>");
-    expect(x).toContain("<key>ThrottleInterval</key>");
+    expect(x).toContain("<key>ThrottleInterval</key><integer>1</integer>");
     expect(x).toContain("com.waifucave.clover.core");
     expect(x).not.toContain("CLOVER_PROFILE");
   });
@@ -34,11 +34,16 @@ describe("login renderers run supervise, crash-only", () => {
     expect(u).toContain("WantedBy=default.target");
   });
 
-  test("schtasks: logon trigger, supervise, restart-on-failure recovers supervise", () => {
+  test("schtasks: logon trigger, supervise, and the defaults overridden for a daemon (S7 §5)", () => {
     const x = renderSchtasksXml(base({ os: "win32" }));
     expect(x).toContain("<LogonTrigger>");
     expect(x).toContain("<Arguments>supervise</Arguments>");
-    expect(x).toContain("<RestartOnFailure>");
+    expect(x).toContain("<ExecutionTimeLimit>PT0S</ExecutionTimeLimit>");
+    expect(x).toContain("<DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>");
+    expect(x).toContain("<StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>");
+    expect(x).toContain("<Priority>5</Priority>");
+    expect(x).toContain("<MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>");
+    expect(x).not.toContain("<RestartOnFailure>"); // measured not to fire; supervise restarts
     expect(x).toContain("<Command>/opt/clover/clover-core</Command>");
   });
 

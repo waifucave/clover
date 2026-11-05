@@ -54,7 +54,8 @@ function xmlEscape(s: string): string {
 }
 
 /** A macOS LaunchAgent. `KeepAlive` is crash-only (`SuccessfulExit: false`), so a clean Quit holds
- *  until the next login (§3.1); `ThrottleInterval` bounds a crash loop. */
+ *  until the next login (§3.1). `ThrottleInterval` 1: without it launchd waits up to 10 s before
+ *  restarting a crashed job (S7 §5 measured a restart in 0.26–1.2 s with it). */
 export function renderLaunchdPlist(spec: LoginSpec): string {
   const env = spec.profile === "dev"
     ? `<dict><key>CLOVER_HOME</key><string>${xmlEscape(spec.home)}</string><key>CLOVER_PROFILE</key><string>dev</string></dict>`
@@ -74,7 +75,7 @@ export function renderLaunchdPlist(spec: LoginSpec): string {
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key>
   <dict><key>SuccessfulExit</key><false/></dict>
-  <key>ThrottleInterval</key><integer>10</integer>
+  <key>ThrottleInterval</key><integer>1</integer>
   <key>ProcessType</key><string>Background</string>
   <key>StandardOutPath</key><string>${xmlEscape(join(spec.logsDir, "supervise.out.log"))}</string>
   <key>StandardErrorPath</key><string>${xmlEscape(join(spec.logsDir, "supervise.err.log"))}</string>
@@ -103,9 +104,11 @@ WantedBy=default.target
 `;
 }
 
-/** A Task Scheduler definition for `schtasks /Create /XML`. A logon trigger starts `supervise`;
- *  `RestartOnFailure` recovers `supervise` itself (Task Scheduler does not supervise the daemon it
- *  spawns, which is why `supervise` runs the daemon's own restart loop). */
+/** A Task Scheduler definition for `schtasks /Create /XML`. A logon trigger starts `supervise`, the
+ *  daemon's restart loop: Task Scheduler's own restart on failure did not restart a killed task in
+ *  S7 §5 (and cannot restart in under a minute), so it is not used. The defaults Task Scheduler gets
+ *  wrong for a daemon are set explicitly: no time limit (default 72 h), not stopped or held back on
+ *  battery, normal priority (5; the default 7 is below normal), and a second start ignored. */
 export function renderSchtasksXml(spec: LoginSpec): string {
   const cmd = xmlEscape(spec.bin);
   const envNote = spec.profile === "dev" ? "Clover (dev)" : "Clover";
@@ -131,10 +134,7 @@ export function renderSchtasksXml(spec: LoginSpec): string {
     <AllowHardTerminate>true</AllowHardTerminate>
     <StartWhenAvailable>true</StartWhenAvailable>
     <ExecutionTimeLimit>PT0S</ExecutionTimeLimit>
-    <RestartOnFailure>
-      <Interval>PT1M</Interval>
-      <Count>3</Count>
-    </RestartOnFailure>
+    <Priority>5</Priority>
   </Settings>
   <Actions Context="Author">
     <Exec>

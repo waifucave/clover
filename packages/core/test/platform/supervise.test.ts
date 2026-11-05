@@ -33,7 +33,7 @@ describe("supervise loop", () => {
     expect(r.starts).toBe(3);
     expect(r.crashes).toBe(2);
     expect(r.ended).toBe("clean-exit");
-    expect(waits).toEqual([1000, 2000]); // back-off after the 1st and 2nd crash
+    expect(waits).toEqual([500, 1000]); // back-off after the 1st and 2nd crash
   });
 
   test("a stop request ends the loop even amid crashes", async () => {
@@ -52,10 +52,10 @@ describe("supervise loop", () => {
     expect(r.starts).toBe(1);
   });
 
-  test("back-off grows and caps at 30s", () => {
-    expect(backoffMs(1)).toBe(1000);
-    expect(backoffMs(2)).toBe(2000);
-    expect(backoffMs(3)).toBe(4000);
+  test("back-off grows from 0.5 s and caps at 30 s", () => {
+    expect(backoffMs(1)).toBe(500);
+    expect(backoffMs(2)).toBe(1000);
+    expect(backoffMs(3)).toBe(2000);
     expect(backoffMs(10)).toBe(30000);
   });
 });
