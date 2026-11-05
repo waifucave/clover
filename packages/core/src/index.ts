@@ -19,7 +19,7 @@ export {
 } from "./platform/pair";
 export { callerFloorVerdict, mayBeUser, type SandboxProbe, type FloorVerdict } from "./platform/sandbox-floor";
 export { probePeer, peerPid, parentPid, ancestry, sandboxProbe, socketFd, descendsFrom, WindowsPipePeers, type PeerFacts } from "./platform/caller-probe";
-export { lockPipeDacl, pipeDaclSddl, pipeServerIdentity, isOurDaemon, ownerOnlyPipeSddl, type PipeServerIdentity } from "./platform/win-pipe";
+export { lockPipeDacl, currentUserSid, pipeDaclSddl, pipeServerIdentity, isOurDaemon, ownerOnlyPipeSddl, type PipeServerIdentity } from "./platform/win-pipe";
 export { acquireLock, AlreadyRunningError, LockHeldNoDaemonError, LockFailedError, classifyLockFailure, endpointAnswers, type Lock, type AcquireLockOptions } from "./lock";
 export { resolveCloverProfile, keychainService, profileDisplayName, cliCommandName, type CloverProfile } from "./profile";
 export {

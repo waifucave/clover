@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { isOurDaemon, lockPipeDacl, ownerOnlyPipeSddl, pipeDaclSddl, pipeServerIdentity } from "../../src/platform/win-pipe";
+import { currentUserSid, isOurDaemon, lockPipeDacl, ownerOnlyPipeSddl, pipeDaclSddl, pipeServerIdentity } from "../../src/platform/win-pipe";
 import { checkDaemonProof, proveDaemon } from "../../src/platform/pair/run-files";
 import { bunRunner, windowsUserSid } from "../../src/platform/login/live";
 import { resolveEndpoint } from "../../src/platform/transport";
@@ -34,6 +34,7 @@ describe("dialling the daemon safely (E-M1's review)", () => {
   test.skipIf(process.platform !== "win32")("Windows: first instance only, an owner-only DACL, and the server's identity from the client", async () => {
     const path = resolveEndpoint(mkdtempSync(join(tmpdir(), "clover-pipe-"))).path;
     const sid = (await windowsUserSid(bunRunner))!;
+    expect(currentUserSid()).toBe(sid); // the daemon's own read, with no child process
     const server = Bun.listen({ unix: path, socket: { data() {} } });
     expect(() => Bun.listen({ unix: path, socket: { data() {} } })).toThrow(); // FILE_FLAG_FIRST_PIPE_INSTANCE
     expect(lockPipeDacl(path, sid)).toBeGreaterThan(0);

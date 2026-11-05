@@ -143,6 +143,11 @@ function processIdentity(pid: number): Omit<PipeServerIdentity, "pid"> | null {
   } finally { k.CloseHandle!(h); }
 }
 
+/** This process's own user, as a SID string (no child process: the daemon calls it as it listens). */
+export function currentUserSid(): string | null {
+  return processIdentity(process.pid)?.userSid ?? null;
+}
+
 /** Who serves the pipe this process is connected to: its pid, user and image. Call after
  *  connecting and before sending anything. Null when it can't be told (then don't say hello). */
 export function pipeServerIdentity(pipePath: string): PipeServerIdentity | null {
