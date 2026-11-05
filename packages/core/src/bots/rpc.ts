@@ -4,13 +4,19 @@
 //
 // The server decides who may call what before a handler runs (the allow lists, the capabilities, `userOnly`); the
 // handlers check the caller again where the method changes something, since a bot's or a plugin's call must never
-// count as the user's (§3.1, §9.1). Not here yet: `session.answer` (the runtime's questions, A-M3), `session.setModel`
-// (agents and coding sessions, K), `session.compact` (A-M3), `bots.pause` (M2), and the routines' methods (M3).
+// count as the user's (§3.1, §9.1). Not here yet: `session.answer` (the runtime's questions, A-M3) and the routines'
+// methods (M3).
+//
+// `peerSessionMethods` is the receiving side of `peer.session.send` (devices.ts), for a computer that runs a bot the
+// user messaged from another device: the sending device's signature decides whether the turn is the user's (N3).
+import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import {
-  CLOVER_ERR, ERR, IMAGE_REFERENCE_INVALID, SESSIONS_METHODS,
+  CLOVER_ERR, DEVICES_METHODS, ERR, IMAGE_REFERENCE_INVALID, SESSIONS_METHODS,
   type BotView, type Caller, type ChangeResult, type MemoryEntry, type MethodSpec, type SessionView, type UserMessageImageRef,
 } from "@waifucave/clover-protocol";
+import type { DeviceRegistry } from "../contracts/device-registry";
+import { verifyUserMessage } from "../contracts/session-host";
 import type { z } from "zod";
 import { StageImageRefusal, validateImageRefs } from "../agent/stage-image";
 import type { Clock } from "../contracts/clock";
@@ -77,6 +83,9 @@ export interface SessionsMethodsDeps {
   clock: Clock;
   /** This device's id, for a message the user sends from this computer's app or terminal (lane H's device key). */
   localDevice: string;
+  /** `session.setModel` for a background agent or a coding session (lane K's `AgentManager.setModel`); without it the
+   *  new model is recorded in the session's view and its driver reads it at the next turn. */
+  setAgentModel?(id: string, model: string, effort?: string): Promise<void>;
 }
 
 const HISTORY_SCAN_STEP = 200;
@@ -196,7 +205,8 @@ export function sessionsMethods(deps: SessionsMethodsDeps): Record<string, Metho
       reachable(id);
       if (message.text.trim() === "") throw new ContractError("invalid", "a message needs text");
       const images = checkedImages(caller, id, message.text, message.images);
-      const { seq } = await host.sendUser(id, {
+      const v = view(id);
+      const input = {
         text: message.text,
         device: caller.device ?? deps.localDevice,
         // The client's own stamp on the shared clock orders the user's messages (§6.4); without one, when it arrived.
@@ -204,7 +214,16 @@ export function sessionsMethods(deps: SessionsMethodsDeps): Record<string, Metho
         clientMessageId: message.clientMessageId,
         ...(images === undefined ? {} : { images }),
         ...(message.files === undefined ? {} : { files: message.files }),
-      });
+      };
+      // A bot's conversation runs on the computer running the bots, which may be another one (§6.4).
+      if (v.kind === "bot" && v.bot !== undefined && bots.mainSession(v.bot) === id) {
+        if (images !== undefined && !bots.botsRunHere().includes(v.bot)) {
+          throw new MethodError(ERR.INVALID_PARAMS, "images reach only a bot whose conversation runs on this computer", { code: IMAGE_REFERENCE_INVALID });
+        }
+        const { seq } = await bots.sendUserTo(v.bot, input, message);
+        return { seq };
+      }
+      const { seq } = await host.sendUser(id, input);
       return { seq };
     }),
 
@@ -232,6 +251,31 @@ export function sessionsMethods(deps: SessionsMethodsDeps): Record<string, Metho
       return { ok: true as const };
     }),
 
+    [M.botsPause.name]: handler(M.botsPause, async ({ paused }, ctx) => {
+      requireUser(ctx, "pause or resume the bots");
+      await bots.setPaused(paused, ctx.caller);
+      return { ok: true as const };
+    }),
+
+    [M.sessionSetModel.name]: handler(M.sessionSetModel, async ({ id, model, effort }, ctx) => {
+      requireUser(ctx, "switch a session's model");
+      const v = view(id);
+      if (v.kind === "bot") throw new ContractError("refused", "a bot's model is its user layer (bot.setUserLayer), which its conversation and side threads follow");
+      if (v.kind === "side-thread") throw new ContractError("refused", "a side thread runs on its bot's model");
+      if (v.status === "stopped" || v.status === "failed") throw new ContractError("closed", `session ${id} has ended`);
+      await deps.setAgentModel?.(id, model, effort);
+      host.update(id, { model, effort: effort ?? null });
+      return { ok: true as const };
+    }),
+
+    [M.sessionCompact.name]: handler(M.sessionCompact, async ({ id }, ctx) => {
+      requireUser(ctx, "compact a session");
+      const outcome = await host.compact(id, "user");
+      if (outcome === "unsupported") throw new ContractError("refused", "this session's agent compacts its own conversation");
+      if (outcome === "failed") throw new ContractError("conflict", "the compaction failed; the conversation is as it was");
+      return { ok: true as const };
+    }),
+
     [M.memoryList.name]: handler(M.memoryList, async ({ bot }): Promise<{ entries: MemoryEntry[] }> => {
       const dir = botPaths(deps.home, bot).memory;
       if (!bots.has(bot) && !existsSync(dir)) throw new ContractError("not_found", `no bot ${bot}`);
@@ -239,5 +283,45 @@ export function sessionsMethods(deps: SessionsMethodsDeps): Record<string, Metho
     }),
 
     [M.memoryRead.name]: handler(M.memoryRead, async ({ bot, path }) => ({ text: readMemory(botPaths(deps.home, bot).memory, path) })),
+  };
+}
+
+export interface PeerSessionMethodsDeps {
+  bots: Pick<BotService, "has" | "botsRunHere">;
+  host: Pick<DurableSessionHost, "get" | "sendUser">;
+  clock: Pick<Clock, "now">;
+  /** The paired devices (lane H): whose answer key signs a user's message. Without it, no relayed message is signed. */
+  devices?: Pick<DeviceRegistry, "get" | "verifyAnswer">;
+}
+
+/** The receiving side of `peer.session.send` (§6.4): a user's message another computer relays to a session here, a bot's
+ *  conversation this computer runs. It counts as the user's turn only with the sending device's good signature (N3);
+ *  otherwise it still arrives, as the user's words in a turn that isn't the user's. */
+export function peerSessionMethods(deps: PeerSessionMethodsDeps): Record<string, MethodHandler> {
+  const P = DEVICES_METHODS.peerSessionDeliver;
+  const sha256 = (text: string) => createHash("sha256").update(text).digest("hex");
+  return {
+    [P.name]: handler(P, async ({ id, message, device, sentAt }, ctx) => {
+      if (ctx.caller.kind !== "peer") throw new MethodError(CLOVER_ERR.ROLE_REFUSED, "peer.session.send comes only from another computer over the link");
+      const relayedBy = ctx.caller.device;
+      const v = deps.host.get(id);
+      if (!v) throw new ContractError("not_found", `no session ${id}`);
+      if (v.kind === "bot" && (v.bot === undefined || !deps.bots.has(v.bot) || !deps.bots.botsRunHere().includes(v.bot))) {
+        throw new ContractError("not_main", `this computer doesn't run ${v.bot ?? id}'s conversation now`);
+      }
+      if (message.text.trim() === "") throw new ContractError("invalid", "a message needs text");
+      // Images name files on the computer they were staged on, which isn't this one.
+      if (message.images !== undefined && message.images.length > 0) throw new MethodError(ERR.INVALID_PARAMS, "a relayed message can't carry images yet", { code: IMAGE_REFERENCE_INVALID });
+      const signed = deps.devices === undefined ? false : await verifyUserMessage({ session: id, device, message }, { now: deps.clock.now(), sha256, devices: deps.devices });
+      const { seq } = await deps.host.sendUser(id, {
+        text: message.text,
+        device,
+        sentAt: message.sentAt ?? sentAt,
+        clientMessageId: message.clientMessageId,
+        ...(message.files === undefined ? {} : { files: message.files }),
+        relayed: { by: relayedBy, signed },
+      });
+      return { seq };
+    }),
   };
 }
