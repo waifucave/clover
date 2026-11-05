@@ -1,0 +1,5 @@
+Uploading public source chunk 1
+Uploading public source chunk 2
+Running run-candidate.ps1 on clover-c-win
+Evaluating dedicated-principal WFP candidate and mandatory-floor attempts
+{"test":"candidate-initialize","launch_error":"acl_grant_failed","diagnostic":"srt-win acl grant --persistent exited 1 (failed): srt-win: WARNING: '\\\\?\\C:\\clover-tools\\clover-candidate-CxDX7f\\work' carries (A;OICIIO;0x10000000;;;S-1-3-0): files the sandbox creates under it stay writable to sessions of other projects\nsrt-win: deny '\\\\?\\C:\\clover-tools\\clover-candidate-CxDX7f\\state\\clover\\secrets.enc': deny refused: '\\\\?\\C:\\clover-tools\\clover-candidate-CxDX7f\\state\\clover\\secrets.enc' has 2 hardlink(s); ace_holders rows are path-keyed, so releasing an alias would prematurely strip the shared deny ACE\nsrt-win: acl grant (persistent) — 1 root(s): 1 DACL write(s), 0 path(s) unchanged, 0 written without a walk of the tree\nsrt-win: acl grant — 5 path(s) (5 fresh, 1 already held, 1 FAILED — rolled back); recovery pruned 0 dead broker(s), revoked 0 orphan ACE(s)\nsrt-win: error: 1 of 5 path(s) could not be granted; batch rolled back"}

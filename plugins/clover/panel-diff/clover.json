@@ -1,0 +1,27 @@
+{
+  "manifest": 1,
+  "name": "Diff",
+  "description": "A code session's changes panel: base against working tree, per file, unified or split. Never in a bot's tab.",
+  "engines": {
+    "clover": "^1.0.0"
+  },
+  "client": {
+    "entry": "client/index.tsx",
+    "css": [
+      "client/styles.css"
+    ]
+  },
+  "capabilities": [
+    "files"
+  ],
+  "contributes": {
+    "ui": [
+      {
+        "spot": "panel",
+        "key": "diff",
+        "title": "Changes",
+        "component": "DiffPanel"
+      }
+    ]
+  }
+}

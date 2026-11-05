@@ -1,0 +1,3 @@
+Running linux-store.py on clover-c-linux
+Running private Secret Service encrypted-file roundtrip
+{"test": "private-secret-service", "key_roundtrip": true, "encrypted_file_roundtrip": true, "ciphertext_bytes": 92, "tamper_rejected": true, "real_login_bus_used": false}

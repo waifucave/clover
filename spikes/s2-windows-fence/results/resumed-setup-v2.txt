@@ -1,0 +1,31 @@
+Running setup-candidate.ps1 on clover-c-win
+Installing pinned standalone Windows sandbox candidate
+
+up to date in 1s
+HELPER C:\clover-tools\srt\node_modules\@anthropic-ai\sandbox-runtime\vendor\srt-win\x64\srt-win.exe
+Usage: srt windows-install [options]
+
+Windows: provision the `srt-sandbox` user account + install WFP filters (one
+UAC prompt), then make your user profile readable to sandboxed commands, except
+for credential stores (no elevation; minutes on a large profile the first
+time). No logout needed. Run it again after upgrading sandbox-runtime when a
+command asks for it, or to bring the profile read grant up to date: it upgrades
+the existing install in place.
+
+Options:
+  --sublayer-guid <guid>      WFP sublayer GUID
+  --proxy-port-range <lo-hi>  loopback PERMIT port range (e.g. 60080-60089)
+  --allow-loopback            let sandboxed commands connect to any localhost
+                              port (default: off); must match
+                              network.allowLocalBinding
+  --sandbox-user <name>       name for the sandbox user account (default:
+                              srt-sandbox)
+  --force                     replace an existing install with different config
+  --profile-exclude <path>    a path inside your profile to keep unreadable in
+                              addition to the built-in exclusions (repeatable)
+                              (default: [])
+  --skip-profile-grant        install the account and the filters only;
+                              sandboxed commands then read nothing in your
+                              profile (use this on a computer other people have
+                              accounts on)
+  -h, --help                  display help for command

@@ -1,0 +1,24 @@
+== sw_vers
+ProductName:		macOS
+ProductVersion:		26.6.2
+BuildVersion:		25G83
+Xcode 26.6
+Build version 17F113
+
+== mount -F -t clovertree (module registered, not enabled)
+Module com.waifucave.clover.tree.dev.fs is disabled!
+mount: Unable to invoke task
+exit 69
+took 1 s
+
+== the same after adding the module to enabledModules.plist by hand
+mount: Loading resource: The operation couldn’t be completed. (com.apple.extensionKit.errorDomain error 2.)
+mount: File system named clovertree not found
+exit 69
+
+== amfid, from the unified log
+2026-11-05 00:57:29.298 Df kernel[0:4bc1] (AppleMobileFileIntegrity) AMFI: '/Users/runner/Applications/CloverTree.app/Contents/Extensions/CloverTreeFS.appex/Contents/MacOS/CloverTreeFS' is adhoc signed.
+2026-11-05 00:57:29.301 Df amfid[102:31ec] /Users/runner/Applications/CloverTree.app/Contents/Extensions/CloverTreeFS.appex/Contents/MacOS/CloverTreeFS not valid: Error Domain=AppleMobileFileIntegrityError Code=-424 "The file is adhoc signed but contains restricted entitlements" UserInfo={NSURL=file:///Users/runner/Applications/CloverTree.app/Contents/Extensions/CloverTreeFS.appex/Contents/MacOS/C
+2026-11-05 00:57:29.301 Df kernel[0:4bc1] (AppleMobileFileIntegrity) AMFI: When validating /Users/runner/Applications/CloverTree.app/Contents/Extensions/CloverTreeFS.appex/Contents/MacOS/CloverTreeFS:
+2026-11-05 00:57:29.301 Df kernel[0:4bc1] mac_vnode_check_signature: /Users/runner/Applications/CloverTree.app/Contents/Extensions/CloverTreeFS.appex/Contents/MacOS/CloverTreeFS: code signature validation failed fatally: When validating /Users/runner/Applications/CloverTree.app/Contents/Extensions/CloverTreeFS.appex/Contents/MacOS/CloverTreeFS:
+2026-11-05 00:57:29.301 Df kernel[0:4bc1] proc 5015: load code signature error 4 for file "CloverTreeFS"

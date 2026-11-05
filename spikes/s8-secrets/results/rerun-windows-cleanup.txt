@@ -1,0 +1,8 @@
+Uploading public source chunk 1
+Uploading public source chunk 2
+Running cleanup-windows.ps1 on clover-c-win
+Cleaning only lane C sandbox installations, tasks, users and interrupted fixtures
+codex_uninstall_exit=0
+srt_uninstall_exit=0
+Remaining sandbox profile folders: 0
+Remaining lane test users:

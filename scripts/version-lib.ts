@@ -68,6 +68,8 @@ export function nextVersion(current: string, mode: string): string {
 }
 
 const PKGS = ["cli", "core", "protocol", "plugin-sdk"];
+/** M-M0: other stamped package.jsons, by repo path — the desktop app, whose version electron-builder reads. */
+const OTHER_PKG_DIRS = ["apps/desktop"];
 
 /** The generated Info.plists (in apple/Winter/Support) that carry CLOVER's version: the app's and Winter Headless's. */
 export const CLOVER_INFO_PLISTS = ["Info.plist", "WinterHeadless-Info.plist"] as const;
@@ -88,8 +90,7 @@ export function stampAll(v: string): string[] {
   );
 
   // 2. package.jsons — semver-normalized twin (private packages, never published).
-  for (const p of PKGS) {
-    const path = join(ROOT, "packages", p, "package.json");
+  for (const path of [...PKGS.map((p) => join(ROOT, "packages", p, "package.json")), ...OTHER_PKG_DIRS.map((d) => join(ROOT, d, "package.json"))]) {
     const pkg = JSON.parse(readFileSync(path, "utf8")) as Record<string, unknown>;
     pkg.version = twin;
     put(path, JSON.stringify(pkg, null, 2) + "\n");

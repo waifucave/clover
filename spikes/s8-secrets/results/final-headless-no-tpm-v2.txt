@@ -1,0 +1,2 @@
+Running headless-no-tpm.py on clover-c-linux
+{"test": "user-scoped-no-tpm-namespace", "uid": 0, "host_credential_ipc_hidden": true, "tpm_devices_hidden": true, "encrypt_exit": 1, "diagnostic": "Credential secret file '/var/lib/systemd/credential.secret' is not located on encrypted media, using anyway.\nFailed to write result: Permission denied\n"}

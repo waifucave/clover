@@ -1,0 +1,142 @@
+/* What the MOCK core draws inside its sealed frames and MCP Apps views, for the gallery only. The
+   real frames come from a core-owned origin and take only the `card.*` tokens (spec §5.5). */
+
+.mock-sealed {
+  display: block;
+  color: var(--clover-card-text);
+  font-family: var(--clover-card-font-family);
+}
+
+.mock-sealed[data-field="title"] {
+  font-weight: 600;
+}
+
+.mock-sealed[data-field="command"] {
+  padding: 8px 10px;
+  border: 1px solid var(--clover-card-rim);
+  border-radius: 8px;
+  background: var(--clover-card-background);
+  font-family: var(--clover-font-mono);
+  font-size: 12.5px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.mock-sealed[data-field="computer"],
+.mock-sealed[data-field="risk"] {
+  color: var(--clover-card-muted);
+  font-size: 12px;
+}
+
+.mock-sealed[data-field="computer"]::before {
+  content: "Computer: ";
+}
+
+.mock-sealed[data-field="risk"]::before {
+  content: "Risk: ";
+}
+
+.mock-sealed[data-field="reason"] {
+  color: var(--clover-card-muted);
+  font-size: 13px;
+}
+
+.mock-sealed-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  min-width: 96px;
+  min-height: 32px;
+  padding: 0 14px;
+  border-radius: var(--clover-card-radius);
+  font-family: var(--clover-card-font-family);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.mock-sealed-button[data-kind="approve"] {
+  background: var(--clover-card-approve-background);
+  color: var(--clover-card-approve-text);
+}
+
+.mock-sealed-button[data-kind="deny"] {
+  border: 1px solid var(--clover-card-rim);
+  background: var(--clover-card-deny-background);
+  color: var(--clover-card-deny-text);
+}
+
+.mock-app {
+  overflow: hidden;
+  border: 1px solid var(--clover-color-hairline-raised);
+  border-radius: 10px;
+  background: var(--clover-color-surface);
+}
+
+.mock-app__bar {
+  padding: 4px 10px;
+  border-bottom: 1px solid var(--clover-color-hairline-raised);
+  color: var(--clover-color-text-muted);
+  font-family: var(--clover-font-mono);
+  font-size: 11px;
+}
+
+.mock-app__body {
+  padding: 12px;
+}
+
+.mock-chart {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  height: 120px;
+}
+
+.mock-chart__col {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: stretch;
+  height: 100%;
+  gap: 4px;
+}
+
+.mock-chart__bar {
+  border-radius: 4px 4px 0 0;
+  background: var(--clover-color-accent);
+}
+
+.mock-chart__label {
+  color: var(--clover-color-text-muted);
+  font-size: 11px;
+  text-align: center;
+}
+
+/* The mock core's frames for the fields lane B's card data added. */
+.mock-card {
+  display: contents;
+}
+
+.mock-sealed[data-field="what"] {
+  font-weight: var(--clover-font-weight-medium);
+}
+
+.mock-sealed[data-field="source"],
+.mock-sealed[data-field="host"],
+.mock-sealed[data-field="expires"],
+.mock-sealed[data-field="paths"],
+.mock-sealed[data-field="detail"] {
+  color: var(--clover-card-muted);
+}
+
+.mock-sealed[data-field="paths"],
+.mock-sealed[data-field="host"] {
+  font-family: var(--clover-font-mono);
+}
+
+.mock-sealed-button[data-always] {
+  background: var(--clover-card-deny-background);
+  color: var(--clover-card-deny-text);
+}

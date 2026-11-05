@@ -1,0 +1,17 @@
+
+AMServiceEnabled          : True
+AntivirusEnabled          : True
+RealTimeProtectionEnabled : False
+OnAccessProtectionEnabled : False
+IoavProtectionEnabled     : False
+BehaviorMonitorEnabled    : False
+
+
+DisableRealtimeMonitoring : True
+ExclusionPath             : {C:\, D:\}
+
+after turning real-time protection off:
+
+RealTimeProtectionEnabled : False
+OnAccessProtectionEnabled : False
+

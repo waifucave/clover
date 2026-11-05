@@ -1,0 +1,156 @@
+/* The terminal panel. Every colour, face and size is a theme token from lane B's catalog; the terminal's
+   own colours (`terminal.*`) are a request to B, and until then it wears the surface's. Sizes follow the
+   reference app's (as measured for lane G's base theme): 12 px monospace on 15 px lines. */
+
+.cl-term {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--clover-color-surface);
+  color: var(--clover-color-text);
+  font-family: var(--clover-font-sans);
+  font-size: var(--clover-font-size-control);
+}
+
+.cl-term :focus-visible,
+.cl-term-tabs :focus-visible {
+  outline: 2px solid var(--clover-color-focus);
+  outline-offset: -2px;
+}
+
+/* The tabs, in the panel's header. */
+.cl-term-tabs {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  font-family: var(--clover-font-sans);
+  font-size: var(--clover-font-size-label);
+}
+
+.cl-term-tabs button {
+  font: inherit;
+}
+
+.cl-term-tabs__tab {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  border-radius: var(--clover-radius-medium);
+}
+
+.cl-term-tabs__tab[data-active] {
+  background: var(--clover-color-control);
+}
+
+.cl-term-tabs__select,
+.cl-term-tabs__close,
+.cl-term-tabs__new {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 28px;
+  padding: 0 var(--clover-space-s);
+  border: none;
+  border-radius: var(--clover-radius-medium);
+  background: transparent;
+  color: var(--clover-color-text-secondary);
+  cursor: pointer;
+}
+
+.cl-term-tabs__tab[data-active] .cl-term-tabs__select {
+  color: var(--clover-color-text);
+}
+
+.cl-term-tabs__close {
+  min-width: 24px;
+  padding: 0;
+  color: var(--clover-color-text-muted);
+}
+
+.cl-term-tabs__new {
+  width: 28px;
+  padding: 0;
+}
+
+.cl-term-tabs__new:hover,
+.cl-term-tabs__close:hover {
+  background: var(--clover-color-hover);
+  color: var(--clover-color-text);
+}
+
+.cl-term__screen {
+  flex: 1 1 auto;
+  min-height: 0;
+  margin: 0;
+  padding: var(--clover-space-s) 11px;
+  overflow: auto;
+  color: var(--clover-color-text);
+  font-family: var(--clover-font-mono);
+  font-size: var(--clover-font-size-caption);
+  line-height: var(--clover-font-line-tight);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.cl-term__chunk[data-style="error"] {
+  color: var(--clover-color-danger);
+}
+
+.cl-term__chunk[data-style="warning"] {
+  color: var(--clover-color-attention-text);
+}
+
+.cl-term__chunk[data-style="success"] {
+  color: var(--clover-color-success);
+}
+
+.cl-term__chunk[data-style="prompt"] {
+  color: var(--clover-color-accent-text);
+}
+
+.cl-term__chunk[data-style="dim"] {
+  color: var(--clover-color-text-muted);
+}
+
+.cl-term__chunk[data-style="bold"] {
+  font-weight: var(--clover-font-weight-semibold);
+}
+
+.cl-term__chunk[data-style="link"] {
+  text-decoration: underline;
+}
+
+.cl-term__cursor {
+  display: inline-block;
+  width: 0.6em;
+  height: 1.1em;
+  background: var(--clover-color-text-secondary);
+  vertical-align: text-bottom;
+}
+
+/* How to leave: shown while the terminal has the keyboard, read out with it always. */
+.cl-term__hint {
+  display: none;
+  flex: none;
+  margin: 0;
+  padding: var(--clover-space-xs) 11px;
+  border-top: 1px solid var(--clover-color-hairline);
+  color: var(--clover-color-text-muted);
+  font-size: var(--clover-font-size-caption);
+}
+
+.cl-term__screen:focus + .cl-term__hint {
+  display: block;
+}
+
+.cl-term-icon {
+  flex: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cl-term * {
+    transition: none;
+  }
+}

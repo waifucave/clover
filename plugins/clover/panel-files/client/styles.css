@@ -1,0 +1,247 @@
+/* The files panel. Every colour, face and size is a theme token from lane B's catalog. Sizes follow the
+   reference app's (as measured for lane G's base theme): a 237 px tree under an 8 px filter row, 32 px
+   rows at 13 px, and the viewer's note centred. */
+
+.cl-files {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+  background: var(--clover-color-surface);
+  color: var(--clover-color-text);
+  font-family: var(--clover-font-sans);
+  font-size: var(--clover-font-size-control);
+}
+
+.cl-files button {
+  font: inherit;
+}
+
+.cl-files :focus-visible {
+  outline: 2px solid var(--clover-color-focus);
+  outline-offset: -2px;
+}
+
+.cl-files__viewer {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.cl-files__empty {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--clover-space-xs);
+  padding: var(--clover-space-xl);
+  color: var(--clover-color-text-muted);
+  text-align: center;
+}
+
+.cl-files__empty-title {
+  margin: var(--clover-space-s) 0 0;
+  color: var(--clover-color-text);
+  font-size: var(--clover-font-size-control);
+}
+
+.cl-files__empty-text {
+  max-width: 260px;
+  margin: 0;
+  font-size: var(--clover-font-size-label);
+  line-height: var(--clover-font-line-body);
+}
+
+.cl-files__file {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.cl-files__path {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--clover-space-s);
+  padding: var(--clover-space-s) 11px;
+  border-bottom: 1px solid var(--clover-color-hairline);
+  color: var(--clover-color-text-muted);
+  font-size: var(--clover-font-size-label);
+}
+
+/* A file that holds hidden characters says so above its lines. */
+.cl-files__warning {
+  padding: 0 6px;
+  border: 1px solid currentColor;
+  border-radius: var(--clover-radius-round);
+  color: var(--clover-color-attention-text);
+  font-size: var(--clover-font-size-caption);
+}
+
+/* A hidden character, drawn as its code point in a box. */
+.cl-files-hidden {
+  display: inline-block;
+  margin: 0 1px;
+  padding: 0 3px;
+  border: 1px solid var(--clover-color-attention);
+  border-radius: 3px;
+  color: var(--clover-color-attention-text);
+  font-family: var(--clover-font-mono);
+  font-size: 0.85em;
+  line-height: 1.2;
+}
+
+.cl-files__code {
+  flex: 1 1 auto;
+  min-height: 0;
+  margin: 0;
+  padding: var(--clover-space-s) 0;
+  overflow: auto;
+  font-family: var(--clover-font-mono);
+  font-size: var(--clover-font-size-caption);
+  line-height: var(--clover-plugin-clover-line-code);
+}
+
+.cl-files__line {
+  display: block;
+  padding-right: var(--clover-space-m);
+  white-space: pre;
+}
+
+.cl-files__num {
+  display: inline-block;
+  width: 40px;
+  margin-right: var(--clover-space-m);
+  color: var(--clover-color-text-placeholder);
+  text-align: right;
+}
+
+.cl-files__side {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  width: 237px;
+  min-height: 0;
+  border-left: 1px solid var(--clover-color-hairline-raised);
+}
+
+.cl-files__filter {
+  box-sizing: border-box;
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--clover-space-s);
+  height: 28px;
+  margin: var(--clover-space-s);
+  padding: 0 10px;
+  border-radius: var(--clover-radius-medium);
+  background: var(--clover-color-raised);
+  color: var(--clover-color-text-muted);
+}
+
+.cl-files__filter:focus-within {
+  outline: 2px solid var(--clover-color-focus);
+  outline-offset: -1px;
+}
+
+.cl-files__filter-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--clover-color-text);
+  font: inherit;
+  font-size: var(--clover-font-size-label);
+}
+
+.cl-files__filter-input::placeholder {
+  color: var(--clover-color-text-placeholder);
+}
+
+.cl-files__tree {
+  flex: 1 1 auto;
+  min-height: 0;
+  margin: 0;
+  padding: 0 var(--clover-space-xs) var(--clover-space-s);
+  overflow-y: auto;
+  list-style: none;
+}
+
+.cl-files__row {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: var(--clover-space-s);
+  width: 100%;
+  min-height: 32px;
+  padding-right: var(--clover-space-s);
+  border: none;
+  border-radius: var(--clover-radius-medium);
+  background: transparent;
+  color: var(--clover-color-text);
+  font-size: var(--clover-font-size-label);
+  text-align: left;
+  cursor: pointer;
+}
+
+.cl-files__row:hover {
+  background: var(--clover-color-hover);
+}
+
+.cl-files__row[aria-selected="true"] {
+  background: var(--clover-color-selected);
+}
+
+.cl-files__row[data-type="dir"] .cl-files-icon {
+  color: var(--clover-color-text-muted);
+}
+
+.cl-files__name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cl-files__loading {
+  padding: 4px var(--clover-space-s);
+  color: var(--clover-color-text-muted);
+}
+
+.cl-files-icon {
+  flex: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cl-files * {
+    transition: none;
+  }
+}
+
+/* The panel's header: the session's folder, then its computer. */
+.cl-files-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: var(--clover-color-text);
+  font-family: var(--clover-font-sans);
+  font-size: var(--clover-font-size-control);
+}
+
+.cl-files-title__name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cl-files-title__computer {
+  flex: none;
+  color: var(--clover-color-text-muted);
+}

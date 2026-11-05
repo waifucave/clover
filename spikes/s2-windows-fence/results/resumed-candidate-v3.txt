@@ -1,0 +1,5 @@
+Uploading public source chunk 1
+Uploading public source chunk 2
+Running run-candidate.ps1 on clover-c-win
+Evaluating dedicated-principal WFP candidate and mandatory-floor attempts
+{"test":"candidate-initialize","launch_error":"wfp_verify_unparseable","diagnostic":"WFP egress fence could not be verified — `srt-win wfp verify` exited 1 with unparseable output \"\" (stderr: \"srt-win: error: spawn runner for egress probe: NtOpenDirectoryObject(\\\\Sessions\\\\0\\\\BaseNamedObjects, READ_CONTROL|WRITE_DAC): NTSTATUS 0xC0000034\")"}

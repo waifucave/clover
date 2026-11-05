@@ -1,0 +1,209 @@
+{
+  "spike": "S6",
+  "question": "speed",
+  "machine": {
+    "os": "win32",
+    "release": "10.0.26100",
+    "arch": "x64",
+    "cpus": 4,
+    "cpu": "AMD EPYC 9V45 96-Core Processor                ",
+    "memGB": 16,
+    "bun": "1.3.14"
+  },
+  "started": "2026-11-05T04:10:41.189Z",
+  "rows": [
+    {
+      "workload": "tsc-protocol",
+      "where": "mount",
+      "policy": "cached",
+      "rttMs": 0,
+      "phase": "cold",
+      "requests": 912,
+      "ops": {
+        "STAT": 325,
+        "TREE": 116,
+        "TREE_entries": 14893,
+        "READLINK": 102,
+        "READ": 369,
+        "READ_bytes": 13081465
+      },
+      "helper": {
+        "cacheHits": 19188,
+        "cacheMiss": 325,
+        "drops": 0,
+        "fastFails": 0,
+        "online": true,
+        "prefetches": 10,
+        "reconnects": 0,
+        "requests": 915,
+        "timeouts": 0
+      },
+      "ms": 5801,
+      "ok": true,
+      "code": 0,
+      "timedOut": false
+    },
+    {
+      "workload": "tsc-protocol",
+      "where": "mount",
+      "policy": "cached",
+      "rttMs": 0,
+      "phase": "warm",
+      "requests": 471,
+      "ops": {
+        "READLINK": 102,
+        "READ": 369,
+        "READ_bytes": 13081465
+      },
+      "ms": 2194,
+      "ok": true,
+      "code": 0,
+      "timedOut": false
+    },
+    {
+      "workload": "tsc-core",
+      "where": "mount",
+      "policy": "cached",
+      "rttMs": 0,
+      "phase": "cold",
+      "requests": 2982,
+      "ops": {
+        "STAT": 325,
+        "TREE": 148,
+        "TREE_entries": 19180,
+        "READLINK": 493,
+        "READ": 2016,
+        "READ_bytes": 37626891
+      },
+      "helper": {
+        "cacheHits": 79111,
+        "cacheMiss": 325,
+        "drops": 0,
+        "fastFails": 0,
+        "online": true,
+        "prefetches": 42,
+        "reconnects": 0,
+        "requests": 2985,
+        "timeouts": 0
+      },
+      "ms": 19741,
+      "ok": true,
+      "code": 0,
+      "timedOut": false
+    },
+    {
+      "workload": "tsc-core",
+      "where": "mount",
+      "policy": "cached",
+      "rttMs": 0,
+      "phase": "warm",
+      "requests": 2509,
+      "ops": {
+        "READLINK": 493,
+        "READ": 2016,
+        "READ_bytes": 37626891
+      },
+      "ms": 19724,
+      "ok": true,
+      "code": 0,
+      "timedOut": false
+    },
+    {
+      "workload": "tsc-protocol",
+      "where": "mount",
+      "policy": "cached",
+      "rttMs": 20,
+      "phase": "cold",
+      "requests": 912,
+      "ops": {
+        "STAT": 325,
+        "TREE": 116,
+        "TREE_entries": 14893,
+        "READLINK": 102,
+        "READ": 369,
+        "READ_bytes": 13081465
+      },
+      "helper": {
+        "cacheHits": 19188,
+        "cacheMiss": 325,
+        "drops": 0,
+        "fastFails": 0,
+        "online": true,
+        "prefetches": 10,
+        "reconnects": 0,
+        "requests": 915,
+        "timeouts": 0
+      },
+      "ms": 30607,
+      "ok": true,
+      "code": 0,
+      "timedOut": false
+    },
+    {
+      "workload": "tsc-protocol",
+      "where": "mount",
+      "policy": "cached",
+      "rttMs": 20,
+      "phase": "warm",
+      "requests": 471,
+      "ops": {
+        "READLINK": 102,
+        "READ": 369,
+        "READ_bytes": 13081465
+      },
+      "ms": 16587,
+      "ok": true,
+      "code": 0,
+      "timedOut": false
+    },
+    {
+      "workload": "tsc-core",
+      "where": "mount",
+      "policy": "cached",
+      "rttMs": 20,
+      "phase": "cold",
+      "requests": 2982,
+      "ops": {
+        "STAT": 325,
+        "TREE": 148,
+        "TREE_entries": 19180,
+        "READLINK": 493,
+        "READ": 2016,
+        "READ_bytes": 37626891
+      },
+      "helper": {
+        "cacheHits": 79111,
+        "cacheMiss": 325,
+        "drops": 0,
+        "fastFails": 0,
+        "online": true,
+        "prefetches": 42,
+        "reconnects": 0,
+        "requests": 2985,
+        "timeouts": 0
+      },
+      "ms": 108713,
+      "ok": true,
+      "code": 0,
+      "timedOut": false
+    },
+    {
+      "workload": "tsc-core",
+      "where": "mount",
+      "policy": "cached",
+      "rttMs": 20,
+      "phase": "warm",
+      "requests": 2509,
+      "ops": {
+        "READLINK": 493,
+        "READ": 2016,
+        "READ_bytes": 37626891
+      },
+      "ms": 90113,
+      "ok": true,
+      "code": 0,
+      "timedOut": false
+    }
+  ],
+  "finished": "2026-11-05T04:15:36.694Z"
+}

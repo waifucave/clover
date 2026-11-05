@@ -1,0 +1,9 @@
+Running provision-candidate.ps1 on clover-c-win
+Provisioning disposable Clover sandbox principal and WFP fence
+Error: srt-win install failed (exit 3221225781):
+Windows sandbox provisioning failed
+At C:\Users\<test-user>\AppData\Local\Temp\clover-lane-c-f24291c682e541f7a4fdd26963e99ad3\probe.ps1:6 char:28
++ ... ($LASTEXITCODE -ne 0) { throw 'Windows sandbox provisioning failed' }
++                             ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : OperationStopped: (Windows sandbox provisioning failed:String) [], RuntimeException
+    + FullyQualifiedErrorId : Windows sandbox provisioning failed

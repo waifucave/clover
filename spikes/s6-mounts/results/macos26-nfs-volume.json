@@ -1,0 +1,118 @@
+{
+  "spike": "S6",
+  "question": "volume",
+  "machine": {
+    "os": "darwin",
+    "release": "25.6.0",
+    "arch": "arm64",
+    "cpus": 3,
+    "cpu": "Apple M1 (Virtual)",
+    "memGB": 7,
+    "bun": "1.3.14",
+    "commit": "147f346c9c621585e2d7596eb51348d64e2ae075",
+    "run": "42004174774",
+    "runAttempt": "1",
+    "job": "macos"
+  },
+  "started": "2026-11-05T10:03:41.315Z",
+  "runs": [
+    {
+      "label": "default",
+      "extra": "",
+      "mountLine": "127.0.0.1:/<one-time export path> on /Users/runner/work/_temp/s6/nfs-tree (nfs, nodev, nosuid, nobrowse, mounted by runner)",
+      "xattrWrite": "",
+      "xattrRead": "org.clover.s6: 1",
+      "cpP": "",
+      "ditto": "",
+      "holderSees": [
+        "._a.txt",
+        "._b-cp.txt",
+        "._b-ditto.txt",
+        "a.txt",
+        "b-cp.txt",
+        "b-ditto.txt"
+      ],
+      "appleDouble": [
+        "._a.txt",
+        "._b-cp.txt",
+        "._b-ditto.txt"
+      ],
+      "mountSees": [
+        "._a.txt",
+        "._b-cp.txt",
+        "._b-ditto.txt",
+        "a.txt",
+        "b-cp.txt",
+        "b-ditto.txt"
+      ],
+      "mdutil": "/System/Volumes/Data/Users/runner/work/_temp/s6/nfs-tree:\n\tIndexing and searching disabled.",
+      "tmutilIsExcluded": "[Excluded]  /Users/runner/work/_temp/s6/nfs-tree"
+    },
+    {
+      "label": "nouserxattr",
+      "extra": "nouserxattr",
+      "mountLine": "127.0.0.1:/<one-time export path> on /Users/runner/work/_temp/s6/nfs-tree (nfs, nodev, nosuid, nobrowse, mounted by runner)",
+      "xattrWrite": "",
+      "xattrRead": "org.clover.s6: 1",
+      "cpP": "",
+      "ditto": "",
+      "holderSees": [
+        "._a.txt",
+        "._b-cp.txt",
+        "._b-ditto.txt",
+        "a.txt",
+        "b-cp.txt",
+        "b-ditto.txt"
+      ],
+      "appleDouble": [
+        "._a.txt",
+        "._b-cp.txt",
+        "._b-ditto.txt"
+      ],
+      "mountSees": [
+        "._a.txt",
+        "._b-cp.txt",
+        "._b-ditto.txt",
+        "a.txt",
+        "b-cp.txt",
+        "b-ditto.txt"
+      ],
+      "mdutil": "/System/Volumes/Data/Users/runner/work/_temp/s6/nfs-tree:\n\tIndexing and searching disabled.",
+      "tmutilIsExcluded": "[Excluded]  /Users/runner/work/_temp/s6/nfs-tree"
+    },
+    {
+      "label": "noappledouble",
+      "extra": "noappledouble",
+      "mountLine": "127.0.0.1:/<one-time export path> on /Users/runner/work/_temp/s6/nfs-tree (nfs, nodev, nosuid, nobrowse, mounted by runner)",
+      "xattrWrite": "",
+      "xattrRead": "org.clover.s6: 1",
+      "cpP": "",
+      "ditto": "",
+      "holderSees": [
+        "._a.txt",
+        "._b-cp.txt",
+        "._b-ditto.txt",
+        "a.txt",
+        "b-cp.txt",
+        "b-ditto.txt"
+      ],
+      "appleDouble": [
+        "._a.txt",
+        "._b-cp.txt",
+        "._b-ditto.txt"
+      ],
+      "mountSees": [
+        "._a.txt",
+        "._b-cp.txt",
+        "._b-ditto.txt",
+        "a.txt",
+        "b-cp.txt",
+        "b-ditto.txt"
+      ],
+      "mdutil": "/System/Volumes/Data/Users/runner/work/_temp/s6/nfs-tree:\n\tIndexing and searching disabled.",
+      "tmutilIsExcluded": "[Excluded]  /Users/runner/work/_temp/s6/nfs-tree"
+    }
+  ],
+  "dsDontWriteNetworkStores": "FAILED: 2026-11-05 10:03:41.329 defaults[16878:48866] \nThe domain/default pair of (com.apple.desktopservices, DSDontWriteNetworkStores) does not exist",
+  "finished": "2026-11-05T10:03:42.382Z"
+}

@@ -1,0 +1,380 @@
+{
+  "check": "prompt",
+  "agent": "cursor",
+  "command": "/opt/homebrew/bin/cursor-agent acp",
+  "started": "2026-11-05T00:21:41.291Z",
+  "bridgeTokenSha": {
+    "stdio": "e752b35ffd22"
+  },
+  "nonces": {
+    "stdio": "SN-0830211d2f14",
+    "http": "HN-158d88219e15",
+    "stdioWord": "swordca0c1f",
+    "httpWord": "hwordaaeb02"
+  },
+  "initialize": {
+    "protocolVersion": 1,
+    "agentCapabilities": {
+      "loadSession": true,
+      "mcpCapabilities": {
+        "http": true,
+        "sse": true
+      },
+      "promptCapabilities": {
+        "audio": false,
+        "embeddedContext": false,
+        "image": true
+      },
+      "sessionCapabilities": {
+        "list": {}
+      }
+    },
+    "authMethods": [
+      {
+        "id": "cursor_login",
+        "name": "Cursor Login",
+        "description": "Authenticate using existing Cursor login credentials. Run 'agent login' first if not logged in."
+      }
+    ]
+  },
+  "session": {
+    "sessionId": "cursor-session-3",
+    "ms": 3279,
+    "modes": {
+      "currentModeId": "agent",
+      "availableModes": [
+        {
+          "id": "agent",
+          "name": "Agent",
+          "description": "Full agent capabilities with tool access"
+        },
+        {
+          "id": "plan",
+          "name": "Plan",
+          "description": "Read-only mode for planning and designing before implementation"
+        },
+        {
+          "id": "ask",
+          "name": "Ask",
+          "description": "Q&A mode - no edits or command execution"
+        }
+      ]
+    },
+    "models": {
+      "current": "claude-haiku-5-5[thinking=true,context=300k,reasoning_effort=high]",
+      "available": [
+        "default[]",
+        "grok-4.7[context=256k,reasoning_effort=high,fast=true]",
+        "grok-4.6[effort=high,fast=true]",
+        "composer-2.5[fast=true]",
+        "claude-opus-5-5[context=300k,effort=medium,fast=false]",
+        "claude-opus-5[thinking=true,context=300k,effort=high,fast=false]",
+        "claude-opus-4-8[thinking=true,context=300k,effort=high,fast=false]",
+        "gemini-4-argon[reasoning_effort=medium]",
+        "muse-wonder-1.0[context=300k,reasoning_effort=high]",
+        "gpt-5.6-sol[context=272k,reasoning=medium,fast=false]",
+        "gpt-5.5[context=272k,reasoning=medium,fast=false]",
+        "claude-fable-5-1[thinking=true,context=300k,effort=high]",
+        "claude-fable-5[thinking=true,context=300k,effort=high]",
+        "grok-4.5[effort=high,fast=true]",
+        "gemini-3.8-flash[reasoning_effort=high]",
+        "gemini-3.7-flash[effort=high]",
+        "muse-spark-1.3[context=300k,effort=high]",
+        "gpt-5.6-terra[context=272k,reasoning=medium,fast=false]",
+        "claude-sonnet-5-5[context=300k,reasoning_effort=high]",
+        "claude-sonnet-5[thinking=true,context=300k,effort=high]",
+        "claude-sonnet-4-6[thinking=true,context=200k,effort=medium]",
+        "gpt-5.3-codex[reasoning=medium,fast=false]",
+        "claude-opus-4-7[thinking=true,context=300k,effort=xhigh,fast=false]",
+        "gpt-5.4[context=272k,reasoning=medium,fast=false]",
+        "claude-opus-4-6[thinking=true,context=200k,effort=high]",
+        "claude-opus-4-5[thinking=true]",
+        "gpt-5.2[reasoning=medium,fast=false]",
+        "gpt-5.6-luna[context=272k,reasoning=medium,fast=false]",
+        "gemini-3.6-flash[effort=high]",
+        "gemini-3.1-pro[]",
+        "gpt-5.4-mini[reasoning=medium]",
+        "gpt-5.4-nano[reasoning=medium]",
+        "claude-haiku-5-5[thinking=true,context=300k,reasoning_effort=high]",
+        "claude-haiku-4-5[thinking=true]",
+        "claude-sonnet-4-5[thinking=true,context=200k]",
+        "gpt-5.1[reasoning=medium]",
+        "gemini-3-flash[]",
+        "gemini-3.5-flash[]",
+        "claude-sonnet-4[thinking=false,context=200k]",
+        "gpt-5-mini[]",
+        "gemini-2.5-flash[]",
+        "kimi-k3[reasoning=max]",
+        "kimi-k2.7-code[]",
+        "glm-5.2[reasoning=high]",
+        "glm-5p3[reasoning=high]",
+        "glm-5p3-flash[reasoning=high]",
+        "deepseek-v41-flash-1017[reasoning_effort=high]"
+      ]
+    },
+    "configOptions": [
+      {
+        "id": "mode",
+        "category": "mode",
+        "type": "select",
+        "currentValue": "agent",
+        "values": [
+          "agent",
+          "plan",
+          "ask"
+        ]
+      },
+      {
+        "id": "model",
+        "category": "model",
+        "type": "select",
+        "currentValue": "claude-haiku-5-5[thinking=true,context=300k,reasoning_effort=high]",
+        "values": [
+          "default[]",
+          "grok-4.7[context=256k,reasoning_effort=high,fast=true]",
+          "grok-4.6[effort=high,fast=true]",
+          "composer-2.5[fast=true]",
+          "claude-opus-5-5[context=300k,effort=medium,fast=false]",
+          "claude-opus-5[thinking=true,context=300k,effort=high,fast=false]",
+          "claude-opus-4-8[thinking=true,context=300k,effort=high,fast=false]",
+          "gemini-4-argon[reasoning_effort=medium]",
+          "muse-wonder-1.0[context=300k,reasoning_effort=high]",
+          "gpt-5.6-sol[context=272k,reasoning=medium,fast=false]",
+          "gpt-5.5[context=272k,reasoning=medium,fast=false]",
+          "claude-fable-5-1[thinking=true,context=300k,effort=high]",
+          "claude-fable-5[thinking=true,context=300k,effort=high]",
+          "grok-4.5[effort=high,fast=true]",
+          "gemini-3.8-flash[reasoning_effort=high]",
+          "gemini-3.7-flash[effort=high]",
+          "muse-spark-1.3[context=300k,effort=high]",
+          "gpt-5.6-terra[context=272k,reasoning=medium,fast=false]",
+          "claude-sonnet-5-5[context=300k,reasoning_effort=high]",
+          "claude-sonnet-5[thinking=true,context=300k,effort=high]",
+          "claude-sonnet-4-6[thinking=true,context=200k,effort=medium]",
+          "gpt-5.3-codex[reasoning=medium,fast=false]",
+          "claude-opus-4-7[thinking=true,context=300k,effort=xhigh,fast=false]",
+          "gpt-5.4[context=272k,reasoning=medium,fast=false]",
+          "claude-opus-4-6[thinking=true,context=200k,effort=high]",
+          "claude-opus-4-5[thinking=true]",
+          "gpt-5.2[reasoning=medium,fast=false]",
+          "gpt-5.6-luna[context=272k,reasoning=medium,fast=false]",
+          "gemini-3.6-flash[effort=high]",
+          "gemini-3.1-pro[]",
+          "gpt-5.4-mini[reasoning=medium]",
+          "gpt-5.4-nano[reasoning=medium]",
+          "claude-haiku-5-5[thinking=true,context=300k,reasoning_effort=high]",
+          "claude-haiku-4-5[thinking=true]",
+          "claude-sonnet-4-5[thinking=true,context=200k]",
+          "gpt-5.1[reasoning=medium]",
+          "gemini-3-flash[]",
+          "gemini-3.5-flash[]",
+          "claude-sonnet-4[thinking=false,context=200k]",
+          "gpt-5-mini[]",
+          "gemini-2.5-flash[]",
+          "kimi-k3[reasoning=max]",
+          "kimi-k2.7-code[]",
+          "glm-5.2[reasoning=high]",
+          "glm-5p3[reasoning=high]",
+          "glm-5p3-flash[reasoning=high]",
+          "deepseek-v41-flash-1017[reasoning_effort=high]"
+        ]
+      }
+    ]
+  },
+  "modelSet": {
+    "via": "session/set_config_option",
+    "configId": "model",
+    "value": "default[]",
+    "current": "default[]"
+  },
+  "result": {
+    "ms": 21736,
+    "stopReason": "end_turn",
+    "text": "I'll run the protocol in order: discover both MCP echo tools, call them, then write the output file and run the two shell commands.s5-stdio echo: alpha [nonce SN-0830211d2f14] s5-http echo: beta [nonce HN-158d88219e15] none no",
+    "verdict": {
+      "stdioToolResultReachedModel": true,
+      "httpToolResultReachedModel": true,
+      "stdioInstructionsReachedModel": false,
+      "httpInstructionsReachedModel": false,
+      "fileWritten": true,
+      "fileHasBothResults": true,
+      "rejectedCommandDidNotRun": true,
+      "usedClientFs": false,
+      "usedClientTerminal": false,
+      "permissionRequests": 4
+    }
+  },
+  "listAfter": {
+    "count": 1,
+    "includesThisSession": true
+  },
+  "agentStop": {
+    "code": 143,
+    "signal": null,
+    "forced": false
+  },
+  "mcp": {
+    "stdio": {
+      "starts": 1,
+      "bridgeCheck": "present sha256=e752b35ffd22",
+      "envTokenMatches": true,
+      "envNames": [
+        "HOME",
+        "LOGNAME",
+        "PATH",
+        "S5_BRIDGE_TOKEN",
+        "S5_INSTRUCTION_WORD",
+        "S5_NONCE",
+        "SHELL",
+        "TERM",
+        "USER"
+      ],
+      "methods": [
+        "initialize",
+        "notifications/initialized",
+        "tools/list",
+        "tools/call"
+      ],
+      "calls": [
+        {
+          "name": "s5_stdio_echo",
+          "arguments": {
+            "text": "alpha"
+          }
+        }
+      ]
+    },
+    "http": {
+      "requests": [
+        "POST /mcp → 200 initialize asked=2025-11-25 answered=2025-11-25",
+        "POST /mcp → 202 notification notifications/initialized",
+        "GET /mcp → 405",
+        "POST /mcp → 200 tools/list",
+        "POST /mcp → 200 tools/call s5_http_echo text=\"beta\""
+      ],
+      "authCheck": [
+        "match"
+      ],
+      "protocolVersionHeader": [
+        "2025-11-25"
+      ],
+      "userAgent": [
+        "Cursor/1.0.0"
+      ],
+      "calls": [
+        {
+          "name": "s5_http_echo",
+          "arguments": {
+            "text": "beta"
+          }
+        }
+      ]
+    }
+  },
+  "client": {
+    "permissions": [
+      {
+        "ms": 14164,
+        "sessionId": "cursor-session-3",
+        "toolCallId": "cursor-call-1",
+        "title": "s5-stdio-s5_stdio_echo: s5_stdio_echo",
+        "kind": "other",
+        "optionKinds": [
+          "allow_once:allow-once",
+          "allow_always:allow-always",
+          "reject_once:reject-once"
+        ],
+        "decision": "allow",
+        "optionId": "allow-once"
+      },
+      {
+        "ms": 16042,
+        "sessionId": "cursor-session-3",
+        "toolCallId": "cursor-call-2",
+        "title": "s5-http-s5_http_echo: s5_http_echo",
+        "kind": "other",
+        "optionKinds": [
+          "allow_once:allow-once",
+          "allow_always:allow-always",
+          "reject_once:reject-once"
+        ],
+        "decision": "allow",
+        "optionId": "allow-once"
+      },
+      {
+        "ms": 20511,
+        "sessionId": "cursor-session-3",
+        "toolCallId": "cursor-call-3",
+        "title": "`cat s5-out.txt`",
+        "kind": "execute",
+        "optionKinds": [
+          "allow_once:allow-once",
+          "allow_always:allow-always",
+          "reject_once:reject-once"
+        ],
+        "decision": "allow",
+        "optionId": "allow-once"
+      },
+      {
+        "ms": 22791,
+        "sessionId": "cursor-session-3",
+        "toolCallId": "cursor-call-4",
+        "title": "`touch s5-should-not-exist.txt`",
+        "kind": "execute",
+        "optionKinds": [
+          "allow_once:allow-once",
+          "allow_always:allow-always",
+          "reject_once:reject-once"
+        ],
+        "decision": "reject",
+        "optionId": "reject-once"
+      }
+    ],
+    "fsCalls": [],
+    "terminalCalls": [],
+    "elicitations": 0,
+    "unknownMethods": [],
+    "updateKinds": {
+      "available_commands_update": 1,
+      "session_info_update": 1,
+      "agent_thought_chunk": 39,
+      "agent_message_chunk": 67,
+      "tool_call": 5,
+      "tool_call_update": 13
+    },
+    "toolCalls": [
+      {
+        "id": "cursor-call-1",
+        "title": "s5-stdio: s5_stdio_echo",
+        "kind": "other",
+        "status": "completed"
+      },
+      {
+        "id": "cursor-call-2",
+        "title": "s5-http: s5_http_echo",
+        "kind": "other",
+        "status": "completed"
+      },
+      {
+        "id": "cursor-call-5",
+        "title": "Edit `$RUNS/work/cursor/s5-out.txt`",
+        "kind": "edit",
+        "status": "completed"
+      },
+      {
+        "id": "cursor-call-3",
+        "title": "`cat s5-out.txt`",
+        "kind": "execute",
+        "status": "completed"
+      },
+      {
+        "id": "cursor-call-4",
+        "title": "`touch s5-should-not-exist.txt`",
+        "kind": "execute",
+        "status": "completed"
+      }
+    ]
+  },
+  "shimsUsed": [],
+  "finished": "2026-11-05T00:22:10.395Z"
+}
