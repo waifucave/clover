@@ -91,10 +91,12 @@ type outFrame struct {
 	once *atomic.Bool
 }
 
-// writeChunk bounds one write: each chunk gets the liveness bound to leave, so a large frame on
-// a slow link only fails when the link stops taking bytes (review S1), not when the whole frame
-// takes longer than 1.5 s, which a 1 MiB frame does below about 6 Mbit/s.
-const writeChunk = 32 << 10
+// writeChunk bounds one write call, and writeBatch how many queued bytes the writer gathers into
+// one buffer before it writes them out.
+const (
+	writeChunk = 32 << 10
+	writeBatch = 256 << 10
+)
 
 // Client is one computer's link. It is safe for concurrent use.
 type Client struct {
@@ -434,31 +436,30 @@ func (c *Client) reader(l *link, br *bufio.Reader) {
 }
 
 func (c *Client) writer(l *link) {
-	bw := bufio.NewWriterSize(l.conn, writeChunk)
+	buf := make([]byte, 0, writeBatch)
+	var batch []outFrame
 	for {
 		select {
 		case <-l.quit:
 			return
 		case f := <-l.sendq:
-			// A blackholed link fills the socket buffer; a deadline per chunk keeps us from
-			// blocking past the liveness bound once the link stops taking bytes.
-			for off := 0; off < len(f.b); off += writeChunk {
-				end := min(off+writeChunk, len(f.b))
-				_ = l.conn.SetWriteDeadline(time.Now().Add(c.cfg.DeadAfter))
-				if _, err := bw.Write(f.b[off:end]); err != nil {
-					c.drop(l.gen, "write: "+err.Error())
-					return
-				}
-				l.lastSent.Store(time.Now().UnixNano())
+			buf = append(buf[:0], f.b...)
+			batch = append(batch[:0], f)
+		}
+	gather:
+		for len(buf) < writeBatch {
+			select {
+			case f := <-l.sendq:
+				buf = append(buf, f.b...)
+				batch = append(batch, f)
+			default:
+				break gather
 			}
-			if len(l.sendq) == 0 {
-				_ = l.conn.SetWriteDeadline(time.Now().Add(c.cfg.DeadAfter))
-				if err := bw.Flush(); err != nil {
-					c.drop(l.gen, "flush: "+err.Error())
-					return
-				}
-				l.lastSent.Store(time.Now().UnixNano())
-			}
+		}
+		if !c.writeAll(l, buf) {
+			return
+		}
+		for _, f := range batch {
 			if f.once != nil {
 				f.once.Store(false)
 			}
@@ -467,6 +468,34 @@ func (c *Client) writer(l *link) {
 			}
 		}
 	}
+}
+
+// writeAll puts b on the wire, at most writeChunk per call, each with the liveness bound as its
+// deadline. A blackholed link stops taking bytes and stops sending them: that fails the link.
+// A congested uplink can also take nothing for seconds (a full socket buffer, a TCP window that
+// opens in bursts) while the holder's pings still arrive; then the link is alive and the write
+// goes on (review S1: on Windows a 2 Mbit/s link stalled a 32 KiB write past 1.5 s, and the
+// link was called dead with the holder's pings still arriving).
+func (c *Client) writeAll(l *link, b []byte) bool {
+	for off := 0; off < len(b); {
+		end := min(off+writeChunk, len(b))
+		_ = l.conn.SetWriteDeadline(time.Now().Add(c.cfg.DeadAfter))
+		n, err := l.conn.Write(b[off:end])
+		off += n
+		if n > 0 {
+			l.lastSent.Store(time.Now().UnixNano())
+		}
+		if err == nil {
+			continue
+		}
+		var ne net.Error
+		if errors.As(err, &ne) && ne.Timeout() && time.Since(time.Unix(0, c.lastRecv.Load())) < c.cfg.DeadAfter {
+			continue
+		}
+		c.drop(l.gen, "write: "+err.Error())
+		return false
+	}
+	return true
 }
 
 func (c *Client) watchdog(l *link) {
@@ -502,9 +531,10 @@ func (c *Client) enqueueOut(l *link, f outFrame) bool {
 		case <-l.quit:
 			return false
 		case <-t.C:
-			// A full queue is a slow link while the writer keeps putting bytes on the wire; it
-			// is stuck only when the writer has written nothing for the liveness bound.
-			if time.Since(time.Unix(0, l.lastSent.Load())) > c.cfg.DeadAfter {
+			// A full queue is a slow link while the writer keeps putting bytes on the wire or the
+			// holder's bytes keep arriving; it is stuck only when neither happened for the bound.
+			now := time.Now()
+			if now.Sub(time.Unix(0, l.lastSent.Load())) > c.cfg.DeadAfter && now.Sub(time.Unix(0, c.lastRecv.Load())) > c.cfg.DeadAfter {
 				c.drop(l.gen, "send queue stuck")
 				return false
 			}

@@ -67,12 +67,13 @@ func (s *service) kill() {
 
 // relay is a pass-through TCP relay that can hold all traffic (a dropped network).
 type relay struct {
-	ln    net.Listener
-	to    string
-	held  atomic.Bool
-	rate  atomic.Int64 // bytes per second each way; 0 = unlimited
-	mu    sync.Mutex
-	conns []net.Conn
+	ln     net.Listener
+	to     string
+	held   atomic.Bool
+	upHeld atomic.Bool  // holds only what the helper sends (a stalled uplink)
+	rate   atomic.Int64 // bytes per second each way; 0 = unlimited
+	mu     sync.Mutex
+	conns  []net.Conn
 }
 
 func newRelay(t *testing.T, to string) *relay {
@@ -105,7 +106,7 @@ func (r *relay) serve(c net.Conn) {
 	r.mu.Lock()
 	r.conns = append(r.conns, c, up)
 	r.mu.Unlock()
-	pipe := func(dst, src net.Conn) {
+	pipe := func(dst, src net.Conn, uplink bool) {
 		buf := make([]byte, 64<<10)
 		for {
 			chunk := buf
@@ -113,7 +114,7 @@ func (r *relay) serve(c net.Conn) {
 				chunk = buf[:8<<10]
 			}
 			n, err := src.Read(chunk)
-			for r.held.Load() {
+			for r.held.Load() || (uplink && r.upHeld.Load()) {
 				time.Sleep(5 * time.Millisecond)
 			}
 			if rate := r.rate.Load(); rate > 0 && n > 0 {
@@ -131,8 +132,8 @@ func (r *relay) serve(c net.Conn) {
 		dst.Close()
 		src.Close()
 	}
-	go pipe(up, c)
-	go pipe(c, up)
+	go pipe(up, c, true)
+	go pipe(c, up, false)
 }
 
 func (r *relay) reset() {
@@ -415,6 +416,38 @@ func TestSlowLinkStaysUp(t *testing.T) {
 	}
 	if d, to := f.C.Drops.Load(), f.C.Timeouts.Load(); d != 0 || to != 0 {
 		t.Fatalf("a live link was called dead: %d drops, %d timeouts", d, to)
+	}
+}
+
+// An uplink that takes nothing for seconds while the holder's pings still arrive is congested,
+// not gone (review S1). On Windows a 2 Mbit/s link stalled one 32 KiB write past the 1.5 s bound
+// and the link was called dead; here the helper's direction is held for 3 s in the middle of a
+// 4 MiB write, and the write must finish with no drop.
+func TestStalledUplinkIsNotOffline(t *testing.T) {
+	root := t.TempDir()
+	svc := startService(t, root, freePort(t))
+	defer svc.kill()
+	r := newRelay(t, "127.0.0.1:"+strconv.Itoa(svc.port))
+	pol, _ := PolicyByName("plain")
+	f := newFS(t, r.addr(), pol)
+	h, _, e := f.Open("stall.bin", wire.OWronly|wire.OCreat|wire.OTrunc, 0o644)
+	if e != wire.OK {
+		t.Fatal(e)
+	}
+	payload := bytes.Repeat([]byte{9}, 4<<20)
+	r.upHeld.Store(true)
+	go func() { time.Sleep(3 * time.Second); r.upHeld.Store(false) }()
+	start := time.Now()
+	if n, e := f.Write(h, 0, payload); e != wire.OK || n != len(payload) {
+		t.Fatalf("write across a stalled uplink: %d bytes, %v after %v", n, e, time.Since(start).Round(time.Millisecond))
+	}
+	f.Release(h)
+	t.Logf("4 MiB written in %v across a 3 s stall", time.Since(start).Round(time.Millisecond))
+	if d := f.C.Drops.Load(); d != 0 {
+		t.Fatalf("%d drops on a live link", d)
+	}
+	if st, err := os.Stat(filepath.Join(root, "stall.bin")); err != nil || st.Size() != int64(len(payload)) {
+		t.Fatalf("on the holder: %v %v", st, err)
 	}
 }
 
