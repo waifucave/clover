@@ -35,6 +35,10 @@ type Tree struct {
 	Computers []*Computer
 	Policy    remote.Policy
 	Host      *fuse.FileSystemHost
+	// Single serves one other computer's home as the whole volume. On Windows that volume is
+	// mounted on a folder, <tree>\home\<Other>, beside a junction for this computer: WinFsp's
+	// FUSE layer can't make a link that leaves the volume (see the report).
+	Single bool
 
 	handles sync.Map // uint64 -> *remote.Handle
 	next    atomic.Uint64
@@ -117,17 +121,35 @@ func (t *Tree) notify(c *Computer, p string) {
 		return
 	}
 	full := "/home/" + c.Name
+	if t.Single {
+		full = ""
+	}
 	if p != "" {
 		full += "/" + p
 	}
+	if full == "" {
+		t.Host.Notify("/", fuse.NOTIFY_CHMOD|fuse.NOTIFY_CHOWN|fuse.NOTIFY_UTIME)
+		return
+	}
 	t.Host.Notify(full, fuse.NOTIFY_CHMOD|fuse.NOTIFY_CHOWN|fuse.NOTIFY_UTIME|fuse.NOTIFY_TRUNCATE)
 	dir, _ := remote.Parent(full)
+	if dir == "" {
+		dir = "/"
+	}
 	t.Host.Notify(dir, fuse.NOTIFY_CREATE|fuse.NOTIFY_UNLINK)
 }
 
 // where splits a tree path: kind is "root", "home", "self", "remote" or "" (no such path).
 func (t *Tree) where(path string) (kind string, c *Computer, rel string) {
 	p := strings.TrimPrefix(path, "/")
+	if t.Single {
+		for _, cc := range t.Computers {
+			if cc.FS != nil {
+				return "remote", cc, p
+			}
+		}
+		return "", nil, ""
+	}
 	if p == "" {
 		return "root", nil, ""
 	}
@@ -453,6 +475,45 @@ func (t *Tree) Chmod(path string, mode uint32) int {
 		return 0
 	}
 	_, e := c.FS.Setattr(rel, nil, wire.SetMode, mode&0o7777, 0, 0, 0)
+	return errc(e)
+}
+
+// Mknod makes a regular file. macFUSE's FSKit backend creates files this way, not with create.
+func (t *Tree) Mknod(path string, mode uint32, dev uint64) int {
+	kind, c, rel := t.where(path)
+	if kind != "remote" || rel == "" {
+		return -fuse.EACCES
+	}
+	if f := mode & fuse.S_IFMT; f != 0 && f != fuse.S_IFREG {
+		return -fuse.EPERM // no devices, fifos or sockets across computers
+	}
+	h, _, e := c.FS.Open(rel, wire.OWronly|wire.OCreat|wire.OExcl, mode&0o7777)
+	if e != wire.OK {
+		return errc(e)
+	}
+	go c.FS.Release(h)
+	return 0
+}
+
+func (t *Tree) Symlink(target, newpath string) int {
+	kind, c, rel := t.where(newpath)
+	if kind != "remote" || rel == "" {
+		return -fuse.EACCES
+	}
+	_, e := c.FS.Symlink(rel, target)
+	return errc(e)
+}
+
+func (t *Tree) Link(oldpath, newpath string) int {
+	k1, c1, r1 := t.where(oldpath)
+	k2, c2, r2 := t.where(newpath)
+	if k1 != "remote" || k2 != "remote" || r1 == "" || r2 == "" {
+		return -fuse.EACCES
+	}
+	if c1 != c2 {
+		return -fuse.EXDEV
+	}
+	_, e := c1.FS.Link(r1, r2)
 	return errc(e)
 }
 

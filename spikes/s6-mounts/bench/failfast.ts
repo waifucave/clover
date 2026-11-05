@@ -13,7 +13,7 @@
 
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { BUN, HERE, IS_LINUX, IS_WIN, Rig, log, machine, mounted, parseArgs, probe, run, sleep, stuckProcesses, summary, tail, writeJson } from "./lib";
+import { BUN, HERE, IS_LINUX, IS_WIN, Rig, lastOtherStuck, log, machine, mounted, parseArgs, probe, run, sleep, stuckProcesses, summary, tail, writeJson } from "./lib";
 
 const args = parseArgs(process.argv.slice(2));
 const ROOT = path.resolve(args.root!);
@@ -76,6 +76,7 @@ async function recover(): Promise<number> {
 
 async function checks(r: Record<string, unknown>) {
   r.stuckProcesses = await stuckProcesses();
+  r.systemUninterruptible = lastOtherStuck().map((p) => `${p.comm.split("/").pop()}:${p.stat}`);
   r.helperAlive = rig.helper ? rig.helper.proc.exitCode === null : false;
   if (!rig.nfs && !rig.fskit) r.homeListing = await probe("readdir", path.join(rig.treeRoot, "home"), 3000); // other computers unaffected
 }
@@ -182,6 +183,7 @@ async function helperCrash() {
   r.sawError = o.code ? `${o.code}: ${o.message}` : "";
   r.deadMount = await probe("stat", rig.nfs ? rig.remotePath("clover", "package.json") : path.join(rig.treeRoot, "home"), 15000); // what a dead mount answers
   r.stuckProcesses = await stuckProcesses();
+  r.systemUninterruptible = lastOtherStuck().map((p) => `${p.comm.split("/").pop()}:${p.stat}`);
   // The daemon's part: detach the dead mount, start a new helper.
   const t1 = performance.now();
   r.detach = await rig.detach();

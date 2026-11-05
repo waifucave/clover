@@ -46,18 +46,41 @@ async function until(fn: () => boolean, ms: number): Promise<number> {
   return -1;
 }
 
+/** Rewrites a file in place (same inode), as an editor or a program on the holder does. */
+function rewriteInPlace(p: string, content: string) {
+  const fd = fs.openSync(p, "r+");
+  fs.ftruncateSync(fd, 0);
+  fs.writeSync(fd, content, 0);
+  fs.closeSync(fd);
+}
+
+const statSize = (p: string) => { try { return fs.statSync(p).size; } catch (e: any) { return e.code; } };
+
 async function checks(label: string, mountDir: string) {
   const local = (n: string) => path.join(ROOT, n);
   const remote = (n: string) => path.join(mountDir, n);
   const r: Record<string, unknown> = { label };
+  // 0. FSKit's case exactly: the mount learns a size from a stat alone (nothing in a page cache),
+  //    the file changes size behind it, then a program reads it. The read reaches the module,
+  //    which can send only 46 of the 200 bytes FSKit asks for.
+  fs.writeFileSync(local("so.txt"), "A".repeat(200));
+  fs.writeFileSync(local("sg.txt"), "B".repeat(46));
+  await sleep(300);
+  r.statOnlyBefore = { shrink: statSize(remote("so.txt")), grow: statSize(remote("sg.txt")) };
+  rewriteInPlace(local("so.txt"), "B".repeat(46));
+  rewriteInPlace(local("sg.txt"), "C".repeat(300));
+  r.statOnlyShrunkRead = readThrough(remote("so.txt"));
+  r.statOnlyShrinkVerdict = shrinkVerdict(r.statOnlyShrunkRead);
+  const sg = readThrough(remote("sg.txt")) as any;
+  r.statOnlyGrownRead = sg;
+  r.statOnlyGrowVerdict = !sg.ok ? `error ${sg.code}` : sg.length === 300 && sg.bytes.C === 300 ? "correct: 300 'C'" : `stale: ${sg.length} bytes ${JSON.stringify(sg.bytes)}`;
+  fs.rmSync(local("so.txt"), { force: true });
+  fs.rmSync(local("sg.txt"), { force: true });
   // 1. shrink: 200 'A' -> 46 'B', the same inode, read at once through the mount
   fs.writeFileSync(local("sr.txt"), "A".repeat(200));
   await sleep(300);
   r.before = { stat: fs.statSync(remote("sr.txt")).size, read: readThrough(remote("sr.txt")) };
-  const fd = fs.openSync(local("sr.txt"), "r+");
-  fs.ftruncateSync(fd, 0);
-  fs.writeSync(fd, "B".repeat(46), 0);
-  fs.closeSync(fd);
+  rewriteInPlace(local("sr.txt"), "B".repeat(46));
   r.shrunkStatAtOnce = (() => { try { return fs.statSync(remote("sr.txt")).size; } catch (e: any) { return e.code; } })();
   r.shrunkRead = readThrough(remote("sr.txt"));
   const sr = r.shrunkRead as any;
@@ -80,7 +103,7 @@ async function checks(label: string, mountDir: string) {
   fs.rmSync(local("sr.txt"), { force: true });
   results.push(r);
   writeJson(OUT, out);
-  log(`${label}: shrink ${r.shrinkVerdict}; size fresh after ${r.sizeFreshAfterMs} ms; grow ${r.growVerdict}; new name after ${r.newNameVisibleAfterMs} ms; delete after ${r.deletedGoneAfterMs} ms`);
+  log(`${label}: after a stat only, shrink ${r.statOnlyShrinkVerdict}, grow ${r.statOnlyGrowVerdict}; after a read, shrink ${r.shrinkVerdict}; size fresh after ${r.sizeFreshAfterMs} ms; grow ${r.growVerdict}; new name after ${r.newNameVisibleAfterMs} ms; delete after ${r.deletedGoneAfterMs} ms`);
 }
 
 async function main() {
@@ -112,8 +135,8 @@ async function main() {
   }
   out.finished = new Date().toISOString();
   writeJson(OUT, out);
-  let md = `\n### S6 coherence on ${out.machine.os} (${out.machine.release})\n\n| mount | file shrinks behind it | new size seen after | file grows | new name seen after | delete seen after |\n| :- | :- | -: | :- | -: | -: |\n`;
-  for (const r of results as any[]) md += `| ${r.label} | ${r.shrinkVerdict} | ${r.sizeFreshAfterMs} ms | ${r.growVerdict} | ${r.newNameVisibleAfterMs} ms | ${r.deletedGoneAfterMs} ms |\n`;
+  let md = `\n### S6 coherence on ${out.machine.os} (${out.machine.release})\n\n| mount | shrinks after a stat | grows after a stat | shrinks after a read | new size seen after | grows after a read | new name seen after | delete seen after |\n| :- | :- | :- | :- | -: | :- | -: | -: |\n`;
+  for (const r of results as any[]) md += `| ${r.label} | ${r.statOnlyShrinkVerdict} | ${r.statOnlyGrowVerdict} | ${r.shrinkVerdict} | ${r.sizeFreshAfterMs} ms | ${r.growVerdict} | ${r.newNameVisibleAfterMs} ms | ${r.deletedGoneAfterMs} ms |\n`;
   summary(md);
 }
 

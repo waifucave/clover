@@ -17,11 +17,17 @@ const fmt = (ms?: number, timedOut?: boolean, ok?: boolean) => {
 };
 
 // ---- speed ------------------------------------------------------------------------------------
+// One table per mount kind: linux, windows, macos-nfs, macos-fskit. A "-writes" file is a later
+// rerun of some workloads, and its rows replace the earlier ones.
 const speedByOs = new Map<string, any[]>();
-for (const f of files.filter((f) => f.includes("speed"))) {
+const speedFiles = files.filter((f) => f.includes("speed")).sort((a, b) => Number(a.includes("-writes")) - Number(b.includes("-writes")));
+const rowKey = (r: any) => [r.workload, r.where, r.policy, r.rttMs, r.phase].join("|");
+for (const f of speedFiles) {
   const d = load(f);
-  const os = f.split("-")[0]!;
-  speedByOs.set(os, [...(speedByOs.get(os) ?? []), ...d.rows.map((r: any) => ({ ...r, file: f }))]);
+  const os = f.replace(/-speed.*$/, "") + (f.includes("nfs") ? "-nfs" : "");
+  const fresh = d.rows.map((r: any) => ({ ...r, file: f }));
+  const keys = new Set(fresh.map(rowKey));
+  speedByOs.set(os, [...(speedByOs.get(os) ?? []).filter((r) => !keys.has(rowKey(r))), ...fresh]);
 }
 for (const [os, rows] of speedByOs) {
   const workloads = [...new Set(rows.map((r) => r.workload))];
@@ -78,11 +84,12 @@ for (const f of files.filter((f) => f.includes("failfast"))) {
 for (const f of files.filter((f) => f.includes("coherence"))) {
   const d = load(f);
   console.log(`\n#### coherence: ${f.replace(".json", "")} (${d.machine.os} ${d.machine.release})\n`);
-  console.log("| mount | file shrinks behind it | size seen after | file grows behind it | grown content seen after | new name seen after | delete seen after |");
-  console.log("| :- | :- | -: | :- | -: | -: | -: |");
+  console.log("| mount | shrinks after a stat | grows after a stat | shrinks after a read | size seen after | grows after a read | grown content seen after | new name seen after | delete seen after |");
+  console.log("| :- | :- | :- | :- | -: | :- | -: | -: | -: |");
   for (const r of d.results) {
     const t = (v: number) => (v < 0 ? "never (10 s)" : `${v} ms`);
-    console.log(`| ${r.label} | ${r.shrunkRead ? shrinkVerdict(r.shrunkRead) : r.shrinkVerdict} | ${t(r.sizeFreshAfterMs)} | ${r.growVerdict} | ${t(r.grownFreshAfterMs)} | ${t(r.newNameVisibleAfterMs)} | ${t(r.deletedGoneAfterMs)} |`);
+    const so = r.statOnlyShrunkRead ? shrinkVerdict(r.statOnlyShrunkRead) : "–";
+    console.log(`| ${r.label} | ${so} | ${r.statOnlyGrowVerdict ?? "–"} | ${r.shrunkRead ? shrinkVerdict(r.shrunkRead) : r.shrinkVerdict} | ${t(r.sizeFreshAfterMs)} | ${r.growVerdict} | ${t(r.grownFreshAfterMs)} | ${t(r.newNameVisibleAfterMs)} | ${r.newNameVisibleAfterMs < 0 ? "(never seen)" : t(r.deletedGoneAfterMs)} |`);
   }
   if (d.selfLink) console.log(`\nhome/<this computer>: ${JSON.stringify(d.selfLink)}`);
 }

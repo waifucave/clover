@@ -245,14 +245,35 @@ export function tail(file: string, n = 15): string {
   try { return fs.readFileSync(file, "utf8").trim().split("\n").slice(-n).join("\n"); } catch { return ""; }
 }
 
-/** Processes the kernel left stuck: uninterruptible waits (D on Linux, U on macOS) or zombies (Z). */
-export async function stuckProcesses(): Promise<Array<{ pid: number; stat: string; comm: string }>> {
+/** A process the kernel left stuck: an uninterruptible wait (D on Linux, U on macOS) or a zombie (Z). */
+export interface Stuck { pid: number; ppid: number; stat: string; comm: string }
+const WORKLOAD = /(^|\/)(git|git-[a-z-]+|node|bun|clover-[a-z]+|ls|cat|cp|sh|bash)$/;
+let otherStuck: Stuck[] = [];
+
+/**
+ * Stuck processes of this run: the harness's own process tree (the workloads, the helper, the
+ * fake link, the file service) and any of the programs it runs that ended up reparented. macOS
+ * shows system daemons (Spotlight's mds and mdworker, spindump, cfprefsd) in U for moments on a
+ * busy runner; those are kept apart in lastOtherStuck(), not counted.
+ */
+export async function stuckProcesses(): Promise<Stuck[]> {
   if (IS_WIN) return [];
-  const r = await run(["ps", "-eo", "pid=,stat=,comm="], { timeoutMs: 5000 });
-  const stuck = IS_LINUX ? /^[DZ]/ : /^[UZ]/;
-  return r.stdout.split("\n").map((l) => l.trim().split(/\s+/)).filter((p) => p.length >= 3 && stuck.test(p[1]!))
-    .map((p) => ({ pid: Number(p[0]), stat: p[1]!, comm: p.slice(2).join(" ") }))
-    .filter((p) => !/kworker|jbd2|kthread/.test(p.comm));
+  const r = await run(["ps", "-eo", "pid=,ppid=,stat=,comm="], { timeoutMs: 5000 });
+  const all = r.stdout.split("\n").map((l) => l.trim().split(/\s+/)).filter((p) => p.length >= 4)
+    .map((p) => ({ pid: Number(p[0]), ppid: Number(p[1]), stat: p[2]!, comm: p.slice(3).join(" ") }));
+  const kids = new Map<number, number[]>();
+  for (const p of all) kids.set(p.ppid, [...(kids.get(p.ppid) ?? []), p.pid]);
+  const ours = new Set<number>();
+  const walk = (pid: number) => { for (const k of kids.get(pid) ?? []) if (!ours.has(k)) { ours.add(k); walk(k); } };
+  walk(process.pid);
+  const stuck = all.filter((p) => (IS_LINUX ? /^[DZ]/ : /^[UZ]/).test(p.stat) && !/kworker|jbd2|kthread/.test(p.comm));
+  otherStuck = stuck.filter((p) => !(ours.has(p.pid) || WORKLOAD.test(p.comm)));
+  return stuck.filter((p) => ours.has(p.pid) || WORKLOAD.test(p.comm));
+}
+
+/** The system processes the last stuckProcesses() call saw in an uninterruptible wait, not counted. */
+export function lastOtherStuck(): Stuck[] {
+  return otherStuck;
 }
 
 export async function dropCaches(): Promise<boolean> {

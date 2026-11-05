@@ -245,12 +245,19 @@ jobs:
         if: matrix.macfuse == '5.5.0'
         env:
           CLOVER_MACFUSE_BACKEND: fskit
+          S6_SKIP_SPEED: ${{ contains(github.event.head_commit.message, '[s6-skip-speed]') }}
         run: |
           res="$RUNNER_TEMP/s6/results"
           common=(--root "$RUNNER_TEMP/s6/export" --tree "$RUNNER_TEMP/s6/tree" --helper "$RUNNER_TEMP/s6/clover-mount" --copy-src "$GITHUB_WORKSPACE/packages/protocol")
           bun spikes/s6-mounts/bench/failfast.ts "${common[@]}" --rtt 20 --policy plain --out "$res/macos-fskit-failfast.json" || echo "failfast failed"
           if [ "${{ matrix.runner }}" = xcode-27 ]; then
-            bun spikes/s6-mounts/bench/speed.ts "${common[@]}" --policies cached,plain --rtts 0,20,80 --timeout 600 --out "$res/macos-fskit-speed.json"
+            if [ "$S6_SKIP_SPEED" = true ]; then
+              # only the workloads that create files (they need cgofs's mknod, added after the full run)
+              bun spikes/s6-mounts/bench/speed.ts "${common[@]}" --policies cached,plain --rtts 0,20,80 --timeout 600 --local 0 \
+                --workloads write-256M,copy-in --out "$res/macos-fskit-speed-writes.json"
+            else
+              bun spikes/s6-mounts/bench/speed.ts "${common[@]}" --policies cached,plain --rtts 0,20,80 --timeout 600 --out "$res/macos-fskit-speed.json"
+            fi
           fi
       - name: Results
         if: always()
