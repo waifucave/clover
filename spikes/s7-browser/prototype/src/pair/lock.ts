@@ -12,6 +12,20 @@ import { openSync } from "node:fs";
 
 export interface HeldLock { kind: string; release(): void }
 
+/**
+ * What a failed lock means, from the OS's error code alone (round eleven: a pure function, unit-tested on every OS).
+ * Only "another process holds it" is busy: EWOULDBLOCK from flock (35 on macOS, 11 on Linux) or a sharing violation
+ * (32) from CreateFileW. Everything else is an error, so the daemon exits non-zero and is started again.
+ * bun:ffi has no call that keeps errno or the last error, so they are read by a second FFI call straight after the
+ * failing one. A misread can only turn "busy" into an error (a non-zero exit, and a retry), and a "busy" that no
+ * daemon answers on the socket is treated as an error too (daemon.ts). Lane C should read them inside one native call.
+ */
+export function classifyLockFailure(platform: NodeJS.Platform, code: number): "busy" | "error" {
+  if (platform === "win32") return code === 32 ? "busy" : "error";
+  if (platform === "darwin") return code === 35 ? "busy" : "error";
+  return code === 11 ? "busy" : "error";
+}
+
 export async function takeLock(path: string): Promise<HeldLock | { busy: true; detail: string }> {
   const { dlopen, FFIType, ptr } = await import("bun:ffi");
   if (process.platform === "win32") {
@@ -26,7 +40,7 @@ export async function takeLock(path: string): Promise<HeldLock | { busy: true; d
     const h = typeof raw === "bigint" ? raw : BigInt(raw);
     if (h === -1n) {
       const err = k32.symbols.GetLastError();
-      if (err === 32) return { busy: true, detail: "CreateFileW: error 32 (sharing violation: another daemon holds it)" };
+      if (classifyLockFailure("win32", err) === "busy") return { busy: true, detail: "CreateFileW: error 32 (sharing violation: another process holds it)" };
       throw new Error(`the daemon lock ${path}: CreateFileW failed with error ${err}`);
     }
     return { kind: "CreateFileW share-none", release: () => { k32.symbols.CloseHandle(h); } };
@@ -43,7 +57,7 @@ export async function takeLock(path: string): Promise<HeldLock | { busy: true; d
   if (libc.symbols.flock(fd, LOCK_EX | LOCK_NB) !== 0) {
     const where = (libc.symbols as Record<string, () => unknown>)[errnoFn]!() as Parameters<typeof read.i32>[0];
     const errno = read.i32(where, 0);
-    if (errno === EWOULDBLOCK) return { busy: true, detail: "flock: held by another process" };
+    if (classifyLockFailure(process.platform, errno) === "busy") return { busy: true, detail: "flock: held by another process" };
     throw new Error(`the daemon lock ${path}: flock failed with errno ${errno}`);
   }
   return { kind: "flock", release: () => { libc.symbols.flock(fd, LOCK_UN); } };

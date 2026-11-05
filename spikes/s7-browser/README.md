@@ -83,10 +83,14 @@ results/         every round's JSON from CI, with summary.md (bun src/summarize.
                  design (the override), captures scaled to 1280x800, and tab capture's own error on Wayland. The
                  shaped host drew and took no click, but the click landed on the window below's corner, a resize
                  handle; on Windows at 2x the 4x31 host's content was 0 wide, and its tabs drew nothing
-  round10/       the click well inside the window below (not resizable), and a 32x32 host on Windows
+  round10/       the click well inside the window below (not resizable), and a 32x32 host on Windows: every job
+                 and all 172 checks passed
+  round11/       the daemon lock classified by a pure function and tested on macOS, Windows and Linux, and a
+                 daemon that finds the lock held exits 0 only when another daemon answers on the socket
 ```
 
-The report quotes round two for the Electron tables (rounds three, five and eight re-ran them and agreed), and later
+The report quotes round two for the Electron tables (rounds three and eight to ten re-ran them on every OS, and round
+five on all but macOS, whose jobs were cancelled; what draws and what doesn't agreed), and later
 rounds where it says so. A push whose head commit's message contains `[cft only]` runs only the unit and Chrome for
 Testing jobs; pushes that change only `results/` don't start the workflow. `results/round1/summary.md` is the summary
 job's own artifact from that run.

@@ -59,7 +59,7 @@ function assertAll(): Assertion[] {
   if (thr !== undefined) {
     const row = (c: string): ThrottleRow | undefined => thr.find((r) => r.config === c);
     const host = row("1x1 shown window, throttling off");
-    add("the 1x1 host draws (rAF above 10 Hz)", (host?.rates?.rafHz ?? 0) > 10, { rafHz: host?.rates?.rafHz, error: host?.error });
+    add("the host (1x1; 32x32 on Windows) draws (rAF above 10 Hz)", (host?.rates?.rafHz ?? 0) > 10, { rafHz: host?.rates?.rafHz, error: host?.error });
     const never = row("never-shown window, throttling off");
     add("a never-shown window draws nothing (rAF below 1 Hz)", never?.rates !== undefined && never.rates.rafHz < 1, { rafHz: never?.rates?.rafHz, error: never?.error });
   }
@@ -69,9 +69,9 @@ function assertAll(): Assertion[] {
     // (round eight, Windows at 2x: a host tab without it laid out at 0x0 and drew nothing), so only that is asserted
     const dsf = screen.getPrimaryDisplay().scaleFactor;
     const r = cap.find((x) => x.place === "tinyWindow" && x.method === "capturePage" && x.variant === undefined);
-    if (dsf === 1) add("capturePage works in the 1x1 host", r !== undefined && r.tries > 0 && r.ok === r.tries, { ok: r?.ok, tries: r?.tries, errors: r?.errors });
+    if (dsf === 1) add("capturePage works in the host", r !== undefined && r.tries > 0 && r.ok === r.tries, { ok: r?.ok, tries: r?.tries, errors: r?.errors });
     const f = cap.find((x) => x.place === "tinyWindow" && x.method === "capturePage" && x.variant === "fit 1280x800 at 1x");
-    add("capturePage works in the 1x1 host with the agent's 1280x800 at 1x held", f !== undefined && f.tries > 0 && f.ok === f.tries, { dsf, ok: f?.ok, tries: f?.tries, size: f?.size, errors: f?.errors });
+    add("capturePage works in the host with the agent's 1280x800 at 1x held", f !== undefined && f.tries > 0 && f.ok === f.tries, { dsf, ok: f?.ok, tries: f?.tries, size: f?.size, errors: f?.errors });
   }
   const hc = results.hostcheck as HostInvariants | undefined;
   if (hc !== undefined) {

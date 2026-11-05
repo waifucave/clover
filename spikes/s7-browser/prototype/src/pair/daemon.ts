@@ -62,12 +62,27 @@ if (command === "supervise") {
 
 // --- the daemon --------------------------------------------------------------------------------------------------
 mkdirSync(dirname(n.lockFile), { recursive: true });
-const taken = await takeLock(n.lockFile);
-if ("busy" in taken) {
-  log(`another daemon holds this home (${taken.detail}); exiting`);
-  process.exit(0); // not a crash: the login item must not restart this one
+// Round eleven: "busy" alone isn't proof of another daemon (a virus scanner can open the lock file without sharing at
+// login, and an error code can be misread). A daemon that finds the lock held dials the socket: if a daemon answers,
+// it exits 0, so its login item doesn't loop. If none answers, it tries the lock again for a few seconds, and if the
+// lock is still held and still nobody answers, it exits 1, so the OS or the supervisor starts it again.
+async function takeOrLeave(): Promise<HeldLock> {
+  for (let attempt = 0; attempt < 6; attempt++) {
+    const taken = await takeLock(n.lockFile);
+    if (!("busy" in taken)) return taken;
+    const c = await dial(n.socket, 1000);
+    if (c !== undefined) {
+      c.close();
+      log(`another daemon holds this home (${taken.detail}) and answers on its socket; exiting`);
+      process.exit(0); // not a crash: the login item must not restart this one
+    }
+    log(`the lock is held (${taken.detail}) but no daemon answers on the socket; trying again`);
+    await new Promise((r) => setTimeout(r, 500));
+  }
+  log("the lock stayed held and no daemon answered; exiting 1 so the daemon is started again");
+  process.exit(1);
 }
-const lock: HeldLock = taken;
+const lock: HeldLock = await takeOrLeave();
 const cfg = JSON.parse(readFileSync(n.configFile, "utf8")) as PairConfig;
 const bootedAt = Date.now();
 writeFileSync(n.pidFile, String(process.pid));
