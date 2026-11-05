@@ -69,7 +69,10 @@ async function route(test,actor){const args=[worker,test,actor,work,control,clsi
  // Provisioning (elevated, here the administrator) creates the missing Startup folder so the
  // deny can be stamped; nothing is granted inside the principal's profile.
  if(startupTarget&&!fs.existsSync(startupTarget)){fs.mkdirSync(startupTarget,{recursive:true});console.log(JSON.stringify({test:'principal-startup-created-by-provisioning'}))}
- console.log(JSON.stringify({test:'principal-profile',principal_profile:principalProfile,temporary_profile:!principalProfile||warm.out.trim().split(/\r?\n/).pop().trim()!==principalProfile}));
+ const temporaryProfile=!principalProfile||warm.out.trim().split(/\r?\n/).pop().trim()!==principalProfile;
+ console.log(JSON.stringify({test:'principal-profile',principal_profile:principalProfile,temporary_profile:temporaryProfile}));
+ // As in candidate.mjs: a principal on a temporary profile is not the configuration under test.
+ if(temporaryProfile){server.close();throw Object.assign(new Error('the principal is not running on its own profile'),{code:'TEMPORARY_PROFILE'});}
 }
 // The real user's own Startup folder exists on a desktop logon; materialize it if absent.
 const createdHostStartup=!fs.existsSync(hostStartup);if(createdHostStartup)fs.mkdirSync(hostStartup,{recursive:true});

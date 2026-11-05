@@ -78,8 +78,7 @@ aliases, normal/approved-escape floors and network, plus detached-child cleanup:
 python3 spikes/s2-windows-fence/remote.py windows spikes/s2-windows-fence/run-session0-candidate.ps1
 ```
 
-The namespace alias is not an admitted production fix. The out-of-process COM result is
-inconclusive; scripts print measurements, not a release-admission verdict. Use the S8 cleanup
+The namespace alias is not an admitted production fix. Scripts print measurements, not a release-admission verdict. Use the S8 cleanup
 command after the disposable VM experiments. `remote.py` uploads public source in bounded
 chunks, preventing cmd.exe length limits and overlapping stdin transports.
 
@@ -107,7 +106,12 @@ and the controls now resolve that profile by SID after the first launch, create 
 Startup folder as provisioning would, and deny the principal's, the real user's and the common
 Startup folders. A deny on the whole profile is **destructive**: Windows loads a temporary profile
 (`C:\Users\TEMP`) and changes the principal's ProfileList entry, so re-provision afterwards.
-Results: `final-startup-probe.txt`, `final-windows-candidate-v3.txt`, `review-controls-v6.txt`.
+Every denial in the candidate counts only as an access error (EPERM/EACCES). The Shell.Application
+check passes only on the started child's own receipt (non-admin, protected read refused). The
+`declared-limit-profile-write` check is not a denial: it passes when the principal's write to its
+own profile lands, the M0-only recorded limit, and its result carries `"kind":"declared-limit"`.
+Results: `final-startup-probe.txt`, `final-windows-candidate-v4.txt`, `review-controls-v7.txt`
+(v3 and v6 are the first rerun, before these rules).
 
 Measure a credential-broker hop from the fence: requests over a named pipe to an endpoint in the
 real user's context, which replies with a public fixture string (no credential, store or key):
