@@ -1,0 +1,27 @@
+Running linux-agents.sh on clover-c-linux
+Installing pinned sandbox-only agent tools in the disposable probe directory
+Running standalone Anthropic sandbox checks
+{"test": "anthropic-standalone-sandbox", "exit": 0, "allowed_write_observed": true, "hidden_write_observed": false, "private_mask_view_writable": true, "diagnostic": ""}
+Running sandbox-only Codex checks
+{"test": "codex-own-sandbox", "exit": 0, "allowed_write_observed": true, "hidden_write_observed": false, "diagnostic": "WARNING: proceeding, even though we could not create PATH aliases: Refusing to create helper binaries under temporary dir \"/tmp/clover-codex-4_6x0afc\" (codex_home: AbsolutePathBuf(\"/tmp/clover-codex-4_6x0afc/config\"))\n"}
+{"backend": "srt", "test": "allowed-write", "pass": true, "exit": 0, "host_unchanged": true, "diagnostic": ""}
+{"backend": "srt", "test": "secret-read", "pass": true, "exit": 0, "host_unchanged": true, "diagnostic": ""}
+{"backend": "srt", "test": "key-read", "pass": true, "exit": 0, "host_unchanged": true, "diagnostic": ""}
+{"backend": "srt", "test": "run-read", "pass": true, "exit": 0, "host_unchanged": true, "diagnostic": ""}
+{"backend": "srt", "test": "alias-read", "pass": true, "exit": 0, "host_unchanged": true, "diagnostic": ""}
+{"backend": "srt", "test": "link-create", "pass": true, "exit": 0, "host_unchanged": true, "diagnostic": ""}
+{"backend": "srt", "test": "settings-write", "pass": true, "exit": 0, "host_unchanged": true, "diagnostic": ""}
+{"backend": "srt", "test": "policy-write", "pass": true, "exit": 0, "host_unchanged": true, "diagnostic": ""}
+{"backend": "srt", "test": "nested-retry", "pass": true, "exit": 0, "host_unchanged": true, "diagnostic": ""}
+{"backend": "srt", "test": "nested-userns", "pass": true, "exit": 0, "host_unchanged": true, "diagnostic": ""}
+{"backend": "codex", "test": "allowed-write", "pass": true, "exit": 0, "host_unchanged": true, "diagnostic": "WARNING: proceeding, even though we could not create PATH aliases: Refusing to create helper binaries under temporary dir \"<isolated-home>\" (codex_home: AbsolutePathBuf(\"<isolated-home>/config\"))\n"}
+{"backend": "codex", "test": "secret-read", "pass": true, "exit": 0, "host_unchanged": true, "diagnostic": "WARNING: proceeding, even though we could not create PATH aliases: Refusing to create helper binaries under temporary dir \"<isolated-home>\" (codex_home: AbsolutePathBuf(\"<isolated-home>/config\"))\n"}
+{"backend": "codex", "test": "key-read", "pass": true, "exit": 0, "host_unchanged": true, "diagnostic": "WARNING: proceeding, even though we could not create PATH aliases: Refusing to create helper binaries under temporary dir \"<isolated-home>\" (codex_home: AbsolutePathBuf(\"<isolated-home>/config\"))\n"}
+{"backend": "codex", "test": "run-read", "pass": true, "exit": 0, "host_unchanged": true, "diagnostic": "WARNING: proceeding, even though we could not create PATH aliases: Refusing to create helper binaries under temporary dir \"<isolated-home>\" (codex_home: AbsolutePathBuf(\"<isolated-home>/config\"))\n"}
+{"backend": "codex", "test": "alias-read", "pass": true, "exit": 0, "host_unchanged": true, "diagnostic": "WARNING: proceeding, even though we could not create PATH aliases: Refusing to create helper binaries under temporary dir \"<isolated-home>\" (codex_home: AbsolutePathBuf(\"<isolated-home>/config\"))\n"}
+{"backend": "codex", "test": "link-create", "pass": true, "exit": 0, "host_unchanged": true, "diagnostic": "WARNING: proceeding, even though we could not create PATH aliases: Refusing to create helper binaries under temporary dir \"<isolated-home>\" (codex_home: AbsolutePathBuf(\"<isolated-home>/config\"))\n"}
+{"backend": "codex", "test": "settings-write", "pass": true, "exit": 0, "host_unchanged": true, "diagnostic": "WARNING: proceeding, even though we could not create PATH aliases: Refusing to create helper binaries under temporary dir \"<isolated-home>\" (codex_home: AbsolutePathBuf(\"<isolated-home>/config\"))\n"}
+{"backend": "codex", "test": "policy-write", "pass": true, "exit": 0, "host_unchanged": true, "diagnostic": "WARNING: proceeding, even though we could not create PATH aliases: Refusing to create helper binaries under temporary dir \"<isolated-home>\" (codex_home: AbsolutePathBuf(\"<isolated-home>/config\"))\n"}
+{"backend": "codex", "test": "nested-retry", "pass": true, "exit": 0, "host_unchanged": true, "diagnostic": "WARNING: proceeding, even though we could not create PATH aliases: Refusing to create helper binaries under temporary dir \"<isolated-home>\" (codex_home: AbsolutePathBuf(\"<isolated-home>/config\"))\n"}
+{"backend": "codex", "test": "nested-userns", "pass": true, "exit": 0, "host_unchanged": true, "diagnostic": "WARNING: proceeding, even though we could not create PATH aliases: Refusing to create helper binaries under temporary dir \"<isolated-home>\" (codex_home: AbsolutePathBuf(\"<isolated-home>/config\"))\n"}
+srt_exit=0 codex_exit=0

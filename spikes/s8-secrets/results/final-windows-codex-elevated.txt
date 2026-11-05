@@ -1,0 +1,9 @@
+Uploading public source chunk 1
+Running windows-elevated-agent-gates.ps1 on clover-c-win
+Testing elevated native Windows Codex sandbox-only entry point
+{"backend":"codex-windows-elevated","test":"allowed-write","exit":null,"pass":false,"diagnostic":""}
+{"backend":"codex-windows-elevated","test":"hidden-read","exit":1,"pass":false,"diagnostic":"windows sandbox failed: timed out after 15000ms connecting runner pipe-in\n"}
+{"backend":"codex-windows-elevated","test":"hidden-write","exit":1,"pass":false,"diagnostic":"windows sandbox failed: timed out after 15000ms connecting runner pipe-in\n"}
+{"backend":"codex-windows-elevated","test":"alias-read","exit":1,"pass":false,"diagnostic":"windows sandbox failed: timed out after 15000ms connecting runner pipe-in\n"}
+{"backend":"codex-windows-elevated","test":"policy-write","exit":1,"pass":false,"diagnostic":"windows sandbox failed: timed out after 15000ms connecting runner pipe-in\n"}
+{"backend":"codex-windows-elevated","test":"nested-retry","exit":1,"pass":false,"diagnostic":"windows sandbox failed: timed out after 15000ms connecting runner pipe-in\n"}

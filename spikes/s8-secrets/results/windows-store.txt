@@ -1,0 +1,4 @@
+Normalized transcript of successful windows-store.ps1 output captured in the tool session.
+An older transport timeout later overwrote the redirected file; values below were recovered from the already captured successful output.
+{"dpapi_roundtrip": false, "dpapi_hresult": -2147024891, "credential_roundtrip": false, "credential_error": 1312, "logon": "SSH key (network logon)"}
+{"dpapi_roundtrip": true, "dpapi_hresult": 0, "credential_roundtrip": true, "credential_error": 0, "logon": "LogonUser type 2 (password interactive), LoadUserProfile, impersonated throwaway local user"}

@@ -1,0 +1,16 @@
+Running broker-probe.py on clover-c-linux
+{"test": "broker-search-clover-hidden", "pass": true}
+{"test": "broker-search-results-filtered", "pass": true}
+{"test": "broker-direct-clover-denied", "pass": true}
+{"test": "broker-mixed-bulk-denied", "pass": true}
+{"test": "broker-collection-items-filtered", "pass": true}
+{"test": "broker-no-host-org.freedesktop.systemd1", "pass": true}
+{"test": "broker-no-host-org.freedesktop.portal.Desktop", "pass": true}
+{"test": "broker-no-host-org.gnome.Terminal", "pass": true}
+{"test": "broker-gh-credential-lookup", "pass": true}
+{"test": "broker-docker-credential-lookup", "pass": true}
+{"test": "broker-git-credential-lookup", "pass": true}
+{"test": "broker-git-credential-fill", "pass": true}
+{"test": "broker-fenced-clover-lookup-denied", "pass": true}
+{"test": "broker-scope", "real_secret_service": true, "git_credential_plumbing": true, "gh_and_docker": "local store-lookup fixtures; no account login or daemon socket"}
+{"test": "broker-latency", "filtered_semantic_search": {"median_ms": 4.25, "p95_ms": 5.39, "runs": 25}, "direct_backend_search": {"median_ms": 0.69, "p95_ms": 1.03, "runs": 25}, "filtered_get_secret": {"median_ms": 4.63, "p95_ms": 5.0, "runs": 25}, "direct_get_secret": {"median_ms": 0.67, "p95_ms": 0.82, "runs": 25}, "tool_lookup_via_broker": {"median_ms": 31.97, "p95_ms": 35.96, "runs": 15}, "tool_lookup_direct": {"median_ms": 19.16, "p95_ms": 20.9, "runs": 15}, "scope": "filtered xdg-dbus-proxy plus semantic broker versus the direct backend bus; in-process D-Bus calls and whole secret-tool lookups; excludes bubblewrap startup"}

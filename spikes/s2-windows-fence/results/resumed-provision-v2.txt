@@ -1,0 +1,9 @@
+Running provision-candidate.ps1 on clover-c-win
+Provisioning disposable Clover sandbox principal and WFP fence
+Installed.
+  sandbox user: provisioned (S-1-5-21-2049286435-129160171-2159440921-1007)
+  WFP:   installed, 4 filters, port range 60080-60089
+  profile read grant: NOT applied — skipProfileGrant was set
+
+No logout needed — the WFP filter keys on the dedicated `srt-sandbox` user's SID, so your network is unaffected.
+Provisioning completed
