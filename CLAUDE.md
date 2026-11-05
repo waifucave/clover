@@ -33,11 +33,13 @@ bun run verify:workflow              # also verify:automation-worker, verify:run
 cd apple/WinterProtocol && swift test   # also apple/WinterKit
 
 # CLI / daemon in dev — never a plain `clover` or `winter`: those are dist CLIs
-cd packages/cli && bun src/main.ts daemon run   # headless daemon; `-p "hello"` one-shot; no args = TUI
+cd packages/cli && bun src/main.ts daemon run   # headless daemon; `-p "hello"` one-shot; no args = TUI (a throwaway home only, below)
 bun run build:winter                 # dist/winter from ../clover-sdk, for the built-binary e2e
+
+# Live suites: WINTER_CU_LIVE_TESTS=1 bun run e2e:cu-live (NEVER from an agent); CLOVER_BROWSER_E2E=1 bun run e2e:browser (likewise)
 ```
 
-Run a daemon from a checkout only with a temp or dev home set (see Profiles). Every daemon tees its stdout/stderr into `<CLOVER_HOME>/logs/daemon.log` (`clover doctor` prints the path). Tests get a per-process temp root and a throwaway Keychain service from the preloads.
+Run a daemon from the checkout under plain `bun` only on a throwaway home with a throwaway Keychain service: `CLOVER_HOME="$(mktemp -d)" CLOVER_PROFILE=dev CLOVER_KEYCHAIN_SERVICE=com.waifucave.clover.core.scratch`. The dev home `~/.clover-dev` only through `bun run dev:daemon` (see Profiles). Every daemon tees its stdout/stderr into `<CLOVER_HOME>/logs/daemon.log` (`clover doctor` prints the path). Tests get a per-process temp root and a throwaway Keychain service from the preloads.
 
 ## Profiles — which daemon you are talking to
 
@@ -45,7 +47,8 @@ Run a daemon from a checkout only with a temp or dev home set (see Profiles). Ev
 - Identities: dist `com.waifucave.clover` with Keychain `com.waifucave.clover.core`; dev `com.waifucave.clover.dev` with `com.waifucave.clover.core.dev`.
 - A plain `clover` is the dist CLI and, on a dead socket, tries to launch the dist app. A plain `winter` is **Winter's** dist CLI and launches the live Winter app. Never run either for dev or test work.
 - `bun run dev:daemon` builds, signs and runs the dev daemon (`dist/dev/clover-core`) on `~/.clover-dev`. It refuses `~/.clover` and, by real path, every other install's home (`packages/core/src/other-installs.ts`); `clover daemon run` and `startDaemon` refuse those homes too. A boot never imports anything from another install: Migration B (`packages/core/src/migration/`) runs only for an explicit `clover migrate --from <legacy home>`, and Clover's carry-over from Winter is a later lane's.
-- Don't run `dev:helper` or `dev:headless`: they build and register Winter's Computer Use and Headless helpers under Winter's identities, which would replace Winter Dev's own registrations.
+- After the dev daemon's one-time `bun run dev:daemon --transition`, the dev Keychain items trust only the signed dev binary: never run a dev daemon or the dev CLI on `~/.clover-dev` under plain `bun`, which is prompted for every Keychain item. Use `bun run dev:daemon` (`--no-build` reuses the binary; `bun scripts/dev-daemon.ts --no-build --cli <args>` runs the dev CLI through it).
+- `dev:helper` and `dev:headless` refuse to run in this repo until opensky: they would build and register Winter's Computer Use and Headless helpers under Winter's identities, replacing Winter Dev's own registrations and its native-messaging manifests.
 
 ## Where to read more
 
@@ -82,6 +85,9 @@ Other references: `clover-vs-cc-tools.md` (repo root, the tool comparison with C
 - **Never kill, restart, launch or write to a running Winter.app or the user's live Winter daemon.** The daily driver is `Winter.app` (`com.winter.app`) in `/Applications` on `~/.winter` with Keychain `com.winter.core`. A local Release build of the Mac app (`out/release/<version>/…/Winter.app`) carries the same bundle id and Launch Services can resolve `com.winter.app` to it at relaunch: never launch one, and never delete an `out/release/<version>` tree while a Winter process runs from it. The legacy `Norma.app` / `~/.norma` / `com.norma.core` items stay untouched as the rollback source.
 - **Never launch a dist Winter instance** — `Winter.app`, a Release build, or the dist `winter` CLI, which launches the app on a dead socket. A Claude-launched dist instance is indistinguishable from the user's own in the menu bar and defeats the entire dev/dist split. Winter's dev work happens only in "Winter Dev" (`com.winter.app.dev`, `~/.winter-dev`), from the Winter checkout, never from this one.
 - **Winter fixes go on `winter/maintenance`**, from Winter's own checkout. The `winter-before-clover` tag marks Winter's last commit before Clover: never move it.
+- **Before C7, never build `apple/Winter` or run `scripts/release*.ts` or `bun run tap:publish`.** They produce `com.winter.app` against Winter's live update feed (`apple/Winter/project.yml`) and publish to Winter's tap; `release.ts` and `tap:publish` refuse until Clover's own release pipeline lands in C7.
+- **Never run WinterKit's `winter-probe`.** Its defaults are the live Winter daemon's socket (`~/.winter/run/core.sock`) and Keychain (`com.winter.core`).
+- **Never run the live suites from an agent.** `e2e:cu-live` takes over the screen (gated only by `WINTER_CU_LIVE_TESTS=1`); `e2e:browser` drives real browsers on the desktop (`CLOVER_BROWSER_E2E=1`).
 - The Sparkle public key in `apple/Winter/project.yml` (`SUPublicEDKey`) is Winter's production key, and Winter's live update feed depends on it; the private half exists only in the login Keychain — never committed anywhere.
 
 ### Tests, secrets and identities
