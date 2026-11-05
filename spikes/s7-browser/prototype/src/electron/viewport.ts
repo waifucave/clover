@@ -797,6 +797,7 @@ export async function viewportCheck(host: TabHost, server: SpikeServer, root: st
     };
     await show(1);
     await vp.cdp(t, "Emulation.setFocusEmulationEnabled", { enabled: true });
+    await sleep(600); // the timers and the stream tick on (round twelve's first runs read too soon)
     const s1 = await state();
     oracle("shown (first time)", s0, s1, "typed by the bot");
 

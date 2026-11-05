@@ -10,7 +10,7 @@ import { tmpdir, release, cpus, totalmem } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { captureCheck, costCheck, hostCheck, longCheck, moveCheck, sharedHostCheck, throttleCheck, wakeCheck, type CaptureRow, type HostInvariants, type MoveResult, type SharedResult, type ThrottleRow, type WakeResult } from "./checks.ts";
 import { Link, streamCheck } from "./stream.ts";
-import { dialogCheck, osrCheck, viewportCheck } from "./viewport.ts";
+import { dialogCheck, osrCheck, viewportCheck, type DialogRow, type OsrResult, type ViewportResult } from "./viewport.ts";
 import { placeAvailable, TabHost } from "./tabs.ts";
 import { startServer } from "../shared/server.ts";
 import { errorText, rounded } from "../shared/stats.ts";
@@ -101,6 +101,47 @@ function assertAll(): Assertion[] {
     add("a resting tab draws within 2 s of moving into the host, every cycle",
       wake.error === undefined && wake.cycles.length > 0 && wake.cycles.every((c) => c.firstRafMs !== undefined && c.firstRafMs < 2000),
       { firstRafMs: wake.cycles.map((c) => c.firstRafMs), error: wake.error });
+  }
+  // round twelve: Winter's model in Electron
+  const osr = results.osr as OsrResult | undefined;
+  if (osr !== undefined) {
+    const row = osr.rates.find((r) => r.mode === "bitmap" && r.fps === 30 && r.painting === true);
+    // macOS's runner reads frames back slowly: bitmaps asked at 30 fps came at about 19 there (round twelve)
+    add("an offscreen tab draws with no window (CPU bitmaps asked at 30 fps: rAF above 10 Hz)", (row?.rates?.rafHz ?? 0) > 10, { rafHz: row?.rates?.rafHz, error: row?.error ?? osr.error });
+    const cap = osr.captures.find((r) => r.config.startsWith("offscreen, bitmap, painting on") && r.method === "capturePage");
+    add("capturePage works on an offscreen tab", cap !== undefined && cap.tries > 0 && cap.ok === cap.tries, { ok: cap?.ok, tries: cap?.tries, errors: cap?.errors });
+    const w = osr.windows["4 offscreen tabs open (nothing else shown)"];
+    if (w?.windows !== undefined) add("four offscreen tabs put no window on screen", w.windows.length === 0, w.windows);
+    if (process.platform === "darwin") add("macOS: shared textures come (GPU compositing on)", osr.texture.works, osr.texture);
+  }
+  const vp = results.viewport as ViewportResult | undefined;
+  if (vp !== undefined) {
+    add("no reload across show and hide through the viewport: same document, its timers, its socket, its form",
+      vp.oracle.length >= 4 && vp.oracle.every((o) => o.sameDocument && o.ticksAdvanced && o.sseKept && o.formKept), vp.oracle.map((o) => `${o.when}: ${o.detail}`));
+    const works = ["mouse:", "wheel:", "keys:", "IME:", "paste:", "<select>:", "cursor:", "drag: the same, with the browser's drag", "file chooser:", "resize:", "find-in-page:", "DevTools:", "accessibility:", "the tab's webContents.focus()"];
+    for (const prefix of works) {
+      const st = vp.steps.find((x) => x.name.startsWith(prefix));
+      add(`through the viewport: ${st?.name ?? prefix}`, st?.ok === true, st?.detail.slice(0, 300) ?? "missing");
+    }
+    // the gaps, pinned: an Electron upgrade that closes one shows up here
+    const plainDrag = vp.steps.find((x) => x.name.startsWith("drag: an HTML5 drag inside the page, sent as plain"));
+    add("a known gap, pinned: an HTML5 drag sent as plain mouse events doesn't drop in an offscreen tab", plainDrag?.ok === false, plainDrag?.detail ?? "missing");
+    const popup = vp.steps.find((x) => x.name.startsWith("a window the page opens"));
+    add("a known gap, pinned: a window the page opens, made offscreen, paints nothing", popup !== undefined && popup.ok === false && /"paints":0/.test(popup.detail), popup?.detail.slice(0, 300) ?? "missing");
+    const fps = vp.fps["viewport, animated page"];
+    // not asserted for bitmaps on macOS, whose runner reads frames back at about half the rate (recorded)
+    if (!(vp.mode === "bitmap" && process.platform === "darwin")) add("the viewport draws an animated page at 45 fps or more", typeof fps?.drawnPerSec === "number" && fps.drawnPerSec >= 45, fps ?? "missing");
+  }
+  const dialogs = results.dialogs as DialogRow[] | undefined;
+  if (dialogs !== undefined) {
+    const seen = dialogs.filter((r) => r.kind === "alert" || r.kind === "confirm");
+    add("CDP sees every alert and confirm, offscreen, in the host window and with disableDialogs", seen.length === 6 && seen.every((r) => r.cdpEvent), seen.map((r) => `${r.place} ${r.kind}: ${r.cdpEvent}`));
+    const listed = dialogs.filter((r) => r.kind === "alert" && r.windowsBefore !== undefined && r.windowsAfter?.windows !== undefined);
+    for (const r of listed) {
+      const grew = (r.windowsAfter!.windows!.length) > (r.windowsBefore!.length);
+      if (r.place === "offscreen tab, disableDialogs") add("with disableDialogs an alert puts up no window", !grew, { before: r.windowsBefore, after: r.windowsAfter?.windows });
+      else add(`a known gap, pinned: an alert answered over CDP still leaves a native box up (${r.place})`, grew, { before: r.windowsBefore, after: r.windowsAfter?.windows });
+    }
   }
   const shared = results.shared as SharedResult | undefined;
   if (shared !== undefined) {
