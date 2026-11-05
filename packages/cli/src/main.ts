@@ -1,7 +1,7 @@
 import { join, resolve } from "node:path";
 import { homedir } from "node:os";
 import { existsSync, readFileSync } from "node:fs";
-import { resolveCloverHome, KeychainSecretStore, startDaemon, TOKEN_NAMES, loadSettings, CORE_VERSION, runWorkflowSubprocess, runAutomationWorker, AUTOMATION_WORKER_ARG, processSatisfiesRequirement, runRuntimeWorkflowWorker, RUNTIME_WORKFLOW_WORKER_ARG, runRuntimeStateProbe, runRuntimesProbe, keychainUnlocked, processStartSecondsViaSysctl, runEmbeddedProbe, runDevKeychainAdopt, DEV_KEYCHAIN_ADOPT_ARG, resolveCloverProfile, splitTag, sdkLocalMcpServers, installCloverProcessIdentity } from "@waifucave/clover-core";
+import { resolveCloverHome, OtherInstallHomeRefused, KeychainSecretStore, startDaemon, TOKEN_NAMES, loadSettings, CORE_VERSION, runWorkflowSubprocess, runAutomationWorker, AUTOMATION_WORKER_ARG, processSatisfiesRequirement, runRuntimeWorkflowWorker, RUNTIME_WORKFLOW_WORKER_ARG, runRuntimeStateProbe, runRuntimesProbe, keychainUnlocked, processStartSecondsViaSysctl, runEmbeddedProbe, runDevKeychainAdopt, DEV_KEYCHAIN_ADOPT_ARG, resolveCloverProfile, splitTag, sdkLocalMcpServers, installCloverProcessIdentity } from "@waifucave/clover-core";
 import type { CredentialRow, SecretStore, Settings } from "@waifucave/clover-core";
 import { METHODS, type ApprovalPolicy, type Task } from "@waifucave/clover-protocol";
 import { POLICY_ORDER } from "./tui/policy-order";
@@ -1586,6 +1586,16 @@ if (import.meta.main) {
   // C0 (review S1): every provider call this process makes presents as Clover — `User-Agent`, the Codex
   // `originator` and the contact URL (core installs it when it loads; this makes the CLI's start explicit).
   installCloverProcessIdentity();
+  // Every command runs on a Clover home, and `resolveCloverHome()` refuses another install's by real path
+  // (`other-installs.ts`). Asked once here, so a command that would write there without a daemon (`mcp`, `plugin`,
+  // `output-style`, `workflow`, settings) stops with one line rather than a stack trace.
+  try {
+    resolveCloverHome();
+  } catch (err) {
+    if (!(err instanceof OtherInstallHomeRefused)) throw err;
+    console.error(`clover: ${err.message} — set CLOVER_HOME to a Clover home`);
+    process.exit(1);
+  }
   const argv = process.argv.slice(2);
   const isTTY = !!(process.stdin.isTTY && process.stdout.isTTY);
   const route = routeCliInvocation(argv, isTTY);
@@ -1646,13 +1656,9 @@ if (import.meta.main) {
     // 2026-09-17: tee this process's stdout/stderr into <home>/logs/daemon.log (rotating) BEFORE the
     // daemon boots, so the boot lines themselves are captured — the release app wires our stdio to
     // /dev/null, and the file is the only diagnostic that survives that.
-    const { installDaemonLogFile, otherInstallHome } = await import("@waifucave/clover-core");
-    // Before the log file or anything else touches the home: never another install's home (`other-installs.ts`).
-    const otherInstall = otherInstallHome(resolveCloverHome());
-    if (otherInstall !== undefined) {
-      console.error(`clover daemon run: refusing ${resolveCloverHome()}: it is ${otherInstall.what}, which Clover never touches — set CLOVER_HOME to a Clover home`);
-      process.exit(1);
-    }
+    const { installDaemonLogFile } = await import("@waifucave/clover-core");
+    // Another install's home was refused before any command ran (above), before the log file or anything else
+    // touches the home; `installDaemonLogFile` and `startDaemon` refuse it again on their own.
     const daemonLog = installDaemonLogFile(resolveCloverHome());
     console.error(`daemon log: ${daemonLog.path}`);
     let daemon: Awaited<ReturnType<typeof startDaemon>>;
