@@ -4,6 +4,7 @@ import { CoworkWorkspaceService } from "../cowork/service";
 import { CoworkError } from "../cowork/types";
 import type { CoworkSessionDoor, CoworkSessionDrivers } from "../cowork/session-ports";
 import { chmodSync, realpathSync, statSync } from "node:fs";
+import { isPipe } from "../platform/transport";
 import { ComputerUseControlError, type ComputerUseControl } from "../computer-use/wiring";
 import { BrowserLinkRpcError, type BrowserLink } from "../computer-use/browser/cef-link/rpc";
 import { join } from "node:path";
@@ -2157,7 +2158,9 @@ export function startIpcServer(opts: IpcServerOptions): IpcServer {
       },
     },
   });
-  chmodSync(opts.socketPath, 0o600);
+  // A Unix socket file is tightened to the owner; a Windows named pipe is not a file and its
+  // access is set at creation, so skip it.
+  if (!isPipe(opts.socketPath)) chmodSync(opts.socketPath, 0o600);
 
   async function handle(socket: { data: ConnState }, method: string, params: unknown): Promise<unknown> {
     if (method === METHODS.hello) {

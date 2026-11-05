@@ -2,6 +2,15 @@
 export { installCloverProcessIdentity } from "./runtime-sdk/process-identity";
 export { startDaemon, CORE_VERSION, type RunningDaemon } from "./daemon";
 export { bootstrapCloverDir, resolveCloverHome, isDefaultCloverHome } from "./clover-dir";
+export { resolveEndpoint, homePipeId, isPipe, WINDOWS_PIPE_PREFIX, type DaemonPlatform, type Endpoint } from "./platform/transport";
+export {
+  loginEnable, loginDisable, loginStatus, readUnit, liveLoginOsDeps,
+  renderLaunchdPlist, renderSystemdUnit, renderSchtasksXml, loginLabel, loginUnitPath,
+  systemdUnitName, schtasksTaskName, SUPERVISE_ARGS,
+  superviseLoop, backoffMs,
+  type LoginSpec, type LoginOsDeps, type LoginStatus, type LoginState,
+  type SuperviseDeps, type SuperviseResult, type DaemonRun,
+} from "./platform/login";
 export { resolveCloverProfile, keychainService, profileDisplayName, cliCommandName, type CloverProfile } from "./profile";
 export {
   LEGACY_LAUNCHD_LABEL, LEGACY_HOME_DIR, LEGACY_DEV_HOME_DIR, LEGACY_HOME_ENV, LEGACY_PROFILE_ENV,

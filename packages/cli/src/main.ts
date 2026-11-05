@@ -1,7 +1,7 @@
 import { join, resolve } from "node:path";
 import { homedir } from "node:os";
-import { existsSync, readFileSync } from "node:fs";
-import { resolveCloverHome, OtherInstallHomeRefused, KeychainSecretStore, startDaemon, TOKEN_NAMES, loadSettings, CORE_VERSION, runWorkflowSubprocess, runAutomationWorker, AUTOMATION_WORKER_ARG, processSatisfiesRequirement, runRuntimeWorkflowWorker, RUNTIME_WORKFLOW_WORKER_ARG, runRuntimeStateProbe, runRuntimesProbe, keychainUnlocked, processStartSecondsViaSysctl, runEmbeddedProbe, runDevKeychainAdopt, DEV_KEYCHAIN_ADOPT_ARG, resolveCloverProfile, splitTag, sdkLocalMcpServers, installCloverProcessIdentity } from "@waifucave/clover-core";
+import { existsSync, readFileSync, mkdirSync } from "node:fs";
+import { resolveCloverHome, OtherInstallHomeRefused, KeychainSecretStore, startDaemon, TOKEN_NAMES, loadSettings, CORE_VERSION, runWorkflowSubprocess, runAutomationWorker, AUTOMATION_WORKER_ARG, processSatisfiesRequirement, runRuntimeWorkflowWorker, RUNTIME_WORKFLOW_WORKER_ARG, runRuntimeStateProbe, runRuntimesProbe, keychainUnlocked, processStartSecondsViaSysctl, runEmbeddedProbe, runDevKeychainAdopt, DEV_KEYCHAIN_ADOPT_ARG, resolveCloverProfile, splitTag, sdkLocalMcpServers, installCloverProcessIdentity, loginEnable, loginDisable, loginStatus, liveLoginOsDeps, superviseLoop, type LoginSpec, type DaemonRun } from "@waifucave/clover-core";
 import type { CredentialRow, SecretStore, Settings } from "@waifucave/clover-core";
 import { METHODS, type ApprovalPolicy, type Task } from "@waifucave/clover-protocol";
 import { POLICY_ORDER } from "./tui/policy-order";
@@ -1465,6 +1465,73 @@ export async function runLogoutOpenAiRoute(
 
 // Guarded so `main.ts` can be imported (e.g. by tests, for INIT_PROMPT/runTurnSession) without
 // executing the CLI — import.meta.main is true only when this file is the entry point.
+
+// --- Login start and supervision (lane C, C-M1; spec §3.1) ---------------------------------------
+function currentDaemonPlatform(): "darwin" | "linux" | "win32" {
+  return process.platform === "win32" ? "win32" : process.platform === "darwin" ? "darwin" : "linux";
+}
+
+/** `clover autostart enable|disable|status`: login start on this OS. The unit runs `clover-core
+ *  supervise` on the running binary (`process.execPath`); lane M's installer passes the installed
+ *  path by invoking the installed binary. */
+async function runAutostartCommand(sub: string | undefined): Promise<void> {
+  const home = resolveCloverHome();
+  const profile = resolveCloverProfile();
+  const logsDir = join(home, "logs");
+  mkdirSync(logsDir, { recursive: true });
+  const spec: LoginSpec = { os: currentDaemonPlatform(), bin: process.execPath, home, logsDir, profile };
+  const os = liveLoginOsDeps();
+  switch (sub ?? "status") {
+    case "enable": {
+      const st = await loginEnable(spec, os);
+      console.log(st.registered ? `autostart enabled (${st.label})` : `autostart: wrote the unit but the OS did not register it (${st.label})`);
+      if (!st.registered) process.exitCode = 1;
+      break;
+    }
+    case "disable":
+      await loginDisable(spec, os);
+      console.log(`autostart disabled (${spec.profile})`);
+      break;
+    case "status": {
+      const st = await loginStatus(spec, os);
+      console.log(`autostart: ${st.state}${st.unitPath ? ` (${st.unitPath})` : ""}${st.registered ? " [registered]" : ""}`);
+      break;
+    }
+    default:
+      console.error("usage: clover autostart enable|disable|status");
+      process.exitCode = 1;
+  }
+}
+
+/** `clover-core supervise`: start the daemon and restart it after a crash; a clean stop ends the loop. */
+async function runSupervise(): Promise<void> {
+  const bin = process.execPath;
+  let alive = true;
+  let stopChild: (() => void) | null = null;
+  let wake: (() => void) | null = null;
+  const stopAll = () => { alive = false; stopChild?.(); wake?.(); };
+  process.on("SIGTERM", stopAll);
+  process.on("SIGINT", stopAll);
+  const result = await superviseLoop({
+    startDaemon(): DaemonRun {
+      const child = Bun.spawn([bin, "daemon", "run"], { stdin: "inherit", stdout: "inherit", stderr: "inherit" });
+      const kill = () => { try { child.kill(); } catch { /* already gone */ } };
+      stopChild = kill;
+      return { exited: child.exited, stop: kill };
+    },
+    async wait(ms: number): Promise<boolean> {
+      if (!alive) return false;
+      await new Promise<void>((resolve) => {
+        const t = setTimeout(() => { wake = null; resolve(); }, ms);
+        wake = () => { clearTimeout(t); wake = null; resolve(); };
+      });
+      return alive;
+    },
+    shouldContinue: () => alive,
+  });
+  console.error(`[supervise] loop ended: ${result.ended} (starts=${result.starts}, crashes=${result.crashes})`);
+}
+
 if (import.meta.main) {
   // WS-23: the RUNTIME's workflow worker (COMPILED path) — an embedded chat/dispatch session's Workflow
   // tool spawns `<clover-core> __runtime-workflow-worker --bridge` under the seatbelt
@@ -1638,6 +1705,22 @@ if (import.meta.main) {
     // decision — both spellings land here because cmdKey is just argv[0] for non-daemon commands).
     console.log(`clover ${CORE_VERSION}`);
     process.exit(0);
+  }
+  case "autostart": {
+    // `clover-core autostart enable|disable|status` — login start on this OS (spec §3.1). (`login`
+    // is already the account/provider sign-in command.) Lane M's installer calls this; it
+    // writes/removes the launchd agent, systemd user unit or Task Scheduler task that runs
+    // `clover-core supervise`.
+    await runAutostartCommand(sub);
+    process.exit(0);
+    break;
+  }
+  case "supervise": {
+    // The restart loop the login unit runs: starts the daemon and restarts it after a crash; a
+    // clean stop (a Quit) ends the loop so the crash-only OS unit does not bring it back.
+    await runSupervise();
+    process.exit(0);
+    break;
   }
   case "daemon run": {
     // Whole-branch review: register the shutdown handlers HERE, not (only) in daemon.ts. daemon.ts's
