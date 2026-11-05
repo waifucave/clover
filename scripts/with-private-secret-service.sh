@@ -19,11 +19,11 @@ chmod 700 "$root/run"
 export XDG_DATA_HOME="$root/data" XDG_CONFIG_HOME="$root/config" XDG_RUNTIME_DIR="$root/run"
 export CLOVER_PRIVATE_SECRET_SERVICE=1
 status=0
-# Inside the private bus: create and unlock a login keyring with an empty password (it dies with the bus), start
-# its Secret Service, then run the command.
+# Inside the private bus: start gnome-keyring's Secret Service with a login keyring it creates and unlocks, then run
+# the command. The keyring needs a password, or the daemon creates no login collection and asks a prompter that
+# has no screen: a random one, made here and kept nowhere, protects a keyring that is deleted with the temp folder.
 dbus-run-session -- bash -c '
-  printf "" | gnome-keyring-daemon --unlock --components=secrets >/dev/null
-  gnome-keyring-daemon --start --components=secrets >/dev/null
+  od -An -N16 -tx1 /dev/urandom | tr -d " \n" | gnome-keyring-daemon --unlock --components=secrets >/dev/null
   exec "$@"
 ' with-private-secret-service "$@" || status=$?
 exit "$status"

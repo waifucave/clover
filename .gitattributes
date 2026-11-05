@@ -1,0 +1,3 @@
+# One line ending in every checkout: tests compare committed files byte for byte (fixtures, generated code, the
+# lockfiles), and a Windows checkout would otherwise turn them into CRLF. Binary files are detected and left alone.
+* text=auto eol=lf

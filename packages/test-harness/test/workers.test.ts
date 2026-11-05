@@ -6,6 +6,9 @@ import { join } from "node:path";
 import { miniflareOptions, readWranglerConfig, startWorker } from "../src/workers";
 
 const fixture = join(import.meta.dir, "fixtures", "worker");
+// Windows: in CI one Worker start in a run has hung (workerd never answered, and the runner killed it when the test
+// timed out) while the starts before and after it took under a second. One retry there, with a shorter wait.
+const START = { timeout: 30_000, retry: process.platform === "win32" ? 1 : 0 };
 
 describe("startWorker", () => {
   test("runs the Worker with its variables and an in-memory KV namespace", async () => {
@@ -19,7 +22,7 @@ describe("startWorker", () => {
     } finally {
       await worker.dispose();
     }
-  }, 60_000);
+  }, START);
 
   test("a test's bindings override the config's variables", async () => {
     const worker = await startWorker({ dir: fixture, bindings: { WHO: "override" } });
@@ -28,7 +31,7 @@ describe("startWorker", () => {
     } finally {
       await worker.dispose();
     }
-  }, 60_000);
+  }, START);
 
   test("two Workers at once, each with its own storage", async () => {
     const [a, b] = await Promise.all([startWorker({ dir: fixture }), startWorker({ dir: fixture })]);
@@ -38,7 +41,7 @@ describe("startWorker", () => {
     } finally {
       await Promise.all([a.dispose(), b.dispose()]);
     }
-  }, 60_000);
+  }, START);
 });
 
 describe("readWranglerConfig", () => {

@@ -59,7 +59,7 @@ describe("CI takes the `winter` binary from the installed platform package ONLY 
     const jobs = (Bun.YAML.parse(CI_YML) as { jobs: Record<string, { steps?: { run?: string }[] }> }).jobs;
     const LOUD = "did not install — bun install is the ONLY winter source since";
     // A job needs the binary when it copies it to dist/winter or runs the gate that stages it.
-    const needing = Object.keys(jobs).filter((id) => /dist\/winter|verify:runtimes/.test(JSON.stringify(jobs[id]))).sort();
+    const needing = Object.keys(jobs).filter((id) => ["dist/winter", "verify:runtimes"].some((s) => JSON.stringify(jobs[id]).includes(s))).sort();
     expect(needing).toEqual(["test-cli", "test-core", "test-scripts", "verify"]);
     for (const id of needing) expect([id, (jobs[id]!.steps ?? []).some((s) => s.run?.includes(LOUD) === true)]).toEqual([id, true]);
     expect((CI_YML.match(new RegExp(LOUD, "g")) ?? []).length).toBe(needing.length);
