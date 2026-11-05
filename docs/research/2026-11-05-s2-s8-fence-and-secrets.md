@@ -2,7 +2,7 @@
 
 Date: 2026-11-05. Lane C, `lane/c-m0`, spec revision 17; base `a481f7e14`.
 
-**Review revision: the Windows candidate fails the required floor. Windows is not admitted for release.**
+**Review findings addressed: the Windows candidate fails the required floor. Windows is not admitted for release.**
 The paired controls demonstrate an allowed user-Startup write outside the permitted roots. Historical **29/30 + 7/7**
 figures are provisional, alias-assisted measurements on an artificially modified Session 0 namespace.
 The unmodified candidate admitted zero workload checks: initialization failed.
@@ -390,6 +390,9 @@ or unavailable backend combinations remain explicitly unsupported pending resolu
 write policy, concurrent sessions, crash cleanup and real credential-helper protocols need coverage.
 The principal/broker [D] decision, per-command escape API and full fenced-set enumeration above are
 explicit M1 entry requirements, not features proved by the spike counts.
+The current candidate is rejected until user-Startup writes are closed, including paths materialized
+after provisioning. A write outside the configured roots cannot be waived because it belongs to the
+sandbox principal rather than the real user. This is a measured failure, not Windows release admission.
 
 Owner-batch gates: real Windows 11 install/Bash/island (§10.3), actual Ubuntu/Fedora deb/rpm/SELinux
 and desktop keyrings (§10.4), macOS 27 integration (§10.5), authenticated ACP/file-tool/retry checks for
@@ -402,3 +405,35 @@ Windows security parity or every vendor integration passed. The latest focused r
 checkpoint passed all three jobs; final-head status is linked from PR #148. Broader repository CI is
 reported separately. M0 is ready for the lane reviewer to assess these positive, negative and
 inconclusive results; only the controller merges.
+
+## Review disposition (review of da905d5d9)
+
+1. **Credential principal / [D]:** explicit blocking finding, conditional M1 entry and proposed §9.1
+   text above; scope, costs and alternatives documented. The controller takes the decision to the owner.
+2. **Repository CI:** controller-owned base-doc residue gate, to clear with C0 #152. No residue
+   allowlist, base-doc or cross-lane source changes made by this lane. Focused spike CI is separate.
+3. **Unfenced/admin controls:** all listed route denials paired in `review-controls-v4.txt`, with local
+   administrator launching context verified. Startup user write is now a measured failure; runas
+   has a failed control and is not credited as closed. Principal-based denials are labelled as such.
+4. **COM / handles:** synchronous child receipts replace the unobserved ShellExecute marker;
+   forced local-server activation reports class unavailability in both contexts. Deliberate inherited
+   handles and both duplication paths have positive unfenced and negative fenced controls.
+5. **Session 0:** the alias is in the headline qualification; unmodified initialization admits zero
+   commands. Alias-assisted counts are provisional and cannot admit Windows for release.
+6. **Per-command escapes:** named M1 API/concurrency/lifecycle requirement; separate-session
+   reinitialization is explicitly not one-call escape support.
+7. **Full fenced set:** source/spec mapping above lists every omitted registration group and the
+   additional sandboxConfigFor/child rules; full-set parity is not claimed from representative paths.
+8. **Non-root, no TPM:** explicit live gate on a genuinely TPM-less host, including reboot and hiding;
+   the existing UID-0 namespace control is not substituted for it.
+9. **Public metadata:** cloud project id and local gcloud/Homebrew paths scrubbed in a new commit,
+   without rewriting history. `normalize-results.py` handles future tracebacks and preserves JSON
+   escaping; CI checks idempotent normalization. Raw-byte comparison also catches Windows CRLF.
+10. **TPM support claim:** cited committed `review-tpm-inventory-v2.txt` records the command and output.
+11. **Workflow:** controller approved the scoped spike workflow; privacy normalization is checked there.
+12. **Base-doc context:** no action, as ruled; controller owns C0/rebase/merge sequencing.
+
+`spikes/s8-secrets/results/review-windows-cleanup.txt` records removal of the review installation,
+four WFP filters, grants and test principal. Both named VM stop operations completed after testing.
+The new measurements reject a claimed denial rather than hiding it; no unfenced fallback or production
+sandbox change was introduced. The [D] decision and controller-owned repo CI remain explicit gates.

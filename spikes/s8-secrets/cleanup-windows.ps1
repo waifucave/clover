@@ -16,6 +16,10 @@ Get-LocalUser | Where-Object {$_.Name -match '^clover_[bt]_'} | ForEach-Object {
  $sid=$_.SID.Value;Remove-LocalUser $_.Name
  Get-CimInstance Win32_UserProfile -Filter ("SID='"+$sid+"'") | Remove-CimInstance -ErrorAction SilentlyContinue
 }
+$startup=Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\Startup'
+# The paired review fixture created this previously missing leaf. Remove it only
+# when empty; never remove another process's Startup entry.
+if ((Test-Path $startup) -and !(Get-ChildItem -Force $startup)) {Remove-Item $startup -ErrorAction Continue}
 Get-ChildItem C:\clover-tools -Directory | Where-Object {$_.Name -like 'clover-*' -or $_.Name -like 'com.waifucave.clover.*' -or $_.Name -in @('cursor','srt','npm-cache')} | Remove-Item -Recurse -Force -ErrorAction Continue
 Remove-Item -Recurse -Force $env:CODEX_HOME
 Get-ChildItem $env:TEMP -Filter clover-transport-*.b64 | Remove-Item -Force
