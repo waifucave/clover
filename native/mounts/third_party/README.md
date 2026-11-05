@@ -11,6 +11,7 @@ this copy. Three files are changed, each marked at its top:
   "Permission denied" and a lookup "No such file", which the macOS client then cached as a
   missing name until the directory changed, so the mount stayed broken after the link returned.
 * `nfs_onlookup.go`: a lookup answers NFS3ERR_NOENT only when the name is really missing.
-* `nfs_onread.go`: after a short read, the reply's post-op attributes are taken after the read,
-  so the client learns that the file shrank. Unpatched, macOS's NFS client padded the read up to
-  the old size with zeros: FSKit's short-read corruption, in NFS (report §2).
+* `nfs_onread.go`: a read that comes back shorter than the size the client was given answers
+  NFS3ERR_IO instead of a short read. Unpatched, macOS's NFS client padded such a read with
+  zeros up to the size it held (FSKit's short-read corruption, in NFS: report §2), and it did so
+  even when the reply's post-op attributes carried the new size, which was the first try.

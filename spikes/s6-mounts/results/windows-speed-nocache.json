@@ -1,0 +1,364 @@
+{
+  "spike": "S6",
+  "question": "speed",
+  "machine": {
+    "os": "win32",
+    "release": "10.0.26100",
+    "arch": "x64",
+    "cpus": 4,
+    "cpu": "INTEL(R) XEON(R) PLATINUM 8573C",
+    "memGB": 16,
+    "bun": "1.3.14"
+  },
+  "started": "2026-11-05T02:11:18.027Z",
+  "rows": [
+    {
+      "workload": "git-status",
+      "where": "mount",
+      "policy": "nocache",
+      "rttMs": 0,
+      "phase": "cold",
+      "requests": 22,
+      "ops": {
+        "STAT": 22
+      },
+      "helper": {
+        "cacheHits": 0,
+        "cacheMiss": 0,
+        "drops": 0,
+        "fastFails": 0,
+        "online": true,
+        "prefetches": 0,
+        "reconnects": 0,
+        "requests": 24,
+        "timeouts": 0
+      },
+      "ms": 45,
+      "ok": false,
+      "code": 128,
+      "timedOut": false,
+      "err": "fatal: Unable to read current working directory: No such file or directory"
+    },
+    {
+      "workload": "git-status",
+      "where": "mount",
+      "policy": "nocache",
+      "rttMs": 0,
+      "phase": "warm",
+      "requests": 22,
+      "ops": {
+        "STAT": 22
+      },
+      "ms": 41,
+      "ok": false,
+      "code": 128,
+      "timedOut": false,
+      "err": "fatal: Unable to read current working directory: No such file or directory"
+    },
+    {
+      "workload": "tsc-protocol",
+      "where": "mount",
+      "policy": "nocache",
+      "rttMs": 0,
+      "phase": "cold",
+      "requests": 14890,
+      "ops": {
+        "STAT": 14311,
+        "READLINK": 364,
+        "READ": 205,
+        "READ_bytes": 9630252,
+        "LIST": 4,
+        "STATFS": 6
+      },
+      "helper": {
+        "cacheHits": 0,
+        "cacheMiss": 0,
+        "drops": 0,
+        "fastFails": 0,
+        "online": true,
+        "prefetches": 0,
+        "reconnects": 0,
+        "requests": 14892,
+        "timeouts": 0
+      },
+      "ms": 7951,
+      "ok": false,
+      "code": 2,
+      "timedOut": false,
+      "err": "packages/protocol/test/parity-fixtures.test.ts(77,42): error TS2339: Property 'dir' does not exist on type 'ImportMeta'.\r | packages/protocol/test/parity-fixtures.test.ts(78,57): error TS7006: Parameter 'f' implicitly has an 'any' type.\r | packages/protocol/test/session-mode.test.ts(1,40): error TS2307: Cannot find module 'bun:test' or its corresponding type declarations."
+    },
+    {
+      "workload": "tsc-protocol",
+      "where": "mount",
+      "policy": "nocache",
+      "rttMs": 0,
+      "phase": "warm",
+      "requests": 14891,
+      "ops": {
+        "STAT": 14311,
+        "READLINK": 364,
+        "STATFS": 7,
+        "READ": 205,
+        "READ_bytes": 9630252,
+        "LIST": 4
+      },
+      "ms": 7537,
+      "ok": false,
+      "code": 2,
+      "timedOut": false,
+      "err": "packages/protocol/test/parity-fixtures.test.ts(77,42): error TS2339: Property 'dir' does not exist on type 'ImportMeta'.\r | packages/protocol/test/parity-fixtures.test.ts(78,57): error TS7006: Parameter 'f' implicitly has an 'any' type.\r | packages/protocol/test/session-mode.test.ts(1,40): error TS2307: Cannot find module 'bun:test' or its corresponding type declarations."
+    },
+    {
+      "workload": "tsc-core",
+      "where": "mount",
+      "policy": "nocache",
+      "rttMs": 0,
+      "phase": "cold",
+      "requests": 127724,
+      "ops": {
+        "STAT": 122659,
+        "READLINK": 3156,
+        "READ": 1776,
+        "READ_bytes": 32377216,
+        "LIST": 84,
+        "STATFS": 49
+      },
+      "helper": {
+        "cacheHits": 0,
+        "cacheMiss": 0,
+        "drops": 0,
+        "fastFails": 0,
+        "online": true,
+        "prefetches": 0,
+        "reconnects": 0,
+        "requests": 127726,
+        "timeouts": 0
+      },
+      "ms": 66395,
+      "ok": false,
+      "code": 2,
+      "timedOut": false,
+      "err": "scripts/dev-daemon-lib.ts(2,25): error TS2307: Cannot find module 'node:os' or its corresponding type declarations.\r | scripts/dev-daemon-lib.ts(3,31): error TS2307: Cannot find module 'node:path' or its corresponding type declarations.\r | scripts/dev-daemon-lib.ts(64,36): error TS2503: Cannot find namespace 'NodeJS'."
+    },
+    {
+      "workload": "tsc-core",
+      "where": "mount",
+      "policy": "nocache",
+      "rttMs": 0,
+      "phase": "warm",
+      "requests": 127725,
+      "ops": {
+        "STAT": 122659,
+        "READLINK": 3156,
+        "STATFS": 50,
+        "READ": 1776,
+        "READ_bytes": 32377216,
+        "LIST": 84
+      },
+      "ms": 66303,
+      "ok": false,
+      "code": 2,
+      "timedOut": false,
+      "err": "scripts/dev-daemon-lib.ts(2,25): error TS2307: Cannot find module 'node:os' or its corresponding type declarations.\r | scripts/dev-daemon-lib.ts(3,31): error TS2307: Cannot find module 'node:path' or its corresponding type declarations.\r | scripts/dev-daemon-lib.ts(64,36): error TS2503: Cannot find namespace 'NodeJS'."
+    },
+    {
+      "workload": "read-256M",
+      "where": "mount",
+      "policy": "nocache",
+      "rttMs": 0,
+      "phase": "cold",
+      "requests": 266,
+      "ops": {
+        "STAT": 9,
+        "READ": 257,
+        "READ_bytes": 268435456
+      },
+      "helper": {
+        "cacheHits": 0,
+        "cacheMiss": 0,
+        "drops": 0,
+        "fastFails": 0,
+        "online": true,
+        "prefetches": 0,
+        "reconnects": 0,
+        "requests": 268,
+        "timeouts": 0
+      },
+      "ms": 922,
+      "ok": true,
+      "code": 0,
+      "timedOut": false
+    },
+    {
+      "workload": "read-256M",
+      "where": "mount",
+      "policy": "nocache",
+      "rttMs": 0,
+      "phase": "warm",
+      "requests": 266,
+      "ops": {
+        "STAT": 9,
+        "READ": 257,
+        "READ_bytes": 268435456
+      },
+      "ms": 887,
+      "ok": true,
+      "code": 0,
+      "timedOut": false
+    },
+    {
+      "workload": "write-256M",
+      "where": "mount",
+      "policy": "nocache",
+      "rttMs": 0,
+      "phase": "cold",
+      "requests": 529,
+      "ops": {
+        "STAT": 270,
+        "OPEN": 1,
+        "WRITE": 256,
+        "WRITE_bytes": 268435456,
+        "FSYNC": 1,
+        "CLOSE": 1
+      },
+      "helper": {
+        "cacheHits": 0,
+        "cacheMiss": 0,
+        "drops": 0,
+        "fastFails": 0,
+        "online": true,
+        "prefetches": 0,
+        "reconnects": 0,
+        "requests": 531,
+        "timeouts": 0
+      },
+      "ms": 1833,
+      "ok": true,
+      "code": 0,
+      "timedOut": false
+    },
+    {
+      "workload": "write-256M",
+      "where": "mount",
+      "policy": "nocache",
+      "rttMs": 0,
+      "phase": "warm",
+      "requests": 529,
+      "ops": {
+        "STAT": 270,
+        "OPEN": 1,
+        "WRITE": 256,
+        "WRITE_bytes": 268435456,
+        "FSYNC": 1,
+        "CLOSE": 1
+      },
+      "ms": 1476,
+      "ok": true,
+      "code": 0,
+      "timedOut": false
+    },
+    {
+      "workload": "copy-out",
+      "where": "mount",
+      "policy": "nocache",
+      "rttMs": 0,
+      "phase": "cold",
+      "requests": 2123,
+      "ops": {
+        "STAT": 1873,
+        "LIST": 7,
+        "READ": 238,
+        "READ_bytes": 746123,
+        "READLINK": 5
+      },
+      "helper": {
+        "cacheHits": 0,
+        "cacheMiss": 0,
+        "drops": 0,
+        "fastFails": 0,
+        "online": true,
+        "prefetches": 0,
+        "reconnects": 0,
+        "requests": 2125,
+        "timeouts": 0
+      },
+      "ms": 982,
+      "ok": true,
+      "code": 0,
+      "timedOut": false
+    },
+    {
+      "workload": "copy-out",
+      "where": "mount",
+      "policy": "nocache",
+      "rttMs": 0,
+      "phase": "warm",
+      "requests": 2123,
+      "ops": {
+        "STAT": 1873,
+        "LIST": 7,
+        "READ": 238,
+        "READ_bytes": 746123,
+        "READLINK": 5
+      },
+      "ms": 963,
+      "ok": true,
+      "code": 0,
+      "timedOut": false
+    },
+    {
+      "workload": "copy-in",
+      "where": "mount",
+      "policy": "nocache",
+      "rttMs": 0,
+      "phase": "cold",
+      "requests": 3348,
+      "ops": {
+        "STAT": 2866,
+        "MKDIR": 6,
+        "OPEN": 119,
+        "WRITE": 119,
+        "WRITE_bytes": 746123,
+        "SETATTR": 119,
+        "CLOSE": 119
+      },
+      "helper": {
+        "cacheHits": 0,
+        "cacheMiss": 0,
+        "drops": 0,
+        "fastFails": 0,
+        "online": true,
+        "prefetches": 0,
+        "reconnects": 0,
+        "requests": 3350,
+        "timeouts": 0
+      },
+      "ms": 1482,
+      "ok": true,
+      "code": 0,
+      "timedOut": false
+    },
+    {
+      "workload": "copy-in",
+      "where": "mount",
+      "policy": "nocache",
+      "rttMs": 0,
+      "phase": "warm",
+      "requests": 3348,
+      "ops": {
+        "STAT": 2866,
+        "MKDIR": 6,
+        "OPEN": 119,
+        "WRITE": 119,
+        "WRITE_bytes": 746123,
+        "SETATTR": 119,
+        "CLOSE": 119
+      },
+      "ms": 1469,
+      "ok": true,
+      "code": 0,
+      "timedOut": false
+    }
+  ],
+  "finished": "2026-11-05T02:13:57.135Z"
+}

@@ -199,7 +199,9 @@ jobs:
         if: matrix.runner == 'xcode-27'
         env:
           S6_SKIP_NFS_PLAIN: ${{ contains(github.event.head_commit.message, '[s6-skip-nfs-plain]') }}
+          S6_SKIP_NFS_SPEED: ${{ contains(github.event.head_commit.message, '[s6-skip-nfs-speed]') }}
         run: |
+          [ "$S6_SKIP_NFS_SPEED" = true ] && { echo "skipped by the commit message"; exit 0; }
           res="$RUNNER_TEMP/s6/results"
           common=(--root "$RUNNER_TEMP/s6/export" --tree "$RUNNER_TEMP/s6/nfs-tree" --helper none \
             --nfs-helper "$RUNNER_TEMP/s6/clover-nfs" --copy-src "$GITHUB_WORKSPACE/packages/protocol" --rtts 0,20,80 --timeout 600)

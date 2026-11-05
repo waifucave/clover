@@ -1,11 +1,12 @@
-// Modified for Clover's spike S6 (native/mounts/third_party/README.md): after a short read the reply
-// carries fresh post-op attributes.
+// Modified for Clover's spike S6 (native/mounts/third_party/README.md): a read that comes back
+// shorter than the size the client was given answers NFS3ERR_IO, never a short read.
 package nfs
 
 import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 
@@ -77,15 +78,13 @@ func onRead(ctx context.Context, w *response, userHandle Handler) error {
 	if errors.Is(err, io.EOF) || setEOF {
 		resp.EOF = 1
 	}
-	// A read that came back shorter than the size this reply would claim means the file shrank
-	// since the stat above. Send the attributes as they are after the read, so the client learns
-	// the new size and doesn't pad the rest with bytes the file doesn't have (the same short-read
-	// padding as FSKit's, report §2). The file system drops its cached size on a short read.
+	// A read that came back shorter than the size the client was given means the file shrank
+	// since the stat above. macOS's NFS client pads such a reply with zeros up to the size it
+	// holds, even when the reply's attributes carry the new one (S6 CI), so it must never see a
+	// short read inside the file: answer EIO instead, as Clover's FSKit module does (report §2).
+	// The file system has dropped its cached size, so the client's next GETATTR gets the new one.
 	if uint32(cnt) < obj.Count {
-		if fresh, serr := fs.Stat(fullPath); serr == nil {
-			info = fresh
-		}
-		resp.EOF = 1
+		return &NFSStatusError{NFSStatusIO, fmt.Errorf("%s shrank under the read: %d of %d bytes", fullPath, cnt, obj.Count)}
 	}
 
 	writer := bytes.NewBuffer([]byte{})
