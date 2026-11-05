@@ -49,8 +49,8 @@ export function Stage({ width, height, children }: { width: number; height: numb
   );
 }
 
-function Avatar({ still, framing = "bust" }: { still: AvatarStill; framing?: Framing }): ReactElement {
-  return <VrmAvatar src={ALPHA_VRM} name="Alpha" portrait={ALPHA_PORTRAIT} framing={framing} still={still} />;
+function Avatar({ still, framing = "bust", credit = "auto" }: { still: AvatarStill; framing?: Framing; credit?: "auto" | "never" }): ReactElement {
+  return <VrmAvatar src={ALPHA_VRM} name="Alpha" portrait={ALPHA_PORTRAIT} framing={framing} still={still} credit={credit} />;
 }
 
 /** A labelled grid of small stages. */
@@ -60,7 +60,8 @@ function Sheet({ cells, columns, cell, label }: { cells: { label: string; still:
       {cells.map((c, i) => (
         <div key={i} style={{ position: "relative" }}>
           <Stage width={cell.width} height={cell.height}>
-            <Avatar still={c.still} />
+            {/* The credit shows on the single stories; in a sheet of small stages it would cover the figure. */}
+            <Avatar still={c.still} credit="never" />
           </Stage>
           <span style={{ position: "absolute", left: 8, top: 6, font: "600 11px system-ui, sans-serif", color: "var(--color-text, #1C1B22)", background: "#FFFFFFB3", borderRadius: 6, padding: "1px 6px" }}>{label?.(i) ?? c.label}</span>
         </div>

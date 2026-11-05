@@ -159,7 +159,10 @@ export class AvatarScene {
     // Fit the height, and on a narrow stage the shoulders' width too.
     const width = framing === "bust" ? 0.5 : 0.7;
     const distance = Math.max(height / 2 / Math.tan(half), width / 2 / (Math.tan(half) * Math.max(aspect, 0.01)));
-    const target = { x: 0, y: bottom + height / 2, z: 0 };
+    // On a tall, narrow stage the width decides the distance and more of the figure shows: keep the top of the
+    // head where it is and let the extra show below.
+    const visible = 2 * distance * Math.tan(half);
+    const target = { x: 0, y: top - visible / 2, z: 0 };
     this.camera.fov = fov;
     this.camera.aspect = aspect;
     this.camera.position.set(0, target.y + height * 0.04, distance);

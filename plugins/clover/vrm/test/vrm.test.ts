@@ -22,13 +22,26 @@ async function parse(b: Uint8Array): Promise<VRM> {
   return gltf.userData.vrm as VRM;
 }
 
+/** Where two JSON values differ, numbers allowed a float's last bits (and values within a millionth of zero). */
+function differences(a: unknown, b: unknown, at = "$"): string[] {
+  if (typeof a === "number" && typeof b === "number") return Math.abs(a - b) <= 1e-6 + 1e-5 * Math.max(Math.abs(a), Math.abs(b)) ? [] : [`${at}: ${a} ≠ ${b}`];
+  if (Array.isArray(a) && Array.isArray(b)) {
+    if (a.length !== b.length) return [`${at}: ${a.length} items ≠ ${b.length}`];
+    return a.flatMap((item, i) => differences(item, b[i], `${at}[${i}]`));
+  }
+  if (a && b && typeof a === "object" && typeof b === "object") {
+    const keys = new Set([...Object.keys(a), ...Object.keys(b)]);
+    return [...keys].flatMap((k) => differences((a as Record<string, unknown>)[k], (b as Record<string, unknown>)[k], `${at}.${k}`));
+  }
+  return a === b ? [] : [`${at}: ${JSON.stringify(a)} ≠ ${JSON.stringify(b)}`];
+}
+
 describe("Alpha's placeholder model", () => {
   test("the committed file is what the code makes (run `bun run placeholder` after a change)", () => {
     // Equal but for the last bits of a float: Math.sin and friends may round differently from one machine to another.
     const made = makePlaceholderVrm();
     const committed = bytes();
-    const round = (_key: string, value: unknown) => (typeof value === "number" && !Number.isInteger(value) ? Number(value.toPrecision(5)) : value);
-    expect(JSON.stringify(glbJson(made), round)).toBe(JSON.stringify(glbJson(committed), round));
+    expect(differences(glbJson(made), glbJson(committed))).toEqual([]);
     // The BIN chunks, each from its own offset (a JSON number printed a digit longer moves it).
     const bin = (glb: Uint8Array) => {
       const view = new DataView(glb.buffer, glb.byteOffset, glb.byteLength);
