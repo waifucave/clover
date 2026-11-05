@@ -1,8 +1,8 @@
 // Renders every gallery story to a PNG with headless Chromium (software WebGL for the avatar), one page
 // load per story, and checks every sealed part drawn at rest with IntersectionObserver v2 (the visibility
 // check spec §5.5's frames rely on). CI ONLY: it refuses to run anywhere else, so it can never put a
-// browser on someone's desk. Output: out/png/<story>.png, out/index.html (every picture with its title),
-// out/report.json.
+// browser on someone's desk. Output, under $GALLERY_OUT (run.ts sets it to $CLOVER_GALLERY_OUT/base-theme; out/
+// without it): png/<story>.png, index.html (every picture with its title), report.json.
 
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import { dirname, extname, join, normalize } from "node:path";
@@ -17,7 +17,7 @@ const { chromium } = await import("playwright");
 
 const here = dirname(fileURLToPath(import.meta.url));
 const dist = join(here, "dist");
-const out = join(here, "out");
+const out = process.env.GALLERY_OUT ?? join(here, "out");
 mkdirSync(join(out, "png"), { recursive: true });
 
 const ORIGIN = "http://gallery.test";
