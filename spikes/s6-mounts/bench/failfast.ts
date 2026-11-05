@@ -194,6 +194,9 @@ async function slowLink() {
   const kbps = Number(args["slow-kbps"] ?? 2000), mib = Number(args["slow-mib"] ?? 8), jitter = Number(args["slow-jitter-ms"] ?? 20);
   const r: Record<string, unknown> = { scenario: "slow-link", op: `write then read ${mib} MiB`, fault: `${kbps} kbit/s each way, +0–${jitter} ms jitter, 256 KiB buffer` };
   log(`== slow link: ${kbps} kbit/s`);
+  // The read is of another file, made on the holder's own disk before the mount, so it crosses
+  // the link: the file just written can come back from the client's own cache (NFS: 86 ms).
+  await run([BUN, RW, "make", path.join(ROOT, "ff-slow-src.bin"), String(mib)], { timeoutMs: 120_000 });
   await rig.mount(POLICY);
   const before = await rig.helperStats();
   await rig.setLink({ rateKbps: kbps, jitterMs: jitter, bufKB: 256 });
@@ -205,7 +208,7 @@ async function slowLink() {
     r.writeOk = w.ok;
     if (!w.ok) r.writeError = firstError(w.stderr || w.stdout);
     const t1 = performance.now();
-    const rd = await run([BUN, RW, "read", file], { timeoutMs: 600_000 });
+    const rd = await run([BUN, RW, "read", rig.remotePath("ff-slow-src.bin")], { timeoutMs: 600_000 });
     r.readMs = Math.round(performance.now() - t1);
     r.readOk = rd.ok;
     if (!rd.ok) r.readError = firstError(rd.stderr || rd.stdout);

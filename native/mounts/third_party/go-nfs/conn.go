@@ -1,7 +1,7 @@
 // Modified for Clover's spike S6 (native/mounts/third_party/README.md): a computer that is offline
 // answers NFS3ERR_IO, whatever status the handler chose (offlineAsIO); the requests of one
-// connection are handled concurrently, writes in order on their own queue (serve,
-// readRequestHeader); and every NFS procedure served is counted (Calls, CallNanos).
+// connection are handled concurrently, writes in line (serve, readRequestHeader); and every NFS
+// procedure served is counted (Calls, CallNanos).
 package nfs
 
 import (
@@ -60,26 +60,14 @@ func (c *conn) serve(ctx context.Context) {
 	// it. Each request now runs on its own goroutine, at most maxInflight at a time; replies go
 	// out through writeSerializer as before, each whole, in the order they finish.
 	//
-	// WRITE and COMMIT run one at a time, in arrival order, on a queue of their own, while the
-	// loop goes on reading other calls. With writes concurrent, macOS's client let a writer run
-	// on for 18-29 s after the far computer dropped before it reported the error; one at a time,
-	// the writer meets it within the link's bound.
+	// WRITE and COMMIT still run in line, as upstream ran everything, so a lookup can wait behind
+	// one write. With writes concurrent, macOS's client let a writer run on for 18-29 s after the
+	// far computer dropped before it reported the error. A queue of their own, with the loop
+	// reading on (review S5), did the same: 25-29 s, because the loop then takes every write the
+	// client sends and the client never feels the far computer slow down. In line, the writer
+	// meets the drop within the link's bound.
 	const maxInflight = 64
 	sem := make(chan struct{}, maxInflight)
-	writes := make(chan *response, maxInflight)
-	go func() {
-		for {
-			select {
-			case w := <-writes:
-				if !c.serveOne(connCtx, w) {
-					cancel()
-					return
-				}
-			case <-connCtx.Done():
-				return
-			}
-		}
-	}()
 	bio := bufio.NewReader(c.Conn)
 	for {
 		w, err := c.readRequestHeader(connCtx, bio)
@@ -92,9 +80,7 @@ func (c *conn) serve(ctx context.Context) {
 			return
 		}
 		if h := w.req.Header; h.Prog == nfsServiceID && (h.Proc == uint32(NFSProcedureWrite) || h.Proc == uint32(NFSProcedureCommit)) {
-			select {
-			case writes <- w:
-			case <-connCtx.Done():
+			if !c.serveOne(connCtx, w) {
 				return
 			}
 			continue
