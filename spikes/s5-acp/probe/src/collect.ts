@@ -1,9 +1,10 @@
 #!/usr/bin/env bun
 // Copies run folders into spikes/s5-acp/results/<date>/ as committed evidence, scrubbed for a
 // public repo:
-//   * every ACP session id, Antigravity conversation id, tool-call id and MCP session id becomes
-//     a stable placeholder across the whole set (cursor-session-3 is the same session in every
-//     file), so a load still points back at its prompt run;
+//   * every ACP session id, Antigravity conversation id, live tool-call id and MCP session id
+//     becomes a stable placeholder across the whole set (cursor-session-3 is the same session in
+//     every file), so a load still points back at its prompt run. Cursor's load replay renames
+//     its tool calls replay-0-N; those are Cursor's own ids and are kept;
 //   * an object under a `tier` key (Antigravity names the account's plan there) is dropped;
 //   * the agent's slash-command list (it holds the owner's own skills), other folders'
 //     sessions from session/list, and long model lists are cut;

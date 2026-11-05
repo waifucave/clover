@@ -59,7 +59,7 @@ Other flags:
 
 `results/2026-11-05/` holds one folder per real run, made by `collect.ts` from the raw run folders:
 
-* **Placeholders.** Every ACP session id, Antigravity conversation id, tool-call id and MCP session id is replaced by a stable placeholder across the whole set. `cursor-session-3` is the same session in every file, so a load run still points at its prompt run.
+* **Placeholders.** Every ACP session id, Antigravity conversation id and MCP session id, and every tool-call id from a live turn, is replaced by a stable placeholder across the whole set. `cursor-session-3` is the same session in every file, so a load run still points at its prompt run. Cursor's load replay renames its tool calls `replay-0-N` (in the raw runs too), so those ids are Cursor's own and are kept.
 * **What is cut.** Antigravity names the account's plan under `_meta.antigravity.tier`; that object is dropped. Also cut:
   * the agent's slash-command list, which holds the owner's own skills;
   * the owner's sessions from other folders in `session/list` answers;
@@ -67,5 +67,6 @@ Other flags:
   * the user's name, home and temp paths.
 * **The audit.** `collect.ts` refuses to write a file that still holds a UUID, a raw tool-call id, the plan or a home path.
 * **Not copied:** `events.ndjson`. It is derived from the wire, and in these runs its records were mislabelled: the event's own fields were overwritten by its data's `kind` and `ms`. `util/log.ts` now writes `{event, data}` with the log's own `ms` last. `acp.ndjson` and `summary.json` hold everything it did.
+* **`permissions[].ms` in the summaries.** In the committed `summary.json` files, a permission record's own timestamp is still called `ms`: these runs predate its rename to `atMs`. It counts from the client's start, not the log's.
 * **The ledger.** `model-calls.ndjson` is generated, not edited. It keeps the rows `run.ts` wrote for the real agents (`agent`, `check`, `kind`, `at`, and `model` when one was set), with `run` shortened to the folder name. The fake agent's rows are dropped; they are not model calls.
 * **`cli-help/`** holds the `--help` and `--version` output behind the backends table in the report.
