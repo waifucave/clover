@@ -2,10 +2,14 @@
 // "Credentials", §9.1 "The secret store"). Owner: lane C.
 //
 // Where secrets live: on macOS, Keychain items that trust the daemon's binary alone; on Windows and Linux, one
-// encrypted file whose key is in the OS store (Credential Manager or DPAPI, the Secret Service). The headless case
-// with no unlocked keyring is unsettled (spike S8 reports a conflict with "secrets never on disk"), so the contract
-// has a `locked` state instead of any plaintext fallback: a locked store answers `locked` and the daemon runs on
-// without saved credentials until lane C's answer lands.
+// encrypted file whose key is in the OS store (Credential Manager, the Secret Service). A headless Linux computer with
+// no unlocked keyring falls back as §8.5 says (the controller's ruling on spike S8): the key is sealed by
+// `systemd-creds --user` (systemd 256 or later), with the TPM where one exists; otherwise it sits in a key file only
+// the user can read, and the store's status says `plaintext`, which Settings shows on that computer
+// (`ComputerView.secrets`). Bash's fence hides the secrets file and the key file from bots either way (§9.1).
+// `secretKeySourceFor` makes the choice. Cloud computers run unattended, so a headless computer never waits locked;
+// `locked` is only for a desktop store someone can unlock (a keyring still locked at the login screen), and a locked
+// store answers `locked` until it is unlocked.
 //
 // What the contract promises everyone else:
 // * A value leaves the store only through `get`, wrapped in a `Secret`, which prints and serializes as `[secret]`,
@@ -14,6 +18,7 @@
 //   against `owner` (§5.1), and adapters get access tokens by reference with a generation number (§3.3).
 // * Account-wide items sync end-to-end encrypted (§8.5); the device's own key never leaves the device (§8.1).
 // * Every write gives the item a new generation, so a caller holding generation n asks for one newer after a 401.
+import type { Os, SecretKeySource, SecretStoreView } from "@waifucave/clover-protocol";
 
 export type SecretOwner =
   /** The core's own items: sign-ins, API keys, the bridge's per-session tokens. */
@@ -41,19 +46,41 @@ export interface SecretMeta {
   synced: boolean;
 }
 
-export type SecretBackend =
-  /** macOS: Keychain items whose ACL trusts the daemon's binary alone (§9.1). */
-  | "keychain"
-  /** Windows and Linux: one encrypted file, its key in the OS store (§9.1, item 59). */
-  | "encrypted-file"
-  /** Tests and fakes; and a locked store's explicit in-memory unlock, if lane C keeps one (S8). */
-  | "memory";
+/** `keychain` on macOS (items whose ACL trusts the daemon's binary alone, §9.1); `encrypted-file` on Windows and
+ *  Linux (one encrypted file, its key where `keySource` says, item 59); `memory` in tests and fakes. */
+export type SecretBackend = SecretStoreView["backend"];
 
-export interface SecretStoreStatus {
-  backend: SecretBackend;
-  state: "unlocked" | "locked";
-  /** Why it is locked, for Settings: "no unlocked keyring", "the key store refused this logon". Never a value. */
-  reason?: string;
+/** The store's status, as `ComputerView.secrets` carries it to Settings: its backend, where the file's key is, the
+ *  `plaintext` label, and `locked` with its reason. Never a value. */
+export type SecretStoreStatus = SecretStoreView;
+
+/** What the daemon finds at start on Windows or Linux, for `secretKeySourceFor`. */
+export interface KeyStoreProbe {
+  os: Exclude<Os, "macos">;
+  /** Linux: a Secret Service on the session bus, and whether its keyring is unlocked. */
+  secretService?: "unlocked" | "locked" | "absent";
+  /** Someone can unlock a keyring here: a graphical login session. A server or a cloud computer has none. */
+  interactive: boolean;
+  /** `systemd-creds --user` works here (systemd 256 or later). */
+  systemdCreds: boolean;
+  /** A TPM `systemd-creds` can seal to. */
+  tpm: boolean;
+}
+
+/** Where the secrets file's key goes (§8.5): Windows' Credential Manager; an unlocked keyring; a locked one when
+ *  someone can unlock it (the store waits `locked`); otherwise `systemd-creds` (with the TPM where there is one), and
+ *  last a plaintext key file only the user can read. */
+export function secretKeySourceFor(p: KeyStoreProbe): { source: SecretKeySource; tpm: boolean } | { locked: string } {
+  if (p.os === "windows") return { source: "credential-manager", tpm: false };
+  if (p.secretService === "unlocked") return { source: "secret-service", tpm: false };
+  if (p.secretService === "locked" && p.interactive) return { locked: "the keyring is locked: unlock it to use saved logins" };
+  if (p.systemdCreds) return { source: "systemd-creds", tpm: p.tpm };
+  return { source: "key-file", tpm: false };
+}
+
+/** The status a store reports for a key source: `plaintext` exactly when the key sits unsealed in a file. */
+export function encryptedFileStatus(source: SecretKeySource, tpm = false): SecretStoreStatus {
+  return { backend: "encrypted-file", keySource: source, ...(source === "systemd-creds" ? { tpm } : {}), plaintext: source === "key-file", state: "unlocked" };
 }
 
 export type SecretChange = { meta: SecretMeta; deleted: boolean } | { status: SecretStoreStatus };

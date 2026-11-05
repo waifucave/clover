@@ -97,6 +97,51 @@
                 "isMain": {
                   "type": "boolean"
                 },
+                "secrets": {
+                  "type": "object",
+                  "properties": {
+                    "backend": {
+                      "type": "string",
+                      "enum": [
+                        "keychain",
+                        "encrypted-file",
+                        "memory"
+                      ]
+                    },
+                    "keySource": {
+                      "type": "string",
+                      "enum": [
+                        "credential-manager",
+                        "secret-service",
+                        "systemd-creds",
+                        "key-file"
+                      ]
+                    },
+                    "tpm": {
+                      "type": "boolean"
+                    },
+                    "plaintext": {
+                      "type": "boolean"
+                    },
+                    "state": {
+                      "type": "string",
+                      "enum": [
+                        "unlocked",
+                        "locked"
+                      ]
+                    },
+                    "reason": {
+                      "type": "string",
+                      "maxLength": 200
+                    }
+                  },
+                  "required": [
+                    "backend",
+                    "plaintext",
+                    "state"
+                  ],
+                  "additionalProperties": false
+                },
                 "cloud": {
                   "type": "object",
                   "properties": {
@@ -262,6 +307,51 @@
               },
               "isMain": {
                 "type": "boolean"
+              },
+              "secrets": {
+                "type": "object",
+                "properties": {
+                  "backend": {
+                    "type": "string",
+                    "enum": [
+                      "keychain",
+                      "encrypted-file",
+                      "memory"
+                    ]
+                  },
+                  "keySource": {
+                    "type": "string",
+                    "enum": [
+                      "credential-manager",
+                      "secret-service",
+                      "systemd-creds",
+                      "key-file"
+                    ]
+                  },
+                  "tpm": {
+                    "type": "boolean"
+                  },
+                  "plaintext": {
+                    "type": "boolean"
+                  },
+                  "state": {
+                    "type": "string",
+                    "enum": [
+                      "unlocked",
+                      "locked"
+                    ]
+                  },
+                  "reason": {
+                    "type": "string",
+                    "maxLength": 200
+                  }
+                },
+                "required": [
+                  "backend",
+                  "plaintext",
+                  "state"
+                ],
+                "additionalProperties": false
               },
               "cloud": {
                 "type": "object",
@@ -1819,6 +1909,50 @@
               },
               "isMain": {
                 "type": "boolean"
+              },
+              "secrets": {
+                "type": "object",
+                "properties": {
+                  "backend": {
+                    "type": "string",
+                    "enum": [
+                      "keychain",
+                      "encrypted-file",
+                      "memory"
+                    ]
+                  },
+                  "keySource": {
+                    "type": "string",
+                    "enum": [
+                      "credential-manager",
+                      "secret-service",
+                      "systemd-creds",
+                      "key-file"
+                    ]
+                  },
+                  "tpm": {
+                    "type": "boolean"
+                  },
+                  "plaintext": {
+                    "type": "boolean"
+                  },
+                  "state": {
+                    "type": "string",
+                    "enum": [
+                      "unlocked",
+                      "locked"
+                    ]
+                  },
+                  "reason": {
+                    "type": "string",
+                    "maxLength": 200
+                  }
+                },
+                "required": [
+                  "backend",
+                  "plaintext",
+                  "state"
+                ]
               },
               "cloud": {
                 "type": "object",

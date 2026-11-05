@@ -16,6 +16,12 @@
     "level": "ask-risky",
     "state": "online",
     "link": "lan",
-    "isMain": false
+    "isMain": false,
+    "secrets": {
+      "backend": "encrypted-file",
+      "keySource": "credential-manager",
+      "plaintext": false,
+      "state": "unlocked"
+    }
   }
 }

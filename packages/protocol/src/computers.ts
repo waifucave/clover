@@ -7,7 +7,7 @@
 // "computer offline" at once. Holds, the user-working mark and `computers.control` are kept for opensky (§4, §9.2).
 import { z } from "zod";
 import {
-  AnyPluginId, ChangeResult, ComputerName, DeviceId, Empty, Level, Ok, Os, SessionId, Timestamp, TreePath,
+  AnyPluginId, ChangeResult, ComputerName, DeviceId, Empty, Level, Ok, Os, SecretStoreView, SessionId, Timestamp, TreePath,
 } from "./common";
 import { coreEvent, defineEvent, defineMethod } from "./rpc";
 
@@ -27,6 +27,8 @@ export const ComputerView = z.object({
   /** How this computer reaches it. */
   link: z.enum(["self", "lan", "direct", "relay"]).optional(),
   isMain: z.boolean(),
+  /** Where it keeps its secrets, for Settings: a headless one may show the plaintext label (§8.5). */
+  secrets: SecretStoreView.optional(),
   /** A cloud computer's VM (§9.2); its state lives in the registry, not in the plugin folder. */
   cloud: z.object({
     plugin: AnyPluginId,
@@ -210,7 +212,7 @@ export const ToolOutputEvent = coreEvent("tool_output", { callId: z.string().min
 export const COMPUTERS_EVENTS = {
   computerChanged: defineEvent({
     type: "computer_changed", owner: "J", roles: ["app", "cli", "remote", "layer", "plugin-host"], capability: "computers.read", schema: ComputerChangedEvent,
-    fixture: { type: "computer_changed", ts: 1781270000000, computer: { name: "Desktop1", aliases: ["Gaming-PC"], device: "d1sk7t0p3a5b7c9d1e3f5a7b9c1d3e5f", os: "windows", hasDisplay: true, agents: ["claude-code", "codex"], level: "ask-risky", state: "online", link: "lan", isMain: false } },
+    fixture: { type: "computer_changed", ts: 1781270000000, computer: { name: "Desktop1", aliases: ["Gaming-PC"], device: "d1sk7t0p3a5b7c9d1e3f5a7b9c1d3e5f", os: "windows", hasDisplay: true, agents: ["claude-code", "codex"], level: "ask-risky", state: "online", link: "lan", isMain: false, secrets: { backend: "encrypted-file", keySource: "credential-manager", plaintext: false, state: "unlocked" } } },
     doc: "A computer was added or changed state, level or name.",
   }),
   computerRemoved: defineEvent({

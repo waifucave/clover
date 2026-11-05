@@ -4,7 +4,7 @@ import { describe, expect, test } from "bun:test";
 import { isContractError } from "../common";
 import { FakeClock } from "../fakes/clock";
 import { MemorySecretStore } from "../fakes/secret-store";
-import { Secret, secretTokenSource, type SecretChange, type SecretRef } from "../secret-store";
+import { Secret, encryptedFileStatus, secretKeySourceFor, secretTokenSource, type KeyStoreProbe, type SecretChange, type SecretRef } from "../secret-store";
 
 // Built at run time, so no secret-looking literal sits in a fixture.
 const VALUE = ["sk", "test", Math.random().toString(36).slice(2)].join("-");
@@ -68,12 +68,12 @@ describe("MemorySecretStore", () => {
 
   test("a locked store refuses reads and writes until unlocked, and says so to watchers", async () => {
     const store = new MemorySecretStore({ locked: "no unlocked keyring" });
-    expect(store.status()).toEqual({ backend: "memory", state: "locked", reason: "no unlocked keyring" });
+    expect(store.status()).toEqual({ backend: "memory", plaintext: false, state: "locked", reason: "no unlocked keyring" });
     expect(isContractError(await store.set(core("a"), VALUE).catch((e: unknown) => e), "locked")).toBe(true);
     const seen: SecretChange[] = [];
     store.watch((c) => seen.push(c));
     store.unlock();
-    expect(seen).toEqual([{ status: { backend: "memory", state: "unlocked" } }]);
+    expect(seen).toEqual([{ status: { backend: "memory", plaintext: false, state: "unlocked" } }]);
     expect((await store.set(core("a"), VALUE)).generation).toBe(1);
   });
 
@@ -101,6 +101,25 @@ describe("MemorySecretStore", () => {
     expect(refreshed).toEqual([1]);
     // An API key has no refresher: a 401 is the answer.
     expect(await secretTokenSource(store, ref).newer(3)).toBeNull();
+  });
+
+  test("a headless computer never waits locked: systemd-creds where it works, else a key file labelled plaintext", () => {
+    const linux = (over: Partial<KeyStoreProbe>): KeyStoreProbe => ({ os: "linux", secretService: "absent", interactive: false, systemdCreds: false, tpm: false, ...over });
+    expect(secretKeySourceFor({ os: "windows", interactive: true, systemdCreds: false, tpm: true })).toEqual({ source: "credential-manager", tpm: false });
+    expect(secretKeySourceFor(linux({ secretService: "unlocked", interactive: true }))).toEqual({ source: "secret-service", tpm: false });
+    // A desktop keyring someone can unlock: the store waits locked.
+    expect(secretKeySourceFor(linux({ secretService: "locked", interactive: true }))).toHaveProperty("locked");
+    // A server or cloud computer with a locked or missing keyring falls back and runs on.
+    expect(secretKeySourceFor(linux({ secretService: "locked", systemdCreds: true, tpm: true }))).toEqual({ source: "systemd-creds", tpm: true });
+    expect(secretKeySourceFor(linux({ systemdCreds: true }))).toEqual({ source: "systemd-creds", tpm: false });
+    expect(secretKeySourceFor(linux({}))).toEqual({ source: "key-file", tpm: false });
+    // The label reaches Settings through the status (ComputerView.secrets).
+    expect(encryptedFileStatus("key-file")).toEqual({ backend: "encrypted-file", keySource: "key-file", plaintext: true, state: "unlocked" });
+    expect(encryptedFileStatus("systemd-creds", true)).toEqual({ backend: "encrypted-file", keySource: "systemd-creds", tpm: true, plaintext: false, state: "unlocked" });
+    const store = new MemorySecretStore({ status: encryptedFileStatus("key-file") });
+    expect(store.status().plaintext).toBe(true);
+    store.lock("held for the test");
+    expect(store.status()).toMatchObject({ keySource: "key-file", plaintext: true, state: "locked" });
   });
 
   test("names are checked", async () => {

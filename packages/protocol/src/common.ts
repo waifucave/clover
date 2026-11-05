@@ -92,6 +92,32 @@ export const Text = z.union([z.string(), z.object({ en: z.string() }).catchall(z
 export type Text = z.infer<typeof Text>;
 
 export const Os = z.enum(["macos", "windows", "linux"]);
+
+/** Where a computer's secrets file keeps its key (§8.5, §9.1): Windows' Credential Manager; an unlocked Secret Service
+ *  keyring on Linux; on a headless Linux computer with none unlocked, sealed by `systemd-creds --user` (systemd 256 or
+ *  later, with the TPM where one exists); otherwise a key file only the user can read, which Settings labels
+ *  plaintext. Bash's fence hides the secrets file and any key file from bots on every one (§9.1). */
+export const SECRET_KEY_SOURCES = ["credential-manager", "secret-service", "systemd-creds", "key-file"] as const;
+export const SecretKeySource = z.enum(SECRET_KEY_SOURCES);
+export type SecretKeySource = z.infer<typeof SecretKeySource>;
+
+/** A computer's secret store as Settings shows it (lane C). Never a value. */
+export const SecretStoreView = z.object({
+  /** The Keychain on macOS; one encrypted file on Windows and Linux; memory in tests. */
+  backend: z.enum(["keychain", "encrypted-file", "memory"]),
+  keySource: SecretKeySource.optional(),
+  /** `systemd-creds` sealed the key with the TPM as well. */
+  tpm: z.boolean().optional(),
+  /** The label Settings shows when the key sits on disk unsealed (`key-file`): this computer's secrets are as safe as
+   *  the user's own account on it. */
+  plaintext: z.boolean(),
+  /** `locked` only for a desktop store someone can unlock (a locked keyring at the login screen); a headless computer
+   *  falls back to `systemd-creds` or the key file and never waits. */
+  state: z.enum(["unlocked", "locked"]),
+  /** Why it is locked, for Settings. */
+  reason: z.string().max(200).optional(),
+});
+export type SecretStoreView = z.infer<typeof SecretStoreView>;
 export type Os = z.infer<typeof Os>;
 /** The daemon's four targets; no darwin-x64, since macOS 27 is Apple silicon only (§3.1, §4). */
 export const Platform = z.enum(["darwin-arm64", "windows-x64", "linux-x64", "linux-arm64"]);

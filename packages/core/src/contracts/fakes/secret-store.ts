@@ -18,9 +18,14 @@ export class MemorySecretStore implements SecretStore {
   #status: SecretStoreStatus;
   readonly #clock: Pick<Clock, "now"> | undefined;
 
-  constructor(opts: { clock?: Pick<Clock, "now">; locked?: string } = {}) {
+  readonly #unlockedStatus: SecretStoreStatus;
+
+  /** `status`: the backend it stands for (`encryptedFileStatus("key-file")` for a headless computer's); memory by
+   *  default. */
+  constructor(opts: { clock?: Pick<Clock, "now">; locked?: string; status?: SecretStoreStatus } = {}) {
     this.#clock = opts.clock;
-    this.#status = opts.locked === undefined ? { backend: "memory", state: "unlocked" } : { backend: "memory", state: "locked", reason: opts.locked };
+    this.#unlockedStatus = opts.status ?? { backend: "memory", plaintext: false, state: "unlocked" };
+    this.#status = opts.locked === undefined ? { ...this.#unlockedStatus } : { ...this.#unlockedStatus, state: "locked", reason: opts.locked };
   }
 
   status(): SecretStoreStatus {
@@ -28,12 +33,12 @@ export class MemorySecretStore implements SecretStore {
   }
 
   lock(reason = "locked by the test"): void {
-    this.#status = { backend: "memory", state: "locked", reason };
+    this.#status = { ...this.#unlockedStatus, state: "locked", reason };
     this.#listeners.emit({ status: this.status() });
   }
 
   unlock(): void {
-    this.#status = { backend: "memory", state: "unlocked" };
+    this.#status = { ...this.#unlockedStatus };
     this.#listeners.emit({ status: this.status() });
   }
 
