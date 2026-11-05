@@ -5,7 +5,9 @@
 //   Windows:      the lock file opened with no sharing (CreateFileW, dwShareMode 0) for the process's life
 // Only "another process holds it" means busy (EWOULDBLOCK; ERROR_SHARING_VIOLATION). Any other failure throws, so
 // the daemon exits non-zero and its login item retries, instead of exiting 0 as a second daemon would and leaving
-// the pair down until the next login (round eight: an antivirus scan holding the file at login, a full disk).
+// the pair down until the next login (round eight: a full disk, a permissions error). A process that opens the file
+// without sharing, such as a virus scanner at login, still looks like a second daemon on Windows; the report gives
+// lane C the fix (dial the socket before exiting 0).
 import { openSync } from "node:fs";
 
 export interface HeldLock { kind: string; release(): void }
