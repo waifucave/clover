@@ -208,7 +208,9 @@ describe("child-parser contract (clover-sdk coerceMaterial)", () => {
     // 0.0.52 → 0.0.53 (host-tool images reach the model): keychain-store.ts diff EMPTY; the mirror stands.
     // 0.0.53 → 0.0.54 (sandbox violations reach the model): keychain-store.ts diff EMPTY; the mirror stands.
     // 0.0.54 → 0.0.55 (free-text questions, case-variant write roots): keychain-store.ts diff EMPTY; the mirror stands.
-    expect(pkg.version).toBe("0.0.55");
+    // 0.0.55 → 0.0.63 (A-M1: the packages are @waifucave/clover-*): keychain-store.ts diff is its three import
+    // specifiers only (`git diff v0.0.55 HEAD -- packages/runtime/src/provider/keychain-store.ts`); the mirror stands.
+    expect(pkg.version).toBe("0.0.63");
   });
 
 
