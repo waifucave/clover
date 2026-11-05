@@ -1,0 +1,2 @@
+[test]
+# The gallery has no tests of its own: each part tests itself; CI renders this page.

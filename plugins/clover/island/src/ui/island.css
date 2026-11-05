@@ -1,0 +1,757 @@
+/* Clover's island: the strip, the cards born from the housing, the waiting pill and the open island,
+   rebuilt from Winter's Swift island (docs/claude/island.md). Black liquid over any desktop, dark
+   whatever the appearance. Every colour reads a token; the fallback after it is the base theme's value
+   (`styles.test.ts` keeps the two equal).
+
+   Sealed approval parts sit inside `.clv-card-shell`, `.clv-open-body` and `.clv-inner-card`: none of
+   those, nor anything between them and a part, may carry a filter, an opacity below 1 or a transform
+   other than a move or an enlargement at rest. The birth and morph set those inline, only while moving. */
+
+.clv-island {
+  position: relative;
+  font-family: var(--font-sans, system-ui, -apple-system, "Segoe UI Variable Text", "Segoe UI", "Noto Sans", Ubuntu, Cantarell, sans-serif);
+  color: var(--island-text, #FFFFFF);
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+  line-height: 1.25;
+}
+
+.clv-island button {
+  font: inherit;
+  color: inherit;
+  cursor: default;
+}
+
+/* The slim strip. */
+
+.clv-strip {
+  position: absolute;
+  top: 0;
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+  box-sizing: border-box;
+  background: var(--island-surface, #000000);
+  border-radius: 0 0 10px 10px;
+  transition: box-shadow 150ms ease-out;
+}
+
+.clv-strip[data-hovered="true"] {
+  box-shadow:
+    0 0 8px #00000073,
+    0 0 20px #00000038;
+}
+
+.clv-strip-wing {
+  flex: none;
+  width: 46px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  font-size: var(--font-size-label, 12px);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.clv-strip-housing {
+  flex: 1 1 auto;
+}
+
+.clv-strip-tab {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+}
+
+.clv-strip-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--font-size-label, 12px);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.clv-attention {
+  color: var(--island-attention, #FFC747);
+}
+
+.clv-working {
+  color: var(--island-working, #FF7AB6);
+}
+
+/* A card's panel, its liquid birth and its shell. */
+
+.clv-card-panel {
+  position: absolute;
+  top: 0;
+  pointer-events: none;
+}
+
+.clv-melt {
+  position: absolute;
+  inset: 0;
+  overflow: visible;
+}
+
+.clv-card-shell {
+  position: absolute;
+  overflow: hidden;
+  background: var(--island-surface, #000000);
+  box-shadow: var(--island-shadow, 0 4px 24px #00000073);
+  transform-origin: 50% 0;
+  pointer-events: auto;
+}
+
+.clv-card-shell::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow: inset 0 0 0 1px var(--island-rim, #FFFFFF17);
+  pointer-events: none;
+}
+
+.clv-card-content {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  box-sizing: border-box;
+  width: 400px;
+  padding: 16px;
+}
+
+.clv-card-parts {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.clv-card-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 14px;
+  font-size: var(--font-size-caption, 11px);
+  font-weight: 500;
+  color: var(--island-muted, #8B8B8B);
+}
+
+.clv-card-header > svg {
+  flex: none;
+  color: var(--island-attention, #FFC747);
+  --glyph-cut: var(--island-surface, #000000);
+}
+
+.clv-card-header-line {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.clv-card-header-trailing {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+}
+
+.clv-answer-line {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.clv-answer-words {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 30px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  font-size: var(--font-size-body, 14px);
+  line-height: 1.38;
+  color: var(--island-text, #FFFFFF);
+}
+
+.clv-host-line {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--font-mono, ui-monospace, "SF Mono", "Cascadia Mono", "JetBrains Mono", "DejaVu Sans Mono", Menlo, Consolas, monospace);
+  font-size: var(--font-size-label, 12px);
+  color: var(--island-muted, #8B8B8B);
+}
+
+.clv-command {
+  font-family: var(--font-mono, ui-monospace, "SF Mono", "Cascadia Mono", "JetBrains Mono", "DejaVu Sans Mono", Menlo, Consolas, monospace);
+  font-size: var(--font-size-label, 12px);
+  line-height: 1.45;
+  color: var(--island-text, #FFFFFF);
+  background: var(--island-option, #FFFFFF1F);
+  border-radius: 10px;
+  padding: 8px 10px;
+}
+
+/* The ✕ and ✓ circles: the island's own (a question's), and the slots sealed buttons fill. */
+
+.clv-circle,
+.clv-sealed-slot {
+  flex: none;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  padding: 0;
+  font-weight: 700;
+  transition: box-shadow 150ms ease-out;
+}
+
+.clv-circle[data-role="refuse"],
+.clv-sealed-slot[data-role="refuse"] {
+  background: var(--island-refuse, #FFFFFF);
+  color: var(--island-refuse-text, #000000);
+}
+
+.clv-circle[data-role="accept"],
+.clv-sealed-slot[data-role="accept"] {
+  background: var(--island-accept, #0A85FF);
+  color: var(--island-accept-text, #FFFFFF);
+}
+
+.clv-circle[data-role="refuse"]:hover,
+.clv-sealed-slot[data-role="refuse"]:hover,
+.clv-circle[data-role="refuse"][data-hover="true"],
+.clv-sealed-slot[data-role="refuse"][data-hover="true"] {
+  box-shadow:
+    0 0 8px #FFFFFF73,
+    0 0 20px #FFFFFF38;
+}
+
+.clv-circle[data-role="accept"]:hover,
+.clv-sealed-slot[data-role="accept"]:hover,
+.clv-circle[data-role="accept"][data-hover="true"],
+.clv-sealed-slot[data-role="accept"][data-hover="true"] {
+  box-shadow:
+    0 0 8px #0A85FF73,
+    0 0 20px #0A85FF38;
+}
+
+.clv-circle:disabled {
+  background: var(--island-option, #FFFFFF1F);
+  color: var(--island-faint, #FFFFFF59);
+  box-shadow: none;
+}
+
+.clv-sealed-slot > * {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  padding: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: inherit;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* A question. */
+
+.clv-question-text {
+  font-size: var(--font-size-body, 14px);
+  line-height: 1.38;
+  color: var(--island-text, #FFFFFF);
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.clv-options {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.clv-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 30px;
+  box-sizing: border-box;
+  padding: 5px 12px;
+  border: 0;
+  border-radius: 15px;
+  background: var(--island-option, #FFFFFF1F);
+  color: var(--island-text, #FFFFFF);
+  font-size: var(--font-size-body, 14px);
+  text-align: left;
+  transition: background-color 150ms ease-out;
+}
+
+.clv-option:hover,
+.clv-option[data-hover="true"] {
+  background: var(--island-option-hover, #FFFFFF2E);
+}
+
+.clv-option[aria-checked="true"] {
+  background: var(--island-text, #FFFFFF);
+  color: var(--island-surface, #000000);
+}
+
+.clv-option-label {
+  flex: 1 1 auto;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.clv-option-box {
+  flex: none;
+  width: 13px;
+  height: 13px;
+  border-radius: 4px;
+  box-shadow: inset 0 0 0 1.5px currentColor;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.clv-other {
+  height: 30px;
+  box-sizing: border-box;
+  border: 0;
+  border-radius: 15px;
+  padding: 0 12px;
+  background: #FFFFFF14;
+  color: var(--island-text, #FFFFFF);
+  font: inherit;
+  font-size: var(--font-size-body, 14px);
+  outline: none;
+  user-select: text;
+}
+
+.clv-other::placeholder {
+  color: var(--island-faint, #FFFFFF59);
+}
+
+.clv-card-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  min-height: 30px;
+}
+
+.clv-card-status {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: var(--font-size-caption, 11px);
+  color: var(--island-attention, #FFC747);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The waiting pill under a hovered card. */
+
+.clv-waiting {
+  position: absolute;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 16px;
+  background: var(--island-surface, #000000);
+  color: var(--island-text, #FFFFFF);
+  box-shadow:
+    inset 0 0 0 1px var(--island-rim, #FFFFFF17),
+    0 3px 20px #00000073;
+  font-size: var(--font-size-label, 12px);
+  font-weight: 500;
+  transform-origin: 50% 0;
+  pointer-events: auto;
+}
+
+.clv-waiting > svg {
+  flex: none;
+  color: var(--island-attention, #FFC747);
+  font-size: var(--font-size-caption, 11px);
+  --glyph-cut: var(--island-surface, #000000);
+}
+
+.clv-waiting-line {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* The open island. */
+
+.clv-open {
+  position: absolute;
+  top: 0;
+}
+
+.clv-open-shadow {
+  position: absolute;
+  pointer-events: none;
+}
+
+.clv-open-shadow > div {
+  position: absolute;
+  inset: 40px;
+  box-shadow: 0 6px 36px #00000073;
+}
+
+.clv-open-body {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  background: var(--island-surface, #000000);
+}
+
+.clv-open-shoulder {
+  position: absolute;
+  top: 0;
+  overflow: visible;
+}
+
+.clv-open-shoulder path {
+  fill: var(--island-surface, #000000);
+}
+
+.clv-open-content {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  display: flex;
+  flex-direction: column;
+}
+
+.clv-open-header {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  box-sizing: border-box;
+  padding: 0 20px;
+}
+
+.clv-open-header-side {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.clv-open-header-side[data-side="trailing"] {
+  justify-content: flex-end;
+}
+
+.clv-open-title {
+  min-width: 0;
+  font-size: var(--font-size-body, 14px);
+  color: var(--island-text, #FFFFFF);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.clv-count-badge {
+  flex: none;
+  box-sizing: border-box;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: 9px;
+  background: var(--island-attention, #FFC747);
+  color: var(--island-surface, #000000);
+  font-size: var(--font-size-caption, 11px);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.clv-dots {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.clv-dot {
+  width: 6px;
+  height: 6px;
+  margin: 6px 0;
+  padding: 0;
+  border: 0;
+  border-radius: 3px;
+  background: #FFFFFF4D;
+}
+
+.clv-dot[aria-selected="true"] {
+  width: 16px;
+  background: var(--island-text, #FFFFFF);
+}
+
+.clv-tab-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  position: relative;
+}
+
+.clv-tab-scroll {
+  position: absolute;
+  inset: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: #FFFFFF40 transparent;
+}
+
+.clv-tab-flat {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+
+/* Needs you. */
+
+.clv-needs {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 0 14px 14px;
+}
+
+.clv-needs-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.clv-needs-row > .clv-card-header {
+  padding: 0 6px;
+}
+
+.clv-inner-card {
+  position: relative;
+  padding: 16px;
+  border-radius: 28px;
+  background: var(--island-card, #181818);
+}
+
+.clv-inner-card::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow: inset 0 0 0 0.5px var(--island-card-rim, #3C3C3C);
+  pointer-events: none;
+}
+
+.clv-empty {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: var(--island-muted, #8B8B8B);
+  font-size: var(--font-size-control, 13px);
+}
+
+.clv-empty > svg {
+  font-size: 28px;
+}
+
+/* The tabs' rows (Winter's "island visual language"): no boxes, typography carries the hierarchy,
+   quiet at rest and lifting under the pointer. */
+
+.clv-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 0 20px 14px;
+}
+
+.clv-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  transition: padding 300ms cubic-bezier(0.2, 0.9, 0.3, 1);
+}
+
+.clv-row[data-hovered="true"] {
+  padding: 2px 0;
+}
+
+.clv-row-mark {
+  flex: none;
+  width: 18px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--font-size-tiny, 10px);
+}
+
+.clv-row-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.clv-row-title-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 20px;
+}
+
+.clv-row-title {
+  flex: 0 1 auto;
+  min-width: 0;
+  font-size: var(--font-size-label, 12px);
+  font-weight: 500;
+  color: #FFFFFFEB;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transform-origin: 0 50%;
+}
+
+.clv-row[data-quiet="true"] .clv-row-title {
+  color: #FFFFFFA6;
+}
+
+.clv-row[data-hovered="true"] .clv-row-title {
+  color: var(--island-text, #FFFFFF);
+  transform: scale(1.12);
+  margin-right: 14px;
+}
+
+.clv-row-side {
+  flex: 0 1 auto;
+  min-width: 0;
+  font-size: var(--font-size-tiny, 10px);
+  color: var(--island-muted, #8B8B8B);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.clv-row-spacer {
+  flex: 1 1 auto;
+}
+
+.clv-row-words {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 16px;
+  font-size: var(--font-size-tiny, 10px);
+  color: var(--island-muted, #8B8B8B);
+}
+
+.clv-row-words > span:first-child {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.clv-mark-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.clv-mark-ring {
+  width: 6.5px;
+  height: 6.5px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1.4px currentColor;
+}
+
+.clv-status-word {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: var(--font-size-tiny, 10px);
+  font-variant-numeric: tabular-nums;
+  color: var(--island-muted, #8B8B8B);
+  white-space: nowrap;
+}
+
+.clv-group-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 18px;
+  font-size: var(--font-size-caption, 11px);
+  font-weight: 600;
+  color: var(--island-text, #FFFFFF);
+}
+
+.clv-group-meta {
+  font-size: var(--font-size-tiny, 10px);
+  font-weight: 400;
+  color: var(--island-muted, #8B8B8B);
+}
+
+.clv-link-words,
+.clv-action-words {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font-size: var(--font-size-tiny, 10px);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  color: #FFFFFFEB;
+  white-space: nowrap;
+}
+
+.clv-action-words[data-tone="amber"] {
+  color: var(--island-attention, #FFC747);
+}
+
+.clv-action-words[data-tone="red"] {
+  color: var(--island-danger, #FF6B70);
+}
+
+.clv-action-words[data-tone="muted"] {
+  color: var(--island-muted, #8B8B8B);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .clv-row,
+  .clv-row-title,
+  .clv-strip,
+  .clv-dot {
+    transition: none;
+  }
+}
