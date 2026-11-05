@@ -1,13 +1,18 @@
-//go:build windows
+//go:build windows || (darwin && cgo)
 
-// Package winfsp serves the folder tree through WinFsp's FUSE layer (cgofuse, no cgo).
+// Package cgofs serves the folder tree through a path-based FUSE API (cgofuse):
 //
-//	T:\                  the tree's root (a drive letter, spec §9.1)
-//	T:\home\<self>       a symlink to this computer's own home folder
-//	T:\home\<other>      another computer's home folder, over its link
-package winfsp
+//   - Windows: WinFsp's FUSE layer, without cgo (cgofuse loads WinFsp's DLL itself).
+//     T:\ is the tree's root (a drive letter, spec §9.1), T:\home\<self> a link to this
+//     computer's home folder, T:\home\<other> another computer's home over its link.
+//   - macOS (cgo, macFUSE's libfuse): only to drive macFUSE's FSKit backend in CI, which is how
+//     the spike reproduces FSKit's short-read bug without a module of its own (see the report).
+package cgofs
 
 import (
+	"os"
+	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -36,12 +41,13 @@ type Tree struct {
 	started time.Time
 }
 
-// Mount mounts the tree at a drive letter ("T:") or an absent directory; it blocks until unmount.
+// Mount mounts the tree and blocks until unmount. Windows: a drive letter ("T:"), "\\.\T:" for
+// the Mount Manager, or an absent directory. macOS: a directory, through macFUSE.
 func Mount(mountpoint string, t *Tree, debug bool) bool {
 	t.started = time.Now()
 	t.Host = fuse.NewFileSystemHost(t)
 	t.Host.SetCapReaddirPlus(t.Policy.TTL != 0)
-	t.Host.SetCapCaseInsensitive(true) // Windows programs expect it; see the report on case clashes
+	t.Host.SetCapCaseInsensitive(runtime.GOOS == "windows") // see the report on case clashes
 	for _, c := range t.Computers {
 		if c.FS != nil {
 			comp := c
@@ -50,17 +56,26 @@ func Mount(mountpoint string, t *Tree, debug bool) bool {
 		}
 	}
 	timeout := int(t.Policy.KernelTTL / time.Millisecond)
-	opts := []string{
-		"-o", "uid=-1,gid=-1", // files belong to the user running the helper
-		"-o", "volname=Clover",
-		"-o", "FileSystemName=Clover",
-		"-o", "FileInfoTimeout=" + itoa(timeout),
-		"-o", "DirInfoTimeout=" + itoa(timeout),
-		"-o", "VolumeInfoTimeout=" + itoa(maxInt(timeout, 1000)),
-		"-o", "KeepFileCache",
-	}
-	if !t.Policy.KeepCache {
-		opts = opts[:len(opts)-2]
+	var opts []string
+	if runtime.GOOS == "windows" {
+		opts = []string{
+			"-o", "uid=-1,gid=-1", // files belong to the user running the helper
+			"-o", "volname=Clover",
+			"-o", "FileSystemName=Clover",
+			"-o", "FileInfoTimeout=" + itoa(timeout),
+			"-o", "DirInfoTimeout=" + itoa(timeout),
+			"-o", "VolumeInfoTimeout=" + itoa(maxInt(timeout, 1000)),
+		}
+		if t.Policy.KeepCache {
+			opts = append(opts, "-o", "KeepFileCache")
+		}
+	} else {
+		secs := strconv.FormatFloat(t.Policy.KernelTTL.Seconds(), 'f', 3, 64)
+		opts = []string{"-o", "volname=Clover,nobrowse,noappledouble,noapplexattr",
+			"-o", "attr_timeout=" + secs + ",entry_timeout=" + secs + ",negative_timeout=" + secs}
+		if b := os.Getenv("CLOVER_MACFUSE_BACKEND"); b != "" {
+			opts = append(opts, "-o", "backend="+b) // "fskit": macFUSE's FSKit backend
+		}
 	}
 	if debug {
 		opts = append(opts, "-d")

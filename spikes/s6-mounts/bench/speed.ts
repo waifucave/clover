@@ -53,6 +53,8 @@ const rig = new Rig({
   root: ROOT, tree: TREE, helperBin: path.resolve(args.helper!), logs: path.join(path.dirname(OUT), "logs", path.basename(OUT, ".json")),
   remoteName: "Desktop1", selfName: "Runner", selfHome: path.dirname(ROOT),
 });
+if (args["fskit-url"]) rig.fskit = { url: args["fskit-url"], mountpoint: path.resolve(args["fskit-mountpoint"]!) };
+if (args["nfs-helper"]) rig.nfs = { bin: path.resolve(args["nfs-helper"]), port: 12049, mountpoint: path.resolve(args.tree!) };
 
 async function once(w: Workload, base: string): Promise<Omit<Row, "workload" | "where" | "phase">> {
   const tag = `${process.pid}-${seq++}`;
@@ -112,6 +114,7 @@ async function main() {
   } finally {
     await rig.stopAll();
   }
+  if (rig.nfs) result.nfs = { mountedAs: rig.nfs.mountedAs, userMountError: rig.nfs.mountError };
   result.finished = new Date().toISOString();
   save();
   report();

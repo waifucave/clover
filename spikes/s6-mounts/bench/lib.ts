@@ -93,6 +93,10 @@ export class Rig {
   service?: Proc;
   link?: Proc;
   helper?: Proc;
+  /** fskit: when set, the tree is an FSKit volume mounted by `mount -F` (the macOS live gate). */
+  fskit?: { url: string; mountpoint: string };
+  /** nfs: the tree entry is an NFSv3 export on localhost (clover-nfs) mounted by mount_nfs (macOS). */
+  nfs?: { bin: string; port: number; mountpoint: string; sudo?: boolean; mountedAs?: string; mountError?: string };
   constructor(public o: { root: string; tree: string; helperBin: string; logs: string; remoteName: string; selfName: string; selfHome: string }) {}
 
   async startService(extra: string[] = []) {
@@ -121,9 +125,16 @@ export class Rig {
 
   /** The tree's root as a path ("T:\\" on Windows, where the mount argument is "T:"). */
   get treeRoot() { return IS_WIN && /^[A-Za-z]:$/.test(this.o.tree) ? this.o.tree + "\\" : this.o.tree; }
-  remotePath(...p: string[]) { return path.join(this.treeRoot, "home", this.o.remoteName, ...p); }
+  remotePath(...p: string[]) {
+    // On macOS each other computer is its own FSKit volume, mounted where its entry belongs.
+    if (this.fskit) return path.join(this.fskit.mountpoint, ...p);
+    if (this.nfs) return path.join(this.nfs.mountpoint, ...p);
+    return path.join(this.treeRoot, "home", this.o.remoteName, ...p);
+  }
 
   async mount(policy: string, extra: string[] = []) {
+    if (this.fskit) return this.mountFskit();
+    if (this.nfs) return this.mountNfs(policy);
     if (!IS_WIN) fs.mkdirSync(this.o.tree, { recursive: true });
     this.helper = spawnLogged("helper", [
       this.o.helperBin, "--mountpoint", this.o.tree, "--policy", policy,
@@ -141,7 +152,60 @@ export class Rig {
     throw new Error(`mount did not appear: ${tail(this.helper.logFile)}`);
   }
 
+  async mountFskit() {
+    const f = this.fskit!;
+    fs.mkdirSync(f.mountpoint, { recursive: true });
+    const r = await run(["/sbin/mount", "-F", "-t", "clovertree", f.url, f.mountpoint], { timeoutMs: 30000 });
+    if (!r.ok) throw new Error(`mount -F failed: ${(r.stderr || r.stdout).trim()}`);
+    this.helper = { proc: { exitCode: null, kill() {}, exited: Promise.resolve(0) } as any, name: "fskit", logFile: "" };
+  }
+
+  async mountNfs(policy: string) {
+    const n = this.nfs!;
+    fs.mkdirSync(n.mountpoint, { recursive: true });
+    this.helper = spawnLogged("helper", [n.bin, "--listen", `127.0.0.1:${n.port}`, "--remote", `${this.o.remoteName}=127.0.0.1:${PORTS.link}`,
+      "--policy", policy, "--status", `127.0.0.1:${PORTS.helperStatus}`], this.o.logs);
+    await waitPort(n.port);
+    // soft + short timeo: if the helper itself dies, calls fail instead of hanging; nobrowse keeps
+    // the volume out of Finder; actimeo matches the plain policy's 1 s.
+    const ac = policy === "nocache" ? "noac" : "actimeo=1";
+    const opts = `vers=3,tcp,port=${n.port},mountport=${n.port},nolocks,locallocks,soft,intr,timeo=10,retrans=2,rsize=1048576,wsize=1048576,readahead=16,nobrowse,${ac}`;
+    const cmd = ["/sbin/mount_nfs", "-o", opts, "127.0.0.1:/", n.mountpoint];
+    if (!n.sudo) {
+      const r = await run(cmd, { timeoutMs: 30000 });
+      if (r.ok) { n.mountedAs = "user"; return; }
+      n.mountError = (r.stderr || r.stdout).trim().slice(0, 300);
+      log(`mount_nfs as the user failed: ${n.mountError}; trying sudo`);
+      n.sudo = true;
+    }
+    const r = await run(["sudo", ...cmd], { timeoutMs: 30000 });
+    if (!r.ok) throw new Error(`mount_nfs failed: ${(r.stderr || r.stdout).trim()}`);
+    n.mountedAs = "root (sudo)";
+  }
+
+  /** What the daemon does after its helper died: take the dead mount away so it can remount. */
+  async detach() {
+    if (IS_LINUX) return (await run(["fusermount3", "-u", "-z", this.o.tree], { timeoutMs: 5000 })).ok;
+    if (process.platform === "darwin" && !this.nfs && !this.fskit) return (await run(["/sbin/umount", "-f", this.o.tree], { timeoutMs: 15000 })).ok;
+    if (this.nfs) return (await run([...(this.nfs.sudo ? ["sudo"] : []), "/sbin/umount", "-f", this.nfs.mountpoint], { timeoutMs: 15000 })).ok;
+    return true;
+  }
+
   async unmount() {
+    if (this.nfs) {
+      const h = this.helper;
+      this.helper = undefined;
+      await run([...(this.nfs.sudo ? ["sudo"] : []), "/sbin/umount", this.nfs.mountpoint], { timeoutMs: 15000 });
+      if (await mounted(this.nfs.mountpoint)) await run([...(this.nfs.sudo ? ["sudo"] : []), "/sbin/umount", "-f", this.nfs.mountpoint], { timeoutMs: 15000 });
+      if (h) { h.proc.kill(9); await h.proc.exited; }
+      return;
+    }
+    if (this.fskit) {
+      if (!this.helper) return;
+      this.helper = undefined;
+      await run(["/sbin/umount", this.fskit.mountpoint], { timeoutMs: 15000 });
+      return;
+    }
     if (!this.helper) return;
     const h = this.helper;
     this.helper = undefined;
@@ -153,6 +217,7 @@ export class Rig {
     const exited = await Promise.race([h.proc.exited.then(() => true), sleep(5000).then(() => false)]);
     if (!exited) { h.proc.kill(9); await h.proc.exited; }
     if (IS_LINUX) await run(["fusermount3", "-u", "-z", this.o.tree], { timeoutMs: 5000 });
+    if (process.platform === "darwin" && (await mounted(this.o.tree))) await run(["/sbin/umount", "-f", this.o.tree], { timeoutMs: 15000 });
     // Wait until the mount is gone.
     const end = Date.now() + 10000;
     while (Date.now() < end) {
@@ -180,11 +245,12 @@ export function tail(file: string, n = 15): string {
   try { return fs.readFileSync(file, "utf8").trim().split("\n").slice(-n).join("\n"); } catch { return ""; }
 }
 
-/** Processes the kernel left stuck: uninterruptible sleep (D) or zombies (Z). Linux only. */
+/** Processes the kernel left stuck: uninterruptible waits (D on Linux, U on macOS) or zombies (Z). */
 export async function stuckProcesses(): Promise<Array<{ pid: number; stat: string; comm: string }>> {
-  if (!IS_LINUX) return [];
+  if (IS_WIN) return [];
   const r = await run(["ps", "-eo", "pid=,stat=,comm="], { timeoutMs: 5000 });
-  return r.stdout.split("\n").map((l) => l.trim().split(/\s+/)).filter((p) => p.length >= 3 && /^[DZ]/.test(p[1]!))
+  const stuck = IS_LINUX ? /^[DZ]/ : /^[UZ]/;
+  return r.stdout.split("\n").map((l) => l.trim().split(/\s+/)).filter((p) => p.length >= 3 && stuck.test(p[1]!))
     .map((p) => ({ pid: Number(p[0]), stat: p[1]!, comm: p.slice(2).join(" ") }))
     .filter((p) => !/kworker|jbd2|kthread/.test(p.comm));
 }

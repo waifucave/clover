@@ -113,6 +113,10 @@ jobs:
               bun "$S6/bench/speed.ts" "${common[@]}" --policies plain --rtts 0,20,80 --local 0 --timeout 600 --out "$res/${{ matrix.os }}-speed-plain.json"
               bun "$S6/bench/speed.ts" "${common[@]}" --policies nocache --rtts 0 --local 0 --timeout 600 --out "$res/${{ matrix.os }}-speed-nocache.json" ;;
           esac
+      - name: Git for Windows inside the tree (drive letter vs Mount Manager)
+        if: matrix.os == 'windows' && matrix.suite == 'failfast'
+        shell: pwsh
+        run: ./spikes/s6-mounts/ci/windows-git.ps1 -Helper "$env:RUNNER_TEMP\s6\clover-mount.exe" -Export "$env:RUNNER_TEMP\s6\export" -Serve "$env:GITHUB_WORKSPACE\spikes\s6-mounts\server\serve.ts"
       - name: Results
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -122,9 +126,9 @@ jobs:
           if-no-files-found: warn
 
   macos:
-    name: macos · ${{ matrix.runner }} · FSKit module
+    name: macos · ${{ matrix.runner }} · FSKit module + NFS loopback
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 40
+    timeout-minutes: 170
     strategy:
       fail-fast: false
       matrix:
@@ -142,6 +146,8 @@ jobs:
           bun-version-file: .bun-version
       - name: Protocol tests against the real file service (no mount)
         working-directory: native/mounts
+        env:
+          CGO_ENABLED: "0"
         run: CLOVER_S6_SERVE="$GITHUB_WORKSPACE/spikes/s6-mounts/server/serve.ts" go test ./... -count=1 -v
       - name: xcodegen
         run: brew install xcodegen >/dev/null 2>&1 || brew install xcodegen
@@ -154,10 +160,94 @@ jobs:
             cat "$RUNNER_TEMP/s6/results/probe.txt" | tail -80
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: 24
+      - name: NFS loopback (the alternative to FSKit) — build, prepare
+        run: |
+          (cd native/mounts && CGO_ENABLED=0 go build -o "$RUNNER_TEMP/s6/clover-nfs" ./cmd/clover-nfs)
+          git config --global --add safe.directory '*'
+          bash spikes/s6-mounts/ci/prepare.sh "$RUNNER_TEMP/s6/export"
+      - name: NFS loopback — coherence and fail-fast
+        run: |
+          res="$RUNNER_TEMP/s6/results"; mkdir -p "$RUNNER_TEMP/s6/nfs-tree"
+          common=(--root "$RUNNER_TEMP/s6/export" --tree "$RUNNER_TEMP/s6/nfs-tree" --helper none --nfs-helper "$RUNNER_TEMP/s6/clover-nfs")
+          bun spikes/s6-mounts/bench/coherence.ts "${common[@]}" --policies plain --out "$res/macos-nfs-coherence.json" || echo "coherence failed"
+          bun spikes/s6-mounts/bench/failfast.ts "${common[@]}" --copy-src "$GITHUB_WORKSPACE/packages/protocol" --rtt 20 --policy plain --out "$res/macos-nfs-failfast.json"
+      - name: NFS loopback — speed
+        if: matrix.runner == 'xcode-27'
+        run: |
+          res="$RUNNER_TEMP/s6/results"
+          bun spikes/s6-mounts/bench/speed.ts --root "$RUNNER_TEMP/s6/export" --tree "$RUNNER_TEMP/s6/nfs-tree" --helper none \
+            --nfs-helper "$RUNNER_TEMP/s6/clover-nfs" --copy-src "$GITHUB_WORKSPACE/packages/protocol" \
+            --policies plain --rtts 0,20,80 --timeout 600 --out "$res/macos-speed-nfs.json"
       - name: Results
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: s6-macos-${{ matrix.runner }}
+          path: ${{ runner.temp }}/s6/results
+          if-no-files-found: warn
+
+  macfuse-fskit:
+    # FSKit itself, through macFUSE's FSKit backend: macFUSE's module carries a real signature, so
+    # AMFI runs it, and this disposable runner adds it to FSKit's enabled list by hand (what the
+    # System Settings switch writes). 5.4.0 predates macFUSE's short-read mitigation; 5.5.0 has it.
+    name: macos · ${{ matrix.runner }} · macFUSE ${{ matrix.macfuse }} FSKit backend
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 170
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [macos-26, xcode-27]
+        macfuse: ["5.4.0", "5.5.0"]
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: native/mounts/go.mod
+          cache-dependency-path: native/mounts/go.sum
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: .bun-version
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: 24
+      - name: Install macFUSE ${{ matrix.macfuse }} and turn its FSKit module on
+        run: bash spikes/s6-mounts/ci/macfuse.sh "${{ matrix.macfuse }}" "$RUNNER_TEMP/s6/results"
+      - name: Build the helper against macFUSE's libfuse
+        working-directory: native/mounts
+        env:
+          CGO_ENABLED: "1"
+        run: go build -o "$RUNNER_TEMP/s6/clover-mount" ./cmd/clover-mount
+      - name: Prepare the other computer's home
+        run: |
+          git config --global --add safe.directory '*'
+          bash spikes/s6-mounts/ci/prepare.sh "$RUNNER_TEMP/s6/export"
+      - name: Coherence through FSKit (the short-read bug)
+        env:
+          CLOVER_MACFUSE_BACKEND: fskit
+        run: |
+          res="$RUNNER_TEMP/s6/results"
+          bun spikes/s6-mounts/bench/coherence.ts --root "$RUNNER_TEMP/s6/export" --tree "$RUNNER_TEMP/s6/tree" \
+            --helper "$RUNNER_TEMP/s6/clover-mount" --policies plain,cached --out "$res/macos-fskit-macfuse-${{ matrix.macfuse }}-coherence.json"
+      - name: Fail-fast and speed through FSKit
+        if: matrix.macfuse == '5.5.0'
+        env:
+          CLOVER_MACFUSE_BACKEND: fskit
+        run: |
+          res="$RUNNER_TEMP/s6/results"
+          common=(--root "$RUNNER_TEMP/s6/export" --tree "$RUNNER_TEMP/s6/tree" --helper "$RUNNER_TEMP/s6/clover-mount" --copy-src "$GITHUB_WORKSPACE/packages/protocol")
+          bun spikes/s6-mounts/bench/failfast.ts "${common[@]}" --rtt 20 --policy plain --out "$res/macos-fskit-failfast.json" || echo "failfast failed"
+          if [ "${{ matrix.runner }}" = xcode-27 ]; then
+            bun spikes/s6-mounts/bench/speed.ts "${common[@]}" --policies cached,plain --rtts 0,20,80 --timeout 600 --out "$res/macos-fskit-speed.json"
+          fi
+      - name: Results
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: s6-macfuse-${{ matrix.runner }}-${{ matrix.macfuse }}
           path: ${{ runner.temp }}/s6/results
           if-no-files-found: warn

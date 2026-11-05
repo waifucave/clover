@@ -14,7 +14,7 @@ import * as path from "node:path";
 import { IS_WIN, Rig, log, machine, parseArgs, sleep, summary, writeJson } from "./lib";
 
 const args = parseArgs(process.argv.slice(2));
-const ROOT = path.resolve(args.root!);
+const ROOT = path.resolve(args.root ?? ".");
 const OUT = path.resolve(args.out ?? "coherence.json");
 const POLICIES = (args.policies ?? "plain,cached").split(",");
 const EXTERNAL = args.external;
@@ -29,6 +29,15 @@ function readThrough(p: string) {
     for (const x of b) { const k = String.fromCharCode(x).replace(/[^A-Za-z]/, "·"); counts[k] = (counts[k] ?? 0) + 1; }
     return { ok: true, length: b.length, bytes: counts, head: [...b.subarray(0, 8)], tail: [...b.subarray(Math.max(0, b.length - 8))] };
   } catch (e: any) { return { ok: false, code: e.code, message: String(e.message).slice(0, 120) }; }
+}
+
+/** Classifies what a reader saw after the file went from 200 'A' to 46 'B' behind the mount. */
+export function shrinkVerdict(sr: any): string {
+  if (!sr.ok) return `error ${sr.code} (no wrong bytes)`;
+  if (sr.length === 46 && sr.bytes.B === 46) return "correct: 46 'B'";
+  if (sr.length === 200 && sr.bytes.A === 200) return "old version: 200 'A' (stale, but bytes the holder sent)";
+  if (sr.bytes.B === 46) return `WRONG: 46 'B' then ${sr.length - 46} bytes the holder never sent`;
+  return `WRONG: ${JSON.stringify(sr.bytes)}`;
 }
 
 async function until(fn: () => boolean, ms: number): Promise<number> {
@@ -52,8 +61,7 @@ async function checks(label: string, mountDir: string) {
   r.shrunkStatAtOnce = (() => { try { return fs.statSync(remote("sr.txt")).size; } catch (e: any) { return e.code; } })();
   r.shrunkRead = readThrough(remote("sr.txt"));
   const sr = r.shrunkRead as any;
-  r.shrinkVerdict = !sr.ok ? `error ${sr.code} (no wrong bytes)` : sr.length === 46 && sr.bytes.B === 46 ? "correct: 46 'B'" :
-    sr.bytes.B === 46 ? `WRONG: ${sr.length} bytes, 46 'B' then ${sr.length - 46} bytes the holder never sent` : `WRONG: ${JSON.stringify(sr.bytes)}`;
+  r.shrinkVerdict = shrinkVerdict(sr);
   r.sizeFreshAfterMs = await until(() => { try { return fs.statSync(remote("sr.txt")).size === 46; } catch { return false; } }, 10000);
   // 2. grow: 46 'B' -> 300 'C'
   fs.writeFileSync(local("sr.txt"), "C".repeat(300));
@@ -83,12 +91,21 @@ async function main() {
       root: ROOT, tree: IS_WIN ? args.tree! : path.resolve(args.tree!), helperBin: path.resolve(args.helper!),
       logs: path.join(path.dirname(OUT), "logs", path.basename(OUT, ".json")), remoteName: "Desktop1", selfName: "Runner", selfHome: path.dirname(ROOT),
     });
+    if (args["nfs-helper"]) rig.nfs = { bin: path.resolve(args["nfs-helper"]), port: 12049, mountpoint: path.resolve(args.tree!) };
     await rig.startService();
     await rig.startLink(0);
     try {
       for (const p of POLICIES) {
         await rig.mount(p);
-        await checks(p, rig.remotePath());
+        if (!rig.nfs) {
+          // This computer's own entry is a link to its home folder: programs here use it natively.
+          const self = path.join(rig.treeRoot, "home", "Runner");
+          let link: unknown;
+          try { link = { target: fs.readlinkSync(self), entries: fs.readdirSync(self).length }; } catch (e: any) { link = { error: `${e.code}: ${e.message}` }; }
+          out.selfLink = link;
+          log(`self link home/Runner: ${JSON.stringify(link)}`);
+        }
+        await checks(rig.nfs ? `nfs ${p}` : p, rig.remotePath());
         await rig.unmount();
       }
     } finally { await rig.stopAll(); }
@@ -100,4 +117,4 @@ async function main() {
   summary(md);
 }
 
-main().catch((e) => { console.error(e); writeJson(OUT, out); process.exit(1); });
+if (import.meta.main) main().catch((e) => { console.error(e); writeJson(OUT, out); process.exit(1); });

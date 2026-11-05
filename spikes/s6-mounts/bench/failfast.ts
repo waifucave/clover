@@ -29,6 +29,8 @@ const rig = new Rig({
   root: ROOT, tree: TREE, helperBin: path.resolve(args.helper!), logs: path.join(path.dirname(OUT), "logs", path.basename(OUT, ".json")),
   remoteName: "Desktop1", selfName: "Runner", selfHome: path.dirname(ROOT),
 });
+if (args["fskit-url"]) rig.fskit = { url: args["fskit-url"], mountpoint: path.resolve(args["fskit-mountpoint"]!) };
+if (args["nfs-helper"]) rig.nfs = { bin: path.resolve(args["nfs-helper"]), port: 12049, mountpoint: path.resolve(args.tree!) };
 const results: Array<Record<string, unknown>> = [];
 const out: { [k: string]: any } = { spike: "S6", question: "failfast", machine: machine(), rttMs: RTT, policy: POLICY, started: new Date().toISOString(), results };
 const save = () => writeJson(OUT, out);
@@ -53,6 +55,13 @@ const FAULTS: Record<string, Fault> = {
   },
 };
 
+/** The line of a program's output that names the error (git's "fatal:", Node's "Error: ..."). */
+function firstError(text: string): string {
+  const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
+  const hit = lines.find((l) => /^(fatal|error)[: ]|Error:|E[A-Z]{3,}\b|host is/i.test(l));
+  return (hit ?? lines.slice(-1)[0] ?? "").slice(0, 300);
+}
+
 const outcome = (s: string) => { try { return JSON.parse(s.trim().split("\n").pop() ?? "{}"); } catch { return {}; } };
 
 async function recover(): Promise<number> {
@@ -68,7 +77,7 @@ async function recover(): Promise<number> {
 async function checks(r: Record<string, unknown>) {
   r.stuckProcesses = await stuckProcesses();
   r.helperAlive = rig.helper ? rig.helper.proc.exitCode === null : false;
-  r.homeListing = await probe("readdir", path.join(rig.treeRoot, "home"), 3000);
+  if (!rig.nfs && !rig.fskit) r.homeListing = await probe("readdir", path.join(rig.treeRoot, "home"), 3000); // other computers unaffected
 }
 
 /** One scenario: an operation in flight, a fault, then the way back. */
@@ -92,7 +101,7 @@ async function inflight(opKey: string, faultKey: string) {
   const so = await stdoutP;
   const se = await stderrP;
   const o = outcome(so);
-  r.sawError = o.code ? `${o.code}: ${o.message}` : (se || so).trim().split("\n").slice(-2).join(" | ").slice(0, 300);
+  r.sawError = o.code ? `${o.code}: ${o.message}` : firstError(se || so);
   r.progressBytes = o.bytes;
   // While the computer is away, a new operation answers at once.
   r.whileDown = await probe("stat", rig.remotePath("clover", "package.json"), 5000);
@@ -171,11 +180,11 @@ async function helperCrash() {
   if (!exited) { r.hung = true; child.kill(9); await child.exited; }
   const o = outcome(await so);
   r.sawError = o.code ? `${o.code}: ${o.message}` : "";
-  r.deadMount = await probe("stat", path.join(rig.treeRoot, "home"), 5000); // what a dead mount answers
+  r.deadMount = await probe("stat", rig.nfs ? rig.remotePath("clover", "package.json") : path.join(rig.treeRoot, "home"), 15000); // what a dead mount answers
   r.stuckProcesses = await stuckProcesses();
   // The daemon's part: detach the dead mount, start a new helper.
   const t1 = performance.now();
-  if (IS_LINUX) r.detach = (await run(["fusermount3", "-u", "-z", TREE], { timeoutMs: 5000 })).ok;
+  r.detach = await rig.detach();
   rig.helper = undefined;
   await rig.mount(POLICY);
   r.remountMs = Math.round(performance.now() - t1);
@@ -206,6 +215,9 @@ async function main() {
     ["read+helper-crash", helperCrash],
   ];
   if (!IS_WIN) plan.splice(3, 0, ["read+freeze", () => inflight("read", "freeze")]);
+  // An FSKit volume has no helper process of ours to kill; the gate script tests the module's
+  // own process separately, because a dead module can leave callers stuck.
+  if (rig.fskit) plan.splice(plan.findIndex(([n]) => n === "read+helper-crash"), 1);
   try {
     for (const [name, fn] of plan) {
       if (only && !only.includes(name)) continue;
@@ -217,6 +229,7 @@ async function main() {
   } finally {
     await rig.stopAll();
   }
+  if (rig.nfs) out.nfs = { mountedAs: rig.nfs.mountedAs, userMountError: rig.nfs.mountError };
   out.finished = new Date().toISOString();
   save();
   report();
