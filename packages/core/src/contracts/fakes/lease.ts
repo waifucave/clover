@@ -1,5 +1,7 @@
 // FakeLeaseAuthority: the waifucave handshake's lease, in memory, on a shared fake clock. Each device gets a Lease
-// over it; `cutOff` makes the handshake unreachable from one device, as a main that loses the internet would see.
+// over it, with its own clock offset (`lease(device, { offsetMs })`), so a device's wall clock can be wrong; `cutOff`
+// makes the handshake unreachable from one device, as a main that loses the internet would see. Without an account
+// (`account: false`) there is no handshake to ask, and only the user's own takeover (`byUser`) acquires.
 import type { LeaseView } from "@waifucave/clover-protocol";
 import type { Clock, TimerHandle } from "../clock";
 import { ContractError, Listeners, type Unsubscribe } from "../common";
@@ -20,16 +22,19 @@ export class FakeLeaseAuthority {
   readonly #cutOff = new Set<string>();
   readonly #listeners = new Listeners<void>();
   #lapseTimer: TimerHandle | undefined;
+  readonly #account: boolean;
 
-  constructor(opts: { clock: Clock; main?: string; ttlMs?: number; marginMs?: number }) {
+  constructor(opts: { clock: Clock; main?: string; ttlMs?: number; marginMs?: number; account?: boolean }) {
     this.#clock = opts.clock;
     this.#main = opts.main ?? null;
     this.ttlMs = opts.ttlMs ?? FAKE_LEASE_TTL_MS;
     this.marginMs = opts.marginMs ?? FAKE_LEASE_MARGIN_MS;
+    this.#account = opts.account ?? true;
   }
 
-  lease(device: string): FakeLease {
-    return new FakeLease(device, this, this.#clock);
+  /** A device's lease; `offsetMs` is how far its wall clock is off, which `canAct` must not care about. */
+  lease(device: string, opts: { offsetMs?: number } = {}): FakeLease {
+    return new FakeLease(device, this, this.#clock, opts.offsetMs ?? 0);
   }
 
   /** The computer the user chose as main (§6.4). */
@@ -62,7 +67,8 @@ export class FakeLeaseAuthority {
   }
 
   /** @internal */
-  acquire(device: string): void {
+  acquire(device: string, byUser = false): void {
+    if (!this.#account && !byUser) throw new ContractError("refused", "with no account, taking over is the user's own action");
     if (this.#cutOff.has(device)) throw new ContractError("offline", "the handshake can't be reached");
     const now = this.#clock.now();
     const live = this.#holder !== null && this.#expiresAt !== null && now < this.#expiresAt;
@@ -109,11 +115,22 @@ export class FakeLease implements Lease {
   readonly self: string;
   readonly #authority: FakeLeaseAuthority;
   readonly #clock: Clock;
+  /** How far this device's wall clock is off; only what it shows uses it. */
+  readonly offsetMs: number;
+  /** On this device's monotonic clock: when it may no longer act. */
+  #deadline: number | null = null;
+  #woke = false;
 
-  constructor(self: string, authority: FakeLeaseAuthority, clock: Clock) {
+  constructor(self: string, authority: FakeLeaseAuthority, clock: Clock, offsetMs = 0) {
     this.self = self;
     this.#authority = authority;
     this.#clock = clock;
+    this.offsetMs = offsetMs;
+  }
+
+  /** This device's own wall clock, off by `offsetMs`. */
+  wallNow(): number {
+    return this.#clock.now() + this.offsetMs;
   }
 
   state(): LeaseState {
@@ -121,22 +138,35 @@ export class FakeLease implements Lease {
   }
 
   canAct(): boolean {
-    const s = this.state();
-    return s.holder === this.self && s.expiresAt !== null && this.#clock.now() < s.expiresAt - this.#authority.marginMs;
+    return !this.#woke && this.#deadline !== null && this.state().holder === this.self && this.#clock.monotonic() < this.#deadline;
   }
 
-  async acquire(): Promise<LeaseState> {
-    this.#authority.acquire(this.self);
+  async acquire(opts: { byUser?: boolean } = {}): Promise<LeaseState> {
+    const sent = this.#clock.monotonic();
+    this.#authority.acquire(this.self, opts.byUser ?? false);
+    this.#granted(sent);
     return this.state();
   }
 
   async renew(): Promise<LeaseState> {
+    const sent = this.#clock.monotonic();
     this.#authority.renew(this.self);
+    this.#granted(sent);
     return this.state();
   }
 
   async release(): Promise<void> {
+    this.#deadline = null;
     this.#authority.release(this.self);
+  }
+
+  wake(): void {
+    this.#woke = true;
+  }
+
+  #granted(sentAt: number): void {
+    this.#deadline = sentAt + this.#authority.ttlMs - this.#authority.marginMs;
+    this.#woke = false;
   }
 
   watch(fn: (state: LeaseState) => void): Unsubscribe {

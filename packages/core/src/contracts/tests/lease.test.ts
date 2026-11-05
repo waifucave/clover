@@ -43,6 +43,54 @@ describe("FakeLeaseAuthority", () => {
     expect(studio.state().holder).toBe("studio");
   });
 
+  test("the deadline runs on the device's monotonic clock: a wrong wall clock changes nothing", async () => {
+    const clock = new FakeClock();
+    const authority = new FakeLeaseAuthority({ clock, main: "studio" });
+    const ahead = authority.lease("studio", { offsetMs: 10 * 60_000 });
+    const behind = authority.lease("laptop", { offsetMs: -10 * 60_000 });
+    await ahead.acquire();
+    expect(ahead.wallNow() - behind.wallNow()).toBe(20 * 60_000);
+    clock.advance(FAKE_LEASE_TTL_MS - FAKE_LEASE_MARGIN_MS - 1);
+    expect(ahead.canAct()).toBe(true);
+    clock.advance(1);
+    expect(ahead.canAct()).toBe(false);
+    clock.advance(FAKE_LEASE_MARGIN_MS);
+    await behind.acquire();
+    expect(behind.canAct()).toBe(true);
+    expect(ahead.canAct()).toBe(false);
+  });
+
+  test("a main that slept past its lease never acts on it: after a wake, only a successful renew lets it act", async () => {
+    const { clock, authority, studio, laptop } = setup();
+    await studio.acquire();
+    // Asleep for a minute (the monotonic clock counts sleep); the laptop took over meanwhile.
+    clock.advance(60_000);
+    await laptop.acquire();
+    studio.wake();
+    expect(studio.canAct()).toBe(false);
+    expect(isContractError(await studio.renew().catch((e: unknown) => e), "not_main")).toBe(true);
+    expect(studio.canAct()).toBe(false);
+    // A short nap with the lease still held: still nothing until the renew.
+    await laptop.renew();
+    laptop.wake();
+    expect(laptop.canAct()).toBe(false);
+    authority.cutOff("laptop");
+    expect(isContractError(await laptop.renew().catch((e: unknown) => e), "offline")).toBe(true);
+    expect(laptop.canAct()).toBe(false);
+    authority.cutOff("laptop", false);
+    await laptop.renew();
+    expect(laptop.canAct()).toBe(true);
+  });
+
+  test("with no account there's no handshake: only the user's own takeover acquires", async () => {
+    const clock = new FakeClock();
+    const authority = new FakeLeaseAuthority({ clock, account: false });
+    const studio = authority.lease("studio");
+    expect(isContractError(await studio.acquire().catch((e: unknown) => e), "refused")).toBe(true);
+    await studio.acquire({ byUser: true });
+    expect(studio.canAct()).toBe(true);
+  });
+
   test("renewing keeps the epoch and pushes the expiry", async () => {
     const { clock, studio } = setup();
     await studio.acquire();
