@@ -31,6 +31,7 @@ jobs:
           - { os: windows, runner: windows-2025, suite: speed-cached }
           - { os: windows, runner: windows-2025, suite: speed-plain }
           - { os: windows, runner: windows-2025, suite: speed-git }
+          - { os: windows, runner: windows-2025, suite: speed-tsc }
     defaults:
       run:
         shell: bash
@@ -121,6 +122,10 @@ jobs:
             speed-git)
               bun "$S6/bench/speed.ts" "${common[@]}" --policies cached,plain --rtts 0,20,80 --timeout 600 \
                 --workloads git-status --out "$res/${{ matrix.os }}-speed-git.json" ;;
+            speed-tsc)
+              # tsc on its own, after WinFsp's names kept their case (the earlier runs upper-cased them)
+              bun "$S6/bench/speed.ts" "${common[@]}" --policies cached,plain --rtts 0,20,80 --timeout 600 --local 0 \
+                --workloads tsc-protocol,tsc-core --out "$res/${{ matrix.os }}-speed-tsc.json" ;;
             git-owner)
               # git across the mount when the holder's user has another uid (see speed.ts --owner)
               bun "$S6/bench/speed.ts" "${common[@]}" --policies cached --rtts 0,20,80 --local 0 --timeout 900 \
