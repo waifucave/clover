@@ -5,6 +5,7 @@ import { CoworkError } from "../cowork/types";
 import type { CoworkSessionDoor, CoworkSessionDrivers } from "../cowork/session-ports";
 import { chmodSync, realpathSync, statSync } from "node:fs";
 import { isPipe } from "../platform/transport";
+import { currentUserSid, lockPipeDacl } from "../platform/win-pipe";
 import { ComputerUseControlError, type ComputerUseControl } from "../computer-use/wiring";
 import { BrowserLinkRpcError, type BrowserLink } from "../computer-use/browser/cef-link/rpc";
 import { join } from "node:path";
@@ -2167,9 +2168,18 @@ export function startIpcServer(opts: IpcServerOptions): IpcServer {
       },
     },
   });
-  // A Unix socket file is tightened to the owner; a Windows named pipe is not a file and its
-  // access is set at creation, so skip it.
+  // A Unix socket file is tightened to the owner (its run directory is the owner's too). A Windows
+  // named pipe has no file: its DACL becomes the user's and SYSTEM's alone (libuv already made the
+  // first instance with FILE_FLAG_FIRST_PIPE_INSTANCE, so the name was free). A pipe that can't be
+  // locked down fails the start rather than staying open to others.
   if (!isPipe(opts.socketPath)) chmodSync(opts.socketPath, 0o600);
+  else {
+    const sid = currentUserSid();
+    if (sid === null || lockPipeDacl(opts.socketPath, sid) === 0) {
+      server.stop(true);
+      throw new Error("the daemon's pipe could not be made owner-only");
+    }
+  }
 
   async function handle(socket: { data: ConnState }, method: string, params: unknown): Promise<unknown> {
     // C-M1: a Clover connection speaks only Clover's methods, through its role's gate.

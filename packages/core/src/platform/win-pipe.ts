@@ -41,7 +41,7 @@ function adv(): FfiLib | null {
   });
 }
 
-const DACL_SECURITY_INFORMATION = 0x4, PROTECTED_DACL_SECURITY_INFORMATION = 0x80000000;
+const DACL_SECURITY_INFORMATION = 0x4;
 const PIPE_SERVER_END = 1, FILE_TYPE_PIPE = 3, FILE_NAME_INFO = 2;
 const PROCESS_QUERY_LIMITED_INFORMATION = 0x1000, TOKEN_QUERY = 0x8, TOKEN_USER = 1;
 
@@ -95,7 +95,10 @@ export function lockPipeDacl(pipePath: string, userSid: string): number {
   let done = 0;
   try {
     for (const h of pipeHandles(pipePath, "server")) {
-      if ((a.SetKernelObjectSecurity!(h, DACL_SECURITY_INFORMATION | PROTECTED_DACL_SECURITY_INFORMATION, out[0]!) as number) !== 0) done++;
+      // DACL_SECURITY_INFORMATION alone: the SDDL's `P` protects it. (With PROTECTED_DACL_SECURITY_INFORMATION
+      // added, the call returned success and changed nothing, measured.) The DACL is the pipe's, so it holds for
+      // every instance, the ones libuv creates later included (measured).
+      if ((a.SetKernelObjectSecurity!(h, DACL_SECURITY_INFORMATION, out[0]!) as number) !== 0) done++;
     }
   } finally { k.LocalFree!(out[0]!); }
   return done;
