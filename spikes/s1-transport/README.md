@@ -19,7 +19,7 @@ Lane H, milestone M0. It answers spec §8.3 and §14.1 item 1 in the lab: iroh a
 | `nat/netem.sh` | Delay and throughput under `tc netem`, Linux and root only |
 | `nat/migrate.sh` | One live connection through an address change and blackouts, Linux and root only |
 | [`../../native/link-sidecar/`](../../native/link-sidecar/) | The native half: quinn and iroh peers, a STUN responder, the stdio sidecar |
-| `results/2026-11-05/` | The result files behind the report: the platform checks and netem from CI run 3, the NAT matrix and network changes from run 4, and in `run5/` all three labs again from run 5 |
+| `results/2026-11-05/` | The result files behind the report: the platform checks and netem from CI run 3, the NAT matrix and network changes from run 4, in `run5/` all three labs again from run 5, and in `run6/` the NAT matrix and network changes from run 6 |
 
 Every check prints one line, `S1RESULT <json>`. Set `S1_ANNOTATE=1` to also print it as a GitHub `::notice`.
 
@@ -67,4 +67,4 @@ The same protocol runs in TypeScript (`iroh-napi.ts`) and Rust (`native/link-sid
 
 ## CI
 
-`.github/workflows/spike-s1.yml` runs on pushes to `lane/h-m0`: the platform checks on `macos-latest`, `windows-latest`, `ubuntu-24.04` and `ubuntu-24.04-arm`, and the NAT matrix, netem and network changes on `ubuntu-24.04`. Each job writes a Markdown summary, uploads its result files, and leaves up to ten compact notices, which `GET https://api.github.com/repos/waifucave/clover/commits/<sha>/check-runs` and each run's `/annotations` serve without auth.
+`.github/workflows/spike-s1.yml` runs on pushes to `lane/h-m0` that change the code (commits to `results/` alone don't start it): the platform checks on `macos-latest`, `windows-latest`, `ubuntu-24.04` and `ubuntu-24.04-arm`, and the NAT matrix, netem and network changes on `ubuntu-24.04`. Each job writes a Markdown summary, uploads its result files, and leaves up to ten compact notices, which `GET https://api.github.com/repos/waifucave/clover/commits/<sha>/check-runs` and each run's `/annotations` serve without auth.
