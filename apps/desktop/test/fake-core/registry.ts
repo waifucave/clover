@@ -28,7 +28,7 @@ export interface FakeView {
 }
 
 export const REPO = join(import.meta.dir, "..", "..", "..", "..");
-const ZERO = "0".repeat(64);
+const ZERO = `sha256:${"0".repeat(64)}`;
 
 interface Manifest {
   id?: string;

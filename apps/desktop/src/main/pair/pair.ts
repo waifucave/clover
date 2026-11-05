@@ -10,7 +10,7 @@
 //     says `pair.exiting` before it leaves for an update or a restart. Quit itself is `pair.quit` (quit.ts).
 //
 // Pure apart from the injected dial, launcher and clock, so the tests drive it against a fake daemon under Bun.
-import type { CloverHelloParams, CloverHelloResult } from "@waifucave/clover-protocol";
+import { APP_METHODS, type CloverHelloParams, type CloverHelloResult } from "@waifucave/clover-protocol";
 import { dial as dialSocket, RpcCallError, type DaemonClient, type RequestHandler } from "../protocol/client";
 import type { DaemonLauncher } from "./login";
 
@@ -92,7 +92,9 @@ export class Pair {
     this.sleep = opts.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms)));
     this.log = opts.log ?? (() => {});
     this.handlers.set("app.quit", (params) => {
-      const reason = (params as { reason?: unknown } | undefined)?.reason === "update" ? "update" : "quit";
+      const parsed = APP_METHODS.appQuit.params.safeParse(params);
+      if (!parsed.success) throw new Error("app.quit needs a reason: quit or update");
+      const reason = parsed.data.reason;
       this.leaving = true;
       this.setState({ kind: "quitting" });
       // Answer first, then leave: the daemon waits for the answer before it stops.
@@ -144,6 +146,7 @@ export class Pair {
       this.setState({ kind: "unavailable", reason: this.refusal });
       return false;
     }
+    client.onListenerError = (what, err) => this.log(`pair: a listener for ${what} failed: ${err instanceof Error ? err.message : String(err)}`);
     for (const [method, handler] of this.handlers) client.handle(method, handler);
     for (const l of this.notificationListeners) client.onNotification(l);
     let hello: CloverHelloResult;

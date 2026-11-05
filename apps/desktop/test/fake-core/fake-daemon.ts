@@ -33,6 +33,10 @@ export interface FakeDaemon {
   quitApps(reason?: "quit" | "update"): Promise<void>;
   /** Asks the app to show something. */
   show(what: unknown): Promise<unknown>;
+  /** Any request to each app connection: its answers (a result, or the error). */
+  request(method: string, params: unknown): Promise<unknown[]>;
+  /** Raw lines to each app connection, written at once (one chunk). */
+  write(lines: readonly unknown[]): void;
   connections(): number;
   close(): Promise<void>;
   /** Resolves when `pair.quit` was called (with its params). */
@@ -175,6 +179,10 @@ export async function startFakeDaemon(opts: FakeOptions): Promise<FakeDaemon> {
     },
     async show(what) {
       return (await ask("app.show", { what }))[0];
+    },
+    request: ask,
+    write(lines) {
+      for (const s of sockets) if (authed.has(s)) s.write(lines.map((l) => `${JSON.stringify(l)}\n`).join(""));
     },
     close: stopListening,
   };

@@ -1,7 +1,7 @@
 // The host's brokers (S9 §3): menus as data placed by the core, drags as grants between parts, and where a surface
 // window sits and takes clicks.
 import { describe, expect, test } from "bun:test";
-import { checkDragOffer, checkMenu, checkRegions, inRegions, mayClaim, menuPoint, surfacePlacement, MENU_LIMITS } from "../src/main/ui/brokers";
+import { MENU_INPUT_WINDOW_MS, MenuGate, THIRD_PARTY_SURFACE_MAX, checkDragOffer, checkMenu, checkRegions, inRegions, mayClaim, menuPoint, surfaceMayFloat, surfacePlacement, surfaceSize, MENU_LIMITS } from "../src/main/ui/brokers";
 
 describe("the menu broker", () => {
   test("a menu is data: items with ids and plain labels, separators, checkboxes and submenus", () => {
@@ -26,6 +26,27 @@ describe("the menu broker", () => {
     expect(menuPoint({ x: -500, y: 9999 }, chain)).toEqual({ x: 380, y: 816 });
     expect(menuPoint({ x: Number.NaN, y: 1 }, chain)).toEqual({ x: 380, y: 761 });
     expect(menuPoint({ x: 1, y: 1 }, [])).toBeUndefined();
+  });
+});
+
+describe("the menu gate", () => {
+  test("a menu opens only right after the user's input in its window, uses that input up, and one at a time", () => {
+    let now = 1_000;
+    const gate = new MenuGate(() => now);
+    expect(gate.take(1)).toMatchObject({ ok: false });
+    gate.input(1);
+    expect(gate.take(2)).toMatchObject({ ok: false });
+    expect(gate.take(1)).toEqual({ ok: true });
+    // One click, one menu; and none while one is open.
+    gate.input(1);
+    expect(gate.take(1)).toMatchObject({ ok: false, reason: "another menu is open" });
+    gate.done();
+    expect(gate.take(1)).toEqual({ ok: true });
+    gate.done();
+    expect(gate.take(1)).toMatchObject({ ok: false });
+    gate.input(1);
+    now += MENU_INPUT_WINDOW_MS + 1;
+    expect(gate.take(1)).toMatchObject({ ok: false });
   });
 });
 
@@ -63,5 +84,21 @@ describe("surface windows", () => {
     expect(inRegions({ x: 10, y: 10 }, regions)).toBe(true);
     expect(inRegions({ x: 100, y: 10 }, regions)).toBe(false);
     expect(checkRegions("everywhere", { width: 1, height: 1 })).toEqual([]);
+  });
+});
+
+describe("surfaces outside the clover tree", () => {
+  const workArea = { width: 1512, height: 949 };
+  test("only the clover tree's surfaces float above everything", () => {
+    expect(surfaceMayFloat("clover/island")).toBe(true);
+    expect(surfaceMayFloat("fixture-surface")).toBe(false);
+    expect(surfaceMayFloat("cloverx/island")).toBe(false);
+  });
+
+  test("sizes stay inside the work area, and a third party's inside a smaller box", () => {
+    expect(surfaceSize({ width: 5000, height: 5000 }, { width: 100, height: 100 }, { trusted: true, workArea })).toEqual({ width: 1512, height: 949 });
+    expect(surfaceSize({ width: 5000, height: 5000 }, { width: 100, height: 100 }, { trusted: false, workArea })).toEqual(THIRD_PARTY_SURFACE_MAX);
+    expect(surfaceSize({ width: 1, height: "x" }, { width: 100, height: 70 }, { trusted: false, workArea })).toEqual({ width: 40, height: 70 });
+    expect(surfaceSize({ height: 120 }, { width: 360, height: 40 }, { trusted: false, workArea: { width: 300, height: 100 } })).toEqual({ width: 300, height: 100 });
   });
 });

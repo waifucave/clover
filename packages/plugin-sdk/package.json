@@ -12,8 +12,8 @@
   },
   "scripts": {
     "test": "bun test",
-    "typecheck": "tsc --noEmit -p .",
-    "generate": "bun run scripts/generate.ts"
+    "generate": "bun run scripts/generate.ts",
+    "typecheck": "tsc --noEmit -p ."
   },
   "dependencies": {
     "@waifucave/clover-protocol": "workspace:*",

@@ -409,6 +409,11 @@ function LayerFrame({ item, props }: { item: Extract<SpotItem, { kind: "frame" }
   useEffect(() => onLayerMessage((m) => {
     if (m.type === "child-size" && m.child === item.mount) setHeight(m.height);
     if (m.type === "child-gone" && m.child === item.mount) setGone(m.reason);
+    if (m.type === "child-reload" && m.child === item.mount) {
+      setGone(undefined);
+      setAsleep(false);
+      setUrl(m.url);
+    }
   }), [item.mount]);
   useEffect(() => {
     if (gone !== undefined) return;

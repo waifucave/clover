@@ -3,7 +3,7 @@
 // releases the lease at once so another computer takes the bots (§6.4); with no other computer to take them, it says
 // they stay offline until this one is back. Pure: the question is data, which the main process shows as a native
 // dialog and the tests read. The strings move to `clover.` keys in E-M2.
-import type { PairStatus } from "@waifucave/clover-protocol";
+import { PairStatus } from "@waifucave/clover-protocol";
 
 export type QuitChoice = "quit" | "handover" | "cancel";
 
@@ -25,8 +25,11 @@ function names(bots: readonly string[]): string {
   return `${bots.slice(0, 3).join(", ")} and ${bots.length - 3} more`;
 }
 
-/** What Quit asks, from `pair.status`. With no status (the daemon is down), there is nothing to ask. */
-export function quitQuestion(status: PairStatus | undefined): QuitQuestion {
+/** What Quit asks, from `pair.status` as the daemon sent it. With no status (the daemon is down) there is nothing to
+ *  ask, and a status that isn't one (lane B's `PairStatus`) falls back to a plain Quit. */
+export function quitQuestion(raw: unknown): QuitQuestion {
+  const parsed = raw === undefined ? undefined : PairStatus.safeParse(raw);
+  const status = parsed?.success === true ? parsed.data : undefined;
   if (status === undefined || (status.bots.length === 0 && status.routines === 0 && status.agents === 0)) {
     return { ask: false, message: "", detail: "", buttons: [{ id: "quit", label: "Quit" }] };
   }

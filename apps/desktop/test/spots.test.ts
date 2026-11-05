@@ -265,3 +265,17 @@ describe("safe mode", () => {
     expect(resolveCell({ plugins: [], choices: NO_CHOICES, ctx }, "app.root")).toMatchObject({ shown: [], hidden: false, conflict: false, decidedBy: 0 });
   });
 });
+
+describe("private spots", () => {
+  test("a private spot is open only to the declaring plugin's own tree (§5.4)", () => {
+    const host = plugin("vn", [{ spot: "conversation", component: "Novel", declares: { "vn.line": { shape: "single", props: {}, private: true } } }]);
+    const own = plugin("vn/lines", [{ spot: "vn.line", component: "Line" }], { enabledAt: 1 });
+    const other = plugin("intruder", [{ spot: "vn.line", component: "Fake" }], { enabledAt: 999 });
+    const r = resolveCell({ plugins: [host, own, other], ctx }, "vn.line");
+    expect(shownRefs(r)).toEqual(["vn/lines#vn.line"]);
+    expect(r.skipped).toContainEqual({ ref: "intruder#vn.line", reason: "private" });
+    // The same spot, not private: the most recently enabled wins.
+    const open = plugin("vn", [{ spot: "conversation", component: "Novel", declares: { "vn.line": { shape: "single", props: {} } } }]);
+    expect(shownRefs(resolveCell({ plugins: [open, own, other], ctx }, "vn.line"))).toEqual(["intruder#vn.line"]);
+  });
+});

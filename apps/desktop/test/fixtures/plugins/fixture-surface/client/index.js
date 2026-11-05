@@ -10,8 +10,13 @@ export function FixtureSurface() {
   const [picked, setPicked] = useState("");
   useEffect(() => {
     surface({ width: 360, height: 120, regions: [{ x: 0, y: 0, width: 360, height: 40 }], visible: true });
-    menu([{ id: "first", label: "First" }, { type: "separator" }, { id: "second", label: "Second" }], { x: 20, y: 10 })
-      .then((id) => setPicked(id === null ? "none" : id), (err) => setPicked(`error: ${String(err && err.message)}`));
+    // Refused until the user's input in this window (the test's), so it asks again until then.
+    let live = true;
+    let timer;
+    const ask = () => menu([{ id: "first", label: "First" }, { type: "separator" }, { id: "second", label: "Second" }], { x: 20, y: 10 })
+      .then((id) => live && setPicked(id === null ? "none" : id), () => { if (live) timer = setTimeout(ask, 300); });
+    ask();
+    return () => { live = false; clearTimeout(timer); };
   }, []);
   return jsx("div", { "data-fixture": "surface", "data-menu": picked, children: picked === "" ? "Fixture surface" : `Menu: ${picked}` });
 }

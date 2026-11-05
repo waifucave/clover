@@ -6,7 +6,7 @@
 // user installed, over a bundled one"), `enabledAt` (rule 6, "the most recently enabled") and `capabilities` (`needs`).
 // Until they are, `readUiPlugins` takes them from `plugin.list` and the plugin's detail when given, and otherwise
 // falls back to: bundled for the `clover` tree and `alpha`, the order the daemon listed them in, and no capabilities.
-import type { UiPluginView } from "@waifucave/clover-protocol";
+import { UiPluginView as UiPluginViewSchema, type UiPluginView } from "@waifucave/clover-protocol";
 
 /** Where a plugin came from, as the resolver's rule 5 sees it. */
 export type UiSource = "bundled" | "installed" | "dev";
@@ -176,9 +176,26 @@ function fromView(v: Record<string, unknown>): UiPluginExtras {
   };
 }
 
-/** The daemon's `plugin.ui` list as the runtime uses it. `extras` fills what the view lacks (see the header). */
-export function readUiPlugins(views: readonly UiPluginView[], extras: Readonly<Record<string, UiPluginExtras>> = {}): UiPlugin[] {
-  return views.map((view, index) => {
+/** The daemon's `plugin.ui` list as the runtime uses it. `extras` fills what the view lacks (see the header). Each view
+ *  is checked against lane B's schema, and its layer is the app's own reckoning (`layerOf`), never the daemon's word:
+ *  a view whose label disagrees is refused, so no plugin can claim the trusted `clover` layer. */
+export function readUiPlugins(views: readonly unknown[], extras: Readonly<Record<string, UiPluginExtras>> = {}, log: (line: string) => void = () => {}): UiPlugin[] {
+  const checked: UiPluginView[] = [];
+  for (const raw of views) {
+    const parsed = UiPluginViewSchema.safeParse(raw);
+    if (!parsed.success) {
+      log(`layers: refused a plugin view that isn't one (${parsed.error.issues[0]?.message ?? "invalid"})`);
+      continue;
+    }
+    const view = { ...(raw as Record<string, unknown>), ...parsed.data } as UiPluginView;
+    const layer = layerOf(view.pluginId);
+    if (view.layer !== layer) {
+      log(`layers: refused ${view.pluginId}: its layer is ${layer}, not ${view.layer}`);
+      continue;
+    }
+    checked.push(view);
+  }
+  return checked.map((view, index) => {
     // Fields lane B is asked to add to `UiPluginView` are read from the view when it carries them.
     const x: UiPluginExtras = { ...fromView(view as unknown as Record<string, unknown>), ...extras[view.pluginId] };
     const top = topIdOf(view.pluginId);
@@ -186,7 +203,7 @@ export function readUiPlugins(views: readonly UiPluginView[], extras: Readonly<R
     return {
       id: view.pluginId,
       topId: top,
-      layer: view.layer,
+      layer: layerOf(view.pluginId),
       treeHash: view.treeHash,
       assetBase: view.assetBase,
       ...(view.clientEntry !== undefined ? { clientEntry: view.clientEntry } : {}),

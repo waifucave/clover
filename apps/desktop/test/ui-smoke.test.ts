@@ -7,11 +7,12 @@
 // LSBackgroundOnly on macOS); every run is headless: no window shown, no Dock or tray icon, no focus (plan §8).
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { readCalls } from "./fake-core/fake-daemon";
+import { IPV6_REACHABILITY_PROBE, offMachine, readNetLog } from "./netlog";
 import { FIXTURES, REPO, alphaView, cloverViews, folderView } from "./fake-core/registry";
 
 const root = join(import.meta.dir, "..");
@@ -33,6 +34,17 @@ function electron(): string {
   return localElectron !== undefined && localElectron !== "" ? localElectron : (createRequire(join(root, "package.json"))("electron") as string);
 }
 
+/** A local run's Electron must never come to the front: on macOS a copy whose Info.plist sets `LSBackgroundOnly`
+ *  (`bun run scripts/background-electron.ts` makes one). The test refuses any other. */
+function refuseForegroundElectron(): void {
+  if (ci || process.platform !== "darwin") return;
+  const plist = join(dirname(dirname(localElectron!)), "Info.plist");
+  const value = spawnSync("plutil", ["-extract", "LSBackgroundOnly", "raw", plist], { encoding: "utf8" });
+  if (value.status !== 0 || value.stdout.trim() !== "true") {
+    throw new Error(`CLOVER_UI_LOCAL_ELECTRON (${localElectron}) is not a background-only Electron; make one with \`bun run scripts/background-electron.ts <dir>\``);
+  }
+}
+
 function home(): string {
   // Short, for the Unix socket's path limit.
   const h = mkdtempSync(join(tmpdir(), "ce1-"));
@@ -48,12 +60,23 @@ function env(h: string, registry: string, extra: Record<string, string> = {}): N
   return e;
 }
 
-function smoke(executable: string, args: string[], registry: string, extra: Record<string, string> = {}): { status: number | null; facts: Smoke | undefined; output: string; home: string } {
+function smoke(executable: string, args: string[], registry: string, extra: Record<string, string> = {}): { status: number | null; facts: Smoke | undefined; output: string; home: string; netlog: string } {
   const h = home();
   const out = join(h, "smoke.json");
-  const r = spawnSync(executable, [...args, "--clover-smoke"], { env: env(h, registry, { CLOVER_SMOKE_OUT: out, ...extra }), encoding: "utf8", timeout: 100_000 });
+  // Every run records a net log: what it sent off the machine is asserted (none of it beyond loopback).
+  const netlog = join(h, "net.json");
+  const r = spawnSync(executable, [...args, "--clover-smoke", `--log-net-log=${netlog}`], { env: env(h, registry, { CLOVER_SMOKE_OUT: out, ...extra }), encoding: "utf8", timeout: 100_000 });
   const facts = existsSync(out) ? (JSON.parse(readFileSync(out, "utf8")) as Smoke) : undefined;
-  return { status: r.status, facts, output: `${r.stdout ?? ""}${r.stderr ?? ""}${r.error ? `\n${r.error.message}` : ""}`.slice(-6000), home: h };
+  return { status: r.status, facts, output: `${r.stdout ?? ""}${r.stderr ?? ""}${r.error ? `\n${r.error.message}` : ""}`.slice(-6000), home: h, netlog };
+}
+
+/** Nothing left the machine: no lookup, socket or request beyond loopback (and `allowed`, the probe's control). */
+function expectQuiet(r: ReturnType<typeof smoke>, allowed: Parameters<typeof offMachine>[1] = {}): ReturnType<typeof readNetLog> {
+  expect(existsSync(r.netlog), r.output).toBe(true);
+  const activity = readNetLog(r.netlog);
+  expect(activity.events, "the net log recorded nothing").toBeGreaterThan(0);
+  expect(offMachine(activity, allowed)).toEqual({ lookups: [], sockets: [], requests: [] });
+  return activity;
 }
 
 function expectShell(r: ReturnType<typeof smoke>): Frame {
@@ -89,6 +112,7 @@ function expectBothStopped(r: ReturnType<typeof smoke>): void {
 
 beforeAll(() => {
   if (!enabled) return;
+  if (!ci) refuseForegroundElectron();
   work = mkdtempSync(join(tmpdir(), "clover-ui-"));
   if (!existsSync(join(root, "out", "main", "index.js"))) {
     const built = spawnSync("bun", ["run", "scripts/build.ts"], { cwd: root, encoding: "utf8" });
@@ -102,9 +126,13 @@ beforeAll(() => {
   registries.fixture = join(work, "fixture.json");
   writeFileSync(registries.default, JSON.stringify({ plugins: base }));
   writeFileSync(registries.fixture, JSON.stringify({ plugins: [...base, folderView(join(FIXTURES, "fixture-composer")), folderView(join(FIXTURES, "fixture-surface"), 1001)] }));
+  registries.dns = join(work, "dns.json");
+  writeFileSync(registries.dns, JSON.stringify({ plugins: [...base, folderView(join(FIXTURES, "fixture-dns"), 1002), folderView(join(FIXTURES, "fixture-dns-control"), 1003)] }));
 });
 
 afterAll(() => {
+  // CLOVER_UI_KEEP_HOMES=1 keeps each run's home (its log, net log and calls) for a look after a failure.
+  if (process.env.CLOVER_UI_KEEP_HOMES === "1") return;
   for (const h of homes) rmSync(h, { recursive: true, force: true });
   if (work !== undefined) rmSync(work, { recursive: true, force: true });
 });
@@ -117,10 +145,11 @@ describe.if(enabled)("the app in Electron (UI test: CI, or locally with a backgr
     expect(shell.text).toContain("Alpha");
     expect(r.facts!.mounts).toMatchObject({ root: 3, frame: 3 });
     expectBothStopped(r);
+    expectQuiet(r);
   }, 120_000);
 
   test("a third-party part renders in a layer of its own, in its own process, themed by its tab; surfaces and menus go through the core", () => {
-    const r = smoke(electron(), [root], "fixture", { CLOVER_SMOKE_LAYERS: "1", CLOVER_SMOKE_WAIT_TEXT: "Menu:", CLOVER_TEST_MENU_PICK: "second" });
+    const r = smoke(electron(), [root], "fixture", { CLOVER_SMOKE_LAYERS: "1", CLOVER_SMOKE_WAIT_TEXT: "Menu:", CLOVER_TEST_MENU_PICK: "second", CLOVER_SMOKE_INPUT: "1" });
     const shell = expectShell(r);
     const part = r.facts!.frames.find((x) => x.origin === "clover-plugin://fixture-composer");
     expect(part, r.output).toMatchObject({ bridge: "object", node: false, text: "Send" });
@@ -139,10 +168,29 @@ describe.if(enabled)("the app in Electron (UI test: CI, or locally with a backgr
     expect(surfaces.map((x) => x.id).sort()).toEqual(["fixture", "island", "pill"]);
     expect(r.facts!.mounts).toMatchObject({ root: 4, frame: 5 });
     for (const x of surfaces) expect(x.visible).toBe(false);
+    // Menus wait for the user's input in their window: refused before the test's key press, shown after it.
+    expect(r.output).toContain("menu: refused (a menu needs the user's recent click or key press in its window)");
     // The composer's menu came from a frame inside the shell's frame: placed by each frame's offset, low in the window.
     const at = [...r.output.matchAll(/menu: 1 item\(s\) at (\d+),(\d+)/g)].map((m) => ({ x: Number(m[1]), y: Number(m[2]) }));
     expect(at.length, r.output).toBeGreaterThan(0);
     expect(at[0]!.y).toBeGreaterThan(300);
+    expectBothStopped(r);
+    expectQuiet(r);
+  }, 120_000);
+
+  test("S9's DNS-prefetch probe: a layer looks up no host name; the same document without its allowlist does", () => {
+    const guarded = "fixture-dns-probe.example";
+    const control = "fixture-dns-control-probe.example";
+    const r = smoke(electron(), [root], "dns", { CLOVER_TEST_UNGUARDED_LAYERS: "fixture-dns-control", CLOVER_SMOKE_WAIT_TEXT: `probe: ${guarded}|probe: ${control}`, CLOVER_SMOKE_SETTLE_MS: "3000" });
+    expectShell(r);
+    const texts = (r.facts!.surfaces as { frames: Frame[] }[]).flatMap((x) => x.frames.map((f) => f.text));
+    expect(texts, r.output).toContain(`probe: ${guarded}`);
+    expect(texts, r.output).toContain(`probe: ${control}`);
+    // The control's lookup, and the resolver's IPv6 check it sets off (a UDP connect that sends nothing), are all.
+    const activity = expectQuiet(r, { lookups: [control], sockets: [IPV6_REACHABILITY_PROBE] });
+    // The positive control reached the resolver, so the probe sees a lookup when one happens; the guarded one didn't.
+    expect(activity.lookups, JSON.stringify(activity.lookups)).toContain(control);
+    expect(activity.lookups).not.toContain(guarded);
     expectBothStopped(r);
   }, 120_000);
 
@@ -155,10 +203,16 @@ describe.if(enabled)("the app in Electron (UI test: CI, or locally with a backgr
         : [join(dist, process.arch === "x64" ? "linux-unpacked" : `linux-${process.arch}-unpacked`, "clover")];
     const executable = candidates.find((c) => existsSync(c));
     expect(executable, "run `bun run dist` first (the app job does)").toBeDefined();
+    // A packaged dist app ignores CLOVER_DAEMON_BIN: it finds its daemon in its own resources, where lane M packages
+    // it, so the fake goes there.
+    const resources = process.platform === "darwin" ? join(dirname(dirname(executable!)), "Resources") : join(dirname(executable!), "resources");
+    mkdirSync(join(resources, "daemon"), { recursive: true });
+    copyFileSync(fakeCore, join(resources, "daemon", `clover-core${exe}`));
     const r = smoke(executable!, [], "default");
     expectShell(r);
     expect(r.facts!).toMatchObject({ packaged: true, version });
     expectBothStopped(r);
+    expectQuiet(r);
   }, 120_000);
 
   test("the pair: a crashed daemon is started again, and the launcher's Quit stops both", async () => {

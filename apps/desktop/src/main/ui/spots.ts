@@ -155,6 +155,14 @@ export function declarationOf(spot: string, plugins: readonly UiPlugin[]): Point
   return undefined;
 }
 
+/** The tree a `private` spot is open to (§5.4: "a `private` point is open only to the declaring plugin's own tree"):
+ *  the declaring plugin's top-level id, or undefined for a spot anyone may fill. The catalog's spots are never private. */
+export function privateTo(spot: string, plugins: readonly UiPlugin[]): string | undefined {
+  if (spotInfo(spot) !== undefined) return undefined;
+  for (const p of plugins) for (const e of p.entries) if (e.declares[spot]?.private === true) return p.topId;
+  return undefined;
+}
+
 const list = (v: string | readonly string[] | undefined): readonly string[] | undefined => (v === undefined ? undefined : typeof v === "string" ? [v] : v);
 
 /** The bots an entry is limited to, or `all` (rule 4 and `when.bot`): a bot's own entries are limited to that bot; the
@@ -208,7 +216,7 @@ export interface Candidate {
 /** Why an entry that names this cell isn't in the running for it. */
 export interface Skipped {
   ref: string;
-  reason: "safe-mode" | "needs" | "when";
+  reason: "safe-mode" | "needs" | "when" | "private";
   detail?: string;
 }
 
@@ -330,12 +338,17 @@ export function resolveCell(input: ResolveInput, spot: string, key?: string): Ce
 
   const fill: Candidate[] = [];
   const style: Candidate[] = [];
+  const owner = privateTo(spot, input.plugins);
   for (const plugin of input.plugins) {
     for (const entry of plugin.entries) {
       if (entry.spot !== spot) continue;
       const tier = keyTier(effectiveKey(plugin, entry), cellKey);
       if (tier === undefined) continue;
       const ref = entryRef(entry);
+      if (owner !== undefined && plugin.topId !== owner) {
+        result.skipped.push({ ref, reason: "private" });
+        continue;
+      }
       if (!runs(plugin, ctx)) {
         result.skipped.push({ ref, reason: "safe-mode" });
         continue;

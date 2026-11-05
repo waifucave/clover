@@ -67,6 +67,9 @@ interface Mount {
   children: Map<string, string>;
   /** Placed by the clover layer with a session kind (`when.session`). */
   session?: string;
+  /** A frame's document: the layers its `Connection-Allowlist` names, as it was served (B1: each installed layer by
+   *  name, never a `*` host, since Chromium matches a document's DNS lookups against the list by host only). */
+  allowedLayers?: readonly string[];
 }
 
 export interface WindowInfo {
@@ -292,7 +295,24 @@ export class UiRuntime {
     if (m === undefined || m.kind !== "frame" || m.layer !== layer || m.tokenState !== "issued") return undefined;
     if (this.now() - (m.issuedAt ?? 0) > MOUNT_TOKEN_TTL_MS) return undefined;
     m.tokenState = "served";
+    m.allowedLayers = this.layerLabels();
     return m;
+  }
+
+  /** Every layer the registry has, by its origin label: what a document served now may frame. */
+  layerLabels(): string[] {
+    return [...new Set(["clover", ...this.plugins.map((p) => p.layer)])].sort();
+  }
+
+  /** A document served before a layer it now has to frame was installed: Chromium holds the frame's navigation to the
+   *  document's own allowlist, so the document is loaded again (a fresh single-use token), and its parent swaps it in. */
+  private refreshDocument(doc: Mount): void {
+    if (doc.kind !== "frame" || doc.parent === undefined) return;
+    const parentDoc = this.docOf(this.mounts.get(doc.parent)!);
+    if (parentDoc === undefined) return;
+    const url = this.reissue(doc);
+    this.log(`layers: ${doc.id} loads again to frame a layer installed after it was served`);
+    this.post(parentDoc.id, { type: "child-reload", child: doc.id, url });
   }
 
   /** A document asks what it is: the root of its window, or the frame its token was issued for. */
@@ -370,11 +390,13 @@ export class UiRuntime {
   // Spots
   // ----------------------------------------------------------------------------------------------
 
-  /** Whether a part declares a spot: its entry's `declares`, the root's own, or `bot.tab`, the app's core point that
-   *  any part may show (the shell shows it in `main`, the panel an agent's). */
+  /** Whether a part declares a spot: its entry's `declares` or the root's own. `bot.tab`, the app's core point, is
+   *  shown by the shell (it shows it in `main`, the panel an agent's), so the `clover` tree's parts may show it without
+   *  declaring it; any other part must declare it. A bot's whole tab, composer included, in a frame whose size and
+   *  covering a third party controls would be a clickjacking surface for the sends E-M3 counts as the user's. */
   private declares(m: Mount, spot: string): boolean {
     if (m.kind === "root") return m.rootSpots?.includes(spot) ?? false;
-    if (spot === "bot.tab") return true;
+    if (spot === "bot.tab" && m.plugin?.topId === "clover") return true;
     const entry = m.plugin?.entries.find((e) => e.id === m.entryId);
     return entry?.declares[spot] !== undefined;
   }
@@ -415,6 +437,7 @@ export class UiRuntime {
         this.drop(id);
       }
     }
+    if (doc.allowedLayers !== undefined && items.some((i) => i.kind === "frame" && i.layer !== doc.layer && !doc.allowedLayers!.includes(i.layer))) this.refreshDocument(doc);
     return { spot, ...(cellKey !== undefined ? { key: cellKey } : {}), shape: cell.shape, items, hidden: cell.hidden, conflict: cell.conflict };
   }
 
@@ -529,11 +552,17 @@ export class UiRuntime {
   reload(frame: FrameRef, child: string): string | undefined {
     const m = this.childOf(frame, child);
     if (m.kind !== "frame") return undefined;
+    return this.reissue(m);
+  }
+
+  /** Drops a frame's document and everything under it, and issues a fresh single-use token for its next load. */
+  private reissue(m: Mount): string {
     for (const id of [...m.children.values()]) this.drop(id);
     m.children.clear();
     if (m.frame !== undefined) this.byFrame.delete(m.frame.key);
     delete m.frame;
     if (m.token !== undefined) this.byToken.delete(m.token);
+    delete m.allowedLayers;
     m.token = this.token();
     m.tokenState = "issued";
     m.issuedAt = this.now();
@@ -615,6 +644,11 @@ export class UiRuntime {
     return { windowId: doc.windowId, steps };
   }
 
+  /** Checks that a part is in the document `frame` (throws otherwise); its plugin's id. */
+  partOf(frame: FrameRef, mountId: string): string {
+    return this.partIn(frame, mountId).plugin?.id ?? "core";
+  }
+
   private partIn(frame: FrameRef, mountId: string): Mount {
     const doc = this.requireDoc(frame);
     const part = this.mounts.get(mountId);
@@ -688,7 +722,7 @@ export class UiRuntime {
   }
 
   /** The frame mount a document's mount token names, for the protocol handler's document. */
-  mountForDocument(m: Mount): { pluginId: string; layer: string; assets: { module?: string; css: string[] } } {
-    return { pluginId: m.plugin?.id ?? "core", layer: m.layer, assets: this.assets(m) };
+  mountForDocument(m: Mount): { pluginId: string; layer: string; assets: { module?: string; css: string[] }; layers: readonly string[] } {
+    return { pluginId: m.plugin?.id ?? "core", layer: m.layer, assets: this.assets(m), layers: m.allowedLayers ?? this.layerLabels() };
   }
 }

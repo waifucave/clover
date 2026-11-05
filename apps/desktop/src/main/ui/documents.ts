@@ -7,11 +7,15 @@
 //                             `/_p/<plugin id>/…` that plugin's own files
 //   clover-sealed://          sealed card frames (E-M3); refused until then
 //
-// Every layer document and script carries a CSP that keeps it to its own origin, and `Connection-Allowlist`
-// `(response-origin)`, which Chromium 156 enforces per document and worker: no DNS prefetch, no ICE servers. Declared
-// network hosts join both when lane B's registry hands them over; until then every layer is fail-closed (S9 item 7).
-// The known gap stays (decision 94): a remote ICE candidate can still make a directly mounted document send checks to
-// an undeclared address; the windows' `disable_non_proxied_udp` policy is the defence in depth.
+// Every layer document and script carries a CSP that keeps it to its own origin, and `Connection-Allowlist`, which
+// Chromium 156 enforces per document and worker, DNS lookups included: a document's lookups are matched against the
+// list by host only (`HostOnlyMatch`), so the list never holds a `*` host. A script's list is `(response-origin)`; a
+// document's also names each installed layer's origin by its label (`clover-plugin://<layer>/*`), because Chromium
+// holds a child frame's navigation to its parent's list. So a document can look up only the installed layers' labels
+// (the E-M1 review's B1; the app CI job's DNS-prefetch probe, with its positive control, checks it). Declared network
+// hosts join both when lane B's registry hands them over; until then every layer is fail-closed (S9 item 7). The known
+// gap stays (decision 94): a remote ICE candidate can still make a directly mounted document send checks to an
+// undeclared address; the windows' `disable_non_proxied_udp` policy is the defence in depth.
 import { createHash } from "node:crypto";
 
 export const LAYER_SCHEME = "clover-plugin";
@@ -58,11 +62,16 @@ export function layerCsp(hosts: readonly string[] = []): string {
   ].join("; ");
 }
 
-/** `Connection-Allowlist` for a layer document or script: its own origin and its declared hosts. A document may also
- *  load frames from the other layers' origins: Chromium 156 holds a frame's navigation to its parent's list
- *  (`ERR_NETWORK_ACCESS_REVOKED` otherwise), and each such frame is checked by its token, its parent and CSP. */
-export function connectionAllowlist(hosts: readonly string[] = [], document = false): string {
-  return `(${[...hosts.map((h) => JSON.stringify(`${h}/*`)), ...(document ? [JSON.stringify(`${LAYER_SCHEME}://*/*`)] : []), "response-origin"].join(" ")})`;
+/** A layer's origin label as the allowlist may name it: a plugin id's characters only, never a pattern. */
+const LAYER_LABEL = /^[a-z0-9][a-z0-9-]*$/;
+
+/** `Connection-Allowlist` for a layer document or script: its own origin and its declared hosts. A document also names
+ *  each installed layer's origin (`layers`), from which it may load frames: Chromium 156 holds a frame's navigation to
+ *  its parent's list (`ERR_NETWORK_ACCESS_REVOKED` otherwise), and each such frame is checked by its token, its parent
+ *  and CSP. Never a `*` host: the list also gates the document's DNS lookups, by host alone. */
+export function connectionAllowlist(hosts: readonly string[] = [], layers: readonly string[] | undefined = undefined): string {
+  const frames = (layers ?? []).filter((l) => LAYER_LABEL.test(l)).map((l) => JSON.stringify(`${LAYER_SCHEME}://${l}/*`));
+  return `(${[...hosts.map((h) => JSON.stringify(`${h}/*`)), ...frames, "response-origin"].join(" ")})`;
 }
 
 export const CORE_CSP = [
@@ -89,10 +98,12 @@ export function commonHeaders(): Record<string, string> {
   };
 }
 
-export function layerHeaders(contentType: string, hosts: readonly string[] = []): Record<string, string> {
+/** The headers of a response on a layer's origin. A document (`text/html`) names the installed layers it may frame. */
+export function layerHeaders(contentType: string, hosts: readonly string[] = [], layers: readonly string[] = []): Record<string, string> {
   const h: Record<string, string> = { ...commonHeaders(), "Content-Type": contentType };
-  if (contentType.startsWith("text/html")) h["Content-Security-Policy"] = layerCsp(hosts);
-  if (contentType.startsWith("text/html") || contentType.startsWith("text/javascript")) h["Connection-Allowlist"] = connectionAllowlist(hosts, contentType.startsWith("text/html"));
+  const doc = contentType.startsWith("text/html");
+  if (doc) h["Content-Security-Policy"] = layerCsp(hosts);
+  if (doc || contentType.startsWith("text/javascript")) h["Connection-Allowlist"] = connectionAllowlist(hosts, doc ? layers : undefined);
   return h;
 }
 

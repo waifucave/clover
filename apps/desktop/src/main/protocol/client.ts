@@ -49,6 +49,10 @@ export class DaemonClient {
   private readonly decoder = new LineDecoder();
   private closedFlag = false;
 
+  /** Where a listener's failure goes: one listener that throws on a message never stops the others, the rest of the
+   *  chunk's lines, or the main process (an uncaught exception there shows an error dialog). */
+  onListenerError: (what: string, err: unknown) => void = () => {};
+
   constructor(private readonly socket: Socket) {
     socket.on("data", (chunk: Buffer) => {
       let lines: string[];
@@ -58,7 +62,13 @@ export class DaemonClient {
         this.close();
         return;
       }
-      for (const line of lines) this.receive(line);
+      for (const line of lines) {
+        try {
+          this.receive(line);
+        } catch (err) {
+          this.onListenerError("a message", err);
+        }
+      }
     });
     socket.on("close", () => this.closed());
     socket.on("error", () => this.closed());
@@ -76,7 +86,13 @@ export class DaemonClient {
       w.reject(new RpcCallError(CLIENT_ERR.CLOSED, "the connection closed"));
     }
     this.waiting.clear();
-    for (const l of this.closeListeners) l();
+    for (const l of this.closeListeners) {
+      try {
+        l();
+      } catch (err) {
+        this.onListenerError("close", err);
+      }
+    }
   }
 
   private receive(line: string): void {
@@ -93,7 +109,13 @@ export class DaemonClient {
       return;
     }
     if (method !== undefined) {
-      for (const l of this.notificationListeners) l(method, msg.params);
+      for (const l of this.notificationListeners) {
+        try {
+          l(method, msg.params);
+        } catch (err) {
+          this.onListenerError(method, err);
+        }
+      }
       return;
     }
     if (typeof msg.id !== "number") return;

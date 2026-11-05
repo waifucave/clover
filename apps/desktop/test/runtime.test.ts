@@ -178,7 +178,7 @@ describe("each part themed by its tab (decision 77)", () => {
     const dir = mkdtempSync(join(tmpdir(), "clover-theme-"));
     mkdirSync(dir, { recursive: true });
     writeFileSync(join(dir, "theme.json"), JSON.stringify({ theme: 1, name: id, tokens: { "color.accent": accent } }));
-    return readUiPlugins([{ pluginId: id, treeHash: "0".repeat(64), layer: id, assetBase: dir, ui: [], themes: [{ id, file: "theme.json" }], locales: [], bots: "all", isBot: true, botTheme: id, name: id }] as never)[0]!;
+    return readUiPlugins([{ pluginId: id, treeHash: `sha256:${"0".repeat(64)}`, layer: id, assetBase: dir, ui: [], themes: [{ id, file: "theme.json" }], locales: [], bots: "all", isBot: true, botTheme: id, name: id }] as never)[0]!;
   }
 
   test("one plugin's frames in two bots' tabs take each tab's theme", () => {
@@ -316,5 +316,55 @@ describe("sleeping frames, surfaces, and the brokers' part of the runtime", () =
     const convo = s.rt.resolve(shell.shellFrame, tab.mount, "conversation").items[0]!;
     const msg = s.rt.dragOffer(shell.shellFrame, convo.mount, { type: "application/x-clover-message", data: { id: "m1" } }) as { token: string };
     expect(s.rt.dragClaim(child, item.mount, msg.token)).toHaveProperty("error");
+  });
+});
+
+describe("the E-M1 review's fixes", () => {
+  test("the layer is the app's own reckoning: a view whose label disagrees, or that isn't a view, is refused", () => {
+    const lines: string[] = [];
+    const good = folderView(join(FIXTURES, "fixture-composer"));
+    const plugins = readUiPlugins([
+      good,
+      { ...good, pluginId: "evil", layer: "clover" },
+      { ...good, pluginId: "kid/part", layer: "kid--part" },
+      { pluginId: "broken" },
+    ], {}, (l) => lines.push(l));
+    expect(plugins.map((p) => [p.id, p.layer])).toEqual([["fixture-composer", "fixture-composer"], ["kid/part", "kid--part"]]);
+    expect(lines.join("\n")).toContain("refused evil: its layer is evil, not clover");
+    expect(lines.join("\n")).toContain("refused a plugin view that isn't one");
+  });
+
+  test("bot.tab: the clover tree's parts may show it; any other part only if it declares it", () => {
+    const s = setup(composerFixture());
+    const shell = mountShell(s);
+    const tab = s.rt.resolve(shell.shellFrame, shell.info.mount, "bot.tab", "alpha").items[0]!;
+    const item = s.rt.resolve(shell.shellFrame, tab.mount, "composer").items[0]!;
+    const token = new URL((item as { url: string }).url).searchParams.get("mount")!;
+    s.rt.serveDocument("fixture-composer", token);
+    const composerFrame = frame((item as { url: string }).url, shell.shellFrame);
+    const info = s.rt.describe(composerFrame, WIN, token);
+    expect(s.rt.resolve(composerFrame, info.mount, "bot.tab", "alpha")).toMatchObject({ items: [], undeclared: true });
+    expect(s.rt.resolve(shell.shellFrame, shell.info.mount, "bot.tab", "alpha").items.length).toBe(1);
+  });
+
+  test("a document names the installed layers it may frame, and loads again to frame one installed after it", () => {
+    const s = setup();
+    const shell = mountShell(s);
+    const mounts = (s.rt as unknown as { mounts: Map<string, Parameters<UiRuntime["mountForDocument"]>[0]> }).mounts;
+    expect(s.rt.mountForDocument(mounts.get(shell.info.mount)!).layers).toEqual(["alpha", "clover"]);
+    // A composer from a new layer is installed while the shell shows.
+    s.rt.setRegistry([...readUiPlugins([...cloverViews(), alphaView()] as never), ...composerFixture()]);
+    s.sent.length = 0;
+    const tab = s.rt.resolve(shell.shellFrame, shell.info.mount, "bot.tab", "alpha").items[0]!;
+    s.rt.resolve(shell.shellFrame, tab.mount, "composer");
+    const reload = s.sent.find((x) => x.m.type === "child-reload");
+    expect(reload?.to).toBe(`${s.rootFrame.processId}:${s.rootFrame.routingId}`);
+    const url = (reload!.m as { url: string }).url;
+    expect(reload!.m).toMatchObject({ type: "child-reload", child: shell.info.mount });
+    expect(url).toMatch(/^clover-plugin:\/\/clover\/\?mount=t\d+$/);
+    // Served again, it names the new layer.
+    const token = new URL(url).searchParams.get("mount")!;
+    const again = s.rt.serveDocument("clover", token);
+    expect(s.rt.mountForDocument(again!).layers).toEqual(["alpha", "clover", "fixture-composer"]);
   });
 });

@@ -13,19 +13,20 @@ import { release as osRelease } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { app, BrowserWindow, Menu, dialog, nativeTheme, powerMonitor, screen, session, shell, systemPreferences, type Input, type MenuItemConstructorOptions } from "electron";
-import { CLOVER_PROTOCOL_VERSION, type PairStatus, type UiPluginView, type UiSettings } from "@waifucave/clover-protocol";
+import { APP_METHODS, CLOVER_PROTOCOL_VERSION, CORE_EVENT_NOTIFICATION, PairStatus, UiSettings, UiSettingsChangedEvent } from "@waifucave/clover-protocol";
 import { systemAccentFromOs } from "@waifucave/clover-plugin-sdk";
 import { appIdentity, daemonHome, parseLaunchArgs, resolveAppProfile, SMOKE_PREFIX, UI_PARTITION } from "./identity";
 import { cliLauncher, locateDaemonBinary } from "./pair/login";
 import { Pair, type PairState } from "./pair/pair";
 import { quitQuestion, type QuitChoice } from "./pair/quit";
-import { appHello, readAppToken, readStartInfo } from "./pair/start";
+import { appHello, devOverridesAllowed, pairEnv, readAppToken, readStartInfo } from "./pair/start";
 import { daemonEndpoint, type DaemonClient } from "./protocol/client";
+import { appShortcut } from "./shortcuts";
 import { AppTray } from "./tray";
 import { readUiPlugins, type UiPluginExtras } from "./ui/model";
-import { checkRegions, inRegions, surfacePlacement, type MenuItem, type Rect } from "./ui/brokers";
+import { MenuGate, checkRegions, inRegions, surfaceMayFloat, surfacePlacement, surfaceSize, type MenuItem, type Rect } from "./ui/brokers";
 import { guardContents, hardenSession, installIpc, installUiSession, registerSchemes, startCensus } from "./ui/electron";
-import { UiRuntime } from "./ui/runtime";
+import { LayerError, UiRuntime } from "./ui/runtime";
 import type { Os } from "./ui/spots";
 import { mainWindowPlan, surfaceWindowPlan, TITLE_BAR_HEIGHT, webPreferences, windowsHasAcrylic } from "./window";
 
@@ -54,6 +55,8 @@ function log(line: string): void {
   process.stdout.write(`[clover-app] ${line}\n`);
 }
 
+// The dev overrides (the daemon binary, the app token) count only in a dev or unpackaged run.
+const env = pairEnv(process.env, devOverridesAllowed({ packaged: app.isPackaged, profile: identity.profile }));
 const start = readStartInfo(home, process.argv);
 const safeMode = start.safeMode || args.safeMode;
 
@@ -75,7 +78,6 @@ if (!app.requestSingleInstanceLock()) {
   app.on("window-all-closed", () => {
     // Closing a window only closes it: the app stays in the menu bar.
   });
-  app.on("web-contents-created", (_event, contents) => guardContents(contents, log));
   app.on("before-quit", (event) => {
     if (leaving || shuttingDown) return;
     // The OS asked (the Dock's Quit): the app's own Quit stops both halves, so it asks first.
@@ -101,7 +103,9 @@ async function ready(): Promise<void> {
   await hardenSession(ui, log);
 
   runtime = new UiRuntime({ os, platform: process.platform, safeMode, log });
-  installUiSession(ui, runtime, dirs, log);
+  // The UI test's positive control for the DNS probe: never in a packaged app.
+  const unguarded = !app.isPackaged && headless ? (process.env.CLOVER_TEST_UNGUARDED_LAYERS ?? "").split(",").filter((l) => l !== "") : [];
+  installUiSession(ui, runtime, dirs, log, { unguardedLayers: new Set(unguarded) });
   installIpc(runtime, {
     frameMetrics: (id, m) => runtime.setFrameMetrics(id, m),
     rootCommand: (_id, name) => {
@@ -133,11 +137,11 @@ async function ready(): Promise<void> {
 // ------------------------------------------------------------------------------------------------
 
 function makePair(): Pair {
-  const binary = locateDaemonBinary({ env: process.env, packaged: app.isPackaged, resourcesPath: process.resourcesPath });
+  const binary = locateDaemonBinary({ env, packaged: app.isPackaged, resourcesPath: process.resourcesPath });
   const p = new Pair({
     endpoint: daemonEndpoint(home),
     hello: () => {
-      const token = readAppToken(home, process.env);
+      const token = readAppToken(home, env);
       return token === undefined ? undefined : appHello(token, app.getVersion(), CLOVER_PROTOCOL_VERSION);
     },
     ...(binary !== undefined ? { launcher: cliLauncher({ binary, home, profile: identity.profile }) } : {}),
@@ -149,11 +153,20 @@ function makePair(): Pair {
       exitApp();
     },
   });
-  p.handle("app.show", (params) => show(params));
+  p.handle("app.show", (params) => {
+    const parsed = APP_METHODS.appShow.params.safeParse(params);
+    if (!parsed.success) throw new Error("app.show needs a place to show");
+    return show(parsed.data.what);
+  });
+  // Every message from the daemon is checked against lane B's schemas before it changes anything.
   p.onNotification((method, params) => {
-    if (method !== "core.event" || params === null || typeof params !== "object") return;
+    if (method !== CORE_EVENT_NOTIFICATION || params === null || typeof params !== "object") return;
     const type = (params as { type?: unknown }).type;
-    if (type === "ui_settings_changed") runtime.setChoices(((params as { settings: UiSettings }).settings) as never);
+    if (type === "ui_settings_changed") {
+      const parsed = UiSettingsChangedEvent.safeParse(params);
+      if (parsed.success) runtime.setChoices(parsed.data.settings as never);
+      else log("pair: ignored a ui_settings_changed event that isn't one");
+    }
     if (type === "plugin_changed" || type === "plugin_removed" || type === "plugin_found") scheduleReload();
   });
   return p;
@@ -170,24 +183,30 @@ function scheduleReload(): void {
 
 /** The registry and the user's choices, on every connection (state is the core's: a reconnect rebuilds from it). */
 async function loadRegistry(client: DaemonClient): Promise<void> {
-  const [ui, settings, status] = await Promise.all([
-    client.request<{ plugins: UiPluginView[] }>("plugin.ui"),
-    client.request<UiSettings>("ui.settings"),
-    client.request<PairStatus>("pair.status").catch(() => undefined),
+  const [ui, settingsRaw, statusRaw] = await Promise.all([
+    client.request<unknown>("plugin.ui"),
+    client.request<unknown>("ui.settings"),
+    client.request<unknown>("pair.status").catch(() => undefined),
   ]);
+  const views = ui !== null && typeof ui === "object" && Array.isArray((ui as { plugins?: unknown }).plugins) ? (ui as { plugins: unknown[] }).plugins : [];
+  const settings = UiSettings.safeParse(settingsRaw);
+  if (!settings.success) log("pair: the daemon's UI settings aren't valid; the defaults apply");
+  const status = statusRaw === undefined ? undefined : PairStatus.safeParse(statusRaw);
   let extras: Record<string, UiPluginExtras> = {};
   try {
-    const list = await client.request<{ plugins: { id: string; source: string }[] }>("plugin.list");
-    extras = Object.fromEntries(list.plugins.map((p) => [p.id, { source: p.source === "bundled" ? "bundled" : p.source === "dev" ? "dev" : "installed" } as UiPluginExtras]));
+    const list = await client.request<{ plugins?: unknown }>("plugin.list");
+    const rows = Array.isArray(list?.plugins) ? (list.plugins as { id?: unknown; source?: unknown }[]) : [];
+    extras = Object.fromEntries(rows.filter((p) => typeof p?.id === "string").map((p) => [p.id as string, { source: p.source === "bundled" ? "bundled" : p.source === "dev" ? "dev" : "installed" } as UiPluginExtras]));
   } catch {
     // An older daemon, or the fake: the view's own fields, else the defaults.
   }
-  if (status?.safeMode === true) runtime.setSafeMode(true);
-  runtime.setRegistry(readUiPlugins(ui.plugins, extras));
-  runtime.setChoices(settings as never);
+  if (status?.success === true && status.data.safeMode) runtime.setSafeMode(true);
+  const plugins = readUiPlugins(views, extras, log);
+  runtime.setRegistry(plugins);
+  runtime.setChoices((settings.success ? settings.data : { picks: [], lists: [] }) as never);
   syncSurfaces();
   await client.request("events.subscribe", { areas: ["plugins", "app"] }).catch(() => undefined);
-  log(`layers: ${ui.plugins.length} plugin(s) with UI`);
+  log(`layers: ${plugins.length} plugin(s) with UI`);
 }
 
 function stateChanged(s: PairState): void {
@@ -196,16 +215,15 @@ function stateChanged(s: PairState): void {
   tray?.show({ safeMode: runtime.safeMode, ...(status !== undefined ? { status } : {}) });
 }
 
-/** The daemon asks the app to open a window or a place in it (§3.1, lane B's `app.show`). */
-async function show(params: unknown): Promise<{ ok: true }> {
-  const what = (params as { what?: { kind?: string; url?: string; section?: string } } | undefined)?.what;
-  if (what?.kind === "url" && typeof what.url === "string") {
+/** The daemon asks the app to open a window or a place in it (§3.1, lane B's `app.show`), checked against its schema. */
+async function show(what: { kind: string; url?: string; section?: string }): Promise<{ ok: true }> {
+  if (what.kind === "url" && typeof what.url === "string") {
     const url = new URL(what.url);
     if (url.protocol === "https:" || url.protocol === "http:") await shell.openExternal(url.toString());
     return { ok: true };
   }
   const win = await openMainWindow();
-  if (win !== undefined && what?.kind === "settings") runtime.command(win.id, "open-settings");
+  if (win !== undefined && what.kind === "settings") runtime.command(win.id, "open-settings");
   return { ok: true };
 }
 
@@ -213,12 +231,13 @@ async function show(params: unknown): Promise<{ ok: true }> {
 async function requestQuit(source: string): Promise<void> {
   if (leaving) return;
   const client = pair?.client;
-  let status: PairStatus | undefined;
+  let status: unknown;
   try {
-    status = client === undefined ? undefined : await client.request<PairStatus>("pair.status", {}, 3_000);
+    status = client === undefined ? undefined : await client.request<unknown>("pair.status", {}, 3_000);
   } catch {
     status = undefined;
   }
+  // A status that isn't one falls back to a plain Quit.
   const q = quitQuestion(status);
   let choice: QuitChoice = "quit";
   if (q.ask) {
@@ -288,6 +307,7 @@ async function openMainWindow(): Promise<BrowserWindow | undefined> {
   const win = new BrowserWindow(plan.options);
   mainWindow = win;
   const id = win.id;
+  watchWindow(win);
   runtime.openWindow(id, { material: plan.material });
   if (process.platform === "darwin") runtime.setFrameMetrics(id, { top: TITLE_BAR_HEIGHT, start: 80, end: 0 });
   win.on("closed", () => {
@@ -302,6 +322,9 @@ async function openMainWindow(): Promise<BrowserWindow | undefined> {
   });
   win.on("focus", () => runtime.focusReturned(id));
   win.webContents.on("before-input-event", (event, input) => shortcut(event, input, win));
+  win.webContents.on("before-mouse-event", (_event, mouse) => {
+    if (mouse.type === "mouseDown") menus.input(id);
+  });
   win.once("ready-to-show", () => {
     if (headless) return;
     win.show();
@@ -320,6 +343,7 @@ async function openMainWindow(): Promise<BrowserWindow | undefined> {
 interface Surface {
   win: BrowserWindow;
   ref: string;
+  pluginId: string;
   placement?: string;
   regions: Rect[];
   poll?: ReturnType<typeof setInterval>;
@@ -336,15 +360,20 @@ function syncSurfaces(): void {
   }
   for (const w of wanted) {
     if (surfaces.has(w.id)) continue;
+    // Only the clover tree's surfaces float above everything, on every Space (the review's ruling for 1.111.1).
+    const floats = surfaceMayFloat(w.pluginId);
     const win = new BrowserWindow(surfaceWindowPlan({
-      surface: w.window,
+      surface: { ...w.window, alwaysOnTop: floats && w.window.alwaysOnTop === true },
       title: `${identity.productName} ${w.id}`,
       webPreferences: webPreferences({ preload: join(here, "preload.cjs"), partition: UI_PARTITION, headless, offscreen: false }),
     }));
-    if (process.platform === "darwin") win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
-    if (w.window.alwaysOnTop === true) win.setAlwaysOnTop(true, process.platform === "darwin" ? "status" : "floating");
+    watchWindow(win);
+    // `skipTransformProcessType`: without it Electron hides the Dock icon while the window shows, which fights
+    // `syncActivation`.
+    if (process.platform === "darwin" && floats) win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true, skipTransformProcessType: true });
+    if (floats && w.window.alwaysOnTop === true) win.setAlwaysOnTop(true, process.platform === "darwin" ? "status" : "floating");
     const placement = w.window.placement?.[os];
-    const s: Surface = { win, ref: w.ref, regions: [], ...(placement !== undefined ? { placement } : {}) };
+    const s: Surface = { win, ref: w.ref, pluginId: w.pluginId, regions: [], ...(placement !== undefined ? { placement } : {}) };
     surfaces.set(w.id, s);
     const id = win.id;
     runtime.openWindow(id, { material: "none", surface: { id: w.id, ref: w.ref } });
@@ -367,12 +396,10 @@ function steerSurface(windowId: number, request: Record<string, unknown>): void 
   const entry = [...surfaces].find(([, s]) => !s.win.isDestroyed() && s.win.id === windowId);
   if (entry === undefined) return;
   const [id, s] = entry;
-  const n = (v: unknown, min: number, max: number) => (typeof v === "number" && Number.isFinite(v) ? Math.round(Math.min(max, Math.max(min, v))) : undefined);
-  const width = n(request.width, 40, 2000);
-  const height = n(request.height, 24, 1400);
-  if (width !== undefined || height !== undefined) {
+  if (request.width !== undefined || request.height !== undefined) {
     const [w, h] = s.win.getSize();
-    place(id, s, [width ?? w!, height ?? h!]);
+    const size = surfaceSize(request, { width: w!, height: h! }, { trusted: surfaceMayFloat(s.pluginId), workArea: screen.getPrimaryDisplay().workArea });
+    place(id, s, [size.width, size.height]);
   }
   if (request.regions !== undefined) {
     const [w, h] = s.win.getSize();
@@ -406,15 +433,42 @@ function clickThrough(s: Surface): void {
   s.poll = setInterval(tick, 50);
 }
 
+/** The menu broker's gate: menus open only right after the user's click or key press in that window, one at a time. */
+const menus = new MenuGate();
+
+/** The guards the app's own windows get (never another webContents: lane L's browser views have L's own policy), and
+ *  the input the menu gate counts. */
+function watchWindow(win: BrowserWindow): void {
+  guardContents(win.webContents, log);
+  const id = win.id;
+  win.webContents.on("before-input-event", (_event, input) => {
+    if (input.type === "keyDown" || input.type === "rawKeyDown") menus.input(id);
+  });
+  win.on("closed", () => menus.forget(id));
+}
+
 /** The menu broker's last step: a native menu at the point, in the window the asking frame is in. A headless run
  *  never shows it: it answers with `CLOVER_TEST_MENU_PICK` (the tests), else nothing. */
-function popupMenu(windowId: number, items: MenuItem[], point: { x: number; y: number }): Promise<string | null> {
+async function popupMenu(windowId: number, items: MenuItem[], point: { x: number; y: number }): Promise<string | null> {
   const win = BrowserWindow.fromId(windowId);
-  if (win === null || win.isDestroyed()) return Promise.resolve(null);
-  if (headless || !win.isVisible()) {
-    log(`menu: ${items.length} item(s) at ${point.x},${point.y} (not shown: headless)`);
-    return Promise.resolve(process.env.CLOVER_TEST_MENU_PICK ?? null);
+  if (win === null || win.isDestroyed()) return null;
+  const gate = menus.take(windowId);
+  if (!gate.ok) {
+    log(`menu: refused (${gate.reason})`);
+    throw new LayerError(gate.reason);
   }
+  try {
+    if (headless || !win.isVisible()) {
+      log(`menu: ${items.length} item(s) at ${point.x},${point.y} (not shown: headless)`);
+      return process.env.CLOVER_TEST_MENU_PICK ?? null;
+    }
+    return await nativeMenu(win, items, point);
+  } finally {
+    menus.done();
+  }
+}
+
+function nativeMenu(win: BrowserWindow, items: MenuItem[], point: { x: number; y: number }): Promise<string | null> {
   return new Promise((resolve) => {
     let picked: string | null = null;
     const build = (list: MenuItem[]): MenuItemConstructorOptions[] => list.map((it) => (it.type === "separator"
@@ -429,22 +483,14 @@ function popupMenu(windowId: number, items: MenuItem[], point: { x: number; y: n
   });
 }
 
-/** The app's shortcuts, ahead of every layer (S9: the host owns them through `before-input-event`). macOS's come
- *  from the menu's accelerators. */
+/** The app's shortcuts, ahead of every layer (`shortcuts.ts`). */
 function shortcut(event: Electron.Event, input: Input, win: BrowserWindow): void {
-  if (input.type !== "keyDown" || process.platform === "darwin") return;
-  if (!input.control || input.alt || input.meta) return;
-  const key = input.key.toLowerCase();
-  if (key === "q") {
-    event.preventDefault();
-    void requestQuit("shortcut");
-  } else if (key === "w" && !input.shift) {
-    event.preventDefault();
-    win.close();
-  } else if (key === ",") {
-    event.preventDefault();
-    runtime.command(win.id, "open-settings");
-  }
+  const which = appShortcut(input, process.platform);
+  if (which === undefined) return;
+  event.preventDefault();
+  if (which === "quit") void requestQuit("shortcut");
+  else if (which === "close-window") win.close();
+  else runtime.command(win.id, "open-settings");
 }
 
 function setMenu(): void {
@@ -458,7 +504,7 @@ function setMenu(): void {
       submenu: [
         { role: "about" },
         { type: "separator" },
-        { label: "Settings…", accelerator: "Command+,", click: () => void show({ what: { kind: "settings" } }) },
+        { label: "Settings…", accelerator: "Command+,", click: () => void show({ kind: "settings" }) },
         { type: "separator" },
         { role: "hide" },
         { role: "hideOthers" },
@@ -520,7 +566,8 @@ async function smoke(): Promise<void> {
   };
   let frames: Probed[] = [];
   let surfaceFacts: { id: string; visible: boolean; bounds: Rect; frames: Probed[] }[] = [];
-  const waitText = process.env.CLOVER_SMOKE_WAIT_TEXT;
+  // Texts the run waits for, all of them (`|` between).
+  const waitTexts = (process.env.CLOVER_SMOKE_WAIT_TEXT ?? "").split("|").filter((t) => t !== "");
   while (Date.now() < deadline) {
     frames = await probeWindow(win);
     surfaceFacts = [];
@@ -530,10 +577,23 @@ async function smoke(): Promise<void> {
     const layers = frames.filter((f) => f.origin.startsWith("clover-plugin://"));
     const others = new Set(layers.filter((f) => f.origin !== "clover-plugin://clover").map((f) => f.origin));
     const texts = [...frames, ...surfaceFacts.flatMap((x) => x.frames)].map((f) => f.text);
+    const drawn = shell?.shell === true && shell.composer && others.size >= wanted && layers.every((f) => f.rendered);
     // Every layer's part has drawn, as many other layers as the run expects are there, and any text it waits for.
-    if (shell?.shell && shell.composer && others.size >= wanted && layers.every((f) => f.rendered) && (waitText === undefined || texts.some((t) => t.includes(waitText)))) break;
+    if (drawn && waitTexts.every((w) => texts.some((t) => t.includes(w)))) break;
+    // The UI test's user: once everything has drawn (so a part asking for a menu before has been refused), a Shift
+    // press in each window, which the menu gate counts as the user's input.
+    if (drawn && process.env.CLOVER_SMOKE_INPUT === "1") {
+      for (const w of [win, ...[...surfaces.values()].map((x) => x.win)]) {
+        if (w.isDestroyed()) continue;
+        w.webContents.sendInputEvent({ type: "keyDown", keyCode: "Shift" });
+        w.webContents.sendInputEvent({ type: "keyUp", keyCode: "Shift" });
+      }
+    }
     await new Promise((r) => setTimeout(r, 250));
   }
+  // Time for what the parts set going to happen (the DNS probe's lookups).
+  const settle = Number(process.env.CLOVER_SMOKE_SETTLE_MS ?? "0");
+  if (settle > 0) await new Promise((r) => setTimeout(r, Math.min(settle, 10_000)));
   const metrics = app.getAppMetrics();
   const shellFrame = frames.find((f) => f.origin === "clover-plugin://clover");
   let captured: string | undefined;

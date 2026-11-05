@@ -54,6 +54,21 @@ export function readStartInfo(home: string, argv: readonly string[], now: number
   return { by, safeMode };
 }
 
+/** The dev overrides (`CLOVER_DAEMON_BIN`, `CLOVER_APP_TOKEN`) count only in a dev or unpackaged run: a packaged dist
+ *  app finds its daemon in its own resources and its token in the daemon's run folder, whatever its environment. */
+export function devOverridesAllowed(input: { packaged: boolean; profile: string }): boolean {
+  return !input.packaged || input.profile === "dev";
+}
+
+/** The environment the pair reads, without the dev overrides where they don't count. */
+export function pairEnv(env: NodeJS.ProcessEnv, allowed: boolean): NodeJS.ProcessEnv {
+  if (allowed) return env;
+  const out = { ...env };
+  delete out.CLOVER_DAEMON_BIN;
+  delete out.CLOVER_APP_TOKEN;
+  return out;
+}
+
 /** The `app` token: `CLOVER_APP_TOKEN`, else the daemon's token file; undefined when there is none yet. */
 export function readAppToken(home: string, env: NodeJS.ProcessEnv): string | undefined {
   const fromEnv = env.CLOVER_APP_TOKEN;

@@ -160,3 +160,57 @@ export function checkRegions(raw: unknown, bounds: { width: number; height: numb
 export function inRegions(point: { x: number; y: number }, regions: readonly Rect[]): boolean {
   return regions.some((r) => point.x >= r.x && point.x < r.x + r.width && point.y >= r.y && point.y < r.y + r.height);
 }
+
+/** Surfaces the `clover` tree ships may float above everything, on every Space (the island, the pill); in 1.111.1 any
+ *  other plugin's surface is an ordinary window level (the E-M1 review's ruling). */
+export function surfaceMayFloat(pluginId: string): boolean {
+  return pluginId.split("/")[0] === "clover";
+}
+
+/** The largest surface a plugin outside the `clover` tree may have. */
+export const THIRD_PARTY_SURFACE_MAX = { width: 800, height: 600 } as const;
+
+/** A surface's size, as asked, kept to the display's work area, and for a plugin outside the `clover` tree to
+ *  `THIRD_PARTY_SURFACE_MAX`; each side at least 40 by 24. A side not asked keeps `current`'s. */
+export function surfaceSize(asked: { width?: unknown; height?: unknown }, current: { width: number; height: number }, input: { trusted: boolean; workArea: { width: number; height: number } }): { width: number; height: number } {
+  const maxW = Math.max(40, input.trusted ? input.workArea.width : Math.min(THIRD_PARTY_SURFACE_MAX.width, input.workArea.width));
+  const maxH = Math.max(24, input.trusted ? input.workArea.height : Math.min(THIRD_PARTY_SURFACE_MAX.height, input.workArea.height));
+  const side = (v: unknown, fallback: number, min: number, max: number) => Math.round(Math.min(max, Math.max(min, typeof v === "number" && Number.isFinite(v) ? v : fallback)));
+  return { width: side(asked.width, current.width, 40, maxW), height: side(asked.height, current.height, 24, maxH) };
+}
+
+/** How long after the user's last click or key press in a window a part may open a menu there. */
+export const MENU_INPUT_WINDOW_MS = 5_000;
+
+/** The menu broker's gate: one menu at a time, and only right after the user's own input in that window, which the
+ *  menu then uses up (one click, one menu). */
+export class MenuGate {
+  private readonly lastInput = new Map<number, number>();
+  private open = false;
+
+  constructor(private readonly now: () => number = Date.now) {}
+
+  /** The user clicked or pressed a key in a window (`before-mouse-event`, `before-input-event`). */
+  input(windowId: number): void {
+    this.lastInput.set(windowId, this.now());
+  }
+
+  /** Takes the gate for a menu in a window, or says why not. */
+  take(windowId: number): { ok: true } | { ok: false; reason: string } {
+    if (this.open) return { ok: false, reason: "another menu is open" };
+    const at = this.lastInput.get(windowId);
+    if (at === undefined || this.now() - at > MENU_INPUT_WINDOW_MS) return { ok: false, reason: "a menu needs the user's recent click or key press in its window" };
+    this.lastInput.delete(windowId);
+    this.open = true;
+    return { ok: true };
+  }
+
+  /** The menu closed. */
+  done(): void {
+    this.open = false;
+  }
+
+  forget(windowId: number): void {
+    this.lastInput.delete(windowId);
+  }
+}

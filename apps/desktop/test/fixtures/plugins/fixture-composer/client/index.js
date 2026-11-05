@@ -10,9 +10,17 @@ export function FixtureComposer({ props }) {
   const menu = useMenu();
   const [picked, setPicked] = useState("");
   // A menu from deep in the window (this frame sits in the shell's frame, in the root): the core places it by each
-  // frame's place in the one around it.
+  // frame's place in the one around it. The core refuses a menu until the user has just clicked or pressed a key in
+  // the window, so the fixture asks again until the test's input lets it through.
   useEffect(() => {
-    menu([{ id: "attach", label: "Attach" }], { x: 7, y: 5 }).then((id) => setPicked(id === null ? "none" : id), () => setPicked("error"));
+    let live = true;
+    let timer;
+    const ask = () => menu([{ id: "attach", label: "Attach" }], { x: 7, y: 5 }).then(
+      (id) => live && setPicked(id === null ? "none" : id),
+      () => { if (live) timer = setTimeout(ask, 300); },
+    );
+    ask();
+    return () => { live = false; clearTimeout(timer); };
   }, []);
   return jsxs("form", {
     className: "fixture-composer",

@@ -96,6 +96,10 @@ function onMessage(m: LayerMessage): void {
     bridge.rectReply(m.id, b === undefined ? null : { x: b.x, y: b.y, width: b.width, height: b.height });
   }
   if (m.type === "tokens" && m.tokens[info.mount] !== undefined) applyTokens(m.tokens[info.mount]!);
+  if (m.type === "child-reload" && m.child === shown?.mount) {
+    const frame = stage.querySelector("iframe");
+    mount({ mount: m.child, url: m.url, ref: frame?.dataset.cloverEntry ?? "", layer: frame?.dataset.cloverLayer ?? "" });
+  }
   if (m.type === "child-gone" && m.child === shown?.mount) {
     const child = m.child;
     note(["Clover's window stopped drawing. Its layer will start again when you reload."], {

@@ -31,7 +31,7 @@ async function build(config: Parameters<typeof Bun.build>[0], what: string): Pro
   }
 }
 
-const browser = { target: "browser" as const, format: "esm" as const, minify: true, sourcemap: "linked" as const, define: { "process.env.NODE_ENV": '"production"' } };
+const browser = { target: "browser" as const, format: "esm" as const, minify: true, sourcemap: "none" as const, define: { "process.env.NODE_ENV": '"production"' } };
 const LAYER_EXTERNALS = ["react", "react/jsx-runtime", "react/jsx-dev-runtime", "react-dom", "react-dom/client", "@waifucave/clover-plugin-sdk/ui"];
 
 // ---- The main process and the preload ----

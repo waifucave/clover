@@ -11,7 +11,7 @@ import { daemonEndpoint } from "../src/main/protocol/client";
 import { parseAutostartStatus, type DaemonLauncher } from "../src/main/pair/login";
 import { Pair, type PairState } from "../src/main/pair/pair";
 import { quitQuestion } from "../src/main/pair/quit";
-import { appHello, readAppToken, readStartInfo, startFilePath } from "../src/main/pair/start";
+import { appHello, devOverridesAllowed, pairEnv, readAppToken, readStartInfo, startFilePath } from "../src/main/pair/start";
 import { readCalls, startFakeDaemon, type FakeDaemon } from "./fake-core/fake-daemon";
 
 const homes: string[] = [];
@@ -53,7 +53,7 @@ function fakeLauncher(home: string, opts: { startDelayMs?: number } = {}): Daemo
   return l;
 }
 
-function pairFor(home: string, launcher: DaemonLauncher | undefined, extra: { onDaemonQuit?: (r: string) => void } = {}): { pair: Pair; states: PairState["kind"][] } {
+function pairFor(home: string, launcher: DaemonLauncher | undefined, extra: { onDaemonQuit?: (r: string) => void; log?: (line: string) => void } = {}): { pair: Pair; states: PairState["kind"][] } {
   const states: PairState["kind"][] = [];
   const pair = new Pair({
     endpoint: daemonEndpoint(home),
@@ -65,6 +65,7 @@ function pairFor(home: string, launcher: DaemonLauncher | undefined, extra: { on
     timing: FAST,
     onState: (s) => states.push(s.kind),
     ...(extra.onDaemonQuit ? { onDaemonQuit: extra.onDaemonQuit } : {}),
+    ...(extra.log ? { log: extra.log } : {}),
   });
   pairs.push(pair);
   return { pair, states };
@@ -222,7 +223,48 @@ describe("quitting", () => {
   });
 });
 
+describe("what the daemon sends is checked (the E-M1 review's should-fix 2)", () => {
+  test("an app.quit that isn't one is answered with an error, and the app stays", async () => {
+    const home = tempHome();
+    const fake = await startFakeDaemon({ home });
+    fakes.push(fake);
+    let told: string | undefined;
+    const { pair } = pairFor(home, fakeLauncher(home), { onDaemonQuit: (r) => (told = r) });
+    await pair.start();
+    const [answer] = await fake.request("app.quit", { reason: "now" });
+    expect(answer).toMatchObject({ message: expect.stringContaining("app.quit needs a reason") });
+    await new Promise((r) => setTimeout(r, 50));
+    expect(told).toBeUndefined();
+    expect(pair.state.kind).toBe("connected");
+  });
+
+  test("a listener that throws stops neither the other listeners, the rest of the chunk, nor the connection", async () => {
+    const home = tempHome();
+    const fake = await startFakeDaemon({ home });
+    fakes.push(fake);
+    const lines: string[] = [];
+    const { pair } = pairFor(home, fakeLauncher(home), { log: (l) => lines.push(l) });
+    const seen: unknown[] = [];
+    pair.onNotification(() => {
+      throw new Error("boom");
+    });
+    pair.onNotification((_m, p) => seen.push(p));
+    await pair.start();
+    fake.write([{ jsonrpc: "2.0", method: "core.event", params: { type: "a" } }, { jsonrpc: "2.0", method: "core.event", params: { type: "b" } }]);
+    await until(() => seen.length === 2);
+    expect(seen).toEqual([{ type: "a" }, { type: "b" }]);
+    expect(lines.filter((l) => l.includes("a listener for core.event failed: boom")).length).toBe(2);
+    expect(pair.state.kind).toBe("connected");
+  });
+});
+
 describe("Quit's question", () => {
+  test("a pair.status that isn't one falls back to a plain Quit", () => {
+    expect(quitQuestion({ bots: "alpha" })).toMatchObject({ ask: false });
+    expect(quitQuestion(null)).toMatchObject({ ask: false });
+    expect(quitQuestion({ bots: ["alpha"], routines: -1, agents: 0, canHandOver: true, safeMode: false })).toMatchObject({ ask: false });
+  });
+
   test("nothing running: no question", () => {
     expect(quitQuestion({ bots: [], routines: 0, agents: 0, canHandOver: true, safeMode: false }).ask).toBe(false);
     expect(quitQuestion(undefined).ask).toBe(false);
@@ -277,6 +319,15 @@ describe("how the app was started, and its token", () => {
     writeFileSync(join(home, "run", "app.token"), "abc\n");
     expect(readAppToken(home, {})).toBe("abc");
     expect(readAppToken(home, { CLOVER_APP_TOKEN: "env" })).toBe("env");
+  });
+
+  test("the dev overrides count only in a dev or unpackaged run", () => {
+    expect(devOverridesAllowed({ packaged: false, profile: "dist" })).toBe(true);
+    expect(devOverridesAllowed({ packaged: true, profile: "dev" })).toBe(true);
+    expect(devOverridesAllowed({ packaged: true, profile: "dist" })).toBe(false);
+    const env = { CLOVER_DAEMON_BIN: "/tmp/x", CLOVER_APP_TOKEN: "t", CLOVER_HOME: "/h" };
+    expect(pairEnv(env, false)).toEqual({ CLOVER_HOME: "/h" });
+    expect(pairEnv(env, true)).toBe(env);
   });
 
   test("the endpoint, as lane C resolves it: a socket in the run directory, or a pipe named after it on Windows", () => {

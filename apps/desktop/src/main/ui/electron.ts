@@ -52,7 +52,13 @@ function fileResponse(path: string, type: string, headers: Record<string, string
 /** Serves the core root (`clover-core://app/`) and the layers on the UI session, and keeps the session off the
  *  network: no plugin layer declares a host until lane B's registry hands them over, so every request outside the
  *  app's own schemes is cancelled. */
-export function installUiSession(ses: Session, runtime: UiRuntime, dirs: { core: string; layer: string }, log: (line: string) => void): void {
+export interface UiSessionOptions {
+  /** Layers served without `Connection-Allowlist`: only the UI test's positive control for the DNS probe, and only in
+   *  an unpackaged run (index.ts decides). */
+  unguardedLayers?: ReadonlySet<string>;
+}
+
+export function installUiSession(ses: Session, runtime: UiRuntime, dirs: { core: string; layer: string }, log: (line: string) => void, options: UiSessionOptions = {}): void {
   ses.protocol.handle(CORE_SCHEME, (request) => {
     const url = new URL(request.url);
     if (url.host !== "app") return notFound();
@@ -71,14 +77,18 @@ export function installUiSession(ses: Session, runtime: UiRuntime, dirs: { core:
       const mount = runtime.serveDocument(layer, url.searchParams.get("mount"));
       if (mount === undefined) return forbidden();
       const doc = runtime.mountForDocument(mount);
-      return new Response(layerDocument({ css: doc.assets.css, title: doc.pluginId }), { headers: layerHeaders("text/html; charset=utf-8") });
+      const headers = layerHeaders("text/html; charset=utf-8", [], doc.layers);
+      // The DNS probe's positive control (the UI test, unpackaged runs only): the same document without its allowlist.
+      if (options.unguardedLayers?.has(doc.layer) === true) delete headers["Connection-Allowlist"];
+      return new Response(layerDocument({ css: doc.assets.css, title: doc.pluginId }), { headers });
     }
     if (url.pathname.startsWith("/_clover/")) {
       const file = normalize(join(dirs.layer, ...url.pathname.slice("/_clover/".length).split("/")));
       if (!isInside(dirs.layer, file)) return forbidden();
       const type = mediaType(file);
       if (type === undefined) return notFound();
-      // The `clover` tree's bundle is served only in the `clover` layer.
+      // The `clover` tree's bundle is served only in the `clover` layer, and no source map to anyone.
+      if (url.pathname.endsWith(".map")) return notFound();
       if (/^clover\.(js|css)$/.test(url.pathname.slice("/_clover/".length)) && layer !== "clover") return forbidden();
       return fileResponse(file, type, layerHeaders(type));
     }
@@ -282,6 +292,9 @@ export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: stri
   handle("clover:menu", async (event, a) => {
     const s = sender(event);
     const mount = str(a.mount, 32);
+    // The part asking must be in the asking document.
+    if (mount === undefined) throw new LayerError("bad request");
+    runtime.partOf(s.frame, mount);
     const checked = checkMenu(a);
     if ("error" in checked) throw new LayerError(checked.error);
     const place = runtime.placeOf(s.frame);

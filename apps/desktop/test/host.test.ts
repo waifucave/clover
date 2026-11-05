@@ -6,6 +6,7 @@ import { mkdirSync, mkdtempSync, readFileSync, readdirSync, statSync, symlinkSyn
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { CORE_CSP, IMPORT_MAP, connectionAllowlist, layerCsp, layerDocument, layerHeaders } from "../src/main/ui/documents";
+import { appShortcut } from "../src/main/shortcuts";
 import { mediaType, pluginFile } from "../src/main/ui/files";
 import { trayMenu } from "../src/main/tray-menu";
 import { mainWindowPlan, webPreferences, windowsHasAcrylic } from "../src/main/window";
@@ -25,10 +26,16 @@ describe("documents and headers (S9, decision 94)", () => {
     const csp = layerCsp();
     for (const d of ["default-src 'none'", "connect-src 'self'", "frame-src clover-plugin:", "form-action 'none'", "object-src 'none'", "base-uri 'none'"]) expect(csp).toContain(d);
     expect(connectionAllowlist()).toBe("(response-origin)");
-    expect(connectionAllowlist([], true)).toBe('("clover-plugin://*/*" response-origin)');
     expect(connectionAllowlist(["https://api.example.com"])).toBe('("https://api.example.com/*" response-origin)');
-    expect(layerHeaders("text/html; charset=utf-8")).toMatchObject({ "Connection-Allowlist": '("clover-plugin://*/*" response-origin)', "X-Content-Type-Options": "nosniff", "X-DNS-Prefetch-Control": "off" });
-    expect(layerHeaders("text/javascript; charset=utf-8")["Connection-Allowlist"]).toBe("(response-origin)");
+    // A document names each installed layer by its label, never a `*` host: Chromium matches its DNS lookups against
+    // the list by host alone (the E-M1 review's B1).
+    expect(connectionAllowlist([], ["clover", "fixture-composer"])).toBe('("clover-plugin://clover/*" "clover-plugin://fixture-composer/*" response-origin)');
+    expect(connectionAllowlist([], ["*", "a/b", "x.example", "ok"])).toBe('("clover-plugin://ok/*" response-origin)');
+    const doc = layerHeaders("text/html; charset=utf-8", [], ["clover", "alpha"]);
+    expect(doc).toMatchObject({ "Connection-Allowlist": '("clover-plugin://clover/*" "clover-plugin://alpha/*" response-origin)', "X-Content-Type-Options": "nosniff", "X-DNS-Prefetch-Control": "off" });
+    expect(doc["Connection-Allowlist"]).not.toContain("://*");
+    expect(layerHeaders("text/html; charset=utf-8")["Connection-Allowlist"]).toBe("(response-origin)");
+    expect(layerHeaders("text/javascript; charset=utf-8", [], ["clover"])["Connection-Allowlist"]).toBe("(response-origin)");
     expect(layerHeaders("image/png")["Connection-Allowlist"]).toBeUndefined();
     expect(CORE_CSP).toContain("connect-src 'none'");
     expect(CORE_CSP).toContain("frame-ancestors 'none'");
@@ -115,5 +122,21 @@ describe("the guard: no Bun in the main process, no Node in pages", () => {
   test("src/layer and src/core use no Node API (they run in sandboxed pages)", () => {
     const hits = files(join(src, "layer")).concat(files(join(src, "core"))).filter((f) => /from "node:|require\(|\bprocess\.|\bBuffer\b/.test(readFileSync(f, "utf8")));
     expect(hits).toEqual([]);
+  });
+});
+
+describe("the app's shortcuts", () => {
+  const key = (k: string, mods: Partial<{ control: boolean; meta: boolean; alt: boolean; shift: boolean }> = {}) => ({ type: "keyDown", key: k, control: false, meta: false, alt: false, shift: false, ...mods });
+  test("⌘Q, ⌘W and ⌘, on macOS, ahead of every layer; Ctrl elsewhere", () => {
+    expect(appShortcut(key("q", { meta: true }), "darwin")).toBe("quit");
+    expect(appShortcut(key("W", { meta: true }), "darwin")).toBe("close-window");
+    expect(appShortcut(key(",", { meta: true }), "darwin")).toBe("settings");
+    expect(appShortcut(key("q", { control: true }), "darwin")).toBeUndefined();
+    expect(appShortcut(key("q", { control: true }), "win32")).toBe("quit");
+    expect(appShortcut(key(",", { control: true }), "linux")).toBe("settings");
+    expect(appShortcut(key("q", { meta: true }), "linux")).toBeUndefined();
+    expect(appShortcut(key("w", { meta: true, shift: true }), "darwin")).toBeUndefined();
+    expect(appShortcut(key("q", { meta: true, alt: true }), "darwin")).toBeUndefined();
+    expect(appShortcut({ ...key("q", { meta: true }), type: "keyUp" }, "darwin")).toBeUndefined();
   });
 });

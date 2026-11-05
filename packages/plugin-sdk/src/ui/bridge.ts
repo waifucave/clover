@@ -97,6 +97,9 @@ export type LayerMessage =
   | { type: "respot" }
   /** A child frame's layer stopped; the parent shows a placeholder with a reload. */
   | { type: "child-gone"; child: string; reason: string }
+  /** A child frame's document loads again, from this fresh single-use URL (it must frame a layer installed after it
+   *  was served). */
+  | { type: "child-reload"; child: string; url: string }
   /** A child frame's content height, for the parent to size it (§5.5: the core sizes the frame). */
   | { type: "child-size"; child: string; height: number }
   /** The window got the focus back after the core's own overlay: restore the element that had it (S9). */
