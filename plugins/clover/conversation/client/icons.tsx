@@ -42,5 +42,4 @@ export const IconPlug = () => (<Svg><path d="M6 2.5v3M10 2.5v3M4.5 5.5h7v2a3.5 3
 export const IconFile = () => (<Svg><path d="M4.5 2.5h4.5l2.5 2.5v8.5h-7z" /><path d="M9 2.5V5h2.5" /></Svg>);
 export const IconImage = () => (<Svg><rect x="2.5" y="3.5" width="11" height="9" rx="1.5" /><circle cx="6" cy="6.8" r="1" /><path d="M13.5 10.5l-3-3-5 5" /></Svg>);
 export const IconArrowDown = () => (<Svg><path d="M8 3.5v9M4.5 9l3.5 3.5L11.5 9" /></Svg>);
-export const IconGlobe = () => (<Svg><circle cx="8" cy="8" r="5.5" /><path d="M2.5 8h11M8 2.5c1.6 1.6 2.3 3.5 2.3 5.5S9.6 11.9 8 13.5C6.4 11.9 5.7 10 5.7 8S6.4 4.1 8 2.5z" /></Svg>);
 export const IconMessage = () => (<Svg><path d="M3 4.5a1.5 1.5 0 0 1 1.5-1.5h7A1.5 1.5 0 0 1 13 4.5v5A1.5 1.5 0 0 1 11.5 11H7l-3 2.5V11h0a1.5 1.5 0 0 1-1-1.5z" /></Svg>);

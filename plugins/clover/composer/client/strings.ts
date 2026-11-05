@@ -12,7 +12,6 @@ export const S = {
   modelMenu: "Model and effort",
   effort: "Effort",
   interruptHint: (bot: string) => `Sending now interrupts ${bot}.`,
-  keysHint: "Enter to send, Shift+Enter for a new line",
   asleep: (bot: string, reason: string) => `${bot} is asleep: ${reason}. Your message waits here until it's back.`,
   tooManyAttachments: (max: number) => `A message can carry at most ${max} attachments.`,
   dropHere: "Drop files to attach them",

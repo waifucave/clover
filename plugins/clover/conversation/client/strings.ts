@@ -28,8 +28,6 @@ export const S = {
   copyMessage: "Copy message",
   copyCode: "Copy code",
   imageLink: (alt: string) => (alt ? `Image: ${alt}` : "Image"),
-  attachmentImage: (n: number) => `Image #${n}`,
-  attachmentFile: (n: number) => `File #${n}`,
 
   // Thinking.
   thinkingLive: "Thinking",
