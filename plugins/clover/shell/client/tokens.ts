@@ -1,32 +1,58 @@
-// The theme tokens this part wears (`color.text` arrives as `--clover-color-text`). The catalog is
-// lane B's, in the plugin SDK; this list is what to check against it. test/styles.test.ts fails if
-// styles.css and this list disagree.
-export const TOKENS = {
-  "color.canvas": "The sidebar's plane, the base the app sits on",
-  "color.raised": "Banners",
-  "color.control": "A portrait with no picture",
-  "color.hover": "A row under the pointer",
-  "color.selected": "The open route's row",
-  "color.hairline": "The sidebar's edge and dividers",
-  "color.text": "Names and the wordmark",
-  "color.text-secondary": "Row ink and app glyphs",
-  "color.text-muted": "Status lines and headings",
-  "color.link": "A banner's action",
-  "color.strong": "Count badges and the unread dot",
-  "color.on-strong": "A count on its badge",
-  "color.accent": "A bot that is thinking or working",
-  "color.warning": "Needs you; warning banners",
-  "color.danger": "A failed or stalled agent",
-  "color.focus": "The keyboard focus ring",
-  "font.body": "The body face",
-  "font.display": "The wordmark",
-  "text.small": "Rows",
-  "text.caption": "Status lines, headings and banners",
-  "radius.control": "Rows and tool buttons",
-  "radius.card": "Banners",
-  "radius.pill": "Portraits and badges",
-} as const;
+// The theme tokens the shell wears, by lane B's catalog names (`packages/plugin-sdk/src/catalogs/tokens.ts`,
+// B-M0 cde691273): `color.text.muted` arrives in CSS as `--clover-color-text-muted`. test/styles.test.ts
+// fails if styles.css uses a token this list doesn't name, or this list names one styles.css doesn't use.
+// The shell's gallery test checks every catalog name here against a snapshot of B's catalog.
 
-export type Token = keyof typeof TOKENS;
+/** Tokens from lane B's catalog. */
+export const CATALOG_TOKENS = [
+  "color.accent",
+  "color.accent.contrast",
+  "color.accent.soft",
+  "color.accent.text",
+  "color.attention",
+  "color.attention.text",
+  "color.canvas",
+  "color.control",
+  "color.danger",
+  "color.focus",
+  "color.hairline",
+  "color.hairline.raised",
+  "color.hover",
+  "color.raised",
+  "color.selected",
+  "color.success",
+  "color.surface",
+  "color.text",
+  "color.text.muted",
+  "color.text.placeholder",
+  "color.text.secondary",
+  "font.display",
+  "font.line.body",
+  "font.line.tight",
+  "font.sans",
+  "font.size.body",
+  "font.size.caption",
+  "font.size.control",
+  "font.size.large",
+  "font.weight.medium",
+  "font.weight.regular",
+  "radius.medium",
+  "radius.round",
+  "radius.small",
+  "space.l",
+  "space.m",
+  "space.s",
+  "space.xl",
+  "space.xs",
+] as const;
 
-export const cssVariable = (token: string) => `--clover-${token.replace(/\./g, "-")}`;
+/** Part-local tokens, named as B's rule names a plugin's own (`<top-level id>.<name>`, so `clover.…`),
+ *  each a request to B for a catalog entry (listed in the PR body). */
+export const PART_TOKENS: readonly string[] = [
+  "clover.scrim",
+];
+
+export const TOKENS: readonly string[] = [...CATALOG_TOKENS, ...PART_TOKENS];
+
+/** `color.text.muted` → `--clover-color-text-muted` (B's `cssProperty`). */
+export const cssVariable = (token: string) => `--clover-${token.replace(/-/g, "_").replace(/\./g, "-")}`;

@@ -1,0 +1,267 @@
+/* The diff panel. Every colour, face and size is a theme token from lane B's catalog; the soft line
+   tints are part-local (`clover.diff.added.soft`, `clover.diff.removed.soft`), a request to B. */
+
+.cl-diff {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  overflow-y: auto;
+  background: var(--clover-color-surface);
+  color: var(--clover-color-text);
+  font-family: var(--clover-font-sans);
+  font-size: var(--clover-font-size-control);
+}
+
+.cl-diff button,
+.cl-diff-switch button {
+  font: inherit;
+}
+
+.cl-diff :focus-visible,
+.cl-diff-switch :focus-visible,
+.cl-diff-title :focus-visible {
+  outline: 2px solid var(--clover-color-focus);
+  outline-offset: -2px;
+}
+
+.cl-diff__notice {
+  padding: var(--clover-space-s) var(--clover-space-m);
+  border-bottom: 1px solid var(--clover-color-hairline);
+  background: var(--clover-color-raised);
+  color: var(--clover-color-text-muted);
+  font-size: var(--clover-font-size-caption);
+}
+
+.cl-diff__empty {
+  padding: var(--clover-space-xl);
+  color: var(--clover-color-text-muted);
+  text-align: center;
+}
+
+.cl-diff__files {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cl-diff-file {
+  border-bottom: 1px solid var(--clover-color-hairline);
+}
+
+.cl-diff-file__row {
+  display: flex;
+  align-items: center;
+}
+
+.cl-diff-file__toggle {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: var(--clover-space-s);
+  min-width: 0;
+  min-height: 36px;
+  padding: 0 var(--clover-space-s) 0 var(--clover-space-m);
+  border: none;
+  background: transparent;
+  color: var(--clover-color-text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.cl-diff-file__toggle:hover {
+  background: var(--clover-color-hover);
+}
+
+.cl-diff-file__toggle:disabled {
+  cursor: default;
+}
+
+.cl-diff-file__toggle:disabled .cl-diff-icon {
+  color: var(--clover-color-text-placeholder);
+}
+
+.cl-diff-file__name {
+  flex: none;
+  font-family: var(--clover-font-mono);
+}
+
+.cl-diff-file__folder {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--clover-color-text-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cl-diff-file__note {
+  flex: none;
+  color: var(--clover-color-text-muted);
+  font-size: var(--clover-font-size-caption);
+}
+
+.cl-diff-file__added,
+.cl-diff-file__removed {
+  flex: none;
+  font-family: var(--clover-font-mono);
+  font-size: var(--clover-font-size-caption);
+}
+
+.cl-diff-file__added {
+  margin-left: auto;
+  color: var(--clover-color-diff-added);
+}
+
+.cl-diff-file__removed {
+  color: var(--clover-color-diff-removed);
+}
+
+.cl-diff-file__open {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  margin-right: var(--clover-space-s);
+  padding: 0;
+  border: none;
+  border-radius: var(--clover-radius-medium);
+  background: transparent;
+  color: var(--clover-color-text-muted);
+  cursor: pointer;
+}
+
+.cl-diff-file__open:hover {
+  background: var(--clover-color-hover);
+  color: var(--clover-color-text);
+}
+
+.cl-diff-file__body {
+  padding-bottom: var(--clover-space-s);
+  overflow-x: auto;
+  font-family: var(--clover-font-mono);
+  font-size: var(--clover-font-size-code);
+  line-height: var(--clover-font-line-tight);
+}
+
+.cl-diff-hunk {
+  padding: 4px var(--clover-space-m);
+  background: var(--clover-color-raised);
+  color: var(--clover-color-text-muted);
+}
+
+.cl-diff-line {
+  display: flex;
+  min-width: 0;
+}
+
+.cl-diff-line[data-kind="add"] {
+  background: var(--clover-clover-diff-added-soft);
+}
+
+.cl-diff-line[data-kind="del"] {
+  background: var(--clover-clover-diff-removed-soft);
+}
+
+.cl-diff-line[data-kind="empty"] {
+  background: var(--clover-color-raised);
+}
+
+.cl-diff-line__num {
+  flex: none;
+  width: 40px;
+  padding-right: var(--clover-space-s);
+  color: var(--clover-color-text-placeholder);
+  text-align: right;
+}
+
+.cl-diff-line__mark {
+  flex: none;
+  width: 16px;
+  color: var(--clover-color-text-muted);
+}
+
+.cl-diff-line[data-kind="add"] .cl-diff-line__mark {
+  color: var(--clover-color-diff-added);
+}
+
+.cl-diff-line[data-kind="del"] .cl-diff-line__mark {
+  color: var(--clover-color-diff-removed);
+}
+
+.cl-diff-line__text {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding-right: var(--clover-space-m);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.cl-diff-split {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+
+.cl-diff-split > .cl-diff-line + .cl-diff-line {
+  border-left: 1px solid var(--clover-color-hairline);
+}
+
+/* The header's parts. */
+.cl-diff-title {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--clover-space-s);
+  min-width: 0;
+  color: var(--clover-color-text-secondary);
+  font-family: var(--clover-font-sans);
+  font-size: var(--clover-font-size-body);
+}
+
+.cl-diff-title__arrow {
+  color: var(--clover-color-text-muted);
+}
+
+.cl-diff-title__select {
+  padding: 2px var(--clover-space-xs);
+  border: none;
+  border-radius: var(--clover-radius-small);
+  background: transparent;
+  color: var(--clover-color-text);
+  font: inherit;
+}
+
+.cl-diff-switch {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: var(--clover-radius-medium);
+  background: var(--clover-color-control);
+  font-family: var(--clover-font-sans);
+  font-size: var(--clover-font-size-caption);
+}
+
+.cl-diff-switch__option {
+  min-height: 22px;
+  padding: 0 var(--clover-space-s);
+  border: none;
+  border-radius: var(--clover-radius-small);
+  background: transparent;
+  color: var(--clover-color-text-muted);
+  cursor: pointer;
+}
+
+.cl-diff-switch__option[aria-checked="true"] {
+  background: var(--clover-color-surface);
+  color: var(--clover-color-text);
+}
+
+.cl-diff-icon {
+  flex: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cl-diff * {
+    transition: none;
+  }
+}

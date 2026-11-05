@@ -1,0 +1,13 @@
+.story-browser {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.story-browser__head {
+  display: flex;
+  align-items: center;
+  height: 44px;
+  padding: 0 8px;
+  border-bottom: 1px solid var(--clover-color-hairline);
+}

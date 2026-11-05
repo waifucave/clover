@@ -1,0 +1,14 @@
+{
+  "manifest": 1,
+  "name": "Panel",
+  "description": "The right-hand panel: its toggles, the views it holds two at a time, and the session view.",
+  "engines": {
+    "clover": "^1.0.0"
+  },
+  "client": {
+    "entry": "client/index.tsx"
+  },
+  "capabilities": [
+    "computers.read"
+  ]
+}

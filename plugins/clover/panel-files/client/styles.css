@@ -1,0 +1,178 @@
+/* The files panel. Every colour, face and size is a theme token from lane B's catalog. */
+
+.cl-files {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+  background: var(--clover-color-surface);
+  color: var(--clover-color-text);
+  font-family: var(--clover-font-sans);
+  font-size: var(--clover-font-size-control);
+}
+
+.cl-files button {
+  font: inherit;
+}
+
+.cl-files :focus-visible {
+  outline: 2px solid var(--clover-color-focus);
+  outline-offset: -2px;
+}
+
+.cl-files__viewer {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.cl-files__empty {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--clover-space-xs);
+  padding: var(--clover-space-xl);
+  color: var(--clover-color-text-muted);
+  text-align: center;
+}
+
+.cl-files__empty-title {
+  margin: var(--clover-space-s) 0 0;
+  color: var(--clover-color-text);
+  font-size: var(--clover-font-size-body);
+}
+
+.cl-files__empty-text {
+  max-width: 280px;
+  margin: 0;
+}
+
+.cl-files__file {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.cl-files__path {
+  padding: var(--clover-space-s) var(--clover-space-m);
+  border-bottom: 1px solid var(--clover-color-hairline);
+  color: var(--clover-color-text-muted);
+  font-family: var(--clover-font-mono);
+  font-size: var(--clover-font-size-caption);
+}
+
+.cl-files__code {
+  flex: 1 1 auto;
+  min-height: 0;
+  margin: 0;
+  padding: var(--clover-space-s) 0;
+  overflow: auto;
+  font-family: var(--clover-font-mono);
+  font-size: var(--clover-font-size-code);
+  line-height: var(--clover-font-line-tight);
+}
+
+.cl-files__line {
+  display: block;
+  padding-right: var(--clover-space-m);
+  white-space: pre;
+}
+
+.cl-files__num {
+  display: inline-block;
+  width: 40px;
+  margin-right: var(--clover-space-m);
+  color: var(--clover-color-text-placeholder);
+  text-align: right;
+}
+
+.cl-files__side {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  width: 260px;
+  min-height: 0;
+  border-left: 1px solid var(--clover-color-hairline);
+}
+
+.cl-files__filter {
+  margin: var(--clover-space-s);
+  padding: 6px var(--clover-space-s);
+  border: 1px solid var(--clover-color-hairline-raised);
+  border-radius: var(--clover-radius-medium);
+  background: var(--clover-color-control);
+  color: var(--clover-color-text);
+  font: inherit;
+}
+
+.cl-files__filter::placeholder {
+  color: var(--clover-color-text-placeholder);
+}
+
+.cl-files__filter:focus-visible {
+  outline: 2px solid var(--clover-color-focus);
+  outline-offset: -1px;
+}
+
+.cl-files__tree {
+  flex: 1 1 auto;
+  min-height: 0;
+  margin: 0;
+  padding: 0 var(--clover-space-xs) var(--clover-space-s);
+  overflow-y: auto;
+  list-style: none;
+}
+
+.cl-files__row {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-height: 28px;
+  padding-right: var(--clover-space-s);
+  border: none;
+  border-radius: var(--clover-radius-small);
+  background: transparent;
+  color: var(--clover-color-text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.cl-files__row:hover {
+  background: var(--clover-color-hover);
+}
+
+.cl-files__row[aria-selected="true"] {
+  background: var(--clover-color-selected);
+}
+
+.cl-files__row[data-type="dir"] .cl-files-icon {
+  color: var(--clover-color-text-muted);
+}
+
+.cl-files__name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cl-files__loading {
+  padding: 4px var(--clover-space-s);
+  color: var(--clover-color-text-muted);
+}
+
+.cl-files-icon {
+  flex: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cl-files * {
+    transition: none;
+  }
+}

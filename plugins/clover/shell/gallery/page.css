@@ -10,7 +10,7 @@ body {
 
 .g-page {
   box-sizing: border-box;
-  max-width: 1400px;
+  max-width: 1520px;
   margin: 0 auto;
   padding: 28px 28px 80px;
 }
@@ -139,7 +139,7 @@ body {
   padding: 0 18px;
   border-bottom: 1px solid var(--clover-color-hairline);
   color: var(--clover-color-text);
-  font-family: var(--clover-font-body);
+  font-family: var(--clover-font-sans);
   font-size: 14px;
   font-weight: 600;
 }

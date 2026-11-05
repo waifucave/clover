@@ -1,0 +1,397 @@
+/* The panel: its toggles, the host and the session column. Every colour, face and size is a theme
+   token from lane B's catalog (`--clover-*`, listed in tokens.ts). */
+
+.cl-panel-toggles {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.cl-panel-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: none;
+  border-radius: var(--clover-radius-medium);
+  background: transparent;
+  color: var(--clover-color-text-muted);
+  cursor: pointer;
+}
+
+.cl-panel-toggle:hover {
+  background: var(--clover-color-hover);
+  color: var(--clover-color-text);
+}
+
+.cl-panel-toggle[aria-pressed="true"] {
+  background: var(--clover-color-selected);
+  color: var(--clover-color-text);
+}
+
+.cl-panel-toggle:focus-visible,
+.cl-panel :focus-visible,
+.cl-session :focus-visible {
+  outline: 2px solid var(--clover-color-focus);
+  outline-offset: -2px;
+}
+
+/* The host: one view, or two one above the other. */
+.cl-panel {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background: var(--clover-color-surface);
+  color: var(--clover-color-text);
+  font-family: var(--clover-font-sans);
+  font-size: var(--clover-font-size-body);
+}
+
+.cl-panel button {
+  font: inherit;
+}
+
+.cl-panel__view {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.cl-panel__view + .cl-panel__view {
+  border-top: 1px solid var(--clover-color-hairline-raised);
+}
+
+.cl-panel__head {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+  height: 48px;
+  padding: 0 var(--clover-space-s) 0 var(--clover-space-m);
+  border-bottom: 1px solid var(--clover-color-hairline);
+}
+
+.cl-panel__head-main {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  min-width: 0;
+}
+
+.cl-panel__title {
+  margin: 0;
+  overflow: hidden;
+  color: var(--clover-color-text-secondary);
+  font-size: var(--clover-font-size-body);
+  font-weight: var(--clover-font-weight-regular);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cl-panel__actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+}
+
+.cl-panel__icon-button {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: var(--clover-radius-medium);
+  background: transparent;
+  color: var(--clover-color-text-muted);
+  cursor: pointer;
+}
+
+.cl-panel__icon-button:hover {
+  background: var(--clover-color-hover);
+  color: var(--clover-color-text);
+}
+
+.cl-panel__body {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* The session column: quiet cards of rows. */
+.cl-session {
+  display: flex;
+  flex-direction: column;
+  gap: var(--clover-space-s);
+  padding: var(--clover-space-m);
+  color: var(--clover-color-text);
+  font-family: var(--clover-font-sans);
+  font-size: var(--clover-font-size-control);
+}
+
+.cl-session button {
+  font: inherit;
+}
+
+.cl-session ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cl-session__section {
+  padding: var(--clover-space-s) var(--clover-space-m);
+  border: 1px solid var(--clover-color-hairline);
+  border-radius: var(--clover-radius-large);
+  background: var(--clover-color-raised);
+}
+
+.cl-session__heading {
+  display: flex;
+  align-items: center;
+  gap: var(--clover-space-s);
+  margin: 0;
+  font-size: var(--clover-font-size-control);
+  font-weight: var(--clover-font-weight-regular);
+}
+
+.cl-session__toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 0;
+  border: none;
+  background: transparent;
+  color: var(--clover-color-text-secondary);
+  cursor: pointer;
+}
+
+.cl-session__toggle:disabled {
+  cursor: default;
+}
+
+.cl-session__summary {
+  display: inline-flex;
+  align-items: center;
+  margin-left: auto;
+  color: var(--clover-color-text-muted);
+}
+
+.cl-session__content {
+  padding-top: var(--clover-space-xs);
+}
+
+.cl-session__list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.cl-session__row {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 30px;
+  padding: 2px 4px;
+  border: none;
+  border-radius: var(--clover-radius-small);
+  background: transparent;
+  color: var(--clover-color-text);
+  text-align: left;
+  cursor: pointer;
+}
+
+button.cl-session__row:hover {
+  background: var(--clover-color-hover);
+}
+
+.cl-session__row--static {
+  cursor: default;
+}
+
+.cl-session__row > .cl-panel-icon {
+  color: var(--clover-color-text-muted);
+}
+
+.cl-session__name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cl-session__meta {
+  flex: none;
+  color: var(--clover-color-text-muted);
+  font-size: var(--clover-font-size-caption);
+}
+
+.cl-session__meta[data-status="needs-you"],
+.cl-session__meta[data-status="stalled"] {
+  color: var(--clover-color-attention-text);
+}
+
+.cl-session__link {
+  flex: none;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--clover-color-text-muted);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.cl-session__link[data-attention] {
+  color: var(--clover-color-attention-text);
+}
+
+.cl-session__switch {
+  position: relative;
+  flex: none;
+  width: 34px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  border-radius: var(--clover-radius-round);
+  background: var(--clover-color-control);
+  cursor: pointer;
+}
+
+.cl-session__switch[aria-checked="true"] {
+  background: var(--clover-color-accent);
+}
+
+.cl-session__switch-knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: var(--clover-radius-round);
+  background: var(--clover-color-surface);
+}
+
+.cl-session__switch[aria-checked="true"] .cl-session__switch-knob {
+  left: 16px;
+}
+
+.cl-session__context {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--clover-space-s);
+}
+
+.cl-session__bar {
+  display: inline-block;
+  width: 36px;
+  height: 6px;
+  overflow: hidden;
+  border-radius: var(--clover-radius-round);
+  background: var(--clover-color-control);
+}
+
+.cl-session__bar-fill {
+  display: block;
+  height: 100%;
+  background: var(--clover-color-accent);
+}
+
+.cl-session__note {
+  margin: 0;
+  color: var(--clover-color-text-muted);
+}
+
+.cl-session__more {
+  margin-top: var(--clover-space-xs);
+  padding: 2px 4px;
+  border: none;
+  background: transparent;
+  color: var(--clover-color-text-muted);
+  cursor: pointer;
+}
+
+.cl-session__changes {
+  display: flex;
+  align-items: center;
+  gap: var(--clover-space-s);
+}
+
+.cl-session__diffstat {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.cl-session__added {
+  flex: none;
+  color: var(--clover-color-diff-added);
+  font-family: var(--clover-font-mono);
+  font-size: var(--clover-font-size-caption);
+}
+
+.cl-session__removed {
+  flex: none;
+  color: var(--clover-color-diff-removed);
+  font-family: var(--clover-font-mono);
+  font-size: var(--clover-font-size-caption);
+}
+
+.cl-session__button {
+  flex: none;
+  padding: 4px 10px;
+  border: 1px solid var(--clover-color-hairline-raised);
+  border-radius: var(--clover-radius-medium);
+  background: var(--clover-color-control);
+  color: var(--clover-color-text);
+  cursor: pointer;
+}
+
+.cl-session__button:hover {
+  background: var(--clover-color-hover);
+}
+
+.cl-session__pr {
+  align-items: flex-start;
+}
+
+.cl-session__pr-icon {
+  display: inline-flex;
+  padding-top: 2px;
+  color: var(--clover-color-accent-text);
+}
+
+.cl-session__pr-icon[data-state="merged"] {
+  color: var(--clover-color-text-muted);
+}
+
+.cl-session__pr-text {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+  line-height: var(--clover-font-line-tight);
+}
+
+.cl-panel-icon {
+  flex: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cl-panel *,
+  .cl-session * {
+    transition: none;
+  }
+}

@@ -1,11 +1,37 @@
-// The shell's sidebar: the bots, each background agent as a live tab under its bot (spec §9.3), the
-// coding sessions the user started directly, the app buttons (`sidebar.app`), and Plugins and
-// Settings. Banners above say what the whole app is doing: safe mode, the pause switch, and the link
-// to the main computer. Selection is carried by fill alone; the accent stays out of navigation.
-import { useId, type ReactNode } from "react";
-import { Glyph, IconCheck, IconClock, IconClover, IconCross, IconDash, IconDots, IconGear, IconLink, IconPause, IconPlus, IconPuzzle, IconShield, IconSidebar, IconTerminal, IconWarning } from "./icons";
+// The sidebar, laid out the way a desktop agent app's is: a switch between the bots and the code at the
+// top, then New, Search, Outputs, Customize and More, then the bots (with their live agents and what
+// needs the user) or the coding sessions grouped by project folder, and the account with the settings
+// gear at the bottom. Banners for safe mode, the pause switch and the link to the main computer sit
+// under the actions. Collapsed, it is a rail of icons, each with its accessible name.
+import { useState, type ReactNode } from "react";
+import {
+  CloverMark,
+  IconArchive,
+  IconBots,
+  IconBranch,
+  IconChart,
+  IconChevronDown,
+  IconChevronRight,
+  IconClose,
+  IconCode,
+  IconCustomize,
+  IconFolder,
+  IconGear,
+  IconGlobe,
+  IconGrid,
+  IconLink,
+  IconMore,
+  IconOutputs,
+  IconPause,
+  IconPlus,
+  IconSearch,
+  IconShield,
+  IconSidebar,
+} from "./icons";
 import { S } from "./strings";
-import type { AgentStatus, LinkState, SidebarAgent, SidebarApp, SidebarBot, SidebarProps, SidebarRoute } from "./types";
+import type { AgentStatus, SidebarAgent, SidebarApp, SidebarBot, SidebarProject, SidebarProps, SidebarRoute, SidebarSession } from "./types";
+
+const FINISHED: ReadonlySet<AgentStatus | "idle"> = new Set(["completed", "failed", "stopped"]);
 
 export function sameRoute(a: SidebarRoute, b: SidebarRoute): boolean {
   if (a.kind !== b.kind) return false;
@@ -21,319 +47,422 @@ export function sameRoute(a: SidebarRoute, b: SidebarRoute): boolean {
   }
 }
 
-/** The line under a bot's name: what needs the user first, then why it can't answer, then what it
- *  is doing. */
+/** The line under a bot's name: what it is doing, else nothing. */
 export function botStatusLine(bot: SidebarBot): string {
-  if (bot.status === "needs-you" || bot.status === "asleep" || bot.status === "paused") return S.botStatus[bot.status];
-  if (bot.activity) return bot.activity;
+  if (bot.status === "idle") return bot.activity ?? "";
   return S.botStatus[bot.status];
 }
 
-const FINISHED: ReadonlySet<AgentStatus> = new Set(["completed", "failed", "stopped", "stalled"]);
-
-export function agentStatusLine(agent: SidebarAgent): string {
-  const parts = [agent.backend];
-  if (agent.computer) parts.push(agent.computer);
-  if (agent.status !== "running") parts.push(S.agentStatus[agent.status]);
-  return parts.join(" · ");
-}
-
-function AgentGlyph({ status }: { status: AgentStatus }) {
-  const glyph = {
-    running: <IconDots />,
-    "needs-you": <IconPause />,
-    completed: <IconCheck />,
-    failed: <IconCross />,
-    stopped: <IconDash />,
-    stalled: <IconClock />,
-  }[status];
-  return (
-    <span className="cl-sidebar__agent-glyph" data-status={status} role="img" aria-label={S.agentStatus[status]}>
-      {glyph}
-    </span>
-  );
-}
-
 function Portrait({ bot }: { bot: SidebarBot }) {
+  const url = bot.portraitUrl && /^(blob:|data:image\/|clover-asset:)/i.test(bot.portraitUrl) ? bot.portraitUrl : undefined;
   return (
-    <span className="cl-sidebar__portrait" data-status={bot.status}>
-      {bot.portraitUrl ? (
-        <img className="cl-sidebar__portrait-image" src={bot.portraitUrl} alt="" />
-      ) : (
-        <span className="cl-sidebar__portrait-initial" aria-hidden="true">
-          {bot.name.trim().charAt(0).toUpperCase()}
-        </span>
-      )}
-      <span className="cl-sidebar__portrait-dot" aria-hidden="true" />
+    <span className="cl-sidebar__portrait" data-status={bot.status} aria-hidden="true">
+      {url ? <img src={url} alt="" /> : <span className="cl-sidebar__initial">{bot.name.slice(0, 1).toUpperCase()}</span>}
     </span>
   );
 }
 
-function Badge({ count }: { count: number }) {
+function Count({ count, label }: { count: number | undefined; label: (n: number) => string }) {
+  if (!count) return null;
   return (
-    <span className="cl-sidebar__badge" title={S.needsYou(count)}>
-      {count > 99 ? "99+" : count}
+    <span className="cl-sidebar__count" aria-label={label(count)} title={label(count)}>
+      {count}
     </span>
   );
 }
 
-function BotRow({ bot, current, collapsed, onNavigate }: { bot: SidebarBot; current: boolean; collapsed: boolean; onNavigate: SidebarProps["onNavigate"] }) {
-  const line = botStatusLine(bot);
-  const label = [bot.name, line, bot.needsYou ? S.needsYou(bot.needsYou) : bot.unread ? S.unread : ""].filter(Boolean).join(", ");
+/** A status dot that says what a live tab is doing; its text sits beside it, never cut. */
+function State({ status }: { status: AgentStatus | "idle" }) {
+  const text = S.agentStatus[status];
+  if (!text) return null;
   return (
-    <button
-      type="button"
-      className="cl-sidebar__row"
-      data-kind="bot"
-      data-status={bot.status}
-      aria-current={current ? "page" : undefined}
-      aria-label={collapsed ? label : undefined}
-      title={collapsed ? label : undefined}
-      onClick={() => onNavigate({ kind: "bot", botId: bot.id })}
-    >
-      <Portrait bot={bot} />
-      <span className="cl-sidebar__row-text">
-        <span className="cl-sidebar__name">{bot.name}</span>
-        {line && <span className="cl-sidebar__status">{line}</span>}
-      </span>
-      {bot.needsYou ? <Badge count={bot.needsYou} /> : bot.unread ? <span className="cl-sidebar__unread" title={S.unread} /> : null}
-    </button>
+    <span className="cl-sidebar__state" data-status={status}>
+      {text}
+    </span>
   );
 }
 
-function AgentRow({
-  agent,
-  current,
-  onNavigate,
-  onClose,
-}: {
-  agent: SidebarAgent;
-  current: boolean;
-  onNavigate: SidebarProps["onNavigate"];
-  onClose?: (id: string) => void;
-}) {
+function AgentRow({ agent, route, onNavigate, onClose }: { agent: SidebarAgent; route: SidebarRoute; onNavigate: SidebarProps["onNavigate"]; onClose?: (id: string) => void }) {
+  const target: SidebarRoute = { kind: "agent", agentId: agent.id };
+  const selected = sameRoute(route, target);
+  const finished = FINISHED.has(agent.status);
   return (
     <li className="cl-sidebar__agent" data-status={agent.status}>
       <button
         type="button"
-        className="cl-sidebar__row"
-        data-kind="agent"
-        aria-current={current ? "page" : undefined}
-        onClick={() => onNavigate({ kind: "agent", agentId: agent.id })}
+        className="cl-sidebar__row cl-sidebar__row--nested"
+        aria-current={selected ? "page" : undefined}
+        title={`${agent.title} · ${agent.backend}${agent.computer ? ` · ${agent.computer}` : ""}`}
+        onClick={() => onNavigate(target)}
       >
-        <AgentGlyph status={agent.status} />
-        <span className="cl-sidebar__row-text">
-          <span className="cl-sidebar__name">{agent.title}</span>
-          <span className="cl-sidebar__status">{agentStatusLine(agent)}</span>
-        </span>
+        <span className="cl-sidebar__dot" data-status={agent.status} aria-hidden="true" />
+        <State status={agent.status} />
+        <span className="cl-sidebar__title">{agent.title}</span>
       </button>
-      {onClose && FINISHED.has(agent.status) && (
+      {finished && onClose && (
         <button type="button" className="cl-sidebar__close" aria-label={S.close(agent.title)} title={S.close(agent.title)} onClick={() => onClose(agent.id)}>
-          <IconCross />
+          <IconClose />
         </button>
       )}
     </li>
   );
 }
 
-function AppIcon({ app }: { app: SidebarApp }) {
-  if (app.icon && "url" in app.icon) return <img className="cl-sidebar__app-image" src={app.icon.url} alt="" />;
-  return <Glyph name={app.icon && "glyph" in app.icon ? app.icon.glyph : "grid"} />;
-}
-
-function Banner({ tone, icon, text, action }: { tone: "info" | "warning"; icon: ReactNode; text: string; action?: { label: string; onClick: () => void } }) {
-  return (
-    <div className="cl-sidebar__banner" data-tone={tone} role="status" title={text}>
-      {icon}
-      <span className="cl-sidebar__banner-text">{text}</span>
-      {action && (
-        <button type="button" className="cl-sidebar__banner-action" onClick={action.onClick}>
-          {action.label}
-        </button>
-      )}
-    </div>
-  );
-}
-
-function linkBanner(link: LinkState | undefined): { tone: "info" | "warning"; text: string } | null {
-  switch (link?.state) {
-    case "unreachable":
-      return { tone: "warning", text: S.unreachable(link.main) };
-    case "takeover":
-      return { tone: "info", text: S.takeover(link.main, link.here) };
-    case "offline":
-      return { tone: "warning", text: S.offline };
-    default:
-      return null;
-  }
-}
-
-function Section({ title, children, collapsed }: { title: string; children: ReactNode; collapsed: boolean }) {
-  const id = useId();
-  return (
-    <section className="cl-sidebar__section" aria-labelledby={id}>
-      <h2 className="cl-sidebar__heading" id={id} data-hidden={collapsed || undefined}>
-        {title}
-      </h2>
-      {children}
-    </section>
-  );
-}
-
-export function Sidebar(props: SidebarProps) {
-  const {
-    bots,
-    sessions = [],
-    apps = [],
-    route,
-    onNavigate,
-    onNewBot,
-    onNewSession,
-    onCloseAgent,
-    link,
-    paused = false,
-    onResume,
-    safeMode = false,
-    onOpenPluginManager,
-    collapsed = false,
-    onToggleCollapsed,
-    renderBot,
-  } = props;
-  const current = (r: SidebarRoute) => sameRoute(route, r);
-  const banner = linkBanner(link);
-  const footer = (kind: "plugins" | "settings", label: string, icon: ReactNode) => (
+function BotRow({ bot, props }: { bot: SidebarBot; props: SidebarProps }) {
+  const target: SidebarRoute = { kind: "bot", botId: bot.id };
+  const selected = sameRoute(props.route, target);
+  const line = botStatusLine(bot);
+  const standard = (
     <button
       type="button"
-      className="cl-sidebar__row"
-      data-kind={kind}
-      aria-current={current({ kind }) ? "page" : undefined}
-      aria-label={collapsed ? label : undefined}
-      title={collapsed ? label : undefined}
-      onClick={() => onNavigate({ kind })}
+      className="cl-sidebar__row cl-sidebar__bot"
+      aria-current={selected ? "page" : undefined}
+      onClick={() => props.onNavigate(target)}
     >
-      <span className="cl-sidebar__app-icon">{icon}</span>
-      <span className="cl-sidebar__name">{label}</span>
+      <Portrait bot={bot} />
+      <span className="cl-sidebar__names">
+        <span className="cl-sidebar__title">{bot.name}</span>
+        {line && (
+          <span className="cl-sidebar__line" data-status={bot.status}>
+            {line}
+          </span>
+        )}
+      </span>
+      {bot.unread && <span className="cl-sidebar__unread" aria-label={S.unread} title={S.unread} />}
+      <Count count={bot.needsYou} label={S.needsYou} />
     </button>
   );
   return (
-    <nav className="cl-sidebar" aria-label={S.nav} data-collapsed={collapsed || undefined}>
-      <header className="cl-sidebar__header">
-        <span className="cl-sidebar__wordmark">
-          <IconClover />
-          <span className="cl-sidebar__wordmark-text">{S.app}</span>
-        </span>
-        <span className="cl-sidebar__spacer" />
-        {onToggleCollapsed && (
+    <li className="cl-sidebar__bot-item">
+      {props.renderBot ? props.renderBot(bot, standard) : standard}
+      {bot.agents && bot.agents.length > 0 && (
+        <ul className="cl-sidebar__agents" aria-label={S.agentsOf(bot.name)}>
+          {bot.agents.map((agent) => (
+            <AgentRow key={agent.id} agent={agent} route={props.route} onNavigate={props.onNavigate} onClose={props.onCloseAgent} />
+          ))}
+        </ul>
+      )}
+    </li>
+  );
+}
+
+function SessionRow({ session, props }: { session: SidebarSession; props: SidebarProps }) {
+  const target: SidebarRoute = { kind: "agent", agentId: session.id };
+  const selected = sameRoute(props.route, target);
+  const finished = FINISHED.has(session.status);
+  return (
+    <li className="cl-sidebar__agent" data-status={session.status}>
+      <button
+        type="button"
+        className="cl-sidebar__row cl-sidebar__row--nested"
+        aria-current={selected ? "page" : undefined}
+        title={session.title}
+        onClick={() => props.onNavigate(target)}
+      >
+        <span className="cl-sidebar__title">{session.title}</span>
+        {session.branch && (
+          <span className="cl-sidebar__branch" aria-label={S.branch(session.branch, session.changes)} title={S.branch(session.branch, session.changes)}>
+            <IconBranch />
+            {session.changes !== undefined && <span>{session.changes}</span>}
+          </span>
+        )}
+        <Count count={session.needsYou} label={S.needsYou} />
+        {(session.status === "running" || session.status === "needs-you") && (
+          <span className="cl-sidebar__dot" data-status={session.status} role="img" aria-label={S.agentStatus[session.status]} />
+        )}
+      </button>
+      {finished && props.onCloseAgent && (
+        <button type="button" className="cl-sidebar__close" aria-label={S.close(session.title)} title={S.close(session.title)} onClick={() => props.onCloseAgent?.(session.id)}>
+          <IconClose />
+        </button>
+      )}
+    </li>
+  );
+}
+
+function ProjectGroup({ project, folded, onFold, props }: { project: SidebarProject; folded: boolean; onFold: () => void; props: SidebarProps }) {
+  const listId = `cl-sidebar-project-${project.id}`;
+  return (
+    <li className="cl-sidebar__project" data-folded={folded || undefined}>
+      <div className="cl-sidebar__project-head">
+        <button
+          type="button"
+          className="cl-sidebar__project-toggle"
+          aria-expanded={!folded}
+          aria-controls={folded ? undefined : listId}
+          aria-label={folded ? S.unfold(project.name) : S.fold(project.name)}
+          title={project.path}
+          onClick={onFold}
+        >
+          <span className="cl-sidebar__project-name">{project.name}</span>
+          {folded ? <IconChevronRight /> : <IconChevronDown />}
+        </button>
+        {props.onNewSession && (
+          <button type="button" className="cl-sidebar__icon-button" aria-label={S.newSessionIn(project.name)} title={S.newSessionIn(project.name)} onClick={() => props.onNewSession?.(project.id)}>
+            <IconPlus />
+          </button>
+        )}
+      </div>
+      {!folded &&
+        (project.sessions.length > 0 ? (
+          <ul className="cl-sidebar__sessions" id={listId}>
+            {project.sessions.map((session) => (
+              <SessionRow key={session.id} session={session} props={props} />
+            ))}
+          </ul>
+        ) : (
+          <div className="cl-sidebar__empty">{S.noSessions}</div>
+        ))}
+    </li>
+  );
+}
+
+function AppIcon({ app }: { app: SidebarApp }) {
+  if (app.icon && "url" in app.icon && /^(blob:|data:image\/|clover-asset:)/i.test(app.icon.url)) return <img className="cl-sidebar__app-icon" src={app.icon.url} alt="" />;
+  const glyph = app.icon && "glyph" in app.icon ? app.icon.glyph : "grid";
+  return glyph === "globe" ? <IconGlobe /> : glyph === "archive" ? <IconArchive /> : glyph === "chart" ? <IconChart /> : <IconGrid />;
+}
+
+interface Banner {
+  key: string;
+  icon: ReactNode;
+  text: string;
+  short: string;
+  action?: { label: string; onClick: () => void };
+  tone: "attention" | "info";
+}
+
+function banners(props: SidebarProps): Banner[] {
+  const out: Banner[] = [];
+  if (props.safeMode) {
+    out.push({
+      key: "safe",
+      icon: <IconShield />,
+      text: S.safeMode,
+      short: S.safeModeShort,
+      action: props.onOpenPluginManager ? { label: S.pluginManager, onClick: props.onOpenPluginManager } : undefined,
+      tone: "attention",
+    });
+  }
+  if (props.paused) {
+    out.push({
+      key: "paused",
+      icon: <IconPause />,
+      text: S.paused,
+      short: S.pausedShort,
+      action: props.onResume ? { label: S.resume, onClick: props.onResume } : undefined,
+      tone: "attention",
+    });
+  }
+  const link = props.link;
+  if (link && link.state !== "connected") {
+    const text = link.state === "unreachable" ? S.unreachable(link.main) : link.state === "takeover" ? S.takeover(link.main, link.here) : S.offline;
+    out.push({ key: "link", icon: <IconLink />, text, short: S.linkShort, tone: link.state === "takeover" ? "info" : "attention" });
+  }
+  return out;
+}
+
+export function Sidebar(props: SidebarProps) {
+  const { side, collapsed = false } = props;
+  const [folded, setFolded] = useState<ReadonlySet<string>>(() => new Set(props.initialFoldedProjects ?? []));
+  const fold = (id: string) =>
+    setFolded((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  const list = banners(props);
+
+  const action = (key: string, icon: ReactNode, label: string, onClick: (() => void) | undefined) =>
+    onClick ? (
+      <li key={key}>
+        <button type="button" className="cl-sidebar__row cl-sidebar__action" aria-label={collapsed ? label : undefined} title={collapsed ? label : undefined} onClick={onClick}>
+          {icon}
+          {!collapsed && <span className="cl-sidebar__title">{label}</span>}
+        </button>
+      </li>
+    ) : null;
+
+  return (
+    <nav className="cl-sidebar" aria-label={S.nav} data-collapsed={collapsed || undefined} data-side={side}>
+      <div className="cl-sidebar__top">
+        {props.onToggleCollapsed && (
           <button
             type="button"
-            className="cl-sidebar__tool"
+            className="cl-sidebar__icon-button"
             aria-label={collapsed ? S.expand : S.collapse}
-            aria-expanded={!collapsed}
             title={collapsed ? S.expand : S.collapse}
-            onClick={onToggleCollapsed}
+            aria-expanded={!collapsed}
+            onClick={props.onToggleCollapsed}
           >
             <IconSidebar />
           </button>
         )}
-        {onNewBot && !collapsed && (
-          <button type="button" className="cl-sidebar__tool" aria-label={S.newBot} title={S.newBot} onClick={onNewBot}>
-            <IconPlus />
+        <span className="cl-sidebar__brand" aria-hidden={collapsed || undefined}>
+          <CloverMark size={18} />
+          {!collapsed && <span>{S.app}</span>}
+        </span>
+      </div>
+
+      <div className="cl-sidebar__switch" role="radiogroup" aria-label={S.sides}>
+        {(["bots", "code"] as const).map((key) => (
+          <button
+            key={key}
+            type="button"
+            role="radio"
+            aria-checked={side === key}
+            className="cl-sidebar__switch-option"
+            aria-label={collapsed ? (key === "bots" ? S.sideBots : S.sideCode) : undefined}
+            onClick={() => props.onSideChange(key)}
+          >
+            {key === "bots" ? <IconBots /> : <IconCode />}
+            {!collapsed && <span>{key === "bots" ? S.sideBots : S.sideCode}</span>}
           </button>
-        )}
-      </header>
-      {!collapsed && (safeMode || paused || banner) && (
-        <div className="cl-sidebar__banners">
-          {safeMode && (
-            <Banner
-              tone="warning"
-              icon={<IconShield />}
-              text={S.safeMode}
-              action={onOpenPluginManager ? { label: S.pluginManager, onClick: onOpenPluginManager } : undefined}
-            />
-          )}
-          {paused && <Banner tone="warning" icon={<IconPause />} text={S.paused} action={onResume ? { label: S.resume, onClick: onResume } : undefined} />}
-          {banner && <Banner tone={banner.tone} icon={banner.tone === "warning" ? <IconWarning /> : <IconLink />} text={banner.text} />}
-        </div>
-      )}
-      <div className="cl-sidebar__scroll">
-        <Section title={S.bots} collapsed={collapsed}>
-          <ul className="cl-sidebar__list">
-            {bots.map((bot) => {
-              const standard = <BotRow bot={bot} current={current({ kind: "bot", botId: bot.id })} collapsed={collapsed} onNavigate={onNavigate} />;
-              return (
-                <li key={bot.id} className="cl-sidebar__bot">
-                  {renderBot ? renderBot(bot, standard) : standard}
-                  {!collapsed && bot.agents && bot.agents.length > 0 && (
-                    <ul className="cl-sidebar__agents" aria-label={S.agentsOf(bot.name)}>
-                      {bot.agents.map((agent) => (
-                        <AgentRow
-                          key={agent.id}
-                          agent={agent}
-                          current={current({ kind: "agent", agentId: agent.id })}
-                          onNavigate={onNavigate}
-                          onClose={onCloseAgent}
-                        />
-                      ))}
-                    </ul>
-                  )}
-                </li>
-              );
-            })}
+        ))}
+      </div>
+
+      <ul className="cl-sidebar__actions">
+        {action("new", <IconPlus />, side === "bots" ? S.newChat : S.new, props.onNew)}
+        {action("search", <IconSearch />, S.search, props.onSearch)}
+        {action("outputs", <IconOutputs />, S.outputs, props.onOutputs)}
+        {action("customize", <IconCustomize />, S.customize, props.onCustomize)}
+        {action("more", <IconMore />, S.more, props.onMore)}
+      </ul>
+
+      {list.length > 0 &&
+        (collapsed ? (
+          <ul className="cl-sidebar__marks">
+            {list.map((b) => (
+              <li key={b.key}>
+                <button type="button" className="cl-sidebar__mark" data-tone={b.tone} aria-label={b.text} title={b.text} onClick={b.action?.onClick}>
+                  {b.icon}
+                </button>
+              </li>
+            ))}
           </ul>
-        </Section>
-        {!collapsed && (sessions.length > 0 || onNewSession) && (
-          <Section title={S.coding} collapsed={collapsed}>
-            <ul className="cl-sidebar__list">
-              {sessions.map((session) => (
-                <AgentRow
-                  key={session.id}
-                  agent={session}
-                  current={current({ kind: "agent", agentId: session.id })}
-                  onNavigate={onNavigate}
-                  onClose={onCloseAgent}
-                />
-              ))}
-            </ul>
-            {onNewSession && (
-              <button type="button" className="cl-sidebar__row cl-sidebar__add" onClick={onNewSession}>
-                <span className="cl-sidebar__app-icon">
-                  <IconTerminal />
-                </span>
-                <span className="cl-sidebar__name">{S.newSession}</span>
-              </button>
-            )}
-          </Section>
-        )}
-        {apps.length > 0 && (
-          <Section title={S.apps} collapsed={collapsed}>
-            <ul className="cl-sidebar__list">
-              {apps.map((app) => (
-                <li key={app.id}>
-                  <button
-                    type="button"
-                    className="cl-sidebar__row"
-                    data-kind="app"
-                    aria-current={current({ kind: "app", appId: app.id }) ? "page" : undefined}
-                    aria-label={collapsed ? app.title : undefined}
-                    title={collapsed ? app.title : undefined}
-                    onClick={() => onNavigate({ kind: "app", appId: app.id })}
-                  >
-                    <span className="cl-sidebar__app-icon">
-                      <AppIcon app={app} />
-                    </span>
-                    <span className="cl-sidebar__name">{app.title}</span>
-                    {app.badge ? <span className="cl-sidebar__badge">{app.badge > 99 ? "99+" : app.badge}</span> : null}
+        ) : (
+          <div className="cl-sidebar__banners">
+            {list.map((b) => (
+              <div key={b.key} className="cl-sidebar__banner" data-tone={b.tone} role="status">
+                {b.icon}
+                <span className="cl-sidebar__banner-text">{b.text}</span>
+                {b.action && (
+                  <button type="button" className="cl-sidebar__banner-action" onClick={b.action.onClick}>
+                    {b.action.label}
                   </button>
-                </li>
-              ))}
+                )}
+              </div>
+            ))}
+          </div>
+        ))}
+
+      <div className="cl-sidebar__scroll">
+        {side === "bots" ? (
+          <section className="cl-sidebar__section" aria-label={S.bots}>
+            {!collapsed && <h2 className="cl-sidebar__heading">{S.bots}</h2>}
+            <ul className="cl-sidebar__list">
+              {props.bots.map((bot) =>
+                collapsed ? (
+                  <li key={bot.id}>
+                    <button
+                      type="button"
+                      className="cl-sidebar__row cl-sidebar__bot"
+                      aria-current={sameRoute(props.route, { kind: "bot", botId: bot.id }) ? "page" : undefined}
+                      aria-label={[bot.name, botStatusLine(bot), bot.needsYou ? S.needsYou(bot.needsYou) : ""].filter(Boolean).join(", ")}
+                      title={bot.name}
+                      onClick={() => props.onNavigate({ kind: "bot", botId: bot.id })}
+                    >
+                      <Portrait bot={bot} />
+                      {bot.needsYou ? <span className="cl-sidebar__count cl-sidebar__count--corner">{bot.needsYou}</span> : null}
+                    </button>
+                  </li>
+                ) : (
+                  <BotRow key={bot.id} bot={bot} props={props} />
+                ),
+              )}
             </ul>
-          </Section>
+          </section>
+        ) : (
+          <section className="cl-sidebar__section" aria-label={S.projects}>
+            {collapsed ? (
+              <ul className="cl-sidebar__list">
+                {(props.projects ?? []).map((project) => (
+                  <li key={project.id}>
+                    <button
+                      type="button"
+                      className="cl-sidebar__row cl-sidebar__action"
+                      aria-label={`${project.name}: ${project.sessions.length}`}
+                      title={project.name}
+                      onClick={() => {
+                        const first = project.sessions[0];
+                        if (first) props.onNavigate({ kind: "agent", agentId: first.id });
+                      }}
+                    >
+                      <IconFolder />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <ul className="cl-sidebar__list">
+                {(props.projects ?? []).map((project) => (
+                  <ProjectGroup key={project.id} project={project} folded={folded.has(project.id)} onFold={() => fold(project.id)} props={props} />
+                ))}
+              </ul>
+            )}
+          </section>
+        )}
+
+        {props.apps && props.apps.length > 0 && (
+          <section className="cl-sidebar__section" aria-label={S.apps}>
+            <ul className="cl-sidebar__list">
+              {props.apps.map((app) => {
+                const target: SidebarRoute = { kind: "app", appId: app.id };
+                return (
+                  <li key={app.id}>
+                    <button
+                      type="button"
+                      className="cl-sidebar__row cl-sidebar__action"
+                      aria-current={sameRoute(props.route, target) ? "page" : undefined}
+                      aria-label={collapsed ? app.title : undefined}
+                      title={collapsed ? app.title : undefined}
+                      onClick={() => props.onNavigate(target)}
+                    >
+                      <AppIcon app={app} />
+                      {!collapsed && <span className="cl-sidebar__title">{app.title}</span>}
+                      {!collapsed && app.badge ? <span className="cl-sidebar__count">{app.badge}</span> : null}
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          </section>
         )}
       </div>
-      <footer className="cl-sidebar__footer">
-        {footer("plugins", S.plugins, <IconPuzzle />)}
-        {footer("settings", S.settings, <IconGear />)}
-      </footer>
+
+      <div className="cl-sidebar__footer">
+        <button
+          type="button"
+          className="cl-sidebar__row cl-sidebar__account"
+          aria-label={S.account(props.account.name)}
+          title={S.account(props.account.name)}
+          onClick={props.onOpenAccount ?? props.onOpenSettings}
+        >
+          <span className="cl-sidebar__avatar" aria-hidden="true">
+            {props.account.name.slice(0, 1).toUpperCase()}
+          </span>
+          {!collapsed && (
+            <span className="cl-sidebar__account-names">
+              <span className="cl-sidebar__title">{props.account.name}</span>
+              {props.account.detail && <span className="cl-sidebar__account-detail">{props.account.detail}</span>}
+            </span>
+          )}
+        </button>
+        <button type="button" className="cl-sidebar__icon-button" aria-label={S.settings} title={S.settings} onClick={props.onOpenSettings}>
+          <IconGear />
+        </button>
+      </div>
     </nav>
   );
 }

@@ -1,12 +1,13 @@
 name: Lane F gallery
 
-# Lane F's own checks, on its branch only: the conversation parts' tests and typecheck on all three
-# OSes, and the gallery rendered to PNGs with headless Chromium (light and dark), uploaded as the
-# `lane-f-gallery` artifact for review. The parts are self-contained packages until the workspace
-# globs land, so each installs its own dependencies.
+# Lane F's own checks, on its branches only: every part's tests and typecheck on all three OSes, and
+# the gallery (whole-window screens and every part) rendered to PNGs with headless Chromium, light and
+# dark, uploaded as the `lane-f-gallery` artifact for review. The parts are self-contained packages
+# until the workspace globs land, so each installs its own dependencies. Lane M takes these checks
+# into CI proper; until then this file stays.
 on:
   push:
-    branches: [lane/f-m1]
+    branches: ['lane/f-*']
     paths: ['plugins/clover/**', '.github/workflows/lane-f-gallery.yml']
   workflow_dispatch:
 
@@ -16,6 +17,9 @@ permissions:
 concurrency:
   group: lane-f-gallery-${{ github.ref }}
   cancel-in-progress: true
+
+env:
+  PARTS: conversation composer shell panel panel-terminal panel-diff panel-files panel-browser settings
 
 jobs:
   test:
@@ -37,13 +41,13 @@ jobs:
           bun-version-file: .bun-version
 
       - name: Install each part's dependencies
-        run: for p in conversation composer shell; do (cd "plugins/clover/$p" && bun install --frozen-lockfile); done
+        run: for p in $PARTS; do (cd "plugins/clover/$p" && bun install --frozen-lockfile); done
 
       - name: Typecheck
-        run: for p in conversation composer shell; do (cd "plugins/clover/$p" && echo "typecheck $p" && bun run typecheck); done
+        run: for p in $PARTS; do (cd "plugins/clover/$p" && echo "typecheck $p" && bun run typecheck); done
 
       - name: Test
-        run: for p in conversation composer shell; do (cd "plugins/clover/$p" && bun test); done
+        run: for p in $PARTS; do (cd "plugins/clover/$p" && bun test); done
 
   gallery:
     name: gallery PNGs
@@ -60,7 +64,7 @@ jobs:
           bun-version-file: .bun-version
 
       - name: Install each part's dependencies
-        run: for p in conversation composer shell; do (cd "plugins/clover/$p" && bun install --frozen-lockfile); done
+        run: for p in $PARTS; do (cd "plugins/clover/$p" && bun install --frozen-lockfile); done
 
       - name: Build the gallery
         working-directory: plugins/clover/shell

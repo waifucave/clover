@@ -8,13 +8,13 @@ import type { Story } from "./story";
 const noop = () => undefined;
 
 export const MODELS: ComposerModelChoice = {
-  model: "anthropic/opus-5.5",
+  model: "openai/gpt-6",
   effort: "medium",
   models: [
-    { id: "anthropic/opus-5.5", label: "Opus 5.5", detail: "Anthropic" },
-    { id: "anthropic/sonnet-5", label: "Sonnet 5", detail: "Anthropic" },
-    { id: "openai/gpt-6", label: "GPT-6", detail: "your ChatGPT plan" },
+    { id: "openai/gpt-6", label: "GPT-6", detail: "OpenAI" },
     { id: "xai/grok-5", label: "Grok 5", detail: "xAI" },
+    { id: "moonshot/kimi-k3", label: "Kimi K3", detail: "Moonshot" },
+    { id: "studio/qwen-4", label: "Qwen 4", detail: "On Studio" },
   ],
   efforts: ["low", "medium", "high", "max"],
   onChange: noop,

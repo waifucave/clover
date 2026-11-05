@@ -1,0 +1,121 @@
+/* The terminal panel. Every colour, face and size is a theme token from lane B's catalog; the
+   terminal's own colours (`terminal.*`) are a request to B, and until then it wears the surface's. */
+
+.cl-term {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--clover-color-surface);
+  color: var(--clover-color-text);
+  font-family: var(--clover-font-sans);
+  font-size: var(--clover-font-size-control);
+}
+
+.cl-term button {
+  font: inherit;
+}
+
+.cl-term :focus-visible {
+  outline: 2px solid var(--clover-color-focus);
+  outline-offset: -2px;
+}
+
+.cl-term__tabs {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+  padding: var(--clover-space-xs) var(--clover-space-s);
+  border-bottom: 1px solid var(--clover-color-hairline);
+}
+
+.cl-term__tab {
+  display: inline-flex;
+  align-items: center;
+  border-radius: var(--clover-radius-medium);
+}
+
+.cl-term__tab[data-active] {
+  background: var(--clover-color-selected);
+}
+
+.cl-term__tab-button,
+.cl-term__tab-close,
+.cl-term__new {
+  min-height: 26px;
+  padding: 0 var(--clover-space-s);
+  border: none;
+  border-radius: var(--clover-radius-medium);
+  background: transparent;
+  color: var(--clover-color-text-secondary);
+  cursor: pointer;
+}
+
+.cl-term__tab-close,
+.cl-term__new {
+  padding: 0 6px;
+  color: var(--clover-color-text-muted);
+}
+
+.cl-term__new:hover,
+.cl-term__tab-close:hover {
+  background: var(--clover-color-hover);
+  color: var(--clover-color-text);
+}
+
+.cl-term__screen {
+  flex: 1 1 auto;
+  min-height: 0;
+  margin: 0;
+  padding: var(--clover-space-m) var(--clover-space-l);
+  overflow: auto;
+  color: var(--clover-color-text);
+  font-family: var(--clover-font-mono);
+  font-size: var(--clover-font-size-code);
+  line-height: var(--clover-font-line-tight);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.cl-term__chunk[data-style="error"] {
+  color: var(--clover-color-danger);
+}
+
+.cl-term__chunk[data-style="warning"] {
+  color: var(--clover-color-attention-text);
+}
+
+.cl-term__chunk[data-style="success"] {
+  color: var(--clover-color-success);
+}
+
+.cl-term__chunk[data-style="prompt"] {
+  color: var(--clover-color-accent-text);
+}
+
+.cl-term__chunk[data-style="dim"] {
+  color: var(--clover-color-text-muted);
+}
+
+.cl-term__chunk[data-style="bold"] {
+  font-weight: var(--clover-font-weight-semibold);
+}
+
+.cl-term__chunk[data-style="link"] {
+  text-decoration: underline;
+}
+
+.cl-term__cursor {
+  display: inline-block;
+  width: 0.6em;
+  height: 1.1em;
+  background: var(--clover-color-text-secondary);
+  vertical-align: text-bottom;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cl-term * {
+    transition: none;
+  }
+}

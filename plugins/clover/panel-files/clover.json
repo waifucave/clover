@@ -1,0 +1,14 @@
+{
+  "manifest": 1,
+  "name": "Files",
+  "description": "The files panel: a filterable tree over the folder tree, and the file that's open.",
+  "engines": {
+    "clover": "^1.0.0"
+  },
+  "client": {
+    "entry": "client/index.tsx"
+  },
+  "capabilities": [
+    "files"
+  ]
+}

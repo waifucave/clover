@@ -5,6 +5,15 @@ import "../../conversation/gallery/mock-runtime.css";
 import "../../conversation/gallery/stories.css";
 import "../../composer/client/styles.css";
 import "../../composer/gallery/stories.css";
+import "../../panel/client/styles.css";
+import "../../panel/gallery/stories.css";
+import "../../panel-terminal/client/styles.css";
+import "../../panel-diff/client/styles.css";
+import "../../panel-diff/gallery/stories.css";
+import "../../panel-files/client/styles.css";
+import "../../panel-browser/client/styles.css";
+import "../../panel-browser/gallery/stories.css";
+import "../../settings/client/styles.css";
 import "../client/styles.css";
 import "./stories.css";
 import "./theme.css";
@@ -13,15 +22,27 @@ import { Component, useEffect, useState, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { stories as composerStories } from "../../composer/gallery/stories";
 import { stories as conversationStories } from "../../conversation/gallery/stories";
-import { composedStories } from "./composed";
+import { browserStories } from "../../panel-browser/gallery/stories";
+import { diffStories } from "../../panel-diff/gallery/stories";
+import { filesStories } from "../../panel-files/gallery/stories";
+import { terminalStories } from "../../panel-terminal/gallery/stories";
+import { panelStories } from "../../panel/gallery/stories";
+import { settingsStories } from "../../settings/gallery/stories";
+import { screenStories } from "./screens";
 import type { Story } from "./story";
 import { stories as sidebarStories } from "./stories";
 
 export const GROUPS: { title: string; stories: Story[] }[] = [
+  { title: "Whole window", stories: screenStories },
   { title: "Conversation", stories: conversationStories },
   { title: "Composer", stories: composerStories },
   { title: "Sidebar", stories: sidebarStories },
-  { title: "Together", stories: composedStories },
+  { title: "Panel", stories: panelStories },
+  { title: "Terminal", stories: terminalStories },
+  { title: "Changes", stories: diffStories },
+  { title: "Files", stories: filesStories },
+  { title: "Browser", stories: browserStories },
+  { title: "Settings", stories: settingsStories },
 ];
 
 /** Keeps one broken story from taking the page down, and marks it for the screenshot run. */
@@ -69,8 +90,8 @@ function Gallery() {
   return (
     <main className="g-page" data-gallery-ready={ready ? "" : undefined}>
       <header className="g-header">
-        <h1>Clover: the conversation parts</h1>
-        <p>Lane F, M1. Plain React against mocked props, on a stand-in theme.</p>
+        <h1>Clover: the window and its parts</h1>
+        <p>Lane F, M1. Plain React against mocked props, on lane G's base theme values (lane B's catalog defaults).</p>
         <span className="g-theme" role="group" aria-label="Theme">
           {(["light", "dark"] as const).map((t) => (
             <button key={t} type="button" aria-pressed={theme === t} onClick={() => setTheme(t)}>

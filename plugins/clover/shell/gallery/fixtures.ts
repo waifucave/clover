@@ -1,5 +1,5 @@
 // Mock sidebar data for the gallery and the tests.
-import type { SidebarAgent, SidebarApp, SidebarBot } from "../client/types";
+import type { SidebarAccount, SidebarAgent, SidebarApp, SidebarBot, SidebarProject } from "../client/types";
 
 /** A soft round portrait with an initial, standing in for a bot's avatar portrait. */
 export function portrait(letter: string, from: string, to: string): string {
@@ -8,9 +8,9 @@ export function portrait(letter: string, from: string, to: string): string {
 }
 
 export const ALPHA_AGENTS: SidebarAgent[] = [
-  { id: "agent-island", title: "Rebuild the island as a plugin", backend: "Claude Code", computer: "Studio", status: "running" },
-  { id: "agent-lint", title: "Fix the lint warnings", backend: "Codex", computer: "Laptop", status: "needs-you" },
-  { id: "agent-docs", title: "Write the plugin SDK docs", backend: "Claude Code", computer: "Studio", status: "completed" },
+  { id: "agent-island", title: "Rebuild the island as a plugin", backend: "Codex", computer: "Studio", status: "running" },
+  { id: "agent-lint", title: "Fix the lint warnings", backend: "OpenCode", computer: "Laptop", status: "needs-you" },
+  { id: "agent-docs", title: "Write the plugin SDK docs", backend: "Codex", computer: "Studio", status: "completed" },
   { id: "agent-hub", title: "Profile the hub's cold start", backend: "Gemini CLI", computer: "Cloud computer", status: "stalled" },
 ];
 
@@ -21,9 +21,27 @@ export const BOTS: SidebarBot[] = [
   { id: "mira", name: "Mira", portraitUrl: portrait("M", "#f6b8a0", "#b0583d"), status: "idle", unread: true },
 ];
 
-export const SESSIONS: SidebarAgent[] = [
-  { id: "session-clover", title: "clover repo", backend: "Claude Code", computer: "Studio", status: "running" },
-  { id: "session-hub", title: "hub migrations", backend: "Codex", computer: "Cloud computer", status: "failed" },
+export const PROJECTS: SidebarProject[] = [
+  {
+    id: "clover",
+    name: "clover",
+    path: "home/Studio/projects/clover",
+    sessions: [
+      { id: "session-panels", title: "The panels as plugins", branch: "lane/f-m1", changes: 14, status: "running" },
+      { id: "session-hub", title: "Hub migrations on staging", branch: "hub-staging", changes: 3, status: "needs-you", needsYou: 1 },
+      { id: "session-docs", title: "README for the plugin index", branch: "main", changes: 0, status: "completed" },
+    ],
+  },
+  {
+    id: "tarot",
+    name: "tarot-panel",
+    path: "home/Laptop/code/tarot-panel",
+    sessions: [
+      { id: "session-spread", title: "Three-card spread layout", branch: "spread", changes: 6, status: "idle" },
+      { id: "session-icons", title: "Card icons at every size", branch: "icons", changes: 2, status: "failed" },
+    ],
+  },
+  { id: "keycaps", name: "keycaps", path: "home/Studio/projects/keycaps", sessions: [] },
 ];
 
 /** The apps we ship, plus one a third-party plugin adds (Discord Waifus, spec §11). */
@@ -35,3 +53,5 @@ export const APPS: SidebarApp[] = [
 ];
 
 export const BUNDLED_APPS = APPS.filter((a) => a.id !== "discord-waifus");
+
+export const ACCOUNT: SidebarAccount = { name: "Sam", detail: "Studio" };

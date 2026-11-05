@@ -53,13 +53,17 @@ export function subjectOf(selector: string): string {
 export const COLOR_LITERAL = /#[0-9a-fA-F]{3,8}\b|\b(?:rgba?|hsla?|hwb|lab|lch|oklab|oklch|color)\(|\b(?:white|black|red|green|blue|gray|grey|silver|yellow|orange|purple|pink)\b/;
 
 /** Properties that fade, filter or transform: around a sealed frame they stop clicks counting. */
-export const FRAME_UNSAFE = new Set(["opacity", "filter", "backdrop-filter", "transform", "rotate", "scale", "zoom", "mix-blend-mode"]);
+export const FRAME_UNSAFE = new Set([
+  "opacity", "filter", "backdrop-filter", "transform", "rotate", "scale", "zoom", "mix-blend-mode",
+  "clip-path", "mask", "mask-image", "-webkit-mask", "-webkit-mask-image",
+]);
 
 /** True when a value of an unsafe property is harmless anywhere: full opacity, a move, no filter. */
 export function harmless(property: string, value: string): boolean {
   const v = value.replace(/\s*!important$/, "").trim();
   if (property === "opacity") return Number(v) >= 1;
   if (property === "filter" || property === "backdrop-filter" || property === "mix-blend-mode") return v === "none" || v === "normal";
+  if (property === "clip-path" || property.includes("mask")) return v === "none";
   if (property === "transform") return v === "none" || /^(translate[XYZ3d]*\([^)]*\)\s*)+$/.test(v);
   return v === "none";
 }
@@ -91,4 +95,22 @@ export function frameUnsafeRules(css: string, leaves: readonly string[]): string
     if (unsafe && !rule.prelude.split(",").every(isLeaf)) offending.push(rule.prelude);
   }
   return offending;
+}
+
+/** Rules that take an element out of the flow (absolute or fixed). Anything positioned can come to sit
+ *  over a sealed frame, so each part names the few it has, and none may reach outside its part:
+ *  no `bottom: 100%`, no `top: 100%`, no negative offset. */
+export function positionedRules(css: string): { selector: string; escapes: boolean }[] {
+  const out: { selector: string; escapes: boolean }[] = [];
+  for (const rule of parseCss(css)) {
+    const position = rule.declarations.find((d) => d.property === "position")?.value.trim();
+    if (position !== "absolute" && position !== "fixed") continue;
+    const escapes =
+      position === "fixed" ||
+      rule.declarations.some(
+        (d) => ["top", "bottom", "left", "right", "inset"].includes(d.property) && (/(^|\s)-\d/.test(d.value) || /^100%$/.test(d.value.trim()) || /calc\(100%/.test(d.value)),
+      );
+    out.push({ selector: rule.prelude.trim(), escapes });
+  }
+  return out;
 }

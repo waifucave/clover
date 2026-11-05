@@ -1,0 +1,11 @@
+{
+  "manifest": 1,
+  "name": "Terminal",
+  "description": "The terminal panel: a terminal over a PTY feed.",
+  "engines": {
+    "clover": "^1.0.0"
+  },
+  "client": {
+    "entry": "client/index.tsx"
+  }
+}

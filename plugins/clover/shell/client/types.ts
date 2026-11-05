@@ -21,7 +21,7 @@ export interface SidebarAgent {
   id: string;
   /** What it was asked to do. */
   title: string;
-  /** The agent backend: "Claude Code", "Codex"… */
+  /** The agent backend: "Codex", "OpenCode"… */
   backend: string;
   computer?: string;
   status: AgentStatus;
@@ -65,26 +65,75 @@ export type LinkState =
   /** No link to any other device. */
   | { state: "offline" };
 
+/** The switch at the top of the sidebar: the bots and their agents, or coding sessions by project. */
+export type SidebarSide = "bots" | "code";
+
+/** A coding session the user started directly: a live tab like an agent's (spec §9.3), grouped by the
+ *  project folder it works in. */
+export interface SidebarSession {
+  id: string;
+  title: string;
+  /** The git branch it works on. */
+  branch?: string;
+  /** Files it has changed on that branch. */
+  changes?: number;
+  status: AgentStatus | "idle";
+  needsYou?: number;
+  backend?: string;
+  computer?: string;
+}
+
+/** A project folder and the sessions in it. */
+export interface SidebarProject {
+  id: string;
+  name: string;
+  /** Its tree path (`home/<Computer>/…`). */
+  path: string;
+  sessions: SidebarSession[];
+}
+
+/** Who is signed in to this app, at the bottom of the sidebar. */
+export interface SidebarAccount {
+  name: string;
+  /** A second word: the plan, or the computer. */
+  detail?: string;
+}
+
 export interface SidebarProps {
-  bots: SidebarBot[];
-  /** Coding sessions the user started with no bot (`clover code`, spec §9.3). */
-  sessions?: SidebarAgent[];
-  apps?: SidebarApp[];
+  side: SidebarSide;
+  onSideChange: (side: SidebarSide) => void;
   route: SidebarRoute;
   onNavigate: (route: SidebarRoute) => void;
-  onNewBot?: () => void;
-  onNewSession?: () => void;
-  /** Close a finished agent's tab. */
-  onCloseAgent?: (agentId: string) => void;
+  bots: SidebarBot[];
+  /** The code side's project folders. */
+  projects?: SidebarProject[];
+  /** `sidebar.app` buttons. */
+  apps?: SidebarApp[];
+  account: SidebarAccount;
+  onOpenSettings: () => void;
+  onOpenAccount?: () => void;
+  /** New: a chat with a bot on the bots side, a coding session on the code side. */
+  onNew?: () => void;
+  onSearch?: () => void;
+  /** Files and artifacts the bots made. */
+  onOutputs?: () => void;
+  /** Plugins and themes. */
+  onCustomize?: () => void;
+  onMore?: () => void;
+  /** A new session in one project. */
+  onNewSession?: (projectId: string) => void;
+  /** Close a finished agent's or session's tab. */
+  onCloseAgent?: (id: string) => void;
+  /** Projects drawn folded at first. */
+  initialFoldedProjects?: string[];
   link?: LinkState;
-  /** The core's switch that pauses every bot and routine at once (spec §9.2). */
   paused?: boolean;
   onResume?: () => void;
-  /** Only Clover's own plugins run (spec §5.8). */
   safeMode?: boolean;
   onOpenPluginManager?: () => void;
+  /** The narrow rail: icons with accessible names, banners as marks. */
   collapsed?: boolean;
   onToggleCollapsed?: () => void;
-  /** The `sidebar.bot` spot: draw one bot's row another way. */
+  /** The `sidebar.bot` spot: a plugin draws a bot's row its own way. */
   renderBot?: (bot: SidebarBot, standard: ReactNode) => ReactNode;
 }

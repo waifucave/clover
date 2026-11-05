@@ -504,11 +504,11 @@ describe("events and notes", () => {
     const onOpenFile = mock((_p: string) => undefined);
     renderView({ items: EVENTS, onOpenThread, onOpenAgent, onOpenFile });
     expect(screen.getByText("Morning brief")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "From Claude Code" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "From OpenCode" })).toBeTruthy();
     expect(screen.getByText("Every weekday at 9:00")).toBeTruthy();
     fireEvent.click(screen.getAllByRole("button", { name: "Open run" })[0]!);
     expect(onOpenThread).toHaveBeenCalledWith("side-1");
-    expect(screen.getByText("Claude Code finished")).toBeTruthy();
+    expect(screen.getByText("OpenCode finished")).toBeTruthy();
     expect(screen.getByText("Codex stopped making progress")).toBeTruthy();
     expect(screen.getByText("Background command finished")).toBeTruthy();
     expect(screen.getByText("Background command failed")).toBeTruthy();
@@ -529,7 +529,7 @@ describe("events and notes", () => {
   test("messages from other sessions and plugins name their sender, never the user", () => {
     const { container } = renderView({ items: EVENTS });
     const titles = [...container.querySelectorAll(".cl-conv-event__title")].map((t) => t.textContent);
-    expect(titles).toEqual(expect.arrayContaining(["From Claude Code", "From Luna", "From Tarot panel"]));
+    expect(titles).toEqual(expect.arrayContaining(["From OpenCode", "From Luna", "From Tarot panel"]));
     expect(screen.getByText(/joined the turn/)).toBeTruthy();
     // A plugin's message (conversation.post, an MCP Apps page's ui/message) says it is a plugin's and
     // is never a user bubble.

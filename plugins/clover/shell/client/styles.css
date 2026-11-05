@@ -1,23 +1,184 @@
-/* The shell's sidebar. Every colour, face and type size is a theme token (`--clover-*`, listed in
-   tokens.ts). The sidebar is the base plane (`color.canvas`); selection is a fill, never the accent. */
+/* The shell: the window frame and the sidebar. Every colour, face and size is a theme token from lane
+   B's catalog (`--clover-*`, listed in tokens.ts). Calm and dense: hairlines rather than shadows,
+   muted text for everything that isn't a name. */
+
+/* ------------------------------------------------------------------ the window */
+
+.cl-window {
+  position: relative;
+  box-sizing: border-box;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--clover-color-surface);
+  color: var(--clover-color-text);
+  font-family: var(--clover-font-sans);
+  font-size: var(--clover-font-size-body);
+  line-height: var(--clover-font-line-body);
+}
+
+.cl-window[data-panel="open"] {
+  grid-template-columns: auto minmax(0, 1fr) minmax(0, 1fr);
+}
+
+.cl-window button {
+  font: inherit;
+}
+
+.cl-window :focus-visible {
+  outline: 2px solid var(--clover-color-focus);
+  outline-offset: 1px;
+}
+
+.cl-window__sidebar {
+  display: flex;
+  min-height: 0;
+  border-right: 1px solid var(--clover-color-hairline);
+}
+
+.cl-window__main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.cl-window__bar {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--clover-space-s);
+  height: 48px;
+  padding: 0 var(--clover-space-m) 0 var(--clover-space-l);
+  border-bottom: 1px solid var(--clover-color-hairline);
+}
+
+.cl-window__title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  margin: 0;
+  padding: 4px 6px;
+  border: none;
+  border-radius: var(--clover-radius-medium);
+  background: transparent;
+  color: var(--clover-color-text);
+  font-size: var(--clover-font-size-body);
+  font-weight: var(--clover-font-weight-regular);
+  cursor: default;
+}
+
+button.cl-window__title {
+  cursor: pointer;
+}
+
+button.cl-window__title:hover {
+  background: var(--clover-color-hover);
+}
+
+.cl-window__title-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cl-window__spacer {
+  flex: 1 1 auto;
+}
+
+.cl-window__toggles {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+}
+
+.cl-window__body {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.cl-window__content {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.cl-window__side {
+  flex: none;
+  width: 320px;
+  min-height: 0;
+  overflow-y: auto;
+  border-left: 1px solid var(--clover-color-hairline);
+}
+
+.cl-window__panel {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  border-left: 1px solid var(--clover-color-hairline);
+}
+
+/* Dialogs cover the whole window, the conversation and its cards included: a card under a dialog is
+   covered, so its buttons count no clicks until the dialog closes. The layer stays inside the window. */
+.cl-window__dialog {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--clover-space-xl);
+  background: var(--clover-clover-scrim);
+}
+
+.cl-bot-tab {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.cl-bot-tab__conversation {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.cl-bot-tab__composer {
+  flex: none;
+  padding-top: var(--clover-space-s);
+}
+
+/* ------------------------------------------------------------------ the sidebar */
 
 .cl-sidebar {
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
+  gap: var(--clover-space-xs);
   width: 264px;
   height: 100%;
   min-height: 0;
-  border-right: 1px solid var(--clover-color-hairline);
+  padding: var(--clover-space-s);
   background: var(--clover-color-canvas);
-  color: var(--clover-color-text-secondary);
-  font-family: var(--clover-font-body);
-  font-size: var(--clover-text-small);
-  line-height: 1.35;
+  color: var(--clover-color-text);
+  font-family: var(--clover-font-sans);
+  font-size: var(--clover-font-size-body);
 }
 
 .cl-sidebar[data-collapsed] {
-  width: 64px;
+  width: 56px;
+  align-items: center;
 }
 
 .cl-sidebar button {
@@ -29,161 +190,89 @@
   outline-offset: -2px;
 }
 
-.cl-sidebar__header {
-  display: flex;
-  flex: none;
-  align-items: center;
-  gap: 4px;
-  height: 48px;
-  padding: 0 10px 0 16px;
-}
-
-.cl-sidebar[data-collapsed] .cl-sidebar__header {
-  flex-direction: column;
-  height: auto;
-  padding: 12px 0 6px;
-  gap: 8px;
-}
-
-.cl-sidebar__wordmark {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  color: var(--clover-color-text);
-  font-family: var(--clover-font-display);
-  font-size: 17px;
-  font-weight: 650;
-}
-
-.cl-sidebar[data-collapsed] .cl-sidebar__wordmark-text {
-  display: none;
-}
-
-.cl-sidebar__spacer {
-  flex: 1;
-}
-
-.cl-sidebar__tool {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 30px;
-  height: 30px;
-  padding: 0;
-  border: none;
-  border-radius: var(--clover-radius-control);
-  background: transparent;
-  color: var(--clover-color-text-muted);
-  cursor: pointer;
-}
-
-.cl-sidebar__tool:hover {
-  background: var(--clover-color-hover);
-  color: var(--clover-color-text);
-}
-
-.cl-sidebar__banners {
-  display: flex;
-  flex: none;
-  flex-direction: column;
-  gap: 6px;
-  padding: 0 10px 8px;
-}
-
-.cl-sidebar__banner {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-start;
-  gap: 4px 8px;
-  padding: 8px 10px;
-  border: 1px solid var(--clover-color-hairline);
-  border-radius: var(--clover-radius-card);
-  background: var(--clover-color-raised);
-  color: var(--clover-color-text);
-  font-size: var(--clover-text-caption);
-  line-height: 1.4;
-}
-
-.cl-sidebar__banner .cl-sidebar-icon {
-  margin-top: 1px;
-}
-
-.cl-sidebar__banner[data-tone="warning"] .cl-sidebar-icon {
-  color: var(--clover-color-warning);
-}
-
-.cl-sidebar__banner-text {
-  flex: 1 1 160px;
-}
-
-.cl-sidebar__banner-action {
-  margin-left: 24px;
-  padding: 0;
-  border: none;
-  background: none;
-  color: var(--clover-color-link);
-  font-size: var(--clover-text-caption);
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.cl-sidebar__scroll {
-  display: flex;
-  flex: 1 1 auto;
-  flex-direction: column;
-  gap: 14px;
-  min-height: 0;
-  padding: 0 8px 8px;
-  overflow-y: auto;
-}
-
-.cl-sidebar__heading {
-  margin: 4px 8px;
-  color: var(--clover-color-text-muted);
-  font-size: var(--clover-text-caption);
-  font-weight: 600;
-  letter-spacing: 0.02em;
-}
-
-.cl-sidebar__heading[data-hidden] {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  margin: 0;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
-}
-
-.cl-sidebar__list,
-.cl-sidebar__agents {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
+.cl-sidebar ul {
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
-.cl-sidebar__agents {
-  margin: 1px 0 4px 21px;
-  padding-left: 6px;
-  border-left: 1px solid var(--clover-color-hairline);
+.cl-sidebar__top {
+  display: flex;
+  align-items: center;
+  gap: var(--clover-space-s);
+  min-height: 32px;
+  padding: 0 var(--clover-space-xs);
+}
+
+.cl-sidebar[data-collapsed] .cl-sidebar__top {
+  flex-direction: column;
+  padding: 0;
+}
+
+.cl-sidebar__brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--clover-color-text);
+  font-family: var(--clover-font-display);
+  font-size: var(--clover-font-size-large);
+}
+
+.cl-shell-mark {
+  color: var(--clover-color-accent);
+}
+
+.cl-sidebar__switch {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: var(--clover-radius-medium);
+  background: var(--clover-color-control);
+}
+
+.cl-sidebar[data-collapsed] .cl-sidebar__switch {
+  flex-direction: column;
+}
+
+.cl-sidebar__switch-option {
+  display: inline-flex;
+  flex: 1 1 0;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 30px;
+  padding: 0 var(--clover-space-s);
+  border: none;
+  border-radius: var(--clover-radius-small);
+  background: transparent;
+  color: var(--clover-color-text-muted);
+  cursor: pointer;
+}
+
+.cl-sidebar__switch-option[aria-checked="true"] {
+  background: var(--clover-color-surface);
+  color: var(--clover-color-text);
+}
+
+.cl-sidebar__actions {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding-top: var(--clover-space-xs);
 }
 
 .cl-sidebar__row {
-  position: relative;
   box-sizing: border-box;
   display: flex;
   align-items: center;
-  gap: 9px;
+  gap: 10px;
   width: 100%;
-  min-height: 34px;
-  padding: 5px 8px;
+  min-height: 32px;
+  padding: 4px var(--clover-space-s);
   border: none;
-  border-radius: var(--clover-radius-control);
+  border-radius: var(--clover-radius-medium);
   background: transparent;
-  color: inherit;
+  color: var(--clover-color-text);
   text-align: left;
   cursor: pointer;
 }
@@ -194,195 +283,276 @@
 
 .cl-sidebar__row[aria-current="page"] {
   background: var(--clover-color-selected);
-  color: var(--clover-color-text);
 }
 
 .cl-sidebar[data-collapsed] .cl-sidebar__row {
   justify-content: center;
-  padding: 6px 0;
+  width: 40px;
+  padding: 4px;
 }
 
-.cl-sidebar[data-collapsed] .cl-sidebar__row-text,
-.cl-sidebar[data-collapsed] .cl-sidebar__name {
-  display: none;
+.cl-sidebar__action {
+  color: var(--clover-color-text-secondary);
 }
 
-.cl-sidebar__row-text {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
+.cl-sidebar__title {
   min-width: 0;
-}
-
-.cl-sidebar__name {
-  min-width: 0;
+  flex: 1 1 auto;
   overflow: hidden;
-  color: var(--clover-color-text);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.cl-sidebar__row[data-kind="bot"] .cl-sidebar__name {
-  font-weight: 500;
-}
-
-.cl-sidebar__status {
-  overflow: hidden;
+.cl-sidebar__icon-button {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: var(--clover-radius-medium);
+  background: transparent;
   color: var(--clover-color-text-muted);
-  font-size: var(--clover-text-caption);
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  cursor: pointer;
 }
 
-.cl-sidebar__row[data-status="needs-you"] .cl-sidebar__status,
-.cl-sidebar__agent[data-status="needs-you"] .cl-sidebar__status {
-  color: var(--clover-color-warning);
+.cl-sidebar__icon-button:hover {
+  background: var(--clover-color-hover);
+  color: var(--clover-color-text);
+}
+
+/* Banners: safe mode, the pause switch, the link to the main computer. */
+.cl-sidebar__banners {
+  display: flex;
+  flex-direction: column;
+  gap: var(--clover-space-xs);
+  padding-top: var(--clover-space-xs);
+}
+
+.cl-sidebar__banner {
+  display: grid;
+  grid-template-columns: 16px 1fr;
+  gap: 2px var(--clover-space-s);
+  padding: var(--clover-space-s);
+  border: 1px solid var(--clover-color-hairline-raised);
+  border-radius: var(--clover-radius-medium);
+  background: var(--clover-color-raised);
+  color: var(--clover-color-text-secondary);
+  font-size: var(--clover-font-size-control);
+  line-height: var(--clover-font-line-tight);
+}
+
+.cl-sidebar__banner[data-tone="attention"] > .cl-shell-icon {
+  color: var(--clover-color-attention-text);
+}
+
+.cl-sidebar__banner-action {
+  grid-column: 2;
+  justify-self: start;
+  padding: 2px 0;
+  border: none;
+  background: transparent;
+  color: var(--clover-color-accent-text);
+  font-size: var(--clover-font-size-control);
+  cursor: pointer;
+}
+
+.cl-sidebar__marks {
+  display: flex;
+  flex-direction: column;
+  gap: var(--clover-space-xs);
+}
+
+.cl-sidebar__mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid var(--clover-color-hairline-raised);
+  border-radius: var(--clover-radius-medium);
+  background: var(--clover-color-raised);
+  color: var(--clover-color-text-secondary);
+  cursor: pointer;
+}
+
+.cl-sidebar__mark[data-tone="attention"] {
+  color: var(--clover-color-attention-text);
+}
+
+/* The bots, or the projects: the part that scrolls. */
+.cl-sidebar__scroll {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: var(--clover-space-m);
+  min-height: 0;
+  margin: var(--clover-space-s) calc(-1 * var(--clover-space-s)) 0;
+  padding: 0 var(--clover-space-s);
+  overflow-y: auto;
+}
+
+.cl-sidebar__section {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.cl-sidebar__heading {
+  margin: 0;
+  padding: var(--clover-space-xs) var(--clover-space-s);
+  color: var(--clover-color-text-muted);
+  font-size: var(--clover-font-size-control);
+  font-weight: var(--clover-font-weight-medium);
+}
+
+.cl-sidebar__list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
 }
 
 .cl-sidebar__portrait {
-  position: relative;
   display: inline-flex;
   flex: none;
   align-items: center;
   justify-content: center;
   width: 28px;
   height: 28px;
-  border-radius: var(--clover-radius-pill);
-  background: var(--clover-color-control);
+  overflow: hidden;
+  border-radius: var(--clover-radius-round);
+  background: var(--clover-color-accent-soft);
+  color: var(--clover-color-accent-text);
+  font-size: var(--clover-font-size-control);
 }
 
-.cl-sidebar__portrait-image {
-  width: 28px;
-  height: 28px;
-  border-radius: var(--clover-radius-pill);
+.cl-sidebar__portrait img {
+  width: 100%;
+  height: 100%;
   object-fit: cover;
 }
 
-.cl-sidebar__portrait-initial {
-  color: var(--clover-color-text);
-  font-size: var(--clover-text-small);
-  font-weight: 600;
+.cl-sidebar__names {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+  line-height: var(--clover-font-line-tight);
 }
 
-.cl-sidebar__portrait-dot {
-  position: absolute;
-  right: -2px;
-  bottom: -2px;
-  display: none;
-  box-sizing: border-box;
-  width: 11px;
-  height: 11px;
-  border: 2px solid var(--clover-color-canvas);
-  border-radius: var(--clover-radius-pill);
+.cl-sidebar__line {
+  overflow: hidden;
+  color: var(--clover-color-text-muted);
+  font-size: var(--clover-font-size-caption);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.cl-sidebar__portrait[data-status="thinking"] .cl-sidebar__portrait-dot,
-.cl-sidebar__portrait[data-status="working"] .cl-sidebar__portrait-dot {
-  display: block;
-  background: var(--clover-color-accent);
+.cl-sidebar__line[data-status="needs-you"] {
+  color: var(--clover-color-attention-text);
 }
 
-.cl-sidebar__portrait[data-status="needs-you"] .cl-sidebar__portrait-dot {
-  display: block;
-  background: var(--clover-color-warning);
-}
-
-.cl-sidebar__portrait[data-status="asleep"] .cl-sidebar__portrait-dot,
-.cl-sidebar__portrait[data-status="paused"] .cl-sidebar__portrait-dot {
-  display: block;
-  background: var(--clover-color-text-muted);
-}
-
-.cl-sidebar__badge {
-  box-sizing: border-box;
-  display: inline-flex;
+.cl-sidebar__count {
   flex: none;
-  align-items: center;
-  justify-content: center;
   min-width: 18px;
-  height: 18px;
   padding: 0 5px;
-  border-radius: var(--clover-radius-pill);
-  background: var(--clover-color-strong);
-  color: var(--clover-color-on-strong);
-  font-size: 11px;
-  font-weight: 700;
+  border-radius: var(--clover-radius-round);
+  background: var(--clover-color-accent);
+  color: var(--clover-color-accent-contrast);
+  font-size: var(--clover-font-size-caption);
+  line-height: 18px;
+  text-align: center;
 }
 
 .cl-sidebar__unread {
   flex: none;
-  width: 8px;
-  height: 8px;
-  border-radius: var(--clover-radius-pill);
-  background: var(--clover-color-strong);
+  width: 7px;
+  height: 7px;
+  border-radius: var(--clover-radius-round);
+  background: var(--clover-color-accent);
 }
 
-.cl-sidebar[data-collapsed] .cl-sidebar__badge {
-  position: absolute;
-  top: 1px;
-  right: 8px;
-}
-
-.cl-sidebar[data-collapsed] .cl-sidebar__unread {
-  position: absolute;
-  top: 5px;
-  right: 14px;
+/* Live tabs nest under their bot or project, along a guide line. */
+.cl-sidebar__agents,
+.cl-sidebar__sessions {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin: 1px 0 var(--clover-space-xs) 22px;
+  padding-left: var(--clover-space-s);
+  border-left: 1px solid var(--clover-color-hairline-raised);
 }
 
 .cl-sidebar__agent {
-  position: relative;
   display: flex;
   align-items: center;
+  gap: 2px;
 }
 
-.cl-sidebar__agent .cl-sidebar__row {
+.cl-sidebar__row--nested {
   min-height: 30px;
-  padding-right: 30px;
+  color: var(--clover-color-text-secondary);
+  font-size: var(--clover-font-size-control);
 }
 
-.cl-sidebar__agent-glyph {
+.cl-sidebar__dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: var(--clover-radius-round);
+  background: var(--clover-color-text-placeholder);
+}
+
+.cl-sidebar__dot[data-status="running"] {
+  background: var(--clover-color-accent);
+}
+
+.cl-sidebar__dot[data-status="needs-you"],
+.cl-sidebar__dot[data-status="stalled"] {
+  background: var(--clover-color-attention);
+}
+
+.cl-sidebar__dot[data-status="failed"] {
+  background: var(--clover-color-danger);
+}
+
+.cl-sidebar__dot[data-status="completed"] {
+  background: var(--clover-color-success);
+}
+
+/* A live tab's state comes first and never shrinks; its title takes what is left. */
+.cl-sidebar__state {
+  flex: none;
+  color: var(--clover-color-text-muted);
+  font-size: var(--clover-font-size-caption);
+}
+
+.cl-sidebar__state[data-status="needs-you"],
+.cl-sidebar__state[data-status="stalled"] {
+  color: var(--clover-color-attention-text);
+}
+
+.cl-sidebar__state[data-status="failed"] {
+  color: var(--clover-color-danger);
+}
+
+/* Close on a finished tab: always there, so the keyboard reaches it (review item 8). */
+.cl-sidebar__close {
   display: inline-flex;
   flex: none;
   align-items: center;
   justify-content: center;
-  width: 16px;
-  height: 16px;
-  color: var(--clover-color-text-muted);
-}
-
-.cl-sidebar__agent-glyph[data-status="running"] {
-  color: var(--clover-color-text);
-}
-
-.cl-sidebar__agent-glyph[data-status="needs-you"] {
-  color: var(--clover-color-warning);
-}
-
-.cl-sidebar__agent-glyph[data-status="failed"],
-.cl-sidebar__agent-glyph[data-status="stalled"] {
-  color: var(--clover-color-danger);
-}
-
-.cl-sidebar__close {
-  position: absolute;
-  right: 4px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 22px;
-  height: 22px;
+  width: 24px;
+  height: 24px;
   padding: 0;
   border: none;
-  border-radius: var(--clover-radius-control);
+  border-radius: var(--clover-radius-small);
   background: transparent;
   color: var(--clover-color-text-muted);
   cursor: pointer;
-  visibility: hidden;
-}
-
-.cl-sidebar__agent:hover .cl-sidebar__close,
-.cl-sidebar__close:focus-visible {
-  visibility: visible;
 }
 
 .cl-sidebar__close:hover {
@@ -390,38 +560,119 @@
   color: var(--clover-color-text);
 }
 
+/* Projects. */
+.cl-sidebar__project-head {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.cl-sidebar__project-toggle {
+  display: inline-flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  min-height: 30px;
+  padding: 0 var(--clover-space-s);
+  border: none;
+  border-radius: var(--clover-radius-medium);
+  background: transparent;
+  color: var(--clover-color-text-secondary);
+  font-size: var(--clover-font-size-control);
+  font-weight: var(--clover-font-weight-medium);
+  cursor: pointer;
+}
+
+.cl-sidebar__project-toggle:hover {
+  background: var(--clover-color-hover);
+}
+
+.cl-sidebar__project-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cl-sidebar__branch {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+  color: var(--clover-color-text-muted);
+  font-size: var(--clover-font-size-caption);
+}
+
+.cl-sidebar__empty {
+  margin-left: 30px;
+  padding: 4px 0;
+  color: var(--clover-color-text-muted);
+  font-size: var(--clover-font-size-control);
+}
+
 .cl-sidebar__app-icon {
+  width: 16px;
+  height: 16px;
+}
+
+/* The account and the settings gear, at the bottom. */
+.cl-sidebar__footer {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--clover-space-xs);
+  padding-top: var(--clover-space-s);
+  border-top: 1px solid var(--clover-color-hairline);
+}
+
+.cl-sidebar[data-collapsed] .cl-sidebar__footer {
+  flex-direction: column;
+}
+
+.cl-sidebar__account {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.cl-sidebar__avatar {
   display: inline-flex;
   flex: none;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--clover-radius-round);
+  background: var(--clover-color-control);
   color: var(--clover-color-text-secondary);
+  font-size: var(--clover-font-size-caption);
 }
 
-.cl-sidebar__app-image {
-  width: 18px;
-  height: 18px;
-  border-radius: 4px;
-}
-
-.cl-sidebar__add .cl-sidebar__name,
-.cl-sidebar__add .cl-sidebar__app-icon {
-  color: var(--clover-color-text-muted);
-}
-
-.cl-sidebar__footer {
+.cl-sidebar__account-names {
   display: flex;
-  flex: none;
-  flex-direction: column;
-  gap: 1px;
-  padding: 8px;
-  border-top: 1px solid var(--clover-color-hairline);
+  min-width: 0;
+  align-items: baseline;
+  gap: 6px;
 }
 
-.cl-sidebar-icon {
+.cl-sidebar__account-detail {
   flex: none;
-  display: inline-block;
-  vertical-align: middle;
+  color: var(--clover-color-text-muted);
+  font-size: var(--clover-font-size-caption);
+}
+
+.cl-sidebar__count--corner {
+  margin-left: -10px;
+  align-self: flex-start;
+}
+
+.cl-shell-icon {
+  flex: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cl-window *,
+  .cl-sidebar * {
+    transition: none;
+  }
 }

@@ -1,8 +1,15 @@
 {
   "manifest": 1,
   "name": "Shell",
-  "description": "The default shell: the sidebar with bots, their agents' live tabs, coding sessions and apps.",
-  "engines": { "clover": "^1.0.0" },
-  "client": { "entry": "client/index.tsx" },
-  "capabilities": ["bots.read", "computers.read"]
+  "description": "The default shell: the window frame, and the sidebar with the bots and their live agents, or the coding sessions by project.",
+  "engines": {
+    "clover": "^1.0.0"
+  },
+  "client": {
+    "entry": "client/index.tsx"
+  },
+  "capabilities": [
+    "bots.read",
+    "computers.read"
+  ]
 }

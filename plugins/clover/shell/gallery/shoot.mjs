@@ -17,7 +17,7 @@ const site = resolve(siteArg);
 const out = resolve(outArg);
 
 const browser = await chromium.launch();
-const page = await browser.newPage({ viewport: { width: 1440, height: 1000 }, deviceScaleFactor: 2, locale: "en-US", timezoneId: "UTC" });
+const page = await browser.newPage({ viewport: { width: 1600, height: 1100 }, deviceScaleFactor: 2, locale: "en-US", timezoneId: "UTC" });
 const problems = [];
 page.on("pageerror", (e) => problems.push(`page error: ${e.message}`));
 page.on("console", (m) => {

@@ -172,25 +172,25 @@ describe("model, voice and actions", () => {
   test("the model pill opens a menu; a model or an effort reaches the host, and focus comes back", () => {
     const onChange = mock((_c: { model: string; effort?: string }) => undefined);
     setup({ model: { ...MODELS, onChange } });
-    const pill = screen.getByRole("button", { name: "Model: Opus 5.5, medium" });
+    const pill = screen.getByRole("button", { name: "Model: GPT-6, medium" });
     fireEvent.click(pill);
     expect(pill.getAttribute("aria-expanded")).toBe("true");
     const menu = screen.getByRole("menu", { name: "Model and effort" });
     // Focus starts on the checked model; arrow keys move through every item.
-    expect(document.activeElement?.textContent).toContain("Opus 5.5");
+    expect(document.activeElement?.textContent).toContain("GPT-6");
     fireEvent.keyDown(menu, { key: "ArrowDown" });
-    expect(document.activeElement?.textContent).toContain("Sonnet 5");
+    expect(document.activeElement?.textContent).toContain("Grok 5");
     fireEvent.keyDown(menu, { key: "End" });
     expect(document.activeElement?.textContent).toBe("max");
     fireEvent.keyDown(menu, { key: "ArrowDown" });
-    expect(document.activeElement?.textContent).toContain("Opus 5.5");
+    expect(document.activeElement?.textContent).toContain("GPT-6");
     fireEvent.click(screen.getByRole("menuitemradio", { name: "high" }));
-    expect(onChange).toHaveBeenCalledWith({ model: "anthropic/opus-5.5", effort: "high" });
+    expect(onChange).toHaveBeenCalledWith({ model: "openai/gpt-6", effort: "high" });
     expect(menu.isConnected).toBe(false);
     expect(document.activeElement).toBe(pill);
     fireEvent.click(pill);
-    fireEvent.click(screen.getByRole("menuitemradio", { name: /Sonnet 5/ }));
-    expect(onChange).toHaveBeenLastCalledWith({ model: "anthropic/sonnet-5", effort: "medium" });
+    fireEvent.click(screen.getByRole("menuitemradio", { name: /Grok 5/ }));
+    expect(onChange).toHaveBeenLastCalledWith({ model: "xai/grok-5", effort: "medium" });
     fireEvent.click(pill);
     fireEvent.keyDown(screen.getByRole("menu"), { key: "Escape" });
     expect(screen.queryByRole("menu")).toBeNull();

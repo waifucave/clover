@@ -1,0 +1,11 @@
+{
+  "manifest": 1,
+  "name": "Settings",
+  "description": "The settings window and the language chooser.",
+  "engines": {
+    "clover": "^1.0.0"
+  },
+  "client": {
+    "entry": "client/index.tsx"
+  }
+}

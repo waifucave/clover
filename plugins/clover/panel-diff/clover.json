@@ -1,0 +1,14 @@
+{
+  "manifest": 1,
+  "name": "Diff",
+  "description": "The diff panel: base against working tree, per file, unified or split.",
+  "engines": {
+    "clover": "^1.0.0"
+  },
+  "client": {
+    "entry": "client/index.tsx"
+  },
+  "capabilities": [
+    "files"
+  ]
+}

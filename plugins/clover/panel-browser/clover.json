@@ -1,0 +1,14 @@
+{
+  "manifest": 1,
+  "name": "Browser",
+  "description": "The browser panel: tabs, the address bar and the annotate tools around the Clover Browser's live view.",
+  "engines": {
+    "clover": "^1.0.0"
+  },
+  "client": {
+    "entry": "client/index.tsx"
+  },
+  "capabilities": [
+    "browser"
+  ]
+}

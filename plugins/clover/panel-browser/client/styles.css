@@ -1,0 +1,234 @@
+/* The browser panel: the chrome around the live page. Every colour, face and size is a theme token
+   from lane B's catalog. The annotate tools float over the page (lane L's view), inside the frame;
+   they never reach the conversation. */
+
+.cl-browser-tabs {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  font-family: var(--clover-font-sans);
+  font-size: var(--clover-font-size-control);
+}
+
+.cl-browser-tabs button,
+.cl-browser button {
+  font: inherit;
+}
+
+.cl-browser-tabs :focus-visible,
+.cl-browser :focus-visible {
+  outline: 2px solid var(--clover-color-focus);
+  outline-offset: -2px;
+}
+
+.cl-browser-tabs__tab {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  max-width: 200px;
+  border-radius: var(--clover-radius-medium);
+}
+
+.cl-browser-tabs__tab[data-active] {
+  background: var(--clover-color-selected);
+}
+
+.cl-browser-tabs__select {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  min-height: 28px;
+  padding: 0 4px 0 var(--clover-space-s);
+  border: none;
+  background: transparent;
+  color: var(--clover-color-text-secondary);
+  cursor: pointer;
+}
+
+.cl-browser-tabs__title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cl-browser-tabs__close,
+.cl-browser-tabs__new {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: var(--clover-radius-small);
+  background: transparent;
+  color: var(--clover-color-text-muted);
+  cursor: pointer;
+}
+
+.cl-browser-tabs__close:hover,
+.cl-browser-tabs__new:hover {
+  background: var(--clover-color-hover);
+  color: var(--clover-color-text);
+}
+
+.cl-browser {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--clover-color-surface);
+  color: var(--clover-color-text);
+  font-family: var(--clover-font-sans);
+  font-size: var(--clover-font-size-control);
+}
+
+.cl-browser__bar {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+  padding: var(--clover-space-xs) var(--clover-space-s);
+  border-bottom: 1px solid var(--clover-color-hairline);
+}
+
+.cl-browser__button {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: var(--clover-radius-medium);
+  background: transparent;
+  color: var(--clover-color-text-muted);
+  cursor: pointer;
+}
+
+.cl-browser__button:hover:not(:disabled) {
+  background: var(--clover-color-hover);
+  color: var(--clover-color-text);
+}
+
+.cl-browser__button:disabled {
+  color: var(--clover-color-text-placeholder);
+  cursor: default;
+}
+
+.cl-browser__address {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin-left: var(--clover-space-xs);
+  padding: 5px var(--clover-space-m);
+  border: 1px solid var(--clover-color-hairline);
+  border-radius: var(--clover-radius-medium);
+  background: var(--clover-color-control);
+  color: var(--clover-color-text);
+  font: inherit;
+  text-align: center;
+}
+
+.cl-browser__address:focus-visible {
+  outline: 2px solid var(--clover-color-focus);
+  outline-offset: -1px;
+  text-align: left;
+}
+
+/* The frame lane L's live view fills. */
+.cl-browser__frame {
+  position: relative;
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.cl-browser__placeholder {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--clover-space-xs);
+  margin: var(--clover-space-m);
+  padding: var(--clover-space-xl);
+  border: 1px dashed var(--clover-color-hairline-raised);
+  border-radius: var(--clover-radius-large);
+  background: var(--clover-color-raised);
+  color: var(--clover-color-text-muted);
+  text-align: center;
+}
+
+.cl-browser__placeholder-title {
+  margin: var(--clover-space-s) 0 0;
+  color: var(--clover-color-text);
+  font-size: var(--clover-font-size-body);
+}
+
+.cl-browser__placeholder-text {
+  max-width: 300px;
+  margin: 0;
+}
+
+.cl-browser__annotate {
+  position: absolute;
+  bottom: var(--clover-space-m);
+  left: 50%;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: -100px;
+  padding: 4px;
+  border: 1px solid var(--clover-color-hairline-raised);
+  border-radius: var(--clover-radius-large);
+  background: var(--clover-color-float);
+  box-shadow: var(--clover-shadow-float);
+}
+
+.cl-browser__tool {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: none;
+  border-radius: var(--clover-radius-medium);
+  background: transparent;
+  color: var(--clover-color-text-secondary);
+  cursor: pointer;
+}
+
+.cl-browser__tool:hover {
+  background: var(--clover-color-hover);
+  color: var(--clover-color-text);
+}
+
+.cl-browser__tool[aria-pressed="true"] {
+  background: var(--clover-color-accent-soft);
+  color: var(--clover-color-accent-text);
+}
+
+.cl-browser__tool-gap {
+  width: 1px;
+  height: 20px;
+  margin: 0 4px;
+  background: var(--clover-color-hairline-raised);
+}
+
+.cl-browser-icon {
+  flex: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cl-browser * {
+    transition: none;
+  }
+}

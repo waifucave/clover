@@ -2,26 +2,42 @@ import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { cssVariable, TOKENS } from "../client/tokens";
-import { COLOR_LITERAL, frameUnsafeRules, parseCss } from "./css";
+import { COLOR_LITERAL, frameUnsafeRules, parseCss, positionedRules } from "./css";
 
 const css = readFileSync(join(import.meta.dir, "../client/styles.css"), "utf8");
 
-describe("the sidebar stylesheet", () => {
+/** Leaves that may move or fade: they never hold a sealed frame. */
+const LEAVES: string[] = [".cl-shell-icon"];
+
+/** The dialog layer, which covers the window on purpose (a card under a dialog is covered) and stays inside it. */
+const POSITIONED: string[] = [".cl-window__dialog"];
+
+describe("the shell stylesheet", () => {
   test("uses exactly the tokens tokens.ts names", () => {
-    const used = new Set([...css.matchAll(/var\((--clover-[a-z0-9-]+)/g)].map((m) => m[1]));
-    const listed = new Set(Object.keys(TOKENS).map(cssVariable));
+    const used = new Set([...css.matchAll(/var\((--clover-[a-z0-9_-]+)/g)].map((m) => m[1]));
+    const listed = new Set(TOKENS.map(cssVariable));
     expect([...used].filter((v) => !listed.has(v!))).toEqual([]);
     expect([...listed].filter((v) => !used.has(v))).toEqual([]);
   });
 
-  test("holds no colour literals", () => {
+  test("holds no colour literals: every colour is a token", () => {
     const offenders = parseCss(css).flatMap((rule) =>
       rule.declarations.filter((d) => COLOR_LITERAL.test(d.value)).map((d) => `${rule.prelude} { ${d.property}: ${d.value} }`),
     );
     expect(offenders).toEqual([]);
   });
 
-  test("never fades, filters or transforms", () => {
-    expect(frameUnsafeRules(css, [])).toEqual([]);
+  test("never fades, filters, clips or transforms anything that could hold a sealed frame", () => {
+    expect(frameUnsafeRules(css, LEAVES)).toEqual([]);
+  });
+
+  test("positions only its listed elements out of the flow, and none reaches outside the part", () => {
+    const positioned = positionedRules(css);
+    expect(positioned.map((p) => p.selector).sort()).toEqual([...POSITIONED].sort());
+    expect(positioned.filter((p) => p.escapes)).toEqual([]);
+  });
+
+  test("animations stop for reduced motion", () => {
+    expect(css).toContain("@media (prefers-reduced-motion: reduce)");
   });
 });

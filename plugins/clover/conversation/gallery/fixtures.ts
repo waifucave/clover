@@ -376,11 +376,11 @@ export const EVENTS: ConversationItem[] = [
     summary: "The GitHub token expired, so I couldn't read the new issues.",
     threadId: "side-2",
   } satisfies RoutineResultItem,
-  user(at(0, 10, 0), "Have Claude Code rebuild the island as a plugin on Studio."),
-  bot(at(0, 10, 0), "Started a Claude Code agent on Studio for it. I'll tell you when it reports."),
+  user(at(0, 10, 0), "Have OpenCode rebuild the island as a plugin on Studio."),
+  bot(at(0, 10, 0), "Started an OpenCode agent on Studio for it. I'll tell you when it reports."),
   {
     kind: "agent-report", id: "ar-1", at: at(0, 10, 20),
-    from: { kind: "agent", id: "agent-island", name: "Claude Code", backend: "Claude Code", computer: "Studio" },
+    from: { kind: "agent", id: "agent-island", name: "OpenCode", backend: "OpenCode", computer: "Studio" },
     text: "Halfway there: the notch geometry works. Should the strip be 32 or 40 px tall on Windows?",
     folded: true,
   } satisfies AgentReportItem,
@@ -396,7 +396,7 @@ export const EVENTS: ConversationItem[] = [
   } satisfies AgentReportItem,
   {
     kind: "task-notification", id: "tn-1", at: at(0, 10, 44),
-    task: { kind: "agent", agentId: "agent-island", name: "Claude Code", backend: "Claude Code · opus, high effort", computer: "Studio" },
+    task: { kind: "agent", agentId: "agent-island", name: "OpenCode", backend: "OpenCode · kimi-k3, high effort", computer: "Studio" },
     status: "completed",
     report: REPORT,
     transcriptPath: "bots/alpha/agents/agent-island.jsonl",
@@ -426,7 +426,7 @@ export const EVENTS: ConversationItem[] = [
 export const NOTES: ConversationItem[] = [
   note(at(-1, 23, 50), "Alpha summarized the conversation up to here", { variant: "divider" }),
   user(at(0, 8, 0), "Morning! Switch to a faster model for today."),
-  note(at(0, 8, 0), "Switched to Sonnet 5, low effort. The next turn uses it."),
+  note(at(0, 8, 0), "Switched to Grok 5, low effort. The next turn uses it."),
   bot(at(0, 8, 0), "Done. I'll be quicker today."),
   note(at(0, 8, 2), "You're on Laptop. Alpha thinks on Studio.", { from: { kind: "core" } }),
   note(at(0, 8, 5), "2 new tools arrived: mcp__figma__Export and mcp__figma__Inspect."),
