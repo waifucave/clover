@@ -1,0 +1,358 @@
+{
+ "run": "42018941532",
+ "commit": "115ca242fee8d2fe3a7bff251c21be25c455fdf4",
+ "platform": "win32",
+ "arch": "x64",
+ "electron": "45.2.3",
+ "chrome": "156.0.8078.80",
+ "method": "netlog-v2-<variant>.json decoded with its own constants; destination ports labeled by the fixture listener that recorded the socket source port; resolver hosts labeled by fixture name. Unconnected UDP sockets are WebRTC P2P sockets; connected ones are resolver reachability probes. IPv6 sends go to ::1, which the 127.0.0.1 listeners never receive.",
+ "variants": {
+  "control": {
+   "udp": {
+    "p2pSocketsBound": 30,
+    "p2pDatagrams": {
+     "main/stun": 6,
+     "main/remote-candidate": 15,
+     "nested/stun": 6,
+     "nested/remote-candidate": 15,
+     "srcdoc/stun": 6,
+     "srcdoc/remote-candidate": 15,
+     "opaque-srcdoc/stun": 6,
+     "opaque-srcdoc/remote-candidate": 15,
+     "about-blank/stun": 6,
+     "about-blank/remote-candidate": 15
+    },
+    "connectedDatagrams": {
+     "main/webtransport": 6
+    },
+    "datagramsElsewhere": 0
+   },
+   "tcp": {
+    "connectsByFixture": {
+     "main/turn (refused attempt)": 2,
+     "main/turn": 2,
+     "main/prefetch": 1,
+     "main/fetch": 1,
+     "main/own-fetch": 3,
+     "main/other-plugin-fetch": 1,
+     "main/keepalive": 1,
+     "main/xhr": 1,
+     "main/image": 1,
+     "main/css": 1,
+     "main/font": 1,
+     "main/script": 1,
+     "main/media": 1,
+     "main/css-import": 1,
+     "main/background": 1,
+     "main/websocket": 1,
+     "main/beacon": 1,
+     "main/eventsource": 1,
+     "main/redirect": 1,
+     "main/redirect-target": 1,
+     "main/fetchLater": 2,
+     "main/ping": 1,
+     "main/worker": 1,
+     "main/shared": 1,
+     "main/blob": 1,
+     "nested/turn (refused attempt)": 2,
+     "nested/turn": 2,
+     "nested/fetch": 1,
+     "srcdoc/turn (refused attempt)": 2,
+     "srcdoc/turn": 2,
+     "srcdoc/fetch": 1,
+     "opaque-srcdoc/turn (refused attempt)": 2,
+     "opaque-srcdoc/turn": 2,
+     "opaque-srcdoc/fetch": 1,
+     "about-blank/turn (refused attempt)": 2,
+     "about-blank/turn": 2,
+     "about-blank/fetch": 1,
+     "worker/fetch": 1
+    },
+    "elsewhere": 0
+   },
+   "resolver": {
+    "speculative": {
+     "main/dns-prefetch": 1,
+     "nested/dns-prefetch": 1,
+     "srcdoc/dns-prefetch": 1,
+     "opaque-srcdoc/dns-prefetch": 1,
+     "about-blank/dns-prefetch": 1
+    },
+    "other": {
+     "other name": 32
+    }
+   }
+  },
+  "csp": {
+   "udp": {
+    "p2pSocketsBound": 30,
+    "p2pDatagrams": {
+     "main/stun": 6,
+     "main/remote-candidate": 15,
+     "nested/stun": 6,
+     "nested/remote-candidate": 15,
+     "srcdoc/stun": 6,
+     "srcdoc/remote-candidate": 15,
+     "opaque-srcdoc/stun": 6,
+     "opaque-srcdoc/remote-candidate": 15,
+     "about-blank/stun": 6,
+     "about-blank/remote-candidate": 15
+    },
+    "connectedDatagrams": {},
+    "datagramsElsewhere": 0
+   },
+   "tcp": {
+    "connectsByFixture": {
+     "main/turn (refused attempt)": 2,
+     "main/turn": 2,
+     "main/own-fetch": 2,
+     "main/other-plugin-fetch": 1,
+     "nested/turn (refused attempt)": 2,
+     "nested/turn": 2,
+     "srcdoc/turn (refused attempt)": 2,
+     "srcdoc/turn": 2,
+     "opaque-srcdoc/turn (refused attempt)": 2,
+     "opaque-srcdoc/turn": 2,
+     "about-blank/turn (refused attempt)": 2,
+     "about-blank/turn": 2
+    },
+    "elsewhere": 0
+   },
+   "resolver": {
+    "speculative": {
+     "main/dns-prefetch": 1,
+     "nested/dns-prefetch": 1,
+     "srcdoc/dns-prefetch": 1,
+     "opaque-srcdoc/dns-prefetch": 1,
+     "about-blank/dns-prefetch": 1
+    },
+    "other": {
+     "other name": 2
+    }
+   }
+  },
+  "filter": {
+   "udp": {
+    "p2pSocketsBound": 30,
+    "p2pDatagrams": {
+     "main/stun": 6,
+     "main/remote-candidate": 15,
+     "nested/stun": 6,
+     "nested/remote-candidate": 15,
+     "srcdoc/stun": 6,
+     "srcdoc/remote-candidate": 15,
+     "opaque-srcdoc/stun": 6,
+     "opaque-srcdoc/remote-candidate": 15,
+     "about-blank/stun": 6,
+     "about-blank/remote-candidate": 15
+    },
+    "connectedDatagrams": {
+     "main/webtransport": 6
+    },
+    "datagramsElsewhere": 0
+   },
+   "tcp": {
+    "connectsByFixture": {
+     "main/turn (refused attempt)": 2,
+     "main/turn": 2,
+     "main/own-fetch": 2,
+     "main/other-plugin-fetch": 1,
+     "nested/turn (refused attempt)": 2,
+     "nested/turn": 2,
+     "srcdoc/turn (refused attempt)": 2,
+     "srcdoc/turn": 2,
+     "opaque-srcdoc/turn (refused attempt)": 2,
+     "opaque-srcdoc/turn": 2,
+     "about-blank/turn (refused attempt)": 2,
+     "about-blank/turn": 2
+    },
+    "elsewhere": 0
+   },
+   "resolver": {
+    "speculative": {
+     "main/dns-prefetch": 1,
+     "nested/dns-prefetch": 1,
+     "srcdoc/dns-prefetch": 1,
+     "opaque-srcdoc/dns-prefetch": 1,
+     "about-blank/dns-prefetch": 1
+    },
+    "other": {
+     "other name": 3
+    }
+   }
+  },
+  "combined": {
+   "udp": {
+    "p2pSocketsBound": 30,
+    "p2pDatagrams": {
+     "main/stun": 6,
+     "main/remote-candidate": 15,
+     "nested/stun": 6,
+     "nested/remote-candidate": 15,
+     "srcdoc/stun": 6,
+     "srcdoc/remote-candidate": 15,
+     "opaque-srcdoc/stun": 6,
+     "opaque-srcdoc/remote-candidate": 15,
+     "about-blank/stun": 6,
+     "about-blank/remote-candidate": 15
+    },
+    "connectedDatagrams": {},
+    "datagramsElsewhere": 0
+   },
+   "tcp": {
+    "connectsByFixture": {
+     "main/turn (refused attempt)": 2,
+     "main/turn": 2,
+     "main/own-fetch": 2,
+     "main/other-plugin-fetch": 1,
+     "nested/turn (refused attempt)": 2,
+     "nested/turn": 2,
+     "srcdoc/turn (refused attempt)": 2,
+     "srcdoc/turn": 2,
+     "opaque-srcdoc/turn (refused attempt)": 2,
+     "opaque-srcdoc/turn": 2,
+     "about-blank/turn (refused attempt)": 2,
+     "about-blank/turn": 2
+    },
+    "elsewhere": 0
+   },
+   "resolver": {
+    "speculative": {
+     "main/dns-prefetch": 1,
+     "nested/dns-prefetch": 1,
+     "srcdoc/dns-prefetch": 1,
+     "opaque-srcdoc/dns-prefetch": 1,
+     "about-blank/dns-prefetch": 1
+    },
+    "other": {
+     "other name": 2
+    }
+   }
+  },
+  "allowlist": {
+   "udp": {
+    "p2pSocketsBound": 12,
+    "p2pDatagrams": {
+     "main/remote-candidate": 15,
+     "opaque-srcdoc/remote-candidate": 15
+    },
+    "connectedDatagrams": {},
+    "datagramsElsewhere": 0
+   },
+   "tcp": {
+    "connectsByFixture": {
+     "main/own-fetch": 2,
+     "main/other-plugin-fetch": 1
+    },
+    "elsewhere": 0
+   },
+   "resolver": {
+    "speculative": {},
+    "other": {
+     "other name": 2
+    }
+   }
+  },
+  "ip-policy": {
+   "udp": {
+    "p2pSocketsBound": 30,
+    "p2pDatagrams": {},
+    "connectedDatagrams": {},
+    "datagramsElsewhere": 0
+   },
+   "tcp": {
+    "connectsByFixture": {
+     "main/turn (refused attempt)": 2,
+     "main/turn": 2,
+     "main/own-fetch": 2,
+     "main/other-plugin-fetch": 1,
+     "nested/turn (refused attempt)": 2,
+     "nested/turn": 2,
+     "srcdoc/turn (refused attempt)": 2,
+     "srcdoc/turn": 2,
+     "opaque-srcdoc/turn (refused attempt)": 2,
+     "opaque-srcdoc/turn": 2,
+     "about-blank/turn (refused attempt)": 2,
+     "about-blank/turn": 2
+    },
+    "elsewhere": 0
+   },
+   "resolver": {
+    "speculative": {
+     "main/dns-prefetch": 1,
+     "nested/dns-prefetch": 1,
+     "srcdoc/dns-prefetch": 1,
+     "opaque-srcdoc/dns-prefetch": 1,
+     "about-blank/dns-prefetch": 1
+    },
+    "other": {
+     "other name": 2
+    }
+   }
+  },
+  "belt": {
+   "udp": {
+    "p2pSocketsBound": 12,
+    "p2pDatagrams": {},
+    "connectedDatagrams": {},
+    "datagramsElsewhere": 0
+   },
+   "tcp": {
+    "connectsByFixture": {
+     "main/own-fetch": 2
+    },
+    "elsewhere": 0
+   },
+   "resolver": {
+    "speculative": {},
+    "other": {
+     "other name": 1
+    }
+   }
+  },
+  "stub": {
+   "udp": {
+    "p2pSocketsBound": 0,
+    "p2pDatagrams": {},
+    "connectedDatagrams": {},
+    "datagramsElsewhere": 0
+   },
+   "tcp": {
+    "connectsByFixture": {},
+    "elsewhere": 0
+   },
+   "resolver": {
+    "speculative": {},
+    "other": {}
+   }
+  },
+  "non-plugin": {
+   "udp": {
+    "p2pSocketsBound": 6,
+    "p2pDatagrams": {
+     "main/stun": 6,
+     "main/remote-candidate": 15
+    },
+    "connectedDatagrams": {},
+    "datagramsElsewhere": 0
+   },
+   "tcp": {
+    "connectsByFixture": {
+     "main/own-fetch": 1,
+     "main/turn (refused attempt)": 2,
+     "main/turn": 2,
+     "main/fetch": 1
+    },
+    "elsewhere": 0
+   },
+   "resolver": {
+    "speculative": {
+     "main/dns-prefetch": 1
+    },
+    "other": {
+     "other name": 2
+    }
+   }
+  }
+ }
+}

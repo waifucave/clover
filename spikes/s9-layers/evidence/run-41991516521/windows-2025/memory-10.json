@@ -1,0 +1,803 @@
+{
+  "date": "2026-11-05T08:04:19.553Z",
+  "platform": "win32",
+  "arch": "x64",
+  "versions": {
+    "node": "24.22.2",
+    "acorn": "8.18.0",
+    "ada": "4.0.0",
+    "amaro": "1.1.11",
+    "ares": "1.34.9",
+    "brotli": "1.2.0",
+    "cldr": "48.0",
+    "icu": "78.2",
+    "llhttp": "9.4.3",
+    "merve": "1.2.2",
+    "modules": "150",
+    "napi": "10",
+    "nbytes": "0.1.4",
+    "ncrypto": "0.0.1",
+    "nghttp2": "1.70.0",
+    "nghttp3": "",
+    "ngtcp2": "",
+    "openssl": "0.0.0",
+    "simdjson": "4.6.11",
+    "simdutf": "7.7.0",
+    "sqlite": "3.53.4",
+    "tz": "2026e",
+    "undici": "7.30.1",
+    "unicode": "17.0",
+    "uv": "1.52.1",
+    "uvwasi": "0.0.23",
+    "v8": "15.6.75.27-electron.0",
+    "zlib": "1.3.2.1-motley",
+    "zstd": "1.6.0",
+    "electron": "45.2.3",
+    "chrome": "156.0.8078.80"
+  },
+  "check": "memory",
+  "layers": 10,
+  "commit": "d2fc33e8f1a04b69bd7bd95a212a84085bd2185a",
+  "verdict": "works with limits",
+  "unit": "KiB",
+  "workload": "empty inputs, CSS menu and drag/drop fixture; no React, avatar or production UI",
+  "frames": [
+    {
+      "url": "clover-core://shell/",
+      "processId": 4,
+      "osProcessId": 2936,
+      "routingId": 1
+    },
+    {
+      "url": "clover-plugin://p1/?mount=bc578b6a-da03-4d0d-ad26-f14510bc0cba",
+      "processId": 5,
+      "osProcessId": 7008,
+      "routingId": 5
+    },
+    {
+      "url": "clover-plugin://p2/?mount=6530ae24-614f-4973-ad58-82dbabf92807",
+      "processId": 6,
+      "osProcessId": 4352,
+      "routingId": 6
+    },
+    {
+      "url": "clover-plugin://p3/?mount=3e5f221f-9fde-4bbe-b357-07af05efbf77",
+      "processId": 7,
+      "osProcessId": 6524,
+      "routingId": 7
+    },
+    {
+      "url": "clover-plugin://p4/?mount=a39e65c8-4f06-424b-9d71-2699bc5eebdb",
+      "processId": 8,
+      "osProcessId": 6644,
+      "routingId": 8
+    },
+    {
+      "url": "clover-plugin://p5/?mount=c3d33667-ffb4-4b20-95ee-426c65bfb24c",
+      "processId": 9,
+      "osProcessId": 8608,
+      "routingId": 9
+    },
+    {
+      "url": "clover-plugin://p6/?mount=84fe15ae-a0e1-4743-b3f6-1fe2e826a27c",
+      "processId": 10,
+      "osProcessId": 1444,
+      "routingId": 10
+    },
+    {
+      "url": "clover-plugin://p7/?mount=4232ce31-2f2d-4279-84e7-867b55d389f5",
+      "processId": 11,
+      "osProcessId": 7956,
+      "routingId": 11
+    },
+    {
+      "url": "clover-plugin://p8/?mount=c37f9519-4e3f-4f11-a32b-874f8abda314",
+      "processId": 12,
+      "osProcessId": 5944,
+      "routingId": 12
+    },
+    {
+      "url": "clover-plugin://p9/?mount=a1760f3c-6b96-4c3a-a5f9-3ec2ca174396",
+      "processId": 13,
+      "osProcessId": 2156,
+      "routingId": 13
+    },
+    {
+      "url": "clover-plugin://p10/?mount=9da0a97f-bfe5-46de-afb0-ebd8f8f0b0d2",
+      "processId": 14,
+      "osProcessId": 7460,
+      "routingId": 14
+    }
+  ],
+  "samples": [
+    [
+      {
+        "pid": 2936,
+        "memory": {
+          "residentSet": 79724,
+          "private": 30392,
+          "shared": 340
+        },
+        "sandboxed": true,
+        "isolated": true,
+        "namespacePid": 2936,
+        "frameUrl": "clover-core://shell/",
+        "received": 1793865863256
+      },
+      {
+        "pid": 7008,
+        "memory": {
+          "residentSet": 76640,
+          "private": 23048,
+          "shared": 324
+        },
+        "sandboxed": true,
+        "isolated": true,
+        "namespacePid": 7008,
+        "frameUrl": "clover-plugin://p1/?mount=bc578b6a-da03-4d0d-ad26-f14510bc0cba",
+        "received": 1793865863383
+      },
+      {
+        "pid": 4352,
+        "memory": {
+          "residentSet": 76764,
+          "private": 23252,
+          "shared": 324
+        },
+        "sandboxed": true,
+        "isolated": true,
+        "namespacePid": 4352,
+        "frameUrl": "clover-plugin://p2/?mount=6530ae24-614f-4973-ad58-82dbabf92807",
+        "received": 1793865863418
+      },
+      {
+        "pid": 6524,
+        "memory": {
+          "residentSet": 79776,
+          "private": 26140,
+          "shared": 324
+        },
+        "sandboxed": true,
+        "isolated": true,
+        "namespacePid": 6524,
+        "frameUrl": "clover-plugin://p3/?mount=3e5f221f-9fde-4bbe-b357-07af05efbf77",
+        "received": 1793865863389
+      },
+      {
+        "pid": 6644,
+        "memory": {
+          "residentSet": 76880,
+          "private": 23148,
+          "shared": 324
+        },
+        "sandboxed": true,
+        "isolated": true,
+        "namespacePid": 6644,
+        "frameUrl": "clover-plugin://p4/?mount=a39e65c8-4f06-424b-9d71-2699bc5eebdb",
+        "received": 1793865863023
+      },
+      {
+        "pid": 8608,
+        "memory": {
+          "residentSet": 76924,
+          "private": 24264,
+          "shared": 324
+        },
+        "sandboxed": true,
+        "isolated": true,
+        "namespacePid": 8608,
+        "frameUrl": "clover-plugin://p5/?mount=c3d33667-ffb4-4b20-95ee-426c65bfb24c",
+        "received": 1793865862987
+      },
+      {
+        "pid": 1444,
+        "memory": {
+          "residentSet": 77040,
+          "private": 23336,
+          "shared": 324
+        },
+        "sandboxed": true,
+        "isolated": true,
+        "namespacePid": 1444,
+        "frameUrl": "clover-plugin://p6/?mount=84fe15ae-a0e1-4743-b3f6-1fe2e826a27c",
+        "received": 1793865863038
+      },
+      {
+        "pid": 7956,
+        "memory": {
+          "residentSet": 76848,
+          "private": 23156,
+          "shared": 324
+        },
+        "sandboxed": true,
+        "isolated": true,
+        "namespacePid": 7956,
+        "frameUrl": "clover-plugin://p7/?mount=4232ce31-2f2d-4279-84e7-867b55d389f5",
+        "received": 1793865863002
+      },
+      {
+        "pid": 5944,
+        "memory": {
+          "residentSet": 79740,
+          "private": 25952,
+          "shared": 324
+        },
+        "sandboxed": true,
+        "isolated": true,
+        "namespacePid": 5944,
+        "frameUrl": "clover-plugin://p8/?mount=c37f9519-4e3f-4f11-a32b-874f8abda314",
+        "received": 1793865863006
+      },
+      {
+        "pid": 2156,
+        "memory": {
+          "residentSet": 77164,
+          "private": 23204,
+          "shared": 324
+        },
+        "sandboxed": true,
+        "isolated": true,
+        "namespacePid": 2156,
+        "frameUrl": "clover-plugin://p9/?mount=a1760f3c-6b96-4c3a-a5f9-3ec2ca174396",
+        "received": 1793865863088
+      },
+      {
+        "pid": 7460,
+        "memory": {
+          "residentSet": 77120,
+          "private": 23220,
+          "shared": 324
+        },
+        "sandboxed": true,
+        "isolated": true,
+        "namespacePid": 7460,
+        "frameUrl": "clover-plugin://p10/?mount=9da0a97f-bfe5-46de-afb0-ebd8f8f0b0d2",
+        "received": 1793865863086
+      }
+    ],
+    [
+      {
+        "pid": 2936,
+        "memory": {
+          "residentSet": 79756,
+          "private": 30424,
+          "shared": 340
+        },
+        "sandboxed": true,
+        "isolated": true,
+        "namespacePid": 2936,
+        "frameUrl": "clover-core://shell/",
+        "received": 1793865863755
+      },
+      {
+        "pid": 7008,
+        "memory": {
+          "residentSet": 76680,
+          "private": 23088,
+          "shared": 324
+        },
+        "sandboxed": true,
+        "isolated": true,
+        "namespacePid": 7008,
+        "frameUrl": "clover-plugin://p1/?mount=bc578b6a-da03-4d0d-ad26-f14510bc0cba",
+        "received": 1793865863888
+      },
+      {
+        "pid": 4352,
+        "memory": {
+          "residentSet": 76796,
+          "private": 23284,
+          "shared": 324
+        },
+        "sandboxed": true,
+        "isolated": true,
+        "namespacePid": 4352,
+        "frameUrl": "clover-plugin://p2/?mount=6530ae24-614f-4973-ad58-82dbabf92807",
+        "received": 1793865863920
+      },
+      {
+        "pid": 6524,
+        "memory": {
+          "residentSet": 79812,
+          "private": 26176,
+          "shared": 324
+        },
+        "sandboxed": true,
+        "isolated": true,
+        "namespacePid": 6524,
+        "frameUrl": "clover-plugin://p3/?mount=3e5f221f-9fde-4bbe-b357-07af05efbf77",
+        "received": 1793865863904
+      },
+      {
+        "pid": 6644,
+        "memory": {
+          "residentSet": 76952,
+          "private": 23220,
+          "shared": 324
+        },
+        "sandboxed": true,
+        "isolated": true,
+        "namespacePid": 6644,
+        "frameUrl": "clover-plugin://p4/?mount=a39e65c8-4f06-424b-9d71-2699bc5eebdb",
+        "received": 1793865864015
+      },
+      {
+        "pid": 8608,
+        "memory": {
+          "residentSet": 77000,
+          "private": 24340,
+          "shared": 324
+        },
+        "sandboxed": true,
+        "isolated": true,
+        "namespacePid": 8608,
+        "frameUrl": "clover-plugin://p5/?mount=c3d33667-ffb4-4b20-95ee-426c65bfb24c",
+        "received": 1793865863988
+      },
+      {
+        "pid": 1444,
+        "memory": {
+          "residentSet": 77120,
+          "private": 23416,
+          "shared": 324
+        },
+        "sandboxed": true,
+        "isolated": true,
+        "namespacePid": 1444,
+        "frameUrl": "clover-plugin://p6/?mount=84fe15ae-a0e1-4743-b3f6-1fe2e826a27c",
+        "received": 1793865864031
+      },
+      {
+        "pid": 7956,
+        "memory": {
+          "residentSet": 76924,
+          "private": 23232,
+          "shared": 324
+        },
+        "sandboxed": true,
+        "isolated": true,
+        "namespacePid": 7956,
+        "frameUrl": "clover-plugin://p7/?mount=4232ce31-2f2d-4279-84e7-867b55d389f5",
+        "received": 1793865864004
+      },
+      {
+        "pid": 5944,
+        "memory": {
+          "residentSet": 79816,
+          "private": 26028,
+          "shared": 324
+        },
+        "sandboxed": true,
+        "isolated": true,
+        "namespacePid": 5944,
+        "frameUrl": "clover-plugin://p8/?mount=c37f9519-4e3f-4f11-a32b-874f8abda314",
+        "received": 1793865864002
+      },
+      {
+        "pid": 2156,
+        "memory": {
+          "residentSet": 77208,
+          "private": 23248,
+          "shared": 324
+        },
+        "sandboxed": true,
+        "isolated": true,
+        "namespacePid": 2156,
+        "frameUrl": "clover-plugin://p9/?mount=a1760f3c-6b96-4c3a-a5f9-3ec2ca174396",
+        "received": 1793865863571
+      },
+      {
+        "pid": 7460,
+        "memory": {
+          "residentSet": 77156,
+          "private": 23256,
+          "shared": 324
+        },
+        "sandboxed": true,
+        "isolated": true,
+        "namespacePid": 7460,
+        "frameUrl": "clover-plugin://p10/?mount=9da0a97f-bfe5-46de-afb0-ebd8f8f0b0d2",
+        "received": 1793865863573
+      }
+    ],
+    [
+      {
+        "pid": 2936,
+        "memory": {
+          "residentSet": 79788,
+          "private": 30456,
+          "shared": 340
+        },
+        "sandboxed": true,
+        "isolated": true,
+        "namespacePid": 2936,
+        "frameUrl": "clover-core://shell/",
+        "received": 1793865864256
+      },
+      {
+        "pid": 7008,
+        "memory": {
+          "residentSet": 76712,
+          "private": 23120,
+          "shared": 324
+        },
+        "sandboxed": true,
+        "isolated": true,
+        "namespacePid": 7008,
+        "frameUrl": "clover-plugin://p1/?mount=bc578b6a-da03-4d0d-ad26-f14510bc0cba",
+        "received": 1793865864382
+      },
+      {
+        "pid": 4352,
+        "memory": {
+          "residentSet": 76828,
+          "private": 23316,
+          "shared": 324
+        },
+        "sandboxed": true,
+        "isolated": true,
+        "namespacePid": 4352,
+        "frameUrl": "clover-plugin://p2/?mount=6530ae24-614f-4973-ad58-82dbabf92807",
+        "received": 1793865864412
+      },
+      {
+        "pid": 6524,
+        "memory": {
+          "residentSet": 79844,
+          "private": 26208,
+          "shared": 324
+        },
+        "sandboxed": true,
+        "isolated": true,
+        "namespacePid": 6524,
+        "frameUrl": "clover-plugin://p3/?mount=3e5f221f-9fde-4bbe-b357-07af05efbf77",
+        "received": 1793865864396
+      },
+      {
+        "pid": 6644,
+        "memory": {
+          "residentSet": 76984,
+          "private": 23252,
+          "shared": 324
+        },
+        "sandboxed": true,
+        "isolated": true,
+        "namespacePid": 6644,
+        "frameUrl": "clover-plugin://p4/?mount=a39e65c8-4f06-424b-9d71-2699bc5eebdb",
+        "received": 1793865864523
+      },
+      {
+        "pid": 8608,
+        "memory": {
+          "residentSet": 77032,
+          "private": 24372,
+          "shared": 324
+        },
+        "sandboxed": true,
+        "isolated": true,
+        "namespacePid": 8608,
+        "frameUrl": "clover-plugin://p5/?mount=c3d33667-ffb4-4b20-95ee-426c65bfb24c",
+        "received": 1793865864486
+      },
+      {
+        "pid": 1444,
+        "memory": {
+          "residentSet": 77152,
+          "private": 23448,
+          "shared": 324
+        },
+        "sandboxed": true,
+        "isolated": true,
+        "namespacePid": 1444,
+        "frameUrl": "clover-plugin://p6/?mount=84fe15ae-a0e1-4743-b3f6-1fe2e826a27c",
+        "received": 1793865864539
+      },
+      {
+        "pid": 7956,
+        "memory": {
+          "residentSet": 76960,
+          "private": 23268,
+          "shared": 324
+        },
+        "sandboxed": true,
+        "isolated": true,
+        "namespacePid": 7956,
+        "frameUrl": "clover-plugin://p7/?mount=4232ce31-2f2d-4279-84e7-867b55d389f5",
+        "received": 1793865864507
+      },
+      {
+        "pid": 5944,
+        "memory": {
+          "residentSet": 79848,
+          "private": 26060,
+          "shared": 324
+        },
+        "sandboxed": true,
+        "isolated": true,
+        "namespacePid": 5944,
+        "frameUrl": "clover-plugin://p8/?mount=c37f9519-4e3f-4f11-a32b-874f8abda314",
+        "received": 1793865864501
+      },
+      {
+        "pid": 2156,
+        "memory": {
+          "residentSet": 77276,
+          "private": 23316,
+          "shared": 324
+        },
+        "sandboxed": true,
+        "isolated": true,
+        "namespacePid": 2156,
+        "frameUrl": "clover-plugin://p9/?mount=a1760f3c-6b96-4c3a-a5f9-3ec2ca174396",
+        "received": 1793865864572
+      },
+      {
+        "pid": 7460,
+        "memory": {
+          "residentSet": 77224,
+          "private": 23324,
+          "shared": 324
+        },
+        "sandboxed": true,
+        "isolated": true,
+        "namespacePid": 7460,
+        "frameUrl": "clover-plugin://p10/?mount=9da0a97f-bfe5-46de-afb0-ebd8f8f0b0d2",
+        "received": 1793865864571
+      }
+    ]
+  ],
+  "rendererPrivateTotals": [
+    269112,
+    269712,
+    270140
+  ],
+  "mainMemory": {
+    "residentSet": 114520,
+    "private": 49132,
+    "shared": 4192
+  },
+  "appMetrics": [
+    {
+      "cpu": {
+        "cumulativeCPUUsage": 1.071937,
+        "percentCPUUsage": 0,
+        "idleWakeupsPerSecond": 0
+      },
+      "pid": 9140,
+      "type": "Browser",
+      "creationTime": 1793865859442.073,
+      "memory": {
+        "workingSetSize": 114884,
+        "peakWorkingSetSize": 115364,
+        "privateBytes": 49356
+      },
+      "integrityLevel": "high",
+      "sandboxed": false
+    },
+    {
+      "cpu": {
+        "cumulativeCPUUsage": 0.15052,
+        "percentCPUUsage": 0,
+        "idleWakeupsPerSecond": 0
+      },
+      "pid": 2460,
+      "type": "GPU",
+      "creationTime": 1793865859563.974,
+      "serviceName": "GPU",
+      "memory": {
+        "workingSetSize": 66060,
+        "peakWorkingSetSize": 66060,
+        "privateBytes": 19172
+      },
+      "integrityLevel": "low",
+      "sandboxed": true
+    },
+    {
+      "cpu": {
+        "cumulativeCPUUsage": 0.075027,
+        "percentCPUUsage": 0,
+        "idleWakeupsPerSecond": 0
+      },
+      "pid": 2896,
+      "type": "Utility",
+      "creationTime": 1793865859563.048,
+      "serviceName": "network.mojom.NetworkService",
+      "name": "Network Service",
+      "memory": {
+        "workingSetSize": 45980,
+        "peakWorkingSetSize": 45980,
+        "privateBytes": 12168
+      },
+      "integrityLevel": "high",
+      "sandboxed": false
+    },
+    {
+      "cpu": {
+        "cumulativeCPUUsage": 0.151727,
+        "percentCPUUsage": 0,
+        "idleWakeupsPerSecond": 0
+      },
+      "pid": 2936,
+      "type": "Tab",
+      "creationTime": 1793865859675.676,
+      "memory": {
+        "workingSetSize": 79820,
+        "peakWorkingSetSize": 79820,
+        "privateBytes": 30488
+      },
+      "integrityLevel": "untrusted",
+      "sandboxed": true
+    },
+    {
+      "cpu": {
+        "cumulativeCPUUsage": 0.101709,
+        "percentCPUUsage": 0,
+        "idleWakeupsPerSecond": 0
+      },
+      "pid": 7008,
+      "type": "Tab",
+      "creationTime": 1793865859786.265,
+      "memory": {
+        "workingSetSize": 76744,
+        "peakWorkingSetSize": 76744,
+        "privateBytes": 23152
+      },
+      "integrityLevel": "untrusted",
+      "sandboxed": true
+    },
+    {
+      "cpu": {
+        "cumulativeCPUUsage": 0.102273,
+        "percentCPUUsage": 0,
+        "idleWakeupsPerSecond": 0
+      },
+      "pid": 4352,
+      "type": "Tab",
+      "creationTime": 1793865859789.084,
+      "memory": {
+        "workingSetSize": 76860,
+        "peakWorkingSetSize": 76860,
+        "privateBytes": 23348
+      },
+      "integrityLevel": "untrusted",
+      "sandboxed": true
+    },
+    {
+      "cpu": {
+        "cumulativeCPUUsage": 0.10266,
+        "percentCPUUsage": 0,
+        "idleWakeupsPerSecond": 0
+      },
+      "pid": 6524,
+      "type": "Tab",
+      "creationTime": 1793865859789.278,
+      "memory": {
+        "workingSetSize": 79876,
+        "peakWorkingSetSize": 79876,
+        "privateBytes": 26240
+      },
+      "integrityLevel": "untrusted",
+      "sandboxed": true
+    },
+    {
+      "cpu": {
+        "cumulativeCPUUsage": 0.09848,
+        "percentCPUUsage": 0,
+        "idleWakeupsPerSecond": 0
+      },
+      "pid": 6644,
+      "type": "Tab",
+      "creationTime": 1793865859811.964,
+      "memory": {
+        "workingSetSize": 77016,
+        "peakWorkingSetSize": 77016,
+        "privateBytes": 23284
+      },
+      "integrityLevel": "untrusted",
+      "sandboxed": true
+    },
+    {
+      "cpu": {
+        "cumulativeCPUUsage": 0.102516,
+        "percentCPUUsage": 0,
+        "idleWakeupsPerSecond": 0
+      },
+      "pid": 8608,
+      "type": "Tab",
+      "creationTime": 1793865859802.521,
+      "memory": {
+        "workingSetSize": 77064,
+        "peakWorkingSetSize": 77064,
+        "privateBytes": 24404
+      },
+      "integrityLevel": "untrusted",
+      "sandboxed": true
+    },
+    {
+      "cpu": {
+        "cumulativeCPUUsage": 0.102196,
+        "percentCPUUsage": 0,
+        "idleWakeupsPerSecond": 0
+      },
+      "pid": 1444,
+      "type": "Tab",
+      "creationTime": 1793865859820.862,
+      "memory": {
+        "workingSetSize": 77184,
+        "peakWorkingSetSize": 77184,
+        "privateBytes": 23480
+      },
+      "integrityLevel": "untrusted",
+      "sandboxed": true
+    },
+    {
+      "cpu": {
+        "cumulativeCPUUsage": 0.097492,
+        "percentCPUUsage": 0,
+        "idleWakeupsPerSecond": 0
+      },
+      "pid": 7956,
+      "type": "Tab",
+      "creationTime": 1793865859808.253,
+      "memory": {
+        "workingSetSize": 76992,
+        "peakWorkingSetSize": 76992,
+        "privateBytes": 23300
+      },
+      "integrityLevel": "untrusted",
+      "sandboxed": true
+    },
+    {
+      "cpu": {
+        "cumulativeCPUUsage": 0.100121,
+        "percentCPUUsage": 0,
+        "idleWakeupsPerSecond": 0
+      },
+      "pid": 5944,
+      "type": "Tab",
+      "creationTime": 1793865859814.602,
+      "memory": {
+        "workingSetSize": 79880,
+        "peakWorkingSetSize": 79880,
+        "privateBytes": 26092
+      },
+      "integrityLevel": "untrusted",
+      "sandboxed": true
+    },
+    {
+      "cpu": {
+        "cumulativeCPUUsage": 0.101296,
+        "percentCPUUsage": 0,
+        "idleWakeupsPerSecond": 0
+      },
+      "pid": 2156,
+      "type": "Tab",
+      "creationTime": 1793865859844.102,
+      "memory": {
+        "workingSetSize": 77308,
+        "peakWorkingSetSize": 77308,
+        "privateBytes": 23348
+      },
+      "integrityLevel": "untrusted",
+      "sandboxed": true
+    },
+    {
+      "cpu": {
+        "cumulativeCPUUsage": 0.100045,
+        "percentCPUUsage": 0,
+        "idleWakeupsPerSecond": 0
+      },
+      "pid": 7460,
+      "type": "Tab",
+      "creationTime": 1793865859832.544,
+      "memory": {
+        "workingSetSize": 77256,
+        "peakWorkingSetSize": 77256,
+        "privateBytes": 23356
+      },
+      "integrityLevel": "untrusted",
+      "sandboxed": true
+    }
+  ],
+  "note": "Renderer totals include trusted root. appMetrics retained separately; do not sum resident RSS as private memory."
+}
