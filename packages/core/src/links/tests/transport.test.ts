@@ -180,7 +180,7 @@ describe("CloverLinkTransport, the conformance cases", () => {
 describe("CloverLinkTransport, beyond the contract's cases", () => {
   test("a key that isn't paired is refused at the door, and connect refuses an unpaired device", async () => {
     const c = await cluster(["a", "b", "stranger"], { clock: new SystemClock(), pairAll: false });
-    c.pair("a", "b");
+    await c.pair("a", "b");
     expect(isContractError(await rejection(c.t("stranger").connect(c.id("a"))), "refused")).toBe(true);
     // The stranger dials anyway, at the wire: a's transport closes the connection.
     const conn = await c.devices.get("stranger")!.endpoint.dial({ key: c.key("a") }, { alpn: ALPN_LINK });
@@ -195,7 +195,7 @@ describe("CloverLinkTransport, beyond the contract's cases", () => {
     const link = await c.t("a").connect(c.id("b"));
     const inFlight = link.request("slow", {});
     await flush();
-    c.devices.get("a")!.paired.revoke(c.id("b"));
+    await c.devices.get("a")!.registry.revoke(c.id("b"));
     expect(isContractError(await rejection(inFlight), "refused")).toBe(true);
     expect(link.view().up).toBe(false);
     expect(isContractError(await rejection(c.t("a").connect(c.id("b"))), "refused")).toBe(true);
