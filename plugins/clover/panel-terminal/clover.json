@@ -1,7 +1,7 @@
 {
   "manifest": 1,
   "name": "Terminal",
-  "description": "The terminal panel: a terminal over a PTY feed.",
+  "description": "A code session's terminal panel: a terminal over a PTY feed, in the session's folder on its computer. Never in a bot's tab.",
   "engines": {
     "clover": "^1.0.0"
   },

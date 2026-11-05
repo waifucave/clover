@@ -3,7 +3,12 @@
 // a plugin of its own that fills the `panel` spot keyed by its id (session, terminal, diff, files,
 // browser; lane B's catalog), so a third-party plugin can replace any of them. A key no installed plugin
 // fills shows the host's own placeholder, which says so.
+//
+// The host draws only views that belong in the tab (`belongsIn`): in a bot's tab, never the terminal, the
+// changes or the files, which work on a code session's folder. A bot's tab may hold one of its agents
+// instead (its transcript, with a composer of its own), and the browser.
 import { IconClose, IconExpand, IconPlugin } from "./icons";
+import { belongsIn } from "./PanelToggles";
 import { S } from "./strings";
 import type { PanelHostProps, PanelView } from "./types";
 
@@ -22,10 +27,11 @@ function Empty({ view, onFindPlugin }: { view: PanelView; onFindPlugin?: (id: st
   );
 }
 
-export function PanelHost({ views, onClose, onExpand, onFindPlugin }: PanelHostProps) {
-  const shown = views.slice(0, 2);
+export function PanelHost({ kind, views, onClose, onExpand, onFindPlugin }: PanelHostProps) {
+  const shown = views.filter((v) => belongsIn(v, kind)).slice(0, 2);
+  if (shown.length === 0) return null;
   return (
-    <div className="cl-panel" role="region" aria-label={S.panel} data-count={shown.length}>
+    <div className="cl-panel" role="region" aria-label={S.panel} data-kind={kind} data-count={shown.length}>
       {shown.map((view) => (
         <section key={view.id} className="cl-panel__view" data-view={view.id} aria-label={view.title}>
           <header className="cl-panel__head">

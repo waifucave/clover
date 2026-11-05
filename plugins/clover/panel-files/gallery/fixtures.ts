@@ -1,7 +1,9 @@
-// A mocked folder tree, as `files.list` would list it (lane B's `FileStat`, lane J's tree).
+// A mocked code session's folder, as `files.list` would list it from the computer that holds it (lane B's
+// `FileStat`, lane J's API).
 import type { FileEntry } from "../client/types";
 
-export const ROOT = "home/Studio/projects/clover";
+export const ROOT = "/Users/sam/projects/clover";
+export const COMPUTER = "Studio";
 
 const e = (folder: string, name: string, type: FileEntry["type"] = "file"): FileEntry => ({ path: `${folder}/${name}`, name, type });
 

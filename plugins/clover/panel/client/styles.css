@@ -258,6 +258,11 @@ button.cl-session__row:hover {
   background: var(--clover-color-hover);
 }
 
+/* The agent open in the panel now. */
+button.cl-session__row[aria-current="true"] {
+  background: var(--clover-color-selected);
+}
+
 .cl-session__row--static {
   cursor: default;
 }

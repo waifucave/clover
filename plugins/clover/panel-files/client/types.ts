@@ -1,6 +1,7 @@
-// The files panel's props, over the folder tree that lane J provides and lane B's `files` API carries
-// (`files.list(path)` → `FileStat[]`, `files.readText(path)`). The host lists folders as they open and
-// hands their entries in; the panel never reads the disk itself.
+// The files panel's props. It belongs to a code session: its tree is that session's folder and nothing
+// outside it, read from the computer that holds the folder through lane J's API, which lane B's `files`
+// calls carry (`files.list(path)` → `FileStat[]`, `files.readText(path)`, `files.grep`). There are no
+// mounts: the host lists folders as they open and hands their entries in; the panel never reads a disk.
 
 /** A folder's entry, as `files.list` gives it (B's `FileStat`: `path`, `type`), plus the name shown. */
 export interface FileEntry {
@@ -10,7 +11,8 @@ export interface FileEntry {
 }
 
 export interface FilesPanelProps {
-  /** The folder the tree starts at, a tree path (`home/<Computer>/…`). */
+  /** The session's folder, as a path on the computer that holds it: the tree shows it and what's inside
+   *  it, nothing more. */
   root: string;
   /** Each listed folder's entries, by its path. A folder not here is still to be listed. */
   listing: Readonly<Record<string, readonly FileEntry[]>>;
@@ -24,4 +26,11 @@ export interface FilesPanelProps {
   open?: { path: string; text: string };
   /** Search inside files: a filter that starts with `?` (`files.grep`). */
   onSearch?: (query: string) => void;
+}
+
+export interface FilesTitleProps {
+  /** The session's folder, as `FilesPanelProps.root`. */
+  root: string;
+  /** The computer that holds it. */
+  computer: string;
 }

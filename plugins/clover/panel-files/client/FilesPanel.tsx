@@ -1,7 +1,8 @@
-// The files panel: the open file on the left (or a note saying how to open one), and on the right the
-// project's tree under a filter box. A filter narrows the tree to matching names among the folders
-// listed so far; one that starts with `?` searches inside files instead. It fills `panel` keyed
-// `files`.
+// The files panel, a code session's only: the open file on the left (or a note saying how to open one),
+// and on the right the session's folder as a tree under a filter box. Nothing outside that folder shows.
+// A filter narrows the tree to matching names among the folders listed so far; one that starts with `?`
+// searches inside files instead. It fills `panel` keyed `files`; `FilesTitle` goes in the panel's header
+// and names the folder and its computer.
 //
 // The tree is a real tree for the keyboard: one item takes Tab, the arrows move through what shows,
 // Right opens a folder (or steps into it), Left closes it (or steps out to its folder), Home and End
@@ -12,13 +13,29 @@ import { useRef, useState, type KeyboardEvent, type ReactElement } from "react";
 import { visiblePaths } from "./filter";
 import { hasHidden, ShowHidden } from "./hidden";
 import { S } from "./strings";
-import type { FileEntry, FilesPanelProps } from "./types";
+import type { FileEntry, FilesPanelProps, FilesTitleProps } from "./types";
 
 // Lucide's icons (ISC, `LICENSES/lucide-react.txt`), at Lucide's 2 stroke. Decorative.
 const Icon = ({ kind, open }: { kind: "dir" | "file"; open?: boolean }) => {
   const Glyph = kind === "dir" ? (open ? ChevronDown : ChevronRight) : File;
   return <Glyph className="cl-files-icon" size={14} strokeWidth={2} aria-hidden="true" focusable="false" />;
 };
+
+/** The last part of a path, either separator. */
+export const folderName = (path: string) => path.replace(/[\\/]+$/, "").split(/[\\/]/).pop() || path;
+
+/** The panel's header: the session's folder and the computer that holds it. */
+export function FilesTitle({ root, computer }: FilesTitleProps) {
+  return (
+    <div className="cl-files-title" title={root} aria-label={S.title(folderName(root), computer)}>
+      <Folder className="cl-files-icon" size={14} strokeWidth={2} aria-hidden="true" focusable="false" />
+      <span className="cl-files-title__name">
+        <ShowHidden text={folderName(root)} />
+      </span>
+      <span className="cl-files-title__computer">{S.on(computer)}</span>
+    </div>
+  );
+}
 
 function sortEntries(entries: readonly FileEntry[]): FileEntry[] {
   return [...entries].sort((a, b) => ((a.type === "dir") === (b.type === "dir") ? a.name.localeCompare(b.name) : a.type === "dir" ? -1 : 1));

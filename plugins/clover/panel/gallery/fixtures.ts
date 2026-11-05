@@ -14,11 +14,10 @@ export const SESSION: SessionViewProps = {
     here: true,
     level: { label: "Ask before risky", onChange: noop },
     folders: [
-      { name: "clover · ~/projects", path: "home/Studio/projects/clover" },
-      { name: "garden-planner", path: "home/Studio/projects/garden-planner" },
+      { name: "clover · ~/projects", path: "/Users/sam/projects/clover" },
+      { name: "garden-planner", path: "/Users/sam/projects/garden-planner" },
     ],
     branch: "lane/f-m1",
-    onSave: noop,
   },
   context: { used: 0.14, detail: "28,000 of 200,000 tokens. Older turns are summarized near the limit." },
   connectors: { total: 7, needSignIn: 2, onOpen: noop },
@@ -45,5 +44,23 @@ export const SESSION: SessionViewProps = {
       { id: "pr152", title: "C0: rename to Clover", repo: "clover", number: 152, state: "merged" },
     ],
     onOpenPr: noop,
+  },
+};
+
+/** A bot's slim column: its coding agents and tasks, its context and its outputs. */
+export const BOT_COLUMN: SessionViewProps = {
+  kind: "bot",
+  agents: [
+    { id: "agent-export", title: "Fix the CSV export's dates", backend: "Codex", status: "running" },
+    { id: "task-digest", title: "Weekly notes digest", backend: "Task", status: "completed" },
+  ],
+  onOpenAgent: noop,
+  context: { used: 0.31, detail: "62,000 of 200,000 tokens. Older turns are summarized near the limit." },
+  outputs: {
+    items: [
+      { id: "b1", name: "This week in the clover repo", kind: "page" },
+      { id: "b2", name: "garden-beds.csv", kind: "file" },
+    ],
+    onOpen: noop,
   },
 };

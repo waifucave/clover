@@ -1,7 +1,7 @@
 {
   "manifest": 1,
   "name": "Files",
-  "description": "The files panel: a filterable tree over the folder tree, and the file that's open.",
+  "description": "A code session's files panel: a filterable tree of the session's folder, read from the computer that holds it, and the file that's open. Never in a bot's tab.",
   "engines": {
     "clover": "^1.0.0"
   },

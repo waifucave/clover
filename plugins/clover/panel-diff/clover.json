@@ -1,7 +1,7 @@
 {
   "manifest": 1,
   "name": "Diff",
-  "description": "The diff panel: base against working tree, per file, unified or split.",
+  "description": "A code session's changes panel: base against working tree, per file, unified or split. Never in a bot's tab.",
   "engines": {
     "clover": "^1.0.0"
   },

@@ -222,3 +222,26 @@
     transition: none;
   }
 }
+
+/* The panel's header: the session's folder, then its computer. */
+.cl-files-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: var(--clover-color-text);
+  font-family: var(--clover-font-sans);
+  font-size: var(--clover-font-size-control);
+}
+
+.cl-files-title__name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cl-files-title__computer {
+  flex: none;
+  color: var(--clover-color-text-muted);
+}

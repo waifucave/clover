@@ -9,6 +9,8 @@ export const S = {
     browser: "Browser",
     files: "Files",
   } as const,
+  /** A bot's tab's slim column. */
+  botColumn: "Details",
   toggle: (label: string, open: boolean) => (open ? `Hide ${label}` : `Show ${label}`),
   more: "More panels",
   close: (title: string) => `Close ${title}`,
@@ -21,8 +23,6 @@ export const S = {
   agents: "Agents and tasks",
   environment: "Where it runs",
   here: "This computer",
-  save: "Save",
-  saveTitle: "Keep this setup for new sessions here",
   level: (label: string) => `Level: ${label}`,
   levelRequested: (label: string) => `${label} asked for`,
   levelRequestedTitle: (label: string) => `Waiting for your answer on the card to change the level to ${label}`,

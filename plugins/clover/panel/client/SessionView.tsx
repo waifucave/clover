@@ -1,6 +1,9 @@
-// The session column: what the session runs on and what it has made, in quiet folding cards: its agents
-// and tasks, where it runs (the computer and that computer's level, the folders, the branch), how much
-// context it uses, its connectors, its outputs, and its changes with the pull requests they became.
+// The column beside the conversation, in quiet folding cards.
+// - In a code session: its agents and tasks, where it runs (the computer and that computer's level, the
+//   folders, the branch), how much context it uses, its connectors, its outputs, and its changes (lane
+//   D's) with the pull requests they became.
+// - In a bot's tab, the slim column: its agents and tasks, its context and its outputs. Nothing about a
+//   folder: no changes, files or terminal. One of its coding agents opens in the panel (`onOpenAgent`).
 // Every device already sees every bot live (spec §6.4), so nothing here switches a device on.
 import { useState, type ReactNode } from "react";
 import {
@@ -56,16 +59,27 @@ function Section({
 }
 
 export function SessionView(props: SessionViewProps) {
-  const { agents, environment, context, connectors, outputs, changes } = props;
+  const { kind = "code", agents, context, outputs } = props;
+  // A bot's tab is slim: whatever the host passes, it never shows a folder's things.
+  const code = kind === "code";
+  const environment = code ? props.environment : undefined;
+  const connectors = code ? props.connectors : undefined;
+  const changes = code ? props.changes : undefined;
   const pct = context ? Math.round(Math.min(1, Math.max(0, context.used)) * 100) : 0;
   return (
-    <div className="cl-session">
+    <div className="cl-session" data-kind={kind}>
       {agents && agents.length > 0 && (
         <Section title={S.agents}>
           <ul className="cl-session__list">
             {agents.map((a) => (
               <li key={a.id}>
-                <button type="button" className="cl-session__row" onClick={() => props.onOpenAgent?.(a.id)} title={`${a.title} · ${a.backend}`}>
+                <button
+                  type="button"
+                  className="cl-session__row"
+                  aria-current={props.openAgent === a.id || undefined}
+                  onClick={() => props.onOpenAgent?.(a.id)}
+                  title={`${a.title} · ${a.backend}`}
+                >
                   <IconAgent />
                   <span className="cl-session__name">{a.title}</span>
                   <span className="cl-session__meta" data-status={a.status}>
@@ -84,11 +98,6 @@ export function SessionView(props: SessionViewProps) {
             <li className="cl-session__row cl-session__row--static">
               <IconComputer />
               <span className="cl-session__name">{environment.here ? S.here : environment.computer}</span>
-              {environment.onSave && (
-                <button type="button" className="cl-session__link" title={S.saveTitle} onClick={environment.onSave}>
-                  {S.save}
-                </button>
-              )}
             </li>
             {environment.level && (
               <li className="cl-session__row cl-session__row--static" data-requested={environment.level.requested ? "" : undefined}>
