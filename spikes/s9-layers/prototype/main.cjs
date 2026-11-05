@@ -82,11 +82,13 @@ async function crossingCheck() {
   const {win} = await makeWindow(shell(2));
   const fs = win.webContents.mainFrame.frames;
   const wc = win.webContents;
-  win.focus(); wc.focus();
+  app.focus({steal:true});win.focus(); wc.focus();await pause(400);
+  wc.sendInputEvent({type:'mouseDown',x:30,y:30,button:'left',clickCount:1});wc.sendInputEvent({type:'mouseUp',x:30,y:30,button:'left',clickCount:1});await pause(200);
   await fs[0].executeJavaScript("document.querySelector('#first').focus()");
-  wc.sendInputEvent({type:'char',keyCode:'a'}); await pause(150);
-  const focus = await fs[0].executeJavaScript("({active:document.activeElement.id,value:document.querySelector('#first').value})");
-  for(let i=0;i<5;i++){wc.sendInputEvent({type:'keyDown',keyCode:'Tab'});wc.sendInputEvent({type:'keyUp',keyCode:'Tab'});await pause(100);}
+  wc.sendInputEvent({type:'keyDown',keyCode:'A'});wc.sendInputEvent({type:'char',keyCode:'a'});wc.sendInputEvent({type:'keyUp',keyCode:'A'}); await pause(150);
+  const focus = /** @type {any} */(await fs[0].executeJavaScript("({active:document.activeElement.id,value:document.querySelector('#first').value})"));
+  const tabSteps=[];
+  for(let i=0;i<5;i++){wc.sendInputEvent({type:'keyDown',keyCode:'Tab'});wc.sendInputEvent({type:'keyUp',keyCode:'Tab'});await pause(100);tabSteps.push(await Promise.all(fs.map(f=>f.executeJavaScript('({active:document.activeElement.id,focused:document.hasFocus()})'))));}
   const keyboard = await Promise.all(fs.map(f=>f.executeJavaScript('({active:document.activeElement.id,events:window.events})')));
   let shortcuts = 0;
   wc.on('before-input-event',(_event,input)=>{if(input.key.toLowerCase()==='k' && input.control)shortcuts++;});
@@ -104,7 +106,7 @@ async function crossingCheck() {
     await wc.debugger.sendCommand('Input.dispatchDragEvent',{type:'drop',x:240,y:85,data:{items:[{mimeType:'text/plain',data:'clover-fixture'}],dragOperationsMask:1}});
     await pause(300); drag.push(.../** @type {any[]} */(await fs[1].executeJavaScript('window.events')));
   } catch(e) {drag.push({error:String(e)});} finally {if(wc.debugger.isAttached())wc.debugger.detach();}
-  return {verdict:'works with limits',focus,keyboard,shortcuts,drag,menus:{clippedScreenshot:'menu-clipped.png',hostScreenshot:'menu-host.png',note:'An iframe clips its own top layer; trusted root demonstrates overlay outside iframe.'},ime:'not checked: requires OS IME and real input; live gate',dragLimit:'CDP delivery only. Does not prove native drag initiation, file drops or OS clipboard. Live gate required.'};
+  return {verdict:focus.value==='a' && drag.some(e=>e.type==='drop')?'works with limits':'does not',focus,windowFocused:win.isFocused(),keyboard,tabSteps,shortcuts,drag,menus:{clippedScreenshot:'menu-clipped.png',hostScreenshot:'menu-host.png',note:'An iframe clips its own top layer; trusted root demonstrates overlay outside iframe.'},ime:'not checked: requires OS IME and real input; live gate',dragLimit:'CDP delivery only. Does not prove native drag initiation, file drops or OS clipboard. Live gate required.'};
 }
 async function networkCheck() {
   const hits=[], connections=[], udpHits=[];
