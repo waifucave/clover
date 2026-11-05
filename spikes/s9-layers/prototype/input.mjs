@@ -25,6 +25,12 @@ export async function crossingCheck(win,app){
  writeFileSync('results/menu-clipped.png',(await wc.capturePage()).toPNG());
  await wc.executeJavaScript('const menu=document.createElement("div");menu.id="overlay";menu.textContent="Core menu";document.body.append(menu)');
  writeFileSync('results/menu-host.png',(await wc.capturePage()).toPNG());await wc.executeJavaScript('document.querySelector("#overlay").remove()');
+ let xdotool=null;
+ if(process.platform==='linux'){
+  wc.focus();await pause(150);
+  await one.executeJavaScript('document.querySelector("#first").focus();document.querySelector("#first").select()');
+  try{const id=String(win.getNativeWindowHandle().readUInt32LE(0));execFileSync('xdotool',['windowfocus','--sync',id],{timeout:3000});execFileSync('xdotool',['type','--clearmodifiers','xvfb'],{timeout:3000});execFileSync('xdotool',['key','Tab'],{timeout:3000});await pause(200);xdotool=await state();}catch(e){xdotool={error:String(e)};}
+ }
  /** @type {any} */ let intercepted=null;
 /** @type {any[]} */ const messages=[];
  const onMessage=(/** @type {any} */ _e,/** @type {any} */ method,/** @type {any} */ params)=>{if(method==='Input.dragIntercepted'){intercepted=params.data;messages.push({method,data:params.data})}};wc.debugger.on('message',onMessage);
@@ -37,11 +43,6 @@ export async function crossingCheck(win,app){
  await send('Input.dispatchMouseEvent',{type:'mouseReleased',x:215,y:85,button:'left',buttons:0,clickCount:1});await pause(200);
  await send('Input.setInterceptDrags',{enabled:false});wc.debugger.removeListener('message',onMessage);
  const drag=await state();
- let xdotool=null;
- if(process.platform==='linux'){
-  await one.executeJavaScript('document.querySelector("#first").focus();document.querySelector("#first").select()');
-  try{const id=String(win.getNativeWindowHandle().readUInt32LE(0));execFileSync('xdotool',['windowfocus','--sync',id],{timeout:3000});execFileSync('xdotool',['type','--clearmodifiers','xvfb'],{timeout:3000});execFileSync('xdotool',['key','Tab'],{timeout:3000});await pause(200);xdotool=await state();}catch(e){xdotool={error:String(e)};}
- }
  const io=await one.executeJavaScript(`new Promise(resolve=>{const f=document.createElement('iframe');f.srcdoc='<button style="width:50px;height:30px">fixture</button>';document.body.append(f);f.onload=()=>{try{const o=new f.contentWindow.IntersectionObserver(entries=>{o.disconnect();resolve(entries.map(e=>({isIntersecting:e.isIntersecting,isVisible:e.isVisible,ratio:e.intersectionRatio})))},{trackVisibility:true,delay:100});o.observe(f.contentDocument.querySelector('button'));}catch(e){resolve({error:String(e)})}};setTimeout(()=>resolve({timeout:true}),1200)})`);
  wc.debugger.detach();
  const passed=typing[0].value==='ab'&&Array.isArray(ime)&&ime[0].value==='日本'&&drag[1].events.some((/** @type {any} */ e)=>e.type==='drop'&&e.text==='clover-fixture');

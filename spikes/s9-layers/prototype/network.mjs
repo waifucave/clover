@@ -38,7 +38,7 @@ async function fixtures(prefix){
     if(name==='css'||name==='css-import')res.setHeader('Content-Type','text/css');
     if(name==='download')res.setHeader('Content-Disposition','attachment; filename="fixture.txt"');
     res.end(name==='css'||name==='css-import'?'body{color:black}':name==='eventsource'?'data: fixture\n\n':'fixture');});
-   server.on('connection',(/** @type {any} */ socket)=>{rec.tcp.push({sourcePort:socket.remotePort,address:socket.remoteAddress});socket.on('error',()=>{});});
+   server.on('connection',(/** @type {any} */ socket)=>{const entry={sourcePort:socket.remotePort,address:socket.remoteAddress,firstBytes:''};rec.tcp.push(entry);socket.once('data',(/** @type {Buffer} */ bytes)=>entry.firstBytes=bytes.subarray(0,5).toString('hex'));socket.on('error',()=>{});});
    server.on('upgrade',(/** @type {any} */ req,/** @type {any} */ socket)=>{rec.http.push({host:req.headers.host,url:req.url,method:'WS'});const accept=crypto.createHash('sha1').update(req.headers['sec-websocket-key']+'258EAFA5-E914-47DA-95CA-C5AB0DC85B11').digest('base64');socket.write('HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: '+accept+'\r\n\r\n');socket.on('error',()=>{});setTimeout(()=>socket.destroy(),300);});
    await new Promise(r=>server.listen(0,'127.0.0.1',()=>r(undefined)));
   }
