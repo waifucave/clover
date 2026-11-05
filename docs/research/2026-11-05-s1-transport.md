@@ -2,22 +2,24 @@
 
 Lane H, milestone M0: the lab half of spike S1 (spec §8.2, §8.3 and §14.1 item 1; plan §4 lane H). November 5, 2026.
 
-Code: [`spikes/s1-transport/`](../../spikes/s1-transport/README.md) (the Bun side, the network labs, the CI glue) and [`native/link-sidecar/`](../../native/link-sidecar/) (the native half: quinn and iroh peers, a STUN responder, a stdio sidecar). CI: `.github/workflows/spike-s1.yml` on `lane/h-m0`. The runs on real networks, and how often traffic falls back to n0's relays, wait for live gate 1.
+Code: [`spikes/s1-transport/`](../../spikes/s1-transport/README.md) (the Bun side, the network labs, the CI glue) and [`native/link-sidecar/`](../../native/link-sidecar/) (the native half: quinn and iroh peers, a STUN responder, a stdio sidecar). CI: `.github/workflows/spike-s1.yml` on `lane/h-m0`, runs [1](https://github.com/waifucave/clover/actions/runs/41942502147), [2](https://github.com/waifucave/clover/actions/runs/41943850278), [3](https://github.com/waifucave/clover/actions/runs/41945403885) and [4](https://github.com/waifucave/clover/actions/runs/41948554183); each run's artifacts hold its result files. The runs on real networks, and how often traffic falls back to n0's relays, wait for live gate 1.
 
 ## Verdicts
 
 | # | Question | Verdict | Key numbers |
 | :- | :- | :- | :- |
-| 1 | iroh or plain QUIC (quinn) between a user's computers | **iroh.** The two are equally fast and punch the same NATs; quinn would mean rebuilding iroh's identity, relay and path handling, could not use n0's relays, and has no iOS or Bun binding | Native loopback bulk: iroh 130–608 MB/s, quinn 116–559 MB/s, neither ahead on every OS; RPC p50 0.05–0.19 ms against 0.04–0.15 ms; identical NAT matrix |
+| 1 | iroh or plain QUIC (quinn) between a user's computers | **iroh.** The two are equally fast and punch the same NATs. quinn would mean rebuilding iroh's identity, relay fallback and discovery, could not use n0's relays, and has no iOS or Bun binding. quinn did follow a new address faster (0.1 s against 6 s), which re-dialling on network changes covers | Native loopback bulk: iroh 130–608 MB/s, quinn 116–559 MB/s, neither ahead on every OS; RPC p50 0.05–0.19 ms against 0.04–0.15 ms; identical NAT matrix |
 | 2 | iroh, quinn and WebRTC under Bun and inside `bun build --compile`, on all three OSes | **Works, with limits.** Everything loads and compiles on all four targets. n0's napi binding is too slow for bulk data and makes Bun stop firing timers; a binding that passes buffers fixes both. quinn has no binding: it needs a sidecar or our own addon | iroh napi bulk 18–64 MB/s against native 130–608; a 10 ms timer fired once in 1–3.5 s of transfer; an async buffer-typed napi call costs 22–61 µs and moves 1.1–3.3 GB/s; the sidecar's stdio hop is 0.02–0.06 ms |
 | 3 | Punching through routers with no relay | **Works, with limits.** Relay-free iroh connects every NAT pair that can connect without a relay, if each device asks STUN from iroh's own port first and both devices dial at once; a symmetric NAT against a filtering one needs a relay | 13 of 15 NAT pairs direct, the same for quinn; same LAN direct in 1 ms; with only one side dialling, 10 of 25 |
 | 4 | Delay and throughput under `tc netem`, prioritised streams | **Works, with limits.** Connecting costs one round trip and a small RPC the network's delay plus well under a millisecond, on both stacks. But stream priorities alone don't keep small messages fast during a transfer, and neither stack's default congestion control copes with a lossy path | Connect 1 RTT + 1–5 ms; RPC p50 1 RTT + < 0.6 ms; during a transfer, prioritised and equal streams measured the same, +1–15 ms at p50 under Cubic and +35–50 ms under quinn's BBR; at 1 % loss and 80 ms, Cubic 0.2–0.5 MB/s and quinn's BBR 4.7 MB/s |
 | 5 | WebRTC from a browser to the Bun side | **Works.** Headless Chrome 156 and Firefox 158–159 open data channels to `node-datachannel` under Bun on macOS, Windows and Linux; Lane I can build on [`webrtc-browser.ts`](../../spikes/s1-transport/bun/src/webrtc-browser.ts) | Open 0.15–1.5 s; RTT p50 0.14–0.48 ms; 8–80 MB/s each way; RTT during a parallel upload 6–62 ms (p50) |
 
-Two results change the spec beyond choosing iroh, and one touches decisions:
+Beyond choosing iroh, these results change the spec, and one touches decisions:
 
 * **How clover-core holds iroh** [P]: through a thin napi addon of Clover's own, not n0's binding as it is (Q2).
 * **Relay-free iroh needs two things from the handshake** [P]: each device learns its public address with STUN on the port iroh then binds, because iroh has no STUN and learns nothing without a relay, and both devices dial each other at the same moment (Q3).
+* **Priorities aren't enough** [P]: the congestion controller and pacing decide how fast control messages stay during a transfer, and how much a lossy path delivers (Q4).
+* **Re-dial on every network change and wake** [P]: no existing connection came back quickly from a long outage, and relay-free iroh took 6 s to follow a new address (network changes).
 * **Relays on, coordination off them** touches three [D]s (edit 6): iroh sends a dial's first packets over every path it knows, the relay included, so coordination stays off n0's relays only if Clover dials direct first and adds the relay after a head start, which the owner weighs against the fastest connection.
 
 ## Where it ran
@@ -56,8 +58,8 @@ On the owner's Mac the same check moves 62–64 MB/s, against 263–269 MB/s for
 What this shows:
 
 1. **It loads and compiles everywhere.** napi-rs's loader names each platform package literally, so `bun build --compile` embeds the right `.node` by itself. A compiled binary writes that file to a new temporary file on every start: 11–39 ms on the runners, 147–233 ms on Windows, 290–450 ms on the owner's Mac. The same file kept beside the binary and loaded from disk (`NAPI_RS_NATIVE_LIBRARY_PATH`) loads in 4 ms once the OS has seen it.
-2. **Its byte API is the bottleneck.** Every `read` and `write` takes or returns `Vec<u8>`, which napi-rs turns into a JS `Array<number>`, one element at a time. The probe puts the cost at 0.5–2.3 ms of JS-thread time per 64 KB under Bun (28–135 MB/s) and 2–10 ms under Node. A `Uint8Array` in costs 1–2 µs, a `Buffer` out 20–27 µs, and either one as an async call 22–61 µs (1.1–3.0 GB/s). So the binding, not iroh or Bun, caps transfers at a tenth of native speed and holds the daemon's thread while it does.
-3. **Bun stops firing timers while napi completions keep arriving.** With a transfer running, a 10 ms interval fired once in 1–2.7 s on every OS; Node fired it on time. The probe reproduces it without iroh: two independent loops of async napi calls whose results each take about a millisecond to convert left a 10 ms timer firing once in 44–90 periods, while lock-step pairs, typed buffers and Node all kept it on time. Bun appears to run every queued native completion before its timers, and two loops keep that queue from emptying. For a daemon whose keep-alives, lease renewals and clock sync are timers (spec §6.4), this matters more than speed. Yielding once per write (`setImmediate`) fixes it at no cost to throughput; a buffer-typed binding avoids it, since each completion is cheap. It is worth reporting to Bun; the controller decides.
+2. **Its byte API is the bottleneck.** Every `read` and `write` takes or returns `Vec<u8>`, which napi-rs turns into a JS `Array<number>`, one element at a time. The probe puts the cost at 0.5–2.3 ms of JS-thread time per 64 KB under Bun (28–135 MB/s) and 2–10 ms under Node. A `Uint8Array` in costs 1–2 µs, a `Buffer` out 20–27 µs, and either one as an async call 22–61 µs (1.1–3.0 GB/s). So the binding, not iroh or Bun, makes transfers 4–16 times slower than native and holds the daemon's thread while they run.
+3. **Bun stops firing timers while napi completions keep arriving.** With a transfer running, a 10 ms interval that should have fired 140–350 times fired 1–20 times, on every OS; under Node it fired on time. The probe reproduces it without iroh: two independent loops of async napi calls whose results each take about a millisecond to convert left a 10 ms timer firing once in 44–90 periods, while lock-step pairs, typed buffers and Node all kept it on time. Bun appears to run every queued native completion before its timers, and two loops keep that queue from emptying. For a daemon whose keep-alives, lease renewals and clock sync are timers (spec §6.4), this matters more than speed. Yielding once per write (`setImmediate`) fixes it at no cost to throughput; a buffer-typed binding avoids it, since each completion is cheap. It is worth reporting to Bun; the controller decides.
 4. **node-datachannel loads under Bun on all four targets, and compiles with a 10-line plugin.** Its loader computes the package name, so the bundler can't follow it; [`compile.ts`](../../spikes/s1-transport/bun/scripts/compile.ts) swaps the loader for a literal `require` of this platform's `.node`. Bun to Bun in one process: open 3–55 ms, RTT p50 0.08–0.30 ms, 15–115 MB/s.
 5. **quinn has no maintained napi binding.** Under Bun it is reachable only through our own addon or a sidecar. The sidecar prototype (`clover-link-sidecar ipc`, framed echo over stdio) measured, from Bun and from compiled binaries: spawn and first round trip 4–21 ms; 64-byte round trip p50 0.02–0.06 ms (p99 0.4–1.5 ms); 0.5–1.6 GB/s each way; timers unaffected. That confirms the spec's "adds microseconds" for the fallback.
 6. **Compiled sizes**: 63–76 MB on macOS, 99–115 MB on Windows, 94–131 MB on Linux, for a binary carrying Bun plus one of these addons (iroh's `.node` alone is 12 MB).
@@ -90,12 +92,12 @@ Beyond speed:
 | Public address with relays off | None: iroh has no STUN, and its QUIC address discovery (QAD) only runs against relays. STUN on the port before iroh binds it, then `add_external_addr` | STUN on its own socket |
 | Punching | NAT traversal rounds inside a connection, so the first path must work on its own; both sides dial at once (Q3) | Punch packets from its own socket, and both sides dial (Q3) |
 | Relay fallback | Built in; n0's relays, which spec §8.3 turns on by default [D] | None. n0's relays speak iroh's relay protocol, so quinn could not use them |
-| Path changes | Multipath, with paths kept alive every 5 s and dropped after 15 s idle | QUIC migration from the client side |
+| Path changes | Multipath, with paths kept alive every 5 s and dropped after 15 s idle. With relays off it took 6 s to follow a new local address, but came back sooner after long outages (below) | QUIC migration: followed a new client address in 0.1 s |
 | iOS | Official Swift bindings; Winter's phone already uses iroh-ffi 1.1.0 | None |
 | Bun | n0's napi binding (with Q2's limits); or our own addon | Our own addon, or a sidecar |
 | Churn | iroh 1.0 shipped in June 2026 and is at 1.4.1 now; the napi binding is at 1.2.0 | quinn's 0.11 line is stable |
 
-**Verdict: iroh.** Speed doesn't separate them: quinn is ahead on some runners by 10–15 %, behind on Linux x64, and both are far above what the network delivers once the link leaves the machine (Q4). Everything else favours iroh, and quinn would also break a decision: n0's relays, on by default [D], are iroh relays.
+**Verdict: iroh.** Speed doesn't separate them: quinn is ahead on some runners and behind on others, and both are far above what the network delivers once the link leaves the machine (Q4). quinn did better at following a new address (below), and its punch packets saved one retransmission in one NAT pair (Q3), but re-dialling on network changes covers the first and an earlier second dial would cover the other. Everything else favours iroh, and quinn would also break a decision: n0's relays, on by default [D], are iroh relays.
 
 ## Question 3: punching with no relay
 
@@ -118,7 +120,7 @@ The routers drop unsolicited UDP silently, every pair starts from fresh namespac
 
 Peer `a` then runs 20 RPCs on the connection to prove data flows. The time is from the moment a peer had the other's record to its first connection; the lab's rendezvous polls every 20 ms, which is most of the 22 ms values.
 
-Direct connections, iroh, both peers dialling (time to connect):
+Direct connections, iroh, both peers dialling (time to connect, CI run 2; runs 3 and 4 connected the same pairs, within the 20 ms poll of these times):
 
 | a \ b | public | full | restricted | port-restricted | symmetric |
 | :- | :-: | :-: | :-: | :-: | :-: |
@@ -130,14 +132,14 @@ Direct connections, iroh, both peers dialling (time to connect):
 
 Same LAN behind one router: direct over the LAN addresses, 1 ms.
 
-quinn with its own STUN and punch packets, both peers dialling, connects exactly the same 13 of 15 pairs, and the same LAN case (PENDING_QUINN_TIMES). With only one peer dialling, iroh reaches peer `b` only when `b` is public or behind a full cone, 10 of 25 ordered pairs: every other router drops the dial because `b` never sent anything toward `a`.
+quinn with its own STUN and punch packets, both peers dialling, connects exactly the same 13 of 15 pairs and the same LAN case, in 1–22 ms (CI run 4). That includes restricted × symmetric in 22 ms, which took iroh one retransmission: quinn's punch packets had already opened the way. With only one peer dialling, iroh reaches peer `b` only when `b` is public or behind a full cone, 10 of 25 ordered pairs: every other router drops the dial because `b` never sent anything toward `a`.
 
 What this shows:
 
 1. **Relay-free iroh punches everything that can be punched without a relay**, 13 of 15 pairs, the textbook result: only a symmetric NAT against a port-restricted or symmetric one fails, since the symmetric side's port for the peer is one nobody has seen (Linux picks it at random, so no prediction helps).
 2. **iroh learns no public address with relays off.** In iroh 1.4.1 an endpoint finds its public address only through QUIC address discovery against its relays (`net_report` builds its probes from the relay map); there is no STUN. So the handshake's STUN has to run from the port iroh will use, before iroh binds it, and Clover should hand the result to iroh with `add_external_addr` so iroh's later NAT-traversal rounds advertise it. On NATs whose mapping depends on the destination (symmetric), no such address exists at all.
 3. **Both peers must dial at the same moment.** Before a connection exists, iroh sends its Initial to every address it was given, which opens the dialler's own NAT toward the peer; the peer's NAT lets it in only once the peer has sent something back the other way. So the handshake has to tell both devices to dial each other at once. A pair that took one retransmission (restricted × symmetric, 981 ms) shows why at once matters: the first Initial arrived before the other side's.
-4. **The two stacks are equal here.** Punching is a property of the NATs, not of the QUIC library, once both have their address and dial together.
+4. **The two stacks reach the same pairs.** Punching is a property of the NATs, not of the QUIC library, once both sides have their address and dial together. quinn's punch packets only saved one retransmission; iroh could get the same by dialling a second time a few milliseconds after the first.
 
 **Verdict: works, with limits.** Every pair that can connect without a relay did, given STUN on iroh's port and a simultaneous dial; pairs with a symmetric NAT against a filtering one need a relay. How common those are on real networks is live gate 1's question.
 
@@ -183,16 +185,28 @@ Spec §8.3 asks for the time to first byte after sleep and after a Wi-Fi-to-mobi
 
 **Method.** [`nat/migrate.sh`](../../spikes/s1-transport/nat/migrate.sh) puts a client and a server namespace on one veth pair with 10 ms of delay each way. The client ([`bench.rs`](../../native/link-sidecar/src/bench.rs), `ping`) sends a 64-byte echo every 50 ms without waiting for replies. The script then breaks the path at a known time: the client's address changes, or every packet is dropped for a while, or both. In some scenarios it also tells the client the network changed, as clover-core would on the OS's event: quinn then moves to a new socket (`rebind`, its active migration) and iroh re-checks its paths (`network_change()`). Nothing reconnects; the question is whether this one connection carries on.
 
-PENDING_MIGRATE_TABLE
+Echoes sent every 50 ms; "longest gap" is the longest wait between replies (CI run 4; the blackout rows match run 3 within 0.1 s):
+
+| Scenario | quinn: all back? | quinn: longest gap | iroh: all back? | iroh: longest gap |
+| :- | :- | -: | :- | -: |
+| address change, no call | yes | 0.14 s | yes | 6.0 s |
+| address change, with the network-change call | yes | 0.12 s | yes | 6.0 s |
+| Wi-Fi to mobile: 2 s outage, new address, call | yes | 2.1 s | **no**: 181 of 201, 8 s after the end | 8.0 s |
+| 5 s blackout | yes | 5.1 s | yes | 5.1 s |
+| 20 s blackout | yes | 28.4 s | yes | 24.6 s |
+| 20 s blackout, with the call at wake | yes | 28.4 s | yes | 24.5 s |
+| 40 s blackout | **no**: closed at 33 s | | **no**: closed at 33 s | |
 
 What this shows:
 
 1. **Short outages heal by themselves.** After 5 s without a network, both stacks delivered every queued echo within about 150 ms of the link coming back.
-2. **Long ones heal slowly, and the wake call doesn't speed them up.** After 20 s, iroh resumed 4.4 s after the link returned and quinn 8.4 s, with or without the network-change call. Both had backed off their retransmission timers, and after a loss that long both are also held back by congestion control, so quinn's ping on rebind waits too. A fresh connection would take one round trip.
-3. **Past 30 s the connection is gone.** Both close it after 30 s with nothing received, as configured (quinn here; iroh's own default), so sleep longer than that always needs a new connection.
-PENDING_MIGRATE_ADDRESS
+2. **quinn follows a new address at once; relay-free iroh takes seconds.** When the client's address changed, quinn carried on within about 0.1 s: QUIC's own migration, where the client just sends from its new address and the server follows. iroh, with relays off, went 6 s without replies before it opened a second path from the new address, and the network-change call didn't shorten that. In the Wi-Fi-to-mobile case iroh went 8 s without replies, and a tenth of the echoes still hadn't arrived 8 s after the test ended. With relays on, iroh would have had the relay path meanwhile; that is live gate 1's to measure. It is worth raising with n0 (the controller decides).
+3. **Long outages heal slowly, and the wake call doesn't speed them up.** After 20 s, iroh resumed 4.5 s after the link returned and quinn 8.4 s, with or without the call. Both had backed off their retransmission timers, and after a loss that long congestion control holds them back too, so quinn's rebind ping waits as well. A fresh connection takes one round trip.
+4. **Past 30 s the connection is gone.** Both close it after 30 s with nothing received (quinn as configured here, iroh by default), so a sleep longer than that always needs a new connection.
 
-**Verdict.** Neither stack makes a sleep or a network switch invisible. clover-core should dial a new connection at once on every wake and network-change event, use whichever connection answers first, and let the old one go, as spec §8.3's "re-dial at once" already says. iroh recovers by itself sooner than quinn, which matters when no event arrives.
+The first two runs of this test were wrong and are not used: deleting the client's old address also deleted the new one, because Linux drops secondary addresses with the primary unless `promote_secondaries` is on.
+
+**Verdict.** Neither stack makes a sleep or a network switch invisible, and relay-free iroh handles a new address worse than plain QUIC. clover-core should dial a new connection at once on every wake and network-change event, keep whichever connection answers first, and let the old one go, as spec §8.3's "re-dial at once" already says (edit 8). That costs one round trip on either stack and takes the difference between them off the table.
 
 ## Question 5: WebRTC from browsers
 
@@ -231,9 +245,9 @@ Each is marked [P] (the controller applies it) or [D] (it touches an owner decis
    * New: `Between devices the link uses QUIC, whose independent streams run over UDP, through iroh (chosen in spike S1, §8.3).`
 2. **[P] §8.3, the transport table's Bun row:**
    * Old: `| Bun | Official napi binding `@number0/iroh` (iroh-ffi 1.2.0); Bun support unconfirmed | `node-datachannel` napi; Bun support unconfirmed | Go helper process |`
-   * New: `| Bun | `@number0/iroh` 1.2.0 loads under Bun and compiled on all four targets, but passes bytes as JS arrays (21–63 MB/s, and Bun stops firing timers meanwhile); Clover binds iroh with a thin addon of its own | `node-datachannel` 0.33.6 loads under Bun and compiled on all four targets; compiling needs a small build plugin | Go helper process |`
+   * New: `| Bun | `@number0/iroh` 1.2.0 loads under Bun and compiled on all four targets, but passes bytes as JS arrays (18–64 MB/s, and Bun stops firing timers meanwhile); Clover binds iroh with a thin addon of its own | `node-datachannel` 0.33.6 loads under Bun and compiled on all four targets; compiling needs a small build plugin | Go helper process |`
 3. **[P] §8.3, "S1 compares two ways to get QUIC speed"** and its two sub-bullets, replaced by the result:
-   * New: `**[P] The transport (S1's lab half, November 5, 2026): iroh.** Plain quinn matched iroh's speed and punched the same NATs, but needs its own identity, relay and path handling, has no iOS or Bun binding, and cannot use n0's relays. With relays off, iroh connects directly through every NAT pair that allows it (13 of 15 in the lab) given two things from the handshake: each device asks a public STUN server for its address from the port iroh then binds, since iroh has no STUN and learns no address without a relay, and both devices dial each other at once ([lab report](research/2026-11-05-s1-transport.md)).`
+   * New: `**[P] The transport (S1's lab half, November 5, 2026): iroh.** Plain quinn matched iroh's speed and punched the same NATs, and followed a new address faster (0.1 s against 6 s, which re-dialling covers), but needs its own identity, discovery and relay fallback, has no iOS or Bun binding, and cannot use n0's relays. With relays off, iroh connects directly through every NAT pair that allows it (13 of 15 in the lab) given two things from the handshake: each device asks a public STUN server for its address from the port iroh then binds, since iroh has no STUN and learns no address without a relay, and both devices dial each other at once ([lab report](research/2026-11-05-s1-transport.md)).`
 4. **[P] §8.3, "Fallback if the Bun bindings don't load":**
    * New: `**[P] How clover-core holds iroh:** through a thin napi addon of Clover's own, which passes byte buffers and keeps the link's framing in Rust. n0's binding passes every byte as a JS number and, under Bun, keeps timers from firing while a transfer runs; a buffer-typed call measured 22–61 µs and 1.1–3.3 GB/s under Bun on all four targets. The addon ships beside clover-core, not inside it. The fallback stays a sidecar process, whose stdio hop measured 0.02–0.06 ms per round trip and 0.5–1.6 GB/s.`
 5. **[P] §8.3, inside the [D] "Discovery works like waifucave's pairing service today"** (it adds how, and doesn't change the decision):
@@ -248,7 +262,11 @@ Each is marked [P] (the controller applies it) or [D] (it touches an owner decis
    * Old: `* **Priorities:** binary frames on separate streams for bulk data, with token streams and control messages ahead of screenshots and files.`
    * New: `* **Priorities:** binary frames on separate streams for bulk data, with token streams and control messages ahead of screenshots and files. Priorities only order what QUIC sends next; during a transfer a control message still waits in the queues below QUIC, which the congestion controller fills or keeps short (S1: prioritised and equal streams measured the same). So bulk streams are paced below the path's rate.`
    * Added: `* **[P] Congestion control is chosen for lossy paths.** At 1 % loss and 80 ms, Cubic moved 0.2–0.5 MB/s in S1's lab and quinn's BBR 4.7 MB/s, while noq's BBRv3 managed 0.5 MB/s and quinn's BBR added 35–50 ms of queueing. M1 picks and tunes the controller (iroh accepts one from Clover); live gate 1 checks it on real Wi-Fi and mobile.`
-8. **[P] §8.3, "Connect early, stay connected":** PENDING_EDIT_CONNECT
+8. **[P] §8.3, "Connect early, stay connected"**, and the transport table's "Network change or sleep" row:
+   * Old: `* **Connect early, stay connected:** connect at login and wake, send keep-alives, and re-dial at once on network-change and wake events.`
+   * New: `* **Connect early, stay connected:** connect at login and wake, send keep-alives, and re-dial at once on network-change and wake events, keeping whichever connection answers first. In S1's lab an existing connection came back 4.5–8.4 s after a 20 s outage ended, telling the stack about the change didn't shorten that, relay-free iroh took 6 s to follow a new local address, and a connection is gone after 30 s of silence; a new one takes one round trip.`
+   * Old (iroh's cell): `Best: the connection survives a switch of path`
+   * New: `The connection survives a switch of path, but with relays off it took 6 s to follow a new address in S1's lab (plain QUIC migration: 0.1 s); Clover re-dials on network changes either way`
 9. **[P] §8.3, the S1 list**, a line after item 8: `S1's lab half (November 5, 2026) answered item 1 and the lab part of items 2–6 ([lab report](research/2026-11-05-s1-transport.md)); the runs on real networks, item 8 and, if still wanted, item 7 wait for live gate 1.`
 10. **[P] §14.1 item 1**, appended: `Lab half done November 5, 2026: iroh, held through Clover's own addon; real networks and the relay share remain for live gate 1 ([lab report](research/2026-11-05-s1-transport.md)).`
 11. **[P] §8.4, the web companion's first bullet**, appended: `Browsers name their LAN candidates with mDNS, which the daemon's WebRTC library does not resolve, so the page's direct path rests on STUN's reflexive candidates unless the daemon resolves mDNS names (S1).`
@@ -260,7 +278,7 @@ Each is marked [P] (the controller applies it) or [D] (it touches an owner decis
 3. **Mobile and carrier NATs are often symmetric**, and every pair with a symmetric NAT against a filtering one needs a relay. The relay share could be much higher on phones and hotel Wi-Fi than at home; live gate 1 measures it.
 4. **STUN before bind only works once per port.** After a network change the public address changes, but iroh now holds the port, so Clover can't ask STUN from it again. Ways out for M1: relays on (n0's QAD, which [D] turns on by default anyway), or iroh's observed-address reports from any connected peer (`send_observed_address_reports` / `receive_observed_address_reports` in iroh's transport config), or rebinding iroh on a fresh port after a fresh STUN.
 5. **Priorities don't protect small messages under load** on their own (Q4): the queues that delay them sit below QUIC.
-6. **Neither stack heals a local address change by itself** in the lab (below), so clover-core must catch the OS's network-change events on all three OSes and tell iroh.
+6. **Relay-free iroh follows a new local address slowly.** In the lab it took 6 s, and with an outage in front a tenth of the data was still missing 8 s later. So clover-core must catch the OS's network-change and wake events on all three OSes and re-dial at once; with no event, the old connection limps.
 7. **Lossy links collapse loss-based congestion control** (Q4), and noq's BBRv3 did little better there than Cubic.
 8. **Browsers:** host candidates are mDNS names libdatachannel can't resolve; SCTP has no priorities; Firefox takes 1.1–1.5 s to open a channel. Safari was not tested.
 9. **Windows Firewall** may ask the user the first time clover-core receives unsolicited UDP. CI runners never prompt, so only live gate 3 can show it.
