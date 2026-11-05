@@ -75,7 +75,7 @@ export async function networkCheck(electron){
    const allowed=[...(registry.get(url.origin)||[])];
    // WHATWG URL.origin is null for custom schemes in Node; explicit scheme+host registry key.
    const key=`${url.protocol}//${url.host}`;const grants=[...(registry.get(key)||[])];
-   /** @type {Record<string,string>} */ const headers={'Content-Type':worker?'text/javascript':'text/html','Content-Security-Policy':csp(grants,useCsp,["'self'"])+`; frame-ancestors ${(mount?.ancestors||['clover-core://shell','clover-plugin://p1']).join(' ')}`};
+   /** @type {Record<string,string>} */ const headers={'Content-Type':worker?'text/javascript':'text/html','Content-Security-Policy':csp(grants,useCsp,["'self'"])+`; frame-ancestors ${worker?"'none'":(mount?.ancestors||['clover-core://shell','clover-plugin://p1']).join(' ')}`};
    if(header)headers['Connection-Allowlist']=`(${grants.map(x=>JSON.stringify(x+'/*')).join(' ')} response-origin)`;
    let content='<input id="input"><div>plugin fixture</div>';
    if(url.pathname==='/worker.js')content=`fetch(${JSON.stringify(f.endpoints.worker.url)}).then(()=>postMessage('sent')).catch(()=>postMessage('blocked'))`;
@@ -119,10 +119,11 @@ export async function networkCheck(electron){
    // Pass endpoints in the message so this context has its own names and ports.
    // Replace handler above's endpoint-only script using a data parameter in worker message.
    contexts[contexts.length-1].result=await frame.executeJavaScript(`new Promise(resolve=>{const w=new Worker('/context-worker.js');w.onmessage=e=>{w.terminate();resolve(e.data)};w.onerror=e=>resolve({error:e.message});w.postMessage(${JSON.stringify(wf.endpoints)});setTimeout(()=>{w.terminate();resolve({error:'worker deadline'})},6000)})`);
-   const attempts=[];
+   await frame.executeJavaScript("window.trustViolations=[];document.addEventListener('securitypolicyviolation',e=>trustViolations.push({directive:e.effectiveDirective,blocked:e.blockedURI}))");
    for(const target of ['clover-plugin://p2/',p2url,'clover-core://shell/',`clover-core://shell/?mount=${rootToken}`,'clover-sealed://cards/']){
-    trustAttempts.push(await frame.executeJavaScript(`new Promise(resolve=>{const f=document.createElement('iframe');f.src=${JSON.stringify(target)};f.onload=()=>resolve({target:${JSON.stringify(target)},loaded:true});f.onerror=()=>resolve({target:${JSON.stringify(target)},error:true});document.body.append(f);setTimeout(()=>resolve({target:${JSON.stringify(target)},settled:true}),150)})`));
+    trustAttempts.push(await frame.executeJavaScript(`new Promise(resolve=>{const f=document.createElement('iframe');f.name='trust-'+${JSON.stringify(target)};f.src=${JSON.stringify(target)};f.onload=()=>resolve({target:${JSON.stringify(target)},loaded:true});f.onerror=()=>resolve({target:${JSON.stringify(target)},error:true});document.body.append(f);setTimeout(()=>resolve({target:${JSON.stringify(target)},settled:true}),150)})`));
    }
+   trustAttempts.push({violations:await frame.executeJavaScript('window.trustViolations'),children:frame.frames.map((/** @type {any} */ child)=>({name:child.name,url:child.url}))});
    await frame.executeJavaScript(`(()=>{try{top.location=${JSON.stringify(f.endpoints['top-location'].url)}}catch(e){window.topError=String(e)}})()`);
   }
   await pause(350);await ses.netLog.stopLogging();
@@ -137,6 +138,6 @@ export async function networkCheck(electron){
  const dns=(/** @type {any} */ v,/** @type {string} */ host)=>v.netlog.speculative.filter((/** @type {any} */ e)=>JSON.stringify(e.params).includes(host));
  const directClosed=tested(a.main)&&a.records.stun.udp.length===0&&a.records.turn.tcp.length===0&&candidates(a.main).length===0;
  const inheritedClosed=a.contexts.every((/** @type {any} */ c)=>c.result?.outcomes && !c.result.error && c.records.stun.udp.length===0&&c.records.turn.tcp.length===0&&candidates(c.result).length===0);
- const assertions={undeclaredStunPositive:control.records.stun.udp.some((/** @type {any} */ p)=>p.stun),undeclaredTurnPositive:control.records.turn.tcp.length>0,allowlistDirectClosed:directClosed,allowlistInheritedClosed:inheritedClosed,nonPluginStillConnects:non.records.stun.udp.length>0&&non.records.turn.tcp.length>0,dnsPositive:dns(plain,plain.records['dns-prefetch'].host).length>0,dnsRefused:dns(a,a.records['dns-prefetch'].host).length===0,preconnectEventPositive:plain.preconnect.some((/** @type {any} */ e)=>e.url.includes(plain.records.preconnect.host))};
+ const assertions={undeclaredStunPositive:control.records.stun.udp.some((/** @type {any} */ p)=>p.stun),undeclaredTurnPositive:control.records.turn.tcp.length>0,allowlistDirectClosed:directClosed,allowlistInheritedClosed:inheritedClosed,nonPluginStillConnects:non.records.stun.udp.length>0&&non.records.turn.tcp.length>0,nonPluginDns:dns(non,non.records['dns-prefetch'].host).length>0,dnsPositive:dns(plain,plain.records['dns-prefetch'].host).length>0,dnsRefused:dns(a,a.records['dns-prefetch'].host).length===0,preconnectEventPositive:plain.preconnect.some((/** @type {any} */ e)=>e.url.includes(plain.records.preconnect.host))};
  return {verdict:Object.values(assertions).every(Boolean)?'works with limits':'does not',assertions,variants};
 }

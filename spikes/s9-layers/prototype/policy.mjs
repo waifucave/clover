@@ -16,7 +16,7 @@ export function decision(url, initiatorOrigin, registry) {
 }
 /** @param {string[]} allowed @param {boolean} enabled @param {string[]} [frames] */
 export function csp(allowed, enabled, frames = ["'self'"]) {
-  if (!enabled) return "default-src 'self' * data: blob: 'unsafe-inline' 'unsafe-eval'; frame-ancestors clover-core://shell clover-plugin:;";
+  if (!enabled) return "default-src 'self' * data: blob: 'unsafe-inline' 'unsafe-eval';";
   const network = allowed.join(' ');
   return `default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' ${network}; img-src 'self' ${network}; font-src 'self' ${network}; connect-src 'self' ${network} ${network.replaceAll('http:', 'ws:')}; worker-src 'self' blob:; frame-src ${frames.join(' ')}; form-action 'none'; object-src 'none'; base-uri 'none'`;
 }
