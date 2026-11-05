@@ -84,6 +84,29 @@ describe("the terminal panel", () => {
     expect(onNew).toHaveBeenCalledTimes(1);
   });
 
+  test("on Windows and Linux, Ctrl+V and Ctrl+Shift+V paste: they send nothing and leave the paste to happen (review round 3)", () => {
+    for (const platform of ["windows", "linux"] as const) {
+      const onInput = mock((_d: string) => undefined);
+      const { unmount } = render(<TerminalPanel tabs={TABS} active="t1" chunks={FEED} onInput={onInput} onPaste={() => undefined} platform={platform} />);
+      const log = screen.getByRole("log");
+      // Not prevented, so the browser goes on to paste, through the paste door.
+      expect(fireEvent.keyDown(log, { key: "v", ctrlKey: true })).toBe(true);
+      expect(fireEvent.keyDown(log, { key: "V", ctrlKey: true, shiftKey: true })).toBe(true);
+      expect(onInput).not.toHaveBeenCalled();
+      // Ctrl+C still interrupts.
+      fireEvent.keyDown(log, { key: "c", ctrlKey: true });
+      expect(onInput).toHaveBeenCalledWith("\x03");
+      unmount();
+    }
+  });
+
+  test("on macOS, Ctrl+V is the shell's own (^V) and ⌘V pastes", () => {
+    expect(keyToData({ key: "v", ctrlKey: true, metaKey: false, altKey: false }, "mac")).toBe("\x16");
+    expect(keyToData({ key: "v", ctrlKey: false, metaKey: true, altKey: false }, "mac")).toBeUndefined();
+    expect(keyToData({ key: "v", ctrlKey: true, metaKey: false, altKey: false }, "linux")).toBeUndefined();
+    expect(keyToData({ key: "V", ctrlKey: true, metaKey: false, altKey: false }, "windows")).toBeUndefined();
+  });
+
   test("keyToData: modifiers that aren't the terminal's send nothing", () => {
     expect(keyToData({ key: "Shift", ctrlKey: false, metaKey: false, altKey: false })).toBeUndefined();
     expect(keyToData({ key: "b", ctrlKey: false, metaKey: false, altKey: true })).toBe("\x1bb");

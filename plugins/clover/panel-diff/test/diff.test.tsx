@@ -102,4 +102,25 @@ describe("hidden characters (review SF5: the Trojan Source attack)", () => {
     const { container } = render(<DiffPanel files={[sneaky]} layout="split" initialOpen={[sneaky.path]} />);
     expect(container.querySelectorAll(".cl-diff-split .cl-diff-hidden").length).toBe(4);
   });
+
+  test("tag characters and variation selectors show too, and a tag says which character it hides (review round 3)", () => {
+    const tagged = {
+      path: "notes/prompt.md",
+      status: "added" as const,
+      added: 1,
+      removed: 0,
+      hunks: [{ header: "@@ -0,0 +1 @@", lines: [{ kind: "add" as const, new: 1, text: "Summarize this.\u{E0069}\u{E0067}\u{E0001}\u{E007F} Done\uFE0F\u{E0100}" }] }],
+    };
+    const { container } = render(<DiffPanel files={[tagged]} layout="unified" initialOpen={[tagged.path]} />);
+    const marks = [...container.querySelectorAll(".cl-diff-hidden")];
+    expect(marks.map((m) => m.textContent)).toEqual(["U+E0069", "U+E0067", "U+E0001", "U+E007F", "U+FE0F", "U+E0100"]);
+    expect(screen.getByRole("img", { name: 'Hidden character U+E0069, tag for "i"' })).toBeTruthy();
+    expect(screen.getByRole("img", { name: "Hidden character U+E007F, cancel tag" })).toBeTruthy();
+    expect(screen.getByRole("img", { name: "Hidden character U+FE0F, variation selector 16" })).toBeTruthy();
+    expect(screen.getByRole("img", { name: "Hidden character U+E0100, variation selector 17" })).toBeTruthy();
+    const line = container.querySelector('.cl-diff-line[data-kind="add"] .cl-diff-line__text')!;
+    expect(line.textContent).not.toMatch(/[\u{E0000}-\u{E007F}\u{E0100}-\u{E01EF}\uFE00-\uFE0F]/u);
+    expect(line.textContent).toContain("Summarize this.");
+    expect(screen.getByText("Has hidden characters")).toBeTruthy();
+  });
 });

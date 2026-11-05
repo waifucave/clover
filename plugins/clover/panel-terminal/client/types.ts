@@ -2,7 +2,9 @@
 // `terminal` capability beside `files`, with an OK that says it runs commands on a computer, and input
 // that counts only from real key presses, like a send): the core runs the PTY on the chosen computer
 // (lane J) and hands the view its output as text with styles. Until B pins it, the host passes the
-// output it has (`chunks`) and gets the user's keys (`onInput`) and pastes (`onPaste`) apart.
+// output it has (`chunks`) and gets the user's keys (`onInput`) and pastes (`onPaste`) apart. The terminal
+// is a code session's only: a bot's tab never shows it.
+import type { Platform } from "./keys";
 
 /** A run of output in one style. ANSI colours arrive already parsed into these. */
 export interface TerminalChunk {
@@ -27,6 +29,8 @@ export interface TerminalPanelProps {
   /** What the user pasted, whole: the host brackets it for the shell, and asks before a paste of several
    *  lines runs. Without it, a paste does nothing. */
   onPaste?: (text: string) => void;
+  /** Which keys paste: ⌘V on macOS, Ctrl+V and Ctrl+Shift+V elsewhere. The platform it runs on when absent. */
+  platform?: Platform;
 }
 
 /** The tabs, in the panel's header. */

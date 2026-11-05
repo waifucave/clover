@@ -4,11 +4,12 @@
 //
 // Input has two doors. Key presses go through `onInput`, as the bytes a terminal sends. A paste goes
 // through `onPaste`, never `onInput`, so the host can bracket it for the shell and ask before a paste
-// of several lines runs. The terminal keeps Tab for the shell, so F6 leaves it (Shift+F6 goes back
-// the other way), and it says so (WCAG 2.1.2).
+// of several lines runs: ⌘V on macOS, Ctrl+V or Ctrl+Shift+V on Windows and Linux. The terminal keeps
+// Tab for the shell, so F6 leaves it (Shift+F6 goes back the other way), and it says so (WCAG 2.1.2).
+// It belongs to a code session: it runs in that session's folder, on the computer that holds it.
 import { useId, useLayoutEffect, useRef } from "react";
 import { IconClose, IconPlus } from "./icons";
-import { keyToData } from "./keys";
+import { currentPlatform, keyToData } from "./keys";
 import { S } from "./strings";
 import type { TerminalPanelProps, TerminalTabsProps } from "./types";
 
@@ -48,7 +49,7 @@ export function TerminalTabs({ tabs, active, onSelect, onNew, onClose }: Termina
   );
 }
 
-export function TerminalPanel({ tabs, active, chunks, onInput, onPaste }: TerminalPanelProps) {
+export function TerminalPanel({ tabs, active, chunks, onInput, onPaste, platform = currentPlatform() }: TerminalPanelProps) {
   const screen = useRef<HTMLPreElement>(null);
   const hintId = useId();
   const tab = tabs.find((t) => t.id === active);
@@ -74,7 +75,7 @@ export function TerminalPanel({ tabs, active, chunks, onInput, onPaste }: Termin
             return;
           }
           if (!onInput) return;
-          const data = keyToData(e);
+          const data = keyToData(e, platform);
           if (data === undefined) return;
           e.preventDefault();
           onInput(data);

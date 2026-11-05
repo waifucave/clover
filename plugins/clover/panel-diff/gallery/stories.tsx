@@ -1,6 +1,6 @@
 // Every diff panel state the gallery shows.
 import { DiffLayoutSwitch, DiffPanel, DiffTitle } from "../client/DiffPanel";
-import { FILES } from "./fixtures";
+import { FILES, HIDDEN_FILE } from "./fixtures";
 import type { Story } from "./story";
 
 const noop = () => undefined;
@@ -31,6 +31,13 @@ export const diffStories: Story[] = [
     notes: "Removals pair with the additions after them, row by row.",
     width: 900,
     render: () => <Framed layout="split" />,
+  },
+  {
+    id: "panel-diff/hidden",
+    title: "A change that hides characters",
+    notes: "A zero-width space in the name, bidi controls that reorder a line, and tag characters that spell a word no one sees: each shows as a mark naming its code point, and the row warns.",
+    width: 720,
+    render: () => <DiffPanel files={[HIDDEN_FILE]} layout="unified" initialOpen={[HIDDEN_FILE.path]} />,
   },
   {
     id: "panel-diff/empty",

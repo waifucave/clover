@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { visiblePaths } from "../client/filter";
-import { FilesPanel } from "../client/FilesPanel";
-import { LISTING, OPEN_FILE, ROOT } from "../gallery/fixtures";
+import { FilesPanel, FilesTitle } from "../client/FilesPanel";
+import { COMPUTER, LISTING, OPEN_FILE, ROOT } from "../gallery/fixtures";
 
 afterEach(cleanup);
 
@@ -101,5 +101,27 @@ describe("hidden characters (review SF5)", () => {
     expect([...container.querySelectorAll(".cl-files__code .cl-files-hidden")].map((m) => m.textContent)).toEqual(["U+202E", "U+2066"]);
     expect(screen.getByText("Has hidden characters")).toBeTruthy();
     expect(container.querySelector(".cl-files__code")?.textContent).not.toMatch(/[\u202E\u2066]/);
+  });
+
+  test("tag characters and variation selectors show as marks too (review round 3)", () => {
+    const { container } = render(<FilesPanel root={ROOT} listing={LISTING} onOpen={() => undefined} open={{ path: `${ROOT}/README.md`, text: "Read me.\u{E0068}\u{E0069}\uFE0E" }} />);
+    expect([...container.querySelectorAll(".cl-files__code .cl-files-hidden")].map((m) => m.textContent)).toEqual(["U+E0068", "U+E0069", "U+FE0E"]);
+    expect(screen.getByRole("img", { name: 'Hidden character U+E0068, tag for "h"' })).toBeTruthy();
+  });
+});
+
+describe("a code session's folder (the owner's scope ruling)", () => {
+  test("the header names the session's folder and its computer", () => {
+    render(<FilesTitle root={ROOT} computer={COMPUTER} />);
+    expect(screen.getByLabelText("Files in clover, on Studio")).toBeTruthy();
+    expect(screen.getByText("on Studio")).toBeTruthy();
+  });
+
+  test("the tree shows the folder and what's inside it, never anything outside it", () => {
+    const outside = "/Users/sam/projects/garden-planner";
+    const listing = { ...LISTING, [outside]: [{ path: `${outside}/beds.csv`, name: "beds.csv", type: "file" as const }] };
+    render(<FilesPanel root={ROOT} listing={listing} onOpen={() => undefined} />);
+    expect(screen.queryByText("beds.csv")).toBeNull();
+    expect(screen.getByText("README.md")).toBeTruthy();
   });
 });

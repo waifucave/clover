@@ -34,3 +34,24 @@ export const FILES: DiffFile[] = [
   { path: "plugins/clover/shell/gallery/screens.tsx", status: "renamed", from: "plugins/clover/shell/gallery/window.tsx", added: 12, removed: 4 },
   { path: "plugins/clover/shell/gallery/mark.png", status: "added", added: 0, removed: 0, binary: true },
 ];
+
+/** A change that hides things: a zero-width space in its name, a Trojan Source line, and a sentence of
+ *  tag characters no one would see. */
+export const HIDDEN_FILE: DiffFile = {
+  path: "src/access\u200B.ts",
+  status: "modified",
+  added: 2,
+  removed: 1,
+  hunks: [
+    {
+      header: "@@ -1,3 +1,4 @@",
+      lines: [
+        { kind: "context", old: 1, new: 1, text: "const role = user.role;" },
+        { kind: "del", old: 2, text: 'if (role != "admin") {' },
+        { kind: "add", new: 2, text: 'if (role != "admin\u202E \u2066// check later\u2069 \u2066") {' },
+        { kind: "add", new: 3, text: "  // Reviewed.\u{E0049}\u{E0067}\u{E006E}\u{E006F}\u{E0072}\u{E0065}" },
+        { kind: "context", old: 3, new: 4, text: "  return deny();" },
+      ],
+    },
+  ],
+};

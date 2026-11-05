@@ -1,7 +1,8 @@
-// The diff panel: the session's changes, base against the working tree, one row per file with its
-// counts, opening to its hunks in a unified or a split layout. It fills `panel` keyed `diff`;
-// `DiffTitle` and `DiffLayoutSwitch` go in the panel's header. Hidden characters (bidi controls,
-// zero-width ones) show as visible marks in names and lines, and a file holding any says so.
+// The diff panel, a code session's only: its changes (lane D's), base against the working tree, one
+// row per file with its counts, opening to its hunks in a unified or a split layout. It fills `panel`
+// keyed `diff`; `DiffTitle` and `DiffLayoutSwitch` go in the panel's header. Hidden characters (bidi
+// controls, zero-width ones, tags, variation selectors) show as visible marks in names and lines, and a
+// file holding any says so.
 import { ArrowUpRight, ChevronDown, ChevronRight, File, FileCode } from "lucide-react";
 import { useState } from "react";
 import { hasHidden, ShowHidden } from "./hidden";
