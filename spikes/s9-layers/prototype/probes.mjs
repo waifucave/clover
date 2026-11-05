@@ -38,7 +38,7 @@ export async function networkProbe(endpoints, full = true) {
  await attempt('webtransport',async()=>{if(typeof WebTransport==='undefined')return {supported:false};const wt=new WebTransport(endpoints.webtransport.url.replace('http:','https:'));wt.closed.catch(()=>{});try{return await Promise.race([wt.ready.then(()=>({ready:true})),wait(600).then(()=>({pending:true}))]);}finally{wt.close();}});
  await attempt('fetchLater',async()=>{if(typeof /** @type {any} */ (globalThis).fetchLater!=='function')return {supported:false};
 /** @type {any} */ (globalThis).fetchLater(endpoints.fetchLater.url,{activateAfter:0});await wait(300);return {supported:true};});
- for(const name of ['ping','download'])await attempt(name,async()=>{const a=document.createElement('a');a.href=name==='ping'?'#probe':endpoints.download.url;if(name==='ping')a.ping=endpoints.ping.url;else a.download='fixture.txt';a.textContent=name;document.body.append(a);a.click();await wait(200);return 'clicked';});
+ for(const name of ['ping'])await attempt(name,async()=>{const a=document.createElement('a');a.href=name==='ping'?'#probe':endpoints.download.url;if(name==='ping')a.ping=endpoints.ping.url;else a.download='fixture.txt';a.textContent=name;document.body.append(a);a.click();await wait(200);return 'clicked';});
  for(const path of ['worker','shared','blob'])await attempt(path,()=>new Promise(r=>{
   const code=`fetch(${JSON.stringify(endpoints[path].url)}).then(()=>postMessage('sent')).catch(()=>postMessage('blocked'));`;
   if(path==='shared'){const w=new SharedWorker('/shared.js');w.port.onmessage=e=>{r(e.data);w.port.close()};w.port.start();w.onerror=()=>r('error');}

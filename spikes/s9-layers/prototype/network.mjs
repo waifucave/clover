@@ -2,7 +2,7 @@ import http from 'node:http';
 import net from 'node:net';
 import dgram from 'node:dgram';
 import crypto from 'node:crypto';
-import {readFileSync} from 'node:fs';
+import {readFileSync,writeFileSync} from 'node:fs';
 import {resolve} from 'node:path';
 import {csp,decision} from './policy.mjs';
 import {extractNetlog} from './netlog.mjs';
@@ -132,11 +132,14 @@ export async function networkCheck(electron){
    }
    trustAttempts.push({violations:await frame.executeJavaScript('window.trustViolations'),children:frame.frames.map((/** @type {any} */ child)=>({name:child.name,url:child.url}))});
    await frame.executeJavaScript(`(()=>{try{top.location=${JSON.stringify(f.endpoints['top-location'].url)}}catch(e){window.topError=String(e)}})()`);
+   // External download can replace the initiating frame with an error document; run it last.
+   await frame.executeJavaScript(`(()=>{const a=document.createElement('a');a.href=${JSON.stringify(f.endpoints.download.url)};a.download='fixture.txt';document.body.append(a);a.click()})()`).catch(()=>{});
   }
   await pause(350);await ses.netLog.stopLogging();
   const log=extractNetlog(JSON.parse(readFileSync(logPath,'utf8')));
   const inherited=contexts.map(c=>({kind:c.kind,result:c.result,records:c.fixture.records,dnsEvents:log.speculative.filter((/** @type {any} */ e)=>JSON.stringify(e.params).includes(c.fixture.records['dns-prefetch'].host))}));
   variants.push({mode,header:header?'Connection-Allowlist on documents and worker scripts':null,ipPolicy:win.webContents.getWebRTCIPHandlingPolicy(),main,second,records:f.records,requests,preconnect,popups,navigations,downloads,mountAttempts,trustAttempts,contexts:inherited,netlog:log});
+  writeFileSync(resolve('results',`network-variant-${mode}.json`),JSON.stringify(variants[variants.length-1],null,2));
   win.destroy();f.close();contexts.forEach(c=>c.fixture.close());
  }
  const a=variants.find(v=>v.mode==='allowlist'),control=variants.find(v=>v.mode==='combined'),plain=variants.find(v=>v.mode==='control'),non=variants.find(v=>v.mode==='non-plugin');
