@@ -6,12 +6,7 @@ name: link
 # Lane M folds this into ci.yml's `changes` and `gate` when it takes the native builds over.
 
 on:
-  push:
-    branches: ['lane/h-*']
-    paths:
-      - native/link/**
-      - packages/core/src/links/**
-      - .github/workflows/link.yml
+  # Pull requests only, so a branch with an open PR doesn't run it twice for each push.
   pull_request:
     branches: [main]
     paths:
