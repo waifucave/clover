@@ -20,12 +20,18 @@ jobs:
           echo 'Installing focused probe dependencies'
           sudo apt-get update -qq
           sudo apt-get install -y bubblewrap xdg-dbus-proxy dbus-daemon python3-dbus python3-gi python3-cryptography gnome-keyring libsecret-tools gcc git
+      - name: Install the scoped AppArmor launcher profile
+        run: bash spikes/s8-secrets/linux-apparmor.sh
       - name: Filesystem, network and IPC fixture
         run: python3 spikes/s8-secrets/linux-fence.py
       - name: Record method-body filtering counterexample
         run: python3 spikes/s8-secrets/proxy-probe.py --bwrap
       - name: Private Secret Service and authenticated encryption
         run: python3 spikes/s8-secrets/linux-store.py
+      - name: Semantic broker with local credential fixtures
+        run: python3 spikes/s8-secrets/broker-probe.py
+      - name: Linux sandbox-only deny and retry gates
+        run: bash spikes/s8-secrets/linux-agents.sh
   macos-agent-sandboxes:
     runs-on: macos-15
     timeout-minutes: 8
@@ -40,6 +46,11 @@ jobs:
         run: python3 spikes/s8-secrets/srt-probe.py
       - name: Codex sandbox only
         run: PATH="$PWD/spikes/s8-secrets/.deps/node_modules/.bin:$PATH" python3 spikes/s8-secrets/codex-probe.py
+      - name: Mac deny and retry gates
+        run: |
+          export PATH="$PWD/spikes/s8-secrets/.deps/node_modules/.bin:$PATH"
+          python3 spikes/s8-secrets/agent-floor-gates.py srt
+          python3 spikes/s8-secrets/agent-floor-gates.py codex
   windows-measurements:
     runs-on: windows-2025
     timeout-minutes: 8
