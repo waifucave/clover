@@ -85,6 +85,11 @@ Test the semantic read-only broker against a private real keyring and local help
 python3 spikes/s2-windows-fence/remote.py linux spikes/s8-secrets/broker-probe.py
 ```
 
+It ends with a `broker-latency` row: medians of in-process `SearchItems` and `GetSecrets` calls and of
+whole `secret-tool lookup` processes, through the filtered proxy and broker versus the backend bus
+directly. Timings only; no secret value is printed. The broker is a Python prototype, so these are
+upper bounds for its overhead, and they exclude bubblewrap startup. See `results/final-broker-latency.txt`.
+
 Test user-scoped host-plus-TPM sealing, hardware controls, plaintext fallback and file masks:
 
 ```sh

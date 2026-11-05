@@ -98,6 +98,29 @@ with tempfile.TemporaryDirectory(prefix='clover-broker-') as temp:
         check('broker-fenced-clover-lookup-denied',r.returncode!=0 and not r.stdout)
         print(json.dumps({'test':'broker-scope','real_secret_service':True,'git_credential_plumbing':True,
             'gh_and_docker':'local store-lookup fixtures; no account login or daemon socket'}),flush=True)
+        def median_ms(fn,n=25):
+            samples=[]
+            for _ in range(n):
+                start=time.perf_counter(); fn(); samples.append((time.perf_counter()-start)*1000)
+            samples.sort()
+            return {'median_ms':round(samples[len(samples)//2],2),'p95_ms':round(samples[max(0,int(len(samples)*0.95)-1)],2),'runs':n}
+        _,raw_session=raw.OpenSession('plain',dbus.String('',variant_level=1),dbus_interface=SVC)
+        lookup=['secret-tool','lookup','application',EXTERNAL,'tool','git']
+        def tool_lookup(address):
+            r=subprocess.run(lookup,env=dict(env,DBUS_SESSION_BUS_ADDRESS=address),capture_output=True,timeout=10)
+            assert r.returncode==0 and r.stdout.decode().strip()==tokens['git']
+        latency={
+            'filtered_semantic_search':median_ms(lambda: obj.SearchItems({'tool':'git'},dbus_interface=SVC)),
+            'direct_backend_search':median_ms(lambda: raw.SearchItems({'tool':'git'},dbus_interface=SVC)),
+            'filtered_get_secret':median_ms(lambda: obj.GetSecrets(dbus.Array([external],signature='o'),session,dbus_interface=SVC)),
+            'direct_get_secret':median_ms(lambda: raw.GetSecrets(dbus.Array([external],signature='o'),raw_session,dbus_interface=SVC)),
+            'tool_lookup_via_broker':median_ms(lambda: tool_lookup('unix:path='+sock),n=15),
+            'tool_lookup_direct':median_ms(lambda: tool_lookup(backend),n=15),
+        }
+        # Timings only: no secret value is printed. The tool rows are whole secret-tool
+        # processes outside bubblewrap, so they isolate proxy plus broker from fence startup.
+        print(json.dumps({'test':'broker-latency',**latency,
+            'scope':'filtered xdg-dbus-proxy plus semantic broker versus the direct backend bus; in-process D-Bus calls and whole secret-tool lookups; excludes bubblewrap startup'}),flush=True)
     finally:
         for p in reversed(processes):
             p.terminate()
