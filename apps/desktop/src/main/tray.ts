@@ -1,31 +1,8 @@
 // The menu-bar icon (macOS) or tray icon (Windows, Linux), spec §3.1: the app always runs there, with no window until
 // the user opens one, and its Quit stops both halves. On a Linux desktop with no tray, the launcher's Quit action runs
 // `clover --quit`, which reaches the running app as a second instance (index.ts). Never made in a headless run.
-import { Menu, Tray, nativeImage, type MenuItemConstructorOptions } from "electron";
-
-export interface TrayActions {
-  open(): void;
-  quit(): void;
-  restart(safeMode: boolean): void;
-}
-
-export interface TrayState {
-  safeMode: boolean;
-  /** One line about the pair, when the daemon isn't connected ("Reconnecting…"). */
-  status?: string;
-}
-
-export function trayMenu(state: TrayState, actions: TrayActions): MenuItemConstructorOptions[] {
-  return [
-    ...(state.status !== undefined ? [{ label: state.status, enabled: false }, { type: "separator" as const }] : []),
-    { label: "Open Clover", click: () => actions.open() },
-    state.safeMode
-      ? { label: "Restart Normally", click: () => actions.restart(false) }
-      : { label: "Restart in Safe Mode", click: () => actions.restart(true) },
-    { type: "separator" },
-    { label: "Quit Clover", click: () => actions.quit() },
-  ];
-}
+import { Menu, Tray, nativeImage } from "electron";
+import { trayMenu, type TrayActions, type TrayState } from "./tray-menu";
 
 export class AppTray {
   private tray: Tray | undefined;
