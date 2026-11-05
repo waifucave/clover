@@ -25,6 +25,7 @@ export async function networkProbe(endpoints, full = true) {
  await attempt('stun',()=>rtc(endpoints.stun.ice));
  await attempt('turn-tcp',()=>rtc(endpoints.turn.ice));
  await attempt('remote-candidate',()=>remote(endpoints['remote-candidate'].port));
+ if(endpoints['remote-tcp-candidate'])await attempt('remote-tcp-candidate',()=>remoteNlProbe('tcp','127.0.0.1',endpoints['remote-tcp-candidate'].port));
  if(typeof document!=='undefined'){
   for(const rel of (full?['dns-prefetch','preconnect','prefetch','prerender']:['dns-prefetch']))await attempt(rel,async()=>{const el=document.createElement('link');el.rel=rel;el.href=endpoints[rel].url;document.head.append(el);await wait(200);return 'inserted';});
   if(full)await attempt('speculationrules',async()=>{const s=document.createElement('script');s.type='speculationrules';s.textContent=JSON.stringify({prefetch:[{source:'list',urls:[endpoints.speculation.url]}],prerender:[{source:'list',urls:[endpoints.prerender.url]}]});document.head.append(s);await wait(200);return 'inserted';});
@@ -62,4 +63,36 @@ export async function networkProbe(endpoints, full = true) {
   const f=document.createElement('iframe');f.src=endpoints.navigation.url;document.body.append(f);return 'inserted';
  });
  await wait(300);return {outcomes:out,violations};
+}
+/** Report which WebRTC constructor globals a document's MAIN world still exposes,
+ * and whether RTCPeerConnection is live. Runs per-frame for the preload variant.
+ * @returns {any} */
+export function webRtcSurface(){
+ const g=/** @type {any} */ (globalThis);
+ const surface={rtcp:typeof g.RTCPeerConnection,webkitRtcp:typeof g.webkitRTCPeerConnection,dataChannel:typeof g.RTCDataChannel,iceTransport:typeof g.RTCIceTransport,rtpSender:typeof g.RTCRtpSender,rtpReceiver:typeof g.RTCRtpReceiver};
+ let rtcpLive=false;
+ try{if(typeof g.RTCPeerConnection==='function'){const pc=new g.RTCPeerConnection();pc.createDataChannel('x');rtcpLive=true;pc.close();}}catch{ /* not live */ }
+ return {...surface,rtcpLive};
+}
+/** Remote ICE candidate naming an arbitrary `ip:port` on a given transport. Like the
+ * UDP `remote`, this writes a candidate into a remote description and watches for a
+ * connectivity check. Whether Chromium pairs it (no local candidate here) is itself a
+ * result. @param {string} transport @param {string} ip @param {number} port */
+export async function remoteNlProbe(transport,ip,port){
+ if(typeof RTCPeerConnection==='undefined')return {supported:false};
+ const pc=new RTCPeerConnection();
+ try{pc.createDataChannel('fixture');const offer=await pc.createOffer();await pc.setLocalDescription(offer);
+  const sdp=String(offer.sdp).replace(/a=setup:actpass/g,'a=setup:active')+`a=candidate:1 1 ${transport} 2122260223 ${ip} ${port} typ host${transport==='tcp'?' tcptype active':''}\r\n`;
+  await pc.setRemoteDescription({type:'answer',sdp});await new Promise(r=>setTimeout(r,1200));return {supported:true,state:pc.iceConnectionState};}
+ catch(e){return {supported:true,error:String(e),state:pc.iceConnectionState};}finally{pc.close();}
+}
+/** TURN over TCP to an explicit `ip:port` target (no hostname, so it cannot be
+ * affected by host-resolver fixture rules). @param {string} ip @param {number} port */
+export async function turnTcpProbe(ip,port){
+ if(typeof RTCPeerConnection==='undefined')return {supported:false};
+ const pc=new RTCPeerConnection({iceServers:[{urls:`turn:${ip}:${port}?transport=tcp`,username:'fixture',credential:'fixture'}]});
+ /** @type {string[]} */ const candidates=[];
+ pc.onicecandidate=e=>{if(e.candidate)candidates.push(e.candidate.candidate);};
+ try{pc.createDataChannel('fixture');await pc.setLocalDescription(await pc.createOffer());await new Promise(r=>setTimeout(r,1200));return {supported:true,candidates,state:pc.iceGatheringState};}
+ catch(e){return {supported:true,candidates,error:String(e),state:pc.iceGatheringState};}finally{pc.close();}
 }

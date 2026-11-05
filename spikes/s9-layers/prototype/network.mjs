@@ -1,16 +1,36 @@
 import http from 'node:http';
 import net from 'node:net';
 import dgram from 'node:dgram';
+import os from 'node:os';
 import crypto from 'node:crypto';
 import {readFileSync,writeFileSync} from 'node:fs';
 import {resolve} from 'node:path';
 import {csp,decision} from './policy.mjs';
 import {extractNetlog} from './netlog.mjs';
-import {networkProbe} from './probes.mjs';
+import {networkProbe,webRtcSurface,remoteNlProbe,turnTcpProbe} from './probes.mjs';
 const pause=(/** @type {any} */ ms)=>new Promise(r=>setTimeout(r,ms));
-const vectors=['own-fetch','other-plugin-fetch','wrong-port','fetch','xhr','image','css','font','script','media','object','css-import','background','websocket','beacon','eventsource','redirect','redirect-target','keepalive','webtransport','fetchLater','ping','download','worker','shared','blob','window-open','form','navigation','top-location','dns-prefetch','preconnect','prefetch','prerender','speculation','stun','turn','remote-candidate'];
+/** First non-loopback IPv4 the runner owns, used only to target a listener on a
+ * non-loopback address at runtime. The literal address is never written to results
+ * or committed files. */ 
+function nonLoopbackIp(){
+ for(const list of Object.values(os.networkInterfaces())){
+  for(const addr of list||[]){
+   if(addr.family==='IPv4'&&!addr.internal)return addr.address;
+  }
+ }
+ return null;
+}
+/** A black-hole PAC that names exactly one declared host:port DIRECT and sends
+ * everything else to PROXY 127.0.0.1:4 (a port nothing listens on). Built at runtime
+ * because the fixture ports are ephemeral. */
+function beltPac(/** @type {string} */ host,/** @type {number} */ port){
+ return `function FindProxyForURL(url, host) {\n  if (shExpMatch(url, "http://${host}:${port}/*") || shExpMatch(url, "ws://${host}:${port}/*")) return "DIRECT";\n  return "PROXY 127.0.0.1:4";\n}`;
+}
+const vectors=['own-fetch','other-plugin-fetch','wrong-port','fetch','xhr','image','css','font','script','media','object','css-import','background','websocket','beacon','eventsource','redirect','redirect-target','keepalive','webtransport','fetchLater','ping','download','worker','shared','blob','window-open','form','navigation','top-location','dns-prefetch','preconnect','prefetch','prerender','speculation','stun','turn','remote-candidate','remote-tcp-candidate'];
 /** UDP listeners: STUN servers, WebTransport (QUIC) and remote-candidate connectivity checks. */
 const udpVectors=['stun','webtransport','remote-candidate'];
+/** TCP listeners: TURN over TCP, and remote TCP candidates. */
+const tcpVectors=['turn','remote-tcp-candidate'];
 /** Build inherited-context markup without executing it locally.
  * @param {string} kind @param {string} nestedurl */
 export function inheritedScript(kind,nestedurl){
@@ -18,21 +38,21 @@ export function inheritedScript(kind,nestedurl){
  const setup=kind==='nested'?`f.src=${JSON.stringify(nestedurl)}`:kind==='about-blank'?`f.src='about:blank'`:`f.srcdoc='<input>';${kind==='opaque-srcdoc'?"f.sandbox='allow-scripts'":''}`;
  return `(()=>{const f=document.createElement('iframe');f.name=${JSON.stringify(kind)};${setup};document.body.append(f)})()`;
 }
-/** @param {string} prefix */
-async function fixtures(prefix){
+/** @param {string} prefix @param {string} [bind='127.0.0.1'] */
+async function fixtures(prefix,bind='127.0.0.1'){
  /** @type {Record<string,any>} */ const endpoints={};
  /** @type {Record<string,any>} */ const records={};
  /** @type {(()=>void)[]} */ const closers=[];
  for(const name of vectors){
-  const host=`${prefix}-${name.replaceAll(/[^a-z0-9-]/gi,'-').toLowerCase()}.${['dns-prefetch','stun','turn','remote-candidate'].includes(name)?'localhost':'s9.test'}`;
+  const host=`${prefix}-${name.replaceAll(/[^a-z0-9-]/gi,'-').toLowerCase()}.${['dns-prefetch','stun','turn','remote-candidate','remote-tcp-candidate'].includes(name)?'localhost':'s9.test'}`;
   /** @type {any} */ const rec=records[name]={host,http:[],tcp:[],udp:[]};
   /** @type {any} */ let server;
   if(udpVectors.includes(name)){
    server=dgram.createSocket('udp4');server.on('message',(/** @type {any} */ data,/** @type {any} */ remote)=>rec.udp.push({bytes:data.length,address:remote.address,sourcePort:remote.port,magicCookie:data.length>=8?data.readUInt32BE(4).toString(16):null,stun:data.length>=20&&data.readUInt32BE(4)===0x2112a442,time:Date.now()}));
-   await new Promise(r=>server.bind(0,'127.0.0.1',()=>r(undefined)));
-  }else if(name==='turn'){
-   server=net.createServer(socket=>{const entry={sourcePort:socket.remotePort,address:socket.remoteAddress,bytes:0};rec.tcp.push(entry);socket.on('data',b=>{entry.bytes+=b.length;});socket.on('error',()=>{});setTimeout(()=>socket.destroy(),1700);});
-   await new Promise(r=>server.listen(0,'127.0.0.1',()=>r(undefined)));
+   await new Promise(r=>server.bind(0,bind,()=>r(undefined)));
+  }else if(tcpVectors.includes(name)){
+   server=net.createServer(socket=>{const entry={sourcePort:socket.remotePort,address:socket.remoteAddress,bytes:0,connected:true,time:Date.now()};rec.tcp.push(entry);socket.on('data',b=>{entry.bytes+=b.length;});socket.on('error',()=>{});setTimeout(()=>socket.destroy(),1700);});
+   await new Promise(r=>server.listen(0,bind,()=>r(undefined)));
   }else{
    server=http.createServer((req,res)=>{rec.http.push({host:req.headers.host,url:req.url,method:req.method,headers:{purpose:req.headers['sec-purpose']||req.headers.purpose}});res.setHeader('Access-Control-Allow-Origin','*');res.setHeader('Access-Control-Allow-Headers','*');
     if(name==='redirect'){res.writeHead(302,{location:endpoints['redirect-target'].url});res.end();return;}
@@ -42,9 +62,9 @@ async function fixtures(prefix){
     res.end(name==='css'||name==='css-import'?'body{color:black}':name==='eventsource'?'data: fixture\n\n':'fixture');});
    server.on('connection',(/** @type {any} */ socket)=>{const entry={sourcePort:socket.remotePort,address:socket.remoteAddress,firstBytes:''};rec.tcp.push(entry);socket.once('data',(/** @type {Buffer} */ bytes)=>entry.firstBytes=bytes.subarray(0,5).toString('hex'));socket.on('error',()=>{});});
    server.on('upgrade',(/** @type {any} */ req,/** @type {any} */ socket)=>{rec.http.push({host:req.headers.host,url:req.url,method:'WS'});const accept=crypto.createHash('sha1').update(req.headers['sec-websocket-key']+'258EAFA5-E914-47DA-95CA-C5AB0DC85B11').digest('base64');socket.write('HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: '+accept+'\r\n\r\n');socket.on('error',()=>{});setTimeout(()=>socket.destroy(),300);});
-   await new Promise(r=>server.listen(0,'127.0.0.1',()=>r(undefined)));
+   await new Promise(r=>server.listen(0,bind,()=>r(undefined)));
   }
-  const port=server.address().port;endpoints[name]={url:`http://${host}:${port}/${name}`,host,port,ice:name==='stun'?`stun:${host}:${port}`:name==='turn'?`turn:${host}:${port}?transport=tcp`:undefined};
+  const port=server.address().port;endpoints[name]={url:`http://${host}:${port}/${name}`,host,port,ice:name==='stun'?`stun:${host}:${port}`:name==='turn'?`turn:${host}:${port}?transport=tcp`:undefined,tcp:name==='remote-tcp-candidate'||name==='turn'?{port}:undefined};
   closers.push(()=>{server.closeAllConnections?.();server.close();});
  }
  // Same declared name with an undeclared port must be refused independently.
@@ -94,7 +114,7 @@ export async function networkCheck(electron){
  // Subframe renderer kills do not reach the host webContents event; the app event sees them.
  app.on('render-process-gone',onRendererGone);
  /** @type {any[]} */ const variants=[];
- for(const mode of ['control','csp','filter','combined','allowlist','ip-policy','non-plugin']){
+ for(const mode of ['control','csp','filter','combined','allowlist','ip-policy','belt','stub','non-plugin']){
   console.log(`Clover S9 revised network: ${mode}`);
   /** @type {any} */ let f=null;
   /** @type {any[]} */ const contexts=[];
@@ -105,8 +125,10 @@ export async function networkCheck(electron){
   /** @type {boolean} */ let logging=false;
   try{
    f=await fixtures(mode);ses=session.fromPartition(`s9-${crypto.randomUUID()}`);
-   await ses.setProxy({mode:'direct'});
-   const useCsp=['csp','combined','allowlist','ip-policy'].includes(mode),useFilter=['filter','combined','allowlist','ip-policy'].includes(mode),header=mode==='allowlist';
+   if(mode==='belt')await ses.setProxy({mode:'pac_script',pacScript:beltPac(f.endpoints['own-fetch'].host,f.endpoints['own-fetch'].port)});
+   else await ses.setProxy({mode:'direct'});
+   const modeFlags={useCsp:['csp','combined','allowlist','ip-policy','belt'].includes(mode),useFilter:['filter','combined','allowlist','ip-policy','belt'].includes(mode),header:['allowlist','belt'].includes(mode),pac:mode==='belt'?{belt:true,allowHost:f.endpoints['own-fetch'].host,allowPort:f.endpoints['own-fetch'].port}:null};
+   const {useCsp,useFilter,header}=modeFlags;
    const registry=new Map([['clover-plugin://p1',new Set([new URL(f.endpoints['own-fetch'].url).origin])],['clover-plugin://p2',new Set([new URL(f.endpoints['other-plugin-fetch'].url).origin])]]);
    /** @type {any[]} */ const requests=[];
    /** @type {any[]} */ const preconnect=[];
@@ -114,9 +136,17 @@ export async function networkCheck(electron){
    /** @type {any[]} */ const popups=[];
    /** @type {any[]} */ const navigations=[];
    /** @type {any[]} */ const downloads=[];
+   /** @type {any[]} */ const spellcheckDownloads=[];
    activeGone=rendererGone;
    ses.on('preconnect',(/** @type {any} */ _event,/** @type {any} */ url,/** @type {any} */ allowCredentials)=>preconnect.push({url,allowCredentials}));
    ses.on('will-download',(/** @type {any} */ event,/** @type {any} */ item)=>{downloads.push({url:item.getURL()});event.preventDefault();});
+   try{ses.on('spellcheck-dictionary-download-begin',(/** @type {any} */ _event,/** @type {any} */ lang)=>spellcheckDownloads.push({lang,time:Date.now()}));}catch{ /* not present on this Electron */ }
+   // The reviewer's finding: on Windows and Linux, Chromium 156 downloads a Hunspell
+   // dictionary from redirector.gvt1.com for any language the OS spellchecker lacks,
+   // outside webRequest, CSP and Connection-Allowlist. Plugin sessions must disable
+   // the spellchecker so a "no off-machine traffic" assertion can hold. Keep it on for
+   // `control` and `non-plugin` to record the positive control.
+   if(['stub','belt','allowlist','ip-policy','combined','filter','csp'].includes(mode)){try{ses.setSpellCheckerEnabled(false);}catch{}}
    ses.setPermissionRequestHandler((/** @type {any} */ _wc,/** @type {any} */ _p,/** @type {any} */ cb)=>cb(false));ses.setPermissionCheckHandler(()=>false);
    // Single-use mount tokens: first successful document serve consumes the token.
    const mounts=new Map();
@@ -153,8 +183,8 @@ export async function networkCheck(electron){
     const result=internal||!useFilter?{cancel:false,reason:'local protocol or control'}:decision(d.url,d.initiatorOrigin,registry);
     requests.push({url:d.url,type:d.resourceType,initiator:d.initiatorOrigin,...result});cb({cancel:result.cancel});
    });
-   win=new BrowserWindow({show:true,width:1000,height:800,webPreferences:{session:ses,sandbox:true,contextIsolation:true,nodeIntegration:false,backgroundThrottling:false}});
-   if(mode==='ip-policy')win.webContents.setWebRTCIPHandlingPolicy('disable_non_proxied_udp');
+   win=new BrowserWindow({show:true,width:1000,height:800,webPreferences:{session:ses,sandbox:true,contextIsolation:mode!=='stub',nodeIntegration:false,preload:mode==='stub'?resolve('preload-stub.cjs'):undefined,backgroundThrottling:false}});
+   if(mode==='ip-policy'||mode==='belt')win.webContents.setWebRTCIPHandlingPolicy('disable_non_proxied_udp');
    win.webContents.setWindowOpenHandler((/** @type {any} */ d)=>{popups.push(d.url);return {action:'deny'}});
    win.webContents.on('will-frame-navigate',(/** @type {any} */ e)=>{if(!e.url.startsWith('clover-plugin:')){navigations.push({url:e.url,blocked:true});e.preventDefault();}});
    win.webContents.on('will-navigate',(/** @type {any} */ e)=>{navigations.push({url:e.url,blocked:true});e.preventDefault();});
@@ -170,11 +200,15 @@ export async function networkCheck(electron){
    /** @type {any} */ let topNavigation=null;
    /** @type {any} */ let second=null;
     /** @type {any} */ let mountReuse=null;
+   /** @type {any} */ const belt={};
+   /** @type {any} */ const stub={};
    try{
-    if(frame)main=await Promise.race([invoke(frame,f.endpoints,mode!=='non-plugin'),pause(16000).then(()=>({error:'document probe deadline'}))]);
+    if(mode==='stub'){
+     if(frame){stub.direct=await frame.executeJavaScript(`(${webRtcSurface.toString()})()`);main=stub.direct;}
+    }else if(frame){main=await Promise.race([invoke(frame,f.endpoints,mode!=='non-plugin'),pause(16000).then(()=>({error:'document probe deadline'}))]);}
     if(mode!=='non-plugin'){
      const p2=liveFrame(win.webContents.mainFrame,p2url);
-     if(p2)second=await p2.executeJavaScript(`Promise.all(${JSON.stringify([f.endpoints['own-fetch'].url,f.endpoints['other-plugin-fetch'].url])}.map(url=>fetch(url).then(r=>({url,status:r.status})).catch(e=>({url,error:String(e)}))))`);
+     if(p2&&mode!=='stub')second=await p2.executeJavaScript(`Promise.all(${JSON.stringify([f.endpoints['own-fetch'].url,f.endpoints['other-plugin-fetch'].url])}.map(url=>fetch(url).then(r=>({url,status:r.status})).catch(e=>({url,error:String(e)}))))`);
      // Single-use proof: the served mounts are spent; a never-issued mount is refused; a new one loads.
      const status=(/** @type {string} */ url)=>ses.fetch(url).then((/** @type {any} */ r)=>r.status).catch((/** @type {any} */ e)=>String(e));
      mountReuse={spentP1:await status(p1url),spentP2:await status(p2url),missing:await status('clover-plugin://p1/?mount=never-issued'),fresh:await status(issue('p1',['clover-core://shell']))};
@@ -240,6 +274,39 @@ export async function networkCheck(electron){
       trustAttempts.push({children:frame.frames.map((/** @type {any} */ child)=>{try{return {name:child.name,url:child.url};}catch{return {name:null,url:'disposed'};}})});
       topNavigation=await frame.executeJavaScript(`(()=>{try{top.location=${JSON.stringify(f.endpoints['top-location'].url)};return {attempted:true}}catch(e){return {attempted:true,error:String(e)}}})()`);
       await frame.executeJavaScript(`(()=>{const a=document.createElement('a');a.href=${JSON.stringify(f.endpoints.download.url)};a.download='fixture.txt';document.body.append(a);a.click()})()`).catch(()=>{});
+      if(mode==='belt'){
+       // The declared host must still work, on loopback and a non-loopback listener, or
+       // the belt has broken legitimate plugin traffic. Declared-host tests use a listener
+       // bound to 0.0.0.0 and reached by the runner's own non-loopback IPv4.
+       const nlIp=nonLoopbackIp();
+       belt.declaredFetch={loopback:await frame.executeJavaScript(`fetch(${JSON.stringify(f.endpoints['own-fetch'].url)}).then(r=>({status:r.status})).catch(e=>({error:String(e)}))`)};
+       const nlTarget=await fixtures(`${mode}-nonloop`,'0.0.0.0');
+       const nlOwnPort=nlTarget.endpoints['own-fetch'].port;
+       belt.nonLoopback=await frame.executeJavaScript(`fetch(${JSON.stringify(`http://${nlIp}:${nlOwnPort}/own-fetch`)}).then(r=>({status:r.status})).catch(e=>({error:String(e)}))`);
+       // Non-loopback WebRTC probes the PAC cannot be skipped for: a remote UDP candidate,
+       // a remote TCP candidate and TURN over TCP, each aimed at the runner's non-loopback
+       // IPv4 on a fresh listener port. A hit means the belt did not stop the socket.
+       const nlUdp=await fixtures(`${mode}-nl-udp`,'0.0.0.0');const nlTcp=await fixtures(`${mode}-nl-tcp`,'0.0.0.0');
+       belt.nonLoopbackRemoteUdp=await frame.executeJavaScript(`(${remoteNlProbe.toString()})('udp',${JSON.stringify(nlIp)},${nlUdp.endpoints['remote-candidate'].port}).then(r=>({r})).catch(e=>({error:String(e)}))`);
+       belt.nonLoopbackRemoteTcp=await frame.executeJavaScript(`(${remoteNlProbe.toString()})('tcp',${JSON.stringify(nlIp)},${nlTcp.endpoints['remote-tcp-candidate'].port}).then(r=>({r})).catch(e=>({error:String(e)}))`);
+       belt.nonLoopbackTurn=await frame.executeJavaScript(`(${turnTcpProbe.toString()})(${JSON.stringify(nlIp)},${nlTcp.endpoints['turn'].port}).then(r=>({r})).catch(e=>({error:String(e)}))`);
+       await pause(200);
+       belt.nonLoopbackUltimate={remoteUdpHits:nlUdp.records['remote-candidate'].udp.length,remoteTcpHits:nlTcp.records['remote-tcp-candidate'].tcp.length,turnHits:nlTcp.records.turn.tcp.length};
+       belt.declaredFetchNonLoopbackHits=nlTarget.records['own-fetch'].http.length;
+       nlUdp.close();nlTcp.close();nlTarget.close();
+      }
+      if(mode==='stub'&&frame){
+       // The page's main world is stripped. Can it reach a fresh, working RTCPeerConnection?
+       const surface=`(${webRtcSurface.toString()})()`;
+       const freshProbe=(/** @type {string} */ src,/** @type {string} */ srcdoc)=>frame.executeJavaScript(`new Promise(resolve=>{const f=document.createElement('iframe');f.name='stub-fresh';${srcdoc?`f.srcdoc=${JSON.stringify(srcdoc)};`:`f.src=${JSON.stringify(src)};`}f.onload=()=>{try{const w=f.contentWindow;let live=false;try{if(typeof w.RTCPeerConnection==='function'){const p=new w.RTCPeerConnection();p.close();live=true;}}catch{}resolve({rtcp:typeof w.RTCPeerConnection,webkit:typeof w.webkitRTCPeerConnection,rtcpLive:live});}catch(e){resolve({error:String(e)});}};document.body.append(f);setTimeout(()=>resolve({timeout:true}),1500)})`);
+       stub.direct=await frame.executeJavaScript(surface);
+       try{
+        stub.srcdoc=await freshProbe('','<input>');
+        stub.aboutBlank=await freshProbe('about:blank','');
+        stub.nested=await freshProbe(f.endpoints['own-fetch'].url,'');
+        stub.worker=await frame.executeJavaScript(`new Promise(resolve=>{const w=new Worker(${JSON.stringify('data:application/javascript,'+encodeURIComponent('postMessage([typeof RTCPeerConnection, typeof webkitRTCPeerConnection])'))});w.onmessage=e=>{w.terminate();resolve({rtcp:e.data[0],webkit:e.data[1]})};w.onerror=e=>{resolve({error:e.message})};setTimeout(()=>{w.terminate();resolve({timeout:true})},1500)})`);
+       }catch(e){stub.error=String(e);}
+      }
      }
     }
    }finally{
@@ -253,7 +320,7 @@ export async function networkCheck(electron){
     const info=candidateInfo(resultCandidates(c.result));
     return {...item,candidates:info,closed:contextClosed(item)};
    });
-   const entry={mode,header:header?'Connection-Allowlist on documents and worker scripts':null,ipPolicy:win.webContents.getWebRTCIPHandlingPolicy(),main,mainCandidates:candidateInfo(resultCandidates(main)),second,mountReuse,records:f.records,requests,preconnect,popups,navigations,downloads,downloadAttempt:mode!=='non-plugin',topNavigation,mountAttempts,trustAttempts,rendererGone,contexts:inherited,netlog:log};
+   const entry={mode,pac:modeFlags.pac,spellcheckDisabled:['stub','belt','allowlist','ip-policy','combined','filter','csp'].includes(mode),header:header?'Connection-Allowlist on documents and worker scripts':null,ipPolicy:win.webContents.getWebRTCIPHandlingPolicy(),main,mainCandidates:candidateInfo(resultCandidates(main)),second,mountReuse,records:f.records,requests,preconnect,popups,navigations,downloads,spellcheckDownloads,downloadAttempt:mode!=='non-plugin',topNavigation,mountAttempts,trustAttempts,rendererGone,contexts:inherited,netlog:log,belt:mode==='belt'?belt:undefined,stub:mode==='stub'?stub:undefined};
    variants.push(entry);
    writeFileSync(resolve('results',`network-variant-${mode}.json`),JSON.stringify(entry,null,2));
   }catch(e){
@@ -269,8 +336,9 @@ export async function networkCheck(electron){
    contexts.forEach(c=>{try{c.fixture.close();}catch{}});
   }
  }
- const a=variants.find(v=>v.mode==='allowlist'),control=variants.find(v=>v.mode==='combined'),plain=variants.find(v=>v.mode==='control'),non=variants.find(v=>v.mode==='non-plugin'),ip=variants.find(v=>v.mode==='ip-policy');
+ const a=variants.find(v=>v.mode==='allowlist'),control=variants.find(v=>v.mode==='combined'),plain=variants.find(v=>v.mode==='control'),non=variants.find(v=>v.mode==='non-plugin'),ip=variants.find(v=>v.mode==='ip-policy'),beltV=variants.find(v=>v.mode==='belt'),stubV=variants.find(v=>v.mode==='stub');
  const mainCandidates=(/** @type {any} */ v)=>candidateInfo(resultCandidates(v));
+ const beltClosed=beltV&&!beltV.error&&(beltV.records?.['remote-tcp-candidate']?.tcp?.length||0)===0;
  const tested=(/** @type {any} */ v)=>['stun','turn-tcp'].every(name=>(v?.outcomes||[]).some((/** @type {any} */ o)=>o.name===name&&o.result?.supported===true&&Array.isArray(o.result.candidates)));
  const dns=(/** @type {any} */ v,/** @type {string} */ host)=>v?.netlog?.speculative?.filter((/** @type {any} */ e)=>JSON.stringify(e.params).includes(host))||[];
  const directClosed=!!a&&!a.error&&tested(a.main)&&zeroRtc(a.records)&&mainCandidates(a.main).network===0&&dns(a,a.records['dns-prefetch'].host).length===0;
@@ -279,6 +347,13 @@ export async function networkCheck(electron){
  const assertions={undeclaredStunPositive:!!control&&control.records?.stun?.udp?.some((/** @type {any} */ p)=>p.stun),undeclaredTurnPositive:!!control&&(control.records?.turn?.tcp?.length||0)>0,undeclaredRemoteCandidatePositive:checks(control)>0,allowlistRemoteCandidateClosed:!!a&&!a.error&&(a.records?.['remote-candidate']?.udp?.length||0)===0,allowlistDirectClosed:directClosed,allowlistInheritedClosed:inheritedClosed,allowlistInheritedCrashClosure:!!a&&Array.isArray(a.contexts)&&a.contexts.some((/** @type {any} */ c)=>c.rendererGone||c.result?.rendererKilled),ipPolicyRan:!!ip&&!ip.error,nonPluginStillConnects:!!non&&(non.records?.stun?.udp?.length||0)>0&&(non.records?.turn?.tcp?.length||0)>0,nonPluginDns:!!non&&dns(non,non.records['dns-prefetch'].host).length>0,dnsPositive:!!plain&&dns(plain,plain.records['dns-prefetch'].host).length>0,dnsRefused:!!a&&dns(a,a.records['dns-prefetch'].host).length===0,preconnectEventPositive:!!plain&&plain.preconnect?.some((/** @type {any} */ e)=>e.url.includes(plain.records.preconnect.host))};
  // Crash-closure of inherited contexts is an explicit Chromium 156 outcome, not a fail.
  const required=['undeclaredStunPositive','undeclaredTurnPositive','undeclaredRemoteCandidatePositive','allowlistRemoteCandidateClosed','allowlistDirectClosed','allowlistInheritedClosed','ipPolicyRan','nonPluginStillConnects','nonPluginDns','dnsPositive','dnsRefused','preconnectEventPositive'];
+ const beltStub=(beltV?.belt||beltV?.stub)?{declaredFetch:beltV?.belt?.declaredFetch,nonLoopback:beltV?.belt?.nonLoopback,nonLoopbackRemoteUdp:beltV?.belt?.nonLoopbackRemoteUdp,nonLoopbackRemoteTcp:beltV?.belt?.nonLoopbackRemoteTcp,nonLoopbackTurn:beltV?.belt?.nonLoopbackTurn,nonLoopbackUltimate:beltV?.belt?.nonLoopbackUltimate,declaredFetchNonLoopbackHits:beltV?.belt?.declaredFetchNonLoopbackHits,pac:beltV?.pac}:undefined;
+ const stubResult=stubV?.stub?{direct:stubV.stub.direct,srcdoc:stubV.stub.srcdoc,aboutBlank:stubV.stub.aboutBlank,nested:stubV.stub.nested,worker:stubV.stub.worker,error:stubV.stub.error}:undefined;
+ const beltDeclaredWorks=!beltV?.error&&typeof beltV?.belt?.declaredFetch?.loopback?.status==='number';
+ const beltNonLoopDeclaredWorks=beltV?.belt?.nonLoopback?.status===200;
+ const beltNonLoopWebRtcClosed=beltV?.belt?.nonLoopbackUltimate?((beltV.belt.nonLoopbackUltimate.remoteUdpHits||0)===0&&(beltV.belt.nonLoopbackUltimate.remoteTcpHits||0)===0&&(beltV.belt.nonLoopbackUltimate.turnHits||0)===0):null;
+ const stubStripped=!!stubV?.stub?.direct&&stubV.stub.direct.rtcp==='undefined';
+ const stubEscapeLive=!!stubV?.stub&&[stubV.stub.srcdoc,stubV.stub.aboutBlank,stubV.stub.nested].some((/** @type {any} */ x)=>x?.rtcpLive===true);
  app.removeListener('render-process-gone',onRendererGone);
- return {verdict:required.every(k=>assertions[/** @type {keyof typeof assertions} */(k)])?'works with limits':'does not',assertions,variants};
+ return {verdict:required.every(k=>assertions[/** @type {keyof typeof assertions} */(k)])?'works with limits':'does not',assertions,probes:{beltDeclaredWorks,beltNonLoopDeclaredWorks,beltNonLoopWebRtcClosed,beltStub,stubStripped,stubEscapeLive,stubResult},variants};
 }
