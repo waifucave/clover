@@ -2,7 +2,7 @@
 export const S = {
   tree: "Files",
   filter: "Filter files",
-  filterHint: "Filter names · ?word searches files",
+  filterHint: "Filter names · ?word inside",
   noMatch: "No file matches",
   emptyTitle: "No file open",
   emptyText: "Choose one from the tree on the right, or any path the bot names in the conversation.",
