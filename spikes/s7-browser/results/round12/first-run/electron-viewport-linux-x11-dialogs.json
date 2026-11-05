@@ -1,0 +1,284 @@
+{
+  "meta": {
+    "label": "dialogs-linux-x11",
+    "status": "done",
+    "platform": "linux",
+    "arch": "x64",
+    "osRelease": "7.0.0-1014-aws",
+    "cpus": 4,
+    "memGiB": 15,
+    "electron": "45.2.2",
+    "chrome": "156.0.8078.80",
+    "ozone": "x11",
+    "sessionType": "",
+    "waylandDisplay": "",
+    "display": ":100",
+    "displays": [
+      "1920x1080@1"
+    ],
+    "gpu": {
+      "2d_canvas": "disabled_software",
+      "direct_rendering_display_compositor": "disabled_off_ok",
+      "gpu_compositing": "disabled_software",
+      "multiple_raster_threads": "disabled_off",
+      "opengl": "disabled_off",
+      "rasterization": "disabled_software",
+      "raw_draw": "disabled_off_ok",
+      "skia_graphite": "disabled_off",
+      "trees_in_viz": "disabled_off",
+      "video_decode": "disabled_software",
+      "video_encode": "disabled_software",
+      "vulkan": "disabled_off",
+      "webgl": "disabled_off",
+      "webgpu": "disabled_off",
+      "webgpu_on_vk_via_gl_interop": "disabled_off",
+      "webnn": "disabled_off"
+    },
+    "seconds": 14.83
+  },
+  "checks": {
+    "dialogs": [
+      {
+        "place": "offscreen tab",
+        "kind": "alert",
+        "cdpEvent": true,
+        "page": "alert:\"returned\":40ms",
+        "windowsBefore": [
+          "543 1920x1080+0+0 IsViewable (the root window) (has no name)"
+        ],
+        "hasBrowserHandler": true,
+        "windowsDuring": {
+          "tool": "xdotool search --onlyvisible --pid",
+          "windows": [
+            "543 1920x1080+0+0 IsViewable (the root window) (has no name)",
+            "4194306 120x81+0+0 IsViewable (has no name)",
+            "4194307 1x1+-1+-1 IsViewable (has no name)"
+          ],
+          "ms": 14
+        },
+        "windowsAfter": {
+          "tool": "xdotool search --onlyvisible --pid",
+          "windows": [
+            "543 1920x1080+0+0 IsViewable (the root window) (has no name)",
+            "4194306 120x81+0+0 IsViewable (has no name)",
+            "4194307 1x1+-1+-1 IsViewable (has no name)"
+          ],
+          "ms": 15
+        }
+      },
+      {
+        "place": "offscreen tab",
+        "kind": "confirm",
+        "cdpEvent": true,
+        "page": "alert:\"returned\":40ms | confirm:true:45ms",
+        "windowsBefore": [
+          "543 1920x1080+0+0 IsViewable (the root window) (has no name)",
+          "4194306 120x81+0+0 IsViewable (has no name)",
+          "4194307 1x1+-1+-1 IsViewable (has no name)"
+        ],
+        "hasBrowserHandler": true,
+        "windowsDuring": {
+          "tool": "xdotool search --onlyvisible --pid",
+          "windows": [
+            "543 1920x1080+0+0 IsViewable (the root window) (has no name)",
+            "4194306 120x81+0+0 IsViewable (has no name)",
+            "4194358 156x81+0+0 IsViewable (has no name)",
+            "4194307 1x1+-1+-1 IsViewable (has no name)",
+            "4194359 1x1+-1+-1 IsViewable (has no name)"
+          ],
+          "ms": 20
+        },
+        "windowsAfter": {
+          "tool": "xdotool search --onlyvisible --pid",
+          "windows": [
+            "543 1920x1080+0+0 IsViewable (the root window) (has no name)",
+            "4194306 120x81+0+0 IsViewable (has no name)",
+            "4194358 156x81+0+0 IsViewable (has no name)",
+            "4194307 1x1+-1+-1 IsViewable (has no name)",
+            "4194359 1x1+-1+-1 IsViewable (has no name)"
+          ],
+          "ms": 22
+        }
+      },
+      {
+        "place": "offscreen tab",
+        "kind": "prompt",
+        "cdpEvent": false,
+        "page": "alert:\"returned\":40ms | confirm:true:45ms",
+        "windowsBefore": [
+          "543 1920x1080+0+0 IsViewable (the root window) (has no name)",
+          "4194306 120x81+0+0 IsViewable (has no name)",
+          "4194358 156x81+0+0 IsViewable (has no name)",
+          "4194307 1x1+-1+-1 IsViewable (has no name)",
+          "4194359 1x1+-1+-1 IsViewable (has no name)"
+        ],
+        "windowsDuring": {
+          "tool": "xdotool search --onlyvisible --pid",
+          "windows": [
+            "543 1920x1080+0+0 IsViewable (the root window) (has no name)",
+            "4194306 120x81+0+0 IsViewable (has no name)",
+            "4194358 156x81+0+0 IsViewable (has no name)",
+            "4194307 1x1+-1+-1 IsViewable (has no name)",
+            "4194359 1x1+-1+-1 IsViewable (has no name)"
+          ],
+          "ms": 21
+        },
+        "windowsAfter": {
+          "tool": "xdotool search --onlyvisible --pid",
+          "windows": [
+            "543 1920x1080+0+0 IsViewable (the root window) (has no name)",
+            "4194306 120x81+0+0 IsViewable (has no name)",
+            "4194358 156x81+0+0 IsViewable (has no name)",
+            "4194307 1x1+-1+-1 IsViewable (has no name)",
+            "4194359 1x1+-1+-1 IsViewable (has no name)"
+          ],
+          "ms": 22
+        }
+      },
+      {
+        "place": "host window tab",
+        "kind": "alert",
+        "cdpEvent": true,
+        "page": "alert:\"returned\":53ms",
+        "windowsBefore": [
+          "543 1920x1080+0+0 IsViewable (the root window) (has no name)",
+          "4194306 120x81+0+0 IsViewable (has no name)",
+          "4194358 156x81+0+0 IsViewable (has no name)",
+          "2097158 1x1+0+0 IsViewable \"S7 tiny t2\"",
+          "4194307 1x1+-1+-1 IsViewable (has no name)",
+          "4194359 1x1+-1+-1 IsViewable (has no name)"
+        ],
+        "hasBrowserHandler": true,
+        "windowsDuring": {
+          "tool": "xdotool search --onlyvisible --pid",
+          "windows": [
+            "543 1920x1080+0+0 IsViewable (the root window) (has no name)",
+            "4194306 120x81+0+0 IsViewable (has no name)",
+            "4194358 156x81+0+0 IsViewable (has no name)",
+            "2097158 1x1+0+0 IsViewable \"S7 tiny t2\"",
+            "4194513 120x81+0+0 IsViewable (has no name)",
+            "4194307 1x1+-1+-1 IsViewable (has no name)",
+            "4194359 1x1+-1+-1 IsViewable (has no name)",
+            "4194514 1x1+-1+-1 IsViewable (has no name)"
+          ],
+          "ms": 28
+        },
+        "windowsAfter": {
+          "tool": "xdotool search --onlyvisible --pid",
+          "windows": [
+            "543 1920x1080+0+0 IsViewable (the root window) (has no name)",
+            "4194306 120x81+0+0 IsViewable (has no name)",
+            "4194358 156x81+0+0 IsViewable (has no name)",
+            "2097158 1x1+0+0 IsViewable \"S7 tiny t2\"",
+            "4194513 120x81+0+0 IsViewable (has no name)",
+            "4194307 1x1+-1+-1 IsViewable (has no name)",
+            "4194359 1x1+-1+-1 IsViewable (has no name)",
+            "4194514 1x1+-1+-1 IsViewable (has no name)"
+          ],
+          "ms": 32
+        }
+      },
+      {
+        "place": "host window tab",
+        "kind": "confirm",
+        "cdpEvent": true,
+        "page": "alert:\"returned\":53ms | confirm:true:62ms",
+        "windowsBefore": [
+          "543 1920x1080+0+0 IsViewable (the root window) (has no name)",
+          "4194306 120x81+0+0 IsViewable (has no name)",
+          "4194358 156x81+0+0 IsViewable (has no name)",
+          "2097158 1x1+0+0 IsViewable \"S7 tiny t2\"",
+          "4194513 120x81+0+0 IsViewable (has no name)",
+          "4194307 1x1+-1+-1 IsViewable (has no name)",
+          "4194359 1x1+-1+-1 IsViewable (has no name)",
+          "4194514 1x1+-1+-1 IsViewable (has no name)"
+        ],
+        "hasBrowserHandler": true,
+        "windowsDuring": {
+          "tool": "xdotool search --onlyvisible --pid",
+          "windows": [
+            "543 1920x1080+0+0 IsViewable (the root window) (has no name)",
+            "4194306 120x81+0+0 IsViewable (has no name)",
+            "4194358 156x81+0+0 IsViewable (has no name)",
+            "2097158 1x1+0+0 IsViewable \"S7 tiny t2\"",
+            "4194513 120x81+0+0 IsViewable (has no name)",
+            "4194600 156x81+0+0 IsViewable (has no name)",
+            "4194307 1x1+-1+-1 IsViewable (has no name)",
+            "4194359 1x1+-1+-1 IsViewable (has no name)",
+            "4194514 1x1+-1+-1 IsViewable (has no name)",
+            "4194601 1x1+-1+-1 IsViewable (has no name)"
+          ],
+          "ms": 36
+        },
+        "windowsAfter": {
+          "tool": "xdotool search --onlyvisible --pid",
+          "windows": [
+            "543 1920x1080+0+0 IsViewable (the root window) (has no name)",
+            "4194306 120x81+0+0 IsViewable (has no name)",
+            "4194358 156x81+0+0 IsViewable (has no name)",
+            "2097158 1x1+0+0 IsViewable \"S7 tiny t2\"",
+            "4194513 120x81+0+0 IsViewable (has no name)",
+            "4194600 156x81+0+0 IsViewable (has no name)",
+            "4194307 1x1+-1+-1 IsViewable (has no name)",
+            "4194359 1x1+-1+-1 IsViewable (has no name)",
+            "4194514 1x1+-1+-1 IsViewable (has no name)",
+            "4194601 1x1+-1+-1 IsViewable (has no name)"
+          ],
+          "ms": 39
+        }
+      },
+      {
+        "place": "host window tab",
+        "kind": "prompt",
+        "cdpEvent": false,
+        "page": "alert:\"returned\":53ms | confirm:true:62ms",
+        "windowsBefore": [
+          "543 1920x1080+0+0 IsViewable (the root window) (has no name)",
+          "4194306 120x81+0+0 IsViewable (has no name)",
+          "4194358 156x81+0+0 IsViewable (has no name)",
+          "2097158 1x1+0+0 IsViewable \"S7 tiny t2\"",
+          "4194513 120x81+0+0 IsViewable (has no name)",
+          "4194600 156x81+0+0 IsViewable (has no name)",
+          "4194307 1x1+-1+-1 IsViewable (has no name)",
+          "4194359 1x1+-1+-1 IsViewable (has no name)",
+          "4194514 1x1+-1+-1 IsViewable (has no name)",
+          "4194601 1x1+-1+-1 IsViewable (has no name)"
+        ],
+        "windowsDuring": {
+          "tool": "xdotool search --onlyvisible --pid",
+          "windows": [
+            "543 1920x1080+0+0 IsViewable (the root window) (has no name)",
+            "4194306 120x81+0+0 IsViewable (has no name)",
+            "4194358 156x81+0+0 IsViewable (has no name)",
+            "2097158 1x1+0+0 IsViewable \"S7 tiny t2\"",
+            "4194513 120x81+0+0 IsViewable (has no name)",
+            "4194600 156x81+0+0 IsViewable (has no name)",
+            "4194307 1x1+-1+-1 IsViewable (has no name)",
+            "4194359 1x1+-1+-1 IsViewable (has no name)",
+            "4194514 1x1+-1+-1 IsViewable (has no name)",
+            "4194601 1x1+-1+-1 IsViewable (has no name)"
+          ],
+          "ms": 39
+        },
+        "windowsAfter": {
+          "tool": "xdotool search --onlyvisible --pid",
+          "windows": [
+            "543 1920x1080+0+0 IsViewable (the root window) (has no name)",
+            "4194306 120x81+0+0 IsViewable (has no name)",
+            "4194358 156x81+0+0 IsViewable (has no name)",
+            "2097158 1x1+0+0 IsViewable \"S7 tiny t2\"",
+            "4194513 120x81+0+0 IsViewable (has no name)",
+            "4194600 156x81+0+0 IsViewable (has no name)",
+            "4194307 1x1+-1+-1 IsViewable (has no name)",
+            "4194359 1x1+-1+-1 IsViewable (has no name)",
+            "4194514 1x1+-1+-1 IsViewable (has no name)",
+            "4194601 1x1+-1+-1 IsViewable (has no name)"
+          ],
+          "ms": 39
+        }
+      }
+    ]
+  },
+  "errors": [],
+  "assertions": []
+}

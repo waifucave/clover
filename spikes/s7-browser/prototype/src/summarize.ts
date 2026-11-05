@@ -1,0 +1,177 @@
+#!/usr/bin/env bun
+// Turn the CI results (one JSON per job) into Markdown tables, for the job summary and the report.
+//   bun run src/summarize.ts <results folder> [> summary.md]
+import { readdirSync, readFileSync, statSync } from "node:fs";
+import { basename, join } from "node:path";
+
+type J = Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
+
+function files(dir: string): string[] {
+  const out: string[] = [];
+  const walk = (d: string): void => {
+    for (const f of readdirSync(d)) {
+      const p = join(d, f);
+      if (statSync(p).isDirectory()) walk(p);
+      else if (f.endsWith(".json")) out.push(p);
+    }
+  };
+  walk(dir);
+  return out.sort();
+}
+
+const f1 = (v: unknown, d = 1): string => (typeof v === "number" && Number.isFinite(v) ? v.toFixed(d) : v === undefined || v === null ? "–" : String(v));
+const ms = (s: J | undefined): string => (s === undefined || !s.n ? "–" : `${f1(s.p50, 0)} / ${f1(s.p95, 0)}`);
+const table = (head: string[], rows: string[][]): string => [`| ${head.join(" | ")} |`, `| ${head.map(() => ":-").join(" | ")} |`, ...rows.map((r) => `| ${r.join(" | ")} |`)].join("\n");
+
+function electron(name: string, j: J): string {
+  const m = j.meta ?? {};
+  const c = j.checks ?? {};
+  const out: string[] = [`### Electron · ${m.label} (${name})`, "", `Electron ${m.electron} (Chromium ${m.chrome}), ${m.platform}-${m.arch} ${m.osRelease}, ozone ${m.ozone}, displays ${(m.displays ?? []).join(", ")}, status **${m.status}**, ${f1(m.seconds, 0)} s${(j.errors ?? []).length ? `, errors: ${j.errors.join("; ")}` : ""}`, ""];
+  if (c.move) {
+    out.push("**Q1 hidden ⇄ shown** (times are p50 / p95 ms from the move)", "");
+    out.push(table(["hidden place", "same document", "field", "scroll", "SSE", "media ×", "decoded fps", "fresh picture shown", "first rAF shown", "layout hidden → shown → hidden", "fit to 1280×800", "rAF while hidden", "error"],
+      Object.keys(c.move).map((k) => {
+        const r = c.move[k];
+        const hiddenRaf = (r.cycles ?? []).map((x: J) => x.hiddenRates?.rafHz).filter((v: unknown) => typeof v === "number");
+        const back = [...new Set((r.cycles ?? []).map((x: J) => x.toHidden?.layoutAfter))].join("/");
+        return [`${k}`, f1(r.checks?.sameDocument), f1(r.checks?.fieldKept), f1(r.checks?.scrollKept), `${f1(r.checks?.sseKept)} (${f1(r.checks?.sseOpensServer, 0)})`, f1(r.checks?.mediaPlayedPerSec, 2), f1(r.checks?.mediaDecodedFps, 1),
+          ms(r.timing?.showFreshPictureMs), ms(r.timing?.showFirstRafMs), `${r.layout?.hidden} → ${r.layout?.shown} → ${back}`, r.fit ? ms(r.timing?.hideFitMs) : "–",
+          hiddenRaf.length ? f1(hiddenRaf.reduce((a: number, b: number) => a + b, 0) / hiddenRaf.length) : "–", r.error ?? ""];
+      })));
+    out.push("");
+  }
+  if (c.throttle) {
+    out.push("**Q2 throttling** (5 s windows)", "");
+    out.push(table(["config", "visibility", "layout", "interval Hz", "chain Hz", "rAF Hz", "max rAF gap ms", "IO / RO Hz", "media ×", "decoded fps", "pump fps", "renderer CPU %", "all CPU %", "error"],
+      c.throttle.map((r: J) => [r.config, r.rates?.visibility ?? "–", r.rates?.layout ?? "–", f1(r.rates?.intervalHz), f1(r.rates?.chainHz), f1(r.rates?.rafHz), f1(r.rates?.maxRafGapMs, 0), r.rates?.ioHz !== undefined ? `${f1(r.rates.ioHz)} / ${f1(r.rates.roHz)}` : "–", r.media ? f1(r.rates?.mediaPlayedPerSec, 2) : "–", r.media ? f1(r.rates?.decodedFps) : "–", f1(r.pumpFps), f1(r.rendererCpuPct), f1(r.allCpuPct), [r.error, r.cover].filter(Boolean).join("; ")])));
+    out.push("");
+  }
+  if (c.capture) {
+    out.push("**Q2 pictures of tabs** (8 tries; ms and staleness are p50 / p95; stale < 0 means drawn after the call began)", "");
+    out.push(table(["place", "throttling", "method", "ok", "decoded", "ms", "stale ms", "size", "to 1280×800 + JPEG ms", "CPU ms/picture", "frames/s", "visibility events", "geometry; errors"],
+      c.capture.map((r: J) => [`${r.place}${r.pump ? " + pump" : ""}${r.variant ? `, ${r.variant}` : ""}`, f1(r.throttling), r.method, `${r.ok}/${r.tries}`, f1(r.decoded, 0), ms(r.ms), ms(r.staleMs), r.size, r.scaleMs ? ms(r.scaleMs) : "–", f1(r.cpuMsPerPicture, 0), f1(r.framesPerSec), (r.visibilityEvents ?? []).length ? r.visibilityEvents.join(" ") : "", [r.geometry, ...(r.errors ?? [])].filter(Boolean).join("; ")])));
+    out.push("");
+  }
+  if (c.cost) {
+    const k = c.cost;
+    out.push("**Q2 cost**", "");
+    out.push(table(["idle hidden tabs", "memory MiB", "kind", "RSS MiB", "processes", "CPU %"], (k.idle ?? []).map((s: J) => [f1(s.tabs, 0), f1(s.memBest / 1048576, 0), s.memKind, f1(s.memRss / 1048576, 0), f1(s.procs, 0), f1(s.cpuPct)])));
+    out.push("", `Per idle tab resting in the never-shown window (a still page): **${f1(k.perIdleTabMiB, 0)} MiB**, ${f1(k.perIdleTabCpuPct, 2)}% CPU. Four tabs: one partition +${f1(k.partitions?.samePartitionMiB, 0)} MiB, four partitions +${f1(k.partitions?.ownPartitionsMiB, 0)} MiB.${k.error ? ` Error: ${k.error}` : ""}`, "");
+    if (k.host) out.push(`Quiet tabs working in one shared 1×1 host (no rAF loop; the page repaints twice a second): **${f1(k.host.perTabMiB, 0)} MiB** and ${f1(k.host.perTabCpuPct, 2)}% CPU a tab (${(k.host.steps ?? []).map((s: J) => `${s.tabs}: ${f1(s.memBest / 1048576, 0)} MiB / ${f1(s.cpuPct)}%`).join(", ")}).`, "");
+    out.push(table(["animated tab", "all CPU %", "renderer %", "GPU %", "rAF Hz"], (k.animated ?? []).map((a: J) => [a.config, f1(a.cpuPct), f1(a.rendererPct), f1(a.gpuPct), f1(a.rafHz, 0)])));
+    out.push("");
+  }
+  if (c.wake) {
+    out.push(`**Waking a resting tab into the host** (never-shown window, throttling on, ${c.wake.cycles?.length ?? 0} cycles): first rAF ${ms(c.wake.firstRafMs)} ms, fresh picture ${ms(c.wake.freshPictureMs)} ms; resting rates ${(c.wake.cycles ?? []).map((x: J) => `${f1(x.restRates?.intervalHz)} Hz / rAF ${f1(x.restRates?.rafHz)}`).join(", ")}; awake rAF ${(c.wake.cycles ?? []).map((x: J) => f1(x.awakeRates?.rafHz, 0)).join(", ")}${c.wake.error ? `; error ${c.wake.error}` : ""}`, "");
+  }
+  if (c.shared) {
+    out.push(`**One host, ${c.shared.tabs?.length ?? 0} tabs${c.shared.fitted ? " (each held at 1280×800, 1×)" : ""}:** ${(c.shared.tabs ?? []).map((t: J, i: number) => `tab ${i + 1} rAF ${f1(t.rates?.rafHz, 0)} Hz, capturePage ${t.capture?.ok}/${t.capture?.tries} in ${ms(t.capture?.ms)} ms (${t.capture?.size})`).join("; ")}${c.shared.error ? `; error ${c.shared.error}` : ""}`, "");
+  }
+  if (c.hostcheck) {
+    const h = c.hostcheck;
+    out.push(`**The host's invariants:** host ${h.hostBounds}, focused at start ${f1(h.focusedAtStart)}, after its page grabs focus ${f1(h.focusedAfterPageGrab)} (focused window "${h.focusedWindowTitle}"); Windows styles ${typeof h.windowsStyles === "object" ? JSON.stringify(h.windowsStyles) : h.windowsStyles ?? "–"}; click-through ${typeof h.clickThrough === "object" ? JSON.stringify(h.clickThrough) : h.clickThrough ?? "–"}${h.x11 !== undefined ? `; X11 ${JSON.stringify(h.x11)}` : ""}${h.error ? `; error ${h.error}` : ""}`, "");
+    if (h.shaped) {
+      const sh = h.shaped;
+      out.push(`**X11, the host with an empty window shape:** ${JSON.stringify(sh.xwininfo)}; rAF ${f1(sh.rates?.rafHz, 0)} Hz (${sh.rates?.visibility ?? "–"}), capturePage ${sh.capture?.ok ?? "–"}/${sh.capture?.tries ?? "–"} in ${ms(sh.capture?.ms)} ms (${sh.capture?.size ?? "–"}); click-through ${JSON.stringify(sh.clickThrough ?? "–")}; with throttling on: ${f1(sh.controlRates?.intervalHz)} Hz / rAF ${f1(sh.controlRates?.rafHz, 0)} (${sh.controlRates?.visibility ?? "–"})${sh.error ? `; error ${sh.error}` : ""}`, "");
+    }
+  }
+  if (c.osr) {
+    const o = c.osr;
+    out.push(`**Round twelve, offscreen bot tabs** (never-shown OSR windows; GPU ${JSON.stringify(m.gpu?.gpu_compositing ?? "–")})`, "");
+    out.push(`Size: ${(o.sizes ?? []).map((r: J) => `${r.variant}: window ${r.windowSize}, page ${r.layout}${r.error ? ` (${r.error})` : ""}`).join("; ")} → **${o.sizeFix}**.`, "");
+    out.push(`Shared textures: ${f1(o.texture?.textures, 0)} textures, ${f1(o.texture?.bitmaps, 0)} bitmaps, ${f1(o.texture?.empties, 0)} empty paints in 3 s → **${o.texture?.works ? "they come here" : "none here (CPU bitmaps)"}**${o.texture?.info ? ` — ${JSON.stringify({ pixelFormat: o.texture.info.pixelFormat, codedSize: o.texture.info.codedSize, handle: o.texture.info.handle })}` : ""}${o.texture?.error ? `; error ${o.texture.error}` : ""}`, "");
+    out.push(table(["config", "visibility", "rAF Hz", "paints/s", "textures/s", "all CPU %", "renderer %", "GPU %", "browser %", "error"],
+      (o.rates ?? []).map((r: J) => [r.config, r.rates?.visibility ?? "–", f1(r.rates?.rafHz), f1(r.paintsPerSec), f1(r.texturesPerSec), f1(r.cpuTotal), f1(r.rendererPct), f1(r.cpuByType?.GPU), f1(r.cpuByType?.Browser), r.error ?? ""])));
+    out.push("");
+    out.push(table(["pictures of", "method", "ok", "ms", "stale ms", "size", "errors"], (o.captures ?? []).map((r: J) => [r.config, r.method, `${r.ok}/${r.tries}`, ms(r.ms), ms(r.staleMs), r.size, (r.errors ?? []).join("; ")])));
+    out.push("");
+    out.push(table(["cost", "MiB a tab", "CPU % a tab", "kind", "error"], (o.cost ?? []).map((r: J) => [r.config, f1(r.perTabMiB), f1(r.perTabCpuPct, 2), r.step?.memKind ?? "–", r.error ?? ""])));
+    out.push("", `Windows on screen: ${Object.entries(o.windows ?? {}).map(([k, w]) => `${k}: ${(w as J).windows !== undefined ? `${(w as J).windows.length} ${JSON.stringify((w as J).windows)}` : (w as J).error}`).join("; ")}${o.error ? `; error ${o.error}` : ""}`, "");
+  }
+  if (c.viewport) {
+    const v = c.viewport;
+    out.push(`**Round twelve, the viewport** (mode **${v.mode}**: ${v.modeWhy})`, "");
+    out.push(`Shows: ${(v.shows ?? []).map((x: J) => `#${x.cycle} first frame ${f1(x.firstFrameMs, 0)} ms, at the viewport's size ${f1(x.reflowMs, 0)} ms (${x.layout ?? "–"}, frame ${x.frame ?? "–"}), hidden again ${f1(x.hideMs, 0)} ms`).join("; ")}`, "");
+    out.push(table(["oracle", "same document", "timers", "SSE socket", "form", "layout", "detail"], (v.oracle ?? []).map((r: J) => [r.when, f1(r.sameDocument), f1(r.ticksAdvanced), f1(r.sseKept), f1(r.formKept), r.layout, r.detail])));
+    out.push("");
+    out.push(table(["through the viewport", "ok", "ms", "detail"], (v.steps ?? []).map((r: J) => [r.name, r.ok ? "yes" : "**no**", f1(r.ms, 0), String(r.detail).slice(0, 500).replace(/\|/g, "\\|")])));
+    out.push("");
+    out.push(table(["input → frame", "trials", "ms p50 / p95", "parts (p50)"], Object.entries(v.latency ?? {}).map(([k, x]) => [k, f1((x as J).trials, 0), ms((x as J).ms), Object.entries((x as J).parts ?? {}).map(([pk, pv]) => `${pk} ${f1((pv as J).p50, 0)}`).join("; ")])));
+    out.push("");
+    out.push(table(["frames", "numbers"], Object.entries(v.fps ?? {}).map(([k, x]) => [k, Object.entries(x as J).map(([fk, fv]) => `${fk} ${f1(fv)}`).join(", ")])));
+    out.push("", `Windows on screen: ${Object.entries(v.windows ?? {}).map(([k, w]) => `${k}: ${(w as J).windows !== undefined ? `${(w as J).windows.length} ${JSON.stringify((w as J).windows)}` : (w as J).error}`).join("; ")}`, "");
+    out.push(`Viewer: ${JSON.stringify({ frames: v.viewer?.frames, textures: v.viewer?.textures, bitmaps: v.viewer?.bitmaps, popups: v.viewer?.popups, draw: v.viewer?.drawMsSummary, errors: v.viewer?.errors })}; counters ${JSON.stringify(v.counters)}${v.error ? `; error ${v.error}` : ""}`, "");
+  }
+  if (c.dialogs) {
+    out.push("**Round twelve, JavaScript dialogs answered over CDP**", "");
+    out.push(table(["tab", "dialog", "CDP event", "browser handler", "windows during", "windows after", "page", "error"], (c.dialogs as J[]).map((r) => [r.place, r.kind, f1(r.cdpEvent), f1(r.hasBrowserHandler), JSON.stringify(r.windowsDuring?.windows ?? r.windowsDuring?.error ?? "–"), JSON.stringify(r.windowsAfter?.windows ?? r.windowsAfter?.error ?? "–"), r.page, r.error ?? ""])));
+    out.push("");
+  }
+  if (Array.isArray(j.assertions) && j.assertions.length) out.push(`**Assertions:** ${j.assertions.map((x: J) => `${x.ok ? "PASS" : "**FAIL**"} ${x.name}`).join("; ")}`, "");
+  if (c.stream) {
+    out.push("**Q6 streamed view** (10 s at the viewer; latency p50 / p95 ms)", "");
+    out.push(table(["road", "content", "source", "fps", "decoded fps", "latency", "gap p95", "kbit/s", "bytes/frame", "sender CPU %", "viewer CPU %", "source rAF", "notes"],
+      c.stream.map((r: J) => [r.road, r.scenario, r.source, f1(r.framesPerSec), f1(r.decodedPerSec), ms(r.latencyMs), f1(r.interFrameMs?.p95, 0), f1(r.kbitPerSec, 0), f1(r.avgFrameBytes, 0), f1(r.senderCpuPct, 0), f1(r.viewerCpuPct, 0), f1(r.sourceRafHz, 0),
+        [r.extra?.sender?.encoderImplementation, r.extra?.viewer?.codec, r.extra?.viewer?.decoderImplementation, r.extra?.mainThreadJpegMsPerFrame !== undefined ? `toJPEG ${f1(r.extra.mainThreadJpegMsPerFrame)} ms` : undefined, r.extra?.encoder?.hardware, ...(r.errors ?? []).slice(0, 2)].filter(Boolean).join("; ")])));
+    out.push("");
+  }
+  if (c.long) {
+    out.push("**Long run** (rates in each window)", "");
+    out.push(table(["config", "at", "visibility", "interval Hz", "chain Hz", "rAF Hz", "max chain gap ms"], c.long.map((r: J) => [r.config, r.at, r.rates?.visibility ?? "–", f1(r.rates?.intervalHz, 2), f1(r.rates?.chainHz, 2), f1(r.rates?.rafHz, 2), f1(r.rates?.maxChainGapMs, 0)])));
+    out.push("");
+  }
+  return out.join("\n");
+}
+
+function cft(name: string, j: J): string {
+  const m = j.meta ?? {};
+  const out: string[] = [`### Chrome for Testing · ${m.platform}-${m.arch} (${name})`, "", `${m.osRelease}, ${m.cpus} CPUs, ${m.memGiB} GiB, Bun ${m.bun}, status **${m.status}**, ${f1(m.seconds, 0)} s`, ""];
+  for (const [artifact, r] of Object.entries(j.results ?? {}) as Array<[string, J]>) {
+    const i = r.install ?? {};
+    out.push(`**${artifact}** — ${r.product ?? ""}; sandbox ${r.sandbox ?? "–"}${r.sandboxedStartError ? ` (sandboxed start failed: ${String(r.sandboxedStartError).slice(0, 160)})` : ""}`, "");
+    out.push(`- install: ${f1(i.zipBytes / 1048576, 0)} MiB archive, ${f1(i.unpackedBytes / 1048576, 0)} MiB unpacked, ${i.files} files, ${i.symlinks} symlinks; download ${f1(i.downloadMs, 0)} ms, unpack ${f1(i.extractMs, 0)} ms; sha256 \`${i.sha256}\` (${i.verified ? "matches the pin" : "trust on first use"}; server MD5 ${f1(i.serverMd5Matched)})`);
+    if (r.start) out.push(`- start: over **${r.start.transport}**, cold ${f1(r.start.coldMs, 0)} ms, warm ${f1(r.start.warmMs, 0)} ms; the port for comparison ${r.start.portMs !== undefined ? `${f1(r.start.portMs, 0)} ms` : r.start.portError ?? "–"}`);
+    if (r.startAttempts) out.push(`- start attempts: ${(r.startAttempts as J[]).map((a) => `${a.transport}${a.sandboxed ? "" : " --no-sandbox"} ${a.ok ? `ok ${f1(a.ms, 0)} ms` : `failed (${String(a.error).slice(0, 220)})`}`).join("; ")}`);
+    if (r.tabs) out.push(`- tabs: ${(r.tabs as J[]).map((t) => t.stoppedAnswering === true ? `${t.tab}: STOPPED ANSWERING` : `${t.tab}: ${t.visibility}, ${t.layout}, interval ${f1(t.intervalHz)} Hz, rAF ${f1(t.rafHz)} Hz${t.mediaPlayedPerSec !== undefined ? `, media ×${f1(t.mediaPlayedPerSec, 2)}, decoded ${f1(t.decodedFps)} fps, audio ${t.audioState}` : ""}`).join("; ")}`);
+    if (r.afterStoppedTab) out.push(`- after a tab stopped answering: the browser answers ${r.afterStoppedTab.getVersion}; opens a tab ${r.afterStoppedTab.createTarget}`);
+    if (r.media) out.push(`- media (video with sound, an AudioContext): ${(r.media as J[]).map((m) => m.ok ? `${m.flags}: ${m.visibility}, interval ${f1(m.intervalHz)} Hz, rAF ${f1(m.rafHz)} Hz, media ×${f1(m.mediaPlayedPerSec, 2)}, decoded ${f1(m.decodedFps)} fps, audio ${m.audioState}, set up in ${f1(m.setupMs, 0)} ms, browser answers in ${f1(m.browserAnswersMs, 0)} ms` : `${m.flags}: FAILED ${String(m.error ?? "").slice(0, 400)}`).join("; ")}`);
+    if (r.resize) out.push(`- resize to 1000×700 and back: ${f1(r.resize.toViewMs, 0)} ms / ${f1(r.resize.backMs, 0)} ms, same document ${f1(r.resize.sameDocument)} (${(r.resize.layouts ?? []).join(" → ")})`);
+    if (r.screenshots) out.push(`- screenshots: png ${ms(r.screenshots.png?.ms)} ms (${f1(r.screenshots.png?.bytes?.p50 / 1024, 0)} KiB, CPU ${f1(r.screenshots.png?.cpuMsPerShot, 0)} ms), jpeg ${ms(r.screenshots.jpeg?.ms)} ms (${f1(r.screenshots.jpeg?.bytes?.p50 / 1024, 0)} KiB, stale ${ms(r.screenshots.jpeg?.staleMs)} ms, CPU ${f1(r.screenshots.jpeg?.cpuMsPerShot, 0)} ms)`);
+    if (r.screencast) out.push(`- screencast: ${f1(r.screencast.framesPerSec)} fps, ${f1(r.screencast.kbitPerSec, 0)} kbit/s, ${f1(r.screencast.avgFrameBytes / 1024, 0)} KiB/frame, latency ${ms(r.screencast.latencyMs)} ms, browser CPU ${f1(r.screencast.browserCpuPct, 0)}%`);
+    if (r.profiles) out.push(`- per-bot profiles: isolated ${f1(r.profiles.isolated)}, persisted across a restart ${f1(r.profiles.persisted)}`);
+    if (r.cost) {
+      out.push(`- cost: browser base ${f1(r.cost.browserBaseMiB, 0)} MiB, per idle tab ${f1(r.cost.perIdleTabMiB, 0)} MiB, 4 browser contexts +${f1(r.cost.fourContextsMiB, 0)} MiB, a second bot's browser ${f1(r.cost.secondBrowserBaseMiB, 0)} MiB (${r.cost.secondBrowserProcs} processes), animated tab ${f1(r.cost.animatedTabCpuPct)}% CPU`);
+      out.push(`  - steps: ${(r.cost.steps as J[]).map((s) => `${s.tabs} tabs ${f1(s.memMiB, 0)} MiB ${s.memKind} / ${f1(s.cpuPct)}%`).join(", ")}`);
+    }
+    if ((r.errors ?? []).length) out.push(`- errors: ${r.errors.join("; ")}`);
+    out.push("");
+  }
+  if (Array.isArray(j.assertions) && j.assertions.length) out.push(`**Assertions:** ${j.assertions.map((x: J) => `${x.ok ? "PASS" : "**FAIL**"} ${x.name}`).join("; ")}`, "");
+  return out.join("\n");
+}
+
+function pair(name: string, j: J): string {
+  const m = j.meta ?? {};
+  const out: string[] = [`### The pair · ${m.platform}-${m.arch} (${name})`, "", `${m.osRelease}, ${f1(m.seconds, 0)} s, state **${m.state}**${m.platform === "win32" ? `, Windows app start: ${m.windowsAppStart}${m.windowsSupervise ? ", daemon under the supervisor" : ""}` : ""}`, ""];
+  for (const s of j.steps ?? []) {
+    const { step, ...rest } = s as J;
+    if (step === "uninstall") continue;
+    const brief = JSON.stringify(rest, (k, v) => (k === "out" && typeof v === "string" ? v.slice(0, 160) : k === "unit" || k === "registeredForLogin" || k === "install" ? undefined : v));
+    out.push(`- **${step}**: ${brief.slice(0, 900)}`);
+  }
+  if (Array.isArray(j.assertions) && j.assertions.length) out.push("", `**Assertions:** ${j.assertions.map((x: J) => `${x.ok ? "PASS" : "**FAIL**"} ${x.name}`).join("; ")}`);
+  out.push("");
+  return out.join("\n");
+}
+
+const dir = process.argv[2] ?? "out/results";
+const parts: string[] = ["## Spike S7 results", ""];
+for (const f of files(dir)) {
+  let j: J;
+  try { j = JSON.parse(readFileSync(f, "utf8")) as J; } catch { continue; }
+  const name = basename(f);
+  if (j.checks !== undefined) parts.push(electron(name, j));
+  else if (j.results !== undefined) parts.push(cft(name, j));
+  else if (j.steps !== undefined) parts.push(pair(name, j));
+}
+console.log(parts.join("\n"));
