@@ -1,0 +1,2759 @@
+{
+  "catalog": 1,
+  "pluginApi": "1.0.0",
+  "capabilities": [
+    {
+      "name": "conversation.read",
+      "lets": "Read bots' conversations and follow them live; sealed card fields never reach it",
+      "ok": "reads your conversations with bots",
+      "warns": false
+    },
+    {
+      "name": "conversation.post",
+      "lets": "Add a note to a conversation, or send a bot a message; a turn it starts is the plugin's, never the user's",
+      "ok": "adds notes and sends messages to bots",
+      "warns": false
+    },
+    {
+      "name": "memory.read",
+      "lets": "Read bots' memories",
+      "ok": "reads your bots' memories",
+      "warns": false
+    },
+    {
+      "name": "bots.read",
+      "lets": "Read the list of bots and their settings",
+      "ok": "sees your bots and their settings",
+      "warns": false
+    },
+    {
+      "name": "routines.read",
+      "lets": "Read the list of routines and their runs",
+      "ok": "sees your routines and their runs",
+      "warns": false
+    },
+    {
+      "name": "computers.read",
+      "lets": "Read the computer registry: each computer's folders, level and state",
+      "ok": "sees your computers, their folders and levels",
+      "warns": false
+    },
+    {
+      "name": "computers.control",
+      "lets": "Take and release holds and the user-working mark, learn where Clover's windows are, and say when an action is running",
+      "ok": "controls the screen and input of your computers",
+      "warns": true
+    },
+    {
+      "name": "approvals",
+      "lets": "Hear which cards are pending, never their text, and place their sealed frames",
+      "ok": "restyles approval cards",
+      "warns": true
+    },
+    {
+      "name": "files",
+      "lets": "Read and write files through the folder tree, inside the fence",
+      "ok": "reads and writes files on your computers",
+      "warns": false
+    },
+    {
+      "name": "browser",
+      "lets": "Drive the Clover Browser through its API",
+      "ok": "drives the Clover Browser",
+      "warns": false
+    },
+    {
+      "name": "usage.read",
+      "lets": "Read usage rows and plan readings",
+      "ok": "sees your usage and plan readings",
+      "warns": false
+    },
+    {
+      "name": "logs.read",
+      "lets": "Read Clover's logs and every plugin's",
+      "ok": "reads Clover's logs",
+      "warns": false
+    },
+    {
+      "name": "notify",
+      "lets": "Send the user a notification through the notifiers",
+      "ok": "sends you notifications",
+      "warns": false
+    },
+    {
+      "name": "audio",
+      "lets": "Record and play audio through the app; it records only while push-to-talk is held, unless the user turns listening on",
+      "ok": "can hear your microphone",
+      "warns": true
+    },
+    {
+      "name": "call:<plugin-id>",
+      "lets": "Run that plugin's commands",
+      "ok": "runs commands of {plugin}",
+      "warns": false
+    },
+    {
+      "name": "network:<host>",
+      "lets": "Reach that host through the core's fetch, which adds the plugin's own keys and tokens, and from the plugin's components, which reach no other host",
+      "ok": "connects to {host}",
+      "warns": false
+    }
+  ],
+  "hooks": {
+    "events": [
+      "tool.before",
+      "tool.after",
+      "message.in",
+      "message.out",
+      "turn.start",
+      "turn.end",
+      "compact.before",
+      "compact.after"
+    ],
+    "returns": {
+      "tool.before": [
+        "deny",
+        "ask",
+        "input"
+      ],
+      "tool.after": [
+        "result"
+      ],
+      "message.in": [
+        "text"
+      ],
+      "message.out": [
+        "text"
+      ],
+      "turn.start": [
+        "note"
+      ],
+      "turn.end": [],
+      "compact.before": [],
+      "compact.after": []
+    },
+    "claudeEvents": {
+      "PreToolUse": "tool.before",
+      "PostToolUse": "tool.after",
+      "UserPromptSubmit": "message.in",
+      "Stop": "turn.end",
+      "PreCompact": "compact.before",
+      "PostCompact": "compact.after"
+    },
+    "defaultTimeoutMs": 10000
+  },
+  "corePoints": [
+    {
+      "name": "bot",
+      "side": "daemon",
+      "shape": "single",
+      "kind": "data",
+      "runsOn": "data, on every device",
+      "doc": "Builds `<bot-instructions>`, picks the default model, keys memory by the bot's id (§6).",
+      "shipsWith": "Alpha only"
+    },
+    {
+      "name": "models",
+      "side": "daemon",
+      "shape": "list",
+      "uniqueBy": "provider",
+      "kind": "either",
+      "runsOn": "every computer running a session; started when first needed",
+      "doc": "Calls the adapter, or the declared endpoint, for every turn; the welcome guide reads the sign-in methods (§3.3).",
+      "shipsWith": "every provider Winter has today"
+    },
+    {
+      "name": "mcpServers",
+      "side": "daemon",
+      "shape": "keyed",
+      "kind": "either",
+      "runsOn": "local servers on each computer they are installed on; remote servers on the computer running the session (§9.1)",
+      "doc": "Dispatches tool calls, builds the MCP block and shows MCP Apps pages.",
+      "shipsWith": "the web tools; `mcp__clover__Browser`"
+    },
+    {
+      "name": "skills",
+      "side": "daemon",
+      "shape": "list",
+      "kind": "data",
+      "runsOn": "data, on every device",
+      "doc": "Indexes them in `Glossary` (§6.8).",
+      "shipsWith": "—"
+    },
+    {
+      "name": "agents",
+      "side": "daemon",
+      "shape": "list",
+      "kind": "data",
+      "runsOn": "data, on every device",
+      "doc": "Offers these presets to `Agent`: backend, model, effort, instructions, computer, root folder, plugins (§9.3).",
+      "shipsWith": "—"
+    },
+    {
+      "name": "agentBackends",
+      "side": "daemon",
+      "shape": "list",
+      "uniqueBy": "id",
+      "kind": "code",
+      "runsOn": "the computer the agent is placed on",
+      "doc": "Starts agents for `Agent`: an ACP agent or a vendor cloud agent (§9.3).",
+      "shipsWith": "Claude Code, Codex, Grok, Gemini CLI, DeepSeek, Winter's coding agent"
+    },
+    {
+      "name": "hooks",
+      "side": "daemon",
+      "shape": "list",
+      "kind": "code",
+      "runsOn": "every computer running a session; started when first needed",
+      "doc": "Calls them in the turn loop; a hook can block or adjust, never replace the runtime or skip approvals.",
+      "shipsWith": "—"
+    },
+    {
+      "name": "commands",
+      "side": "daemon",
+      "shape": "list",
+      "uniqueBy": "name",
+      "kind": "code",
+      "runsOn": "the main, unless `runsOn` says otherwise",
+      "doc": "Runs a plugin's public functions for any client at once, with no model turn (§5.4).",
+      "shipsWith": "—"
+    },
+    {
+      "name": "triggers",
+      "side": "daemon",
+      "shape": "keyed",
+      "uniqueBy": "type",
+      "kind": "code",
+      "runsOn": "each computer, started at once",
+      "doc": "Arms them for routine files (§7).",
+      "shipsWith": "schedule, webhook"
+    },
+    {
+      "name": "voices",
+      "side": "daemon",
+      "shape": "list",
+      "uniqueBy": "id",
+      "kind": "code",
+      "runsOn": "the computer the user is talking on",
+      "doc": "Speech-to-text and text-to-speech for the bot's voice choice (§6.6).",
+      "shipsWith": "Fish Audio"
+    },
+    {
+      "name": "computerProviders",
+      "side": "daemon",
+      "shape": "keyed",
+      "uniqueBy": "id",
+      "kind": "code",
+      "runsOn": "the main, unless `runsOn` says otherwise",
+      "doc": "Creates, resizes and deletes the VMs that cloud computer folders describe (§9.2).",
+      "shipsWith": "Google Cloud, Hetzner"
+    },
+    {
+      "name": "computer",
+      "side": "daemon",
+      "shape": "single",
+      "kind": "data",
+      "runsOn": "data",
+      "doc": "A cloud computer, created after the user's OK (§9.2).",
+      "shipsWith": "—"
+    },
+    {
+      "name": "relays",
+      "side": "daemon",
+      "shape": "list",
+      "kind": "code",
+      "runsOn": "every device that uses them",
+      "doc": "Carries encrypted traffic when two devices can't connect directly, or holds encrypted sync mail (§8.3).",
+      "shipsWith": "n0's public relays; the cloud computer relay"
+    },
+    {
+      "name": "notifiers",
+      "side": "daemon",
+      "shape": "list",
+      "kind": "code",
+      "runsOn": "the main, unless `runsOn` says otherwise",
+      "doc": "Wakes companions when something happens (§10).",
+      "shipsWith": "waifucave push; desktop notifications"
+    },
+    {
+      "name": "companions",
+      "side": "daemon",
+      "shape": "list",
+      "kind": "code",
+      "runsOn": "the main, unless `runsOn` says otherwise",
+      "doc": "Serves a remote client within the fixed list of remote calls (§10).",
+      "shipsWith": "the iOS app; clover.waifucave.com"
+    },
+    {
+      "name": "themes",
+      "side": "app",
+      "shape": "list",
+      "kind": "data",
+      "runsOn": "every app instance",
+      "doc": "Applies the base theme, the user's global theme and each bot's theme in its tab (§5.5).",
+      "shipsWith": "the base theme"
+    },
+    {
+      "name": "app.root",
+      "side": "app",
+      "shape": "single",
+      "kind": "code",
+      "runsOn": "every app instance",
+      "doc": "Mounts the main window's root: the shell (§5.5).",
+      "shipsWith": "the default shell"
+    },
+    {
+      "name": "app.surface",
+      "side": "app",
+      "shape": "list",
+      "kind": "code",
+      "runsOn": "every app instance",
+      "doc": "Opens top-level floating windows.",
+      "shipsWith": "island, Dispatch pill"
+    },
+    {
+      "name": "bot.tab",
+      "side": "app",
+      "shape": "keyed",
+      "kind": "code",
+      "runsOn": "every app instance",
+      "doc": "Holds each bot's tab, which the shell shows.",
+      "shipsWith": "the default bot tab"
+    },
+    {
+      "name": "locales",
+      "side": "app",
+      "shape": "keyed",
+      "kind": "data",
+      "runsOn": "every app instance",
+      "doc": "Supplies strings for the core's own text and each plugin's keys, in the user's language (§5.5).",
+      "shipsWith": "English, built in"
+    }
+  ],
+  "dataPoints": [
+    {
+      "name": "webhook.ingress",
+      "shape": "list",
+      "declaredBy": "clover/trigger-webhook",
+      "kind": "code",
+      "doc": "Ways for webhooks to reach a device: the waifucave forwarder, the user's cloud computer, a tunnel (§7).",
+      "fields": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[a-z0-9]([a-z0-9._-]{0,126}[a-z0-9])?$"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "en": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "en"
+                ],
+                "additionalProperties": {
+                  "type": "string"
+                }
+              }
+            ]
+          },
+          "handler": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z_$][A-Za-z0-9_$]*$",
+            "format": "handler",
+            "description": "An export of `host.entry`."
+          }
+        },
+        "required": [
+          "id",
+          "handler"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "avatar.packs",
+      "shape": "list",
+      "declaredBy": "clover/bot-editor",
+      "kind": "data",
+      "doc": "Avatar files with their format and portrait, so an avatar pack is a data plugin (§5.5).",
+      "fields": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[a-z0-9]([a-z0-9._-]{0,126}[a-z0-9])?$"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "en": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "en"
+                ],
+                "additionalProperties": {
+                  "type": "string"
+                }
+              }
+            ]
+          },
+          "file": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024,
+            "format": "path",
+            "description": "A path relative to the plugin folder, with `/`; it must resolve inside it."
+          },
+          "format": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 32,
+            "pattern": "^[a-z0-9-]+$"
+          },
+          "portrait": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024,
+            "format": "path",
+            "description": "A path relative to the plugin folder, with `/`; it must resolve inside it."
+          },
+          "license": {
+            "type": "string",
+            "maxLength": 200
+          }
+        },
+        "required": [
+          "id",
+          "file",
+          "format"
+        ],
+        "additionalProperties": false
+      }
+    }
+  ],
+  "spots": [
+    {
+      "name": "app.root",
+      "shape": "single",
+      "declaredBy": "app",
+      "inBotTab": false,
+      "doc": "The main window's root: the shell, which declares every other spot.",
+      "fields": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {}
+      },
+      "props": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "app.surface",
+      "shape": "list",
+      "declaredBy": "app",
+      "inBotTab": false,
+      "context": [
+        "surface",
+        "os"
+      ],
+      "doc": "Top-level floating windows, such as the island and the Dispatch pill; `window` says how they float.",
+      "fields": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "en": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "en"
+                ],
+                "additionalProperties": {
+                  "type": "string"
+                }
+              }
+            ]
+          },
+          "icon": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024,
+            "format": "path",
+            "description": "A path relative to the plugin folder, with `/`; it must resolve inside it."
+          }
+        }
+      },
+      "props": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "surface": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "surface"
+        ]
+      }
+    },
+    {
+      "name": "bot.tab",
+      "shape": "keyed",
+      "declaredBy": "app",
+      "inBotTab": true,
+      "context": [
+        "bot"
+      ],
+      "doc": "Each bot's tab, keyed by bot; an entry with no key fills every bot without one of its own.",
+      "fields": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {}
+      },
+      "props": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "bot": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "en": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "en"
+                    ],
+                    "additionalProperties": {
+                      "type": "string"
+                    }
+                  }
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "name"
+            ]
+          }
+        },
+        "required": [
+          "bot"
+        ]
+      }
+    },
+    {
+      "name": "sidebar",
+      "shape": "single",
+      "declaredBy": "shell",
+      "inBotTab": false,
+      "doc": "The sidebar.",
+      "fields": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {}
+      },
+      "props": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "sidebar.bot",
+      "shape": "keyed",
+      "declaredBy": "shell",
+      "inBotTab": false,
+      "context": [
+        "bot"
+      ],
+      "doc": "A bot's row in the sidebar, keyed by bot.",
+      "fields": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {}
+      },
+      "props": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "bot": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "en": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "en"
+                    ],
+                    "additionalProperties": {
+                      "type": "string"
+                    }
+                  }
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "name"
+            ]
+          },
+          "selected": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "bot",
+          "selected"
+        ]
+      }
+    },
+    {
+      "name": "sidebar.app",
+      "shape": "list",
+      "declaredBy": "shell",
+      "inBotTab": false,
+      "doc": "App buttons in the sidebar; `opens` names the `main` and `panel` key it shows.",
+      "fields": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "en": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "en"
+                ],
+                "additionalProperties": {
+                  "type": "string"
+                }
+              }
+            ]
+          },
+          "icon": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024,
+            "format": "path",
+            "description": "A path relative to the plugin folder, with `/`; it must resolve inside it."
+          },
+          "opens": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        },
+        "required": [
+          "title",
+          "icon",
+          "opens"
+        ]
+      },
+      "props": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "main",
+      "shape": "keyed",
+      "declaredBy": "shell",
+      "inBotTab": false,
+      "keys": [
+        "bot",
+        "agent",
+        "settings",
+        "plugins",
+        "app"
+      ],
+      "doc": "The main area, keyed by route: bot, agent, settings, plugins, app.",
+      "fields": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {}
+      },
+      "props": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "route": {
+            "type": "string"
+          },
+          "params": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "route",
+          "params"
+        ]
+      }
+    },
+    {
+      "name": "panel",
+      "shape": "keyed",
+      "declaredBy": "shell",
+      "inBotTab": false,
+      "doc": "The panel, keyed by app.",
+      "fields": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "en": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "en"
+                ],
+                "additionalProperties": {
+                  "type": "string"
+                }
+              }
+            ]
+          },
+          "icon": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024,
+            "format": "path",
+            "description": "A path relative to the plugin folder, with `/`; it must resolve inside it."
+          }
+        }
+      },
+      "props": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "app": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "app"
+        ]
+      }
+    },
+    {
+      "name": "panel.view",
+      "shape": "keyed",
+      "declaredBy": "shell",
+      "inBotTab": false,
+      "doc": "The panel's contents: the browser, and later the diff view, editor, file tree and terminal.",
+      "fields": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "en": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "en"
+                ],
+                "additionalProperties": {
+                  "type": "string"
+                }
+              }
+            ]
+          },
+          "icon": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024,
+            "format": "path",
+            "description": "A path relative to the plugin folder, with `/`; it must resolve inside it."
+          }
+        },
+        "required": [
+          "title"
+        ]
+      },
+      "props": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "view": {
+            "type": "string"
+          },
+          "session": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "view"
+        ]
+      }
+    },
+    {
+      "name": "settings.section",
+      "shape": "list",
+      "declaredBy": "shell",
+      "inBotTab": false,
+      "doc": "A section of the settings screen.",
+      "fields": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "en": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "en"
+                ],
+                "additionalProperties": {
+                  "type": "string"
+                }
+              }
+            ]
+          },
+          "icon": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024,
+            "format": "path",
+            "description": "A path relative to the plugin folder, with `/`; it must resolve inside it."
+          }
+        },
+        "required": [
+          "title"
+        ]
+      },
+      "props": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "status",
+      "shape": "list",
+      "declaredBy": "shell",
+      "inBotTab": false,
+      "doc": "The shell's status bar; Winter's `tile` becomes an entry here (§12).",
+      "fields": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "en": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "en"
+                ],
+                "additionalProperties": {
+                  "type": "string"
+                }
+              }
+            ]
+          },
+          "icon": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024,
+            "format": "path",
+            "description": "A path relative to the plugin folder, with `/`; it must resolve inside it."
+          }
+        }
+      },
+      "props": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "bot.header",
+      "shape": "single",
+      "declaredBy": "bot-tab",
+      "inBotTab": true,
+      "context": [
+        "bot"
+      ],
+      "doc": "The tab's header.",
+      "fields": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {}
+      },
+      "props": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "bot": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "en": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "en"
+                    ],
+                    "additionalProperties": {
+                      "type": "string"
+                    }
+                  }
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "name"
+            ]
+          }
+        },
+        "required": [
+          "bot"
+        ]
+      }
+    },
+    {
+      "name": "bot.header.action",
+      "shape": "list",
+      "declaredBy": "bot-tab",
+      "inBotTab": true,
+      "context": [
+        "bot"
+      ],
+      "doc": "Buttons in the tab's header.",
+      "fields": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "en": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "en"
+                ],
+                "additionalProperties": {
+                  "type": "string"
+                }
+              }
+            ]
+          },
+          "icon": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024,
+            "format": "path",
+            "description": "A path relative to the plugin folder, with `/`; it must resolve inside it."
+          }
+        },
+        "required": [
+          "title"
+        ]
+      },
+      "props": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "bot": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "en": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "en"
+                    ],
+                    "additionalProperties": {
+                      "type": "string"
+                    }
+                  }
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "name"
+            ]
+          }
+        },
+        "required": [
+          "bot"
+        ]
+      }
+    },
+    {
+      "name": "bot.stage",
+      "shape": "single",
+      "declaredBy": "bot-tab",
+      "inBotTab": true,
+      "context": [
+        "bot"
+      ],
+      "doc": "The stage, where the avatar stands.",
+      "fields": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {}
+      },
+      "props": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "bot": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "en": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "en"
+                    ],
+                    "additionalProperties": {
+                      "type": "string"
+                    }
+                  }
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "name"
+            ]
+          }
+        },
+        "required": [
+          "bot"
+        ]
+      }
+    },
+    {
+      "name": "bot.side",
+      "shape": "single",
+      "declaredBy": "bot-tab",
+      "inBotTab": true,
+      "context": [
+        "bot"
+      ],
+      "doc": "The tab's side area.",
+      "fields": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {}
+      },
+      "props": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "bot": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "en": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "en"
+                    ],
+                    "additionalProperties": {
+                      "type": "string"
+                    }
+                  }
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "name"
+            ]
+          }
+        },
+        "required": [
+          "bot"
+        ]
+      }
+    },
+    {
+      "name": "conversation",
+      "shape": "single",
+      "declaredBy": "bot-tab",
+      "inBotTab": true,
+      "needs": [
+        "conversation.read"
+      ],
+      "context": [
+        "bot"
+      ],
+      "doc": "The conversation view.",
+      "fields": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {}
+      },
+      "props": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "bot": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "en": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "en"
+                    ],
+                    "additionalProperties": {
+                      "type": "string"
+                    }
+                  }
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "name"
+            ]
+          },
+          "session": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "bot",
+          "session"
+        ]
+      }
+    },
+    {
+      "name": "composer",
+      "shape": "single",
+      "declaredBy": "bot-tab",
+      "inBotTab": true,
+      "context": [
+        "bot"
+      ],
+      "doc": "The composer; a send counts as the user's only on a real key press or click (§5.5).",
+      "fields": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {}
+      },
+      "props": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "bot": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "en": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "en"
+                    ],
+                    "additionalProperties": {
+                      "type": "string"
+                    }
+                  }
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "name"
+            ]
+          },
+          "session": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "bot",
+          "session"
+        ]
+      }
+    },
+    {
+      "name": "avatar",
+      "shape": "keyed",
+      "declaredBy": "bot-stage",
+      "inBotTab": true,
+      "keys": [
+        "vrm"
+      ],
+      "context": [
+        "bot"
+      ],
+      "doc": "Draws the bot's avatar, keyed by the avatar file's format (VRM by default), and lip-syncs it.",
+      "fields": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {}
+      },
+      "props": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "bot": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "en": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "en"
+                    ],
+                    "additionalProperties": {
+                      "type": "string"
+                    }
+                  }
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "name"
+            ]
+          },
+          "file": {
+            "type": "string"
+          },
+          "format": {
+            "type": "string"
+          },
+          "speaking": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "bot",
+          "file",
+          "format",
+          "speaking"
+        ]
+      }
+    },
+    {
+      "name": "composer.action",
+      "shape": "keyed",
+      "declaredBy": "composer",
+      "inBotTab": true,
+      "context": [
+        "bot"
+      ],
+      "doc": "The composer's buttons, keyed by action id.",
+      "fields": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "en": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "en"
+                ],
+                "additionalProperties": {
+                  "type": "string"
+                }
+              }
+            ]
+          },
+          "icon": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024,
+            "format": "path",
+            "description": "A path relative to the plugin folder, with `/`; it must resolve inside it."
+          }
+        }
+      },
+      "props": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "bot": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "en": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "en"
+                    ],
+                    "additionalProperties": {
+                      "type": "string"
+                    }
+                  }
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "name"
+            ]
+          },
+          "session": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "bot",
+          "session"
+        ]
+      }
+    },
+    {
+      "name": "conversation.message",
+      "shape": "keyed",
+      "declaredBy": "conversation",
+      "inBotTab": true,
+      "keys": [
+        "user",
+        "bot",
+        "tool",
+        "approval",
+        "question",
+        "routine-result",
+        "task-notification",
+        "agent-report",
+        "note"
+      ],
+      "keep": [
+        "approval"
+      ],
+      "needs": [
+        "conversation.read"
+      ],
+      "context": [
+        "bot"
+      ],
+      "doc": "One message, keyed by kind; the `approval` cell can't be hidden.",
+      "fields": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {}
+      },
+      "props": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "bot": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "en": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "en"
+                    ],
+                    "additionalProperties": {
+                      "type": "string"
+                    }
+                  }
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "name"
+            ]
+          },
+          "message": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string"
+              },
+              "session": {
+                "type": "string"
+              },
+              "seq": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": [
+              "id",
+              "kind",
+              "session",
+              "seq"
+            ]
+          }
+        },
+        "required": [
+          "bot",
+          "message"
+        ]
+      }
+    },
+    {
+      "name": "conversation.message.extra",
+      "shape": "list",
+      "declaredBy": "conversation",
+      "inBotTab": true,
+      "needs": [
+        "conversation.read"
+      ],
+      "context": [
+        "bot"
+      ],
+      "doc": "Add-ons under each message.",
+      "fields": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {}
+      },
+      "props": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "bot": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "en": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "en"
+                    ],
+                    "additionalProperties": {
+                      "type": "string"
+                    }
+                  }
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "name"
+            ]
+          },
+          "message": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string"
+              },
+              "session": {
+                "type": "string"
+              },
+              "seq": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": [
+              "id",
+              "kind",
+              "session",
+              "seq"
+            ]
+          }
+        },
+        "required": [
+          "bot",
+          "message"
+        ]
+      }
+    },
+    {
+      "name": "tool.result",
+      "shape": "keyed",
+      "declaredBy": "conversation",
+      "inBotTab": true,
+      "needs": [
+        "conversation.read"
+      ],
+      "context": [
+        "bot"
+      ],
+      "doc": "A tool's result, keyed by tool name (`mcp__blender__*`).",
+      "fields": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {}
+      },
+      "props": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "bot": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "en": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "en"
+                    ],
+                    "additionalProperties": {
+                      "type": "string"
+                    }
+                  }
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "name"
+            ]
+          },
+          "message": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string"
+              },
+              "session": {
+                "type": "string"
+              },
+              "seq": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": [
+              "id",
+              "kind",
+              "session",
+              "seq"
+            ]
+          },
+          "tool": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "bot",
+          "message",
+          "tool"
+        ]
+      }
+    },
+    {
+      "name": "menu.message",
+      "shape": "list",
+      "declaredBy": "conversation",
+      "inBotTab": true,
+      "needs": [
+        "conversation.read"
+      ],
+      "context": [
+        "bot"
+      ],
+      "doc": "Items in a message's menu.",
+      "fields": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "en": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "en"
+                ],
+                "additionalProperties": {
+                  "type": "string"
+                }
+              }
+            ]
+          },
+          "icon": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024,
+            "format": "path",
+            "description": "A path relative to the plugin folder, with `/`; it must resolve inside it."
+          }
+        },
+        "required": [
+          "title"
+        ]
+      },
+      "props": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "bot": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "en": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "en"
+                    ],
+                    "additionalProperties": {
+                      "type": "string"
+                    }
+                  }
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "name"
+            ]
+          },
+          "message": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string"
+              },
+              "session": {
+                "type": "string"
+              },
+              "seq": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": [
+              "id",
+              "kind",
+              "session",
+              "seq"
+            ]
+          }
+        },
+        "required": [
+          "bot",
+          "message"
+        ]
+      }
+    },
+    {
+      "name": "file.preview",
+      "shape": "keyed",
+      "declaredBy": "file-view",
+      "inBotTab": true,
+      "doc": "A file's preview wherever one shows, keyed by media type (`image/*`); in a bot's plugin, only inside its tab.",
+      "fields": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {}
+      },
+      "props": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "mediaType": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "mediaType"
+        ]
+      }
+    },
+    {
+      "name": "island.tab",
+      "shape": "list",
+      "declaredBy": "island",
+      "inBotTab": false,
+      "context": [
+        "surface"
+      ],
+      "doc": "A tab of the island, such as Needs you, Devices or Usage.",
+      "fields": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "en": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "en"
+                ],
+                "additionalProperties": {
+                  "type": "string"
+                }
+              }
+            ]
+          },
+          "icon": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024,
+            "format": "path",
+            "description": "A path relative to the plugin folder, with `/`; it must resolve inside it."
+          },
+          "size": {
+            "type": "object",
+            "properties": {
+              "width": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
+              },
+              "height": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": [
+              "width",
+              "height"
+            ]
+          },
+          "idle": {
+            "type": "boolean"
+          },
+          "attention": {
+            "type": "string",
+            "enum": [
+              "never",
+              "badge",
+              "expand"
+            ]
+          }
+        },
+        "required": [
+          "title"
+        ]
+      },
+      "props": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "expanded": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "expanded"
+        ]
+      }
+    },
+    {
+      "name": "pill.target",
+      "shape": "list",
+      "declaredBy": "pill",
+      "inBotTab": false,
+      "context": [
+        "surface"
+      ],
+      "doc": "Something the Dispatch pill can message besides the bots.",
+      "fields": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "en": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "en"
+                ],
+                "additionalProperties": {
+                  "type": "string"
+                }
+              }
+            ]
+          },
+          "icon": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024,
+            "format": "path",
+            "description": "A path relative to the plugin folder, with `/`; it must resolve inside it."
+          }
+        },
+        "required": [
+          "title"
+        ]
+      },
+      "props": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {}
+      }
+    }
+  ],
+  "tokens": [
+    {
+      "name": "color.bg",
+      "type": "color",
+      "default": "#ffffff",
+      "dark": "#16161a",
+      "doc": "The part's background."
+    },
+    {
+      "name": "color.bg.raised",
+      "type": "color",
+      "default": "#f6f6f8",
+      "dark": "#1f1f25",
+      "doc": "Panels, menus and cards above the background."
+    },
+    {
+      "name": "color.bg.sunken",
+      "type": "color",
+      "default": "#ececf0",
+      "dark": "#0f0f12",
+      "doc": "Inputs and wells below the background."
+    },
+    {
+      "name": "color.fg",
+      "type": "color",
+      "default": "#16161a",
+      "dark": "#ececf0",
+      "doc": "Text."
+    },
+    {
+      "name": "color.fg.muted",
+      "type": "color",
+      "default": "#55555f",
+      "dark": "#a6a6b3",
+      "doc": "Secondary text."
+    },
+    {
+      "name": "color.fg.subtle",
+      "type": "color",
+      "default": "#8a8a96",
+      "dark": "#73737f",
+      "doc": "Hints and placeholders."
+    },
+    {
+      "name": "color.border",
+      "type": "color",
+      "default": "#dedee4",
+      "dark": "#2c2c34",
+      "doc": "Hairlines between parts."
+    },
+    {
+      "name": "color.border.strong",
+      "type": "color",
+      "default": "#b9b9c4",
+      "dark": "#454551",
+      "doc": "Borders that must show."
+    },
+    {
+      "name": "color.accent",
+      "type": "color",
+      "default": "#5b5bd6",
+      "dark": "#8b8bf0",
+      "doc": "The accent: links, the selected item, primary buttons."
+    },
+    {
+      "name": "color.accent.fg",
+      "type": "color",
+      "default": "#ffffff",
+      "dark": "#0f0f12",
+      "doc": "Text on the accent."
+    },
+    {
+      "name": "color.danger",
+      "type": "color",
+      "default": "#d6455b",
+      "dark": "#f07a8b",
+      "doc": "Destructive actions and errors."
+    },
+    {
+      "name": "color.danger.fg",
+      "type": "color",
+      "default": "#ffffff",
+      "dark": "#0f0f12",
+      "doc": "Text on danger."
+    },
+    {
+      "name": "color.warning",
+      "type": "color",
+      "default": "#c98a14",
+      "dark": "#f0b84d",
+      "doc": "Warnings."
+    },
+    {
+      "name": "color.success",
+      "type": "color",
+      "default": "#2f9e5f",
+      "dark": "#5ccc8c",
+      "doc": "Success."
+    },
+    {
+      "name": "color.focus",
+      "type": "color",
+      "default": "#5b5bd6",
+      "dark": "#8b8bf0",
+      "doc": "The keyboard focus ring."
+    },
+    {
+      "name": "color.selection",
+      "type": "color",
+      "default": "#d9d9fb",
+      "dark": "#34345f",
+      "doc": "Selected text."
+    },
+    {
+      "name": "color.bubble.user.bg",
+      "type": "color",
+      "default": "#5b5bd6",
+      "dark": "#3c3c99",
+      "doc": "The user's message bubble."
+    },
+    {
+      "name": "color.bubble.user.fg",
+      "type": "color",
+      "default": "#ffffff",
+      "dark": "#ffffff",
+      "doc": "Text in the user's bubble."
+    },
+    {
+      "name": "color.bubble.bot.bg",
+      "type": "color",
+      "default": "#f0f0f4",
+      "dark": "#24242b",
+      "doc": "The bot's message bubble."
+    },
+    {
+      "name": "color.bubble.bot.fg",
+      "type": "color",
+      "default": "#16161a",
+      "dark": "#ececf0",
+      "doc": "Text in the bot's bubble."
+    },
+    {
+      "name": "font.body",
+      "type": "font-family",
+      "default": "system-ui, sans-serif",
+      "doc": "Body text."
+    },
+    {
+      "name": "font.display",
+      "type": "font-family",
+      "default": "system-ui, sans-serif",
+      "doc": "Titles and the bot's name."
+    },
+    {
+      "name": "font.mono",
+      "type": "font-family",
+      "default": "ui-monospace, monospace",
+      "doc": "Code and commands."
+    },
+    {
+      "name": "font.size.small",
+      "type": "length",
+      "default": "12px",
+      "doc": "Small text."
+    },
+    {
+      "name": "font.size.body",
+      "type": "length",
+      "default": "14px",
+      "doc": "Body text."
+    },
+    {
+      "name": "font.size.large",
+      "type": "length",
+      "default": "17px",
+      "doc": "Large text."
+    },
+    {
+      "name": "font.size.title",
+      "type": "length",
+      "default": "22px",
+      "doc": "Titles."
+    },
+    {
+      "name": "font.weight.body",
+      "type": "font-weight",
+      "default": "400",
+      "doc": "Body text's weight."
+    },
+    {
+      "name": "font.weight.strong",
+      "type": "font-weight",
+      "default": "600",
+      "doc": "Strong text's weight."
+    },
+    {
+      "name": "font.lineHeight",
+      "type": "number",
+      "default": "1.5",
+      "doc": "Body text's line height."
+    },
+    {
+      "name": "space.xs",
+      "type": "length",
+      "default": "4px",
+      "doc": "The smallest gap."
+    },
+    {
+      "name": "space.sm",
+      "type": "length",
+      "default": "8px",
+      "doc": "A small gap."
+    },
+    {
+      "name": "space.md",
+      "type": "length",
+      "default": "12px",
+      "doc": "The usual gap."
+    },
+    {
+      "name": "space.lg",
+      "type": "length",
+      "default": "16px",
+      "doc": "A large gap."
+    },
+    {
+      "name": "space.xl",
+      "type": "length",
+      "default": "24px",
+      "doc": "The largest gap."
+    },
+    {
+      "name": "radius.sm",
+      "type": "length",
+      "default": "6px",
+      "doc": "Small corners: chips, inputs."
+    },
+    {
+      "name": "radius.md",
+      "type": "length",
+      "default": "10px",
+      "doc": "Corners of cards and bubbles."
+    },
+    {
+      "name": "radius.lg",
+      "type": "length",
+      "default": "16px",
+      "doc": "Corners of windows and sheets."
+    },
+    {
+      "name": "shadow.raised",
+      "type": "shadow",
+      "default": "0 1px 2px rgba(0,0,0,0.08)",
+      "dark": "0 1px 2px rgba(0,0,0,0.4)",
+      "doc": "Raised parts."
+    },
+    {
+      "name": "shadow.overlay",
+      "type": "shadow",
+      "default": "0 8px 24px rgba(0,0,0,0.16)",
+      "dark": "0 8px 24px rgba(0,0,0,0.5)",
+      "doc": "Menus and popovers."
+    },
+    {
+      "name": "motion.fast",
+      "type": "duration",
+      "default": "120ms",
+      "doc": "Small transitions."
+    },
+    {
+      "name": "motion.normal",
+      "type": "duration",
+      "default": "220ms",
+      "doc": "Most transitions."
+    },
+    {
+      "name": "motion.easing",
+      "type": "easing",
+      "default": "cubic-bezier(0.2, 0, 0, 1)",
+      "doc": "The usual easing."
+    },
+    {
+      "name": "layout.sidebar.width",
+      "type": "length",
+      "default": "264px",
+      "doc": "The sidebar's width."
+    },
+    {
+      "name": "layout.panel.width",
+      "type": "length",
+      "default": "420px",
+      "doc": "The panel's width."
+    },
+    {
+      "name": "card.bg",
+      "type": "color",
+      "default": "#ffffff",
+      "dark": "#1f1f25",
+      "doc": "A card's background."
+    },
+    {
+      "name": "card.fg",
+      "type": "color",
+      "default": "#16161a",
+      "dark": "#ececf0",
+      "doc": "A card's text."
+    },
+    {
+      "name": "card.fg.muted",
+      "type": "color",
+      "default": "#55555f",
+      "dark": "#a6a6b3",
+      "doc": "A card's secondary text."
+    },
+    {
+      "name": "card.border",
+      "type": "color",
+      "default": "#dedee4",
+      "dark": "#2c2c34",
+      "doc": "A card's border."
+    },
+    {
+      "name": "card.radius",
+      "type": "length",
+      "default": "10px",
+      "doc": "A card's corners."
+    },
+    {
+      "name": "card.padding",
+      "type": "length",
+      "default": "12px",
+      "doc": "Space inside a card."
+    },
+    {
+      "name": "card.font",
+      "type": "font-family",
+      "default": "system-ui, sans-serif",
+      "doc": "A card's text font."
+    },
+    {
+      "name": "card.font.size",
+      "type": "length",
+      "default": "14px",
+      "doc": "A card's text size."
+    },
+    {
+      "name": "card.code.bg",
+      "type": "color",
+      "default": "#ececf0",
+      "dark": "#0f0f12",
+      "doc": "Behind a command on a card."
+    },
+    {
+      "name": "card.code.fg",
+      "type": "color",
+      "default": "#16161a",
+      "dark": "#ececf0",
+      "doc": "A command's text on a card."
+    },
+    {
+      "name": "card.code.font",
+      "type": "font-family",
+      "default": "ui-monospace, monospace",
+      "doc": "A command's font on a card."
+    },
+    {
+      "name": "card.approve.bg",
+      "type": "color",
+      "default": "#5b5bd6",
+      "dark": "#8b8bf0",
+      "doc": "The approve button."
+    },
+    {
+      "name": "card.approve.fg",
+      "type": "color",
+      "default": "#ffffff",
+      "dark": "#0f0f12",
+      "doc": "The approve button's text."
+    },
+    {
+      "name": "card.deny.bg",
+      "type": "color",
+      "default": "#ececf0",
+      "dark": "#2c2c34",
+      "doc": "The deny button."
+    },
+    {
+      "name": "card.deny.fg",
+      "type": "color",
+      "default": "#16161a",
+      "dark": "#ececf0",
+      "doc": "The deny button's text."
+    },
+    {
+      "name": "card.button.radius",
+      "type": "length",
+      "default": "8px",
+      "doc": "A card button's corners."
+    }
+  ],
+  "apiCalls": {
+    "confirm": {
+      "where": "both"
+    },
+    "t": {
+      "where": "both"
+    },
+    "points.entries": {
+      "where": "both"
+    },
+    "points.watch": {
+      "where": "both"
+    },
+    "points.call": {
+      "where": "both"
+    },
+    "commands.run": {
+      "capability": "call:*",
+      "where": "both"
+    },
+    "commands.list": {
+      "where": "both"
+    },
+    "host.call": {
+      "where": "ui"
+    },
+    "host.on": {
+      "where": "ui"
+    },
+    "ui.send": {
+      "where": "host"
+    },
+    "storage.synced.get": {
+      "where": "both"
+    },
+    "storage.synced.set": {
+      "where": "both"
+    },
+    "storage.synced.delete": {
+      "where": "both"
+    },
+    "storage.synced.keys": {
+      "where": "both"
+    },
+    "storage.synced.watch": {
+      "where": "both"
+    },
+    "net.fetch": {
+      "capability": "network:*",
+      "where": "both"
+    },
+    "secrets.get": {
+      "where": "host"
+    },
+    "settings.get": {
+      "where": "both"
+    },
+    "settings.watch": {
+      "where": "both"
+    },
+    "settings.set": {
+      "where": "both"
+    },
+    "conversation.list": {
+      "capability": "conversation.read",
+      "where": "both"
+    },
+    "conversation.get": {
+      "capability": "conversation.read",
+      "where": "both"
+    },
+    "conversation.history": {
+      "capability": "conversation.read",
+      "where": "both"
+    },
+    "conversation.follow": {
+      "capability": "conversation.read",
+      "where": "both"
+    },
+    "conversation.note": {
+      "capability": "conversation.post",
+      "where": "both"
+    },
+    "conversation.send": {
+      "capability": "conversation.post",
+      "where": "both"
+    },
+    "conversation.answer": {
+      "capability": "conversation.post",
+      "where": "both"
+    },
+    "memory.list": {
+      "capability": "memory.read",
+      "where": "both"
+    },
+    "memory.read": {
+      "capability": "memory.read",
+      "where": "both"
+    },
+    "bots.list": {
+      "capability": "bots.read",
+      "where": "both"
+    },
+    "bots.get": {
+      "capability": "bots.read",
+      "where": "both"
+    },
+    "bots.watch": {
+      "capability": "bots.read",
+      "where": "both"
+    },
+    "routines.list": {
+      "capability": "routines.read",
+      "where": "both"
+    },
+    "routines.runs": {
+      "capability": "routines.read",
+      "where": "both"
+    },
+    "computers.list": {
+      "capability": "computers.read",
+      "where": "both"
+    },
+    "computers.get": {
+      "capability": "computers.read",
+      "where": "both"
+    },
+    "computers.watch": {
+      "capability": "computers.read",
+      "where": "both"
+    },
+    "computers.holds": {
+      "capability": "computers.control",
+      "where": "both"
+    },
+    "computers.takeHold": {
+      "capability": "computers.control",
+      "where": "host"
+    },
+    "computers.releaseHold": {
+      "capability": "computers.control",
+      "where": "host"
+    },
+    "computers.setUserWorking": {
+      "capability": "computers.control",
+      "where": "host"
+    },
+    "computers.setActionRunning": {
+      "capability": "computers.control",
+      "where": "host"
+    },
+    "computers.cloverWindows": {
+      "capability": "computers.control",
+      "where": "host"
+    },
+    "approvals.pending": {
+      "capability": "approvals",
+      "where": "both"
+    },
+    "approvals.watch": {
+      "capability": "approvals",
+      "where": "both"
+    },
+    "files.stat": {
+      "capability": "files",
+      "where": "both"
+    },
+    "files.readText": {
+      "capability": "files",
+      "where": "both"
+    },
+    "files.readBytes": {
+      "capability": "files",
+      "where": "both"
+    },
+    "files.write": {
+      "capability": "files",
+      "where": "both"
+    },
+    "files.list": {
+      "capability": "files",
+      "where": "both"
+    },
+    "files.remove": {
+      "capability": "files",
+      "where": "both"
+    },
+    "files.move": {
+      "capability": "files",
+      "where": "both"
+    },
+    "files.glob": {
+      "capability": "files",
+      "where": "both"
+    },
+    "files.grep": {
+      "capability": "files",
+      "where": "both"
+    },
+    "browser.tabs": {
+      "capability": "browser",
+      "where": "both"
+    },
+    "browser.open": {
+      "capability": "browser",
+      "where": "both"
+    },
+    "browser.close": {
+      "capability": "browser",
+      "where": "both"
+    },
+    "browser.navigate": {
+      "capability": "browser",
+      "where": "both"
+    },
+    "browser.show": {
+      "capability": "browser",
+      "where": "both"
+    },
+    "browser.hide": {
+      "capability": "browser",
+      "where": "both"
+    },
+    "browser.screenshot": {
+      "capability": "browser",
+      "where": "both"
+    },
+    "browser.cdp": {
+      "capability": "browser",
+      "where": "both"
+    },
+    "browser.onCdpEvent": {
+      "capability": "browser",
+      "where": "both"
+    },
+    "browser.watch": {
+      "capability": "browser",
+      "where": "both"
+    },
+    "usage.rows": {
+      "capability": "usage.read",
+      "where": "both"
+    },
+    "usage.plans": {
+      "capability": "usage.read",
+      "where": "both"
+    },
+    "usage.summary": {
+      "capability": "usage.read",
+      "where": "both"
+    },
+    "usage.watch": {
+      "capability": "usage.read",
+      "where": "both"
+    },
+    "logs.read": {
+      "capability": "logs.read",
+      "where": "both"
+    },
+    "logs.follow": {
+      "capability": "logs.read",
+      "where": "both"
+    },
+    "notify.send": {
+      "capability": "notify",
+      "where": "both"
+    },
+    "audio.play": {
+      "capability": "audio",
+      "where": "both"
+    },
+    "audio.onRecording": {
+      "capability": "audio",
+      "where": "both"
+    }
+  }
+}

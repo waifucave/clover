@@ -62,6 +62,7 @@ export const CloverWindow = z.object({
   x: z.number(), y: z.number(), width: z.number().nonnegative(), height: z.number().nonnegative(),
   display: z.string().max(128).optional(),
 });
+export type CloverWindow = z.infer<typeof CloverWindow>;
 
 export const FileStat = z.object({
   path: TreePath,

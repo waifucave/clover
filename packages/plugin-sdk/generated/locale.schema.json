@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Clover locale",
+  "description": "Locale format 1: a string table for one language (spec §5.5).",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "maxLength": 2048
+    },
+    "locale": {
+      "type": "number",
+      "const": 1
+    },
+    "lang": {
+      "type": "string",
+      "minLength": 2,
+      "maxLength": 35,
+      "pattern": "^[a-z]{2,3}(-[A-Za-z0-9]{2,8})*$"
+    },
+    "strings": {
+      "type": "object",
+      "propertyNames": {
+        "type": "string",
+        "minLength": 3,
+        "maxLength": 256,
+        "pattern": "^[a-z][a-z0-9-]*(\\.[A-Za-z0-9_-]+)+$"
+      },
+      "additionalProperties": {
+        "anyOf": [
+          {
+            "type": "string",
+            "maxLength": 20000
+          },
+          {
+            "type": "object",
+            "properties": {
+              "zero": {
+                "type": "string",
+                "maxLength": 20000
+              },
+              "one": {
+                "type": "string",
+                "maxLength": 20000
+              },
+              "two": {
+                "type": "string",
+                "maxLength": 20000
+              },
+              "few": {
+                "type": "string",
+                "maxLength": 20000
+              },
+              "many": {
+                "type": "string",
+                "maxLength": 20000
+              },
+              "other": {
+                "type": "string",
+                "maxLength": 20000
+              }
+            },
+            "required": [
+              "other"
+            ],
+            "additionalProperties": false
+          }
+        ]
+      }
+    }
+  },
+  "required": [
+    "locale",
+    "lang",
+    "strings"
+  ],
+  "additionalProperties": false
+}

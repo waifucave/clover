@@ -1,0 +1,140 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Clover theme",
+  "description": "Theme format 1: design tokens, fonts, icons and cleaned CSS (spec §5.5).",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "maxLength": 2048
+    },
+    "theme": {
+      "type": "number",
+      "const": 1
+    },
+    "name": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "en": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "en"
+          ],
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      ]
+    },
+    "appearance": {
+      "type": "string",
+      "enum": [
+        "light",
+        "dark",
+        "both"
+      ]
+    },
+    "tokens": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "dark": {
+      "type": "object",
+      "properties": {
+        "tokens": {
+          "$ref": "#/$defs/__schema0"
+        }
+      },
+      "required": [
+        "tokens"
+      ],
+      "additionalProperties": false
+    },
+    "css": {
+      "$ref": "#/$defs/__schema1"
+    },
+    "fonts": {
+      "maxItems": 64,
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/__schema2"
+      }
+    },
+    "icons": {
+      "type": "object",
+      "propertyNames": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 64,
+        "pattern": "^[a-z0-9][a-z0-9.-]*$"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema1"
+      }
+    }
+  },
+  "required": [
+    "theme",
+    "name",
+    "tokens"
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "__schema0": {
+      "type": "object",
+      "propertyNames": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 128,
+        "pattern": "^[a-z0-9][a-z0-9.-]*$"
+      },
+      "additionalProperties": {
+        "type": "string",
+        "maxLength": 300
+      }
+    },
+    "__schema1": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1024,
+      "format": "path",
+      "description": "A path relative to the plugin folder, with `/`; it must resolve inside it."
+    },
+    "__schema2": {
+      "type": "object",
+      "properties": {
+        "family": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100,
+          "pattern": "^[A-Za-z0-9 _-]+$"
+        },
+        "src": {
+          "$ref": "#/$defs/__schema1"
+        },
+        "weight": {
+          "type": "string",
+          "maxLength": 16
+        },
+        "style": {
+          "type": "string",
+          "enum": [
+            "normal",
+            "italic"
+          ]
+        }
+      },
+      "required": [
+        "family",
+        "src"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

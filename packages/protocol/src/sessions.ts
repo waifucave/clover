@@ -128,7 +128,10 @@ export const RoutineRunView = z.object({
   summary: z.string().max(4000).optional(),
 });
 
+export type RoutineRunView = z.infer<typeof RoutineRunView>;
+
 export const MemoryEntry = z.object({ path: z.string().max(1024), size: z.number().int().nonnegative(), modifiedAt: Timestamp });
+export type MemoryEntry = z.infer<typeof MemoryEntry>;
 
 const SessionParams = z.object({ id: SessionId });
 
