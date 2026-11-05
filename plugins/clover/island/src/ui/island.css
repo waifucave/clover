@@ -7,8 +7,8 @@
    those, nor anything between them and a part, may carry a filter, an opacity below 1 or a transform
    other than a move or an enlargement at rest. The birth and morph set those inline, only while moving.
    And nothing is drawn over a part, not even something transparent (Chromium counts it as covering):
-   rims are each box's own inset shadow, glows sit beneath their row (a pseudo-element at z-index -1 in
-   the row's own stacking context), and nothing positioned comes after a part (`sealed.test.tsx`). */
+   rims are each box's own inset shadow, glows sit beneath the card's content (a pseudo-element at z-index -1
+   in the card's own stacking context), and nothing positioned comes after a part (`sealed.test.tsx`). */
 
 .clv-island {
   position: relative;
@@ -130,6 +130,9 @@
   display: flex;
   flex-direction: column;
   gap: 10px;
+  /* The whole card is one stacking context: the circles' glows (z-index -1) sit beneath every field and button
+     in it. A row of its own would paint as a layer over the fields below it, glow and all. */
+  isolation: isolate;
 }
 
 .clv-card-header {
@@ -165,8 +168,6 @@
   display: flex;
   align-items: flex-end;
   gap: 8px;
-  /* Its own stacking context: the circles' glows sit beneath everything in it. */
-  isolation: isolate;
 }
 
 .clv-answer-words {
@@ -229,8 +230,8 @@
   font-weight: 700;
 }
 
-/* The soft glow under the pointer, in the circle's own colour: two rings drawn BENEATH the row, so it never
-   lies over a neighbour (a sealed part least of all). */
+/* The soft glow under the pointer, in the circle's own colour: two rings drawn BENEATH the card's content (the
+   card is its stacking context), so it never lies over a neighbour, a sealed part least of all. */
 .clv-circle::before,
 .clv-sealed-slot::before {
   content: "";
@@ -400,7 +401,6 @@
   justify-content: flex-end;
   gap: 8px;
   min-height: 30px;
-  isolation: isolate;
 }
 
 .clv-card-status {

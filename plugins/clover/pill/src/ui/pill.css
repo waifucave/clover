@@ -9,7 +9,7 @@
    fades, shrinks or spins does so inline, on elements that never hold a sealed part, and the morph's blur
    and fade only while the shape moves. Nothing is drawn over a part either, not even something
    transparent (Chromium counts it as covering): the shell's rim is its own inset shadow, the slots' glows
-   sit beneath their row, and nothing positioned comes after a card (`sealed.test.tsx`). */
+   sit beneath the card's content, and nothing positioned comes after a card (`sealed.test.tsx`). */
 
 .clp-stage {
   position: relative;
@@ -340,6 +340,9 @@
   display: flex;
   flex-direction: column;
   gap: 10px;
+  /* The whole card is one stacking context: the slots' glows (z-index -1) sit beneath every field and button in
+     it. A row of its own would paint as a layer over the fields above it, glow and all. */
+  isolation: isolate;
 }
 
 .clp-card-header {
@@ -402,8 +405,6 @@
   align-items: center;
   gap: 8px;
   min-height: 30px;
-  /* Its own stacking context: the slots' glows sit beneath everything in it. */
-  isolation: isolate;
 }
 
 .clp-card-status {
@@ -459,8 +460,8 @@
   background: var(--clover-pill-send, #FFFFFF);
 }
 
-/* The glow under the pointer, in the circle's own colour: two rings drawn BENEATH the row, so it never lies
-   over the other button or the words beside it. */
+/* The glow under the pointer, in the circle's own colour: two rings drawn BENEATH the card's content (the card is
+   its stacking context), so it never lies over the other button or the words beside it. */
 .clp-slot::before {
   content: "";
   position: absolute;

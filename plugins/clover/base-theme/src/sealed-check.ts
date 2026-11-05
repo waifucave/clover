@@ -10,9 +10,12 @@
 //     own box (an outer shadow, an outline, a filter);
 //   - an element before it, inside the same positioned box, that is out of flow or shifted (positioned boxes
 //     paint after the flow around them), and any element lifted by a positive z-index;
-//   - a positioned pseudo-element on the part, on anything around it or on anything after it.
+//   - a positioned pseudo-element on the part, on anything around it or on anything after it;
+//   - inside the part's card, a box that paints as a layer of its own (it isolates, or is positioned with a
+//     z-index, or turns, or fades) holding anything that draws outside its box: the layer paints after the card's
+//     flow, wherever it sits in the tree, so a glow "beneath" its own row still lands on the field below the row.
 //
-// unless a negative z-index puts it beneath. Hover, focus and active states count as if they were on: a glow
+// unless a negative z-index puts it beneath (in the part's own layer). Hover, focus and active states count as if they were on: a glow
 // under the pointer shows exactly when the user is about to click.
 
 import { animatesAny, drawsOver, hidesFrames, hidingKeyframes, lifts, styleRules, type Declaration } from "./css-check";
@@ -156,9 +159,43 @@ export function sealedProblems(root: Element, css: string): string[] {
         pseudoOver(el, part);
       }
     }
+
+    // Layers in the part's card: one that holds anything drawing outside its box paints it over the card's flow.
+    const card = part.closest("[data-sealed-card]") ?? root;
+    for (const el of card.querySelectorAll("*")) {
+      if (el === part || part.contains(el) || el.contains(part) || hidden(el) || !layered(of(el))) continue;
+      for (const inner of [el, ...el.querySelectorAll("*")]) {
+        const spill = overflows(of(inner)) ?? overflows(of(inner, "before")) ?? overflows(of(inner, "after"));
+        if (spill) {
+          problems.add(`${describe(el)} paints as a layer of its own over the card's flow, and ${describe(inner)} in it draws outside its box (${spill}) onto ${describe(part)}`);
+          break;
+        }
+      }
+    }
   }
   for (const selector of unknown) problems.add(`cannot check the selector ${selector}`);
   return [...problems];
+}
+
+/** Whether a box paints as a layer of its own (a stacking context), after the flow it sits in. */
+function layered(declarations: readonly Declaration[]): boolean {
+  const last = (property: string) => {
+    for (let i = declarations.length - 1; i >= 0; i--) if (declarations[i]!.property === property) return clean(declarations[i]!.value);
+    return undefined;
+  };
+  if (last("isolation") === "isolate") return true;
+  const z = last("z-index");
+  if (positioned(declarations) && z !== undefined && z !== "auto") return true;
+  const opacity = last("opacity");
+  if (opacity !== undefined && !(parseFloat(opacity) >= 1)) return true;
+  for (const property of ["transform", "filter", "backdrop-filter", "perspective", "clip-path", "mask", "mask-image"]) {
+    const v = last(property);
+    if (v !== undefined && v !== "none") return true;
+  }
+  const blend = last("mix-blend-mode");
+  if (blend !== undefined && blend !== "normal") return true;
+  const contain = last("contain");
+  return contain !== undefined && /paint|layout|strict|content/.test(contain);
 }
 
 function positioned(declarations: readonly Declaration[]): boolean {

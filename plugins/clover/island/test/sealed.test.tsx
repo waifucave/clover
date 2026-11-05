@@ -180,6 +180,12 @@ describe("the check itself catches what would cover a part", () => {
     [`<div class="row" style="filter: blur(1px)">${part}</div>`, ``],
     [`<div class="row">${part}</div>`, `.row { visibility: hidden }`],
     [`<div class="row">${part}</div><div class="top"></div>`, `.top { position: relative; z-index: 3 }`],
+    // A row of its own (a stacking context) paints after the card's flow: its glow, "beneath" in the row, lands on
+    // the field below it. What Chromium caught in the gallery.
+    [
+      `<div data-sealed-card="c"><div class="row"><span class="slot"></span></div><span data-sealed="field" data-field="risk"></span></div>`,
+      `.row { isolation: isolate } .slot { position: relative } .slot::before { content: ""; position: absolute; inset: 0; z-index: -1; box-shadow: 0 0 20px #FFF }`,
+    ],
   ];
   for (const [html, css] of cases) {
     test(css || html, () => {
@@ -191,11 +197,11 @@ describe("the check itself catches what would cover a part", () => {
     });
   }
 
-  test("and lets through a glow beneath its row, and a rim of the box's own", () => {
+  test("and lets through a glow beneath the card's own content, and a rim of the box's own", () => {
     const root = document.createElement("div");
-    root.innerHTML = `<div class="row"><span class="slot">${part}</span><span class="slot after"></span></div>`;
+    root.innerHTML = `<div class="card" data-sealed-card="c"><div class="row"><span class="slot">${part}</span><span class="slot after"></span></div><span data-sealed="field" data-field="risk"></span></div>`;
     document.body.appendChild(root);
-    const css = `.row { isolation: isolate } .slot { position: relative; box-shadow: inset 0 0 0 1px #FFF } .slot::before { content: ""; position: absolute; inset: 0; z-index: -1; box-shadow: 0 0 20px #FFF }`;
+    const css = `.card { isolation: isolate } .slot { position: relative; box-shadow: inset 0 0 0 1px #FFF } .slot::before { content: ""; position: absolute; inset: 0; z-index: -1; box-shadow: 0 0 20px #FFF }`;
     expect(sealedProblems(root, css)).toEqual([]);
     root.remove();
   });
