@@ -2,7 +2,7 @@ name: Clover S9 layers
 on:
   push:
     branches: [main, lane/e-m0, lane/e-m1]
-    paths: ['spikes/s9-layers/**', '.github/workflows/spike-s9.yml']
+    paths: ['spikes/s9-layers/**', '.github/workflows/spike-s9.yml', 'apps/desktop/**/package.json', 'apps/desktop/package.json', 'bun.lock', 'pnpm-lock.yaml']
   workflow_dispatch:
 permissions:
   contents: read

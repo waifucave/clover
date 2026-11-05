@@ -1,9 +1,16 @@
 import { spawn } from 'node:child_process';
-import { readFileSync, mkdirSync, mkdtempSync } from 'node:fs';
+import { readFileSync, mkdirSync, mkdtempSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 // Check BEFORE resolving/loading Electron. This script cannot launch locally.
 if (process.env.GITHUB_ACTIONS !== 'true' || process.env.CLOVER_S9_CI !== '1') throw new Error('Electron runs only in the S9 GitHub Actions job');
+const desktopManifest=resolve('../../../apps/desktop/package.json');
+if(existsSync(desktopManifest)){
+  const desktop=JSON.parse(readFileSync(desktopManifest,'utf8'));
+  const pinned=JSON.parse(readFileSync('package.json','utf8')).devDependencies.electron;
+  const product=desktop.devDependencies?.electron||desktop.dependencies?.electron;
+  if(product && product!==pinned)throw new Error('Desktop Electron pin changed: update and rerun S9 at the same exact pin');
+}
 const command = process.argv[2];
 const checks = command === 'all' ? ['process', 'memory', 'crossing', 'network'] : [command];
 if (checks.some(c => !['process', 'memory', 'crossing', 'network'].includes(c))) throw new Error('unknown check');
