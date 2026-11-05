@@ -252,3 +252,23 @@ describe("delivery", () => {
     expect(t.deliveries.map((d) => fromUtf8(d.request.body))).toEqual(["as buffer", "as view", "as blob"]);
   });
 });
+
+describe("a computer the service forgot", () => {
+  test("registers again after repeated failed connections, and stops if it was revoked", async () => {
+    const t = setup();
+    await connected(t);
+    t.service.revoked = true;
+    // The service refuses the upgrade for a revoked computer: the socket closes without ever opening.
+    t.service.socket.serverClose(1006);
+    for (let i = 0; i < 4; i++) {
+      await t.clock.advance(60_000);
+      const socket = t.service.sockets.at(-1)!;
+      if (socket.readyState === 0) socket.serverClose(1006);
+      await settle();
+    }
+    await t.clock.advance(60_000);
+    expect(t.client.state).toBe("revoked");
+    const registrations = t.service.calls.filter((c) => c.path === "/v1/devices/self").length;
+    expect(registrations).toBeGreaterThan(1);
+  });
+});

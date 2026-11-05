@@ -317,6 +317,9 @@ export class ForwarderClient {
       this.revoked();
       return;
     }
+    // Connections that keep failing before they open may mean the service no longer knows this computer
+    // (it answers the upgrade 403, which a socket cannot report): register again, which says if it was revoked.
+    if (this.attempt >= 2) this.registration = null;
     this.retry();
   }
 
