@@ -1,0 +1,582 @@
+/* The sidebar. Every colour, face and size is a theme token from lane B's catalog (`--clover-*`, listed in
+   tokens.ts), or the clover plugin's own (`--clover-plugin-clover-*`). Sizes follow the reference app's
+   (as measured for lane G's base theme): rows 32 px tall and 34 apart, 8 px in from both edges, 10 px of
+   padding, an 18 px icon and 8 px to the text. It paints no background: the window frame puts the
+   sidebar's material, or its solid colour, behind it. */
+
+.cl-sidebar {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  width: 247px;
+  height: 100%;
+  min-height: 0;
+  padding: 0 var(--clover-space-s);
+  background: transparent;
+  color: var(--clover-color-text);
+  font-family: var(--clover-font-sans);
+  font-size: var(--clover-font-size-control);
+  line-height: var(--clover-font-line-tight);
+}
+
+/* The rail stays wide enough for the window's own controls over its top. */
+.cl-sidebar[data-collapsed] {
+  width: max(64px, var(--cl-window-controls, 80px));
+  align-items: center;
+}
+
+.cl-sidebar button {
+  font: inherit;
+  -webkit-app-region: no-drag;
+}
+
+.cl-sidebar :focus-visible {
+  outline: 2px solid var(--clover-color-focus);
+  outline-offset: -2px;
+}
+
+/* No specificity, so each list's own class sets its margins. */
+:where(.cl-sidebar) ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* The first row: the window's controls draw over its start (the traffic lights on macOS, 80 px with
+   their margin; the host sets `--cl-window-controls` where they differ), and the window drags by it. */
+.cl-sidebar__top {
+  display: flex;
+  flex: none;
+  align-items: center;
+  align-self: stretch;
+  height: var(--clover-plugin-clover-bar-height);
+  -webkit-app-region: drag;
+}
+
+.cl-sidebar__controls {
+  flex: none;
+  width: calc(var(--cl-window-controls, 80px) - var(--clover-space-s));
+}
+
+.cl-sidebar[data-collapsed] .cl-sidebar__controls {
+  width: 0;
+}
+
+.cl-sidebar__brand {
+  display: inline-flex;
+  align-items: center;
+  margin-left: auto;
+  padding: 0 6px;
+  color: var(--clover-plugin-clover-mark);
+}
+
+.cl-sidebar__rail-toggle {
+  display: flex;
+  justify-content: center;
+  margin-bottom: var(--clover-space-s);
+}
+
+/* Bots or code: two halves on a track. */
+.cl-sidebar__switch {
+  display: flex;
+  flex: none;
+  gap: 2px;
+  height: 30px;
+  padding: 2px;
+  box-sizing: border-box;
+  border-radius: var(--clover-radius-medium);
+  background: var(--clover-color-control);
+}
+
+.cl-sidebar[data-collapsed] .cl-sidebar__switch {
+  flex-direction: column;
+  height: auto;
+}
+
+.cl-sidebar__switch-option {
+  display: inline-flex;
+  flex: 1 1 0;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 0;
+  min-height: 26px;
+  padding: 0 var(--clover-space-s);
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--clover-color-text-muted);
+  cursor: pointer;
+}
+
+.cl-sidebar__switch-option[aria-checked="true"] {
+  background: var(--clover-color-selected);
+  color: var(--clover-color-text);
+}
+
+.cl-sidebar__actions {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 11px;
+}
+
+.cl-sidebar__row {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: var(--clover-space-s);
+  width: 100%;
+  min-height: 32px;
+  padding: 0 10px;
+  border: none;
+  border-radius: var(--clover-radius-medium);
+  background: transparent;
+  color: var(--clover-color-text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.cl-sidebar__row:hover {
+  background: var(--clover-color-hover);
+}
+
+.cl-sidebar__row[aria-current="page"] {
+  background: var(--clover-color-selected);
+}
+
+.cl-sidebar[data-collapsed] .cl-sidebar__row {
+  justify-content: center;
+  width: 40px;
+  padding: 0;
+}
+
+.cl-sidebar__title {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cl-sidebar__icon-button {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: var(--clover-radius-medium);
+  background: transparent;
+  color: var(--clover-color-text-muted);
+  cursor: pointer;
+}
+
+.cl-sidebar__icon-button:hover {
+  background: var(--clover-color-hover);
+  color: var(--clover-color-text);
+}
+
+/* The bots, or the projects, and the apps: the part that scrolls. */
+.cl-sidebar__scroll {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 18px;
+  min-height: 0;
+  margin: 18px calc(-1 * var(--clover-space-s)) 0;
+  padding: 0 var(--clover-space-s) var(--clover-space-s);
+  overflow-y: auto;
+}
+
+.cl-sidebar[data-collapsed] .cl-sidebar__scroll {
+  align-items: center;
+}
+
+.cl-sidebar__section {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.cl-sidebar__heading {
+  display: flex;
+  align-items: center;
+  min-height: 32px;
+  margin: 0;
+  padding: 0 10px;
+  color: var(--clover-color-text);
+  font-size: var(--clover-font-size-label);
+  font-weight: var(--clover-font-weight-regular);
+}
+
+.cl-sidebar__list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.cl-sidebar__portrait {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  overflow: hidden;
+  border-radius: var(--clover-radius-round);
+  background: var(--clover-color-control);
+  color: var(--clover-color-text-secondary);
+  font-size: var(--clover-font-size-caption);
+}
+
+.cl-sidebar__portrait img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* A bot's name keeps its room; what it is doing takes what is left and gives way first. */
+.cl-sidebar__name {
+  flex: 0 1 auto;
+}
+
+.cl-sidebar__line {
+  flex: 1 1000 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--clover-color-text-muted);
+  font-size: var(--clover-font-size-label);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cl-sidebar__fill {
+  flex: 1 1 auto;
+}
+
+.cl-sidebar__line[data-status="needs-you"] {
+  color: var(--clover-color-attention-text);
+}
+
+/* What needs the user, counted: a quiet wash of the accent, its digits at 5:1 or better in both themes. */
+.cl-sidebar__count {
+  flex: none;
+  box-sizing: border-box;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: var(--clover-radius-round);
+  background: var(--clover-color-accent-soft);
+  color: var(--clover-color-accent-text);
+  font-size: var(--clover-font-size-caption);
+  line-height: 18px;
+  text-align: center;
+}
+
+/* Unread is a quiet grey dot; running is the accent; they never share a colour. */
+.cl-sidebar__unread {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: var(--clover-radius-round);
+  background: var(--clover-plugin-clover-unread);
+}
+
+/* Live tabs nest under their bot along a guide line, drawn under the rows so a selected row covers it. */
+.cl-sidebar__agents {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 2px;
+  background-image: linear-gradient(var(--clover-color-hairline-raised), var(--clover-color-hairline-raised));
+  background-position: 14px 0;
+  background-repeat: no-repeat;
+  background-size: 1px 100%;
+}
+
+.cl-sidebar__sessions {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.cl-sidebar__agent {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+/* The row takes what Close leaves it. */
+.cl-sidebar__agent > .cl-sidebar__row {
+  flex: 1 1 auto;
+  width: auto;
+  min-width: 0;
+}
+
+.cl-sidebar__agents .cl-sidebar__row--nested {
+  padding-left: 30px;
+}
+
+.cl-sidebar__dot {
+  flex: none;
+  box-sizing: border-box;
+  width: 7px;
+  height: 7px;
+  border-radius: var(--clover-radius-round);
+  background: var(--clover-color-text-placeholder);
+}
+
+.cl-sidebar__dot[data-status="running"] {
+  background: var(--clover-color-accent);
+}
+
+.cl-sidebar__dot[data-status="needs-you"] {
+  background: var(--clover-color-attention);
+}
+
+/* Stalled is a ring, failed a filled dot: the same family, never the same mark as needs-you. */
+.cl-sidebar__dot[data-status="stalled"] {
+  border: 1.5px solid var(--clover-color-danger);
+  background: transparent;
+}
+
+.cl-sidebar__dot[data-status="failed"] {
+  background: var(--clover-color-danger);
+}
+
+.cl-sidebar__dot[data-status="completed"] {
+  background: var(--clover-color-success);
+}
+
+/* A live tab's state comes first and never shrinks; its title takes what is left. */
+.cl-sidebar__state {
+  flex: none;
+  color: var(--clover-color-text-muted);
+  font-size: var(--clover-font-size-label);
+}
+
+.cl-sidebar__state[data-status="needs-you"] {
+  color: var(--clover-color-attention-text);
+}
+
+.cl-sidebar__state[data-status="failed"] {
+  color: var(--clover-color-danger);
+}
+
+/* Close on a finished tab: always there, so the keyboard reaches it. */
+.cl-sidebar__close {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: var(--clover-radius-small);
+  background: transparent;
+  color: var(--clover-color-text-muted);
+  cursor: pointer;
+}
+
+.cl-sidebar__close:hover {
+  background: var(--clover-color-hover);
+  color: var(--clover-color-text);
+}
+
+/* Projects: a heading row with its fold and a +, then its sessions. */
+.cl-sidebar__projects {
+  gap: 18px;
+}
+
+.cl-sidebar__project-head {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-bottom: 2px;
+}
+
+.cl-sidebar__project-toggle {
+  display: inline-flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  min-height: 32px;
+  padding: 0 10px;
+  border: none;
+  border-radius: var(--clover-radius-medium);
+  background: transparent;
+  color: var(--clover-color-text);
+  font-size: var(--clover-font-size-label);
+  cursor: pointer;
+}
+
+.cl-sidebar__project-toggle:hover {
+  background: var(--clover-color-hover);
+}
+
+.cl-sidebar__project-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cl-sidebar__branch {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 3px;
+  color: var(--clover-plugin-clover-branch);
+  font-size: var(--clover-font-size-label);
+}
+
+.cl-sidebar__empty {
+  padding: 6px 10px;
+  color: var(--clover-color-text-muted);
+  font-size: var(--clover-font-size-label);
+}
+
+.cl-sidebar__app-icon {
+  width: 18px;
+  height: 18px;
+  border-radius: var(--clover-radius-small);
+}
+
+/* Banners: safe mode, the pause switch, the link to the main computer. They sit above the account. */
+.cl-sidebar__banners {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: var(--clover-space-xs);
+  padding: var(--clover-space-s) 0 var(--clover-space-xs);
+}
+
+.cl-sidebar__banner {
+  display: grid;
+  grid-template-columns: 16px 1fr;
+  align-items: start;
+  gap: 2px var(--clover-space-s);
+  min-height: 32px;
+  box-sizing: border-box;
+  padding: 7px 10px;
+  border-radius: var(--clover-radius-medium);
+  background: var(--clover-color-control);
+  color: var(--clover-color-text);
+  font-size: var(--clover-font-size-label);
+}
+
+.cl-sidebar__banner[data-tone="attention"] > .cl-sidebar-icon {
+  color: var(--clover-color-attention-text);
+}
+
+.cl-sidebar__banner-action {
+  display: inline-flex;
+  grid-column: 2;
+  justify-self: start;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 0;
+  border: none;
+  background: transparent;
+  color: var(--clover-color-accent-text);
+  font-size: var(--clover-font-size-label);
+  cursor: pointer;
+}
+
+.cl-sidebar__marks {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: var(--clover-space-xs);
+  padding-top: var(--clover-space-s);
+}
+
+.cl-sidebar__mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: none;
+  border-radius: var(--clover-radius-medium);
+  background: var(--clover-color-control);
+  color: var(--clover-color-text-secondary);
+  cursor: pointer;
+}
+
+.cl-sidebar__mark[data-tone="attention"] {
+  color: var(--clover-color-attention-text);
+}
+
+/* The account and the settings gear, at the bottom. */
+.cl-sidebar__footer {
+  display: flex;
+  flex: none;
+  align-items: center;
+  align-self: stretch;
+  gap: var(--clover-space-xs);
+  padding: var(--clover-space-xs) 0 var(--clover-space-s);
+}
+
+.cl-sidebar[data-collapsed] .cl-sidebar__footer {
+  flex-direction: column;
+  align-items: center;
+}
+
+.cl-sidebar__account {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding-left: 6px;
+}
+
+.cl-sidebar__avatar {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: var(--clover-radius-round);
+  background: var(--clover-color-control);
+  color: var(--clover-color-text-secondary);
+  font-size: var(--clover-font-size-tiny);
+}
+
+.cl-sidebar__account-names {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--clover-font-size-label);
+}
+
+.cl-sidebar__account-names > .cl-sidebar__title {
+  flex: 0 1 auto;
+}
+
+.cl-sidebar__account-detail {
+  flex: none;
+  color: var(--clover-color-text-muted);
+}
+
+.cl-sidebar__count--corner {
+  margin-left: -10px;
+  align-self: flex-start;
+}
+
+.cl-sidebar-icon {
+  flex: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cl-sidebar * {
+    transition: none;
+  }
+}

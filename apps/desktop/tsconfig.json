@@ -1,0 +1,6 @@
+{
+  "extends": "../../tsconfig.base.json",
+  // The main process runs on Electron's Node, never Bun: Node's types only, so a Bun API cannot slip in.
+  "compilerOptions": { "types": ["node"] },
+  "include": ["src/main"]
+}

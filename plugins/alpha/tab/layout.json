@@ -1,0 +1,23 @@
+{
+  "layout": 1,
+  "root": {
+    "column": [
+      { "spot": "bot.header" },
+      {
+        "row": [
+          {
+            "column": [
+              { "spot": "conversation", "grow": 1 },
+              { "spot": "composer" }
+            ],
+            "grow": 1,
+            "min": 360,
+            "class": "alpha-talk"
+          },
+          { "spot": "bot.stage", "size": 380, "min": 300, "max": 480, "hideBelow": 820, "class": "alpha-stage" }
+        ],
+        "grow": 1
+      }
+    ]
+  }
+}

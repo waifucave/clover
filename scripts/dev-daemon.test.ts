@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, readFileSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { OTHER_INSTALL_HOMES } from "../packages/core/src/other-installs";
-import { designatedRequirementOf, DEV_DAEMON_IDENTIFIER, devCompileCommand, devDaemonHome, devDaemonRequirement, resolveDevSigningIdentity, signedFacts } from "./dev-daemon-lib";
+import { describeDevDaemonPlan, designatedRequirementOf, DEV_DAEMON_IDENTIFIER, devCompileCommand, devDaemonHome, devDaemonPlan, devDaemonRequirement, devOs, resolveDevSigningIdentity, signedFacts } from "./dev-daemon-lib";
 
 const TEAM = "37N77U9RSZ";
 const IDENTITIES = `  1) ${"A".repeat(40)} "Apple Development: someone@example.invalid (AAAAAAAAAA)"
@@ -74,5 +74,69 @@ describe("the dev daemon's build and home", () => {
     const dv = `Executable=/x\nIdentifier=${DEV_DAEMON_IDENTIFIER}\nFormat=Mach-O thin (arm64)\nCodeDirectory v=20500 size=1 flags=0x10000(runtime) hashes=1+7 location=embedded\nTeamIdentifier=${TEAM}\n`;
     expect(signedFacts(dv)).toEqual({ identifier: DEV_DAEMON_IDENTIFIER, teamId: TEAM, runtime: true });
     expect(signedFacts("Identifier=bun\nCodeDirectory v=1 size=1 flags=0x2(adhoc) hashes=1\nTeamIdentifier=not set\n")).toEqual({ identifier: "bun", runtime: false });
+  });
+});
+
+// M-M0: the dev daemon on every OS. The plan is decided before anything is built or started; `--dry-run` prints it.
+describe("the dev daemon's plan on each OS", () => {
+  const compileCoreScript = (JSON.parse(readFileSync(join(import.meta.dir, "..", "packages", "cli", "package.json"), "utf8")) as { scripts: Record<string, string> }).scripts["compile:core"]!;
+  const plan = (argv: string[], platform: NodeJS.Platform, env: NodeJS.ProcessEnv = {}) => devDaemonPlan({ argv, env, platform, userHome: "/home/u", compileCoreScript, pid: 7 });
+
+  test("which OS", () => {
+    expect([devOs("darwin"), devOs("linux"), devOs("win32")]).toEqual(["macos", "linux", "windows"]);
+  });
+
+  test("every OS builds compile:core beside the binary and runs `daemon run` on ~/.clover-dev; only macOS signs", () => {
+    for (const [platform, os, binary, tmp] of [
+      ["darwin", "macos", "dist/dev/clover-core", "../../dist/dev/clover-core.7.tmp"],
+      ["linux", "linux", "dist/dev/clover-core", "../../dist/dev/clover-core.7.tmp"],
+      ["win32", "windows", "dist/dev/clover-core.exe", "../../dist/dev/clover-core.7.tmp.exe"],
+    ] as const) {
+      const p = plan([], platform);
+      expect(p).toEqual({
+        os,
+        home: "/home/u/.clover-dev",
+        binary,
+        build: { command: devCompileCommand(compileCoreScript, tmp), tmp, sign: os === "macos" },
+        transition: false,
+        args: ["daemon", "run"],
+        env: { CLOVER_HOME: "/home/u/.clover-dev", CLOVER_PROFILE: "dev" },
+        dryRun: false,
+      });
+    }
+  });
+
+  test("the flags: --no-build, --cli, pass-through after the first other word or a --, --dry-run", () => {
+    expect(plan(["--no-build"], "linux").build).toBeUndefined();
+    expect(plan(["--no-build", "--cli"], "linux").args).toEqual([]);
+    expect(plan(["--no-build", "--cli", "credentials", "list"], "linux").args).toEqual(["credentials", "list"]);
+    expect(plan(["credentials", "--no-build"], "linux")).toMatchObject({ args: ["credentials", "--no-build"] });
+    expect(plan(["--", "--no-build"], "linux")).toMatchObject({ args: ["--no-build"] });
+    expect(plan(["--dry-run", "--no-build"], "win32")).toMatchObject({ dryRun: true, build: undefined });
+  });
+
+  test("the Keychain transition is macOS-only and takes no other arguments", () => {
+    expect(plan(["--transition"], "darwin").transition).toBe(true);
+    expect(() => plan(["--transition"], "linux")).toThrow("--transition is macOS-only");
+    expect(() => plan(["--transition"], "win32")).toThrow("--transition is macOS-only");
+    expect(() => plan(["--transition", "daemon", "run"], "darwin")).toThrow("--transition takes no other arguments");
+  });
+
+  test("the home is refused before anything else, on every OS", () => {
+    for (const platform of ["darwin", "linux", "win32"] as const) {
+      expect(() => plan(["--dry-run"], platform, { CLOVER_HOME: "/home/u/.clover" })).toThrow("dist home");
+    }
+    expect(plan(["--dry-run"], "linux", { CLOVER_HOME: "/tmp/elsewhere" }).home).toBe("/tmp/elsewhere");
+  });
+
+  test("--dry-run says what would be built, signed and run", () => {
+    const linux = describeDevDaemonPlan(plan(["--dry-run"], "linux"));
+    expect(linux[0]).toBe("dev:daemon: the plan on linux (dry run: nothing is built, signed or started)");
+    expect(linux).toContain("  sign     none (the dev binary is unsigned on linux); rename to dist/dev/clover-core");
+    expect(linux).toContain("  run      dist/dev/clover-core daemon run");
+    const mac = describeDevDaemonPlan(plan(["--dry-run", "--transition"], "darwin"));
+    expect(mac.some((l) => l.startsWith(`  sign     codesign as ${DEV_DAEMON_IDENTIFIER}`))).toBe(true);
+    expect(mac).toContain("  then     the one-time dev Keychain transition, and exit");
+    expect(describeDevDaemonPlan(plan(["--dry-run", "--no-build"], "win32"))).toContain("  build    none (--no-build): dist/dev/clover-core.exe as it is");
   });
 });

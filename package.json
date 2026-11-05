@@ -7,6 +7,7 @@
   },
   "scripts": {
     "test": "pnpm -r --workspace-concurrency=1 test",
+    "test:workspaces": "bun scripts/workspaces.ts run test",
     "protocol:generate": "pnpm --filter @waifucave/clover-protocol generate",
     "version:sync": "bun run scripts/sync-version.ts",
     "version:bump": "bun run scripts/bump-version.ts",
@@ -14,6 +15,8 @@
     "version:bump:major": "bun run scripts/bump-version.ts --major",
     "tap:publish": "bun run scripts/publish-tap.ts",
     "build:winter": "bun run scripts/build-winter.ts",
+    "build:daemon": "bun run scripts/build-daemon.ts",
+    "build:app": "cd apps/desktop && bun run dist",
     "runtimes:stage": "bun run scripts/stage-runtimes.ts",
     "verify:workflow": "bun run scripts/verify-workflow-compiled.ts",
     "verify:automation-worker": "bun run scripts/verify-automation-worker-compiled.ts",
@@ -35,9 +38,10 @@
     "typecheck:cli": "tsc --noEmit -p packages/cli",
     "typecheck:plugin-sdk": "tsc --noEmit -p packages/plugin-sdk",
     "typecheck:scripts": "tsc --noEmit -p scripts",
-    "typecheck": "bun run typecheck:core && bun run typecheck:page-runtime && bun run typecheck:protocol && bun run typecheck:cli && bun run typecheck:plugin-sdk && bun run typecheck:scripts",
+    "typecheck": "bun run typecheck:page-runtime && bun run typecheck:scripts && bun scripts/workspaces.ts run typecheck",
     "verify:office-agent": "bun run scripts/office-agent-gate.ts",
     "dev:daemon": "bun run scripts/dev-daemon.ts",
+    "dev:app": "bun run scripts/dev-app.ts",
     "dev:helper": "bun run scripts/dev-helper.ts",
     "dev:cowork-native": "bun run scripts/dev-cowork-native.ts",
     "dev:headless": "bun run scripts/dev-headless.ts",
@@ -53,15 +57,29 @@
   },
   "workspaces": [
     "packages/*",
+    "apps/*",
+    "plugins/*",
+    "plugins/*/*",
+    "plugins/*/*/gallery",
+    "services/*",
+    "native/*",
     "spikes/*",
     "examples/*"
   ],
   "pnpm": {
     "overrides": {
-      "shell-quote": ">=1.11.0"
+      "shell-quote": ">=1.11.0",
+      "fast-uri": ">=3.1.9 <4",
+      "@types/node": "25.9.3",
+      "sharp": "0.35.5",
+      "undici": "7.30.1"
     }
   },
   "overrides": {
-    "shell-quote": ">=1.11.0"
+    "shell-quote": ">=1.11.0",
+    "fast-uri": ">=3.1.9 <4",
+    "@types/node": "25.9.3",
+    "sharp": "0.35.5",
+    "undici": "7.30.1"
   }
 }

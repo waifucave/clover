@@ -1,0 +1,6 @@
+{
+  "manifest": 1,
+  "id": "clover",
+  "name": "Clover",
+  "description": "Everything Clover ships, as child plugins."
+}

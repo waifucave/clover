@@ -10,7 +10,8 @@
   },
   "scripts": {
     "test": "bun test",
-    "generate": "bun run scripts/generate.ts"
+    "generate": "bun run scripts/generate.ts",
+    "typecheck": "tsc --noEmit -p ."
   },
   "dependencies": {
     "@waifucave/clover-protocol": "workspace:*",

@@ -9,7 +9,8 @@
     "./embedded-worker": "./src/runtime-sdk/embedded-worker-entry.ts"
   },
   "scripts": {
-    "test": "bun test"
+    "test": "bun test",
+    "typecheck": "tsc --noEmit -p ."
   },
   "dependencies": {
     "@waifucave/clover-protocol": "workspace:*",
@@ -23,5 +24,11 @@
   },
   "devDependencies": {
     "@yanlinglabs/winter-provider-conformance": "0.0.55"
+  },
+  "cloverCi": {
+    "os": [
+      "macos"
+    ],
+    "ownJob": true
   }
 }

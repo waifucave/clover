@@ -1,0 +1,2 @@
+Timestamp               Ty Process[PID:TID]
+2026-11-05 10:03:35.226 Df log[16473:bab9] [com.apple.log:] log run noninteractively, parent: 8661 (bash), args: 'log' 'show' '--last' '90m' '--style' 'compact' '--predicate' 'eventMessage CONTAINS[c] "nfs server" OR eventMessage CONTAINS[c] "not responding" OR eventMessage CONTAINS[c] "jukebox"'

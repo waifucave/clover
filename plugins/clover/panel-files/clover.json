@@ -1,0 +1,27 @@
+{
+  "manifest": 1,
+  "name": "Files",
+  "description": "A code session's files panel: a filterable tree of the session's folder, read from the computer that holds it, and the file that's open. Never in a bot's tab.",
+  "engines": {
+    "clover": "^1.0.0"
+  },
+  "client": {
+    "entry": "client/index.tsx",
+    "css": [
+      "client/styles.css"
+    ]
+  },
+  "capabilities": [
+    "files"
+  ],
+  "contributes": {
+    "ui": [
+      {
+        "spot": "panel",
+        "key": "files",
+        "title": "Files",
+        "component": "FilesPanel"
+      }
+    ]
+  }
+}

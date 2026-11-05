@@ -1,0 +1,29 @@
+{
+  "manifest": 1,
+  "name": "Settings",
+  "description": "The settings window, with Clover's own sections (account, devices, appearance, notifications, plugins, levels), and the language chooser.",
+  "engines": {
+    "clover": "^1.0.0"
+  },
+  "client": {
+    "entry": "client/index.tsx",
+    "css": [
+      "client/styles.css"
+    ]
+  },
+  "contributes": {
+    "ui": [
+      {
+        "spot": "main",
+        "key": "settings",
+        "component": "SettingsModal",
+        "declares": {
+          "settings.section": {
+            "shape": "list",
+            "props": {}
+          }
+        }
+      }
+    ]
+  }
+}

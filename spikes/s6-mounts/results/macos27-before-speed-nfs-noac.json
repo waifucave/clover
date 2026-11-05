@@ -1,0 +1,476 @@
+{
+  "spike": "S6",
+  "question": "speed",
+  "machine": {
+    "os": "darwin",
+    "release": "27.0.0",
+    "arch": "arm64",
+    "cpus": 3,
+    "cpu": "Apple M1 (Virtual)",
+    "memGB": 7,
+    "bun": "1.3.14"
+  },
+  "started": "2026-11-05T04:07:01.245Z",
+  "rows": [
+    {
+      "workload": "git-status",
+      "where": "local",
+      "phase": "cold",
+      "cacheDropped": false,
+      "ms": 114,
+      "ok": true,
+      "code": 0,
+      "timedOut": false
+    },
+    {
+      "workload": "git-status",
+      "where": "local",
+      "phase": "warm",
+      "ms": 22,
+      "ok": true,
+      "code": 0,
+      "timedOut": false
+    },
+    {
+      "workload": "tsc-core",
+      "where": "local",
+      "phase": "cold",
+      "cacheDropped": false,
+      "ms": 29343,
+      "ok": true,
+      "code": 0,
+      "timedOut": false
+    },
+    {
+      "workload": "tsc-core",
+      "where": "local",
+      "phase": "warm",
+      "ms": 20890,
+      "ok": true,
+      "code": 0,
+      "timedOut": false
+    },
+    {
+      "workload": "read-256M",
+      "where": "local",
+      "phase": "cold",
+      "cacheDropped": false,
+      "ms": 205,
+      "ok": true,
+      "code": 0,
+      "timedOut": false
+    },
+    {
+      "workload": "read-256M",
+      "where": "local",
+      "phase": "warm",
+      "ms": 44,
+      "ok": true,
+      "code": 0,
+      "timedOut": false
+    },
+    {
+      "workload": "copy-in",
+      "where": "local",
+      "phase": "cold",
+      "cacheDropped": false,
+      "ms": 145,
+      "ok": true,
+      "code": 0,
+      "timedOut": false
+    },
+    {
+      "workload": "copy-in",
+      "where": "local",
+      "phase": "warm",
+      "ms": 46,
+      "ok": true,
+      "code": 0,
+      "timedOut": false
+    },
+    {
+      "workload": "git-status",
+      "where": "mount",
+      "policy": "cached",
+      "rttMs": 0,
+      "phase": "cold",
+      "requests": 75,
+      "ops": {
+        "STAT": 21,
+        "TREE": 2,
+        "TREE_entries": 13475,
+        "READ": 45,
+        "READ_bytes": 18075577,
+        "SETATTR": 4,
+        "EVENTS": 4,
+        "OPEN": 1,
+        "CLOSE": 1,
+        "UNLINK": 1
+      },
+      "helper": {
+        "drops": 0,
+        "fastFails": 0,
+        "online": true,
+        "reconnects": 0,
+        "requests": 78,
+        "timeouts": 0
+      },
+      "ms": 7145,
+      "ok": true,
+      "code": 0,
+      "timedOut": false
+    },
+    {
+      "workload": "git-status",
+      "where": "mount",
+      "policy": "cached",
+      "rttMs": 0,
+      "phase": "warm",
+      "requests": 15,
+      "ops": {
+        "EVENTS": 4,
+        "STAT": 8,
+        "SETATTR": 4,
+        "OPEN": 1,
+        "TREE": 1,
+        "TREE_entries": 5,
+        "UNLINK": 1
+      },
+      "ms": 7951,
+      "ok": true,
+      "code": 0,
+      "timedOut": false
+    },
+    {
+      "workload": "tsc-core",
+      "where": "mount",
+      "policy": "cached",
+      "rttMs": 0,
+      "phase": "cold",
+      "requests": 2026,
+      "ops": {
+        "STAT": 11,
+        "TREE": 2,
+        "TREE_entries": 26858,
+        "READLINK": 40,
+        "READ": 1973,
+        "READ_bytes": 37212831
+      },
+      "helper": {
+        "drops": 0,
+        "fastFails": 0,
+        "online": true,
+        "reconnects": 0,
+        "requests": 2028,
+        "timeouts": 0
+      },
+      "ms": 36879,
+      "ok": true,
+      "code": 0,
+      "timedOut": false
+    },
+    {
+      "workload": "tsc-core",
+      "where": "mount",
+      "policy": "cached",
+      "rttMs": 0,
+      "phase": "warm",
+      "requests": 1973,
+      "ops": {
+        "READ": 1973,
+        "READ_bytes": 37212831
+      },
+      "ms": 33683,
+      "ok": true,
+      "code": 0,
+      "timedOut": false
+    },
+    {
+      "workload": "read-256M",
+      "where": "mount",
+      "policy": "cached",
+      "rttMs": 0,
+      "phase": "cold",
+      "requests": 266,
+      "ops": {
+        "STAT": 10,
+        "READ": 256,
+        "READ_bytes": 268435456
+      },
+      "helper": {
+        "drops": 0,
+        "fastFails": 0,
+        "online": true,
+        "reconnects": 0,
+        "requests": 268,
+        "timeouts": 0
+      },
+      "ms": 494,
+      "ok": true,
+      "code": 0,
+      "timedOut": false
+    },
+    {
+      "workload": "read-256M",
+      "where": "mount",
+      "policy": "cached",
+      "rttMs": 0,
+      "phase": "warm",
+      "requests": 0,
+      "ops": {},
+      "ms": 57,
+      "ok": true,
+      "code": 0,
+      "timedOut": false
+    },
+    {
+      "workload": "copy-in",
+      "where": "mount",
+      "policy": "cached",
+      "rttMs": 0,
+      "phase": "cold",
+      "requests": 1115,
+      "ops": {
+        "STAT": 508,
+        "MKDIR": 6,
+        "TREE": 6,
+        "TREE_entries": 0,
+        "OPEN": 238,
+        "WRITE": 119,
+        "WRITE_bytes": 731883,
+        "SETATTR": 119,
+        "CLOSE": 119,
+        "EVENTS": 13
+      },
+      "helper": {
+        "drops": 0,
+        "fastFails": 0,
+        "online": true,
+        "reconnects": 0,
+        "requests": 1117,
+        "timeouts": 0
+      },
+      "ms": 737,
+      "ok": true,
+      "code": 0,
+      "timedOut": false
+    },
+    {
+      "workload": "copy-in",
+      "where": "mount",
+      "policy": "cached",
+      "rttMs": 0,
+      "phase": "warm",
+      "requests": 1116,
+      "ops": {
+        "STAT": 509,
+        "EVENTS": 14,
+        "MKDIR": 6,
+        "TREE": 6,
+        "TREE_entries": 0,
+        "OPEN": 238,
+        "WRITE": 119,
+        "WRITE_bytes": 731883,
+        "SETATTR": 119,
+        "CLOSE": 119
+      },
+      "ms": 676,
+      "ok": true,
+      "code": 0,
+      "timedOut": false
+    },
+    {
+      "workload": "git-status",
+      "where": "mount",
+      "policy": "cached",
+      "rttMs": 20,
+      "phase": "cold",
+      "requests": 79,
+      "ops": {
+        "STAT": 23,
+        "TREE": 4,
+        "TREE_entries": 13483,
+        "READ": 45,
+        "READ_bytes": 18075577,
+        "SETATTR": 4,
+        "EVENTS": 6,
+        "OPEN": 1,
+        "CLOSE": 1,
+        "UNLINK": 1
+      },
+      "helper": {
+        "drops": 0,
+        "fastFails": 0,
+        "online": true,
+        "reconnects": 0,
+        "requests": 81,
+        "timeouts": 0
+      },
+      "ms": 7973,
+      "ok": true,
+      "code": 0,
+      "timedOut": false
+    },
+    {
+      "workload": "git-status",
+      "where": "mount",
+      "policy": "cached",
+      "rttMs": 20,
+      "phase": "warm",
+      "requests": 16,
+      "ops": {
+        "STAT": 10,
+        "SETATTR": 4,
+        "EVENTS": 6,
+        "OPEN": 1,
+        "UNLINK": 1
+      },
+      "ms": 8629,
+      "ok": true,
+      "code": 0,
+      "timedOut": false
+    },
+    {
+      "workload": "tsc-core",
+      "where": "mount",
+      "policy": "cached",
+      "rttMs": 20,
+      "phase": "cold",
+      "requests": 2027,
+      "ops": {
+        "STAT": 12,
+        "TREE": 2,
+        "TREE_entries": 26858,
+        "READLINK": 40,
+        "READ": 1973,
+        "READ_bytes": 37212831
+      },
+      "helper": {
+        "drops": 0,
+        "fastFails": 0,
+        "online": true,
+        "reconnects": 0,
+        "requests": 2029,
+        "timeouts": 0
+      },
+      "ms": 90944,
+      "ok": true,
+      "code": 0,
+      "timedOut": false
+    },
+    {
+      "workload": "tsc-core",
+      "where": "mount",
+      "policy": "cached",
+      "rttMs": 20,
+      "phase": "warm",
+      "requests": 1973,
+      "ops": {
+        "READ": 1973,
+        "READ_bytes": 37212831
+      },
+      "ms": 92361,
+      "ok": true,
+      "code": 0,
+      "timedOut": false
+    },
+    {
+      "workload": "read-256M",
+      "where": "mount",
+      "policy": "cached",
+      "rttMs": 20,
+      "phase": "cold",
+      "requests": 266,
+      "ops": {
+        "STAT": 10,
+        "READ": 256,
+        "READ_bytes": 268435456
+      },
+      "helper": {
+        "drops": 0,
+        "fastFails": 0,
+        "online": true,
+        "reconnects": 0,
+        "requests": 268,
+        "timeouts": 0
+      },
+      "ms": 783,
+      "ok": true,
+      "code": 0,
+      "timedOut": false
+    },
+    {
+      "workload": "read-256M",
+      "where": "mount",
+      "policy": "cached",
+      "rttMs": 20,
+      "phase": "warm",
+      "requests": 0,
+      "ops": {},
+      "ms": 59,
+      "ok": true,
+      "code": 0,
+      "timedOut": false
+    },
+    {
+      "workload": "copy-in",
+      "where": "mount",
+      "policy": "cached",
+      "rttMs": 20,
+      "phase": "cold",
+      "requests": 1600,
+      "ops": {
+        "STAT": 883,
+        "MKDIR": 6,
+        "TREE": 6,
+        "TREE_entries": 0,
+        "EVENTS": 327,
+        "OPEN": 238,
+        "WRITE": 119,
+        "WRITE_bytes": 731883,
+        "SETATTR": 119,
+        "CLOSE": 229
+      },
+      "helper": {
+        "drops": 0,
+        "fastFails": 0,
+        "online": true,
+        "reconnects": 0,
+        "requests": 1602,
+        "timeouts": 0
+      },
+      "ms": 28429,
+      "ok": true,
+      "code": 0,
+      "timedOut": false
+    },
+    {
+      "workload": "copy-in",
+      "where": "mount",
+      "policy": "cached",
+      "rttMs": 20,
+      "phase": "warm",
+      "requests": 1586,
+      "ops": {
+        "STAT": 860,
+        "EVENTS": 344,
+        "MKDIR": 6,
+        "CLOSE": 238,
+        "TREE": 6,
+        "TREE_entries": 0,
+        "OPEN": 238,
+        "WRITE": 119,
+        "WRITE_bytes": 731883,
+        "SETATTR": 119
+      },
+      "ms": 25279,
+      "ok": true,
+      "code": 0,
+      "timedOut": false
+    }
+  ],
+  "nfs": {
+    "mountedAs": "user"
+  },
+  "finished": "2026-11-05T04:13:36.171Z"
+}

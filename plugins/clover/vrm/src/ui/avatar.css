@@ -1,0 +1,98 @@
+/* The VRM avatar on a bot's stage. The canvas is see-through: the stage's own background (the theme's
+   `stage.*` tokens, or the bot's layout) shows behind the model. A credit line, when the model's licence asks
+   for one, sits in a band of its own below the avatar, never over it, on a plate of the surface colour (so
+   `stage.text` is read against `color.surface`, whatever the stage looks like). Every colour reads a token;
+   the fallback after it is the base theme's value (`styles.test.ts` keeps the two equal). */
+
+.clvr-avatar {
+  position: relative;
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  min-height: 160px;
+  margin: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  font-family: var(--clover-font-sans, system-ui, -apple-system, "Segoe UI Variable Text", "Segoe UI", "Noto Sans", Ubuntu, Cantarell, sans-serif);
+  color: var(--clover-stage-text, #676674);
+}
+
+.clvr-view {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.clvr-canvas {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.clvr-wait,
+.clvr-error {
+  position: absolute;
+  inset: 0;
+  box-sizing: border-box;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  text-align: center;
+}
+
+.clvr-portrait {
+  width: 96px;
+  height: 96px;
+  border-radius: 50%;
+  object-fit: cover;
+  box-shadow: 0 0 0 6px var(--clover-stage-glow, #2F6FDF1F);
+}
+
+.clvr-silhouette {
+  width: 88px;
+  height: 112px;
+  border-radius: 44px 44px 20px 20px;
+  background: var(--clover-stage-glow, #2F6FDF1F);
+}
+
+.clvr-wait-line,
+.clvr-error-line {
+  max-width: 260px;
+  font-size: var(--clover-font-size-label, 13px);
+  line-height: 1.45;
+}
+
+.clvr-error-title {
+  font-size: var(--clover-font-size-control, 14px);
+  font-weight: 600;
+  color: var(--clover-color-text, #1F1F1F);
+}
+
+.clvr-credit {
+  flex: none;
+  display: flex;
+  justify-content: center;
+  padding: 4px 12px 8px;
+  font-size: var(--clover-font-size-caption, 12px);
+  line-height: 1.35;
+  pointer-events: none;
+}
+
+/* The whole credit, wrapping when the stage is narrow: a licence that asks for credit gets all of it. */
+.clvr-credit-plate {
+  max-width: 100%;
+  box-sizing: border-box;
+  padding: 2px 10px;
+  border-radius: 10px;
+  background: var(--clover-color-surface, #FFFFFF);
+  box-shadow: inset 0 0 0 1px var(--clover-color-hairline, #E8E8E8);
+  color: var(--clover-stage-text, #676674);
+  text-align: center;
+  overflow-wrap: anywhere;
+}
