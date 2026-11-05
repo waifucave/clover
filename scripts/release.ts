@@ -1492,7 +1492,7 @@ const caskRendered = caskFrom(caskTmpl, {
   sha256: dmgSha256,
   url: `https://github.com/${GH_REPO}/releases/download/v${version}/Clover-${version}.dmg`,
 });
-const caskOutPath = join(OUT, "winter.rb");
+const caskOutPath = join(OUT, "clover.rb");
 writeFileSync(caskOutPath, caskRendered);
 console.log(`Cask rendered: ${caskOutPath} (sha256 ${dmgSha256})`);
 

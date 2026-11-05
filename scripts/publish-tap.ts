@@ -40,7 +40,7 @@ export interface TapFile {
  *  reads — so it's unit-testable without a real release build on disk. */
 export function tapPlan(version: string): TapFile[] {
   return [
-    { repoPath: "Casks/clover.rb", localPath: join(ROOT, "out", "release", version, "winter.rb") },
+    { repoPath: "Casks/clover.rb", localPath: join(ROOT, "out", "release", version, "clover.rb") },
     { repoPath: "Casks/norma.rb", localPath: join(ROOT, "packaging", "norma-deprecated.rb") },
   ];
 }

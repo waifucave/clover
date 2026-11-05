@@ -194,7 +194,7 @@ describe("renderDryRunEntry — fix wave M3 (whole-branch review, Major)", () =>
   });
 
   test("prints the 'missing on disk' note when the file does not exist yet — never a false refusal", () => {
-    const entry = renderDryRunEntry({ repoPath: "Casks/clover.rb", localPath: join(tmpdir(), "clover-publish-tap-test-does-not-exist", "winter.rb") });
+    const entry = renderDryRunEntry({ repoPath: "Casks/clover.rb", localPath: join(tmpdir(), "clover-publish-tap-test-does-not-exist", "clover.rb") });
     expect(entry).toContain("missing on disk");
     expect(entry).not.toContain("REFUSED");
   });

@@ -105,7 +105,7 @@ export const CLOVER_ALLOWLIST: readonly AllowlistEntry[] = [
   },
   {
     id: "sdk-wire",
-    regex: /\bwinter_(?:provider(?:_state)?|mcp_server|site_icons|dialect_record|code)\b|\bwinter-agent\b(?!-)|\bwinter-t8-lane[a-z](?:-fixture-content)?\b|(?<![.\w])winter\.(?:openai-chat-completions|openai-responses|anthropic-messages|vertex-gemini|local-openai|google-generate-content|xai-oauth|codex-oauth|bedrock-converse|azure-openai)\b|(?<=["'`])winter-(?:agent|session|thread)(?=["'`])|\bwinter-test(?=[/"'`])|(?<=["'`])winter\.[a-z][a-z0-9-]*(?=["'`])|"winter"(?=[^\n]*(?:\b[Ll]eg(?:s|Of|ForNewSession|Now|Ref)?\b|Leg(?:s|Of)?\b))|"winter"(?<=(?:\b[Ll]eg(?:s|Of|ForNewSession|Now|Ref)?\b|Leg(?:s|Of)?\b)[^\n]*"winter")|"winter"(?=\s*\|\s*"(?:official|engine)"|\s*:\s*"engine"|\]\s*,\s*\[\w+,\s*"(?:official|engine)")|"winter"(?<="(?:official|engine)"\s*\|\s*"winter")|"winter"(?<=\bfamily:\s*"winter")|\bwinter\b(?<=\bassertVersionMatrix\(\{\s*winter)|"winter"(?<=(?:says|is now) "winter")|"winter"(?<=\b(?:peers|messaging)\b[^\n]*\["winter")|"winter"(?=`)(?<=`=== "winter")/g,
+    regex: /\bwinter_(?:provider(?:_state)?|mcp_server|site_icons|dialect_record|code)\b|\bwinter-agent\b(?!-)|\bwinter-t8-lane[a-z](?:-fixture-content)?\b|(?<![.\w])winter\.(?:openai-chat-completions|openai-responses|anthropic-messages|vertex-gemini|local-openai|google-generate-content|xai-oauth|codex-oauth|bedrock-converse|azure-openai)\b|(?<=["'`])winter-(?:agent|session|thread)(?=["'`])|\bwinter-test(?=[/"'`])|(?<=["'`])winter\.mcp(?=["'`])|"winter"(?=[^\n]*(?:\b[Ll]eg(?:s|Of|ForNewSession|Now|Ref)?\b|Leg(?:s|Of)?\b))|"winter"(?<=(?:\b[Ll]eg(?:s|Of|ForNewSession|Now|Ref)?\b|Leg(?:s|Of)?\b)[^\n]*"winter")|"winter"(?=\s*\|\s*"(?:official|engine)"|\s*:\s*"engine"|\]\s*,\s*\[\w+,\s*"(?:official|engine)")|"winter"(?<="(?:official|engine)"\s*\|\s*"winter")|"winter"(?<=\bfamily:\s*"winter")|\bwinter\b(?<=\bassertVersionMatrix\(\{\s*winter)|"winter"(?<=(?:says|is now) "winter")|"winter"(?<=\b(?:peers|messaging)\b[^\n]*\["winter")|"winter"(?=`)(?<=`=== "winter")/g,
     why: "values the agent SDK and router put on the wire: message fields (`winter_provider`, `winter_mcp_server`), the runtime kind `winter-agent`, the router's transports and its `winter` leg (core's `SessionLeg` mirrors it), the test provider's `winter-test/…` models, the catalog's adapter ids (`winter.openai-responses`), the `winter_code` preset",
   },
   {
@@ -168,8 +168,8 @@ export const CLOVER_ALLOWLIST: readonly AllowlistEntry[] = [
   {
     id: "cu-helper-daemon-identities",
     regex: /\bwinter-core\b|\bcom\.winter\.core\.dev\b/g,
-    files: ["scripts/computer-helper-lib.ts", "scripts/cu-live/build.ts"],
-    why: "the daemon identities the Winter Computer Use helper and its browser host accept (`HostIdentity.swift`, `HelperIdentity.swift`): Winter's, until opensky replaces them",
+    files: ["scripts/computer-helper-lib.ts", "scripts/cu-live/build.ts", "scripts/embed-cowork-native.test.ts"],
+    why: "the daemon identities the Winter Computer Use helper and its browser host accept (`HostIdentity.swift`, `HelperIdentity.swift`), and the kept Cowork launcher names (`CodeIdentity.swift`): Winter's, until opensky replaces them",
   },
   {
     id: "not-the-brand",
@@ -182,6 +182,12 @@ export const CLOVER_ALLOWLIST: readonly AllowlistEntry[] = [
     regex: /It grows from Winter, a Mac assistant|and never Winter's: `Winter\.app`, with\s+its `~\/\.winter` home and `com\.winter\.core` Keychain|\(and plain `winter` is Winter's\)|or Winter's `~\/\.winter`|is Winter's production key, which its live update/g,
     files: ["README.md", "CONTRIBUTING.md"],
     why: "the README's status note and CONTRIBUTING's rules name Winter, the live install a Clover developer must never touch, and where Clover comes from",
+  },
+  {
+    id: "release-notes-history",
+    regex: /(?<=<h1>)Winter(?= \$\{i\.version\}<\/h1>`)|(?<=`# )Winter(?= <version>`)/g,
+    files: ["scripts/release-lib.ts"],
+    why: "the release notes shipped before C0 (`releases/notes/`, history) open with `# Winter <version>`, a title the notes renderer drops like Clover's own",
   },
   {
     id: "winter-history",
