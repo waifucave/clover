@@ -929,7 +929,10 @@ export async function viewportCheck(host: TabHost, server: SpikeServer, root: st
       vp.autoFiles = undefined;
       return { ok: opened === true && (st?.files.some((x) => x.startsWith("s7-upload.txt:23:hello")) ?? false), detail: { choosers: vp.fileChoosers.slice(n0), files: st?.files } };
     });
-    await step("a window the page opens: offscreen too, its opener kept, shown in the viewport and clicked", async () => {
+    // a window the page opens, made offscreen by the open handler: same-site (#openBtn), then cross-site (#openXBtn, round
+    // fourteen: Electron #55565 says a same-site child keeps a widget made at 0x0 with no paint callback, and a cross-site
+    // one, in a renderer of its own, is sized and paints)
+    const popupCase = async (button: string, tag: string): Promise<{ ok: boolean; detail: unknown }> => {
       let child: BrowserWindow | undefined;
       t.wc.setWindowOpenHandler(() => ({
         action: "allow",
@@ -937,7 +940,9 @@ export async function viewportCheck(host: TabHost, server: SpikeServer, root: st
       }));
       const created = (w: BrowserWindow): void => { child = w; };
       t.wc.once("did-create-window", created);
-      const r = await rect("openBtn");
+      const hello = `popup:hello${tag}`;
+      const clickMsg = `popup:click${tag}`;
+      const r = await rect(button);
       await vclick(r.cx, r.cy);
       await waitFor(() => child, 4000);
       if (child === undefined) return { ok: false, detail: { opened: (await state()).popup, why: "no did-create-window" } };
@@ -945,9 +950,11 @@ export async function viewportCheck(host: TabHost, server: SpikeServer, root: st
       const childTab = host.adopt(child, "persist:bot-vp", 30, mode === "texture");
       const cwc = child.webContents;
       const info: Record<string, unknown> = { offscreen: cwc.isOffscreen(), visible: child.isVisible(), size: child.getSize().join("x"), painting: cwc.isPainting(), frameRate: cwc.getFrameRate() };
-      await waitFor(async () => ((await state()).popup.messages.includes("popup:hello") ? true : undefined), 3000);
+      await waitFor(async () => ((await state()).popup.messages.includes(hello) ? true : undefined), 5000);
       await sleep(800);
       const paints = childTab.paints;
+      info.pageSize = await withTimeout(cwc.executeJavaScript("[innerWidth, innerHeight].join('x')", true), 3000, "child size").catch((e: unknown) => `no answer: ${errorText(e)}`);
+      info.sameProcessAsOpener = cwc.getOSProcessId() === t.wc.getOSProcessId();
       // round twelve, first run: macOS's offscreen window.open child painted nothing. Did its frames go to the opener?
       // Does a repaint or a restarted capturer bring them? Does input reach it?
       info.openerFramesOfTheChildSize = t.dirtyLog.slice(openerDirty0).filter((d) => d.size === info.size).length;
@@ -961,7 +968,7 @@ export async function viewportCheck(host: TabHost, server: SpikeServer, root: st
       cwc.sendInputEvent({ type: "mouseDown", x: 100, y: 40, button: "left", clickCount: 1 });
       cwc.sendInputEvent({ type: "mouseUp", x: 100, y: 40, button: "left", clickCount: 1 });
       info.directClick = (await waitFor(async () => ((await state()).popup.messages.length > m0 ? true : undefined), 2000)) === true;
-      result.windows["the page's window open (offscreen)"] = await visibleWindows();
+      result.windows[`the page's ${tag === "" ? "" : "cross-site "}window open (offscreen)`] = await visibleWindows();
       let clicked = false;
       if (childTab.paints > 0) {
         const seq0 = vp.seq;
@@ -969,14 +976,16 @@ export async function viewportCheck(host: TabHost, server: SpikeServer, root: st
         await waitFor(() => (vp.ackLog.some((a) => a.seq > seq0 && a.size === `${vp.size.w}x${vp.size.h}`) ? true : undefined), 3000);
         await sleep(300);
         await vclick(100, 40);
-        clicked = (await waitFor(async () => ((await state()).popup.messages.includes("popup:click") ? true : undefined), 3000)) === true;
+        clicked = (await waitFor(async () => ((await state()).popup.messages.includes(clickMsg) ? true : undefined), 3000)) === true;
         vp.attach(t, 60);
         await sleep(500);
       }
       const st = await state();
       await host.close(childTab);
-      return { ok: info.offscreen === true && st.popup.messages.includes("popup:hello") && clicked, detail: { ...info, paints, openerMessages: st.popup.messages, clickedInViewport: clicked } };
-    });
+      return { ok: info.offscreen === true && st.popup.messages.includes(hello) && clicked, detail: { ...info, paints: childTab.paints, openerMessages: st.popup.messages, clickedInViewport: clicked } };
+    };
+    await step("a window the page opens: offscreen too, its opener kept, shown in the viewport and clicked", () => popupCase("openBtn", ""));
+    await step("a cross-site window the page opens (Electron #55565): offscreen, its opener kept, shown in the viewport and clicked", () => popupCase("openXBtn", "@other-site"));
     await step("resize: the page reflows to the viewport, no reload", async () => {
       const want = async (w: number, h: number, ms: number): Promise<number | undefined> => {
         const t0 = Date.now();

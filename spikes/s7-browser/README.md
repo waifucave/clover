@@ -96,6 +96,7 @@ results/         every round's JSON from CI, with summary.md (bun src/summarize.
   round12/       Winter's model in Electron: offscreen bot tabs, one shown through a viewport, dialogs over CDP
                  (viewport jobs only; the first try hung on Linux asking for shared textures without a GPU)
   round13/       the whole workflow again with round twelve's checks asserted, and the pair's held lock
+  round14/       a cross-site window the page opens, against Electron #55565's same-site bug (viewport jobs only)
 ```
 
 The report quotes round two for the Electron tables (rounds three and eight to ten re-ran them on every OS, and round

@@ -120,8 +120,16 @@ document.getElementById("openBtn")!.addEventListener("click", () => {
   S.popup.opened = w !== null;
   log("window.open", w === null ? "null" : "window");
 });
+// round fourteen: the same window from another site (127.0.0.1 and localhost are different sites), which Electron #55565
+// says moves to a renderer of its own and is sized and painted, where a same-site one is not
+document.getElementById("openXBtn")!.addEventListener("click", () => {
+  const other = location.hostname === "127.0.0.1" ? "localhost" : "127.0.0.1";
+  const w = window.open(`${location.protocol}//${other}:${location.port}/pages/vp-popup.html?tab=${encodeURIComponent(tabId)}-xpopup`, "s7popupx", "width=480,height=360");
+  S.popup.opened = w !== null;
+  log("window.open cross-site", w === null ? "null" : "window");
+});
 window.addEventListener("message", (e) => {
-  if (typeof e.data === "string" && e.data.startsWith("popup:")) S.popup.messages.push(e.data);
+  if (typeof e.data === "string" && e.data.startsWith("popup:")) S.popup.messages.push(e.origin === location.origin ? e.data : `${e.data}@other-site`);
 });
 
 // --- HTML5 drag and drop -------------------------------------------------------------------------------------------------
