@@ -1,0 +1,249 @@
+{
+  "date": "2026-11-05T00:38:34.749Z",
+  "platform": "win32",
+  "arch": "x64",
+  "versions": {
+    "node": "24.22.2",
+    "acorn": "8.18.0",
+    "ada": "4.0.0",
+    "amaro": "1.1.11",
+    "ares": "1.34.9",
+    "brotli": "1.2.0",
+    "cldr": "48.0",
+    "icu": "78.2",
+    "llhttp": "9.4.3",
+    "merve": "1.2.2",
+    "modules": "150",
+    "napi": "10",
+    "nbytes": "0.1.4",
+    "ncrypto": "0.0.1",
+    "nghttp2": "1.70.0",
+    "nghttp3": "",
+    "ngtcp2": "",
+    "openssl": "0.0.0",
+    "simdjson": "4.6.11",
+    "simdutf": "7.7.0",
+    "sqlite": "3.53.4",
+    "tz": "2026e",
+    "undici": "7.30.1",
+    "unicode": "17.0",
+    "uv": "1.52.1",
+    "uvwasi": "0.0.23",
+    "v8": "15.6.75.27-electron.0",
+    "zlib": "1.3.2.1-motley",
+    "zstd": "1.6.0",
+    "electron": "45.2.3",
+    "chrome": "156.0.8078.80"
+  },
+  "check": "process",
+  "layers": 3,
+  "commit": "12ca3e48fc2ee614d699d45092f1c87d3e83291b",
+  "verdict": "works",
+  "isolated": true,
+  "frames": [
+    {
+      "url": "clover-plugin://core/",
+      "processId": 4,
+      "osProcessId": 2368,
+      "routingId": 1
+    },
+    {
+      "url": "clover-plugin://p1/",
+      "processId": 5,
+      "osProcessId": 8756,
+      "routingId": 5
+    },
+    {
+      "url": "clover-plugin://p2/",
+      "processId": 6,
+      "osProcessId": 5020,
+      "routingId": 6
+    },
+    {
+      "url": "clover-plugin://p3/",
+      "processId": 7,
+      "osProcessId": 8436,
+      "routingId": 7
+    },
+    {
+      "url": "clover-plugin://p1--child/",
+      "processId": 8,
+      "osProcessId": 8908,
+      "routingId": 8
+    },
+    {
+      "url": "clover-plugin://p2/",
+      "processId": 6,
+      "osProcessId": 5020,
+      "routingId": 15
+    }
+  ],
+  "metrics": [
+    {
+      "cpu": {
+        "cumulativeCPUUsage": 0.663298,
+        "percentCPUUsage": 0,
+        "idleWakeupsPerSecond": 0
+      },
+      "pid": 8304,
+      "type": "Browser",
+      "creationTime": 1793839114642.381,
+      "memory": {
+        "workingSetSize": 108256,
+        "peakWorkingSetSize": 108256,
+        "privateBytes": 44796
+      },
+      "integrityLevel": "high",
+      "sandboxed": false
+    },
+    {
+      "cpu": {
+        "cumulativeCPUUsage": 0.120593,
+        "percentCPUUsage": 0,
+        "idleWakeupsPerSecond": 0
+      },
+      "pid": 7664,
+      "type": "GPU",
+      "creationTime": 1793839114754.461,
+      "serviceName": "GPU",
+      "memory": {
+        "workingSetSize": 63724,
+        "peakWorkingSetSize": 63724,
+        "privateBytes": 18416
+      },
+      "integrityLevel": "low",
+      "sandboxed": true
+    },
+    {
+      "cpu": {
+        "cumulativeCPUUsage": 0.074521,
+        "percentCPUUsage": 0,
+        "idleWakeupsPerSecond": 0
+      },
+      "pid": 5148,
+      "type": "Utility",
+      "creationTime": 1793839114758.733,
+      "serviceName": "network.mojom.NetworkService",
+      "name": "Network Service",
+      "memory": {
+        "workingSetSize": 45576,
+        "peakWorkingSetSize": 45576,
+        "privateBytes": 11612
+      },
+      "integrityLevel": "high",
+      "sandboxed": false
+    },
+    {
+      "cpu": {
+        "cumulativeCPUUsage": 0.10887,
+        "percentCPUUsage": 0,
+        "idleWakeupsPerSecond": 0
+      },
+      "pid": 2368,
+      "type": "Tab",
+      "creationTime": 1793839114846.938,
+      "memory": {
+        "workingSetSize": 73204,
+        "peakWorkingSetSize": 73204,
+        "privateBytes": 24936
+      },
+      "integrityLevel": "untrusted",
+      "sandboxed": true
+    },
+    {
+      "cpu": {
+        "cumulativeCPUUsage": 0.092651,
+        "percentCPUUsage": 0,
+        "idleWakeupsPerSecond": 0
+      },
+      "pid": 8756,
+      "type": "Tab",
+      "creationTime": 1793839114967.033,
+      "memory": {
+        "workingSetSize": 81624,
+        "peakWorkingSetSize": 81624,
+        "privateBytes": 28416
+      },
+      "integrityLevel": "untrusted",
+      "sandboxed": true
+    },
+    {
+      "cpu": {
+        "cumulativeCPUUsage": 0.097427,
+        "percentCPUUsage": 0,
+        "idleWakeupsPerSecond": 0
+      },
+      "pid": 5020,
+      "type": "Tab",
+      "creationTime": 1793839114965.657,
+      "memory": {
+        "workingSetSize": 78568,
+        "peakWorkingSetSize": 78568,
+        "privateBytes": 24412
+      },
+      "integrityLevel": "untrusted",
+      "sandboxed": true
+    },
+    {
+      "cpu": {
+        "cumulativeCPUUsage": 0.084735,
+        "percentCPUUsage": 0,
+        "idleWakeupsPerSecond": 0
+      },
+      "pid": 8436,
+      "type": "Tab",
+      "creationTime": 1793839114968.867,
+      "memory": {
+        "workingSetSize": 79736,
+        "peakWorkingSetSize": 79736,
+        "privateBytes": 25916
+      },
+      "integrityLevel": "untrusted",
+      "sandboxed": true
+    },
+    {
+      "cpu": {
+        "cumulativeCPUUsage": 0.067981,
+        "percentCPUUsage": 0,
+        "idleWakeupsPerSecond": 0
+      },
+      "pid": 8908,
+      "type": "Tab",
+      "creationTime": 1793839115042.751,
+      "memory": {
+        "workingSetSize": 77268,
+        "peakWorkingSetSize": 77268,
+        "privateBytes": 23200
+      },
+      "integrityLevel": "untrusted",
+      "sandboxed": true
+    }
+  ],
+  "sameOriginP2Frames": 2,
+  "nodeExposure": [
+    {
+      "url": "clover-plugin://core/",
+      "require": "undefined"
+    },
+    {
+      "url": "clover-plugin://p1/",
+      "require": "undefined"
+    },
+    {
+      "url": "clover-plugin://p2/",
+      "require": "undefined"
+    },
+    {
+      "url": "clover-plugin://p3/",
+      "require": "undefined"
+    },
+    {
+      "url": "clover-plugin://p1--child/",
+      "require": "undefined"
+    },
+    {
+      "url": "clover-plugin://p2/",
+      "require": "undefined"
+    }
+  ]
+}
