@@ -214,6 +214,8 @@ export interface ThrottleRow {
   rendererCpuPct?: number;
   allCpuPct?: number;
   pumpFps?: number;
+  /** Where the cover window ended up, for covered configs. */
+  cover?: string;
   error?: string;
 }
 
@@ -229,7 +231,7 @@ async function measureTab(host: TabHost, tab: Tab, seconds: number): Promise<{ r
   return { rates: rates(a, b), cpu: cpu.byPid[String(tab.wc.getOSProcessId())] ?? Number.NaN, all: cpu.total, pumpFps: tab.pumping ? (tab.pumpFrames - p0) / seconds : undefined };
 }
 
-interface ThrottleConfig { config: string; place: Place; throttling: boolean; media?: boolean; pump?: boolean; toggle?: boolean }
+interface ThrottleConfig { config: string; place: Place; throttling: boolean; media?: boolean; pump?: boolean; toggle?: boolean; cover?: boolean; onTop?: boolean }
 
 export async function throttleCheck(host: TabHost, log: Log): Promise<ThrottleRow[]> {
   const rows: ThrottleRow[] = [];
@@ -244,6 +246,10 @@ export async function throttleCheck(host: TabHost, log: Log): Promise<ThrottleRo
     { config: "detached, throttling off + frame pump", place: "detached", throttling: false, pump: true },
     { config: "invisible shown window, throttling off", place: "invisibleWindow", throttling: false },
     { config: "1x1 shown window, throttling off", place: "tinyWindow", throttling: false },
+    // a real desktop: the user's windows cover the host window (round three)
+    { config: "1x1 shown window, covered by another window", place: "tinyWindow", throttling: false, cover: true },
+    { config: "1x1 shown window, always on top, under a cover", place: "tinyWindow", throttling: false, cover: true, onTop: true },
+    { config: "invisible shown window, covered by another window", place: "invisibleWindow", throttling: false, cover: true },
     { config: "osr window 30 fps, throttling off", place: "osr", throttling: false },
     { config: "osr view (no window) 30 fps, throttling off", place: "osrView", throttling: false },
     // a page playing sound is exempt from Chrome's background throttling whatever the setting: measured apart
@@ -256,8 +262,9 @@ export async function throttleCheck(host: TabHost, log: Log): Promise<ThrottleRo
     if (!placeAvailable(c.place)) { row.error = "not possible here"; rows.push(row); continue; }
     let tab: Tab | undefined;
     try {
-      tab = await host.create({ place: c.place, partition: `bot-throttle-${rows.length}`, throttling: c.throttling, path: `${PROBE}&sse=0${c.media ? "&media=1" : ""}` });
+      tab = await host.create({ place: c.place, partition: `bot-throttle-${rows.length}`, throttling: c.throttling, onTop: c.onTop, path: `${PROBE}&sse=0${c.media ? "&media=1" : ""}` });
       if (c.media) await host.exec(tab, `window.__s7.setup({ media: true })`, 10_000);
+      if (c.cover) row.cover = host.cover(tab);
       if (c.toggle) { await sleep(1500); tab.wc.setBackgroundThrottling(false); }
       if (c.pump) host.startPump(tab);
       await sleep(2000);
@@ -271,6 +278,7 @@ export async function throttleCheck(host: TabHost, log: Log): Promise<ThrottleRo
       row.error = errorText(e);
       log(`  throttle ${c.config}: ERROR ${row.error}`);
     } finally {
+      host.uncover();
       if (tab !== undefined) await host.close(tab);
     }
     rows.push(row);
@@ -306,6 +314,8 @@ export interface CaptureRow {
   place: Place;
   throttling: boolean;
   pump: boolean;
+  /** "covered": an opaque window over the host window (round three). */
+  variant?: string;
   method: string;
   tries: number;
   ok: number;
@@ -326,23 +336,25 @@ const empty = summarize([]);
 
 export async function captureCheck(host: TabHost, log: Log): Promise<CaptureRow[]> {
   const rows: CaptureRow[] = [];
-  const places: Array<{ place: Place; throttling: boolean; pump?: boolean }> = [
+  const places: Array<{ place: Place; throttling: boolean; pump?: boolean; cover?: boolean }> = [
     { place: "shown", throttling: true },
     { place: "detached", throttling: false },
     { place: "hiddenWindow", throttling: false },
     { place: "hiddenWindow", throttling: false, pump: true },
     { place: "invisibleWindow", throttling: false },
     { place: "tinyWindow", throttling: false },
+    { place: "tinyWindow", throttling: false, cover: true },
     { place: "osr", throttling: false },
     { place: "osrView", throttling: false },
   ];
   for (const p of places) {
-    const label = { place: p.place, throttling: p.throttling, pump: p.pump === true };
+    const label = { place: p.place, throttling: p.throttling, pump: p.pump === true, ...(p.cover === true ? { variant: "covered" } : {}) };
     if (!placeAvailable(p.place)) { rows.push({ ...label, method: "-", tries: 0, ok: 0, decoded: 0, ms: empty, staleMs: empty, size: "-", errors: ["not possible here"], visibilityEvents: [] }); continue; }
     let tab: Tab | undefined;
     try {
       tab = await host.create({ place: p.place, partition: `bot-capture-${rows.length}`, throttling: p.throttling, path: "/pages/probe.html?scenario=anim&sse=0" });
       if (p.pump) host.startPump(tab);
+      if (p.cover) log(`  capture ${p.place} ${host.cover(tab)}`);
       await sleep(1500);
       const snap = await host.snapshot(tab);
       const osr = p.place === "osr" || p.place === "osrView";
@@ -399,6 +411,7 @@ export async function captureCheck(host: TabHost, log: Log): Promise<CaptureRow[
       rows.push({ ...label, method: "setup", tries: 0, ok: 0, decoded: 0, ms: empty, staleMs: empty, size: "-", errors: [errorText(e)], visibilityEvents: [] });
       log(`  capture ${p.place}: ERROR ${errorText(e)}`);
     } finally {
+      host.uncover();
       if (tab !== undefined) await host.close(tab);
     }
   }

@@ -43,13 +43,13 @@ function electron(name: string, j: J): string {
   if (c.throttle) {
     out.push("**Q2 throttling** (5 s windows)", "");
     out.push(table(["config", "visibility", "layout", "interval Hz", "chain Hz", "rAF Hz", "max rAF gap ms", "media ×", "decoded fps", "pump fps", "renderer CPU %", "all CPU %", "error"],
-      c.throttle.map((r: J) => [r.config, r.rates?.visibility ?? "–", r.rates?.layout ?? "–", f1(r.rates?.intervalHz), f1(r.rates?.chainHz), f1(r.rates?.rafHz), f1(r.rates?.maxRafGapMs, 0), r.media ? f1(r.rates?.mediaPlayedPerSec, 2) : "–", r.media ? f1(r.rates?.decodedFps) : "–", f1(r.pumpFps), f1(r.rendererCpuPct), f1(r.allCpuPct), r.error ?? ""])));
+      c.throttle.map((r: J) => [r.config, r.rates?.visibility ?? "–", r.rates?.layout ?? "–", f1(r.rates?.intervalHz), f1(r.rates?.chainHz), f1(r.rates?.rafHz), f1(r.rates?.maxRafGapMs, 0), r.media ? f1(r.rates?.mediaPlayedPerSec, 2) : "–", r.media ? f1(r.rates?.decodedFps) : "–", f1(r.pumpFps), f1(r.rendererCpuPct), f1(r.allCpuPct), [r.error, r.cover].filter(Boolean).join("; ")])));
     out.push("");
   }
   if (c.capture) {
     out.push("**Q2 pictures of tabs** (8 tries; ms and staleness are p50 / p95; stale < 0 means drawn after the call began)", "");
     out.push(table(["place", "throttling", "method", "ok", "decoded", "ms", "stale ms", "size", "CPU ms/picture", "frames/s", "visibility events", "errors"],
-      c.capture.map((r: J) => [`${r.place}${r.pump ? " + pump" : ""}`, f1(r.throttling), r.method, `${r.ok}/${r.tries}`, f1(r.decoded, 0), ms(r.ms), ms(r.staleMs), r.size, f1(r.cpuMsPerPicture, 0), f1(r.framesPerSec), (r.visibilityEvents ?? []).length ? r.visibilityEvents.join(" ") : "", (r.errors ?? []).join("; ")])));
+      c.capture.map((r: J) => [`${r.place}${r.pump ? " + pump" : ""}${r.variant ? `, ${r.variant}` : ""}`, f1(r.throttling), r.method, `${r.ok}/${r.tries}`, f1(r.decoded, 0), ms(r.ms), ms(r.staleMs), r.size, f1(r.cpuMsPerPicture, 0), f1(r.framesPerSec), (r.visibilityEvents ?? []).length ? r.visibilityEvents.join(" ") : "", (r.errors ?? []).join("; ")])));
     out.push("");
   }
   if (c.cost) {

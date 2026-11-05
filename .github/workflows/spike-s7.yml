@@ -192,7 +192,7 @@ jobs:
   cft:
     name: chrome for testing · ${{ matrix.label }}
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 40
+    timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:

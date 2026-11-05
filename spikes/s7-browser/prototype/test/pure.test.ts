@@ -58,10 +58,13 @@ describe("Chrome for Testing pins", () => {
     expect(binaryIn("chrome", "mac-arm64")).toContain("Google Chrome for Testing.app");
     expect(archiveUrl("chrome-headless-shell", "linux64", "156.0.8078.80")).toBe("https://storage.googleapis.com/chrome-for-testing-public/156.0.8078.80/linux64/chrome-headless-shell-linux64.zip");
   });
-  test("every platform the daemon ships on has a pin", () => {
+  test("every platform the daemon ships on has a pin: size and SHA-256", () => {
     for (const plat of ["mac-arm64", "linux64", "linux-arm64", "win64"]) {
-      expect(pinFor("chrome-headless-shell", plat)?.bytes).toBeGreaterThan(50_000_000);
-      expect(pinFor("chrome", plat)?.bytes).toBeGreaterThan(50_000_000);
+      for (const artifact of ["chrome-headless-shell", "chrome"] as const) {
+        const pin = pinFor(artifact, plat);
+        expect(pin?.bytes).toBeGreaterThan(50_000_000);
+        expect(pin?.sha256).toMatch(/^[0-9a-f]{64}$/);
+      }
     }
   });
   test("GCS md5 header", () => {

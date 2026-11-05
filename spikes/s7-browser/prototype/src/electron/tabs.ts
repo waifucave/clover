@@ -11,7 +11,7 @@
 //   osr              an offscreen-rendering BrowserWindow (frames arrive as 'paint' events; can't be shown as a view)
 //   osrView          an offscreen-rendering WebContentsView in no window
 // Headless tabs are laid out at the agent's 1280x800; a shown tab at the window's 1000x700.
-import { app, BaseWindow, BrowserWindow, nativeImage, WebContentsView, type NativeImage, type WebContents } from "electron";
+import { app, BaseWindow, BrowserWindow, nativeImage, screen, WebContentsView, type NativeImage, type WebContents } from "electron";
 import { ageMs, decodeMarker, rgbaReader, type Marker } from "../shared/marker.ts";
 import { errorText, sleep, waitFor, withTimeout } from "../shared/stats.ts";
 
@@ -68,6 +68,8 @@ export interface CreateOptions {
   path: string;
   /** OSR frame rate. */
   fps?: number;
+  /** A shown host window (tiny, invisible) kept above other windows: always on top at the highest level. */
+  onTop?: boolean;
 }
 
 export interface CaptureResult {
@@ -112,6 +114,7 @@ function tinyWindow(title: string): BaseWindow {
 export class TabHost {
   private hiddenHost?: BaseWindow;
   private shownWin?: BaseWindow;
+  private coverWin?: BaseWindow;
   private readonly tabs = new Set<Tab>();
 
   constructor(readonly origin: string) {}
@@ -130,6 +133,35 @@ export class TabHost {
       this.shownWin = new BaseWindow({ show: true, x: 40, y: 40, width: SHOWN_W, height: SHOWN_H, useContentSize: true, title: "S7 browser view" });
     }
     return this.shownWin;
+  }
+
+  /**
+   * An opaque window over a tab's host window, as the user's own windows would be on a real desktop: shown without
+   * focus, above normal windows (but below an always-on-top host at the "screen-saver" level), click-through. On
+   * Wayland, where nothing can be placed, it is made full screen instead. Returns where it ended up.
+   */
+  cover(t: Tab): string {
+    this.uncover();
+    const d = screen.getPrimaryDisplay().bounds;
+    const at = t.win !== undefined && !t.win.isDestroyed() ? t.win.getBounds() : { x: 0, y: 0, width: 1, height: 1 };
+    const x = Math.min(d.x, at.x), y = Math.min(d.y, at.y);
+    const w = new BaseWindow({
+      show: false, x, y, width: Math.max(d.x + d.width, at.x + at.width) - x, height: Math.max(d.y + d.height, at.y + at.height) - y,
+      frame: false, focusable: false, skipTaskbar: true, hasShadow: false, backgroundColor: "#202020", title: "S7 cover",
+    });
+    w.setIgnoreMouseEvents(true);
+    if (onWayland()) w.setFullScreen(true);
+    else w.setAlwaysOnTop(true, "floating");
+    w.showInactive();
+    if (t.win !== undefined && !t.win.isDestroyed() && t.win.isAlwaysOnTop()) t.win.moveTop();
+    this.coverWin = w;
+    const b = w.getBounds();
+    return `cover ${b.x},${b.y} ${b.width}x${b.height} over host ${at.x},${at.y} ${at.width}x${at.height}`;
+  }
+
+  uncover(): void {
+    if (this.coverWin !== undefined && !this.coverWin.isDestroyed()) this.coverWin.destroy();
+    this.coverWin = undefined;
   }
 
   async create(o: CreateOptions): Promise<Tab> {
@@ -163,6 +195,7 @@ export class TabHost {
       else if (o.place === "tinyWindow") home = tinyWindow(`S7 tiny ${id}`);
       else if (o.place === "shown") home = this.shown();
       if (o.place === "ownHiddenWindow" || o.place === "invisibleWindow" || o.place === "tinyWindow") tab.ownWin = home;
+      if (o.onTop === true && home !== undefined && (o.place === "invisibleWindow" || o.place === "tinyWindow")) home.setAlwaysOnTop(true, "screen-saver");
       if (o.place !== "shown") tab.home = home;
       if (home !== undefined) home.contentView.addChildView(view);
       tab.win = home;
@@ -221,10 +254,14 @@ export class TabHost {
     t.fitted = false;
   }
 
-  /** Keep frames coming for a hidden tab: a frame subscription that only counts what it gets. */
+  /**
+   * Keep frames coming for a hidden tab: a frame subscription that only counts what it gets. Not `onlyDirty` (round
+   * two: a dirty-only subscription on a hidden tab delivered nothing); every frame is copied into an image, so this
+   * is a probe of what frames do to the page, not a design.
+   */
   startPump(t: Tab): void {
     t.pumpFrames = 0;
-    t.wc.beginFrameSubscription(true, () => { t.pumpFrames++; });
+    t.wc.beginFrameSubscription(false, () => { t.pumpFrames++; });
     t.pumping = true;
   }
 

@@ -2,7 +2,7 @@
 // --remote-debugging-io-pipes=<read handle>,<write handle> (Chromium reads fds 3 and 4 only on POSIX; on Windows it
 // wants raw handle values). Bun's spawn does not map extra stdio entries to the CRT descriptors Chromium would read,
 // so the pipes are made here over kernel32 and the parent's ends are polled (PeekNamedPipe, then ReadFile of what is
-// there), which never blocks the event loop. Bun only (bun:ffi).
+// there, once per tick), which never blocks the event loop. Bun only (bun:ffi).
 import { StringDecoder } from "node:string_decoder";
 
 export interface WinPipes {
@@ -18,6 +18,7 @@ export interface WinPipes {
 
 const HANDLE_FLAG_INHERIT = 1;
 const ERROR_BROKEN_PIPE = 109;
+const READ_MAX = 4 << 20;
 
 export async function makeWinPipes(): Promise<WinPipes> {
   const { dlopen, FFIType, ptr } = await import("bun:ffi");
@@ -68,26 +69,24 @@ export async function makeWinPipes(): Promise<WinPipes> {
       }
     },
     start(onData, onClose) {
+      // One read per tick, of at most READ_MAX: round two read in a loop while bytes were there, and a screencast
+      // (a frame arriving while the last was decoded) kept that loop going for good, so no timer ever ran again.
       timer = setInterval(() => {
         if (closed) return;
-        for (;;) {
-          if (f.PeekNamedPipe(parentRead, null, 0, null, ptr(avail), null) === 0) {
-            const err = f.GetLastError();
-            closed = true;
-            if (timer !== undefined) clearInterval(timer);
-            onClose();
-            void err;
-            return;
-          }
-          const n = avail.readUInt32LE(0);
-          if (n === 0) return;
-          const buf = Buffer.alloc(n);
-          if (f.ReadFile(parentRead, ptr(buf), n, ptr(done), null) === 0) {
-            if (f.GetLastError() === ERROR_BROKEN_PIPE) { closed = true; if (timer !== undefined) clearInterval(timer); onClose(); }
-            return;
-          }
-          onData(decoder.write(buf.subarray(0, done.readUInt32LE(0))));
+        if (f.PeekNamedPipe(parentRead, null, 0, null, ptr(avail), null) === 0) {
+          closed = true;
+          if (timer !== undefined) clearInterval(timer);
+          onClose();
+          return;
         }
+        const n = Math.min(avail.readUInt32LE(0), READ_MAX);
+        if (n === 0) return;
+        const buf = Buffer.alloc(n);
+        if (f.ReadFile(parentRead, ptr(buf), n, ptr(done), null) === 0) {
+          if (f.GetLastError() === ERROR_BROKEN_PIPE) { closed = true; if (timer !== undefined) clearInterval(timer); onClose(); }
+          return;
+        }
+        onData(decoder.write(buf.subarray(0, done.readUInt32LE(0))));
       }, 4);
     },
     closeChildEnds,

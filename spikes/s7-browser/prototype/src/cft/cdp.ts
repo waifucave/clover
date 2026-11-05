@@ -1,11 +1,13 @@
 // A minimal CDP client for a browser the daemon starts itself, over --remote-debugging-pipe (NUL-framed JSON): no
-// port, so no other local process — a bot's Bash included — can reach the browser. On macOS and Linux the pipe is
-// fds 3 (commands in) and 4 (answers out); on Windows it is two inherited pipe handles named with
-// --remote-debugging-io-pipes (winpipe.ts). The port road (--remote-debugging-port=0, read from stderr) is here to
-// compare, and as the fallback where no pipe can be made.
+// port, so no other local process — a bot's Bash included — can reach the browser. The transports, best first:
+//   fdpipe   macOS, Linux: pipe(2) pairs over bun:ffi handed to Bun.spawn as fds 3 and 4 (fdpipe.ts; Winter's road)
+//   winpipe  Windows: two inherited pipe handles named with --remote-debugging-io-pipes (winpipe.ts)
+//   pipe     node:child_process's extra stdio slots (here to compare: under Bun the browser can read EOF on fd 3)
+//   port     --remote-debugging-port=0 on loopback, read from stderr (the fallback; any local process can reach it)
 import { spawn, type ChildProcess } from "node:child_process";
 import type { Readable, Writable } from "node:stream";
 import { StringDecoder } from "node:string_decoder";
+import { spawnWithFdPipes, type FdPipeProcess } from "./fdpipe.ts";
 import { makeWinPipes, type WinPipes } from "./winpipe.ts";
 
 export type CdpEvent = { method: string; params: Record<string, unknown>; sessionId?: string };
@@ -29,13 +31,46 @@ export function splitNul(buf: string): { messages: string[]; rest: string } {
   return { messages, rest };
 }
 
-export type Transport = "pipe" | "winpipe" | "port";
+export type Transport = "fdpipe" | "winpipe" | "pipe" | "port";
+
+/** The browser's process, whichever API started it. */
+interface ProcHandle {
+  pid: number;
+  kill(signal?: NodeJS.Signals): void;
+  onStderr(listener: (chunk: Buffer) => void): void;
+  onExit(listener: (code: number | null, signal: string | null) => void): void;
+}
+
+function fromChild(proc: ChildProcess): ProcHandle {
+  return {
+    pid: proc.pid ?? 0,
+    kill: (s) => { try { proc.kill(s ?? "SIGKILL"); } catch { /* gone */ } },
+    onStderr: (l) => { proc.stderr?.on("data", (d: Buffer) => l(d)); },
+    onExit: (l) => { proc.on("exit", (code, signal) => l(code, signal)); },
+  };
+}
+
+function fromBun(proc: ReturnType<typeof Bun.spawn>): ProcHandle {
+  return {
+    pid: proc.pid,
+    kill: (s) => { try { proc.kill(s ?? "SIGKILL"); } catch { /* gone */ } },
+    onStderr: (l) => {
+      void (async () => {
+        try {
+          for await (const chunk of proc.stderr as ReadableStream<Uint8Array>) l(Buffer.from(chunk));
+        } catch { /* gone */ }
+      })();
+    },
+    onExit: (l) => { void proc.exited.then((code) => l(proc.signalCode === null ? code : null, proc.signalCode ?? null)); },
+  };
+}
 
 export class Browser {
-  readonly proc: ChildProcess;
+  readonly proc: ProcHandle;
   readonly transport: Transport;
   readonly stderr: string[] = [];
   private out?: Writable;
+  private fd?: FdPipeProcess;
   private win?: WinPipes;
   private ws?: WebSocket;
   private nextId = 1;
@@ -47,12 +82,12 @@ export class Browser {
   exitSignal: string | null = null;
   private readonly exitWaiters: Array<() => void> = [];
 
-  private constructor(proc: ChildProcess, transport: Transport) {
+  private constructor(proc: ProcHandle, transport: Transport) {
     this.proc = proc;
     this.transport = transport;
     const dec = new StringDecoder("utf8");
     let partial = "";
-    proc.stderr?.on("data", (d: Buffer) => {
+    proc.onStderr((d) => {
       const lines = (partial + dec.write(d)).split("\n");
       partial = lines.pop() ?? "";
       for (const line of lines) {
@@ -61,15 +96,20 @@ export class Browser {
         if (this.stderr.length > 200) this.stderr.shift(); // keep the newest
       }
     });
-    proc.on("exit", (code, signal) => {
+    proc.onExit((code, signal) => {
       this.exited = true;
       this.exitCode = code;
       this.exitSignal = signal;
       for (const p of this.pending.values()) { clearTimeout(p.timer); p.reject(new CdpError(`browser exited (${code ?? signal}) during ${p.method}`)); }
       this.pending.clear();
       this.win?.close();
+      this.fd?.closeInput();
       for (const w of this.exitWaiters.splice(0)) w();
     });
+  }
+
+  get pid(): number {
+    return this.proc.pid;
   }
 
   /** The last lines the browser printed (for an error report). */
@@ -87,12 +127,18 @@ export class Browser {
    * Start a browser and connect to it. `args` are the browser's own switches (no debugging switch). A start that
    * fails kills the browser (so its profile is free again) and says what it printed.
    */
-  static async launch(bin: string, args: string[], transport: Transport = "pipe", timeoutMs = 30_000): Promise<Browser> {
+  static async launch(bin: string, args: string[], transport: Transport, timeoutMs = 30_000): Promise<Browser> {
     let b: Browser | undefined;
     try {
-      if (transport === "pipe") {
+      if (transport === "fdpipe") {
+        const fd = await spawnWithFdPipes(bin, ["--remote-debugging-pipe", ...args]);
+        b = new Browser(fromBun(fd.proc), "fdpipe");
+        b.fd = fd;
+        const self = b;
+        fd.onData((text) => self.onData(text));
+      } else if (transport === "pipe") {
         const proc = spawn(bin, ["--remote-debugging-pipe", ...args], { stdio: ["ignore", "ignore", "pipe", "pipe", "pipe"], windowsHide: true });
-        b = new Browser(proc, "pipe");
+        b = new Browser(fromChild(proc), "pipe");
         b.out = proc.stdio[3] as Writable;
         const input = proc.stdio[4] as Readable | null;
         if (b.out == null || input == null) throw new CdpError("the runtime did not give the child fds 3 and 4");
@@ -103,14 +149,14 @@ export class Browser {
       } else if (transport === "winpipe") {
         const pipes = await makeWinPipes();
         const proc = spawn(bin, ["--remote-debugging-pipe", `--remote-debugging-io-pipes=${pipes.childRead},${pipes.childWrite}`, ...args], { stdio: ["ignore", "ignore", "pipe"], windowsHide: true });
-        b = new Browser(proc, "winpipe");
+        b = new Browser(fromChild(proc), "winpipe");
         b.win = pipes;
         pipes.closeChildEnds();
         const self = b;
         pipes.start((text) => self.onData(text), () => undefined);
       } else {
         const proc = spawn(bin, ["--remote-debugging-port=0", ...args], { stdio: ["ignore", "ignore", "pipe"], windowsHide: true });
-        b = new Browser(proc, "port");
+        b = new Browser(fromChild(proc), "port");
         const self = b;
         const url = await new Promise<string>((resolve, reject) => {
           const timer = setTimeout(() => reject(new CdpError("no DevTools URL on stderr")), timeoutMs);
@@ -119,7 +165,7 @@ export class Browser {
             if (m !== null) { clearTimeout(timer); proc.stderr?.off("data", onData); resolve(m[1]!); }
           };
           proc.stderr?.on("data", onData);
-          proc.on("exit", () => { clearTimeout(timer); reject(new CdpError(`browser exited before listening`)); });
+          proc.on("exit", () => { clearTimeout(timer); reject(new CdpError("browser exited before listening")); });
         });
         const ws = new WebSocket(url);
         b.ws = ws;
@@ -168,7 +214,8 @@ export class Browser {
       const timer = setTimeout(() => { this.pending.delete(id); reject(new CdpError(`${method} timed out`)); }, timeoutMs);
       this.pending.set(id, { resolve: resolve as (v: unknown) => void, reject, timer, method });
       try {
-        if (this.transport === "pipe") this.out!.write(`${text}\0`);
+        if (this.transport === "fdpipe") { if (!this.fd!.write(`${text}\0`)) throw new Error("the pipe is closed"); }
+        else if (this.transport === "pipe") this.out!.write(`${text}\0`);
         else if (this.transport === "winpipe") this.win!.write(text);
         else this.ws!.send(text);
       } catch (e) {
@@ -207,8 +254,13 @@ export class Browser {
 export class Page {
   constructor(readonly browser: Browser, readonly targetId: string, readonly sessionId: string) {}
 
-  static async open(browser: Browser, url: string, browserContextId?: string): Promise<Page> {
-    const { targetId } = await browser.send<{ targetId: string }>("Target.createTarget", { url: "about:blank", ...(browserContextId === undefined ? {} : { browserContextId }) });
+  /** `newWindow`: the tab in a window of its own (in headless Chrome, a background tab of a shared window is hidden). */
+  static async open(browser: Browser, url: string, opts: { browserContextId?: string; newWindow?: boolean } = {}): Promise<Page> {
+    const { targetId } = await browser.send<{ targetId: string }>("Target.createTarget", {
+      url: "about:blank",
+      ...(opts.browserContextId === undefined ? {} : { browserContextId: opts.browserContextId }),
+      ...(opts.newWindow === true ? { newWindow: true } : {}),
+    });
     const { sessionId } = await browser.send<{ sessionId: string }>("Target.attachToTarget", { targetId, flatten: true });
     const page = new Page(browser, targetId, sessionId);
     await page.send("Page.enable");

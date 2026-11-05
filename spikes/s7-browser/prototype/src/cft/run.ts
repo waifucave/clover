@@ -46,6 +46,7 @@ function baseArgs(artifact: Artifact, profile: string, extra: string[]): string[
     ...(artifact === "chrome" ? ["--headless"] : []),
     `--user-data-dir=${profile}`, "--no-first-run", "--no-default-browser-check", "--disable-background-networking",
     "--disable-component-update", "--disable-sync", "--disable-default-apps", "--mute-audio", "--hide-scrollbars",
+    "--autoplay-policy=no-user-gesture-required",
     "--window-size=1280,800", "--use-mock-keychain", "--password-store=basic", ...extra, "about:blank",
   ];
 }
@@ -59,7 +60,7 @@ async function launch(l: Launcher, profile: string, transport: Transport = l.tra
 }
 
 /** The transports to try, best first: a pipe no other process can reach, else the loopback port. */
-const TRANSPORTS: Transport[] = process.platform === "win32" ? ["winpipe", "pipe", "port"] : ["pipe", "port"];
+const TRANSPORTS: Transport[] = process.platform === "win32" ? ["winpipe", "pipe", "port"] : ["fdpipe", "pipe", "port"];
 
 function decodeJpeg(data: Buffer, pageWidth: number, at: number): number | undefined {
   try {
@@ -71,8 +72,8 @@ function decodeJpeg(data: Buffer, pageWidth: number, at: number): number | undef
   }
 }
 
-async function probeTab(b: Browser, server: SpikeServer, query: string, contextId?: string): Promise<Page> {
-  const p = await Page.open(b, `${server.origin}/pages/probe.html?${query}`, contextId);
+async function probeTab(b: Browser, server: SpikeServer, query: string, contextId?: string, newWindow = false): Promise<Page> {
+  const p = await Page.open(b, `${server.origin}/pages/probe.html?${query}`, { browserContextId: contextId, newWindow });
   await waitFor(() => p.eval<boolean>("typeof window.__s7 === 'object'").then((v) => (v ? true : undefined)), 5000);
   return p;
 }
@@ -146,44 +147,53 @@ async function forArtifact(artifact: Artifact, server: SpikeServer): Promise<Rec
     // --- background tabs: are timers, rAF and media throttled? ------------------------------------------------------
     if (want("tabs")) {
       try {
-        const t1 = await probeTab(b, server, "scenario=probe&media=1&sse=0&tab=c1");
-        const t2 = await probeTab(b, server, "scenario=probe&media=1&sse=0&tab=c2");
-        for (const t of [t1, t2]) await t.eval("window.__s7.setup({ media: true })", 15_000);
-        await sleep(2000);
-        for (const t of [t1, t2]) await t.eval("window.__s7.resetGaps()");
-        const a = [await t1.eval<Snap>("window.__s7.snapshot()"), await t2.eval<Snap>("window.__s7.snapshot()")];
-        await sleep(5000);
-        const z = [await t1.eval<Snap>("window.__s7.snapshot()"), await t2.eval<Snap>("window.__s7.snapshot()")];
-        out.tabs = [0, 1].map((i) => {
-          const s0 = a[i]!, s1 = z[i]!;
-          const secs = (s1.now - s0.now) / 1000;
-          return {
-            tab: i === 0 ? "first (created first)" : "second (created last)",
-            visibility: s1.visibility,
-            layout: `${s1.innerWidth}x${s1.innerHeight}`,
-            intervalHz: rate(s0.interval.n, s0.now, s1.interval.n, s1.now),
-            chainHz: rate(s0.chain.n, s0.now, s1.chain.n, s1.now),
-            rafHz: rate(s0.raf.n, s0.now, s1.raf.n, s1.now),
-            maxRafGapMs: s1.raf.maxGap,
-            mediaPlayedPerSec: s0.media && s1.media ? (s1.media.played - s0.media.played) / secs : undefined,
-            decodedFps: s0.media && s1.media ? (s1.media.decodedFrames - s0.media.decodedFrames) / secs : undefined,
-            audioState: s1.media?.audioState,
-          };
-        });
+        // two tabs in one window (Target.createTarget's default), then two tabs each in a window of its own
+        const tabRows: Array<Record<string, unknown>> = [];
+        for (const own of [false, true]) {
+          const t1 = await probeTab(b, server, `scenario=probe&media=1&sse=0&tab=c1${own ? "w" : ""}`, undefined, own);
+          const t2 = await probeTab(b, server, `scenario=probe&media=1&sse=0&tab=c2${own ? "w" : ""}`, undefined, own);
+          const media = [];
+          for (const t of [t1, t2]) media.push(await t.eval<Record<string, unknown>>("window.__s7.setup({ media: true })", 15_000));
+          await sleep(2000);
+          for (const t of [t1, t2]) await t.eval("window.__s7.resetGaps()");
+          const a = [await t1.eval<Snap>("window.__s7.snapshot()"), await t2.eval<Snap>("window.__s7.snapshot()")];
+          await sleep(5000);
+          const z = [await t1.eval<Snap>("window.__s7.snapshot()"), await t2.eval<Snap>("window.__s7.snapshot()")];
+          for (const i of [0, 1]) {
+            const s0 = a[i]!, s1 = z[i]!;
+            const secs = (s1.now - s0.now) / 1000;
+            tabRows.push({
+              tab: `${own ? "own window" : "one window"}: ${i === 0 ? "first (background)" : "second (front)"}`,
+              visibility: s1.visibility,
+              layout: `${s1.innerWidth}x${s1.innerHeight}`,
+              intervalHz: rate(s0.interval.n, s0.now, s1.interval.n, s1.now),
+              chainHz: rate(s0.chain.n, s0.now, s1.chain.n, s1.now),
+              rafHz: rate(s0.raf.n, s0.now, s1.raf.n, s1.now),
+              maxRafGapMs: s1.raf.maxGap,
+              mediaStart: media[i]?.media,
+              mediaPlayedPerSec: s0.media && s1.media ? (s1.media.played - s0.media.played) / secs : undefined,
+              decodedFps: s0.media && s1.media ? (s1.media.decodedFrames - s0.media.decodedFrames) / secs : undefined,
+              audioState: s1.media?.audioState,
+            });
+          }
+          if (own) {
+            // --- a resize (a person watching at another size) without a reload, on a tab in its own window ---------
+            const before = await t1.eval<Snap>("window.__s7.snapshot()");
+            let r0 = Date.now();
+            await t1.send("Emulation.setDeviceMetricsOverride", { width: 1000, height: 700, deviceScaleFactor: 1, mobile: false });
+            const resized = await waitFor(async () => { const s = await t1.eval<Snap>("window.__s7.snapshot()"); return s.innerWidth === 1000 ? s : undefined; }, 5000, 20);
+            const toViewMs = Date.now() - r0;
+            r0 = Date.now();
+            await t1.send("Emulation.clearDeviceMetricsOverride");
+            const back = await waitFor(async () => { const s = await t1.eval<Snap>("window.__s7.snapshot()"); return s.innerWidth === before.innerWidth ? s : undefined; }, 5000, 20);
+            out.resize = { toViewMs, backMs: Date.now() - r0, sameDocument: resized?.token === before.token && back?.token === before.token, layouts: [before.innerWidth, resized?.innerWidth, back?.innerWidth] };
+          }
+          await t1.close();
+          await t2.close();
+        }
+        out.tabs = tabRows;
         log(`${artifact}: tabs ${JSON.stringify(rounded(out.tabs, 1))}`);
 
-        // --- a resize (a person watching at another size) without a reload ----------------------------------------
-        const before = await t1.eval<Snap>("window.__s7.snapshot()");
-        let r0 = Date.now();
-        await t1.send("Emulation.setDeviceMetricsOverride", { width: 1000, height: 700, deviceScaleFactor: 1, mobile: false });
-        const resized = await waitFor(async () => { const s = await t1.eval<Snap>("window.__s7.snapshot()"); return s.innerWidth === 1000 ? s : undefined; }, 5000, 20);
-        const toViewMs = Date.now() - r0;
-        r0 = Date.now();
-        await t1.send("Emulation.clearDeviceMetricsOverride");
-        const back = await waitFor(async () => { const s = await t1.eval<Snap>("window.__s7.snapshot()"); return s.innerWidth === 1280 ? s : undefined; }, 5000, 20);
-        out.resize = { toViewMs, backMs: Date.now() - r0, sameDocument: resized?.token === before.token && back?.token === before.token, layouts: [before.innerWidth, resized?.innerWidth, back?.innerWidth] };
-        await t1.close();
-        await t2.close();
       } catch (e) {
         errors.push(`tabs: ${errorText(e)}${b.exited ? ` — the browser exited (${b.exitCode ?? b.exitSignal}); stderr: ${b.tail(10)}` : ""}`);
       }
@@ -192,13 +202,13 @@ async function forArtifact(artifact: Artifact, server: SpikeServer): Promise<Rec
     // --- screenshots ---------------------------------------------------------------------------------------------
     if (want("screenshots")) {
       try {
-        const t = await probeTab(b, server, "scenario=anim&sse=0&tab=c3");
+        const t = await probeTab(b, server, "scenario=anim&sse=0&tab=c3", undefined, true);
         await sleep(1000);
         const width = (await t.eval<Snap>("window.__s7.snapshot()")).innerWidth;
         const shots: Record<string, unknown> = {};
         for (const format of ["png", "jpeg"]) {
           const ms: number[] = [], stale: number[] = [], sizes: number[] = [];
-          const c0 = await sampleTree(b.proc.pid!);
+          const c0 = await sampleTree(b.pid);
           for (let i = 0; i < 8; i++) {
             const at = Date.now();
             const r = await t.send<{ data: string }>("Page.captureScreenshot", format === "png" ? { format } : { format, quality: 80 });
@@ -208,14 +218,16 @@ async function forArtifact(artifact: Artifact, server: SpikeServer): Promise<Rec
             if (format === "jpeg") { const s = decodeJpeg(buf, width, at); if (s !== undefined) stale.push(s); }
             await sleep(100);
           }
-          const c1 = await sampleTree(b.proc.pid!);
+          const c1 = await sampleTree(b.pid);
           shots[format] = { ms: summarize(ms), staleMs: summarize(stale), bytes: summarize(sizes), cpuMsPerShot: ((treeCpuPct(c0, c1) / 100) * ((c1.at - c0.at) / 1000) * 1000) / 8 };
         }
         out.screenshots = shots;
         log(`${artifact}: screenshots ${JSON.stringify(rounded(shots, 0))}`);
 
         // --- screencast ------------------------------------------------------------------------------------------
-        let frames = 0, bytes = 0;
+        // every frame is acked and counted; at most ten a second are decoded for their marker, so the JavaScript JPEG
+        // decode (tens of ms a frame on a runner) never falls behind and adds queueing to what is measured
+        let frames = 0, bytes = 0, lastDecode = 0;
         const lat: number[] = [], arrivals: number[] = [];
         const off = b.on((e) => {
           if (e.sessionId !== t.sessionId || e.method !== "Page.screencastFrame") return;
@@ -225,6 +237,8 @@ async function forArtifact(artifact: Artifact, server: SpikeServer): Promise<Rec
           frames++;
           bytes += buf.length;
           arrivals.push(at);
+          if (at - lastDecode < 100) return;
+          lastDecode = at;
           const meta = e.params.metadata as { deviceWidth?: number } | undefined;
           const s = decodeJpeg(buf, meta?.deviceWidth ?? width, at);
           if (s !== undefined) lat.push(s);
@@ -232,13 +246,13 @@ async function forArtifact(artifact: Artifact, server: SpikeServer): Promise<Rec
         await t.send("Page.startScreencast", { format: "jpeg", quality: 70, maxWidth: 1280, maxHeight: 800, everyNthFrame: 1 });
         await sleep(1500);
         frames = 0; bytes = 0; lat.length = 0; arrivals.length = 0;
-        const c0 = await sampleTree(b.proc.pid!);
+        const c0 = await sampleTree(b.pid);
         await sleep(8000);
-        const c1 = await sampleTree(b.proc.pid!);
+        const c1 = await sampleTree(b.pid);
         await t.send("Page.stopScreencast");
         off();
         const gaps = arrivals.slice(1).map((x, i) => x - arrivals[i]!);
-        out.screencast = { framesPerSec: frames / 8, kbitPerSec: (bytes * 8) / 8 / 1000, avgFrameBytes: frames > 0 ? bytes / frames : 0, latencyMs: summarize(lat), interFrameMs: summarize(gaps), browserCpuPct: treeCpuPct(c0, c1), note: "latency is measured after a JavaScript JPEG decode in the daemon (~10–30 ms of it)" };
+        out.screencast = { framesPerSec: frames / 8, kbitPerSec: (bytes * 8) / 8 / 1000, avgFrameBytes: frames > 0 ? bytes / frames : 0, latencyMs: summarize(lat), interFrameMs: summarize(gaps), browserCpuPct: treeCpuPct(c0, c1), note: "latency: from the marker's draw time to the frame's arrival at the daemon, on up to ten decoded frames a second" };
         log(`${artifact}: screencast ${JSON.stringify(rounded(out.screencast, 1))}`);
         await t.close();
       } catch (e) {
@@ -293,14 +307,15 @@ async function forArtifact(artifact: Artifact, server: SpikeServer): Promise<Rec
       main = (await launch(l, join(profiles, `${artifact}-cost`))).b;
       const step = async (n: number): Promise<Record<string, number | string>> => {
         await sleep(3000);
-        const s0 = await sampleTree(main!.proc.pid!);
+        const s0 = await sampleTree(main!.pid);
         await sleep(4000);
-        const s1 = await sampleTree(main!.proc.pid!);
+        const s1 = await sampleTree(main!.pid);
         return { tabs: n, memMiB: s1.best / 1048576, memKind: s1.bestKind, rssMiB: s1.rss / 1048576, procs: s1.procs.length, cpuPct: treeCpuPct(s0, s1) };
       };
       const steps: Array<Record<string, number | string>> = [await step(0)];
       for (const target of [1, 2, 4, 8]) {
-        while (pages.length < target) pages.push(await probeTab(main, server, `scenario=static&sse=0&tab=k${pages.length}`));
+        // each bot tab in a window of its own, so none is a hidden background tab
+        while (pages.length < target) pages.push(await probeTab(main, server, `scenario=static&sse=0&tab=k${pages.length}`, undefined, true));
         steps.push(await step(target));
         log(`${artifact}: cost ${target} tabs: ${JSON.stringify(rounded(steps[steps.length - 1], 1))}`);
       }
@@ -316,14 +331,14 @@ async function forArtifact(artifact: Artifact, server: SpikeServer): Promise<Rec
       const ctx4 = await step(4);
       for (const p of pages.splice(0)) await p.close();
       // an animated tab
-      const anim = await probeTab(main, server, "scenario=anim&sse=0&tab=an");
+      const anim = await probeTab(main, server, "scenario=anim&sse=0&tab=an", undefined, true);
       const animStep = await step(1);
       await anim.close();
       // a second bot = a second browser with its own profile: its base cost
-      const before = await sampleTree(main.proc.pid!);
+      const before = await sampleTree(main.pid);
       second = (await launch(l, join(profiles, `${artifact}-cost-2`))).b;
       await sleep(3000);
-      const secondTree = await sampleTree(second.proc.pid!);
+      const secondTree = await sampleTree(second.pid);
       out.cost = {
         steps, perIdleTabMiB: perTabMiB, browserBaseMiB: Number(s0.memMiB),
         fourContextsMiB: Number(ctx4.memMiB) - Number(ctxBase.memMiB), animatedTabCpuPct: Number(animStep.cpuPct) - Number(ctxBase.cpuPct),
