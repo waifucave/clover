@@ -252,31 +252,74 @@ describe("htmlToText: linear-time scanning (Critical fix, fix-round-2 — the SA
     { name: "a (the same shape extractLinks already fixed)", unit: '<a href="https://example.com/x">link text ' },
   ];
 
-  for (const { name, unit } of shapes) {
-    test(`many unclosed <${name}> opens, no closing tag anywhere: a doubling series (128KB->1MB) stays bounded, not ~4x per doubling`, () => {
-      const sizesKb = [128, 256, 512, 1024];
-      const timings = sizesKb.map((kb) => {
-        const html = unclosed(unit, kb * 1024);
+  // HOW THESE TWO ARE TIMED. htmlToText on a megabyte legitimately takes milliseconds to over a hundred on a loaded
+  // CI runner (a macOS runner once took 124 ms at 1MB against the old 100 ms bound), so a tight absolute bound is a
+  // flake. What they guard is the growth: the pre-fix series was ~130/510/2070/8360 ms, ~4x per doubling. So each
+  // size is timed as the least of a few runs (noise only ever adds time) after a warm-up, and the test asserts the
+  // GROWTH, measured in this process: the slope of log(time) against log(size), ~1 for linear and 2 for quadratic
+  // (measured after the fix on macOS arm64: 0.89-1.08 idle, up to 1.36 with other heavy jobs running; the pre-fix
+  // series gives 2.0). An absolute ceiling stays, set far above any linear run and far below the pre-fix times, so a
+  // change that made every size uniformly slow is still caught.
+  const LINEAR_SLOPE_MAX = 1.5;
+  const SERIES_CEILING_MS = 1_000; // per size; pre-fix the 1MB step alone took 8,360 ms
+
+  /** The least of `reps` timings of `run` on each input, after one warm-up run; it stops at the first time over the
+   *  ceiling (the assertion then fails on it) so a quadratic regression fails fast instead of timing out. */
+  function leastTimes(inputs: string[], run: (input: string) => unknown, ceilingMs: number, reps = 5): number[] {
+    run(inputs[0]!);
+    const times: number[] = [];
+    for (const input of inputs) {
+      let least = Infinity;
+      for (let i = 0; i < reps && (i === 0 || least <= ceilingMs); i++) {
         const start = performance.now();
-        htmlToText(html);
-        return performance.now() - start;
-      });
-      // Pre-fix this series was ~130/510/2070/8360ms per shape (measured directly on this branch
-      // before the fix, each step ~4x the last — clean O(n^2), matching the reviewer's own
-      // methodology). Post-fix every step must stay small and bounded — an absolute bound, not a
-      // ratio (CI timing noise): even the LARGEST (1MB) must complete in well under what the
-      // SMALLEST (128KB) took pre-fix.
-      for (const t of timings) expect(t).toBeLessThan(100);
-    });
+        run(input);
+        least = Math.min(least, performance.now() - start);
+      }
+      times.push(least);
+      if (least > ceilingMs) break;
+    }
+    return times;
   }
 
-  test("the 3MB pathological case (no closing tags at all) completes in a small bounded time (was ~77,000ms pre-fix, measured directly)", () => {
-    const html = unclosed('<script type="text/x"> ', 3 * 1024 * 1024);
-    const start = performance.now();
-    htmlToText(html);
-    const elapsed = performance.now() - start;
-    expect(elapsed).toBeLessThan(500);
+  /** The least-squares slope of log(time) against log(size): ~1 when time grows linearly with size, 2 when quadratically. */
+  function growthSlope(sizes: number[], times: number[]): number {
+    const xs = sizes.map(Math.log);
+    const ys = times.map((t) => Math.log(Math.max(t, 0.01)));
+    const mx = xs.reduce((a, b) => a + b, 0) / xs.length;
+    const my = ys.reduce((a, b) => a + b, 0) / ys.length;
+    let num = 0;
+    let den = 0;
+    for (let i = 0; i < xs.length; i++) {
+      num += (xs[i]! - mx) * (ys[i]! - my);
+      den += (xs[i]! - mx) ** 2;
+    }
+    return num / den;
+  }
+
+  test("the growth measure tells linear from quadratic (the yardstick the two tests below rely on)", () => {
+    const sizes = [1, 2, 4, 8];
+    expect(growthSlope(sizes, sizes.map((n) => 3 * n))).toBeCloseTo(1, 5);
+    expect(growthSlope(sizes, [130, 510, 2070, 8360])).toBeGreaterThan(1.9); // the pre-fix series, measured
+    expect(growthSlope(sizes, sizes.map((n) => 0.5 + 2 * n))).toBeLessThan(LINEAR_SLOPE_MAX); // a fixed overhead flattens it
   });
+
+  for (const { name, unit } of shapes) {
+    test(`many unclosed <${name}> opens, no closing tag anywhere: a doubling series (128KB->1MB) grows linearly, not ~4x per doubling`, () => {
+      const sizesKb = [128, 256, 512, 1024];
+      const times = leastTimes(sizesKb.map((kb) => unclosed(unit, kb * 1024)), htmlToText, SERIES_CEILING_MS);
+      const shown = times.map((t) => t.toFixed(1)).join("/");
+      for (const t of times) expect(t, `${name}: ${shown} ms`).toBeLessThan(SERIES_CEILING_MS);
+      expect(growthSlope(sizesKb, times), `${name}: ${shown} ms`).toBeLessThan(LINEAR_SLOPE_MAX);
+    }, 30_000);
+  }
+
+  test("the 3MB pathological case (no closing tags at all) completes in linear time (was ~77,000ms pre-fix, measured directly)", () => {
+    // Timed against 1MB of the same shape in this process: 3x the input is ~3x the time when linear and ~9x when
+    // quadratic, so the bound is the slope's 3^1.5 (~5.2x). The absolute ceiling is far below the pre-fix 77 s.
+    const [oneMb, threeMb] = leastTimes([1, 3].map((mb) => unclosed('<script type="text/x"> ', mb * 1024 * 1024)), htmlToText, 5_000, 3);
+    expect(threeMb, `1MB ${oneMb!.toFixed(1)} ms, 3MB ${threeMb?.toFixed(1)} ms`).toBeLessThan(5_000);
+    expect(threeMb! / oneMb!, `1MB ${oneMb!.toFixed(1)} ms, 3MB ${threeMb!.toFixed(1)} ms`).toBeLessThan(3 ** LINEAR_SLOPE_MAX);
+  }, 60_000);
 
   // Task 6b Part B: the fix above linearized the five PAIRED-tag scans but left the FINAL
   // `<[^>]+>` strip quadratic, and the shapes probed above all terminate their own tags (`<script
