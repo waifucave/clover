@@ -21,6 +21,7 @@ export async function networkProbe(endpoints, full = true) {
  await attempt('fetch',()=>fetch(endpoints.fetch.url).then(r=>r.status));
  if(!full)return {outcomes:out,violations};
  for(const name of ['own-fetch','other-plugin-fetch','wrong-port','keepalive'])await attempt(name,()=>fetch(endpoints[name].url,{keepalive:name==='keepalive'}).then(r=>r.status));
+ await attempt('own-websocket',()=>new Promise(r=>{const ws=new WebSocket(endpoints['own-fetch'].url.replace('http:','ws:'));ws.onopen=()=>{ws.close();r('open')};ws.onerror=()=>r('error');}));
  await attempt('xhr',()=>new Promise(r=>{const x=new XMLHttpRequest();x.open('GET',endpoints.xhr.url);x.onload=()=>r(x.status);x.onerror=()=>r('error');x.send();}));
  for(const name of ['image','css','font','script','media','object'])await attempt(name,async()=>{
   const url=endpoints[name].url;

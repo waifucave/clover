@@ -11,6 +11,8 @@ export function pluginHost(id) {
  * @param {Map<string,Set<string>>} registry */
 export function decision(url, initiatorOrigin, registry) {
   const target = new URL(url);
+  if(target.protocol==='ws:')target.protocol='http:';
+  if(target.protocol==='wss:')target.protocol='https:';
   const grant = initiatorOrigin ? registry.get(initiatorOrigin) : undefined;
   return {cancel: !grant?.has(target.origin), reason: grant ? 'exact origin grant' : 'unknown or opaque initiator'};
 }

@@ -9,6 +9,7 @@ test('spec ids, lengths, children and IDNA-safe hosts',()=>{
 test('different plugins, ports, redirects and opaque initiators fail closed',()=>{
  const grants=new Map([['clover-plugin://p-alpha',new Set(['https://one.test:444'])],['clover-plugin://p-beta',new Set(['https://two.test'])]]);
  assert.equal(decision('https://one.test:444/x','clover-plugin://p-alpha',grants).cancel,false);
+ assert.equal(decision('wss://one.test:444/x','clover-plugin://p-alpha',grants).cancel,false);
  for(const initiator of [undefined,'null','clover-plugin://unknown','clover-plugin://p-beta'])assert.equal(decision('https://one.test:444',initiator,grants).cancel,true);
  for(const url of ['https://one.test','https://one.test:445','https://two.test','file:///tmp/a','clover-plugin://p-beta'])assert.equal(decision(url,'clover-plugin://p-alpha',grants).cancel,true);
 });
