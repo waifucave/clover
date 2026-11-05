@@ -22,7 +22,7 @@ app.commandLine.appendSwitch('disable-features', 'PreconnectToSearch,Prerender2,
 app.commandLine.appendSwitch('force-webrtc-ip-handling-policy', 'disable_non_proxied_udp');
 protocol.registerSchemesAsPrivileged([{ scheme: 'clover-plugin', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, allowServiceWorkers: true } }]);
 ipcMain.on('clover-s9-memory', (event, value) => {
-  if (event.senderFrame?.url.startsWith('clover-plugin://')) samples.set(value.pid, { ...value, frameUrl: event.senderFrame.url, received: Date.now() });
+  if (event.senderFrame?.url.startsWith('clover-plugin://')) samples.set(event.senderFrame.osProcessId, { ...value, namespacePid:value.pid,pid:event.senderFrame.osProcessId, frameUrl: event.senderFrame.url, received: Date.now() });
 });
 function save(name, data) {
   mkdirSync('results', { recursive: true });
@@ -76,7 +76,7 @@ async function memoryCheck() {
   const listing = frames(win), pids = [...new Set(listing.map(f=>f.osProcessId))];
   const series = [];
   for(let i=0;i<3;i++){await pause(600);series.push(pids.map(pid=>({pid,...samples.get(pid)})));}
-  return { verdict:series.every(s=>s.every(p=>Number.isFinite(p.memory?.private)))?'works with limits':'does not', layers:count, unit:'KiB', workload:'empty inputs, CSS menu and drag/drop fixture; no React, avatar or production UI', frames:listing, samples:series, rendererPrivateTotals:series.map(s=>s.reduce((sum,p)=>sum+(p.memory?.private||0),0)), mainMemory:await process.getProcessMemoryInfo(), appMetrics:app.getAppMetrics(), note:'Renderer totals include trusted root. appMetrics retained separately; do not sum resident RSS as private memory.' };
+  return { verdict:series.every(s=>s.every(p=>Number.isFinite(p.memory?.private)))?'works with limits':'does not', layers:count, unit:'KiB', workload:'empty inputs, CSS menu and drag/drop fixture; no React, avatar or production UI', frames:listing, samples:series, rendererPrivateTotals:series.map(s=>s.every(p=>Number.isFinite(p.memory?.private))?s.reduce((sum,p)=>sum+p.memory.private,0):null), mainMemory:await process.getProcessMemoryInfo(), appMetrics:app.getAppMetrics(), note:'Renderer totals include trusted root. appMetrics retained separately; do not sum resident RSS as private memory.' };
 }
 async function crossingCheck() {
   const {win} = await makeWindow(shell(2));
