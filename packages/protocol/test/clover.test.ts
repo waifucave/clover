@@ -224,6 +224,16 @@ describe("the allow lists", () => {
     expect(CLOVER_EVENTS.get("device_changed")).toMatchObject({ capability: "devices.read" });
   });
 
+  test("lane D's asks: usage by bot and session, and the client's send stamp on a user's message", () => {
+    const rows = CLOVER_METHODS.get("usage.rows")!.params;
+    expect(rows.safeParse({ since: 0, bot: "alpha", session: "s_alpha" }).success).toBe(true);
+    const summary = CLOVER_METHODS.get("usage.summary")!.params;
+    expect(summary.safeParse({ from: 0, to: 1, groupBy: "session", bot: "alpha" }).success).toBe(true);
+    const send = CLOVER_METHODS.get("session.send")!.params;
+    expect(send.safeParse({ id: "s_alpha", message: { text: "hi", clientMessageId: "c1", sentAt: 1781270000000 } }).success).toBe(true);
+    expect(send.safeParse({ id: "s_alpha", message: { text: "hi", clientMessageId: "c1" } }).success).toBe(true);
+  });
+
   test("a method only the user may call is open to user roles, or to a layer when it becomes a card", () => {
     for (const m of methods.filter((x) => x.userOnly)) {
       for (const r of m.roles) {

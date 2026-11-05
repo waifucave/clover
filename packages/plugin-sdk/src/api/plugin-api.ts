@@ -464,9 +464,11 @@ export interface BrowserApi {
 }
 
 export interface UsageApi {
-  rows(query: { since: number; until?: number; computer?: string; source?: UsageRow["source"]; cursor?: string; limit?: number }): Promise<{ rows: UsageRow[]; next?: string }>;
+  /** `bot` and `session` keep one bot's or one session's rows (lane D's filters, as `usage.rows` has them). */
+  rows(query: { since: number; until?: number; computer?: string; source?: UsageRow["source"]; bot?: string; session?: string; cursor?: string; limit?: number }): Promise<{ rows: UsageRow[]; next?: string }>;
   plans(): Promise<PlanReading[]>;
-  summary(query: { from: number; to: number; groupBy: "source" | "model" | "bot" | "computer" | "day" }): Promise<{ key: string; inputTokens: number; outputTokens: number; costUsd?: number }[]>;
+  /** `day` is the UTC date; a row with no bot or session groups under `-`. */
+  summary(query: { from: number; to: number; groupBy: "source" | "model" | "bot" | "computer" | "day" | "session"; bot?: string; session?: string }): Promise<{ key: string; inputTokens: number; outputTokens: number; costUsd?: number }[]>;
   watch(listener: (since: number) => void): Unsubscribe;
 }
 

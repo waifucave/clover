@@ -118,6 +118,10 @@ export const UserMessageInput = z.object({
   files: z.array(z.object({ n: z.number().int().positive(), path: TreePath })).max(64).optional(),
   /** The client's id for this message, so a resend is not a second message. */
   clientMessageId: utf16(128, 1),
+  /** When the client sent it, on the shared clock (§6.4): with the device, it orders the user's messages, so one sent
+   *  earlier from a slower device goes first (`(sentAt, device)`). A client with no synced clock leaves it out, and the
+   *  daemon stamps the time it received the message (lane D's request). */
+  sentAt: Timestamp.optional(),
 });
 export type UserMessageInput = z.infer<typeof UserMessageInput>;
 

@@ -50,6 +50,8 @@ export const USAGE_METHODS = {
     name: "usage.rows", owner: "D", ...Read,
     params: z.object({
       since: Timestamp, until: Timestamp.optional(), computer: ComputerName.optional(), source: UsageSource.optional(),
+      /** One bot's rows, or one session's (§12: Clover's turns count per bot and per session). */
+      bot: BotId.optional(), session: SessionId.optional(),
       cursor: Cursor.optional(), limit: z.number().int().min(1).max(10_000).optional(),
     }),
     result: z.object({ rows: z.array(UsageRow), next: Cursor.optional() }),
@@ -62,7 +64,12 @@ export const USAGE_METHODS = {
   }),
   usageSummary: defineMethod({
     name: "usage.summary", owner: "D", roles: ["app", "cli", "remote", "layer"], capability: "usage.read",
-    params: z.object({ from: Timestamp, to: Timestamp, groupBy: z.enum(["source", "model", "bot", "computer", "day"]) }),
+    params: z.object({
+      from: Timestamp, to: Timestamp,
+      /** `day` is the UTC date; a row with no bot or session groups under `-`. */
+      groupBy: z.enum(["source", "model", "bot", "computer", "day", "session"]),
+      bot: BotId.optional(), session: SessionId.optional(),
+    }),
     result: z.object({
       groups: z.array(z.object({
         key: utf16(256),
