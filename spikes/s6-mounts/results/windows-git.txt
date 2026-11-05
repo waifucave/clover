@@ -1,0 +1,74 @@
+git: git version 2.56.0.windows.4; core.symlinks here: file:C:/Program Files/Git/etc/gitconfig	true
+
+== 1. tree on T: (DefineDosDevice): --mountpoint T:
+repo visible: True
+probe T:\ : open ok | final(0) error 1005 | final(1) error 1005 | final(2) \Device\Volume{fb069734-d8fb-11f1-925a-000d3a5d4e7f}\ | final(4) \ | final(8) error 1005 | long T:\ | attrs 10
+probe T:\home : open ok | final(0) error 1005 | final(1) error 1005 | final(2) \Device\Volume{fb069734-d8fb-11f1-925a-000d3a5d4e7f}\home | final(4) \home | final(8) error 1005 | long T:\home | attrs 10
+probe T:\home\Desktop1 : open ok | final(0) error 1005 | final(1) error 1005 | final(2) \Device\Volume{fb069734-d8fb-11f1-925a-000d3a5d4e7f}\home\Desktop1 | final(4) \home\Desktop1 | final(8) error 1005 | long T:\home\Desktop1 | attrs 10
+probe T:\home\Desktop1\clover : open ok | final(0) error 1005 | final(1) error 1005 | final(2) \Device\Volume{fb069734-d8fb-11f1-925a-000d3a5d4e7f}\home\Desktop1\clover | final(4) \home\Desktop1\clover | final(8) error 1005 | long T:\home\Desktop1\clover | attrs 10
+probe T:\home\Runner : open error 2 | long T:\home\Runner | attrs 400
+pwd: T:\home\Desktop1\clover
+git status, started in the repo: exit 0 
+git rev-parse --show-toplevel: T:/home/Desktop1/clover
+git -c core.symlinks=false status: exit 0 
+git -c core.symlinks=true status: exit 0 
+Git Bash, started in the repo: /t/home/Desktop1/clover / git exit 0
+git -C <repo> status: exit 0 
+git -C status took 192 ms (0 lines)
+this computer's entry (T:\home\Runner) lists: Runner
+helper: 09:43:27.316300 [Desktop1] online (service a078c071 on win32)
+helper: 09:43:27.350906 mounting T: (policy plain)
+helper: The service clover-mount has been started.
+
+== 2. tree on \\.\T: (Mount Manager): --mountpoint \\.\T:
+repo visible: True
+probe T:\ : open ok | final(0) \\?\T:\ | final(1) \\?\Volume{fb069752-d8fb-11f1-925a-000d3a5d4e7f}\ | final(2) \Device\Volume{fb069750-d8fb-11f1-925a-000d3a5d4e7f}\ | final(4) \ | final(8) \\?\T:\ | long T:\ | attrs 10
+probe T:\home\Desktop1\clover : open ok | final(0) \\?\T:\home\Desktop1\clover | final(1) \\?\Volume{fb069752-d8fb-11f1-925a-000d3a5d4e7f}\home\Desktop1\clover | final(2) \Device\Volume{fb069750-d8fb-11f1-925a-000d3a5d4e7f}\home\Desktop1\clover | final(4) \home\Desktop1\clover | final(8) \\?\T:\home\Desktop1\clover | long T:\home\Desktop1\clover | attrs 10
+probe T:\home\Runner : open error 2 | long T:\home\Runner | attrs 400
+pwd: T:\home\Desktop1\clover
+git status, started in the repo: exit 0 
+git rev-parse --show-toplevel: T:/home/Desktop1/clover
+git -c core.symlinks=false status: exit 0 
+git -c core.symlinks=true status: exit 0 
+Git Bash, started in the repo: /t/home/Desktop1/clover / git exit 0
+git -C <repo> status: exit 0 
+git -C status took 209 ms (0 lines)
+this computer's entry (T:\home\Runner) lists: Runner
+helper: 09:43:29.966482 [Desktop1] online (service a078c071 on win32)
+helper: 09:43:29.997359 mounting \\.\T: (policy plain)
+helper: The service clover-mount has been started.
+
+== 3. real folder, junction for this computer, the other one mounted on a folder: --mountpoint C:\s6tree\home\Desktop1
+repo visible: True
+probe C:\s6tree\home\Desktop1 : open ok | final(0) error 1005 | final(1) error 1005 | final(2) \Device\Volume{fb06976e-d8fb-11f1-925a-000d3a5d4e7f}\ | final(4) \ | final(8) error 1005 | long C:\s6tree\home\Desktop1 | attrs 410
+probe C:\s6tree\home\Desktop1\clover : open ok | final(0) error 1005 | final(1) error 1005 | final(2) \Device\Volume{fb06976e-d8fb-11f1-925a-000d3a5d4e7f}\clover | final(4) \clover | final(8) error 1005 | long C:\s6tree\home\Desktop1\clover | attrs 10
+probe C:\s6tree\home\Runner : open ok | final(0) \\?\C:\Users\runneradmin | final(1) \\?\Volume{51199064-2a58-498e-81e0-1bdfd593eced}\Users\runneradmin | final(2) \Device\HarddiskVolume3\Users\runneradmin | final(4) \Users\runneradmin | final(8) \\?\C:\Users\runneradmin | long C:\s6tree\home\Runner | attrs 410
+pwd: C:\s6tree\home\Desktop1\clover
+git status, started in the repo: exit 0 
+git rev-parse --show-toplevel: C:/s6tree/home/Desktop1/clover
+git -c core.symlinks=false status: exit 0 
+git -c core.symlinks=true status: exit 0 
+Git Bash, started in the repo: /c/s6tree/home/Desktop1/clover / git exit 0
+git -C <repo> status: exit 0 
+git -C status took 186 ms (0 lines)
+this computer's entry (C:\s6tree\home\Runner) lists: .bun, .cargo, .docker
+helper: 09:43:32.327174 [Desktop1] online (service a078c071 on win32)
+helper: 09:43:32.359907 mounting C:\s6tree\home\Desktop1 (policy plain)
+helper: The service clover-mount has been started.
+
+== 4. tree on T: as a network volume (\\clover\tree): --mountpoint T:
+repo visible: True
+probe T:\ : open ok | final(0) \\?\UNC\clover\tree\ | final(1) error 3 | final(2) \Device\Mup\clover\tree\ | final(4) \clover\tree\ | final(8) \\?\UNC\clover\tree\ | long T:\ | attrs 10
+probe T:\home\Desktop1\clover : open ok | final(0) \\?\UNC\clover\tree\home\Desktop1\clover | final(1) error 3 | final(2) \Device\Mup\clover\tree\home\Desktop1\clover | final(4) \clover\tree\home\Desktop1\clover | final(8) \\?\UNC\clover\tree\home\Desktop1\clover | long T:\home\Desktop1\clover | attrs 10
+probe \\clover\tree\home\Desktop1\clover : open ok | final(0) \\?\UNC\clover\tree\home\Desktop1\clover | final(1) error 3 | final(2) \Device\Mup\clover\tree\home\Desktop1\clover | final(4) \clover\tree\home\Desktop1\clover | final(8) \\?\UNC\clover\tree\home\Desktop1\clover | long \\clover\tree\home\Desktop1\clover | attrs 10
+pwd: T:\home\Desktop1\clover
+git status, started in the repo: exit 0 
+git rev-parse --show-toplevel: //clover/tree/home/Desktop1/clover
+git -c core.symlinks=false status: exit 0 
+git -c core.symlinks=true status: exit 0 
+Git Bash, started in the repo: /t/home/Desktop1/clover / git exit 0
+git -C <repo> status: exit 0 
+git -C status took 171 ms (0 lines)
+helper: 09:43:34.484418 [Desktop1] online (service a078c071 on win32)
+helper: 09:43:34.515621 mounting T: (policy plain)
+helper: The service clover-mount has been started.
