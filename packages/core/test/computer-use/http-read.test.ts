@@ -673,6 +673,15 @@ describe("the review's smaller findings", () => {
     expect(proxyFor("93.184.216.34", https, { all_proxy: "http://proxy:3128" })).toBe("all_proxy");
     expect(proxyFor("127.0.0.1", http(), { http_proxy: "http://proxy:3128", ALL_PROXY: "http://other:3128" })).toBe("http_proxy");
     expect(proxyFor("127.0.0.1", http(), { ALL_PROXY: "http://proxy:3128", NO_PROXY: "127.0.0.1" })).toBeUndefined();
+    // A SOCKS ALL_PROXY Bun ignores (it dials direct); one with no scheme it uses as an HTTP proxy.
+    for (const socks of ["socks5://127.0.0.1:1080", "SOCKS5H://proxy:1080", "socks4://proxy:1080", "socks4a://proxy:1080"]) {
+      expect(proxyFor("127.0.0.1", http(), { ALL_PROXY: socks })).toBeUndefined();
+      expect(proxyFor("93.184.216.34", https, { all_proxy: socks })).toBeUndefined();
+    }
+    expect(proxyFor("127.0.0.1", http(), { ALL_PROXY: "socks5://proxy:1080", all_proxy: "http://proxy:3128" })).toBe("all_proxy");
+    expect(proxyFor("127.0.0.1", http(), { ALL_PROXY: "proxy:3128" })).toBe("ALL_PROXY");
+    // The scheme's own variable counts whatever it names (Bun refuses the request for a SOCKS one, never dials direct).
+    expect(proxyFor("127.0.0.1", http(), { HTTP_PROXY: "socks5://proxy:1080" })).toBe("HTTP_PROXY");
     // NO_PROXY: *, the host exactly, host:port with the dial's own port — an IPv6 address only bracketed.
     const P = { HTTP_PROXY: "http://proxy:3128" };
     expect(proxyFor("127.0.0.1", http(), { ...P, NO_PROXY: "example.com, 127.0.0.1" })).toBeUndefined();
@@ -720,6 +729,18 @@ describe("the review's smaller findings", () => {
     }
     expect(seen.proxied).toBeGreaterThan(0);
     expect(seen.direct).toBeGreaterThan(0);
+    // ALL_PROXY's spellings, NO_PROXY unset: Bun dials direct for a SOCKS one, and proxyFor agrees both ways; one with
+    // no scheme goes through the proxy, and proxyFor says so.
+    const url = new URL(`http://127.0.0.1:${o4.port}/`);
+    for (const [value, viaProxy] of [[`socks5://127.0.0.1:${proxy.port}`, false], [`socks5h://127.0.0.1:${proxy.port}`, false], [`socks4://127.0.0.1:${proxy.port}`, false], [`socks4a://127.0.0.1:${proxy.port}`, false], [`127.0.0.1:${proxy.port}`, true]] as const) {
+      const env: Record<string, string> = { PATH: process.env.PATH ?? "", ALL_PROXY: value };
+      const p = Bun.spawn([process.execPath, "-e", child, url.href], { env, stdout: "pipe", stderr: "ignore" });
+      const out = (await new Response(p.stdout).text()).trim();
+      await p.exited;
+      const proxied = hits.splice(0).length > 0;
+      expect({ value, out, proxied }).toEqual({ value, out: viaProxy ? "from-proxy" : "from-origin", proxied: viaProxy });
+      expect({ value, judged: proxyFor("127.0.0.1", url, env) !== undefined }).toEqual({ value, judged: viaProxy });
+    }
   }, 60_000);
 
   test("link URLs in the text are redacted like tab URLs; references are decoded once; the title is the <title>, else the first <h1>", async () => {

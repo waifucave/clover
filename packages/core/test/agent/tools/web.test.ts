@@ -263,10 +263,14 @@ describe("htmlToText: linear-time scanning (Critical fix, fix-round-2 — the SA
   const LINEAR_SLOPE_MAX = 1.5;
   const SERIES_CEILING_MS = 1_000; // per size; pre-fix the 1MB step alone took 8,360 ms
 
-  /** The least of `reps` timings of `run` on each input, after one warm-up run; it stops at the first time over the
-   *  ceiling (the assertion then fails on it) so a quadratic regression fails fast instead of timing out. */
+  /** The least of `reps` timings of `run` on each input, after one warm-up run on the first; it stops at the first
+   *  time over the ceiling, the warm-up's included (the assertion then fails on it), so a quadratic regression fails
+   *  fast instead of timing out. Fewer times than inputs means it stopped. */
   function leastTimes(inputs: string[], run: (input: string) => unknown, ceilingMs: number, reps = 5): number[] {
+    const warmStart = performance.now();
     run(inputs[0]!);
+    const warm = performance.now() - warmStart;
+    if (warm > ceilingMs) return [warm];
     const times: number[] = [];
     for (const input of inputs) {
       let least = Infinity;
@@ -309,6 +313,7 @@ describe("htmlToText: linear-time scanning (Critical fix, fix-round-2 — the SA
       const times = leastTimes(sizesKb.map((kb) => unclosed(unit, kb * 1024)), htmlToText, SERIES_CEILING_MS);
       const shown = times.map((t) => t.toFixed(1)).join("/");
       for (const t of times) expect(t, `${name}: ${shown} ms`).toBeLessThan(SERIES_CEILING_MS);
+      expect(times, `${name}: ${shown} ms`).toHaveLength(sizesKb.length);
       expect(growthSlope(sizesKb, times), `${name}: ${shown} ms`).toBeLessThan(LINEAR_SLOPE_MAX);
     }, 30_000);
   }
@@ -316,9 +321,13 @@ describe("htmlToText: linear-time scanning (Critical fix, fix-round-2 — the SA
   test("the 3MB pathological case (no closing tags at all) completes in linear time (was ~77,000ms pre-fix, measured directly)", () => {
     // Timed against 1MB of the same shape in this process: 3x the input is ~3x the time when linear and ~9x when
     // quadratic, so the bound is the slope's 3^1.5 (~5.2x). The absolute ceiling is far below the pre-fix 77 s.
-    const [oneMb, threeMb] = leastTimes([1, 3].map((mb) => unclosed('<script type="text/x"> ', mb * 1024 * 1024)), htmlToText, 5_000, 3);
-    expect(threeMb, `1MB ${oneMb!.toFixed(1)} ms, 3MB ${threeMb?.toFixed(1)} ms`).toBeLessThan(5_000);
-    expect(threeMb! / oneMb!, `1MB ${oneMb!.toFixed(1)} ms, 3MB ${threeMb!.toFixed(1)} ms`).toBeLessThan(3 ** LINEAR_SLOPE_MAX);
+    const times = leastTimes([1, 3].map((mb) => unclosed('<script type="text/x"> ', mb * 1024 * 1024)), htmlToText, 5_000, 3);
+    const shown = `1MB then 3MB: ${times.map((t) => t.toFixed(1)).join("/")} ms`;
+    // Each time under the ceiling first, so a run that stopped at 1MB fails here, on its number.
+    for (const t of times) expect(t, shown).toBeLessThan(5_000);
+    expect(times, shown).toHaveLength(2);
+    const [oneMb, threeMb] = times as [number, number];
+    expect(threeMb / oneMb, shown).toBeLessThan(3 ** LINEAR_SLOPE_MAX);
   }, 60_000);
 
   // Task 6b Part B: the fix above linearized the five PAIRED-tag scans but left the FINAL
