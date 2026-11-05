@@ -1,0 +1,19 @@
+{
+  "name": "@waifucave/clover-plugin-browser",
+  "version": "0.0.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "type": "module",
+  "description": "clover/browser: mcp__clover__Browser, the bots' tool for the Clover Browser, over the plugin API's browser calls.",
+  "exports": {
+    ".": "./host/index.ts"
+  },
+  "scripts": {
+    "test": "bun test",
+    "typecheck": "tsc --noEmit -p ."
+  },
+  "devDependencies": {
+    "@types/bun": "1.3.14",
+    "typescript": "5.9.3"
+  }
+}
