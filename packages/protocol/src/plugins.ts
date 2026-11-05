@@ -143,6 +143,37 @@ export const PointView = z.object({
 });
 export type PointView = z.infer<typeof PointView>;
 
+/** One of a plugin's settings as Settings shows it (§5.4 "Settings", review S16): the manifest's field and its value.
+ *  A `secret` field never carries its value over the wire, only whether one is stored. */
+export const PluginSettingView = z.object({
+  key: utf16(128, 1),
+  type: z.enum(["string", "number", "boolean", "enum", "color", "secret"]),
+  title: Text,
+  description: Text.optional(),
+  scope: z.enum(["account", "device", "bot"]),
+  required: z.boolean(),
+  /** The value in effect: the user's, else the manifest's default. Never there for a `secret` field. */
+  value: z.unknown().optional(),
+  /** The user set it; for a `secret` field, a value is stored. */
+  set: z.boolean(),
+  /** A changed default waits for the user's OK (§5.6). */
+  defaultPending: z.boolean().optional(),
+});
+export type PluginSettingView = z.infer<typeof PluginSettingView>;
+
+/** One of a plugin's sign-ins (§5.1 "Sign-ins"), by its place in the manifest's `auth` list. */
+export const PluginAuthView = z.object({
+  index: z.number().int().min(0).max(31),
+  method: z.enum(["api-key", "oauth-pkce", "custom"]),
+  /** The secret it fills. */
+  secret: utf16(64).optional(),
+  state: z.enum(["signed-out", "signed-in", "expired", "refreshing", "failed"]),
+  /** Who is signed in, when the service says (an email, an account name). */
+  account: utf16(320).optional(),
+  reason: utf16(2000).optional(),
+});
+export type PluginAuthView = z.infer<typeof PluginAuthView>;
+
 /** What the app's plugin runtime (lane E) needs to mount one plugin's UI: its layer's origin, its client module, its
  *  `ui` entries as the manifest has them, and its themes and string tables. Assets are served by hash (§5.1); URLs
  *  are the app runtime's scheme, which the daemon fills from `assetBase`. */
@@ -257,6 +288,43 @@ export const PLUGINS_METHODS = {
     params: z.object({ id: AnyPluginId, lines: z.number().int().min(1).max(5000).optional() }),
     result: z.object({ lines: z.array(utf16(4000)) }),
     doc: "A plugin's log (`logs/plugins/<id>.log`), newest last.",
+  }),
+  pluginSettingsGet: defineMethod({
+    name: "plugin.settings.get", owner: "B", roles: ["app", "cli"],
+    params: z.object({ id: AnyPluginId, bot: BotId.optional() }),
+    result: z.object({ settings: z.array(PluginSettingView).max(256) }),
+    doc: "A plugin's settings with their values (a bot's, for `bot` settings); secret fields say only whether they are set.",
+  }),
+  pluginSettingsSet: defineMethod({
+    name: "plugin.settings.set", owner: "B", roles: ["app", "cli", "layer"], userOnly: true, change: "core",
+    params: z.object({
+      id: AnyPluginId, key: utf16(128, 1),
+      /** Null goes back to the default. A `secret` field's value goes into the credential store and never comes back. */
+      value: z.unknown().nullable(),
+      bot: BotId.optional(),
+    }),
+    result: ChangeResult,
+    doc: "Sets one of a plugin's settings; bots can't (§9.1), and from a layer it is a sealed card (§5.5).",
+  }),
+  pluginAuthList: defineMethod({
+    name: "plugin.auth.list", owner: "A", roles: ["app", "cli"],
+    params: IdParams, result: z.object({ auth: z.array(PluginAuthView).max(32) }),
+    doc: "A plugin's sign-ins and their state, for Settings and the welcome guide (§3.3, §5.1).",
+  }),
+  pluginAuthSignIn: defineMethod({
+    name: "plugin.auth.signIn", owner: "A", roles: ["app", "cli"], userOnly: true,
+    params: z.object({
+      id: AnyPluginId, index: z.number().int().min(0).max(31),
+      /** An `api-key` entry's key, which goes into the credential store and never comes back. */
+      key: utf16(8192, 1).optional(),
+    }),
+    result: z.object({ state: PluginAuthView.shape.state, authorizeUrl: z.string().url().optional() }),
+    doc: "Signs in with one `auth` entry: a key is stored; `oauth-pkce` returns the URL to open and the core finishes on the redirect; `custom` runs its handler on the refresher (§8.5).",
+  }),
+  pluginAuthSignOut: defineMethod({
+    name: "plugin.auth.signOut", owner: "A", roles: ["app", "cli"], userOnly: true,
+    params: z.object({ id: AnyPluginId, index: z.number().int().min(0).max(31) }), result: Ok,
+    doc: "Signs out of one `auth` entry and deletes its secret everywhere.",
   }),
   pluginInstall: defineMethod({
     name: "plugin.install", owner: "B", roles: ["app", "cli"], userOnly: true,
@@ -503,6 +571,7 @@ export const PluginLogEvent = coreEvent("plugin_log", { id: AnyPluginId, line: u
 export const DevFolderReloadedEvent = coreEvent("dev_folder_reloaded", {
   path: utf16(4096), pluginId: AnyPluginId.optional(), ok: z.boolean(), reason: utf16(2000).optional(),
 });
+export const PluginAuthChangedEvent = coreEvent("plugin_auth_changed", { id: AnyPluginId, auth: PluginAuthView });
 /** A plugin was found on disk and waits for its OK, which is a sealed card (§5.1). */
 export const PluginFoundEvent = coreEvent("plugin_found", { id: TopPluginId, folder: utf16(4096), card: CardId });
 
@@ -521,6 +590,11 @@ export const PLUGINS_EVENTS = {
     type: "plugin_found", owner: "B", roles: ["app", "cli"], schema: PluginFoundEvent,
     fixture: { type: "plugin_found", ts: 1781270000000, id: "luna", folder: "/Users/me/.clover/plugins/luna", card: "card_0a1b2c3d" },
     doc: "A new folder in the plugins directory waits for the user's OK.",
+  }),
+  pluginAuthChanged: defineEvent({
+    type: "plugin_auth_changed", owner: "A", roles: ["app", "cli"], schema: PluginAuthChangedEvent,
+    fixture: { type: "plugin_auth_changed", ts: 1781270000000, id: "clover/model-openai", auth: { index: 0, method: "api-key", secret: "openai", state: "signed-in" } },
+    doc: "One of a plugin's sign-ins changed state.",
   }),
   pluginUiChanged: defineEvent({
     type: "plugin_ui_changed", owner: "B", roles: ["app"], schema: PluginUiChangedEvent,

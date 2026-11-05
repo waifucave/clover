@@ -45,6 +45,12 @@
       "warns": true
     },
     {
+      "name": "devices.read",
+      "lets": "Read the user's devices: their names, kinds, links, which one is the main, and which are online",
+      "ok": "sees your devices",
+      "warns": false
+    },
+    {
       "name": "approvals",
       "lets": "Hear which cards are pending, never their text, and place their sealed frames",
       "ok": "restyles approval cards",
@@ -3152,6 +3158,14 @@
     "computers.cloverWindows": {
       "capability": "computers.control",
       "where": "host"
+    },
+    "devices.list": {
+      "capability": "devices.read",
+      "where": "both"
+    },
+    "devices.watch": {
+      "capability": "devices.read",
+      "where": "both"
     },
     "approvals.pending": {
       "capability": "approvals",

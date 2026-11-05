@@ -203,6 +203,20 @@ describe("the allow lists", () => {
     }
   });
 
+  test("what M1 needs: a plugin's settings and sign-ins, the archive, and devices for layers (review S16)", () => {
+    for (const name of ["plugin.settings.get", "plugin.settings.set", "plugin.auth.list", "plugin.auth.signIn", "plugin.auth.signOut", "archive.list", "archive.history"]) {
+      expect(CLOVER_METHODS.has(name)).toBe(true);
+    }
+    // A key goes in and never comes back; only the user signs in, and a layer's setting is a card.
+    expect(Object.keys((CLOVER_METHODS.get("plugin.auth.signIn")!.result as z.ZodObject).shape).sort()).toEqual(["authorizeUrl", "state"]);
+    expect(CLOVER_METHODS.get("plugin.auth.signIn")!.roles).not.toContain("layer");
+    expect(CLOVER_METHODS.get("plugin.settings.set")).toMatchObject({ userOnly: true, change: "core" });
+    for (const name of ["archive.list", "archive.history"]) expect([...CLOVER_METHODS.get(name)!.roles].sort()).toEqual(["app", "cli"]);
+    expect(CLOVER_METHODS.get("device.list")).toMatchObject({ capability: "devices.read" });
+    expect(CLOVER_METHODS.get("device.list")!.roles).toContain("layer");
+    expect(CLOVER_EVENTS.get("device_changed")).toMatchObject({ capability: "devices.read" });
+  });
+
   test("a method only the user may call is open to user roles, or to a layer when it becomes a card", () => {
     for (const m of methods.filter((x) => x.userOnly)) {
       for (const r of m.roles) {

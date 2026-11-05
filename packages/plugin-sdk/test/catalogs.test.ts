@@ -12,10 +12,10 @@ import {
 } from "../src/index";
 
 describe("capabilities", () => {
-  test("the catalog holds §5.4's sixteen", () => {
+  test("the catalog holds §5.4's sixteen, and devices.read for the Devices tab (review S16)", () => {
     expect(CAPABILITIES.map((c) => c.name)).toEqual([
       "conversation.read", "conversation.post", "memory.read", "bots.read", "routines.read", "computers.read",
-      "computers.control", "approvals", "files", "browser", "usage.read", "logs.read", "notify", "audio",
+      "computers.control", "devices.read", "approvals", "files", "browser", "usage.read", "logs.read", "notify", "audio",
       "call:<plugin-id>", "network:<host>",
     ]);
     expect(CAPABILITIES.filter((c) => c.warns).map((c) => c.ok)).toEqual([
@@ -290,7 +290,7 @@ describe("names", () => {
 describe("the catalog document", () => {
   test("carries every catalog, with JSON Schemas for spot fields and props", () => {
     const c = catalogJson();
-    expect(c.capabilities.length).toBe(16);
+    expect(c.capabilities.length).toBe(17);
     expect(c.spots.length).toBe(SPOTS.length);
     expect(c.spots.every((s) => typeof s.props === "object" && typeof s.fields === "object")).toBe(true);
     expect(Object.keys(c.apiCalls).length).toBe(Object.keys(API_CALLS).length);

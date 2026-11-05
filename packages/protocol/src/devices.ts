@@ -106,7 +106,7 @@ export type SyncEntry = z.infer<typeof SyncEntry>;
 
 export const DEVICES_METHODS = {
   deviceList: defineMethod({
-    name: "device.list", owner: "H", roles: ["app", "cli", "remote"],
+    name: "device.list", owner: "H", roles: ["app", "cli", "remote", "layer"], capability: "devices.read",
     params: Empty, result: z.object({ devices: z.array(DeviceView) }),
     doc: "Every paired device, phones and browsers included, with its link.",
   }),
@@ -249,7 +249,7 @@ export const AccountChangedEvent = coreEvent("account_changed", { account: Accou
 
 export const DEVICES_EVENTS = {
   deviceChanged: defineEvent({
-    type: "device_changed", owner: "H", roles: ["app", "cli", "remote"], schema: DeviceChangedEvent,
+    type: "device_changed", owner: "H", roles: ["app", "cli", "remote", "layer"], capability: "devices.read", schema: DeviceChangedEvent,
     fixture: {
       type: "device_changed", ts: 1781270000000,
       device: { id: "k3x9a7mq2c4d8e1f5g6h0j2k4m6n8p0r", name: "Laptop1", kind: "desktop", os: "macos", runsCore: true, computer: "Laptop1", hasDisplay: true, online: true, link: { peer: "k3x9a7mq2c4d8e1f5g6h0j2k4m6n8p0r", up: true, path: "lan", rttMs: 2.4 }, isThis: false, isMain: false, addedAt: 1781200000000 },
@@ -257,7 +257,7 @@ export const DEVICES_EVENTS = {
     doc: "A device was added or changed, or came online or went offline.",
   }),
   deviceRemoved: defineEvent({
-    type: "device_removed", owner: "H", roles: ["app", "cli", "remote"], schema: DeviceRemovedEvent,
+    type: "device_removed", owner: "H", roles: ["app", "cli", "remote", "layer"], capability: "devices.read", schema: DeviceRemovedEvent,
     fixture: { type: "device_removed", ts: 1781270000000, id: "k3x9a7mq2c4d8e1f5g6h0j2k4m6n8p0r", revoked: true },
     doc: "A device was revoked or removed.",
   }),

@@ -9,8 +9,10 @@
       "roles": [
         "app",
         "cli",
-        "remote"
+        "remote",
+        "layer"
       ],
+      "capability": "devices.read",
       "params": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -1920,8 +1922,10 @@
       "roles": [
         "app",
         "cli",
-        "remote"
+        "remote",
+        "layer"
       ],
+      "capability": "devices.read",
       "schema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -2060,8 +2064,10 @@
       "roles": [
         "app",
         "cli",
-        "remote"
+        "remote",
+        "layer"
       ],
+      "capability": "devices.read",
       "schema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",

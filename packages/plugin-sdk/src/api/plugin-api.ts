@@ -13,7 +13,7 @@
 // overrides (another service origin, say) are the plugin's own settings, never environment variables, which the
 // plugin host doesn't pass on.
 import {
-  type BotView, type Caller, type CardMeta, type CommandView, type ComputerView, type CloverWindow, type FileStat,
+  type BotView, type Caller, type CardMeta, type CommandView, type ComputerView, type CloverWindow, type DeviceView, type FileStat,
   type HoldTarget, type HoldView, type MemoryEntry, type PlanReading, type RoutineRunView, type RoutineView,
   type Screenshot, type SessionView, type TabOwner, type TabView, type UsageRow, type Viewport, BUNDLED_ROOT_PLUGIN,
   topPluginIdOf,
@@ -79,6 +79,9 @@ export interface NotifierHandler {
  *  what a plugin's `notify.send` (or the core's own notice) asked to show. A notifier whose service is off the user's
  *  computers sends that service no content at all: waifucave push sends `{ badge: unseen }` alone. */
 export interface NotifierUpdate {
+  /** One more for each update on this computer. The core coalesces: while a `notify` call runs, a newer update
+   *  replaces the one waiting, so a notifier may see gaps and always ends on the latest (lane D's review). */
+  seq: number;
   kind: "message" | "card" | "question" | "routine-result" | "agent-finished" | "notification";
   /** How many updates the user hasn't seen, as the core counts them; always sent. */
   unseen: number;
@@ -98,9 +101,13 @@ export interface WebhookIngressHandler {
   /** A webhook routine this computer holds. The trigger passes `webhookKeyHash(key)`, so the routine's key never
    *  enters an ingress plugin. `conflict`: another computer holds it, unless `takeover`. */
   register(args: { routine: string; keyHash: string; takeover?: boolean }, ctx: HandlerContext): Promise<{ url: string } | { conflict: { device: string } }>;
-  unregister(args: { routine: string }, ctx: HandlerContext): Promise<Record<string, never>>;
-  list(args: undefined, ctx: HandlerContext): Promise<{ routines: { id: string; device: string; held: boolean }[] }>;
-  /** A long poll: up to `max` deliveries (default 16, at most 64), waiting up to `waitMs` for the first. */
+  /** `released: false` when another computer holds the routine, which is no error and no nack (lane I's B1). */
+  unregister(args: { routine: string }, ctx: HandlerContext): Promise<{ released: boolean }>;
+  /** Each routine with the deliveries the service dropped for it (a full queue, an expired one; lane I's S7), so the
+   *  trigger can say runs were missed. */
+  list(args: undefined, ctx: HandlerContext): Promise<{ routines: { id: string; device: string; held: boolean; dropped: number }[] }>;
+  /** A long poll: up to `max` deliveries (default 16, at most 64) and `WEBHOOK_NEXT_MAX_BYTES` of bodies, waiting up
+   *  to `waitMs` for the first. A body is at most `WEBHOOK_BODY_MAX_BYTES`. */
   next(args: { max?: number; waitMs?: number }, ctx: HandlerContext): Promise<{ deliveries: WebhookDelivery[] }>;
   /** Taken: the service deletes them. */
   ack(args: { ids: string[] }, ctx: HandlerContext): Promise<Record<string, never>>;
@@ -127,6 +134,45 @@ export interface WebhookDelivery {
 export const WEBHOOK_ROUTINE_ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
 export const WEBHOOK_NEXT_WAIT_MAX_MS = 300_000;
 export const WEBHOOK_NEXT_GRACE_MS = 10_000;
+export const WEBHOOK_NEXT_MAX = 64;
+/** One delivery's body, and one `next`'s bodies together: 64 deliveries of 1 MiB. */
+export const WEBHOOK_BODY_MAX_BYTES = 1024 * 1024;
+export const WEBHOOK_NEXT_MAX_BYTES = WEBHOOK_NEXT_MAX * WEBHOOK_BODY_MAX_BYTES;
+
+/** A `relays` entry's handler (§8.3): an object of handlers the link layer calls on each device that uses the relay.
+ *  A relay plugin never touches the traffic: the core dials the endpoints it names, and everything through them stays
+ *  end-to-end encrypted, so the relay sees which devices talk and how much, never what. Sync mail (§6.5) is sealed
+ *  for its device before it reaches the plugin. Provisional for lane H (H-M2). */
+export interface RelayHandler {
+  /** Where this device reaches the relay, best first. */
+  endpoints(args: undefined, ctx: HandlerContext): Promise<{ endpoints: RelayEndpoint[] }>;
+  /** A relay this computer serves (the cloud computer relay): start or stop serving it here. */
+  serve?(args: { on: boolean }, ctx: HandlerContext): Promise<{ endpoints: RelayEndpoint[] }>;
+  /** Sync mail for a device that is never on with the sender: keep a sealed blob until `expiresAt`. */
+  putMail?(args: { to: string; id: string; sealed: Uint8Array; expiresAt: number }, ctx: HandlerContext): Promise<Record<string, never>>;
+  /** This device's mail, oldest first; taken mail stays until `ackMail`. */
+  takeMail?(args: { max?: number }, ctx: HandlerContext): Promise<{ mail: { id: string; sealed: Uint8Array }[] }>;
+  ackMail?(args: { ids: string[] }, ctx: HandlerContext): Promise<Record<string, never>>;
+}
+
+export interface RelayEndpoint {
+  /** `iroh`: an iroh relay URL; `websocket`: a relay that carries the link over WebSockets (the Cloudflare one). */
+  kind: "iroh" | "websocket";
+  url: string;
+  region?: string;
+}
+
+/** A `companions` entry's handler (§10): the daemon-side half of a remote client (the iOS app, the web page), called
+ *  on the main. The client reaches the core on the core's own link, as a paired device with the core's fixed list of
+ *  calls (`remote`, or `web` for the web page); a companion can't widen that list, and cards and their answers never
+ *  pass through it. What it adds is what the client needs around the link. Provisional for lanes H and I. */
+export interface CompanionHandler {
+  /** A paired device of this companion came online or went away. */
+  presence(args: { device: string; role: "remote" | "web"; online: boolean }, ctx: HandlerContext): Promise<void>;
+  /** What the pairing screen shows for this companion's clients, given the core's pairing code: a URL to open on
+   *  the other device (the web page's), or a QR payload. */
+  pairing?(args: { code: string; expiresAt: number }, ctx: HandlerContext): Promise<{ url?: string; qr?: string }>;
+}
 
 /** What `register` takes in place of a routine's key: base64url (no padding) of SHA-256 over
  *  `clover hook key v1|<key>`, as the waifucave forwarder's service stores it. */
@@ -361,6 +407,13 @@ export interface ComputersApi {
   cloverWindows(computer: string): Promise<CloverWindow[]>;
 }
 
+/** `devices.read`: the user's devices, for the island's Devices tab and the like: names, kinds, links, online state
+ *  and which one is the main (review S16). */
+export interface DevicesApi {
+  list(): Promise<DeviceView[]>;
+  watch(listener: (device: DeviceView) => void): Unsubscribe;
+}
+
 /** `approvals`: which cards are pending and where, never their text. A component places one with the UI API's
  *  `<Card id>` and its parts. */
 export interface ApprovalsApi {
@@ -450,6 +503,7 @@ export interface PluginApi {
   readonly routines?: RoutinesApi;
   /** `computers.read`, `computers.control`: each gives its own members. */
   readonly computers?: Partial<ComputersApi>;
+  readonly devices?: DevicesApi;
   readonly approvals?: ApprovalsApi;
   readonly files?: FilesApi;
   readonly browser?: BrowserApi;

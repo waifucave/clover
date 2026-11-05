@@ -31,8 +31,8 @@ export * from "./api/keyed-fetch";
 export type * from "./api/plugin-api";
 export {
   API_CALL_MAX_TIMEOUT_MS, API_CALL_TIMEOUT_MS, CONFIRM_TIMEOUT_MS, KEY_NAME_RE, KEYED_FETCH_ERROR_CODES, KEYS_PER_PLUGIN_MAX,
-  SYNCED_STORE_LIMIT_BYTES, WAIFUCAVE_AUTH, WAIFUCAVE_DOMAIN, WEBHOOK_NEXT_GRACE_MS, WEBHOOK_NEXT_WAIT_MAX_MS,
-  WEBHOOK_ROUTINE_ID_RE, mayUseWaifucaveAuth, webhookKeyHash,
+  SYNCED_STORE_LIMIT_BYTES, WAIFUCAVE_AUTH, WAIFUCAVE_DOMAIN, WEBHOOK_BODY_MAX_BYTES, WEBHOOK_NEXT_GRACE_MS, WEBHOOK_NEXT_MAX,
+  WEBHOOK_NEXT_MAX_BYTES, WEBHOOK_NEXT_WAIT_MAX_MS, WEBHOOK_ROUTINE_ID_RE, mayUseWaifucaveAuth, webhookKeyHash,
 } from "./api/plugin-api";
 export type * from "./api/ui-api";
 export { isSealedLookAllowed } from "./api/ui-api";

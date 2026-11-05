@@ -3,9 +3,10 @@
 import { describe, expect, test } from "bun:test";
 import {
   API_CALL_MAX_TIMEOUT_MS, API_CALL_TIMEOUT_MS, CONFIRM_TIMEOUT_MS, SYNCED_STORE_LIMIT_BYTES, WAIFUCAVE_AUTH,
-  WEBHOOK_NEXT_GRACE_MS, WEBHOOK_NEXT_WAIT_MAX_MS, mayUseWaifucaveAuth, webhookKeyHash, type ClientModule, type EntryProps,
+  WEBHOOK_BODY_MAX_BYTES, WEBHOOK_NEXT_GRACE_MS, WEBHOOK_NEXT_MAX, WEBHOOK_NEXT_MAX_BYTES, WEBHOOK_NEXT_WAIT_MAX_MS,
+  mayUseWaifucaveAuth, webhookKeyHash, type ClientModule, type CompanionHandler, type EntryProps,
   type Handler, type HandlerObject, type HookInput, type HookOutput, type HostModule, type Manifest, type NotifierHandler,
-  type PluginApi, type UiApi, type WebhookIngressHandler,
+  type PluginApi, type RelayHandler, type StreamHandler, type UiApi, type WebhookIngressHandler,
 } from "../src/index";
 import { createHash } from "node:crypto";
 import { DEFAULT_KEY_PLACEMENT, isSealedLookAllowed, keyHeaderFor, stripEchoedKey, validateManifest } from "../src/index";
@@ -27,8 +28,8 @@ const ingress: WebhookIngressHandler = {
     const res = await ctx.api.net.fetch("https://hooks.waifucave.com/v1/routines", { method: "POST", body: JSON.stringify({ ...args, key: pub?.length }) }, { auth: WAIFUCAVE_AUTH });
     return res.status === 409 ? { conflict: { device: "Laptop" } } : { url: `https://hooks.waifucave.com/t/${args.routine}` };
   },
-  unregister: async () => ({}),
-  list: async () => ({ routines: [] }),
+  unregister: async () => ({ released: true }),
+  list: async () => ({ routines: [{ id: "r_morning", device: "Laptop", held: true, dropped: 0 }] }),
   next: async (_args, ctx) => {
     const res = await ctx.api.net.fetch("https://hooks.waifucave.com/v1/next", undefined, { auth: WAIFUCAVE_AUTH });
     const sealed = new Uint8Array(await res.arrayBuffer());
@@ -40,11 +41,33 @@ const ingress: WebhookIngressHandler = {
 };
 const asObject: HandlerObject = { ...ingress };
 const notifier: NotifierHandler = {
-  notify: async (update, ctx) => void (await ctx.api.storage.synced.set("unseen", update.unseen)),
+  notify: async (update, ctx) => void (await ctx.api.storage.synced.set("unseen", { n: update.unseen, seq: update.seq })),
   clear: async (_args, ctx) => void (await ctx.api.storage.synced.set("unseen", 0)),
 };
 
+// A relay, a companion, and a streamed handler (review S16).
+const relay: RelayHandler = {
+  endpoints: async () => ({ endpoints: [{ kind: "iroh", url: "https://relay.example/", region: "eu" }] }),
+  takeMail: async () => ({ mail: [] }),
+};
+const companion: CompanionHandler = {
+  presence: async (args, ctx) => void (await ctx.api.storage.synced.set(`online:${args.device}`, args.online)),
+  pairing: async (args) => ({ url: `https://clover.waifucave.com/pair#${args.code}` }),
+};
+const speak: StreamHandler<{ text: string }, Uint8Array, { words: number }> = async function* (args, ctx) {
+  for (const word of args.text.split(" ")) {
+    if (ctx.signal.aborted) break;
+    yield new TextEncoder().encode(word);
+  }
+  return { words: args.text.split(" ").length };
+};
+const devicesTab = async (api: PluginApi) => (await api.devices?.list())?.filter((d) => d.online).map((d) => d.name);
+
 const host: HostModule = {
+  relay,
+  companion,
+  speak,
+  devicesTab,
   draw,
   beforeTool,
   ingress,
@@ -138,6 +161,8 @@ describe("the declarations", () => {
     const want = createHash("sha256").update("clover hook key v1|k3y").digest("base64url");
     expect(await webhookKeyHash("k3y")).toBe(want);
     expect(WEBHOOK_NEXT_WAIT_MAX_MS + WEBHOOK_NEXT_GRACE_MS).toBeLessThanOrEqual(API_CALL_MAX_TIMEOUT_MS);
+    expect(WEBHOOK_NEXT_MAX_BYTES).toBe(WEBHOOK_NEXT_MAX * WEBHOOK_BODY_MAX_BYTES);
+    expect(WEBHOOK_NEXT_MAX_BYTES).toBe(64 * 1024 * 1024);
   });
 
   test("a sealed glyph never contradicts its button", () => {
