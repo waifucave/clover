@@ -15,7 +15,8 @@ import { sampleTree, treeCpuPct } from "../shared/procmem.ts";
 import { startServer, type SpikeServer } from "../shared/server.ts";
 import { errorText, rate, rounded, sleep, summarize, waitFor } from "../shared/stats.ts";
 
-if (process.env.CI !== "true" && process.env.S7_ALLOW_LOCAL !== "1") {
+// GitHub Actions sets GITHUB_ACTIONS; some agent harnesses set CI=true on a developer's Mac, so CI isn't enough.
+if (process.env.GITHUB_ACTIONS !== "true" && process.env.S7_ALLOW_LOCAL !== "1") {
   console.error("cft: refusing to run here — it launches a browser. It runs in CI (set S7_ALLOW_LOCAL=1 only on a machine nobody is using).");
   process.exit(2);
 }
@@ -92,11 +93,13 @@ async function forArtifact(artifact: Artifact, server: SpikeServer): Promise<Rec
   try {
     inst = await install(home, artifact, log);
     out.install = inst;
-    log(`${artifact}: ${(inst.zipBytes / 1048576).toFixed(0)} MiB archive in ${inst.downloadMs} ms, ${(inst.unpackedBytes / 1048576).toFixed(0)} MiB unpacked (${inst.files} files) in ${inst.extractMs} ms, sha256 ${inst.sha256.slice(0, 16)}… ${inst.verified ? "matches the pin" : "(trust on first use)"}`);
+    log(`${artifact}: ${(inst.zipBytes / 1048576).toFixed(0)} MiB archive in ${inst.downloadMs} ms, ${(inst.unpackedBytes / 1048576).toFixed(0)} MiB unpacked (${inst.files} files) in ${inst.extractMs} ms, sha256 ${inst.sha256.slice(0, 16)}… ${inst.verified ? "matches the pin" : "(trust on first use)"}${inst.reused ? " (reused, binary re-hashed)" : ""}`);
   } catch (e) {
     errors.push(`install: ${errorText(e)}`);
     return out;
   }
+  // --only=install: put the browsers in place and launch nothing (the workflow loads the AppArmor profile next)
+  if (only.length === 1 && only[0] === "install") return out;
   const l: Launcher = { bin: inst.bin, artifact, extra: [], sandbox: "on", transport: TRANSPORTS[0]! };
   const profiles = join(home, "browsers", "profiles");
 
@@ -423,6 +426,27 @@ async function forArtifact(artifact: Artifact, server: SpikeServer): Promise<Rec
   return out;
 }
 
+interface Assertion { name: string; ok: boolean; detail: string }
+let assertions: Assertion[] = [];
+
+/** What the report concludes about the headless shell, checked against this run (round eight). */
+function assertAll(results: Record<string, unknown>): Assertion[] {
+  const a: Assertion[] = [];
+  const add = (name: string, ok: boolean, detail: unknown): void => { a.push({ name, ok, detail: typeof detail === "string" ? detail : JSON.stringify(detail) }); };
+  const r = results["chrome-headless-shell"] as Record<string, any> | undefined;
+  if (r === undefined) return a;
+  const errs = (r.errors as string[] | undefined) ?? [];
+  add("the headless shell installs from its pin", r.install?.verified === true || r.install?.reused === true, { verified: r.install?.verified, reused: r.install?.reused, errors: errs.filter((e) => e.startsWith("install")) });
+  if (only.length === 1 && only[0] === "install") return a;
+  add("it starts over the native DevTools pipe", r.transport === "fdpipe" || r.transport === "winpipe", { transport: r.transport });
+  if (process.env.S7_EXPECT_SANDBOX === "1") add("it runs sandboxed", r.sandbox === "on", { sandbox: r.sandbox });
+  add("no step failed", errs.length === 0, errs.map((e) => e.slice(0, 200)));
+  if (want("tabs") && Array.isArray(r.tabs)) add("every tab is visible and draws (rAF above 10 Hz)", r.tabs.length > 0 && r.tabs.every((t: any) => t.visibility === "visible" && t.rafHz > 10), r.tabs.map((t: any) => `${t.tab}: ${t.visibility} ${t.rafHz}`));
+  if (want("screenshots")) add("screenshots and a screencast arrive, fresh", (r.screenshots?.jpeg?.staleMs?.n ?? 0) > 0 && (r.screencast?.framesPerSec ?? 0) > 5, { jpegDecoded: r.screenshots?.jpeg?.staleMs?.n, screencastFps: r.screencast?.framesPerSec });
+  if (want("profiles")) add("per-bot profiles are apart and survive a restart", r.profiles?.isolated === true && r.profiles?.persisted === true, r.profiles ?? "missing");
+  return a;
+}
+
 async function main(): Promise<void> {
   const server = await startServer({ pagesDir: join(ROOT, "out", "pages"), fixturesDir: join(ROOT, "fixtures") });
   const results: Record<string, unknown> = {};
@@ -431,6 +455,8 @@ async function main(): Promise<void> {
     results[a] = await forArtifact(a, server);
     write(results, "running");
   }
+  assertions = assertAll(results);
+  for (const x of assertions) log(`${x.ok ? "PASS" : "FAIL"} ${x.name}: ${x.detail.slice(0, 300)}`);
   write(results, "done");
   await server.close();
   if (!keepHome) rmSync(home, { recursive: true, force: true });
@@ -440,8 +466,8 @@ async function main(): Promise<void> {
 function write(results: Record<string, unknown>, status: string): void {
   mkdirSync(dirname(outFile), { recursive: true });
   const meta = { status, platform: process.platform, arch: process.arch, osRelease: release(), cpus: cpus().length, memGiB: Math.round(totalmem() / 1073741824), bun: Bun.version, posixReader: Browser.posixReader, seconds: (Date.now() - started) / 1000 };
-  writeFileSync(outFile, JSON.stringify(rounded({ meta, results }, 2), null, 2));
+  writeFileSync(outFile, JSON.stringify(rounded({ meta, results, assertions }, 2), null, 2));
 }
 
 await main();
-process.exit(0);
+process.exit(assertions.some((x) => !x.ok) ? 1 : 0);

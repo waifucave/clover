@@ -6,14 +6,18 @@
 //   - page lifecycle: visibilitychange, resize, focus, freeze/resume, pageshow/pagehide, with times;
 //   - state that a reload would lose: a field's value, sessionStorage, the scroll position, an open SSE stream;
 //   - media: a looping <video> with sound (played time, decoded frames, pauses) and an AudioContext;
-//   - the frame marker (shared/marker.ts) drawn on every rAF and timer tick, or twice a second for `static`.
-// Query: scenario=probe|anim|static, media=1, sse=0, tab=<id>.
+//   - the frame marker (shared/marker.ts) drawn on every rAF and timer tick, or twice a second for `static`;
+//   - what waits for a rendering step: an IntersectionObserver and a ResizeObserver on an element that moves out of
+//     the viewport and changes size twice a second (round eight: "nothing that waits for a rendering step happens",
+//     measured instead of inferred), and mousedowns (the host's click-through check).
+// Query: scenario=probe|anim|static|idle (idle: no rAF loop, the marker twice a second), media=1, sse=0, tab=<id>.
 import { drawMarker, MARKER_HEIGHT, MARKER_WIDTH } from "../shared/marker.ts";
 
 const params = new URLSearchParams(location.search);
 const scenario = params.get("scenario") ?? "probe";
 const tabId = params.get("tab") ?? "";
-const fastTimers = scenario !== "static";
+const fastTimers = scenario !== "static" && scenario !== "idle";
+const rafLoop = scenario !== "idle";
 
 interface Gap { n: number; lastAt: number; maxGap: number }
 function gap(): Gap { return { n: 0, lastAt: 0, maxGap: 0 }; }
@@ -137,8 +141,23 @@ const onFrame = (ts: number): void => {
   if (bgCtx !== null) drawBackground(ts);
   requestAnimationFrame(onFrame);
 };
-requestAnimationFrame(onFrame);
+if (rafLoop) requestAnimationFrame(onFrame);
 drawNow();
+
+// --- what waits for a rendering step, and clicks ---------------------------------------------------------------------
+const O = { io: 0, ro: 0, clicks: 0 };
+const mover = document.createElement("div");
+mover.style.cssText = "position:fixed;left:600px;top:0;width:10px;height:10px;background:#888;pointer-events:none";
+document.body.appendChild(mover);
+new IntersectionObserver(() => { O.io++; }).observe(mover);
+new ResizeObserver(() => { O.ro++; }).observe(mover);
+let flip = false;
+setInterval(() => {
+  flip = !flip;
+  mover.style.top = flip ? "-100px" : "0px";
+  mover.style.width = flip ? "12px" : "10px";
+}, 500);
+document.addEventListener("mousedown", () => { O.clicks++; log("mousedown"); }, true);
 
 // --- lifecycle -----------------------------------------------------------------------------------------------------
 document.addEventListener("visibilitychange", () => log("visibility", document.visibilityState));
@@ -243,6 +262,7 @@ const api = {
       frame: S.frame,
       lastMarkerAt: S.lastMarkerAt,
       sse: { ...S.sse },
+      observers: { ...O },
       media: video === null ? null : {
         played: S.media.played,
         currentTime: video.currentTime,
@@ -263,6 +283,12 @@ const api = {
   /** Reset the longest-gap trackers (the start of a measurement window). */
   resetGaps(): void {
     for (const g of [S.interval, S.chain, S.raf]) { g.maxGap = 0; g.lastAt = 0; }
+  },
+  /** What a page can do to take focus: window.focus(), and focusing its field. */
+  grabFocus(): boolean {
+    window.focus();
+    (document.getElementById("field") as HTMLInputElement).focus();
+    return document.hasFocus();
   },
   /** The first rAF at or after `t` (ms since the epoch), or -1. */
   rafAfter(t: number): number {

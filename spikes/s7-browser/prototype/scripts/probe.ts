@@ -5,8 +5,9 @@
 import { existsSync } from "node:fs";
 import { join, resolve } from "node:path";
 
-if (process.env.CI !== "true" && process.env.S7_ALLOW_LOCAL !== "1") {
-  console.error("probe: refusing to run here — it opens windows. It runs in CI.");
+// GitHub Actions sets GITHUB_ACTIONS; some agent harnesses set CI=true on a developer's Mac, so CI isn't enough.
+if (process.env.GITHUB_ACTIONS !== "true" && process.env.S7_ALLOW_LOCAL !== "1") {
+  console.error("probe: refusing to run here: it opens windows. It runs on GitHub Actions.");
   process.exit(2);
 }
 const ROOT = resolve(import.meta.dir, "..");

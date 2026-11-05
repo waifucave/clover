@@ -16,7 +16,8 @@ import { dial } from "./ndjson.ts";
 import { alive, installAndStart, killHard, registration, startApp, uninstall, unitState, type OsResult } from "./oslaunch.ts";
 import { errorText, rounded, sleep } from "../shared/stats.ts";
 
-if (process.env.CI !== "true" && process.env.S7_ALLOW_LOCAL !== "1") {
+// GitHub Actions sets GITHUB_ACTIONS; some agent harnesses set CI=true on a developer's Mac, so CI isn't enough.
+if (process.env.GITHUB_ACTIONS !== "true" && process.env.S7_ALLOW_LOCAL !== "1") {
   console.error("pair: refusing to run here — it installs a login item and starts an app. It runs in CI.");
   process.exit(2);
 }
@@ -231,12 +232,44 @@ async function main(): Promise<void> {
   });
 }
 
+interface Assertion { name: string; ok: boolean; detail: string }
+let assertions: Assertion[] = [];
+
+/** The pair's promises (spec §3.1), checked against this run's steps (round eight). */
+function assertAll(): Assertion[] {
+  const a: Assertion[] = [];
+  const add = (name: string, ok: boolean, detail: unknown): void => { a.push({ name, ok, detail: JSON.stringify(detail) }); };
+  const st = (name: string): Record<string, any> | undefined => steps.find((x) => x.step === name) as Record<string, any> | undefined;
+  const login = st("login start");
+  add("the login item starts the daemon, and the daemon the app", login?.daemonUp === true && typeof login?.appConnectedMs === "number" && login.appConnectedMs < 30_000, { daemonUpMs: login?.daemonUpMs, appConnectedMs: login?.appConnectedMs, error: login?.error });
+  const second = st("second daemon on the same home");
+  add("a second daemon is refused and exits 0", second?.exitCode === 0 && second?.firstStillServing === true, { exitCode: second?.exitCode, firstStillServing: second?.firstStillServing });
+  const crash = st("app crash");
+  add("a crashed app is back within 6 s", typeof crash?.restartedMs === "number" && crash.restartedMs < 6000, { restartedMs: crash?.restartedMs });
+  const loop = st("app crash loop → safe mode");
+  add("the start after the third crash in two minutes is in safe mode", loop?.thirdRestartInSafeMode === true, { rounds: loop?.rounds });
+  const osAlone = st("daemon crash, restarted by the OS alone");
+  const restartsAlone = process.platform !== "win32" || cfg.windowsSupervise === true;
+  if (restartsAlone) add("a crashed daemon is back within 5 s without the app's help", typeof osAlone?.daemonBackMs === "number" && osAlone.daemonBackMs < 5000, { daemonBackMs: osAlone?.daemonBackMs });
+  else add("Task Scheduler alone does not restart a killed task (the finding the supervisor answers)", osAlone?.daemonBackMs === undefined, { daemonBackMs: osAlone?.daemonBackMs });
+  const helped = st("daemon crash, the app helps after 3 s");
+  add("a crashed daemon is back within 10 s, and the app lives on", typeof helped?.daemonBackMs === "number" && helped.daemonBackMs < 10_000 && helped?.samePid === true, { daemonBackMs: helped?.daemonBackMs, samePid: helped?.samePid });
+  const tray = st("tray Quit stops both, and they stay down");
+  add("the tray's Quit stops both, and nothing restarts them", typeof tray?.bothDownMs === "number" && tray?.restartedWithin12s === false, { bothDownMs: tray?.bothDownMs, restarted: tray?.restartedWithin12s });
+  const user = st("a user starts the app → it starts the daemon");
+  add("a user's start of the app brings up both within 10 s", typeof user?.bothUpMs === "number" && user.bothUpMs < 10_000, { bothUpMs: user?.bothUpMs });
+  const quit = st("the daemon side's Quit stops both");
+  add("the daemon side's Quit stops both, and nothing restarts them", typeof quit?.bothDownMs === "number" && quit?.restartedWithin8s === false, { bothDownMs: quit?.bothDownMs, restarted: quit?.restartedWithin8s });
+  return a;
+}
+
 function write(state: string): void {
   mkdirSync(dirname(outFile), { recursive: true });
   const daemonLog = existsSync(join(n.logsDir, "daemon.log")) ? readFileSync(join(n.logsDir, "daemon.log"), "utf8").split("\n").slice(-80) : [];
   writeFileSync(outFile, JSON.stringify(rounded({
     meta: { state, platform: process.platform, arch: process.arch, osRelease: release(), seconds: (Date.now() - started) / 1000, names: n, windowsAppStart: cfg.windowsAppStart, windowsSupervise: cfg.windowsSupervise === true },
     steps,
+    assertions,
     daemonLog,
   }, 0), null, 2));
 }
@@ -249,8 +282,10 @@ try {
   steps.push({ step: "uninstall", results: u });
   // anything left (the runner never leaves a process behind)
   for (const e of appEvents(0)) if (typeof e.pid === "number" && alive(e.pid)) killHard(e.pid, true);
+  assertions = assertAll();
+  for (const x of assertions) log(`${x.ok ? "PASS" : "FAIL"} ${x.name}: ${x.detail.slice(0, 300)}`);
   write("done");
   rmSync(home, { recursive: true, force: true });
   log("done");
 }
-process.exit(0);
+process.exit(assertions.some((x) => !x.ok) ? 1 : 0);

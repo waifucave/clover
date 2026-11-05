@@ -3,7 +3,9 @@ name: Spike S7 (the Clover Browser)
 # Lane L's M0: every check that launches Electron or a browser runs here, never on a developer's Mac.
 # spikes/s7-browser/README.md says what each job answers.
 
-# A push whose message says [cft only] runs the unit and Chrome for Testing jobs alone.
+# A push whose head commit's message says [cft only] runs the unit and Chrome for Testing jobs alone (only the head
+# commit is read). Every runner exits 1 when an assertion about the report's conclusions fails (round eight), so a
+# green run means those held. M1 retargets the push trigger when this becomes the browser suite.
 on:
   push:
     branches: [lane/l-m0]
@@ -87,15 +89,27 @@ jobs:
           tail -n 15 "$RESULTS/linux-sandbox-no-profile.txt"
           rm -f "$RESULTS/sandbox-no-profile.json"
           exit 0
-      - name: Linux — the AppArmor profile a deb would install
+      - name: Linux — the AppArmor profile a deb would install, and xdotool for the click-through check
         if: runner.os == 'Linux'
-        run: scripts/ci/apparmor.sh clover-s7-electron "$(node -p "require('electron')")"
-      - name: Probe (move, throttle, capture, cost, stream)
         run: |
+          scripts/ci/apparmor.sh clover-s7-electron "$(node -p "require('electron')")"
+          sudo apt-get install -y -qq xdotool >/dev/null
+      - name: Probe (move, throttle, capture, cost, stream, wake, shared host, host invariants)
+        run: |
+          checks=move,throttle,capture,cost,stream,wake,shared,hostcheck
           if [ "$RUNNER_OS" = "Linux" ]; then
-            xvfb-run -a -s "-screen 0 1920x1080x24" bun scripts/probe.ts --checks=move,throttle,capture,cost,stream --out="$RESULTS/electron-${{ matrix.label }}.json" --label=${{ matrix.label }} -- --ozone-platform=x11
+            xvfb-run -a -s "-screen 0 1920x1080x24" bun scripts/probe.ts --checks=$checks --out="$RESULTS/electron-${{ matrix.label }}.json" --label=${{ matrix.label }} -- --ozone-platform=x11
           else
-            bun scripts/probe.ts --checks=move,throttle,capture,cost,stream --out="$RESULTS/electron-${{ matrix.label }}.json" --label=${{ matrix.label }}
+            bun scripts/probe.ts --checks=$checks --out="$RESULTS/electron-${{ matrix.label }}.json" --label=${{ matrix.label }}
+          fi
+      - name: At a device scale factor of 2 (pictures, cost, the shared host)
+        if: success() || failure()
+        run: |
+          checks=capture,cost,shared
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            xvfb-run -a -s "-screen 0 1920x1080x24" bun scripts/probe.ts --checks=$checks --out="$RESULTS/electron-${{ matrix.label }}-dsf2.json" --label=${{ matrix.label }}-dsf2 -- --ozone-platform=x11 --force-device-scale-factor=2
+          else
+            bun scripts/probe.ts --checks=$checks --out="$RESULTS/electron-${{ matrix.label }}-dsf2.json" --label=${{ matrix.label }}-dsf2 -- --force-device-scale-factor=2
           fi
       - if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -125,7 +139,7 @@ jobs:
       - name: Probe under Wayland (no X server at all)
         run: |
           mkdir -p "$RESULTS"
-          scripts/ci/weston.sh bun scripts/probe.ts --checks=move,throttle,capture,cost,stream --out="$RESULTS/electron-linux-wayland.json" --label=linux-wayland -- --ozone-platform=wayland
+          scripts/ci/weston.sh bun scripts/probe.ts --checks=move,throttle,capture,cost,stream,wake,shared,hostcheck --out="$RESULTS/electron-linux-wayland.json" --label=linux-wayland -- --ozone-platform=wayland
       - if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
@@ -159,7 +173,7 @@ jobs:
       - name: Probe with Ozone's headless platform (no X, no Wayland)
         run: |
           mkdir -p "$RESULTS"
-          env -u DISPLAY -u WAYLAND_DISPLAY bun scripts/probe.ts --checks=move,throttle,capture,cost --out="$RESULTS/electron-${{ matrix.label }}.json" --label=${{ matrix.label }} -- --ozone-platform=headless --ozone-override-screen-size=1920,1080
+          env -u DISPLAY -u WAYLAND_DISPLAY bun scripts/probe.ts --checks=move,throttle,capture,cost,wake,shared,hostcheck --out="$RESULTS/electron-${{ matrix.label }}.json" --label=${{ matrix.label }} -- --ozone-platform=headless --ozone-override-screen-size=1920,1080
       - if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
@@ -214,24 +228,29 @@ jobs:
           bun-version-file: .bun-version
       - run: bun install --frozen-lockfile
       - run: bun run build
-      - name: Install, start, tabs, screenshots, screencast, per-bot profiles, cost
+      - name: Install both browsers from their pins (launches nothing)
         run: |
           mkdir -p "$RESULTS"
-          if [ "$RUNNER_OS" = "Linux" ]; then echo "userns restriction: $(sysctl -n kernel.apparmor_restrict_unprivileged_userns)"; fi
-          bun src/cft/run.ts --out="$RESULTS/cft-${{ matrix.label }}.json" --home="$RUNNER_TEMP/clover-s7-home" --keep-home
-      - name: Linux — the same with the DevTools pipe read in a worker thread (round six's comparison)
-        if: runner.os == 'Linux'
-        run: bun src/cft/run.ts --posix-reader=worker --artifacts=chrome-headless-shell,chrome --out="$RESULTS/cft-${{ matrix.label }}-worker.json" --home="$RUNNER_TEMP/clover-s7-home" --keep-home
-      - name: Linux — a sandboxed start with the AppArmor profile
+          bun src/cft/run.ts --only=install --out="$RESULTS/cft-${{ matrix.label }}-install.json" --home="$RUNNER_TEMP/clover-s7-home" --keep-home
+      - name: Linux — load the AppArmor profiles a deb or rpm would install, for both browsers, before any start
         if: runner.os == 'Linux'
         run: |
+          echo "userns restriction: $(sysctl -n kernel.apparmor_restrict_unprivileged_userns)"
           plat=$([ "$(uname -m)" = "aarch64" ] && echo linux-arm64 || echo linux64)
-          ver=$(jq -r .version src/cft/pins.json)
-          bin="$RUNNER_TEMP/clover-s7-home/browsers/cft/$ver/chrome-headless-shell-$plat/chrome-headless-shell-$plat/chrome-headless-shell"
-          scripts/ci/apparmor.sh clover-s7-cft "$bin"
-          bun src/cft/run.ts --only=start --artifacts=chrome-headless-shell --out="$RESULTS/cft-${{ matrix.label }}-apparmor.json" --home="$RUNNER_TEMP/clover-s7-home" --keep-home
-      - name: Linux — what a bare server lacks (clean ubuntu:24.04 container)
-        if: runner.os == 'Linux'
+          root="$RUNNER_TEMP/clover-s7-home/browsers/cft/$(jq -r .version src/cft/pins.json)"
+          scripts/ci/apparmor.sh clover-s7-cft-shell "$root/chrome-headless-shell-$plat/chrome-headless-shell-$plat/chrome-headless-shell"
+          scripts/ci/apparmor.sh clover-s7-cft-chrome "$root/chrome-$plat/chrome-$plat/chrome"
+      - name: Start, tabs, media, screenshots, screencast, per-bot profiles, cost (sandboxed, as in production)
+        env:
+          S7_EXPECT_SANDBOX: "1"
+        run: bun src/cft/run.ts --out="$RESULTS/cft-${{ matrix.label }}.json" --home="$RUNNER_TEMP/clover-s7-home" --keep-home
+      - name: Linux — the same with the DevTools pipe read in a worker thread (round six's comparison)
+        if: runner.os == 'Linux' && (success() || failure())
+        env:
+          S7_EXPECT_SANDBOX: "1"
+        run: bun src/cft/run.ts --posix-reader=worker --artifacts=chrome-headless-shell,chrome --out="$RESULTS/cft-${{ matrix.label }}-worker.json" --home="$RUNNER_TEMP/clover-s7-home" --keep-home
+      - name: Linux — what a bare server lacks (clean ubuntu:24.04 container, pinned by digest)
+        if: runner.os == 'Linux' && (success() || failure())
         run: |
           plat=$([ "$(uname -m)" = "aarch64" ] && echo linux-arm64 || echo linux64)
           ver=$(jq -r .version src/cft/pins.json)

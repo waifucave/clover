@@ -59,9 +59,17 @@ export interface InstallResult {
   sha256: string;
   /** The pin had a SHA-256 and the archive matched it. */
   verified: boolean;
-  /** The pin had no SHA-256 yet: this run's hash is the one to commit. */
+  /** The pin had no SHA-256 yet: this run's hash is the one to commit (only with S7_CFT_TOFU=1, round eight). */
   trustOnFirstUse: boolean;
   serverMd5Matched?: boolean;
+  /** The browser binary's own SHA-256, checked again whenever the install is reused (round eight). */
+  binSha256?: string;
+}
+
+async function fileSha256(path: string): Promise<string> {
+  const h = new Bun.CryptoHasher("sha256");
+  h.update(new Uint8Array(await Bun.file(path).arrayBuffer()));
+  return h.digest("hex");
 }
 
 function dirSize(dir: string): number {
@@ -85,9 +93,17 @@ export async function install(home: string, artifact: Artifact, log: (s: string)
   const bin = join(dir, binaryIn(artifact, plat));
   const pin = pinFor(artifact, plat);
   const marker = join(dir, ".clover-installed.json");
+  // Fail closed (round eight): no SHA-256 pin, no install, unless a pin refresh asks for trust on first use.
+  const tofu = process.env.S7_CFT_TOFU === "1";
+  if ((pin?.sha256 ?? "") === "" && !tofu) throw new Error(`no SHA-256 pin for ${artifact} ${plat} ${version}: refusing to install (S7_CFT_TOFU=1 refreshes pins)`);
   if (existsSync(marker) && existsSync(bin)) {
+    // A reused install must still be the pinned one: the archive's hash in the marker, and the binary's own hash.
+    // (The other files are not re-hashed here; M2 needs a manifest of every file, or an install only the daemon
+    // can write.)
     const done = JSON.parse(readFileSync(marker, "utf8")) as InstallResult;
-    return { ...done, reused: true };
+    const binNow = await fileSha256(bin);
+    if (done.version === version && done.sha256 === pin?.sha256 && done.binSha256 !== undefined && done.binSha256 === binNow) return { ...done, reused: true };
+    log(`the install at ${dir} is not the pinned one (or was changed): installing again`);
   }
   mkdirSync(root, { recursive: true });
   const url = archiveUrl(artifact, plat, version);
@@ -120,7 +136,7 @@ export async function install(home: string, artifact: Artifact, log: (s: string)
   if (serverMd5Matched === false) { rmSync(tmpZip, { force: true }); throw new Error("the server's MD5 does not match what arrived"); }
   const pinnedSha = pin?.sha256 ?? "";
   if (pinnedSha !== "" && pinnedSha !== sha256) { rmSync(tmpZip, { force: true }); throw new Error(`SHA-256 ${sha256} is not the pinned ${pinnedSha}`); }
-  if (pinnedSha === "") log(`PIN ${artifact} ${plat} sha256 ${sha256} (no pin yet: trust on first use)`);
+  if (pinnedSha === "") log(`PIN ${artifact} ${plat} sha256 ${sha256} (no pin yet: trust on first use, S7_CFT_TOFU=1)`);
   const t1 = Date.now();
   const staging = join(root, `.staging-${artifact}-${process.pid}`);
   rmSync(staging, { recursive: true, force: true });
@@ -135,7 +151,8 @@ export async function install(home: string, artifact: Artifact, log: (s: string)
     symlinks: stats.symlinks, downloadMs, extractMs, sha256, verified: pinnedSha !== "" && pinnedSha === sha256,
     trustOnFirstUse: pinnedSha === "", serverMd5Matched,
   };
-  writeFileSync(marker, JSON.stringify(result, null, 2));
   if (!existsSync(bin)) throw new Error(`no browser at ${bin} after unpacking`);
+  result.binSha256 = await fileSha256(bin);
+  writeFileSync(marker, JSON.stringify(result, null, 2));
   return result;
 }

@@ -7,7 +7,7 @@
 **chrome-headless-shell** — HeadlessChrome/156.0.8078.80; sandbox on
 
 - install: 121 MiB archive, 277 MiB unpacked, 287 files, 0 symlinks; download 557 ms, unpack 966 ms; sha256 `5bb6a00a4285c13303d3f72c5afdb70f144ea7a93eed462365a52b69631c9607` (trust on first use; server MD5 true)
-- start: over **undefined**, cold – ms, warm – ms; the port for comparison 63 ms
+- start: cold 58 ms, warm 54 ms over the pipe; port 63 ms
 
 ### Chrome for Testing · linux-arm64 (cft-linux-arm64.json)
 
@@ -16,7 +16,7 @@
 **chrome-headless-shell** — HeadlessChrome/156.0.8078.80; sandbox off (--no-sandbox: the sandboxed start failed) (sandboxed start failed: browser exited (SIGTRAP) during Browser.getVersion)
 
 - install: 121 MiB archive, 277 MiB unpacked, 287 files, 0 symlinks; download 557 ms, unpack 966 ms; sha256 `5bb6a00a4285c13303d3f72c5afdb70f144ea7a93eed462365a52b69631c9607` (trust on first use; server MD5 true)
-- start: over **undefined**, cold – ms, warm – ms; the port for comparison 53 ms
+- start: cold 1208 ms, warm 32 ms over the pipe; port 53 ms
 - per-bot profiles: isolated true, persisted across a restart true
 - cost: browser base 175 MiB, per idle tab 23 MiB, 4 browser contexts +95 MiB, a second bot's browser 113 MiB (6 processes), animated tab 52.1% CPU
   - steps: 0 tabs 175 MiB pss / 0.0%, 1 tabs 210 MiB pss / 2.2%, 2 tabs 234 MiB pss / 4.2%, 4 tabs 276 MiB pss / 8.7%, 8 tabs 361 MiB pss / 16.9%
@@ -25,7 +25,7 @@
 **chrome** — Chrome/156.0.8078.80; sandbox off (--no-sandbox: the sandboxed start failed) (sandboxed start failed: browser exited (SIGABRT) during Browser.getVersion)
 
 - install: 191 MiB archive, 401 MiB unpacked, 301 files, 0 symlinks; download 860 ms, unpack 1360 ms; sha256 `1f496a826c9ba4d6a5f5bf2de686145fe718528c2cc3dbeb96b5893b89653724` (trust on first use; server MD5 true)
-- start: over **undefined**, cold – ms, warm – ms; the port for comparison 234 ms
+- start: cold 266 ms, warm 205 ms over the pipe; port 234 ms
 - per-bot profiles: isolated true, persisted across a restart true
 - errors: tabs: Runtime.evaluate timed out; screenshots: browser exited (0) during Page.captureScreenshot; cost: Target.createTarget timed out
 
@@ -36,7 +36,7 @@
 **chrome-headless-shell** — HeadlessChrome/156.0.8078.80; sandbox on
 
 - install: 121 MiB archive, 274 MiB unpacked, 287 files, 0 symlinks; download 899 ms, unpack 1379 ms; sha256 `547dcd374e02961bf998f6046a267644f8502225c36bb78ca307dab32a0b3eb4` (trust on first use; server MD5 true)
-- start: over **undefined**, cold – ms, warm – ms; the port for comparison 61 ms
+- start: cold 67 ms, warm 65 ms over the pipe; port 61 ms
 
 ### Chrome for Testing · linux-x64 (cft-linux-x64.json)
 
@@ -45,7 +45,7 @@
 **chrome-headless-shell** — HeadlessChrome/156.0.8078.80; sandbox off (--no-sandbox: the sandboxed start failed) (sandboxed start failed: browser exited (SIGTRAP) during Browser.getVersion)
 
 - install: 121 MiB archive, 274 MiB unpacked, 287 files, 0 symlinks; download 899 ms, unpack 1379 ms; sha256 `547dcd374e02961bf998f6046a267644f8502225c36bb78ca307dab32a0b3eb4` (trust on first use; server MD5 true)
-- start: over **undefined**, cold – ms, warm – ms; the port for comparison 46 ms
+- start: cold 188 ms, warm 35 ms over the pipe; port 46 ms
 - per-bot profiles: isolated true, persisted across a restart true
 - cost: browser base 172 MiB, per idle tab 23 MiB, 4 browser contexts +94 MiB, a second bot's browser 113 MiB (6 processes), animated tab 27.7% CPU
   - steps: 0 tabs 172 MiB pss / 0.0%, 1 tabs 207 MiB pss / 1.5%, 2 tabs 229 MiB pss / 3.2%, 4 tabs 272 MiB pss / 5.5%, 8 tabs 357 MiB pss / 10.0%
@@ -54,7 +54,7 @@
 **chrome** — Chrome/156.0.8078.80; sandbox off (--no-sandbox: the sandboxed start failed) (sandboxed start failed: browser exited (SIGABRT) during Browser.getVersion)
 
 - install: 192 MiB archive, 403 MiB unpacked, 301 files, 0 symlinks; download 1144 ms, unpack 1962 ms; sha256 `b711c720f774be355197f32edf37e0651418ba036d92446ee2da19ac017540a7` (trust on first use; server MD5 true)
-- start: over **undefined**, cold – ms, warm – ms; the port for comparison 266 ms
+- start: cold 296 ms, warm 220 ms over the pipe; port 266 ms
 - screenshots: png 242 / 252 ms (536 KiB, CPU 296 ms), jpeg 74 / 77 ms (143 KiB, stale -43 / -39 ms, CPU 103 ms)
 - per-bot profiles: isolated true, persisted across a restart true
 - errors: tabs: Runtime.evaluate timed out; screenshots: browser exited (0) during Page.stopScreencast; cost: Target.createTarget timed out
@@ -66,14 +66,14 @@
 **chrome-headless-shell** — HeadlessChrome/156.0.8078.80; sandbox on
 
 - install: 99 MiB archive, 204 MiB unpacked, 16 files, 0 symlinks; download 2184 ms, unpack 2473 ms; sha256 `ea615baa2e9caf0d02d1898a6562b5f8fa9c35239707dae0f592178df5b986ac` (trust on first use; server MD5 true)
-- start: over **undefined**, cold – ms, warm – ms; the port for comparison 215 ms
+- start: cold 400 ms, warm 183 ms over the pipe; port 215 ms
 - per-bot profiles: isolated true, persisted across a restart true
 - errors: tabs: Runtime.evaluate timed out; screenshots: browser exited (0) during Page.captureScreenshot; cost: browser gone (Target.createBrowserContext)
 
 **chrome** — Chrome/156.0.8078.80; sandbox on
 
 - install: 186 MiB archive, 366 MiB unpacked, 344 files, 5 symlinks; download 2463 ms, unpack 2995 ms; sha256 `8bc590d1b1acac042a000234c768f31830f25a3983a83ed5e067114c87c4cad1` (trust on first use; server MD5 true)
-- start: over **undefined**, cold – ms, warm – ms; the port for comparison 825 ms
+- start: cold 3549 ms, warm 1439 ms over the pipe; port 825 ms
 - per-bot profiles: isolated true, persisted across a restart true
 - cost: browser base 266 MiB, per idle tab 24 MiB, 4 browser contexts +520 MiB, a second bot's browser 271 MiB (10 processes), animated tab 16.3% CPU
   - steps: 0 tabs 266 MiB footprint / 8.9%, 1 tabs 313 MiB footprint / 4.4%, 2 tabs 341 MiB footprint / 5.3%, 4 tabs 396 MiB footprint / 5.7%, 8 tabs 456 MiB footprint / 6.4%
@@ -97,28 +97,31 @@
 
 Electron 45.2.2 (Chromium 156.0.8078.80), linux-arm64 7.0.0-1017-azure, ozone headless, displays 1x1@1, status **done**, 412 s
 
-**Q1 hidden ⇄ shown** (times are p50 / p95 ms from the move)
+**Q1 hidden ⇄ shown** (5 cycles; times are p50 / p95 ms from the move)
 
-| hidden place | same document | field | scroll | SSE | media × | decoded fps | fresh picture shown | first rAF shown | layout hidden → shown → hidden | fit to 1280×800 | rAF while hidden | error |
+| hidden place | same document | field | scroll | SSE | media × | decoded fps | →shown resize | first rAF | fresh picture | →hidden resize | layout hidden → shown | error |
 | :- | :- | :- | :- | :- | :- | :- | :- | :- | :- | :- | :- | :- |
-| detached | true | true | true | true (1) | 0.92 | 27.6 | 1543 / 1558 | 1 / 5 | 1280x800@1 → 1000x700@1 →  | – | 0.0 |  |
-| hiddenWindow | true | true | true | true (1) | 0.96 | 28.6 | 1529 / 1534 | 5 / 5 | 1280x800@1 → 1000x700@1 →  | – | 1.0 |  |
+| detached | true | true | true | true (1 opens) | 0.92 | 27.6 | 0 / 1 | 1 / 5 | 1543 / 1558 | – | 1280x800@1 → 1000x700@1 |  |
+| hiddenWindow | true | true | true | true (1 opens) | 0.96 | 28.6 | 1 / 1 | 5 / 5 | 1529 / 1534 | – | 1280x800@1 → 1000x700@1 |  |
+
+- detached: while hidden, interval 100.0 Hz, rAF 0.0 Hz, media ×0.93, decoded 27.0 fps, visibility visible; while shown, rAF 60.0 Hz, visibility visible; initial (hidden) rAF 0.0 Hz
+- hiddenWindow: while hidden, interval 100.1 Hz, rAF 1.0 Hz, media ×0.98, decoded 28.7 fps, visibility visible; while shown, rAF 60.0 Hz, visibility visible; initial (hidden) rAF 0.0 Hz
 
 **Q2 throttling** (5 s windows)
 
-| config | visibility | layout | interval Hz | chain Hz | rAF Hz | max rAF gap ms | media × | decoded fps | pump fps | renderer CPU % | all CPU % | error |
-| :- | :- | :- | :- | :- | :- | :- | :- | :- | :- | :- | :- | :- |
-| shown (reference) | visible | – | 99.9 | 99.1 | 60.0 | 17 | – | – | – | 8.0 | – |  |
-| detached, throttling on (default) | hidden | – | 100.0 | 99.4 | 0.0 | 0 | – | – | – | 2.6 | – |  |
-| detached, throttling off | visible | – | 99.9 | 99.3 | 0.0 | 0 | – | – | – | 2.6 | – |  |
-| own hidden window, throttling on (default) | hidden | – | 100.0 | 99.4 | 0.0 | 0 | – | – | – | 2.4 | – |  |
-| own hidden window, throttling off | visible | – | 100.0 | 99.2 | 0.0 | 0 | – | – | – | 2.4 | – |  |
-| osr, throttling on (default) | visible | – | 100.0 | 99.2 | 30.0 | 34 | – | – | – | 3.6 | – |  |
-| osr, throttling off | visible | – | 99.9 | 99.1 | 30.0 | 34 | – | – | – | 3.8 | – |  |
-| shared hidden window: tab A, throttling off | visible | – | 99.9 | 99.1 | 0.0 | 0 | – | – | – | – | – |  |
-| shared hidden window: tab B, throttling on | hidden | – | 2.0 | 1.0 | 0.0 | 0 | – | – | – | – | – |  |
-| own hidden window, on then setBackgroundThrottling(false): before | hidden | – | 2.0 | 1.0 | 0.0 | 0 | – | – | – | 0.0 | – |  |
-| own hidden window, on then setBackgroundThrottling(false): after | visible | – | 99.9 | 99.4 | 1.0 | 1017 | – | – | – | 1.5 | – |  |
+| config | visibility | interval Hz | chain Hz | rAF Hz | max rAF gap ms | media × | decoded fps | audio | renderer CPU % | error |
+| :- | :- | :- | :- | :- | :- | :- | :- | :- | :- | :- |
+| shown (reference) | visible | 99.9 | 99.1 | 60.0 | 17 | 0.94 | 28.8 | running | 8.0 |  |
+| detached, throttling on (default) | hidden | 100.0 | 99.4 | 0.0 | 0 | 0.85 | 25.8 | running | 2.6 |  |
+| detached, throttling off | visible | 99.9 | 99.3 | 0.0 | 0 | 0.85 | 25.8 | running | 2.6 |  |
+| own hidden window, throttling on (default) | hidden | 100.0 | 99.4 | 0.0 | 0 | 0.85 | 25.8 | running | 2.4 |  |
+| own hidden window, throttling off | visible | 100.0 | 99.2 | 0.0 | 0 | 0.85 | 25.8 | running | 2.4 |  |
+| osr, throttling on (default) | visible | 100.0 | 99.2 | 30.0 | 34 | 0.85 | 24.8 | running | 3.6 |  |
+| osr, throttling off | visible | 99.9 | 99.1 | 30.0 | 34 | 0.85 | 25.2 | running | 3.8 |  |
+| shared hidden window: tab A, throttling off | visible | 99.9 | 99.1 | 0.0 | 0 | – | – | – | – |  |
+| shared hidden window: tab B, throttling on | hidden | 2.0 | 1.0 | 0.0 | 0 | – | – | – | – |  |
+| own hidden window, on then setBackgroundThrottling(false): before | hidden | 2.0 | 1.0 | 0.0 | 0 | – | – | – | 0.0 |  |
+| own hidden window, on then setBackgroundThrottling(false): after | visible | 99.9 | 99.4 | 1.0 | 1017 | – | – | – | 1.5 |  |
 
 **Q2 pictures of tabs** (8 tries; ms and staleness are p50 / p95; stale < 0 means drawn after the call began)
 
@@ -161,39 +164,42 @@ Electron 45.2.2 (Chromium 156.0.8078.80), linux-arm64 7.0.0-1017-azure, ozone he
 
 Per idle hidden tab: **16 MiB**, 0.06% CPU. Four tabs: one partition +66 MiB, four partitions +69 MiB.
 
-| animated tab | all CPU % | renderer % | GPU % | rAF Hz |
-| :- | :- | :- | :- | :- |
-| animated, shown | 30.5 | 28.7 | 1.5 | – |
-| animated, hidden window, throttling off | 1.0 | 0.8 | 0.0 | – |
-| animated, hidden window, throttling on | 0.0 | 0.0 | 0.0 | – |
-| animated, osr 30 fps, throttling off | 3.3 | 2.8 | 0.5 | – |
+| animated tab | all CPU % | renderer % | GPU % |
+| :- | :- | :- | :- |
+| animated, shown | 30.5 | 28.7 | 1.5 |
+| animated, hidden window, throttling off | 1.0 | 0.8 | 0.0 |
+| animated, hidden window, throttling on | 0.0 | 0.0 | 0.0 |
+| animated, osr 30 fps, throttling off | 3.3 | 2.8 | 0.5 |
 
 ### Electron · linux-wayland (electron-linux-wayland.json)
 
 Electron 45.2.2 (Chromium 156.0.8078.80), linux-x64 7.0.0-1017-azure, ozone wayland, displays 1920x1080@1, status **done**, 741 s
 
-**Q1 hidden ⇄ shown** (times are p50 / p95 ms from the move)
+**Q1 hidden ⇄ shown** (5 cycles; times are p50 / p95 ms from the move)
 
-| hidden place | same document | field | scroll | SSE | media × | decoded fps | fresh picture shown | first rAF shown | layout hidden → shown → hidden | fit to 1280×800 | rAF while hidden | error |
+| hidden place | same document | field | scroll | SSE | media × | decoded fps | →shown resize | first rAF | fresh picture | →hidden resize | layout hidden → shown | error |
 | :- | :- | :- | :- | :- | :- | :- | :- | :- | :- | :- | :- | :- |
-| detached | true | true | true | true (1) | 0.92 | 27.5 | 1559 / 1664 | 1 / 125 | 1280x800@1 → 1000x700@1 →  | – | 0.0 |  |
-| hiddenWindow | true | true | true | true (1) | 0.93 | 27.6 | 1534 / 1561 | 1 / 2 | 1280x800@1 → 1000x700@1 →  | – | 0.0 |  |
+| detached | true | true | true | true (1 opens) | 0.92 | 27.5 | 0 / 1 | 1 / 125 | 1559 / 1664 | – | 1280x800@1 → 1000x700@1 |  |
+| hiddenWindow | true | true | true | true (1 opens) | 0.93 | 27.6 | 1 / 1 | 1 / 2 | 1534 / 1561 | – | 1280x800@1 → 1000x700@1 |  |
+
+- detached: while hidden, interval 100.0 Hz, rAF 0.0 Hz, media ×0.91, decoded 26.5 fps, visibility visible; while shown, rAF 39.5 Hz, visibility visible; initial (hidden) rAF 0.0 Hz
+- hiddenWindow: while hidden, interval 100.1 Hz, rAF 0.0 Hz, media ×0.96, decoded 27.0 fps, visibility visible; while shown, rAF 39.6 Hz, visibility visible; initial (hidden) rAF 0.0 Hz
 
 **Q2 throttling** (5 s windows)
 
-| config | visibility | layout | interval Hz | chain Hz | rAF Hz | max rAF gap ms | media × | decoded fps | pump fps | renderer CPU % | all CPU % | error |
-| :- | :- | :- | :- | :- | :- | :- | :- | :- | :- | :- | :- | :- |
-| shown (reference) | visible | – | 100.0 | 99.4 | 39.8 | 26 | – | – | – | 5.4 | – |  |
-| detached, throttling on (default) | hidden | – | 100.0 | 99.4 | 0.0 | 0 | – | – | – | 1.8 | – |  |
-| detached, throttling off | visible | – | 100.1 | 99.1 | 0.0 | 0 | – | – | – | 2.0 | – |  |
-| own hidden window, throttling on (default) | hidden | – | 100.0 | 99.2 | 0.0 | 0 | – | – | – | 1.6 | – |  |
-| own hidden window, throttling off | visible | – | 100.0 | 99.2 | 0.0 | 0 | – | – | – | 2.0 | – |  |
-| osr, throttling on (default) | visible | – | 100.0 | 99.2 | 30.0 | 34 | – | – | – | 4.2 | – |  |
-| osr, throttling off | visible | – | 100.0 | 99.2 | 30.0 | 34 | – | – | – | 4.6 | – |  |
-| shared hidden window: tab A, throttling off | visible | – | 100.0 | 99.0 | 0.0 | 0 | – | – | – | – | – |  |
-| shared hidden window: tab B, throttling on | hidden | – | 1.0 | 1.0 | 0.0 | 0 | – | – | – | – | – |  |
-| own hidden window, on then setBackgroundThrottling(false): before | hidden | – | 1.0 | 1.0 | 0.0 | 0 | – | – | – | 0.0 | – |  |
-| own hidden window, on then setBackgroundThrottling(false): after | visible | – | 99.8 | 99.1 | 0.0 | 0 | – | – | – | 1.0 | – |  |
+| config | visibility | interval Hz | chain Hz | rAF Hz | max rAF gap ms | media × | decoded fps | audio | renderer CPU % | error |
+| :- | :- | :- | :- | :- | :- | :- | :- | :- | :- | :- |
+| shown (reference) | visible | 100.0 | 99.4 | 39.8 | 26 | 0.94 | 29.0 | running | 5.4 |  |
+| detached, throttling on (default) | hidden | 100.0 | 99.4 | 0.0 | 0 | 0.85 | 25.8 | running | 1.8 |  |
+| detached, throttling off | visible | 100.1 | 99.1 | 0.0 | 0 | 0.85 | 25.8 | running | 2.0 |  |
+| own hidden window, throttling on (default) | hidden | 100.0 | 99.2 | 0.0 | 0 | 0.85 | 25.8 | running | 1.6 |  |
+| own hidden window, throttling off | visible | 100.0 | 99.2 | 0.0 | 0 | 0.85 | 25.8 | running | 2.0 |  |
+| osr, throttling on (default) | visible | 100.0 | 99.2 | 30.0 | 34 | 0.94 | 29.0 | running | 4.2 |  |
+| osr, throttling off | visible | 100.0 | 99.2 | 30.0 | 34 | 0.94 | 29.0 | running | 4.6 |  |
+| shared hidden window: tab A, throttling off | visible | 100.0 | 99.0 | 0.0 | 0 | – | – | – | – |  |
+| shared hidden window: tab B, throttling on | hidden | 1.0 | 1.0 | 0.0 | 0 | – | – | – | – |  |
+| own hidden window, on then setBackgroundThrottling(false): before | hidden | 1.0 | 1.0 | 0.0 | 0 | – | – | – | 0.0 |  |
+| own hidden window, on then setBackgroundThrottling(false): after | visible | 99.8 | 99.1 | 0.0 | 0 | – | – | – | 1.0 |  |
 
 **Q2 pictures of tabs** (8 tries; ms and staleness are p50 / p95; stale < 0 means drawn after the call began)
 
@@ -236,31 +242,31 @@ Electron 45.2.2 (Chromium 156.0.8078.80), linux-x64 7.0.0-1017-azure, ozone wayl
 
 Per idle hidden tab: **8 MiB**, 0.09% CPU. Four tabs: one partition +67 MiB, four partitions +70 MiB.
 
-| animated tab | all CPU % | renderer % | GPU % | rAF Hz |
-| :- | :- | :- | :- | :- |
-| animated, shown | 15.0 | 9.3 | 4.8 | – |
-| animated, hidden window, throttling off | 1.5 | 1.0 | 0.3 | – |
-| animated, hidden window, throttling on | 0.5 | 0.0 | 0.3 | – |
-| animated, osr 30 fps, throttling off | 20.0 | 8.3 | 4.0 | – |
+| animated tab | all CPU % | renderer % | GPU % |
+| :- | :- | :- | :- |
+| animated, shown | 15.0 | 9.3 | 4.8 |
+| animated, hidden window, throttling off | 1.5 | 1.0 | 0.3 |
+| animated, hidden window, throttling on | 0.5 | 0.0 | 0.3 |
+| animated, osr 30 fps, throttling off | 20.0 | 8.3 | 4.0 |
 
 **Q6 streamed view** (10 s at the viewer; latency p50 / p95 ms)
 
-| road | content | source | fps | decoded fps | latency | gap p95 | kbit/s | bytes/frame | sender CPU % | viewer CPU % | source rAF | notes |
-| :- | :- | :- | :- | :- | :- | :- | :- | :- | :- | :- | :- | :- |
-| screencast | anim | hiddenWindow | 0.0 | 0.0 | – | – | 0 | 0 | 1 | 0 | – |  |
-| capturePoll | anim | hiddenWindow | 0.0 | 0.0 | – | – | 0 | 0 | 2 | 0 | – | toJPEG 0.0 ms |
-| webrtc-vp8 | anim | hiddenWindow | 0.0 | 0.0 | – | – | 0 | 0 | 0 | 0 | – | [object Object] |
-| webrtc-h264 | anim | hiddenWindow | 0.0 | 0.0 | – | – | 0 | 0 | 0 | 0 | – | [object Object] |
-| webcodecs-vp8 | anim | hiddenWindow | 0.0 | 0.0 | – | – | 0 | 0 | 0 | 0 | – | [object Object] |
-| webcodecs-h264 | anim | hiddenWindow | 0.0 | 0.0 | – | – | 0 | 0 | 0 | 0 | – | [object Object] |
-| screencast | static | hiddenWindow | 0.0 | 0.0 | – | – | 0 | 0 | 0 | 0 | – |  |
-| capturePoll | static | hiddenWindow | 0.0 | 0.0 | – | – | 0 | 0 | 1 | 0 | – | toJPEG 0.0 ms |
-| webrtc-vp8 | static | hiddenWindow | 0.0 | 0.0 | – | – | 0 | 0 | 0 | 0 | – | [object Object] |
-| webrtc-h264 | static | hiddenWindow | 0.0 | 0.0 | – | – | 0 | 0 | 0 | 0 | – | [object Object] |
-| webcodecs-vp8 | static | hiddenWindow | 0.0 | 0.0 | – | – | 0 | 0 | 0 | 0 | – | [object Object] |
-| webcodecs-h264 | static | hiddenWindow | 0.0 | 0.0 | – | – | 0 | 0 | 0 | 0 | – | [object Object] |
-| screencast | anim | shown | 38.9 | 38.9 | 66 / 67 | 27 | 35592 | 114666 | 64 | 16 | – |  |
-| webrtc-vp8 | anim | shown | 20.5 | 0.0 | – | 79 | 2462 | 15015 | 71 | 14 | – | libvpx; video/VP8 |
+| road | content | source | fps | decoded fps | latency | gap p95 | kbit/s | bytes/frame | sender CPU % | viewer CPU % | notes |
+| :- | :- | :- | :- | :- | :- | :- | :- | :- | :- | :- | :- |
+| screencast | anim | hiddenWindow | 0.0 | 0.0 | – | – | 0 | 0 | 1 | 0 |  |
+| capturePoll | anim | hiddenWindow | 0.0 | 0.0 | – | – | 0 | 0 | 2 | 0 | toJPEG 0.0 ms |
+| webrtc-vp8 | anim | hiddenWindow | 0.0 | 0.0 | – | – | 0 | 0 | 0 | 0 | [object Object] |
+| webrtc-h264 | anim | hiddenWindow | 0.0 | 0.0 | – | – | 0 | 0 | 0 | 0 | [object Object] |
+| webcodecs-vp8 | anim | hiddenWindow | 0.0 | 0.0 | – | – | 0 | 0 | 0 | 0 | [object Object] |
+| webcodecs-h264 | anim | hiddenWindow | 0.0 | 0.0 | – | – | 0 | 0 | 0 | 0 | [object Object] |
+| screencast | static | hiddenWindow | 0.0 | 0.0 | – | – | 0 | 0 | 0 | 0 |  |
+| capturePoll | static | hiddenWindow | 0.0 | 0.0 | – | – | 0 | 0 | 1 | 0 | toJPEG 0.0 ms |
+| webrtc-vp8 | static | hiddenWindow | 0.0 | 0.0 | – | – | 0 | 0 | 0 | 0 | [object Object] |
+| webrtc-h264 | static | hiddenWindow | 0.0 | 0.0 | – | – | 0 | 0 | 0 | 0 | [object Object] |
+| webcodecs-vp8 | static | hiddenWindow | 0.0 | 0.0 | – | – | 0 | 0 | 0 | 0 | [object Object] |
+| webcodecs-h264 | static | hiddenWindow | 0.0 | 0.0 | – | – | 0 | 0 | 0 | 0 | [object Object] |
+| screencast | anim | shown | 38.9 | 38.9 | 66 / 67 | 27 | 35592 | 114666 | 64 | 16 |  |
+| webrtc-vp8 | anim | shown | 20.5 | 0.0 | – | 79 | 2462 | 15015 | 71 | 14 | libvpx; video/VP8 |
 
 ### Electron · linux-x11-long (electron-linux-x11-long.json)
 
@@ -284,28 +290,31 @@ Electron 45.2.2 (Chromium 156.0.8078.80), linux-x64 7.0.0-1017-azure, ozone x11,
 
 Electron 45.2.2 (Chromium 156.0.8078.80), linux-x64 7.0.0-1017-azure, ozone x11, displays 1920x1080@1, status **done**, 606 s
 
-**Q1 hidden ⇄ shown** (times are p50 / p95 ms from the move)
+**Q1 hidden ⇄ shown** (5 cycles; times are p50 / p95 ms from the move)
 
-| hidden place | same document | field | scroll | SSE | media × | decoded fps | fresh picture shown | first rAF shown | layout hidden → shown → hidden | fit to 1280×800 | rAF while hidden | error |
+| hidden place | same document | field | scroll | SSE | media × | decoded fps | →shown resize | first rAF | fresh picture | →hidden resize | layout hidden → shown | error |
 | :- | :- | :- | :- | :- | :- | :- | :- | :- | :- | :- | :- | :- |
-| detached | true | true | true | true (1) | 0.94 | 28.3 | 1540 / 1554 | 1 / 12 | 1280x800@1 → 1000x700@1 →  | – | 0.0 |  |
-| hiddenWindow | true | true | true | true (1) | 0.96 | 28.6 | 1519 / 1531 | 6 / 13 | 1280x800@1 → 1000x700@1 →  | – | 1.0 |  |
+| detached | true | true | true | true (1 opens) | 0.94 | 28.3 | 1 / 2 | 1 / 12 | 1540 / 1554 | – | 1280x800@1 → 1000x700@1 |  |
+| hiddenWindow | true | true | true | true (1 opens) | 0.96 | 28.6 | 2 / 2 | 6 / 13 | 1519 / 1531 | – | 1280x800@1 → 1000x700@1 |  |
+
+- detached: while hidden, interval 100.0 Hz, rAF 0.0 Hz, media ×0.90, decoded 27.1 fps, visibility visible; while shown, rAF 60.0 Hz, visibility visible; initial (hidden) rAF 0.0 Hz
+- hiddenWindow: while hidden, interval 100.0 Hz, rAF 1.0 Hz, media ×0.98, decoded 28.4 fps, visibility visible; while shown, rAF 60.0 Hz, visibility visible; initial (hidden) rAF 0.0 Hz
 
 **Q2 throttling** (5 s windows)
 
-| config | visibility | layout | interval Hz | chain Hz | rAF Hz | max rAF gap ms | media × | decoded fps | pump fps | renderer CPU % | all CPU % | error |
-| :- | :- | :- | :- | :- | :- | :- | :- | :- | :- | :- | :- | :- |
-| shown (reference) | visible | – | 100.1 | 99.3 | 60.2 | 17 | – | – | – | 6.0 | – |  |
-| detached, throttling on (default) | hidden | – | 100.0 | 99.4 | 0.0 | 0 | – | – | – | 1.2 | – |  |
-| detached, throttling off | visible | – | 100.0 | 99.4 | 0.0 | 0 | – | – | – | 1.6 | – |  |
-| own hidden window, throttling on (default) | hidden | – | 100.0 | 99.4 | 0.0 | 0 | – | – | – | 1.4 | – |  |
-| own hidden window, throttling off | visible | – | 99.9 | 99.1 | 0.0 | 0 | – | – | – | 2.0 | – |  |
-| osr, throttling on (default) | visible | – | 100.0 | 99.4 | 30.0 | 36 | – | – | – | 4.2 | – |  |
-| osr, throttling off | visible | – | 100.0 | 99.2 | 30.0 | 34 | – | – | – | 4.2 | – |  |
-| shared hidden window: tab A, throttling off | visible | – | 100.0 | 99.4 | 0.0 | 0 | – | – | – | – | – |  |
-| shared hidden window: tab B, throttling on | hidden | – | 1.0 | 1.0 | 0.0 | 0 | – | – | – | – | – |  |
-| own hidden window, on then setBackgroundThrottling(false): before | hidden | – | 1.0 | 1.0 | 0.0 | 0 | – | – | – | 0.0 | – |  |
-| own hidden window, on then setBackgroundThrottling(false): after | visible | – | 99.9 | 99.4 | 1.0 | 1017 | – | – | – | 0.8 | – |  |
+| config | visibility | interval Hz | chain Hz | rAF Hz | max rAF gap ms | media × | decoded fps | audio | renderer CPU % | error |
+| :- | :- | :- | :- | :- | :- | :- | :- | :- | :- | :- |
+| shown (reference) | visible | 100.1 | 99.3 | 60.2 | 17 | 0.94 | 28.8 | running | 6.0 |  |
+| detached, throttling on (default) | hidden | 100.0 | 99.4 | 0.0 | 0 | 0.85 | 25.8 | running | 1.2 |  |
+| detached, throttling off | visible | 100.0 | 99.4 | 0.0 | 0 | 0.85 | 25.8 | running | 1.6 |  |
+| own hidden window, throttling on (default) | hidden | 100.0 | 99.4 | 0.0 | 0 | 0.85 | 25.8 | running | 1.4 |  |
+| own hidden window, throttling off | visible | 99.9 | 99.1 | 0.0 | 0 | 0.85 | 25.8 | running | 2.0 |  |
+| osr, throttling on (default) | visible | 100.0 | 99.4 | 30.0 | 36 | 0.94 | 29.0 | running | 4.2 |  |
+| osr, throttling off | visible | 100.0 | 99.2 | 30.0 | 34 | 0.94 | 29.0 | running | 4.2 |  |
+| shared hidden window: tab A, throttling off | visible | 100.0 | 99.4 | 0.0 | 0 | – | – | – | – |  |
+| shared hidden window: tab B, throttling on | hidden | 1.0 | 1.0 | 0.0 | 0 | – | – | – | – |  |
+| own hidden window, on then setBackgroundThrottling(false): before | hidden | 1.0 | 1.0 | 0.0 | 0 | – | – | – | 0.0 |  |
+| own hidden window, on then setBackgroundThrottling(false): after | visible | 99.9 | 99.4 | 1.0 | 1017 | – | – | – | 0.8 |  |
 
 **Q2 pictures of tabs** (8 tries; ms and staleness are p50 / p95; stale < 0 means drawn after the call began)
 
@@ -348,58 +357,61 @@ Electron 45.2.2 (Chromium 156.0.8078.80), linux-x64 7.0.0-1017-azure, ozone x11,
 
 Per idle hidden tab: **9 MiB**, 0.06% CPU. Four tabs: one partition +65 MiB, four partitions +69 MiB.
 
-| animated tab | all CPU % | renderer % | GPU % | rAF Hz |
-| :- | :- | :- | :- | :- |
-| animated, shown | 15.0 | 10.3 | 4.8 | – |
-| animated, hidden window, throttling off | 0.5 | 0.5 | 0.0 | – |
-| animated, hidden window, throttling on | 0.3 | 0.0 | 0.0 | – |
-| animated, osr 30 fps, throttling off | 19.5 | 7.8 | 4.5 | – |
+| animated tab | all CPU % | renderer % | GPU % |
+| :- | :- | :- | :- |
+| animated, shown | 15.0 | 10.3 | 4.8 |
+| animated, hidden window, throttling off | 0.5 | 0.5 | 0.0 |
+| animated, hidden window, throttling on | 0.3 | 0.0 | 0.0 |
+| animated, osr 30 fps, throttling off | 19.5 | 7.8 | 4.5 |
 
 **Q6 streamed view** (10 s at the viewer; latency p50 / p95 ms)
 
-| road | content | source | fps | decoded fps | latency | gap p95 | kbit/s | bytes/frame | sender CPU % | viewer CPU % | source rAF | notes |
-| :- | :- | :- | :- | :- | :- | :- | :- | :- | :- | :- | :- | :- |
-| screencast | anim | hiddenWindow | 0.0 | 0.0 | – | – | 0 | 0 | 2 | 0 | – |  |
-| capturePoll | anim | hiddenWindow | 0.0 | 0.0 | – | – | 0 | 0 | 1 | 0 | – | toJPEG 0.0 ms |
-| webrtc-vp8 | anim | hiddenWindow | 20.7 | 20.7 | 36 / 44 | 78 | 2473 | 14932 | 45 | 12 | – | libvpx; video/VP8 |
-| webrtc-h264 | anim | hiddenWindow | 12.5 | 12.5 | 59 / 90 | 110 | 2450 | 24505 | 43 | 7 | – | OpenH264; video/H264 |
-| webcodecs-vp8 | anim | hiddenWindow | 30.0 | 30.0 | 29 / 31 | 34 | 2419 | 10080 | 62 | 15 | – |  |
-| webcodecs-h264 | anim | hiddenWindow | 30.0 | 30.0 | 28 / 30 | 35 | 2405 | 10020 | 52 | 14 | – |  |
-| screencast | static | hiddenWindow | 0.0 | 0.0 | – | – | 0 | 0 | 0 | 0 | – |  |
-| capturePoll | static | hiddenWindow | 0.0 | 0.0 | – | – | 0 | 0 | 1 | 0 | – | toJPEG 0.0 ms |
-| webrtc-vp8 | static | hiddenWindow | 2.0 | 2.0 | 16 / 43 | 533 | 121 | 7554 | 5 | 1 | – | libvpx; video/VP8 |
-| webrtc-h264 | static | hiddenWindow | 0.9 | 0.9 | 17 / 157 | 1001 | 100 | 13927 | 4 | 1 | – | OpenH264; video/H264 |
-| webcodecs-vp8 | static | hiddenWindow | 2.0 | 2.0 | 14 / 16 | 504 | 119 | 7413 | 5 | 1 | – |  |
-| webcodecs-h264 | static | hiddenWindow | 2.0 | 2.0 | 12 / 25 | 529 | 35 | 2162 | 4 | 1 | – |  |
-| screencast | anim | shown | 60.0 | 60.0 | 14 / 16 | 18 | 55033 | 114652 | 81 | 23 | – |  |
-| webrtc-vp8 | anim | shown | 20.0 | 0.0 | – | 78 | 2457 | 15356 | 66 | 12 | – | libvpx; video/VP8 |
+| road | content | source | fps | decoded fps | latency | gap p95 | kbit/s | bytes/frame | sender CPU % | viewer CPU % | notes |
+| :- | :- | :- | :- | :- | :- | :- | :- | :- | :- | :- | :- |
+| screencast | anim | hiddenWindow | 0.0 | 0.0 | – | – | 0 | 0 | 2 | 0 |  |
+| capturePoll | anim | hiddenWindow | 0.0 | 0.0 | – | – | 0 | 0 | 1 | 0 | toJPEG 0.0 ms |
+| webrtc-vp8 | anim | hiddenWindow | 20.7 | 20.7 | 36 / 44 | 78 | 2473 | 14932 | 45 | 12 | libvpx; video/VP8 |
+| webrtc-h264 | anim | hiddenWindow | 12.5 | 12.5 | 59 / 90 | 110 | 2450 | 24505 | 43 | 7 | OpenH264; video/H264 |
+| webcodecs-vp8 | anim | hiddenWindow | 30.0 | 30.0 | 29 / 31 | 34 | 2419 | 10080 | 62 | 15 |  |
+| webcodecs-h264 | anim | hiddenWindow | 30.0 | 30.0 | 28 / 30 | 35 | 2405 | 10020 | 52 | 14 |  |
+| screencast | static | hiddenWindow | 0.0 | 0.0 | – | – | 0 | 0 | 0 | 0 |  |
+| capturePoll | static | hiddenWindow | 0.0 | 0.0 | – | – | 0 | 0 | 1 | 0 | toJPEG 0.0 ms |
+| webrtc-vp8 | static | hiddenWindow | 2.0 | 2.0 | 16 / 43 | 533 | 121 | 7554 | 5 | 1 | libvpx; video/VP8 |
+| webrtc-h264 | static | hiddenWindow | 0.9 | 0.9 | 17 / 157 | 1001 | 100 | 13927 | 4 | 1 | OpenH264; video/H264 |
+| webcodecs-vp8 | static | hiddenWindow | 2.0 | 2.0 | 14 / 16 | 504 | 119 | 7413 | 5 | 1 |  |
+| webcodecs-h264 | static | hiddenWindow | 2.0 | 2.0 | 12 / 25 | 529 | 35 | 2162 | 4 | 1 |  |
+| screencast | anim | shown | 60.0 | 60.0 | 14 / 16 | 18 | 55033 | 114652 | 81 | 23 |  |
+| webrtc-vp8 | anim | shown | 20.0 | 0.0 | – | 78 | 2457 | 15356 | 66 | 12 | libvpx; video/VP8 |
 
 ### Electron · linux-x64-ozone-headless (electron-linux-x64-ozone-headless.json)
 
 Electron 45.2.2 (Chromium 156.0.8078.80), linux-x64 7.0.0-1017-azure, ozone headless, displays 1x1@1, status **done**, 396 s
 
-**Q1 hidden ⇄ shown** (times are p50 / p95 ms from the move)
+**Q1 hidden ⇄ shown** (5 cycles; times are p50 / p95 ms from the move)
 
-| hidden place | same document | field | scroll | SSE | media × | decoded fps | fresh picture shown | first rAF shown | layout hidden → shown → hidden | fit to 1280×800 | rAF while hidden | error |
+| hidden place | same document | field | scroll | SSE | media × | decoded fps | →shown resize | first rAF | fresh picture | →hidden resize | layout hidden → shown | error |
 | :- | :- | :- | :- | :- | :- | :- | :- | :- | :- | :- | :- | :- |
-| detached | true | true | true | true (1) | 0.94 | 28.1 | 1550 / 1567 | 1 / 4 | 1280x800@1 → 1000x700@1 →  | – | 0.0 |  |
-| hiddenWindow | true | true | true | true (1) | 0.96 | 28.6 | 1536 / 1539 | 13 / 16 | 1280x800@1 → 1000x700@1 →  | – | 1.0 |  |
+| detached | true | true | true | true (1 opens) | 0.94 | 28.1 | 0 / 1 | 1 / 4 | 1550 / 1567 | – | 1280x800@1 → 1000x700@1 |  |
+| hiddenWindow | true | true | true | true (1 opens) | 0.96 | 28.6 | 1 / 1 | 13 / 16 | 1536 / 1539 | – | 1280x800@1 → 1000x700@1 |  |
+
+- detached: while hidden, interval 100.0 Hz, rAF 0.0 Hz, media ×0.96, decoded 27.9 fps, visibility visible; while shown, rAF 60.0 Hz, visibility visible; initial (hidden) rAF 0.0 Hz
+- hiddenWindow: while hidden, interval 100.0 Hz, rAF 1.0 Hz, media ×0.95, decoded 28.4 fps, visibility visible; while shown, rAF 60.0 Hz, visibility visible; initial (hidden) rAF 0.0 Hz
 
 **Q2 throttling** (5 s windows)
 
-| config | visibility | layout | interval Hz | chain Hz | rAF Hz | max rAF gap ms | media × | decoded fps | pump fps | renderer CPU % | all CPU % | error |
-| :- | :- | :- | :- | :- | :- | :- | :- | :- | :- | :- | :- | :- |
-| shown (reference) | visible | – | 99.9 | 99.3 | 60.0 | 18 | – | – | – | 3.4 | – |  |
-| detached, throttling on (default) | hidden | – | 100.0 | 99.4 | 0.0 | 0 | – | – | – | 1.4 | – |  |
-| detached, throttling off | visible | – | 100.0 | 99.4 | 0.0 | 0 | – | – | – | 1.4 | – |  |
-| own hidden window, throttling on (default) | hidden | – | 100.0 | 99.4 | 0.0 | 0 | – | – | – | 1.0 | – |  |
-| own hidden window, throttling off | visible | – | 100.0 | 99.4 | 0.0 | 0 | – | – | – | 1.2 | – |  |
-| osr, throttling on (default) | visible | – | 100.0 | 99.4 | 30.0 | 34 | – | – | – | 1.8 | – |  |
-| osr, throttling off | visible | – | 99.9 | 99.3 | 30.0 | 34 | – | – | – | 2.0 | – |  |
-| shared hidden window: tab A, throttling off | visible | – | 100.0 | 99.2 | 0.0 | 0 | – | – | – | – | – |  |
-| shared hidden window: tab B, throttling on | hidden | – | 1.0 | 1.0 | 0.0 | 0 | – | – | – | – | – |  |
-| own hidden window, on then setBackgroundThrottling(false): before | hidden | – | 1.0 | 1.0 | 0.0 | 0 | – | – | – | 0.0 | – |  |
-| own hidden window, on then setBackgroundThrottling(false): after | visible | – | 100.1 | 99.4 | 1.0 | 1017 | – | – | – | 0.8 | – |  |
+| config | visibility | interval Hz | chain Hz | rAF Hz | max rAF gap ms | media × | decoded fps | audio | renderer CPU % | error |
+| :- | :- | :- | :- | :- | :- | :- | :- | :- | :- | :- |
+| shown (reference) | visible | 99.9 | 99.3 | 60.0 | 18 | 0.94 | 28.8 | running | 3.4 |  |
+| detached, throttling on (default) | hidden | 100.0 | 99.4 | 0.0 | 0 | 0.85 | 25.8 | running | 1.4 |  |
+| detached, throttling off | visible | 100.0 | 99.4 | 0.0 | 0 | 0.85 | 25.8 | running | 1.4 |  |
+| own hidden window, throttling on (default) | hidden | 100.0 | 99.4 | 0.0 | 0 | 0.85 | 25.8 | running | 1.0 |  |
+| own hidden window, throttling off | visible | 100.0 | 99.4 | 0.0 | 0 | 0.85 | 25.8 | running | 1.2 |  |
+| osr, throttling on (default) | visible | 100.0 | 99.4 | 30.0 | 34 | 0.85 | 25.8 | running | 1.8 |  |
+| osr, throttling off | visible | 99.9 | 99.3 | 30.0 | 34 | 0.85 | 25.8 | running | 2.0 |  |
+| shared hidden window: tab A, throttling off | visible | 100.0 | 99.2 | 0.0 | 0 | – | – | – | – |  |
+| shared hidden window: tab B, throttling on | hidden | 1.0 | 1.0 | 0.0 | 0 | – | – | – | – |  |
+| own hidden window, on then setBackgroundThrottling(false): before | hidden | 1.0 | 1.0 | 0.0 | 0 | – | – | – | 0.0 |  |
+| own hidden window, on then setBackgroundThrottling(false): after | visible | 100.1 | 99.4 | 1.0 | 1017 | – | – | – | 0.8 |  |
 
 **Q2 pictures of tabs** (8 tries; ms and staleness are p50 / p95; stale < 0 means drawn after the call began)
 
@@ -442,39 +454,42 @@ Electron 45.2.2 (Chromium 156.0.8078.80), linux-x64 7.0.0-1017-azure, ozone head
 
 Per idle hidden tab: **16 MiB**, 0.03% CPU. Four tabs: one partition +65 MiB, four partitions +69 MiB.
 
-| animated tab | all CPU % | renderer % | GPU % | rAF Hz |
-| :- | :- | :- | :- | :- |
-| animated, shown | 7.3 | 6.8 | 0.5 | – |
-| animated, hidden window, throttling off | 0.8 | 0.5 | 0.0 | – |
-| animated, hidden window, throttling on | 0.0 | 0.0 | 0.0 | – |
-| animated, osr 30 fps, throttling off | 1.8 | 1.5 | 0.3 | – |
+| animated tab | all CPU % | renderer % | GPU % |
+| :- | :- | :- | :- |
+| animated, shown | 7.3 | 6.8 | 0.5 |
+| animated, hidden window, throttling off | 0.8 | 0.5 | 0.0 |
+| animated, hidden window, throttling on | 0.0 | 0.0 | 0.0 |
+| animated, osr 30 fps, throttling off | 1.8 | 1.5 | 0.3 |
 
 ### Electron · macos (electron-macos.json)
 
 Electron 45.2.2 (Chromium 156.0.8078.80), darwin-arm64 25.6.0, ozone (default), displays 1024x768@1, status **done**, 535 s
 
-**Q1 hidden ⇄ shown** (times are p50 / p95 ms from the move)
+**Q1 hidden ⇄ shown** (5 cycles; times are p50 / p95 ms from the move)
 
-| hidden place | same document | field | scroll | SSE | media × | decoded fps | fresh picture shown | first rAF shown | layout hidden → shown → hidden | fit to 1280×800 | rAF while hidden | error |
+| hidden place | same document | field | scroll | SSE | media × | decoded fps | →shown resize | first rAF | fresh picture | →hidden resize | layout hidden → shown | error |
 | :- | :- | :- | :- | :- | :- | :- | :- | :- | :- | :- | :- | :- |
-| detached | true | true | true | true (1) | 0.92 | 27.9 | 1583 / 2231 | 35 / 319 | 1280x800@1 → 1000x700@1 →  | – | 1.0 |  |
-| hiddenWindow | true | true | true | true (1) | 0.97 | 29.1 | 1557 / 1617 | 15 / 71 | 1280x800@1 → 1000x700@1 →  | – | 1.0 |  |
+| detached | true | true | true | true (1 opens) | 0.92 | 27.9 | – | 35 / 319 | 1583 / 2231 | – | 1280x800@1 → 1000x700@1 |  |
+| hiddenWindow | true | true | true | true (1 opens) | 0.97 | 29.1 | – | 15 / 71 | 1557 / 1617 | – | 1280x800@1 → 1000x700@1 |  |
+
+- detached: while hidden, interval 53.4 Hz, rAF 1.0 Hz, media ×0.94, decoded 29.2 fps, visibility visible; while shown, rAF 52.0 Hz, visibility visible; initial (hidden) rAF 0.0 Hz
+- hiddenWindow: while hidden, interval 53.8 Hz, rAF 1.0 Hz, media ×0.99, decoded 29.0 fps, visibility visible; while shown, rAF 58.8 Hz, visibility visible; initial (hidden) rAF 0.0 Hz
 
 **Q2 throttling** (5 s windows)
 
-| config | visibility | layout | interval Hz | chain Hz | rAF Hz | max rAF gap ms | media × | decoded fps | pump fps | renderer CPU % | all CPU % | error |
-| :- | :- | :- | :- | :- | :- | :- | :- | :- | :- | :- | :- | :- |
-| shown (reference) | visible | – | 81.7 | 61.9 | 60.1 | 36 | – | – | – | 11.2 | – |  |
-| detached, throttling on (default) | hidden | – | 51.8 | 41.2 | 0.0 | 0 | – | – | – | 3.8 | – |  |
-| detached, throttling off | visible | – | 55.0 | 42.6 | 0.0 | 0 | – | – | – | 3.6 | – |  |
-| own hidden window, throttling on (default) | hidden | – | 55.8 | 43.2 | 0.0 | 0 | – | – | – | 3.2 | – |  |
-| own hidden window, throttling off | visible | – | 56.4 | 45.0 | 0.0 | 0 | – | – | – | 4.0 | – |  |
-| osr, throttling on (default) | visible | – | 58.4 | 46.6 | 13.8 | 111 | – | – | – | 6.9 | – |  |
-| osr, throttling off | visible | – | 59.6 | 48.4 | 14.8 | 127 | – | – | – | 6.3 | – |  |
-| shared hidden window: tab A, throttling off | visible | – | 98.9 | 84.9 | 0.0 | 0 | – | – | – | – | – |  |
-| shared hidden window: tab B, throttling on | hidden | – | 1.0 | 1.0 | 0.0 | 0 | – | – | – | – | – |  |
-| own hidden window, on then setBackgroundThrottling(false): before | hidden | – | 1.5 | 1.0 | 0.0 | 0 | – | – | – | 0.1 | – |  |
-| own hidden window, on then setBackgroundThrottling(false): after | visible | – | 77.6 | 61.8 | 59.3 | 53 | – | – | – | 7.5 | – |  |
+| config | visibility | interval Hz | chain Hz | rAF Hz | max rAF gap ms | media × | decoded fps | audio | renderer CPU % | error |
+| :- | :- | :- | :- | :- | :- | :- | :- | :- | :- | :- |
+| shown (reference) | visible | 81.7 | 61.9 | 60.1 | 36 | 1.00 | 29.4 | running | 11.2 |  |
+| detached, throttling on (default) | hidden | 51.8 | 41.2 | 0.0 | 0 | 0.95 | 27.6 | running | 3.8 |  |
+| detached, throttling off | visible | 55.0 | 42.6 | 0.0 | 0 | 0.89 | 26.2 | running | 3.6 |  |
+| own hidden window, throttling on (default) | hidden | 55.8 | 43.2 | 0.0 | 0 | 0.93 | 28.8 | running | 3.2 |  |
+| own hidden window, throttling off | visible | 56.4 | 45.0 | 0.0 | 0 | 0.94 | 27.2 | running | 4.0 |  |
+| osr, throttling on (default) | visible | 58.4 | 46.6 | 13.8 | 111 | 0.94 | 28.8 | running | 6.9 |  |
+| osr, throttling off | visible | 59.6 | 48.4 | 14.8 | 127 | 0.95 | 29.0 | running | 6.3 |  |
+| shared hidden window: tab A, throttling off | visible | 98.9 | 84.9 | 0.0 | 0 | – | – | – | – |  |
+| shared hidden window: tab B, throttling on | hidden | 1.0 | 1.0 | 0.0 | 0 | – | – | – | – |  |
+| own hidden window, on then setBackgroundThrottling(false): before | hidden | 1.5 | 1.0 | 0.0 | 0 | – | – | – | 0.1 |  |
+| own hidden window, on then setBackgroundThrottling(false): after | visible | 77.6 | 61.8 | 59.3 | 53 | – | – | – | 7.5 |  |
 
 **Q2 pictures of tabs** (8 tries; ms and staleness are p50 / p95; stale < 0 means drawn after the call began)
 
@@ -517,58 +532,61 @@ Electron 45.2.2 (Chromium 156.0.8078.80), darwin-arm64 25.6.0, ozone (default), 
 
 Per idle hidden tab: **20 MiB**, 0.26% CPU. Four tabs: one partition +76 MiB, four partitions +80 MiB.
 
-| animated tab | all CPU % | renderer % | GPU % | rAF Hz |
-| :- | :- | :- | :- | :- |
-| animated, shown | 27.1 | 9.5 | 17.4 | – |
-| animated, hidden window, throttling off | 12.5 | 3.8 | 8.4 | – |
-| animated, hidden window, throttling on | 0.6 | 0.1 | 0.3 | – |
-| animated, osr 30 fps, throttling off | 23.6 | 4.8 | 11.7 | – |
+| animated tab | all CPU % | renderer % | GPU % |
+| :- | :- | :- | :- |
+| animated, shown | 27.1 | 9.5 | 17.4 |
+| animated, hidden window, throttling off | 12.5 | 3.8 | 8.4 |
+| animated, hidden window, throttling on | 0.6 | 0.1 | 0.3 |
+| animated, osr 30 fps, throttling off | 23.6 | 4.8 | 11.7 |
 
 **Q6 streamed view** (10 s at the viewer; latency p50 / p95 ms)
 
-| road | content | source | fps | decoded fps | latency | gap p95 | kbit/s | bytes/frame | sender CPU % | viewer CPU % | source rAF | notes |
-| :- | :- | :- | :- | :- | :- | :- | :- | :- | :- | :- | :- | :- |
-| screencast | anim | hiddenWindow | 0.0 | 0.0 | – | – | 0 | 0 | 14 | 0 | – |  |
-| capturePoll | anim | hiddenWindow | 0.0 | 0.0 | – | – | 0 | 0 | 13 | 0 | – | toJPEG 0.0 ms |
-| webrtc-vp8 | anim | hiddenWindow | 2.3 | 2.3 | 374 / 585 | 617 | 412 | 22374 | 54 | 3 | – | libvpx; video/VP8 |
-| webrtc-h264 | anim | hiddenWindow | 7.9 | 7.9 | 203 / 306 | 198 | 1560 | 24678 | 80 | 5 | – | OpenH264; video/H264 |
-| webcodecs-vp8 | anim | hiddenWindow | 30.4 | 30.4 | 45 / 201 | 51 | 2279 | 9371 | 96 | 16 | – |  |
-| webcodecs-h264 | anim | hiddenWindow | 30.1 | 30.1 | 48 / 59 | 48 | 2243 | 9314 | 107 | 18 | – |  |
-| screencast | static | hiddenWindow | 0.0 | 0.0 | – | – | 0 | 0 | 1 | 0 | – |  |
-| capturePoll | static | hiddenWindow | 0.0 | 0.0 | – | – | 0 | 0 | 2 | 0 | – | toJPEG 0.0 ms |
-| webrtc-vp8 | static | hiddenWindow | 2.0 | 2.0 | 258 / 400 | 827 | 120 | 7470 | 8 | 2 | – | libvpx; video/VP8 |
-| webrtc-h264 | static | hiddenWindow | 0.9 | 0.9 | 72 / 527 | 1018 | 56 | 7787 | 10 | 1 | – | OpenH264; video/H264 |
-| webcodecs-vp8 | static | hiddenWindow | 2.0 | 2.0 | 53 / 65 | 553 | 103 | 6461 | 10 | 2 | – |  |
-| webcodecs-h264 | static | hiddenWindow | 2.0 | 2.0 | 42 / 62 | 552 | 9 | 546 | 9 | 1 | – |  |
-| screencast | anim | shown | 60.0 | 60.0 | 40 / 49 | 29 | 49001 | 101915 | 85 | 24 | – |  |
-| webrtc-vp8 | anim | shown | 20.0 | 0.0 | – | 98 | 2103 | 13141 | 59 | 14 | – | libvpx; video/VP8 |
+| road | content | source | fps | decoded fps | latency | gap p95 | kbit/s | bytes/frame | sender CPU % | viewer CPU % | notes |
+| :- | :- | :- | :- | :- | :- | :- | :- | :- | :- | :- | :- |
+| screencast | anim | hiddenWindow | 0.0 | 0.0 | – | – | 0 | 0 | 14 | 0 |  |
+| capturePoll | anim | hiddenWindow | 0.0 | 0.0 | – | – | 0 | 0 | 13 | 0 | toJPEG 0.0 ms |
+| webrtc-vp8 | anim | hiddenWindow | 2.3 | 2.3 | 374 / 585 | 617 | 412 | 22374 | 54 | 3 | libvpx; video/VP8 |
+| webrtc-h264 | anim | hiddenWindow | 7.9 | 7.9 | 203 / 306 | 198 | 1560 | 24678 | 80 | 5 | OpenH264; video/H264 |
+| webcodecs-vp8 | anim | hiddenWindow | 30.4 | 30.4 | 45 / 201 | 51 | 2279 | 9371 | 96 | 16 |  |
+| webcodecs-h264 | anim | hiddenWindow | 30.1 | 30.1 | 48 / 59 | 48 | 2243 | 9314 | 107 | 18 |  |
+| screencast | static | hiddenWindow | 0.0 | 0.0 | – | – | 0 | 0 | 1 | 0 |  |
+| capturePoll | static | hiddenWindow | 0.0 | 0.0 | – | – | 0 | 0 | 2 | 0 | toJPEG 0.0 ms |
+| webrtc-vp8 | static | hiddenWindow | 2.0 | 2.0 | 258 / 400 | 827 | 120 | 7470 | 8 | 2 | libvpx; video/VP8 |
+| webrtc-h264 | static | hiddenWindow | 0.9 | 0.9 | 72 / 527 | 1018 | 56 | 7787 | 10 | 1 | OpenH264; video/H264 |
+| webcodecs-vp8 | static | hiddenWindow | 2.0 | 2.0 | 53 / 65 | 553 | 103 | 6461 | 10 | 2 |  |
+| webcodecs-h264 | static | hiddenWindow | 2.0 | 2.0 | 42 / 62 | 552 | 9 | 546 | 9 | 1 |  |
+| screencast | anim | shown | 60.0 | 60.0 | 40 / 49 | 29 | 49001 | 101915 | 85 | 24 |  |
+| webrtc-vp8 | anim | shown | 20.0 | 0.0 | – | 98 | 2103 | 13141 | 59 | 14 | libvpx; video/VP8 |
 
 ### Electron · windows (electron-windows.json)
 
 Electron 45.2.2 (Chromium 156.0.8078.80), win32-x64 10.0.26100, ozone (default), displays 1024x768@1, status **done**, 603 s
 
-**Q1 hidden ⇄ shown** (times are p50 / p95 ms from the move)
+**Q1 hidden ⇄ shown** (5 cycles; times are p50 / p95 ms from the move)
 
-| hidden place | same document | field | scroll | SSE | media × | decoded fps | fresh picture shown | first rAF shown | layout hidden → shown → hidden | fit to 1280×800 | rAF while hidden | error |
+| hidden place | same document | field | scroll | SSE | media × | decoded fps | →shown resize | first rAF | fresh picture | →hidden resize | layout hidden → shown | error |
 | :- | :- | :- | :- | :- | :- | :- | :- | :- | :- | :- | :- | :- |
-| detached | true | true | true | true (1) | 0.93 | 27.6 | 1544 / 1566 | 1 / 39 | 1280x800@1 → 1000x700@1 →  | – | 0.0 |  |
-| hiddenWindow | true | true | true | true (1) | 0.96 | 28.7 | 1532 / 1544 | 9 / 16 | 1280x800@1 → 1000x700@1 →  | – | 1.0 |  |
+| detached | true | true | true | true (1 opens) | 0.93 | 27.6 | 1 / 1 | 1 / 39 | 1544 / 1566 | – | 1280x800@1 → 1000x700@1 |  |
+| hiddenWindow | true | true | true | true (1 opens) | 0.96 | 28.7 | – | 9 / 16 | 1532 / 1544 | – | 1280x800@1 → 1000x700@1 |  |
+
+- detached: while hidden, interval 100.1 Hz, rAF 0.0 Hz, media ×0.88, decoded 26.8 fps, visibility visible; while shown, rAF 64.0 Hz, visibility visible; initial (hidden) rAF 0.0 Hz
+- hiddenWindow: while hidden, interval 99.9 Hz, rAF 1.0 Hz, media ×0.98, decoded 28.8 fps, visibility visible; while shown, rAF 64.0 Hz, visibility visible; initial (hidden) rAF 0.0 Hz
 
 **Q2 throttling** (5 s windows)
 
-| config | visibility | layout | interval Hz | chain Hz | rAF Hz | max rAF gap ms | media × | decoded fps | pump fps | renderer CPU % | all CPU % | error |
-| :- | :- | :- | :- | :- | :- | :- | :- | :- | :- | :- | :- | :- |
-| shown (reference) | visible | – | 100.0 | 90.8 | 64.2 | 17 | – | – | – | 8.1 | – |  |
-| detached, throttling on (default) | hidden | – | 100.0 | 92.8 | 0.0 | 0 | – | – | – | 2.4 | – |  |
-| detached, throttling off | visible | – | 100.0 | 91.6 | 0.0 | 0 | – | – | – | 2.2 | – |  |
-| own hidden window, throttling on (default) | hidden | – | 99.2 | 91.8 | 0.0 | 0 | – | – | – | 2.5 | – |  |
-| own hidden window, throttling off | visible | – | 100.0 | 90.4 | 0.0 | 0 | – | – | – | 2.5 | – |  |
-| osr, throttling on (default) | visible | – | 100.0 | 90.6 | 30.0 | 35 | – | – | – | 6.4 | – |  |
-| osr, throttling off | visible | – | 100.0 | 90.2 | 30.0 | 35 | – | – | – | 5.5 | – |  |
-| shared hidden window: tab A, throttling off | visible | – | 100.0 | 97.8 | 0.0 | 0 | – | – | – | – | – |  |
-| shared hidden window: tab B, throttling on | hidden | – | 1.8 | 1.0 | 0.0 | 0 | – | – | – | – | – |  |
-| own hidden window, on then setBackgroundThrottling(false): before | hidden | – | 1.0 | 1.0 | 0.0 | 0 | – | – | – | 0.0 | – |  |
-| own hidden window, on then setBackgroundThrottling(false): after | visible | – | 100.2 | 90.7 | 1.0 | 1000 | – | – | – | 0.9 | – |  |
+| config | visibility | interval Hz | chain Hz | rAF Hz | max rAF gap ms | media × | decoded fps | audio | renderer CPU % | error |
+| :- | :- | :- | :- | :- | :- | :- | :- | :- | :- | :- |
+| shown (reference) | visible | 100.0 | 90.8 | 64.2 | 17 | 0.94 | 29.0 | running | 8.1 |  |
+| detached, throttling on (default) | hidden | 100.0 | 92.8 | 0.0 | 0 | 0.85 | 24.8 | running | 2.4 |  |
+| detached, throttling off | visible | 100.0 | 91.6 | 0.0 | 0 | 0.84 | 24.8 | running | 2.2 |  |
+| own hidden window, throttling on (default) | hidden | 99.2 | 91.8 | 0.0 | 0 | 0.85 | 26.0 | running | 2.5 |  |
+| own hidden window, throttling off | visible | 100.0 | 90.4 | 0.0 | 0 | 0.85 | 24.8 | running | 2.5 |  |
+| osr, throttling on (default) | visible | 100.0 | 90.6 | 30.0 | 35 | 0.93 | 29.4 | running | 6.4 |  |
+| osr, throttling off | visible | 100.0 | 90.2 | 30.0 | 35 | 0.93 | 29.2 | running | 5.5 |  |
+| shared hidden window: tab A, throttling off | visible | 100.0 | 97.8 | 0.0 | 0 | – | – | – | – |  |
+| shared hidden window: tab B, throttling on | hidden | 1.8 | 1.0 | 0.0 | 0 | – | – | – | – |  |
+| own hidden window, on then setBackgroundThrottling(false): before | hidden | 1.0 | 1.0 | 0.0 | 0 | – | – | – | 0.0 |  |
+| own hidden window, on then setBackgroundThrottling(false): after | visible | 100.2 | 90.7 | 1.0 | 1000 | – | – | – | 0.9 |  |
 
 **Q2 pictures of tabs** (8 tries; ms and staleness are p50 / p95; stale < 0 means drawn after the call began)
 
@@ -611,35 +629,35 @@ Electron 45.2.2 (Chromium 156.0.8078.80), win32-x64 10.0.26100, ozone (default),
 
 Per idle hidden tab: **16 MiB**, 0.05% CPU. Four tabs: one partition +97 MiB, four partitions +102 MiB.
 
-| animated tab | all CPU % | renderer % | GPU % | rAF Hz |
-| :- | :- | :- | :- | :- |
-| animated, shown | 32.2 | 17.2 | 14.5 | – |
-| animated, hidden window, throttling off | 1.3 | 1.1 | 0.0 | – |
-| animated, hidden window, throttling on | 0.1 | 0.0 | 0.0 | – |
-| animated, osr 30 fps, throttling off | 19.1 | 8.9 | 6.3 | – |
+| animated tab | all CPU % | renderer % | GPU % |
+| :- | :- | :- | :- |
+| animated, shown | 32.2 | 17.2 | 14.5 |
+| animated, hidden window, throttling off | 1.3 | 1.1 | 0.0 |
+| animated, hidden window, throttling on | 0.1 | 0.0 | 0.0 |
+| animated, osr 30 fps, throttling off | 19.1 | 8.9 | 6.3 |
 
 **Q6 streamed view** (10 s at the viewer; latency p50 / p95 ms)
 
-| road | content | source | fps | decoded fps | latency | gap p95 | kbit/s | bytes/frame | sender CPU % | viewer CPU % | source rAF | notes |
-| :- | :- | :- | :- | :- | :- | :- | :- | :- | :- | :- | :- | :- |
-| screencast | anim | hiddenWindow | 0.0 | 0.0 | – | – | 0 | 0 | 2 | 0 | – |  |
-| capturePoll | anim | hiddenWindow | 0.0 | 0.0 | – | – | 0 | 0 | 2 | 0 | – | toJPEG 0.0 ms |
-| webrtc-vp8 | anim | hiddenWindow | 24.8 | 24.8 | 37 / 39 | 64 | 2476 | 12477 | 67 | 15 | – | libvpx; video/VP8 |
-| webrtc-h264 | anim | hiddenWindow | 14.7 | 14.7 | 54 / 56 | 80 | 2456 | 20881 | 66 | 10 | – | OpenH264; video/H264 |
-| webcodecs-vp8 | anim | hiddenWindow | 30.0 | 30.0 | 32 / 36 | 48 | 2182 | 9092 | 85 | 17 | – |  |
-| webcodecs-h264 | anim | hiddenWindow | 30.0 | 30.0 | 29 / 31 | 48 | 2159 | 8994 | 78 | 14 | – |  |
-| screencast | static | hiddenWindow | 0.0 | 0.0 | – | – | 0 | 0 | 0 | 0 | – |  |
-| capturePoll | static | hiddenWindow | 0.0 | 0.0 | – | – | 0 | 0 | 1 | 0 | – | toJPEG 0.0 ms |
-| webrtc-vp8 | static | hiddenWindow | 2.0 | 2.0 | 26 / 36 | 502 | 101 | 6316 | 7 | 2 | – | libvpx; video/VP8 |
-| webrtc-h264 | static | hiddenWindow | 0.9 | 0.9 | 22 / 166 | 1005 | 82 | 11357 | 7 | 1 | – | OpenH264; video/H264 |
-| webcodecs-vp8 | static | hiddenWindow | 2.0 | 2.0 | 17 / 20 | 503 | 110 | 6903 | 6 | 1 | – |  |
-| webcodecs-h264 | static | hiddenWindow | 2.0 | 2.0 | 22 / 26 | 525 | 9 | 553 | 5 | 1 | – |  |
-| screencast | anim | shown | 64.0 | 64.0 | 29 / 31 | 17 | 50856 | 99327 | 99 | 24 | – |  |
-| webrtc-vp8 | anim | shown | 24.7 | 0.0 | – | 77 | 2505 | 12678 | 99 | 16 | – | libvpx; video/VP8 |
+| road | content | source | fps | decoded fps | latency | gap p95 | kbit/s | bytes/frame | sender CPU % | viewer CPU % | notes |
+| :- | :- | :- | :- | :- | :- | :- | :- | :- | :- | :- | :- |
+| screencast | anim | hiddenWindow | 0.0 | 0.0 | – | – | 0 | 0 | 2 | 0 |  |
+| capturePoll | anim | hiddenWindow | 0.0 | 0.0 | – | – | 0 | 0 | 2 | 0 | toJPEG 0.0 ms |
+| webrtc-vp8 | anim | hiddenWindow | 24.8 | 24.8 | 37 / 39 | 64 | 2476 | 12477 | 67 | 15 | libvpx; video/VP8 |
+| webrtc-h264 | anim | hiddenWindow | 14.7 | 14.7 | 54 / 56 | 80 | 2456 | 20881 | 66 | 10 | OpenH264; video/H264 |
+| webcodecs-vp8 | anim | hiddenWindow | 30.0 | 30.0 | 32 / 36 | 48 | 2182 | 9092 | 85 | 17 |  |
+| webcodecs-h264 | anim | hiddenWindow | 30.0 | 30.0 | 29 / 31 | 48 | 2159 | 8994 | 78 | 14 |  |
+| screencast | static | hiddenWindow | 0.0 | 0.0 | – | – | 0 | 0 | 0 | 0 |  |
+| capturePoll | static | hiddenWindow | 0.0 | 0.0 | – | – | 0 | 0 | 1 | 0 | toJPEG 0.0 ms |
+| webrtc-vp8 | static | hiddenWindow | 2.0 | 2.0 | 26 / 36 | 502 | 101 | 6316 | 7 | 2 | libvpx; video/VP8 |
+| webrtc-h264 | static | hiddenWindow | 0.9 | 0.9 | 22 / 166 | 1005 | 82 | 11357 | 7 | 1 | OpenH264; video/H264 |
+| webcodecs-vp8 | static | hiddenWindow | 2.0 | 2.0 | 17 / 20 | 503 | 110 | 6903 | 6 | 1 |  |
+| webcodecs-h264 | static | hiddenWindow | 2.0 | 2.0 | 22 / 26 | 525 | 9 | 553 | 5 | 1 |  |
+| screencast | anim | shown | 64.0 | 64.0 | 29 / 31 | 17 | 50856 | 99327 | 99 | 24 |  |
+| webrtc-vp8 | anim | shown | 24.7 | 0.0 | – | 77 | 2505 | 12678 | 99 | 16 | libvpx; video/VP8 |
 
 ### The pair · linux-x64 (pair-linux.json)
 
-7.0.0-1017-azure, 35 s, state **done**
+7.0.0-1017-azure, 35 s, state **done**, Windows app start: task
 
 - **login start**: {"daemonUpMs":114,"daemonUp":true,"appConnectedMs":2610,"appStartedBy":"daemon","appStart":{"at":1793839269130,"safeMode":false,"reason":"daemon start","ok":true,"how":"systemctl --user start clover-s7-app-7f07b71e.service","out":""},"daemonParent":1312}
 - **second daemon on the same home**: {"exitCode":0,"ms":50,"said":"2026-11-05T00:41:09.490Z [core 2690] another daemon holds this home (flock: held by another process); exiting","firstStillServing":true}
@@ -653,7 +671,7 @@ Per idle hidden tab: **16 MiB**, 0.05% CPU. Four tabs: one partition +97 MiB, fo
 
 ### The pair · darwin-arm64 (pair-macos.json)
 
-25.6.0, 37 s, state **done**
+25.6.0, 37 s, state **done**, Windows app start: task
 
 - **login start**: {"daemonUpMs":130,"daemonUp":true,"appConnectedMs":3555,"appStartedBy":"daemon","appStart":{"at":1793839267058,"safeMode":false,"reason":"daemon start","ok":true,"how":"open -n -g -a /Users/runner/work/clover/clover/spikes/s7-browser/prototype/node_modules/electron/dist/Electron.app --args /Users/runner/work/clover/clover/spikes/s7-browser/prototype/out/pair/app --home=/var/folders/n6/hn37q6pj7sj_9dmqqc2113800000gn/T/clover-s7-pair-mmpjyK","out":""},"daemonParent":1}
 - **second daemon on the same home**: {"exitCode":0,"ms":119,"said":"2026-11-05T00:41:08.181Z [core 1936] another daemon holds this home (flock: held by another process); exiting","firstStillServing":true}

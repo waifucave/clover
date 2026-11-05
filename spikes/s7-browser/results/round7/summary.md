@@ -148,6 +148,38 @@
 - cost: browser base 435 MiB, per idle tab 52 MiB, 4 browser contexts +309 MiB, a second bot's browser 291 MiB (11 processes), animated tab 21.5% CPU
   - steps: 0 tabs 435 MiB pss / 0.5%, 1 tabs 511 MiB pss / 1.5%, 2 tabs 562 MiB pss / 3.0%, 4 tabs 652 MiB pss / 4.2%, 8 tabs 852 MiB pss / 9.1%
 
+### Chrome for Testing · darwin-arm64 (cft-macos.json)
+
+25.6.0, 3 CPUs, 7 GiB, Bun 1.3.14, status **done**, 254 s
+
+**chrome-headless-shell** — HeadlessChrome/156.0.8078.80; sandbox on
+
+- install: 99 MiB archive, 204 MiB unpacked, 16 files, 0 symlinks; download 1562 ms, unpack 1735 ms; sha256 `ea615baa2e9caf0d02d1898a6562b5f8fa9c35239707dae0f592178df5b986ac` (matches the pin; server MD5 true)
+- start: over **fdpipe**, cold 440 ms, warm 174 ms; the port for comparison 169 ms
+- start attempts: fdpipe ok 440 ms
+- tabs: own window: first (background): visible, 1280x800, interval 62.3 Hz, rAF 28.9 Hz; own window: second (front): visible, 1280x800, interval 61.5 Hz, rAF 28.3 Hz; one window: first (background): visible, 1280x800, interval 66.3 Hz, rAF 41.9 Hz; one window: second (front): visible, 1280x800, interval 70.9 Hz, rAF 47.3 Hz
+- media (video with sound, an AudioContext): default flags: visible, interval 62.7 Hz, rAF 28.8 Hz, media ×0.98, decoded 29.4 fps, audio running, set up in 548 ms, browser answers in 0 ms
+- resize to 1000×700 and back: 15 ms / 29 ms, same document true (1280 → 1000 → 1280)
+- screenshots: png 342 / 397 ms (630 KiB, CPU 339 ms), jpeg 158 / 208 ms (131 KiB, stale -97 / -53 ms, CPU 119 ms)
+- screencast: 35.6 fps, 34260 kbit/s, 117 KiB/frame, latency 65 / 129 ms, browser CPU 79%
+- per-bot profiles: isolated true, persisted across a restart true
+- cost: browser base 44 MiB, per idle tab 33 MiB, 4 browser contexts +132 MiB, a second bot's browser 44 MiB (4 processes), animated tab 36.1% CPU
+  - steps: 0 tabs 44 MiB footprint / 1.5%, 1 tabs 78 MiB footprint / 3.7%, 2 tabs 111 MiB footprint / 6.7%, 4 tabs 178 MiB footprint / 12.0%, 8 tabs 311 MiB footprint / 20.3%
+
+**chrome** — Chrome/156.0.8078.80; sandbox on
+
+- install: 186 MiB archive, 366 MiB unpacked, 344 files, 5 symlinks; download 1997 ms, unpack 2485 ms; sha256 `8bc590d1b1acac042a000234c768f31830f25a3983a83ed5e067114c87c4cad1` (matches the pin; server MD5 true)
+- start: over **fdpipe**, cold 2811 ms, warm 2033 ms; the port for comparison 1362 ms
+- start attempts: fdpipe ok 2811 ms
+- tabs: own window: first (background): visible, 1280x657, interval 60.5 Hz, rAF 25.8 Hz; own window: second (front): hidden, 1280x657, interval 1.0 Hz, rAF 0.0 Hz; one window: first (background): hidden, 1280x657, interval 1.6 Hz, rAF 0.0 Hz; one window: second (front): visible, 1280x657, interval 60.9 Hz, rAF 27.6 Hz
+- media (video with sound, an AudioContext): default flags: visible, interval 62.9 Hz, rAF 25.1 Hz, media ×0.96, decoded 28.9 fps, audio running, set up in 461 ms, browser answers in 0 ms
+- resize to 1000×700 and back: 10 ms / 71 ms, same document true (1280 → 1000 → 1280)
+- screenshots: png 310 / 435 ms (478 KiB, CPU 231 ms), jpeg 151 / 197 ms (114 KiB, stale -101 / -57 ms, CPU 68 ms)
+- screencast: 28.3 fps, 23643 kbit/s, 102 KiB/frame, latency 92 / 148 ms, browser CPU 41%
+- per-bot profiles: isolated true, persisted across a restart true
+- cost: browser base 263 MiB, per idle tab 52 MiB, 4 browser contexts +442 MiB, a second bot's browser 258 MiB (9 processes), animated tab 8.7% CPU
+  - steps: 0 tabs 263 MiB footprint / 3.0%, 1 tabs 356 MiB footprint / 4.2%, 2 tabs 421 MiB footprint / 7.4%, 4 tabs 509 MiB footprint / 4.9%, 8 tabs 682 MiB footprint / 7.1%
+
 ### Chrome for Testing · win32-x64 (cft-windows.json)
 
 10.0.26100, 4 CPUs, 16 GiB, Bun 1.3.14, status **done**, 246 s

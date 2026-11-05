@@ -42,8 +42,8 @@ function electron(name: string, j: J): string {
   }
   if (c.throttle) {
     out.push("**Q2 throttling** (5 s windows)", "");
-    out.push(table(["config", "visibility", "layout", "interval Hz", "chain Hz", "rAF Hz", "max rAF gap ms", "media ×", "decoded fps", "pump fps", "renderer CPU %", "all CPU %", "error"],
-      c.throttle.map((r: J) => [r.config, r.rates?.visibility ?? "–", r.rates?.layout ?? "–", f1(r.rates?.intervalHz), f1(r.rates?.chainHz), f1(r.rates?.rafHz), f1(r.rates?.maxRafGapMs, 0), r.media ? f1(r.rates?.mediaPlayedPerSec, 2) : "–", r.media ? f1(r.rates?.decodedFps) : "–", f1(r.pumpFps), f1(r.rendererCpuPct), f1(r.allCpuPct), [r.error, r.cover].filter(Boolean).join("; ")])));
+    out.push(table(["config", "visibility", "layout", "interval Hz", "chain Hz", "rAF Hz", "max rAF gap ms", "IO / RO Hz", "media ×", "decoded fps", "pump fps", "renderer CPU %", "all CPU %", "error"],
+      c.throttle.map((r: J) => [r.config, r.rates?.visibility ?? "–", r.rates?.layout ?? "–", f1(r.rates?.intervalHz), f1(r.rates?.chainHz), f1(r.rates?.rafHz), f1(r.rates?.maxRafGapMs, 0), r.rates?.ioHz !== undefined ? `${f1(r.rates.ioHz)} / ${f1(r.rates.roHz)}` : "–", r.media ? f1(r.rates?.mediaPlayedPerSec, 2) : "–", r.media ? f1(r.rates?.decodedFps) : "–", f1(r.pumpFps), f1(r.rendererCpuPct), f1(r.allCpuPct), [r.error, r.cover].filter(Boolean).join("; ")])));
     out.push("");
   }
   if (c.capture) {
@@ -57,9 +57,21 @@ function electron(name: string, j: J): string {
     out.push("**Q2 cost**", "");
     out.push(table(["idle hidden tabs", "memory MiB", "kind", "RSS MiB", "processes", "CPU %"], (k.idle ?? []).map((s: J) => [f1(s.tabs, 0), f1(s.memBest / 1048576, 0), s.memKind, f1(s.memRss / 1048576, 0), f1(s.procs, 0), f1(s.cpuPct)])));
     out.push("", `Per idle hidden tab: **${f1(k.perIdleTabMiB, 0)} MiB**, ${f1(k.perIdleTabCpuPct, 2)}% CPU. Four tabs: one partition +${f1(k.partitions?.samePartitionMiB, 0)} MiB, four partitions +${f1(k.partitions?.ownPartitionsMiB, 0)} MiB.${k.error ? ` Error: ${k.error}` : ""}`, "");
+    if (k.host) out.push(`Quiet tabs (no rAF loop) working in one shared 1×1 host: **${f1(k.host.perTabMiB, 0)} MiB** and ${f1(k.host.perTabCpuPct, 2)}% CPU a tab (${(k.host.steps ?? []).map((s: J) => `${s.tabs}: ${f1(s.memBest / 1048576, 0)} MiB / ${f1(s.cpuPct)}%`).join(", ")}).`, "");
     out.push(table(["animated tab", "all CPU %", "renderer %", "GPU %", "rAF Hz"], (k.animated ?? []).map((a: J) => [a.config, f1(a.cpuPct), f1(a.rendererPct), f1(a.gpuPct), f1(a.rafHz, 0)])));
     out.push("");
   }
+  if (c.wake) {
+    out.push(`**Waking a resting tab into the host** (never-shown window, throttling on, ${c.wake.cycles?.length ?? 0} cycles): first rAF ${ms(c.wake.firstRafMs)} ms, fresh picture ${ms(c.wake.freshPictureMs)} ms; resting rates ${(c.wake.cycles ?? []).map((x: J) => `${f1(x.restRates?.intervalHz)} Hz / rAF ${f1(x.restRates?.rafHz)}`).join(", ")}; awake rAF ${(c.wake.cycles ?? []).map((x: J) => f1(x.awakeRates?.rafHz, 0)).join(", ")}${c.wake.error ? `; error ${c.wake.error}` : ""}`, "");
+  }
+  if (c.shared) {
+    out.push(`**One host, ${c.shared.tabs?.length ?? 0} tabs:** ${(c.shared.tabs ?? []).map((t: J, i: number) => `tab ${i + 1} rAF ${f1(t.rates?.rafHz, 0)} Hz, capturePage ${t.capture?.ok}/${t.capture?.tries} in ${ms(t.capture?.ms)} ms (${t.capture?.size})`).join("; ")}${c.shared.error ? `; error ${c.shared.error}` : ""}`, "");
+  }
+  if (c.hostcheck) {
+    const h = c.hostcheck;
+    out.push(`**The host's invariants:** host ${h.hostBounds}, focused at start ${f1(h.focusedAtStart)}, after its page grabs focus ${f1(h.focusedAfterPageGrab)} (focused window "${h.focusedWindowTitle}"); Windows styles ${typeof h.windowsStyles === "object" ? JSON.stringify(h.windowsStyles) : h.windowsStyles ?? "–"}; click-through ${typeof h.clickThrough === "object" ? JSON.stringify(h.clickThrough) : h.clickThrough ?? "–"}${h.error ? `; error ${h.error}` : ""}`, "");
+  }
+  if (Array.isArray(j.assertions) && j.assertions.length) out.push(`**Assertions:** ${j.assertions.map((x: J) => `${x.ok ? "PASS" : "**FAIL**"} ${x.name}`).join("; ")}`, "");
   if (c.stream) {
     out.push("**Q6 streamed view** (10 s at the viewer; latency p50 / p95 ms)", "");
     out.push(table(["road", "content", "source", "fps", "decoded fps", "latency", "gap p95", "kbit/s", "bytes/frame", "sender CPU %", "viewer CPU %", "source rAF", "notes"],
@@ -98,6 +110,7 @@ function cft(name: string, j: J): string {
     if ((r.errors ?? []).length) out.push(`- errors: ${r.errors.join("; ")}`);
     out.push("");
   }
+  if (Array.isArray(j.assertions) && j.assertions.length) out.push(`**Assertions:** ${j.assertions.map((x: J) => `${x.ok ? "PASS" : "**FAIL**"} ${x.name}`).join("; ")}`, "");
   return out.join("\n");
 }
 
@@ -110,6 +123,7 @@ function pair(name: string, j: J): string {
     const brief = JSON.stringify(rest, (k, v) => (k === "out" && typeof v === "string" ? v.slice(0, 160) : k === "unit" || k === "registeredForLogin" || k === "install" ? undefined : v));
     out.push(`- **${step}**: ${brief.slice(0, 900)}`);
   }
+  if (Array.isArray(j.assertions) && j.assertions.length) out.push("", `**Assertions:** ${j.assertions.map((x: J) => `${x.ok ? "PASS" : "**FAIL**"} ${x.name}`).join("; ")}`);
   out.push("");
   return out.join("\n");
 }

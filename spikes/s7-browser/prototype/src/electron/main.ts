@@ -1,15 +1,22 @@
 // The S7 Electron probe: runs the chosen checks in this OS's Electron and writes one JSON result.
-//   electron out/electron/main.cjs --checks=move,throttle,capture,cost,stream[,long] --out=<file> --label=<name>
-// CI only: it opens windows. Every run gets its own temporary userData folder.
+//   electron out/electron/main.cjs --checks=move,throttle,capture,cost,stream,wake,shared,hostcheck[,long] --out=<file>
+//                                   --label=<name>
+// CI only: it opens windows. Every run gets its own temporary userData folder. It exits 1 when an assertion about
+// what the report concludes fails (round eight), after writing everything it measured.
 import { app, screen } from "electron";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir, release, cpus, totalmem } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { captureCheck, costCheck, longCheck, moveCheck, throttleCheck } from "./checks.ts";
+import { captureCheck, costCheck, hostCheck, longCheck, moveCheck, sharedHostCheck, throttleCheck, wakeCheck, type CaptureRow, type HostInvariants, type MoveResult, type SharedResult, type ThrottleRow, type WakeResult } from "./checks.ts";
 import { Link, streamCheck } from "./stream.ts";
 import { placeAvailable, TabHost } from "./tabs.ts";
 import { startServer } from "../shared/server.ts";
 import { errorText, rounded } from "../shared/stats.ts";
+
+if (process.env.GITHUB_ACTIONS !== "true" && process.env.S7_ALLOW_LOCAL !== "1") {
+  console.error("s7 probe: refusing to run here: it opens windows. It runs on GitHub Actions.");
+  process.exit(2);
+}
 
 const ROOT = process.env.S7_ROOT ?? resolve(__dirname, "..", "..");
 process.env.S7_ROOT = ROOT;
@@ -34,6 +41,60 @@ const started = Date.now();
 const log = (line: string): void => { console.log(`[s7 ${((Date.now() - started) / 1000).toFixed(1)}s] ${line}`); };
 const results: Record<string, unknown> = {};
 const errors: string[] = [];
+interface Assertion { name: string; ok: boolean; detail: string }
+let assertions: Assertion[] = [];
+
+/** What the report concludes, checked against this run's numbers. */
+function assertAll(): Assertion[] {
+  const a: Assertion[] = [];
+  const add = (name: string, ok: boolean, detail: unknown): void => { a.push({ name, ok, detail: typeof detail === "string" ? detail : JSON.stringify(detail) }); };
+  const move = results.move as Record<string, MoveResult> | undefined;
+  if (move !== undefined) {
+    for (const [k, r] of Object.entries(move)) {
+      add(`no reload when moving from ${k}`, r.error === undefined && r.checks.sameDocument === true && r.checks.fieldKept === true && r.checks.sseKept === true,
+        { sameDocument: r.checks.sameDocument, fieldKept: r.checks.fieldKept, sseKept: r.checks.sseKept, error: r.error });
+    }
+  }
+  const thr = results.throttle as ThrottleRow[] | undefined;
+  if (thr !== undefined) {
+    const row = (c: string): ThrottleRow | undefined => thr.find((r) => r.config === c);
+    const host = row("1x1 shown window, throttling off");
+    add("the 1x1 host draws (rAF above 10 Hz)", (host?.rates?.rafHz ?? 0) > 10, { rafHz: host?.rates?.rafHz, error: host?.error });
+    const never = row("never-shown window, throttling off");
+    add("a never-shown window draws nothing (rAF below 1 Hz)", never?.rates !== undefined && never.rates.rafHz < 1, { rafHz: never?.rates?.rafHz, error: never?.error });
+  }
+  const cap = results.capture as CaptureRow[] | undefined;
+  if (cap !== undefined) {
+    const r = cap.find((x) => x.place === "tinyWindow" && x.method === "capturePage" && x.variant === undefined);
+    add("capturePage works in the 1x1 host", r !== undefined && r.tries > 0 && r.ok === r.tries, { ok: r?.ok, tries: r?.tries, errors: r?.errors });
+  }
+  const hc = results.hostcheck as HostInvariants | undefined;
+  if (hc !== undefined) {
+    add("the host never takes focus, even when its page asks", hc.error === undefined && hc.focusedAtStart === false && hc.focusedAfterPageGrab === false,
+      { atStart: hc.focusedAtStart, afterGrab: hc.focusedAfterPageGrab, focusedWindow: hc.focusedWindowTitle, error: hc.error });
+    if (process.platform === "win32") {
+      const w = hc.windowsStyles;
+      add("Windows: the host is a no-activate, click-through tool window, not an app window",
+        typeof w === "object" && w.toolWindow && w.noActivate && w.transparent && !w.appWindow, w ?? "missing");
+    }
+    if (typeof hc.clickThrough === "object") {
+      add("a real click at the host's point reaches the window below", hc.clickThrough.belowClicks >= 1 && hc.clickThrough.hostClicks === 0, hc.clickThrough);
+    }
+  }
+  const wake = results.wake as WakeResult | undefined;
+  if (wake !== undefined) {
+    add("a resting tab draws within 2 s of moving into the host, every cycle",
+      wake.error === undefined && wake.cycles.length > 0 && wake.cycles.every((c) => c.firstRafMs !== undefined && c.firstRafMs < 2000),
+      { firstRafMs: wake.cycles.map((c) => c.firstRafMs), error: wake.error });
+  }
+  const shared = results.shared as SharedResult | undefined;
+  if (shared !== undefined) {
+    add("every tab in one shared host draws and is pictured",
+      shared.error === undefined && shared.tabs.length > 0 && shared.tabs.every((t) => (t.rates?.rafHz ?? 0) > 10 && t.capture.ok === t.capture.tries),
+      { tabs: shared.tabs.map((t) => ({ rafHz: t.rates?.rafHz, ok: t.capture.ok, tries: t.capture.tries })), error: shared.error });
+  }
+  return a;
+}
 
 function write(status: string): void {
   mkdirSync(dirname(outFile), { recursive: true });
@@ -55,7 +116,7 @@ function write(status: string): void {
     gpu: app.isReady() ? app.getGPUFeatureStatus() : {},
     seconds: (Date.now() - started) / 1000,
   };
-  writeFileSync(outFile, JSON.stringify(rounded({ meta, checks: results, errors }, 2), null, 2));
+  writeFileSync(outFile, JSON.stringify(rounded({ meta, checks: results, errors, assertions }, 2), null, 2));
 }
 
 setTimeout(() => {
@@ -99,7 +160,12 @@ async function main(): Promise<void> {
   await run("capture", () => captureCheck(host, log));
   await run("cost", () => costCheck(host, log));
   await run("stream", () => streamCheck(host, server.origin, link, log));
+  await run("wake", () => wakeCheck(host, log));
+  await run("shared", () => sharedHostCheck(host, log));
+  await run("hostcheck", () => hostCheck(host, server, log));
   await run("long", () => longCheck(host, log));
+  assertions = assertAll();
+  for (const x of assertions) log(`${x.ok ? "PASS" : "FAIL"} ${x.name}: ${x.detail.slice(0, 300)}`);
   write("done");
   await server.close();
   log(`done in ${((Date.now() - started) / 1000).toFixed(0)} s → ${outFile}`);
@@ -112,5 +178,7 @@ main()
   })
   .finally(() => {
     try { rmSync(userData, { recursive: true, force: true }); } catch { /* best effort */ }
-    app.exit(0);
+    const failed = assertions.filter((x) => !x.ok).length + (errors.length > 0 ? 1 : 0);
+    if (failed > 0) log(`${failed} assertion(s) or error(s): exit 1`);
+    app.exit(failed > 0 ? 1 : 0);
   });

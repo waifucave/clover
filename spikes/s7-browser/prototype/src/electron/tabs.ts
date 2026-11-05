@@ -7,7 +7,9 @@
 //                    placed off every screen (X11), click-through, not focusable, not in the taskbar (not on Wayland,
 //                    where an app can neither hide nor place a shown window)
 //   tinyWindow       a view of 1280x800 in a shown 1x1 window, click-through, not focusable, not in the taskbar, and
-//                    at opacity 0 on macOS and Windows (round four)
+//                    at opacity 0 on macOS and Windows (round four); a tool window on Windows (out of Alt-Tab) and
+//                    out of Mission Control on macOS (round eight)
+//   sharedTinyWindow the same host, one window for many tabs (round eight: does every view in it draw?)
 //   shown            a view in the visible browser view's window, laid out at that view's size
 //   osr              an offscreen-rendering BrowserWindow (frames arrive as 'paint' events; can't be shown as a view)
 //   osrView          an offscreen-rendering WebContentsView in no window
@@ -21,10 +23,10 @@ export const AGENT_H = 800;
 export const SHOWN_W = 1000;
 export const SHOWN_H = 700;
 
-export type Place = "detached" | "hiddenWindow" | "ownHiddenWindow" | "invisibleWindow" | "tinyWindow" | "shown" | "osr" | "osrView";
+export type Place = "detached" | "hiddenWindow" | "ownHiddenWindow" | "invisibleWindow" | "tinyWindow" | "sharedTinyWindow" | "shown" | "osr" | "osrView";
 
 /** The places a headless tab can live in, as views that can later be shown. */
-export type HeadlessPlace = "detached" | "hiddenWindow" | "ownHiddenWindow" | "invisibleWindow" | "tinyWindow";
+export type HeadlessPlace = "detached" | "hiddenWindow" | "ownHiddenWindow" | "invisibleWindow" | "tinyWindow" | "sharedTinyWindow";
 
 export function onWayland(): boolean {
   return process.platform === "linux" && (app.commandLine.getSwitchValue("ozone-platform") === "wayland" || (app.commandLine.getSwitchValue("ozone-platform") === "" && process.env.WAYLAND_DISPLAY !== undefined && process.env.DISPLAY === undefined));
@@ -106,8 +108,10 @@ function tinyWindow(title: string): BaseWindow {
   const w = new BaseWindow({
     show: false, x: 0, y: 0, width: 1, height: 1, useContentSize: true, frame: false, focusable: false,
     skipTaskbar: true, hasShadow: false, resizable: false, minimizable: false, maximizable: false, title,
+    ...(process.platform === "win32" ? { type: "toolbar" } : {}),
   });
   w.setIgnoreMouseEvents(true);
+  if (process.platform === "darwin") w.setHiddenInMissionControl(true);
   // round four: Windows makes a frameless window at least 32x31, which would show a corner of the page, so the
   // host is transparent where it can be (macOS, Windows); Linux has no window opacity
   if (process.platform === "darwin" || process.platform === "win32") w.setOpacity(0);
@@ -117,6 +121,7 @@ function tinyWindow(title: string): BaseWindow {
 
 export class TabHost {
   private hiddenHost?: BaseWindow;
+  private sharedHost?: BaseWindow;
   private shownWin?: BaseWindow;
   private coverWin?: BaseWindow;
   private readonly tabs = new Set<Tab>();
@@ -129,6 +134,26 @@ export class TabHost {
       this.hiddenHost = new BaseWindow({ show: false, width: AGENT_W, height: AGENT_H, useContentSize: true, title: "S7 hidden host" });
     }
     return this.hiddenHost;
+  }
+
+  /** One shared 1x1 host window for many tabs. */
+  sharedTiny(): BaseWindow {
+    if (this.sharedHost === undefined || this.sharedHost.isDestroyed()) this.sharedHost = tinyWindow("S7 shared host");
+    return this.sharedHost;
+  }
+
+  /** A new 1x1 host window of its own (the wake check's host). */
+  newTiny(title: string): BaseWindow {
+    return tinyWindow(title);
+  }
+
+  /** Move a tab's view into `win` at the agent's 1280x800 (rest ⇄ host), without touching its home. */
+  rehome(t: Tab, win: BaseWindow): void {
+    if (t.view === undefined) throw new Error("no view");
+    if (t.win !== undefined && !t.win.isDestroyed()) t.win.contentView.removeChildView(t.view);
+    win.contentView.addChildView(t.view);
+    t.view.setBounds({ x: 0, y: 0, width: AGENT_W, height: AGENT_H });
+    t.win = win;
   }
 
   /** The visible browser view's window. */
@@ -150,9 +175,11 @@ export class TabHost {
     const d = screen.getPrimaryDisplay().bounds;
     const at = t.win !== undefined && !t.win.isDestroyed() ? t.win.getBounds() : { x: 0, y: 0, width: 1, height: 1 };
     const x = Math.min(d.x, at.x), y = Math.min(d.y, at.y);
+    // macOS: may be larger than the screen, so a host bigger than the runner's 1024x768 display is covered whole
     const w = new BaseWindow({
       show: false, x, y, width: Math.max(d.x + d.width, at.x + at.width) - x, height: Math.max(d.y + d.height, at.y + at.height) - y,
       frame: false, focusable: false, skipTaskbar: true, hasShadow: false, backgroundColor: "#202020", title: "S7 cover",
+      enableLargerThanScreen: true,
     });
     if (onWayland()) w.setFullScreen(true);
     else w.setAlwaysOnTop(true, "floating");
@@ -197,6 +224,7 @@ export class TabHost {
       else if (o.place === "ownHiddenWindow") home = new BaseWindow({ show: false, width: AGENT_W, height: AGENT_H, useContentSize: true, title: `S7 hidden ${id}` });
       else if (o.place === "invisibleWindow") home = invisibleWindow(`S7 invisible ${id}`);
       else if (o.place === "tinyWindow") home = tinyWindow(`S7 tiny ${id}`);
+      else if (o.place === "sharedTinyWindow") home = this.sharedTiny();
       else if (o.place === "shown") home = this.shown();
       if (o.place === "ownHiddenWindow" || o.place === "invisibleWindow" || o.place === "tinyWindow") tab.ownWin = home;
       if (o.onTop === true && home !== undefined && (o.place === "invisibleWindow" || o.place === "tinyWindow")) home.setAlwaysOnTop(true, "screen-saver");
@@ -300,6 +328,9 @@ export class TabHost {
 
   async closeAll(): Promise<void> {
     for (const t of [...this.tabs]) await this.close(t);
+    if (this.sharedHost !== undefined && !this.sharedHost.isDestroyed()) this.sharedHost.destroy();
+    this.sharedHost = undefined;
+    this.uncover();
   }
 
   // --- pictures ---------------------------------------------------------------------------------------------------
@@ -372,6 +403,7 @@ export interface Snapshot {
   frame: number;
   lastMarkerAt: number;
   sse: { opens: number; errors: number; msgs: number; lastSeq: number; gaps: number };
+  observers: { io: number; ro: number; clicks: number };
   media: null | {
     played: number; currentTime: number; paused: boolean; readyState: number; decodedFrames: number; droppedFrames: number;
     pauses: number; plays: number; waiting: number; error: string; audioState: string; audioTime: number;

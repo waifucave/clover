@@ -10,6 +10,11 @@ let ws: WebSocket | null = null;
 let encoding = false;
 const counters = { encoded: 0, dropped: 0, keyFrames: 0, bytes: 0, errors: [] as string[], codec: "", hardware: "" };
 
+function describe(e: unknown): string {
+  if (e instanceof DOMException || e instanceof Error) return `${e.name}: ${e.message}`;
+  return String(e);
+}
+
 function note(e: unknown): void {
   const s = String(e instanceof Error ? e.message : e);
   if (counters.errors.length < 20 && !counters.errors.includes(s)) counters.errors.push(s);
@@ -32,14 +37,25 @@ const api = {
       audio: false,
       video: { mandatory: { chromeMediaSource: "tab", chromeMediaSourceId: sourceId, maxWidth, maxHeight, maxFrameRate: maxFps } },
     } as unknown as MediaStreamConstraints;
-    const stream = await navigator.mediaDevices.getUserMedia(constraints);
+    let stream: MediaStream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia(constraints);
+    } catch (e) {
+      // a DOMException crosses executeJavaScript as {}: hand its name and message over as text (round eight)
+      throw new Error(`getUserMedia(tab): ${describe(e)}`);
+    }
     track = stream.getVideoTracks()[0] ?? null;
     if (track !== null) track.contentHint = "detail";
     return { settings: track?.getSettings() ?? null, via: "getUserMedia(tab)" };
   },
   /** The other road: getDisplayMedia, answered by the main process's setDisplayMediaRequestHandler with the tab. */
   async captureDisplay(maxFps: number): Promise<Record<string, unknown>> {
-    const stream = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: maxFps }, audio: false });
+    let stream: MediaStream;
+    try {
+      stream = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: maxFps }, audio: false });
+    } catch (e) {
+      throw new Error(`getDisplayMedia: ${describe(e)}`);
+    }
     track = stream.getVideoTracks()[0] ?? null;
     if (track !== null) track.contentHint = "detail";
     return { settings: track?.getSettings() ?? null, via: "getDisplayMedia" };

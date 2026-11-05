@@ -3,6 +3,9 @@
 // over one that is still starting (Winter's pid-file lock could). Bun only (bun:ffi).
 //   macOS, Linux: flock(LOCK_EX | LOCK_NB) on <home>/run/core.lock
 //   Windows:      the lock file opened with no sharing (CreateFileW, dwShareMode 0) for the process's life
+// Only "another process holds it" means busy (EWOULDBLOCK; ERROR_SHARING_VIOLATION). Any other failure throws, so
+// the daemon exits non-zero and its login item retries, instead of exiting 0 as a second daemon would and leaving
+// the pair down until the next login (round eight: an antivirus scan holding the file at login, a full disk).
 import { openSync } from "node:fs";
 
 export interface HeldLock { kind: string; release(): void }
@@ -21,15 +24,25 @@ export async function takeLock(path: string): Promise<HeldLock | { busy: true; d
     const h = typeof raw === "bigint" ? raw : BigInt(raw);
     if (h === -1n) {
       const err = k32.symbols.GetLastError();
-      return { busy: true, detail: `CreateFileW: error ${err}${err === 32 ? " (sharing violation: another daemon holds it)" : ""}` };
+      if (err === 32) return { busy: true, detail: "CreateFileW: error 32 (sharing violation: another daemon holds it)" };
+      throw new Error(`the daemon lock ${path}: CreateFileW failed with error ${err}`);
     }
     return { kind: "CreateFileW share-none", release: () => { k32.symbols.CloseHandle(h); } };
   }
+  const errnoFn = process.platform === "darwin" ? "__error" : "__errno_location";
   const libc = dlopen(process.platform === "darwin" ? "/usr/lib/libSystem.B.dylib" : "libc.so.6", {
     flock: { args: [FFIType.i32, FFIType.i32], returns: FFIType.i32 },
+    [errnoFn]: { args: [], returns: FFIType.ptr },
   });
+  const { read } = await import("bun:ffi");
   const fd = openSync(path, "a");
   const LOCK_EX = 2, LOCK_NB = 4, LOCK_UN = 8;
-  if (libc.symbols.flock(fd, LOCK_EX | LOCK_NB) !== 0) return { busy: true, detail: "flock: held by another process" };
+  const EWOULDBLOCK = process.platform === "darwin" ? 35 : 11;
+  if (libc.symbols.flock(fd, LOCK_EX | LOCK_NB) !== 0) {
+    const where = (libc.symbols as Record<string, () => unknown>)[errnoFn]!() as Parameters<typeof read.i32>[0];
+    const errno = read.i32(where, 0);
+    if (errno === EWOULDBLOCK) return { busy: true, detail: "flock: held by another process" };
+    throw new Error(`the daemon lock ${path}: flock failed with errno ${errno}`);
+  }
   return { kind: "flock", release: () => { libc.symbols.flock(fd, LOCK_UN); } };
 }

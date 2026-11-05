@@ -4,8 +4,16 @@ Lane L's M0 (plan §4 L, spec §12.1 and §14.1 item 7). The findings are in
 [docs/research/2026-11-05-s7-browser.md](../../docs/research/2026-11-05-s7-browser.md).
 
 Everything that launches Electron or a browser runs in CI (`.github/workflows/spike-s7.yml`, on every push to
-`lane/l-m0`), never on a developer's Mac: even a headless browser can take the front there. The runners refuse to
-start unless `CI=true` (or `S7_ALLOW_LOCAL=1`, for a machine nobody is using).
+`lane/l-m0`; M1 retargets the trigger when this becomes the browser suite), never on a developer's Mac: even a
+headless browser can take the front there. The runners refuse to start unless `GITHUB_ACTIONS=true`, which only
+GitHub's runners set (`CI=true` is not enough: some agent harnesses set it on a Mac), or `S7_ALLOW_LOCAL=1`, for a
+spare machine nobody is using.
+
+Every runner checks what the report concludes and exits 1 when an assertion fails (round eight), after writing all
+it measured: no reload on a move, the 1×1 host drawing and `capturePage` working in it, a never-shown window drawing
+nothing, the host never taking focus, its click-through and (Windows) window styles, a resting tab waking, every tab
+in a shared host drawing, Chrome for Testing's pin, pipe, sandbox and steps, and the pair's restarts and Quits. So a
+green run means those held.
 
 The prototype lives in `prototype/`, with its own `package.json` and lockfile. It sits one level down on purpose: the
 repo's workspaces match `spikes/*`, and a member there would change the root lockfiles.
@@ -32,11 +40,12 @@ CI only (each is one job in `spike-s7.yml`):
 
 | Question | What runs | Command |
 | :- | :- | :- |
-| 1, 2, 6 on macOS, Windows, Linux X11 | the Electron probe: hidden ⇄ shown moves, throttling, pictures, cost, the streamed view | `bun scripts/probe.ts --checks=move,throttle,capture,cost,stream --out=out/results/electron.json` (Linux: under `xvfb-run`, `-- --ozone-platform=x11`) |
-| 3, Wayland | the same probe under a headless Weston, no X server | `scripts/ci/weston.sh bun scripts/probe.ts --checks=move,throttle,capture,cost,stream --out=out/results/electron-wayland.json -- --ozone-platform=wayland` |
-| 4, Electron where no display exists | the probe on Ozone's headless platform, x64 and arm64 | `bun scripts/probe.ts --checks=move,throttle,capture,cost -- --ozone-platform=headless` |
+| 1, 2, 6 on macOS, Windows, Linux X11 | the Electron probe: hidden ⇄ shown moves, throttling (with the throttling-on controls), pictures, cost, the streamed view, a resting tab waking in the host, one host for four tabs, the host's invariants (focus, click-through, Windows styles; X11 needs `xdotool`) | `bun scripts/probe.ts --checks=move,throttle,capture,cost,stream,wake,shared,hostcheck --out=out/results/electron.json` (Linux: under `xvfb-run`, `-- --ozone-platform=x11`) |
+| 2, at a device scale factor of 2 | pictures (and the 1x override), cost and the shared host at 2× | `bun scripts/probe.ts --checks=capture,cost,shared --out=out/results/electron-dsf2.json -- --force-device-scale-factor=2` |
+| 3, Wayland | the same probe under a headless Weston, no X server | `scripts/ci/weston.sh bun scripts/probe.ts --checks=move,throttle,capture,cost,stream,wake,shared,hostcheck --out=out/results/electron-wayland.json -- --ozone-platform=wayland` |
+| 4, Electron where no display exists | the probe on Ozone's headless platform, x64 and arm64 | `bun scripts/probe.ts --checks=move,throttle,capture,cost,wake,shared,hostcheck -- --ozone-platform=headless` |
 | 2, five hidden minutes | timer rates past Chrome's intensive throttling | `bun scripts/probe.ts --checks=long` (under `xvfb-run`) |
-| 4, Chrome for Testing | pinned install, starts over the DevTools pipe, background tabs, a resize, media in a browser of its own, screenshots, screencast, per-bot profiles, cost | `bun src/cft/run.ts --out=out/results/cft.json` (one step: `--only=start,tabs,media,screenshots,profiles,cost`) |
+| 4, Chrome for Testing | pinned install (fails closed without a pin), starts over the DevTools pipe, background tabs, a resize, media in a browser of its own, screenshots, screencast, per-bot profiles, cost | `bun src/cft/run.ts --only=install …` first (launches nothing), then on Linux `scripts/ci/apparmor.sh` for each browser, then `S7_EXPECT_SANDBOX=1 bun src/cft/run.ts --out=out/results/cft.json` (one step: `--only=start,tabs,media,screenshots,profiles,cost`; `--posix-reader=worker` reads the pipe on a worker thread) |
 | 4, a bare Linux server | the libraries a clean `ubuntu:24.04` lacks for the headless shell | `scripts/ci/cft-deps.sh <browser dir> <binary> <out>` |
 | 5, the pair | login item, start, app crash, crash loop → safe mode, daemon crash, tray Quit, a user's start, the daemon's Quit | `bun scripts/build.ts --daemon && bun src/pair/run.ts --daemon-bin=out/pair/clover-core-s7 --electron=$(node -p "require('electron')") --app-dir=out/pair/app --out=out/results/pair.json` |
 | All | Markdown tables from every job's JSON | `bun src/summarize.ts <results folder>` |
@@ -61,11 +70,16 @@ results/         every round's JSON from CI, with summary.md (bun src/summarize.
   round3/        the DevTools pipe without EOFs, covered host windows
   round4/        Linux Chrome for Testing only (the rest was cancelled for round five): media plays there
   round5/        a browser per Chrome for Testing step and a trace of the pipe; a cover that occludes on Windows;
-                 the 1x1 host at opacity 0 on macOS and Windows
+                 the 1x1 host at opacity 0 on Windows (its macOS jobs waited for a runner and were cancelled)
   round6/        Linux Chrome for Testing twice, the pipe read by createReadStream and by a worker thread
   round7/        the native pipe tried first, node's stdio pipes never on the way (the Linux stall's suspect)
+  final/         the first full run on the PR (on 5bae76e66): every job, macOS's opacity-0 1x1 host included
+  round8/        the review's experiments: throttling-on controls under a cover, Linux Chrome for Testing
+                 sandboxed from the start, a device scale factor of 2, persist: partitions, the wake from rest,
+                 one shared host, the host's invariants, and assertions in every runner
 ```
 
-The report quotes round two for the Electron tables (rounds three and five re-ran them and agreed), round three for
-Chrome for Testing on macOS and Windows, and later rounds where it says so. A push whose message contains
-`[cft only]` runs only the unit and Chrome for Testing jobs.
+The report quotes round two for the Electron tables (rounds three, five and eight re-ran them and agreed), and later
+rounds where it says so. A push whose head commit's message contains `[cft only]` runs only the unit and Chrome for
+Testing jobs; pushes that change only `results/` don't start the workflow. `results/round1/summary.md` is the summary
+job's own artifact from that run.
