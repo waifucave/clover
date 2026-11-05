@@ -57,22 +57,46 @@ function liveFrame(parent,url){
 /** Zero STUN/TURN listener traffic is the network-side closure signal.
  * @param {any} records */
 function zeroRtc(records){return (records?.stun?.udp?.length||0)===0&&(records?.turn?.tcp?.length||0)===0;}
-/** Inherited-context closure: completed probes with no traffic, or renderer kill with no traffic.
- * Chromium 156 kills the renderer when an allowlist-restricted inherited context asks for MdnsResponder.
+/** ICE candidate types. Host candidates are local interface enumeration, normally
+ * mDNS-obfuscated; srflx/relay candidates mean a STUN/TURN round trip left the process.
+ * @param {string[]} candidates */
+function candidateInfo(candidates){
+ /** @type {Record<string,number>} */ const types={};
+ for(const c of candidates){const m=/ typ (\w+)/.exec(c);const type=m?m[1]:'unknown';types[type]=(types[type]||0)+1;}
+ const network=(types.srflx||0)+(types.prflx||0)+(types.relay||0);
+ return {total:candidates.length,types,network};
+}
+/** @param {any} result */
+function resultCandidates(result){
+ return (result?.outcomes||[]).filter((/** @type {any} */ o)=>['stun','turn-tcp'].includes(o.name)).flatMap((/** @type {any} */ o)=>o.result?.candidates||[]);
+}
+/** Inherited-context closure: no listener traffic and no network-gathered candidates.
+ * A renderer kill with zero traffic is Chromium 156's allowlist outcome, not an escape.
+ * A deadline without a kill is inconclusive, never a pass.
  * @param {any} c */
 function contextClosed(c){
  if(!zeroRtc(c.records))return false;
  if(c.result?.rendererKilled||c.rendererGone)return true;
- return !!(c.result?.outcomes&&!c.result.error&&(c.result.outcomes||[]).filter((/** @type {any} */ o)=>['stun','turn-tcp'].includes(o.name)).flatMap((/** @type {any} */ o)=>o.result?.candidates||[]).length===0);
+ if(!c.result?.outcomes||c.result.error)return false;
+ return candidateInfo(resultCandidates(c.result)).network===0;
 }
 /** @param {any} electron */
 export async function networkCheck(electron){
- const {BrowserWindow,session}=electron;
+ const {app,BrowserWindow,session}=electron;
+ /** @type {any[]|null} */ let activeGone=null;
+ const onRendererGone=(/** @type {any} */ _event,/** @type {any} */ contents,/** @type {any} */ details)=>{
+  const entry={time:Date.now(),reason:details.reason,exitCode:details.exitCode,webContentsId:contents?.id};
+  activeGone?.push(entry);
+  console.log(`Clover S9 render-process-gone ${details.reason} exit=${details.exitCode} wc=${contents?.id}`);
+ };
+ // Subframe renderer kills do not reach the host webContents event; the app event sees them.
+ app.on('render-process-gone',onRendererGone);
  /** @type {any[]} */ const variants=[];
  for(const mode of ['control','csp','filter','combined','allowlist','ip-policy','non-plugin']){
   console.log(`Clover S9 revised network: ${mode}`);
   /** @type {any} */ let f=null;
   /** @type {any[]} */ const contexts=[];
+  /** @type {any[]} */ const rendererGone=[];
   /** @type {any} */ let win=null;
   /** @type {any} */ let ses=null;
   /** @type {string|null} */ let logPath=null;
@@ -88,7 +112,7 @@ export async function networkCheck(electron){
    /** @type {any[]} */ const popups=[];
    /** @type {any[]} */ const navigations=[];
    /** @type {any[]} */ const downloads=[];
-   /** @type {any[]} */ const rendererGone=[];
+   activeGone=rendererGone;
    ses.on('preconnect',(/** @type {any} */ _event,/** @type {any} */ url,/** @type {any} */ allowCredentials)=>preconnect.push({url,allowCredentials}));
    ses.on('will-download',(/** @type {any} */ event,/** @type {any} */ item)=>{downloads.push({url:item.getURL()});event.preventDefault();});
    ses.setPermissionRequestHandler((/** @type {any} */ _wc,/** @type {any} */ _p,/** @type {any} */ cb)=>cb(false));ses.setPermissionCheckHandler(()=>false);
@@ -132,7 +156,6 @@ export async function networkCheck(electron){
    win.webContents.setWindowOpenHandler((/** @type {any} */ d)=>{popups.push(d.url);return {action:'deny'}});
    win.webContents.on('will-frame-navigate',(/** @type {any} */ e)=>{if(!e.url.startsWith('clover-plugin:')){navigations.push({url:e.url,blocked:true});e.preventDefault();}});
    win.webContents.on('will-navigate',(/** @type {any} */ e)=>{navigations.push({url:e.url,blocked:true});e.preventDefault();});
-   win.webContents.on('render-process-gone',(/** @type {any} */ _e,/** @type {any} */ details)=>{rendererGone.push({time:Date.now(),reason:details.reason,exitCode:details.exitCode});console.log(`Clover S9 ${mode}: render-process-gone ${details.reason} exit=${details.exitCode}`);});
    logPath=resolve('results',`netlog-v2-${mode}.json`);await ses.netLog.startLogging(logPath);logging=true;
    // Non-plugin control is an HTTP document from the same loopback fixture session.
    if(mode==='non-plugin')await win.loadURL(f.endpoints['own-fetch'].url);
@@ -144,11 +167,15 @@ export async function networkCheck(electron){
    /** @type {any[]} */ const trustAttempts=[];
    /** @type {any} */ let topNavigation=null;
    /** @type {any} */ let second=null;
+    /** @type {any} */ let mountReuse=null;
    try{
     if(frame)main=await Promise.race([invoke(frame,f.endpoints,mode!=='non-plugin'),pause(16000).then(()=>({error:'document probe deadline'}))]);
     if(mode!=='non-plugin'){
      const p2=liveFrame(win.webContents.mainFrame,p2url);
      if(p2)second=await p2.executeJavaScript(`Promise.all(${JSON.stringify([f.endpoints['own-fetch'].url,f.endpoints['other-plugin-fetch'].url])}.map(url=>fetch(url).then(r=>({url,status:r.status})).catch(e=>({url,error:String(e)}))))`);
+     // Single-use proof: the served mounts are spent; a never-issued mount is refused; a new one loads.
+     const status=(/** @type {string} */ url)=>ses.fetch(url).then((/** @type {any} */ r)=>r.status).catch((/** @type {any} */ e)=>String(e));
+     mountReuse={spentP1:await status(p1url),spentP2:await status(p2url),missing:await status('clover-plugin://p1/?mount=never-issued'),fresh:await status(issue('p1',['clover-core://shell']))};
      // Recreate the parent per inherited-context probe. A renderer crash is a result,
      // not permission to skip the other contexts or the non-plugin control.
      const fresh=async()=>{
@@ -181,14 +208,16 @@ export async function networkCheck(electron){
      if(frame){
       await frame.executeJavaScript("window.trustViolations=[];document.addEventListener('securitypolicyviolation',e=>trustViolations.push({directive:e.effectiveDirective,blocked:e.blockedURI}))");
       for(const target of ['clover-plugin://p2/',p2url,'clover-core://shell/',`clover-core://shell/?mount=${rootToken}`,'clover-sealed://cards/']){
-       const report=await frame.executeJavaScript(`new Promise(resolve=>{const f=document.createElement('iframe');f.name='trust-'+${JSON.stringify(target)};f.src=${JSON.stringify(target)};f.onload=()=>resolve({target:${JSON.stringify(target)},loadEvent:true});f.onerror=()=>resolve({target:${JSON.stringify(target)},error:true});document.body.append(f);setTimeout(()=>resolve({target:${JSON.stringify(target)},settled:true}),150)})`);
+       const report=await frame.executeJavaScript(`new Promise(resolve=>{window.trustViolations=[];const f=document.createElement('iframe');f.name='trust-'+${JSON.stringify(target)};f.src=${JSON.stringify(target)};f.onload=()=>resolve({target:${JSON.stringify(target)},loadEvent:true});f.onerror=()=>resolve({target:${JSON.stringify(target)},error:true});document.body.append(f);setTimeout(()=>resolve({target:${JSON.stringify(target)},settled:true}),150)})`);
        const child=frame.frames.find((/** @type {any} */ x)=>{try{return x.name==='trust-'+target;}catch{return false;}});
        let actualUrl=null;try{actualUrl=child?.url??null;}catch{actualUrl='disposed';}
-       // iframe load fires for error documents too; Electron's frame URL decides blocked vs mounted.
-       const mounted=!!actualUrl&&actualUrl!=='about:blank'&&(actualUrl===target||actualUrl.startsWith(target.split('?')[0]));
-       trustAttempts.push({...report,actualUrl,loaded:mounted,blocked:!mounted});
+       const violations=await frame.executeJavaScript('window.trustViolations');
+       // An iframe load event fires for a CSP error page too, and the frame can still report
+       // the requested URL. A matching frame-src violation is the decisive block record.
+       const blocked=violations.some((/** @type {any} */ v)=>v.directive==='frame-src'&&target.startsWith(v.blocked+':'))||actualUrl==='about:blank'||!child;
+       trustAttempts.push({...report,actualUrl,violations,loaded:!blocked,blocked});
       }
-      trustAttempts.push({violations:await frame.executeJavaScript('window.trustViolations'),children:frame.frames.map((/** @type {any} */ child)=>{try{return {name:child.name,url:child.url};}catch{return {name:null,url:'disposed'};}})});
+      trustAttempts.push({children:frame.frames.map((/** @type {any} */ child)=>{try{return {name:child.name,url:child.url};}catch{return {name:null,url:'disposed'};}})});
       topNavigation=await frame.executeJavaScript(`(()=>{try{top.location=${JSON.stringify(f.endpoints['top-location'].url)};return {attempted:true}}catch(e){return {attempted:true,error:String(e)}}})()`);
       await frame.executeJavaScript(`(()=>{const a=document.createElement('a');a.href=${JSON.stringify(f.endpoints.download.url)};a.download='fixture.txt';document.body.append(a);a.click()})()`).catch(()=>{});
      }
@@ -199,13 +228,17 @@ export async function networkCheck(electron){
    }
    /** @type {any} */ let log={events:[],speculative:[],errors:[]};
    try{if(logPath)log=extractNetlog(JSON.parse(readFileSync(logPath,'utf8')));}catch(e){log={events:[],speculative:[],errors:[],readError:String(e)};}
-   const inherited=contexts.map(c=>({kind:c.kind,result:c.result,rendererGone:!!c.rendererGone,records:c.fixture.records,dnsEvents:log.speculative.filter((/** @type {any} */ e)=>JSON.stringify(e.params).includes(c.fixture.records['dns-prefetch'].host))}));
-   const entry={mode,header:header?'Connection-Allowlist on documents and worker scripts':null,ipPolicy:win.webContents.getWebRTCIPHandlingPolicy(),main,second,records:f.records,requests,preconnect,popups,navigations,downloads,downloadAttempt:mode!=='non-plugin',topNavigation,mountAttempts,trustAttempts,rendererGone,contexts:inherited,netlog:log};
+   const inherited=contexts.map(c=>{
+    const item={kind:c.kind,result:c.result,rendererGone:!!c.rendererGone,records:c.fixture.records,dnsEvents:log.speculative.filter((/** @type {any} */ e)=>JSON.stringify(e.params).includes(c.fixture.records['dns-prefetch'].host))};
+    const info=candidateInfo(resultCandidates(c.result));
+    return {...item,candidates:info,closed:contextClosed(item)};
+   });
+   const entry={mode,header:header?'Connection-Allowlist on documents and worker scripts':null,ipPolicy:win.webContents.getWebRTCIPHandlingPolicy(),main,mainCandidates:candidateInfo(resultCandidates(main)),second,mountReuse,records:f.records,requests,preconnect,popups,navigations,downloads,downloadAttempt:mode!=='non-plugin',topNavigation,mountAttempts,trustAttempts,rendererGone,contexts:inherited,netlog:log};
    variants.push(entry);
    writeFileSync(resolve('results',`network-variant-${mode}.json`),JSON.stringify(entry,null,2));
   }catch(e){
    console.error(`Clover S9 ${mode} failed:`,e);
-   const entry={mode,error:String(e),stack:e instanceof Error?e.stack:undefined,rendererGone:[],contexts:contexts.map(c=>({kind:c.kind,result:c.result,rendererGone:!!c.rendererGone,records:c.fixture?.records})),records:f?.records||null};
+   const entry={mode,error:String(e),stack:e instanceof Error?e.stack:undefined,rendererGone,contexts:contexts.map(c=>({kind:c.kind,result:c.result,rendererGone:!!c.rendererGone,records:c.fixture?.records})),records:f?.records||null};
    variants.push(entry);
    writeFileSync(resolve('results',`network-variant-${mode}.json`),JSON.stringify(entry,null,2));
    if(logging&&ses){try{await ses.netLog.stopLogging();}catch{}}
@@ -216,13 +249,14 @@ export async function networkCheck(electron){
   }
  }
  const a=variants.find(v=>v.mode==='allowlist'),control=variants.find(v=>v.mode==='combined'),plain=variants.find(v=>v.mode==='control'),non=variants.find(v=>v.mode==='non-plugin'),ip=variants.find(v=>v.mode==='ip-policy');
- const candidates=(/** @type {any} */ v)=>(v?.outcomes||[]).filter((/** @type {any} */ o)=>['stun','turn-tcp'].includes(o.name)).flatMap((/** @type {any} */ o)=>o.result?.candidates||[]);
+ const mainCandidates=(/** @type {any} */ v)=>candidateInfo(resultCandidates(v));
  const tested=(/** @type {any} */ v)=>['stun','turn-tcp'].every(name=>(v?.outcomes||[]).some((/** @type {any} */ o)=>o.name===name&&o.result?.supported===true&&Array.isArray(o.result.candidates)));
  const dns=(/** @type {any} */ v,/** @type {string} */ host)=>v?.netlog?.speculative?.filter((/** @type {any} */ e)=>JSON.stringify(e.params).includes(host))||[];
- const directClosed=!!a&&!a.error&&tested(a.main)&&zeroRtc(a.records)&&candidates(a.main).length===0;
- const inheritedClosed=!!a&&!a.error&&Array.isArray(a.contexts)&&a.contexts.length>0&&a.contexts.every(contextClosed);
+ const directClosed=!!a&&!a.error&&tested(a.main)&&zeroRtc(a.records)&&mainCandidates(a.main).network===0&&dns(a,a.records['dns-prefetch'].host).length===0;
+ const inheritedClosed=!!a&&!a.error&&Array.isArray(a.contexts)&&a.contexts.length>0&&a.contexts.every((/** @type {any} */ c)=>c.closed);
  const assertions={undeclaredStunPositive:!!control&&control.records?.stun?.udp?.some((/** @type {any} */ p)=>p.stun),undeclaredTurnPositive:!!control&&(control.records?.turn?.tcp?.length||0)>0,allowlistDirectClosed:directClosed,allowlistInheritedClosed:inheritedClosed,allowlistInheritedCrashClosure:!!a&&Array.isArray(a.contexts)&&a.contexts.some((/** @type {any} */ c)=>c.rendererGone||c.result?.rendererKilled),ipPolicyRan:!!ip&&!ip.error,nonPluginStillConnects:!!non&&(non.records?.stun?.udp?.length||0)>0&&(non.records?.turn?.tcp?.length||0)>0,nonPluginDns:!!non&&dns(non,non.records['dns-prefetch'].host).length>0,dnsPositive:!!plain&&dns(plain,plain.records['dns-prefetch'].host).length>0,dnsRefused:!!a&&dns(a,a.records['dns-prefetch'].host).length===0,preconnectEventPositive:!!plain&&plain.preconnect?.some((/** @type {any} */ e)=>e.url.includes(plain.records.preconnect.host))};
  // Crash-closure of inherited contexts is an explicit Chromium 156 outcome, not a fail.
  const required=['undeclaredStunPositive','undeclaredTurnPositive','allowlistDirectClosed','allowlistInheritedClosed','ipPolicyRan','nonPluginStillConnects','nonPluginDns','dnsPositive','dnsRefused','preconnectEventPositive'];
+ app.removeListener('render-process-gone',onRendererGone);
  return {verdict:required.every(k=>assertions[/** @type {keyof typeof assertions} */(k)])?'works with limits':'does not',assertions,variants};
 }
