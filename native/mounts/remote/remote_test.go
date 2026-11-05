@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -36,13 +37,13 @@ type service struct {
 	root string
 }
 
-func startService(t *testing.T, root string, port int) *service {
+func startService(t *testing.T, root string, port int, extra ...string) *service {
 	t.Helper()
 	serve := os.Getenv("CLOVER_S6_SERVE")
 	if serve == "" {
 		t.Skip("CLOVER_S6_SERVE is not set (path to spikes/s6-mounts/server/serve.ts)")
 	}
-	cmd := exec.Command("bun", serve, "--root", root, "--port", strconv.Itoa(port), "--test-ops")
+	cmd := exec.Command("bun", append([]string{serve, "--root", root, "--port", strconv.Itoa(port), "--test-ops"}, extra...)...)
 	cmd.Stderr = os.Stderr
 	if err := cmd.Start(); err != nil {
 		t.Skipf("cannot start bun: %v", err)
@@ -560,6 +561,124 @@ func TestFenceHoldsThroughLinks(t *testing.T) {
 	}
 }
 
+// The fence compares names the way the disk under the export does (review round 2): on a Mac
+// STAT and RENAME of `.CLOVER` reached `.clover`. Every spelling the disk could take for a fenced
+// name is refused with EACCES before the disk is touched: other case, other Unicode
+// normalisation, and on Windows a trailing dot or space and the 8.3 short name. On a
+// case-sensitive disk `.CLOVER` is a folder of its own, and it is fenced too.
+func TestFenceIgnoresCase(t *testing.T) {
+	root := t.TempDir()
+	os.MkdirAll(filepath.Join(root, ".clover", "sub"), 0o700)
+	secret := filepath.Join(root, ".clover", "settings.json")
+	os.WriteFile(secret, []byte(`{"secret":1}`), 0o600)
+	os.WriteFile(filepath.Join(root, "plain.txt"), []byte("plain"), 0o644)
+	cafe := ".caf\u00e9" // a fence name with an accent, NFC
+	os.MkdirAll(filepath.Join(root, cafe), 0o700)
+	os.WriteFile(filepath.Join(root, cafe, "k"), []byte("k"), 0o600)
+	caseSensitive := false
+	if _, err := os.Stat(filepath.Join(root, ".CLOVER")); err != nil {
+		caseSensitive = true
+		os.MkdirAll(filepath.Join(root, ".CLOVER"), 0o700)
+		os.WriteFile(filepath.Join(root, ".CLOVER", "settings.json"), []byte("x"), 0o600)
+	}
+	svc := startService(t, root, freePort(t), "--fence", ".clover,.clover-dev,"+cafe)
+	defer svc.kill()
+	pol, _ := PolicyByName("nocache")
+	f := newFS(t, "127.0.0.1:"+strconv.Itoa(svc.port), pol)
+
+	names := []string{".CLOVER", ".Clover", ".cLoVeR", ".CLOVER-DEV", ".cafe\u0301", ".CAF\u00c9", ".CAFE\u0301"}
+	if runtime.GOOS == "windows" {
+		names = append(names, ".clover.", ".clover ", ".CLOVER. .")
+	}
+	for _, n := range names {
+		want := func(op string, e wire.Errno) {
+			t.Helper()
+			if e != wire.EACCES {
+				t.Errorf("%s %q: %v, want EACCES", op, n, e)
+			}
+		}
+		_, e := f.Stat(n)
+		want("STAT", e)
+		_, e = f.Stat(n + "/settings.json")
+		want("STAT inside", e)
+		_, e = f.Read(n+"/settings.json", nil, 0, 100)
+		want("READ", e)
+		_, e = f.List(n)
+		want("LIST", e)
+		h, _, e := f.Open(n+"/settings.json", wire.OWronly|wire.OTrunc, 0)
+		if e == wire.OK {
+			f.Release(h)
+		}
+		want("OPEN for writing", e)
+		h, _, e = f.Open(n+"/new.json", wire.OWronly|wire.OCreat, 0o644)
+		if e == wire.OK {
+			f.Release(h)
+		}
+		want("OPEN to create", e)
+		_, e = f.Setattr(n+"/settings.json", nil, 1, 0o666, 0, 0, 0)
+		want("SETATTR", e)
+		want("UNLINK", f.Unlink(n+"/settings.json"))
+		want("RMDIR", f.Rmdir(n+"/sub"))
+		_, e = f.Mkdir(n+"/new", 0o755)
+		want("MKDIR", e)
+		_, e = f.Symlink(n+"/ln", "x")
+		want("SYMLINK", e)
+		want("RENAME away", f.Rename(n, "moved", 0))
+		want("RENAME in", f.Rename("plain.txt", n+"/plain.txt", 0))
+		_, e = f.Link(n+"/settings.json", "stolen")
+		want("LINK out", e)
+		_, e = f.Readlink(n)
+		want("READLINK", e)
+	}
+	if runtime.GOOS == "windows" {
+		// where short names are on, .clover answers to one; realpath lengthens the folders above
+		short := ""
+		for _, s := range []string{"CLOVER~1", "CLOVER~2", "CLOVER~3"} {
+			a, err1 := os.Stat(filepath.Join(root, s))
+			b, err2 := os.Stat(filepath.Join(root, ".clover"))
+			if err1 == nil && err2 == nil && os.SameFile(a, b) {
+				short = s
+				break
+			}
+		}
+		if short == "" {
+			t.Log("no 8.3 name for .clover on this disk")
+		} else {
+			t.Logf(".clover answers to %s", short)
+			if _, e := f.Stat(short); e != wire.EACCES {
+				t.Errorf("STAT %s: %v, want EACCES", short, e)
+			}
+			if e := f.Rename(short, "moved", 0); e != wire.EACCES {
+				t.Errorf("RENAME %s: %v, want EACCES", short, e)
+			}
+			if _, e := f.Stat(short + "/settings.json"); e != wire.EACCES {
+				t.Errorf("STAT %s/settings.json: %v, want EACCES", short, e)
+			}
+		}
+	}
+	ents, e := f.List("")
+	if e != wire.OK {
+		t.Fatal(e)
+	}
+	for _, d := range ents {
+		if d.Name != "plain.txt" {
+			t.Errorf("the export's listing shows %q", d.Name)
+		}
+	}
+	if b, _ := os.ReadFile(secret); string(b) != `{"secret":1}` {
+		t.Fatalf("the fenced file changed: %q", b)
+	}
+	for _, p := range []string{"moved", "stolen", filepath.Join(".clover", "new.json"), filepath.Join(".clover", "new"), filepath.Join(".clover", "plain.txt")} {
+		if _, err := os.Lstat(filepath.Join(root, p)); err == nil {
+			t.Errorf("%s appeared", p)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(root, ".clover", "sub")); err != nil {
+		t.Error("the fenced folder lost sub")
+	}
+	t.Logf("case-sensitive disk: %v", caseSensitive)
+}
+
 // Paths through links that stay inside the export work. WinFsp hands the file service whole
 // paths through Bun's node_modules links; a first version of the S2 fix refused any link before
 // the last component (ELOOP) and broke tsc on the Windows tree. The link itself still stats as a
@@ -619,10 +738,13 @@ func TestOfflineAtStartSubscribes(t *testing.T) {
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
+	if !f.C.Welcome().Watching {
+		t.Fatal("the link came up without a subscription in its handshake")
+	}
 	if a, _ := f.Stat("f.txt"); a.Size != 3 {
 		t.Fatalf("size %d", a.Size)
 	}
-	time.Sleep(300 * time.Millisecond) // let the watch settle
+	time.Sleep(300 * time.Millisecond) // let the watcher settle
 	os.WriteFile(filepath.Join(root, "f.txt"), []byte("three"), 0o644)
 	deadline = time.Now().Add(5 * time.Second)
 	for {

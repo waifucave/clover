@@ -50,8 +50,26 @@ function checkRel(rel: string): string[] {
   for (const p of parts) if (p === "" || p === "." || p === "..") fail(Err.EINVAL, `bad component in ${rel}`);
   return parts;
 }
+/**
+ * Fence names compare the way the disk under the export compares names, not as typed (review
+ * round 2: on a Mac STAT and RENAME of `.CLOVER` reached `.clover`). APFS and NTFS are
+ * case-insensitive by default and APFS ignores Unicode normalisation, so each name is folded:
+ * NFC, then case (upper then lower, so Kelvin K and long s fold too). On Windows the trailing
+ * dots and spaces Win32 drops from a name are dropped as well (`.clover.` opens `.clover`).
+ * The fold applies on every platform: on a case-sensitive disk it also fences `.CLOVER`, a
+ * different folder there, which costs nothing, and ext4's casefold folders and FAT or NTFS
+ * volumes mounted on Linux are covered. Windows' 8.3 aliases are handled in resolveSafe.
+ */
+const foldName = (n: string) => {
+  const s = n.normalize("NFC").toUpperCase().toLowerCase().normalize("NFC");
+  return IS_WIN ? s.replace(/[. ]+$/, "") : s;
+};
+const FENCE_FOLDED = FENCE.map((f) => f.split("/").map(foldName).join("/"));
+const FENCE_DEPTH = Math.max(1, ...FENCE_FOLDED.map((f) => f.split("/").length));
 function fenced(rel: string): boolean {
-  return FENCE.some((f) => (IS_WIN ? rel.toLowerCase() === f.toLowerCase() || rel.toLowerCase().startsWith(f.toLowerCase() + "/") : rel === f || rel.startsWith(f + "/")));
+  // only the first FENCE_DEPTH names can decide it; listings call this once per entry
+  const head = rel.split("/", FENCE_DEPTH).map(foldName).join("/");
+  return FENCE_FOLDED.some((f) => head === f || head.startsWith(f + "/"));
 }
 const within = (root: string, p: string) => { const r = path.relative(root, p); return r === "" || (!r.startsWith("..") && !path.isAbsolute(r)); };
 /** The export-relative form of a real path, or null when it lies outside the export. */
@@ -85,8 +103,10 @@ async function resolveSafe(rel: string, follow = true): Promise<string> {
   const parts = rel.split("/");
   const parent = await fs.promises.realpath(path.join(REAL_ROOT, ...parts.slice(0, -1))).catch((e) => fail(errFromCode(e.code)));
   landsOk(parent, rel);
-  const lexical = path.join(parent, parts[parts.length - 1]!);
+  const last = parts[parts.length - 1]!;
+  const lexical = path.join(parent, last);
   landsOk(lexical, rel);
+  if (IS_WIN && last.includes("~")) await notAnAlias(parent, last, rel);
   if (!follow) return lexical;
   let real: string;
   try { real = await fs.promises.realpath(lexical); }
@@ -99,6 +119,18 @@ async function resolveSafe(rel: string, follow = true): Promise<string> {
   }
   landsOk(real, rel);
   return real;
+}
+/**
+ * Windows answers to a file's 8.3 short name too (`CLOVER~1` for `.clover` where short names are
+ * on). realpath turns the folders above into long names; the last name, taken as it is for stat,
+ * unlink and rename, is checked here: a name the disk answers to but doesn't list is refused.
+ */
+async function notAnAlias(parent: string, last: string, rel: string) {
+  const st = await fs.promises.lstat(path.join(parent, last)).catch(() => null);
+  if (st === null) return; // nothing there: a create, which makes the long name
+  const names = await fs.promises.readdir(parent).catch((e) => fail(errFromCode(e.code)));
+  const want = last.toLowerCase();
+  if (!names.some((n) => n.toLowerCase() === want)) fail(Err.EACCES, `a short (8.3) name: ${rel}`);
 }
 function landsOk(real: string, rel: string) {
   const r = relOfReal(real);
@@ -274,9 +306,13 @@ function onFrame(c: Conn, body: Uint8Array) {
     case Kind.HELLO: {
       const version = r.u32();
       const client = r.str();
-      if (VERBOSE) console.error(`[serve] hello v${version} from ${client}`);
+      const flags = r.remaining() > 0 ? r.u8() : 0;
+      if (VERBOSE) console.error(`[serve] hello v${version} from ${client} (flags ${flags})`);
+      // The watch flag subscribes the connection before WELCOME goes out: every change after it
+      // is reported, with no gap before a separate WATCH (review round 2).
+      if (flags & 1) { c.watching = true; startWatch(); }
       send(c, new Writer().u8(Kind.WELCOME).u32(0).u32(VERSION).str(INSTANCE).str(process.platform)
-        .u8(process.platform === "linux" ? 1 : 0).frame());
+        .u8(process.platform === "linux" ? 1 : 0).u8(c.watching && watcher !== null ? 1 : 0).frame());
       c.welcomed = true;
       return;
     }

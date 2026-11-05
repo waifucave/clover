@@ -139,13 +139,9 @@ func (f *FS) mark() uint64 {
 func NewFS(c *Client, pol Policy) *FS {
 	f := &FS{C: c, Pol: pol, attrs: map[string]attrEnt{}, dirs: map[string]dirEnt{}, prefetched: map[string]bool{}, inflight: map[string]chan struct{}{}}
 	c.OnEvent = f.onEvent
-	// A computer that was offline when the mount started subscribes when its link first comes
-	// up; before, only reconnects did, and such a mount cached without events for good (S3).
-	c.OnConnect = func(reconnect bool) {
-		if !reconnect && pol.Watch {
-			go f.C.Do(wire.OpWatch, func(w *wire.Writer) { w.U8(1) })
-		}
-	}
+	// Every link, the first included, subscribes in its HELLO: a computer that was offline when
+	// the mount started is covered from its first answer (S3), and so is every reconnect.
+	c.Watch = pol.Watch
 	prev := c.OnReconnect
 	c.OnReconnect = func(w Welcome, changed bool) {
 		f.mu.Lock()
@@ -154,9 +150,6 @@ func NewFS(c *Client, pol Policy) *FS {
 		f.prefetched = map[string]bool{}
 		f.mu.Unlock()
 		c.QueueEvent(wire.EventResync, "") // the kernel's caches, off the dialler and the reader
-		if pol.Watch {
-			go f.C.Do(wire.OpWatch, func(w *wire.Writer) { w.U8(1) })
-		}
 		if prev != nil {
 			prev(w, changed)
 		}
@@ -164,10 +157,10 @@ func NewFS(c *Client, pol Policy) *FS {
 	return f
 }
 
-// Start subscribes at once when the link is already up, so the first lookups are covered by
-// change events. (OnConnect subscribes too, without waiting; a second WATCH is harmless.)
+// Start subscribes a link that was already up before NewFS set Watch (a client started first).
+// Links dialled after NewFS subscribe in their HELLO.
 func (f *FS) Start() {
-	if f.Pol.Watch && f.C.Online() {
+	if f.Pol.Watch && f.C.Online() && !f.C.Welcome().Watching {
 		f.C.Do(wire.OpWatch, func(w *wire.Writer) { w.U8(1) })
 	}
 }

@@ -61,6 +61,7 @@ type Welcome struct {
 	Instance      string
 	OS            string
 	CaseSensitive bool
+	Watching      bool // the service subscribed this link to change events before WELCOME
 }
 
 type call struct {
@@ -115,12 +116,16 @@ type Client struct {
 	rxCtl    atomic.Int64 // of those, the bytes of PING and PONG frames
 	online   atomic.Bool
 
+	// Watch asks, in HELLO, for change events from the first byte on every link (set before
+	// Start). The service subscribes before WELCOME, so nothing changes unreported between going
+	// online and a separate WATCH (review round 2).
+	Watch bool
+
 	// Hooks, set before Start. They run on the client's own goroutines, never on the reader:
 	// OnEvent typically tells the kernel to drop a cache, and the kernel can wait for a reply
 	// that only the reader can deliver (Linux's inval_inode waits on the page locks of a write
 	// in flight on the same file), which would stall the link until the watchdog called it dead.
 	OnEvent     func(typ uint8, path string)
-	OnConnect   func(reconnect bool)                  // after every successful dial, the first included
 	OnReconnect func(w Welcome, instanceChanged bool) // after every reconnect (caches are stale)
 	OnOffline   func(reason string)
 
@@ -229,7 +234,11 @@ func (c *Client) dial() error {
 	// arrive, and the watchdog must not call the link dead while it does (review S1).
 	conn = &progressConn{Conn: conn, last: &c.lastRecv, n: &c.rxBytes}
 	_ = conn.SetDeadline(time.Now().Add(c.cfg.DialTimeout))
-	if _, err := conn.Write(wire.NewWriter(wire.KindHello, 0).U32(wire.Version).Str("clover-mount").Frame()); err != nil {
+	var flags uint8
+	if c.Watch {
+		flags |= 1
+	}
+	if _, err := conn.Write(wire.NewWriter(wire.KindHello, 0).U32(wire.Version).Str("clover-mount").U8(flags).Frame()); err != nil {
 		conn.Close()
 		return err
 	}
@@ -251,6 +260,9 @@ func (c *Client) dial() error {
 		return errVersion
 	}
 	w := Welcome{Instance: r.Str(), OS: r.Str(), CaseSensitive: r.U8() != 0}
+	if r.Err() == nil && r.Remaining() > 0 {
+		w.Watching = r.U8() != 0
+	}
 	if r.Err() != nil {
 		conn.Close()
 		return r.Err()
@@ -277,8 +289,10 @@ func (c *Client) dial() error {
 	go c.writer(l)
 	go c.watchdog(l)
 	c.online.Store(true)
-	if c.OnConnect != nil {
-		c.OnConnect(reconnect)
+	if c.Watch && !w.Watching {
+		// a service that can't watch (--no-watch, or its watcher is being re-armed): caches on
+		// this link see no events until it can, and a re-armed watcher sends RESYNC
+		c.cfg.Logf("[%s] the service is not sending change events", c.cfg.Name)
 	}
 	if reconnect {
 		c.Reconnects.Add(1)

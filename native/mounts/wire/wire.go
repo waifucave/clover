@@ -202,6 +202,9 @@ func (r *Reader) need(n int) bool {
 	return true
 }
 func (r *Reader) Err() error { return r.err }
+
+// Remaining is how many bytes are left to read.
+func (r *Reader) Remaining() int { return len(r.b) - r.off }
 func (r *Reader) U8() uint8 {
 	if !r.need(1) {
 		return 0

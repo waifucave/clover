@@ -21,8 +21,8 @@ u32 id                request id (REQ/RES), sequence (PING/PONG), else 0
 
 | kind | name | direction | payload |
 | :- | :- | :- | :- |
-| 1 | HELLO | helper → service | `u32 version`, `str client` |
-| 2 | WELCOME | service → helper | `u32 version`, `str instance`, `str os`, `u8 caseSensitive` |
+| 1 | HELLO | helper → service | `u32 version`, `str client`, `u8 flags` (1 = watch) |
+| 2 | WELCOME | service → helper | `u32 version`, `str instance`, `str os`, `u8 caseSensitive`, `u8 watching` |
 | 3 | REQ | helper → service | `u8 op`, then the op's arguments |
 | 4 | RES | service → helper | `u16 err`, then the op's results when `err` is 0 |
 | 5 | EVENT | service → helper | `u8 type`, `str path` |
@@ -31,6 +31,13 @@ u32 id                request id (REQ/RES), sequence (PING/PONG), else 0
 
 `instance` changes every time the service starts, so the helper knows its open
 handles and caches died with the old one. Responses may arrive in any order.
+
+**Watching from the first byte.** A helper that caches sets the watch flag in
+HELLO, and the service subscribes the connection before it sends WELCOME, so
+every change after WELCOME is reported and there is no window between going
+online and a separate WATCH in which a lookup could be cached without events
+(review round 2). `watching` says the service did. WATCH still turns events on
+or off later.
 
 **Liveness.** Any inbound frame counts as proof the link is alive. The helper
 sends a PING every `pingEvery` (250 ms); if nothing at all has arrived for

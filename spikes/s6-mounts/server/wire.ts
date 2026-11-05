@@ -117,6 +117,7 @@ export class Reader {
   private need(n: number) {
     if (this.off + n > this.buf.length) throw new RangeError("short frame");
   }
+  remaining() { return this.buf.length - this.off; }
   u8() { this.need(1); return this.view.getUint8(this.off++); }
   u16() { this.need(2); const v = this.view.getUint16(this.off, true); this.off += 2; return v; }
   u32() { this.need(4); const v = this.view.getUint32(this.off, true); this.off += 4; return v; }
