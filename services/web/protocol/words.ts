@@ -3,7 +3,7 @@
 // Source: https://www.eff.org/files/2016/09/08/eff_short_wordlist_1.txt ("EFF Short Wordlist", from the EFF's
 // dice-generated passphrases project, https://www.eff.org/dice). License: Creative Commons Attribution 3.0 Unported
 // (CC BY 3.0), Electronic Frontier Foundation. The dice-roll index column is dropped; the 1,296 words are kept in the
-// source's order, the same list and order as Winter's phone pairing (apple/WinterProtocol, EFFShortWordlist.swift).
+// source's order, the same list and order as the iOS app's pairing words (EFFShortWordlist.swift).
 //
 // The words are read off as base-1296 digits: the list must stay exactly these 1,296 words in exactly this order.
 

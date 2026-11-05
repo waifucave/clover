@@ -185,7 +185,7 @@ export async function pairingResult(
   return { secret, words: wordsFrom(mac) };
 }
 
-/** Four words from the first 5 bytes, as base-1296 digits, most significant first (as Winter's phone pairing). */
+/** Four words from the first 5 bytes, as base-1296 digits, most significant first (as the iOS app's pairing words). */
 export function wordsFrom(mac: Uint8Array): string[] {
   let value = 0n;
   for (const byte of mac.subarray(0, 5)) value = (value << 8n) | BigInt(byte);

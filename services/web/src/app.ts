@@ -5,6 +5,7 @@
 import {
   generateSigner,
   HandshakeClient,
+  HandshakeError,
   type Connect,
   type ChannelEvent,
   PairChannel,
@@ -148,6 +149,7 @@ export class Companion {
     };
 
     let secret: Uint8Array | null = null;
+    let cancel: (err: Error) => void = () => undefined;
     const done = new Promise<PairRecord>((resolve, reject) => {
       const timer = setTimeout(
         () => reject(new PairingError("timeout", "the computer didn't confirm in time")),
@@ -157,6 +159,7 @@ export class Companion {
         clearTimeout(timer);
         fn();
       };
+      cancel = (err) => settle(() => reject(err));
       let chain = Promise.resolve();
       const onEvent = (event: ChannelEvent) => {
         if (event.type === "closed" && event.final) {
@@ -202,6 +205,13 @@ export class Companion {
     try {
       await p1.send("signal", request as unknown as Record<string, unknown>);
       return await done;
+    } catch (err) {
+      // A request that never went out (the invite already used or ended) ends the wait at once, timer and all.
+      done.catch(() => undefined);
+      cancel(err instanceof Error ? err : new Error("failed"));
+      if (err instanceof PairingError) throw err;
+      if (err instanceof HandshakeError && (err.status === 410 || err.status === 403)) throw new PairingError("refused", "this pairing link has been used or ended");
+      throw new PairingError("failed", err instanceof Error ? err.message : "failed");
     } finally {
       p1.close();
     }
