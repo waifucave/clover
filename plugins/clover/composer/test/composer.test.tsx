@@ -197,16 +197,32 @@ describe("model, voice and actions", () => {
     expect(document.activeElement).toBe(pill);
   });
 
-  test("the level pill offers Clover's five levels; a pick reaches the host", () => {
-    const onChange = mock((_l: string) => undefined);
-    setup({ level: { ...LEVEL, onChange } });
-    fireEvent.click(screen.getByRole("button", { name: "Approval level: Ask when risky" }));
+  test("the level pill names its computer and offers Clover's five levels; a pick is a request (review SF1)", () => {
+    const onRequest = mock((_l: string) => undefined);
+    setup({ level: { ...LEVEL, onRequest } });
+    fireEvent.click(screen.getByRole("button", { name: "Approval level on Studio: Ask when risky" }));
+    expect(screen.getByRole("menu", { name: "Approval level on Studio" })).toBeTruthy();
     const items = screen.getAllByRole("menuitemradio");
     expect(items.map((i) => i.querySelector(".cl-composer__menu-label")?.textContent)).toEqual([
       "Read only", "Ask first", "Ask when risky", "Accept edits", "Fully automatic",
     ]);
+    expect(screen.getByText("A change raises a card for you to answer, and applies only then.")).toBeTruthy();
     fireEvent.click(screen.getByRole("menuitemradio", { name: /Accept edits/ }));
-    expect(onChange).toHaveBeenCalledWith("accept-edits");
+    expect(onRequest).toHaveBeenCalledWith("accept-edits");
+    // Picking the level it already has asks for nothing.
+    fireEvent.click(screen.getByRole("button", { name: /^Approval level on Studio/ }));
+    fireEvent.click(screen.getByRole("menuitemradio", { name: /Ask when risky/ }));
+    expect(onRequest).toHaveBeenCalledTimes(1);
+  });
+
+  test("a level asked for shows beside the old one, which stands until the card is answered", () => {
+    setup({ level: { ...LEVEL, requested: "automatic" } });
+    const pill = screen.getByRole("button", { name: "Approval level on Studio: Ask when risky, Fully automatic asked for" });
+    expect(pill.getAttribute("data-level")).toBe("risky");
+    expect(pill.textContent).toContain("Fully automatic asked for");
+    fireEvent.click(pill);
+    expect(screen.getByRole("menuitemradio", { name: /Ask when risky/ }).getAttribute("aria-checked")).toBe("true");
+    expect(screen.getByRole("menuitemradio", { name: /Fully automatic/ }).textContent).toContain("Asked for");
   });
 
   test("a card arriving closes the menu, and the pills wait while it is pending (review item 1)", () => {
@@ -217,7 +233,7 @@ describe("model, voice and actions", () => {
     rerender(<Composer {...props} cardPending />);
     expect(screen.queryByRole("menu")).toBeNull();
     expect((screen.getByRole("button", { name: /^Model:/ }) as HTMLButtonElement).disabled).toBe(true);
-    expect((screen.getByRole("button", { name: /^Approval level:/ }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: /^Approval level on / }) as HTMLButtonElement).disabled).toBe(true);
   });
 
   test("Send and Stop never look alike", () => {

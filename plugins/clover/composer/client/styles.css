@@ -1,5 +1,7 @@
 /* The composer. Every colour, face and size is a theme token from lane B's catalog (`--clover-*`,
-   listed in tokens.ts). A composer several tabs share takes each tab's tokens (spec §5.5).
+   listed in tokens.ts). A composer several tabs share takes each tab's tokens (spec §5.5). Sizes follow
+   the reference app's (as measured for lane G's base theme): a box at most 768 px wide and 44 tall for a
+   line, at least 32 px from each side; + and the microphone 28 px square; the pills in a 40 px row.
 
    Nothing here leaves the part: menus open in the flow above the box, never over the conversation,
    and the box casts no shadow onto it (review item 1). */
@@ -10,9 +12,9 @@
   flex-direction: column;
   gap: var(--clover-space-xs);
   width: 100%;
-  max-width: 800px;
+  max-width: 832px;
   margin: 0 auto;
-  padding: 0 var(--clover-space-xl) var(--clover-space-m);
+  padding: 0 var(--clover-space-xxl);
   color: var(--clover-composer-text);
   font-family: var(--clover-font-sans);
   font-size: var(--clover-font-size-body);
@@ -34,7 +36,7 @@
   display: flex;
   flex-direction: column;
   gap: var(--clover-space-s);
-  padding: var(--clover-space-s);
+  padding: 7px 6px 7px 5px;
   border: 1px solid var(--clover-composer-rim);
   border-radius: var(--clover-composer-radius);
   background: var(--clover-composer-background);
@@ -55,10 +57,10 @@
   box-sizing: border-box;
   flex: 1 1 auto;
   min-width: 0;
-  min-height: 32px;
+  min-height: 28px;
   max-height: 240px;
   margin: 0;
-  padding: 5px var(--clover-space-xs);
+  padding: 3px 5px;
   overflow-y: auto;
   border: none;
   outline: none;
@@ -81,13 +83,13 @@
   flex: none;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
+  width: 28px;
+  height: 28px;
   padding: 0;
   border: none;
   border-radius: var(--clover-radius-medium);
   background: transparent;
-  color: var(--clover-color-text-muted);
+  color: var(--clover-color-text-secondary);
   cursor: pointer;
 }
 
@@ -107,8 +109,8 @@
   flex: none;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
+  width: 28px;
+  height: 28px;
   padding: 0;
   border: none;
   border-radius: var(--clover-radius-round);
@@ -130,8 +132,8 @@
   align-items: center;
   justify-content: center;
   box-sizing: border-box;
-  width: 32px;
-  height: 32px;
+  width: 28px;
+  height: 28px;
   padding: 0;
   border: 1px solid var(--clover-color-hairline-raised);
   border-radius: var(--clover-radius-medium);
@@ -144,12 +146,13 @@
   background: var(--clover-color-hover);
 }
 
-/* Beneath the box: the approval level at the start, the model at the end. */
+/* Beneath the box, in a 40 px row: the approval level at the start, the model at the end. */
 .cl-composer__under {
   display: flex;
   align-items: center;
   gap: var(--clover-space-s);
-  padding: 0 var(--clover-space-xs);
+  min-height: 40px;
+  padding: 0 var(--clover-space-s) 2px;
 }
 
 .cl-composer__spacer {
@@ -160,13 +163,13 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  min-height: 26px;
-  padding: 2px var(--clover-space-s);
+  min-height: 28px;
+  padding: 0 var(--clover-space-s);
   border: none;
-  border-radius: var(--clover-radius-medium);
+  border-radius: var(--clover-radius-small);
   background: transparent;
   color: var(--clover-color-text-muted);
-  font-size: var(--clover-font-size-control);
+  font-size: var(--clover-font-size-label);
   cursor: pointer;
 }
 
@@ -185,11 +188,16 @@
 }
 
 .cl-composer__pill-label {
-  color: var(--clover-color-text-secondary);
+  color: var(--clover-color-text);
 }
 
 .cl-composer__pill-detail {
   color: var(--clover-color-text-muted);
+}
+
+/* A level asked for, waiting for its card: beside the level that still stands. */
+.cl-composer__pill-request {
+  color: var(--clover-color-attention-text);
 }
 
 .cl-composer__pill[data-level="automatic"] .cl-composer__pill-label {
@@ -256,6 +264,20 @@
 
 .cl-composer__menu-detail {
   grid-column: 2;
+  color: var(--clover-color-text-muted);
+  font-size: var(--clover-font-size-caption);
+}
+
+.cl-composer__menu-tag {
+  margin-left: var(--clover-space-s);
+  color: var(--clover-color-attention-text);
+  font-size: var(--clover-font-size-caption);
+}
+
+.cl-composer__menu-note {
+  margin: 0;
+  padding: var(--clover-space-xs) var(--clover-space-s) 2px;
+  border-top: 1px solid var(--clover-color-hairline);
   color: var(--clover-color-text-muted);
   font-size: var(--clover-font-size-caption);
 }

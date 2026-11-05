@@ -44,6 +44,8 @@ interface MenuItem {
   id: string;
   label: string;
   detail?: string;
+  /** A short tag after the label ("Asked for"). */
+  tag?: string;
   checked: boolean;
   onPick: () => void;
 }
@@ -59,6 +61,7 @@ function Menu({
   label,
   side,
   sections,
+  note,
   opener,
   onClose,
 }: {
@@ -66,6 +69,8 @@ function Menu({
   /** Which edge of the composer the menu lines up with: its pill's. */
   side: "start" | "end";
   sections: MenuSection[];
+  /** A line under the items that says how a pick works. */
+  note?: string;
   opener: RefObject<HTMLButtonElement | null>;
   onClose: () => void;
 }) {
@@ -129,12 +134,16 @@ function Menu({
               }}
             >
               <span className="cl-composer__menu-check">{item.checked ? <IconCheck /> : null}</span>
-              <span className="cl-composer__menu-label">{item.label}</span>
+              <span className="cl-composer__menu-label">
+                {item.label}
+                {item.tag && <span className="cl-composer__menu-tag">{item.tag}</span>}
+              </span>
               {item.detail && <span className="cl-composer__menu-detail">{item.detail}</span>}
             </button>
           ))}
         </div>
       ))}
+      {note && <p className="cl-composer__menu-note">{note}</p>}
     </div>
   );
 }
@@ -283,7 +292,9 @@ export function Composer(props: ComposerProps) {
       )
     : null;
 
-  const levelLabel = level ? (level.levels.find((l) => l.id === level.level)?.label ?? level.level) : "";
+  const levelName = (id: string) => level?.levels.find((l) => l.id === id)?.label ?? id;
+  const levelLabel = level ? levelName(level.level) : "";
+  const requestedLabel = level?.requested && level.requested !== level.level ? levelName(level.requested) : undefined;
   const levelButton = level
     ? action(
         "level",
@@ -293,14 +304,17 @@ export function Composer(props: ComposerProps) {
           type="button"
           className="cl-composer__pill"
           data-level={level.level}
+          data-requested={requestedLabel ? level.requested : undefined}
           aria-haspopup="menu"
           aria-expanded={menu === "level"}
-          aria-label={S.level(levelLabel)}
+          aria-label={S.level(level.computer, levelLabel, requestedLabel)}
           disabled={cardPending}
           onClick={() => setMenu((m) => (m === "level" ? null : "level"))}
         >
           <IconShield />
           <span className="cl-composer__pill-label">{levelLabel}</span>
+          <span className="cl-composer__pill-detail">{level.computer}</span>
+          {requestedLabel && <span className="cl-composer__pill-request">{S.levelAsked(requestedLabel)}</span>}
           <IconChevronDown />
         </button>,
       )
@@ -411,18 +425,24 @@ export function Composer(props: ComposerProps) {
       />
     ) : menu === "level" && level ? (
       <Menu
-        label={S.levelMenu}
+        label={S.levelMenu(level.computer)}
         side="start"
         opener={levelPill}
         onClose={closeMenu}
+        note={S.levelNote}
         sections={[
           {
+            title: S.levelMenu(level.computer),
             items: level.levels.map((l) => ({
               id: l.id,
               label: l.label,
               detail: l.detail,
+              tag: l.id === level.requested && l.id !== level.level ? S.levelAskedTag : undefined,
               checked: l.id === level.level,
-              onPick: () => level.onChange(l.id),
+              // A pick only asks: the level stays until the card is answered.
+              onPick: () => {
+                if (l.id !== level.level) level.onRequest(l.id);
+              },
             })),
           },
         ]}

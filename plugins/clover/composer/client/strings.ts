@@ -11,8 +11,12 @@ export const S = {
   model: (label: string) => `Model: ${label}`,
   modelMenu: "Model and effort",
   modelSection: "Model",
-  level: (label: string) => `Approval level: ${label}`,
-  levelMenu: "Approval level",
+  level: (computer: string, label: string, requested?: string) =>
+    requested ? `Approval level on ${computer}: ${label}, ${requested} asked for` : `Approval level on ${computer}: ${label}`,
+  levelMenu: (computer: string) => `Approval level on ${computer}`,
+  levelAsked: (label: string) => `${label} asked for`,
+  levelAskedTag: "Asked for",
+  levelNote: "A change raises a card for you to answer, and applies only then.",
   levels: {
     "read-only": { label: "Read only", detail: "Looks around, never changes anything" },
     ask: { label: "Ask first", detail: "Asks before every action" },

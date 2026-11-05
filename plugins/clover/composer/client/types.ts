@@ -52,12 +52,19 @@ export interface ComposerLevelOption {
   detail?: string;
 }
 
-/** The approval level the bot works at on this computer, and the others to pick from. A change goes to
- *  the host, which makes it (spec §5.5: from any layer but `clover`'s it is a sealed card). */
+/** The approval level of the computer the bot works on (spec §9.1: levels are per computer), and the
+ *  others to pick from. A pick is only a request: changing a computer's level is a sealed card from every
+ *  layer, `clover`'s included (§5.5), so the pill keeps the old level and shows the one asked for until
+ *  that card is answered. */
 export interface ComposerLevel {
+  /** The computer the level belongs to. */
+  computer: string;
   level: string;
   levels: ComposerLevelOption[];
-  onChange: (level: string) => void;
+  /** A change asked for, waiting for its card. */
+  requested?: string;
+  /** Ask for a change: the host raises the sealed card, and passes the pick back as `requested`. */
+  onRequest: (level: string) => void;
 }
 
 export interface ComposerProps {

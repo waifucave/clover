@@ -20,7 +20,7 @@ export const MODELS: ComposerModelChoice = {
   onChange: noop,
 };
 
-export const LEVEL: ComposerLevel = { level: DEFAULT_LEVEL, levels: CLOVER_LEVELS, onChange: noop };
+export const LEVEL: ComposerLevel = { computer: "Studio", level: DEFAULT_LEVEL, levels: CLOVER_LEVELS, onRequest: noop };
 
 function swatch(a: string, b: string): string {
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="56" height="56"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${a}"/><stop offset="1" stop-color="${b}"/></linearGradient></defs><rect width="56" height="56" fill="url(#g)"/></svg>`;
@@ -96,9 +96,19 @@ export const stories: Story[] = [
     ),
   },
   {
+    id: "composer/level-asked",
+    title: "A level change asked for",
+    notes: "The pill names the computer the level belongs to. A pick is a request: the old level stands, with the asked-for one beside it, until the sealed card is answered (spec §5.5).",
+    render: () => (
+      <Bottom>
+        <Demo level={{ ...LEVEL, requested: "automatic" }} initialMenu="level" />
+      </Bottom>
+    ),
+  },
+  {
     id: "composer/level-menu",
     title: "Picking the approval level",
-    notes: "Clover's five levels (spec §9.1), ask-when-risky the default.",
+    notes: "Clover's five levels (spec §9.1) on Studio, ask-when-risky the default; a pick raises a card first.",
     render: () => (
       <Bottom>
         <Demo initialMenu="level" />

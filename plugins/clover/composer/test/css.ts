@@ -54,7 +54,7 @@ export const COLOR_LITERAL = /#[0-9a-fA-F]{3,8}\b|\b(?:rgba?|hsla?|hwb|lab|lch|o
 
 /** Properties that fade, filter or transform: around a sealed frame they stop clicks counting. */
 export const FRAME_UNSAFE = new Set([
-  "opacity", "filter", "backdrop-filter", "transform", "rotate", "scale", "zoom", "mix-blend-mode",
+  "opacity", "filter", "-webkit-filter", "backdrop-filter", "-webkit-backdrop-filter", "transform", "rotate", "scale", "zoom", "mix-blend-mode",
   "clip-path", "mask", "mask-image", "-webkit-mask", "-webkit-mask-image",
 ]);
 
@@ -62,7 +62,7 @@ export const FRAME_UNSAFE = new Set([
 export function harmless(property: string, value: string): boolean {
   const v = value.replace(/\s*!important$/, "").trim();
   if (property === "opacity") return Number(v) >= 1;
-  if (property === "filter" || property === "backdrop-filter" || property === "mix-blend-mode") return v === "none" || v === "normal";
+  if (property.endsWith("filter") || property === "mix-blend-mode") return v === "none" || v === "normal";
   if (property === "clip-path" || property.includes("mask")) return v === "none";
   if (property === "transform") return v === "none" || /^(translate[XYZ3d]*\([^)]*\)\s*)+$/.test(v);
   return v === "none";
