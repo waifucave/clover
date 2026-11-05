@@ -98,7 +98,8 @@ describe("the repo layout (docs/clover-layout.md)", () => {
       }
     }
     expect(problems).toEqual([]);
-    expect(dirsIn("plugins")).toEqual(expect.arrayContaining(["alpha", "clover"]));
+    // Clover's own plugin is here from the start; Alpha's folder comes with lane D's bot (D-M1).
+    expect(dirsIn("plugins")).toContain("clover");
   });
 
   test("services: each one is a Worker with its wrangler config", () => {
